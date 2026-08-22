@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v2.1.0
 milestone_name: HERMES-CLAUDE_PARITY
-current_phase: 45.1
-current_phase_name: native-mcp-client
-status: complete
-stopped_at: Phase 46 context re-measured after 45.1 (D-23..D-38 added)
-last_updated: "2026-08-17T07:52:25.585Z"
-last_activity: 2026-08-17
-last_activity_desc: "45.1-08 closed the phase — SC#5 measured live instead of inferred, bridge_risk.go mutation 94.4%, CI green on 63b456f8e"
+current_phase: 46
+current_phase_name: mcp-trust-and-facade
+status: blocked
+stopped_at: "Phase 46 HALTED at dispatch: 46-02 Task 1 premise falsified by live measurement (see 46-HALT-2026-08-22.md)"
+last_updated: "2026-08-22T10:15:53.414Z"
+last_activity: 2026-08-22
+last_activity_desc: "Phase 46 execution halted before wave 1 — WhatsApp mount premise falsified, replan pending"
 progress:
   total_phases: 3
   completed_phases: 2
-  total_plans: 17
+  total_plans: 26
   completed_plans: 17
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-05)
 
 **Core value:** When Aura says she did something, she did it — and she can find what she knew.
-**Current focus:** Phase 45.1 — native-mcp-client
+**Current focus:** Phase 46 — mcp-trust-and-facade
 
 ## Current Position
 
-Phase: 45.1 (native-mcp-client) — COMPLETE (8 of 8)
-Status: validated live; Nyquist per-task sampling still owed (/gsd-validate-phase 45.1 not run)
+Phase: 46 (mcp-trust-and-facade) — HALTED BEFORE WAVE 1 (no executor dispatched, no commits)
+Status: Blocked — 46-02/46-08/46-09 rest on a falsified premise; see 46-HALT-2026-08-22.md
 Phase 46 discussion are recorded in `46-CONTEXT.md` D-10..D-16 and in ROADMAP §45.1.
-Last activity: 2026-08-17 — plan 08 complete; next is Phase 46, still blocked on its five amendments (46-CONTEXT.md D-05..D-09)
+Last activity: 2026-08-22 — execution halted at dispatch; live measurement of the running sidecar contradicts 46-RESEARCH
 requirements as falsified or already-shipped, and inserted Phase 45.1 ahead of it by operator
 decision ("use mcp client native no bespoke").
 

@@ -842,14 +842,22 @@ services:
       - aura-ingest-state:/state
 
 
-  # WhatsApp MCP sibling — forked whatsmeow bridge + FastMCP HTTP front
-  # (chetto1983/whatsapp-mcp @ aura/cockpit-connect): the agent mounts the MCP over
-  # streamable-HTTP (8080, catalog recipe:whatsapp), and Aura's cockpit drives device
-  # linking via the bridge management REST (/api/{status,qr,logout} on 8081). CI-built
-  # + published to GHCR (public) by the fork's aura-publish-image workflow. Aura boot
-  # never depends on this service being healthy.
+  # WhatsApp MCP sibling — forked whatsmeow bridge + MCP-2.0.0 HTTP front
+  # (chetto1983/whatsapp-mcp @ main): the agent mounts the MCP over streamable-HTTP
+  # (8080, catalog recipe:whatsapp), and Aura's cockpit drives device linking via the
+  # bridge management REST (/api/{status,qr,logout} on 8081). Aura boot never depends
+  # on this service being healthy.
+  #
+  # PINNED BY COMMIT, deliberately. `:sidecar` is written by TWO workflows on this fork
+  # — aura-publish-image.yml (branch aura/cockpit-connect) and publish-image.yml (main)
+  # — so which build it names depends on which ran last. The branch aura/cockpit-connect
+  # is retired: 143 commits behind main, its one unique commit fused into main on
+  # 2026-07-01 (4a8306206). sha-e0b8345 = main e0b83459, digest
+  # sha256:7d557d462994dca468cf19f69931743cb99e34a2ca5c47969aa77eba7df04568, serving 14
+  # tools of which list_messages/list_chats bind MCP Apps views (ui://whatsapp/*.html).
+  # Bump by reading the sha- tag publish-image.yml minted for the target commit.
   whatsapp:
-    image: ${AURA_WHATSAPP_MCP_IMAGE:-ghcr.io/chetto1983/whatsapp-mcp:sidecar}
+    image: ${AURA_WHATSAPP_MCP_IMAGE:-ghcr.io/chetto1983/whatsapp-mcp:sha-e0b8345}
     pull_policy: ${AURA_WHATSAPP_MCP_PULL_POLICY:-missing}
     container_name: aura-whatsapp
     restart: unless-stopped
@@ -1024,11 +1032,22 @@ services:
   # Aura PIM sidecar — forked calendar-mcp (chetto1983/aura-pim-mcp @ aura/pim-sidecar):
   # unified mail+calendar+contacts over MCP-over-HTTP (/) + a token-gated admin REST API
   # (/admin) the cockpit drives for per-deployment OAuth connect. Not vendored: the image is
-  # CI-built + published to GHCR (public) by the fork's aura-publish-image workflow. Pin via
-  # AURA_PIM_MCP_IMAGE (e.g. the immutable :<sha> tag) for reproducible appliance builds.
+  # CI-built + published to GHCR (public) by the fork's aura-publish-image workflow.
   # Aura's catalog points at the loopback publish; Aura boot never depends on this service.
+  #
+  # PINNED BY COMMIT — for a plainer reason than the whatsapp service above. Only one
+  # workflow writes `:sidecar` here, so the tag is uncontested; it still MOVES. It moved on
+  # 2026-08-22, when the fork merged upstream through 3c0ae72d7 and the publish reran, and
+  # with pull_policy=missing an already-pulled host keeps serving the OLD bytes under the
+  # unchanged name (sha256:39e11bf9… where the tag now means sha256:48c9119a…). That silent
+  # divergence is what a floating tag cannot report. The 40-hex form exists here because the
+  # fork's aura-publish-image workflow tags the raw github.sha alongside `:sidecar`.
+  # 10383276961828bc19f34a9372ba2c64a14e2b62 = that merge, digest
+  # sha256:48c9119ae40f1ce944a47064b303ea528df9ef3c0728a38f3e15d86779991b9a, serving the
+  # trimmed 14-tool surface of calendar-mcp 1.4.1. Bump by reading the 40-hex tag the
+  # workflow minted for the target commit.
   aura-pim-mcp:
-    image: ${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:sidecar}
+    image: ${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:10383276961828bc19f34a9372ba2c64a14e2b62}
     pull_policy: ${AURA_PIM_MCP_PULL_POLICY:-missing}
     container_name: aura-pim-mcp
     restart: unless-stopped
