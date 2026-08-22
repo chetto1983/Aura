@@ -398,14 +398,31 @@ her own memory. `prd.md:4579` is untouched: document passages remain `TrustUntru
 **Plans**: 9 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 46-01-PLAN.md — prd.md amendment batch: ratify 34b892512, MCP-04/05's new mechanism, TOOL-14's tiering axis + count budget, 45.1 ratification + AURA_MCP_* catalogue repair (BLOCKING, docs only)
 - [ ] 46-02-PLAN.md — curated-surface design doc (the fork contract) + the one-way operator decision on the WhatsApp action scope and the curated tool names
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 46-03-PLAN.md — REQUIREMENTS.md MCP-02/04/05 rows and ROADMAP §46 rewritten clean, superseded wording relocated to dated footnotes (D-31)
 - [ ] 46-04-PLAN.md — D-27's deferral count rule: <=3 model-facing tools earns a slot, global cap 2, frozen at mount, drift warned on reconnect
 - [ ] 46-05-PLAN.md — calendar fork (aura-pim-mcp) curated into one multiplexed tool, accountId handle fixed, immutable :<sha> image published
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 46-06-PLAN.md — TRACER: re-key the risk table to action names, gate Multiplexed on classifier existence, register the classifier, reconcile at mount, pin the image — one atomic commit
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 46-07-PLAN.md — TRACER GATE: one driven conversation proving SC#1/#2/#4 for calendar live, evidence quoted from aura.tool_invocations, scored >9.8
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 46-08-PLAN.md — WhatsApp fork curated + its table re-key, classifier and pin in the second atomic commit
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 46-09-PLAN.md — SC#6 via the calculator mount, trust-posture tripwire tests, tool-search fixture repair, and the phase-close gates
 
 ### Phase 47: Tool-surface ceremony strip

@@ -1,19 +1,20 @@
 ---
 gsd_state_version: 1.0
 milestone: v2.1.0
-milestone_name: HERMES-CLAUDE_PARITY
 current_phase: 46
 current_phase_name: mcp-trust-and-facade
 status: blocked
 stopped_at: "Phase 46 HALTED at dispatch: 46-02 Task 1 premise falsified by live measurement (see 46-HALT-2026-08-22.md)"
-last_updated: "2026-08-22T10:15:53.414Z"
+last_updated: "2026-08-22T13:23:22.390Z"
 last_activity: 2026-08-22
-last_activity_desc: "Phase 46 execution halted before wave 1 — WhatsApp mount premise falsified, replan pending"
+last_activity_desc: Phase 46 execution halted before wave 1 — WhatsApp mount premise falsified, replan pending
+state_head: e041b4b2de2e239146ecd0dc8bc040be30120f0a
 progress:
-  total_phases: 3
+  total_phases: 11
   completed_phases: 2
   total_plans: 26
   completed_plans: 17
+milestone_name: HERMES-CLAUDE_PARITY
 ---
 
 # Project State
@@ -27,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 
 ## Current Position
 
-Phase: 46 (mcp-trust-and-facade) — HALTED BEFORE WAVE 1 (no executor dispatched, no commits)
+Phase: 46 (mcp-trust-and-facade) — READY TO EXECUTE
 Status: Blocked — 46-02/46-08/46-09 rest on a falsified premise; see 46-HALT-2026-08-22.md
 Phase 46 discussion are recorded in `46-CONTEXT.md` D-10..D-16 and in ROADMAP §45.1.
 Last activity: 2026-08-22 — execution halted at dispatch; live measurement of the running sidecar contradicts 46-RESEARCH

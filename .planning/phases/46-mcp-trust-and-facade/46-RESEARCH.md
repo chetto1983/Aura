@@ -1,643 +1,256 @@
-# Phase 46: MCP trust and facade - Research
-
-**Researched:** 2026-08-17
-**Domain:** MCP host policy (Go, `internal/agent/mcptools` + `internal/gateway`) and two forked MCP
-sidecars (C#/.NET `aura-pim-mcp`, Python/FastMCP `whatsapp-mcp`)
-**Confidence:** HIGH on the Aura-side mechanism (D-21/D-27, re-verified against `02a291530`); HIGH on
-fork CI/publish mechanics (verified live via `gh api` against both fork repos); MEDIUM on the exact
-in-fork curation diff shape (depends on discretion items CONTEXT.md leaves open); LOW on nothing —
-every claim below was either read from code/API or is explicitly marked `[ASSUMED]`.
-
-## Summary
-
-CONTEXT.md (D-00..D-38) already resolved the architecture, the trust posture, and the classification
-mechanism — this research does not re-open any of that. What it adds, beyond cheap re-verification of
-the cited line numbers (all confirmed current), is the ground CONTEXT.md itself flagged as least
-settled: **fork delivery mechanics**. Both forks were inspected live via `gh api` (not assumed): both
-already carry an `aura-publish-image.yml` workflow on their Aura-owned branch (`aura/pim-sidecar`,
-`aura/cockpit-connect`) that builds and pushes `ghcr.io/<repo>:sidecar` **and**
-`ghcr.io/<repo>:${{ github.sha }}` (the full 40-char commit SHA — this is what D-23's `:<sha>` tag
-means concretely) on every push to that branch touching build-relevant paths, or on manual dispatch.
-This is a currently-idle-but-present piece of CI, not something to build.
-
-One load-bearing discrepancy was found and was not in CONTEXT.md: **`whatsapp-mcp`'s
-`aura/cockpit-connect` branch (the one `compose.yaml` mounts) currently registers only 12 of the 14
-actions `bridge_risk.go`'s `trustedRecipeActions[whatsAppRecipeSource]` already lists** — `get_contact`
-and `send_reaction` exist on the fork's own `main` branch but were never merged onto
-`aura/cockpit-connect`. The Go-side risk table already accounts for a fork state that does not exist
-yet on the branch Aura mounts. This does not break anything today (both are unused table entries; the
-fail-closed default protects any tool that IS mounted but unlisted) but it directly affects how the
-planner scopes the WhatsApp fork's plan: curating "the existing surface" without first reconciling
-`aura/cockpit-connect` against `main` will silently narrow the curated tool to 12 actions while leaving
-2 dead entries in the Go table, or the plan must explicitly include the merge as its first step.
-
-The description-budget arithmetic (D-36) was independently re-derived from the numbers CONTEXT.md
-already measured; the fixture (`internal/agent/tools/testdata/deferred_manifest.json`, 101,815 bytes
-total) is confirmed current. The 4,096-byte `frameMCPDescription` cap and 16KB/128-property
-`capSchemaDescriptions` caps were re-read at `bridge.go:26-30` and hold as cited.
-
-**Primary recommendation:** plan Phase 46 as three tracks that land in one order — (1) the blocking PRD
-amendment batch (D-05, D-08, D-09, TOOL-14, D-28..D-31) lands first as pure documentation, zero code;
-(2) two fork-side plans (one per sidecar) whose commits land in the fork repos, each ending with the
-`aura-publish-image` workflow producing a `:<sha>` tag — the WhatsApp plan's first task is reconciling
-`aura/cockpit-connect` against `main`'s `get_contact`/`send_reaction` before curating; (3) one atomic
-Aura-side commit (D-32) that flips both image pins in `compose.yaml`, re-keys `trustedRecipeActions` to
-action-keyed, sets `Multiplexed: true` gated on classifier existence (D-34), adds the two
-`multiplexedClassifiers` entries, and adds the mount-time drift-warning reconciliation (D-33) — all in
-the same commit, because D-23's immutable pin is what makes a half-landed state impossible to reach.
-
-## Architectural Responsibility Map
-
-| Capability | Primary Tier | Secondary Tier | Rationale |
-|------------|-------------|----------------|-----------|
-| MCP result trust framing | API/Backend (`internal/agent/mcptools`) | — | `newResult`/`frameMCPDescription` run host-side at bridge time, before the model ever sees text |
-| Per-action risk classification | API/Backend (`internal/gateway`) | — | `classify`/`ValidateClassifiable` are the single in-process policy-enforcement point (PEP); no client or DB involvement |
-| Tool surface curation (calendar/WhatsApp action set) | External service (forked MCP sidecar, C#/.NET and Python) | — | D-17: curation is server-owned by design; Aura's bridge stays generic |
-| Always-loaded / deferred decision | API/Backend (`bridgePolicy.defaultDeferred`) | — | Pure host-side arithmetic over tool count, no persistence |
-| Image pin / version selection | Database/Storage boundary is N/A here — Deploy config (`compose.yaml`) | — | Not a runtime tier; it is the join point between two repos, evaluated at `docker compose up` |
-| `accountId` handle resolution | External service (fork) | — | D-20: the fork's own detail-tool schema, not host injection — MCP has no `accountId` concept at all |
-
-## Standard Stack
-
-No new library dependency is introduced by this phase. The relevant "stack" is what already exists at
-each tier:
-
-### Core
-| Component | Version (verified) | Purpose | Why standard |
-|---|---|---|---|
-| `github.com/modelcontextprotocol/go-sdk` | v1.7.0 (`go.mod:27`, unchanged from 45.1) | MCP client the bridge sits on | Already the official SDK; Phase 45.1 completed the swap |
-| `chetto1983/aura-pim-mcp` (fork of `MarimerLLC/calendar-mcp`), branch `aura/pim-sidecar` | HEAD verified live via `gh api` 2026-08-17 (branch exists, `aura-publish-image.yml` present) | Mail+calendar+contacts MCP server | Existing, already-mounted fork — this phase edits it, does not create it |
-| `chetto1983/whatsapp-mcp`, branch `aura/cockpit-connect` | HEAD verified live via `gh api` 2026-08-17 | WhatsApp MCP server | Same — existing fork |
-
-### Alternatives Considered
-None — CONTEXT.md D-17/D-18 already closed this question (curation-in-fork over an Aura-side facade,
-declarative config, or a namespace table). Re-litigating is explicitly out of scope per the task brief.
-
-**Installation:** No `go get`/`npm install`/`pip install` — this phase edits existing Go files, an
-existing C# project (`aura-pim-mcp`), and an existing Python FastMCP server (`whatsapp-mcp`).
-
-## Package Legitimacy Audit
-
-**Not applicable.** This phase installs no new external package in any ecosystem. Both MCP sidecars are
-pre-existing forks already mounted and pinned in `compose.yaml`; the work is curation-diffs inside them,
-not new dependencies. `slopcheck`/registry verification is skipped — nothing to gate.
-
-## Fork Delivery Mechanics (primary research target)
-
-### What already exists (verified live, not assumed)
-
-Both forks were inspected directly against GitHub (`gh api repos/chetto1983/<repo>/contents/...`, not
-training-data guesses about fork content):
-
-- **`aura-pim-mcp`**, branch `aura/pim-sidecar`: workflows are `ci.yml`, `claude.yml`, `release.yml`
-  (upstream cross-platform binary release, irrelevant to the sidecar image), and
-  **`aura-publish-image.yml`** — present ONLY on this branch, not on `main` (confirmed: `main`'s
-  workflow listing lacks it). `[VERIFIED: gh api, repos/chetto1983/aura-pim-mcp/contents/.github/workflows?ref=aura/pim-sidecar]`
-- **`whatsapp-mcp`**, branch `aura/cockpit-connect`: same shape — `aura-publish-image.yml` present.
-  `[VERIFIED: gh api]`
-- **Both workflows are byte-for-byte the same pattern**: trigger on `workflow_dispatch` or `push` to
-  the Aura branch touching build-relevant paths (`src/**`/`Dockerfile`/`Directory.Build.props` for
-  the .NET fork; `whatsapp-bridge/**`/`whatsapp-mcp-server/**`/`Dockerfile`/`docker/entrypoint.sh` for
-  the Python fork, plus the workflow file itself in both cases); `docker/build-push-action@v6` tags
-  the built image **`ghcr.io/<owner>/<repo>:sidecar`** and **`ghcr.io/<owner>/<repo>:${{ github.sha }}`**
-  — the full 40-hex-char commit SHA of the triggering push. This is exactly what D-23's `:<sha>` pin
-  refers to concretely: no separate release process, no manual tag entry — pushing a curation commit
-  to the Aura branch (or dispatching manually) produces the pinnable tag automatically, using the
-  repo's own `GITHUB_TOKEN` (no PAT setup needed). `[VERIFIED: gh api, both repos' aura-publish-image.yml content]`
-- **`compose.yaml`'s current defaults are the floating `:sidecar` tag** at line 818
-  (`AURA_WHATSAPP_MCP_IMAGE`) and line 997 (`AURA_PIM_MCP_IMAGE`) — confirmed by direct read, matching
-  D-23's citation exactly. `pull_policy: missing` on both (only pulls if absent locally — relevant for
-  local dev loops, irrelevant once the compose default names an immutable SHA tag, since a new
-  `:<sha>` never collides with a cached image).
-
-### The finding CONTEXT.md did not have: WhatsApp fork branch drift
-
-`bridge_risk.go`'s `trustedRecipeActions[whatsAppRecipeSource]` (14 entries: `list_chats`,
-`list_messages`, `search_contacts`, `get_contact`, `get_chat`, `get_contact_chats`,
-`get_direct_chat_by_contact`, `get_last_interaction`, `get_message_context`, `download_media`,
-`send_audio_message`, `send_file`, `send_message`, `send_reaction`) was checked against the ACTUAL
-`@mcp.tool()`-decorated functions in `whatsapp-mcp-server/main.py` on every relevant branch:
-
-| Branch | `@mcp.tool()` count | Has `get_contact` | Has `send_reaction` |
-|---|---|---|---|
-| `aura/cockpit-connect` (the one `compose.yaml` mounts) | **12** | **no** | **no** |
-| `main` (upstream, not mounted) | 14 | yes | yes |
-| `luke/group-chat`, `luke/send-files-audio`, `luke/improved-date-filtering` | 9-11 | varies | varies |
-
-`[VERIFIED: gh api, repos/chetto1983/whatsapp-mcp/contents/whatsapp-mcp-server/main.py?ref=<branch>,
-grep on @mcp.tool()/def name, 2026-08-17]`
-
-**Consequence for planning:** the Go-side risk table was written against a 14-action surface that does
-not exist on the branch Aura actually mounts. This is harmless today (dead table entries; fail-closed
-protects anything unlisted-but-mounted) but it means the WhatsApp fork plan cannot simply "curate the
-existing 14 tools into one multiplexed tool" — it must either (a) start by merging/cherry-picking
-`get_contact` and `send_reaction` from `main` onto `aura/cockpit-connect` so the curated surface matches
-what the Go table already assumes, or (b) explicitly scope the curated `messages` tool to 12 actions and
-prune the 2 dead entries from `trustedRecipeActions` in the same Aura-side commit. This is a genuine
-open question the discretion section did not anticipate — flag it for the planner as a first-task
-decision on the WhatsApp fork plan, not an assumption to silently resolve either way.
-
-The calendar fork has no equivalent drift: `aura-pim-mcp`'s `Program.cs` (`aura/pim-sidecar` branch)
-registers exactly 14 `.WithTools<>()` lines (`ListAccountsTool`, `GetEmailsTool`,
-`GetEmailDetailsTool`, `SearchEmailsTool`, `SendEmailTool`, `ListCalendarsTool`,
-`GetCalendarEventsTool`, `GetCalendarEventDetailsTool`, `CreateEventTool`, `RespondToEventTool`,
-`UpdateEventTool`, `GetContactsTool`, `SearchContactsTool`, `GetContactDetailsTool`) matching
-`trustedRecipeActions[calendarRecipeSource]`'s 14 keys 1:1. `[VERIFIED: gh api,
-repos/chetto1983/aura-pim-mcp/contents/src/CalendarMcp.HttpServer/Program.cs?ref=aura/pim-sidecar]`
-
-### Where the curation edit actually lands in each fork
-
-- **`aura-pim-mcp`**: `Program.cs:121-134` is the exact list of `.WithTools<CalendarMcp.Core.Tools.X>()`
-  registrations (`app.MapMcp()` at `:180` serves whatever is registered). D-26 (delete, don't just
-  unadvertise) means these 14 individual tool classes stop being registered and a new
-  `CalendarActionTool`-shaped class implementing the flat-union `action` dispatch (D-19) replaces them,
-  calling into the same underlying provider methods the 14 classes already call. No local clone exists
-  on this machine — the planner's fork plan must `git clone` (or the executor must, at execution time)
-  `https://github.com/chetto1983/aura-pim-mcp` on branch `aura/pim-sidecar`, since `D:/tmp/` has clones
-  of `hermes-agent`, `mcp-go-sdk`, `agent-memory-fork` etc. but not either sidecar fork.
-- **`whatsapp-mcp`**: `whatsapp-mcp-server/main.py` holds the `@mcp.tool()` decorators (thin wrappers)
-  and `whatsapp.py` holds the actual implementation each wrapper calls. The curated `messages` tool
-  replaces the `@mcp.tool()` decorators with one dispatcher function carrying the `action` argument,
-  calling straight into `whatsapp.py`'s existing functions — `whatsapp.py` itself does not need to
-  change, only `main.py`'s registration surface (mirrors the calendar fork's shape: implementation
-  layer untouched, registration layer collapsed).
-
-### How the fork's new surface is proven from Aura's side (no cross-repo CI)
-
-There is no CI job in Aura's own pipeline that can see into the fork repos' CI — GitHub Actions does
-not span repos without a webhook or a manual `workflow_run` trigger neither fork currently has.
-Proof of a fork's new curated surface happening correctly is therefore **live, from Aura's tree**, not
-compiled: mount the pinned `:<sha>` image locally (`docker compose up aura-pim-mcp whatsapp`, or against
-the CI stack once the pin lands), and let the existing `calendar_integration_test.go` /
-`whatsapp_integration_test.go` (tags `calendar_integration` / `whatsapp_integration`,
-`AURA_MCP_CALENDAR_SERVER_JSON` / `AURA_MCP_WHATSAPP_SERVER_JSON`) drive a real `tools/list` against
-the running sidecar and assert the curated tool count (`calendar` → exactly 1 model-facing tool,
-`messages` → exactly 1). These two tags are NOT in `AURA_COVERAGE_TAGS` (`db_integration` only,
-`scripts/coverage_gate.sh:29`), so they run in CI (if wired — verify wiring, see Validation Architecture
-below) but contribute no coverage percentage; they are proof-of-shape, not proof-of-coverage.
-
-**What CI genuinely cannot check across the repo boundary:** whether a fork commit that has NOT yet been
-pushed to `aura/pim-sidecar`/`aura/cockpit-connect` (i.e., still local or on a feature branch inside the
-fork) compiles or passes the fork's own tests — that is the fork's own `ci.yml`, entirely outside
-Aura's pipeline. The planner should treat "fork CI green" as a precondition recorded in the phase's
-`VALIDATION.md`/SUMMARY (per D-25: "the phase records the fork SHAs"), not as something Aura's own CI
-job can assert.
-
-## Architecture Patterns
-
-### System Architecture Diagram
-
-```
-Model turn
-   │
-   ▼
-tools.Registry.All()  ──boot──▶  gateway.ValidateClassifiable (panics if a Mutating+Multiplexed
-   │                              tool has no multiplexedClassifiers entry — D-34 gates this on
-   │                              classifier EXISTENCE, not on any `action` enum in the schema)
-   │
-   ▼ (per turn)
-bridgedTool.Spec()  ──deferred?──▶ bridgePolicy.defaultDeferred()
-   │                                  today: unconditional true
-   │                                  D-27: true UNLESS modelFacing tool count ≤ 3 AND the
-   │                                        global 2-slot budget is unspent (deterministic
-   │                                        grant order, mount order)
-   ▼ (if loaded, i.e. calendar / messages / a ≤3-tool self-minted server)
-model dispatches calendar(action=X) or messages(action=Y)
-   │
-   ▼
-gateway.classify(spec, rawArgs)
-   │  spec.Multiplexed == true (set at bridge time, D-21/D-34) →
-   │  multiplexedClassifiers["calendar"/"messages"](rawArgs)
-   │     └─ unmarshals {action}, looks up trustedRecipeActions[recipeSource][action]
-   │        (RE-KEYED from raw-tool-name to action-name by this phase)
-   ▼
-scoring.RiskTier (Safe / Normal / Risky / Destructive)
-   │
-   ▼
-decide.go: only Destructive stops the turn for operator approval
-   │
-   ▼
-bridgedTool.Execute → srv.CallToolText → the fork's HTTP MCP endpoint
-   │                                        (fork routes action → underlying provider call,
-   │                                         curation and provider dispatch both live here)
-   ▼
-newResult(): tools.NewResult + Provenance{Trust: TrustTrusted}  (no envelope, D-01)
-   │
-   ▼
-aura.tool_invocations row (args_raw, result_preview, meta) — the live-evidence read surface
-```
-
-### Recommended structure of the Aura-side change (no new files needed)
-
-```
-internal/agent/mcptools/
-├── bridge.go            # specFromToolDefWithPolicy: set Multiplexed (D-21, gated by D-34)
-├── bridge_risk.go        # re-key trustedRecipeActions to action-keyed for calendar+whatsapp,
-│                          # keep memory tool-keyed (D-35, documented mixed-key comment);
-│                          # add mount-time reconciliation warn-log (D-33)
-├── bridge_memory.go       # defaultDeferred(): add the count predicate (D-27) — or a small
-│                          # new file bridge_deferral.go if this pushes bridge_memory.go's
-│                          # LOC past the 600 threshold with headroom needed for D-33's log
-internal/gateway/
-├── classify.go           # add "calendar" and "messages" (or actual namespaced names,
-│                          # e.g. "calendar" and "whatsapp__messages" — verify exact
-│                          # namespaced spec.Name at bridge time) to multiplexedClassifiers
-compose.yaml               # both image pins move from :sidecar to :<sha> (D-23), landing in
-                            # the SAME commit as the above (D-32)
-docs/superpowers/specs/
-└── 2026-08-1X-mcp-curated-surface-design.md   # NEW: the contract doc (D-24), naming both
-                                                 # curated tools' action sets, the flat-union
-                                                 # shape (D-19), and the accountId fix (D-20)
-```
-
-### Pattern: mixed-key risk table with a documented discriminator (D-35)
-
-```go
-// trustedRecipeActions is keyed by whatever discriminator that source's surface
-// exposes: calendar and whatsapp are ACTION-keyed (their tools are multiplexed
-// behind one curated action enum); memory stays RAW-TOOL-NAME-keyed (it is not
-// merged — each memory_* call is its own MCP tool name). One table, one lookup
-// site in classifyToolRisk, two key spaces documented here so a future reader
-// does not assume uniformity that was never true.
-var trustedRecipeActions = map[string]map[string]mcpActionClass{
-    calendarRecipeSource: { /* keyed by action, e.g. "send_email": mcpActionDestructive */ },
-    whatsAppRecipeSource: { /* keyed by action */ },
-    mcp.SourceRecipeMemory: { /* keyed by raw tool name, e.g. "memory_forget" */ },
-}
-```
-
-### Pattern: gate `Multiplexed` inference on classifier existence, not on schema shape (D-34)
-
-```go
-// specFromToolDefWithPolicy — do NOT set Multiplexed from "does the schema have
-// an `action` property". That would make ValidateClassifiable panic at boot for
-// ANY stranger's server whose schema happens to use an `action` argument — the
-// opposite of Success Criterion 6. Multiplexed is true only when this specific
-// tool's namespaced name already has an entry in classify.go's
-// multiplexedClassifiers — i.e., only for the two curated tools Aura itself knows
-// about; every other bridged tool (a self-minted or ad hoc mount) gets the
-// generic Mutating/Destructive flat tier, which is exactly the fail-closed
-// promise SC#6 makes for an unknown server.
-spec.Multiplexed = isKnownMultiplexedMCPTool(spec.Name)
-```
-
-### Anti-Patterns to Avoid
-
-- **A second risk table or a `classifyComms` reading curation data:** explicitly rejected (D-21). The
-  existing `trustedRecipeActions` + `multiplexedClassifiers` machinery is the ONLY risk source; adding
-  a parallel one for the two curated tools reintroduces exactly the class of bug D-21 fixes.
-- **Deriving tiers from server-declared MCP annotations** (`ReadOnlyHint`/`DestructiveHint`) for the two
-  curated tools: `explicitDestructive` is deliberately escalate-only (never de-escalate) — trusting a
-  fork's own annotation to LOWER a tier would let the fork talk itself out of an approval gate.
-- **Inferring `Multiplexed` from schema shape** (any `action` property): panics Aura's boot for a
-  stranger's server (D-34's hazard, above).
-- **A dual-key transition table for the landing-order cutover**: rejected (D-32) in favor of one atomic
-  commit gated by the immutable pin — avoids a table that means two things depending on which pin is
-  live, plus a forgettable cleanup commit.
-
-## Don't Hand-Roll
-
-| Problem | Don't Build | Use Instead | Why |
-|---------|-------------|-------------|-----|
-| Curated tool surface for calendar/WhatsApp | An Aura-side `comms` facade tool, hide-list, or curation config | Curate inside each fork's own tool registration (`Program.cs` / `main.py`) | D-17: every MCP server Aura ships is a fork Aura controls; Aura's bridge stays generic for the NEXT mounted server too |
-| Per-action risk gating for a multiplexed tool | A new classifier abstraction or a `bridgePolicy` namespace table | `multiplexedClassifiers` + `trustedRecipeActions`, both already shipped | D-21: same data, re-keyed — adding a second risk source is the exact bug this phase closes |
-| Always-loaded tool priority | A `_meta`-declared hint, or an allowlist of tool names | Tool-count arithmetic (`modelFacing` count ≤ 3, global cap 2) | D-27: the MCP protocol has NO priority field (`mcp/protocol.go` inventory, `Tool` struct) — an annotation-derived rule was falsified before being proposed; a name-list is the exact declaration ceremony D-17 forbids |
-| Cross-repo drift detection | A checked-in `tools/list` capture fixture regenerated on demand | Mount-time reconciliation: WARN-log any curated `action` enum value the mounted server doesn't advertise (D-33) | A fixture needs manual regeneration and goes stale silently; a live reconcile at every mount catches drift the moment it matters |
-
-**Key insight:** every "don't hand-roll" here resolves to the same instinct D-17 named — a problem
-solvable in the server (which Aura owns, being a fork) or with already-shipped Aura machinery should
-never grow a new Aura-side abstraction.
-
-## Common Pitfalls
-
-### Pitfall 1: Landing the Aura-side re-key before the fork publishes
-**What goes wrong:** if `trustedRecipeActions` is re-keyed from raw-tool-name to action-name before the
-fork's curated tool actually exists, every raw tool call (`calendar__send_email`, etc., still the only
-thing mounted) falls through to the fail-closed default (`return true, true`) because the table no
-longer has raw-tool-name keys — every calendar/WhatsApp call, including reads, starts demanding
-approval.
-**Why it happens:** the table lookup key changes meaning; there is no transition state where both key
-shapes work.
-**How to avoid:** D-32's ordering — fork publishes first (image tag exists), then ONE Aura commit lands
-the pin + re-key + `Multiplexed` + classifier entry together. Never split across commits.
-**Warning signs:** a live scenario where a calendar READ (e.g. `list_calendars`) suddenly triggers an
-approval prompt is the tell.
-
-### Pitfall 2: Treating the WhatsApp Go-side table as ground truth for what to curate
-**What goes wrong:** building the `messages` tool's action set purely from
-`trustedRecipeActions[whatsAppRecipeSource]`'s 14 keys produces a curated tool advertising
-`get_contact`/`send_reaction` that the mounted `aura/cockpit-connect` branch cannot actually serve
-(404/method-not-found at call time).
-**Why it happens:** the table was written against a broader surface (possibly `main`) than what is
-mounted today — verified drift, see Fork Delivery Mechanics above.
-**How to avoid:** the WhatsApp fork plan's first task must resolve this explicitly — merge the 2 missing
-actions from `main`, or scope the curated tool (and the Go table) to the 12 that exist. Do not silently
-assume either direction.
-**Warning signs:** a live call to `messages(action=get_contact)` in the E2E scenario returns a
-transport/method error instead of a result.
-
-### Pitfall 3: `refreshSpec` flipping deferral mid-conversation
-**What goes wrong:** `bridge.go:66-100`'s `refreshSpec` recomputes `spec.Deferred` on every reconnect.
-If D-27's count predicate is naively re-evaluated there too, a server's tool count crossing the
-threshold across a reconnect (e.g. the fork briefly advertises a 4th tool during a bad deploy, then
-corrects) flips the manifest mid-conversation, invalidating the KV cache prefix the model was relying
-on.
-**Why it happens:** `refreshSpec` already warns on `Mutating`/`Destructive` flag changes and required-arg
-changes (existing pattern, lines 78-98) — deferral needs the same treatment or an explicit freeze, and
-it is easy to wire the count check only at mount time and forget the reconnect path.
-**How to avoid:** follow the existing warn-on-change pattern for deferral flips, or freeze the deferred
-bit at mount time and never recompute it on `refreshSpec` (CONTEXT.md leaves this to Claude's
-discretion — pick one and document the choice, don't leave it unaddressed).
-**Warning signs:** a tool present in one turn's manifest silently vanishing (or appearing) later in the
-same conversation with no user-visible mount/unmount event.
-
-### Pitfall 4: COMPAT blast radius from deleting the 28 raw tool names (D-26)
-**What goes wrong:** any persisted row in `aura.tool_invocations`, a paused approval
-(`aura.paused_states`), or a scheduled `agent_job` referencing `calendar__send_email` or any of its 27
-siblings has nothing to resolve against the moment the pin flips — those requirements (COMPAT-01/02/03)
-are assigned to Phases 47/48, AFTER this phase removes the names.
-**Why it happens:** D-26 is deliberately one-way (deleting, not merely unadvertising, per operator
-decision) — dark code (still-callable-but-unadvertised handlers) is forbidden by CLAUDE.md.
-**How to avoid:** this phase does not own the fix, but must not silently absorb or hide the blast radius.
-Record it explicitly in the phase's SUMMARY/handoff so Phase 47/48 planning starts from a known list of
-what breaks, not a rediscovery.
-**Warning signs:** none observable within Phase 46 itself — the risk surfaces only when Phase 47/48
-rehydrate old history or resume an old pause. Documentation, not code, is this phase's mitigation.
-
-## Code Examples
-
-### Verified pattern: fail-closed default for an unannotated/unlisted MCP tool
-```go
-// Source: internal/agent/mcptools/bridge_risk.go:130-133 (read live, 2026-08-17)
-a := t.Annotations
-if a == nil {
-    return true, true
-}
-```
-
-### Verified pattern: monotone saturate-upward classification never lowers below the mutating floor
-```go
-// Source: internal/gateway/classify.go:53-64
-func classify(spec tools.Spec, rawArgs json.RawMessage) scoring.RiskTier {
-    if fn, ok := multiplexedClassifiers[spec.Name]; ok {
-        return fn(rawArgs)
-    }
-    if spec.Destructive {
-        return scoring.Destructive
-    }
-    if spec.Mutating {
-        return scoring.Normal
-    }
-    return scoring.Safe
-}
-```
-
-### Verified pattern: boot-time panic on a wiring gap, not a runtime under-gate
-```go
-// Source: internal/gateway/guard.go:22-38 (this is the guard D-34 must not break for
-// an unknown server, and the one D-21's re-key must satisfy for the two curated tools)
-func ValidateClassifiable(reg *tools.Registry) {
-    for _, t := range reg.All() {
-        spec := t.Spec()
-        if spec.Mutating {
-            validateOperationMetadata(spec)
-        }
-        if !spec.Mutating || !spec.Multiplexed {
-            continue
-        }
-        if _, ok := multiplexedClassifiers[spec.Name]; !ok {
-            panic(fmt.Sprintf(
-                "gateway.ValidateClassifiable: mutating multiplexed tool %q has no per-action "+
-                    "classifier — add it to multiplexedClassifiers, or the gateway will under-gate "+
-                    "its actions", spec.Name))
-        }
-    }
-}
-```
-
-### Fork publish workflow (identical shape in both forks, verified via `gh api`)
-```yaml
-# Source: aura-publish-image.yml, both chetto1983/aura-pim-mcp@aura/pim-sidecar
-# and chetto1983/whatsapp-mcp@aura/cockpit-connect (read live 2026-08-17)
-on:
-  workflow_dispatch:
-  push:
-    branches: [aura/pim-sidecar]   # or aura/cockpit-connect
-    paths: ['src/**', 'Dockerfile', ...]
-jobs:
-  publish:
-    steps:
-      - uses: docker/build-push-action@v6
-        with:
-          tags: |
-            ghcr.io/${{ github.repository }}:sidecar
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
-```
-
-## State of the Art
-
-| Old Approach | Current Approach | When Changed | Impact |
-|--------------|------------------|---------------|--------|
-| Per-call MCP result fencing (`TrustUntrusted` envelope) | `TrustTrusted`, no envelope | `34b892512`, 2026-08-12 | Ratified this phase (D-05); no code |
-| 28 raw calendar+WhatsApp MCP tools, deferred | 2 curated always-loaded multiplexed tools | This phase (MCP-04) | Manifest slot cost drops from ~56 raw defs (undeferred) to 2 curated tools at a ~2KB-each description budget (D-36) |
-| `bridgePolicy.defaultDeferred()` unconditional `true` | `true` unless modelFacing-tool-count ≤ 3 and the 2-slot global budget is unspent | This phase (D-27) | First non-constant deferral rule in the bridge |
-| Floating `:sidecar` image tag | Immutable `:<sha>` tag | This phase (D-23) | "Which tool surface is live" becomes answerable from `compose.yaml` alone |
-
-**Deprecated/outdated:** Amendment #110's *"non-persisted, untrusted reference item"* framing for the
-memory block is superseded by D-03/D-05, not restored.
-
-## Assumptions Log
-
-| # | Claim | Section | Risk if Wrong |
-|---|-------|---------|---------------|
-| A1 | The exact file `Program.cs` line range (121-134) and `main.py`/`whatsapp.py` split will still be current when the fork plan's executor actually clones and edits — verified 2026-08-17, could drift if either fork's `main`/Aura branch is pushed to before the plan executes | Fork Delivery Mechanics | Low — a fresh `gh api` or `git clone` re-read at execution time trivially re-confirms; the shape (registration list vs. implementation file) is a stable convention in both frameworks |
-| A2 | Neither fork has any other CI job that would block a push to the Aura branch beyond `ci.yml` (not inspected in full — only `aura-publish-image.yml` was read in full) | Fork Delivery Mechanics | Low-Medium — if `ci.yml` has strict gates (e.g. required status checks, branch protection) the fork plan's push could be blocked; verify `ci.yml` content and any branch protection rules before executing the fork plans |
-| A3 | The curated tool's exact namespaced `spec.Name` (e.g. `calendar` vs `calendar__calendar` vs `pim__calendar`) that must be the key in `multiplexedClassifiers` — depends on the namespace string used at `Mount()` time, not yet decided | Architecture Patterns | Medium — using the wrong key means the classifier entry never matches and `ValidateClassifiable` panics at boot; must be read from the actual mount-time namespace before writing the classifier registration |
-
-## Open Questions
-
-1. **Does the WhatsApp fork plan merge `get_contact`/`send_reaction` from `main`, or scope the curated
-   tool to the 12 actions `aura/cockpit-connect` already has?**
-   - What we know: both actions exist cleanly on `main`, isolated to `main.py`/`whatsapp.py` (no merge
-     conflict expected against `aura/cockpit-connect`'s divergence, per file-level diff inspection).
-   - What's unclear: whether `aura/cockpit-connect` has diverged from `main` in ways that make a clean
-     cherry-pick non-trivial (not fully diffed here — only tool-registration presence was checked).
-   - Recommendation: the fork plan's first task should attempt the merge and fall back to the 12-action
-     scope (plus pruning the two dead Go-table entries) only if the merge proves non-trivial; either way,
-     record the choice explicitly rather than defaulting silently.
-
-2. **Exact key `multiplexedClassifiers` needs for each curated tool** (see A3 above).
-   - Recommendation: read the actual namespace passed to `Mount()`/`mountWithAdvertisedPolicy` for the
-     PIM and WhatsApp managed servers in `internal/mcp/manager/catalog.go` (`BuiltInCatalog`) before
-     writing the classifier map entry — do not guess the namespace string.
-
-3. **Where D-27's count predicate lives, and how `refreshSpec` avoids flipping deferral mid-turn**
-   (explicitly left to Claude's discretion in CONTEXT.md) — Pitfall 3 above lays out the hazard; the
-   planner must pick a concrete answer (freeze-at-mount vs. warn-on-reconnect-change) and record it, not
-   leave it implicit in the diff.
-
-## Environment Availability
-
-| Dependency | Required By | Available | Version | Fallback |
-|------------|------------|-----------|---------|----------|
-| `gh` CLI (GitHub) | Fork inspection, verifying branch/workflow state | ✓ | authenticated as chetto1983 (per user memory) | — |
-| Local clone of `chetto1983/aura-pim-mcp` | Fork plan execution (editing `Program.cs`) | ✗ (not under `D:/tmp/`) | — | `git clone` at plan-execution time; no viable fallback, this IS the work |
-| Local clone of `chetto1983/whatsapp-mcp` | Fork plan execution (editing `main.py`) | ✗ (not under `D:/tmp/`) | — | `git clone` at plan-execution time |
-| .NET 10 SDK (for `aura-pim-mcp` local build/test) | Verifying the C# curation compiles before pushing | Not probed this session — `docs/superpowers/plans/2026-06-16-aura-pim-mcp-fork-design.md` documents WSL .NET 10 prerequisites from the original fork build | — | Rely on the fork's own `ci.yml` running in GitHub Actions if local .NET is unavailable |
-| `docker compose` (local stack) | Mounting the pinned images for live E2E (SC#1/#2/#4/#6) | Assumed available (project runs on containerized stack per CLAUDE.md) | — | — |
-
-**Missing dependencies with no fallback:**
-- Local clones of both forks do not exist and must be created as the literal first step of each fork
-  plan — this is expected, not a blocker, since the work product IS a commit in each fork repo.
-
-**Missing dependencies with fallback:**
-- Local .NET 10 toolchain — the fork's own `ci.yml` can substitute if WSL/.NET is unavailable locally,
-  at the cost of a slower push-and-wait verification loop.
-
-## Validation Architecture
-
-### Test Framework
-| Property | Value |
-|----------|-------|
-| Framework | Go `testing` + build tags (no third-party test framework) |
-| Config file | none — tag-gated files under `internal/mcp/*_test.go`, `internal/agent/mcptools/*_test.go`, `internal/gateway/*_test.go` |
-| Quick run command | `go test ./internal/agent/mcptools/... ./internal/gateway/...` (no tags — daemon-free unit tier) |
-| Full suite command | `AURA_DB_URL=... AURA_DB_MIGRATE_URL=... go test -tags db_integration -p 1 ./internal/...` (mirrors `scripts/coverage_gate.sh`) |
-
-### Phase Requirements → Test Map
-
-| Req ID | Behavior | Test Type | Automated Command | File Exists? |
-|--------|----------|-----------|---------------------|-------------|
-| MCP-01 | MCP descriptions carry no distrust prefix | unit | `go test ./internal/agent/mcptools/ -run TestFrameMCPDescription` | ✅ (`bridge_trust_test.go` or equivalent already covers `34b892512`'s shipped behavior — confirm exact test name at plan time) |
-| MCP-02 | Fail-closed default for unannotated/unlisted tool; approval gate; namespacing panic-on-duplicate; schema byte caps | unit | `go test ./internal/agent/mcptools/ -run TestClassifyToolRisk` (fail-closed default), `go test ./internal/agent/mcptools/ -run TestCapSchemaDescriptions` | ✅ `bridge_risk_test.go`, byte-cap tests likely in `bridge_spec_test.go`/`bridge_edges_test.go` |
-| MCP-03 | Trust unconditional across every mounted server | unit | `go test ./internal/agent/mcptools/ -run TestNewResult` (or wherever `TrustTrusted` is asserted) | ✅ `bridge_trust_test.go` |
-| MCP-04 (SC#1, SC#2) | Two always-loaded multiplexed tools, per-action classification survives the merge | unit (classification logic) + live E2E (manifest + approval flow) | unit: `go test ./internal/gateway/ -run TestClassify` extended with calendar/messages cases; live: driven conversation, `aura.tool_invocations` query | ❌ Wave 0 — new test cases for the two new `multiplexedClassifiers` entries do not exist yet; new unit test asserting `bridgePolicy.defaultDeferred()`'s count arithmetic (D-27) does not exist yet |
-| MCP-05 (SC#4) | `accountId` never in dispatched args for calendar calls | live E2E only (the fix is fork-side; Go-side has nothing to unit-test except "the fork doesn't require it", which is an integration-tier assertion) | `calendar_integration` tag test extended to assert no `accountId` in a `get_calendar_event_details` call built from a prior `list` result | ❌ Wave 0 — extend `calendar_integration_test.go` |
-| TOOL-14 | Tiering axis change (frequency + count budget) documented and enforced | unit | `go test ./internal/agent/mcptools/ -run TestDefaultDeferred` (new) | ❌ Wave 0 |
-| SC#3 | Every mounted server's descriptions render as ordinary text | unit (already covered by MCP-01 test) + live spot-check | same as MCP-01 | ✅ (unit), live spot-check has no dedicated automation (visual read of a live turn) |
-| SC#6 | A new unlisted server (calculator fork) mounts with no code/config change, fail-closed at Mutating+Destructive | integration (build-tag) | `go test -tags calculator_integration ./internal/mcp/ -run TestCalculatorServerLive` | ✅ already exists (`calculator_integration_test.go`) — extend with a risk-tier assertion if not already present |
-
-### Sampling Rate
-- **Per task commit:** `go test ./internal/agent/mcptools/... ./internal/gateway/...` (daemon-free,
-  seconds) — run after every edit to `bridge_risk.go`, `bridge.go`, `bridge_memory.go`, `classify.go`,
-  `guard.go` per CLAUDE.md's post-edit validation rule (`go vet`, `go build`, `go test`,
-  `go test -race` for touched packages).
-- **Per wave merge:** `bash scripts/coverage_docker.sh` (full `db_integration`-tagged aggregate, the
-  85%-floor gate) plus, if the stack is up, a manual `calendar_integration`/`whatsapp_integration` run
-  against the newly-pinned images.
-- **Phase gate:** full suite green (`make quality-full`) before `/gsd-verify-work`; additionally the
-  live driven-conversation E2E (D-37) scored per CLAUDE.md's Definition of Done (>9.8), which no
-  automated command can substitute for — see below.
-
-### Wave 0 Gaps
-- [ ] `internal/gateway/classify_test.go` (or a new `classify_multiplexed_comms_test.go`) — unit tests
-  for the two new `multiplexedClassifiers` entries (calendar/messages) covering: a read action → Safe,
-  a mutate action → Normal, a destructive action → Destructive, an unrecognised action → Risky
-  (fail-safe, mirrors `classifySkill`/`classifyTask`'s pattern exactly).
-- [ ] `internal/agent/mcptools/bridge_deferral_test.go` (or extend `bridge_memory_policy_test.go`) —
-  unit tests for D-27's count predicate: a server with ≤3 model-facing tools and budget available →
-  not deferred; a server with >3 → deferred; the 2-slot global cap exhausted → third qualifying server
-  stays deferred even though it individually qualifies (this is the case most likely to be missed).
-- [ ] `internal/gateway/guard_test.go` — extend with a case asserting D-34's gate: a tool whose schema
-  carries an `action` property but has NO `multiplexedClassifiers` entry does NOT get `Multiplexed:
-  true` inferred, and boots cleanly (proves SC#6's fail-closed-not-panic promise for a stranger's
-  server).
-- [ ] `internal/agent/mcptools/bridge_risk_test.go` — extend for the re-keyed (action-keyed)
-  `trustedRecipeActions[calendarRecipeSource]`/`[whatsAppRecipeSource]`, replacing whatever raw-tool-name
-  keyed cases exist today; keep `mcp.SourceRecipeMemory`'s raw-tool-name-keyed cases unchanged (D-35).
-- [ ] Mount-time reconciliation (D-33) — a small unit test asserting an unknown action in a mounted
-  curated tool's `action` enum produces a WARN log by name and does NOT panic boot.
-- [ ] `calendar_integration_test.go` / `whatsapp_integration_test.go` — extend to assert the curated
-  tool's action count and, for calendar, that no `accountId` argument is required by the detail-tool
-  call built from a prior list result (MCP-05/SC#4's only integration-tier assertion point).
-
-None of these six gaps are daemon-gated except the last (`*_integration` tag, requires the live
-sidecar) — the first five are pure-function unit tests over already-daemon-free packages
-(`internal/gateway`, `internal/agent/mcptools`), so they DO feed the `db_integration`-only 85% coverage
-gate and must exist before the phase closes, per CLAUDE.md's "daemon/container-gated runtime code
-needs daemon-free unit tests" rule (which applies here even though nothing in this phase is
-container-gated — the rule's spirit, keeping the floor real, still applies to any new branch added to
-already-covered files).
-
-### Live evidence, per success criterion (the six SCs, mapped to signal/source/tier)
-
-| SC | Observable signal | Where read from | Tier that can assert it | Daemon-free unit backing the gate |
-|----|---|---|---|---|
-| SC#1 (2 always-loaded multiplexed tools, curation visible in fork's own `tools/list`) | Live turn's rendered manifest shows exactly `calendar` and `messages` (or their namespaced names), not 28 raw tools; a direct `tools/list` call against the mounted sidecar shows the same curated set | OTel span / manifest render log; direct MCP `tools/list` response | Live E2E only — manifest composition is a runtime property, no unit test can assert "what the model actually saw this turn" | `bridge_deferral_test.go` (D-27's count arithmetic) is the unit-level proxy — it proves the RULE is correct, not that a specific live turn obeyed it |
-| SC#2 (destructive action gates, read in the same tool doesn't) | `aura.tool_invocations` shows an approval-pending row for e.g. `calendar(action=send_email)` and a completed row with no approval step for `calendar(action=list_calendar_events)` in the same conversation | `aura.tool_invocations` (status, meta columns), approval ledger | Live E2E required for the end-to-end proof; `classify_multiplexed_comms_test.go` unit-proves the classification function in isolation | `classify_multiplexed_comms_test.go` (Wave 0 gap above) |
-| SC#3 (descriptions render as ordinary text, no distrust framing) | Rendered tool description text in a live turn transcript contains no distrust marker/prefix | Transcript / prompt-render log | Unit-testable in full (`frameMCPDescription` is pure) — live spot-check is confirmatory only | Already exists (MCP-01 unit test) |
-| SC#4 (`accountId` never in dispatched args for calendar calls) | `aura.tool_invocations.args_raw` for a `get_calendar_event_details` call contains no `accountId` key (or contains only the opaque reference the fork itself issued) | `aura.tool_invocations.args_raw` (jsonb/text inspection) | Integration tier (`calendar_integration`) can assert the fork's own schema no longer requires it; the LIVE dispatched-args proof needs a real turn | `calendar_integration_test.go` extension (Wave 0 gap) |
-| SC#5 | **DELETED (D-07)** — do not attempt to prove; a plan that tries "results carry instruction-shaped text and are not acted on" is reintroducing a criterion the operator explicitly struck | — | — | — |
-| SC#6 (new unlisted server usable with zero code, fail-closed at Mutating+Destructive) | Mounting `chetto1983/calculator-mcp-server` live produces a usable tool with no catalog/code change, and its risk tier reads Destructive for any mutating action with no annotation | `calculator_integration_test.go` output; `aura.tool_invocations` for a live-driven call | `calculator_integration` tag proves the mount-and-classify mechanics; the "no code change was needed" claim is a documentation/process assertion the driven conversation's narration must state explicitly (per D-38's caveat: the server IS referenced in Aura's tree via the test fixture, so the evidence must show the MOUNT needed nothing new, not that the server was unknown) | `calculator_integration_test.go` already exists; extend with an explicit risk-tier assertion if absent |
-
-**D-37's evidence discipline applies across SC#1/#2/#4**: one driven conversation against the real
-running stack, reading a calendar, sending something that trips the approval gate, and following an
-event from listing through to detail — quote the actual `aura.tool_invocations` rows in
-`VALIDATION.md`. A green test suite alone does not close this phase (CLAUDE.md Definition of Done);
-the live scenario must be scored, and per the project's evidence policy this is read from OTel traces
-and `aura.tool_invocations`, never inferred from test output.
-
-## Security Domain
-
-### Applicable ASVS Categories
-
-| ASVS Category | Applies | Standard Control |
-|---------------|---------|-----------------|
-| V2 Authentication | no (MCP servers here are operator-mounted infra, not user-auth surfaces) | — |
-| V3 Session Management | no | — |
-| V4 Access Control | yes | `mcpToolRisk`'s fail-closed default + the model-blind approval gate (`approve.go`) — no tool schema exposes the approval mechanism to the model, closing a self-approval vector |
-| V5 Input Validation | yes | `capSchemaDescriptions` (16KB schema / 128-property / per-arg byte caps) bounds a server-controlled schema before it reaches the model or `tool_search`; `classify`'s saturate-upward parse-failure handling (`json.Unmarshal` error → `Risky`, never `Safe`) |
-| V6 Cryptography | no (no new crypto surface in this phase) | — |
-
-### Known Threat Patterns for this stack
-
-| Pattern | STRIDE | Standard Mitigation |
-|---------|--------|---------------------|
-| A curated MCP tool's `action` enum drifting from what the fork actually serves (Fork Delivery Mechanics finding above) | Tampering / Denial of Service (of a specific action, not the whole mount) | D-33: WARN-log at mount time by action name; fail-closed at call time for an unrecognised action (same path `classify` already uses for unknown input) |
-| Prompt injection via untrusted MCP result text now read as ordinary (trusted) text | Spoofing / Elevation of Privilege | Explicitly accepted residual risk by operator decision (D-01) — mitigated only by the surviving guardrails (fail-closed risk classification, model-blind approval gate, namespacing) and operator control over what gets mounted. Not this phase's problem to re-litigate. |
-| A fork's schema flooding the model-facing manifest (large descriptions, many properties) | Denial of Service (context budget) | `capSchemaDescriptions` byte/property caps (already shipped); D-36's tight ~1.5-2KB merged-description budget for the two always-loaded tools specifically, since they are now paid every turn |
-| A stranger's mounted server whose schema happens to use an `action` property tricking the classifier into treating it as a known multiplexed tool | Elevation of Privilege (wrong risk tier assigned) | D-34: `Multiplexed` inferred ONLY when a `multiplexedClassifiers` entry already exists for that exact tool name — an unknown server can never self-promote into a known classifier's tier |
-
-## Sources
-
-### Primary (HIGH confidence)
-- `internal/agent/mcptools/bridge.go`, `bridge_risk.go`, `bridge_memory.go`, `bridge_call.go` — read
-  in full 2026-08-17 at the current tree state (`02a291530`).
-- `internal/gateway/classify.go`, `guard.go` — read in full 2026-08-17.
-- `compose.yaml:780-1035` — read directly, confirms line numbers cited in CONTEXT.md D-23.
-- `scripts/coverage_gate.sh` — read in full, confirms `AURA_COVERAGE_TAGS` default (`db_integration`
-  only) and the anti-footgun live-DB guard.
-- `internal/db/migrations/0011_tool_invocations.up.sql` — confirms `aura.tool_invocations` schema
-  (`tool_name`, `args_raw`, `status`, `meta` columns) as the live-evidence read surface.
-- GitHub API (`gh api repos/chetto1983/aura-pim-mcp/...`, `gh api repos/chetto1983/whatsapp-mcp/...`) —
-  branch listings, workflow file contents, and tool-registration source files, all read live 2026-08-17.
-  This is the primary new evidence this research adds beyond CONTEXT.md.
-
-### Secondary (MEDIUM confidence)
-- `docs/superpowers/specs/2026-06-16-calendar-pim-mcp-fork-design.md` — read in full as the design-doc
-  precedent D-24 extends; dated 2026-06-16, describes the ORIGINAL 29→~16 trim, not this phase's
-  14→1 multiplex (superseded shape, still the correct structural precedent for the NEW doc's format).
-
-### Tertiary (LOW confidence)
-None — every claim in this document is either read directly from code/API or explicitly logged in the
-Assumptions table above.
-
-## Metadata
-
-**Confidence breakdown:**
-- Standard stack / architecture: HIGH — nothing new to verify beyond re-confirming CONTEXT.md's cited
-  line numbers, all of which matched.
-- Fork delivery mechanics: HIGH on CI/publish mechanism (read live via `gh api`); MEDIUM on the exact
-  in-fork diff shape (depends on open questions the planner must resolve, notably the WhatsApp branch
-  drift finding).
-- Pitfalls: HIGH — all four are either re-derived from code already read or a direct extension of a
-  hazard CONTEXT.md already named (D-32, D-34).
-- Validation Architecture: HIGH on the mapping (build tags, coverage tag set, and `aura.tool_invocations`
-  schema all confirmed by direct read); MEDIUM on which exact existing test function names cover MCP-01
-  /MCP-02/MCP-03 today (not individually enumerated — the planner should `grep` the exact test names
-  before writing task-level verification steps).
-
-**Research date:** 2026-08-17
-**Valid until:** 14 days (fast-moving — depends on live fork repo state, which this research found to
-have already drifted once; re-verify branch state with `gh api` before executing either fork plan if
-more than a few days have passed)
+# Phase 46: MCP trust and facade — Research (REPLAN)
+
+**Supersedes:** `46-RESEARCH.md` as dated 2026-08-17, in full. Trigger:
+`.planning/phases/46-mcp-trust-and-facade/46-HALT-2026-08-22.md`, whose §1-§7 are authoritative
+where anything below would disagree. This file does not restate the HALT's live measurements — it
+cites them — and adds what the HALT itself left for a replan to settle (§6).
+
+**Researched:** 2026-08-22 (re-research after halt). **Domain:** unchanged — MCP host policy
+(`internal/agent/mcptools` + `internal/gateway`) and two forked MCP sidecars.
+
+**Confidence:** HIGH on everything measured live this session and quoted with its source below.
+Two claims are flagged `UNVERIFIED — planner must confirm` rather than re-checked, per this
+session's explicit instruction not to re-verify after the second interruption; both are named where
+they occur.
+
+## Session note — the tree moved twice under this research
+
+1. At the start of this session the WhatsApp/calendar pin edits (HALT §7) were **uncommitted**.
+   They are now **committed**: `73764ea11` *"Pin both MCP sidecars to the commit they were built
+   from"* (2026-08-22 14:27), touching `compose.yaml`, `.github/workflows/ci.yml`,
+   `cmd/aura/container_artifacts_test.go`, `docker/aura/PROVENANCE.md`,
+   `.planning/codebase/INTEGRATIONS.md`, `.planning/STATE.md`, and the HALT doc itself.
+2. That commit's subject says **"both sidecars"** — it does not stop at WhatsApp. The HALT (§7,
+   "Left open, deliberately") explicitly left the PIM pin floating because only one workflow wrote
+   its `:sidecar` tag and it was "currently identical" to the commit-sha tag beside it. That
+   equality broke the same afternoon: `aura/pim-sidecar` merged upstream through `3c0ae72d7`, the
+   fork's publish reran, GHCR's `:sidecar` moved to a new digest, and the running host — pinned
+   only by an unpinned tag name, `pull_policy: missing` — kept serving the old bytes under an
+   unchanged name with nothing to report the divergence. `73764ea11`'s own commit message records
+   this measured, not inferred, and closes it: `compose.yaml`'s `AURA_PIM_MCP_IMAGE` default now
+   reads `ghcr.io/chetto1983/aura-pim-mcp:10383276961828bc19f34a9372ba2c64a14e2b62` (the fork's
+   `aura-publish-image.yml` tags the raw 40-hex `github.sha` alongside `:sidecar`, so the format
+   46-06 already assumes was available and used). WhatsApp's pin is unchanged from HALT §7:
+   `ghcr.io/chetto1983/whatsapp-mcp:sha-e0b8345`.
+3. Live, at time of writing: `aura-pim-mcp` container running the new 40-hex tag, healthy;
+   `aura-whatsapp` running `sha-e0b8345`, healthy, session paired (`jid 393248682022:31@s.whatsapp.net`).
+4. **Consequence for planning:** both mounts are now settled by commit, not one. The replan targets
+   `aura-pim-mcp:10383276961828bc19f34a9372ba2c64a14e2b62` and `whatsapp-mcp:sha-e0b8345` as the
+   pre-curation baseline for BOTH forks — 46-05/46-06 are not curating against a stale pin any more
+   than 46-08 is, they were simply never wrong about the *branch* the way WhatsApp was.
+5. A second session is committing into this checkout concurrently. Everything below not explicitly
+   re-measured after point 1 above reflects this session's own earlier reads; where the working
+   tree could plausibly have moved again since, it is flagged.
+
+## User Constraints (from CONTEXT.md) — carried forward, one correction
+
+CONTEXT.md's D-00..D-38 are NOT re-litigated by this research except where named below. Load-bearing
+for the replan, unchanged: **D-17** (curation lives in the fork, zero Aura-side facade/hide-list/
+config — the organizing constraint of the whole phase), **D-18** (one multiplexed tool per sidecar,
+two always-loaded slots) **— AMENDED for WhatsApp only, see "The views question" below: WhatsApp's
+slot now holds three model-facing tools, not one; D-18 stands as written for calendar**, **D-19**
+(flat-union `action` schema, typed IDs, never a bare `id`), **D-20** (MCP-05's `accountId` fix lives
+in the fork's schema, never host-injected), **D-21/D-34/D-35** (re-key `trustedRecipeActions` to
+action names, gate `Multiplexed` on classifier existence not schema shape, document the mixed key
+space), **D-23** (immutable pin over floating tag — reinforced twice now, first by the WhatsApp
+branch-ownership hazard, second by the PIM `:sidecar` drift this session's commit closed), **D-26**
+(DELETE the raw handlers, never merely unadvertise), **D-27** (≤3 model-facing tools per server earns
+a slot, global cap 2, arithmetic not a list), **D-32/D-33** (fork publishes first, one atomic commit
+per source; WARN-not-panic at mount on drift). **Deferred, unchanged:** D-22 (tool_search scope),
+memory promotion (Phase 48), `@sha256` digest pinning, a `_meta`-declared always-load hint.
+
+**Operator directives, unchanged:** no ceremony; native MCP client; all Aura's MCP servers are forks
+Aura controls.
+
+<phase_requirements>
+## Phase Requirements
+
+| ID | Description | Research support |
+|----|-------------|-------------------|
+| MCP-01 | Descriptions reach the model as ordinary text | Shipped (`34b892512`), unaffected by the halt; ratify by amendment (46-01, unchanged) |
+| MCP-02 | Fail-closed classification survives, fencing dropped | Unaffected; 46-01/46-03 unchanged |
+| MCP-03 | Trust unconditional across every mounted server | Unaffected; 46-01/46-09 unchanged |
+| MCP-04 | Calendar+WhatsApp collapse to curated, always-loaded surfaces | **Directly affected** — see "curated action list" and "the views question" below |
+| MCP-05 | `accountId` fixed in the fork, not host-injected | Unaffected by the halt (calendar-only); 46-05 unchanged |
+| TOOL-14 | Tiering axis = frequency + hard count budget | Unaffected in mechanism (46-04); its *worked example* in prose changes — WhatsApp is no longer "1 tool," see below |
+</phase_requirements>
+
+## 1. The curated action list, re-derived from the served 14
+
+The WhatsApp sidecar (`sha-e0b8345`, `main`) serves exactly the 14 tools HALT §1 tabulates, all
+`readOnlyHint`-unset. This research adds nothing to that count — it was measured live this session
+via a direct `tools/list` against `127.0.0.1:8092/mcp` and matched the HALT's table tool-for-tool,
+including the two view bindings (`list_messages` → `ui://whatsapp/thread.html`,
+`list_chats` → `ui://whatsapp/chats.html`) and the absence of `_meta` on the other 12.
+
+Given the views decision below (§2), the split is:
+
+- **Merge into one curated `messages` tool (12 actions):** `search_contacts`, `get_contact`,
+  `get_chat`, `get_direct_chat_by_contact`, `get_contact_chats`, `get_last_interaction`,
+  `get_message_context`, `download_media`, `send_message`, `send_reaction`, `send_file`,
+  `send_audio_message`. Risk classes carry over unchanged from `bridge_risk.go`'s existing
+  `trustedRecipeActions[whatsAppRecipeSource]` (verified this session still lists all 14 with classes
+  matching the live server exactly — the Go table was never stale, per HALT §2): 7 read, 1 mutate
+  (`download_media`), 4 destructive.
+- **Keep as their own raw, un-curated, always-loaded tools (2 tools):** `list_chats`, `list_messages`
+  — see §2 for why.
+- **Nothing is dropped.** This is a different "12" than the one the 2026-08-17 research measured —
+  that 12 was a branch missing two actions entirely; this 12 is a deliberate exemption of two actions
+  that exist and are kept, just not folded into the multiplexed tool.
+
+Calendar's 14 (all read/mutate/destructive, unchanged, no `_meta`, no `resources` capability — see
+§3) collapse into ONE curated tool exactly as originally planned; nothing here changes calendar's
+action list.
+
+## 2. The views question — recommendation and cost
+
+**Recommendation: (b) — exempt `list_chats` and `list_messages` from the merge.** Curate the
+remaining 12 WhatsApp actions into one `messages` tool; leave the two view-bound reads as their own
+plain tools. This is not a menu — the other two candidates are rejected below with reasons, not left
+open.
+
+**Why (a) "curate all 14 and drop the views" is rejected.** The views are not aspirational — HALT §4
+proves them live and in active use (`GET /api/mcp/view/...thread.html` → 200, 27,733 bytes of armed
+HTML; `POST /api/mcp/view/call {tool:list_chats}` → 200 with real chat rows). Dropping them destroys
+a working, in-use operator capability to buy nothing the exemption doesn't also buy — the tool-count
+saving is 2 tools, well inside the ≤3 ceiling either way.
+
+**Why (c) "a per-result view mechanism" was investigated and does not exist — inventory, not
+assumption.** Two independent sources checked this session:
+- **Aura's own code.** `bridgedTool` (`internal/agent/mcptools/bridge.go:35-49`) carries exactly one
+  `view mcp.ViewRef` field, set once at construction from the RAW mounted tool (`bridge.go:164`,
+  `view: viewRefFor(policy, t)`) and explicitly never refreshed (comment: *"a server that repoints a
+  tool at a different document mid-run would move the operator's rendering surface underneath
+  them"*). `ViewRef` itself (`internal/mcp/apps.go:33-43`) is documented as *"what a TOOL carries"* —
+  one `ResourceURI`, read from that tool's own `_meta.ui` in `tools/list`. There is no field, map, or
+  parse path anywhere in `bridge_views.go`/`apps.go`/`appviews.go` that reads a view reference off a
+  CALL RESULT rather than the static tool definition. The view-callback path is a second, separate
+  finding worth carrying: `CallReadOnlyTool` → `toolIsReadOnly` → `s.bridged[name]`
+  (`bridge_supervisor.go:337-343`) is keyed by the RAW mounted-server tool name, not the model-facing
+  namespaced/multiplexed name — so a curated `messages` tool would not merely fail the Mutating gate
+  for a view callback, the view's own embedded JS (written against `list_chats`/`list_messages` by
+  name) would find no tool by that name at all the moment those names are curated away. This is a
+  THIRD, independent way the 14→1 merge breaks the views, beyond the two HALT §4 already names.
+- **The protocol itself.** Fetched directly from
+  `github.com/modelcontextprotocol/ext-apps/specification/draft/apps.mdx` (SEP-1865, status Final)
+  this session. The tool-to-view binding is defined once, on the TOOL (`interface McpUiToolMeta {
+  resourceUri?: string; visibility?: ... }`, attached to `Tool._meta.ui`), read at `tools/list`, and
+  the spec states the behavior plainly: *"If `ui.resourceUri` is present ... host renders tool
+  results using the specified UI resource"* — the tool's declared one, not a per-call one. Under
+  **§Extensibility → "Other Advanced Features (see Future Considerations)"** the spec lists, verbatim:
+  *"Support multiple UI resources in a tool response"* — i.e. a genuinely per-result mechanism is
+  explicitly named as NOT part of the finalized MVP, deferred to unscheduled future work. (A
+  different, easily-confused mechanism DOES exist per-response in the spec: `resources/read`'s
+  content item MAY carry its own `_meta.ui` overriding the listing-level one — but that is the
+  resource's FRAMING policy, CSP/permissions, already modeled in Aura as `ViewPolicy`, not a
+  selection of WHICH resource a tool's result renders in.)
+
+Conclusion, with both sources agreeing: candidate (c) is not a corner Aura's code failed to build —
+it is a capability the finalized spec does not yet define. Building it would mean inventing a
+protocol extension Aura's forks and Aura's host would both have to speak, alone, which is exactly the
+bespoke-protocol trap CLAUDE.md's "stop before bespoke" rule exists for.
+
+**Cost of the recommendation (b), stated plainly:**
+- WhatsApp's model-facing tool count becomes **3** (1 curated + 2 exempted), not 1. D-18's own
+  rationale text ("the two curated forks expose 1 tool each") is now wrong for WhatsApp and must be
+  corrected wherever it is repeated (46-01's TOOL-14 amendment prose, ROADMAP §46, D-27's own
+  commentary) — the CODE (D-27's `≤3` ceiling) needs no change, only the worked example.
+- `trustedRecipeActions[whatsAppRecipeSource]` becomes a MIXED key space **within one source**, not
+  just across sources as D-35 anticipated: 2 entries stay raw-tool-name-keyed (`list_chats`,
+  `list_messages`, read by `classifyToolRisk`'s existing `t.Name` lookup, unchanged mechanism) and 12
+  become action-name-keyed (read by the new gateway classifier from `rawArgs`). No name collision
+  exists between the two key spaces (verified: none of the 12 curated action names equals either
+  exempted raw name), but D-35's comment ("calendar and whatsapp are ACTION-keyed... memory stays
+  RAW-TOOL-NAME-keyed") is now imprecise for WhatsApp specifically and needs a third clause.
+  46-08 is the plan that must write this correctly.
+- Zero headroom: WhatsApp sits exactly AT the `≤3` ceiling. A fork change that adds one more
+  standalone (non-merged) tool flips it to deferred with no code change — worth a mount-time WARN if
+  46-08's author wants one, not required by this research.
+- The merged tool's own description budget (D-36, target ~1.5-2KB) is computed over 12 actions
+  instead of 14 — smaller, not larger, so the existing ~1.5-2KB target still holds; but it is no
+  longer the ONLY always-loaded WhatsApp description paid every turn — `list_chats`'s and
+  `list_messages`'s own descriptions (already individually capped at 4,096B by `frameMCPDescription`,
+  observed live this session at roughly 300-800B each) are ALSO paid every turn now, since both stay
+  always-loaded. Total is still well under budget; 46-02/46-08 should say so explicitly rather than
+  leave the reader to infer it.
+- **UNVERIFIED — planner must confirm:** the exact current byte length of `list_chats`'s and
+  `list_messages`' JSON descriptions as served (this session read their text but did not compute
+  byte counts before the write-now instruction arrived).
+
+**What does NOT change:** calendar (§3), D-19's flat-union shape, D-20's `accountId` fix, D-23's pin
+mechanics, D-26's delete-not-unadvertise rule, D-27's code (only its worked example), D-32's atomic
+commit-per-source rule.
+
+## 3. Calendar side — stands, confirmed live this session
+
+`tools/list` against `127.0.0.1:8093/` (the pre-curation-pin PIM sidecar, this session, before the
+tag moved under `73764ea11`) returned exactly the 14 tools `keptCalendarTools` in
+`calendar_integration_test.go` already names, **zero `_meta` fields on any of them**, and the
+`initialize` handshake's `capabilities` block carried **no `resources` key at all** — unlike
+WhatsApp's, which explicitly declares `resources: {listChanged:false, subscribe:false}`. A server
+that never declares the resources capability has no `ui://` documents to read; calendar has zero MCP
+Apps views. The views question above is exclusively a WhatsApp problem.
+
+**What this means for 46-05 → 46-07:** unchanged in shape. They still curate 14 calendar actions into
+one multiplexed tool, still fix `accountId` in the fork's schema (D-20), still land the tracer's one
+atomic commit. The only adjustment is the STARTING pin: per the session note above, the pre-curation
+baseline is now `ghcr.io/chetto1983/aura-pim-mcp:10383276961828bc19f34a9372ba2c64a14e2b62`
+(40-hex, committed in `73764ea11`), not the floating `:sidecar` 46-06 originally expected to read
+and pin itself — 46-06's OWN job (curate, publish, re-pin to the NEW post-curation commit) is
+unaffected; it simply starts one step further along than originally planned, and its task should say
+so rather than re-discover the pin already exists.
+
+## 4. `sha-<7hex>` vs 40-hex — the must_have rewording
+
+Confirmed this session directly from both forks' workflow YAML (not inferred from HALT prose):
+
+- **`chetto1983/whatsapp-mcp`'s `publish-image.yml`** (triggers on push to `main`, not a dedicated
+  Aura branch — the file's own header comment says so): `docker/metadata-action` tags include
+  `type=sha` with no length override, which mints **`sha-<7-hex-char>`** (docker/metadata-action's
+  documented short form) — never a 40-char SHA. This is architecturally different from calendar, not
+  just differently formatted: WhatsApp curation commits land on `main` directly (there is no
+  surviving Aura-only branch — `aura/cockpit-connect` is retired, fused into `main` 2026-07-01), and
+  `main` pushes are what `publish-image.yml` reacts to.
+- **`chetto1983/aura-pim-mcp`'s `aura-publish-image.yml`** (triggers on push to `aura/pim-sidecar`
+  specifically): tags literally `ghcr.io/${{ github.repository }}:${{ github.sha }}` — the full
+  40-hex commit SHA, verbatim. This is what `73764ea11` just used
+  (`10383276961828bc19f34a9372ba2c64a14e2b62`, 40 chars).
+
+**Rewording required:** 46-06's must_have (*"compose.yaml's AURA_PIM_MCP_IMAGE default is the
+immutable ghcr.io/chetto1983/aura-pim-mcp:<40-hex-sha> tag"*) is **already correct as written** — no
+change needed, and this session's commit already demonstrates the format working. 46-08's must_have
+(*"compose.yaml's AURA_WHATSAPP_MCP_IMAGE default is the immutable ghcr.io/.../whatsapp-mcp:<40-hex-sha>
+tag"*, and its verify script's regex `[0-9a-f]{40}`) is **wrong and must be reworded** — that pattern
+can never match a WhatsApp tag. Replace with a pattern anchored on the `sha-` prefix and 7 hex chars,
+e.g. `ghcr.io/chetto1983/whatsapp-mcp:sha-[0-9a-f]{7}` — matching the value `73764ea11` already
+committed (`sha-e0b8345`). The general must_have language ("immutable tag pinned by commit") should
+stay source-agnostic; only the concrete regex/example needs the fork-specific form.
+
+## 5. Plan triage (46-01 … 46-09)
+
+| Plan | Verdict | Why |
+|---|---|---|
+| 46-01 (PRD amendment batch) | **Survives** | Content is trust-posture/mechanism prose, not tool counts; TOOL-14's worked example should say "WhatsApp: 1 curated + 2 exempted = 3" rather than "1," a wording fix, not a blocker. |
+| 46-02 (design doc + WhatsApp checkpoint) | **Needs rework** | Task 1's whole decision ("12 vs 14 actions, aura/cockpit-connect vs main") is moot — the mount target is settled (§0 above). Replace the checkpoint with the views-exemption decision (§2) and the naming sub-decision (calendar__calendar vs calendar__pim, still genuinely open, unaffected). Task 2's WhatsApp action table becomes 12 actions + a 2-tool exemption list, not 14. |
+| 46-03 (REQUIREMENTS/ROADMAP clean rewrite) | **Survives, minor content care** | Depends only on 46-01's amendment numbers; must not bake "WhatsApp = 1 tool" into the clean prose it writes — say "two curated slots" (still true) rather than "two curated tools" (no longer true). |
+| 46-04 (D-27 deferral arithmetic) | **Survives unchanged** | Pure count predicate, ≤3/cap-2, source-agnostic; 3 ≤ 3 still qualifies. No code change needed. |
+| 46-05 (calendar fork curation) | **Survives unchanged** | Zero views on calendar (§3, confirmed live); starting pin is now the 40-hex tag from `73764ea11` rather than `:sidecar`, a starting-state note only. |
+| 46-06 (calendar tracer: re-key, gate, pin, atomic commit) | **Survives unchanged** | Its 40-hex must_have is already correct (§4); unaffected by the views question entirely. |
+| 46-07 (tracer gate: live E2E, calendar) | **Survives unchanged** | Calendar-only, no WhatsApp/views dependency beyond `depends_on: 46-06`. |
+| 46-08 (WhatsApp fork curation + table + pin) | **Needs rework** | Fork target moves from `aura/cockpit-connect` to `main` (the branch is retired); action count is 12-merged + 2-exempted, not 14-merged; `trustedRecipeActions[whatsAppRecipeSource]` becomes a THREE-way mix (§2), not purely action-keyed as currently written; "both curated servers... exactly 1 model-facing tool" must_have is wrong for WhatsApp (it's 3); the 40-hex regex must become `sha-[0-9a-f]{7}` (§4); Task 1's "operator resolved this in 46-02's checkpoint" framing points at the now-moot 12-vs-14-branch decision and must point at the views-exemption decision instead. |
+| 46-09 (SC#6, tripwires, retrieval-gate repair, phase close) | **Survives** | The retrieval-gate's `55 → ~27` math is unaffected either way — ALL of WhatsApp's tools end up always-loaded (not deferred) whether curated as 1 or split 1+2, so none of them were ever going to appear in the deferred-manifest fixture. SC#6/calculator work is fully independent of WhatsApp's shape. |
+
+## 6. `io.modelcontextprotocol/ui` never declared — recorded, out of scope
+
+Confirmed live this session, exactly as HALT §5 states: `internal/mcp/sdkclient.go:71` sends
+`Capabilities: &sdkmcp.ClientCapabilities{}` (empty) with no extensions field. `AppsExtensionID`
+(`internal/mcp/apps.go:23`, value `"io.modelcontextprotocol/ui"`) is defined and never referenced
+anywhere else in non-test code — grepped this session, zero production call sites. `AppsClientSettings()`
+(`apps.go:95`) likewise has no production caller (only `apps_test.go`). The views render anyway
+because the server advertises `_meta.ui` unconditionally regardless of what the client declared — so
+this is a missed negotiation promise (a server that saw the capability could trim its text output),
+not a broken feature. **This is a separate item, not Phase 46 work** — Phase 46 does not touch
+`sdkclient.go`, and nothing in the curated-surface design depends on Aura ever declaring the
+extension.
+
+## RESEARCH COMPLETE

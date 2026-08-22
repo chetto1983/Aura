@@ -280,8 +280,7 @@ priority or "always load" field** — an annotation-derived rule is falsified be
   that is what CLAUDE.md's PRD-amendment-before-code exists for. The 45.1 ratification and the
   env-catalog repair record what already shipped and constrain nothing, so they land in the same phase
   without gating its first commit.
-- **D-31 — REQUIREMENTS.md rows and the ROADMAP §46 section get rewritten clean, with dated
-  footnotes.** MCP-02/04/05 currently read as struck-through prose with amendment notes appended, and
+- **D-31 — REQUIREMENTS.md rows and the ROADMAP §46 section get rewritten clean, with dated footnotes.** MCP-02/04/05 currently read as struck-through prose with amendment notes appended, and
   the ROADMAP's Phase 46 section carries roughly six SUPERSEDED paragraphs. Each is replaced by its
   current text, with the superseded wording moved into a dated footnote. **This was the operator's
   call against the recommendation** to leave the strikethrough inline (the argument for leaving it:
