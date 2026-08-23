@@ -67,7 +67,7 @@ perché restano aperte» non può in nessun caso far diventare verde quel gate.
 
 | # | Cosa | Cosa lo chiude |
 |---|---|---|
-| **2.3** | **Il punto più grave aperto.** Se skills (`~/.aura/skills`) o pyscripts (`~/.aura/pyscripts`) raggiungono `../mcp/servers.json` per traversal, D-106 è falsa e `sdkclient.go:169` diventa esecuzione di comando arbitrario. | Un test che, da entrambi gli scrittori, prova `../mcp/servers.json` e ottiene un rifiuto. Se invece riesce: il critical è reale e la voce sale sopra tutto il resto. |
+| **2.3** | ~~Se skills o pyscripts raggiungono `../mcp/servers.json` per traversal, D-106 è falsa.~~ **CHIUSO 2026-08-23.** Il traversal è NO (`bc8291fb8`), ma la premessa di D-106 cade lo stesso per la via dell'install: npx gira da root nel processo aura e il registry è scrivibile da lì. | **Fatto.** `stdio_shape.go` rifiuta allo spawn e al salvataggio le forme che nessun server MCP ha — nessuna allowlist, nessuna capacità tolta all'agente (PRD amendment #128). Dettaglio in §6.x qui sotto. |
 | **2.1** | `aura.settings` ha PK sulla sola `key`, è esclusa da RLS (`0087:248`) e **contiene `OPENROUTER_API_KEY`**. | O si scopa per identità, o si registra perché la guardia di boot che rifiuta il multi-utente lo rende irrilevante — con il commit che lo dice, non a voce. |
 | **2.2** | Le scritture del file-manager decodificano senza gate sul Content-Type, sole fra tutte le scritture del server. | Lo stesso 400 che danno le altre, più il test che lo prova sul filo. |
 
@@ -150,11 +150,48 @@ non è stato portato di proposito, perché montare un MCP non deve costare cerim
 è `~/.aura/mcp/servers.json` dentro il container aura, la box del modello monta solo le cache
 pip/uv/npm e `/workspace`, e nessun tool agente scrive quella config — l'unica scrittura è
 `POST /api/governance/mcp`, autenticata.
-**Quello che NON è stato verificato, ed è la domanda intera:** che gli scrittori di file
-dell'agente — skills in `~/.aura/skills`, pyscripts in `~/.aura/pyscripts` — non possano fare
-traversal fino a `../mcp/servers.json`. Se possono, «trust class dell'operatore» è falso e la
-riga 169 diventa esecuzione di comando arbitrario. *Confidenza: alta su ciò che è misurato, nulla
-sul traversal. È il primo controllo di /gsd-secure-phase 45.1.*
+**Il traversal è VERIFICATO il 2026-08-23, e la risposta è NO** (`bc8291fb8`,
+`internal/skills/writer_traversal_security_test.go`). Non per lettura della regexp: tutti e nove
+i verbi raggiungibili dall'agente (`create`, `update`, `save_snippet`, `install`, `archive`,
+`restore`, `delete`, `set_always`, `use_snippet`) sono stati guidati contro `../mcp/servers.json`
+in 14 grafie — POSIX, Windows, percent-encoded, assoluta, con separatore finale, solo-punti — e
+tutte tornano `ErrInvalidName`. Ogni caso verifica anche che il registry sia **byte-identico**
+dopo, perché `archive`/`restore`/`delete` uniscono il nome in un path che finisce in
+`os.RemoveAll`: un rifiuto arrivato dopo la join avrebbe comunque distrutto il file. Il layout del
+test è quello misurato in produzione, non uno comodo: `/var/lib/aura/mcp/servers.json` accanto a
+`/var/lib/aura/skills`, un solo salto relativo, con il processo aura a `uid=0` che può scriverlo.
+Il materializzatore dell'install salta i symlink invece di seguirli (provato con un albero che
+punta al registry). E `~/.aura/pyscripts` **non ha nessuno scrittore**: la premessa dell'analisi
+originale era stale — gli snippet Slice 7e sono skill `type:snippet` sotto la root skills, e
+`pyscripts` è solo una directory provisionata e montata nella box.
+
+**Ma la premessa di D-106 cade lo stesso, per una strada che questa voce non guardava.** Cinque
+anelli, ognuno misurato il 2026-08-23, nessuno dedotto:
+
+1. `skill_manage action=install` è **Risky** (`classify.go:92`) e `gated()` ferma **solo**
+   `Destructive` → nessuna approvazione. Che il modello ci arrivi da solo non è ipotesi:
+   l'emendamento #126 lo ha misurato dal vivo.
+2. `Installer.Install` esegue `npx skills add <source> --copy -y` via `exec.CommandContext`
+   (`installer.go:176`, `execCommandRunner`) — **nel processo aura**, non nella box.
+3. Il container aura gira `uid=0(root)` e `npm config get ignore-scripts` risponde **`false`**:
+   il `postinstall` di un pacchetto npm gira da root.
+4. `/var/lib/aura/mcp/servers.json` (0600 root) è **scrivibile** da quel processo.
+5. `sdkclient.go:169` costruisce la command line da quel file **senza validarla** — il critical
+   accettato.
+
+Il traversal non serve. E l'ordine è invertito rispetto a quello che la difesa presume:
+`SanitizeName` e la blocklist girano sul SKILL.md **dopo** che npx ha già eseguito codice di
+terzi. L'ultimo anello non è stato eseguito di proposito — sarebbe scrivere un exploit contro il
+deployment vivo; i cinque anelli sono misurati singolarmente.
+
+**Direttiva operatore, 2026-08-23:** non si chiude togliendo capacità all'agente («un problema che
+potresti avere anche te»). `--ignore-scripts`, `install` portato a `Destructive`, npx non-root e
+la validazione della command line sono tutte **respinte**: contraddicono D-06/D-07 e la postura
+no-cerimonia. La direzione ammessa è **integrità, non permessi** — l'agente quel file non lo
+scrive mai, l'unico scrittore legittimo è `POST /api/governance/mcp`, autenticato; quindi il
+daemon può tenere l'impronta del registry e segnalare (audit + allarme, non rifiuto) una
+riscrittura fuori banda, lasciando intatti install, script, root e la scelta della sorgente.
+*Confidenza: alta su tutti e cinque gli anelli. Non implementato.*
 
 **2.2 — Le scritture del file-manager non hanno il gate sul Content-Type.**
 `internal/agui/files_api_write.go:83-98` — il commento stesso dice "Decoded WITHOUT a

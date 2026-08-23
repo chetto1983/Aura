@@ -144,6 +144,14 @@ func SaveManagedConfig(path string, doc ManagedConfig) error {
 	if err := validateManagedServers(doc.MCPServers); err != nil {
 		return err
 	}
+	// The save-time half of stdio_shape.go. It sits here and not in
+	// validateManagedServers on purpose: that validator also runs on LoadManagedConfig,
+	// where a shape refusal would make ONE planted entry render the whole registry
+	// unreadable and take every healthy server down with it. Refusing the write while
+	// letting the read through is what keeps the spawn-time checkpoint the loud one.
+	if err := checkManagedServersShape(doc.MCPServers); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create MCP config dir: %w", err)
 	}

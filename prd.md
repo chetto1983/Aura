@@ -6864,3 +6864,83 @@ Phase 42 was governed by IC-01..IC-14 and Section 17 of the (now-removed) indust
 > non è solo linguistico: il resume risolve il codice di **questo** soggetto, quindi una
 > risposta presa da un'altra approvazione non concede niente, e un'etichetta riscritta dal
 > modello non allarga niente.
+
+> **Amendment #128 (2026-08-23, il registry MCP smette di essere una superficie di persistenza —
+> registra una misura, ritratta una premessa, prende una decisione).** D-106 accetta il critical
+> `go/command-injection` su `internal/mcp/sdkclient.go:169` — la command line di un server stdio
+> non è validata — su una premessa esplicita: **solo l'operatore scrive il registry**. La
+> premessa è stata misurata, ed è falsa.
+>
+> **Prima, la domanda che HANDOFF §2.3 poneva davvero, e la sua risposta: il traversal è NO**
+> (`bc8291fb8`, `internal/skills/writer_traversal_security_test.go`). Tutti e nove i verbi che
+> l'agente raggiunge (`create`, `update`, `save_snippet`, `install`, `archive`, `restore`,
+> `delete`, `set_always`, `use_snippet`) sono stati guidati contro `../mcp/servers.json` in 14
+> grafie — POSIX, Windows, percent-encoded, assoluta, con separatore finale — e tornano tutte
+> `ErrInvalidName`, con il registry byte-identico dopo ogni rifiuto. Il layout del test è quello
+> di produzione: `/var/lib/aura/mcp/servers.json` accanto a `/var/lib/aura/skills`, un solo salto
+> relativo. Nella stessa misura è caduta una premessa stale di CLAUDE.md e dell'handoff:
+> **`~/.aura/pyscripts` non ha nessuno scrittore** — è solo provisionata e materializzata nella
+> box; gli snippet Slice 7e sono skill `type:snippet` sotto la root skills.
+>
+> **La premessa di D-106 cade comunque, per una strada che quella domanda non guardava.** Cinque
+> anelli, ognuno misurato sullo stack acceso il 2026-08-23:
+>
+> 1. `skill_manage action=install` è **Risky** (`classify.go:92`) e `gated()` ferma **solo**
+>    `Destructive` → nessuna approvazione; che il modello ci arrivi da solo è misurato in #126.
+> 2. `Installer.Install` esegue `npx skills add <source> --copy -y` via `exec.CommandContext`
+>    (`installer.go:176`) **nel processo aura**, non nella box.
+> 3. Il container aura gira `uid=0(root)` e `npm config get ignore-scripts` risponde **`false`**.
+> 4. `/var/lib/aura/mcp/servers.json` (0600 root) è **scrivibile** da quel processo.
+> 5. `sdkclient.go:169` costruisce la command line da quel file **senza validarla**.
+>
+> Il traversal non serve, e l'ordine è invertito rispetto a quello che la difesa presume:
+> `SanitizeName` e la blocklist girano sul SKILL.md **dopo** che npx ha già eseguito codice di
+> terzi. L'ultimo anello non è stato eseguito: sarebbe un exploit contro il deployment vivo.
+>
+> **Decisione dell'operatore, verbatim: «non togliamo capacità all'agente per un problema che
+> potresti avere anche te».** Respinte quindi: `--ignore-scripts` sull'install, `install` portato
+> a `Destructive`, npx sotto utente non-root, e la validazione allowlist della command line.
+> Restano `install` senza approvazione, gli script npm attivi, npx da root, e la scelta della
+> sorgente in mano al modello.
+>
+> **Cosa si difende allora, e perché è la cosa giusta.** L'esecuzione arbitraria dentro il
+> container è già raggiungibile per progetto. Quello che il registry aggiunge sopra è la
+> **persistenza**: `/var/lib/aura` è un volume, il filesystem del container no, quindi una voce
+> piantata lì viene rieseguita a ogni mount, a ogni restart, per sempre. È esattamente la
+> campagna *hermes-0day* di giugno 2026 (`hermes_cli/mcp_security.py`): voci `command: bash` che
+> riappendevano la chiave SSH dell'attaccante a ogni avvio. La difesa che serve nega la
+> **persistenza**, non la prima esecuzione.
+>
+> **Le due implementazioni di riferimento, lette, non supposte.** LibreChat elimina l'ipotesi:
+> `MCPServerUserInputSchema` (`packages/data-provider/src/mcp.ts:432`) è una union di sole tre
+> varianti URL — WebSocket, SSE, Streamable HTTP — quindi un server creato dall'utente **non può
+> essere stdio**; lo stdio vive solo nel `librechat.yaml` dell'operatore. Da noi non è
+> applicabile: i nostri server *sono* stdio per progetto. Hermes tiene lo stdio aperto e rifiuta
+> tre forme, dichiarando in testa al file che **non è una whitelist** ("legitimate local MCPs can
+> still use custom commands, Python scripts, npx, uvx, etc."), e — il pezzo che conta — gira il
+> controllo **sia al salvataggio sia allo spawn**, "so a hand-edited or pre-planted entry is also
+> caught before it can execute".
+>
+> **Quello che è atterrato:** `internal/mcp/stdio_shape.go`, gemello stdio di `ssrf.go`. Nessuna
+> allowlist, nessun divieto di interprete, nessun requisito di path assoluto — le tre cose che
+> D-106 ha respinto restano respinte, e `bash`, `npx`, `uv`, `docker` e uno script in una home
+> restano montabili. Rifiuta tre forme: (a) una dichiarazione di lancio che **nomina il registry
+> stesso** — incondizionata, ed è l'analogo stdio del blocco IMDS di `ssrf.go`, perché nessun
+> server MCP legittimo nomina il file che decide quali server partono; (b) uno script shell
+> inline che scrive su una superficie di persistenza del sistema; (c) uno script shell inline che
+> scarica ed esegue codice o spedisce dati fuori. Due checkpoint, `SaveManagedConfig` e
+> `OpenSDKSessionForConfig`, e il secondo è quello portante: una voce scritta fuori banda non
+> passa mai dal primo. `LoadManagedConfig` **non** lo esegue, di proposito: una voce piantata non
+> deve rendere illeggibile l'intero registry e portarsi dietro ogni server sano.
+>
+> Una differenza deliberata da hermes: l'interprete si cerca su **tutto l'argv**, non su
+> `argv[0]`. Il nostro runtime docker risolve ogni server containerizzato in
+> `docker run … <image> <command…>`, quindi uno script piantato in `runtime.command` sta molti
+> token dentro e un controllo sul solo basename di `argv[0]` vedrebbe `docker` e lascerebbe
+> passare tutto.
+>
+> **Cosa questa misura NON dimostra.** Non dimostra che le tre forme esauriscano gli abusi: è una
+> blocklist stretta e lo dichiara. Non dimostra che l'anello 5 sia sfruttabile end-to-end — la
+> catena è misurata anello per anello, non eseguita. Non tocca gli anelli 1-4: `install` resta
+> senza approvazione e npx resta root, per decisione dell'operatore registrata sopra. E non dice
+> niente sul ramo HTTP, che ha già la sua difesa in `ssrf.go`.
