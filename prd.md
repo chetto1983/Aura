@@ -6846,7 +6846,21 @@ Phase 42 was governed by IC-01..IC-14 and Section 17 of the (now-removed) indust
 > sceglierebbe `always` — su una sessione sola, con tre azioni, non c'è una frequenza da
 > misurare. Non dimostra che i tre scope siano i tre giusti: sono quelli che hermes espone, ed è
 > l'unica evidenza a favore. Non tocca `gated()`: quali tier fermano il turno resta esattamente
-> com'era, e questo emendamento allarga la *durata* di un consenso, mai il suo *perimetro*. E la
-> revoca di un `always` atterra come comando CLI (`aura gateway grants`), non come superficie
-> cockpit: l'operatore che lo concede dal browser lo revoca dal terminale, ed è un debito
-> dichiarato qui, non una svista.
+> com'era, e questo emendamento allarga la *durata* di un consenso, mai il suo *perimetro*.
+>
+> **La revoca sta nel cockpit** (Impostazioni → Identità e permessi → Approvazioni permanenti),
+> non solo in CLI. Una prima stesura di questo paragrafo la dichiarava come debito accettato —
+> "chi concede dal browser revoca dal terminale" — ed era una riduzione di scope decisa da chi
+> scriveva, non dall'operatore, che l'ha respinta: *"devi usare il cockpit, la CLI non la usa
+> nessuno"*. Un permesso permanente concedibile in un clic e revocabile solo via terminale è
+> una porta a senso unico con la maniglia nascosta. `aura gateway grants list|revoke` resta,
+> come la stessa operazione da terminale.
+>
+> **Le parole le scrive ogni superficie, non il gateway.** Il valore che viaggia sul filo è un
+> codice — `gateway_scope:<scope>:<subject>` — e l'etichetta inglese lo accompagna solo come
+> fallback: è la stessa separazione che `internal/runner` applica già a `ResolveOutcome` ("the
+> runner is not locale-aware, so each surface renders its own copy"). Anche questo l'ha trovato
+> l'operatore aprendo la pagina, con tre bottoni inglesi dentro una card italiana. Il beneficio
+> non è solo linguistico: il resume risolve il codice di **questo** soggetto, quindi una
+> risposta presa da un'altra approvazione non concede niente, e un'etichetta riscritta dal
+> modello non allarga niente.
