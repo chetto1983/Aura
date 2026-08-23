@@ -120,10 +120,6 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 	return nil
 }
 
-func (r *Runner) persistToolTurn(ctx context.Context, tr *turnTracker, ti *agent.ToolInvocation) error {
-	return r.persistToolTurnEvent(ctx, tr, ti, nil)
-}
-
 func (r *Runner) persistToolTurnEvent(ctx context.Context, tr *turnTracker, ti *agent.ToolInvocation, ev *agent.Event) error {
 	if ti == nil || ti.ToolCallID == "" {
 		return nil

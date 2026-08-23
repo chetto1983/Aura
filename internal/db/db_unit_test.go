@@ -357,13 +357,13 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A deliberate pin, moved deliberately: 0098_retire_document_catalog drops the ten tables
-	// of the document catalog, whose last writers went when internal/assets stopped minting a
-	// second document identity for objects the ingest sidecar already names. The test exists
-	// so a migration added without noticing breaks the build rather than the deployment, so
-	// bumping it is the intended way to acknowledge one -- never a fixup to make a red go away.
-	if head != 98 {
-		t.Fatalf("MigrationHead=%d, want embedded head 98", head)
+	// A deliberate pin, moved deliberately: 0099_gateway_approval_grants adds the table
+	// behind an approval's scope, so a gateway approval can be granted once, for a session,
+	// or always instead of being re-asked every turn. The test exists so a migration added
+	// without noticing breaks the build rather than the deployment, so bumping it is the
+	// intended way to acknowledge one -- never a fixup to make a red go away.
+	if head != 99 {
+		t.Fatalf("MigrationHead=%d, want embedded head 99", head)
 	}
 }
 

@@ -159,3 +159,12 @@ func TestSessionStoreConcurrent(t *testing.T) {
 		t.Errorf("live entries = %d, want 64", n)
 	}
 }
+
+// len reports the number of live (un-swept) entries — a test-support accessor that also
+// triggers a sweep so expiry assertions observe the reclaimed count.
+func (st *sessionStore) len() int {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.sweepLocked()
+	return len(st.entries)
+}

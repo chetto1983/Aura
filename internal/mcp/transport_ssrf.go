@@ -53,12 +53,6 @@ type hardenedDialer struct {
 	policy EgressPolicy
 }
 
-// newHardenedDialer composes the hardened dialer. dial may be nil — a real net.Dialer
-// whose Control hook re-checks the post-resolution IP is used then.
-func newHardenedDialer(res resolver, dial dialFunc) *hardenedDialer {
-	return newHardenedDialerWithPolicy(res, dial, EgressPolicy{enforcePrivate: true})
-}
-
 func newHardenedDialerWithPolicy(res resolver, dial dialFunc, policy EgressPolicy) *hardenedDialer {
 	return &hardenedDialer{res: res, dial: dial, policy: policy}
 }
@@ -107,13 +101,6 @@ func (h *hardenedDialer) dialContext(ctx context.Context, network, addr string) 
 		},
 	}
 	return dialer.DialContext(ctx, network, pinnedAddress)
-}
-
-// control runs AFTER resolution and BEFORE connect (address is the post-resolution
-// ip:port), re-classifying the dialed IP so a rebind to a private/metadata target is
-// rejected even on a path that dialed by name. Fail-closed on an unparseable host.
-func (h *hardenedDialer) control(_ string, address string, _ syscall.RawConn) error {
-	return h.controlAddress("", address, nil, false)
 }
 
 func (h *hardenedDialer) controlAddress(_ string, address string, _ syscall.RawConn, allowPrivate bool) error {

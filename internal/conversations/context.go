@@ -16,12 +16,6 @@ import (
 	"github.com/pkoukk/tiktoken-go"
 )
 
-// l2HeadroomTokens is the fixed budget reservation subtracted from the L2 hard cap
-// (SPEC Req#10: hard_cap = ContextWindow - max(MaxOutputTokens,20000) - 13000). The
-// 13000 covers the system prompt + tool manifest + per-request overhead that is not
-// in the persisted history.
-const l2HeadroomTokens = 13000
-
 // l2MinOutputReservation is the floor for the output reservation (SPEC Req#10:
 // max(MaxOutputTokens, 20000)).
 const l2MinOutputReservation = 20000

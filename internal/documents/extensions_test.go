@@ -1,7 +1,9 @@
 package documents
 
 import (
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -66,4 +68,16 @@ func TestIsSupportedDocument(t *testing.T) {
 			t.Errorf("isSupportedDocument(%q) = %v, want %v", tc.fileName, got, tc.want)
 		}
 	}
+}
+
+// isSupportedDocument reports whether fileName carries an extension Aura
+// ingests. The match is case-insensitive over the file extension; a name with
+// no extension is unsupported.
+func isSupportedDocument(fileName string) bool {
+	ext := strings.ToLower(filepath.Ext(fileName))
+	if ext == "" {
+		return false
+	}
+	_, ok := supportedDocumentExt[ext]
+	return ok
 }

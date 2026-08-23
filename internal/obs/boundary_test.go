@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"go.opentelemetry.io/otel/attribute"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -162,4 +163,13 @@ func assertMetricPoint(t *testing.T, metrics []metricdata.Metrics, name string, 
 		return
 	}
 	t.Fatalf("metric %q not found", name)
+}
+
+func hasAttribute(attrs []attribute.KeyValue, key AttributeKey, value string) bool {
+	for _, attr := range attrs {
+		if string(attr.Key) == string(key) && attr.Value.AsString() == value {
+			return true
+		}
+	}
+	return false
 }

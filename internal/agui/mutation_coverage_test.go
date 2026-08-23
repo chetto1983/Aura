@@ -1,6 +1,7 @@
 package agui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -80,4 +81,13 @@ func TestEveryRegisteredUnsafeHTTPRouteIsClassified(t *testing.T) {
 			}
 		}
 	}
+}
+
+func validateHTTPMutationInventory() error {
+	for route, meta := range httpMutationRoutes {
+		if meta.Scope != idempotency.ScopeHTTPMutation || meta.Normalize == "" || meta.KeyPolicy != keyPolicyRequiredHeader {
+			return fmt.Errorf("mutation route %q has incomplete idempotency metadata", route)
+		}
+	}
+	return nil
 }

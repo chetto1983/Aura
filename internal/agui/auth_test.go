@@ -2,6 +2,7 @@ package agui
 
 import (
 	"context"
+	"crypto/sha256"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -570,4 +571,15 @@ func TestRequireCapability(t *testing.T) {
 			t.Fatal("next reached despite a store error")
 		}
 	})
+}
+
+// deriveSigningKey turns the operator secret into a 32-byte HMAC key.
+// It lives in the tests, not in auth_cookie.go, because PRODUCTION never derives
+// one: buildAuthDeps sets SigningKey nil and Secret "", and validateSession
+// dispatches to the Authula SessionValidator instead of the passphrase branch.
+// The derivation contract this expresses is therefore a test fixture, not the
+// runtime's behaviour — the fallback branch it feeds is only reachable from here.
+func deriveSigningKey(secret string) []byte {
+	sum := sha256.Sum256([]byte(secret))
+	return sum[:]
 }

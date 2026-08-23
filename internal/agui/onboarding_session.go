@@ -142,15 +142,6 @@ func (st *sessionStore) sweepLocked() {
 	}
 }
 
-// len reports the number of live (un-swept) entries — a test-support accessor that also
-// triggers a sweep so expiry assertions observe the reclaimed count.
-func (st *sessionStore) len() int {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	st.sweepLocked()
-	return len(st.entries)
-}
-
 // ---------------------------------------------------------------------------
 // OnboardingService implementation (the seed side: StartSession + the seed mapper).
 // The provisioning saga (Provision/TelegramStatus) and SubmitProfile live in

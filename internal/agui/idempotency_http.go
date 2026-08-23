@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"math"
@@ -397,13 +396,4 @@ func writeIdempotencyError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
-}
-
-func validateHTTPMutationInventory() error {
-	for route, meta := range httpMutationRoutes {
-		if meta.Scope != idempotency.ScopeHTTPMutation || meta.Normalize == "" || meta.KeyPolicy != keyPolicyRequiredHeader {
-			return fmt.Errorf("mutation route %q has incomplete idempotency metadata", route)
-		}
-	}
-	return nil
 }

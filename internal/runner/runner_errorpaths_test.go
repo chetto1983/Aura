@@ -457,3 +457,7 @@ func TestTurn_DeferredFlushOnConsumerStop(t *testing.T) {
 		t.Fatal("deferred flush did not persist the combined ask_user assistant turn")
 	}
 }
+
+func (r *Runner) persistToolTurn(ctx context.Context, tr *turnTracker, ti *agent.ToolInvocation) error {
+	return r.persistToolTurnEvent(ctx, tr, ti, nil)
+}

@@ -96,18 +96,6 @@ func (s *Sink) encrypt(plaintext []byte) ([]byte, error) {
 	return s.aead.Seal(nonce, nonce, plaintext, nil), nil
 }
 
-func (s *Sink) decrypt(ciphertext []byte) ([]byte, error) {
-	nonceSize := s.aead.NonceSize()
-	if len(ciphertext) < nonceSize {
-		return nil, fmt.Errorf("trace sink: ciphertext too short (%d < %d)", len(ciphertext), nonceSize)
-	}
-	plaintext, err := s.aead.Open(nil, ciphertext[:nonceSize], ciphertext[nonceSize:], nil)
-	if err != nil {
-		return nil, fmt.Errorf("trace sink: decrypt: %w", err)
-	}
-	return plaintext, nil
-}
-
 func deriveKey(keyHex string) ([]byte, error) {
 	encoded := strings.TrimSpace(keyHex)
 	if len(encoded) != 64 {

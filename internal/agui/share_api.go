@@ -91,12 +91,12 @@ func toShareLinkResponse(link share.Link, token string) shareLinkResponse {
 }
 
 // sharePublicCapabilityName is the D-02 capability_grants name for the public-share tier —
-// see cmd/aura/serve_webui_share.go's sharePublicCapability doc for the full identity.create-
+// see cmd/aura/share_public_route_test.go's sharePublicCapability doc for the full identity.create-
 // sibling rationale (per-user, off-by-default, NOT governance.write's admin-only shape).
 // Duplicated here as a string literal, not imported, because internal/agui cannot import
 // cmd/aura (the composition-root package) — both packages must agree on this exact string.
 // Neither the tag audit nor go vet catch a drift between the two literals; grep both
-// `sharePublicCapability` (cmd/aura) and `sharePublicCapabilityName` (here) before renaming
+// `sharePublicCapability` (cmd/aura test) and `sharePublicCapabilityName` (here) before renaming
 // either.
 const sharePublicCapabilityName = "share.public"
 

@@ -54,3 +54,23 @@ func TestSharePublicCapabilityNameValid(t *testing.T) {
 		t.Fatalf("ValidateCapabilityName(%q): %v", sharePublicCapability, err)
 	}
 }
+
+// Moved here from serve_webui_share.go: no production code in cmd/aura names this
+// literal — internal/agui's sharePublicCapabilityName is what the runtime gates on.
+// The pair still has to agree, and this test is what checks it.
+// sharePublicCapability is the D-02 capability_grants name for the public-share tier:
+// per-user grantable, off by default, admin-grantable — exactly identity.create's shape
+// (serve_webui.go:271-278's identityCreateCapability comment is the precedent this doc
+// mirrors), NOT governance.write's (:110-118). It is deliberately NOT a reuse of
+// governance.write: that would mean "to share your own chat publicly you must be a full org
+// admin who can install MCP servers and RISKY supply-chain skills" — a privilege-escalation
+// smell that contradicts D-02's per-user semantics. share.public is identity.create's
+// sibling, not governance.write's.
+//
+// Verified at plan time (37F-RESEARCH.md A5/R-13): the bootstrap identity is granted the
+// literal "*" wildcard (serve_bootstrap.go:176-180), so the operator auto-holds
+// share.public — intended, they are the admin — while provisioned identities receive only
+// the explicit named capabilities their creator grants (serve_onboarding.go:153-165), never
+// the wildcard and never share.public unless a holder explicitly grants it. That contrast is
+// what makes the per-user, off-by-default semantics real rather than vacuous.
+const sharePublicCapability = "share.public"

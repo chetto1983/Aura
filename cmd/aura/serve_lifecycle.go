@@ -104,17 +104,6 @@ type serveComponentResult struct {
 	err  error
 }
 
-func runServeComponents(
-	parent context.Context,
-	state *readiness.Snapshot,
-	listener net.Listener,
-	server *http.Server,
-	scheduler schedulerLifecycle,
-	drain func(),
-) error {
-	return runServeComponentsWithMetrics(parent, state, listener, server, scheduler, nil, drain)
-}
-
 func runServeComponentsWithMetrics(
 	parent context.Context,
 	state *readiness.Snapshot,

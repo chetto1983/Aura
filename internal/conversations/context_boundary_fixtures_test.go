@@ -54,3 +54,8 @@ func sizedTurns(t *testing.T, enc *tiktoken.Tiktoken, bodyTokens int) []Turn {
 	}
 	return turns
 }
+
+// l2HeadroomTokens is fixture padding for the boundary range below, NOT the live
+// reservation: context_budget.go subtracts llm.PromptHeadroom(ContextWindow), which
+// scales with the window instead of being the fixed 13000 this once described.
+const l2HeadroomTokens = 13000

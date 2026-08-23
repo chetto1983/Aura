@@ -84,15 +84,6 @@ func grantLoadedSlot(namespace string, modelFacing int) bool {
 	return true
 }
 
-// resetLoadedSlotBudgetForTest resets the package-level slot counter. Test-only:
-// production has no unmount path to justify resetting it, and no caller outside
-// a _test.go file should ever need to.
-func resetLoadedSlotBudgetForTest() {
-	loadedSlotBudget.mu.Lock()
-	defer loadedSlotBudget.mu.Unlock()
-	loadedSlotBudget.spent = 0
-}
-
 // warnIfDeferralWouldFlip reports — and never applies — a reconnect whose
 // recomputed model-facing count would cross the always-loaded ceiling relative
 // to the decision frozen on policy at mount (policy.alwaysLoaded,
