@@ -35,13 +35,17 @@ Cypher-only and rejects SQL DDL with Neo.ClientError.Statement.SyntaxError
 (measured). LSM_VECTOR/FULL_TEXT index METADATA has no Cypher equivalent, so
 schema DDL goes over POST /api/v1/command/<db> as ArcadeDB SQL, and database
 creation over POST /api/v1/server -- both ArcadeDB's own HTTP API surface,
-mirroring internal/arcadedb/client.go's command/server endpoint split.
+mirroring internal/arcadedb/client.go's command/server endpoint split. A third,
+GET /api/v1/ready, is what ensure_schema waits on before either: see
+wait_until_ready() for why a server that is merely still booting must not be
+read as a server that rejects us.
 """
 
 from __future__ import annotations
 
 import base64
 import json
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -49,6 +53,25 @@ import urllib.request
 PASSAGE_TYPE = "Passage"
 PASSAGE_EDGE_TYPE = "HAS_PASSAGE"
 DOCUMENT_TYPE = "IndexedDocument"
+
+# ArcadeDB's own liveness endpoint. GetReadyHandler.isRequireAuthentication() is false,
+# which is why the compose healthcheck can probe it without baking the root password into
+# the file -- and why this module sends no credential either.
+READY_PATH = "/api/v1/ready"
+
+# The two statuses GetReadyHandler produces: 204 once server status is ONLINE (and, under
+# HA, once the node has joined the Raft group and caught up on the committed log), 503
+# while it is not. The 503 is the one that matters here: the HTTP port binds before the
+# engine is online, so "the socket answered" is NOT the same claim as "DDL will work".
+_READY = 204
+_NOT_ONLINE_YET = 503
+
+# Long enough to outlast the compose healthcheck's own patience for this same server
+# (start_period 40s + interval 10s x retries 12 = 160s). Failing sooner than the
+# orchestrator gives up would mean declaring dead a server the stack still considers
+# starting.
+DEFAULT_READY_TIMEOUT_S = 180.0
+_POLL_INTERVAL_S = 2.0
 
 
 def schema_version(dimensions: int) -> str:
@@ -67,6 +90,65 @@ class ArcadeSchemaError(RuntimeError):
     """Raised when ArcadeDB rejects database creation or a DDL statement."""
 
 
+def wait_until_ready(
+    base_url: str,
+    *,
+    timeout_s: float = DEFAULT_READY_TIMEOUT_S,
+    poll_interval_s: float = _POLL_INTERVAL_S,
+) -> None:
+    """Block until ArcadeDB reports itself ONLINE, or raise once the budget is spent.
+
+    ArcadeDB not being up YET and ArcadeDB rejecting what we ask are different facts, and
+    conflating them is what made this sidecar crash-loop. `depends_on: condition:
+    service_healthy` covers only `docker compose up`: when the Docker daemon restarts it
+    rebrings every `restart: unless-stopped` container in arbitrary order, ignoring both
+    depends_on and healthchecks. Measured 2026-08-23 -- aura-ingest started 6s after
+    ArcadeDB, `create database` hit a port nothing was listening on, and the URLError
+    killed the process. 14 such deaths in five days, in bursts, one burst per restart.
+
+    So a transport failure and a 503 are waited out, while any other answer is raised on
+    the spot: waiting three minutes on a wrong port or a proxy in the way would hide the
+    fault rather than report it.
+    """
+    base_url = base_url.rstrip("/")
+    deadline = time.monotonic() + timeout_s
+    reported = False
+    while True:
+        not_ready = _probe_ready(base_url, poll_interval_s)
+        if not_ready is None:
+            if reported:
+                print(f"[arcade] {base_url} ready", flush=True)
+            return
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ArcadeSchemaError(
+                f"GET {base_url}{READY_PATH}: not ready within {timeout_s:g}s: {not_ready}"
+            )
+        if not reported:
+            # Once entering the wait and once leaving it. Every probe would be the same
+            # log storm this replaces; silence for three minutes would read as a hang.
+            print(f"[arcade] waiting for {base_url}{READY_PATH}: {not_ready}", flush=True)
+            reported = True
+        time.sleep(min(poll_interval_s, remaining))
+
+
+def _probe_ready(base_url: str, timeout_s: float) -> str | None:
+    """None when ArcadeDB is ONLINE, else why it is not yet. Raises on anything else."""
+    request = urllib.request.Request(base_url + READY_PATH, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_s) as response:
+            status = response.status
+    except urllib.error.HTTPError as exc:
+        if exc.code == _NOT_ONLINE_YET:
+            return f"HTTP {exc.code} (server not ONLINE yet)"
+        raise ArcadeSchemaError(f"GET {READY_PATH}: HTTP {exc.code}") from exc
+    except urllib.error.URLError as exc:
+        return str(exc.reason)
+    if status != _READY:
+        raise ArcadeSchemaError(f"GET {READY_PATH}: unexpected HTTP {status}")
+    return None
+
+
 def ensure_schema(
     base_url: str,
     database: str,
@@ -74,17 +156,24 @@ def ensure_schema(
     dimensions: int,
     *,
     timeout_s: float = 60.0,
+    ready_timeout_s: float = DEFAULT_READY_TIMEOUT_S,
 ) -> None:
     """Create `database` if absent, then run every Passage DDL statement.
 
-    Safe to call on every process start: each DDL statement carries its own
-    IF NOT EXISTS, and "create database" tolerates an "already exists" error
-    the same way internal/arcadedb/tenant_clients.go's provision() does --
-    ArcadeDB's server command has no IF NOT EXISTS form of its own.
+    Safe to call on every process start -- and that promise is why the readiness wait
+    lives HERE rather than at the call site: each DDL statement carries its own IF NOT
+    EXISTS, "create database" tolerates an "already exists" error the same way
+    internal/arcadedb/tenant_clients.go's provision() does, and the wait absorbs a server
+    that has not finished booting. A caller cannot forget the part that was missing.
+
+    ready_timeout_s is separate from timeout_s on purpose: the latter bounds a single DDL
+    statement against a server already answering, the former bounds a cold JVM coming up.
+    One number for both would either abandon a slow boot or hang on a wedged statement.
     """
     if dimensions <= 0:
         raise ValueError("dimensions must be positive")
     base_url = base_url.rstrip("/")
+    wait_until_ready(base_url, timeout_s=ready_timeout_s)
     _create_database(base_url, database, auth, timeout_s)
     for statement in _passage_ddl(dimensions):
         _command(base_url, database, auth, statement, timeout_s)
