@@ -93,12 +93,9 @@ export function SharedLinksSection() {
   const busy = revokingId !== undefined || revokingAll;
 
   return (
-    <section
-      aria-labelledby="settings-shared-links"
-      className="flex flex-col gap-4 border-t border-border pt-6"
-    >
+    <section aria-labelledby="settings-shared-links" className="flex flex-col gap-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <h2 id="settings-shared-links" className="text-[18px] font-semibold text-text">
+        <h2 id="settings-shared-links" className="text-[20px] font-semibold text-text">
           {t('share.settings.heading')}
         </h2>
         {links.length > 0 ? (

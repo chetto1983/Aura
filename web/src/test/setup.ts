@@ -20,6 +20,12 @@ if (typeof Element !== 'undefined' && typeof Element.prototype.scrollTo !== 'fun
   Element.prototype.scrollTo = (): void => undefined;
 }
 
+// Same gap for Element.scrollIntoView, which the Settings rail calls to bring the remembered
+// pane's chip on screen when the rail is a narrow horizontal strip.
+if (typeof Element !== 'undefined' && typeof Element.prototype.scrollIntoView !== 'function') {
+  Element.prototype.scrollIntoView = (): void => undefined;
+}
+
 // jsdom does not implement window.matchMedia, which the governance BoardLayout uses to gate the
 // mobile-only bottom-sheet focus trap. Default to a desktop (no-match) media query so components
 // mount under jsdom; the real mobile bottom-sheet behaviour is proven by the Playwright e2e.

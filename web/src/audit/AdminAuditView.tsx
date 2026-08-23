@@ -36,7 +36,7 @@ const OUTCOME_CHIP_CLASS: Record<InvocationOutcome, string> = {
 
 // AdminAuditView is the D-28 admin per-user activity view: pick an identity, page through its
 // MCP/skill/tool activity newest-first. The read is governance.write-gated server-side; this
-// view is only mounted inside the admin-gated Settings page.
+// view is only mounted inside the admin-gated Governance surface (its Audit tab).
 export function AdminAuditView() {
   const { t, i18n } = useTranslation();
   const identitiesQuery = useAdminIdentities();

@@ -1,8 +1,13 @@
 export const settingsEn = {
   settings: {
-    kicker: 'Operations',
-    heading: 'Runtime settings',
-    body: 'Model, token, cloud, and local sidecar settings are stored in Postgres and can be changed here without editing .env files.',
+    rail: {
+      label: 'Settings sections',
+    },
+    groups: {
+      personal: 'Personal',
+      runtime: 'Runtime',
+      access: 'Access & channels',
+    },
     loading: 'Loading runtime settings...',
     error: "Couldn't load runtime settings. Check the server and try again.",
     restartRequired:
@@ -12,8 +17,8 @@ export const settingsEn = {
       "Couldn't save: {{message}}. Your changes are still here — fix the value and try again.",
     secretPlaceholder: 'Enter a new value',
     identity: {
-      heading: 'Identity',
-      body: 'Create operator identities and connect their setup channels from here.',
+      heading: 'Identities & access',
+      body: 'Create operator identities, connect their setup channels, and grant or revoke what each one is allowed to do.',
     },
     telegram: {
       heading: 'Telegram',
@@ -94,9 +99,14 @@ export const settingsEn = {
 
 export const settingsIt = {
   settings: {
-    kicker: 'Operazioni',
-    heading: 'Impostazioni runtime',
-    body: 'Modello, token, cloud e sidecar locali sono salvati in Postgres e si cambiano qui senza toccare file .env.',
+    rail: {
+      label: 'Sezioni impostazioni',
+    },
+    groups: {
+      personal: 'Personale',
+      runtime: 'Runtime',
+      access: 'Accesso e canali',
+    },
     loading: 'Caricamento impostazioni runtime...',
     error: 'Impossibile caricare le impostazioni runtime. Controlla il server e riprova.',
     restartRequired:
@@ -106,8 +116,8 @@ export const settingsIt = {
       'Salvataggio non riuscito: {{message}}. Le modifiche sono ancora qui — correggi il valore e riprova.',
     secretPlaceholder: 'Inserisci un nuovo valore',
     identity: {
-      heading: 'Identita',
-      body: 'Crea identita operatore e collega qui i loro canali di setup.',
+      heading: 'Identità e permessi',
+      body: 'Crea identità operatore, collega i loro canali di setup e concedi o revoca cosa ognuna può fare.',
     },
     telegram: {
       heading: 'Telegram',

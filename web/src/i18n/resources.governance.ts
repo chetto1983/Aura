@@ -28,6 +28,7 @@ export const governanceEn = {
       mcp: 'MCP servers',
       skills: 'Skills',
       scheduler: 'Scheduler',
+      audit: 'Audit',
     },
     mcp: {
       emptyHeading: 'No MCP servers configured',
@@ -237,6 +238,7 @@ export const governanceIt = {
       mcp: 'Server MCP',
       skills: 'Competenze',
       scheduler: 'Pianificazione',
+      audit: 'Audit',
     },
     mcp: {
       emptyHeading: 'Nessun server MCP configurato',

@@ -126,3 +126,49 @@ export function resolveProvider(storedProvider: string, baseURL: string): 'cloud
   if (normalized === CLOUD_PROVIDER) return 'cloud';
   return isLocalBaseURL(baseURL) ? 'local' : 'cloud';
 }
+
+// A group is one settings pane: the fields it renders plus any key it must dirty-track
+// without rendering. `tracked` exists for AURA_LLM_PROVIDER — the Cloud/Local buttons are
+// its editor, so a routing pane that did not track it would save a base URL and leave the
+// previous provider's adapter serving the new endpoint.
+export type ModelSettingsGroup = 'routing' | 'tokens' | 'backends';
+
+export interface ModelSettingsGroupDef {
+  readonly id: ModelSettingsGroup;
+  readonly labelId: string;
+  readonly headingKey: string;
+  readonly bodyKey: string;
+  readonly fields: readonly SettingDef[];
+  readonly tracked: readonly SettingDef[];
+}
+
+export const MODEL_SETTINGS_GROUPS: readonly ModelSettingsGroupDef[] = [
+  {
+    id: 'routing',
+    labelId: 'runtime-model-routing',
+    headingKey: 'settings.modelRouting.heading',
+    bodyKey: 'settings.modelRouting.body',
+    fields: PRIMARY_SETTINGS,
+    tracked: ROUTING_SETTINGS,
+  },
+  {
+    id: 'tokens',
+    labelId: 'runtime-token-budgets',
+    headingKey: 'settings.tokens.heading',
+    bodyKey: 'settings.tokens.body',
+    fields: TOKEN_SETTINGS,
+    tracked: [],
+  },
+  {
+    id: 'backends',
+    labelId: 'runtime-backends',
+    headingKey: 'settings.backends.heading',
+    bodyKey: 'settings.backends.body',
+    fields: BACKEND_SETTINGS,
+    tracked: [],
+  },
+];
+
+export const ALL_MODEL_GROUPS: readonly ModelSettingsGroup[] = MODEL_SETTINGS_GROUPS.map(
+  (group) => group.id,
+);

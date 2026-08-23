@@ -1,226 +1,65 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
-import { Cloud, Cpu, RefreshCw, RotateCcw, Save } from 'lucide-react';
+import { useMemo } from 'react';
+import { Cloud, Cpu, RefreshCw, Save } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
-import { deleteSetting, fetchSettings, putSetting, type SettingItem } from './settingsApi';
+import { SettingsFields } from './SettingField';
+import { useModelSettings } from './modelSettingsState';
 import {
-  ALL_SETTINGS,
-  BACKEND_SETTINGS,
+  ALL_MODEL_GROUPS,
   CLOUD_PROVIDER,
   LOCAL_BASE_URL,
   LOCAL_PROVIDER,
+  MODEL_SETTINGS_GROUPS,
   OPENROUTER_BASE_URL,
-  PRIMARY_SETTINGS,
   resolveProvider,
-  TOKEN_SETTINGS,
-  type SettingDef,
-  type SettingsKey,
+  type ModelSettingsGroup,
 } from './modelSettingsDefs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { SecretInput } from '@/components/ui/secret-input';
 import { cn } from '@/lib/utils';
 
 interface ModelSettingsPanelProps {
   readonly className?: string;
+  /**
+   * Which runtime groups this panel renders and may write. Defaults to all three, which is
+   * the first-run wizard's single-form view; the Settings rail mounts one group per pane so
+   * each pane is one form with one save button.
+   */
+  readonly groups?: readonly ModelSettingsGroup[];
   readonly onComplete?: () => void | Promise<void>;
   readonly saveLabel?: string;
   readonly skipLabel?: string;
 }
 
-interface LoadedState {
-  readonly rows: Record<string, SettingItem>;
-  readonly values: Record<string, string>;
-  readonly initial: Record<string, string>;
-  readonly restartRequired: boolean;
-}
-
-function emptyItem(def: SettingDef): SettingItem {
-  return {
-    key: def.key,
-    label: def.key,
-    kind: def.kind,
-    secret: def.secret === true,
-    value: '',
-    has_value: false,
-    overridden: false,
-  };
-}
-
-function buildState(list: Awaited<ReturnType<typeof fetchSettings>>): LoadedState {
-  const byKey = Object.fromEntries(list.settings.map((item) => [item.key, item]));
-  const rows: Record<string, SettingItem> = {};
-  const values: Record<string, string> = {};
-  const initial: Record<string, string> = {};
-  for (const def of ALL_SETTINGS) {
-    const item = byKey[def.key] ?? emptyItem(def);
-    rows[def.key] = item;
-    const value = item.secret ? '' : item.value;
-    values[def.key] = value;
-    initial[def.key] = value;
-  }
-  return { rows, values, initial, restartRequired: list.restart_required };
-}
-
-// errorMessage pulls the human part out of whatever the API layer threw. settingsApi
-// already unwraps the server's {"error": "..."} body, so for a rejected write this is the
-// validation reason itself ("must be an int") rather than a status code.
-function errorMessage(err: unknown): string {
-  if (err instanceof Error && err.message.trim() !== '') return err.message;
-  return String(err);
-}
-
-function SettingsFields({
-  defs,
-  loaded,
-  onReset,
-  onValueChange,
-  resetting,
-}: {
-  readonly defs: readonly SettingDef[];
-  readonly loaded: LoadedState;
-  readonly resetting: string | undefined;
-  readonly onValueChange: (key: SettingsKey, value: string) => void;
-  readonly onReset: (key: SettingsKey) => void;
-}) {
-  return (
-    <SettingsGrid>
-      {defs.map((def) => (
-        <SettingField
-          key={def.key}
-          def={def}
-          item={loaded.rows[def.key] ?? emptyItem(def)}
-          value={loaded.values[def.key] ?? ''}
-          onChange={(value) => {
-            onValueChange(def.key, value);
-          }}
-          onReset={() => {
-            onReset(def.key);
-          }}
-          resetting={resetting === def.key}
-        />
-      ))}
-    </SettingsGrid>
-  );
-}
-
 export function ModelSettingsPanel({
   className,
+  groups = ALL_MODEL_GROUPS,
   onComplete,
   saveLabel,
   skipLabel,
 }: ModelSettingsPanelProps) {
   const { t } = useTranslation();
-  const [loaded, setLoaded] = useState<LoadedState | undefined>(undefined);
-  const [loadStatus, setLoadStatus] = useState<'loading' | 'ready' | 'error'>('loading');
-  const [saving, setSaving] = useState(false);
-  const [resetting, setResetting] = useState<string | undefined>(undefined);
-  const [saved, setSaved] = useState(false);
-  // Separate from loadStatus on purpose — a save that fails is not a load that failed.
-  const [saveError, setSaveError] = useState<string | undefined>(undefined);
-
-  const reload = useCallback(async () => {
-    setLoadStatus('loading');
-    try {
-      const settings = await fetchSettings();
-      setLoaded(buildState(settings));
-      setLoadStatus('ready');
-    } catch {
-      setLoadStatus('error');
-    }
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetchSettings()
-      .then((settings) => {
-        if (cancelled) return;
-        setLoaded(buildState(settings));
-        setLoadStatus('ready');
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setLoadStatus('error');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const dirtyKeys = useMemo(() => {
-    if (loaded === undefined) return [];
-    return ALL_SETTINGS.filter((def) => {
-      const value = loaded.values[def.key] ?? '';
-      if (def.secret) return value.trim() !== '';
-      return value !== (loaded.initial[def.key] ?? '');
-    }).map((def) => def.key);
-  }, [loaded]);
-
-  const provider = resolveProvider(
-    loaded?.values.AURA_LLM_PROVIDER ?? '',
-    loaded?.values.AURA_LLM_BASE_URL ?? '',
+  const active = useMemo(
+    () => MODEL_SETTINGS_GROUPS.filter((group) => groups.includes(group.id)),
+    [groups],
   );
-
-  function setValue(key: SettingsKey, value: string) {
-    setLoaded((prev) =>
-      prev === undefined
-        ? prev
-        : {
-            ...prev,
-            values: { ...prev.values, [key]: value },
-          },
-    );
-    setSaved(false);
-    setSaveError(undefined);
-  }
-
-  async function saveChanges() {
-    if (loaded === undefined || saving) return;
-    if (dirtyKeys.length === 0) {
-      await onComplete?.();
-      return;
-    }
-    setSaving(true);
-    setSaved(false);
-    setSaveError(undefined);
-    try {
-      for (const key of dirtyKeys) {
-        await putSetting(key, loaded.values[key] ?? '');
-      }
-      const settings = await fetchSettings();
-      setLoaded(buildState(settings));
-      setSaved(true);
-      await onComplete?.();
-    } catch (err) {
-      // Deliberately NOT setLoadStatus('error'): that swaps the whole panel for the
-      // "couldn't LOAD settings" alert, which throws away everything the operator just
-      // typed and blames the wrong operation. A failed save leaves the form standing, with
-      // the edits intact and the server's reason next to the button that failed.
-      setSaveError(errorMessage(err));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function resetSetting(key: SettingsKey) {
-    if (resetting !== undefined) return;
-    setResetting(key);
-    setSaveError(undefined);
-    try {
-      await deleteSetting(key);
-      await reload();
-    } catch (err) {
-      // Reset had no error handling at all: a rejected delete only cleared the spinner, so
-      // the row went back to looking normal while still holding the old override.
-      setSaveError(errorMessage(err));
-    } finally {
-      setResetting(undefined);
-    }
-  }
+  const scope = useMemo(
+    () => active.flatMap((group) => [...group.fields, ...group.tracked]),
+    [active],
+  );
+  const {
+    loaded,
+    loadStatus,
+    saving,
+    resetting,
+    saved,
+    saveError,
+    dirtyKeys,
+    reload,
+    setValue,
+    save,
+    resetSetting,
+  } = useModelSettings(scope);
 
   if (loadStatus === 'loading') {
     return (
@@ -247,6 +86,10 @@ export function ModelSettingsPanel({
     );
   }
 
+  const provider = resolveProvider(
+    loaded.values.AURA_LLM_PROVIDER ?? '',
+    loaded.values.AURA_LLM_BASE_URL ?? '',
+  );
   const saveButtonLabel =
     onComplete !== undefined && dirtyKeys.length === 0
       ? t('settings.actions.continue')
@@ -254,97 +97,63 @@ export function ModelSettingsPanel({
 
   return (
     <div className={cn('flex flex-col gap-7', className)}>
-      <section aria-labelledby="runtime-model-routing" className="flex flex-col gap-4">
-        <div className="flex flex-col gap-2">
-          <h2 id="runtime-model-routing" className="text-[20px] font-semibold text-text">
-            {t('settings.modelRouting.heading')}
-          </h2>
-          <p className="max-w-3xl text-[15.5px] leading-relaxed text-text-muted">
-            {t('settings.modelRouting.body')}
-          </p>
-        </div>
-
-        <div
-          className="flex flex-wrap items-center gap-2"
-          role="group"
-          aria-label={t('settings.provider.label')}
+      {active.map((group, index) => (
+        <section
+          key={group.id}
+          aria-labelledby={group.labelId}
+          className={cn('flex flex-col gap-4', index > 0 && 'border-t border-border pt-6')}
         >
-          <Button
-            type="button"
-            variant={provider === 'cloud' ? 'default' : 'outline'}
-            aria-pressed={provider === 'cloud'}
-            onClick={() => {
-              setValue('AURA_LLM_BASE_URL', OPENROUTER_BASE_URL);
-              setValue('AURA_LLM_PROVIDER', CLOUD_PROVIDER);
-            }}
-          >
-            <Cloud aria-hidden="true" />
-            {t('settings.provider.cloud')}
-          </Button>
-          <Button
-            type="button"
-            variant={provider === 'local' ? 'default' : 'outline'}
-            aria-pressed={provider === 'local'}
-            onClick={() => {
-              setValue('AURA_LLM_BASE_URL', LOCAL_BASE_URL);
-              setValue('AURA_LLM_PROVIDER', LOCAL_PROVIDER);
-            }}
-          >
-            <Cpu aria-hidden="true" />
-            {t('settings.provider.local')}
-          </Button>
-        </div>
+          <div className="flex flex-col gap-2">
+            <h2 id={group.labelId} className="text-[20px] font-semibold text-text">
+              {t(group.headingKey)}
+            </h2>
+            <p className="max-w-3xl text-[15.5px] leading-relaxed text-text-muted">
+              {t(group.bodyKey)}
+            </p>
+          </div>
 
-        <SettingsFields
-          defs={PRIMARY_SETTINGS}
-          loaded={loaded}
-          resetting={resetting}
-          onValueChange={setValue}
-          onReset={(key) => void resetSetting(key)}
-        />
-      </section>
+          {group.id === 'routing' ? (
+            <div
+              className="flex flex-wrap items-center gap-2"
+              role="group"
+              aria-label={t('settings.provider.label')}
+            >
+              <Button
+                type="button"
+                variant={provider === 'cloud' ? 'default' : 'outline'}
+                aria-pressed={provider === 'cloud'}
+                onClick={() => {
+                  setValue('AURA_LLM_BASE_URL', OPENROUTER_BASE_URL);
+                  setValue('AURA_LLM_PROVIDER', CLOUD_PROVIDER);
+                }}
+              >
+                <Cloud aria-hidden="true" />
+                {t('settings.provider.cloud')}
+              </Button>
+              <Button
+                type="button"
+                variant={provider === 'local' ? 'default' : 'outline'}
+                aria-pressed={provider === 'local'}
+                onClick={() => {
+                  setValue('AURA_LLM_BASE_URL', LOCAL_BASE_URL);
+                  setValue('AURA_LLM_PROVIDER', LOCAL_PROVIDER);
+                }}
+              >
+                <Cpu aria-hidden="true" />
+                {t('settings.provider.local')}
+              </Button>
+            </div>
+          ) : null}
 
-      <section
-        aria-labelledby="runtime-token-budgets"
-        className="flex flex-col gap-4 border-t border-border pt-6"
-      >
-        <div className="flex flex-col gap-2">
-          <h2 id="runtime-token-budgets" className="text-[18px] font-semibold text-text">
-            {t('settings.tokens.heading')}
-          </h2>
-          <p className="max-w-3xl text-[15.5px] leading-relaxed text-text-muted">
-            {t('settings.tokens.body')}
-          </p>
-        </div>
-        <SettingsFields
-          defs={TOKEN_SETTINGS}
-          loaded={loaded}
-          resetting={resetting}
-          onValueChange={setValue}
-          onReset={(key) => void resetSetting(key)}
-        />
-      </section>
-
-      <section
-        aria-labelledby="runtime-backends"
-        className="flex flex-col gap-4 border-t border-border pt-6"
-      >
-        <div className="flex flex-col gap-2">
-          <h2 id="runtime-backends" className="text-[18px] font-semibold text-text">
-            {t('settings.backends.heading')}
-          </h2>
-          <p className="max-w-3xl text-[15.5px] leading-relaxed text-text-muted">
-            {t('settings.backends.body')}
-          </p>
-        </div>
-        <SettingsFields
-          defs={BACKEND_SETTINGS}
-          loaded={loaded}
-          resetting={resetting}
-          onValueChange={setValue}
-          onReset={(key) => void resetSetting(key)}
-        />
-      </section>
+          <SettingsFields
+            defs={group.fields}
+            loaded={loaded}
+            resetting={resetting}
+            onValueChange={setValue}
+            onReset={(key) => void resetSetting(key)}
+          />
+        </section>
+      ))}
 
       {loaded.restartRequired ? (
         <div
@@ -381,7 +190,7 @@ export function ModelSettingsPanel({
           type="button"
           disabled={saving}
           aria-busy={saving}
-          onClick={() => void saveChanges()}
+          onClick={() => void save(onComplete)}
         >
           {saving ? <Spinner /> : <Save aria-hidden="true" />}
           {saveButtonLabel}
@@ -394,96 +203,6 @@ export function ModelSettingsPanel({
             onClick={() => void onComplete()}
           >
             {skipLabel ?? t('settings.actions.skip')}
-          </Button>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function SettingsGrid({ children }: { readonly children: ReactNode }) {
-  return <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{children}</div>;
-}
-
-function SettingField({
-  def,
-  item,
-  onChange,
-  onReset,
-  resetting,
-  value,
-}: {
-  readonly def: SettingDef;
-  readonly item: SettingItem;
-  readonly value: string;
-  readonly onChange: (value: string) => void;
-  readonly onReset: () => void;
-  readonly resetting: boolean;
-}) {
-  const { t } = useTranslation();
-  const inputId = `setting-${def.key}`;
-  const label = t(def.labelKey);
-  const isBooleanActive = def.kind === 'bool' && value === 'true';
-  const isConfigured = def.kind === 'bool' ? isBooleanActive : item.has_value;
-  const status =
-    def.kind === 'bool'
-      ? t(isBooleanActive ? 'settings.status.active' : 'settings.status.inactive')
-      : item.has_value
-        ? t('settings.status.configured')
-        : t('settings.status.notConfigured');
-
-  return (
-    <div className="flex min-h-32 flex-col gap-2 rounded-md border border-border bg-surface px-3 py-3">
-      <div className="flex min-w-0 items-start justify-between gap-2">
-        <Label htmlFor={inputId} className="min-w-0 break-words text-[13px]">
-          {label}
-        </Label>
-        <Badge variant={isConfigured ? 'success' : 'secondary'}>{status}</Badge>
-      </div>
-      {def.kind === 'bool' ? (
-        <label className="flex min-h-[44px] items-center gap-3 rounded-md border border-input bg-surface-3 px-3 text-[13px] text-text">
-          <input
-            id={inputId}
-            type="checkbox"
-            checked={value === 'true'}
-            onChange={(event) => {
-              onChange(event.target.checked ? 'true' : 'false');
-            }}
-            className="size-4 accent-accent"
-          />
-          {t('settings.fields.enabled')}
-        </label>
-      ) : def.secret ? (
-        <SecretInput
-          id={inputId}
-          value={value}
-          placeholder={def.placeholder ?? t('settings.secretPlaceholder')}
-          showLabel={t('secret.show', { label })}
-          hideLabel={t('secret.hide', { label })}
-          onChange={(event) => {
-            onChange(event.target.value);
-          }}
-          className="font-mono text-[13px]"
-        />
-      ) : (
-        <Input
-          id={inputId}
-          type={def.kind === 'int' ? 'number' : 'text'}
-          inputMode={def.kind === 'int' ? 'numeric' : undefined}
-          value={value}
-          placeholder={def.placeholder}
-          onChange={(event) => {
-            onChange(event.target.value);
-          }}
-          className="font-mono text-[13px]"
-        />
-      )}
-      <div className="mt-auto flex items-center justify-between gap-2">
-        <code className="min-w-0 break-all text-[12px] text-text-faint">{def.key}</code>
-        {item.overridden ? (
-          <Button type="button" variant="ghost" size="sm" disabled={resetting} onClick={onReset}>
-            {resetting ? <Spinner /> : <RotateCcw aria-hidden="true" />}
-            {t('settings.actions.reset')}
           </Button>
         ) : null}
       </div>

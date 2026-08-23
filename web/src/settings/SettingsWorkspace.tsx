@@ -1,25 +1,31 @@
 import { useTranslation } from 'react-i18next';
-import { ShieldAlert, UserPlus } from 'lucide-react';
-import { AdminAuditView } from '../audit/AdminAuditView';
+import { ShieldAlert } from 'lucide-react';
 import { useCapabilities } from '../admin/useAdmin';
-import { CapabilityAdminPanel } from './CapabilityAdminPanel';
+import { IdentityAccessPanel } from './IdentityAccessPanel';
 import { ModelSettingsPanel } from './ModelSettingsPanel';
 import { ProfilePanel } from './ProfilePanel';
+import { SettingsRail } from './SettingsRail';
 import { SharedLinksSection } from './SharedLinksSection';
 import { TelegramSettingsPanel } from './TelegramSettingsPanel';
-import { Button } from '@/components/ui/button';
+import { visibleSections, type SettingsSectionId } from './settingsSections';
+import { useSettingsSection } from './useSettingsSection';
 
 interface SettingsWorkspaceProps {
   readonly onCreateIdentity: () => void;
 }
 
-// SettingsWorkspace is the admin surface (MUSR-01 / D-03): model settings, identity creation,
-// capability grant/revoke (D-26), and the per-user audit view (D-28). The whole page is gated
-// on governance.write — a non-admin session renders the not-authorized fallback instead of the
-// controls (defense-in-depth behind the server-side RequireCapability gate on every route).
+// SettingsWorkspace is the admin surface (MUSR-01 / D-03). It used to stack every panel on one
+// scroll — nine headings, seventeen action buttons, and every panel's queries firing at once.
+// It is a rail + pane now: the rail is the map, and only the selected pane mounts, so opening
+// Settings no longer costs a roster fetch, a Telegram availability probe and a settings read
+// the operator did not ask for. The whole surface stays gated on governance.write — a
+// non-admin sees only the profile pane (defense-in-depth behind the server-side
+// RequireCapability gate on every route).
 export default function SettingsWorkspace({ onCreateIdentity }: SettingsWorkspaceProps) {
   const { t } = useTranslation();
   const { isAdmin, isLoading } = useCapabilities();
+  const sections = visibleSections(isAdmin);
+  const { section, setSection } = useSettingsSection(sections);
 
   if (isLoading) {
     return (
@@ -31,7 +37,7 @@ export default function SettingsWorkspace({ onCreateIdentity }: SettingsWorkspac
 
   // The profile is every operator's, the runtime settings are the admin's. A non-admin gets
   // the editor and the explanation, not a bare "not authorized" page that hides the one thing
-  // on this page they DO own.
+  // on this page they DO own — and no rail, because a one-item rail is a label, not a choice.
   if (!isAdmin) {
     return (
       <div className="h-full min-h-0 overflow-y-auto bg-bg">
@@ -54,47 +60,38 @@ export default function SettingsWorkspace({ onCreateIdentity }: SettingsWorkspac
   }
 
   return (
-    <div className="h-full min-h-0 overflow-y-auto bg-bg">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-7 px-4 py-6 sm:px-6 lg:px-8">
-        <header className="flex flex-col gap-2 border-b border-border pb-5">
-          <p className="text-xs font-semibold uppercase text-accent-text">{t('settings.kicker')}</p>
-          <h1 className="font-display text-[26px] font-semibold text-text">
-            {t('settings.heading')}
-          </h1>
-          <p className="max-w-3xl text-[15.5px] leading-relaxed text-text-muted">
-            {t('settings.body')}
-          </p>
-        </header>
-        <ProfilePanel />
-        <section
-          aria-labelledby="settings-identity"
-          className="flex flex-col gap-4 border-t border-border pt-6"
-        >
-          <div className="flex flex-col gap-2">
-            <h2 id="settings-identity" className="text-[20px] font-semibold text-text">
-              {t('settings.identity.heading')}
-            </h2>
-            <p className="max-w-3xl text-[15.5px] leading-relaxed text-text-muted">
-              {t('settings.identity.body')}
-            </p>
-          </div>
-          <div>
-            <Button type="button" variant="outline" onClick={onCreateIdentity}>
-              <UserPlus aria-hidden="true" />
-              {t('onboarding.open')}
-            </Button>
-          </div>
-        </section>
-        <div className="border-t border-border pt-6">
-          <CapabilityAdminPanel />
+    <div className="flex h-full min-h-0 flex-col bg-bg lg:flex-row">
+      <SettingsRail sections={sections} activeId={section} onSelect={setSection} />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+          <SettingsPane section={section} onCreateIdentity={onCreateIdentity} />
         </div>
-        <div className="border-t border-border pt-6">
-          <AdminAuditView />
-        </div>
-        <TelegramSettingsPanel />
-        <ModelSettingsPanel />
-        <SharedLinksSection />
       </div>
     </div>
   );
+}
+
+function SettingsPane({
+  section,
+  onCreateIdentity,
+}: {
+  readonly section: SettingsSectionId;
+  readonly onCreateIdentity: () => void;
+}) {
+  switch (section) {
+    case 'profile':
+      return <ProfilePanel />;
+    case 'model':
+      return <ModelSettingsPanel groups={['routing']} />;
+    case 'budget':
+      return <ModelSettingsPanel groups={['tokens']} />;
+    case 'backends':
+      return <ModelSettingsPanel groups={['backends']} />;
+    case 'identities':
+      return <IdentityAccessPanel onCreateIdentity={onCreateIdentity} />;
+    case 'channels':
+      return <TelegramSettingsPanel />;
+    case 'sharing':
+      return <SharedLinksSection />;
+  }
 }

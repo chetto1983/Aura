@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
 
-// GovernanceWorkspace is the lazy tab-strip shell. The three boards are mocked (their data hooks
-// are exercised by their own board tests) so this suite asserts ONLY the workspace obligations:
-// the shadcn Tabs strip renders (MCP/Skills/Scheduler), the obsolete read-only banner is gone,
-// and switching tabs swaps the active board. These are the GovernanceWorkspace behavior
+// GovernanceWorkspace is the lazy tab-strip shell. The four panes are mocked (their data hooks
+// are exercised by their own tests) so this suite asserts ONLY the workspace obligations: the
+// shadcn Tabs strip renders (MCP/Skills/Scheduler/Audit), the obsolete read-only banner is gone,
+// and switching tabs swaps the active pane. These are the GovernanceWorkspace behavior
 // obligations from the plan acceptance criteria.
 
 vi.mock('../McpBoard', () => ({
@@ -17,17 +17,20 @@ vi.mock('../SkillsBoard', () => ({
 vi.mock('../SchedulerBoard', () => ({
   SchedulerBoard: () => <div data-testid="scheduler-board">scheduler</div>,
 }));
+vi.mock('../../audit/AdminAuditView', () => ({
+  AdminAuditView: () => <div data-testid="audit-view">audit</div>,
+}));
 
 const { default: GovernanceWorkspace } = await import('../GovernanceWorkspace');
 
 describe('GovernanceWorkspace (boards mocked)', () => {
-  it('renders the role=tablist tab strip with the three governance tabs', async () => {
+  it('renders the role=tablist tab strip with the four governance tabs', async () => {
     render(<GovernanceWorkspace />);
 
     const tablist = screen.getByRole('tablist', { name: 'Governance' });
     expect(tablist).toBeTruthy();
     expect(tablist.getAttribute('data-slot')).toBe('tabs-list');
-    expect(tablist.className).toContain('grid-cols-3');
+    expect(tablist.className).toContain('grid-cols-4');
 
     const mcpTab = screen.getByRole('tab', { name: 'MCP servers' });
     expect(mcpTab.getAttribute('data-slot')).toBe('tabs-trigger');
@@ -38,6 +41,9 @@ describe('GovernanceWorkspace (boards mocked)', () => {
       'tabs-trigger',
     );
     expect(screen.getByRole('tab', { name: 'Scheduler' }).getAttribute('data-slot')).toBe(
+      'tabs-trigger',
+    );
+    expect(screen.getByRole('tab', { name: 'Audit' }).getAttribute('data-slot')).toBe(
       'tabs-trigger',
     );
 
@@ -77,20 +83,32 @@ describe('GovernanceWorkspace (boards mocked)', () => {
     expect(mcpTab.getAttribute('tabindex')).toBe('-1');
   });
 
+  it('opens the per-identity audit feed on its own tab', async () => {
+    render(<GovernanceWorkspace />);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Audit' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('audit-view')).toBeTruthy();
+    });
+    // The feed is a plain section, so the pane has to supply the scroller the boards own.
+    expect(screen.getByTestId('audit-view').closest('.overflow-y-auto')).not.toBeNull();
+  });
+
   it('roams tabs with the arrow keys (roving tabindex)', async () => {
     render(<GovernanceWorkspace />);
     const mcpTab = screen.getByRole('tab', { name: 'MCP servers' });
-    const schedulerTab = screen.getByRole('tab', { name: 'Scheduler' });
+    const auditTab = screen.getByRole('tab', { name: 'Audit' });
 
-    // ArrowLeft from the first tab wraps to the last (Scheduler).
+    // ArrowLeft from the first tab wraps to the last (Audit).
     fireEvent.keyDown(mcpTab, { key: 'ArrowLeft' });
     await waitFor(() => {
-      expect(screen.getByTestId('scheduler-board')).toBeTruthy();
+      expect(screen.getByTestId('audit-view')).toBeTruthy();
     });
-    expect(schedulerTab.getAttribute('aria-selected')).toBe('true');
+    expect(auditTab.getAttribute('aria-selected')).toBe('true');
 
     // ArrowRight wraps back to the first tab.
-    fireEvent.keyDown(schedulerTab, { key: 'ArrowRight' });
+    fireEvent.keyDown(auditTab, { key: 'ArrowRight' });
     await waitFor(() => {
       expect(screen.getByTestId('mcp-board')).toBeTruthy();
     });
@@ -99,14 +117,14 @@ describe('GovernanceWorkspace (boards mocked)', () => {
   it('Home selects the first tab and End selects the last', async () => {
     render(<GovernanceWorkspace />);
     const mcpTab = screen.getByRole('tab', { name: 'MCP servers' });
-    const schedulerTab = screen.getByRole('tab', { name: 'Scheduler' });
+    const auditTab = screen.getByRole('tab', { name: 'Audit' });
 
     fireEvent.keyDown(mcpTab, { key: 'End' });
     await waitFor(() => {
-      expect(schedulerTab.getAttribute('aria-selected')).toBe('true');
+      expect(auditTab.getAttribute('aria-selected')).toBe('true');
     });
 
-    fireEvent.keyDown(schedulerTab, { key: 'Home' });
+    fireEvent.keyDown(auditTab, { key: 'Home' });
     await waitFor(() => {
       expect(mcpTab.getAttribute('aria-selected')).toBe('true');
     });

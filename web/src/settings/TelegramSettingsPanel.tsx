@@ -152,7 +152,7 @@ export function TelegramSettingsPanel() {
 
   if (loadStatus === 'loading') {
     return (
-      <section className="grid min-h-28 place-items-center border-t border-border pt-6 text-sm text-text-muted">
+      <section className="grid min-h-28 place-items-center text-sm text-text-muted">
         {t('settings.telegram.loading')}
       </section>
     );
@@ -173,12 +173,9 @@ export function TelegramSettingsPanel() {
   }
 
   return (
-    <section
-      aria-labelledby="settings-telegram"
-      className="flex flex-col gap-4 border-t border-border pt-6"
-    >
+    <section aria-labelledby="settings-telegram" className="flex flex-col gap-4">
       <div className="flex flex-col gap-2">
-        <h2 id="settings-telegram" className="text-[18px] font-semibold text-text">
+        <h2 id="settings-telegram" className="text-[20px] font-semibold text-text">
           {t('settings.telegram.heading')}
         </h2>
         <p className="max-w-3xl text-[15.5px] leading-relaxed text-text-muted">

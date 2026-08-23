@@ -15,6 +15,8 @@ import type { SurfaceIntent } from './shell/modes';
 import { MODES, isAdminMode, visibleModes } from './shell/modes';
 import { useEdgeSwipe } from './shell/useEdgeSwipe';
 import { useSurfaceIntent } from './shell/useSurfaceIntent';
+import { isSettingsSectionId } from './settings/settingsSections';
+import { storeSettingsSection } from './settings/useSettingsSection';
 import { useSurfaceRestore } from './shell/useSurfaceRestore';
 import { useCapabilities } from './admin/useAdmin';
 import { fetchOnboardingStatus } from './onboarding/onboardingApi';
@@ -95,6 +97,7 @@ export function AppShell() {
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [profileOnboardingOpen, setProfileOnboardingOpen] = useState(false);
   const autoOpenedOnboarding = useRef(false);
+  const deepLinkedSettings = useRef(false);
 
   const nextRouteId = routeId ?? '';
   if (nextRouteId !== lastRouteId) {
@@ -144,6 +147,20 @@ export function AppShell() {
     closeNav();
     void navigate('/', { replace: true });
   }, [closeNav, navigate, searchParams]);
+
+  // `?settings=<section>` opens the Settings surface on one pane, then cleans the URL — the
+  // same one-shot idiom as ?onboarding=1 above. Surfaces are not routed in this shell, so the
+  // parameter hands the choice to the pane's own persisted selection rather than becoming a
+  // route; a non-admin who follows such a link is still bounced by the admin-mode guard.
+  useEffect(() => {
+    const requested = searchParams.get('settings');
+    if (!isSettingsSectionId(requested) || deepLinkedSettings.current) return;
+    deepLinkedSettings.current = true;
+    storeSettingsSection(requested);
+    setSurface('settings');
+    closeNav();
+    void navigate('/', { replace: true });
+  }, [closeNav, navigate, searchParams, setSurface]);
 
   useEffect(() => {
     let cancelled = false;
