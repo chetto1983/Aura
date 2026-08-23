@@ -41,7 +41,15 @@ SCENARIOS = (
     Scenario("mcp.initialize.valid", "mcp_contract", "positive", "./internal/mcp", "TestOpenSDKSessionStreamableHTTP"),
     Scenario("mcp.domain_error.typed", "mcp_contract", "negative", "./internal/mcp", "TestDecodeToolResultRejectsExplicitDomainFailure"),
     Scenario("mcp.timeout.bounded", "mcp_contract", "negative", "./internal/mcp", "TestOpenSDKSessionHTTPHonoursCallerDeadline"),
-    Scenario("mcp.remote_trust.blocked", "mcp_contract", "negative", "./internal/mcp", "TestMountForIdentityRemoteTrustOverrideIgnored"),
+    # Re-pointed, not dropped, for the reason stated above. The witness used to be
+    # TestMountForIdentityRemoteTrustOverrideIgnored, which asserted a per-identity
+    # overlay could not elevate a remote server's trust. That overlay was deleted for
+    # having no production caller, so the guarantee is now stronger than the old test
+    # measured: there is no per-identity elevation PATH at all. What still needs a
+    # witness is the half that remains reachable — an HTTP-shaped server must never be
+    # auto-promoted to the runnable remote_http class and must resolve to blocked,
+    # which only an explicit admin catalog entry can change. That is F-013.
+    Scenario("mcp.remote_trust.blocked", "mcp_contract", "negative", "./internal/mcp", "TestClassify_RemoteEmptyTrust"),
     Scenario("memory.cli.mapping", "memory_contract", "positive", "./cmd/aura", "TestMemoryVerbMapping"),
     Scenario("memory.cli.invalid_rejected", "memory_contract", "negative", "./cmd/aura", "TestMemoryVerbMappingNegativeCases"),
     Scenario("memory.readiness.functional", "memory_contract", "positive", "./cmd/aura", "TestMemoryReadinessCheckRunsAnIsolatedFunctionalSearch"),
