@@ -1,6 +1,6 @@
 # Aura — handoff unico
 
-**Aggiornato: 2026-08-17.** Sostituisce dodici handoff sparsi (`docs/superpowers/*-handoff.md`,
+**Aggiornato: 2026-08-23.** Sostituisce dodici handoff sparsi (`docs/superpowers/*-handoff.md`,
 `.planning/handoffs/*`, `docs/handoff-2026-08-13.md`), cancellati il 2026-08-13.
 
 **Questo documento tiene solo ciò che è APERTO.** Il lavoro chiuso viene cancellato appena è
@@ -13,12 +13,14 @@ riapra una decisione già presa.
 
 ## Stato
 
-Produzione su e sana. Misurato il 2026-08-17.
+Produzione su e sana. Git ri-misurato il 2026-08-23; il resto il 2026-08-17.
 
-- `master` è a `4f6af1093`, allineato a `origin/master`, **niente di non pushato**. Un solo
-  branch locale (`master`): i quattro ref `worktree-agent-*`, `tmp/62-reserves` e
-  `gsd/phase-45-harness-correctness` sono stati cancellati dopo aver verificato **per contenuto**
-  — non per SHA — che il loro lavoro è in master.
+- `master` è a `ef698eea2`, **allineato a `origin/master`** dopo un push di 45 commit fermi da
+  giorni (`e041b4b2d..ef698eea2`, 2026-08-23). Tutti e tre i run su quel SHA sono verdi: **CI
+  25 job su 25**, CodeQL, Skills. Un solo branch locale (`master`): i quattro ref
+  `worktree-agent-*`, `tmp/62-reserves` e `gsd/phase-45-harness-correctness` sono stati
+  cancellati dopo aver verificato **per contenuto** — non per SHA — che il loro lavoro è in
+  master.
 - Su origin restano tre branch **interamente fusi** (`ahead=0` su `origin/master`) che nessuno ha
   ancora cancellato: `gsd/phase-45-harness-correctness`, `fix/unify-credential-redaction`,
   `fix/backup-postgres-arcadedb`. Più due branch Dependabot con PR aperte (**#46** pin
@@ -51,7 +53,7 @@ si sposta.
 
 | # | Cosa | Cosa lo chiude |
 |---|---|---|
-| **3.7** | **Ri-misurata il 2026-08-22: quattro righe su cinque non descrivevano più la realtà**, e il register è stato corretto. Gli account calendario ed email SONO autorizzati, il device WhatsApp È appaiato. Restano aperte per ragioni nuove, non per le vecchie. | Non è più «sbloccare o registrare». EXT-001/002 sono ferme su un **difetto interno** (il daemon ha montato 14 nomi per-azione stantii contro un server che ora ne espone uno solo, multiplexato: ogni chiamata torna `Unknown tool`) e si chiudono quando il daemon rimonta la superficie curata. EXT-003/005 sono ferme su un'**approvazione che il gateway trattiene per progetto** (`gateway_approval_required`). Solo **EXT-004** è ancora esterna. |
+| **3.7** | **Ri-misurata il 2026-08-22: quattro righe su cinque non descrivevano più la realtà**, e il register è stato corretto. Gli account calendario ed email SONO autorizzati, il device WhatsApp È appaiato. Restano aperte per ragioni nuove, non per le vecchie. | **Il difetto interno di EXT-001/002 è risolto il 2026-08-23** (vedi §10): il daemon monta `server=calendar tools=1` e un turno reale chiude `RUN_FINISHED` con tre `calendar__calendar` riuscite. Restano aperte solo sul **loro criterio**, che non è il rimonto: EXT-001 vuole un CRUD reversibile completo, EXT-002 una ricevuta d'invio — entrambe scritture reali sull'account dell'operatore, che nessuna sessione deve fare di propria iniziativa. EXT-003/005 sono ferme su un'**approvazione che il gateway trattiene per progetto** (`gateway_approval_required`). Solo **EXT-004** è ancora esterna. |
 
 **Nota strutturale che l'analisi originale non aveva:** chiudere una riga **è** lavoro di codice.
 `release_ready` è letteralmente `not rows` (`scripts/audit_closure_gate.py:132`) e
@@ -215,16 +217,19 @@ freschi di 24h (`scripts/release_readiness_gate.py:255-264`). *Confidenza: alta.
 Ri-misurate sullo stack acceso il 2026-08-22, e il register corretto di conseguenza: il gate ora
 stampa `5 current unresolved, **1** external`, non 5.
 
-- **EXT-001 / EXT-002 — l'account non è più il problema, il daemon sì.** Il calendario ha l'account
-  Google `davide` **abilitato**, e l'email **legge davvero** (`Retrieved 30 emails from Google
-  account davide`, 12:36). Ma il daemon ha montato `server=calendar tools=14` alle 12:50, poi il PIM
-  MCP è stato sostituito col **fork curato che espone UN solo tool multiplexato** (`calendar`, con
-  l'operazione nell'argomento `action`), e il daemon non ha mai rimontato. Risultato: offre 14 nomi
-  per-azione stantii, inoltra l'azione de-prefissata a un server che non ce l'ha, e ogni chiamata
-  torna `error: calling "tools/call": Unknown tool: 'list_accounts'`. **Due run reali dell'agente
-  sono finite in `RUN_ERROR` con zero chiamate riuscite.** Il supporto Aura alla superficie curata è
-  **in volo**: `internal/agent/mcptools/bridge_multiplex.go`, non committato, misura lo stesso fork
-  che advertisce un solo tool.
+- **EXT-001 / EXT-002 — il difetto interno è chiuso; restano i loro criteri.** Il blocco descritto
+  qui il 2026-08-22 (daemon fermo su 14 nomi per-azione stantii contro un server che ne espone uno
+  solo, ogni chiamata `Unknown tool`) **non esiste più dal 2026-08-23**. Il supporto Aura è
+  committato (`bridge_multiplex.go` in `2edbc3910`, azioni tierate in `b01413620`, pin finito in
+  `8cc2aeed2`) e il daemon è stato rimontato con `up -d` — mai `restart` (§8) — alla ricreazione
+  del container: `mcp mounted server=calendar tools=1`, 12:47:45. **Provato con un turno reale**,
+  non dedotto dal log: `RUN_FINISHED`, **tre chiamate `calendar__calendar` riuscite, zero
+  `Unknown tool`**, e l'agente ha riportato i due account configurati (Google `davide`
+  read/write; Fixture JSON read-only) e l'unico evento di domani.
+  **Perché restano aperte:** il criterio di EXT-001 è un CRUD **reversibile** completo attraverso
+  l'agente vivo, quello di EXT-002 una ricevuta di **invio** email. Sono scritture sull'account
+  reale dell'operatore: la gamba di lettura è provata, quella di scrittura richiede il suo via
+  libera esplicito. Non è più un difetto, è un'autorizzazione.
 - **EXT-003 — il device è appaiato, il piano tool funziona, e la catena HITL è provata intera.**
   Il bridge porta traffico vero e dodici chiamate `whatsapp__*` sono andate a buon fine in un turno
   `RUN_FINISHED`. L'invio è **trattenuto dal ToolGateway** (`gateway_approval_required`), il
@@ -294,7 +299,8 @@ il marker in chat). Aperti solo questi:
 - *Una soglia sotto la quota di overhead disattiva la compaction in silenzio.*
   `earlyCompactionTokens` = `finestra × pct/100 − overhead manifest`, e restituisce 0 (= spenta)
   quando è ≤ 0. Su questo deployment l'overhead è ~19k, quindi qualunque percentuale sotto ~24%
-  spegne tutto senza un warning — e la manopola è esposta all'operatore in Settings. Va clampata,
+  spegne tutto senza un warning — e la manopola è esposta all'operatore in Impostazioni, sul
+  pannello «Budget token» del rail (`web/src/settings/`). Va clampata,
   o rifiutata dicendo qual è il minimo utile su questa finestra.
 - *La soglia conta i token della STORIA, non quelli della richiesta.* System prompt e manifest
   dei tool (~19k qui) non entrano nel conteggio: con finestra 81.920 e soglia 30% la compaction
@@ -395,6 +401,20 @@ catalogo. *Confidenza: alta.*
   diagnostica dal lato WSL (`wsl -e bash -lc "head -1 file | od -c"`) e si ripara dal blob
   committato, perche' `.gitattributes` dice gia' `*.sh text eol=lf` e `git checkout --` non
   aiuta se a sporcarlo e' stato un editor.
+- **Il pre-push legge l'ALBERO DI LAVORO, la CI legge il COMMIT.** Costo misurato il
+  2026-08-23: **cinque job rossi** su un push i cui hook erano tutti verdi. La correzione prettier
+  di due file stava sul disco ma non nel commit, quindi il gate `web` la vedeva e
+  `npm run format:check` in CI no. Su un checkout condiviso (§Stato) questo scarto è la norma:
+  prima di pushare, confronta ciò che hai committato con ciò che gira, non con ciò che vedi.
+  Corollario dello stesso giorno: un'assertion può restare indietro rispetto a due file che
+  concordano — `container_artifacts_test.go` pinnava `whatsapp-mcp:sha-e0b8345` mentre
+  `compose.yaml` e `ci.yml` erano già su `sha-9911eb8`, e da sola faceva fallire tre job.
+- **Il dist embeddato va costruito da un worktree PULITO, non dall'albero di lavoro.**
+  `web-dist-freshness` ricostruisce dai sorgenti **committati** e pretende byte identici: un dist
+  costruito sopra le modifiche non committate di un'altra sessione non può corrispondere.
+  Committa i sorgenti, `git worktree add --detach <tmp> <sha>`, costruisci lì, copia indietro.
+  E per non Linux-corrompere `web/node_modules` dell'host, monta un volume anonimo sopra:
+  `docker run -v "$PWD:/repo" -v /repo/web/node_modules -w /repo/web node:24 …`.
 - **Un test che asserisce un letterale si rompe in package che non hai toccato.** Il cambio di
   segnaposto della redazione ha rotto sei asserzioni in quattro package: cercare il letterale su
   tutto l'albero, non solo dove hai modificato.
@@ -470,7 +490,7 @@ catalogo. *Confidenza: alta.*
 | Iniettare il summary «identical shape to `injectAlwaysBlock`» (piano 1b §6) | Sbagliato: sloggerebbe l'always-block da `messages[1]` cambiando il prefisso cachato. Derivato invece da `splitHeadHistoryActive`, **dopo** `injectAlwaysBlock` |
 | `aura.documents` e le nove tabelle sorelle | Migration `0098` |
 | **1.1** — il floor di coverage per-package che il gate non applica | `CLAUDE.md` corretto: il gate confronta **un solo aggregato** (`scripts/coverage_gate.sh:86-107`), e ora la regola lo dice. Il ciclo per package NON è stato implementato perché sotto il solo tag `db_integration` boccerebbe package la cui coverage vera vive in un altro tier (`internal/arcadedb`: 92,81% sotto `arcadedb_integration`) |
-| **3.7 / EXT-001-002** — riavviare il daemon per rimontare la superficie calendario | **Deciso di NO, per ora.** Il fix Aura-side sta atterrando nella fase 46 (`7f28c5a51 fix(mcp): restore mail management to the curated calendar surface`): riavviare adesso rimonterebbe la stessa superficie curata contro un binario che non la supporta ancora, e interromperebbe una sessione a metà lavoro senza chiudere niente. Il rimonto è il passo di chiusura **dopo** che quel lavoro è costruito — e va fatto con `up -d`, mai `restart` (§8) |
+| **3.7 / EXT-001-002** — riavviare il daemon per rimontare la superficie calendario | **FATTO il 2026-08-23**, alla condizione che era stata posta: il lavoro fase 46 è costruito e in master (`2edbc3910`, `b01413620`, `8cc2aeed2`). Rimonto con `up -d` come prescritto: `mcp mounted server=calendar tools=1`. Provato da un turno reale — `RUN_FINISHED`, tre `calendar__calendar` riuscite, zero `Unknown tool` — non dedotto dal log di mount. Le due righe restano aperte sui loro criteri di scrittura, non più su questo difetto |
 | **3.7 / EXT-003** — approvare io la pending al posto dell'operatore | **Deciso di NO.** È esattamente il controllo che ha funzionato: `approve.go:148-150` lega `ApproveChallenge` alla challenge **e** a una domanda visibile all'operatore, *"the informed-consent binding a benign relayed question cannot satisfy (CR-01)"*. Hermes fa lo stesso in modo ancora più netto — l'utente risolve fuori banda con `/approve`/`/deny <reason>` e scope `once\|session\|always`. Auto-approvare svuoterebbe la sola cosa che in tutta EXT-003 ha funzionato al primo colpo |
 | **6.4** — le licenze dei due corpora di eval | **ADR 0045**: `open_ragbench` (CC-BY-NC-4.0) e `snap-research/locomo` (NOASSERTION) **declinati entrambi**. Nessuna pipeline può scaricarli; le misure che li aspettavano sono ridefinite, non cancellate |
 
