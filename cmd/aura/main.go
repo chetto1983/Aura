@@ -8,6 +8,7 @@
 //	aura tools              — print the tool manifest (active + deferred)
 //	aura db <sub>           — Postgres lifecycle (migrate|ping|status|reset)
 //	aura identity <sub>     — identity + capability_grants (list|get|grant|revoke)
+//	aura gateway grants     — durable "always approve" gateway grants (list|revoke)
 //	aura profile <sub>      — filesystem Agent.md profile (show|add-fact)
 //	aura paused-states <sub>— HITL pause escape hatch (list|purge --before <ISO> --confirm)
 //	aura chat <sub>         — multi-thread conversation REPL (list|new|resume|archive|unarchive|delete|rename|search)
@@ -85,6 +86,8 @@ func main() {
 		runDocs(os.Args[2:])
 	case "identity":
 		runIdentity(os.Args[2:])
+	case "gateway":
+		runGateway(os.Args[2:])
 	case "paused-states":
 		runPausedStates(os.Args[2:])
 	case "task":
@@ -148,7 +151,7 @@ func runMCPDispatch(args []string) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|doctor|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|task <sub>|retention <plan|apply>|skills <sub>|pack <list|show>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|objectstore <sub>|docs <sub>|version}")
+	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|doctor|chat <sub>|config <sub>|identity <sub>|gateway grants <sub>|paused-states <sub>|task <sub>|retention <plan|apply>|skills <sub>|pack <list|show|install|trust>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|objectstore <sub>|docs <sub>|version}")
 }
 
 // buildRegistry is the pool-free, box-free registry the manifest/fixture verbs use. The nil

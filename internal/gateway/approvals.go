@@ -39,6 +39,13 @@ type GatewayApprovals struct {
 	mu       sync.Mutex
 	approved map[string]ResolvedApproval
 	pending  map[string]gatewayChallenge
+	// sessions holds the ScopeSession grants (amendment #127), keyed on conversation +
+	// grant SUBJECT (tool + multiplexed action) rather than on an args fingerprint: a
+	// session grant is "this verb, for the rest of this conversation", so it must survive
+	// the argument change that ends a one-shot approval. It sits beside approved rather
+	// than inside it because the two answer different questions and are consumed
+	// differently — approved is deleted on read, a session grant is not.
+	sessions map[string]ResolvedApproval
 }
 
 // gatewayChallenge is the server-side record of an issued approval-required result: the
@@ -47,6 +54,10 @@ type GatewayApprovals struct {
 // (the gateway pre-computes the args fingerprint, so the ledger key already carries it).
 type gatewayChallenge struct {
 	question string
+	// subject is the tool+action the operator's scope choice will be keyed on. It is
+	// recorded at issue time, from the same arguments the question summarized, so the
+	// resume hook resolves the answer against the subject the operator actually saw.
+	subject grantSubject
 }
 
 // NewGatewayApprovals builds an empty ledger with both maps initialized.
@@ -54,6 +65,7 @@ func NewGatewayApprovals() *GatewayApprovals {
 	return &GatewayApprovals{
 		approved: map[string]ResolvedApproval{},
 		pending:  map[string]gatewayChallenge{},
+		sessions: map[string]ResolvedApproval{},
 	}
 }
 
@@ -111,7 +123,7 @@ func (a *GatewayApprovals) Consume(convID, toolName, argsFingerprint string) (Re
 // resume hook later calls ApproveChallenge, which records the operator's approval ONLY IF
 // this challenge exists AND the operator-visible question matches it. An empty coordinate
 // is a no-op (guard parity with Approve); nil-receiver-safe; guarded by a.mu.
-func (a *GatewayApprovals) Challenge(convID, toolName, argsFingerprint, question string) {
+func (a *GatewayApprovals) Challenge(convID, toolName, argsFingerprint, question string, subject grantSubject) {
 	if a == nil || convID == "" || toolName == "" || argsFingerprint == "" {
 		return
 	}
@@ -120,7 +132,10 @@ func (a *GatewayApprovals) Challenge(convID, toolName, argsFingerprint, question
 	if a.pending == nil {
 		a.pending = map[string]gatewayChallenge{}
 	}
-	a.pending[gatewayApprovalKey(convID, toolName, argsFingerprint)] = gatewayChallenge{question: question}
+	a.pending[gatewayApprovalKey(convID, toolName, argsFingerprint)] = gatewayChallenge{
+		question: question,
+		subject:  subject,
+	}
 }
 
 // ApproveChallenge records the operator's ResolvedApproval for (convID, toolName,
@@ -129,28 +144,67 @@ func (a *GatewayApprovals) Challenge(convID, toolName, argsFingerprint, question
 // byte-for-byte analog of ShellApprovals.ApproveChallenge (existence check + question
 // match), storing a ResolvedApproval instead of a bare marker. A missing challenge or a
 // mismatched question records NOTHING and returns a typed error (fail-closed: a
-// confused-deputy relay of a benign/false question can never move pending→approved). On
-// success it writes the approval and deletes the pending challenge. Nil-receiver-safe.
-func (a *GatewayApprovals) ApproveChallenge(convID, toolName, argsFingerprint, question string, r ResolvedApproval) error {
+// confused-deputy relay of a benign/false question can never move pending→approved).
+//
+// answer is what the operator actually chose. It is resolved against the label table of the
+// subject THIS challenge recorded (amendment #127), so the scope honoured is the one printed
+// on the button they pressed; an empty or unrecognised answer is ScopeOnce. On success it
+// always writes the one-shot approval (the immediate re-drive consumes it whatever the
+// scope), additionally records a ScopeSession grant in place, reports the resolved scope and
+// subject so the caller can persist a ScopeAlways grant durably, and deletes the pending
+// challenge. Nil-receiver-safe.
+func (a *GatewayApprovals) ApproveChallenge(
+	convID, toolName, argsFingerprint, question, answer string, r ResolvedApproval,
+) (ApprovalScope, grantSubject, error) {
 	if a == nil || convID == "" || toolName == "" || argsFingerprint == "" {
-		return fmt.Errorf("gateway approval challenge %q not found", argsFingerprint)
+		return ScopeOnce, grantSubject{}, fmt.Errorf("gateway approval challenge %q not found", argsFingerprint)
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	key := gatewayApprovalKey(convID, toolName, argsFingerprint)
 	ch, ok := a.pending[key]
 	if !ok {
-		return fmt.Errorf("gateway approval challenge %q not found", argsFingerprint)
+		return ScopeOnce, grantSubject{}, fmt.Errorf("gateway approval challenge %q not found", argsFingerprint)
 	}
 	if question != ch.question {
-		return fmt.Errorf("gateway approval challenge %q question mismatch", argsFingerprint)
+		return ScopeOnce, grantSubject{}, fmt.Errorf("gateway approval challenge %q question mismatch", argsFingerprint)
 	}
 	if a.approved == nil {
 		a.approved = map[string]ResolvedApproval{}
 	}
 	a.approved[key] = r
 	delete(a.pending, key)
-	return nil
+	return scopeForAnswer(ch.subject, answer), ch.subject, nil
+}
+
+// GrantSession records a ScopeSession grant for (convID, subject) in place. It is separate
+// from ApproveChallenge because the Gateway calls it on TWO paths: an operator who chose
+// "for this conversation", and an operator who chose "always" on a deployment that cannot
+// persist one. Nil-receiver-safe.
+func (a *GatewayApprovals) GrantSession(convID string, subject grantSubject, r ResolvedApproval) {
+	if a == nil || convID == "" || subject.Tool == "" {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.sessions == nil {
+		a.sessions = map[string]ResolvedApproval{}
+	}
+	a.sessions[gatewaySessionKey(convID, subject)] = r
+}
+
+// SessionGrant reports the operator's ScopeSession grant for (convID, subject), if one is
+// live. routeApprove consults it BEFORE issuing a challenge, so a granted verb runs for the
+// rest of the conversation without re-asking — and, unlike Consume, reading it does not
+// spend it. Nil-receiver-safe.
+func (a *GatewayApprovals) SessionGrant(convID string, subject grantSubject) (ResolvedApproval, bool) {
+	if a == nil || convID == "" || subject.Tool == "" {
+		return ResolvedApproval{}, false
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	r, ok := a.sessions[gatewaySessionKey(convID, subject)]
+	return r, ok
 }
 
 // Evict drops every approval AND every pending challenge under a conversation prefix
@@ -174,6 +228,13 @@ func (a *GatewayApprovals) Evict(convID string) {
 			delete(a.pending, k)
 		}
 	}
+	// A session grant is scoped to the conversation by definition, so eviction is not
+	// hygiene here the way it is for the other two maps — it is the grant's expiry.
+	for k := range a.sessions {
+		if strings.HasPrefix(k, prefix) {
+			delete(a.sessions, k)
+		}
+	}
 }
 
 // gatewayApprovalKey binds the ledger entry to conversation_id + tool + canonical-args
@@ -190,6 +251,14 @@ func gatewayApprovalKey(convID, toolName, argsFingerprint string) string {
 // about where one coordinate ends and the fingerprint begins.
 func gatewayApprovalKeyPrefix(convID, toolName string) string {
 	return convID + "\x00" + toolName + "\x00"
+}
+
+// gatewaySessionKey binds a ScopeSession grant to conversation + tool + multiplexed action.
+// It shares gatewayApprovalKey's convID-prefix idiom so Evict's one prefix scan reaches
+// every map, and deliberately does NOT carry an args fingerprint: the grant is on the verb,
+// not on one particular set of arguments.
+func gatewaySessionKey(convID string, subject grantSubject) string {
+	return gatewayApprovalKeyPrefix(convID, subject.Tool) + subject.Action
 }
 
 // PendingCountForTool reports how many pending challenges exist for (convID,

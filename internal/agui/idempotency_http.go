@@ -61,6 +61,7 @@ var httpMutationRoutes = map[string]mutationRouteMeta{
 	"POST /api/admin/identities/{id}/capabilities":                httpMutationMeta("capability_grant"),
 	"DELETE /api/admin/identities/{id}/capabilities/{capability}": httpMutationMeta("capability_revoke"),
 	"POST /api/approvals/{token}/resolve":                         httpMutationMeta("approval_resolve"),
+	"POST /api/approvals/grants/revoke":                           httpMutationMeta("approval_grant_revoke"),
 	"POST /api/assets/presign":                                    httpMutationMeta("asset_presign"),
 	"POST /api/assets/{id}/finalize":                              httpMutationMeta("asset_finalize"),
 	"POST /api/assets/{id}/promote":                               httpMutationMeta("asset_promote"),

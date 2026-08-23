@@ -94,6 +94,15 @@ func (h *hitl) prompt(ctx context.Context, bot botSender, chatID int64, convID s
 	to := tele.ChatID(chatID)
 	switch p.Kind {
 	case "approval":
+		// An approval that carries options is one the gateway attached approval SCOPES to
+		// (amendment #127): the operator picks how long their yes lasts, not merely whether
+		// it is a yes. Without this branch the fixed Sì/No keyboard answered with an empty
+		// content, which the gateway resolves to the narrowest scope — correct, but it
+		// silently withheld a choice the operator had been offered. A bare approval keeps
+		// the fixed keyboard.
+		if len(decodeOptions(p.Options)) > 0 {
+			return h.send(bot, to, p.Question, approvalScopeMarkup(p.Token, p.Options))
+		}
 		return h.send(bot, to, p.Question, approvalMarkup(p.Token))
 	case "choice":
 		return h.send(bot, to, p.Question, choiceMarkup(p.Token, p.Options))
@@ -280,6 +289,29 @@ func approvalPushMarkup(token string) *tele.ReplyMarkup {
 		approvalDecisionRow(token),
 		{{Unique: callbackUnique, Text: "Dettagli", Data: callbackData(token, actionDetails, "")}},
 	}
+	return mk
+}
+
+// approvalScopeMarkup is the keyboard for an approval that carries options: one button per
+// option (same INDEX-not-value callback encoding as choiceMarkup — Telegram caps callback_data
+// at 64 bytes and a scope label is long), then a Rifiuta button so declining stays one tap
+// away. It deliberately does NOT reuse approvalDecisionRow: that row's generic "Approva" would
+// be a FOURTH accept beside three that each say how long they last, and the one that says
+// least would be the easiest to press.
+func approvalScopeMarkup(token string, raw json.RawMessage) *tele.ReplyMarkup {
+	opts := decodeOptions(raw)
+	mk := &tele.ReplyMarkup{}
+	rows := make([][]tele.InlineButton, 0, len(opts)+1)
+	for i, o := range opts {
+		rows = append(rows, []tele.InlineButton{{
+			Unique: callbackUnique,
+			Text:   o.Label,
+			Data:   callbackData(token, askuser.ActionAccept, strconv.Itoa(i)),
+		}})
+	}
+	mk.InlineKeyboard = append(rows, []tele.InlineButton{{
+		Unique: callbackUnique, Text: "Rifiuta", Data: callbackData(token, askuser.ActionDecline, ""),
+	}})
 	return mk
 }
 

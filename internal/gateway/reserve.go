@@ -235,18 +235,21 @@ func boundedString(value string, limit int) string {
 //
 // operatorID is "" for the auto-allow origin and set for the approved-resume origin; it is
 // folded into the single start Meta so both origins produce the SAME single start∧¬end shape.
-func (g *Gateway) reserve(ctx context.Context, spec tools.Spec, rawArgs json.RawMessage, key ReservationKey, tier scoring.RiskTier, operatorID string) (Verdict, error) {
+func (g *Gateway) reserve(
+	ctx context.Context, spec tools.Spec, rawArgs json.RawMessage, key ReservationKey,
+	tier scoring.RiskTier, operatorID string, scope ApprovalScope,
+) (Verdict, error) {
 	if g.store == nil {
 		// A strict Gateway constructed without a ledger (standalone/tests): allow without
 		// a reservation. The dev/local_trusted no-op already short-circuits before here.
-		return Verdict{Decision: Allow, Tier: tier, OperatorID: operatorID}, nil
+		return Verdict{Decision: Allow, Tier: tier, OperatorID: operatorID, Scope: scope}, nil
 	}
-	acquired, replay, err := g.store.Reserve(ctx, g.reservationStart(spec, rawArgs, key, tier, operatorID))
+	acquired, replay, err := g.store.Reserve(ctx, g.reservationStart(spec, rawArgs, key, tier, operatorID, scope))
 	if err != nil {
 		return Verdict{Decision: Deny, Tier: tier, Reason: "reservation failed"}, nil
 	}
 	if acquired {
-		return Verdict{Decision: Allow, Tier: tier, OperatorID: operatorID}, nil
+		return Verdict{Decision: Allow, Tier: tier, OperatorID: operatorID, Scope: scope}, nil
 	}
 	if replay == nil {
 		// The slot is held by a prior dispatch that never recorded an end — crashed, or a
@@ -264,13 +267,16 @@ func (g *Gateway) reserve(ctx context.Context, spec tools.Spec, rawArgs json.Raw
 		}, nil
 	}
 	res := replayResult(replay)
-	return Verdict{Decision: Allow, Tier: tier, OperatorID: operatorID, Replay: &res}, nil
+	return Verdict{Decision: Allow, Tier: tier, OperatorID: operatorID, Scope: scope, Replay: &res}, nil
 }
 
 // reservationStart builds the append-only `start` Event for the reservation. The verdict
 // rides Meta (D-01 zero-migration); RedactForLedger runs for free inside the store's
 // toParams, so any secret on the tool command line is redacted before the durable column.
-func (g *Gateway) reservationStart(spec tools.Spec, rawArgs json.RawMessage, key ReservationKey, tier scoring.RiskTier, operatorID string) toolinvocations.Event {
+func (g *Gateway) reservationStart(
+	spec tools.Spec, rawArgs json.RawMessage, key ReservationKey,
+	tier scoring.RiskTier, operatorID string, scope ApprovalScope,
+) toolinvocations.Event {
 	meta := map[string]any{
 		"gateway_verdict": string(Allow),
 		"gateway_tier":    string(tier),
@@ -281,6 +287,12 @@ func (g *Gateway) reservationStart(spec tools.Spec, rawArgs json.RawMessage, key
 		// reservation start's Meta — the approve branch writes NO competing row.
 		meta["operator_id"] = operatorID
 		meta["approved"] = true
+	}
+	if scope != "" {
+		// A standing grant let this destructive call through without asking (amendment
+		// #127). Recording WHICH grant is the whole point: an audit that shows an
+		// unprompted destructive execution and cannot say why is worse than no record.
+		meta["approval_scope"] = string(scope)
 	}
 	return toolinvocations.Event{
 		ConversationID: key.ConversationID,

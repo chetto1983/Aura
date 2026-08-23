@@ -153,17 +153,17 @@ export function InlineApprovalCard({
         <div className="flex flex-wrap gap-2">
           {options.map((option) => (
             <Button
-              key={option}
+              key={option.label}
               type="button"
               variant="outline"
               size="sm"
               disabled={busy}
               onClick={() => {
-                submit('accept', option);
+                submit('accept', option.value);
               }}
               className="text-[0.8125rem] hover:border-accent"
             >
-              {option}
+              {option.label}
             </Button>
           ))}
         </div>

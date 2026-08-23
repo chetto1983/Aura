@@ -14,13 +14,30 @@ export function isTerminal(approval: Pick<Approval, 'terminal'>): boolean {
   return approval.terminal === true;
 }
 
+/** One rendered choice: the label the operator reads, the value the server records. */
+export interface ApprovalOption {
+  readonly label: string;
+  readonly value: string;
+}
+
 /**
- * Parse the raw JSON option set into a string[] the inline card can render as
- * buttons. The server projects `options` as raw JSON (string[] | null | object);
- * anything that is not a clean array of strings yields [] so the card falls back to
- * the free-text path (defensive — an unexpected shape never throws).
+ * Parse the raw JSON option set into the choices the inline card renders as buttons.
+ *
+ * The server persists `paused_states.options` from agent.PauseOption, which marshals as
+ * `[{label, value}]` — NOT as a string array. This function used to accept only strings, so
+ * every options pause silently fell through to the free-text box and no option button had
+ * ever rendered. Both shapes are accepted now: a bare string is its own label and value (the
+ * shape ask_user's schema also accepts), an object needs a non-empty label and falls back to
+ * the label when the value is missing. Anything else is dropped rather than thrown, so an
+ * unexpected payload still degrades to free text instead of blanking the card.
  */
-export function parseOptions(options: unknown): string[] {
+export function parseOptions(options: unknown): ApprovalOption[] {
   if (!Array.isArray(options)) return [];
-  return options.filter((o): o is string => typeof o === 'string');
+  return options.flatMap((o): ApprovalOption[] => {
+    if (typeof o === 'string') return o === '' ? [] : [{ label: o, value: o }];
+    if (o === null || typeof o !== 'object') return [];
+    const { label, value } = o as { label?: unknown; value?: unknown };
+    if (typeof label !== 'string' || label === '') return [];
+    return [{ label, value: typeof value === 'string' && value !== '' ? value : label }];
+  });
 }
