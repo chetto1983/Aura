@@ -131,9 +131,7 @@ export function McpViewFrame({ descriptor }: McpViewFrameProps) {
       // and a server answering with a plain string sets only the text.
       return {
         structuredContent: body.structured_content ?? null,
-        content: body.text_content
-          ? [{ type: 'text' as const, text: body.text_content }]
-          : [],
+        content: body.text_content ? [{ type: 'text' as const, text: body.text_content }] : [],
       };
     },
     [descriptor.server, t],

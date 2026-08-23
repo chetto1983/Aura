@@ -149,9 +149,7 @@ export function createHostBridge(opts: HostBridgeOptions): HostBridge {
     // Sending only the latter silently starved every server that answers in text.
     notify('ui/notifications/tool-result', {
       structuredContent: descriptor.structured_content ?? null,
-      content: descriptor.text_content
-        ? [{ type: 'text', text: descriptor.text_content }]
-        : [],
+      content: descriptor.text_content ? [{ type: 'text', text: descriptor.text_content }] : [],
     });
   };
 
