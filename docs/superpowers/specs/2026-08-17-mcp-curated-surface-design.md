@@ -169,8 +169,42 @@ Apps views, so there is no views question on this side — all 14 actions merge 
 | `mark_email_read` | mutate | `accountId`, `emailId`, `isRead` | mark a message read or unread |
 | `delete_email` | destructive | `accountId`, `emailId` | delete a message — Google trashes it, Microsoft deletes outright |
 | `move_email` | destructive | `accountId`, `emailId`, `destination` | move a message to another folder or label |
+| `delete_event` | destructive | `eventId` | delete a calendar event |
+| `create_contact` | mutate | `displayName` | create a contact |
+| `update_contact` | mutate | `accountId`, `contactId` | update a contact |
+| `delete_contact` | destructive | `accountId`, `contactId` | delete a contact |
+| `get_email_attachment` | read | `accountId`, `emailId`, `attachmentId` | fetch one attachment (`stash` or `inline`) |
+| `get_contextual_email_summary` | read | — | cluster recent mail into topics |
+| `get_guide` | read | — | read an in-depth topical guide; omit `name` for the index |
+| `get_unsubscribe_info` | read | `accountId`, `emailId` | report how a mailing can be unsubscribed from |
+| `unsubscribe_from_email` | destructive | `accountId`, `emailId` | act on that unsubscribe |
+| `bulk_delete_emails` | destructive | `items` | delete several messages |
+| `bulk_mark_emails_read` | mutate | `items`, `isRead` | mark several messages read or unread |
+| `bulk_move_emails` | destructive | `items`, `destination` | move several messages |
 
-Classes: 10 read, 3 mutate (`create_event`, `update_event`, `mark_email_read`), 4 destructive
+**Amended 2026-08-23 — the surface is now upstream-complete: 29 actions, not 17.**
+Upstream registers **29** tools. The first curation round folded 14 of them into this tool and
+deleted the classes it took them from; **twelve were never folded**, and because `Program.cs`
+registers only `WithCalendarActionTool()` they stayed in the tree implemented, tested and
+callable by nobody. The gap was not a rounding difference. `create_event` and `update_event`
+were curated while `delete_event` was not, so an agent could put an event on a calendar and
+never take it off — measured, not theorised: a write test on 2026-08-23 stranded a real event
+on the operator's Google calendar and the tool had no way to remove it. Separately, the
+server's own `ServerInstructions` told callers to invoke `get_guide`, an action the enum did
+not contain, so every caller that obeyed the instructions got `Unknown action`.
+
+The twelve forward to their existing implementation classes rather than copying the bodies
+into the facade, so each remains defined once. Measured on the rebuilt sidecar, the 29-action
+surface costs **3,393 bytes of description against Aura's 4,096 cap** (`bridge.go:27`), a
+**10,117-byte schema against 16,384**, and **47 properties against 128**. Note the budget the
+previous round sized against was wrong by half: `2048` is `maxMCPErrorPreviewBytes`, an
+unrelated constant, not the description cap.
+
+Classes across all 29: **14 read, 6 mutate, 9 destructive**. `bulk_move_emails` inherits
+`move_email`'s reasoning verbatim; `unsubscribe_from_email` is destructive because it makes an
+outward request to a third party on the operator's behalf and nothing takes it back.
+
+Classes across the original 17: 10 read, 3 mutate (`create_event`, `update_event`, `mark_email_read`), 4 destructive
 (`respond_to_event`, `send_email`, `delete_email`, `move_email`) — the first 14 rows were read
 directly off `bridge_risk.go`'s live `trustedRecipeActions[calendarRecipeSource]` table on
 2026-08-22 and reproduced **unchanged**; the merge re-registers those 14 actions, it does not

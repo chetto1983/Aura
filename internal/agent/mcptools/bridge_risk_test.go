@@ -423,6 +423,22 @@ func TestMCPToolRiskRecipeTablesUnchanged(t *testing.T) {
 			// move_email is destructive because 'trash' is a valid destination —
 			// a cheaper tier here would be a bypass of delete_email's gate.
 			"move_email": {true, true},
+			// The twelve unreachable actions, exposed 2026-08-23. bulk_move_emails
+			// inherits move_email's reasoning verbatim; unsubscribe_from_email is
+			// destructive because it makes an outward request to a third party on the
+			// operator's behalf and nothing takes it back.
+			"get_guide":                    {false, false},
+			"get_unsubscribe_info":         {false, false},
+			"get_email_attachment":         {false, false},
+			"get_contextual_email_summary": {false, false},
+			"create_contact":               {true, false},
+			"update_contact":               {true, false},
+			"bulk_mark_emails_read":        {true, false},
+			"delete_event":                 {true, true},
+			"delete_contact":               {true, true},
+			"bulk_delete_emails":           {true, true},
+			"bulk_move_emails":             {true, true},
+			"unsubscribe_from_email":       {true, true},
 		},
 		whatsAppRecipeSource: {
 			"list_chats":                 {false, false},
@@ -533,6 +549,17 @@ var calendarDesignDocActions = []string{
 	// provider layer always had these three; only 14 of its 21 operations were
 	// ever registered as tools, so they were implemented and unreachable.
 	"mark_email_read", "delete_email", "move_email",
+	// Amended 2026-08-23: the twelve actions the first curation round left
+	// unreachable. Upstream registers 29 tools; the curated enum published 17, and
+	// the difference was not cosmetic — delete_event was absent while create_event
+	// and update_event were present, so an agent could add an event to a calendar
+	// and never remove it (proven live: a write test stranded a real event), and
+	// the server's own ServerInstructions pointed callers at get_guide, which the
+	// enum did not contain.
+	"delete_event", "create_contact", "update_contact", "delete_contact",
+	"get_email_attachment", "get_contextual_email_summary", "get_guide",
+	"get_unsubscribe_info", "unsubscribe_from_email",
+	"bulk_delete_emails", "bulk_mark_emails_read", "bulk_move_emails",
 }
 
 // TestTrustedRecipeCalendarActionsMatchDesignDoc pins D-21's re-key: calendar's

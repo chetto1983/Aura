@@ -70,6 +70,29 @@ var trustedRecipeActions = map[string]map[string]MCPActionClass{
 		// gate decorative. Same reasoning as escalate-only — the tier follows the
 		// worst reachable outcome, not the usual one.
 		"move_email": MCPActionDestructive,
+
+		// The twelve the fork's first curation round left unreachable. Upstream
+		// serves 29 tools; the curated enum published 17, and the difference was
+		// not cosmetic -- delete_event was missing while create_event and
+		// update_event were present, so an agent could create an event and never
+		// remove it. Tiered here on the same escalate-only rule as their siblings.
+		"get_guide":                    MCPActionRead,
+		"get_unsubscribe_info":         MCPActionRead,
+		"get_email_attachment":         MCPActionRead,
+		"get_contextual_email_summary": MCPActionRead,
+		"create_contact":               MCPActionMutate,
+		"update_contact":               MCPActionMutate,
+		"bulk_mark_emails_read":        MCPActionMutate,
+		"delete_event":                 MCPActionDestructive,
+		"delete_contact":               MCPActionDestructive,
+		"bulk_delete_emails":           MCPActionDestructive,
+		// bulk_move_emails inherits move_email's reasoning exactly: 'trash' is an
+		// accepted destination, so tiering it Mutate would route around
+		// bulk_delete_emails' gate. unsubscribe_from_email is Destructive because it
+		// makes an outward request to a third party on the operator's behalf, and no
+		// second call takes it back.
+		"bulk_move_emails":       MCPActionDestructive,
+		"unsubscribe_from_email": MCPActionDestructive,
 	},
 	whatsAppRecipeSource: {
 		"list_chats":                 MCPActionRead,
