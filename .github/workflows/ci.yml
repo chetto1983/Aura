@@ -1104,10 +1104,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15  # guards against a hung image pull
     # Phase 3 (aura-pim-mcp fork). Brings up the published PIM sidecar (forked
-    # calendar-mcp → ghcr.io/chetto1983/aura-pim-mcp) with ZERO connected accounts and
+    # calendar-mcp → ghcr.io/chetto1983/aura-pim-mcp), seeds a no-OAuth fixture calendar, and
     # runs the calendar_integration tier against the LIVE container: streamable-HTTP
-    # initialize + the ONE curated `calendar` tool (14 actions, 46-05/46-06) + a clean
-    # list_accounts. No OAuth/secrets needed — the empty-config container speaks MCP.
+    # initialize + the ONE curated `calendar` tool (17 actions, 46-05/46-06) + a clean
+    # list_accounts, plus the MCP-05 opaque-reference round-trip against a seeded
+    # `json`-provider fixture calendar. No OAuth/secrets needed anywhere in this job.
     # NO-SKIP-AS-GREEN: AURA_PIM_MCP_URL is exported so the tier RUNS; the test
     # t.Fatals under $CI when it is unset (a skipped tier fails the gate — CLAUDE.md).
     env:
@@ -1160,6 +1161,29 @@ jobs:
             docker logs aura-pim-mcp --tail 80 || true
             exit 1
           fi
+
+      - name: Seed a no-OAuth fixture calendar (arms the MCP-05 round-trip)
+        # Without this the sidecar has zero events, get_calendar_events returns no
+        # opaque eventId, and the tier degrades to proving only the SCHEMA half of
+        # MCP-05 while still reporting PASS -- a skip wearing a green hat, which is
+        # exactly what CLAUDE.md's no-skip-as-green rule exists to stop.
+        # The `json` provider needs no OAuth and no network: it reads a local file,
+        # so CI gets the same round-trip coverage a connected account would give.
+        run: |
+          wait_healthy() {
+            for i in $(seq 1 30); do
+              status="$(docker inspect -f '{{.State.Health.Status}}' aura-pim-mcp 2>/dev/null || echo starting)"
+              [ "$status" = "healthy" ] && return 0
+              sleep 5
+            done
+            echo "aura-pim-mcp did not become healthy after seeding" >&2
+            docker logs aura-pim-mcp --tail 80 || true
+            return 1
+          }
+          docker cp internal/mcp/testdata/fixture-calendar.json             aura-pim-mcp:/app/data/fixture-calendar.json
+          curl -sS -X POST http://127.0.0.1:8093/admin/accounts             -H "Authorization: Bearer ci-not-a-secret"             -H 'Content-Type: application/json'             -d '{"id":"fixture","displayName":"Fixture calendar (no OAuth)","provider":"json","enabled":true,"priority":1,"providerConfig":{"source":"local","filePath":"/app/data/fixture-calendar.json"}}'             --fail-with-body
+          docker restart aura-pim-mcp
+          wait_healthy
 
       - name: Live calendar_integration tier (curated tool + list_accounts)
         # -race matches every other live tier (db/web/knowledge/telegram/memory).

@@ -1,0 +1,28 @@
+[
+  {
+    "id": "fixture-evt-0001",
+    "subject": "Phase 46 tracer gate — MCP-05 round-trip",
+    "start": "2026-08-24T09:00:00",
+    "end": "2026-08-24T09:30:00",
+    "startWithTimeZone": "2026-08-24T09:00:00+02:00",
+    "endWithTimeZone": "2026-08-24T09:30:00+02:00",
+    "location": "Fixture calendar",
+    "organizer": "fixture@example.invalid",
+    "body": "Synthetic event. Exists so get_calendar_events can mint an opaque eventId and get_calendar_event_details can resolve the account from it with no accountId argument.",
+    "isHtml": false,
+    "categories": ["phase-46"],
+    "requiredAttendees": "fixture@example.invalid"
+  },
+  {
+    "id": "fixture-evt-0002",
+    "subject": "Second fixture event",
+    "start": "2026-08-25T14:00:00",
+    "end": "2026-08-25T15:00:00",
+    "startWithTimeZone": "2026-08-25T14:00:00+02:00",
+    "endWithTimeZone": "2026-08-25T15:00:00+02:00",
+    "location": "Fixture calendar",
+    "organizer": "fixture@example.invalid",
+    "body": "A second event so a listing returns more than one reference.",
+    "isHtml": false
+  }
+]
