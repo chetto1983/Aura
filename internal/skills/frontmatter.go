@@ -58,11 +58,7 @@ const (
 // `key: value` splitter (picobot's anti-reference) mis-parses. Type defaults to
 // instruction; unknown keys are tolerated (goccy ignores struct-absent fields).
 func parseFrontmatter(raw []byte) (Frontmatter, string, error) {
-	// Normalize CRLF → LF first: Windows checkouts (spike 004b) and the skills.sh
-	// corpus arrive CRLF, and the fence split below is newline-sensitive.
-	normalized := bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n"))
-
-	block, body, err := splitFrontmatter(normalized)
+	block, body, err := SplitFrontmatter(raw)
 	if err != nil {
 		return Frontmatter{}, "", err
 	}
@@ -83,12 +79,20 @@ func parseFrontmatter(raw []byte) (Frontmatter, string, error) {
 	return fm, body, nil
 }
 
-// splitFrontmatter extracts the YAML between the leading `---` and the next `---`
+// SplitFrontmatter extracts the YAML between the leading `---` and the next `---`
 // on its own line, returning the YAML bytes and the remaining markdown body. A
 // SKILL.md MUST open with a frontmatter fence — a missing one is an error (the
 // loader skip-logs it; the file is not a valid skill).
-func splitFrontmatter(normalized []byte) (block []byte, body string, err error) {
-	s := string(normalized)
+//
+// Exported because a SKILL.md is not the only file in Aura that opens with this
+// fence: a knowledge-work pack's `commands/*.md` uses the identical convention
+// (amendment #126), and `internal/packs` reads those. One fence rule, in one
+// place — including the CRLF normalization, which is not optional and was the
+// half a second implementation would most likely have dropped.
+func SplitFrontmatter(raw []byte) (block []byte, body string, err error) {
+	// Normalize CRLF → LF first: Windows checkouts (spike 004b) and the skills.sh
+	// corpus arrive CRLF, and the fence split below is newline-sensitive.
+	s := string(bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n")))
 	// Tolerate a leading BOM or blank lines before the fence is NOT done here —
 	// SKILL.md opens with the fence (CC parity). Trim only a leading newline run.
 	trimmed := strings.TrimLeft(s, "\n")

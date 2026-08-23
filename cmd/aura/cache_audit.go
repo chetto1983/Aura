@@ -186,7 +186,11 @@ func replayAudit(ctx context.Context, turns []fixtureTurn, errOut io.Writer) ([]
 	// list with NO network). Dropping them first keeps Register fail-loud (B-14).
 	// The fake web_search drives the D-05 source-list tail-inject fixture (turn-08):
 	// the volatile numbered list must ride the tail copy and NEVER mutate messages[0].
-	reg := tools.Without(buildRegistry(), skillManifestName, skillManageName, "web_search")
+	// `plugin_pack` rides registerSkillTools too, so it is dropped for the same reason the
+	// other two are: Register is fail-loud on a duplicate (B-14), and re-registering
+	// the group would panic on the one name the audit was not replacing. Its spec is
+	// constant and network-free, so the re-registered tool is the production one.
+	reg := tools.Without(buildRegistry(), skillManifestName, skillManageName, "plugin_pack", "web_search")
 	registerSkillTools(reg, auditCfg, nil)                      // deferred like production
 	reg.Register(&tools.WebSearch{Engine: auditSearchEngine{}}) // deterministic, network-free
 

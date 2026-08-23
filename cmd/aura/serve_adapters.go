@@ -329,6 +329,10 @@ func registerSkillTools(reg *tools.Registry, cfg *config.Config, writerPool *pgx
 	skillTool := newSkillTool(cfg, writerPool)
 	reg.Register(skillTool)
 	reg.Register(&tools.SkillManageTool{Skills: skillTool})
+	// Registered beside the skill tools because a pack IS a group of them plus the
+	// connectors that ship alongside, and the model reaches for one right after the
+	// other: read the pack, then install the skills it names through skill_manage.
+	reg.Register(&tools.PackTool{})
 }
 
 func newSkillTool(cfg *config.Config, writerPool *pgxpool.Pool) *tools.SkillTool {

@@ -93,6 +93,8 @@ func main() {
 		runRetention(os.Args[2:])
 	case "skills":
 		runSkills(os.Args[2:])
+	case "pack":
+		runPack(os.Args[2:])
 	case "chat":
 		runChat(os.Args[2:])
 	case "cache-stats":
@@ -146,7 +148,7 @@ func runMCPDispatch(args []string) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|doctor|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|task <sub>|retention <plan|apply>|skills <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|objectstore <sub>|docs <sub>|version}")
+	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|doctor|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|task <sub>|retention <plan|apply>|skills <sub>|pack <list|show>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|objectstore <sub>|docs <sub>|version}")
 }
 
 // buildRegistry is the pool-free, box-free registry the manifest/fixture verbs use. The nil
