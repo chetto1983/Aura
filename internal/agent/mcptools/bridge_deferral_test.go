@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -388,4 +389,12 @@ func TestRefreshSpecsLockedWarnsWhenReconnectWouldFlipDeferral(t *testing.T) {
 			t.Fatalf("unchanged decision must not warn, got: %s", logs.String())
 		}
 	})
+}
+
+func bridgeTools(namespace string, srv *MountedServer, advertised []*sdkmcp.Tool, callTimeout time.Duration) []tools.Tool {
+	return bridgeToolsWithPolicy(namespace, srv, advertised, callTimeout, defaultBridgePolicy(namespace))
+}
+
+func specFromToolDef(namespace string, t *sdkmcp.Tool) tools.Spec {
+	return specFromToolDefWithPolicy(namespace, t, defaultBridgePolicy(namespace))
 }

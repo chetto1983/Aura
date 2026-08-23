@@ -441,3 +441,9 @@ func TestDuringQuietHours_UnsetOrMalformedIsNeverQuiet(t *testing.T) {
 		}
 	}
 }
+
+func (s *Scheduler) markTerminalFailure(err error) {
+	if s.readiness != nil {
+		s.readiness.MarkSchedulerFailure(err)
+	}
+}

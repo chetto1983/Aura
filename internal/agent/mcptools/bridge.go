@@ -158,10 +158,6 @@ func bridgeFromAdvertisedWithPolicy(namespace string, srv *MountedServer, advert
 	return bridged, nil
 }
 
-func bridgeTools(namespace string, srv *MountedServer, advertised []*sdkmcp.Tool, callTimeout time.Duration) []tools.Tool {
-	return bridgeToolsWithPolicy(namespace, srv, advertised, callTimeout, defaultBridgePolicy(namespace))
-}
-
 // bridgeToolsWithPolicy is the ONLY place bridging scores the always-loaded
 // slot decision (D-27, bridge_deferral.go): it runs at MOUNT only (reached from
 // Mount/mountWithAdvertisedPolicy), never on reconnect, so policy.alwaysLoaded
@@ -182,10 +178,6 @@ func bridgeToolsWithPolicy(namespace string, srv *MountedServer, advertised []*s
 		out = append(out, bt)
 	}
 	return out
-}
-
-func specFromToolDef(namespace string, t *sdkmcp.Tool) tools.Spec {
-	return specFromToolDefWithPolicy(namespace, t, defaultBridgePolicy(namespace))
 }
 
 func specFromToolDefWithPolicy(namespace string, t *sdkmcp.Tool, policy bridgePolicy) tools.Spec {

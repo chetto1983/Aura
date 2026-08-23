@@ -53,12 +53,6 @@ type hardenedDialer struct {
 	policy EgressPolicy
 }
 
-// newHardenedDialer composes the hardened dialer. dial may be nil — a real net.Dialer
-// whose Control hook re-checks the post-resolution IP is used then.
-func newHardenedDialer(res resolver, dial dialFunc) *hardenedDialer {
-	return newHardenedDialerWithPolicy(res, dial, EgressPolicy{enforcePrivate: true})
-}
-
 func newHardenedDialerWithPolicy(res resolver, dial dialFunc, policy EgressPolicy) *hardenedDialer {
 	return &hardenedDialer{res: res, dial: dial, policy: policy}
 }

@@ -107,3 +107,9 @@ func TestHardenedDialerAllowsExactTrustedPrivateAuthority(t *testing.T) {
 		t.Fatalf("alternate private port dialed %q", rec.addr)
 	}
 }
+
+// newHardenedDialer composes the hardened dialer. dial may be nil — a real net.Dialer
+// whose Control hook re-checks the post-resolution IP is used then.
+func newHardenedDialer(res resolver, dial dialFunc) *hardenedDialer {
+	return newHardenedDialerWithPolicy(res, dial, EgressPolicy{enforcePrivate: true})
+}

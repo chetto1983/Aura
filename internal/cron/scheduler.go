@@ -255,12 +255,6 @@ func (s *Scheduler) runScheduledScan(ctx context.Context) (err error) {
 	return nil
 }
 
-func (s *Scheduler) markTerminalFailure(err error) {
-	if s.readiness != nil {
-		s.readiness.MarkSchedulerFailure(err)
-	}
-}
-
 // tick selects the due tasks (next_run_at<=Now, FOR UPDATE SKIP LOCKED) up to the
 // concurrency cap, then claims+dispatches each under a semaphore bounded by
 // maxConcurrent so held conns never exceed the cap (Pitfall 2). A task already

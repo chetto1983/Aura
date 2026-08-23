@@ -93,31 +93,6 @@ func metadataAddress(ip netip.Addr) bool {
 	return ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || mcpMetadataV6Pfx.Contains(ip)
 }
 
-// guardEndpoint validates a raw MCP endpoint URL and returns the parsed *url.URL or
-// an error. Five steps, the first three UNCONDITIONAL (they break the CodeQL taint
-// flow on every policy branch):
-//
-//  1. parse + non-empty host;
-//  2. scheme ∈ allowedSchemes;
-//  3. host ∉ metadataHostBlocklist;
-//  4. resolve and classify EVERY record; strict mode rejects private targets except
-//     the exact authority of a trusted built-in recipe, and rejects mixed DNS even
-//     for that recipe; dev rejects metadata/link-local while allowing local sidecars;
-//  5. return the validated URL.
-func guardEndpoint(ctx context.Context, raw string, enforce bool, allowHosts map[string]struct{}, res resolver) (*url.URL, error) {
-	policy := EgressPolicy{enforcePrivate: enforce}
-	if enforce && len(allowHosts) > 0 {
-		if u, err := url.Parse(strings.TrimSpace(raw)); err == nil {
-			if _, ok := allowHosts[normalizeEgressHost(u.Hostname())]; ok {
-				if authority, authorityErr := canonicalURLAuthority(u); authorityErr == nil {
-					policy.allowedPrivateAuthorities = map[string]struct{}{authority: {}}
-				}
-			}
-		}
-	}
-	return guardEndpointWithPolicy(ctx, raw, policy, res)
-}
-
 // guardEndpointWithPolicy validates one initial or redirect URL against the fully
 // resolved runtime/source policy. It resolves every candidate even for an allowed
 // recipe so metadata and mixed-address DNS cannot hide behind the allow entry.
