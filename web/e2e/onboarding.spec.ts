@@ -141,6 +141,11 @@ async function openOnboarding(page: Page) {
   }
   await waitForVisibleCandidate(settingsButtons);
   await clickFirstVisible(settingsButtons);
+  // Settings is a section rail now, and it opens on the profile pane. Identity creation
+  // lives on the Identities & access pane, so the wizard is two clicks in, not one.
+  const identitiesSection = page.getByRole('button', { name: 'Identities & access' });
+  await waitForVisibleCandidate(identitiesSection);
+  await clickFirstVisible(identitiesSection);
   const createButtons = page.getByRole('button', { name: 'Create identity' });
   await waitForVisibleCandidate(createButtons);
   await clickFirstVisible(createButtons);
