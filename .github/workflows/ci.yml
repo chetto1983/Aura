@@ -1118,7 +1118,7 @@ jobs:
       # :?-required POSTGRES_PASSWORD. The standalone GHCR image has no compose deps.
       # Pinned by commit, matching compose.yaml: `:sidecar` moved on 2026-08-22, and a
       # floating tag is how CI and dev end up exercising different servers.
-      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:4e0f518333773a892f9f5a718981466e6054ae2e
+      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:c497224cf8a0c8eeaea02210d5101b1e032661fb
       # The container's MCP-over-HTTP path is the root "/" (spike 064); we publish it on
       # host 127.0.0.1:8093 (the container listens on 8080).
       AURA_PIM_MCP_URL: http://127.0.0.1:8093/
@@ -1208,8 +1208,8 @@ jobs:
       # Both pinned by commit, matching compose.yaml. A floating `:sidecar` is how CI and
       # dev end up exercising different servers: on the whatsapp fork two workflows write
       # that tag, and on the PIM fork it moved on 2026-08-22.
-      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:4e0f518333773a892f9f5a718981466e6054ae2e
-      AURA_WHATSAPP_MCP_IMAGE: ghcr.io/chetto1983/whatsapp-mcp:sha-e0b8345
+      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:c497224cf8a0c8eeaea02210d5101b1e032661fb
+      AURA_WHATSAPP_MCP_IMAGE: ghcr.io/chetto1983/whatsapp-mcp:sha-9911eb8
       AURA_PIM_MCP_PORT: "8093"
       AURA_PIM_MCP_ADMIN_TOKEN: ci-not-a-secret
       AURA_WHATSAPP_BRIDGE_PORT: "8094"

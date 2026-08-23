@@ -75,6 +75,19 @@ var calendarActionEnum = []string{
 	// operations and only 14 were ever registered as tools, so delete/mark-read/move
 	// were implemented for every provider and reachable by none.
 	"delete_email", "mark_email_read", "move_email",
+	// Amended 2026-08-23: the twelve b01413620 tiered. That commit did three of the
+	// four things the bump needed — it tiered all twelve in trustedRecipeActions and
+	// moved compose.yaml's pin to the 29-action fork — but left THIS list and
+	// ci.yml's AURA_PIM_MCP_IMAGE on the 17-action one. The two stragglers together
+	// produced a false green: CI kept passing because it ran the old image against
+	// this old list, while the deployment, which runs the pin compose names, failed
+	// the tier. Measured 2026-08-23 against the running
+	// ghcr.io/chetto1983/aura-pim-mcp:c497224cf8a0..., whose tools/list order this
+	// continues.
+	"delete_event", "create_contact", "update_contact", "delete_contact",
+	"get_email_attachment", "get_contextual_email_summary",
+	"get_guide", "get_unsubscribe_info", "unsubscribe_from_email",
+	"bulk_delete_emails", "bulk_mark_emails_read", "bulk_move_emails",
 }
 
 // TestCalendarServerLive drives the live Aura PIM sidecar over streamable-HTTP through
