@@ -6787,3 +6787,66 @@ Phase 42 was governed by IC-01..IC-14 and Section 17 of the (now-removed) indust
 > sends one. No command was executed. The `unstable_` adapter was verified to EXIST in the
 > pinned build, never rendered or driven. And the whole reading of what Cowork is comes from
 > Anthropic's plugin repository, not from the product, which is closed and was not used.
+
+> **Amendment #127 (2026-08-23, l'approvazione ha uno scope: `once` / `session` / `always` —
+> registra una misura e prende una decisione).** La misura viene da una sessione operatore
+> reale sullo stack acceso, non da una supposizione: tre azioni auto-indirizzate (un evento di
+> calendario da cancellare, una mail all'indirizzo dell'operatore, un messaggio WhatsApp al suo
+> numero) hanno richiesto **tre approvazioni separate**, ognuna con lo stesso identico rituale,
+> e la quarta chiamata sullo stesso identico strumento nella stessa identica conversazione ne
+> avrebbe richiesta una quarta.
+>
+> **Perché, letto nel codice e non dedotto.** `GatewayApprovals.Consume`
+> (`internal/gateway/approvals.go`) **cancella** l'approvazione appena la legge: "a second
+> Consume returns ok=false so a retried call re-issues the approval-required result
+> (fail-closed)". La chiave è `conversation_id \x00 tool \x00 sha256(canonical args)`, quindi
+> anche lo *stesso* strumento con argomenti diversi è un'approvazione nuova. Il gateway ha
+> quindi esattamente **uno** scope, `once`, e lo ha per costruzione — non per configurazione.
+> Non esiste nessuna variabile d'ambiente, nessuna riga di `aura.settings`, nessun grant che lo
+> allarghi. `gated()` (`internal/gateway/decide.go`) trattiene solo `scoring.Destructive`, e
+> quella scelta è già stata calibrata una volta (il commento in quel file racconta perché
+> `Risky` è stato tolto: "A prompt that fires on the expected case is not a safety property —
+> it trains the answer yes"). Il ragionamento vale una seconda volta un livello più in basso:
+> **anche dentro `Destructive`, chiedere N volte per la stessa cosa che l'operatore ha appena
+> autorizzato allena la stessa risposta automatica.**
+>
+> **Decisione.** L'approvazione porta uno scope scelto dall'operatore al momento in cui
+> approva, non dal modello e non da una configurazione decisa mesi prima:
+>
+> | scope | chiave del grant | vita | dove vive |
+> |---|---|---|---|
+> | `once` | conversazione + tool + fingerprint degli argomenti | un solo `Consume` | mappa in-memory (comportamento odierno, invariato) |
+> | `session` | conversazione + tool + azione | fino a `EvictSession` / riavvio del processo | mappa in-memory in `GatewayApprovals` |
+> | `always` | identità + tool + azione | fino a revoca esplicita | Postgres, tabella dedicata |
+>
+> L'azione è il verbo dei tool multiplexati (`calendar`, `skill_manage`, `task`): un grant
+> `session` su "cancella evento" **non** apre "manda mail", benché i due arrivino dallo stesso
+> tool `calendar`. Granularizzare sul tool soltanto sarebbe stato più semplice da scrivere e
+> disonesto da usare.
+>
+> **Chi decide le etichette.** Il gateway le genera server-side insieme alla domanda, il modello
+> le ricopia in `ask_user.options`, e l'hook di resume rimappa la risposta dell'operatore
+> **contro le etichette memorizzate nella challenge** — lo stesso identico binding CR-01 che già
+> vincola la domanda. Una risposta che non corrisponde a nessuna etichetta nota vale `once`: il
+> grant più stretto, mai il più largo. Il modello non può quindi né inventare uno scope né
+> allargare quello che l'operatore ha scelto.
+>
+> **`aura.capability_grants` è stato valutato e scartato, per una ragione misurata.** Sarebbe
+> stato il riuso ovvio — la tabella esiste, ha già API, CLI e pannello cockpit. Ma
+> `HasCapability` (`internal/db/queries/capability_grants.sql`) risolve
+> `capability = '*' OR capability = $2`, e l'identità operatore porta il grant `*` seminato da
+> `0004_identity.up.sql`. Un permesso di scope scritto lì sarebbe stato **vero prima che
+> chiunque approvasse qualsiasi cosa**: il cancello risulterebbe già aperto. Leggerlo con
+> `ListCapabilities` per aggirare il wildcard funzionerebbe e sarebbe peggio — due lettori della
+> stessa tabella con due semantiche diverse, e il prossimo che usa `HasCapability` riapre il
+> cancello senza accorgersene. Tabella dedicata, con la coppia di policy RLS fail-closed del
+> pattern `0087`.
+>
+> **Cosa questa misura NON dimostra.** Non dice niente su quanto spesso un operatore
+> sceglierebbe `always` — su una sessione sola, con tre azioni, non c'è una frequenza da
+> misurare. Non dimostra che i tre scope siano i tre giusti: sono quelli che hermes espone, ed è
+> l'unica evidenza a favore. Non tocca `gated()`: quali tier fermano il turno resta esattamente
+> com'era, e questo emendamento allarga la *durata* di un consenso, mai il suo *perimetro*. E la
+> revoca di un `always` atterra come comando CLI (`aura gateway grants`), non come superficie
+> cockpit: l'operatore che lo concede dal browser lo revoca dal terminale, ed è un debito
+> dichiarato qui, non una svista.
