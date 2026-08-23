@@ -133,8 +133,10 @@ codice Go legge quella env var**. *Confidenza: alta.*
 
 **2.1 — Tre piani condivisi restano non-scoped; il multi-utente è rifiutato da una guardia di boot
 invece che risolto.** `internal/config/config_validate.go:110-145` nomina i tre: skills,
-`aura.settings`, catalogo MCP. `internal/skills/identity_root.go:61`
-`NewSkillToolForIdentity` ha **zero chiamanti di produzione**. `aura.settings` ha PK sulla sola
+`aura.settings`, catalogo MCP. Le primitive per-identità scritte in Phase 36 per skills e
+catalogo MCP (`skills.NewSkillToolForIdentity`, `mcp.MountForIdentity` e famiglia) avevano
+**zero chiamanti di produzione** e sono state **cancellate**: facevano sembrare semi-risolto
+un piano che non lo era. `aura.settings` ha PK sulla sola
 `key` (`0024_settings.up.sql:15`) e `0087_rls_fail_closed.up.sql:248` la esclude esplicitamente
 da RLS — **e contiene `OPENROUTER_API_KEY`**. *Confidenza: alta.*
 *(Il piano tool è invece genuinamente chiuso: `SandboxRouter.Route` contiene su ogni profilo.)*

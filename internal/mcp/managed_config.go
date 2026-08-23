@@ -29,6 +29,19 @@ const (
 	RuntimeKindDockerGateway = "docker_gateway"
 )
 
+// SourceRecipeMemory marks the shared, admin-governed ArcadeDB memory MCP. The
+// manager catalog stamps it onto the memory recipe so the boundary is keyed on the
+// recipe, not on the server's name — an operator can rename the server without
+// turning shared infrastructure into an ordinary per-identity one.
+const SourceRecipeMemory = "recipe:memory"
+
+// IsSharedAdminGoverned reports whether s is the shared memory MCP. It is the one
+// server class an identity never governs: the mount is deployment-wide and only an
+// admin changes it through the shared catalog.
+func IsSharedAdminGoverned(s ManagedServer) bool {
+	return strings.TrimSpace(s.Source) == SourceRecipeMemory
+}
+
 // ManagedConfig is Aura's durable MCP server registry. It intentionally keeps the
 // Claude-Desktop mcpServers shape so users can recognize and migrate config, while
 // adding small Aura-owned metadata such as enabled/source.

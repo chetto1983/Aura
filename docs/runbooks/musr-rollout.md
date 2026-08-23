@@ -32,11 +32,11 @@ A second principal would **share** these with the operator:
 
 | Plane | Why it is shared |
 |---|---|
-| Skills library | `skillLoaderRoots` (`cmd/aura/serve_adapters.go`) resolves `{<export>/.agents/skills, cfg.SkillsDir}` — no identity component. The model-facing `skill` tool can create/update/delete there, so `agent.run` alone is enough to read and rewrite the operator's skills. The per-identity primitive `skills.NewSkillToolForIdentity` exists but has **zero production callers**. |
+| Skills library | `skillLoaderRoots` (`cmd/aura/serve_adapters.go`) resolves `{<export>/.agents/skills, cfg.SkillsDir}` — no identity component. The model-facing `skill` tool can create/update/delete there, so `agent.run` alone is enough to read and rewrite the operator's skills. A per-identity rooting primitive was written in Phase 36 and never called; it was **deleted** rather than left standing as a fix that looks applied. |
 | `aura.settings` | Keyed by `key` alone (migration `0024`) — no identity column, no RLS. It carries `OPENROUTER_API_KEY`, `TELEGRAM_BOT_TOKEN` and `AURA_LLM_BASE_URL` for the whole daemon. Secrets are redacted on read, but `governance.write` can overwrite them. |
-| MCP catalog | One shared `servers.json`. The per-identity functions in `internal/mcp/managed_config_identity.go` are dormant. |
+| MCP catalog | One shared `servers.json`, read ONCE at process boot (`config.loadMCPServers`) and mounted process-wide before any identity exists. A per-identity overlay (`managed_config_identity.go`) was written in Phase 36 and never called; it was **deleted**, and it would not have sufficed anyway — it could only toggle enable/trust over the same shared catalog, never give an identity its own connector or its own credential. |
 | Governance scheduler board | `ListManageableTasks` / `ApproveTask` / `RunTaskNow` / `UpdateTask` address tasks by id and status only, with no owner predicate and no RLS. |
-| Host filesystem and shell | `SandboxRouter.Route` returns "not routed" unless `AURA_PROFILE` is strict, and **dev is the default**. On that branch `shell_exec` and every `fs_*` tool run on the host as the daemon user — reaching `.env`, the datastore credentials and `$AURA_RUN_DIR`. This one defeats every scoped plane above at once. |
+| ~~Host filesystem and shell~~ | **No longer shared.** `SandboxRouter.Route` (`internal/sandbox/usersandbox/router.go:80`) has no profile branch and no host arm: every profile routes into the caller's own box, and an unreachable backend denies rather than falls back (D-09/GATE-01). `shell_exec` and the `fs_*` tools no longer reach `.env` or the daemon's filesystem. |
 
 The capability grants (`agent.run`, `governance.read`, `governance.write`) are the only
 control on the middle four; the last one needs no capability beyond `agent.run`.
@@ -46,8 +46,9 @@ control on the middle four; the last one needs no capability beyond `agent.run`.
 Do **not** set this flag on a deployment you share with someone you would not hand the
 `.env` to. Turning it on is safe only once the table above is empty. In dependency order:
 
-1. Route the skills tool through `skills.NewSkillToolForIdentity` (the primitive is
-   written; nothing calls it) and give each box its own materialize source.
+1. Root the skills tool per identity and give each box its own materialize source.
+   This is a BUILD, not a wire: the Phase-36 primitive that once made it look like a
+   wire has been deleted.
 2. Scope `aura.settings` per identity, or make it admin-only and stop treating
    `governance.write` as a per-user capability.
 3. Same for the MCP catalog.
