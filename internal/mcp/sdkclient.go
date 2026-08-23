@@ -148,12 +148,15 @@ func openSDKHTTP(ctx context.Context, name string, server ManagedServer, egress 
 //
 // D-106: the launch-command validator that used to live here — shell-metacharacter
 // rejection, relative-path rejection, shell-interpreter rejection — is deliberately
-// NOT ported. This was an explicit operator decision taken against the standing
-// recommendation to keep it, on the grounds that the operator controls what is mounted
-// and mounting must cost no ceremony. The counter-argument, recorded so it is not
-// rediscovered as a surprise: CommandTransport validates nothing, so an agent-authored
-// stdio server is no longer a lower trust class than an operator-typed one. Tracked as
-// T-45.1-06 for /gsd-secure-phase 45.1.
+// NOT ported, and still is not. That was an explicit operator decision on the grounds
+// that mounting must cost no ceremony, and it stands.
+//
+// What DID land (2026-08-23) is checkStdioShape: not an allowlist, not a ban on any
+// interpreter, but a refusal of the two or three launch shapes no MCP server has. The
+// premise the D-106 acceptance rested on — that only the operator writes the registry
+// — was measured false: a skill install runs third-party npm lifecycle scripts as root
+// in this container, and /var/lib/aura/mcp/servers.json is writable from there. See
+// stdio_shape.go for why the answer is persistence-denial rather than validation.
 func OpenSDKSessionForConfig(processCtx, handshakeCtx context.Context, name string, cfg ServerConfig, o SessionOptions) (cs *sdkmcp.ClientSession, err error) {
 	handshakeCtx, end := sdkStdioConnectBoundary.Start(handshakeCtx)
 	defer end.PanicSafe(&err)
@@ -163,6 +166,14 @@ func OpenSDKSessionForConfig(processCtx, handshakeCtx context.Context, name stri
 		// Not a transport error: an empty command is a config defect that retrying
 		// cannot fix, so MountWithRetry must not treat it as a boot-timing failure.
 		return nil, fmt.Errorf("mcp %q: empty command", name)
+	}
+	// The spawn-time half of stdio_shape.go, and the one that matters: an entry
+	// planted out of band never passed through SaveManagedConfig, so this is the only
+	// checkpoint standing between it and exec. Returned unwrapped for the same reason
+	// as the empty command above — a shape refusal is permanent, never a boot-timing
+	// failure for MountWithRetry to sit through.
+	if err := checkStdioShape(name, command, cfg.Args, cfg.Env); err != nil {
+		return nil, err
 	}
 	// G204: Command/Args/Env come from the operator-controlled mcpServers config,
 	// not from untrusted model output.
