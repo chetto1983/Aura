@@ -6699,3 +6699,91 @@ Phase 42 was governed by IC-01..IC-14 and Section 17 of the (now-removed) indust
 > video despite `/props` advertising it. Throughput was measured single-request with `-np 1`;
 > concurrent multimodal load is unknown. And the VRAM conclusions hold for a 12GB RTX 3060 with
 > `aura-llama-embed` resident — they say nothing about the DGX Spark target.
+
+> **Amendment #126 (2026-08-23, knowledge-work plugin packs — records a live measurement and
+> takes one decision; opens the pack slice).** The question was whether Aura needs a workspace
+> layer of its own to reach what Claude Cowork offers. It does not. Cowork's own open
+> repository (`anthropics/knowledge-work-plugins`) states the whole shape: "Each plugin bundles
+> the skills, connectors, slash commands, and sub-agents for a specific job function. Every
+> component is file-based — markdown and JSON, no code, no infrastructure, no build steps."
+> Aura already has all four planes. What it lacks is the BUNDLE: an installable unit that holds
+> them together. This amendment records what was measured before any of it is designed.
+>
+> **The skills plane already works, live-proven, with ZERO code changes.** Driven through the
+> cockpit HTTP API as the operator on the running deployment: the agent searched the catalog,
+> found `skill_manage` through `tool_search`, called
+> `{"action":"install","source":"anthropics/knowledge-work-plugins@call-prep"}`, and the
+> installer answered `Skill "call-prep" installed … and active now`. A following `action=list`
+> returned it with its description parsed, and `action=info` rendered the whole SKILL.md body,
+> ASCII box art included. Aura's `Frontmatter` (`internal/skills/frontmatter.go:22`) is a
+> SUPERSET of Anthropic's schema — `name`, `description`, `license`, `compatibility`,
+> `metadata`, `allowed-tools` are shared, the snippet fields are Aura's own — so a plugin's
+> `skills/` directory needs no conversion at all.
+>
+> **But the catalogue flattens the bundle.** `https://skills.sh/api/search` (the endpoint
+> `internal/skills/catalog_search.go:21` already calls) returns entries shaped
+> `{id, skillId, name, installs, source}` and nothing else: no plugin, no MCP server, no
+> command. `call-prep` comes back as `anthropics/knowledge-work-plugins/call-prep` — the
+> `sales/` folder it lives in is DROPPED. A query for that repo returns 100 entries, and 100 is
+> very likely the page cap rather than the true count, so read it as "at least 100". The
+> consequence is precise: through the catalogue alone, eighteen job-function plugins arrive as
+> a hundred loose skills with no way to know which belong together. The `source` field is the
+> hook out of this, because it names the repository the other three planes live in.
+>
+> **The commands plane is advertising, not substance.** Measured over the cloned repository at
+> `main`: of **18** plugin directories, exactly **two** ship a `commands/` folder —
+> `pdf-viewer` (annotate, fill-form, open, sign) and `product-management` (brainstorm). **Five
+> command files in the entire marketplace.** Any design that treats slash commands as the
+> centre of gravity is designing for something that is not there. The weight is in `skills/`
+> and `.mcp.json`.
+>
+> **The connectors are remote HTTP MCP servers.** `sales/.mcp.json` declares Slack (with an
+> OAuth clientId and callbackPort), HubSpot, Close, Monday, Clay and ZoomInfo, all
+> `"type": "http"` against vendor-hosted endpoints. Two facts about how those land in Aura,
+> both read from the code rather than assumed. (1) `buildInstallServer`
+> (`cmd/aura/serve_governance_write.go:238`) gives a custom server
+> `Trust: TrustBlocked` — "until an explicit operator trust-approve" — so an imported connector
+> is inert until a human says otherwise, which is already the posture this amendment wants.
+> (2) An earlier draft of this paragraph claimed every tool from such a server would fail closed
+> as Destructive and stop the turn. **That is wrong, and the correction matters**:
+> `classifyToolRisk` (`internal/agent/mcptools/bridge_risk.go:212`) returns `false, false` for
+> any tool carrying `ReadOnlyHint` without an explicit destructive hint, on ANY server,
+> curated action table or not. Only an UNANNOTATED tool takes the fail-closed
+> `return true, true`. A well-behaved vendor server therefore behaves sanely on arrival, and no
+> per-vendor action table is required to make a pack usable.
+>
+> **The composer already has the picker.** `@assistant-ui/react` **0.15.14** — the version this
+> repo pins, verified in the installed `dist/index.d.ts`, not in an upstream checkout —
+> exports `unstable_useSlashCommandAdapter`, which feeds `ComposerTriggerPopover char="/"` with
+> `{id, label, description, icon, execute}` items. It is marked
+> `@deprecated — Under active development and may change without notice`, so this is a port
+> carrying a known upstream risk, not a free ride.
+>
+> **Decisions.**
+> 1. **A pack is resolved from the repository, not from the catalogue.** Given a `source` (which
+>    every catalogue entry already carries) plus a plugin directory, Aura reads
+>    `.claude-plugin/plugin.json`, `skills/`, `.mcp.json` and `commands/` as ONE unit and
+>    records the membership the catalogue threw away.
+> 2. **One trust-approve per pack, not per connector.** The operator decided to install the
+>    pack; making them approve `sales` nine times to reach nine vendors is ceremony that buys
+>    nothing, and it contradicts the standing project rule that installing a server IS the
+>    authorization. The grant is recorded against the pack, and every connector it brought
+>    inherits it.
+> 3. **The UI lives in the composer.** Packs are discovered and invoked where work happens:
+>    `web/src/chat/composer/SkillPicker.tsx` becomes a capability picker over skills AND pack
+>    commands. Management stays in `GovernanceWorkspace`, beside `McpBoard`, which is where
+>    skills and MCP servers are already managed.
+> 4. **No new trust tier, and no bespoke marketplace.** The format is Anthropic's, open and
+>    file-based; Aura reads it rather than inventing one, and inherits eighteen plugins written
+>    by someone else.
+>
+> **What this measurement does NOT prove.** Only ONE skill was installed end to end
+> (`call-prep`); the other ninety-nine were never ingested, so nothing is known about the
+> frontmatter Aura's loader might reject across the whole set, nor about skills that reference
+> bundled resources beside their SKILL.md. NO connector was imported: the `.mcp.json` files were
+> read, never installed, so the OAuth flow, the callback port, and whether these vendor servers
+> annotate `ReadOnlyHint` in practice are all unmeasured — the risk-classification argument
+> above is about what Aura's code does with an annotation, not evidence that Slack or HubSpot
+> sends one. No command was executed. The `unstable_` adapter was verified to EXIST in the
+> pinned build, never rendered or driven. And the whole reading of what Cowork is comes from
+> Anthropic's plugin repository, not from the product, which is closed and was not used.
