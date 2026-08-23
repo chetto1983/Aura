@@ -189,7 +189,7 @@ func gatewayApprovalRequiredResult(
 		"tier":           string(tier),
 		"args_sha256":    fp,
 		"question":       question,
-		"options":        scopeOptionLabels(subject),
+		"options":        scopeOptions(subject),
 		"resume_context": resumeContext,
 		"message": "This mutating action requires operator approval and has been WITHHELD. " +
 			"Call ask_user with kind=\"approval\", question exactly equal to the question field, " +

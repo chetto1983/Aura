@@ -41,3 +41,36 @@ export function parseOptions(options: unknown): ApprovalOption[] {
     return [{ label, value: typeof value === 'string' && value !== '' ? value : label }];
   });
 }
+
+/**
+ * The gateway's approval SCOPES (PRD amendment #127), carried on an option's value as
+ * `gateway_scope:<scope>:<subject>`. The value is a semantic code, never display text —
+ * the same split ResolveOutcome uses, because the gateway is not locale-aware and each
+ * surface renders its own copy.
+ */
+export type ApprovalScope = 'once' | 'session' | 'always';
+
+export interface ScopeChoice {
+  readonly scope: ApprovalScope;
+  /** The tool (plus the verb of a multiplexed tool) the scope would cover. */
+  readonly subject: string;
+}
+
+const SCOPE_PREFIX = 'gateway_scope:';
+const SCOPES: readonly ApprovalScope[] = ['once', 'session', 'always'];
+
+/**
+ * Decode a gateway scope option value, or null when the option is an ordinary choice.
+ * The subject is the whole remainder after the second colon: neither a tool name nor a
+ * multiplexed action contains a colon, so it needs no unescaping.
+ */
+export function parseScopeChoice(value: string): ScopeChoice | null {
+  if (!value.startsWith(SCOPE_PREFIX)) return null;
+  const rest = value.slice(SCOPE_PREFIX.length);
+  const separator = rest.indexOf(':');
+  if (separator < 0) return null;
+  const scope = rest.slice(0, separator);
+  const subject = rest.slice(separator + 1);
+  if (!SCOPES.includes(scope as ApprovalScope) || subject === '') return null;
+  return { scope: scope as ApprovalScope, subject };
+}

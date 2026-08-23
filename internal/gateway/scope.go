@@ -80,24 +80,54 @@ func scopeLabels(s grantSubject) []scopeLabel {
 	}
 }
 
-// scopeOptionLabels is the label list routeApprove hands the model to relay verbatim into
-// ask_user's options. ask_user accepts 2-4 distinct labels; these are three and distinct by
-// construction (each carries a different verb prefix).
-func scopeOptionLabels(s grantSubject) []string {
+// scopeOptionPrefix marks an option VALUE as a gateway scope choice. The value is a
+// semantic code, never display text — the same split internal/runner's ResolveOutcome
+// already uses ("the runner is not locale-aware, so each surface renders its own copy").
+// Two things fall out of it: the cockpit and Telegram can render the choice in the
+// operator's language, and the string that travels the wire is stable, so a resume matches
+// on a code rather than on prose a model might reword.
+const scopeOptionPrefix = "gateway_scope:"
+
+// ScopeOption is one relayed choice: the operator-visible fallback label, and the stable
+// value the answer comes back as.
+type ScopeOption struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
+}
+
+// scopeOptionValue encodes a scope and its subject into the wire value.
+// "gateway_scope:<scope>:<subject>" — a surface splits on the first two colons and
+// localizes the rest. Neither a tool name nor a multiplexed action contains a colon, so the
+// subject is the whole remainder and needs no escaping.
+func scopeOptionValue(scope ApprovalScope, s grantSubject) string {
+	return scopeOptionPrefix + string(scope) + ":" + s.String()
+}
+
+// scopeOptions is the option list routeApprove hands the model to relay verbatim into
+// ask_user's options. ask_user accepts 2-4 distinct entries; these are three, distinct by
+// construction. The English label is the fallback for a surface that does not localize —
+// it is never the thing matched on resume.
+func scopeOptions(s grantSubject) []ScopeOption {
 	entries := scopeLabels(s)
-	out := make([]string, len(entries))
+	out := make([]ScopeOption, len(entries))
 	for i, e := range entries {
-		out[i] = e.Label
+		out[i] = ScopeOption{Label: e.Label, Value: scopeOptionValue(e.Scope, s)}
 	}
 	return out
 }
 
-// scopeForAnswer maps the operator's answer back to a scope using the subject's OWN label
-// table. An empty, unknown, or reworded answer is ScopeOnce: an accept still stands (the
-// operator did accept), but it authorizes only the call in front of them.
+// scopeForAnswer maps the operator's answer back to a scope. It matches the subject's OWN
+// option values first — the stable, locale-free codes — and falls back to the English label
+// table for a surface that submitted the fallback text. An empty, unknown, or reworded
+// answer is ScopeOnce: an accept still stands (the operator did accept), but it authorizes
+// only the call in front of them.
+//
+// Matching the value against THIS subject's own encoding is what stops a replay: a code
+// minted for "calendar delete_event" does not equal the one for "skill_manage delete", so
+// an answer lifted from another approval grants nothing here.
 func scopeForAnswer(s grantSubject, answer string) ApprovalScope {
 	for _, e := range scopeLabels(s) {
-		if answer == e.Label {
+		if answer == scopeOptionValue(e.Scope, s) || answer == e.Label {
 			return e.Scope
 		}
 	}

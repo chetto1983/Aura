@@ -50,28 +50,53 @@ func TestSubjectForReadsTheVerbOfAMultiplexedToolOnly(t *testing.T) {
 	}
 }
 
-// TestScopeOptionLabelsAreRelayable proves the labels the model is told to copy verbatim are
-// a payload ask_user accepts: 2-4 entries, non-empty, distinct. A set that failed that
-// validation would surface as a tool error with the destructive call already withheld and no
-// way left for the operator to answer.
-func TestScopeOptionLabelsAreRelayable(t *testing.T) {
+// TestScopeOptionsAreRelayable proves the options the model is told to copy verbatim are a
+// payload ask_user accepts: 2-4 entries, non-empty and distinct on BOTH coordinates. A set
+// that failed that validation would surface as a tool error with the destructive call
+// already withheld and no way left for the operator to answer.
+func TestScopeOptionsAreRelayable(t *testing.T) {
 	t.Parallel()
 	for _, subject := range []grantSubject{
 		{Tool: "shell_exec"},
 		{Tool: "skill_manage", Action: "delete"},
 		{Tool: mcptools.CalendarMultiplexedToolName, Action: "delete_event"},
 	} {
-		labels := scopeOptionLabels(subject)
-		if len(labels) < 2 || len(labels) > 4 {
-			t.Fatalf("subject %q: %d labels, ask_user accepts 2-4", subject, len(labels))
+		opts := scopeOptions(subject)
+		if len(opts) < 2 || len(opts) > 4 {
+			t.Fatalf("subject %q: %d options, ask_user accepts 2-4", subject, len(opts))
 		}
-		seen := map[string]bool{}
-		for _, l := range labels {
-			if l == "" || seen[l] {
-				t.Fatalf("subject %q: label %q is empty or repeated", subject, l)
+		labels, values := map[string]bool{}, map[string]bool{}
+		for _, o := range opts {
+			if o.Label == "" || labels[o.Label] {
+				t.Fatalf("subject %q: label %q is empty or repeated", subject, o.Label)
 			}
-			seen[l] = true
+			if o.Value == "" || values[o.Value] {
+				t.Fatalf("subject %q: value %q is empty or repeated", subject, o.Value)
+			}
+			labels[o.Label], values[o.Value] = true, true
 		}
+	}
+}
+
+// TestScopeOptionValueIsALocaleFreeCode pins the wire contract the cockpit and Telegram
+// decode: a stable prefix, the scope, and the subject, with no display text in it. Both
+// surfaces render their own words from this, so a change here is a change to their copy.
+func TestScopeOptionValueIsALocaleFreeCode(t *testing.T) {
+	t.Parallel()
+	opts := scopeOptions(grantSubject{Tool: "calendar", Action: "delete_event"})
+	want := []string{
+		"gateway_scope:once:calendar delete_event",
+		"gateway_scope:session:calendar delete_event",
+		"gateway_scope:always:calendar delete_event",
+	}
+	for i, w := range want {
+		if opts[i].Value != w {
+			t.Errorf("option[%d].Value = %q, want %q", i, opts[i].Value, w)
+		}
+	}
+	// A subject with no verb still yields a two-colon shape the surfaces can split.
+	if got := scopeOptions(grantSubject{Tool: "shell_exec"})[2].Value; got != "gateway_scope:always:shell_exec" {
+		t.Errorf("verb-less always value = %q", got)
 	}
 }
 
@@ -85,19 +110,28 @@ func TestScopeForAnswerResolvesOnlyItsOwnLabels(t *testing.T) {
 	other := grantSubject{Tool: mcptools.CalendarMultiplexedToolName, Action: "delete_event"}
 
 	for _, e := range scopeLabels(subject) {
-		if got := scopeForAnswer(subject, e.Label); got != e.Scope {
-			t.Errorf("scopeForAnswer(%q) = %q, want %q", e.Label, got, e.Scope)
+		// Both the stable code the surfaces submit and the English fallback resolve.
+		for _, answer := range []string{scopeOptionValue(e.Scope, subject), e.Label} {
+			if got := scopeForAnswer(subject, answer); got != e.Scope {
+				t.Errorf("scopeForAnswer(%q) = %q, want %q", answer, got, e.Scope)
+			}
 		}
 	}
 	widening := []string{
 		"", "approvo", "yes",
-		"Approve once ", // trailing space — not the label
-		"approve once",  // case-shifted — not the label
+		"gateway_scope:always",                         // truncated code, no subject
+		"gateway_scope:always:",                        // empty subject
+		"gateway_scope:everything:skill_manage delete", // unknown scope
+		"gateway_scope:always:skill_manage",            // the tool without its verb
+		"Approve once ",                                // trailing space — not the label
+		"approve once",                                 // case-shifted — not the label
 		"Always approve everything",
 		"Approve skill_manage for this convo", // reworded
 	}
 	for _, e := range scopeLabels(other) {
-		widening = append(widening, e.Label) // another subject's labels grant nothing here
+		// Another subject's labels AND its codes grant nothing here: an answer lifted from
+		// a different approval must not widen this one.
+		widening = append(widening, e.Label, scopeOptionValue(e.Scope, other))
 	}
 	for _, answer := range widening {
 		if got := scopeForAnswer(subject, answer); got != ScopeOnce {

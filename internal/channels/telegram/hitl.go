@@ -11,6 +11,7 @@ package telegram
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -305,7 +306,7 @@ func approvalScopeMarkup(token string, raw json.RawMessage) *tele.ReplyMarkup {
 	for i, o := range opts {
 		rows = append(rows, []tele.InlineButton{{
 			Unique: callbackUnique,
-			Text:   o.Label,
+			Text:   scopeButtonText(o),
 			Data:   callbackData(token, askuser.ActionAccept, strconv.Itoa(i)),
 		}})
 	}
@@ -313,6 +314,38 @@ func approvalScopeMarkup(token string, raw json.RawMessage) *tele.ReplyMarkup {
 		Unique: callbackUnique, Text: "Rifiuta", Data: callbackData(token, askuser.ActionDecline, ""),
 	}})
 	return mk
+}
+
+// scopeGrammar is this channel's copy for the gateway's approval scopes. The gateway ships
+// a stable code (gateway_scope:<scope>:<subject>) plus an English fallback label, because it
+// is not locale-aware — every surface writes its own words, the same split ResolveOutcome
+// already uses. Telegram's own buttons are Italian, so these are too.
+var scopeGrammar = map[string]string{
+	"once":    "Approva una volta",
+	"session": "Approva %s per questa conversazione",
+	"always":  "Approva sempre %s",
+}
+
+// scopeButtonText renders one option's button. An option that is not a gateway scope, or a
+// scope this build does not know, falls back to the label the server sent — never to a raw
+// code on a button the operator has to press.
+func scopeButtonText(o pauseOption) string {
+	rest, ok := strings.CutPrefix(o.Value, "gateway_scope:")
+	if !ok {
+		return o.Label
+	}
+	scope, subject, ok := strings.Cut(rest, ":")
+	if !ok {
+		return o.Label
+	}
+	text, known := scopeGrammar[scope]
+	if !known {
+		return o.Label
+	}
+	if !strings.Contains(text, "%s") {
+		return text
+	}
+	return fmt.Sprintf(text, subject)
 }
 
 // choiceMarkup builds one InlineButton per discrete option, each callback carrying

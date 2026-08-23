@@ -59,12 +59,7 @@ func approvedGateway() (*Gateway, *fakeStore, context.Context) {
 // answerFor is the label a button press would send for a scope, taken from the same table
 // the gateway generated the options from.
 func answerFor(args json.RawMessage, scope ApprovalScope) string {
-	for _, e := range scopeLabels(subjectFor(gatedSpec(), args)) {
-		if e.Scope == scope {
-			return e.Label
-		}
-	}
-	return ""
+	return scopeOptionValue(scope, subjectFor(gatedSpec(), args))
 }
 
 // withhold drives the first Decide and returns the operator-visible question, failing the
@@ -240,12 +235,7 @@ func calendarSpec() tools.Spec {
 }
 
 func calendarAnswer(args json.RawMessage, scope ApprovalScope) string {
-	for _, e := range scopeLabels(subjectFor(calendarSpec(), args)) {
-		if e.Scope == scope {
-			return e.Label
-		}
-	}
-	return ""
+	return scopeOptionValue(scope, subjectFor(calendarSpec(), args))
 }
 
 func calendarWithhold(t *testing.T, g *Gateway, ctx context.Context, args json.RawMessage) string {
@@ -348,19 +338,19 @@ func TestApprovalRequestCarriesTheScopeOptions(t *testing.T) {
 		t.Fatalf("Decide = %+v, err %v", v, err)
 	}
 	var payload struct {
-		Options []string `json:"options"`
-		Message string   `json:"message"`
+		Options []ScopeOption `json:"options"`
+		Message string        `json:"message"`
 	}
 	if err := json.Unmarshal([]byte(v.ApprovalRequest.Preview), &payload); err != nil {
 		t.Fatalf("approval payload: %v", err)
 	}
-	want := scopeOptionLabels(subjectFor(gatedSpec(), args))
+	want := scopeOptions(subjectFor(gatedSpec(), args))
 	if len(payload.Options) != len(want) {
 		t.Fatalf("options = %v, want %v", payload.Options, want)
 	}
 	for i, w := range want {
 		if payload.Options[i] != w {
-			t.Fatalf("option[%d] = %q, want %q", i, payload.Options[i], w)
+			t.Fatalf("option[%d] = %+v, want %+v", i, payload.Options[i], w)
 		}
 	}
 	if !strings.Contains(payload.Message, "options exactly equal to the options field") {

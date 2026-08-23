@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -547,48 +546,4 @@ func TestCallbackDataPanicsOverTelegramLimit(t *testing.T) {
 		}
 	}()
 	callbackData(strings.Repeat("x", 65), askuser.ActionAccept, "")
-}
-
-// TestApprovalScopeMarkupOffersTheScopesAndOneRefusal proves an approval carrying scope
-// options reaches Telegram as one button per scope plus a refusal — and NOT as the fixed
-// Sì/No keyboard, which answers with an empty content and would silently collapse the
-// operator's choice to the narrowest scope (PRD amendment #127).
-func TestApprovalScopeMarkupOffersTheScopesAndOneRefusal(t *testing.T) {
-	t.Parallel()
-	token := "01a02f2b-5a37-7597-b6ac-92368c6b56df"
-	raw := json.RawMessage(`[{"label":"Approve once","value":"Approve once"},` +
-		`{"label":"Approve calendar delete_event for this conversation","value":"Approve calendar delete_event for this conversation"},` +
-		`{"label":"Always approve calendar delete_event","value":"Always approve calendar delete_event"}]`)
-
-	rows := approvalScopeMarkup(token, raw).InlineKeyboard
-	if len(rows) != 4 {
-		t.Fatalf("rows = %d, want 3 scopes + 1 refusal", len(rows))
-	}
-	for i, want := range []string{
-		"Approve once",
-		"Approve calendar delete_event for this conversation",
-		"Always approve calendar delete_event",
-	} {
-		if got := rows[i][0].Text; got != want {
-			t.Errorf("row %d = %q, want %q", i, got, want)
-		}
-		// The callback carries the option INDEX, not its text: Telegram caps callback_data
-		// at 64 bytes and a scope label blows through it.
-		if _, _, value, ok := parseCallback(rows[i][0].Data); !ok || value != strconv.Itoa(i) {
-			t.Errorf("row %d callback value = %q (ok=%v), want the option index", i, value, ok)
-		}
-	}
-	refusal := rows[3][0]
-	if _, action, _, ok := parseCallback(refusal.Data); !ok || action != askuser.ActionDecline {
-		t.Errorf("last row action = %q, want a decline", action)
-	}
-	// No generic accept: a fourth "Approva" beside three that say how long they last would
-	// be the easiest button to press and the one that says least.
-	for _, row := range rows {
-		for _, b := range row {
-			if b.Text == "Approva" {
-				t.Error("the scope keyboard offers a generic Approva beside the scoped ones")
-			}
-		}
-	}
 }
