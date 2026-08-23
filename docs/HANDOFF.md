@@ -225,10 +225,20 @@ stampa `5 current unresolved, **1** external`, non 5.
   sono finite in `RUN_ERROR` con zero chiamate riuscite.** Il supporto Aura alla superficie curata è
   **in volo**: `internal/agent/mcptools/bridge_multiplex.go`, non committato, misura lo stesso fork
   che advertisce un solo tool.
-- **EXT-003 — il device è appaiato e il piano tool funziona.** Il bridge porta traffico vero e dodici
-  chiamate `whatsapp__*` sono andate a buon fine in un turno `RUN_FINISHED`. L'invio è **trattenuto
-  dal ToolGateway**: `gateway_approval_required`, per progetto. Serve l'approvazione in-band
-  dell'operatore, non un QR.
+- **EXT-003 — il device è appaiato, il piano tool funziona, e la catena HITL è provata intera.**
+  Il bridge porta traffico vero e dodici chiamate `whatsapp__*` sono andate a buon fine in un turno
+  `RUN_FINISHED`. L'invio è **trattenuto dal ToolGateway** (`gateway_approval_required`), il
+  risultato trattenuto è stato **relayato**, e la pausa `approval` è **viva e in attesa** su
+  `GET /api/approvals`: token `01a02b8a-fb00-…`, priorità 80, `resume_context.args_sha256` uguale a
+  quello della chiamata trattenuta, e la domanda che nomina **solo le chiavi** degli argomenti
+  (`args: message, recipient`), mai i valori. Non è bloccata da niente se non dalla risposta
+  dell'operatore.
+
+  *Diagnosi ritirata:* avevo riportato che l'agente non chiamava `ask_user` e che l'approvazione non
+  arrivava mai. **Falso, e la lezione è il metodo:** l'avevo dedotto dallo stream SSE, dove il turno
+  finisce con prosa e il mio parser non vedeva la chiamata. La riga in `aura.paused_states` e la
+  risposta di `/api/approvals` dicono il contrario. Per una pausa, la verità è il database, non il
+  filo.
 - **EXT-005 — due gambe su tre PROVATE.** Consegna sul canale cockpit autenticato e ricevuta sul filo:
   il frame `aura.artifact` porta `asset_id` `736e1d66-…`, e `aura.assets` lo tiene `accepted`, 29
   byte, nel bucket per-identità con content hash. La terza gamba (cleanup) **non è osservata**: la
@@ -417,6 +427,16 @@ catalogo. *Confidenza: alta.*
   fallback quando quell'host è congestionato. Effetto collaterale della stessa misura, forse più
   importante del costo: **la quantizzazione varia per host** (`fp8` su alcuni, `fp4` su altri) e il
   primo-parte `deepseek/fp8` ha servito 2 richieste su 69 in un giorno.
+- **Le pause di Aura non scadono, e non è una svista.** `internal/askuser/store.go:14` lo
+  specifica (`SPEC Req#4`): *"There is no internal timeout / expiry state… the only resolution paths
+  are Resume, ResumeBatch, and AutoResolveForConversation."* Confrontando con hermes viene la
+  tentazione di portarne il timeout di approvazione (300s, poi esito `timeout` distinto da `deny`,
+  in `tools/approval.py:3670-3730`). **Non va portato:** hermes *blocca un thread dell'agente* su un
+  `threading.Event` mentre aspetta, quindi DEVE limitare l'attesa o la sessione resta incastrata.
+  Aura non blocca: persiste la pausa e il turno finisce, quindi una pending aperta costa una riga e
+  nient'altro. Stesso nome, problema diverso — portare il timeout toglierebbe una proprietà
+  specificata per curare un male che qui non esiste.
+
 - **`arcadedb_integration` "non gira da nessuna parte"** era falso **due volte** in due documenti
   diversi: gira nel job CI `arcadedb-integration-test`. Ciò che resta vero è solo che non alimenta
   la coverage.
@@ -450,6 +470,8 @@ catalogo. *Confidenza: alta.*
 | Iniettare il summary «identical shape to `injectAlwaysBlock`» (piano 1b §6) | Sbagliato: sloggerebbe l'always-block da `messages[1]` cambiando il prefisso cachato. Derivato invece da `splitHeadHistoryActive`, **dopo** `injectAlwaysBlock` |
 | `aura.documents` e le nove tabelle sorelle | Migration `0098` |
 | **1.1** — il floor di coverage per-package che il gate non applica | `CLAUDE.md` corretto: il gate confronta **un solo aggregato** (`scripts/coverage_gate.sh:86-107`), e ora la regola lo dice. Il ciclo per package NON è stato implementato perché sotto il solo tag `db_integration` boccerebbe package la cui coverage vera vive in un altro tier (`internal/arcadedb`: 92,81% sotto `arcadedb_integration`) |
+| **3.7 / EXT-001-002** — riavviare il daemon per rimontare la superficie calendario | **Deciso di NO, per ora.** Il fix Aura-side sta atterrando nella fase 46 (`7f28c5a51 fix(mcp): restore mail management to the curated calendar surface`): riavviare adesso rimonterebbe la stessa superficie curata contro un binario che non la supporta ancora, e interromperebbe una sessione a metà lavoro senza chiudere niente. Il rimonto è il passo di chiusura **dopo** che quel lavoro è costruito — e va fatto con `up -d`, mai `restart` (§8) |
+| **3.7 / EXT-003** — approvare io la pending al posto dell'operatore | **Deciso di NO.** È esattamente il controllo che ha funzionato: `approve.go:148-150` lega `ApproveChallenge` alla challenge **e** a una domanda visibile all'operatore, *"the informed-consent binding a benign relayed question cannot satisfy (CR-01)"*. Hermes fa lo stesso in modo ancora più netto — l'utente risolve fuori banda con `/approve`/`/deny <reason>` e scope `once\|session\|always`. Auto-approvare svuoterebbe la sola cosa che in tutta EXT-003 ha funzionato al primo colpo |
 | **6.4** — le licenze dei due corpora di eval | **ADR 0045**: `open_ragbench` (CC-BY-NC-4.0) e `snap-research/locomo` (NOASSERTION) **declinati entrambi**. Nessuna pipeline può scaricarli; le misure che li aspettavano sono ridefinite, non cancellate |
 
 ---
