@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"path"
-	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -124,7 +123,14 @@ func registryReferences() []string {
 // an empty path: an empty reference would make strings.Contains true for EVERY launch
 // declaration and refuse the whole box.
 func registryReferencesFor(configured string) []string {
-	slashed := filepath.ToSlash(strings.TrimSpace(configured))
+	// strings.ReplaceAll, NOT filepath.ToSlash: ToSlash is a no-op on Linux, so a
+	// Windows-shaped path in the config would keep its backslashes there while
+	// launchText (which always replaces) had already converted the text being
+	// matched — the two halves of one guard would disagree, and the reference would
+	// never match on the OS Aura actually deploys on. The path being normalized is
+	// data read from a config file, not a path on this host, so the conversion must
+	// not depend on which OS is reading it.
+	slashed := strings.ReplaceAll(strings.TrimSpace(configured), `\`, "/")
 	if slashed == "" {
 		return nil
 	}
