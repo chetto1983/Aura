@@ -40,16 +40,6 @@ const sessionCookieName = "__Host-aura_session"
 // it via AuthDeps.TTL but 12h is the default.
 const defaultSessionTTL = 12 * time.Hour
 
-// deriveSigningKey turns the operator secret into the 32-byte HMAC key. A single
-// AURA_WEB_AUTH_SECRET governs both the login compare and the cookie signature
-// (RESEARCH A2) — sha256 stretches the arbitrary-length passphrase to a fixed key.
-// An empty secret yields a deterministic-but-useless key; validateSecret already
-// fail-closes login when the secret is empty, so no valid cookie is ever minted.
-func deriveSigningKey(secret string) []byte {
-	sum := sha256.Sum256([]byte(secret))
-	return sum[:]
-}
-
 // validateSecret is the fail-closed login check (D-01 / T-24-09). An empty configured
 // secret means in-binary auth is NOT enabled — reject ALL logins (never accept an empty
 // passphrase, never treat ""=="" as a match). The compare is constant-time so a login
