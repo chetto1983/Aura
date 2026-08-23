@@ -102,7 +102,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"aura-home:/var/lib/aura",
 		"127.0.0.1:${AURA_SETUP_PORT:-9081}:9081",
 		"whatsapp:",
-		"ghcr.io/chetto1983/whatsapp-mcp:sha-e0b8345",
+		"ghcr.io/chetto1983/whatsapp-mcp:sha-9911eb8",
 		"127.0.0.1:${AURA_WHATSAPP_MCP_PORT:-8092}:8080",
 		"127.0.0.1:${AURA_WHATSAPP_BRIDGE_PORT:-8094}:8081",
 		"aura-whatsapp-session:/app/whatsapp-bridge/store",
