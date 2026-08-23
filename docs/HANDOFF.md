@@ -15,9 +15,10 @@ riapra una decisione già presa.
 
 Produzione su e sana. Git ri-misurato il 2026-08-23; il resto il 2026-08-17.
 
-- `master` è a `ef698eea2`, **allineato a `origin/master`** dopo un push di 45 commit fermi da
-  giorni (`e041b4b2d..ef698eea2`, 2026-08-23). Tutti e tre i run su quel SHA sono verdi: **CI
-  25 job su 25**, CodeQL, Skills. Un solo branch locale (`master`): i quattro ref
+- `master` è a `5a061bfde`, pushato il 2026-08-23 (**CI in corso al momento della scrittura** —
+  verificare prima di trattarla come verde). Porta l'emendamento PRD #127 e gli scope di
+  approvazione (vedi §10). Il push precedente, `ef698eea2`, era verde su tutti e tre i run:
+  **CI 25 job su 25**, CodeQL, Skills. Un solo branch locale (`master`): i quattro ref
   `worktree-agent-*`, `tmp/62-reserves` e `gsd/phase-45-harness-correctness` sono stati
   cancellati dopo aver verificato **per contenuto** — non per SHA — che il loro lavoro è in
   master.
@@ -133,8 +134,10 @@ codice Go legge quella env var**. *Confidenza: alta.*
 
 **2.1 — Tre piani condivisi restano non-scoped; il multi-utente è rifiutato da una guardia di boot
 invece che risolto.** `internal/config/config_validate.go:110-145` nomina i tre: skills,
-`aura.settings`, catalogo MCP. `internal/skills/identity_root.go:61`
-`NewSkillToolForIdentity` ha **zero chiamanti di produzione**. `aura.settings` ha PK sulla sola
+`aura.settings`, catalogo MCP. Le primitive per-identità scritte in Phase 36 per skills e
+catalogo MCP (`skills.NewSkillToolForIdentity`, `mcp.MountForIdentity` e famiglia) avevano
+**zero chiamanti di produzione** e sono state **cancellate**: facevano sembrare semi-risolto
+un piano che non lo era. `aura.settings` ha PK sulla sola
 `key` (`0024_settings.up.sql:15`) e `0087_rls_fail_closed.up.sql:248` la esclude esplicitamente
 da RLS — **e contiene `OPENROUTER_API_KEY`**. *Confidenza: alta.*
 *(Il piano tool è invece genuinamente chiuso: `SandboxRouter.Route` contiene su ogni profilo.)*
@@ -362,6 +365,18 @@ catalogo. *Confidenza: alta.*
 **6.7 — Immagini e audio non hanno una famiglia propria.**
 `services/ingest/app.py:275-282` lo dichiara apertamente come seam lasciato aperto.
 
+**6.8 — La DOMANDA di ogni pausa generata dal server è solo in inglese.** Gli scope di
+approvazione (#127) hanno risolto le *etichette* — codice semantico sul filo, parole scritte da
+ogni superficie — ma la riga sopra i bottoni resta `"Approve skill_manage (risk=destructive)? …"`
+anche in una card italiana. Non è una svista di quella slice: la domanda è generata in Go
+(`gatewayApprovalQuestion`, e gli analoghi di `shell_exec` e install skill), salvata in
+`paused_states.question`, ed è **il vincolo CR-01** — il resume la confronta byte per byte con
+quella emessa. Tradurla lato client significherebbe parsare prosa, cioè la cosa che il codice
+di questo repo evita apposta. Farla bene vuol dire dare a *tutte* le domande generate dal server
+lo stesso trattamento codice+render: una colonna nuova su `paused_states` (parametri strutturati
+accanto al testo, che resta l'oggetto del confronto) più un campo su `ask_user`. Lavoro suo,
+deliberatamente non iniziato qui — decisione dell'operatore il 2026-08-23.
+
 ---
 
 ## 7. Contraddizioni fra documenti
@@ -385,6 +400,22 @@ catalogo. *Confidenza: alta.*
 
 ## 8. Trappole pagate, da non ripagare
 
+- **Un `mux.Handle` senza slash finale è un path ESATTO: niente sotto di esso eredita.**
+  `/api/approvals` è montato così sul parent mux, quindi `/api/approvals/grants` ha risposto
+  **404** benché la rotta esistesse e fosse registrata sul mux AG-UI. Non si scopre in Go: si
+  scopre aprendo la pagina. Ogni rotta nuova sotto un prefisso già montato vuole la sua voce.
+- **Le `options` di una pausa non sono mai arrivate a nessun canale, per due bug diversi.**
+  `paused_states.options` è serializzato da `agent.PauseOption` come `[{label,value}]`, e il
+  cockpit accettava solo `string[]` → ogni pausa con opzioni cadeva in silenzio sul campo di
+  testo libero. Telegram, in parallelo, ignorava `p.Options` su `kind=approval` e mostrava il
+  Sì/No fisso, che risponde con contenuto vuoto. Una funzionalità può essere shippata,
+  testata e **irraggiungibile** su ogni superficie: il test che manca è quello che guarda la
+  pagina.
+- **Prima di localizzare, guarda dove nasce la stringa.** Le etichette di scope erano generate
+  in Go, e il gateway non conosce la lingua dell'operatore: tre bottoni inglesi dentro una card
+  italiana. La soluzione non è tradurre lato server ma spedire un **codice semantico** e lasciare
+  che ogni superficie scriva le sue parole — è ciò che `internal/runner` fa già con
+  `ResolveOutcome`, ed era scritto nel commento di quel file.
 - **`docker compose restart` su un parent `network_mode: service:` orfana i figli per sempre.**
   Usare `up -d`. Costo misurato: 5h30 di metriche cieche. Risolto strutturalmente oggi, ma la
   regola vale per ogni altro accoppiamento `service:`.
@@ -484,6 +515,9 @@ catalogo. *Confidenza: alta.*
 | La card che si descriveva col nome del file temporaneo | `67b64b144` — `_card_name()`: stem vero + estensione convertita, 6 unit test |
 | **4.2** — la domanda ripetuta rimandata al modello per sempre | `02fba5490` + `d2afda7a5` (il call-site, dimenticato dal primo) |
 | **4.2b** — il run che muore senza lasciare traccia | `5befdd184` — causa riprodotta col restart a metà run, marcatore provato dal vivo |
+| L'approvazione senza scope (ogni distruttiva trattenuta ogni volta) | `72aef55a2` + `64fc478d8` — emendamento #127, `once`/`session`/`always`; provato dall'agente vero: tre delete in un turno con zero approvazioni sotto il grant di sessione, e un `always` sopravvissuto al riavvio del container |
+| Il cockpit che non ha mai renderizzato le `options` come bottoni | `72aef55a2` — `parseOptions` accetta `{label,value}`, la forma che il DB scrive davvero |
+| Telegram che ignorava le `options` su `kind=approval` | `72aef55a2` — `approvalScopeMarkup`, un bottone per scope più Rifiuta |
 | `/new` e `/clear` nel composer | Cancellati: non facevano niente che la sidebar non faccia |
 | Il tetto di output del summarizer (`summaryMaxTokens = 1024`) | Tolto dal filo, mai da rimettere: `agent/context_compressor.py` di hermes lo legifera («NO max_tokens: the output cap must never truncate a summary»). La lunghezza si chiede nel PROMPT, derivata da quanto si comprime |
 | Copiare l'`archive_and_compact` di hermes | Rifiutato con misura: là la compaction fa UPDATE sulle righe dei messaggi, che qui spara `conversation_turns_snapshot_bump` (0047) → `55006` → niente compaction proprio durante un export. E il flag `active` è per-riga, mentre l'albero branch di 0017 condivide le righe fra rami: non può esprimere «superata su A, viva su B». Il watermark per (conversazione, ramo) sì |
