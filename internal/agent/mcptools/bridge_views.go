@@ -2,7 +2,6 @@ package mcptools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -73,6 +72,24 @@ func (b *bridgedTool) viewDescriptor(payload mcp.ToolPayload) (map[string]any, b
 			"bytes", len(payload.Structured), "cap", MaxViewPayloadBytes)
 	default:
 		descriptor["structured_content"] = payload.Structured
+	}
+	// Text travels too, because structuredContent is OPTIONAL in MCP and a server
+	// that returns a plain string never sets it. ext-apps says as much: the
+	// `ui/notifications/tool-result` params carry BOTH `content` and
+	// `structuredContent`, mirroring CallToolResult. Carrying only the structured
+	// half made every text-returning server unrenderable — measured 2026-08-23 on
+	// the calendar sidecar, whose tool returns Task<string>, so its view received
+	// null while whatsapp's list tools (which do return structured lists) rendered
+	// fine. The same cap applies: a view is a panel, not a file viewer.
+	switch {
+	case payload.Text == "":
+	case len(payload.Text) > MaxViewPayloadBytes:
+		descriptor["text_dropped_bytes"] = len(payload.Text)
+		slog.Warn("mcp view text over cap",
+			"server", b.srv.name, "tool", b.name,
+			"bytes", len(payload.Text), "cap", MaxViewPayloadBytes)
+	default:
+		descriptor["text_content"] = payload.Text
 	}
 	return descriptor, true
 }
@@ -190,16 +207,16 @@ type ViewCallers map[string]*MountedServer
 // CallForView runs a read-only tool on the named server. An unknown server is an
 // error, never a silent empty result — a view that reached the wrong host should
 // say so rather than render nothing and look merely empty.
-func (c ViewCallers) CallForView(ctx context.Context, server, tool string, args map[string]any) (json.RawMessage, error) {
+func (c ViewCallers) CallForView(ctx context.Context, server, tool string, args map[string]any) (mcp.ToolPayload, error) {
 	host, ok := c[server]
 	if !ok {
-		return nil, fmt.Errorf("mcp %q: not mounted, or its views may not call back", server)
+		return mcp.ToolPayload{}, fmt.Errorf("mcp %q: not mounted, or its views may not call back", server)
 	}
-	payload, err := host.CallReadOnlyTool(ctx, tool, args)
-	if err != nil {
-		return nil, err
-	}
-	return payload.Structured, nil
+	// The WHOLE payload, not just its structured half: structuredContent is optional
+	// in MCP, so a server that answers with a plain string has none, and returning
+	// only Structured handed such a view a null it could not distinguish from an
+	// empty result. Same defect as viewDescriptor's, on the callback path.
+	return host.CallReadOnlyTool(ctx, tool, args)
 }
 
 // viewDeclaration picks where the framing declaration lives. The spec hangs it off

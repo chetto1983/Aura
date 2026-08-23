@@ -21,7 +21,7 @@ function harness(overrides: Partial<Parameters<typeof createHostBridge>[0]> = {}
     descriptor,
     html: '<html>view</html>',
     post: (envelope) => sent.push(envelope),
-    callTool: () => Promise.resolve({ rows: [] }),
+    callTool: () => Promise.resolve({ structuredContent: { rows: [] } }),
     hostContext: () => ({ theme: 'dark' }),
     ...overrides,
   });
@@ -70,16 +70,20 @@ describe('ui/initialize', () => {
     expect((init.result as { hostContext: unknown }).hostContext).toEqual({ theme: 'dark' });
     expect(input.method).toBe('ui/notifications/tool-input');
     expect(input.params).toEqual({ arguments: descriptor.arguments });
-    // The view reads result.structuredContent — the shape the official ext-apps
-    // client and the spec's own sample both key on.
+    // ext-apps mirrors CallToolResult in this notification: BOTH `content` and
+    // `structuredContent`. The view prefers the structured half and falls back to
+    // content[].text, so a descriptor carrying no text still sends the key, empty.
     expect(result.method).toBe('ui/notifications/tool-result');
-    expect(result.params).toEqual({ structuredContent: descriptor.structured_content });
+    expect(result.params).toEqual({
+      structuredContent: descriptor.structured_content,
+      content: [],
+    });
   });
 });
 
 describe('tools/call', () => {
   it('answers in the structuredContent shape the view reads', async () => {
-    const callTool = vi.fn().mockResolvedValue({ rows: [1, 2] });
+    const callTool = vi.fn().mockResolvedValue({ structuredContent: { rows: [1, 2] } });
     const { bridge, toView } = harness({ callTool });
     bridge.onEnvelope({
       kind: 'from_view',
@@ -96,6 +100,32 @@ describe('tools/call', () => {
 
     expect(callTool).toHaveBeenCalledWith('list_messages', { page: 1 });
     expect(toView()[0]).toMatchObject({ id: 7, result: { structuredContent: { rows: [1, 2] } } });
+  });
+
+  it('relays a text-only answer, which is all a string-returning server sends', async () => {
+    // structuredContent is optional in MCP. The calendar sidecar's tools return a
+    // plain string and set none, so answering with structuredContent alone handed
+    // its view a null it could not tell from an empty result.
+    const callTool = vi
+      .fn()
+      .mockResolvedValue({ content: [{ type: 'text', text: '{"emails":[]}' }] });
+    const { bridge, toView } = harness({ callTool });
+    bridge.onEnvelope({
+      kind: 'from_view',
+      message: {
+        jsonrpc: '2.0',
+        id: 9,
+        method: 'tools/call',
+        params: { name: 'calendar', arguments: { action: 'get_emails' } },
+      },
+    });
+    await vi.waitFor(() => {
+      expect(toView()).toHaveLength(1);
+    });
+    expect(toView()[0]).toMatchObject({
+      id: 9,
+      result: { content: [{ type: 'text', text: '{"emails":[]}' }] },
+    });
   });
 
   it('turns a host refusal into a JSON-RPC error, never a hang', async () => {

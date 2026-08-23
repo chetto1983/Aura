@@ -49,7 +49,7 @@ var mcpSandboxHTML []byte
 // (internal/agent/mcptools) refuses anything that is not read-only and anything
 // on a server other than the one named — this package only carries the request.
 type MCPViewToolCaller interface {
-	CallForView(ctx context.Context, server, tool string, args map[string]any) (json.RawMessage, error)
+	CallForView(ctx context.Context, server, tool string, args map[string]any) (mcp.ToolPayload, error)
 }
 
 // registerMCPViewRoutes mounts the view routes. The read + call routes inherit
@@ -75,15 +75,21 @@ func (s *Server) SetMCPViews(catalog *mcp.ViewCatalog, sandboxOrigin string, cal
 // handleMCPSandbox serves the relay document (mcp_sandbox.html).
 //
 // Two headers carry the whole security posture of this route. The CSP allows the
-// page's own inline script and NOTHING else to load — no network, no fonts, no
-// images — because a relay needs none of it; and frame-ancestors narrows the
-// embedders to the single origin the caller named. That origin is the CALLER's
-// claim, not a configured one — the cockpit passes its own, and a page that
-// passes a different one only ever gets a relay framed on an origin with no
-// session, no data and nothing it may fetch. What it must never become is a way
-// to write the header itself, which is why only a bare scheme://authority is
-// accepted. The view document is not covered by this CSP at all: it lives in a
-// nested frame with its own, which is the separation the proxy exists for.
+// page's own inline script, images that are already in hand as `data:`, and
+// NOTHING else — no network of any kind; and frame-ancestors narrows the embedders
+// to the single origin the caller named. That origin is the CALLER's claim, not a
+// configured one — the cockpit passes its own, and a page that passes a different
+// one only ever gets a relay framed on an origin with no session, no data and
+// nothing it may fetch. What it must never become is a way to write the header
+// itself, which is why only a bare scheme://authority is accepted.
+//
+// This policy governs the VIEW too, which the comment here previously denied: the
+// view is mounted as `srcdoc` (mcp_sandbox.html), and a srcdoc frame inherits the
+// embedding document's policy rather than carrying one of its own. That is why
+// `img-src data:` appears at all — without it `default-src 'none'` reached the
+// view and every picture in a rendered panel was blocked, whatever its server
+// sent. `data:` and only `data:`: bytes that arrived through a tool result the
+// gateway already graded, never a URL the frame goes out and fetches.
 func (s *Server) handleMCPSandbox(w http.ResponseWriter, r *http.Request) {
 	ancestor := frameAncestor(r.URL.Query().Get("host"))
 	if ancestor == "" {
@@ -95,7 +101,7 @@ func (s *Server) handleMCPSandbox(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Security-Policy",
-		"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-src data: blob:; frame-ancestors "+ancestor)
+		"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; frame-src data: blob:; frame-ancestors "+ancestor)
 	_, _ = w.Write(mcpSandboxHTML)
 }
 
@@ -141,14 +147,20 @@ func (s *Server) handleMCPViewCall(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no such view server", http.StatusNotFound)
 		return
 	}
-	structured, err := s.mcpViewCaller.CallForView(r.Context(), req.Server, req.Tool, req.Arguments)
+	payload, err := s.mcpViewCaller.CallForView(r.Context(), req.Server, req.Tool, req.Arguments)
 	if err != nil {
 		slog.Warn("mcp view tool call refused", "server", req.Server, "tool", req.Tool, "error", err)
 		http.Error(w, "tool call refused", http.StatusForbidden)
 		return
 	}
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	writeJSON(w, map[string]any{"structured_content": structured})
+	// Both halves travel. A server whose tools return a plain string sets no
+	// structuredContent at all, so answering with that field alone made every such
+	// server's view read null.
+	writeJSON(w, map[string]any{
+		"structured_content": payload.Structured,
+		"text_content":       payload.Text,
+	})
 }
 
 // maxViewCallBodyBytes bounds a view's tools/call body. A view sends a handful of

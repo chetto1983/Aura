@@ -22,14 +22,15 @@ const (
 
 type stubViewCaller struct {
 	structured json.RawMessage
+	text       string
 	err        error
 	sawServer  string
 	sawTool    string
 }
 
-func (s *stubViewCaller) CallForView(_ context.Context, server, tool string, _ map[string]any) (json.RawMessage, error) {
+func (s *stubViewCaller) CallForView(_ context.Context, server, tool string, _ map[string]any) (mcp.ToolPayload, error) {
 	s.sawServer, s.sawTool = server, tool
-	return s.structured, s.err
+	return mcp.ToolPayload{Structured: s.structured, Text: s.text}, s.err
 }
 
 func newViewServer(t *testing.T, origin string, caller MCPViewToolCaller) http.Handler {
@@ -167,8 +168,15 @@ func TestHandleMCPSandbox(t *testing.T) {
 	if !strings.Contains(csp, "default-src 'none'") {
 		t.Errorf("the relay loads nothing: %q", csp)
 	}
+	// A picture that arrived inside a tool result may be painted; a picture the
+	// frame would have to go and fetch may not. The view inherits this policy —
+	// it is mounted as srcdoc — so without this directive a rendered panel could
+	// not show an image at all, whatever its server returned.
+	if !strings.Contains(csp, "img-src data:") {
+		t.Errorf("a view must be able to paint the bytes it was handed: %q", csp)
+	}
 	// The relay must never grow a network reach: it carries data it was handed.
-	for _, forbidden := range []string{"connect-src", "img-src http"} {
+	for _, forbidden := range []string{"connect-src", "img-src http", "img-src *"} {
 		if strings.Contains(csp, forbidden) {
 			t.Errorf("the relay policy must not open %q: %q", forbidden, csp)
 		}

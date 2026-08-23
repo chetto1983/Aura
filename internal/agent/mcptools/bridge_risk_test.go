@@ -91,6 +91,11 @@ func TestTrustedRecipeRiskPolicyIsGraduated(t *testing.T) {
 		{name: "memory erase without approval loop", source: mcp.SourceRecipeMemory, tool: "memory_forget", wantMutating: true},
 		{name: "whatsapp read", source: "recipe:whatsapp", tool: "list_messages"},
 		{name: "whatsapp local download", source: "recipe:whatsapp", tool: "download_media", wantMutating: true},
+		// Read despite the cache write it performs, because a view may only call
+		// read-only tools and this one exists so a rendered panel can show a photo
+		// instead of a placeholder. Sibling download_media stays mutating: it hands
+		// back a container path, which is an effect without a reader.
+		{name: "whatsapp inline media for a view", source: "recipe:whatsapp", tool: "get_media_data"},
 		{name: "whatsapp external send", source: "recipe:whatsapp", tool: "send_message", wantMutating: true, wantDestructive: true},
 		{name: "unknown recipe tool fails closed", source: "recipe:calendar", tool: "new_side_effect", wantMutating: true, wantDestructive: true},
 	}
@@ -450,6 +455,7 @@ func TestMCPToolRiskRecipeTablesUnchanged(t *testing.T) {
 			"get_direct_chat_by_contact": {false, false},
 			"get_last_interaction":       {false, false},
 			"get_message_context":        {false, false},
+			"get_media_data":             {false, false},
 			"download_media":             {true, false},
 			"send_audio_message":         {true, true},
 			"send_file":                  {true, true},

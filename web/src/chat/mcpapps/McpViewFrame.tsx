@@ -4,11 +4,11 @@ import { useTranslation } from 'react-i18next';
 import { DisplayCardShell } from '../displays/DisplayCardShell';
 import {
   createHostBridge,
-  type HostContext,
   type McpViewDescriptor,
   type McpViewDocument,
   type SandboxEnvelope,
 } from './hostProtocol';
+import { hostContextFrom } from './hostTheme';
 import { fetchViewDocument } from './viewDocuments';
 
 // McpViewFrame renders one MCP Apps view (SEP-1865).
@@ -110,21 +110,7 @@ export function McpViewFrame({ descriptor }: McpViewFrameProps) {
     };
   }, [descriptor.server, descriptor.resource_uri, key]);
 
-  const hostContext = useCallback((): HostContext => {
-    const root = document.documentElement;
-    const read = (name: string) => getComputedStyle(root).getPropertyValue(name).trim();
-    return {
-      theme: root.classList.contains('dark') ? 'dark' : 'light',
-      styles: {
-        variables: {
-          '--wa-bg': read('--color-surface') || '',
-          '--host-surface': read('--color-surface') || '',
-          '--host-text': read('--color-text') || '',
-          '--host-accent': read('--color-accent') || '',
-        },
-      },
-    };
-  }, []);
+  const hostContext = useCallback(() => hostContextFrom(document.documentElement), []);
 
   // A tool call a view asks for goes to the host, which refuses anything that is
   // not read-only. The browser never reaches an MCP server directly.
@@ -137,8 +123,18 @@ export function McpViewFrame({ descriptor }: McpViewFrameProps) {
         body: JSON.stringify({ server: descriptor.server, tool, arguments: args }),
       });
       if (!res.ok) throw new Error(t('display.mcpView.callRefused'));
-      const body = (await res.json()) as { structured_content?: unknown };
-      return body.structured_content ?? null;
+      const body = (await res.json()) as {
+        structured_content?: unknown;
+        text_content?: string;
+      };
+      // Both halves reach the view, because structuredContent is optional in MCP
+      // and a server answering with a plain string sets only the text.
+      return {
+        structuredContent: body.structured_content ?? null,
+        content: body.text_content
+          ? [{ type: 'text' as const, text: body.text_content }]
+          : [],
+      };
     },
     [descriptor.server, t],
   );

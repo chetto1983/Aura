@@ -174,6 +174,40 @@ func TestCuratedActionReconciliationWarnsBothDirections(t *testing.T) {
 	}
 }
 
+// TestCuratedActionReconciliationIsSilentWhenTheTwoSidesAgree is the other half of
+// D-33's contract, and the half the both-directions test above cannot express: it
+// asserts on the ABSENCE of warnings. Without it the reconciler's `inEnum`
+// bookkeeping is unmeasured — drop that one map write and every entry in the risk
+// table is reported as "no longer advertised" on a perfectly healthy mount, while
+// the both-directions test keeps passing because the name it greps for is still
+// there. A drift warning that fires on a fork in step is a warning an operator
+// learns to ignore, which costs exactly the outage D-33 exists to surface.
+// (Measured 2026-08-23: this is the one non-equivalent survivor of
+// go-mutesting on bridge_multiplex.go.)
+func TestCuratedActionReconciliationIsSilentWhenTheTwoSidesAgree(t *testing.T) {
+	var logs bytes.Buffer
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(old) })
+
+	enum := make([]string, 0, len(trustedRecipeActions[calendarRecipeSource]))
+	for action := range trustedRecipeActions[calendarRecipeSource] {
+		enum = append(enum, action)
+	}
+	params, err := json.Marshal(map[string]any{
+		"properties": map[string]any{"action": map[string]any{"enum": enum}},
+	})
+	if err != nil {
+		t.Fatalf("marshal params: %v", err)
+	}
+
+	reconcileCuratedActions(CalendarMultiplexedToolName, calendarRecipeSource, params)
+
+	if logs.Len() != 0 {
+		t.Errorf("a curated tool whose enum matches the risk table exactly must warn about nothing, got: %s", logs.String())
+	}
+}
+
 // TestCuratedActionEnumToleratesAbsentOrUnparseable proves D-33's "never panic"
 // half: no action enum, or unparseable params, must emit nothing and must not panic.
 func TestCuratedActionEnumToleratesAbsentOrUnparseable(t *testing.T) {

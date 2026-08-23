@@ -104,11 +104,20 @@ var trustedRecipeActions = map[string]map[string]MCPActionClass{
 		"get_direct_chat_by_contact": MCPActionRead,
 		"get_last_interaction":       MCPActionRead,
 		"get_message_context":        MCPActionRead,
-		"download_media":             MCPActionMutate,
-		"send_audio_message":         MCPActionDestructive,
-		"send_file":                  MCPActionDestructive,
-		"send_message":               MCPActionDestructive,
-		"send_reaction":              MCPActionDestructive,
+		// Read, and deliberately so, even though it warms the bridge's media cache on
+		// the way: it sends nothing, alters no remote state, and returns bytes the
+		// caller can already read the message for. That classification is what lets a
+		// rendered view fetch a photo at all (CallForView admits read-only tools only),
+		// which is the whole reason the tool exists — download_media next to it hands
+		// back a container path no browser can open, so a view could only ever show a
+		// placeholder where the picture belongs. The incidental write is a cache, not
+		// an effect the user would want approval over.
+		"get_media_data":     MCPActionRead,
+		"download_media":     MCPActionMutate,
+		"send_audio_message": MCPActionDestructive,
+		"send_file":          MCPActionDestructive,
+		"send_message":       MCPActionDestructive,
+		"send_reaction":      MCPActionDestructive,
 	},
 	// The tools cmd/arcadedb-mcp actually serves. The names here were the
 	// PREVIOUS memory server's — memory_add_fact, memory_add_entity, memory_update,

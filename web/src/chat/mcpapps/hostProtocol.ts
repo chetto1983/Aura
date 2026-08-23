@@ -18,8 +18,22 @@ export interface McpViewDescriptor {
   readonly tool_name?: string;
   readonly arguments?: unknown;
   readonly structured_content?: unknown;
+  /**
+   * The server's text content. structuredContent is OPTIONAL in MCP, so a server
+   * whose tools return a plain string never sets it — carrying only the structured
+   * half left every such view rendering null.
+   */
+  readonly text_content?: string;
   /** Set when the server's payload was over the host cap and was not forwarded. */
   readonly payload_dropped_bytes?: number;
+  /** Set when the server's text was over the host cap and was not forwarded. */
+  readonly text_dropped_bytes?: number;
+}
+
+/** A tools/call answer in CallToolResult's shape — both halves, either may be absent. */
+export interface McpToolCallResult {
+  readonly structuredContent?: unknown;
+  readonly content?: readonly { readonly type: 'text'; readonly text: string }[];
 }
 
 /** GET /api/mcp/view — the document plus what the server asked for. */
@@ -81,7 +95,7 @@ export interface HostBridgeOptions {
   /** Send one envelope to the relay. */
   readonly post: (envelope: unknown) => void;
   /** Run a tool the view asked for. Rejects when the host refuses it. */
-  readonly callTool: (tool: string, args: Record<string, unknown>) => Promise<unknown>;
+  readonly callTool: (tool: string, args: Record<string, unknown>) => Promise<McpToolCallResult>;
   readonly hostContext: () => HostContext;
   /** The view asked to put text in the conversation. */
   readonly onSendToChat?: (text: string) => void;
@@ -131,8 +145,13 @@ export function createHostBridge(opts: HostBridgeOptions): HostBridge {
     notify('ui/notifications/tool-input', {
       arguments: descriptor.arguments ?? {},
     });
+    // ext-apps mirrors CallToolResult here: BOTH `content` and `structuredContent`.
+    // Sending only the latter silently starved every server that answers in text.
     notify('ui/notifications/tool-result', {
       structuredContent: descriptor.structured_content ?? null,
+      content: descriptor.text_content
+        ? [{ type: 'text', text: descriptor.text_content }]
+        : [],
     });
   };
 
@@ -174,10 +193,10 @@ export function createHostBridge(opts: HostBridgeOptions): HostBridge {
         const tool = typeof params.name === 'string' ? params.name : '';
         const args = (params.arguments ?? {}) as Record<string, unknown>;
         try {
-          // The view reads result.structuredContent (that is what the official
-          // ext-apps client and the spec's own sample both do), so the host must
-          // answer in that shape rather than in its own.
-          reply(id, { structuredContent: await opts.callTool(tool, args) });
+          // Answer in CallToolResult's shape, not the host's own: a view reads
+          // structuredContent first and falls back to content[].text, and a server
+          // that returns a plain string only ever fills the second.
+          reply(id, await opts.callTool(tool, args));
         } catch (err) {
           replyError(id, err instanceof Error ? err.message : String(err));
         }
