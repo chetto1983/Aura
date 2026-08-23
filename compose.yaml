@@ -852,12 +852,15 @@ services:
   # — aura-publish-image.yml (branch aura/cockpit-connect) and publish-image.yml (main)
   # — so which build it names depends on which ran last. The branch aura/cockpit-connect
   # is retired: 143 commits behind main, its one unique commit fused into main on
-  # 2026-07-01 (4a8306206). sha-e0b8345 = main e0b83459, digest
-  # sha256:7d557d462994dca468cf19f69931743cb99e34a2ca5c47969aa77eba7df04568, serving 14
-  # tools of which list_messages/list_chats bind MCP Apps views (ui://whatsapp/*.html).
+  # 2026-07-01 (4a8306206). sha-9911eb8 = main 9911eb8f, digest
+  # sha256:f24a041a913786ad894baec010e8b1f4f0f7420250b56e4ff44d4d9ab7f23c9e, serving 15
+  # tools: the two list tools now bind ONE two-pane view (ui://whatsapp/client.html --
+  # chat index left, conversation right) in place of the two single-purpose ones, and
+  # the new `get_media_data` returns a photo as a data: URL so that view can paint it
+  # (download_media returns a path inside the container, which no browser can open).
   # Bump by reading the sha- tag publish-image.yml minted for the target commit.
   whatsapp:
-    image: ${AURA_WHATSAPP_MCP_IMAGE:-ghcr.io/chetto1983/whatsapp-mcp:sha-e0b8345}
+    image: ${AURA_WHATSAPP_MCP_IMAGE:-ghcr.io/chetto1983/whatsapp-mcp:sha-9911eb8}
     pull_policy: ${AURA_WHATSAPP_MCP_PULL_POLICY:-missing}
     container_name: aura-whatsapp
     restart: unless-stopped
@@ -1029,7 +1032,7 @@ services:
       retries: 12
       start_period: 60s                        # first-boot HF model download
 
-  # Aura PIM sidecar — forked calendar-mcp (chetto1983/aura-pim-mcp @ aura/pim-sidecar):
+  # Aura PIM sidecar — forked calendar-mcp (chetto1983/aura-pim-mcp @ main):
   # unified mail+calendar+contacts over MCP-over-HTTP (/) + a token-gated admin REST API
   # (/admin) the cockpit drives for per-deployment OAuth connect. Not vendored: the image is
   # CI-built + published to GHCR (public) by the fork's aura-publish-image workflow.
@@ -1044,13 +1047,14 @@ services:
   # host keeps serving old bytes under an unchanged name if it moves again. The
   # 40-hex form exists here because the fork's aura-publish-image workflow tags the
   # raw github.sha alongside `:sidecar`.
-  # 4e0f518333773a892f9f5a718981466e6054ae2e = curated surface + restored mail
-  # management (delete_email/mark_email_read/move_email), digest
-  # sha256:db4deb805a011dc1f6d0f6388fd5b307b4abe8e2e1c76286a813283dbcedbb25, serving
-  # the ONE `calendar` tool (17 actions) in place of the prior 14 registered tools.
+  # c497224cf8a0c8eeaea02210d5101b1e032661fb = the same curated `calendar` tool (17
+  # actions), now binding an MCP Apps view (ui://calendar/view.html): a three-pane
+  # client whose rows adapt to whichever family the action returned -- events, emails,
+  # contacts, calendars or accounts -- and which calls back for a mail body. Digest
+  # sha256:5ab6970b79fa1333d8f35bf64b5a5340da4cba1622f6fdcba8fcfb14bedde9ef.
   # Bump by reading the 40-hex tag the workflow minted for the target commit.
   aura-pim-mcp:
-    image: ${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:4e0f518333773a892f9f5a718981466e6054ae2e}
+    image: ${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:c497224cf8a0c8eeaea02210d5101b1e032661fb}
     pull_policy: ${AURA_PIM_MCP_PULL_POLICY:-missing}
     container_name: aura-pim-mcp
     restart: unless-stopped
