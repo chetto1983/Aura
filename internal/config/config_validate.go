@@ -116,9 +116,10 @@ func (c *Config) ValidateProfile(p RuntimeProfile) []Violation {
 // kept keyed on Strict() anyway, because the other three planes it names still stand:
 //
 //	skills          skillLoaderRoots() returns {<export>/.agents/skills, cfg.SkillsDir}
-//	                with no identity component, and skills.NewSkillToolForIdentity — the
-//	                per-identity primitive — has ZERO production callers. A second
-//	                identity reads and rewrites the operator's library.
+//	                with no identity component. A second identity reads and rewrites
+//	                the operator's library. A per-identity rooting primitive was
+//	                written for this in Phase 36 and never acquired a caller; it was
+//	                deleted rather than left as a fix that looks applied.
 //	aura.settings   keyed by `key` alone — no identity column, no RLS — and it holds
 //	                OPENROUTER_API_KEY.
 //	MCP catalog     unscoped; capability grants are the only control.
