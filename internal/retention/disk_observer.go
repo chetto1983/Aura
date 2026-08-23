@@ -256,6 +256,9 @@ func diskMetricState(ratio float64, thresholds DiskThresholds) string {
 	}
 }
 
+// ratioFromCapacity converts a statfs total/available pair into a used ratio.
+// Only disk_usage_windows.go calls it — a Linux-only lint run reports it unused,
+// which is why it must not be moved out of production code.
 func ratioFromCapacity(total, available uint64) (float64, error) {
 	if total == 0 {
 		return 0, errors.New("filesystem capacity is zero")

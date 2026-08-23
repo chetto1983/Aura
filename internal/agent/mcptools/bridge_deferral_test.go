@@ -398,3 +398,12 @@ func bridgeTools(namespace string, srv *MountedServer, advertised []*sdkmcp.Tool
 func specFromToolDef(namespace string, t *sdkmcp.Tool) tools.Spec {
 	return specFromToolDefWithPolicy(namespace, t, defaultBridgePolicy(namespace))
 }
+
+// resetLoadedSlotBudgetForTest resets the package-level slot counter. Test-only:
+// production has no unmount path to justify resetting it, and no caller outside
+// a _test.go file should ever need to.
+func resetLoadedSlotBudgetForTest() {
+	loadedSlotBudget.mu.Lock()
+	defer loadedSlotBudget.mu.Unlock()
+	loadedSlotBudget.spent = 0
+}

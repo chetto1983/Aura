@@ -21,7 +21,7 @@ type finalRequestEnvelope struct {
 // configured output and provider-tokenizer reserves.
 //
 // The history ladder deliberately excludes the system prompt and tool manifest,
-// reserving l2HeadroomTokens for them. This final guard counts those bytes for
+// reserving llm.PromptHeadroom(ContextWindow) for them. This final guard counts those bytes for
 // real and compares the complete envelope against:
 //
 //	ContextWindow - max(MaxOutputTokens, 20000) - provider error reserve

@@ -3,6 +3,8 @@ package toolinvocations
 import (
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 // TestRedactForLedger_Patterns is the WR-02 redactor table: each credential shape
@@ -177,3 +179,7 @@ func TestRedactForLedger_NoCap(t *testing.T) {
 		t.Errorf("no-cap output must not carry the cap marker: %q", got)
 	}
 }
+
+// redactedPlaceholder is the shared marker (internal/redact owns the pattern table).
+// It lives here, not in redact.go: no production code names it — only these assertions do.
+const redactedPlaceholder = redact.Placeholder

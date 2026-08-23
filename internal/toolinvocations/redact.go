@@ -43,9 +43,6 @@ const (
 	// independently chosen, not mirrored.
 	ResultPreviewCapBytes = 2 * 1024
 
-	// redactedPlaceholder is the shared marker; the pattern table lives in
-	// internal/redact so a shape added for one caller protects every caller.
-	redactedPlaceholder = redact.Placeholder
 	// capMarker is appended when a value is truncated to its byte cap, so a reader
 	// can tell a capped value from one that happened to end at the boundary.
 	capMarker = "…[capped]"

@@ -197,12 +197,3 @@ func terminalClasses(err error, panicked bool) (string, string) {
 		return "error", ErrorClass(err)
 	}
 }
-
-func hasAttribute(attrs []attribute.KeyValue, key AttributeKey, value string) bool {
-	for _, attr := range attrs {
-		if string(attr.Key) == string(key) && attr.Value.AsString() == value {
-			return true
-		}
-	}
-	return false
-}

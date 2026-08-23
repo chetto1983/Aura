@@ -103,13 +103,6 @@ func (h *hardenedDialer) dialContext(ctx context.Context, network, addr string) 
 	return dialer.DialContext(ctx, network, pinnedAddress)
 }
 
-// control runs AFTER resolution and BEFORE connect (address is the post-resolution
-// ip:port), re-classifying the dialed IP so a rebind to a private/metadata target is
-// rejected even on a path that dialed by name. Fail-closed on an unparseable host.
-func (h *hardenedDialer) control(_ string, address string, _ syscall.RawConn) error {
-	return h.controlAddress("", address, nil, false)
-}
-
 func (h *hardenedDialer) controlAddress(_ string, address string, _ syscall.RawConn, allowPrivate bool) error {
 	host, _, err := net.SplitHostPort(address)
 	if err != nil {

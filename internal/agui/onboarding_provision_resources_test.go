@@ -230,3 +230,28 @@ func TestResumeResourceProvisioningConverges(t *testing.T) {
 		t.Fatalf("resume did not converge: objectstore=%d filesystem=%d, want 1/1", os.liveCount(), fs.liveCount())
 	}
 }
+
+// resumeResourceProvisioning re-runs the journaled resource legs (Garage + filesystem) for
+// an already-created identity, skipping steps the journal marks done and re-running the
+// rest. It is the forward-recovery entry point (D-14): after a crash mid-provision, calling
+// it converges to ONE consistent set of resources (idempotent steps — no duplicate bucket,
+// grant, or dir). It performs NO compensation (forward recovery only); a genuine failure
+// surfaces so a caller can retry.
+func (s *onboardingService) resumeResourceProvisioning(ctx context.Context, identityID string) error {
+	run := newSagaRun(ctx, s.journal, sagaKindProvision, identityID)
+	if s.objectStore != nil {
+		if err := run.step(ctx, sagaStepGarage, func(ctx context.Context) error {
+			return s.objectStore.ProvisionObjectStore(ctx, identityID)
+		}); err != nil {
+			return provisionFail("object store resume", err)
+		}
+	}
+	if s.filesystem != nil {
+		if err := run.step(ctx, sagaStepFilesystem, func(ctx context.Context) error {
+			return s.filesystem.ProvisionIdentityDirs(ctx, identityID)
+		}); err != nil {
+			return provisionFail("filesystem resume", err)
+		}
+	}
+	return nil
+}

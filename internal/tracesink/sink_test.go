@@ -3,6 +3,7 @@ package tracesink
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -145,4 +146,16 @@ func TestSink(t *testing.T) {
 			t.Fatal("Write to a directory succeeded")
 		}
 	})
+}
+
+func (s *Sink) decrypt(ciphertext []byte) ([]byte, error) {
+	nonceSize := s.aead.NonceSize()
+	if len(ciphertext) < nonceSize {
+		return nil, fmt.Errorf("trace sink: ciphertext too short (%d < %d)", len(ciphertext), nonceSize)
+	}
+	plaintext, err := s.aead.Open(nil, ciphertext[:nonceSize], ciphertext[nonceSize:], nil)
+	if err != nil {
+		return nil, fmt.Errorf("trace sink: decrypt: %w", err)
+	}
+	return plaintext, nil
 }
