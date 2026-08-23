@@ -21,7 +21,7 @@ func TestReserveAcquire(t *testing.T) {
 	store := &fakeStore{}
 	g := New(config.ProfileSingleUserHardened, store)
 
-	v, err := g.reserve(context.Background(), gatedSpec(), nil, testKey(), scoring.Risky, "")
+	v, err := g.reserve(context.Background(), gatedSpec(), nil, testKey(), scoring.Risky, "", "")
 	if err != nil {
 		t.Fatalf("reserve returned err=%v, want nil", err)
 	}
@@ -43,7 +43,7 @@ func TestReserveFoldsOperatorID(t *testing.T) {
 	store := &fakeStore{}
 	g := New(config.ProfileSingleUserHardened, store)
 
-	v, err := g.reserve(context.Background(), gatedSpec(), nil, testKey(), scoring.Destructive, "op-9")
+	v, err := g.reserve(context.Background(), gatedSpec(), nil, testKey(), scoring.Destructive, "op-9", "")
 	if err != nil {
 		t.Fatalf("reserve err: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestReserveReplayOnConflict(t *testing.T) {
 	}
 	g := New(config.ProfileSingleUserHardened, store)
 
-	v, err := g.reserve(context.Background(), gatedSpec(), nil, testKey(), scoring.Risky, "")
+	v, err := g.reserve(context.Background(), gatedSpec(), nil, testKey(), scoring.Risky, "", "")
 	if err != nil {
 		t.Fatalf("reserve err: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestReserveFailClosed(t *testing.T) {
 	store := &fakeStore{reserveErr: errors.New("insert boom")}
 	g := New(config.ProfileSingleUserHardened, store)
 
-	v, err := g.reserve(context.Background(), gatedSpec(), nil, testKey(), scoring.Risky, "op-1")
+	v, err := g.reserve(context.Background(), gatedSpec(), nil, testKey(), scoring.Risky, "op-1", "")
 	if err != nil {
 		t.Fatalf("reserve must map the store error to a Deny verdict, not return err: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestReplayResultAppendsReplayedMarkerOnDuplicate(t *testing.T) {
 // the model can see and act on beats an invented success it cannot.
 func TestReserveDeniesAnUnaccountedPriorDispatch(t *testing.T) {
 	g := New(config.ProfileSingleUserHardened, &fakeStore{notAcquired: true}) // replayEnd nil
-	v, err := g.reserve(context.Background(), gatedSpec(), nil, testKey(), scoring.Normal, "")
+	v, err := g.reserve(context.Background(), gatedSpec(), nil, testKey(), scoring.Normal, "", "")
 	if err != nil {
 		t.Fatalf("reserve returned err=%v, want a verdict", err)
 	}

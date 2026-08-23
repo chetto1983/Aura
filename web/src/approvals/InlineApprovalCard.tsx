@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ariaInvalid } from '../a11y/aria';
-import { isTerminal, parseOptions } from './approvalState';
+import { isTerminal, parseOptions, parseScopeChoice } from './approvalState';
 import type { ApprovalResolution, ApprovalResolutionAttempt } from './useThreadApprovals';
 import {
   useResolveApproval,
@@ -29,6 +29,20 @@ type CardState = 'pending' | 'answered' | 'declined' | 'cancelled';
  * action is only the fallback for the in-session verdicts ('continue'/'pending'), where the chip
  * reflects what the operator just did while the turn goes on.
  */
+/**
+ * useScopeLabel renders a gateway approval-scope option in the operator's language. The
+ * gateway ships a stable code plus an English fallback label; a scope it does not
+ * recognise falls back to that label rather than rendering a raw code.
+ */
+function useScopeLabel(): (option: { label: string; value: string }) => string {
+  const { t } = useTranslation();
+  return (option) => {
+    const choice = parseScopeChoice(option.value);
+    if (choice === null) return option.label;
+    return t(`approval.scope.${choice.scope}`, { subject: choice.subject });
+  };
+}
+
 function cardStateFor(outcome: ResolveOutcome, action: ResolveAction): CardState {
   switch (outcome) {
     case 'approved':
@@ -64,6 +78,7 @@ export function InlineApprovalCard({
   const { t } = useTranslation();
   const resolve = useResolveApproval();
   const options = parseOptions(approval.options);
+  const scopeLabel = useScopeLabel();
   const terminal = isTerminal(approval);
   const [freeText, setFreeText] = useState('');
   const [confirmingCancel, setConfirmingCancel] = useState(false);
@@ -153,17 +168,17 @@ export function InlineApprovalCard({
         <div className="flex flex-wrap gap-2">
           {options.map((option) => (
             <Button
-              key={option}
+              key={option.label}
               type="button"
               variant="outline"
               size="sm"
               disabled={busy}
               onClick={() => {
-                submit('accept', option);
+                submit('accept', option.value);
               }}
               className="text-[0.8125rem] hover:border-accent"
             >
-              {option}
+              {scopeLabel(option)}
             </Button>
           ))}
         </div>

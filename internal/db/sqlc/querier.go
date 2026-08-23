@@ -152,7 +152,9 @@ type Querier interface {
 	GetTurnPointers(ctx context.Context, arg GetTurnPointersParams) (GetTurnPointersRow, error)
 	GetVerificationState(ctx context.Context, arg GetVerificationStateParams) (GetVerificationStateRow, error)
 	GrantCapability(ctx context.Context, arg GrantCapabilityParams) error
+	GrantGatewayApproval(ctx context.Context, arg GrantGatewayApprovalParams) error
 	HasCapability(ctx context.Context, arg HasCapabilityParams) (bool, error)
+	HasGatewayApprovalGrant(ctx context.Context, arg HasGatewayApprovalGrantParams) (bool, error)
 	HeartbeatBenchmarkSettingsOverride(ctx context.Context, arg HeartbeatBenchmarkSettingsOverrideParams) (int64, error)
 	HeartbeatIngestionJob(ctx context.Context, arg HeartbeatIngestionJobParams) (AuraIngestionJobs, error)
 	IncrementPasswordResetChallengeAttempts(ctx context.Context, id pgtype.UUID) error
@@ -247,6 +249,7 @@ type Querier interface {
 	// lock; a rare cross-instance double-nudge under HA is benign.
 	ListDuePendingApprovalReminders(ctx context.Context, arg ListDuePendingApprovalRemindersParams) ([]AuraSchedulerTasks, error)
 	ListExpiredReplayBodies(ctx context.Context, arg ListExpiredReplayBodiesParams) ([]ListExpiredReplayBodiesRow, error)
+	ListGatewayApprovalGrants(ctx context.Context, identityID pgtype.UUID) ([]AuraGatewayApprovalGrants, error)
 	ListIdentities(ctx context.Context) ([]AuraIdentities, error)
 	ListIdentityAudit(ctx context.Context, arg ListIdentityAuditParams) ([]AuraIdentityAudit, error)
 	ListInFlightToolInvocationsBefore(ctx context.Context, startedAt pgtype.Timestamptz) ([]AuraToolInvocations, error)
@@ -335,6 +338,7 @@ type Querier interface {
 	RetryIngestionJob(ctx context.Context, arg RetryIngestionJobParams) (RetryIngestionJobRow, error)
 	RetryRetentionItem(ctx context.Context, arg RetryRetentionItemParams) (int64, error)
 	RevokeCapability(ctx context.Context, arg RevokeCapabilityParams) error
+	RevokeGatewayApprovalGrant(ctx context.Context, arg RevokeGatewayApprovalGrantParams) (int64, error)
 	// Advance an active task's next fire to now so the next tick claims it. Returns rows
 	// affected so the caller distinguishes a hit from a non-active (pending/cancelled) task.
 	RunTaskNowRow(ctx context.Context, id pgtype.UUID) (int64, error)

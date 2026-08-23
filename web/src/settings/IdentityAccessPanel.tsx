@@ -1,14 +1,16 @@
 import { UserPlus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { CapabilityAdminPanel } from './CapabilityAdminPanel';
+import { StandingApprovalsPanel } from './StandingApprovalsPanel';
 import { Button } from '@/components/ui/button';
 
 interface IdentityAccessPanelProps {
   readonly onCreateIdentity: () => void;
 }
 
-// Creating an identity and deciding what it may do is one job, split across two sections by a
-// divider on the old single-scroll page. They are one pane now: roster first, grants second.
+// Creating an identity, revoking the standing approvals the operator handed the agent, and
+// deciding what another identity may do are one job. They are one pane: roster first, the
+// operator's own standing consent second, per-identity capabilities last.
 export function IdentityAccessPanel({ onCreateIdentity }: IdentityAccessPanelProps) {
   const { t } = useTranslation();
 
@@ -30,6 +32,9 @@ export function IdentityAccessPanel({ onCreateIdentity }: IdentityAccessPanelPro
           </Button>
         </div>
       </section>
+      <div className="border-t border-border pt-6">
+        <StandingApprovalsPanel />
+      </div>
       <div className="border-t border-border pt-6">
         <CapabilityAdminPanel />
       </div>

@@ -450,8 +450,27 @@ func newGatewayResumeHook(g *gateway.Gateway) runner.ResumeHook {
 		// newShellResumeHook). The authenticated pending.ConversationID is the key (WR-02),
 		// never the model-relayed resume_context id. A mismatched/benign question or a missing
 		// challenge → error, nothing recorded → the re-drive re-issues the approval (withheld).
-		return g.ApproveChallenge(pending.ConversationID, rc.Tool, rc.ArgsSHA256, pending.Question,
-			gateway.ResolvedApproval{Approved: true, OperatorID: "local"})
+		//
+		// resp.Content is the label the operator pressed. It is passed through as DATA, never
+		// trusted as an instruction: the gateway resolves it against the label table of the
+		// challenge it issued, so a value that matches nothing grants the narrowest scope
+		// (amendment #127). identityctx carries the authenticated principal a durable
+		// "always" grant belongs to; without one the accept degrades to this conversation.
+		scope, err := g.ApproveChallenge(ctx, gateway.ApprovalAccept{
+			ConversationID:  pending.ConversationID,
+			Tool:            rc.Tool,
+			ArgsFingerprint: rc.ArgsSHA256,
+			Question:        pending.Question,
+			Answer:          resp.Content,
+			IdentityID:      identityctx.IdentityID(ctx),
+			OperatorID:      "local",
+		})
+		if err != nil {
+			return err
+		}
+		slog.Info("gateway approval recorded",
+			"conversation_id", pending.ConversationID, "tool", rc.Tool, "scope", string(scope))
+		return nil
 	}
 }
 

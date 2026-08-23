@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agui"
+	"github.com/chetto1983/aura/internal/approvalgrants"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/readiness"
@@ -106,6 +107,9 @@ func wireAGUIServer(chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler,
 	// shipped with s.approvals == nil. chat.pause is the same askuser.Store the Runner
 	// resumes through, so the badge/list read the identical pending set.
 	aguiServer.SetApprovalStore(chat.pause)
+	// The standing "always approve" grants the approval prompt creates (amendment #127).
+	// Same pool, same owner-scoped posture as the pending read.
+	aguiServer.SetApprovalGrantStore(approvalgrants.New(chat.pool))
 	// Wire the DISP-05/D-09 image-proxy fetcher: a fresh web.Client reusing the SAME
 	// SSRF-hardened transport web_search/web_fetch use (hostname blocklist → DNS-pin →
 	// classify → image content-type allowlist + size cap). Without this the

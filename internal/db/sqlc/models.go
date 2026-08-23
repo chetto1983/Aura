@@ -212,6 +212,15 @@ type AuraConversations struct {
 	DeleteLeaseExpiresAt pgtype.Timestamptz `json:"delete_lease_expires_at"`
 }
 
+// Durable "always approve" grants per identity + tool + multiplexed action (amendment #127). Revoked with `aura gateway grants revoke`.
+type AuraGatewayApprovalGrants struct {
+	IdentityID pgtype.UUID        `json:"identity_id"`
+	Tool       string             `json:"tool"`
+	Action     string             `json:"action"`
+	GrantedAt  pgtype.Timestamptz `json:"granted_at"`
+	GrantedBy  pgtype.Text        `json:"granted_by"`
+}
+
 // Identity-scoped public-operation state and bounded replay metadata linked optionally to the append-only tool invocation audit tuple.
 type AuraIdempotencyOperations struct {
 	IdentityID          pgtype.UUID        `json:"identity_id"`

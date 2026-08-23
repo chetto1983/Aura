@@ -20,6 +20,15 @@ export const settingsEn = {
       heading: 'Identities & access',
       body: 'Create operator identities, connect their setup channels, and grant or revoke what each one is allowed to do.',
     },
+    standingApprovals: {
+      heading: 'Standing approvals',
+      body: 'Actions you told Aura to always approve. Until you revoke one here, Aura runs it without stopping to ask.',
+      empty: 'No standing approvals. Aura asks before every destructive action.',
+      error: 'Could not load your standing approvals.',
+      revoke: 'Revoke',
+      revokeError: 'Could not revoke that approval. Nothing changed.',
+      grantedAt: 'Granted {{date}}',
+    },
     telegram: {
       heading: 'Telegram',
       body: 'Add or validate the Telegram bot token, then mint a QR link for this signed-in identity if onboarding was skipped.',
@@ -118,6 +127,15 @@ export const settingsIt = {
     identity: {
       heading: 'Identità e permessi',
       body: 'Crea identità operatore, collega i loro canali di setup e concedi o revoca cosa ognuna può fare.',
+    },
+    standingApprovals: {
+      heading: 'Approvazioni permanenti',
+      body: 'Azioni per cui hai detto ad Aura di approvare sempre. Finché non le revochi qui, Aura le esegue senza fermarsi a chiedere.',
+      empty: 'Nessuna approvazione permanente. Aura chiede prima di ogni azione distruttiva.',
+      error: 'Non riesco a caricare le tue approvazioni permanenti.',
+      revoke: 'Revoca',
+      revokeError: 'Non sono riuscito a revocare questa approvazione. Non è cambiato niente.',
+      grantedAt: 'Concessa il {{date}}',
     },
     telegram: {
       heading: 'Telegram',

@@ -1,11 +1,14 @@
 package agui
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
+	"github.com/chetto1983/aura/internal/approvalgrants"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/google/uuid"
@@ -48,6 +51,89 @@ const defaultApprovalsLimit = 100
 func (s *Server) registerApprovalRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/approvals", s.handleListApprovals)
 	mux.HandleFunc("POST /api/approvals/{token}/resolve", s.handleResolveApproval)
+	mux.HandleFunc("GET /api/approvals/grants", s.handleListApprovalGrants)
+	mux.HandleFunc("POST /api/approvals/grants/revoke", s.handleRevokeApprovalGrant)
+}
+
+// approvalGrantStore is the narrow seam over the durable "always approve" rows
+// (*approvalgrants.Store). It is declared here, at the consumer, per D-A2-02.
+type approvalGrantStore interface {
+	List(ctx context.Context, identityID string) ([]approvalgrants.Grant, error)
+	Revoke(ctx context.Context, identityID, tool, action string) (bool, error)
+}
+
+// SetApprovalGrantStore wires the durable grant store. Until set, the grant routes answer
+// 503 — the same optional-wiring posture as the pending read.
+func (s *Server) SetApprovalGrantStore(store approvalGrantStore) { s.approvalGrants = store }
+
+// approvalGrantItem is the JSON projection of one standing grant. `subject` is the same
+// string the approval option named when the operator granted it, so what they revoke reads
+// exactly like what they approved.
+type approvalGrantItem struct {
+	Tool      string `json:"tool"`
+	Action    string `json:"action"`
+	Subject   string `json:"subject"`
+	GrantedAt string `json:"granted_at"`
+	GrantedBy string `json:"granted_by,omitempty"`
+}
+
+// handleListApprovalGrants returns the AUTHENTICATED principal's standing grants. It is
+// owner-scoped like the pending read: a grant is a statement by one principal about their
+// own agent, and no request parameter selects whose grants are meant.
+func (s *Server) handleListApprovalGrants(w http.ResponseWriter, r *http.Request) {
+	if s.approvalGrants == nil {
+		http.Error(w, "approval grants not available", http.StatusServiceUnavailable)
+		return
+	}
+	grants, err := s.approvalGrants.List(r.Context(), scopedIdentityID(r.Context()))
+	if err != nil {
+		http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
+		return
+	}
+	items := make([]approvalGrantItem, 0, len(grants))
+	for _, g := range grants {
+		items = append(items, approvalGrantItem{
+			Tool:      g.Tool,
+			Action:    g.Action,
+			Subject:   g.Subject(),
+			GrantedAt: g.GrantedAt.UTC().Format(time.RFC3339),
+			GrantedBy: g.GrantedBy,
+		})
+	}
+	writeJSON(w, items)
+}
+
+// revokeGrantBody is the POST /grants/revoke payload. The subject is sent as its two
+// coordinates rather than the rendered string, so the server never has to parse a label
+// back into a key.
+type revokeGrantBody struct {
+	Tool   string `json:"tool"`
+	Action string `json:"action"`
+}
+
+// handleRevokeApprovalGrant drops one standing grant of the authenticated principal and
+// reports whether a row was actually removed, so the cockpit can distinguish "revoked" from
+// "it was already gone" instead of showing success over a stale list.
+func (s *Server) handleRevokeApprovalGrant(w http.ResponseWriter, r *http.Request) {
+	if s.approvalGrants == nil {
+		http.Error(w, "approval grants not available", http.StatusServiceUnavailable)
+		return
+	}
+	var body revokeGrantBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if body.Tool == "" {
+		http.Error(w, "tool is required", http.StatusBadRequest)
+		return
+	}
+	revoked, err := s.approvalGrants.Revoke(r.Context(), scopedIdentityID(r.Context()), body.Tool, body.Action)
+	if err != nil {
+		http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]bool{"revoked": revoked})
 }
 
 // approvalItem is the JSON projection of one cross-thread pending pause (APRV-01). It

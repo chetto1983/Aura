@@ -30,9 +30,9 @@ func TestGatewayApprovalsLedgerOneShot(t *testing.T) {
 func TestGatewayApprovalsChallengeApproveConsume(t *testing.T) {
 	led := NewGatewayApprovals()
 	conv, tool, fp, q := "conv-1", "swarm_spawn", "fp-abc", "Approve swarm_spawn (risk=risky)? args: goals"
-	led.Challenge(conv, tool, fp, q)
+	led.Challenge(conv, tool, fp, q, grantSubject{Tool: tool})
 
-	if err := led.ApproveChallenge(conv, tool, fp, q, ResolvedApproval{Approved: true, OperatorID: "op-7"}); err != nil {
+	if err := approveChallenge(led, conv, tool, fp, q, ResolvedApproval{Approved: true, OperatorID: "op-7"}); err != nil {
 		t.Fatalf("ApproveChallenge(matching question): %v", err)
 	}
 	r, ok := led.Consume(conv, tool, fp)
@@ -52,12 +52,12 @@ func TestGatewayApprovalsChallengeApproveConsume(t *testing.T) {
 func TestGatewayApprovalsApproveClearsSameKeyPendingChallenge(t *testing.T) {
 	led := NewGatewayApprovals()
 	conv, tool, fp, q := "conv-1", "swarm_spawn", "fp-abc", "Approve swarm_spawn (risk=risky)? args: goals"
-	led.Challenge(conv, tool, fp, q)
+	led.Challenge(conv, tool, fp, q, grantSubject{Tool: tool})
 	led.Approve(conv, tool, fp, ResolvedApproval{Approved: true, OperatorID: "op-7"})
 
 	// The pending challenge must be gone: a question-matched ApproveChallenge now finds
 	// nothing (Approve cleared it), so it cannot re-approve the key.
-	if err := led.ApproveChallenge(conv, tool, fp, q, ResolvedApproval{Approved: true}); err == nil {
+	if err := approveChallenge(led, conv, tool, fp, q, ResolvedApproval{Approved: true}); err == nil {
 		t.Fatal("Approve must clear the same-key pending challenge (shell parity)")
 	}
 	// The direct Approve is still consumable exactly once.
@@ -73,9 +73,9 @@ func TestGatewayApprovalsApproveClearsSameKeyPendingChallenge(t *testing.T) {
 func TestGatewayApprovalsApproveChallengeQuestionMismatch(t *testing.T) {
 	led := NewGatewayApprovals()
 	conv, tool, fp := "conv-1", "swarm_spawn", "fp-abc"
-	led.Challenge(conv, tool, fp, "Approve swarm_spawn (risk=risky)? args: goals")
+	led.Challenge(conv, tool, fp, "Approve swarm_spawn (risk=risky)? args: goals", grantSubject{Tool: tool})
 
-	err := led.ApproveChallenge(conv, tool, fp, "Save your meeting notes?", ResolvedApproval{Approved: true})
+	err := approveChallenge(led, conv, tool, fp, "Save your meeting notes?", ResolvedApproval{Approved: true})
 	if err == nil {
 		t.Fatal("a mismatched/benign question must be rejected")
 	}
@@ -92,7 +92,7 @@ func TestGatewayApprovalsApproveChallengeQuestionMismatch(t *testing.T) {
 // (conv, tool, fp) the gateway never issued a challenge for, even with the correct fp.
 func TestGatewayApprovalsApproveChallengeNotFound(t *testing.T) {
 	led := NewGatewayApprovals()
-	err := led.ApproveChallenge("conv-1", "swarm_spawn", "fp-none", "any", ResolvedApproval{Approved: true})
+	err := approveChallenge(led, "conv-1", "swarm_spawn", "fp-none", "any", ResolvedApproval{Approved: true})
 	if err == nil {
 		t.Fatal("ApproveChallenge with no prior challenge must return an error")
 	}
@@ -110,7 +110,7 @@ func TestGatewayApprovalsApproveChallengeNotFound(t *testing.T) {
 func TestGatewayApprovalsEvictPrefixSweep(t *testing.T) {
 	led := NewGatewayApprovals()
 	led.Approve("conv-A", "swarm_spawn", "fp-1", ResolvedApproval{Approved: true}) // approved map
-	led.Challenge("conv-A", "skill", "fp-2", "Q-A")                                // pending map
+	led.Challenge("conv-A", "skill", "fp-2", "Q-A", grantSubject{Tool: "skill"})   // pending map
 	led.Approve("conv-B", "swarm_spawn", "fp-1", ResolvedApproval{Approved: true}) // must survive
 
 	led.Evict("conv-A")
@@ -118,7 +118,7 @@ func TestGatewayApprovalsEvictPrefixSweep(t *testing.T) {
 	if _, ok := led.Consume("conv-A", "swarm_spawn", "fp-1"); ok {
 		t.Fatal("Evict must drop the resolved approval under the conversation prefix")
 	}
-	if err := led.ApproveChallenge("conv-A", "skill", "fp-2", "Q-A", ResolvedApproval{Approved: true}); err == nil {
+	if err := approveChallenge(led, "conv-A", "skill", "fp-2", "Q-A", ResolvedApproval{Approved: true}); err == nil {
 		t.Fatal("Evict must drop the pending challenge under the conversation prefix")
 	}
 	if _, ok := led.Consume("conv-B", "swarm_spawn", "fp-1"); !ok {
@@ -136,8 +136,8 @@ func TestGatewayApprovalsNilSafe(t *testing.T) {
 	if _, ok := led.Consume("c", "t", "f"); ok {
 		t.Fatal("nil ledger Consume must be false")
 	}
-	led.Challenge("c", "t", "f", "q") // must not panic
-	if err := led.ApproveChallenge("c", "t", "f", "q", ResolvedApproval{Approved: true}); err == nil {
+	led.Challenge("c", "t", "f", "q", grantSubject{Tool: "t"}) // must not panic
+	if err := approveChallenge(led, "c", "t", "f", "q", ResolvedApproval{Approved: true}); err == nil {
 		t.Fatal("nil ledger ApproveChallenge must return an error (challenge not found)")
 	}
 	led.Evict("c") // must not panic
@@ -160,8 +160,8 @@ func TestGatewayApprovalsEmptyArgsRejected(t *testing.T) {
 		t.Fatal("empty fingerprint must not record")
 	}
 	// An empty coordinate must not record a challenge either (guard parity with Approve).
-	led.Challenge("", "t", "f", "q")
-	if err := led.ApproveChallenge("", "t", "f", "q", ResolvedApproval{Approved: true}); err == nil {
+	led.Challenge("", "t", "f", "q", grantSubject{Tool: "t"})
+	if err := approveChallenge(led, "", "t", "f", "q", ResolvedApproval{Approved: true}); err == nil {
 		t.Fatal("empty convID ApproveChallenge must error (no challenge recorded)")
 	}
 }
@@ -186,4 +186,14 @@ func TestGatewayArgsFingerprintCanonicalEquality(t *testing.T) {
 	if gatewayArgsFingerprint(a) == gatewayArgsFingerprint(e) {
 		t.Fatal("a changed scalar value must yield a different fingerprint")
 	}
+}
+
+// approveChallenge is the pre-#127 call shape: an accept carrying NO scope label. The tests
+// above predate approval scopes and assert the challenge/question binding, which the scope
+// resolution sits beside rather than inside — an empty answer resolves to ScopeOnce, which is
+// exactly the behaviour they were written against. Scope resolution has its own tests in
+// scope_test.go.
+func approveChallenge(a *GatewayApprovals, convID, toolName, fp, question string, r ResolvedApproval) error {
+	_, _, err := a.ApproveChallenge(convID, toolName, fp, question, "", r)
+	return err
 }

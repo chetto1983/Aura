@@ -17,6 +17,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/approvalgrants"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/cachemetrics"
@@ -353,6 +354,10 @@ func assembleChatEnv(
 	gw := gateway.New(cfg.Profile, toolInvocationStore)
 	operations := idempotency.New(pool, idempotency.Config{})
 	gw.SetOperationRegistry(operations)
+	// The durable half of the approval scopes (amendment #127). Without it the gateway keeps
+	// the two in-memory scopes and an "always" accept degrades to "for this conversation" —
+	// the honest failure, not a silent one.
+	gw.SetGrantStore(approvalgrants.New(pool))
 
 	// Boot reconciliation GC (D-A5-02 / Req#12): reconcile orphan sidecar dirs
 	// BEFORE serving. A scan failure is a WARN-level degradation, not a boot-blocker.

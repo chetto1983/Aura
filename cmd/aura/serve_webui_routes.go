@@ -120,6 +120,20 @@ const (
 // T-25-05). It inherits RequireAuth from the whole-mux wrap below.
 const approvalsListRoute = "/api/approvals"
 
+// The standing-approval grant routes (amendment #127). approvalsListRoute is an EXACT path,
+// so /api/approvals/grants does not inherit it — these are their own specific parent-mux
+// entries, siblings under the same "/api/" carve-out, never a bare "/api/approvals/" prefix
+// (which would swallow the capability-gated resolve route).
+//
+// Neither is capability-gated beyond RequireAuth, and that is deliberate: both are scoped
+// server-side to the AUTHENTICATED principal's own grants, and revoking is a
+// DE-escalation — gating the only way to close a standing permission is how an operator
+// ends up unable to close one.
+const (
+	approvalGrantsRoute       = "/api/approvals/grants"
+	approvalGrantsRevokeRoute = "/api/approvals/grants/revoke"
+)
+
 // imageProxyRoute is the DISP-05/D-09 SSRF-safe image relay (web_result thumbnails/
 // favicons). It is a sibling of "/api/conversations/" + "/api/approvals" under the
 // "/api/" exclusion carve-out — NEVER a bare "/api/" (which would shadow the

@@ -11,6 +11,7 @@ package telegram
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -94,6 +95,15 @@ func (h *hitl) prompt(ctx context.Context, bot botSender, chatID int64, convID s
 	to := tele.ChatID(chatID)
 	switch p.Kind {
 	case "approval":
+		// An approval that carries options is one the gateway attached approval SCOPES to
+		// (amendment #127): the operator picks how long their yes lasts, not merely whether
+		// it is a yes. Without this branch the fixed Sì/No keyboard answered with an empty
+		// content, which the gateway resolves to the narrowest scope — correct, but it
+		// silently withheld a choice the operator had been offered. A bare approval keeps
+		// the fixed keyboard.
+		if len(decodeOptions(p.Options)) > 0 {
+			return h.send(bot, to, p.Question, approvalScopeMarkup(p.Token, p.Options))
+		}
 		return h.send(bot, to, p.Question, approvalMarkup(p.Token))
 	case "choice":
 		return h.send(bot, to, p.Question, choiceMarkup(p.Token, p.Options))
@@ -281,6 +291,61 @@ func approvalPushMarkup(token string) *tele.ReplyMarkup {
 		{{Unique: callbackUnique, Text: "Dettagli", Data: callbackData(token, actionDetails, "")}},
 	}
 	return mk
+}
+
+// approvalScopeMarkup is the keyboard for an approval that carries options: one button per
+// option (same INDEX-not-value callback encoding as choiceMarkup — Telegram caps callback_data
+// at 64 bytes and a scope label is long), then a Rifiuta button so declining stays one tap
+// away. It deliberately does NOT reuse approvalDecisionRow: that row's generic "Approva" would
+// be a FOURTH accept beside three that each say how long they last, and the one that says
+// least would be the easiest to press.
+func approvalScopeMarkup(token string, raw json.RawMessage) *tele.ReplyMarkup {
+	opts := decodeOptions(raw)
+	mk := &tele.ReplyMarkup{}
+	rows := make([][]tele.InlineButton, 0, len(opts)+1)
+	for i, o := range opts {
+		rows = append(rows, []tele.InlineButton{{
+			Unique: callbackUnique,
+			Text:   scopeButtonText(o),
+			Data:   callbackData(token, askuser.ActionAccept, strconv.Itoa(i)),
+		}})
+	}
+	mk.InlineKeyboard = append(rows, []tele.InlineButton{{
+		Unique: callbackUnique, Text: "Rifiuta", Data: callbackData(token, askuser.ActionDecline, ""),
+	}})
+	return mk
+}
+
+// scopeGrammar is this channel's copy for the gateway's approval scopes. The gateway ships
+// a stable code (gateway_scope:<scope>:<subject>) plus an English fallback label, because it
+// is not locale-aware — every surface writes its own words, the same split ResolveOutcome
+// already uses. Telegram's own buttons are Italian, so these are too.
+var scopeGrammar = map[string]string{
+	"once":    "Approva una volta",
+	"session": "Approva %s per questa conversazione",
+	"always":  "Approva sempre %s",
+}
+
+// scopeButtonText renders one option's button. An option that is not a gateway scope, or a
+// scope this build does not know, falls back to the label the server sent — never to a raw
+// code on a button the operator has to press.
+func scopeButtonText(o pauseOption) string {
+	rest, ok := strings.CutPrefix(o.Value, "gateway_scope:")
+	if !ok {
+		return o.Label
+	}
+	scope, subject, ok := strings.Cut(rest, ":")
+	if !ok {
+		return o.Label
+	}
+	text, known := scopeGrammar[scope]
+	if !known {
+		return o.Label
+	}
+	if !strings.Contains(text, "%s") {
+		return text
+	}
+	return fmt.Sprintf(text, subject)
 }
 
 // choiceMarkup builds one InlineButton per discrete option, each callback carrying

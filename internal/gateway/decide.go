@@ -66,18 +66,19 @@ func (g *Gateway) Decide(ctx context.Context, spec tools.Spec, rawArgs json.RawM
 	// start row per executed call, the operator_id (when present) folded into that one
 	// start's Meta (GATE-03/04 / D-03 point 2). This is the unified reserve invariant.
 	operatorID := ""
+	scope := ApprovalScope("")
 	if gated(tier) {
 		v, err := g.routeApprove(ctx, spec, tier, rawArgs, key)
 		if err != nil || v.Decision != Allow {
 			return v, err
 		}
-		operatorID = v.OperatorID
+		operatorID, scope = v.OperatorID, v.Scope
 	}
 	operationVerdict, proceed := g.beginOperation(ctx, spec, rawArgs, key, tier)
 	if !proceed {
 		return operationVerdict, nil
 	}
-	verdict, err := g.reserve(ctx, spec, rawArgs, key, tier, operatorID)
+	verdict, err := g.reserve(ctx, spec, rawArgs, key, tier, operatorID, scope)
 	verdict.OperationDecision = operationVerdict.OperationDecision
 	verdict.OperationClaimToken = operationVerdict.OperationClaimToken
 	return verdict, err

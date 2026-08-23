@@ -74,6 +74,12 @@ type Verdict struct {
 	Tier       scoring.RiskTier
 	Reason     string
 	OperatorID string
+	// Scope is set on an Allow that a STANDING grant produced (amendment #127) — a
+	// ScopeSession or ScopeAlways the operator granted on an earlier accept. It is empty on
+	// every other Allow, including the one-shot approved re-drive, whose authorization was
+	// spent on this call and left nothing standing. It rides the reservation start's Meta so
+	// the audit trail says which grant let a destructive call through without asking.
+	Scope ApprovalScope
 	// Replay is non-nil ONLY when Reserve found the (conv,req,toolCall) slot already
 	// held (rows==0): it carries the recorded outcome so execTool returns it WITHOUT
 	// re-invoking tool.Execute (GATE-04 idempotency — a duplicate/retried mutating call,
@@ -145,6 +151,7 @@ type Gateway struct {
 	store      reservationStore
 	operations operationRegistry
 	approvals  *GatewayApprovals // cross-turn carrier for an operator's ResolvedApproval (D-03 point 2)
+	grants     grantStore        // durable ScopeAlways grants (amendment #127); nil = the two in-memory scopes only
 }
 
 // New builds a Gateway over the resolved runtime profile and the append-only tool
@@ -197,15 +204,33 @@ func (g *Gateway) RecordResolvedApproval(convID, toolName, argsFingerprint strin
 // previously issued a challenge for (convID, toolName, argsFingerprint) AND the
 // operator-visible question matches the gateway-generated one (CR-01 informed-consent). It
 // is the faithful production analog of ShellApprovals.ApproveChallenge; the model relaying
-// via ask_user does NOT grant approval (D-03c). A nil Gateway is a no-op returning nil.
-func (g *Gateway) ApproveChallenge(convID, toolName, argsFingerprint, question string, r ResolvedApproval) error {
+// via ask_user does NOT grant approval (D-03c).
+//
+// It then acts on the scope the operator chose (amendment #127) and returns the scope that
+// actually took effect, which is NOT always the one they picked: a ScopeAlways with no
+// durable store or no authenticated identity degrades to ScopeSession. The returned scope is
+// what the caller may report; the requested one is not. A nil Gateway is a no-op returning
+// ScopeOnce and nil.
+func (g *Gateway) ApproveChallenge(ctx context.Context, a ApprovalAccept) (ApprovalScope, error) {
 	if g == nil {
-		return nil
+		return ScopeOnce, nil
 	}
 	if g.profile == config.ProfileServerProduction {
-		return fmt.Errorf("gateway approval refused under server_production")
+		return ScopeOnce, fmt.Errorf("gateway approval refused under server_production")
 	}
-	return g.approvals.ApproveChallenge(convID, toolName, argsFingerprint, question, r)
+	resolved := ResolvedApproval{Approved: true, OperatorID: a.OperatorID}
+	scope, subject, err := g.approvals.ApproveChallenge(
+		a.ConversationID, a.Tool, a.ArgsFingerprint, a.Question, a.Answer, resolved)
+	if err != nil {
+		return ScopeOnce, err
+	}
+	switch scope {
+	case ScopeSession:
+		g.approvals.GrantSession(a.ConversationID, subject, resolved)
+	case ScopeAlways:
+		return g.recordAlwaysGrant(ctx, a, subject), nil
+	}
+	return scope, nil
 }
 
 // EvictSession drops a conversation's resolved-but-unconsumed approvals (R-41 parity

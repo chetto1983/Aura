@@ -16,6 +16,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/scoring"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 )
@@ -104,6 +105,19 @@ func (g *Gateway) routeApprove(ctx context.Context, spec tools.Spec, tier scorin
 		g.recordDegradedDeny(ctx, spec, key, tier)
 		return Verdict{Decision: Deny, Tier: tier, Reason: "no interactive approver — action declined"}, nil
 	}
+	// Standing grants (amendment #127) come FIRST, after the hard-deny and before the
+	// one-shot ledger: an operator who said "for this conversation" or "always" already
+	// answered this question, and reading a standing grant — unlike Consume — does not spend
+	// it. Both are keyed on the SUBJECT (tool + multiplexed action), never on the argument
+	// fingerprint, so a second delete of a DIFFERENT event is covered while a grant on
+	// "calendar delete_event" still leaves "calendar send_email" to be asked.
+	subject := subjectFor(spec, rawArgs)
+	if r, ok := g.approvals.SessionGrant(key.ConversationID, subject); ok && r.Approved {
+		return Verdict{Decision: Allow, Tier: tier, OperatorID: r.OperatorID, Scope: ScopeSession}, nil
+	}
+	if g.alwaysGranted(ctx, identityctx.IdentityID(ctx), subject) {
+		return Verdict{Decision: Allow, Tier: tier, OperatorID: "local", Scope: ScopeAlways}, nil
+	}
 	// Cross-turn ledger re-entry (D-03 point 2, the production carrier): reachable only under
 	// hardened + a live responder now. The operator resolved the relayed ask_user on a PRIOR
 	// Turn and newGatewayResumeHook recorded the ResolvedApproval (challenge + question gated).
@@ -148,8 +162,8 @@ func (g *Gateway) routeApprove(ctx context.Context, spec tools.Spec, tier scorin
 	// ApproveChallenge requires this challenge AND a matching operator-visible question before
 	// recording — the informed-consent binding a benign relayed question cannot satisfy (CR-01).
 	question := gatewayApprovalQuestion(spec, tier, rawArgs)
-	g.approvals.Challenge(key.ConversationID, spec.Name, fp, question)
-	result := gatewayApprovalRequiredResult(spec, tier, key, fp, question)
+	g.approvals.Challenge(key.ConversationID, spec.Name, fp, question, subject)
+	result := gatewayApprovalRequiredResult(spec, tier, key, fp, question, subject)
 	return Verdict{Decision: Approve, Tier: tier, ApprovalRequest: &result}, nil
 }
 
@@ -157,12 +171,17 @@ func (g *Gateway) routeApprove(ctx context.Context, spec tools.Spec, tier scorin
 // shellApprovalRequiredResult: a JSON payload (Preview) instructing the model to relay
 // the approval via ask_user. It carries error="gateway_approval_required", the tool, the
 // tier, args_sha256 (the fingerprint the resume must reproduce), a descriptive question,
-// the exact resume_context object (including args_sha256), and a message telling the model
-// to call ask_user with kind="approval", the same question, the tier-ordered priority, and
+// the three server-generated scope options (amendment #127 — the model relays them, it does
+// not author them, and the resume hook re-resolves the answer against the challenge's own
+// copy, so a reworded label grants nothing wider), the exact resume_context object
+// (including args_sha256), and a message telling the model to call ask_user with
+// kind="approval", the same question, the same options, the tier-ordered priority, and
 // the same resume_context, then "retry the exact call only after the user accepts." The fp
 // and question are computed ONCE by routeApprove and threaded in (IN-02: a single
 // gatewayArgsFingerprint call site, and the SAME question recorded as the challenge).
-func gatewayApprovalRequiredResult(spec tools.Spec, tier scoring.RiskTier, key ReservationKey, fp, question string) tools.ToolResult {
+func gatewayApprovalRequiredResult(
+	spec tools.Spec, tier scoring.RiskTier, key ReservationKey, fp, question string, subject grantSubject,
+) tools.ToolResult {
 	resumeContext := gatewayApprovalContext(spec, tier, key, fp)
 	payload := map[string]any{
 		"error":          "gateway_approval_required",
@@ -170,11 +189,14 @@ func gatewayApprovalRequiredResult(spec tools.Spec, tier scoring.RiskTier, key R
 		"tier":           string(tier),
 		"args_sha256":    fp,
 		"question":       question,
+		"options":        scopeOptions(subject),
 		"resume_context": resumeContext,
 		"message": "This mutating action requires operator approval and has been WITHHELD. " +
 			"Call ask_user with kind=\"approval\", question exactly equal to the question field, " +
-			"priority=" + strconv.Itoa(tools.ApprovalPriority(tier)) + ", and resume_context exactly equal " +
-			"to the resume_context field. Retry the exact call only after the user accepts.",
+			"options exactly equal to the options field (copy all three verbatim — do not reword, " +
+			"reorder or drop any), priority=" + strconv.Itoa(tools.ApprovalPriority(tier)) +
+			", and resume_context exactly equal to the resume_context field. " +
+			"Retry the exact call only after the user accepts.",
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {

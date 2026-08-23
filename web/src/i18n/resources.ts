@@ -221,6 +221,13 @@ export const resources = {
           review: 'Review the scope and consequence before continuing.',
         },
         lock: 'Answer the request above to continue.',
+        // The gateway's approval scopes (amendment #127). It ships a stable code and an
+        // English fallback; these are the words the cockpit puts on the buttons.
+        scope: {
+          once: 'Approve once',
+          session: 'Approve {{subject}} for this conversation',
+          always: 'Always approve {{subject}}',
+        },
         card: {
           freeText: 'Your answer',
           freeTextPlaceholder: 'Type your answer',
@@ -485,6 +492,11 @@ export const resources = {
           review: 'Controlla ambito e conseguenze prima di continuare.',
         },
         lock: 'Rispondi alla richiesta qui sopra per continuare.',
+        scope: {
+          once: 'Approva una volta',
+          session: 'Approva {{subject}} per questa conversazione',
+          always: 'Approva sempre {{subject}}',
+        },
         card: {
           freeText: 'La tua risposta',
           freeTextPlaceholder: 'Scrivi la tua risposta',
