@@ -357,13 +357,13 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A deliberate pin, moved deliberately: 0099_gateway_approval_grants adds the table
-	// behind an approval's scope, so a gateway approval can be granted once, for a session,
-	// or always instead of being re-asked every turn. The test exists so a migration added
-	// without noticing breaks the build rather than the deployment, so bumping it is the
-	// intended way to acknowledge one -- never a fixup to make a red go away.
-	if head != 99 {
-		t.Fatalf("MigrationHead=%d, want embedded head 99", head)
+	// A deliberate pin, moved deliberately: 0100_identity_mcp_oauth adds the per-identity
+	// OAuth grant store, so a remote MCP server's token belongs to ONE person instead of to
+	// the deployment. The test exists so a migration added without noticing breaks the build
+	// rather than the deployment, so bumping it is the intended way to acknowledge one --
+	// never a fixup to make a red go away.
+	if head != 100 {
+		t.Fatalf("MigrationHead=%d, want embedded head 100", head)
 	}
 }
 
