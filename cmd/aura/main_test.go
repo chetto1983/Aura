@@ -36,11 +36,28 @@ func TestMain(m *testing.M) {
 	// deployment where every tool call denies. The goroutine belongs to the library and lives
 	// for the process; it is not something Aura can join. No-op on Linux, where the client
 	// dials a unix socket.
-	goleak.VerifyTestMain(m,
+	goleak.VerifyTestMain(releasingProcessPools{m},
 		goleak.IgnoreAnyFunction("net/http.(*persistConn).readLoop"),
 		goleak.IgnoreAnyFunction("net/http.(*persistConn).writeLoop"),
 		goleak.IgnoreAnyFunction("github.com/Microsoft/go-winio.ioCompletionProcessor"),
 	)
+}
+
+// releasingProcessPools closes what the binary holds for its whole life, in the window
+// between the last test and goleak's verification.
+//
+// The MCP registry and the OAuth grant store share one lazily-opened pool (mcp_registry.go)
+// because they are read on the request path and cannot open-use-close like every other
+// verb. Production gives that pool back by exiting. A test binary never exits until after
+// goleak has already looked, so without this the pgxpool health-check goroutine is standing
+// at verification — and it is genuinely standing, which is why the answer is to close the
+// pool here rather than to add another Ignore.
+type releasingProcessPools struct{ m *testing.M }
+
+func (r releasingProcessPools) Run() int {
+	code := r.m.Run()
+	closeMCPDB()
+	return code
 }
 
 func TestBuildRegistryBlockedManagedServerNotLaunched(t *testing.T) {

@@ -14,7 +14,6 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/chetto1983/aura/internal/config"
-	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
@@ -250,13 +249,12 @@ func runtimeMCPOAuth(ctx context.Context) mcp.OAuthOptions {
 		return mcp.OAuthOptions{}
 	}
 	grantsOnce.Do(func() {
-		cfg := config.LoadDB()
-		if strings.TrimSpace(cfg.AuthulaSecret) == "" {
-			return
-		}
-		pool, err := db.Open(ctx, &cfg.DB)
+		pool, cfg, err := mcpDB(ctx)
 		if err != nil {
 			slog.Warn("mcp oauth: no grant store; an authorized server will not mount", "err", err)
+			return
+		}
+		if strings.TrimSpace(cfg.AuthulaSecret) == "" {
 			return
 		}
 		store, err := mcpoauth.NewStore(pool, cfg.AuthulaSecret)

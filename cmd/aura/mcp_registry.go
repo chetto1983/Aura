@@ -27,20 +27,52 @@ import (
 // MCP audit trail (migration 0022) and the per-identity OAuth grants (0100).
 
 var (
+	mcpDBOnce sync.Once
+	mcpDBPool *pgxpool.Pool
+	mcpDBCfg  *config.Config
+	mcpDBErr  error
+
 	registryOnce sync.Once
 	registry     *mcpregistry.Store
 	registryErr  error
 )
 
-// mcpRegistry returns the process-wide registry store, opening its pool once.
+// mcpDB opens the ONE pool this binary's MCP paths share — the registry here and the
+// OAuth grant store in mcp_tools.go.
 //
-// One pool for the process, not one per call: the daemon's board reads this on every
-// request, and a pool per request is a connection storm. A CLI verb is short-lived and
-// closes with the process.
+// One pool for the process, not one per call: the daemon's board reads the registry on
+// every request, and a pool per request is a connection storm. One pool for BOTH, not one
+// each: they are the same database, read by the same process, under the same config, and a
+// daemon holding two private pools spends twice the `max_conns` to learn that.
+//
+// Every other verb in this binary opens a pool, uses it and closes it. These two cannot —
+// they are read on the request path — so the pool lives as long as the process, and
+// closeMCPDB is how anything that outlives a single command gets it back.
+func mcpDB(ctx context.Context) (*pgxpool.Pool, *config.Config, error) {
+	mcpDBOnce.Do(func() {
+		mcpDBCfg = config.LoadDB()
+		mcpDBPool, mcpDBErr = db.Open(ctx, &mcpDBCfg.DB)
+	})
+	return mcpDBPool, mcpDBCfg, mcpDBErr
+}
+
+// closeMCPDB releases the shared pool.
+//
+// Production releases it by exiting, so nothing in the daemon or a CLI verb calls this. A
+// test binary does not exit between tests: it runs the whole package and only then does
+// goleak verify, by which point pgxpool's background health-check goroutine has been
+// parked since the first registry read and reads as a leak — which is exactly what it is,
+// for a process that keeps running.
+func closeMCPDB() {
+	if mcpDBPool != nil {
+		mcpDBPool.Close()
+	}
+}
+
+// mcpRegistry returns the process-wide registry store.
 func mcpRegistry(ctx context.Context) (*mcpregistry.Store, error) {
 	registryOnce.Do(func() {
-		cfg := config.LoadDB()
-		pool, err := db.Open(ctx, &cfg.DB)
+		pool, cfg, err := mcpDB(ctx)
 		if err != nil {
 			registryErr = fmt.Errorf("mcp registry: open database: %w", err)
 			return
