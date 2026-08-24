@@ -53,6 +53,7 @@ type Querier interface {
 	CountBenchmarkSettingsRestoreMismatches(ctx context.Context, runID pgtype.UUID) (int32, error)
 	CountConversationsForIdentityPurge(ctx context.Context, identityID pgtype.UUID) (int64, error)
 	CountIngestionJobsByStatus(ctx context.Context, arg CountIngestionJobsByStatusParams) (int64, error)
+	CountMCPServers(ctx context.Context) (int64, error)
 	// Current durable work that has not reached a terminal completed/failed item state.
 	// This query owns the restart-safe backlog gauge; transition counters are not state.
 	CountRetentionBacklog(ctx context.Context) (int64, error)
@@ -92,6 +93,7 @@ type Querier interface {
 	// whether a row existed cannot tell a real revocation from a no-op on someone else's row
 	// that RLS filtered away.
 	DeleteIdentityMCPOAuth(ctx context.Context, arg DeleteIdentityMCPOAuthParams) (int64, error)
+	DeleteMCPServer(ctx context.Context, name string) (int64, error)
 	DeleteSetting(ctx context.Context, key string) error
 	// Bound ledger growth per session+root, keeping the newest $4 events. The row the
 	// state points at survives because it is always among the newest.
@@ -135,6 +137,7 @@ type Querier interface {
 	GetIdentityRecoveryByIdentity(ctx context.Context, identityID pgtype.UUID) (AuraIdentityRecovery, error)
 	// The turn path wants one string, not a row: the clock is rendered on every request.
 	GetIdentityTimezone(ctx context.Context, identityID pgtype.UUID) (string, error)
+	GetMCPServer(ctx context.Context, name string) (AuraMcpServer, error)
 	GetOnboardingState(ctx context.Context, identityID pgtype.UUID) (GetOnboardingStateRow, error)
 	GetOpenBenchmarkSettingsOverride(ctx context.Context) (AuraBenchmarkSettingsOverrides, error)
 	GetOperation(ctx context.Context, arg GetOperationParams) (GetOperationRow, error)
@@ -266,6 +269,7 @@ type Querier interface {
 	// credentials into memory to render a name and an expiry.
 	ListIdentityMCPOAuthServers(ctx context.Context, identityID pgtype.UUID) ([]ListIdentityMCPOAuthServersRow, error)
 	ListInFlightToolInvocationsBefore(ctx context.Context, startedAt pgtype.Timestamptz) ([]AuraToolInvocations, error)
+	ListMCPServers(ctx context.Context) ([]AuraMcpServer, error)
 	// The cockpit scheduler board (GOV-03 write): active AND pending_approval tasks, so an
 	// operator can approve a gated task on-screen. Ordered by next fire (pending rows have a
 	// non-null next_run_at too — it is the first fire computed at schedule time).
@@ -412,6 +416,7 @@ type Querier interface {
 	// profile editor, and read on the turn path -- so the reads are narrow on purpose.
 	UpsertIdentityProfile(ctx context.Context, arg UpsertIdentityProfileParams) (AuraIdentityProfiles, error)
 	UpsertIdentityRecovery(ctx context.Context, arg UpsertIdentityRecoveryParams) error
+	UpsertMCPServer(ctx context.Context, arg UpsertMCPServerParams) (AuraMcpServer, error)
 	UpsertSetting(ctx context.Context, arg UpsertSettingParams) (AuraSettings, error)
 	// The setting half: an edit stales whatever evidence existed. last_event_id is kept so
 	// the status read can still name the command that last passed, which is what makes the

@@ -357,13 +357,14 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A deliberate pin, moved deliberately: 0100_identity_mcp_oauth adds the per-identity
-	// OAuth grant store, so a remote MCP server's token belongs to ONE person instead of to
-	// the deployment. The test exists so a migration added without noticing breaks the build
-	// rather than the deployment, so bumping it is the intended way to acknowledge one --
-	// never a fixup to make a red go away.
-	if head != 100 {
-		t.Fatalf("MigrationHead=%d, want embedded head 100", head)
+	// A deliberate pin, moved deliberately: 0101_mcp_server_registry moves the MCP server
+	// registry off a single root-owned JSON file and into Postgres, next to the MCP audit
+	// trail (0022) and the per-identity OAuth grants (0100) that were already there. The
+	// test exists so a migration added without noticing breaks the build rather than the
+	// deployment, so bumping it is the intended way to acknowledge one -- never a fixup to
+	// make a red go away.
+	if head != 101 {
+		t.Fatalf("MigrationHead=%d, want embedded head 101", head)
 	}
 }
 

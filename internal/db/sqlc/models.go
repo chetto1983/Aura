@@ -408,6 +408,20 @@ type AuraMcpAudit struct {
 	Reason          pgtype.Text        `json:"reason"`
 }
 
+// The MCP server registry (migration 0101), previously one root-owned JSON file. config is the ManagedServer as jsonb minus env; env_enc is AES-256-GCM ciphertext over its KEY=VALUE list (KEK derived from AURA_AUTHULA_SECRET, the same trust boundary as aura.identity_mcp_oauth). Deployment-scoped on purpose, NOT per identity: which servers exist is configuration every operator and the daemon itself must see, unlike aura.identity_mcp_oauth, where a row identifies one person. created_by is audit, never a visibility predicate.
+type AuraMcpServer struct {
+	Name   string `json:"name"`
+	Source string `json:"source"`
+	// NULL means enabled (ManagedServer.Enabled is a *bool): a config that says nothing about enablement must not read as disabled.
+	Enabled   pgtype.Bool        `json:"enabled"`
+	Config    []byte             `json:"config"`
+	EnvEnc    []byte             `json:"env_enc"`
+	Profiles  []string           `json:"profiles"`
+	CreatedBy pgtype.UUID        `json:"created_by"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Short-lived Telegram code challenges for self-service Authula password reset.
 type AuraPasswordResetChallenges struct {
 	ID             pgtype.UUID        `json:"id"`
