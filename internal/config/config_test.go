@@ -2,7 +2,6 @@ package config
 
 import (
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 )
@@ -64,70 +63,6 @@ func clearPostgresEnv(t *testing.T) {
 	// Non-empty key so the composed llm.Load() succeeds; the LLM-specific
 	// load-order is unit-tested in internal/llm/config_test.go.
 	t.Setenv("OPENROUTER_API_KEY", "sk-test-config")
-}
-
-func TestLoad_MCPServersJSON(t *testing.T) {
-	clearPostgresEnv(t)
-	t.Setenv("AURA_MCP_SERVERS_JSON", `{
-		"mcpServers": {
-			"calculator": {
-				"command": "uvx",
-				"args": [
-					"--from",
-					"calculator-mcp-server@git+https://github.com/chetto1983/calculator-mcp-server.git",
-					"--",
-					"calculator-mcp-server",
-					"--stdio"
-				],
-				"env": ["PYTHONUNBUFFERED=1"]
-			}
-		}
-	}`)
-
-	cfg := LoadDB()
-	got, ok := cfg.MCPServers["calculator"]
-	if !ok {
-		t.Fatal("calculator MCP server was not loaded")
-	}
-	if got.Command != "uvx" {
-		t.Fatalf("calculator command = %q, want uvx", got.Command)
-	}
-	if len(got.Args) != 5 || got.Args[0] != "--from" || got.Args[3] != "calculator-mcp-server" {
-		t.Fatalf("calculator args not preserved: %#v", got.Args)
-	}
-	if len(got.Env) != 1 || got.Env[0] != "PYTHONUNBUFFERED=1" {
-		t.Fatalf("calculator env not preserved: %#v", got.Env)
-	}
-}
-
-func TestLoad_MCPManagedConfigAndEnvOverride(t *testing.T) {
-	clearPostgresEnv(t)
-	dir := t.TempDir()
-	path := dir + "/servers.json"
-	t.Setenv("AURA_MCP_CONFIG", path)
-	if err := os.WriteFile(path, []byte(`{
-		"mcpServers": {
-			"calculator": {"command": "uvx", "args": ["calculator-mcp-server"]},
-			"disabled": {"command": "ignored", "enabled": false}
-		}
-	}`), 0o600); err != nil {
-		t.Fatalf("write managed config: %v", err)
-	}
-	t.Setenv("AURA_MCP_SERVERS_JSON", `{
-		"calculator": {"command": "override-calc"},
-		"adhoc": {"command": "node", "args": ["server.js"]}
-	}`)
-
-	cfg := LoadDB()
-	if _, ok := cfg.MCPServers["disabled"]; ok {
-		t.Fatal("disabled managed MCP server should not be loaded")
-	}
-	if cfg.MCPServers["calculator"].Command != "override-calc" {
-		t.Fatalf("env config should override managed config, got %#v", cfg.MCPServers["calculator"])
-	}
-	if cfg.MCPServers["adhoc"].Command != "node" {
-		t.Fatalf("adhoc env server missing: %#v", cfg.MCPServers)
-	}
 }
 
 // TestSwarmConfigDefaultsAndOverrides locks the Phase 9 swarm knobs (D-11/D-12/D-13):

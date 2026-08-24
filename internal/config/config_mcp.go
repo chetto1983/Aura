@@ -1,11 +1,8 @@
 package config
 
 import (
-	"encoding/json"
-	"fmt"
 	"maps"
 	"os"
-	"strings"
 
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
@@ -39,9 +36,15 @@ const (
 // wins, and a missing sidecar fail-softs to a WARN drop at mount like any other server.
 var containerDefaultOnRecipes = []string{calendarRecipeName, whatsappRecipeName}
 
-// loadMCPServers composes the runtime MCP server set from the managed config doc, the
-// AURA_MCP_SERVERS_JSON env override, and the default-on memory recipe (D-08). It returns the
-// runnable servers + the policy map (managed recipes the operator may enable/disable).
+// loadMCPServers composes the runtime MCP server set from the managed config doc plus the
+// default-on recipes (D-08). It returns the runnable servers + the policy map (managed
+// recipes the operator may enable/disable).
+//
+// There was a second source here: AURA_MCP_SERVERS_JSON, an env-declared override that
+// could add servers and shadow managed ones. It is gone. A second way to declare the same
+// thing is a second thing to keep in sync, and it bought nothing `aura mcp add` does not —
+// while its rows arrived with a source no write path could edit, so a server declared that
+// way appeared on the board and refused every mutation.
 func loadMCPServers() (map[string]mcp.ServerConfig, map[string]mcp.ManagedServer, error) {
 	path, err := mcp.ManagedConfigPath()
 	if err != nil {
@@ -61,67 +64,16 @@ func loadMCPServers() (map[string]mcp.ServerConfig, map[string]mcp.ManagedServer
 	}
 	policies := make(map[string]mcp.ManagedServer, len(runnableManaged))
 	maps.Copy(policies, runnableManaged)
-	envServers, err := parseMCPServersJSON(os.Getenv("AURA_MCP_SERVERS_JSON"))
-	if err != nil {
-		return nil, nil, err
-	}
-	out := make(map[string]mcp.ServerConfig, len(managedServers)+len(envServers))
+	out := make(map[string]mcp.ServerConfig, len(managedServers))
 	maps.Copy(out, managedServers)
-	for name, cfg := range envServers {
-		out[name] = cfg
-		delete(policies, name)
-	}
-	// Default-on (D-08): memory is a core capability, so it mounts out of the box
-	// with no `aura mcp install`. Injected AFTER the env delete loop so an
-	// AURA_MCP_SERVERS_JSON override of `memory` still wins; respects an explicit
-	// `aura mcp disable memory` (D-09). On a fresh machine this makes len(policies)
-	// non-zero — the intended default-on behavior.
-	injectDefaultOnMemory(policies, managed, envServers)
-	injectDefaultOnContainerRecipes(policies, managed, envServers)
+	// Default-on (D-08): memory is a core capability, so it mounts out of the box with no
+	// `aura mcp install`; an explicit `aura mcp disable memory` still wins (D-09).
+	injectDefaultOnMemory(policies, managed)
+	injectDefaultOnContainerRecipes(policies, managed)
 	if len(out) == 0 && len(policies) == 0 {
 		return nil, nil, nil
 	}
 	return out, policies, nil
-}
-
-func parseMCPServersJSON(raw string) (map[string]mcp.ServerConfig, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil, nil
-	}
-	var wrapped struct {
-		MCPServers map[string]mcp.ServerConfig `json:"mcpServers"`
-	}
-	if err := json.Unmarshal([]byte(raw), &wrapped); err != nil {
-		return nil, fmt.Errorf("AURA_MCP_SERVERS_JSON: %w", err)
-	}
-	if wrapped.MCPServers != nil {
-		return validateMCPServers(wrapped.MCPServers)
-	}
-	var direct map[string]mcp.ServerConfig
-	if err := json.Unmarshal([]byte(raw), &direct); err != nil {
-		return nil, fmt.Errorf("AURA_MCP_SERVERS_JSON: %w", err)
-	}
-	return validateMCPServers(direct)
-}
-
-func validateMCPServers(in map[string]mcp.ServerConfig) (map[string]mcp.ServerConfig, error) {
-	if len(in) == 0 {
-		return nil, nil
-	}
-	out := make(map[string]mcp.ServerConfig, len(in))
-	for name, cfg := range in {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			return nil, fmt.Errorf("AURA_MCP_SERVERS_JSON: server name cannot be empty")
-		}
-		if strings.TrimSpace(cfg.Command) == "" {
-			return nil, fmt.Errorf("AURA_MCP_SERVERS_JSON: server %q command cannot be empty", name)
-		}
-		cfg.Command = strings.TrimSpace(cfg.Command)
-		out[name] = cfg
-	}
-	return out, nil
 }
 
 // injectDefaultOn adds a catalog recipe to policies unless the operator has ANY say of
@@ -138,11 +90,8 @@ func validateMCPServers(in map[string]mcp.ServerConfig) (map[string]mcp.ServerCo
 //     NOT be silently replaced by the catalog recipe, and a profile that excludes the
 //     server keeps it unmounted (CR-01).
 //  3. Otherwise (no operator entry at all) inject the catalog recipe.
-func injectDefaultOn(policies map[string]mcp.ManagedServer, managed mcp.ManagedConfig, envOverridden map[string]mcp.ServerConfig, name string) {
+func injectDefaultOn(policies map[string]mcp.ManagedServer, managed mcp.ManagedConfig, name string) {
 	if _, ok := policies[name]; ok {
-		return
-	}
-	if _, ok := envOverridden[name]; ok {
 		return
 	}
 	if _, ok := managed.MCPServers[name]; ok {
@@ -159,18 +108,18 @@ func injectDefaultOn(policies map[string]mcp.ManagedServer, managed mcp.ManagedC
 
 // injectDefaultOnMemory keeps memory on out of the box on EVERY host, container or not:
 // it is a core capability, not an appliance convenience.
-func injectDefaultOnMemory(policies map[string]mcp.ManagedServer, managed mcp.ManagedConfig, envOverridden map[string]mcp.ServerConfig) {
-	injectDefaultOn(policies, managed, envOverridden, memoryRecipeName)
+func injectDefaultOnMemory(policies map[string]mcp.ManagedServer, managed mcp.ManagedConfig) {
+	injectDefaultOn(policies, managed, memoryRecipeName)
 }
 
 // injectDefaultOnContainerRecipes turns on the recipes whose backing sidecar ships in the
 // appliance image/compose stack. Outside the container it is a no-op — a dev host may have
 // neither uvx nor the sidecars.
-func injectDefaultOnContainerRecipes(policies map[string]mcp.ManagedServer, managed mcp.ManagedConfig, envOverridden map[string]mcp.ServerConfig) {
+func injectDefaultOnContainerRecipes(policies map[string]mcp.ManagedServer, managed mcp.ManagedConfig) {
 	if os.Getenv("AURA_IN_CONTAINER") != "1" {
 		return
 	}
 	for _, name := range containerDefaultOnRecipes {
-		injectDefaultOn(policies, managed, envOverridden, name)
+		injectDefaultOn(policies, managed, name)
 	}
 }

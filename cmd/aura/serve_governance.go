@@ -24,23 +24,49 @@ var governanceVisibleContainerRecipes = []string{"calendar", "whatsapp"}
 // buildGovernanceProviders: a provider that cannot be constructed is left nil so its
 // board answers 503, NEVER aborting daemon boot (the SetGraphView precedent).
 
-// mcpBoardAdapter satisfies agui.MCPBoardProvider over the loaded managed MCP config and
-// the structured per-server probe. Servers returns the snapshot config the handler renders
-// (static, by-name); Probe delegates to mcp.ProbeServer under the handler's bounded ctx so
-// a hung/dead server fails only its own row. The config is captured once at boot (the
-// board reflects the config the daemon started with — a config reload is out of scope for
-// the read board).
+// mcpBoardAdapter satisfies agui.MCPBoardProvider over the managed MCP config and the
+// structured per-server probe. Servers re-derives the config on every read; Probe delegates
+// to mcp.ProbeServer under the handler's bounded ctx so a hung/dead server fails only its
+// own row.
+//
+// The config was once captured at boot, which was defensible while the board was read-only.
+// It stopped being defensible when MCPW-01 gave the cockpit an Install button: the write
+// lands in servers.json, the board kept rendering the boot snapshot, and the server the
+// operator had just added was invisible until the daemon restarted — measured 2026-08-24
+// with a real Slack install, present on disk and absent from the list. Every CLI path
+// (mcp.go, mcp_profile.go, mcp_status.go) already re-loads per invocation; this is the
+// board joining them.
 type mcpBoardAdapter struct {
-	doc mcp.ManagedConfig
+	// boot is the config read at start-up. It is the fallback, not the answer: a reload
+	// that fails must not blank a board that was rendering a moment ago.
+	boot mcp.ManagedConfig
 }
 
-func (a mcpBoardAdapter) Servers() mcp.ManagedConfig { return a.doc }
+func (a mcpBoardAdapter) Servers() mcp.ManagedConfig {
+	doc, err := governanceMCPBoardConfig()
+	if err != nil {
+		slog.Warn("aura serve: mcp board reload failed, serving the boot config", "err", err)
+		return a.boot
+	}
+	return doc
+}
 
 func (a mcpBoardAdapter) Probe(ctx context.Context, name string, server mcp.ManagedServer) mcp.ProbeResult {
 	return probeManagedMCPServer(ctx, name, server)
 }
 
-func governanceMCPBoardConfig(cfg *config.Config) (mcp.ManagedConfig, error) {
+// governanceMCPBoardConfig is the board's read, and it reads ONE thing: the managed config,
+// re-read per call, plus the catalog recipes that are declared in code rather than stored.
+//
+// Two overlays used to sit here and both are gone, because neither was an overlay. Each
+// layered a copy of the SAME managed config — taken once at boot by
+// internal/config/config_mcp.go — back on top of the file the board had just re-read. A
+// stale copy of your own source is not extra information, it is a cache that can only ever
+// disagree, and on 2026-08-24 it disagreed in the worst direction: the file lost its server
+// map, every write path correctly saw nothing, and the board went on listing servers from
+// the boot copy — so the operator was told "mcp server not found" about a row they were
+// looking at on screen.
+func governanceMCPBoardConfig() (mcp.ManagedConfig, error) {
 	doc, _, err := loadManagedMCPConfig()
 	if err != nil {
 		return mcp.ManagedConfig{}, err
@@ -48,36 +74,8 @@ func governanceMCPBoardConfig(cfg *config.Config) (mcp.ManagedConfig, error) {
 	if doc.MCPServers == nil {
 		doc.MCPServers = map[string]mcp.ManagedServer{}
 	}
-	if cfg != nil {
-		addMCPPolicyRows(&doc, cfg.MCPPolicies)
-		addLegacyMCPRows(&doc, cfg.MCPServers)
-	}
 	addContainerRecipeRows(&doc)
 	return doc, nil
-}
-
-func addMCPPolicyRows(doc *mcp.ManagedConfig, policies map[string]mcp.ManagedServer) {
-	for name, server := range policies {
-		if _, exists := doc.MCPServers[name]; exists {
-			continue
-		}
-		doc.MCPServers[name] = server
-	}
-}
-
-func addLegacyMCPRows(doc *mcp.ManagedConfig, servers map[string]mcp.ServerConfig) {
-	for name, server := range servers {
-		if _, exists := doc.MCPServers[name]; exists {
-			continue
-		}
-		doc.MCPServers[name] = mcp.ManagedServer{
-			Command: server.Command,
-			Args:    server.Args,
-			Env:     server.Env,
-			Source:  "env:AURA_MCP_SERVERS_JSON",
-			Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedLocal},
-		}
-	}
 }
 
 func addContainerRecipeRows(doc *mcp.ManagedConfig) {
@@ -135,12 +133,12 @@ func (a skillsBoardAdapter) AuditLog(ctx context.Context, filter skills.AuditFil
 func buildGovernanceProviders(cfg *config.Config, pool *pgxpool.Pool, store agui.SchedulerBoardProvider) agui.GovernanceProviders {
 	var providers agui.GovernanceProviders
 
-	if doc, err := governanceMCPBoardConfig(cfg); err != nil {
+	if doc, err := governanceMCPBoardConfig(); err != nil {
 		// A managed-config load failure leaves the MCP board nil (503), never fatal —
 		// mirrors the SetGraphView best-effort warn.
 		slog.Warn("aura serve: governance mcp board unavailable", "err", err)
 	} else {
-		providers.MCP = mcpBoardAdapter{doc: doc}
+		providers.MCP = mcpBoardAdapter{boot: doc}
 	}
 
 	if pool != nil {

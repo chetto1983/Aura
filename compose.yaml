@@ -158,7 +158,6 @@ services:
       # layer by manufacturer sites and surfaced in production as a fetch timeout.
       AURA_WEB_USER_AGENT: ${AURA_WEB_USER_AGENT:-}
       AURA_MCP_CONFIG: ${AURA_MCP_CONFIG:-/var/lib/aura/mcp/servers.json}
-      AURA_MCP_SERVERS_JSON: ${AURA_MCP_SERVERS_JSON:-}
       # Docker-daemon/host restarts ignore depends_on ordering, so Aura can boot while the
       # memory MCP sidecar is still waiting on its own store's healthcheck. The default
       # 10s mount budget loses that race and the registry freezes with ZERO memory tools until

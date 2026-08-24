@@ -101,34 +101,6 @@ func TestCalendarDefaultOn_RespectsDisable(t *testing.T) {
 	}
 }
 
-// TestCalendarContainerDefaultOn_EnvServersOverrideWins proves an AURA_MCP_SERVERS_JSON
-// entry named "calendar" wins in-container — the inject lands AFTER the envServers delete
-// loop and must not re-add the recipe default.
-func TestCalendarContainerDefaultOn_EnvServersOverrideWins(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "servers.json")
-	clearMCPEnv(t, path)
-	t.Setenv("AURA_IN_CONTAINER", "1")
-	t.Setenv(
-		"AURA_MCP_SERVERS_JSON",
-		`{"mcpServers":{"calendar":{"command":"my-pim","args":["--stdio"]}}}`,
-	)
-
-	cfg := LoadDB()
-	if cfg.MCPServersErr != nil {
-		t.Fatalf("loadMCPServers err = %v, want nil", cfg.MCPServersErr)
-	}
-	if _, ok := cfg.MCPPolicies["calendar"]; ok {
-		t.Fatalf("calendar should not be a policy when overridden by AURA_MCP_SERVERS_JSON: %#v", cfg.MCPPolicies)
-	}
-	got, ok := cfg.MCPServers["calendar"]
-	if !ok {
-		t.Fatalf("AURA_MCP_SERVERS_JSON calendar override not in MCPServers: %#v", cfg.MCPServers)
-	}
-	if got.Command != "my-pim" {
-		t.Fatalf("calendar command = %q, want my-pim (env override wins)", got.Command)
-	}
-}
-
 // TestCalendarContainerDefaultOn_RespectsExplicitInstall proves an operator-customized
 // calendar entry wins in-container — the default-on inject sees the existing managed/policy
 // row and does not overwrite the custom URL.
@@ -264,29 +236,6 @@ func TestMemoryDefaultOn_RespectsProfileExclusion(t *testing.T) {
 	}
 	if _, ok := cfg.MCPPolicies["other"]; !ok {
 		t.Fatalf("profile-selected server missing: %#v", cfg.MCPPolicies)
-	}
-}
-
-// TestMemoryDefaultOn_EnvServersOverrideWins proves an AURA_MCP_SERVERS_JSON entry
-// named "memory" still wins — the inject lands AFTER the envServers delete loop.
-func TestMemoryDefaultOn_EnvServersOverrideWins(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "servers.json")
-	clearMCPEnv(t, path)
-	t.Setenv("AURA_MCP_SERVERS_JSON", `{"mcpServers":{"memory":{"command":"my-memory-binary","args":["--stdio"]}}}`)
-
-	cfg := LoadDB()
-	if cfg.MCPServersErr != nil {
-		t.Fatalf("loadMCPServers err = %v, want nil", cfg.MCPServersErr)
-	}
-	if _, ok := cfg.MCPPolicies["memory"]; ok {
-		t.Fatalf("memory should not be in policies when overridden by AURA_MCP_SERVERS_JSON: %#v", cfg.MCPPolicies)
-	}
-	got, ok := cfg.MCPServers["memory"]
-	if !ok {
-		t.Fatalf("AURA_MCP_SERVERS_JSON memory override not in MCPServers: %#v", cfg.MCPServers)
-	}
-	if got.Command != "my-memory-binary" {
-		t.Fatalf("memory command = %q, want my-memory-binary (env override wins)", got.Command)
 	}
 }
 

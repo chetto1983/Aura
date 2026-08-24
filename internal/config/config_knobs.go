@@ -86,12 +86,6 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_TRACE_FULL_ACK", Kind: KindBool, Default: "false"},
 		{Name: "AURA_TRACE_ENCRYPT_KEY", Kind: KindString, Default: "", Secret: true},
 
-		// Phase 38 MCP governance hardening (D-14/D-15/MCPH-08): the legacy
-		// AURA_MCP_SERVERS_JSON env override is production-gated by gateMCPLegacyEnv
-		// (config_validate.go) unless this compat flag explicitly opts in. KindBool so a
-		// malformed value is FLAGGED (not silently absorbed) under a strict tier.
-		{Name: "AURA_MCP_LEGACY_ENV_COMPAT", Kind: KindBool, Default: "false"},
-
 		// --- Tier B: int/bool reliability knobs read in internal/config (F-016 surface) ---
 		{Name: "AURA_CONTEXT_PREVIEW_CAP_BYTES", Kind: KindInt, Default: "30000"},
 		{Name: "AURA_CONVERSATION_TURN_CAP_BYTES", Kind: KindInt, Default: strconv.Itoa(conversations.DefaultTurnCapBytes)},
