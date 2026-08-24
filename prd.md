@@ -6945,7 +6945,38 @@ Phase 42 was governed by IC-01..IC-14 and Section 17 of the (now-removed) indust
 > senza approvazione e npx resta root, per decisione dell'operatore registrata sopra. E non dice
 > niente sul ramo HTTP, che ha già la sua difesa in `ssrf.go`.
 
-## §MCP — Un connettore remoto si autorizza per identità, non per deployment (Amendment #129, 2026-08-24)
+## §ArcadeDB tenant credentials are created with the Aura tenant (Amendment #129, 2026-08-24)
+
+> **What was measured.** On the live Compose appliance, an authenticated operator identity
+> existed in `aura.identities` and was correctly linked through `aura.identity_auth_links`, but
+> ArcadeDB held neither that identity's `mem_<uuid>` database nor its derived `u_<uuid>` server
+> user. `POST /api/graph/query` therefore bound the correct tenant-scoped credential and received
+> `SecurityException: User/Password not valid`; Aura correctly sanitized that backend failure to
+> HTTP 502. The existing `internal/arcadedb.TenantClients` can create the database, user, and
+> memory schema, but only when a memory caller invokes its lazy `For` path. The cockpit graph is a
+> read-only consumer and intentionally has no ArcadeDB server credential, so a newly-created Aura
+> identity could reach the graph before any component had created its tenant boundary.
+>
+> **What changes.** The per-identity ArcadeDB database, HMAC-derived server credential, and memory
+> schema become an eager resource leg of tenant creation. Both first-operator bootstrap and
+> multi-user onboarding call the single existing tenant provisioner after the Aura identity UUID
+> exists and before reporting success. The onboarding leg is idempotent, journaled, and compensated
+> in reverse order with the other tenant resources; bootstrap compensates its committed Aura and
+> Authula legs if memory provisioning fails. Daemon startup also reconciles active pre-amendment
+> user identities through that same idempotent provisioner, so an upgrade repairs the measured
+> missing tenant without granting provisioning rights to the graph endpoint. Tenant database name,
+> user name, and password continue to come only from `DatabaseFor`, `TenantUserFor`, and
+> `TenantCredentials.PasswordFor`; no credential enters browser JSON, request input, logs, or
+> PostgreSQL.
+>
+> **What this measurement does NOT prove.** It does not prove that the missing ArcadeDB state ever
+> existed or why it disappeared, and reconciliation cannot recover lost graph data; it only restores
+> the required empty tenant boundary and schema when absent. It does not authorize graph reads to
+> use the server credential, does not weaken one-database-per-identity isolation, and does not
+> provision non-user identities. A 200 graph response after reconciliation proves availability and
+> correct authentication, not recovery of any memory records that were absent from the live volume.
+
+## §MCP — Un connettore remoto si autorizza per identità, non per deployment (Amendment #130, 2026-08-24)
 
 **Cosa è stato misurato, e su cosa.** Non su uno stack acceso: questa slice è stata
 misurata contro **il codice di tre implementazioni reali** — l'SDK go che Aura già usa

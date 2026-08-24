@@ -330,7 +330,9 @@ function isHTTPSURL(raw: string): boolean {
   try {
     const parsed = new URL(raw.trim());
     if (parsed.protocol === 'https:') return true;
-    return parsed.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
+    return (
+      parsed.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname)
+    );
   } catch {
     return false;
   }

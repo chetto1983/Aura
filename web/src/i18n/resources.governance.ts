@@ -142,7 +142,8 @@ export const governanceEn = {
         authorization: {
           title: 'Your authorization',
           authorized: 'Authorized for your identity',
-          notAuthorized: 'This server authorizes each person separately. Connect to authorize it for you.',
+          notAuthorized:
+            'This server authorizes each person separately. Connect to authorize it for you.',
           unsupported: 'This server takes no authorization flow.',
           connect: 'Connect',
           reconnect: 'Re-authorize',
@@ -380,7 +381,8 @@ export const governanceIt = {
         authorization: {
           title: 'La tua autorizzazione',
           authorized: 'Autorizzato per la tua identità',
-          notAuthorized: 'Questo server autorizza ogni persona separatamente. Collegalo per autorizzarlo a tuo nome.',
+          notAuthorized:
+            'Questo server autorizza ogni persona separatamente. Collegalo per autorizzarlo a tuo nome.',
           unsupported: 'Questo server non prevede un flusso di autorizzazione.',
           connect: 'Collega',
           reconnect: 'Riautorizza',
@@ -410,7 +412,7 @@ export const governanceIt = {
         urlLabel: 'URL del server',
         urlHint:
           'Un server MCP ospitato. Se autorizza ogni persona separatamente, collegalo dal suo pannello di dettaglio dopo averlo installato.',
-        urlInvalid: "Deve essere un URL https (http è ammesso solo per localhost).",
+        urlInvalid: 'Deve essere un URL https (http è ammesso solo per localhost).',
         nameLabel: 'Nome server',
         recipeLabel: 'Ricetta',
         commandLabel: 'Comando',

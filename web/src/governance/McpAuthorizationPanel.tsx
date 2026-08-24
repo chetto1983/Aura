@@ -115,8 +115,7 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
     );
   }
 
-  const waitingURL =
-    live?.status === 'authorization_required' ? (live.authorizationUrl ?? '') : '';
+  const waitingURL = live?.status === 'authorization_required' ? (live.authorizationUrl ?? '') : '';
   const failure =
     live?.status === 'error'
       ? (live.error ?? t('governance.mcp.authorization.failed'))

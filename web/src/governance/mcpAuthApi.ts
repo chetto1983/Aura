@@ -49,9 +49,7 @@ export function startMcpAuthorization(name: string): Promise<McpFlow> {
 }
 
 export function pollMcpAuthorizationFlow(flowId: string): Promise<McpFlow> {
-  return getJSON<McpFlow>(
-    `/api/governance/mcp/authorization/flow/${encodeURIComponent(flowId)}`,
-  );
+  return getJSON<McpFlow>(`/api/governance/mcp/authorization/flow/${encodeURIComponent(flowId)}`);
 }
 
 export function revokeMcpAuthorization(name: string): Promise<{ readonly removed: boolean }> {
