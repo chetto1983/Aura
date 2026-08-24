@@ -7050,3 +7050,61 @@ serva (x/oauth2 non sa mandarlo — `tokenRefresher` posta solo `grant_type` e
 `refresh_token`, v0.36.0 `oauth2.go:274` — e l'SDK usa quella stessa chiamata, quindi il
 dato è salvato ma non speso). Il fallback in tutti e tre i casi è un 401 che riapre il
 flusso completo, che funziona.
+
+## §WhatsApp's exemption is three tools, and its curation is a no-go (Amendment #131, 2026-08-24)
+
+> **Amendment #131 (2026-08-24, Phase 46/plan 46-08 — records a live measurement that falsifies
+> three of the plan's premises; does not revise amendment #123).**
+>
+> **What was measured**, on the running stack, against the image the deployment actually mounts
+> (`ghcr.io/chetto1983/whatsapp-mcp:sha-9911eb8`):
+>
+> 1. `tools/list` on `127.0.0.1:8092/mcp` returns **15** tools. The design doc
+>    (`docs/superpowers/specs/2026-08-17-mcp-curated-surface-design.md` §5b) records 14. The
+>    fifteenth is `get_media_data`, added by fork commit `d367d32`.
+> 2. `resources/read ui://whatsapp/client.html` (50,934 bytes) shows the view's embedded JS calls
+>    back **by raw tool name** into **three** tools, not two: `callTool("list_chats", …)`,
+>    `callTool("list_messages", …)` and `callTool("get_media_data", { message_id, chat_jid })`.
+>    §5b's exemption table lists only the first two. **It is incomplete.**
+> 3. Both view-bound reads bind to a **single shared document**, `ui://whatsapp/client.html`. §5b
+>    records `ui://whatsapp/chats.html` and `ui://whatsapp/thread.html` — two URIs the served image
+>    does not advertise. Plan 46-08's acceptance criterion asserting them could never have passed.
+> 4. `trustedRecipeActions[whatsAppRecipeSource]` (`internal/agent/mcptools/bridge_risk.go`) already
+>    carries all **15** served keys, `get_media_data` included and classified `MCPActionRead` with
+>    its rationale recorded inline. **The Go table was never stale; the design doc was.**
+> 5. The live mount log: `mcp always-loaded slot granted namespace=calendar model_facing=1
+>    slots_remaining=1`, then `whatsapp tools=15`, `memory tools=4`, `notion tools=28`,
+>    `linear tools=53`. Calendar holds the only grant. **WhatsApp is already deferred today.**
+>
+> **What changes.**
+> (a) The exemption is **three** tools. `get_media_data` is exempted on the others' ground and on one
+> of its own: `toolIsReadOnly` gates the view callback by raw mounted name, and D-26 deletes names.
+> (b) Amendment #123's `<=3` ceiling and 2-slot cap are **unchanged**; this records their consequence.
+> A curated WhatsApp is 1 curated + 3 exempted = **4** model-facing tools, and `grantLoadedSlot`
+> refuses `modelFacing > 3` without consuming a slot — so a curated WhatsApp stays deferred exactly
+> as an uncurated one does.
+> (c) **Plan 46-08's curation is a measured NO-GO.** Its must_have — *"WhatsApp ends at exactly 3
+> model-facing tools, so it still earns a loaded slot … and together with calendar's 1 the 2-slot
+> budget is exactly spent"* — is false against the served surface. The curation's primary
+> justification was manifest collapse; a deferred server contributes nothing to the manifest, so the
+> collapse saves nothing that is being paid. What remains is D-26 deleting 12 working `@mcp.tool()`
+> handlers from a live, operator-validated surface — one-way, reversible only by a second fork
+> commit + publish + pin — to shrink a `tool_search` payload. Not taken.
+> (d) **T-46-37 is realized, not accepted.** The plan recorded it as `accept`: *"One further
+> standalone tool in the fork flips WhatsApp to deferred with no Aura code change and no failure."*
+> `d367d32` added `get_media_data` and did precisely that.
+> (e) **The second always-loaded slot is structurally unreachable on today's mounts** — every mounted
+> server but calendar is over the ceiling (whatsapp 15, or 4 curated; memory 4; notion 28; linear 53).
+> `slots_remaining=1` is permanent. Phase 48, which owns the total manifest budget, inherits this.
+>
+> **What this measurement does NOT prove.** It does **not** prove curating would break the view:
+> `get_media_data` is called by raw name and D-26 would delete that name, but no curated build was
+> produced and no post-curation view was exercised — the claim is structural, not observed. It does
+> **not** prove deferral is harmless to agent behaviour; that the view callback survives deferral was
+> established by *reading code* (`alwaysLoaded` feeds only `Deferred:` on the spec, while
+> `toolIsReadOnly` reads the `bridged` map that `trackBridgedTools` populates regardless), never by
+> driving the agent. It does not measure how often the model reaches WhatsApp through `tool_search`,
+> nor what that costs against an always-loaded entry. It says nothing about the calendar half, which
+> is untouched. And it does not re-measure description bytes, since no curated description was
+> written. `notion` and `linear` are mounted and were outside Phase 46's picture entirely; their
+> existence is noted here and nothing about them is measured.
