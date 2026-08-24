@@ -3,6 +3,7 @@ import { Pencil, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { McpEnvEditForm } from './McpEnvEditForm';
 import { McpLifecycleCluster } from './McpLifecycleCluster';
+import { McpAuthorizationPanel } from './McpAuthorizationPanel';
 import { WhatsAppConnect } from './WhatsAppConnect';
 import { CalendarConnect } from './CalendarConnect';
 import { isWhatsAppServer, type McpProbeResult, type McpServerRow } from './governanceApi';
@@ -76,6 +77,11 @@ export function McpServerDetail({ server, probe, probeLoading, onClose }: McpSer
 
       {/* Lifecycle cluster — enable/disable + trust-approve + remove (inline, not a kebab). */}
       <McpLifecycleCluster server={server} onRemoved={onClose} />
+
+      {/* Per-identity authorization. It renders nothing until the server answers, and one
+          muted line for a server that takes no flow, so it never adds noise to the local
+          servers that are the majority of this board. */}
+      <McpAuthorizationPanel serverName={server.name} />
 
       {/* Cockpit "Connect" — the WhatsApp device-linking section, only for the WhatsApp server. */}
       {isWhatsAppServer(server) ? <WhatsAppConnect /> : null}

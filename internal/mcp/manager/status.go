@@ -101,13 +101,32 @@ func runtimeName(server mcp.ManagedServer) string {
 	return "local"
 }
 
+// authStatus reports how a server authenticates.
+//
+// OAuth is decided by the real classifier, NOT by sniffing env key names for "OAUTH".
+// The sniff was wrong in the direction that matters most: a remote server with NO oauth
+// configuration at all is exactly the Linear/Atlassian shape — dynamic client
+// registration, zero operator config — and reporting it "unsupported" told the operator
+// the one thing that would stop them trying to connect it.
 func authStatus(server mcp.ManagedServer) string {
+	if settings, err := mcp.OAuthSettingsFromEnv(server.Env); err == nil && mcp.UsesOAuth(server, settings) {
+		return AuthOAuth
+	}
 	for _, entry := range server.Env {
 		key, value, ok := strings.Cut(entry, "=")
 		if !ok {
 			continue
 		}
 		upper := strings.ToUpper(key)
+		// Aura's own MCP_OAUTH_* knobs configure the flow decided above; reaching here
+		// means that flow is NOT active, so they describe nothing. Skipping them is also
+		// load-bearing: MCP_OAUTH_TOKEN_URL contains "TOKEN" and would otherwise be
+		// reported as a bearer credential the server does not have.
+		if strings.HasPrefix(upper, "MCP_OAUTH_") {
+			continue
+		}
+		// Any OTHER oauth-shaped key still means what it always did: a server that runs
+		// its own OAuth internally, which a local stdio server legitimately can.
 		if strings.Contains(upper, "OAUTH") {
 			return AuthOAuth
 		}

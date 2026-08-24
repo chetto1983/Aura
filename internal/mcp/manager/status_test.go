@@ -83,6 +83,33 @@ func TestAuthStatus(t *testing.T) {
 		{name: "no env", server: mcp.ManagedServer{}, want: AuthUnsupported},
 		{name: "non-auth env", server: mcp.ManagedServer{Env: []string{"PUBLIC=1"}}, want: AuthUnsupported},
 		{name: "oauth", server: mcp.ManagedServer{Env: []string{"GOOGLE_OAUTH_CLIENT=abc"}}, want: AuthOAuth},
+		// The Linear/Atlassian shape: a remote server with NO oauth configuration at all
+		// still authorizes by OAuth, because dynamic client registration needs none.
+		// Sniffing env key names reported this "unsupported" — the one answer that would
+		// stop an operator from even trying to connect it.
+		{
+			name:   "remote server with no oauth env at all",
+			server: mcp.ManagedServer{Type: mcp.ServerTypeStreamableHTTP, URL: "https://mcp.linear.app/mcp"},
+			want:   AuthOAuth,
+		},
+		// A static bearer token is an explicit operator instruction and keeps precedence
+		// over a browser flow, so the row must still read as a bearer token.
+		{
+			name: "remote server with a static bearer token",
+			server: mcp.ManagedServer{
+				Type: mcp.ServerTypeStreamableHTTP, URL: "https://mcp.notion.com/mcp",
+				Env: []string{"MCP_BEARER_TOKEN=real-value"},
+			},
+			want: AuthBearerToken,
+		},
+		// MCP_OAUTH_TOKEN_URL contains "TOKEN". Read as a static credential it would
+		// report a bearer token the server does not have — on a stdio server, where our
+		// own flow cannot apply at all.
+		{
+			name:   "stdio server carrying only our oauth knobs",
+			server: mcp.ManagedServer{Command: "notes-mcp", Env: []string{"MCP_OAUTH_TOKEN_URL=https://x.example/token"}},
+			want:   AuthUnsupported,
+		},
 		{name: "bearer real", server: mcp.ManagedServer{Env: []string{"BEARER_TOKEN=real-value"}}, want: AuthBearerToken},
 		{name: "token placeholder", server: mcp.ManagedServer{Env: []string{"API_TOKEN=${API_TOKEN}"}}, want: AuthNotLoggedIn},
 		{name: "token change_me", server: mcp.ManagedServer{Env: []string{"API_TOKEN=CHANGE_ME"}}, want: AuthNotLoggedIn},

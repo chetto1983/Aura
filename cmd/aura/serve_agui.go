@@ -140,6 +140,16 @@ func wireAGUIServer(chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler,
 	// stack without the calendar sidecar boots fine). The routes mount behind RequireCapability(
 	// governance.write) in serve_webui.go, so the proxy is never an open relay.
 	aguiServer.SetCalendarMCP(chat.cfg.CalendarMCPURL, chat.cfg.CalendarMCPAdminToken)
+	// Wire per-identity MCP authorization: the cockpit's Connect button for a remote
+	// server that needs a human's consent rather than an operator-pasted token. Nil
+	// (no pool, or no AURA_AUTHULA_SECRET to derive the grant key from) leaves the five
+	// routes at 503 and MUST NOT abort boot — a deployment without them still serves
+	// every other board.
+	if authService, err := newMCPAuthService(chat.cfg, chat.pool, slog.Default()); err != nil {
+		slog.Warn("mcp authorization unavailable", "error", err)
+	} else if authService != nil {
+		aguiServer.SetMCPAuthorizations(authService)
+	}
 	// Wire the read-only graph explorer over ArcadeDB (buildArcadeGraphView). It is
 	// SCHEMA-ONLY: one identity's type catalogue, never a drawable canvas — see
 	// agui.ArcadeGraphView. Best-effort — an unconfigured memory server or a missing

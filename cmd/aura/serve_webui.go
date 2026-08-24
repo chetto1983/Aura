@@ -149,6 +149,9 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	// "/api/" fallback exclusion already returns them as backend routes.
 	mux.Handle(governanceMCPListRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
 	mux.Handle(governanceMCPProbeRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
+	mux.Handle(governanceMCPAuthStateRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
+	mux.Handle(governanceMCPAuthFlowRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
+	mux.Handle(governanceMCPAuthCbRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
 	mux.Handle(governanceSkillsRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
 	mux.Handle(governanceSkillsAuditRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
 	mux.Handle(governanceSkillsBodyRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
@@ -163,6 +166,8 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle(governanceMCPInstallRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(governanceMCPEnvRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(governanceMCPTrustRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(governanceMCPAuthStartRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(governanceMCPAuthRevokeRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(governanceMCPEnableRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(governanceMCPDisableRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(governanceMCPRemoveRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))

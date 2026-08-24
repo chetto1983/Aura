@@ -143,6 +143,7 @@ type Server struct {
 	graph            GraphView
 	governance       GovernanceProviders
 	governanceWrite  GovernanceWriteProviders
+	mcpAuth          MCPAuthorizationProvider
 	settings         settingsStore
 	audit            auditReader
 	idAdmin          identityAdmin
@@ -396,6 +397,9 @@ func (s *Server) Mux() http.Handler {
 	// tasks + run history). Colocated with their handlers; the parent-mux mount behind
 	// RequireAuth (no RequireCapability — read-only) lives in cmd/aura/serve_webui.go.
 	s.registerGovernanceRoutes(mux)
+	// The per-identity MCP authorization routes (start/poll/callback/revoke) sit beside
+	// the board's reads: same prefix, same capability mounts in cmd/aura.
+	s.registerMCPAuthorizationRoutes(mux)
 	// MCPW-01/02/03 governance WRITE routes (Phase 29 plan 29-02): POST /api/governance/mcp
 	// (install) + PATCH .../{name}/env + POST .../{name}/{trust,enable,disable} + DELETE
 	// .../{name}. Colocated with their handlers; the parent-mux mount behind

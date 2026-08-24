@@ -167,13 +167,22 @@ const (
 // to the SPA catch-all and answers index.html, not the handler. The pair is the contract:
 // agui registers, this mounts it behind its capability.
 const (
-	governanceMCPListRoute     = "GET /api/governance/mcp"
-	governanceMCPProbeRoute    = "GET /api/governance/mcp/{name}/probe"
-	governanceSkillsRoute      = "GET /api/governance/skills"
-	governanceSkillsAuditRoute = "GET /api/governance/skills/audit"
-	governanceSkillsBodyRoute  = "GET /api/governance/skills/{name}/body"
-	governanceSchedulerRoute   = "GET /api/governance/scheduler"
-	governanceSchedRunsRoute   = "GET /api/governance/scheduler/{id}/runs"
+	governanceMCPListRoute  = "GET /api/governance/mcp"
+	governanceMCPProbeRoute = "GET /api/governance/mcp/{name}/probe"
+	// The per-identity MCP authorization surface. The state read and the flow poll are
+	// governance.read; starting a flow and revoking a grant are governance.write. The
+	// callback is a READ mount on purpose: it is the human's own browser coming back
+	// from a consent screen, and requiring the stronger capability there would refuse
+	// the redirect of an operator who may read the board but not rewrite it — after
+	// they had already consented at the provider.
+	governanceMCPAuthStateRoute = "GET /api/governance/mcp/{name}/authorization"
+	governanceMCPAuthFlowRoute  = "GET /api/governance/mcp/authorization/flow/{id}"
+	governanceMCPAuthCbRoute    = "GET /api/governance/mcp/authorization/callback"
+	governanceSkillsRoute       = "GET /api/governance/skills"
+	governanceSkillsAuditRoute  = "GET /api/governance/skills/audit"
+	governanceSkillsBodyRoute   = "GET /api/governance/skills/{name}/body"
+	governanceSchedulerRoute    = "GET /api/governance/scheduler"
+	governanceSchedRunsRoute    = "GET /api/governance/scheduler/{id}/runs"
 )
 
 // governance*WriteRoute are the Phase-29 MCPW-01/02/03 governance WRITE routes (install a
@@ -191,12 +200,14 @@ const (
 // write path is introduced, so SameSite=Strict remains the sufficient CSRF control (the
 // TanStack useMutation calls are same-origin); no double-submit token is added.
 const (
-	governanceMCPInstallRoute = "POST /api/governance/mcp"
-	governanceMCPEnvRoute     = "PATCH /api/governance/mcp/{name}/env"
-	governanceMCPTrustRoute   = "POST /api/governance/mcp/{name}/trust"
-	governanceMCPEnableRoute  = "POST /api/governance/mcp/{name}/enable"
-	governanceMCPDisableRoute = "POST /api/governance/mcp/{name}/disable"
-	governanceMCPRemoveRoute  = "DELETE /api/governance/mcp/{name}"
+	governanceMCPInstallRoute    = "POST /api/governance/mcp"
+	governanceMCPEnvRoute        = "PATCH /api/governance/mcp/{name}/env"
+	governanceMCPTrustRoute      = "POST /api/governance/mcp/{name}/trust"
+	governanceMCPAuthStartRoute  = "POST /api/governance/mcp/{name}/authorization"
+	governanceMCPAuthRevokeRoute = "DELETE /api/governance/mcp/{name}/authorization"
+	governanceMCPEnableRoute     = "POST /api/governance/mcp/{name}/enable"
+	governanceMCPDisableRoute    = "POST /api/governance/mcp/{name}/disable"
+	governanceMCPRemoveRoute     = "DELETE /api/governance/mcp/{name}"
 )
 
 // governanceSkills*WriteRoute are the Phase-29 SKW-01/02/03 governance SKILLS WRITE routes

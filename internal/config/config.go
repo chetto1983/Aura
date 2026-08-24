@@ -150,6 +150,7 @@ type Config struct {
 	ObjectStoreBackend           string // AURA_OBJECTSTORE_BACKEND — garage|filesystem-dev|fake
 	ObjectStoreEndpoint          string // AURA_OBJECTSTORE_ENDPOINT — S3-compatible internal endpoint
 	ObjectStorePublicEndpoint    string // AURA_OBJECTSTORE_PUBLIC_ENDPOINT — optional presign URL host rewrite
+	WebPublicURL                 string // AURA_WEB_PUBLIC_URL — the origin a browser reaches the cockpit on; required for the MCP OAuth redirect
 	ObjectStoreRegion            string // AURA_OBJECTSTORE_REGION — Garage/S3 region
 	ObjectStoreBucket            string // AURA_OBJECTSTORE_BUCKET — asset bucket
 	ObjectStoreAccessKey         string // AURA_OBJECTSTORE_ACCESS_KEY — S3 access key
@@ -454,6 +455,7 @@ func loadBase() *Config {
 		ObjectStoreBackend:        envDefault("AURA_OBJECTSTORE_BACKEND", "garage"),
 		ObjectStoreEndpoint:       envDefault("AURA_OBJECTSTORE_ENDPOINT", "http://127.0.0.1:3900"),
 		ObjectStorePublicEndpoint: os.Getenv("AURA_OBJECTSTORE_PUBLIC_ENDPOINT"),
+		WebPublicURL:              os.Getenv("AURA_WEB_PUBLIC_URL"),
 		ObjectStoreRegion:         envDefault("AURA_OBJECTSTORE_REGION", "garage"),
 		ObjectStoreBucket:         envDefault("AURA_OBJECTSTORE_BUCKET", "aura-assets"),
 		ObjectStoreAccessKey:      envDefault("AURA_OBJECTSTORE_ACCESS_KEY", defaultObjectStoreAccessKey),
