@@ -48,8 +48,13 @@ func SetServerEnv(doc *mcp.ManagedConfig, name string, submitted []string) error
 
 // mergeSubmittedEnv applies the operator-submitted env over existing, preserving a stored
 // secret only when the submitted value is the redacted ${KEY} placeholder (or empty for a
-// secret key). The output order follows the submitted entries first, then any existing key
-// not re-submitted, so a deterministic shape survives an edit.
+// secret key).
+//
+// The submitted list is AUTHORITATIVE: a key the operator did not submit is removed. It
+// used to be retained, and that made a mistyped variable name permanent — the editor
+// renders every stored key, so the operator can only ever submit the full set, and with
+// retention no submission could mean "delete this one". The cockpit had no way to undo a
+// typo, and neither did the CLI.
 func mergeSubmittedEnv(existing, submitted []string) []string {
 	existingByKey := map[string]string{}
 	for _, entry := range existing {
@@ -77,17 +82,6 @@ func mergeSubmittedEnv(existing, submitted []string) []string {
 			continue
 		}
 		out = append(out, entry)
-	}
-	for _, entry := range existing {
-		key, _, ok := cutEnv(entry)
-		if !ok {
-			continue
-		}
-		if _, done := seen[key]; done {
-			continue
-		}
-		out = append(out, entry)
-		seen[key] = struct{}{}
 	}
 	return out
 }

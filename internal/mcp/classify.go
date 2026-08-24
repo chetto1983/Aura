@@ -52,7 +52,7 @@ func Classify(s ManagedServer) (serverType string, trust string, err error) {
 		return "", "", fmt.Errorf("mcp classify: unknown type %q", s.Type)
 	}
 
-	trust = resolveTrust(s)
+	trust = resolveTrust(s, serverType)
 
 	if err := checkTypeTrustConsistency(serverType, trust); err != nil {
 		return "", "", err
@@ -61,22 +61,33 @@ func Classify(s ManagedServer) (serverType string, trust string, err error) {
 	return serverType, trust, nil
 }
 
-// resolveTrust absorbs NormalizedTrust's pre-existing logic MINUS the F-013
-// auto-promote-to-TrustRemoteHTTP fallback: an explicit known class always
-// wins, then a recipe:-sourced server (Aura's own vetted catalog, a genuinely
-// different case from "nothing was ever set") resolves to TrustTrustedRecipe,
-// and anything else -- including an empty, blank, whitespace-only, or unknown
-// trust class on a remote server -- resolves to TrustBlocked (D-03). There is
-// deliberately no streamable_http-shape check here: an unset remote trust must
-// block regardless of transport, so transport plays no role in this fallback.
-func resolveTrust(s ManagedServer) string {
+// resolveTrust picks the class for a server that did not state one. An explicit known
+// class always wins; a recipe:-sourced server (Aura's own vetted catalog) resolves to
+// TrustTrustedRecipe; anything else resolves BY TRANSPORT.
+//
+// The unset case used to resolve to TrustBlocked (D-03), so a server had to be installed
+// and then trust-approved in a separate step. That step protected nobody it could reach:
+// only a human with governance.write (the cockpit) or a shell (the CLI) can put a server
+// in this file at all, and both had already decided by the time they got here. What it did
+// instead was leave the server installed, listed and inert, which is how a Slack install
+// on 2026-08-24 ended up visible and unusable with no on-screen way to finish it.
+//
+// TrustBlocked remains a class an operator can set DELIBERATELY, and it still means
+// blocked. It is no longer what you get for saying nothing.
+// The transport is the RESOLVED one, not a re-reading of the fields: a server that
+// declares `type: streamable_http` and no URL is still remote, and pairing it with
+// trusted_local would fail checkTypeTrustConsistency and make Classify error out.
+func resolveTrust(s ManagedServer, serverType string) string {
 	if isKnownTrust(s.Trust.Class) {
 		return strings.TrimSpace(s.Trust.Class)
 	}
 	if strings.HasPrefix(strings.TrimSpace(s.Source), "recipe:") {
 		return TrustTrustedRecipe
 	}
-	return TrustBlocked
+	if serverType == ServerTypeStreamableHTTP {
+		return TrustRemoteHTTP
+	}
+	return TrustTrustedLocal
 }
 
 // checkTypeTrustConsistency enforces the explicit type<->trust compatibility

@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ariaInvalid } from '../a11y/aria';
+import { HttpError } from '../api/json';
 import { Spinner } from '../components/Spinner';
 import { installMcpServer, type McpInstallRequest } from './governanceApi';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -104,7 +105,7 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
       };
     }
     if (mode === 'remote') {
-      return { name: effectiveName, url: url.trim(), type: 'streamable-http' };
+      return { name: effectiveName, url: url.trim(), type: 'streamable_http' };
     }
     return {
       name: effectiveName,
@@ -126,6 +127,20 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
   function submit() {
     if (!canInstall) return;
     mutation.mutate(buildRequest());
+  }
+
+  // The server's own sentence is the only thing that says what to change, and sendJSON already
+  // carries it on HttpError.reason — this panel used to drop it and print the board's generic
+  // "could not load this card", which described neither the request nor the failure. Measured
+  // 2026-08-24: the panel sent a `type` the classifier rejects, the API answered 502 with
+  // "mcp classify: unknown type", and the operator saw a load error. A 409 is worded locally
+  // because `existingNames` goes stale whenever another session or the CLI installs a name.
+  function installFailureMessage(error: unknown): string {
+    if (!(error instanceof HttpError)) return t('governance.mcp.install.failed');
+    if (error.status === 409) {
+      return t('governance.mcp.install.duplicateName', { name: effectiveName });
+    }
+    return error.reason !== '' ? error.reason : t('governance.mcp.install.failed');
   }
 
   return (
@@ -239,7 +254,7 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
 
       {mutation.isError ? (
         <Alert variant="destructive">
-          <AlertDescription>{t('governance.error')}</AlertDescription>
+          <AlertDescription>{installFailureMessage(mutation.error)}</AlertDescription>
         </Alert>
       ) : null}
 

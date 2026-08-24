@@ -100,16 +100,21 @@ export function McpLifecycleCluster({ server, onRemoved }: McpLifecycleClusterPr
           </span>
         </Button>
 
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => {
-            setTrusting((prev) => !prev);
-          }}
-        >
-          <ShieldCheck data-icon aria-hidden="true" className="size-4" />
-          {t('governance.mcp.lifecycle.trust')}
-        </Button>
+        {/* Only a server that is actually blocked has anything to approve. Installing is
+            the authorization now, so on every other row this button was a control that
+            changed nothing — and it sat next to Remove, which changes a great deal. */}
+        {enabled ? null : (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setTrusting((prev) => !prev);
+            }}
+          >
+            <ShieldCheck data-icon aria-hidden="true" className="size-4" />
+            {t('governance.mcp.lifecycle.trust')}
+          </Button>
+        )}
 
         <Button
           type="button"

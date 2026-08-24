@@ -37,6 +37,11 @@ const SERVER: McpServerRow = {
   envKeys: [],
 };
 
+// Trust & approve exists only for a server that is actually blocked. Installing is the
+// authorization everywhere else, so on a runnable row the button changed nothing while
+// sitting beside Remove, which changes everything.
+const BLOCKED_SERVER: McpServerRow = { ...SERVER, trust: 'blocked', riskPolicy: 'blocked' };
+
 function client() {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } });
 }
@@ -89,7 +94,7 @@ describe('McpLifecycleCluster (MCPW-02/03)', () => {
 
   it('requires a reason before Trust & approve can submit', async () => {
     trustMcpServer.mockResolvedValue({ name: 'github' });
-    renderCluster();
+    renderCluster(BLOCKED_SERVER);
 
     // Open the inline trust form (the toolbar Trust & approve button).
     fireEvent.click(screen.getByRole('button', { name: 'Trust & approve' }));
@@ -115,8 +120,13 @@ describe('McpLifecycleCluster (MCPW-02/03)', () => {
     });
   });
 
-  it('cancelling the trust form clears it without a call', () => {
+  it('offers no Trust & approve on a server that is not blocked', () => {
     renderCluster();
+    expect(screen.queryByRole('button', { name: 'Trust & approve' })).toBeNull();
+  });
+
+  it('cancelling the trust form clears it without a call', () => {
+    renderCluster(BLOCKED_SERVER);
     fireEvent.click(screen.getByRole('button', { name: 'Trust & approve' }));
     expect(screen.getByLabelText('Reason')).toBeTruthy();
     // "Don't approve", not "Cancel approval": this button dismisses the form and calls

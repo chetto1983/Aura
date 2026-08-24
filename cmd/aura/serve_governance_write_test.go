@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/mcp"
@@ -95,4 +96,40 @@ func TestTrustApproveRejectsInvalidClassOrReason(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestJoinActiveProfile pins the asymmetry that made a cockpit install look like it worked
+// and then do nothing: the server was written to the registry but never joined the profile,
+// and ProfileServerNames — not MCPServers — is what decides the runnable set.
+func TestJoinActiveProfile(t *testing.T) {
+	t.Run("adds the server to the active profile", func(t *testing.T) {
+		doc := mcp.ManagedConfig{
+			ActiveProfile: "work",
+			Profiles:      map[string]mcp.ManagedProfile{"work": {Servers: []string{"memory"}}},
+			MCPServers:    map[string]mcp.ManagedServer{"memory": {Command: "node"}, "slack": {URL: "https://mcp.slack.com/mcp"}},
+		}
+		joinActiveProfile(&doc, "slack")
+		if got := doc.ProfileServerNames(""); !slices.Contains(got, "slack") {
+			t.Fatalf("installed server missing from the runnable set: %v", got)
+		}
+	})
+
+	t.Run("is idempotent", func(t *testing.T) {
+		doc := mcp.ManagedConfig{
+			Profiles:   map[string]mcp.ManagedProfile{mcp.DefaultMCPProfile: {Servers: []string{"slack"}}},
+			MCPServers: map[string]mcp.ManagedServer{"slack": {URL: "https://mcp.slack.com/mcp"}},
+		}
+		joinActiveProfile(&doc, "slack")
+		if got := doc.Profiles[mcp.DefaultMCPProfile].Servers; len(got) != 1 {
+			t.Fatalf("re-installing duplicated the profile entry: %v", got)
+		}
+	})
+
+	t.Run("creates the profile map when the config has none", func(t *testing.T) {
+		doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{"slack": {URL: "https://mcp.slack.com/mcp"}}}
+		joinActiveProfile(&doc, "slack")
+		if got := doc.ProfileServerNames(""); !slices.Contains(got, "slack") {
+			t.Fatalf("server missing after profile map was created: %v", got)
+		}
+	})
 }

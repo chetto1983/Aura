@@ -187,11 +187,15 @@ export const governanceEn = {
         willWriteTo: 'Will write to:',
         customBlockedNote: 'Custom servers start blocked until you trust-approve them.',
         duplicateName: 'A server named "{{name}}" already exists. Choose a different name.',
+        failed: 'The install was refused and the server gave no reason. Check the runtime logs.',
         submit: 'Install server',
         discard: 'Discard install',
       },
       env: {
         editHeading: 'Environment',
+        addKey: 'Add variable',
+        addKeyLabel: 'New variable name',
+        removeKey: 'Remove {{key}}',
         save: 'Save changes',
         discard: 'Discard changes',
         secretHint: 'Stored secret — leave unchanged to keep it; type a new value to replace it.',
@@ -424,11 +428,15 @@ export const governanceIt = {
         customBlockedNote:
           'I server personalizzati partono bloccati finché non li approvi con fiducia.',
         duplicateName: 'Esiste già un server chiamato "{{name}}". Scegli un nome diverso.',
+        failed: "L'installazione è stata rifiutata senza un motivo. Controlla i log del runtime.",
         submit: 'Installa server',
         discard: 'Annulla installazione',
       },
       env: {
         editHeading: 'Ambiente',
+        addKey: 'Aggiungi variabile',
+        addKeyLabel: 'Nome della nuova variabile',
+        removeKey: 'Rimuovi {{key}}',
         save: 'Salva modifiche',
         discard: 'Annulla modifiche',
         secretHint:

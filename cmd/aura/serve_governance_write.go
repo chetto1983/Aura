@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -54,6 +55,7 @@ func (a mcpWriteAdapter) InstallServer(ctx context.Context, actor string, req ag
 		return agui.MCPWriteResult{}, err
 	}
 	doc.MCPServers[name] = server
+	joinActiveProfile(&doc, name)
 
 	if err := mcpmanager.WriteConfigWithAudit(ctx, a.pool, a.path, doc, mcpmanager.MCPAuditInsert{
 		ActorIdentityID: actor, Action: "install", ServerName: name,
@@ -161,6 +163,26 @@ func (a mcpWriteAdapter) SetEnabled(ctx context.Context, actor, name string, ena
 	return agui.MCPWriteResult{Name: name, Server: server}, nil
 }
 
+// joinActiveProfile puts a freshly installed server into the profile that is actually in
+// force. Without it install was the only asymmetric mutation on this adapter: RemoveServer
+// takes a name OUT of every profile, but nothing ever put one IN, so a server installed from
+// the cockpit was written to the registry, listed on the board — and absent from
+// ProfileServerNames, which is what decides the runnable set. It could not be reached by the
+// agent and its authorization endpoint answered "not configured or is disabled", with the
+// board showing it installed the whole time. Measured on the live stack, 2026-08-24.
+func joinActiveProfile(doc *mcp.ManagedConfig, name string) {
+	profile := doc.ActiveProfileName()
+	if doc.Profiles == nil {
+		doc.Profiles = map[string]mcp.ManagedProfile{}
+	}
+	cfg := doc.Profiles[profile]
+	if slices.Contains(cfg.Servers, name) {
+		return
+	}
+	cfg.Servers = append(cfg.Servers, name)
+	doc.Profiles[profile] = cfg
+}
+
 func (a mcpWriteAdapter) RemoveServer(ctx context.Context, actor, name string) error {
 	doc, err := a.load()
 	if err != nil {
@@ -234,9 +256,10 @@ func buildInstallServer(req agui.MCPInstallRequest) (mcp.ManagedServer, string, 
 		URL:     url,
 		Type:    strings.TrimSpace(req.Type),
 		Source:  "custom",
-		// A custom server defaults to blocked until an explicit operator trust-approve
-		// (parity with the CLI mcpAdd default; T-29-02-03 no model self-trust).
-		Trust: mcp.ManagedTrust{Class: mcp.TrustBlocked},
+		// No trust class: Classify resolves one from the transport. Installing IS the
+		// authorization — this route is operator-authenticated and capability-gated
+		// (governance.write), so the human who reached it already made the decision a
+		// trust-approve would have asked for a second time.
 	}
 	cli := "aura mcp add " + req.Name
 	if command != "" {

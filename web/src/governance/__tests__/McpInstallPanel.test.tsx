@@ -66,9 +66,48 @@ describe('McpInstallPanel (MCPW-01)', () => {
       expect.objectContaining({
         name: 'slack',
         url: 'https://mcp.slack.com/mcp',
-        type: 'streamable-http',
+        // The wire value is mcp.ServerTypeStreamableHTTP (internal/mcp/managed_config.go) —
+        // `streamable_http`, underscore. This assertion once read `streamable-http`, which
+        // pinned an invented spelling: every cockpit install of a hosted connector came back
+        // 502 "mcp classify: unknown type" while this test stayed green.
+        type: 'streamable_http',
       }),
     );
+  });
+
+  // A refused install must say WHY. The panel used to render the board's generic
+  // "could not load this card" for every failure, which hid the server's own sentence and
+  // made a wrong-payload bug look like a runtime outage.
+  it('surfaces the server reason when the install is refused', async () => {
+    const { HttpError } = await import('../../api/json');
+    installMcpServer.mockRejectedValue(
+      new HttpError(502, 'mcp classify: unknown type "streamable-http"'),
+    );
+    renderPanel({});
+    fireEvent.click(screen.getByRole('button', { name: 'Remote (HTTP)', pressed: false }));
+    fireEvent.change(screen.getByLabelText('Server name'), { target: { value: 'slack' } });
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: 'https://mcp.slack.com/mcp' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Install server' }));
+
+    expect(await screen.findByText(/mcp classify: unknown type/)).toBeTruthy();
+  });
+
+  // A 409 means the name was taken since the panel opened (another session, or the CLI), so
+  // `existingNames` could not have caught it. It reads as the same duplicate-name sentence.
+  it('words a 409 as the duplicate-name message', async () => {
+    const { HttpError } = await import('../../api/json');
+    installMcpServer.mockRejectedValue(new HttpError(409, ''));
+    renderPanel({});
+    fireEvent.click(screen.getByRole('button', { name: 'Remote (HTTP)', pressed: false }));
+    fireEvent.change(screen.getByLabelText('Server name'), { target: { value: 'slack' } });
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: 'https://mcp.slack.com/mcp' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Install server' }));
+
+    expect(await screen.findByText(/A server named "slack" already exists/)).toBeTruthy();
   });
 
   // The URL is where an identity's OAuth token will be sent. A plaintext one hands it to
@@ -208,12 +247,15 @@ describe('McpInstallPanel (MCPW-01)', () => {
     });
   });
 
+  // A non-HTTP failure (the network dropped) has no server sentence to show, so it falls back
+  // to the install-specific wording — never the board's "could not load this card", which
+  // describes a read that never happened here.
   it('shows the destructive error alert when the install request fails', async () => {
     installMcpServer.mockRejectedValueOnce(new Error('boom'));
     renderPanel({ existingNames: ['memory'] });
     fireEvent.click(screen.getByRole('button', { name: 'Install server' }));
     await waitFor(() => {
-      expect(screen.getByText(/load this board/)).toBeTruthy();
+      expect(screen.getByText(/The install was refused/)).toBeTruthy();
     });
     // The failed request still fired exactly once (no retry).
     expect(installMcpServer).toHaveBeenCalledTimes(1);

@@ -5,6 +5,7 @@ import { Spinner } from '../components/Spinner';
 import { setMcpServerEnv, type McpEnvChip } from './governanceApi';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -106,6 +107,35 @@ export function McpEnvEditForm({
     setRows((prev) => prev.map((row) => (row.key === key ? { ...row, value } : row)));
   }
 
+  // Rows are seeded from the keys a server ALREADY has plus the ones its recipe declares, so
+  // a custom server — which is every hosted connector installed by URL — opens this form
+  // empty with nothing to fill in. That is not a cosmetic gap: Slack's authorization server
+  // publishes no registration_endpoint (measured 2026-08-24), so its client id and secret can
+  // never be issued automatically and MUST be typed. Without this control there was nowhere
+  // in the cockpit to type them.
+  const [newKey, setNewKey] = useState('');
+  const newKeyId = `env-${serverName}-new`;
+  const normalizedNewKey = newKey.trim().toUpperCase();
+  const newKeyValid =
+    /^[A-Z_][A-Z0-9_]*$/.test(normalizedNewKey) &&
+    !rows.some((row) => row.key === normalizedNewKey);
+
+  // Removal is what makes the key name correctable at all: the name is typed, so it can be
+  // typed wrong, and until now nothing in the cockpit could take one back out. Renaming is
+  // remove + add, which is why there is no separate rename control.
+  function removeRow(key: string) {
+    setRows((prev) => prev.filter((row) => row.key !== key));
+  }
+
+  function addRow() {
+    if (!newKeyValid) return;
+    setRows((prev) => [
+      ...prev,
+      { key: normalizedNewKey, secret: true, required: false, present: false, value: '' },
+    ]);
+    setNewKey('');
+  }
+
   const offending = rows
     .filter((row) => row.required)
     .filter((row) => !row.present || row.value === '' || row.value === placeholderToken(row.key))
@@ -143,13 +173,34 @@ export function McpEnvEditForm({
                 >
                   {row.key}
                 </Label>
-                <Badge variant={stateVariant(state)} className={`text-[13px] ${stateTone(state)}`}>
-                  <span
-                    aria-hidden="true"
-                    className={`inline-block h-2 w-2 shrink-0 rounded-sm ${STATE_DOT[state]}`}
-                  />
-                  {t(STATE_LABEL[state])}
-                </Badge>
+                <span className="flex items-center gap-1">
+                  <Badge
+                    variant={stateVariant(state)}
+                    className={`text-[13px] ${stateTone(state)}`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`inline-block h-2 w-2 shrink-0 rounded-sm ${STATE_DOT[state]}`}
+                    />
+                    {t(STATE_LABEL[state])}
+                  </Badge>
+                  {/* A required key belongs to its recipe and cannot be deleted; anything
+                      else can, which is the only way to undo a mistyped variable name. */}
+                  {row.required ? null : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={t('governance.mcp.env.removeKey', { key: row.key })}
+                      onClick={() => {
+                        removeRow(row.key);
+                      }}
+                      className="text-text-muted hover:text-danger"
+                    >
+                      <Trash2 data-icon aria-hidden="true" className="size-4" />
+                    </Button>
+                  )}
+                </span>
               </span>
               <EnvValueInput
                 secret={row.secret}
@@ -174,6 +225,32 @@ export function McpEnvEditForm({
           );
         })}
       </ul>
+
+      <div className="flex flex-wrap items-end gap-2">
+        <span className="flex min-w-[220px] flex-1 flex-col gap-1">
+          <Label htmlFor={newKeyId} className="text-[13px] font-semibold text-text-muted">
+            {t('governance.mcp.env.addKeyLabel')}
+          </Label>
+          <Input
+            id={newKeyId}
+            dir="ltr"
+            value={newKey}
+            placeholder="MCP_OAUTH_CLIENT_ID"
+            onChange={(event) => {
+              setNewKey(event.target.value);
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter') return;
+              event.preventDefault();
+              addRow();
+            }}
+            className="font-mono text-[13px]"
+          />
+        </span>
+        <Button type="button" variant="outline" disabled={!newKeyValid} onClick={addRow}>
+          {t('governance.mcp.env.addKey')}
+        </Button>
+      </div>
 
       {offending.length > 0 ? (
         <Card role="note" className="gap-1 border-warning bg-warning/10 px-3 py-2">

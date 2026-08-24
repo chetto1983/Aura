@@ -130,8 +130,11 @@ func TestManagedConfigTrustDefaults(t *testing.T) {
 	if got := doc.NormalizedTrust("recipe"); got != TrustTrustedRecipe {
 		t.Fatalf("recipe trust = %q, want %q", got, TrustTrustedRecipe)
 	}
-	if got := doc.NormalizedTrust("manual"); got != TrustBlocked {
-		t.Fatalf("manual trust = %q, want %q", got, TrustBlocked)
+	// A hand-added stdio server resolves from its transport. It used to resolve to
+	// TrustBlocked, which only meant the operator who wrote the entry had to approve it
+	// again somewhere else.
+	if got := doc.NormalizedTrust("manual"); got != TrustTrustedLocal {
+		t.Fatalf("manual trust = %q, want %q", got, TrustTrustedLocal)
 	}
 	if got := doc.NormalizedTrust("trusted"); got != TrustTrustedLocal {
 		t.Fatalf("trusted trust = %q, want %q", got, TrustTrustedLocal)
@@ -297,11 +300,16 @@ func TestNormalizedTrustUnknownServerIsBlocked(t *testing.T) {
 // this test's OLD assertion described exactly the bug being fixed.
 func TestNormalizedTrustRemoteHTTPInferred(t *testing.T) {
 	doc := ManagedConfig{MCPServers: map[string]ManagedServer{
-		"remote": {Type: ServerTypeStreamableHTTP, URL: "https://example.test/mcp"},
+		"remote":  {Type: ServerTypeStreamableHTTP, URL: "https://example.test/mcp"},
+		"blocked": {Type: ServerTypeStreamableHTTP, URL: "https://example.test/mcp", Trust: ManagedTrust{Class: TrustBlocked}},
 	}}
-	if got := doc.NormalizedTrust("remote"); got != TrustBlocked {
-		t.Fatalf("remote http trust with no explicit class = %q, want %q (F-013: must not auto-promote to %q)",
-			got, TrustBlocked, TrustRemoteHTTP)
+	if got := doc.NormalizedTrust("remote"); got != TrustRemoteHTTP {
+		t.Fatalf("remote http trust with no explicit class = %q, want %q", got, TrustRemoteHTTP)
+	}
+	// The escape hatch has to keep working, or "no ceremony" would have quietly become
+	// "no way to block anything".
+	if got := doc.NormalizedTrust("blocked"); got != TrustBlocked {
+		t.Fatalf("explicitly blocked remote = %q, want %q", got, TrustBlocked)
 	}
 }
 

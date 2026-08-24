@@ -85,8 +85,17 @@ func TestSetServerEnvUnknownServer(t *testing.T) {
 }
 
 // TestSetServerEnvClearsNonSecret asserts a non-secret env var clears in place when the
-// operator submits an empty value, and that a key only present in the existing Env (not
-// re-submitted) is retained.
+// operator submits an empty value.
+//
+// The second half of this test used to assert the opposite of what it asserts now: that a
+// key present in the stored Env but NOT re-submitted was retained. That rule made a typo
+// permanent. The editor renders every stored key, so the operator can only ever submit the
+// full set — and with retention there was no submission that could mean "remove this",
+// leaving a mistyped key sitting in the config with nothing in the cockpit able to delete
+// it. Deliberately rewritten per CLAUDE.md: the assertion described the defect.
+//
+// The submitted list is now authoritative for the keys the form showed, which is the same
+// contract a full-form editor has everywhere else in Aura.
 func TestSetServerEnvClearsNonSecret(t *testing.T) {
 	t.Parallel()
 
@@ -95,13 +104,37 @@ func TestSetServerEnvClearsNonSecret(t *testing.T) {
 			"alpha": {Command: "a", Env: []string{"FLAG=on", "KEEP=1"}},
 		},
 	}
-	if err := SetServerEnv(doc, "alpha", []string{"FLAG="}); err != nil {
+	if err := SetServerEnv(doc, "alpha", []string{"FLAG=", "KEEP=1"}); err != nil {
 		t.Fatalf("SetServerEnv: %v", err)
 	}
 	if v, _ := envValue(doc.MCPServers["alpha"].Env, "FLAG"); v != "" {
 		t.Fatalf("non-secret clear: FLAG=%q want empty", v)
 	}
 	if v, ok := envValue(doc.MCPServers["alpha"].Env, "KEEP"); !ok || v != "1" {
-		t.Fatalf("un-submitted existing key must be retained, got KEEP=%q ok=%v", v, ok)
+		t.Fatalf("a re-submitted key must survive, got KEEP=%q ok=%v", v, ok)
+	}
+}
+
+// TestSetServerEnvRemovesOmittedKey is the other half of the contract above, and the reason
+// it changed: omitting a key deletes it, which is what gives the cockpit a way to undo a
+// mistyped variable name.
+func TestSetServerEnvRemovesOmittedKey(t *testing.T) {
+	t.Parallel()
+
+	doc := &mcp.ManagedConfig{
+		MCPServers: map[string]mcp.ManagedServer{
+			"alpha": {Command: "a", Env: []string{"MCP_OAUTH_CLIENT_ID=abc", "MCP_OAUHT_TYPO=oops"}},
+		},
+	}
+	if err := SetServerEnv(doc, "alpha", []string{"MCP_OAUTH_CLIENT_ID=${MCP_OAUTH_CLIENT_ID}"}); err != nil {
+		t.Fatalf("SetServerEnv: %v", err)
+	}
+	env := doc.MCPServers["alpha"].Env
+	if _, ok := envValue(env, "MCP_OAUHT_TYPO"); ok {
+		t.Fatalf("an omitted key survived, so a typo can never be undone: %v", env)
+	}
+	// The surviving secret must still hold its real value, not the redacted placeholder.
+	if v, ok := envValue(env, "MCP_OAUTH_CLIENT_ID"); !ok || v != "abc" {
+		t.Fatalf("re-submitting the placeholder lost the stored secret: %q ok=%v", v, ok)
 	}
 }

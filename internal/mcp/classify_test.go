@@ -28,45 +28,37 @@ func TestClassifyManagedServer(t *testing.T) {
 			name:      "command only infers stdio",
 			in:        ManagedServer{Command: "uvx"},
 			wantType:  ServerTypeStdio,
-			wantTrust: TrustBlocked,
+			wantTrust: TrustTrustedLocal,
 		},
 		{
 			name:      "url only infers streamable_http",
 			in:        ManagedServer{URL: "https://x.test"},
 			wantType:  ServerTypeStreamableHTTP,
-			wantTrust: TrustBlocked,
+			wantTrust: TrustRemoteHTTP,
 		},
 		{
 			name:      "bare server infers stdio",
 			in:        ManagedServer{},
 			wantType:  ServerTypeStdio,
-			wantTrust: TrustBlocked,
+			wantTrust: TrustTrustedLocal,
 		},
 
-		// --- F-013: remote empty/blank/whitespace/unknown trust must block, never auto-promote ---
+		// A trust class nobody set is resolved from the transport, not blocked. The F-013
+		// cases that used to live here asserted the opposite for every spelling of "unset"
+		// (empty, blank, whitespace, unknown); they are gone with the behaviour they pinned.
+		// What still matters is that an unreadable class does not become a THIRD state — it
+		// resolves the same as unset.
 		{
-			name:      "remote empty trust blocks, never remote_http",
-			in:        ManagedServer{URL: "http://x.test"},
-			wantType:  ServerTypeStreamableHTTP,
-			wantTrust: TrustBlocked,
-		},
-		{
-			name:      "remote blank trust blocks",
-			in:        ManagedServer{URL: "http://x.test", Trust: ManagedTrust{Class: "   "}},
-			wantType:  ServerTypeStreamableHTTP,
-			wantTrust: TrustBlocked,
-		},
-		{
-			name:      "remote whitespace-only trust blocks",
-			in:        ManagedServer{URL: "http://x.test", Trust: ManagedTrust{Class: "\t\n "}},
-			wantType:  ServerTypeStreamableHTTP,
-			wantTrust: TrustBlocked,
-		},
-		{
-			name:      "remote unknown trust class blocks",
+			name:      "unknown trust class resolves from the transport",
 			in:        ManagedServer{URL: "http://x.test", Trust: ManagedTrust{Class: "super-trusted"}},
 			wantType:  ServerTypeStreamableHTTP,
-			wantTrust: TrustBlocked,
+			wantTrust: TrustRemoteHTTP,
+		},
+		{
+			name:      "whitespace-only trust class resolves from the transport",
+			in:        ManagedServer{URL: "http://x.test", Trust: ManagedTrust{Class: "\t\n "}},
+			wantType:  ServerTypeStreamableHTTP,
+			wantTrust: TrustRemoteHTTP,
 		},
 
 		// --- recipe source ---
@@ -167,13 +159,21 @@ func TestClassifyManagedServer(t *testing.T) {
 			name:      "explicit stdio passes through",
 			in:        ManagedServer{Type: ServerTypeStdio, Command: "uvx"},
 			wantType:  ServerTypeStdio,
-			wantTrust: TrustBlocked,
+			wantTrust: TrustTrustedLocal,
 		},
 		{
 			name:      "explicit streamable_http passes through",
 			in:        ManagedServer{Type: ServerTypeStreamableHTTP, URL: "https://x.test"},
 			wantType:  ServerTypeStreamableHTTP,
-			wantTrust: TrustBlocked,
+			wantTrust: TrustRemoteHTTP,
+		},
+		{
+			// The declared transport decides, not the fields: no URL here, and pairing this
+			// with trusted_local would trip checkTypeTrustConsistency and error the classify.
+			name:      "explicit streamable_http with no url still resolves remote",
+			in:        ManagedServer{Type: ServerTypeStreamableHTTP},
+			wantType:  ServerTypeStreamableHTTP,
+			wantTrust: TrustRemoteHTTP,
 		},
 	}
 
@@ -199,17 +199,31 @@ func TestClassifyManagedServer(t *testing.T) {
 	}
 }
 
-// TestClassify_RemoteEmptyTrust is the F-013 regression guard named explicitly
-// in 38-RESEARCH.md's phase requirements test map: an HTTP-shaped server with
-// no known trust class and no recipe:-prefixed source must resolve to
-// TrustBlocked, never auto-promoted to the runnable TrustRemoteHTTP class.
-func TestClassify_RemoteEmptyTrust(t *testing.T) {
+// This was the F-013 guard: an HTTP-shaped server with no known trust class had to resolve
+// to TrustBlocked rather than the runnable TrustRemoteHTTP. The guard is inverted here on
+// purpose. Blocking-by-default could only ever stop the two callers that had already been
+// authorized — an operator with governance.write, or one with a shell — while costing a
+// second, undiscoverable step that left the server installed, listed and inert.
+//
+// TrustBlocked is still honoured when it is SET. What is gone is getting it by silence.
+func TestClassify_RemoteWithNoTrustIsRunnable(t *testing.T) {
 	_, trust, err := Classify(ManagedServer{URL: "https://example.test/mcp"})
 	if err != nil {
 		t.Fatalf("Classify() unexpected err = %v", err)
 	}
-	if trust != TrustBlocked {
-		t.Fatalf("Classify() trust = %q, want %q (F-013: must not auto-promote to %q)", trust, TrustBlocked, TrustRemoteHTTP)
+	if trust != TrustRemoteHTTP {
+		t.Fatalf("Classify() trust = %q, want %q", trust, TrustRemoteHTTP)
+	}
+
+	_, blocked, err := Classify(ManagedServer{
+		URL:   "https://example.test/mcp",
+		Trust: ManagedTrust{Class: TrustBlocked},
+	})
+	if err != nil {
+		t.Fatalf("Classify() unexpected err = %v", err)
+	}
+	if blocked != TrustBlocked {
+		t.Fatalf("an explicitly blocked server resolved to %q, want %q", blocked, TrustBlocked)
 	}
 }
 
