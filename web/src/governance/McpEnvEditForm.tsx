@@ -1,11 +1,11 @@
 import { useId, useMemo, useState, type ComponentProps } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { Trash2 } from 'lucide-react';
 import { Spinner } from '../components/Spinner';
 import { setMcpServerEnv, type McpEnvChip } from './governanceApi';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
