@@ -310,6 +310,7 @@ func buildBaseRegistryWithHandles(
 func buildRegistryWithMCP(
 	ctx context.Context,
 	cfg *config.Config,
+	pool *pgxpool.Pool,
 	ts *cronTaskStore,
 	sandboxRouter *usersandbox.SandboxRouter,
 	consent mcptools.ElicitationConsent,
@@ -359,16 +360,23 @@ func buildRegistryWithMCP(
 		// subprocess reaped without ctx ever being touched — so an already-mounted,
 		// healthy server (whose subprocess lives on ctx) is never killed once this
 		// server's mount deadline elapses (Pitfall #2).
-		handshakeCtx, cancel := context.WithTimeout(ctx, mountTimeout)
+		// A server behind OAuth is mounted as the identity that authorized it. Boot has
+		// no request and therefore no identity of its own, and the grant store scopes
+		// every row to one — so without this an already-authorized server comes back from
+		// a restart demanding a second consent, which is what Linear and Notion did on
+		// 2026-08-24. LibreChat never faces this because it connects such servers only
+		// inside a request, where the user is already known (MCPManager.getUserConnection).
+		mountCtx := mcpOwnerContext(ctx, cfg, pool, name, mcpPolicies[name])
+		handshakeCtx, cancel := context.WithTimeout(mountCtx, mountTimeout)
 		var mountedHost *mcptools.MountedServer
 		sharedAdmin := false
 		mountOnce := func(c context.Context) (func() error, []string, error) {
 			server, managed := mcpPolicies[name]
 			if !managed {
-				return mcptools.MountServer(ctx, c, reg, name, mcpServers[name])
+				return mcptools.MountServer(mountCtx, c, reg, name, mcpServers[name])
 			}
 			closer, names, host, mountErr := mcptools.MountManagedServerWithOptions(
-				ctx,
+				mountCtx,
 				c,
 				reg,
 				name,
@@ -376,6 +384,7 @@ func buildRegistryWithMCP(
 				mcptools.MountOptions{
 					Egress: mcp.RuntimeEgressPolicy(cfg.Profile.Strict(), server),
 					Views:  handles.MCPViews,
+					OAuth:  runtimeMCPOAuth(mountCtx),
 				},
 			)
 			if mountErr == nil {
@@ -499,7 +508,7 @@ func printTools(args []string) {
 	// Pool-free manifest path: printing Specs never calls Execute, so a nil router costs nothing
 	// and saves this verb a Docker dial. Were a tool ever executed from here it would DENY, which
 	// is the right answer for a path with no identity and no box.
-	reg, _, closers, err := buildRegistryWithMCP(context.Background(), config.LoadDB(), nil, nil, nil)
+	reg, _, closers, err := buildRegistryWithMCP(context.Background(), config.LoadDB(), nil, nil, nil, nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "mcp:", err)
 		os.Exit(1)

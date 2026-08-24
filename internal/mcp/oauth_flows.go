@@ -114,6 +114,16 @@ type Flows struct {
 	logger *slog.Logger
 	now    func() time.Time
 
+	// onAuthorized mounts the server the human just authorized. Nothing else does: MCP
+	// servers are mounted at process boot, and boot has neither a browser nor an
+	// identity, so a server behind OAuth can never be among them. Without this hook the
+	// operator completed a consent screen, the grant was stored correctly, and the agent
+	// still had zero of that server's tools until somebody restarted the daemon — with
+	// nothing on screen saying so. LibreChat draws the same line and answers it the same
+	// way: app-level connections at start-up, user-scoped connections created when the
+	// user needs them (requiresUserScopedConnection, MCPManager.ts).
+	onAuthorized func(context.Context, string, ManagedServer)
+
 	mu      sync.Mutex
 	byID    map[string]*liveFlow
 	byState map[string]*liveFlow
@@ -222,6 +232,17 @@ func (f *Flows) run(ctx context.Context, flow *liveFlow, name string, server Man
 		_ = session.Close()
 	}
 	f.approve(flow)
+	if f.onAuthorized != nil {
+		// After approve, so the cockpit's poll sees success even if the mount is slow, and
+		// on this goroutine, which is already detached from the request.
+		f.onAuthorized(ctx, name, server)
+	}
+}
+
+// OnAuthorized sets the hook run once a server has been authorized and its grant stored.
+// The composition root supplies it; nothing in this package can mount anything.
+func (f *Flows) OnAuthorized(mount func(context.Context, string, ManagedServer)) {
+	f.onAuthorized = mount
 }
 
 // fetcher publishes the consent URL and then waits for the redirect to arrive on another

@@ -5,16 +5,20 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
+	"github.com/chetto1983/aura/internal/mcpoauth"
 )
 
 func mcpTools(ctx context.Context, args []string, out io.Writer) error {
@@ -97,8 +101,13 @@ func openManagedMCPSession(ctx context.Context, name string, server mcp.ManagedS
 	return mcp.OpenSDKSession(ctx, name, server, runtimeMCPEgressPolicy(server), cliSessionOptions())
 }
 
+// probeManagedMCPServer is the board's per-row liveness check. It carries the same
+// credentials a mount would, or an authorized server reports "dial failed" on screen while
+// its tools work perfectly well in the agent.
 func probeManagedMCPServer(ctx context.Context, name string, server mcp.ManagedServer) mcp.ProbeResult {
-	return mcp.ProbeServerWithEgress(ctx, name, server, runtimeMCPEgressPolicy(server))
+	return mcp.ProbeServerWithOptions(ctx, name, server, runtimeMCPEgressPolicy(server), mcp.SessionOptions{
+		OAuth: runtimeMCPOAuth(ctx),
+	})
 }
 
 func openAndListMCPTools(ctx context.Context, name string, cfg mcp.ServerConfig) (*sdkmcp.ClientSession, []*sdkmcp.Tool, error) {
@@ -216,4 +225,52 @@ func toolCount(n int) string {
 		return "1 tool"
 	}
 	return fmt.Sprintf("%d tools", n)
+}
+
+var (
+	grantsOnce sync.Once
+	grants     mcp.GrantStore
+)
+
+// runtimeMCPOAuth is the ONE answer to "which credentials does a session to this server
+// carry", the twin of runtimeMCPEgressPolicy's "where may it reach".
+//
+// It exists because there were three: the boot mount, the post-authorization mount and the
+// board probe each built their own SessionOptions, and each forgot something different —
+// so a server the human had just authorized mounted at boot, failed the mount that
+// followed the consent, and showed "dial failed" on the board, all at the same time, all
+// from the same missing store. One resolver, three callers.
+//
+// The store is supplied ONLY when ctx carries an identity. It refuses an identity-less
+// context by design (a token belongs to a person), so handing it one turns every internal
+// sidecar's mount into "no identity on context" — measured 2026-08-24, when calendar spent
+// 40 retries on it for a server that has no authorization to do.
+func runtimeMCPOAuth(ctx context.Context) mcp.OAuthOptions {
+	if strings.TrimSpace(identityctx.IdentityID(ctx)) == "" {
+		return mcp.OAuthOptions{}
+	}
+	grantsOnce.Do(func() {
+		cfg := config.LoadDB()
+		if strings.TrimSpace(cfg.AuthulaSecret) == "" {
+			return
+		}
+		pool, err := db.Open(ctx, &cfg.DB)
+		if err != nil {
+			slog.Warn("mcp oauth: no grant store; an authorized server will not mount", "err", err)
+			return
+		}
+		store, err := mcpoauth.NewStore(pool, cfg.AuthulaSecret)
+		if err != nil {
+			slog.Warn("mcp oauth: no grant store; an authorized server will not mount", "err", err)
+			return
+		}
+		grants = store
+	})
+	if grants == nil {
+		return mcp.OAuthOptions{}
+	}
+	// No Fetcher anywhere: every caller here is unattended (a boot, a probe, a mount that
+	// follows a consent already completed). A server with no stored grant must refuse with
+	// the instruction to authorize it, not wait on a browser nobody is at.
+	return mcp.OAuthOptions{Store: grants}
 }

@@ -53,7 +53,6 @@ type Querier interface {
 	CountBenchmarkSettingsRestoreMismatches(ctx context.Context, runID pgtype.UUID) (int32, error)
 	CountConversationsForIdentityPurge(ctx context.Context, identityID pgtype.UUID) (int64, error)
 	CountIngestionJobsByStatus(ctx context.Context, arg CountIngestionJobsByStatusParams) (int64, error)
-	CountMCPServers(ctx context.Context) (int64, error)
 	// Current durable work that has not reached a terminal completed/failed item state.
 	// This query owns the restart-safe backlog gauge; transition counters are not state.
 	CountRetentionBacklog(ctx context.Context) (int64, error)
@@ -137,7 +136,6 @@ type Querier interface {
 	GetIdentityRecoveryByIdentity(ctx context.Context, identityID pgtype.UUID) (AuraIdentityRecovery, error)
 	// The turn path wants one string, not a row: the clock is rendered on every request.
 	GetIdentityTimezone(ctx context.Context, identityID pgtype.UUID) (string, error)
-	GetMCPServer(ctx context.Context, name string) (AuraMcpServer, error)
 	GetOnboardingState(ctx context.Context, identityID pgtype.UUID) (GetOnboardingStateRow, error)
 	GetOpenBenchmarkSettingsOverride(ctx context.Context) (AuraBenchmarkSettingsOverrides, error)
 	GetOperation(ctx context.Context, arg GetOperationParams) (GetOperationRow, error)

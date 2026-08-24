@@ -16,6 +16,7 @@ import (
 type fakeMCPBoard struct{}
 
 func (fakeMCPBoard) Servers() mcp.ManagedConfig { return mcp.ManagedConfig{} }
+func (fakeMCPBoard) Mounted(string) bool        { return false }
 func (fakeMCPBoard) Probe(context.Context, string, mcp.ManagedServer) mcp.ProbeResult {
 	return mcp.ProbeResult{}
 }

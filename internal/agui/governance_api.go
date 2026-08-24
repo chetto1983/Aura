@@ -172,6 +172,12 @@ func (s *Server) handleMCPList(w http.ResponseWriter, _ *http.Request) {
 	rows := make([]mcpServerRow, 0, len(statuses))
 	for _, st := range statuses {
 		server := doc.MCPServers[st.Name]
+		// A server nothing has ruled out is "unknown" until the registry is asked. Asking
+		// is the difference between a board that describes the config and a board that
+		// describes the process.
+		if st.StartupState == mcpmanager.StartupUnknown && s.governance.MCP.Mounted(st.Name) {
+			st.StartupState = mcpmanager.StartupReady
+		}
 		rows = append(rows, mcpServerRow{
 			Name:         st.Name,
 			Source:       server.Source,

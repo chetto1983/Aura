@@ -24,6 +24,8 @@ type ManifestEntry struct {
 // for cache stability. Stable ordering matters: any reshuffle invalidates the
 // provider-side prompt cache. See [[feedback_aura_cache_poisoning_sites_2026-05-27]].
 func (r *Registry) Render() []ManifestEntry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	out := make([]ManifestEntry, 0, len(r.tools))
 	for _, t := range r.tools {
 		s := t.Spec()
@@ -63,6 +65,8 @@ func (r *Registry) Render() []ManifestEntry {
 // any reshuffle invalidates the provider-side prompt cache, so the order is fixed
 // regardless of which tools are promoted.
 func (r *Registry) RenderToolDefs(activated map[string]struct{}) []llm.ToolDef {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	out := make([]llm.ToolDef, 0, len(r.tools))
 	for _, t := range r.tools {
 		s := t.Spec()
@@ -106,6 +110,8 @@ func (r *Registry) RenderToolDefs(activated map[string]struct{}) []llm.ToolDef {
 // with the rule present, in full, at the top. Claude Code delivers the same list
 // in a late system-reminder instead, adjacent to the decision.
 func (r *Registry) DeferredRoster(activated map[string]struct{}) string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	const builtin = "built-in"
 	sources := map[string][]string{}
 	for _, t := range r.tools {
@@ -166,6 +172,8 @@ type ManifestEntryJSON struct {
 // Name/Description/Parameters are exactly what searchDocument consumes, so a consumer
 // can rebuild a byte-identical ranking document offline.
 func (r *Registry) RenderJSON() ([]byte, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	entries := make([]ManifestEntryJSON, 0, len(r.tools))
 	for _, t := range r.tools {
 		s := t.Spec()

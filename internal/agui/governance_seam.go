@@ -28,6 +28,13 @@ import (
 type MCPBoardProvider interface {
 	Servers() mcp.ManagedConfig
 	Probe(ctx context.Context, name string, server mcp.ManagedServer) mcp.ProbeResult
+	// Mounted reports whether this server's tools are in the live registry right now.
+	//
+	// Without it the board could only derive a startup state from enabled/trust, so every
+	// server that was neither disabled nor blocked rendered as "unknown" — which the
+	// cockpit shows as down. On 2026-08-24 that meant five servers reading as down while
+	// all five were mounted and answering, Linear with 53 tools.
+	Mounted(name string) bool
 }
 
 // SkillsBoardProvider is the read-only skills-governance surface (GOV-02): the active

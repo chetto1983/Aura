@@ -59,6 +59,16 @@ type MountOptions struct {
 	// *ViewCatalog method tolerates — so a caller with no rendering surface passes
 	// nothing rather than each mount path growing an enabled/disabled branch.
 	Views *mcp.ViewCatalog
+	// OAuth carries the per-identity grant store so a mount can present a token the human
+	// already granted. Without it the SDK has no InitialTokenSource and starts a fresh
+	// authorization — which, unattended, is refused outright. That is exactly what a
+	// restart did on 2026-08-24: Linear and Notion had valid stored grants, refresh tokens
+	// and all, and both came back demanding a second consent because the mount was never
+	// handed the store that held them.
+	//
+	// A zero value keeps the old behaviour, which is right for a server that needs no
+	// authorization at all.
+	OAuth mcp.OAuthOptions
 }
 
 // MountManagedServerWithOptions is the one mount entry point that carries the
@@ -126,6 +136,7 @@ func mountManagedHTTPHost(processCtx, handshakeCtx context.Context, reg *tools.R
 		o.Sending = sendingMiddleware(policy)
 		o.ToolListChanged = srv.onToolListChanged
 		o.Elicitation = elicit
+		o.OAuth = opts.OAuth
 		return mcp.OpenSDKSession(hctx, name, server, opts.Egress, o)
 	}
 	srv = NewMountedServer(name, open)

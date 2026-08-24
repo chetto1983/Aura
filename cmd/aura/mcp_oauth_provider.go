@@ -72,6 +72,12 @@ func newMCPAuthService(cfg *config.Config, pool *pgxpool.Pool, logger *slog.Logg
 	return &mcpAuthService{store: store, flows: flows, configuredCallback: configured}, nil
 }
 
+// OnAuthorized wires the post-authorization mount. The composition root supplies it
+// because this file holds no registry: what it owns is grants and flows.
+func (s *mcpAuthService) OnAuthorized(mount func(context.Context, string, mcp.ManagedServer)) {
+	s.flows.OnAuthorized(mount)
+}
+
 // configuredCallbackURL validates the optional AURA_WEB_PUBLIC_URL override.
 func configuredCallbackURL(publicURL string) (string, error) {
 	trimmed := strings.TrimSpace(publicURL)

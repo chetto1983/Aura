@@ -82,6 +82,7 @@ func openProductionToolPipeRuntime(ctx context.Context, cfg *config.Config) (too
 	registry, _, mcpClosers, err := buildRegistryWithMCP(
 		ctx,
 		cfg,
+		pool,
 		taskStore,
 		buildSandboxRouter(cfg),
 		nil,

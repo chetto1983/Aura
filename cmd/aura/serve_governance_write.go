@@ -30,6 +30,10 @@ import (
 // mutation is always applied over the freshest servers.
 type mcpWriteAdapter struct {
 	pool *pgxpool.Pool
+	// live mounts and unmounts against the running registry, so an install is usable and
+	// a remove stops being offered without a restart. Nil under `aura chat`, where there
+	// is no long-lived registry to keep in step.
+	live *liveMCPMount
 }
 
 // mcpRegistryDestination is what the install preview names as the place the server lands.
@@ -67,6 +71,7 @@ func (a mcpWriteAdapter) InstallServer(ctx context.Context, actor string, req ag
 		return agui.MCPWriteResult{}, err
 	}
 
+	a.live.Mount(ctx, name, server)
 	probe := a.probe(ctx, name, server)
 	return agui.MCPWriteResult{
 		Name:          name,
@@ -164,6 +169,11 @@ func (a mcpWriteAdapter) SetEnabled(ctx context.Context, actor, name string, ena
 	}); err != nil {
 		return agui.MCPWriteResult{}, err
 	}
+	if enabled {
+		a.live.Mount(ctx, name, server)
+	} else {
+		a.live.Unmount(name)
+	}
 	return agui.MCPWriteResult{Name: name, Server: server}, nil
 }
 
@@ -200,9 +210,16 @@ func (a mcpWriteAdapter) RemoveServer(ctx context.Context, actor, name string) e
 		cfg.Servers = removeString(cfg.Servers, name)
 		doc.Profiles[profile] = cfg
 	}
-	return a.save(ctx, doc, mcpmanager.MCPAuditInsert{
+	if err := a.save(ctx, doc, mcpmanager.MCPAuditInsert{
 		ActorIdentityID: actor, Action: "remove", ServerName: name,
-	})
+	}); err != nil {
+		return err
+	}
+	// A removed server must stop being offered to the model now, not at the next restart.
+	// The operator reported the mirror of this bug on 2026-08-24: Remove reported success
+	// and the row stayed on screen.
+	a.live.Unmount(name)
+	return nil
 }
 
 // save applies doc to the registry and records its audit row in one transaction, so a
@@ -339,9 +356,9 @@ func mapManagerErr(err error) error {
 // buildMCPWriteProvider constructs the concrete MCP write provider best-effort: a nil pool
 // (no DB) leaves it nil → the routes answer 503. Never aborts boot (the
 // SetGovernanceProviders precedent).
-func buildMCPWriteProvider(pool *pgxpool.Pool) (agui.MCPWriteProvider, error) {
+func buildMCPWriteProvider(pool *pgxpool.Pool, live *liveMCPMount) (agui.MCPWriteProvider, error) {
 	if pool == nil {
 		return nil, nil
 	}
-	return mcpWriteAdapter{pool: pool}, nil
+	return mcpWriteAdapter{pool: pool, live: live}, nil
 }

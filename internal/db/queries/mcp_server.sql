@@ -15,13 +15,6 @@ SELECT name, source, enabled, config, env_enc, profiles, created_by, created_at,
 FROM aura.mcp_server
 ORDER BY name;
 
--- name: GetMCPServer :one
-SELECT name, source, enabled, config, env_enc, profiles, created_by, created_at, updated_at
-FROM aura.mcp_server
-WHERE name = $1;
-
 -- name: DeleteMCPServer :execrows
 DELETE FROM aura.mcp_server WHERE name = $1;
 
--- name: CountMCPServers :one
-SELECT count(*) FROM aura.mcp_server;

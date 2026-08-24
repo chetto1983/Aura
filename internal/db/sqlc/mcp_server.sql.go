@@ -11,17 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const countMCPServers = `-- name: CountMCPServers :one
-SELECT count(*) FROM aura.mcp_server
-`
-
-func (q *Queries) CountMCPServers(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countMCPServers)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const deleteMCPServer = `-- name: DeleteMCPServer :execrows
 DELETE FROM aura.mcp_server WHERE name = $1
 `
@@ -32,29 +21,6 @@ func (q *Queries) DeleteMCPServer(ctx context.Context, name string) (int64, erro
 		return 0, err
 	}
 	return result.RowsAffected(), nil
-}
-
-const getMCPServer = `-- name: GetMCPServer :one
-SELECT name, source, enabled, config, env_enc, profiles, created_by, created_at, updated_at
-FROM aura.mcp_server
-WHERE name = $1
-`
-
-func (q *Queries) GetMCPServer(ctx context.Context, name string) (AuraMcpServer, error) {
-	row := q.db.QueryRow(ctx, getMCPServer, name)
-	var i AuraMcpServer
-	err := row.Scan(
-		&i.Name,
-		&i.Source,
-		&i.Enabled,
-		&i.Config,
-		&i.EnvEnc,
-		&i.Profiles,
-		&i.CreatedBy,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
 }
 
 const listMCPServers = `-- name: ListMCPServers :many

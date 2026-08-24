@@ -38,9 +38,10 @@ const RECIPES: readonly RecipeDescriptor[] = [
   { name: 'whatsapp', requiredEnv: [] },
 ];
 
-/** The default managed-config destination shown in the preview before save (the real path /
- * override source is confirmed in the install response). */
-const DEFAULT_DESTINATION = '~/.aura/mcp/servers.json';
+/** Where an installed server lands, shown in the preview before save. It was a filesystem
+ * path, which only meant anything to somebody with a shell inside the container; the
+ * registry is a Postgres table now (migration 0101). The install response confirms it. */
+const DEFAULT_DESTINATION = 'postgres: aura.mcp_server';
 
 // 'remote' is a streamable-HTTP server reached by URL — the shape every hosted connector
 // takes (Slack, Notion, Linear). The install request has carried `url`/`type` since the
@@ -245,12 +246,6 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
           <code className="break-all font-mono text-[13px] text-text">{DEFAULT_DESTINATION}</code>
         </div>
       </Card>
-
-      {mode === 'custom' ? (
-        <p role="note" className="text-[13px] text-text-muted">
-          {t('governance.mcp.install.customBlockedNote')}
-        </p>
-      ) : null}
 
       {mutation.isError ? (
         <Alert variant="destructive">

@@ -26,7 +26,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -114,18 +113,6 @@ func (s *Store) List(ctx context.Context) (mcp.ManagedConfig, error) {
 	return doc, nil
 }
 
-// Get returns one server, or ErrNotFound.
-func (s *Store) Get(ctx context.Context, name string) (Entry, error) {
-	row, err := s.q.GetMCPServer(ctx, strings.TrimSpace(name))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Entry{}, fmt.Errorf("%w: %q", ErrNotFound, name)
-	}
-	if err != nil {
-		return Entry{}, fmt.Errorf("mcpregistry: get %q: %w", name, err)
-	}
-	return s.entryFrom(row)
-}
-
 // Upsert writes a server, creating or replacing it in one statement. createdBy is the
 // identity performing the install; it is recorded for the audit trail and is never used to
 // decide who may see the row.
@@ -181,16 +168,6 @@ func (s *Store) Remove(ctx context.Context, name string) error {
 		return fmt.Errorf("%w: %q", ErrNotFound, name)
 	}
 	return nil
-}
-
-// Count reports how many servers are registered. It is what tells the one-shot file import
-// whether it has already run.
-func (s *Store) Count(ctx context.Context) (int64, error) {
-	n, err := s.q.CountMCPServers(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("mcpregistry: count: %w", err)
-	}
-	return n, nil
 }
 
 func (s *Store) entryFrom(row sqlc.AuraMcpServer) (Entry, error) {

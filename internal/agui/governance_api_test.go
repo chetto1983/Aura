@@ -18,12 +18,18 @@ import (
 // returns a canned ManagedConfig and a per-name probe func, recording every probe target
 // so the configured-servers-only assertion can prove no dial occurs for an unknown name.
 type scriptedMCPBoard struct {
-	doc    mcp.ManagedConfig
-	probe  func(ctx context.Context, name string, server mcp.ManagedServer) mcp.ProbeResult
-	probed []string
+	// mounted is the set of servers the live registry holds. Empty means the board
+	// describes configuration only, which is what every test written before the board
+	// learned to ask the registry assumes.
+	mounted map[string]bool
+	doc     mcp.ManagedConfig
+	probe   func(ctx context.Context, name string, server mcp.ManagedServer) mcp.ProbeResult
+	probed  []string
 }
 
 func (b *scriptedMCPBoard) Servers() mcp.ManagedConfig { return b.doc }
+
+func (b *scriptedMCPBoard) Mounted(name string) bool { return b.mounted[name] }
 
 func (b *scriptedMCPBoard) Probe(ctx context.Context, name string, server mcp.ManagedServer) mcp.ProbeResult {
 	b.probed = append(b.probed, name)

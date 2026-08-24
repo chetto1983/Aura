@@ -185,7 +185,6 @@ export const governanceEn = {
         argAria: 'Argument {{index}}',
         cliLabel: 'CLI equivalent',
         willWriteTo: 'Will write to:',
-        customBlockedNote: 'Custom servers start blocked until you trust-approve them.',
         duplicateName: 'A server named "{{name}}" already exists. Choose a different name.',
         failed: 'The install was refused and the server gave no reason. Check the runtime logs.',
         submit: 'Install server',
@@ -216,16 +215,6 @@ export const governanceEn = {
         disabled: 'Disabled',
         enable: 'Enable server',
         disable: 'Disable server',
-        trust: 'Trust & approve',
-        trustReasonLabel: 'Reason',
-        trustReasonPlaceholder: 'Why are you approving this server?',
-        trustConfirm: 'Trust & approve',
-        // Dismisses the reason form; it revokes NOTHING (the handler only clears local
-        // state). "Cancel approval" read as "revoke this server's approval" — a
-        // destructive meaning, on the button sitting next to the one that grants it.
-        // States the outcome instead, like removeCancel/"Keep server" right below.
-        trustCancel: "Don't approve",
-        approvedBy: 'Approved by {{actor}} · {{ts}} · "{{reason}}"',
         remove: 'Remove server',
         removeTitle: 'Remove "{{name}}"?',
         removeBody:
@@ -425,8 +414,6 @@ export const governanceIt = {
         argAria: 'Argomento {{index}}',
         cliLabel: 'Equivalente CLI',
         willWriteTo: 'Verrà scritto su:',
-        customBlockedNote:
-          'I server personalizzati partono bloccati finché non li approvi con fiducia.',
         duplicateName: 'Esiste già un server chiamato "{{name}}". Scegli un nome diverso.',
         failed: "L'installazione è stata rifiutata senza un motivo. Controlla i log del runtime.",
         submit: 'Installa server',
@@ -458,12 +445,6 @@ export const governanceIt = {
         disabled: 'Disabilitato',
         enable: 'Abilita server',
         disable: 'Disabilita server',
-        trust: 'Fidati e approva',
-        trustReasonLabel: 'Motivo',
-        trustReasonPlaceholder: 'Perché stai approvando questo server?',
-        trustConfirm: 'Fidati e approva',
-        trustCancel: 'Non approvare',
-        approvedBy: 'Approvato da {{actor}} · {{ts}} · "{{reason}}"',
         remove: 'Rimuovi server',
         removeTitle: 'Rimuovere "{{name}}"?',
         removeBody:

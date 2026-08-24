@@ -47,6 +47,10 @@ const keyDerivationInfo = "aura-mcp-oauth-identity-key-v1"
 // mounting the server unauthenticated.
 var ErrNoGrant = errors.New("mcpoauth: no grant for this identity and server")
 
+// ErrAmbiguousOwner reports that more than one identity has authorized the same server, so
+// a single process-wide mount cannot be attributed to either.
+var ErrAmbiguousOwner = errors.New("mcpoauth: more than one identity has authorized this server")
+
 // Grant is one decrypted OAuth grant, in memory only.
 //
 // ClientInfo carries the dynamic-client-registration result when the authorization server
@@ -381,4 +385,41 @@ func deriveKeyWithInfo(authulaSecretHex, info string) ([]byte, error) {
 		return nil, fmt.Errorf("mcpoauth: derive key: %w", err)
 	}
 	return key, nil
+}
+
+// OwnerOf reports which of candidates holds a grant for serverName.
+//
+// It exists because process boot has no identity and the grants are per-identity. LibreChat
+// never needs this: everything there happens inside a request, so getOAuthTokens() always
+// has a userId to load with (MCPConnectionFactory.discoverToolsInternal). Aura mounts at
+// boot as well, and a server the human already authorized must come back after a restart
+// rather than demand a second consent — so the identity is resolved from the grant instead
+// of from a request.
+//
+// Each candidate is asked with its own identity bound, which is what keeps this inside RLS
+// rather than around it: migration 0100's RESTRICTIVE floor means a caller with no
+// app.current_identity sees nothing, and that floor stays intact here.
+//
+// A server two identities have authorized returns ErrAmbiguousOwner. One process-wide tool
+// registry cannot serve both without handing one person's tools the other person's token,
+// and guessing which would be the worse answer.
+func (s *Store) OwnerOf(ctx context.Context, serverName string, candidates []string) (string, error) {
+	found := ""
+	for _, candidate := range candidates {
+		scoped := identityctx.WithIdentityID(ctx, candidate)
+		if _, err := s.Load(scoped, serverName); err != nil {
+			if errors.Is(err, ErrNoGrant) {
+				continue
+			}
+			return "", err
+		}
+		if found != "" {
+			return "", fmt.Errorf("%w: %q", ErrAmbiguousOwner, serverName)
+		}
+		found = candidate
+	}
+	if found == "" {
+		return "", fmt.Errorf("%w: %q", ErrNoGrant, serverName)
+	}
+	return found, nil
 }

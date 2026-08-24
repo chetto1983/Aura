@@ -132,7 +132,8 @@ describe('McpInstallPanel (MCPW-01)', () => {
     expect(screen.getByText('CLI equivalent')).toBeTruthy();
     expect(screen.getByText(/aura mcp install calculator/)).toBeTruthy();
     expect(screen.getByText('Will write to:')).toBeTruthy();
-    expect(screen.getByText('~/.aura/mcp/servers.json')).toBeTruthy();
+    // The registry is a Postgres table now (migration 0101), not a file in a container.
+    expect(screen.getByText('postgres: aura.mcp_server')).toBeTruthy();
   });
 
   it('updates the CLI-equivalent live when switching to Custom and typing a command', () => {

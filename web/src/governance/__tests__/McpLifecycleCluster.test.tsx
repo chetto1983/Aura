@@ -92,48 +92,15 @@ describe('McpLifecycleCluster (MCPW-02/03)', () => {
     });
   });
 
-  it('requires a reason before Trust & approve can submit', async () => {
-    trustMcpServer.mockResolvedValue({ name: 'github' });
-    renderCluster(BLOCKED_SERVER);
-
-    // Open the inline trust form (the toolbar Trust & approve button).
-    fireEvent.click(screen.getByRole('button', { name: 'Trust & approve' }));
-    const reasonInput = screen.getByLabelText('Reason');
-
-    // The confirm (submit, second "Trust & approve") is disabled with an empty reason.
-    const confirm = screen
-      .getAllByRole('button', { name: 'Trust & approve' })
-      .find((b) => b.getAttribute('type') === 'submit') as HTMLButtonElement | undefined;
-    if (confirm === undefined) throw new Error('trust confirm button not found');
-    expect(confirm.disabled).toBe(true);
-
-    // Typing a reason enables it; submitting passes the trusted_local class + reason.
-    fireEvent.change(reasonInput, { target: { value: 'operator vetted the publisher' } });
-    expect(confirm.disabled).toBe(false);
-    fireEvent.click(confirm);
-    await waitFor(() => {
-      expect(trustMcpServer).toHaveBeenCalledWith(
-        'github',
-        'trusted_local',
-        'operator vetted the publisher',
-      );
-    });
-  });
-
-  it('offers no Trust & approve on a server that is not blocked', () => {
+  // The trust ceremony is gone from the cockpit entirely, blocked servers included:
+  // installing a server IS the authorization, so `Trust & approve` changed nothing on any
+  // row an operator would click it on — while sitting next to Remove, which changes a great
+  // deal. The two tests that pinned its reason form went with it.
+  it('offers no Trust & approve, blocked or not', () => {
     renderCluster();
     expect(screen.queryByRole('button', { name: 'Trust & approve' })).toBeNull();
-  });
-
-  it('cancelling the trust form clears it without a call', () => {
     renderCluster(BLOCKED_SERVER);
-    fireEvent.click(screen.getByRole('button', { name: 'Trust & approve' }));
-    expect(screen.getByLabelText('Reason')).toBeTruthy();
-    // "Don't approve", not "Cancel approval": this button dismisses the form and calls
-    // nothing — the assertion below is what the old label promised to undo.
-    fireEvent.click(screen.getByRole('button', { name: "Don't approve" }));
-    expect(screen.queryByLabelText('Reason')).toBeNull();
-    expect(trustMcpServer).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Trust & approve' })).toBeNull();
   });
 
   it('the Remove dialog labels are action-specific, the safe Keep action is default-focused, and Escape dismisses', async () => {

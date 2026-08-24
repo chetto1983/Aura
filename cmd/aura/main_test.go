@@ -66,7 +66,7 @@ func TestBuildRegistryBlockedManagedServerNotLaunched(t *testing.T) {
 	if _, ok := policies["memory"]; ok {
 		t.Fatal("explicitly disabled memory must not reach policies")
 	}
-	reg, _, closers, err := buildRegistryWithMCP(context.Background(), cfg, nil, nil, nil)
+	reg, _, closers, err := buildRegistryWithMCP(context.Background(), cfg, nil, nil, nil, nil)
 	defer func() { _ = closeMCPServers(closers) }()
 	if err != nil {
 		t.Fatalf("buildRegistryWithMCP: %v", err)
@@ -86,7 +86,7 @@ func TestBuildRegistryFailSoft(t *testing.T) {
 	seedMCPRegistry(t, withDefaultOnRecipesOff(mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
 		"broken": {Command: "aura-nonexistent-mcp-binary-xyz", Source: "manual"},
 	}}))
-	reg, _, closers, err := buildRegistryWithMCP(context.Background(), config.LoadDB(), nil, nil, nil)
+	reg, _, closers, err := buildRegistryWithMCP(context.Background(), config.LoadDB(), nil, nil, nil, nil)
 	defer func() { _ = closeMCPServers(closers) }()
 	if err != nil {
 		t.Fatalf("a broken MCP server must NOT abort boot (D-21); got err=%v", err)
@@ -143,7 +143,7 @@ func TestBuildRegistryWithMCP_HungServerDroppedHealthySurvives(t *testing.T) {
 	done := make(chan buildResult, 1)
 	start := time.Now()
 	go func() {
-		reg, _, closers, err := buildRegistryWithMCP(context.Background(), cfg, nil, nil, nil)
+		reg, _, closers, err := buildRegistryWithMCP(context.Background(), cfg, nil, nil, nil, nil)
 		done <- buildResult{reg: reg, closers: closers, err: err}
 	}()
 

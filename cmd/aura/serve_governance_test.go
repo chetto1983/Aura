@@ -11,7 +11,7 @@ func TestGovernanceMCPBoardIncludesContainerRecipes(t *testing.T) {
 	t.Setenv("AURA_IN_CONTAINER", "1")
 	withMemoryMCPRegistry(t)
 
-	providers := buildGovernanceProviders(&config.Config{}, nil, nil)
+	providers := buildGovernanceProviders(&config.Config{}, nil, nil, nil)
 	if providers.MCP == nil {
 		t.Fatal("MCP governance provider is nil")
 	}
@@ -36,7 +36,7 @@ func TestGovernanceMCPBoardSeesAServerInstalledAfterBoot(t *testing.T) {
 	t.Setenv("AURA_IN_CONTAINER", "1")
 	withMemoryMCPRegistry(t)
 
-	providers := buildGovernanceProviders(&config.Config{}, nil, nil)
+	providers := buildGovernanceProviders(&config.Config{}, nil, nil, nil)
 	if providers.MCP == nil {
 		t.Fatal("MCP governance provider is nil")
 	}
@@ -63,7 +63,7 @@ func TestGovernanceMCPBoardSeesAServerInstalledAfterBoot(t *testing.T) {
 func TestGovernanceMCPBoardShowsDefaultOnMemory(t *testing.T) {
 	withMemoryMCPRegistry(t)
 
-	providers := buildGovernanceProviders(&config.Config{}, nil, nil)
+	providers := buildGovernanceProviders(&config.Config{}, nil, nil, nil)
 	server, ok := providers.MCP.Servers().MCPServers["memory"]
 	if !ok {
 		t.Fatalf("memory is missing from the board: %#v", providers.MCP.Servers().MCPServers)

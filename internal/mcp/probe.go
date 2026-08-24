@@ -53,6 +53,13 @@ func ProbeServer(ctx context.Context, name string, server ManagedServer) ProbeRe
 // ProbeServerWithEgress performs the same live probe using a composition-root
 // policy, keeping diagnostics on the identical network boundary as agent mounts.
 func ProbeServerWithEgress(ctx context.Context, name string, server ManagedServer, egress EgressPolicy) ProbeResult {
+	return ProbeServerWithOptions(ctx, name, server, egress, SessionOptions{})
+}
+
+// ProbeServerWithOptions is the probe body, and the one a caller with credentials uses.
+// A board that probes without them reports "dial failed" for every server behind OAuth,
+// which is a lie about a server whose tools are mounted and working.
+func ProbeServerWithOptions(ctx context.Context, name string, server ManagedServer, egress EgressPolicy, opts SessionOptions) ProbeResult {
 	res := ProbeResult{Name: name}
 
 	// A stdio server with no launch command cannot be dialed; an HTTP server is keyed by
@@ -63,7 +70,7 @@ func ProbeServerWithEgress(ctx context.Context, name string, server ManagedServe
 		return res
 	}
 
-	session, err := OpenSDKSession(ctx, name, server, egress, SessionOptions{})
+	session, err := OpenSDKSession(ctx, name, server, egress, opts)
 	if err != nil {
 		res.Detail = "dial failed"
 		res.Err = RedactSecrets(err.Error())

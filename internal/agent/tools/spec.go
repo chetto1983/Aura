@@ -17,6 +17,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
+	"sync"
 
 	"github.com/chetto1983/aura/internal/idempotency"
 )
@@ -160,10 +162,20 @@ type Tool interface {
 	Execute(ctx context.Context, args json.RawMessage) (ToolResult, error)
 }
 
-// Registry holds the set of tools available to one agent. It is built at
-// startup and stays immutable for the lifetime of an agent run (swarm-spawned
-// children may receive a filtered copy).
+// Registry holds the set of tools available to one agent.
+//
+// It is built at startup and then read on every turn, but it is no longer immutable: a
+// remote MCP server that needs a human to authorize it cannot be mounted at process boot,
+// because boot has no human and no identity. It is mounted when the authorization
+// completes, which means tools arrive after the first read. LibreChat draws the same line —
+// app-level connections at start-up, user-scoped connections created lazily
+// (requiresUserScopedConnection, MCPManager.ts) — and a server behind OAuth is always the
+// second kind.
+//
+// The mutex is therefore load-bearing rather than defensive: without it, mounting a newly
+// authorized server races every in-flight turn's manifest render.
 type Registry struct {
+	mu    sync.RWMutex
 	tools map[string]Tool
 }
 
@@ -182,14 +194,62 @@ func NewRegistry() *Registry {
 // recover from a static wiring collision: fix the wiring.
 func (r *Registry) Register(t Tool) {
 	name := t.Spec().Name
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if _, dup := r.tools[name]; dup {
 		panic(fmt.Sprintf("tools.Registry.Register: duplicate tool name %q — a tool with this name is already registered", name))
 	}
 	r.tools[name] = t
 }
 
+// Adopt registers a set of tools that may already be present, replacing any it collides
+// with. It is how a server is re-mounted: the same server yields the same tool names, and
+// a remount that panicked on its own previous mount would be useless.
+//
+// Unlike Register, a collision here is expected rather than a wiring bug — which is why
+// the two are separate methods instead of one with a flag. Boot must still fail loud.
+func (r *Registry) Adopt(tools []Tool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, t := range tools {
+		r.tools[t.Spec().Name] = t
+	}
+}
+
+// Forget removes every tool whose name begins with prefix, returning how many went. It is
+// the unmount half: a server the operator disabled or removed must stop being offered to
+// the model without waiting for a restart.
+func (r *Registry) Forget(prefix string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for name := range r.tools {
+		if strings.HasPrefix(name, prefix) {
+			delete(r.tools, name)
+			n++
+		}
+	}
+	return n
+}
+
+// HasPrefix reports whether any registered tool name begins with prefix. It answers "is
+// this server mounted?" for the governance board, which namespaces every mount as
+// <server>__<tool>.
+func (r *Registry) HasPrefix(prefix string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for name := range r.tools {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // Get returns the tool registered under name, reporting whether it exists.
 func (r *Registry) Get(name string) (Tool, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	t, ok := r.tools[name]
 	return t, ok
 }
@@ -197,6 +257,8 @@ func (r *Registry) Get(name string) (Tool, bool) {
 // All returns the registered tools in map-iteration order. Callers that render a
 // manifest must sort the result — the order is deliberately not stable here.
 func (r *Registry) All() []Tool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	out := make([]Tool, 0, len(r.tools))
 	for _, t := range r.tools {
 		out = append(out, t)
@@ -211,6 +273,8 @@ func (r *Registry) All() []Tool {
 // 5). Call it once at boot after all Register calls (the registry is empty at
 // construction, so a constructor-time check is impossible).
 func (r *Registry) Validate() error {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	for _, t := range r.tools {
 		s := t.Spec()
 		if !s.Deferred && s.Name != toolSearchName {

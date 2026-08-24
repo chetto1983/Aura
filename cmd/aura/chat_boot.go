@@ -393,6 +393,7 @@ func assembleChatEnv(
 	reg, toolHandles, mcpClosers, err := buildRegistryWithMCP(
 		ctx,
 		cfg,
+		pool,
 		taskStore,
 		sandboxRouter,
 		elicitation,

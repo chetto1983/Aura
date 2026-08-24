@@ -145,9 +145,17 @@ func wireAGUIServer(chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler,
 	// (no pool, or no AURA_AUTHULA_SECRET to derive the grant key from) leaves the five
 	// routes at 503 and MUST NOT abort boot — a deployment without them still serves
 	// every other board.
+	// One live mounter for the process: the OAuth-complete hook and the governance write
+	// path both change what is mounted, and two mounters would fight over the same registry.
+	live := newLiveMCPMount(chat)
 	if authService, err := newMCPAuthService(chat.cfg, chat.pool, slog.Default()); err != nil {
 		slog.Warn("mcp authorization unavailable", "error", err)
 	} else if authService != nil {
+		// Mount the server as soon as the human authorizes it. Boot could not: it has no
+		// browser and no identity, so an OAuth server is always dropped there. Without
+		// this the consent screen completed, the grant was stored, and the agent still had
+		// none of that server's tools until a restart nothing had asked for.
+		authService.OnAuthorized(live.Mount)
 		aguiServer.SetMCPAuthorizations(authService)
 	}
 	// Wire the read-only graph explorer over ArcadeDB (buildArcadeGraphView). It is
@@ -165,7 +173,7 @@ func wireAGUIServer(chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler,
 	// constructed is left nil so its board answers 503, MUST NOT abort boot (the
 	// SetGraphView best-effort precedent). The reads inherit RequireAuth from the parent
 	// mux; no capability gate (read-only).
-	aguiServer.SetGovernanceProviders(buildGovernanceProviders(chat.cfg, chat.pool, store))
+	aguiServer.SetGovernanceProviders(buildGovernanceProviders(chat.cfg, chat.pool, store, live))
 	wireSettingsProviders(aguiServer, chat.pool)
 	// Wire the 37C web-voice providers (WEBVOICE-01/02/03, D-12/D-13): a DEDICATED mp3
 	// web TTSClient (Format="mp3", distinct from Telegram's opus client) + a cloud-only
@@ -200,7 +208,7 @@ func wireAGUIServer(chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler,
 	// it nil so the routes answer 503 — never aborts boot. Both write providers are wired in ONE
 	// SetGovernanceWriteProviders call so the bundle stays the single seam (no second setter).
 	var mcpWrite agui.MCPWriteProvider
-	if mw, werr := buildMCPWriteProvider(chat.pool); werr != nil {
+	if mw, werr := buildMCPWriteProvider(chat.pool, live); werr != nil {
 		slog.Warn("aura serve: governance mcp write unavailable", "err", werr)
 	} else {
 		mcpWrite = mw

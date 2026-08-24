@@ -1,27 +1,22 @@
-import { useId, useState } from 'react';
+import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Power, ShieldCheck, Trash2 } from 'lucide-react';
+import { Power, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Spinner } from '../components/Spinner';
-import {
-  removeMcpServer,
-  setMcpServerEnabled,
-  trustMcpServer,
-  type McpServerRow,
-} from './governanceApi';
+import { removeMcpServer, setMcpServerEnabled, type McpServerRow } from './governanceApi';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 
-// McpLifecycleCluster (MCPW-02/03) — the inline control cluster on the MCP server detail header
-// (NOT a kebab): an enable/disable toggle (success/muted dot + label, idempotent), a
-// `Trust & approve` inline form requiring a reason, and a `Remove server` destructive
-// confirmation dialog with action-specific labels (Remove server / Keep server), the
-// destructive button NOT default-focused, Escape-dismissable + focus-trapped. Status is never
-// color-alone — every state carries a dot + a text label (WCAG 1.4.1).
-
-const TRUST_CLASS_LOCAL = 'trusted_local';
+// McpLifecycleCluster (MCPW-02/03) — the inline control cluster on the MCP server detail
+// header (NOT a kebab): an enable/disable toggle (success/muted dot + label, idempotent) and
+// a `Remove server` destructive confirmation dialog with action-specific labels (Remove
+// server / Keep server), the destructive button NOT default-focused, Escape-dismissable +
+// focus-trapped. Status is never color-alone — every state carries a dot + a text label
+// (WCAG 1.4.1).
+//
+// There was a third control, `Trust & approve`. It is gone, along with the blocked-by-
+// default class it existed to lift: installing a server IS the authorization, so the button
+// changed nothing on every row an operator would ever click it on — while sitting next to
+// Remove, which changes a great deal.
 
 export interface McpLifecycleClusterProps {
   readonly server: McpServerRow;
@@ -31,10 +26,7 @@ export interface McpLifecycleClusterProps {
 export function McpLifecycleCluster({ server, onRemoved }: McpLifecycleClusterProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [trusting, setTrusting] = useState(false);
-  const [reason, setReason] = useState('');
   const [confirmingRemove, setConfirmingRemove] = useState(false);
-  const reasonId = useId();
 
   // A blocked server reads as disabled; an enabled flag is absent on the read row, so the
   // toggle reflects whether the server is runnable (not blocked). The backend is the authority.
@@ -47,15 +39,6 @@ export function McpLifecycleCluster({ server, onRemoved }: McpLifecycleClusterPr
   const enableMutation = useMutation({
     mutationFn: (next: boolean) => setMcpServerEnabled(server.name, next),
     onSuccess: invalidate,
-  });
-  const trustMutation = useMutation({
-    mutationFn: (vars: { readonly reason: string }) =>
-      trustMcpServer(server.name, TRUST_CLASS_LOCAL, vars.reason),
-    onSuccess: () => {
-      invalidate();
-      setTrusting(false);
-      setReason('');
-    },
   });
   const removeMutation = useMutation({
     mutationFn: () => removeMcpServer(server.name),
@@ -100,21 +83,6 @@ export function McpLifecycleCluster({ server, onRemoved }: McpLifecycleClusterPr
           </span>
         </Button>
 
-        {/* Only a server that is actually blocked has anything to approve. Installing is
-            the authorization now, so on every other row this button was a control that
-            changed nothing — and it sat next to Remove, which changes a great deal. */}
-        {enabled ? null : (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              setTrusting((prev) => !prev);
-            }}
-          >
-            <ShieldCheck data-icon aria-hidden="true" className="size-4" />
-            {t('governance.mcp.lifecycle.trust')}
-          </Button>
-        )}
 
         <Button
           type="button"
@@ -129,51 +97,6 @@ export function McpLifecycleCluster({ server, onRemoved }: McpLifecycleClusterPr
         </Button>
       </div>
 
-      {/* Trust & approve inline form — requires a reason. */}
-      {trusting ? (
-        <form
-          className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 px-3 py-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (reason.trim() === '') return;
-            trustMutation.mutate({ reason: reason.trim() });
-          }}
-        >
-          <Label htmlFor={reasonId} className="text-[13px] font-semibold text-text">
-            {t('governance.mcp.lifecycle.trustReasonLabel')}
-          </Label>
-          <Input
-            id={reasonId}
-            type="text"
-            value={reason}
-            onChange={(event) => {
-              setReason(event.target.value);
-            }}
-            placeholder={t('governance.mcp.lifecycle.trustReasonPlaceholder')}
-            className="text-[13px]"
-          />
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="submit"
-              disabled={reason.trim() === '' || trustMutation.isPending}
-              aria-busy={trustMutation.isPending}
-            >
-              {trustMutation.isPending ? <Spinner /> : null}
-              {t('governance.mcp.lifecycle.trustConfirm')}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setTrusting(false);
-                setReason('');
-              }}
-            >
-              {t('governance.mcp.lifecycle.trustCancel')}
-            </Button>
-          </div>
-        </form>
-      ) : null}
 
       {confirmingRemove ? (
         <RemoveDialog

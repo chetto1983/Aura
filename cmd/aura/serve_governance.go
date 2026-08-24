@@ -36,7 +36,14 @@ var governanceVisibleContainerRecipes = []string{"calendar", "whatsapp"}
 // with a real Slack install, present on disk and absent from the list. Every CLI path
 // (mcp.go, mcp_profile.go, mcp_status.go) already re-loads per invocation; this is the
 // board joining them.
-type mcpBoardAdapter struct{}
+type mcpBoardAdapter struct {
+	// live answers "is this mounted right now". Nil under a composition with no running
+	// registry, where the honest answer is "not mounted here".
+	live *liveMCPMount
+}
+
+// Mounted reports the live registry's answer, not the config's.
+func (a mcpBoardAdapter) Mounted(name string) bool { return a.live.Mounted(name) }
 
 func (a mcpBoardAdapter) Servers() mcp.ManagedConfig {
 	doc, err := governanceMCPBoardConfig()
@@ -141,13 +148,13 @@ func (a skillsBoardAdapter) AuditLog(ctx context.Context, filter skills.AuditFil
 // audit store over the shared pool; the scheduler board is the cron Store directly (it
 // already satisfies the interface). A nil pool leaves the pool-backed boards unset. None
 // of these aborts boot — a governance-board outage is not a daemon outage.
-func buildGovernanceProviders(cfg *config.Config, pool *pgxpool.Pool, store agui.SchedulerBoardProvider) agui.GovernanceProviders {
+func buildGovernanceProviders(cfg *config.Config, pool *pgxpool.Pool, store agui.SchedulerBoardProvider, live *liveMCPMount) agui.GovernanceProviders {
 	var providers agui.GovernanceProviders
 
 	// The board reads per request, so there is nothing to capture here — and nothing to
 	// go stale. It is wired unconditionally: a registry that is briefly unreachable is a
 	// board that answers empty and recovers, not a route that answers 503 until restart.
-	providers.MCP = mcpBoardAdapter{}
+	providers.MCP = mcpBoardAdapter{live: live}
 
 	if pool != nil {
 		providers.Skills = skillsBoardAdapter{
