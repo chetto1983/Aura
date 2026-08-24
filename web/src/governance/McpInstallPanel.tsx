@@ -41,7 +41,11 @@ const RECIPES: readonly RecipeDescriptor[] = [
  * override source is confirmed in the install response). */
 const DEFAULT_DESTINATION = '~/.aura/mcp/servers.json';
 
-type Mode = 'recipe' | 'custom';
+// 'remote' is a streamable-HTTP server reached by URL — the shape every hosted connector
+// takes (Slack, Notion, Linear). The install request has carried `url`/`type` since the
+// write layer landed; only this panel could not express it, which made a hosted connector
+// unaddable from the cockpit however well the rest of the flow worked.
+type Mode = 'recipe' | 'custom' | 'remote';
 
 export interface McpInstallPanelProps {
   /** The existing server names — a name collision blocks Install with an inline error. */
@@ -60,6 +64,7 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
   const [name, setName] = useState('');
   const [command, setCommand] = useState('');
   const [args, setArgs] = useState<string[]>(['']);
+  const [url, setUrl] = useState('');
   const [recipeEnv, setRecipeEnv] = useState<Record<string, string>>({});
 
   const existing = useMemo(() => new Set(existingNames), [existingNames]);
@@ -83,7 +88,9 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
   const cliEquivalent =
     mode === 'recipe'
       ? `aura mcp install ${recipe}`
-      : `aura mcp add ${effectiveName || '<name>'}${command.trim() !== '' ? ` -- ${command.trim()}` : ''}`;
+      : mode === 'remote'
+        ? `aura mcp add ${effectiveName || '<name>'} --url ${url.trim() || '<url>'}`
+        : `aura mcp add ${effectiveName || '<name>'}${command.trim() !== '' ? ` -- ${command.trim()}` : ''}`;
 
   function buildRequest(): McpInstallRequest {
     if (mode === 'recipe') {
@@ -96,6 +103,9 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
         ...(env.length > 0 ? { env } : {}),
       };
     }
+    if (mode === 'remote') {
+      return { name: effectiveName, url: url.trim(), type: 'streamable-http' };
+    }
     return {
       name: effectiveName,
       command: command.trim(),
@@ -107,7 +117,11 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
     effectiveName !== '' &&
     !duplicate &&
     !mutation.isPending &&
-    (mode === 'recipe' ? recipe !== '' : command.trim() !== '');
+    (mode === 'recipe'
+      ? recipe !== ''
+      : mode === 'remote'
+        ? isHTTPSURL(url)
+        : command.trim() !== '');
 
   function submit() {
     if (!canInstall) return;
@@ -135,13 +149,13 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
         </Button>
       </header>
 
-      {/* Mode toggle — Recipe | Custom (stdio). */}
+      {/* Mode toggle — Recipe | Custom (stdio) | Remote (HTTP). */}
       <div
         role="group"
         aria-label={t('governance.mcp.install.modeLabel')}
         className="flex gap-1 rounded-md bg-surface-2 p-1"
       >
-        {(['recipe', 'custom'] as const).map((m) => (
+        {(['recipe', 'custom', 'remote'] as const).map((m) => (
           <Button
             key={m}
             type="button"
@@ -190,6 +204,8 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
             setRecipeEnv((prev) => ({ ...prev, [key]: value }));
           }}
         />
+      ) : mode === 'remote' ? (
+        <RemoteFields url={url} onURLChange={setUrl} />
       ) : (
         <CustomFields
           command={command}
@@ -303,6 +319,60 @@ function RecipeFields({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// isHTTPSURL gates the Install button. https only, and not out of pedantry: the URL is
+// where an identity's OAuth token will be sent, and a plaintext one hands it to anyone on
+// the path. Loopback is exempt because a locally-run server has no path to sit on.
+function isHTTPSURL(raw: string): boolean {
+  try {
+    const parsed = new URL(raw.trim());
+    if (parsed.protocol === 'https:') return true;
+    return parsed.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function RemoteFields({
+  url,
+  onURLChange,
+}: {
+  readonly url: string;
+  readonly onURLChange: (value: string) => void;
+}) {
+  const { t } = useTranslation();
+  const fieldId = useId();
+  const invalid = url.trim() !== '' && !isHTTPSURL(url);
+  return (
+    <div className="flex flex-col gap-1">
+      <Label htmlFor={fieldId} className="text-[13px] font-semibold text-text">
+        {t('governance.mcp.install.urlLabel')}
+      </Label>
+      <Input
+        id={fieldId}
+        type="url"
+        inputMode="url"
+        value={url}
+        onChange={(event) => {
+          onURLChange(event.target.value);
+        }}
+        placeholder="https://mcp.example.com/mcp"
+        aria-invalid={ariaInvalid(invalid)}
+        aria-describedby={invalid ? `${fieldId}-err` : `${fieldId}-hint`}
+        className="font-mono text-[13px]"
+      />
+      {invalid ? (
+        <p id={`${fieldId}-err`} role="alert" className="text-[13px] text-danger">
+          {t('governance.mcp.install.urlInvalid')}
+        </p>
+      ) : (
+        <p id={`${fieldId}-hint`} className="text-[13px] text-text-muted">
+          {t('governance.mcp.install.urlHint')}
+        </p>
+      )}
     </div>
   );
 }

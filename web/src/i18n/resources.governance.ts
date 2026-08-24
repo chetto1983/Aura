@@ -170,7 +170,12 @@ export const governanceEn = {
         mode: {
           recipe: 'Recipe',
           custom: 'Custom (stdio)',
+          remote: 'Remote (HTTP)',
         },
+        urlLabel: 'Server URL',
+        urlHint:
+          'A hosted MCP server. If it authorizes each person separately, connect it from its detail pane after installing.',
+        urlInvalid: 'Must be an https URL (http is allowed only for localhost).',
         nameLabel: 'Server name',
         recipeLabel: 'Recipe',
         commandLabel: 'Command',
@@ -400,7 +405,12 @@ export const governanceIt = {
         mode: {
           recipe: 'Ricetta',
           custom: 'Personalizzato (stdio)',
+          remote: 'Remoto (HTTP)',
         },
+        urlLabel: 'URL del server',
+        urlHint:
+          'Un server MCP ospitato. Se autorizza ogni persona separatamente, collegalo dal suo pannello di dettaglio dopo averlo installato.',
+        urlInvalid: "Deve essere un URL https (http è ammesso solo per localhost).",
         nameLabel: 'Nome server',
         recipeLabel: 'Ricetta',
         commandLabel: 'Comando',

@@ -47,6 +47,46 @@ describe('McpInstallPanel (MCPW-01)', () => {
     vi.clearAllMocks();
   });
 
+  // The hosted-connector shape (Slack, Notion, Linear). Until this mode existed the write
+  // layer accepted `url`/`type` but no cockpit control could express it, so a hosted
+  // connector was unaddable from the cockpit however well the authorization flow worked.
+  it('installs a remote HTTP server by URL', async () => {
+    renderPanel({});
+    fireEvent.click(screen.getByRole('button', { name: 'Remote (HTTP)', pressed: false }));
+    fireEvent.change(screen.getByLabelText('Server name'), { target: { value: 'slack' } });
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: 'https://mcp.slack.com/mcp' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Install server' }));
+    await waitFor(() => {
+      expect(installMcpServer).toHaveBeenCalledTimes(1);
+    });
+    expect(installMcpServer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'slack',
+        url: 'https://mcp.slack.com/mcp',
+        type: 'streamable-http',
+      }),
+    );
+  });
+
+  // The URL is where an identity's OAuth token will be sent. A plaintext one hands it to
+  // anyone on the path, so Install stays disabled rather than saving a server that leaks.
+  it('refuses a plaintext remote URL and fires no request', () => {
+    renderPanel({});
+    fireEvent.click(screen.getByRole('button', { name: 'Remote (HTTP)', pressed: false }));
+    fireEvent.change(screen.getByLabelText('Server name'), { target: { value: 'slack' } });
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: 'http://mcp.slack.com/mcp' },
+    });
+
+    expect(screen.getByRole('button', { name: 'Install server' }).hasAttribute('disabled')).toBe(
+      true,
+    );
+    expect(installMcpServer).not.toHaveBeenCalled();
+  });
+
   it('shows the live preview: the CLI-equivalent + the Will write to: destination', () => {
     renderPanel({});
     // Recipe mode default → `aura mcp install <recipe>`.
