@@ -20,7 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const mcpUsage = "usage: aura mcp {recipes [--json]|install <recipe> [name]|add <name> [--env KEY=VALUE] [--disabled] [--trust local] -- <command> [args...]|profile ...|trust <name> --reason <text> [--class <class>]|list|doctor <name>|tools <name>|console [--addr host:port]|enable <name>|disable <name>|remove <name>}"
+const mcpUsage = "usage: aura mcp {recipes [--json]|install <recipe> [name]|add <name> [--env KEY=VALUE] [--disabled] [--trust local] -- <command> [args...]|profile ...|trust <name> --reason <text> [--class <class>]|list|doctor <name>|tools <name>|console [--addr host:port]|enable <name>|disable <name>|remove <name>|login <name>|logout <name>|authorizations}"
 
 // mcpMutatingSubcommands is the set of top-level `aura mcp` CLI verbs that mutate the
 // managed config (D-12): these route through the audited WriteConfigWithAudit and need a
@@ -29,6 +29,14 @@ const mcpUsage = "usage: aura mcp {recipes [--json]|install <recipe> [name]|add 
 var mcpMutatingSubcommands = map[string]bool{
 	"add": true, "install": true, "trust": true,
 	"enable": true, "disable": true, "remove": true,
+}
+
+// mcpOAuthSubcommands need a live *pgxpool.Pool for the per-identity grant store but do
+// NOT touch the managed config, so they stay out of mcpMutatingSubcommands and away from
+// WriteConfigWithAudit: what they change is one identity's own credentials, which the
+// config audit trail has no business recording.
+var mcpOAuthSubcommands = map[string]bool{
+	"login": true, "logout": true, "authorizations": true,
 }
 
 // mcpProfileMutatingSubcommands mirrors the same split one level down, inside
@@ -47,7 +55,7 @@ func mcpCommandNeedsPool(args []string) bool {
 	if args[0] == "profile" {
 		return len(args) > 1 && mcpProfileMutatingSubcommands[args[1]]
 	}
-	return mcpMutatingSubcommands[args[0]]
+	return mcpMutatingSubcommands[args[0]] || mcpOAuthSubcommands[args[0]]
 }
 
 func runMCP(ctx context.Context, pool *pgxpool.Pool, args []string) {
@@ -91,6 +99,12 @@ func runMCPCommand(ctx context.Context, pool *pgxpool.Pool, args []string, out i
 		return mcpSetEnabled(ctx, pool, args[1:], false, out)
 	case "remove":
 		return mcpRemove(ctx, pool, args[1:], out)
+	case "login":
+		return mcpLogin(ctx, pool, args[1:], out)
+	case "logout":
+		return mcpLogout(ctx, pool, args[1:], out)
+	case "authorizations":
+		return mcpAuthorizations(ctx, pool, args[1:], out)
 	default:
 		return fmt.Errorf("unknown mcp subcommand %q", args[0])
 	}
