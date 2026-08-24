@@ -46,6 +46,10 @@ type SessionOptions struct {
 	Sending         []sdkmcp.Middleware
 	ToolListChanged func(context.Context, *sdkmcp.ToolListChangedRequest)
 	Elicitation     func(context.Context, *sdkmcp.ElicitRequest) (*sdkmcp.ElicitResult, error)
+	// OAuth carries the per-identity authorization wiring for remote servers. Its zero
+	// value is meaningful: no store and no fetcher still attaches a handler, so a
+	// server that needs authorization says so instead of returning a bare 401.
+	OAuth OAuthOptions
 }
 
 func resolveLogger(logger *slog.Logger) *slog.Logger {
@@ -123,11 +127,29 @@ func openSDKHTTP(ctx context.Context, name string, server ManagedServer, egress 
 		httpClient = newHardenedHTTPClient(net.DefaultResolver, egress)
 	}
 	httpClient = withMCPRedirectGuard(httpClient, egress, net.DefaultResolver)
+
+	// The authorization flow is built from the client as it stands HERE, before the
+	// static credentials go on: its requests leave for the authorization server, a
+	// different origin, and headerRoundTripper applies MCP_HEADER_* with no origin
+	// check. See oauthHandlerFor.
+	settings, err := OAuthSettingsFromEnv(server.Env)
+	if err != nil {
+		return nil, TransportErrorf(name, err)
+	}
+	oauthHandler, err := oauthHandlerFor(ctx, name, server, settings, httpClient, o.OAuth, o.Logger)
+	if err != nil {
+		return nil, TransportErrorf(name, err)
+	}
+
 	headers, bearer := httpAuthFromEnv(server.Env)
 	httpClient = withAuthHeaders(httpClient, headers, bearer)
 
 	// Bounded because the SDK is not: see bounded_call.go.
-	transport := &sdkmcp.StreamableClientTransport{Endpoint: validated.String(), HTTPClient: httpClient}
+	transport := &sdkmcp.StreamableClientTransport{
+		Endpoint:     validated.String(),
+		HTTPClient:   httpClient,
+		OAuthHandler: oauthHandler,
+	}
 	client := newSDKClient(o)
 	session, err := BoundedCall(ctx,
 		func(ctx context.Context) (*sdkmcp.ClientSession, error) { return client.Connect(ctx, transport, nil) },
