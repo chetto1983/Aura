@@ -62,6 +62,17 @@ func NewStore(pool *pgxpool.Pool, authulaSecretHex string) (*Store, error) {
 	return &Store{q: sqlc.New(pool), sealer: sealer}, nil
 }
 
+// Tx returns a Store bound to an open transaction's queries, so a registry change can
+// commit together with whatever else that transaction is doing.
+//
+// The audit ledger is the caller that needs this. The file-based registry it replaces got
+// all-or-nothing by staging a temp file, inserting the audit row in a transaction and only
+// renaming on commit (D-04); with both halves in Postgres the same guarantee is just a
+// transaction, and there is no half-written file left behind when a process dies mid-write.
+func (s *Store) Tx(q *sqlc.Queries) *Store {
+	return &Store{q: q, sealer: s.sealer}
+}
+
 // Entry is one registered server plus the profile membership that decides whether anything
 // will actually mount it.
 //
@@ -99,6 +110,7 @@ func (s *Store) List(ctx context.Context) (mcp.ManagedConfig, error) {
 			doc.Profiles[profile] = p
 		}
 	}
+	mcp.Normalize(&doc)
 	return doc, nil
 }
 

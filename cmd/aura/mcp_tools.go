@@ -58,20 +58,20 @@ func writeMCPTools(out io.Writer, advertised []*sdkmcp.Tool) error {
 }
 
 func effectiveManagedMCPServer(name string) (mcp.ManagedServer, bool, error) {
-	cfg := config.LoadDB()
-	if cfg.MCPServersErr != nil {
-		return mcp.ManagedServer{}, false, cfg.MCPServersErr
+	_, policies, err := mcpRuntimeSet()
+	if err != nil {
+		return mcp.ManagedServer{}, false, err
 	}
-	server, ok := cfg.MCPPolicies[name]
+	server, ok := policies[name]
 	return server, ok, nil
 }
 
 func effectiveMCPServer(name string) (mcp.ServerConfig, error) {
-	cfg := config.LoadDB()
-	if cfg.MCPServersErr != nil {
-		return mcp.ServerConfig{}, cfg.MCPServersErr
+	servers, _, err := mcpRuntimeSet()
+	if err != nil {
+		return mcp.ServerConfig{}, err
 	}
-	server, ok := cfg.MCPServers[name]
+	server, ok := servers[name]
 	if !ok {
 		return mcp.ServerConfig{}, fmt.Errorf("MCP server %q is not configured or is disabled", name)
 	}

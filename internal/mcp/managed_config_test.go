@@ -1,29 +1,12 @@
 package mcp
 
 import (
-	"os"
-	"path/filepath"
 	"reflect"
-	"runtime"
 	"strings"
 	"testing"
 )
 
-func TestManagedConfigPathUsesOverride(t *testing.T) {
-	want := filepath.Join(t.TempDir(), "servers.json")
-	t.Setenv("AURA_MCP_CONFIG", want)
-
-	got, err := ManagedConfigPath()
-	if err != nil {
-		t.Fatalf("ManagedConfigPath: %v", err)
-	}
-	if got != want {
-		t.Fatalf("ManagedConfigPath = %q, want %q", got, want)
-	}
-}
-
 func TestManagedConfigRoundTripFiltersDisabled(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "servers.json")
 	doc := ManagedConfig{MCPServers: map[string]ManagedServer{
 		"calculator": {
 			Command: "uvx",
@@ -37,18 +20,9 @@ func TestManagedConfigRoundTripFiltersDisabled(t *testing.T) {
 		},
 	}}
 
-	if err := SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("SaveManagedConfig: %v", err)
-	}
-	if info, err := os.Stat(path); err != nil {
-		t.Fatalf("stat saved config: %v", err)
-	} else if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
-		t.Fatalf("saved mode = %v, want 0600", info.Mode().Perm())
-	}
-
-	got, err := LoadManagedConfig(path)
-	if err != nil {
-		t.Fatalf("LoadManagedConfig: %v", err)
+	got := doc
+	if err := PrepareForWrite(&got); err != nil {
+		t.Fatalf("PrepareForWrite: %v", err)
 	}
 	if !reflect.DeepEqual(got.MCPServers["calculator"].Args, doc.MCPServers["calculator"].Args) {
 		t.Fatalf("calculator args = %#v, want %#v", got.MCPServers["calculator"].Args, doc.MCPServers["calculator"].Args)
@@ -66,7 +40,6 @@ func TestManagedConfigRoundTripFiltersDisabled(t *testing.T) {
 }
 
 func TestManagedConfigDockerRuntimeDoesNotRequireLocalCommand(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "servers.json")
 	doc := ManagedConfig{MCPServers: map[string]ManagedServer{
 		"third-party": {
 			Source: "manual",
@@ -79,36 +52,23 @@ func TestManagedConfigDockerRuntimeDoesNotRequireLocalCommand(t *testing.T) {
 		},
 	}}
 
-	if err := SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("SaveManagedConfig: %v", err)
-	}
-	got, err := LoadManagedConfig(path)
-	if err != nil {
-		t.Fatalf("LoadManagedConfig: %v", err)
+	got := doc
+	if err := PrepareForWrite(&got); err != nil {
+		t.Fatalf("PrepareForWrite: %v", err)
 	}
 	if got.MCPServers["third-party"].Command != "" {
 		t.Fatalf("local command = %q, want empty for docker runtime", got.MCPServers["third-party"].Command)
 	}
 }
 
-func TestManagedConfigLegacyLoadsWithDefaultVersionAndProfile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "servers.json")
-	if err := os.WriteFile(path, []byte(`{
-  "mcpServers": {
-    "legacy": {
-      "command": "node",
-      "args": ["server.js"],
-      "env": ["API_TOKEN=secret"]
-    }
-  }
-}`), 0o600); err != nil {
-		t.Fatalf("write legacy config: %v", err)
-	}
-
-	got, err := LoadManagedConfig(path)
-	if err != nil {
-		t.Fatalf("LoadManagedConfig: %v", err)
-	}
+// A document that names no version and no profile still has to resolve to the current
+// version and the default profile — a row stored before either field existed must not come
+// back unmountable.
+func TestManagedConfigLegacyNormalizesVersionAndProfile(t *testing.T) {
+	got := ManagedConfig{MCPServers: map[string]ManagedServer{
+		"legacy": {Command: "node", Args: []string{"server.js"}, Env: []string{"API_TOKEN=secret"}},
+	}}
+	Normalize(&got)
 	if got.Version != 2 {
 		t.Fatalf("Version = %d, want 2", got.Version)
 	}
@@ -160,82 +120,12 @@ func TestManagedConfigProfileMembership(t *testing.T) {
 	}
 }
 
-func TestManagedConfigPathDefaultUsesHome(t *testing.T) {
-	t.Setenv("AURA_MCP_CONFIG", "")
-	home := t.TempDir()
-	// HOME (POSIX) / USERPROFILE (Windows) back os.UserHomeDir.
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
-
-	got, err := ManagedConfigPath()
-	if err != nil {
-		t.Fatalf("ManagedConfigPath: %v", err)
-	}
-	want := filepath.Join(home, ".aura", "mcp", "servers.json")
-	if got != want {
-		t.Fatalf("ManagedConfigPath = %q, want %q", got, want)
-	}
-}
-
-func TestManagedConfigPathBlankOverrideFallsBack(t *testing.T) {
-	t.Setenv("AURA_MCP_CONFIG", "   ")
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
-	got, err := ManagedConfigPath()
-	if err != nil {
-		t.Fatalf("ManagedConfigPath: %v", err)
-	}
-	if !strings.Contains(filepath.ToSlash(got), ".aura/mcp/servers.json") {
-		t.Fatalf("blank override should fall back to home path, got %q", got)
-	}
-}
-
-func TestLoadManagedConfigMissingReturnsEmpty(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "does-not-exist.json")
-	got, err := LoadManagedConfig(path)
-	if err != nil {
-		t.Fatalf("LoadManagedConfig(missing): %v", err)
-	}
-	if got.MCPServers == nil || len(got.MCPServers) != 0 {
-		t.Fatalf("missing config should yield empty registry, got %#v", got.MCPServers)
-	}
-}
-
-func TestLoadManagedConfigEmptyFileReturnsEmpty(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "servers.json")
-	if err := os.WriteFile(path, []byte("   \n\t"), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	got, err := LoadManagedConfig(path)
-	if err != nil {
-		t.Fatalf("LoadManagedConfig(empty): %v", err)
-	}
-	if got.MCPServers == nil || len(got.MCPServers) != 0 {
-		t.Fatalf("empty file should yield empty registry, got %#v", got.MCPServers)
-	}
-}
-
-func TestLoadManagedConfigMalformedErrors(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "servers.json")
-	if err := os.WriteFile(path, []byte("{not valid json"), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	if _, err := LoadManagedConfig(path); err == nil || !strings.Contains(err.Error(), "parse") {
-		t.Fatalf("want parse error, got %v", err)
-	}
-}
-
-func TestSaveManagedConfigRejectsInvalidServer(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "servers.json")
+func TestPrepareForWriteRejectsInvalidServer(t *testing.T) {
 	doc := ManagedConfig{MCPServers: map[string]ManagedServer{
 		"broken": {Type: ServerTypeStdio}, // missing command for local runtime
 	}}
-	if err := SaveManagedConfig(path, doc); err == nil || !strings.Contains(err.Error(), "command cannot be empty") {
+	if err := PrepareForWrite(&doc); err == nil || !strings.Contains(err.Error(), "command cannot be empty") {
 		t.Fatalf("want validation error, got %v", err)
-	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("invalid config should not be written, stat err = %v", err)
 	}
 }
 
@@ -482,24 +372,9 @@ func TestEnabledServersValidationError(t *testing.T) {
 	}
 }
 
-func TestLoadManagedConfigReadErrorOnDirectory(t *testing.T) {
-	// Pointing at a directory makes os.ReadFile fail with a non-NotExist error.
-	dir := t.TempDir()
-	if _, err := LoadManagedConfig(dir); err == nil || !strings.Contains(err.Error(), "read") {
-		t.Fatalf("want read error for directory path, got %v", err)
-	}
-}
-
-func TestLoadManagedConfigNormalizesNilMaps(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "servers.json")
-	// JSON with no mcpServers/profiles keys exercises the nil-map normalization.
-	if err := os.WriteFile(path, []byte(`{"activeProfile":"work"}`), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	got, err := LoadManagedConfig(path)
-	if err != nil {
-		t.Fatalf("LoadManagedConfig: %v", err)
-	}
+func TestNormalizeFillsNilMaps(t *testing.T) {
+	got := ManagedConfig{ActiveProfile: "work"}
+	Normalize(&got)
 	if got.MCPServers == nil {
 		t.Fatal("MCPServers should be normalized to non-nil map")
 	}

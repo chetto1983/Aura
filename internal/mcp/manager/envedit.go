@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/chetto1983/aura/internal/mcp"
@@ -15,6 +16,15 @@ import (
 // for a stored secret preserves that secret (it is NEVER overwritten with the placeholder
 // text), while a real submitted value (or a cleared non-secret) takes effect. The path
 // lives in package manager so it can call those unexported helpers directly.
+
+// ErrServerNotFound is the sentinel for an env-edit / mutation targeting a server name
+// absent from the registry. The handler maps it to a clean 404.
+//
+// It used to live in configwrite.go beside WriteConfigWithAudit, the temp→tx→rename wrapper
+// that gave a JSON-file registry all-or-nothing semantics against its Postgres audit ledger
+// (D-04). The registry is a Postgres table now (migration 0101), the two halves commit in
+// one transaction, and that wrapper had nothing left to protect.
+var ErrServerNotFound = errors.New("mcp server not found")
 
 // SetServerEnv replaces server `name`'s Env in doc with the merge of its existing Env and
 // the operator-submitted Env (D-05). It rejects an unknown server with a 404-style error

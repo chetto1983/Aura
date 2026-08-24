@@ -228,16 +228,14 @@ func TestDoctorChecksIncludesMCPServers(t *testing.T) {
 // TestDoctorProbeMCPServersReachable proves a reachable, enabled HTTP MCP server
 // passes with an aggregated "N/N reachable" detail.
 func TestDoctorProbeMCPServersReachable(t *testing.T) {
-	path := withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 	srv := newMCPHTTPTestServer(t)
 	defer srv.Close()
 
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
 		"good": {Type: mcp.ServerTypeStreamableHTTP, URL: srv.URL, Source: "manual:http", Trust: mcp.ManagedTrust{Class: mcp.TrustRemoteHTTP}},
 	}}
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
+	seedMCPRegistry(t, withDefaultOnRecipesOff(doc))
 
 	detail, err := defaultDoctorProbeMCPServers(context.Background(), &config.Config{})
 	if err != nil {
@@ -249,19 +247,19 @@ func TestDoctorProbeMCPServersReachable(t *testing.T) {
 }
 
 func TestDoctorProbeMCPServersUsesResolvedRuntimeConfig(t *testing.T) {
-	withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 	srv := newMCPHTTPTestServer(t)
 	defer srv.Close()
 
-	cfg := &config.Config{MCPPolicies: map[string]mcp.ManagedServer{
+	withRuntimeMCPServers(t, map[string]mcp.ManagedServer{
 		"default-on": {
 			Type:   mcp.ServerTypeStreamableHTTP,
 			URL:    srv.URL,
 			Source: "recipe:test",
 			Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 		},
-	}}
-	detail, err := defaultDoctorProbeMCPServers(context.Background(), cfg)
+	})
+	detail, err := defaultDoctorProbeMCPServers(context.Background(), &config.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,13 +271,11 @@ func TestDoctorProbeMCPServersUsesResolvedRuntimeConfig(t *testing.T) {
 // TestDoctorProbeMCPServersUnreachableNamesServer proves a dead HTTP MCP server
 // fails the check and names the unreachable server in the aggregated error.
 func TestDoctorProbeMCPServersUnreachableNamesServer(t *testing.T) {
-	path := withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
 		"deadhttp": {Type: mcp.ServerTypeStreamableHTTP, URL: "http://127.0.0.1:0/mcp", Source: "manual:http", Trust: mcp.ManagedTrust{Class: mcp.TrustRemoteHTTP}},
 	}}
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
+	seedMCPRegistry(t, withDefaultOnRecipesOff(doc))
 
 	_, err := defaultDoctorProbeMCPServers(context.Background(), &config.Config{})
 	if err == nil {
@@ -296,7 +292,7 @@ func TestDoctorProbeMCPServersUnreachableNamesServer(t *testing.T) {
 // aggregated detail stays "1/1" even though three OTHER servers are configured and
 // would each fail if actually probed (dead command / unreachable URL).
 func TestDoctorProbeMCPServersSkipsDisabledBlockedStdio(t *testing.T) {
-	path := withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 	srv := newMCPHTTPTestServer(t)
 	defer srv.Close()
 	disabled := false
@@ -307,9 +303,7 @@ func TestDoctorProbeMCPServersSkipsDisabledBlockedStdio(t *testing.T) {
 		"blocked": {Type: mcp.ServerTypeStreamableHTTP, URL: "http://127.0.0.1:0/mcp", Source: "manual:http", Trust: mcp.ManagedTrust{Class: mcp.TrustBlocked}},
 		"shell":   {Command: "aura-nonexistent-mcp-binary-xyz", Source: "manual", Trust: mcp.ManagedTrust{Class: mcp.TrustTrustedLocal}},
 	}}
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
+	seedMCPRegistry(t, withDefaultOnRecipesOff(doc))
 
 	detail, err := defaultDoctorProbeMCPServers(context.Background(), &config.Config{})
 	if err != nil {
@@ -323,7 +317,8 @@ func TestDoctorProbeMCPServersSkipsDisabledBlockedStdio(t *testing.T) {
 // TestDoctorProbeMCPServersNoneConfigured proves an empty/absent managed config is
 // an informational pass, not a failure.
 func TestDoctorProbeMCPServersNoneConfigured(t *testing.T) {
-	withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
+	seedMCPRegistry(t, withDefaultOnRecipesOff(mcp.ManagedConfig{}))
 
 	detail, err := defaultDoctorProbeMCPServers(context.Background(), &config.Config{})
 	if err != nil {
@@ -344,7 +339,7 @@ func TestDoctorProbeMCPServersNoneConfigured(t *testing.T) {
 // a bounded ceiling regardless.
 func TestDoctorProbeMCPServersBoundedByProbeTimeout(t *testing.T) {
 	t.Setenv("AURA_MCP_PROBE_TIMEOUT", "1")
-	path := withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
@@ -356,9 +351,7 @@ func TestDoctorProbeMCPServersBoundedByProbeTimeout(t *testing.T) {
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
 		"hung": {Type: mcp.ServerTypeStreamableHTTP, URL: srv.URL, Source: "manual:http", Trust: mcp.ManagedTrust{Class: mcp.TrustRemoteHTTP}},
 	}}
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
+	seedMCPRegistry(t, withDefaultOnRecipesOff(doc))
 
 	start := time.Now()
 	_, err := defaultDoctorProbeMCPServers(context.Background(), &config.Config{})

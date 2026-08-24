@@ -1,17 +1,15 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/mcp"
 )
 
 func TestGovernanceMCPBoardIncludesContainerRecipes(t *testing.T) {
 	t.Setenv("AURA_IN_CONTAINER", "1")
-	t.Setenv("AURA_MCP_CONFIG", filepath.Join(t.TempDir(), "servers.json"))
-	t.Setenv("AURA_MCP_SERVERS_JSON", "")
+	withMemoryMCPRegistry(t)
 
 	providers := buildGovernanceProviders(&config.Config{}, nil, nil)
 	if providers.MCP == nil {
@@ -35,10 +33,8 @@ func TestGovernanceMCPBoardIncludesContainerRecipes(t *testing.T) {
 // server the cockpit then refused to list — the operator's only way out was restarting the
 // daemon, and nothing said so.
 func TestGovernanceMCPBoardSeesAServerInstalledAfterBoot(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "servers.json")
 	t.Setenv("AURA_IN_CONTAINER", "1")
-	t.Setenv("AURA_MCP_CONFIG", path)
-	t.Setenv("AURA_MCP_SERVERS_JSON", "")
+	withMemoryMCPRegistry(t)
 
 	providers := buildGovernanceProviders(&config.Config{}, nil, nil)
 	if providers.MCP == nil {
@@ -48,11 +44,9 @@ func TestGovernanceMCPBoardSeesAServerInstalledAfterBoot(t *testing.T) {
 		t.Fatal("slack is on the board before it was installed")
 	}
 
-	installed := `{"version":2,"mcpServers":{"slack":{"source":"custom","type":"streamable_http",` +
-		`"url":"https://mcp.slack.com/mcp","trust":{"class":"blocked"}}}}`
-	if err := os.WriteFile(path, []byte(installed), 0o600); err != nil {
-		t.Fatalf("write managed config: %v", err)
-	}
+	seedMCPRegistry(t, mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
+		"slack": {Source: "custom", Type: mcp.ServerTypeStreamableHTTP, URL: "https://mcp.slack.com/mcp"},
+	}})
 
 	server, ok := providers.MCP.Servers().MCPServers["slack"]
 	if !ok {
@@ -63,24 +57,18 @@ func TestGovernanceMCPBoardSeesAServerInstalledAfterBoot(t *testing.T) {
 	}
 }
 
-// A managed config that cannot be read must not blank a board that was rendering a moment
-// ago: the reload falls back to the boot snapshot rather than dropping every row.
-func TestGovernanceMCPBoardFallsBackToBootWhenTheReloadFails(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "servers.json")
-	t.Setenv("AURA_IN_CONTAINER", "1")
-	t.Setenv("AURA_MCP_CONFIG", path)
-	t.Setenv("AURA_MCP_SERVERS_JSON", "")
+// A default-on recipe has no registry row until somebody customizes it, so a board that
+// listed only installed servers dropped memory off the cockpit entirely while it went on
+// mounting at every boot. The board answers from the same resolution the mount does.
+func TestGovernanceMCPBoardShowsDefaultOnMemory(t *testing.T) {
+	withMemoryMCPRegistry(t)
 
 	providers := buildGovernanceProviders(&config.Config{}, nil, nil)
-	if providers.MCP == nil {
-		t.Fatal("MCP governance provider is nil")
+	server, ok := providers.MCP.Servers().MCPServers["memory"]
+	if !ok {
+		t.Fatalf("memory is missing from the board: %#v", providers.MCP.Servers().MCPServers)
 	}
-	if err := os.WriteFile(path, []byte("{ not json"), 0o600); err != nil {
-		t.Fatalf("write broken config: %v", err)
-	}
-
-	if _, ok := providers.MCP.Servers().MCPServers["calendar"]; !ok {
-		t.Fatal("a broken managed config emptied the board instead of serving the boot snapshot")
+	if server.Source != mcp.SourceRecipeMemory {
+		t.Fatalf("memory source = %q, want %q", server.Source, mcp.SourceRecipeMemory)
 	}
 }

@@ -314,23 +314,24 @@ func buildRegistryWithMCP(
 	sandboxRouter *usersandbox.SandboxRouter,
 	consent mcptools.ElicitationConsent,
 ) (*tools.Registry, runtimeToolHandles, []func() error, error) {
-	if cfg.MCPServersErr != nil {
-		return nil, runtimeToolHandles{}, nil, cfg.MCPServersErr
+	mcpServers, mcpPolicies, err := mcpRuntimeSet()
+	if err != nil {
+		return nil, runtimeToolHandles{}, nil, err
 	}
 	reg, handles := buildBaseRegistryWithHandles(cfg, ts, sandboxRouter)
 	handles.MCPViews = mcp.NewViewCatalog()
 	handles.ViewCallers = mcptools.ViewCallers{}
-	if len(cfg.MCPServers) == 0 && len(cfg.MCPPolicies) == 0 {
+	if len(mcpServers) == 0 && len(mcpPolicies) == 0 {
 		return reg, handles, nil, nil
 	}
 
 	seen := map[string]struct{}{}
-	serverNames := make([]string, 0, len(cfg.MCPServers)+len(cfg.MCPPolicies))
-	for name := range cfg.MCPServers {
+	serverNames := make([]string, 0, len(mcpServers)+len(mcpPolicies))
+	for name := range mcpServers {
 		seen[name] = struct{}{}
 		serverNames = append(serverNames, name)
 	}
-	for name := range cfg.MCPPolicies {
+	for name := range mcpPolicies {
 		if _, ok := seen[name]; ok {
 			continue
 		}
@@ -362,9 +363,9 @@ func buildRegistryWithMCP(
 		var mountedHost *mcptools.MountedServer
 		sharedAdmin := false
 		mountOnce := func(c context.Context) (func() error, []string, error) {
-			server, managed := cfg.MCPPolicies[name]
+			server, managed := mcpPolicies[name]
 			if !managed {
-				return mcptools.MountServer(ctx, c, reg, name, cfg.MCPServers[name])
+				return mcptools.MountServer(ctx, c, reg, name, mcpServers[name])
 			}
 			closer, names, host, mountErr := mcptools.MountManagedServerWithOptions(
 				ctx,

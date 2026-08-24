@@ -22,8 +22,12 @@ import (
 const memoryReadinessOwner = "00000000-0000-0000-0000-0000000000ff"
 
 func memoryReadinessProbe(chat *chatEnv) (agui.ReadinessProbe, bool) {
+	_, policies, err := mcpRuntimeSet()
+	if err != nil {
+		return agui.ReadinessProbe{}, false
+	}
 	required := false
-	for _, server := range chat.cfg.MCPPolicies {
+	for _, server := range policies {
 		if mcp.IsSharedAdminGoverned(server) {
 			required = true
 			break

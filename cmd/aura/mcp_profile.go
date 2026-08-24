@@ -38,7 +38,7 @@ func mcpProfileList(args []string, out io.Writer) error {
 	if len(args) != 0 {
 		return fmt.Errorf("usage: aura mcp profile list")
 	}
-	doc, _, err := loadManagedMCPConfig()
+	doc, err := loadManagedMCPConfig()
 	if err != nil {
 		return err
 	}
@@ -70,7 +70,7 @@ func mcpProfileCreate(ctx context.Context, pool *pgxpool.Pool, args []string, ou
 	if name == "" {
 		return fmt.Errorf("MCP profile name cannot be empty")
 	}
-	doc, path, err := loadManagedMCPConfig()
+	doc, err := loadManagedMCPConfig()
 	if err != nil {
 		return err
 	}
@@ -81,7 +81,7 @@ func mcpProfileCreate(ctx context.Context, pool *pgxpool.Pool, args []string, ou
 		return fmt.Errorf("MCP profile %q already exists", name)
 	}
 	doc.Profiles[name] = mcp.ManagedProfile{}
-	if err := mcpWriteManagedConfig(ctx, pool, path, doc, "profile_create", name, ""); err != nil {
+	if err := mcpWriteManagedConfig(ctx, pool, doc, "profile_create", name, ""); err != nil {
 		return err
 	}
 	return writef(out, "ok: created profile %s\n", name)
@@ -92,7 +92,7 @@ func mcpProfileUse(ctx context.Context, pool *pgxpool.Pool, args []string, out i
 		return fmt.Errorf("usage: aura mcp profile use <name>")
 	}
 	name := strings.TrimSpace(args[0])
-	doc, path, err := loadManagedMCPConfig()
+	doc, err := loadManagedMCPConfig()
 	if err != nil {
 		return err
 	}
@@ -103,7 +103,7 @@ func mcpProfileUse(ctx context.Context, pool *pgxpool.Pool, args []string, out i
 		return fmt.Errorf("MCP profile %q not found", name)
 	}
 	doc.ActiveProfile = name
-	if err := mcpWriteManagedConfig(ctx, pool, path, doc, "profile_use", name, ""); err != nil {
+	if err := mcpWriteManagedConfig(ctx, pool, doc, "profile_use", name, ""); err != nil {
 		return err
 	}
 	return writef(out, "ok: using profile %s\n", name)
@@ -114,7 +114,7 @@ func mcpProfileAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out i
 		return fmt.Errorf("usage: aura mcp profile add <profile> <server>")
 	}
 	profile, server := strings.TrimSpace(args[0]), strings.TrimSpace(args[1])
-	doc, path, err := loadManagedMCPConfig()
+	doc, err := loadManagedMCPConfig()
 	if err != nil {
 		return err
 	}
@@ -122,7 +122,7 @@ func mcpProfileAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out i
 		return fmt.Errorf("MCP server %q not found", server)
 	}
 	ensureProfileMembership(&doc, profile, server)
-	if err := mcpWriteManagedConfig(ctx, pool, path, doc, "profile_add", server, ""); err != nil {
+	if err := mcpWriteManagedConfig(ctx, pool, doc, "profile_add", server, ""); err != nil {
 		return err
 	}
 	return writef(out, "ok: added %s to profile %s\n", server, profile)
@@ -133,7 +133,7 @@ func mcpProfileRemove(ctx context.Context, pool *pgxpool.Pool, args []string, ou
 		return fmt.Errorf("usage: aura mcp profile remove <profile> <server>")
 	}
 	profile, server := strings.TrimSpace(args[0]), strings.TrimSpace(args[1])
-	doc, path, err := loadManagedMCPConfig()
+	doc, err := loadManagedMCPConfig()
 	if err != nil {
 		return err
 	}
@@ -149,7 +149,7 @@ func mcpProfileRemove(ctx context.Context, pool *pgxpool.Pool, args []string, ou
 	}
 	p.Servers = append([]string(nil), next...)
 	doc.Profiles[profile] = p
-	if err := mcpWriteManagedConfig(ctx, pool, path, doc, "profile_remove", server, ""); err != nil {
+	if err := mcpWriteManagedConfig(ctx, pool, doc, "profile_remove", server, ""); err != nil {
 		return err
 	}
 	return writef(out, "ok: removed %s from profile %s\n", server, profile)
@@ -219,7 +219,7 @@ func mcpTrust(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Wri
 	if err != nil {
 		return err
 	}
-	doc, path, err := loadManagedMCPConfig()
+	doc, err := loadManagedMCPConfig()
 	if err != nil {
 		return err
 	}
@@ -237,7 +237,7 @@ func mcpTrust(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Wri
 		Reason:     reason,
 	}
 	doc.MCPServers[name] = server
-	if err := mcpWriteManagedConfig(ctx, pool, path, doc, "trust", name, reason); err != nil {
+	if err := mcpWriteManagedConfig(ctx, pool, doc, "trust", name, reason); err != nil {
 		return err
 	}
 	return writef(out, "ok: trusted %s as %s\n", name, class)

@@ -32,13 +32,13 @@ import (
 //
 // Two checkpoints, and neither substitutes for the other:
 //
-//	SaveManagedConfig       -- the authenticated write path refuses to persist it;
+//	ValidateStdioShape      -- the authenticated write path refuses to persist it;
 //	OpenSDKSessionForConfig -- the exec path refuses to launch it.
 //
 // The second is load-bearing. An entry written out of band never passes through the
-// first, so a save-only check would never see the attack it exists for.
-// LoadManagedConfig deliberately does NOT run these: one planted entry must not make
-// the whole registry unreadable and take every healthy server down with it.
+// first, so a save-only check would never see the attack it exists for. Reading the
+// registry deliberately does NOT run these: one planted entry must not make the whole
+// registry unreadable and take every healthy server down with it.
 
 // ErrStdioShapeRefused marks a launch declaration refused on shape. It deliberately
 // does not wrap ErrTransport: a refusal is a permanent verdict about the config, so
@@ -107,50 +107,6 @@ func inlineShellScript(command string, args []string) (string, bool) {
 	return "", false
 }
 
-// registryReferences names Aura's own MCP registry, as an absolute path and as its
-// trailing two segments so a relative spelling ("../mcp/servers.json") is caught too.
-// The bare directory is deliberately absent: an operator AURA_MCP_CONFIG one level
-// deep would reduce it to "/" and refuse every server on the box.
-func registryReferences() []string {
-	configured, err := ManagedConfigPath()
-	if err != nil {
-		return nil
-	}
-	return registryReferencesFor(configured)
-}
-
-// registryReferencesFor is the pure half. An empty result is the only safe answer for
-// an empty path: an empty reference would make strings.Contains true for EVERY launch
-// declaration and refuse the whole box.
-func registryReferencesFor(configured string) []string {
-	// strings.ReplaceAll, NOT filepath.ToSlash: ToSlash is a no-op on Linux, so a
-	// Windows-shaped path in the config would keep its backslashes there while
-	// launchText (which always replaces) had already converted the text being
-	// matched — the two halves of one guard would disagree, and the reference would
-	// never match on the OS Aura actually deploys on. The path being normalized is
-	// data read from a config file, not a path on this host, so the conversion must
-	// not depend on which OS is reading it.
-	slashed := strings.ReplaceAll(strings.TrimSpace(configured), `\`, "/")
-	if slashed == "" {
-		return nil
-	}
-	refs := []string{slashed}
-	if dir, file := path.Split(slashed); dir != "" && file != "" {
-		refs = append(refs, path.Join(path.Base(path.Clean(dir)), file))
-	}
-	return refs
-}
-
-// launchText flattens a launch declaration into one lowercase, forward-slashed string
-// for substring matching.
-func launchText(command string, args, env []string) string {
-	parts := make([]string, 0, len(args)+len(env)+1)
-	parts = append(parts, command)
-	parts = append(parts, args...)
-	parts = append(parts, env...)
-	return strings.ToLower(strings.ReplaceAll(strings.Join(parts, " "), `\`, "/"))
-}
-
 // envValues returns the value half of each KEY=value entry.
 func envValues(env []string) []string {
 	out := make([]string, 0, len(env))
@@ -164,17 +120,11 @@ func envValues(env []string) []string {
 
 // checkStdioShape is the one decision body; both checkpoints adapt their inputs to it.
 func checkStdioShape(name, command string, args, env []string) error {
-	// Unconditional, and the stdio analogue of ssrf.go's metadata-host block: no
-	// legitimate MCP server launch mentions the file that decides which servers
-	// launch. An entry that does is writing the next boot's config -- the
-	// self-healing half of a backdoor -- and there is no use to weigh against it.
-	flat := launchText(command, args, env)
-	for _, ref := range registryReferences() {
-		if strings.Contains(flat, strings.ToLower(ref)) {
-			return fmt.Errorf("%w: server %q names Aura's own MCP registry (%s) in its launch declaration", ErrStdioShapeRefused, name, ref)
-		}
-	}
-
+	// The registry used to be a JSON file, and the first thing checked here was whether a
+	// launch declaration named it: an entry that writes the file deciding which entries
+	// launch is the self-healing half of a backdoor. The registry is a Postgres table now
+	// (migration 0101), so there is no path to name — reaching it takes credentials, which
+	// is a different guard's job.
 	script, ok := inlineShellScript(command, args)
 	if !ok {
 		return nil

@@ -26,7 +26,7 @@ func mcpStatus(ctx context.Context, args []string, out io.Writer) error {
 	if len(args) > 1 || (len(args) == 1 && args[0] != "--json") { //nolint:gosec // G602 false positive: args[0] guarded by len(args)==1
 		return fmt.Errorf("usage: aura mcp status [--json]")
 	}
-	doc, _, err := loadManagedMCPConfig()
+	doc, err := loadManagedMCPConfig()
 	if err != nil {
 		return err
 	}
@@ -105,7 +105,7 @@ func resolveMCPProbeTimeout() time.Duration {
 }
 
 func mcpDoctorAll(ctx context.Context, out io.Writer) error {
-	doc, _, err := loadManagedMCPConfig()
+	doc, err := loadManagedMCPConfig()
 	if err != nil {
 		return err
 	}
@@ -134,7 +134,7 @@ func mcpLogs(args []string, out io.Writer) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: aura mcp logs <name>")
 	}
-	doc, _, err := loadManagedMCPConfig()
+	doc, err := loadManagedMCPConfig()
 	if err != nil {
 		return err
 	}

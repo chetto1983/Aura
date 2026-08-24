@@ -2,8 +2,7 @@ package main
 
 import (
 	"context"
-	"os"
-	"path/filepath"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -57,18 +56,12 @@ func TestValidateTrustClassReason(t *testing.T) {
 // nil-pool tx.Begin would panic — so a passing (non-panicking) test proves no config/audit
 // write was attempted, matching the plan's "no config write, no audit row" requirement.
 func TestTrustApproveRejectsInvalidClassOrReason(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "servers.json")
+	withMemoryMCPRegistry(t)
 	seed := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
 		"srv": {Command: "srv-bin"},
 	}}
-	if err := mcp.SaveManagedConfig(path, seed); err != nil {
-		t.Fatalf("seed config: %v", err)
-	}
-	before, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read seed config: %v", err)
-	}
+	seedMCPRegistry(t, seed)
+	before := readMCPRegistry(t)
 
 	cases := []struct {
 		name   string
@@ -83,16 +76,12 @@ func TestTrustApproveRejectsInvalidClassOrReason(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			a := mcpWriteAdapter{pool: nil, path: path}
+			a := mcpWriteAdapter{pool: nil}
 			if _, err := a.TrustApprove(context.Background(), "cli:tester", "srv", c.class, c.reason); err == nil {
 				t.Fatal("TrustApprove succeeded, want a validation error")
 			}
-			after, err := os.ReadFile(path)
-			if err != nil {
-				t.Fatalf("re-read config: %v", err)
-			}
-			if string(after) != string(before) {
-				t.Fatal("TrustApprove wrote the config despite a validation failure")
+			if after := readMCPRegistry(t); !reflect.DeepEqual(after.MCPServers, before.MCPServers) {
+				t.Fatal("TrustApprove wrote the registry despite a validation failure")
 			}
 		})
 	}

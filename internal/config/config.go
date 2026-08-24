@@ -19,7 +19,6 @@ import (
 	"github.com/chetto1983/aura/internal/envutil"
 	"github.com/chetto1983/aura/internal/idroot"
 	"github.com/chetto1983/aura/internal/llm"
-	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/secret"
 	"github.com/joho/godotenv"
 )
@@ -36,11 +35,8 @@ type Config struct {
 	Embed            EmbedConfig    // embedding sidecar wiring (config_embed.go)
 	ArcadeDB         ArcadeDBConfig // memory server — per-identity databases + the adaptive projection (arcadedb.go)
 	LLM              llm.Config     // Slice 1 — OpenAI-compat client + load-order chain (D-22)
-	MCPServers       map[string]mcp.ServerConfig
-	MCPPolicies      map[string]mcp.ManagedServer
-	MCPServersErr    error
-	RunDir           string // absolute — a relative AURA_RUN_DIR is normalized to absolute at load (F-041) so sidecars are not cwd-dependent
-	RunDirErr        error  // non-nil only if filepath.Abs failed (cwd unobtainable); surfaced by Validate so boot fails loudly
+	RunDir           string         // absolute — a relative AURA_RUN_DIR is normalized to absolute at load (F-041) so sidecars are not cwd-dependent
+	RunDirErr        error          // non-nil only if filepath.Abs failed (cwd unobtainable); surfaced by Validate so boot fails loudly
 	ToolPreviewCap   int
 	// Timezone is the IANA zone every clock the model reads is rendered in
 	// (AURA_TIMEZONE). Empty means the process's own zone, which in a container is
@@ -369,7 +365,6 @@ func loadBase() *Config {
 	if bootstrapURL == "" {
 		bootstrapURL = composeDSN(pgUser, pgPassword, pgHost, pgPort, pgDB, pgSSL)
 	}
-	mcpServers, mcpPolicies, mcpServersErr := loadMCPServers()
 
 	runDir, runDirErr := absRunDir(envDefault("AURA_RUN_DIR", defaultRunDir()))
 	// WorkspaceDir is honored VERBATIM: AURA_WORKSPACE_DIR is an operator-set absolute
@@ -400,9 +395,6 @@ func loadBase() *Config {
 			)),
 		},
 		ArcadeDB:       loadArcadeDB(),
-		MCPServers:     mcpServers,
-		MCPPolicies:    mcpPolicies,
-		MCPServersErr:  mcpServersErr,
 		RunDir:         runDir,
 		RunDirErr:      runDirErr,
 		ToolPreviewCap: envutil.IntDefault("AURA_CONTEXT_PREVIEW_CAP_BYTES", defaultToolPreviewCapBytes),

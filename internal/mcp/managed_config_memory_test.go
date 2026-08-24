@@ -1,14 +1,15 @@
 package mcp
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestManagedConfig_RejectsDuplicateMemorySourcesOnLoadAndSave(t *testing.T) {
-	servers := map[string]ManagedServer{
+// Two servers both claiming to be THE memory recipe is a configuration with no correct
+// answer — the agent's long-term memory would resolve to whichever one the map iterated
+// first. The write path refuses it.
+func TestManagedConfig_RejectsDuplicateMemorySources(t *testing.T) {
+	doc := ManagedConfig{MCPServers: map[string]ManagedServer{
 		"memory": {
 			Type: ServerTypeStreamableHTTP, URL: "http://127.0.0.1:8096/mcp/",
 			Source: SourceRecipeMemory, Trust: ManagedTrust{Class: TrustTrustedRecipe},
@@ -17,20 +18,9 @@ func TestManagedConfig_RejectsDuplicateMemorySourcesOnLoadAndSave(t *testing.T) 
 			Type: ServerTypeStreamableHTTP, URL: "http://127.0.0.1:8097/mcp/",
 			Source: SourceRecipeMemory, Trust: ManagedTrust{Class: TrustTrustedRecipe},
 		},
-	}
-	path := filepath.Join(t.TempDir(), "servers.json")
-	if err := SaveManagedConfig(path, ManagedConfig{MCPServers: servers}); err == nil ||
-		!strings.Contains(err.Error(), "duplicate") {
-		t.Fatalf("SaveManagedConfig duplicate memory error = %v", err)
-	}
-
-	raw := `{"version":2,"mcpServers":{` +
-		`"memory":{"type":"streamable_http","url":"http://127.0.0.1:8096/mcp/","source":"recipe:memory","trust":{"class":"trusted_recipe"}},` +
-		`"mem":{"type":"streamable_http","url":"http://127.0.0.1:8097/mcp/","source":"recipe:memory","trust":{"class":"trusted_recipe"}}}}`
-	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
-		t.Fatalf("write fixture: %v", err)
-	}
-	if _, err := LoadManagedConfig(path); err == nil || !strings.Contains(err.Error(), "duplicate") {
-		t.Fatalf("LoadManagedConfig duplicate memory error = %v", err)
+	}}
+	err := PrepareForWrite(&doc)
+	if err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("PrepareForWrite duplicate memory error = %v", err)
 	}
 }

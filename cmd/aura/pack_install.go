@@ -41,7 +41,7 @@ func packInstall(ctx context.Context, pool *pgxpool.Pool, refArg string, out io.
 	}
 	pack := found[0]
 
-	doc, path, err := loadManagedMCPConfig()
+	doc, err := loadManagedMCPConfig()
 	if err != nil {
 		return err
 	}
@@ -63,7 +63,7 @@ func packInstall(ctx context.Context, pool *pgxpool.Pool, refArg string, out io.
 		return err
 	}
 	if len(report.Servers) > 0 {
-		if err := mcpWriteManagedConfig(ctx, pool, path, doc, "pack-install", pack.Name, packs.SourceMarker(ref)); err != nil {
+		if err := mcpWriteManagedConfig(ctx, pool, doc, "pack-install", pack.Name, packs.SourceMarker(ref)); err != nil {
 			return fmt.Errorf("write managed config: %w", err)
 		}
 	}
@@ -158,7 +158,7 @@ func packTrust(ctx context.Context, pool *pgxpool.Pool, refArg, class, reason st
 	if err != nil {
 		return err
 	}
-	doc, path, err := loadManagedMCPConfig()
+	doc, err := loadManagedMCPConfig()
 	if err != nil {
 		return err
 	}
@@ -180,7 +180,7 @@ func packTrust(ctx context.Context, pool *pgxpool.Pool, refArg, class, reason st
 		server.Trust = approval
 		doc.MCPServers[name] = server
 	}
-	if err := mcpWriteManagedConfig(ctx, pool, path, doc, "pack-trust", ref.String(), reason); err != nil {
+	if err := mcpWriteManagedConfig(ctx, pool, doc, "pack-trust", ref.String(), reason); err != nil {
 		return err
 	}
 	_, _ = fmt.Fprintf(out, "ok: trusted %d connector(s) from %s as %s\n", len(names), ref.String(), class)

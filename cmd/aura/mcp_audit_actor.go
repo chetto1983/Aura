@@ -68,22 +68,20 @@ func mcpAuditInsertFor(action, name, reason string) mcpmanager.MCPAuditInsert {
 
 // mcpWriteManagedConfig is the ONE choke point every mutating `aura mcp` CLI verb calls
 // (D-12/D-13, MCPH-07): main.go's runMCPDispatch opens a live *pgxpool.Pool for every
-// mutating subcommand before it ever reaches here, so in real CLI use this call is
-// ALWAYS audited via manager.WriteConfigWithAudit with the cli:<os-username> actor. A nil
-// pool can only reach here from a pool-free caller (e.g. a unit test exercising a
-// mutating function directly, never main.go's real dispatch) — under server_production
-// that is an explicit hard error (mcpPoolRequiredErr); under every other profile it
-// degrades to the pre-existing plain atomic write so a pool-free caller still gets its
-// config change, just without the audit row. This is the CLI write surface's single
-// remaining direct SaveManagedConfig call — deliberately isolated here (not in
-// mcp.go/mcp_profile.go) so those files' own mutation bodies read as "always audited."
-func mcpWriteManagedConfig(ctx context.Context, pool *pgxpool.Pool, path string, doc mcp.ManagedConfig, action, name, reason string) error {
+// mutating subcommand before it ever reaches here, so in real CLI use this call is ALWAYS
+// audited with the cli:<os-username> actor. A nil pool can only reach here from a pool-free
+// caller (a unit test exercising a mutating function directly, never main.go's real
+// dispatch) — under server_production that is a hard error (mcpPoolRequiredErr); under
+// every other profile the config change still lands, just without the audit row.
+//
+// The audit row and the config change commit in ONE transaction (saveManagedMCPConfig), so
+// an applied-but-unaudited change — the one outcome MCPH-07 forbids — cannot happen.
+func mcpWriteManagedConfig(ctx context.Context, pool *pgxpool.Pool, doc mcp.ManagedConfig, action, name, reason string) error {
 	if pool == nil {
 		profile := config.ParseProfile(os.Getenv("AURA_PROFILE"))
 		if err := mcpPoolRequiredErr(profile, action); err != nil {
 			return err
 		}
-		return mcp.SaveManagedConfig(path, doc)
 	}
-	return mcpmanager.WriteConfigWithAudit(ctx, pool, path, doc, mcpAuditInsertFor(action, name, reason))
+	return saveManagedMCPConfig(ctx, pool, doc, mcpAuditInsertFor(action, name, reason))
 }

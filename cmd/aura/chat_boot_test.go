@@ -283,6 +283,7 @@ func TestBootCloseOnFinalValidateFailure(t *testing.T) {
 // leaked). mcpClosers is empty here (no MCP servers); the drain itself is asserted by
 // TestBootReleaseResourcesDrainsClosersAndClosesPool.
 func TestBootCloseOnCommandHookFailure(t *testing.T) {
+	withMemoryMCPRegistry(t)
 	t.Setenv("AURA_AGENT_COMMAND_HOOKS", "{not-json")
 	pool := unreachablePool(t)
 	cfg := validBootConfig() // RunDir "" => ScanOrphans is a no-op, no pool query

@@ -1,39 +1,46 @@
-package config
+package manager
 
 import (
-	"path/filepath"
 	"reflect"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/mcp"
-	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
 
-// clearMCPEnv zeroes the MCP env knobs so the default-on seam is exercised from a
-// known baseline regardless of the host shell, then points AURA_MCP_CONFIG at path.
-func clearMCPEnv(t *testing.T, path string) {
+// clearMCPEnv zeroes the MCP env knobs so the default-on seam is exercised from a known
+// baseline regardless of the host shell.
+func clearMCPEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("AURA_MCP_SERVERS_JSON", "")
 	t.Setenv("AURA_AGENT_MEMORY_MCP_PORT", "")
-	t.Setenv("AURA_MCP_CONFIG", path)
+}
+
+// runtimePolicies is what every test here asserts on: the policy half of RuntimeSet, which
+// is where default-on injection lands.
+//
+// These tests used to reach it through config.LoadDB(), writing the document to a temp
+// servers.json and letting internal/config read it back. The registry is Postgres now
+// (migration 0101) and the composition takes the document directly, so the round-trip
+// through a file is gone and with it the only reason these lived in internal/config.
+func runtimePolicies(t *testing.T, doc mcp.ManagedConfig) map[string]mcp.ManagedServer {
+	t.Helper()
+	_, policies, err := RuntimeSet(doc)
+	if err != nil {
+		t.Fatalf("RuntimeSet err = %v, want nil", err)
+	}
+	return policies
 }
 
 // TestMemoryDefaultOn proves a fresh machine (empty/absent AURA_MCP_CONFIG) mounts
 // the memory recipe by default — no prior `aura mcp install` (D-08).
 func TestMemoryDefaultOn(t *testing.T) {
-	// Absent file: AURA_MCP_CONFIG points at a path that does not exist.
-	path := filepath.Join(t.TempDir(), "servers.json")
-	clearMCPEnv(t, path)
+	clearMCPEnv(t)
 
-	cfg := LoadDB()
-	if cfg.MCPServersErr != nil {
-		t.Fatalf("loadMCPServers err = %v, want nil", cfg.MCPServersErr)
-	}
-	got, ok := cfg.MCPPolicies["memory"]
+	policies := runtimePolicies(t, mcp.ManagedConfig{})
+	got, ok := policies["memory"]
 	if !ok {
-		t.Fatalf("MCPPolicies missing memory on a fresh machine (default-on, D-08): %#v", cfg.MCPPolicies)
+		t.Fatalf("MCPPolicies missing memory on a fresh machine (default-on, D-08): %#v", policies)
 	}
-	want, ok := mcpmanager.LookupCatalog("memory")
+	want, ok := LookupCatalog("memory")
 	if !ok {
 		t.Fatal("LookupCatalog(\"memory\") not found — recipe must exist (Task 1)")
 	}
@@ -43,7 +50,7 @@ func TestMemoryDefaultOn(t *testing.T) {
 }
 
 // These four cover the container default-on semantics. They used to run against the
-// calculator recipe, which is retired (see mcpmanager.BuiltInCatalog); calendar carries
+// calculator recipe, which is retired (see BuiltInCatalog); calendar carries
 // them now because it is the other in-container default-on whose sidecar ships in the same
 // compose file. The semantics under test are the recipe-independent part: default-on
 // injects, an explicit disable still wins, an env override still wins, and an
@@ -52,19 +59,15 @@ func TestMemoryDefaultOn(t *testing.T) {
 // TestCalendarContainerDefaultOn proves the Aura appliance mounts the calendar recipe by
 // default in-container, without requiring a prior `aura mcp install calendar`.
 func TestCalendarContainerDefaultOn(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "servers.json")
-	clearMCPEnv(t, path)
+	clearMCPEnv(t)
 	t.Setenv("AURA_IN_CONTAINER", "1")
 
-	cfg := LoadDB()
-	if cfg.MCPServersErr != nil {
-		t.Fatalf("loadMCPServers err = %v, want nil", cfg.MCPServersErr)
-	}
-	got, ok := cfg.MCPPolicies["calendar"]
+	policies := runtimePolicies(t, mcp.ManagedConfig{})
+	got, ok := policies["calendar"]
 	if !ok {
-		t.Fatalf("MCPPolicies missing calendar in Aura container: %#v", cfg.MCPPolicies)
+		t.Fatalf("MCPPolicies missing calendar in Aura container: %#v", policies)
 	}
-	want, ok := mcpmanager.LookupCatalog("calendar")
+	want, ok := LookupCatalog("calendar")
 	if !ok {
 		t.Fatal("LookupCatalog(\"calendar\") not found")
 	}
@@ -74,8 +77,7 @@ func TestCalendarContainerDefaultOn(t *testing.T) {
 }
 
 func TestCalendarDefaultOn_RespectsDisable(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "servers.json")
-	clearMCPEnv(t, path)
+	clearMCPEnv(t)
 	t.Setenv("AURA_IN_CONTAINER", "1")
 
 	disabled := false
@@ -88,16 +90,10 @@ func TestCalendarDefaultOn_RespectsDisable(t *testing.T) {
 			Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 		},
 	}}
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save managed config: %v", err)
-	}
 
-	cfg := LoadDB()
-	if cfg.MCPServersErr != nil {
-		t.Fatalf("loadMCPServers err = %v, want nil", cfg.MCPServersErr)
-	}
-	if _, ok := cfg.MCPPolicies["calendar"]; ok {
-		t.Fatalf("calendar mounted despite explicit disable: %#v", cfg.MCPPolicies)
+	policies := runtimePolicies(t, doc)
+	if _, ok := policies["calendar"]; ok {
+		t.Fatalf("calendar mounted despite explicit disable: %#v", policies)
 	}
 }
 
@@ -105,8 +101,7 @@ func TestCalendarDefaultOn_RespectsDisable(t *testing.T) {
 // calendar entry wins in-container — the default-on inject sees the existing managed/policy
 // row and does not overwrite the custom URL.
 func TestCalendarContainerDefaultOn_RespectsExplicitInstall(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "servers.json")
-	clearMCPEnv(t, path)
+	clearMCPEnv(t)
 	t.Setenv("AURA_IN_CONTAINER", "1")
 
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
@@ -117,17 +112,11 @@ func TestCalendarContainerDefaultOn_RespectsExplicitInstall(t *testing.T) {
 			Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 		},
 	}}
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save managed config: %v", err)
-	}
 
-	cfg := LoadDB()
-	if cfg.MCPServersErr != nil {
-		t.Fatalf("loadMCPServers err = %v, want nil", cfg.MCPServersErr)
-	}
-	got, ok := cfg.MCPPolicies["calendar"]
+	policies := runtimePolicies(t, doc)
+	got, ok := policies["calendar"]
 	if !ok {
-		t.Fatalf("explicit calendar install not mounted: %#v", cfg.MCPPolicies)
+		t.Fatalf("explicit calendar install not mounted: %#v", policies)
 	}
 	if got.URL != "http://operator-pim:9999/custom/" {
 		t.Fatalf("calendar URL = %q, want the operator-customized one (explicit wins)", got.URL)
@@ -137,8 +126,7 @@ func TestCalendarContainerDefaultOn_RespectsExplicitInstall(t *testing.T) {
 // TestMemoryDefaultOn_RespectsDisable proves `aura mcp disable memory`
 // (Enabled=false in servers.json) keeps memory unmounted (D-09 respect disable).
 func TestMemoryDefaultOn_RespectsDisable(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "servers.json")
-	clearMCPEnv(t, path)
+	clearMCPEnv(t)
 
 	disabled := false
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
@@ -150,24 +138,17 @@ func TestMemoryDefaultOn_RespectsDisable(t *testing.T) {
 			Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 		},
 	}}
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save managed config: %v", err)
-	}
 
-	cfg := LoadDB()
-	if cfg.MCPServersErr != nil {
-		t.Fatalf("loadMCPServers err = %v, want nil", cfg.MCPServersErr)
-	}
-	if _, ok := cfg.MCPPolicies["memory"]; ok {
-		t.Fatalf("memory mounted despite explicit disable: %#v", cfg.MCPPolicies)
+	policies := runtimePolicies(t, doc)
+	if _, ok := policies["memory"]; ok {
+		t.Fatalf("memory mounted despite explicit disable: %#v", policies)
 	}
 }
 
 // TestMemoryDefaultOn_RespectsExplicitInstall proves an operator-customized memory
 // server wins — the default-on inject does not override an explicit URL (D-08).
 func TestMemoryDefaultOn_RespectsExplicitInstall(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "servers.json")
-	clearMCPEnv(t, path)
+	clearMCPEnv(t)
 
 	const customURL = "http://127.0.0.1:18091/mcp/"
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
@@ -178,17 +159,11 @@ func TestMemoryDefaultOn_RespectsExplicitInstall(t *testing.T) {
 			Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 		},
 	}}
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save managed config: %v", err)
-	}
 
-	cfg := LoadDB()
-	if cfg.MCPServersErr != nil {
-		t.Fatalf("loadMCPServers err = %v, want nil", cfg.MCPServersErr)
-	}
-	got, ok := cfg.MCPPolicies["memory"]
+	policies := runtimePolicies(t, doc)
+	got, ok := policies["memory"]
 	if !ok {
-		t.Fatalf("explicit memory install not mounted: %#v", cfg.MCPPolicies)
+		t.Fatalf("explicit memory install not mounted: %#v", policies)
 	}
 	if got.URL != customURL {
 		t.Fatalf("memory URL = %q, want operator-customized %q (explicit wins)", got.URL, customURL)
@@ -200,8 +175,7 @@ func TestMemoryDefaultOn_RespectsExplicitInstall(t *testing.T) {
 // the inject must consult the unfiltered managed doc, never re-add memory at the
 // catalog URL behind the operator's profile selection.
 func TestMemoryDefaultOn_RespectsProfileExclusion(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "servers.json")
-	clearMCPEnv(t, path)
+	clearMCPEnv(t)
 
 	doc := mcp.ManagedConfig{
 		ActiveProfile: "work",
@@ -223,19 +197,13 @@ func TestMemoryDefaultOn_RespectsProfileExclusion(t *testing.T) {
 			},
 		},
 	}
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save managed config: %v", err)
-	}
 
-	cfg := LoadDB()
-	if cfg.MCPServersErr != nil {
-		t.Fatalf("loadMCPServers err = %v, want nil", cfg.MCPServersErr)
+	policies := runtimePolicies(t, doc)
+	if got, ok := policies["memory"]; ok {
+		t.Fatalf("memory mounted (URL %q) despite active-profile exclusion (CR-01): %#v", got.URL, policies)
 	}
-	if got, ok := cfg.MCPPolicies["memory"]; ok {
-		t.Fatalf("memory mounted (URL %q) despite active-profile exclusion (CR-01): %#v", got.URL, cfg.MCPPolicies)
-	}
-	if _, ok := cfg.MCPPolicies["other"]; !ok {
-		t.Fatalf("profile-selected server missing: %#v", cfg.MCPPolicies)
+	if _, ok := policies["other"]; !ok {
+		t.Fatalf("profile-selected server missing: %#v", policies)
 	}
 }
 
@@ -250,19 +218,15 @@ func TestMemoryDefaultOn_RespectsProfileExclusion(t *testing.T) {
 func TestSidecarRecipesContainerDefaultOn(t *testing.T) {
 	for _, name := range []string{"calendar", "whatsapp"} {
 		t.Run(name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "servers.json")
-			clearMCPEnv(t, path)
+			clearMCPEnv(t)
 			t.Setenv("AURA_IN_CONTAINER", "1")
 
-			cfg := LoadDB()
-			if cfg.MCPServersErr != nil {
-				t.Fatalf("loadMCPServers err = %v, want nil", cfg.MCPServersErr)
-			}
-			got, ok := cfg.MCPPolicies[name]
+			policies := runtimePolicies(t, mcp.ManagedConfig{})
+			got, ok := policies[name]
 			if !ok {
-				t.Fatalf("MCPPolicies missing %s in the appliance container — a paired device with no tools is exactly the trap this closes: %#v", name, cfg.MCPPolicies)
+				t.Fatalf("policies missing %s in the appliance container — a paired device with no tools is exactly the trap this closes: %#v", name, policies)
 			}
-			want, ok := mcpmanager.LookupCatalog(name)
+			want, ok := LookupCatalog(name)
 			if !ok {
 				t.Fatalf("LookupCatalog(%q) not found", name)
 			}
@@ -277,30 +241,25 @@ func TestSidecarRecipesContainerDefaultOn(t *testing.T) {
 // point at compose sidecars that only exist in the appliance stack, so mounting them on a
 // laptop would just log a failed dial every boot.
 func TestSidecarRecipesNotDefaultOnOutsideContainer(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "servers.json")
-	clearMCPEnv(t, path)
+	clearMCPEnv(t)
 	t.Setenv("AURA_IN_CONTAINER", "")
 
-	cfg := LoadDB()
-	if cfg.MCPServersErr != nil {
-		t.Fatalf("loadMCPServers err = %v, want nil", cfg.MCPServersErr)
-	}
+	policies := runtimePolicies(t, mcp.ManagedConfig{})
 	for _, name := range []string{"calendar", "whatsapp", "calculator"} {
-		if _, ok := cfg.MCPPolicies[name]; ok {
-			t.Fatalf("%s default-on outside the container: %#v", name, cfg.MCPPolicies)
+		if _, ok := policies[name]; ok {
+			t.Fatalf("%s default-on outside the container: %#v", name, policies)
 		}
 	}
 	// Memory is the deliberate exception: a core capability on every host.
-	if _, ok := cfg.MCPPolicies["memory"]; !ok {
-		t.Fatalf("memory must stay default-on everywhere: %#v", cfg.MCPPolicies)
+	if _, ok := policies["memory"]; !ok {
+		t.Fatalf("memory must stay default-on everywhere: %#v", policies)
 	}
 }
 
 // TestWhatsAppDefaultOn_RespectsDisable proves default-on never overrides the operator:
 // an explicit `aura mcp disable whatsapp` still keeps it unmounted.
 func TestWhatsAppDefaultOn_RespectsDisable(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "servers.json")
-	clearMCPEnv(t, path)
+	clearMCPEnv(t)
 	t.Setenv("AURA_IN_CONTAINER", "1")
 
 	disabled := false
@@ -313,15 +272,9 @@ func TestWhatsAppDefaultOn_RespectsDisable(t *testing.T) {
 			Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 		},
 	}}
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save managed config: %v", err)
-	}
 
-	cfg := LoadDB()
-	if cfg.MCPServersErr != nil {
-		t.Fatalf("loadMCPServers err = %v, want nil", cfg.MCPServersErr)
-	}
-	if _, ok := cfg.MCPPolicies["whatsapp"]; ok {
-		t.Fatalf("whatsapp mounted despite explicit disable: %#v", cfg.MCPPolicies)
+	policies := runtimePolicies(t, doc)
+	if _, ok := policies["whatsapp"]; ok {
+		t.Fatalf("whatsapp mounted despite explicit disable: %#v", policies)
 	}
 }

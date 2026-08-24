@@ -1,10 +1,7 @@
 package mcp
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -99,72 +96,26 @@ type ManagedRuntime struct {
 	Profile string   `json:"profile,omitempty"`
 }
 
-// ManagedConfigPath returns Aura's managed MCP config path. AURA_MCP_CONFIG is a
-// test/operator override; otherwise the file lives beside Aura's other user config.
-func ManagedConfigPath() (string, error) {
-	if path := strings.TrimSpace(os.Getenv("AURA_MCP_CONFIG")); path != "" {
-		return path, nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("resolve home dir: %w", err)
-	}
-	return filepath.Join(home, ".aura", "mcp", "servers.json"), nil
-}
-
-// LoadManagedConfig reads path, returning an empty registry when it does not yet
-// exist. A malformed file is an error because chat/tools must not silently ignore
-// operator-intended MCP servers.
-func LoadManagedConfig(path string) (ManagedConfig, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // operator-owned config path
-	if os.IsNotExist(err) {
-		return ManagedConfig{MCPServers: map[string]ManagedServer{}}, nil
-	}
-	if err != nil {
-		return ManagedConfig{}, fmt.Errorf("read %s: %w", path, err)
-	}
-	if len(strings.TrimSpace(string(data))) == 0 {
-		return ManagedConfig{MCPServers: map[string]ManagedServer{}}, nil
-	}
-	var doc ManagedConfig
-	if err := json.Unmarshal(data, &doc); err != nil {
-		return ManagedConfig{}, fmt.Errorf("parse %s: %w", path, err)
-	}
-	normalizeManagedConfig(&doc)
-	if err := validateManagedServers(doc.MCPServers); err != nil {
-		return ManagedConfig{}, err
-	}
-	return doc, nil
-}
-
-// SaveManagedConfig writes path as indented JSON with user-only permissions. MCP
-// env entries commonly hold tokens, so the file should not be group/world-readable.
-func SaveManagedConfig(path string, doc ManagedConfig) error {
-	normalizeManagedConfig(&doc)
+// PrepareForWrite normalizes doc and refuses it if any server is malformed or has a launch
+// declaration shaped like a backdoor. Every write to the registry goes through it.
+//
+// It is deliberately NOT run on reads. A shape refusal on read would let ONE planted entry
+// make the whole registry unreadable and take every healthy server down with it; refusing
+// the write while letting the read through keeps the spawn-time checkpoint
+// (OpenSDKSessionForConfig) the loud one. See stdio_shape.go for what "backdoor-shaped"
+// means and why the list is three shapes rather than a general policy.
+func PrepareForWrite(doc *ManagedConfig) error {
+	normalizeManagedConfig(doc)
 	if err := validateManagedServers(doc.MCPServers); err != nil {
 		return err
 	}
-	// The save-time half of stdio_shape.go. It sits here and not in
-	// validateManagedServers on purpose: that validator also runs on LoadManagedConfig,
-	// where a shape refusal would make ONE planted entry render the whole registry
-	// unreadable and take every healthy server down with it. Refusing the write while
-	// letting the read through is what keeps the spawn-time checkpoint the loud one.
-	if err := checkManagedServersShape(doc.MCPServers); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("create MCP config dir: %w", err)
-	}
-	data, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
-		return fmt.Errorf("encode MCP config: %w", err)
-	}
-	data = append(data, '\n')
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	_ = os.Chmod(path, 0o600) // best effort on Windows; enforced on POSIX
-	return nil
+	return checkManagedServersShape(doc.MCPServers)
+}
+
+// Normalize fills in a document's defaults without validating it — the read-side half, used
+// where a malformed entry must not cost the caller every other server.
+func Normalize(doc *ManagedConfig) {
+	normalizeManagedConfig(doc)
 }
 
 // EnabledServers returns only enabled servers as runtime launch configs.

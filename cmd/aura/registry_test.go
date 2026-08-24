@@ -130,15 +130,16 @@ func TestValidate_AllDeferredFixtureFails(t *testing.T) {
 }
 
 func TestBuildRegistryWithMCP_MountsConfiguredServer(t *testing.T) {
-	cfg := &config.Config{
-		MCPServers: map[string]mcp.ServerConfig{
-			"calculator": {
-				Command: os.Args[0],
-				Args:    []string{"-test.run=TestMCPServerHelperProcess", "--"},
-				Env:     []string{"AURA_MCP_HELPER=1"},
-			},
+	withMemoryMCPRegistry(t)
+	seedMCPRegistry(t, mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
+		"calculator": {
+			Command: os.Args[0],
+			Args:    []string{"-test.run=TestMCPServerHelperProcess", "--"},
+			Env:     []string{"AURA_MCP_HELPER=1"},
+			Source:  "manual",
 		},
-	}
+	}})
+	cfg := config.LoadDB()
 
 	reg, _, closers, err := buildRegistryWithMCP(context.Background(), cfg, nil, nil, nil)
 	if err != nil {
@@ -163,15 +164,15 @@ func TestBuildRegistryWithMCP_MountsConfiguredServer(t *testing.T) {
 func TestBuildRegistryWithMCP_MountsManagedStreamableHTTPServer(t *testing.T) {
 	server := newMCPHTTPTestServer(t)
 	defer server.Close()
-	cfg := &config.Config{
-		MCPPolicies: map[string]mcp.ManagedServer{
-			"remote": {
-				Type:  mcp.ServerTypeStreamableHTTP,
-				URL:   server.URL,
-				Trust: mcp.ManagedTrust{Class: mcp.TrustRemoteHTTP},
-			},
+	withMemoryMCPRegistry(t)
+	seedMCPRegistry(t, mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
+		"remote": {
+			Type:  mcp.ServerTypeStreamableHTTP,
+			URL:   server.URL,
+			Trust: mcp.ManagedTrust{Class: mcp.TrustRemoteHTTP},
 		},
-	}
+	}})
+	cfg := config.LoadDB()
 
 	reg, _, closers, err := buildRegistryWithMCP(context.Background(), cfg, nil, nil, nil)
 	if err != nil {
@@ -200,16 +201,16 @@ func TestBuildRegistryWithMCPRetainsManagedMemoryHost(t *testing.T) {
 	)
 	server := newMCPHTTPTestServer(t)
 	defer server.Close()
-	cfg := &config.Config{
-		MCPPolicies: map[string]mcp.ManagedServer{
-			"memory": {
-				Type:   mcp.ServerTypeStreamableHTTP,
-				URL:    server.URL,
-				Source: mcp.SourceRecipeMemory,
-				Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
-			},
+	withMemoryMCPRegistry(t)
+	seedMCPRegistry(t, mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
+		"memory": {
+			Type:   mcp.ServerTypeStreamableHTTP,
+			URL:    server.URL,
+			Source: mcp.SourceRecipeMemory,
+			Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 		},
-	}
+	}})
+	cfg := config.LoadDB()
 
 	_, handles, closers, err := buildRegistryWithMCP(context.Background(), cfg, nil, nil, nil)
 	if err != nil {

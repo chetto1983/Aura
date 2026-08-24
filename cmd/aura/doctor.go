@@ -13,7 +13,6 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/mcp"
-	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
 
 type doctorProbe func(context.Context, *config.Config) (string, error)
@@ -125,7 +124,7 @@ func defaultDoctorProbeEmbed(ctx context.Context, cfg *config.Config) (string, e
 // single unreachable server fails only its own name in the aggregated detail,
 // never the others.
 func defaultDoctorProbeMCPServers(ctx context.Context, cfg *config.Config) (string, error) {
-	runnable, err := doctorRuntimeMCPServers(cfg)
+	runnable, err := doctorRuntimeMCPServers()
 	if err != nil {
 		return "", err
 	}
@@ -157,18 +156,13 @@ func defaultDoctorProbeMCPServers(ctx context.Context, cfg *config.Config) (stri
 	return fmt.Sprintf("%d/%d HTTP MCP servers reachable", len(names), len(names)), nil
 }
 
-func doctorRuntimeMCPServers(cfg *config.Config) (map[string]mcp.ManagedServer, error) {
-	if cfg != nil && cfg.MCPServersErr != nil {
-		return nil, cfg.MCPServersErr
-	}
-	if cfg != nil && (cfg.MCPPolicies != nil || cfg.MCPServers != nil) {
-		return cfg.MCPPolicies, nil
-	}
-	doc, _, err := loadManagedMCPConfig()
-	if err != nil {
-		return nil, err
-	}
-	return mcpmanager.RunnableManagedServers(doc)
+// doctorRuntimeMCPServers resolves the servers this host would mount. It is a var, not a
+// func, so the probe's own tests can drive it without a live registry — the registry is a
+// Postgres table now, and a doctor test that needed a database to check its aggregation
+// arithmetic would be a database test wearing a unit test's name.
+var doctorRuntimeMCPServers = func() (map[string]mcp.ManagedServer, error) {
+	_, policies, err := mcpRuntimeSet()
+	return policies, err
 }
 
 func doctorProbeLLMKey(context.Context, *config.Config) (string, error) {

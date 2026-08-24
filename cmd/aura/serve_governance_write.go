@@ -25,13 +25,17 @@ import (
 // A nil pool (no DB) leaves the provider unset → the routes answer 503. Boot is best-effort
 // (the SetGovernanceProviders precedent): a wiring failure never aborts daemon boot.
 
-// mcpWriteAdapter satisfies agui.MCPWriteProvider over the managed-config path + the shared
-// pool. path is captured once at boot (the managed servers.json destination); the adapter
-// reloads its contents per call so each mutation is applied over the freshest config.
+// mcpWriteAdapter satisfies agui.MCPWriteProvider over the Postgres registry + the shared
+// pool. It holds no path and caches no document: every method reloads the registry, so a
+// mutation is always applied over the freshest servers.
 type mcpWriteAdapter struct {
 	pool *pgxpool.Pool
-	path string
 }
+
+// mcpRegistryDestination is what the install preview names as the place the server lands.
+// It used to be a filesystem path, which was only ever meaningful to somebody with a shell
+// inside the container; the registry is a table, and saying so is both shorter and true.
+const mcpRegistryDestination = "postgres: aura.mcp_server"
 
 // mcpProbeTimeout bounds the post-write live tool-count probe (parity with the read board's
 // 3s per-row deadline). A hung/dead server fails only its own probe, fail-soft.
@@ -57,7 +61,7 @@ func (a mcpWriteAdapter) InstallServer(ctx context.Context, actor string, req ag
 	doc.MCPServers[name] = server
 	joinActiveProfile(&doc, name)
 
-	if err := mcpmanager.WriteConfigWithAudit(ctx, a.pool, a.path, doc, mcpmanager.MCPAuditInsert{
+	if err := a.save(ctx, doc, mcpmanager.MCPAuditInsert{
 		ActorIdentityID: actor, Action: "install", ServerName: name,
 	}); err != nil {
 		return agui.MCPWriteResult{}, err
@@ -68,7 +72,7 @@ func (a mcpWriteAdapter) InstallServer(ctx context.Context, actor string, req ag
 		Name:          name,
 		Server:        server,
 		CLIEquivalent: cliEquiv,
-		Destination:   a.path,
+		Destination:   mcpRegistryDestination,
 		Warnings:      placeholderWarnings(req.Recipe, server.Env),
 		Probe:         probe,
 	}, nil
@@ -82,7 +86,7 @@ func (a mcpWriteAdapter) SetServerEnv(ctx context.Context, actor, name string, s
 	if err := mcpmanager.SetServerEnv(&doc, name, submitted); err != nil {
 		return agui.MCPWriteResult{}, mapManagerErr(err)
 	}
-	if err := mcpmanager.WriteConfigWithAudit(ctx, a.pool, a.path, doc, mcpmanager.MCPAuditInsert{
+	if err := a.save(ctx, doc, mcpmanager.MCPAuditInsert{
 		ActorIdentityID: actor, Action: "edit", ServerName: name,
 	}); err != nil {
 		return agui.MCPWriteResult{}, err
@@ -117,7 +121,7 @@ func (a mcpWriteAdapter) TrustApprove(ctx context.Context, actor, name, class, r
 	}
 	doc.MCPServers[name] = server
 
-	if err := mcpmanager.WriteConfigWithAudit(ctx, a.pool, a.path, doc, mcpmanager.MCPAuditInsert{
+	if err := a.save(ctx, doc, mcpmanager.MCPAuditInsert{
 		ActorIdentityID: actor, Action: "trust", ServerName: name, Reason: reason,
 	}); err != nil {
 		return agui.MCPWriteResult{}, err
@@ -155,7 +159,7 @@ func (a mcpWriteAdapter) SetEnabled(ctx context.Context, actor, name string, ena
 	if enabled {
 		action = "enable"
 	}
-	if err := mcpmanager.WriteConfigWithAudit(ctx, a.pool, a.path, doc, mcpmanager.MCPAuditInsert{
+	if err := a.save(ctx, doc, mcpmanager.MCPAuditInsert{
 		ActorIdentityID: actor, Action: action, ServerName: name,
 	}); err != nil {
 		return agui.MCPWriteResult{}, err
@@ -196,15 +200,21 @@ func (a mcpWriteAdapter) RemoveServer(ctx context.Context, actor, name string) e
 		cfg.Servers = removeString(cfg.Servers, name)
 		doc.Profiles[profile] = cfg
 	}
-	return mcpmanager.WriteConfigWithAudit(ctx, a.pool, a.path, doc, mcpmanager.MCPAuditInsert{
+	return a.save(ctx, doc, mcpmanager.MCPAuditInsert{
 		ActorIdentityID: actor, Action: "remove", ServerName: name,
 	})
 }
 
-// load reads the managed config from disk per call (never a cached doc) so each mutation is
-// applied over the freshest config — a concurrent CLI/operator edit is not clobbered.
+// save applies doc to the registry and records its audit row in one transaction, so a
+// governance mutation is never applied without its ledger entry (MCPH-07).
+func (a mcpWriteAdapter) save(ctx context.Context, doc mcp.ManagedConfig, in mcpmanager.MCPAuditInsert) error {
+	return saveManagedMCPConfig(ctx, a.pool, doc, in)
+}
+
+// load reads the registry per call (never a cached doc) so each mutation is applied over
+// the freshest config — a concurrent CLI/operator edit is not clobbered.
 func (a mcpWriteAdapter) load() (mcp.ManagedConfig, error) {
-	doc, err := mcp.LoadManagedConfig(a.path)
+	doc, err := loadManagedMCPConfig()
 	if err != nil {
 		return mcp.ManagedConfig{}, fmt.Errorf("load managed MCP config: %w", err)
 	}
@@ -327,15 +337,11 @@ func mapManagerErr(err error) error {
 }
 
 // buildMCPWriteProvider constructs the concrete MCP write provider best-effort: a nil pool
-// (no DB) or an unresolvable managed-config path leaves it nil → the routes answer 503.
-// Never aborts boot (the SetGovernanceProviders precedent).
+// (no DB) leaves it nil → the routes answer 503. Never aborts boot (the
+// SetGovernanceProviders precedent).
 func buildMCPWriteProvider(pool *pgxpool.Pool) (agui.MCPWriteProvider, error) {
 	if pool == nil {
 		return nil, nil
 	}
-	path, err := mcp.ManagedConfigPath()
-	if err != nil {
-		return nil, err
-	}
-	return mcpWriteAdapter{pool: pool, path: path}, nil
+	return mcpWriteAdapter{pool: pool}, nil
 }

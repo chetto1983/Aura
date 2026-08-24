@@ -96,7 +96,7 @@ func TestMCPCLIAuditTrustAppendsOneRow(t *testing.T) {
 	defer cancel()
 
 	pool := mcpAuditMigratedPool(t)
-	path := withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 	store := mcpmanager.NewMCPAuditStore(pool)
 
 	name := "audit-" + uuid.Must(uuid.NewV7()).String()
@@ -174,10 +174,7 @@ func TestMCPCLIAuditTrustAppendsOneRow(t *testing.T) {
 		t.Fatal("repeat mutation must append a DISTINCT second row, not reuse the first")
 	}
 
-	doc, err := mcp.LoadManagedConfig(path)
-	if err != nil {
-		t.Fatalf("load config after repeat trust: %v", err)
-	}
+	doc := readMCPRegistry(t)
 	server, ok := doc.MCPServers[name]
 	if !ok {
 		t.Fatalf("server %q missing from config after repeat trust", name)

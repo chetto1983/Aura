@@ -162,7 +162,7 @@ func withMemoryServerAt(t *testing.T, url string) {
 		"AURA_AGENT_MEMORY_MCP_AUTH_SECRET",
 		"memory-command-test-secret-that-is-at-least-32-bytes",
 	)
-	path := withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
 		memoryServerName: {
 			Type:   mcp.ServerTypeStreamableHTTP,
@@ -171,9 +171,7 @@ func withMemoryServerAt(t *testing.T, url string) {
 			Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 		},
 	}}
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save managed config: %v", err)
-	}
+	seedMCPRegistry(t, doc)
 }
 
 // scopedCtx carries an identity the way runMemory's withOperatorIdentity does in
@@ -399,7 +397,7 @@ func TestMemoryNotConfigured(t *testing.T) {
 	// Memory is default-on (15-02 inject-unless-disabled), so an empty managed
 	// config still resolves the catalog recipe. The unresolvable state is an
 	// explicit `aura mcp disable memory` (Enabled=false, D-09).
-	path := withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 	disabled := false
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
 		memoryServerName: {
@@ -410,9 +408,7 @@ func TestMemoryNotConfigured(t *testing.T) {
 			Enabled: &disabled,
 		},
 	}}
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save managed config: %v", err)
-	}
+	seedMCPRegistry(t, doc)
 	var buf bytes.Buffer
 	err := runMemoryCommand(scopedCtx(), []string{"search", "x"}, &buf)
 	if err == nil {

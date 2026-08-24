@@ -13,7 +13,7 @@ import (
 )
 
 func TestMCPDoctorWhatsAppReportsBridgeHealth(t *testing.T) {
-	path := withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
 		"whatsapp": {
 			Command: os.Args[0],
@@ -23,9 +23,7 @@ func TestMCPDoctorWhatsAppReportsBridgeHealth(t *testing.T) {
 			Source:  "recipe:whatsapp",
 		},
 	}}
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save managed config: %v", err)
-	}
+	seedMCPRegistry(t, doc)
 
 	bridge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/api/status" {
@@ -55,7 +53,7 @@ func TestMCPDoctorWhatsAppReportsBridgeHealth(t *testing.T) {
 }
 
 func TestMCPDoctorWhatsAppHTTPRecipeReportsBridgeHealth(t *testing.T) {
-	path := withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 	server := newMCPHTTPTestServer(t)
 	defer server.Close()
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
@@ -66,9 +64,7 @@ func TestMCPDoctorWhatsAppHTTPRecipeReportsBridgeHealth(t *testing.T) {
 			Source: "recipe:whatsapp",
 		},
 	}}
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save managed config: %v", err)
-	}
+	seedMCPRegistry(t, doc)
 
 	bridge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/api/status" {

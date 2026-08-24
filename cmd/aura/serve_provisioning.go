@@ -16,7 +16,6 @@ import (
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/idroot"
-	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/objectstore/garageadmin"
 )
@@ -81,17 +80,13 @@ func newFilesystemProvisionAdapter(cfg *config.Config) filesystemProvisionAdapte
 	return filesystemProvisionAdapter{roots: identityDirRoots(cfg)}
 }
 
-// identityDirRoots resolves the four per-identity storage bases from cfg + the mcp/skills
-// package conventions (NOT a temp dir): the mcp base honors mcp.ManagedConfigPath (and thus
-// AURA_MCP_CONFIG), skills is $AURA_SKILLS_DIR, agents is $AURA_PROFILE_DIR, pyscripts is
-// the home-derived ~/.aura/pyscripts (mirroring internal/skills defaultPyScriptsDir).
+// identityDirRoots resolves the four per-identity storage bases from cfg + the skills
+// package conventions (NOT a temp dir): skills is $AURA_SKILLS_DIR, agents is
+// $AURA_PROFILE_DIR, and mcp/pyscripts are home-derived (mirroring internal/skills
+// defaultPyScriptsDir).
 func identityDirRoots(cfg *config.Config) map[string]string {
-	mcpBase := auraSubdir("mcp")
-	if p, err := mcp.ManagedConfigPath(); err == nil {
-		mcpBase = filepath.Dir(p)
-	}
 	return map[string]string{
-		"mcp":       mcpBase,
+		"mcp":       auraSubdir("mcp"),
 		"skills":    cfg.SkillsDir,
 		"pyscripts": auraSubdir("pyscripts"),
 		"agents":    cfg.ProfileDir,

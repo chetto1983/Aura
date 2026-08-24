@@ -189,7 +189,7 @@ func TestMCPInspectionUsesConfiguredProbeTimeout(t *testing.T) {
 // a reachable HTTP server's probe column reports ok, a dead one reports a failure —
 // neither replaces the trust/runtime/profiles columns already there.
 func TestMCPStatusReflectsLiveHTTPProbe(t *testing.T) {
-	path := withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 	srv := newMCPHTTPTestServer(t)
 	defer srv.Close()
 
@@ -197,9 +197,7 @@ func TestMCPStatusReflectsLiveHTTPProbe(t *testing.T) {
 		"live": {Type: mcp.ServerTypeStreamableHTTP, URL: srv.URL, Source: "manual:http", Trust: mcp.ManagedTrust{Class: mcp.TrustRemoteHTTP}},
 		"dead": {Type: mcp.ServerTypeStreamableHTTP, URL: "http://127.0.0.1:0/mcp", Source: "manual:http", Trust: mcp.ManagedTrust{Class: mcp.TrustRemoteHTTP}},
 	}}
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
+	seedMCPRegistry(t, doc)
 
 	var out bytes.Buffer
 	if err := runMCPCommand(context.Background(), nil, []string{"status", "--json"}, &out); err != nil {
@@ -225,15 +223,13 @@ func TestMCPStatusReflectsLiveHTTPProbe(t *testing.T) {
 // listing (Rule 2 addition: mirrors mcpDoctorAll's own disabled/blocked skip so a
 // blocked stdio command is never spawned just to render a status table).
 func TestMCPStatusSkipsProbingDisabledAndBlockedServers(t *testing.T) {
-	path := withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 	disabled := false
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
 		"off":     {Command: "aura-nonexistent-mcp-binary-xyz", Source: "manual", Enabled: &disabled, Trust: mcp.ManagedTrust{Class: mcp.TrustTrustedLocal}},
 		"blocked": {Command: "aura-nonexistent-mcp-binary-xyz", Source: "manual", Trust: mcp.ManagedTrust{Class: mcp.TrustBlocked}},
 	}}
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
+	seedMCPRegistry(t, doc)
 
 	var out bytes.Buffer
 	if err := runMCPCommand(context.Background(), nil, []string{"status", "--json"}, &out); err != nil {

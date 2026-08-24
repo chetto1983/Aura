@@ -44,7 +44,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestBuildRegistryBlockedManagedServerNotLaunched(t *testing.T) {
-	path := withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 	// Disable the default-on memory recipe (15-02 / D-08) so this test isolates the
 	// blocked-server assertion: with memory off, the ONLY policy is the blocked
 	// server, which must be filtered out (no closer). The memory default-on +
@@ -54,14 +54,16 @@ func TestBuildRegistryBlockedManagedServerNotLaunched(t *testing.T) {
 		"blocked": {Command: "aura-nonexistent-mcp-binary-xyz", Source: "manual", Trust: mcp.ManagedTrust{Class: mcp.TrustBlocked}},
 		"memory":  {Type: mcp.ServerTypeStreamableHTTP, URL: "http://127.0.0.1:8091/mcp/", Source: "recipe:memory", Enabled: &disabled, Trust: mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe}},
 	}}
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
+	seedMCPRegistry(t, doc)
 	cfg := config.LoadDB()
-	if _, ok := cfg.MCPServers["blocked"]; ok {
+	servers, policies, err := mcpRuntimeSet()
+	if err != nil {
+		t.Fatalf("mcpRuntimeSet: %v", err)
+	}
+	if _, ok := servers["blocked"]; ok {
 		t.Fatal("blocked managed server must be filtered before chat boot")
 	}
-	if _, ok := cfg.MCPPolicies["memory"]; ok {
+	if _, ok := policies["memory"]; ok {
 		t.Fatal("explicitly disabled memory must not reach policies")
 	}
 	reg, _, closers, err := buildRegistryWithMCP(context.Background(), cfg, nil, nil, nil)
@@ -80,12 +82,11 @@ func TestBuildRegistryBlockedManagedServerNotLaunched(t *testing.T) {
 // the non-deferred built-ins still registered (Pitfall 6 — a boot where every MCP
 // server is dropped still passes Registry.Validate via the built-ins).
 func TestBuildRegistryFailSoft(t *testing.T) {
-	cfg := &config.Config{
-		MCPServers: map[string]mcp.ServerConfig{
-			"broken": {Command: "aura-nonexistent-mcp-binary-xyz"},
-		},
-	}
-	reg, _, closers, err := buildRegistryWithMCP(context.Background(), cfg, nil, nil, nil)
+	withMemoryMCPRegistry(t)
+	seedMCPRegistry(t, withDefaultOnRecipesOff(mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
+		"broken": {Command: "aura-nonexistent-mcp-binary-xyz", Source: "manual"},
+	}}))
+	reg, _, closers, err := buildRegistryWithMCP(context.Background(), config.LoadDB(), nil, nil, nil)
 	defer func() { _ = closeMCPServers(closers) }()
 	if err != nil {
 		t.Fatalf("a broken MCP server must NOT abort boot (D-21); got err=%v", err)
@@ -117,20 +118,22 @@ func TestBuildRegistryFailSoft(t *testing.T) {
 func TestBuildRegistryWithMCP_HungServerDroppedHealthySurvives(t *testing.T) {
 	t.Setenv("AURA_MCP_MOUNT_TIMEOUT", "1")
 
-	cfg := &config.Config{
-		MCPServers: map[string]mcp.ServerConfig{
-			"calculator": {
-				Command: os.Args[0],
-				Args:    []string{"-test.run=TestMCPServerHelperProcess", "--"},
-				Env:     []string{"AURA_MCP_HELPER=1"},
-			},
-			"hung": {
-				Command: os.Args[0],
-				Args:    []string{"-test.run=TestMCPServerHelperProcess", "--"},
-				Env:     []string{"AURA_MCP_HELPER=1", "AURA_MCP_HELPER_MODE=hang"},
-			},
+	withMemoryMCPRegistry(t)
+	seedMCPRegistry(t, withDefaultOnRecipesOff(mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
+		"calculator": {
+			Command: os.Args[0],
+			Args:    []string{"-test.run=TestMCPServerHelperProcess", "--"},
+			Env:     []string{"AURA_MCP_HELPER=1"},
+			Source:  "manual",
 		},
-	}
+		"hung": {
+			Command: os.Args[0],
+			Args:    []string{"-test.run=TestMCPServerHelperProcess", "--"},
+			Env:     []string{"AURA_MCP_HELPER=1", "AURA_MCP_HELPER_MODE=hang"},
+			Source:  "manual",
+		},
+	}}))
+	cfg := config.LoadDB()
 
 	type buildResult struct {
 		reg     *tools.Registry

@@ -1,12 +1,14 @@
-package config
+package manager
 
 import (
 	"maps"
 	"os"
 
 	"github.com/chetto1983/aura/internal/mcp"
-	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
+
+// runtimeset.go answers "what does this host mount?" — the registry's servers plus the
+// catalog recipes that are on by default.
 
 // Default-on catalog keys. Memory is a core capability EVERYWHERE; the rest are
 // default-on only inside the Aura appliance image, where each one's backing sidecar
@@ -36,29 +38,25 @@ const (
 // wins, and a missing sidecar fail-softs to a WARN drop at mount like any other server.
 var containerDefaultOnRecipes = []string{calendarRecipeName, whatsappRecipeName}
 
-// loadMCPServers composes the runtime MCP server set from the managed config doc plus the
-// default-on recipes (D-08). It returns the runnable servers + the policy map (managed
-// recipes the operator may enable/disable).
+// RuntimeSet composes what this host will actually mount from `managed`: the runnable
+// server configs plus the policy map (the managed recipes an operator may enable/disable).
 //
-// There was a second source here: AURA_MCP_SERVERS_JSON, an env-declared override that
-// could add servers and shadow managed ones. It is gone. A second way to declare the same
-// thing is a second thing to keep in sync, and it bought nothing `aura mcp add` does not —
-// while its rows arrived with a source no write path could edit, so a server declared that
-// way appeared on the board and refused every mutation.
-func loadMCPServers() (map[string]mcp.ServerConfig, map[string]mcp.ManagedServer, error) {
-	path, err := mcp.ManagedConfigPath()
+// It takes the document rather than fetching one because there is exactly one place that
+// knows where servers live — the registry — and this package is not it. It used to read the
+// managed JSON file itself, from inside internal/config, which is how the board and the
+// write path ended up answering from two different copies of the same registry.
+//
+// There was also a second declaration source here: AURA_MCP_SERVERS_JSON, an env override
+// that could add servers and shadow managed ones. It is gone. A second way to declare the
+// same thing is a second thing to keep in sync, and it bought nothing `aura mcp add` does
+// not — while its rows arrived with a source no write path could edit, so a server declared
+// that way appeared on the board and refused every mutation.
+func RuntimeSet(managed mcp.ManagedConfig) (map[string]mcp.ServerConfig, map[string]mcp.ManagedServer, error) {
+	managedServers, err := RuntimeServers(managed)
 	if err != nil {
 		return nil, nil, err
 	}
-	managed, err := mcp.LoadManagedConfig(path)
-	if err != nil {
-		return nil, nil, err
-	}
-	managedServers, err := mcpmanager.RuntimeServers(managed)
-	if err != nil {
-		return nil, nil, err
-	}
-	runnableManaged, err := mcpmanager.RunnableManagedServers(managed)
+	runnableManaged, err := RunnableManagedServers(managed)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -81,15 +79,13 @@ func loadMCPServers() (map[string]mcp.ServerConfig, map[string]mcp.ManagedServer
 // `aura mcp install`.
 //
 // Precedence (highest first):
-//  1. An AURA_MCP_SERVERS_JSON override (already landed in envOverridden, with the
-//     overlapping policy deleted by the caller) wins — do not re-inject.
-//  2. ANY explicit entry in the managed doc wins — enabled (already in policies),
+//  1. ANY explicit entry in the managed doc wins — enabled (already in policies),
 //     disabled (`aura mcp disable <name>`), trust-blocked, or excluded by the active
 //     profile. The check is against the UNFILTERED managed.MCPServers, not the
 //     profile-filtered policies map: a customized URL excluded by the active profile must
 //     NOT be silently replaced by the catalog recipe, and a profile that excludes the
 //     server keeps it unmounted (CR-01).
-//  3. Otherwise (no operator entry at all) inject the catalog recipe.
+//  2. Otherwise (no operator entry at all) inject the catalog recipe.
 func injectDefaultOn(policies map[string]mcp.ManagedServer, managed mcp.ManagedConfig, name string) {
 	if _, ok := policies[name]; ok {
 		return
@@ -99,7 +95,7 @@ func injectDefaultOn(policies map[string]mcp.ManagedServer, managed mcp.ManagedC
 		// enabled+active case already returned via policies above).
 		return
 	}
-	recipe, ok := mcpmanager.LookupCatalog(name)
+	recipe, ok := LookupCatalog(name)
 	if !ok {
 		return
 	}

@@ -147,7 +147,7 @@ func mcpInstall(ctx context.Context, pool *pgxpool.Pool, args []string, out io.W
 	if len(args) == 2 {
 		name = strings.TrimSpace(args[1])
 	}
-	doc, path, err := loadManagedMCPConfig()
+	doc, err := loadManagedMCPConfig()
 	if err != nil {
 		return err
 	}
@@ -159,10 +159,10 @@ func mcpInstall(ctx context.Context, pool *pgxpool.Pool, args []string, out io.W
 	}
 	doc.MCPServers[name] = recipe.Server
 	ensureProfileMembership(&doc, doc.ActiveProfileName(), name)
-	if err := mcpWriteManagedConfig(ctx, pool, path, doc, "install", name, ""); err != nil {
+	if err := mcpWriteManagedConfig(ctx, pool, doc, "install", name, ""); err != nil {
 		return err
 	}
-	return writef(out, "ok: installed %s in %s\n", name, path)
+	return writef(out, "ok: installed %s\n", name)
 }
 
 func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Writer) error {
@@ -228,7 +228,7 @@ func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Write
 		return fmt.Errorf("usage: aura mcp add <name> [--env KEY=VALUE] [--disabled] -- <command> [args...]")
 	}
 	command, commandArgs := splitCommandParts(commandParts)
-	doc, path, err := loadManagedMCPConfig()
+	doc, err := loadManagedMCPConfig()
 	if err != nil {
 		return err
 	}
@@ -247,14 +247,14 @@ func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Write
 		Trust:   mcp.ManagedTrust{Class: trustClass},
 	}
 	ensureProfileMembership(&doc, doc.ActiveProfileName(), name)
-	if err := mcpWriteManagedConfig(ctx, pool, path, doc, "add", name, ""); err != nil {
+	if err := mcpWriteManagedConfig(ctx, pool, doc, "add", name, ""); err != nil {
 		return err
 	}
-	return writef(out, "ok: added %s in %s\n", name, path)
+	return writef(out, "ok: added %s\n", name)
 }
 
 func mcpList(out io.Writer) error {
-	doc, _, err := loadManagedMCPConfig()
+	doc, err := loadManagedMCPConfig()
 	if err != nil {
 		return err
 	}
@@ -283,7 +283,7 @@ func mcpDoctor(ctx context.Context, args []string, out io.Writer) error {
 		return fmt.Errorf("usage: aura mcp doctor <name>|--all")
 	}
 	name := args[0]
-	doc, _, err := loadManagedMCPConfig()
+	doc, err := loadManagedMCPConfig()
 	if err != nil {
 		return err
 	}
@@ -337,7 +337,7 @@ func mcpSetEnabled(ctx context.Context, pool *pgxpool.Pool, args []string, enabl
 		return fmt.Errorf("usage: aura mcp enable|disable <name>")
 	}
 	name := args[0]
-	doc, path, err := loadManagedMCPConfig()
+	doc, err := loadManagedMCPConfig()
 	if err != nil {
 		return err
 	}
@@ -353,7 +353,7 @@ func mcpSetEnabled(ctx context.Context, pool *pgxpool.Pool, args []string, enabl
 		action = "enable"
 		state = "enabled"
 	}
-	if err := mcpWriteManagedConfig(ctx, pool, path, doc, action, name, ""); err != nil {
+	if err := mcpWriteManagedConfig(ctx, pool, doc, action, name, ""); err != nil {
 		return err
 	}
 	return writef(out, "ok: %s %s\n", state, name)
@@ -364,7 +364,7 @@ func mcpRemove(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Wr
 		return fmt.Errorf("usage: aura mcp remove <name>")
 	}
 	name := args[0]
-	doc, path, err := loadManagedMCPConfig()
+	doc, err := loadManagedMCPConfig()
 	if err != nil {
 		return err
 	}
@@ -372,25 +372,10 @@ func mcpRemove(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Wr
 		return fmt.Errorf("MCP server %q not found in managed config", name)
 	}
 	delete(doc.MCPServers, name)
-	if err := mcpWriteManagedConfig(ctx, pool, path, doc, "remove", name, ""); err != nil {
+	if err := mcpWriteManagedConfig(ctx, pool, doc, "remove", name, ""); err != nil {
 		return err
 	}
 	return writef(out, "ok: removed %s\n", name)
-}
-
-func loadManagedMCPConfig() (mcp.ManagedConfig, string, error) {
-	path, err := mcp.ManagedConfigPath()
-	if err != nil {
-		return mcp.ManagedConfig{}, "", err
-	}
-	doc, err := mcp.LoadManagedConfig(path)
-	if err != nil {
-		return mcp.ManagedConfig{}, "", err
-	}
-	if doc.MCPServers == nil {
-		doc.MCPServers = map[string]mcp.ManagedServer{}
-	}
-	return doc, path, nil
 }
 
 func writeWhatsAppBridgeHealth(ctx context.Context, out io.Writer, cfg mcp.ServerConfig) error {

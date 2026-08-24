@@ -120,11 +120,11 @@ func TestMemoryReadinessCheckRejectsSemanticAndTransportFailure(t *testing.T) {
 }
 
 func TestMemoryReadinessProbeFailsWhenRequiredMountIsMissing(t *testing.T) {
-	chat := &chatEnv{cfg: &config.Config{
-		MCPPolicies: map[string]mcp.ManagedServer{
-			"alias": {Source: mcp.SourceRecipeMemory},
-		},
-	}}
+	withMemoryMCPRegistry(t)
+	seedMCPRegistry(t, mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
+		"alias": {Command: "memory-bin", Source: mcp.SourceRecipeMemory},
+	}})
+	chat := &chatEnv{cfg: config.LoadDB()}
 	probe, required := memoryReadinessProbe(chat)
 	if !required || probe.Code != readiness.CodeMemoryUnavailable {
 		t.Fatalf("probe required/code = %v/%q", required, probe.Code)

@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -16,29 +15,19 @@ import (
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
 
-func withTempMCPConfig(t *testing.T) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "servers.json")
-	t.Setenv("AURA_MCP_CONFIG", path)
-	return path
-}
-
 // `aura mcp install <recipe>` must write the catalog row verbatim. This ran against the
 // calculator until that recipe was retired (see mcpmanager.BuiltInCatalog); calendar is the
 // stand-in, and the assertion is now against LookupCatalog rather than a copied literal —
 // the old hardcoded arg string went stale on the first legitimate bump.
 func TestMCPInstallWritesRecipeVerbatim(t *testing.T) {
-	path := withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 
 	var out bytes.Buffer
 	if err := runMCPCommand(context.Background(), nil, []string{"install", "calendar"}, &out); err != nil {
 		t.Fatalf("mcp install calendar: %v", err)
 	}
 
-	doc, err := mcp.LoadManagedConfig(path)
-	if err != nil {
-		t.Fatalf("load managed config: %v", err)
-	}
+	doc := readMCPRegistry(t)
 	want, ok := mcpmanager.LookupCatalog("calendar")
 	if !ok {
 		t.Fatal("LookupCatalog(\"calendar\") not found")
@@ -53,7 +42,7 @@ func TestMCPInstallWritesRecipeVerbatim(t *testing.T) {
 }
 
 func TestMCPRecipesListsBuiltins(t *testing.T) {
-	withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 	t.Setenv("AURA_AGENT_MEMORY_MCP_PORT", "") // literal-8091 assertion below; a sourced .env must not skew it (WR-06)
 	t.Setenv("AURA_PIM_MCP_PORT", "")          // literal-8093 calendar assertion below (WR-06)
 
@@ -88,17 +77,14 @@ func TestMCPRecipesListsBuiltins(t *testing.T) {
 }
 
 func TestMCPAddListAndDisable(t *testing.T) {
-	path := withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 
 	var out bytes.Buffer
 	err := runMCPCommand(context.Background(), nil, []string{"add", "local", "--env", "TOKEN=secret", "--", "python", "server.py", "--stdio"}, &out)
 	if err != nil {
 		t.Fatalf("mcp add: %v", err)
 	}
-	doc, err := mcp.LoadManagedConfig(path)
-	if err != nil {
-		t.Fatalf("load managed config: %v", err)
-	}
+	doc := readMCPRegistry(t)
 	if got := doc.MCPServers["local"].Trust.Class; got != mcp.TrustBlocked {
 		t.Fatalf("manual add trust = %q, want %q", got, mcp.TrustBlocked)
 	}
@@ -127,7 +113,7 @@ func TestMCPAddListAndDisable(t *testing.T) {
 }
 
 func TestMCPProfileCommands(t *testing.T) {
-	path := withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 
 	var out bytes.Buffer
 	if err := runMCPCommand(context.Background(), nil, []string{"profile", "create", "work"}, &out); err != nil {
@@ -141,10 +127,7 @@ func TestMCPProfileCommands(t *testing.T) {
 	if err := runMCPCommand(context.Background(), nil, []string{"install", "calendar"}, &out); err != nil {
 		t.Fatalf("install calendar: %v", err)
 	}
-	doc, err := mcp.LoadManagedConfig(path)
-	if err != nil {
-		t.Fatalf("load config: %v", err)
-	}
+	doc := readMCPRegistry(t)
 	if doc.ActiveProfileName() != "work" {
 		t.Fatalf("active profile = %q, want work", doc.ActiveProfileName())
 	}
@@ -156,10 +139,7 @@ func TestMCPProfileCommands(t *testing.T) {
 	if err := runMCPCommand(context.Background(), nil, []string{"profile", "remove", "work", "calendar"}, &out); err != nil {
 		t.Fatalf("profile remove: %v", err)
 	}
-	doc, err = mcp.LoadManagedConfig(path)
-	if err != nil {
-		t.Fatalf("reload config: %v", err)
-	}
+	doc = readMCPRegistry(t)
 	if got := doc.ProfileServerNames("work"); containsString(got, "calendar") {
 		t.Fatalf("work profile still has calendar: %#v", got)
 	}
@@ -172,7 +152,7 @@ func TestMCPProfileCommands(t *testing.T) {
 // rewriting a test to match an intentional behavior change is permitted with
 // justification, unlike modifying a test just to force it green).
 func TestMCPTrustRecordsApproval(t *testing.T) {
-	path := withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 
 	var out bytes.Buffer
 	if err := runMCPCommand(context.Background(), nil, []string{"add", "local", "--", "node", "server.js"}, &out); err != nil {
@@ -182,10 +162,7 @@ func TestMCPTrustRecordsApproval(t *testing.T) {
 	if err := runMCPCommand(context.Background(), nil, []string{"trust", "local", "--reason", "operator vetted"}, &out); err != nil {
 		t.Fatalf("mcp trust: %v", err)
 	}
-	doc, err := mcp.LoadManagedConfig(path)
-	if err != nil {
-		t.Fatalf("load config: %v", err)
-	}
+	doc := readMCPRegistry(t)
 	if got := doc.MCPServers["local"].Trust.Class; got != mcp.TrustTrustedLocal {
 		t.Fatalf("trust class = %q, want %q", got, mcp.TrustTrustedLocal)
 	}
@@ -202,7 +179,7 @@ func TestMCPTrustRecordsApproval(t *testing.T) {
 // explicit empty/unknown class is likewise rejected via the shared
 // validateTrustClassReason single source of truth (D-13).
 func TestMCPTrustRequiresReason(t *testing.T) {
-	withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 	var out bytes.Buffer
 	if err := runMCPCommand(context.Background(), nil, []string{"add", "local", "--", "node", "server.js"}, &out); err != nil {
 		t.Fatalf("mcp add: %v", err)
@@ -218,7 +195,7 @@ func TestMCPTrustRequiresReason(t *testing.T) {
 }
 
 func TestMCPStatusJSONShowsBlockedServer(t *testing.T) {
-	withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 	var out bytes.Buffer
 	if err := runMCPCommand(context.Background(), nil, []string{"add", "local", "--", "node", "server.js"}, &out); err != nil {
 		t.Fatalf("mcp add: %v", err)
@@ -236,7 +213,7 @@ func TestMCPStatusJSONShowsBlockedServer(t *testing.T) {
 }
 
 func TestMCPStatusShowsLifecycleWithoutPolicyColumns(t *testing.T) {
-	path := withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 	// 38-06: `mcp status` now additionally live-probes each non-blocked/non-disabled
 	// server (D-17); "npx" (a real, possibly-present binary that would hang waiting
 	// on stdin with no real MCP handshake) is replaced with a deterministic-fail
@@ -250,9 +227,7 @@ func TestMCPStatusShowsLifecycleWithoutPolicyColumns(t *testing.T) {
 			Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 		},
 	}}
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
+	seedMCPRegistry(t, doc)
 
 	var out bytes.Buffer
 	if err := runMCPCommand(context.Background(), nil, []string{"status"}, &out); err != nil {
@@ -282,7 +257,7 @@ func TestMCPStatusShowsLifecycleWithoutPolicyColumns(t *testing.T) {
 }
 
 func TestMCPDoctorAllChecksCalendarRecipe(t *testing.T) {
-	path := withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 	// F-046 fix (38-06): the calendar PIM sidecar is an HTTP recipe — writeRuntimeCheck
 	// now LIVE-DIALS its configured URL via mcp.ProbeServer instead of the old
 	// false-healthy "http endpoint configured" short-circuit, so a dead/typoed endpoint
@@ -303,9 +278,7 @@ func TestMCPDoctorAllChecksCalendarRecipe(t *testing.T) {
 			Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 		},
 	}}
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
+	seedMCPRegistry(t, doc)
 
 	var out bytes.Buffer
 	if err := runMCPCommand(context.Background(), nil, []string{"doctor", "--all"}, &out); err != nil {
@@ -326,13 +299,11 @@ func TestMCPDoctorAllChecksCalendarRecipe(t *testing.T) {
 }
 
 func TestMCPDoctorBlockedDoesNotLaunch(t *testing.T) {
-	path := withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
 		"blocked": {Command: "aura-nonexistent-mcp-binary-xyz", Source: "manual", Trust: mcp.ManagedTrust{Class: mcp.TrustBlocked}},
 	}}
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
+	seedMCPRegistry(t, doc)
 	var out bytes.Buffer
 	if err := runMCPCommand(context.Background(), nil, []string{"doctor", "blocked"}, &out); err != nil {
 		t.Fatalf("doctor blocked: %v", err)
@@ -343,7 +314,7 @@ func TestMCPDoctorBlockedDoesNotLaunch(t *testing.T) {
 }
 
 func TestMCPDoctorAndToolsStartConfiguredServer(t *testing.T) {
-	path := withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
 		"calculator": {
 			Command: os.Args[0],
@@ -353,9 +324,7 @@ func TestMCPDoctorAndToolsStartConfiguredServer(t *testing.T) {
 			Source:  "recipe:calculator",
 		},
 	}}
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save managed config: %v", err)
-	}
+	seedMCPRegistry(t, doc)
 
 	var out bytes.Buffer
 	if err := runMCPCommand(context.Background(), nil, []string{"doctor", "calculator"}, &out); err != nil {
@@ -375,7 +344,7 @@ func TestMCPDoctorAndToolsStartConfiguredServer(t *testing.T) {
 }
 
 func TestMCPManagerMockE2EProfileRecipeBlockedAndTools(t *testing.T) {
-	path := withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 	var out bytes.Buffer
 	// Install a real recipe purely to inherit trusted_recipe — `mcp add` would land
 	// untrusted and never mount — then rewrite the row into the stdio helper process. The
@@ -384,10 +353,7 @@ func TestMCPManagerMockE2EProfileRecipeBlockedAndTools(t *testing.T) {
 	if err := runMCPCommand(context.Background(), nil, []string{"install", "calendar"}, &out); err != nil {
 		t.Fatalf("install calendar: %v", err)
 	}
-	doc, err := mcp.LoadManagedConfig(path)
-	if err != nil {
-		t.Fatalf("load config: %v", err)
-	}
+	doc := readMCPRegistry(t)
 	calc := doc.MCPServers["calendar"]
 	calc.Type = ""
 	calc.URL = ""
@@ -395,9 +361,7 @@ func TestMCPManagerMockE2EProfileRecipeBlockedAndTools(t *testing.T) {
 	calc.Args = []string{"-test.run=TestMCPServerHelperProcess", "--"}
 	calc.Env = []string{"AURA_MCP_HELPER=1"}
 	doc.MCPServers["calendar"] = calc
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save fake stdio server: %v", err)
-	}
+	seedMCPRegistry(t, doc)
 
 	out.Reset()
 	if err := runMCPCommand(context.Background(), nil, []string{"profile", "create", "e2e"}, &out); err != nil {
@@ -445,7 +409,7 @@ func TestMCPManagerMockE2EProfileRecipeBlockedAndTools(t *testing.T) {
 }
 
 func TestMCPToolsSupportsManagedStreamableHTTPServer(t *testing.T) {
-	path := withTempMCPConfig(t)
+	withMemoryMCPRegistry(t)
 	server := newMCPHTTPTestServer(t)
 	defer server.Close()
 
@@ -457,9 +421,7 @@ func TestMCPToolsSupportsManagedStreamableHTTPServer(t *testing.T) {
 			Trust:  mcp.ManagedTrust{Class: mcp.TrustRemoteHTTP},
 		},
 	}}
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save managed config: %v", err)
-	}
+	seedMCPRegistry(t, doc)
 
 	var out bytes.Buffer
 	if err := runMCPCommand(context.Background(), nil, []string{"tools", "remote"}, &out); err != nil {
@@ -467,49 +429,6 @@ func TestMCPToolsSupportsManagedStreamableHTTPServer(t *testing.T) {
 	}
 	if got := out.String(); !strings.Contains(got, "echo\tmounted\tGet echo text.") {
 		t.Fatalf("tools output missing remote HTTP tool:\n%s", got)
-	}
-}
-
-func TestMCPToolsIgnoresLegacyPolicyAndMountsAllTools(t *testing.T) {
-	path := withTempMCPConfig(t)
-	raw, err := json.MarshalIndent(map[string]any{
-		"version": mcp.ManagedConfigVersion,
-		"mcpServers": map[string]any{
-			"mail": map[string]any{
-				"command":    os.Args[0],
-				"args":       []string{"-test.run=TestMCPServerHelperProcess", "--"},
-				"env":        []string{"AURA_MCP_HELPER=1", "AURA_MCP_HELPER_TOOLS=policy"},
-				"source":     "recipe:mail",
-				"trust":      map[string]any{"class": mcp.TrustTrustedRecipe},
-				"riskLabels": []string{"private_data"},
-				"toolPolicy": map[string]any{
-					"allow":    []string{"send_email", "fetch_emails"},
-					"denyRisk": []string{"destructive", "unknown"},
-				},
-			},
-		},
-	}, "", "  ")
-	if err != nil {
-		t.Fatalf("marshal legacy managed config: %v", err)
-	}
-	if err := os.WriteFile(path, append(raw, '\n'), 0o600); err != nil {
-		t.Fatalf("write managed config: %v", err)
-	}
-
-	var out bytes.Buffer
-	if err := runMCPCommand(context.Background(), nil, []string{"tools", "mail"}, &out); err != nil {
-		t.Fatalf("mcp tools: %v", err)
-	}
-	got := out.String()
-	for _, want := range []string{
-		"send_email\tmounted",
-		"fetch_emails\tmounted",
-		"delete_mailbox\tmounted",
-		"mystery\tmounted",
-	} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("tools output missing %q:\n%s", want, got)
-		}
 	}
 }
 
