@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"testing"
@@ -348,4 +349,67 @@ func TestMountWithAStoredGrantArrivesAlreadyAuthorized(t *testing.T) {
 	if tok.AccessToken != "live" {
 		t.Fatalf("access token = %q, want the stored one", tok.AccessToken)
 	}
+}
+
+// TestNarrowScopes pins the workaround for go-sdk v1.7.0 having no ScopeFilter: without it a
+// Slack consent screen asks for all 30 scopes the workspace publishes, because Slack's 401
+// carries no scope challenge and the handler falls back to scopes_supported.
+func TestNarrowScopes(t *testing.T) {
+	const base = "https://slack.com/oauth/v2_user/authorize?client_id=abc&code_challenge=xyz" +
+		"&code_challenge_method=S256&redirect_uri=http%3A%2F%2Flocalhost%3A9080%2Fcb&state=st" +
+		"&scope=channels%3Aread+files%3Awrite+canvases%3Awrite"
+
+	t.Run("replaces the discovered scopes with the configured ones", func(t *testing.T) {
+		got := narrowScopes(&auth.AuthorizationArgs{URL: base}, []string{"channels:read", "users:read"})
+		q := mustQuery(t, got.URL)
+		if q.Get("scope") != "channels:read users:read" {
+			t.Fatalf("scope = %q", q.Get("scope"))
+		}
+		// The parameters that make the exchange work must survive verbatim.
+		for key, want := range map[string]string{
+			"client_id":             "abc",
+			"code_challenge":        "xyz",
+			"code_challenge_method": "S256",
+			"redirect_uri":          "http://localhost:9080/cb",
+			"state":                 "st",
+		} {
+			if q.Get(key) != want {
+				t.Fatalf("%s = %q, want %q", key, q.Get(key), want)
+			}
+		}
+	})
+
+	t.Run("leaves the URL alone when nothing is configured", func(t *testing.T) {
+		got := narrowScopes(&auth.AuthorizationArgs{URL: base}, nil)
+		if got.URL != base {
+			t.Fatalf("URL was rewritten with no configured scopes:\n got %s\nwant %s", got.URL, base)
+		}
+	})
+
+	t.Run("does not invent a scope the authorization URL never carried", func(t *testing.T) {
+		const noScope = "https://slack.com/oauth/v2_user/authorize?client_id=abc&state=st"
+		got := narrowScopes(&auth.AuthorizationArgs{URL: noScope}, []string{"channels:read"})
+		if got.URL != noScope {
+			t.Fatalf("a scope was added where none was requested: %s", got.URL)
+		}
+	})
+
+	t.Run("survives a nil args and an unparseable URL", func(t *testing.T) {
+		if got := narrowScopes(nil, []string{"channels:read"}); got != nil {
+			t.Fatalf("nil args became %v", got)
+		}
+		bad := &auth.AuthorizationArgs{URL: "://not a url"}
+		if got := narrowScopes(bad, []string{"channels:read"}); got.URL != bad.URL {
+			t.Fatalf("unparseable URL was rewritten: %s", got.URL)
+		}
+	})
+}
+
+func mustQuery(t *testing.T, raw string) url.Values {
+	t.Helper()
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		t.Fatalf("parse %q: %v", raw, err)
+	}
+	return parsed.Query()
 }

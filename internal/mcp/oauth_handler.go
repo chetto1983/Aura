@@ -208,8 +208,38 @@ func guardedFetcher(name string, settings OAuthSettings, inner auth.Authorizatio
 		if inner == nil {
 			return nil, fmt.Errorf("%w: %s", ErrOAuthAuthorizationRequired, name)
 		}
-		return inner(ctx, args)
+		return inner(ctx, narrowScopes(args, settings.Scopes))
 	}
+}
+
+// narrowScopes rewrites the authorization URL's `scope` to what the operator configured.
+//
+// It has to happen HERE because go-sdk v1.7.0 offers no earlier seam: the handler takes the
+// scopes from the WWW-Authenticate challenge, and when the server sends none — Slack sends
+// none, measured 2026-08-24 — it falls back to the protected-resource metadata's whole
+// scopes_supported list. For Slack that is all 30 scopes, so a consent screen meant to read
+// two channels asks for canvases, files, reactions and every search surface the workspace
+// has. Upstream added a ScopeFilter hook for exactly this, but it is not in any release yet.
+//
+// Only `scope` is touched: PKCE, state and redirect_uri are the SDK's and must survive
+// untouched. An empty configuration changes nothing, so discovery still decides by default.
+func narrowScopes(args *auth.AuthorizationArgs, scopes []string) *auth.AuthorizationArgs {
+	if args == nil || len(scopes) == 0 {
+		return args
+	}
+	parsed, err := url.Parse(args.URL)
+	if err != nil {
+		return args
+	}
+	query := parsed.Query()
+	if !query.Has("scope") {
+		return args
+	}
+	query.Set("scope", strings.Join(scopes, " "))
+	parsed.RawQuery = query.Encode()
+	narrowed := *args
+	narrowed.URL = parsed.String()
+	return &narrowed
 }
 
 // pinnedOAuthClient enforces a pinned token endpoint at the transport.

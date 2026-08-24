@@ -151,7 +151,20 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle(governanceMCPProbeRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
 	mux.Handle(governanceMCPAuthStateRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
 	mux.Handle(governanceMCPAuthFlowRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
-	mux.Handle(governanceMCPAuthCbRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
+	// The OAuth callback is the ONE route here that carries no capability, because it
+	// cannot: it is a cross-site top-level navigation from the provider's consent screen,
+	// and the session cookie is `__Host-` + SameSite, so the browser does not send it on
+	// that hop. Mounted behind a capability it did exactly what a missing session always
+	// does — bounced the human to the login page, discarding a consent they had already
+	// given (measured against Slack, 2026-08-24).
+	//
+	// What authenticates it instead is `state`: 128 bits of SDK-generated randomness,
+	// single-use, TTL-bounded, and matched against a flow THIS deployment started. The
+	// handler reads nothing else — no identity from context — and an unknown state gets a
+	// 409, so the route grants nothing to anyone who cannot already produce the secret.
+	// This is what LibreChat does too (api/server/routes/mcp.js: the callback carries no
+	// auth middleware and resolves state → flow).
+	mux.Handle(governanceMCPAuthCbRoute, aguiHandler)
 	mux.Handle(governanceSkillsRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
 	mux.Handle(governanceSkillsAuditRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
 	mux.Handle(governanceSkillsBodyRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
@@ -273,6 +286,17 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 			return true
 		}
 		if isPublicShareRoute(r) {
+			return true
+		}
+		// The MCP OAuth callback arrives as a cross-site top-level navigation from the
+		// provider's consent screen, so the browser withholds the `__Host-` SameSite
+		// session cookie on that one hop. Behind the gate it did what a missing session
+		// always does — bounced the human to the login page and threw away a consent
+		// they had just given at Slack (measured 2026-08-24). `state` authenticates it
+		// instead: single-use, TTL-bounded, and matched against a flow this deployment
+		// started; an unknown one gets a 409 and nothing else. LibreChat mounts its
+		// equivalent with no auth middleware for the same reason.
+		if r.Method == http.MethodGet && r.URL.Path == mcpOAuthCallbackAPIPath {
 			return true
 		}
 		// The MCP Apps sandbox proxy is fetched from the SECOND origin and carries no

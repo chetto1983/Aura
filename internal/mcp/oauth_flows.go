@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
+
+	"github.com/chetto1983/aura/internal/identityctx"
 )
 
 // oauth_flows.go makes the authorization flow survivable across an HTTP request.
@@ -175,10 +177,16 @@ func (f *Flows) Start(ctx context.Context, owner, name string, server ManagedSer
 		codes: make(chan *auth.AuthorizationResult, 1),
 		ready: make(chan struct{}),
 	}
-	// Detached from the request — this authorization outlives the request that asked
-	// for it by design — but cancellable, so expiry and shutdown can end it.
-	// detachedForRefresh keeps the identity the grant store scopes its rows by.
-	flowCtx, cancel := context.WithCancel(detachedForRefresh(ctx))
+	// Detached from the request — this authorization outlives the request that asked for
+	// it by design — but cancellable, so expiry and shutdown can end it.
+	//
+	// The identity is bound EXPLICITLY from owner rather than inherited from ctx. Relying
+	// on inheritance cost a completed authorization on 2026-08-24: Linear consented, the
+	// code was exchanged, and the grant was then dropped with "no identity on context",
+	// because the context that reaches the persist hook is the SDK's, built while it
+	// retries the 401'd request, not the one handed to Start. owner is the identity the
+	// grant must be scoped to anyway, so binding it here is both the fix and the truth.
+	flowCtx, cancel := context.WithCancel(identityctx.WithIdentityID(detachedForRefresh(ctx), owner))
 	flow.cancel = cancel
 	f.register(flow)
 	go f.run(flowCtx, flow, name, server)
