@@ -6944,3 +6944,78 @@ Phase 42 was governed by IC-01..IC-14 and Section 17 of the (now-removed) indust
 > catena è misurata anello per anello, non eseguita. Non tocca gli anelli 1-4: `install` resta
 > senza approvazione e npx resta root, per decisione dell'operatore registrata sopra. E non dice
 > niente sul ramo HTTP, che ha già la sua difesa in `ssrf.go`.
+
+## §MCP — Un connettore remoto si autorizza per identità, non per deployment (Amendment #129, 2026-08-24)
+
+**Cosa è stato misurato, e su cosa.** Non su uno stack acceso: questa slice è stata
+misurata contro **il codice di tre implementazioni reali** — l'SDK go che Aura già usa
+(`modelcontextprotocol/go-sdk@v1.7.0`), LibreChat (`packages/api/src/mcp/oauth`) e Hermes
+(`tools/mcp_oauth.py`, `apps/desktop/src/lib/mcp-dashboard-oauth.ts`) — letti prima di
+scrivere una riga. È una misura di superficie API e di comportamento documentato, non di
+traffico: **non dimostra che il flusso funzioni contro Slack, Notion o Linear**, perché
+nessun provider è stato contattato. Quello resta il test E2E da fare.
+
+**Il problema.** `MCP_BEARER_TOKEN` è una credenziale che l'operatore incolla nella
+config: una sola, per tutto il deployment. Un connettore che rappresenta *una persona*
+(Slack, Notion, Google) non può funzionare così, e dal cockpit non c'era alcun modo di
+autenticarsi. Da qui la migration **0100** (`aura.identity_mcp_oauth`, chiave
+`(identity_id, server_name)`, token cifrati AES-256-GCM sotto chiave derivata per
+identità, entrambi gli strati RLS) e tutto ciò che le sta sopra.
+
+**Le quattro cose che la lettura ha corretto, e che una supposizione avrebbe sbagliato:**
+
+1. **Si persistono tre cose, non una.** Hermes scrive token, client info **e metadata del
+   server**, e ne dà la ragione nel proprio commento: l'SDK tiene i metadata scoperti
+   *solo in memoria*, quindi un refresh a freddo ricade su `{server_url}/token` indovinato,
+   che «returns 404 on most real providers and forces a full browser re-authorization».
+   LibreChat persiste lo stesso terzo oggetto, più il **resource indicator** usato allo
+   scambio. In Aura è `resolvedClient`, dentro la colonna `client_info_enc` — cifrata
+   perché un client registrato dinamicamente porta un `client_secret` ed è quindi *esso
+   stesso* una credenziale.
+
+2. **L'SDK non spende mai un refresh token.** `Authorize()` percorre sempre discovery →
+   registration → fetcher (`authorization_code.go:290-350`). Il refresh silenzioso deve
+   quindi essere nostro: il grant salvato viene ricostruito in un `oauth2.Config` e
+   iniettato come `InitialTokenSource`, e `NewTokenSource` avvolge la sorgente post-scambio
+   perché ogni refresh successivo torni su disco. Senza quell'avvolgimento il refresh è
+   invisibile — `oauth2` sostituisce il token dentro di sé e non lo dice a nessuno — e una
+   riga vecchia di una settimana conserverebbe un refresh token che il provider ha già
+   ruotato.
+
+3. **Il pin degli endpoint era decorativo.** `OAuthSettings` rifiutava già un client secret
+   senza endpoint pinnati, ma l'SDK costruisce il suo `oauth2.Config` dagli endpoint
+   **scoperti**: `MCP_OAUTH_TOKEN_URL` non influiva su dove il segreto finiva davvero. Ora
+   il pin è applicato dove la credenziale e l'umano passano per davvero — i POST di un
+   client confidenziale possono andare solo all'endpoint pinnato (la discovery è GET e non
+   porta segreti, quindi resta libera; un client pubblico non è vincolato, ed è ciò che
+   tiene vivo il DCR), e il fetcher rifiuta un authorization URL non pinnato, che è la metà
+   *phishing* dello stesso buco.
+
+4. **Nessun URL pubblico è richiesto.** Il primo disegno lo pretendeva ed era sbagliato: il
+   redirect non viene *scaricato* dall'authorization server, è un indirizzo dove viene
+   mandato il **browser dell'umano**. `http://localhost:8080` è quindi una destinazione
+   valida anche su un deployment raggiungibile da nessun'altra parte. L'origine arriva dal
+   browser che avvia il flusso; `AURA_WEB_PUBLIC_URL` (nuovo, opzionale) la sovrascrive per
+   i due casi che la richiesta non può risolvere — un client pre-registrato a mano presso il
+   provider, e un reverse proxy che riscrive l'origine.
+
+**Env var nuove:** `MCP_OAUTH_CLIENT_ID`, `MCP_OAUTH_CLIENT_SECRET`, `MCP_OAUTH_SCOPES`,
+`MCP_OAUTH_AUTHORIZATION_URL`, `MCP_OAUTH_TOKEN_URL`, `MCP_OAUTH_REDIRECT_URL`,
+`MCP_OAUTH_DISABLED` (per server, su `ManagedServer.Env`, prefisso upstream come le altre
+`MCP_*`); `AURA_WEB_PUBLIC_URL` (globale, opzionale).
+
+**Nessun provider è nominato nel codice, deliberatamente.** La flotta è misurata come
+divisa: Linear e Atlassian implementano la Dynamic Client Registration e non richiedono
+*nessuna* configurazione dell'operatore; Slack e GitHub la rifiutano e vogliono un'app
+registrata a mano; Notion sta in mezzo. L'SDK prova CIMD → pre-registrato → DCR e risponde
+quello che il server supporta. Un ramo per provider significherebbe scrivere il ramo
+sbagliato per metà della flotta. *Zero-config* è però vero per l'**operatore**, non per
+Aura: la metadata DCR va comunque costruita, perché l'SDK rifiuta di creare un handler
+senza almeno un metodo di registrazione.
+
+**Cosa questa slice NON dimostra.** Che un provider reale accetti il flusso; che il refresh
+funzioni contro un authorization server vero; che RFC 8707 `resource` sul refresh non
+serva (x/oauth2 non sa mandarlo — `tokenRefresher` posta solo `grant_type` e
+`refresh_token`, v0.36.0 `oauth2.go:274` — e l'SDK usa quella stessa chiamata, quindi il
+dato è salvato ma non speso). Il fallback in tutti e tre i casi è un 401 che riapre il
+flusso completo, che funziona.
