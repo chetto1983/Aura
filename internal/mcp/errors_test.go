@@ -21,3 +21,21 @@ func TestAuthorizationRequiredIsNotRetryable(t *testing.T) {
 		t.Fatal("an ordinary transport failure stopped being retryable")
 	}
 }
+
+// TestRegistrationImpossibleIsNotRetryable covers the second way an OAuth server occupies
+// the mount loop forever: it needs a client and the authorization server offers no way to
+// mint one. Slack publishes no registration_endpoint, so with no MCP_OAUTH_CLIENT_ID
+// configured this is the permanent answer, and it too cost 40 attempts of held startup.
+func TestRegistrationImpossibleIsNotRetryable(t *testing.T) {
+	err := TransportErrorf("Slack", errors.New(
+		"calling \"initialize\": no configured client registration methods are supported by the authorization server"))
+	if IsTransportError(err) {
+		t.Fatal("an unregisterable OAuth client is being retried as a transient transport failure")
+	}
+}
+
+func TestIsTransportErrorOnNil(t *testing.T) {
+	if IsTransportError(nil) {
+		t.Fatal("nil is not a transport error")
+	}
+}
