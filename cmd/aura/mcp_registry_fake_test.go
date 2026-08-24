@@ -5,6 +5,8 @@ import (
 	"maps"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -27,9 +29,18 @@ func withMemoryMCPRegistry(t *testing.T) {
 	loadPrev, savePrev := loadManagedMCPConfig, saveManagedMCPConfig
 	t.Cleanup(func() { loadManagedMCPConfig, saveManagedMCPConfig = loadPrev, savePrev })
 	loadManagedMCPConfig = func() (mcp.ManagedConfig, error) { return cloneManagedConfig(doc), nil }
-	saveManagedMCPConfig = func(_ context.Context, _ *pgxpool.Pool, next mcp.ManagedConfig, _ mcpmanager.MCPAuditInsert) error {
+	saveManagedMCPConfig = func(ctx context.Context, pool *pgxpool.Pool, next mcp.ManagedConfig, in mcpmanager.MCPAuditInsert) error {
 		doc = cloneManagedConfig(next)
-		return nil
+		if pool == nil {
+			return nil
+		}
+		// The registry is faked; the ledger is not. A mutation dispatched with a live pool
+		// still owes its audit row, and a test given a real pool is asking about exactly
+		// that — so this half stays real, in the same transaction shape the production
+		// function uses.
+		return db.WithTx(ctx, pool, func(q *sqlc.Queries) error {
+			return mcpmanager.InsertMCPAuditTx(ctx, q, in)
+		})
 	}
 }
 
