@@ -13,6 +13,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
 	"golang.org/x/oauth2"
 
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcpoauth"
 )
 
@@ -132,7 +133,7 @@ func oauthHandlerFor(ctx context.Context, name string, server ManagedServer, set
 			return nil, err
 		}
 		cfg.InitialTokenSource = initial
-		cfg.NewTokenSource = persistOnAuthorization(name, server.URL, o.Store, log)
+		cfg.NewTokenSource = persistOnAuthorization(ctx, name, server.URL, o.Store, log)
 	}
 	handler, err := auth.NewAuthorizationCodeHandler(cfg)
 	if err != nil {
@@ -175,13 +176,22 @@ func applyClientRegistration(cfg *auth.AuthorizationCodeHandlerConfig, settings 
 // resolved config, which is the ONLY moment the discovered token endpoint and the
 // possibly DCR-minted client id are visible to us. Missing it is what forces a browser
 // on every restart.
-func persistOnAuthorization(name, resourceURL string, store GrantStore, logger *slog.Logger) func(context.Context, *oauth2.Config, *oauth2.Token) (oauth2.TokenSource, error) {
+//
+// owner is captured from mountCtx — the context that built the handler — because the ctx
+// the hook RECEIVES carries no identity and never can: the SDK builds it from
+// context.Background() before invoking the hook (go-sdk v1.7.0
+// auth/authorization_code.go:645), by design, so the token source outlives the request
+// that triggered the 401. Measured 2026-08-24: Linear consented, the code was exchanged,
+// and the grant was then discarded with "mcpoauth: no identity on context" — a completed
+// human authorization thrown away because the store had nobody to scope the row to.
+func persistOnAuthorization(mountCtx context.Context, name, resourceURL string, store GrantStore, logger *slog.Logger) func(context.Context, *oauth2.Config, *oauth2.Token) (oauth2.TokenSource, error) {
+	owner := identityctx.IdentityID(mountCtx)
 	return func(ctx context.Context, cfg *oauth2.Config, tok *oauth2.Token) (oauth2.TokenSource, error) {
 		rc := resolvedClientFrom(cfg)
-		// Detached before the save, not after: the context here belongs to the request
-		// that hit the 401, and the token source built on it must outlive that request.
-		// WithoutCancel keeps the identity the store scopes rows by.
-		detached := detachedForRefresh(ctx)
+		// Detached before the save, not after: the token source built here must outlive
+		// the request that hit the 401. The identity is re-bound from owner rather than
+		// inherited, for the reason above.
+		detached := identityctx.WithIdentityID(detachedForRefresh(ctx), owner)
 		grant, err := grantFrom(name, resourceURL, tok, rc)
 		if err != nil {
 			return nil, err

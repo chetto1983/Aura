@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"reflect"
 	"testing"
 	"time"
@@ -110,7 +111,7 @@ func TestRestorePropagatesARealStorageFailure(t *testing.T) {
 func TestPersistOnAuthorizationStoresTheEndpointARefreshWillNeed(t *testing.T) {
 	t.Parallel()
 	store := &fakeStore{}
-	hook := persistOnAuthorization("notion", "https://mcp.notion.com/mcp", store, nil)
+	hook := persistOnAuthorization(context.Background(), "notion", "https://mcp.notion.com/mcp", store, nil)
 
 	cfg := &oauth2.Config{
 		ClientID:     "dcr-minted-id",
@@ -164,7 +165,7 @@ func TestPersistOnAuthorizationStoresTheEndpointARefreshWillNeed(t *testing.T) {
 func TestPersistOnAuthorizationSurvivesAStorageFault(t *testing.T) {
 	t.Parallel()
 	store := &fakeStore{saveErr: errors.New("disk on fire")}
-	hook := persistOnAuthorization("notion", "u", store, nil)
+	hook := persistOnAuthorization(context.Background(), "notion", "u", store, nil)
 
 	source, err := hook(context.Background(), &oauth2.Config{Endpoint: oauth2.Endpoint{TokenURL: "https://x.example/token"}}, &oauth2.Token{AccessToken: "fresh"})
 	if err != nil {
@@ -295,4 +296,42 @@ func TestZeroExpiryIsPreservedInBothDirections(t *testing.T) {
 	if grant.Expired(time.Now(), oauthTokenLeeway) {
 		t.Fatal("a grant with no advertised expiry read as expired")
 	}
+}
+
+// TestPersistOnAuthorizationScopesTheGrantToTheMountIdentity pins the 2026-08-24 loss: the
+// SDK invokes this hook with a context built from context.Background() (go-sdk v1.7.0
+// auth/authorization_code.go:645), so an identity inherited from the request can never
+// reach it. Linear consented, the code was exchanged, and the grant was dropped with
+// "no identity on context" — a completed human authorization discarded.
+func TestPersistOnAuthorizationScopesTheGrantToTheMountIdentity(t *testing.T) {
+	t.Parallel()
+	const owner = "6f1c4d24-27a1-4f0e-9a0a-9a0f0b2c1d33"
+	store := &identityRecordingStore{}
+	mountCtx := identityctx.WithIdentityID(context.Background(), owner)
+	hook := persistOnAuthorization(mountCtx, "linear", "https://mcp.linear.app/mcp", store, nil)
+
+	// context.Background(), exactly as the SDK hands it over: no identity, no deadline.
+	if _, err := hook(context.Background(), &oauth2.Config{
+		ClientID: "id",
+		Endpoint: oauth2.Endpoint{TokenURL: "https://mcp.linear.app/token"},
+	}, &oauth2.Token{AccessToken: "fresh", RefreshToken: "r1", TokenType: "Bearer"}); err != nil {
+		t.Fatalf("persistOnAuthorization: %v", err)
+	}
+	if store.seen != owner {
+		t.Fatalf("grant saved for identity %q, want %q — the authorization would be discarded", store.seen, owner)
+	}
+}
+
+// identityRecordingStore records the identity on the context each Save was given.
+type identityRecordingStore struct {
+	seen string
+}
+
+func (s *identityRecordingStore) Save(ctx context.Context, _ mcpoauth.Grant) error {
+	s.seen = identityctx.IdentityID(ctx)
+	return nil
+}
+
+func (s *identityRecordingStore) Load(context.Context, string) (mcpoauth.Grant, error) {
+	return mcpoauth.Grant{}, nil
 }
