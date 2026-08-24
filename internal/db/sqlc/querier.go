@@ -88,6 +88,10 @@ type Querier interface {
 	// the cutoff, and state whose only anchor is an event older than the cutoff.
 	DeleteExpiredVerificationState(ctx context.Context, lastEditAt pgtype.Timestamptz) error
 	DeleteIdentity(ctx context.Context, name string) error
+	// Revoking locally. execrows, not exec: a caller that reports "revoked" without knowing
+	// whether a row existed cannot tell a real revocation from a no-op on someone else's row
+	// that RLS filtered away.
+	DeleteIdentityMCPOAuth(ctx context.Context, arg DeleteIdentityMCPOAuthParams) (int64, error)
 	DeleteSetting(ctx context.Context, key string) error
 	// Bound ledger growth per session+root, keeping the newest $4 events. The row the
 	// state points at survives because it is always among the newest.
@@ -122,6 +126,11 @@ type Querier interface {
 	GetConversationVersionForIdentity(ctx context.Context, arg GetConversationVersionForIdentityParams) (int64, error)
 	GetIdentityByID(ctx context.Context, id pgtype.UUID) (AuraIdentities, error)
 	GetIdentityByName(ctx context.Context, name string) (AuraIdentities, error)
+	// Per-identity OAuth grants for remote MCP servers (migration 0100). Every statement is
+	// scoped by identity_id in the WHERE clause AND by the two RLS policies underneath: the
+	// predicate here is what makes the intent readable, the policy is what makes it true even
+	// when a future caller forgets to write it.
+	GetIdentityMCPOAuth(ctx context.Context, arg GetIdentityMCPOAuthParams) (AuraIdentityMcpOauth, error)
 	GetIdentityProfile(ctx context.Context, identityID pgtype.UUID) (AuraIdentityProfiles, error)
 	GetIdentityRecoveryByIdentity(ctx context.Context, identityID pgtype.UUID) (AuraIdentityRecovery, error)
 	// The turn path wants one string, not a row: the clock is rendered on every request.
@@ -252,6 +261,10 @@ type Querier interface {
 	ListGatewayApprovalGrants(ctx context.Context, identityID pgtype.UUID) ([]AuraGatewayApprovalGrants, error)
 	ListIdentities(ctx context.Context) ([]AuraIdentities, error)
 	ListIdentityAudit(ctx context.Context, arg ListIdentityAuditParams) ([]AuraIdentityAudit, error)
+	// The names an identity has authorized, for `aura mcp login --status` and the cockpit's
+	// connector list. Deliberately selects NO ciphertext: a listing must not pull three
+	// credentials into memory to render a name and an expiry.
+	ListIdentityMCPOAuthServers(ctx context.Context, identityID pgtype.UUID) ([]ListIdentityMCPOAuthServersRow, error)
 	ListInFlightToolInvocationsBefore(ctx context.Context, startedAt pgtype.Timestamptz) ([]AuraToolInvocations, error)
 	// The cockpit scheduler board (GOV-03 write): active AND pending_approval tasks, so an
 	// operator can approve a gated task on-screen. Ordered by next fire (pending rows have a
@@ -390,6 +403,11 @@ type Querier interface {
 	// they were summarized. Zero rows back means "someone else already went further", which
 	// the caller treats as success and re-reads.
 	UpsertConversationCompaction(ctx context.Context, arg UpsertConversationCompactionParams) (AuraConversationCompactions, error)
+	// A refresh rewrites the same row, so this is an UPDATE-on-conflict rather than the
+	// delete-then-insert aura.identity_object_store uses for key rotation. created_at is
+	// deliberately left alone on conflict: it records when the identity first authorized this
+	// server, which a refresh does not change.
+	UpsertIdentityMCPOAuth(ctx context.Context, arg UpsertIdentityMCPOAuthParams) error
 	// Deterministic operator profile (migration 0097). It is written by onboarding and the
 	// profile editor, and read on the turn path -- so the reads are narrow on purpose.
 	UpsertIdentityProfile(ctx context.Context, arg UpsertIdentityProfileParams) (AuraIdentityProfiles, error)

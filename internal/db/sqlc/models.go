@@ -281,6 +281,21 @@ type AuraIdentityAuthLinks struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
+// Per-identity OAuth grant for a remote MCP server (migration 0100). access_token_enc, refresh_token_enc and client_info_enc are AES-256-GCM ciphertext (KEK derived from AURA_AUTHULA_SECRET, the same trust boundary as .env and as aura.identity_object_store); client_info_enc holds the dynamic-client-registration result, which carries an AS-minted client_secret. The operator's OWN pre-registered client credentials are NOT here: they are deployment config on ManagedServer.Env. expires_at is absolute, so a daemon restart can reconstruct the remaining TTL instead of trusting a relative expires_in with no wall-clock reference.
+type AuraIdentityMcpOauth struct {
+	IdentityID      pgtype.UUID        `json:"identity_id"`
+	ServerName      string             `json:"server_name"`
+	ResourceUrl     string             `json:"resource_url"`
+	AccessTokenEnc  []byte             `json:"access_token_enc"`
+	RefreshTokenEnc []byte             `json:"refresh_token_enc"`
+	ClientInfoEnc   []byte             `json:"client_info_enc"`
+	TokenType       string             `json:"token_type"`
+	Scopes          []string           `json:"scopes"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Per-identity Garage/S3 credential store (Phase 36, D-08/OQ4). secret_key_enc is the S3 secret as encrypted-at-rest bytea ciphertext (wrapping key derived from AURA_AUTHULA_SECRET, same trust boundary as .env); the AEAD is implemented by the plan-06 persistence layer. Deleting the identity cascades its key.
 type AuraIdentityObjectStore struct {
 	IdentityID   pgtype.UUID        `json:"identity_id"`
