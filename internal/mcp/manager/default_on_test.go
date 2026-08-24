@@ -30,7 +30,7 @@ func runtimePolicies(t *testing.T, doc mcp.ManagedConfig) map[string]mcp.Managed
 	return policies
 }
 
-// TestMemoryDefaultOn proves a fresh machine (empty/absent AURA_MCP_CONFIG) mounts
+// TestMemoryDefaultOn proves a fresh machine (an empty registry) mounts
 // the memory recipe by default — no prior `aura mcp install` (D-08).
 func TestMemoryDefaultOn(t *testing.T) {
 	clearMCPEnv(t)

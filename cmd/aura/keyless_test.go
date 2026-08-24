@@ -19,8 +19,6 @@ func isolateKeylessBootEnv(t *testing.T) {
 		"AURA_DB_URL",
 		"AURA_DB_MIGRATE_URL",
 		"AURA_DB_BOOTSTRAP_URL",
-		"AURA_MCP_CONFIG",
-		"AURA_MCP_SERVERS_JSON",
 	} {
 		t.Setenv(k, "")
 	}

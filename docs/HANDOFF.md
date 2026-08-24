@@ -202,6 +202,17 @@ assottigliata rispetto a ogni altra scrittura del server. *Confidenza: alta.*
 
 ## 3. Misure dovute e gate che non chiudono
 
+**3.0 — Il registry MCP su Postgres non ha ancora una misura di coverage.**
+`internal/mcpregistry` e `cmd/aura/mcp_registry.go` sono nati il 2026-08-24 e il tier che li
+esercita davvero — un vero `Upsert`/`List`/`Remove` contro Postgres — non esiste: i test
+`cmd/aura` girano su un registry in memoria (`mcp_registry_fake_test.go`), che è giusto per
+provare il parsing degli argomenti e **non prova nulla** sul sealing dell'env, sul round-trip
+del jsonb o sulla transazione unica che tiene insieme la riga di audit e la scrittura. Il floor
+dell'85% è aggregato, quindi un package scoperto viaggia sulle spalle degli altri e il gate può
+restare verde mentendo. *Serve `bash scripts/coverage_docker.sh` con lo stack acceso, e dei test
+`db_integration` che guidino lo store come `aura_app` — mai come `aura`, per la ragione nella
+sezione Stato.*
+
 **3.1 — Il gate di produzione #115 non è mai stato eseguito e il suo runner è cancellato.**
 `scripts/document_pipeline_e2e.sh` rimosso in `7847ecc29`. Il ledger
 `docs/superpowers/verification/2026-08-05-…/FINDINGS.md:206-212` è `_pending_` su CP1–CP7.
@@ -331,6 +342,39 @@ in-process, il modello a versioni, Docling, lo store di retrieval Postgres, il d
 ---
 
 ## 6. Lavoro progettato e non fatto
+
+**6.8 — MCP per identità: metà fatta, e le due metà mancanti non sono lo stesso lavoro.**
+Il 2026-08-24 il registry MCP è passato su Postgres (`aura.mcp_server`, migration `0101`, il
+file `servers.json` cancellato) e un server dietro OAuth ora monta **quando lo si autorizza** e
+ritorna dopo un riavvio dal grant salvato. Misurato sullo stack acceso: calendar 1 tool, linear
+53, memory 4, notion 28, whatsapp 15, tutti `ready` sul board. Resta aperto questo:
+
+- *Un registry per processo.* `tools.Registry` è uno solo e condiviso. I grant invece sono per
+  identità (`aura.identity_mcp_oauth`, `0100`), quindi un server che **due** identità hanno
+  autorizzato viene rifiutato al boot (`mcpoauth.ErrAmbiguousOwner`) invece di dare a uno il
+  token dell'altro. È la scelta giusta per un'appliance a operatore singolo e **sbagliata** per
+  una multi-utente: LibreChat tiene un pool di connessioni per utente
+  (`MCPManager.getUserConnection`), non un registry solo. Va deciso, non scoperto il giorno che
+  esiste la seconda persona.
+- *`calendar` e `whatsapp` sono single-account per costruzione.* `sendingMiddleware`
+  (`internal/agent/mcptools/mount.go:120`) aggiunge `IdentityMetaMiddleware` **solo** se
+  `policy.memory`, quindi solo `memory` porta `_meta.aura.user_identifier` e instrada al
+  database ArcadeDB della persona. Gli altri due condividono un account PIM e un pairing
+  WhatsApp fra tutte le identità. **Il lavoro non è simmetrico**: `aura-pim-mcp` è già
+  multi-account (`list_accounts` restituisce `accountId`, ogni tool ne prende uno), quindi
+  calendar diventa per-identità stampando l'identità sul mount (una riga in
+  `bridge_risk.go:149`) e mappando identità → `accountId` **nel nostro fork** del sidecar —
+  stessa forma di Linear. Il bridge WhatsApp invece non ha alcun concetto di account: una
+  sessione pairata, un volume, una porta. Lì per-identità significa **un container per
+  identità** (lo schema che Aura già usa per ArcadeDB), provisionato dalla saga che crea già le
+  directory per identità; forkare il bridge per tenere N sessioni whatsmeow combatte contro un
+  design upstream che assume un dispositivo solo.
+- *Non spiegato, e ormai non riproducibile.* `/var/lib/aura/mcp/servers.json` è stato trovato
+  troncato a mappa vuota **due volte** nello stesso pomeriggio, con dentro i nomi `hung`,
+  `e2e-probe`, `ssrf-probe` — che sono fixture di test di `cmd/aura`. Solo `aura` e
+  `aura-migrate` montavano quel volume, quindi un test sull'host non poteva averlo scritto. La
+  causa non è stata trovata; il file non esiste più, quindi il sintomo non può tornare. Se
+  qualcosa di simile ricapita su `aura.mcp_server`, questa riga è il precedente.
 
 **6.1 — Compaction: quel che resta aperto.** Slice 1b è consegnata (riga durevole `0096` con
 watermark, trigger anticipato, aggiornamento iterativo, ramo per branch, `/compact` esplicito con

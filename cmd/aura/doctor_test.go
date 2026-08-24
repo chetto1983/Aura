@@ -31,7 +31,7 @@ func installDoctorFakeProbes(t *testing.T) {
 	doctorProbePostgres = func(context.Context, *config.Config) (string, error) { return "reachable", nil }
 	doctorProbeEmbed = func(context.Context, *config.Config) (string, error) { return "dimension 768", nil }
 	// Faked like every other doctorProbe: the real defaultDoctorProbeMCPServers reads
-	// AURA_MCP_CONFIG (host state), which these generic pass/fail plumbing tests must
+	// the registry (host state), which these generic pass/fail plumbing tests must
 	// not depend on (same host-state hazard as the literal-8093 fixture fixed in
 	// mcp_test.go — a real managed config on the dev box would make this probe dial a
 	// real server during an unrelated unit test).
