@@ -83,7 +83,6 @@ export function McpLifecycleCluster({ server, onRemoved }: McpLifecycleClusterPr
           </span>
         </Button>
 
-
         <Button
           type="button"
           variant="ghost"
@@ -96,7 +95,6 @@ export function McpLifecycleCluster({ server, onRemoved }: McpLifecycleClusterPr
           {t('governance.mcp.lifecycle.remove')}
         </Button>
       </div>
-
 
       {confirmingRemove ? (
         <RemoveDialog
