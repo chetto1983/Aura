@@ -199,8 +199,16 @@ export default defineConfig({
               test: /[\\/]node_modules[\\/](cytoscape-fcose|cose-base|layout-base)[\\/]/,
             },
             {
+              name: 'assistant-stream',
+              test: /[\\/]node_modules[\\/]assistant-stream[\\/]/,
+            },
+            {
+              name: 'assistant-rendering',
+              test: /[\\/]node_modules[\\/]@assistant-ui[\\/](react-markdown|react-syntax-highlighter)[\\/]/,
+            },
+            {
               name: 'assistant-ui',
-              test: /[\\/]node_modules[\\/](@assistant-ui|assistant-stream)[\\/]/,
+              test: /[\\/]node_modules[\\/]@assistant-ui[\\/]/,
             },
             {
               name: 'markdown',

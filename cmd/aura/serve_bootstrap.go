@@ -33,8 +33,8 @@ type bootstrapProvider interface {
 	OperatorUserID(context.Context) (string, error)
 }
 
-func wireBootstrapService(server bootstrapServer, pool *pgxpool.Pool, provider bootstrapProvider) bool {
-	if isNilBootstrapDependency(server) || pool == nil || isNilBootstrapDependency(provider) {
+func wireBootstrapService(server bootstrapServer, pool *pgxpool.Pool, provider bootstrapProvider, memory agui.MemoryProvisioner) bool {
+	if isNilBootstrapDependency(server) || pool == nil || isNilBootstrapDependency(provider) || isNilBootstrapDependency(memory) {
 		return false
 	}
 	core := provider.CoreServices()
@@ -42,9 +42,11 @@ func wireBootstrapService(server bootstrapServer, pool *pgxpool.Pool, provider b
 		return false
 	}
 	server.SetBootstrapService(&firstOperatorBootstrapService{
-		authula:  authulaCoreAdapter{core: core},
-		operator: provider,
-		pool:     pool,
+		authula:        authulaCoreAdapter{core: core},
+		operator:       provider,
+		pool:           pool,
+		memory:         memory,
+		identityDelete: auraLegAdapter{pool: pool},
 	})
 	return true
 }
@@ -63,10 +65,36 @@ func isNilBootstrapDependency(v any) bool {
 }
 
 type firstOperatorBootstrapService struct {
-	mu       sync.Mutex
-	authula  agui.AuthulaCore
-	operator bootstrapProvider
-	pool     *pgxpool.Pool
+	mu             sync.Mutex
+	authula        agui.AuthulaCore
+	operator       bootstrapProvider
+	pool           *pgxpool.Pool
+	memory         agui.MemoryProvisioner
+	identityDelete agui.IdentityDeleter
+}
+
+func (s *firstOperatorBootstrapService) provisionTenantMemory(
+	ctx context.Context,
+	identityName, identityID string,
+	compAuthula func(),
+) error {
+	if s.memory == nil || s.identityDelete == nil {
+		return errors.New("bootstrap memory provisioning unavailable")
+	}
+	if err := s.memory.ProvisionMemory(ctx, identityID); err != nil {
+		cctx := context.WithoutCancel(ctx)
+		if derr := s.memory.PurgeMemory(cctx, identityID); derr != nil {
+			slog.Error("aura serve: bootstrap memory compensation failed")
+		}
+		if derr := s.identityDelete.DeleteIdentity(cctx, identityName); derr != nil {
+			slog.Error("aura serve: bootstrap identity compensation failed")
+		}
+		if compAuthula != nil {
+			compAuthula()
+		}
+		return err
+	}
+	return nil
 }
 
 func (s *firstOperatorBootstrapService) CreateFirstOperator(ctx context.Context, req agui.BootstrapCreateRequest) (agui.BootstrapCreateResponse, error) {
@@ -153,6 +181,10 @@ func (s *firstOperatorBootstrapService) CreateFirstOperator(ctx context.Context,
 		return agui.BootstrapCreateResponse{}, errors.New("bootstrap unavailable")
 	}
 	committed = true
+	if err := s.provisionTenantMemory(ctx, identityName, identityID, compAuthula); err != nil {
+		slog.Warn("aura serve: bootstrap memory provision failed")
+		return agui.BootstrapCreateResponse{}, errors.New("bootstrap unavailable")
+	}
 	return agui.BootstrapCreateResponse{IdentityID: identityID}, nil
 }
 

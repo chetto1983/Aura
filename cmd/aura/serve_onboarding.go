@@ -246,7 +246,12 @@ func (a recoverySetupAdapter) UpsertRecovery(ctx context.Context, identityID, qu
 // provisioning saga is wired when the composition root supplies an Authula provider.
 // The Telegram bot username is resolved live (a best-effort getMe); an empty username
 // leaves provisioning unavailable so no identity/recovery/token writes occur.
-func buildOnboardingService(ctx context.Context, chat *chatEnv, authulaProvider *webauth.Provider) agui.OnboardingService {
+func buildOnboardingService(
+	ctx context.Context,
+	chat *chatEnv,
+	authulaProvider *webauth.Provider,
+	memory agui.MemoryProvisioner,
+) agui.OnboardingService {
 	deps := agui.OnboardingDeps{
 		Capabilities: chat.identity,
 		Profiles:     onboarding.NewProfileStore(chat.pool),
@@ -260,6 +265,7 @@ func buildOnboardingService(ctx context.Context, chat *chatEnv, authulaProvider 
 		// provisionResourceLegs nil-skips each leg, so admin-create still succeeds and just
 		// provisions no resources (backward compatible).
 		objProv, fsProv, jrnl := buildProvisioningPorts(chat)
+		deps.Memory = memory
 		deps.ObjectStore = objProv
 		deps.Filesystem = fsProv
 		deps.Journal = jrnl

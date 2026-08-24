@@ -379,6 +379,7 @@ func (e *liveSagaEnv) service(t *testing.T, au AuthulaCore, leg AuraLegWriter, t
 		Profiles:     &recordingProfileWriter{},
 		Authula:      au, AuraLeg: leg, Telegram: tg, BotUsername: "AuraBotTest",
 		Recovery: e.recovery,
+		Memory:   newFakeMemoryProvisioner(),
 		// Isolation ON so the live saga clears the CR-01 provision-time refusal gate.
 		MUSRIsolation: true,
 	})

@@ -14,10 +14,10 @@ import (
 )
 
 // onboarding_provision.go is the ordered cross-store provisioning saga (ONBD-01a/01b /
-// RESEARCH §Hard Problem 1). Provisioning a loginable identity spans FOUR independent
-// stores that cannot share a transaction — the aura.* pgx pool, the Authula `authula`
-// schema on its OWN database/sql pool, the recovery challenge row, and the Telegram mint
-// token — so atomicity is a saga with per-leg compensation, NOT a single tx.
+// RESEARCH §Hard Problem 1). Provisioning a loginable identity spans independent
+// persistence planes that cannot share a transaction — Aura/PostgreSQL, Authula,
+// ArcadeDB, Garage, filesystem roots, and the Telegram mint token — so atomicity is a
+// saga with per-leg compensation, NOT a single tx.
 //
 // The saga consumes narrow consumer-side ports (declared here) so this package stays free
 // of the internal/channels/telegram import (which would cycle: telegram imports agui). The
@@ -33,10 +33,12 @@ import (
 //	2. Leg A (aura, one db.WithTx): INSERT identity + GrantCapability per cap + LinkOperator;
 //	   on failure → COMP_B.
 //	3. Recovery setup: hash answer + upsert challenge; on failure → DeleteIdentity + COMP_B.
-//	4. Leg C (Telegram mint): InsertPending(new identity, +1h); on failure → DeleteIdentity
-//	   + COMP_B.
-//	5. one immutable identity_audit row (a tiny final db.WithTx AFTER Leg C); on failure
-//	   DeletePending + DeleteIdentity + COMP_B so a rolled-back flow has none.
+//	4. Resource legs: provision the ArcadeDB tenant, then optional Garage/filesystem state;
+//	   on failure reverse resources + DeleteIdentity + COMP_B.
+//	5. Leg C (Telegram mint): InsertPending(new identity, +1h); on failure → reverse
+//	   resources + DeleteIdentity + COMP_B.
+//	6. one immutable identity_audit row (a tiny final db.WithTx AFTER Leg C); on failure
+//	   DeletePending + reverse resources + DeleteIdentity + COMP_B.
 //
 // Then (ONBD-02) the profile seed carried in the provision body is written for the NEW
 // identity id; a blank seed writes nothing. The Telegram CONSUME is async (the user scans later);
@@ -160,13 +162,14 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 	if !s.musrIsolation {
 		return OnboardingProvisionResponse{}, errIsolationDisabled
 	}
-	if s.authula == nil || s.auraLeg == nil || s.telegram == nil || s.resolveBotName(ctx) == "" || s.recovery == nil {
+	if s.authula == nil || s.auraLeg == nil || s.telegram == nil || s.resolveBotName(ctx) == "" || s.recovery == nil || s.memory == nil {
 		slog.Warn("onboarding: provisioning backend not configured",
 			"authula", s.authula != nil,
 			"aura_leg", s.auraLeg != nil,
 			"telegram", s.telegram != nil,
 			"bot_username", s.resolveBotName(ctx) != "",
 			"recovery", s.recovery != nil,
+			"memory", s.memory != nil,
 		)
 		return OnboardingProvisionResponse{}, errProvisioningUnavailable
 	}

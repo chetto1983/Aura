@@ -14,7 +14,12 @@ import (
 var (
 	_ agui.ConversationPurger = conversationPurgeAdapter{}
 	_ agui.MemoryPurger       = arcadeMemoryPurgeAdapter{}
+	_ agui.MemoryProvisioner  = arcadeMemoryPurgeAdapter{}
 )
+
+type memoryTenantResolver interface {
+	For(context.Context, string) (*arcadedb.Client, error)
+}
 
 type conversationPurgeStore interface {
 	PurgeConversations(context.Context, string) error
@@ -35,15 +40,24 @@ func (a conversationPurgeAdapter) PurgeConversations(ctx context.Context, identi
 // ArcadeDB database and one server user per identity, so the purge is two server
 // commands rather than a sweep that has to find everything memory ever wrote.
 //
-// It carries no client for the tenant: the probe below is built per call, because
-// its whole purpose is to be REFUSED, and a cached client would prove nothing
-// about the credential the server holds now.
+// tenants owns the idempotent create/schema path. Purge verification deliberately
+// does not reuse that client: the negative credential probe below is built per call,
+// because a cached client would prove nothing about the credential the server holds now.
 type arcadeMemoryPurgeAdapter struct {
-	admin *arcadedb.Client
+	tenants memoryTenantResolver
+	admin   *arcadedb.Client
 	// base has no credential. The admin one drops; the tenant one is derived per
 	// call to be refused. Storing either in base would invite using the wrong one.
 	base        arcadedb.Config
 	credentials *arcadedb.TenantCredentials
+}
+
+func (a arcadeMemoryPurgeAdapter) ProvisionMemory(ctx context.Context, identityID string) error {
+	if a.tenants == nil {
+		return fmt.Errorf("memory provision is not configured")
+	}
+	_, err := a.tenants.For(ctx, identityID)
+	return err
 }
 
 // PurgeMemory drops the identity's database and its server user, then PROVES both.
@@ -137,12 +151,28 @@ func becauseOf(err error) string {
 // preflight refuses identity deletion when this is nil, which is the loud failure
 // an operator can act on.
 func buildArcadeMemoryPurger(cfg *config.Config) agui.MemoryPurger {
+	adapter := buildArcadeMemoryLifecycle(cfg)
+	if adapter == nil {
+		return nil
+	}
+	return *adapter
+}
+
+func buildArcadeMemoryProvisioner(cfg *config.Config) agui.MemoryProvisioner {
+	adapter := buildArcadeMemoryLifecycle(cfg)
+	if adapter == nil {
+		return nil
+	}
+	return *adapter
+}
+
+func buildArcadeMemoryLifecycle(cfg *config.Config) *arcadeMemoryPurgeAdapter {
 	if cfg == nil {
 		return nil
 	}
 	server := cfg.ArcadeDB
 	if strings.TrimSpace(server.AdminUser) == "" || strings.TrimSpace(server.AdminPassword) == "" {
-		slog.Warn("aura serve: no ArcadeDB server credential — memory purge disabled, de-provisioning will refuse identity deletion")
+		slog.Warn("aura serve: no ArcadeDB server credential — memory lifecycle disabled; tenant creation and de-provisioning are unavailable")
 		return nil
 	}
 	base := arcadedb.Config{BaseURL: server.BaseURL, Database: server.Database}
@@ -151,15 +181,16 @@ func buildArcadeMemoryPurger(cfg *config.Config) agui.MemoryPurger {
 	adminCfg.Password = server.AdminPassword
 	admin, err := arcadedb.New(adminCfg)
 	if err != nil {
-		slog.Warn("aura serve: ArcadeDB server credential unusable — memory purge disabled", "error", err)
+		slog.Warn("aura serve: ArcadeDB server credential unusable — memory lifecycle disabled", "error", err)
 		return nil
 	}
 	// Without the derivation secret the purge could still drop the user, but it
 	// could not prove the drop took — and an unprovable erasure is not one.
 	credentials, err := arcadedb.NewTenantCredentials()
 	if err != nil {
-		slog.Warn("aura serve: no ArcadeDB tenant secret — memory purge disabled", "error", err)
+		slog.Warn("aura serve: no ArcadeDB tenant secret — memory lifecycle disabled", "error", err)
 		return nil
 	}
-	return arcadeMemoryPurgeAdapter{admin: admin, base: base, credentials: credentials}
+	tenants := arcadedb.NewTenantClients(base, admin, nil, credentials)
+	return &arcadeMemoryPurgeAdapter{tenants: tenants, admin: admin, base: base, credentials: credentials}
 }

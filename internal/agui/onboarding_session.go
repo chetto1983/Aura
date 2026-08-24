@@ -202,9 +202,11 @@ type onboardingService struct {
 
 	// Phase-36 resource legs + journaling (onboarding_provision_resources.go /
 	// saga_journal.go): the forward-recovery journal, the per-identity Garage bucket/key
-	// leg, and the per-identity filesystem-roots leg. All OPTIONAL (nil disables that leg /
-	// journaling) so the pre-cutover + seed-only + unit-test paths are unchanged.
+	// leg, the REQUIRED per-identity ArcadeDB tenant leg, and the optional per-identity
+	// filesystem-roots leg. Nil journal/object-store/filesystem disables that optional leg;
+	// nil memory makes Provision fail before writes.
 	journal     SagaJournal
+	memory      MemoryProvisioner
 	objectStore ObjectStoreProvisioner
 	filesystem  FilesystemProvisioner
 
@@ -233,10 +235,10 @@ type OnboardingDeps struct {
 	// nil or returning "", the service falls back to the boot-resolved BotUsername.
 	BotUsernameResolver func(context.Context) string
 	Recovery            RecoverySetupWriter
-	// Phase-36 provisioning saga extensions (all optional): the forward-recovery journal
-	// (D-14/D-27), the per-identity Garage bucket/key leg (D-08), and the per-identity
-	// filesystem-roots leg (D-20/D-21).
+	// Phase-36 provisioning saga extensions: Memory is required for Provision; Journal,
+	// ObjectStore, and Filesystem remain optional for pre-cutover/seed-only compositions.
 	Journal     SagaJournal
+	Memory      MemoryProvisioner
 	ObjectStore ObjectStoreProvisioner
 	Filesystem  FilesystemProvisioner
 	// MUSRIsolation declares the deployment fit to host more than one identity
@@ -266,6 +268,7 @@ func newOnboardingService(d OnboardingDeps) *onboardingService {
 		botNameResolver: d.BotUsernameResolver,
 		recovery:        d.Recovery,
 		journal:         d.Journal,
+		memory:          d.Memory,
 		objectStore:     d.ObjectStore,
 		filesystem:      d.Filesystem,
 		musrIsolation:   d.MUSRIsolation,

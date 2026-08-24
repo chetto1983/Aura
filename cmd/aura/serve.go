@@ -266,6 +266,11 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	if err != nil {
 		return nil, err
 	}
+	memoryProvisioner := buildArcadeMemoryProvisioner(chat.cfg)
+	if err := reconcileArcadeMemoryTenants(ctx, chat.identity, memoryProvisioner); err != nil {
+		chat.close()
+		return nil, err
+	}
 	readinessState := readiness.NewSnapshot(readiness.Config{
 		MigrationCompatible: true,
 		SchedulerEnabled:    true,
@@ -401,10 +406,10 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// The mounts live in serve_webui.go: RequireCapability(identity.create) on start +
 	// provision ONLY; status, the seed-form submit (POST /api/onboarding/profile) and
 	// telegram-status are self-scoped and carry RequireAuth alone.
-	aguiServer.SetOnboardingService(buildOnboardingService(ctx, chat, onboardingAuthulaProvider))
+	aguiServer.SetOnboardingService(buildOnboardingService(ctx, chat, onboardingAuthulaProvider, memoryProvisioner))
 	aguiServer.SetOnboardingStatusSource(newOnboardingStatusAdapter(chat))
 	aguiServer.SetProfileEditor(onboarding.NewProfileStore(chat.pool))
-	wireBootstrapService(aguiServer, chat.pool, authulaProvider)
+	wireBootstrapService(aguiServer, chat.pool, authulaProvider, memoryProvisioner)
 	var resetTokenPepper []byte
 	if authulaProvider != nil {
 		resetTokenPepper, err = agui.DeriveResetTokenPepper(chat.cfg.AuthulaSecret)

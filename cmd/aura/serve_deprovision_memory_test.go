@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -42,6 +43,30 @@ type fakeArcadeServer struct {
 	ignoreDropUser     bool
 	existsStatus       int    // non-zero overrides the computed 200
 	existsBody         string // non-empty replaces the computed body
+}
+
+type fakeMemoryTenantResolver struct {
+	identityID string
+	err        error
+}
+
+func (f *fakeMemoryTenantResolver) For(_ context.Context, identityID string) (*arcadedb.Client, error) {
+	f.identityID = identityID
+	return nil, f.err
+}
+
+func TestArcadeMemoryProvisionUsesTenantResolver(t *testing.T) {
+	wantErr := errors.New("injected: tenant provision")
+	resolver := &fakeMemoryTenantResolver{err: wantErr}
+	provisioner := arcadeMemoryPurgeAdapter{tenants: resolver}
+
+	err := provisioner.ProvisionMemory(context.Background(), testMemoryIdentityID)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("ProvisionMemory error = %v, want %v", err, wantErr)
+	}
+	if resolver.identityID != testMemoryIdentityID {
+		t.Fatalf("tenant identity = %q, want %q", resolver.identityID, testMemoryIdentityID)
+	}
 }
 
 func (f *fakeArcadeServer) recordedCommands() []string {
@@ -331,5 +356,21 @@ func TestBuildArcadeMemoryPurgerIsNilWithoutItsCredentials(t *testing.T) {
 	})
 	if buildArcadeMemoryPurger(nil) != nil {
 		t.Fatal("buildArcadeMemoryPurger(nil) is not nil")
+	}
+}
+
+func TestBuildArcadeMemoryProvisionerUsesTenantCredentialGate(t *testing.T) {
+	configured := config.ArcadeDBConfig{
+		BaseURL:       "http://arcadedb:2480",
+		Database:      "aura_memory",
+		AdminUser:     testArcadeAdminUser,
+		AdminPassword: testArcadeAdminPass,
+	}
+	t.Setenv("AURA_ARCADEDB_TENANT_SECRET", testTenantSecret)
+	if buildArcadeMemoryProvisioner(&config.Config{ArcadeDB: configured}) == nil {
+		t.Fatal("a fully configured memory provisioner came back nil")
+	}
+	if buildArcadeMemoryProvisioner(nil) != nil {
+		t.Fatal("buildArcadeMemoryProvisioner(nil) is not nil")
 	}
 }
