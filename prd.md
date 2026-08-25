@@ -6096,11 +6096,12 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_AGUI_CORS_PERMISSIVE` | `0` | operative | 8 | Dev mode CORS `*`. |
 | `AURA_AGUI_PATH_RUN` | `/agent/run` | operative | 8 | AG-UI endpoint path. |
 | `AURA_AGUI_SSE_HEARTBEAT_SEC` | `15` | cap | 8 (fix-plan 1.3 Tier A) | Idle SSE-comment (`:hb\n\n`) keepalive interval on the `/agent/run` drain loop, keeping a quiet connection's TCP path warm against an intermediary (proxy/LB/browser) idle timeout during a long model-thinking or tool-call stretch. `<=0` disables it entirely (no ticker allocated) rather than falling back to a default, unlike `AURA_AGUI_BUFFER_CAP`. The web client already tolerates SSE comment lines (`web/src/chat/sseAdapter.ts`); Tier B (reconnect + Last-Event-ID resume) is deferred to a PRD-amended phase. |
-| `AURA_AGUI_RUN_DETACH` | `0` (false) | operative | 8 (fix-plan 1.3 Tier B) | Decouples run lifetime from the HTTP fetch (amendment #90): `handleRun` drives the turn on a `context.WithoutCancel` detached producer, so a client disconnect no longer cancels it — the run stays bounded by the agent Budget, `AURA_AGUI_RUN_MAX_WALLCLOCK_SEC`, the explicit cancel route, the conversation delete-lifecycle, and daemon shutdown. Off (default) ⇒ nil `RunRegistry` ⇒ byte-identical `/agent/run` wire and today's request-scoped path; the default flips to true only after the live E2E scores >9.8 (its own amendment line). |
+| `AURA_AGUI_RUN_DETACH` | `1` (true) | operative | 8 (fix-plan 1.3 Tier B) | Decouples run lifetime from the HTTP fetch (amendment #90). The default flipped to true after amendment #90.1's live E2E passed 10/10; explicit `false` remains the rollback to the request-scoped path. Runs stay bounded by the agent Budget, `AURA_AGUI_RUN_MAX_WALLCLOCK_SEC`, explicit cancel, conversation deletion, and daemon shutdown. |
 | `AURA_AGUI_RUN_BUFFER_EVENTS` | `2048` | cap | 8 (fix-plan 1.3 Tier B) | Per-run replay ring capacity in translated (pre-redacted) events — ≈1 MiB/run worst-case at ~512 B/frame (amendment #90). A resume from before the surviving window answers `410 Gone` → client snapshot fallback. Non-positive → default (cap, not toggle). |
 | `AURA_AGUI_RUN_LINGER_SEC` | `180` | cap | 8 (fix-plan 1.3 Tier B) | Terminal-session replay window (amendment #90): a finished run lingers in the `RunRegistry` this long so a late resume still replays the tail + `RUN_FINISHED`; the reaper (tick = linger/2) then evicts it → resume 404 → snapshot fallback. Non-terminal sessions are never reaped. |
 | `AURA_AGUI_RUN_MAX_WALLCLOCK_SEC` | `3600` | cap | 8 (fix-plan 1.3 Tier B) | Outer wallclock bound on the detached run ctx (amendment #90) — belt-and-suspenders over the agent Budget deadline so a mis-configured budget can never leak a detached producer goroutine forever; its expiry makes the run terminal and starts the linger clock. |
 | `AURA_AGUI_RUN_MAX_LIVE` | `16` | cap | 8 (fix-plan 1.3 Tier B) | Live (non-terminal) run cap (amendment #90): `RunRegistry.Start` refuses past it with `503 + Retry-After` BEFORE the thread lock is taken. Lingering terminal runs never consume a slot; registry memory worst-case ≈ MAX_LIVE × BUFFER_EVENTS ≈ 16 MiB + linger tail. |
+| `AURA_ASKUSER_PAUSE_TTL_SEC` | `172800` (48 hours) | cap | Phase 52 / Amendment #140 | Maximum age of an unanswered `kind=approval` pause. The daemon runs one owner-scoped sweep immediately at boot, then at `min(TTL/2, 60s)`. Expiry is persisted as the internal `expired` refusal through the same atomic pause-claim + `RoleTool` transaction as a human resume. `<=0` explicitly disables expiry. |
 | `AURA_WEB_AUTH_SECRET` | `` (empty) | secret | WEB (Phase 24) | Operator login passphrase for the in-binary cockpit auth AND the source of the HMAC cookie-signing key (derived as `sha256(secret)`; Plan 24-03 implements the derivation — NO separate signing-key var, D-01). Empty = loopback-only dev boot. Setting it lets `GuardWebBind` boot a non-loopback `AURA_AGUI_BIND` (WEB-02/D-05). |
 | `AURA_WEB_TRUST_PROXY` | `false` | operative | WEB (Phase 24) | Operator asserts a reverse proxy terminates auth in front of Aura (Go stays hands-off). `true` unlocks a non-loopback `AURA_AGUI_BIND` without the in-binary login (`GuardWebBind`, WEB-02/D-05). |
 | `AURA_CHANNEL_<NAME>_ENABLED` | `1` (true) | operative | 9a | Per-channel enable (es. `AURA_CHANNEL_TELEGRAM_ENABLED`). |
@@ -7592,3 +7593,36 @@ flusso completo, che funziona.
 > navigable — if a future amendment cancels this one it will most likely be on cost, not on
 > accuracy. And it says nothing about `send_file`, `document_index` or `current_time` leaving the
 > surface (AUTO-01/AUTO-02), which are Phase 47's to justify or drop on their own evidence.
+
+## §An unanswered approval has a bounded lifetime (Amendment #140, 2026-08-25)
+
+> **Amendment #140 (2026-08-25, Phase 52/RESUME-01 — records the live pre-implementation
+> measurement and closes the design gate for amendment #133 gap 4.)**
+>
+> **What was measured first.** The running WSL stack used PostgreSQL **18.4**. The live
+> `aura.paused_states` relation exposed `created_at`, `resumed_at`, and `resumed_answer`, but no
+> `expires_at`; the measurement found **0 pending rows**, so no user content was inspected. A source
+> inventory found no `ActionExpired`, no `AURA_ASKUSER_PAUSE_TTL_SEC`, and no approval-expiry worker.
+> The latest migration on disk was 0102. Because `created_at` already gives a durable cutoff clock,
+> expiry needs a bounded pending-row query and **no schema migration**.
+>
+> **Contract recorded from that measurement.** Only unanswered `kind=approval` pauses expire.
+> The default TTL is **172800 seconds (48 hours)**: long enough for an operator to step away for a
+> complete working day without a boundary-time expiry, while still bounding a forgotten approval.
+> This number is an explicit product policy, not a value inferred from the database or from
+> `AURA_MCP_ELICITATION_TIMEOUT_SEC`; `<=0` is the operator's explicit disable switch. The daemon
+> sweeps once immediately at boot and then every `min(TTL/2, 60 seconds)`.
+>
+> Expiry is an internal `expired` refusal, never a public resume verb and never an approval. Each
+> due pause goes through the same `WHERE resumed_at IS NULL` claim used by a genuine resume and, in
+> that same transaction, appends the matching `RoleTool` answer. This preserves wire-valid history
+> and makes an expiry-versus-human race single-winner under PostgreSQL READ COMMITTED. The worker
+> enumerates active identities and scopes each sweep to its owner; it does not bypass RLS. A later
+> HTTP decision on a deterministically expired token returns Gone rather than looking approved or
+> accepting an `expired` verb from the client.
+>
+> **What the measurement does NOT prove.** Zero pending rows means it did not exercise a live
+> expiry, choose 48 hours empirically, measure queue volume, or demonstrate the race. Those are the
+> implementation's real-PostgreSQL, race, restart-sweep, and real-agent E2E obligations. It also
+> does not prove that every future approval class should share this TTL; the contract is deliberately
+> limited to today's persisted `kind=approval` rows.

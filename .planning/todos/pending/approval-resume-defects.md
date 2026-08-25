@@ -70,6 +70,12 @@ orphan-scan TTL exist. LibreChat has `APPROVAL_EXPIRED_ERROR`, `expireApproval()
 prunes the paused run's durable checkpoint, and explicit handling for a decision arriving after the
 TTL lapsed.
 
+Pre-implementation measurement 2026-08-25: the live PostgreSQL 18.4 table had `created_at` and no
+`expires_at`, with zero pending rows at measurement time. Amendment #140 therefore records a
+no-migration design: 48-hour default, immediate boot sweep plus a bounded periodic sweep, per-owner
+RLS scoping, and an internal `expired` refusal committed atomically with its matching `RoleTool`
+answer. This item remains open until the real database, race, restart, and real-agent evidence lands.
+
 ## Constraint on any fix
 
 Our idempotency story is stronger than LibreChat's and must survive: `MarkResumed`'s
