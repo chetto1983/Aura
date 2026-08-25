@@ -66,6 +66,8 @@ test.describe('real multi-conversation ownership', () => {
     const titleB = `Thread B ${suffix}`;
     const answerToken = `THREAD-A-${suffix}`;
     const prompt = `Rispondi soltanto con ${answerToken}. Non usare strumenti.`;
+    const answerTokenB = `THREAD-B-${suffix}`;
+    const promptB = `Rispondi soltanto con ${answerTokenB}. Non usare strumenti.`;
     const conversationIds: string[] = [];
     let secondPage: Page | undefined;
 
@@ -103,6 +105,19 @@ test.describe('real multi-conversation ownership', () => {
       await expect(page.getByText(prompt, { exact: true })).toHaveCount(0);
       await expect(page.getByText(answerToken, { exact: false })).toHaveCount(0);
 
+      const composerB = page.getByPlaceholder('Ask Aura');
+      await composerB.fill(promptB);
+      const runBResponsePromise = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === '/agent/run' &&
+          response.request().method() === 'POST',
+      );
+      await composerB.press('Enter');
+      const runBResponse = await runBResponsePromise;
+      expect(runBResponse.status()).toBe(200);
+      const runBBody = runBResponse.request().postDataJSON() as { readonly threadId?: string };
+      expect(runBBody.threadId).toBe(threadB);
+
       secondPage = await page.context().newPage();
       await gotoAuthenticated(secondPage, `/c/${encodeURIComponent(threadB)}`);
       await expect(secondPage).toHaveURL(new RegExp(`/c/${threadB}$`));
@@ -111,6 +126,7 @@ test.describe('real multi-conversation ownership', () => {
         'true',
       );
       await expect(secondPage.getByText(prompt, { exact: true })).toHaveCount(0);
+      await expect(secondPage.getByText(promptB, { exact: true })).toBeVisible();
       await secondPage.close();
       secondPage = undefined;
 
@@ -124,6 +140,16 @@ test.describe('real multi-conversation ownership', () => {
       await expect(page.getByRole('button', { name: 'Send message' })).toBeEnabled({
         timeout: 180_000,
       });
+      await page.getByPlaceholder('Ask Aura').fill('');
+
+      await page.getByRole('button', { name: titleB, exact: true }).click();
+      await expect(page).toHaveURL(new RegExp(`/c/${threadB}$`));
+      await expect(page.getByText(promptB, { exact: true })).toBeVisible({ timeout: 180_000 });
+      await expect(page.getByText(answerTokenB, { exact: false }).last()).toBeVisible({
+        timeout: 180_000,
+      });
+      await expect(page.getByText(prompt, { exact: true })).toHaveCount(0);
+      await expect(page.getByText(answerToken, { exact: false })).toHaveCount(0);
     } finally {
       await secondPage?.close();
       for (const conversationId of conversationIds.reverse()) {
