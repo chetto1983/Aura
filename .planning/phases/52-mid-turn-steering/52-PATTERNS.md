@@ -34,7 +34,7 @@ work to a plan:**
 | `internal/agui/server.go` | 534 | 66 | One route registration + one setter call only. |
 | `internal/runner/runner.go` | 577 | 23 | **Almost none.** One struct field + one config passthrough line MAX; the wiring function itself goes in a new sibling file. |
 | `internal/askuser/store.go` | 527 | 73 | New TTL logic → new sibling file, not appended here. (Re-measured 2026-08-25 rev-2: 527, not the 513 first recorded.) |
-| `internal/channels/telegram/commands.go` | 436 | 164 | Room for one busy-peek helper. |
+| `internal/channels/telegram/commands.go` | 436 | 164 | **NOT MODIFIED — the busy-peek reservation is RETRACTED.** 52-06 `<stated_non_goals>` measured it and concluded "none is needed": `registerTurn`'s existing `false` return IS the live-turn signal both branches key on. A HEAD-scoped git criterion in BOTH 52-06 tasks proves this file untouched. |
 | `internal/agui/idempotency_http.go` | 406 | 194 | Room for one map entry. |
 | `internal/agui/translator.go` | 454 | 146 | Room for one CUSTOM-frame branch + const. |
 | `internal/agent/event.go` | 298 | 302 | Room for one additive `Actions` field. |
@@ -400,9 +400,17 @@ plain-text-during-live-turn case (#132 item 7: `ask_user`-paused runs are termin
 steerable — CONTEXT.md's Interaction note), so `sendBusy` stays unchanged there; only the
 `runTurnWithAssets` call site's `onBusy` changes.
 
-### `internal/channels/telegram/commands.go` — busy-peek helper (if needed)
+### `internal/channels/telegram/commands.go` — read-only; the busy-peek reservation is SUPERSEDED
 
-**Analog:** `internal/channels/telegram/commands.go:112-120`, `registerTurn`:
+**SUPERSEDED 2026-08-25.** This section previously reserved room in `commands.go` for a
+"busy-peek helper". 52-06's `<stated_non_goals>` retracted that after measuring: *"An earlier
+pattern note reserved room in it for a 'busy-peek helper'; measured, none is needed."* The file is
+**read-only for the whole phase** — 52-06 forbids touching it and enforces that with a HEAD-scoped
+git criterion in both of its tasks. What remains below is reference material only: `registerTurn`
+is the signal both the steer branch and the queue branch key on, so the executor reads it.
+
+**Analog:** `internal/channels/telegram/commands.go:112-120`, `registerTurn` (live, re-read
+2026-08-25 — unchanged):
 ```go
 func (c *commands) registerTurn(chatID int64, cancel context.CancelFunc) bool {
 	c.mu.Lock()
@@ -414,11 +422,12 @@ func (c *commands) registerTurn(chatID int64, cancel context.CancelFunc) bool {
 	return true
 }
 ```
-`registerTurn`'s own `false` return already IS the "chat is busy" signal — no new peek method
-is strictly required; the steer routing can live entirely in the `if !t.cmds.registerTurn(...)`
-branch already shown above. Listed here only in case the planner decides the text/non-text
-split (D-05) needs to happen BEFORE attempting registration (to avoid a wasted
-register-then-unregister cycle for a message that will queue rather than steer).
+`registerTurn`'s own `false` return already IS the "chat is busy" signal, and 52-06 settled the
+question the old text left open: no peek method is added, and the text/non-text split (D-05) does
+NOT move ahead of registration. Both branches live entirely in the `if !t.cmds.registerTurn(...)`
+arm shown above — which is also what keeps them behind `scopeTurnToIdentity`'s fail-closed identity
+scoping (T-52-30). If a task finds itself needing a peek method after all, 52-06 states that is a
+plan deviation to raise rather than a widening to make silently.
 
 ### `internal/config/config_agui_steer.go` (new) — the three knobs
 
@@ -510,39 +519,58 @@ lines 5-8: "moved out of config_test.go ... so that file stays under the 600-LOC
 
 ### `internal/agui/server_project.go` — the folded approval-resume defects
 
-**Analog:** the file's own `resumeAnswers`/`payloadString`, `internal/agui/server_project.go:21-52`:
+**Defect #2 is CLOSED.** Commit `80e2904ad` ("fix: reject empty accepted approval resumes",
+2026-08-25) landed between revisions of this map. The quote below is the LIVE function pair
+re-read on 2026-08-25, not the pre-`80e2904ad` body an earlier revision of this document
+reproduced. `.planning/todos/pending/approval-resume-defects.md` now titles its §2 "Closed
+2026-08-25".
+
+**Analog:** the file's own `resumeAnswers`/`submitResumeEntries`,
+`internal/agui/server_project.go:22-47` (live):
 ```go
-func resumeAnswers(entries []types.ResumeEntry) map[string]runner.ResponseInput {
+// resumeAnswers maps the AG-UI protocol-native Resume[] onto the Runner's three-action
+// resume model and rejects malformed answers before they cross the wire boundary.
+func resumeAnswers(entries []types.ResumeEntry) (map[string]runner.ResponseInput, error) {
 	out := make(map[string]runner.ResponseInput, len(entries))
 	for _, e := range entries {
 		action := askuser.ActionAccept
 		if e.Status == types.ResumeStatusCancelled {
 			action = askuser.ActionCancel
 		}
-		out[e.InterruptID] = runner.ResponseInput{Action: action, Content: payloadString(e.Payload)}
+		answer := runner.ResponseInput{Action: action, Content: payloadString(e.Payload)}
+		if err := askuser.ValidateResumeAnswer(askuser.ResumeAnswer(answer)); err != nil {
+			return nil, fmt.Errorf("resume %q: %w", e.InterruptID, err)
+		}
+		out[e.InterruptID] = answer
 	}
-	return out
+	return out, nil
 }
 
-func payloadString(payload any) string {
-	switch v := payload.(type) {
-	case nil:
-		return ""
-	case string:
-		return v
-	default:
-		b, err := json.Marshal(v)
-		if err != nil {
-			return ""
-		}
-		return string(b)
+func (s *Server) submitResumeEntries(ctx context.Context, entries []types.ResumeEntry) error {
+	answers, err := resumeAnswers(entries)
+	if err != nil {
+		return err
 	}
+	_, err = s.run.SubmitAnswers(ctx, answers)
+	return err
 }
 ```
-Folded defect #1 (no per-tool decision policy — accept on a decline-only pause) and #2 (empty
-answer resumes silently) both live in this exact function pair. LibreChat's reference
-behavior is 403 / 400 respectively (CONTEXT.md); the Aura shape is NOT a second validation
-layer bolted on afterward — the constraint carried from the todo is explicit: *"New
+`payloadString` is unchanged by `80e2904ad` and still returns `""` for a nil payload — correct
+for a cancel, which needs no answer. What changed is the caller's contract: `resumeAnswers` now
+returns an error and calls `askuser.ValidateResumeAnswer` per entry, so an ACCEPT with empty or
+whitespace-only content is refused, and BOTH HTTP call sites (`server_run.go:110`,
+`server_run_detach.go:75`) map that error to **400** before `SubmitAnswers` is reached. The same
+invariant is enforced again in the Runner (`runner_resume.go:102` and `:155`) and at the
+persistence boundary (`encodeAnswer`, `store.go:508`).
+
+**Folded defect #1 (no per-tool decision policy — accept on a decline-only pause) is still open**,
+and it does NOT live in this function pair: `resumeAnswers` is a pure `[]types.ResumeEntry` → map
+mapping with no store handle, so it cannot read the pause whose policy it would have to enforce.
+The pause record is in scope only in the Runner, where `GetByToken` has already run — beside the
+existing `ValidateResumeAnswer(claim.Answer)` calls at `runner_resume.go:102` / `:155`, which both
+AG-UI call sites already funnel through via `submitResumeEntries` → `SubmitAnswers`. LibreChat's
+reference behavior is 403 for #1 and 400 for #2 (CONTEXT.md); the Aura shape is NOT a second
+validation layer bolted on afterward — the constraint carried from the todo is explicit: *"New
 validation goes inside that transaction's front door, never as a second path around it."*
 The transaction's front door is `MarkResumedTx`/`MarkResumedBatchTx`
 (`internal/askuser/store.go:325-342`, `:382-...`), and the cross-store claim is
@@ -570,7 +598,10 @@ need), not as a second check after.
 ### `internal/askuser` — pending-approval TTL (folded defect #3)
 
 **No explicit target file named in CONTEXT.md.** Given `internal/askuser/store.go` is at
-513/600 (87 lines of headroom — tight for a ticker+reaper addition plus its own tests), the
+527/600 (73 lines of headroom — tight for a ticker+reaper addition plus its own tests; re-measured
+2026-08-25 with `wc -l`, and it agrees with the LOC table above — an earlier revision of this
+document said 513/87 in the table and this paragraph, corrected the table, and left the paragraph
+lying), the
 closest STRUCTURAL analog for the reaper itself is `internal/agui/runregistry.go:186-226`,
 the linger-reaper:
 ```go

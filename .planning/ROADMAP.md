@@ -632,13 +632,27 @@ STEER-04 exists because the failure mode of any queue-into-a-running-thing is si
 **Plans**: 8 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 52-01-PLAN.md — STEER-06 amendment gate: the five corrections to #132, the three superseded documents, the minted RESUME-01 id, and the knob surface
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 52-02-PLAN.md — The agent half: the conversation-keyed bounded inbox, both drain points, the nonce marker OUTSIDE the tool-output envelope, the teaching note and the pre-wrap lookalike scrub
 - [ ] 52-03-PLAN.md — RESUME-01, folded amendment #133 defects: empty-accept refusal, per-pause decision policy recorded at mint, pending-approval TTL through the resume front door
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 52-04-PLAN.md — Tracer: the cockpit steer route, the aura.steer echo frame, drain-time persistence, the single-inbox wiring, plus the rehydration and resume-replay proofs
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 52-05-PLAN.md — STEER-04: auto-deliver a leftover steer as the next user turn, and refuse a terminal run with an actionable 410
 - [ ] 52-06-PLAN.md — STEER-05: Telegram steers the live turn, and the media queue D-05 requires (today a photo on a busy chat is dropped, not queued)
 - [ ] 52-07-PLAN.md — D-10's composer contract: the cockpit composer steers a live run, the aura.steer frame reaches the UI on both pumps, and the committed dist is rebuilt on Linux
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 52-08-PLAN.md — Gate 3: live E2E from both surfaces, the D-13 budget A/B judged on ceiling+deadline, Go and frontend gates re-measured on this tree, quality snapshot re-attested
 
 ### Phase 54: Milestone exit
@@ -689,6 +703,7 @@ Three departures from numeric order, each measured rather than preferred:
   What did NOT go with them: amendment #133's three approval-path defects, kept in
   `.planning/todos/pending/approval-resume-defects.md`, because they are resume-path security
   gaps rather than tool-surface ceremony.
+
 - **50 before 49.** 50's target is now the compaction trigger, which exists; 49's remaining scope
   is smaller than written and does not gate it.
 
