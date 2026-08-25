@@ -162,7 +162,7 @@
 - [ ] **STEER-04**: A steer that arrives after its run has ended is delivered automatically as the next user turn, preceded by a visible line saying that happened, never silently swallowed
 - [ ] **STEER-05**: Steering works from the operator's channels, not only the cockpit
 - [ ] **STEER-06**: The PRD amendment ratifying mid-turn steering is committed **before** any of its code
-- [x] **RESUME-01**: The approval resume path refuses an accept carrying no answer, refuses a decision the pause's policy does not permit, and expires a pending approval as an expiry rather than as a yes — without weakening the `WHERE resumed_at IS NULL` conditional update that IS the idempotency key. Folded from PRD amendment #133 (Phase 47, deleted 2026-08-25); all three defects closed 2026-08-25 (empty-answer refusal, per-tool decision policy, pending-approval TTL — see `52-03-SUMMARY.md`)
+- [x] **RESUME-01**: The approval resume path refuses an accept carrying no answer, refuses a decision the pause's policy does not permit, and expires a pending approval as an expiry rather than as a yes — without weakening the `WHERE resumed_at IS NULL` conditional update that IS the idempotency key. Folded from PRD amendment #133 (Phase 47, deleted 2026-08-25); all three defects shipped ahead of the phase's own Gate 3 (empty-answer refusal, per-tool decision policy, pending-approval TTL — see `52-03-SUMMARY.md`). 52-08 also declares this id and closes it formally by live E2E — the shared-ID gate withholds "Complete" in the traceability table until then
 
 ### Acceptance
 
@@ -252,7 +252,7 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 | MEM-04 | Phase 45 | Complete |
 | MEM-05 | Phase 45 | Complete |
 | MEM-06 | Phase 49 | Pending |
-| RESUME-01 | Phase 52 | Complete |
+| RESUME-01 | Phase 52 | Shipped early (`52-03`) — closes at 52-08 (Gate 3) |
 | STEER-01 | Phase 52 | Pending |
 | STEER-02 | Phase 52 | Pending |
 | STEER-03 | Phase 52 | Pending |

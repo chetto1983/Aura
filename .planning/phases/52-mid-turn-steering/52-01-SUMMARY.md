@@ -7,7 +7,7 @@ tags: [prd-amendment, config, steering, resume, dark-code, envutil]
 requires: []
 provides:
   - "PRD amendment #142: five corrections to amendment #132 (auto-delivery, two drain points, nonce marker + placement, AURA_AGUI_RUN_STEER default true + in-phase composer contract, D-05's missing media queue), each with hermes/live-tree citations and a 'what this does NOT prove' paragraph"
-  - "REQUIREMENTS.md/ROADMAP.md realigned to the corrected contract (auto-delivery wording, Depends-on fix, RESUME-01 minted and marked Complete)"
+  - "REQUIREMENTS.md/ROADMAP.md realigned to the corrected contract (auto-delivery wording, Depends-on fix, RESUME-01 minted — traceability status 'Shipped early (52-03), closes at 52-08' per the shared-ID gate)"
   - "Amendment #133 re-pointed from the deleted Phase 47 to Phase 52/RESUME-01"
   - "internal/config/config_agui_steer.go: AGUISteerConfig{Enabled,Max,MaxBytes} + loadAGUISteerConfig(), wired into Config.AGUISteer"
   - "config_knobs.go: three new AURA_AGUI_RUN_STEER* catalogue rows, D-11/D-12 comments naming the decisions"
@@ -38,14 +38,14 @@ key-files:
 
 key-decisions:
   - "Next PRD amendment number is #142, not #141 — #141 was claimed mid-session by an unrelated concurrent commit (42711b508, a different Codex-authored session correcting the document-pipeline gate) that landed between the plan's own reading pass and the first edit. Recomputed live per <no_stale_inputs>, not trusted from any prior reading."
-  - "AURA_ASKUSER_PAUSE_TTL_SEC / RESUME-01's TTL half was already shipped by plan 52-03's out-of-order execution (commits 0d5f48dfd/6d1ec3859, landed before this plan ran despite 52-01 being Wave 1). Not re-implemented; RESUME-01 is minted here and marked Complete to reflect the accurate combined state, since all three folded defects (empty-answer refusal, per-tool decision policy, pending-approval TTL) are independently closed as of 2026-08-25."
+  - "AURA_ASKUSER_PAUSE_TTL_SEC / RESUME-01's TTL half was already shipped by plan 52-03's out-of-order execution (commits 0d5f48dfd/6d1ec3859, landed before this plan ran despite 52-01 being Wave 1). Not re-implemented; RESUME-01 is minted here with its bullet checked (the work is done), but its traceability Status stays 'Shipped early (52-03) — closes at 52-08' rather than 'Complete', because plan 52-08 also declares RESUME-01 and the #2388 shared-ID gate withholds Complete until every declaring plan finishes — the same convention already used for MCP-01/MCP-03."
   - "AURA_AGUI_RUN_DETACH's catalogue default was also already corrected to true by 52-03's commit 0d5f48dfd (an in-scope Rule-1 fix that executor made while touching config_knobs.go for the TTL row). This plan adds only the missing D-11-naming comment and the TestEveryNewKnobIsCatalogued tripwire the acceptance criteria required."
   - "The five corrections live as a new sibling amendment (#142) referencing #132 by number, PLUS in-place strikethrough+replacement edits inside #132's own text at the three sentences that asserted the superseded behaviour (item B's terminal-event-only delivery, the singular drain point, and item 10/12's default-false + deferred-composer clauses) — matching the must_haves truths requirement literally, not just the automated grep checks."
 
 patterns-established:
   - "A catalogued knob's Default string is round-tripped against the loader's actual applied default in a dedicated test (TestEveryNewKnobIsCatalogued), not just asserted once at knob-creation time — the pattern any future D-11-shaped drift should be caught by."
 
-requirements-completed: [STEER-06, RESUME-01]
+requirements-completed: [STEER-06, STEER-01]
 
 coverage:
   - id: D1
@@ -112,7 +112,7 @@ status: complete
 - Amendment #133 is re-pointed from the deleted Phase 47 to Phase 52/`RESUME-01` with a dated line, without rewriting its findings.
 - REQUIREMENTS.md STEER-04 and ROADMAP Phase 52 SC#3 both now read "delivered automatically as the next user turn, preceded by a visible line saying that happened" instead of "returned/returns to the operator to re-send."
 - ROADMAP Phase 52's `Depends on:` line no longer claims Phase 51; it states the actual execution order and why the original reasoning inverted.
-- `RESUME-01` is minted in REQUIREMENTS.md (bullet + traceability row) and added to ROADMAP Phase 52's `**Requirements**:` line, marked Complete — all three folded amendment-#133 defects are independently closed as of 2026-08-25.
+- `RESUME-01` is minted in REQUIREMENTS.md (bullet + traceability row) and added to ROADMAP Phase 52's `**Requirements**:` line — all three folded amendment-#133 defects are independently closed as of 2026-08-25; traceability Status reads "Shipped early (52-03) — closes at 52-08" per the shared-ID gate (52-08 also declares this id).
 - `internal/config/config_agui_steer.go` ships `AGUISteerConfig{Enabled, Max, MaxBytes}` and `loadAGUISteerConfig()`, wired into `Config.AGUISteer` via `loadBase()`. `Enabled` defaults `true` (D-12).
 - `config_knobs.go` gains the three `AURA_AGUI_RUN_STEER*` rows plus D-11/D-12-naming comments; prd.md's env catalogue gains the matching three rows.
 - `TestEveryNewKnobIsCatalogued` is a standing tripwire: it fails if any cataloged knob's `Default` string diverges from what the loader actually applies, covering the four new knobs and `AURA_AGUI_RUN_DETACH`.
@@ -158,9 +158,19 @@ _No plan-metadata commit is separate from this SUMMARY's own commit (below)._
 - **Files affected:** none — the correct number (#142) was used from the first write, no rework needed
 - **Verification:** `grep -o 'Amendment #[0-9]*' prd.md | ... | tail -1` recomputed after the collision landed, confirmed #142 is unused before writing
 
+### Auto-fixed Issues
+
+**3. [Rule 1 - Bug] RESUME-01 traceability status wrongly marked Complete, bypassing the shared-ID gate.** During Task 1, RESUME-01's traceability row was hand-written as `Complete` instead of routed through `requirements.ready-ids`/`requirements.mark-complete`. Post-commit verification (`requirements.ready-ids` for `RESUME-01`) showed `0/1 ready` — plan `52-08` (Gate 3) also declares `RESUME-01` in its frontmatter and has not produced a SUMMARY yet, so the #2388 shared-ID gate withholds `Complete` until every declaring plan finishes. Fixed to mirror the existing `MCP-01`/`MCP-03` precedent in the same table: bullet stays `[x]` (the underlying work genuinely shipped, in `52-03`), traceability Status changed to `Shipped early (52-03) — closes at 52-08 (Gate 3)`.
+- **Found during:** Post-Task-1 verification, before the final metadata commit
+- **Issue:** A downstream verifier reading the traceability table would see `RESUME-01 | Phase 52 | Complete` and could skip Gate 3's own closing evidence for it
+- **Fix:** Traceability Status row and REQUIREMENTS.md bullet annotation both corrected to the `Shipped early — closes at N` convention already established for MCP-01/MCP-03
+- **Files modified:** `.planning/REQUIREMENTS.md`
+- **Verification:** `node gsd-tools.cjs query requirements.ready-ids 52-01-PLAN.md RESUME-01` still reports `0/1 ready` (expected — it is not auto-marked); `grep -c RESUME-01 .planning/REQUIREMENTS.md` still `2` (Task 1's acceptance criterion unaffected)
+- **Committed in:** this SUMMARY's own commit (docs-only fix, no code change)
+
 ---
 
-**Total deviations:** 0 auto-fixed (Rules 1-4); 2 informational findings, both resolved by accurate measurement per `<no_stale_inputs>`, no plan content weakened or reworked.
+**Total deviations:** 1 auto-fixed (Rule 1 — self-caught traceability bug); 2 informational findings, both resolved by accurate measurement per `<no_stale_inputs>`, no plan content weakened or reworked.
 **Impact on plan:** None on scope or correctness. Task 2's file list (`config_askuser.go`/`config_askuser_test.go`) is unmodified because that work was already correct and complete.
 
 ## Issues Encountered
