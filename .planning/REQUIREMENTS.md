@@ -38,77 +38,40 @@
 
 ### Tool surface
 
-- [ ] **TOOL-01**: Exactly **14 tools** are loaded in the model's manifest. A hard cap, not a target:
-
-  | # | Tool | Covers |
-  |---|------|--------|
-  | 1 | `text_response` | the loop's only terminal |
-  | 2 | `ask_user` | pause, clarify, approve |
-  | 3 | `shell_exec` | terminal, background via param |
-  | 4 | `fs_read` | |
-  | 5 | `fs_write` | write + exact-string edit |
-  | 6 | `fs_search` | find by name + search contents |
-  | 7 | `document` | search + open |
-  | 8 | `memory` | recall + atomic write batch |
-  | 9 | `web` | search + fetch |
-  | 10 | `skill` | list + view + linked files |
-  | 11 | `skill_manage` | create, patch, delete, install |
-  | 12 | `task` | schedule, list, cancel |
-  | 13 | `delegate` | swarm |
-  | 14 | `comms` | calendar, mail, contacts, WhatsApp |
-  | + | `tool_search` | **infrastructure — mandatory.** Without it the deferred tail is unreachable; hermes states the rule as *"Core tools are never deferred. Always-load means always-load. No exceptions."* |
-
-  So **15 loaded**, not 14: fourteen domain tools plus the one that reaches everything else.
-  `read_tool_output` is loaded too until TOOL-13 deletes it, briefly making 16 — the same count
-  Claude Code ships, whose 16 likewise include plumbing (`Task`, `BashOutput`, `KillBash`).
-
-  Everything else is deferred behind `tool_search`. Four tools leave the model's surface
-  entirely because the host takes the step over: `send_file` (AUTO-01), `document_index`
-  and `document_describe` (AUTO-02), and `current_time` (already injected in the volatile
-  block). Reference point: Claude Code ships 16 loaded tools and no deferred pattern at
-  all — but those 16 cover coding alone, while these 14 must also carry documents, memory,
-  comms, scheduling and delegation. The budget is stricter than the comparison suggests
-  and has no slack
-
-- [ ] **TOOL-02**: The model is never asked to supply a parameter the host overwrites and discards
-- [ ] **TOOL-03**: A withheld destructive action is raised and resolved by the host; the model never relays a resume payload. **Carve-out:** the swarm relay fields (`proxied_from_child_id`, `proxied_tool_call_id`) stay — a headless worker has already returned its report by the time the parent relays its question, so which worker asked is knowledge only the parent holds. Removing them would leave a worker's question unattributed or undeliverable
-- [ ] **TOOL-04**: Scheduling a task takes one natural-language `when` instead of five mutually exclusive time fields
 - [ ] **TOOL-05**: Recalling memory takes one question; the host chooses graph traversal or hybrid search and reports which it used
-- [ ] **TOOL-06**: Loading a skill's content **is** using it — the read-without-applying action does not exist. Hermes exposes a single `skill_view`; Aura's `info`/`use` pair differs only by a wrapper sentence, and that cosmetic split cost ~4k duplicated tokens in the audited session when she read `docx` and `xlsx` through one verb and then re-read both through the other
-- [ ] **TOOL-07**: Skill *use* is separated from skill *lifecycle* (create, update, delete, install, snippets), so the frequent path stays small
-- [ ] **TOOL-08**: Indexing a produced file accepts its description in the same call
-- [ ] **TOOL-09**: Web search drops the parameters inferable from the query itself
-- [ ] **TOOL-10**: A fetch that returns a bot-block, consent wall, or empty extraction is reported as a failed read, never handed back as if it were the page
-- [ ] **TOOL-12**: A deferred tool whose exact name the model can already see is loaded without spending a search first — the listing makes the name visible, so discovery and loading are not forced into two round trips
 - [ ] **TOOL-13**: `read_tool_output` stops occupying a loaded slot. Paging a large output should use the file tool that already exists — **neither reference harness has a bespoke paging tool**: hermes writes the spill to a file (*"the model can `read_file` to access the full output"*) and Claude Code's 16 tools have none either (`Read` takes `offset`/`limit`; `BashOutput` is for live background shells, not completed results). Two independent harnesses, no third way.
 
   **Deleting it outright is the goal, and it is not trivial — three sub-problems, to be sized before committing to the full form:**
 
   1. **Filesystem boundary.** Sidecars live host-side in `AURA_RUN_DIR` (absolute, swept on a timer); `fs_read` reads inside the sandbox container under `/workspace`. The spill must land somewhere the sandboxed reader can reach.
-  2. **Description debt.** `fs_read`'s own text says *"A large result pages to a sidecar you read with read_tool_output"* — every description naming the tool has to be rewritten with it (SURF-02 territory).
+  2. **Description debt.** `fs_read`'s own text says *"A large result pages to a sidecar you read with read_tool_output"* — every description naming the tool has to be rewritten with it — and with SURF-02 deleted,
+     no requirement owns that rewrite any more; it belongs to whoever does TOOL-13.
   3. **GC contract.** `AURA_RUN_DIR` is swept and `reserve.go`'s `resultExpiredMarker` depends on that. A spill in the persistent `/workspace` either accumulates in the operator's own space or needs its own sweep.
 
-  **Fallback if (1) proves expensive: keep the tool but make it deferred rather than loaded.** That recovers the manifest slot — the actual scarce resource under TOOL-01 — at near-zero cost, and paging a result is rare enough that one search round trip is acceptable. The L1 eviction pointer keeps working unchanged
+  **Fallback if (1) proves expensive: keep the tool but make it deferred rather than loaded.** That recovers a manifest slot at near-zero cost — though with TOOL-01 deleted (PRD amendment #139:
+  `tool_search` measures 164 calls / 0 failures against a deferred tail of 100+ tools), the slot is
+  no longer a scarce resource and this fallback is cheaper than the deletion it replaces — and paging a result is rare enough that one search round trip is acceptable. The L1 eviction pointer keeps working unchanged
 
-- [x] **TOOL-14**: The PRD amendment ratifying the tool-surface tier change is committed **before** any of its code. It must (a) supersede amendment **A4** (2026-05-30, `prd.md:751,783`) by name, which declares `read_tool_output` a *"Builtin non-deferred"* with a byte-paging contract that TOOL-13 changes; (b) extend amendment **#44** (`prd.md:1371`), which already ratified `sandbox_exec` as *"non-deferred di proposito"* because a live E2E showed the model cramming a whole command line into one argument when it could not see the schema — *"il modello DEVE vedere lo schema"*; and (c) change the tiering axis stated at `prd.md:154` from **size** (*"Tool grandi → Deferred: true"*) to **frequency plus a hard count budget**. Covers TOOL-01, TOOL-13 and MCP-04. This is an extension of ratified reasoning, not a reversal of it
-- [ ] **TOOL-11**: Finding files by name and searching their contents are one tool (`target: files | content`). **This reverses an earlier decision in this document.** The research established that five of six vendor harnesses — Claude Code included — keep them separate, and on that evidence the merge was parked pending telemetry. TOOL-01's hard cap overrules it: those vendors spend 16 slots on coding alone and can afford two, while Aura must fit documents, memory, comms, scheduling and delegation into the same budget. The cap forces the merge; the vendor evidence still says it is the weaker shape, and that tension is recorded rather than resolved
+- [x] **TOOL-14**: The PRD amendment ratifying the tool-surface tier change is committed **before** any of its code. It must (a) supersede amendment **A4** (2026-05-30, `prd.md:751,783`) by name, which declares `read_tool_output` a *"Builtin non-deferred"* with a byte-paging contract that TOOL-13 changes; (b) extend amendment **#44** (`prd.md:1371`), which already ratified `sandbox_exec` as *"non-deferred di proposito"* because a live E2E showed the model cramming a whole command line into one argument when it could not see the schema — *"il modello DEVE vedere lo schema"*; and (c) change the tiering axis stated at `prd.md:154` from **size** (*"Tool grandi → Deferred: true"*) to **frequency plus a hard count budget**. Covers TOOL-13 and MCP-04 (it also covered TOOL-01, deleted 2026-08-25). This is an extension of ratified reasoning, not a reversal of it
 
 ### Automation
 
 <!-- Directive: "simplify AND automatize more". A step the host can take is not the model's to remember. -->
 
-- [ ] **AUTO-01**: A file produced for the operator reaches them without the model having to remember to send it
-- [ ] **AUTO-02**: A file the operator will need later becomes findable without a separate deliberate indexing step
+> **Narrowed 2026-08-25.** AUTO-01 (host-side file delivery), AUTO-02 (automatic indexing) and
+> AUTO-04 (host-filled parameters everywhere) were deleted with Phases 47-48. `send_file` measures
+> 18 calls and 0 failures, so no evidence said the operator was losing files; AUTO-01 additionally
+> REVERSED D-05/D-06. Consequence recorded rather than hidden: the `always-deliver-files` skill
+> stays, because the host-side delivery that would have made it redundant is not being built.
+
 - [ ] **AUTO-03**: A durable fact revealed during a turn is captured as part of doing the work — and never harvested from reasoning traces (see CTX-05)
-- [ ] **AUTO-04**: Every parameter the host already knows is filled host-side across the whole surface, native and MCP alike, not just where it was noticed
 
 ### Compatibility
 
-<!-- The tool-shape changes in TOOL-* and MCP-* land on a system with live persisted state. -->
+> **DELETED 2026-08-25.** COMPAT-01/02/03 existed to keep live persisted state valid across the
+> tool renames and merges of Phases 47-48. Those phases were deleted (PRD amendments #134, #139),
+> nothing is renaming a tool, and the compatibility work has no change to be compatible with.
 
-- [ ] **COMPAT-01**: Conversation history rehydrated from turns recorded against an older tool schema still builds a valid request — an old `tool_calls` payload never produces a broken wire message or a crash
-- [ ] **COMPAT-02**: A pause created against a previous `ask_user` shape either resumes correctly or fails loudly with an actionable message — never silently
-- [ ] **COMPAT-03**: A scheduled `agent_job` created before the change still fires, resolving tools at fire time against the current surface
 
 ### MCP trust and facade
 
@@ -151,7 +114,7 @@
 - [ ] **CTX-03**: A pruned skill body leaves a marker, so the model can tell a skill's instructions are gone rather than believing it still holds them
 - [ ] **CTX-04**: The operator can see what is consuming the context window by category, not only how full it is
 - [ ] **CTX-05**: Reasoning traces never reach a summarizer or fact extraction, so scratch-work conclusions cannot be preserved as facts
-- [ ] **CTX-06**: A spike measures, on real exported conversations with known-correct answers, whether retrieval over indexed history recovers what the ladder drops — against summarization, and against both — and its result decides which ships
+- [x] **CTX-06**: ~~A spike measures, on real exported conversations with known-correct answers, whether retrieval over indexed history recovers what the ladder drops — against summarization, and against both — and its result decides which ships.~~ **Satisfied by implementation, not by a spike (PRD amendment #137).** L3 LLM-driven compaction shipped 2026-08-12 (`prd.md:1190`) with an operator `/compact` command and an AG-UI endpoint. A spike decides whether to build a thing; this thing runs. What it does NOT settle: the retrieval arm was never measured against the summarization arm, so which is *better* is still unknown — only which one exists
 - [ ] **CTX-07**: When the context is over threshold and cannot be reduced, the reason is stated rather than the session simply failing or silently degrading
 - [ ] **CTX-08**: Tool output is bounded **per turn**, not only per result. After a round's results are collected, if their total exceeds the turn budget the largest are spilled to disk until it is under. Aura caps each result (`AURA_CONTEXT_PREVIEW_CAP_BYTES`) and has no aggregate: ten medium results in one parallel batch each clear the per-result cap and still overflow the turn — the exact shape of a swarm fan-out or a wide multi-tool round. Hermes calls this the third of three defenses and sets it at 200K chars
 
@@ -166,14 +129,8 @@
 
 ### Surface legibility
 
-- [ ] **SURF-01**: The system prompt names only tools that are actually loaded, and is regenerated as part of the un-defer rather than after it
-- [ ] **SURF-02**: Per-tool operational rules live in that tool's description, arriving with its schema at the moment of use
-- [ ] **SURF-03**: Files produced but not yet delivered or indexed are surfaced next to the turn, not left for the model to remember
 - [ ] **SURF-04**: The model can tell that memory was already injected, and that a tool dropped from the manifest is still callable
-- [ ] **SURF-05**: The obsolete `learned_lesson` facts and the `always-deliver-files` skill are retired once the defects they compensate for are fixed
-- [ ] **SURF-06**: A skill's references, templates and scripts are fetched **through the skill tool itself** — the first call returns the skill body plus a `linked_files` index, and a second call naming one of those paths returns it. The model never learns where skills are mounted because it never needs to (hermes `skill_view` pattern). This is what F-6 actually wanted: `ls /skills/` was a workaround for a tool that would not hand back its own attachments
-- [ ] **SURF-07**: Each preinstalled skill carries the operational detail its family needs — no skill is a stub beside siblings that are full playbooks
-- [ ] **SURF-08**: The deferred roster lists every deferred capability **by name**, and carries three statements hermes found necessary: that tools already loaded need no search; that a name appearing in the list must not be reported as unavailable; and that a generic tool — the terminal above all — must not be substituted for a specific one without searching first. The third is the exact failure of audit turn `[054]`, where she reached for `shell_exec` because the specific tool was not in front of her. The roster degrades deterministically when it will not fit — full listing, then names only, then one line per server — sorted so a single oversized server cannot cost a small one its listing
+- [ ] **SURF-05**: The obsolete `learned_lesson` facts are retired once the defects they compensate for are fixed. **Narrowed 2026-08-25:** the `always-deliver-files` skill is NO LONGER part of this — AUTO-01 was deleted rather than built, so the gap that skill compensates for stays open and the skill stays with it
 
 ### Delegation
 
@@ -185,9 +142,9 @@
 - [ ] **SWARM-03**: A top-level delegation returns the turn immediately; its results re-enter the conversation when the work finishes, and the model cannot opt out of this
 - [ ] **SWARM-04**: A delegation issued *by a worker* runs synchronously — an orchestrating worker needs its own workers' results inside its own turn
 - [ ] **SWARM-05**: A worker can itself orchestrate, bounded by the configured depth — opening the nesting the PRD designed and the current registry-minus-`swarm_spawn` implementation forecloses
-- [ ] **SWARM-06**: A worker that needs the operator reaches them, attributed to the worker that asked — the relay survives the TOOL-03 approval rework
+- [ ] **SWARM-06**: A worker that needs the operator reaches them, attributed to the worker that asked — the relay survives — TOOL-03's approval rework was deleted 2026-08-25, so it rides the shipped `ask_user` shape rather than a reworked one
 - [ ] **SWARM-07**: Concurrent workers writing durable facts (AUTO-03) and reasoning traces (MEM-03) into one identity's graph neither corrupt nor duplicate, and each write names the worker that made it
-- [ ] **SWARM-08**: Workers reason over the same flattened tool surface the parent does, verified after the un-defer rather than assumed from registry inheritance
+- [ ] **SWARM-08**: Workers reason over the same flattened tool surface the parent does, verified against the live surface rather than assumed from registry inheritance — the un-defer this was written to follow was deleted 2026-08-25
 - [ ] **SWARM-09**: Delegated work is durable — a task survives a process restart, is claimable from Postgres, and is never silently lost nor silently retried. Implements the approved-but-unbuilt [durable swarm messaging design](../docs/superpowers/specs/2026-06-29-durable-swarm-messaging-design.md); SWARM-03's background delegation is this substrate's first consumer, not a parallel mechanism
 - [ ] **SWARM-10**: The operator (and the parent) can watch a worker work — a tail-able live transcript per child, rather than waiting blind for the consolidated report
 - [ ] **SWARM-11**: The PRD amendment ratifying the durable swarm substrate is committed **before** any of its code
@@ -210,7 +167,7 @@
 
 - [x] **ACC-01**: **Mandatory, every requirement, no exceptions.** A requirement is verified only by a real conversation with the running Aura, scored on the answer she actually gave and the artifact or state she actually produced. A passing test — unit, integration, race, or smoke — is **not** evidence that a requirement is met. Tests keep the code honest; they say nothing about whether the agent behaves. Any requirement whose only evidence is a green suite is **not done**
 - [x] **ACC-02**: Phase evidence is read from OpenTelemetry traces, `aura.tool_invocations`, `aura.conversation_turns` and `aura.context_rot_events` — no new eval harness is built
-- [ ] **ACC-03**: **Milestone exit gate.** With the nine `learned_lesson` facts and the `always-deliver-files` skill deleted, replaying the audited scenarios produces correct tool choice, automatic delivery and successful self-retrieval — and Aura does not re-learn any retired lesson
+- [ ] **ACC-03**: **Milestone exit gate.** With the nine `learned_lesson` facts deleted, replaying the audited scenarios produces correct tool choice, file delivery and successful self-retrieval — and Aura does not re-learn any retired lesson. **Narrowed 2026-08-25** with SURF-05: the `always-deliver-files` skill is not deleted and delivery is not automatic, because AUTO-01 was deleted rather than built
 
 ## v2 Requirements
 
@@ -218,7 +175,7 @@ Deferred. Tracked, not in this roadmap.
 
 ### Context
 
-- **CTX-V2-01**: LLM summarization rung with anti-thrash, cooldown and deterministic fallback — **promoted to v1 only if CTX-06's spike selects it**; STACK.md confirms it needs no new dependencies whichever way the spike lands
+- **CTX-V2-01**: LLM summarization rung with anti-thrash, cooldown and deterministic fallback — **promoted by implementation, not by a spike** — L3 compaction shipped 2026-08-12 (PRD amendment #137). CTX-V2-01's own anti-thrash/cooldown/fallback guards were the spike's deliverable and were NOT part of that shipment; whether they exist in the shipped compaction is unverified
 - **CTX-V2-02**: Durable cross-restart anti-thrash state (needs a migration; in-memory is the simpler default)
 
 ### Tool surface
@@ -226,7 +183,7 @@ Deferred. Tracked, not in this roadmap.
 - **TOOL-V2-01**: Merge `fs_glob` and `fs_grep` — **blocked on telemetry**, see Out of Scope
 - **TOOL-V2-02**: Provider reasoning-block replay for models that require it for multi-turn tool use (not needed by DeepSeek via OpenRouter today)
 - **TOOL-V2-03**: **The three-tool bridge** — `tool_search` + `tool_describe` + `tool_call`, where a deferred tool is invoked THROUGH the bridge and never enters the manifest at all. Hermes' model; it makes the manifest constant regardless of catalog size (they carry ~3,300 Cloudflare tools whose names alone are ~32K tokens) and dissolves the promotion machinery outright — `activated`, `everLoaded`, `maxPromotedDeferredTools`, `promoteFromMeta`, `deriveActivated` all become dead code, and with them F-3's manifest-versus-callability confusion and the catalog-drift class hermes warns about (*"a session-keyed catalog that drifts out of sync with the live tool registry produces silent tool dropouts"* — which is what `deriveActivated` is).
-  **Deferred deliberately, not overlooked.** Two reasons: Aura's gateway classifies risk by tool NAME and fails closed, and the idempotency key is built from `tools.Spec` + args — behind a bridge both must unwrap, which inserts a step into precisely the two code paths Phase 45 is fixing bugs in. And the benefit scales with catalog size: after the `comms` facade Aura's deferred tail is ~10-15 tools, not thousands.
+  **Deferred deliberately, not overlooked.** Two reasons: Aura's gateway classifies risk by tool NAME and fails closed, and the idempotency key is built from `tools.Spec` + args — behind a bridge both must unwrap, which inserts a step into precisely the two code paths Phase 45 is fixing bugs in. And the benefit scales with catalog size — but that clause is now wrong, and the trigger below has already fired: the `comms` facade was never built (PRD amendment #134 — the row cannot be built without reopening D-17 or D-27), and the deferred tail measures **100+ tools** today (Linear 53, Notion 28, WhatsApp 15, memory 4). What kept the bridge deferred is no longer catalog size but the two unwrap points named above, plus amendment #139's measurement that `tool_search` is running at 164 calls / 0 failures over exactly that tail.
   **Note it would NOT fix F-4** — `tool_describe` results accumulate in the transcript exactly as `tool_search` results do today; that is CTX-02's job either way.
   **Trigger to reopen:** the deferred tail passes ~30 tools, or a self-extension-minted MCP server mounts a surface of Cloudflare's order.
 
@@ -234,10 +191,10 @@ Deferred. Tracked, not in this roadmap.
 
 | Feature | Reason |
 |---------|--------|
-| ~~Merging `fs_glob` + `fs_grep`~~ | **Reversed 2026-08-05** — promoted to TOOL-11. The vendor evidence against it stands; TOOL-01's 14-slot cap overrules it anyway |
+| Merging `fs_glob` + `fs_grep` | **Back out of scope 2026-08-25.** Promoted to TOOL-11 on 2026-08-05 on the strength of TOOL-01's 14-slot cap; both were deleted with Phase 48, and the vendor evidence against the merge (five of six harnesses keep them separate) never stopped standing |
 | Restoring `internal/eval/` | It was broken, which is why it was deleted. OTel, `tool_invocations` and `conversation_turns` already carry the evidence (ACC-02) |
 | `make_document` routing tool | The friction it was meant to fix was the F-1 replay bug; fixing the harness removes the need |
-| `remind_me` / `remember` as new wrapper tools | Delivered by flattening `task` and `memory_recall` in place (TOOL-04, TOOL-05), so there stays one obvious way to do it |
+| `remind_me` / `remember` as new wrapper tools | Delivered by flattening `memory_recall` in place (TOOL-05), so there stays one obvious way to do it. TOOL-04's `task` flatten was deleted 2026-08-25, so `task`'s five time fields stay as they are |
 | Moving conversation persistence off Postgres | RLS fail-closed, branch replay, token/USD aggregation and rot events all live there. ArcadeDB gets a derived projection (MEM-01), never the source of truth |
 | Reasoning in the default context window | Amendment #91's budget rationale holds — hermes measured 27% of a 214-turn payload sitting in reasoning blobs. MEM-03 keeps retrieval explicit |
 | Un-deferring every tool | Anthropic's guidance and Aura's own measured 56-definition / ~20k-token incident both cap the useful manifest. The long tail stays deferred |
@@ -260,19 +217,13 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 | ACC-01 | Phase 45 | Complete |
 | ACC-02 | Phase 45 | Complete |
 | ACC-03 | Phase 54 | Pending |
-| AUTO-01 | Phase 47 | Pending |
-| AUTO-02 | Phase 47 | Pending |
 | AUTO-03 | Phase 49 | Pending |
-| AUTO-04 | Phase 48 | Pending |
-| COMPAT-01 | Phase 48 | Pending |
-| COMPAT-02 | Phase 47 | Pending |
-| COMPAT-03 | Phase 48 | Pending |
 | CTX-01 | Phase 50 | Pending |
 | CTX-02 | Phase 50 | Pending |
 | CTX-03 | Phase 50 | Pending |
 | CTX-04 | Phase 50 | Pending |
 | CTX-05 | Phase 49 | Pending |
-| CTX-06 | Phase 53 | Pending |
+| CTX-06 | — (Phase 53 deleted) | Satisfied by implementation — L3 compaction, 2026-08-12 |
 | CTX-07 | Phase 50 | Pending |
 | CTX-08 | Phase 50 | Pending |
 | HARN-01 | Phase 45 | Complete |
@@ -306,14 +257,8 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 | STEER-04 | Phase 52 | Pending |
 | STEER-05 | Phase 52 | Pending |
 | STEER-06 | Phase 52 | Pending |
-| SURF-01 | Phase 48 | Pending |
-| SURF-02 | Phase 47 | Pending |
-| SURF-03 | Phase 47 | Pending |
 | SURF-04 | Phase 50 | Pending |
 | SURF-05 | Phase 54 | Pending |
-| SURF-06 | Phase 48 | Pending |
-| SURF-07 | Phase 48 | Pending |
-| SURF-08 | Phase 48 | Pending |
 | SWARM-01 | Phase 51 | Pending |
 | SWARM-02 | Phase 51 | Pending |
 | SWARM-03 | Phase 51 | Pending |
@@ -325,31 +270,42 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 | SWARM-09 | Phase 51 | Pending |
 | SWARM-10 | Phase 51 | Pending |
 | SWARM-11 | Phase 51 | Pending |
-| TOOL-01 | Phase 48 | Pending |
-| TOOL-02 | Phase 47 | Pending |
-| TOOL-03 | Phase 47 | Pending |
-| TOOL-04 | Phase 48 | Pending |
 | TOOL-05 | Phase 49 | Pending |
-| TOOL-06 | Phase 48 | Pending |
-| TOOL-07 | Phase 48 | Pending |
-| TOOL-08 | Phase 47 | Pending |
-| TOOL-09 | Phase 47 | Pending |
-| TOOL-10 | Phase 47 | Pending |
-| TOOL-11 | Phase 48 | Pending |
-| TOOL-12 | Phase 48 | Pending |
 | TOOL-13 | Phase 50 | Pending |
 | TOOL-14 | Phase 46 | Complete |
 
 **Coverage:**
 
-- v1 requirements: 77 total
-- Mapped to phases: 77
-- Unmapped: 0 ✓
+- v1 requirements: **59 total** — 82 defined, 23 deleted 2026-08-25 with Phases 47-48
+- Mapped to phases: 58
+- Unmapped: 1 — CTX-06, which needs no phase: it was satisfied by implementation, not by the
+  Phase 53 spike that was deleted around it
+- **The count above was wrong before this edit, and the correction is separate from the deletion.**
+  This block read *"77 total / 77 mapped / 0 unmapped"* since 2026-08-13. Counted mechanically at
+  the commit before the deletion, the document defined **82** requirements and the traceability
+  table held **82** rows — self-consistent with each other, and both five higher than the prose
+  claimed. Nothing was unmapped; the summary line had simply stopped being recounted as
+  requirements were added. 82 − 23 = 59, verified by counting bullets and table rows again after
+- Deleted, and why: **TOOL-01/02/03/04/06/07/08/09/10/11/12, SURF-01/02/03/06/07/08,
+  AUTO-01/02/04, COMPAT-01/02/03.** They were the whole content of Phases 47-48. PRD amendment
+  **#139** measures `tool_search` at **164 calls / 0 failures** against a deferred tail of 100+
+  tools, which falsifies TOOL-01's *"hard cap, not a target"* — the premise every one of them
+  inherited. Amendment **#134** separately shows TOOL-01's `comms` row cannot be built at all.
+  They are deleted rather than deferred to v2 because deferring an unmeasured premise only moves
+  it; nothing here is blocked on them, and if tool choice ever degrades it comes back with the
+  measurement attached
+- What did NOT go with them: PRD amendment **#133**'s three approval-path defects — no per-tool
+  decision policy, an empty answer resuming silently, pending approvals never expiring — kept in
+  `.planning/todos/pending/approval-resume-defects.md`. They are resume-path security gaps that
+  happened to be scheduled inside Phase 47, not tool-surface ceremony
 
 ---
 *Requirements defined: 2026-08-05*
-*Last updated: 2026-08-13 — reconciled the prose around the traceability table with the table
-itself. The table was already current; the surrounding sentences still described the roadmap's
+*Last updated: 2026-08-25 — **23 requirements deleted with Phases 47-48** (see Coverage above);
+CTX-06 marked satisfied-by-implementation as Phase 53 was deleted; SURF-05 and ACC-03 narrowed to
+stop promising the `always-deliver-files` skill's retirement, which AUTO-01's deletion makes
+permanent surface rather than a workaround awaiting removal. Prior: 2026-08-13 — reconciled the
+prose around the traceability table with the table itself. The table was already current; the surrounding sentences still described the roadmap's
 first shape. History: 2026-08-05 roadmap created over Phases 45-52 with 52 requirements (the
 count corrected from a stated 51 to an actual 52 at that time), then expanded the same day to
 Phases 45-54 by `1844cbfd9` (durable delegation + mid-turn steering) and grown to 77 by the

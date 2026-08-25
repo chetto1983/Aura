@@ -8,11 +8,17 @@ long-term memory holds nine `learned_lesson` facts, eight of which are workaroun
 defective surface, six of which restate rules the system prompt already contains. She wrote
 her own bug report. This milestone is done when those lessons become unnecessary — Phase 54
 uses her memory as the oracle for that. (Corrected 2026-08-24: this sentence said Phase 53,
-which is the summarization spike, not the exit gate. Phase 53 is now cancelled — see below.)
+which was the summarization spike, not the exit gate. Phase 53 was cancelled and then deleted
+2026-08-25 — PRD amendment #137.)
 
 Phase numbering continues from v2.0.0 (which closed at Phase 44) — this milestone is Phases
-45-54. All 77 v1 requirements from REQUIREMENTS.md map to exactly one of these 10 phases; the
-v2 items (CTX-V2-01, CTX-V2-02, TOOL-V2-01, TOOL-V2-02) and the Out of Scope table are not
+45-54, **less 47, 48 and 53, which were deleted on 2026-08-25**. Of the **59** surviving v1
+requirements in REQUIREMENTS.md, 58 map to exactly one of the 8 remaining phases and CTX-06 maps to
+none — it was satisfied by implementation rather than by the deleted Phase 53 spike. The 23
+requirements that belonged to the deleted tool-surface phases were deleted with them (PRD
+amendments #134, #139). (The figure *"77 v1 requirements"* this sentence carried was already wrong
+before the deletion: the document defined 82. See REQUIREMENTS.md §Coverage.)
+The v2 items (CTX-V2-01, CTX-V2-02, TOOL-V2-01, TOOL-V2-02) and the Out of Scope table are not
 scheduled here.
 
 **Build order and why it isn't negotiable** (ARCHITECTURE.md section 4, traced to specific
@@ -34,16 +40,16 @@ call sites, not stylistic preference):
    was never introduced — `ReplayToolResult` remains the only value — and
    `applyMCPOperationMetadata` already fills all three fields correctly. Phase 46's real
    dependency on Phase 45 is `ValidateClassifiable`'s boot guard (D-09), which the two-tool merge
-   must satisfy. It still leaves exactly one remaining metadata-assignment site (native tool
-   files) to audit in Phases 47-48.
+   must satisfy. The one remaining metadata-assignment site (native tool files) has no phase to
+   audit it in since 47-48 were deleted; it is unaudited, and stated as such rather than assumed clean.
 
-3. **Phases 47-48 (tool-surface) need both prior phases settled** — every touched/merged spec
-   needs the correct `Mutating`/`ReplayPolicy`/`OperationScope`/`Multiplexed` combination from
-   Phase 45, and Phase 46's facade shape must be settled first since facade tools count toward
-   the ~26-tool budget Phase 48 sizes against. Tool-surface work is split across two phases
-   (47: ceremony strip, 48: un-defer/merges) rather than one giant phase, because it touches
-   live persisted state (COMPAT-01/02/03) and PITFALLS.md documents distinct blast radii for
-   each kind of change — a parameter drop is lower-risk than a rename/merge.
+3. ~~**Phases 47-48 (tool-surface) need both prior phases settled**~~ — **DELETED 2026-08-25.**
+   Both phases are gone. The measurement that killed them is PRD amendment #139: `tool_search`
+   records **164 calls and 0 failures** against a deferred tail of 100+ tools, so TOOL-01's
+   *"hard cap, not a target"* was an unmeasured assertion that the only available measurement
+   contradicts. Amendment #134 separately established that TOOL-01's `comms` row cannot be built
+   at all without reopening D-17 or D-27. The whole ordering argument above was about sequencing
+   work that is no longer scheduled.
 
 4. **Phase 49 (memory tiers) is a secondary track** that emerged from the operator's
    post-briefing decisions, not from the original architecture research. It depends on
@@ -53,16 +59,17 @@ call sites, not stylistic preference):
 
 5. **Phase 50 (context ladder) has zero package overlap with 45-49** (`internal/conversations`
    + `internal/runner` only) and could run in parallel. Sequenced last among the technical
-   phases so its real-token budget (CTX-01) tunes against the *final* manifest shape rather
-   than one still being renumbered by Phase 48's un-defer/merges.
+   phases so its real-token budget (CTX-01) tunes against the *final* manifest shape. With 48
+   deleted, nothing is renumbering the manifest any more — that constraint is satisfied by
+   default rather than by sequencing.
 
 6. ~~**Phase 53 (the spike) needs Phase 49's retrieval mechanism**~~ — **VOID 2026-08-24.**
    Phase 53 is **CANCELLED**: the summarization arm it was meant to evaluate was BUILT and
    shipped while the roadmap sat still. `prd.md:1190` records L3 LLM-driven compaction as
    **LANDED 2026-08-12**; `internal/conversations/compaction{,_durable,_request,_transcript}.go`
    exist, an operator `/compact` command exists, and `internal/agui/conversations_compaction_api.go`
-   exposes it. A spike decides whether to build a thing; this thing is running. See Phase 53's
-   own block for what the cancellation does and does not settle.
+   exposes it. A spike decides whether to build a thing; this thing is running. The block is
+   deleted; PRD amendment #137 records what the cancellation does and does not settle.
 
 7. **Phases 51-52 (delegation, steering) were added by operator decision on 2026-08-05**, after
    reading hermes' delegation against Aura's. Both implement designs that already exist in the
@@ -98,15 +105,12 @@ harness is built; `internal/eval/` stays deleted.
 
 - [x] **Phase 45: Harness correctness** - Idempotency replay fix and memory-write guardrails close the two headline audit defects (completed 2026-08-15)
 - [x] **Phase 45.1: Native MCP client** - The official Go SDK replaces ~1,970 LOC of bespoke transport and reconnect; Aura's own policy layers survive on top (inserted 2026-08-16)
-- [ ] **Phase 46: MCP trust and facade** - Ratify the trust posture that already shipped; curation moves into the forks, not into Aura — **7/9 plans done; 46-08 is a recorded no-go (amendment #131); only 46-09 remains**
-- [x] ~~**Phase 47: Tool-surface ceremony strip**~~ - **CANCELLED 2026-08-24** — the tool surface works (amendment #139). Its three measured approval defects are NOT lost: they are recorded in `.planning/todos/pending/approval-resume-defects.md`
-- [x] ~~**Phase 48: Tool-surface un-defer and merges**~~ - **CANCELLED 2026-08-24** (amendment #139) — `tool_search` measures **164 calls, 0 failures** with Linear (53), Notion (28) and WhatsApp (15) in the deferred tail. TOOL-01's hard cap was never measured; the one measurement that exists contradicts it
+- [x] **Phase 46: MCP trust and facade** - Ratify the trust posture that already shipped; curation moves into the forks, not into Aura — **closed 2026-08-25: 7 plans executed, 46-08 a recorded no-go (amendment #131), 46-09 closed by the operator**
 - [ ] **Phase 49: Memory tiers** - Short-term searchable retrieval and a PRD-amendment-gated reasoning tier — **scoped down: `memory_recall` and `internal/reasoningtrace` already exist**
 - [ ] **Phase 50: Context ladder legibility** - Real token accounting, eviction, and per-category visibility — **re-hosted: the consumer is now the compaction trigger**
 - [ ] **Phase 51: Durable delegation** - The approved swarm substrate gets built; workers get a real brief, real limits, and a turn that no longer blocks — **needs a design gate before it can be planned**
 - [ ] **Phase 52: Mid-turn steering** - The operator can type into a running turn and redirect it at the next round boundary — **PLAN-READY (amendment #132); runs before Phase 51**
-- [x] ~~**Phase 53: Summarization spike**~~ - **CANCELLED 2026-08-24** — the summarization arm shipped as L3 compaction (`prd.md:1190`, LANDED 2026-08-12); a spike cannot decide what is already running
-- [ ] **Phase 54: Milestone exit** - Retire the compensating lessons and skill; validate parity live — **causally gated on Phase 47's AUTO-01, not merely sequenced after it**
+- [ ] **Phase 54: Milestone exit** - Retire the nine compensating `learned_lesson` facts and validate parity live — **narrowed 2026-08-25: the `always-deliver-files` skill STAYS, because AUTO-01 was deleted with Phase 47**
 
 ## Phase Details
 
@@ -345,12 +349,12 @@ when `Multiplexed` is already true. Fix with existing machinery and no second ri
 `multiplexedClassifiers`. Do **not** derive tiers from server-declared annotations:
 `explicitDestructive` is deliberately escalate-only.
 
-**TOOL-14 lands here, before Phase 48 needs it.** Tool tiering is PRD-declared, not an
+**TOOL-14 lands here.** Tool tiering is PRD-declared, not an
 implementation detail: `prd.md:154` states the rule (amended by `prd.md` Amendment #123), each
 slice carries a "Deferred-tool partition", and two named amendments fix specific tools' tiers — A4
 makes `read_tool_output` non-deferred (which TOOL-13 changes) and #44 makes `sandbox_exec`
 non-deferred with live evidence. Phase 46 is the earliest consumer because MCP-04 changes which MCP
-tools exist at all, so the amendment gates this phase and Phase 48 both. Amendment #123's count
+tools exist at all, so the amendment gates this phase. (It also gated Phase 48, deleted 2026-08-25.) Amendment #123's count
 rule (`<=3` model-facing tools/server earns an always-loaded slot, global cap 2) is the arithmetic
 Phase 46 actually spends: under the operator's `views-exempt` selection
 (`.planning/phases/46-mcp-trust-and-facade/46-02-SUMMARY.md`), calendar exposes **1** curated tool
@@ -418,137 +422,6 @@ Plans:
 
 <a name="fn-46-e"></a> **Success Criterion 4, reworded 2026-08-16 (D-20):** the original *"host-injected, exactly like `user_identifier`"* is superseded — injection cannot work for the handle case.
 
-### Phase 47: Tool-surface ceremony strip
-
-> **CANCELLED 2026-08-24 (operator decision).** The tool surface works as it is — `tool_search`
-> measures 164 calls and 0 failures against a deferred tail of 100+ tools (amendment #139), and
-> `send_file` measures 18 calls and 0 failures. The ceremony this phase would strip is not
-> costing anything measured, and AUTO-01 would additionally REVERSE D-05/D-06.
->
-> **What does NOT disappear with the phase.** Amendment #133's three approval defects are real,
-> were measured, and are moved to `.planning/todos/pending/approval-resume-defects.md`: no
-> per-tool decision policy (any pause can be accepted), an empty answer resumes silently
-> (`payloadString(nil)` → `""`), and pending approvals never expire. They are defects in the
-> resume path, not tool-surface ceremony, and cancelling this phase is not a judgement on them.
->
-> ~~REVISED 2026-08-24, then NARROWED the same day.~~ This phase was reduced to its security gaps.
-> The three approval defects in (a) below are real and stay. **AUTO-01 and AUTO-02 are no longer
-> assumed**: `send_file` measures 18 calls and 0 failures, no evidence says the operator is losing
-> files, and AUTO-01 REVERSES a deliberate decision (see (b)). Carry them only with evidence, or
-> drop them — and if AUTO-01 is dropped, Phase 54's retirement of the `always-deliver-files` skill
-> must be revisited, because that skill compensates for a gap that would then remain open.
->
-> Two changes, both measured.
->
-> **(a) This phase grows three approval-path gaps** confirmed by reading LibreChat against our own
-> resume path (PRD amendment #133): nothing expresses "this pause may only be declined" — any
-> pending pause can be accepted (LibreChat 403s a crafted POST that approves a tool its policy
-> restricted); `payloadString(nil)` returns `""` so an accept with no payload resumes the model
-> with an empty answer instead of being refused; and a pending approval never expires. These sit
-> beside TOOL-03 and are the same surface. What our path does BETTER — the conditional update as
-> idempotency key, and the deadlock-free claim-all-then-append-all batch — must survive the fix:
-> new validation goes inside that transaction's front door, never around it.
->
-> **(b) AUTO-01 REVERSES a deliberate decision and must be planned as such.**
-> `internal/agent/tools/send_file.go:16` states it outright: *"There is NO renderer auto-detect —
-> delivery is an explicit [model decision]"* (D-05/D-06). Automatic delivery is therefore not
-> missing work; it is a decision to overturn, and the plan must say why D-05/D-06 no longer hold
-> rather than quietly implementing past them.
-
-**Goal**: The lowest-risk tool-surface debt is paid off: parameters the host already knows
-stop being asked of the model, a withheld destructive action is resolved without the model
-ever touching a resume payload, and a file the operator needed reaches them and becomes
-searchable without a remembered follow-up action.
-**Depends on**: Phase 45 — the `ask_user`/approval trim (TOOL-03) shares state with Phase 45's idempotency/reservation machinery (`internal/agent/idempotency_operation.go`, `internal/gateway/reserve.go`); sequencing after Phase 45 avoids two uncoordinated changes racing on the same state machine.
-**Requirements**: TOOL-02, TOOL-03, TOOL-08, TOOL-09, TOOL-10, AUTO-01, AUTO-02, SURF-02, SURF-03, COMPAT-02
-**Rationale**: Lower blast radius than Phase 48 — dropping declared-but-host-overwritten
-parameters, host-mediating approval, and merging `document_index`+`document_describe` are
-well-evidenced, low-risk changes (FEATURES.md). AUTO-01 (automatic delivery) and AUTO-02
-(automatic findability) piggyback naturally on the same document-tooling change TOOL-08
-touches. SURF-02 (per-tool operational rules live in the tool's own description) and SURF-03
-(undelivered/unindexed files surfaced next to the turn) are text/legibility changes in the
-same vein, not schema renames, so they belong in the lower-risk phase. COMPAT-02 protects
-specifically the `ask_user` shape change this phase makes: a pause created under the old
-shape must resume correctly or fail loudly, never silently (Pitfall 4).
-**Success Criteria** (what must be TRUE):
-
-  1. Asking Aura to produce a file for the operator results in it reaching their channel (Telegram/web) automatically in that same turn, without Aura calling a separate "send" action.
-  2. That same file is already findable via `document_search`/`document_open` on a following turn, without Aura having called a separate indexing action.
-  3. A live destructive action withheld for approval, once approved, resumes and completes without the model ever being shown or asked to reproduce a resume/fingerprint payload.
-  4. A live `web_fetch` against a known bot-blocked or consent-wall URL is reported to the model as a failed read in the transcript, never handed back as if it were page content.
-  5. A conversation paused mid-approval under the pre-Phase-47 `ask_user` shape (seeded before this phase lands) either resumes correctly or fails with an explicit, actionable message — never silently.
-
-**Plans**: TBD
-
-### Phase 48: Tool-surface un-defer and merges
-
-> **CANCELLED 2026-08-24 — the premise was never measured, and the measurement contradicts it.**
-> `aura.tool_invocations` records `tool_search` at **164 calls and 0 failures**, reaching a
-> deferred tail that today holds `linear` (53 tools), `notion` (28), `whatsapp` (15) and
-> `memory` (4). Of 531 invocations, 22 are errors and every one is an execution failure
-> (`shell_exec`, `fs_read`, `calendar__list_accounts`) — **none is a failure to find or choose a
-> tool**. TOOL-01's *"hard cap, not a target"* rests on the premise that the current manifest
-> exceeds what the model can reason over; nothing supports that and this contradicts it. Nobody
-> ships the merged shape either — Claude Code, hermes and LibreChat all expose large discrete tool
-> sets. See PRD amendment #139, and #134 for the separate finding that TOOL-01's `comms` row
-> cannot be built at all. **The measured inventory below is kept as a record of what the manifest
-> holds; it is no longer a work list.**
->
-> ~~REVISED 2026-08-24 — the goal is right, the premise was wrong.~~ The manifest already carries
-> **exactly 14 always-loaded tools** — 13 native (`ask_user`, `document_open`, `document_search`,
-> `patch`, `read_file`, `read_tool_output`, `search_files`, `send_file`, `shell_exec`, `skill`,
-> `text_response`, `tool_search`, `write_file`) plus the one curated `calendar` MCP tool that
-> holds the only granted always-loaded slot. **That 14 is an arithmetic coincidence, not the
-> target.** TOOL-01 names a MERGED surface, and the composition does not match it: `read_file` /
-> `write_file`+`patch` / `search_files` are separate where TOOL-01 wants `fs_read` / `fs_write` /
-> `fs_search`; `document_search`+`document_open` are separate where it wants one `document`;
-> `web_search`/`web_fetch` are DEFERRED where it wants one loaded `web`; and `memory` is not
-> loaded at all (the memory MCP exposes 4 model-facing tools, over the ceiling). **The work is the
-> merges and the un-defers, and none of it is done.**
-
-**Goal**: The model's manifest lands on exactly **14** loaded tools (TOOL-01 names them) and the
-system prompt is regenerated to match exactly what's loaded — the manifest the model reasons over each turn
-becomes something it can actually hold in its head, safe against conversations and schedules
-that predate the change.
-**Depends on**: Phase 45 (ReplayPolicy vocabulary for newly merged/un-deferred specs), Phase 46 (the facade must collapse to the single `comms` slot first, since that slot is one of the 14 this phase sizes against), Phase 47 (shares the same native tool files; landing ceremony-strip first avoids double-touching them, and settles the ask_user/approval state before further tool-registry churn).
-**Requirements**: TOOL-01, TOOL-04, TOOL-06, TOOL-07, TOOL-11, TOOL-12, SURF-01, SURF-06, SURF-07, SURF-08, COMPAT-01, COMPAT-03, AUTO-04
-**Rationale**: Highest surface area of the milestone — every native tool file,
-`llm_agent_promote.go`'s promotion machinery, the registry boot-guard (ARCHITECTURE.md §4).
-Pitfall 1 recommends restoring a tool-choice-accuracy eval harness before un-deferring;
-the operator's ACC-02 decision (no new eval harness — evidence comes from OTel/
-`aura.tool_invocations`/`aura.conversation_turns`/`aura.context_rot_events`) supersedes that
-recommendation. Substitute: verify tool-choice accuracy by running the SAME real scenarios
-live, before and after the flatten, and comparing tool selection in `aura.tool_invocations` —
-a live before/after comparison, not a new automated harness. `TOOL-05` (memory_recall
-unification) deliberately does NOT ship here alongside its `task`/`skill` flatten siblings —
-its one-call shape is meaningless until Phase 49's short-term+long-term unified retrieval
-exists to back it, so it ships there instead. SURF-01 (system prompt regeneration) is
-inside this phase, not after it — the prompt's own governing rule is "the prompt names a
-tool only if that tool is loaded," so un-deferring without regenerating in the same phase
-ships a wrong prompt. COMPAT-01 and COMPAT-03 protect specifically the renames/merges this
-phase makes: test against a REHYDRATED pre-flatten conversation fixture, not just a fresh
-one, and keep renamed tools rejecting with a clear message for at least one deploy cycle
-(Pitfall 4).
-**`tool_search` is infrastructure and stays loaded** — hermes states the rule outright:
-*"Core tools are never deferred. Always-load means always-load. No exceptions."* Without it the
-deferred tail is unreachable, so the 14 domain tools are really 15 loaded. SURF-08 puts the
-deferred roster's names and its three anti-failure sentences where the decision happens; TOOL-12
-lets a known name skip the search step. **The three-tool bridge (`tool_search`/`tool_describe`/
-`tool_call`) was evaluated and deliberately deferred to TOOL-V2-03** with a written trigger — it
-would insert an unwrapping step into the gateway's name-keyed risk classification and the
-idempotency key, which are the two paths Phase 45 is fixing, and its payoff scales with a catalog
-Aura does not have.
-
-**Success Criteria** (what must be TRUE):
-
-  1. A fresh conversation's system prompt names exactly the tools actually loaded that turn — no phantom name for a deferred/unloaded tool, verified by reading the rendered prompt.
-  2. Scheduling a task in a live conversation with a natural-language `when` ("next Tuesday at 9am") succeeds in one call, with no mutually exclusive time fields required.
-  3. Applying a skill happens in one call in a live turn — no separate "view" step before "apply" — while creating/updating a skill still works through the separate lifecycle action.
-  4. A conversation rehydrated from turns recorded against the pre-flatten tool schema (seeded before this phase) still produces a valid request on its next live turn — no broken wire message, no crash.
-  5. A scheduled `agent_job` created before this phase still fires and resolves its tools against the current, post-flatten registry, verified via a live scheduler run.
-
-**Plans**: TBD
-
 ### Phase 49: Memory tiers
 
 > **REVISED 2026-08-24 — scope narrowed by measurement.** Parts of this phase already exist:
@@ -569,11 +442,11 @@ record, not an implementation detail.
 persisted to the graph, retrieved only on demand, never summarized or harvested) is its own
 committed step, landing before any commit that touches reasoning-tier implementation, per
 CLAUDE.md's PRD-amendment-before-code rule. A short-term memory tier in ArcadeDB is settled,
-operator-decided scope regardless of Phase 53's spike outcome — Postgres stays the system of
+operator-decided scope — Postgres stays the system of
 record for turns, ArcadeDB gets a derived, searchable projection (MEM-01). TOOL-05 lands here
-rather than with its flatten siblings in Phase 48 because it's the model-facing shape of
-this exact mechanism (MEM-02's unified retrieval call). HARN-05 (atomic multi-op memory
-write) lands here rather than in Phase 48 because it needs the same ArcadeDB memory-bridge
+because it's the model-facing shape of this exact mechanism (MEM-02's unified retrieval call) —
+its flatten siblings were deleted with Phase 48 on 2026-08-25, so this is now the only place it
+could land. HARN-05 (atomic multi-op memory write) lands here because it needs the same ArcadeDB memory-bridge
 atomic-commit path this phase's other work touches — net-new transactional semantics, not a
 schema widening. AUTO-03 and CTX-05 are the same boundary this phase must enforce now that
 a reasoning tier exists: a durable fact is captured as part of doing the work, and reasoning
@@ -604,7 +477,7 @@ already exhibited once.
 **Goal**: The context ladder's existing deterministic machinery becomes legible and
 accurate — the eviction/budget decisions the model is already subject to are now visible to
 the operator and correct against the provider's real token count.
-**Depends on**: Nothing structurally (zero package overlap with Phases 45-49: touches only `internal/conversations` + `internal/runner`); sequenced after Phase 48 so its real-token budget (CTX-01) tunes against the FINAL tool-surface shape rather than one still being renumbered by the un-defer/merge work.
+**Depends on**: Nothing structurally (zero package overlap with Phases 45-49: touches only `internal/conversations` + `internal/runner`). Its former sequencing dependency on Phase 48 is void — that phase was deleted 2026-08-25, so the tool-surface shape CTX-01's real-token budget tunes against is already final.
 **Requirements**: CTX-01, CTX-02, CTX-03, CTX-04, CTX-07, CTX-08, TOOL-13, SURF-04
 **Rationale**: `internal/conversations/context.go` is at 590/600 LOC — new work lands in
 sibling files (`context_summary.go`/`context_breakdown.go`), never appended to it. The
@@ -639,10 +512,11 @@ context can't be reduced) closes the ladder's failure-mode legibility gap.
 > path or a second caller of [`agent_job` / AG-UI run-detach]"* — and CLAUDE.md forbids designing
 > past it. **Add a design gate (spike or AI-SPEC) that answers that question before /gsd-plan-phase
 > is run against this phase.** Its declared dependencies on 47/48/49 were re-examined and are all
-> SOFT: the worker registry is DERIVED (`Without(reg, "swarm_spawn")`, `swarm_context.go:20`), so
-> a later flatten follows automatically; SWARM-07's concurrency surface exists against today's
-> memory. The one with real cost is Phase 47 — SWARM-06 is written as a compensation FOR 47's
-> approval rework, so building the relay first means building it twice.
+> SOFT, and 47/48 no longer exist at all (deleted 2026-08-25): the worker registry is DERIVED
+> (`Without(reg, "swarm_spawn")`, `swarm_context.go:20`), SWARM-07's concurrency surface exists
+> against today's memory, and SWARM-06's build-it-twice risk is gone with the approval rework that
+> caused it — the relay now rides the `ask_user` shape that is already shipped and staying.
+> **Only Phase 49 remains as a real dependency.**
 >
 > **Reference reading (do this before designing, not after):** `hermes-agent` has already built
 > this and hardened it twice in one evening (`a94ebf5f5` steer lifecycle ownership, `9d4ef04ed`
@@ -652,7 +526,7 @@ context can't be reduced) closes the ladder's failure-mode legibility gap.
 **Goal**: A delegated worker gets a brief worth acting on and limits it can see, a worker can
 orchestrate workers of its own, and a top-level delegation stops holding the operator's turn
 hostage — results re-enter the conversation when the work is actually done.
-**Depends on**: Phase 48 (the worker registry is the parent's minus the delegation tool, so the flattened surface must be settled before workers are verified against it — SWARM-08), Phase 49 (SWARM-07 needs the memory and reasoning tiers to exist before deciding what concurrent workers may write into them), Phase 47 (SWARM-06's relay rides the `ask_user` shape that phase reworks).
+**Depends on**: Phase 49 (SWARM-07 needs the memory and reasoning tiers to exist before deciding what concurrent workers may write into them). The former dependencies on Phases 47 and 48 died with those phases on 2026-08-25 — SWARM-08 now verifies workers against a tool surface nobody is renumbering, and SWARM-06's relay rides the shipped `ask_user` shape rather than a reworked one.
 **Requirements**: SWARM-01, SWARM-02, SWARM-03, SWARM-04, SWARM-05, SWARM-06, SWARM-07, SWARM-08, SWARM-09, SWARM-10, SWARM-11
 **Rationale**: Operator decision, 2026-08-05, taken after reading hermes' `delegate_task`
 against Aura's `swarm_spawn`.
@@ -673,7 +547,8 @@ already documents in her own tool description (*"the worker cannot see the conve
 user, the other workers, or anything outside the goal text you give it"*): SWARM-01 splits
 `goal` from `context`, SWARM-02 rebuilds the schema per manifest render so the model reads the
 operator's real `AURA_SWARM_*` caps instead of discovering them by failing, and SWARM-06 keeps
-the child-question relay alive through Phase 47's approval rework.
+the child-question relay alive — no longer through an approval rework, since Phase 47 was deleted,
+but against the `ask_user` shape as it stands.
 
 SWARM-03/04 are the substantial change and are NOT a surface clean: today the parent blocks
 until every worker reports. Hermes makes top-level delegation background-by-default with the
@@ -756,53 +631,6 @@ STEER-04 exists because the failure mode of any queue-into-a-running-thing is si
 
 **Plans**: TBD
 
-### Phase 53: Summarization spike
-
-> **CANCELLED 2026-08-24 — measured, not abandoned.** This phase exists to decide whether an LLM
-> summarization rung is worth building. **It was built and shipped while the roadmap sat still.**
-> `prd.md:1190` records L3 LLM-driven compaction as **LANDED 2026-08-12**; the code is
-> `internal/conversations/compaction.go`, `compaction_durable.go`, `compaction_request.go` and
-> `compaction_transcript.go`; there is an operator-facing `/compact` command and an AG-UI route at
-> `internal/agui/conversations_compaction_api.go`. The operator confirms it runs in production.
-> A spike cannot decide what is already running, so CTX-06 is satisfied by the shipped
-> implementation rather than by a study.
->
-> **What the cancellation does NOT settle, stated so nobody mistakes this for a full answer:** the
-> comparative question the spike was framed around — retrieval versus summarization versus both,
-> scored on the audit corpus with a defined known-correct-answer methodology — was **never run**.
-> Summarization did not win a measurement; it won by being built. If retrieval-versus-summarization
-> ever needs a real answer, it needs a new phase and this one's methodology requirement is the
-> place to start. The conditional "promote CTX-V2-01 as Phase 55" note at the end of this roadmap
-> is void for the same reason: CTX-V2-01 was promoted by implementation.
-
-**Goal**: The milestone has an evidenced answer, not a guess, to whether an LLM
-summarization rung is worth building on top of the short-term retrieval tier Phase 49
-shipped.
-**Depends on**: Phase 49 — needs the short-term retrieval mechanism (MEM-01/MEM-02) to exist as the "retrieval" arm being measured against a prototyped summarization arm.
-**Requirements**: CTX-06
-**Rationale**: This is a research/measurement phase, not an implementation phase — its own
-output determines whether a follow-on phase for CTX-V2-01 (LLM summarization with hermes'
-anti-thrash, cooldown, and fallback machinery) gets scheduled at all. The spike measures, on
-the real exported 234+10-turn audit corpus already in hand
-(`docs/audit/live-conversations-2026-08-04/`), whether retrieval over indexed history
-recovers what the deterministic ladder drops, against summarization, and against both —
-using a "known-correct answer" methodology this phase must define first, since none exists
-yet. **This phase's result is not assumed.** If it selects the summarization arm (in whole
-or in part), a follow-on phase must be added (an integer phase after 54, or inserted as a
-decimal) carrying the design ARCHITECTURE.md §3 already prepared (a sibling
-`context_summary.go`, a `PriorSummary` field, Runner-owned two-pass orchestration, a
-dedicated second `llm.Breaker`) plus hermes' anti-thrash/cooldown/fallback guards budgeted
-into that same phase, not a follow-up (Pitfall 3). If it selects retrieval alone, no further
-phase is needed for CTX-V2-01 and it stays deferred. That decision is NOT made by this
-roadmap — it is this phase's deliverable.
-**Success Criteria** (what must be TRUE):
-
-  1. The spike runs against the real audit corpus with a defined "known-correct answer" methodology (documented before scoring), not an assumed or informal one.
-  2. The spike produces a written, evidenced decision — with measured recall/continuity numbers per arm — on whether retrieval, summarization, or both best recover what the ladder drops.
-  3. The decision explicitly states whether CTX-V2-01 is promoted into a future phase, backed by the measured numbers, not asserted without evidence.
-
-**Plans**: TBD
-
 ### Phase 54: Milestone exit
 
 **Goal**: The nine `learned_lesson` facts and the `always-deliver-files` skill — Aura's own
@@ -830,7 +658,7 @@ the four named signals, never a green test suite.
 **Execution Order (REVISED 2026-08-24 — no longer numeric):**
 
 ```
-45 ✓ → 45.1 ✓ → 46 (close: only 46-09) → 52 → 50 → 49 → 51 → 54
+45 ✓ → 45.1 ✓ → 46 ✓ → 52 → 50 → 49 → 51 → 54
 ```
 
 Three departures from numeric order, each measured rather than preferred:
@@ -841,44 +669,39 @@ Three departures from numeric order, each measured rather than preferred:
   substrate does not exist: today there is only one run model, and building 51 first is what
   would create the second.
 
-- **53 cancelled**, not reordered — its deliverable shipped as L3 compaction on 2026-08-12.
-- **48 cancelled** — `tool_search` is 164/0 against a deferred tail of 100+ tools; TOOL-01's cap
-  was an unmeasured assertion and the merges buy nothing measured while breaking every historical
-  `tool_invocations` row and scheduled `agent_job` that names a renamed tool (amendment #139).
-- **47 cancelled** (operator decision, 2026-08-24), on the same measurement that cancelled 48. Its
-  three approval defects move to `.planning/todos/pending/approval-resume-defects.md` rather than
-  being dropped — they are resume-path defects, not tool-surface ceremony.
-- **Phase 54 must be revisited.** It retires the `always-deliver-files` skill, which exists
-  BECAUSE AUTO-01 does not. With 47 cancelled that gap stays open, so the skill still compensates
-  for something real and cannot simply be deleted.
-- **23 requirements are now unmapped.** 47 carried TOOL-02/03/08/09/10, AUTO-01/02, SURF-02/03,
-  COMPAT-02; 48 carried TOOL-01/04/06/07/11/12, SURF-01/06/07/08, COMPAT-01/03, AUTO-04.
-  REQUIREMENTS.md maps all 77 v1 requirements to exactly one phase, so these no longer have a home.
-  Left stated rather than quietly re-homed: closing the milestone means deciding whether they are
-  dropped, deferred to v2, or satisfied as-is.
+- **47, 48 and 53 are DELETED, not annotated** (operator decision, 2026-08-25). Their detail
+  blocks are gone from this document; the evidence that killed them stays in the PRD, which is
+  where measurements live: amendment **#139** (`tool_search` 164 calls / 0 failures against a
+  deferred tail of 100+ tools — TOOL-01's hard cap was never measured and this contradicts it),
+  amendment **#134** (TOOL-01's `comms` row cannot be built at all) and amendment **#137**
+  (Phase 53's deliverable shipped as L3 compaction on 2026-08-12). **The 23 requirements those two
+  phases carried are deleted with them** — see REQUIREMENTS.md, which now defines 54, not 77.
+  What did NOT go with them: amendment #133's three approval-path defects, kept in
+  `.planning/todos/pending/approval-resume-defects.md`, because they are resume-path security
+  gaps rather than tool-surface ceremony.
 - **50 before 49.** 50's target is now the compaction trigger, which exists; 49's remaining scope
   is smaller than written and does not gate it.
 
-Phase 54 stays last: it is **causally** gated on Phase 47, not merely sequenced after it — the
-`always-deliver-files` skill it retires exists BECAUSE AUTO-01 does not.
+Phase 54 stays last, but its causal gate is gone with Phase 47: the `always-deliver-files` skill
+survives the milestone, because the AUTO-01 host-side delivery that would have made it redundant
+was deleted rather than built. Phase 54 retires the nine `learned_lesson` facts and validates the
+replay; the skill is now permanent surface, not a compensating workaround awaiting removal.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 45. Harness correctness | 9/9 | Complete    | 2026-08-15 |
-| 46. MCP trust and facade | 7/9 | In Progress|  |
-| ~~47. Tool-surface ceremony strip~~ | — | **CANCELLED** — surface works; approval defects → todos (amendment #139) | 2026-08-24 |
-| ~~48. Tool-surface un-defer and merges~~ | — | **CANCELLED** — tool_search 164/0; cap unmeasured (amendment #139) | 2026-08-24 |
+| 46. MCP trust and facade | 9/9 | Complete — 7 executed, 46-08 no-go, 46-09 operator-closed | 2026-08-25 |
 | 49. Memory tiers | 0/TBD | Not started | - |
 | 50. Context ladder legibility | 0/TBD | Not started | - |
 | 51. Durable delegation | 0/TBD | Not started | - |
 | 52. Mid-turn steering | 0/TBD | Not started | - |
-| ~~53. Summarization spike~~ | — | **CANCELLED** — shipped as L3 compaction (amendment record in Phase 53 block) | 2026-08-24 |
 | 54. Milestone exit | 0/TBD | Not started | - |
 
 ## Notes on conditional scope
 
-**VOID 2026-08-24 — Phase 53 is cancelled and CTX-V2-01 was promoted by implementation, not by a
-spike (see the Phase 53 block). The paragraph below is kept only as the record of what was
+**VOID 2026-08-24, phase DELETED 2026-08-25 — CTX-V2-01 was promoted by implementation, not by a
+spike: the summarization arm shipped as L3 compaction on 2026-08-12 (PRD amendment #137), so the
+spike had nothing left to decide. The paragraph below is kept only as the record of what was
 planned.** ~~Phase 53's spike may promote `CTX-V2-01` (LLM summarization rung) from the v2
 deferred list into a scheduled phase~~ — this roadmap deliberately does NOT pre-schedule that phase, since
 its design, dependency set, and even which package it touches depend entirely on the spike's

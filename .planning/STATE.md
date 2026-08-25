@@ -1,19 +1,18 @@
 ---
 gsd_state_version: 1.0
 milestone: v2.1.0
-current_phase: 46
-current_phase_name: MCP trust and facade
-status: executing
-stopped_at: Completed 46-06-PLAN.md
-last_updated: "2026-08-24T17:44:05.548Z"
-last_activity: 2026-08-24
-last_activity_desc: Phase 46 execution resumed (wave continue)
-state_head: 0b1652c412c0c21ef479bd44fca725987c2af2d1
+current_phase: 52
+current_phase_name: Mid-turn steering
+status: planning
+stopped_at: Phase 46 closed; Phases 47, 48, 53 deleted
+last_updated: "2026-08-25T00:00:00.000Z"
+last_activity: 2026-08-25
+last_activity_desc: Phase 46 closed, tool-surface phases deleted, 23 requirements deleted
 progress:
-  total_phases: 11
-  completed_phases: 1
+  total_phases: 8
+  completed_phases: 3
   total_plans: 26
-  completed_plans: 24
+  completed_plans: 26
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -24,12 +23,30 @@ milestone_name: HERMES-CLAUDE_PARITY
 See: .planning/PROJECT.md (updated 2026-08-05)
 
 **Core value:** When Aura says she did something, she did it — and she can find what she knew.
-**Current focus:** Phase 46 — MCP trust and facade
+**Current focus:** Phase 52 — Mid-turn steering
 
 ## Current Position
 
-Phase: 46 (MCP trust and facade) — EXECUTING (6/9 plans complete)
-Status: Executing Phase 46
+Phase: 52 (Mid-turn steering) — NOT PLANNED. Plan-ready: PRD amendment #132 ratifies the contract
+(corrected against hermes before any code existed), and every prerequisite was verified present.
+Status: Between phases
+
+**The roadmap shrank on 2026-08-25 (operator decision).** Phases **47** (tool-surface ceremony
+strip), **48** (un-defer and merges) and **53** (summarization spike) are DELETED, not annotated —
+their blocks are gone from ROADMAP.md and the **23 requirements** they carried are gone from
+REQUIREMENTS.md. The evidence lives in the PRD, which is where measurements belong: amendment
+**#139** (`tool_search` = 164 calls / 0 failures against a deferred tail of 100+ tools, which
+falsifies TOOL-01's *"hard cap, not a target"*), **#134** (TOOL-01's `comms` row is unbuildable
+without reopening D-17 or D-27) and **#137** (Phase 53's deliverable shipped as L3 compaction on
+2026-08-12). Execution order is now `45 ✓ → 45.1 ✓ → 46 ✓ → 52 → 50 → 49 → 51 → 54`.
+
+Phase 46 closed the same day at 9/9: seven plans executed, 46-08 a recorded no-go (amendment #131 —
+the WhatsApp view calls back into three tools, so a curated WhatsApp would be four model-facing,
+over the ceiling), and 46-09 closed by the operator. **What 46-09 did not leave behind, stated
+plainly:** the MCP-01 distrust-framing and MCP-03 `TrustTrusted` tripwire tests do not exist, and
+`deferred_manifest.json` still holds its pre-curation 55 entries. See `46-09-SUMMARY.md`.
+
+Prior status (Phase 46 execution):
 Phase 46 discussion are recorded in `46-CONTEXT.md` D-10..D-16 and in ROADMAP §45.1.
 Last activity: 2026-08-24 — Phase 46 execution resumed (wave continue)
 failure is closed: a bridged tool never set `Multiplexed`, so `classify` gave ONE flat tier to the
@@ -106,33 +123,36 @@ Progress: [████████░░] 82%
 
 Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecting current work:
 
-- Roadmap creation: build order is F-1 idempotency fix (45) → MCP trust/facade (46) →
+- ~~Roadmap creation: build order is F-1 idempotency fix (45) → MCP trust/facade (46) →
   tool-surface ceremony strip (47) → tool-surface un-defer/merges (48) → memory tiers (49) →
   context ladder (50, parallel-safe) → durable delegation (51) → mid-turn steering (52) →
-  summarization spike (53) → milestone exit (54).
+  summarization spike (53) → milestone exit (54).~~ **SUPERSEDED 2026-08-25** — 47, 48 and 53
+  deleted; order is now 45 → 45.1 → 46 → 52 → 50 → 49 → 51 → 54.
 
 - Durable delegation (51) and mid-turn steering (52) were added to the milestone on
   2026-08-05 by `1844cbfd9`, after the original 8-phase roadmap was written — both are
   operator decisions with pre-existing approved designs under `docs/superpowers/specs/`,
   not fresh design work. They pushed the spike 51→53 and the milestone exit 52→54.
 
-- Tool-surface work deliberately split across two phases (47, 48) rather than one — it
-  touches live persisted state (COMPAT-01/02/03) and has distinct blast radii per PITFALLS.md.
+- ~~Tool-surface work deliberately split across two phases (47, 48)~~ **VOID 2026-08-25** — both
+  phases deleted, and COMPAT-01/02/03 with them: they existed to survive renames nobody is doing.
 
 - MEM-06 (PRD amendment extending #91) is a committed step inside Phase 49, landing before
   any reasoning-tier code commit — not a separate phase, since it's a within-phase sequencing
   rule (CLAUDE.md PRD-amendment-before-code), not a standalone deliverable.
 
-- CTX-06 (Phase 53) is a spike, not an implementation phase — its output decides whether
-  CTX-V2-01 (LLM summarization) gets promoted into a follow-on integer phase after 54 or a
-  decimal insertion before the Phase 54 exit gate. Not pre-scheduled in this roadmap.
+- ~~CTX-06 (Phase 53) is a spike~~ **VOID 2026-08-25** — the summarization arm shipped as L3
+  compaction on 2026-08-12 (amendment #137), so CTX-V2-01 was promoted by implementation rather
+  than by a spike. CTX-06 is marked satisfied-by-implementation and maps to no phase. What that
+  does NOT settle: the retrieval arm was never measured against the summarization arm.
 
-- v1 requirement count: **77**, measured 2026-08-13 by direct count of unique REQ-IDs in
-  REQUIREMENTS.md and cross-checked against ROADMAP.md's per-phase `**Requirements**:` lines
-  (77 mapped, each to exactly one phase, 0 unmapped, 0 double-mapped). History: the count was
-  corrected from a stated 51 to an actual 52 at definition time — a miscount, not a scope
-  change — and then genuinely grew to 77 as delegation, steering and the follow-up
-  tool-surface commits landed on 2026-08-05.
+- v1 requirement count: **59** (2026-08-25). The prior figure of **77** was wrong when it was
+  written and stayed wrong: counted mechanically at the commit before the deletion, REQUIREMENTS.md
+  defined **82** requirements and its traceability table held **82** rows — self-consistent with
+  each other, five above the prose. Nothing was unmapped; the summary line had simply stopped being
+  recounted. 82 − 23 deleted = 59, of which 58 map to a phase and CTX-06 maps to none. History: the
+  count was corrected from a stated 51 to an actual 52 at definition time, then grew as delegation,
+  steering and the tool-surface commits landed on 2026-08-05.
 
 - [Phase 45]: Boot-time operation-metadata guard (D-09) checks the three Mutating-tool fields for EMPTINESS only, positioned inside ValidateClassifiable's existing reg.All() loop BEFORE the multiplexed-classifier continue, so non-multiplexed mutating tools are also covered
 - [Phase 45]: 45-03's Task-2 span attributes are set inside execTool on the span already carried by ctx (stampReplayAttributes), the smaller of the two acceptable plumbing shapes named in the plan
@@ -186,10 +206,20 @@ None yet.
   Phase 45 says so explicitly), and decide how far MEM-04/05 entity resolution goes here
   versus in Phase 49.
 
-- Phase 48's un-defer step normally needs a tool-choice-accuracy eval harness per Pitfall 1,
-  but ACC-02 (no new eval harness) supersedes that — Phase 48 must instead verify via a live
-  before/after scenario comparison against `aura.tool_invocations`. Flagged so this
-  substitution isn't lost during planning.
+- ~~Phase 48's un-defer step needs a live before/after comparison against
+  `aura.tool_invocations` in place of an eval harness (ACC-02).~~ **CLOSED 2026-08-25 by the
+  evidence itself.** That comparison is what killed the phase: `tool_search` measures 164 calls
+  and 0 failures over a deferred tail of 100+ tools, and all 22 errors across 531 invocations are
+  execution failures, not selection failures (amendment #139).
+
+- **Open, and deliberately unscheduled:** the MCP-01 and MCP-03 trust tripwires do not exist
+  (`46-09-SUMMARY.md`). A ratified trust posture with no named test is one refactor away from
+  silent regression. Not re-scheduled — operator's call — recorded so it is a known edge.
+
+- **Open:** amendment #133's three approval-resume defects (no per-tool decision policy, an empty
+  answer resuming silently, pending approvals never expiring), in
+  `.planning/todos/pending/approval-resume-defects.md`. They were scheduled inside Phase 47 but
+  are resume-path security gaps, not tool-surface ceremony, so they outlived it.
 
 - 45.1-08 (phase close) must re-run bash scripts/coverage_docker.sh (full aggregate 85% owned-surface gate) once plan 45.1-04 lands and the tree is quiescent -- not run during 45.1-03 because a concurrent unrelated in-flight session held compose.yaml and internal/agent/mcptools/bridge_risk.go dirty in the same checkout
 - 45.1-08 must also run a mutation spot-check on internal/agent/mcptools/bridge_risk.go -- not run during 45.1-04; the file is at 100% per-function coverage and bridge_supervisor.go scored 99/99, but neither is a mutation score for this file
@@ -204,9 +234,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| Context | CTX-V2-01 (LLM summarization rung) | Conditional — promoted only if Phase 53's spike selects it | v2.1.0 requirements definition |
+| Context | CTX-V2-01 (LLM summarization rung) | **Promoted by implementation 2026-08-12** (L3 compaction), not by a spike — Phase 53 deleted. Its anti-thrash/cooldown/fallback guards were the spike's deliverable and are unverified in the shipped code | v2.1.0 requirements definition |
 | Context | CTX-V2-02 (durable cross-restart anti-thrash state) | Deferred | v2.1.0 requirements definition |
-| Tool surface | TOOL-V2-01 (merge fs_glob/fs_grep) | Deferred, blocked on telemetry | v2.1.0 requirements definition |
+| Tool surface | TOOL-V2-01 (merge fs_glob/fs_grep) | Deferred. Was promoted to TOOL-11 on 2026-08-05 on TOOL-01's slot cap; both deleted 2026-08-25, so it is back here and the vendor evidence against the merge stands | v2.1.0 requirements definition |
 | Tool surface | TOOL-V2-02 (provider reasoning-block replay) | Deferred, not needed by current provider | v2.1.0 requirements definition |
 
 ## Session Continuity
@@ -226,4 +256,5 @@ to 77, the `tool_call_id` blocker marked resolved by `657c9e383`, and the CTX-V2
 re-pointed at Phase 53. REQUIREMENTS.md's two stale prose lines corrected to match.
 
 Resume file: None
-Next action: `/gsd-execute-phase 46` (plan 46-06 — pin both curated images + re-key trust).
+Next action: none assigned. Phase 52 is the next in order and is plan-ready, but nothing is
+scheduled — the operator drives.
