@@ -2,12 +2,16 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/agent/agenttest"
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/steer"
 	"github.com/google/uuid"
 )
 
@@ -163,5 +167,96 @@ func TestPersistedSteerCarriesRawText(t *testing.T) {
 func TestSteerInboxOrNil(t *testing.T) {
 	if got := steerInboxOrNil(nil); got != nil {
 		t.Fatalf("steerInboxOrNil(nil) = %#v, want a genuinely nil interface (the Go nil-interface trap this helper exists to avoid)", got)
+	}
+}
+
+// steerInjectorTool simulates "the operator typed a steer while a tool was
+// running": its Execute pushes into the SAME inbox + conv key a real
+// concurrent cockpit POST would use, deterministically, from inside the
+// synchronous dispatch path — no goroutine/timing race needed to prove the
+// drain-point ordering.
+type steerInjectorTool struct {
+	inbox  *steer.Inbox
+	convID string
+	text   string
+}
+
+func (s *steerInjectorTool) Spec() tools.Spec {
+	return tools.Spec{
+		Name:        "steer_inject",
+		Summary:     "Test-only: pushes a steer into the shared inbox mid-dispatch.",
+		Description: "Test-only: pushes a steer into the shared inbox mid-dispatch.",
+		Parameters:  json.RawMessage(`{"type":"object"}`),
+	}
+}
+
+func (s *steerInjectorTool) Execute(ctx context.Context, _ json.RawMessage) (tools.ToolResult, error) {
+	if err := s.inbox.Push(s.convID, "test", s.text); err != nil {
+		return tools.ToolResult{}, err
+	}
+	return tools.NewResult(ctx, "steer injected")
+}
+
+// assertWireValidHistory is the core STEER-03/FA-2 invariant: every assistant
+// turn carrying ToolCalls must be IMMEDIATELY followed by exactly
+// len(ToolCalls) RoleTool turns answering it, with no other role interposed
+// — in particular, no RoleUser turn (a persisted steer) ever sits between an
+// assistant tool_calls turn and the tool-result turns answering it.
+func assertWireValidHistory(t *testing.T, hist []llm.Message) {
+	t.Helper()
+	for i := range hist {
+		msg := hist[i]
+		if msg.Role != llm.RoleAssistant || len(msg.ToolCalls) == 0 {
+			continue
+		}
+		n := len(msg.ToolCalls)
+		for j := 1; j <= n; j++ {
+			if i+j >= len(hist) {
+				t.Fatalf("assistant tool_calls turn at index %d has no matching tool result at offset %d: %+v", i, j, hist)
+			}
+			if hist[i+j].Role != llm.RoleTool {
+				t.Fatalf("turn at index %d (role=%q) sits between the assistant tool_calls turn at %d and its tool results -- wire-invalid rehydration: %+v", i+j, hist[i+j].Role, i, hist)
+			}
+		}
+	}
+}
+
+// TestRehydratedSteeredHistoryIsWireValid closes FA-2 (52-02-PLAN.md's
+// flagged assumption about the runner's persistence ordering): drives a
+// multi-round turn with a steer drained between rounds through the REAL
+// agent loop, reloads history through the REAL loader (conv.LoadHistory —
+// never a hand-built []llm.Message fixture), and asserts no user-role turn
+// sits between an assistant tool_calls turn and its answering tool results.
+func TestRehydratedSteeredHistoryIsWireValid(t *testing.T) {
+	inbox := steer.New(steer.Config{Max: 8, MaxBytes: 16384})
+	convID := newConvID(t)
+
+	client := agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(agenttest.MakeToolCall("call-1", "steer_inject", "{}")),
+		agenttest.ToolCallTurn(textResponseCall("call-final", "done")),
+	)
+	r, conv, _ := newTestRunner(t, client)
+	r.steer = inbox
+	r.registry.Register(&steerInjectorTool{inbox: inbox, convID: convID, text: "switch to plan B"})
+	mustCreate(t, r, convID)
+
+	if _, err := drain(r.Turn(context.Background(), convID, new("hi"))); err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+
+	hist, err := conv.LoadHistory(context.Background(), convID)
+	if err != nil {
+		t.Fatalf("LoadHistory: %v", err)
+	}
+	assertWireValidHistory(t, hist)
+
+	found := false
+	for _, m := range hist {
+		if m.Role == llm.RoleUser && m.Content == "switch to plan B" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no persisted RoleUser turn carrying the raw steer text: %+v", hist)
 	}
 }

@@ -99,6 +99,8 @@ artifacts/*
 .audit-build-*
 # transient conversation store written by cmd/aura tests
 cmd/aura/conversations/
+# same AURA_RUN_DIR-unset fallback, tripped by 52-04's real-tool-dispatch e2e test
+internal/agui/conversations/
 # subagent-driven-development scratch: ledger, task briefs, review packages
 .superpowers/
 docs/audit/live-conversations-*

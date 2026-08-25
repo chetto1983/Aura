@@ -1,10 +1,13 @@
 package agui
 
 import (
+	"bufio"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/steer"
 )
@@ -159,6 +162,118 @@ func TestSteerRouteRendersInboxSentinels(t *testing.T) {
 		body := readAllClose(t, resp)
 		if resp.StatusCode != http.StatusGone {
 			t.Fatalf("status = %d, want 410; body=%q", resp.StatusCode, body)
+		}
+	})
+}
+
+// sseFrame is one parsed `event:`/`id:`/`data:` triple off the run-scoped
+// wire (writeSeqFrame's own line order — server_run_detach.go).
+type sseFrame struct {
+	event string
+	seq   int64
+	data  string
+}
+
+// parseSeqFrames walks an SSE body into its ordered seq-carrying frames.
+func parseSeqFrames(t *testing.T, body string) []sseFrame {
+	t.Helper()
+	var frames []sseFrame
+	var cur sseFrame
+	have := 0
+	sc := bufio.NewScanner(strings.NewReader(body))
+	for sc.Scan() {
+		line := sc.Text()
+		switch {
+		case strings.HasPrefix(line, "event: "):
+			cur = sseFrame{event: strings.TrimPrefix(line, "event: ")}
+			have = 1
+		case strings.HasPrefix(line, "id: ") && have == 1:
+			n, err := strconv.ParseInt(strings.TrimPrefix(line, "id: "), 10, 64)
+			if err != nil {
+				t.Fatalf("unparsable id line %q: %v", line, err)
+			}
+			cur.seq = n
+			have = 2
+		case strings.HasPrefix(line, "data: ") && have == 2:
+			cur.data = strings.TrimPrefix(line, "data: ")
+			frames = append(frames, cur)
+			have = 0
+		}
+	}
+	return frames
+}
+
+// findSteerFrame locates the CUSTOM aura.steer frame among parsed frames.
+func findSteerFrame(t *testing.T, frames []sseFrame) sseFrame {
+	t.Helper()
+	for _, f := range frames {
+		if f.event == "CUSTOM" && strings.Contains(f.data, `"name":"`+SteerEventName+`"`) {
+			return f
+		}
+	}
+	t.Fatalf("no CUSTOM %s frame found among %d frames", SteerEventName, len(frames))
+	return sseFrame{}
+}
+
+// TestSteerFrameReplaysFromSeq closes STEER-03's third leg: the aura.steer
+// CUSTOM frame carries the SAME run-scoped `id:` seq as every other frame, so
+// a Last-Event-ID resume includes it when acknowledged up to n-1 and omits it
+// once acknowledged at n — no separate replay channel, no special-casing.
+func TestSteerFrameReplaysFromSeq(t *testing.T) {
+	const tid = "47474747-4747-4747-4747-474747474747"
+	delta := map[string]any{
+		"conversation_id": tid,
+		"round":           uint32(1),
+		"steers": []map[string]any{
+			{"id": "s1", "source": "cockpit", "text": "redirect", "delivery": "tool_result_append"},
+		},
+	}
+	events := []*agent.Event{
+		{Author: "aura", LLMResponse: &agent.LLMResponse{Content: "before"}},
+		steerEvent(delta),
+		{Author: "aura", LLMResponse: &agent.LLMResponse{Content: "after", FinishReason: "stop"}},
+	}
+	_, srv := newDetachTestServer(t, &scriptedRunner{events: events},
+		&fakeConvStore{known: map[string]bool{tid: true}}, ServerConfig{})
+	runID := runDetachedToTerminal(t, srv, tid)
+
+	fullResp, full := getEvents(t, srv, runID, "")
+	if fullResp.StatusCode != http.StatusOK {
+		t.Fatalf("full-replay status = %d, want 200", fullResp.StatusCode)
+	}
+	steerSeq := findSteerFrame(t, parseSeqFrames(t, full)).seq
+
+	t.Run("Last-Event-ID = steerSeq-1 replays the steer frame", func(t *testing.T) {
+		resp, body := getEvents(t, srv, runID, strconv.FormatInt(steerSeq-1, 10))
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200", resp.StatusCode)
+		}
+		frames := parseSeqFrames(t, body)
+		found := false
+		for _, f := range frames {
+			if f.seq != steerSeq {
+				continue
+			}
+			if f.event != "CUSTOM" || !strings.Contains(f.data, `"name":"`+SteerEventName+`"`) {
+				t.Fatalf("frame at seq %d = %+v, want the aura.steer CUSTOM frame", steerSeq, f)
+			}
+			found = true
+		}
+		if !found {
+			t.Fatalf("resume from %d did not replay seq %d (the steer frame): %v", steerSeq-1, steerSeq, frames)
+		}
+	})
+
+	t.Run("Last-Event-ID = steerSeq does not replay the steer frame again", func(t *testing.T) {
+		resp, body := getEvents(t, srv, runID, strconv.FormatInt(steerSeq, 10))
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200", resp.StatusCode)
+		}
+		frames := parseSeqFrames(t, body)
+		for _, f := range frames {
+			if f.seq <= steerSeq {
+				t.Fatalf("resume acknowledged through %d still replayed already-acknowledged seq %d (steer frame at %d): %v", steerSeq, f.seq, steerSeq, frames)
+			}
 		}
 	})
 }
