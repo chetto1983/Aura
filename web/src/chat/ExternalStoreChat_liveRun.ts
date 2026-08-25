@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useQueryClient } from '@tanstack/react-query';
 import type { ThreadMessageLike } from '@assistant-ui/react';
-import { fetchConversation } from '../conversations/useConversations';
+import {
+  CONVERSATION_KEY,
+  fetchConversation,
+  type Conversation,
+} from '../conversations/useConversations';
 import { attachRun } from './sseResume';
 import type { TurnUsage } from './sseAdapter';
 
@@ -46,12 +51,14 @@ export function useLiveRunAttach({
   onArtifact,
 }: LiveRunAttachArgs): void {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   /** One reload-attach attempt per (thread, run): a 404/410 must not re-loop. */
   const attachedRunsRef = useRef<Set<string>>(new Set());
 
   const attachLiveRun = useCallback(
-    (runId: string) =>
-      foldAppendedStream(threadId, (controller, onUpdate) => {
+    async (runId: string) => {
+      const terminal = { observed: false };
+      await foldAppendedStream(threadId, (controller, onUpdate) => {
         activeRunIdRef.current = runId;
         return attachRun({
           threadId,
@@ -59,11 +66,30 @@ export function useLiveRunAttach({
           signal: controller.signal,
           connectionLostNote: t('chat.error.connectionLost'),
           onSnapshotReplace: setMessages,
+          onTerminal: () => {
+            terminal.observed = true;
+          },
           ...(onArtifact !== undefined ? { onArtifact } : {}),
           onUpdate,
         });
-      }),
-    [foldAppendedStream, threadId, t, onArtifact, activeRunIdRef, setMessages],
+      });
+      if (!terminal.observed) return;
+
+      // A terminal frame is authoritative. The server closes the SSE subscriber
+      // immediately before removing this run from LiveForThread, so endRun's
+      // conversation invalidation can race that tiny window and cache the old
+      // live_run_id again. Cancel that stale refetch and settle the cache from
+      // the terminal event; later ordinary reads remain server-authoritative.
+      const queryKey = [CONVERSATION_KEY, threadId] as const;
+      await queryClient.cancelQueries({ queryKey, exact: true });
+      queryClient.setQueryData<Conversation>(queryKey, (current) => {
+        if (current?.live_run_id !== runId) return current;
+        const { live_run_id: settledRunId, ...settled } = current;
+        void settledRunId;
+        return settled;
+      });
+    },
+    [foldAppendedStream, threadId, t, onArtifact, activeRunIdRef, setMessages, queryClient],
   );
 
   // Reload-attach discovery (design §4.2): once the snapshot is rendered, a set

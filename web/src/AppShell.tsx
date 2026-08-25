@@ -178,12 +178,6 @@ export function AppShell() {
   }, [closeNav]);
 
   function selectThread(id: string) {
-    setSelectedId(id);
-    resetUsage();
-    surfaces.closeNav();
-  }
-
-  function selectThreadFromMobileNav(id: string) {
     setSurface('chat');
     setSelectedId(id);
     resetUsage();
@@ -345,7 +339,7 @@ export function AppShell() {
         <div className="min-h-0 flex-1 overflow-hidden">
           <ConversationSidebar
             activeId={activeThreadId}
-            onSelect={selectThreadFromMobileNav}
+            onSelect={selectThread}
             onDeleted={handleConversationDeleted}
           />
         </div>

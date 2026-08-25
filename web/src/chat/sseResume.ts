@@ -55,6 +55,8 @@ export interface AttachRunOptions {
   readonly backoffBaseMs?: number;
   readonly connectionLostNote?: string;
   readonly onSnapshotReplace?: (messages: ThreadMessageLike[]) => void;
+  /** Fires exactly once after a terminal RUN_FINISHED/RUN_ERROR frame is folded. */
+  readonly onTerminal?: () => void;
 }
 
 /** The option subset both entry points share — what makeEngine consumes. */
@@ -68,6 +70,7 @@ interface EngineOptions {
   readonly onArtifact?: ((assetId: string | undefined) => void) | undefined;
   readonly onRunId?: ((runId: string) => void) | undefined;
   readonly onSnapshotReplace?: ((messages: ThreadMessageLike[]) => void) | undefined;
+  readonly onTerminal?: (() => void) | undefined;
 }
 
 /**
@@ -97,6 +100,7 @@ function makeEngine(state: AssistantTurnState, opts: EngineOptions): ResumeEngin
     onArtifact: opts.onArtifact,
     onRunId: opts.onRunId,
     onSnapshotReplace: opts.onSnapshotReplace,
+    onTerminal: opts.onTerminal,
     terminal: false,
   };
 }
@@ -145,6 +149,7 @@ async function pumpBody(
   eng: ResumeEngine,
 ): Promise<'terminal' | 'end'> {
   for await (const { frame, id } of readSSEFrames(body)) {
+    if (eng.signal.aborted) throw abortError(eng.signal);
     if (id !== undefined) eng.lastEventId = id;
     if (
       frame.type === 'RUN_STARTED' &&
@@ -158,7 +163,10 @@ async function pumpBody(
     reduceFrame(eng.state, frame);
     const artifact = artifactDescriptorValue(frame);
     if (artifact !== null) eng.onArtifact?.(artifact.asset_id);
-    if (frame.type === 'RUN_FINISHED' || frame.type === 'RUN_ERROR') eng.terminal = true;
+    if ((frame.type === 'RUN_FINISHED' || frame.type === 'RUN_ERROR') && !eng.terminal) {
+      eng.terminal = true;
+      eng.onTerminal?.();
+    }
     eng.onUpdate(toThreadMessage(eng.state), eng.state.usage);
   }
   return eng.terminal ? 'terminal' : 'end';

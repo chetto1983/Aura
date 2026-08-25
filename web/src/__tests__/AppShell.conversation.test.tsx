@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { AppShell } from '../AppShell';
 
 // This file mounts the FULL AppShell (QueryClient + SSE chat lane + multi-fetch
@@ -28,6 +28,11 @@ function sseResponse(frames: readonly Record<string, unknown>[]): Response {
     },
   });
   return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+}
+
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="location">{location.pathname}</output>;
 }
 
 // A richer fetch double: a populated list + a single-conversation aggregate +
@@ -110,8 +115,24 @@ describe('AppShell conversation binding (CHAT-02 / 25-03 stub resolution)', () =
       <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={[initialPath]}>
           <Routes>
-            <Route path="/" element={<AppShell />} />
-            <Route path="/c/:id" element={<AppShell />} />
+            <Route
+              path="/"
+              element={
+                <>
+                  <AppShell />
+                  <LocationProbe />
+                </>
+              }
+            />
+            <Route
+              path="/c/:id"
+              element={
+                <>
+                  <AppShell />
+                  <LocationProbe />
+                </>
+              }
+            />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>,
@@ -119,7 +140,7 @@ describe('AppShell conversation binding (CHAT-02 / 25-03 stub resolution)', () =
   }
 
   it(
-    'selecting a conversation marks it active (binds the chat lane threadId)',
+    'selecting a conversation binds the chat lane and canonical conversation URL',
     async () => {
       renderAt('/');
       const row = await screen.findByRole('button', { name: 'Pinned run' });
@@ -130,6 +151,7 @@ describe('AppShell conversation binding (CHAT-02 / 25-03 stub resolution)', () =
           screen.getByRole('button', { name: 'Pinned run' }).getAttribute('aria-current'),
         ).toBe('true');
       });
+      expect(screen.getByTestId('location').textContent).toBe('/c/c-1');
     },
     ASYNC_TIMEOUT_MS,
   );

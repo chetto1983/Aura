@@ -287,8 +287,20 @@ export function ExternalStoreChat({
   );
 
   useEffect(() => {
-    if (usageThreadRef.current === threadId) usageThreadRef.current = null;
-    else usageLifecycle.clear();
+    const isFirstThreadAdoption = usageThreadRef.current === threadId;
+    if (isFirstThreadAdoption) {
+      usageThreadRef.current = null;
+    } else {
+      usageLifecycle.clear();
+      if (isRunningRef.current) {
+        const previousViewer = abortRef.current;
+        abortRef.current = null;
+        activeRunIdRef.current = null;
+        isRunningRef.current = false;
+        setIsRunning(false);
+        previousViewer?.abort();
+      }
+    }
     historyRequestRef.current += 1;
     const request = historyRequestRef.current;
     const nextHistoryStatus = threadId.length === 0 ? 'ready' : 'loading';
@@ -312,7 +324,7 @@ export function ExternalStoreChat({
       clearLoadedMessages();
       return;
     }
-    if (isRunningRef.current) {
+    if (isFirstThreadAdoption && isRunningRef.current) {
       historyAbortRef.current = null;
       return;
     }

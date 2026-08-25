@@ -118,6 +118,23 @@ describe('ExternalStoreChat — RS-07 live-run attach + Stop→cancel', () => {
       expect(screen.getByText('Attached answer.')).toBeTruthy();
     });
 
+    // RUN_FINISHED is authoritative even if the conversation refetch races the
+    // registry cleanup and briefly returns the stale live_run_id again. The
+    // composer must release as soon as the attached stream is terminal.
+    fireEvent.change(screen.getByPlaceholderText('Ask Aura'), {
+      target: { value: 'follow-up draft' },
+    });
+    await waitFor(() => {
+      expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Send message' }).disabled).toBe(
+        false,
+      );
+    });
+    expect(
+      screen.queryByText(
+        'A run is still in progress in this conversation. Sending re-enables when it finishes.',
+      ),
+    ).toBeNull();
+
     // The attach GET is the read-only resume endpoint with NO Last-Event-ID
     // (full-buffer replay rebuilds the in-flight partial turn).
     if (attachInit === undefined) throw new Error('expected the resume GET');
