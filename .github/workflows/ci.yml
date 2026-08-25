@@ -1104,11 +1104,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15  # guards against a hung image pull
     # Phase 3 (aura-pim-mcp fork). Brings up the published PIM sidecar (forked
-    # calendar-mcp → ghcr.io/chetto1983/aura-pim-mcp), seeds a no-OAuth fixture calendar, and
-    # runs the calendar_integration tier against the LIVE container: streamable-HTTP
-    # initialize + the ONE curated `calendar` tool (17 actions, 46-05/46-06) + a clean
-    # list_accounts, plus the MCP-05 opaque-reference round-trip against a seeded
-    # `json`-provider fixture calendar. No OAuth/secrets needed anywhere in this job.
+    # calendar-mcp → ghcr.io/chetto1983/aura-pim-mcp), seeds the same no-OAuth JSON
+    # fixture for two Aura identities, and runs the calendar_integration tier against
+    # the LIVE bearer-protected container: Streamable HTTP initialize + the ONE curated
+    # 29-action `calendar` tool + cross-tenant list isolation + the MCP-05 opaque-reference
+    # round-trip. No provider OAuth or external network is needed.
     # NO-SKIP-AS-GREEN: AURA_PIM_MCP_URL is exported so the tier RUNS; the test
     # t.Fatals under $CI when it is unset (a skipped tier fails the gate — CLAUDE.md).
     env:
@@ -1118,7 +1118,7 @@ jobs:
       # :?-required POSTGRES_PASSWORD. The standalone GHCR image has no compose deps.
       # Pinned by commit, matching compose.yaml: `:sidecar` moved on 2026-08-22, and a
       # floating tag is how CI and dev end up exercising different servers.
-      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:c497224cf8a0c8eeaea02210d5101b1e032661fb
+      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:a4d39473b360e66575ee4e6bab0a6aad6562f341
       # The container's MCP-over-HTTP path is the root "/" (spike 064); we publish it on
       # host 127.0.0.1:8093 (the container listens on 8080).
       AURA_PIM_MCP_URL: http://127.0.0.1:8093/
@@ -1181,7 +1181,14 @@ jobs:
             return 1
           }
           docker cp internal/mcp/testdata/fixture-calendar.json             aura-pim-mcp:/app/data/fixture-calendar.json
-          curl -sS -X POST http://127.0.0.1:8093/admin/accounts             -H "Authorization: Bearer ci-not-a-secret"             -H 'Content-Type: application/json'             -d '{"id":"fixture","displayName":"Fixture calendar (no OAuth)","provider":"json","enabled":true,"priority":1,"providerConfig":{"source":"local","filePath":"/app/data/fixture-calendar.json"}}'             --fail-with-body
+          for tenant in 00000000-0000-0000-0000-000000000001 00000000-0000-0000-0000-000000000002; do
+            curl -sS -X POST http://127.0.0.1:8093/admin/accounts \
+              -H "Authorization: Bearer ci-not-a-secret" \
+              -H "X-Aura-Identity: $tenant" \
+              -H 'Content-Type: application/json' \
+              -d '{"id":"fixture","displayName":"Fixture calendar (no OAuth)","provider":"json","enabled":true,"priority":1,"providerConfig":{"source":"local","filePath":"/app/data/fixture-calendar.json"}}' \
+              --fail-with-body
+          done
           docker restart aura-pim-mcp
           wait_healthy
 
@@ -1192,78 +1199,6 @@ jobs:
       - name: Tear down
         if: always()
         run: docker rm -f aura-pim-mcp || true
-
-  integrations-proxy-test:
-    name: Integrations proxy (integrations_integration tier, live calendar + whatsapp sidecars)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # Phase 4 (cockpit connect data plane). Boots BOTH managed-sidecar backends (the
-    # calendar PIM + the forked whatsapp bridge, public GHCR images) and drives Aura's
-    # newIntegrationsProxy() handler end to end: calendar /admin/accounts (token
-    # injected server-side) + whatsapp /api/status + /api/qr (bridge mgmt REST, no
-    # token). NO-SKIP-AS-GREEN: the sidecar ports are exported so the tier RUNS; the
-    # test t.Fatals under $CI when they are unset (a skipped tier fails the gate).
-    env:
-      CI: "true"  # arms the no-skip-as-green t.Fatal in the tier
-      # Both pinned by commit, matching compose.yaml. A floating `:sidecar` is how CI and
-      # dev end up exercising different servers: on the whatsapp fork two workflows write
-      # that tag, and on the PIM fork it moved on 2026-08-22.
-      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:c497224cf8a0c8eeaea02210d5101b1e032661fb
-      AURA_WHATSAPP_MCP_IMAGE: ghcr.io/chetto1983/whatsapp-mcp:sha-9911eb8
-      AURA_PIM_MCP_PORT: "8093"
-      AURA_PIM_MCP_ADMIN_TOKEN: ci-not-a-secret
-      AURA_WHATSAPP_BRIDGE_PORT: "8094"
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Compile the integrations_integration tier (always — no-skip-as-green floor)
-        run: go vet -tags integrations_integration ./cmd/aura/
-
-      - name: Start the calendar PIM sidecar (published GHCR image)
-        run: |
-          docker run -d --name aura-pim-mcp \
-            -p 127.0.0.1:8093:8080 \
-            -e CALENDAR_MCP_ADMIN_TOKEN="$AURA_PIM_MCP_ADMIN_TOKEN" \
-            "$AURA_PIM_MCP_IMAGE"
-
-      - name: Start the WhatsApp sidecar (published GHCR image)
-        # bridge mgmt REST on 8094->8081, MCP-over-HTTP on 8092->8080.
-        run: |
-          docker run -d --name aura-whatsapp \
-            -p 127.0.0.1:8094:8081 \
-            -p 127.0.0.1:8092:8080 \
-            "$AURA_WHATSAPP_MCP_IMAGE"
-
-      - name: Wait for both sidecars healthy
-        run: |
-          ok=""
-          for i in $(seq 1 30); do
-            pim="$(docker inspect -f '{{.State.Health.Status}}' aura-pim-mcp 2>/dev/null || echo starting)"
-            wa="$(docker inspect -f '{{.State.Health.Status}}' aura-whatsapp 2>/dev/null || echo starting)"
-            echo "pim=$pim whatsapp=$wa"
-            [ "$pim" = "healthy" ] && [ "$wa" = "healthy" ] && ok=1 && break
-            sleep 5
-          done
-          if [ -z "$ok" ]; then
-            echo "sidecars did not become healthy" >&2
-            docker logs aura-pim-mcp --tail 40 || true
-            docker logs aura-whatsapp --tail 40 || true
-            exit 1
-          fi
-
-      - name: Live integrations_integration tier (both MCP legs through the proxy)
-        run: go test -race -tags integrations_integration -count=1 -run TestIntegrationsProxyLiveBothMCP ./cmd/aura/
-
-      - name: Tear down
-        if: always()
-        run: docker rm -f aura-pim-mcp aura-whatsapp || true
 
   # ── Phase 23 frontend web jobs (FND-03/FND-06) ──────────────────────────────
   # Five path-filtered Node-24 jobs, all blocking on every PR (D-16), all in the

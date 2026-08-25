@@ -11,7 +11,7 @@ import (
 )
 
 // TestServeWebui pins FND-02 + WEB-01: newServeHandler mounts the embedded operator
-// SPA at "/" additively while the AG-UI route prefixes and the integrations proxy
+// SPA at "/" additively while the AG-UI route prefixes
 // keep priority, and the "/" catch-all is now an SPA-fallback (not a bare static
 // tree). Stdlib testing + httptest only (no testify).
 func TestServeWebui(t *testing.T) {
@@ -301,7 +301,7 @@ func TestServeWebui(t *testing.T) {
 		}
 	})
 
-	t.Run("GET /api/integrations/<unknown> -> integrations proxy (precedence)", func(t *testing.T) {
+	t.Run("GET retired /api/integrations/<unknown> -> backend 404", func(t *testing.T) {
 		aguiHits = nil
 		resp, err := http.Get(srv.URL + "/api/integrations/does-not-exist")
 		if err != nil {
@@ -310,13 +310,10 @@ func TestServeWebui(t *testing.T) {
 		raw, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusNotFound {
-			t.Fatalf("status = %d, want 404 from the integrations proxy", resp.StatusCode)
-		}
-		if !strings.Contains(string(raw), "unknown integration") {
-			t.Fatalf("/api/integrations/ did not reach the integrations proxy (body=%q)", raw)
+			t.Fatalf("status = %d, want backend 404", resp.StatusCode)
 		}
 		if strings.Contains(string(raw), indexMarker) {
-			t.Fatalf("/api/integrations/ leaked the SPA shell instead of reaching the proxy")
+			t.Fatalf("retired /api/integrations/ leaked the SPA shell instead of returning a backend 404")
 		}
 	})
 }

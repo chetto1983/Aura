@@ -144,7 +144,7 @@ func (s *Server) SetOnboardingStatusSource(source OnboardingStatusSource) {
 
 // registerOnboardingRoutes mounts the five onboarding routes on the supplied mux using Go
 // 1.22 method-pattern routing — SPECIFIC method+path siblings under the /api/ carve-out,
-// never a bare /api/ (which would shadow /api/integrations/). The parent-mux mount (the
+// never a bare /api/. The parent-mux mount (the
 // capability gate on start+provision) lives in cmd/aura/serve_webui.go.
 func (s *Server) registerOnboardingRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/onboarding/status", s.handleOnboardingStatus)

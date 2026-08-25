@@ -4,16 +4,15 @@
 //
 // Handler(apiPrefixes) serves the SPA shell with three outcomes:
 //   - an excluded prefix in apiPrefixes (the AG-UI routes /agent/run, /healthz,
-//     /readyz, /metrics, /debug/vars, /threads/...; the integrations proxy subtree;
-//     the forward-compat /api/ carve-out) → a real 404, so an API client never
+//     /readyz, /metrics, /debug/vars, /threads/... and the forward-compat /api/
+//     carve-out) → a real 404, so an API client never
 //     receives the HTML shell (WEB-01 / SC1);
 //   - an unknown client route (no embedded asset) → index.html, so React Router
 //     resolves deep links;
 //   - a real embedded asset → that asset, MIME-typed by http.FileServerFS.
 //
 // The exclusion list is NOT hard-coded here: the caller (cmd/aura/serve_webui.go)
-// is the single source of truth (it derives the set from aguiRoutePrefixes +
-// integrationsRoutePrefix + "/api/") and passes it in, so the parent-mux
+// is the single source of truth and passes the set in, so the parent-mux
 // registration and the fallback exclusion cannot drift.
 //
 // This package is intentionally a leaf: it imports only the standard library

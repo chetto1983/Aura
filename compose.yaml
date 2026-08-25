@@ -1033,23 +1033,16 @@ services:
   # CI-built + published to GHCR (public) by the fork's aura-publish-image workflow.
   # Aura's catalog points at the loopback publish; Aura boot never depends on this service.
   #
-  # PINNED BY COMMIT, re-pinned 2026-08-22 (46-05/46-06, D-32) past the pre-curation
-  # merge this comment used to describe: the fork collapsed its 14 registered tools
-  # into ONE curated `calendar` tool with a 17-value `action` enum (docs/superpowers/
-  # specs/2026-08-17-mcp-curated-surface-design.md §5a). Only one workflow writes
-  # `:sidecar` here, so the tag is uncontested, but it still MOVES — a floating tag
-  # cannot report that divergence, and with pull_policy=missing an already-pulled
-  # host keeps serving old bytes under an unchanged name if it moves again. The
-  # 40-hex form exists here because the fork's aura-publish-image workflow tags the
-  # raw github.sha alongside `:sidecar`.
-  # c497224cf8a0c8eeaea02210d5101b1e032661fb = the same curated `calendar` tool (17
-  # actions), now binding an MCP Apps view (ui://calendar/view.html): a three-pane
-  # client whose rows adapt to whichever family the action returned -- events, emails,
-  # contacts, calendars or accounts -- and which calls back for a mail body. Digest
-  # sha256:5ab6970b79fa1333d8f35bf64b5a5340da4cba1622f6fdcba8fcfb14bedde9ef.
+  # PINNED BY COMMIT. a4d39473b360e66575ee4e6bab0a6aad6562f341 is the 29-action
+  # curated `calendar` tool plus Aura identity tenancy: the HTTP transport requires the
+  # deployment bearer, every tool call requires `_meta.aura.user_identifier`, account
+  # IDs are tenant-prefixed, and the admin plane requires `X-Aura-Identity`. A floating
+  # `:sidecar` tag is forbidden because pull_policy=missing can otherwise retain old
+  # bytes under an unchanged name. Published index digest:
+  # sha256:551afcb6ddb701b2016fc4d343ebf80a9dbb06f18abcbacac56658061cd2cf56.
   # Bump by reading the 40-hex tag the workflow minted for the target commit.
   aura-pim-mcp:
-    image: ${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:c497224cf8a0c8eeaea02210d5101b1e032661fb}
+    image: ${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:a4d39473b360e66575ee4e6bab0a6aad6562f341}
     pull_policy: ${AURA_PIM_MCP_PULL_POLICY:-missing}
     container_name: aura-pim-mcp
     restart: unless-stopped

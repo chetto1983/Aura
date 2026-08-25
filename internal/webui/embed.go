@@ -22,11 +22,10 @@ const distRoot = "dist"
 func Sub() (fs.FS, error) { return fs.Sub(distFS, distRoot) }
 
 // Handler serves the embedded SPA shell with WEB-01 fallback semantics. apiPrefixes
-// are the routes the daemon owns elsewhere (AG-UI gateway, the integrations proxy,
-// the forward-compat /api/ carve-out) and MUST 404 as real API errors rather than
-// leak the SPA shell (WEB-01 / SC1). The caller — cmd/aura/serve_webui.go — is the
-// single source of that list (derived from aguiRoutePrefixes + integrationsRoutePrefix
-// + "/api/"), so internal/webui never hard-codes a second list that could drift.
+// are the routes the daemon owns elsewhere (AG-UI gateway plus the forward-compat
+// /api/ carve-out) and MUST 404 as real API errors rather than leak the SPA shell
+// (WEB-01 / SC1). The caller — cmd/aura/serve_webui.go — is the single source of
+// that list, so internal/webui never hard-codes a second list that could drift.
 //
 // Behavior:
 //   - an excluded prefix (e.g. /api/nope, /agent/typo, /healthz...) → real 404;
