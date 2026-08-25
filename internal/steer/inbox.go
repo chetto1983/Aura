@@ -13,16 +13,22 @@ package steer
 
 import (
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 )
 
-// TODO(RED): stub only — compiles for the pre-commit vet gate (go vet ./...
-// runs over the whole tree) but implements nothing yet, matching phase 45-04's
-// established RED-commit convention (see 52-02-PLAN.md <no_stale_inputs>).
-// GREEN fills in Push/Drain/Close.
+// defaultMax and defaultMaxBytes are the package-level fallbacks a
+// non-positive Config cap resolves to — the same <=0 → default convention
+// agui.NewRunRegistry uses. Deliberately NOT the ratified amendment #132
+// item 10 numbers: those live in config.AGUISteerConfig and arrive through
+// Config, never as a literal in this file (a D-11-shaped drift guard).
+const (
+	defaultMax      = 32
+	defaultMaxBytes = 32768
+)
 
 // Sentinel errors returned by Push, one per validation reason, so a caller
 // (the HTTP route in 52-04, the Telegram reply in 52-06) can render each
@@ -39,7 +45,7 @@ var (
 // package never imports internal/config; the composition root converts.
 type Config struct {
 	Max      int // queued-message cap per conversation; <=0 resolves to a package default
-	MaxBytes int // per-message UTF-8 byte cap; <=0 resolves to a package default
+	MaxBytes int // per-message byte cap (Unicode-encoded byte length, not rune count); <=0 resolves to a package default
 }
 
 // Message is one operator steer, carrying the minimum provenance the
@@ -57,11 +63,20 @@ type Inbox struct {
 	mu     sync.Mutex
 	byConv map[string][]Message
 	cfg    Config
+	closed bool
 	now    func() time.Time
 }
 
-// New builds an Inbox from the resolved caps.
+// New builds an Inbox from the resolved caps. A non-positive cap falls back
+// to the package default — a cap exists to bound memory, not to be silently
+// disabled by an unset/zero env value.
 func New(cfg Config) *Inbox {
+	if cfg.Max <= 0 {
+		cfg.Max = defaultMax
+	}
+	if cfg.MaxBytes <= 0 {
+		cfg.MaxBytes = defaultMaxBytes
+	}
 	return &Inbox{
 		byConv: make(map[string][]Message),
 		cfg:    cfg,
@@ -69,17 +84,56 @@ func New(cfg Config) *Inbox {
 	}
 }
 
-// Push enqueues text for conv, tagged with source.
+// Push enqueues text for conv, tagged with source (the channel that produced
+// it — the cockpit HTTP route or the Telegram dispatch path). Validates in
+// order — empty/whitespace, oversize, closed, queue-full — returning a
+// distinct sentinel for each so a caller never has to string-match. A
+// refused Push never touches the queue.
 func (i *Inbox) Push(conv, source, text string) error {
-	_ = uuid.NewString // referenced in GREEN
+	if strings.TrimSpace(text) == "" {
+		return ErrEmpty
+	}
+	// Byte semantics, not runes: the cap bounds memory and wire size, and a
+	// rune cap would let a multi-byte body exceed the memory bound it exists
+	// to enforce. len(string) in Go already IS the encoded byte length.
+	if size := len([]byte(text)); size > i.cfg.MaxBytes {
+		return ErrTooLarge
+	}
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.closed {
+		return ErrClosed
+	}
+	if len(i.byConv[conv]) >= i.cfg.Max {
+		return ErrQueueFull
+	}
+	i.byConv[conv] = append(i.byConv[conv], Message{
+		ID:      uuid.NewString(),
+		Source:  source,
+		Text:    text,
+		Arrived: i.now(),
+	})
 	return nil
 }
 
-// Drain pops and returns everything queued for conv.
+// Drain pops and returns everything queued for conv, atomically clearing the
+// slot — a second Drain on the same conv returns empty. Deletes the map key
+// so an idle conversation leaves no residue behind; a conv never pushed to
+// returns a nil (len 0) slice without allocating an entry.
 func (i *Inbox) Drain(conv string) []Message {
-	return nil
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	msgs := i.byConv[conv]
+	delete(i.byConv, conv)
+	return msgs
 }
 
-// Close stops accepting new Push calls; queued messages are not discarded.
+// Close stops accepting new Push calls (which return ErrClosed from then
+// on); it does not discard whatever is already queued — Drain after Close
+// still returns the pending messages, so shutdown never silently destroys
+// operator input.
 func (i *Inbox) Close() {
+	i.mu.Lock()
+	i.closed = true
+	i.mu.Unlock()
 }

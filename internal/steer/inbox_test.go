@@ -162,10 +162,10 @@ func TestInboxRejectsEmptyAndOversize(t *testing.T) {
 	})
 
 	t.Run("MaxBytes", func(t *testing.T) {
-		// "é" (U+00E9) is a 2-byte UTF-8 rune. A run-counting (rune-counting)
-		// implementation would also accept this fixture; it is the MaxBytes+1
-		// case below — built from the SAME multi-byte fixture — that only a
-		// byte-counting cap refuses.
+		// MaxBytes byte-length fixture: "é" (U+00E9) is a 2-byte UTF-8 rune. A
+		// rune-counting implementation would also accept this fixture; it is the
+		// MaxBytes+1 case below — built from the SAME multi-byte fixture — that
+		// only a byte-counting cap refuses.
 		const maxBytes = 10
 		body := strings.Repeat("é", maxBytes/2) // 5 runes * 2 bytes = 10 bytes exactly
 		if got := len([]byte(body)); got != maxBytes {
@@ -178,6 +178,7 @@ func TestInboxRejectsEmptyAndOversize(t *testing.T) {
 	})
 
 	t.Run("MaxBytes+1", func(t *testing.T) {
+		// MaxBytes+1 byte-length fixture: same multi-byte "é" body, one ASCII byte over.
 		const maxBytes = 10
 		body := strings.Repeat("é", maxBytes/2) + "x" // 11 bytes, still carries a multi-byte rune
 		if got := len([]byte(body)); got != maxBytes+1 {
