@@ -90,6 +90,7 @@ func buildTelegramDeps(chat *chatEnv, tgCfg telegram.Config) telegram.Deps {
 		Prices:             chat.cfg.LLM.Prices,
 		Model:              chat.cfg.LLM.Model,
 		Resume:             chat.run,
+		Steer:              chat.steer,
 		StatusThrottleMS:   tgCfg.StatusThrottleMS,
 		ContentThrottleMS:  tgCfg.ContentThrottleMS,
 		ChatRateLimitMS:    tgCfg.ChatRateLimitMS,

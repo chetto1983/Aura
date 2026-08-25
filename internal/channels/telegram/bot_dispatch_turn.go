@@ -30,12 +30,33 @@ func (t *Telegram) runTurn(daemonCtx context.Context, c tele.Context, chatID int
 // catalog of the thread's other docs are composed by the SAME shared seam the AG-UI
 // gateway uses — no per-channel duplication.
 func (t *Telegram) runTurnWithAssets(daemonCtx context.Context, c tele.Context, chatID int64, text string, attachments []assets.Asset, inboundWasVoice bool) {
-	text = t.composeTurnContext(daemonCtx, c, chatID, attachments, text)
+	// rawText is captured BEFORE composeTurnContext reassigns text below. A steer
+	// must carry the operator's raw words, never the attachment block / knowledge
+	// catalog composeTurnContext adds (T-52-33) — that treatment is for a fresh
+	// turn only.
+	rawText := text
+	composedText := t.composeTurnContext(daemonCtx, c, chatID, attachments, text)
 	sender := t.sender(c)
 	notifier, _ := c.Bot().(botNotifier)
 	to := c.Recipient()
-	t.startTurn(daemonCtx, sender, notifier, to, chatID, &text, inboundWasVoice,
-		func() { t.reply(c, turnBusyMessage) })
+	t.startTurn(daemonCtx, sender, notifier, to, chatID, &composedText, inboundWasVoice,
+		t.onBusyRedirect(c, chatID, rawText, len(attachments) > 0))
+}
+
+// onBusyRedirect builds startTurn's onBusy callback for a chat where registerTurn
+// found a turn already live. Plain text (no attachments) with a wired steer inbox
+// redirects the running turn (D-03) instead of replying busy; an attachment or an
+// unwired inbox (the composition root's explicit rollback) keeps today's
+// turnBusyMessage. The attachments arm becomes the queue bot_dispatch_queue.go
+// builds; until it lands this stays turnBusyMessage.
+func (t *Telegram) onBusyRedirect(c tele.Context, chatID int64, rawText string, hasAttachments bool) func() {
+	return func() {
+		if t.deps.Steer == nil || hasAttachments {
+			t.reply(c, turnBusyMessage)
+			return
+		}
+		t.steerBusyTurn(c, chatID, rawText)
+	}
 }
 
 // composeTurnContext augments the inbound text with the channel-agnostic per-turn

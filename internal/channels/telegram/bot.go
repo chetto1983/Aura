@@ -22,6 +22,7 @@ import (
 	"github.com/chetto1983/aura/internal/channels"
 	"github.com/chetto1983/aura/internal/llm"
 	profileflow "github.com/chetto1983/aura/internal/onboarding"
+	"github.com/chetto1983/aura/internal/steer"
 )
 
 // channelName keys AURA_CHANNEL_TELEGRAM_ENABLED (the registry enable gate).
@@ -112,6 +113,16 @@ type Deps struct {
 	// (no button render, no resume) but the channel still serves plain turns. The
 	// continuation turn after a pause resolves is built locally in hitlFor.
 	Resume resumeRunner
+
+	// Steer is the shared process-wide mid-turn steer inbox (amendment #132,
+	// D-01/D-12) — the SAME *steer.Inbox instance the composition root also wires
+	// into agui.Server.SetSteerInbox, so a cockpit steer and a Telegram steer for
+	// the same conversation can never land in two different queues (T-52-31). nil
+	// degrades BOTH the plain-text redirect branch (bot_dispatch_steer.go) and the
+	// media queue branch (bot_dispatch_queue.go) to today's turnBusyMessage — the
+	// composition root's explicit rollback darkens Telegram exactly like the
+	// cockpit route, never a half-live surface.
+	Steer *steer.Inbox
 
 	// StatusThrottle / ContentThrottle bound the two render consumers; ChatRate
 	// bounds the per-chat send queue. Zero → the package defaults (see config).
