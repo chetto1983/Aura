@@ -159,9 +159,10 @@
 - [ ] **STEER-01**: The operator can type into a running turn; the message is injected at the next round boundary as ordinary user input, never interrupting a tool mid-execution
 - [ ] **STEER-02**: A steer does not extend the step or wallclock budget — steering redirects the work, it does not buy more of it
 - [ ] **STEER-03**: A steer is echoed on the wire and persisted where it belongs in sequence, so a reload, a resume, or a later replay shows it at the point it actually landed
-- [ ] **STEER-04**: A steer that arrives after its run has ended is returned to the operator to re-send as a normal turn, never silently swallowed
+- [ ] **STEER-04**: A steer that arrives after its run has ended is delivered automatically as the next user turn, preceded by a visible line saying that happened, never silently swallowed
 - [ ] **STEER-05**: Steering works from the operator's channels, not only the cockpit
 - [ ] **STEER-06**: The PRD amendment ratifying mid-turn steering is committed **before** any of its code
+- [x] **RESUME-01**: The approval resume path refuses an accept carrying no answer, refuses a decision the pause's policy does not permit, and expires a pending approval as an expiry rather than as a yes — without weakening the `WHERE resumed_at IS NULL` conditional update that IS the idempotency key. Folded from PRD amendment #133 (Phase 47, deleted 2026-08-25); all three defects closed 2026-08-25 (empty-answer refusal, per-tool decision policy, pending-approval TTL — see `52-03-SUMMARY.md`)
 
 ### Acceptance
 
@@ -251,6 +252,7 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 | MEM-04 | Phase 45 | Complete |
 | MEM-05 | Phase 45 | Complete |
 | MEM-06 | Phase 49 | Pending |
+| RESUME-01 | Phase 52 | Complete |
 | STEER-01 | Phase 52 | Pending |
 | STEER-02 | Phase 52 | Pending |
 | STEER-03 | Phase 52 | Pending |

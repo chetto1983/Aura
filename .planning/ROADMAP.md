@@ -598,8 +598,8 @@ lands squarely on the memory correctness Phase 45 and 49 just established.
 **Goal**: The operator can type into a running turn and have it land — redirecting work at
 the next round boundary instead of waiting for the turn to end or killing it and starting
 over.
-**Depends on**: Phase 51 — the steering design reconciles with the durable swarm substrate in its own §8, and both touch the same run-identity and pause/resume machinery; building the substrate first means steering has one addressable run model to attach to rather than two.
-**Requirements**: STEER-01, STEER-02, STEER-03, STEER-04, STEER-05, STEER-06
+**Depends on**: None — Phase 52 runs BEFORE Phase 51 in the actual execution order (`45 ✓ → 45.1 ✓ → 46 ✓ → 52 → 50 → 49 → 51 → 54`, see Progress below). The original reasoning — that steering should reconcile with the durable swarm substrate first — inverts once you observe the substrate does not exist yet: today there is only one run model, and building 51 first is what would create the second.
+**Requirements**: STEER-01, STEER-02, STEER-03, STEER-04, STEER-05, STEER-06, RESUME-01
 **Rationale**: Operator decision, 2026-08-05. The design study already exists
 (`docs/superpowers/specs/2026-07-23-mid-turn-steering-design.md`, 664 lines, its three
 operator-level open questions already resolved to "Claude Code parity") and is explicitly
@@ -625,7 +625,7 @@ STEER-04 exists because the failure mode of any queue-into-a-running-thing is si
 
   1. Typing a redirect while Aura is mid-task changes what she does next, live — observable as her next round acting on the new instruction, with no tool killed mid-execution.
   2. That steer appears in the persisted conversation at the point it actually landed — reloading the thread or resuming the run shows it in the right place, not appended at the end.
-  3. Steering a run that has just finished returns the message to the operator to send normally — it is never silently swallowed.
+  3. Steering a run that has just finished is delivered automatically as the next user turn, preceded by a visible line saying that happened — it is never silently swallowed.
   4. A steered turn consumes no more steps or wallclock than an unsteered one — the budget is unchanged by steering.
   5. The same steer works from a channel, not only the cockpit.
 

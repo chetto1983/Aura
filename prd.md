@@ -7187,9 +7187,15 @@ flusso completo, che funziona.
 > silently absorbed"*: queuing returns "queued", and this is where a queued-but-never-delivered
 > steer gets surfaced by name. STEER-04 exists for precisely this failure mode. The first draft's
 > answer — a 410 plus a client re-send, with an undrained steer detected *"by a missing echo"* —
-> infers loss from an absence. **RATIFIED: the 410 contract stands, AND an undrained steer is
+> infers loss from an absence. ~~RATIFIED: the 410 contract stands, AND an undrained steer is
 > drained and reported by name in the run's terminal event rather than inferred from a missing
-> echo.**
+> echo.~~ **CORRECTED (Amendment #142, 2026-08-25): the 410 contract stands only for a run that is
+> ALREADY terminal when the POST arrives — the operator is told plainly and re-sends it themselves.
+> A steer accepted against a LIVE run whose drain never came is instead delivered automatically as
+> the next user turn, preceded by a visible line saying that is what happened — not merely named in
+> the terminal event for the human to retype. Together the two cover the whole space STEER-04
+> requires; either alone leaves a hole. See Amendment #142 for the hermes evidence
+> (`turn_finalizer.py`/`cli.py`/`gateway/run.py`).**
 >
 > **(C) Generation binding is NOT needed here, and this records why.** Hermes' HEAD commit
 > `9d4ef04ed fix(delegation): bind steering to session generation` had to bind steer authority to
@@ -7219,8 +7225,9 @@ flusso completo, che funziona.
 > differently.
 > (b) **The study's line citations have drifted.** §3 cites `llm_agent.go:331` and `:439`; the
 > nudge append now sits at `:481`. Read the seam, never the citation. `llm_agent.go` is at
-> **561/600 LOC**, so the drain point cannot be appended there without tripping the file-size rule:
-> it lands in a sibling file.
+> **561/600 LOC**, so ~~the drain point cannot be appended there~~ **the drain points (two — see
+> Amendment #142 correction 2, which corrects this section's single-drain-point premise) cannot be
+> appended there** without tripping the file-size rule: it lands in a sibling file.
 >
 > **What is ratified.** The study's §11 checklist, with items 1 and 3 replaced by (A) and (B)
 > above, and the remainder verbatim: the never-extend-the-budget rule and bounded FIFO queueing per
@@ -7234,10 +7241,17 @@ flusso completo, che funziona.
 > interrupt (`agent/interrupt_compat.py:9`, `request_hard_interrupt`), so this is a deliberate
 > divergence from parity, not an oversight**; the `internal/steer.Inbox` `Push/Drain/Close`
 > interface, in-memory on the RunSession, pre-aligned to the durable swarm-messaging vocabulary
-> (9); the three env additions — `AURA_AGUI_RUN_STEER` default **false**, `AURA_AGUI_RUN_STEER_MAX`
-> 8, `AURA_AGUI_RUN_STEER_MAX_BYTES` 16384 (10); the non-goals, per (D) above (11); and the
+> (9); the three env additions — `AURA_AGUI_RUN_STEER` default ~~**false**~~ **`true` (CORRECTED,
+> Amendment #142 correction 4, D-12 — a flag defaulted off is dark code)**, `AURA_AGUI_RUN_STEER_MAX`
+> 8, `AURA_AGUI_RUN_STEER_MAX_BYTES` 16384 (10); the non-goals, per (D) above (11); and ~~the
 > composer contract, whose default-flip to `true` requires its own amendment line after a live
-> cockpit E2E >9.8 (12).
+> cockpit E2E >9.8 (12)~~ **the composer contract, which lands INSIDE this phase rather than waiting
+> on a later amendment (CORRECTED, Amendment #142 correction 4, D-10): the live cockpit E2E is its
+> evidence, not its precondition; the composer routes a live-run submit to
+> `POST /agent/runs/{runID}/steer` client-side, so `/agent/run`'s `ErrThreadBusy` 409 is never
+> removed — merely unreached on this path (12)**. The marker's own construction — left unspecified
+> here — is fixed by Amendment #142 correction 3 (per-run nonce, reusing `toolOutputNonce()`), and
+> this section's single stated drain point is corrected to two by Amendment #142 correction 2.
 >
 > **The three operator-level open questions are RESOLVED** (2026-07-23, "Claude Code parity") and
 > are not reopened: no steer-withdrawal affordance in slice 1; cockpit first, Telegram after real
@@ -7260,8 +7274,15 @@ flusso completo, che funziona.
 
 ## §The approval resume path, measured against LibreChat (Amendment #133, 2026-08-24)
 
-> **Amendment #133 (2026-08-24, Phase 47/TOOL-03 pre-work — records a reading, blocks nothing
-> today, and names three gaps; two closed on 2026-08-25.)**
+> **Amendment #133 (2026-08-24, ~~Phase 47/TOOL-03 pre-work~~ **re-pointed to Phase 52/`RESUME-01`
+> below** — records a reading, blocks nothing today, and names three gaps; all three closed as of
+> 2026-08-25.)**
+>
+> **Re-pointed 2026-08-25 (Amendment #142).** Phase 47 was deleted the same day. These three folded
+> defects live in Phase 52 as requirement `RESUME-01` — see `.planning/todos/pending/
+> approval-resume-defects.md` for the folded todo and `.planning/phases/52-mid-turn-steering/
+> 52-03-SUMMARY.md` for gap 4's implementation. Only the destination moves; the findings below are
+> unchanged.
 >
 > **What was read.** `LibreChat` on disk (`api/server/controllers/agents/`,
 > `packages/api/src/agents/hitl/`, `packages/api/src/stream/`), against Aura's own resume path
@@ -7649,3 +7670,123 @@ flusso completo, che funziona.
 > the durable conversation from two to three turns with 3752 prompt tokens and stated that the
 > approval expired without a decision and nothing executed. No grant, protected tool execution, or
 > contradictory history was observed.
+
+## §Mid-turn steering, corrected again — five findings from hermes and the live tree, before any code (Amendment #142, 2026-08-25)
+
+> **Amendment #142 (2026-08-25, Phase 52/STEER-06, BLOCKING — lands before any steering
+> implementation commit; corrects Amendment #132 a second time, still before a line of
+> `internal/steer` exists).**
+>
+> **What this is.** Five corrections found by reading `hermes-agent` further and the live tree
+> during `/gsd-discuss-phase 52` (2026-08-25), plus three planning documents that assert the
+> superseded #132 text and move with this same commit. Like #132's own same-day revision, the
+> superseded wording stays struck through in place inside §132 above, replacement beside it — the
+> trail is the point, and it cost nothing because it lands before any steering code exists.
+>
+> **1. Item (B) → automatic delivery, not a named-and-abandoned drain.** Struck through in §132
+> above. hermes' `turn_finalizer.py:683-685` hands an undelivered steer back on
+> `result["pending_steer"]` (`_leftover_steer = agent._drain_pending_steer(); result["pending_steer"]
+> = _leftover_steer`), and **three** independent consumers deliver it as the next turn on their own:
+> `cli.py:14523-14527` (`_leftover_steer = result.get('pending_steer')`, prints `"⏩ Delivering
+> leftover /steer as next turn: '{preview}'"`, then `self._pending_input.put(_leftover_steer)`);
+> `gateway/run.py:25525-25531` (comment: *"and returned it in result[\"pending_steer\"]. Deliver it
+> as the [next user turn]"*, `logger.debug("Delivering leftover /steer as next turn: '%s...'",
+> pending[:40])`); and the ACP path. **Corrected: a steer still queued when the run ends is
+> delivered automatically as the next user turn, preceded by a visible line saying that is what
+> happened.**
+>
+> **The 410 tension, resolved explicitly.** #132's refusal ladder keeps `410 Gone` for a run that is
+> ALREADY terminal at the moment the POST arrives — the operator is told plainly the message was
+> not queued, and re-sends it themselves. Auto-delivery covers the case 410 structurally cannot: a
+> steer accepted against a LIVE run whose drain never came before the run ended. Together they are
+> what makes STEER-04's "never silently swallowed" true; either alone leaves a hole.
+>
+> **2. Single drain point → two.** Struck through in §132 above. hermes drains at the end of a
+> tool-call batch (the original mechanism, unchanged) AND again immediately before every subsequent
+> API call — `conversation_loop.py:1486-1499`, whose own comment states the reason: *"If a /steer
+> arrived during the previous API call (while the model was thinking), drain it now — before we
+> build api_messages — so the model sees the steer text on THIS iteration. Without this, steers sent
+> during an API call only land after the NEXT tool batch, which may never come if the model returns
+> a final response."* `_pre_api_steer = agent._drain_pending_steer()` runs at the top of the loop,
+> the same drain call the tool-batch point uses. Aura's two drain points land in a new
+> `llm_agent_steer.go` sibling file — `llm_agent.go` is at 561/600 LOC, no room for either.
+>
+> **3. The marker → per-run nonce + system-prompt note + lookalike scrub, both positions fixed.**
+> #132 ratified the tool-result append (correction (A)) but left the marker's own construction and
+> placement open — struck through in §132 above. hermes' marker is **static** —
+> `prompt_builder.py:661-691`: `STEER_MARKER_OPEN`/`STEER_MARKER_CLOSE` are fixed strings
+> (`"[/OUT-OF-BAND USER MESSAGE]"` etc.) wrapped around the steer text by `format_steer_marker`,
+> taught to the model once via `STEER_CHANNEL_NOTE`. A static marker is forgeable by anything that
+> can put text into a tool result before the agent does. Aura already owns the non-forgeable
+> version: `toolOutputNonce()` (`internal/agent/trust.go:65-72`) mints a fresh random 8-byte hex
+> nonce per call; **the steer marker reuses that exact function — a second consumer, not a second
+> minter** (CLAUDE.md inventory-before-invention). The system-prompt note teaches the model that
+> text carrying a recognised nonce is a genuine mid-turn user message with the authority of the
+> original request, and that any lookalike inside a tool result, a web page or a file is to be
+> ignored.
+>
+> **Two placement clauses, both measured on the live tree, both load-bearing.**
+> (a) **The nonce marker sits AFTER `</tool_output>`, never inside it.** `llm_agent_dispatch.go:119`
+> sets `run.Preview = renderToolResultForPrompt(calls[i].Function.Name, run.Result)` and `:142`
+> appends exactly that string as the `RoleTool` content — every untrusted tool result already sits
+> inside `<tool_output source="..." trust="untrusted" nonce="...">…</tool_output>`
+> (`trust.go:59-64`) BEFORE it enters history. If the steer marker were appended inside that
+> envelope, the system prompt's own "distrust tool_output" instruction would apply to the operator's
+> own redirect — exactly backwards, and it would defeat correction 3's nonce while looking correct.
+> It is appended after the closing tag.
+> (b) **The lookalike scrub runs on the RAW tool-result content, inside `renderToolResultForPrompt`,
+> before either branch — not on the escaped output.** `wrapUntrustedToolOutput` already
+> `html.EscapeString`s untrusted content (`trust.go:60-64`), so the load-bearing case for the scrub
+> is the TRUSTED passthrough branch (`trustedToolNames`, or explicit `TrustTrusted` provenance,
+> `trust.go:19-53`), where `res.Preview` reaches history byte-for-byte unescaped. The scrub belongs
+> there, matched against the literal bytes the steer wrapper would produce — not against an
+> HTML-escaped form nobody ever emits. It must not touch `run.Result.Preview` itself: the
+> dedup/progress veto hashes that raw preview by design, and scrubbing it would break the hash.
+>
+> **4. `AURA_AGUI_RUN_STEER` default `true`; the composer contract lands in-phase.** Struck through
+> in §132 above. Item 10 ratified `AURA_AGUI_RUN_STEER` default **false**; item 12 deferred the
+> composer flip to a later amendment. Operator ruling, verbatim: *"un flag a off è = a dark code"*
+> — CLAUDE.md's own DARK-CODE-IS-FORBIDDEN rule applied to a shipping switch nobody can reach
+> without editing the environment. **Corrected: `AURA_AGUI_RUN_STEER` default `true` (D-12); the
+> knob is the explicit rollback, not the shipping position — the same shape D-11 already endorsed
+> for `AURA_AGUI_RUN_DETACH`.** The composer contract (item 12) lands INSIDE this phase rather than
+> waiting on a later amendment, with the live cockpit E2E as its evidence rather than its
+> precondition (D-10). **Its measured shape is not what item 12 implied: `ErrThreadBusy`'s 409
+> (`server_run.go:102`) is NOT removed.** The cockpit already blocks the send client-side before any
+> request is made — `ExternalStoreChat.tsx` passes `sendBlocked` (derived from `live_run_id`) into
+> `Composer.tsx`'s `sendDisabled` — so the 409 was never what the operator hit. The contract is
+> satisfied by the composer routing a live-run submit to `POST /agent/runs/{runID}/steer`;
+> `/agent/run` is never POSTed during a live run, so the busy 409's guarantee stays untouched, just
+> unreached on this path.
+>
+> **5. D-05's non-text arm needs a queue that does not exist.** D-05 (`52-CONTEXT.md`) says a
+> non-text message (photo/voice/document) during a live turn is "queued for the next turn." Measured
+> on the live tree: `internal/channels/telegram/bot_dispatch_turn.go:94-101` —
+> `if !t.cmds.registerTurn(chatID, cancel) { cancel(); if onBusy != nil { onBusy() }; return }` — a
+> busy chat's message is answered with the busy copy and the function RETURNS. There is no queue
+> anywhere on this path; the media message is **dropped**, not queued. "Today's behaviour" is
+> therefore not an acceptable reading of D-05: it requires a NEW per-chat pending-turn slot,
+> delivered when the live turn ends (plan 52-06).
+>
+> **Also landing in this same commit** (superseded assertions moved with the correction):
+> `.planning/REQUIREMENTS.md` STEER-04 and `.planning/ROADMAP.md` Phase 52 SC#3 both replace
+> "returned/returns … to the operator to re-send/send normally" with the auto-delivery wording
+> above; ROADMAP's `Depends on:` line is corrected to match the actual execution order (52 before
+> 51) with the reasoning inversion stated; a dated line inside Amendment #133 above re-points its
+> three folded defects from the deleted Phase 47 to Phase 52/`RESUME-01`; and `RESUME-01` is minted
+> in REQUIREMENTS.md, closing the id-less gap the plan-check pass found — its own folded defects are
+> all independently closed as of 2026-08-25 (empty-answer refusal and per-tool decision policy by
+> this amendment's neighbour #133's closure notes; pending-approval expiry by Amendment #140).
+>
+> **What this measurement does NOT prove.** It does not prove the tool-result append or either drain
+> point works on Aura's real provider path (OpenRouter, llama.cpp) — that is still STEER-01's own
+> obligation, unmoved by this amendment. It does not prove the queue bound of 8 or the 16 KiB cap
+> are right for real usage; #132 already recorded these as untested defaults carried from the
+> study, and this amendment does not re-measure them. It does not prove the nonce-and-scrub pair is
+> unbeatable against every adversarial tool output — only that it closes the specific static-marker
+> forgery hermes' own design leaves open. It does not prove the composer contract is safe under real
+> concurrent use, nor that the new Telegram pending-turn slot behaves correctly under a second busy
+> message arriving before the first is delivered — those are plans 52-06/52-07's live-E2E
+> obligations. And it does not re-litigate anything #132 already ratified that this correction does
+> not touch: the tool-result append mechanism itself, the generation-binding non-issue, the
+> child-steering non-goal, or the steer-then-cancel escalation ladder.
