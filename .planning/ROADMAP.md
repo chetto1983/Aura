@@ -629,7 +629,7 @@ STEER-04 exists because the failure mode of any queue-into-a-running-thing is si
   4. A steered turn consumes no more steps or wallclock than an unsteered one — the budget is unchanged by steering.
   5. The same steer works from a channel, not only the cockpit.
 
-**Plans**: 2/8 plans executed
+**Plans**: 3/8 plans executed
 
 Plans:
 **Wave 1**
@@ -638,7 +638,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 52-02-PLAN.md — The agent half: the conversation-keyed bounded inbox, both drain points, the nonce marker OUTSIDE the tool-output envelope, the teaching note and the pre-wrap lookalike scrub
+- [x] 52-02-PLAN.md — The agent half: the conversation-keyed bounded inbox, both drain points, the nonce marker OUTSIDE the tool-output envelope, the teaching note and the pre-wrap lookalike scrub
 - [x] 52-03-PLAN.md — RESUME-01 remainder: pending-approval TTL through the resume front door (empty-accept refusal and per-pause decision policy closed 2026-08-25)
 
 **Wave 3** *(blocked on Wave 2 completion)*
@@ -720,7 +720,7 @@ replay; the skill is now permanent surface, not a compensating workaround awaiti
 | 49. Memory tiers | 0/TBD | Not started | - |
 | 50. Context ladder legibility | 0/TBD | Not started | - |
 | 51. Durable delegation | 0/TBD | Not started | - |
-| 52. Mid-turn steering | 2/8 | In Progress|  |
+| 52. Mid-turn steering | 3/8 | In Progress|  |
 | 54. Milestone exit | 0/TBD | Not started | - |
 
 ## Notes on conditional scope
