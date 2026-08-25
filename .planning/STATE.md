@@ -13,7 +13,7 @@ progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 34
-  completed_plans: 29
+  completed_plans: 30
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -187,6 +187,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 46]: 46-05's MCP-05 fix encodes `{accountId, eventId}` as an opaque base64 JSON token minted by `get_calendar_events` and decoded only by `get_calendar_event_details` — the provider call still needs a real accountId server-side, so the reference carries it instead of a caller-supplied argument; a missing/malformed reference is rejected outright, never defaulted to an account
 - [Phase 46]: 46-05 found `ci.yml` structurally never triggers on `aura/pim-sidecar` (push/PR to `main` only, zero runs in the branch's history) — the plan's literal "ci.yml green" acceptance wording cannot be satisfied on this branch; `aura-publish-image.yml` is the actual gate and it succeeded, additionally verified by pulling and re-probing the published `:<sha>` image live
 - [Phase 52]: 52-01 assigned PRD amendment #142 (not #141 — a concurrent session claimed #141) for the five hermes/live-tree corrections to #132; RESUME-01 minted as its own requirement ID and amendment #133 re-pointed from the deleted Phase 47 to Phase 52
+- [Phase 52]: 52-05 auto-delivers a leftover steer via turnLocked under the ALREADY-HELD lock (never Turn/runTurn, which would deadlock re-acquiring it), capped at steerAutoDeliverMaxChain=1 so a steer queued during the auto-delivered turn cannot start a second hop
+- [Phase 52]: 52-05's exactly-once persistence is proven by a ROW COUNT (TestLeftoverSteerPersistsExactlyOneTurn), not a status code; 52-04's drain-time persistSteerTurn is guarded against the next-turn form via steerDeliveryForms
+- [Phase 52]: 52-05 moved Deps/ResumeHook/New out of runner.go (596/600 before the change) into runner_deps.go as refactor-on-touch, named explicitly in the commit body -- the Wave-2 mis-titled-commit defect did not repeat
 - [Phase 52]: 52-04 closes the Wave-2 cap-drift by wiring newSteerInbox(cfg.AGUISteer) at the composition root (cmd/aura/chat_boot.go) and pinning the WIRED caps to 8/16384 in chat_boot_test.go. internal/steer's own 32/32768 fallbacks are kept DELIBERATELY divergent so the package never imports internal/config -- a zero Config is then visibly wrong rather than silently plausible
 - [Phase 52]: 52-02 delivers a steer by appending it AFTER the closing </tool_output> of the last tool-result message, behind a nonce marker minted by trust.go's existing toolOutputNonce() -- there remains exactly one nonce minter in internal/agent
 - [Phase 52]: 52-02's GREEN commit for Task 2 (60836960e) carries the steer drain implementation (llm_agent.go, llm_agent_steer.go, trust.go) but its SUBJECT describes only a bundled Rule-3 lint unblock; the message misrepresents the diff. Left unrewritten deliberately: a concurrent session pushed ad0bee571 and merge 18231becc around it, and rewriting shared history another session may have pulled is worse than a wrong subject line. Recorded here so a later `git log --grep=steer` miss is explainable
