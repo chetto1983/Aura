@@ -7979,3 +7979,50 @@ flusso completo, che funziona.
 > does not prove deployment-global settings or skills are safe to grant to ordinary identities;
 > their safety continues to come from governance capabilities and the strict-profile boot gate,
 > not from this sidecar isolation.
+
+## §Calendar, WhatsApp and ArcadeDB share one remote-MCP tenancy model (Amendment #145, 2026-08-25)
+
+> **Amendment #145 (2026-08-25 — operator correction to amendment #144 before code).**
+>
+> **What was measured.** Aura already persists the remote-server catalog once in
+> `aura.mcp_server` and persists each authorization grant under the owning identity in
+> `aura.identity_mcp_oauth`. `runtimeMCPOAuth(ctx)` resolves that existing grant from the
+> authenticated identity context. The remaining asymmetry is in the client bridge:
+> `sendingMiddleware` adds `_meta.aura.user_identifier` only when `bridgePolicy.memory` is true,
+> while Calendar and WhatsApp are mounted through the same streamable-HTTP machinery without that
+> identity scope. `cmd/aura/mcp_live_mount.go` also records the process-wide registry limitation;
+> it is existing remote-MCP debt, not a sidecar-specific feature to copy. The official MCP HTTP
+> authorization specification defines the client as acting for a resource owner and the protected
+> MCP server as an OAuth resource server; it does not define Calendar, messaging, or memory as
+> different connection types.
+>
+> **Operator ruling.** Calendar, WhatsApp and ArcadeDB are the same architectural thing: three
+> Aura-owned remote MCP servers. There is one deployment-scoped catalog and one generic
+> identity-scoped remote-connection path. No Calendar session registry, WhatsApp session registry,
+> or memory-only identity policy may exist in Aura. The `memory` policy bit is retired in favour of
+> a transport/trust-derived identity scope shared by every Aura-owned streamable-HTTP recipe. The
+> authenticated Aura context is the only source of the owner; browser fields and model-visible tool
+> arguments cannot select it. Existing Postgres remote-MCP ownership and grant persistence are
+> reused; this concern adds no parallel connection table and no Aura schema migration.
+>
+> The generic bridge owns connection/session selection and the single identity envelope. Each
+> server consumes that envelope only to select its domain storage: ArcadeDB selects the identity's
+> database, Calendar selects the identity's accounts and provider credentials, and WhatsApp opens
+> the identity's SQLite/whatsmeow/media directory. These storage implementations necessarily differ,
+> but they do not get different mount, authentication, tenancy, retry, or lifecycle protocols. A
+> missing identity fails before a tool reaches any of the three data planes.
+>
+> Amendment #144 remains authoritative for the measured singleton leaks, required tenant storage,
+> one-time live-data moves, scoped migrations-on-first-connect, foreign-ID denial and two-identity
+> real-agent E2E. It is superseded only where it describes Calendar/WhatsApp as special internal
+> recipes or proposes sidecar-specific identity routing. Closure must additionally prove that the
+> same generic remote-MCP identity test covers all three recipes and that removal of the memory-only
+> branch leaves no compatibility fallback, dead policy field, duplicate registry, or hidden legacy
+> path.
+>
+> **What this correction does NOT prove.** The existing per-identity grant rows do not by themselves
+> prove concurrent runtime isolation; the source comment explicitly says the current process registry
+> is shared. Nor does the official authorization contract prove that these pinned server builds
+> consume Aura's identity envelope. Those are implementation and live-E2E obligations. This decision
+> also does not authorize replacing provider OAuth or WhatsApp pairing with a new bespoke authorization
+> server: inventory and reuse of the existing remote-MCP flow remain mandatory.
