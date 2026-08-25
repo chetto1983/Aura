@@ -62,6 +62,7 @@ export const graphEn = {
     filter: {
       labels: 'Node types',
       relTypes: 'Connection types',
+      resize: 'Resize the filters column',
     },
     cap: {
       notice: 'Showing the top {{count}} — expand a node to go deeper',
@@ -127,6 +128,7 @@ export const graphIt = {
     filter: {
       labels: 'Tipi di nodo',
       relTypes: 'Tipi di connessione',
+      resize: 'Ridimensiona la colonna filtri',
     },
     cap: {
       notice: 'Mostro i primi {{count}} — espandi un nodo per approfondire',

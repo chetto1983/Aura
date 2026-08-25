@@ -1,8 +1,9 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
 
 // governance.spec.ts — the Phase 28 Governance boards E2E. It proves the operator can open the
-// 'governance' workspace (the live mode), the MCP/Skills/Scheduler tab strip is a real role=tablist,
+// 'governance' workspace (the live mode), the MCP/Skills/Scheduler section rail is a real nav
+// landmark (a sidebar column on desktop, a scrollable strip above the board on mobile),
 // a master row opens its detail (a bottom sheet on a mobile viewport, the desktop column on
 // chromium), the master list is arrow-navigable, and the interactive targets meet the 44px floor.
 // The six /api/governance/* routes are mocked at the page-network layer so only the served SPA +
@@ -137,8 +138,26 @@ async function openGovernance(page: Page) {
   await page.getByRole('button', { name: 'Governance', exact: true }).first().click();
 }
 
+// The board switcher is the shared SectionRail — a nav landmark, not a tablist. Scope every
+// lookup to it: 'Skills' and 'Audit' also name controls inside the boards themselves.
+async function dragHandleBy(page: Page, handle: Locator, deltaX: number) {
+  const box = await handle.boundingBox();
+  if (box === null) throw new Error('resize handle has no bounding box');
+  const y = box.y + box.height / 2;
+  await page.mouse.move(box.x + box.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + deltaX, y, { steps: 10 });
+  await page.mouse.up();
+}
+
+function railItem(page: Page, name: string) {
+  return page
+    .getByRole('navigation', { name: 'Governance sections' })
+    .getByRole('button', { name });
+}
+
 test.describe('Phase 28 — Governance boards (desktop + mobile)', () => {
-  test('opens the workspace with the shadcn MCP/Skills/Scheduler tablist', async ({
+  test('opens the workspace with the MCP/Skills/Scheduler section rail', async ({
     page,
   }, testInfo) => {
     await openGovernance(page);
@@ -148,11 +167,10 @@ test.describe('Phase 28 — Governance boards (desktop + mobile)', () => {
       page.getByText('Read-only — viewing only. Changes arrive in a later phase.'),
     ).toHaveCount(0);
 
-    // The tab strip is a real role=tablist with the three governance tabs.
-    const tablist = page.getByRole('tablist', { name: 'Governance' });
-    await expect(tablist.getByRole('tab', { name: 'MCP servers' })).toBeVisible();
-    await expect(tablist.getByRole('tab', { name: 'Skills' })).toBeVisible();
-    await expect(tablist.getByRole('tab', { name: 'Scheduler' })).toBeVisible();
+    // The rail is a real nav landmark carrying the three governance boards.
+    await expect(railItem(page, 'MCP servers')).toBeVisible();
+    await expect(railItem(page, 'Skills')).toBeVisible();
+    await expect(railItem(page, 'Scheduler')).toBeVisible();
 
     // The MCP board renders both rows; the healthy probe resolves to its tool count.
     await expect(page.getByText('github')).toBeVisible();
@@ -181,7 +199,7 @@ test.describe('Phase 28 — Governance boards (desktop + mobile)', () => {
 
   test('selecting a scheduled task shows its paginated run history', async ({ page }) => {
     await openGovernance(page);
-    await page.getByRole('tab', { name: 'Scheduler' }).click();
+    await railItem(page, 'Scheduler').click();
 
     await expect(page.getByText('reminder')).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('0 9 * * *')).toBeVisible();
@@ -197,24 +215,50 @@ test.describe('Phase 28 — Governance boards (desktop + mobile)', () => {
 
   test('interactive controls meet the 44px touch-target floor', async ({ page }) => {
     await openGovernance(page);
-    await expect(page.getByRole('tablist', { name: 'Governance' })).toBeVisible({
+    await expect(page.getByRole('navigation', { name: 'Governance sections' })).toBeVisible({
       timeout: 15000,
     });
 
     for (const name of ['MCP servers', 'Skills', 'Scheduler']) {
-      const box = await page.getByRole('tab', { name }).boundingBox();
-      expect(box, `tab ${name} has a bounding box`).not.toBeNull();
+      const box = await railItem(page, name).boundingBox();
+      expect(box, `rail item ${name} has a bounding box`).not.toBeNull();
       if (box !== null) {
-        expect(box.height, `tab ${name} ≥ 44px tall`).toBeGreaterThanOrEqual(44);
+        expect(box.height, `rail item ${name} ≥ 44px tall`).toBeGreaterThanOrEqual(44);
       }
     }
+  });
+
+  test('the rail and the board list resize independently', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'chrome', 'both columns are lg-only');
+    await openGovernance(page);
+    await expect(page.getByText('github')).toBeVisible({ timeout: 15000 });
+
+    const rail = page.getByRole('navigation', { name: 'Governance sections' });
+    const listHandle = page.getByRole('separator', { name: 'Resize the list column' });
+    const railHandle = page.getByRole('separator', { name: 'Resize the sections rail' });
+
+    const railBefore = (await rail.boundingBox())?.width ?? 0;
+    const listBefore = Number(await listHandle.getAttribute('aria-valuenow'));
+
+    // Dragging the LIST handle moves the list by the drag delta and nothing else. The
+    // regression this pins: a width measured from the VIEWPORT instead of from the grid's own
+    // left edge, which made the column jump by the rail's full width on the first pointer move.
+    await dragHandleBy(page, listHandle, 60);
+    const listAfter = Number(await listHandle.getAttribute('aria-valuenow'));
+    expect(listAfter).toBeGreaterThan(listBefore + 40);
+    expect(listAfter).toBeLessThan(listBefore + 80);
+    expect((await rail.boundingBox())?.width).toBe(railBefore);
+
+    // The rail has its own handle, with the chat sidebar's bounds.
+    await dragHandleBy(page, railHandle, 50);
+    expect((await rail.boundingBox())?.width ?? 0).toBeGreaterThan(railBefore + 30);
   });
 
   test('skills lifecycle is a state-filter group with no run/activate row control', async ({
     page,
   }) => {
     await openGovernance(page);
-    await page.getByRole('tab', { name: 'Skills' }).click();
+    await railItem(page, 'Skills').click();
 
     // Amendment #97 merged the four lifecycle tabs into ONE list filtered by state: the
     // stages are a role=group of filter chips ('Pending' went away with the approval
@@ -224,8 +268,11 @@ test.describe('Phase 28 — Governance boards (desktop + mobile)', () => {
     await expect(filters.getByRole('button', { name: /^Active/ })).toBeVisible();
     await expect(filters.getByRole('button', { name: /^Archived/ })).toBeVisible();
 
-    // The audit ledger is a toggle in the same toolbar.
-    await expect(page.getByRole('button', { name: 'Audit' })).toBeVisible();
+    // The audit ledger is a toggle in the same toolbar — scoped to it, because the rail's
+    // Audit section now shares the word (`pressed` does NOT separate them: Playwright reads a
+    // button with no aria-pressed as unpressed).
+    const toolbar = filters.locator('..');
+    await expect(toolbar.getByRole('button', { name: 'Audit' })).toBeVisible();
 
     // No run/activate control exists on rows; the one allowed write CTA is "Install skill".
     await expect(page.getByRole('button', { name: /^(run|activate)\b/i })).toHaveCount(0);

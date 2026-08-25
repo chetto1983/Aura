@@ -116,7 +116,15 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     expect(workspace.className).toContain('graph-workspace');
     expect(workspace.className).toContain('overflow-hidden');
     expect(workspace.parentElement?.className).toContain('graph-workspace-container');
-    expect(workspace.className).toContain('lg:grid-cols-[18rem_minmax(0,1fr)]');
+    // The filters track is a variable, not a hard 18rem: it is the graph's sidebar and it
+    // drag-resizes like the chat rail. `auto` is the handle's own track.
+    expect(workspace.className).toContain(
+      'lg:grid-cols-[var(--graph-filters-w)_auto_minmax(0,1fr)]',
+    );
+    expect(workspace.getAttribute('style')).toContain('--graph-filters-w: 288px');
+    expect(screen.getByRole('separator', { name: 'Resize the filters column' })).toBeTruthy();
+    // Chat sidebar chrome: the surface fill behind the border, which this column lacked.
+    expect(screen.getByLabelText('Node types').className).toContain('lg:bg-surface');
     const canvas = workspace.querySelector('.graph-workspace__canvas');
     expect(canvas?.className).toContain('min-h-0');
     expect(canvas?.className).not.toContain('min-h-[46svh]');
@@ -250,7 +258,7 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     // Select a node via the path-strip node list (the non-hover access path) → inspector opens.
     fireEvent.click(screen.getByRole('button', { name: /Alpha/ }));
     expect(screen.getByTestId('graph-workspace').className).toContain(
-      'lg:grid-cols-[18rem_minmax(0,1fr)_20rem]',
+      'lg:grid-cols-[var(--graph-filters-w)_auto_minmax(0,1fr)_20rem]',
     );
     expect(screen.getByLabelText('Select a node').getAttribute('data-open')).toBe('true');
     expect(screen.getByText('Connections')).toBeTruthy(); // inspector degree label

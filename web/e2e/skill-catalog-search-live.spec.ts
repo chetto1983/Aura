@@ -87,7 +87,10 @@ test.describe('live skill catalog performance score', () => {
     await test.step('1/10 opens the skill install catalog', async () => {
       await gotoAuthenticated(page, '/');
       await page.getByRole('button', { name: 'Governance', exact: true }).first().click();
-      await page.getByRole('tab', { name: 'Skills' }).click();
+      await page
+        .getByRole('navigation', { name: 'Governance sections' })
+        .getByRole('button', { name: 'Skills' })
+        .click();
       await page.getByRole('button', { name: 'Install skill' }).click();
       const heading = page.getByRole('heading', { name: 'Install skill' });
       await expect(heading).toBeVisible();

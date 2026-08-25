@@ -50,7 +50,11 @@ export function SkillsList({
   const deleteLabel = t('governance.skills.deleteSkill');
 
   return (
-    <div role="list" aria-label={t('governance.tabs.skills')} className="flex flex-col gap-2 p-2">
+    <div
+      role="list"
+      aria-label={t('governance.sections.skills')}
+      className="flex flex-col gap-2 p-2"
+    >
       {rows.map((skill) => {
         const isSelected = selected === skill.name;
         const isArchived = skill.stage === 'archived';

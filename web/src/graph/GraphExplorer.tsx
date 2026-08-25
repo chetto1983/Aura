@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useReducer, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { CheckCircle2, Database, Network, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { fetchGraphSchema, postGraphQuery } from './graphApi';
@@ -14,6 +14,8 @@ import { GraphControls } from './GraphControls';
 import { NodeInspector } from './NodeInspector';
 import { PathStrip } from './PathStrip';
 import type { GraphNode, GraphResult, GraphSchema } from './types';
+import { ColumnResizeHandle } from '@/components/ColumnResizeHandle';
+import { useColumnResize } from '@/components/useColumnResize';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -165,6 +167,18 @@ export default function GraphExplorer() {
   // Mobile-only: the control pane is a bottom sheet (canvas stays dominant). On lg it is
   // the permanent left column and this flag is inert.
   const [filtersOpen, setFiltersOpen] = useState(false);
+  // The filters column is the graph's sidebar, so it gets the chat rail's chrome and the same
+  // drag-to-resize as the Settings/Governance rails. Its width was a hard 18rem track, which
+  // is exactly the wrong thing on the surface whose labels are user data (node + relation type
+  // names come from the graph, not from a translation file).
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
+  const filtersWidth = useColumnResize({
+    originRef: workspaceRef,
+    storageKey: 'aura.graph.filtersWidth',
+    defaultWidth: 288,
+    min: 208,
+    max: 448,
+  });
 
   const loadSchemaOverview = useCallback(async () => {
     try {
@@ -377,11 +391,13 @@ export default function GraphExplorer() {
   return (
     <div className="graph-workspace-container h-full min-h-0">
       <div
+        ref={workspaceRef}
         data-testid="graph-workspace"
+        style={{ '--graph-filters-w': `${String(filtersWidth.width)}px` } as React.CSSProperties}
         className={`graph-workspace relative flex h-full min-h-0 flex-col overflow-hidden lg:grid lg:grid-rows-[minmax(0,1fr)_auto] ${
           inspectorOpen
-            ? 'lg:grid-cols-[18rem_minmax(0,1fr)_20rem]'
-            : 'lg:grid-cols-[18rem_minmax(0,1fr)]'
+            ? 'lg:grid-cols-[var(--graph-filters-w)_auto_minmax(0,1fr)_20rem]'
+            : 'lg:grid-cols-[var(--graph-filters-w)_auto_minmax(0,1fr)]'
         }`}
       >
         {/* MOBILE control bar — keeps the canvas dominant; refresh + filters live here, not in an
@@ -415,7 +431,7 @@ export default function GraphExplorer() {
         <aside
           aria-label={t('graph.filter.labels')}
           data-open={filtersOpen ? 'true' : 'false'}
-          className={`graph-workspace__filters min-h-0 lg:col-start-1 lg:row-start-1 lg:row-span-2 lg:flex lg:flex-col lg:border-r lg:border-border ${
+          className={`graph-workspace__filters min-h-0 lg:col-start-1 lg:row-start-1 lg:row-span-2 lg:flex lg:flex-col lg:border-r lg:border-border lg:bg-surface ${
             filtersOpen
               ? 'fixed inset-x-0 bottom-0 z-40 flex max-h-[80svh] flex-col rounded-t-2xl border-t border-border bg-surface shadow-2xl lg:inset-auto lg:z-auto lg:max-h-none lg:rounded-none lg:border-t-0 lg:shadow-none'
               : 'hidden lg:flex'
@@ -441,10 +457,19 @@ export default function GraphExplorer() {
           <div className="min-h-0 flex-1 overflow-y-auto">{controlPanel}</div>
         </aside>
 
+        {/* Its own grid track, so the handle never overlaps the filters or the canvas. The
+          narrow regime here is a CONTAINER query, not `lg` — the class below is what that
+          query hides, because `lg:block` can still be true inside a narrow container. */}
+        <ColumnResizeHandle
+          resize={filtersWidth}
+          label={t('graph.filter.resize')}
+          className="graph-workspace__resizer lg:col-start-2 lg:row-start-1 lg:row-span-2"
+        />
+
         {/* CANVAS — the dominant element. Mobile: flex-1 with a real min-height. Desktop: center cell. */}
         <section
           aria-label={t('graph.title')}
-          className="graph-workspace__canvas relative min-h-0 flex-1 bg-bg lg:col-start-2 lg:row-start-1 lg:flex-none"
+          className="graph-workspace__canvas relative min-h-0 flex-1 bg-bg lg:col-start-3 lg:row-start-1 lg:flex-none"
         >
           {canvasPane}
         </section>
@@ -454,7 +479,7 @@ export default function GraphExplorer() {
         <aside
           aria-label={t('graph.inspector.emptyHeading')}
           data-open={inspectorOpen ? 'true' : 'false'}
-          className={`graph-workspace__inspector min-h-0 lg:col-start-3 lg:row-start-1 lg:row-span-2 lg:static lg:overflow-y-auto lg:border-l lg:border-border lg:bg-surface ${
+          className={`graph-workspace__inspector min-h-0 lg:col-start-4 lg:row-start-1 lg:row-span-2 lg:static lg:overflow-y-auto lg:border-l lg:border-border lg:bg-surface ${
             inspectorOpen
               ? 'fixed inset-x-0 bottom-0 z-40 max-h-[78svh] overflow-y-auto border-t border-border bg-surface shadow-2xl lg:inset-auto lg:z-auto lg:max-h-none lg:border-t-0 lg:shadow-none'
               : 'hidden'
@@ -471,7 +496,7 @@ export default function GraphExplorer() {
 
         {/* EVIDENCE — path strip + a11y parallel DOM. Mobile: a capped scroll region below the
           canvas (canvas stays dominant). Desktop: the strip under the canvas (col 2). */}
-        <div className="graph-workspace__evidence max-h-[40svh] shrink-0 overflow-y-auto border-t border-border lg:col-start-2 lg:row-start-2 lg:max-h-[18vh] lg:shrink lg:overflow-y-auto">
+        <div className="graph-workspace__evidence max-h-[40svh] shrink-0 overflow-y-auto border-t border-border lg:col-start-3 lg:row-start-2 lg:max-h-[18vh] lg:shrink lg:overflow-y-auto">
           <PathStrip
             nodes={view.result?.nodes ?? []}
             edges={view.result?.edges ?? []}
