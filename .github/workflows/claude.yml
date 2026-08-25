@@ -12,11 +12,24 @@ on:
 
 jobs:
   claude:
+    # Aura is a PUBLIC repo and this job holds contents/pull-requests/issues
+    # write. The upstream example gates on the @claude mention alone, which on a
+    # public repo is an unauthenticated write-capable trigger: anyone who can
+    # comment can start it. Every arm therefore also requires the actor to be an
+    # OWNER, MEMBER or COLLABORATOR.
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      (github.event_name == 'issue_comment' &&
+        contains(github.event.comment.body, '@claude') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
+      (github.event_name == 'pull_request_review_comment' &&
+        contains(github.event.comment.body, '@claude') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
+      (github.event_name == 'pull_request_review' &&
+        contains(github.event.review.body, '@claude') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.review.author_association)) ||
+      (github.event_name == 'issues' &&
+        (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')) &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -26,13 +39,13 @@ jobs:
       actions: read # Required for Claude to read CI results on PRs
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 1
 
       - name: Run Claude Code
         id: claude
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@16b3b310c3d7b5279df73130324d5205aeea8eac # v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
 
