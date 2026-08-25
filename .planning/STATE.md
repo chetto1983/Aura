@@ -3,17 +3,17 @@ gsd_state_version: 1.0
 milestone: v2.1.0
 current_phase: 52
 current_phase_name: Mid-turn steering
-status: planning
+status: executing
 stopped_at: Phase 52 context gathered
-last_updated: "2026-08-25T10:06:01.062Z"
+last_updated: "2026-08-25T13:25:33.684Z"
 last_activity: 2026-08-25
-last_activity_desc: Phase 46 closed, tool-surface phases deleted, 23 requirements deleted
-state_head: a087ea3260fbcec4019a13456eaea8b7a871f01e
+last_activity_desc: Phase 52 execution resumed (wave continue)
+state_head: 27c3066e1e4c790d31028b948c343a4fafe9c964
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 34
-  completed_plans: 26
+  completed_plans: 28
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -28,9 +28,9 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 
 ## Current Position
 
-Phase: 52 (Mid-turn steering) — READY TO EXECUTE
+Phase: 52 (Mid-turn steering) — EXECUTING
 (corrected against hermes before any code existed), and every prerequisite was verified present.
-Status: Between phases
+Status: Executing Phase 52
 
 **The roadmap shrank on 2026-08-25 (operator decision).** Phases **47** (tool-surface ceremony
 strip), **48** (un-defer and merges) and **53** (summarization spike) are DELETED, not annotated —
@@ -49,7 +49,7 @@ plainly:** the MCP-01 distrust-framing and MCP-03 `TrustTrusted` tripwire tests 
 
 Prior status (Phase 46 execution):
 Phase 46 discussion are recorded in `46-CONTEXT.md` D-10..D-16 and in ROADMAP §45.1.
-Last activity: 2026-08-24 — Phase 46 execution resumed (wave continue)
+Last activity: 2026-08-25 — Phase 52 execution resumed (wave continue)
 failure is closed: a bridged tool never set `Multiplexed`, so `classify` gave ONE flat tier to the
 whole merged tool — `calendar(action=list_calendars)` and `calendar(action=send_email)` scored
 identically, with no panic to warn anyone. Now `bridge.go:211` sets `spec.Multiplexed =
@@ -186,6 +186,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 46]: 46-05 found `AIJsonSchemaCreateOptions.TransformSchemaNode` carries no per-parameter identity when generating a schema from a MethodInfo's parameters (empty Path, null PropertyInfo, measured live via debug instrumentation) — the working fix instead parses and rewrites the already-built `Tool.InputSchema` after `McpServerTool.Create` returns
 - [Phase 46]: 46-05's MCP-05 fix encodes `{accountId, eventId}` as an opaque base64 JSON token minted by `get_calendar_events` and decoded only by `get_calendar_event_details` — the provider call still needs a real accountId server-side, so the reference carries it instead of a caller-supplied argument; a missing/malformed reference is rejected outright, never defaulted to an account
 - [Phase 46]: 46-05 found `ci.yml` structurally never triggers on `aura/pim-sidecar` (push/PR to `main` only, zero runs in the branch's history) — the plan's literal "ci.yml green" acceptance wording cannot be satisfied on this branch; `aura-publish-image.yml` is the actual gate and it succeeded, additionally verified by pulling and re-probing the published `:<sha>` image live
+- [Phase 52]: 52-01 assigned PRD amendment #142 (not #141 — a concurrent session claimed #141) for the five hermes/live-tree corrections to #132; RESUME-01 minted as its own requirement ID and amendment #133 re-pointed from the deleted Phase 47 to Phase 52
+- [Phase 52]: 52-02 delivers a steer by appending it AFTER the closing </tool_output> of the last tool-result message, behind a nonce marker minted by trust.go's existing toolOutputNonce() -- there remains exactly one nonce minter in internal/agent
+- [Phase 52]: 52-02's GREEN commit for Task 2 (60836960e) carries the steer drain implementation (llm_agent.go, llm_agent_steer.go, trust.go) but its SUBJECT describes only a bundled Rule-3 lint unblock; the message misrepresents the diff. Left unrewritten deliberately: a concurrent session pushed ad0bee571 and merge 18231becc around it, and rewriting shared history another session may have pulled is worse than a wrong subject line. Recorded here so a later `git log --grep=steer` miss is explainable
 - [Phase 46]: 46-05 deleted the 14 orphaned MSTest files (2062 LOC) for the deleted raw tool classes rather than porting them to `CalendarActionTool` — no replacement unit coverage was written for the merged tool in this plan; flagged as a known gap/follow-up, not silently absorbed
 
 ### Pending Todos
@@ -228,6 +231,7 @@ None yet.
 - 45.1-08 must also cover 45.1-07: no mutation spot-check on elicitation.go/elicitation_consent.go, and no LIVE E2E of a real mounted server issuing a real elicitation to a real channel -- the in-memory pair proves the protocol path, not a Telegram delivery
 - 46-05 (calendar fork curation) deleted 14 orphaned MSTest files (2062 LOC) for the raw tool classes it removed, with no replacement unit coverage written for the merged `CalendarActionTool` -- flagged for a future fork-side follow-up, not something this milestone's own coverage gates measure (aura-pim-mcp is an external repo)
 - 46-05 found `ci.yml` structurally never triggers on `aura/pim-sidecar` (push/PR to `main` only) -- if a future plan expects a green `ci.yml` run on this branch as evidence, it will not exist; use `aura-publish-image.yml`'s run history plus a live pulled-image probe instead
+- **52-04 MUST wire the steer inbox from config, and the fallbacks disagree today.** `internal/steer/inbox.go` carries package-level fallbacks `defaultMax=32` / `defaultMaxBytes=32768`, while the ratified amendment #132 item 10 values in `internal/config/config_agui_steer.go` are `Max=8` / `MaxBytes=16384`. There are currently ZERO non-test callers of `steer.New`, so nothing yet resolves the disagreement. If 52-04 constructs the inbox with a zero `steer.Config`, the caps silently become 4x the ratified numbers and no test fails -- the D-11 catalogue-vs-loader drift reproduced one layer down. 52-04 must pass `config.AGUISteer` explicitly AND add a test pinning the wired caps to the config values.
 - Env catalog gap (found in 45.1-07, PRD-amendment shaped): the whole AURA_MCP_* family is uncatalogued in prd.md -- AURA_MCP_MOUNT_TIMEOUT and AURA_MCP_SHUTDOWN_TIMEOUT are absent, AURA_MCP_CALL_TIMEOUT_SEC appears only in amendment prose, and AURA_MCP_ELICITATION_TIMEOUT_SEC was deliberately not added alone
 
 ## Deferred Items
