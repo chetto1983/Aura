@@ -99,7 +99,7 @@ harness is built; `internal/eval/` stays deleted.
 - [x] **Phase 45: Harness correctness** - Idempotency replay fix and memory-write guardrails close the two headline audit defects (completed 2026-08-15)
 - [x] **Phase 45.1: Native MCP client** - The official Go SDK replaces ~1,970 LOC of bespoke transport and reconnect; Aura's own policy layers survive on top (inserted 2026-08-16)
 - [ ] **Phase 46: MCP trust and facade** - Ratify the trust posture that already shipped; curation moves into the forks, not into Aura — **7/9 plans done; 46-08 is a recorded no-go (amendment #131); only 46-09 remains**
-- [ ] **Phase 47: Tool-surface ceremony strip** - Host-fills drop from schemas, approvals resolve without a resume payload, files auto-deliver and auto-index — **grows the three approval gaps of amendment #133**
+- [x] ~~**Phase 47: Tool-surface ceremony strip**~~ - **CANCELLED 2026-08-24** — the tool surface works (amendment #139). Its three measured approval defects are NOT lost: they are recorded in `.planning/todos/pending/approval-resume-defects.md`
 - [x] ~~**Phase 48: Tool-surface un-defer and merges**~~ - **CANCELLED 2026-08-24** (amendment #139) — `tool_search` measures **164 calls, 0 failures** with Linear (53), Notion (28) and WhatsApp (15) in the deferred tail. TOOL-01's hard cap was never measured; the one measurement that exists contradicts it
 - [ ] **Phase 49: Memory tiers** - Short-term searchable retrieval and a PRD-amendment-gated reasoning tier — **scoped down: `memory_recall` and `internal/reasoningtrace` already exist**
 - [ ] **Phase 50: Context ladder legibility** - Real token accounting, eviction, and per-category visibility — **re-hosted: the consumer is now the compaction trigger**
@@ -420,7 +420,18 @@ Plans:
 
 ### Phase 47: Tool-surface ceremony strip
 
-> **REVISED 2026-08-24, then NARROWED the same day.** This phase is reduced to its security gaps.
+> **CANCELLED 2026-08-24 (operator decision).** The tool surface works as it is — `tool_search`
+> measures 164 calls and 0 failures against a deferred tail of 100+ tools (amendment #139), and
+> `send_file` measures 18 calls and 0 failures. The ceremony this phase would strip is not
+> costing anything measured, and AUTO-01 would additionally REVERSE D-05/D-06.
+>
+> **What does NOT disappear with the phase.** Amendment #133's three approval defects are real,
+> were measured, and are moved to `.planning/todos/pending/approval-resume-defects.md`: no
+> per-tool decision policy (any pause can be accepted), an empty answer resumes silently
+> (`payloadString(nil)` → `""`), and pending approvals never expire. They are defects in the
+> resume path, not tool-surface ceremony, and cancelling this phase is not a judgement on them.
+>
+> ~~REVISED 2026-08-24, then NARROWED the same day.~~ This phase was reduced to its security gaps.
 > The three approval defects in (a) below are real and stay. **AUTO-01 and AUTO-02 are no longer
 > assumed**: `send_file` measures 18 calls and 0 failures, no evidence says the operator is losing
 > files, and AUTO-01 REVERSES a deliberate decision (see (b)). Carry them only with evidence, or
@@ -819,7 +830,7 @@ the four named signals, never a green test suite.
 **Execution Order (REVISED 2026-08-24 — no longer numeric):**
 
 ```
-45 ✓ → 45.1 ✓ → 46 (close: only 46-09) → 52 → 47 (security gaps only) → 50 → 49 → 51 → 54
+45 ✓ → 45.1 ✓ → 46 (close: only 46-09) → 52 → 50 → 49 → 51 → 54
 ```
 
 Three departures from numeric order, each measured rather than preferred:
@@ -834,10 +845,17 @@ Three departures from numeric order, each measured rather than preferred:
 - **48 cancelled** — `tool_search` is 164/0 against a deferred tail of 100+ tools; TOOL-01's cap
   was an unmeasured assertion and the merges buy nothing measured while breaking every historical
   `tool_invocations` row and scheduled `agent_job` that names a renamed tool (amendment #139).
-- **47 reduced to its security gaps.** The three approval defects of amendment #133 are real and
-  stay. AUTO-01/AUTO-02 (automatic delivery and indexing) are NOT carried on measured evidence —
-  `send_file` shows 18 calls and 0 failures — and AUTO-01 additionally REVERSES D-05/D-06. They
-  must be justified on their own evidence or dropped; they are no longer assumed.
+- **47 cancelled** (operator decision, 2026-08-24), on the same measurement that cancelled 48. Its
+  three approval defects move to `.planning/todos/pending/approval-resume-defects.md` rather than
+  being dropped — they are resume-path defects, not tool-surface ceremony.
+- **Phase 54 must be revisited.** It retires the `always-deliver-files` skill, which exists
+  BECAUSE AUTO-01 does not. With 47 cancelled that gap stays open, so the skill still compensates
+  for something real and cannot simply be deleted.
+- **23 requirements are now unmapped.** 47 carried TOOL-02/03/08/09/10, AUTO-01/02, SURF-02/03,
+  COMPAT-02; 48 carried TOOL-01/04/06/07/11/12, SURF-01/06/07/08, COMPAT-01/03, AUTO-04.
+  REQUIREMENTS.md maps all 77 v1 requirements to exactly one phase, so these no longer have a home.
+  Left stated rather than quietly re-homed: closing the milestone means deciding whether they are
+  dropped, deferred to v2, or satisfied as-is.
 - **50 before 49.** 50's target is now the compaction trigger, which exists; 49's remaining scope
   is smaller than written and does not gate it.
 
@@ -848,7 +866,7 @@ Phase 54 stays last: it is **causally** gated on Phase 47, not merely sequenced 
 |-------|----------------|--------|-----------|
 | 45. Harness correctness | 9/9 | Complete    | 2026-08-15 |
 | 46. MCP trust and facade | 7/9 | In Progress|  |
-| 47. Tool-surface ceremony strip | 0/TBD | Not started | - |
+| ~~47. Tool-surface ceremony strip~~ | — | **CANCELLED** — surface works; approval defects → todos (amendment #139) | 2026-08-24 |
 | ~~48. Tool-surface un-defer and merges~~ | — | **CANCELLED** — tool_search 164/0; cap unmeasured (amendment #139) | 2026-08-24 |
 | 49. Memory tiers | 0/TBD | Not started | - |
 | 50. Context ladder legibility | 0/TBD | Not started | - |
