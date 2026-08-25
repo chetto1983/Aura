@@ -233,6 +233,15 @@ func (g *Gateway) ApproveChallenge(ctx context.Context, a ApprovalAccept) (Appro
 	return scope, nil
 }
 
+// DiscardApprovalChallenge removes one unresolved challenge after its durable pause
+// expired. It never creates a grant and is nil-safe like the rest of the ledger surface.
+func (g *Gateway) DiscardApprovalChallenge(convID, toolName, argsFingerprint string) {
+	if g == nil {
+		return
+	}
+	g.approvals.DiscardChallenge(convID, toolName, argsFingerprint)
+}
+
 // EvictSession drops a conversation's resolved-but-unconsumed approvals (R-41 parity
 // with ShellApprovals.Evict) so a long-running serve daemon does not retain them across
 // conversations. The gateway ledger lives OUTSIDE the tool registry, so the runner's

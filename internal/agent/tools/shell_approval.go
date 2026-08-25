@@ -148,6 +148,17 @@ func (a *ShellApprovals) ApproveChallenge(sessionID, digest, question string) er
 	return nil
 }
 
+// DiscardChallenge removes one unresolved challenge without creating an approval.
+// Approval expiry calls it only after the durable pause claim has won its race.
+func (a *ShellApprovals) DiscardChallenge(sessionID, digest string) {
+	if a == nil || sessionID == "" || digest == "" {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	delete(a.pending, shellApprovalKey(sessionID, digest))
+}
+
 func (s *ShellExec) requireShellApproval(ctx context.Context, command, cwd string) (*ToolResult, error) {
 	destructive, err := destructiveShellMatch(command)
 	if err != nil {

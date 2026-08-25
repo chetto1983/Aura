@@ -78,6 +78,31 @@ func TestGatewayResumeHookRecordsAcceptedApproval(t *testing.T) {
 	}
 }
 
+func TestGatewayResumeHookExpiryDiscardsChallengeWithoutApproval(t *testing.T) {
+	gw := gateway.New(config.ProfileSingleUserHardened, nil)
+	hook := newGatewayResumeHook(gw)
+	pending, _, _, _ := gatewayApprovalPending(t, gw, "conv-expired")
+	var rc struct {
+		Tool       string `json:"tool"`
+		ArgsSHA256 string `json:"args_sha256"`
+	}
+	if err := json.Unmarshal(pending.ResumeContext, &rc); err != nil {
+		t.Fatalf("resume context: %v", err)
+	}
+	if err := hook(t.Context(), pending, runner.ResponseInput{Action: askuser.ActionExpired}); err != nil {
+		t.Fatalf("expiry hook: %v", err)
+	}
+	_, err := gw.ApproveChallenge(t.Context(), gateway.ApprovalAccept{
+		ConversationID:  pending.ConversationID,
+		Tool:            rc.Tool,
+		ArgsFingerprint: rc.ArgsSHA256,
+		Question:        pending.Question,
+	})
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expired gateway challenge remained approvable: %v", err)
+	}
+}
+
 // TestGatewayResumeHookIgnoresNonAccept proves decline/cancel/wrong-type/non-approval-kind
 // record NOTHING — the re-drive still returns Approve (fail-closed: the tool stays
 // withheld until an accept is recorded).

@@ -33,6 +33,7 @@ var errDSNLeak = errors.New("dial tcp: failed to connect to postgres://aura_app:
 type fakeApprovalStore struct {
 	pendings []askuser.Pending
 	err      error
+	getErr   error
 }
 
 func (f *fakeApprovalStore) ListPendingAll(_ context.Context, _ int) ([]askuser.Pending, error) {
@@ -48,7 +49,7 @@ func (f *fakeApprovalStore) ListPendingAllForIdentity(_ context.Context, _ strin
 }
 
 func (f *fakeApprovalStore) GetByTokenForIdentity(_ context.Context, _, _ string) (askuser.Pending, error) {
-	return askuser.Pending{}, nil
+	return askuser.Pending{}, f.getErr
 }
 
 func (f *fakeApprovalStore) GetByToken(_ context.Context, _ string) (askuser.Pending, error) {
@@ -191,16 +192,20 @@ func TestApprovalsAPI_ResolveNonUUIDToken(t *testing.T) {
 // and never reaches the runner (Tampering guard: deny≠accept, only the three known
 // verbs are admitted).
 func TestApprovalsAPI_ResolveUnknownAction(t *testing.T) {
-	run := &scriptedRunner{}
-	srv := newResolveTestServer(t, run, nil)
-	token := uuid.Must(uuid.NewV7()).String()
+	for _, action := range []string{"approve", askuser.ActionExpired} {
+		t.Run(action, func(t *testing.T) {
+			run := &scriptedRunner{}
+			srv := newResolveTestServer(t, run, nil)
+			token := uuid.Must(uuid.NewV7()).String()
 
-	code, body := postResolve(t, srv, token, `{"action":"approve"}`) // "approve" is not a valid verb
-	if code != http.StatusBadRequest {
-		t.Errorf("unknown action status = %d, want 400: %s", code, body)
-	}
-	if run.gotAnswers != nil {
-		t.Errorf("an unknown action must not reach SubmitAnswers; got %v", run.gotAnswers)
+			code, body := postResolve(t, srv, token, `{"action":"`+action+`"}`)
+			if code != http.StatusBadRequest {
+				t.Errorf("unknown action %q status = %d, want 400: %s", action, code, body)
+			}
+			if run.gotAnswers != nil {
+				t.Errorf("unknown action %q must not reach SubmitAnswers; got %v", action, run.gotAnswers)
+			}
+		})
 	}
 }
 
@@ -226,6 +231,29 @@ func TestApprovalsAPI_ResolvePauseNotFound(t *testing.T) {
 	if code != http.StatusNotFound {
 		t.Errorf("ErrPauseNotFound status = %d, want 404: %s", code, body)
 	}
+}
+
+func TestApprovalsAPI_ResolveExpiredReturnsGone(t *testing.T) {
+	token := uuid.Must(uuid.NewV7()).String()
+	t.Run("runner detects expiry", func(t *testing.T) {
+		run := &scriptedRunner{answersErr: askuser.ErrPauseExpired}
+		srv := newResolveTestServer(t, run, nil)
+		code, body := postResolve(t, srv, token, `{"action":"accept","content":"yes"}`)
+		if code != http.StatusGone {
+			t.Fatalf("expired runner status = %d, want 410: %s", code, body)
+		}
+	})
+	t.Run("owner gate detects expiry", func(t *testing.T) {
+		run := &scriptedRunner{}
+		srv := newResolveTestServer(t, run, &fakeApprovalStore{getErr: askuser.ErrPauseExpired})
+		code, body := postResolve(t, srv, token, `{"action":"accept","content":"yes"}`)
+		if code != http.StatusGone {
+			t.Fatalf("expired owner-gate status = %d, want 410: %s", code, body)
+		}
+		if run.gotAnswers != nil {
+			t.Fatalf("expired owner gate reached SubmitAnswer: %v", run.gotAnswers)
+		}
+	})
 }
 
 func TestApprovalsAPI_ResolveDecisionNotAllowed(t *testing.T) {

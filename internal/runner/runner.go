@@ -63,6 +63,7 @@ func threadLockHeld(ctx context.Context) bool {
 type Deps struct {
 	Conv            ConversationStore
 	Pause           PauseStore
+	ApprovalExpiry  ApprovalExpiryStore
 	Identity        IdentityStore
 	CacheMetrics    CacheMetricStore
 	ToolInvocations ToolInvocationStore
@@ -162,6 +163,7 @@ type ResumeHook func(ctx context.Context, pending askuser.Pending, resp Response
 type Runner struct {
 	Conv            ConversationStore
 	pause           PauseStore
+	approvalExpiry  ApprovalExpiryStore
 	identity        IdentityStore
 	cacheMetrics    CacheMetricStore
 	toolInvocations ToolInvocationStore
@@ -268,6 +270,7 @@ func New(d Deps) *Runner {
 	r := &Runner{
 		Conv:                     d.Conv,
 		pause:                    d.Pause,
+		approvalExpiry:           d.ApprovalExpiry,
 		identity:                 d.Identity,
 		cacheMetrics:             d.CacheMetrics,
 		toolInvocations:          d.ToolInvocations,
@@ -320,7 +323,7 @@ func New(d Deps) *Runner {
 // ResponseInput is the CLI/caller-facing resume payload (the MCP three-action model,
 // D-A3-01 / AM-02). It maps to askuser.ResumeAnswer at the Store boundary.
 type ResponseInput struct {
-	Action  string // accept | decline | cancel
+	Action  string // public: accept|decline|cancel; server-authored expiry also uses this carrier
 	Content string
 }
 

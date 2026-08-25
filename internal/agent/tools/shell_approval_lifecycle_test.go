@@ -54,3 +54,24 @@ func TestShellApprovals_Lifecycle(t *testing.T) {
 		t.Fatal("second Consume must fail (approval is single-use)")
 	}
 }
+
+func TestShellApprovals_DiscardChallengeIsExactAndNilSafe(t *testing.T) {
+	t.Parallel()
+	var nilApprovals *ShellApprovals
+	nilApprovals.DiscardChallenge("session", "digest")
+
+	approvals := NewShellApprovals()
+	first := approvals.CreateChallenge("session", "rm -rf /tmp/first", "/work")
+	second := approvals.CreateChallenge("session", "rm -rf /tmp/second", "/work")
+	approvals.DiscardChallenge("session", first.Digest)
+
+	if _, ok := approvals.PendingChallenge("session", first.Digest); ok {
+		t.Fatal("discarded challenge remained pending")
+	}
+	if approvals.Consume("session", first.Digest) {
+		t.Fatal("discard created an approval grant")
+	}
+	if _, ok := approvals.PendingChallenge("session", second.Digest); !ok {
+		t.Fatal("discard removed a different challenge")
+	}
+}

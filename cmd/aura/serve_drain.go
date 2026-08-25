@@ -79,6 +79,9 @@ func drainShutdown(workCtx context.Context, env *serveEnv) {
 	if env.sweeper != nil {
 		env.sweeper.Stop()
 	}
+	if env.approvalExpirySweeper != nil {
+		env.approvalExpirySweeper.Stop()
+	}
 	if env.assetProcessingWorker != nil {
 		env.assetProcessingWorker.Stop()
 	}

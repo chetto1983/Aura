@@ -230,6 +230,10 @@ func (s *Server) handleResolveApproval(w http.ResponseWriter, r *http.Request) {
 	if s.approvals != nil {
 		identity := scopedIdentityID(r.Context())
 		if _, err := s.approvals.GetByTokenForIdentity(r.Context(), token, identity); err != nil {
+			if errors.Is(err, askuser.ErrPauseExpired) {
+				http.Error(w, "approval expired", http.StatusGone)
+				return
+			}
 			if errors.Is(err, askuser.ErrPauseNotFound) {
 				http.Error(w, "approval not found or already resolved", http.StatusNotFound)
 				return
@@ -240,6 +244,10 @@ func (s *Server) handleResolveApproval(w http.ResponseWriter, r *http.Request) {
 	}
 	directive, err := s.run.SubmitAnswer(r.Context(), token, runner.ResponseInput{Action: action, Content: body.Content})
 	if err != nil {
+		if errors.Is(err, askuser.ErrPauseExpired) {
+			http.Error(w, "approval expired", http.StatusGone)
+			return
+		}
 		if errors.Is(err, askuser.ErrPauseNotFound) {
 			http.Error(w, "approval not found or already resolved", http.StatusNotFound)
 			return

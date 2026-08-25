@@ -328,89 +328,6 @@ func TestIdempotentReplay(t *testing.T) {
 	}
 }
 
-// TestApprovedCallReservedAndIdempotent proves D-03 point 2 concretely: an operator-approved
-// then-resumed mutating call (Verdict{Allow, OperatorID}) (a) takes its GATE-03 reservation
-// (start committed before Execute; a forced reservation INSERT error blocks Execute even
-// post-approval) and (b) replays idempotently on retry; AND the ledger holds exactly one
-// start (operator_id in Meta) + one end for the triple, with NO separate executed row.
-func TestApprovedCallReservedAndIdempotent(t *testing.T) {
-	pool := migratedPool(t)
-	store := toolinvocations.New(pool)
-	g := New(config.ProfileSingleUserHardened, store)
-	convID := seedConversation(t, pool)
-
-	// A call that actually reaches the approval path: skill/delete → Destructive, the one
-	// tier that stops the turn. The resume carries the operator's resolution, so routeApprove
-	// returns Verdict{Allow, OperatorID}.
-	//
-	// NOT shell_exec and no longer swarm_spawn — both are Normal, so an ordinary write is
-	// allowed outright and never reaches routeApprove. This test would have kept passing its
-	// Allow assertion while silently asserting nothing about approval at all.
-	approvedCtx := WithResolvedApproval(WithResponder(ownerCtx()),
-		ResolvedApproval{Approved: true, OperatorID: "op-1"})
-	mutatingSpec := tools.Spec{Name: "skill_manage", Mutating: true}
-
-	// (a) reserve-before-execute for the approved call.
-	key := newKey(convID, "call-approved-1")
-	startAtExec := -1
-	spy := &spyTool{
-		spec:   mutatingSpec,
-		result: tools.ToolResult{Preview: "approved-output"},
-		onExec: func() { startAtExec = startRowCount(t, pool, key) },
-	}
-	_, v, err := gatedExec(approvedCtx, g, spy, skillDeleteArgs, key)
-	if err != nil || v.Decision != Allow {
-		t.Fatalf("approved dispatch = (%+v, %v), want allow", v, err)
-	}
-	if v.OperatorID != "op-1" {
-		t.Fatalf("approved verdict operator id = %q, want op-1", v.OperatorID)
-	}
-	if spy.count != 1 || startAtExec != 1 {
-		t.Fatalf("approved call: Execute count = %d, start rows at Execute = %d; want 1/1", spy.count, startAtExec)
-	}
-
-	// forced reservation INSERT error blocks Execute even post-approval (GATE-03 fail-closed).
-	badKey := newKey(uuid.Must(uuid.NewV7()).String(), "call-approved-fail")
-	blockSpy := &spyTool{spec: mutatingSpec}
-	_, bv, berr := gatedExec(approvedCtx, g, blockSpy, skillDeleteArgs, badKey)
-	if bv.Decision != Deny {
-		t.Fatalf("approved+bad-reservation verdict = %q, want deny", bv.Decision)
-	}
-	var denied *ErrDenied
-	if !errors.As(berr, &denied) {
-		t.Fatalf("approved+bad-reservation err = %v, want *ErrDenied", berr)
-	}
-	if blockSpy.count != 0 {
-		t.Fatalf("approved+bad-reservation Execute count = %d, want 0", blockSpy.count)
-	}
-
-	// (b) retry replays idempotently.
-	insertEnd(t, store, key, "approved-output", "")
-	res, rv, rerr := gatedExec(approvedCtx, g, spy, skillDeleteArgs, key)
-	if rerr != nil {
-		t.Fatalf("approved retry err: %v", rerr)
-	}
-	if rv.Replay == nil || spy.count != 1 {
-		t.Fatalf("approved retry: replay=%v Execute count=%d, want replay + count 1", rv.Replay, spy.count)
-	}
-	// A Layer A replay carries replayedMarker (HARN-03, D-10) appended to the recorded end.
-	if res.Preview != "approved-output"+replayedMarker {
-		t.Fatalf("approved replay preview = %q, want the recorded end plus the replay marker", res.Preview)
-	}
-
-	// ledger shape: exactly one start (operator_id in Meta) + one end for the triple.
-	starts, ends := tripleEvents(t, store, key)
-	if len(starts) != 1 {
-		t.Fatalf("triple has %d start rows, want exactly 1 (no competing executed Insert)", len(starts))
-	}
-	if len(ends) != 1 {
-		t.Fatalf("triple has %d end rows, want exactly 1", len(ends))
-	}
-	if starts[0].Meta["operator_id"] != "op-1" || starts[0].Meta["approved"] != true {
-		t.Fatalf("start meta = %v, want operator_id/op-1 + approved:true (executed marker rides the reservation)", starts[0].Meta)
-	}
-}
-
 // TestReplayMissingSidecar proves Pitfall 6: a recorded end whose sidecar is gone replays
 // the preview plus a `result expired` marker, with no error and no dangling FullPath.
 func TestReplayMissingSidecar(t *testing.T) {
@@ -451,8 +368,8 @@ func TestReplayMissingSidecar(t *testing.T) {
 var skillDeleteArgs = json.RawMessage(`{"action":"delete","name":"obsolete-skill"}`)
 
 // TestGatewayApprovalResumeReentersAndReservesOnce proves D-03 point 2 through the
-// PRODUCTION carrier (the ledger the resume hook writes, NOT a hand-set WithResolvedApproval
-// ctx): an operator approval recorded via RecordResolvedApproval lets the resumed re-drive
+// production carrier (the ledger the resume hook writes): an operator approval recorded
+// via RecordResolvedApproval lets the resumed re-drive
 // re-enter Decide -> routeApprove.Consume -> Verdict{Allow, OperatorID} -> the SINGLE 35-04
 // reservation, executing exactly once with operator_id in that one start's Meta and NO
 // competing executed row. A retry (re-recorded, same triple) replays idempotently (rows==0

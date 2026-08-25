@@ -17,6 +17,7 @@ package runner
 
 import (
 	"context"
+	"time"
 
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
@@ -84,6 +85,13 @@ type PauseStore interface {
 	MarkResumed(ctx context.Context, token string, ans askuser.ResumeAnswer) error
 	MarkResumedBatch(ctx context.Context, answers map[string]askuser.ResumeAnswer) error
 	AutoResolveForConversation(ctx context.Context, conversationID string) error
+}
+
+// ApprovalExpiryStore is the due-row read used only by the daemon expiry path.
+// Keeping it separate avoids forcing interactive/cache fakes to implement a method
+// they never call; *askuser.Store satisfies both store interfaces in production.
+type ApprovalExpiryStore interface {
+	ListExpiredPendingApprovals(ctx context.Context, cutoff time.Time, limit int) ([]askuser.Pending, error)
 }
 
 // ResumeClaim binds one pause's claim (token + AM-02 answer) to the RoleTool answer

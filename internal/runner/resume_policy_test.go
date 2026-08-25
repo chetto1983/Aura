@@ -125,7 +125,7 @@ func TestKnownResumeAction(t *testing.T) {
 			t.Errorf("knownResumeAction(%q) = false", action)
 		}
 	}
-	for _, action := range []string{"", "approve", "ACCEPT", " decline "} {
+	for _, action := range []string{"", "approve", askuser.ActionExpired, "ACCEPT", " decline "} {
 		if knownResumeAction(action) {
 			t.Errorf("knownResumeAction(%q) = true", action)
 		}

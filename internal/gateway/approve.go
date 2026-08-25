@@ -1,6 +1,6 @@
 // approve.go holds the mutating-approve routing (D-03): responder-presence detection,
 // the gateway_approval ResumeContext builder, the DENY-branch terminal decision-fact
-// recorder, and the post-resume approved branch. approve is host/policy-side ONLY — no
+// recorder, and the cross-turn approved branch. approve is host/policy-side ONLY — no
 // tool schema exposes it (D-03c), so the model can never self-approve a gated action.
 package gateway
 
@@ -45,36 +45,16 @@ func responderPresent(ctx context.Context) bool {
 	return v
 }
 
-// ResolvedApproval is an operator's answer to a gateway_approval pause, carried back
-// into a resumed Decide (the resume RE-ENTERS execTool → Decide). Approved==true routes
-// routeApprove to Verdict{Allow, OperatorID} with NO ledger write of its own.
+// ResolvedApproval is an operator's answer to a gateway_approval pause. The resume hook
+// records it in the one-shot cross-turn ledger consumed by the next Decide.
 type ResolvedApproval struct {
 	Approved   bool
 	OperatorID string
 }
 
-// resolvedApprovalCtxKey carries a ResolvedApproval into a resumed Decide (D-03 point 2).
-type resolvedApprovalCtxKey struct{}
-
-// WithResolvedApproval carries an operator's gateway_approval resolution into a resumed
-// Decide. The resume orchestrator (a later plan) sets it before re-entering execTool so
-// the approved call returns Allow+OperatorID without re-pausing.
-func WithResolvedApproval(ctx context.Context, r ResolvedApproval) context.Context {
-	return context.WithValue(ctx, resolvedApprovalCtxKey{}, r)
-}
-
-func resolvedApproval(ctx context.Context) (ResolvedApproval, bool) {
-	r, ok := ctx.Value(resolvedApprovalCtxKey{}).(ResolvedApproval)
-	return r, ok
-}
-
 // routeApprove routes a mutating GateRecommended call by responder presence (D-03),
 // mirroring shell_exec's requireShellApproval but hoisted ABOVE tool.Execute.
 //
-//   - A same-ctx resume carrying the operator's resolution → Verdict{Allow, OperatorID},
-//     NO row (the executed marker rides 35-04's single reservation start Meta — the
-//     in-process unit-test seam / same-Turn fast path). It stays at the very TOP, before
-//     the deny gate, so a host-set same-ctx resolution short-circuits regardless of profile.
 //   - server_production OR no positively-known responder → deny-with-guidance, plus a
 //     durable degraded_deny(reason=no_approver) terminal `end` decision-fact (D-03a/b,
 //     D-03 point 1 / GATE-01). Evaluated BEFORE any cross-turn Consume (WR-01
@@ -90,13 +70,6 @@ func resolvedApproval(ctx context.Context) (ResolvedApproval, bool) {
 //     tool RESULT (no pause sentinel). The resume hook records the operator's accept ONLY
 //     IF this challenge exists AND the operator-visible question matches it (CR-01).
 func (g *Gateway) routeApprove(ctx context.Context, spec tools.Spec, tier scoring.RiskTier, rawArgs json.RawMessage, key ReservationKey) (Verdict, error) {
-	if r, ok := resolvedApproval(ctx); ok && r.Approved {
-		// Same-ctx fast path (unit seam): the operator's resolution was placed on THIS ctx.
-		// Return Allow+OperatorID and write NOTHING — a bare executed(operator_id) Insert
-		// would compete for the (conv,req,toolCall,event_kind) slot the real reservation
-		// start/end needs, discarding the tool's outcome and blinding the 35-05 reconciler.
-		return Verdict{Decision: Allow, Tier: tier, OperatorID: r.OperatorID}, nil
-	}
 	// WR-01 deny-before-Consume: the production/headless hard-deny is evaluated BEFORE the
 	// cross-turn Consume, so a recorded (or CR-01-fabricated) approval can NEVER be consumed
 	// on a headless/production run. D-03b: production identity is unverified pre-Phase-36, so

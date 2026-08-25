@@ -11,8 +11,8 @@
 // (04-05) owns resume ORCHESTRATION and is the sole writer beyond this Store's
 // Insert. This package NEVER imports internal/agent/tools (D-A1-04) — it takes
 // plain fields; the Event carries the pause payload, not a tools type. There is
-// no internal timeout / expiry state (SPEC Req#4): the only resolution paths are
-// Resume, ResumeBatch, and AutoResolveForConversation.
+// Approval expiry orchestration lives in Runner so a timeout claims the pause and
+// appends its matching RoleTool answer in the same transaction.
 package askuser
 
 import (
@@ -32,25 +32,28 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Action is the MCP three-action resolution model (AM-02 / D-A3-01). resumed_answer
-// is stored as the JSON {action, content}: accept injects content as a RoleTool,
-// decline tells the model the user declined, cancel aborts the turn.
+// Action is the public MCP three-action resolution model plus the server-only expiry
+// outcome. resumed_answer stores the JSON {action, content}.
 const (
 	ActionAccept  = "accept"
 	ActionDecline = "decline"
 	ActionCancel  = "cancel"
+	// ActionExpired is server-authored. It is valid at the persistence boundary but is
+	// deliberately absent from every public resume parser and policy decision set.
+	ActionExpired = "expired"
 )
 
 // autoTerminatedContent is the resumed_answer content written when a conversation
-// ends with open pendings (SPEC Req#11). It is an accept-shaped marker so a
-// resumed loop sees a benign answer rather than a missing one.
+// ends with open pendings (SPEC Req#11). The explicit cancel action keeps it distinct
+// from a human answer while still closing every dangling tool call.
 const autoTerminatedContent = "<auto-terminated: conversation ended>"
 
 // Sentinel errors so callers classify failures without string matching.
-// ErrPauseNotFound is an unknown/already-resolved token; ErrInvalidAnswer is a
-// malformed resolution action.
+// ErrPauseNotFound is unknown/already-resolved; ErrPauseExpired distinguishes the
+// server-authored expiry outcome; ErrInvalidAnswer is malformed input.
 var (
 	ErrPauseNotFound = errors.New("paused state not found or already resumed")
+	ErrPauseExpired  = errors.New("approval expired before a decision was made")
 	ErrInvalidAnswer = errors.New("invalid resume answer")
 )
 
@@ -201,6 +204,9 @@ func (s *Store) GetByToken(ctx context.Context, token string) (Pending, error) {
 				return ErrPauseNotFound
 			}
 			return gErr
+		}
+		if stateErr := resolvedStateError(row.ResumedAt.Valid, row.ResumedAnswer); stateErr != nil {
+			return stateErr
 		}
 		pending = fromRow(row)
 		return nil
@@ -488,17 +494,20 @@ func fromRow(r sqlc.AuraPausedStates) Pending {
 	}
 }
 
-// ValidateResumeAnswer enforces the three-action wire contract before a pause can
-// be claimed. Accept must carry an operator answer; decline and cancel have
-// server-authored semantics and therefore do not require caller content.
+// ValidateResumeAnswer enforces the persistence contract before a pause can be
+// claimed. Accept and the server-only expiry require content; decline and cancel
+// have fixed semantics and need no caller content.
 func ValidateResumeAnswer(ans ResumeAnswer) error {
 	switch ans.Action {
-	case ActionAccept, ActionDecline, ActionCancel:
+	case ActionAccept, ActionDecline, ActionCancel, ActionExpired:
 	default:
-		return fmt.Errorf("%w: action %q must be accept|decline|cancel", ErrInvalidAnswer, ans.Action)
+		return fmt.Errorf("%w: action %q must be accept|decline|cancel|expired", ErrInvalidAnswer, ans.Action)
 	}
 	if ans.Action == ActionAccept && strings.TrimSpace(ans.Content) == "" {
 		return fmt.Errorf("%w: accepted content must not be empty", ErrInvalidAnswer)
+	}
+	if ans.Action == ActionExpired && strings.TrimSpace(ans.Content) == "" {
+		return fmt.Errorf("%w: expiry content must not be empty", ErrInvalidAnswer)
 	}
 	return nil
 }
@@ -524,4 +533,15 @@ func decodeResumedAnswer(token string, raw []byte) (string, error) {
 		return "", fmt.Errorf("decode resumed_answer for %s: %w", token, err)
 	}
 	return ans.Content, nil
+}
+
+func resolvedStateError(resumed bool, raw []byte) error {
+	if !resumed {
+		return nil
+	}
+	var answer ResumeAnswer
+	if len(raw) != 0 && json.Unmarshal(raw, &answer) == nil && answer.Action == ActionExpired {
+		return ErrPauseExpired
+	}
+	return ErrPauseNotFound
 }

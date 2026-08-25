@@ -139,6 +139,8 @@ type Config struct {
 	// AGUIRun bundles the AURA_AGUI_RUN_* detached-run knobs (fix-plan 1.3 Tier B,
 	// amendment #90) — see config_agui_run.go.
 	AGUIRun AGUIRunConfig
+	// AskUser owns the bounded lifetime of unanswered approval pauses (amendment #140).
+	AskUser AskUserConfig
 
 	// Industrial asset object-store foundation. The backend is selected by the
 	// later asset service; config is intentionally non-fatal so DB/migration paths
@@ -443,6 +445,7 @@ func loadBase() *Config {
 		AGUIBufferCap:       envutil.IntDefault("AURA_AGUI_BUFFER_CAP", 64),
 		AGUISSEHeartbeatSec: envutil.IntDefault("AURA_AGUI_SSE_HEARTBEAT_SEC", 15),
 		AGUIRun:             loadAGUIRunConfig(),
+		AskUser:             loadAskUserConfig(),
 
 		ObjectStoreBackend:        envDefault("AURA_OBJECTSTORE_BACKEND", "garage"),
 		ObjectStoreEndpoint:       envDefault("AURA_OBJECTSTORE_ENDPOINT", "http://127.0.0.1:3900"),

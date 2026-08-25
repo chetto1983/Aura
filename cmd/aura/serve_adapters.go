@@ -388,7 +388,8 @@ func newShellResumeHook(approvals *tools.ShellApprovals) runner.ResumeHook {
 		return nil
 	}
 	return func(ctx context.Context, pending askuser.Pending, resp runner.ResponseInput) error {
-		if pending.Kind != tools.KindApproval || resp.Action != askuser.ActionAccept || len(pending.ResumeContext) == 0 {
+		if pending.Kind != tools.KindApproval || len(pending.ResumeContext) == 0 ||
+			(resp.Action != askuser.ActionAccept && resp.Action != askuser.ActionExpired) {
 			return nil
 		}
 		var rc struct {
@@ -403,6 +404,10 @@ func newShellResumeHook(approvals *tools.ShellApprovals) runner.ResumeHook {
 		}
 		if rc.CommandSHA256 == "" {
 			return fmt.Errorf("shell resume context: missing command_sha256")
+		}
+		if resp.Action == askuser.ActionExpired {
+			approvals.DiscardChallenge(pending.ConversationID, rc.CommandSHA256)
+			return nil
 		}
 		return approvals.ApproveChallenge(pending.ConversationID, rc.CommandSHA256, pending.Question)
 	}
@@ -427,7 +432,8 @@ func newGatewayResumeHook(g *gateway.Gateway) runner.ResumeHook {
 		return nil
 	}
 	return func(ctx context.Context, pending askuser.Pending, resp runner.ResponseInput) error {
-		if pending.Kind != tools.KindApproval || resp.Action != askuser.ActionAccept || len(pending.ResumeContext) == 0 {
+		if pending.Kind != tools.KindApproval || len(pending.ResumeContext) == 0 ||
+			(resp.Action != askuser.ActionAccept && resp.Action != askuser.ActionExpired) {
 			return nil
 		}
 		var rc struct {
@@ -443,6 +449,10 @@ func newGatewayResumeHook(g *gateway.Gateway) runner.ResumeHook {
 		}
 		if rc.Tool == "" || rc.ArgsSHA256 == "" {
 			return fmt.Errorf("gateway resume context: missing tool or args_sha256")
+		}
+		if resp.Action == askuser.ActionExpired {
+			g.DiscardApprovalChallenge(pending.ConversationID, rc.Tool, rc.ArgsSHA256)
+			return nil
 		}
 		// Record ONLY IF the gateway issued a challenge for this (authenticated conversation,
 		// tool, digest) AND the operator-visible pending.Question equals the gateway-generated

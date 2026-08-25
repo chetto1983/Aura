@@ -87,6 +87,7 @@ func newTestRunnerCfg(t *testing.T, client llm.Client, cfg llm.Config) (*Runner,
 	r := New(Deps{
 		Conv:            conv,
 		Pause:           pause,
+		ApprovalExpiry:  pause,
 		Identity:        id,
 		CacheMetrics:    newFakeCacheMetricStore(),
 		ToolInvocations: newFakeToolInvocationStore(),

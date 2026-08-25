@@ -67,7 +67,7 @@ func NewRunDirSweeper(pool *pgxpool.Pool, p ScanParams, interval time.Duration) 
 // sweep launches nothing (the worker is disabled). The goroutine exits on Stop() or on
 // ctx cancellation, whichever comes first — Stop afterward is still a clean join.
 func (s *Sweeper) Start(ctx context.Context) {
-	if s.interval <= 0 || s.sweep == nil {
+	if s == nil || s.interval <= 0 || s.sweep == nil {
 		return
 	}
 	s.wg.Go(func() {
@@ -86,10 +86,22 @@ func (s *Sweeper) Start(ctx context.Context) {
 	})
 }
 
+// SweepNow runs the configured work synchronously. It shares Start's disabled
+// semantics so a non-positive interval remains a complete off switch.
+func (s *Sweeper) SweepNow(ctx context.Context) {
+	if s == nil || s.interval <= 0 || s.sweep == nil {
+		return
+	}
+	s.sweep(ctx)
+}
+
 // Stop signals the worker to exit and joins it under a bounded wait so a hung tick
 // cannot wedge shutdown. It is idempotent (safe to call when Start was never invoked,
 // e.g. a disabled interval) and safe to call multiple times.
 func (s *Sweeper) Stop() {
+	if s == nil {
+		return
+	}
 	s.once.Do(func() { close(s.stop) })
 	done := make(chan struct{})
 	go func() {

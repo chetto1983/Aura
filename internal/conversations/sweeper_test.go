@@ -74,6 +74,22 @@ func TestSweeper_DisabledIntervalNeverTicks(t *testing.T) {
 	sw.Stop()
 }
 
+func TestSweeper_SweepNowHonorsDisabledState(t *testing.T) {
+	var calls atomic.Int64
+	enabled := NewSweeper(SweeperConfig{Interval: time.Minute, Sweep: func(context.Context) { calls.Add(1) }})
+	enabled.SweepNow(t.Context())
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("enabled SweepNow calls = %d, want 1", got)
+	}
+	disabled := NewSweeper(SweeperConfig{Sweep: func(context.Context) { calls.Add(1) }})
+	disabled.SweepNow(t.Context())
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("disabled SweepNow changed calls to %d", got)
+	}
+	var nilSweeper *Sweeper
+	nilSweeper.SweepNow(t.Context())
+}
+
 // TestSweeper_CancelStopsWorker: cancelling the Start ctx stops the worker even without
 // an explicit Stop — Stop afterward is still a clean join (goleak).
 func TestSweeper_CancelStopsWorker(t *testing.T) {

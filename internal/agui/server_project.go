@@ -55,6 +55,9 @@ func (s *Server) validateResumeEntries(ctx context.Context, entries []types.Resu
 }
 
 func resumeErrorStatus(err error) int {
+	if errors.Is(err, askuser.ErrPauseExpired) {
+		return http.StatusGone
+	}
 	if errors.Is(err, ErrResumeDecisionNotAllowed) {
 		return http.StatusForbidden
 	}

@@ -149,6 +149,7 @@ func newLiveHarness(t *testing.T) *liveHarness {
 	r := New(Deps{
 		Conv:            convStore,
 		Pause:           pauseStore,
+		ApprovalExpiry:  pauseStore,
 		Identity:        identity.New(pool),
 		CacheMetrics:    cachemetrics.New(pool),
 		ToolInvocations: toolinvocations.New(pool),

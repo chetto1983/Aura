@@ -424,6 +424,7 @@ func assembleChatEnv(
 	deps := runner.Deps{
 		Conv:            convStore,
 		Pause:           pauseStore,
+		ApprovalExpiry:  pauseStore,
 		Identity:        idStore,
 		CacheMetrics:    cacheStore,
 		ToolInvocations: toolInvocationStore,

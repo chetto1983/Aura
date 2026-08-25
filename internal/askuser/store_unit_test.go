@@ -60,6 +60,24 @@ func TestEncodeAnswer_AllowsEmptyContentForTerminalActions(t *testing.T) {
 	}
 }
 
+func TestResolvedStateErrorDistinguishesOnlyInternalExpiry(t *testing.T) {
+	if err := resolvedStateError(false, nil); err != nil {
+		t.Fatalf("pending state error = %v, want nil", err)
+	}
+	if err := resolvedStateError(true, []byte(`{"action":"expired","content":"timed out"}`)); !errors.Is(err, ErrPauseExpired) {
+		t.Fatalf("expired state error = %v, want ErrPauseExpired", err)
+	}
+	for _, raw := range [][]byte{
+		[]byte(`{"action":"decline","content":"no"}`),
+		[]byte(`not-json`),
+		nil,
+	} {
+		if err := resolvedStateError(true, raw); !errors.Is(err, ErrPauseNotFound) {
+			t.Errorf("resolvedStateError(%q) = %v, want ErrPauseNotFound", raw, err)
+		}
+	}
+}
+
 func TestDecodeResumedAnswerRejectsNonObject(t *testing.T) {
 	_, err := decodeResumedAnswer("tok", []byte(`42`))
 	if err == nil {
@@ -125,6 +143,12 @@ func TestStore_BadUUID_FailsBeforeDB(t *testing.T) {
 	}
 	if _, err := s.GetByToken(ctx, bad); err == nil {
 		t.Error("GetByToken(bad): want error, got nil")
+	}
+	if _, err := s.GetByTokenForIdentity(ctx, bad, "00000000-0000-0000-0000-000000000001"); err == nil {
+		t.Error("GetByTokenForIdentity(bad token): want error, got nil")
+	}
+	if _, err := s.GetByTokenForIdentity(ctx, "00000000-0000-0000-0000-000000000001", bad); err == nil {
+		t.Error("GetByTokenForIdentity(bad identity): want error, got nil")
 	}
 	if _, err := s.ListPending(ctx, bad); err == nil {
 		t.Error("ListPending(bad): want error, got nil")

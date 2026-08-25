@@ -95,6 +95,9 @@ type serveEnv struct {
 	// running daemon sidecars accumulate between reboots, so it re-runs the boot
 	// ScanOrphans on AURA_RUN_DIR_SWEEP_INTERVAL_SEC. runServe Start/Stops it.
 	sweeper *conversations.Sweeper
+	// approvalExpirySweeper closes unanswered approval pauses through Runner's atomic
+	// resume committer. It is owner-scoped and disabled when the configured TTL is <=0.
+	approvalExpirySweeper *conversations.Sweeper
 
 	// assetProcessingWorker claims durable asset_process ingestion jobs and runs the
 	// shared asset processor pipeline. runServe Start/Stops it with the daemon.
@@ -206,6 +209,8 @@ func runServe(args []string) {
 	// derived) so a SIGTERM does not kill an in-flight filesystem walk mid-sweep; the
 	// drain joins it. A disabled interval launches no goroutine. Stopped in drainShutdown.
 	env.sweeper.Start(ctx)
+	env.approvalExpirySweeper.SweepNow(ctx)
+	env.approvalExpirySweeper.Start(ctx)
 	env.assetProcessingWorker.Start(ctx)
 	// Crash-orphan reconciler (D-01d): launched on the work ctx like the sweeper so a
 	// SIGTERM does not abort an in-flight anti-join mid-sweep; the drain joins it. A boot
@@ -448,6 +453,11 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		RunDir:             chat.cfg.RunDir,
 		WarnThresholdBytes: int64(chat.cfg.RunDirWarnThresholdBytes),
 	}, time.Duration(chat.cfg.RunDirSweepIntervalSec)*time.Second)
+	approvalExpirySweeper := newApprovalExpirySweeper(
+		chat.run,
+		chat.identity,
+		time.Duration(chat.cfg.AskUser.PauseTTLSec)*time.Second,
+	)
 	assetProcessingWorker := newRuntimeAssetProcessingWorker(
 		chat.cfg, chat.pool, chat.assets, chat.cfg.AssetProcessingConcurrent,
 	)
@@ -474,6 +484,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		channels:                  reg,
 		setupSrv:                  setupSrv,
 		sweeper:                   sweeper,
+		approvalExpirySweeper:     approvalExpirySweeper,
 		assetProcessingWorker:     assetProcessingWorker,
 		reconciler:                reconciler,
 		authulaProvider:           authulaProvider,

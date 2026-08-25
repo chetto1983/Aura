@@ -177,6 +177,17 @@ func (a *GatewayApprovals) ApproveChallenge(
 	return scopeForAnswer(ch.subject, answer), ch.subject, nil
 }
 
+// DiscardChallenge removes one unresolved challenge without creating an approval.
+// Approval expiry calls it only after the durable pause claim has won its race.
+func (a *GatewayApprovals) DiscardChallenge(convID, toolName, argsFingerprint string) {
+	if a == nil || convID == "" || toolName == "" || argsFingerprint == "" {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	delete(a.pending, gatewayApprovalKey(convID, toolName, argsFingerprint))
+}
+
 // GrantSession records a ScopeSession grant for (convID, subject) in place. It is separate
 // from ApproveChallenge because the Gateway calls it on TWO paths: an operator who chose
 // "for this conversation", and an operator who chose "always" on a deployment that cannot

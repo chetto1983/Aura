@@ -252,6 +252,58 @@ func (q *Queries) ListAllPendingPausedStatesForIdentity(ctx context.Context, arg
 	return items, nil
 }
 
+const listExpiredPendingApprovals = `-- name: ListExpiredPendingApprovals :many
+SELECT token, conversation_id, kind, question, options, priority,
+       resume_context, tool_call_id, proxied_from_child_id, proxied_tool_call_id,
+       created_at, resumed_at, resumed_answer, identity_id
+FROM aura.paused_states
+WHERE kind = 'approval'
+  AND resumed_at IS NULL
+  AND created_at <= $1
+ORDER BY created_at ASC, token ASC
+LIMIT $2
+`
+
+type ListExpiredPendingApprovalsParams struct {
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	Limit     int32              `json:"limit"`
+}
+
+func (q *Queries) ListExpiredPendingApprovals(ctx context.Context, arg ListExpiredPendingApprovalsParams) ([]AuraPausedStates, error) {
+	rows, err := q.db.Query(ctx, listExpiredPendingApprovals, arg.CreatedAt, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuraPausedStates{}
+	for rows.Next() {
+		var i AuraPausedStates
+		if err := rows.Scan(
+			&i.Token,
+			&i.ConversationID,
+			&i.Kind,
+			&i.Question,
+			&i.Options,
+			&i.Priority,
+			&i.ResumeContext,
+			&i.ToolCallID,
+			&i.ProxiedFromChildID,
+			&i.ProxiedToolCallID,
+			&i.CreatedAt,
+			&i.ResumedAt,
+			&i.ResumedAnswer,
+			&i.IdentityID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPendingPausedStates = `-- name: ListPendingPausedStates :many
 SELECT token, conversation_id, kind, question, options, priority,
        resume_context, tool_call_id, proxied_from_child_id, proxied_tool_call_id,

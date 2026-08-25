@@ -52,11 +52,9 @@ func (s *Store) ListPendingAllForIdentity(ctx context.Context, identityID string
 	return out, nil
 }
 
-// GetByTokenForIdentity fetches one pause scoped to identityID, mapping a miss (unknown
-// token OR a token owned by another identity) to ErrPauseNotFound. It is the ownership
-// gate the approval-resolve handler consults before delegating the atomic resume to the
-// Runner: a hit ⇒ the caller owns the pause (proceed); ErrPauseNotFound ⇒ the handler
-// probes unscoped existence to split 403 (a known-foreign token) from 404.
+// GetByTokenForIdentity fetches one unresolved pause scoped to identityID. Unknown,
+// foreign, and already-resolved tokens remain indistinguishable as ErrPauseNotFound;
+// a server-expired owned token returns ErrPauseExpired so HTTP can render 410.
 func (s *Store) GetByTokenForIdentity(ctx context.Context, token, identityID string) (Pending, error) {
 	id, err := db.ParseUUID("token", token)
 	if err != nil {
@@ -77,6 +75,9 @@ func (s *Store) GetByTokenForIdentity(ctx context.Context, token, identityID str
 				return fmt.Errorf("get paused state %s: %w", token, ErrPauseNotFound)
 			}
 			return fmt.Errorf("get paused state %s: %w", token, gErr)
+		}
+		if stateErr := resolvedStateError(row.ResumedAt.Valid, row.ResumedAnswer); stateErr != nil {
+			return fmt.Errorf("get paused state %s: %w", token, stateErr)
 		}
 		pending = fromRow(row)
 		return nil

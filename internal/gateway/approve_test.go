@@ -146,33 +146,6 @@ func TestApproveHeadlessDenies(t *testing.T) {
 	assertDegradedDenyFact(t, store)
 }
 
-// TestApprovePostResumeAllow proves D-03 point 2: a resume carrying the operator's
-// resolution returns Verdict{Allow, OperatorID} and writes ZERO rows of its own — the
-// executed marker rides 35-04's single reservation start Meta, never a competing Insert.
-func TestApprovePostResumeAllow(t *testing.T) {
-	store := &fakeStore{}
-	g := New(config.ProfileSingleUserHardened, store)
-	ctx := WithResolvedApproval(WithResponder(context.Background()),
-		ResolvedApproval{Approved: true, OperatorID: "op-1"})
-
-	v, err := g.Decide(ctx, gatedSpec(), gatedArgs(), testKey())
-	if err != nil {
-		t.Fatalf("Decide err: %v", err)
-	}
-	if v.Decision != Allow {
-		t.Fatalf("decision = %q, want allow", v.Decision)
-	}
-	if v.OperatorID != "op-1" {
-		t.Fatalf("operator id = %q, want op-1", v.OperatorID)
-	}
-	if v.ApprovalRequest != nil {
-		t.Fatal("post-resume approved must not re-request approval")
-	}
-	if got := len(store.calls()); got != 0 {
-		t.Fatalf("post-resume approved wrote %d Insert rows, want 0 (marker rides the reservation start)", got)
-	}
-}
-
 // TestApproveIsHostSideOnly proves D-03c: a model-only ctx (no host-set responder
 // marker) can NEVER obtain Approve or Allow for a gated mutating call — the responder
 // signal is host/policy-side (WithResponder), not derivable from model-supplied args.

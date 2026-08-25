@@ -74,6 +74,29 @@ func TestShellResumeHookRejectsMismatchedQuestion(t *testing.T) {
 	}
 }
 
+func TestShellResumeHookExpiryDiscardsChallengeWithoutApproval(t *testing.T) {
+	approvals := tools.NewShellApprovals()
+	hook := newShellResumeHook(approvals)
+	challenge := approvals.CreateChallenge("conv-expired", "rm -f /tmp/old", "/workspace")
+	pending := askuser.Pending{
+		ConversationID: "conv-expired",
+		Kind:           tools.KindApproval,
+		Question:       challenge.Question,
+		ResumeContext: rawJSON(t, map[string]string{
+			"type": "shell_exec_approval", "command_sha256": challenge.Digest,
+		}),
+	}
+	if err := hook(t.Context(), pending, runner.ResponseInput{Action: askuser.ActionExpired}); err != nil {
+		t.Fatalf("expiry hook: %v", err)
+	}
+	if _, ok := approvals.PendingChallenge("conv-expired", challenge.Digest); ok {
+		t.Fatal("expired shell challenge remained pending")
+	}
+	if approvals.Consume("conv-expired", challenge.Digest) {
+		t.Fatal("expired shell challenge became an approval")
+	}
+}
+
 func TestShellResumeHookIgnoresDeclineCancelAndUnrelatedContext(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

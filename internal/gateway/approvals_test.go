@@ -44,6 +44,29 @@ func TestGatewayApprovalsChallengeApproveConsume(t *testing.T) {
 	}
 }
 
+func TestGatewayApprovalsDiscardChallengeIsExactAndNilSafe(t *testing.T) {
+	var nilLedger *GatewayApprovals
+	nilLedger.DiscardChallenge("conv", "tool", "fp")
+	var nilGateway *Gateway
+	nilGateway.DiscardApprovalChallenge("conv", "tool", "fp")
+
+	ledger := NewGatewayApprovals()
+	ledger.Challenge("conv", "tool", "fp-first", "first?", grantSubject{Tool: "tool"})
+	ledger.Challenge("conv", "tool", "fp-second", "second?", grantSubject{Tool: "tool"})
+	gateway := &Gateway{approvals: ledger}
+	gateway.DiscardApprovalChallenge("conv", "tool", "fp-first")
+
+	if err := approveChallenge(ledger, "conv", "tool", "fp-first", "first?", ResolvedApproval{Approved: true}); err == nil {
+		t.Fatal("discarded challenge was still approvable")
+	}
+	if _, ok := ledger.Consume("conv", "tool", "fp-first"); ok {
+		t.Fatal("discard created an approval grant")
+	}
+	if err := approveChallenge(ledger, "conv", "tool", "fp-second", "second?", ResolvedApproval{Approved: true}); err != nil {
+		t.Fatalf("discard removed a different challenge: %v", err)
+	}
+}
+
 // TestGatewayApprovalsApproveClearsSameKeyPendingChallenge proves Approve clears a same-key
 // pending challenge (shell parity — ShellApprovals.Approve deletes pending). Without the
 // clear a stale challenge would survive a direct Approve, so a later question-matched

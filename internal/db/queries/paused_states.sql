@@ -37,6 +37,17 @@ WHERE resumed_at IS NULL
 ORDER BY priority DESC, created_at ASC, token ASC
 LIMIT $1;
 
+-- name: ListExpiredPendingApprovals :many
+SELECT token, conversation_id, kind, question, options, priority,
+       resume_context, tool_call_id, proxied_from_child_id, proxied_tool_call_id,
+       created_at, resumed_at, resumed_answer, identity_id
+FROM aura.paused_states
+WHERE kind = 'approval'
+  AND resumed_at IS NULL
+  AND created_at <= $1
+ORDER BY created_at ASC, token ASC
+LIMIT $2;
+
 -- name: ListRecentPausedStates :many
 SELECT token, conversation_id, kind, question, options, priority,
        resume_context, tool_call_id, proxied_from_child_id, proxied_tool_call_id,

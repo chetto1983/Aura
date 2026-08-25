@@ -258,6 +258,7 @@ type Querier interface {
 	// SELECT returns (inert). The dedup is the approval_reminded_at throttle stamp, not a row
 	// lock; a rare cross-instance double-nudge under HA is benign.
 	ListDuePendingApprovalReminders(ctx context.Context, arg ListDuePendingApprovalRemindersParams) ([]AuraSchedulerTasks, error)
+	ListExpiredPendingApprovals(ctx context.Context, arg ListExpiredPendingApprovalsParams) ([]AuraPausedStates, error)
 	ListExpiredReplayBodies(ctx context.Context, arg ListExpiredReplayBodiesParams) ([]ListExpiredReplayBodiesRow, error)
 	ListGatewayApprovalGrants(ctx context.Context, identityID pgtype.UUID) ([]AuraGatewayApprovalGrants, error)
 	ListIdentities(ctx context.Context) ([]AuraIdentities, error)

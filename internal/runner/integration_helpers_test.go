@@ -138,6 +138,7 @@ func newIntegrationRunnerWithResumeHook(
 	r := New(Deps{
 		Conv:            convStore,
 		Pause:           pauseStore,
+		ApprovalExpiry:  pauseStore,
 		Identity:        newFakeIdentityStore(),
 		CacheMetrics:    newFakeCacheMetricStore(),
 		ToolInvocations: newFakeToolInvocationStore(),

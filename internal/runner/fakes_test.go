@@ -6,6 +6,7 @@ import (
 	"maps"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
@@ -408,6 +409,26 @@ func (f *fakePauseStore) ListPending(_ context.Context, conversationID string) (
 		}
 		return out[i].Token < out[j].Token
 	})
+	return out, nil
+}
+
+func (f *fakePauseStore) ListExpiredPendingApprovals(_ context.Context, _ time.Time, limit int) ([]askuser.Pending, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []askuser.Pending
+	for token, pending := range f.byToken {
+		if pending.Kind != "approval" {
+			continue
+		}
+		if _, resolved := f.answers[token]; resolved {
+			continue
+		}
+		out = append(out, *pending)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Token < out[j].Token })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
 	return out, nil
 }
 
