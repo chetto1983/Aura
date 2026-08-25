@@ -107,7 +107,7 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(in.Resume) > 0 {
-		if _, err := s.run.SubmitAnswers(ctx, resumeAnswers(in.Resume)); err != nil {
+		if err := s.submitResumeEntries(ctx, in.Resume); err != nil {
 			http.Error(w, sanitizeErr(err), http.StatusBadRequest)
 			return
 		}

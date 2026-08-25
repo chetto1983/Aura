@@ -44,6 +44,22 @@ func TestEncodeAnswer_RejectsUnknownAction(t *testing.T) {
 	}
 }
 
+func TestEncodeAnswer_RejectsEmptyAcceptedContent(t *testing.T) {
+	for _, content := range []string{"", " \t\r\n"} {
+		if _, err := encodeAnswer(ResumeAnswer{Action: ActionAccept, Content: content}); !errors.Is(err, ErrInvalidAnswer) {
+			t.Errorf("encodeAnswer(accept, %q): want ErrInvalidAnswer, got %v", content, err)
+		}
+	}
+}
+
+func TestEncodeAnswer_AllowsEmptyContentForTerminalActions(t *testing.T) {
+	for _, action := range []string{ActionDecline, ActionCancel} {
+		if _, err := encodeAnswer(ResumeAnswer{Action: action}); err != nil {
+			t.Errorf("encodeAnswer(%q, empty): %v", action, err)
+		}
+	}
+}
+
 func TestDecodeResumedAnswerRejectsNonObject(t *testing.T) {
 	_, err := decodeResumedAnswer("tok", []byte(`42`))
 	if err == nil {

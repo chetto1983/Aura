@@ -163,6 +163,29 @@ func TestMarkResumedBatch_InvalidActionWrap(t *testing.T) {
 	}
 }
 
+func TestMarkResumedBatch_EmptyAcceptedContentRollsBack(t *testing.T) {
+	pool := migratedPool(t)
+	s := New(pool)
+	convID := newConversation(t, pool)
+	ctx := ownerCtx()
+
+	validToken := insertPause(t, s, convID, "approval", "first", 0)
+	emptyToken := insertPause(t, s, convID, "approval", "second", 0)
+	if validToken > emptyToken {
+		validToken, emptyToken = emptyToken, validToken
+	}
+	err := s.MarkResumedBatch(ctx, map[string]ResumeAnswer{
+		validToken: {Action: ActionAccept, Content: "approved"},
+		emptyToken: {Action: ActionAccept},
+	})
+	if !errors.Is(err, ErrInvalidAnswer) {
+		t.Fatalf("batch with empty accepted content: want ErrInvalidAnswer, got %v", err)
+	}
+	if n := countPending(t, pool, convID); n != 2 {
+		t.Fatalf("empty accepted content must roll back the whole batch, pending = %d, want 2", n)
+	}
+}
+
 // TestMarkResumedBatch_BadTokenWrap pins the batch parseUUID wrap inside the tx: a
 // malformed token surfaces "mark resumed batch: invalid token" (it needs a live
 // pool because the parse runs inside db.WithTx after Begin).

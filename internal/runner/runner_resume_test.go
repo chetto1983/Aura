@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -59,6 +60,49 @@ func TestSubmitAnswers_AcceptInjectsOperatorContent(t *testing.T) {
 // decline maps to declinedContent ("user declined to answer"), NEVER the operator
 // text, so the agent continues INFORMED of the refusal (Claude-Code "deny" semantics,
 // D-05). Asserts the injected content is declinedContent and the operator text is absent.
+func TestSubmitAnswerRejectsEmptyAcceptBeforeCommit(t *testing.T) {
+	for _, input := range []struct {
+		name    string
+		content string
+	}{
+		{name: "empty", content: ""},
+		{name: "whitespace", content: " \t\r\n"},
+	} {
+		t.Run(input.name, func(t *testing.T) {
+			tests := []struct {
+				name string
+				run  func(*Runner, string) error
+			}{
+				{name: "single", run: func(r *Runner, token string) error {
+					_, err := r.SubmitAnswer(context.Background(), token, ResponseInput{Action: askuser.ActionAccept, Content: input.content})
+					return err
+				}},
+				{name: "batch", run: func(r *Runner, token string) error {
+					_, err := r.SubmitAnswers(context.Background(), map[string]ResponseInput{
+						token: {Action: askuser.ActionAccept, Content: input.content},
+					})
+					return err
+				}},
+			}
+			for _, tc := range tests {
+				t.Run(tc.name, func(t *testing.T) {
+					r, conv, pause := newTestRunner(t, agenttest.NewFakeClient(
+						agenttest.ToolCallTurn(askUserCall("call-empty", "Approve?", "approval")),
+					))
+					convID, token := seedSinglePause(t, r, conv)
+					err := tc.run(r, token)
+					if !errors.Is(err, askuser.ErrInvalidAnswer) {
+						t.Fatalf("empty accept: want ErrInvalidAnswer before commit, got %v", err)
+					}
+					if got := pause.unresolvedCount(convID); got != 1 {
+						t.Fatalf("empty accept claimed the pause: unresolved = %d, want 1", got)
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestSubmitAnswers_DeclineInjectsDeclinedContent(t *testing.T) {
 	client := agenttest.NewFakeClient(
 		agenttest.ToolCallTurn(askUserCall("call-1", "Proceed?", "approval")),

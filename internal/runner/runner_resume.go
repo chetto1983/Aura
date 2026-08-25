@@ -98,7 +98,10 @@ func (r *Runner) SubmitAnswer(ctx context.Context, token string, resp ResponseIn
 	// NULL so the user can retry. The WHERE resumed_at IS NULL conditional update IS the
 	// idempotency key (D-06), so the old claimed-without-answer residual is now
 	// structurally impossible — no more split MarkResumed → injectAnswer.
-	claim := ResumeClaim{Token: token, Answer: toResumeAnswer(resp), Turn: r.answerTurn(pending, resp)}
+	claim := r.resumeClaim(token, pending, resp)
+	if err := askuser.ValidateResumeAnswer(claim.Answer); err != nil {
+		return ResolveDirective{}, fmt.Errorf("submit answer: %w", err)
+	}
 	if err := r.resumeCommitter.CommitResume(ctx, claim); err != nil {
 		return ResolveDirective{}, fmt.Errorf("submit answer: %w", err)
 	}
@@ -148,7 +151,11 @@ func (r *Runner) SubmitAnswers(ctx context.Context, answers map[string]ResponseI
 	// orphan RoleTool turns; the loser gets ErrPauseNotFound (D-04/D-06).
 	claims := make([]ResumeClaim, 0, len(answers))
 	for token, resp := range answers {
-		claims = append(claims, ResumeClaim{Token: token, Answer: toResumeAnswer(resp), Turn: r.answerTurn(pendings[token], resp)})
+		claim := r.resumeClaim(token, pendings[token], resp)
+		if err := askuser.ValidateResumeAnswer(claim.Answer); err != nil {
+			return 0, fmt.Errorf("submit answers: %w", err)
+		}
+		claims = append(claims, claim)
 	}
 	if err := r.resumeCommitter.CommitResumeBatch(ctx, claims); err != nil {
 		return 0, fmt.Errorf("submit answers: %w", err)
@@ -298,6 +305,13 @@ func toResumeAnswer(resp ResponseInput) askuser.ResumeAnswer {
 		content = declinedContent
 	}
 	return askuser.ResumeAnswer{Action: resp.Action, Content: content}
+}
+
+func (r *Runner) resumeClaim(token string, pending askuser.Pending, resp ResponseInput) ResumeClaim {
+	turn := r.answerTurn(pending, resp)
+	answer := toResumeAnswer(resp)
+	answer.Content = turn.Content
+	return ResumeClaim{Token: token, Answer: answer, Turn: turn}
 }
 
 // Stop terminates the conversation lifecycle (D-A1-06 / Req#11): it auto-resolves

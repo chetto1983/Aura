@@ -1,6 +1,7 @@
 package agui
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -19,18 +20,30 @@ import (
 // definitions; they are package-private and referenced only from server.go.
 
 // resumeAnswers maps the AG-UI protocol-native Resume[] onto the Runner's three-action
-// resume model: a resolved interrupt accepts (carrying any payload string as the answer),
-// a cancelled interrupt cancels. The InterruptID is the pause token the Runner keys on.
-func resumeAnswers(entries []types.ResumeEntry) map[string]runner.ResponseInput {
+// resume model and rejects malformed answers before they cross the wire boundary.
+func resumeAnswers(entries []types.ResumeEntry) (map[string]runner.ResponseInput, error) {
 	out := make(map[string]runner.ResponseInput, len(entries))
 	for _, e := range entries {
 		action := askuser.ActionAccept
 		if e.Status == types.ResumeStatusCancelled {
 			action = askuser.ActionCancel
 		}
-		out[e.InterruptID] = runner.ResponseInput{Action: action, Content: payloadString(e.Payload)}
+		answer := runner.ResponseInput{Action: action, Content: payloadString(e.Payload)}
+		if err := askuser.ValidateResumeAnswer(askuser.ResumeAnswer(answer)); err != nil {
+			return nil, fmt.Errorf("resume %q: %w", e.InterruptID, err)
+		}
+		out[e.InterruptID] = answer
 	}
-	return out
+	return out, nil
+}
+
+func (s *Server) submitResumeEntries(ctx context.Context, entries []types.ResumeEntry) error {
+	answers, err := resumeAnswers(entries)
+	if err != nil {
+		return err
+	}
+	_, err = s.run.SubmitAnswers(ctx, answers)
+	return err
 }
 
 // payloadString renders a resume payload as the answer content: a string payload is

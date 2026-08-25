@@ -72,7 +72,7 @@ func (s *Server) handleRunDetached(w http.ResponseWriter, r *http.Request, ctx c
 	}
 
 	if len(in.Resume) > 0 {
-		if _, err := s.run.SubmitAnswers(ctx, resumeAnswers(in.Resume)); err != nil {
+		if err := s.submitResumeEntries(ctx, in.Resume); err != nil {
 			release()
 			http.Error(w, sanitizeErr(err), http.StatusBadRequest)
 			return

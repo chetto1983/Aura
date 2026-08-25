@@ -53,10 +53,13 @@ func TestPayloadString(t *testing.T) {
 // TestResumeAnswersActions maps resolved→accept and cancelled→cancel, keyed on the
 // interrupt token, with the payload carried as the answer content.
 func TestResumeAnswersActions(t *testing.T) {
-	out := resumeAnswers([]types.ResumeEntry{
+	out, err := resumeAnswers([]types.ResumeEntry{
 		{InterruptID: "tok-a", Status: types.ResumeStatusResolved, Payload: "ok"},
 		{InterruptID: "tok-b", Status: types.ResumeStatusCancelled},
 	})
+	if err != nil {
+		t.Fatalf("resumeAnswers: %v", err)
+	}
 	if a := out["tok-a"]; a.Action != askuser.ActionAccept || a.Content != "ok" {
 		t.Errorf("tok-a = %+v, want accept/ok", a)
 	}

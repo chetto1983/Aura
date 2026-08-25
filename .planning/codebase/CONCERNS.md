@@ -10,7 +10,8 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 
 | Concern | Severity | Status | Primary evidence |
 |---|---|---|---|
-| Approval resume accepts decisions outside a per-pause policy, accepts empty answers, and has no expiry | High | Open | `internal/agui/server_project.go`, `internal/runner/runner_resume.go`, `.planning/todos/pending/approval-resume-defects.md` |
+| Approval resume accepts decisions outside a per-pause policy and has no expiry | High | Open | `internal/agui/server_project.go`, `internal/runner/runner_resume.go`, `.planning/todos/pending/approval-resume-defects.md` |
+| Empty accepted approval answers resumed the model silently | High | Closed 2026-08-25 | `internal/agui/server_run_test.go`, `internal/runner/runner_resume_test.go`, `internal/askuser/store_mutation_test.go` |
 | Release disclosure register still has five open rows and therefore reports NO-GO | High | Open/operator or external action | `docs/audit/README.md`, `scripts/audit_closure_gate.py` |
 | Amendment #115 still requires a real-production document E2E whose runner no longer exists | High | Open | `prd.md`, absent `scripts/document_pipeline_e2e.sh` |
 | ArcadeDB tenant memory has no exercised backup/restore plane | High | Open | `scripts/restore_drill.sh`, `.github/workflows/ci.yml` |
@@ -61,11 +62,11 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 
 ## Known Bugs
 
-**An empty approval answer resumes the model silently:**
-- Symptoms: a resolved AG-UI resume entry with a nil payload becomes `ActionAccept` with `Content: ""`; the Runner appends that empty string as a `RoleTool` answer and continues.
-- Files: `internal/agui/server_project.go`, `internal/runner/runner_resume.go`, `.planning/todos/pending/approval-resume-defects.md`.
-- Trigger: submit an authenticated, owner-scoped resume for a valid pause token with a resolved status and no payload.
-- Workaround: clients must refuse to send empty acceptance payloads; the server currently does not enforce this.
+**Closed 2026-08-25 — empty accepted approval answers resumed the model silently:**
+- Resolution: the AG-UI boundary returns HTTP 400 for missing, empty, or whitespace-only resolved payloads before calling `SubmitAnswers`; Runner validates the effective answer used for both persistence and the `RoleTool` turn; and `askuser.Store` enforces the same invariant inside the transaction front door.
+- Compatibility: decline/cancel still permits empty caller content, and scheduled approvals remain valid because Runner validates their server-authored outcome rather than the caller's empty placeholder.
+- Files: `internal/agui/server_project.go`, `internal/runner/runner_resume.go`, `internal/askuser/store.go`, `.planning/todos/pending/approval-resume-defects.md`.
+- Evidence: wire, Runner, Store, and rollback regressions are green; the full disposable-Postgres `db_integration` matrix measured 26827/31139 = 86.2% owned coverage; `ValidateResumeAnswer` mutation score is 4/5 = 80% killed.
 
 **Pending approvals do not expire:**
 - Symptoms: a pending pause remains actionable until it is resumed, auto-resolved, or removed with its conversation. No approval-specific TTL or expiry transition exists.
@@ -85,7 +86,7 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 - Risk: `resumeAnswers` maps any resolved entry to accept, and `SubmitAnswer`/`SubmitAnswers` act on the supplied action. A pause cannot express "decline/respond only," so a crafted authenticated POST can approve any pause whose token the caller owns.
 - Files: `internal/agui/server_project.go`, `internal/runner/runner_resume.go`, `internal/askuser/types.go`, `.planning/todos/pending/approval-resume-defects.md`.
 - Current mitigation: the route is authenticated and owner-scoped, the token is required, and transactional `resumed_at IS NULL` claims prevent duplicate resumes. No exploit has been demonstrated.
-- Recommendations: persist allowed decisions with each pause and validate action plus non-empty content at the transaction's front door, preserving `CommitResumeBatch` atomicity and sorted-token locking.
+- Recommendations: persist allowed decisions with each pause and validate them at the transaction's front door, preserving `CommitResumeBatch` atomicity and sorted-token locking. Non-empty accepted content is already enforced there.
 
 **Deployment-wide settings can contain secrets without identity scope or RLS:**
 - Risk: `aura.settings` is keyed only by `key`, grants full DML to `aura_app`, stores secret values in plaintext, and includes `OPENROUTER_API_KEY` and `TELEGRAM_BOT_TOKEN` in its allowlist.
@@ -136,8 +137,8 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 **Approval resume transaction boundary:**
 - Files: `internal/agui/server_project.go`, `internal/runner/runner_resume.go`, `internal/runner/resume_committer.go`, `internal/askuser/store.go`.
 - Why fragile: wire mapping, owner scoping, pause claims, answer-turn persistence, hooks, and idempotency span several packages. Validation added outside the cross-store transaction can recreate claimed-without-answer or double-resume failures.
-- Safe modification: validate decision policy, expiry, and payload before claims inside the existing committer boundary; retain sorted-token batch locking and the `resumed_at IS NULL` conditional update.
-- Test coverage: atomic single/batch resume tests exist under `db_integration`, but the three policy/empty/expiry defects have no closing tests yet.
+- Safe modification: validate decision policy and expiry before claims inside the existing committer boundary; retain the now-shared accepted-content validation, sorted-token batch locking, and the `resumed_at IS NULL` conditional update.
+- Test coverage: atomic single/batch resume tests exist under `db_integration`; empty accepted content is closed by wire, Runner, Store, and rollback tests. Decision policy and expiry still have no closing tests.
 
 **Context ladder and durable compaction:**
 - Files: `internal/conversations/context.go`, `internal/conversations/context_budget.go`, `internal/conversations/compaction.go`, `internal/conversations/compaction_durable_test.go`, `internal/conversations/compaction_inforce_test.go`.
@@ -233,8 +234,8 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 - Risk: a refactor can silently change prompt framing/trust semantics without failing the current description-cap tests.
 - Priority: Medium. Add one focused unit test at the result seam.
 
-**Approval policy, empty-answer, and expiry regressions have no closing tests:**
-- What's not tested: allowed-decision enforcement, rejection of empty accepted payloads, and deterministic expiry of pending approvals while retaining batch atomicity.
+**Approval policy and expiry regressions have no closing tests:**
+- What's not tested: allowed-decision enforcement and deterministic expiry of pending approvals while retaining batch atomicity. Empty accepted payload rejection now has closing tests at the wire, Runner, Store, and database-transaction boundaries.
 - Files: `.planning/todos/pending/approval-resume-defects.md`, `internal/agui/server_project.go`, `internal/runner/runner_resume.go`, `internal/gateway/approvals_test.go`.
 - Risk: authorization-granularity and stale-approval bugs remain open and can survive broader happy-path resume coverage.
 - Priority: High. Add wire-level and `db_integration` tests with the implementation, not as test-only expectation changes.

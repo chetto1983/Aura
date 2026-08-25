@@ -95,6 +95,35 @@ func TestServer_ResumeSubmitError(t *testing.T) {
 	}
 }
 
+func TestServer_ResumeRejectsEmptyAcceptedContent(t *testing.T) {
+	const tid = "66666666-6666-6666-6666-666666666667"
+	cases := []struct {
+		name  string
+		entry string
+	}{
+		{name: "missing payload", entry: `{"interruptId":"tok-1","status":"resolved"}`},
+		{name: "empty string payload", entry: `{"interruptId":"tok-1","status":"resolved","payload":""}`},
+		{name: "whitespace string payload", entry: `{"interruptId":"tok-1","status":"resolved","payload":"   "}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			run := &scriptedRunner{events: textTurn("must not run")}
+			srv := newTestServer(t, run, &fakeConvStore{known: map[string]bool{tid: true}})
+			body := `{"threadId":"` + tid + `","messages":[],"resume":[` + tc.entry + `]}`
+
+			resp := postRun(t, srv, body)
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusBadRequest {
+				raw, _ := io.ReadAll(resp.Body)
+				t.Fatalf("status = %d, want 400: %s", resp.StatusCode, raw)
+			}
+			if run.gotAnswers != nil {
+				t.Fatalf("empty accepted content reached SubmitAnswers: %+v", run.gotAnswers)
+			}
+		})
+	}
+}
+
 // TestServer_MessagesLoadHistoryError: a LoadHistory failure after the thread resolves
 // returns a sanitized 500 (no DSN leak in the body).
 func TestServer_MessagesLoadHistoryError(t *testing.T) {

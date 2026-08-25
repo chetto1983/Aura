@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
@@ -487,12 +488,25 @@ func fromRow(r sqlc.AuraPausedStates) Pending {
 	}
 }
 
-// encodeAnswer validates the action and marshals the AM-02 {action, content} jsonb.
-func encodeAnswer(ans ResumeAnswer) ([]byte, error) {
+// ValidateResumeAnswer enforces the three-action wire contract before a pause can
+// be claimed. Accept must carry an operator answer; decline and cancel have
+// server-authored semantics and therefore do not require caller content.
+func ValidateResumeAnswer(ans ResumeAnswer) error {
 	switch ans.Action {
 	case ActionAccept, ActionDecline, ActionCancel:
 	default:
-		return nil, fmt.Errorf("%w: action %q must be accept|decline|cancel", ErrInvalidAnswer, ans.Action)
+		return fmt.Errorf("%w: action %q must be accept|decline|cancel", ErrInvalidAnswer, ans.Action)
+	}
+	if ans.Action == ActionAccept && strings.TrimSpace(ans.Content) == "" {
+		return fmt.Errorf("%w: accepted content must not be empty", ErrInvalidAnswer)
+	}
+	return nil
+}
+
+// encodeAnswer validates and marshals the AM-02 {action, content} jsonb.
+func encodeAnswer(ans ResumeAnswer) ([]byte, error) {
+	if err := ValidateResumeAnswer(ans); err != nil {
+		return nil, err
 	}
 	b, err := json.Marshal(ans)
 	if err != nil {

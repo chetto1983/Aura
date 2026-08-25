@@ -7328,6 +7328,18 @@ flusso completo, che funziona.
 > resuming a real model turn. And it says nothing about whether LibreChat's layered policy shape
 > suits Aura: Aura classifies risk per tool today (`bridge_risk.go`, `internal/gateway/classify.go`)
 > and whether that becomes a decision policy is Phase 47's design question, not this record's.
+>
+> **Closure measurement 2026-08-25 — gap 3 only.** Missing, empty, and whitespace-only accepted
+> answers were first reproduced red at the AG-UI and Store boundaries, then closed with shared
+> validation at the wire, Runner-effective-answer, and transactional persistence boundaries. The
+> full disposable-PostgreSQL `db_integration` matrix is green at **26827/31139 = 86.2%** owned
+> coverage, including a rollback test where a valid earlier claim precedes an invalid empty answer.
+> The critical validator killed **4/5 mutants = 80%**; the one reported survivor was byte-identical
+> to the original file.
+> Decline/cancel remains valid without caller content, and scheduled approvals remain valid because
+> their server-authored outcome is the effective answer. This does **not** close gap 2's per-pause
+> decision policy or gap 4's expiry semantics, and no production exploit or real-model turn was
+> attempted.
 
 ## §The loaded manifest, counted — and TOOL-01's `comms` row is unreachable (Amendment #134, 2026-08-24)
 
