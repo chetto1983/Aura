@@ -37,7 +37,7 @@ func TestDeferralCountModelFacing(t *testing.T) {
 
 	t.Run("memory policy hides six of the real ten tool names", func(t *testing.T) {
 		// The real cmd/arcadedb-mcp surface: 10 advertised, 6 in
-		// memoryHiddenFromModel (bridge_memory.go), so 4 model-facing.
+		// memoryHiddenFromModel (bridge_policy.go), so 4 model-facing.
 		advertised := []*sdkmcp.Tool{
 			mustTool("memory_entities", "d", nil, nil),
 			mustTool("memory_digest", "d", nil, nil),
@@ -50,7 +50,7 @@ func TestDeferralCountModelFacing(t *testing.T) {
 			mustTool("memory_facts_about", "d", nil, nil),
 			mustTool("memory_reembed", "d", nil, nil),
 		}
-		if got := countModelFacing(bridgePolicy{memory: true}, advertised); got != 4 {
+		if got := countModelFacing(bridgePolicy{memorySurface: true}, advertised); got != 4 {
 			t.Fatalf("countModelFacing (memory policy) = %d, want 4", got)
 		}
 	})

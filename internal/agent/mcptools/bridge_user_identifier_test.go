@@ -3,6 +3,7 @@ package mcptools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 	"testing"
 
@@ -15,7 +16,7 @@ import (
 // bridge_user_identifier_test.go used to pin acceptsUserIdentifier's schema-probe
 // rule, which withMemoryUserIdentifier needed to decide whether to inject the
 // user_identifier ARGUMENT. D-108 deletes both: identity now travels only in
-// _meta, unconditionally, on every memory-policy mount — there is no schema to
+// _meta, unconditionally, on every identity-scoped remote mount — there is no schema to
 // probe any more. These tests assert on what the SERVER received, not on what
 // Aura's own struct holds (a middleware that mutates a copy would pass a
 // struct-level assertion and fail on the wire).
@@ -54,7 +55,7 @@ func TestIdentityMetaMiddleware_StampsCtxIdentityOnTheWire(t *testing.T) {
 	t.Cleanup(func() { _ = serverSession.Wait() })
 
 	session, err := connectClient(ctx, clientTransport, mcp.SessionOptions{
-		Sending: sendingMiddleware(bridgePolicy{memory: true}),
+		Sending: sendingMiddleware(bridgePolicy{identityScoped: true}),
 	})
 	if err != nil {
 		t.Fatalf("client.Connect: %v", err)
@@ -82,11 +83,9 @@ func TestIdentityMetaMiddleware_StampsCtxIdentityOnTheWire(t *testing.T) {
 	}
 }
 
-// TestIdentityMetaMiddleware_DefaultsToLocalOperatorWithNoCtxIdentity preserves
-// withMemoryUserIdentifier's exact prior behaviour for the no-principal case: a
-// single source (ctx, defaulted), not the dual-source argument fallback D-108
-// forbids.
-func TestIdentityMetaMiddleware_DefaultsToLocalOperatorWithNoCtxIdentity(t *testing.T) {
+// TestIdentityMetaMiddleware_RejectsCallWithNoCtxIdentity proves an unowned
+// remote call fails before the server sees it.
+func TestIdentityMetaMiddleware_RejectsCallWithNoCtxIdentity(t *testing.T) {
 	server, mu, seenMeta, _ := echoMetaAndArgsServer(t)
 	clientTransport, serverTransport := sdkmcp.NewInMemoryTransports()
 	ctx := context.Background()
@@ -97,26 +96,21 @@ func TestIdentityMetaMiddleware_DefaultsToLocalOperatorWithNoCtxIdentity(t *test
 	t.Cleanup(func() { _ = serverSession.Wait() })
 
 	session, err := connectClient(ctx, clientTransport, mcp.SessionOptions{
-		Sending: sendingMiddleware(bridgePolicy{memory: true}),
+		Sending: sendingMiddleware(bridgePolicy{identityScoped: true}),
 	})
 	if err != nil {
 		t.Fatalf("client.Connect: %v", err)
 	}
 	t.Cleanup(func() { _ = session.Close() })
 
-	if _, err := session.CallTool(ctx, &sdkmcp.CallToolParams{Name: "echo"}); err != nil {
-		t.Fatalf("CallTool: %v", err)
+	if _, err := session.CallTool(ctx, &sdkmcp.CallToolParams{Name: "echo"}); !errors.Is(err, errMissingRemoteIdentity) {
+		t.Fatalf("CallTool error = %v, want %v", err, errMissingRemoteIdentity)
 	}
 
 	mu.Lock()
 	defer mu.Unlock()
-	aura, _ := (*seenMeta)[mcp.MetaNamespaceAura].(map[string]any)
-	if aura == nil {
-		t.Fatal("server observed no _meta.aura namespace")
-	}
-	if aura[mcp.MetaFieldUserIdentifier] != identityctx.LocalOperatorIdentity {
-		t.Fatalf("no-ctx-identity user_identifier = %v, want the operator fallback %q",
-			aura[mcp.MetaFieldUserIdentifier], identityctx.LocalOperatorIdentity)
+	if *seenMeta != nil {
+		t.Fatalf("server handled an unowned remote call: meta = %v", *seenMeta)
 	}
 }
 

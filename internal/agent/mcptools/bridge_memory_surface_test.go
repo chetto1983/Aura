@@ -12,7 +12,7 @@ import (
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
-func TestMemoryBridgePolicy_AliasKeepsIsolationAndHiddenSurface(t *testing.T) {
+func TestMemorySurfacePolicy_AliasKeepsIsolationAndHiddenSurface(t *testing.T) {
 	// D-27 (bridge_deferral.go): this fixture exposes exactly 1 model-facing
 	// tool (memory_recall; the other 3 are hidden by bridgePolicy.modelFacing),
 	// which is <= maxAlwaysLoadedMCPTools, so on a fresh budget it now earns an
@@ -43,12 +43,10 @@ func TestMemoryBridgePolicy_AliasKeepsIsolationAndHiddenSurface(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = serverSession.Close() })
 	srv := NewMountedServer("fixture", nil)
-	// The alias case ("mem" != "memory") needs the memory-policy Sending
-	// middleware EXPLICITLY, independent of the namespace label the SessionOptions
-	// helper below has no way to infer — mirrors bridgeFromAdvertisedWithPolicy's
-	// own explicit-policy call a few lines down.
+	// Identity scope and surface curation are explicit and independent of the
+	// alias, matching the managed mount path.
 	session, err := connectClient(ctx, clientTransport, mcp.SessionOptions{
-		Sending:         sendingMiddleware(bridgePolicy{memory: true}),
+		Sending:         sendingMiddleware(bridgePolicy{identityScoped: true}),
 		ToolListChanged: srv.onToolListChanged,
 	})
 	if err != nil {
@@ -62,11 +60,11 @@ func TestMemoryBridgePolicy_AliasKeepsIsolationAndHiddenSurface(t *testing.T) {
 		t.Fatalf("ListTools: %v", err)
 	}
 	// Bridge(ctx, "mem", srv) would derive bridgePolicy from the namespace
-	// string alone (defaultBridgePolicy: memory = namespace=="memory"), which
-	// "mem" fails — the alias case this test exists for needs the memory policy
+	// string alone (defaultBridgePolicy: memorySurface = namespace=="memory"), which
+	// "mem" fails â€” the alias case this test exists for needs the memory surface
 	// EXPLICITLY, independent of the namespace label, so it goes through
 	// bridgeFromAdvertisedWithPolicy directly instead of Bridge.
-	bridged, err := bridgeFromAdvertisedWithPolicy("mem", srv, advertised, bridgePolicy{memory: true})
+	bridged, err := bridgeFromAdvertisedWithPolicy("mem", srv, advertised, bridgePolicy{identityScoped: true, memorySurface: true})
 	if err != nil {
 		t.Fatalf("bridgeFromAdvertisedWithPolicy: %v", err)
 	}
@@ -84,7 +82,7 @@ func TestMemoryBridgePolicy_AliasKeepsIsolationAndHiddenSurface(t *testing.T) {
 	callCtx := identityctx.WithIdentityID(context.Background(), "tenant-a")
 	callCtx = tools.WithToolCallContext(callCtx, "session", "call", t.TempDir(), 2048)
 	// A stale/spoofed user_identifier in the ARGUMENTS must not affect which
-	// identity reaches _meta — the bridge never reads or filters this argument.
+	// identity reaches _meta â€” the bridge never reads or filters this argument.
 	if _, err := recall.Execute(callCtx, json.RawMessage(`{"query":"marker","user_identifier":"tenant-b"}`)); err != nil {
 		t.Fatalf("execute aliased memory recall: %v", err)
 	}

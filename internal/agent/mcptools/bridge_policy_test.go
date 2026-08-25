@@ -75,6 +75,48 @@ func TestManagedBridgePolicyGatesViewsOnTrustClass(t *testing.T) {
 	}
 }
 
+func TestManagedBridgePolicyScopesEveryAuraOwnedRemoteRecipe(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		srv  mcp.ManagedServer
+		want bool
+	}{
+		{
+			name: "calendar",
+			srv:  mcp.ManagedServer{Source: "recipe:calendar", URL: "http://calendar/mcp", Trust: mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe}},
+			want: true,
+		},
+		{
+			name: "whatsapp",
+			srv:  mcp.ManagedServer{Source: "recipe:whatsapp", URL: "http://whatsapp/mcp", Trust: mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe}},
+			want: true,
+		},
+		{
+			name: "arcadedb",
+			srv:  mcp.ManagedServer{Source: mcp.SourceRecipeMemory, URL: "http://memory/mcp", Trust: mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe}},
+			want: true,
+		},
+		{
+			name: "trusted recipe over stdio stays local",
+			srv:  mcp.ManagedServer{Source: "recipe:calendar", Command: "calendar", Trust: mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe}},
+		},
+		{
+			name: "third party remote does not receive Aura identity metadata",
+			srv:  mcp.ManagedServer{Source: "remote:vendor", URL: "https://vendor.example/mcp", Trust: mcp.ManagedTrust{Class: mcp.TrustRemoteHTTP}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := managedBridgePolicy(tt.srv).identityScoped; got != tt.want {
+				t.Fatalf("identityScoped = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // A `recipe:` source names Aura's own curated catalog, and its action table is
 // what lets a read stay a read instead of failing closed as Destructive. The
 // TRUST class, not the source string, is what may hand that table out: an
