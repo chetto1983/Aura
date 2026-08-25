@@ -50,8 +50,7 @@ var aguiRoutePrefixes = []string{
 // any request path under one of these returns a real 404 from internal/webui rather
 // than the SPA shell (WEB-01 / SC1). It mirrors aguiRoutePrefixes (with the whole
 // /agent/ namespace excluded — a typo like /agent/typo must 404 as backend, not fall
-// back to the shell), adds the integrations proxy subtree, and adds the forward-compat
-// "/api/" carve-out (which also subsumes /api/integrations/). It is passed into
+// back to the shell), and adds the forward-compat "/api/" carve-out. It is passed into
 // webui.Handler so the fallback never hard-codes a second list that could drift from
 // the mux registration above (Pitfall 6 / T-24-08).
 func fallbackExcludedPrefixes() []string {
@@ -60,9 +59,8 @@ func fallbackExcludedPrefixes() []string {
 		"/readyz",
 		"/debug/vars",
 		"/metrics",
-		"/agent/",   // whole AG-UI agent namespace (mux registers /agent/run + the /agent/runs/ subtree)
-		"/threads/", // AG-UI threads subtree
-		integrationsRoutePrefix,
+		"/agent/",          // whole AG-UI agent namespace (mux registers /agent/run + the /agent/runs/ subtree)
+		"/threads/",        // AG-UI threads subtree
 		"/api/",            // forward-compat carve-out; exclusion-only, never a mux registration
 		authBasePath + "/", // Authula credential subtree — a backend route, never the SPA shell
 	}
@@ -91,8 +89,8 @@ const governanceWriteCapability = "governance.write"
 
 // conversationsRoutePrefix is the CHAT-02 conversation-management subtree (Phase 25),
 // registered on the parent mux as a SPECIFIC subtree delegating to the AG-UI handler.
-// It MUST stay a sibling of "/api/integrations/" under the "/api/" exclusion carve-out
-// — never a bare "/api/", which would shadow the integrations proxy (T-24-07 / T-25-05).
+// It stays a specific subtree under the "/api/" exclusion carve-out — never a bare
+// "/api/" registration (T-24-07 / T-25-05).
 const conversationsRoutePrefix = "/api/conversations/"
 
 // conversationsListRoute is the exact (no trailing slash) list endpoint. Go 1.22
@@ -115,9 +113,8 @@ const (
 
 // approvalsListRoute is the exact (no trailing slash) cross-thread pending read
 // (APRV-01), registered as a SPECIFIC parent-mux path delegating to the AG-UI handler
-// — a sibling of "/api/conversations/" + "/api/integrations/" under the "/api/"
-// exclusion carve-out, NEVER a bare "/api/" (which would shadow the integrations proxy,
-// T-25-05). It inherits RequireAuth from the whole-mux wrap below.
+// — a sibling of "/api/conversations/" under the "/api/" exclusion carve-out, NEVER
+// a bare "/api/" (T-25-05). It inherits RequireAuth from the whole-mux wrap below.
 const approvalsListRoute = "/api/approvals"
 
 // The standing-approval grant routes (amendment #127). approvalsListRoute is an EXACT path,
@@ -136,8 +133,8 @@ const (
 
 // imageProxyRoute is the DISP-05/D-09 SSRF-safe image relay (web_result thumbnails/
 // favicons). It is a sibling of "/api/conversations/" + "/api/approvals" under the
-// "/api/" exclusion carve-out — NEVER a bare "/api/" (which would shadow the
-// integrations proxy, T-24-07 / T-25-05). It delegates to the AG-UI handler (the route
+// "/api/" exclusion carve-out — NEVER a bare "/api/" (T-24-07 / T-25-05). It delegates
+// to the AG-UI handler (the route
 // lives on Server.Mux) and is a read GET, so it inherits RequireAuth from the whole-mux
 // wrap with no capability gate.
 const imageProxyRoute = "GET /api/image-proxy"
@@ -145,7 +142,7 @@ const imageProxyRoute = "GET /api/image-proxy"
 // graphSchemaRoute / graphQueryRoute are the Phase-27 GRAPH-01 read-only graph-explorer
 // routes (the schema overview + the structured-intent query). Like imageProxyRoute they
 // are SPECIFIC method+path siblings under the "/api/" exclusion carve-out — NEVER a bare
-// "/api/" (which would shadow the integrations proxy, T-27-03). Both delegate to the AG-UI
+// "/api/" (T-27-03). Both delegate to the AG-UI
 // handler (the routes live on Server.Mux) and inherit RequireAuth from the whole-mux wrap
 // below with NO RequireCapability — this is the read-only milestone (no write/PATCH/DELETE
 // graph surface; the mutating add-note route is deferred to Phase 29).
@@ -157,8 +154,8 @@ const (
 // governance* are the Phase-28 GOV-01/02/03 read-only governance-board routes (the MCP
 // registry + per-row live probe, the skills lifecycle + audit ledger, the scheduler tasks
 // + run history). Like the graph routes they are SPECIFIC method+path siblings under the
-// "/api/" exclusion carve-out — NEVER a bare "/api/" (which would shadow the integrations
-// proxy, T-28-02-05). All seven delegate to the AG-UI handler (the routes live on
+// "/api/" exclusion carve-out — NEVER a bare "/api/" (T-28-02-05). All seven delegate
+// to the AG-UI handler (the routes live on
 // Server.Mux) and are interposed with RequireCapability(governance.read). These reads run
 // after RequireAuth binds the principal. There is no write/PATCH/DELETE governance
 // surface; onboarding create has its own identity.create gate.
@@ -188,8 +185,8 @@ const (
 // governance*WriteRoute are the Phase-29 MCPW-01/02/03 governance WRITE routes (install a
 // recipe/custom server, edit one server's env in place, operator-trust-approve, reversibly
 // enable/disable, confirm-remove). Each is a SPECIFIC method+path sibling under the "/api/"
-// exclusion carve-out — NEVER a bare "/api/" (which would shadow /api/integrations/,
-// Pitfall 5). All six delegate to the AG-UI handler (the routes live on Server.Mux) and are
+// exclusion carve-out — NEVER a bare "/api/" (Pitfall 5). All six delegate to the AG-UI
+// handler (the routes live on Server.Mux) and are
 // interposed with RequireCapability(governance.write) — strictly stronger than
 // governance.read because a write can install a new MCP server. Go 1.22 longest-pattern
 // precedence keeps these method+path siblings authoritative over the bare "/api/" carve-out
@@ -234,7 +231,7 @@ const (
 
 // connect* are the cockpit "Connect" WhatsApp device-linking routes (connect_api.go). Each
 // is a SPECIFIC method+path sibling under the "/api/" exclusion carve-out — NEVER a bare
-// "/api/" (which would shadow /api/integrations/, Pitfall 5). All three delegate to the AG-UI
+// "/api/" (Pitfall 5). All three delegate to the AG-UI
 // handler (routes on Server.Mux) and are interposed with RequireCapability(governance.write):
 // a logout drops the paired session and a QR scan links a device, so these are operator
 // write-class actions — the SAME gate as the MCP/skills write routes, not a bare read. Go
@@ -286,7 +283,7 @@ const identityCreateCapability = "identity.create"
 // and fires AFTER RequireAuth binds the principal). status, the seed-form submit and
 // telegram-status are self-scoped and inherit RequireAuth from the whole-mux wrap with NO
 // capability gate. All five are SPECIFIC method+path siblings under the "/api/" exclusion
-// carve-out — NEVER a bare "/api/" (which would shadow /api/integrations/, T-28-05).
+// carve-out — NEVER a bare "/api/" (T-28-05).
 const (
 	onboardingStatusRoute        = "GET /api/onboarding/status"
 	onboardingProfileSubmitRoute = "POST /api/onboarding/profile"

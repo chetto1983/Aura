@@ -12,14 +12,10 @@ import (
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
-// bridge_memory_test.go drives mount.go's REAL sendingMiddleware(policy) wiring
-// (not a hand-built middleware slice), proving the production composition rather
-// than the primitive in isolation.
-
-// TestSendingMiddleware_NonMemoryMountCarriesNoIdentityKey proves the policy
-// gate: a non-memory mount's Sending slice has no IdentityMetaMiddleware at all,
+// TestSendingMiddleware_UnscopedMountCarriesNoIdentityKey proves the policy
+// gate: an unscoped mount's Sending slice has no IdentityMetaMiddleware at all,
 // so _meta.aura is entirely absent on a call with no idempotency operation.
-func TestSendingMiddleware_NonMemoryMountCarriesNoIdentityKey(t *testing.T) {
+func TestSendingMiddleware_UnscopedMountCarriesNoIdentityKey(t *testing.T) {
 	server, mu, seenMeta, _ := echoMetaAndArgsServer(t)
 	clientTransport, serverTransport := sdkmcp.NewInMemoryTransports()
 	ctx := context.Background()
@@ -30,7 +26,7 @@ func TestSendingMiddleware_NonMemoryMountCarriesNoIdentityKey(t *testing.T) {
 	t.Cleanup(func() { _ = serverSession.Wait() })
 
 	session, err := connectClient(ctx, clientTransport, mcp.SessionOptions{
-		Sending: sendingMiddleware(bridgePolicy{memory: false}),
+		Sending: sendingMiddleware(bridgePolicy{}),
 	})
 	if err != nil {
 		t.Fatalf("client.Connect: %v", err)
@@ -45,13 +41,13 @@ func TestSendingMiddleware_NonMemoryMountCarriesNoIdentityKey(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	if aura, ok := (*seenMeta)[mcp.MetaNamespaceAura]; ok {
-		t.Fatalf("non-memory mount must carry no _meta.aura namespace at all, got %v", aura)
+		t.Fatalf("unscoped mount must carry no _meta.aura namespace at all, got %v", aura)
 	}
 }
 
 // TestSendingMiddleware_ComposesOperationAndIdentity proves both plan 45.1-02's
 // operation stamp and this plan's identity stamp arrive TOGETHER under one
-// _meta.aura namespace on a memory-policy mount's real production middleware
+// _meta.aura namespace on an identity-scoped remote mount's production middleware
 // slice, and that the SDK's own protocolVersion triple survives both.
 func TestSendingMiddleware_ComposesOperationAndIdentity(t *testing.T) {
 	server, mu, seenMeta, _ := echoMetaAndArgsServer(t)
@@ -64,7 +60,7 @@ func TestSendingMiddleware_ComposesOperationAndIdentity(t *testing.T) {
 	t.Cleanup(func() { _ = serverSession.Wait() })
 
 	session, err := connectClient(ctx, clientTransport, mcp.SessionOptions{
-		Sending: sendingMiddleware(bridgePolicy{memory: true}),
+		Sending: sendingMiddleware(bridgePolicy{identityScoped: true}),
 	})
 	if err != nil {
 		t.Fatalf("client.Connect: %v", err)
@@ -93,7 +89,7 @@ func TestSendingMiddleware_ComposesOperationAndIdentity(t *testing.T) {
 // TestIdentityMetaMiddleware_ConcurrentCallsCarryTheirOwnIdentity is the
 // concurrency edge case: eight goroutines, sharing ONE *ClientSession, each
 // under a distinct identityctx value, produce eight requests whose
-// _meta.aura.user_identifier the server observes as exactly that set — proving
+// _meta.aura.user_identifier the server observes as exactly that set â€” proving
 // the middleware reads ctx per-call rather than capturing a value once.
 func TestIdentityMetaMiddleware_ConcurrentCallsCarryTheirOwnIdentity(t *testing.T) {
 	const n = 8
@@ -123,7 +119,7 @@ func TestIdentityMetaMiddleware_ConcurrentCallsCarryTheirOwnIdentity(t *testing.
 	t.Cleanup(func() { _ = serverSession.Wait() })
 
 	session, err := connectClient(ctx, clientTransport, mcp.SessionOptions{
-		Sending: sendingMiddleware(bridgePolicy{memory: true}),
+		Sending: sendingMiddleware(bridgePolicy{identityScoped: true}),
 	})
 	if err != nil {
 		t.Fatalf("client.Connect: %v", err)

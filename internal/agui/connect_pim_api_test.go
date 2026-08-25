@@ -18,21 +18,24 @@ import (
 // by the cross-surface auth sweep (connectGatedRoutes, governance_write_auth_sweep_test).
 
 const fakePIMToken = "test-admin-token-123"
+const fakePIMIdentity = "00000000-0000-0000-0000-000000000001"
 
 // fakePIM is a scripted aura-pim-mcp /admin REST: it records the last-seen Authorization header +
 // request path/method/body so the test can assert token injection and correct forwarding.
 type fakePIM struct {
-	gotAuth   string
-	gotPath   string
-	gotMethod string
-	gotQuery  string
-	gotBody   string
+	gotAuth     string
+	gotIdentity string
+	gotPath     string
+	gotMethod   string
+	gotQuery    string
+	gotBody     string
 }
 
 func (p *fakePIM) handler() http.Handler {
 	mux := http.NewServeMux()
 	record := func(w http.ResponseWriter, r *http.Request, status int, body string) {
 		p.gotAuth = r.Header.Get("Authorization")
+		p.gotIdentity = r.Header.Get("X-Aura-Identity")
 		p.gotPath = r.URL.Path
 		p.gotMethod = r.Method
 		p.gotQuery = r.URL.RawQuery
@@ -79,7 +82,9 @@ func connectPIMServer(baseURL, token string) *httptest.Server {
 	if baseURL != "" {
 		s.SetCalendarMCP(baseURL, token)
 	}
-	return httptest.NewServer(s.Mux())
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.Mux().ServeHTTP(w, withPrincipal(r, fakePIMIdentity))
+	}))
 }
 
 // TestPIMGoogleStartRetriesTransient404 proves the google/start proxy retries the sidecar's
@@ -140,9 +145,32 @@ func TestPIMListAccountsForwardsWithBearer(t *testing.T) {
 	if p.gotAuth != "Bearer "+fakePIMToken {
 		t.Fatalf("Authorization = %q, want Bearer %s", p.gotAuth, fakePIMToken)
 	}
+	if p.gotIdentity != fakePIMIdentity {
+		t.Fatalf("X-Aura-Identity = %q, want authenticated principal %q", p.gotIdentity, fakePIMIdentity)
+	}
 	body, _ := io.ReadAll(resp.Body)
 	if !bytes.Contains(body, []byte(`"id":"work"`)) {
 		t.Fatalf("list body not passed through: %q", body)
+	}
+}
+
+func TestPIMProxyRejectsMissingPrincipalBeforeDial(t *testing.T) {
+	var calls atomic.Int32
+	sidecar := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		calls.Add(1)
+	}))
+	defer sidecar.Close()
+
+	s := NewServer(&scriptedRunner{}, nil, ServerConfig{})
+	s.SetCalendarMCP(sidecar.URL, fakePIMToken)
+	rec := httptest.NewRecorder()
+	s.Mux().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/connect/pim/accounts", nil))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("missing principal status = %d, want 401", rec.Code)
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("sidecar received %d calls without an authenticated principal, want 0", calls.Load())
 	}
 }
 

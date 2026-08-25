@@ -11,8 +11,8 @@ import (
 
 // excludedPrefixes mirrors the segment-level exclusion set the caller
 // (cmd/aura/serve_webui.go) derives and passes in: the AG-UI route segments,
-// the health endpoints, and the forward-compat /api/ carve-out (which also
-// subsumes /api/integrations/). Kept here only so the unit tests can exercise
+// the health endpoints, and the forward-compat /api/ carve-out. Kept here only
+// so the unit tests can exercise
 // the 404-vs-fallback split without importing cmd/aura.
 var excludedPrefixes = []string{
 	"/healthz",

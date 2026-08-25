@@ -20,12 +20,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const mcpUsage = "usage: aura mcp {recipes [--json]|install <recipe> [name]|add <name> [--env KEY=VALUE] [--disabled] [--trust local] -- <command> [args...]|profile ...|trust <name> --reason <text> [--class <class>]|list|doctor <name>|tools <name>|console [--addr host:port]|enable <name>|disable <name>|remove <name>|login <name>|logout <name>|authorizations}"
+const mcpUsage = "usage: aura mcp {recipes [--json]|install <recipe> [name]|add <name> [--env KEY=VALUE] [--disabled] [--trust local] -- <command> [args...]|profile ...|trust <name> --reason <text> [--class <class>]|list|doctor <name>|tools <name>|enable <name>|disable <name>|remove <name>|login <name>|logout <name>|authorizations}"
 
 // mcpMutatingSubcommands is the set of top-level `aura mcp` CLI verbs that mutate the
 // managed config (D-12): these route through the audited WriteConfigWithAudit and need a
-// live *pgxpool.Pool. Every other subcommand (recipes/status/list/logs/doctor/tools/
-// console) is read-only and stays pool-free.
+// live *pgxpool.Pool. Every other subcommand
+// (recipes/status/list/logs/doctor/tools) is read-only and stays pool-free.
 var mcpMutatingSubcommands = map[string]bool{
 	"add": true, "install": true, "trust": true,
 	"enable": true, "disable": true, "remove": true,
@@ -91,8 +91,6 @@ func runMCPCommand(ctx context.Context, pool *pgxpool.Pool, args []string, out i
 		return mcpDoctor(ctx, args[1:], out)
 	case "tools":
 		return mcpTools(ctx, args[1:], out)
-	case "console":
-		return mcpConsole(args[1:], out)
 	case "enable":
 		return mcpSetEnabled(ctx, pool, args[1:], true, out)
 	case "disable":

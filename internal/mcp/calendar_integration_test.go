@@ -3,9 +3,9 @@
 // Live Aura PIM sidecar tier (forked calendar-mcp → chetto1983/aura-pim-mcp,
 // curated onto ONE `calendar` action tool by 46-05/46-06). Drives the running
 // streamable-HTTP sidecar end to end over the SDK session: connect + tools/list
-// (exactly one curated tool, action enum matching the design doc) + a real
-// list_accounts call (clean even with zero connected accounts — the CI smoke
-// shape) + the MCP-05 opaque-reference proof (SC#4).
+// (exactly one curated tool, action enum matching the design doc) + real
+// list_accounts calls for two identities on the same session (each must see only
+// its own fixture account) + the MCP-05 opaque-reference proof (SC#4).
 //
 // No-skip-as-green (CLAUDE.md): when AURA_PIM_MCP_URL (or _PORT) is unset under $CI the
 // test t.Fatals (a skipped tier fails the gate, never passes it); locally it t.Skips.
@@ -56,6 +56,25 @@ func calendarEndpointOrGate(t *testing.T) string {
 	return ""
 }
 
+func calendarBearerOrGate(t *testing.T) string {
+	t.Helper()
+	if token := strings.TrimSpace(os.Getenv("AURA_PIM_MCP_ADMIN_TOKEN")); token != "" {
+		return token
+	}
+	if strings.TrimSpace(os.Getenv("CI")) != "" {
+		t.Fatal("AURA_PIM_MCP_ADMIN_TOKEN must be set under CI because the live Calendar MCP transport is bearer-protected")
+	}
+	t.Skip("set AURA_PIM_MCP_ADMIN_TOKEN to run the bearer-protected calendar_integration tier")
+	return ""
+}
+
+const (
+	calendarTenantA        = "00000000-0000-0000-0000-000000000001"
+	calendarTenantB        = "00000000-0000-0000-0000-000000000002"
+	calendarTenantAccount  = "00000000000000000000000000000001__fixture"
+	calendarForeignAccount = "00000000000000000000000000000002__fixture"
+)
+
 // curatedCalendarToolName is the fork's own advertised wire name (measured live
 // 2026-08-22 against ghcr.io/chetto1983/aura-pim-mcp:38c94fd9d...) — this test
 // talks to the sidecar directly over the SDK session, the same handshake
@@ -94,6 +113,7 @@ var calendarActionEnum = []string{
 // the SDK session — the same OpenSDKSession construction path production uses.
 func TestCalendarServerLive(t *testing.T) {
 	endpoint := calendarEndpointOrGate(t)
+	bearer := calendarBearerOrGate(t)
 	reapIdleHTTPConns(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -102,6 +122,7 @@ func TestCalendarServerLive(t *testing.T) {
 	server := ManagedServer{
 		Type:  ServerTypeStreamableHTTP,
 		URL:   endpoint,
+		Env:   []string{"MCP_BEARER_TOKEN=" + bearer},
 		Trust: ManagedTrust{Class: TrustTrustedRecipe},
 	}
 	session, err := OpenSDKSession(ctx, "calendar", server, EgressPolicy{}, SessionOptions{})
@@ -138,17 +159,38 @@ func TestCalendarServerLive(t *testing.T) {
 		t.Errorf("curated tool schema required = %v, want [action] — the flat-union D-19 shape has no other root-required field", required)
 	}
 
-	// list_accounts is read-only and clean even with zero connected accounts — the
-	// CI smoke runs against an empty-config container.
-	out, isErr := callAndDecodeForTest(t, ctx, session, curatedCalendarToolName, map[string]any{"action": "list_accounts"})
+	// list_accounts is read-only. CI seeds the same local JSON provider for two
+	// identities so this tier proves isolation, not merely empty-list behavior.
+	out, isErr := callCalendarForIdentity(t, ctx, session, calendarTenantA, map[string]any{"action": "list_accounts"})
 	if isErr {
 		t.Fatalf("CallTool calendar(list_accounts) reported isError: %s", out)
 	}
 	if strings.TrimSpace(out) == "" {
 		t.Fatal("calendar(list_accounts) returned empty content")
 	}
+	foreignOut, foreignIsErr := callCalendarForIdentity(t, ctx, session, calendarTenantB, map[string]any{"action": "list_accounts"})
+	if foreignIsErr {
+		t.Fatalf("CallTool calendar(list_accounts) for tenant B reported isError: %s", foreignOut)
+	}
+	if !strings.Contains(out, calendarTenantAccount) || strings.Contains(out, calendarForeignAccount) {
+		t.Fatalf("tenant A account surface is not isolated: %s", out)
+	}
+	if !strings.Contains(foreignOut, calendarForeignAccount) || strings.Contains(foreignOut, calendarTenantAccount) {
+		t.Fatalf("tenant B account surface is not isolated: %s", foreignOut)
+	}
 
-	assertOpaqueEventIDNeedsNoAccountID(t, ctx, session, tool)
+	assertOpaqueEventIDNeedsNoAccountID(t, ctx, session, tool, calendarTenantA)
+}
+
+func callCalendarForIdentity(t *testing.T, ctx context.Context, session *sdkmcp.ClientSession, identityID string, args map[string]any) (text string, isError bool) {
+	t.Helper()
+	params := &sdkmcp.CallToolParams{Name: curatedCalendarToolName, Arguments: args}
+	SetAuraMetaField(params, MetaFieldUserIdentifier, identityID)
+	res, err := session.CallTool(ctx, params)
+	if err != nil {
+		t.Fatalf("CallTool %s for identity %s: %v", curatedCalendarToolName, identityID, err)
+	}
+	return DecodeToolResult(res)
 }
 
 // calendarActionSchema parses the curated tool's advertised inputSchema — an `any`
@@ -189,7 +231,7 @@ var (
 // legitimately returns no events to chain from. When that happens this function
 // logs and returns without fabricating a reference, per this plan's own
 // instruction.
-func assertOpaqueEventIDNeedsNoAccountID(t *testing.T, ctx context.Context, session *sdkmcp.ClientSession, tool *sdkmcp.Tool) {
+func assertOpaqueEventIDNeedsNoAccountID(t *testing.T, ctx context.Context, session *sdkmcp.ClientSession, tool *sdkmcp.Tool, identityID string) {
 	t.Helper()
 
 	_, required := calendarActionSchema(t, tool)
@@ -197,7 +239,7 @@ func assertOpaqueEventIDNeedsNoAccountID(t *testing.T, ctx context.Context, sess
 		t.Fatalf("curated tool schema marks accountId required at the root — MCP-05 regressed: %v", required)
 	}
 
-	out, isErr := callAndDecodeForTest(t, ctx, session, curatedCalendarToolName,
+	out, isErr := callCalendarForIdentity(t, ctx, session, identityID,
 		map[string]any{"action": "get_calendar_events", "timeZone": "UTC"})
 	if isErr {
 		t.Logf("get_calendar_events reported isError (expected with zero connected accounts): %s — MCP-05 round-trip half not exercised, only the schema half was", out)
@@ -219,7 +261,7 @@ func assertOpaqueEventIDNeedsNoAccountID(t *testing.T, ctx context.Context, sess
 	if _, hasAccountID := detailArgs["accountId"]; hasAccountID {
 		t.Fatal("test bug: the detail call's dispatched arguments must not include accountId")
 	}
-	detailOut, detailIsErr := callAndDecodeForTest(t, ctx, session, curatedCalendarToolName, detailArgs)
+	detailOut, detailIsErr := callCalendarForIdentity(t, ctx, session, identityID, detailArgs)
 	if detailIsErr {
 		t.Fatalf("get_calendar_event_details with the opaque eventId reference (no accountId argument) failed: %s", detailOut)
 	}

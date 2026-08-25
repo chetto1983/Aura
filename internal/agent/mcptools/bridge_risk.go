@@ -146,11 +146,12 @@ var trustedRecipeActions = map[string]map[string]MCPActionClass{
 }
 
 func managedBridgePolicy(server mcp.ManagedServer) bridgePolicy {
-	policy := bridgePolicy{memory: mcp.IsSharedAdminGoverned(server)}
-	_, trust, err := mcp.Classify(server)
+	policy := bridgePolicy{memorySurface: mcp.IsSharedAdminGoverned(server)}
+	serverType, trust, err := mcp.Classify(server)
 	if err != nil {
 		return policy
 	}
+	policy.identityScoped = serverType == mcp.ServerTypeStreamableHTTP && trust == mcp.TrustTrustedRecipe
 	// Rendering a server's own document is a larger grant than calling its tools,
 	// so it is gated on the trust class and on nothing else (mcp.TrustMayRenderViews).
 	policy.views = mcp.TrustMayRenderViews(trust)

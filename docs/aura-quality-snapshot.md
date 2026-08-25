@@ -54,6 +54,22 @@ This is a living document. A new row may start as unmeasured only while its owne
 
 ## Quality matrix
 
+**Current-range re-measurement — Calendar remote MCP tenancy (2026-08-25):**
+the published `aura-pim-mcp` image at
+`a4d39473b360e66575ee4e6bab0a6aad6562f341` passed the real Streamable-HTTP
+SDK tier with its deployment bearer required. Two Aura UUIDs called
+`list_accounts` over the same client session, each saw only its tenant-prefixed
+account, and tenant A completed the opaque-event detail round-trip without an
+`accountId`. Aura overlays the current bearer only into resolved
+`recipe:calendar` runtime policy, while the admin proxy derives
+`X-Aura-Identity` from the authenticated principal and refuses to dial without
+one. The duplicate `/api/integrations/*` proxy, `aura mcp console`, their tests,
+HTML, and obsolete CI tier are deleted; `/api/connect/pim/*` is the sole
+management plane. The live Calendar volume contains zero configured accounts,
+so the ownership/ID migration is a measured no-op, not a compatibility branch.
+Fresh WSL witnesses: full vet/build, tagged Calendar vet, touched-package unit
+and race suites, and the two-tenant live Calendar race tier are green.
+
 **Current-range re-attestation — MCP manager row (2026-07-31, metric-neutral):**
 `internal/mcp/tool_error.go` now maps only the two live WhatsApp `None`/`DictModel`
 misses to stable `not_found` outcomes. Transport, mount, trust, reconnect, manager,

@@ -104,7 +104,7 @@ func elicitationHandlerFor(name string, consent ElicitationConsent) func(context
 
 // sendingMiddleware is the sending middleware stack every Aura MCP session opens
 // with: the _meta.aura operation stamp (plan 45.1-02) always, plus the _meta.aura
-// identity stamp (plan 45.1-05/D-108) ONLY when policy.memory — the middleware is
+// identity stamp on every Aura-owned remote recipe. The middleware is
 // registered once on the per-mount Client, so scoping is by mount, not by a
 // per-call branch. It is the same function for both mount branches so a policy
 // fix in one cannot miss the other.
@@ -118,7 +118,7 @@ func elicitationHandlerFor(name string, consent ElicitationConsent) func(context
 // silently relying on "the SDK figures out order" would be wrong for it.
 func sendingMiddleware(policy bridgePolicy) []sdkmcp.Middleware {
 	mw := []sdkmcp.Middleware{mcp.OperationMetaMiddleware()}
-	if policy.memory {
+	if policy.identityScoped {
 		mw = append(mw, IdentityMetaMiddleware())
 	}
 	return mw

@@ -3,6 +3,7 @@ package mcptools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -37,7 +38,7 @@ func TestBridgedMemoryToolInjectsContextUserIdentifier(t *testing.T) {
 	t.Cleanup(func() { _ = serverSession.Close() })
 	srv := NewMountedServer("fixture", nil)
 	session, err := connectClient(ctx, clientTransport, mcp.SessionOptions{
-		Sending:         sendingMiddleware(bridgePolicy{memory: true}),
+		Sending:         sendingMiddleware(bridgePolicy{identityScoped: true}),
 		ToolListChanged: srv.onToolListChanged,
 	})
 	if err != nil {
@@ -65,11 +66,9 @@ func TestBridgedMemoryToolInjectsContextUserIdentifier(t *testing.T) {
 	}
 }
 
-// TestBridgedMemoryToolFallsBackToOperatorWhenNoPrincipal guards the fail-open
-// fix, preserved verbatim from withMemoryUserIdentifier's era: a no-principal
-// (CLI/unauthenticated) memory call is scoped to the seeded local operator
-// identity — never carried unscoped — but now via _meta rather than an argument.
-func TestBridgedMemoryToolFallsBackToOperatorWhenNoPrincipal(t *testing.T) {
+// TestBridgedRemoteToolRejectsNoPrincipal proves a missing authenticated owner
+// fails before the remote handler is invoked.
+func TestBridgedRemoteToolRejectsNoPrincipal(t *testing.T) {
 	var capturedMeta map[string]any
 	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "fixture", Version: "0.0.1"}, nil)
 	recallTool := mustTool("memory_recall", "Recall memory.",
@@ -89,7 +88,7 @@ func TestBridgedMemoryToolFallsBackToOperatorWhenNoPrincipal(t *testing.T) {
 	t.Cleanup(func() { _ = serverSession.Close() })
 	srv := NewMountedServer("fixture", nil)
 	session, err := connectClient(ctx, clientTransport, mcp.SessionOptions{
-		Sending:         sendingMiddleware(bridgePolicy{memory: true}),
+		Sending:         sendingMiddleware(bridgePolicy{identityScoped: true}),
 		ToolListChanged: srv.onToolListChanged,
 	})
 	if err != nil {
@@ -105,20 +104,18 @@ func TestBridgedMemoryToolFallsBackToOperatorWhenNoPrincipal(t *testing.T) {
 	// No identityctx.WithIdentityID — the no-principal path.
 	callCtx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), 2048)
 
-	if _, err := got[0].Execute(callCtx, json.RawMessage(`{"query":"anything"}`)); err != nil {
-		t.Fatalf("Execute: %v", err)
+	if _, err := got[0].Execute(callCtx, json.RawMessage(`{"query":"anything"}`)); !errors.Is(err, errMissingRemoteIdentity) {
+		t.Fatalf("Execute error = %v, want %v", err, errMissingRemoteIdentity)
 	}
-	aura, _ := capturedMeta[mcp.MetaNamespaceAura].(map[string]any)
-	if aura == nil || aura[mcp.MetaFieldUserIdentifier] != identityctx.LocalOperatorIdentity {
-		t.Fatalf("no-principal _meta.aura.user_identifier = %v, want operator fallback %q (never unscoped)",
-			aura, identityctx.LocalOperatorIdentity)
+	if capturedMeta != nil {
+		t.Fatalf("remote handler ran without a principal: meta = %v", capturedMeta)
 	}
 }
 
-// TestBridgedNonMemoryToolDoesNotInjectUserIdentifier proves a non-memory bridge
+// TestBridgedUnscopedToolDoesNotInjectUserIdentifier proves an unscoped bridge
 // mount never stamps an identity anywhere: not in _meta (no IdentityMetaMiddleware
 // on its Sending slice at all) and not in Arguments (the bridge never touches them).
-func TestBridgedNonMemoryToolDoesNotInjectUserIdentifier(t *testing.T) {
+func TestBridgedUnscopedToolDoesNotInjectUserIdentifier(t *testing.T) {
 	var capturedArgs map[string]any
 	var capturedMeta map[string]any
 	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "fixture", Version: "0.0.1"}, nil)
@@ -136,7 +133,7 @@ func TestBridgedNonMemoryToolDoesNotInjectUserIdentifier(t *testing.T) {
 	t.Cleanup(func() { _ = serverSession.Close() })
 	srv := NewMountedServer("fixture", nil)
 	session, err := connectClient(ctx, clientTransport, mcp.SessionOptions{
-		Sending:         sendingMiddleware(bridgePolicy{memory: false}),
+		Sending:         sendingMiddleware(bridgePolicy{}),
 		ToolListChanged: srv.onToolListChanged,
 	})
 	if err != nil {

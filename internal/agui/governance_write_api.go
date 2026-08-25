@@ -45,7 +45,7 @@ type mcpTrustBody struct {
 
 // registerGovernanceWriteRoutes mounts the six MCP write routes on the supplied mux using
 // Go 1.22 method-pattern routing — SPECIFIC method+path siblings under the /api/ carve-out,
-// never a bare /api/ (which would shadow /api/integrations/, Pitfall 5). The parent-mux
+// never a bare /api/ (Pitfall 5). The parent-mux
 // mount behind RequireCapability(governance.write) lives in cmd/aura/serve_webui.go.
 func (s *Server) registerGovernanceWriteRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/governance/mcp", s.handleMCPInstall)

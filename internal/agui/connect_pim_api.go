@@ -24,7 +24,9 @@ import (
 // AURA_PIM_MCP_URL + AURA_PIM_MCP_ADMIN_TOKEN); an unset URL answers 503 so a stack with the sidecar
 // off degrades gracefully. The admin token is injected server-side as Authorization: Bearer and
 // NEVER returned to the client; a transport error or a non-2xx status is passed through with a
-// sanitized JSON body (the sidecar host never leaks).
+// sanitized JSON body (the sidecar host never leaks). Every forward also carries
+// X-Aura-Identity from the authenticated cockpit principal; the browser cannot
+// choose or override the tenant.
 //
 // The Google OAuth callback (GET /admin/auth/google/callback) is token-exempt and is hit DIRECTLY
 // by the user's browser at the sidecar's external base URL — it is deliberately NOT proxied here.
@@ -243,6 +245,11 @@ func (s *Server) dialPIM(w http.ResponseWriter, r *http.Request, method, path st
 		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "calendar connect not configured"})
 		return nil, false
 	}
+	identityID, ok := principalIdentityID(r)
+	if !ok {
+		writeJSONStatus(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+		return nil, false
+	}
 	var reader io.Reader
 	if body != nil {
 		reader = bytes.NewReader(body)
@@ -259,6 +266,7 @@ func (s *Server) dialPIM(w http.ResponseWriter, r *http.Request, method, path st
 	if s.calendarMCPToken != "" {
 		req.Header.Set("Authorization", "Bearer "+s.calendarMCPToken)
 	}
+	req.Header.Set("X-Aura-Identity", identityID)
 	resp, err := client.Do(req)
 	if err != nil {
 		// The error embeds the sidecar host/URL — SanitizeString collapses any DSN/userinfo/token;

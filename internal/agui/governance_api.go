@@ -145,7 +145,7 @@ type schedulerRunRow struct {
 
 // registerGovernanceRoutes mounts the seven read-only governance routes on the supplied mux
 // using Go 1.22 method-pattern routing. They are SPECIFIC method+path siblings under the
-// /api/ carve-out — never a bare /api/ (which would shadow /api/integrations/). The
+// /api/ carve-out — never a bare /api/. The
 // parent-mux mount behind RequireAuth lives in cmd/aura/serve_webui.go.
 func (s *Server) registerGovernanceRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/governance/mcp", s.handleMCPList)

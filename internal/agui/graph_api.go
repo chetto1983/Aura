@@ -56,7 +56,7 @@ type GraphView interface {
 
 // registerGraphRoutes mounts the two read-only graph routes on the supplied mux using
 // Go 1.22 method-pattern routing. Both are SPECIFIC method+path siblings under the /api/
-// carve-out — never a bare /api/ (which would shadow /api/integrations/, T-27-03). The
+// carve-out — never a bare /api/ (T-27-03). The
 // parent-mux mount behind RequireAuth lives in cmd/aura/serve_webui.go.
 func (s *Server) registerGraphRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/graph/schema", s.handleGraphSchema)

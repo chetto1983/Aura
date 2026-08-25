@@ -12,6 +12,7 @@ import (
 func clearMCPEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("AURA_AGENT_MEMORY_MCP_PORT", "")
+	t.Setenv("AURA_PIM_MCP_ADMIN_TOKEN", "")
 }
 
 // runtimePolicies is what every test here asserts on: the policy half of RuntimeSet, which
@@ -120,6 +121,55 @@ func TestCalendarContainerDefaultOn_RespectsExplicitInstall(t *testing.T) {
 	}
 	if got.URL != "http://operator-pim:9999/custom/" {
 		t.Fatalf("calendar URL = %q, want the operator-customized one (explicit wins)", got.URL)
+	}
+}
+
+func TestCalendarRuntimeUsesDeploymentBearerWithoutPersistingIt(t *testing.T) {
+	clearMCPEnv(t)
+	t.Setenv("AURA_PIM_MCP_ADMIN_TOKEN", "rotated-calendar-token")
+
+	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
+		"work-calendar": {
+			Type:   mcp.ServerTypeStreamableHTTP,
+			URL:    "http://operator-pim:9999/",
+			Source: "recipe:calendar",
+			Env:    []string{"PUBLIC_FLAG=1", "MCP_BEARER_TOKEN=stale-token"},
+			Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+		},
+	}}
+
+	policies := runtimePolicies(t, doc)
+	got := policies["work-calendar"]
+	if !reflect.DeepEqual(got.Env, []string{"PUBLIC_FLAG=1", "MCP_BEARER_TOKEN=rotated-calendar-token"}) {
+		t.Fatalf("runtime calendar env = %#v, want public env plus current deployment bearer", got.Env)
+	}
+	if !reflect.DeepEqual(doc.MCPServers["work-calendar"].Env, []string{"PUBLIC_FLAG=1", "MCP_BEARER_TOKEN=stale-token"}) {
+		t.Fatalf("RuntimeSet mutated the persisted registry document: %#v", doc.MCPServers["work-calendar"].Env)
+	}
+	recipe, ok := LookupCatalog("calendar")
+	if !ok {
+		t.Fatal("LookupCatalog(\"calendar\") not found")
+	}
+	if len(recipe.Server.Env) != 0 {
+		t.Fatalf("catalog leaked runtime credentials: %#v", recipe.Server.Env)
+	}
+}
+
+func TestRecipeBearerOverlayNeverTouchesThirdPartyRemoteHTTP(t *testing.T) {
+	clearMCPEnv(t)
+	t.Setenv("AURA_PIM_MCP_ADMIN_TOKEN", "calendar-token")
+
+	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
+		"external": {
+			Type:   mcp.ServerTypeStreamableHTTP,
+			URL:    "https://mcp.example.invalid/mcp",
+			Source: "manual",
+			Trust:  mcp.ManagedTrust{Class: mcp.TrustRemoteHTTP},
+		},
+	}}
+	got := runtimePolicies(t, doc)["external"]
+	if len(got.Env) != 0 {
+		t.Fatalf("third-party remote received Aura recipe credentials: %#v", got.Env)
 	}
 }
 
