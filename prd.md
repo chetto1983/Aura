@@ -7877,3 +7877,88 @@ flusso completo, che funziona.
 > Migration 0102 and the real document-agent E2E were not repeated because this delta has no schema,
 > document-pipeline, agent-loop, or model-facing-tool change; their persisted green checkpoints remain
 > the applicable evidence for those unchanged boundaries.
+
+## §Calendar and WhatsApp become identity-scoped data planes (Amendment #144, 2026-08-25)
+
+> **Amendment #144 (2026-08-25 — measured before implementation; narrows the remaining
+> multi-user concern to the two sidecars that still carry user data).**
+>
+> **What was measured first.** The live WSL stack ran the healthy pinned Calendar image
+> `ghcr.io/chetto1983/aura-pim-mcp:c497224cf8a0c8eeaea02210d5101b1e032661fb` and WhatsApp
+> image `ghcr.io/chetto1983/whatsapp-mcp:sha-9911eb8`. Two independent streamable-HTTP MCP
+> sessions called each sidecar with different `_meta.aura.user_identifier` values. Calendar
+> `list_accounts` returned the same 604-byte result and SHA-256
+> `982edc53f4122806e6f6e0027f21a4cf31e44903513b078992ff7f64b55fea91` to both identities;
+> WhatsApp `list_chats(limit=1)` returned the same 152-byte result and SHA-256
+> `49a7b370d36542ebceb6f365624f8a564fd847cf1d88f651d7ca5a8f0afd320c` to both. No account,
+> contact, chat, message, or secret value was printed by the probe.
+>
+> Source inventory explains the identical wire results. Aura stamps caller identity only for the
+> memory recipe today. Calendar loads one deployment-wide `AccountRegistry` and never reads MCP
+> request metadata. WhatsApp opens one `store/messages.db`, one `store/whatsapp.db`, one media
+> root, and one `whatsmeow.Client`; its Python MCP server also reads those same process-global
+> paths. The official C# MCP SDK 2.2.0 exposes request metadata at
+> `RequestContext<CallToolRequestParams>.Params.Meta`; the official Python MCP SDK 2.0.0 injects
+> `Context` into tools and preserves request metadata at `ctx.request_context.meta`. The pinned
+> whatsmeow API explicitly supports independent clients from independent SQL containers and gives
+> each client its own connect, QR, event-handler, disconnect, and logout lifecycle. There is no SDK
+> gap requiring a new wire protocol.
+>
+> **Operator ruling and control-plane boundary.** `aura.settings`, installed skills, and the MCP
+> catalog are intentional deployment/operator control planes: reads and mutations remain behind
+> `governance.read` / `governance.write`, and strict multi-user boot keeps requiring the sandbox
+> profile. They are not duplicated per identity. The user-data planes behind the Calendar and
+> WhatsApp recipes are identity-scoped instead; treating their current singleton storage as another
+> operator-global setting is forbidden.
+>
+> **Calendar contract.** Every configured account carries a required `TenantId`. Every MCP tool
+> call must extract a non-empty identity from `_meta.aura.user_identifier` and bind the account
+> registry to that identity for the full asynchronous call. Listing, smart routing, explicit
+> `accountId`, opaque event references, bulk items, delegated tools, and provider-internal account
+> lookups all see only that bound view; a caller-supplied foreign `accountId` is indistinguishable
+> from a missing account. The cockpit admin proxy stamps `X-Aura-Identity` from Aura's authenticated
+> request context, never from browser input, and Calendar account create/list/status/auth/logout/
+> delete operations enforce the same tenant. Missing MCP metadata or a missing authenticated admin
+> identity fails closed. Existing live account rows are rewritten once with their real Aura owner
+> before the new image is started; the runtime contains no unscoped-account fallback.
+>
+> **WhatsApp contract.** The fork replaces the singleton with a concurrency-safe runtime registry
+> keyed by the validated Aura identity. Each tenant owns exactly one live `whatsmeow.Client`, QR/
+> pairing state, reconnect lifecycle, `messages.db`, opaque whatsmeow `whatsapp.db`, and media root
+> under `WHATSAPP_STORE_ROOT/tenants/<identity>/`. Python MCP tools obtain the identity only from
+> `_meta.aura.user_identifier`, open only that tenant's databases, and send the same identity to
+> bridge REST in `X-Aura-Identity`; the Go bridge rejects a missing/invalid identity before touching
+> storage or a client. Aura's cockpit proxy stamps the authenticated identity and the existing
+> bridge bearer token for status, QR, and logout. `WHATSAPP_DB_PATH` and `WHATSMEOW_DB_PATH` are
+> retired rather than retained as singleton compatibility switches; `WHATSAPP_STORE_ROOT` is the
+> single storage configuration. Existing live WhatsApp files and media are moved once into the
+> operator's tenant directory before the new image starts. No shared-store fallback, old singleton
+> process path, or restart-the-whole-bridge logout path remains.
+>
+> Aura passes the existing sidecar `WHATSAPP_BRIDGE_TOKEN` as the new
+> `AURA_WHATSAPP_BRIDGE_TOKEN` daemon secret so the management proxy can authenticate; installers
+> generate it like the other appliance secrets. The MCP identity envelope and admin proxy header
+> are internal trusted-boundary assertions: neither sidecar publishes a model-facing `tenantId`
+> argument, and neither accepts an identity chosen by a browser body, query string, or tool
+> argument.
+>
+> **Implementation and verification boundary.** Targeted files are the Aura identity-stamping
+> policy, Calendar/WhatsApp cockpit proxies and config wiring, Compose/env/install artifacts, the
+> two fork request-context/storage/runtime paths, and their focused tests and docs. This change
+> adds no Aura Postgres schema and therefore no migration. Closure requires: daemon-free parser/
+> path/foreign-account tests; WSL Go race, Python pytest/ruff, and .NET test/build gates for the
+> touched packages; a real one-time migration of both live volumes; two live identities returning
+> different account/chat ownership evidence; foreign explicit identifiers denied; per-tenant
+> status/QR state; and a real agent E2E in which each identity calls both mounted recipes without
+> observing the other's records. The already-green migration-0102 up/down/up test and document-agent
+> E2E remain persistent checkpoints unless this delta unexpectedly touches their code paths.
+>
+> **What this measurement does NOT prove.** Equal hashes prove that identity does not influence the
+> current sidecars; the 152-byte WhatsApp response may be empty and therefore does not by itself
+> prove a foreign chat was disclosed. Source inspection proves the singleton path, not that two
+> clients can sustain production reconnect load inside one process. The probe does not exercise
+> account writes, QR pairing, logout, concurrent tenant startup, foreign explicit IDs, media path
+> confinement, or an agent turn. Those are implementation and live-E2E obligations above. It also
+> does not prove deployment-global settings or skills are safe to grant to ordinary identities;
+> their safety continues to come from governance capabilities and the strict-profile boot gate,
+> not from this sidecar isolation.
