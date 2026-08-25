@@ -44,6 +44,8 @@ import { useAssetActions } from './ExternalStoreChat_assets';
 import { useStreamFolds } from './ExternalStoreChat_streams';
 import { useBranchEdits } from './ExternalStoreChat_branches';
 import { useLiveRunAttach } from './ExternalStoreChat_liveRun';
+import { useSteerSend } from './ExternalStoreChat_steer';
+import { SteerNotice } from './SteerNotice';
 import { fetchThreadMessages } from './sseAdapter';
 import { cancelRun, streamRunResilient } from './sseResume';
 import { useRunUsageLifecycle, type RunUsageEvent } from './runUsage';
@@ -122,6 +124,7 @@ export function ExternalStoreChat({
   const hydratedEffort = conversation?.ReasoningEffort;
   /** RS-07 §4.2: a set live_run_id means a detached run is in flight for this thread. */
   const liveRunId = conversation?.live_run_id;
+  const steer = useSteerSend({ threadId, liveRunId, activeRunIdRef, isRunning, setMessages });
   const { effort, setEffort } = useReasoningEffort(
     threadId,
     hydratedEffort,
@@ -153,6 +156,11 @@ export function ExternalStoreChat({
         compaction.runCommand(command);
         return;
       }
+      // D-10: a live run for this thread means this submit redirects it instead of starting a
+      // new one. Gated on NO attachments — the steer route is text-only (internal/steer.Push),
+      // so a file attached while live still falls through to the normal (and still-locked) path
+      // rather than silently dropping it.
+      if ((message.attachments?.length ?? 0) === 0 && (await steer.trySend(text))) return;
       // The runtime only hands over attachments it has already sent (adapter.send ran), so
       // there is no separate "is anything still uploading" gate to consult here.
       // The attachment id is the adapter's stable client id, so the ASSET id the run
@@ -209,6 +217,7 @@ export function ExternalStoreChat({
           },
           onSnapshotReplace: setMessages,
           ...(onArtifact !== undefined ? { onArtifact } : {}),
+          onSteer: steer.onFrame,
           onUpdate: (assistant, usage) => {
             usageLifecycle.update(usageRunId, usage);
             setMessages((prev) => {
@@ -258,6 +267,7 @@ export function ExternalStoreChat({
       effort,
       prepareUsageBaseline,
       compaction,
+      steer,
     ],
   );
 
@@ -411,6 +421,7 @@ export function ExternalStoreChat({
     foldAppendedStream,
     setMessages,
     onArtifact,
+    onSteer: steer.onFrame,
   });
 
   const threadApprovals = useThreadApprovals(threadId, resumeRun, dispatchApprovalFocus);
@@ -508,15 +519,14 @@ export function ExternalStoreChat({
             onDismiss={compaction.dismissFailure}
           />
 
-          {/* RS-07 §4.2: while the thread has a live detached run, sending is
-              blocked (Stop replaces Send once attached) and this hint explains
-              why — strictly better than the raw 409 the widened lock window
-              would otherwise surface. */}
+          {/* D-10: a live detached run no longer blocks Send — this hint just orients the
+              operator toward the redirect control Composer now renders. */}
           {liveRunId !== undefined && liveRunId.length > 0 ? (
             <p role="status" className="px-3 py-1 text-[0.75rem] text-text-muted sm:px-4">
               {t('chat.liveRun.hint')}
             </p>
           ) : null}
+          <SteerNotice notice={steer.notice} refusal={steer.refusalText} />
 
           <ThreadApprovalCards
             approvals={threadApprovals.approvals}
@@ -529,7 +539,9 @@ export function ExternalStoreChat({
             inputRef={composerInputRef}
             onInputAvailable={setComposerInput}
             approvalLocked={threadApprovals.isPending}
-            sendBlocked={liveRunId !== undefined && liveRunId.length > 0}
+            sendBlocked={false} // D-10: a live run redirects (steerAvailable) instead of blocking.
+            steerAvailable={steer.available}
+            onSteerSubmit={(steerText) => void steer.trySend(steerText)}
             draftPrompt={draftPrompt}
             onDraftPromptConsumed={onDraftPromptConsumed}
             skills={skills}

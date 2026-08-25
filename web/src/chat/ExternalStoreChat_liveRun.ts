@@ -8,7 +8,7 @@ import {
   type Conversation,
 } from '../conversations/useConversations';
 import { attachRun } from './sseResume';
-import type { TurnUsage } from './sseAdapter';
+import type { SteerNotice, TurnUsage } from './sseAdapter';
 
 // ExternalStoreChat_liveRun — the RS-07 §4.2 reload-attach split out of
 // ExternalStoreChat.tsx (600-LOC cap): when a thread opens while its detached
@@ -38,6 +38,8 @@ export interface LiveRunAttachArgs {
   readonly foldAppendedStream: AppendedStreamFold;
   readonly setMessages: Dispatch<SetStateAction<ThreadMessageLike[]>>;
   readonly onArtifact?: ((assetId: string | undefined) => void) | undefined;
+  /** D-10's reattach-pump half: fires on an aura.steer frame observed by a reloaded tab. */
+  readonly onSteer?: ((notice: SteerNotice) => void) | undefined;
 }
 
 export function useLiveRunAttach({
@@ -49,6 +51,7 @@ export function useLiveRunAttach({
   foldAppendedStream,
   setMessages,
   onArtifact,
+  onSteer,
 }: LiveRunAttachArgs): void {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -70,6 +73,7 @@ export function useLiveRunAttach({
             terminal.observed = true;
           },
           ...(onArtifact !== undefined ? { onArtifact } : {}),
+          ...(onSteer !== undefined ? { onSteer } : {}),
           onUpdate,
         });
       });
@@ -89,7 +93,16 @@ export function useLiveRunAttach({
         return settled;
       });
     },
-    [foldAppendedStream, threadId, t, onArtifact, activeRunIdRef, setMessages, queryClient],
+    [
+      foldAppendedStream,
+      threadId,
+      t,
+      onArtifact,
+      onSteer,
+      activeRunIdRef,
+      setMessages,
+      queryClient,
+    ],
   );
 
   // Reload-attach discovery (design §4.2): once the snapshot is rendered, a set

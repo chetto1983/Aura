@@ -107,9 +107,7 @@ describe('ExternalStoreChat — RS-07 live-run attach + Stop→cancel', () => {
 
     // The run-in-progress hint renders while live_run_id is set (§4.2 step 3).
     expect(
-      await screen.findByText(
-        'A run is still in progress in this conversation. Sending re-enables when it finishes.',
-      ),
+      await screen.findByText('A run is still in progress. Type to redirect it, or tap Stop.'),
     ).toBeTruthy();
 
     // The snapshot renders first, then the attach folds the replayed turn.
@@ -130,9 +128,7 @@ describe('ExternalStoreChat — RS-07 live-run attach + Stop→cancel', () => {
       );
     });
     expect(
-      screen.queryByText(
-        'A run is still in progress in this conversation. Sending re-enables when it finishes.',
-      ),
+      screen.queryByText('A run is still in progress. Type to redirect it, or tap Stop.'),
     ).toBeNull();
 
     // The attach GET is the read-only resume endpoint with NO Last-Event-ID

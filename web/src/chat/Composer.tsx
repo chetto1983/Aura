@@ -30,6 +30,8 @@ interface ComposerProps {
   readonly approvalLocked?: boolean;
   /** RS-07 §4.2: blocks ONLY Send (typing stays free) while the thread's detached run is live. */
   readonly sendBlocked?: boolean;
+  readonly steerAvailable?: boolean; // D-10: true while the live run for this thread is steerable.
+  readonly onSteerSubmit?: (text: string) => void; // D-10: routes composer text as a steer.
   readonly draftPrompt?: ComposerDraftPrompt | undefined;
   readonly onDraftPromptConsumed?: ((nonce: number) => void) | undefined;
   readonly skills?: readonly ComposerSkillRow[];
@@ -56,6 +58,8 @@ export function Composer({
   onInputAvailable,
   approvalLocked = false,
   sendBlocked = false,
+  steerAvailable = false,
+  onSteerSubmit,
   draftPrompt,
   onDraftPromptConsumed,
   skills,
@@ -122,6 +126,14 @@ export function Composer({
     s.composer.attachments.some((a) => a.status.type === 'running'),
   );
   const sendDisabled = approvalLocked || sendBlocked || uploading;
+  // D-10: assistant-ui disables Send while running (no thread.capabilities.queue) — steer needs its own control.
+  const steering = isRunning && steerAvailable;
+  const submitSteer = () => {
+    const text = aui.composer.getState().text;
+    if (text.trim().length === 0) return;
+    aui.composer.setText('');
+    onSteerSubmit?.(text);
+  };
 
   useLayoutEffect(() => {
     onInputAvailable?.(composerInputRef.current);
@@ -394,6 +406,12 @@ export function Composer({
               // the property shell.spec.ts asserts, and the reason screen readers no longer
               // announce a listbox popup on every ordinary message.
               disabled={approvalLocked}
+              onKeyDown={(e) => {
+                if (steering && e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  submitSteer();
+                }
+              }}
               className="max-h-40 min-h-[44px] w-full resize-none bg-transparent px-3 py-2 text-[1.0625rem] leading-relaxed text-text outline-none placeholder:text-text-faint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             />
             <div className="flex items-center gap-1">
@@ -508,6 +526,18 @@ export function Composer({
                     className="pointer-events-none absolute right-2 size-3.5 text-text-faint"
                   />
                 </div>
+              ) : null}
+              {steering ? (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  aria-label={t('chat.steer.sendAria')}
+                  onClick={submitSteer}
+                  className="ml-auto rounded-full text-accent-text hover:text-accent-text"
+                >
+                  <ArrowUp data-icon aria-hidden="true" className="size-4" />
+                </Button>
               ) : null}
               {/* ml-auto, not a spacer: the send is the only control anchored to the far end, so
                 the gap between the toolbar and it is the send's own margin rather than an empty
