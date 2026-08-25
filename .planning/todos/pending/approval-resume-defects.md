@@ -63,18 +63,26 @@ Closing evidence:
 - `scripts/coverage_docker.sh` green against disposable PostgreSQL: **26827/31139 = 86.2%** owned
   coverage across the full `db_integration` matrix.
 
-## 3. Pending approvals never expire
+## 3. Closed 2026-08-25 — pending approvals never expired
 
-No TTL anywhere in `internal/gateway` expires a pending approval — only replay retention and an
-orphan-scan TTL exist. LibreChat has `APPROVAL_EXPIRED_ERROR`, `expireApproval()`, a handler that
-prunes the paused run's durable checkpoint, and explicit handling for a decision arriving after the
-TTL lapsed.
+Unanswered `kind=approval` pauses now expire after `AURA_ASKUSER_PAUSE_TTL_SEC` (48 hours by
+default, `<=0` explicitly disables expiry). The daemon runs an immediate boot sweep and a bounded
+periodic sweep for each active owner. Expiry uses the existing atomic resume claim to persist an
+internal `expired` refusal and its matching `RoleTool` answer in one transaction; the public API
+rejects `expired`, late decisions return Gone, and gateway/shell pending challenges are discarded
+without granting approval.
 
-Pre-implementation measurement 2026-08-25: the live PostgreSQL 18.4 table had `created_at` and no
-`expires_at`, with zero pending rows at measurement time. Amendment #140 therefore records a
-no-migration design: 48-hour default, immediate boot sweep plus a bounded periodic sweep, per-owner
-RLS scoping, and an internal `expired` refusal committed atomically with its matching `RoleTool`
-answer. This item remains open until the real database, race, restart, and real-agent evidence lands.
+Closing evidence:
+
+- targeted WSL unit/race, vet, build, lint, file-size, sqlc, and dead-code gates are green;
+- disposable PostgreSQL proves due-row selection, kind/resolution filtering, owner RLS, atomic
+  visibility, and an expiry-versus-human race with exactly one winner and one `RoleTool` turn;
+- the real migration-0102 up/down/up round-trip remains green; expiry required no schema migration;
+- the touched ask-user/Runner database matrix measured 86.2% aggregate coverage, with every changed
+  critical expiry function at or above 85%;
+- `ExpirePendingApprovals` mutation testing killed 14/14 mutants;
+- a fresh real OpenRouter agent advanced from two to three turns, consumed 3752 prompt tokens, and
+  truthfully reported that the approval expired and nothing executed: **10.0/10**.
 
 ## Constraint on any fix
 
@@ -89,7 +97,7 @@ around it.**
 
 No production exploit was demonstrated. Reaching the resume route already requires an
 authenticated, owner-scoped session and a valid pause token, so #1 was an
-authorization-granularity gap rather than an open door. The closing measurements now prove #1's
-persisted policy and real-agent behavior plus #2's fail-closed wire, Runner, Store, and
-real-PostgreSQL transaction behavior. They do not prove #3's expiry semantics; approval expiry is
-the sole remaining open defect in this record.
+authorization-granularity gap rather than an open door. All three defects in this record are now
+closed through fail-closed wire behavior, real-PostgreSQL transaction/race evidence, and fresh
+real-agent E2E runs. The 48-hour TTL remains an explicit product policy rather than an empirically
+optimized duration, and this closure does not claim a new repository-wide coverage run.

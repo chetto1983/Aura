@@ -7626,3 +7626,18 @@ flusso completo, che funziona.
 > implementation's real-PostgreSQL, race, restart-sweep, and real-agent E2E obligations. It also
 > does not prove that every future approval class should share this TTL; the contract is deliberately
 > limited to today's persisted `kind=approval` rows.
+>
+> **Closure evidence (2026-08-25).** The implementation now performs immediate boot and bounded
+> periodic owner-scoped sweeps, commits the internal `expired` refusal with its matching `RoleTool`
+> answer through the existing atomic resume path, rejects public `expired` decisions, returns Gone
+> for late answers, and discards the exact pending gateway/shell challenge without granting it.
+> Disposable PostgreSQL proved cutoff/kind/resolution selection, RLS isolation, atomic visibility,
+> and an expiry-versus-human race with exactly one winner and one tool-result turn. Migration 0102's
+> real up/down/up round-trip remains green; expiry added no migration. The touched ask-user/Runner
+> database matrix measured 86.2% aggregate coverage, every changed critical expiry function is at
+> least 85%, and mutation testing killed 14/14 `ExpirePendingApprovals` mutants.
+>
+> **Real-agent Definition-of-Done score: 10.0/10 (>9.8 PASS).** A fresh OpenRouter agent resumed
+> the durable conversation from two to three turns with 3752 prompt tokens and stated that the
+> approval expired without a decision and nothing executed. No grant, protected tool execution, or
+> contradictory history was observed.

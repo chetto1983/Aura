@@ -11,7 +11,7 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 | Concern | Severity | Status | Primary evidence |
 |---|---|---|---|
 | Approval resume enforces a persisted per-pause decision policy | High | Closed 2026-08-25 | `internal/runner/resume_policy.go`, `internal/db/migrations/0102_paused_state_decision_policy.up.sql`, `internal/runner/live_e2e_policy_test.go` |
-| Pending approvals have no expiry | High | Open | `internal/gateway/approvals.go`, `internal/askuser/store.go`, `.planning/todos/pending/approval-resume-defects.md` |
+| Pending approvals have no expiry | High | Closed 2026-08-25 | `internal/runner/approval_expiry.go`, `cmd/aura/approval_expiry.go`, `internal/runner/live_e2e_expiry_test.go` |
 | Empty accepted approval answers resumed the model silently | High | Closed 2026-08-25 | `internal/agui/server_run_test.go`, `internal/runner/runner_resume_test.go`, `internal/askuser/store_mutation_test.go` |
 | Release disclosure register still has five open rows and therefore reports NO-GO | High | Open/operator or external action | `docs/audit/README.md`, `scripts/audit_closure_gate.py` |
 | Amendment #115 still requires a real-production document E2E whose runner no longer exists | High | Open | `prd.md`, absent `scripts/document_pipeline_e2e.sh` |
@@ -75,11 +75,11 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 - Files: `internal/runner/resume_policy.go`, `internal/runner/runner_resume.go`, `internal/db/migrations/0102_paused_state_decision_policy.up.sql`, `internal/agui/server_run.go`, `internal/agui/server_run_detach.go`.
 - Evidence: policy mutation 20/20 = 100%; Runner aggregate coverage 85.3%; targeted WSL race green; real OpenRouter-agent E2E proved forbidden accept stays pending and allowed decline re-drives the agent from 2 to 3 turns with 3750 prompt tokens.
 
-**Pending approvals do not expire:**
-- Symptoms: a pending pause remains actionable until it is resumed, auto-resolved, or removed with its conversation. No approval-specific TTL or expiry transition exists.
-- Files: `internal/gateway/approvals.go`, `internal/askuser/store.go`, `internal/runner/runner_resume.go`, `.planning/todos/pending/approval-resume-defects.md`.
-- Trigger: leave a gateway/ask-user pause unanswered indefinitely.
-- Workaround: cancel/delete the conversation or explicitly resolve the pause; there is no scheduled expiry.
+**Closed 2026-08-25 — pending approvals did not expire:**
+- Resolution: unanswered `kind=approval` pauses expire after an operator-configurable 48-hour default. The daemon performs an owner-scoped boot sweep and bounded periodic sweeps, using the existing atomic resume claim to append an `expired` refusal and its matching `RoleTool` turn together.
+- Safety: `expired` is server-only; public clients cannot submit it. A late human decision returns Gone, and a real PostgreSQL expiry-versus-human race proved exactly one winner and one tool-result turn under RLS.
+- Files: `internal/runner/approval_expiry.go`, `cmd/aura/approval_expiry.go`, `internal/askuser/store.go`, `internal/gateway/approvals.go`, `internal/runner/live_e2e_expiry_test.go`.
+- Evidence: targeted WSL race/vet/build and disposable-PostgreSQL integration tests are green; migration 0102 still round-trips; expiry mutation testing killed 14/14 mutants; the real OpenRouter-agent E2E scored 10.0/10.
 
 **Runner verification test is flaky under the full parallel gate:**
 - Symptoms: `TestVerifyOnStopFiresOnARealTurn` is recorded failing in the full parallel gate while passing repeatedly in isolation.
@@ -240,11 +240,11 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 - Risk: a refactor can silently change prompt framing/trust semantics without failing the current description-cap tests.
 - Priority: Medium. Add one focused unit test at the result seam.
 
-**Approval expiry regressions have no closing tests:**
-- What's not tested: deterministic expiry of pending approvals while retaining batch atomicity. Empty accepted payload rejection and per-pause decision policy now have closing tests through the real database and production agent.
-- Files: `.planning/todos/pending/approval-resume-defects.md`, `internal/runner/runner_resume.go`, `internal/gateway/approvals_test.go`.
-- Risk: stale approvals remain actionable indefinitely and can survive broader happy-path resume coverage.
-- Priority: High. Add wire-level and `db_integration` tests with the expiry implementation, not as test-only expectation changes.
+**Closed 2026-08-25 — approval expiry has closing tests:**
+- Coverage: unit and wire tests cover configuration, boot/periodic sweeps, late decisions, exact pending-challenge discard, and refusal propagation. Disposable-PostgreSQL tests cover cutoff/kind/resolution selection, owner RLS, atomic visibility, and the expiry-versus-human race.
+- Evidence quality: the touched ask-user/Runner database matrix measured 86.2% aggregate coverage; every changed critical expiry function is at least 85%; `ExpirePendingApprovals` mutation testing killed 14/14 mutants; and a fresh real OpenRouter agent correctly explained the expired approval without claiming execution.
+- Migration guard: the real migration-0102 up/down/up round-trip remains green even though expiry required no new schema migration.
+- Files: `internal/askuser/store_db_integration_test.go`, `internal/runner/approval_expiry_db_integration_test.go`, `internal/runner/live_e2e_expiry_test.go`, `cmd/aura/approval_expiry_test.go`.
 
 **Daemon-gated sandbox branches do not contribute to the coverage floor:**
 - What's not tested by the coverage metric: Docker lifecycle, egress enforcement, and routed tool branches under `docker_integration`.
