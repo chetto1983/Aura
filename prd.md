@@ -7109,77 +7109,142 @@ flusso completo, che funziona.
 > written. `notion` and `linear` are mounted and were outside Phase 46's picture entirely; their
 > existence is noted here and nothing about them is measured.
 
-## §Mid-turn steering — the contract, ratified before the code (Amendment #132, 2026-08-24)
+
+## §Mid-turn steering — the contract, ratified before the code (Amendment #132, 2026-08-24, REVISED same day)
 
 > **Amendment #132 (2026-08-24, Phase 52/STEER-06, BLOCKING — lands before any steering
 > implementation commit, per CLAUDE.md's PRD-amendment-before-code rule and the roadmap's own
 > sequencing of STEER-06 first).**
 >
-> **What this amendment is.** A **design-gate** ratification, not a behavioural measurement.
-> No steering code exists, so nothing here reports how steering behaves. What WAS measured, on
-> 2026-08-24 against the tree, is the **seam** the design study
-> (`docs/superpowers/specs/2026-07-23-mid-turn-steering-design.md`, 664 lines, STUDY ONLY) claims
-> to attach to — every structural precondition it names was verified present before ratifying a
-> contract that depends on them.
+> **REVISED the same day, before a line of steering code existed.** The first draft was written
+> from the design study alone and ratified an injection mechanism the reference implementation
+> **deliberately avoids**. The superseded wording is kept struck through below so the trail
+> survives — the same in-place convention amendment #123 used. The correction cost nothing because
+> it arrived before implementation; it would have cost a rewrite of the loop seam after.
 >
-> **What was measured.**
+> **What this amendment is.** A **design-gate** ratification, not a behavioural measurement. No
+> steering code exists, so nothing here reports how steering behaves. What WAS measured is (a) the
+> **seam** the design study (`docs/superpowers/specs/2026-07-23-mid-turn-steering-design.md`, 664
+> lines, STUDY ONLY) claims to attach to, and (b) the **two reference implementations** on disk —
+> `hermes-agent` (the milestone's own parity target) and `LibreChat`. Reading (b) is what produced
+> the revision, by the same discipline that corrected four suppositions in amendment #129.
+>
+> **What was measured — the seam.**
 > 1. Amendment #90's run identity is **shipped**: `internal/agui/{runregistry,runsession,
 >    server_run_detach,server_run_resume}.go` exist. `RunSession` carries `RunID`, `ThreadID`,
 >    `IdentityID` (owner captured at start, the resume gate) and a fixed-cap replay `ring`
->    (`runsession.go:47-58`) — the addressable identity and replay buffer the `aura.steer` echo
->    rides are real, not planned.
+>    (`runsession.go:47-58`).
 > 2. `httpMutationRoutes` (`internal/agui/idempotency_http.go:53`) already inventories
->    `POST /agent/runs/{runID}/cancel` as `agent_run_cancel`. The new steer route copies an
->    existing registration shape rather than inventing one.
-> 3. `Store.AppendTurn` / `AppendTurnTx` (`internal/conversations/store_append.go:66,129`) is the
->    persistence seam checklist item 5 names, and it exists.
-> 4. The mid-loop user-role injection pattern is **real**, not aspirational: `llm_agent.go:481`
->    appends `llm.Message{Role: llm.RoleUser, Content: nudge}` to history inside the loop. A steer
->    is a fourth, operator-sourced instance of a pattern already running three times.
-> 5. `internal/agent/model_round.go` exists (round ordinal + context carry) — the boundary a steer
->    lands on.
-> 6. `internal/steer` does **not** exist. Net-new, exactly as the study says.
+>    `POST /agent/runs/{runID}/cancel` as `agent_run_cancel` — the new route copies an existing
+>    registration shape rather than inventing one.
+> 3. `Store.AppendTurn` / `AppendTurnTx` (`internal/conversations/store_append.go:66,129`) exists.
+> 4. The mid-loop user-role injection pattern is real: `llm_agent.go:481` and `:489` append
+>    `llm.Message{Role: llm.RoleUser}` to history inside the loop. **But see the correction below —
+>    those appends land at TERMINATION points, not mid-tool-batch, so they do not license the same
+>    move at the steer's position.**
+> 5. `internal/agent/model_round.go` exists (round ordinal + context carry).
+> 6. `internal/steer` does **not** exist. Net-new, as the study says.
+>
+> **What reading `hermes-agent` corrected — the substantive revision.**
+>
+> **(A) The injection mechanism.** Hermes' `apply_pending_steer_to_tool_results`
+> (`agent/agent_runtime_helpers.py:3921`) **appends the steer text into the last `role:"tool"`
+> message of the in-flight batch**, behind a marker telling the model the text came from the user
+> and not from the tool. Its docstring states the reason: *"Role alternation is preserved —
+> nothing new is inserted, we only modify existing content."* A plain `user` message inserted
+> between a tool-result batch and the next assistant call is exactly the insertion it avoids. Its
+> fallback is the mirror image: when the batch carries **no** tool result, the steer is put back on
+> the pending slot and delivered as an ordinary next-turn user message.
+>
+> ~~SUPERSEDED (first draft, 2026-08-24): "operator input may be injected into a live run as plain
+> `user` messages at the next agent round boundary (after the in-flight tool batch's results,
+> before the next LLM call)."~~ That wording made the fallback the primary and left the primary
+> absent.
+>
+> **RATIFIED INSTEAD:** a steer is delivered by **appending it to the last tool result of the
+> in-flight batch behind an explicit user-attribution marker**, preserving role alternation; a
+> plain `user` message is the **fallback**, used only when the drained batch carries no tool
+> result. Aura's own user-role appends do NOT settle this: `llm_agent.go:361` and `:489` fire at
+> content-stop and completion-veto — after an assistant message, not between tool results and the
+> next call. **Before implementation, STEER-01 must verify against Aura's real provider path
+> (OpenRouter and llama.cpp, not Anthropic direct) whether user-insertion at the steer position is
+> accepted; the tool-result append is the form that needs no such verification.**
+>
+> **(B) The terminal race deserves a state machine, not a status code.** Hermes carries an explicit
+> per-run `accepting_steer` flag closed atomically under the registry lock at a **named
+> linearization boundary** (`tools/delegate_tool.py:187,2460`), and — the part worth copying — it
+> **drains the undelivered text and names it** on the completion entry as `missed_steer` /
+> `pending_steer`, with the stated rationale *"so the parent sees the steer was MISSED rather than
+> silently absorbed"*: queuing returns "queued", and this is where a queued-but-never-delivered
+> steer gets surfaced by name. STEER-04 exists for precisely this failure mode. The first draft's
+> answer — a 410 plus a client re-send, with an undrained steer detected *"by a missing echo"* —
+> infers loss from an absence. **RATIFIED: the 410 contract stands, AND an undrained steer is
+> drained and reported by name in the run's terminal event rather than inferred from a missing
+> echo.**
+>
+> **(C) Generation binding is NOT needed here, and this records why.** Hermes' HEAD commit
+> `9d4ef04ed fix(delegation): bind steering to session generation` had to bind steer authority to
+> the **object identity of the live in-memory session record** — *"the public session id is only a
+> lookup hint … session transport rebinding, removal, or id reuse therefore invalidates an earlier
+> generation."* Aura does not inherit that hazard: `runID` is `"run-" + uuid.NewString()` minted
+> fresh per run (`server_run.go:116`, `server_run_detach.go:82`), the registry's `byRun` map is
+> only ever `delete`d and never rebound to a different session under the same key
+> (`runregistry.go:57,223`), and `IdentityID` is frozen at start. **Closed by construction — which
+> is exactly why it is written down: a future change making run ids reusable or rebindable reopens
+> a hazard hermes needed two commits to tame.**
+>
+> **(D) Child steering stays a non-goal, now with evidence for what changing that would cost.**
+> Hermes exposes BOTH `session.steer` (main turn) and `subagent.steer` (delegated child), and
+> **all** of its recent hardening was on the child path — two commits in one evening, for lifecycle
+> ownership and for generation binding. The non-goal below is therefore ratified as a *scope*
+> decision, not an assumption of simplicity: if Phase 51 lands delegation, child steering arrives
+> carrying a known-hard lifecycle problem, not a free extension.
 >
 > **Two measured corrections the study does not carry.**
 > (a) **`AURA_AGUI_RUN_DETACH` has two contradictory defaults.**
 > `internal/config/config_agui_run.go:36` reads `envutil.BoolDefault("AURA_AGUI_RUN_DETACH", true)`
-> — default **true**. `internal/config/config_knobs.go:116` catalogues the same name as
-> `Default: "false"`. Checklist item 1 makes steering *require* detach, so the flag gate is
-> meaningless until these agree. **Reconciling them is a precondition of STEER-01, not a cleanup
-> to schedule later.** This amendment does not decide which value is correct; it refuses to let the
-> contract rest on a knob whose default the tree states twice, differently.
+> — default **true**. `internal/config/config_knobs.go:116` catalogues it as `Default: "false"`.
+> Steering is specified to *require* detach, so the flag gate is meaningless until these agree.
+> **Reconciling them is a precondition of STEER-01, not a later cleanup.** This amendment does not
+> decide which value is correct; it refuses to rest a contract on a knob the tree states twice,
+> differently.
 > (b) **The study's line citations have drifted.** §3 cites `llm_agent.go:331` and `:439`; the
-> nudge append now sits at `:481`. The *structure* holds and the *line numbers* do not — read the
-> seam, never the citation. `llm_agent.go` is also at **561/600 LOC**, so the drain point cannot be
-> appended there without tripping the file-size rule: it lands in a sibling file.
+> nudge append now sits at `:481`. Read the seam, never the citation. `llm_agent.go` is at
+> **561/600 LOC**, so the drain point cannot be appended there without tripping the file-size rule:
+> it lands in a sibling file.
 >
-> **What is ratified.** The twelve items of the study's §11 checklist, verbatim, as the steering
-> contract — steering semantics and the never-extend-the-budget rule (1); the new
-> `POST /agent/runs/{runID}/steer` route with its refusal ladder (2); the terminal-race 410
-> contract (3); the `aura.steer` CUSTOM echo (4); drain-time persistence through `AppendTurn`, with
-> persisted order == model-visible order == wire order (5); the **cache invariant addendum** —
-> steers are tail-only `messages[3..N]` and MUST never enter the `[0]/[1]/[2]` cacheable prefix,
-> reaffirming amendments #16/#29 (6); `ask_user`-paused runs are terminal and NOT steerable (7);
-> the escalation ladder steer → cancel with no interrupt-now rung (8); the `internal/steer.Inbox`
-> `Push/Drain/Close` interface, in-memory on the RunSession, pre-aligned to the durable
-> swarm-messaging vocabulary (`kind='steer'`, `direction='request'`) so a later durable
-> implementation replaces storage behind the same interface (9); the three env additions —
-> `AURA_AGUI_RUN_STEER` default **false**, `AURA_AGUI_RUN_STEER_MAX` 8,
-> `AURA_AGUI_RUN_STEER_MAX_BYTES` 16384 (10); the non-goals, including no Telegram/CLI steering, no
-> swarm/child steering, no durable queue, and no AG-UI protocol claim for `aura.steer` (11); and
-> the composer contract, whose default-flip to `true` requires its own amendment line after a live
+> **What is ratified.** The study's §11 checklist, with items 1 and 3 replaced by (A) and (B)
+> above, and the remainder verbatim: the never-extend-the-budget rule and bounded FIFO queueing per
+> run (1); the new `POST /agent/runs/{runID}/steer` route with its refusal ladder — 400
+> empty/oversize, 429+Retry-After queue-full, 410 terminal (2); the `aura.steer` CUSTOM echo,
+> ring-buffered like every frame (4); drain-time persistence through `AppendTurn`, with persisted
+> order == model-visible order == wire order (5); the **cache invariant addendum** — steers are
+> tail-only `messages[3..N]` and MUST never enter the `[0]/[1]/[2]` cacheable prefix, reaffirming
+> amendments #16/#29 (6); `ask_user`-paused runs are terminal and NOT steerable (7); the escalation
+> ladder steer to cancel with no interrupt-now rung (8) — **noting that hermes DOES carry a hard
+> interrupt (`agent/interrupt_compat.py:9`, `request_hard_interrupt`), so this is a deliberate
+> divergence from parity, not an oversight**; the `internal/steer.Inbox` `Push/Drain/Close`
+> interface, in-memory on the RunSession, pre-aligned to the durable swarm-messaging vocabulary
+> (9); the three env additions — `AURA_AGUI_RUN_STEER` default **false**, `AURA_AGUI_RUN_STEER_MAX`
+> 8, `AURA_AGUI_RUN_STEER_MAX_BYTES` 16384 (10); the non-goals, per (D) above (11); and the
+> composer contract, whose default-flip to `true` requires its own amendment line after a live
 > cockpit E2E >9.8 (12).
 >
 > **The three operator-level open questions are RESOLVED** (2026-07-23, "Claude Code parity") and
 > are not reopened: no steer-withdrawal affordance in slice 1; cockpit first, Telegram after real
-> usage; no budget-bonus knob — "cancel and re-send with a bigger budget" is the sanctioned answer.
+> usage; no budget-bonus knob.
 >
 > **What this measurement does NOT prove.** It proves nothing about steering itself — there is no
 > implementation to observe, and this amendment must not be cited as evidence that a steer lands,
-> persists at the right `seq`, or is honoured by the model. It does not prove the queue bound of 8
-> or the 16 KiB cap are the right numbers for any real usage; both are untested defaults. It does
-> not prove the cockpit composer change is safe, nor that §7.2's Telegram parity is reachable at
-> the cost the study estimates. It does not resolve the `AURA_AGUI_RUN_DETACH` default
-> contradiction — it records it and makes resolving it a precondition. And it says nothing about
-> Phase 51: the `internal/steer.Inbox` vocabulary alignment is a naming precaution against a future
-> rename, NOT evidence that the durable swarm substrate and the steer queue reconcile in practice.
+> persists at the right `seq`, or is honoured by the model. **It does not prove the tool-result
+> append works on Aura's provider path**: hermes talks to Anthropic and OpenAI shapes directly,
+> Aura goes through OpenRouter and llama.cpp, and no message-shape test was run against either —
+> adopting hermes' mechanism removes a known hazard, it does not confirm ours accepts it. It does
+> not prove the queue bound of 8 or the 16 KiB cap are right for any real usage; both are untested
+> defaults carried from the study. It does not prove the cockpit composer change is safe, nor that
+> §7.2's Telegram parity is reachable at the study's estimated cost. It does not resolve the
+> `AURA_AGUI_RUN_DETACH` contradiction — it records it and makes resolving it a precondition. And
+> `LibreChat` was read only far enough to establish that its agent client rests on
+> **abort/interrupt** semantics (`api/server/controllers/agents/client.js:1198-1243`,
+> `run.getInterrupt()` feeding a pending-action pause) rather than on queued mid-turn injection —
+> so it is evidence about a DIFFERENT design, not a second witness for this one.
