@@ -7328,3 +7328,192 @@ flusso completo, che funziona.
 > resuming a real model turn. And it says nothing about whether LibreChat's layered policy shape
 > suits Aura: Aura classifies risk per tool today (`bridge_risk.go`, `internal/gateway/classify.go`)
 > and whether that becomes a decision policy is Phase 47's design question, not this record's.
+
+## §The loaded manifest, counted — and TOOL-01's `comms` row is unreachable (Amendment #134, 2026-08-24)
+
+> **Amendment #134 (2026-08-24, Phase 48/TOOL-01, BLOCKING for Phase 48 planning) — the manifest
+> already holds exactly 14 always-loaded tools, that number is a coincidence, and one row of
+> TOOL-01's table cannot be built as written.**
+>
+> **What was measured**, per `Spec{}` block across `internal/agent/tools/` (test fixtures
+> `alpha`/`bravo`/`zebra`/`deferred_demo`/`mid_deferred`/`gmail`/`sales`/`slack` excluded), plus the
+> live mount log of the running daemon:
+>
+> **13 native always-loaded:** `ask_user`, `document_open`, `document_search`, `patch`, `read_file`,
+> `read_tool_output`, `search_files`, `send_file`, `shell_exec`, `skill`, `text_response`,
+> `tool_search`, `write_file`.
+> **10 native deferred:** `current_time`, `plugin_pack`, `shell_kill`, `shell_poll`, `skill_manage`,
+> `swarm_spawn`, `task`, `todo_write`, `web_fetch`, `web_search`.
+> **1 MCP always-loaded:** the curated `calendar` tool — `mcp always-loaded slot granted
+> namespace=calendar model_facing=1 slots_remaining=1`. Every other mounted server is deferred:
+> `whatsapp tools=15`, `memory tools=4`, `notion tools=28`, `linear tools=53`.
+>
+> **13 + 1 = 14 always-loaded.** TOOL-01's headline number is already met **and it means nothing**:
+> TOOL-01 names a MERGED surface, and the composition does not match it anywhere it matters.
+>
+> | TOOL-01 row | today | work |
+> |---|---|---|
+> | `fs_read` | `read_file` | rename |
+> | `fs_write` (write + exact-string edit) | `write_file` + `patch` | **merge 2→1** |
+> | `fs_search` (name + contents) | `search_files` | rename; confirm it covers both |
+> | `document` (search + open) | `document_search` + `document_open` | **merge 2→1** |
+> | `web` (search + fetch) | `web_search` + `web_fetch`, **both deferred** | **merge 2→1 + un-defer** |
+> | `memory` (recall + atomic write batch) | **not loaded at all** | the memory MCP serves 4 model-facing tools, over D-27's ≤3 ceiling |
+> | `skill_manage`, `task`, `delegate` | deferred (`skill_manage`, `task`, `swarm_spawn`) | un-defer (+ rename for `delegate`) |
+> | leaves the surface entirely | `send_file` loaded, `current_time` deferred | AUTO-01 / volatile block must remove them |
+>
+> `document_index` and `document_describe`, which TOOL-01 expects AUTO-02 to remove, **do not exist
+> in the tree at all** — that removal is already done or never applied.
+>
+> **THE BLOCKING FINDING — TOOL-01 row 14 (`comms`) cannot be built as specified.** It names ONE
+> loaded tool covering *"calendar, mail, contacts, WhatsApp"*. Three ratified decisions make that
+> unreachable together: **D-17** forbids an Aura-side facade (curation lives in the fork, zero
+> Aura-side hide-list or namespace-policy table); **amendment #123** grants always-loaded slots
+> **per mounted server**, so two sidecars are two slots and never one tool; and **amendment #131**
+> establishes that WhatsApp sits at 4 model-facing tools and therefore earns **no** slot. So the
+> `comms` row is today satisfied by calendar ALONE, with WhatsApp deferred — a scope reduction
+> TOOL-01 does not authorize and Phase 46 did not decide. **Phase 48 must resolve this explicitly
+> before planning**: either amend TOOL-01's row 14 to "calendar, mail, contacts" and state that
+> WhatsApp is reached through `tool_search`, or reopen D-17/D-27. It must not be resolved by a
+> planner quietly counting calendar as `comms` and moving on.
+>
+> **What this measurement does NOT prove.** It does not prove the 13 native tools were classified
+> correctly by a per-`Spec{}` scan rather than by running the daemon and reading the rendered
+> manifest — the count comes from source and from the mount log, not from a captured prompt. It
+> does not prove `search_files` covers both halves of TOOL-01's `fs_search` (name AND contents);
+> that was assumed from the name and must be checked. It does not prove the merges are safe or
+> cheap — no merge was attempted. And it says nothing about COMPAT-01/COMPAT-03, the rehydration of
+> conversations recorded against pre-flatten schemas, which stays exactly as Phase 48 wrote it.
+
+## §CTX-01's consumer moved while the phase waited (Amendment #135, 2026-08-24)
+
+> **Amendment #135 (2026-08-24, Phase 50/CTX-01 — the diagnosis holds, the target does not.)**
+>
+> **What was measured.** CTX-01's premise is still literally true: the provider's real token count
+> is persisted every turn and is NOT used for the budget decision. `LastInputTokens`
+> (`internal/conversations/store.go:165-172`, commented as *"the CURRENT context-window fill"*) is
+> read by exactly one caller, `store_identity.go:49`, which feeds the cockpit's display gauge. The
+> decision path still computes with tiktoken: `compaction.go:10`, `compaction_durable.go:10`,
+> `compaction_request.go:83` and `compaction_transcript.go:10` all import `pkoukk/tiktoken-go`.
+>
+> **What changed.** When Phase 50 was written the consumer was "the context ladder's own budget
+> decision". The **compaction engine was built afterwards** (see amendment #137) and is now the
+> thing that triggers on an estimate. Commit `aaa3e3102` ("Count the tool manifest in the compaction
+> trigger, since the wire does") already refined that estimate rather than replacing it — which is
+> the tell that the estimate is load-bearing. **CTX-01 should be re-pointed at the compaction
+> trigger.** Same requirement, same evidence, different file.
+>
+> **A second correction.** Phase 50's rationale states `internal/conversations/context.go` is "at
+> 590/600 LOC" and that new work must land in siblings. It is now **516 LOC** and the split already
+> happened — `context_budget.go`, `context_repeat.go`, `context_rot.go`, `context_tail.go`,
+> `context_tool_names.go` all exist. The constraint is satisfied, not pending.
+>
+> **What this measurement does NOT prove.** It does not prove `store_identity.go:49` is the ONLY
+> consumer of `LastInputTokens` — that came from a grep over `internal/`, not from a call-graph
+> analysis, and a dynamic or reflective read would not appear. It does not prove swapping the
+> estimate for the real count is safe: the real count arrives from the PREVIOUS response, so a
+> trigger reading it is always one turn behind, and nothing here measures whether that lag matters
+> at the threshold. And it does not measure the estimate's actual error against the real count on
+> any live conversation — the case for the change rests on correctness of source, not on a
+> measured divergence.
+
+## §What the memory tier already has (Amendment #136, 2026-08-24)
+
+> **Amendment #136 (2026-08-24, Phase 49 — scope narrowed by inventory; blocks nothing.)**
+>
+> **What was measured.** Phase 49 was written as though its surface were absent. Parts of it are
+> not. `cmd/arcadedb-mcp` serves **`memory_recall`** (`main.go:178`, `addMemoryRecallTool`) beside
+> `memory_search`, `memory_facts_about`, `memory_entities`, `memory_digest`, `memory_upsert_fact`,
+> `memory_forget`, `memory_merge_entities`, `memory_reembed`, plus `entity`, `graph_schema`, `q`
+> and `query`. The server mounts at **4 model-facing tools** (`mcp mounted server=memory tools=4`),
+> i.e. `bridgePolicy.modelFacing` hides most of that list. `internal/reasoningtrace` exists at
+> roughly **838 LOC**. The recall-injection seam is wired: `internal/runner/runner_context.go:16`
+> defines `memoryRecallHeader` / `memoryRecallFooter` for the injected block.
+>
+> **What remains genuinely open**, on this reading: MEM-01's short-term searchable tier as a
+> derived ArcadeDB projection; MEM-06's amendment gate, which must be committed before any
+> reasoning-tier implementation commit; and the AUTO-03/CTX-05 boundary that keeps reasoning
+> content out of any summarizer or fact-extraction path.
+>
+> **What this measurement does NOT prove — and this is the important part.** It does **not** prove
+> `memory_recall` is MEM-02's *unified* retrieval spanning recent conversation AND long-term facts.
+> Its implementation was not read; only its existence and registration were established. Phase 49's
+> planner MUST read it before assuming MEM-02 is partly done — the name is not the contract. It
+> does not prove the reasoning trace persists with edges to the entities it touched (SC#3), only
+> that a package by that name exists and is substantial. It does not prove the recall injection is
+> ON in any deployment, nor that the agent actually uses what is injected. And it measures nothing
+> about correctness under concurrent writes, which is SWARM-07's question and stays open.
+
+## §CTX-06 was satisfied by building it, not by studying it (Amendment #137, 2026-08-24)
+
+> **Amendment #137 (2026-08-24, Phase 53/CTX-06 — records why the spike is cancelled, and what the
+> cancellation does not settle.)**
+>
+> **What was measured.** Phase 53 exists to produce *"an evidenced decision on whether an LLM
+> summarization rung is worth building"*. That rung was built and shipped while the roadmap sat
+> still. `prd.md:1190` records **L3 LLM-driven compaction as LANDED 2026-08-12**: when history
+> exceeds the hard cap, historical rounds between the protected head and the active round are
+> summarized by the LLM into one synthetic `<earlier_conversation_summary>` turn, ahead of the
+> deterministic L2.5 drop, falling back to L2.5 on summarizer error. In the tree today:
+> `internal/conversations/compaction.go`, `compaction_durable.go`, `compaction_request.go`,
+> `compaction_transcript.go`; an operator-facing `/compact` command (`787f92ff0`, *"Give the
+> operator a /compact command, and let them see it happen"*); durable summaries (`1f4b16eab`); and
+> an AG-UI route at `internal/agui/conversations_compaction_api.go`. The operator confirms it runs
+> in production. **A spike cannot decide what is already running**, so CTX-06 is satisfied by the
+> implementation and Phase 53 is cancelled.
+>
+> **What this does NOT settle, stated so the cancellation is not mistaken for an answer.** The
+> comparative question the spike was framed around — retrieval versus summarization versus both,
+> scored on the exported 234+10-turn audit corpus with a *"known-correct answer"* methodology
+> defined before scoring — was **never run**. Summarization did not win a measurement; it won by
+> being built. Nothing here establishes that retrieval over indexed history would not have
+> recovered more of what the ladder drops, nor that the two together would not beat either. Note
+> also that `prd.md:1190`'s own caveat still stands unless later work cleared it: the L3 measure
+> was *"verificato SOLO con unit test offline … NESSUN E2E su stack acceso"*. If the
+> retrieval-versus-summarization question ever needs a real answer, it needs a new phase, and this
+> phase's methodology requirement is the right starting point. The conditional "promote CTX-V2-01
+> as Phase 55" note is void for the same reason: CTX-V2-01 was promoted by implementation.
+
+## §Durable delegation is unbuilt and unplannable (Amendment #138, 2026-08-24)
+
+> **Amendment #138 (2026-08-24, Phase 51/SWARM — BLOCKING for Phase 51 planning: a design gate is
+> required before `/gsd-plan-phase` is run against it.)**
+>
+> **What was measured.** The approved substrate is entirely on paper.
+> `docs/superpowers/specs/2026-06-29-durable-swarm-messaging-design.md` exists (26,320 bytes) and
+> specifies claimable tasks, short leases with heartbeat extension, fencing on
+> `attempt_count`+`locked_by`, at-least-once delivery with idempotency keys, and a `waiting_input`
+> non-terminal pause. **None of it is in the tree**: a grep for mailbox machinery across
+> `internal/` returns nothing, and `internal/agent/tools/swarm_spawn.go` is **112 lines** that
+> validate a goals cap and delegate to an injected `swarmRunner`. Four `AURA_SWARM_*` knobs exist
+> (`CHILD_TIMEOUT_SEC`, `MAX_CONCURRENT`, `MAX_DEPTH`, `MAX_GOALS`).
+>
+> **Why it is unplannable today.** Phase 51's own rationale carries an unresolved
+> inventory-before-invention question, quoted: *"Establish whether background delegation is a new
+> execution path or a second caller of [the scheduler's `agent_job` / AG-UI run-detach] before
+> designing one."* CLAUDE.md forbids designing past that. **A design gate — spike or AI-SPEC —
+> must answer it first.**
+>
+> **Its declared dependencies were re-examined and are all SOFT, with one carrying real cost.**
+> Phase 48: the worker registry is DERIVED (`Without(reg, "swarm_spawn")`,
+> `internal/agent/swarm_context.go:20`), so a later flatten propagates automatically — skipping 48
+> costs a re-verification, not a redesign. Phase 49: SWARM-07's concurrency surface exists against
+> today's ArcadeDB memory and SC#5 is testable now; only the reasoning-tier write policy needs 49.
+> **Phase 47 is the one with real cost**: SWARM-06 is written as a compensation FOR 47's approval
+> rework — *"keeps the child-question relay alive THROUGH Phase 47's approval rework"* — so
+> building the relay first means building it twice.
+>
+> **Read these before designing, not after.** `hermes-agent` has already built this and hardened it
+> twice in one evening (`a94ebf5f5` steer lifecycle ownership, `9d4ef04ed` bind steering to session
+> generation); `tools/delegate_tool.py` is 4,133 lines and carries a `missed_steer` contract, an
+> `accepting_steer` flag and a named linearization boundary. `LibreChat`'s `GenerationJobManager`
+> (1,985 lines) is a different, durable answer: a job store with approval expiry and cross-replica
+> abort over Redis pub/sub.
+>
+> **What this measurement does NOT prove.** It does not prove the substrate should be built as
+> designed — the 2026-06-29 document was approved in June and its own premises have not been
+> re-checked against a tree that has since gained a compaction engine, per-identity MCP OAuth and a
+> RunRegistry. It does not prove `agent_job`/run-detach CAN serve as the execution path; that is
+> precisely the open question and nothing here answers it. It does not measure what `swarm_spawn`
+> does today under load, nesting, or failure — only that it is small. And the dependency verdicts
+> are reasoning over call sites, not experiments: no plan was executed out of order to test them.
