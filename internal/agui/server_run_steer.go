@@ -46,6 +46,17 @@ func (s *Server) handleRunSteer(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "run not found", http.StatusNotFound)
 		return
 	}
+	// The 410 half of D-09's boundary (52-05, complementing 52-04's route): a
+	// run whose session is ALREADY terminal when this POST arrives is refused
+	// before anything is queued — the auto-delivery wrap (runner_steer.go)
+	// only ever covers a steer accepted against a run that was still LIVE.
+	// Consults the session's OWN terminal accessor (the SAME notion the
+	// reaper and the resume route already use) rather than computing
+	// terminality here.
+	if terminal, _ := sess.terminalState(); terminal {
+		writeSteerGone(w, steerTerminalRunMessage)
+		return
+	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxRunBodyBytes+1))
 	if err != nil || len(body) > maxRunBodyBytes {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -63,6 +74,23 @@ func (s *Server) handleRunSteer(w http.ResponseWriter, r *http.Request) {
 	writeJSONStatus(w, http.StatusAccepted, map[string]string{"status": "queued"})
 }
 
+// steerTerminalRunMessage is the terminal-run 410 body (D-09's complement to
+// 52-04's route, 52-05): distinguishable BOTH from the resume route's
+// replay-window 410 ("replay window exceeded", server_run_resume.go) and
+// from the inbox-closed 410 (steer.ErrClosed's own message) by content, so
+// neither an operator nor a test has to infer which of the three causes
+// fired from the status code alone. It says plainly the message was NOT
+// queued — the operator's next move is to send it as an ordinary turn.
+const steerTerminalRunMessage = "run has ended: message was not queued; send it as a normal turn"
+
+// writeSteerGone is the SOLE 410-Gone call site in this file, shared by the
+// terminal-run refusal above and the inbox-closed sentinel below — two
+// structurally distinct causes (a dead RUN vs a closed INBOX), one status
+// code, each with its own distinguishing body.
+func writeSteerGone(w http.ResponseWriter, msg string) {
+	http.Error(w, msg, http.StatusGone)
+}
+
 // writeSteerRefusal renders internal/steer's own sentinel errors as the
 // ratified refusal ladder — empty/oversize 400, queue-full 429 with
 // Retry-After, closed 410 — never re-deriving the classification behind them.
@@ -74,7 +102,7 @@ func writeSteerRefusal(w http.ResponseWriter, err error) {
 		w.Header().Set("Retry-After", "5")
 		writeJSONStatus(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
 	case errors.Is(err, steer.ErrClosed):
-		http.Error(w, err.Error(), http.StatusGone)
+		writeSteerGone(w, err.Error())
 	default:
 		http.Error(w, "steer refused", http.StatusInternalServerError)
 	}
