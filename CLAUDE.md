@@ -67,19 +67,23 @@ Ogni slice attraversa 3 gate (formalizzati nel PRD §Slice Q&A discipline). Mapp
 
 ## GSD tooling (workflow ufficiale)
 
-Installazione: **due copie coesistono e non sono la stessa versione** (misurato 2026-08-22).
-La **globale** (`~/.claude/`) è a **1.11.0**, layout skills-based: 71 skill `gsd-*` in
-`~/.claude/skills/`, tool in `~/.claude/gsd-core/bin/gsd-tools.cjs`. La **project-local**
-(`.claude/`) è ferma a **1.1.0** (`.claude/get-shit-done/VERSION`), vecchio layout a comandi:
-67 commands in `.claude/commands/gsd/`, 33 agents, 13 script in `.claude/hooks/` di cui
-**9 wired** in `.claude/settings.json`.
+Installazione: **una sola copia, in HOME** (`~/.claude/`, **1.11.0**, layout skills-based):
+72 skill `gsd-*` in `~/.claude/skills/`, tool in `~/.claude/gsd-core/bin/gsd-tools.cjs`,
+17 hook wired in `~/.claude/settings.json`, agents in `~/.claude/agents/`.
 
-Quale delle due gira davvero — misurato, non dedotto: in sessione `/gsd-plan-phase` risolve a
-`~/.claude/skills/gsd-plan-phase`, e il preambolo dei workflow GSD cerca
-`<repo>/.claude/gsd-core/bin/gsd-tools.cjs` — che **non esiste**, perché la copia locale vive in
-`.claude/get-shit-done/bin/` — quindi ricade su HOME da solo. Hooks e agents restano invece
-quelli locali. **`gsd-tools.cjs` si invoca sempre da HOME:** la copia nel progetto è indietro
-di dieci minor.
+La copia project-local 1.1.0 è stata **ritirata il 2026-08-25**: comandi rimossi, hook
+sganciati da `.claude/settings.json`. Non era una ridondanza innocua -- gli hook dei diversi
+scope si **sommano**, non si sovrascrivono, quindi ogni `Edit` faceva partire due
+`prompt-guard` e due `read-guard` di versioni divergenti (3.489 B contro 10.445 B), e la
+guard vecchia poteva bloccare ciò che la nuova consente. Verificato prima di rimuoverla:
+tutti e 67 i comandi `/gsd:*` locali avevano la skill HOME equivalente (HOME ne ha 4 in più:
+`gsd-mempalace-capture`, `gsd-mempalace-recall`, `gsd-next`, `gsd-onboard`), e il set di hook
+HOME è un superset con matcher più larghi (`workflow-guard` locale su `Write|Edit`, HOME su
+`Bash|Edit|Write|MultiEdit`).
+
+**Resta project-local solo `.claude/agents/`** (33 agent): scope diversi non collidono, il
+progetto vince e basta, nessuna doppia esecuzione. **`gsd-tools.cjs` si invoca sempre da
+HOME.**
 
 > **`.planning/` ESISTE ed è tracciata in git.** Cancellata alla chiusura della milestone
 > v2.0.0, è stata **rigenerata il 2026-08-05** (`b1a95faf8`, apertura di v2.1.0
@@ -121,87 +125,16 @@ Bootstrap inziale (one-shot):
 - `/gsd-ingest-docs` — importa prd.md esistente in `.planning/` setup (PRD → ADR/SPEC structured)
 - `/gsd-map-codebase` — analizza il codebase esistente in `.planning/codebase/` (v0.0.0 Phase 0-21 + v1.0.0 Phase 22-30 shippate, v2.0.0 Phase 31-42 in corso — **~98k LOC non-test su 68 package**, di cui ~7k sqlc-generated; ~143k LOC di test)
 
-## Skills installate (`.claude/skills/`, 49 totali — 9.7 MB, misurato 2026-08-22)
+## Skills installate
 
-Skills modulari caricate on-demand quando il task le triggera (markdown SKILL.md con frontmatter description). Installate via `npx skills add`. Mappa skill → utilizzo nel workflow GSD + Slice Q&A:
+L'inventario vive in `.claude/skills/` e `~/.claude/skills/`: `ls` è la fonte, non questo file.
+Il modello sceglie la skill dal `description` nel frontmatter — nessun elenco qui la rende più
+raggiungibile. Per cercarne di nuove: `/find-skills`, o
+`npx skills add <owner>/<repo> --skill <name> --agent claude-code -y`.
 
-### Security + Audit + Q&A (Trail of Bits, 14 skills)
-
-| Skill | Slice/Gate mappato | Use case |
-|---|---|---|
-| `ask-questions-if-underspecified` | **Gate 1 DoR** | Clarify requirements before impl ("serious doubts" check) |
-| `audit-prep-assistant` | **Gate 3 DoD setup** | Pre-audit checklist (set goals, run static analysis, increase coverage, remove dead code, ensure accessibility) |
-| `audit-context-building` | **Gate 3 DoD audit** | Ultra-granular line-by-line code analysis |
-| `code-maturity-assessor` | **Gate 3 DoD scoring** | 9-category framework (arithmetic safety, auditing, access controls, complexity, decentralization, documentation, MEV/risks, low-level, testing) |
-| `differential-review` | **Gate 3 DoD pre-merge** | Security-focused diff review per PR + git history + blast radius |
-| `fp-check` | **Gate 3 DoD triage** | TRUE/FALSE POSITIVE verification con evidence |
-| `sharp-edges` | Slice 7 + tool design | Footgun API detection (skill_create + sandbox config) |
-| `codeql` | Slice 2 sandbox + 7 skills + 11 ingest | Data flow + taint tracking + SARIF |
-| `semgrep-rule-creator` | Slice 7c | Custom rules per `AURA_SKILL_INJECTION_BLOCKLIST` |
-| `mutation-testing` | **Gate 3 DoD** | mewt/muton config (PRD richiede ≥70% killed) |
-| `property-based-testing` | Slice 3/4/8 (PRD esplicito) | gopter/rapid patterns |
-| `agentic-actions-auditor` | Future CI/CD | GitHub Actions security per AI agents |
-| `gh-cli` | **Gate 3 DoD PR** | Authenticated gh CLI workflow |
-| `devcontainer-setup` | Slice 0.5 infra | Devcontainer Go + Postgres + ArcadeDB |
-
-### Go programming (samber/cc-skills-golang, 16 skills)
-
-| Skill | Slice/Gate mappato | Use case |
-|---|---|---|
-| `golang-testing` | **Tutte slice — Gate 2/3** | Table-driven, fuzzing, goleak, snapshot, race, coverage, parallel tests |
-| `golang-stretchr-testify` | Tutte slice | testify assert/require/mock/suite (se Aura adopta) |
-| `golang-benchmark` | **Slice 9c/11b/13b pre-merge benchmarks** | Methodology + measurement (PRD richiede benchmark pre-merge) |
-| `golang-error-handling` | **Tutte slice** | Error wrapping `%w`, sentinel patterns (`ErrAwaitingUserInput`, `HTTPError`) |
-| `golang-concurrency` | **Slice 0.9/1/3/11e** | Goroutines, channels, iter.Seq2 streaming, background workers |
-| `golang-context` | **Slice 1/3 cancellation** | Ctx-cancel propagation end-to-end |
-| `golang-safety` | Tutte slice | Memory safety patterns |
-| `golang-security` | **Slice 2 sandbox + 7 skills** | Security best practices Go |
-| `golang-observability` | Tutte slice | Structured logging (slog), OpenTelemetry |
-| `golang-database` | **Slice 0.5/1.5/1.7/1.8/6/7c/10/11/13** | Patterns Postgres+pgx, transactions, migrations |
-| `golang-troubleshooting` | Debug | pprof, Delve, race detector, GODEBUG |
-| `golang-project-layout` | **Slice 0.5 bootstrap** | cmd/ + internal/ standard layout |
-| `golang-structs-interfaces` | **Slice 0.9 Agent interface** | Composition, embedding, interface segregation |
-| `golang-modernize` | Tutte slice (Go 1.25+) | t.Context, b.Loop, synctest, iter.Seq2 modernizations |
-| `golang-spf13-cobra` | CLI subcommands | `aura chat`/`serve`/`exec`/`ingest`/`telegram` etc. |
-| `golang-lint` | **Gate 2 Impl** | golangci-lint setup + rules |
-
-
-### Meta + MCP + Anthropics (3 skills)
-
-| Skill | Slice mappato | Use case |
-|---|---|---|
-| `find-skills` (vercel-labs) | meta | Discover/install new skills on demand |
-| `mcp-builder` (anthropics) | **Slice 0.7** | MCP server design pattern (per `cmd/arcadedb-mcp`) |
-| `skill-creator` (anthropics) | **Slice 7 Skills** | Meta-pattern per creating + evaluating Aura skills |
-
-### Documenti + tooling (16 skills)
-
-| Skill | Slice/Phase mappato | Use case |
-|---|---|---|
-| `printing-press` + 8 varianti (`-amend/-import/-output-review/-polish/-publish/-reprint/-retro/-score`) | CLI per API esterne | Genera CLI agent-ready per API di terze parti (NON per il codice Aura) |
-| `cocoindex` | **Slice 11 ingest** | Pipeline incrementali; la live-mode è `coco.auto_refresh`, non la source |
-| `docx`, `pdf`, `pptx`, `xlsx` | **Slice 11b ingest / filecard** | Office e PDF come input/output di un task |
-| `svar-svelte` | Cockpit filemanager | SVAR components (il cockpit usa i binding `@svar-ui/react-*`) |
-| `spike-findings-Aura` | **meta — auto-caricata** | Blueprint dagli spike (vedi riga 5 di questo file) |
-
-> **Cosa NON è installato, contro quanto questa sezione affermava** (misurato 2026-08-22):
-> `frontend-design` non è una skill di progetto — arriva dal marketplace plugin
-> `claude-plugins-official`; `claude-api` è built-in della CLI. E `accessibility`, `shadcn`,
-> `vercel-react-best-practices`, `vite`, `assistant-ui`, `primitives`, `runtime`, `streaming`,
-> `tools`, `printing-press-catalog` **non esistono da nessuna parte**: né in `.claude/skills/`,
-> né in `~/.claude/skills/`, né tra i plugin, né nella storia git di `.claude/skills/`. Le righe
-> che le elencavano erano un elenco di intenzioni, non un inventario. Per il design del cockpit
-> vale §Frontend_aesthetics di questo file più il plugin `frontend-design`.
-
-### Trigger automatic
-
-Il modello detecta skill rilevante dal frontmatter `description` (es. "Use when writing or reviewing Go tests" → triggera `golang-testing`). Skill caricate solo quando richieste — no token bloat in default manifest.
-
-### Espandere il set
-
-- `/find-skills` (skill meta) per cercare nuove
-- `npx skills add <owner>/<repo> --skill <name> --agent claude-code -y` per install
-- Repo noti: `samber/cc-skills-golang` (40 Go skills), `trailofbits/skills` (security), `anthropics/skills` (utility), `vercel-labs/skills` (find-skills + agent-skills)
+> Misurato 2026-08-25 su 69 avvii e 446 sessioni: 43 delle 49 skill di progetto non erano mai
+> state invocate una volta. Sono disattivate via `skillOverrides` in `.claude/settings.local.json`;
+> riattivarne una è rimuovere la sua riga.
 
 ## Behavioral rules (apply to every change)
 
