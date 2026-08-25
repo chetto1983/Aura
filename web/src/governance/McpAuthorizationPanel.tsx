@@ -106,10 +106,10 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
     return (
       <section className="flex flex-col gap-1 rounded-lg border border-border p-3">
         <h4 className="text-[13px] font-semibold text-text-muted">
-          {t('governance.mcp.authorization.title')}
+          {t('governance.mcp.detail.authorization.title')}
         </h4>
         <p className="text-[14px] text-text-muted">
-          {state.reason ?? t('governance.mcp.authorization.unsupported')}
+          {state.reason ?? t('governance.mcp.detail.authorization.unsupported')}
         </p>
       </section>
     );
@@ -118,19 +118,19 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
   const waitingURL = live?.status === 'authorization_required' ? (live.authorizationUrl ?? '') : '';
   const failure =
     live?.status === 'error'
-      ? (live.error ?? t('governance.mcp.authorization.failed'))
+      ? (live.error ?? t('governance.mcp.detail.authorization.failed'))
       : (start.error?.message ?? revoke.error?.message ?? '');
 
   return (
     <section className="flex flex-col gap-3 rounded-lg border border-border p-3">
       <h4 className="text-[13px] font-semibold text-text-muted">
-        {t('governance.mcp.authorization.title')}
+        {t('governance.mcp.detail.authorization.title')}
       </h4>
 
       {state.authorized && !waitingURL ? (
         <>
           <p className="text-[14px] text-text">
-            {t('governance.mcp.authorization.authorized')}
+            {t('governance.mcp.detail.authorization.authorized')}
             {state.expiresAt ? ` · ${new Date(state.expiresAt).toLocaleString()}` : ''}
           </p>
           <div className="flex gap-2">
@@ -144,7 +144,7 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
               }}
             >
               <Unlink data-icon aria-hidden="true" className="size-4" />
-              {t('governance.mcp.authorization.disconnect')}
+              {t('governance.mcp.detail.authorization.disconnect')}
             </Button>
             <Button
               type="button"
@@ -155,7 +155,7 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
                 start.mutate();
               }}
             >
-              {t('governance.mcp.authorization.reconnect')}
+              {t('governance.mcp.detail.authorization.reconnect')}
             </Button>
           </div>
         </>
@@ -164,7 +164,7 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
       {!state.authorized && !waitingURL ? (
         <>
           <p className="text-[14px] text-text-muted">
-            {t('governance.mcp.authorization.notAuthorized')}
+            {t('governance.mcp.detail.authorization.notAuthorized')}
           </p>
           <div>
             <Button
@@ -178,8 +178,8 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
             >
               <Link2 data-icon aria-hidden="true" className="size-4" />
               {start.isPending
-                ? t('governance.mcp.authorization.starting')
-                : t('governance.mcp.authorization.connect')}
+                ? t('governance.mcp.detail.authorization.starting')
+                : t('governance.mcp.detail.authorization.connect')}
             </Button>
           </div>
         </>
@@ -187,7 +187,9 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
 
       {waitingURL ? (
         <div className="flex flex-col gap-2">
-          <p className="text-[14px] text-text">{t('governance.mcp.authorization.waiting')}</p>
+          <p className="text-[14px] text-text">
+            {t('governance.mcp.detail.authorization.waiting')}
+          </p>
           {/* The URL is shown, not merely opened: a blocked popup would otherwise leave
               no way forward, and the cockpit is frequently not on the machine that can
               complete the consent. */}
@@ -195,7 +197,7 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
             readOnly
             dir="ltr"
             value={waitingURL}
-            aria-label={t('governance.mcp.authorization.copyLink')}
+            aria-label={t('governance.mcp.detail.authorization.copyLink')}
             onFocus={(event) => {
               event.currentTarget.select();
             }}
@@ -211,7 +213,7 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
               }}
             >
               <ExternalLink data-icon aria-hidden="true" className="size-4" />
-              {t('governance.mcp.authorization.openAgain')}
+              {t('governance.mcp.detail.authorization.openAgain')}
             </Button>
             <Button
               type="button"
@@ -226,7 +228,7 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
               ) : (
                 <Copy data-icon aria-hidden="true" className="size-4" />
               )}
-              {t('governance.mcp.authorization.copyLink')}
+              {t('governance.mcp.detail.authorization.copyLink')}
             </Button>
           </div>
         </div>

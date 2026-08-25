@@ -2,11 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
 
-// GovernanceWorkspace is the lazy tab-strip shell. The four panes are mocked (their data hooks
-// are exercised by their own tests) so this suite asserts ONLY the workspace obligations: the
-// shadcn Tabs strip renders (MCP/Skills/Scheduler/Audit), the obsolete read-only banner is gone,
-// and switching tabs swaps the active pane. These are the GovernanceWorkspace behavior
-// obligations from the plan acceptance criteria.
+// GovernanceWorkspace is the lazy rail + pane shell. The four panes are mocked (their data
+// hooks are exercised by their own tests) so this suite asserts ONLY the workspace
+// obligations: the shared SectionRail renders the four sections, the obsolete read-only
+// banner is gone, and selecting a section swaps the mounted board. The rail replaced a
+// four-column tablist that truncated every label; the two-layout contract (strip above the
+// pane below `lg`, sidebar column from `lg` up) is asserted here and in SectionRail's suite.
 
 vi.mock('../McpBoard', () => ({
   McpBoard: () => <div data-testid="mcp-board">mcp</div>,
@@ -24,30 +25,27 @@ vi.mock('../../audit/AdminAuditView', () => ({
 const { default: GovernanceWorkspace } = await import('../GovernanceWorkspace');
 
 describe('GovernanceWorkspace (boards mocked)', () => {
-  it('renders the role=tablist tab strip with the four governance tabs', async () => {
+  it('renders the section rail with the four governance boards', async () => {
     render(<GovernanceWorkspace />);
 
-    const tablist = screen.getByRole('tablist', { name: 'Governance' });
-    expect(tablist).toBeTruthy();
-    expect(tablist.getAttribute('data-slot')).toBe('tabs-list');
-    expect(tablist.className).toContain('grid-cols-4');
+    const rail = screen.getByRole('navigation', { name: 'Governance sections' });
+    // One rail, two layouts: a scrollable strip below `lg`, a sidebar column from `lg` up.
+    expect(rail.className).toContain('overflow-x-auto');
+    expect(rail.className).toContain('lg:w-[var(--rail-w)]');
+    expect(rail.className).toContain('lg:flex-col');
+    // The rail is drag-resizable like the chat sidebar — Governance needs it most, the boards
+    // beside it are already master + detail.
+    expect(screen.getByRole('separator', { name: 'Resize the sections rail' })).toBeTruthy();
 
-    const mcpTab = screen.getByRole('tab', { name: 'MCP servers' });
-    expect(mcpTab.getAttribute('data-slot')).toBe('tabs-trigger');
-    expect(mcpTab.className).toContain('min-w-0');
-    expect(mcpTab.querySelector('svg[data-icon="inline-start"]')).not.toBeNull();
-    expect(mcpTab.querySelector('[data-tab-label]')?.className).toContain('truncate');
-    expect(screen.getByRole('tab', { name: 'Skills' }).getAttribute('data-slot')).toBe(
-      'tabs-trigger',
-    );
-    expect(screen.getByRole('tab', { name: 'Scheduler' }).getAttribute('data-slot')).toBe(
-      'tabs-trigger',
-    );
-    expect(screen.getByRole('tab', { name: 'Audit' }).getAttribute('data-slot')).toBe(
-      'tabs-trigger',
-    );
+    for (const name of ['MCP servers', 'Skills', 'Scheduler', 'Audit']) {
+      const item = screen.getByRole('button', { name });
+      expect(item.getAttribute('data-slot')).toBe('button');
+      // Labels keep their full width on the strip — the old grid-cols-4 tablist clipped them.
+      expect(item.className).toContain('whitespace-nowrap');
+      expect(item.querySelector('svg[data-icon="inline-start"]')).not.toBeNull();
+    }
 
-    // The MCP board is the default-open tab.
+    // The MCP board is the default-open section.
     await waitFor(() => {
       expect(screen.getByTestId('mcp-board')).toBeTruthy();
     });
@@ -60,73 +58,44 @@ describe('GovernanceWorkspace (boards mocked)', () => {
     ).toBeNull();
   });
 
-  it('marks the active tab with aria-selected and swaps the board on tab click', async () => {
+  it('marks the active section aria-current and swaps the board on click', async () => {
     render(<GovernanceWorkspace />);
 
-    const mcpTab = screen.getByRole('tab', { name: 'MCP servers' });
-    const skillsTab = screen.getByRole('tab', { name: 'Skills' });
-    expect(mcpTab.getAttribute('aria-selected')).toBe('true');
-    expect(skillsTab.getAttribute('aria-selected')).toBe('false');
+    const mcp = screen.getByRole('button', { name: 'MCP servers' });
+    const skills = screen.getByRole('button', { name: 'Skills' });
+    expect(mcp.getAttribute('aria-current')).toBe('page');
+    expect(skills.getAttribute('aria-current')).toBeNull();
 
-    // Roving tabindex: the active tab is 0, inactive are -1 (kills the tabIndex ternary mutant).
-    expect(mcpTab.getAttribute('tabindex')).toBe('0');
-    expect(skillsTab.getAttribute('tabindex')).toBe('-1');
-
-    fireEvent.click(skillsTab);
+    fireEvent.click(skills);
 
     await waitFor(() => {
       expect(screen.getByTestId('skills-board')).toBeTruthy();
     });
-    expect(skillsTab.getAttribute('aria-selected')).toBe('true');
-    expect(mcpTab.getAttribute('aria-selected')).toBe('false');
-    expect(skillsTab.getAttribute('tabindex')).toBe('0');
-    expect(mcpTab.getAttribute('tabindex')).toBe('-1');
+    expect(skills.getAttribute('aria-current')).toBe('page');
+    expect(mcp.getAttribute('aria-current')).toBeNull();
+    // Only the selected board is mounted — the rail is what keeps the other three unmounted.
+    expect(screen.queryByTestId('mcp-board')).toBeNull();
   });
 
-  it('opens the per-identity audit feed on its own tab', async () => {
+  it('opens the scheduler board from the rail', async () => {
     render(<GovernanceWorkspace />);
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Audit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Scheduler' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('scheduler-board')).toBeTruthy();
+    });
+  });
+
+  it('opens the per-identity audit feed on its own section', async () => {
+    render(<GovernanceWorkspace />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Audit' }));
 
     await waitFor(() => {
       expect(screen.getByTestId('audit-view')).toBeTruthy();
     });
     // The feed is a plain section, so the pane has to supply the scroller the boards own.
     expect(screen.getByTestId('audit-view').closest('.overflow-y-auto')).not.toBeNull();
-  });
-
-  it('roams tabs with the arrow keys (roving tabindex)', async () => {
-    render(<GovernanceWorkspace />);
-    const mcpTab = screen.getByRole('tab', { name: 'MCP servers' });
-    const auditTab = screen.getByRole('tab', { name: 'Audit' });
-
-    // ArrowLeft from the first tab wraps to the last (Audit).
-    fireEvent.keyDown(mcpTab, { key: 'ArrowLeft' });
-    await waitFor(() => {
-      expect(screen.getByTestId('audit-view')).toBeTruthy();
-    });
-    expect(auditTab.getAttribute('aria-selected')).toBe('true');
-
-    // ArrowRight wraps back to the first tab.
-    fireEvent.keyDown(auditTab, { key: 'ArrowRight' });
-    await waitFor(() => {
-      expect(screen.getByTestId('mcp-board')).toBeTruthy();
-    });
-  });
-
-  it('Home selects the first tab and End selects the last', async () => {
-    render(<GovernanceWorkspace />);
-    const mcpTab = screen.getByRole('tab', { name: 'MCP servers' });
-    const auditTab = screen.getByRole('tab', { name: 'Audit' });
-
-    fireEvent.keyDown(mcpTab, { key: 'End' });
-    await waitFor(() => {
-      expect(auditTab.getAttribute('aria-selected')).toBe('true');
-    });
-
-    fireEvent.keyDown(auditTab, { key: 'Home' });
-    await waitFor(() => {
-      expect(mcpTab.getAttribute('aria-selected')).toBe('true');
-    });
   });
 });

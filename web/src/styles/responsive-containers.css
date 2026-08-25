@@ -143,6 +143,13 @@
     box-shadow: var(--shadow-drawer) !important;
   }
 
+  /* The filters resizer is a desktop-grid affordance. The narrow regime here is a CONTAINER
+     query, so `lg:hidden` cannot reach it: a narrow container inside a wide viewport would
+     leave a stray hairline in the flex column. */
+  .graph-workspace__resizer {
+    display: none !important;
+  }
+
   .graph-workspace__canvas {
     grid-column: auto !important;
     grid-row: auto !important;

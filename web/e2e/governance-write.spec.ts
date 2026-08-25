@@ -317,7 +317,10 @@ test.describe('Phase 29 — Governance write flow (desktop + mobile)', () => {
   }) => {
     const state = freshState();
     await openGovernance(page, state);
-    await page.getByRole('tab', { name: 'Skills' }).click();
+    await page
+      .getByRole('navigation', { name: 'Governance sections' })
+      .getByRole('button', { name: 'Skills' })
+      .click();
     await expect(page.getByText('golang-testing')).toBeVisible({ timeout: 15000 });
 
     await page.getByRole('button', { name: 'Install skill' }).click();
@@ -339,7 +342,10 @@ test.describe('Phase 29 — Governance write flow (desktop + mobile)', () => {
   test('archiving flips the row in place; the state filter is what hides it', async ({ page }) => {
     const state = freshState();
     await openGovernance(page, state);
-    await page.getByRole('tab', { name: 'Skills' }).click();
+    await page
+      .getByRole('navigation', { name: 'Governance sections' })
+      .getByRole('button', { name: 'Skills' })
+      .click();
     const row = page.getByRole('listitem').filter({ hasText: 'golang-testing' });
     await expect(row).toBeVisible({ timeout: 15000 });
 
@@ -371,7 +377,10 @@ test.describe('Phase 29 — Governance write flow (desktop + mobile)', () => {
     const state = freshState();
     state.collideOnRestore = true;
     await openGovernance(page, state);
-    await page.getByRole('tab', { name: 'Skills' }).click();
+    await page
+      .getByRole('navigation', { name: 'Governance sections' })
+      .getByRole('button', { name: 'Skills' })
+      .click();
     // No tab to cross any more — an archived row sits in the same list, tagged.
     const row = page.getByRole('listitem').filter({ hasText: 'retired-skill' });
     await expect(row).toBeVisible({ timeout: 15000 });

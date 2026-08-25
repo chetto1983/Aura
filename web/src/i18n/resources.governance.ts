@@ -24,7 +24,10 @@ export const governanceEn = {
       more: 'Show more',
       status: 'Showing {{shown}} of {{total}}',
     },
-    tabs: {
+    rail: {
+      label: 'Governance sections',
+    },
+    sections: {
       mcp: 'MCP servers',
       skills: 'Skills',
       scheduler: 'Scheduler',
@@ -248,7 +251,10 @@ export const governanceIt = {
       more: 'Mostra altro',
       status: 'Mostrate {{shown}} di {{total}}',
     },
-    tabs: {
+    rail: {
+      label: 'Sezioni governance',
+    },
+    sections: {
       mcp: 'Server MCP',
       skills: 'Competenze',
       scheduler: 'Pianificazione',

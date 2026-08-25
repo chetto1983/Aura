@@ -130,7 +130,7 @@ export function McpBoard() {
   }
 
   const master = (
-    <div role="list" aria-label={t('governance.tabs.mcp')} className="flex flex-col gap-2 p-2">
+    <div role="list" aria-label={t('governance.sections.mcp')} className="flex flex-col gap-2 p-2">
       {rows.map((server, index) => {
         const isSelected = selected === server.name;
         const selectedBadgeClass = isSelected

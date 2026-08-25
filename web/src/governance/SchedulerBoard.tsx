@@ -96,14 +96,14 @@ export function SchedulerBoard() {
     <div className="flex flex-col">
       <header className="flex items-center justify-between border-b border-border px-3 py-2">
         <span className="font-mono text-[13px] font-semibold uppercase tracking-[0.18em] text-text">
-          {t('governance.tabs.scheduler')}
+          {t('governance.sections.scheduler')}
         </span>
         <span className="font-mono text-[12px] tabular-nums text-text-faint">
           {t('governance.scheduler.countLabel', { count: rows.length })}
         </span>
       </header>
 
-      <ul aria-label={t('governance.tabs.scheduler')} className="flex flex-col">
+      <ul aria-label={t('governance.sections.scheduler')} className="flex flex-col">
         {rows.map((task) => {
           const isSelected = selected === task.ID;
           const manageable = isUserManageableKind(task.Kind);

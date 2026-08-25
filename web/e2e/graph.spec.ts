@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
 
 // graph.spec.ts — the Phase 27 Graph Explorer E2E. It proves the operator can open the Frame-06
@@ -92,6 +92,16 @@ async function openGraphSurface(page: Page) {
   await page.getByRole('button', { name: 'Graph', exact: true }).first().click();
 }
 
+async function dragHandleBy(page: Page, handle: Locator, deltaX: number) {
+  const box = await handle.boundingBox();
+  if (box === null) throw new Error('resize handle has no bounding box');
+  const y = box.y + box.height / 2;
+  await page.mouse.move(box.x + box.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + deltaX, y, { steps: 10 });
+  await page.mouse.up();
+}
+
 test.describe('Phase 27 — Graph Explorer (desktop + mobile)', () => {
   test('opens the WebGL canvas with the a11y node/edge list and path strip', async ({
     page,
@@ -137,6 +147,28 @@ test.describe('Phase 27 — Graph Explorer (desktop + mobile)', () => {
     await expect(inspector.getByRole('button', { name: 'Expand neighbors' })).toBeVisible();
     await expect(inspector.getByRole('button', { name: 'Show ArcadeDB SQL' })).toBeVisible();
     await expect(inspector.getByRole('button', { name: /add note/i })).toHaveCount(0);
+  });
+
+  test('the filters column is a resizable sidebar, and only on the wide layout', async ({
+    page,
+  }, testInfo) => {
+    await openGraphSurface(page);
+    const filters = page.getByLabel('Node types');
+    const handle = page.getByRole('separator', { name: 'Resize the filters column' });
+
+    if (testInfo.project.name !== 'chrome') {
+      // The narrow regime is a CONTAINER query, not `lg` — the resizer has to be gone there,
+      // which `lg:hidden` alone would NOT guarantee.
+      await expect(handle).toBeHidden();
+      return;
+    }
+
+    await expect(filters).toBeVisible({ timeout: 20000 });
+    const before = (await filters.boundingBox())?.width ?? 0;
+    await dragHandleBy(page, handle, 90);
+    const after = (await filters.boundingBox())?.width ?? 0;
+    expect(after).toBeGreaterThan(before + 60);
+    expect(after).toBeLessThan(before + 120);
   });
 
   test('Show ArcadeDB SQL reveals the read-only query — never an editable input', async ({
