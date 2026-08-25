@@ -7248,3 +7248,83 @@ flusso completo, che funziona.
 > **abort/interrupt** semantics (`api/server/controllers/agents/client.js:1198-1243`,
 > `run.getInterrupt()` feeding a pending-action pause) rather than on queued mid-turn injection —
 > so it is evidence about a DIFFERENT design, not a second witness for this one.
+
+## §The approval resume path, measured against LibreChat (Amendment #133, 2026-08-24)
+
+> **Amendment #133 (2026-08-24, Phase 47/TOOL-03 pre-work — records a reading, blocks nothing
+> today, and names two gaps Phase 47 must close.)**
+>
+> **What was read.** `LibreChat` on disk (`api/server/controllers/agents/`,
+> `packages/api/src/agents/hitl/`, `packages/api/src/stream/`), against Aura's own resume path
+> (`internal/agui/server_project.go`, `internal/runner/runner_resume.go`,
+> `internal/runner/resume_committer.go`). Same discipline as amendments #129 and #132: the
+> reference implementation is read before the design, not after the bug.
+>
+> **The two designs answer different questions, and that is the first finding.** LibreChat has **no
+> mid-turn steering at all**. Its `GenerationJobManager` (1,985 LOC) keeps runs in a durable job
+> store and offers the operator exactly two interventions: **abort** — propagated across replicas
+> over Redis pub/sub (*"when abort is triggered on ANY replica, this replica receives the signal and
+> aborts its local AbortController"*) — or a **decision on a HITL pause**. The reason is structural:
+> with N replicas an in-memory queue on one replica cannot be reached. **Aura's `internal/steer.Inbox`
+> (amendment #132, item 9) is in-memory on the RunSession and therefore single-replica by
+> construction.** That is correct for a single-daemon appliance and is now a STATED boundary rather
+> than an unexamined one: a multi-replica Aura would need LibreChat's cross-replica signalling, not
+> a bigger queue.
+>
+> **What LibreChat validates on a resume, that Aura does not.** `resolveResumeValue`
+> (`api/server/controllers/agents/resume.js:142`) applies four guards to the wire payload before it
+> reaches the SDK. The second is the one that matters here, quoted verbatim: *"Enforce the policy's
+> per-tool allowed_decisions — **a crafted POST must not approve a tool the policy restricted to
+> (e.g.) reject/respond**"* → **403**. Its threat model is that **the human's POST is untrusted**,
+> which is a DIFFERENT threat from the one Phase 47's SC3 addresses (that the *model* never sees or
+> reproduces a resume payload). Aura covers the model-facing half and not this one. LibreChat also
+> refuses an under-specified decision — *"defaults ({} / '') would resume with an empty input/result
+> **the user didn't approve**"* → 400 — and requires a non-empty answer for its `ask_user` equivalent.
+> Its trust rule is stated outright: properties fixed when the pause was created are read *"from the
+> paused job (persisted at creation), **not the resume body**"*.
+>
+> Its policy layering (`packages/api/src/agents/hitl/policy.ts`) carries an invariant worth naming:
+> `endpoint` owns the `enabled` kill switch, a per-agent layer may refine it, and skill-contributed
+> policy **may only TIGHTEN** — add `ask`/`deny`, never grant bypass or widen `allow` — *"so a
+> selected skill can never silently auto-approve a tool."* `respond` (the agent substituting a
+> synthetic tool result) is deliberately excluded from the default decision set.
+>
+> **What was measured in Aura — including a correction to a gap that is not one.**
+> 1. **Partial resume is NOT a defect here.** LibreChat 400s unless every paused tool call is
+>    decided. Aura's `SubmitAnswers` (`runner_resume.go:120`) deliberately permits a partial batch
+>    and RETURNS `remaining`. That is a different, coherent design, and an earlier reading of this
+>    session wrongly listed it as a gap. It is recorded as a divergence, not a defect.
+> 2. **No per-tool decision policy — CONFIRMED GAP.** `resumeAnswers`
+>    (`internal/agui/server_project.go:24`) maps `resolved→ActionAccept` and
+>    `cancelled→ActionCancel`, and the Runner acts on `resp.Action` directly. Nothing anywhere
+>    expresses "this pause may only be declined". Any pending pause can be accepted by anyone who
+>    can reach the route with its token.
+> 3. **An empty answer resumes silently — CONFIRMED GAP.** `payloadString(nil)` returns `""`
+>    (`server_project.go`), and `answerTurn` injects the supplied content as the `RoleTool` answer.
+>    An accept carrying no payload therefore resumes the model with an empty answer instead of being
+>    refused. This is the exact defect class LibreChat's `findIncompleteDecisions` exists to stop.
+> 4. **Pending approvals never expire — CONFIRMED GAP.** LibreChat has
+>    `APPROVAL_EXPIRED_ERROR = "Approval expired before a decision was made"`, `expireApproval()`, a
+>    handler that prunes the paused run's durable checkpoint, and explicit handling for the race
+>    where *"the user submits a decision after the TTL lapsed"*. `internal/gateway` carries replay
+>    retention and an orphan-scan TTL, but nothing expires a pending approval.
+>
+> **What Aura does BETTER, and must not lose while closing the above.** The idempotency and
+> concurrency story is stronger than LibreChat's. `MarkResumed`'s `RowsAffected==0` gate returns
+> `ErrPauseNotFound` for an unknown OR already-resumed token, so a duplicate resume *claims nothing
+> and injects nothing*; the `WHERE resumed_at IS NULL` conditional update IS the idempotency key
+> (D-06); and `CommitResumeBatch` claims all pauses under sorted-token, deadlock-free ordering and
+> appends all answers in ONE cross-store transaction, so a concurrent batch serializes and the loser
+> gets `ErrPauseNotFound` — exactly one answer per pause, no orphan `RoleTool` turns. Any validation
+> added for gaps 2-4 lands INSIDE that transaction's front door, never as a second path around it.
+>
+> **What this measurement does NOT prove.** It does not prove the two confirmed gaps are
+> exploitable: reaching the resume route already requires an authenticated, owner-scoped session and
+> a valid pause token, so gap 2 is an authorization-granularity gap, not an open door — no exploit
+> was attempted or demonstrated. It does not prove a TTL is the right remedy for gap 4, nor what
+> that TTL should be; LibreChat's own value was not read. It does not measure Aura's behaviour under
+> any of these conditions live — every finding here comes from reading both trees, not from driving
+> the stack, and the empty-answer path in particular was traced through the code and never observed
+> resuming a real model turn. And it says nothing about whether LibreChat's layered policy shape
+> suits Aura: Aura classifies risk per tool today (`bridge_risk.go`, `internal/gateway/classify.go`)
+> and whether that becomes a decision policy is Phase 47's design question, not this record's.
