@@ -3,7 +3,6 @@ package arcadedb
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 )
 
@@ -17,15 +16,13 @@ func (resolve tenantResolverFunc) For(ctx context.Context, identityID string) (*
 
 func testDocumentConfig() DocumentIndexConfig {
 	return DocumentIndexConfig{
-		Dimensions: 3, MaxCandidatePassages: 4, MaxActivePassages: 8,
-		MaxRetrievalCandidates: 4, MaxDocumentFilters: 3, MaxQueryRunes: 40,
+		Dimensions: 3, MaxRetrievalCandidates: 4, MaxDocumentFilters: 3, MaxQueryRunes: 40,
 	}
 }
 
 func testDocumentIndex(
 	t *testing.T,
 	respond func(recordedRequest) testResponse,
-	ready bool,
 ) (*DocumentIndex, *[]recordedRequest) {
 	t.Helper()
 	client, requests := routedClient(t, respond)
@@ -38,90 +35,30 @@ func testDocumentIndex(
 	if err != nil {
 		t.Fatalf("NewDocumentIndex: %v", err)
 	}
-	if ready {
-		index.schemaReady[documentTestIdentity] = struct{}{}
-	}
 	return index, requests
 }
 
-func TestDocumentSchemaIsExplicitIdempotentAndCached(t *testing.T) {
+func TestDocumentIndexDoesNotMutateTheCocoIndexOwnedSchema(t *testing.T) {
 	index, requests := testDocumentIndex(t, func(recordedRequest) testResponse {
 		return testResponse{Body: `{"result":[]}`}
-	}, false)
-
+	})
 	if _, err := index.tenantClient(t.Context(), documentTestIdentity); err != nil {
 		t.Fatalf("tenantClient: %v", err)
 	}
-	firstCount := len(*requests)
-	if firstCount == 0 {
-		t.Fatal("schema issued no statements")
-	}
-	var schema strings.Builder
-	for _, request := range *requests {
-		statement, _ := request.Payload["command"].(string)
-		schema.WriteString(statement)
-		schema.WriteString("\n")
-		if strings.HasPrefix(statement, "CREATE") && !strings.Contains(statement, "IF NOT EXISTS") {
-			t.Fatalf("non-idempotent DDL: %s", statement)
-		}
-	}
-	joined := schema.String()
-	// DocumentProjection is deliberately absent: the generation/tombstone writer that was
-	// its only author is gone, and services/ingest never populated it ("a Go-side concept
-	// this Python sidecar does not populate" -- arcade.py). Declaring a vertex type nothing
-	// writes or reads is dead schema, so its DDL went with the writer.
-	if strings.Contains(joined, "DocumentProjection") {
-		t.Errorf("schema still declares DocumentProjection, which nothing writes or reads")
-	}
-	for _, required := range []string{
-		"CREATE VERTEX TYPE Passage",
-		"CREATE EDGE TYPE HAS_PASSAGE",
-		"org.apache.lucene.analysis.standard.StandardAnalyzer",
-		"LSM_VECTOR", `"dimensions": 3`, `"quantization": "NONE"`,
-	} {
-		if !strings.Contains(joined, required) {
-			t.Errorf("schema missing %q", required)
-		}
-	}
-	if _, err := index.tenantClient(t.Context(), documentTestIdentity); err != nil {
-		t.Fatalf("cached tenantClient: %v", err)
-	}
-	if len(*requests) != firstCount {
-		t.Fatalf("cached schema added %d requests", len(*requests)-firstCount)
-	}
-}
-
-func TestDocumentSchemaFailureCanBeRetried(t *testing.T) {
-	fail := true
-	index, requests := testDocumentIndex(t, func(recordedRequest) testResponse {
-		if fail {
-			fail = false
-			return testResponse{Status: 500, Body: `{"error":"schema failed"}`}
-		}
-		return testResponse{Body: `{"result":[]}`}
-	}, false)
-	if _, err := index.tenantClient(t.Context(), documentTestIdentity); err == nil {
-		t.Fatal("schema failure accepted")
-	}
-	if _, err := index.tenantClient(t.Context(), documentTestIdentity); err != nil {
-		t.Fatalf("schema retry: %v", err)
-	}
-	if len(*requests) <= len(documentSchemaStatements(3)) {
-		t.Fatalf("retry did not issue a second schema attempt: %d requests", len(*requests))
+	if len(*requests) != 0 {
+		t.Fatalf("reader mutated schema with %d HTTP requests", len(*requests))
 	}
 }
 
 func TestNewDocumentIndexRejectsInvalidContracts(t *testing.T) {
 	resolver := tenantResolverFunc(func(context.Context, string) (*Client, error) { return nil, nil })
-	tests := []struct {
+	for _, test := range []struct {
 		name string
 		cfg  DocumentIndexConfig
 	}{
 		{"dimension", DocumentIndexConfig{}},
-		{"negative limit", DocumentIndexConfig{Dimensions: 3, MaxActivePassages: -1}},
-		{"candidate above active", DocumentIndexConfig{Dimensions: 3, MaxCandidatePassages: 5, MaxActivePassages: 4}},
-	}
-	for _, test := range tests {
+		{"negative limit", DocumentIndexConfig{Dimensions: 3, MaxRetrievalCandidates: -1}},
+	} {
 		t.Run(test.name, func(t *testing.T) {
 			if _, err := NewDocumentIndex(resolver, test.cfg); err == nil {
 				t.Fatal("invalid config accepted")

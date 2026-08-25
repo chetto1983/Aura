@@ -63,44 +63,26 @@ type FusedCandidateQuery struct {
 // PassageCandidate is an immutable passage plus its provenance and locator evidence.
 type PassageCandidate struct {
 	PassageID        string
-	DocumentID       string
 	SearchDocumentID string
-	// SourceKind and SourceKey are where the bytes actually live -- for the only writer
-	// that exists, "s3" and the exact Garage object key. services/ingest has written both
-	// since it was built and arcade.py declares them, noting that Go "doesn't read them
-	// yet"; reading them here is what turns a retrieval hit back into a file in one hop,
-	// instead of the five the catalog used to take.
-	SourceKind         string
-	SourceKey          string
-	RawSHA256          string
-	PipelineGeneration string
-	SchemaVersion      string
-	Ordinal            int64
-	Text               string
-	NormalizedSHA256   string
-	SelfRef            string
-	HeadingPath        []string
-	Captions           []string
-	PageNumber         *int64
-	BoundingBox        *BoundingBox
-	CharacterSpan      *CharacterSpan
-	SheetName          string
-	TableName          string
-	RowNumber          *int64
-	ColumnNumber       *int64
-	CellReference      string
-	Leg                RetrievalLeg
+	SourceKind       string
+	SourceKey        string
+	RawSHA256        string
+	SchemaVersion    string
+	Ordinal          int64
+	Text             string
+	NormalizedSHA256 string
+	HeadingPath      []string
+	CharacterSpan    *CharacterSpan
+	Leg              RetrievalLeg
 	// FusedScore is the engine's combined score, higher-is-better. Under RRF it reads
 	// back as a sum of 1/(60+rank) over the sources that matched, which makes a bad
 	// ranking diagnosable by arithmetic instead of by guessing.
 	FusedScore *float64
 }
 
-const passageCandidateFields = "passage_key, passage_id, document_id, " +
-	"search_document_id, source_kind, source_key, raw_sha256, pipeline_generation, " +
-	"schema_version, ordinal, text, normalized_text_sha256, self_ref, heading_path, captions, " +
-	"page_number, bbox_left, bbox_top, bbox_right, bbox_bottom, char_start, char_end, " +
-	"sheet_name, table_name, row_number, column_number, cell_reference, active"
+const passageCandidateFields = "passage_key, search_document_id, source_kind, source_key, " +
+	"raw_sha256, schema_version, ordinal, text, normalized_text_sha256, heading_path, " +
+	"char_start, char_end"
 
 // FusedCandidates returns ONE ranking over the full-text and vector indexes, combined by
 // ArcadeDB's own `vector.fuse` (manual: "Hybrid Search with vector.fuse", >= 26.5.1) and
@@ -151,8 +133,8 @@ func (d *DocumentIndex) FusedCandidates(
 // fusedStatement is the measured query, parameter for parameter. No outer ORDER BY:
 // `vector.fuse` returns descending by fused score, asserted by the engine's own
 // SQLFunctionVectorFuseTest.
-// The scope predicate reaches BOTH sub-pipelines: it carries `active = true` and, when
-// the caller named documents, the restriction to them. Measured 2026-08-08 to leave the
+// The scope predicate reaches BOTH sub-pipelines and, when the caller named documents,
+// restricts both to them. Measured 2026-08-08 to leave the
 // ranking bit-identical, so it costs nothing and its absence would have silently ignored
 // a caller's document filter.
 func fusedStatement(where string, strategy FusionStrategy, limit int) string {
@@ -162,7 +144,7 @@ func fusedStatement(where string, strategy FusionStrategy, limit int) string {
 		"{ filter: (SELECT @rid FROM " + documentPassageType + " WHERE " + where + ").@rid })," +
 		"(SELECT @rid, $score FROM " + documentPassageType +
 		" WHERE SEARCH_INDEX('" + documentPassageType + "[text]', :query) = true AND " + where + ")," +
-		"{ fusion: '" + string(strategy) + "', groupBy: 'document_id', groupSize: " +
+		"{ fusion: '" + string(strategy) + "', groupBy: 'search_document_id', groupSize: " +
 		strconv.Itoa(fusedGroupSize) + " }" +
 		"))) LIMIT " + strconv.Itoa(limit)
 }
@@ -207,9 +189,9 @@ func (d *DocumentIndex) normalizeCandidateFilter(filter CandidateFilter) (Candid
 
 func candidateWhere(documentIDs []string) (string, map[string]any) {
 	params := make(map[string]any)
-	where := "active = true"
+	where := "1 = 1"
 	if len(documentIDs) > 0 {
-		where += " AND document_id IN :document_ids"
+		where += " AND search_document_id IN :document_ids"
 		params["document_ids"] = documentIDs
 	}
 	return where, params
@@ -264,31 +246,14 @@ func (d *DocumentIndex) decodeCandidate(
 	if err != nil {
 		return PassageCandidate{}, "", err
 	}
-	// projection_key, version_id and version_number are NOT required any more.
-	//
-	// They were the generation model: a projection grouped the passages of one document
-	// version so a later generation could tombstone the earlier one wholesale. The writer
-	// that produced them was deleted with the in-process pipeline, and the reconciler that
-	// replaced it removes a document's rows when its object leaves the bucket -- so there
-	// is no second generation to distinguish, and no tombstone to read. services/ingest
-	// writes all three as NULL, which under the old rule made every candidate it produced
-	// unreadable: rows landed, and retrieval returned nothing, with no error anywhere.
-	//
-	// What still has to hold is what a citation depends on: the passage's identity, the
-	// document it came from, its text, and the two digests that stop a citation outliving
-	// the bytes it quotes.
 	required := []struct {
 		key    string
 		target *string
 	}{
-		{"passage_id", new(string)},
-		{"document_id", new(string)}, {"search_document_id", new(string)},
-		// source_key is REQUIRED, not best-effort. It is the only route from a hit back to
-		// the bytes it quotes, so a passage without one can be ranked and cited but never
-		// opened -- an answer the caller cannot verify. Failing here keeps that impossible.
-		{"source_kind", new(string)}, {"source_key", new(string)},
+		{"search_document_id", new(string)}, {"source_kind", new(string)},
+		{"source_key", new(string)},
 		{"raw_sha256", new(string)},
-		{"pipeline_generation", new(string)}, {"schema_version", new(string)},
+		{"schema_version", new(string)},
 		{"text", new(string)}, {"normalized_text_sha256", new(string)},
 	}
 	for index := range required {
@@ -298,12 +263,10 @@ func (d *DocumentIndex) decodeCandidate(
 		}
 	}
 	candidate := PassageCandidate{
-		PassageID:  *required[0].target,
-		DocumentID: *required[1].target, SearchDocumentID: *required[2].target,
-		SourceKind: *required[3].target, SourceKey: *required[4].target,
-		RawSHA256:          *required[5].target,
-		PipelineGeneration: *required[6].target, SchemaVersion: *required[7].target,
-		Text: *required[8].target, NormalizedSHA256: *required[9].target, Leg: leg,
+		PassageID: passageKey, SearchDocumentID: *required[0].target,
+		SourceKind: *required[1].target, SourceKey: *required[2].target,
+		RawSHA256: *required[3].target, SchemaVersion: *required[4].target,
+		Text: *required[5].target, NormalizedSHA256: *required[6].target, Leg: leg,
 	}
 	if !validSHA256(candidate.RawSHA256) || !validSHA256(candidate.NormalizedSHA256) {
 		return PassageCandidate{}, "", fmt.Errorf("candidate carries an invalid SHA-256")
@@ -313,19 +276,8 @@ func (d *DocumentIndex) decodeCandidate(
 			"candidate schema %q does not match %q", candidate.SchemaVersion, d.schemaVersion(),
 		)
 	}
-	// The two projection-key equalities and the version_number check went with the
-	// generation model above. passageKey is still read and returned -- it is the row's
-	// unique key, and dedup across the lexical and dense legs needs it -- but it is no
-	// longer required to hash to anything.
 	candidate.Ordinal, err = requiredInt64(row, "ordinal", false)
 	if err != nil {
-		return PassageCandidate{}, "", err
-	}
-	active, err := requiredBool(row, "active")
-	if err != nil || !active {
-		if err == nil {
-			err = fmt.Errorf("active is false")
-		}
 		return PassageCandidate{}, "", err
 	}
 	if err := decodeCandidateLocator(row, &candidate); err != nil {
@@ -344,35 +296,7 @@ func (d *DocumentIndex) decodeCandidate(
 
 func decodeCandidateLocator(row map[string]any, candidate *PassageCandidate) error {
 	var err error
-	if candidate.SelfRef, err = optionalString(row, "self_ref"); err != nil {
-		return err
-	}
-	if candidate.SheetName, err = optionalString(row, "sheet_name"); err != nil {
-		return err
-	}
-	if candidate.TableName, err = optionalString(row, "table_name"); err != nil {
-		return err
-	}
-	if candidate.CellReference, err = optionalString(row, "cell_reference"); err != nil {
-		return err
-	}
 	if candidate.HeadingPath, err = optionalStrings(row, "heading_path"); err != nil {
-		return err
-	}
-	if candidate.Captions, err = optionalStrings(row, "captions"); err != nil {
-		return err
-	}
-	if candidate.PageNumber, err = optionalInt64(row, "page_number", true); err != nil {
-		return err
-	}
-	if candidate.RowNumber, err = optionalInt64(row, "row_number", false); err != nil {
-		return err
-	}
-	if candidate.ColumnNumber, err = optionalInt64(row, "column_number", false); err != nil {
-		return err
-	}
-	candidate.BoundingBox, err = optionalBoundingBox(row)
-	if err != nil {
 		return err
 	}
 	candidate.CharacterSpan, err = optionalCharacterSpan(row)
@@ -457,31 +381,6 @@ func optionalInt64(row map[string]any, key string, positive bool) (*int64, error
 		return nil, fmt.Errorf("%s is not a valid integer", key)
 	}
 	return &number, nil
-}
-
-func optionalBoundingBox(row map[string]any) (*BoundingBox, error) {
-	keys := []string{"bbox_left", "bbox_top", "bbox_right", "bbox_bottom"}
-	values := make([]float64, len(keys))
-	present := 0
-	for index, key := range keys {
-		value, exists := row[key]
-		if !exists || value == nil {
-			continue
-		}
-		var ok bool
-		values[index], ok = finiteFloat(value)
-		if !ok {
-			return nil, fmt.Errorf("%s is not a finite number", key)
-		}
-		present++
-	}
-	if present == 0 {
-		return nil, nil
-	}
-	if present != len(keys) {
-		return nil, fmt.Errorf("bounding box is incomplete")
-	}
-	return &BoundingBox{Left: values[0], Top: values[1], Right: values[2], Bottom: values[3]}, nil
 }
 
 func optionalCharacterSpan(row map[string]any) (*CharacterSpan, error) {

@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db"
@@ -30,14 +31,14 @@ const DefaultAssetMaxDocumentBytes = 100 << 20
 
 // Config is the root composite. Subsystem configs live in their packages.
 type Config struct {
-	DB               db.Config
-	DocumentPipeline DocumentPipelineConfig
-	Embed            EmbedConfig    // embedding sidecar wiring (config_embed.go)
-	ArcadeDB         ArcadeDBConfig // memory server — per-identity databases + the adaptive projection (arcadedb.go)
-	LLM              llm.Config     // Slice 1 — OpenAI-compat client + load-order chain (D-22)
-	RunDir           string         // absolute — a relative AURA_RUN_DIR is normalized to absolute at load (F-041) so sidecars are not cwd-dependent
-	RunDirErr        error          // non-nil only if filepath.Abs failed (cwd unobtainable); surfaced by Validate so boot fails loudly
-	ToolPreviewCap   int
+	DB                db.Config
+	DocumentRetrieval DocumentRetrievalConfig
+	Embed             EmbedConfig    // embedding sidecar wiring (config_embed.go)
+	ArcadeDB          ArcadeDBConfig // memory server — per-identity databases + the adaptive projection (arcadedb.go)
+	LLM               llm.Config     // Slice 1 — OpenAI-compat client + load-order chain (D-22)
+	RunDir            string         // absolute — a relative AURA_RUN_DIR is normalized to absolute at load (F-041) so sidecars are not cwd-dependent
+	RunDirErr         error          // non-nil only if filepath.Abs failed (cwd unobtainable); surfaced by Validate so boot fails loudly
+	ToolPreviewCap    int
 	// Timezone is the IANA zone every clock the model reads is rendered in
 	// (AURA_TIMEZONE). Empty means the process's own zone, which in a container is
 	// UTC -- and a UTC clock hands the model an arithmetic problem it gets wrong:
@@ -148,25 +149,26 @@ type Config struct {
 	// Industrial asset object-store foundation. The backend is selected by the
 	// later asset service; config is intentionally non-fatal so DB/migration paths
 	// do not depend on Garage being reachable.
-	ObjectStoreBackend           string // AURA_OBJECTSTORE_BACKEND — garage|filesystem-dev|fake
-	ObjectStoreEndpoint          string // AURA_OBJECTSTORE_ENDPOINT — S3-compatible internal endpoint
-	ObjectStorePublicEndpoint    string // AURA_OBJECTSTORE_PUBLIC_ENDPOINT — optional presign URL host rewrite
-	WebPublicURL                 string // AURA_WEB_PUBLIC_URL — the origin a browser reaches the cockpit on; required for the MCP OAuth redirect
-	ObjectStoreRegion            string // AURA_OBJECTSTORE_REGION — Garage/S3 region
-	ObjectStoreBucket            string // AURA_OBJECTSTORE_BUCKET — asset bucket
-	ObjectStoreAccessKey         string // AURA_OBJECTSTORE_ACCESS_KEY — S3 access key
-	ObjectStoreSecretKey         string // AURA_OBJECTSTORE_SECRET_KEY — S3 secret key
-	ObjectStorePathStyle         bool   // AURA_OBJECTSTORE_PATH_STYLE — Garage requires path-style by default
-	ObjectStoreReplicationFactor int    // AURA_OBJECTSTORE_REPLICATION_FACTOR — declared Garage durability intent, default 1 (D-13/PROF-06)
-	GarageRPCSecret              string // GARAGE_RPC_SECRET — Garage inter-node RPC secret (upstream name; D-13/PROF-03)
-	AssetMaxDocumentBytes        int    // AURA_ASSET_MAX_DOCUMENT_BYTES — document upload ceiling
-	AssetMaxImageBytes           int    // AURA_ASSET_MAX_IMAGE_BYTES — image upload ceiling
-	AssetMaxAudioBytes           int    // AURA_ASSET_MAX_AUDIO_BYTES — audio upload ceiling
-	AssetPresignTTLSec           int    // AURA_ASSET_PRESIGN_TTL_SEC — upload URL lifetime
-	AssetProcessingConcurrent    int    // AURA_ASSET_PROCESSING_CONCURRENCY — future asset worker width
-	TelegramAPIBaseURL           string // TELEGRAM_API_BASE_URL — optional local Bot API base
-	TelegramFileBaseURL          string // TELEGRAM_FILE_BASE_URL — optional local Bot API file base
-	TelegramLocalBotAPI          bool   // AURA_TELEGRAM_LOCAL_BOT_API — local Bot API toggle
+	ObjectStoreBackend           string        // AURA_OBJECTSTORE_BACKEND — garage|filesystem-dev|fake
+	ObjectStoreEndpoint          string        // AURA_OBJECTSTORE_ENDPOINT — S3-compatible internal endpoint
+	ObjectStorePublicEndpoint    string        // AURA_OBJECTSTORE_PUBLIC_ENDPOINT — optional presign URL host rewrite
+	WebPublicURL                 string        // AURA_WEB_PUBLIC_URL — the origin a browser reaches the cockpit on; required for the MCP OAuth redirect
+	ObjectStoreRegion            string        // AURA_OBJECTSTORE_REGION — Garage/S3 region
+	ObjectStoreBucket            string        // AURA_OBJECTSTORE_BUCKET — asset bucket
+	ObjectStoreAccessKey         string        // AURA_OBJECTSTORE_ACCESS_KEY — S3 access key
+	ObjectStoreSecretKey         string        // AURA_OBJECTSTORE_SECRET_KEY — S3 secret key
+	ObjectStorePathStyle         bool          // AURA_OBJECTSTORE_PATH_STYLE — Garage requires path-style by default
+	ObjectStoreReplicationFactor int           // AURA_OBJECTSTORE_REPLICATION_FACTOR — declared Garage durability intent, default 1 (D-13/PROF-06)
+	GarageRPCSecret              string        // GARAGE_RPC_SECRET — Garage inter-node RPC secret (upstream name; D-13/PROF-03)
+	AssetMaxDocumentBytes        int           // AURA_ASSET_MAX_DOCUMENT_BYTES — document upload ceiling
+	AssetMaxImageBytes           int           // AURA_ASSET_MAX_IMAGE_BYTES — image upload ceiling
+	AssetMaxAudioBytes           int           // AURA_ASSET_MAX_AUDIO_BYTES — audio upload ceiling
+	AssetPresignTTLSec           int           // AURA_ASSET_PRESIGN_TTL_SEC — upload URL lifetime
+	AssetProcessingConcurrent    int           // AURA_ASSET_PROCESSING_CONCURRENCY — asset worker width
+	AssetProcessingLeaseDuration time.Duration // AURA_ASSET_PROCESSING_LEASE_SEC — durable asset job lease
+	TelegramAPIBaseURL           string        // TELEGRAM_API_BASE_URL — optional local Bot API base
+	TelegramFileBaseURL          string        // TELEGRAM_FILE_BASE_URL — optional local Bot API file base
+	TelegramLocalBotAPI          bool          // AURA_TELEGRAM_LOCAL_BOT_API — local Bot API toggle
 
 	// Web-auth knobs. GuardWebBind decides at boot whether a non-loopback AGUIBind
 	// may start. Authula is the active provider; WebAuthSecret is retained only so
@@ -389,7 +391,7 @@ func loadBase() *Config {
 			BootstrapURL: bootstrapURL,
 			Password:     pgPassword,
 		},
-		DocumentPipeline: loadDocumentPipelineConfig(),
+		DocumentRetrieval: loadDocumentRetrievalConfig(),
 		Embed: EmbedConfig{
 			BaseURL:    envDefault("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
 			Dimensions: envutil.IntDefault("AURA_EMBED_DIMENSIONS", DefaultEmbedDimensions),
@@ -470,9 +472,12 @@ func loadBase() *Config {
 		AssetMaxAudioBytes:           envutil.IntDefault("AURA_ASSET_MAX_AUDIO_BYTES", 104857600),
 		AssetPresignTTLSec:           envutil.IntDefault("AURA_ASSET_PRESIGN_TTL_SEC", 600),
 		AssetProcessingConcurrent:    envutil.IntDefault("AURA_ASSET_PROCESSING_CONCURRENCY", 2),
-		TelegramAPIBaseURL:           os.Getenv("TELEGRAM_API_BASE_URL"),
-		TelegramFileBaseURL:          os.Getenv("TELEGRAM_FILE_BASE_URL"),
-		TelegramLocalBotAPI:          envutil.BoolDefault("AURA_TELEGRAM_LOCAL_BOT_API", false),
+		AssetProcessingLeaseDuration: time.Duration(envutil.IntDefault(
+			"AURA_ASSET_PROCESSING_LEASE_SEC", DefaultAssetProcessingLeaseSec,
+		)) * time.Second,
+		TelegramAPIBaseURL:  os.Getenv("TELEGRAM_API_BASE_URL"),
+		TelegramFileBaseURL: os.Getenv("TELEGRAM_FILE_BASE_URL"),
+		TelegramLocalBotAPI: envutil.BoolDefault("AURA_TELEGRAM_LOCAL_BOT_API", false),
 
 		// Web-auth knobs. The legacy secret is read raw for compatibility only; the
 		// active cockpit login path is Authula.

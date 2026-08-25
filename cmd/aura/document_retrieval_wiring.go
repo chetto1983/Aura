@@ -17,23 +17,19 @@ func newHostDocumentRetriever(cfg *config.Config, pool *pgxpool.Pool) (*document
 	retriever := &documents.HostRetriever{
 		Embedder: embeddingClient(cfg, documentHTTPClient(cfg)),
 		Config: documents.RetrievalConfig{
-			CandidateLimit: cfg.DocumentPipeline.RetrievalCandidates,
-			FusionStrategy: arcadedb.FusionStrategy(cfg.DocumentPipeline.FusionStrategy),
+			CandidateLimit: cfg.DocumentRetrieval.RetrievalCandidates,
+			FusionStrategy: arcadedb.FusionStrategy(cfg.DocumentRetrieval.FusionStrategy),
 		},
 	}
-	// ONE index serves both roles now. The control plane used to be a PostgreSQL store
-	// built from the pool while the projection was ArcadeDB; cards and passages are both
-	// ArcadeDB records today, so a single DocumentIndex answers the card leg and the two
-	// candidate legs. Without ArcadeDB configured the retriever has NO control plane and
-	// Retrieve fails loudly, which is the honest outcome: there is nothing left to search.
+	// One per-identity ArcadeDB index supplies document metadata and fused passage candidates.
 	if strings.TrimSpace(cfg.ArcadeDB.BaseURL) == "" {
 		return retriever, nil
 	}
-	index, err := newRuntimeDocumentIndex(cfg, nil, false)
+	index, err := newRuntimeDocumentIndex(cfg, nil, true)
 	if err != nil {
 		return retriever, nil
 	}
 	retriever.ControlPlane = &documents.ArcadeRetrievalControlPlane{Index: index}
-	retriever.Projection = index
+	retriever.PassageIndex = index
 	return retriever, nil
 }
