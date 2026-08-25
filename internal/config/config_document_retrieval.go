@@ -8,6 +8,7 @@ import (
 	"github.com/chetto1983/aura/internal/envutil"
 )
 
+// Defaults for the document-retrieval and asset-processing knobs this file loads.
 const (
 	DefaultAssetProcessingLeaseSec     = 1_200
 	DefaultDocumentRetrievalCandidates = 200
@@ -31,6 +32,8 @@ func loadDocumentRetrievalConfig() DocumentRetrievalConfig {
 	}
 }
 
+// Validate rejects an out-of-range RetrievalCandidates; a zero-value config
+// (unset) is left alone rather than defaulted here.
 func (c DocumentRetrievalConfig) Validate() error {
 	if c == (DocumentRetrievalConfig{}) {
 		return nil

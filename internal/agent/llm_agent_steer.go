@@ -7,6 +7,7 @@ import (
 	"html"
 	"regexp"
 
+	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/steer"
 )
 
@@ -84,10 +85,35 @@ func scrubSteerLookalikes(content string) string {
 // primary and its ratified fallback expressed as a single branch (D-07/D-08).
 // Never touches a.history[0..2] — only ever the tail.
 func (a *LlmAgent) drainSteer(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, round modelRound) *Event {
-	// TODO(RED): stub — always a no-op. GREEN drains a.steer and mutates history.
-	_ = ic
-	_ = spanID
-	_ = parentSpanID
-	_ = round
-	return nil
+	if a.steer == nil {
+		return nil
+	}
+	msgs := a.steer.Drain(a.sessionID)
+	if len(msgs) == 0 {
+		return nil
+	}
+	delivered := make([]map[string]any, 0, len(msgs))
+	for _, m := range msgs {
+		marked := wrapUserSteer(m.Text)
+		delivery := "user_message_fallback"
+		if n := len(a.history); n > 0 && a.history[n-1].Role == llm.RoleTool {
+			a.history[n-1].Content += marked
+			delivery = "tool_result_append"
+		} else {
+			a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: marked})
+		}
+		delivered = append(delivered, map[string]any{
+			"id":       m.ID,
+			"source":   m.Source,
+			"text":     m.Text,
+			"delivery": delivery,
+		})
+	}
+	ev := a.newEvent(ic, spanID, parentSpanID)
+	ev.Actions.SteerDelta = map[string]any{
+		"conversation_id": a.sessionID,
+		"round":           round.ordinal,
+		"steers":          delivered,
+	}
+	return ev
 }

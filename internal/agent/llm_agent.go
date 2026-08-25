@@ -74,9 +74,7 @@ type LlmAgent struct {
 	// gateway is the optional Phase-35 policy PEP (GATE-01): execTool calls its Decide
 	// before tool.Execute. nil is an Allow no-op (dev-parity for tests/standalone).
 	gateway *gateway.Gateway
-	// steer is the optional mid-turn redirect inbox (llm_agent_steer.go). nil means
-	// drainSteer is a no-op, exactly like a nil gateway means Allow (D-12 rollback).
-	steer SteerInbox
+	steer   SteerInbox // nil means drainSteer is a no-op, like a nil gateway means Allow (D-12)
 	// ledgerConvID is the ORIGINATING conversation UUID the gateway ReservationKey is
 	// keyed on. It defaults to sessionID (the main runner path, where session_id ==
 	// conversation_id UUID); headless swarm/cron roots set it to the originating
@@ -182,8 +180,7 @@ type LlmAgentConfig struct {
 	// Gateway is the optional Phase-35 policy PEP (GATE-01). nil is an Allow no-op
 	// (dev-parity). The composition roots inject the one process-wide *gateway.Gateway.
 	Gateway *gateway.Gateway
-	// Steer is the optional mid-turn redirect inbox; nil means drain is a no-op.
-	Steer SteerInbox
+	Steer   SteerInbox // optional mid-turn redirect inbox; nil means drain is a no-op
 	// Ledger is the optional verification evidence ledger the verify-on-stop gate
 	// reads. nil disables that gate (tests/standalone, and any deployment with no
 	// Postgres pool behind NewEvidenceStore).
@@ -338,8 +335,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				modelRound = modelRoundOrdinal.next(ic.RequestID)
 			}
 			spanCtx = withModelRound(spanCtx, modelRound)
-			// Skipped on an exact transport retry (see llm_agent_steer.go).
-			if !transportRetry {
+			if !transportRetry { // an exact transport retry never drains (llm_agent_steer.go)
 				if ev := a.drainSteer(ic, spanID, parentSpanID, modelRound); ev != nil && !yield(ev, nil) {
 					span.End()
 					cancel()
