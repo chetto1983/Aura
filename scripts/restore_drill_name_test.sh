@@ -32,4 +32,20 @@ if printf '%s' '{"volumes":{}}' | dr_compose_volume_name aura-home >/dev/null 2>
   exit 1
 fi
 
+arcade_database="$(dr_arcadedb_database '20260731T021604Z-228043')"
+if [ "$arcade_database" != "mem_090c49fe_ca8b_51b4_77ce_b6175088646e" ]; then
+  echo "restore-drill-name-test: unexpected ArcadeDB drill database $arcade_database" >&2
+  exit 1
+fi
+if ! dr_arcadedb_database_is_safe "$arcade_database"; then
+  echo "restore-drill-name-test: generated ArcadeDB database is unsafe" >&2
+  exit 1
+fi
+for unsafe in mem_local aura_memory 'mem_../../databases/aura_memory' ''; do
+  if dr_arcadedb_database_is_safe "$unsafe"; then
+    echo "restore-drill-name-test: unsafe ArcadeDB database passed: $unsafe" >&2
+    exit 1
+  fi
+done
+
 echo "restore-drill-name-test: pass"

@@ -548,7 +548,7 @@ services:
   # Retrieval is full-text + graph, with an optional dense leg over the sidecar
   # embedder (LSM_VECTOR + vector.fuse); see internal/arcadedb/memory_vector.go.
   arcadedb:
-    image: arcadedata/arcadedb:26.7.3
+    image: arcadedata/arcadedb:26.8.1
     container_name: aura-arcadedb
     restart: unless-stopped
     mem_limit: 3g
@@ -577,9 +577,14 @@ services:
       #
       # Documented Bolt deltas are narrow — RID/UUID arrive as strings, BigDecimal
       # down-converts to double, auth `none` is always rejected.
+      # The root-only HTTP restore command must read archives from the separately mounted
+      # backup volume during the production DR drill. ArcadeDB 26.7.3 denies file:// restore
+      # sources unless this is explicit. Port 2480 remains loopback-only and non-root users
+      # still cannot call server restore/import commands.
       JAVA_OPTS: >-
         -Darcadedb.server.rootPassword=${ARCADEDB_PASSWORD:?ARCADEDB_PASSWORD required in .env}
         -Darcadedb.server.defaultDatabases=${ARCADEDB_DATABASE:-aura_memory}[]
+        -Darcadedb.server.restoreImportAllowLocalUrls=true
         -Darcadedb.server.plugins=Bolt:com.arcadedb.bolt.BoltProtocolPlugin
     ports:
       - "127.0.0.1:2480:2480"
@@ -610,10 +615,11 @@ services:
       retries: 12
       start_period: 40s
 
-  # Aura's own MCP surface over ArcadeDB (cmd/arcadedb-mcp). It is NOT ArcadeDB's built-in
-  # MCP server: that one ships 10 generic tools in 26.7.3 — no full_text_search, no
-  # hybrid_search, no upsert_entity, whatever the docs page claims — and its `query` tool
-  # takes no bind parameters, which makes it unsafe for user text.
+  # Aura's own MCP surface over ArcadeDB (cmd/arcadedb-mcp). ArcadeDB 26.8.1 expands its
+  # generic MCP search surface, but it does not own Aura's `_meta` caller identity,
+  # per-identity database/credential provisioning, provenance, erasure, or domain-shaped
+  # memory tools. Those production boundaries remain here rather than behind a compatibility
+  # branch selected by the installed ArcadeDB version.
   arcadedb-mcp:
     build:
       context: .

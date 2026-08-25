@@ -117,8 +117,8 @@ def valid_evidence() -> dict[str, dict[str, object]]:
         ),
         "dr-report.json": common(
             passed=True,
-            planes_executed=3,
-            planes_required=3,
+            planes_executed=4,
+            planes_required=4,
             planes=[
                 {
                     "plane": name,
@@ -126,7 +126,7 @@ def valid_evidence() -> dict[str, dict[str, object]]:
                     "checksum_ok": True,
                     "cleanup_ok": True,
                 }
-                for name in ("postgres", "sidecars", "garage")
+                for name in ("postgres", "sidecars", "garage", "arcadedb")
             ],
         ),
         "observability-report.json": common(

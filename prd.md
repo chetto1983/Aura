@@ -46,7 +46,7 @@
 - PostgreSQL backups must restore into a newly-created database under
   `pg_restore`'s restricted search path. Stored expressions and SQL functions
   therefore schema-qualify extension objects such as
-  `public.unaccent`/`public.unaccent(...)`; the three-plane DR drill is the
+  `public.unaccent`/`public.unaccent(...)`; the four-plane DR drill is the
   blocking acceptance test.
 - Archive entry names copied out of a sandbox are content metadata only and
   must never influence a host filesystem path. The staged filename comes from
@@ -7793,3 +7793,87 @@ flusso completo, che funziona.
 > obligations. And it does not re-litigate anything #132 already ratified that this correction does
 > not touch: the tool-result append mechanism itself, the generation-binding non-issue, the
 > child-steering non-goal, or the steer-then-cancel escalation ladder.
+
+## §ArcadeDB memory joins the exercised disaster-recovery plane (Amendment #143, 2026-08-25)
+
+> **Amendment #143 (2026-08-25 — measured before implementation; closes the open ArcadeDB
+> backup/restore concern without replacing ArcadeDB's own scheduler).**
+>
+> **What was measured first.** The live WSL stack runs the pinned, healthy ArcadeDB **26.7.3**
+> container. `compose.yaml` already mounts the official `backup.json` scheduler configuration and
+> stores its output in the distinct `aura-arcadedb-backups` volume. The live volume contained
+> current hourly archives for the shared `aura_memory` database and for two separate
+> `mem_<uuid>` tenant databases; the newest observed tenant archives were timestamped
+> `20260825-143028`. This proves the configured scheduler discovers tenant databases and writes
+> backup artifacts outside the database volume. It does not prove that any archive restores.
+>
+> The gap is entirely in rehearsal and release evidence. `scripts/restore_drill.sh` explicitly
+> executes only Postgres, conversation sidecars, and Garage, emits `expected = {"postgres",
+> "sidecars", "garage"}`, and reports a three-plane pass. `scripts/release_readiness_gate.py`
+> independently hard-codes the same three names and exact count. The CI step is nevertheless named
+> "Four-plane disaster-recovery drill". That label is aspirational, not evidence.
+>
+> **Pinned-version correction measured during the first live rehearsal.** ArcadeDB 26.7.3
+> successfully created the disposable database, committed the sentinel, and produced its native
+> backup, but rejected the documented `file://` restore with HTTP 403: local restore/import URLs
+> require `arcadedb.server.restoreImportAllowLocalUrls=true`. The Compose server therefore pins
+> that startup setting explicitly. This does not make restore tenant-callable: `/api/v1/server`
+> keeps create, drop, trigger-backup, and restore root-only, and ArcadeDB's published HTTP port stays
+> bound to loopback. The setting exists solely so root can read archives from the already-mounted
+> `aura-arcadedb-backups` volume; the drill does not enable or use a remote/private HTTP source.
+>
+> **Latest-version correction requested by the operator.** The official GitHub `releases/latest`
+> endpoint now resolves to **26.8.1**, released 2026-08-03, while Compose still pinned 26.7.3. The
+> official multi-architecture Docker manifest for `arcadedata/arcadedb:26.8.1` exists. ArcadeDB
+> recommends the upgrade, carries all 26.7.3 fixes plus thirteen further security advisories, and
+> states that no schema migration or existing-database rewrite is required. The relevant breaking
+> inventory found no Aura use of the retired positive `locationCacheSize` setting, no non-COSINE
+> vector index, and no dashboards or alerts on the renamed raw engine-counter series. Aura's HTTP
+> client already sends `limit:-1`, so the new configurable default response limit does not truncate
+> its queries. The current vector/full-text metadata keys are intentional and covered by live DDL.
+>
+> Compose therefore advances its exact version pin to 26.8.1 in this concern. Closure requires two
+> distinct live proofs: a disposable backup created by 26.7.3 restores under 26.8.1, and the normal
+> four-plane drill creates, drops, restores, verifies, and cleans a fresh 26.8.1 tenant database.
+> The upgrade does not authorize adopting ArcadeDB's newly expanded generic MCP module: Aura's own
+> sidecar still owns caller `_meta` identity, per-tenant credential/database provisioning,
+> provenance, erasure, and the domain-shaped memory contract.
+>
+> **Replacement contract.** Keep the installed AutoBackupSchedulerPlugin as the sole production
+> backup owner. The drill adds one fourth plane named `arcadedb`; it does not enumerate, copy, or
+> rewrite production tenant databases. It creates one disposable tenant-shaped database, commits a
+> checksum sentinel, invokes ArcadeDB's official root-only `trigger backup <database>` server
+> command, and waits for the resulting archive in the configured backup volume with a finite
+> timeout. It then drops only that disposable database, restores the same name from the new archive
+> through the official `restore database <database> file://...` server command, and verifies the
+> sentinel checksum through the live HTTP query boundary.
+>
+> The plane records backup age as RPO, restore duration as RTO, archive bytes, one restored item,
+> checksum success, and cleanup success in `dr-report.json`. Cleanup drops the disposable database
+> and removes only the archive directory whose name was derived by this run. A failed or timed-out
+> backup, restore, checksum, or cleanup fails the drill; there is no skip-as-green path and no
+> volume-copy fallback. The release-readiness gate requires all four exact planes and the existing
+> checksum/cleanup postconditions.
+>
+> **Scope boundary.** This change touches the DR script, its small helper/self-test surface, the
+> release-evidence validator and fixtures, CI wording, and release/concern documentation. It adds no
+> schema migration and changes no memory read/write path, tenant credential derivation, document
+> pipeline, agent loop, or model-facing tool. Therefore migration 0102 and the already-green real
+> document-agent E2E remain persistent checkpoints rather than being rerun for an unrelated delta.
+>
+> **What this amendment does NOT yet prove.** It does not yet prove that a 26.7.3 archive restores
+> under the live Compose mount, that restoring under the same database name preserves the sentinel,
+> that cleanup is exact, or that the four-plane release gate rejects a missing ArcadeDB leg. Those
+> are the implementation's targeted WSL and live restore-drill obligations.
+>
+> **Closure evidence (2026-08-25).** All of those obligations are now measured. A native backup
+> created by 26.7.3 restored under the Compose-mounted 26.8.1 server with its sentinel checksum
+> intact, after which the disposable database and its exact backup directory were removed. A fresh
+> four-plane drill on 26.8.1 passed 4/4 with ArcadeDB RPO 0 seconds, RTO 218 ms, one restored item,
+> a 1,142-byte native archive, checksum success, and cleanup success. The full deterministic + live
+> memory evaluator also passed on 26.8.1 at MRS 100.00, and the disposable ingest integration passed
+> schema creation, idempotence, retired-schema removal, and Bolt-written ARRAY_OF_FLOATS/ANN lookup
+> 4/4. The release validator now requires the exact four-plane set, so an absent ArcadeDB leg fails.
+> Migration 0102 and the real document-agent E2E were not repeated because this delta has no schema,
+> document-pipeline, agent-loop, or model-facing-tool change; their persisted green checkpoints remain
+> the applicable evidence for those unchanged boundaries.

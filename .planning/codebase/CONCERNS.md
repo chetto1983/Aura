@@ -15,7 +15,7 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 | Empty accepted approval answers resumed the model silently | High | Closed 2026-08-25 | `internal/agui/server_run_test.go`, `internal/runner/runner_resume_test.go`, `internal/askuser/store_mutation_test.go` |
 | Release disclosure register reported NO-GO | High | Closed 2026-08-25 | `docs/audit/README.md`, `scripts/audit_closure_gate.py` |
 | Amendment #115 still requires a real-production document E2E whose runner no longer exists | High | Closed 2026-08-25 | PRD amendment #141, `scripts/ingest_reconcile_e2e.sh`, `cmd/aura/document_agent_live_test.go` |
-| ArcadeDB tenant memory has no exercised backup/restore plane | High | Open | `scripts/restore_drill.sh`, `.github/workflows/ci.yml` |
+| ArcadeDB tenant memory has no exercised backup/restore plane | High | Closed 2026-08-25 | `scripts/restore_drill.sh`, `scripts/release_readiness_gate.py`, `compose.yaml` |
 | Shared settings, skills, and MCP catalog constrain safe multi-user operation | Medium | Mitigated by a strict-profile boot gate | `internal/config/config_validate.go`, `internal/db/migrations/0024_settings.up.sql` |
 | Coverage is one aggregate at 86.4%; daemon-gated tiers do not feed that floor | Medium | Open/self-documented | `scripts/coverage_gate.sh`, `.github/workflows/ci.yml`, `docs/aura-quality-snapshot.md` |
 | Long-history compaction can disable itself silently and uses an unmeasured three-minute timeout | Medium | Open | `internal/conversations/context_budget.go`, `internal/conversations/compaction.go` |
@@ -205,10 +205,11 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 - Gate: the current register is empty, `open_total` is zero, and the audit closure report emits `release_ready:true`.
 - Files: `docs/audit/README.md`, `scripts/audit_closure_gate.py`.
 
-**ArcadeDB tenant memory is absent from disaster-recovery rehearsal:**
-- Problem: the DR script explicitly drills only Postgres, run sidecars, and Garage. It states that per-identity ArcadeDB databases are not dumped and must be snapshotted out of band.
-- Blocks: a tested restore path for long-term memory after volume loss. The CI step is labelled "Four-plane" even though the generated report requires only three planes.
-- Files: `scripts/restore_drill.sh`, `.github/workflows/ci.yml`, `internal/arcadedb/tenant.go`.
+**Closed 2026-08-25 — ArcadeDB tenant memory joins disaster-recovery rehearsal:**
+- Resolution: ArcadeDB's native scheduler remains the sole backup owner. The DR drill now creates one disposable `mem_<uuid>` database, writes a checksum sentinel, triggers a native backup, drops and restores the same database, verifies the sentinel, then removes only the disposable database and its exact backup directory. The release gate requires the exact four-plane set: Postgres, sidecars, Garage, and ArcadeDB.
+- Upgrade evidence: the official latest pin is 26.8.1. A native 26.7.3 archive restored successfully on 26.8.1 with checksum and cleanup intact; no schema migration or database rewrite was required. The fresh 26.8.1 four-plane run passed 4/4 with ArcadeDB RPO 0 seconds and RTO 218 ms.
+- Runtime evidence: `agent-memory-eval` passed the deterministic + live MCP suite at MRS 100.00 on 26.8.1. The disposable ingest integration passed schema creation, idempotence, retired-schema removal, and Bolt-written vector/ANN retrieval 4/4. The already-green migration 0102 and real document-agent E2E were retained as persistent checkpoints because this delta does not overlap those boundaries.
+- Files: `scripts/restore_drill.sh`, `scripts/restore_drill_lib.sh`, `scripts/release_readiness_gate.py`, `compose.yaml`, `.github/workflows/ci.yml`.
 
 **No model-facing document catalog operation:**
 - Problem: `document_search` requires a query and `document_open` requires an id from a hit; the former `aura docs list/status` ledger was removed. The agent has no direct operation for "which documents have I uploaded?" independent of content search.

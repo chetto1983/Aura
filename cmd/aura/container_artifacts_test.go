@@ -133,7 +133,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		// and the `aura` gate on it are part of the image contract, not incidental
 		// wiring.
 		"arcadedb:",
-		"image: arcadedata/arcadedb:26.7.3",
+		"image: arcadedata/arcadedb:26.8.1",
 		"aura-arcadedb:/home/arcadedb/databases",
 		"arcadedb-mcp:",
 		"127.0.0.1:8096:8096",

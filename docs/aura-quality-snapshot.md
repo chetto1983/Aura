@@ -109,7 +109,7 @@ strictly greater than 96.5.
 
 | Metric | Value | Method | Last measured | Status |
 |---|---|---|---|---|
-| Memory Reliability Score | **100.00/100** | Full deterministic + live MCP suite, including initialize/list/call, temporal history, provenance, purge, isolation, abstention, runtime metadata and latency | 2026-08-03 | **PASS** (>96.5) |
+| Memory Reliability Score | **100.00/100** | Full deterministic + live MCP suite, including initialize/list/call, temporal history, provenance, purge, isolation, abstention, runtime metadata and latency | 2026-08-25 | **PASS** (>96.5) |
 | `internal/arcadedb` package coverage | **943/1016 = 92.81%** | Combined unit + `arcadedb_integration` profile against the live database | 2026-08-03 | **PASS** (>=85%) |
 | Operator-path search latency | **p50 67.069 ms / p95 77.654 ms / max 86.340 ms** | 25 sequential cold-retained samples, each including PostgreSQL identity lookup, MCP initialize and `memory_search` | 2026-08-03 | **PASS** (p95 <=1000 ms) |
 | Nonexistent-fact behavior | `facts: []`, `abstained: true`, `no_qualified_candidates` | Live CLI query for a deliberately fabricated claim | 2026-08-03 | **PASS** |
@@ -117,7 +117,7 @@ strictly greater than 96.5.
 | Model-facing memory surface | **4 operations exposed / 6 host operations hidden** | Deployed manifest plus retrieval gate: 25/25 top-1 and 25/25 recall@3 | 2026-08-03 | **PASS** |
 | Owned Go coverage matrix | **24004/27729 = 86.6%** | Disposable PostgreSQL `db_integration` run via `scripts/coverage_docker.sh`; `internal/arcadedb` is 92.72% in this matrix | 2026-08-03 | **PASS** (>=85%) |
 
-**Runtime witness:** ArcadeDB 26.7.3, `arcadedb-mcp` 0.1.0,
+**Runtime witness:** ArcadeDB 26.8.1, `arcadedb-mcp` 0.1.0,
 `embeddinggemma-300M-Q8_0.gguf`, 768 dimensions. The candidate commit, dirty-file set,
 tool-manifest hash and seeded-corpus marker are embedded in the generated report. This score
 measures memory-system reliability, not LoCoMo answer accuracy, and supersedes the retired

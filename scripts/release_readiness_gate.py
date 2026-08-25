@@ -186,17 +186,24 @@ def validate_dr(report: dict[str, Any]) -> dict[str, Any]:
     indexed = {
         item.get("plane"): item for item in planes if isinstance(item, dict) and item.get("plane")
     }
-    required = {"postgres", "sidecars", "garage"}
+    required = {"postgres", "sidecars", "garage", "arcadedb"}
     missing = required - indexed.keys()
     require(not missing, f"disaster recovery: missing planes {sorted(missing)}")
-    require(report.get("planes_executed") == 3, "disaster recovery: executed plane count != 3")
-    require(report.get("planes_required") == 3, "disaster recovery: required plane count != 3")
+    expected_count = len(required)
+    require(
+        report.get("planes_executed") == expected_count,
+        f"disaster recovery: executed plane count != {expected_count}",
+    )
+    require(
+        report.get("planes_required") == expected_count,
+        f"disaster recovery: required plane count != {expected_count}",
+    )
     for plane_id in sorted(required):
         plane = indexed[plane_id]
         require(plane.get("restored_items", 0) > 0, f"disaster recovery: {plane_id} empty")
         require(plane.get("checksum_ok") is True, f"disaster recovery: {plane_id} checksum failed")
         require(plane.get("cleanup_ok") is True, f"disaster recovery: {plane_id} cleanup failed")
-    return {"planes": 3}
+    return {"planes": expected_count}
 
 
 def validate_observability(report: dict[str, Any]) -> dict[str, Any]:
