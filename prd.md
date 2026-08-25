@@ -7911,6 +7911,15 @@ flusso completo, che funziona.
 > WhatsApp recipes are identity-scoped instead; treating their current singleton storage as another
 > operator-global setting is forbidden.
 >
+> The already-delivered remote-MCP split is the ownership model for these internal recipes:
+> `aura.mcp_server` remains deployment-scoped, while the authenticated Aura identity is the owner of
+> the connection opened from that recipe. Aura resolves that identity from its Postgres-backed web or
+> agent context and passes it across the trusted internal boundary; neither the browser nor a model
+> argument can choose it. The process-wide remote-MCP registry limitation recorded in `docs/HANDOFF.md`
+> is not copied into these sidecars: Calendar and WhatsApp dispatch every request through a runtime
+> keyed by identity, so two identities may use the same recipe concurrently without sharing a grant,
+> account, session, or client.
+>
 > **Calendar contract.** Every configured account carries a required `TenantId`. Every MCP tool
 > call must extract a non-empty identity from `_meta.aura.user_identifier` and bind the account
 > registry to that identity for the full asynchronous call. Listing, smart routing, explicit
@@ -7918,9 +7927,11 @@ flusso completo, che funziona.
 > lookups all see only that bound view; a caller-supplied foreign `accountId` is indistinguishable
 > from a missing account. The cockpit admin proxy stamps `X-Aura-Identity` from Aura's authenticated
 > request context, never from browser input, and Calendar account create/list/status/auth/logout/
-> delete operations enforce the same tenant. Missing MCP metadata or a missing authenticated admin
-> identity fails closed. Existing live account rows are rewritten once with their real Aura owner
-> before the new image is started; the runtime contains no unscoped-account fallback.
+> delete operations enforce the same tenant. A successful connect persists that Postgres-derived
+> owner onto the new account before any provider authorization is started. Missing MCP metadata or a
+> missing authenticated admin identity fails closed. Existing live account rows are rewritten once
+> with their real Aura owner before the new image is started; the runtime contains no unscoped-account
+> fallback.
 >
 > **WhatsApp contract.** The fork replaces the singleton with a concurrency-safe runtime registry
 > keyed by the validated Aura identity. Each tenant owns exactly one live `whatsmeow.Client`, QR/
@@ -7931,9 +7942,11 @@ flusso completo, che funziona.
 > storage or a client. Aura's cockpit proxy stamps the authenticated identity and the existing
 > bridge bearer token for status, QR, and logout. `WHATSAPP_DB_PATH` and `WHATSMEOW_DB_PATH` are
 > retired rather than retained as singleton compatibility switches; `WHATSAPP_STORE_ROOT` is the
-> single storage configuration. Existing live WhatsApp files and media are moved once into the
-> operator's tenant directory before the new image starts. No shared-store fallback, old singleton
-> process path, or restart-the-whole-bridge logout path remains.
+> single storage configuration. Opening a tenant for the first connect acquires that tenant's lock,
+> creates its directory and SQLite files if absent, and applies the fork's idempotent schema migrations
+> before the client or message store becomes reachable. Existing live WhatsApp files and media are
+> moved once into the operator's tenant directory before the new image starts. No shared-store
+> fallback, old singleton process path, or restart-the-whole-bridge logout path remains.
 >
 > Aura passes the existing sidecar `WHATSAPP_BRIDGE_TOKEN` as the new
 > `AURA_WHATSAPP_BRIDGE_TOKEN` daemon secret so the management proxy can authenticate; installers
@@ -7945,7 +7958,11 @@ flusso completo, che funziona.
 > **Implementation and verification boundary.** Targeted files are the Aura identity-stamping
 > policy, Calendar/WhatsApp cockpit proxies and config wiring, Compose/env/install artifacts, the
 > two fork request-context/storage/runtime paths, and their focused tests and docs. This change
-> adds no Aura Postgres schema and therefore no migration. Closure requires: daemon-free parser/
+> reuses Aura's existing Postgres identity and authenticated request binding; it adds no duplicate
+> identity registry and therefore no new Aura schema migration. "Migrate on connect" means each
+> tenant-owned sidecar store runs its own current schema migrations synchronously on first open,
+> before reporting connected; it never means guessing an owner for legacy singleton data. Closure
+> requires: daemon-free parser/
 > path/foreign-account tests; WSL Go race, Python pytest/ruff, and .NET test/build gates for the
 > touched packages; a real one-time migration of both live volumes; two live identities returning
 > different account/chat ownership evidence; foreign explicit identifiers denied; per-tenant
