@@ -629,7 +629,7 @@ STEER-04 exists because the failure mode of any queue-into-a-running-thing is si
   4. A steered turn consumes no more steps or wallclock than an unsteered one — the budget is unchanged by steering.
   5. The same steer works from a channel, not only the cockpit.
 
-**Plans**: 6/8 plans executed
+**Plans**: 7/8 plans executed
 
 Plans:
 **Wave 1**
@@ -649,7 +649,7 @@ Plans:
 
 - [x] 52-05-PLAN.md — STEER-04: auto-deliver a leftover steer as the next user turn, and refuse a terminal run with an actionable 410
 - [x] 52-06-PLAN.md — STEER-05: Telegram steers the live turn, and the media queue D-05 requires (today a photo on a busy chat is dropped, not queued)
-- [ ] 52-07-PLAN.md — D-10's composer contract: the cockpit composer steers a live run, the aura.steer frame reaches the UI on both pumps, and the committed dist is rebuilt on Linux
+- [x] 52-07-PLAN.md — D-10's composer contract: the cockpit composer steers a live run, the aura.steer frame reaches the UI on both pumps, and the committed dist is rebuilt on Linux
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -720,7 +720,7 @@ replay; the skill is now permanent surface, not a compensating workaround awaiti
 | 49. Memory tiers | 0/TBD | Not started | - |
 | 50. Context ladder legibility | 0/TBD | Not started | - |
 | 51. Durable delegation | 0/TBD | Not started | - |
-| 52. Mid-turn steering | 6/8 | In Progress|  |
+| 52. Mid-turn steering | 7/8 | In Progress|  |
 | 54. Milestone exit | 0/TBD | Not started | - |
 
 ## Notes on conditional scope

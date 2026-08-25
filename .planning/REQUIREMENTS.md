@@ -156,9 +156,9 @@
      user-role messages mid-run on three paths, so a steer is a fourth instance of an
      existing pattern. -->
 
-- [ ] **STEER-01**: The operator can type into a running turn; the message is injected at the next round boundary as ordinary user input, never interrupting a tool mid-execution
+- [x] **STEER-01**: The operator can type into a running turn; the message is injected at the next round boundary as ordinary user input, never interrupting a tool mid-execution
 - [ ] **STEER-02**: A steer does not extend the step or wallclock budget — steering redirects the work, it does not buy more of it
-- [ ] **STEER-03**: A steer is echoed on the wire and persisted where it belongs in sequence, so a reload, a resume, or a later replay shows it at the point it actually landed
+- [x] **STEER-03**: A steer is echoed on the wire and persisted where it belongs in sequence, so a reload, a resume, or a later replay shows it at the point it actually landed
 - [ ] **STEER-04**: A steer that arrives after its run has ended is delivered automatically as the next user turn, preceded by a visible line saying that happened, never silently swallowed
 - [x] **STEER-05**: Steering works from the operator's channels, not only the cockpit
 - [ ] **STEER-06**: The PRD amendment ratifying mid-turn steering is committed **before** any of its code
@@ -253,9 +253,9 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 | MEM-05 | Phase 45 | Complete |
 | MEM-06 | Phase 49 | Pending |
 | RESUME-01 | Phase 52 | Shipped early (`52-03`) — closes at 52-08 (Gate 3) |
-| STEER-01 | Phase 52 | Pending |
+| STEER-01 | Phase 52 | Complete |
 | STEER-02 | Phase 52 | Pending |
-| STEER-03 | Phase 52 | Pending |
+| STEER-03 | Phase 52 | Complete |
 | STEER-04 | Phase 52 | Pending |
 | STEER-05 | Phase 52 | Complete |
 | STEER-06 | Phase 52 | Pending |
