@@ -13,8 +13,7 @@ type rankedDocument struct {
 	passages map[string]*RetrievalPassage
 	// order is the best position this document reached in the ranking the ENGINE
 	// returned. Nothing here computes a score: ArcadeDB fused both indexes and ordered
-	// them, and any order re-derived in Go could only disagree with it -- which is what
-	// the tier ladder this replaces did, at 0.300 recall@1 against 0.850.
+	// them, and any order re-derived in Go could only disagree with it.
 	order   int
 	ordinal int64
 }
@@ -33,17 +32,7 @@ func rankDocuments(
 	topPassages int,
 	forceOpen bool,
 ) []RetrievalDocument {
-	// Keyed by search_document_id, which BOTH sides already carry: a card's DocumentID is
-	// aura.documents.search_document_id, and a candidate's is the same string the sidecar
-	// derived from (identity, "s3", source_key).
-	//
-	// It used to be keyed by the card's catalog uuid, and that made the CARD the spine: a
-	// document existed in the answer only because a card created it, and passages attached
-	// to it afterwards. A document reconciled from the bucket has no catalog row at all, so
-	// its passages matched the query and were then dropped on the floor with nothing to
-	// attach to. The passage is the spine now and the card is enrichment -- the shape
-	// cognee uses, where the chunk carries document_id/document_name for reference
-	// rendering rather than joining to find them.
+	// Cards and passages share the reconciler-derived search_document_id.
 	byDocumentID := make(map[string]*rankedDocument, len(cards)+len(passages))
 	// Passages first and their order wins: a document the engine ranked is better
 	// evidenced than one only a card mentions, so cards start after the last passage.
@@ -100,9 +89,7 @@ func newRankedDocument(documentID string) *rankedDocument {
 	}
 }
 
-// ensureRankedDocumentFromCard adds the catalog's human-facing fields -- title, tags, the
-// digest and the card body. They are enrichment: a document is perfectly answerable
-// without them, it just answers with a filename instead of a title.
+// ensureRankedDocumentFromCard adds the document's searchable description and object identity.
 func ensureRankedDocumentFromCard(byDocumentID map[string]*rankedDocument, card RetrievalCard) *rankedDocument {
 	doc := byDocumentID[card.DocumentID]
 	if doc == nil {
@@ -158,11 +145,7 @@ func mergePassage(doc *rankedDocument, candidate arcadedb.PassageCandidate, rank
 		locator := citationLocator(candidate)
 		passage = &RetrievalPassage{
 			PassageID: candidate.PassageID, Ordinal: candidate.Ordinal, Text: candidate.Text,
-			// document:<search_document_id>@<sha12>#<locator>. The middle field was the
-			// version number, which is always absent now; the digest of the object replaces
-			// it and is strictly better at the job a citation has -- a version number says
-			// which row was current, while the digest says whether these are still the bytes
-			// that were quoted. Twelve hex characters, like every other short digest here.
+			// document:<search_document_id>@<sha12>#<locator> pins the citation to object bytes.
 			CitationToken: "document:" + candidate.SearchDocumentID + "@" +
 				shortHash(candidate.RawSHA256) + "#" + locator,
 			CitationLocator: locator, Locator: passageLocator(candidate),
@@ -181,33 +164,13 @@ func mergePassage(doc *rankedDocument, candidate arcadedb.PassageCandidate, rank
 
 func passageLocator(candidate arcadedb.PassageCandidate) PassageLocator {
 	locator := PassageLocator{
-		SelfRef: candidate.SelfRef, HeadingPath: append([]string(nil), candidate.HeadingPath...),
-		Captions:  append([]string(nil), candidate.Captions...),
-		SheetName: candidate.SheetName, TableName: candidate.TableName,
-		CellRef: candidate.CellReference,
-	}
-	locator.PageNumber = intFromInt64(candidate.PageNumber)
-	locator.RowNumber = intFromInt64(candidate.RowNumber)
-	locator.ColumnNumber = intFromInt64(candidate.ColumnNumber)
-	if candidate.BoundingBox != nil {
-		locator.BoundingBox = []float64{
-			candidate.BoundingBox.Left, candidate.BoundingBox.Top,
-			candidate.BoundingBox.Right, candidate.BoundingBox.Bottom,
-		}
+		HeadingPath: append([]string(nil), candidate.HeadingPath...),
 	}
 	if candidate.CharacterSpan != nil {
 		start, end := int(candidate.CharacterSpan.Start), int(candidate.CharacterSpan.End)
 		locator.CharStart, locator.CharEnd = &start, &end
 	}
 	return locator
-}
-
-func intFromInt64(value *int64) *int {
-	if value == nil {
-		return nil
-	}
-	converted := int(*value)
-	return &converted
 }
 
 func sortedPassages(passages map[string]*RetrievalPassage, limit int) []RetrievalPassage {

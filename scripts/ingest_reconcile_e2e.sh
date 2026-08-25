@@ -1,26 +1,6 @@
 #!/usr/bin/env bash
-# Task 6's own test -- proves what is OURS, not CocoIndex's reconciliation.
-#
-# spikes/cocoindex-ingestion/FINDINGS.md's "S3 incrementale" already measured add/modify/
-# delete reconciliation against Garage (3 added / 3 unchanged in 0.1s / 1 reprocessed /
-# delete removes all 249 of a document's passages) "senza una riga di codice nostro" --
-# re-measuring that here would be test babysitting of the library, not of this pipeline.
-#
-# What IS ours, and unproven before this script:
-#   (a) the passage identity is search_document_id(identity, "s3", key), not the walker's
-#       prefix-relative path -- the F0 defect FINDINGS §5b recorded in the spike.
-#   (b) the written Passage carries arcade.py's full field set, not five fields.
-#   (c) the real ingest.extract (iscc-tika + LibreOffice) and ingest.chunk are in the
-#       chain, not the withdrawn MarkItDown / naive char splitter.
-#   (d) live mode (auto_refresh + update_blocking(live=True)) really performs a SECOND
-#       cycle on an object added after the process started.
-# Plus two wiring probes for OUR bugs, not CocoIndex's: rerun-unchanged -> zero
-# re-extractions (an ephemeral LMDB or an unstable component path would both show up
-# here), and delete -> the deleted document's passages are gone.
-#
-# Runs against the REAL stack: a disposable Garage bucket + key and a disposable
-# ArcadeDB database, both created and torn down here -- NEVER aura_memory or any
-# mem_<uuid>, which are production identities. Run in WSL, not Git Bash.
+# Production reconciliation gate: real Garage, CocoIndex, extractor, embedder and
+# per-identity ArcadeDB. Every resource is disposable. Run in WSL.
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
 
@@ -32,9 +12,17 @@ net="${AURA_NETWORK:-aura_default}"
 suffix="$(date +%s)-$$"
 bucket="aura-ingest-e2e-${suffix}"
 key_name="aura-ingest-e2e-${suffix}"
-arcade_db="aura_ingest_e2e_$(printf '%s' "$suffix" | tr -c '0-9a-zA-Z' '_')"
 volume="aura-ingest-e2e-state-${suffix}"
-identity_id="aura-ingest-e2e-identity-${suffix}"
+identity_id="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+arcade_db="mem_${identity_id//-/_}"
+marker_a="CERULEAN${suffix//-/}"
+
+bucket_b="aura-ingest-e2e-b-${suffix}"
+key_name_b="aura-ingest-e2e-b-${suffix}"
+volume_b="aura-ingest-e2e-state-b-${suffix}"
+identity_id_b="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+arcade_db_b="mem_${identity_id_b//-/_}"
+marker_b="VERMILION${suffix//-/}"
 
 for c in aura-arcadedb aura-garage aura-llama-embed; do
   if [ "$(docker inspect -f '{{.State.Running}}' "$c" 2>/dev/null || echo false)" != "true" ]; then
@@ -50,6 +38,8 @@ scratch="$(mktemp -d)"
 access_key=""
 secret_key=""
 container_id=""
+access_key_b=""
+secret_key_b=""
 
 # Everything that talks to ArcadeDB or S3 runs INSIDE aura-ingest:local, on the compose
 # network, reusing the same modules the pipeline itself uses (ingest.arcade._post for
@@ -59,10 +49,20 @@ run_py() {  # run_py <heredoc-on-stdin>, with ARCADE_*/S3_* already exported bel
   docker run --rm -i --network "$net" \
     -e ARCADE_HTTP="http://aura-arcadedb:2480" -e ARCADE_DB="$arcade_db" -e ARCADEDB_PASSWORD="$arcade_pw" \
     -e S3_ENDPOINT="http://aura-garage:3900" -e S3_ACCESS_KEY="$access_key" -e S3_SECRET_KEY="$secret_key" \
-    -e S3_BUCKET="$bucket" -e IDENTITY_ID="$identity_id" \
+    -e S3_BUCKET="$bucket" -e IDENTITY_ID="$identity_id" -e MARKER_A="$marker_a" \
     -e AURA_INGEST_IDENTITY_ID="$identity_id" -e AURA_INGEST_S3_BUCKET="$bucket" \
     -e AURA_INGEST_S3_ACCESS_KEY_ID="$access_key" -e AURA_INGEST_S3_SECRET_ACCESS_KEY="$secret_key" \
     -v "$repo_root/scripts/fixtures/document_pipeline_e2e:/fixtures:ro" \
+    --entrypoint python "$img" -
+}
+
+run_py_b() {
+  docker run --rm -i --network "$net" \
+    -e ARCADE_HTTP="http://aura-arcadedb:2480" -e ARCADE_DB="$arcade_db_b" -e ARCADEDB_PASSWORD="$arcade_pw" \
+    -e S3_ENDPOINT="http://aura-garage:3900" -e S3_ACCESS_KEY="$access_key_b" -e S3_SECRET_KEY="$secret_key_b" \
+    -e S3_BUCKET="$bucket_b" -e IDENTITY_ID="$identity_id_b" -e MARKER_B="$marker_b" \
+    -e AURA_INGEST_IDENTITY_ID="$identity_id_b" -e AURA_INGEST_S3_BUCKET="$bucket_b" \
+    -e AURA_INGEST_S3_ACCESS_KEY_ID="$access_key_b" -e AURA_INGEST_S3_SECRET_ACCESS_KEY="$secret_key_b" \
     --entrypoint python "$img" -
 }
 
@@ -93,6 +93,26 @@ PY
     docker exec aura-garage /garage bucket delete --yes "$bucket" >/dev/null 2>&1
     docker exec aura-garage /garage key delete --yes "$access_key" >/dev/null 2>&1
   fi
+  if [ -n "$access_key_b" ]; then
+    run_py_b <<'PY' >/dev/null 2>&1
+import asyncio, os
+from aiobotocore.session import get_session
+
+async def main():
+    session = get_session()
+    async with session.create_client(
+        "s3", endpoint_url=os.environ["S3_ENDPOINT"], aws_access_key_id=os.environ["S3_ACCESS_KEY"],
+        aws_secret_access_key=os.environ["S3_SECRET_KEY"], region_name="garage") as c:
+        paginator = c.get_paginator("list_objects_v2")
+        async for page in paginator.paginate(Bucket=os.environ["S3_BUCKET"]):
+            for obj in page.get("Contents", []):
+                await c.delete_object(Bucket=os.environ["S3_BUCKET"], Key=obj["Key"])
+
+asyncio.run(main())
+PY
+    docker exec aura-garage /garage bucket delete --yes "$bucket_b" >/dev/null 2>&1
+    docker exec aura-garage /garage key delete --yes "$access_key_b" >/dev/null 2>&1
+  fi
   run_py <<'PY' >/dev/null 2>&1
 import os
 from ingest.arcade import _post
@@ -102,7 +122,17 @@ try:
 except Exception:
     pass
 PY
+  run_py_b <<'PY' >/dev/null 2>&1
+import os
+from ingest.arcade import _post
+try:
+    _post("http://aura-arcadedb:2480", "/api/v1/server", {"command": f"drop database {os.environ['ARCADE_DB']}"},
+          ("root", os.environ["ARCADEDB_PASSWORD"]), 30.0)
+except Exception:
+    pass
+PY
   docker volume rm "$volume" >/dev/null 2>&1
+  docker volume rm "$volume_b" >/dev/null 2>&1
   rm -rf "$scratch"
   exit "$ec"
 }
@@ -122,14 +152,17 @@ docker exec aura-garage /garage bucket allow --read --write --owner "$bucket" --
 EXTRACT_COUNT=0
 run_pass() {
   local log="$scratch/run.log"
-  docker run --rm --network "$net" \
+  if ! docker run --rm --network "$net" \
     -e ARCADEDB_PASSWORD="$arcade_pw" -e ARCADE_HTTP="http://aura-arcadedb:2480" \
-    -e ARCADE_BOLT="bolt://aura-arcadedb:7687" -e ARCADE_DB="$arcade_db" \
+    -e ARCADE_BOLT="bolt://aura-arcadedb:7687" \
     -e AURA_INGEST_IDENTITY_ID="$identity_id" \
     -e AURA_INGEST_S3_ENDPOINT="http://aura-garage:3900" -e AURA_INGEST_S3_BUCKET="$bucket" \
     -e AURA_INGEST_S3_ACCESS_KEY_ID="$access_key" -e AURA_INGEST_S3_SECRET_ACCESS_KEY="$secret_key" \
     -v "$volume:/state" \
-    "$img" > "$log" 2>&1
+    "$img" > "$log" 2>&1; then
+    cat "$log" >&2
+    return 1
+  fi
   cat "$log"
   EXTRACT_COUNT="$(grep -c '^\[extract\]' "$log" || true)"
 }
@@ -140,7 +173,10 @@ import asyncio, os
 from aiobotocore.session import get_session
 
 DOCS = {
-    "alpha.txt": "Alpha document about apple orchards in springtime, filler filler filler filler.",
+    "alpha.txt": (
+        "Alpha document about apple orchards in springtime. "
+        f"The private launch code is {os.environ['MARKER_A']}. filler filler filler filler."
+    ),
     "beta.txt": "Beta document about basalt columns on volcanic coastlines, filler filler filler.",
     "gamma.txt": "Gamma document about glacier melt rates in the Alps, filler filler filler filler.",
 }
@@ -177,9 +213,9 @@ from ingest.identity import search_document_id
 expected = search_document_id(os.environ["IDENTITY_ID"], "s3", "alpha.txt")
 rows = _post("http://aura-arcadedb:2480", f"/api/v1/query/{os.environ['ARCADE_DB']}",
              {"language": "sql",
-              "command": f"SELECT search_document_id, document_id FROM Passage WHERE document_id = '{expected}'"},
+              "command": f"SELECT search_document_id FROM Passage WHERE search_document_id = '{expected}'"},
              ("root", os.environ["ARCADEDB_PASSWORD"]), 30.0)["result"]
-assert rows, f"no Passage row has document_id={expected!r} -- did identity derivation drift?"
+assert rows, f"no Passage row has search_document_id={expected!r} -- did identity derivation drift?"
 stored = rows[0]["search_document_id"]
 assert stored == expected, (
     f"stored search_document_id ({stored!r}) != identity.search_document_id() ({expected!r}); "
@@ -187,29 +223,19 @@ assert stored == expected, (
 print(f"ok: search_document_id == identity.search_document_id(identity, 's3', 'alpha.txt'), not the walker path")
 PY
 
-echo "== Assertion (b): the full arcade.py field set, not five fields =="
-# Two checks, because ArcadeDB's Bolt plugin follows Neo4j's own SET n += \$props
-# semantics: a None value in the props map REMOVES that property from the vertex
-# rather than storing a null -- measured directly (INSERT ... SET b = null keeps the
-# key; CocoIndex's declare_record with a None field does not). So a live row can only
-# ever show the fields THIS pipeline populates with real values; the other arcade.py
-# fields (layout/version/projection -- genuinely inapplicable to plain-text chunking,
-# see app.py's Passage docstring) are proven by the STRUCTURAL check instead.
+echo "== Assertion (b): the declared passage contract has no unused fields =="
 run_py <<'PY'
 import dataclasses
 import ingest.app as m
 
 names = {f.name for f in dataclasses.fields(m.Passage)}
 expected = {
-    "passage_key", "passage_id", "projection_key", "document_id", "search_document_id",
-    "version_id", "version_number", "raw_sha256", "pipeline_generation", "schema_version",
-    "ordinal", "text", "normalized_text_sha256", "self_ref", "heading_path", "captions",
-    "page_number", "bbox_left", "bbox_top", "bbox_right", "bbox_bottom", "char_start",
-    "char_end", "sheet_name", "table_name", "row_number", "column_number", "cell_reference",
-    "embedding", "active", "created_at", "tombstoned_at",
+    "passage_key", "search_document_id", "source_kind", "source_key", "raw_sha256",
+    "schema_version", "ordinal", "text", "normalized_text_sha256", "heading_path",
+    "char_start", "char_end", "embedding",
 }
 assert names == expected, f"Passage field set drifted from arcade.py's DDL: {names ^ expected}"
-print(f"ok: Passage declares all {len(expected)} arcade.py fields (the spike's Passage had 5)")
+print(f"ok: Passage declares exactly {len(expected)} populated fields")
 PY
 run_py <<'PY'
 import os
@@ -218,21 +244,19 @@ from ingest.identity import search_document_id
 
 doc_id = search_document_id(os.environ["IDENTITY_ID"], "s3", "alpha.txt")
 rows = _post("http://aura-arcadedb:2480", f"/api/v1/query/{os.environ['ARCADE_DB']}",
-             {"language": "sql", "command": f"SELECT * FROM Passage WHERE document_id = '{doc_id}'"},
+             {"language": "sql", "command": f"SELECT * FROM Passage WHERE search_document_id = '{doc_id}'"},
              ("root", os.environ["ARCADEDB_PASSWORD"]), 30.0)["result"]
 row = rows[0]
 populated = {
-    "passage_key", "passage_id", "document_id", "search_document_id", "raw_sha256",
-    "pipeline_generation", "schema_version", "ordinal", "text", "normalized_text_sha256",
-    "heading_path", "char_start", "char_end", "embedding", "active", "created_at",
+    "passage_key", "search_document_id", "source_kind", "source_key", "raw_sha256",
+    "schema_version", "ordinal", "text", "normalized_text_sha256", "heading_path",
+    "char_start", "char_end", "embedding",
 }
 missing = populated - row.keys()
 assert not missing, f"missing fields that should always be non-null: {sorted(missing)}"
 assert len(row["embedding"]) == 768, f"embedding width {len(row['embedding'])} != 768"
-assert row["active"] is True
-assert row["pipeline_generation"] and row["schema_version"] and row["raw_sha256"]
-print(f"ok: all {len(populated)} populated fields present live (raw_sha256/pipeline_generation/"
-      f"schema_version/normalized_text_sha256 did not exist in the spike's Passage at all)")
+assert row["schema_version"] and row["raw_sha256"]
+print(f"ok: all {len(populated)} declared fields are populated live")
 PY
 
 echo "== Assertion (c): the real extractor+chunker are in the chain =="
@@ -259,7 +283,7 @@ from ingest.identity import search_document_id
 
 doc_id = search_document_id(os.environ["IDENTITY_ID"], "s3", "order.xls")
 rows = _post("http://aura-arcadedb:2480", f"/api/v1/query/{os.environ['ARCADE_DB']}",
-             {"language": "sql", "command": f"SELECT text FROM Passage WHERE document_id = '{doc_id}'"},
+             {"language": "sql", "command": f"SELECT text FROM Passage WHERE search_document_id = '{doc_id}'"},
              ("root", os.environ["ARCADEDB_PASSWORD"]), 30.0)["result"]
 text = " ".join(r["text"] for r in rows)
 # GROUND_TRUTH.txt: "CODE: A9A26924 appears exactly once, with Quantita 11" -- this table
@@ -268,7 +292,7 @@ text = " ".join(r["text"] for r in rows)
 # outright on .xls (FINDINGS.md), so this could not pass on the withdrawn extractor.
 for token in ("A9A26924", "Descrizione", "Quantita"):
     assert token in text, f"{token!r} not found in extracted .xls text: {text!r}"
-print("ok: legacy .xls normalised by LibreOffice and extracted by iscc-tika, matching GROUND_TRUTH.txt")
+print("ok: .xls normalised by LibreOffice and extracted by iscc-tika, matching GROUND_TRUTH.txt")
 PY
 
 echo "== Wiring probe 1: rerun unchanged -> zero re-extractions =="
@@ -286,9 +310,11 @@ async def main():
     async with session.create_client(
         "s3", endpoint_url=os.environ["S3_ENDPOINT"], aws_access_key_id=os.environ["S3_ACCESS_KEY"],
         aws_secret_access_key=os.environ["S3_SECRET_KEY"], region_name="garage") as c:
-        await c.put_object(Bucket=os.environ["S3_BUCKET"], Key="alpha.txt",
-                            Body=b"Alpha document REVISED about apple orchards after a late frost, "
-                                 b"filler filler filler filler filler.")
+        revised = (
+            "Alpha document REVISED about apple orchards after a late frost. "
+            f"The private launch code is {os.environ['MARKER_A']}. filler filler filler filler."
+        )
+        await c.put_object(Bucket=os.environ["S3_BUCKET"], Key="alpha.txt", Body=revised.encode())
         await c.delete_object(Bucket=os.environ["S3_BUCKET"], Key="beta.txt")
 
 asyncio.run(main())
@@ -302,7 +328,7 @@ from ingest.identity import search_document_id
 
 beta_id = search_document_id(os.environ["IDENTITY_ID"], "s3", "beta.txt")
 rows = _post("http://aura-arcadedb:2480", f"/api/v1/query/{os.environ['ARCADE_DB']}",
-             {"language": "sql", "command": f"SELECT count(*) as n FROM Passage WHERE document_id = '{beta_id}'"},
+             {"language": "sql", "command": f"SELECT count(*) as n FROM Passage WHERE search_document_id = '{beta_id}'"},
              ("root", os.environ["ARCADEDB_PASSWORD"]), 30.0)["result"]
 n = rows[0]["n"]
 assert n == 0, f"beta.txt's passages survived deletion ({n} rows) -- no delete worker of ours should have been needed"
@@ -312,7 +338,7 @@ PY
 echo "== Assertion (d): live mode really performs a second cycle =="
 container_id="$(docker run -d --network "$net" \
   -e ARCADEDB_PASSWORD="$arcade_pw" -e ARCADE_HTTP="http://aura-arcadedb:2480" \
-  -e ARCADE_BOLT="bolt://aura-arcadedb:7687" -e ARCADE_DB="$arcade_db" \
+  -e ARCADE_BOLT="bolt://aura-arcadedb:7687" \
   -e AURA_INGEST_IDENTITY_ID="$identity_id" \
   -e AURA_INGEST_S3_ENDPOINT="http://aura-garage:3900" -e AURA_INGEST_S3_BUCKET="$bucket" \
   -e AURA_INGEST_S3_ACCESS_KEY_ID="$access_key" -e AURA_INGEST_S3_SECRET_ACCESS_KEY="$secret_key" \
@@ -345,12 +371,85 @@ from ingest.identity import search_document_id
 
 delta_id = search_document_id(os.environ["IDENTITY_ID"], "s3", "delta.txt")
 rows = _post("http://aura-arcadedb:2480", f"/api/v1/query/{os.environ['ARCADE_DB']}",
-             {"language": "sql", "command": f"SELECT count(*) as n FROM Passage WHERE document_id = '{delta_id}'"},
+             {"language": "sql", "command": f"SELECT count(*) as n FROM Passage WHERE search_document_id = '{delta_id}'"},
              ("root", os.environ["ARCADEDB_PASSWORD"]), 30.0)["result"]
 n = rows[0]["n"]
 assert n == 1, f"delta.txt was extracted but no Passage row landed ({n})"
 print("ok: object added after the live process started was reconciled within one AURA_INGEST_INTERVAL_SEC, no restart")
 PY
 
+echo "== Identity B: separate bucket, state and ArcadeDB database =="
+key_output_b="$(docker exec aura-garage /garage key create "$key_name_b" 2>&1)"
+access_key_b="$(printf '%s\n' "$key_output_b" | grep -oP '(?<=Key ID:)\s*\K\S+')"
+secret_key_b="$(printf '%s\n' "$key_output_b" | grep -oP '(?<=Secret key:)\s*\K\S+')"
+[ -n "$access_key_b" ] && [ -n "$secret_key_b" ] || {
+  echo "FAIL: could not parse Garage key for identity B" >&2
+  exit 1
+}
+docker exec aura-garage /garage bucket create "$bucket_b" >/dev/null
+docker exec aura-garage /garage bucket allow --read --write --owner "$bucket_b" --key "$access_key_b" >/dev/null
+run_py_b <<'PY'
+import asyncio, os
+from aiobotocore.session import get_session
+
+async def main():
+    text = f"Bravo document. The private launch code is {os.environ['MARKER_B']}."
+    session = get_session()
+    async with session.create_client(
+        "s3", endpoint_url=os.environ["S3_ENDPOINT"], aws_access_key_id=os.environ["S3_ACCESS_KEY"],
+        aws_secret_access_key=os.environ["S3_SECRET_KEY"], region_name="garage") as c:
+        await c.put_object(Bucket=os.environ["S3_BUCKET"], Key="bravo.txt", Body=text.encode())
+
+asyncio.run(main())
+PY
+if ! docker run --rm --network "$net" \
+  -e ARCADEDB_PASSWORD="$arcade_pw" -e ARCADE_HTTP="http://aura-arcadedb:2480" \
+  -e ARCADE_BOLT="bolt://aura-arcadedb:7687" \
+  -e AURA_INGEST_IDENTITY_ID="$identity_id_b" \
+  -e AURA_INGEST_S3_ENDPOINT="http://aura-garage:3900" -e AURA_INGEST_S3_BUCKET="$bucket_b" \
+  -e AURA_INGEST_S3_ACCESS_KEY_ID="$access_key_b" -e AURA_INGEST_S3_SECRET_ACCESS_KEY="$secret_key_b" \
+  -v "$volume_b:/state" "$img" >"$scratch/run-b.log" 2>&1; then
+  cat "$scratch/run-b.log" >&2
+  exit 1
+fi
+cat "$scratch/run-b.log"
+run_py_b <<'PY'
+import os
+from ingest.arcade import _post
+
+rows = _post(
+    "http://aura-arcadedb:2480", f"/api/v1/query/{os.environ['ARCADE_DB']}",
+    {"language": "sql", "command": "SELECT text FROM Passage"},
+    ("root", os.environ["ARCADEDB_PASSWORD"]), 30.0,
+)["result"]
+text = " ".join(row["text"] for row in rows)
+assert os.environ["MARKER_B"] in text, "identity B marker did not reach its own database"
+print("ok: identity B marker exists only in its own per-identity projection")
+PY
+
+echo "== Latest migration round-trip and real-agent document E2E =="
+set -a
+# The repository .env is CRLF because it is shared with Windows. Normalize only the
+# sourced stream; never rewrite the operator's file.
+source <(sed 's/\r$//' .env)
+set +a
+export AURA_PROFILE=dev
+export AURA_DB_URL="postgres://aura_app:${POSTGRES_PASSWORD}@127.0.0.1:5432/aura?sslmode=disable"
+export AURA_DB_MIGRATE_URL="postgres://aura_migrate:${POSTGRES_PASSWORD}@127.0.0.1:5432/aura?sslmode=disable"
+export ARCADEDB_URL="http://127.0.0.1:2480"
+export ARCADEDB_ADMIN_USER=root
+export ARCADEDB_ADMIN_PASSWORD="$arcade_pw"
+export ARCADEDB_PASSWORD="$arcade_pw"
+export AURA_EMBED_BASE_URL="http://127.0.0.1:8081"
+export AURA_DOCUMENT_E2E_IDENTITY_A="$identity_id"
+export AURA_DOCUMENT_E2E_IDENTITY_B="$identity_id_b"
+export AURA_DOCUMENT_E2E_MARKER_A="$marker_a"
+export AURA_DOCUMENT_E2E_MARKER_B="$marker_b"
+
+go test -tags db_integration -run '^TestMigrate0102BackfillsDecisionPolicyRoundTrip$' \
+  -timeout 3m -v ./internal/db
+go test -tags document_live_e2e -run '^TestDocumentProductionAgentE2E$' \
+  -timeout 5m -v ./cmd/aura
+
 echo
-echo "ok: ingest reconciliation -- 4/4 assertions, 2/2 wiring probes"
+echo "ok: production document E2E -- reconciliation, migration, isolation and real agent"

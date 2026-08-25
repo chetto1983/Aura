@@ -123,13 +123,12 @@ func docsSearch(ctx context.Context, args []string, out io.Writer, factory docsS
 		return err
 	}
 	return writeJSON(out, map[string]any{
-		"query":               response.Query,
-		"profile":             response.Profile,
-		"status":              response.Status,
-		"degradation_reason":  response.DegradationReason,
-		"rejected_candidates": response.RejectedCandidates,
-		"documents":           response.Documents,
-		"retrieval_ms":        time.Since(start).Milliseconds(),
+		"query":              response.Query,
+		"profile":            response.Profile,
+		"status":             response.Status,
+		"degradation_reason": response.DegradationReason,
+		"documents":          response.Documents,
+		"retrieval_ms":       time.Since(start).Milliseconds(),
 	})
 }
 

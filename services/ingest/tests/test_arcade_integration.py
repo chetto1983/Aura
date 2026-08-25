@@ -55,6 +55,13 @@ def _query(database: str, statement: str, params: dict) -> list[dict]:
     return body["result"]
 
 
+def _command(database: str, statement: str) -> None:
+    _post(
+        ARCADE_HTTP, f"/api/v1/command/{database}",
+        {"language": "sql", "command": statement}, AUTH, 30.0,
+    )
+
+
 @pytest.fixture
 def disposable_database():
     _drop_database_ignoring_absence(TEST_DB)  # clean slate from a prior failed run
@@ -71,6 +78,45 @@ def test_ensure_schema_succeeds_on_a_fresh_database(disposable_database):
 def test_ensure_schema_is_idempotent(disposable_database):
     ensure_schema(ARCADE_HTTP, disposable_database, AUTH, DIMS)
     ensure_schema(ARCADE_HTTP, disposable_database, AUTH, DIMS)  # must not raise
+
+
+def test_ensure_schema_removes_retired_values_properties_and_types(disposable_database):
+    ensure_schema(ARCADE_HTTP, disposable_database, AUTH, DIMS)
+    for statement in (
+        "CREATE PROPERTY Passage.document_id IF NOT EXISTS STRING",
+        "CREATE PROPERTY Passage.active IF NOT EXISTS BOOLEAN",
+        "CREATE PROPERTY Passage.self_ref IF NOT EXISTS STRING",
+        "CREATE INDEX IF NOT EXISTS ON Passage (active, document_id) NOTUNIQUE",
+        "CREATE VERTEX TYPE DocumentProjection IF NOT EXISTS",
+        "CREATE EDGE TYPE HAS_PASSAGE IF NOT EXISTS",
+        "INSERT INTO Passage SET passage_key = 'retired', document_id = 'old', "
+        "active = true, self_ref = '/old'",
+    ):
+        _command(disposable_database, statement)
+
+    ensure_schema(ARCADE_HTTP, disposable_database, AUTH, DIMS)
+
+    schema = _query(
+        disposable_database,
+        "SELECT name, properties FROM schema:types",
+        {},
+    )
+    by_name = {row["name"]: row for row in schema}
+    names = {
+        prop["name"] if isinstance(prop, dict) else prop
+        for prop in by_name["Passage"]["properties"]
+    }
+    assert not {"document_id", "active", "self_ref"} & names
+    assert "DocumentProjection" not in by_name
+    assert "HAS_PASSAGE" not in by_name
+
+    rows = _query(
+        disposable_database,
+        "SELECT FROM Passage WHERE passage_key = :key",
+        {"key": "retired"},
+    )
+    assert len(rows) == 1
+    assert not {"document_id", "active", "self_ref"} & rows[0].keys()
 
 
 def test_bolt_written_vector_is_typed_and_ann_retrievable(disposable_database):

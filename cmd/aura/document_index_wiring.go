@@ -35,9 +35,7 @@ func newRuntimeDocumentIndex(
 	)
 	index, err := arcadedb.NewDocumentIndex(tenants, arcadedb.DocumentIndexConfig{
 		Dimensions:             cfg.Embed.Dimensions,
-		MaxCandidatePassages:   cfg.DocumentPipeline.MaxPassagesPerVersion,
-		MaxActivePassages:      cfg.DocumentPipeline.MaxActivePassages,
-		MaxRetrievalCandidates: cfg.DocumentPipeline.RetrievalCandidates,
+		MaxRetrievalCandidates: cfg.DocumentRetrieval.RetrievalCandidates,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("document index: %w", err)

@@ -1,22 +1,4 @@
-"""ArcadeDB schema for the Passage vertex type the ingestion pipeline writes.
-
-Passage's property names, its indexes, and its HAS_PASSAGE edge type are NOT
-this module's to invent: they mirror internal/arcadedb/document_schema.go's
-documentSchemaStatements exactly, because that is the schema Aura's Go
-retriever reads in production -- a name invented here would write rows the
-product cannot see. document_schema.go survives this rewrite; if its
-statements move, this list must move with them.
-
-DocumentProjection is GONE from both sides (2026-08-08). It was the other
-vertex type declared there, this sidecar never populated it, and the Go
-generation/tombstone writer that was its only author was deleted with the
-in-process pipeline -- so declaring it was dead schema.
-
-One deliberate exception: source_kind/source_key are declared here but not
-in document_schema.go. Go's retriever doesn't read them yet; they exist so a
-retrieval hit can be traced back to the Garage object it came from. ArcadeDB
-property creation is additive and IF NOT EXISTS, so a Go-created Passage type
-tolerates these extra properties without conflict.
+"""ArcadeDB schema owned by the CocoIndex document reconciler.
 
 ensure_schema() MUST run before the first passage write, every run,
 idempotently. CocoIndex's Neo4j-dialect Cypher MERGE creates an untyped list
@@ -51,8 +33,18 @@ import urllib.parse
 import urllib.request
 
 PASSAGE_TYPE = "Passage"
-PASSAGE_EDGE_TYPE = "HAS_PASSAGE"
 DOCUMENT_TYPE = "IndexedDocument"
+
+# These names were written by withdrawn projection/version/layout models. The current
+# plain-text reconciler cannot populate them, and keeping them would advertise a contract
+# that no production path implements.
+RETIRED_PASSAGE_PROPERTIES = (
+    "passage_id", "projection_key", "document_id", "version_id", "version_number",
+    "pipeline_generation", "self_ref", "captions", "page_number", "bbox_left",
+    "bbox_top", "bbox_right", "bbox_bottom", "sheet_name", "table_name", "row_number",
+    "column_number", "cell_reference", "active", "created_at", "tombstoned_at",
+)
+RETIRED_TYPES = ("DocumentProjection", "HAS_PASSAGE")
 
 # ArcadeDB's own liveness endpoint. GetReadyHandler.isRequireAuthentication() is false,
 # which is why the compose healthcheck can probe it without baking the root password into
@@ -175,27 +167,21 @@ def ensure_schema(
     base_url = base_url.rstrip("/")
     wait_until_ready(base_url, timeout_s=ready_timeout_s)
     _create_database(base_url, database, auth, timeout_s)
-    for statement in _passage_ddl(dimensions):
+    for statement in _document_ddl(dimensions):
         _command(base_url, database, auth, statement, timeout_s)
+    _drop_retired_schema(base_url, database, auth, timeout_s)
 
 
-def _passage_ddl(dimensions: int) -> list[str]:
-    """The exact Passage + HAS_PASSAGE statements from document_schema.go:276-319."""
+def _document_ddl(dimensions: int) -> list[str]:
+    """The complete declared schema for CocoIndex's two record targets."""
     t = PASSAGE_TYPE
     return [
         f"CREATE VERTEX TYPE {t} IF NOT EXISTS",
         f"CREATE PROPERTY {t}.passage_key IF NOT EXISTS STRING",
-        f"CREATE PROPERTY {t}.passage_id IF NOT EXISTS STRING",
-        f"CREATE PROPERTY {t}.document_id IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.search_document_id IF NOT EXISTS STRING",
-        # Not in document_schema.go yet (Go retrieval doesn't consume these):
-        # added here so a retrieval hit can resolve back to the object it came
-        # from. Property creation is additive/idempotent, so this does not
-        # conflict with the Go-created type -- see this module's docstring.
         f"CREATE PROPERTY {t}.source_kind IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.source_key IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.raw_sha256 IF NOT EXISTS STRING",
-        f"CREATE PROPERTY {t}.pipeline_generation IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.schema_version IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.ordinal IF NOT EXISTS LONG",
         f"CREATE PROPERTY {t}.text IF NOT EXISTS STRING",
@@ -208,10 +194,8 @@ def _passage_ddl(dimensions: int) -> list[str]:
         # property fails outright ("declared as LIST of 'FLOAT' but a value
         # of type 'ARRAY_OF_FLOATS' is used" -- see memory_vector.go).
         f"CREATE PROPERTY {t}.embedding IF NOT EXISTS ARRAY_OF_FLOATS",
-        f"CREATE PROPERTY {t}.active IF NOT EXISTS BOOLEAN",
-        f"CREATE PROPERTY {t}.created_at IF NOT EXISTS DATETIME",
         f"CREATE INDEX IF NOT EXISTS ON {t} (passage_key) UNIQUE",
-        f"CREATE INDEX IF NOT EXISTS ON {t} (active, document_id) NOTUNIQUE",
+        f"CREATE INDEX IF NOT EXISTS ON {t} (search_document_id) NOTUNIQUE",
         # The corpus is multilingual (Italian/English business documents), so
         # the analyzer is pinned explicitly rather than left at ArcadeDB's
         # per-language default.
@@ -224,8 +208,6 @@ def _passage_ddl(dimensions: int) -> list[str]:
         # above 10K vectors, which does not apply at this corpus size.
         f"CREATE INDEX IF NOT EXISTS ON {t} (embedding) LSM_VECTOR METADATA "
         f'{{ "dimensions": {dimensions}, "similarity": "COSINE", "quantization": "NONE" }}',
-        f"CREATE EDGE TYPE {PASSAGE_EDGE_TYPE} IF NOT EXISTS",
-
         # One record per object, carrying the card. It lives HERE and not in PostgreSQL
         # because the card leg is a full-text ranking, and ArcadeDB already indexes
         # Passage.text FULL_TEXT with this same analyzer: putting the card in Postgres
@@ -258,6 +240,45 @@ def _passage_ddl(dimensions: int) -> list[str]:
         f"CREATE INDEX IF NOT EXISTS ON {DOCUMENT_TYPE} (file_name_words) FULL_TEXT METADATA "
         "{analyzer:'org.apache.lucene.analysis.standard.StandardAnalyzer'}",
     ]
+
+
+def _drop_retired_schema(
+    base_url: str, database: str, auth: tuple[str, str], timeout_s: float
+) -> None:
+    """Remove retired values, properties and types from an existing tenant database."""
+    path = f"/api/v1/query/{urllib.parse.quote(database, safe='')}"
+    body = _post(
+        base_url, path,
+        {"language": "sql", "command": "SELECT name, properties FROM schema:types"},
+        auth, timeout_s,
+    )
+    rows = {row.get("name"): row for row in body.get("result", []) if row.get("name")}
+    passage_properties = _property_names(rows.get(PASSAGE_TYPE, {}).get("properties"))
+    for property_name in RETIRED_PASSAGE_PROPERTIES:
+        if property_name not in passage_properties:
+            continue
+        # DROP PROPERTY changes only the schema. Remove the record values first so no
+        # schemaless remnants survive, then FORCE removes any index that depended on it.
+        _command(base_url, database, auth, f"UPDATE {PASSAGE_TYPE} REMOVE {property_name}", timeout_s)
+        _command(
+            base_url, database, auth,
+            f"DROP PROPERTY {PASSAGE_TYPE}.{property_name} FORCE", timeout_s,
+        )
+    for type_name in RETIRED_TYPES:
+        if type_name in rows:
+            _command(base_url, database, auth, f"DROP TYPE {type_name} UNSAFE", timeout_s)
+
+
+def _property_names(value: object) -> set[str]:
+    if not isinstance(value, list):
+        return set()
+    names: set[str] = set()
+    for item in value:
+        if isinstance(item, str):
+            names.add(item)
+        elif isinstance(item, dict) and isinstance(item.get("name"), str):
+            names.add(item["name"])
+    return names
 
 
 def indexed_source_keys(

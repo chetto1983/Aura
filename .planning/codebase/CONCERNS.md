@@ -14,7 +14,7 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 | Pending approvals have no expiry | High | Closed 2026-08-25 | `internal/runner/approval_expiry.go`, `cmd/aura/approval_expiry.go`, `internal/runner/live_e2e_expiry_test.go` |
 | Empty accepted approval answers resumed the model silently | High | Closed 2026-08-25 | `internal/agui/server_run_test.go`, `internal/runner/runner_resume_test.go`, `internal/askuser/store_mutation_test.go` |
 | Release disclosure register reported NO-GO | High | Closed 2026-08-25 | `docs/audit/README.md`, `scripts/audit_closure_gate.py` |
-| Amendment #115 still requires a real-production document E2E whose runner no longer exists | High | Open | `prd.md`, absent `scripts/document_pipeline_e2e.sh` |
+| Amendment #115 still requires a real-production document E2E whose runner no longer exists | High | Closed 2026-08-25 | PRD amendment #141, `scripts/ingest_reconcile_e2e.sh`, `cmd/aura/document_agent_live_test.go` |
 | ArcadeDB tenant memory has no exercised backup/restore plane | High | Open | `scripts/restore_drill.sh`, `.github/workflows/ci.yml` |
 | Shared settings, skills, and MCP catalog constrain safe multi-user operation | Medium | Mitigated by a strict-profile boot gate | `internal/config/config_validate.go`, `internal/db/migrations/0024_settings.up.sql` |
 | Coverage is one aggregate at 86.4%; daemon-gated tiers do not feed that floor | Medium | Open/self-documented | `scripts/coverage_gate.sh`, `.github/workflows/ci.yml`, `docs/aura-quality-snapshot.md` |
@@ -37,11 +37,10 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 - Impact: future planning can treat historical numbers or dead commands as current gates. The HNSW section even points at deleted Neo4j paths as witnesses.
 - Fix approach: mark historical sections explicitly, retire rows whose capability or corpus is gone, and give every remaining row a command that runs against a permitted fixture.
 
-**Production document E2E contract has no runner:**
-- Issue: PRD amendment #115 requires a real-agent, real-production document lifecycle score above 98%, and amendment #118 explicitly retains that gate. The named `scripts/document_pipeline_e2e.sh` does not exist in the current tree.
-- Files: `prd.md`, `scripts/ingest_reconcile_e2e.sh`, `scripts/fixtures/document_pipeline_e2e/`, `.github/workflows/production-readiness.yml`.
-- Impact: the strongest document-plane acceptance path cannot be executed as specified, so unit/integration success cannot satisfy the repository's own Definition of Done.
-- Fix approach: either rebuild the production runner around the current CocoIndex/Tika/ArcadeDB path or amend the PRD after a measured replacement gate proves the same ingest, retrieval, isolation, deletion, and cleanup properties.
+**Production document E2E contract has no runner — CLOSED 2026-08-25:**
+- Resolution: amendment #141 replaces the retired catalog/version/stage contract with the measured production path: per-identity Garage, CocoIndex reconciliation, the real extractor/embedder, per-identity ArcadeDB, native retrieval, and a real OpenRouter agent. The replacement keeps the existing `scripts/ingest_reconcile_e2e.sh`; no withdrawn runner name was restored.
+- Evidence: the WSL gate passed add, unchanged restart, modify, delete, live refresh, structural-schema, `.xls` extraction, two-identity isolation, migration 0102 up/down/up, production `document_search`, and a real-agent answer. `services/ingest/tests/test_arcade_integration.py` additionally proved live removal of retired values, properties, indexes, and types.
+- Cleanup: the always-null/duplicated passage fields, `HAS_PASSAGE`, `DocumentProjection`, Go-side duplicate DDL, retired document-pipeline knobs, the ignored projection writer copy, and the catalog-backed live test were removed. CocoIndex is the sole document-schema writer and lifecycle reconciler.
 
 **Coverage gate is aggregate, not per-package:**
 - Issue: `scripts/coverage_gate.sh` sums every filtered statement and performs one comparison against `AURA_COVERAGE_MIN`. There is no package loop or package minimum.

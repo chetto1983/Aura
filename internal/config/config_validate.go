@@ -97,7 +97,8 @@ func (c *Config) ValidateProfile(p RuntimeProfile) []Violation {
 	vs = append(vs, c.gateReasoningTraceFull(p)...)
 	vs = append(vs, c.gateWebAuth(p)...)
 	vs = append(vs, c.gateObjectStoreEndpoint(p)...)
-	vs = append(vs, c.gateDocumentPipeline(p)...)
+	vs = append(vs, c.gateDocumentRetrieval(p)...)
+	vs = append(vs, c.gateAssetProcessingLease()...)
 	vs = append(vs, c.gateRetention()...)
 	vs = append(vs, c.gateMultiUserNeedsASandbox(p)...)
 	return vs

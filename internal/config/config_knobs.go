@@ -127,6 +127,7 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_ASSET_MAX_AUDIO_BYTES", Kind: KindInt, Default: "104857600"},
 		{Name: "AURA_ASSET_PRESIGN_TTL_SEC", Kind: KindInt, Default: "600"},
 		{Name: "AURA_ASSET_PROCESSING_CONCURRENCY", Kind: KindInt, Default: "2"},
+		{Name: "AURA_ASSET_PROCESSING_LEASE_SEC", Kind: KindInt, Default: "1200"},
 		{Name: "AURA_EMBED_REVISION", Kind: KindString, Default: ""},
 		{Name: "AURA_EMBED_FINGERPRINT", Kind: KindString, Default: ""},
 		{Name: "AURA_OBJECTSTORE_PATH_STYLE", Kind: KindBool, Default: "true"},

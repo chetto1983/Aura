@@ -3,7 +3,6 @@ package arcadedb
 import (
 	"encoding/json"
 	"math"
-	"strconv"
 	"strings"
 	"testing"
 )
@@ -15,20 +14,14 @@ func resultBody(rows any) string {
 	return string(encoded)
 }
 
-// candidateFixture shapes a row the way services/ingest actually writes one: passage_key is
-// "<search_document_id>:<ordinal>", and projection_key / version_id / version_number are
-// absent because the sidecar never sets them. It used to hash the projection keys, which
-// tested the decoder against a writer that no longer exists.
+// candidateFixture shapes the complete record CocoIndex writes today.
 func candidateFixture(index *DocumentIndex, passageID, documentID string, ordinal int64, scoreKey string, score float64) map[string]any {
-	generation := "generation-1"
 	return map[string]any{
-		"passage_key": "search-" + documentID + ":" + strconv.FormatInt(ordinal, 10), "passage_id": passageID,
-		"document_id": documentID, "search_document_id": "search-" + documentID,
+		"passage_key": passageID, "search_document_id": "search-" + documentID,
 		"source_kind": "s3", "source_key": "fatture/" + documentID + ".pdf",
-		"raw_sha256":          strings.Repeat("a", 64),
-		"pipeline_generation": generation, "schema_version": index.schemaVersion(), "ordinal": ordinal,
+		"raw_sha256": strings.Repeat("a", 64), "schema_version": index.schemaVersion(), "ordinal": ordinal,
 		"text": "bounded passage text", "normalized_text_sha256": strings.Repeat("b", 64),
-		"active": true, scoreKey: score,
+		scoreKey: score,
 	}
 }
 
@@ -36,16 +29,10 @@ func TestCandidateLocatorRoundTripsStrictly(t *testing.T) {
 	var index *DocumentIndex
 	index, _ = testDocumentIndex(t, func(recordedRequest) testResponse {
 		row := candidateFixture(index, "p-1", "doc-a", 1, "fused_score", 2)
-		row["self_ref"] = "#/tables/1"
 		row["heading_path"] = []any{"Quarterly", "Revenue"}
-		row["captions"] = []any{"Amounts in EUR"}
-		row["page_number"] = 3
-		row["bbox_left"], row["bbox_top"], row["bbox_right"], row["bbox_bottom"] = 1.0, 2.0, 3.0, 4.0
 		row["char_start"], row["char_end"] = 10, 25
-		row["sheet_name"], row["table_name"] = "Sheet1", "Revenue"
-		row["row_number"], row["column_number"], row["cell_reference"] = 4, 7, "G4"
 		return testResponse{Body: resultBody([]any{row})}
-	}, true)
+	})
 	candidates, err := index.FusedCandidates(t.Context(), FusedCandidateQuery{
 		CandidateFilter: CandidateFilter{IdentityID: documentTestIdentity, Limit: 1},
 		Query:           "revenue", Embedding: []float64{1, 0, 0},
@@ -54,10 +41,8 @@ func TestCandidateLocatorRoundTripsStrictly(t *testing.T) {
 		t.Fatalf("FusedCandidates: %v", err)
 	}
 	candidate := candidates[0]
-	if candidate.PageNumber == nil || *candidate.PageNumber != 3 ||
-		candidate.BoundingBox == nil || candidate.BoundingBox.Right != 3 ||
-		candidate.CharacterSpan == nil || candidate.CharacterSpan.End != 25 ||
-		candidate.CellReference != "G4" || len(candidate.HeadingPath) != 2 {
+	if candidate.CharacterSpan == nil || candidate.CharacterSpan.End != 25 ||
+		len(candidate.HeadingPath) != 2 {
 		t.Fatalf("candidate locator = %+v", candidate)
 	}
 }
@@ -105,7 +90,7 @@ func TestCandidateQueriesRejectInvalidRequestsBeforeIO(t *testing.T) {
 			index, requests := testDocumentIndex(t, func(recordedRequest) testResponse {
 				t.Fatal("invalid request reached ArcadeDB")
 				return testResponse{}
-			}, true)
+			})
 			if err := test.run(index); err == nil {
 				t.Fatal("invalid request accepted")
 			}
@@ -118,18 +103,12 @@ func TestCandidateQueriesRejectInvalidRequestsBeforeIO(t *testing.T) {
 
 func TestCandidateDecoderRejectsMalformedOrStaleRows(t *testing.T) {
 	mutations := map[string]func(map[string]any){
-		"missing key":        func(row map[string]any) { delete(row, "passage_id") },
+		"missing key":        func(row map[string]any) { delete(row, "passage_key") },
 		"wrong schema":       func(row map[string]any) { row["schema_version"] = "old" },
-		"inactive":           func(row map[string]any) { row["active"] = false },
 		"fractional ordinal": func(row map[string]any) { row["ordinal"] = 1.5 },
 		"negative score":     func(row map[string]any) { row["fused_score"] = -1 },
-		"partial bbox":       func(row map[string]any) { row["bbox_left"] = 1.0 },
 		"partial span":       func(row map[string]any) { row["char_start"] = 1 },
 		"bad headings":       func(row map[string]any) { row["heading_path"] = []any{7} },
-		// "bad projection key" was here. It is gone with the invariant it protected: the
-		// decoder no longer requires projection_key, because the generation model it keyed
-		// was deleted and the only writer that exists never sets it. Keeping the case would
-		// have meant keeping a check that rejected every real row.
 	}
 	for name, mutate := range mutations {
 		t.Run(name, func(t *testing.T) {
@@ -138,7 +117,7 @@ func TestCandidateDecoderRejectsMalformedOrStaleRows(t *testing.T) {
 				row := candidateFixture(index, "p-1", "doc-a", 1, "fused_score", 1)
 				mutate(row)
 				return testResponse{Body: resultBody([]any{row})}
-			}, true)
+			})
 			_, err := index.FusedCandidates(t.Context(), FusedCandidateQuery{
 				CandidateFilter: CandidateFilter{IdentityID: documentTestIdentity, Limit: 1},
 				Query:           "x", Embedding: []float64{1, 0, 0},
@@ -157,7 +136,7 @@ func TestCandidateDecoderRejectsDuplicateAndOverLimitRows(t *testing.T) {
 			index, _ = testDocumentIndex(t, func(recordedRequest) testResponse {
 				row := candidateFixture(index, "p-1", "doc-a", 1, "fused_score", 1)
 				return testResponse{Body: resultBody([]any{row, row})}
-			}, true)
+			})
 			_, err := index.FusedCandidates(t.Context(), FusedCandidateQuery{
 				CandidateFilter: CandidateFilter{IdentityID: documentTestIdentity, Limit: limit},
 				Query:           "x", Embedding: []float64{1, 0, 0},
@@ -181,7 +160,7 @@ func TestFusedCandidatesSendTheMeasuredQueryAndKeepEngineOrder(t *testing.T) {
 			candidateFixture(index, "p-best", "doc-b", 2, "fused_score", 0.031),
 			candidateFixture(index, "p-next", "doc-a", 1, "fused_score", 0.019),
 		})}
-	}, true)
+	})
 	candidates, err := index.FusedCandidates(t.Context(), FusedCandidateQuery{
 		CandidateFilter: CandidateFilter{IdentityID: documentTestIdentity, Limit: 4},
 		Query:           "codice cliente", Embedding: []float64{1, 0, 0},
@@ -199,9 +178,9 @@ func TestFusedCandidatesSendTheMeasuredQueryAndKeepEngineOrder(t *testing.T) {
 		t.Fatalf("fused score not decoded: %#v", candidates[0])
 	}
 	for _, want := range []string{
-		"`vector.fuse`(", "`vector.neighbors`('Passage[embedding]', :embedding, :fetch,", "active = true",
+		"`vector.fuse`(", "`vector.neighbors`('Passage[embedding]', :embedding, :fetch,", "1 = 1",
 		"SEARCH_INDEX('Passage[text]', :query)", "fusion: 'RRF'",
-		"groupBy: 'document_id'", "groupSize: 1",
+		"groupBy: 'search_document_id'", "groupSize: 1",
 	} {
 		if !strings.Contains(statement, want) {
 			t.Fatalf("statement lost %q: %s", want, statement)
@@ -215,7 +194,7 @@ func TestFusedCandidatesSendTheMeasuredQueryAndKeepEngineOrder(t *testing.T) {
 func TestFusedCandidatesRejectAnUnknownStrategy(t *testing.T) {
 	index, _ := testDocumentIndex(t, func(recordedRequest) testResponse {
 		return testResponse{Body: resultBody([]any{})}
-	}, true)
+	})
 	_, err := index.FusedCandidates(t.Context(), FusedCandidateQuery{
 		CandidateFilter: CandidateFilter{IdentityID: documentTestIdentity, Limit: 4},
 		Query:           "q", Embedding: []float64{1, 0, 0}, Strategy: "COSINE",

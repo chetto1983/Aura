@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,8 +20,8 @@ import (
 const ProductionRetrievalProfile = "arcadedb-fused-card-v2"
 
 // The three sentinels separate blame. An empty query is the caller's input, an invalid scope
-// means a named document is not visible to this identity or is not in a ready generation, and
-// an invalid request means the envelope itself is out of bounds. Only the scope error carries
+// means a named document is not visible to this identity, and an invalid request means the
+// envelope itself is out of bounds. Only the scope error carries
 // tenancy meaning, so callers must not collapse them into one 400.
 var (
 	ErrEmptyDocumentQuery      = errors.New("documents: retrieval query is required")
@@ -40,10 +39,8 @@ type RetrievalStatus string
 // and one caused by an offline ArcadeDB need different operator responses.
 const (
 	RetrievalComplete    RetrievalStatus = "complete"
-	RetrievalLexicalOnly RetrievalStatus = "degraded_lexical_only"
 	RetrievalCardOnly    RetrievalStatus = "degraded_card_only"
 	DegradationEmbedding                 = "query_embedding_unavailable"
-	DegradationDense                     = "dense_retrieval_unavailable"
 	DegradationArcade                    = "arcadedb_unavailable"
 )
 
@@ -57,17 +54,13 @@ type RetrievalRequest struct {
 	DocumentIDs []string `json:"document_ids,omitempty"`
 }
 
-// RetrievalResponse reports what ran. RejectedCandidates is retained in the wire shape and is
-// now always zero: it counted candidates that failed control-plane revalidation, and there is
-// no revalidation step to fail. It stays so a stored response from before the rewrite still
-// decodes, and it is omitempty so a new one does not carry a meaningless field.
+// RetrievalResponse reports which production legs ran and what they returned.
 type RetrievalResponse struct {
-	Query              string              `json:"query"`
-	Profile            string              `json:"profile"`
-	Status             RetrievalStatus     `json:"status"`
-	DegradationReason  string              `json:"degradation_reason,omitempty"`
-	RejectedCandidates int                 `json:"rejected_candidates,omitempty"`
-	Documents          []RetrievalDocument `json:"documents"`
+	Query             string              `json:"query"`
+	Profile           string              `json:"profile"`
+	Status            RetrievalStatus     `json:"status"`
+	DegradationReason string              `json:"degradation_reason,omitempty"`
+	Documents         []RetrievalDocument `json:"documents"`
 }
 
 // RetrievalDocument is one document's share of the answer. RequiresOpen is set when the document
@@ -78,56 +71,25 @@ type RetrievalDocument struct {
 	Title      string  `json:"title"`
 	Card       string  `json:"card,omitempty"`
 	Score      float64 `json:"score"`
-	// SourceKind and SourceKey are the route back to the bytes: "s3" plus the exact object
-	// key. document_open takes the key and reads the object, which is the whole of what the
-	// catalog's uuid -> version -> asset -> object chain used to do.
+	// SourceKind and SourceKey route document_open back to the exact object bytes.
 	SourceKind string `json:"source_kind,omitempty"`
 	SourceKey  string `json:"source_key,omitempty"`
-	// OriginalSHA256 is what a citation is pinned to now. VersionID, VersionNumber and
-	// PipelineGeneration were here and are gone: nothing writes them, and a version number
-	// only ever meant "which of this document's rows is current" -- a question that stops
-	// existing once the bucket is the truth and an object simply has the bytes it has. The
-	// digest answers the question that actually matters, which is whether the bytes a
-	// citation quotes are still the bytes in the bucket.
+	// OriginalSHA256 pins citations to the object bytes they quote.
 	OriginalSHA256 string              `json:"original_sha256"`
 	RequiresOpen   bool                `json:"requires_open"`
 	Evidence       []RetrievalEvidence `json:"evidence"`
 	Passages       []RetrievalPassage  `json:"passages"`
 }
 
-// PassageLocator anchors a passage inside the document it was cut from. It moved here
-// verbatim when pipeline_types.go was deleted; retrieval is its only remaining consumer.
-//
-// MOST OF IT IS DEAD UNDER THE CURRENT WRITER, and that is not a reason to read the
-// fields as merely absent. services/ingest/app.py says so outright -- "the layout fields
-// stay None: this writer only ever extracts plain text, never structured layout" -- so
-// self_ref, captions, page_number, bbox_*, sheet_name, table_name, row/column and
-// cell_reference are ALWAYS null since the layout-aware converter was withdrawn. Only HeadingPath and
-// CharStart/CharEnd carry data, from cocoindex's own Chunk offsets.
-//
-// It also duplicates arcadedb.PassageCandidate, which carries the same fields and is the
-// schema authority services/ingest/arcade.py mirrors. Collapsing the two into one model
-// and dropping the dead fields changes the DDL, the sidecar and document_search's wire
-// shape together, so it belongs to the retrieval sub-project, not to this deletion.
+// PassageLocator anchors a passage in the plain text produced by the current extractor.
 type PassageLocator struct {
-	SelfRef      string    `json:"self_ref,omitempty"`
-	HeadingPath  []string  `json:"heading_path,omitempty"`
-	Captions     []string  `json:"captions,omitempty"`
-	PageNumber   *int      `json:"page_number,omitempty"`
-	BoundingBox  []float64 `json:"bounding_box,omitempty"`
-	CharStart    *int      `json:"char_start,omitempty"`
-	CharEnd      *int      `json:"char_end,omitempty"`
-	SheetName    string    `json:"sheet_name,omitempty"`
-	TableName    string    `json:"table_name,omitempty"`
-	RowNumber    *int      `json:"row_number,omitempty"`
-	ColumnNumber *int      `json:"column_number,omitempty"`
-	CellRef      string    `json:"cell_ref,omitempty"`
+	HeadingPath []string `json:"heading_path,omitempty"`
+	CharStart   *int     `json:"char_start,omitempty"`
+	CharEnd     *int     `json:"char_end,omitempty"`
 }
 
-// RetrievalPassage is the passage as ArcadeDB holds it. It used to be the control plane's copy,
-// substituted for the projection's by a revalidation step that no longer exists. The two digests
-// travel with it so a citation cannot outlive the bytes it quotes: OriginalSHA256 pins the object
-// and NormalizedSHA256 pins this passage's text within it.
+// RetrievalPassage is the passage as ArcadeDB holds it. OriginalSHA256 pins the object and
+// NormalizedSHA256 pins this passage's text within it.
 type RetrievalPassage struct {
 	PassageID        string              `json:"passage_id"`
 	Ordinal          int64               `json:"ordinal"`
@@ -140,31 +102,18 @@ type RetrievalPassage struct {
 	Evidence         []RetrievalEvidence `json:"evidence"`
 }
 
-// RetrievalEvidence records why a document or passage is in the answer. Score and Distance are
-// mutually exclusive and sort in opposite directions — a lexical Score is relevance where higher
-// wins, a dense Distance is cosine distance where lower wins — so neither may be read as the other.
+// RetrievalEvidence records which ranked production leg admitted the result.
 type RetrievalEvidence struct {
-	Leg      string   `json:"leg"`
-	Rank     int      `json:"rank"`
-	Score    *float64 `json:"score,omitempty"`
-	Distance *float64 `json:"distance,omitempty"`
+	Leg   string   `json:"leg"`
+	Rank  int      `json:"rank"`
+	Score *float64 `json:"score,omitempty"`
 }
 
-// RetrievalCard is the control-plane digest row for a ready document. It backs the one leg that
-// runs entirely inside Postgres, and is therefore the only leg still standing when the projection
-// is unreachable. Rank is the raw ts_rank, unbounded and not comparable to a passage score until
-// normalizedScore squashes it.
 // RetrievalCard is one document's own description, as the reconciler recorded it.
-//
-// CatalogID, Tags and Digest were here and are gone with the catalog that supplied them:
-// an object in a bucket has no uuid, no tags and no separate digest, so the fields could
-// only ever have been empty, and document_search marshals this whole shape into the
-// model's context.
 type RetrievalCard struct {
 	DocumentID string
 	Title      string
-	// The object coordinates travel with the card too, so a card-only answer -- the
-	// degraded path taken when ArcadeDB's vector leg is down -- is still openable.
+	// The object coordinates keep a card-only answer openable.
 	SourceKind     string
 	SourceKey      string
 	Card           string
@@ -172,35 +121,15 @@ type RetrievalCard struct {
 	OriginalSHA256 string
 }
 
-// RetrievalControlPlane bounds the scope and routes the cards, both from ArcadeDB.
-//
-// It used to be PostgreSQL. Both of its jobs are full-text work over records the
-// reconciler writes, and ArcadeDB already indexes those records FULL_TEXT with the same
-// analyzer it uses for passages -- so a PostgreSQL control plane meant two search engines
-// tokenising one query differently. It no longer re-confirms candidates either.
-//
-// RevalidateDocumentCandidates was here, and it re-read every candidate from Postgres so the
-// control plane's copy could supersede the projection's before anything was quotable. It is
-// gone because what it validated against no longer exists: there is no second copy of the
-// text in Postgres, no version to confirm a passage belongs to, and no generation to check
-// it against. Its requirements had also become unsatisfiable -- it demanded uuid passage,
-// document and version ids and an integer generation, while the reconciler writes
-// "doc_<hex>:0", "doc_<hex>", nothing, and "cocoindex-v1" -- so it rejected every real row.
-//
-// What replaces it is carried by the passage: source_key locates the bytes and raw_sha256
-// proves them. That is the shape every comparable system uses -- cognee's retrievers return
-// the vector payload directly, and the string "revalidat" does not appear anywhere in its
-// codebase.
+// RetrievalControlPlane bounds identity scope and routes IndexedDocument cards in ArcadeDB.
 type RetrievalControlPlane interface {
 	ResolveDocumentScope(context.Context, string, []string) ([]string, error)
 	RouteDocumentCards(context.Context, string, string, []string, int) ([]RetrievalCard, error)
 	DocumentNames(context.Context, string, []string) (map[string]string, error)
 }
 
-// RetrievalProjection is the search index side of the cascade. It is trusted for candidate
-// ordering only, never for content or tenancy, and both of its legs are advisory: an error from
-// either degrades the answer instead of failing the call.
-type RetrievalProjection interface {
+// PassageIndex reads the fused lexical/vector passage ranking from the identity database.
+type PassageIndex interface {
 	FusedCandidates(context.Context, arcadedb.FusedCandidateQuery) ([]arcadedb.PassageCandidate, error)
 }
 
@@ -220,19 +149,17 @@ type RetrievalConfig struct {
 	FusionStrategy arcadedb.FusionStrategy
 }
 
-// HostRetriever runs the cascade in-process. Projection and Embedder are optional on purpose —
-// a nil one degrades the answer along the documented status/reason pair — but a nil ControlPlane
-// is a wiring bug and fails the call, because without it nothing can be revalidated.
+// HostRetriever runs the cascade in-process. PassageIndex and Embedder may degrade to cards;
+// ControlPlane is required because it owns identity scope and document metadata.
 type HostRetriever struct {
 	ControlPlane RetrievalControlPlane
-	Projection   RetrievalProjection
+	PassageIndex PassageIndex
 	Embedder     embeddings.Embedder
 	Config       RetrievalConfig
 }
 
-// Retrieve runs the card, lexical and dense legs and returns only passages the control plane
-// re-confirmed. A missing or failing projection dependency degrades the answer rather than
-// failing it; only a malformed request or a control-plane error returns a non-nil error.
+// Retrieve runs the document-card and fused-passage legs. A missing or failing passage index
+// degrades the answer; malformed requests and control-plane failures remain hard errors.
 func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) (RetrievalResponse, error) {
 	if r == nil {
 		return RetrievalResponse{}, fmt.Errorf("documents: retriever is not configured")
@@ -258,7 +185,7 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 		Query: request.Query, Profile: ProductionRetrievalProfile,
 		Status: RetrievalComplete, Documents: []RetrievalDocument{},
 	}
-	if r.Projection == nil {
+	if r.PassageIndex == nil {
 		response.Status, response.DegradationReason = RetrievalCardOnly, DegradationArcade
 		response.Documents = rankCardsOnly(cards, request.Limit, cfg.TopPassages)
 		return response, nil
@@ -266,14 +193,14 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 	// The embedding comes before the index read because there is one read: the engine
 	// needs both the vector and the terms to fuse them. Without an embedding there is
 	// nothing to fuse, so the answer degrades to the cards rather than to a second,
-	// hand-reconciled ranking -- that reconciliation is the thing being removed.
+	// hand-reconciled ranking.
 	vectors, embedErr := r.embedQuery(ctx, request.Query)
 	if embedErr != nil {
 		response.Status, response.DegradationReason = RetrievalCardOnly, DegradationEmbedding
 		response.Documents = rankCardsOnly(cards, request.Limit, cfg.TopPassages)
 		return response, nil
 	}
-	fused, err := r.Projection.FusedCandidates(ctx, arcadedb.FusedCandidateQuery{
+	fused, err := r.PassageIndex.FusedCandidates(ctx, arcadedb.FusedCandidateQuery{
 		CandidateFilter: arcadedb.CandidateFilter{
 			IdentityID: request.IdentityID, Limit: cfg.CandidateLimit, DocumentIDs: scope,
 		},
@@ -416,27 +343,9 @@ func normalizedRetrievalConfig(cfg RetrievalConfig) RetrievalConfig {
 }
 
 func citationLocator(candidate arcadedb.PassageCandidate) string {
-	parts := make([]string, 0, 5)
-	add := func(name, value string) {
-		if value != "" {
-			parts = append(parts, name+"="+url.QueryEscape(value))
-		}
+	if candidate.CharacterSpan != nil {
+		return "chars=" + strconv.FormatInt(candidate.CharacterSpan.Start, 10) + "-" +
+			strconv.FormatInt(candidate.CharacterSpan.End, 10)
 	}
-	add("ref", candidate.SelfRef)
-	if candidate.PageNumber != nil {
-		parts = append(parts, "page="+strconv.FormatInt(*candidate.PageNumber, 10))
-	}
-	add("sheet", candidate.SheetName)
-	add("table", candidate.TableName)
-	add("cell", candidate.CellReference)
-	if candidate.RowNumber != nil {
-		parts = append(parts, "row="+strconv.FormatInt(*candidate.RowNumber, 10))
-	}
-	if candidate.ColumnNumber != nil {
-		parts = append(parts, "column="+strconv.FormatInt(*candidate.ColumnNumber, 10))
-	}
-	if len(parts) == 0 {
-		parts = append(parts, "ordinal="+strconv.FormatInt(candidate.Ordinal, 10))
-	}
-	return strings.Join(parts, ";")
+	return "ordinal=" + strconv.FormatInt(candidate.Ordinal, 10)
 }

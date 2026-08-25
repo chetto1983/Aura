@@ -24,7 +24,7 @@ func TestNewHostDocumentRetrieverHasNoControlPlaneWithoutArcadeDB(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if retriever == nil || retriever.ControlPlane != nil || retriever.Projection != nil {
+	if retriever == nil || retriever.ControlPlane != nil || retriever.PassageIndex != nil {
 		t.Fatalf("retriever = %#v, want neither a control plane nor a projection", retriever)
 	}
 	if _, err := retriever.Retrieve(t.Context(), documents.RetrievalRequest{

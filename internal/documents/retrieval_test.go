@@ -56,13 +56,13 @@ func (f *fakeRetrievalControl) RouteDocumentCards(
 	return append([]RetrievalCard(nil), f.cards...), nil
 }
 
-type fakeRetrievalProjection struct {
+type fakePassageIndex struct {
 	fused      []arcadedb.PassageCandidate
 	fusedErr   error
 	fusedQuery arcadedb.FusedCandidateQuery
 }
 
-func (f *fakeRetrievalProjection) FusedCandidates(
+func (f *fakePassageIndex) FusedCandidates(
 	_ context.Context, query arcadedb.FusedCandidateQuery,
 ) ([]arcadedb.PassageCandidate, error) {
 	f.fusedQuery = query
@@ -83,17 +83,17 @@ func (f *fakeRetrievalEmbedder) Embed(_ context.Context, inputs []string) ([][]f
 	return [][]float64{append([]float64(nil), f.vector...)}, nil
 }
 
-func TestHostRetrieverReturnsRevalidatedCitationEvidence(t *testing.T) {
+func TestHostRetrieverReturnsCitationEvidence(t *testing.T) {
 	// One fused candidate, not one per leg: the engine returns a single ranking.
 	fused := retrievalCandidate(arcadedb.RetrievalLegFused)
 	fused.FusedScore = new(0.031)
 	control := &fakeRetrievalControl{
 		scope: []string{retrievalDocument}, cards: []RetrievalCard{retrievalCard()},
 	}
-	projection := &fakeRetrievalProjection{fused: []arcadedb.PassageCandidate{fused}}
+	passageIndex := &fakePassageIndex{fused: []arcadedb.PassageCandidate{fused}}
 	embedder := &fakeRetrievalEmbedder{vector: []float64{0.1, 0.2}}
 	retriever := &HostRetriever{
-		ControlPlane: control, Projection: projection, Embedder: embedder,
+		ControlPlane: control, PassageIndex: passageIndex, Embedder: embedder,
 		Config: RetrievalConfig{CandidateLimit: 20},
 	}
 
@@ -105,7 +105,7 @@ func TestHostRetrieverReturnsRevalidatedCitationEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	if response.Profile != ProductionRetrievalProfile || response.Status != RetrievalComplete ||
-		len(response.Documents) != 1 || response.RejectedCandidates != 0 {
+		len(response.Documents) != 1 {
 		t.Fatalf("response = %#v", response)
 	}
 	doc := response.Documents[0]
@@ -114,61 +114,49 @@ func TestHostRetrieverReturnsRevalidatedCitationEvidence(t *testing.T) {
 		t.Fatalf("document = %#v", doc)
 	}
 	passage := doc.Passages[0]
-	if passage.CitationToken != "document:doc_9f2c@aaaaaaaaaaaa#ref=%2Ftexts%2F42;page=7" ||
-		passage.CitationLocator != "ref=%2Ftexts%2F42;page=7" ||
-		passage.Locator.SelfRef != "/texts/42" ||
+	if passage.CitationToken != "document:doc_9f2c@aaaaaaaaaaaa#chars=10-25" ||
+		passage.CitationLocator != "chars=10-25" ||
+		passage.Locator.CharStart == nil || *passage.Locator.CharStart != 10 ||
 		passage.Evidence[0].Rank != 1 {
 		t.Fatalf("citation = %#v", passage)
 	}
 	if !reflect.DeepEqual(control.scopeRequest, []string{"doc_9f2c"}) ||
-		!reflect.DeepEqual(projection.fusedQuery.DocumentIDs, []string{retrievalDocument}) ||
-		!reflect.DeepEqual(projection.fusedQuery.Embedding, []float64{0.1, 0.2}) {
-		t.Fatalf("scope/query not threaded: %#v", projection.fusedQuery)
+		!reflect.DeepEqual(passageIndex.fusedQuery.DocumentIDs, []string{retrievalDocument}) ||
+		!reflect.DeepEqual(passageIndex.fusedQuery.Embedding, []float64{0.1, 0.2}) {
+		t.Fatalf("scope/query not threaded: %#v", passageIndex.fusedQuery)
 	}
 	if len(embedder.inputs) != 1 || embedder.inputs[0] != "task: search result | query: codice cliente WPT" {
 		t.Fatalf("embedding inputs = %#v", embedder.inputs)
 	}
 }
 
-func TestHostRetrieverReturnsTheProjectionPassageDirectly(t *testing.T) {
-	// This test asserted the OPPOSITE until 2026-08-08: that a Postgres copy fetched by
-	// RevalidateDocumentCandidates superseded the ArcadeDB payload wholesale, and it was
-	// named EmitsAuthoritativePostgresPassage. That step is gone -- there is no second copy
-	// of the text in Postgres to be authoritative, and its own preconditions (uuid ids, an
-	// integer generation) rejected every row the reconciler writes. The projection payload
-	// is the answer now, which is what comparable systems do.
+func TestHostRetrieverReturnsTheIndexedPassageDirectly(t *testing.T) {
 	candidate := retrievalCandidate(arcadedb.RetrievalLegFused)
 	candidate.Text = "il codice cliente WPT-4417 e' attivo"
-	candidate.SelfRef = "/texts/42"
+	candidate.HeadingPath = []string{"Clienti"}
 	candidate.FusedScore = new(0.031)
 	response, err := (&HostRetriever{
 		ControlPlane: &fakeRetrievalControl{cards: []RetrievalCard{retrievalCard()}},
-		Projection:   &fakeRetrievalProjection{fused: []arcadedb.PassageCandidate{candidate}},
+		PassageIndex: &fakePassageIndex{fused: []arcadedb.PassageCandidate{candidate}},
 		Embedder:     &fakeRetrievalEmbedder{vector: []float64{0.1, 0.2}},
 	}).Retrieve(t.Context(), RetrievalRequest{IdentityID: retrievalIdentity, Query: "WPT cliente"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	passage := response.Documents[0].Passages[0]
-	if passage.Text != candidate.Text || passage.Locator.SelfRef != candidate.SelfRef {
-		t.Fatalf("projection payload was altered on the way out: %#v", passage)
-	}
-	if response.RejectedCandidates != 0 {
-		t.Fatalf("nothing revalidates any more, so nothing can be rejected: %d", response.RejectedCandidates)
+	if passage.Text != candidate.Text || !reflect.DeepEqual(passage.Locator.HeadingPath, candidate.HeadingPath) {
+		t.Fatalf("indexed passage was altered on the way out: %#v", passage)
 	}
 }
 
-// A document reconciled from the bucket has no catalog row, so no card. Before the passage
-// became the ranking spine its passages matched and were then discarded, because a document
-// could only be created by a card -- which is the whole reason bucket-ingested documents
-// were unreachable through document_search.
+// Passage hits remain searchable even when the document-card leg has no matching row.
 func TestHostRetrieverReturnsDocumentsThatHaveNoCard(t *testing.T) {
 	candidate := retrievalCandidate(arcadedb.RetrievalLegFused)
 	candidate.FusedScore = new(0.031)
 	candidate.SourceKind, candidate.SourceKey = "s3", "fatture/2026/q1/fattura-acme.pdf"
 	response, err := (&HostRetriever{
 		ControlPlane: &fakeRetrievalControl{},
-		Projection:   &fakeRetrievalProjection{fused: []arcadedb.PassageCandidate{candidate}},
+		PassageIndex: &fakePassageIndex{fused: []arcadedb.PassageCandidate{candidate}},
 		Embedder:     &fakeRetrievalEmbedder{vector: []float64{0.1, 0.2}},
 	}).Retrieve(t.Context(), RetrievalRequest{IdentityID: retrievalIdentity, Query: "fattura"})
 	if err != nil {
@@ -204,7 +192,7 @@ func TestHostRetrieverTitlesPassageOnlyHitsWithTheirRealName(t *testing.T) {
 	}
 	response, err := (&HostRetriever{
 		ControlPlane: control,
-		Projection: &fakeRetrievalProjection{
+		PassageIndex: &fakePassageIndex{
 			fused: []arcadedb.PassageCandidate{carded, uncarded},
 		},
 		Embedder: &fakeRetrievalEmbedder{vector: []float64{0.1, 0.2}},
@@ -238,7 +226,7 @@ func TestHostRetrieverKeepsTheAnswerWhenTheNameLookupFails(t *testing.T) {
 	candidate.SourceKey = "chat/bc4c9304-7729-4b1e-9009-0882a03ea1a5.pdf"
 	response, err := (&HostRetriever{
 		ControlPlane: &fakeRetrievalControl{namesErr: errors.New("arcadedb unreachable")},
-		Projection:   &fakeRetrievalProjection{fused: []arcadedb.PassageCandidate{candidate}},
+		PassageIndex: &fakePassageIndex{fused: []arcadedb.PassageCandidate{candidate}},
 		Embedder:     &fakeRetrievalEmbedder{vector: []float64{0.1, 0.2}},
 	}).Retrieve(t.Context(), RetrievalRequest{IdentityID: retrievalIdentity, Query: "footnotes"})
 	if err != nil {
@@ -257,20 +245,20 @@ func TestHostRetrieverDegradationIsExplicit(t *testing.T) {
 	// With one fused read there are two ways to lose it -- no embedding to fuse with, or
 	// the engine refusing -- and both leave only the cards.
 	tests := []struct {
-		name       string
-		projection *fakeRetrievalProjection
-		embedder   *fakeRetrievalEmbedder
-		reason     string
+		name         string
+		passageIndex *fakePassageIndex
+		embedder     *fakeRetrievalEmbedder
+		reason       string
 	}{
-		{"embedding", &fakeRetrievalProjection{}, &fakeRetrievalEmbedder{err: errors.New("offline")}, DegradationEmbedding},
-		{"arcade", &fakeRetrievalProjection{fusedErr: errors.New("server unavailable")},
+		{"embedding", &fakePassageIndex{}, &fakeRetrievalEmbedder{err: errors.New("offline")}, DegradationEmbedding},
+		{"arcade", &fakePassageIndex{fusedErr: errors.New("server unavailable")},
 			&fakeRetrievalEmbedder{vector: []float64{1}}, DegradationArcade},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			control := &fakeRetrievalControl{cards: []RetrievalCard{retrievalCard()}}
 			response, err := (&HostRetriever{
-				ControlPlane: control, Projection: test.projection, Embedder: test.embedder,
+				ControlPlane: control, PassageIndex: test.passageIndex, Embedder: test.embedder,
 			}).Retrieve(t.Context(), RetrievalRequest{IdentityID: retrievalIdentity, Query: "codice cliente"})
 			if err != nil {
 				t.Fatal(err)
@@ -305,13 +293,12 @@ func retrievalCard() RetrievalCard {
 }
 
 func retrievalCandidate(leg arcadedb.RetrievalLeg) arcadedb.PassageCandidate {
-	page := int64(7)
 	return arcadedb.PassageCandidate{
-		PassageID: retrievalPassage, DocumentID: retrievalDocument,
+		PassageID:        retrievalPassage,
 		SearchDocumentID: "doc_9f2c", SourceKind: "s3", SourceKey: "clienti/Clienti.xlsx",
-		RawSHA256: strings.Repeat("a", 64), PipelineGeneration: "7",
-		Ordinal: 42, Text: "Il codice cliente di WPT SRL è C-1042.",
-		NormalizedSHA256: strings.Repeat("b", 64), SelfRef: "/texts/42",
-		PageNumber: &page, Leg: leg,
+		RawSHA256: strings.Repeat("a", 64),
+		Ordinal:   42, Text: "Il codice cliente di WPT SRL è C-1042.",
+		NormalizedSHA256: strings.Repeat("b", 64),
+		CharacterSpan:    &arcadedb.CharacterSpan{Start: 10, End: 25}, Leg: leg,
 	}
 }

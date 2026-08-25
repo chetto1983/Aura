@@ -34,7 +34,7 @@ func TestDocumentCardsAnswerAnUnscopedQuery(t *testing.T) {
 			documentCardFixture("doc_"+strings.Repeat("a", 32), "clienti_complesso.xlsx",
 				"spreadsheet, 3 sheets. Citta: most common Torino (98)."),
 		})}
-	}, true)
+	})
 
 	cards, err := index.DocumentCards(t.Context(), documentTestIdentity, "Torino", 3)
 	if err != nil {
@@ -63,7 +63,7 @@ func TestDocumentCardsAcceptADocumentWithoutACard(t *testing.T) {
 	index, _ = testDocumentIndex(t, func(recordedRequest) testResponse {
 		row := documentCardFixture("doc_"+strings.Repeat("b", 32), "rotto.zip", "")
 		return testResponse{Body: resultBody([]any{row})}
-	}, true)
+	})
 	cards, err := index.DocumentCards(t.Context(), documentTestIdentity, "rotto", 3)
 	if err != nil || len(cards) != 1 || cards[0].Card != "" {
 		t.Fatalf("cards = %+v, err = %v", cards, err)
@@ -84,7 +84,7 @@ func TestDocumentCardsRejectMalformedRows(t *testing.T) {
 				row := documentCardFixture("doc_"+strings.Repeat("c", 32), "x.pdf", "PDF")
 				mutate(row)
 				return testResponse{Body: resultBody([]any{row})}
-			}, true)
+			})
 			if _, err := index.DocumentCards(t.Context(), documentTestIdentity, "x", 3); err == nil {
 				t.Fatal("malformed card accepted")
 			}
@@ -99,7 +99,7 @@ func TestDocumentCardsRejectDuplicates(t *testing.T) {
 	index, _ = testDocumentIndex(t, func(recordedRequest) testResponse {
 		row := documentCardFixture("doc_"+strings.Repeat("d", 32), "due.xlsx", "spreadsheet")
 		return testResponse{Body: resultBody([]any{row, row})}
-	}, true)
+	})
 	if _, err := index.DocumentCards(t.Context(), documentTestIdentity, "due", 3); err == nil {
 		t.Fatal("duplicate card accepted")
 	}
@@ -128,7 +128,7 @@ func TestDocumentCardsValidateTheRequestBeforeIO(t *testing.T) {
 			index, requests := testDocumentIndex(t, func(recordedRequest) testResponse {
 				t.Fatal("invalid request reached ArcadeDB")
 				return testResponse{}
-			}, true)
+			})
 			if err := run(index); err == nil {
 				t.Fatal("invalid request accepted")
 			}
@@ -146,7 +146,7 @@ func TestResolveDocumentScopeSkipsTheQueryWhenNothingIsNamed(t *testing.T) {
 	index, requests := testDocumentIndex(t, func(recordedRequest) testResponse {
 		t.Fatal("unscoped resolve issued a query")
 		return testResponse{}
-	}, true)
+	})
 	scope, err := index.ResolveDocumentScope(t.Context(), documentTestIdentity, nil)
 	if err != nil || len(scope) != 0 {
 		t.Fatalf("scope = %#v, err = %v", scope, err)
@@ -160,7 +160,7 @@ func TestResolveDocumentScopeReturnsOnlyWhatTheIdentityHas(t *testing.T) {
 	known := "doc_" + strings.Repeat("e", 32)
 	index, _ := testDocumentIndex(t, func(recordedRequest) testResponse {
 		return testResponse{Body: resultBody([]any{map[string]any{"search_document_id": known}})}
-	}, true)
+	})
 	scope, err := index.ResolveDocumentScope(t.Context(), documentTestIdentity,
 		[]string{known, "doc_" + strings.Repeat("f", 32), known})
 	if err != nil {
