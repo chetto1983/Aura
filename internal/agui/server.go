@@ -73,6 +73,7 @@ type ServerConfig struct {
 // the two methods it calls, not the whole Runner — and so unit tests pass scripted fakes.
 type Runner interface {
 	Turn(ctx context.Context, convID string, userMsg *string) iter.Seq2[*agent.Event, error]
+	ValidateResumeAnswers(ctx context.Context, answers map[string]runner.ResponseInput) error
 	SubmitAnswers(ctx context.Context, answers map[string]runner.ResponseInput) (int, error)
 	// SubmitAnswer resolves ONE pause and returns the runner's ResolveDirective — the
 	// continue-vs-outcome decision the approval center renders instead of re-deriving it

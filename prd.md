@@ -7252,7 +7252,7 @@ flusso completo, che funziona.
 ## §The approval resume path, measured against LibreChat (Amendment #133, 2026-08-24)
 
 > **Amendment #133 (2026-08-24, Phase 47/TOOL-03 pre-work — records a reading, blocks nothing
-> today, and names two gaps Phase 47 must close.)**
+> today, and names three gaps; two closed on 2026-08-25.)**
 >
 > **What was read.** `LibreChat` on disk (`api/server/controllers/agents/`,
 > `packages/api/src/agents/hitl/`, `packages/api/src/stream/`), against Aura's own resume path
@@ -7337,9 +7337,21 @@ flusso completo, che funziona.
 > The critical validator killed **4/5 mutants = 80%**; the one reported survivor was byte-identical
 > to the original file.
 > Decline/cancel remains valid without caller content, and scheduled approvals remain valid because
-> their server-authored outcome is the effective answer. This does **not** close gap 2's per-pause
-> decision policy or gap 4's expiry semantics, and no production exploit or real-model turn was
-> attempted.
+> their server-authored outcome is the effective answer. This measurement alone did **not** close
+> gap 2's per-pause decision policy or gap 4's expiry semantics, and no production exploit or
+> real-model turn was attempted.
+>
+> **Closure measurement 2026-08-25 — gap 2.** Every production pause writer now persists an
+> explicit server-authored `allowed_decisions` policy; Runner validates it before any single/batch
+> claim or side effect, and missing, malformed, null, or unknown policy fails closed. AG-UI and the
+> Approval Center return 403 for forbidden decisions. Migration 0102 backfills existing rows so
+> runtime carries no legacy fallback; a real disposable-PostgreSQL 0101→0102→0101→0102 test proves
+> normalization, preserved object fields, rollback, and repeatable re-application. The focused
+> validator killed **20/20 mutants = 100%**, Runner aggregate coverage measured **85.3%**, and
+> targeted WSL race tests are green. A production-path OpenRouter-agent E2E minted a decline-only
+> pause, proved a crafted accept left the same token pending, then accepted the allowed decline and
+> re-drove the agent from 2 to 3 persisted turns with **3750 prompt tokens**. This closes gap 2;
+> gap 4's pending-approval expiry remains open and is not implied by the policy evidence.
 
 ## §The loaded manifest, counted — and TOOL-01's `comms` row is unreachable (Amendment #134, 2026-08-24)
 

@@ -6,7 +6,7 @@ severity: security
 resolves_phase:
 ---
 
-# Three measured defects in the approval resume path — one closed
+# Three measured defects in the approval resume path — two closed
 
 Phases 47 and 48 were cancelled on 2026-08-24 (the tool surface works — amendment #139).
 These three findings came out of reading LibreChat against our own resume path and are **not**
@@ -15,16 +15,31 @@ tool-surface ceremony: they are defects in `internal/agui/server_project.go` and
 
 Full detail and evidence: **PRD amendment #133** (commit `3a53bea7e`).
 
-## 1. No per-tool decision policy
+## 1. Closed 2026-08-25 — per-pause decision policy enforced
 
-`resumeAnswers` (`internal/agui/server_project.go:24`) maps `resolved→ActionAccept` /
-`cancelled→ActionCancel`, and the Runner acts on `resp.Action` directly. Nothing anywhere
-expresses "this pause may only be declined". Any pending pause can be accepted by anyone who
-reaches the route with its token.
+Every production pause writer now persists an explicit, server-authored `allowed_decisions`
+policy in `resume_context`. Runner parses that persisted policy fail-closed and validates each
+single or batch answer before any claim, cancellation, hook, or answer-turn side effect. A missing,
+null, malformed, or unknown policy is rejected rather than widened by a compatibility fallback.
+Both AG-UI resume paths and the Approval Center map a forbidden decision to HTTP 403.
 
-LibreChat returns **403** here: *"a crafted POST must not approve a tool the policy restricted to
-(e.g.) reject/respond"*. Its threat model is that the **human's POST is untrusted** — a different
-threat from the one the roadmap covered (that the *model* never sees a resume payload).
+Migration 0102 backfills every existing pause with the exact historical decision set and normalizes
+non-object contexts. Its real disposable-PostgreSQL integration test drives 0101 → 0102 → 0101 →
+0102, proving backfill, object-field preservation, down removal, and repeatable re-application.
+
+Closing evidence:
+
+- focused Runner and AG-UI regressions prove forbidden single/batch decisions fail before side
+  effects and allowed decisions retain the existing atomic/idempotent path;
+- the critical policy parser/validator killed **20/20 mutants = 100%** in WSL;
+- `internal/runner` aggregate coverage measured **85.3%**;
+- the real migration round trip passed against a fresh disposable database;
+- a real OpenRouter-agent E2E minted a decline-only pause, proved a crafted accept left the same
+  token pending, then allowed decline and re-drove the production agent from 2 to 3 persisted turns
+  with **3750 prompt tokens**;
+- targeted WSL race tests passed for `internal/runner`, `internal/agui`, and `internal/askuser`;
+  targeted production and test dead-code scans returned zero findings after the eight reported
+  unreachable elements were removed.
 
 ## 2. Closed 2026-08-25 — empty accepted answers are rejected
 
@@ -67,7 +82,8 @@ around it.**
 ## What is NOT claimed
 
 No production exploit was demonstrated. Reaching the resume route already requires an
-authenticated, owner-scoped session and a valid pause token, so #1 is an authorization-granularity
-gap rather than an open door. The closing measurement for #2 proves fail-closed wire, Runner,
-Store, and real-PostgreSQL transaction behavior; it does not prove #1's per-pause decision policy
-or #3's expiry semantics, which remain open.
+authenticated, owner-scoped session and a valid pause token, so #1 was an
+authorization-granularity gap rather than an open door. The closing measurements now prove #1's
+persisted policy and real-agent behavior plus #2's fail-closed wire, Runner, Store, and
+real-PostgreSQL transaction behavior. They do not prove #3's expiry semantics; approval expiry is
+the sole remaining open defect in this record.

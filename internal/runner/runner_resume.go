@@ -87,6 +87,9 @@ func (r *Runner) SubmitAnswer(ctx context.Context, token string, resp ResponseIn
 	if err != nil {
 		return ResolveDirective{}, fmt.Errorf("submit answer: %w", err)
 	}
+	if err := validatePendingResumeDecision(pending, resp.Action); err != nil {
+		return ResolveDirective{}, fmt.Errorf("submit answer: %w", err)
+	}
 	if resp.Action == askuser.ActionCancel {
 		return r.cancelConversation(ctx, pending.ConversationID)
 	}
@@ -126,24 +129,21 @@ func (r *Runner) SubmitAnswers(ctx context.Context, answers map[string]ResponseI
 	if len(answers) == 0 {
 		return 0, nil
 	}
-	// Resolve each token up-front so we know the conversation + tool_call_id for the
-	// answer turn, and detect a cancel.
-	pendings := make(map[string]askuser.Pending, len(answers))
-	var convID string
-	for token := range answers {
-		p, err := r.pause.GetByToken(ctx, token)
+	// Resolve and validate EVERY token before any cancel side effect or transactional
+	// claim. One disallowed decision therefore leaves the entire batch retryable.
+	pendings, convID, err := r.loadAndValidateResumeAnswers(ctx, answers)
+	if err != nil {
+		return 0, fmt.Errorf("submit answers: %w", err)
+	}
+	for token, resp := range answers {
+		if resp.Action != askuser.ActionCancel {
+			continue
+		}
+		directive, err := r.cancelConversation(ctx, pendings[token].ConversationID)
 		if err != nil {
-			return 0, fmt.Errorf("submit answers: %w", err)
+			return 0, err
 		}
-		pendings[token] = p
-		convID = p.ConversationID
-		if answers[token].Action == askuser.ActionCancel {
-			directive, err := r.cancelConversation(ctx, p.ConversationID)
-			if err != nil {
-				return 0, err
-			}
-			return directive.Remaining, nil
-		}
+		return directive.Remaining, nil
 	}
 
 	// Claim-all-then-append-all in one tx: a duplicate/concurrent batch serializes on the
@@ -166,6 +166,32 @@ func (r *Runner) SubmitAnswers(ctx context.Context, answers map[string]ResponseI
 		}
 	}
 	return r.remainingPending(ctx, convID)
+}
+
+// ValidateResumeAnswers is the AG-UI preflight used to map a policy refusal to HTTP
+// 403 before SubmitAnswers. SubmitAnswers repeats the same persisted-policy check so
+// another caller cannot bypass it and a pause changed between preflight and claim still
+// fails closed.
+func (r *Runner) ValidateResumeAnswers(ctx context.Context, answers map[string]ResponseInput) error {
+	_, _, err := r.loadAndValidateResumeAnswers(ctx, answers)
+	return err
+}
+
+func (r *Runner) loadAndValidateResumeAnswers(ctx context.Context, answers map[string]ResponseInput) (map[string]askuser.Pending, string, error) {
+	pendings := make(map[string]askuser.Pending, len(answers))
+	var convID string
+	for token, resp := range answers {
+		pending, err := r.pause.GetByToken(ctx, token)
+		if err != nil {
+			return nil, "", err
+		}
+		if err := validatePendingResumeDecision(pending, resp.Action); err != nil {
+			return nil, "", err
+		}
+		pendings[token] = pending
+		convID = pending.ConversationID
+	}
+	return pendings, convID, nil
 }
 
 func (r *Runner) applyResumeHook(ctx context.Context, pending askuser.Pending, resp ResponseInput) error {

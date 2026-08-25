@@ -31,6 +31,7 @@ type scriptedRunner struct {
 	gotAnswers           map[string]runner.ResponseInput
 	submitAnswersCtx     context.Context
 	answersErr           error
+	validateAnswersErr   error
 	directive            runner.ResolveDirective // returned by SubmitAnswer (zero value = Continue)
 	gotBranchLeaf        int                     // the leaf TurnBranch was called with (D-09 re-run assertion)
 	turnCalled           bool                    // Turn was invoked (continue-after-resume reached the runner)
@@ -93,6 +94,10 @@ func (s *scriptedRunner) SubmitAnswers(ctx context.Context, answers map[string]r
 		return 0, s.answersErr
 	}
 	return 0, nil
+}
+
+func (s *scriptedRunner) ValidateResumeAnswers(_ context.Context, _ map[string]runner.ResponseInput) error {
+	return s.validateAnswersErr
 }
 
 // SubmitAnswer models the single-pause resolve the approval center calls. It records the call the

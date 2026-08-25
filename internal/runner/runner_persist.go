@@ -374,6 +374,10 @@ func (r *Runner) persistPause(ctx context.Context, tr *turnTracker, ai *agent.Aw
 	if err != nil {
 		return err
 	}
+	resumeContext, err := resumeContextWithDecisionPolicy(ai.ResumeContext, allResumeDecisions())
+	if err != nil {
+		return fmt.Errorf("persist pause decision policy: %w", err)
+	}
 	// D-05 relay ids: a non-empty child id is forwarded as a non-nil *string (→
 	// proxied_from_child_id); an empty one stays nil (→ SQL NULL for direct calls).
 	var proxiedChild *string
@@ -388,7 +392,7 @@ func (r *Runner) persistPause(ctx context.Context, tr *turnTracker, ai *agent.Aw
 		Options:            options,
 		Priority:           ai.Priority,
 		ToolCallID:         ai.ToolCallID,
-		ResumeContext:      ai.ResumeContext,
+		ResumeContext:      resumeContext,
 		ProxiedFromChildID: proxiedChild,
 		ProxiedToolCallID:  ai.ProxiedToolCallID,
 	})

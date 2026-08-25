@@ -34,12 +34,3 @@ func reasoningOverride(ctx context.Context) (llm.ReasoningEffort, bool) {
 	eff, ok := ctx.Value(reasoningOverrideKey{}).(llm.ReasoningEffort)
 	return eff, ok
 }
-
-// ReasoningOverride is the exported reader for the fixed per-turn effort carried on ctx — the
-// public read side of WithReasoningOverride. The runtime consumer (buildAgent) uses the
-// package-internal reasoningOverride; this lets the upstream writer of the seam (the agui run
-// handler, plan 06) assert in a unit test that a validated fixed level was actually threaded
-// (and that auto/absent threads nothing). The zero result ("", false) is the auto case.
-func ReasoningOverride(ctx context.Context) (llm.ReasoningEffort, bool) {
-	return reasoningOverride(ctx)
-}

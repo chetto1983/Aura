@@ -101,7 +101,7 @@ func TestSubmitAnswer_ScheduledApproval_DirectiveMatchesTaskTransition_Integrati
 			if err != nil {
 				t.Fatalf("marshal resume context: %v", err)
 			}
-			token, err := r.MintApprovalPause(ctx, convID, "Attivo il task pianificato?", rc)
+			token, err := r.MintApprovalPause(ctx, convID, "Attivo il task pianificato?", rc, allResumeDecisions())
 			if err != nil {
 				t.Fatalf("mint approval pause: %v", err)
 			}
@@ -140,7 +140,7 @@ func TestSubmitAnswer_ScheduledApproval_ForeignConversationDoesNotTransition_Int
 	if err != nil {
 		t.Fatalf("marshal resume context: %v", err)
 	}
-	token, err := r.MintApprovalPause(ctx, foreignConv, "Attivo il task pianificato?", rc)
+	token, err := r.MintApprovalPause(ctx, foreignConv, "Attivo il task pianificato?", rc, allResumeDecisions())
 	if err != nil {
 		t.Fatalf("mint approval pause: %v", err)
 	}

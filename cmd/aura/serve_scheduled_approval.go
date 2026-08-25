@@ -119,7 +119,7 @@ func newScheduledTaskResumeHook(store scheduledTaskApprover) runner.ResumeHook {
 // approvalMinter is the narrow pause-minting seam the ensurer drives when no matching pause
 // exists. *runner.Runner satisfies it (MintApprovalPause); unit tests inject a fake.
 type approvalMinter interface {
-	MintApprovalPause(ctx context.Context, convID, question string, resumeContext json.RawMessage) (string, error)
+	MintApprovalPause(ctx context.Context, convID, question string, resumeContext json.RawMessage, allowedDecisions []string) (string, error)
 }
 
 // approvalPauseLister is the narrow pending-read seam the ensurer dedups against.
@@ -166,7 +166,11 @@ func (e approvalPauseEnsurer) EnsureApprovalPause(ctx context.Context, taskID, c
 		return "", false, fmt.Errorf("ensure approval pause: marshal resume context: %w", err)
 	}
 	question := fmt.Sprintf("Scheduled %s task %s needs your approval. Approve or reject it below.", kind, shortTaskID(taskID))
-	token, err := e.minter.MintApprovalPause(ctx, conversationID, question, rc)
+	token, err := e.minter.MintApprovalPause(ctx, conversationID, question, rc, []string{
+		askuser.ActionAccept,
+		askuser.ActionDecline,
+		askuser.ActionCancel,
+	})
 	return token, true, err
 }
 

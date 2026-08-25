@@ -352,7 +352,7 @@ func TestGraphQueryFilterSchemaError(t *testing.T) {
 // local identity (validCookieReq only builds GETs; the graph query route is a POST).
 func validCookiePost(deps AuthDeps, path string, body []byte) *http.Request {
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
-	value := signSession(deps.SigningKey, deps.LocalIdentityID, time.Now())
+	value := signedSessionFixture(deps.SigningKey, deps.LocalIdentityID, time.Now())
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: value})
 	return req
 }

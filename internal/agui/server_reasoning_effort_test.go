@@ -3,14 +3,11 @@ package agui
 import (
 	"context"
 	"io"
-	"iter"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/llm"
-	"github.com/chetto1983/aura/internal/runner"
 )
 
 // fakeCapSource is a scripted llm.ReasoningCapabilitySource: it returns a fixed advertised set
@@ -24,24 +21,6 @@ type fakeCapSource struct {
 
 func (f fakeCapSource) AllowedEfforts(context.Context) ([]llm.ReasoningEffort, llm.ReasoningEffort, bool) {
 	return f.efforts, f.deflt, f.detected
-}
-
-// effortRunner wraps scriptedRunner to CAPTURE the ctx handleRun drives the turn with, so a
-// test can assert (via the exported runner.ReasoningOverride reader) that a validated fixed
-// level was actually threaded onto ctx — and that auto/absent threads nothing.
-type effortRunner struct {
-	*scriptedRunner
-	gotCtx context.Context
-}
-
-func (r *effortRunner) Turn(ctx context.Context, convID string, userMsg *string) iter.Seq2[*agent.Event, error] {
-	r.gotCtx = ctx
-	return r.scriptedRunner.Turn(ctx, convID, userMsg)
-}
-
-func (r *effortRunner) TurnWithModelUserMessage(ctx context.Context, convID string, visible, model string) iter.Seq2[*agent.Event, error] {
-	r.gotCtx = ctx
-	return r.scriptedRunner.TurnWithModelUserMessage(ctx, convID, visible, model)
 }
 
 // effortConvStore wraps fakeConvStore to record the symbol persisted through
@@ -118,8 +97,8 @@ func TestParseEffortSymbol(t *testing.T) {
 }
 
 // TestHandleRunEffort covers Stage-1 syntactic governance + the isolation-precedes-governance
-// ordering: a non-enum symbol → 400; absent/auto → 200 with NO override threaded but the symbol
-// still persisted; a foreign thread → 404 BEFORE effort validation.
+// ordering: a non-enum symbol → 400; absent/auto → 200 with the symbol persisted; a foreign
+// thread → 404 BEFORE effort validation. The Runner package tests the private context carrier.
 func TestHandleRunEffort(t *testing.T) {
 	const tid = "11111111-1111-1111-1111-111111111111"
 	permissive := fakeCapSource{efforts: []llm.ReasoningEffort{
@@ -128,7 +107,7 @@ func TestHandleRunEffort(t *testing.T) {
 	}, detected: true}
 
 	t.Run("non-enum symbol → 400", func(t *testing.T) {
-		run := &effortRunner{scriptedRunner: &scriptedRunner{events: textTurn("ok")}}
+		run := &scriptedRunner{events: textTurn("ok")}
 		conv := &effortConvStore{fakeConvStore: &fakeConvStore{known: map[string]bool{tid: true}}}
 		srv := newEffortServer(t, run, conv, permissive)
 		resp := postRun(t, srv, effortRunBody(tid, "turbo"))
@@ -148,8 +127,8 @@ func TestHandleRunEffort(t *testing.T) {
 		}
 	})
 
-	t.Run("absent effort → 200, no override, persists empty", func(t *testing.T) {
-		run := &effortRunner{scriptedRunner: &scriptedRunner{events: textTurn("ok")}}
+	t.Run("absent effort → 200, persists empty", func(t *testing.T) {
+		run := &scriptedRunner{events: textTurn("ok")}
 		conv := &effortConvStore{fakeConvStore: &fakeConvStore{known: map[string]bool{tid: true}}}
 		srv := newEffortServer(t, run, conv, permissive)
 		resp := postRun(t, srv, runPayload(tid)) // no aura envelope at all
@@ -158,16 +137,13 @@ func TestHandleRunEffort(t *testing.T) {
 		if resp.StatusCode != 200 {
 			t.Fatalf("status = %d, want 200", resp.StatusCode)
 		}
-		if _, ok := runner.ReasoningOverride(run.gotCtx); ok {
-			t.Error("absent effort threaded an override; want none (adaptive path, D-04)")
-		}
 		if conv.effortCalls != 1 || conv.gotEffort != "" {
 			t.Errorf("persist = (calls %d, effort %q), want (1, \"\")", conv.effortCalls, conv.gotEffort)
 		}
 	})
 
-	t.Run("auto → 200, no override, persists auto", func(t *testing.T) {
-		run := &effortRunner{scriptedRunner: &scriptedRunner{events: textTurn("ok")}}
+	t.Run("auto → 200, persists auto", func(t *testing.T) {
+		run := &scriptedRunner{events: textTurn("ok")}
 		conv := &effortConvStore{fakeConvStore: &fakeConvStore{known: map[string]bool{tid: true}}}
 		srv := newEffortServer(t, run, conv, permissive)
 		resp := postRun(t, srv, effortRunBody(tid, "auto"))
@@ -176,9 +152,6 @@ func TestHandleRunEffort(t *testing.T) {
 		if resp.StatusCode != 200 {
 			t.Fatalf("status = %d, want 200", resp.StatusCode)
 		}
-		if _, ok := runner.ReasoningOverride(run.gotCtx); ok {
-			t.Error("auto threaded an override; want none")
-		}
 		if conv.gotEffort != "auto" {
 			t.Errorf("persisted %q, want \"auto\" (switch-back remembered, OQ-3)", conv.gotEffort)
 		}
@@ -186,7 +159,7 @@ func TestHandleRunEffort(t *testing.T) {
 
 	t.Run("foreign thread 404 precedes effort validation", func(t *testing.T) {
 		const foreign = "22222222-2222-2222-2222-222222222222"
-		run := &effortRunner{scriptedRunner: &scriptedRunner{events: textTurn("ok")}}
+		run := &scriptedRunner{events: textTurn("ok")}
 		conv := &effortConvStore{fakeConvStore: &fakeConvStore{known: map[string]bool{}}} // owns nothing
 		srv := newEffortServer(t, run, conv, permissive)
 		resp := postRun(t, srv, effortRunBody(foreign, "turbo")) // invalid effort on a foreign thread
@@ -201,29 +174,25 @@ func TestHandleRunEffort(t *testing.T) {
 }
 
 // TestHandleRunEffortCapability covers Stage-2 governance against a fake capability source:
-// advertised fixed → 200 + threaded + persisted; unadvertised → 400; mandatory (no none) + off
+// advertised fixed → 200 + persisted; unadvertised → 400; mandatory (no none) + off
 // → 400; detection-failed collapses to the safe floor (graduated → 400, off/auto → pass).
 func TestHandleRunEffortCapability(t *testing.T) {
 	const tid = "33333333-3333-3333-3333-333333333333"
 
-	newSrv := func(t *testing.T, src llm.ReasoningCapabilitySource) (*httptest.Server, *effortRunner, *effortConvStore) {
-		run := &effortRunner{scriptedRunner: &scriptedRunner{events: textTurn("ok")}}
+	newSrv := func(t *testing.T, src llm.ReasoningCapabilitySource) (*httptest.Server, *scriptedRunner, *effortConvStore) {
+		run := &scriptedRunner{events: textTurn("ok")}
 		conv := &effortConvStore{fakeConvStore: &fakeConvStore{known: map[string]bool{tid: true}}}
 		return newEffortServer(t, run, conv, src), run, conv
 	}
 
-	t.Run("advertised fixed → 200 + threaded + persisted", func(t *testing.T) {
+	t.Run("advertised fixed → 200 + persisted", func(t *testing.T) {
 		src := fakeCapSource{efforts: []llm.ReasoningEffort{llm.ReasoningEffortLow, llm.ReasoningEffortHigh}, detected: true}
-		srv, run, conv := newSrv(t, src)
+		srv, _, conv := newSrv(t, src)
 		resp := postRun(t, srv, effortRunBody(tid, "high"))
 		defer resp.Body.Close()
 		_, _ = io.Copy(io.Discard, resp.Body)
 		if resp.StatusCode != 200 {
 			t.Fatalf("status = %d, want 200 for an advertised level", resp.StatusCode)
-		}
-		eff, ok := runner.ReasoningOverride(run.gotCtx)
-		if !ok || eff != llm.ReasoningEffortHigh {
-			t.Errorf("threaded override = (%q,%v), want (high,true)", eff, ok)
 		}
 		if conv.gotEffort != "high" {
 			t.Errorf("persisted %q, want \"high\"", conv.gotEffort)
@@ -274,15 +243,12 @@ func TestHandleRunEffortCapability(t *testing.T) {
 
 	t.Run("detection failed + off → 200 (off is the universal floor)", func(t *testing.T) {
 		src := fakeCapSource{detected: false}
-		srv, run, conv := newSrv(t, src)
+		srv, _, conv := newSrv(t, src)
 		resp := postRun(t, srv, effortRunBody(tid, "off"))
 		defer resp.Body.Close()
 		_, _ = io.Copy(io.Discard, resp.Body)
 		if resp.StatusCode != 200 {
 			t.Fatalf("status = %d, want 200 (off always passes)", resp.StatusCode)
-		}
-		if eff, ok := runner.ReasoningOverride(run.gotCtx); !ok || eff != llm.ReasoningEffortNone {
-			t.Errorf("threaded override = (%q,%v), want (none,true)", eff, ok)
 		}
 		if conv.gotEffort != "off" {
 			t.Errorf("persisted %q, want \"off\"", conv.gotEffort)
@@ -291,15 +257,12 @@ func TestHandleRunEffortCapability(t *testing.T) {
 
 	t.Run("detection failed + auto → 200 (Stage-2 skipped for auto)", func(t *testing.T) {
 		src := fakeCapSource{detected: false}
-		srv, run, _ := newSrv(t, src)
+		srv, _, _ := newSrv(t, src)
 		resp := postRun(t, srv, effortRunBody(tid, "auto"))
 		defer resp.Body.Close()
 		_, _ = io.Copy(io.Discard, resp.Body)
 		if resp.StatusCode != 200 {
 			t.Fatalf("status = %d, want 200 (auto always passes)", resp.StatusCode)
-		}
-		if _, ok := runner.ReasoningOverride(run.gotCtx); ok {
-			t.Error("auto threaded an override; want none")
 		}
 	})
 }

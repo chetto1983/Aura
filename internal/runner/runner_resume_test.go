@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -10,6 +11,21 @@ import (
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/llm"
 )
+
+func setPendingDecisionPolicy(t *testing.T, pause *fakePauseStore, token string, decisions ...string) {
+	t.Helper()
+	raw, err := json.Marshal(map[string]any{"allowed_decisions": decisions})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pause.mu.Lock()
+	defer pause.mu.Unlock()
+	pending, ok := pause.byToken[token]
+	if !ok {
+		t.Fatalf("pending token %s not found", token)
+	}
+	pending.ResumeContext = raw
+}
 
 // runner_resume_test.go pins the HTTP-resolve bridge invariant the APRV-02 approval
 // adapter (internal/agui/approvals_api.go) depends on: SubmitAnswers maps each of the
@@ -100,6 +116,84 @@ func TestSubmitAnswerRejectsEmptyAcceptBeforeCommit(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+func TestResumeRejectsDisallowedDecision(t *testing.T) {
+	r, conv, pause := newTestRunner(t, agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(askUserCall("call-policy", "Proceed?", "approval")),
+	))
+	convID, token := seedSinglePause(t, r, conv)
+	setPendingDecisionPolicy(t, pause, token, askuser.ActionDecline)
+
+	if _, err := r.SubmitAnswer(context.Background(), token, ResponseInput{
+		Action: askuser.ActionAccept, Content: "yes",
+	}); !errors.Is(err, ErrResumeDecisionNotAllowed) {
+		t.Fatalf("disallowed accept: want ErrResumeDecisionNotAllowed, got %v", err)
+	}
+	if got := pause.unresolvedCount(convID); got != 1 {
+		t.Fatalf("disallowed decision claimed the pause: unresolved = %d, want 1", got)
+	}
+	if _, err := r.SubmitAnswer(context.Background(), token, ResponseInput{
+		Action: askuser.ActionDecline,
+	}); err != nil {
+		t.Fatalf("corrected retry must succeed: %v", err)
+	}
+	if got := pause.unresolvedCount(convID); got != 0 {
+		t.Fatalf("corrected retry left %d unresolved pauses, want 0", got)
+	}
+}
+
+func TestValidationRejectsBeforeMarkResumed(t *testing.T) {
+	r, _, pause := newTestRunner(t, agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(
+			askUserCall("call-policy-a", "A?", "approval"),
+			askUserCall("call-policy-b", "B?", "approval"),
+		),
+	))
+	convID := newConvID(t)
+	ctx := context.Background()
+	mustCreate(t, r, convID)
+	if _, err := drain(r.Turn(ctx, convID, new("ask twice"))); err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+	pending, err := r.PendingFor(ctx, convID)
+	if err != nil || len(pending) != 2 {
+		t.Fatalf("want 2 pending pauses, got %d (err=%v)", len(pending), err)
+	}
+	setPendingDecisionPolicy(t, pause, pending[1].Token, askuser.ActionDecline)
+
+	badBatch := map[string]ResponseInput{
+		pending[0].Token: {Action: askuser.ActionAccept, Content: "answer-a"},
+		pending[1].Token: {Action: askuser.ActionAccept, Content: "answer-b"},
+	}
+	if _, err := r.SubmitAnswers(ctx, badBatch); !errors.Is(err, ErrResumeDecisionNotAllowed) {
+		t.Fatalf("bad batch: want ErrResumeDecisionNotAllowed, got %v", err)
+	}
+	if got := pause.unresolvedCount(convID); got != 2 {
+		t.Fatalf("bad batch partially claimed pauses: unresolved = %d, want 2", got)
+	}
+
+	badBatch[pending[1].Token] = ResponseInput{Action: askuser.ActionDecline}
+	if _, err := r.SubmitAnswers(ctx, badBatch); err != nil {
+		t.Fatalf("corrected batch retry must succeed: %v", err)
+	}
+	if got := pause.unresolvedCount(convID); got != 0 {
+		t.Fatalf("corrected batch left %d unresolved pauses, want 0", got)
+	}
+}
+
+func TestIdempotencyInvariantUnchanged(t *testing.T) {
+	r, conv, _ := newTestRunner(t, agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(askUserCall("call-idempotency", "Proceed?", "approval")),
+	))
+	_, token := seedSinglePause(t, r, conv)
+	answer := ResponseInput{Action: askuser.ActionAccept, Content: "yes"}
+	if _, err := r.SubmitAnswer(context.Background(), token, answer); err != nil {
+		t.Fatalf("first resume: %v", err)
+	}
+	if _, err := r.SubmitAnswer(context.Background(), token, answer); !errors.Is(err, askuser.ErrPauseNotFound) {
+		t.Fatalf("duplicate resume: want ErrPauseNotFound, got %v", err)
 	}
 }
 

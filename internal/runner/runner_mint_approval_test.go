@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/llm"
@@ -19,7 +20,7 @@ func TestMintApprovalPause_WritesWireValidPauseAndReturnsToken(t *testing.T) {
 
 	const convID = "11111111-1111-1111-1111-111111111111"
 	rc := json.RawMessage(`{"type":"scheduled_task_approval","task_id":"abc123"}`)
-	token, err := r.MintApprovalPause(context.Background(), convID, "Approve scheduled task?", rc)
+	token, err := r.MintApprovalPause(context.Background(), convID, "Approve scheduled task?", rc, allResumeDecisions())
 	if err != nil {
 		t.Fatalf("MintApprovalPause: %v", err)
 	}
@@ -39,14 +40,19 @@ func TestMintApprovalPause_WritesWireValidPauseAndReturnsToken(t *testing.T) {
 		t.Fatal("pause must carry a ToolCallID referencing the synthetic assistant tool_call")
 	}
 	var payload struct {
-		Type   string `json:"type"`
-		TaskID string `json:"task_id"`
+		Type             string   `json:"type"`
+		TaskID           string   `json:"task_id"`
+		AllowedDecisions []string `json:"allowed_decisions"`
 	}
 	if err := json.Unmarshal(got.ResumeContext, &payload); err != nil {
 		t.Fatalf("resume_context not valid json: %v", err)
 	}
 	if payload.Type != "scheduled_task_approval" || payload.TaskID != "abc123" {
 		t.Fatalf("resume_context not preserved: %s", got.ResumeContext)
+	}
+	wantDecisions := []string{"accept", "decline", "cancel"}
+	if !slices.Equal(payload.AllowedDecisions, wantDecisions) {
+		t.Fatalf("default allowed_decisions = %v, want %v", payload.AllowedDecisions, wantDecisions)
 	}
 
 	// Wire-validity: history carries an assistant message whose tool_call id == pause.ToolCallID.
@@ -59,6 +65,40 @@ func TestMintApprovalPause_WritesWireValidPauseAndReturnsToken(t *testing.T) {
 	}
 }
 
+func TestMintApprovalPause_PersistsRestrictedDecisions(t *testing.T) {
+	conv := newFakeConvStore()
+	pause := newFakePauseStore()
+	r := &Runner{resumeCommitter: newSplitResumeCommitter(conv, pause), pause: pause}
+	const convID = "33333333-3333-3333-3333-333333333333"
+
+	token, err := r.MintApprovalPause(
+		context.Background(), convID, "Do not approve this action?",
+		json.RawMessage(`{"type":"restricted_test","nonce":"keep-me"}`),
+		[]string{"decline", "cancel"},
+	)
+	if err != nil {
+		t.Fatalf("MintApprovalPause: %v", err)
+	}
+	got, err := pause.GetByToken(context.Background(), token)
+	if err != nil {
+		t.Fatalf("GetByToken(%s): %v", token, err)
+	}
+	var payload struct {
+		Type             string   `json:"type"`
+		Nonce            string   `json:"nonce"`
+		AllowedDecisions []string `json:"allowed_decisions"`
+	}
+	if err := json.Unmarshal(got.ResumeContext, &payload); err != nil {
+		t.Fatalf("resume_context not valid json: %v", err)
+	}
+	if payload.Type != "restricted_test" || payload.Nonce != "keep-me" {
+		t.Fatalf("existing resume_context fields not preserved: %s", got.ResumeContext)
+	}
+	if want := []string{"decline", "cancel"}; !slices.Equal(payload.AllowedDecisions, want) {
+		t.Fatalf("allowed_decisions = %v, want %v", payload.AllowedDecisions, want)
+	}
+}
+
 // TestMintApprovalPause_TokenIsUnique proves two mints on the same conversation produce
 // distinct tokens (no dedup here — dedup is the ensurer adapter's job).
 func TestMintApprovalPause_TokenIsUnique(t *testing.T) {
@@ -68,11 +108,11 @@ func TestMintApprovalPause_TokenIsUnique(t *testing.T) {
 	const convID = "22222222-2222-2222-2222-222222222222"
 	rc := json.RawMessage(`{"type":"scheduled_task_approval","task_id":"t1"}`)
 
-	t1, err := r.MintApprovalPause(context.Background(), convID, "q1", rc)
+	t1, err := r.MintApprovalPause(context.Background(), convID, "q1", rc, allResumeDecisions())
 	if err != nil {
 		t.Fatalf("mint 1: %v", err)
 	}
-	t2, err := r.MintApprovalPause(context.Background(), convID, "q2", rc)
+	t2, err := r.MintApprovalPause(context.Background(), convID, "q2", rc, allResumeDecisions())
 	if err != nil {
 		t.Fatalf("mint 2: %v", err)
 	}

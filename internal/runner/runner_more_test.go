@@ -121,7 +121,13 @@ func TestSubmitAnswer_RunsResumeHookForContext(t *testing.T) {
 	mustCreate(t, r, convID)
 
 	token := "pause-token"
-	resumeContext := json.RawMessage(`{"type":"skill_approval","skill_name":"calc"}`)
+	resumeContext, err := resumeContextWithDecisionPolicy(
+		json.RawMessage(`{"type":"skill_approval","skill_name":"calc"}`),
+		allResumeDecisions(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := pause.Insert(ctx, askuser.InsertParams{
 		Token:          token,
 		ConversationID: convID,

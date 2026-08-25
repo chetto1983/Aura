@@ -56,19 +56,6 @@ func mcpDB(ctx context.Context) (*pgxpool.Pool, *config.Config, error) {
 	return mcpDBPool, mcpDBCfg, mcpDBErr
 }
 
-// closeMCPDB releases the shared pool.
-//
-// Production releases it by exiting, so nothing in the daemon or a CLI verb calls this. A
-// test binary does not exit between tests: it runs the whole package and only then does
-// goleak verify, by which point pgxpool's background health-check goroutine has been
-// parked since the first registry read and reads as a leak — which is exactly what it is,
-// for a process that keeps running.
-func closeMCPDB() {
-	if mcpDBPool != nil {
-		mcpDBPool.Close()
-	}
-}
-
 // mcpRegistry returns the process-wide registry store.
 func mcpRegistry(ctx context.Context) (*mcpregistry.Store, error) {
 	registryOnce.Do(func() {

@@ -18,13 +18,17 @@ func TestSubmitAnswerPreservesOriginalOperationThroughAtomicResume(t *testing.T)
 	convID := newConvID(t)
 	mustCreate(t, r, convID)
 	const token = "resume-token"
+	resumeContext, err := resumeContextWithDecisionPolicy(json.RawMessage(`{"type":"test"}`), allResumeDecisions())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := pauses.Insert(context.Background(), askuser.InsertParams{
 		Token:          token,
 		ConversationID: convID,
 		Kind:           "approval",
 		Question:       "approve?",
 		ToolCallID:     "call-1",
-		ResumeContext:  json.RawMessage(`{"type":"test"}`),
+		ResumeContext:  resumeContext,
 	}); err != nil {
 		t.Fatal(err)
 	}

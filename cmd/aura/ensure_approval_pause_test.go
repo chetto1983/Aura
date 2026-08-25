@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
@@ -24,15 +25,17 @@ type recordingMinter struct {
 	convID  string
 	q       string
 	rc      json.RawMessage
+	allowed []string
 	calls   int
 	mintErr error
 }
 
-func (m *recordingMinter) MintApprovalPause(_ context.Context, convID, question string, resumeContext json.RawMessage) (string, error) {
+func (m *recordingMinter) MintApprovalPause(_ context.Context, convID, question string, resumeContext json.RawMessage, allowedDecisions []string) (string, error) {
 	m.calls++
 	m.convID = convID
 	m.q = question
 	m.rc = resumeContext
+	m.allowed = append([]string(nil), allowedDecisions...)
 	if m.mintErr != nil {
 		return "", m.mintErr
 	}
@@ -100,6 +103,10 @@ func TestEnsureApprovalPause_MintsWhenAbsent(t *testing.T) {
 	}
 	if rc.Type != "scheduled_task_approval" || rc.TaskID != "task-7" {
 		t.Errorf("minted resume_context = %s, want scheduled_task_approval/task-7", minter.rc)
+	}
+	wantAllowed := []string{askuser.ActionAccept, askuser.ActionDecline, askuser.ActionCancel}
+	if !slices.Equal(minter.allowed, wantAllowed) {
+		t.Errorf("allowed decisions = %v, want %v", minter.allowed, wantAllowed)
 	}
 }
 

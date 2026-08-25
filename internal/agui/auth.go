@@ -1,8 +1,7 @@
 // auth.go is the WEB-03 in-binary web-auth boundary (D-01..D-04): a constant-time
 // Auth middleware gates the whole origin except the public paths (login + assets +
 // GET /healthz), clears sessions on logout, and applies capability gates to mutating
-// routes. The legacy HMAC passphrase helpers remain covered by unit tests, but
-// `aura serve` mounts Authula as the only credential issuer.
+// routes. `aura serve` mounts Authula as the only credential issuer.
 //
 // The boundary is stdlib-only (crypto/hmac + crypto/sha256 + crypto/subtle +
 // net/http + time) — no gorilla/* or other 3rd-party session library (RESEARCH
@@ -114,36 +113,6 @@ func (d AuthDeps) loginPath() string {
 	return d.LoginPath
 }
 
-// LoginHandler returns the POST /login handler: it reads the form passphrase (body
-// size-bounded like server.go's handleRun), constant-time compares it against the
-// configured secret (validateSecret — fail-closed on an empty/unconfigured secret),
-// and on success mints a session cookie bound to the local identity and 303-redirects
-// to "/". On any failure it returns a GENERIC 401 with no Set-Cookie and no oracle
-// distinguishing "wrong password" from "no secret configured" (T-24-15, golang-security
-// V7). The passphrase is never echoed.
-func (d AuthDeps) LoginHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, maxLoginBodyBytes)
-		// ParseForm reads the bounded body; an oversized/garbled body is treated as a
-		// failed login (generic 401), never a distinct error surface.
-		if err := r.ParseForm(); err != nil {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		passphrase := r.PostFormValue("passphrase")
-		if !validateSecret(passphrase, d.Secret) {
-			// Generic body — do NOT reveal whether the secret is unset vs the passphrase
-			// is wrong (no login oracle). No Set-Cookie on failure.
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		value := signSession(d.SigningKey, d.LocalIdentityID, time.Now())
-		setSessionCookie(w, value, d.ttl())
-		// 303 See Other so a browser form POST follows up with a GET of "/".
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-	}
-}
-
 // LogoutHandler returns the POST /logout handler: it clears the session cookie
 // (MaxAge < 0) and 303-redirects to the login page. It is safe to call without a
 // session (idempotent) and never reads the cookie value.
@@ -153,11 +122,6 @@ func (d AuthDeps) LogoutHandler() http.HandlerFunc {
 		http.Redirect(w, r, d.loginPath(), http.StatusSeeOther)
 	}
 }
-
-// maxLoginBodyBytes bounds the POST /login form body (Tampering/DoS guard, mirrors
-// maxRunBodyBytes in server.go). A login form is a single short passphrase field; 64
-// KiB is generous headroom while defanging a hostile body before ParseForm decodes it.
-const maxLoginBodyBytes = 64 << 10
 
 // isPublicPath reports whether a request path is reachable WITHOUT a session (D-03):
 // the login page route and its static assets (the shared SPA bundle/styles + PWA +

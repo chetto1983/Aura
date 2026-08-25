@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent"
@@ -44,7 +45,7 @@ func TestPersistPause_ForwardsProxiedIDs(t *testing.T) {
 	}
 }
 
-// TestPersistPause_DirectPauseLeavesProxiedNil is the back-compat control: a
+// TestPersistPause_DirectPauseLeavesProxiedNil is the direct-pause control: a
 // direct (non-proxied) pause forwards a nil child id (→ SQL NULL) and an empty
 // tool_call id, so existing direct pauses persist unchanged.
 func TestPersistPause_DirectPauseLeavesProxiedNil(t *testing.T) {
@@ -74,7 +75,9 @@ func TestPersistPause_ForwardsResumeContext(t *testing.T) {
 	convID := newConvID(t)
 	tr := &turnTracker{convID: convID}
 
-	resumeContext := json.RawMessage(`{"type":"skill_approval","skill_name":"calc"}`)
+	resumeContext := json.RawMessage(
+		`{"type":"skill_approval","skill_name":"calc","allowed_decisions":["decline"]}`,
+	)
 	ai := &agent.AwaitingInput{
 		Question:      "approve skill?",
 		Kind:          "approval",
@@ -88,8 +91,19 @@ func TestPersistPause_ForwardsResumeContext(t *testing.T) {
 	if len(tr.pauseInserts) != 1 {
 		t.Fatalf("persistPause must accumulate exactly 1 pause InsertParams, got %d", len(tr.pauseInserts))
 	}
-	if string(tr.pauseInserts[0].ResumeContext) != string(resumeContext) {
-		t.Fatalf("ResumeContext not forwarded: got %s want %s", tr.pauseInserts[0].ResumeContext, resumeContext)
+	var got struct {
+		Type             string   `json:"type"`
+		SkillName        string   `json:"skill_name"`
+		AllowedDecisions []string `json:"allowed_decisions"`
+	}
+	if err := json.Unmarshal(tr.pauseInserts[0].ResumeContext, &got); err != nil {
+		t.Fatalf("ResumeContext invalid: %v", err)
+	}
+	if got.Type != "skill_approval" || got.SkillName != "calc" {
+		t.Fatalf("ResumeContext fields not preserved: %s", tr.pauseInserts[0].ResumeContext)
+	}
+	if !slices.Equal(got.AllowedDecisions, allResumeDecisions()) {
+		t.Fatalf("allowed decisions = %v, want %v", got.AllowedDecisions, allResumeDecisions())
 	}
 }
 

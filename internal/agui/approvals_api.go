@@ -244,6 +244,10 @@ func (s *Server) handleResolveApproval(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "approval not found or already resolved", http.StatusNotFound)
 			return
 		}
+		if errors.Is(err, runner.ErrResumeDecisionNotAllowed) {
+			http.Error(w, "approval decision not allowed", http.StatusForbidden)
+			return
+		}
 		http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
 		return
 	}

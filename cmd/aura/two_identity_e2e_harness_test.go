@@ -189,6 +189,10 @@ func (r musrStubRunner) SubmitAnswers(context.Context, map[string]runner.Respons
 	return 0, nil
 }
 
+func (r musrStubRunner) ValidateResumeAnswers(context.Context, map[string]runner.ResponseInput) error {
+	return nil
+}
+
 func (r musrStubRunner) SubmitAnswer(context.Context, string, runner.ResponseInput) (runner.ResolveDirective, error) {
 	return runner.ResolveDirective{}, nil
 }

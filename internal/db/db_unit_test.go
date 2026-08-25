@@ -357,14 +357,14 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A deliberate pin, moved deliberately: 0101_mcp_server_registry moves the MCP server
-	// registry off a single root-owned JSON file and into Postgres, next to the MCP audit
-	// trail (0022) and the per-identity OAuth grants (0100) that were already there. The
+	// A deliberate pin, moved deliberately: 0102_paused_state_decision_policy backfills
+	// an explicit server-authored decision set onto every persisted pause, so runtime
+	// authorization can remain fail-closed without a compatibility path. The
 	// test exists so a migration added without noticing breaks the build rather than the
 	// deployment, so bumping it is the intended way to acknowledge one -- never a fixup to
 	// make a red go away.
-	if head != 101 {
-		t.Fatalf("MigrationHead=%d, want embedded head 101", head)
+	if head != 102 {
+		t.Fatalf("MigrationHead=%d, want embedded head 102", head)
 	}
 }
 

@@ -639,7 +639,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [ ] 52-02-PLAN.md — The agent half: the conversation-keyed bounded inbox, both drain points, the nonce marker OUTSIDE the tool-output envelope, the teaching note and the pre-wrap lookalike scrub
-- [ ] 52-03-PLAN.md — RESUME-01, folded amendment #133 defects: empty-accept refusal, per-pause decision policy recorded at mint, pending-approval TTL through the resume front door
+- [ ] 52-03-PLAN.md — RESUME-01 remainder: pending-approval TTL through the resume front door (empty-accept refusal and per-pause decision policy closed 2026-08-25)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -700,9 +700,10 @@ Three departures from numeric order, each measured rather than preferred:
   amendment **#134** (TOOL-01's `comms` row cannot be built at all) and amendment **#137**
   (Phase 53's deliverable shipped as L3 compaction on 2026-08-12). **The 23 requirements those two
   phases carried are deleted with them** — see REQUIREMENTS.md, which now defines 54, not 77.
-  What did NOT go with them: amendment #133's three approval-path defects, kept in
+  What did NOT go with them: amendment #133's approval-path defects, kept in
   `.planning/todos/pending/approval-resume-defects.md`, because they are resume-path security
-  gaps rather than tool-surface ceremony.
+  gaps rather than tool-surface ceremony. Empty accepted answers and per-pause decision policy
+  closed on 2026-08-25; only pending-approval expiry remains open.
 
 - **50 before 49.** 50's target is now the compaction trigger, which exists; 49's remaining scope
   is smaller than written and does not gate it.

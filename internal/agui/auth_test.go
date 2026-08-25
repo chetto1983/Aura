@@ -2,10 +2,12 @@ package agui
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -72,30 +74,6 @@ func testDeps(secret string) AuthDeps {
 	}
 }
 
-// TestValidateSecret covers the D-01 fail-closed login compare.
-func TestValidateSecret(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name                 string
-		provided, configured string
-		want                 bool
-	}{
-		{"empty configured rejects all (fail-closed)", "p", "", false},
-		{"empty configured rejects empty too", "", "", false},
-		{"correct passphrase", "right", "right", true},
-		{"wrong passphrase", "wrong", "right", false},
-		{"prefix is not a match", "rig", "right", false},
-		{"longer is not a match", "righter", "right", false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := validateSecret(tc.provided, tc.configured); got != tc.want {
-				t.Fatalf("validateSecret(%q,%q) = %v, want %v", tc.provided, tc.configured, got, tc.want)
-			}
-		})
-	}
-}
-
 func TestIsLoopbackRemoteAddr(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -116,8 +94,16 @@ func TestIsLoopbackRemoteAddr(t *testing.T) {
 	}
 }
 
+func signedSessionFixture(key []byte, identityID string, issued time.Time) string {
+	payload := identityID + "|" + strconv.FormatInt(issued.Unix(), 10)
+	mac := hmac.New(sha256.New, key)
+	_, _ = mac.Write([]byte(payload))
+	return base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." +
+		base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
 // TestSignVerifyRoundtrip is the property: for any identity id + an issued time within
-// TTL, signSession then verifySession returns the same id and ok==true.
+// TTL, a correctly signed fixture verifies to the same id with ok==true.
 func TestSignVerifyRoundtrip(t *testing.T) {
 	t.Parallel()
 	key := deriveSigningKey("operator-secret")
@@ -128,7 +114,7 @@ func TestSignVerifyRoundtrip(t *testing.T) {
 		now := time.Unix(1_700_000_000, 0)
 		issued := now.Add(-time.Duration(ageSec) * time.Second)
 
-		value := signSession(key, id, issued)
+		value := signedSessionFixture(key, id, issued)
 		gotID, ok := verifySession(key, value, defaultSessionTTL, now)
 		if !ok {
 			rt.Fatalf("verifySession ok=false for fresh cookie id=%q age=%ds", id, ageSec)
@@ -147,7 +133,7 @@ func TestVerifyTamper(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	rapid.Check(t, func(rt *rapid.T) {
 		id := rapid.StringMatching(`[a-zA-Z0-9._-]{1,32}`).Draw(rt, "id")
-		value := signSession(key, id, now)
+		value := signedSessionFixture(key, id, now)
 		pos := rapid.IntRange(0, len(value)-1).Draw(rt, "pos")
 		// Flip the byte at pos to a different printable rune.
 		orig := value[pos]
@@ -174,13 +160,13 @@ func TestVerifyExpiry(t *testing.T) {
 
 	t.Run("expired beyond absolute TTL", func(t *testing.T) {
 		issued := now.Add(-defaultSessionTTL - time.Second)
-		value := signSession(key, testLocalID, issued)
+		value := signedSessionFixture(key, testLocalID, issued)
 		if _, ok := verifySession(key, value, defaultSessionTTL, now); ok {
 			t.Fatal("verifySession accepted an expired cookie")
 		}
 	})
 	t.Run("wrong key rejects", func(t *testing.T) {
-		value := signSession(key, testLocalID, now)
+		value := signedSessionFixture(key, testLocalID, now)
 		other := deriveSigningKey("different-secret")
 		if _, ok := verifySession(other, value, defaultSessionTTL, now); ok {
 			t.Fatal("verifySession accepted a cookie signed with a different key")
@@ -211,83 +197,6 @@ func readSessionCookie(rec *httptest.ResponseRecorder) *http.Cookie {
 		}
 	}
 	return nil
-}
-
-func TestLogin(t *testing.T) {
-	t.Parallel()
-	deps := testDeps("operator-secret")
-
-	t.Run("correct passphrase sets a locked session cookie + 303", func(t *testing.T) {
-		form := url.Values{"passphrase": {"operator-secret"}}
-		req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		rec := httptest.NewRecorder()
-
-		deps.LoginHandler()(rec, req)
-
-		if rec.Code != http.StatusSeeOther {
-			t.Fatalf("status = %d, want 303", rec.Code)
-		}
-		c := readSessionCookie(rec)
-		if c == nil {
-			t.Fatal("no session cookie set on a successful login")
-		}
-		if !c.HttpOnly {
-			t.Error("cookie not HttpOnly")
-		}
-		if !c.Secure {
-			t.Error("cookie not Secure")
-		}
-		if c.SameSite != http.SameSiteStrictMode {
-			t.Errorf("SameSite = %v, want Strict", c.SameSite)
-		}
-		if c.Path != "/" {
-			t.Errorf("Path = %q, want /", c.Path)
-		}
-		if c.MaxAge <= 0 {
-			t.Errorf("MaxAge = %d, want positive", c.MaxAge)
-		}
-		// The minted cookie verifies and binds the local identity.
-		if id, ok := verifySession(deps.SigningKey, c.Value, deps.ttl(), time.Now()); !ok || id != testLocalID {
-			t.Errorf("minted cookie verify = (%q,%v), want (%q,true)", id, ok, testLocalID)
-		}
-	})
-
-	t.Run("wrong passphrase -> 401, no cookie, generic body", func(t *testing.T) {
-		form := url.Values{"passphrase": {"nope"}}
-		req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		rec := httptest.NewRecorder()
-
-		deps.LoginHandler()(rec, req)
-
-		if rec.Code != http.StatusUnauthorized {
-			t.Fatalf("status = %d, want 401", rec.Code)
-		}
-		if c := readSessionCookie(rec); c != nil {
-			t.Fatal("a failed login must not set a session cookie")
-		}
-		if strings.Contains(rec.Body.String(), "nope") {
-			t.Fatal("login error body echoed the passphrase")
-		}
-	})
-
-	t.Run("unconfigured secret -> 401, no cookie (fail-closed)", func(t *testing.T) {
-		unconfigured := testDeps("") // SecretConfigured=false, Secret=""
-		form := url.Values{"passphrase": {""}}
-		req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		rec := httptest.NewRecorder()
-
-		unconfigured.LoginHandler()(rec, req)
-
-		if rec.Code != http.StatusUnauthorized {
-			t.Fatalf("status = %d, want 401 (fail-closed)", rec.Code)
-		}
-		if c := readSessionCookie(rec); c != nil {
-			t.Fatal("an unconfigured-secret login must not set a cookie")
-		}
-	})
 }
 
 func TestLogout(t *testing.T) {
@@ -328,7 +237,7 @@ func validCookieReq(deps AuthDeps, path string, acceptHTML bool) *http.Request {
 	if acceptHTML {
 		req.Header.Set("Accept", "text/html")
 	}
-	value := signSession(deps.SigningKey, deps.LocalIdentityID, time.Now())
+	value := signedSessionFixture(deps.SigningKey, deps.LocalIdentityID, time.Now())
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: value})
 	return req
 }
@@ -385,7 +294,7 @@ func TestRequireAuth(t *testing.T) {
 
 	t.Run("tampered cookie -> reject", func(t *testing.T) {
 		next, hit := nextRecorder()
-		value := signSession(deps.SigningKey, deps.LocalIdentityID, time.Now())
+		value := signedSessionFixture(deps.SigningKey, deps.LocalIdentityID, time.Now())
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: value + "x"})
 		rec := httptest.NewRecorder()

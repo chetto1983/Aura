@@ -228,6 +228,17 @@ func TestApprovalsAPI_ResolvePauseNotFound(t *testing.T) {
 	}
 }
 
+func TestApprovalsAPI_ResolveDecisionNotAllowed(t *testing.T) {
+	run := &scriptedRunner{answersErr: runner.ErrResumeDecisionNotAllowed}
+	srv := newResolveTestServer(t, run, nil)
+	token := uuid.Must(uuid.NewV7()).String()
+
+	code, body := postResolve(t, srv, token, `{"action":"accept","content":"yes"}`)
+	if code != http.StatusForbidden {
+		t.Errorf("ErrResumeDecisionNotAllowed status = %d, want 403: %s", code, body)
+	}
+}
+
 // TestApprovalsAPI_ResolveRunnerError asserts a generic runner error is a 500 with the
 // message redacted (sanitizeErr) — a runner error embedding a DSN must not leak.
 func TestApprovalsAPI_ResolveRunnerError(t *testing.T) {

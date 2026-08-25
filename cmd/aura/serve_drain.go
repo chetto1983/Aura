@@ -29,17 +29,6 @@ const (
 	drainResultTimedOut
 )
 
-func (d drainResult) String() string {
-	switch d {
-	case drainResultDrained:
-		return "drained"
-	case drainResultTimedOut:
-		return "timed-out"
-	default:
-		return "unknown"
-	}
-}
-
 // drainWithGrace runs drain (the teardown that joins in-flight turns — e.g. the
 // channel StopAll + http.Server.Shutdown) in its own goroutine and waits up to
 // grace for it to return. It reports drainResultDrained on a clean join, or

@@ -3,7 +3,9 @@ package agui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
@@ -12,6 +14,10 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/runner"
 )
+
+// ErrResumeDecisionNotAllowed is the HTTP-boundary classification for a decision
+// excluded by the server-authored policy persisted with the pause.
+var ErrResumeDecisionNotAllowed = runner.ErrResumeDecisionNotAllowed
 
 // server_project.go holds the pure wire-shape mapping helpers split out of server.go
 // (refactor-on-touch / ≤600 LOC, CLAUDE.md): the AG-UI Resume[]→Runner resume mapping, the
@@ -37,13 +43,22 @@ func resumeAnswers(entries []types.ResumeEntry) (map[string]runner.ResponseInput
 	return out, nil
 }
 
-func (s *Server) submitResumeEntries(ctx context.Context, entries []types.ResumeEntry) error {
+func (s *Server) validateResumeEntries(ctx context.Context, entries []types.ResumeEntry) (map[string]runner.ResponseInput, error) {
 	answers, err := resumeAnswers(entries)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	_, err = s.run.SubmitAnswers(ctx, answers)
-	return err
+	if err := s.run.ValidateResumeAnswers(ctx, answers); err != nil {
+		return nil, err
+	}
+	return answers, nil
+}
+
+func resumeErrorStatus(err error) int {
+	if errors.Is(err, ErrResumeDecisionNotAllowed) {
+		return http.StatusForbidden
+	}
+	return http.StatusBadRequest
 }
 
 // payloadString renders a resume payload as the answer content: a string payload is

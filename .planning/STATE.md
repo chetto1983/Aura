@@ -217,10 +217,11 @@ None yet.
   (`46-09-SUMMARY.md`). A ratified trust posture with no named test is one refactor away from
   silent regression. Not re-scheduled — operator's call — recorded so it is a known edge.
 
-- **Open:** amendment #133's three approval-resume defects (no per-tool decision policy, an empty
-  answer resuming silently, pending approvals never expiring), in
-  `.planning/todos/pending/approval-resume-defects.md`. They were scheduled inside Phase 47 but
-  are resume-path security gaps, not tool-surface ceremony, so they outlived it.
+- **Partially closed 2026-08-25:** amendment #133's empty accepted answer and per-pause decision
+  policy defects are closed with fail-closed wire/Runner/database tests, migration 0102, 100%
+  policy mutation, and a real-agent E2E. **Only pending-approval expiry remains open**, tracked in
+  `.planning/todos/pending/approval-resume-defects.md`; it remains a resume-path security gap rather
+  than tool-surface ceremony.
 
 - 45.1-08 (phase close) must re-run bash scripts/coverage_docker.sh (full aggregate 85% owned-surface gate) once plan 45.1-04 lands and the tree is quiescent -- not run during 45.1-03 because a concurrent unrelated in-flight session held compose.yaml and internal/agent/mcptools/bridge_risk.go dirty in the same checkout
 - 45.1-08 must also run a mutation spot-check on internal/agent/mcptools/bridge_risk.go -- not run during 45.1-04; the file is at 100% per-function coverage and bridge_supervisor.go scored 99/99, but neither is a mutation score for this file

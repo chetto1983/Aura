@@ -31,8 +31,13 @@ const approvalPauseKind = "approval"
 //
 // Kind is always "approval". resumeContext is the caller's machine-readable payload the
 // ResumeHook decodes (e.g. {"type":"scheduled_task_approval","task_id":<id>}). Returns the
-// pause token the caller pushes to the channel and the operator resolves.
-func (r *Runner) MintApprovalPause(ctx context.Context, convID, question string, resumeContext json.RawMessage) (string, error) {
+// pause token the caller pushes to the channel and the operator resolves. allowedDecisions
+// is mandatory server-authored policy; an empty set deliberately permits no decision.
+func (r *Runner) MintApprovalPause(ctx context.Context, convID, question string, resumeContext json.RawMessage, allowedDecisions []string) (string, error) {
+	resumeContext, err := resumeContextWithDecisionPolicy(resumeContext, allowedDecisions)
+	if err != nil {
+		return "", fmt.Errorf("mint approval pause: decision policy: %w", err)
+	}
 	token, err := uuid.NewV7()
 	if err != nil {
 		return "", fmt.Errorf("mint approval pause: token: %w", err)

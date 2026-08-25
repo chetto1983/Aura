@@ -45,10 +45,12 @@ import (
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/llm/openai_compat"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -193,10 +195,13 @@ func (h *liveHarness) resumedAnswerOf(t *testing.T, ctx context.Context, token s
 	t.Helper()
 	var raw []byte
 	var resolved bool
-	if err := h.pool.QueryRow(ctx,
-		"SELECT resumed_answer, resumed_at IS NOT NULL FROM aura.paused_states WHERE token = $1",
-		token,
-	).Scan(&raw, &resolved); err != nil {
+	err := db.WithIdentityTxRaw(ctx, h.pool, identityctx.LocalOperatorIdentity, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx,
+			"SELECT resumed_answer, resumed_at IS NOT NULL FROM aura.paused_states WHERE token = $1",
+			token,
+		).Scan(&raw, &resolved)
+	})
+	if err != nil {
 		t.Fatalf("read resumed_answer for %s: %v", token, err)
 	}
 	var ans askuser.ResumeAnswer

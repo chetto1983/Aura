@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/runner"
 )
 
 // TestServer_RunSSERoundTrip (SC1): a known thread + a user message streams the
@@ -121,6 +123,27 @@ func TestServer_ResumeRejectsEmptyAcceptedContent(t *testing.T) {
 				t.Fatalf("empty accepted content reached SubmitAnswers: %+v", run.gotAnswers)
 			}
 		})
+	}
+}
+
+func TestServer_ResumeRejectsDisallowedDecision(t *testing.T) {
+	const tid = "66666666-6666-6666-6666-666666666668"
+	run := &scriptedRunner{
+		events:             textTurn("must not run"),
+		validateAnswersErr: runner.ErrResumeDecisionNotAllowed,
+	}
+	srv := newTestServer(t, run, &fakeConvStore{known: map[string]bool{tid: true}})
+	body := `{"threadId":"` + tid + `","messages":[],"resume":[` +
+		`{"interruptId":"tok-1","status":"resolved","payload":"yes"}]}`
+
+	resp := postRun(t, srv, body)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		raw, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, want 403: %s", resp.StatusCode, raw)
+	}
+	if run.gotAnswers != nil {
+		t.Fatalf("policy-disallowed decision reached SubmitAnswers: %+v", run.gotAnswers)
 	}
 }
 

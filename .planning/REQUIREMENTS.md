@@ -294,10 +294,10 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
   They are deleted rather than deferred to v2 because deferring an unmeasured premise only moves
   it; nothing here is blocked on them, and if tool choice ever degrades it comes back with the
   measurement attached
-- What did NOT go with them: PRD amendment **#133**'s three approval-path defects — no per-tool
-  decision policy, an empty answer resuming silently, pending approvals never expiring — kept in
-  `.planning/todos/pending/approval-resume-defects.md`. They are resume-path security gaps that
-  happened to be scheduled inside Phase 47, not tool-surface ceremony
+- What did NOT go with them: PRD amendment **#133**'s approval-path defects, kept in
+  `.planning/todos/pending/approval-resume-defects.md`. Empty accepted answers and per-pause
+  decision policy closed on 2026-08-25; pending-approval expiry remains open. These are resume-path
+  security gaps that happened to be scheduled inside Phase 47, not tool-surface ceremony
 
 ---
 *Requirements defined: 2026-08-05*

@@ -56,7 +56,9 @@ type releasingProcessPools struct{ m *testing.M }
 
 func (r releasingProcessPools) Run() int {
 	code := r.m.Run()
-	closeMCPDB()
+	if mcpDBPool != nil {
+		mcpDBPool.Close()
+	}
 	return code
 }
 
