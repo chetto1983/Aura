@@ -13,7 +13,7 @@ progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 34
-  completed_plans: 30
+  completed_plans: 31
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -187,6 +187,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 46]: 46-05's MCP-05 fix encodes `{accountId, eventId}` as an opaque base64 JSON token minted by `get_calendar_events` and decoded only by `get_calendar_event_details` — the provider call still needs a real accountId server-side, so the reference carries it instead of a caller-supplied argument; a missing/malformed reference is rejected outright, never defaulted to an account
 - [Phase 46]: 46-05 found `ci.yml` structurally never triggers on `aura/pim-sidecar` (push/PR to `main` only, zero runs in the branch's history) — the plan's literal "ci.yml green" acceptance wording cannot be satisfied on this branch; `aura-publish-image.yml` is the actual gate and it succeeded, additionally verified by pulling and re-probing the published `:<sha>` image live
 - [Phase 52]: 52-01 assigned PRD amendment #142 (not #141 — a concurrent session claimed #141) for the five hermes/live-tree corrections to #132; RESUME-01 minted as its own requirement ID and amendment #133 re-pointed from the deleted Phase 47 to Phase 52
+- [Phase 52]: 52-06 confirmed D-05's premise against the live tree before building: a non-text message during a live turn WAS dropped (startTurn called onBusy() and returned, no queue on that path). The queue is new work, not a repair
+- [Phase 52]: 52-06 gives Telegram one inbox with TWO consumers (cockpit route + channel), pinned by cmd/aura/steer_wiring_test.go; media queues in a per-chat pending slot delivered under the SAME registration and identity-scoped ctx, chain-capped at one, proven by invocation COUNTS not reply inspection
 - [Phase 52]: 52-05 auto-delivers a leftover steer via turnLocked under the ALREADY-HELD lock (never Turn/runTurn, which would deadlock re-acquiring it), capped at steerAutoDeliverMaxChain=1 so a steer queued during the auto-delivered turn cannot start a second hop
 - [Phase 52]: 52-05's exactly-once persistence is proven by a ROW COUNT (TestLeftoverSteerPersistsExactlyOneTurn), not a status code; 52-04's drain-time persistSteerTurn is guarded against the next-turn form via steerDeliveryForms
 - [Phase 52]: 52-05 moved Deps/ResumeHook/New out of runner.go (596/600 before the change) into runner_deps.go as refactor-on-touch, named explicitly in the commit body -- the Wave-2 mis-titled-commit defect did not repeat
