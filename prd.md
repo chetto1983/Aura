@@ -7517,3 +7517,54 @@ flusso completo, che funziona.
 > precisely the open question and nothing here answers it. It does not measure what `swarm_spawn`
 > does today under load, nesting, or failure — only that it is small. And the dependency verdicts
 > are reasoning over call sites, not experiments: no plan was executed out of order to test them.
+
+## §The tool surface works; TOOL-01's cap was never measured (Amendment #139, 2026-08-24)
+
+> **Amendment #139 (2026-08-24 — supersedes TOOL-01's hard cap and CANCELS Phase 48.)**
+>
+> **What was measured**, from `aura.tool_invocations` on the live deployment:
+>
+> ```
+> tool_search   164 calls   0 failures
+> ```
+>
+> 164 of 164. The deferred tail it reaches currently holds `linear` (53 tools), `notion` (28),
+> `whatsapp` (15), `memory` (4) and ten native tools. Of 531 recorded invocations, **22 are
+> errors**, and they sit in `shell_exec` (4), `fs_read` (4) and `calendar__list_accounts` (4) —
+> **failures of execution, not of selection.** No row shows the model failing to find or choose a
+> tool.
+>
+> **What this falsifies.** TOOL-01 states *"Exactly 14 tools are loaded in the model's manifest. A
+> hard cap, not a target"* and names a merged surface — one `fs_write`, one `document`, one `web`,
+> one `memory`, one `comms`. That cap rests on the premise that the current manifest is more than
+> the model can reason over. **No measurement supports it, and the one measurement that exists
+> contradicts it.** Phase 48's own rationale conceded the point in advance: the operator's ACC-02
+> decision made `aura.tool_invocations` the evidence standard, and that evidence is now in and says
+> the surface works.
+>
+> Two further facts against the merged design. **Nobody ships it**: Claude Code loads ~16 discrete
+> tools with no deferral, hermes and LibreChat both expose large discrete tool sets, and none of the
+> three merges filesystem, document, web and comms verbs into single dispatchers. And amendment
+> **#134** already established that TOOL-01's row 14 (`comms`, one tool spanning calendar + mail +
+> contacts + WhatsApp) **cannot be built** without reopening D-17 or D-27 — a table whose own row
+> is unbuildable is not a specification the tree should be bent toward.
+>
+> **What changes.**
+> (a) **Phase 48 is CANCELLED.** The merges and renames it schedules (`read_file`→`fs_read`,
+> `write_file`+`patch`→`fs_write`, `search_files`→`fs_search`, `document_*`→`document`,
+> `web_*`→`web`, `swarm_spawn`→`delegate`) buy nothing that is measured, cost a rename across every
+> native tool file plus COMPAT-01/COMPAT-03 rehydration work, and would break every historical
+> `aura.tool_invocations` row and scheduled `agent_job` that names the old tools.
+> (b) **TOOL-01's hard cap is void.** The manifest size is an outcome, not a constraint. If a future
+> measurement shows tool-choice degrading, it comes back with that measurement attached.
+> (c) **What survives from TOOL-01**: `tool_search` stays always-loaded and never deferred — that
+> rule is confirmed by the 164/0, not weakened by it.
+>
+> **What this measurement does NOT prove.** It does not prove the surface would still work at twice
+> the deferred tail, nor that `tool_search`'s retrieval stays at 164/0 as the corpus grows — the
+> figure is a snapshot of one deployment's history, not a load test. It does not prove the 22
+> execution errors are acceptable; they were classified by tool name, not diagnosed. It does not
+> measure token cost: nothing here says the current manifest is CHEAP, only that it is
+> navigable — if a future amendment cancels this one it will most likely be on cost, not on
+> accuracy. And it says nothing about `send_file`, `document_index` or `current_time` leaving the
+> surface (AUTO-01/AUTO-02), which are Phase 47's to justify or drop on their own evidence.

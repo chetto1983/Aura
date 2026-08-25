@@ -100,7 +100,7 @@ harness is built; `internal/eval/` stays deleted.
 - [x] **Phase 45.1: Native MCP client** - The official Go SDK replaces ~1,970 LOC of bespoke transport and reconnect; Aura's own policy layers survive on top (inserted 2026-08-16)
 - [ ] **Phase 46: MCP trust and facade** - Ratify the trust posture that already shipped; curation moves into the forks, not into Aura — **7/9 plans done; 46-08 is a recorded no-go (amendment #131); only 46-09 remains**
 - [ ] **Phase 47: Tool-surface ceremony strip** - Host-fills drop from schemas, approvals resolve without a resume payload, files auto-deliver and auto-index — **grows the three approval gaps of amendment #133**
-- [ ] **Phase 48: Tool-surface un-defer and merges** - the manifest lands on the 14 tools TOOL-01 NAMES; the count is already 14, the composition is not
+- [x] ~~**Phase 48: Tool-surface un-defer and merges**~~ - **CANCELLED 2026-08-24** (amendment #139) — `tool_search` measures **164 calls, 0 failures** with Linear (53), Notion (28) and WhatsApp (15) in the deferred tail. TOOL-01's hard cap was never measured; the one measurement that exists contradicts it
 - [ ] **Phase 49: Memory tiers** - Short-term searchable retrieval and a PRD-amendment-gated reasoning tier — **scoped down: `memory_recall` and `internal/reasoningtrace` already exist**
 - [ ] **Phase 50: Context ladder legibility** - Real token accounting, eviction, and per-category visibility — **re-hosted: the consumer is now the compaction trigger**
 - [ ] **Phase 51: Durable delegation** - The approved swarm substrate gets built; workers get a real brief, real limits, and a turn that no longer blocks — **needs a design gate before it can be planned**
@@ -420,7 +420,14 @@ Plans:
 
 ### Phase 47: Tool-surface ceremony strip
 
-> **REVISED 2026-08-24.** Two changes, both measured.
+> **REVISED 2026-08-24, then NARROWED the same day.** This phase is reduced to its security gaps.
+> The three approval defects in (a) below are real and stay. **AUTO-01 and AUTO-02 are no longer
+> assumed**: `send_file` measures 18 calls and 0 failures, no evidence says the operator is losing
+> files, and AUTO-01 REVERSES a deliberate decision (see (b)). Carry them only with evidence, or
+> drop them — and if AUTO-01 is dropped, Phase 54's retirement of the `always-deliver-files` skill
+> must be revisited, because that skill compensates for a gap that would then remain open.
+>
+> Two changes, both measured.
 >
 > **(a) This phase grows three approval-path gaps** confirmed by reading LibreChat against our own
 > resume path (PRD amendment #133): nothing expresses "this pause may only be declined" — any
@@ -464,7 +471,19 @@ shape must resume correctly or fail loudly, never silently (Pitfall 4).
 
 ### Phase 48: Tool-surface un-defer and merges
 
-> **REVISED 2026-08-24 — the goal is right, the premise was wrong.** The manifest already carries
+> **CANCELLED 2026-08-24 — the premise was never measured, and the measurement contradicts it.**
+> `aura.tool_invocations` records `tool_search` at **164 calls and 0 failures**, reaching a
+> deferred tail that today holds `linear` (53 tools), `notion` (28), `whatsapp` (15) and
+> `memory` (4). Of 531 invocations, 22 are errors and every one is an execution failure
+> (`shell_exec`, `fs_read`, `calendar__list_accounts`) — **none is a failure to find or choose a
+> tool**. TOOL-01's *"hard cap, not a target"* rests on the premise that the current manifest
+> exceeds what the model can reason over; nothing supports that and this contradicts it. Nobody
+> ships the merged shape either — Claude Code, hermes and LibreChat all expose large discrete tool
+> sets. See PRD amendment #139, and #134 for the separate finding that TOOL-01's `comms` row
+> cannot be built at all. **The measured inventory below is kept as a record of what the manifest
+> holds; it is no longer a work list.**
+>
+> ~~REVISED 2026-08-24 — the goal is right, the premise was wrong.~~ The manifest already carries
 > **exactly 14 always-loaded tools** — 13 native (`ask_user`, `document_open`, `document_search`,
 > `patch`, `read_file`, `read_tool_output`, `search_files`, `send_file`, `shell_exec`, `skill`,
 > `text_response`, `tool_search`, `write_file`) plus the one curated `calendar` MCP tool that
@@ -800,7 +819,7 @@ the four named signals, never a green test suite.
 **Execution Order (REVISED 2026-08-24 — no longer numeric):**
 
 ```
-45 ✓ → 45.1 ✓ → 46 (close: only 46-09) → 52 → 47 → 48 → 50 → 49 → 51 → 54
+45 ✓ → 45.1 ✓ → 46 (close: only 46-09) → 52 → 47 (security gaps only) → 50 → 49 → 51 → 54
 ```
 
 Three departures from numeric order, each measured rather than preferred:
@@ -812,6 +831,13 @@ Three departures from numeric order, each measured rather than preferred:
   would create the second.
 
 - **53 cancelled**, not reordered — its deliverable shipped as L3 compaction on 2026-08-12.
+- **48 cancelled** — `tool_search` is 164/0 against a deferred tail of 100+ tools; TOOL-01's cap
+  was an unmeasured assertion and the merges buy nothing measured while breaking every historical
+  `tool_invocations` row and scheduled `agent_job` that names a renamed tool (amendment #139).
+- **47 reduced to its security gaps.** The three approval defects of amendment #133 are real and
+  stay. AUTO-01/AUTO-02 (automatic delivery and indexing) are NOT carried on measured evidence —
+  `send_file` shows 18 calls and 0 failures — and AUTO-01 additionally REVERSES D-05/D-06. They
+  must be justified on their own evidence or dropped; they are no longer assumed.
 - **50 before 49.** 50's target is now the compaction trigger, which exists; 49's remaining scope
   is smaller than written and does not gate it.
 
@@ -823,7 +849,7 @@ Phase 54 stays last: it is **causally** gated on Phase 47, not merely sequenced 
 | 45. Harness correctness | 9/9 | Complete    | 2026-08-15 |
 | 46. MCP trust and facade | 7/9 | In Progress|  |
 | 47. Tool-surface ceremony strip | 0/TBD | Not started | - |
-| 48. Tool-surface un-defer and merges | 0/TBD | Not started | - |
+| ~~48. Tool-surface un-defer and merges~~ | — | **CANCELLED** — tool_search 164/0; cap unmeasured (amendment #139) | 2026-08-24 |
 | 49. Memory tiers | 0/TBD | Not started | - |
 | 50. Context ladder legibility | 0/TBD | Not started | - |
 | 51. Durable delegation | 0/TBD | Not started | - |
