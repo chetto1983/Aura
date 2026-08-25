@@ -113,11 +113,14 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_SKILL_SNIPPET_TTL_DAYS", Kind: KindInt, Default: "90"},
 		{Name: "AURA_AGUI_BUFFER_CAP", Kind: KindInt, Default: "64"},
 		{Name: "AURA_AGUI_SSE_HEARTBEAT_SEC", Kind: KindInt, Default: "15"},
-		{Name: "AURA_AGUI_RUN_DETACH", Kind: KindBool, Default: "true"},
+		{Name: "AURA_AGUI_RUN_DETACH", Kind: KindBool, Default: "true"}, // D-11: catalogue corrected to match the loader's real default, never the other way
 		{Name: "AURA_AGUI_RUN_BUFFER_EVENTS", Kind: KindInt, Default: "2048"},
 		{Name: "AURA_AGUI_RUN_LINGER_SEC", Kind: KindInt, Default: "180"},
 		{Name: "AURA_AGUI_RUN_MAX_WALLCLOCK_SEC", Kind: KindInt, Default: "3600"},
 		{Name: "AURA_AGUI_RUN_MAX_LIVE", Kind: KindInt, Default: "16"},
+		{Name: "AURA_AGUI_RUN_STEER", Kind: KindBool, Default: "true"}, // D-12: off is dark code
+		{Name: "AURA_AGUI_RUN_STEER_MAX", Kind: KindInt, Default: "8"},
+		{Name: "AURA_AGUI_RUN_STEER_MAX_BYTES", Kind: KindInt, Default: "16384"},
 		{Name: "AURA_ASKUSER_PAUSE_TTL_SEC", Kind: KindInt, Default: "172800"},
 		{Name: "AURA_ASSET_MAX_DOCUMENT_BYTES", Kind: KindInt, Default: "104857600"},
 		{Name: "AURA_ASSET_MAX_IMAGE_BYTES", Kind: KindInt, Default: "26214400"},

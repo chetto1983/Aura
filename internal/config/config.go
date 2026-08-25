@@ -139,6 +139,9 @@ type Config struct {
 	// AGUIRun bundles the AURA_AGUI_RUN_* detached-run knobs (fix-plan 1.3 Tier B,
 	// amendment #90) — see config_agui_run.go.
 	AGUIRun AGUIRunConfig
+	// AGUISteer bundles the AURA_AGUI_RUN_STEER* mid-turn steering knobs
+	// (amendment #142) — see config_agui_steer.go.
+	AGUISteer AGUISteerConfig
 	// AskUser owns the bounded lifetime of unanswered approval pauses (amendment #140).
 	AskUser AskUserConfig
 
@@ -445,6 +448,7 @@ func loadBase() *Config {
 		AGUIBufferCap:       envutil.IntDefault("AURA_AGUI_BUFFER_CAP", 64),
 		AGUISSEHeartbeatSec: envutil.IntDefault("AURA_AGUI_SSE_HEARTBEAT_SEC", 15),
 		AGUIRun:             loadAGUIRunConfig(),
+		AGUISteer:           loadAGUISteerConfig(),
 		AskUser:             loadAskUserConfig(),
 
 		ObjectStoreBackend:        envDefault("AURA_OBJECTSTORE_BACKEND", "garage"),
