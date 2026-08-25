@@ -629,7 +629,15 @@ STEER-04 exists because the failure mode of any queue-into-a-running-thing is si
   4. A steered turn consumes no more steps or wallclock than an unsteered one — the budget is unchanged by steering.
   5. The same steer works from a channel, not only the cockpit.
 
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+- [ ] 52-01-PLAN.md — STEER-06 amendment gate: the four corrections to #132, the three superseded documents, and the knob surface
+- [ ] 52-02-PLAN.md — Tracer: the conversation-keyed inbox, both drain points behind a nonce-marked envelope, the cockpit route, the aura.steer echo and drain-time persistence
+- [ ] 52-03-PLAN.md — STEER-04: auto-deliver a leftover steer as the next user turn, and refuse a terminal run with an actionable 410
+- [ ] 52-04-PLAN.md — STEER-05: Telegram steers the live turn as a thin wrapper over the shared seam, with the redirect echo
+- [ ] 52-05-PLAN.md — Folded amendment #133 defects: empty-accept refusal, per-pause decision policy, pending-approval TTL
+- [ ] 52-06-PLAN.md — Gate 3: live E2E from both surfaces, the D-13 budget A/B, gates re-measured on this tree, quality snapshot re-attested
 
 ### Phase 54: Milestone exit
 
