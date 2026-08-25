@@ -8,8 +8,10 @@ import {
   readSSEFrames,
   reduceFrame,
   SSE_REQUEST_HEADERS,
+  steerNoticeValue,
   toThreadMessage,
   type AssistantTurnState,
+  type SteerNotice,
   type StreamRunOptions,
   type TurnUsage,
 } from './sseAdapter';
@@ -50,6 +52,9 @@ export interface AttachRunOptions {
   readonly signal: AbortSignal;
   readonly onUpdate: (message: ThreadMessageLike, usage: TurnUsage | undefined) => void;
   readonly onArtifact?: (assetId: string | undefined) => void;
+  /** Fires once per `aura.steer` frame — the reattach pump's half of the mid-turn redirect
+   *  echo (amendment #132, STEER-03), mirroring StreamRunOptions.onSteer exactly. */
+  readonly onSteer?: (notice: SteerNotice) => void;
   readonly newId?: () => string;
   readonly maxRetries?: number;
   readonly backoffBaseMs?: number;
@@ -68,6 +73,7 @@ interface EngineOptions {
   readonly connectionLostNote?: string | undefined;
   readonly onUpdate: (message: ThreadMessageLike, usage: TurnUsage | undefined) => void;
   readonly onArtifact?: ((assetId: string | undefined) => void) | undefined;
+  readonly onSteer?: ((notice: SteerNotice) => void) | undefined;
   readonly onRunId?: ((runId: string) => void) | undefined;
   readonly onSnapshotReplace?: ((messages: ThreadMessageLike[]) => void) | undefined;
   readonly onTerminal?: (() => void) | undefined;
@@ -98,6 +104,7 @@ function makeEngine(state: AssistantTurnState, opts: EngineOptions): ResumeEngin
     connectionLostNote: opts.connectionLostNote ?? 'connection lost',
     onUpdate: opts.onUpdate,
     onArtifact: opts.onArtifact,
+    onSteer: opts.onSteer,
     onRunId: opts.onRunId,
     onSnapshotReplace: opts.onSnapshotReplace,
     onTerminal: opts.onTerminal,
@@ -163,6 +170,8 @@ async function pumpBody(
     reduceFrame(eng.state, frame);
     const artifact = artifactDescriptorValue(frame);
     if (artifact !== null) eng.onArtifact?.(artifact.asset_id);
+    const steer = steerNoticeValue(frame);
+    if (steer !== null) eng.onSteer?.(steer);
     if ((frame.type === 'RUN_FINISHED' || frame.type === 'RUN_ERROR') && !eng.terminal) {
       eng.terminal = true;
       eng.onTerminal?.();

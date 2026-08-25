@@ -86,6 +86,60 @@ export function artifactDescriptorValue(frame: AguiFrame): ArtifactDescriptor | 
 }
 
 /**
+ * The `aura.steer` CUSTOM payload (amendment #132, STEER-03): the SAME structural shape
+ * drainSteer (internal/agent/llm_agent_steer.go) and the leftover auto-delivery
+ * (internal/runner/runner_steer.go's leftoverSteerNoticeEvent) both build — read from the
+ * Go source, not inferred here. `steers[].delivery` distinguishes a mid-run drain
+ * ("tool_result_append" | "user_message_fallback") from the 52-05 leftover form
+ * ("auto_delivery_next_turn"), which the client renders with different copy.
+ */
+export interface SteerNoticeEntry {
+  readonly id: string;
+  readonly source: string;
+  readonly text: string;
+  readonly delivery: string;
+}
+export interface SteerNotice {
+  readonly conversation_id: string;
+  readonly round: number;
+  readonly steers: readonly SteerNoticeEntry[];
+}
+
+function isSteerNoticeEntry(value: unknown): value is SteerNoticeEntry {
+  if (typeof value !== 'object' || value === null) return false;
+  const c = value as { id?: unknown; source?: unknown; text?: unknown; delivery?: unknown };
+  return (
+    typeof c.id === 'string' &&
+    typeof c.source === 'string' &&
+    typeof c.text === 'string' &&
+    typeof c.delivery === 'string'
+  );
+}
+
+function isSteerNotice(value: unknown): value is SteerNotice {
+  if (typeof value !== 'object' || value === null) return false;
+  const c = value as { conversation_id?: unknown; round?: unknown; steers?: unknown };
+  return (
+    typeof c.conversation_id === 'string' &&
+    typeof c.round === 'number' &&
+    Array.isArray(c.steers) &&
+    c.steers.every(isSteerNoticeEntry)
+  );
+}
+
+/**
+ * Narrow a frame to its `aura.steer` notice (or null) — the steer twin of
+ * artifactDescriptorValue above. This is a PUMP-level signal only: reduceFrame below
+ * deliberately produces NO message part for an `aura.steer` frame, because the steer is
+ * already persisted server-side as an ordinary user turn (52-04) — a synthetic part here
+ * would be a second representation of the same fact the runtime could branch from.
+ */
+export function steerNoticeValue(frame: AguiFrame): SteerNotice | null {
+  if (frame.type !== 'CUSTOM' || frame.name !== 'aura.steer') return null;
+  return isSteerNotice(frame.value) ? frame.value : null;
+}
+
+/**
  * Apply one frame to the turn state, mutating in place. Returns the same state
  * for chaining/readability. Unknown / ignored frame types are no-ops.
  *
@@ -230,6 +284,10 @@ export function reduceFrame(state: AssistantTurnState, frame: AguiFrame): Assist
           display: { type: 'mcp_view', tool_call_id: d.tool_call_id, mcp_view: d },
         });
       }
+      // aura.steer (amendment #132, STEER-03) is deliberately NOT handled here: it falls
+      // through to the default no-op below every branch above, exactly as an unrecognized
+      // frame does. steerNoticeValue (above) is the ONLY decision point for it, fired from
+      // the PUMP (streamSSE below, and sseResume.ts's pumpBody) — never from this reducer.
       return state;
     }
     case 'REASONING_START':
@@ -337,6 +395,9 @@ export interface StreamRunOptions {
    * when the delivery degraded). Drives the Artefatti panel's invalidate + auto-open.
    */
   readonly onArtifact?: (assetId: string | undefined) => void;
+  /** Fires once per `aura.steer` frame (amendment #132, STEER-03) — the mid-turn redirect
+   *  echo, from the PUMP, never from reduceFrame. Drives the cockpit's SteerNotice. */
+  readonly onSteer?: (notice: SteerNotice) => void;
   /** Mints the assistant message id; defaults to crypto.randomUUID. */
   readonly newId?: () => string;
 }
@@ -350,6 +411,8 @@ export interface StreamPostOptions {
   readonly onUpdate: (message: ThreadMessageLike, usage: TurnUsage | undefined) => void;
   /** 37B seam (mirrors onUsage): fires on an `aura.artifact` descriptor frame. */
   readonly onArtifact?: (assetId: string | undefined) => void;
+  /** Mirrors StreamRunOptions.onSteer — the mid-turn redirect echo. */
+  readonly onSteer?: (notice: SteerNotice) => void;
   readonly newId?: () => string;
 }
 
@@ -362,6 +425,7 @@ interface StreamSSEOptions {
   readonly request: (assistantId: string) => readonly [string, RequestInit];
   readonly onUpdate: (message: ThreadMessageLike, usage: TurnUsage | undefined) => void;
   readonly onArtifact?: ((assetId: string | undefined) => void) | undefined;
+  readonly onSteer?: ((notice: SteerNotice) => void) | undefined;
   readonly newId?: (() => string) | undefined;
 }
 
@@ -387,6 +451,8 @@ async function streamSSE(opts: StreamSSEOptions): Promise<TurnUsage | undefined>
     // asset_id (undefined on a degraded delivery — the panel still auto-opens).
     const artifact = artifactDescriptorValue(frame);
     if (artifact !== null) opts.onArtifact?.(artifact.asset_id);
+    const steer = steerNoticeValue(frame);
+    if (steer !== null) opts.onSteer?.(steer);
     opts.onUpdate(toThreadMessage(state), state.usage);
   }
   return state.usage;
@@ -403,6 +469,7 @@ export async function streamPost(opts: StreamPostOptions): Promise<TurnUsage | u
     newId: opts.newId,
     onUpdate: opts.onUpdate,
     onArtifact: opts.onArtifact,
+    onSteer: opts.onSteer,
     request: () => [
       opts.url,
       {
@@ -427,6 +494,7 @@ export async function streamRun(opts: StreamRunOptions): Promise<TurnUsage | und
     newId: opts.newId,
     onUpdate: opts.onUpdate,
     onArtifact: opts.onArtifact,
+    onSteer: opts.onSteer,
     request: (id) => [
       '/agent/run',
       {
