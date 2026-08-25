@@ -219,6 +219,7 @@ func (f *cmdPauseFake) Insert(_ context.Context, p askuser.InsertParams) error {
 	f.byToken[p.Token] = &askuser.Pending{
 		Token: p.Token, ConversationID: p.ConversationID, Kind: p.Kind,
 		Question: p.Question, Options: p.Options, Priority: p.Priority, ToolCallID: p.ToolCallID,
+		ResumeContext: p.ResumeContext,
 	}
 	return nil
 }
