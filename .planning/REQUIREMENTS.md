@@ -46,6 +46,7 @@
   1. **Filesystem boundary.** Sidecars live host-side in `AURA_RUN_DIR` (absolute, swept on a timer); `fs_read` reads inside the sandbox container under `/workspace`. The spill must land somewhere the sandboxed reader can reach.
   2. **Description debt.** `fs_read`'s own text says *"A large result pages to a sidecar you read with read_tool_output"* — every description naming the tool has to be rewritten with it — and with SURF-02 deleted,
      no requirement owns that rewrite any more; it belongs to whoever does TOOL-13.
+
   3. **GC contract.** `AURA_RUN_DIR` is swept and `reserve.go`'s `resultExpiredMarker` depends on that. A spill in the persistent `/workspace` either accumulates in the operator's own space or needs its own sweep.
 
   **Fallback if (1) proves expensive: keep the tool but make it deferred rather than loaded.** That recovers a manifest slot at near-zero cost — though with TOOL-01 deleted (PRD amendment #139:
@@ -71,7 +72,6 @@
 > **DELETED 2026-08-25.** COMPAT-01/02/03 existed to keep live persisted state valid across the
 > tool renames and merges of Phases 47-48. Those phases were deleted (PRD amendments #134, #139),
 > nothing is renaming a tool, and the compatibility work has no change to be compatible with.
-
 
 ### MCP trust and facade
 
@@ -160,7 +160,7 @@
 - [ ] **STEER-02**: A steer does not extend the step or wallclock budget — steering redirects the work, it does not buy more of it
 - [ ] **STEER-03**: A steer is echoed on the wire and persisted where it belongs in sequence, so a reload, a resume, or a later replay shows it at the point it actually landed
 - [ ] **STEER-04**: A steer that arrives after its run has ended is delivered automatically as the next user turn, preceded by a visible line saying that happened, never silently swallowed
-- [ ] **STEER-05**: Steering works from the operator's channels, not only the cockpit
+- [x] **STEER-05**: Steering works from the operator's channels, not only the cockpit
 - [ ] **STEER-06**: The PRD amendment ratifying mid-turn steering is committed **before** any of its code
 - [x] **RESUME-01**: The approval resume path refuses an accept carrying no answer, refuses a decision the pause's policy does not permit, and expires a pending approval as an expiry rather than as a yes — without weakening the `WHERE resumed_at IS NULL` conditional update that IS the idempotency key. Folded from PRD amendment #133 (Phase 47, deleted 2026-08-25); all three defects shipped ahead of the phase's own Gate 3 (empty-answer refusal, per-tool decision policy, pending-approval TTL — see `52-03-SUMMARY.md`). 52-08 also declares this id and closes it formally by live E2E — the shared-ID gate withholds "Complete" in the traceability table until then
 
@@ -257,7 +257,7 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 | STEER-02 | Phase 52 | Pending |
 | STEER-03 | Phase 52 | Pending |
 | STEER-04 | Phase 52 | Pending |
-| STEER-05 | Phase 52 | Pending |
+| STEER-05 | Phase 52 | Complete |
 | STEER-06 | Phase 52 | Pending |
 | SURF-04 | Phase 50 | Pending |
 | SURF-05 | Phase 54 | Pending |
@@ -282,12 +282,14 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 - Mapped to phases: 58
 - Unmapped: 1 — CTX-06, which needs no phase: it was satisfied by implementation, not by the
   Phase 53 spike that was deleted around it
+
 - **The count above was wrong before this edit, and the correction is separate from the deletion.**
   This block read *"77 total / 77 mapped / 0 unmapped"* since 2026-08-13. Counted mechanically at
   the commit before the deletion, the document defined **82** requirements and the traceability
   table held **82** rows — self-consistent with each other, and both five higher than the prose
   claimed. Nothing was unmapped; the summary line had simply stopped being recounted as
   requirements were added. 82 − 23 = 59, verified by counting bullets and table rows again after
+
 - Deleted, and why: **TOOL-01/02/03/04/06/07/08/09/10/11/12, SURF-01/02/03/06/07/08,
   AUTO-01/02/04, COMPAT-01/02/03.** They were the whole content of Phases 47-48. PRD amendment
   **#139** measures `tool_search` at **164 calls / 0 failures** against a deferred tail of 100+
@@ -296,6 +298,7 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
   They are deleted rather than deferred to v2 because deferring an unmeasured premise only moves
   it; nothing here is blocked on them, and if tool choice ever degrades it comes back with the
   measurement attached
+
 - What did NOT go with them: PRD amendment **#133**'s approval-path defects, kept in
   `.planning/todos/pending/approval-resume-defects.md`. Empty accepted answers and per-pause
   decision policy closed on 2026-08-25; pending-approval expiry remains open. These are resume-path
