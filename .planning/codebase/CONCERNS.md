@@ -13,7 +13,7 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 | Approval resume enforces a persisted per-pause decision policy | High | Closed 2026-08-25 | `internal/runner/resume_policy.go`, `internal/db/migrations/0102_paused_state_decision_policy.up.sql`, `internal/runner/live_e2e_policy_test.go` |
 | Pending approvals have no expiry | High | Closed 2026-08-25 | `internal/runner/approval_expiry.go`, `cmd/aura/approval_expiry.go`, `internal/runner/live_e2e_expiry_test.go` |
 | Empty accepted approval answers resumed the model silently | High | Closed 2026-08-25 | `internal/agui/server_run_test.go`, `internal/runner/runner_resume_test.go`, `internal/askuser/store_mutation_test.go` |
-| Release disclosure register still has five open rows and therefore reports NO-GO | High | Open/operator or external action | `docs/audit/README.md`, `scripts/audit_closure_gate.py` |
+| Release disclosure register still has four open rows and therefore reports NO-GO | High | Open/operator or external action | `docs/audit/README.md`, `scripts/audit_closure_gate.py` |
 | Amendment #115 still requires a real-production document E2E whose runner no longer exists | High | Open | `prd.md`, absent `scripts/document_pipeline_e2e.sh` |
 | ArcadeDB tenant memory has no exercised backup/restore plane | High | Open | `scripts/restore_drill.sh`, `.github/workflows/ci.yml` |
 | Shared settings, skills, and MCP catalog constrain safe multi-user operation | Medium | Mitigated by a strict-profile boot gate | `internal/config/config_validate.go`, `internal/db/migrations/0024_settings.up.sql` |
@@ -200,8 +200,8 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 
 ## Missing Critical Features
 
-**Five release-gating audit rows remain open:**
-- Problem: release readiness is explicitly NO-GO while `EXT-001` through `EXT-005` remain. Calendar needs an operator-authorized reversible CRUD; email needs a real send receipt; WhatsApp needs a fresh approved outbound flow; GHCR deletion needs GitHub Support; artifact delivery still needs cleanup observed after its TTL.
+**Four release-gating audit rows remain open:**
+- Problem: release readiness is explicitly NO-GO while `EXT-001` through `EXT-004` remain. Calendar needs an operator-authorized reversible CRUD; email needs a real send receipt; WhatsApp needs a fresh approved outbound flow; and GHCR deletion needs GitHub Support. EXT-005 closed on 2026-08-25 after the previously proven authenticated delivery/receipt was paired with a live observation that the persistent run root, TTL staging subtree, and two recorded legacy directories are absent.
 - Blocks: the audit closure gate and release publication. These actions require operator/external authority and must not be performed autonomously.
 - Files: `docs/audit/README.md`, `scripts/audit_closure_gate.py`.
 

@@ -295,20 +295,18 @@ stampa `5 current unresolved, **1** external`, non 5.
   finisce con prosa e il mio parser non vedeva la chiamata. La riga in `aura.paused_states` e la
   risposta di `/api/approvals` dicono il contrario. Per una pausa, la verità è il database, non il
   filo.
-- **EXT-005 — due gambe su tre PROVATE.** Consegna sul canale cockpit autenticato e ricevuta sul filo:
-  il frame `aura.artifact` porta `asset_id` `736e1d66-…`, e `aura.assets` lo tiene `accepted`, 29
-  byte, nel bucket per-identità con content hash. La terza gamba (cleanup) **non è osservata**: la
-  stage dir sta sotto `$AURA_RUN_DIR/tmp/`, che `conversations.ScanOrphans` spazza a TTL 24h —
-  finestra più lunga della sessione che misura.
+- **EXT-005 — CHIUSA 2026-08-25.** La consegna sul canale cockpit autenticato e la ricevuta sul
+  filo erano già provate il 2026-08-22 (`aura.artifact`, asset 29 byte, bucket per-identità e
+  content hash). La terza gamba è ora osservata sullo stesso volume persistente: il run root è
+  vuoto, quindi non restano né lo staging TTL sotto `$AURA_RUN_DIR/tmp/` né le due directory legacy
+  `aura-sendfile-*`. La riga è stata rimossa dal registro corrente e da `REQUIRED_CURRENT_IDS`.
 - **EXT-004 — l'unica ancora davvero esterna.** Non verificabile nemmeno in lettura da qui: il token
   `gh` di sessione non ha lo scope `read:packages`.
 
-*Trovato strada facendo, deliberatamente NON promosso a sesta riga:*
-`/var/lib/aura/runs/aura-sendfile-3383401088/` e `aura-sendfile-830219956/` tengono un
-`dashboard.html` da 13 KB e uno da 6,6 KB **dal 2026-07-28**. Quel prefisso non esiste più
-nell'albero Go — lo stager attuale è `aura-boxstage-*` sotto `$AURA_RUN_DIR/tmp/` — e le due dir
-stanno **fuori** dal sottoalbero `tmp/` spazzato: nessuno le rimuoverà mai. Residuo legacy di un
-percorso rimosso che tiene contenuto utente, non una perdita viva.
+*Residuo legacy ricontrollato 2026-08-25:* le directory esatte
+`/var/lib/aura/runs/aura-sendfile-3383401088/` e `aura-sendfile-830219956/` sono assenti. Il run
+root persistente è vuoto. L'osservazione prova la rimozione, non attribuisce senza evidenza quale
+boot, sweep o intervento abbia eliminato le directory.
 
 *Confidenza: alta su tutto ciò che è misurato; nulla su EXT-004.*
 
