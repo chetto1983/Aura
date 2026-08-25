@@ -28,11 +28,21 @@ var trustedToolNames = map[string]struct{}{
 }
 
 func renderToolResultForPrompt(toolName string, res tools.ToolResult) string {
+	// scrubSteerLookalikes runs AHEAD of the trusted/untrusted branch, on the
+	// raw preview, and is never written back to res.Preview (T-52-06: the
+	// dedup/progress-veto hash reads res.Preview separately and must stay
+	// byte-identical). Ahead of the branch it matches the LITERAL marker bytes
+	// wrapUserSteer produces — behind the untrusted wrap it would only ever see
+	// the already-HTML-escaped form and silently no-op (T-52-19). The TRUSTED
+	// branch is the one that matters: it does no escaping of its own, so
+	// without this call a forged marker there would reach history exactly as
+	// trusted as a genuine one (T-52-10).
+	scrubbed := scrubSteerLookalikes(res.Preview)
 	source, ok := untrustedSource(toolName, res)
 	if !ok {
-		return res.Preview
+		return scrubbed
 	}
-	return wrapUntrustedToolOutput(source, res.Preview)
+	return wrapUntrustedToolOutput(source, scrubbed)
 }
 
 func untrustedSource(toolName string, res tools.ToolResult) (string, bool) {

@@ -94,6 +94,11 @@ type Actions struct {
 	// retry, so live token-by-token streaming on the common no-retry path is
 	// untouched (no buffering). Omitted on the wire unless set.
 	DiscardStreamed bool `json:"discard_streamed,omitempty"`
+	// SteerDelta echoes a mid-turn operator redirect drainSteer just delivered
+	// (52-02-PLAN.md). Untyped map, same rationale as ArtifactDelta/ViewDelta:
+	// the shape is a channel-agnostic wire payload for the aura.steer CUSTOM
+	// frame, not a persisted DB type. Omitted on the wire unless a steer fired.
+	SteerDelta map[string]any `json:"steer_delta,omitempty"`
 }
 
 // ToolInvocationStart and ToolInvocationEnd label tool invocation lifecycle events.

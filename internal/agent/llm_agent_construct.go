@@ -45,6 +45,7 @@ func NewLlmAgent(cfg LlmAgentConfig) *LlmAgent {
 		builder:           prompt.NewPromptBuilder(),
 		hooks:             cfg.HookManager,
 		gateway:           cfg.Gateway,
+		steer:             cfg.Steer,
 		ledger:            cfg.Ledger,
 		ledgerConvID:      ledgerConvID,
 		history:           hist,
