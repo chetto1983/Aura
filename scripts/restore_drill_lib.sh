@@ -27,3 +27,18 @@ if not isinstance(name, str) or not name:
 print(name)
 ' "$1"
 }
+
+# Derive a tenant-shaped disposable ArcadeDB name from a run identifier. Production
+# tenant databases use mem_<uuid-with-underscores>; keeping the drill on that exact
+# shape exercises scheduler discovery without touching or enumerating a real tenant.
+dr_arcadedb_database() {
+  local digest
+  digest="$(printf '%s' "$1" | sha256sum | awk '{print $1}')"
+  printf 'mem_%s_%s_%s_%s_%s' \
+    "${digest:0:8}" "${digest:8:4}" "${digest:12:4}" \
+    "${digest:16:4}" "${digest:20:12}"
+}
+
+dr_arcadedb_database_is_safe() {
+  [[ "$1" =~ ^mem_[0-9a-f]{8}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{12}$ ]]
+}

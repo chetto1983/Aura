@@ -43,7 +43,7 @@ rollback rehearsal, runs the ten-report gate, and uploads the immutable bundle. 
 | capability | `capability-eval.json` | every declared scenario executed and passed; zero skip/missing |
 | load | `load-report.json` | supported concurrency met; success ratio and p95 inside declared budget |
 | chaos | `chaos-report.json` | DB, MCP, Garage, and process-kill scenarios executed, degraded truthfully, recovered |
-| disaster recovery | `dr-report.json` | Postgres, sidecars, and Garage restored and checksum-verified (three planes; memory has no drill yet) |
+| disaster recovery | `dr-report.json` | Postgres, sidecars, Garage, and tenant-shaped ArcadeDB memory restored and checksum-verified |
 | observability | `observability-report.json` | negative fixtures, runtime smoke, live health/readiness, dashboards, alerts, runbooks pass |
 | rollback | `rollback-report.json` | distinct image digests; previous config starts; migrations compatible; candidate restored healthy |
 | audit | `audit-closure-report.json` | current-only register is empty; `release_ready:true`; zero `open` or `external_blocked` rows |

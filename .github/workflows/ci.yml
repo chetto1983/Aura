@@ -364,7 +364,7 @@ jobs:
   musr-e2e:
     name: MUSR two-identity cross-deny E2E (Postgres + Garage-admin + Authula)
     runs-on: ubuntu-latest
-    timeout-minutes: 40  # includes the three-plane DR drill
+    timeout-minutes: 40  # includes the four-plane DR drill
     # Phase 36 D-29 acceptance gate. Brings up the FULL live stack (Postgres +
     # Garage with the Admin API v2 published to loopback + the embedded Authula provider)
     # and runs the two-identity cross-deny E2E: identity B is denied on every plane

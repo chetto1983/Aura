@@ -77,7 +77,7 @@
 **Infrastructure:**
 - PostgreSQL 18.4 (`postgres:18.4-alpine3.24`) - Durable control-plane and Authula relational store declared in `docker-compose.yml`.
 - Garage 2.3.0 (`dxflrs/garage:v2.3.0`) - S3-compatible object store declared in `docker-compose.yml`; the same server binary is copied into the main image by `docker/aura/Dockerfile`.
-- ArcadeDB 26.7.3 (`arcadedata/arcadedb:26.7.3`) - Identity-scoped long-term graph/document memory declared in `docker-compose.yml` and accessed by `internal/arcadedb/`.
+- ArcadeDB 26.8.1 (`arcadedata/arcadedb:26.8.1`) - Identity-scoped long-term graph/document memory declared in `compose.yaml` and accessed by `internal/arcadedb/`.
 - llama.cpp server (`ghcr.io/ggml-org/llama.cpp:server-cuda`) - Embedding runtime and optional local chat/OCR runtimes declared as separate services in `docker-compose.yml`.
 - faster-whisper server (`hwdsl2/whisper-server:latest`) - Local speech-to-text OpenAI-compatible endpoint declared in `docker-compose.yml`.
 - Kokoro FastAPI (`ghcr.io/remsky/kokoro-fastapi-cpu:latest`) - Local text-to-speech OpenAI-compatible endpoint declared in `docker-compose.yml`.
