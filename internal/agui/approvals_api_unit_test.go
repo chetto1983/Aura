@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -264,6 +265,23 @@ func TestApprovalsAPI_ResolveDecisionNotAllowed(t *testing.T) {
 	code, body := postResolve(t, srv, token, `{"action":"accept","content":"yes"}`)
 	if code != http.StatusForbidden {
 		t.Errorf("ErrResumeDecisionNotAllowed status = %d, want 403: %s", code, body)
+	}
+}
+
+// TestApprovalsAPI_ResolveInvalidAnswerReturns400 asserts a malformed answer (the
+// runner/askuser ErrInvalidAnswer sentinel — e.g. an accept carrying no content) is a
+// 400 caller-input error, not the generic 500 (RESUME-01, 52-08: this fell through to
+// the catch-all 500 branch until this test/fix, discovered live against the running
+// stack — the AG-UI-native POST /agent/run resume path already mapped the SAME
+// sentinel to 400 via resumeErrorStatus).
+func TestApprovalsAPI_ResolveInvalidAnswerReturns400(t *testing.T) {
+	run := &scriptedRunner{answersErr: fmt.Errorf("submit answer: %w: accepted content must not be empty", askuser.ErrInvalidAnswer)}
+	srv := newResolveTestServer(t, run, nil)
+	token := uuid.Must(uuid.NewV7()).String()
+
+	code, body := postResolve(t, srv, token, `{"action":"accept","content":""}`)
+	if code != http.StatusBadRequest {
+		t.Errorf("ErrInvalidAnswer status = %d, want 400: %s", code, body)
 	}
 }
 

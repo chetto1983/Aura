@@ -256,6 +256,16 @@ func (s *Server) handleResolveApproval(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "approval decision not allowed", http.StatusForbidden)
 			return
 		}
+		// RESUME-01 (52-08, live-discovered): a malformed answer (e.g. an accept
+		// carrying no content) is a caller-input error, not a server fault — the
+		// AG-UI-native POST /agent/run resume path already maps the same
+		// askuser.ErrInvalidAnswer sentinel to 400 (resumeAnswers/validateResumeEntries);
+		// this route fell through to the generic 500 below instead, observed live
+		// while exercising this exact defect against the running stack.
+		if errors.Is(err, askuser.ErrInvalidAnswer) {
+			http.Error(w, "invalid resume answer: "+sanitizeErr(err), http.StatusBadRequest)
+			return
+		}
 		http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
 		return
 	}
