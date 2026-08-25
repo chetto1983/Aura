@@ -264,51 +264,29 @@ girato**: il suo tag set pretende Garage e Authula vivi. Gira per la prima volta
 2026-08-07 e legati a commit diversi da HEAD. Il gate li vuole tutti e dieci, legati a HEAD e
 freschi di 24h (`scripts/release_readiness_gate.py:255-264`). *Confidenza: alta.*
 
-**3.7 — Le 5 righe di audit restano aperte, ma NON più «tutte a blocco esterno».**
-Ri-misurate sullo stack acceso il 2026-08-22, e il register corretto di conseguenza: il gate ora
-stampa `5 current unresolved, **1** external`, non 5.
+**3.7 — Le 5 righe di audit sono chiuse.**
+Le misure del 2026-08-22 avevano corretto il registro a cinque righe, una sola esterna. EXT-005 è
+stata chiusa il 2026-08-25 con cleanup osservato; nello stesso giorno l'operatore ha attestato come
+già completate e risolte EXT-001…EXT-004. Il gate corrente stampa `0 current unresolved`, zero
+esterne e `release_ready=true` per il registro audit.
 
-- **EXT-001 / EXT-002 — il difetto interno è chiuso; restano i loro criteri.** Il blocco descritto
-  qui il 2026-08-22 (daemon fermo su 14 nomi per-azione stantii contro un server che ne espone uno
-  solo, ogni chiamata `Unknown tool`) **non esiste più dal 2026-08-23**. Il supporto Aura è
-  committato (`bridge_multiplex.go` in `2edbc3910`, azioni tierate in `b01413620`, pin finito in
-  `8cc2aeed2`) e il daemon è stato rimontato con `up -d` — mai `restart` (§8) — alla ricreazione
-  del container: `mcp mounted server=calendar tools=1`, 12:47:45. **Provato con un turno reale**,
-  non dedotto dal log: `RUN_FINISHED`, **tre chiamate `calendar__calendar` riuscite, zero
-  `Unknown tool`**, e l'agente ha riportato i due account configurati (Google `davide`
-  read/write; Fixture JSON read-only) e l'unico evento di domani.
-  **Perché restano aperte:** il criterio di EXT-001 è un CRUD **reversibile** completo attraverso
-  l'agente vivo, quello di EXT-002 una ricevuta di **invio** email. Sono scritture sull'account
-  reale dell'operatore: la gamba di lettura è provata, quella di scrittura richiede il suo via
-  libera esplicito. Non è più un difetto, è un'autorizzazione.
-- **EXT-003 — il device è appaiato, il piano tool funziona, e la catena HITL è provata intera.**
-  Il bridge porta traffico vero e dodici chiamate `whatsapp__*` sono andate a buon fine in un turno
-  `RUN_FINISHED`. L'invio è **trattenuto dal ToolGateway** (`gateway_approval_required`), il
-  risultato trattenuto è stato **relayato**, e la pausa `approval` è **viva e in attesa** su
-  `GET /api/approvals`: token `01a02b8a-fb00-…`, priorità 80, `resume_context.args_sha256` uguale a
-  quello della chiamata trattenuta, e la domanda che nomina **solo le chiavi** degli argomenti
-  (`args: message, recipient`), mai i valori. Non è bloccata da niente se non dalla risposta
-  dell'operatore.
-
-  *Diagnosi ritirata:* avevo riportato che l'agente non chiamava `ask_user` e che l'approvazione non
-  arrivava mai. **Falso, e la lezione è il metodo:** l'avevo dedotto dallo stream SSE, dove il turno
-  finisce con prosa e il mio parser non vedeva la chiamata. La riga in `aura.paused_states` e la
-  risposta di `/api/approvals` dicono il contrario. Per una pausa, la verità è il database, non il
-  filo.
+- **EXT-001…EXT-004 — CHIUSE 2026-08-25 PER ATTESTAZIONE OPERATORE.** L'operatore ha confermato
+  che le azioni di chiusura erano già state completate e risolte: CRUD calendario reversibile,
+  ricevuta email autorizzata, round-trip WhatsApp approvato e rimozione/verifica della versione
+  GHCR protetta. Questa sessione registra l'attestazione senza ripetere alcuna scrittura esterna e
+  senza inventare dettagli di ricevuta non forniti.
 - **EXT-005 — CHIUSA 2026-08-25.** La consegna sul canale cockpit autenticato e la ricevuta sul
   filo erano già provate il 2026-08-22 (`aura.artifact`, asset 29 byte, bucket per-identità e
   content hash). La terza gamba è ora osservata sullo stesso volume persistente: il run root è
   vuoto, quindi non restano né lo staging TTL sotto `$AURA_RUN_DIR/tmp/` né le due directory legacy
   `aura-sendfile-*`. La riga è stata rimossa dal registro corrente e da `REQUIRED_CURRENT_IDS`.
-- **EXT-004 — l'unica ancora davvero esterna.** Non verificabile nemmeno in lettura da qui: il token
-  `gh` di sessione non ha lo scope `read:packages`.
 
 *Residuo legacy ricontrollato 2026-08-25:* le directory esatte
 `/var/lib/aura/runs/aura-sendfile-3383401088/` e `aura-sendfile-830219956/` sono assenti. Il run
 root persistente è vuoto. L'osservazione prova la rimozione, non attribuisce senza evidenza quale
 boot, sweep o intervento abbia eliminato le directory.
 
-*Confidenza: alta su tutto ciò che è misurato; nulla su EXT-004.*
+*Stato corrente: registro vuoto, `open_total=0`, `release_ready=true`.*
 
 ---
 

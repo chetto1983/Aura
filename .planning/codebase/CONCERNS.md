@@ -13,7 +13,7 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 | Approval resume enforces a persisted per-pause decision policy | High | Closed 2026-08-25 | `internal/runner/resume_policy.go`, `internal/db/migrations/0102_paused_state_decision_policy.up.sql`, `internal/runner/live_e2e_policy_test.go` |
 | Pending approvals have no expiry | High | Closed 2026-08-25 | `internal/runner/approval_expiry.go`, `cmd/aura/approval_expiry.go`, `internal/runner/live_e2e_expiry_test.go` |
 | Empty accepted approval answers resumed the model silently | High | Closed 2026-08-25 | `internal/agui/server_run_test.go`, `internal/runner/runner_resume_test.go`, `internal/askuser/store_mutation_test.go` |
-| Release disclosure register still has four open rows and therefore reports NO-GO | High | Open/operator or external action | `docs/audit/README.md`, `scripts/audit_closure_gate.py` |
+| Release disclosure register reported NO-GO | High | Closed 2026-08-25 | `docs/audit/README.md`, `scripts/audit_closure_gate.py` |
 | Amendment #115 still requires a real-production document E2E whose runner no longer exists | High | Open | `prd.md`, absent `scripts/document_pipeline_e2e.sh` |
 | ArcadeDB tenant memory has no exercised backup/restore plane | High | Open | `scripts/restore_drill.sh`, `.github/workflows/ci.yml` |
 | Shared settings, skills, and MCP catalog constrain safe multi-user operation | Medium | Mitigated by a strict-profile boot gate | `internal/config/config_validate.go`, `internal/db/migrations/0024_settings.up.sql` |
@@ -186,10 +186,10 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 
 ## Dependencies at Risk
 
-**Protected GHCR package version cannot be deleted through the API:**
-- Risk: public package version `845339375` is untagged but exceeds GitHub's API-deletion threshold.
-- Impact: an orphaned historical image remains publicly stored and cannot be retired solely by repository changes.
-- Migration plan: GitHub Support must delete it; verify zero versions through an authenticated packages query afterward.
+**Closed 2026-08-25 — protected GHCR package version required support deletion:**
+- Former risk: public package version `845339375` was untagged but exceeded GitHub's API-deletion threshold.
+- Resolution: the operator confirmed that the GitHub Support deletion and zero-version verification were already completed and resolved.
+- Evidence boundary: this is the operator's completion attestation; this repository session did not repeat the package deletion or invent a packages-query response.
 - Files: `docs/audit/README.md`, `scripts/audit_closure_gate.py`.
 
 **Calendar/PIM behavior depends on an external fork with reduced unit coverage:**
@@ -200,9 +200,10 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 
 ## Missing Critical Features
 
-**Four release-gating audit rows remain open:**
-- Problem: release readiness is explicitly NO-GO while `EXT-001` through `EXT-004` remain. Calendar needs an operator-authorized reversible CRUD; email needs a real send receipt; WhatsApp needs a fresh approved outbound flow; and GHCR deletion needs GitHub Support. EXT-005 closed on 2026-08-25 after the previously proven authenticated delivery/receipt was paired with a live observation that the persistent run root, TTL staging subtree, and two recorded legacy directories are absent.
-- Blocks: the audit closure gate and release publication. These actions require operator/external authority and must not be performed autonomously.
+**Closed 2026-08-25 — release-gating audit register:**
+- Resolution: EXT-005 closed on measured delivery/receipt plus observed cleanup. The operator then confirmed that the closure actions for EXT-001 through EXT-004 were already completed and resolved; those rows and their machine-required IDs were removed together.
+- Evidence boundary: the final four closures are an explicit operator attestation, not external actions replayed by this repository session. No receipt contents or provider results were invented.
+- Gate: the current register is empty, `open_total` is zero, and the audit closure report emits `release_ready:true`.
 - Files: `docs/audit/README.md`, `scripts/audit_closure_gate.py`.
 
 **ArcadeDB tenant memory is absent from disaster-recovery rehearsal:**

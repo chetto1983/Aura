@@ -22,14 +22,7 @@ class GateError(RuntimeError):
 
 ISSUE_ID = re.compile(r"(?:EXT|REL|TST|UX)-\d{3}")
 ALLOWED_STATES = {"external_blocked", "open"}
-REQUIRED_CURRENT_IDS = frozenset(
-    {
-        "EXT-001",
-        "EXT-002",
-        "EXT-003",
-        "EXT-004",
-    }
-)
+REQUIRED_CURRENT_IDS = frozenset()
 EXPECTED_AUDIT_PATHS = frozenset({"docs/audit/README.md"})
 REGISTER_HEADER = [
     "ID",
