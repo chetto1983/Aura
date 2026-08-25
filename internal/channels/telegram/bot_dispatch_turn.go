@@ -40,19 +40,23 @@ func (t *Telegram) runTurnWithAssets(daemonCtx context.Context, c tele.Context, 
 	notifier, _ := c.Bot().(botNotifier)
 	to := c.Recipient()
 	t.startTurn(daemonCtx, sender, notifier, to, chatID, &composedText, inboundWasVoice,
-		t.onBusyRedirect(c, chatID, rawText, len(attachments) > 0))
+		t.onBusyRedirect(c, chatID, rawText, composedText, len(attachments) > 0, inboundWasVoice))
 }
 
 // onBusyRedirect builds startTurn's onBusy callback for a chat where registerTurn
-// found a turn already live. Plain text (no attachments) with a wired steer inbox
-// redirects the running turn (D-03) instead of replying busy; an attachment or an
-// unwired inbox (the composition root's explicit rollback) keeps today's
-// turnBusyMessage. The attachments arm becomes the queue bot_dispatch_queue.go
-// builds; until it lands this stays turnBusyMessage.
-func (t *Telegram) onBusyRedirect(c tele.Context, chatID int64, rawText string, hasAttachments bool) func() {
+// found a turn already live. With a wired steer inbox: plain text (no
+// attachments) redirects the running turn (D-03), an attachment is HELD in the
+// per-chat pending slot and delivered when the live turn ends (D-05,
+// bot_dispatch_queue.go). An unwired inbox (the composition root's explicit
+// rollback) keeps today's turnBusyMessage for both.
+func (t *Telegram) onBusyRedirect(c tele.Context, chatID int64, rawText, composedText string, hasAttachments, inboundWasVoice bool) func() {
 	return func() {
-		if t.deps.Steer == nil || hasAttachments {
+		if t.deps.Steer == nil {
 			t.reply(c, turnBusyMessage)
+			return
+		}
+		if hasAttachments {
+			t.enqueueBusyTurn(c, chatID, composedText, inboundWasVoice)
 			return
 		}
 		t.steerBusyTurn(c, chatID, rawText)
@@ -137,6 +141,11 @@ func (t *Telegram) startTurn(
 		stop := pulseChatAction(turnCtx, notifier, to, tele.Typing) // "Aura is working" for the whole turn
 		defer stop()
 		t.handleTurn(turnCtx, sender, chatID, userMsg, inboundWasVoice)
+		// deliverPendingTurn runs BEFORE the deferred unregisterTurn above (defers
+		// fire in reverse order strictly at return, and this call sits before the
+		// function returns) — so a media message queued while THIS turn was live is
+		// delivered under the SAME registration and the SAME scoped turnCtx (D-05).
+		t.deliverPendingTurn(turnCtx, sender, chatID)
 	})
 }
 

@@ -194,6 +194,17 @@ type Telegram struct {
 	// production path) waits on a real timer; a multi-chunk test that left it nil would
 	// pay the 1s-per-chunk chat rate limit for every chunk.
 	deliverSleep func(time.Duration)
+
+	// pendingMu guards pendingTurns. Its OWN mutex, not mu above: the pending slot's
+	// lifetime is deliberately different from everything mu already guards, and from
+	// cmds' cancels map most of all — cancels is cleared the instant a turn ends, and
+	// this slot must survive exactly that moment so the goroutine's post-handleTurn
+	// delivery check (bot_dispatch_queue.go) can still find what arrived while busy.
+	pendingMu sync.Mutex
+
+	// pendingTurns holds media messages queued while a turn was live for the chat,
+	// keyed by chatID. See pendingTurn's own doc comment for what one entry carries.
+	pendingTurns map[int64][]pendingTurn
 }
 
 type hitlReplyKey struct {
