@@ -1,9 +1,29 @@
 # Phase 52: Mid-turn steering - Pattern Map
 
 **Mapped:** 2026-08-25
-**Files analyzed:** 19 (net-new + modified)
-**Analogs found:** 19 / 19 (every file has a same-repo structural twin; `internal/steer` is a
-net-new package but its shape is a direct composite of two existing patterns, not invented)
+**Re-mapped:** 2026-08-25 (revision iteration 2) — the original map was cut against a six-plan
+outline. The plan set is now **eight** plans whose `files_modified` union is **66 paths**, and the
+map's "19 / 19" line was asserting a completeness it did not have: the entire web layer (52-07) plus
+nine Go/SQL paths were absent from the File Classification table.
+
+**Files analyzed:** 44 production paths (net-new + modified) across the eight plans.
+**Analogs found:** 44 / 44 — every production path now carries a row in the File Classification
+table below, re-diffed against the plans' `files_modified` union rather than asserted.
+
+**The 66-path union, accounted for exactly** (44 + 5 + 16 + 1 = 66):
+
+- **44 production paths** — classified below, each with a same-repo analog.
+- **5 planning/documentation artifacts** — `prd.md`, `.planning/REQUIREMENTS.md`,
+  `.planning/ROADMAP.md`, `.planning/phases/52-mid-turn-steering/52-VALIDATION.md`,
+  `docs/aura-quality-snapshot.md`. Prose, not code; their conventions come from the documents
+  themselves and from CLAUDE.md, not from a structural twin.
+- **16 test siblings** — every `*_test.go`, `*.test.ts`, `*.test.tsx`. Each follows the analog assigned
+  to the production file it covers. `internal/agent/agent_fuzz_test.go` is the one exception and it
+  gets its own row below, because 52-02 does not merely extend it: it must RESTATE a property that
+  file currently asserts.
+- **1 generated/built output** — `internal/webui/dist`, produced by `docker webbuild` on Linux and
+  guarded by the `web-dist-freshness` gate; never hand-edited. It is also the phase's single
+  "no analog found" entry (see that section).
 
 **LOC headroom note (CLAUDE.md 600-LOC ceiling), measured 2026-08-25 — read before assigning
 work to a plan:**
@@ -13,7 +33,7 @@ work to a plan:**
 | `internal/agent/llm_agent.go` | 561 | 39 | **No new logic.** Two 1-line drain-point calls only. |
 | `internal/agui/server.go` | 534 | 66 | One route registration + one setter call only. |
 | `internal/runner/runner.go` | 577 | 23 | **Almost none.** One struct field + one config passthrough line MAX; the wiring function itself goes in a new sibling file. |
-| `internal/askuser/store.go` | 513 | 87 | New TTL logic → new sibling file, not appended here. |
+| `internal/askuser/store.go` | 527 | 73 | New TTL logic → new sibling file, not appended here. (Re-measured 2026-08-25 rev-2: 527, not the 513 first recorded.) |
 | `internal/channels/telegram/commands.go` | 436 | 164 | Room for one busy-peek helper. |
 | `internal/agui/idempotency_http.go` | 406 | 194 | Room for one map entry. |
 | `internal/agui/translator.go` | 454 | 146 | Room for one CUSTOM-frame branch + const. |
@@ -24,7 +44,7 @@ work to a plan:**
 | `internal/config/config_agui_run.go` | 42 | — | Pattern donor for new `config_agui_steer.go` (net-new file, no ceiling pressure). |
 | `internal/config/config_knobs.go` | 220 | 380 | Room for 3 catalog rows + 1 corrected default. |
 | `internal/config/config_agui_test.go` | 88 | 512 | Room, or clone as a new sibling test file. |
-| `internal/agui/server_project.go` | 93 | 507 | Room for the folded-todo validation additions. |
+| `internal/agui/server_project.go` | 106 | 494 | Room for the folded-todo validation additions. (Re-measured 2026-08-25 rev-2: 106, not the 93 first recorded.) |
 | `internal/agui/runregistry.go` / `runsession.go` | 253 / 213 | large | Reference only (pattern donor for `internal/steer`, not touched). |
 | `cmd/aura/serve_agui.go` | 245 | 355 | Room for the SteerInbox wiring block. |
 | `cmd/aura/serve_channels.go` | 384 | 216 | Room for one `Deps{}` field. |
@@ -58,6 +78,33 @@ as scarce; push all real logic into new sibling files.
 | `internal/runner/runner_steer.go` (new, mirrors `runner_reasoning.go`) | wiring helper | — | `internal/runner/runner_reasoning.go` (`WithReasoningOverride`) | exact |
 | `cmd/aura/serve_agui.go` (modified) | composition root | — | itself (lines 79-83, `RunRegistry` construction) | exact |
 | `cmd/aura/serve_channels.go` (modified) | composition root | — | itself (`buildTelegramDeps`, line 78-98) | exact |
+| `internal/agent/trust.go` (modified) | pure fn (render + trust decision) | transform | itself (`renderToolResultForPrompt` / `wrapUntrustedToolOutput`) | exact |
+| `internal/agent/prompt.go` (modified) | static prompt constant | — | itself (`SystemPrompt`'s existing named static sections) | exact |
+| `internal/agent/agent_fuzz_test.go` (modified) | property test | — | itself (`FuzzRenderToolResultForPrompt`) | exact — **but its current property contradicts 52-02's scrub and must be restated, not extended** |
+| `internal/runner/runner_persist.go` (modified) | persistence dispatch | event-driven | itself (`persistEvent`'s existing per-`Actions`-field branches) | exact |
+| `internal/runner/runner_resume.go` (modified) | resume controller | request-response | itself | exact |
+| `internal/runner/runner_mint_approval.go` (modified) | pause minting | — | itself (the mint path that records pause metadata) | exact |
+| `internal/askuser/store.go` (modified) | store (sqlc wrapper) | request-response | itself (the `WHERE resumed_at IS NULL` conditional update) | exact |
+| `internal/askuser/expire.go` (new) | service (reaper) | batch/event-driven | `internal/agui/runregistry.go` (`evictExpired` + lazy-start ticker) | role-match |
+| `internal/db/queries/paused_states.sql` (modified) | sqlc query source | — | itself (the existing `paused_states` queries; regenerate with sqlc, never hand-edit the generated Go) | exact |
+| `internal/agui/server_run.go` / `server_run_detach.go` (modified) | controller | request-response / streaming | itself | exact — **read-only in 52-03's stated non-goals; a git-scoped criterion proves 52-04 leaves them alone** |
+| `internal/channels/telegram/bot_dispatch_steer.go` (new) | controller (channel branch) | event-driven | `internal/channels/telegram/bot_dispatch_hitl.go` (the sibling-file dispatch-branch convention) | exact |
+| `internal/channels/telegram/bot_dispatch_queue.go` (new) | service (per-chat pending slot) | event-driven | `internal/agui/runregistry.go` (mutex-guarded map keyed registry) | role-match |
+| `internal/channels/telegram/bot_dispatch.go` (modified) | dispatch router | event-driven | itself (its existing branch-to-sibling-file dispatch) | exact |
+| `internal/channels/telegram/bot.go` (modified) | channel struct + deps | — | itself (existing `Deps` field threading) | exact |
+| `cmd/aura/serve.go` (modified) | composition root | — | itself (the existing background-worker start block the askuser TTL sweep joins) | exact |
+| `cmd/aura/chat_boot.go` (modified) | composition root | — | itself (existing `chatEnv` shared-singleton construction) | exact |
+| `internal/config/config.go` + `config_askuser.go` (new) | config | — | `internal/config/config_agui_run.go` (sub-struct + non-fatal envutil fallback) | exact |
+| **— web layer (52-07); every analog below verified present in the tree 2026-08-25 —** | | | | |
+| `web/src/chat/steerRun.ts` (new) | API client fn | request-response | `web/src/chat/sseResume.ts`'s `cancelRun` (same mutation-with-`Idempotency-Key` shape) | exact |
+| `web/src/chat/sseAdapter.ts` (modified) | transform (frame → part) | streaming | itself, plus `web/src/chat/sseAdapter.onArtifact.test.ts` as the test shape for a new CUSTOM-frame handler | exact |
+| `web/src/chat/sseResume.ts` (modified) | streaming client | streaming | itself (`cancelRun`, `streamRunResilient`) | exact |
+| `web/src/chat/ExternalStoreChat_steer.ts` (new) | state slice split out of the container | — | `web/src/chat/ExternalStoreChat_liveRun.ts` (116 LOC) and its five `ExternalStoreChat_*.ts` siblings — the established split-to-stay-under-600 convention | exact |
+| `web/src/chat/SteerNotice.tsx` (new) | presentational in-thread marker | — | `web/src/chat/compaction/CompactionMarker.tsx` (an in-thread, non-message marker) | exact |
+| `web/src/chat/ExternalStoreChat.tsx` (modified) | container | — | itself — **545/600 LOC; wiring lines only, capped at +20 by 52-07** | exact |
+| `web/src/chat/Composer.tsx` (modified) | container | — | itself (`sendDisabled` / `sendBlocked` prop) — **540/600 LOC; capped at +30** | exact |
+| `web/src/i18n/resources.ts` (modified) | i18n bundle | — | itself — **566/600 LOC**; if two locales of steer copy do not fit, split rather than force them in | exact |
+| `web/src/i18n/resources.steer.ts` (new, conditional) | i18n bundle split | — | `web/src/i18n/resources.composer.ts`, whose header states the split rationale verbatim (`resources.governance.ts` / `resources.graph.ts` set the precedent) | exact |
 
 ## Pattern Assignments
 
@@ -695,9 +742,20 @@ proven for `chat.pause` (askuser.Store), `chat.assets`, `chat.conv`.
 
 ## No Analog Found
 
-None. Every file in the phase's scope has at least a role-match analog in the existing
-codebase; `internal/steer` is net-new but is explicitly a composite of two files already read
-above (`runregistry.go` + `runsession.go`), not an invented shape.
+**One, and it is a build artifact rather than a shape:** `internal/webui/dist`. It is generated by
+`docker webbuild` on Linux node-24 and guarded by the `web-dist-freshness` CI gate; a Windows-built
+bundle re-hashes chunks and fails that gate. There is nothing to pattern-match — the instruction is
+"do not hand-edit it, rebuild it the sanctioned way".
+
+Every other production path in the phase's scope has at least a role-match analog in the existing
+codebase. `internal/steer` is net-new but is explicitly a composite of two files already read above
+(`runregistry.go` + `runsession.go`), not an invented shape; the same holds for
+`internal/channels/telegram/bot_dispatch_queue.go`, whose registry shape is `runregistry.go`'s and
+whose announce-out-loud behaviour mirrors 52-05's leftover auto-delivery.
+
+**The previous revision of this document said "None" while omitting the entire web layer and nine
+Go/SQL paths from its table.** That is recorded here rather than silently corrected: a completeness
+claim nobody measured is worse than an admitted gap, because the next reader trusts it.
 
 ## Metadata
 

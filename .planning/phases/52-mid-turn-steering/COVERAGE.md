@@ -8,12 +8,13 @@ in the tree (telebot / the Bot API) is consumed through its existing, unchanged 
 
 The deterministic detector fires on this phase's scope because the words *endpoint*, *route* and
 *integration* appear in the ROADMAP/CONTEXT prose describing an internal HTTP surface. Confirmed by
-re-reading the phase scope: every file in `files_modified` across the six plans is Aura-owned Go,
-Aura-owned docs, or Aura-owned config. There is no external capability surface to enumerate, so no
-matrix row is fabricated.
+re-reading the phase scope: every file in `files_modified` across the **eight** plans (52-01..52-08)
+is Aura-owned Go, Aura-owned TypeScript, Aura-owned docs, or Aura-owned config. There is no external
+capability surface to enumerate, so no matrix row is fabricated.
 
 **What this declaration does NOT cover, stated so it is not read as broader than it is:** the phase
 does depend on Aura's *existing* provider path (OpenRouter / llama.cpp) accepting a `user`-role
 message at the steer position. That is a message-shape question against an already-integrated
 provider, not a new integration, and it is tracked as an explicit flagged assumption in
-`52-02-PLAN.md` (`FA-1`) with a live E2E in `52-06-PLAN.md`, not as an un-decided coverage hole.
+`52-02-PLAN.md` (`FA-1`) with a live E2E in `52-08-PLAN.md` — the phase's validation plan — not as an
+un-decided coverage hole.
