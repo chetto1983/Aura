@@ -5,15 +5,15 @@ current_phase: 46
 current_phase_name: MCP trust and facade
 status: executing
 stopped_at: Completed 46-06-PLAN.md
-last_updated: "2026-08-22T23:05:00.000Z"
-last_activity: 2026-08-22
-last_activity_desc: Phase 46 plan 46-06 (tracer slice) complete — calendar classifies per action, sidecar pinned to the curated image, one tool live
-state_head: 4d2fe0deb
+last_updated: "2026-08-24T17:44:05.548Z"
+last_activity: 2026-08-24
+last_activity_desc: Phase 46 execution resumed (wave continue)
+state_head: 0b1652c412c0c21ef479bd44fca725987c2af2d1
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 26
-  completed_plans: 23
+  completed_plans: 24
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 Phase: 46 (MCP trust and facade) — EXECUTING (6/9 plans complete)
 Status: Executing Phase 46
 Phase 46 discussion are recorded in `46-CONTEXT.md` D-10..D-16 and in ROADMAP §45.1.
-Last activity: 2026-08-22 — Plan 46-06 (the tracer slice, MCP-04/MCP-02) complete. D-21's silent
+Last activity: 2026-08-24 — Phase 46 execution resumed (wave continue)
 failure is closed: a bridged tool never set `Multiplexed`, so `classify` gave ONE flat tier to the
 whole merged tool — `calendar(action=list_calendars)` and `calendar(action=send_email)` scored
 identically, with no panic to warn anyone. Now `bridge.go:211` sets `spec.Multiplexed =
