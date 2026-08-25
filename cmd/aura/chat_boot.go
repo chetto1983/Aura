@@ -34,6 +34,7 @@ import (
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/chetto1983/aura/internal/settings"
 	"github.com/chetto1983/aura/internal/share"
+	"github.com/chetto1983/aura/internal/steer"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -71,6 +72,14 @@ type chatEnv struct {
 	// serve.go binds the channels Registry onto it once that Registry exists;
 	// `aura chat` leaves it unbound, and an unbound holder declines with a WARN.
 	elicitation *surfacingElicitationConsent
+	// steer is the shared process-wide mid-turn steer inbox (amendment #132,
+	// AURA_AGUI_RUN_STEER, D-01/D-12): the ONE instance injected into both
+	// runner.Deps.Steer (the agent-side drain) and agui.Server.SetSteerInbox
+	// (the cockpit route), so a push and a drain can never disagree about
+	// which queue they mean (T-52-31). nil when the flag is off — every
+	// consumer's own nil-safe seam then degrades to "steer is unwired"
+	// rather than half-live.
+	steer *steer.Inbox
 }
 
 // close releases the pool (the OTel TracerProvider is owned by the REPL path).
@@ -421,6 +430,14 @@ func assembleChatEnv(
 			"model", cfg.LLM.Model, "err", err)
 	}
 	client := newLLMClient(cfg.LLM)
+	// The mid-turn steer inbox (amendment #132, D-01/D-12): ONE instance for
+	// the whole process, gated on its own flag exactly as RunRegistry is
+	// gated on AGUIRun.Detach, so the explicit rollback leaves a nil seam
+	// rather than a half-live feature.
+	var steerInbox *steer.Inbox
+	if cfg.AGUISteer.Enabled {
+		steerInbox = newSteerInbox(cfg.AGUISteer)
+	}
 	deps := runner.Deps{
 		Conv:            convStore,
 		Pause:           pauseStore,
@@ -471,10 +488,23 @@ func assembleChatEnv(
 		// replaces the per-turn LLM router round-trip. Empty EmbedURL => the agent
 		// falls back to the LLM router.
 		Embedder: embeddingClient(cfg, documentHTTPClient(cfg)),
+		Steer:    steerInbox,
 	}
 	run := runner.New(deps)
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: runner.NewDeleteReconciler(run, time.Minute), toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, elicitation: elicitation}, nil
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: runner.NewDeleteReconciler(run, time.Minute), toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, elicitation: elicitation, steer: steerInbox}, nil
+}
+
+// newSteerInbox builds the process-wide mid-turn steer inbox from the
+// ratified AURA_AGUI_RUN_STEER* caps (amendment #132 item 10), EXPLICITLY —
+// never a zero steer.Config. internal/steer's own package-level fallbacks
+// (defaultMax=32, defaultMaxBytes=32768) exist only for a caller that never
+// wires a Config at all; this composition root is not that caller, so
+// passing cfg.AGUISteer's fields verbatim is what keeps the two default sets
+// from silently diverging again — the D-11 catalogue-vs-loader drift,
+// reproduced one layer down, that 52-04 exists to close.
+func newSteerInbox(cfg config.AGUISteerConfig) *steer.Inbox {
+	return steer.New(steer.Config{Max: cfg.Max, MaxBytes: cfg.MaxBytes})
 }
 
 func openSettingsOverlayPool(ctx context.Context) (*pgxpool.Pool, bool, error) {

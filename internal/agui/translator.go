@@ -34,6 +34,16 @@ const DisplayEventName = "aura.display"
 // it once, by (server, resource_uri), from an authenticated Aura route.
 const ViewEventName = "aura.mcp_view"
 
+// SteerEventName is the stable AG-UI CUSTOM-event name the mid-turn steer
+// echo emits (amendment #132, STEER-03): every operator redirect that drains
+// into a round is echoed on the wire under this name, carrying the same
+// channel-agnostic structural payload drainSteer built
+// (internal/agent/llm_agent_steer.go's Actions.SteerDelta). It rides the
+// SAME fixed-cap replay ring every other CUSTOM frame does — a reload, a
+// resume (Last-Event-ID), or a later replay all reconstruct it from that one
+// ring, with no special-cased storage of its own.
+const SteerEventName = "aura.steer"
+
 // redactedReasoningDelta is the placeholder the translator substitutes for a real
 // chain-of-thought delta when showReasoning is false (the default privacy posture).
 // A consumer that opts in (Telegram's AURA_TELEGRAM_SHOW_REASONING) receives the real
@@ -160,6 +170,21 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 					return
 				}
 				if !yield(events.NewCustomEvent(DisplayEventName, events.WithValue(ev.Actions.Display)), nil) {
+					return
+				}
+				continue
+			}
+
+			// A drained mid-turn steer (amendment #132, STEER-03) closes any open
+			// run and yields ONE aura.steer CUSTOM event carrying the SteerDelta
+			// payload — the additive twin of the artifact/display branches above.
+			// Slotted before the generic STATE_DELTA branch for the same
+			// precedence reason. Additive: a nil SteerDelta falls through.
+			if ev.Actions.SteerDelta != nil {
+				if !closeRuns() {
+					return
+				}
+				if !yield(events.NewCustomEvent(SteerEventName, events.WithValue(ev.Actions.SteerDelta)), nil) {
 					return
 				}
 				continue

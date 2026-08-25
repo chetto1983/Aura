@@ -19,6 +19,7 @@ import (
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/steer"
 	"github.com/google/uuid"
 )
 
@@ -147,6 +148,14 @@ type Deps struct {
 	// interface with no internal/share import here. nil => share was never mounted in this
 	// deployment, and step 4.5 is a silent skip (not a panic).
 	ShareRevoker ShareRevoker
+	// Steer is the shared process-wide mid-turn steer inbox (amendment #132,
+	// AURA_AGUI_RUN_STEER, D-01/D-12). The composition root constructs ONE
+	// instance and injects it here AND into agui.Server (SetSteerInbox) so a
+	// push and a drain never disagree about which queue they mean (T-52-31).
+	// nil means the flag is off: buildAgent's steerInboxOrNil then leaves the
+	// per-turn agent's drain a total no-op, exactly like a nil gateway means
+	// Allow.
+	Steer *steer.Inbox
 }
 
 // ResumeHook is called after a paused ask_user response is persisted and before
@@ -212,6 +221,11 @@ type Runner struct {
 	classifier           *prompt.ReasoningClassifier // SHARED reasoning-tier classifier (anchors built once); nil → LLM router
 	gateway              *gateway.Gateway            // Phase-35 policy PEP injected into every per-turn agent; nil → Allow no-op
 	shareRevoker         ShareRevoker                // D-15 consumer-declared seam (runner_delete.go step 4.5); nil → step 4.5 is a silent skip
+	// steer is the shared process-wide mid-turn steer inbox injected via
+	// Deps.Steer (amendment #132, AURA_AGUI_RUN_STEER); nil = the flag is off
+	// (D-12's explicit rollback). See runner_steer.go for the buildAgent
+	// threading and the drain-time persistence it also carries.
+	steer *steer.Inbox
 
 	// threadLocks + sessions are the two per-conversation in-memory maps, BOTH keyed by
 	// the composite (identity, session) sessionKey (D-23, runner_session.go): threadLocks
@@ -302,6 +316,7 @@ func New(d Deps) *Runner {
 		gateway:                  d.Gateway,
 		shareRevoker:             d.ShareRevoker,
 		resumeCommitter:          d.ResumeCommitter,
+		steer:                    d.Steer,
 		// stopDone starts nil: the first waitWorkers arms the wg-drain waiter, and each
 		// clean drain resets it to nil so a later Stop re-arms (WR-02).
 	}
@@ -568,6 +583,7 @@ func (r *Runner) buildAgent(ctx context.Context, convID string, requestID uuid.U
 		Ledger:            r.verificationLedger(ctx),
 		Gateway:           r.gateway,       // Phase-35 PEP; LedgerConversationID defaults to convID (UUID)
 		ReasoningOverride: reasoningEffort, // 37E fixed effort; "" => auto (adaptive path)
+		Steer:             steerInboxOrNil(r.steer),
 	})
 	ic := agent.InvocationContext{
 		Ctx:       boundedCtx,

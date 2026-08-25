@@ -56,7 +56,10 @@ var httpMutationRoutes = map[string]mutationRouteMeta{
 	// inventoried: it is read-only by construction (zero write seams — no
 	// SubmitAnswers, no lock, no turn start; server_run_resume.go), the same
 	// method-based exclusion rationale as the graph-query/TTS/STT reads.
-	"POST /agent/runs/{runID}/cancel":                             httpMutationMeta("agent_run_cancel"),
+	"POST /agent/runs/{runID}/cancel": httpMutationMeta("agent_run_cancel"),
+	// The cockpit mid-turn redirect (amendment #132 D-02, T-52-12): a replayed
+	// POST with the same Idempotency-Key must not enqueue a second steer.
+	"POST /agent/runs/{runID}/steer":                              httpMutationMeta("agent_run_steer"),
 	"POST /api/admin/identities/{id}/capabilities":                httpMutationMeta("capability_grant"),
 	"DELETE /api/admin/identities/{id}/capabilities/{capability}": httpMutationMeta("capability_revoke"),
 	"POST /api/approvals/{token}/resolve":                         httpMutationMeta("approval_resolve"),

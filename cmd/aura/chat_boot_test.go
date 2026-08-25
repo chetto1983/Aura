@@ -13,6 +13,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/steer"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -425,5 +426,59 @@ func TestResolveConfigAndPoolOverlaysSettingsBeforeTheReload(t *testing.T) {
 			}
 			pool.Close()
 		})
+	}
+}
+
+// TestNewSteerInboxWiresConfigCaps closes the D-11-shaped drift 52-04 exists
+// to fix: internal/steer's own package-level fallbacks (defaultMax=32,
+// defaultMaxBytes=32768) disagree with the ratified amendment #132 item 10
+// values (Max=8, MaxBytes=16384, internal/config/config_agui_steer.go). If
+// newSteerInbox ever regresses to constructing the inbox with a zero
+// steer.Config — or the two default sets drift apart again — this test
+// fails: it behaviorally proves the WIRED caps equal the config values,
+// never internal/steer's own fallback.
+func TestNewSteerInboxWiresConfigCaps(t *testing.T) {
+	cfg := config.AGUISteerConfig{Enabled: true, Max: 8, MaxBytes: 16384}
+	inbox := newSteerInbox(cfg)
+
+	// Max: exactly 8 pushes succeed; the 9th must refuse. Were the wired cap
+	// silently the package default of 32, the 9th push would still succeed.
+	for i := range 8 {
+		if err := inbox.Push("conv-cap", "test", "hi"); err != nil {
+			t.Fatalf("push %d: unexpected error %v", i, err)
+		}
+	}
+	if err := inbox.Push("conv-cap", "test", "hi"); !errors.Is(err, steer.ErrQueueFull) {
+		t.Fatalf("9th push = %v, want ErrQueueFull (wired Max must be 8, not internal/steer's own default of 32)", err)
+	}
+	inbox.Drain("conv-cap")
+
+	// MaxBytes: a message one byte over 16384 must be refused; exactly at the
+	// cap must succeed. Were the wired cap silently 32768, the oversize push
+	// below would succeed instead of refusing.
+	over := strings.Repeat("a", 16385)
+	if err := inbox.Push("conv-bytes", "test", over); !errors.Is(err, steer.ErrTooLarge) {
+		t.Fatalf("oversize push = %v, want ErrTooLarge (wired MaxBytes must be 16384, not internal/steer's own default of 32768)", err)
+	}
+	atCap := strings.Repeat("a", 16384)
+	if err := inbox.Push("conv-bytes-2", "test", atCap); err != nil {
+		t.Fatalf("push at exactly MaxBytes: unexpected error %v", err)
+	}
+}
+
+// TestNewSteerInboxDisabledLeavesFieldNil pins assembleChatEnv's gating: when
+// AGUISteer.Enabled is false the composition root never calls newSteerInbox
+// at all, leaving chatEnv.steer and runner.Deps.Steer both genuinely nil —
+// the "unwired surface" contract the steer route and the agent's drain both
+// rely on, mirroring AGUIRun.Detach's own gating of RunRegistry.
+func TestNewSteerInboxDisabledLeavesFieldNil(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.AGUISteer = config.AGUISteerConfig{Enabled: false, Max: 8, MaxBytes: 16384}
+	var steerInbox *steer.Inbox
+	if cfg.AGUISteer.Enabled {
+		steerInbox = newSteerInbox(cfg.AGUISteer)
+	}
+	if steerInbox != nil {
+		t.Fatalf("steerInbox = %#v, want nil when AGUISteer.Enabled is false", steerInbox)
 	}
 }

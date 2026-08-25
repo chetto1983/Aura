@@ -81,6 +81,13 @@ func wireAGUIServer(chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler,
 		runRegistry = agui.NewRunRegistry(serverCfg)
 		aguiServer.SetRunRegistry(runRegistry)
 	}
+	// Amendment #132 D-01/D-12: the SAME steer inbox chat.run's Runner drains
+	// (chat_boot.go's Deps.Steer) is injected here too, so a cockpit POST and
+	// the agent's drain always mean the same queue (T-52-31). nil (the
+	// AURA_AGUI_RUN_STEER=false rollback) leaves the route hidden (404).
+	if chat.steer != nil {
+		aguiServer.SetSteerInbox(chat.steer)
+	}
 	aguiServer.SetOperationRegistry(chat.operations)
 	aguiServer.SetAssetService(chat.assets)
 	aguiServer.SetOwnerExportDestination(ownerExports)

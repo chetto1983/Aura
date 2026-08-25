@@ -18,6 +18,7 @@ import (
 	"github.com/chetto1983/aura/internal/mcp"
 	runtimereadiness "github.com/chetto1983/aura/internal/readiness"
 	"github.com/chetto1983/aura/internal/runner"
+	"github.com/chetto1983/aura/internal/steer"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -170,7 +171,15 @@ type Server struct {
 	// runs is the detached-run session registry (fix-plan 1.3 Tier B). Nil = flag
 	// off (AURA_AGUI_RUN_DETACH unset/false) = today's request-scoped run path and
 	// hidden resume/cancel routes; wired via SetRunRegistry only when the flag is on.
-	runs          *RunRegistry
+	runs *RunRegistry
+	// steer is the shared process-wide mid-turn steer inbox (amendment #132,
+	// AURA_AGUI_RUN_STEER). Nil = flag off (D-12's explicit rollback) = the
+	// steer route hides itself (404), exactly like a nil runs registry hides
+	// resume/cancel; wired via SetSteerInbox only when the flag is on. The SAME
+	// *steer.Inbox instance is also injected into runner.Deps.Steer and (52-06)
+	// telegram.Deps.Steer — one backend, multiple consumers (T-52-31).
+	steer *steer.Inbox
+
 	cfg           ServerConfig
 	readinessRuns readinessProbeCoordinator
 	// probeTimeout bounds a single live MCP probe (GOV-01). Zero falls back to
@@ -251,6 +260,12 @@ func (s *Server) SetApprovalStore(store ApprovalStore) { s.approvals = store }
 // request-scoped path and the run resume/cancel routes hide themselves (404) —
 // D-A2-02 narrow seam, mirroring SetApprovalStore.
 func (s *Server) SetRunRegistry(registry *RunRegistry) { s.runs = registry }
+
+// SetSteerInbox wires the shared mid-turn steer inbox (amendment #132,
+// AURA_AGUI_RUN_STEER). It is set by the daemon composition root ONLY when
+// the steer flag is on, mirroring SetRunRegistry: until set (nil),
+// handleRunSteer answers 404 rather than accepting a POST nothing drains.
+func (s *Server) SetSteerInbox(inbox *steer.Inbox) { s.steer = inbox }
 
 // SetOperationRegistry installs the process-wide durable mutation registry.
 // Keeping this as a narrow consumer-side seam lets tests leave it nil while the
@@ -343,6 +358,10 @@ func (s *Server) Mux() http.Handler {
 	// the registry is nil (flag off — the surface hides itself entirely).
 	mux.HandleFunc("GET /agent/runs/{runID}/events", s.handleRunEvents)
 	mux.HandleFunc("POST /agent/runs/{runID}/cancel", s.handleRunCancel)
+	// Amendment #132 D-02: the cockpit mid-turn redirect. Same 404-while-nil
+	// hiding posture, gated on its OWN flag (AURA_AGUI_RUN_STEER) via
+	// SetSteerInbox, independent of AGUIRun.Detach.
+	mux.HandleFunc("POST /agent/runs/{runID}/steer", s.handleRunSteer)
 	mux.HandleFunc("GET /threads/{id}/messages", s.handleMessages)
 	// DISP-05/D-09 image-proxy: a same-origin SSRF-safe relay for web_result
 	// thumbnails/favicons. Mounted under /api/ so it inherits the parent-mux

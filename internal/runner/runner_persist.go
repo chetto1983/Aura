@@ -95,6 +95,9 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 	if ev.Actions.AwaitingInput != nil {
 		return r.persistPause(ctx, tr, ev.Actions.AwaitingInput)
 	}
+	if ev.Actions.SteerDelta != nil {
+		return r.persistSteerTurn(ctx, tr, ev)
+	}
 	if ev.Actions.ToolInvocation != nil {
 		if err := r.persistToolTurnEvent(ctx, tr, ev.Actions.ToolInvocation, ev); err != nil {
 			return err
