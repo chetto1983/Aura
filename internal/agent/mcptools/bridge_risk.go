@@ -151,7 +151,8 @@ func managedBridgePolicy(server mcp.ManagedServer) bridgePolicy {
 	if err != nil {
 		return policy
 	}
-	policy.identityScoped = serverType == mcp.ServerTypeStreamableHTTP && trust == mcp.TrustTrustedRecipe
+	settings, oauthErr := mcp.OAuthSettingsFromEnv(server.Env)
+	policy.identityScoped = serverType == mcp.ServerTypeStreamableHTTP && oauthErr == nil && mcp.UsesOAuth(server, settings)
 	// Rendering a server's own document is a larger grant than calling its tools,
 	// so it is gated on the trust class and on nothing else (mcp.TrustMayRenderViews).
 	policy.views = mcp.TrustMayRenderViews(trust)

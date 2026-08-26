@@ -141,7 +141,12 @@ func buildAuthulaProvider(ctx context.Context, chat *chatEnv, localIdentityID st
 	case uerr != nil:
 		fmt.Println("aura serve: authula operator lookup deferred (operator not yet enrolled):", uerr)
 	}
-	return provider, webauth.NewValidator(provider, linker), nil
+	validator := webauth.NewValidator(provider, linker)
+	if err := provider.ConfigureMCPOAuth(validator, chat.cfg.WebPublicURL); err != nil {
+		_ = provider.Close()
+		return nil, nil, fmt.Errorf("configure MCP OAuth: %w", err)
+	}
+	return provider, validator, nil
 }
 
 type startupIdentityLinker interface {

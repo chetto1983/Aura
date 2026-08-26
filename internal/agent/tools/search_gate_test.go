@@ -44,6 +44,7 @@ func loadManifestFixture(t *testing.T) []Spec {
 	}
 	var dumped []struct {
 		Name        string          `json:"name"`
+		Deferred    bool            `json:"deferred"`
 		Summary     string          `json:"summary"`
 		Description string          `json:"description"`
 		Parameters  json.RawMessage `json:"parameters"`
@@ -56,6 +57,15 @@ func loadManifestFixture(t *testing.T) []Spec {
 	}
 	out := make([]Spec, 0, len(dumped))
 	for _, d := range dumped {
+		if !d.Deferred {
+			t.Fatalf("manifest fixture contains active tool %q", d.Name)
+		}
+		searchText := d.Summary + d.Description + string(d.Parameters)
+		for _, retired := range []string{"user_identifier", "untrusted MCP server"} {
+			if strings.Contains(searchText, retired) {
+				t.Fatalf("manifest fixture tool %q contains retired contract %q", d.Name, retired)
+			}
+		}
 		out = append(out, Spec{
 			Name:        d.Name,
 			Summary:     d.Summary,
@@ -112,31 +122,22 @@ var gateCases = []gateCase{
 	{"search the current web for prices or news", []string{"web_search"}},
 	{"download the contents of a web page", []string{"web_fetch"}},
 	{"web search for B&R 8LSA35.DB030S300-3 specifications", []string{"web_search"}},
-	{"send a file to the user", []string{"send_file"}},
-	{"read a file from disk", []string{"fs_read"}},
-	{"edit a file on disk", []string{"fs_edit"}},
-	{"write a new file", []string{"fs_write"}},
-	{"list files matching a glob pattern", []string{"fs_glob"}},
-	{"find text inside files in the repository", []string{"fs_grep"}},
-	{"run a shell command on the host", []string{"shell_exec"}},
 	{"kill a background process", []string{"shell_kill"}},
 	{"poll a still-running background command", []string{"shell_poll"}},
 	{"what time is it", []string{"current_time"}},
 	{"schedule a recurring task", []string{"task"}},
 	{"keep a todo list of the current work", []string{"todo_write"}},
 	{"run subtasks in parallel with worker agents", []string{"swarm_spawn"}},
-	{"install a new skill", []string{"skill"}},
-	{"search the user uploaded documents", []string{"document_search"}},
-	{"index a document for retrieval", []string{"document_index"}},
+	{"read a knowledge-work plugin pack and its connectors", []string{"plugin_pack"}},
+	{"install or author a new skill", []string{"skill_manage"}},
 	{"recall a deeper or historical fact from memory", []string{"memory__memory_recall"}},
 	{"remember a fact about the user", []string{"memory__memory_upsert_fact"}},
-	{"create a calendar event", []string{"calendar__create_event"}},
-	{"send an email", []string{"calendar__send_email"}},
+	{"create or update a Linear issue", []string{"linear__save_issue"}},
+	{"list issues in the user's Linear workspace including active Triage Intelligence suggestions for issues in triage", []string{"linear__list_issues"}},
+	{"create or update a comment on a Linear issue", []string{"linear__save_comment"}},
+	{"projects in the user's Linear workspace", []string{"linear__list_projects"}},
 	{"send a whatsapp message", []string{"whatsapp__send_message"}},
-	{
-		"search my whatsapp chat history",
-		[]string{"whatsapp__list_messages", "whatsapp__get_chat"},
-	},
+	{"get WhatsApp messages with optional surrounding context", []string{"whatsapp__list_messages"}},
 }
 
 func isGold(name string, gold []string) bool { return slices.Contains(gold, name) }

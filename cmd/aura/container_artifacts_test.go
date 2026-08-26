@@ -100,10 +100,12 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"aura-home:/var/lib/aura",
 		"127.0.0.1:${AURA_SETUP_PORT:-9081}:9081",
 		"whatsapp:",
-		"ghcr.io/chetto1983/whatsapp-mcp:sha-9911eb8",
-		"127.0.0.1:${AURA_WHATSAPP_MCP_PORT:-8092}:8080",
-		"127.0.0.1:${AURA_WHATSAPP_BRIDGE_PORT:-8094}:8081",
+		"ghcr.io/chetto1983/whatsapp-mcp:sha-a463da5@sha256:006602da0893ada0eb80c812384032e262c1c7f0642866bf194041078e86130f",
+		"127.0.0.1:${AURA_WHATSAPP_MCP_PORT:-8092}:8092",
+		"127.0.0.1:${AURA_WHATSAPP_BRIDGE_PORT:-8094}:8094",
 		"aura-whatsapp-session:/app/whatsapp-bridge/store",
+		"WHATSAPP_BRIDGE_TOKEN: ${AURA_ACCESS_TOKEN:?AURA_ACCESS_TOKEN required in .env}",
+		"MCP_OAUTH_RESOURCE: http://127.0.0.1:8092/mcp/",
 		"caddy:",
 		"0.0.0.0:${AURA_HTTPS_PORT:-443}:443",
 		"caddy-data:/data",
@@ -116,7 +118,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"garage:",
 		"image: ${AURA_GARAGE_IMAGE:-dxflrs/garage:v2.3.0}",
 		"GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?GARAGE_RPC_SECRET required in .env}",
-		"AURA_PIM_MCP_ADMIN_TOKEN: ${AURA_PIM_MCP_ADMIN_TOKEN:?AURA_PIM_MCP_ADMIN_TOKEN required in .env}",
+		"CALENDAR_MCP_OAuth__Resource: http://127.0.0.1:8093/",
 		"SEARXNG_SECRET: ${SEARXNG_SECRET:?SEARXNG_SECRET required in .env}",
 		"/etc/searxng/settings.template.yml",
 		"/etc/searxng/limiter.toml",
@@ -136,7 +138,8 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"image: arcadedata/arcadedb:26.8.1",
 		"aura-arcadedb:/home/arcadedb/databases",
 		"arcadedb-mcp:",
-		"127.0.0.1:8096:8096",
+		"MCP_OAUTH_RESOURCE: http://127.0.0.1:8096/mcp/",
+		"127.0.0.1:${AURA_ARCADEDB_MCP_PORT:-8096}:8096",
 		`test: ["CMD", "wget", "--spider", "-q", "-T", "3", "http://127.0.0.1:8096/health"]`,
 	} {
 		if !strings.Contains(compose, want) {
@@ -258,7 +261,15 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 			t.Fatalf("compose.minipc.yaml missing %q:\n%s", want, minipc)
 		}
 	}
-	for _, want := range []string{".git", ".worktrees", "output", ".env"} {
+	for _, want := range []string{
+		"**\n",
+		"!cmd/aura/**",
+		"!cmd/arcadedb-mcp/**",
+		"!internal/**",
+		"!web/**",
+		"!docker/aura/**",
+		"!docker/arcadedb-mcp/**",
+	} {
 		if !strings.Contains(dockerignore, want) {
 			t.Fatalf(".dockerignore missing %q:\n%s", want, dockerignore)
 		}
@@ -364,21 +375,18 @@ func TestGarageBootstrapCanReachIdempotencyRegistry(t *testing.T) {
 	}
 }
 
-// The memory sidecar is mounted INTO the agent loop at boot and the in-process mount
-// has no boot-retry, so `aura` starting before it is HEALTHY means an agent with zero
-// memory tools until the next full restart (the 2026-07-22 incident). That gate used to
-// name aura-agent-memory-mcp; when memory moved to arcadedb-mcp the gate did not move
-// with it and arcadedb-mcp had no healthcheck to gate on at all. Pin both halves.
-func TestAuraBootGatesOnTheMemorySidecarThatActuallyServesMemory(t *testing.T) {
+func TestMemorySidecarSharesAuraLoopbackNamespaceAndHasHealthcheck(t *testing.T) {
 	root := repoRootForTest(t)
 	compose := readProjectFile(t, root, "compose.yaml")
-	aura := composeServiceBlock(t, compose, "aura")
-	if !strings.Contains(aura, "arcadedb-mcp:\n        condition: service_healthy") {
-		t.Fatalf("aura must gate its boot on a HEALTHY arcadedb-mcp:\n%s", aura)
-	}
 	mcpService := composeServiceBlock(t, compose, "arcadedb-mcp")
-	if !strings.Contains(mcpService, "healthcheck:") {
-		t.Fatalf("arcadedb-mcp must declare the healthcheck aura gates on:\n%s", mcpService)
+	for _, want := range []string{
+		`network_mode: "service:aura"`,
+		"aura:\n        condition: service_started",
+		"healthcheck:",
+	} {
+		if !strings.Contains(mcpService, want) {
+			t.Fatalf("arcadedb-mcp missing %q:\n%s", want, mcpService)
+		}
 	}
 }
 

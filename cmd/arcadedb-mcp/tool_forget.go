@@ -14,8 +14,8 @@ import (
 // run wrote -- a probe, a bad extraction, a batch written under the wrong
 // identity. At least one of source, entity or subject is required: an
 // empty filter is refused, not read as "all".
-// The calling identity is NOT a field here (D-108): it travels in
-// _meta.aura.user_identifier.
+// The calling identity comes from the authenticated OAuth subject, never a
+// model-visible field.
 type MemoryForgetInput struct {
 	Source    *MemoryFactSource `json:"source,omitempty" jsonschema:"detach support from this source run; facts with other sources remain"`
 	Entity    string            `json:"entity,omitempty" jsonschema:"remove every fact touching this entity, in either direction, and the entity itself"`

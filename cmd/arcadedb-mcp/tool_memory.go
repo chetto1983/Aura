@@ -23,8 +23,8 @@ type MemoryFactSource struct {
 
 // MemoryUpsertFactInput mirrors arcadedb.Fact minus the embedding, which the
 // tool computes, and minus created_at, which is always now. The calling
-// identity is NOT a field here (D-108): it travels in _meta.aura.user_identifier,
-// read by identityFromMeta, so the model never emits or sees it.
+// identity is not a tool field: it comes from the authenticated OAuth subject,
+// so the model never emits or sees it.
 type MemoryUpsertFactInput struct {
 	Subject     string `json:"subject" jsonschema:"the entity the fact is about"`
 	SubjectKind string `json:"subject_kind,omitempty" jsonschema:"optional entity kind, e.g. Person or Organization"`
@@ -138,8 +138,8 @@ func memoryUpsertFactHandler(
 	}
 }
 
-// MemorySearchInput asks a question of the fact graph. The calling identity is
-// NOT a field here (D-108): it travels in _meta.aura.user_identifier.
+// MemorySearchInput asks a question of the fact graph. The calling identity
+// comes from the authenticated OAuth subject, never a model-visible field.
 type MemorySearchInput struct {
 	Query string `json:"query" jsonschema:"what to look for, in natural language"`
 	Limit int    `json:"limit,omitempty" jsonschema:"how many facts to return; defaults to 5"`
@@ -178,10 +178,8 @@ type MemoryRetrievalMetadata struct {
 
 // MemoryRecallInput is the model-facing read contract. Entity selects the exact
 // graph path; otherwise query selects hybrid retrieval. The path-specific tools
-// remain host operations for the CLI and automatic context. The calling identity
-// is NOT a field here (D-108): it travels in _meta.aura.user_identifier, and
-// this handler threads the real *mcp.CallToolRequest to its delegates below so
-// THEY read it, rather than resolving it itself.
+// remain host operations for the CLI and automatic context. The handler threads
+// the real *mcp.CallToolRequest to delegates so they read the OAuth subject.
 type MemoryRecallInput struct {
 	Query     string `json:"query,omitempty" jsonschema:"what to recall in natural language; required when entity is empty"`
 	Entity    string `json:"entity,omitempty" jsonschema:"exact entity name when known; selects graph traversal instead of semantic search"`
@@ -215,13 +213,13 @@ func memoryRecallHandler(
 		// other handler — not just a hope that whichever delegate it reaches below
 		// happens to check too. Missing identity refuses before the entity/query
 		// selector is even inspected.
-		if _, err := identityFromMeta(req); err != nil {
+		if _, err := identityFromToken(req); err != nil {
 			return nil, MemorySearchOutput{}, err
 		}
 		if strings.TrimSpace(in.Entity) != "" {
 			// The landmine (RESEARCH/plan <action>): this used to pass a literal nil
 			// request. Now that the delegate reads identity from req, nil must become
-			// req — identityFromMeta stays nil-safe anyway so a future delegate that
+			// req — identityFromToken stays nil-safe anyway so a future delegate that
 			// forgets to thread it refuses cleanly instead of panicking.
 			return memoryFactsAboutHandler(tenants)(ctx, req, MemoryFactsAboutInput{
 				Entity:    in.Entity,
@@ -299,8 +297,8 @@ func parseOptionalTime(value, field string) (time.Time, error) {
 	return parsed, nil
 }
 
-// MemoryFactsAboutInput asks the graph directly. The calling identity is NOT a
-// field here (D-108): it travels in _meta.aura.user_identifier.
+// MemoryFactsAboutInput asks the graph directly. The calling identity comes
+// from the authenticated OAuth subject, never a model-visible field.
 type MemoryFactsAboutInput struct {
 	Entity    string `json:"entity" jsonschema:"the entity to read the facts of, by exact name"`
 	Predicate string `json:"predicate,omitempty" jsonschema:"narrow to one relation, e.g. works_for"`

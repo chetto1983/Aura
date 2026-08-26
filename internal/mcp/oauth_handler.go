@@ -47,6 +47,10 @@ const (
 // _raise_if_non_interactive.
 var ErrOAuthAuthorizationRequired = errors.New("mcp oauth: this identity has not authorized this server; run `aura mcp login <server>`")
 
+// ErrStaticBearerRejected reports that a server refused the credential the operator
+// supplied. A static token cannot be refreshed or replaced by an authorization flow.
+var ErrStaticBearerRejected = errors.New("mcp oauth: server rejected the configured static bearer token")
+
 // ErrOAuthEndpointNotPinned refuses to send a client secret anywhere the operator did
 // not name.
 //
@@ -111,6 +115,13 @@ type OAuthOptions struct {
 //     leg fetches URLs NAMED BY THE SERVER — the one request set in this package whose
 //     destination an attacker chooses.
 func oauthHandlerFor(ctx context.Context, name string, server ManagedServer, settings OAuthSettings, httpClient *http.Client, o OAuthOptions, logger *slog.Logger) (auth.OAuthHandler, error) {
+	_, bearer := httpAuthFromEnv(server.Env)
+	if bearer != "" {
+		return &staticBearerHandler{
+			name:   name,
+			source: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: bearer, TokenType: "Bearer"}),
+		}, nil
+	}
 	if !UsesOAuth(server, settings) {
 		return nil, nil
 	}
@@ -140,6 +151,25 @@ func oauthHandlerFor(ctx context.Context, name string, server ManagedServer, set
 		return nil, fmt.Errorf("mcp oauth %q: %w", name, err)
 	}
 	return handler, nil
+}
+
+// staticBearerHandler uses the SDK's documented authorization seam. Supplying
+// Authorization from an HTTP RoundTripper can lose the header when the transport clones
+// or retries a request; StreamableClientTransport asks this handler for every request.
+type staticBearerHandler struct {
+	name   string
+	source oauth2.TokenSource
+}
+
+func (h *staticBearerHandler) TokenSource(context.Context) (oauth2.TokenSource, error) {
+	return h.source, nil
+}
+
+func (h *staticBearerHandler) Authorize(_ context.Context, _ *http.Request, response *http.Response) error {
+	if response != nil && response.Body != nil {
+		_ = response.Body.Close()
+	}
+	return fmt.Errorf("%w: %s", ErrStaticBearerRejected, h.name)
 }
 
 // applyClientRegistration picks the registration method. The SDK tries CIMD, then
@@ -196,7 +226,9 @@ func persistOnAuthorization(mountCtx context.Context, name, resourceURL string, 
 		if err != nil {
 			return nil, err
 		}
+		persisted := true
 		if err := store.Save(detached, grant); err != nil {
+			persisted = false
 			// Not fatal: the human just completed a consent flow and throwing it away
 			// over a storage fault would make them do it again with no explanation.
 			// The session works; only its survival across a restart is lost, so it is
@@ -204,7 +236,7 @@ func persistOnAuthorization(mountCtx context.Context, name, resourceURL string, 
 			resolveLogger(logger).Warn("mcp oauth: authorization succeeded but could not be persisted",
 				"server", name, "error", err)
 		}
-		return newPersistingTokenSource(detached, cfg.TokenSource(detached, tok), name, resourceURL, rc, store, logger, tok.AccessToken), nil
+		return newPersistingTokenSource(detached, cfg.TokenSource(detached, tok), name, resourceURL, rc, store, logger, tok.AccessToken, persisted), nil
 	}
 }
 

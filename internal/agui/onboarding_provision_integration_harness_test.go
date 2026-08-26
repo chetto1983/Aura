@@ -6,8 +6,8 @@
 // identity-scoping the grant seeds pushed it past the 600-LOC cap (CLAUDE.md, no god
 // class). The assertions live next door; this file is only the scaffolding they stand on.
 //
-// Why the Authula leg is a fake and not the real provider — goleak, and where the real one
-// IS proven — is documented at the top of onboarding_provision_integration_test.go.
+// Why the Authula leg is a deterministic stateful fake, and where the real provider is
+// independently proven, is documented at the top of onboarding_provision_integration_test.go.
 
 package agui
 
@@ -142,7 +142,7 @@ func (a liveRecovery) UpsertRecovery(ctx context.Context, identityID, question, 
 	})
 }
 
-// statefulAuthula is the in-memory Authula leg (goleak-clean — no provider goroutines). It
+// statefulAuthula is the deterministic in-memory Authula leg. It
 // records created/deleted users so COMP_B's zero-orphan-user property is provable, with
 // optional fault injection at CreateUser (B1) / CreateAccount (B2). It mirrors the real
 // adapter's ordered semantics (Hash → CreateUser → CreateAccount; DeleteUser cascades the

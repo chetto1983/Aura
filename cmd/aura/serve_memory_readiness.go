@@ -26,29 +26,39 @@ func memoryReadinessProbe(chat *chatEnv) (agui.ReadinessProbe, bool) {
 	if err != nil {
 		return agui.ReadinessProbe{}, false
 	}
-	required := false
-	for _, server := range policies {
+	memoryServer := ""
+	for name, server := range policies {
 		if mcp.IsSharedAdminGoverned(server) {
-			required = true
+			memoryServer = name
 			break
 		}
 	}
-	if !required {
+	if memoryServer == "" {
 		return agui.ReadinessProbe{}, false
 	}
 	return agui.ReadinessProbe{
 		Name: "memory",
 		Code: readiness.CodeMemoryUnavailable,
 		Check: func(ctx context.Context) error {
-			if chat.toolHandles.Memory == nil {
+			client := chat.toolHandles.Memory
+			owner := memoryReadinessOwner
+			if chat.liveMCP != nil {
+				if live, liveOwner := chat.liveMCP.OwnedHost(memoryServer); live != nil {
+					client = live
+					if strings.TrimSpace(liveOwner) != "" {
+						owner = liveOwner
+					}
+				}
+			}
+			if client == nil {
 				return errors.New("required memory capability is not mounted")
 			}
-			return checkMemoryReadiness(ctx, chat.toolHandles.Memory)
+			return checkMemoryReadiness(ctx, client, owner)
 		},
 	}, true
 }
 
-func checkMemoryReadiness(ctx context.Context, client *mcptools.MountedServer) error {
+func checkMemoryReadiness(ctx context.Context, client *mcptools.MountedServer, owner string) error {
 	if client == nil {
 		return errors.New("memory client is unavailable")
 	}
@@ -57,13 +67,10 @@ func checkMemoryReadiness(ctx context.Context, client *mcptools.MountedServer) e
 	// properties, so leaving it in failed every probe, answered /readyz with 503,
 	// and took the cockpit down over a memory that worked.
 	//
-	// The synthetic readiness owner still means more than a probe convenience:
-	// memory is one DATABASE per identity, so it gets its own, and a health check
-	// cannot read or disturb a real person's memory. D-108: identity travels only
-	// in _meta now, stamped by mount.go's IdentityMetaMiddleware from ctx (this
-	// handle is always mounted memory-policy) — not a "user_identifier" argument
-	// the server no longer reads at all.
-	text, err := client.CallToolText(identityctx.WithIdentityID(ctx, memoryReadinessOwner), "memory_search", map[string]any{
+	// A static mount uses the isolated synthetic owner. An OAuth mount reuses the
+	// subject whose stored grant opened the live session: the functional read remains
+	// tenant-scoped and never creates or borrows a session from another identity.
+	text, err := client.CallToolText(identityctx.WithIdentityID(ctx, owner), "memory_search", map[string]any{
 		"query": "Aura readiness",
 		"limit": 1,
 	})

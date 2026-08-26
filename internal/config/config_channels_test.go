@@ -80,18 +80,19 @@ func TestPhase13ConfigDefaultsAndOverrides(t *testing.T) {
 	}
 }
 
-// TestWhatsAppBridgeURLDefaultAndOverride locks the cockpit Connect knob: unset → the
-// in-compose sibling default; set → the override. An unset value must NOT be boot-fatal
-// (the connect routes answer 503 at call time, the SetWhatsAppBridge precedent).
-func TestWhatsAppBridgeURLDefaultAndOverride(t *testing.T) {
+// TestWhatsAppBridgeConfigDefaultAndOverride locks the private bridge management
+// endpoint and credential independently from the MCP OAuth transport.
+func TestWhatsAppBridgeConfigDefaultAndOverride(t *testing.T) {
 	clearPostgresEnv(t)
+	t.Setenv("AURA_WHATSAPP_BRIDGE_TOKEN", "")
 
-	if cfg := LoadDB(); cfg.WhatsAppBridgeURL != "http://whatsapp:8081" {
-		t.Errorf("WhatsAppBridgeURL default = %q, want http://whatsapp:8081", cfg.WhatsAppBridgeURL)
+	if cfg := LoadDB(); cfg.WhatsAppBridgeURL != "http://whatsapp:8081" || cfg.WhatsAppBridgeToken != "" {
+		t.Errorf("WhatsApp bridge defaults = %q / %q", cfg.WhatsAppBridgeURL, cfg.WhatsAppBridgeToken)
 	}
 
 	t.Setenv("AURA_WHATSAPP_BRIDGE_URL", "http://127.0.0.1:8094")
-	if cfg := LoadDB(); cfg.WhatsAppBridgeURL != "http://127.0.0.1:8094" {
-		t.Errorf("WhatsAppBridgeURL override = %q, want http://127.0.0.1:8094", cfg.WhatsAppBridgeURL)
+	t.Setenv("AURA_WHATSAPP_BRIDGE_TOKEN", "deployment-secret")
+	if cfg := LoadDB(); cfg.WhatsAppBridgeURL != "http://127.0.0.1:8094" || cfg.WhatsAppBridgeToken != "deployment-secret" {
+		t.Errorf("WhatsApp bridge overrides = %q / %q", cfg.WhatsAppBridgeURL, cfg.WhatsAppBridgeToken)
 	}
 }

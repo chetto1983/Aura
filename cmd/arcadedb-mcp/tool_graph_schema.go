@@ -10,7 +10,7 @@ import (
 )
 
 // GraphSchemaInput is deliberately empty of everything, including the identity
-// (D-108: it travels in _meta.aura.user_identifier now, not here) — the schema
+// (it comes from the authenticated OAuth subject) — the schema
 // of the connected database is the whole answer, and taking a database name
 // here would let a caller read across tenants. The schema is per tenant because
 // the database is. Keeping the type (rather than deleting it) is deliberate:

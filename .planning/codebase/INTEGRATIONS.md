@@ -42,7 +42,7 @@
   - Auth: `TELEGRAM_BOT_TOKEN`; optional API base URL settings support a local Telegram Bot API deployment.
 - Aura PIM MCP - Mail, calendar, and contacts integration is provided by the pinned `aura-pim-mcp` sidecar in `docker-compose.yml`; its curated model-facing catalog entry is `calendar` in `internal/mcp/manager/catalog.go`.
   - SDK/Client: Streamable HTTP MCP through `internal/mcp/`, plus server-side management proxy routes in `internal/agui/connect_pim_api.go`.
-  - Auth: `AURA_PIM_MCP_ADMIN_TOKEN` is injected only on server-to-server management calls; upstream account grants are handled by the sidecar.
+  - Auth: standard remote-MCP OAuth; Aura forwards the identity-scoped access token to both MCP and management routes, and the verified token `sub` selects the sidecar tenant. Upstream provider grants remain tenant-scoped behind that boundary.
   - Providers: Google accounts use OAuth redirect, Microsoft/Outlook accounts use device code, and the sidecar also supports IMAP, ICS, and JSON account sources; the management flow is implemented in `internal/agui/connect_pim_api.go`.
 - WhatsApp MCP - Messaging and account management are supplied by the pinned `whatsapp-mcp` sidecar in `docker-compose.yml`; the curated tool entry is `whatsapp` in `internal/mcp/manager/catalog.go`.
   - SDK/Client: Streamable HTTP MCP through `internal/mcp/`, with QR/status management routes under `internal/agui/` and proxy wiring in `cmd/aura/integrations_proxy.go`.
@@ -143,7 +143,7 @@
 - ArcadeDB: `ARCADEDB_PASSWORD`, `ARCADEDB_APP_PASSWORD`, and `AURA_ARCADEDB_TENANT_SECRET`, consumed by `docker-compose.yml` and `internal/arcadedb/`.
 - Object storage: `GARAGE_RPC_SECRET`, `AURA_GARAGE_ADMIN_TOKEN`, `AURA_OBJECTSTORE_ACCESS_KEY`, and `AURA_OBJECTSTORE_SECRET_KEY`, consumed by `docker-compose.yml` and `internal/objectstore/`.
 - Embeddings: `AURA_EMBED_REVISION` and `AURA_EMBED_FINGERPRINT`, with dimension/model settings consumed by `docker-compose.yml` and `internal/config/config_embed.go`.
-- Integration sidecars: `AURA_PIM_MCP_ADMIN_TOKEN` and `SEARXNG_SECRET`, consumed by `docker-compose.yml` and the server-side proxies under `internal/agui/`.
+- Integration sidecars: Calendar, WhatsApp, and Memory use persisted identity-scoped remote-MCP OAuth grants and add no sidecar-specific `.env` secret; `SEARXNG_SECRET` remains specific to SearXNG.
 - Conditional hosted/provider settings: `OPENROUTER_API_KEY`, `AURA_LLM_PROVIDER`, `AURA_LLM_MODEL`, and `AURA_LLM_BASE_URL`, consumed by `internal/llm/config.go`.
 - Conditional channels and public ingress: `TELEGRAM_BOT_TOKEN`, `DESEC_TOKEN`, and `AURA_WEB_PUBLIC_URL`, consumed by `internal/channels/telegram/`, `Caddyfile`, and MCP OAuth callback construction.
 

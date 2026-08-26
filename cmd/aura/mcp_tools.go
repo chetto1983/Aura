@@ -86,18 +86,13 @@ func runtimeMCPEgressPolicy(server mcp.ManagedServer) mcp.EgressPolicy {
 	return mcp.RuntimeEgressPolicy(cfg.Profile.Strict(), server)
 }
 
-// cliSessionOptions is the SessionOptions every CLI-opened session carries: the
-// _meta.aura operation stamp, the same middleware mount.go's sendingMiddleware
-// attaches to every agent-bridge mount — a policy fix in one cannot miss the other.
-func cliSessionOptions() mcp.SessionOptions {
-	return mcp.SessionOptions{Sending: []sdkmcp.Middleware{mcp.OperationMetaMiddleware()}}
-}
-
 // openManagedMCPSession opens a managed server's session through the SDK. Renamed
 // from its pre-SDK "...Transport" name: that word now names a specific, different
 // SDK type, and keeping the old name would mislead a future reader.
 func openManagedMCPSession(ctx context.Context, name string, server mcp.ManagedServer) (*sdkmcp.ClientSession, error) {
-	return mcp.OpenSDKSession(ctx, name, server, runtimeMCPEgressPolicy(server), cliSessionOptions())
+	return mcp.OpenSDKSession(ctx, name, server, runtimeMCPEgressPolicy(server), mcp.SessionOptions{
+		OAuth: runtimeMCPOAuth(ctx),
+	})
 }
 
 // probeManagedMCPServer is the board's per-row liveness check. It carries the same
@@ -112,7 +107,7 @@ func probeManagedMCPServer(ctx context.Context, name string, server mcp.ManagedS
 func openAndListMCPTools(ctx context.Context, name string, cfg mcp.ServerConfig) (*sdkmcp.ClientSession, []*sdkmcp.Tool, error) {
 	ctx, cancel := context.WithTimeout(ctx, mcpInspectionTimeout())
 	defer cancel()
-	session, err := mcp.OpenSDKSessionForConfig(ctx, ctx, name, cfg, cliSessionOptions())
+	session, err := mcp.OpenSDKSessionForConfig(ctx, ctx, name, cfg, mcp.SessionOptions{})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -138,7 +133,7 @@ func openAndListManagedMCPTools(ctx context.Context, name string, server mcp.Man
 		if cfgErr != nil {
 			return nil, nil, cfgErr
 		}
-		session, err = mcp.OpenSDKSessionForConfig(ctx, ctx, name, cfg, cliSessionOptions())
+		session, err = mcp.OpenSDKSessionForConfig(ctx, ctx, name, cfg, mcp.SessionOptions{})
 	}
 	if err != nil {
 		return nil, nil, err
@@ -173,25 +168,17 @@ func drainSDKTools(ctx context.Context, session *sdkmcp.ClientSession) ([]*sdkmc
 // mirrors bridge_supervisor.go's decodeResult). server names the MCP server the
 // session belongs to, for the decoded error's "mcp %q: tool ..." shape.
 //
-// scoped gates the _meta.aura.user_identifier stamp (D-108): only the memory path
-// carries it, through the same mcp.SetAuraMetaField helper the agent bridge's
-// IdentityMetaMiddleware uses, so a key-name divergence between the two writers is
-// a build-time-testable invariant. A scoped call with no resolvable ctx identity
-// returns the existing "no identity to scope to" error rather than stamping an
-// empty string — runMemory resolves the real owner up front, so an unscoped CLI
-// context here is a wiring bug, not a call the bridge's operator-default should
-// paper over.
-func callSessionText(ctx context.Context, session *sdkmcp.ClientSession, server, tool string, args map[string]any, scoped bool) (string, error) {
-	params := &sdkmcp.CallToolParams{Name: tool, Arguments: args}
-	if scoped {
-		identityID := identityctx.IdentityID(ctx)
-		if identityID == "" {
+// requireIdentity prevents a memory call from proceeding unless the session was
+// opened from an identity-scoped context. The OAuth bearer, not the tool request,
+// carries that subject to the resource server.
+func callSessionText(ctx context.Context, session *sdkmcp.ClientSession, server, tool string, args map[string]any, requireIdentity bool) (string, error) {
+	if requireIdentity {
+		if identityctx.IdentityID(ctx) == "" {
 			return "", errors.New(
 				"memory call has no identity to scope to: resolve the operator identity before calling")
 		}
-		mcp.SetAuraMetaField(params, mcp.MetaFieldUserIdentifier, identityID)
 	}
-	res, err := session.CallTool(ctx, params)
+	res, err := session.CallTool(ctx, &sdkmcp.CallToolParams{Name: tool, Arguments: args})
 	if err != nil {
 		return "", err
 	}

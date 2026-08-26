@@ -319,38 +319,39 @@ in-process, il modello a versioni, Docling, lo store di retrieval Postgres, il d
 
 ## 6. Lavoro progettato e non fatto
 
-**6.8 — MCP per identità: metà fatta, e le due metà mancanti non sono lo stesso lavoro.**
-Il 2026-08-24 il registry MCP è passato su Postgres (`aura.mcp_server`, migration `0101`, il
-file `servers.json` cancellato) e un server dietro OAuth ora monta **quando lo si autorizza** e
-ritorna dopo un riavvio dal grant salvato. Misurato sullo stack acceso: calendar 1 tool, linear
-53, memory 4, notion 28, whatsapp 15, tutti `ready` sul board. Resta aperto questo:
+**6.8 — MCP per identità: chiuso sullo stack reale.**
+Dal 2026-08-26 il registry dei tool resta uno per processo, ma le sessioni remote non lo sono:
+`internal/agent/mcptools` mantiene un pool per coppia identità/server e apre ogni sessione con il
+grant in `aura.identity_mcp_oauth`. Calendar/PIM, WhatsApp e Memory ricevono soltanto un access
+token standard; il suo `sub` è l'unico selettore del tenant. Il wire MCP non trasporta header o
+metadati proprietari, argomenti di identità o bearer statici condivisi.
 
-- *Un registry per processo.* `tools.Registry` è uno solo e condiviso. I grant invece sono per
-  identità (`aura.identity_mcp_oauth`, `0100`), quindi un server che **due** identità hanno
-  autorizzato viene rifiutato al boot (`mcpoauth.ErrAmbiguousOwner`) invece di dare a uno il
-  token dell'altro. È la scelta giusta per un'appliance a operatore singolo e **sbagliata** per
-  una multi-utente: LibreChat tiene un pool di connessioni per utente
-  (`MCPManager.getUserConnection`), non un registry solo. Va deciso, non scoperto il giorno che
-  esiste la seconda persona.
-- *`calendar` e `whatsapp` sono single-account per costruzione.* `sendingMiddleware`
-  (`internal/agent/mcptools/mount.go:120`) aggiunge `IdentityMetaMiddleware` **solo** se
-  `policy.memory`, quindi solo `memory` porta `_meta.aura.user_identifier` e instrada al
-  database ArcadeDB della persona. Gli altri due condividono un account PIM e un pairing
-  WhatsApp fra tutte le identità. **Il lavoro non è simmetrico**: `aura-pim-mcp` è già
-  multi-account (`list_accounts` restituisce `accountId`, ogni tool ne prende uno), quindi
-  calendar diventa per-identità stampando l'identità sul mount (una riga in
-  `bridge_risk.go:149`) e mappando identità → `accountId` **nel nostro fork** del sidecar —
-  stessa forma di Linear. Il bridge WhatsApp invece non ha alcun concetto di account: una
-  sessione pairata, un volume, una porta. Lì per-identità significa **un container per
-  identità** (lo schema che Aura già usa per ArcadeDB), provisionato dalla saga che crea già le
-  directory per identità; forkare il bridge per tenere N sessioni whatsmeow combatte contro un
-  design upstream che assume un dispositivo solo.
-- *Non spiegato, e ormai non riproducibile.* `/var/lib/aura/mcp/servers.json` è stato trovato
-  troncato a mappa vuota **due volte** nello stesso pomeriggio, con dentro i nomi `hung`,
-  `e2e-probe`, `ssrf-probe` — che sono fixture di test di `cmd/aura`. Solo `aura` e
-  `aura-migrate` montavano quel volume, quindi un test sull'host non poteva averlo scritto. La
-  causa non è stata trovata; il file non esiste più, quindi il sintomo non può tornare. Se
-  qualcosa di simile ricapita su `aura.mcp_server`, questa riga è il precedente.
+- Il fork Calendar/PIM usa il subject anche sulla `/admin` API; il cockpit inoltra lo stesso
+  access token della sessione MCP senza esporlo al browser. Gli account restituiscono il proprio
+  ID canonico, che il cockpit riusa nei flussi Google e device-code.
+- Il fork WhatsApp mantiene runtime e SQLite separati per subject; il pairing gateway resta un
+  management plane interno distinto dal trasporto MCP.
+- Memory deriva dal subject il database e la credenziale ArcadeDB. Il provider di contesto del
+  Runner si collega al mount OAuth differito dopo l'avvio del listener, invece di conservare lo
+  snapshot nil del bootstrap.
+- La configurazione dei server vive in Postgres (`aura.mcp_server`, migration `0101`); il vecchio
+  `/var/lib/aura/mcp/servers.json` non esiste più.
+
+Misura live del 2026-08-26: il tier avversariale a due subject è verde 3/3 sotto `-race` e
+`goleak` contro i tre sidecar reali. Calendar non espone l'account dell'altro subject,
+WhatsApp non espone il marker dell'altro SQLite e Memory non espone il fatto dell'altro
+database; una `_meta.tenant` contraffatta non prevale sul `sub` OAuth. Lo spec Cockpit/agente
+reale è verde 2/2 (10.0/10): PIM consegna su fake SMTP, il turno termina `content_stop` e il
+cleanup rimuove account e conversazione. I doctor di produzione riaprono Calendar 1 tool,
+Memory 10 e WhatsApp 15 senza login manuale; nei log correnti non compaiono `invalid_grant`,
+`memory MCP is not mounted` o `conversation memory context unavailable`.
+
+Il tier di isolamento usa il plugin token di produzione e le chiavi live senza costruire il
+rate limiter, ma il provider Authula completo ha un gate lifecycle separato ora verde sotto
+`-race` e `goleak`. Il RED mostrava il cleaner del provider rate-limit memory 1.42.0 e i due
+worker `database/sql`; la composizione finale riusa il plugin ufficiale `secondary-storage`
+memory, il cui `Close()` è joinable, e chiude anche event bus e DB posseduti. Il rate limiter
+continua a consentire la prima richiesta e negare la seconda; non è stata introdotta una fork.
 
 **6.1 — Compaction: quel che resta aperto.** Slice 1b è consegnata (riga durevole `0096` con
 watermark, trigger anticipato, aggiornamento iterativo, ramo per branch, `/compact` esplicito con

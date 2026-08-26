@@ -2,14 +2,19 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
-	"github.com/chetto1983/aura/internal/identityctx"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"golang.org/x/oauth2"
 
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcpoauth"
 )
 
@@ -26,6 +31,88 @@ type fakeStore struct {
 	loadErr error
 	saved   []mcpoauth.Grant
 	saveErr error
+}
+
+type rotatingGrantStore struct {
+	mu    sync.Mutex
+	grant mcpoauth.Grant
+}
+
+func (s *rotatingGrantStore) Load(context.Context, string) (mcpoauth.Grant, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.grant, nil
+}
+
+func (s *rotatingGrantStore) Save(_ context.Context, grant mcpoauth.Grant) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.grant = grant
+	return nil
+}
+
+func TestRestoredSourcesDoNotReuseARotatedRefreshToken(t *testing.T) {
+	t.Parallel()
+	var refreshes atomic.Int32
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("parse refresh request: %v", err)
+			http.Error(w, "bad form", http.StatusBadRequest)
+			return
+		}
+		if got := r.Form.Get("refresh_token"); got != "refresh-1" {
+			t.Errorf("refresh token = %q, want refresh-1", got)
+		}
+		if refreshes.Add(1) > 1 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid_grant"})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  "access-2",
+			"refresh_token": "refresh-2",
+			"token_type":    "Bearer",
+			"expires_in":    3600,
+		})
+	}))
+	t.Cleanup(tokenServer.Close)
+
+	client, err := resolvedClient{
+		ClientID:      "aura",
+		TokenEndpoint: tokenServer.URL,
+		AuthStyle:     int(oauth2.AuthStyleInParams),
+	}.encode()
+	if err != nil {
+		t.Fatalf("encode client: %v", err)
+	}
+	store := &rotatingGrantStore{grant: mcpoauth.Grant{
+		ServerName: "calendar", AccessToken: "access-1", RefreshToken: "refresh-1",
+		TokenType: "Bearer", ClientInfo: client, ExpiresAt: time.Now().Add(-time.Minute),
+	}}
+	ctx := identityctx.WithIdentityID(t.Context(), "6f1c4d24-27a1-4f0e-9a0a-9a0f0b2c1d33")
+	first, err := restoreTokenSource(ctx, "calendar", store, http.DefaultClient, nil)
+	if err != nil {
+		t.Fatalf("restore first source: %v", err)
+	}
+	stale, err := restoreTokenSource(ctx, "calendar", store, http.DefaultClient, nil)
+	if err != nil {
+		t.Fatalf("restore stale source: %v", err)
+	}
+	if _, err := first.Token(); err != nil {
+		t.Fatalf("first refresh: %v", err)
+	}
+	got, err := stale.Token()
+	if err != nil {
+		t.Fatalf("stale source reused the rotated refresh token: %v", err)
+	}
+	if got.AccessToken != "access-2" {
+		t.Fatalf("stale source access token = %q, want access-2", got.AccessToken)
+	}
+	if got := refreshes.Load(); got != 1 {
+		t.Fatalf("refresh requests = %d, want 1", got)
+	}
 }
 
 // The whole point of the store: a mount for an identity that already authorized must not
@@ -64,6 +151,38 @@ func TestStoredGrantIsRestoredWithoutAnAuthorizationFlow(t *testing.T) {
 	// rewrite the row on every mount for no reason.
 	if len(store.saved) != 0 {
 		t.Fatalf("an unchanged token was persisted again: %+v", store.saved)
+	}
+}
+
+func TestStoredOAuthAccessTokenUsesTheExistingGrantPath(t *testing.T) {
+	t.Parallel()
+	blob, err := resolvedClient{ClientID: "A1", TokenEndpoint: "https://issuer.example/token"}.encode()
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	store := &fakeStore{grant: mcpoauth.Grant{
+		ServerName:  "calendar",
+		AccessToken: "identity-token",
+		ClientInfo:  blob,
+		ExpiresAt:   time.Now().Add(time.Hour),
+	}}
+	got, err := StoredOAuthAccessToken(t.Context(), "calendar", store, EgressPolicy{}, nil)
+	if err != nil {
+		t.Fatalf("StoredOAuthAccessToken: %v", err)
+	}
+	if got != "identity-token" {
+		t.Fatalf("access token = %q", got)
+	}
+	if len(store.saved) != 0 {
+		t.Fatalf("unchanged grant was persisted: %+v", store.saved)
+	}
+}
+
+func TestStoredOAuthAccessTokenRequiresAuthorization(t *testing.T) {
+	t.Parallel()
+	_, err := StoredOAuthAccessToken(t.Context(), "calendar", &fakeStore{loadErr: mcpoauth.ErrNoGrant}, EgressPolicy{}, nil)
+	if !errors.Is(err, ErrOAuthAuthorizationRequired) {
+		t.Fatalf("err = %v, want ErrOAuthAuthorizationRequired", err)
 	}
 }
 
@@ -180,7 +299,7 @@ func TestPersistingTokenSourceWritesOnlyNewTokens(t *testing.T) {
 	t.Parallel()
 	store := &fakeStore{}
 	current := &oauth2.Token{AccessToken: "t1", Expiry: time.Now().Add(time.Hour)}
-	src := newPersistingTokenSource(context.Background(), oauth2.StaticTokenSource(current), "notion", "https://mcp.notion.com/mcp", resolvedClient{TokenEndpoint: "https://x.example/token"}, store, nil, "")
+	src := newPersistingTokenSource(context.Background(), oauth2.StaticTokenSource(current), "notion", "https://mcp.notion.com/mcp", resolvedClient{TokenEndpoint: "https://x.example/token"}, store, nil, "", false)
 
 	for range 3 {
 		if _, err := src.Token(); err != nil {
@@ -204,7 +323,7 @@ func TestPersistingTokenSourceWritesOnlyNewTokens(t *testing.T) {
 func TestPersistFailureDoesNotBreakTheSession(t *testing.T) {
 	t.Parallel()
 	store := &fakeStore{saveErr: errors.New("disk on fire")}
-	src := newPersistingTokenSource(context.Background(), oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "t1"}), "notion", "u", resolvedClient{}, store, nil, "")
+	src := newPersistingTokenSource(context.Background(), oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "t1"}), "notion", "u", resolvedClient{}, store, nil, "", false)
 
 	tok, err := src.Token()
 	if err != nil {

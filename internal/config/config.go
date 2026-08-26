@@ -232,11 +232,10 @@ type Config struct {
 	ProfileDir        string // AURA_PROFILE_DIR — per-identity Agent.md root, default ~/.aura/agents
 	ProfileCertaintyN int    // AURA_PROFILE_CERTAINTY_N — observation threshold for auto-add, default 3
 
-	// Cockpit "Connect" device-linking knob. WhatsAppBridgeURL is the aura-whatsapp bridge
-	// management REST base URL the /api/connect/whatsapp/* proxy forwards to; the in-compose
-	// default points at the sibling sidecar. An unset/empty value is NOT boot-fatal — the
-	// connect routes answer 503 at call time so a stack without the sidecar boots fine.
-	WhatsAppBridgeURL string // AURA_WHATSAPP_BRIDGE_URL — aura-whatsapp bridge mgmt REST base, default http://whatsapp:8081
+	// Cockpit WhatsApp device-linking endpoint. This is the bridge management plane,
+	// separate from the OAuth-protected MCP resource server.
+	WhatsAppBridgeURL   string // AURA_WHATSAPP_BRIDGE_URL — tenant gateway base, default http://whatsapp:8081
+	WhatsAppBridgeToken string // AURA_WHATSAPP_BRIDGE_TOKEN — private bridge credential, never an MCP bearer
 
 	// MCPSandboxOrigin is the SECOND origin the cockpit frames MCP Apps views from
 	// (AURA_MCP_SANDBOX_ORIGIN, e.g. https://aura.lan:8444). MCP Apps requires a web
@@ -246,13 +245,9 @@ type Config struct {
 	// which is the extension's own progressive-enhancement contract.
 	MCPSandboxOrigin string // AURA_MCP_SANDBOX_ORIGIN — origin serving /mcp-sandbox, no default
 
-	// Cockpit "Connect Google Calendar" knobs. CalendarMCPURL is the aura-pim-mcp sidecar's
-	// base URL the /api/connect/pim/* admin-proxy forwards to; CalendarMCPAdminToken is the
-	// /admin Bearer token injected server-side (never returned to the client). An unset URL is
-	// NOT boot-fatal — the connect routes answer 503 at call time so a stack without the sidecar
-	// boots fine.
-	CalendarMCPURL        string // AURA_PIM_MCP_URL — aura-pim-mcp /admin REST base, default http://aura-pim-mcp:8080
-	CalendarMCPAdminToken string // AURA_PIM_MCP_ADMIN_TOKEN — /admin Bearer token, default changeme-aura-pim-local
+	// Cockpit "Connect Google Calendar" endpoint. Authentication comes from the
+	// identity-scoped OAuth grant used by the generic remote MCP transport.
+	CalendarMCPURL string // AURA_PIM_MCP_URL — aura-pim-mcp /admin REST base, default http://aura-pim-mcp:8080
 
 	// Phase 36 (plan 06) Garage Admin API v2 (D-08). The provisioning saga (plan 08)
 	// calls the INTERNAL-only admin API to create a per-identity bucket + scoped key.
@@ -516,14 +511,14 @@ func loadBase() *Config {
 		ProfileDir:        envDefault("AURA_PROFILE_DIR", idroot.DefaultRoot()),
 		ProfileCertaintyN: envutil.IntDefault("AURA_PROFILE_CERTAINTY_N", 3),
 
-		WhatsAppBridgeURL: envDefault("AURA_WHATSAPP_BRIDGE_URL", "http://whatsapp:8081"),
+		WhatsAppBridgeURL:   envDefault("AURA_WHATSAPP_BRIDGE_URL", "http://whatsapp:8081"),
+		WhatsAppBridgeToken: os.Getenv("AURA_WHATSAPP_BRIDGE_TOKEN"),
 
 		// No default: an origin guessed by Aura would be wrong for every deployment
 		// but one, and a wrong sandbox origin is a refusal, not a degradation.
 		MCPSandboxOrigin: os.Getenv("AURA_MCP_SANDBOX_ORIGIN"),
 
-		CalendarMCPURL:        envDefault("AURA_PIM_MCP_URL", "http://aura-pim-mcp:8080"),
-		CalendarMCPAdminToken: envDefault("AURA_PIM_MCP_ADMIN_TOKEN", "changeme-aura-pim-local"),
+		CalendarMCPURL: envDefault("AURA_PIM_MCP_URL", "http://aura-pim-mcp:8080"),
 
 		// Default OFF: the onboarding saga refuses a 2nd identity until an operator
 		// declares the deployment fit for one (see the field doc for what is shared).

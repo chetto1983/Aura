@@ -242,9 +242,27 @@ describe('CalendarConnect', () => {
     expect(link.getAttribute('rel')).toContain('noopener');
   });
 
+  it('starts provider authentication with the canonical account id returned by create', async () => {
+    listPimAccounts.mockResolvedValue({ accounts: [] });
+    createPimAccount.mockResolvedValue({ ...ACCOUNT, id: 'tenant__work' });
+    pimGoogleStart.mockResolvedValue(GOOGLE_START);
+    renderConnect();
+    await screen.findByText(/No calendar accounts yet/i);
+
+    fillField(/Account ID/i, 'work');
+    fillField(/Display name/i, 'Work calendar');
+    fillField(/^Client ID/i, 'client-id-123');
+    fillField(/^Client secret/i, 'client-secret-456');
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+
+    await waitFor(() => {
+      expect(pimGoogleStart).toHaveBeenCalledWith('tenant__work');
+    });
+  });
+
   it('Microsoft: switching provider swaps fields and runs the device-code flow', async () => {
     listPimAccounts.mockResolvedValue({ accounts: [] });
-    createPimAccount.mockResolvedValue({ ...ACCOUNT, provider: 'microsoft365' });
+    createPimAccount.mockResolvedValue({ ...ACCOUNT, id: 'ms', provider: 'microsoft365' });
     pimDeviceStart.mockResolvedValue(DEVICE_START);
     const status: PimAuthStatus = { status: 'completed', message: 'ok' };
     pimAuthStatus.mockResolvedValue(status);

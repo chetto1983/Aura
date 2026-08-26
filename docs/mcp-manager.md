@@ -203,11 +203,13 @@ Blocked tools never enter the agent registry.
 ## Connecting calendar/email accounts (OAuth)
 
 The `calendar` recipe is the PIM sidecar (forked calendar-mcp). It manages OAuth accounts
-through its token-gated `/admin` REST API, which Aura's cockpit drives via the backend
-routes at `/api/connect/pim/*`. Aura injects both the deployment bearer and the authenticated
-principal as `X-Aura-Identity`; the browser holds neither credential and cannot select a
-different tenant. The retired `/api/integrations/*` proxy and `aura mcp console` do not
-exist: account management and agent tool calls share the same remote-MCP identity model.
+through its OAuth-protected `/admin` REST API, which Aura's cockpit drives via the backend
+routes at `/api/connect/pim/*`. The backend obtains the same identity-scoped grant used by
+the MCP transport and forwards its access token as `Authorization: Bearer`; the sidecar
+validates the standard token and uses its `sub` as the sole tenant selector. The browser
+holds no token and cannot select a different subject. The retired `/api/integrations/*`
+proxy and `aura mcp console` do not exist: account management and agent tool calls share
+the same remote-MCP identity model.
 
 **Microsoft / Outlook (device code)** — no redirect, works everywhere:
 

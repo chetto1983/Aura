@@ -1,4 +1,4 @@
-// Package webauth embeds the Authula (Apache-2.0, v1.11.0) Go auth framework as
+// Package webauth embeds the Authula (Apache-2.0, v1.42.0) Go auth framework as
 // the cockpit's "industrial" web-auth provider, behind the AURA_WEB_AUTH_PROVIDER
 // feature flag (see docs/cockpit-overhaul/05-authula-auth-SPEC.md, Option A2). It
 // constructs authula.New with the three mandatory hardenings:
@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	authula "github.com/Authula/authula"
@@ -36,6 +37,7 @@ import (
 	emailpasswordtypes "github.com/Authula/authula/plugins/email-password/types"
 	ratelimitplugin "github.com/Authula/authula/plugins/rate-limit"
 	ratelimittypes "github.com/Authula/authula/plugins/rate-limit/types"
+	secondarystorageplugin "github.com/Authula/authula/plugins/secondary-storage"
 	sessionplugin "github.com/Authula/authula/plugins/session"
 	totpplugin "github.com/Authula/authula/plugins/totp"
 	totptypes "github.com/Authula/authula/plugins/totp/types"
@@ -82,7 +84,11 @@ type Config struct {
 // session-validate seam, and lifecycle Close. It is nil-safe so the passphrase path
 // can leave it unset.
 type Provider struct {
-	auth *authula.Auth
+	auth      *authula.Auth
+	tokens    *mcpTokenPlugin
+	oauth     *OAuthServer
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // New constructs the embedded Authula provider with the hardened config. It does NOT
@@ -139,22 +145,27 @@ func New(cfg Config) (_ *Provider, err error) {
 			TrustedOrigins: cfg.TrustedOrigins,
 		}),
 		authulaconfig.WithPlugins(authulamodels.PluginsConfig{
-			authulamodels.PluginSession.String():       map[string]any{"enabled": true},
-			authulamodels.PluginEmailPassword.String(): map[string]any{"enabled": true},
-			authulamodels.PluginTOTP.String():          map[string]any{"enabled": true},
-			authulamodels.PluginCSRF.String():          map[string]any{"enabled": true},
-			authulamodels.PluginRateLimit.String():     map[string]any{"enabled": true},
+			authulamodels.PluginSession.String():          map[string]any{"enabled": true},
+			authulamodels.PluginEmailPassword.String():    map[string]any{"enabled": true},
+			authulamodels.PluginTOTP.String():             map[string]any{"enabled": true},
+			authulamodels.PluginCSRF.String():             map[string]any{"enabled": true},
+			authulamodels.PluginSecondaryStorage.String(): map[string]any{"enabled": true},
+			authulamodels.PluginRateLimit.String():        map[string]any{"enabled": true},
+			mcpTokenPluginID:                              map[string]any{"enabled": true},
 		}),
 	)
 
+	tokenPlugin := newMCPTokenPlugin()
+	plugins := buildPlugins(rateLimitMax(cfg.RateLimitMax))
+	plugins = append(plugins, tokenPlugin)
 	auth := authula.New(&authula.AuthConfig{
 		Config:  authCfg,
-		Plugins: buildPlugins(rateLimitMax(cfg.RateLimitMax)),
+		Plugins: plugins,
 	})
 	// Force handler construction now (registers routes/hooks once via sync.Once) so a
 	// late registration error surfaces at boot, not on the first request.
 	_ = auth.Handler()
-	return &Provider{auth: auth}, nil
+	return &Provider{auth: auth, tokens: tokenPlugin}, nil
 }
 
 func validateAuthulaSecret(secret string) error {
@@ -208,10 +219,18 @@ func buildPlugins(rateLimitAttempts int) []authulamodels.Plugin {
 			SameSite:               "strict",
 			EnableHeaderProtection: true,
 		}),
+		secondarystorageplugin.New(secondarystorageplugin.SecondaryStoragePluginConfig{
+			Enabled:  true,
+			Provider: secondarystorageplugin.SecondaryStorageProviderMemory,
+		}),
 		ratelimitplugin.New(ratelimittypes.RateLimitPluginConfig{
 			Enabled: true,
 			// In-memory backend: no external dep that can fail-open (spec §8.4 DoS row).
-			Provider: ratelimittypes.RateLimitProviderInMemory,
+			// Authula only consults its secondary-storage service from this selector.
+			// That service is still its official in-memory backend, whose Close stops
+			// the cleaner that the direct memory/database providers leave running.
+			// https://github.com/Authula/authula/blob/v1.42.0/plugins/rate-limit/plugin.go
+			Provider: ratelimittypes.RateLimitProviderRedis,
 			Window:   time.Minute,
 			Max:      rateLimitAttempts,
 		}),
@@ -222,6 +241,17 @@ func buildPlugins(rateLimitAttempts int) []authulamodels.Plugin {
 func (p *Provider) Handler() http.Handler {
 	return p.auth.Handler()
 }
+
+func (p *Provider) ConfigureMCPOAuth(validator *Validator, publicURL string) error {
+	oauthServer, err := newOAuthServer(publicURL, p.tokens, validator)
+	if err != nil {
+		return err
+	}
+	p.oauth = oauthServer
+	return nil
+}
+
+func (p *Provider) MCPOAuth() *OAuthServer { return p.oauth }
 
 // CoreServices exposes Authula's SessionService + TokenService for the validate seam.
 func (p *Provider) CoreServices() *authulaservices.CoreServices {
@@ -276,14 +306,16 @@ func (p *Provider) Close() error {
 	if p == nil || p.auth == nil {
 		return nil
 	}
-	var firstErr error
-	if err := p.auth.ClosePlugins(); err != nil {
-		firstErr = err
-	}
-	if err := p.auth.CloseSystems(); err != nil && firstErr == nil {
-		firstErr = err
-	}
-	return firstErr
+	p.closeOnce.Do(func() {
+		p.closeErr = errors.Join(p.auth.ClosePlugins(), p.auth.CloseSystems())
+		if eventBus := p.auth.EventBus(); eventBus != nil {
+			p.closeErr = errors.Join(p.closeErr, eventBus.Close())
+		}
+		if closer, ok := p.auth.DB().(interface{ Close() error }); ok {
+			p.closeErr = errors.Join(p.closeErr, closer.Close())
+		}
+	})
+	return p.closeErr
 }
 
 // ensureAuthulaSearchPath guarantees the DSN carries search_path=authula so every

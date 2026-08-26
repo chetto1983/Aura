@@ -75,7 +75,7 @@ func TestManagedBridgePolicyGatesViewsOnTrustClass(t *testing.T) {
 	}
 }
 
-func TestManagedBridgePolicyScopesEveryAuraOwnedRemoteRecipe(t *testing.T) {
+func TestManagedBridgePolicyScopesEveryOAuthRemote(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -103,8 +103,17 @@ func TestManagedBridgePolicyScopesEveryAuraOwnedRemoteRecipe(t *testing.T) {
 			srv:  mcp.ManagedServer{Source: "recipe:calendar", Command: "calendar", Trust: mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe}},
 		},
 		{
-			name: "third party remote does not receive Aura identity metadata",
+			name: "generic remote OAuth gets a subject-bound session",
 			srv:  mcp.ManagedServer{Source: "remote:vendor", URL: "https://vendor.example/mcp", Trust: mcp.ManagedTrust{Class: mcp.TrustRemoteHTTP}},
+			want: true,
+		},
+		{
+			name: "explicitly unprotected remote stays shared",
+			srv:  mcp.ManagedServer{Source: "remote:public", URL: "https://public.example/mcp", Env: []string{"MCP_OAUTH_DISABLED=true"}, Trust: mcp.ManagedTrust{Class: mcp.TrustRemoteHTTP}},
+		},
+		{
+			name: "static bearer remote stays operator-scoped",
+			srv:  mcp.ManagedServer{Source: "remote:service", URL: "https://service.example/mcp", Env: []string{"MCP_BEARER_TOKEN=fixture"}, Trust: mcp.ManagedTrust{Class: mcp.TrustRemoteHTTP}},
 		},
 	}
 	for _, tt := range tests {

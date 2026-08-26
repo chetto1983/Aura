@@ -13,11 +13,9 @@ import (
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
-// TestBridgedMemoryToolInjectsContextUserIdentifier proves the identity the
-// bridge forwards is the authenticated ctx identity, stamped in
-// _meta.aura.user_identifier (D-108) — not a caller-supplied ARGUMENT, which no
-// longer exists on any memory tool's schema and is never inspected by the bridge.
-func TestBridgedMemoryToolInjectsContextUserIdentifier(t *testing.T) {
+// TestBridgedOAuthToolUsesNoProprietaryTenantMetadata proves tenant selection
+// is no longer encoded in tool arguments or MCP metadata.
+func TestBridgedOAuthToolUsesNoProprietaryTenantMetadata(t *testing.T) {
 	var capturedMeta map[string]any
 	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "fixture", Version: "0.0.1"}, nil)
 	memTool := mustTool("memory_upsert_fact", "Store a fact.",
@@ -38,7 +36,7 @@ func TestBridgedMemoryToolInjectsContextUserIdentifier(t *testing.T) {
 	t.Cleanup(func() { _ = serverSession.Close() })
 	srv := NewMountedServer("fixture", nil)
 	session, err := connectClient(ctx, clientTransport, mcp.SessionOptions{
-		Sending:         sendingMiddleware(bridgePolicy{identityScoped: true}),
+		Sending:         sendingMiddleware(bridgePolicy{identityScoped: true}, "identity-1"),
 		ToolListChanged: srv.onToolListChanged,
 	})
 	if err != nil {
@@ -54,15 +52,13 @@ func TestBridgedMemoryToolInjectsContextUserIdentifier(t *testing.T) {
 	callCtx := identityctx.WithIdentityID(context.Background(), "identity-1")
 	callCtx = tools.WithToolCallContext(callCtx, "sess", "tc1", t.TempDir(), 2048)
 
-	// A stale/spoofed user_identifier in the ARGUMENTS (rehydrated history, or an
-	// adversarial payload) must never override the authenticated _meta identity —
-	// the bridge no longer reads or filters this argument at all; it is inert.
+	// A stale argument from rehydrated history is inert. The OAuth session bearer,
+	// bound to identity-1 by the sending middleware, selects the remote subject.
 	if _, err := got[0].Execute(callCtx, json.RawMessage(`{"subject":"a","predicate":"b","object_value":"c","user_identifier":"spoofed"}`)); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	aura, _ := capturedMeta[mcp.MetaNamespaceAura].(map[string]any)
-	if aura == nil || aura[mcp.MetaFieldUserIdentifier] != "identity-1" {
-		t.Fatalf("_meta.aura.user_identifier = %v, want identity-1 (the authenticated ctx identity)", aura)
+	if aura, ok := capturedMeta["aura"]; ok {
+		t.Fatalf("OAuth tool received proprietary Aura metadata: %v", aura)
 	}
 }
 
@@ -88,7 +84,7 @@ func TestBridgedRemoteToolRejectsNoPrincipal(t *testing.T) {
 	t.Cleanup(func() { _ = serverSession.Close() })
 	srv := NewMountedServer("fixture", nil)
 	session, err := connectClient(ctx, clientTransport, mcp.SessionOptions{
-		Sending:         sendingMiddleware(bridgePolicy{identityScoped: true}),
+		Sending:         sendingMiddleware(bridgePolicy{identityScoped: true}, "identity-1"),
 		ToolListChanged: srv.onToolListChanged,
 	})
 	if err != nil {
@@ -112,10 +108,9 @@ func TestBridgedRemoteToolRejectsNoPrincipal(t *testing.T) {
 	}
 }
 
-// TestBridgedUnscopedToolDoesNotInjectUserIdentifier proves an unscoped bridge
-// mount never stamps an identity anywhere: not in _meta (no IdentityMetaMiddleware
-// on its Sending slice at all) and not in Arguments (the bridge never touches them).
-func TestBridgedUnscopedToolDoesNotInjectUserIdentifier(t *testing.T) {
+// TestBridgedUnscopedToolDoesNotInjectTenantData proves an unscoped bridge
+// never stamps an identity in metadata or arguments.
+func TestBridgedUnscopedToolDoesNotInjectTenantData(t *testing.T) {
 	var capturedArgs map[string]any
 	var capturedMeta map[string]any
 	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "fixture", Version: "0.0.1"}, nil)
@@ -133,7 +128,7 @@ func TestBridgedUnscopedToolDoesNotInjectUserIdentifier(t *testing.T) {
 	t.Cleanup(func() { _ = serverSession.Close() })
 	srv := NewMountedServer("fixture", nil)
 	session, err := connectClient(ctx, clientTransport, mcp.SessionOptions{
-		Sending:         sendingMiddleware(bridgePolicy{}),
+		Sending:         sendingMiddleware(bridgePolicy{}, ""),
 		ToolListChanged: srv.onToolListChanged,
 	})
 	if err != nil {
@@ -155,7 +150,7 @@ func TestBridgedUnscopedToolDoesNotInjectUserIdentifier(t *testing.T) {
 	if _, ok := capturedArgs["user_identifier"]; ok {
 		t.Fatalf("non-memory tool received user_identifier in Arguments: %+v", capturedArgs)
 	}
-	if aura, ok := capturedMeta[mcp.MetaNamespaceAura]; ok {
+	if aura, ok := capturedMeta["aura"]; ok {
 		t.Fatalf("non-memory tool received a _meta.aura namespace at all: %v", aura)
 	}
 }

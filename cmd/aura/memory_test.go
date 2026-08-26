@@ -419,17 +419,10 @@ func TestMemoryNotConfigured(t *testing.T) {
 	}
 }
 
-// TestCLIMemoryCallStampsIdentityInMeta pins the scoping guard on the CLI memory
-// path, migrated from the argument-based scopeMemoryArgs (deleted, D-108) onto
-// _meta.aura.user_identifier: the memory server treats a missing identity as "no
-// scope", so an unstamped call wrote a :Conversation with a NULL owner and zero
-// HAS_CONVERSATION edges — data owned by nobody and invisible to every scoped
-// read meant to return it, with anything extracted from it landing in the
-// "global" deduplication scope where it can never merge with the owner-scoped
-// entities the agent records. The identity now travels ONLY in _meta, stamped by
-// callSessionText through the same mcp.SetAuraMetaField helper the bridge's
-// IdentityMetaMiddleware uses — never in the wire arguments.
-func TestCLIMemoryCallStampsIdentityInMeta(t *testing.T) {
+// TestCLIMemoryCallRequiresIdentity pins the fail-closed CLI guard. The remote
+// subject belongs to the OAuth session opened from this context, never to tool
+// arguments or proprietary metadata.
+func TestCLIMemoryCallRequiresIdentity(t *testing.T) {
 	t.Run("refuses to invent an identity when the context carries none", func(t *testing.T) {
 		// This used to fall back to identityctx.LocalOperatorIdentity, which reads as
 		// fail-closed and is not: first login retires that seed, so the CLI addressed a
@@ -448,7 +441,7 @@ func TestCLIMemoryCallStampsIdentityInMeta(t *testing.T) {
 		}
 	})
 
-	t.Run("uses the identity on the context, in _meta, never in arguments", func(t *testing.T) {
+	t.Run("uses the identity-scoped session without tenant data on the request", func(t *testing.T) {
 		rec := newRecordingMemoryMCPServer(t)
 		withMemoryServerAt(t, rec.URL)
 		ctx := identityctx.WithIdentityID(context.Background(), "identity-1")
@@ -456,9 +449,8 @@ func TestCLIMemoryCallStampsIdentityInMeta(t *testing.T) {
 		if err := runMemoryCommand(ctx, []string{"entities"}, &buf); err != nil {
 			t.Fatalf("runMemoryCommand: %v", err)
 		}
-		aura, _ := rec.meta()["aura"].(map[string]any)
-		if aura == nil || aura["user_identifier"] != "identity-1" {
-			t.Fatalf("_meta.aura.user_identifier = %v, want identity-1", aura)
+		if aura, present := rec.meta()["aura"]; present {
+			t.Fatalf("CLI memory call sent proprietary Aura metadata: %v", aura)
 		}
 		if _, ok := rec.args()["user_identifier"]; ok {
 			t.Fatalf("user_identifier leaked into wire arguments: %#v", rec.args())

@@ -15,8 +15,8 @@ import (
 // an exact name, memory_search needs the right words, and graph_schema returns
 // counts rather than names.
 
-// MemoryEntitiesInput bounds the listing. The calling identity is NOT a field
-// here (D-108): it travels in _meta.aura.user_identifier.
+// MemoryEntitiesInput bounds the listing. The calling identity comes from the
+// authenticated OAuth subject, never a model-visible field.
 type MemoryEntitiesInput struct {
 	Limit int `json:"limit,omitempty" jsonschema:"how many entities to return; defaults to 50"`
 }
@@ -50,8 +50,8 @@ func addMemoryEntitiesTool(server *mcp.Server, tenants *tenants) {
 	})
 }
 
-// MemoryDigestInput shapes the index. The calling identity is NOT a field here
-// (D-108): it travels in _meta.aura.user_identifier.
+// MemoryDigestInput shapes the index. The calling identity comes from the
+// authenticated OAuth subject, never a model-visible field.
 type MemoryDigestInput struct {
 	Limit          int `json:"limit,omitempty" jsonschema:"how many entities to include; defaults to 50"`
 	FactsPerEntity int `json:"facts_per_entity,omitempty" jsonschema:"how many facts to show per entity; defaults to 3"`
@@ -86,7 +86,7 @@ func addMemoryDigestTool(server *mcp.Server, tenants *tenants) {
 }
 
 // MemoryMergeInput names the duplicate and the survivor. The calling identity
-// is NOT a field here (D-108): it travels in _meta.aura.user_identifier.
+// comes from the authenticated OAuth subject, never a model-visible field.
 type MemoryMergeInput struct {
 	Source string `json:"source" jsonschema:"the duplicate name; it is removed"`
 	Target string `json:"target" jsonschema:"the name that survives and receives the facts"`

@@ -122,14 +122,10 @@ func openSDKHTTP(ctx context.Context, name string, server ManagedServer, egress 
 		return nil, TransportErrorf(name, err)
 	}
 
-	httpClient := http.DefaultClient
-	if egress.Enforced() {
-		httpClient = newHardenedHTTPClient(net.DefaultResolver, egress)
-	}
-	httpClient = withMCPRedirectGuard(httpClient, egress, net.DefaultResolver)
+	httpClient := oauthHTTPClient(egress)
 
 	// The authorization flow is built from the client as it stands HERE, before the
-	// static credentials go on: its requests leave for the authorization server, a
+	// static headers go on: its requests leave for the authorization server, a
 	// different origin, and headerRoundTripper applies MCP_HEADER_* with no origin
 	// check. See oauthHandlerFor.
 	settings, err := OAuthSettingsFromEnv(server.Env)
@@ -141,8 +137,8 @@ func openSDKHTTP(ctx context.Context, name string, server ManagedServer, egress 
 		return nil, TransportErrorf(name, err)
 	}
 
-	headers, bearer := httpAuthFromEnv(server.Env)
-	httpClient = withAuthHeaders(httpClient, headers, bearer)
+	headers, _ := httpAuthFromEnv(server.Env)
+	httpClient = withStaticHeaders(httpClient, headers)
 
 	// Bounded because the SDK is not: see bounded_call.go.
 	transport := &sdkmcp.StreamableClientTransport{
@@ -245,14 +241,12 @@ func logNegotiatedProtocol(logger *slog.Logger, name, transport string, cs *sdkm
 	)
 }
 
-// headerRoundTripper adds Aura's static headers and bearer token to every request.
-// StreamableClientTransport has no header field, so this is where an operator's
-// MCP_HEADER_* / MCP_BEARER_TOKEN entries land. It only Sets its own keys, leaving the
-// SDK's own routing headers (Mcp-Method, Mcp-Name — SEP-2243) untouched.
+// headerRoundTripper adds operator-declared non-auth headers to every request.
+// StreamableClientTransport has no generic header field, so this is where MCP_HEADER_*
+// entries land. Bearer tokens use OAuthHandler, the SDK's authorization seam.
 type headerRoundTripper struct {
 	base    http.RoundTripper
 	headers map[string]string
-	bearer  string
 }
 
 func (h *headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -261,16 +255,13 @@ func (h *headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 	for key, value := range h.headers {
 		clone.Header.Set(key, value)
 	}
-	if h.bearer != "" {
-		clone.Header.Set("Authorization", "Bearer "+h.bearer)
-	}
 	return h.base.RoundTrip(clone)
 }
 
-// withAuthHeaders wraps client's transport so credentials ride every request. It wraps
-// the transport rather than replacing it, so the hardened dialer underneath survives.
-func withAuthHeaders(base *http.Client, headers map[string]string, bearer string) *http.Client {
-	if len(headers) == 0 && bearer == "" {
+// withStaticHeaders wraps client's transport so non-auth headers ride every request. It
+// wraps the transport rather than replacing it, so the hardened dialer survives.
+func withStaticHeaders(base *http.Client, headers map[string]string) *http.Client {
+	if len(headers) == 0 {
 		return base
 	}
 	cloned := *base
@@ -278,7 +269,7 @@ func withAuthHeaders(base *http.Client, headers map[string]string, bearer string
 	if inner == nil {
 		inner = http.DefaultTransport
 	}
-	cloned.Transport = &headerRoundTripper{base: inner, headers: headers, bearer: bearer}
+	cloned.Transport = &headerRoundTripper{base: inner, headers: headers}
 	return &cloned
 }
 

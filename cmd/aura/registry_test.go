@@ -169,6 +169,7 @@ func TestBuildRegistryWithMCP_MountsManagedStreamableHTTPServer(t *testing.T) {
 		"remote": {
 			Type:  mcp.ServerTypeStreamableHTTP,
 			URL:   server.URL,
+			Env:   []string{"MCP_OAUTH_DISABLED=true"},
 			Trust: mcp.ManagedTrust{Class: mcp.TrustRemoteHTTP},
 		},
 	}})
@@ -206,6 +207,7 @@ func TestBuildRegistryWithMCPRetainsManagedMemoryHost(t *testing.T) {
 		"memory": {
 			Type:   mcp.ServerTypeStreamableHTTP,
 			URL:    server.URL,
+			Env:    []string{"MCP_OAUTH_DISABLED=true"},
 			Source: mcp.SourceRecipeMemory,
 			Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 		},
@@ -219,6 +221,37 @@ func TestBuildRegistryWithMCPRetainsManagedMemoryHost(t *testing.T) {
 	defer func() { _ = closeMCPServers(closers) }()
 	if handles.Memory == nil {
 		t.Fatal("managed memory mount did not retain its process-owned host client")
+	}
+}
+
+func TestBuildRegistryWithMCPRetainsDeferredMemoryProvider(t *testing.T) {
+	withMemoryMCPRegistry(t)
+	seedMCPRegistry(t, withDefaultOnRecipesOff(mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
+		"memory": {
+			Type:   mcp.ServerTypeStreamableHTTP,
+			URL:    "http://127.0.0.1:8096/mcp/",
+			Source: mcp.SourceRecipeMemory,
+			Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+		},
+	}}))
+
+	_, handles, closers, err := buildRegistryWithMCP(
+		deferOAuthMountsUntilListener(context.Background()),
+		config.LoadDB(),
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("buildRegistryWithMCP: %v", err)
+	}
+	defer func() { _ = closeMCPServers(closers) }()
+	if handles.Memory != nil {
+		t.Fatal("deferred memory server mounted before the daemon listener")
+	}
+	if handles.MemoryContext == nil {
+		t.Fatal("deferred memory server did not retain a provider for the live mount")
 	}
 }
 

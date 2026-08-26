@@ -44,23 +44,15 @@ services:
         condition: service_healthy
       aura-llama-embed:
         condition: service_healthy
-      # Memory MCP is mounted into the agent loop at boot (recipe:memory, default-on), so
-      # Aura waits for its healthcheck before taking traffic. Reconnect-on-use only applies
-      # after the initial mount has succeeded.
-      arcadedb-mcp:
-        condition: service_healthy
       garage-bootstrap:
         condition: service_completed_successfully
-      # Start the WhatsApp bridge with the stack (service_started, NOT service_healthy — Aura boot must never block on it; the connect routes fail-soft to 503).
-      whatsapp:
-        condition: service_started
-      # Calendar/PIM sidecar comes up with the stack too (service_started — never block boot; the connect routes fail-soft to 503).
-      aura-pim-mcp:
-        condition: service_started
     environment:
       AURA_AGUI_BIND: 0.0.0.0:9080
       AURA_SETUP_BIND: 0.0.0.0:9081
       AURA_SETUP_TOKEN: ${AURA_ACCESS_TOKEN:?AURA_ACCESS_TOKEN required in .env}
+      # Private pairing gateway only. MCP access uses the identity-scoped OAuth
+      # grants in Postgres and never reads this deployment credential.
+      AURA_WHATSAPP_BRIDGE_TOKEN: ${AURA_ACCESS_TOKEN:?AURA_ACCESS_TOKEN required in .env}
       # WEB-02 GuardWebBind: the 0.0.0.0:9080 cockpit bind boots only when Authula
       # is configured or a reverse proxy is trusted.
       AURA_WEB_TRUST_PROXY: ${AURA_WEB_TRUST_PROXY:-false}
@@ -250,10 +242,11 @@ services:
       TTS_VOICE: ${TTS_VOICE:-if_sara}
       TTS_FORMAT: ${TTS_FORMAT:-opus}
       MULTIMODAL_TIMEOUT_SEC: ${MULTIMODAL_TIMEOUT_SEC:-120}
-      # Calendar/PIM connect proxy: the Go /api/connect/pim/admin/* proxy forwards to the
-      # sidecar's token-gated admin API over the docker network, injecting this admin token.
-      AURA_PIM_MCP_URL: http://aura-pim-mcp:8080
-      AURA_PIM_MCP_ADMIN_TOKEN: ${AURA_PIM_MCP_ADMIN_TOKEN:?AURA_PIM_MCP_ADMIN_TOKEN required in .env}
+      # Calendar/PIM connect proxy. Its bearer comes from the authenticated
+      # identity's existing remote-MCP OAuth grant.
+      AURA_PIM_MCP_URL: http://127.0.0.1:8093
+      # WhatsApp pairing is an internal management plane, separate from its MCP.
+      AURA_WHATSAPP_BRIDGE_URL: http://127.0.0.1:8094
       AURA_PROFILE_DIR: ${AURA_PROFILE_DIR:-/var/lib/aura/agents}
       AURA_PROFILE_CERTAINTY_N: ${AURA_PROFILE_CERTAINTY_N:-3}
       # ↓↓ Phase 37 (SBX-05, ADR 0037) — per-identity full-capability sandbox ↓↓
@@ -304,6 +297,13 @@ services:
     ports:
       - "127.0.0.1:${AURA_AGUI_PORT:-9080}:9080"
       - "127.0.0.1:${AURA_SETUP_PORT:-9081}:9081"
+      # The OAuth SDK permits plain HTTP only for loopback resource servers. All
+      # three MCP sidecars share Aura's network namespace below, so these remain
+      # real 127.0.0.1 endpoints both inside the appliance and on its host.
+      - "127.0.0.1:${AURA_WHATSAPP_MCP_PORT:-8092}:8092"
+      - "127.0.0.1:${AURA_PIM_MCP_PORT:-8093}:8093"
+      - "127.0.0.1:${AURA_WHATSAPP_BRIDGE_PORT:-8094}:8094"
+      - "127.0.0.1:${AURA_ARCADEDB_MCP_PORT:-8096}:8096"
     networks:
       - default
       - aura-web
@@ -630,7 +630,10 @@ services:
     restart: unless-stopped
     mem_limit: 512m
     pids_limit: 256
+    network_mode: "service:aura"
     depends_on:
+      aura:
+        condition: service_started
       arcadedb:
         condition: service_healthy
     environment:
@@ -654,6 +657,10 @@ services:
       # identity the sidecar was actually handed. Rotating this invalidates every
       # tenant credential, so it is a planned operation, not a restart.
       AURA_ARCADEDB_TENANT_SECRET: ${AURA_ARCADEDB_TENANT_SECRET:?AURA_ARCADEDB_TENANT_SECRET required in .env}
+      MCP_OAUTH_ISSUER: http://127.0.0.1:9080
+      MCP_OAUTH_JWKS_URL: http://127.0.0.1:9080/oauth/jwks
+      MCP_OAUTH_RESOURCE: http://127.0.0.1:8096/mcp/
+      MCP_OAUTH_SCOPE: mcp:tools
       # The dense leg of memory retrieval. An empty value selects bounded lexical
       # retrieval. Per-call embedder failures use the same fallback and the MCP
       # response names that mode so dense degradation is never silent.
@@ -675,8 +682,6 @@ services:
       # deployment however it was set in .env -- measured 2026-08-15.
       AURA_MEMORY_OPERATOR_DISPLAY_NAME: ${AURA_MEMORY_OPERATOR_DISPLAY_NAME:-}
       AURA_ARCADEDB_MCP_BODY_MAX_BYTES: ${AURA_ARCADEDB_MCP_BODY_MAX_BYTES:-1048576}
-    ports:
-      - "127.0.0.1:8096:8096"
     healthcheck:
       # The `aura` service gates its boot on this: memory is mounted INTO the agent
       # loop at startup and the in-process mount has no boot-retry, so a sidecar that
@@ -837,42 +842,45 @@ services:
       - aura-ingest-state:/state
 
 
-  # WhatsApp MCP sibling — forked whatsmeow bridge + MCP-2.0.0 HTTP front
-  # (chetto1983/whatsapp-mcp @ main): the agent mounts the MCP over streamable-HTTP
-  # (8080, catalog recipe:whatsapp), and Aura's cockpit drives device linking via the
-  # bridge management REST (/api/{status,qr,logout} on 8081). Aura boot never depends
-  # on this service being healthy.
-  #
-  # PINNED BY COMMIT, deliberately. `:sidecar` is written by TWO workflows on this fork
-  # — aura-publish-image.yml (branch aura/cockpit-connect) and publish-image.yml (main)
-  # — so which build it names depends on which ran last. The branch aura/cockpit-connect
-  # is retired: 143 commits behind main, its one unique commit fused into main on
-  # 2026-07-01 (4a8306206). sha-9911eb8 = main 9911eb8f, digest
-  # sha256:f24a041a913786ad894baec010e8b1f4f0f7420250b56e4ff44d4d9ab7f23c9e, serving 15
-  # tools: the two list tools now bind ONE two-pane view (ui://whatsapp/client.html --
-  # chat index left, conversation right) in place of the two single-purpose ones, and
-  # the new `get_media_data` returns a photo as a data: URL so that view can paint it
-  # (download_media returns a path inside the container, which no browser can open).
-  # Bump by reading the sha- tag publish-image.yml minted for the target commit.
+  # WhatsApp remote MCP. Standard OAuth `sub` selects the tenant; the pairing
+  # gateway is a separate internal HTTP surface protected by its bridge token.
+  # The existing volume mount is retained so startup can perform the explicit one-shot
+  # singleton-to-tenant migration before launching any tenant runtime.
   whatsapp:
-    image: ${AURA_WHATSAPP_MCP_IMAGE:-ghcr.io/chetto1983/whatsapp-mcp:sha-9911eb8}
+    image: ${AURA_WHATSAPP_MCP_IMAGE:-ghcr.io/chetto1983/whatsapp-mcp:sha-a463da5@sha256:006602da0893ada0eb80c812384032e262c1c7f0642866bf194041078e86130f}
     pull_policy: ${AURA_WHATSAPP_MCP_PULL_POLICY:-missing}
     container_name: aura-whatsapp
     restart: unless-stopped
+    network_mode: "service:aura"
+    depends_on:
+      aura:
+        condition: service_started
     environment:
-      WHATSAPP_BRIDGE_PORT: "8081"
-      WHATSAPP_API_URL: http://127.0.0.1:8081/api
-    ports:
-      - "127.0.0.1:${AURA_WHATSAPP_MCP_PORT:-8092}:8080"     # MCP-over-HTTP for the agent
-      - "127.0.0.1:${AURA_WHATSAPP_BRIDGE_PORT:-8094}:8081"  # bridge mgmt REST for the cockpit connect proxy
+      WHATSAPP_BRIDGE_TOKEN: ${AURA_ACCESS_TOKEN:?AURA_ACCESS_TOKEN required in .env}
+      MCP_OAUTH_ISSUER: http://127.0.0.1:9080
+      MCP_OAUTH_JWKS_URL: http://127.0.0.1:9080/oauth/jwks
+      MCP_OAUTH_RESOURCE: http://127.0.0.1:8092/mcp/
+      WHATSAPP_MCP_PORT: "8092"
+      WHATSAPP_GATEWAY_PORT: "8094"
+      WHATSAPP_API_URL: http://127.0.0.1:8094/api
     volumes:
       - aura-whatsapp-session:/app/whatsapp-bridge/store
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/api/status || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8094/healthz || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 30s
+
+  # SMTP sink for real PIM send tests. MailCatcher accepts SMTP on 1025 and exposes
+  # the captured messages on 1080; both host publishes stay loopback-only.
+  aura-fake-smtp:
+    image: haravich/fake-smtp-server:main-32d1bc1@sha256:d0d4f283e2727724f664fca85b9337f685e2b939c7f96852a56ae206405d50db
+    container_name: aura-fake-smtp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:1080:1080"
 
   # Local SearXNG backend. Aura reaches it through Compose DNS on aura-web via
   # SEARXNG_URL; the host reaches it through loopback for local doctor/smoke probes.
@@ -1028,24 +1036,26 @@ services:
       start_period: 60s                        # first-boot HF model download
 
   # Aura PIM sidecar — forked calendar-mcp (chetto1983/aura-pim-mcp @ main):
-  # unified mail+calendar+contacts over MCP-over-HTTP (/) + a token-gated admin REST API
-  # (/admin) the cockpit drives for per-deployment OAuth connect. Not vendored: the image is
+  # unified mail+calendar+contacts over MCP-over-HTTP (/) + an OAuth-protected admin REST API
+  # (/admin) the cockpit drives for provider-account connect. Not vendored: the image is
   # CI-built + published to GHCR (public) by the fork's aura-publish-image workflow.
   # Aura's catalog points at the loopback publish; Aura boot never depends on this service.
   #
-  # PINNED BY COMMIT. a4d39473b360e66575ee4e6bab0a6aad6562f341 is the 29-action
-  # curated `calendar` tool plus Aura identity tenancy: the HTTP transport requires the
-  # deployment bearer, every tool call requires `_meta.aura.user_identifier`, account
-  # IDs are tenant-prefixed, and the admin plane requires `X-Aura-Identity`. A floating
+  # PINNED BY COMMIT. b1d584a4645c41b8e23e176af258befd9e598de5 is the generic OAuth
+  # resource server: the standard `sub` scopes MCP and admin requests to one tenant. A floating
   # `:sidecar` tag is forbidden because pull_policy=missing can otherwise retain old
   # bytes under an unchanged name. Published index digest:
-  # sha256:551afcb6ddb701b2016fc4d343ebf80a9dbb06f18abcbacac56658061cd2cf56.
+  # sha256:ecb4a77957c012e61da1aebd69b17213e584e10215718b1195174216e6461af0.
   # Bump by reading the 40-hex tag the workflow minted for the target commit.
   aura-pim-mcp:
-    image: ${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:a4d39473b360e66575ee4e6bab0a6aad6562f341}
+    image: ${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:b1d584a4645c41b8e23e176af258befd9e598de5@sha256:ecb4a77957c012e61da1aebd69b17213e584e10215718b1195174216e6461af0}
     pull_policy: ${AURA_PIM_MCP_PULL_POLICY:-missing}
     container_name: aura-pim-mcp
     restart: unless-stopped
+    network_mode: "service:aura"
+    depends_on:
+      aura:
+        condition: service_started
     # First-boot seed: the .NET host binds IConfiguration to whichever appsettings.json
     # EXISTS at startup. With a fresh volume the data-dir file is absent, so it falls back
     # to the baked (empty) /app/appsettings.json — while account writes go to /app/data.
@@ -1057,7 +1067,10 @@ services:
       - -c
       - "test -s /app/data/appsettings.json || printf '{\"CalendarMcp\":{\"Accounts\":[]}}' > /app/data/appsettings.json; exec dotnet CalendarMcp.HttpServer.dll"
     environment:
-      CALENDAR_MCP_ADMIN_TOKEN: ${AURA_PIM_MCP_ADMIN_TOKEN:?AURA_PIM_MCP_ADMIN_TOKEN required in .env}
+      ASPNETCORE_URLS: http://0.0.0.0:8093
+      CALENDAR_MCP_OAuth__Issuer: http://127.0.0.1:9080
+      CALENDAR_MCP_OAuth__MetadataAddress: http://127.0.0.1:9080/.well-known/oauth-authorization-server
+      CALENDAR_MCP_OAuth__Resource: http://127.0.0.1:8093/
       # The external base the sidecar uses to build the Google OAuth redirect URI
       # (<base>/admin/auth/google/callback) — register that EXACT URI in the Google "Web
       # application" client. Default targets the loopback host-publish (works for a user on
@@ -1067,12 +1080,10 @@ services:
       # NB: the server does Configuration.Sources.Clear() then AddEnvironmentVariables("CALENDAR_MCP_"),
       # so the var MUST carry that prefix; after the strip it maps to CalendarMcp:ExternalBaseUrl.
       CALENDAR_MCP_CalendarMcp__ExternalBaseUrl: ${AURA_PIM_EXTERNAL_BASE_URL:-http://localhost:8093}
-    ports:
-      - "127.0.0.1:${AURA_PIM_MCP_PORT:-8093}:8080"
     volumes:
       - aura-pim-data:/app/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8093/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12

@@ -1,4 +1,4 @@
-// Command arcadedb-mcp exposes Aura's graph substrate as an MCP server backed
+// Command arcadedb-mcp exposes a graph-backed memory MCP server backed
 // directly by ArcadeDB.
 //
 // Tools are added one file at a time (tool_*.go); every one is exercised
@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	serverName    = "aura-arcadedb"
+	serverName    = "arcadedb-memory"
 	serverVersion = "0.1.0"
 
 	defaultPort            = 8096
@@ -112,12 +112,18 @@ func run(logger *slog.Logger) error {
 	}
 	server := newServer(newTenants(cfg, admin, embedder, credentials), time.Now,
 		os.Getenv("AURA_MEMORY_OPERATOR_DISPLAY_NAME"))
-	handler := cappedBodyHandler(bodyMaxBytes,
-		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
+	oauth := oauthResourceConfigFromEnv()
+	verifier := newArcadeTokenVerifier(oauth, nil)
+	handler := protectedArcadeMCP(oauth, verifier.Verify, cappedBodyHandler(bodyMaxBytes,
+		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)))
+	metadata := arcadeProtectedResourceMetadata(oauth)
 
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", handler)
 	mux.Handle("/mcp/", handler)
+	mux.Handle("/.well-known/oauth-protected-resource", metadata)
+	mux.Handle("/.well-known/oauth-protected-resource/mcp", metadata)
+	mux.Handle("/.well-known/oauth-protected-resource/mcp/", metadata)
 	// Liveness must not touch the database: a readiness probe that fails when
 	// ArcadeDB blips would restart this process for someone else's outage.
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
@@ -170,7 +176,7 @@ func run(logger *slog.Logger) error {
 func newServer(tenants *tenants, now clock, operatorDisplayName string) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    serverName,
-		Title:   "Aura ArcadeDB",
+		Title:   "ArcadeDB Memory",
 		Version: serverVersion,
 	}, nil)
 	addGraphSchemaTool(server, tenants)

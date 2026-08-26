@@ -46,7 +46,7 @@ func TestMemorySurfacePolicy_AliasKeepsIsolationAndHiddenSurface(t *testing.T) {
 	// Identity scope and surface curation are explicit and independent of the
 	// alias, matching the managed mount path.
 	session, err := connectClient(ctx, clientTransport, mcp.SessionOptions{
-		Sending:         sendingMiddleware(bridgePolicy{identityScoped: true}),
+		Sending:         sendingMiddleware(bridgePolicy{identityScoped: true}, "tenant-a"),
 		ToolListChanged: srv.onToolListChanged,
 	})
 	if err != nil {
@@ -81,13 +81,12 @@ func TestMemorySurfacePolicy_AliasKeepsIsolationAndHiddenSurface(t *testing.T) {
 
 	callCtx := identityctx.WithIdentityID(context.Background(), "tenant-a")
 	callCtx = tools.WithToolCallContext(callCtx, "session", "call", t.TempDir(), 2048)
-	// A stale/spoofed user_identifier in the ARGUMENTS must not affect which
-	// identity reaches _meta â€” the bridge never reads or filters this argument.
+	// A stale argument is inert. The identity-bound OAuth session determines the
+	// subject without proprietary metadata.
 	if _, err := recall.Execute(callCtx, json.RawMessage(`{"query":"marker","user_identifier":"tenant-b"}`)); err != nil {
 		t.Fatalf("execute aliased memory recall: %v", err)
 	}
-	aura, _ := capturedMeta[mcp.MetaNamespaceAura].(map[string]any)
-	if aura == nil || aura[mcp.MetaFieldUserIdentifier] != "tenant-a" {
-		t.Fatalf("forwarded _meta.aura.user_identifier = %v, want authenticated tenant-a", aura)
+	if aura, ok := capturedMeta["aura"]; ok {
+		t.Fatalf("aliased OAuth tool received proprietary Aura metadata: %v", aura)
 	}
 }

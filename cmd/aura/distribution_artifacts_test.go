@@ -31,7 +31,6 @@ func TestDistributionSurfaceArtifactsMatchReleaseContract(t *testing.T) {
 		"ensure_objectstore_public_endpoint",
 		"AURA_OBJECTSTORE_PUBLIC_ENDPOINT \"https://$(host_for_summary)\"",
 		"AURA_AUTHULA_SECRET=${authula_secret}",
-		"AURA_PIM_MCP_ADMIN_TOKEN=${pim_admin_token}",
 		"SEARXNG_SECRET=${searxng_secret}",
 		"AURA_OBJECTSTORE_ACCESS_KEY=${objectstore_access_key}",
 		"AURA_OBJECTSTORE_SECRET_KEY=${objectstore_secret_key}",

@@ -66,6 +66,8 @@ github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6 h1:He8af
 github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6/go.mod h1:8o94RPi1/7XTJvwPpRSzSUedZrtlirdB3r9Z20bi2f8=
 github.com/Authula/authula v1.40.0 h1:CmL6t0GPz5u0WCfEr0uPLjuxGG/VDJ72QWxfT0l6qCc=
 github.com/Authula/authula v1.40.0/go.mod h1:EC9v4zH2nOLP4o/dOnNCTuA8PX0LyU2TzpjyqrmeOfg=
+github.com/Authula/authula v1.42.0 h1:oUTnaaSDzaUW3FlhULq2tbvzZ46wpb7dvgRz3ypgJlo=
+github.com/Authula/authula v1.42.0/go.mod h1:EC9v4zH2nOLP4o/dOnNCTuA8PX0LyU2TzpjyqrmeOfg=
 github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c h1:udKWzYgxTojEKWjV8V+WSxDXJ4NFATAsZjh8iIbsQIg=
 github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c/go.mod h1:xomTg63KZ2rFqZQzSB4Vz2SUXa1BpHTVz9L5PTmPC4E=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=

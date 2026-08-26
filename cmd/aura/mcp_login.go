@@ -75,7 +75,7 @@ func mcpLogin(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Wri
 	ctx, cancel := context.WithTimeout(ctx, mcpLoginTimeout)
 	defer cancel()
 
-	opts := cliSessionOptions()
+	opts := mcp.SessionOptions{}
 	opts.OAuth = mcp.OAuthOptions{Store: store, Fetcher: flow.fetch, RedirectURL: flow.redirect}
 	session, err := mcp.OpenSDKSession(ctx, name, server, runtimeMCPEgressPolicy(server), opts)
 	if err != nil {
@@ -173,11 +173,22 @@ func mcpOAuthStore(ctx context.Context, pool *pgxpool.Pool) (context.Context, *m
 	if err != nil {
 		return nil, nil, err
 	}
-	identityID, err := identityctx.OperatorIdentity(ctx, pool)
+	ctx, err = mcpOperatorContext(ctx, pool)
 	if err != nil {
 		return nil, nil, err
 	}
-	return identityctx.WithIdentityID(ctx, identityID), store, nil
+	return ctx, store, nil
+}
+
+func mcpOperatorContext(ctx context.Context, pool *pgxpool.Pool) (context.Context, error) {
+	if identityctx.IdentityID(ctx) != "" {
+		return ctx, nil
+	}
+	identityID, err := identityctx.OperatorIdentity(ctx, pool)
+	if err != nil {
+		return nil, err
+	}
+	return identityctx.WithIdentityID(ctx, identityID), nil
 }
 
 // loopbackFlow receives the authorization redirect on a listener bound to loopback.

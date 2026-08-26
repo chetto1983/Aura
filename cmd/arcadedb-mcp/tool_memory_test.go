@@ -583,8 +583,8 @@ func TestMemoryRecallRejectsMissingIdentityBeforeSelector(t *testing.T) {
 	_, _, err := memoryRecallHandler(singleTenant(t, client))(
 		context.Background(), nil, MemoryRecallInput{},
 	)
-	if err == nil || !errors.Is(err, errMissingIdentityMeta) {
-		t.Fatalf("err = %v, want errMissingIdentityMeta", err)
+	if err == nil || !errors.Is(err, errMissingOAuthSubject) {
+		t.Fatalf("err = %v, want errMissingOAuthSubject", err)
 	}
 	if len(rec.statements) != 0 {
 		t.Fatalf("statements = %v, want no database access", rec.statements)

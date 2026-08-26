@@ -26,7 +26,11 @@ import (
 	"testing"
 	"time"
 
+	authulamodels "github.com/Authula/authula/models"
+	authulaservices "github.com/Authula/authula/services"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/goleak"
 )
 
 func envOrSkip(t *testing.T, key string) string {
@@ -87,26 +91,32 @@ func TestAuthulaProvider_EndToEnd(t *testing.T) {
 		t.Fatal("OperatorUserID returned empty after enrolling a user")
 	}
 
-	// Link the operator user to the seeded `local` identity over aura.* and resolve it.
+	// Link the operator user to a disposable Aura identity and resolve it.
 	pool, err := pgxpool.New(ctx, auraDSN)
 	if err != nil {
 		t.Fatalf("open aura pool: %v", err)
 	}
-	defer pool.Close()
-	const localID = "00000000-0000-0000-0000-000000000001"
+	t.Cleanup(pool.Close)
+	disposableIdentityID := uuid.NewString()
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO aura.identities (id, name, kind) VALUES ($1::uuid, $2, 'user')`,
+		disposableIdentityID, "webauth-integration-"+disposableIdentityID); err != nil {
+		t.Fatalf("insert disposable identity: %v", err)
+	}
 	linker := NewIdentityLinker(pool)
-	if err := linker.LinkOperator(ctx, localID, user.ID); err != nil {
+	if err := linker.LinkOperator(ctx, disposableIdentityID, user.ID); err != nil {
 		t.Fatalf("LinkOperator: %v", err)
 	}
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), "DELETE FROM aura.identity_auth_links WHERE authula_user_id=$1", user.ID)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM aura.identities WHERE id=$1::uuid", disposableIdentityID)
 	})
 	gotID, err := linker.ResolveIdentityID(ctx, user.ID)
 	if err != nil {
 		t.Fatalf("ResolveIdentityID: %v", err)
 	}
-	if gotID != localID {
-		t.Errorf("resolved identity = %q, want %q", gotID, localID)
+	if gotID != disposableIdentityID {
+		t.Errorf("resolved identity = %q, want %q", gotID, disposableIdentityID)
 	}
 
 	// Mint a REAL session via SessionService.Create (store its SHA-256 hash), present the
@@ -123,12 +133,12 @@ func TestAuthulaProvider_EndToEnd(t *testing.T) {
 	validator := NewValidator(provider, linker)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: rawToken})
-	identityID, err := validator.Validate(req)
+	validatedID, err := validator.Validate(req)
 	if err != nil {
 		t.Fatalf("Validate (live session): %v", err)
 	}
-	if identityID != localID {
-		t.Errorf("validated identity = %q, want %q", identityID, localID)
+	if validatedID != gotID {
+		t.Errorf("validated identity = %q, want %q", validatedID, gotID)
 	}
 
 	// A bogus cookie value fails closed.
@@ -137,4 +147,48 @@ func TestAuthulaProvider_EndToEnd(t *testing.T) {
 	if _, err := validator.Validate(bogus); err == nil {
 		t.Error("Validate accepted a bogus token — must fail closed")
 	}
+}
+
+func TestAuthulaProviderCloseReleasesOwnedWorkers(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	baseline := goleak.IgnoreCurrent()
+
+	provider, err := New(Config{
+		DSN:            envOrSkip(t, "AURA_AUTHULA_DSN"),
+		Secret:         envOrSkip(t, "AURA_AUTHULA_SECRET"),
+		TrustedOrigins: []string{"http://127.0.0.1:9080"},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	db := provider.auth.DB()
+	eventBus := provider.auth.EventBus()
+	limiter, ok := provider.auth.ServiceRegistry.Get(authulamodels.ServiceRateLimit.String()).(authulaservices.RateLimiterService)
+	if !ok {
+		t.Fatal("Authula rate limiter service is not registered")
+	}
+	allowed, count, _, err := limiter.CheckAndIncrement(ctx, "webauth-lifecycle", time.Minute, 1)
+	if err != nil || !allowed || count != 1 {
+		t.Fatalf("first rate-limit check = allowed %t, count %d, err %v", allowed, count, err)
+	}
+	allowed, count, _, err = limiter.CheckAndIncrement(ctx, "webauth-lifecycle", time.Minute, 1)
+	if err != nil || allowed || count != 2 {
+		t.Fatalf("second rate-limit check = allowed %t, count %d, err %v", allowed, count, err)
+	}
+	if err := provider.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if err := provider.Close(); err != nil {
+		t.Fatalf("second Close: %v", err)
+	}
+	if err := eventBus.Publish(authulamodels.Event{Type: "webauth.after-close"}); err == nil {
+		t.Error("Authula event bus still accepts publishes after Provider.Close")
+	}
+	if pinger, ok := db.(interface{ PingContext(context.Context) error }); ok {
+		if err := pinger.PingContext(ctx); err == nil {
+			t.Error("Authula-owned database still accepts pings after Provider.Close")
+		}
+	}
+	goleak.VerifyNone(t, baseline)
 }

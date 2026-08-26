@@ -108,7 +108,7 @@ func TestCatalogMemoryURLHonorsPortEnv(t *testing.T) {
 	}
 }
 
-func TestCatalogHTTPRecipeURLsUseComposeDNSInContainer(t *testing.T) {
+func TestCatalogHTTPRecipeURLsRemainLoopbackInContainer(t *testing.T) {
 	t.Setenv("AURA_IN_CONTAINER", "1")
 	t.Setenv("AURA_ARCADEDB_MCP_PORT", "9191")
 	t.Setenv("AURA_WHATSAPP_MCP_PORT", "9192")
@@ -118,24 +118,24 @@ func TestCatalogHTTPRecipeURLsUseComposeDNSInContainer(t *testing.T) {
 	if !ok {
 		t.Fatal("memory recipe missing from BuiltInCatalog")
 	}
-	if memory.Server.URL != "http://aura-arcadedb-mcp:8096/mcp/" {
-		t.Fatalf("memory Server.URL = %q, want compose DNS URL", memory.Server.URL)
+	if memory.Server.URL != "http://127.0.0.1:9191/mcp/" {
+		t.Fatalf("memory Server.URL = %q, want shared-namespace loopback URL", memory.Server.URL)
 	}
 
 	whatsapp, ok := LookupCatalog("whatsapp")
 	if !ok {
 		t.Fatal("whatsapp recipe missing from BuiltInCatalog")
 	}
-	if whatsapp.Server.URL != "http://whatsapp:8080/mcp/" {
-		t.Fatalf("whatsapp Server.URL = %q, want compose DNS URL", whatsapp.Server.URL)
+	if whatsapp.Server.URL != "http://127.0.0.1:9192/mcp/" {
+		t.Fatalf("whatsapp Server.URL = %q, want shared-namespace loopback URL", whatsapp.Server.URL)
 	}
 
 	calendar, ok := LookupCatalog("calendar")
 	if !ok {
 		t.Fatal("calendar recipe missing from BuiltInCatalog")
 	}
-	if calendar.Server.URL != "http://aura-pim-mcp:8080/" {
-		t.Fatalf("calendar Server.URL = %q, want compose DNS URL", calendar.Server.URL)
+	if calendar.Server.URL != "http://127.0.0.1:9193/" {
+		t.Fatalf("calendar Server.URL = %q, want shared-namespace loopback URL", calendar.Server.URL)
 	}
 }
 
@@ -203,12 +203,12 @@ func TestCatalogWhatsappURLRejectsNonPortEnv(t *testing.T) {
 	}
 }
 
-func TestWhatsAppBridgeBaseURLUsesComposeDNSInContainer(t *testing.T) {
+func TestWhatsAppBridgeBaseURLRemainsLoopbackInContainer(t *testing.T) {
 	t.Setenv("AURA_IN_CONTAINER", "1")
 	t.Setenv("AURA_WHATSAPP_BRIDGE_PORT", "9194")
 
-	if got := WhatsAppBridgeBaseURL(); got != "http://whatsapp:8081" {
-		t.Fatalf("WhatsAppBridgeBaseURL() = %q, want compose service DNS", got)
+	if got := WhatsAppBridgeBaseURL(); got != "http://127.0.0.1:9194" {
+		t.Fatalf("WhatsAppBridgeBaseURL() = %q, want shared-namespace loopback", got)
 	}
 }
 

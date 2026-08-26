@@ -61,9 +61,9 @@ func TestToolManifestMatchesServer(t *testing.T) {
 // assertNoUserIdentifierProperty iterates every advertised tool's input schema
 // — never a hand-picked list of tool names, so a tenth tool added later is
 // covered automatically — and fails if any declares a user_identifier
-// property. D-108: the calling identity travels in _meta now; the model must
-// have no schema slot to fill with one, and the server would ignore it if it
-// invented one anyway (identityFromMeta never reads Arguments).
+// property. The calling identity comes from the OAuth subject; the model must
+// have no schema slot to fill with one, and the server ignores an invented
+// argument because identityFromToken never reads Arguments.
 func assertNoUserIdentifierProperty(t *testing.T, tools []*mcp.Tool) {
 	t.Helper()
 	if len(tools) == 0 {

@@ -9,7 +9,7 @@ import (
 // sdkclient_auth_test.go closes an expected gap named in plan 45.1-03 Task 3:
 // "OpenSDKSession's HTTP branch auth-header injection and the bearer-token path
 // — previously covered by http_client_test.go" (deleted with the bespoke client
-// in this same plan). httpAuthFromEnv/withAuthHeaders/headerRoundTripper had no
+// in this same plan). httpAuthFromEnv/withStaticHeaders/headerRoundTripper had no
 // SDK-era test at all until this file — measured against the coverage profile,
 // not assumed.
 
@@ -60,21 +60,20 @@ func TestHTTPAuthFromEnv(t *testing.T) {
 	}
 }
 
-// TestWithAuthHeadersInjectsCredentialsOnTheWire asserts what the SERVER received,
+// TestWithStaticHeadersInjectsOnTheWire asserts what the server received,
 // not the client's internal struct — a middleware/wrapper that mutated a copy would
 // pass a struct-level assertion and fail on the wire (the pattern plan 45.1-02's
 // middleware tests already established).
-func TestWithAuthHeadersInjectsCredentialsOnTheWire(t *testing.T) {
-	var gotAuth, gotCustom string
+func TestWithStaticHeadersInjectsOnTheWire(t *testing.T) {
+	var gotCustom string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuth = r.Header.Get("Authorization")
 		gotCustom = r.Header.Get("X-Custom")
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer ts.Close()
 
 	base := &http.Client{}
-	client := withAuthHeaders(base, map[string]string{"X-Custom": "value"}, "the-token")
+	client := withStaticHeaders(base, map[string]string{"X-Custom": "value"})
 
 	req, err := http.NewRequest(http.MethodGet, ts.URL, nil)
 	if err != nil {
@@ -86,27 +85,24 @@ func TestWithAuthHeadersInjectsCredentialsOnTheWire(t *testing.T) {
 	}
 	_ = resp.Body.Close()
 
-	if gotAuth != "Bearer the-token" {
-		t.Errorf("server saw Authorization = %q, want %q", gotAuth, "Bearer the-token")
-	}
 	if gotCustom != "value" {
 		t.Errorf("server saw X-Custom = %q, want %q", gotCustom, "value")
 	}
 	// headerRoundTripper.RoundTrip clones before setting — the caller's own request
 	// object must come back untouched, since http.RoundTripper implementations must
 	// not mutate the request they were handed.
-	if req.Header.Get("Authorization") != "" || req.Header.Get("X-Custom") != "" {
+	if req.Header.Get("X-Custom") != "" {
 		t.Errorf("caller's request was mutated by RoundTrip: %#v", req.Header)
 	}
 }
 
-// TestWithAuthHeadersNoopWhenNothingToInject proves the base *http.Client — and
+// TestWithStaticHeadersNoopWhenNothingToInject proves the base *http.Client — and
 // whatever hardened Transport it carries underneath — survives untouched when there
 // is nothing to inject, rather than being silently wrapped and potentially replaced.
-func TestWithAuthHeadersNoopWhenNothingToInject(t *testing.T) {
+func TestWithStaticHeadersNoopWhenNothingToInject(t *testing.T) {
 	base := &http.Client{}
-	got := withAuthHeaders(base, nil, "")
+	got := withStaticHeaders(base, nil)
 	if got != base {
-		t.Error("withAuthHeaders with no headers/bearer must return the SAME *http.Client unchanged")
+		t.Error("withStaticHeaders with no headers must return the SAME *http.Client unchanged")
 	}
 }

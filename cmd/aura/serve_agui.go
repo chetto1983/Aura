@@ -28,7 +28,7 @@ import (
 // the remaining auth-dependent providers (onboarding/bootstrap/password-reset)
 // afterward, once the Authula provider exists — those stay in bootServe rather than
 // here so this function needs no auth state (D-A2-02 narrow seam).
-func wireAGUIServer(chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler, readinessState *readiness.Snapshot, ownerExports agui.ExportDestination, shareAPI agui.ShareService, objectStore objectstore.Store) (*agui.Server, *agui.RunRegistry) {
+func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler, readinessState *readiness.Snapshot, ownerExports agui.ExportDestination, shareAPI agui.ShareService, objectStore objectstore.Store) (*agui.Server, *agui.RunRegistry) {
 	// The AG-UI gateway (Slice 8b) reuses the already-composed Runner + conversations
 	// store; it mounts on the same daemon and shares the graceful ctx-cancel drain
 	// (Assumption A3). The bind may now be non-loopback (WEB-02/D-06 lifted the
@@ -125,11 +125,11 @@ func wireAGUIServer(chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler,
 	// parent mux below), so it is never an open relay.
 	aguiServer.SetImageProxy(web.NewClient(chat.cfg))
 	// Wire the cockpit "Connect" WhatsApp device-linking bridge URL (AURA_WHATSAPP_BRIDGE_URL,
-	// default the sibling aura-whatsapp sidecar). The three /api/connect/whatsapp/* routes
+	// default the sibling WhatsApp sidecar). The three /api/connect/whatsapp/* routes
 	// forward to its management REST; an empty value leaves them at 503 (graceful — a stack
 	// without the sidecar boots fine). The routes mount behind RequireCapability(governance.
 	// write) in serve_webui.go, so the proxy is never an open relay.
-	aguiServer.SetWhatsAppBridge(chat.cfg.WhatsAppBridgeURL)
+	aguiServer.SetWhatsAppBridge(chat.cfg.WhatsAppBridgeURL, chat.cfg.WhatsAppBridgeToken)
 	// Wire the MCP Apps view surface: the documents mounted servers served at boot,
 	// the SECOND origin they must be framed from (AURA_MCP_SANDBOX_ORIGIN), and the
 	// read-only callback a rendered view's tools/call reaches. An unset origin leaves
@@ -140,13 +140,6 @@ func wireAGUIServer(chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler,
 	if views := chat.toolHandles.MCPViews.URIs(); len(views) > 0 {
 		slog.Info("mcp views available", "views", views, "sandbox_origin", chat.cfg.MCPSandboxOrigin)
 	}
-	// Wire the cockpit "Connect Google Calendar" admin-proxy: the aura-pim-mcp sidecar base URL
-	// (AURA_PIM_MCP_URL) + the /admin Bearer token (AURA_PIM_MCP_ADMIN_TOKEN). The five
-	// /api/connect/pim/* routes forward to its token-gated /admin REST, injecting the token
-	// server-side (it never reaches the client); an empty URL leaves them at 503 (graceful — a
-	// stack without the calendar sidecar boots fine). The routes mount behind RequireCapability(
-	// governance.write) in serve_webui.go, so the proxy is never an open relay.
-	aguiServer.SetCalendarMCP(chat.cfg.CalendarMCPURL, chat.cfg.CalendarMCPAdminToken)
 	// Wire per-identity MCP authorization: the cockpit's Connect button for a remote
 	// server that needs a human's consent rather than an operator-pasted token. Nil
 	// (no pool, or no AURA_AUTHULA_SECRET to derive the grant key from) leaves the five
@@ -154,7 +147,8 @@ func wireAGUIServer(chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler,
 	// every other board.
 	// One live mounter for the process: the OAuth-complete hook and the governance write
 	// path both change what is mounted, and two mounters would fight over the same registry.
-	live := newLiveMCPMount(chat)
+	live := newLiveMCPMount(ctx, chat)
+	chat.liveMCP = live
 	if authService, err := newMCPAuthService(chat.cfg, chat.pool, slog.Default()); err != nil {
 		slog.Warn("mcp authorization unavailable", "error", err)
 	} else if authService != nil {
@@ -164,6 +158,9 @@ func wireAGUIServer(chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler,
 		// none of that server's tools until a restart nothing had asked for.
 		authService.OnAuthorized(live.Mount)
 		aguiServer.SetMCPAuthorizations(authService)
+		// The calendar admin surface consumes the very same identity-scoped OAuth grant
+		// as the remote MCP session. No deployment bearer or tenant header exists.
+		aguiServer.SetCalendarMCP(chat.cfg.CalendarMCPURL, authService)
 	}
 	// Wire the read-only graph explorer over ArcadeDB (buildArcadeGraphView). It is
 	// SCHEMA-ONLY: one identity's type catalogue, never a drawable canvas — see

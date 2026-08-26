@@ -69,6 +69,7 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 		mux.Handle(authBasePath+"/", authulaProvider.Handler())
 		auth.AuthBasePath = authBasePath
 	}
+	registerMCPOAuthRoutes(mux, authulaProvider)
 	var bootstrapProvider bootstrapAvailabilityProvider
 	if candidate, ok := authulaProvider.(bootstrapAvailabilityProvider); ok {
 		bootstrapProvider = candidate
@@ -267,6 +268,9 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	auth.PublicAsset = webui.IsPublicAsset
 	previousPublicRoute := auth.PublicRoute
 	auth.PublicRoute = func(r *http.Request) bool {
+		if isPublicMCPOAuthRoute(r) {
+			return true
+		}
 		if r.Method == http.MethodGet && r.URL.Path == authConfigRoute {
 			return true
 		}

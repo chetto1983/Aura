@@ -69,6 +69,14 @@ func newHardenedHTTPClient(res resolver, policy EgressPolicy) *http.Client {
 	}
 }
 
+func oauthHTTPClient(policy EgressPolicy) *http.Client {
+	client := http.DefaultClient
+	if policy.Enforced() {
+		client = newHardenedHTTPClient(net.DefaultResolver, policy)
+	}
+	return withMCPRedirectGuard(client, policy, net.DefaultResolver)
+}
+
 // dialContext is the primary hardened gate: split host:port, resolve, classify EVERY
 // record (fail closed on ANY blocked one — never cherry-pick a public IP), then dial
 // the PINNED first IP literal so no second DNS lookup can rebind the target.

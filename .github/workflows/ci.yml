@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ "master", "main", "tabula-rasa" ]
+    branches: ["master", "main", "tabula-rasa"]
   pull_request:
-    branches: [ "master", "main", "tabula-rasa" ]
+    branches: ["master", "main", "tabula-rasa"]
 
 permissions:
   contents: read
@@ -16,7 +16,6 @@ permissions:
 env:
   AURA_ACCESS_TOKEN: ci-not-a-secret
   AURA_AUTHULA_SECRET: 00000000000000000000000000000000000000000000000000000000000000a1
-  AURA_PIM_MCP_ADMIN_TOKEN: ci-not-a-secret
   SEARXNG_SECRET: 00000000000000000000000000000000000000000000000000000000000000b2
   AURA_OBJECTSTORE_ACCESS_KEY: GK000000000000000000000000
   AURA_OBJECTSTORE_SECRET_KEY: 00000000000000000000000000000000000000000000000000000000000000c3
@@ -209,7 +208,7 @@ jobs:
     # without the docker stack. It gates ONLY the byte-identity invariant — NOT a
     # cache-hit percentage (PRD OQ4: hit-rate is provider-dependent + flaky).
     env:
-      CI: "true"  # arms the in-script no-skip-as-green guards
+      CI: "true" # arms the in-script no-skip-as-green guards
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -291,6 +290,7 @@ jobs:
       # fail-loud guard in db_test.go now turns that skip into a failure under CI.
       AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
       AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      AURA_AUTHULA_DSN: "postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable&search_path=authula"
       AURA_AUTHULA_SECRET: 00000000000000000000000000000000000000000000000000000000000000a1
       AURA_E2E_AUTHULA_EMAIL: e2e-operator@example.test
       AURA_E2E_AUTHULA_PASSWORD: ci-e2e-password-123
@@ -340,6 +340,11 @@ jobs:
           go run ./cmd/aura db status
           go run ./cmd/aura db ping
 
+      - name: Authula provider lifecycle (race + goleak)
+        # This tag constructs the full provider against the migrated Postgres service.
+        # CI=true makes a missing DSN/secret fatal, so the tier cannot skip as green.
+        run: go test -tags webauth_integration -race -count=1 ./internal/webauth
+
       - name: Seed Authula operator for AG-UI smoke
         run: go run ./scripts/authula_seed_e2e.go
 
@@ -364,7 +369,7 @@ jobs:
   musr-e2e:
     name: MUSR two-identity cross-deny E2E (Postgres + Garage-admin + Authula)
     runs-on: ubuntu-latest
-    timeout-minutes: 40  # includes the four-plane DR drill
+    timeout-minutes: 40 # includes the four-plane DR drill
     # Phase 36 D-29 acceptance gate. Brings up the FULL live stack (Postgres +
     # Garage with the Admin API v2 published to loopback + the embedded Authula provider)
     # and runs the two-identity cross-deny E2E: identity B is denied on every plane
@@ -591,8 +596,8 @@ jobs:
     # The SSRF block smoke (SC#3) needs no backend (the gate fires before any dial),
     # so it runs on the host with CI armed.
     env:
-      CI: "true"  # arms the no-skip-as-green guards in ssrf_smoke.sh + envOrSkip
-      POSTGRES_PASSWORD: ci-test-password    # compose.yaml parses the whole file
+      CI: "true" # arms the no-skip-as-green guards in ssrf_smoke.sh + envOrSkip
+      POSTGRES_PASSWORD: ci-test-password # compose.yaml parses the whole file
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -636,7 +641,7 @@ jobs:
   knowledge-integration-test:
     name: Owned-surface coverage gate (live Postgres + ArcadeDB + embed sidecar)
     runs-on: ubuntu-latest
-    timeout-minutes: 25  # guards against a hung model/plugin download
+    timeout-minutes: 25 # guards against a hung model/plugin download
     env:
       POSTGRES_USER: aura
       POSTGRES_PASSWORD: ci-test-password
@@ -986,7 +991,7 @@ jobs:
   multimodal-integration-test:
     name: Multimodal sidecars (multimodal_integration tier, live STT/TTS)
     runs-on: ubuntu-latest
-    timeout-minutes: 30  # guards against a hung sidecar model download
+    timeout-minutes: 30 # guards against a hung sidecar model download
     # Phase 13 (Slice 9c, UX-04). GitHub-hosted runners have no Nvidia device, so
     # CI live-runs only the CPU-safe audio sidecars (aura-stt/aura-tts). The compile
     # gate below still covers the OCR code path; the full STT/OCR/TTS live tier runs
@@ -994,7 +999,7 @@ jobs:
     # whole compose file parses (the fail-fast vars) even though this job starts only
     # the audio sidecars.
     env:
-      CI: "true"  # arms the sidecarEnvOrSkip no-skip-as-green guards
+      CI: "true" # arms the sidecarEnvOrSkip no-skip-as-green guards
       POSTGRES_PASSWORD: ci-test-password
       # The loopback-published sidecar endpoints the tier reads (compose maps each
       # service to 127.0.0.1; the /v1 suffix matches the OpenAI-compat base).
@@ -1070,7 +1075,7 @@ jobs:
     # arm liveEnvOrSkip's no-skip-as-green t.Fatal (a missing var under CI fails, never
     # skips green).
     env:
-      CI: "true"  # arms the liveEnvOrSkip no-skip-as-green guards
+      CI: "true" # arms the liveEnvOrSkip no-skip-as-green guards
       # Map the secrets to job env at the job level (the secrets context is not
       # usable in a step-level `if`). HAS_BOT_TOKEN gates the live step; the actual
       # token/chat are passed only to the gated step's env.
@@ -1099,26 +1104,88 @@ jobs:
           AURA_E2E_CHAT_ID: ${{ secrets.AURA_E2E_CHAT_ID }}
         run: go test -race -count=1 -tags telegram_integration ./internal/channels/telegram/
 
+  whatsapp-integration-test:
+    name: WhatsApp MCP (live OAuth subjects + two-tenant isolation)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI: "true"
+      AURA_WHATSAPP_MCP_IMAGE: ghcr.io/chetto1983/whatsapp-mcp:sha-a463da5@sha256:006602da0893ada0eb80c812384032e262c1c7f0642866bf194041078e86130f
+      AURA_WHATSAPP_MCP_URL: http://127.0.0.1:18092/mcp
+      AURA_WHATSAPP_STORE_ROOT: ${{ runner.temp }}/aura-whatsapp-store
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Compile the whatsapp_integration tier
+        run: go vet -tags whatsapp_integration ./internal/mcp/
+
+      - name: Start the published Aura WhatsApp remote MCP
+        run: |
+          mkdir -p "$AURA_WHATSAPP_STORE_ROOT"
+          docker run -d --name aura-whatsapp-ci \
+            --add-host=host.docker.internal:host-gateway \
+            -p 127.0.0.1:18092:8080 \
+            -p 127.0.0.1:18094:8081 \
+            -e WHATSAPP_BRIDGE_TOKEN=ci-whatsapp-bridge-token-2026 \
+            -e MCP_OAUTH_ISSUER=http://127.0.0.1:18090 \
+            -e MCP_OAUTH_JWKS_URL=http://host.docker.internal:18090/jwks \
+            -e MCP_OAUTH_RESOURCE=http://127.0.0.1:18092/mcp \
+            -v "$AURA_WHATSAPP_STORE_ROOT:/app/whatsapp-bridge/store" \
+            "$AURA_WHATSAPP_MCP_IMAGE"
+
+      - name: Wait for the tenant gateway
+        run: |
+          ok=""
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18094/healthz >/dev/null; then
+              ok=1
+              break
+            fi
+            sleep 2
+          done
+          if [ -z "$ok" ]; then
+            docker logs aura-whatsapp-ci --tail 100 || true
+            exit 1
+          fi
+
+      - name: Live Go whatsapp_integration tier
+        # The test starts a real OAuth metadata/JWKS issuer, signs two RS256
+        # access tokens, creates both tenant runtimes, seeds their real SQLite
+        # stores, and proves cross-subject isolation over MCP.
+        run: go test -race -tags whatsapp_integration -count=1 ./internal/mcp/
+
+      - name: Tear down
+        if: always()
+        run: |
+          docker rm -f aura-whatsapp-ci || true
+
   calendar-integration-test:
     name: Calendar PIM MCP (calendar_integration tier, live aura-pim-mcp sidecar)
     runs-on: ubuntu-latest
-    timeout-minutes: 15  # guards against a hung image pull
+    timeout-minutes: 15 # guards against a hung image pull
     # Phase 3 (aura-pim-mcp fork). Brings up the published PIM sidecar (forked
-    # calendar-mcp → ghcr.io/chetto1983/aura-pim-mcp), seeds the same no-OAuth JSON
-    # fixture for two Aura identities, and runs the calendar_integration tier against
-    # the LIVE bearer-protected container: Streamable HTTP initialize + the ONE curated
+    # calendar-mcp → ghcr.io/chetto1983/aura-pim-mcp), stages a no-provider-OAuth JSON
+    # fixture, and runs the calendar_integration tier against the LIVE OAuth-protected
+    # container: Streamable HTTP initialize + the ONE curated
     # 29-action `calendar` tool + cross-tenant list isolation + the MCP-05 opaque-reference
     # round-trip. No provider OAuth or external network is needed.
     # NO-SKIP-AS-GREEN: AURA_PIM_MCP_URL is exported so the tier RUNS; the test
     # t.Fatals under $CI when it is unset (a skipped tier fails the gate — CLAUDE.md).
     env:
-      CI: "true"  # arms the no-skip-as-green t.Fatal in the tier
+      CI: "true" # arms the no-skip-as-green t.Fatal in the tier
       # The job runs the sidecar via `docker run` (NOT `docker compose`): compose would
       # interpolate the WHOLE compose.yaml and fail on the unrelated `aura` service's
       # :?-required POSTGRES_PASSWORD. The standalone GHCR image has no compose deps.
       # Pinned by commit, matching compose.yaml: `:sidecar` moved on 2026-08-22, and a
       # floating tag is how CI and dev end up exercising different servers.
-      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:a4d39473b360e66575ee4e6bab0a6aad6562f341
+      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:b1d584a4645c41b8e23e176af258befd9e598de5@sha256:ecb4a77957c012e61da1aebd69b17213e584e10215718b1195174216e6461af0
       # The container's MCP-over-HTTP path is the root "/" (spike 064); we publish it on
       # host 127.0.0.1:8093 (the container listens on 8080).
       AURA_PIM_MCP_URL: http://127.0.0.1:8093/
@@ -1143,8 +1210,12 @@ jobs:
         # fine: tools/list + list_accounts answer without OAuth.
         run: |
           docker run -d --name aura-pim-mcp \
+            --add-host=host.docker.internal:host-gateway \
             -p 127.0.0.1:8093:8080 \
-            -e CALENDAR_MCP_ADMIN_TOKEN=ci-not-a-secret \
+            -e CALENDAR_MCP_OAuth__Issuer=http://127.0.0.1:18090 \
+            -e CALENDAR_MCP_OAuth__MetadataAddress=http://host.docker.internal:18090/.well-known/oauth-authorization-server \
+            -e CALENDAR_MCP_OAuth__Resource=http://127.0.0.1:8093/ \
+            -e CALENDAR_MCP_OAuth__ToolsScope=mcp:tools \
             "$AURA_PIM_MCP_IMAGE"
 
       - name: Wait for the PIM sidecar healthy
@@ -1162,38 +1233,12 @@ jobs:
             exit 1
           fi
 
-      - name: Seed a no-OAuth fixture calendar (arms the MCP-05 round-trip)
-        # Without this the sidecar has zero events, get_calendar_events returns no
-        # opaque eventId, and the tier degrades to proving only the SCHEMA half of
-        # MCP-05 while still reporting PASS -- a skip wearing a green hat, which is
-        # exactly what CLAUDE.md's no-skip-as-green rule exists to stop.
-        # The `json` provider needs no OAuth and no network: it reads a local file,
-        # so CI gets the same round-trip coverage a connected account would give.
-        run: |
-          wait_healthy() {
-            for i in $(seq 1 30); do
-              status="$(docker inspect -f '{{.State.Health.Status}}' aura-pim-mcp 2>/dev/null || echo starting)"
-              [ "$status" = "healthy" ] && return 0
-              sleep 5
-            done
-            echo "aura-pim-mcp did not become healthy after seeding" >&2
-            docker logs aura-pim-mcp --tail 80 || true
-            return 1
-          }
-          docker cp internal/mcp/testdata/fixture-calendar.json             aura-pim-mcp:/app/data/fixture-calendar.json
-          for tenant in 00000000-0000-0000-0000-000000000001 00000000-0000-0000-0000-000000000002; do
-            curl -sS -X POST http://127.0.0.1:8093/admin/accounts \
-              -H "Authorization: Bearer ci-not-a-secret" \
-              -H "X-Aura-Identity: $tenant" \
-              -H 'Content-Type: application/json' \
-              -d '{"id":"fixture","displayName":"Fixture calendar (no OAuth)","provider":"json","enabled":true,"priority":1,"providerConfig":{"source":"local","filePath":"/app/data/fixture-calendar.json"}}' \
-              --fail-with-body
-          done
-          docker restart aura-pim-mcp
-          wait_healthy
+      - name: Stage the local calendar fixture
+        run: docker cp internal/mcp/testdata/fixture-calendar.json aura-pim-mcp:/app/data/fixture-calendar.json
 
       - name: Live calendar_integration tier (curated tool + list_accounts)
-        # -race matches every other live tier (db/web/knowledge/telegram/memory).
+        # The test's real issuer signs two subject-bound access tokens and uses
+        # those same tokens for both /admin account setup and MCP calls.
         run: go test -race -tags calendar_integration -count=1 ./internal/mcp/
 
       - name: Tear down

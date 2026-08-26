@@ -1,24 +1,26 @@
-.git
-.worktrees
-output
-.env
-.env.*
-*.log
-coverage.out
-tmp
+**
+!.dockerignore
+!go.mod
+!go.sum
+!cmd/
+!cmd/aura/
+!cmd/aura/**
+!cmd/arcadedb-mcp/
+!cmd/arcadedb-mcp/**
+!internal/
+!internal/**
+!web/
+!web/**
+!docker/
+!docker/aura/
+!docker/aura/**
+!docker/arcadedb-mcp/
+!docker/arcadedb-mcp/**
+!docker/caddy/
+!docker/caddy/**
+
 internal/runner/conversations
-**/node_modules
-**/.stryker-tmp*
-# Python sidecar working dirs. A local uv/pip venv under docker/agent-memory/ carries a
-# lib64 -> lib symlink that Docker's context sender cannot stat on Windows, which fails
-# the whole root build with an opaque "file cannot be accessed" — after shipping 144 MB
-# of caches nobody needs in the image.
-**/.venv
-**/__pycache__
-**/.mypy_cache
-**/.pytest_cache
-**/.ruff_cache
-**/.benchmarks
+web/node_modules
 web/coverage
 web/test-results
 web/playwright-report

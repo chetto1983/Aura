@@ -265,11 +265,8 @@ func callMemoryToolText(ctx context.Context, tool string, args map[string]any) (
 		return "", err
 	}
 	defer func() { _ = session.Close() }()
-	// scoped=true: identity resolution and the _meta.aura.user_identifier stamp
-	// (D-108) now live in callSessionText, the CLI's single decode/dispatch site —
-	// scopeMemoryArgs's argument-based stamp is retired, not replaced in place.
-	// Its "a caller-supplied user_identifier is left alone" branch has no _meta
-	// equivalent to preserve: D-108 is a hard cut with no argument path left.
+	// The identity requirement is checked again at dispatch. The session opened
+	// above restores the OAuth grant for that same identity.
 	return callSessionText(callCtx, session, memoryServerName, tool, args, true)
 }
 

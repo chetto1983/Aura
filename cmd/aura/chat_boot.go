@@ -62,6 +62,7 @@ type chatEnv struct {
 	shareSvc    *share.Service
 	toolHandles runtimeToolHandles
 	mcpClosers  []func() error
+	liveMCP     *liveMCPMount
 	// sandboxRouter is the per-identity box routing seam (Phase 37, plan 37-05) and the ONLY
 	// execution path for shell_exec and the fs_* tools. buildSandboxRouter never returns nil: a
 	// composition failure yields a backend-less router whose every Route denies, because nil
@@ -91,6 +92,9 @@ func (e *chatEnv) close() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = e.toolHandles.BackgroundShells.Shutdown(ctx)
+	}
+	if e.liveMCP != nil {
+		_ = e.liveMCP.Close()
 	}
 	_ = closeMCPServers(e.mcpClosers)
 	if e.pool != nil {
@@ -154,7 +158,7 @@ func bootChatEnv(ctx context.Context) (*chatEnv, error) {
 // bootServeChatEnv shares the chat composition root with serve's keyless LLM
 // config loader. Runtime LLM calls still fail closed if no key is configured.
 func bootServeChatEnv(ctx context.Context) (*chatEnv, error) {
-	return bootChatEnvWithConfig(ctx, config.LoadServe)
+	return bootChatEnvWithConfig(deferOAuthMountsUntilListener(ctx), config.LoadServe)
 }
 
 func bootChatEnvWithConfig(ctx context.Context, loadConfig func() (*config.Config, error)) (*chatEnv, error) {
@@ -438,6 +442,11 @@ func assembleChatEnv(
 	if cfg.AGUISteer.Enabled {
 		steerInbox = newSteerInbox(cfg.AGUISteer)
 	}
+	memoryContext := toolHandles.MemoryContext
+	if memoryContext == nil && toolHandles.Memory != nil {
+		memoryContext = newMemoryContextProvider(toolHandles.Memory, cfg.MemoryPreloadTopK, time.Duration(cfg.MemoryPreloadTimeoutMS)*time.Millisecond)
+	}
+	toolHandles.MemoryContext = memoryContext
 	deps := runner.Deps{
 		Conv:            convStore,
 		Pause:           pauseStore,
@@ -445,7 +454,7 @@ func assembleChatEnv(
 		Identity:        idStore,
 		CacheMetrics:    cacheStore,
 		ToolInvocations: toolInvocationStore,
-		MemoryContext:   newMemoryContextProvider(toolHandles.Memory, cfg.MemoryPreloadTopK, time.Duration(cfg.MemoryPreloadTimeoutMS)*time.Millisecond),
+		MemoryContext:   memoryContext,
 		// Atomic cross-store HITL durability (D-03/D-05): the pool-owning committer spans
 		// a pause claim + its answer turn (and pause exposure) in ONE db.WithTx.
 		ResumeCommitter: runner.NewPoolResumeCommitter(pool, convStore, pauseStore),

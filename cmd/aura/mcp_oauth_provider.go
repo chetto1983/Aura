@@ -36,6 +36,7 @@ type mcpAuthService struct {
 }
 
 var _ agui.MCPAuthorizationProvider = (*mcpAuthService)(nil)
+var _ agui.MCPAccessTokenProvider = (*mcpAuthService)(nil)
 
 // newMCPAuthService builds the provider, or returns nil when the deployment cannot
 // support it. Nil is not a failure: the routes answer 503 and the rest of the cockpit
@@ -180,4 +181,22 @@ func (m *mcpAuthService) FailAuthorization(state string, reason error) (mcp.Flow
 
 func (m *mcpAuthService) RevokeAuthorization(ctx context.Context, name string) (bool, error) {
 	return m.store.Delete(ctx, name)
+}
+
+func (m *mcpAuthService) AccessToken(ctx context.Context, name string) (string, error) {
+	server, ok, err := effectiveManagedMCPServer(name)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", fmt.Errorf("MCP server %q is not configured or is disabled", name)
+	}
+	settings, err := mcp.OAuthSettingsFromEnv(server.Env)
+	if err != nil {
+		return "", err
+	}
+	if !mcp.UsesOAuth(server, settings) {
+		return "", fmt.Errorf("MCP server %q does not use OAuth", name)
+	}
+	return mcp.StoredOAuthAccessToken(ctx, name, m.store, runtimeMCPEgressPolicy(server), nil)
 }

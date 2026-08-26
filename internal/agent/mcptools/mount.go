@@ -7,6 +7,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
@@ -102,26 +103,11 @@ func elicitationHandlerFor(name string, consent ElicitationConsent) func(context
 	return NewElicitationHandler(name, consent)
 }
 
-// sendingMiddleware is the sending middleware stack every Aura MCP session opens
-// with: the _meta.aura operation stamp (plan 45.1-02) always, plus the _meta.aura
-// identity stamp on every Aura-owned remote recipe. The middleware is
-// registered once on the per-mount Client, so scoping is by mount, not by a
-// per-call branch. It is the same function for both mount branches so a policy
-// fix in one cannot miss the other.
-//
-// Order is {OperationMetaMiddleware(), IdentityMetaMiddleware()}. AddSendingMiddleware
-// applies its arguments right-to-left (go-sdk@v1.7.0 mcp/client.go:1129), so the
-// LAST middleware in this slice actually runs FIRST on the way out. That ordering
-// is irrelevant here ONLY because the two middlewares write disjoint _meta.aura
-// fields (operation_key/scope/fingerprint vs. user_identifier) — say so explicitly,
-// because the next middleware added to this slice may not have that property, and
-// silently relying on "the SDK figures out order" would be wrong for it.
-func sendingMiddleware(policy bridgePolicy) []sdkmcp.Middleware {
-	mw := []sdkmcp.Middleware{mcp.OperationMetaMiddleware()}
-	if policy.identityScoped {
-		mw = append(mw, IdentityMetaMiddleware())
+func sendingMiddleware(policy bridgePolicy, owner string) []sdkmcp.Middleware {
+	if !policy.identityScoped {
+		return nil
 	}
-	return mw
+	return []sdkmcp.Middleware{IdentityBindingMiddleware(owner)}
 }
 
 // mountManagedHTTPHost is the streamable-HTTP mirror of mountStdio: it opens the
@@ -130,17 +116,48 @@ func sendingMiddleware(policy bridgePolicy) []sdkmcp.Middleware {
 // then wraps the session in a MountedServer so every CALL after a successful
 // mount gets the redial-on-transport-error behavior the stdio branch already had.
 func mountManagedHTTPHost(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, policy bridgePolicy, opts MountOptions) (closer func() error, names []string, host *MountedServer, err error) {
-	var srv *MountedServer
 	elicit := elicitationHandlerFor(name, opts.Elicitation)
-	open := func(pctx, hctx context.Context, o mcp.SessionOptions) (*sdkmcp.ClientSession, error) {
-		o.Sending = sendingMiddleware(policy)
-		o.ToolListChanged = srv.onToolListChanged
+	connect := func(_ context.Context, hctx context.Context, o mcp.SessionOptions) (*sdkmcp.ClientSession, error) {
+		o.Sending = sendingMiddleware(policy, identityctx.IdentityID(hctx))
 		o.Elicitation = elicit
 		o.OAuth = opts.OAuth
 		return mcp.OpenSDKSession(hctx, name, server, opts.Egress, o)
 	}
+	if policy.identityScoped {
+		return openIdentityScopedHTTPMount(processCtx, handshakeCtx, reg, name, policy, opts.Views, connect)
+	}
+	var srv *MountedServer
+	open := func(pctx, hctx context.Context, o mcp.SessionOptions) (*sdkmcp.ClientSession, error) {
+		o.ToolListChanged = srv.onToolListChanged
+		return connect(pctx, hctx, o)
+	}
 	srv = NewMountedServer(name, open)
 	return openAttachAndMount(srv, processCtx, handshakeCtx, open, reg, name, policy, opts.Views)
+}
+
+func openIdentityScopedHTTPMount(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, policy bridgePolicy, views *mcp.ViewCatalog, connect openSessionFunc) (closer func() error, names []string, host *MountedServer, err error) {
+	procCtx, cancel := context.WithCancel(processCtx)
+	parent := NewMountedServer(name, nil)
+	pool := newIdentitySessionPool(parent, connect, procCtx)
+	parent.identityPool = pool
+
+	session, advertised, err := pool.openInitial(handshakeCtx)
+	if err != nil {
+		cancel()
+		return nil, nil, nil, err
+	}
+	names, err = mountWithAdvertisedPolicy(reg, name, parent, advertised, policy)
+	if err != nil {
+		_ = parent.Close()
+		cancel()
+		return nil, nil, nil, fmt.Errorf("mount %q: %w", name, err)
+	}
+	parent.trackAcceptedTools(advertised)
+	hydrateViews(handshakeCtx, session, name, views, advertised, policy)
+	return func() error {
+		defer cancel()
+		return parent.Close()
+	}, names, parent, nil
 }
 
 // mountStdio is the shared stdio mount body for MountServer and MountManagedServer's
@@ -172,7 +189,7 @@ func mountStdioWithPolicyHost(processCtx, handshakeCtx context.Context, reg *too
 	var srv *MountedServer
 	elicit := elicitationHandlerFor(name, opts.Elicitation)
 	open := func(pctx, hctx context.Context, o mcp.SessionOptions) (*sdkmcp.ClientSession, error) {
-		o.Sending = sendingMiddleware(policy)
+		o.Sending = sendingMiddleware(policy, "")
 		o.ToolListChanged = srv.onToolListChanged
 		o.Elicitation = elicit
 		return mcp.OpenSDKSessionForConfig(pctx, hctx, name, cfg, o)

@@ -2,6 +2,7 @@ package agui
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"time"
@@ -20,13 +21,12 @@ import (
 // a Microsoft/Outlook account), so the parent-mux mount (serve_webui.go) is behind
 // RequireCapability(governance.write). They cover every provider the sidecar exposes — google
 // (web-redirect), microsoft365/outlook.com (device-code), imap, ics, json — not just Google. The
-// sidecar base URL + admin token are wired by the daemon composition root via SetCalendarMCP (from
-// AURA_PIM_MCP_URL + AURA_PIM_MCP_ADMIN_TOKEN); an unset URL answers 503 so a stack with the sidecar
-// off degrades gracefully. The admin token is injected server-side as Authorization: Bearer and
+// sidecar base URL + identity-scoped OAuth grant are wired by the daemon composition root via
+// SetCalendarMCP; an unset dependency answers 503 so a stack with the sidecar off degrades
+// gracefully. The access token is injected server-side as Authorization: Bearer and
 // NEVER returned to the client; a transport error or a non-2xx status is passed through with a
-// sanitized JSON body (the sidecar host never leaks). Every forward also carries
-// X-Aura-Identity from the authenticated cockpit principal; the browser cannot
-// choose or override the tenant.
+// sanitized JSON body (the sidecar host never leaks). The standard OAuth subject is the
+// sole tenant selector; the browser cannot choose or override it.
 //
 // The Google OAuth callback (GET /admin/auth/google/callback) is token-exempt and is hit DIRECTLY
 // by the user's browser at the sidecar's external base URL — it is deliberately NOT proxied here.
@@ -51,15 +51,19 @@ const pimDeviceStartTimeout = 35 * time.Second
 // pimDeviceClient is the longer-timeout outbound client used ONLY by the device-code start forward.
 var pimDeviceClient = &http.Client{Timeout: pimDeviceStartTimeout}
 
-// SetCalendarMCP wires the aura-pim-mcp sidecar's /admin REST base URL + admin token the connect
-// calendar routes forward to (AURA_PIM_MCP_URL + AURA_PIM_MCP_ADMIN_TOKEN). Set by the daemon
+type MCPAccessTokenProvider interface {
+	AccessToken(ctx context.Context, server string) (string, error)
+}
+
+// SetCalendarMCP wires the calendar resource server's /admin REST base URL and the same
+// identity-scoped OAuth grant provider used by its MCP transport. Set by the daemon
 // composition root after NewServer; until set (or when the URL is empty), the five
 // /api/connect/pim/* routes answer 503 so a stack without the sidecar degrades gracefully. Kept off
 // the constructor so existing NewServer callers/tests stay unchanged (the SetWhatsAppBridge
 // precedent).
-func (s *Server) SetCalendarMCP(baseURL, adminToken string) {
+func (s *Server) SetCalendarMCP(baseURL string, auth MCPAccessTokenProvider) {
 	s.calendarMCPURL = baseURL
-	s.calendarMCPToken = adminToken
+	s.calendarMCPAuth = auth
 }
 
 // registerConnectPIMRoutes mounts the calendar/PIM connect routes on the supplied mux using Go 1.22
@@ -179,10 +183,10 @@ func readCappedBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	return body, true
 }
 
-// forwardPIMJSON forwards method+path (relative to the sidecar base) with the Bearer admin token
+// forwardPIMJSON forwards method+path (relative to the sidecar base) with the identity's OAuth access token
 // injected server-side and passes the JSON response body + status code straight through. The body
 // is size-capped and read into memory so a sanitized 502 can replace a partial/hostile body. The
-// admin token is NEVER written to the response.
+// access token is NEVER written to the response.
 func (s *Server) forwardPIMJSON(w http.ResponseWriter, r *http.Request, method, path string, body []byte) {
 	resp, ok := s.dialPIM(w, r, method, path, body, pimClient)
 	if !ok {
@@ -237,7 +241,7 @@ func (s *Server) forwardPIMRetry404(w http.ResponseWriter, r *http.Request, meth
 }
 
 // dialPIM nil-checks the configured sidecar URL (503 when unwired), builds + sends the bounded
-// outbound request with the admin Bearer token injected, and maps a transport failure onto a
+// outbound request with the identity-scoped Bearer token injected, and maps a transport failure onto a
 // sanitized 502 (the sidecar host/path/token never leaks). It returns the live response (the caller
 // closes the body) and whether the handler may proceed — mirroring dialBridge's (value, ok) shape.
 func (s *Server) dialPIM(w http.ResponseWriter, r *http.Request, method, path string, body []byte, client *http.Client) (*http.Response, bool) {
@@ -245,9 +249,17 @@ func (s *Server) dialPIM(w http.ResponseWriter, r *http.Request, method, path st
 		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "calendar connect not configured"})
 		return nil, false
 	}
-	identityID, ok := principalIdentityID(r)
-	if !ok {
+	if _, ok := principalIdentityID(r); !ok {
 		writeJSONStatus(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+		return nil, false
+	}
+	if s.calendarMCPAuth == nil {
+		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "calendar authorization not configured"})
+		return nil, false
+	}
+	accessToken, err := s.calendarMCPAuth.AccessToken(r.Context(), "calendar")
+	if err != nil {
+		writeJSONStatus(w, http.StatusUnauthorized, map[string]string{"error": "calendar authorization required"})
 		return nil, false
 	}
 	var reader io.Reader
@@ -263,10 +275,7 @@ func (s *Server) dialPIM(w http.ResponseWriter, r *http.Request, method, path st
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if s.calendarMCPToken != "" {
-		req.Header.Set("Authorization", "Bearer "+s.calendarMCPToken)
-	}
-	req.Header.Set("X-Aura-Identity", identityID)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
 	resp, err := client.Do(req)
 	if err != nil {
 		// The error embeds the sidecar host/URL — SanitizeString collapses any DSN/userinfo/token;

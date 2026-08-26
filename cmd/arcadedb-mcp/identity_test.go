@@ -7,99 +7,58 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
-	auramcp "github.com/chetto1983/aura/internal/mcp"
 )
 
-// reqWithIdentity builds a *mcp.CallToolRequest carrying identity in
-// _meta.aura.user_identifier — the shape every handler test in this package
-// needs post-D-108, since UserIdentifier is no longer an input struct field on
-// any of the nine input types. Every other test file in this package (same
-// package, `main`) reuses this helper instead of hand-rolling the _meta shape.
 func reqWithIdentity(identity string) *mcp.CallToolRequest {
-	return reqWithMeta(map[string]any{
-		auraMetaKey: map[string]any{metaFieldUserIdentifier: identity},
-	})
-}
-
-// reqWithMeta builds a *mcp.CallToolRequest carrying an arbitrary _meta shape,
-// for the refusal-path tests that need something OTHER than a valid identity
-// (absent, wrong-typed, or a foreign namespace entirely).
-func reqWithMeta(meta map[string]any) *mcp.CallToolRequest {
-	params := &mcp.CallToolParamsRaw{}
-	if meta != nil {
-		params.SetMeta(meta)
-	}
-	return &mcp.CallToolRequest{Params: params}
-}
-
-// TestMetaKeyConstantsMatchClient pins identity.go's own consts to
-// internal/mcp's exported ones BY VALUE. This binary is a separate `main`
-// package and cannot import internal/mcp for a shared constant without pulling
-// agent-side policy into the memory sidecar (D-103), so the two pairs are
-// pinned equal here instead. A silent divergence would refuse every call
-// (fail-closed) rather than cross a tenant — but it would also take memory
-// down, so it is worth catching at test time rather than live.
-func TestMetaKeyConstantsMatchClient(t *testing.T) {
-	if auraMetaKey != auramcp.MetaNamespaceAura {
-		t.Fatalf("auraMetaKey = %q, want internal/mcp.MetaNamespaceAura = %q", auraMetaKey, auramcp.MetaNamespaceAura)
-	}
-	if metaFieldUserIdentifier != auramcp.MetaFieldUserIdentifier {
-		t.Fatalf("metaFieldUserIdentifier = %q, want internal/mcp.MetaFieldUserIdentifier = %q",
-			metaFieldUserIdentifier, auramcp.MetaFieldUserIdentifier)
+	return &mcp.CallToolRequest{
+		Params: &mcp.CallToolParamsRaw{},
+		Extra:  &mcp.RequestExtra{TokenInfo: &auth.TokenInfo{UserID: identity}},
 	}
 }
 
-// TestIdentityFromMeta covers every <behavior> bullet the plan names for the
-// fail-closed read itself, exhaustively and directly — before any server
-// round-trip is involved.
-func TestIdentityFromMeta(t *testing.T) {
+func TestIdentityFromToken(t *testing.T) {
 	cases := []struct {
 		name   string
 		req    *mcp.CallToolRequest
 		wantID string
 	}{
-		{"nil request", nil, ""},
-		{"nil params", &mcp.CallToolRequest{}, ""},
-		{"no _meta at all", reqWithMeta(nil), ""},
-		{"_meta present, no aura namespace", reqWithMeta(map[string]any{"other": "x"}), ""},
-		{"aura namespace wrong type", reqWithMeta(map[string]any{"aura": "not-a-map"}), ""},
-		{"aura present, no user_identifier key", reqWithMeta(map[string]any{"aura": map[string]any{}}), ""},
-		{"empty identity", reqWithMeta(map[string]any{"aura": map[string]any{"user_identifier": ""}}), ""},
-		{"whitespace-only identity", reqWithMeta(map[string]any{"aura": map[string]any{"user_identifier": "   "}}), ""},
-		{"non-string identity", reqWithMeta(map[string]any{"aura": map[string]any{"user_identifier": 42}}), ""},
-		{"valid identity", reqWithIdentity(testIdentity), testIdentity},
-		{"valid identity with surrounding whitespace trims", reqWithMeta(map[string]any{
-			"aura": map[string]any{"user_identifier": "  " + testIdentity + "  "},
-		}), testIdentity},
+		{name: "nil request"},
+		{name: "nil extra", req: &mcp.CallToolRequest{}},
+		{name: "nil token", req: &mcp.CallToolRequest{Extra: &mcp.RequestExtra{}}},
+		{name: "empty subject", req: reqWithIdentity("")},
+		{name: "whitespace subject", req: reqWithIdentity("   ")},
+		{name: "valid subject", req: reqWithIdentity(testIdentity), wantID: testIdentity},
+		{name: "surrounding whitespace", req: reqWithIdentity("  " + testIdentity + "  "), wantID: testIdentity},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := identityFromMeta(tc.req)
+			got, err := identityFromToken(tc.req)
 			if tc.wantID == "" {
-				if err == nil {
-					t.Fatalf("identityFromMeta(%s) = %q, nil; want errMissingIdentityMeta", tc.name, got)
-				}
-				if !errors.Is(err, errMissingIdentityMeta) {
-					t.Fatalf("err = %v, want errMissingIdentityMeta", err)
+				if !errors.Is(err, errMissingOAuthSubject) {
+					t.Fatalf("error = %v, want errMissingOAuthSubject", err)
 				}
 				return
 			}
-			if err != nil {
-				t.Fatalf("identityFromMeta(%s): unexpected error %v", tc.name, err)
-			}
-			if got != tc.wantID {
-				t.Fatalf("identity = %q, want %q", got, tc.wantID)
+			if err != nil || got != tc.wantID {
+				t.Fatalf("identityFromToken = (%q, %v), want (%q, nil)", got, err, tc.wantID)
 			}
 		})
 	}
 }
 
-// spyTenantResolver counts For calls so "never resolved" is asserted rather
-// than assumed (RESEARCH Pitfall 2 / the plan's threat register T-45.1-22): a
-// refusal must never reach tenant resolution at all.
+func TestIdentityFromTokenIgnoresClientMetadata(t *testing.T) {
+	req := reqWithIdentity(testIdentity)
+	req.Params.SetMeta(map[string]any{"tenant": "00000000-0000-0000-0000-000000000099"})
+	got, err := identityFromToken(req)
+	if err != nil || got != testIdentity {
+		t.Fatalf("identityFromToken = (%q, %v), want authenticated subject %q", got, err, testIdentity)
+	}
+}
+
 type spyTenantResolver struct {
 	mu    sync.Mutex
 	calls int
@@ -122,11 +81,6 @@ func (s *spyTenantResolver) callCount() int {
 	return s.calls
 }
 
-// inMemoryIdentityServer connects srv to a real client over an in-memory
-// transport pair and returns the client session — the vehicle every refusal
-// test in this file uses to prove the WIRE outcome (IsError:true + text), not
-// merely a Go-level return value a caller could get by skipping AddTool's
-// generated wrapper.
 func inMemoryIdentityServer(t *testing.T, srv *mcp.Server) *mcp.ClientSession {
 	t.Helper()
 	clientTransport, serverTransport := mcp.NewInMemoryTransports()
@@ -148,77 +102,34 @@ func inMemoryIdentityServer(t *testing.T, srv *mcp.Server) *mcp.ClientSession {
 func resultText(res *mcp.CallToolResult) string {
 	var b strings.Builder
 	for _, part := range res.Content {
-		if tc, ok := part.(*mcp.TextContent); ok {
-			b.WriteString(tc.Text)
+		if text, ok := part.(*mcp.TextContent); ok {
+			b.WriteString(text.Text)
 		}
 	}
 	return b.String()
 }
 
-// TestMemoryToolsRefuseMissingIdentity drives a REAL in-memory server (through
-// mcp.AddTool's generated ToolHandlerFor wrapper, per this plan's
-// <falsified_premise>) and proves every one of the four refusal shapes reaches
-// the wire as IsError:true with the model-visible "missing required identity"
-// text — and that tenants.For is NEVER called on any refusal path.
-func TestMemoryToolsRefuseMissingIdentity(t *testing.T) {
+func TestMemoryToolRefusesMissingOAuthSubject(t *testing.T) {
 	spy := &spyTenantResolver{}
 	server := newServer(&tenants{resolver: spy}, testClock, "")
 	session := inMemoryIdentityServer(t, server)
-	ctx := context.Background()
-
-	cases := []struct {
-		name string
-		meta map[string]any
-	}{
-		{"no _meta at all", nil},
-		{"empty identity", map[string]any{"aura": map[string]any{"user_identifier": ""}}},
-		{"whitespace-only identity", map[string]any{"aura": map[string]any{"user_identifier": "   "}}},
-		{"non-string identity", map[string]any{"aura": map[string]any{"user_identifier": 7}}},
+	res, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "memory_search", Arguments: map[string]any{"query": "q"},
+	})
+	if err != nil {
+		t.Fatalf("CallTool transport error: %v", err)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			params := &mcp.CallToolParams{Name: "memory_search", Arguments: map[string]any{"query": "q"}}
-			if tc.meta != nil {
-				params.SetMeta(tc.meta)
-			}
-			res, err := session.CallTool(ctx, params)
-			if err != nil {
-				t.Fatalf("CallTool transport error: %v", err)
-			}
-			if !res.IsError {
-				t.Fatalf("IsError = false, want true (refusal); content = %s", resultText(res))
-			}
-			text := resultText(res)
-			if !strings.Contains(text, "missing required identity") {
-				t.Fatalf("text = %q, want it to contain %q", text, "missing required identity")
-			}
-		})
+	if !res.IsError || !strings.Contains(resultText(res), "missing authenticated OAuth subject") {
+		t.Fatalf("result = (isError=%v) %q", res.IsError, resultText(res))
 	}
 	if got := spy.callCount(); got != 0 {
-		t.Fatalf("tenants.For called %d times across refusal paths, want 0", got)
+		t.Fatalf("tenants.For called %d times, want 0", got)
 	}
 }
 
-// TestMemoryToolResolvesMetaIdentityNotStaleArgument is the adjacency edge
-// case: a call whose ARGUMENTS carry a stale user_identifier (rehydrated
-// history) and whose _meta carries a DIFFERENT, valid identity resolves the
-// _meta identity — the argument is ignored outright, never merged, never
-// preferred, never a fallback.
-//
-// Driven at the handler level, not through a full session.CallTool round trip:
-// every memory tool's advertised schema now declares additionalProperties:false
-// (mcp.AddTool's reflection-derived default) and no longer declares
-// user_identifier at all, so a REAL wire call carrying that extra property is
-// refused by SCHEMA VALIDATION before identityFromMeta or tenants.For ever run
-// — an even stronger guarantee than "ignored", proven separately by
-// TestMemoryToolRefusesStaleArgumentWithNoMeta's IsError:true. What this test
-// isolates is identityFromMeta's OWN contract: it never reads req.Params.
-// Arguments at all, so a stale value sitting there — however it got there — has
-// nothing to override.
-func TestMemoryToolResolvesMetaIdentityNotStaleArgument(t *testing.T) {
+func TestMemoryToolResolvesTokenSubjectNotStaleArgument(t *testing.T) {
 	client, _ := newRecordingDB(t, `{"result":[]}`)
 	captured := &capturingTenantResolver{client: client}
-
 	req := reqWithIdentity(testIdentity)
 	req.Params.Arguments = []byte(`{"query":"q","user_identifier":"11111111-1111-1111-1111-111111111111"}`)
 
@@ -228,43 +139,32 @@ func TestMemoryToolResolvesMetaIdentityNotStaleArgument(t *testing.T) {
 		t.Fatalf("memorySearchHandler: %v", err)
 	}
 	if captured.lastIdentity() != testIdentity {
-		t.Fatalf("resolved identity = %q, want the _meta identity %q — a stale argument must never win",
-			captured.lastIdentity(), testIdentity)
+		t.Fatalf("resolved identity = %q, want token subject %q", captured.lastIdentity(), testIdentity)
 	}
 }
 
-// TestMemoryToolRefusesStaleArgumentWithNoMeta: arguments carrying
-// user_identifier and _meta carrying NONE is refused — the stale argument does
-// not rescue the call.
-func TestMemoryToolRefusesStaleArgumentWithNoMeta(t *testing.T) {
+func TestMemoryToolRefusesStaleArgumentWithoutToken(t *testing.T) {
 	spy := &spyTenantResolver{}
 	server := newServer(&tenants{resolver: spy}, testClock, "")
 	session := inMemoryIdentityServer(t, server)
-	ctx := context.Background()
-
-	params := &mcp.CallToolParams{Name: "memory_search", Arguments: map[string]any{
-		"query": "q", "user_identifier": testIdentity,
-	}}
-	res, err := session.CallTool(ctx, params)
+	res, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "memory_search", Arguments: map[string]any{"query": "q", "user_identifier": testIdentity},
+	})
 	if err != nil {
 		t.Fatalf("CallTool: %v", err)
 	}
 	if !res.IsError {
-		t.Fatalf("IsError = false, want true: a stale argument must not rescue a call with no _meta identity")
+		t.Fatal("stale argument rescued a call with no OAuth subject")
 	}
 	if got := spy.callCount(); got != 0 {
 		t.Fatalf("tenants.For called %d times, want 0", got)
 	}
 }
 
-// capturingTenantResolver records the identity it was resolved with and
-// answers every call with the same recording client — used to prove WHICH
-// identity a call actually resolved, not merely that resolution succeeded.
 type capturingTenantResolver struct {
 	client *arcadedb.Client
-
-	mu   sync.Mutex
-	last string
+	mu     sync.Mutex
+	last   string
 }
 
 func (c *capturingTenantResolver) For(_ context.Context, identityID string) (*arcadedb.Client, error) {

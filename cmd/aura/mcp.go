@@ -24,19 +24,19 @@ const mcpUsage = "usage: aura mcp {recipes [--json]|install <recipe> [name]|add 
 
 // mcpMutatingSubcommands is the set of top-level `aura mcp` CLI verbs that mutate the
 // managed config (D-12): these route through the audited WriteConfigWithAudit and need a
-// live *pgxpool.Pool. Every other subcommand
-// (recipes/status/list/logs/doctor/tools) is read-only and stays pool-free.
+// live *pgxpool.Pool. OAuth-aware diagnostics are read-only but need their own pool to
+// resolve the operator whose grant they probe.
 var mcpMutatingSubcommands = map[string]bool{
 	"add": true, "install": true, "trust": true,
 	"enable": true, "disable": true, "remove": true,
 }
 
-// mcpOAuthSubcommands need a live *pgxpool.Pool for the per-identity grant store but do
-// NOT touch the managed config, so they stay out of mcpMutatingSubcommands and away from
-// WriteConfigWithAudit: what they change is one identity's own credentials, which the
-// config audit trail has no business recording.
+// mcpOAuthSubcommands need a live *pgxpool.Pool to resolve the identity whose grant they
+// read or change. They stay out of mcpMutatingSubcommands because none changes the server
+// inventory governed by WriteConfigWithAudit.
 var mcpOAuthSubcommands = map[string]bool{
 	"login": true, "logout": true, "authorizations": true,
+	"status": true, "doctor": true, "tools": true,
 }
 
 // mcpProfileMutatingSubcommands mirrors the same split one level down, inside
@@ -45,9 +45,7 @@ var mcpProfileMutatingSubcommands = map[string]bool{
 	"create": true, "use": true, "add": true, "remove": true,
 }
 
-// mcpCommandNeedsPool reports whether args (the tokens after "aura mcp") name a mutating
-// subcommand — main.go's dispatch must open a *pgxpool.Pool for it (D-12); a read-only
-// subcommand stays pool-free.
+// mcpCommandNeedsPool reports whether a command mutates config or consumes an OAuth grant.
 func mcpCommandNeedsPool(args []string) bool {
 	if len(args) == 0 {
 		return false
@@ -69,6 +67,13 @@ func runMCP(ctx context.Context, pool *pgxpool.Pool, args []string) {
 func runMCPCommand(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Writer) error {
 	if len(args) == 0 {
 		return errors.New(mcpUsage)
+	}
+	if pool != nil && mcpOAuthSubcommands[args[0]] {
+		var err error
+		ctx, err = mcpOperatorContext(ctx, pool)
+		if err != nil {
+			return err
+		}
 	}
 	switch args[0] {
 	case "recipes":

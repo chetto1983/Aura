@@ -166,11 +166,11 @@ func TestNoOAuthReasonNamesTheActualCause(t *testing.T) {
 	}
 }
 
-// The grant store needs a pool, so main's dispatch has to open one — a login that got a
-// nil pool would fail with "this command needs Postgres" on a correctly configured host.
+// OAuth diagnostics need the pool too: without an operator identity they falsely report
+// that a persisted grant does not exist.
 func TestOAuthSubcommandsGetAPool(t *testing.T) {
 	t.Parallel()
-	for _, verb := range []string{"login", "logout", "authorizations"} {
+	for _, verb := range []string{"login", "logout", "authorizations", "status", "doctor", "tools"} {
 		if !mcpCommandNeedsPool([]string{verb}) {
 			t.Errorf("aura mcp %s would run without a Postgres pool", verb)
 		}

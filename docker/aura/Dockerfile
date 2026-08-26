@@ -29,7 +29,8 @@ RUN apk add --no-cache ca-certificates git
 COPY go.mod go.sum ./
 RUN go mod download
 
-COPY . .
+COPY cmd/aura ./cmd/aura
+COPY internal ./internal
 # Overwrite the committed embed source (internal/webui/dist) with the fresh webbuild
 # output so the image's baked-in SPA is a reproducible build, not the committed bytes.
 COPY --from=webbuild /internal/webui/dist ./internal/webui/dist

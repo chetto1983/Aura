@@ -62,7 +62,9 @@ type agentMemoryLiveUpsertOutput struct {
 
 func TestAgentMemoryMCPLiveInitializeListCallAndIsolation(t *testing.T) {
 	verifyAgentMemoryLiveNoLeaks(t)
-	session, identities, runtime := newAgentMemoryLiveMCP(t, 2, "")
+	sessions, identities, runtime := newAgentMemoryLiveMCP(t, 2, "")
+	alphaSession := sessions[identities[0]]
+	betaSession := sessions[identities[1]]
 	runtimeJSON, err := json.Marshal(runtime)
 	if err != nil {
 		t.Fatalf("encode runtime evidence: %v", err)
@@ -71,7 +73,7 @@ func TestAgentMemoryMCPLiveInitializeListCallAndIsolation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), agentMemoryLiveTimeout)
 	defer cancel()
 
-	tools := drainAgentMemoryLiveTools(t, ctx, session)
+	tools := drainAgentMemoryLiveTools(t, ctx, alphaSession)
 	assertAgentMemoryLiveTools(t, tools,
 		"memory_upsert_fact", "memory_facts_about", "memory_search")
 	assertAgentMemoryLiveSourceSchema(t, tools)
@@ -79,7 +81,7 @@ func TestAgentMemoryMCPLiveInitializeListCallAndIsolation(t *testing.T) {
 	alphaSource := agentMemoryLiveSource{RunID: "live-alpha", MemoryIDs: []string{"alpha-message-1"}}
 	callAgentMemoryLiveJSON[struct {
 		Statement string `json:"statement"`
-	}](t, ctx, session, identities[0], "memory_upsert_fact", map[string]any{
+	}](t, ctx, alphaSession, "memory_upsert_fact", map[string]any{
 		"subject":      "Ada Lovelace",
 		"subject_kind": "person",
 		"predicate":    "keeps",
@@ -90,7 +92,7 @@ func TestAgentMemoryMCPLiveInitializeListCallAndIsolation(t *testing.T) {
 	})
 
 	alpha := callAgentMemoryLiveJSON[agentMemoryLiveSearchOutput](
-		t, ctx, session, identities[0], "memory_facts_about", map[string]any{
+		t, ctx, alphaSession, "memory_facts_about", map[string]any{
 			"entity": "Ada Lovelace",
 		})
 	if len(alpha.Facts) != 1 || alpha.Facts[0].Statement != "Ada Lovelace keeps the Analytical Engine notes." {
@@ -101,7 +103,7 @@ func TestAgentMemoryMCPLiveInitializeListCallAndIsolation(t *testing.T) {
 	}
 
 	alphaFromBeta := callAgentMemoryLiveJSON[agentMemoryLiveSearchOutput](
-		t, ctx, session, identities[1], "memory_facts_about", map[string]any{
+		t, ctx, betaSession, "memory_facts_about", map[string]any{
 			"entity": "Ada Lovelace",
 		})
 	if alphaFromBeta.Facts == nil || len(alphaFromBeta.Facts) != 0 {
@@ -111,7 +113,7 @@ func TestAgentMemoryMCPLiveInitializeListCallAndIsolation(t *testing.T) {
 	betaSource := agentMemoryLiveSource{RunID: "live-beta", MemoryIDs: []string{"beta-message-1"}}
 	callAgentMemoryLiveJSON[struct {
 		Statement string `json:"statement"`
-	}](t, ctx, session, identities[1], "memory_upsert_fact", map[string]any{
+	}](t, ctx, betaSession, "memory_upsert_fact", map[string]any{
 		"subject":      "Grace Hopper",
 		"subject_kind": "person",
 		"predicate":    "documents",
@@ -122,7 +124,7 @@ func TestAgentMemoryMCPLiveInitializeListCallAndIsolation(t *testing.T) {
 	})
 
 	betaFromAlpha := callAgentMemoryLiveJSON[agentMemoryLiveSearchOutput](
-		t, ctx, session, identities[0], "memory_facts_about", map[string]any{
+		t, ctx, alphaSession, "memory_facts_about", map[string]any{
 			"entity": "Grace Hopper",
 		})
 	if betaFromAlpha.Facts == nil || len(betaFromAlpha.Facts) != 0 {
@@ -130,56 +132,36 @@ func TestAgentMemoryMCPLiveInitializeListCallAndIsolation(t *testing.T) {
 	}
 
 	beta := callAgentMemoryLiveJSON[agentMemoryLiveSearchOutput](
-		t, ctx, session, identities[1], "memory_facts_about", map[string]any{
+		t, ctx, betaSession, "memory_facts_about", map[string]any{
 			"entity": "Grace Hopper",
 		})
 	if len(beta.Facts) != 1 || beta.Facts[0].Statement != "Grace Hopper documents compiler behavior." {
 		t.Fatalf("tenant beta facts = %+v", beta.Facts)
 	}
 
-	// A forged _meta identity that is not a real Aura identity refuses at the
-	// database-resolution layer (arcadedb.DatabaseFor), one boundary past
-	// identityFromMeta's own presence/type check — proving the fail-closed chain
-	// holds end to end against a live server, not just against identityFromMeta
-	// in isolation.
+	// Arbitrary client metadata cannot override the authenticated OAuth subject.
 	badParams := &officialmcp.CallToolParams{Name: "memory_facts_about", Arguments: map[string]any{"entity": "Ada Lovelace"}}
-	auramcp.SetAuraMetaField(badParams, auramcp.MetaFieldUserIdentifier, "not-an-aura-identity")
-	res, err := session.CallTool(ctx, badParams)
+	badParams.SetMeta(map[string]any{"tenant": identities[1]})
+	res, err := alphaSession.CallTool(ctx, badParams)
 	if err != nil {
-		t.Fatalf("call memory_facts_about with a forged identity: transport error %v", err)
+		t.Fatalf("call memory_facts_about with client metadata: transport error %v", err)
 	}
 	text, isErr := auramcp.DecodeToolResult(res)
-	if !isErr || !strings.Contains(text, "not an identity") {
-		t.Fatalf("forged identity result = (isError=%v) %q, want a UUID refusal", isErr, text)
-	}
-
-	// The negative identity cases: no _meta at all, and an empty _meta identity.
-	// Both must refuse before any tenant database is resolved.
-	noMeta := callAgentMemoryLiveExpectingRefusal(t, ctx, session, "memory_facts_about", map[string]any{"entity": "Ada Lovelace"})
-	if !strings.Contains(noMeta, "missing required identity") {
-		t.Fatalf("no-_meta refusal text = %q, want it to mention missing required identity", noMeta)
-	}
-	emptyParams := &officialmcp.CallToolParams{Name: "memory_facts_about", Arguments: map[string]any{"entity": "Ada Lovelace"}}
-	auramcp.SetAuraMetaField(emptyParams, auramcp.MetaFieldUserIdentifier, "")
-	emptyRes, err := session.CallTool(ctx, emptyParams)
-	if err != nil {
-		t.Fatalf("call memory_facts_about with an empty identity: transport error %v", err)
-	}
-	emptyText, emptyIsErr := auramcp.DecodeToolResult(emptyRes)
-	if !emptyIsErr || !strings.Contains(emptyText, "missing required identity") {
-		t.Fatalf("empty-identity result = (isError=%v) %q, want a missing-identity refusal", emptyIsErr, emptyText)
+	if isErr || !strings.Contains(text, "Ada Lovelace keeps the Analytical Engine notes.") {
+		t.Fatalf("client metadata changed tenant resolution: (isError=%v) %q", isErr, text)
 	}
 }
 
 func TestAgentMemoryMCPLiveAbstainsOnNonexistentFact(t *testing.T) {
 	verifyAgentMemoryLiveNoLeaks(t)
-	session, identities, _ := newAgentMemoryLiveMCP(t, 1, "")
+	sessions, identities, _ := newAgentMemoryLiveMCP(t, 1, "")
+	session := sessions[identities[0]]
 	ctx, cancel := context.WithTimeout(t.Context(), agentMemoryLiveTimeout)
 	defer cancel()
 
 	callAgentMemoryLiveJSON[struct {
 		Statement string `json:"statement"`
-	}](t, ctx, session, identities[0], "memory_upsert_fact", map[string]any{
+	}](t, ctx, session, "memory_upsert_fact", map[string]any{
 		"subject":      "Davide",
 		"subject_kind": "person",
 		"predicate":    "lives_in",
@@ -192,7 +174,7 @@ func TestAgentMemoryMCPLiveAbstainsOnNonexistentFact(t *testing.T) {
 	})
 
 	out := callAgentMemoryLiveJSON[agentMemoryLiveSearchOutput](
-		t, ctx, session, identities[0], "memory_search", map[string]any{
+		t, ctx, session, "memory_search", map[string]any{
 			"query": "Il pinguino notarile di Zog possiede sette lune viola registrate nel 1842",
 			"limit": 5,
 		})
@@ -214,13 +196,14 @@ func TestAgentMemoryMCPLiveAbstainsOnNonexistentFact(t *testing.T) {
 // leaving the sibling untouched.
 func TestAgentMemoryMCPLiveSupersedeRefusalThenFactKeyCloses(t *testing.T) {
 	verifyAgentMemoryLiveNoLeaks(t)
-	session, identities, _ := newAgentMemoryLiveMCP(t, 1, "")
+	sessions, identities, _ := newAgentMemoryLiveMCP(t, 1, "")
+	session := sessions[identities[0]]
 	ctx, cancel := context.WithTimeout(t.Context(), agentMemoryLiveTimeout)
 	defer cancel()
 
 	source := agentMemoryLiveSource{RunID: "live-supersede", MemoryIDs: []string{"m1"}}
 	write := func(object, statement string) {
-		callAgentMemoryLiveJSON[agentMemoryLiveUpsertOutput](t, ctx, session, identities[0], "memory_upsert_fact", map[string]any{
+		callAgentMemoryLiveJSON[agentMemoryLiveUpsertOutput](t, ctx, session, "memory_upsert_fact", map[string]any{
 			"subject":      "Isaac Newton",
 			"subject_kind": "person",
 			"predicate":    "worked_at",
@@ -233,7 +216,7 @@ func TestAgentMemoryMCPLiveSupersedeRefusalThenFactKeyCloses(t *testing.T) {
 	write("Cambridge", "Isaac Newton worked at Cambridge.")
 	write("the Royal Mint", "Isaac Newton worked at the Royal Mint.")
 
-	before := callAgentMemoryLiveJSON[agentMemoryLiveSearchOutput](t, ctx, session, identities[0], "memory_facts_about", map[string]any{
+	before := callAgentMemoryLiveJSON[agentMemoryLiveSearchOutput](t, ctx, session, "memory_facts_about", map[string]any{
 		"entity": "Isaac Newton",
 	})
 	if len(before.Facts) != 2 {
@@ -249,7 +232,7 @@ func TestAgentMemoryMCPLiveSupersedeRefusalThenFactKeyCloses(t *testing.T) {
 
 	// An ambiguous correction (two candidates, no fact_key) refuses as a
 	// successful call and touches nothing.
-	refusal := callAgentMemoryLiveJSON[agentMemoryLiveUpsertOutput](t, ctx, session, identities[0], "memory_upsert_fact", map[string]any{
+	refusal := callAgentMemoryLiveJSON[agentMemoryLiveUpsertOutput](t, ctx, session, "memory_upsert_fact", map[string]any{
 		"subject":      "Isaac Newton",
 		"subject_kind": "person",
 		"predicate":    "worked_at",
@@ -269,7 +252,7 @@ func TestAgentMemoryMCPLiveSupersedeRefusalThenFactKeyCloses(t *testing.T) {
 		t.Fatalf("reason = %q, want it to name supersedes_fact_key", refusal.Reason)
 	}
 
-	afterRefusal := callAgentMemoryLiveJSON[agentMemoryLiveSearchOutput](t, ctx, session, identities[0], "memory_facts_about", map[string]any{
+	afterRefusal := callAgentMemoryLiveJSON[agentMemoryLiveSearchOutput](t, ctx, session, "memory_facts_about", map[string]any{
 		"entity": "Isaac Newton",
 	})
 	if len(afterRefusal.Facts) != 2 {
@@ -277,7 +260,7 @@ func TestAgentMemoryMCPLiveSupersedeRefusalThenFactKeyCloses(t *testing.T) {
 	}
 
 	// Naming the exact fact_key closes only that one edge.
-	closeResult := callAgentMemoryLiveJSON[agentMemoryLiveUpsertOutput](t, ctx, session, identities[0], "memory_upsert_fact", map[string]any{
+	closeResult := callAgentMemoryLiveJSON[agentMemoryLiveUpsertOutput](t, ctx, session, "memory_upsert_fact", map[string]any{
 		"subject":             "Isaac Newton",
 		"subject_kind":        "person",
 		"predicate":           "worked_at",
@@ -291,7 +274,7 @@ func TestAgentMemoryMCPLiveSupersedeRefusalThenFactKeyCloses(t *testing.T) {
 		t.Fatalf("close result = %+v, want refused=false, superseded=1", closeResult)
 	}
 
-	final := callAgentMemoryLiveJSON[agentMemoryLiveSearchOutput](t, ctx, session, identities[0], "memory_facts_about", map[string]any{
+	final := callAgentMemoryLiveJSON[agentMemoryLiveSearchOutput](t, ctx, session, "memory_facts_about", map[string]any{
 		"entity": "Isaac Newton",
 	})
 	if len(final.Facts) != 2 {

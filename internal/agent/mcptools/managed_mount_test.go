@@ -41,10 +41,15 @@ func managedTools() []*sdkmcp.Tool {
 	}
 }
 
+func unprotectedHTTPFixtureServer(url string) mcp.ManagedServer {
+	return mcp.ManagedServer{URL: url, Env: []string{"MCP_OAUTH_DISABLED=true"}}
+}
+
 func TestMountManagedServerReturnsProcessOwnedHostClient(t *testing.T) {
 	httpSrv, _ := startSDKHTTPFixture(t, managedTools()...)
 	reg := tools.NewRegistry()
-	server := mcp.ManagedServer{Type: mcp.ServerTypeStreamableHTTP, URL: httpSrv.URL}
+	server := unprotectedHTTPFixtureServer(httpSrv.URL)
+	server.Type = mcp.ServerTypeStreamableHTTP
 
 	closer, _, host, err := MountManagedServerWithOptions(
 		context.Background(),
@@ -76,7 +81,8 @@ func TestMountManagedServerReturnsProcessOwnedHostClient(t *testing.T) {
 func TestMountManagedServer_HTTPSuccess(t *testing.T) {
 	httpSrv, _ := startSDKHTTPFixture(t, managedTools()...)
 	reg := tools.NewRegistry()
-	server := mcp.ManagedServer{Type: mcp.ServerTypeStreamableHTTP, URL: httpSrv.URL}
+	server := unprotectedHTTPFixtureServer(httpSrv.URL)
+	server.Type = mcp.ServerTypeStreamableHTTP
 
 	closer, names, err := MountManagedServer(context.Background(), context.Background(), reg, "docs", server)
 	if err != nil {
@@ -135,7 +141,8 @@ func TestMountManagedServer_MountFailureReapsServer(t *testing.T) {
 		t.Fatalf("seed Mount: %v", err)
 	}
 
-	server := mcp.ManagedServer{Type: mcp.ServerTypeStreamableHTTP, URL: httpSrv.URL}
+	server := unprotectedHTTPFixtureServer(httpSrv.URL)
+	server.Type = mcp.ServerTypeStreamableHTTP
 	closer, names, err := MountManagedServer(context.Background(), context.Background(), reg, "docs", server)
 	if err == nil || !strings.Contains(err.Error(), "collision") {
 		t.Fatalf("want a wrapped registration collision error, got %v", err)
@@ -154,7 +161,7 @@ func TestMountManagedServer_MountFailureReapsServer(t *testing.T) {
 func TestMountManagedServer_HTTPBranchInfersFromBareURL(t *testing.T) {
 	httpSrv, _ := startSDKHTTPFixture(t, managedTools()...)
 	reg := tools.NewRegistry()
-	server := mcp.ManagedServer{URL: httpSrv.URL} // bare URL, no Type -> inferred HTTP
+	server := unprotectedHTTPFixtureServer(httpSrv.URL) // bare URL, no Type -> inferred HTTP
 
 	closer, names, err := MountManagedServer(context.Background(), context.Background(), reg, "docs", server)
 	if err != nil {

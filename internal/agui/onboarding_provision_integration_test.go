@@ -8,12 +8,11 @@
 // double-submit yields exactly one identity, exactly one IMMUTABLE audit row per success,
 // and no secret reaches a log line over a full run.
 //
-// Authula leg note: the agui package runs under goleak.VerifyTestMain (main_test.go), and
-// the embedded Authula provider spawns long-lived database/sql + rate-limit cleanup
-// goroutines that goleak (correctly) flags. Constructing the real provider here would fail
-// the package goleak gate. So Leg B uses a STATEFUL Authula fake that records created/
-// deleted users in-memory (so COMP_B's zero-orphan-user property is provable) with the
-// SAME ordered semantics as the real adapter. The REAL Authula CoreServices Leg B
+// Authula leg note: Leg B uses a STATEFUL Authula fake that records created/deleted users
+// in-memory, so every failure point can assert COMP_B's exact zero-orphan-user property
+// without coupling this saga test to Authula's own migrations and tables. It preserves the
+// SAME ordered semantics as the real adapter. The REAL Authula CoreServices Leg B and its
+// now goleak-clean construction/Close lifecycle
 // (PasswordService.Hash + UserService.Create/Delete + AccountService.Create) is live-proven
 // in internal/webauth/authula_integration_test.go + authula_multiuser_test.go; the
 // composition-root adapter that wires it is cmd/aura/serve_onboarding.go.

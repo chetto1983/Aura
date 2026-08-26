@@ -158,16 +158,14 @@ type Server struct {
 	bootstrap     BootstrapService
 	passwordReset *PasswordResetService
 	idgen         IDGenerator
-	// whatsappBridgeURL is the aura-whatsapp bridge management REST base URL the cockpit
-	// connect routes forward to (AURA_WHATSAPP_BRIDGE_URL via SetWhatsAppBridge). Empty
-	// (unwired) → the three /api/connect/whatsapp/* routes answer 503.
-	whatsappBridgeURL string
-	// calendarMCPURL/calendarMCPToken wire the aura-pim-mcp sidecar's token-gated /admin REST
-	// API the cockpit calendar connect routes forward to (AURA_PIM_MCP_URL + ADMIN_TOKEN via
-	// SetCalendarMCP). The token is injected server-side as Authorization: Bearer and NEVER
-	// leaks to the client. An empty URL → the /api/connect/pim/* routes answer 503 (graceful).
-	calendarMCPURL   string
-	calendarMCPToken string
+	// WhatsApp tenant gateway base + private bridge bearer. The proxy injects the
+	// authenticated principal as X-Tenant-ID. Either empty value leaves routes at 503.
+	whatsappBridgeURL   string
+	whatsappBridgeToken string
+	// calendarMCPURL/calendarMCPAuth wire the sidecar's OAuth-protected /admin REST API.
+	// The access token is resolved from the authenticated identity's existing MCP grant.
+	calendarMCPURL  string
+	calendarMCPAuth MCPAccessTokenProvider
 	// runs is the detached-run session registry (fix-plan 1.3 Tier B). Nil = flag
 	// off (AURA_AGUI_RUN_DETACH unset/false) = today's request-scoped run path and
 	// hidden resume/cancel routes; wired via SetRunRegistry only when the flag is on.

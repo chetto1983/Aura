@@ -275,10 +275,6 @@ func TestOAuthHandlerIsNotAttachedWhereItCannotApply(t *testing.T) {
 	}{
 		"stdio server":       {ManagedServer{Command: "notes-mcp"}, OAuthSettings{}},
 		"operator opted out": {remoteServer(), OAuthSettings{Disabled: true}},
-		"static bearer wins": {
-			ManagedServer{Type: ServerTypeStreamableHTTP, URL: "https://mcp.notion.com/mcp", Env: []string{"MCP_BEARER_TOKEN=static"}},
-			OAuthSettings{},
-		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -290,6 +286,33 @@ func TestOAuthHandlerIsNotAttachedWhereItCannotApply(t *testing.T) {
 				t.Fatal("an authorization flow was attached where it cannot apply")
 			}
 		})
+	}
+}
+
+func TestStaticBearerUsesSDKOAuthHandler(t *testing.T) {
+	t.Parallel()
+	server := ManagedServer{
+		Type: ServerTypeStreamableHTTP,
+		URL:  "https://mcp.example/mcp",
+		Env:  []string{"MCP_BEARER_TOKEN=static"},
+	}
+	handler, err := oauthHandlerFor(context.Background(), "static-server", server, OAuthSettings{}, nil, OAuthOptions{}, nil)
+	if err != nil {
+		t.Fatalf("oauthHandlerFor: %v", err)
+	}
+	source, err := handler.TokenSource(context.Background())
+	if err != nil {
+		t.Fatalf("TokenSource: %v", err)
+	}
+	token, err := source.Token()
+	if err != nil {
+		t.Fatalf("Token: %v", err)
+	}
+	if token.AccessToken != "static" || token.TokenType != "Bearer" {
+		t.Fatalf("static token = %#v", token)
+	}
+	if err := handler.Authorize(context.Background(), nil, nil); !errors.Is(err, ErrStaticBearerRejected) {
+		t.Fatalf("Authorize error = %v, want ErrStaticBearerRejected", err)
 	}
 }
 

@@ -12,7 +12,6 @@ import (
 func clearMCPEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("AURA_AGENT_MEMORY_MCP_PORT", "")
-	t.Setenv("AURA_PIM_MCP_ADMIN_TOKEN", "")
 }
 
 // runtimePolicies is what every test here asserts on: the policy half of RuntimeSet, which
@@ -124,52 +123,23 @@ func TestCalendarContainerDefaultOn_RespectsExplicitInstall(t *testing.T) {
 	}
 }
 
-func TestCalendarRuntimeUsesDeploymentBearerWithoutPersistingIt(t *testing.T) {
+func TestAuraOwnedRecipesUseTheGenericRemoteOAuthPath(t *testing.T) {
 	clearMCPEnv(t)
-	t.Setenv("AURA_PIM_MCP_ADMIN_TOKEN", "rotated-calendar-token")
-
-	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
-		"work-calendar": {
-			Type:   mcp.ServerTypeStreamableHTTP,
-			URL:    "http://operator-pim:9999/",
-			Source: "recipe:calendar",
-			Env:    []string{"PUBLIC_FLAG=1", "MCP_BEARER_TOKEN=stale-token"},
-			Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
-		},
-	}}
-
-	policies := runtimePolicies(t, doc)
-	got := policies["work-calendar"]
-	if !reflect.DeepEqual(got.Env, []string{"PUBLIC_FLAG=1", "MCP_BEARER_TOKEN=rotated-calendar-token"}) {
-		t.Fatalf("runtime calendar env = %#v, want public env plus current deployment bearer", got.Env)
-	}
-	if !reflect.DeepEqual(doc.MCPServers["work-calendar"].Env, []string{"PUBLIC_FLAG=1", "MCP_BEARER_TOKEN=stale-token"}) {
-		t.Fatalf("RuntimeSet mutated the persisted registry document: %#v", doc.MCPServers["work-calendar"].Env)
-	}
-	recipe, ok := LookupCatalog("calendar")
-	if !ok {
-		t.Fatal("LookupCatalog(\"calendar\") not found")
-	}
-	if len(recipe.Server.Env) != 0 {
-		t.Fatalf("catalog leaked runtime credentials: %#v", recipe.Server.Env)
-	}
-}
-
-func TestRecipeBearerOverlayNeverTouchesThirdPartyRemoteHTTP(t *testing.T) {
-	clearMCPEnv(t)
-	t.Setenv("AURA_PIM_MCP_ADMIN_TOKEN", "calendar-token")
-
-	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
-		"external": {
-			Type:   mcp.ServerTypeStreamableHTTP,
-			URL:    "https://mcp.example.invalid/mcp",
-			Source: "manual",
-			Trust:  mcp.ManagedTrust{Class: mcp.TrustRemoteHTTP},
-		},
-	}}
-	got := runtimePolicies(t, doc)["external"]
-	if len(got.Env) != 0 {
-		t.Fatalf("third-party remote received Aura recipe credentials: %#v", got.Env)
+	for _, name := range []string{"calendar", "memory", "whatsapp"} {
+		recipe, ok := LookupCatalog(name)
+		if !ok {
+			t.Fatalf("LookupCatalog(%q) not found", name)
+		}
+		if len(recipe.Server.Env) != 0 {
+			t.Fatalf("%s recipe carries OAuth/static-token configuration: %#v", name, recipe.Server.Env)
+		}
+		settings, err := mcp.OAuthSettingsFromEnv(recipe.Server.Env)
+		if err != nil {
+			t.Fatalf("%s OAuth settings: %v", name, err)
+		}
+		if !mcp.UsesOAuth(recipe.Server, settings) {
+			t.Fatalf("%s recipe does not enter the generic remote OAuth path", name)
+		}
 	}
 }
 
@@ -217,6 +187,27 @@ func TestMemoryDefaultOn_RespectsExplicitInstall(t *testing.T) {
 	}
 	if got.URL != customURL {
 		t.Fatalf("memory URL = %q, want operator-customized %q (explicit wins)", got.URL, customURL)
+	}
+}
+
+func TestMemoryDefaultOn_RespectsAliasedInstall(t *testing.T) {
+	clearMCPEnv(t)
+
+	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
+		"long-term-memory": {
+			Type:   mcp.ServerTypeStreamableHTTP,
+			URL:    "http://127.0.0.1:18091/mcp/",
+			Source: mcp.SourceRecipeMemory,
+			Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+		},
+	}}
+
+	policies := runtimePolicies(t, doc)
+	if _, ok := policies["memory"]; ok {
+		t.Fatalf("default memory duplicated an explicitly aliased recipe: %#v", policies)
+	}
+	if _, ok := policies["long-term-memory"]; !ok {
+		t.Fatalf("aliased memory recipe is not mounted: %#v", policies)
 	}
 }
 

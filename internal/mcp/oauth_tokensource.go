@@ -7,11 +7,14 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"golang.org/x/oauth2"
+	"golang.org/x/sync/singleflight"
 
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcpoauth"
 )
 
@@ -171,26 +174,55 @@ func tokenFrom(grant mcpoauth.Grant) *oauth2.Token {
 // token the provider may have already rotated away, which is an authorization that
 // silently cannot be recovered.
 type persistingTokenSource struct {
-	inner  oauth2.TokenSource
-	save   func(*oauth2.Token) error
-	logger *slog.Logger
-	name   string
+	ctx         context.Context
+	inner       oauth2.TokenSource
+	store       GrantStore
+	logger      *slog.Logger
+	name        string
+	resourceURL string
+	client      resolvedClient
 
-	mu   sync.Mutex
-	last string
+	mu           sync.Mutex
+	last         string
+	reloadStored bool
 }
 
+var oauthTokenRefreshes singleflight.Group
+
 func (p *persistingTokenSource) Token() (*oauth2.Token, error) {
-	tok, err := p.inner.Token()
+	owner := identityctx.IdentityID(p.ctx)
+	if owner == "" {
+		return p.token()
+	}
+	value, err, _ := oauthTokenRefreshes.Do(owner+"\x00"+p.name, func() (any, error) {
+		return p.token()
+	})
 	if err != nil {
 		return nil, err
 	}
+	return value.(*oauth2.Token), nil
+}
+
+func (p *persistingTokenSource) token() (*oauth2.Token, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if err := p.reload(); err != nil {
+		return nil, err
+	}
+	tok, err := p.inner.Token()
+	if err != nil {
+		p.logger.Warn("mcp oauth: token refresh failed",
+			"server", p.name, "error", err)
+		return nil, err
+	}
 	if tok == nil || tok.AccessToken == p.last {
 		return tok, nil
 	}
-	if err := p.save(tok); err != nil {
+	grant, err := grantFrom(p.name, p.resourceURL, tok, p.client)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.store.Save(p.ctx, grant); err != nil {
 		// Deliberately NOT fatal, and deliberately not silent. The token in hand is
 		// valid and refusing it would break a working session over a storage fault;
 		// but a save that failed means the next boot re-authorizes, so it must be
@@ -200,7 +232,37 @@ func (p *persistingTokenSource) Token() (*oauth2.Token, error) {
 		return tok, nil
 	}
 	p.last = tok.AccessToken
+	p.reloadStored = true
 	return tok, nil
+}
+
+func (p *persistingTokenSource) reload() error {
+	if !p.reloadStored {
+		return nil
+	}
+	grant, err := p.store.Load(p.ctx, p.name)
+	if errors.Is(err, mcpoauth.ErrNoGrant) {
+		return fmt.Errorf("%w: %s", ErrOAuthAuthorizationRequired, p.name)
+	}
+	if err != nil {
+		p.logger.Warn("mcp oauth: could not reload stored token",
+			"server", p.name, "error", err)
+		return nil
+	}
+	if grant.AccessToken == p.last {
+		return nil
+	}
+	client, err := decodeResolvedClient(grant.ClientInfo)
+	if err != nil || client.TokenEndpoint == "" {
+		p.logger.Warn("mcp oauth: could not adopt stored token",
+			"server", p.name, "error", err)
+		return nil
+	}
+	p.inner = client.oauth2Config().TokenSource(p.ctx, tokenFrom(grant))
+	p.client = client
+	p.resourceURL = grant.ResourceURL
+	p.last = grant.AccessToken
+	return nil
 }
 
 // newPersistingTokenSource wraps src so refreshes are stored under the identity on ctx.
@@ -208,19 +270,10 @@ func (p *persistingTokenSource) Token() (*oauth2.Token, error) {
 // ctx must already be detached from the caller's cancellation (see detachedForRefresh):
 // oauth2 captures it for every future refresh request, and the save below runs on it
 // too, so a handshake context would leave both dead the moment the mount returned.
-func newPersistingTokenSource(ctx context.Context, src oauth2.TokenSource, serverName, resourceURL string, rc resolvedClient, store GrantStore, logger *slog.Logger, seed string) *persistingTokenSource {
+func newPersistingTokenSource(ctx context.Context, src oauth2.TokenSource, serverName, resourceURL string, rc resolvedClient, store GrantStore, logger *slog.Logger, seed string, reloadStored bool) *persistingTokenSource {
 	return &persistingTokenSource{
-		inner:  src,
-		logger: resolveLogger(logger),
-		name:   serverName,
-		last:   seed,
-		save: func(tok *oauth2.Token) error {
-			grant, err := grantFrom(serverName, resourceURL, tok, rc)
-			if err != nil {
-				return err
-			}
-			return store.Save(ctx, grant)
-		},
+		ctx: ctx, inner: src, store: store, logger: resolveLogger(logger), name: serverName,
+		resourceURL: resourceURL, client: rc, last: seed, reloadStored: reloadStored,
 	}
 }
 
@@ -286,5 +339,27 @@ func restoreTokenSource(ctx context.Context, serverName string, store GrantStore
 	source := rc.oauth2Config().TokenSource(detached, tok)
 	// Seeded with the token just loaded so a mount that never refreshes does not write
 	// the row back unchanged on its first call.
-	return newPersistingTokenSource(detached, source, serverName, grant.ResourceURL, rc, store, log, grant.AccessToken), nil
+	return newPersistingTokenSource(detached, source, serverName, grant.ResourceURL, rc, store, log, grant.AccessToken, true), nil
+}
+
+// StoredOAuthAccessToken resolves the current bearer from the same identity-scoped
+// grant and refresh path used by an MCP session. It exists for adjacent HTTP surfaces
+// exposed by the same resource server, so they cannot grow a second credential model.
+func StoredOAuthAccessToken(ctx context.Context, serverName string, store GrantStore, egress EgressPolicy, logger *slog.Logger) (string, error) {
+	source, err := restoreTokenSource(ctx, serverName, store, oauthHTTPClient(egress), logger)
+	if err != nil {
+		return "", err
+	}
+	if source == nil {
+		return "", ErrOAuthAuthorizationRequired
+	}
+	token, err := source.Token()
+	if err != nil {
+		return "", fmt.Errorf("mcp oauth: load access token for %q: %w", serverName, err)
+	}
+	access := strings.TrimSpace(token.AccessToken)
+	if access == "" {
+		return "", fmt.Errorf("mcp oauth: stored grant for %q returned an empty access token", serverName)
+	}
+	return access, nil
 }

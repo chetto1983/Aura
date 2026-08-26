@@ -39,15 +39,6 @@ const (
 // wins, and a missing sidecar fail-softs to a WARN drop at mount like any other server.
 var containerDefaultOnRecipes = []string{calendarRecipeName, whatsappRecipeName}
 
-// recipeBearerEnv maps Aura-owned remote MCP recipes to the deployment secret
-// their HTTP transport uses. The credential is overlaid only in the resolved
-// runtime set: it never enters the catalog JSON or the persisted registry, and a
-// rotated deployment secret takes effect on the next mount even when the recipe
-// was installed before the rotation.
-var recipeBearerEnv = map[string]string{
-	"recipe:calendar": "AURA_PIM_MCP_ADMIN_TOKEN",
-}
-
 // RuntimeSet composes what this host will actually mount from `managed`: the runnable
 // server configs plus the policy map (the managed recipes an operator may enable/disable).
 //
@@ -78,50 +69,10 @@ func RuntimeSet(managed mcp.ManagedConfig) (map[string]mcp.ServerConfig, map[str
 	// `aura mcp install`; an explicit `aura mcp disable memory` still wins (D-09).
 	injectDefaultOnMemory(policies, managed)
 	injectDefaultOnContainerRecipes(policies, managed)
-	injectRecipeBearerTokens(policies)
 	if len(out) == 0 && len(policies) == 0 {
 		return nil, nil, nil
 	}
 	return out, policies, nil
-}
-
-// injectRecipeBearerTokens uses the existing generic MCP_BEARER_TOKEN transport
-// contract for Aura-owned HTTP recipes. Source, rather than registry key, is the
-// discriminator so an operator-installed alias of a built-in recipe behaves the
-// same as its default name. Third-party remote_http servers are never matched.
-func injectRecipeBearerTokens(policies map[string]mcp.ManagedServer) {
-	for name, server := range policies {
-		envName, ok := recipeBearerEnv[server.Source]
-		if !ok {
-			continue
-		}
-		token := strings.TrimSpace(os.Getenv(envName))
-		if token == "" {
-			continue
-		}
-		server.Env = replaceRuntimeEnv(server.Env, "MCP_BEARER_TOKEN", token)
-		policies[name] = server
-	}
-}
-
-func replaceRuntimeEnv(env []string, key, value string) []string {
-	prefix := key + "="
-	out := make([]string, 0, len(env)+1)
-	replaced := false
-	for _, entry := range env {
-		if strings.HasPrefix(entry, prefix) {
-			if !replaced {
-				out = append(out, prefix+value)
-				replaced = true
-			}
-			continue
-		}
-		out = append(out, entry)
-	}
-	if !replaced {
-		out = append(out, prefix+value)
-	}
-	return out
 }
 
 // injectDefaultOn adds a catalog recipe to policies unless the operator has ANY say of
@@ -148,6 +99,12 @@ func injectDefaultOn(policies map[string]mcp.ManagedServer, managed mcp.ManagedC
 	recipe, ok := LookupCatalog(name)
 	if !ok {
 		return
+	}
+	source := strings.TrimSpace(recipe.Server.Source)
+	for _, server := range managed.MCPServers {
+		if source != "" && strings.TrimSpace(server.Source) == source {
+			return
+		}
 	}
 	policies[name] = recipe.Server
 }

@@ -49,6 +49,12 @@ type Validator struct {
 	resolver userResolver
 }
 
+type SessionIdentity struct {
+	IdentityID string
+	UserID     string
+	SessionID  string
+}
+
 // NewValidator binds the validate core to the constructed provider + the identity link
 // resolver. Both must be non-nil at the authula composition root.
 func NewValidator(p coreServicesProvider, r userResolver) *Validator {
@@ -61,28 +67,39 @@ func NewValidator(p coreServicesProvider, r userResolver) *Validator {
 // to the Aura identity UUID. Any miss/expiry/decode failure returns ErrNoSession (never
 // a panic) so the seam fails closed.
 func (v *Validator) Validate(r *http.Request) (identityID string, err error) {
+	resolved, err := v.SessionIdentity(r)
+	if err != nil {
+		return "", err
+	}
+	return resolved.IdentityID, nil
+}
+
+// SessionIdentity resolves the authenticated Authula session and its bound Aura
+// identity in one lookup. OAuth token minting needs the session id as well as the
+// tenant id so refresh revocation remains tied to the login session.
+func (v *Validator) SessionIdentity(r *http.Request) (SessionIdentity, error) {
 	if v == nil || v.provider == nil || v.resolver == nil {
-		return "", ErrNoSession
+		return SessionIdentity{}, ErrNoSession
 	}
 	cookie, cerr := r.Cookie(SessionCookieName)
 	if cerr != nil || cookie.Value == "" {
-		return "", ErrNoSession
+		return SessionIdentity{}, ErrNoSession
 	}
 	core := v.provider.CoreServices()
 	if core == nil || core.TokenService == nil || core.SessionService == nil {
-		return "", ErrNoSession
+		return SessionIdentity{}, ErrNoSession
 	}
 	hashed := core.TokenService.Hash(cookie.Value)
 	sess, gerr := core.SessionService.GetByToken(r.Context(), hashed)
 	if gerr != nil || sess == nil {
-		return "", ErrNoSession
+		return SessionIdentity{}, ErrNoSession
 	}
 	if !sess.ExpiresAt.After(time.Now().UTC()) {
-		return "", ErrNoSession // expired — fail closed (mirrors session/plugin.go:136)
+		return SessionIdentity{}, ErrNoSession // expired — fail closed (mirrors session/plugin.go:136)
 	}
 	auraID, rerr := v.resolver.ResolveIdentityID(r.Context(), sess.UserID)
 	if rerr != nil || auraID == "" {
-		return "", ErrNoSession
+		return SessionIdentity{}, ErrNoSession
 	}
-	return auraID, nil
+	return SessionIdentity{IdentityID: auraID, UserID: sess.UserID, SessionID: sess.ID}, nil
 }

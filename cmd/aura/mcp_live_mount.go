@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 
@@ -18,44 +19,84 @@ import (
 	"github.com/chetto1983/aura/internal/mcpoauth"
 )
 
-// mcp_live_mount.go mounts an MCP server into a RUNNING daemon.
-//
-// Boot mounts every server it can, and for most that is the whole story. It cannot be the
-// whole story for a server behind OAuth: boot has no browser and no identity, so the mount
-// fails with "this identity has not authorized this server" and the server is dropped. The
-// human then authorizes it from the cockpit — and until this file existed, nothing mounted
-// it. Measured 2026-08-24 with Linear: consent completed, the grant landed in
-// aura.identity_mcp_oauth correctly, and the agent had zero Linear tools until somebody
-// restarted the daemon, with nothing on screen to say a restart was needed.
-//
-// LibreChat splits the same way and answers it the same way: connections for servers that
-// need no user credentials are made at start-up, and a server that requires OAuth or
-// user-supplied variables gets a connection created when the user is there to authorize it
-// (requiresUserScopedConnection → getUserConnection, packages/api/src/mcp/MCPManager.ts).
-
-// liveMCPMount owns post-boot mounting for the process registry.
-//
-// Aura runs one registry per process rather than LibreChat's per-user connection pool,
-// which is correct for a single-operator appliance and would not be for a multi-tenant
-// one: two identities authorizing the same server would share one mount and therefore one
-// identity's token. That is a real limit, recorded here rather than hidden — it is why
-// this type exists at all instead of a map keyed by identity.
+// liveMCPMount owns post-listener OAuth mounting. The mounted host exposes one shared tool
+// schema while mcptools keeps a separate authenticated session for each calling identity.
 type liveMCPMount struct {
-	reg     *tools.Registry
-	handles runtimeToolHandles
-	strict  bool
+	reg        *tools.Registry
+	handles    *runtimeToolHandles
+	strict     bool
+	processCtx context.Context
 
 	mu      sync.Mutex
 	closers map[string]func() error
+	hosts   map[string]*mcptools.MountedServer
+	owners  map[string]string
+	closed  bool
+	wg      sync.WaitGroup
 }
 
-func newLiveMCPMount(chat *chatEnv) *liveMCPMount {
+type deferOAuthMountsContextKey struct{}
+
+func deferOAuthMountsUntilListener(ctx context.Context) context.Context {
+	return context.WithValue(ctx, deferOAuthMountsContextKey{}, true)
+}
+
+func newLiveMCPMount(processCtx context.Context, chat *chatEnv) *liveMCPMount {
 	return &liveMCPMount{
-		reg:     chat.reg,
-		handles: chat.toolHandles,
-		strict:  chat.cfg.Profile.Strict(),
-		closers: map[string]func() error{},
+		reg:        chat.reg,
+		handles:    &chat.toolHandles,
+		strict:     chat.cfg.Profile.Strict(),
+		processCtx: processCtx,
+		closers:    map[string]func() error{},
+		hosts:      map[string]*mcptools.MountedServer{},
+		owners:     map[string]string{},
 	}
+}
+
+func deferredOAuthMount(server mcp.ManagedServer) bool {
+	settings, err := mcp.OAuthSettingsFromEnv(server.Env)
+	return err == nil && mcp.UsesOAuth(server, settings)
+}
+
+func shouldDeferOAuthMount(ctx context.Context, server mcp.ManagedServer) bool {
+	deferUntilListener, _ := ctx.Value(deferOAuthMountsContextKey{}).(bool)
+	return deferUntilListener && deferredOAuthMount(server)
+}
+
+// StartReconnect mounts stored OAuth grants without delaying daemon startup.
+func (m *liveMCPMount) StartReconnect(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool) {
+	if m == nil || pool == nil {
+		return
+	}
+	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return
+	}
+	m.wg.Add(1)
+	m.mu.Unlock()
+	go func() {
+		defer m.wg.Done()
+		_, policies, err := mcpRuntimeSet()
+		if err != nil {
+			slog.Warn("mcp oauth: load deferred mounts", "err", err)
+			return
+		}
+		names := make([]string, 0, len(policies))
+		for name, server := range policies {
+			if deferredOAuthMount(server) {
+				names = append(names, name)
+			}
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			ownerCtx := mcpOwnerContext(ctx, cfg, pool, name, policies[name])
+			if identityctx.IdentityID(ownerCtx) == "" {
+				continue
+			}
+			m.Mount(ownerCtx, name, policies[name])
+		}
+	}()
 }
 
 // Mount brings a server's tools into the live registry, replacing any earlier mount of the
@@ -68,23 +109,38 @@ func (m *liveMCPMount) Mount(ctx context.Context, name string, server mcp.Manage
 	if m == nil || m.reg == nil {
 		return
 	}
+	m.mu.Lock()
+	closed := m.closed
+	m.mu.Unlock()
+	if closed {
+		return
+	}
 	m.unmountLocked(name)
 
-	handshakeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), mcpMountTimeout())
+	handshakeCtx, cancel := context.WithTimeout(ctx, mcpMountTimeout())
 	defer cancel()
 
-	closer, mounted, host, err := mcptools.MountManagedServerWithOptions(
-		context.WithoutCancel(ctx),
-		handshakeCtx,
-		m.reg,
-		name,
-		server,
-		mcptools.MountOptions{
-			Egress: mcp.RuntimeEgressPolicy(m.strict, server),
-			Views:  m.handles.MCPViews,
-			OAuth:  runtimeMCPOAuth(ctx),
-		},
-	)
+	var host *mcptools.MountedServer
+	mountOnce := func(attemptCtx context.Context) (func() error, []string, error) {
+		closer, mounted, opened, err := mcptools.MountManagedServerWithOptions(
+			m.processCtx,
+			attemptCtx,
+			m.reg,
+			name,
+			server,
+			mcptools.MountOptions{
+				Egress: mcp.RuntimeEgressPolicy(m.strict, server),
+				Views:  m.handles.MCPViews,
+				OAuth:  runtimeMCPOAuth(ctx),
+			},
+		)
+		if err == nil {
+			host = opened
+		}
+		return closer, mounted, err
+	}
+	closer, mounted, err := mcptools.MountWithRetry(
+		handshakeCtx, name, mcpMountRetryPolicy(), mountOnce)
 	if err != nil {
 		slog.Warn("mcp live mount failed", "server", name, "err", err)
 		return
@@ -92,12 +148,39 @@ func (m *liveMCPMount) Mount(ctx context.Context, name string, server mcp.Manage
 	slog.Info("mcp live mounted", "server", name, "tools", len(mounted))
 
 	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		_ = closer()
+		return
+	}
 	m.closers[name] = closer
+	m.hosts[name] = host
+	m.owners[name] = identityctx.IdentityID(ctx)
+	if host != nil && mcp.IsSharedAdminGoverned(server) && m.handles != nil {
+		m.handles.MemoryContext.setClient(host)
+	}
 	m.mu.Unlock()
 
 	if host != nil && m.handles.MCPViews != nil && m.handles.MCPViews.HasServer(name) {
 		m.handles.ViewCallers[name] = host
 	}
+}
+
+func (m *liveMCPMount) Host(name string) *mcptools.MountedServer {
+	host, _ := m.OwnedHost(name)
+	return host
+}
+
+// OwnedHost returns the live schema host together with the identity whose grant opened
+// its initial session. Host-level functional probes must reuse that subject: inventing a
+// synthetic identity would ask the OAuth session pool to open a grant that cannot exist.
+func (m *liveMCPMount) OwnedHost(name string) (*mcptools.MountedServer, string) {
+	if m == nil {
+		return nil, ""
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.hosts[name], m.owners[name]
 }
 
 // Mounted reports whether this server's tools are in the registry right now — the live
@@ -128,24 +211,53 @@ func (m *liveMCPMount) unmountLocked(name string) {
 	}
 	m.mu.Lock()
 	closer := m.closers[name]
+	host := m.hosts[name]
 	delete(m.closers, name)
+	delete(m.hosts, name)
+	delete(m.owners, name)
+	if m.handles != nil {
+		m.handles.MemoryContext.clearClient(host)
+	}
 	m.mu.Unlock()
 	if closer != nil {
 		_ = closer()
 	}
-	delete(m.handles.ViewCallers, name)
+	if m.handles != nil {
+		delete(m.handles.ViewCallers, name)
+	}
 }
 
-// mcpOwnerContext binds the identity that authorized this server, so a boot-time mount can
-// present a stored grant instead of demanding a fresh consent.
+// Close prevents new mounts, joins the deferred reconnect, and closes every session
+// created after boot. Boot-time MCP sessions remain owned by chatEnv.mcpClosers.
+func (m *liveMCPMount) Close() error {
+	if m == nil {
+		return nil
+	}
+	m.mu.Lock()
+	m.closed = true
+	m.mu.Unlock()
+	m.wg.Wait()
+
+	m.mu.Lock()
+	closers := make([]func() error, 0, len(m.closers))
+	for name, closer := range m.closers {
+		closers = append(closers, closer)
+		if m.handles != nil {
+			m.handles.MemoryContext.clearClient(m.hosts[name])
+		}
+	}
+	m.closers = map[string]func() error{}
+	m.hosts = map[string]*mcptools.MountedServer{}
+	m.owners = map[string]string{}
+	m.mu.Unlock()
+	return closeMCPServers(closers)
+}
+
+// mcpOwnerContext binds an identity that authorized this server so the post-listener
+// reconnect can discover its tool schema with a stored grant.
 //
 // It is a no-op for everything else: a server with no OAuth, a deployment with no pool or
-// no secret, and a server nobody has authorized all return ctx unchanged, and the mount
-// then fails the way it already did — with the instruction to authorize it.
-//
-// A server two identities have authorized is deliberately left unmounted at boot. One
-// process-wide registry would give both identities' tool calls whichever token was resolved
-// first, and a wrong owner here is worse than a missing mount, which at least says so.
+// no secret, and a server nobody has authorized all return ctx unchanged.
 func mcpOwnerContext(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, name string, server mcp.ManagedServer) context.Context {
 	if pool == nil || strings.TrimSpace(cfg.AuthulaSecret) == "" {
 		return ctx

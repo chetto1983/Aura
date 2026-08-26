@@ -99,11 +99,10 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 - Current mitigation: API responses redact secret values; writes require `governance.write`; `gateMultiUserNeedsASandbox` refuses the multi-user flag on a non-strict profile and explicitly names this shared plane.
 - Recommendations: keep the single-user/strict-profile gate fail-closed. Before broad multi-user support, choose intentionally between identity-scoped encrypted settings and an explicitly operator-global settings plane with capability rules that prevent tenant writes.
 
-**Calendar MCP admin token has a well-known fallback:**
-- Risk: both configuration paths fall back to `changeme-aura-pim-local`, and strict-profile validation does not reject it.
-- Files: `internal/config/config.go`, `internal/config/config_validate.go`, `cmd/aura/integrations_proxy.go`, `compose.yaml`.
-- Current mitigation: the Compose deployment requires `AURA_PIM_MCP_ADMIN_TOKEN` and refuses to render without it; the sidecar admin API is internal to the Compose network and the proxy is capability-gated.
-- Recommendations: add strict-profile validation that rejects the well-known value and remove the duplicate literal so bare-binary deployments receive the same defense as Compose.
+**Closed 2026-08-26 — identity-scoped OAuth for Aura-owned remote MCPs:**
+- Former risk: Calendar carried a sidecar-specific admin fallback, and Calendar, WhatsApp, and Memory did not share one identity-scoped authorization/session model.
+- Resolution: all three are standard OAuth MCP resource servers. Aura stores one grant and opens one client session per identity/server; the verified access-token `sub` is the sole tenant selector. No static built-in MCP bearer, sidecar-specific secret, proprietary identity header, model argument, or request metadata can select a tenant.
+- Evidence: the production-like two-subject live tier passed 3/3 under `-race` and `goleak` against the real sidecars, including a forged metadata attempt; the real Cockpit/agent gate passed 2/2 and fresh production doctors opened Calendar, Memory, and WhatsApp without `aura mcp login`.
 
 **Opt-in recalled memory is a prompt-injection and memory-poisoning seam:**
 - Risk: when enabled, current-message retrieval is inserted into the model-visible prompt under text describing it as the model's "own knowledge." Stored facts can originate from earlier model/tool/document activity, so poisoned memory can influence a later turn before explicit tool selection.

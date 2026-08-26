@@ -377,7 +377,6 @@ ensure_internal_env_secrets() {
   ensure_generated_env_secret ARCADEDB_PASSWORD 32
   ensure_generated_env_secret ARCADEDB_APP_PASSWORD 32
   ensure_generated_env_secret AURA_ARCADEDB_TENANT_SECRET 32
-  ensure_generated_env_secret AURA_PIM_MCP_ADMIN_TOKEN 32
   ensure_generated_env_secret SEARXNG_SECRET 32
   ensure_objectstore_env_secrets
   ensure_embed_provenance
@@ -413,7 +412,6 @@ write_env_if_missing() {
   garage_rpc_secret="$(openssl rand -hex 32)"
   garage_admin_token="$(openssl rand -hex 32)"
   authula_secret="$(openssl rand -hex 32)"
-  pim_admin_token="$(openssl rand -hex 32)"
   searxng_secret="$(openssl rand -hex 32)"
   aura_image="${AURA_IMAGE:-$DEFAULT_IMAGE}"
   openrouter_key="${OPENROUTER_API_KEY:-}"
@@ -435,7 +433,6 @@ AURA_AGUI_PORT=9080
 AURA_SETUP_PORT=9081
 AURA_WHATSAPP_MCP_PORT=8092
 AURA_ARCADEDB_MCP_PORT=8096
-AURA_PIM_MCP_ADMIN_TOKEN=${pim_admin_token}
 AURA_BACKUP_DIR=./backups
 SEARXNG_SECRET=${searxng_secret}
 

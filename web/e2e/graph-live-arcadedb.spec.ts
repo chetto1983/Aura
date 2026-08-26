@@ -1,8 +1,18 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { expect, test, type Request } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
 import { collectBrowserHealth } from './support/browserHealth';
 
 const live = process.env.AURA_E2E_LIVE_GRAPH === '1';
+const execFileAsync = promisify(execFile);
+
+async function memoryCLI(...args: string[]): Promise<string> {
+  const result = await execFileAsync('docker', ['exec', 'aura', 'aura', 'memory', ...args], {
+    timeout: 30_000,
+  });
+  return result.stdout;
+}
 
 function graphIntent(request: Request): Record<string, unknown> | undefined {
   if (new URL(request.url()).pathname !== '/api/graph/query') return undefined;
@@ -32,47 +42,72 @@ test.describe('live ArcadeDB memory graph', () => {
       if (intent !== undefined) intents.push(intent);
     });
 
-    await gotoAuthenticated(page, '/');
-    await page.getByRole('button', { name: 'Graph', exact: true }).first().click();
+    const runID = `graph-live-e2e-${String(testInfo.workerIndex)}-${String(Date.now())}`;
+    let seeded = false;
+    try {
+      const write = await memoryCLI(
+        'remember',
+        `Graph Live Alpha ${runID}`,
+        'relates_to',
+        `Graph Live Beta ${runID}`,
+        `Graph Live Alpha ${runID} relates to Graph Live Beta ${runID}.`,
+        '--subject-kind',
+        'test_entity',
+        '--object-kind',
+        'test_entity',
+        '--run',
+        runID,
+      );
+      seeded = true;
+      expect(write).toContain('"refused":false');
 
-    await expect(page.getByRole('img', { name: /Memory graph:/ })).toBeVisible({
-      timeout: 15_000,
-    });
-    const evidence = page.locator('.graph-workspace__evidence');
-    const nodeHeading = evidence.getByText(/^Nodes \(\d+\)/);
-    const edgeHeading = evidence.getByText(/^Connections \(\d+\)$/);
-    await expect(nodeHeading).toBeVisible();
-    await expect(edgeHeading).toBeVisible();
-    const beforeNodes = countFrom((await nodeHeading.textContent()) ?? '');
-    const beforeEdges = countFrom((await edgeHeading.textContent()) ?? '');
-    expect(beforeNodes).toBeGreaterThan(0);
-    expect(beforeEdges).toBeGreaterThan(0);
+      await gotoAuthenticated(page, '/');
+      await page.getByRole('button', { name: 'Graph', exact: true }).first().click();
 
-    await evidence.getByRole('button').first().click();
-    const inspector = page.getByRole('complementary', { name: 'Select a node' });
-    const expandResponse = page.waitForResponse((response) => {
-      const intent = graphIntent(response.request());
-      return intent?.op === 'expand';
-    });
-    await inspector.getByRole('button', { name: 'Expand neighbors' }).click();
-    expect((await expandResponse).status()).toBe(200);
+      await expect(page.getByRole('img', { name: /Memory graph:/ })).toBeVisible({
+        timeout: 15_000,
+      });
+      const evidence = page.locator('.graph-workspace__evidence');
+      const nodeHeading = evidence.getByText(/^Nodes \(\d+\)/);
+      const edgeHeading = evidence.getByText(/^Connections \(\d+\)$/);
+      await expect(nodeHeading).toBeVisible();
+      await expect(edgeHeading).toBeVisible();
+      const beforeNodes = countFrom((await nodeHeading.textContent()) ?? '');
+      const beforeEdges = countFrom((await edgeHeading.textContent()) ?? '');
+      expect(beforeNodes).toBeGreaterThan(0);
+      expect(beforeEdges).toBeGreaterThan(0);
 
-    await expect
-      .poll(async () => countFrom((await nodeHeading.textContent()) ?? ''))
-      .toBeGreaterThanOrEqual(beforeNodes);
-    await inspector.getByRole('button', { name: 'Show ArcadeDB SQL' }).click();
-    await expect(inspector.locator('pre')).toContainText('SELECT');
+      await evidence.getByRole('button').first().click();
+      const inspector = page.getByRole('complementary', { name: 'Select a node' });
+      const expandResponse = page.waitForResponse((response) => {
+        const intent = graphIntent(response.request());
+        return intent?.op === 'expand';
+      });
+      await inspector.getByRole('button', { name: 'Expand neighbors' }).click();
+      expect((await expandResponse).status()).toBe(200);
 
-    expect(intents[0]).toMatchObject({ op: 'overview' });
-    expect(intents[0]).not.toHaveProperty('session');
-    expect(intents[0]).not.toHaveProperty('seed_id');
-    const expansion = intents.find((intent) => intent.op === 'expand');
-    expect(expansion?.node_id).toMatch(/^#[0-9]+:[0-9]+$/);
-    health.assertClean();
+      await expect
+        .poll(async () => countFrom((await nodeHeading.textContent()) ?? ''))
+        .toBeGreaterThanOrEqual(beforeNodes);
+      await inspector.getByRole('button', { name: 'Show ArcadeDB SQL' }).click();
+      await expect(inspector.locator('pre')).toContainText('SELECT');
 
-    await testInfo.attach('live-arcadedb-graph.png', {
-      body: await page.screenshot({ fullPage: true }),
-      contentType: 'image/png',
-    });
+      expect(intents[0]).toMatchObject({ op: 'overview' });
+      expect(intents[0]).not.toHaveProperty('session');
+      expect(intents[0]).not.toHaveProperty('seed_id');
+      const expansion = intents.find((intent) => intent.op === 'expand');
+      expect(expansion?.node_id).toMatch(/^#[0-9]+:[0-9]+$/);
+      health.assertClean();
+
+      await testInfo.attach('live-arcadedb-graph.png', {
+        body: await page.screenshot({ fullPage: true }),
+        contentType: 'image/png',
+      });
+    } finally {
+      if (seeded) {
+        const cleanup = await memoryCLI('forget', '--run', runID, '--apply');
+        expect(cleanup).toContain('"facts":1');
+      }
+    }
   });
 });

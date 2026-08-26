@@ -147,7 +147,8 @@ func TestMountRetryDelay_CappedExponential(t *testing.T) {
 func TestMountWithRetry_RealManagedTransportExhausts(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	reg := tools.NewRegistry()
-	server := mcp.ManagedServer{Type: mcp.ServerTypeStreamableHTTP, URL: "http://127.0.0.1:0/mcp"}
+	server := unprotectedHTTPFixtureServer("http://127.0.0.1:0/mcp")
+	server.Type = mcp.ServerTypeStreamableHTTP
 	closer, names, err := MountWithRetry(context.Background(), "memory", fastPolicy(2),
 		func(c context.Context) (func() error, []string, error) {
 			return MountManagedServer(c, c, reg, "memory", server)

@@ -229,11 +229,11 @@ function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
         ...(domainList.length > 0 ? { domains: domainList } : {}),
         ...(prio !== undefined ? { priority: prio } : {}),
       };
-      await createPimAccount(body);
+      const created = await createPimAccount(body);
       onCreated();
       // create.isError now means ONLY the account creation failed; a failed connect step is a
       // `startFailed` result so the operator isn't told creation failed when it didn't.
-      return startConnect(id, def.authFlow);
+      return startConnect(created.id, def.authFlow);
     },
     onSuccess: setResult,
   });

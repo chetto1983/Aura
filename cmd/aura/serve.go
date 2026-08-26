@@ -199,6 +199,9 @@ func runServe(args []string) {
 	env.readiness.MarkListenerBound()
 	slog.Info("aura serve: agui http server listening", "addr", env.cfg.AGUIBind)
 	slog.Info("aura serve: private metrics server listening", "addr", serveObs.address())
+	if env.liveMCP != nil {
+		env.liveMCP.StartReconnect(ctx, env.cfg, env.pool)
+	}
 
 	// The channels Registry (Telegram) + the setup wizard server (:9081) mount as
 	// fail-soft siblings of the AG-UI gateway: a failed channel or a taken setup
@@ -378,7 +381,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// landed a new ServerConfig field — CLAUDE.md 600-LOC ceiling). The auth-dependent
 	// wiring (onboarding/bootstrap/password-reset) stays below, once auth/authulaProvider
 	// exist.
-	aguiServer, runRegistry := wireAGUIServer(chat, store, scheduler, readinessState, ownerExports, shareAPI, objectStore)
+	aguiServer, runRegistry := wireAGUIServer(ctx, chat, store, scheduler, readinessState, ownerExports, shareAPI, objectStore)
 	// The embedded operator SPA (internal/webui) mounts additively at "/" on the
 	// SAME loopback server: newServeHandler is a parent mux that keeps the AG-UI
 	// routes authoritative and falls everything else through to the static shell

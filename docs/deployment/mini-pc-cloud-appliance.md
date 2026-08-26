@@ -107,7 +107,6 @@ fill ARCADEDB_APP_PASSWORD "$(gen 32)"
 fill AURA_ARCADEDB_TENANT_SECRET "$(gen 32)"
 fill AURA_ACCESS_TOKEN "$(gen 32)"
 fill AURA_AUTHULA_SECRET "$(gen 32)"
-fill AURA_PIM_MCP_ADMIN_TOKEN "$(gen 32)"
 fill SEARXNG_SECRET "$(gen 32)"
 fill AURA_OBJECTSTORE_ACCESS_KEY "GK$(gen 12)"
 fill AURA_OBJECTSTORE_SECRET_KEY "$(gen 32)"
@@ -116,7 +115,7 @@ fill AURA_GARAGE_ADMIN_TOKEN "$(gen 32)"
 chmod 600 .env
 ```
 
-All twelve use compose's `:?` required form, and compose interpolates the **whole
+All required secrets use compose's `:?` form, and compose interpolates the **whole
 file** before it picks a service — so one missing name aborts every `docker compose`
 invocation, including ones that touch none of those containers.
 `docker compose config >/dev/null` is the check.

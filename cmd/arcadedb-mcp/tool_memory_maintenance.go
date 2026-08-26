@@ -14,8 +14,8 @@ import (
 // internal/agent/mcptools/bridge_memory.go: re-embedding is an operator decision about
 // infrastructure, not a move an agent should make mid-turn.
 
-// MemoryReembedInput selects the scope of the pass. The calling identity is NOT
-// a field here (D-108): it travels in _meta.aura.user_identifier.
+// MemoryReembedInput selects the scope of the pass. The calling identity comes
+// from the authenticated OAuth subject, never a model-visible field.
 type MemoryReembedInput struct {
 	// All is the difference between healing a gap and redoing the work. Default false so
 	// the cheap, safe pass is what an unqualified call gets.

@@ -48,6 +48,11 @@ func EgressPolicyForManagedServer(enforce bool, server ManagedServer) EgressPoli
 		return policy
 	}
 	policy.allowedPrivateAuthorities = map[string]struct{}{authority: {}}
+	if issuer, err := url.Parse(AuraAuthorizationServerIssuer); err == nil {
+		if authAuthority, authErr := canonicalURLAuthority(issuer); authErr == nil {
+			policy.allowedPrivateAuthorities[authAuthority] = struct{}{}
+		}
+	}
 	return policy
 }
 

@@ -120,10 +120,8 @@ func main() {
 	}
 }
 
-// runMCPDispatch is the `aura mcp` composition root: it opens a *pgxpool.Pool ONLY when
-// the subcommand mutates the managed config (mirrors identityRecover/
-// identityRecoverOperator's open-close pool lifecycle, D-12) — read-only subcommands
-// (recipes/status/list/logs/doctor/tools/console) never touch the DB. Under
+// runMCPDispatch opens a pool when the command mutates managed config or consumes an
+// identity-scoped OAuth grant. Pure inventory commands remain pool-free. Under
 // server_production a pool-open failure is fatal (MCPH-07's literal "audited OR
 // disallowed" requirement — a production deploy may never fall back to an unaudited
 // write); under every other profile a pool-open failure degrades to a nil pool with a
@@ -166,6 +164,7 @@ type runtimeToolHandles struct {
 	BackgroundShells *tools.BackgroundShells
 	ShellApprovals   *tools.ShellApprovals
 	Memory           *mcptools.MountedServer
+	MemoryContext    *mountedMemoryContext
 	// ShellPoll / ShellKill are retained so serve boot can wire their .Caps to the live
 	// capability store (VERIF-7 / D-18): the pool-free manifest paths construct them with a
 	// nil Caps (owner-only fail-closed), and serve.go sets Caps = the identity store once it
@@ -343,6 +342,20 @@ func buildRegistryWithMCP(
 	mountTimeout := mcpMountTimeout()
 	closers := make([]func() error, 0, len(serverNames))
 	for _, name := range serverNames {
+		if server, managed := mcpPolicies[name]; managed && shouldDeferOAuthMount(ctx, server) {
+			if mcp.IsSharedAdminGoverned(server) {
+				handles.MemoryContext = newMemoryContextProvider(
+					nil,
+					cfg.MemoryPreloadTopK,
+					time.Duration(cfg.MemoryPreloadTimeoutMS)*time.Millisecond,
+				)
+			}
+			// A stored grant may need Aura's own token endpoint for refresh. That
+			// endpoint cannot answer until serve boot has bound and started HTTP, so
+			// the live mounter reconnects OAuth servers after the listener starts.
+			slog.Info("mcp oauth: deferred mount until daemon listener is running", "server", name)
+			continue
+		}
 		// D-21 fail-soft: a single dead/misconfigured server WARN-and-drops; boot
 		// continues with the servers that did mount. Matches every surveyed MCP host
 		// (Claude Code/Desktop, VS Code). Already-mounted servers stay registered —

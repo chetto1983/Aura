@@ -2,8 +2,8 @@
 
 // memory_live_integration_helpers_test.go holds the harness
 // memory_live_integration_test.go's three live-scenario tests share: session
-// construction against the real ArcadeDB + embedder + tenant provisioning, the
-// _meta-stamping call helper (D-108), and cleanup. Split out at the ≤600-LOC
+// construction against the real ArcadeDB + embedder + tenant provisioning,
+// the OAuth-subject call helper, and cleanup. Split out at the ≤600-LOC
 // refactor-on-touch threshold (CLAUDE.md NO GOD CLASS) once this plan's _meta
 // migration pushed the single file to 606 lines.
 package main
@@ -31,7 +31,7 @@ func newAgentMemoryLiveMCP(
 	t *testing.T,
 	identityCount int,
 	operatorDisplayName string,
-) (*officialmcp.ClientSession, []string, agentMemoryRuntimeEvidence) {
+) (map[string]*officialmcp.ClientSession, []string, agentMemoryRuntimeEvidence) {
 	t.Helper()
 	adminPassword := os.Getenv("ARCADEDB_ADMIN_PASSWORD")
 	if strings.TrimSpace(adminPassword) == "" {
@@ -94,9 +94,32 @@ func newAgentMemoryLiveMCP(
 	})
 
 	server := newServer(newTenants(base, admin, embedder, credentials), time.Now, operatorDisplayName)
-	httpServer := httptest.NewServer(officialmcp.NewStreamableHTTPHandler(
-		func(*http.Request) *officialmcp.Server { return server }, nil))
+	authFixture := newArcadeAuthFixture(t)
+	httpServer := httptest.NewUnstartedServer(nil)
+	resource := "http://" + httpServer.Listener.Addr().String() + "/mcp/"
+	oauthConfig := oauthResourceConfig{
+		Issuer: authFixture.issuer, JWKSURL: authFixture.server.URL, Resource: resource, Scope: defaultOAuthScope,
+	}
+	verifier := newArcadeTokenVerifier(oauthConfig, authFixture.server.Client())
+	mux := http.NewServeMux()
+	mux.Handle("/mcp/", protectedArcadeMCP(oauthConfig, verifier.Verify,
+		officialmcp.NewStreamableHTTPHandler(func(*http.Request) *officialmcp.Server { return server }, nil)))
+	mux.Handle("/.well-known/oauth-protected-resource/mcp/", arcadeProtectedResourceMetadata(oauthConfig))
+	httpServer.Config.Handler = mux
+	httpServer.Start()
 	t.Cleanup(httpServer.Close)
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, httpServer.URL+"/mcp/", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("build anonymous MCP request: %v", err)
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("anonymous MCP request: %v", err)
+	}
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("anonymous MCP status = %d, want 401", response.StatusCode)
+	}
 	// Closing the CLIENT session does not close the server's half of it. The SDK keeps a
 	// per-session jsonrpc2 read loop alive on the server (streamableServerConn.Read), and
 	// httptest's Close only waits for outstanding REQUESTS — a streamable session is not
@@ -113,26 +136,32 @@ func newAgentMemoryLiveMCP(
 		}
 	})
 
-	// D-108: the bespoke auramcp.HTTPClient/OpenHTTP/HTTPConfig.ToolIdentityArgument
-	// argument-stamping path is DELETED (plan 45.1-03). This is the same
-	// OpenSDKSession construction path production and calendar_integration_test.go
-	// use — identity now travels in _meta, stamped per call by
-	// callAgentMemoryLiveJSON, never as a launch-time argument-injection config.
-	managed := auramcp.ManagedServer{
-		Type:  auramcp.ServerTypeStreamableHTTP,
-		URL:   httpServer.URL,
-		Trust: auramcp.ManagedTrust{Class: auramcp.TrustTrustedRecipe},
-	}
-	session, err := auramcp.OpenSDKSession(t.Context(), "agent-memory-live", managed, auramcp.EgressPolicy{}, auramcp.SessionOptions{})
-	if err != nil {
-		t.Fatalf("initialize live MCP: %v", err)
+	// This is the same generic remote-MCP session path production uses. Each
+	// session carries a different OAuth subject and therefore resolves a different
+	// tenant database without model-visible identity arguments.
+	sessions := make(map[string]*officialmcp.ClientSession, len(identities))
+	for _, identity := range identities {
+		managed := auramcp.ManagedServer{
+			Type: auramcp.ServerTypeStreamableHTTP,
+			URL:  httpServer.URL + "/mcp/",
+			Env: []string{"MCP_BEARER_TOKEN=" + authFixture.token(t, resource,
+				identity, defaultOAuthScope, time.Now().Add(time.Hour))},
+			Trust: auramcp.ManagedTrust{Class: auramcp.TrustTrustedRecipe},
+		}
+		session, openErr := auramcp.OpenSDKSession(t.Context(), "agent-memory-live", managed, auramcp.EgressPolicy{}, auramcp.SessionOptions{})
+		if openErr != nil {
+			t.Fatalf("initialize live MCP for %s: %v", identity, openErr)
+		}
+		sessions[identity] = session
 	}
 	t.Cleanup(func() {
-		if err := session.Close(); err != nil {
-			t.Errorf("close live MCP client: %v", err)
+		for identity, session := range sessions {
+			if err := session.Close(); err != nil {
+				t.Errorf("close live MCP client for %s: %v", identity, err)
+			}
 		}
 	})
-	return session, identities, agentMemoryRuntimeEvidence{
+	return sessions, identities, agentMemoryRuntimeEvidence{
 		ArcadeDBVersion:    arcadeDBVersion,
 		MCPServerVersion:   serverVersion,
 		EmbeddingModel:     agentMemoryLiveModelLabel(),
@@ -197,20 +226,16 @@ func cleanupAgentMemoryLiveTenants(
 	}
 }
 
-// callAgentMemoryLiveJSON calls tool on session, stamping identity into
-// _meta.aura.user_identifier through the SAME mcp.SetAuraMetaField helper the
-// agent bridge and the CLI use (D-108) — never as a "user_identifier" argument,
-// which no longer exists on any memory tool's schema.
+// callAgentMemoryLiveJSON calls a tool through an OAuth-authenticated session.
 func callAgentMemoryLiveJSON[T any](
 	t *testing.T,
 	ctx context.Context,
 	session *officialmcp.ClientSession,
-	identity, tool string,
+	tool string,
 	arguments map[string]any,
 ) T {
 	t.Helper()
 	params := &officialmcp.CallToolParams{Name: tool, Arguments: arguments}
-	auramcp.SetAuraMetaField(params, auramcp.MetaFieldUserIdentifier, identity)
 	res, err := session.CallTool(ctx, params)
 	if err != nil {
 		t.Fatalf("call %s: %v", tool, err)
@@ -227,28 +252,6 @@ func callAgentMemoryLiveJSON[T any](
 		t.Fatalf("decode %s output %q: %v", tool, text, err)
 	}
 	return output
-}
-
-// callAgentMemoryLiveExpectingRefusal proves the negative identity case against
-// the LIVE server: a call whose _meta carries no usable identity (or none at
-// all) refuses with IsError:true, before any tenant database is touched.
-func callAgentMemoryLiveExpectingRefusal(
-	t *testing.T,
-	ctx context.Context,
-	session *officialmcp.ClientSession,
-	tool string,
-	arguments map[string]any,
-) string {
-	t.Helper()
-	res, err := session.CallTool(ctx, &officialmcp.CallToolParams{Name: tool, Arguments: arguments})
-	if err != nil {
-		t.Fatalf("call %s: transport error %v", tool, err)
-	}
-	text, isErr := auramcp.DecodeToolResult(res)
-	if !isErr {
-		t.Fatalf("call %s with no identity succeeded, want a refusal: %s", tool, text)
-	}
-	return text
 }
 
 // drainAgentMemoryLiveTools drains session's paginated tool list, mirroring

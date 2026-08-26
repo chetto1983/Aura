@@ -8079,3 +8079,66 @@ flusso completo, che funziona.
 > adopting it would be the architectural change D-10 deferred. It does not reopen any other part of
 > Amendment #142 correction 4, which stands: the 409 was never what the operator hit, and it stays
 > unreached, not removed.
+
+## §Aura-owned MCPs use the existing remote OAuth flow (Amendment #147, 2026-08-25)
+
+> **Amendment #147 (2026-08-25 — operator correction to amendment #145 before its bearer wiring ships).**
+>
+> Calendar, WhatsApp and ArcadeDB do not receive `AURA_ACCESS_TOKEN`, an MCP-specific service token,
+> or any other static bearer from `.env`. The static deployment-bearer paragraph in amendment #145 is
+> superseded. The proprietary `_meta.aura.user_identifier`, `X-Aura-Identity`, and identity-envelope
+> contracts in amendments #144 and #145 are superseded with them. Aura already has the one generic
+> remote-MCP client path: RFC 9728 discovery, OAuth
+> authorization-code + PKCE, supported client registration, refresh, encrypted per-identity grants in
+> `aura.identity_mcp_oauth`, and `runtimeMCPOAuth(ctx)`. That path remains provider-neutral and is reused
+> without an Aura-owned-server branch, token overlay, second registry, or second grant store.
+>
+> The three server implementations are changed instead. Each is an OAuth 2.1 resource server for the
+> MCP 2026-07-28 HTTP authorization contract: it publishes protected-resource metadata, returns a
+> `WWW-Authenticate: Bearer` challenge naming that metadata, accepts a bearer on every MCP HTTP request,
+> and validates signature, issuer, expiry, scopes, and an exact RFC 8707 resource/audience. The associated
+> authorization server is the existing Authula identity boundary extended with its own Ed25519/JWKS,
+> short access-token and rotating-refresh-token facilities; it is shared by all three resources and is
+> not copied into the forks. The public Aura client is pre-registered without a client secret, so no
+> deployment credential or DCR result is required in `.env`; authorization codes remain PKCE-bound,
+> short-lived and single-use.
+>
+> A successful authorization mints a resource-specific access token for the authenticated Aura identity.
+> Its standard `sub` claim is authoritative and is the only tenant selector. Calendar, WhatsApp and
+> ArcadeDB resolve account, SQLite directory, WhatsMeow runtime, media path, database and derived
+> credential from that verified subject; no tool argument, MCP `_meta` value, browser field, or
+> proprietary `X-Aura-*` header participates in tenant selection. Calendar management calls use the same
+> bearer subject; WhatsApp pairing remains on its private management boundary. Provider OAuth credentials
+> (Google/Microsoft) and WhatsApp pairing remain domain credentials behind MCP and are never accepted as,
+> or replaced by, an MCP access token.
+>
+> Closure is one proof set over the three real servers: anonymous request -> `401` plus discoverable
+> metadata; authorization-code/PKCE exchange -> audience-bound access + rotating refresh token; wrong
+> audience or expiry -> denial before data access; forged metadata cannot override the bearer subject;
+> identity A and B concurrently reach
+> only their own data; refresh preserves resource and tenant; revoked/rotated refresh reuse is rejected.
+> The migration suite must include the Authula-owned JWKS/refresh migration in the isolated `authula`
+> schema and keep Aura migration 0102 green. The final real-agent E2E must exercise Calendar, WhatsApp and
+> ArcadeDB through Aura's unchanged remote-MCP client, not by injecting a token in a test transport.
+>
+> **Closure evidence (2026-08-26).** The production-like two-subject tier passed 3/3 under `-race`
+> and `goleak` through the real loopback Calendar, WhatsApp and ArcadeDB MCP containers. It used Aura's
+> production token plugin and live Authula signing keys: Calendar exposed only each subject's account,
+> WhatsApp only each subject's SQLite marker, and Memory only each subject's fact; forged
+> `_meta.tenant` did not override `sub`. All disposable accounts, stores, users and databases were
+> removed. The real Cockpit/agent spec then passed 2/2 (10.0/10): all three built-ins authorized and
+> reported healthy, the agent called Calendar, paused for approval, resumed, delivered fake-SMTP message
+> id 5 and ended `content_stop`; cleanup removed its account and conversation. Fresh production doctors
+> opened Calendar (1 tool), Memory (10 tools) and WhatsApp (15 tools) without `aura mcp login`, and the
+> current Aura logs contain zero `invalid_grant`, missing-Memory-mount, or unavailable-memory-context
+> warnings. Migration 0102's automatic round-trip remains green.
+>
+> **What this closure does NOT prove.** The cross-subject tier composes Aura's exact token plugin and live
+> key database, not the unrelated web-login plugin set. That set is independently covered by the full
+> `webauth_integration` lifecycle tier under `-race` and `goleak`: Authula's official in-memory
+> `secondary-storage` service preserves rate limiting while its joinable `Close`, followed by event-bus
+> and owned-DB closure, releases every worker. This avoids the direct v1.42.0 memory/database rate-limit
+> providers whose public `Close()` leaves their cleaner running; it does not claim those unused upstream
+> implementations are repaired. The single real-agent turn proves the complete user path for the
+> operator; the two-subject proof is the direct official-SDK sidecar tier rather than two simultaneous
+> LLM turns.

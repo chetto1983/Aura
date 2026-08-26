@@ -208,6 +208,9 @@ func TestProviderCloseNilSafe(t *testing.T) {
 	if err := p.Close(); err != nil {
 		t.Errorf("nil provider Close: %v", err)
 	}
+	if err := (&Provider{}).Close(); err != nil {
+		t.Errorf("provider without Authula Close: %v", err)
+	}
 	if id, err := p.OperatorUserID(context.Background()); err != nil || id != "" {
 		t.Errorf("nil provider OperatorUserID: id=%q err=%v", id, err)
 	}

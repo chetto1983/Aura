@@ -71,6 +71,9 @@ const (
 type MountedServer struct {
 	name string
 	open openSessionFunc
+	// identityPool is non-nil only for OAuth-protected HTTP servers. The parent
+	// remains the single registry target while calls route to subject-bound children.
+	identityPool *identitySessionPool
 
 	mu                sync.Mutex
 	session           *sdkmcp.ClientSession
@@ -257,6 +260,13 @@ func drainTools(ctx context.Context, session *sdkmcp.ClientSession) ([]*sdkmcp.T
 
 // ListTools drains the current session's paginated tool list.
 func (s *MountedServer) ListTools(ctx context.Context) ([]*sdkmcp.Tool, error) {
+	if s.identityPool != nil {
+		child, err := s.identityPool.server(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return child.ListTools(ctx)
+	}
 	session, err := s.currentSession()
 	if err != nil {
 		return nil, err
@@ -289,6 +299,13 @@ func (s *MountedServer) CallToolText(ctx context.Context, name string, args map[
 // plain tool-level error (including a domain isError:true, which never reaches
 // here as a Go error at all) is returned unchanged.
 func (s *MountedServer) CallTool(ctx context.Context, name string, args map[string]any) (mcp.ToolPayload, error) {
+	if s.identityPool != nil {
+		child, err := s.identityPool.server(ctx)
+		if err != nil {
+			return mcp.ToolPayload{}, err
+		}
+		return child.CallTool(ctx, name, args)
+	}
 	session, terminalErr, dead := s.sessionOrDeath()
 	if terminalErr != nil {
 		return mcp.ToolPayload{}, terminalErr
@@ -346,6 +363,9 @@ func (s *MountedServer) toolIsReadOnly(name string) bool {
 // Close is idempotent: it stops nothing explicitly (watch exits on its own once
 // session.Close's Wait() unblocks) and closes the underlying session.
 func (s *MountedServer) Close() error {
+	if s.identityPool != nil {
+		return s.identityPool.Close()
+	}
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -365,11 +385,14 @@ func (s *MountedServer) Close() error {
 // toolIsReadOnly gate can find them by their raw (wire) name.
 func (s *MountedServer) trackBridgedTools(bridged []tools.Tool) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	for _, t := range bridged {
 		if bt, ok := t.(*bridgedTool); ok {
 			s.bridged[bt.name] = bt
 		}
+	}
+	s.mu.Unlock()
+	if s.identityPool != nil {
+		s.identityPool.syncChildren()
 	}
 }
 
@@ -377,8 +400,11 @@ func (s *MountedServer) trackBridgedTools(bridged []tools.Tool) {
 // baseline validateToolSetLocked compares every subsequent push against.
 func (s *MountedServer) trackAcceptedTools(advertised []*sdkmcp.Tool) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.acceptedToolNames = sdkToolNameSet(advertised)
+	s.mu.Unlock()
+	if s.identityPool != nil {
+		s.identityPool.syncChildren()
+	}
 }
 
 func sdkToolNameSet(advertised []*sdkmcp.Tool) map[string]struct{} {
@@ -416,8 +442,11 @@ func (s *MountedServer) validateToolSetLocked(advertised []*sdkmcp.Tool) error {
 // invalidateToolSearch).
 func (s *MountedServer) setRefreshHook(hook func()) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.refreshHook = hook
+	s.mu.Unlock()
+	if s.identityPool != nil {
+		s.identityPool.syncChildren()
+	}
 }
 
 // refreshSpecsLocked updates each already-registered bridgedTool's stored

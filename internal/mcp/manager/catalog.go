@@ -18,9 +18,6 @@ import (
 // "8096@evil.example" via the URL userinfo trick) would retarget the
 // loopback-by-construction recipe off-host, so garbage falls back to 8096 (WR-01).
 func memoryRecipeURL() string {
-	if os.Getenv("AURA_IN_CONTAINER") == "1" {
-		return "http://aura-arcadedb-mcp:8096/mcp/"
-	}
 	port := strings.TrimSpace(os.Getenv("AURA_ARCADEDB_MCP_PORT"))
 	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
 		port = "8096"
@@ -32,9 +29,6 @@ func memoryRecipeURL() string {
 // sibling. The sibling publishes port 8092 by default; garbage falls back to
 // loopback 8092 so userinfo-style values cannot retarget the recipe off-host.
 func whatsappRecipeURL() string {
-	if os.Getenv("AURA_IN_CONTAINER") == "1" {
-		return "http://whatsapp:8080/mcp/"
-	}
 	port := strings.TrimSpace(os.Getenv("AURA_WHATSAPP_MCP_PORT"))
 	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
 		port = "8092"
@@ -43,16 +37,13 @@ func whatsappRecipeURL() string {
 }
 
 // PIMSidecarBaseURL returns the scheme://host:port (no trailing slash) of the Aura
-// PIM sidecar (forked calendar-mcp → chetto1983/aura-pim-mcp): compose-DNS
-// aura-pim-mcp:8080 in-container, else loopback 127.0.0.1:<AURA_PIM_MCP_PORT|8093>
-// (compose maps host 8093 → the container's 8080). WR-01: a non-port env value
+// PIM sidecar (forked calendar-mcp → chetto1983/aura-pim-mcp): loopback
+// 127.0.0.1:<AURA_PIM_MCP_PORT|8093>. The production sidecar shares Aura's network
+// namespace, so the same URL is valid inside and outside the container. WR-01: a non-port env value
 // (userinfo trick, overflow, junk) falls back to 8093 so it cannot retarget the
 // loopback-by-construction URL off-host. The MCP recipe and the admin proxy share
 // this base (the MCP endpoint is the root "/", the admin REST API is "/admin").
 func PIMSidecarBaseURL() string {
-	if os.Getenv("AURA_IN_CONTAINER") == "1" {
-		return "http://aura-pim-mcp:8080"
-	}
 	port := strings.TrimSpace(os.Getenv("AURA_PIM_MCP_PORT"))
 	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
 		port = "8093"
@@ -66,15 +57,12 @@ func calendarRecipeURL() string {
 }
 
 // WhatsAppBridgeBaseURL returns the scheme://host:port (no path) of the WhatsApp
-// whatsmeow bridge's management REST API (/api/{status,qr,logout}): compose-DNS
-// whatsapp:8081 in-container, else loopback 127.0.0.1:<AURA_WHATSAPP_BRIDGE_PORT|8094>
-// (compose maps host 8094 → the container's 8081). WR-01: a non-port env value falls
+// whatsmeow bridge's management REST API (/api/{status,qr,logout}): loopback
+// 127.0.0.1:<AURA_WHATSAPP_BRIDGE_PORT|8094>. The production bridge shares Aura's
+// network namespace. WR-01: a non-port env value falls
 // back to 8094. The cockpit drives device linking through Aura's proxy onto this base
 // (distinct from whatsappRecipeURL, which is the agent's MCP-over-HTTP endpoint).
 func WhatsAppBridgeBaseURL() string {
-	if os.Getenv("AURA_IN_CONTAINER") == "1" {
-		return "http://whatsapp:8081"
-	}
 	port := strings.TrimSpace(os.Getenv("AURA_WHATSAPP_BRIDGE_PORT"))
 	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
 		port = "8094"
