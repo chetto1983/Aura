@@ -8,6 +8,7 @@ package mcp
 import (
 	"context"
 	"database/sql"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -74,8 +75,8 @@ func TestWhatsAppServerLiveTenantIsolation(t *testing.T) {
 		}
 	}
 
-	_ = callWhatsApp(t, ctx, sessionA)
-	_ = callWhatsApp(t, ctx, sessionB)
+	startWhatsAppRuntime(t, ctx, whatsAppTenantA)
+	startWhatsAppRuntime(t, ctx, whatsAppTenantB)
 	seedWhatsAppChat(t, ctx, storeRoot, whatsAppTenantA, whatsAppTenantOnlyA)
 	seedWhatsAppChat(t, ctx, storeRoot, whatsAppTenantB, whatsAppTenantOnlyB)
 	tenantA := callWhatsApp(t, ctx, sessionA)
@@ -85,6 +86,33 @@ func TestWhatsAppServerLiveTenantIsolation(t *testing.T) {
 	}
 	if !strings.Contains(tenantB, whatsAppTenantOnlyB) || strings.Contains(tenantB, whatsAppTenantOnlyA) {
 		t.Fatalf("tenant B WhatsApp surface is not isolated: %s", tenantB)
+	}
+}
+
+func startWhatsAppRuntime(t *testing.T, ctx context.Context, identity string) {
+	t.Helper()
+	gatewayURL := strings.TrimSpace(os.Getenv("AURA_WHATSAPP_GATEWAY_URL"))
+	bridgeToken := strings.TrimSpace(os.Getenv("AURA_WHATSAPP_BRIDGE_TOKEN"))
+	if gatewayURL == "" || bridgeToken == "" {
+		if strings.TrimSpace(os.Getenv("CI")) != "" {
+			t.Fatal("AURA_WHATSAPP_GATEWAY_URL and AURA_WHATSAPP_BRIDGE_TOKEN are required under CI")
+		}
+		t.Skip("set the WhatsApp tenant gateway URL and bridge token to run this tier")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, gatewayURL, nil)
+	if err != nil {
+		t.Fatalf("create WhatsApp gateway request for %s: %v", identity, err)
+	}
+	request.Header.Set("Authorization", "Bearer "+bridgeToken)
+	request.Header.Set("X-Tenant-ID", identity)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("start WhatsApp runtime for %s: %v", identity, err)
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("start WhatsApp runtime for %s: HTTP %d", identity, response.StatusCode)
 	}
 }
 

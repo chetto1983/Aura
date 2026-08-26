@@ -468,7 +468,11 @@ jobs:
         run: bash scripts/fetch_embedding_model.sh "$AURA_CI_LLAMA_CACHE_DIR/llama.cpp/embeddinggemma-300M-Q8_0.gguf"
 
       - name: Bring up stack + migrate (postgres + ArcadeDB + embed sidecar)
-        run: make db-migrate memory-up
+        run: |
+          if ! make db-migrate memory-up; then
+            docker compose logs --tail 160 garage-bootstrap garage aura-migrate || true
+            exit 1
+          fi
 
       - name: Bring up Garage (Admin API v2 on loopback) + assign layout
         run: |
@@ -744,6 +748,7 @@ jobs:
       POSTGRES_PASSWORD: ci-test-password
       AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
       AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      AURA_AUTHULA_DSN: "postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable&search_path=authula"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -1113,6 +1118,8 @@ jobs:
       CI: "true"
       AURA_WHATSAPP_MCP_IMAGE: ghcr.io/chetto1983/whatsapp-mcp:sha-a463da5@sha256:006602da0893ada0eb80c812384032e262c1c7f0642866bf194041078e86130f
       AURA_WHATSAPP_MCP_URL: http://127.0.0.1:18092/mcp
+      AURA_WHATSAPP_GATEWAY_URL: http://127.0.0.1:18094/api/status
+      AURA_WHATSAPP_BRIDGE_TOKEN: ci-whatsapp-bridge-token-2026
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -1136,7 +1143,7 @@ jobs:
             --add-host=host.docker.internal:host-gateway \
             -p 127.0.0.1:18092:8080 \
             -p 127.0.0.1:18094:8081 \
-            -e WHATSAPP_BRIDGE_TOKEN=ci-whatsapp-bridge-token-2026 \
+            -e WHATSAPP_BRIDGE_TOKEN="$AURA_WHATSAPP_BRIDGE_TOKEN" \
             -e MCP_OAUTH_ISSUER=http://127.0.0.1:18090 \
             -e MCP_OAUTH_JWKS_URL=http://host.docker.internal:18090/jwks \
             -e MCP_OAUTH_RESOURCE=http://127.0.0.1:18092/mcp \

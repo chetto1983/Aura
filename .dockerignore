@@ -18,6 +18,9 @@
 !docker/arcadedb-mcp/**
 !docker/caddy/
 !docker/caddy/**
+!services/
+!services/ingest/
+!services/ingest/**
 
 internal/runner/conversations
 web/node_modules

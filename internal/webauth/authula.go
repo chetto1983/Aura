@@ -151,7 +151,7 @@ func New(cfg Config) (_ *Provider, err error) {
 			authulamodels.PluginCSRF.String():             map[string]any{"enabled": true},
 			authulamodels.PluginSecondaryStorage.String(): map[string]any{"enabled": true},
 			authulamodels.PluginRateLimit.String():        map[string]any{"enabled": true},
-			mcpTokenPluginID:                              map[string]any{"enabled": true},
+			mcpJWTPluginName:                              map[string]any{"enabled": true},
 		}),
 	)
 
@@ -242,6 +242,8 @@ func (p *Provider) Handler() http.Handler {
 	return p.auth.Handler()
 }
 
+// ConfigureMCPOAuth attaches the MCP authorization server to the authenticated
+// cockpit session validator and its externally reachable callback base URL.
 func (p *Provider) ConfigureMCPOAuth(validator *Validator, publicURL string) error {
 	oauthServer, err := newOAuthServer(publicURL, p.tokens, validator)
 	if err != nil {
@@ -251,6 +253,7 @@ func (p *Provider) ConfigureMCPOAuth(validator *Validator, publicURL string) err
 	return nil
 }
 
+// MCPOAuth returns the configured MCP authorization server, or nil before configuration.
 func (p *Provider) MCPOAuth() *OAuthServer { return p.oauth }
 
 // CoreServices exposes Authula's SessionService + TokenService for the validate seam.

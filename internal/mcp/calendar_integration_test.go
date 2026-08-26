@@ -147,25 +147,41 @@ func TestCalendarServerLive(t *testing.T) {
 
 	// list_accounts is read-only. CI seeds the same local JSON provider for two
 	// identities so this tier proves isolation, not merely empty-list behavior.
-	out, isErr := callCalendar(t, ctx, sessionA, map[string]any{"action": "list_accounts"})
-	if isErr {
-		t.Fatalf("CallTool calendar(list_accounts) reported isError: %s", out)
-	}
-	if strings.TrimSpace(out) == "" {
-		t.Fatal("calendar(list_accounts) returned empty content")
-	}
-	foreignOut, foreignIsErr := callCalendar(t, ctx, sessionB, map[string]any{"action": "list_accounts"})
-	if foreignIsErr {
-		t.Fatalf("CallTool calendar(list_accounts) for tenant B reported isError: %s", foreignOut)
-	}
-	if !strings.Contains(out, calendarTenantAccount) || strings.Contains(out, calendarForeignAccount) {
-		t.Fatalf("tenant A account surface is not isolated: %s", out)
-	}
-	if !strings.Contains(foreignOut, calendarForeignAccount) || strings.Contains(foreignOut, calendarTenantAccount) {
-		t.Fatalf("tenant B account surface is not isolated: %s", foreignOut)
-	}
+	_ = awaitCalendarAccount(t, ctx, sessionA, calendarTenantAccount, calendarForeignAccount)
+	_ = awaitCalendarAccount(t, ctx, sessionB, calendarForeignAccount, calendarTenantAccount)
 
 	assertOpaqueEventIDNeedsNoAccountID(t, ctx, sessionA, tool)
+}
+
+func awaitCalendarAccount(
+	t *testing.T,
+	ctx context.Context,
+	session *sdkmcp.ClientSession,
+	want string,
+	foreign string,
+) string {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		out, isErr := callCalendar(t, ctx, session, map[string]any{"action": "list_accounts"})
+		if isErr {
+			t.Fatalf("CallTool calendar(list_accounts) reported isError: %s", out)
+		}
+		if strings.Contains(out, foreign) {
+			t.Fatalf("calendar account surface contains foreign tenant %q: %s", foreign, out)
+		}
+		if strings.Contains(out, want) {
+			return out
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("calendar account %q did not appear after configuration reload: %s", want, out)
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("wait for calendar account %q: %v", want, ctx.Err())
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
 }
 
 func seedCalendarAccount(t *testing.T, ctx context.Context, endpoint, token, identity string) {

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -17,6 +16,7 @@ import (
 
 const mcpOAuthBodyLimit = 64 << 10
 
+// MetadataHandler serves RFC 8414 authorization-server metadata.
 func (s *OAuthServer) MetadataHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -41,6 +41,7 @@ func (s *OAuthServer) MetadataHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// JWKSHandler serves the public Ed25519 keys used by MCP resource servers.
 func (s *OAuthServer) JWKSHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -55,6 +56,7 @@ func (s *OAuthServer) JWKSHandler(w http.ResponseWriter, r *http.Request) {
 	writeOAuthJSON(w, http.StatusOK, keys)
 }
 
+// RegistrationHandler registers Aura's public PKCE client through RFC 7591.
 func (s *OAuthServer) RegistrationHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -89,6 +91,8 @@ func (s *OAuthServer) RegistrationHandler(w http.ResponseWriter, r *http.Request
 	})
 }
 
+// AuthorizationHandler authenticates the cockpit session and issues a one-time
+// authorization code bound to the requested MCP resource and callback.
 func (s *OAuthServer) AuthorizationHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -96,11 +100,12 @@ func (s *OAuthServer) AuthorizationHandler(w http.ResponseWriter, r *http.Reques
 	}
 	query := r.URL.Query()
 	redirect := query.Get("redirect_uri")
+	target, redirectOK := s.validatedRedirect(redirect)
 	resource := query.Get("resource")
 	scope, scopeOK := selectScopes(query.Get("scope"))
 	if query.Get("response_type") != "code" || query.Get("client_id") != mcpOAuthClientID ||
 		query.Get("code_challenge_method") != "S256" || query.Get("code_challenge") == "" ||
-		!scopeOK || !s.redirectAllowed(redirect) || !allowedMCPResource(resource) {
+		!scopeOK || !redirectOK || !allowedMCPResource(resource) {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "invalid OAuth authorization request")
 		return
 	}
@@ -119,15 +124,16 @@ func (s *OAuthServer) AuthorizationHandler(w http.ResponseWriter, r *http.Reques
 		clientID: mcpOAuthClientID, redirectURI: redirect, resource: resource, scope: scope,
 		codeChallenge: query.Get("code_challenge"), expiresAt: s.now().Add(mcpOAuthCodeTTL),
 	})
-	target, _ := url.Parse(redirect)
 	values := target.Query()
 	values.Set("code", code)
 	values.Set("state", query.Get("state"))
 	values.Set("iss", mcp.AuraAuthorizationServerIssuer)
 	target.RawQuery = values.Encode()
-	http.Redirect(w, r, target.String(), http.StatusFound)
+	w.Header().Set("Location", target.String())
+	w.WriteHeader(http.StatusFound)
 }
 
+// TokenHandler exchanges authorization codes or refresh tokens for MCP access tokens.
 func (s *OAuthServer) TokenHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)

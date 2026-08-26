@@ -17,9 +17,6 @@ import (
 	"testing"
 	"time"
 
-	authula "github.com/Authula/authula"
-	authulaconfig "github.com/Authula/authula/config"
-	authulamodels "github.com/Authula/authula/models"
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -49,47 +46,21 @@ func TestMCPResourcesLiveCrossSubjectIsolation(t *testing.T) {
 	t.Run("memory", func(t *testing.T) { testLiveMemoryIsolation(t, tokens) })
 }
 
-func newLiveTokenIssuer(t *testing.T) *mcpTokenPlugin {
+func newLiveTokenIssuer(t *testing.T) *LiveMCPTokenIssuer {
 	t.Helper()
-	dsn, err := ensureAuthulaSearchPath(liveEnvOrGate(t, "AURA_AUTHULA_DSN"))
-	if err != nil {
-		t.Fatalf("production Authula DSN: %v", err)
-	}
-	secret := liveEnvOrGate(t, "AURA_AUTHULA_SECRET")
-	// Compose only Aura's production token plugin here. Authula v1.42.0's rate-limit
-	// providers start cleanup workers whose Close methods are no-ops, so constructing
-	// the full web provider would make this integration harness leak by upstream design.
-	// https://github.com/Authula/authula/blob/v1.42.0/plugins/rate-limit/services/in_memory_provider.go
-	config := authulaconfig.NewConfig(
-		authulaconfig.WithAppName("Aura MCP live integration"),
-		authulaconfig.WithBasePath(basePath),
-		authulaconfig.WithSecret(secret),
-		authulaconfig.WithDatabase(authulamodels.DatabaseConfig{
-			Provider: "postgres", URL: dsn, MaxOpenConns: 2, MaxIdleConns: 1,
-		}),
-		authulaconfig.WithEventBus(authulamodels.EventBusConfig{
-			Provider: "gochannel", GoChannel: &authulamodels.GoChannelConfig{BufferSize: 10},
-		}),
-		authulaconfig.WithPlugins(authulamodels.PluginsConfig{
-			mcpTokenPluginID: map[string]any{"enabled": true},
-		}),
+	issuer, err := NewLiveMCPTokenIssuer(
+		liveEnvOrGate(t, "AURA_AUTHULA_DSN"),
+		liveEnvOrGate(t, "AURA_AUTHULA_SECRET"),
 	)
-	tokens := newMCPTokenPlugin()
-	auth := authula.New(&authula.AuthConfig{Config: config, Plugins: []authulamodels.Plugin{tokens}})
+	if err != nil {
+		t.Fatalf("production MCP token issuer: %v", err)
+	}
 	t.Cleanup(func() {
-		if err := auth.ClosePlugins(); err != nil {
-			t.Errorf("close Authula token plugin: %v", err)
-		}
-		if err := auth.CloseSystems(); err != nil {
-			t.Errorf("close Authula core systems: %v", err)
-		}
-		if closer, ok := auth.DB().(interface{ Close() error }); ok {
-			if err := closer.Close(); err != nil {
-				t.Errorf("close Authula token database: %v", err)
-			}
+		if err := issuer.Close(); err != nil {
+			t.Errorf("close production MCP token issuer: %v", err)
 		}
 	})
-	return tokens
+	return issuer
 }
 
 func liveEnvOrGate(t *testing.T, key string) string {
@@ -105,22 +76,16 @@ func liveEnvOrGate(t *testing.T, key string) string {
 	return ""
 }
 
-func liveSubjectToken(t *testing.T, tokens *mcpTokenPlugin, resource, subject string) string {
+func liveSubjectToken(t *testing.T, tokens *LiveMCPTokenIssuer, resource, subject string) string {
 	t.Helper()
-	pair, err := tokens.jwt.GenerateUserToken(t.Context(), "mcp-live-probe", uuid.NewString(), map[string]any{
-		"iss":           auramcp.AuraAuthorizationServerIssuer,
-		"aud":           resource,
-		"scope":         auramcp.AuraOAuthToolsScope,
-		"client_id":     "aura",
-		mcpSubjectClaim: subject,
-	})
+	token, err := tokens.AccessToken(t.Context(), resource, subject)
 	if err != nil {
 		t.Fatalf("issue production Authula token for %s: %v", resource, err)
 	}
-	return pair.AccessToken
+	return token
 }
 
-func testLiveCalendarIsolation(t *testing.T, tokens *mcpTokenPlugin) {
+func testLiveCalendarIsolation(t *testing.T, tokens *LiveMCPTokenIssuer) {
 	subjectA := uuid.NewString()
 	subjectB := uuid.NewString()
 	tokenA := liveSubjectToken(t, tokens, liveCalendarResource, subjectA)
@@ -217,7 +182,7 @@ func liveBearerJSON(t *testing.T, method, endpoint, token string, body any) *htt
 	return response
 }
 
-func testLiveWhatsAppIsolation(t *testing.T, tokens *mcpTokenPlugin) {
+func testLiveWhatsAppIsolation(t *testing.T, tokens *LiveMCPTokenIssuer) {
 	root := liveEnvOrGate(t, "AURA_WHATSAPP_STORE_ROOT")
 	tokenA := liveSubjectToken(t, tokens, liveWhatsAppResource, liveWhatsAppSubjectA)
 	tokenB := liveSubjectToken(t, tokens, liveWhatsAppResource, liveWhatsAppSubjectB)
@@ -300,7 +265,7 @@ func openLiveWhatsAppDB(t *testing.T, root, subject string) *sql.DB {
 	return db
 }
 
-func testLiveMemoryIsolation(t *testing.T, tokens *mcpTokenPlugin) {
+func testLiveMemoryIsolation(t *testing.T, tokens *LiveMCPTokenIssuer) {
 	subjectA := uuid.NewString()
 	subjectB := uuid.NewString()
 	t.Cleanup(func() { cleanupLiveMemoryTenants(t, subjectA, subjectB) })

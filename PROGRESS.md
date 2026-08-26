@@ -243,6 +243,15 @@ the Aura control plane. Legacy, dark, and dead tenant-routing code must be remov
   `Entity=0` and `FACT=0`, and fresh Aura logs contain zero `invalid_grant`, zero missing-memory
   warnings, and zero unavailable-memory-context warnings.
 
+- The CI recovery batch on 2026-08-26 fixes only the failing touched tiers: the ingest Docker
+  context, valid UUID fixtures, Calendar reload synchronization, WhatsApp runtime startup,
+  Authula-backed live Memory tokens, OAuth redirect validation/lint findings, and MUSR's
+  container-internal Garage endpoint. The three published MCP GHCR images were reused unchanged.
+  Production-container E2E is GREEN for Calendar, WhatsApp, and Memory; the real Memory latency
+  gate passed 25/25 searches with p95 81.347 ms against the 1000 ms limit. Scoped WSL unit,
+  tagged vet, golangci-lint, actionlint, Docker ingest build, and Compose interpolation gates are
+  GREEN. Next action after push: inspect the new CI dispatch once without waiting for completion.
+
 ## Current repository state
 
 - Aura branch: `master`, HEAD `711f0820cd849ea08ca5252f4ebde91032cbf82b`, equal to

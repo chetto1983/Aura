@@ -51,6 +51,8 @@ const pimDeviceStartTimeout = 35 * time.Second
 // pimDeviceClient is the longer-timeout outbound client used ONLY by the device-code start forward.
 var pimDeviceClient = &http.Client{Timeout: pimDeviceStartTimeout}
 
+// MCPAccessTokenProvider restores the current identity's OAuth access token for
+// a named MCP resource server without exposing that token to the browser.
 type MCPAccessTokenProvider interface {
 	AccessToken(ctx context.Context, server string) (string, error)
 }

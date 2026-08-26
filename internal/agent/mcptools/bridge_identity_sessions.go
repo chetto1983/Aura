@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"sync"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -142,13 +143,9 @@ func (p *identitySessionPool) validate(advertised []*sdkmcp.Tool) error {
 func (p *identitySessionPool) syncChild(child *MountedServer) {
 	p.parent.mu.Lock()
 	accepted := make(map[string]struct{}, len(p.parent.acceptedToolNames))
-	for name := range p.parent.acceptedToolNames {
-		accepted[name] = struct{}{}
-	}
+	maps.Copy(accepted, p.parent.acceptedToolNames)
 	bridged := make(map[string]*bridgedTool, len(p.parent.bridged))
-	for name, tool := range p.parent.bridged {
-		bridged[name] = tool
-	}
+	maps.Copy(bridged, p.parent.bridged)
 	hook := p.parent.refreshHook
 	p.parent.mu.Unlock()
 

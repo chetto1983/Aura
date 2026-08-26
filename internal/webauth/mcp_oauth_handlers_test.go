@@ -32,3 +32,16 @@ func TestRegistrationHandlerUsesRFC7591NumericTimestamps(t *testing.T) {
 		t.Error("public client response must omit client_secret_expires_at")
 	}
 }
+
+func TestOAuthRedirectsRejectNonHTTPAndUserinfoCallbacks(t *testing.T) {
+	server := &OAuthServer{}
+	for _, raw := range []string{
+		"javascript://localhost/api/governance/mcp/authorization/callback",
+		"http://operator@127.0.0.1:9080/api/governance/mcp/authorization/callback",
+		" http://127.0.0.1:9080/api/governance/mcp/authorization/callback",
+	} {
+		if server.redirectAllowed(raw) {
+			t.Errorf("redirectAllowed(%q) = true, want false", raw)
+		}
+	}
+}

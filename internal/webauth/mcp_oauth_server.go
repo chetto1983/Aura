@@ -29,6 +29,8 @@ type oauthAuthorizationCode struct {
 	expiresAt     time.Time
 }
 
+// OAuthServer implements Aura's standard authorization-code and refresh-token
+// endpoints for the built-in MCP resource servers.
 type OAuthServer struct {
 	publicURL string
 	tokens    *mcpTokenPlugin
@@ -67,22 +69,35 @@ func (s *OAuthServer) authorizationEndpoint() string {
 }
 
 func (s *OAuthServer) redirectAllowed(raw string) bool {
-	parsed, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || parsed.Fragment != "" || parsed.Scheme == "" || parsed.Host == "" {
-		return false
+	_, ok := s.validatedRedirect(raw)
+	return ok
+}
+
+func (s *OAuthServer) validatedRedirect(raw string) (*url.URL, bool) {
+	trimmed := strings.TrimSpace(raw)
+	parsed, err := url.Parse(trimmed)
+	if err != nil || raw != trimmed || parsed.Fragment != "" || parsed.User != nil ||
+		parsed.Scheme == "" || parsed.Host == "" {
+		return nil, false
 	}
 	switch parsed.Path {
 	case "/aura/mcp/oauth/callback":
-		return parsed.Scheme == "http" && isLoopbackHost(parsed.Hostname())
+		if parsed.Scheme == "http" && isLoopbackHost(parsed.Hostname()) {
+			return parsed, true
+		}
 	case "/api/governance/mcp/authorization/callback":
 		if s.publicURL == "" {
-			return isLoopbackHost(parsed.Hostname())
+			if parsed.Scheme == "http" && isLoopbackHost(parsed.Hostname()) {
+				return parsed, true
+			}
+			break
 		}
 		base, _ := url.Parse(s.publicURL)
-		return strings.EqualFold(parsed.Scheme, base.Scheme) && strings.EqualFold(parsed.Host, base.Host)
-	default:
-		return false
+		if strings.EqualFold(parsed.Scheme, base.Scheme) && strings.EqualFold(parsed.Host, base.Host) {
+			return parsed, true
+		}
 	}
+	return nil, false
 }
 
 func isLoopbackHost(host string) bool {

@@ -178,7 +178,7 @@ func withMemoryServerAt(t *testing.T, url string) {
 // production. Without it every call fails on scoping, which would make the negative cases
 // below pass for the wrong reason.
 func scopedCtx() context.Context {
-	return identityctx.WithIdentityID(context.Background(), "identity-under-test")
+	return identityctx.WithIdentityID(context.Background(), "11111111-1111-4111-8111-111111111111")
 }
 
 func TestMemoryVerbMapping(t *testing.T) {
@@ -444,7 +444,7 @@ func TestCLIMemoryCallRequiresIdentity(t *testing.T) {
 	t.Run("uses the identity-scoped session without tenant data on the request", func(t *testing.T) {
 		rec := newRecordingMemoryMCPServer(t)
 		withMemoryServerAt(t, rec.URL)
-		ctx := identityctx.WithIdentityID(context.Background(), "identity-1")
+		ctx := identityctx.WithIdentityID(context.Background(), "11111111-1111-4111-8111-111111111111")
 		var buf bytes.Buffer
 		if err := runMemoryCommand(ctx, []string{"entities"}, &buf); err != nil {
 			t.Fatalf("runMemoryCommand: %v", err)

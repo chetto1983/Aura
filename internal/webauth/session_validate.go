@@ -49,6 +49,7 @@ type Validator struct {
 	resolver userResolver
 }
 
+// SessionIdentity binds an authenticated Authula session to its Aura identity.
 type SessionIdentity struct {
 	IdentityID string
 	UserID     string

@@ -10,8 +10,19 @@
 #
 # It touches nothing else — Postgres/ArcadeDB/S3 host publishes come from compose.yaml unchanged.
 services:
+  # Host-run tests use 127.0.0.1:3900, but containers must resolve Garage by its
+  # Compose service name. Otherwise the inherited CI value points each container
+  # back at itself and garage-bootstrap fails before the MUSR tier can start.
+  aura:
+    environment:
+      AURA_OBJECTSTORE_ENDPOINT: http://garage:3900
+
   garage:
     ports:
       - "127.0.0.1:3903:3903"
     volumes:
       - ./docker/garage/garage.ci.toml:/etc/garage.toml:ro
+
+  garage-bootstrap:
+    environment:
+      AURA_OBJECTSTORE_ENDPOINT: http://garage:3900

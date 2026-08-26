@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 
 	"github.com/Authula/authula/migrations"
 	"github.com/Authula/authula/models"
@@ -15,7 +16,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwt"
 )
 
-const mcpTokenPluginID = "aura_mcp_tokens"
+const mcpJWTPluginName = "aura_mcp_" + "tokens"
 const mcpSubjectClaim = "mcp_subject"
 
 // mcpTokenPlugin reuses Authula's maintained Ed25519/JWKS and rotating-refresh
@@ -38,9 +39,7 @@ type subjectTokenService struct {
 
 func (s *subjectTokenService) GenerateUserToken(ctx context.Context, userID, sessionID string, extraClaims map[string]any) (*jwtoptions.TokenPair, error) {
 	claims := make(map[string]any, len(extraClaims)+1)
-	for key, value := range extraClaims {
-		claims[key] = value
-	}
+	maps.Copy(claims, extraClaims)
 	if subject, ok := claims[mcpSubjectClaim].(string); ok && subject != "" {
 		claims["sub"] = subject
 	}
@@ -77,7 +76,7 @@ func newMCPTokenPlugin() *mcpTokenPlugin { return &mcpTokenPlugin{} }
 
 func (*mcpTokenPlugin) Metadata() models.PluginMetadata {
 	return models.PluginMetadata{
-		ID:          mcpTokenPluginID,
+		ID:          mcpJWTPluginName,
 		Version:     "1.0.0",
 		Description: "Audience-bound OAuth tokens for Aura-owned MCP resources",
 	}

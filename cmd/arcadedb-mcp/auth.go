@@ -125,7 +125,7 @@ func (v *arcadeTokenVerifier) keySet(ctx context.Context, force bool) (jwk.Set, 
 	if err != nil {
 		return nil, fmt.Errorf("MCP OAuth JWKS fetch: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("MCP OAuth JWKS fetch: HTTP %d", resp.StatusCode)
 	}
