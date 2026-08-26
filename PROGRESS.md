@@ -213,12 +213,25 @@ the Aura control plane. Legacy, dark, and dead tenant-routing code must be remov
   the local OAuth delta is `prd.md` plus `docs/aura-quality-snapshot.md`; no MCP production code
   overlaps. The remote already used PRD amendment number 146, so the measured OAuth decision was
   renumbered to amendment 147 before integration.
+- The OAuth concern was rebased cleanly onto those 14 Phase-52 commits. The final rebased concern
+  commit is `a05c92cfe9b4beea981d691f11d48d3b78aa8806`; both documentation histories are preserved and
+  pushed. The repository also gained the pinned-action ArcadeDB MCP publisher in commit
+  `3c1723cc5d3c4a23c9585c96b9c35d3d79416050`.
+- The first post-push CI dispatch exposed an invalid workflow expression before any job ran:
+  job-level `env` cannot use `${{ runner.temp }}`. Commit
+  `3fd0548688982ce614409eefc05943937efb827c` now exports the WhatsApp store path through
+  `$GITHUB_ENV` after runner setup. Official `actionlint` v1.7.12 reports both CI and the MCP
+  publisher workflow GREEN.
+- The repository publisher built the ArcadeDB MCP from commit
+  `3c1723cc5d3c4a23c9585c96b9c35d3d79416050`. Its immutable GHCR index is
+  `ghcr.io/chetto1983/aura-arcadedb-mcp:3c1723cc5d3c4a23c9585c96b9c35d3d79416050@sha256:621438a7bb77983899c22f43c52714d08c25af1efcd9ad14fc3479e8893225a4`
+  (linux/amd64 manifest `sha256:9a6d9507f477812f67385dca99bf0e1bb2fc0bd6ea691a239a93346ecea601ff`).
 
 ## Current repository state
 
-- Aura branch: `master`, HEAD `8bba3fac8c7594539ba11eb3be568bf4fcd2730f`, with the
-  current concern uncommitted and `origin/master` 14 commits ahead. The overlap is inspected:
-  preserve both Phase-52 remote documentation and the OAuth amendment/quality attestations.
+- Aura branch: `master`, HEAD `3fd0548688982ce614409eefc05943937efb827c`, equal to
+  `origin/master` before the final immutable ArcadeDB MCP pin. The pin, its Compose contract test,
+  CI artifact use, and this checkpoint are the only current working-tree delta.
 - WhatsApp fork: `.planning/tmp/whatsapp-mcp-tenant`, HEAD
   `a463da57dd7afd243b2db8827dd26891b661df7e`, clean and pushed.
 - Calendar fork: `.planning/tmp/aura-pim-mcp-tenant`, HEAD
@@ -237,20 +250,17 @@ the Aura control plane. Legacy, dark, and dead tenant-routing code must be remov
 - Calendar's production bearer verifier is generic OAuth/OIDC code; it contains no Aura
   tenant-routing contract.
 - The live PIM fake-SMTP route and canonical Cockpit account-connect route are implemented and
-  verified. External fork artifacts are published; the Aura and ArcadeDB-MCP artifacts remain.
+  verified. All three MCP artifacts are published; the final ArcadeDB MCP Compose pin and exact
+  published-artifact E2E remain.
 
 ## Exact next actions
 
-1. Cross-subject isolation, Cockpit graph, and the real-agent MCP E2E are GREEN on the rebuilt
-   production-like container; documentation and scoped closing gates are complete.
-2. Quality snapshot re-attestation is complete: six matched rows are dated 2026-08-26, the
-   changed-file gate is GREEN, `internal/agui` combined coverage is 85.5%, and Authula close
-   mutation is 7/7 killed.
-3. Run the small post-pin Aura package gate, commit the OAuth concern, integrate the 14 remote
-   Phase-52 commits with both documentation histories preserved, then publish/pin the ArcadeDB
-   MCP image from the final code commit. Deploy all three immutable GHCR artifacts, rerun the
-   production doctors and real Cockpit E2E, commit/push Aura, and check CI once without waiting
-   30 minutes.
+1. Run the scoped `cmd/aura` post-pin gate, workflow lint, Compose validation, and quality gate.
+2. Commit/push the immutable ArcadeDB MCP pin, then pull and deploy the three exact GHCR indexes
+   while recreating Aura plus all loopback-networked sidecars together.
+3. Rerun the three production doctors, real Cockpit MCP 2/2, guarded graph 1/1, and cleanup/log
+   postconditions. Record the shipped evidence, push it, and check CI once without waiting 30
+   minutes.
 
 ## Required WSL toolchain
 

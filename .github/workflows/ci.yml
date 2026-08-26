@@ -738,6 +738,7 @@ jobs:
       COMPOSE_FILE: compose.yaml:compose.minipc.yaml
       AURA_EMBED_IMAGE: ghcr.io/ggml-org/llama.cpp:server
       AURA_EMBED_NGL: "0"
+      AURA_ARCADEDB_MCP_IMAGE: ghcr.io/chetto1983/aura-arcadedb-mcp:3c1723cc5d3c4a23c9585c96b9c35d3d79416050@sha256:621438a7bb77983899c22f43c52714d08c25af1efcd9ad14fc3479e8893225a4
       # The latency gate includes the real CLI operator-identity lookup, so this
       # job also starts a disposable migrated Postgres instead of timing a shortcut.
       POSTGRES_PASSWORD: ci-test-password
@@ -793,12 +794,12 @@ jobs:
             exit 1
           fi
 
-      - name: Bring up EmbeddingGemma and the ArcadeDB MCP
+      - name: Bring up EmbeddingGemma and the published ArcadeDB MCP
         run: |
           docker compose create aura-llama-embed
           cid="$(docker compose ps -aq aura-llama-embed | head -1)"
           docker cp ~/.cache/aura-embed/model.gguf "$cid:/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf"
-          docker compose up -d --build aura-llama-embed arcadedb-mcp
+          docker compose up -d aura-llama-embed arcadedb-mcp
 
           for endpoint in http://127.0.0.1:8081/health http://127.0.0.1:8096/health; do
             ok=""

@@ -138,6 +138,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"image: arcadedata/arcadedb:26.8.1",
 		"aura-arcadedb:/home/arcadedb/databases",
 		"arcadedb-mcp:",
+		"ghcr.io/chetto1983/aura-arcadedb-mcp:3c1723cc5d3c4a23c9585c96b9c35d3d79416050@sha256:621438a7bb77983899c22f43c52714d08c25af1efcd9ad14fc3479e8893225a4",
 		"MCP_OAUTH_RESOURCE: http://127.0.0.1:8096/mcp/",
 		"127.0.0.1:${AURA_ARCADEDB_MCP_PORT:-8096}:8096",
 		`test: ["CMD", "wget", "--spider", "-q", "-T", "3", "http://127.0.0.1:8096/health"]`,

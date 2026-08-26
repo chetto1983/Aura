@@ -616,16 +616,21 @@ services:
       start_period: 40s
 
   # Aura's own MCP surface over ArcadeDB (cmd/arcadedb-mcp). ArcadeDB 26.8.1 expands its
-  # generic MCP search surface, but it does not own Aura's `_meta` caller identity,
-  # per-identity database/credential provisioning, provenance, erasure, or domain-shaped
-  # memory tools. Those production boundaries remain here rather than behind a compatibility
-  # branch selected by the installed ArcadeDB version.
+  # generic MCP search surface, but it does not provide access-token-subject database/
+  # credential provisioning, provenance, erasure, or domain-shaped memory tools. Those
+  # production boundaries remain here rather than behind a compatibility branch selected by
+  # the installed ArcadeDB version.
+  #
+  # PINNED BY COMMIT. 3c1723cc5d3c4a23c9585c96b9c35d3d79416050 publishes the generic
+  # OAuth resource server from this repository. A floating or local default is forbidden:
+  # production must run the same reviewed bytes as CI. Published index digest:
+  # sha256:621438a7bb77983899c22f43c52714d08c25af1efcd9ad14fc3479e8893225a4.
   arcadedb-mcp:
     build:
       context: .
       dockerfile: docker/arcadedb-mcp/Dockerfile
-    image: ${AURA_ARCADEDB_MCP_IMAGE:-aura-arcadedb-mcp:local}
-    pull_policy: never
+    image: ${AURA_ARCADEDB_MCP_IMAGE:-ghcr.io/chetto1983/aura-arcadedb-mcp:3c1723cc5d3c4a23c9585c96b9c35d3d79416050@sha256:621438a7bb77983899c22f43c52714d08c25af1efcd9ad14fc3479e8893225a4}
+    pull_policy: ${AURA_ARCADEDB_MCP_PULL_POLICY:-missing}
     container_name: aura-arcadedb-mcp
     restart: unless-stopped
     mem_limit: 512m
