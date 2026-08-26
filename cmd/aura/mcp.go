@@ -20,7 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const mcpUsage = "usage: aura mcp {recipes [--json]|install <recipe> [name]|add <name> [--env KEY=VALUE] [--disabled] [--trust local] -- <command> [args...]|profile ...|trust <name> --reason <text> [--class <class>]|list|doctor <name>|tools <name>|enable <name>|disable <name>|remove <name>|login <name>|logout <name>|authorizations}"
+const mcpUsage = "usage: aura mcp {recipes [--json]|install <recipe> [name] [--env KEY=VALUE]|add <name> [--env KEY=VALUE] [--disabled] [--trust local] -- <command> [args...]|profile ...|trust <name> --reason <text> [--class <class>]|list|doctor <name>|tools <name>|enable <name>|disable <name>|remove <name>|login <name>|logout <name>|authorizations}"
 
 // mcpMutatingSubcommands is the set of top-level `aura mcp` CLI verbs that mutate the
 // managed config (D-12): these route through the audited WriteConfigWithAudit and need a
@@ -138,17 +138,13 @@ func mcpRecipes(args []string, out io.Writer) error {
 }
 
 func mcpInstall(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Writer) error {
-	if len(args) < 1 || len(args) > 2 {
-		return fmt.Errorf("usage: aura mcp install <recipe> [name]")
+	recipeName, name, env, err := parseMCPInstallArgs(args)
+	if err != nil {
+		return err
 	}
-	recipeName := args[0]
 	recipe, ok := mcpmanager.LookupCatalog(recipeName)
 	if !ok {
 		return fmt.Errorf("unknown MCP recipe %q", recipeName)
-	}
-	name := recipeName
-	if len(args) == 2 {
-		name = strings.TrimSpace(args[1])
 	}
 	doc, err := loadManagedMCPConfig()
 	if err != nil {
@@ -160,12 +156,55 @@ func mcpInstall(ctx context.Context, pool *pgxpool.Pool, args []string, out io.W
 	if doc.MCPServers == nil {
 		doc.MCPServers = map[string]mcp.ManagedServer{}
 	}
-	doc.MCPServers[name] = recipe.Server
+	server := recipe.Server
+	server.Env = append(append([]string(nil), server.Env...), env...)
+	doc.MCPServers[name] = server
 	ensureProfileMembership(&doc, doc.ActiveProfileName(), name)
 	if err := mcpWriteManagedConfig(ctx, pool, doc, "install", name, ""); err != nil {
 		return err
 	}
 	return writef(out, "ok: installed %s\n", name)
+}
+
+func parseMCPInstallArgs(args []string) (recipe, name string, env []string, err error) {
+	const usage = "usage: aura mcp install <recipe> [name] [--env KEY=VALUE]"
+	if len(args) == 0 {
+		return "", "", nil, errors.New(usage)
+	}
+	recipe = strings.TrimSpace(args[0])
+	name = recipe
+	pendingEnv := false
+	nameSeen := false
+	for _, arg := range args[1:] {
+		if pendingEnv {
+			key, _, ok := strings.Cut(arg, "=")
+			if !ok || strings.TrimSpace(key) == "" {
+				return "", "", nil, fmt.Errorf("--env value %q must be KEY=VALUE", arg)
+			}
+			env = append(env, arg)
+			pendingEnv = false
+			continue
+		}
+		if arg == "--env" {
+			pendingEnv = true
+			continue
+		}
+		if strings.HasPrefix(arg, "--") {
+			return "", "", nil, fmt.Errorf("unknown mcp install option %q", arg)
+		}
+		if nameSeen {
+			return "", "", nil, errors.New(usage)
+		}
+		name = strings.TrimSpace(arg)
+		nameSeen = true
+	}
+	if pendingEnv {
+		return "", "", nil, fmt.Errorf("--env requires KEY=VALUE")
+	}
+	if recipe == "" || name == "" {
+		return "", "", nil, errors.New(usage)
+	}
+	return recipe, name, env, nil
 }
 
 func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Writer) error {

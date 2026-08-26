@@ -14,11 +14,16 @@ interface MailCatcherMessage {
 }
 
 async function openGovernance(page: Page) {
-  await page
-    .getByRole('navigation', { name: 'Primary' })
-    .getByRole('button', { name: 'Governance', exact: true })
-    .click();
+  // Desktop and mobile expose the same mode button under different nav landmarks.
+  await page.getByRole('button', { name: 'Governance', exact: true }).first().click();
   await expect(page.getByRole('list', { name: 'MCP servers' })).toBeVisible();
+}
+
+async function closeServerDetailIfOverlay(page: Page) {
+  const close = page
+    .getByRole('complementary', { name: 'Select a row to see details' })
+    .getByRole('button', { name: 'Close', exact: true });
+  if (await close.isVisible()) await close.click();
 }
 
 async function openCalendar(page: Page) {
@@ -112,17 +117,13 @@ test('authorizes the built-in MCP servers through the live cockpit', async ({ pa
   test.setTimeout(120_000);
 
   await gotoAuthenticated(page, '/');
-  await page.unrouteAll({ behavior: 'wait' });
-  await page.reload({ waitUntil: 'domcontentloaded' });
+  // gotoAuthenticated only fixtures the orthogonal first-run and shell-health
+  // requests. MCP inventory, authorization, probes and popup callbacks stay live.
 
   await expect(page.locator('.aura-shell')).toBeVisible();
-  await page
-    .getByRole('navigation', { name: 'Primary' })
-    .getByRole('button', { name: 'Governance', exact: true })
-    .click();
+  await openGovernance(page);
 
   const serverList = page.getByRole('list', { name: 'MCP servers' });
-  await expect(serverList).toBeVisible();
 
   for (const server of servers) {
     await serverList.getByRole('button').filter({ hasText: server }).first().click();
@@ -148,6 +149,7 @@ test('authorizes the built-in MCP servers through the live cockpit', async ({ pa
     await expect(authorization.getByText('Authorized for your identity')).toBeVisible({
       timeout: 30_000,
     });
+    await closeServerDetailIfOverlay(page);
   }
 
   await page.reload({ waitUntil: 'domcontentloaded' });
@@ -166,6 +168,7 @@ test('authorizes the built-in MCP servers through the live cockpit', async ({ pa
         .innerText();
       throw new Error(`${server} cockpit detail:\n${detail}`, { cause: error });
     }
+    await closeServerDetailIfOverlay(page);
   }
 });
 
@@ -177,8 +180,6 @@ test('configures PIM in the cockpit and sends through the real agent to fake SMT
   test.setTimeout(360_000);
 
   await gotoAuthenticated(page, '/');
-  await page.unrouteAll({ behavior: 'wait' });
-  await page.reload({ waitUntil: 'domcontentloaded' });
   await openCalendar(page);
   await removePimAccountIfPresent(page);
   const canonicalAccountId = await createPimAccount(page);

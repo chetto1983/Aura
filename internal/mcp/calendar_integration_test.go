@@ -263,8 +263,15 @@ func assertOpaqueEventIDNeedsNoAccountID(t *testing.T, ctx context.Context, sess
 		t.Fatalf("curated tool schema marks accountId required at the root — MCP-05 regressed: %v", required)
 	}
 
-	out, isErr := callCalendar(t, ctx, session,
-		map[string]any{"action": "get_calendar_events", "timeZone": "UTC"})
+	// Pin the query to the fixture's own 2026-08-24..25 window. The provider's
+	// omitted-range default starts at the wall clock's current day, which made this
+	// permanent fixture silently expire on 2026-08-26.
+	out, isErr := callCalendar(t, ctx, session, map[string]any{
+		"action":    "get_calendar_events",
+		"startDate": "2026-08-24T00:00:00Z",
+		"endDate":   "2026-08-26T00:00:00Z",
+		"timeZone":  "UTC",
+	})
 	if isErr {
 		t.Fatalf("get_calendar_events reported isError: %s", out)
 	}

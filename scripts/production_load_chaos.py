@@ -40,6 +40,21 @@ from production_load_chaos_support import (
 DEFAULT_SANDBOX_IMAGE = "aura-sandbox:latest"
 
 
+def install_fixture_memory(aura: pathlib.Path, env: dict[str, str]) -> None:
+    """Register the deliberately unprotected memory fixture through Aura's live registry."""
+    command(
+        [
+            str(aura),
+            "mcp",
+            "install",
+            "memory",
+            "--env",
+            "MCP_OAUTH_DISABLED=true",
+        ],
+        env=env,
+    )
+
+
 def new_reports(args: argparse.Namespace) -> tuple[dict, dict]:
     generated = dt.datetime.now(dt.timezone.utc).isoformat()
     candidate = candidate_commit()
@@ -149,6 +164,7 @@ def run_isolated_appliance(
         env = daemon_env(work, database, proxy, aura_port)
         materialize_sandbox_image(env)
         command([str(aura), "db", "migrate"], env=env, timeout=120)
+        install_fixture_memory(aura, env)
         daemon_log = (work / "aura.log").open("wb")
         daemon = subprocess.Popen(
             [str(aura), "serve"],

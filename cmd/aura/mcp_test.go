@@ -41,6 +41,64 @@ func TestMCPInstallWritesRecipeVerbatim(t *testing.T) {
 	}
 }
 
+func TestMCPInstallAcceptsRecipeEnvOverrides(t *testing.T) {
+	withMemoryMCPRegistry(t)
+
+	var out bytes.Buffer
+	if err := runMCPCommand(context.Background(), nil, []string{
+		"install", "memory", "--env", "MCP_OAUTH_DISABLED=true",
+	}, &out); err != nil {
+		t.Fatalf("mcp install memory with env: %v", err)
+	}
+
+	doc := readMCPRegistry(t)
+	got := doc.MCPServers["memory"]
+	if !slices.Equal(got.Env, []string{"MCP_OAUTH_DISABLED=true"}) {
+		t.Fatalf("memory env = %#v, want explicit OAuth opt-out", got.Env)
+	}
+	want, ok := mcpmanager.LookupCatalog("memory")
+	if !ok {
+		t.Fatal("LookupCatalog(\"memory\") not found")
+	}
+	if got.URL != want.Server.URL || got.Type != want.Server.Type || got.Source != want.Server.Source {
+		t.Fatalf("memory row = %#v, want catalog transport with env override %#v", got, want.Server)
+	}
+}
+
+func TestParseMCPInstallArgs(t *testing.T) {
+	recipe, name, env, err := parseMCPInstallArgs([]string{
+		"memory", "fixture-memory", "--env", "MCP_OAUTH_DISABLED=true", "--env", "MODE=",
+	})
+	if err != nil {
+		t.Fatalf("parse valid install: %v", err)
+	}
+	if recipe != "memory" || name != "fixture-memory" ||
+		!slices.Equal(env, []string{"MCP_OAUTH_DISABLED=true", "MODE="}) {
+		t.Fatalf("parse valid install = (%q, %q, %#v)", recipe, name, env)
+	}
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing recipe", want: "usage:"},
+		{name: "empty recipe", args: []string{""}, want: "usage:"},
+		{name: "missing env value", args: []string{"memory", "--env"}, want: "requires KEY=VALUE"},
+		{name: "malformed env", args: []string{"memory", "--env", "VALUE"}, want: "must be KEY=VALUE"},
+		{name: "empty env key", args: []string{"memory", "--env", "=value"}, want: "must be KEY=VALUE"},
+		{name: "unknown option", args: []string{"memory", "--disabled"}, want: "unknown mcp install option"},
+		{name: "extra name", args: []string{"memory", "one", "two"}, want: "usage:"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, _, err := parseMCPInstallArgs(tc.args)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("parse error = %v, want substring %q", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestMCPRecipesListsBuiltins(t *testing.T) {
 	withMemoryMCPRegistry(t)
 	t.Setenv("AURA_AGENT_MEMORY_MCP_PORT", "") // literal-8091 assertion below; a sourced .env must not skew it (WR-06)

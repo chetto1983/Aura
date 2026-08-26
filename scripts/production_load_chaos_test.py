@@ -1,5 +1,6 @@
 import argparse
 import json
+import pathlib
 import re
 import unittest
 import urllib.request
@@ -9,6 +10,7 @@ from production_load_chaos import (
     MCPFixture,
     REQUIRED_CHAOS_SCENARIOS,
     Toxiproxy,
+    install_fixture_memory,
     materialize_sandbox_image,
     new_reports,
     validate_chaos_report,
@@ -233,6 +235,27 @@ class SandboxImageMaterializationTest(unittest.TestCase):
         self.assertEqual(
             run.call_args_list[-1],
             mock.call(["docker", "pull", "registry/box:v1"], timeout=300),
+        )
+
+
+class FixtureMemoryInstallationTest(unittest.TestCase):
+    @mock.patch("production_load_chaos.command")
+    def test_installs_unprotected_fixture_through_registry_cli(self, run):
+        aura = pathlib.Path("/tmp/aura")
+        env = {"AURA_DB_URL": "postgres://fixture"}
+
+        install_fixture_memory(aura, env)
+
+        run.assert_called_once_with(
+            [
+                str(aura),
+                "mcp",
+                "install",
+                "memory",
+                "--env",
+                "MCP_OAUTH_DISABLED=true",
+            ],
+            env=env,
         )
 
 

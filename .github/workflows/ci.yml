@@ -1165,6 +1165,23 @@ jobs:
             exit 1
           fi
 
+      - name: Pre-create host-writable tenant stores
+        # The published image runs as root. Its first tenant request creates SQLite
+        # below the bind mount as root:root, while the Go integration test runs as
+        # the runner user and seeds those live databases. Materialize both runtimes
+        # first, then make this runner-temp fixture writable from either side.
+        run: |
+          for tenant in \
+            aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa \
+            bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb; do
+            curl -fsS \
+              -H "Authorization: Bearer $AURA_WHATSAPP_BRIDGE_TOKEN" \
+              -H "X-Tenant-ID: $tenant" \
+              "$AURA_WHATSAPP_GATEWAY_URL" >/dev/null
+          done
+          docker exec aura-whatsapp-ci \
+            chmod -R a+rwX /app/whatsapp-bridge/store
+
       - name: Live Go whatsapp_integration tier
         # The test starts a real OAuth metadata/JWKS issuer, signs two RS256
         # access tokens, creates both tenant runtimes, seeds their real SQLite
@@ -1219,6 +1236,8 @@ jobs:
         # (curl /health), so the wait step reads .State.Health.Status. Zero accounts is
         # fine: tools/list + list_accounts answer without OAuth.
         run: |
+          # Base64 is {"CalendarMcp":{"Accounts":[]}} without quote loss across
+          # the workflow shell, docker argv and the container shell.
           docker run -d --name aura-pim-mcp \
             --add-host=host.docker.internal:host-gateway \
             -p 127.0.0.1:8093:8080 \
@@ -1226,7 +1245,10 @@ jobs:
             -e CALENDAR_MCP_OAuth__MetadataAddress=http://host.docker.internal:18090/.well-known/oauth-authorization-server \
             -e CALENDAR_MCP_OAuth__Resource=http://127.0.0.1:8093/ \
             -e CALENDAR_MCP_OAuth__ToolsScope=mcp:tools \
-            "$AURA_PIM_MCP_IMAGE"
+            -e AURA_PIM_EMPTY_CONFIG_B64=eyJDYWxlbmRhck1jcCI6eyJBY2NvdW50cyI6W119fQ== \
+            --entrypoint /bin/sh \
+            "$AURA_PIM_MCP_IMAGE" \
+            -c 'test -s /app/data/appsettings.json || printf "%s" "$AURA_PIM_EMPTY_CONFIG_B64" | base64 -d > /app/data/appsettings.json; exec dotnet CalendarMcp.HttpServer.dll'
 
       - name: Wait for the PIM sidecar healthy
         run: |
@@ -1442,7 +1464,7 @@ jobs:
   web-e2e:
     name: Web E2E (Playwright boots aura serve over docker-compose Postgres + Garage)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     # Resolves A-SERVE-NOSTACK: `aura serve` hard-requires a Postgres pool (bootServe
     # → bootServeChatEnv → db.Open is unconditional). So the E2E provisions the stack
     # exactly like the AG-UI live smoke (integration-test job): a dummy non-empty
@@ -1473,6 +1495,9 @@ jobs:
       AURA_OBJECTSTORE_ACCESS_KEY: GK000000000000000000000000
       AURA_OBJECTSTORE_SECRET_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
       AURA_OBJECTSTORE_PATH_STYLE: "true"
+      AURA_ARCADEDB_MCP_IMAGE: ghcr.io/chetto1983/aura-arcadedb-mcp:3c1723cc5d3c4a23c9585c96b9c35d3d79416050@sha256:621438a7bb77983899c22f43c52714d08c25af1efcd9ad14fc3479e8893225a4
+      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:b1d584a4645c41b8e23e176af258befd9e598de5@sha256:ecb4a77957c012e61da1aebd69b17213e584e10215718b1195174216e6461af0
+      AURA_WHATSAPP_MCP_IMAGE: ghcr.io/chetto1983/whatsapp-mcp:sha-a463da5@sha256:006602da0893ada0eb80c812384032e262c1c7f0642866bf194041078e86130f
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -1513,6 +1538,72 @@ jobs:
       - name: Seed Authula E2E operator
         if: steps.changes.outputs.web == 'true'
         run: go run ./scripts/authula_seed_e2e.go
+
+      - name: Install the browser-tested MCP recipes
+        if: steps.changes.outputs.web == 'true'
+        # Memory is core/default-on. Calendar and WhatsApp are appliance-default-on
+        # only inside the Aura container, while this job runs aura serve on the host.
+        run: |
+          go run ./cmd/aura mcp install calendar
+          go run ./cmd/aura mcp install whatsapp
+
+      - name: Start live MCP OAuth resource sidecars
+        if: steps.changes.outputs.web == 'true'
+        # Host networking reproduces the appliance's shared loopback namespace: Aura
+        # and all three resource servers use the exact 127.0.0.1 catalog/issuer URLs.
+        # The sidecars do not contact the issuer until Playwright has started Aura.
+        run: |
+          docker compose up -d arcadedb
+          for i in $(seq 1 40); do
+            status="$(docker inspect -f '{{.State.Health.Status}}' aura-arcadedb 2>/dev/null || echo starting)"
+            [ "$status" = "healthy" ] && break
+            echo "arcadedb health: $status"
+            sleep 3
+          done
+          [ "$(docker inspect -f '{{.State.Health.Status}}' aura-arcadedb)" = "healthy" ]
+
+          docker run -d --name aura-memory-web-ci --network host \
+            -e ARCADEDB_URL=http://127.0.0.1:2480 \
+            -e ARCADEDB_DATABASE=aura_memory \
+            -e ARCADEDB_USER=root \
+            -e ARCADEDB_PASSWORD="$ARCADEDB_PASSWORD" \
+            -e ARCADEDB_ADMIN_USER=root \
+            -e ARCADEDB_ADMIN_PASSWORD="$ARCADEDB_PASSWORD" \
+            -e AURA_ARCADEDB_TENANT_SECRET="$AURA_ARCADEDB_TENANT_SECRET" \
+            -e MCP_OAUTH_ISSUER=http://127.0.0.1:9080 \
+            -e MCP_OAUTH_JWKS_URL=http://127.0.0.1:9080/oauth/jwks \
+            -e MCP_OAUTH_RESOURCE=http://127.0.0.1:8096/mcp/ \
+            -e MCP_OAUTH_SCOPE=mcp:tools \
+            "$AURA_ARCADEDB_MCP_IMAGE"
+
+          docker run -d --name aura-pim-web-ci --network host \
+            -e ASPNETCORE_URLS=http://0.0.0.0:8093 \
+            -e CALENDAR_MCP_OAuth__Issuer=http://127.0.0.1:9080 \
+            -e CALENDAR_MCP_OAuth__MetadataAddress=http://127.0.0.1:9080/.well-known/oauth-authorization-server \
+            -e CALENDAR_MCP_OAuth__Resource=http://127.0.0.1:8093/ \
+            -e CALENDAR_MCP_OAuth__ToolsScope=mcp:tools \
+            -e AURA_PIM_EMPTY_CONFIG_B64=eyJDYWxlbmRhck1jcCI6eyJBY2NvdW50cyI6W119fQ== \
+            --entrypoint /bin/sh \
+            "$AURA_PIM_MCP_IMAGE" \
+            -c 'test -s /app/data/appsettings.json || printf "%s" "$AURA_PIM_EMPTY_CONFIG_B64" | base64 -d > /app/data/appsettings.json; exec dotnet CalendarMcp.HttpServer.dll'
+
+          docker run -d --name aura-whatsapp-web-ci --network host \
+            -e WHATSAPP_BRIDGE_TOKEN=ci-whatsapp-bridge-token-2026 \
+            -e MCP_OAUTH_ISSUER=http://127.0.0.1:9080 \
+            -e MCP_OAUTH_JWKS_URL=http://127.0.0.1:9080/oauth/jwks \
+            -e MCP_OAUTH_RESOURCE=http://127.0.0.1:8092/mcp/ \
+            -e WHATSAPP_MCP_PORT=8092 \
+            -e WHATSAPP_GATEWAY_PORT=8094 \
+            -e WHATSAPP_API_URL=http://127.0.0.1:8094/api \
+            "$AURA_WHATSAPP_MCP_IMAGE"
+
+          for endpoint in \
+            http://127.0.0.1:8096/health \
+            http://127.0.0.1:8093/health \
+            http://127.0.0.1:8094/healthz; do
+            curl --retry 30 --retry-delay 2 --retry-connrefused --retry-all-errors \
+              -fsS "$endpoint" >/dev/null
+          done
 
       - name: Build web dist (fresh embed source)
         if: steps.changes.outputs.web == 'true'
@@ -1600,7 +1691,9 @@ jobs:
 
       - name: Tear down
         if: always()
-        run: docker compose down
+        run: |
+          docker rm -f aura-memory-web-ci aura-pim-web-ci aura-whatsapp-web-ci || true
+          docker compose down
 
   # ── Race + goleak db_integration tier (was the Phase-42 compaction rollout gate) ──
   # The dark Phase-42 compaction engine was removed (Amendment #86); its evaluator,
