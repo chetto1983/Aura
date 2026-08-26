@@ -30,12 +30,14 @@ import (
 // forever. Nothing was broken in the mount path — nobody had ever minted the credential.
 //
 // Why it also has to RENEW: an Aura access token lives 15 minutes (Authula's JWT plugin
-// default), and the refresh leg of Aura's own token endpoint rotates against a LOGIN
-// SESSION. A self-issued grant has no login session behind it, so its refresh cannot
-// succeed — a first mint alone would restore memory for a quarter of an hour and then
-// lose it again. The keeper re-mints before expiry instead, and the live mount picks the
-// new token up without a remount because persistingTokenSource re-reads the stored grant
-// before every call. That is the whole reason this is a keeper and not a boot one-shot.
+// default) and a self-issued grant carries NO refresh token — Authula's refresh_tokens
+// row is foreign-keyed to a login session, and a daemon minting for itself has none
+// (measured live 2026-08-26, SQLSTATE 23503; see webauth.IssueFirstPartyToken). A first
+// mint alone would therefore restore memory for a quarter of an hour and lose it again.
+// The keeper re-mints before expiry instead, and the live mount picks the new token up
+// without a remount because persistingTokenSource re-reads the stored grant before every
+// call. That is the whole reason this is a keeper and not a boot one-shot, and it is why
+// firstPartyGrantRenewBefore must stay a whole tick above firstPartyGrantInterval.
 const (
 	// firstPartyGrantRenewBefore must stay comfortably above firstPartyGrantInterval so a
 	// grant is re-minted a whole tick before anything expires.
@@ -193,13 +195,12 @@ func (k *firstPartyGrantKeeper) ensureGrant(ctx context.Context, identityID, nam
 		return err
 	}
 	grant, err := mcp.AuraIssuedGrant{
-		ServerName:   name,
-		ResourceURL:  server.URL,
-		ClientID:     issued.ClientID,
-		Scopes:       strings.Fields(issued.Scope),
-		AccessToken:  issued.AccessToken,
-		RefreshToken: issued.RefreshToken,
-		ExpiresAt:    issued.ExpiresAt,
+		ServerName:  name,
+		ResourceURL: server.URL,
+		ClientID:    issued.ClientID,
+		Scopes:      strings.Fields(issued.Scope),
+		AccessToken: issued.AccessToken,
+		ExpiresAt:   issued.ExpiresAt,
 	}.Grant()
 	if err != nil {
 		return err

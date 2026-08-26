@@ -35,30 +35,23 @@ func (*stubIssuer) GenerateMachineToken(context.Context, string, string, []strin
 
 func (*stubIssuer) ExtractClaims(context.Context, string) (map[string]any, error) { return nil, nil }
 
-type stubRefreshStore struct {
-	token     string
-	sessionID string
-	expiresAt time.Time
-	calls     int
-	err       error
-}
+// refusingRefreshStore proves the issuer never touches Authula's refresh_tokens table.
+// It cannot: the row is foreign-keyed to a login session, and a self-issued grant has
+// none — measured live on 2026-08-26 as SQLSTATE 23503 when it did try.
+type refusingRefreshStore struct{ calls int }
 
-func (*stubRefreshStore) RefreshTokens(context.Context, string) (*jwtoptions.RefreshTokenResponse, error) {
+func (*refusingRefreshStore) RefreshTokens(context.Context, string) (*jwtoptions.RefreshTokenResponse, error) {
 	return nil, errors.New("not used")
 }
 
-func (s *stubRefreshStore) StoreInitialRefreshToken(_ context.Context, token, sessionID string, expiresAt time.Time) error {
+func (s *refusingRefreshStore) StoreInitialRefreshToken(context.Context, string, string, time.Time) error {
 	s.calls++
-	if s.err != nil {
-		return s.err
-	}
-	s.token, s.sessionID, s.expiresAt = token, sessionID, expiresAt
-	return nil
+	return errors.New("first-party issuance must never store a refresh token")
 }
 
-func firstPartyTestServer(t *testing.T, now time.Time) (*OAuthServer, *stubIssuer, *stubRefreshStore) {
+func firstPartyTestServer(t *testing.T, now time.Time) (*OAuthServer, *stubIssuer, *refusingRefreshStore) {
 	t.Helper()
-	jwtStub, refreshStub := &stubIssuer{}, &stubRefreshStore{}
+	jwtStub, refreshStub := &stubIssuer{}, &refusingRefreshStore{}
 	server := &OAuthServer{
 		tokens: &mcpTokenPlugin{jwt: jwtStub, refresh: refreshStub},
 		now:    func() time.Time { return now },
@@ -89,17 +82,17 @@ func TestIssueFirstPartyTokenMintsTheBrowserExchangeClaimShape(t *testing.T) {
 	if jwtStub.userID != identity {
 		t.Errorf("user id = %q, want the identity %q", jwtStub.userID, identity)
 	}
-	if issued.AccessToken != "access-"+jwtStub.sessionID || issued.RefreshToken != "refresh-"+jwtStub.sessionID {
-		t.Fatalf("issued pair %+v does not come from the minted session %q", issued, jwtStub.sessionID)
+	if issued.AccessToken != "access-"+jwtStub.sessionID {
+		t.Fatalf("issued token %+v does not come from the minted session %q", issued, jwtStub.sessionID)
 	}
 	if !issued.ExpiresAt.Equal(now.Add(15 * time.Minute)) {
 		t.Errorf("ExpiresAt = %s, want %s", issued.ExpiresAt, now.Add(15*time.Minute))
 	}
-	if refreshStub.token != issued.RefreshToken || refreshStub.sessionID != jwtStub.sessionID {
-		t.Errorf("stored refresh %+v does not match the issued pair", refreshStub)
+	if refreshStub.calls != 0 {
+		t.Error("first-party issuance stored a refresh token; Authula has no session to hang one off")
 	}
-	if !refreshStub.expiresAt.Equal(now.Add(firstPartyRefreshTTL)) {
-		t.Errorf("refresh expiry = %s, want %s", refreshStub.expiresAt, now.Add(firstPartyRefreshTTL))
+	if issued.TokenType != "Bearer" || issued.ClientID != mcpOAuthClientID || issued.Scope != mcp.AuraOAuthToolsScope {
+		t.Errorf("issued = %+v, want a Bearer %s token for client %q", issued, mcp.AuraOAuthToolsScope, mcpOAuthClientID)
 	}
 }
 

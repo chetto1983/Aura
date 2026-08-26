@@ -48,12 +48,11 @@ func (f *fakeFirstPartyIssuer) IssueFirstPartyToken(ctx context.Context, resourc
 	f.serial++
 	f.calls = append(f.calls, identityID+"|"+resource)
 	return webauth.IssuedMCPToken{
-		AccessToken:  fmt.Sprintf("access-%s-%d", identityID, f.serial),
-		RefreshToken: fmt.Sprintf("refresh-%s-%d", identityID, f.serial),
-		TokenType:    "Bearer",
-		Scope:        mcp.AuraOAuthToolsScope,
-		ClientID:     "aura",
-		ExpiresAt:    f.now().Add(f.ttl),
+		AccessToken: fmt.Sprintf("access-%s-%d", identityID, f.serial),
+		TokenType:   "Bearer",
+		Scope:       mcp.AuraOAuthToolsScope,
+		ClientID:    "aura",
+		ExpiresAt:   f.now().Add(f.ttl),
 	}, nil
 }
 
@@ -210,8 +209,10 @@ func TestFirstPartyGrantsMintForEveryUserIdentity(t *testing.T) {
 	if !grant.ExpiresAt.Equal(clock.Add(15 * time.Minute)) {
 		t.Errorf("ExpiresAt = %s, want an absolute expiry of %s", grant.ExpiresAt, clock.Add(15*time.Minute))
 	}
-	if grant.RefreshToken == "" || grant.TokenType != "Bearer" {
-		t.Errorf("grant = %+v, want a Bearer pair with a refresh token", grant)
+	// No refresh token, on purpose: Authula cannot store one without a login session, so
+	// a stored one could never be redeemed. The keeper re-mints instead.
+	if grant.TokenType != "Bearer" || grant.RefreshToken != "" {
+		t.Errorf("grant = %+v, want a Bearer token and no refresh token", grant)
 	}
 	// The stored client blob is what restoreTokenSource reads on a cold start; without a
 	// token endpoint it downgrades to "re-authorization required", which for a
@@ -245,7 +246,7 @@ func TestFirstPartyGrantsAreScopedPerIdentity(t *testing.T) {
 
 	first := store.get(t, firstUserIdentity, "memory")
 	second := store.get(t, secondUserIdentity, "memory")
-	if first.AccessToken == second.AccessToken || first.RefreshToken == second.RefreshToken {
+	if first.AccessToken == second.AccessToken {
 		t.Fatal("two identities were handed the same first-party credential")
 	}
 	// The fake store keys by the identity on the context exactly as RLS does, so a grant
