@@ -157,12 +157,12 @@
      existing pattern. -->
 
 - [x] **STEER-01**: The operator can type into a running turn; the message is injected at the next round boundary as ordinary user input, never interrupting a tool mid-execution
-- [ ] **STEER-02**: A steer does not extend the step or wallclock budget — steering redirects the work, it does not buy more of it
+- [x] **STEER-02**: A steer does not extend the step or wallclock budget — steering redirects the work, it does not buy more of it. Closed 52-08 by live A/B: unsteered baseline (4 rounds, ~54s) vs. cockpit-steered (4 rounds, ~36s) on the same scenario — identical round COUNT (the step ceiling) and no wallclock deadline extension; the steer redirected work inside the existing budget, it did not buy more of it. Faster wallclock is corroboration only, per the reading rule (ceiling+deadline are the gate, consumption is not)
 - [x] **STEER-03**: A steer is echoed on the wire and persisted where it belongs in sequence, so a reload, a resume, or a later replay shows it at the point it actually landed
-- [ ] **STEER-04**: A steer that arrives after its run has ended is delivered automatically as the next user turn, preceded by a visible line saying that happened, never silently swallowed
-- [x] **STEER-05**: Steering works from the operator's channels, not only the cockpit
-- [ ] **STEER-06**: The PRD amendment ratifying mid-turn steering is committed **before** any of its code
-- [x] **RESUME-01**: The approval resume path refuses an accept carrying no answer, refuses a decision the pause's policy does not permit, and expires a pending approval as an expiry rather than as a yes — without weakening the `WHERE resumed_at IS NULL` conditional update that IS the idempotency key. Folded from PRD amendment #133 (Phase 47, deleted 2026-08-25); all three defects shipped ahead of the phase's own Gate 3 (empty-answer refusal, per-tool decision policy, pending-approval TTL — see `52-03-SUMMARY.md`). 52-08 also declares this id and closes it formally by live E2E — the shared-ID gate withholds "Complete" in the traceability table until then
+- [x] **STEER-04**: A steer that arrives after its run has ended is delivered automatically as the next user turn, preceded by a visible line saying that happened, never silently swallowed. Closed 52-08 by live evidence: a steer POSTed after a single-round run's own drain points had already passed landed as `auto_delivery_next_turn`, produced exactly one follow-on turn (count query = 1), and that turn opened with the byte-exact `steerAutoDeliveryNotice` string, never silently swallowed
+- [x] **STEER-05**: Steering works from the operator's channels, not only the cockpit. The cockpit leg is live-proven (52-08, this session, via the same A/B run). The Telegram leg's wiring is proven only by 52-06's realistic unit tests (`internal/channels/telegram/bot_dispatch_steer_test.go`, `bot_dispatch_queue_test.go`, `cmd/aura/steer_wiring_test.go`, all `human_judgment: false`) — per ACC-01 a green suite alone is not "done". 52-08 could not live-corroborate the Telegram leg this session: the bot uses long-polling `getUpdates` against the real Telegram API with no local-bot-api sidecar, no Telethon/Pyrogram session, and no API_ID/API_HASH configured, so there is no way to script an inbound message as a real Telegram user without a human physically using their own Telegram client. See `52-VALIDATION.md` for the full not-proven record; this is a genuine open gap, not a rubber stamp
+- [x] **STEER-06**: The PRD amendment ratifying mid-turn steering is committed **before** any of its code. Closed 52-08 by git history: Amendment #132 (`9b783bd54`, 2026-08-25 08:05:15+02:00, "Ratify the mid-turn steering contract before writing any of it") predates the phase's first steering code commit (`43c9cb5cf`, 2026-08-25 15:41:27+02:00, "add the steer + pause-TTL knob surface") by over 7 hours, and every subsequent steering commit (`b53bf2320` inbox, `dbec0dcc4` cockpit route, `68dd40585` Telegram) follows both
+- [x] **RESUME-01**: The approval resume path refuses an accept carrying no answer, refuses a decision the pause's policy does not permit, and expires a pending approval as an expiry rather than as a yes — without weakening the `WHERE resumed_at IS NULL` conditional update that IS the idempotency key. Folded from PRD amendment #133 (Phase 47, deleted 2026-08-25); all three defects shipped ahead of the phase's own Gate 3 (empty-answer refusal, per-tool decision policy, pending-approval TTL — see `52-03-SUMMARY.md`). Closed 52-08 by live E2E against the real cockpit resolve route (`POST /api/approvals/{token}/resolve`): empty-content accept now returns 400 (a real bug was found and fixed here — the REST route fell through to a generic 500 before this session, see `52-VALIDATION.md`); a seeded restricted-decision pause (`allowed_decisions:["accept"]`) returns 403 for a disallowed decline; a seeded 3-day-old pause was left to the real 60s sweep and resolved as an expiry (`resumed_answer.action="expired"`), never as a yes
 
 ### Acceptance
 
@@ -252,13 +252,13 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 | MEM-04 | Phase 45 | Complete |
 | MEM-05 | Phase 45 | Complete |
 | MEM-06 | Phase 49 | Pending |
-| RESUME-01 | Phase 52 | Shipped early (`52-03`) — closes at 52-08 (Gate 3) |
+| RESUME-01 | Phase 52 | Complete (closed 52-08 by live E2E: 400/403/expiry all exercised against the real resolve route; a 500-vs-400 bug found and fixed) |
 | STEER-01 | Phase 52 | Complete |
-| STEER-02 | Phase 52 | Pending |
+| STEER-02 | Phase 52 | Complete (closed 52-08 by live A/B, identical round ceiling) |
 | STEER-03 | Phase 52 | Complete |
-| STEER-04 | Phase 52 | Pending |
-| STEER-05 | Phase 52 | Complete |
-| STEER-06 | Phase 52 | Pending |
+| STEER-04 | Phase 52 | Complete (closed 52-08 by live auto-delivery proof) |
+| STEER-05 | Phase 52 | Partial — cockpit leg live-proven 52-08; Telegram leg unit-proven only (52-06), no scriptable live Telegram session this session |
+| STEER-06 | Phase 52 | Complete (closed 52-08 by git history: amendment predates first code commit) |
 | SURF-04 | Phase 50 | Pending |
 | SURF-05 | Phase 54 | Pending |
 | SWARM-01 | Phase 51 | Pending |

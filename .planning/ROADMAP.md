@@ -109,7 +109,7 @@ harness is built; `internal/eval/` stays deleted.
 - [ ] **Phase 49: Memory tiers** - Short-term searchable retrieval and a PRD-amendment-gated reasoning tier — **scoped down: `memory_recall` and `internal/reasoningtrace` already exist**
 - [ ] **Phase 50: Context ladder legibility** - Real token accounting, eviction, and per-category visibility — **re-hosted: the consumer is now the compaction trigger**
 - [ ] **Phase 51: Durable delegation** - The approved swarm substrate gets built; workers get a real brief, real limits, and a turn that no longer blocks — **needs a design gate before it can be planned**
-- [ ] **Phase 52: Mid-turn steering** - The operator can type into a running turn and redirect it at the next round boundary — **PLAN-READY (amendment #132); runs before Phase 51**
+- [ ] **Phase 52: Mid-turn steering** - The operator can type into a running turn and redirect it at the next round boundary — **8/8 plans executed, Gate 3 live E2E scored 9.0/10 (2026-08-26): SC#1-#4 and RESUME-01 fully live-proven (backend + browser), SC#5's Telegram leg not live-proven this session (structural: no scriptable Telegram session) — see `52-VALIDATION.md`. Does not close per CLAUDE.md's >9.8 bar; needs one human Telegram check.**
 - [ ] **Phase 54: Milestone exit** - Retire the nine compensating `learned_lesson` facts and validate parity live — **narrowed 2026-08-25: the `always-deliver-files` skill STAYS, because AUTO-01 was deleted with Phase 47**
 
 ## Phase Details
@@ -629,7 +629,7 @@ STEER-04 exists because the failure mode of any queue-into-a-running-thing is si
   4. A steered turn consumes no more steps or wallclock than an unsteered one — the budget is unchanged by steering.
   5. The same steer works from a channel, not only the cockpit.
 
-**Plans**: 7/8 plans executed
+**Plans**: 8/8 plans executed
 
 Plans:
 **Wave 1**
@@ -653,7 +653,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 52-08-PLAN.md — Gate 3: live E2E from both surfaces, the D-13 budget A/B judged on ceiling+deadline, Go and frontend gates re-measured on this tree, quality snapshot re-attested
+- [x] 52-08-PLAN.md — Gate 3: live E2E from both surfaces, the D-13 budget A/B judged on ceiling+deadline, Go and frontend gates re-measured on this tree, quality snapshot re-attested (scored 9.0/10 — see `52-VALIDATION.md`; phase does not close, Telegram leg of SC#5 pending a human check)
 
 ### Phase 54: Milestone exit
 
