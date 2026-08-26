@@ -8332,3 +8332,62 @@ flusso completo, che funziona.
 > not weaken MCP subject isolation or the scheduler owner predicates. It closes the ordinary-user
 > cross-tenant mutation path while preserving the multi-user feature the existing isolation work was
 > built to provide.
+
+## §Coverage evidence is tiered and release-bound (Amendment #151, 2026-08-26)
+
+> **Amendment #151 (2026-08-26 — measured correction to the “full tag matrix” coverage
+> claim).**
+>
+> **The measurement.** On exact candidate `e906028cf010b383344b954c2b1e2b189aefd682`,
+> `scripts/coverage_docker.sh` provisioned and migrated a disposable PostgreSQL database
+> through all 77 migrations, then measured **27,324/31,839 = 85.8192782437%** over the
+> owned `internal/*` surface. The only declared runtime tier was `db_integration`; unit
+> tests run in the same invocation. That is a real passing aggregate, but it is not a
+> “full tag matrix” result. Seventeen packages in the resulting profile were individually
+> below 85%, including packages whose behavior is exercised from consumer packages that
+> the current no-`-coverpkg` invocation does not credit. A repository aggregate can
+> therefore mask a package regression and a global per-package floor would also be false.
+>
+> The existing native-Linux `docker_integration` CI job passed on run `32981940968` in
+> 3m57s but emitted no coverage profile. A local WSL/Linux measurement instrumented the
+> two owned daemon packages (`internal/sandbox/usersandbox` and `internal/agent/tools`)
+> across their own tests plus the `cmd/aura` composition tests. Docker Desktop correctly
+> skipped the native-bridge egress assertions; even with that missing leg, Go's native
+> `-test.gocoverdir` plus `go tool covdata textfmt` statement union measured
+> **2,835/3,313 = 85.5719891337%**. This is a lower-bound structural measurement, not the
+> native-Linux closure number. The ArcadeDB MRS already produces a separate exact-candidate
+> `internal/arcadedb` profile and fails below 85%, but its report is not currently required
+> by release readiness.
+>
+> **Contract.** Coverage is a set of exact-candidate tier reports, not one percentage made
+> by concatenating profiles. `coverage-report.json` remains the owned-surface
+> **unit + db_integration** aggregate and keeps its exact 85% floor. The native-Linux
+> Docker job produces `docker-coverage-report.json` with `tier=docker_integration`, an
+> exact 85% floor over the two owned daemon packages, and the merged raw profile generated
+> by Go's own covdata tooling. The Agent Memory MRS report remains the
+> `arcadedb_integration` coverage authority with its existing package-level 85% hard gate.
+> Release readiness requires all three reports from the same candidate SHA and refuses a
+> missing, stale, empty, failed, or wrong-tier report.
+>
+> No profile may be concatenated, no percentages may be averaged, and no denominator may
+> be summed across test binaries. A future cross-tier aggregate is permitted only after a
+> measured implementation unions the same source block once and marks it covered when any
+> required tier executes it. Until then the three independently scoped floors are the
+> truthful release contract. Global per-package floors remain deferred; touched-package
+> deltas may be added as advisory evidence without pretending that every package's real
+> runtime tier is present in the DB aggregate.
+>
+> **Closure proof.** The DB aggregate must reproduce on a disposable database at exact HEAD.
+> The Docker gate must use the current native-Linux job, execute the lifecycle, egress and
+> routed-tool tier under `CI=true`, generate a non-empty deduplicated profile, compare the
+> exact statement ratio, upload both JSON and raw profile, and leave no box, sidecar or
+> volume behind. The release-readiness contract tests must fail independently for a missing
+> Docker report, a Docker ratio below 85%, a wrong tier/SHA, and an Agent Memory report whose
+> live ArcadeDB coverage scenario is missing or failed. Documentation and quality-snapshot
+> wording must name the actual tier instead of “full tag matrix”.
+>
+> **What these measurements do NOT prove.** The local Docker number does not prove the
+> native non-masquerading bridge or FQDN allowlist; only the hosted Linux job can. The DB
+> aggregate does not prove daemon branches, and the ArcadeDB package profile does not cover
+> `cmd/aura` glue or unrelated MCP sidecars. Independent floors make those boundaries
+> visible and release-blocking; they do not manufacture one universal coverage number.
