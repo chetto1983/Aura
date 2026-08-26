@@ -209,9 +209,54 @@ Measured, not inferred — `aura.tool_invocations` for the third run:
 | `tool_search` | 1 | 1 |
 
 The one `end` that landed carries the parent's own combined command (the table above is read
-from its preview). **The workers' own `shell_exec` calls record a `start` and no `end`** — the
-same shape as the second run's 10-against-3. So a staleness reaper built on the invocation
-ledger would see every worker as permanently in-flight and reap live workers.
+from its preview). Grouping the same conversation by request id turns it into a controlled
+comparison — one conversation, one ledger, two event paths:
+
+| | request id | starts | ends |
+|---|---|---|---|
+| **parent** | `…05d4-76f2` | 3 | **3** |
+| **workers** (×4) | `…264f-760e`, `…264f-76b7`, `…264f-798f`, `…2650-75f3` | 5 | **0** |
+
+**The cause: the two halves of a ledger row have different writers, and a worker only
+traverses one of them.**
+
+| row | writer | worker passes through it? |
+|---|---|---|
+| `start` | the **gateway**, in the dispatch path (`reserve.go:302`) | **yes** — so the start is written |
+| `end` | the **Runner**, from `agent.Event` frames as the turn streams (`runner_persist.go:110`, `:201`) | **no** — `runChild` consumes `worker.Run(ic)` itself (`swarm.go:185`) and dumps to a per-child JSONL, so the frames never reach the Runner |
+
+Every worker tool call therefore opens a reservation that nothing will ever close.
+
+### The orphaned starts are not inert: the reconciler writes a falsehood over them
+
+This was caught live rather than predicted. `gateway.Reconciler` is wired at
+`cmd/aura/serve.go:498` and sweeps `start ∧ ¬end` after a grace of at least 30 minutes
+(`reconcile.go:31,38,78-83`), appending `syntheticEnd` — `status='error'`, `meta.indeterminate`.
+At **20:10:31**, half an hour after the second run, it fired on exactly those rows:
+
+```
+reconcile: appended indeterminate end for crash-orphaned reservation   ×7
+  status=error  "crash-orphaned in-flight tool call (indeterminate outcome, never re-invoked)"
+```
+
+Seven worker `shell_exec` calls that **had succeeded** are now permanently recorded as
+indeterminate failures, in a ledger the migration header calls append-only and the code
+never updates or deletes (`reconcile.go:41-43`). The reconciler is not at fault — it is
+correctly closing what looks exactly like a crash orphan. The ledger simply has no way to
+tell a crashed call from a call whose end-writer was never on the path.
+
+The third run then reproduced it exactly, and the same request-id grouping shows the split
+is total rather than incidental:
+
+| | starts | ends | of which `reconciled` |
+|---|---|---|---|
+| parent (`…05d4-76f2`) | 3 | 3 | **0** |
+| workers (×4) | 5 | 5 | **5** |
+
+Every worker call, no exceptions; no parent call, no exceptions.
+
+So a staleness reaper built on this ledger would not merely see live workers as in-flight;
+it would be reading a record that actively contradicts what happened.
 
 The signal that *does* exist is the one already named in the research above:
 `runChild`'s `for ev, err := range worker.Run(ic)` loop (`swarm.go:185`) sees every worker
@@ -254,10 +299,13 @@ since been fixed and re-measured (above). What the spike delivered:
 - **The durations are four workers on four small goals, not a load characterization.** They
   prove a healthy worker finishes far under the cap; they say nothing about a worker doing
   genuinely heavy work, which no run here produced.
-- **The missing worker `end` rows are measured, not explained.** Two runs show worker
-  `shell_exec` calls recording `start` without `end`; the cause was not traced, and this
-  spike does not claim one. The design conclusion does not depend on it — the event loop is
-  the better tick source regardless — but the gap itself is owed an investigation.
+- **The missing worker `end` rows are now explained and their consequence caught live**
+  (asymmetric writers; reconciler stamping succeeded calls as indeterminate at 20:10:31).
+  The blast radius is small so far and was counted rather than guessed: **22 reconciled
+  `end` rows exist in the whole ledger** (`meta->>'reconciled'='true'`), 18 of them written
+  today by these three runs and only 4 before them (2026-08-15/16). What is NOT established
+  is how many of the 4 older ones are swarm workers rather than genuine crash orphans —
+  the row itself cannot tell the two apart, which is the defect restated.
 - One deployment, one routed model (`deepseek/deepseek-v4-flash-0731:nitro`, read from
   `aura.settings`), one profile (`single_user_hardened`). The denial is structural, so it
   should not be deployment-specific, but that has not been checked elsewhere.
