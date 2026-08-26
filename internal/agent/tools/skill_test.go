@@ -194,7 +194,7 @@ func TestSkillRegistryValidates(t *testing.T) {
 func TestSkillDispatchErrors(t *testing.T) {
 	t.Parallel()
 	tool := &SkillTool{Loader: newFakeLoader()}
-	ctx := context.Background()
+	ctx := authorizedSkillManageCtx(context.Background())
 
 	if _, err := tool.Execute(ctx, json.RawMessage(`{"action":""}`)); err == nil ||
 		!strings.Contains(err.Error(), "action is required") {
@@ -214,7 +214,7 @@ func TestSkillDispatchErrors(t *testing.T) {
 	// restore/archive are WIRED (18-03) on the write half — with no writer they dispatch
 	// to the real handler and return a clear "no writer" error (never the old "not yet
 	// available" placeholder, never a panic).
-	manage := &SkillManageTool{Skills: &SkillTool{Loader: newFakeLoader()}}
+	manage := &SkillManageTool{Skills: &SkillTool{Loader: newFakeLoader()}, Caps: allowedSkillManageCaps()}
 	if _, err := manage.Execute(ctx, json.RawMessage(`{"action":"restore","name":"x"}`)); err == nil ||
 		!strings.Contains(err.Error(), "no writer") {
 		t.Fatalf("restore (wired, no writer) err = %v, want 'no writer'", err)

@@ -455,16 +455,14 @@ func TestWebEnvOverrides(t *testing.T) {
 	}
 }
 
-// TestMUSRIsolationDefaultOff locks the multi-identity provisioning switch: unset ⇒ false,
-// because the skills library, aura.settings, the MCP catalog and (under a non-strict
-// profile) the host filesystem are shared deployment-wide, so single-principal is the only
-// safe default. Read straight from AURA_MUSR_ISOLATION as a dedicated config field, never
-// through the internal/settings OverlayEnv allowlist.
+// TestMUSRIsolationDefaultOff locks the explicit multi-identity provisioning switch:
+// unset ⇒ false, so adding principals is a deliberate operator action. It is read straight
+// from AURA_MUSR_ISOLATION, never through the internal/settings OverlayEnv allowlist.
 func TestMUSRIsolationDefaultOff(t *testing.T) {
 	clearPostgresEnv(t)
 
 	if cfg := LoadDB(); cfg.MUSRIsolation {
-		t.Error("MUSRIsolation default = true, want false (a 2nd identity shares the operator's skills/settings/host)")
+		t.Error("MUSRIsolation default = true, want false (multi-user provisioning must be explicit)")
 	}
 
 	t.Setenv("AURA_MUSR_ISOLATION", "true")

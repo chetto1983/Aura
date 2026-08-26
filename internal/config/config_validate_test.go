@@ -221,40 +221,33 @@ func TestGateWebAuth(t *testing.T) {
 	}
 }
 
-// TestGateMultiUserNeedsASandbox pins the one combination that makes every other
-// isolation control decorative: a second identity on a deployment whose tools run on the
-// host. Four planes are shared and unscoped — the skills library, host shell/fs,
-// aura.settings (which holds OPENROUTER_API_KEY) and the MCP catalog — so host access
-// defeats the five planes that ARE isolated.
-//
-// The gate deliberately forbids the PAIR, not either half: running on the host is the
-// product for a single-principal appliance, and multi-user is fine once tools route into
-// a per-identity box.
-func TestGateMultiUserNeedsASandbox(t *testing.T) {
+// TestGateMultiUserRequiresStrictProfile pins the explicit deployment posture: tenant
+// data and boxes are already identity-scoped, while shared catalogs are administrator-only.
+// Multi-user provisioning is accepted under both strict profiles and refused under the
+// development profiles; the flag being off leaves single-principal development untouched.
+func TestGateMultiUserRequiresStrictProfile(t *testing.T) {
 	t.Parallel()
 
-	// The dangerous pair, at every non-strict profile.
+	// Multi-user is unsupported at every non-strict profile.
 	for _, p := range []RuntimeProfile{ProfileDev, ProfileLocalTrusted} {
-		vs := (&Config{MUSRIsolation: true}).gateMultiUserNeedsASandbox(p)
+		vs := (&Config{MUSRIsolation: true}).gateMultiUserRequiresStrictProfile(p)
 		if !hasViolation(vs, "AURA_MUSR_ISOLATION", Fatal) {
 			t.Errorf("multi-user under %s must be Fatal, got %+v", p, vs)
 		}
 	}
 
-	// Strict profiles route tools into a per-identity box, so the pair is safe.
+	// Both strict deployment profiles accept explicit multi-user provisioning.
 	for _, p := range []RuntimeProfile{ProfileSingleUserHardened, ProfileServerProduction} {
-		if vs := (&Config{MUSRIsolation: true}).gateMultiUserNeedsASandbox(p); len(vs) != 0 {
+		if vs := (&Config{MUSRIsolation: true}).gateMultiUserRequiresStrictProfile(p); len(vs) != 0 {
 			t.Errorf("multi-user under strict %s must pass, got %+v", p, vs)
 		}
 	}
 
-	// Single-principal on the host is the SHIPPED product, not a violation. This
-	// assertion is the one that stops someone "hardening" the gate into refusing the
-	// operator's own appliance.
-	if vs := (&Config{MUSRIsolation: false}).gateMultiUserNeedsASandbox(ProfileDev); len(vs) != 0 {
+	// The opt-in being off is never a violation.
+	if vs := (&Config{MUSRIsolation: false}).gateMultiUserRequiresStrictProfile(ProfileDev); len(vs) != 0 {
 		t.Errorf("single-principal dev must pass untouched, got %+v", vs)
 	}
-	if vs := (*Config)(nil).gateMultiUserNeedsASandbox(ProfileDev); len(vs) != 0 {
+	if vs := (*Config)(nil).gateMultiUserRequiresStrictProfile(ProfileDev); len(vs) != 0 {
 		t.Errorf("nil config must not violate, got %+v", vs)
 	}
 }

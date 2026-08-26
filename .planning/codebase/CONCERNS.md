@@ -7,9 +7,9 @@ last_audited_commit: 3ab589ee6e2302e7bf3ff865e0083a4f7475b63e
 
 **Analysis Date:** 2026-08-26
 
-**Audit refresh:** targeted concern closure against `3ab589ee6`; the deferred-manifest
-surface and retrieval gate were reverified, but this is not a new codebase map. Historical
-closed entries are retained where they explain a ratified boundary.
+**Audit refresh:** Amendment #149's measured correction separated tenant data from
+administrator control planes and closed the shared-skill mutation path; this is not a new
+codebase map. Historical closed entries are retained where they explain a ratified boundary.
 
 ## Severity Summary
 
@@ -21,7 +21,7 @@ closed entries are retained where they explain a ratified boundary.
 | Release disclosure register reported NO-GO | High | Closed 2026-08-25 | `docs/audit/README.md`, `scripts/audit_closure_gate.py` |
 | Amendment #115 still requires a real-production document E2E whose runner no longer exists | High | Closed 2026-08-25 | PRD amendment #141, `scripts/ingest_reconcile_e2e.sh`, `cmd/aura/document_agent_live_test.go` |
 | ArcadeDB tenant memory has no exercised backup/restore plane | High | Closed 2026-08-25 | `scripts/restore_drill.sh`, `scripts/release_readiness_gate.py`, `compose.yaml` |
-| Shared settings, skills, and MCP catalog constrain safe multi-user operation | Medium | Mitigated by a strict-profile boot gate | `internal/config/config_validate.go`, `internal/db/migrations/0024_settings.up.sql` |
+| Shared deployment catalogs need administrator-only mutation in multi-user operation | Medium | Closed 2026-08-26 | `internal/agent/tools/skill_manage.go`, `cmd/aura/serve_webui.go`, `internal/config/config_validate.go` |
 | Coverage is one aggregate at 86.4%; daemon-gated tiers do not feed that floor | Medium | Open/self-documented | `scripts/coverage_gate.sh`, `.github/workflows/ci.yml`, `docs/aura-quality-snapshot.md` |
 | Long-history compaction can disable itself silently and uses an unmeasured three-minute timeout | Medium | Open | `internal/conversations/context_budget.go`, `internal/conversations/compaction.go` |
 | Calendar MCP admin-token fallback was removed by identity-scoped OAuth | Medium | Closed 2026-08-26 | `internal/agui/connect_pim_api.go`, `cmd/aura/serve_agui.go`, `compose.yaml` |
@@ -97,11 +97,11 @@ closed entries are retained where they explain a ratified boundary.
 - Resolution: persisted server-authored policy is enforced before claims and side effects; migration 0102 removes the legacy-row exception; forbidden HTTP decisions return 403.
 - Evidence: `internal/runner/resume_policy_test.go`, `internal/db/migrate_0102_integration_test.go`, and `internal/runner/live_e2e_policy_test.go` cover pure, real-database, and real-agent boundaries respectively.
 
-**Deployment-wide settings can contain secrets without identity scope or RLS:**
-- Risk: `aura.settings` is keyed only by `key`, grants full DML to `aura_app`, stores secret values in plaintext, and includes `OPENROUTER_API_KEY` and `TELEGRAM_BOT_TOKEN` in its allowlist.
-- Files: `internal/db/migrations/0024_settings.up.sql`, `internal/settings/settings.go`, `internal/agui/settings_api.go`, `internal/config/config_validate.go`.
-- Current mitigation: API responses redact secret values; writes require `governance.write`; `gateMultiUserNeedsASandbox` refuses the multi-user flag on a non-strict profile and explicitly names this shared plane.
-- Recommendations: keep the single-user/strict-profile gate fail-closed. Before broad multi-user support, choose intentionally between identity-scoped encrypted settings and an explicitly operator-global settings plane with capability rules that prevent tenant writes.
+**Closed 2026-08-26 — deployment-global catalogs are administrator control planes:**
+- Former risk: settings, the MCP catalog, scheduler governance and skills were grouped as if every global row were tenant data. The real mismatch was narrower: `skill_manage` could mutate the shared skill roots for any `agent.run` caller.
+- Resolution: settings and MCP web reads/writes were already behind `governance.read/write`; the scheduler's model-facing task operations were already owner-scoped; MCP OAuth/session/data were already identity-scoped. `skill_manage` now checks the authenticated caller for `governance.write` through the live identity store before parsing or dispatching any action and fails closed on a missing principal/checker, denial or store error. The in-box `/skills` tree is a copy, not a host-writable mount.
+- Trust boundary: granting `governance.write` deliberately makes that identity a deployment administrator. Ordinary `agent.run` identities can use the approved shared skill library but cannot alter it.
+- Evidence: `internal/agent/tools/skill_manage_auth_test.go`, `cmd/aura/skill_manage_auth_wiring_test.go`, `cmd/aura/serve_webui_auth_test.go`, `cmd/aura/serve_adapters.go`.
 
 **Closed 2026-08-26 — identity-scoped OAuth for Aura-owned remote MCPs:**
 - Former risk: Calendar carried a sidecar-specific admin fallback, and Calendar, WhatsApp, and Memory did not share one identity-scoped authorization/session model.
@@ -167,11 +167,11 @@ closed entries are retained where they explain a ratified boundary.
 
 ## Scaling Limits
 
-**Multi-user support depends on deployment profile because three planes remain global:**
-- Current capacity: per-identity Postgres rows, Garage objects, conversations, sandbox boxes, and ArcadeDB databases are isolated, but skills roots, `aura.settings`, and the MCP catalog remain deployment-wide.
-- Limit: `AURA_MUSR_ISOLATION` is refused outside strict profiles; loosening that gate would expose cross-identity shared configuration and content.
-- Scaling path: either identity-scope the three shared planes or formalize them as operator-global resources with read/write capabilities that tenants cannot acquire.
-- Files: `internal/config/config_validate.go`, `internal/settings/settings.go`, `internal/skills/identity_root.go`, `internal/mcpregistry/store.go`.
+**Multi-user support is an explicit strict-profile deployment posture:**
+- Current capacity: Postgres rows, Garage objects, conversations, sandbox boxes, ArcadeDB databases, MCP credentials/sessions/data and model-facing scheduled tasks are identity-scoped.
+- Control plane: skills, `aura.settings`, the MCP catalog and governance boards are intentionally deployment-global behind `governance.read/write`; ordinary `agent.run` identities cannot mutate them.
+- Limit: `AURA_MUSR_ISOLATION` remains opt-in and is refused outside strict profiles. This is a supported-runtime posture gate, not a tenant selector and not a claim that global catalogs contain tenant data.
+- Files: `internal/config/config_validate.go`, `internal/agent/tools/skill_manage.go`, `internal/settings/settings.go`, `internal/mcpregistry/store.go`.
 
 **Coverage cannot represent all runtime tiers in one number:**
 - Current capacity: the default floor runs only `db_integration`; the latest recorded aggregate is 86.4%.

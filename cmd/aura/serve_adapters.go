@@ -325,14 +325,16 @@ func taskStorePool(ts *cronTaskStore) *pgxpool.Pool {
 // cache-invalidation path serve both — a skill written through skill_manage is visible to
 // skill info/use in the same turn. Registering them together is what keeps the two call
 // sites (chat/serve boot and the cache audit) from drifting apart.
-func registerSkillTools(reg *tools.Registry, cfg *config.Config, writerPool *pgxpool.Pool) {
+func registerSkillTools(reg *tools.Registry, cfg *config.Config, writerPool *pgxpool.Pool) *tools.SkillManageTool {
 	skillTool := newSkillTool(cfg, writerPool)
+	manageTool := &tools.SkillManageTool{Skills: skillTool}
 	reg.Register(skillTool)
-	reg.Register(&tools.SkillManageTool{Skills: skillTool})
+	reg.Register(manageTool)
 	// Registered beside the skill tools because a pack IS a group of them plus the
 	// connectors that ship alongside, and the model reaches for one right after the
 	// other: read the pack, then install the skills it names through skill_manage.
 	reg.Register(&tools.PackTool{})
+	return manageTool
 }
 
 func newSkillTool(cfg *config.Config, writerPool *pgxpool.Pool) *tools.SkillTool {

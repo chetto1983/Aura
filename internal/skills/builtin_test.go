@@ -3,6 +3,7 @@ package skills
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -53,6 +54,26 @@ func TestMaterializeFindSkillsAuraAlwaysOn(t *testing.T) {
 	}
 	if got.Description == "" {
 		t.Fatalf("find-skills-aura description is empty")
+	}
+}
+
+func TestFindSkillsAuraExplainsAdministratorInstallBoundary(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := MaterializeBuiltins(dir); err != nil {
+		t.Fatalf("MaterializeBuiltins: %v", err)
+	}
+	got, ok := NewLoader(Config{Roots: []string{dir}}).Get("find-skills-aura")
+	if !ok {
+		t.Fatal("find-skills-aura not found")
+	}
+	for _, want := range []string{"skill_manage action=install", "governance.write", "administrator"} {
+		if !strings.Contains(got.Body, want) {
+			t.Errorf("find-skills-aura body does not contain %q", want)
+		}
+	}
+	if strings.Contains(got.Body, "skill action=install") {
+		t.Error("find-skills-aura still teaches the removed read-tool install syntax")
 	}
 }
 

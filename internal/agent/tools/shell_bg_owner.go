@@ -30,10 +30,9 @@ const localOwnerID = "00000000-0000-0000-0000-000000000001"
 const adminShellCapability = "governance.write"
 
 // capabilityChecker is the narrow consumer-side seam (D-A2-02 "accept interfaces")
-// the poll/kill authority path needs for the D-18 admin exemption; *identity.Store
-// satisfies it structurally. It stays nil in the current composition root (owner-only,
-// fail-closed) and is wired to the identity store when the multi-user surface goes
-// live — a zero-rework swap (D-04). Nil ⇒ no admin exemption (foreign callers denied).
+// used by tool-level administrator checks; *identity.Store satisfies it structurally.
+// Shell poll/kill treat nil as owner-only, while deployment-global catalog mutations
+// such as skill_manage treat nil as a complete denial.
 type capabilityChecker interface {
 	HasCapability(ctx context.Context, identityID, capability string) (bool, error)
 }

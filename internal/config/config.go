@@ -282,16 +282,12 @@ type Config struct {
 	// predicate in SQL (an empty principal is rejected before the statement runs),
 	// conversations and approvals by the *ForIdentity stores plus the migration-0032 RLS
 	// policies, memory by one ArcadeDB database and one derived credential per identity,
-	// objects by per-identity Garage buckets and keys.
+	// objects by per-identity Garage buckets and keys, and tools by an identity-keyed box.
 	//
-	// What is NOT scoped is everything a second principal would SHARE with the operator:
-	// the skills library (skillLoaderRoots carries no identity component, and the
-	// model-facing skill tool can write it), aura.settings (keyed by `key` alone, so it
-	// holds the deployment's OpenRouter key and LLM base URL), the MCP catalog, the
-	// governance scheduler board — and, under any non-strict AURA_PROFILE (dev is the
-	// default), the filesystem and shell tools, which run on the HOST as the daemon user
-	// because SandboxRouter.Route only routes under a strict profile. Default false is
-	// load-bearing: single-principal is the only posture those shared planes are safe in.
+	// Deployment-wide settings, MCP configuration, scheduler governance and skills are
+	// intentional administrator control planes guarded by governance.read/write; ordinary
+	// agent.run identities cannot mutate them. The flag remains an explicit opt-in and
+	// requires a strict runtime profile. Default false makes provisioning deliberate.
 	//
 	// Read as a dedicated config field, deliberately NOT routed through the
 	// internal/settings OverlayEnv allowlist, so a model-driven settings write can never

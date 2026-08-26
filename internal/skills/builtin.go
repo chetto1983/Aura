@@ -12,8 +12,8 @@ import (
 // builtinFS holds the skills Aura ships in-binary. Two builtins are embedded:
 // skill-creator (D-31, the spec-compliant authoring meta-skill) and find-skills-aura
 // (amendment #51 / D-40, the always:true self-extension skill). find-skills-aura now
-// teaches DISCOVERY through the CLI (npx skills find only prints) and INSTALL through
-// skill action=install: it used to teach the CLI install too, which lands the tree
+// teaches DISCOVERY through the CLI (npx skills find only prints) and administrator-only
+// INSTALL through skill_manage action=install: it used to teach the CLI install too, which lands the tree
 // outside every loader root — the model followed the instruction, read "Installation
 // complete", and ended up with a skill nothing could load.
 //

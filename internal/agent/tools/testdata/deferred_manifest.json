@@ -4002,8 +4002,8 @@
   {
     "name": "skill_manage",
     "deferred": true,
-    "summary": "Author, install, and manage the skills in your library.",
-    "description": "Write half of the skills library: author (create/update/delete), install from the open ecosystem, and manage runnable snippets (save_snippet/archive/restore). Use `skill` to list, read or apply an existing skill — this tool is for changing the library. Every write takes effect immediately: what you create, update, install or save is usable on this same turn.",
+    "summary": "Administer the deployment-wide skills library.",
+    "description": "Write half of the skills library: author (create/update/delete), install from the open ecosystem, and manage runnable snippets (save_snippet/archive/restore). Requires the authenticated identity to hold `governance.write` because the library is shared deployment configuration. Use `skill` to list, read or apply an existing skill — this tool is for changing the library. Every write takes effect immediately: what you create, update, install or save is usable on this same turn.",
     "parameters": {
       "type": "object",
       "properties": {
@@ -4018,7 +4018,7 @@
             "restore",
             "archive"
           ],
-          "description": "create authors a new skill and update revises one; delete removes it; install fetches a skill from the open ecosystem into your library; save_snippet stores runnable code you can re-run by path on a later turn instead of re-authoring it; archive de-activates a snippet and restore un-archives it. Every write takes effect immediately: what you create, update, install or save is usable on this same turn. Nothing is staged and nothing waits for approval. Never install by running the skills CLI in a terminal - it writes outside the library and the skill will not load."
+          "description": "create authors a new skill and update revises one; delete removes it; install fetches a skill from the open ecosystem into the deployment library; save_snippet stores runnable code you can re-run by path on a later turn instead of re-authoring it; archive de-activates a snippet and restore un-archives it. Every write takes effect immediately: what you create, update, install or save is usable on this same turn. Nothing is staged and nothing waits for approval. Never install by running the skills CLI in a terminal - it writes outside the library and the skill will not load."
         },
         "name": {
           "type": "string",

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// skill action=install exists because the taught alternative could not work: `npx skills
+// skill_manage action=install exists because the taught alternative could not work: `npx skills
 // add` writes into its working directory, which is not a loader root, so the model
 // installed a skill, was told it succeeded, and then could not find it. These tests pin
 // the two halves of the replacement — the source reaches the installer, and the result
@@ -18,7 +18,7 @@ import (
 // dir, preview cap) — a bare context makes every result-returning tool error out.
 func installCtx(t *testing.T) context.Context {
 	t.Helper()
-	return WithToolCallContext(t.Context(), "session", "toolcall", t.TempDir(), 4096)
+	return authorizedSkillManageCtx(WithToolCallContext(t.Context(), "session", "toolcall", t.TempDir(), 4096))
 }
 
 func installArgs(t *testing.T, source string) json.RawMessage {

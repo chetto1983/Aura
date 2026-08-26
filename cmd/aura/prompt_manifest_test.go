@@ -35,7 +35,7 @@ import (
 // rule for every tool.
 //
 // The exemption is safe in the direction that matters. What the check exists to stop
-// is the prompt TEACHING a deferred tool — "call skill action=install", "shell_exec
+// is the prompt TEACHING a deferred tool — "call skill_manage action=install", "shell_exec
 // is a full terminal" — and any such instruction names other tools, verbs or
 // arguments alongside, which the rest of the check still catches.
 var ambiguousToolName = map[string]bool{"skill": true, "task": true}

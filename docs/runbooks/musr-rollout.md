@@ -22,48 +22,48 @@ refuses to provision a second one.
 | Long-term memory | One ArcadeDB database and one derived credential per identity; the server refuses cross-tenant access at the door. Created just-in-time on first use. |
 | Objects / uploads | Per-identity Garage bucket and scoped key, selected per request; `IdentityStore.Resolve` fails closed on a missing row. |
 | Idempotency, retention, assets | Owner column on every row. |
+| MCP credentials, sessions, data | OAuth grants and runtime sessions are keyed by identity/server; the verified access-token `sub` is the tenant selector inside Calendar, WhatsApp and Memory. |
+| Scheduled tasks | The model-facing `task` store derives the caller from `identityctx` and applies `identity_id` to create, list, cancel, run-now and approve. |
+| Shell and filesystem | `SandboxRouter.Route` selects one box per identity on every profile and denies when the backend is unavailable. `/skills` is copied into that box; it is not a writable host mount. |
 
 `TestTwoIdentityCrossDeny` (`cmd/aura/two_identity_e2e_test.go`) is the live proof for the
-first five rows. Its assertions never consult this flag.
+original data-plane rows. Amendment #147 records the concurrent two-subject MCP proof; the
+task store and sandbox packages carry their own owner-scope tests. None branches on this flag.
 
-## Why the flag still exists — what is NOT scoped
+## Shared administrator control planes
 
-A second principal would **share** these with the operator:
+Some configuration is intentionally deployment-wide. Global does not mean tenant-unscoped:
+these resources configure the daemon and are writable only by an administrator.
 
-| Plane | Why it is shared |
+| Plane | Contract |
 |---|---|
-| Skills library | `skillLoaderRoots` (`cmd/aura/serve_adapters.go`) resolves `{<export>/.agents/skills, cfg.SkillsDir}` — no identity component. The model-facing `skill` tool can create/update/delete there, so `agent.run` alone is enough to read and rewrite the operator's skills. A per-identity rooting primitive was written in Phase 36 and never called; it was **deleted** rather than left standing as a fix that looks applied. |
-| `aura.settings` | Keyed by `key` alone (migration `0024`) — no identity column, no RLS. It carries `OPENROUTER_API_KEY`, `TELEGRAM_BOT_TOKEN` and `AURA_LLM_BASE_URL` for the whole daemon. Secrets are redacted on read, but `governance.write` can overwrite them. |
-| MCP catalog | One shared `servers.json`, read ONCE at process boot (`config.loadMCPServers`) and mounted process-wide before any identity exists. A per-identity overlay (`managed_config_identity.go`) was written in Phase 36 and never called; it was **deleted**, and it would not have sufficed anyway — it could only toggle enable/trust over the same shared catalog, never give an identity its own connector or its own credential. |
-| Governance scheduler board | `ListManageableTasks` / `ApproveTask` / `RunTaskNow` / `UpdateTask` address tasks by id and status only, with no owner predicate and no RLS. |
-| ~~Host filesystem and shell~~ | **No longer shared.** `SandboxRouter.Route` (`internal/sandbox/usersandbox/router.go:80`) has no profile branch and no host arm: every profile routes into the caller's own box, and an unreachable backend denies rather than falls back (D-09/GATE-01). `shell_exec` and the `fs_*` tools no longer reach `.env` or the daemon's filesystem. |
+| Skills library | `skill` read/use is available to agent users. Every model-facing mutation through `skill_manage` checks the authenticated identity for `governance.write` before parsing or dispatching the action; nil/missing/error/denied checks fail closed. Changes made inside a user's copied `/skills` box tree do not write back to the host catalog. |
+| `aura.settings` | Keyed deployment-wide because it configures one daemon. GET is behind `governance.read`; PUT/DELETE are behind `governance.write`; secret values are redacted on reads. |
+| MCP catalog | The server catalog is deployment configuration behind `governance.read/write`. OAuth grants, credentials, client sessions and MCP data remain per identity. |
+| Scheduler governance board | The operator board is a deployment-wide administrative view behind `governance.read/write`; ordinary agent task operations remain owner-scoped. |
 
-The capability grants (`agent.run`, `governance.read`, `governance.write`) are the only
-control on the middle four; the last one needs no capability beyond `agent.run`.
+Granting `governance.write` deliberately makes an identity an administrator of these shared
+control planes. An ordinary user who only needs Aura should receive `agent.run`, not
+`governance.write`.
+
+## Why the flag still exists
+
+The flag is the operator's explicit decision to admit additional identities, and the boot
+validator accepts it only with `single_user_hardened` or `server_production`. It is not a
+substitute for owner predicates and it does not select a scoped query implementation.
 
 ## Procedure
 
-Do **not** set this flag on a deployment you share with someone you would not hand the
-`.env` to. Turning it on is safe only once the table above is empty. In dependency order:
-
-1. Root the skills tool per identity and give each box its own materialize source.
-   This is a BUILD, not a wire: the Phase-36 primitive that once made it look like a
-   wire has been deleted.
-2. Scope `aura.settings` per identity, or make it admin-only and stop treating
-   `governance.write` as a per-user capability.
-3. Same for the MCP catalog.
-4. Add an owner predicate to the scheduler board's list and mutate paths.
-5. Make the sandbox route under every profile a second identity can log into, or fence the
-   host filesystem tools when the principal is not the operator.
-
-Only then:
+1. Select `AURA_PROFILE=single_user_hardened` or `AURA_PROFILE=server_production`.
+2. Enable provisioning:
 
 ```sh
 AURA_MUSR_ISOLATION=true
 ```
 
-Restart `aura serve`. Provisioning through the onboarding saga is available from that
-point.
+3. Restart `aura serve`, then provision the additional identity through onboarding.
+4. Grant the minimum capabilities it needs. Reserve `governance.read/write` for identities
+   that are intentionally trusted as deployment administrators.
 
 ## Reversibility
 
@@ -79,3 +79,7 @@ second identity, not on serving one.
   scoped plane while A keeps its data.
 - `go test ./internal/agui/ -run TestProvisionRefused` — the refusal itself, proven to
   leave zero rows behind.
+- `go test ./internal/agent/tools -run TestSkillManage` — ordinary identities cannot
+  mutate the shared skill catalog; an administrator can.
+- `go test ./internal/config -run TestGateMultiUserRequiresStrictProfile` — both strict
+  profiles accept `AURA_MUSR_ISOLATION=true`, while development profiles reject it.

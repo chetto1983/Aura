@@ -136,15 +136,15 @@ const skillParamsSchemaHonest = `{
 // descriptions, and there is NO root-level oneOf/anyOf/enum — a root enum 400s
 // OpenAI-compat providers. Property-level enums are wire-safe.
 //
-// HONESTY (AG-011 / AG-044 / amendment #97) is preserved, compressed: Aura runs for one
-// trusted operator on their own host, so every write takes effect when written. The
-// schema must not promise an approval step nobody performs — that is what taught the
+// HONESTY (AG-011 / AG-044 / amendment #97) is preserved, compressed: an authorized
+// administrator's write takes effect when written. The schema must not promise an
+// approval step nobody performs — that is what taught the
 // model to wait, and it is why the save-then-cannot-use failure survived. The prior
 // wording spent ~50 tokens restating it per-action; one clause carries the same contract.
 const skillManageParamsSchema = `{
   "type": "object",
   "properties": {
-    "action": {"type": "string", "enum": ["create", "update", "delete", "install", "save_snippet", "restore", "archive"], "description": "create authors a new skill and update revises one; delete removes it; install fetches a skill from the open ecosystem into your library; save_snippet stores runnable code you can re-run by path on a later turn instead of re-authoring it; archive de-activates a snippet and restore un-archives it. Every write takes effect immediately: what you create, update, install or save is usable on this same turn. Nothing is staged and nothing waits for approval. Never install by running the skills CLI in a terminal - it writes outside the library and the skill will not load."},
+    "action": {"type": "string", "enum": ["create", "update", "delete", "install", "save_snippet", "restore", "archive"], "description": "create authors a new skill and update revises one; delete removes it; install fetches a skill from the open ecosystem into the deployment library; save_snippet stores runnable code you can re-run by path on a later turn instead of re-authoring it; archive de-activates a snippet and restore un-archives it. Every write takes effect immediately: what you create, update, install or save is usable on this same turn. Nothing is staged and nothing waits for approval. Never install by running the skills CLI in a terminal - it writes outside the library and the skill will not load."},
     "name": {"type": "string", "description": "Required for every action except install. The exact skill/snippet name (lowercase, [a-z0-9-], 1-64 chars)."},
     "description": {"type": "string", "description": "Required for create, update and save_snippet. A one-line summary, shown in the skill manifest - it is how you find it again. Refused without one."},
     "body": {"type": "string", "description": "Required for create and update. The markdown instructions that make up the skill."},

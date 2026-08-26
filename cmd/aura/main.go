@@ -163,8 +163,11 @@ func buildRegistry() *tools.Registry {
 type runtimeToolHandles struct {
 	BackgroundShells *tools.BackgroundShells
 	ShellApprovals   *tools.ShellApprovals
-	Memory           *mcptools.MountedServer
-	MemoryContext    *mountedMemoryContext
+	// SkillManage is retained so chat boot can attach the live identity capability
+	// checker to the exact process-global catalog writer registered for agent turns.
+	SkillManage   *tools.SkillManageTool
+	Memory        *mcptools.MountedServer
+	MemoryContext *mountedMemoryContext
 	// ShellPoll / ShellKill are retained so serve boot can wire their .Caps to the live
 	// capability store (VERIF-7 / D-18): the pool-free manifest paths construct them with a
 	// nil Caps (owner-only fail-closed), and serve.go sets Caps = the identity store once it
@@ -228,7 +231,7 @@ func buildBaseRegistryWithHandles(
 	// a live pool is available (serve/chat boot, ts!=nil) the write actions are wired to
 	// the durable, gated Writer (11-05); the pool-free manifest path (`aura tools`) gets
 	// a read-only tool whose write actions error loudly.
-	registerSkillTools(reg, cfg, taskStorePool(ts))
+	handles.SkillManage = registerSkillTools(reg, cfg, taskStorePool(ts))
 	webEngine := web.NewClient(cfg)
 	// web_fetch / web_search are DELIBERATELY NOT routed into the box (D-11): they stay host-side,
 	// already SSRF-guarded — passing sandboxRouter here would be a scope error.
@@ -304,6 +307,17 @@ func buildBaseRegistryWithHandles(
 		os.Exit(1)
 	}
 	return reg, handles
+}
+
+type skillManageCapabilityChecker interface {
+	HasCapability(context.Context, string, string) (bool, error)
+}
+
+func wireSkillManageCapability(handles *runtimeToolHandles, caps skillManageCapabilityChecker) {
+	if handles == nil || handles.SkillManage == nil {
+		return
+	}
+	handles.SkillManage.Caps = caps
 }
 
 func buildRegistryWithMCP(

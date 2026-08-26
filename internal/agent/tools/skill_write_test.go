@@ -131,7 +131,7 @@ func execSkill(t *testing.T, tool interface {
 	}
 	// Every write action now returns a normal result (nothing pauses), and NewResult
 	// requires the tool-call context — so the helper supplies it.
-	return tool.Execute(withTestToolCallCtx(context.Background()), json.RawMessage(raw))
+	return tool.Execute(authorizedSkillManageCtx(withTestToolCallCtx(context.Background())), json.RawMessage(raw))
 }
 
 // TestActionCreateActivates asserts P5 in-box ungating: a model-authored create the
@@ -140,12 +140,14 @@ func execSkill(t *testing.T, tool interface {
 // defensive tests below.
 // manageSkills wraps the read tool's seams in the write half: authoring, install and
 // snippet lifecycle moved to skill_manage, which dispatches against the SAME SkillTool.
-func manageSkills(s *SkillTool) *SkillManageTool { return &SkillManageTool{Skills: s} }
+func manageSkills(s *SkillTool) *SkillManageTool {
+	return &SkillManageTool{Skills: s, Caps: allowedSkillManageCaps()}
+}
 
 func TestActionCreateActivates(t *testing.T) {
 	w := &fakeSkillWriter{status: "active"}
 	tool := manageSkills(&SkillTool{Writer: w})
-	ctx := withTestToolCallCtx(context.Background())
+	ctx := authorizedSkillManageCtx(withTestToolCallCtx(context.Background()))
 
 	raw, _ := json.Marshal(map[string]any{
 		"action":      "create",
@@ -192,7 +194,7 @@ func TestActionCreateActivePathStillAlertsWhenAlerterWired(t *testing.T) {
 	w := &fakeSkillWriter{status: "active"}
 	al := &fakeSkillAlerter{}
 	tool := manageSkills(&SkillTool{Writer: w, Alerter: al})
-	ctx := withTestToolCallCtx(context.Background())
+	ctx := authorizedSkillManageCtx(withTestToolCallCtx(context.Background()))
 
 	raw, _ := json.Marshal(map[string]any{
 		"action":      "create",
@@ -302,7 +304,7 @@ func TestNoApproveAction(t *testing.T) {
 func TestSnippetSaveAction(t *testing.T) {
 	w := &fakeSkillWriter{}
 	tool := manageSkills(&SkillTool{Writer: w})
-	ctx := withTestToolCallCtx(context.Background())
+	ctx := authorizedSkillManageCtx(withTestToolCallCtx(context.Background()))
 
 	raw, _ := json.Marshal(map[string]any{
 		"action":      "save_snippet",
@@ -371,7 +373,7 @@ func TestSnippetSaveActionRequiresFields(t *testing.T) {
 func TestActionRestore(t *testing.T) {
 	w := &fakeSkillWriter{}
 	tool := manageSkills(&SkillTool{Writer: w})
-	ctx := withTestToolCallCtx(context.Background())
+	ctx := authorizedSkillManageCtx(withTestToolCallCtx(context.Background()))
 
 	raw, _ := json.Marshal(map[string]any{"action": "restore", "name": "xlsx-build"})
 	res, err := tool.Execute(ctx, json.RawMessage(raw))
@@ -396,7 +398,7 @@ func TestActionRestore(t *testing.T) {
 func TestActionArchive(t *testing.T) {
 	w := &fakeSkillWriter{}
 	tool := manageSkills(&SkillTool{Writer: w})
-	ctx := withTestToolCallCtx(context.Background())
+	ctx := authorizedSkillManageCtx(withTestToolCallCtx(context.Background()))
 
 	raw, _ := json.Marshal(map[string]any{"action": "archive", "name": "xlsx-build"})
 	res, err := tool.Execute(ctx, json.RawMessage(raw))
@@ -528,7 +530,7 @@ func TestMalformedJSONWrapsArgs(t *testing.T) {
 			w := &fakeSkillWriter{}
 			tool := manageSkills(&SkillTool{Writer: w})
 			raw := json.RawMessage(strings.Replace(string(malformed), "%s", action, 1))
-			_, err := tool.Execute(context.Background(), raw)
+			_, err := tool.Execute(authorizedSkillManageCtx(context.Background()), raw)
 			if err == nil {
 				t.Fatalf("%s with malformed args: want a tool error, got nil", action)
 			}

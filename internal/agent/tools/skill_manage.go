@@ -5,7 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+
+	"github.com/chetto1983/aura/internal/identityctx"
 )
+
+const skillManageCapability = "governance.write"
 
 // SkillManageTool is the WRITE half of the skills grammar, split out of SkillTool.
 //
@@ -31,6 +35,9 @@ type SkillManageTool struct {
 	// Skills carries the loader/writer/alerter seams and the action implementations.
 	// Nil is a configuration error, reported by Execute rather than panicking.
 	Skills *SkillTool
+	// Caps checks the caller's deployment-administrator authority. The skill roots are
+	// process-wide operator configuration, so a nil checker denies every mutation.
+	Caps capabilityChecker
 
 	routerOnce sync.Once
 	router     *ActionRouter
@@ -42,9 +49,10 @@ type SkillManageTool struct {
 func (t *SkillManageTool) Spec() Spec {
 	return Spec{
 		Name:    "skill_manage",
-		Summary: "Author, install, and manage the skills in your library.",
+		Summary: "Administer the deployment-wide skills library.",
 		Description: "Write half of the skills library: author (create/update/delete), install from the open ecosystem, " +
 			"and manage runnable snippets (save_snippet/archive/restore). " +
+			"Requires the authenticated identity to hold `governance.write` because the library is shared deployment configuration. " +
 			"Use `skill` to list, read or apply an existing skill — this tool is for changing the library. " +
 			"Every write takes effect immediately: what you create, update, install or save is usable on this same turn.",
 		Parameters: json.RawMessage(skillManageParamsSchema),
@@ -62,6 +70,9 @@ func (t *SkillManageTool) Spec() Spec {
 // Execute parses the `action` discriminator and dispatches through the ActionRouter.
 // It never panics on a bad action — the router returns a structured error.
 func (t *SkillManageTool) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
+	if err := t.authorize(ctx); err != nil {
+		return ToolResult{}, err
+	}
 	if t.Skills == nil {
 		return ToolResult{}, fmt.Errorf("skill_manage: no skills tool wired")
 	}
@@ -75,6 +86,18 @@ func (t *SkillManageTool) Execute(ctx context.Context, raw json.RawMessage) (Too
 		return ToolResult{}, fmt.Errorf("skill_manage: action is required")
 	}
 	return t.actionRouter().Dispatch(ctx, head.Action, raw)
+}
+
+func (t *SkillManageTool) authorize(ctx context.Context) error {
+	identityID := identityctx.IdentityID(ctx)
+	if identityID == "" || t.Caps == nil {
+		return fmt.Errorf("skill_manage: %s capability required", skillManageCapability)
+	}
+	ok, err := t.Caps.HasCapability(ctx, identityID, skillManageCapability)
+	if err != nil || !ok {
+		return fmt.Errorf("skill_manage: %s capability required", skillManageCapability)
+	}
+	return nil
 }
 
 func (t *SkillManageTool) actionRouter() *ActionRouter {

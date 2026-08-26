@@ -1,6 +1,6 @@
 ---
 name: find-skills-aura
-description: Discover and install agent skills from the open skills ecosystem (skills.sh) when your current capabilities don't cover a task — file formats (xlsx, pdf, docx), integrations, or specialized workflows.
+description: Discover agent skills from the open skills ecosystem (skills.sh), and install them when authorized, when current capabilities don't cover a task — file formats (xlsx, pdf, docx), integrations, or specialized workflows.
 always: true
 ---
 
@@ -38,15 +38,18 @@ Run the skills CLI in your terminal — it only prints, it installs nothing:
 
 ## How to install and use
 
-Install with the skill tool, never with the CLI:
+Installing changes Aura's deployment-wide skill library and requires the authenticated
+identity to hold the administrator capability `governance.write`. If you are authorized,
+install with the write tool, never with the CLI:
 
-    skill action=install source=<owner/repo>
+    skill_manage action=install source=<owner/repo>
 
 Add the skill name when a repository ships several: `source=<owner/repo>@<skill-name>`.
 
-That one call fetches the skill, validates it and puts it in your library — it is listed
-by `skill action=list` and usable with `skill action=use` on this same turn. No approval
-round-trip, nothing to wait for.
+That one call fetches the skill, validates it and puts it in the shared library — it is
+listed by `skill action=list` and usable with `skill action=use` on this same turn. If the
+tool reports that `governance.write` is required, do not bypass it: report the selected
+source and ask a deployment administrator to install it.
 
 **Do not install with `npx skills add`.** It writes into whatever directory your shell is
 standing in, which is not the library: the CLI prints "Installation complete" and the

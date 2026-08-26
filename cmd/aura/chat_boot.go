@@ -415,6 +415,10 @@ func assembleChatEnv(
 		// pool + closers released by the deferred close-on-error guard.
 		return nil, fmt.Errorf("mcp: %w", err)
 	}
+	// The skill library is a deployment-wide administrator catalog. Attach the live
+	// identity store to the exact skill_manage instance before any turn can execute it;
+	// pool-free manifest paths retain a nil checker and therefore fail closed.
+	wireSkillManageCapability(&toolHandles, idStore)
 	// Fail-loud boot wiring guard (D-02d): a mutating multiplexed tool the classifier
 	// cannot tier panics here rather than silently under-gating a live turn.
 	gateway.ValidateClassifiable(reg)

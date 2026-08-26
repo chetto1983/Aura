@@ -100,32 +100,16 @@ func (c *Config) ValidateProfile(p RuntimeProfile) []Violation {
 	vs = append(vs, c.gateDocumentRetrieval(p)...)
 	vs = append(vs, c.gateAssetProcessingLease()...)
 	vs = append(vs, c.gateRetention()...)
-	vs = append(vs, c.gateMultiUserNeedsASandbox(p)...)
+	vs = append(vs, c.gateMultiUserRequiresStrictProfile(p)...)
 	return vs
 }
 
-// gateMultiUserNeedsASandbox refuses a second identity on a deployment whose shared,
-// deployment-wide planes are not identity-scoped.
-//
-// The TOOL plane is no longer one of them. SandboxRouter.Route now contains on every
-// profile — there is no host arm behind it — so shell_exec and the fs_* tools reach only
-// the caller's own per-identity box whatever AURA_PROFILE says. The gate is deliberately
-// kept keyed on Strict() anyway, because the other three planes it names still stand:
-//
-//	skills          skillLoaderRoots() returns {<export>/.agents/skills, cfg.SkillsDir}
-//	                with no identity component. A second identity reads and rewrites
-//	                the operator's library. A per-identity rooting primitive was
-//	                written for this in Phase 36 and never acquired a caller; it was
-//	                deleted rather than left as a fix that looks applied.
-//	aura.settings   keyed by `key` alone — no identity column, no RLS — and it holds
-//	                OPENROUTER_API_KEY.
-//	MCP catalog     unscoped; capability grants are the only control.
-//
-// Those three defeat the five planes that ARE isolated — per-identity ArcadeDB databases,
-// identity-scoped Postgres rows, Garage objects, conversations, shared links — so the
-// PAIR is still what this refuses, and it still says which of the two to change. What
-// changed is the reason: it is no longer "your tools run on the host".
-func (c *Config) gateMultiUserNeedsASandbox(p RuntimeProfile) []Violation {
+// gateMultiUserRequiresStrictProfile keeps multi-user provisioning an explicit hardened-
+// deployment posture. Tenant data and tool sandboxes are identity-scoped; the remaining
+// deployment-global settings, MCP, scheduler-governance and skills catalogs are intentional
+// administrator control planes protected by governance.read/write. The strict-profile
+// requirement therefore controls the runtime posture, not tenant selection.
+func (c *Config) gateMultiUserRequiresStrictProfile(p RuntimeProfile) []Violation {
 	if c == nil || !c.MUSRIsolation || p.Strict() {
 		return nil
 	}
@@ -138,8 +122,8 @@ func (c *Config) gateMultiUserNeedsASandbox(p RuntimeProfile) []Violation {
 		// following its own instructions. Found on the live box, 2026-08-03.
 		Msg: "a second identity needs a hardened profile: set AURA_PROFILE to " +
 			"single_user_hardened or server_production, or leave AURA_MUSR_ISOLATION off — " +
-			"tools are already contained per identity on every profile, but under dev every " +
-			"identity still shares the skills library, aura.settings and the MCP catalog",
+			"multi-user provisioning is supported only under a strict runtime posture; " +
+			"deployment-global catalogs remain administrator-only via governance.read/write",
 	}}
 }
 
