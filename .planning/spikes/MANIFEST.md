@@ -105,6 +105,22 @@ armchair. Full decision record: `.planning/phases/51-durable-delegation/51-CONTE
   NOTHING durable (0 checkpoints, 0 write rows)"*. It makes durable exactly one thing: a
   pause somebody is expected to come back to, rebuilt by SEEDING the new owner with the old
   owner's whole state rather than reconciling.
+- **The delivery channel already exists and works across a channel boundary** (spike 101,
+  measured live). A reminder scheduled from the COCKPIT was delivered to TELEGRAM with zero
+  rows in any messaging table: the happy path delivers inline via
+  `Registry.DeliverToIdentity`, and `pending_notifications` is the deferral/retry substrate,
+  not the delivery one. `agent_message_send` and the four-table schema would be a third
+  mechanism beside two working ones.
+- **Delivery picks the channel that OWNS the identity, not the one that asked** (spike 101).
+  `Registry.DeliverToIdentity` walks started channels in `sort.Strings` order and takes the
+  first that claims the identity — no origin concept. Telegram is the ONLY `Deliverer` in
+  the tree, so that choice has never actually been made between two candidates; if a second
+  pushable channel appears, alphabetical order decides it.
+- **A run's outcome never reached the conversation it was scheduled from; fixed** (spike 101,
+  `fix(cron): answer where the question was asked`). `origin_conversation_id` was recorded
+  and threaded into the Job, and only the approval path read it. The push stays and a record
+  joins it — LibreChat's rule that the conversation IS the channel. Validated live: seq 7
+  `assistant: SPIKE101-DELIVERED` where the conversation previously stopped at seq 6.
 - **Reap on inactivity, not on age** (spike 099 research). LibreChat refreshes `lastActivity`
   on every emitted chunk so *"a long but live stream is never reaped"*; hermes leaves an
   advancing child alone forever. Aura caps total age and consumes no liveness signal, although
@@ -121,6 +137,7 @@ armchair. Full decision record: `.planning/phases/51-durable-delegation/51-CONTE
 | 098 | durable-delegation | steer-carries-worker-result | standard | Given a worker completion pushed into the steer inbox with a worker-attributed marker, when the parent turn reaches its next round boundary, then it lands in history without breaking role alternation or touching `history[0..2]`, and reads as spoken by a worker rather than by the operator | **PARTIAL** - rail validated, envelope invalidated: the model detects operator-envelope vs worker-payload mismatch and discounts the report as injection (3/3 live runs) | steer, delivery, kv-cache, attribution |
 | 099 | durable-delegation | worker-duration-and-progress | standard | Given a real fan-out on the live stack, when workers run to completion, then measured durations show whether a 120s wall-clock ceiling is survivable, and whether per-worker progress is observable enough to drive hermes-style staleness | **validated** - healthy workers finish in 5.15-7.80s against a 120s cap (23x margin, answers verified against ground truth); the cap fired once in three runs and caught an upstream stall, while the 70s lost worker passed under it; staleness cannot come from `tool_invocations` (workers log `start`, never `end`) and belongs in `runChild`'s event loop. Also found and fixed a live deterministic defect: a swarm worker could dispatch NO agent-scoped tool (4/4 workers, 100% denied `operation fingerprint mismatch`; re-measured at 0 denials); corrected the child cap from 120s nominal to 240s effective | swarm, timeout, observability, defect |
 | 100 | durable-delegation | durable-substrate-shape | standard | Given the three failure modes D-01 names — a worker dying mid-flight, a daemon restart, and delivery failing eight times — measured against the lease queue Aura already owns, then the substrate choice is decided by evidence rather than preference | **validated** - GENERALIZE `aura.ingestion_jobs`, do NOT create a delegation table: its claim predicate already handles all three scenarios correctly (measured), `job_type` is already the discriminator, a restart needs no recovery path because the lease expiry IS one, and a SIGKILL mid-fan-out showed the delegation's full intent is ALREADY durable in the `swarm_spawn` reservation's args — what is missing is a row saying the work is owed | substrate, durability, lease, crash-recovery, inventory |
+| 101 | durable-delegation | message-channel-necessity | standard | Given a background run that finishes while nobody is watching, when its result must reach the operator, then the measurement shows whether Aura needs agent_message_send and a four-table messaging schema or already owns a working delivery path | **validated** - NO message channel belongs in Phase 51: LibreChat has none at all (40 schemas, the conversation IS the channel) and Aura already has two delivery paths, the steer rail for a present operator and `pending_notifications` -> identity-owning channel for an absent one, measured live cockpit->Telegram with ZERO rows in any messaging table. The gap is a path from the swarm, not a system. Also found and fixed a bug: a run's outcome never reached the conversation it was scheduled from | messaging, delivery, channels, inventory |
 | 100a | durable-delegation | substrate-single-table | comparison | Given a delegation in flight, when the worker dies mid-flight / the daemon restarts / delivery fails 8 consecutive times, then the delegation is never silently lost and converges to a readable terminal state | PENDING | postgres, durability, lease |
 | 100b | durable-delegation | substrate-generalized-queue | comparison | The same question, generalizing the proven `aura.ingestion_jobs` lease engine instead of adding a new table | PENDING | postgres, durability, lease, reuse |
 | 101 | durable-delegation | message-channel-necessity | standard | Given the delegation ledger plus the steer rail, when a background delegation must return a result AND its worker must ask the operator, then either no agent-to-agent message channel is needed, or the spike names exactly what cannot be expressed without one | PENDING | scope, messaging |

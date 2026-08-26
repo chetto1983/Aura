@@ -1,0 +1,1 @@
+Programma un promemoria che scatti fra circa 90 secondi da adesso, con il testo esatto: SPIKE101-DELIVERED. Usa lo strumento di scheduling che hai (caricalo con tool_search se serve). Non usare swarm_spawn. Dopo averlo creato, conferma in una riga l'orario a cui scatterà.
