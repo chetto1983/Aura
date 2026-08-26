@@ -7,8 +7,9 @@ last_audited_commit: 3ab589ee6e2302e7bf3ff865e0083a4f7475b63e
 
 **Analysis Date:** 2026-08-26
 
-**Audit refresh:** documentation-only reconciliation against `3ab589ee6`; this is not a new
-codebase map. Historical closed entries are retained where they explain a ratified boundary.
+**Audit refresh:** targeted concern closure against `3ab589ee6`; the deferred-manifest
+surface and retrieval gate were reverified, but this is not a new codebase map. Historical
+closed entries are retained where they explain a ratified boundary.
 
 ## Severity Summary
 
@@ -29,11 +30,12 @@ codebase map. Historical closed entries are retained where they explain a ratifi
 
 ## Tech Debt
 
-**Deferred MCP manifest fixture no longer represents the mounted surface:**
-- Issue: the fixture was manually refreshed after the original map and now contains 84 deferred entries: 55 Linear, 15 WhatsApp, 4 Memory, and 10 built-ins. It contains no Calendar entry even though the authorized production surface exposes the single curated `calendar__calendar` tool. The gate has 19 query cases and no Calendar case; it still has no production-builder generation path or pinned per-source counts.
-- Files: `internal/agent/tools/testdata/deferred_manifest.json`, `.planning/phases/46-mcp-trust-and-facade/46-09-SUMMARY.md`, `internal/agent/tools/search_gate_test.go`.
-- Impact: retrieval tests measure selection over a corpus that differs from the model's production manifest. A green search gate can therefore miss ranking regressions introduced by the current curated surface.
-- Fix approach: generate the fixture from the same mounted/curated manifest builder used in production, or update it atomically whenever curation changes and pin the expected source counts in a test.
+**Closed 2026-08-26 — deferred manifest aligned with the curated Calendar surface:**
+- Resolution: the checked-in corpus now has 85 deferred specs: 10 built-ins, 1 Calendar, 55 Linear, 4 Memory, and 15 WhatsApp. The added `calendar__calendar` spec follows the immutable sidecar's single-tool flat-union contract, including its 29-action enum and sole root-required `action` field.
+- Drift gate: `TestDeferredManifestFixture_SourceInventory` pins every expected source count, so a curation change cannot silently leave the snapshot behind. The real-corpus ranking gate now includes a Calendar event query and therefore exercises the mounted capability instead of merely counting JSON rows.
+- Evidence: both new assertions were first observed red against the 84-entry fixture; after the atomic fixture update, source inventory is green and retrieval is **100% top-1 / 100% recall@3 (20/20)**.
+- Boundary: this closure uses the documented atomic-snapshot route, not a new live production-builder generator. Any future curated-surface change must update the fixture, pinned inventory, and ranking cases together.
+- Files: `internal/agent/tools/testdata/deferred_manifest.json`, `internal/agent/tools/search_gate_test.go`.
 
 **Closed 2026-08-26 — quality snapshot distinguished historical rows from current gates:**
 - Resolution: the retired Neo4j HNSW baseline is explicitly historical and no longer claims a live migration-path gate. ADR 0038 is superseded as an active store choice, the removed Skills North-Star and snippet-reuse harnesses are explicitly retired, and the old machine-card document metric remains superseded rather than being quoted for the CocoIndex/ArcadeDB path. The 2026-08-23 handoff is explicitly archived instead of masquerading as a current work queue.

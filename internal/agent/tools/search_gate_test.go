@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"os"
 	"slices"
 	"sort"
@@ -88,6 +89,31 @@ func newGateSearch(t *testing.T) (*ToolSearch, context.Context) {
 	return ts, ctxWith(t, "sess-gate", "call-gate")
 }
 
+// The fixture is a checked-in production-manifest snapshot. Pin its source
+// inventory so a curation change cannot silently leave retrieval coverage on an
+// older mounted surface: fixture, expectations, and ranking cases move together.
+func TestDeferredManifestFixture_SourceInventory(t *testing.T) {
+	counts := make(map[string]int)
+	for _, spec := range loadManifestFixture(t) {
+		source := "builtins"
+		if namespace, _, namespaced := strings.Cut(spec.Name, "__"); namespaced {
+			source = namespace
+		}
+		counts[source]++
+	}
+
+	want := map[string]int{
+		"builtins": 10,
+		"calendar": 1,
+		"linear":   55,
+		"memory":   4,
+		"whatsapp": 15,
+	}
+	if !maps.Equal(counts, want) {
+		t.Fatalf("manifest source inventory = %v, want %v", counts, want)
+	}
+}
+
 // gateSearch runs one query and returns the loaded tool names, in rank order.
 // It reads the promotion Meta, not the preview: a multi-tool result exceeds the
 // preview cap and spills to the sidecar, so the rendered text is a truncation
@@ -132,6 +158,7 @@ var gateCases = []gateCase{
 	{"install or author a new skill", []string{"skill_manage"}},
 	{"recall a deeper or historical fact from memory", []string{"memory__memory_recall"}},
 	{"remember a fact about the user", []string{"memory__memory_upsert_fact"}},
+	{"create a calendar event", []string{"calendar__calendar"}},
 	{"create or update a Linear issue", []string{"linear__save_issue"}},
 	{"list issues in the user's Linear workspace including active Triage Intelligence suggestions for issues in triage", []string{"linear__list_issues"}},
 	{"create or update a comment on a Linear issue", []string{"linear__save_comment"}},
