@@ -8142,3 +8142,49 @@ flusso completo, che funziona.
 > implementations are repaired. The single real-agent turn proves the complete user path for the
 > operator; the two-subject proof is the direct official-SDK sidecar tier rather than two simultaneous
 > LLM turns.
+
+## §Multi-user provisioning remains disabled until every mutable shared plane is isolated (Amendment #148, 2026-08-26)
+
+> **Amendment #148 (2026-08-26 — measured containment correction for the codebase concern
+> “Shared settings, skills, and MCP catalog constrain safe multi-user operation”).**
+>
+> **The measurement.** The checked-in boot validator accepted
+> `AURA_MUSR_ISOLATION=true` under `single_user_hardened` and `server_production`, even
+> though the same function documented that the mutable skills roots, `aura.settings`, and
+> the MCP catalog remained deployment-wide. The live `.env` selected
+> `AURA_PROFILE=single_user_hardened` with `AURA_MUSR_ISOLATION=true`. PostgreSQL was then
+> started without the rest of the application stack and queried directly: the persisted
+> identity set contained one active `user` and one active `service`, with no deactivated
+> rows. That is still one human operator, so an existing-identity boot gate can be added
+> without refusing the measured deployment once the unsafe provisioning flag is switched
+> off. Source inspection also found a fourth mutable shared plane omitted from the concern:
+> the governance scheduler board. A strict runtime profile contains shell/filesystem tools
+> and strengthens tool auditing; it does not identity-scope any of these four planes.
+>
+> **Containment contract.** Until the four shared planes are either identity-scoped or
+> explicitly operator-global behind a non-delegable authorization boundary,
+> `AURA_MUSR_ISOLATION=true` is a fatal configuration error under every runtime profile.
+> The refusal happens in the existing pre-database config validation pass, so the daemon
+> never opens Postgres on an operator request to enable unsafe provisioning. After migration
+> and RLS compatibility checks, boot also reads the persisted identity roster and refuses
+> when more than one non-deactivated `kind=user` identity exists. The seeded/system and
+> service identities do not count as additional human principals, and deactivated users do
+> not count because the authentication boundary already denies them. This database-aware
+> backstop closes the rollback hole where switching the flag off stopped future onboarding
+> but continued serving users created while it had been on. The existing onboarding refusal
+> remains defense in depth and performs no writes.
+>
+> **Re-opening multi-user provisioning.** A later amendment may relax these two refusals
+> only after a live two-user test proves all four planes: per-identity mutable skill roots;
+> settings that are either per-identity or operator-global and non-delegable; MCP execution
+> whose catalog visibility, credentials, and session state cannot cross identities; and
+> owner-scoped scheduler reads and mutations. That amendment must name the exact storage,
+> authorization, migration, and rollback contracts measured on the running stack.
+>
+> **What this measurement does NOT prove.** It does not prove that the four shared planes
+> are repaired; this amendment deliberately disables the feature instead. It does not prove
+> the persisted-user refusal against a live database containing two active users—the live
+> database contained one—so that branch requires an automated regression and a future live
+> two-user re-opening test. It does not delete, deactivate, or rewrite any existing identity;
+> an operator whose database already contains multiple active users must resolve that state
+> deliberately rather than having boot mutate identity data.
