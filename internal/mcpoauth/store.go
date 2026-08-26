@@ -402,24 +402,48 @@ func deriveKeyWithInfo(authulaSecretHex, info string) ([]byte, error) {
 //
 // A server two identities have authorized returns ErrAmbiguousOwner. One process-wide tool
 // registry cannot serve both without handing one person's tools the other person's token,
-// and guessing which would be the worse answer.
+// and guessing which would be the worse answer. Aura's OWN sidecars are the documented
+// exception and use OwnersOf instead — see the comment there for why several owners are
+// normal for those and only for those.
 func (s *Store) OwnerOf(ctx context.Context, serverName string, candidates []string) (string, error) {
-	found := ""
+	owners, err := s.OwnersOf(ctx, serverName, candidates)
+	if err != nil {
+		return "", err
+	}
+	if len(owners) > 1 {
+		return "", fmt.Errorf("%w: %q", ErrAmbiguousOwner, serverName)
+	}
+	return owners[0], nil
+}
+
+// OwnersOf returns EVERY candidate holding a grant for serverName, in the order given,
+// or ErrNoGrant when none does.
+//
+// It is OwnerOf without the uniqueness rule, and it exists for the one server class where
+// several owners are normal rather than a conflict: a sidecar Aura ships itself. Every
+// identity is meant to hold its own grant for those (the subject is the tenancy
+// boundary), while the process-wide boot mount only needs SOME authorized subject to
+// discover the tool schema with — the per-identity session pool then opens each caller's
+// own session, and IdentityBindingMiddleware refuses a call from anyone else. Making
+// OwnerOf refuse that case would leave Aura's own memory unmounted for everybody the
+// moment a second person was enrolled.
+//
+// For a third-party server the ambiguity refusal stands: OwnerOf is still what that path
+// calls, and one process-wide registry cannot serve two people's remote tokens.
+func (s *Store) OwnersOf(ctx context.Context, serverName string, candidates []string) ([]string, error) {
+	found := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {
 		scoped := identityctx.WithIdentityID(ctx, candidate)
 		if _, err := s.Load(scoped, serverName); err != nil {
 			if errors.Is(err, ErrNoGrant) {
 				continue
 			}
-			return "", err
+			return nil, err
 		}
-		if found != "" {
-			return "", fmt.Errorf("%w: %q", ErrAmbiguousOwner, serverName)
-		}
-		found = candidate
+		found = append(found, candidate)
 	}
-	if found == "" {
-		return "", fmt.Errorf("%w: %q", ErrNoGrant, serverName)
+	if len(found) == 0 {
+		return nil, fmt.Errorf("%w: %q", ErrNoGrant, serverName)
 	}
 	return found, nil
 }
