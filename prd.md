@@ -8188,3 +8188,55 @@ flusso completo, che funziona.
 > two-user re-opening test. It does not delete, deactivate, or rewrite any existing identity;
 > an operator whose database already contains multiple active users must resolve that state
 > deliberately rather than having boot mutate identity data.
+
+## §Multi-user stays enabled; shared catalogs are an administrator control plane (Amendment #149, 2026-08-26)
+
+> **Amendment #149 (2026-08-26 — measured correction to Amendment #148 before its
+> containment implementation shipped).**
+>
+> **Correction.** Amendment #148 conflated a deployment-global catalog with tenant data and
+> therefore prescribed a system-wide disable that the measured implementation does not justify.
+> Its fatal `AURA_MUSR_ISOLATION=true` gate, persisted-user-count boot refusal, and four-plane
+> reopening contract are superseded in full. Multi-user provisioning remains available under the
+> existing strict-profile gate; boot does not reject a deployment merely because it has multiple
+> active users.
+>
+> **The narrower measurement.** Calendar, WhatsApp, and Memory MCP authorization, credentials,
+> sessions, and data selection are already bound to the authenticated identity, as proven by
+> Amendment #147's concurrent two-subject closure. `aura.mcp_server` is the operator's
+> deployment-wide server catalog, not a tenant data store, and its web mutations are already
+> behind `governance.write`. `aura.settings` is likewise deployment configuration: reads are behind
+> `governance.read`, writes behind `governance.write`, and secrets are redacted. The scheduler's
+> model-facing `task` store derives the caller from `identityctx` and applies `identity_id` to
+> create, list, cancel, run-now, and approve; only the governance board is deployment-global, behind
+> `governance.read/write`. An identity explicitly granted `governance.write` is an administrator
+> trusted to mutate these shared control-plane resources; ordinary `agent.run` users are not.
+>
+> Source inspection found one real authorization mismatch: the model-facing `skill_manage` tool
+> writes the process-wide active skill roots but checks no administrator capability. Its gateway
+> risk classification controls approval behavior, not tenant authority, so an ordinary identity
+> with `agent.run` could otherwise create, update, install, archive, restore, or delete skills seen
+> by other users.
+>
+> **Targeted contract.** The shared skill library remains an operator-managed catalog and remains
+> readable/applicable by authenticated users. Every `skill_manage` execution requires the caller's
+> authenticated identity to hold `governance.write` in the live identity store before arguments are
+> dispatched or any writer seam is reached. A missing identity, missing capability checker,
+> capability-store error, or denied grant fails closed. The pool-free manifest path may still expose
+> the tool specification, but cannot execute it. The seeded operator continues to pass through its
+> wildcard grant; an ordinary multi-user principal remains able to run agents and use approved
+> shared skills without being able to mutate that catalog.
+>
+> **Closure proof.** Automated tests must prove allow, deny, missing-principal, missing-checker, and
+> checker-error branches and prove denied execution never reaches the skill writer. Composition tests
+> must prove the live registry retains and wires the exact `skill_manage` instance to the identity
+> capability store. Existing strict-profile config tests must continue accepting
+> `AURA_MUSR_ISOLATION=true`; no active-user-count boot gate may remain. The multi-user rollout
+> runbook and codebase concern must document this data-plane/control-plane distinction rather than a
+> global feature disable.
+>
+> **What this correction does NOT claim.** It does not make shared catalogs per-user, and it does not
+> prevent a deliberately authorized administrator from changing deployment-wide behavior. It does
+> not weaken MCP subject isolation or the scheduler owner predicates. It closes the ordinary-user
+> cross-tenant mutation path while preserving the multi-user feature the existing isolation work was
+> built to provide.
