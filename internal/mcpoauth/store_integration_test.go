@@ -373,3 +373,44 @@ func grantCreatedAt(t *testing.T, pool *pgxpool.Pool, identityID, server string)
 	})
 	return at
 }
+
+// OwnerOf is what boot uses to find a mount's identity; OwnersOf is what Aura's own
+// sidecars use, where several owners are normal. Both resolve through RLS, one identity
+// at a time, so only a live engine proves they see what they are supposed to.
+func TestGrantStoreResolvesOwnersThroughRLS(t *testing.T) {
+	pool := migratedOAuthPool(t)
+	store := oauthStore(t, pool)
+	first, second, none := seedOAuthIdentity(t, pool), seedOAuthIdentity(t, pool), seedOAuthIdentity(t, pool)
+	candidates := []string{first, second, none}
+
+	if _, err := store.OwnersOf(context.Background(), "memory", candidates); !errors.Is(err, ErrNoGrant) {
+		t.Fatalf("OwnersOf with no grants = %v, want ErrNoGrant", err)
+	}
+	if _, err := store.OwnerOf(context.Background(), "memory", candidates); !errors.Is(err, ErrNoGrant) {
+		t.Fatalf("OwnerOf with no grants = %v, want ErrNoGrant", err)
+	}
+
+	grant := Grant{ServerName: "memory", ResourceURL: "http://127.0.0.1:8096/mcp/", AccessToken: "a-" + uuid.NewString()}
+	if err := store.Save(identityctx.WithIdentityID(context.Background(), first), grant); err != nil {
+		t.Fatalf("Save first: %v", err)
+	}
+	owner, err := store.OwnerOf(context.Background(), "memory", candidates)
+	if err != nil || owner != first {
+		t.Fatalf("OwnerOf = (%q, %v), want (%q, nil)", owner, err, first)
+	}
+
+	grant.AccessToken = "b-" + uuid.NewString()
+	if err := store.Save(identityctx.WithIdentityID(context.Background(), second), grant); err != nil {
+		t.Fatalf("Save second: %v", err)
+	}
+	owners, err := store.OwnersOf(context.Background(), "memory", candidates)
+	if err != nil {
+		t.Fatalf("OwnersOf: %v", err)
+	}
+	if len(owners) != 2 || owners[0] != first || owners[1] != second {
+		t.Fatalf("OwnersOf = %v, want [%s %s] in candidate order", owners, first, second)
+	}
+	if _, err := store.OwnerOf(context.Background(), "memory", candidates); !errors.Is(err, ErrAmbiguousOwner) {
+		t.Fatalf("OwnerOf with two owners = %v, want ErrAmbiguousOwner", err)
+	}
+}

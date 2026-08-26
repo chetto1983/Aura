@@ -61,6 +61,21 @@ func newOAuthServer(publicURL string, tokens *mcpTokenPlugin, validator *Validat
 	}, nil
 }
 
+// mcpTokenClaims is the ONE claim shape every Aura-issued MCP access token carries, and
+// the reason it is a function rather than a literal in each caller: the browser exchange
+// and the first-party self-issuance mint tokens for the same three resource servers, and
+// those servers validate iss, aud, scope and sub exactly. A claim that drifted in one
+// path would be a token the sidecar silently refuses, diagnosed as a transport fault.
+//
+// subject lands in mcp_subject, which subjectTokenService promotes to the standard `sub`
+// — the only tenant selector the resource servers read (Amendment #147).
+func mcpTokenClaims(resource, scope, clientID, subject string) map[string]any {
+	return map[string]any{
+		"iss": mcp.AuraAuthorizationServerIssuer, "aud": resource, "scope": scope,
+		"client_id": clientID, mcpSubjectClaim: subject,
+	}
+}
+
 func (s *OAuthServer) authorizationEndpoint() string {
 	if s.publicURL != "" {
 		return s.publicURL + "/oauth/authorize"

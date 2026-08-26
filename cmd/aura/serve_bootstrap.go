@@ -33,7 +33,20 @@ type bootstrapProvider interface {
 	OperatorUserID(context.Context) (string, error)
 }
 
-func wireBootstrapService(server bootstrapServer, pool *pgxpool.Pool, provider bootstrapProvider, memory agui.MemoryProvisioner) bool {
+// firstPartyGrantProvisioner mints the identity-scoped grants for the MCP sidecars Aura
+// ships. It is OPTIONAL, unlike every other dependency here: a deployment can lack the
+// authorization server that issues them and must still be able to create its operator.
+type firstPartyGrantProvisioner interface {
+	EnsureIdentity(ctx context.Context, identityID string) error
+}
+
+func wireBootstrapService(
+	server bootstrapServer,
+	pool *pgxpool.Pool,
+	provider bootstrapProvider,
+	memory agui.MemoryProvisioner,
+	grants firstPartyGrantProvisioner,
+) bool {
 	if isNilBootstrapDependency(server) || pool == nil || isNilBootstrapDependency(provider) || isNilBootstrapDependency(memory) {
 		return false
 	}
@@ -41,11 +54,15 @@ func wireBootstrapService(server bootstrapServer, pool *pgxpool.Pool, provider b
 	if core == nil {
 		return false
 	}
+	if isNilBootstrapDependency(grants) {
+		grants = nil
+	}
 	server.SetBootstrapService(&firstOperatorBootstrapService{
 		authula:        authulaCoreAdapter{core: core},
 		operator:       provider,
 		pool:           pool,
 		memory:         memory,
+		grants:         grants,
 		identityDelete: auraLegAdapter{pool: pool},
 	})
 	return true
@@ -70,6 +87,7 @@ type firstOperatorBootstrapService struct {
 	operator       bootstrapProvider
 	pool           *pgxpool.Pool
 	memory         agui.MemoryProvisioner
+	grants         firstPartyGrantProvisioner
 	identityDelete agui.IdentityDeleter
 }
 
@@ -80,6 +98,12 @@ func (s *firstOperatorBootstrapService) provisionTenantMemory(
 ) error {
 	if s.memory == nil || s.identityDelete == nil {
 		return errors.New("bootstrap memory provisioning unavailable")
+	}
+	if err := s.provisionFirstPartyGrants(ctx, identityID); err != nil {
+		// Deliberately not fatal, and deliberately not silent. The identity is real and
+		// usable without its sidecar grants; the boot keeper re-mints them on its next
+		// pass. Rolling the whole operator back over a token would be the worse answer.
+		slog.Warn("aura serve: bootstrap first-party MCP grants", "err", err)
 	}
 	if err := s.memory.ProvisionMemory(ctx, identityID); err != nil {
 		cctx := context.WithoutCancel(ctx)
@@ -95,6 +119,16 @@ func (s *firstOperatorBootstrapService) provisionTenantMemory(
 		return err
 	}
 	return nil
+}
+
+// provisionFirstPartyGrants mints this identity's grants for the MCP sidecars Aura ships,
+// so its memory answers on the first turn instead of after the next restart. A deployment
+// with no authorization server wired has nothing to do here.
+func (s *firstOperatorBootstrapService) provisionFirstPartyGrants(ctx context.Context, identityID string) error {
+	if s.grants == nil {
+		return nil
+	}
+	return s.grants.EnsureIdentity(ctx, identityID)
 }
 
 func (s *firstOperatorBootstrapService) CreateFirstOperator(ctx context.Context, req agui.BootstrapCreateRequest) (agui.BootstrapCreateResponse, error) {

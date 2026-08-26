@@ -16,6 +16,7 @@ import (
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
+	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 	"github.com/chetto1983/aura/internal/mcpoauth"
 )
 
@@ -282,7 +283,7 @@ func mcpOwnerContext(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 			candidates = append(candidates, id.ID)
 		}
 	}
-	owner, err := store.OwnerOf(ctx, name, candidates)
+	owner, err := mcpGrantOwner(ctx, store, name, server, candidates)
 	if err != nil {
 		if !errors.Is(err, mcpoauth.ErrNoGrant) {
 			slog.Warn("mcp oauth: could not resolve the grant owner", "server", name, "err", err)
@@ -297,4 +298,37 @@ func mcpOwnerContext(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 	// calendar spent 40 retries on it for a server that has no authorization to do.
 	slog.Info("mcp oauth: mounting with a stored grant", "server", name, "identity", owner)
 	return identityctx.WithIdentityID(ctx, owner)
+}
+
+// mcpGrantOwnerStore is the grant store narrowed to the two owner lookups, so the
+// first-party branch below is provable without a live Postgres.
+type mcpGrantOwnerStore interface {
+	OwnerOf(ctx context.Context, serverName string, candidates []string) (string, error)
+	OwnersOf(ctx context.Context, serverName string, candidates []string) ([]string, error)
+}
+
+// mcpGrantOwner picks the identity whose stored grant opens this server's process-wide
+// mount.
+//
+// For anything Aura does not own, that identity must be unique: OwnerOf refuses two
+// owners rather than hand one person's tools the other person's token.
+//
+// For Aura's OWN sidecars every identity is meant to hold a grant — the token subject IS
+// the memory/calendar/WhatsApp tenant — and the boot mount only reads the tool SCHEMA,
+// which is the same for all of them. Each caller's tools then run on that caller's own
+// session (identitySessionPool), and IdentityBindingMiddleware rejects a call arriving on
+// somebody else's. So the pick here is deliberately the FIRST candidate: ListIdentities
+// orders by created_at, so it is the deployment's oldest identity, and it is stable
+// across boots. Without this, enrolling a second person would silently unmount memory,
+// calendar and WhatsApp for everyone — the same "not mounted" failure this whole path
+// exists to prevent.
+func mcpGrantOwner(ctx context.Context, store mcpGrantOwnerStore, name string, server mcp.ManagedServer, candidates []string) (string, error) {
+	if !mcpmanager.FirstPartyRecipe(server) {
+		return store.OwnerOf(ctx, name, candidates)
+	}
+	owners, err := store.OwnersOf(ctx, name, candidates)
+	if err != nil {
+		return "", err
+	}
+	return owners[0], nil
 }

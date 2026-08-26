@@ -70,7 +70,7 @@ func TestWireBootstrapServiceRequiresPoolAndAuthulaProvider(t *testing.T) {
 	provider := fakeBootstrapProvider{core: &authulaservices.CoreServices{}}
 	memory := &fakeBootstrapMemory{}
 
-	if !wireBootstrapService(server, pool, provider, memory) {
+	if !wireBootstrapService(server, pool, provider, memory, nil) {
 		t.Fatal("wireBootstrapService returned false with pool and Authula provider")
 	}
 	if server.service == nil {
@@ -90,7 +90,7 @@ func TestWireBootstrapServiceRequiresPoolAndAuthulaProvider(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := &fakeBootstrapServer{}
-			if wireBootstrapService(server, tc.pool, tc.provider, tc.memory) {
+			if wireBootstrapService(server, tc.pool, tc.provider, tc.memory, nil) {
 				t.Fatal("wireBootstrapService returned true for incomplete dependencies")
 			}
 			if server.service != nil {
@@ -105,7 +105,7 @@ func TestWireBootstrapServiceTreatsTypedNilProviderAsMissing(t *testing.T) {
 	pool := &pgxpool.Pool{}
 	var provider *panicBootstrapProvider
 
-	if wireBootstrapService(server, pool, provider, &fakeBootstrapMemory{}) {
+	if wireBootstrapService(server, pool, provider, &fakeBootstrapMemory{}, nil) {
 		t.Fatal("wireBootstrapService returned true for typed nil provider")
 	}
 	if server.service != nil {
@@ -141,4 +141,67 @@ func (*panicBootstrapProvider) CoreServices() *authulaservices.CoreServices {
 
 func (*panicBootstrapProvider) OperatorUserID(context.Context) (string, error) {
 	panic("typed nil provider should be treated as missing")
+}
+
+type fakeFirstPartyGrants struct {
+	provisioned []string
+	err         error
+}
+
+func (f *fakeFirstPartyGrants) EnsureIdentity(_ context.Context, identityID string) error {
+	f.provisioned = append(f.provisioned, identityID)
+	return f.err
+}
+
+func TestBootstrapProvisionsFirstPartyGrantsBesideTheMemoryTenant(t *testing.T) {
+	const identityID = "44444444-4444-4444-8444-444444444444"
+	memory := &fakeBootstrapMemory{}
+	grants := &fakeFirstPartyGrants{}
+	service := &firstOperatorBootstrapService{
+		memory: memory, grants: grants, identityDelete: &fakeBootstrapIdentityDeleter{},
+	}
+
+	if err := service.provisionTenantMemory(context.Background(), "operator@example.test", identityID, nil); err != nil {
+		t.Fatalf("provisionTenantMemory: %v", err)
+	}
+	if len(grants.provisioned) != 1 || grants.provisioned[0] != identityID {
+		t.Fatalf("granted identities=%v, want [%s]", grants.provisioned, identityID)
+	}
+	if len(memory.provisioned) != 1 {
+		t.Fatalf("memory provisioning=%v, want the tenant to be created too", memory.provisioned)
+	}
+}
+
+// A grant is recoverable on the next keeper pass; an operator rolled back over one is not.
+func TestBootstrapSurvivesAFirstPartyGrantFailure(t *testing.T) {
+	const identityID = "44444444-4444-4444-8444-444444444444"
+	memory := &fakeBootstrapMemory{}
+	identities := &fakeBootstrapIdentityDeleter{}
+	service := &firstOperatorBootstrapService{
+		memory: memory, grants: &fakeFirstPartyGrants{err: errors.New("injected: no authorization server")},
+		identityDelete: identities,
+	}
+
+	if err := service.provisionTenantMemory(context.Background(), "operator@example.test", identityID, nil); err != nil {
+		t.Fatalf("provisionTenantMemory: %v", err)
+	}
+	if len(memory.provisioned) != 1 || len(memory.purged) != 0 || len(identities.deleted) != 0 {
+		t.Fatal("a first-party grant failure must not compensate the identity away")
+	}
+}
+
+func TestBootstrapWithoutAGrantProvisionerStillProvisionsMemory(t *testing.T) {
+	server := &fakeBootstrapServer{}
+	var absent *firstPartyGrantKeeper
+	if !wireBootstrapService(server, &pgxpool.Pool{}, fakeBootstrapProvider{core: &authulaservices.CoreServices{}}, &fakeBootstrapMemory{}, absent) {
+		t.Fatal("a typed-nil grant provisioner must not disable bootstrap")
+	}
+	memory := &fakeBootstrapMemory{}
+	service := &firstOperatorBootstrapService{memory: memory, identityDelete: &fakeBootstrapIdentityDeleter{}}
+	if err := service.provisionTenantMemory(context.Background(), "operator@example.test", "44444444-4444-4444-8444-444444444444", nil); err != nil {
+		t.Fatalf("provisionTenantMemory: %v", err)
+	}
+	if len(memory.provisioned) != 1 {
+		t.Fatalf("memory provisioning=%v, want one tenant", memory.provisioned)
+	}
 }

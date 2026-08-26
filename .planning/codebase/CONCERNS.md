@@ -7,7 +7,7 @@ last_audited_commit: 3ab589ee6e2302e7bf3ff865e0083a4f7475b63e
 
 **Analysis Date:** 2026-08-26
 
-**Audit refresh:** Amendment #149's measured correction separated tenant data from
+**Audit refresh:** Amendment #150's measured correction separated tenant data from
 administrator control planes and closed the shared-skill mutation path; this is not a new
 codebase map. Historical closed entries are retained where they explain a ratified boundary.
 
