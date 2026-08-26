@@ -8188,3 +8188,93 @@ flusso completo, che funziona.
 > two-user re-opening test. It does not delete, deactivate, or rewrite any existing identity;
 > an operator whose database already contains multiple active users must resolve that state
 > deliberately rather than having boot mutate identity data.
+
+## §Aura mints its own sidecars' MCP grants (Amendment #149, 2026-08-26)
+
+> **Amendment #149 (2026-08-26 — measured correction to Amendment #147's closure claim).**
+>
+> **The measurement.** Amendment #147 recorded that fresh production doctors opened
+> Calendar, Memory and WhatsApp "without `aura mcp login`". On the live deployment that was
+> not true of the DAEMON. Boot deferred all five OAuth servers; after the listener bound,
+> `liveMCPMount.StartReconnect` resolved each one's owner from `aura.identity_mcp_oauth` and
+> silently skipped every server nobody held a grant for. Linear and Notion mounted because a
+> human had once completed their browser consent; Calendar, Memory and WhatsApp held no
+> grant, so the container stayed `unhealthy` with
+> `agui: readiness probe failed probe=memory error="required memory capability is not
+> mounted"` on every boot, forever. Amendment #147 made the three built-ins OAuth resource
+> servers isolated by token subject without giving them any way to obtain a token: the only
+> issuance path was `AuthorizationHandler`, which needs a human at a consent screen.
+>
+> **Why a consent screen is the wrong instrument here.** There is no third party to
+> authorize. The resource server is a process this same deployment launched, provisions and
+> owns. What the OAuth surface buys for a first-party server is the per-identity SUBJECT —
+> the tenancy boundary Amendment #147 introduced — and that survives self-issuance intact,
+> because the subject minted is one concrete identity and nothing else.
+>
+> **Contract.** Aura self-issues an access token for a first-party MCP resource server,
+> through the SAME `mcpTokenPlugin` and the SAME claim shape as the browser code exchange
+> (one shared `mcpTokenClaims`, so the two paths cannot drift into tokens the sidecars
+> validate differently). "First-party" is a positive predicate against the shipped catalog:
+> the server's `source` AND its resolved `url` must both match a `BuiltInCatalog` recipe.
+> The name alone would break under `aura mcp install memory mymem`; the source alone would
+> let a hand-edited `servers.json` entry borrow `recipe:calendar` and point anywhere.
+> `aura mcp add` cannot reach it at all — it hard-codes `source: "manual"`. A second,
+> independent gate sits at the issuer: `allowedMCPResource`, the same allow-list the
+> authorization endpoint enforces. Grants are minted per identity for every non-deactivated
+> `kind=user` row (the filter `reconcileArcadeMemoryTenants` already uses — a `service`
+> identity such as `aura-cli` has no sidecar data and receives nothing), at identity
+> creation beside the ArcadeDB tenant, and reconciled at boot BEFORE `StartReconnect`
+> resolves owners.
+>
+> **A self-issued grant carries NO refresh token, and that is a measurement.** The first
+> live boot refused all three with
+> `insert or update on table "refresh_tokens" violates foreign key constraint
+> "fk_refresh_tokens_session" (23503)`: `authula.refresh_tokens.session_id REFERENCES
+> authula.sessions(id)`, so a refresh token can only exist behind a real login session. Aura
+> must not borrow one — a cockpit session would tie the agent's memory to a person's browser
+> and kill it at logout. Since an Aura access token lives 15 minutes (Authula's JWT plugin
+> default, measured: minted 15:32:48, expiring 15:47:48), a one-shot mint would restore
+> memory for a quarter of an hour and lose it again. The issuer therefore RE-MINTS on a
+> keeper loop — every 5 minutes, replacing any grant with 7 minutes or less left — and the
+> live mount adopts the new token without a remount, because `persistingTokenSource` re-reads
+> the stored grant before every call. The stored `token_endpoint` stays in the grant's client
+> blob regardless: `restoreTokenSource` refuses a grant without one and would downgrade the
+> mount to a browser prompt nobody is at.
+>
+> **A first-party mount tolerates several grant owners.** `Store.OwnerOf` refuses a server
+> two identities have authorized, which is right for a remote provider and wrong for a
+> sidecar Aura ships: there every identity is MEANT to hold its own grant, while the
+> process-wide mount only reads the tool schema and each caller's tools then run on that
+> caller's own session (`identitySessionPool`, guarded by `IdentityBindingMiddleware`).
+> `Store.OwnersOf` returns every owner and the first-party mount takes the first candidate,
+> which is stable across boots because `ListIdentities` orders by `created_at`. This is
+> groundwork for the MCP plane Amendment #148 names as a precondition for re-opening
+> multi-user provisioning; under #148 boot refuses more than one active `kind=user` identity,
+> so the multi-owner case is not reachable at runtime today.
+>
+> **Closure evidence (2026-08-26, live stack).** With the three grants deleted from Postgres
+> so the daemon booted in the genuinely broken state: all three were self-issued at 15:32:48
+> and mounted (calendar 1 tool, memory 4, whatsapp 15) alongside linear 55 and notion 28; the
+> last `required memory capability is not mounted` probe failure is the one three seconds
+> BEFORE the mount landed and there are none after; `docker inspect aura` reported `healthy`
+> and `/readyz` `{"status":"ready"}`; `aura mcp authorizations` listed all five. The keeper
+> renewed at 15:42:48 exactly one tick inside the window, and readiness stayed green across
+> the original 15:47:48 expiry with zero token-refresh warnings — so the live token source
+> adopted the renewed grant. A real authenticated cockpit turn then wrote and read a fact
+> back through `memory__memory_upsert_fact` and `memory__memory_recall`, and ground truth in
+> ArcadeDB confirms the operator's own tenant database `mem_b130c94d_…` is the one whose
+> `FACT_0` and `Entity_0` buckets were written, at 15:50:33. Gates: `go vet ./...`,
+> `go build ./...`, WSL `go test -race` on `internal/webauth`, `internal/mcpoauth`,
+> `internal/mcp/...` and `cmd/aura` all green; `golangci-lint` 0 issues; the owned-surface
+> coverage gate measured **27307/31825 = 85.8%** on the disposable `db_integration` matrix.
+>
+> **What this closure does NOT prove.** It does not prove the multi-owner mount branch on a
+> live database with two active users — the deployment has one, and Amendment #148 now
+> refuses to boot with more. It does not prove that a self-issued grant survives a keeper
+> outage: if the loop stops, the access token dies within 15 minutes and every first-party
+> tool call fails until the next successful pass (it does self-heal, because the store reload
+> runs before every call). It does not prove the Calendar or WhatsApp TOOL surfaces
+> end-to-end — only that both mounted with the expected tool counts and that the Memory
+> surface answers a real agent. And it does not re-measure any per-package figure in
+> `docs/aura-quality-snapshot.md`; the 85.8% above is the aggregate, recorded here so the
+> phase-close snapshot update has a real number to cite.
