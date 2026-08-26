@@ -1112,7 +1112,6 @@ jobs:
       CI: "true"
       AURA_WHATSAPP_MCP_IMAGE: ghcr.io/chetto1983/whatsapp-mcp:sha-a463da5@sha256:006602da0893ada0eb80c812384032e262c1c7f0642866bf194041078e86130f
       AURA_WHATSAPP_MCP_URL: http://127.0.0.1:18092/mcp
-      AURA_WHATSAPP_STORE_ROOT: ${{ runner.temp }}/aura-whatsapp-store
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -1122,6 +1121,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Set WhatsApp store path
+        run: echo "AURA_WHATSAPP_STORE_ROOT=$RUNNER_TEMP/aura-whatsapp-store" >> "$GITHUB_ENV"
 
       - name: Compile the whatsapp_integration tier
         run: go vet -tags whatsapp_integration ./internal/mcp/
