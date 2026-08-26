@@ -869,10 +869,20 @@ services:
       WHATSAPP_GATEWAY_PORT: "8094"
       WHATSAPP_API_URL: http://127.0.0.1:8094/api
       # The multi-tenant image (sha-a463da5) converts the pre-existing SINGLETON
-      # store into a tenant-scoped one on first boot and fails closed without
+      # store into a tenant-scoped one on first boot and refuses to start without
       # this — it will not guess which identity owns an existing session.
       # Must be the aura.identities row that paired the session.
-      WHATSAPP_MIGRATION_TENANT_ID: ${AURA_WHATSAPP_MIGRATION_TENANT_ID:?AURA_WHATSAPP_MIGRATION_TENANT_ID required in .env}
+      #
+      # Empty default, NOT `:?required`. Compose interpolates the WHOLE file before it
+      # selects a service, so a required default here aborts every `docker compose`
+      # invocation on this stack — it did: 12 CI jobs whose only compose call is
+      # `up -d postgres` failed to parse the file (run 32990653742/32990653674).
+      # Satisfying it the other way would mean a fake UUID pasted into every job env
+      # block, asserting a WhatsApp session CI does not have. This is a per-deployment
+      # identity UUID, not an appliance secret, so the guard stays where it already
+      # lives and is already proven: the image raises at boot when an existing
+      # singleton store has no tenant. Same reasoning as aura-ingest above.
+      WHATSAPP_MIGRATION_TENANT_ID: ${AURA_WHATSAPP_MIGRATION_TENANT_ID:-}
     volumes:
       - aura-whatsapp-session:/app/whatsapp-bridge/store
     healthcheck:
