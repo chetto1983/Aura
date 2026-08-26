@@ -1,6 +1,7 @@
 package steer
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -254,4 +255,100 @@ func TestInboxConcurrentPushDrain(t *testing.T) {
 			t.Errorf("message %q was pushed but never drained", text)
 		}
 	}
+}
+
+// TestNewResolvesNonPositiveCapsToPackageDefaults pins New's <=0 -> default
+// fallback (52-08 mutation spot-check: every existing test in this file passes
+// an explicit non-zero Config, leaving New's own boundary branch and the exact
+// defaultMax/defaultMaxBytes values unexercised — go-mutesting's live run
+// against this file surfaced 12 surviving mutants, all inside this branch).
+// Config{} (the Go zero value) exercises the <=0 path for both fields at once.
+func TestNewResolvesNonPositiveCapsToPackageDefaults(t *testing.T) {
+	t.Run("zero Config resolves Max to exactly defaultMax", func(t *testing.T) {
+		inbox := New(Config{})
+		for i := range defaultMax {
+			if err := inbox.Push("c", "cockpit", fmt.Sprintf("m%d", i)); err != nil {
+				t.Fatalf("push %d/%d: %v", i+1, defaultMax, err)
+			}
+		}
+		if err := inbox.Push("c", "cockpit", "one too many"); !errors.Is(err, ErrQueueFull) {
+			t.Errorf("push past defaultMax(%d) = %v, want ErrQueueFull", defaultMax, err)
+		}
+	})
+
+	// literalDefaultMax/literalDefaultMaxBytes are HARDCODED, not read from the
+	// package constants: a symbolic reference to defaultMax/defaultMaxBytes gets
+	// mutated together with the production code under go-mutesting, so a test
+	// that only reads the symbol cannot distinguish 32 from 31/33 (the mutant
+	// changes both the production value and the test's own expectation in
+	// lock-step). Pinning the literal is what actually asserts "the default is
+	// 32", not merely "New is internally self-consistent".
+	const literalDefaultMax = 32
+	const literalDefaultMaxBytes = 32768
+
+	t.Run("zero Config resolves Max to the literal value 32", func(t *testing.T) {
+		inbox := New(Config{})
+		for i := range literalDefaultMax {
+			if err := inbox.Push("c", "cockpit", fmt.Sprintf("m%d", i)); err != nil {
+				t.Fatalf("push %d/%d: %v", i+1, literalDefaultMax, err)
+			}
+		}
+		if err := inbox.Push("c", "cockpit", "one too many"); !errors.Is(err, ErrQueueFull) {
+			t.Errorf("push past literal default %d = %v, want ErrQueueFull", literalDefaultMax, err)
+		}
+	})
+
+	t.Run("zero Config resolves MaxBytes to exactly defaultMaxBytes", func(t *testing.T) {
+		atCap := New(Config{})
+		if err := atCap.Push("c", "cockpit", strings.Repeat("a", defaultMaxBytes)); err != nil {
+			t.Errorf("push of exactly defaultMaxBytes(%d) bytes = %v, want nil", defaultMaxBytes, err)
+		}
+		overCap := New(Config{})
+		if err := overCap.Push("c", "cockpit", strings.Repeat("a", defaultMaxBytes+1)); !errors.Is(err, ErrTooLarge) {
+			t.Errorf("push of defaultMaxBytes+1(%d) bytes = %v, want ErrTooLarge", defaultMaxBytes+1, err)
+		}
+	})
+
+	t.Run("zero Config resolves MaxBytes to the literal value 32768", func(t *testing.T) {
+		atCap := New(Config{})
+		if err := atCap.Push("c", "cockpit", strings.Repeat("a", literalDefaultMaxBytes)); err != nil {
+			t.Errorf("push of exactly %d literal bytes = %v, want nil", literalDefaultMaxBytes, err)
+		}
+		overCap := New(Config{})
+		if err := overCap.Push("c", "cockpit", strings.Repeat("a", literalDefaultMaxBytes+1)); !errors.Is(err, ErrTooLarge) {
+			t.Errorf("push of %d literal+1 bytes = %v, want ErrTooLarge", literalDefaultMaxBytes+1, err)
+		}
+	})
+
+	t.Run("Max=1 is honoured verbatim, never silently widened to the default", func(t *testing.T) {
+		inbox := New(Config{Max: 1, MaxBytes: 64})
+		if err := inbox.Push("c", "cockpit", "first"); err != nil {
+			t.Fatalf("first push with Max=1: %v", err)
+		}
+		if err := inbox.Push("c", "cockpit", "second"); !errors.Is(err, ErrQueueFull) {
+			t.Errorf("second push with Max=1 = %v, want ErrQueueFull (Max must stay 1, not fall back to default)", err)
+		}
+	})
+
+	t.Run("MaxBytes=1 is honoured verbatim, never silently widened to the default", func(t *testing.T) {
+		inbox := New(Config{Max: 4, MaxBytes: 1})
+		if err := inbox.Push("c", "cockpit", "a"); err != nil {
+			t.Fatalf("1-byte push with MaxBytes=1: %v", err)
+		}
+		if err := inbox.Push("c", "cockpit", "ab"); !errors.Is(err, ErrTooLarge) {
+			t.Errorf("2-byte push with MaxBytes=1 = %v, want ErrTooLarge (MaxBytes must stay 1, not fall back to default)", err)
+		}
+	})
+
+	t.Run("negative caps also resolve to the package defaults, not merely <=0", func(t *testing.T) {
+		inbox := New(Config{Max: -5, MaxBytes: -5})
+		for i := range defaultMax {
+			if err := inbox.Push("c", "cockpit", fmt.Sprintf("m%d", i)); err != nil {
+				t.Fatalf("push %d/%d with negative Max: %v", i+1, defaultMax, err)
+			}
+		}
+		if err := inbox.Push("c", "cockpit", "one too many"); !errors.Is(err, ErrQueueFull) {
+			t.Errorf("push past defaultMax with negative Max input = %v, want ErrQueueFull", err)
+		}
+	})
 }
