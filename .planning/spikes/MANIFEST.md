@@ -87,6 +87,24 @@ armchair. Full decision record: `.planning/phases/51-durable-delegation/51-CONTE
   honest now, but they say a call ENDED; staleness needs to know a worker is still ALIVE
   part-way through one. LibreChat fires `recordActivity` per emitted chunk, not per finished
   tool call, so the tick belongs in `runChild`'s event loop (`swarm.go:185`).
+- **The substrate already exists: generalize `aura.ingestion_jobs`** (spike 100, measured).
+  Its claim predicate handles all three of D-01's failure modes correctly — it re-claims a
+  `running` row whose lease expired, refuses one at `attempt_count = max_attempts`, and
+  leaves a live lease alone — and a daemon restart needs no recovery path because that same
+  steady-state claim IS the recovery. `job_type` is already the discriminator; the file calls
+  itself "The GENERIC asset queue" and has already survived one de-specialization (0098).
+- **The delegation's intent is already durable; only the "this is owed" row is missing**
+  (spike 100, SIGKILL two seconds into a live four-worker fan-out). What survived: the
+  `swarm_spawn` `start` row carrying the FULL goals in `args_raw`. What did not: any worker
+  row, any queue row, any terminal frame for the client — the stream simply truncates
+  mid-sentence with neither `RUN_FINISHED` nor `RUN_ERROR`.
+- **The two references disagree on durability, and LibreChat is the one that persists less**
+  (spike 100 research). hermes keeps a durable SQLite delegation ledger with restart
+  recovery; LibreChat keeps NOTHING for a failed non-paused turn — `LazyMongoSaver` persists
+  only checkpoints carrying a resumable pending write, so *"an errored turn still leaves
+  NOTHING durable (0 checkpoints, 0 write rows)"*. It makes durable exactly one thing: a
+  pause somebody is expected to come back to, rebuilt by SEEDING the new owner with the old
+  owner's whole state rather than reconciling.
 - **Reap on inactivity, not on age** (spike 099 research). LibreChat refreshes `lastActivity`
   on every emitted chunk so *"a long but live stream is never reaped"*; hermes leaves an
   advancing child alone forever. Aura caps total age and consumes no liveness signal, although
@@ -102,6 +120,7 @@ armchair. Full decision record: `.planning/phases/51-durable-delegation/51-CONTE
 |---|------|------|------|-----------|---------|------|
 | 098 | durable-delegation | steer-carries-worker-result | standard | Given a worker completion pushed into the steer inbox with a worker-attributed marker, when the parent turn reaches its next round boundary, then it lands in history without breaking role alternation or touching `history[0..2]`, and reads as spoken by a worker rather than by the operator | **PARTIAL** - rail validated, envelope invalidated: the model detects operator-envelope vs worker-payload mismatch and discounts the report as injection (3/3 live runs) | steer, delivery, kv-cache, attribution |
 | 099 | durable-delegation | worker-duration-and-progress | standard | Given a real fan-out on the live stack, when workers run to completion, then measured durations show whether a 120s wall-clock ceiling is survivable, and whether per-worker progress is observable enough to drive hermes-style staleness | **validated** - healthy workers finish in 5.15-7.80s against a 120s cap (23x margin, answers verified against ground truth); the cap fired once in three runs and caught an upstream stall, while the 70s lost worker passed under it; staleness cannot come from `tool_invocations` (workers log `start`, never `end`) and belongs in `runChild`'s event loop. Also found and fixed a live deterministic defect: a swarm worker could dispatch NO agent-scoped tool (4/4 workers, 100% denied `operation fingerprint mismatch`; re-measured at 0 denials); corrected the child cap from 120s nominal to 240s effective | swarm, timeout, observability, defect |
+| 100 | durable-delegation | durable-substrate-shape | standard | Given the three failure modes D-01 names — a worker dying mid-flight, a daemon restart, and delivery failing eight times — measured against the lease queue Aura already owns, then the substrate choice is decided by evidence rather than preference | **validated** - GENERALIZE `aura.ingestion_jobs`, do NOT create a delegation table: its claim predicate already handles all three scenarios correctly (measured), `job_type` is already the discriminator, a restart needs no recovery path because the lease expiry IS one, and a SIGKILL mid-fan-out showed the delegation's full intent is ALREADY durable in the `swarm_spawn` reservation's args — what is missing is a row saying the work is owed | substrate, durability, lease, crash-recovery, inventory |
 | 100a | durable-delegation | substrate-single-table | comparison | Given a delegation in flight, when the worker dies mid-flight / the daemon restarts / delivery fails 8 consecutive times, then the delegation is never silently lost and converges to a readable terminal state | PENDING | postgres, durability, lease |
 | 100b | durable-delegation | substrate-generalized-queue | comparison | The same question, generalizing the proven `aura.ingestion_jobs` lease engine instead of adding a new table | PENDING | postgres, durability, lease, reuse |
 | 101 | durable-delegation | message-channel-necessity | standard | Given the delegation ledger plus the steer rail, when a background delegation must return a result AND its worker must ask the operator, then either no agent-to-agent message channel is needed, or the spike names exactly what cannot be expressed without one | PENDING | scope, messaging |

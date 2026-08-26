@@ -1,0 +1,4 @@
+# Run artifacts stay local: signin.h / signin.json carry live session cookies and
+# each stream.sse is ~300KB of raw SSE. The README carries the evidence that
+# matters; re-run drive.sh to regenerate the rest.
+out/
