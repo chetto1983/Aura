@@ -8026,3 +8026,56 @@ flusso completo, che funziona.
 > consume Aura's identity envelope. Those are implementation and live-E2E obligations. This decision
 > also does not authorize replacing provider OAuth or WhatsApp pairing with a new bespoke authorization
 > server: inventory and reuse of the existing remote-MCP flow remain mandatory.
+
+## §The composer contract is a dedicated control, not an un-disabled Send (Amendment #146, 2026-08-26)
+
+> **Amendment #146 (2026-08-26, Phase 52/STEER-01, measured by 52-07's Step-1 requirement, before
+> the plan's own live E2E — corrects Amendment #142 correction 4's remaining imprecision).**
+>
+> **What this is.** #142 correction 4 established that D-10's composer contract is satisfied by
+> ROUTING a live-run submit to `POST /agent/runs/{runID}/steer` rather than by removing
+> `/agent/run`'s `ErrThreadBusy` 409 — correct as far as it went, but it did not say HOW the
+> operator's live-run submit reaches that route once "the cockpit already blocks the send
+> client-side" (the same sentence's own words). 52-07 was required to measure this as its literal
+> first step, against the INSTALLED `@assistant-ui/react` source rather than its docs, before
+> writing any composer code.
+>
+> **The measurement.** `node_modules/@assistant-ui/react`'s `useComposerSend` gates submission on
+> `!canSend || (isRunning && !capabilities.queue)`, and `createActionButton` ORs that native
+> `disabled` with the caller's own `disabled` prop. Aura's cockpit is built on the LEGACY
+> `useExternalStoreRuntime`, which does not implement `capabilities.queue` — the native queue
+> subsystem the library exposes for exactly this "type while running" case exists in the dependency
+> but is not reachable through the runtime shape Aura adopted (a hard architectural fact, not a
+> missing wiring call; adopting the native queue subsystem would be the architectural change D-10
+> already ruled out of this phase's scope). **Consequence, measured, not assumed: assistant-ui's own
+> `ComposerPrimitive.Send` stays disabled while a run is live, exactly as it was before this phase,
+> and nothing built in Phase 52 changes that.**
+>
+> ~~The composer contract is satisfied by the composer routing a live-run submit to `POST
+> /agent/runs/{runID}/steer`~~ **CORRECTED: the composer contract is satisfied by a SEPARATE,
+> DEDICATED "Redirect the current turn" control rendered beside Cancel in `Composer.tsx`, wired to
+> its own `useSteerSend` hook, which is the thing that POSTs `/agent/runs/{runID}/steer`. The
+> native Send stays gated and unused during a live run; the operator's typed text is submitted
+> through the new control, not through Send.** This is `ExternalStoreChat_steer.ts`'s
+> `useSteerSend` and `Composer.tsx`'s steer button (`52-07-SUMMARY.md`), and it is the shape the
+> measurement forced, not a discretionary choice among equivalent options.
+>
+> **What this means for STEER-01's own must-have wording.** 52-07-PLAN.md's own truth #1 —
+> "the operator can type into the composer and submit, and that submission becomes a steer — the
+> input is not dead and the send is not disabled" — is corrected by this same measurement: **the
+> INPUT (the textarea) is not dead, and the SUBMISSION of that text does become a steer, but it does
+> not happen via the native Send control, which stays disabled by construction.** The operator
+> submits via the dedicated Redirect control instead. Read literally against the ORIGINAL wording,
+> "the send is not disabled" is unmet; read against what the wording was FOR — a live redirect that
+> reaches the agent, not a specific button's enabled state — it is met, by the dedicated control.
+> This amendment exists so a future verifier reads the ORIGINAL wording as superseded by this
+> measurement, not as an unmet must-have discovered by surprise.
+>
+> **What this correction does NOT prove.** It does not prove the dedicated control is discoverable
+> or intuitive to an operator who has not read this amendment — that is a UX judgment call, not a
+> measured fact, and it is exactly the kind of claim the live cockpit E2E (52-08) exists to put in
+> front of a human rather than assert here. It does not prove `capabilities.queue` could not be
+> adopted later to un-disable the native Send; it only proves it is NOT what 52-07 built, and that
+> adopting it would be the architectural change D-10 deferred. It does not reopen any other part of
+> Amendment #142 correction 4, which stands: the 409 was never what the operator hit, and it stays
+> unreached, not removed.
