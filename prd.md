@@ -8446,3 +8446,52 @@ flusso completo, che funziona.
 > that did not execute. A non-regression baseline is containment of known debt, not debt
 > repayment. The report therefore preserves both the measured baseline and the 85% target
 > until focused test work closes each remaining deficit.
+
+## §Compaction fails visibly and shares the measured LLM budgets (Amendment #153, 2026-08-26)
+
+> **Amendment #153 (2026-08-26 — measured closure contract for the long-history
+> compaction concern, before implementation).**
+>
+> **The measurement.** Aura currently wraps every summary call in a private, hard-coded
+> three-minute deadline while the same deployment already defines a 120-second configurable
+> LLM total-call budget (`AURA_LLM_TOTAL_TIMEOUT_SEC`) and a 60-second configurable stream-idle
+> watchdog (`AURA_LLM_STREAM_IDLE_TIMEOUT_SEC`). The early trigger subtracts the rendered tool
+> manifest from its percentage budget; when that fixed overhead consumes the entire allowance,
+> `earlyCompactionTokens` returns zero and turns an enabled feature off without a boot error.
+> Finally, a failed or unusable summary falls through to the same `hard_drop_pairs` audit action
+> used when no summarizer was attempted, so the cockpit cannot distinguish planned deterministic
+> reduction from degraded LLM compaction.
+>
+> LibreChat agents commit `6e7632cc33c2` reserves prompt headroom, reports an impossible
+> instruction budget, propagates the caller's abort signal, emits summarization lifecycle errors,
+> and preserves overflow history when fallback text would destroy it. Hermes commit
+> `68518c1f9bca` uses separate progress-idle and absolute budgets, cancels before commit, preserves
+> the original messages on timeout, and emits an explicit failure notice. Both precedents reject
+> Aura's invisible state; Aura already owns the equivalent two timeout layers, so a third private
+> wall-clock knob would add disagreement rather than control.
+>
+> **Contract.** L2.4 compaction uses the deployment's positive LLM total-call timeout as its
+> absolute deadline and the existing transport stream-idle watchdog as its progress/stall bound.
+> The private three-minute constant is removed. Cancellation remains synchronous and inherited
+> from the turn; Aura has no detached summary worker and therefore no late commit path to fence.
+> When compaction and an early trigger in `(0,100)` are enabled, production boot computes the
+> trigger after the actual rendered manifest overhead and fails with an actionable error if the
+> remaining history allowance is not positive. Explicit trigger values `0` and `100` retain their
+> documented disabled semantics.
+>
+> If an actual LLM compaction attempt errors, returns no usable summary, or produces a summary
+> that still exceeds the cap, and L2.5 consequently drops pairs, the existing rot-event row uses
+> the stable action `compaction_failed_hard_drop`. A deterministic L2.5 drop for which compaction
+> was disabled or had no compactable history remains `hard_drop_pairs`. The existing rot-events
+> API and cockpit projection expose that distinction without a schema migration.
+>
+> **Closure proof.** Focused tests must prove that the configured LLM total timeout reaches the
+> summarizer context, an enabled-but-unreachable trigger is rejected with its window/overhead
+> evidence, failed and oversized summaries write `compaction_failed_hard_drop`, and a nil
+> summarizer still writes `hard_drop_pairs`. The codebase concern closes only when the production
+> composition root runs that validation before accepting chat traffic.
+>
+> **What this amendment does NOT claim.** It does not promise that every valid summary completes
+> within the default 120 seconds, add a retry loop, or remove the deterministic L2.5 safety net.
+> Latency tuning remains deployment configuration backed by observed provider behavior; failure
+> is bounded and visible, not converted into an unbounded turn.
