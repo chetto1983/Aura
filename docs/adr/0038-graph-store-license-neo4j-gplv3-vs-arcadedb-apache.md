@@ -1,14 +1,19 @@
 # ADR 0038 — Graph-store license posture: Neo4j Community (GPLv3) now, ArcadeDB (Apache-2.0) as the appliance-distribution fallback
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR 0042's 2026-08-02 ArcadeDB backing-store amendment
 - **Date:** 2026-07-08
 - **Supersedes / relates to:** spike 068 (`ArcadeDB-vs-Neo4j` COMPARISON.md), spike 069
   (real-data vector parity), ADR 0037 (mini-PC appliance vs DGX-Spark tiering), the persistence
   section of `prd.md`, and `THIRD_PARTY_NOTICES.md`.
 - **Not legal advice:** this is an engineering decision record. The conveyance path in the
-  "shipped appliance" scenario (§Decision D-2) **requires legal sign-off before the first unit
-  ships**; the ADR records the engineering posture and the due-diligence items, not a legal
-  opinion.
+"shipped appliance" scenario (§Decision D-2) **requires legal sign-off before the first unit
+ships**; the ADR records the engineering posture and the due-diligence items, not a legal
+opinion.
+
+> **Historical decision record.** The active "stay on Neo4j Community" decision below no longer
+> describes the repository or deployment. Aura now uses one ArcadeDB database and credential per
+> identity, as recorded by ADR 0042. The licensing analysis is retained as history, not guidance
+> for the current stack.
 
 ---
 

@@ -1,5 +1,11 @@
 # Aura — handoff unico
 
+> **Archiviato il 2026-08-26.** Questo handoff fotografa il checkout del 2026-08-23 e non è più
+> una coda operativa. Le chiusure successive — approval policy/expiry, audit register, DR ArcadeDB,
+> produzione documentale e OAuth MCP — rendono obsolete diverse righe sotto. La fonte corrente per
+> i concern aperti è `.planning/codebase/CONCERNS.md`, auditata contro `3ab589ee6`. Il contenuto
+> seguente resta soltanto come evidenza storica e non deve essere usato per riaprire voci chiuse.
+
 **Aggiornato: 2026-08-23.** Sostituisce dodici handoff sparsi (`docs/superpowers/*-handoff.md`,
 `.planning/handoffs/*`, `docs/handoff-2026-08-13.md`), cancellati il 2026-08-13.
 

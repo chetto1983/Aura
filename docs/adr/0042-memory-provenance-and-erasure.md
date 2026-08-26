@@ -3,7 +3,8 @@
 - **Status:** Accepted
 - **Date:** 2026-07-31 · **Amended:** 2026-08-02 (backing store named below; see ADR 0038)
 - **Requirement:** OPS-06 / F-025
-- **Relates to:** `prd.md` Amendments #61, #62, #103, #106 · ADR 0038 (graph-store choice)
+- **Relates to:** `prd.md` Amendments #61, #62, #103, #106
+- **Supersedes:** ADR 0038's active Neo4j store choice; ADR 0038 remains a historical licensing record
 
 ## Context
 

@@ -1,10 +1,14 @@
 ---
 last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
+last_audited_commit: 3ab589ee6e2302e7bf3ff865e0083a4f7475b63e
 ---
 
 # Codebase Concerns
 
-**Analysis Date:** 2026-08-25
+**Analysis Date:** 2026-08-26
+
+**Audit refresh:** documentation-only reconciliation against `3ab589ee6`; this is not a new
+codebase map. Historical closed entries are retained where they explain a ratified boundary.
 
 ## Severity Summary
 
@@ -19,23 +23,22 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 | Shared settings, skills, and MCP catalog constrain safe multi-user operation | Medium | Mitigated by a strict-profile boot gate | `internal/config/config_validate.go`, `internal/db/migrations/0024_settings.up.sql` |
 | Coverage is one aggregate at 86.4%; daemon-gated tiers do not feed that floor | Medium | Open/self-documented | `scripts/coverage_gate.sh`, `.github/workflows/ci.yml`, `docs/aura-quality-snapshot.md` |
 | Long-history compaction can disable itself silently and uses an unmeasured three-minute timeout | Medium | Open | `internal/conversations/context_budget.go`, `internal/conversations/compaction.go` |
-| Calendar MCP admin token has a well-known code fallback not rejected by strict validation | Medium | Open/compose mitigated | `internal/config/config.go`, `cmd/aura/integrations_proxy.go`, `compose.yaml` |
+| Calendar MCP admin-token fallback was removed by identity-scoped OAuth | Medium | Closed 2026-08-26 | `internal/agui/connect_pim_api.go`, `cmd/aura/serve_agui.go`, `compose.yaml` |
 | Opt-in memory preload inserts recalled content into model-visible context with no dedicated poisoning threat model | Medium | Default off | `internal/runner/runner_context.go`, `internal/config/config.go` |
 | Test/evaluation evidence contains skipped, stale, flaky, or non-reproducible legs | Medium | Open | `scripts/agent_memory_eval.py`, `docs/aura-quality-snapshot.md`, `.planning/STATE.md` |
 
 ## Tech Debt
 
 **Deferred MCP manifest fixture no longer represents the mounted surface:**
-- Issue: `internal/agent/tools/testdata/deferred_manifest.json` contains 55 entries, including 14 raw calendar tools and 14 WhatsApp tools. The live calendar surface is curated to one multiplexed tool, while the fixture predates the current WhatsApp surface. `.planning/phases/46-mcp-trust-and-facade/46-09-SUMMARY.md` records the fixture repair as not done.
+- Issue: the fixture was manually refreshed after the original map and now contains 84 deferred entries: 55 Linear, 15 WhatsApp, 4 Memory, and 10 built-ins. It contains no Calendar entry even though the authorized production surface exposes the single curated `calendar__calendar` tool. The gate has 19 query cases and no Calendar case; it still has no production-builder generation path or pinned per-source counts.
 - Files: `internal/agent/tools/testdata/deferred_manifest.json`, `.planning/phases/46-mcp-trust-and-facade/46-09-SUMMARY.md`, `internal/agent/tools/search_gate_test.go`.
 - Impact: retrieval tests measure selection over a corpus that differs from the model's production manifest. A green search gate can therefore miss ranking regressions introduced by the current curated surface.
 - Fix approach: generate the fixture from the same mounted/curated manifest builder used in production, or update it atomically whenever curation changes and pin the expected source counts in a test.
 
-**Quality snapshot retains retired or unreproducible claims:**
-- Issue: `docs/aura-quality-snapshot.md` still describes Neo4j HNSW labels and migrations after that store was removed, while other rows reference deleted harnesses or manual corpora. `docs/HANDOFF.md` identifies the snippet-reuse, skills North-Star, document recall, and LOCOMO rows as needing retirement or a new reproducible harness.
+**Closed 2026-08-26 — quality snapshot distinguished historical rows from current gates:**
+- Resolution: the retired Neo4j HNSW baseline is explicitly historical and no longer claims a live migration-path gate. ADR 0038 is superseded as an active store choice, the removed Skills North-Star and snippet-reuse harnesses are explicitly retired, and the old machine-card document metric remains superseded rather than being quoted for the CocoIndex/ArcadeDB path. The 2026-08-23 handoff is explicitly archived instead of masquerading as a current work queue.
+- Boundary: the absence of a reproducible production document-retrieval baseline and the deliberately skipped LOCOMO/cross-lingual cases remain real evaluation gaps below. This closure removes stale claims; it does not manufacture replacement measurements.
 - Files: `docs/aura-quality-snapshot.md`, `docs/HANDOFF.md`, `docs/adr/0038-graph-store-license-neo4j-gplv3-vs-arcadedb-apache.md`, `docs/adr/0045-evaluation-corpora-licensing.md`.
-- Impact: future planning can treat historical numbers or dead commands as current gates. The HNSW section even points at deleted Neo4j paths as witnesses.
-- Fix approach: mark historical sections explicitly, retire rows whose capability or corpus is gone, and give every remaining row a command that runs against a permitted fixture.
 
 **Production document E2E contract has no runner — CLOSED 2026-08-25:**
 - Resolution: amendment #141 replaces the retired catalog/version/stage contract with the measured production path: per-identity Garage, CocoIndex reconciliation, the real extractor/embedder, per-identity ArcadeDB, native retrieval, and a real OpenRouter agent. The replacement keeps the existing `scripts/ingest_reconcile_e2e.sh`; no withdrawn runner name was restored.
@@ -54,11 +57,10 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 - Impact: uncommon OOXML variants, relationships, cell encodings, and workbook features become Aura-specific compatibility work.
 - Fix approach: inventory the installed/version-pinned library surface before replacing anything; either document measured reasons for retaining the parser or migrate behind the existing `filecard.Build` boundary with corpus parity tests.
 
-**Legacy staged user files sit outside the active sweeper:**
-- Issue: the current audit found two `aura-sendfile-*` directories under the run root from a removed code path. The active sweeper only owns `$AURA_RUN_DIR/tmp/`, and the legacy prefix no longer exists in source.
+**Closed 2026-08-26 — legacy staged user files were removed:**
+- Resolution: the two recorded `aura-sendfile-*` directories are absent from the run root. The retired prefix no longer exists in source; the active sweeper continues to own only `$AURA_RUN_DIR/tmp/` by design.
+- Evidence: `docs/audit/README.md` records the clean run root after operator-reviewed cleanup. No recurring leak was found, so no legacy-prefix deletion rule was added to the live sweeper.
 - Files: `docs/audit/README.md`, `internal/conversations/orphan_scan.go`, `internal/agent/tools/send_file.go`.
-- Impact: user content from the retired path remains indefinitely unless an operator removes it; this is retention debt, not a live recurring leak.
-- Fix approach: perform a one-time operator-reviewed cleanup of the exact recorded directories and add a migration/sweep rule only if more legacy prefixes are discovered.
 
 ## Known Bugs
 
@@ -82,7 +84,7 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 
 **Runner verification test is flaky under the full parallel gate:**
 - Symptoms: `TestVerifyOnStopFiresOnARealTurn` is recorded failing in the full parallel gate while passing repeatedly in isolation.
-- Files: `internal/runner/runner_verification_test.go`, `docs/aura-quality-snapshot.md`.
+- Files: `internal/runner/runner_verification_integration_test.go`, `docs/aura-quality-snapshot.md`.
 - Trigger: run the repository-wide parallel test/coverage workload; the exact scheduler interaction is not yet isolated.
 - Workaround: rerun the focused test to distinguish the known flake from a deterministic regression, but do not treat the rerun as a fix.
 
@@ -110,11 +112,10 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 - Current mitigation: `AURA_MEMORY_PRELOAD_ENABLED` defaults to false, recall is identity-scoped, and retrieval failures fail soft.
 - Recommendations: write a dedicated trust-boundary threat model before enabling it by default; distinguish data from instructions in framing and add adversarial memory-poisoning tests.
 
-**Mounted MCP output is deliberately stamped trusted without a focused regression test:**
-- Risk: `newResult` marks every mounted server result `TrustTrusted`. This is a ratified operator-infrastructure posture, but a future refactor could drop or invert the stamp without a test failing at the exact seam.
-- Files: `internal/agent/mcptools/bridge_call.go`, `internal/agent/mcptools/bridge_trust_test.go`, `.planning/phases/46-mcp-trust-and-facade/46-09-SUMMARY.md`.
-- Current mitigation: description tests indirectly pin the no-distrust-framing behavior, result size caps still apply, and mounts are operator-configured.
-- Recommendations: add a focused `newResult` test asserting `TrustTrusted` and keep it separate from description-cap tests.
+**Closed 2026-08-26 — mounted MCP trusted-result provenance has a focused regression test:**
+- Resolution: `TestBridgedTool_Execute_MarksResultTrusted` executes the bridge result seam and asserts non-nil provenance, exact source, and `TrustTrusted`.
+- Evidence: the focused WSL test passes in `internal/agent/mcptools/bridge_test.go`; result size caps and operator-managed mount policy remain unchanged.
+- Files: `internal/agent/mcptools/bridge_call.go`, `internal/agent/mcptools/bridge_test.go`.
 
 ## Performance Bottlenecks
 
@@ -142,7 +143,7 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 - Files: `internal/agui/server_project.go`, `internal/runner/runner_resume.go`, `internal/runner/resume_committer.go`, `internal/askuser/store.go`.
 - Why fragile: wire mapping, owner scoping, pause claims, answer-turn persistence, hooks, and idempotency span several packages. Validation added outside the cross-store transaction can recreate claimed-without-answer or double-resume failures.
 - Safe modification: validate expiry before claims inside the existing committer boundary; retain persisted policy validation, accepted-content validation, sorted-token batch locking, and the `resumed_at IS NULL` conditional update.
-- Test coverage: atomic single/batch resume tests exist under `db_integration`; empty accepted content and decision policy are closed at wire, Runner, Store/database, migration, and real-agent boundaries. Expiry still has no closing tests.
+- Test coverage: atomic single/batch resume tests exist under `db_integration`; empty accepted content, decision policy, and expiry are closed at wire, Runner, Store/database, migration, race, and real-agent boundaries.
 
 **Context ladder and durable compaction:**
 - Files: `internal/conversations/context.go`, `internal/conversations/context_budget.go`, `internal/conversations/compaction.go`, `internal/conversations/compaction_durable_test.go`, `internal/conversations/compaction_inforce_test.go`.
@@ -151,13 +152,13 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 - Test coverage: unit coverage is extensive; `.planning/STATE.md` still records anti-thrash/cooldown/fallback guards and cross-restart anti-thrash state as unverified/deferred.
 
 **Large orchestration surfaces:**
-- Files: `cmd/aura/*.go` (about 19,034 non-test LOC), `internal/agui/*.go` (about 15,143), `internal/agent/tools/*.go` (about 8,928), `internal/agent/*.go` (about 8,373).
+- Files: `cmd/aura/*.go` (about 19,167 non-test LOC), `internal/agui/*.go` (about 15,281), `internal/agent/tools/*.go` (about 8,939), `internal/agent/*.go` (about 8,536).
 - Why fragile: these directories combine composition, auth/streaming/governance, model loops, and every model-to-I/O tool boundary. File splitting keeps individual files manageable but does not remove cross-file blast radius.
 - Safe modification: follow existing concern-file splits and run boundary-specific gates (`scripts/agui_boundary_check.sh`, tool unit/race tests, relevant live tagged tiers) after changes.
 - Test coverage: broad, but `docker_integration` behavior and external sidecars remain outside the aggregate coverage profile.
 
 **Files at or near the 600-line cap:**
-- Files: `internal/arcadedb/client.go` (595), `internal/runner/runner.go` (577), `internal/llm/config.go` (577), `internal/config/config.go` (577), `internal/conversations/store.go` (574), `internal/agui/onboarding_provision.go` (573), `internal/agui/server_run_resume_test.go` (600), `internal/agent/tools/skill_write_test.go` (596), `internal/llm/openai_compat/client_test.go` (596), `web/src/settings/__tests__/ModelSettingsPanel.test.tsx` (594).
+- Files: `internal/arcadedb/client.go` (595), `internal/llm/config.go` (577), `internal/config/config.go` (584), `internal/conversations/store.go` (574), `internal/agui/onboarding_provision.go` (573), `internal/agui/server_run_resume_test.go` (600), `internal/agent/tools/skill_write_test.go` (596), `internal/llm/openai_compat/client_test.go` (596), `web/src/settings/__tests__/ModelSettingsPanel.test.tsx` (594). `internal/runner/runner.go` is now 397 lines and is no longer near the cap.
 - Why fragile: the next meaningful edit can breach the repository's enforced file-size rule and require a split during unrelated work.
 - Safe modification: plan concern-based splits before adding behavior; do not hide generated or test files from `scripts/check-file-size.sh`.
 - Test coverage: not a coverage gap by itself; it is a change-risk and scope-control warning.
@@ -234,11 +235,10 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 - Risk: changes can preserve unit correctness while reducing real query recall, and the snapshot remains UNKNOWN.
 - Priority: High. Provide a permitted corpus and wire one report-producing command into CI or an explicitly operator-run release gate.
 
-**MCP trusted-result stamp lacks a direct test:**
-- What's not tested: `bridgedTool.newResult` always produces `ToolResultProvenance{Trust: TrustTrusted}` for mounted infrastructure.
-- Files: `internal/agent/mcptools/bridge_call.go`, `internal/agent/mcptools/bridge_trust_test.go`.
-- Risk: a refactor can silently change prompt framing/trust semantics without failing the current description-cap tests.
-- Priority: Medium. Add one focused unit test at the result seam.
+**Closed 2026-08-26 — MCP trusted-result stamp has a direct execution-path test:**
+- Coverage: `TestBridgedTool_Execute_MarksResultTrusted` asserts `ToolResultProvenance{Trust: TrustTrusted}` and the mounted source after a real bridged `Execute` call.
+- Evidence: `go test -count=1 -run TestBridgedTool_Execute_MarksResultTrusted ./internal/agent/mcptools` passes under WSL.
+- Files: `internal/agent/mcptools/bridge_call.go`, `internal/agent/mcptools/bridge_test.go`.
 
 **Closed 2026-08-25 — approval expiry has closing tests:**
 - Coverage: unit and wire tests cover configuration, boot/periodic sweeps, late decisions, exact pending-challenge discard, and refusal propagation. Disposable-PostgreSQL tests cover cutoff/kind/resolution selection, owner RLS, atomic visibility, and the expiry-versus-human race.
@@ -254,4 +254,4 @@ last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
 
 ---
 
-*Concerns audit: 2026-08-25*
+*Concerns audit: 2026-08-26*
