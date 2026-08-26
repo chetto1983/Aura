@@ -7,10 +7,11 @@ last_audited_commit: 3ab589ee6e2302e7bf3ff865e0083a4f7475b63e
 
 **Analysis Date:** 2026-08-26
 
-**Audit refresh:** Amendment #151 split coverage evidence by runtime tier. Unit plus
-`db_integration`, native Docker, and live ArcadeDB now publish independent candidate-bound
-reports; release readiness requires all three rather than manufacturing one aggregate. The
-remaining within-tier per-package masking risk stays explicit below.
+**Audit refresh:** Amendments #151 and #152 split coverage evidence by runtime tier and add
+cross-package attribution inside the unit plus `db_integration` tier. Release readiness now
+requires the independent unit/database, native Docker, and live ArcadeDB reports, plus the
+exact package-local policy result; known low packages can no longer regress behind stronger
+ones.
 
 ## Severity Summary
 
@@ -24,7 +25,7 @@ remaining within-tier per-package masking risk stays explicit below.
 | ArcadeDB tenant memory has no exercised backup/restore plane | High | Closed 2026-08-25 | `scripts/restore_drill.sh`, `scripts/release_readiness_gate.py`, `compose.yaml` |
 | Shared deployment catalogs need administrator-only mutation in multi-user operation | Medium | Closed 2026-08-26 | `internal/agent/tools/skill_manage.go`, `cmd/aura/serve_webui.go`, `internal/config/config_validate.go` |
 | Daemon-gated coverage tiers did not feed release readiness | Medium | Closed 2026-08-26 | `scripts/docker_coverage_gate.sh`, `scripts/agent_memory_eval.py`, `scripts/release_readiness_gate.py` |
-| Owned unit + database coverage remains aggregate, not per-package | Medium | Open/self-documented | `scripts/coverage_gate.sh`, `docs/aura-quality-snapshot.md`, `CLAUDE.md` |
+| Owned unit + database coverage remains aggregate, not per-package | Medium | Closed 2026-08-26 | `scripts/coverage_package_gate.py`, `scripts/coverage_package_policy.json`, `scripts/release_readiness_gate.py` |
 | Long-history compaction can disable itself silently and uses an unmeasured three-minute timeout | Medium | Open | `internal/conversations/context_budget.go`, `internal/conversations/compaction.go` |
 | Calendar MCP admin-token fallback was removed by identity-scoped OAuth | Medium | Closed 2026-08-26 | `internal/agui/connect_pim_api.go`, `cmd/aura/serve_agui.go`, `compose.yaml` |
 | Opt-in memory preload inserts recalled content into model-visible context with no dedicated poisoning threat model | Medium | Default off | `internal/runner/runner_context.go`, `internal/config/config.go` |
@@ -49,11 +50,12 @@ remaining within-tier per-package masking risk stays explicit below.
 - Evidence: the WSL gate passed add, unchanged restart, modify, delete, live refresh, structural-schema, `.xls` extraction, two-identity isolation, migration 0102 up/down/up, production `document_search`, and a real-agent answer. `services/ingest/tests/test_arcade_integration.py` additionally proved live removal of retired values, properties, indexes, and types.
 - Cleanup: the always-null/duplicated passage fields, `HAS_PASSAGE`, `DocumentProjection`, Go-side duplicate DDL, retired document-pipeline knobs, the ignored projection writer copy, and the catalog-backed live test were removed. CocoIndex is the sole document-schema writer and lifecycle reconciler.
 
-**Coverage gate remains aggregate within unit + `db_integration`:**
-- Issue: `scripts/coverage_gate.sh` filters the owned statement surface and performs one exact comparison against `AURA_COVERAGE_MIN`. There is no package loop or package minimum.
-- Files: `scripts/coverage_gate.sh`, `scripts/coverage_profile_gate.sh`, `docs/aura-quality-snapshot.md`, `CLAUDE.md`.
-- Impact: a weak package can regress while stronger packages keep this tier above 85%. The exact-SHA CI result is 27,323/31,839 = 85.8161%, only 0.8161 percentage points above the floor.
-- Boundary: the new Docker and ArcadeDB floors close the former daemon-visibility gap but deliberately do not pretend to solve masking inside this unit/database aggregate. Cross-package `-coverpkg` attribution must be designed before a truthful per-package floor is introduced.
+**Closed 2026-08-26 — unit plus `db_integration` has package-local regression floors:**
+- Resolution: `scripts/coverage_gate.sh` now collects one native covdata corpus with `-coverpkg=./internal/...`; tests in both `internal` and `cmd/aura` contribute execution before the owned-source exclusions are applied. The explicit 71-package policy fails on new, removed, missing, or unclassified packages.
+- Contract: 58 packages have the exact 85% floor, 12 known low packages have pinned covered/total non-regression baselines plus the visible 85% target, and `internal/sandbox/usersandbox` is delegated only to the separately release-blocking native Docker coverage authority. Lowering a baseline requires a new measurement and PRD amendment.
+- Evidence: the fresh disposable-PostgreSQL run passed every test and every package rule at **27,671/31,839 = 86.9091%** aggregate. Direct unit and database tests raised `internal/mcpregistry` from 0/75 to **71/75 = 94.6667%**, so no zero-coverage package was grandfathered. Contract and release-readiness regressions cover exact-ratio decline, denominator drift, inventory drift, missing evidence, and invalid delegation.
+- Boundary: 12 package deficits remain named debt rather than being represented as 85%. Docker and ArcadeDB retain independent denominators; no cross-tier percentage is manufactured.
+- Files: `scripts/coverage_gate.sh`, `scripts/coverage_package_gate.py`, `scripts/coverage_package_policy.json`, `scripts/release_readiness_gate.py`, `internal/mcpregistry/store_test.go`, `internal/mcpregistry/store_integration_test.go`.
 
 **Manual OOXML parser is a broad custom maintenance surface:**
 - Issue: `internal/documents/filecard` manually parses ZIP/XML workbook and Office structures across `xlsx.go`, `ooxml.go`, `zip.go`, and `table.go` instead of using a workbook library. The implementation is split under the 600-line cap and well tested, but remains a large protocol parser owned by Aura.

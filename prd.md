@@ -8432,6 +8432,15 @@ flusso completo, che funziona.
 > The package that measured 0.0% cannot be grandfathered at zero: direct executable tests
 > must raise `internal/mcpregistry` to the 85% target before this amendment closes.
 >
+> **Closure measurement.** The implemented disposable-PostgreSQL run passed the complete
+> matrix at **27,671/31,839 = 86.9091%** and published 71 exact package results: 58 at the
+> 85% target, 12 named exact-ratio baselines below it, and the single
+> `internal/sandbox/usersandbox` delegation to the independently validated Docker authority.
+> Direct store, encryption, replacement, removal, corrupt-row, and database-error tests moved
+> `internal/mcpregistry` from 0/75 to **71/75 = 94.6667%**. Deterministic package-policy and
+> release-evidence tests fail closed on regression, denominator or inventory drift, missing
+> package evidence, and unsupported delegation.
+>
 > **What this amendment does NOT prove.** It does not claim that every owned package is
 > already at 85%, merge the DB, Docker, and ArcadeDB denominators, or credit a runtime tier
 > that did not execute. A non-regression baseline is containment of known debt, not debt
