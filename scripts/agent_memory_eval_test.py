@@ -292,6 +292,7 @@ class ScoringTest(unittest.TestCase):
     def test_report_round_trips_as_json(self) -> None:
         manifest = evaluator.load_manifest(None)
         report = evaluator.score(manifest, passing_suites(manifest), "deterministic", self.candidate)
+        self.assertEqual(report["schema_version"], 1)
         with tempfile.TemporaryDirectory() as raw:
             path = pathlib.Path(raw) / "nested" / "report.json"
             evaluator.write_report(path, report)

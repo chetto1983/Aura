@@ -12,7 +12,7 @@ make evidence-contracts
 make release-readiness
 ```
 
-`make release-readiness` accepts only the ten canonical JSON reports in
+`make release-readiness` accepts only the twelve canonical JSON reports in
 `artifacts/production-readiness/`, all bound to the exact full `git rev-parse HEAD`, all newer
 than 24 hours. It emits `release-readiness-report.json` with the SHA-256 of every input so the
 approved bundle cannot be silently replaced.
@@ -20,7 +20,7 @@ approved bundle cannot be silently replaced.
 For a publishable candidate, run the GitHub Actions `Production Readiness` workflow on the
 candidate branch and supply the immutable previously-approved image. Its job downloads only
 successful CI artifacts for that exact SHA, verifies exact-SHA CodeQL, performs the live image
-rollback rehearsal, runs the ten-report gate, and uploads the immutable bundle. The tag-triggered
+rollback rehearsal, runs the twelve-report gate, and uploads the immutable bundle. The tag-triggered
 `Release` workflow refuses to publish unless that exact commit has a successful
 `Production readiness bundle` check.
 
@@ -39,6 +39,8 @@ rollback rehearsal, runs the ten-report gate, and uploads the immutable bundle. 
 |---|---|---|
 | security | `security-report.json` from `security_evidence.py` | exact-SHA CodeQL Go+JS, govulncheck, workflow-pin, strict-profile tests pass |
 | coverage | `coverage-report.json` | statements ≥85% with the `db_integration` tier; no empty/filtered tier |
+| Docker coverage | `docker-coverage-report.json` | exact merged statements ≥85% for owned sandbox surfaces under native `docker_integration` |
+| Agent Memory | `agent-memory-eval-report.json` | all-tier MRS passes and ArcadeDB package coverage is ≥85% |
 | mutation | `mutation-report.json` | killed ≥70% separately for gateway, identity, profile, sandbox, and frontend |
 | capability | `capability-eval.json` | every declared scenario executed and passed; zero skip/missing |
 | load | `load-report.json` | supported concurrency met; success ratio and p95 inside declared budget |

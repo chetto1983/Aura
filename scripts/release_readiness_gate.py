@@ -52,11 +52,64 @@ def validate_coverage(report: dict[str, Any]) -> dict[str, Any]:
     percent = report.get("statements_percent")
     require(report.get("passed") is True, "coverage: report did not pass")
     require(isinstance(percent, (int, float)) and percent >= 85, "coverage: statements < 85%")
+    require(report.get("scope") == "owned_internal", "coverage: unexpected scope")
+    require(report.get("covered_statements", 0) > 0, "coverage: no covered statements")
+    require(report.get("total_statements", 0) > 0, "coverage: no statements")
     tiers = set(report.get("tiers_executed", []))
     missing = {"db_integration"} - tiers
     require(not missing, f"coverage: missing tiers {sorted(missing)}")
     require(report.get("empty_tiers") == 0, "coverage: empty or filtered tier")
     return {"statements_percent": percent}
+
+
+def validate_docker_coverage(report: dict[str, Any]) -> dict[str, Any]:
+    percent = report.get("statements_percent")
+    covered = report.get("covered_statements")
+    total = report.get("total_statements")
+    require(report.get("passed") is True, "docker coverage: report did not pass")
+    require(report.get("scope") == "docker_owned_internal", "docker coverage: unexpected scope")
+    require(isinstance(covered, int) and covered > 0, "docker coverage: no covered statements")
+    require(isinstance(total, int) and total > 0, "docker coverage: no statements")
+    require(covered <= total, "docker coverage: covered statements exceed total")
+    require(covered * 100 >= 85 * total, "docker coverage: exact statements < 85%")
+    require(isinstance(percent, (int, float)) and percent >= 85, "docker coverage: statements < 85%")
+    require(
+        report.get("tiers_executed") == ["docker_integration"],
+        "docker coverage: docker_integration is not the sole tier",
+    )
+    require(report.get("empty_tiers") == 0, "docker coverage: empty tier")
+    return {"statements_percent": percent}
+
+
+def validate_agent_memory(report: dict[str, Any]) -> dict[str, Any]:
+    require(report.get("passed") is True, "agent memory: report did not pass")
+    require(report.get("tier") == "all", "agent memory: report is not the all tier")
+    require(report.get("verdict") == "PASS", "agent memory: verdict is not PASS")
+    require(report.get("mrs_eligible") is True, "agent memory: report is not MRS eligible")
+    score = report.get("memory_reliability_score")
+    require(isinstance(score, (int, float)) and score > 96.5, "agent memory: MRS <= 96.5")
+    scenarios = report.get("scenarios")
+    require(isinstance(scenarios, list), "agent memory: scenarios missing")
+    indexed = {
+        item.get("id"): item for item in scenarios if isinstance(item, dict) and item.get("id")
+    }
+    coverage = indexed.get("arcadedb_package_coverage")
+    require(isinstance(coverage, dict), "agent memory: ArcadeDB coverage scenario missing")
+    require(coverage.get("status") == "PASS", "agent memory: ArcadeDB coverage scenario failed")
+    detail = coverage.get("detail")
+    require(isinstance(detail, dict), "agent memory: ArcadeDB coverage detail missing")
+    percent = detail.get("actual_percent")
+    covered = detail.get("covered_statements")
+    total = detail.get("total_statements")
+    require(isinstance(covered, int) and covered > 0, "agent memory: no covered statements")
+    require(isinstance(total, int) and total > 0, "agent memory: no statements")
+    require(covered <= total, "agent memory: covered statements exceed total")
+    require(covered * 100 >= 85 * total, "agent memory: exact ArcadeDB statements < 85%")
+    require(
+        isinstance(percent, (int, float)) and percent >= 85,
+        "agent memory: ArcadeDB coverage < 85%",
+    )
+    return {"memory_reliability_score": score, "arcadedb_statements_percent": percent}
 
 
 def validate_mutation(report: dict[str, Any]) -> dict[str, Any]:
@@ -261,6 +314,8 @@ def validate_audit(report: dict[str, Any]) -> dict[str, Any]:
 VALIDATORS: list[tuple[str, str, Callable[[dict[str, Any]], dict[str, Any]]]] = [
     ("security", "security-report.json", validate_security),
     ("coverage", "coverage-report.json", validate_coverage),
+    ("docker_coverage", "docker-coverage-report.json", validate_docker_coverage),
+    ("agent_memory", "agent-memory-eval-report.json", validate_agent_memory),
     ("mutation", "mutation-report.json", validate_mutation),
     ("capability", "capability-eval.json", validate_capability),
     ("load", "load-report.json", validate_load),

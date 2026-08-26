@@ -91,7 +91,9 @@ jobs:
             scripts/release_readiness_gate_test.py \
             scripts/rollback_rehearsal_test.py \
             scripts/security_evidence_test.py
+          bash scripts/coverage_profile_gate_test.sh
           bash scripts/coverage_gate_test.sh
+          bash scripts/docker_coverage_gate_test.sh
           bash scripts/restore_drill_name_test.sh
 
       - name: Definitive audit closure gate
@@ -1806,9 +1808,17 @@ jobs:
         # -p 1: the three packages share ONE daemon and each creates and destroys containers,
         # named volumes and netns-sharing sidecars. Serialising keeps a failure attributable
         # to one package and keeps the runner's memory envelope predictable.
-        run: |
-          go test -tags docker_integration -count=1 -p 1 \
-            ./internal/sandbox/usersandbox/... ./internal/agent/tools/... ./cmd/aura/...
+        run: bash scripts/docker_coverage_gate.sh
+
+      - name: Upload docker_integration coverage report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: docker-integration-coverage
+          path: |
+            artifacts/production-readiness/docker-coverage-report.json
+            artifacts/production-readiness/docker-coverage.cover
+          if-no-files-found: error
 
       - name: Leftover box/sidecar teardown
         if: always()

@@ -522,6 +522,7 @@ def score(manifest: dict[str, Any], suites: dict[str, Any], tier: str, candidate
         passed = suite_integrity and all(result["status"] == "PASS" for result in scenario_results)
         verdict = f"{tier.upper()}_{'PASS' if passed else 'FAIL'}"
     return {
+        "schema_version": 1,
         "schema_id": SCHEMA_ID,
         "revision": REVISION,
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),

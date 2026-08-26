@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Industrial coverage floor for the OWNED library surface (internal/*), enforcing
-# the CLAUDE.md COVERAGE FLOOR 85% across the full tag matrix (unit + integration).
+# the CLAUDE.md COVERAGE FLOOR 85% across unit + db_integration tests.
 #
 # Why internal/* and not ./...:
 #   - cmd/aura is CLI glue (flag parsing, os.Exit dispatch) — covered behaviourally
@@ -76,62 +76,9 @@ if [[ "${ROWS:-0}" -lt 1 ]]; then
   exit 1
 fi
 
-TOTAL_LINE="$(go tool cover -func="${PROFILE}.filtered" | tail -1)"
-echo "${TOTAL_LINE}"
-PCT="$(printf '%s\n' "${TOTAL_LINE}" | grep -oE '[0-9]+(\.[0-9]+)?%' | tail -1)"
-if [[ -z "${PCT}" ]]; then
-  echo "FAIL: could not parse a coverage percentage from: ${TOTAL_LINE}" >&2
-  exit 1
-fi
-read -r COVERED_STATEMENTS TOTAL_STATEMENTS < <(
-  awk 'NR > 1 {
-    total += $2
-    if ($3 > 0) covered += $2
-  }
-  END { printf "%d %d\n", covered, total }' "${PROFILE}.filtered"
-)
-if [[ "${TOTAL_STATEMENTS:-0}" -lt 1 ]]; then
-  echo "FAIL: filtered coverage profile has no statements" >&2
-  exit 1
-fi
-awk \
-  -v covered="${COVERED_STATEMENTS}" \
-  -v total="${TOTAL_STATEMENTS}" \
-  -v displayed="${PCT%\%}" \
-  -v min="${MIN}" \
-  'BEGIN {
-  if (covered * 100 < min * total) {
-    printf "FAIL: owned coverage %d/%d (%s%% displayed) < %s%% (CLAUDE.md floor)\n", covered, total, displayed, min > "/dev/stderr"
-    exit 1
-  }
-  printf "ok: owned coverage %d/%d (%s%% displayed) >= %s%%\n", covered, total, displayed, min
-}'
-
-python3 - "$REPORT" "$COVERED_STATEMENTS" "$TOTAL_STATEMENTS" "$TAGS" <<'PY'
-import datetime as dt
-import json
-import pathlib
-import subprocess
-import sys
-
-output = pathlib.Path(sys.argv[1])
-covered = int(sys.argv[2])
-total = int(sys.argv[3])
-tags = sys.argv[4].split()
-candidate = subprocess.run(
-    ["git", "rev-parse", "HEAD"], text=True, capture_output=True, check=True
-).stdout.strip()
-report = {
-    "schema_version": 1,
-    "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
-    "candidate_commit": candidate,
-    "passed": True,
-    "statements_percent": covered * 100 / total,
-    "covered_statements": covered,
-    "total_statements": total,
-    "tiers_executed": tags,
-    "empty_tiers": 0,
-}
-output.parent.mkdir(parents=True, exist_ok=True)
-output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-PY
+AURA_COVERAGE_PROFILE="${PROFILE}.filtered" \
+AURA_COVERAGE_REPORT="${REPORT}" \
+AURA_COVERAGE_TAGS="${TAGS}" \
+AURA_COVERAGE_SCOPE="owned_internal" \
+AURA_COVERAGE_MIN="${MIN}" \
+  bash scripts/coverage_profile_gate.sh

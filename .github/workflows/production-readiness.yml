@@ -93,7 +93,8 @@ jobs:
           mkdir -p /tmp/aura-ci-evidence artifacts/production-readiness
           for artifact in \
             audit-closure capability-eval production-load-chaos disaster-recovery \
-            owned-surface-coverage critical-mutation
+            owned-surface-coverage docker-integration-coverage agent-memory-eval \
+            critical-mutation
           do
             gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" \
               --name "$artifact" --dir "/tmp/aura-ci-evidence/$artifact"
@@ -101,7 +102,8 @@ jobs:
           for report in \
             audit-closure-report.json capability-eval.json load-report.json \
             chaos-report.json dr-report.json observability-report.json \
-            coverage-report.json mutation-report.json
+            coverage-report.json docker-coverage-report.json \
+            agent-memory-eval-report.json mutation-report.json
           do
             mapfile -t matches < <(find /tmp/aura-ci-evidence -type f -name "$report")
             test "${#matches[@]}" -eq 1
@@ -152,7 +154,7 @@ jobs:
             --previous-image "$PREVIOUS_IMAGE" \
             --candidate-image "$CANDIDATE_IMAGE"
 
-      - name: Fail-closed ten-report release gate
+      - name: Fail-closed twelve-report release gate
         run: |
           PYTHONPATH=scripts python3 scripts/release_readiness_gate.py \
             --evidence-dir artifacts/production-readiness \

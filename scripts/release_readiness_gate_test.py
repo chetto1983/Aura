@@ -36,8 +36,40 @@ def valid_evidence() -> dict[str, dict[str, object]]:
         "coverage-report.json": common(
             passed=True,
             statements_percent=91.2,
+            covered_statements=912,
+            total_statements=1000,
+            scope="owned_internal",
             tiers_executed=["db_integration"],
             empty_tiers=0,
+        ),
+        "docker-coverage-report.json": common(
+            passed=True,
+            statements_percent=87.5,
+            covered_statements=875,
+            total_statements=1000,
+            scope="docker_owned_internal",
+            tiers_executed=["docker_integration"],
+            empty_tiers=0,
+        ),
+        "agent-memory-eval-report.json": common(
+            schema_id="aura.agent-memory-eval",
+            revision=1,
+            passed=True,
+            tier="all",
+            verdict="PASS",
+            mrs_eligible=True,
+            memory_reliability_score=100.0,
+            scenarios=[
+                {
+                    "id": "arcadedb_package_coverage",
+                    "status": "PASS",
+                    "detail": {
+                        "actual_percent": 87.5,
+                        "covered_statements": 875,
+                        "total_statements": 1000,
+                    },
+                }
+            ],
         ),
         "mutation-report.json": common(
             passed=True,
@@ -202,7 +234,7 @@ class ReleaseReadinessGateTest(unittest.TestCase):
         report = result.report  # type: ignore[attr-defined]
         self.assertTrue(report["passed"])
         self.assertEqual(report["score"], 10.0)
-        self.assertEqual(len(report["evidence"]), 10)
+        self.assertEqual(len(report["evidence"]), 12)
         self.assertTrue(all(len(item["sha256"]) == 64 for item in report["evidence"]))
 
     def test_missing_artifact_fails_closed(self) -> None:
@@ -241,6 +273,21 @@ class ReleaseReadinessGateTest(unittest.TestCase):
             result = self.run_gate(evidence)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("missing", result.stderr)
+
+    def test_tiered_coverage_evidence_fails_closed(self) -> None:
+        evidence = valid_evidence()
+        evidence["docker-coverage-report.json"]["covered_statements"] = 849
+        evidence["docker-coverage-report.json"]["statements_percent"] = 84.9
+        result = self.run_gate(evidence)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("docker coverage", result.stderr)
+
+        evidence = valid_evidence()
+        scenarios = evidence["agent-memory-eval-report.json"]["scenarios"]
+        scenarios.clear()  # type: ignore[union-attr]
+        result = self.run_gate(evidence)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("ArcadeDB coverage scenario missing", result.stderr)
 
     def test_current_open_items_block_release(self) -> None:
         evidence = valid_evidence()

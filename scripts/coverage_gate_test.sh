@@ -62,7 +62,7 @@ if [ "$below_rc" -eq 0 ]; then
 fi
 
 above_out="$(run_gate 26798 2>&1)"
-if ! grep -q 'ok: owned coverage' <<<"$above_out"; then
+if ! grep -q 'ok: owned_internal coverage' <<<"$above_out"; then
   printf 'FAIL: 26798/31527 (85.0001585942%%) did not pass\n%s\n' \
     "$above_out" >&2
   exit 1
@@ -76,6 +76,8 @@ assert report["total_statements"] == 31527
 assert report["statements_percent"] > 85
 assert report["tiers_executed"] == ["unit"]
 assert report["empty_tiers"] == 0
+assert report["scope"] == "owned_internal"
+assert report["minimum_percent"] == 85
 assert re.fullmatch(r"[0-9a-f]{40}", report["candidate_commit"])
 PY
 

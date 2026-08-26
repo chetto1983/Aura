@@ -173,7 +173,9 @@ evidence-contracts:
 		scripts/release_readiness_gate_test.py \
 		scripts/rollback_rehearsal_test.py \
 		scripts/security_evidence_test.py
+	bash scripts/coverage_profile_gate_test.sh
 	bash scripts/coverage_gate_test.sh
+	bash scripts/docker_coverage_gate_test.sh
 	bash scripts/restore_drill_name_test.sh
 
 agent-memory-eval-contract:
