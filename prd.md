@@ -8391,3 +8391,49 @@ flusso completo, che funziona.
 > aggregate does not prove daemon branches, and the ArcadeDB package profile does not cover
 > `cmd/aura` glue or unrelated MCP sidecars. Independent floors make those boundaries
 > visible and release-blocking; they do not manufacture one universal coverage number.
+
+## §Unit/database coverage has package-local regression floors (Amendment #152, 2026-08-26)
+
+> **Amendment #152 (2026-08-26 — measured refinement of Amendment #151's deferred
+> per-package contract).**
+>
+> **The measurement.** On exact candidate `a3fb985e6cf277b2b7961ffb97e79ea1fafe7f1a`, a
+> disposable PostgreSQL instance was migrated through all 77 migrations and the complete
+> unit plus `db_integration` matrix was rerun with Go 1.26.6 native cross-package
+> instrumentation: `-coverpkg=./internal/...`, one shared `-test.gocoverdir`, and
+> `go tool covdata percent`. Tests in both `./internal/...` and `./cmd/aura/...` contributed
+> execution, while only `internal/*` entered the denominator. Every test passed. The change
+> corrected consumer-to-library attribution substantially, but did not make every package
+> reach 85%: 14 runtime packages remained below the target, including `internal/documents`
+> at 69.0%, `internal/objectstore` at 69.8%, `internal/webauth` at 51.9%,
+> `internal/settings` at 23.7%, and `internal/mcpregistry` at 0.0%.
+>
+> **Contract.** The unit/database gate uses Go's covdata merger, never profile
+> concatenation, so a source block is counted once and is covered when any included test
+> binary executes it. Its filtered owned-package inventory is explicit and fail-closed: a
+> new, removed, missing, or unclassified package fails the policy check. Packages already
+> at or above 85% have an exact 85% hard floor. Existing sub-target packages have a pinned
+> exact-ratio non-regression baseline plus the unchanged 85% target, and remain named as
+> debt in the report; a stronger package can no longer hide their regression. The
+> `internal/sandbox/usersandbox` DB result is classified as delegated, because its
+> authoritative native `docker_integration` report already carries the independent exact
+> 85% release floor required by Amendment #151.
+>
+> The release-readiness gate requires the package-policy result inside the exact-candidate
+> unit/database coverage report, requires every classified package to pass its own rule,
+> and requires the delegated package/authority mapping to match the separately validated
+> Docker report. Baselines can move upward without special dispensation; lowering a
+> baseline is a contract change that must carry a new measurement and PRD amendment.
+>
+> **Closure proof.** Deterministic contract tests must fail for an exact-ratio regression,
+> a newly introduced package, a missing package, a mismatched statement denominator, and an
+> invalid delegated authority. A fresh disposable-stack run must publish the complete
+> per-package result set and pass both the aggregate 85% floor and every package-local rule.
+> The package that measured 0.0% cannot be grandfathered at zero: direct executable tests
+> must raise `internal/mcpregistry` to the 85% target before this amendment closes.
+>
+> **What this amendment does NOT prove.** It does not claim that every owned package is
+> already at 85%, merge the DB, Docker, and ArcadeDB denominators, or credit a runtime tier
+> that did not execute. A non-regression baseline is containment of known debt, not debt
+> repayment. The report therefore preserves both the measured baseline and the 85% target
+> until focused test work closes each remaining deficit.
