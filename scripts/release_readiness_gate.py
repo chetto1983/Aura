@@ -59,7 +59,113 @@ def validate_coverage(report: dict[str, Any]) -> dict[str, Any]:
     missing = {"db_integration"} - tiers
     require(not missing, f"coverage: missing tiers {sorted(missing)}")
     require(report.get("empty_tiers") == 0, "coverage: empty or filtered tier")
-    return {"statements_percent": percent}
+
+    package_coverage = report.get("package_coverage")
+    require(isinstance(package_coverage, dict), "coverage: package evidence missing")
+    require(package_coverage.get("passed") is True, "coverage: package policy did not pass")
+    require(
+        package_coverage.get("cross_package_attribution") is True,
+        "coverage: package evidence lacks cross-package attribution",
+    )
+    require(
+        package_coverage.get("policy_schema_version") == 1,
+        "coverage: package policy schema_version must be 1",
+    )
+    target = package_coverage.get("target_percent")
+    require(target == 85, "coverage: package target must be 85%")
+    results = package_coverage.get("results")
+    require(isinstance(results, list) and results, "coverage: package results missing")
+
+    expected_delegated = {
+        "github.com/chetto1983/aura/internal/sandbox/usersandbox": "docker_coverage",
+    }
+    packages: set[str] = set()
+    below_target: list[str] = []
+    delegated: list[dict[str, str]] = []
+    at_target = 0
+    for result in results:
+        require(isinstance(result, dict), "coverage: package result must be an object")
+        package = result.get("package")
+        require(isinstance(package, str) and package, "coverage: package name missing")
+        require(package not in packages, f"coverage: duplicate package result {package}")
+        packages.add(package)
+        require(result.get("passed") is True, f"coverage: {package} did not pass")
+        require(result.get("target_percent") == target, f"coverage: {package} target mismatch")
+        covered = result.get("covered_statements")
+        total = result.get("total_statements")
+        require(
+            type(covered) is int and type(total) is int and 0 <= covered <= total and total > 0,
+            f"coverage: {package} statement counts are invalid",
+        )
+        meets_target = covered * 100 >= target * total
+        mode = result.get("mode")
+        require(mode in {"target", "baseline", "delegated"}, f"coverage: {package} mode invalid")
+        if mode == "target":
+            require(meets_target, f"coverage: {package} is below its 85% target")
+        elif mode == "baseline":
+            baseline_covered = result.get("baseline_covered_statements")
+            baseline_total = result.get("baseline_total_statements")
+            require(
+                type(baseline_covered) is int
+                and type(baseline_total) is int
+                and 0 < baseline_covered <= baseline_total,
+                f"coverage: {package} baseline counts are invalid",
+            )
+            require(
+                baseline_total == total,
+                f"coverage: {package} baseline denominator changed",
+            )
+            require(
+                baseline_covered * 100 < target * baseline_total,
+                f"coverage: {package} baseline must be below target",
+            )
+            require(
+                covered * baseline_total >= baseline_covered * total,
+                f"coverage: {package} regressed below its exact baseline",
+            )
+        else:
+            authority = result.get("authority")
+            require(
+                expected_delegated.get(package) == authority,
+                f"coverage: {package} has unsupported delegated authority {authority!r}",
+            )
+            delegated.append({"package": package, "authority": authority})
+            continue
+
+        if meets_target:
+            at_target += 1
+        else:
+            below_target.append(package)
+
+    expected_delegated_rows = [
+        {"package": package, "authority": authority}
+        for package, authority in sorted(expected_delegated.items())
+    ]
+    require(
+        sorted(delegated, key=lambda item: item["package"]) == expected_delegated_rows,
+        "coverage: required usersandbox Docker delegation missing",
+    )
+    require(
+        package_coverage.get("delegated_packages") == expected_delegated_rows,
+        "coverage: delegated package summary mismatch",
+    )
+    require(
+        package_coverage.get("packages_evaluated") == len(results),
+        "coverage: evaluated package count mismatch",
+    )
+    require(
+        package_coverage.get("packages_at_target") == at_target,
+        "coverage: packages-at-target count mismatch",
+    )
+    require(
+        package_coverage.get("packages_below_target") == sorted(below_target),
+        "coverage: below-target package summary mismatch",
+    )
+    return {
+        "statements_percent": percent,
+        "packages_evaluated": len(results),
+        "packages_below_target": len(below_target),
+    }
 
 
 def validate_docker_coverage(report: dict[str, Any]) -> dict[str, Any]:

@@ -5,7 +5,8 @@
 # Why internal/* and not ./...:
 #   - cmd/aura is CLI glue (flag parsing, os.Exit dispatch) — covered behaviourally
 #     by integration + smoke, not by line-unit tests; folding it into a statement
-#     floor measures the wrong thing (it sits ~20% by nature).
+#     floor measures the wrong thing (it sits ~20% by nature). Its tests still run as
+#     consumers so execution they drive inside internal/* is attributed correctly.
 #   - generated (internal/db/sqlc) and the pre-rewrite llm/client.go skeleton
 #     (owned by Slice 1) are excluded until rewritten. (internal/sandbox was
 #     removed and internal/swarm is now measured — neither is filtered here.)
@@ -30,6 +31,17 @@ MIN="${AURA_COVERAGE_MIN:-85}"
 TAGS="${AURA_COVERAGE_TAGS:-db_integration}"
 PROFILE="${AURA_COVERAGE_PROFILE:-cover_gate.out}"
 REPORT="${AURA_COVERAGE_REPORT:-artifacts/production-readiness/coverage-report.json}"
+PACKAGE_POLICY="${AURA_COVERAGE_PACKAGE_POLICY:-scripts/coverage_package_policy.json}"
+COV_TMP="$(mktemp -d)"
+COVDIR="${COV_TMP}/covdata"
+mkdir -p "${COVDIR}"
+cleanup_coverage_tmp() {
+  case "${COV_TMP}" in
+    /tmp/*|/var/folders/*) rm -rf -- "${COV_TMP}" ;;
+    *) echo "refusing unexpected coverage temp cleanup: ${COV_TMP}" >&2 ;;
+  esac
+}
+trap cleanup_coverage_tmp EXIT
 
 # Anti-footgun (defense-in-depth; see scripts/coverage_docker.sh + the 2026-07-10
 # data-loss incident): the db_integration tier TRUNCATEs/DELETEs shared auth tables
@@ -55,10 +67,15 @@ echo "==> coverage gate: internal/* >= ${MIN}% (tags: ${TAGS})"
 # The default parallel run is flaky once >2 integration packages exist (broke CI
 # after Phase 4 added identity/askuser/conversations/runner). Fail loud — never
 # discard the test output, or a real failure looks like a coverage miss.
-if ! go test -tags "${TAGS}" -p 1 -count=1 -covermode=atomic -coverprofile="${PROFILE}" \
-  ./internal/... > "${PROFILE}.testlog" 2>&1; then
+if ! go test -tags "${TAGS}" -p 1 -count=1 -covermode=atomic \
+  -coverpkg=./internal/... ./internal/... ./cmd/aura/... \
+  -args -test.gocoverdir="${COVDIR}" > "${PROFILE}.testlog" 2>&1; then
   echo "FAIL: integration coverage test run failed (see output below)" >&2
   cat "${PROFILE}.testlog" >&2
+  exit 1
+fi
+if ! go tool covdata textfmt -i="${COVDIR}" -o="${PROFILE}"; then
+  echo "FAIL: could not merge native coverage data" >&2
   exit 1
 fi
 
@@ -82,3 +99,8 @@ AURA_COVERAGE_TAGS="${TAGS}" \
 AURA_COVERAGE_SCOPE="owned_internal" \
 AURA_COVERAGE_MIN="${MIN}" \
   bash scripts/coverage_profile_gate.sh
+
+python3 scripts/coverage_package_gate.py \
+  --profile "${PROFILE}.filtered" \
+  --policy "${PACKAGE_POLICY}" \
+  --report "${REPORT}"

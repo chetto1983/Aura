@@ -41,6 +41,50 @@ def valid_evidence() -> dict[str, dict[str, object]]:
             scope="owned_internal",
             tiers_executed=["db_integration"],
             empty_tiers=0,
+            package_coverage={
+                "passed": True,
+                "cross_package_attribution": True,
+                "policy_schema_version": 1,
+                "target_percent": 85.0,
+                "packages_evaluated": 3,
+                "packages_at_target": 1,
+                "packages_below_target": ["example/internal/debt"],
+                "delegated_packages": [
+                    {
+                        "package": "github.com/chetto1983/aura/internal/sandbox/usersandbox",
+                        "authority": "docker_coverage",
+                    }
+                ],
+                "results": [
+                    {
+                        "package": "example/internal/debt",
+                        "mode": "baseline",
+                        "passed": True,
+                        "target_percent": 85.0,
+                        "covered_statements": 8,
+                        "total_statements": 10,
+                        "baseline_covered_statements": 7,
+                        "baseline_total_statements": 10,
+                    },
+                    {
+                        "package": "example/internal/target",
+                        "mode": "target",
+                        "passed": True,
+                        "target_percent": 85.0,
+                        "covered_statements": 90,
+                        "total_statements": 100,
+                    },
+                    {
+                        "package": "github.com/chetto1983/aura/internal/sandbox/usersandbox",
+                        "mode": "delegated",
+                        "passed": True,
+                        "target_percent": 85.0,
+                        "covered_statements": 4,
+                        "total_statements": 10,
+                        "authority": "docker_coverage",
+                    },
+                ],
+            },
         ),
         "docker-coverage-report.json": common(
             passed=True,
@@ -288,6 +332,34 @@ class ReleaseReadinessGateTest(unittest.TestCase):
         result = self.run_gate(evidence)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("ArcadeDB coverage scenario missing", result.stderr)
+
+    def test_package_coverage_evidence_fails_closed(self) -> None:
+        evidence = valid_evidence()
+        del evidence["coverage-report.json"]["package_coverage"]
+        result = self.run_gate(evidence)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("package evidence missing", result.stderr)
+
+        evidence = valid_evidence()
+        package_results = evidence["coverage-report.json"]["package_coverage"]["results"]  # type: ignore[index]
+        package_results[0]["covered_statements"] = 6  # type: ignore[index]
+        result = self.run_gate(evidence)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("regressed below its exact baseline", result.stderr)
+
+        evidence = valid_evidence()
+        package_results = evidence["coverage-report.json"]["package_coverage"]["results"]  # type: ignore[index]
+        package_results[0]["total_statements"] = 11  # type: ignore[index]
+        result = self.run_gate(evidence)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("baseline denominator changed", result.stderr)
+
+        evidence = valid_evidence()
+        package_results = evidence["coverage-report.json"]["package_coverage"]["results"]  # type: ignore[index]
+        package_results[2]["authority"] = "self_attested"  # type: ignore[index]
+        result = self.run_gate(evidence)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unsupported delegated authority", result.stderr)
 
     def test_current_open_items_block_release(self) -> None:
         evidence = valid_evidence()
