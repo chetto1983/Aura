@@ -141,10 +141,14 @@ func (g *Gateway) CompleteOperation(ctx context.Context, result tools.ToolResult
 		return errors.New("complete operation: trusted operation context missing")
 	}
 	replayResult := boundedOperationReplay(result)
-	return g.operations.Complete(ctx, idempotency.CompleteRequest{
+	if err := g.operations.Complete(ctx, idempotency.CompleteRequest{
 		Operation: operation.Key, Fingerprint: operation.Fingerprint,
 		ClaimToken: operation.ClaimToken, Result: replayResult,
-	})
+	}); err != nil {
+		return err
+	}
+	g.closeDelegatedReservation(ctx, "ok", "", result)
+	return nil
 }
 
 // MarkOperationIndeterminate makes an acquired mutation terminal after an
@@ -157,9 +161,16 @@ func (g *Gateway) MarkOperationIndeterminate(ctx context.Context) error {
 	if !ok {
 		return errors.New("mark operation indeterminate: trusted operation context missing")
 	}
-	return g.operations.MarkIndeterminate(
+	if err := g.operations.MarkIndeterminate(
 		ctx, operation.Key, operation.Fingerprint, operation.ClaimToken,
-	)
+	); err != nil {
+		return err
+	}
+	// The ledger's CHECK is status IN ('ok','error'), so an indeterminate outcome rides
+	// the error text rather than a third status value — the same shape syntheticEnd uses.
+	g.closeDelegatedReservation(ctx, "error",
+		"delegated dispatch ended with an indeterminate outcome", tools.ToolResult{})
+	return nil
 }
 
 // RejectOperation records a deterministic no-effect tool failure. Registries

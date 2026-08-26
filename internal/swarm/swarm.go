@@ -181,7 +181,13 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 	started := time.Now()
 
 	ic := agent.InvocationContext{
-		Ctx:       ctx,
+		// A worker's events are consumed by the loop below and dumped to a per-child
+		// transcript; they never reach the Runner that writes a dispatch's `end` row.
+		// Marking the context tells the gateway to close the reservations it opens here
+		// itself — without it every worker tool call orphaned a `start`, and the
+		// reconciler stamped succeeded calls as indeterminate half an hour later
+		// (spike 099: 5/5 worker calls, 0/3 parent calls).
+		Ctx:       gateway.WithDelegatedDispatch(ctx),
 		RequestID: uuid.Must(uuid.NewV7()),
 		Budget:    budget,
 	}

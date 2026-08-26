@@ -102,6 +102,12 @@ func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool,
 			RequestID:      tools.RequestIDFromContext(ctx),
 			ToolCallID:     tools.ToolCallIDFromContext(ctx),
 		}
+		// This is the one place that holds BOTH the key the gateway reserves under and
+		// the spec it reserves for, so it is where the gateway's terminal hooks get what
+		// they need to close the row they opened. Inert unless the dispatch is also
+		// marked delegated (a swarm worker): a Runner-observed call keeps the Runner's
+		// richer end.
+		ctx = gateway.WithReservationKey(ctx, key, spec.Name)
 		verdict, derr := a.gateway.Decide(ctx, spec, args, key)
 		// Read the claim BEFORE the error check: Decide can acquire the operation and then
 		// fail on the policy reservation that follows it, and returning early here left that
