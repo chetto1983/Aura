@@ -40,7 +40,7 @@ help:
 	@echo "make agent-memory-eval — blocking MRS over the already-running live memory stack"
 	@echo "make critical-mutation — >=70% per critical Go boundary + frontend, no averaging"
 	@echo "make observability-evidence — fixtures + runtime smoke + live Aura endpoints"
-	@echo "make release-readiness — validate the ten fresh reports for the current Git SHA"
+	@echo "make release-readiness — validate the twelve fresh reports for the current Git SHA"
 	@echo "make db-up         — docker compose up -d postgres (waits healthy)"
 	@echo "make db-migrate    — aura db migrate (role aura_migrate)"
 	@echo "make db-status     — aura db status"
