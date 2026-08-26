@@ -49,14 +49,22 @@ armchair. Full decision record: `.planning/phases/51-durable-delegation/51-CONTE
   declares the operator as author; a worker report declares a worker; the model trusts the
   payload's self-declared authorship over the envelope and discounts the whole thing as
   spoofing. Reusing the rail is fine - reusing the envelope silently loses the result.
-- **Worker tool dispatch is broken and must be fixed before anything in this phase is
-  worth building** (spike 099, live, deterministic). `swarm_spawn` and the 10 agent-scoped
-  tools share `OperationScope: OperationScopeAgent`, so `deriveToolOperationContext`'s
-  `parent.Key.Scope == spec.OperationScope` early-return leaves `swarm_spawn`'s operation in
-  the worker's context; the gateway then recomputes the fingerprint for the worker's actual
-  tool and denies on mismatch. Measured 4/4 workers, 100% of dispatches. This IS SWARM-08's
-  "verified against the live surface rather than assumed from registry inheritance", and the
-  live surface says workers inherit the registry but cannot dispatch.
+- **Worker tool dispatch was broken; it is fixed, and the phase can be built on it**
+  (spike 099, live, deterministic, re-measured). `swarm_spawn` and the 10 agent-scoped tools
+  share `OperationScope: OperationScopeAgent`, so `deriveToolOperationContext`'s
+  `parent.Key.Scope == spec.OperationScope` early-return left `swarm_spawn`'s operation in
+  the worker's context; the gateway then recomputed the fingerprint for the worker's actual
+  tool and denied on mismatch. Measured 4/4 workers, 100% of dispatches; re-measured at 0
+  denials and 3 real `shell_exec` executions after the fix. This IS SWARM-08's "verified
+  against the live surface rather than assumed from registry inheritance", and the live
+  surface now says workers both inherit the registry and dispatch through it.
+- **A nested tool call's idempotency key cannot tell two sibling workers apart** (spike 099
+  fix, characterized in `TestSiblingWorkersOfOneSpawnCollapseOnAnIdenticalCall`). The derived
+  key is parent key + parent fingerprint + tool + args + round ordinal, because request and
+  tool-call ids are audit-only by design (a same-round retry must collapse). Two siblings of
+  ONE spawn issuing a byte-identical mutating call at the same ordinal therefore share a key
+  and the second gets in-progress or a marked replay rather than a second mutation — safe,
+  but it is D-10's call whether worker identity should join that key.
 - **The child timeout is 120s nominal but 240s effective** (spike 099). The recovery turn
   deliberately severs the expired deadline (`context.WithoutCancel`, fix-plan 1.1) and its
   call is bounded by `AURA_LLM_TOTAL_TIMEOUT_SEC` (120 here). Observed once at 139.77s
@@ -75,7 +83,7 @@ armchair. Full decision record: `.planning/phases/51-durable-delegation/51-CONTE
 | # | Idea | Name | Type | Validates | Verdict | Tags |
 |---|------|------|------|-----------|---------|------|
 | 098 | durable-delegation | steer-carries-worker-result | standard | Given a worker completion pushed into the steer inbox with a worker-attributed marker, when the parent turn reaches its next round boundary, then it lands in history without breaking role alternation or touching `history[0..2]`, and reads as spoken by a worker rather than by the operator | **PARTIAL** - rail validated, envelope invalidated: the model detects operator-envelope vs worker-payload mismatch and discounts the report as injection (3/3 live runs) | steer, delivery, kv-cache, attribution |
-| 099 | durable-delegation | worker-duration-and-progress | standard | Given a real fan-out on the live stack, when workers run to completion, then measured durations show whether a 120s wall-clock ceiling is survivable, and whether per-worker progress is observable enough to drive hermes-style staleness | **BLOCKED** - a swarm worker cannot dispatch ANY agent-scoped tool (4/4 workers, 100% of dispatches denied `operation fingerprint mismatch`); also corrected the child cap from 120s nominal to 240s effective | swarm, timeout, observability, defect |
+| 099 | durable-delegation | worker-duration-and-progress | standard | Given a real fan-out on the live stack, when workers run to completion, then measured durations show whether a 120s wall-clock ceiling is survivable, and whether per-worker progress is observable enough to drive hermes-style staleness | **PARTIAL** - found and fixed a live deterministic defect (a swarm worker could dispatch NO agent-scoped tool: 4/4 workers, 100% denied `operation fingerprint mismatch`; re-measured at 0 denials); corrected the child cap from 120s nominal to 240s effective; the duration question itself is STILL open, the re-run's goals were not executable inside the sandbox | swarm, timeout, observability, defect |
 | 100a | durable-delegation | substrate-single-table | comparison | Given a delegation in flight, when the worker dies mid-flight / the daemon restarts / delivery fails 8 consecutive times, then the delegation is never silently lost and converges to a readable terminal state | PENDING | postgres, durability, lease |
 | 100b | durable-delegation | substrate-generalized-queue | comparison | The same question, generalizing the proven `aura.ingestion_jobs` lease engine instead of adding a new table | PENDING | postgres, durability, lease, reuse |
 | 101 | durable-delegation | message-channel-necessity | standard | Given the delegation ledger plus the steer rail, when a background delegation must return a result AND its worker must ask the operator, then either no agent-to-agent message channel is needed, or the spike names exactly what cannot be expressed without one | PENDING | scope, messaging |

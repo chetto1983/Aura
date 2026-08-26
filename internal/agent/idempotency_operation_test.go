@@ -154,9 +154,10 @@ func TestDeriveToolOperationContextFailsClosedWithoutRound(t *testing.T) {
 
 // TestDeriveToolOperationContextPassesThroughWithoutParent proves PE-01 (backstop
 // promoted to an explicit assertion here): with no parent operation in context, or
-// a parent whose scope already equals the tool's own scope, deriveToolOperationContext
-// returns (ctx, nil) UNCHANGED — the round is required only on the path that
-// actually derives a child key, never on the passthrough path.
+// a parent that IS this call's own operation (same scope AND same fingerprint —
+// a re-entry), deriveToolOperationContext returns (ctx, nil) UNCHANGED — the round
+// is required only on the path that actually derives a child key, never on the
+// passthrough path.
 func TestDeriveToolOperationContextPassesThroughWithoutParent(t *testing.T) {
 	spec := childOperationSpec()
 	args := json.RawMessage(`{"action":"restore","name":"calc"}`)
@@ -172,10 +173,12 @@ func TestDeriveToolOperationContextPassesThroughWithoutParent(t *testing.T) {
 		}
 	})
 
-	t.Run("parent scope equals tool scope", func(t *testing.T) {
-		fingerprint, err := idempotency.FingerprintTyped(struct {
-			Tool string `json:"tool"`
-		}{Tool: spec.Name})
+	// The parent must be THIS CALL's own operation, not merely one sharing its
+	// scope. The premise was corrected after spike 099: keying passthrough on scope
+	// alone let a swarm worker inherit swarm_spawn's operation and be denied on
+	// every dispatch, so the fingerprint now has to match too.
+	t.Run("parent is a re-entry of the same call", func(t *testing.T) {
+		fingerprint, err := tools.OperationFingerprint(spec, args)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -201,4 +204,133 @@ func TestDeriveToolOperationContextPassesThroughWithoutParent(t *testing.T) {
 			t.Fatal("same-scope derive must return the SAME ctx unchanged")
 		}
 	})
+}
+
+// TestDeriveToolOperationContextDerivesForNestedToolCall pins the defect spike 099
+// measured live: a swarm worker inherited swarm_spawn's operation verbatim, because
+// the passthrough guard keyed on scope alone and swarm_spawn shares
+// OperationScopeAgent with the ten tools a worker can call. gateway.beginOperation
+// then recomputed the fingerprint for the worker's OWN tool, found swarm_spawn's,
+// and denied every dispatch with "operation fingerprint mismatch" — 4/4 workers,
+// 100% of calls, deterministic. A nested call is a NEW operation and must derive
+// one; only a genuine re-entry of the SAME call may pass through.
+func TestDeriveToolOperationContextDerivesForNestedToolCall(t *testing.T) {
+	spec := childOperationSpec()
+	args := json.RawMessage(`{"action":"restore","name":"calc"}`)
+	want, err := tools.OperationFingerprint(spec, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	derived, err := deriveToolOperationContext(swarmParentOperationContextFor(t, `{"goals":["alpha","beta"]}`), spec, args)
+	if err != nil {
+		t.Fatalf("nested derive: %v", err)
+	}
+	op, ok := idempotency.OperationFromContext(derived)
+	if !ok {
+		t.Fatal("nested derive: no operation in context")
+	}
+	if op.Fingerprint != want {
+		t.Fatalf("nested derive carried the PARENT's fingerprint %s, want the worker tool's own %s — the gateway denies this as an operation fingerprint mismatch",
+			idempotency.FingerprintHex(op.Fingerprint), idempotency.FingerprintHex(want))
+	}
+	if op.Key.Scope != spec.OperationScope {
+		t.Fatalf("nested derive scope = %q, want %q", op.Key.Scope, spec.OperationScope)
+	}
+}
+
+// swarmParentOperationContextFor builds the ctx a SWARM WORKER actually runs under:
+// the parent agent already derived a child operation for its own swarm_spawn call
+// (scope ScopeAgentTool), and that operation is still ambient when the worker
+// dispatches a tool of its own. The round is the WORKER's own — llm_agent.go:537
+// re-points it onto ic.Ctx before every dispatch, so the derivation path sees it.
+// The spawn's goals are the caller's, so two DISTINCT invocations can be compared
+// with everything else — identity, scope, the worker's round — held equal.
+func swarmParentOperationContextFor(t *testing.T, goals string) context.Context {
+	t.Helper()
+	swarmSpec := tools.Spec{
+		Name: "swarm_spawn", Mutating: true,
+		OperationScope: tools.OperationScopeAgent, OperationNormalizer: tools.OperationNormalizerCanonical,
+		ReplayPolicy: tools.ReplayToolResult,
+	}
+	swarmFingerprint, err := tools.OperationFingerprint(swarmSpec, json.RawMessage(goals))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent := idempotency.Operation{
+		Key: idempotency.OperationKey{
+			IdentityID: identityctx.LocalOperatorIdentity,
+			Scope:      tools.OperationScopeAgent,
+			Key:        "child:" + idempotency.FingerprintHex(swarmFingerprint),
+		},
+		Fingerprint: swarmFingerprint,
+	}
+	ctx, err := idempotency.WithOperation(
+		identityctx.WithIdentityID(context.Background(), identityctx.LocalOperatorIdentity), parent,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return withModelRound(ctx, modelRound{requestID: uuid.Must(uuid.NewV7()), ordinal: 1})
+}
+
+// TestDeriveToolOperationContextScopesNestedCallsToTheirSpawn proves the widened
+// parent branch did not trade a denial for a collapse: the derived key carries the
+// PARENT's key and fingerprint, so the same worker tool called with the same
+// arguments under two different swarm_spawn invocations derives two different keys
+// and executes twice. Without this, re-running a fan-out would replay the first
+// fan-out's recorded results.
+func TestDeriveToolOperationContextScopesNestedCallsToTheirSpawn(t *testing.T) {
+	spec := childOperationSpec()
+	args := json.RawMessage(`{"action":"restore","name":"calc"}`)
+
+	keyFor := func(goals string) string {
+		derived, err := deriveToolOperationContext(swarmParentOperationContextFor(t, goals), spec, args)
+		if err != nil {
+			t.Fatalf("derive under %s: %v", goals, err)
+		}
+		op, ok := idempotency.OperationFromContext(derived)
+		if !ok {
+			t.Fatalf("derive under %s: no operation in context", goals)
+		}
+		return op.Key.Key
+	}
+
+	if first, second := keyFor(`{"goals":["alpha"]}`), keyFor(`{"goals":["beta"]}`); first == second {
+		t.Fatalf("two distinct spawns derived the SAME key %s — the second fan-out would replay the first's results", first)
+	}
+}
+
+// TestSiblingWorkersOfOneSpawnCollapseOnAnIdenticalCall characterizes — it does not
+// introduce — the one property the derived key cannot discriminate: worker identity.
+// The key is (parent key + parent fingerprint + tool + args + round ordinal) by
+// design, because request and tool-call ids are audit-only (a same-round retry must
+// collapse, HARN-02). Two siblings of ONE spawn issuing a byte-identical mutating
+// call at the same ordinal therefore share a key, and the registry answers the
+// second with in-progress or a marked replay rather than mutating twice.
+//
+// That is the safe outcome, not the obviously right one: sibling workers are given
+// DIFFERENT goals, so identical arguments are an edge case. Phase 51's D-10 already
+// owns the decision of whether worker identity becomes host-derived and joins this
+// key; this test is where that change must announce itself.
+func TestSiblingWorkersOfOneSpawnCollapseOnAnIdenticalCall(t *testing.T) {
+	spec := childOperationSpec()
+	args := json.RawMessage(`{"action":"restore","name":"calc"}`)
+	goals := `{"goals":["alpha","beta"]}`
+
+	keyForSibling := func() string {
+		derived, err := deriveToolOperationContext(swarmParentOperationContextFor(t, goals), spec, args)
+		if err != nil {
+			t.Fatalf("sibling derive: %v", err)
+		}
+		op, ok := idempotency.OperationFromContext(derived)
+		if !ok {
+			t.Fatal("sibling derive: no operation in context")
+		}
+		return op.Key.Key
+	}
+
+	if first, second := keyForSibling(), keyForSibling(); first != second {
+		t.Fatalf("sibling keys diverged (%s vs %s) — worker identity entered the key; update D-10 and this test's rationale together", first, second)
+	}
 }

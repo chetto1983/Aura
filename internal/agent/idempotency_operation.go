@@ -40,22 +40,38 @@ var errMissingModelRound = errors.New("missing model round for tool operation de
 // old sentence true, and would also make HARN-03 provable without a probe.
 func deriveToolOperationContext(ctx context.Context, spec tools.Spec, args json.RawMessage) (context.Context, error) {
 	parent, ok := idempotency.OperationFromContext(ctx)
-	if !ok || parent.Key.Scope == spec.OperationScope {
+	if !ok {
+		return ctx, nil
+	}
+	toolFingerprint, err := tools.OperationFingerprint(spec, args)
+	if err != nil {
+		return nil, err
+	}
+	// Passthrough is a RE-ENTRY guard, so it keys on the whole identity of the call
+	// (scope AND fingerprint), never on scope alone. Scope alone was wrong the moment
+	// one agent-scoped tool could run inside another: swarm_spawn shares
+	// OperationScopeAgent with the ten tools a worker may call, so a worker's own
+	// dispatch matched this guard, inherited swarm_spawn's operation verbatim, and
+	// gateway.beginOperation then recomputed the fingerprint for the worker's actual
+	// tool and denied it as an "operation fingerprint mismatch" — measured live in
+	// spike 099 at 4/4 workers, 100% of dispatches, deterministic.
+	if parent.Key.Scope == spec.OperationScope && parent.Fingerprint == toolFingerprint {
 		return ctx, nil
 	}
 	switch parent.Key.Scope {
 	case idempotency.ScopeHTTPMutation, idempotency.ScopeCLICommand,
-		idempotency.ScopeSchedulerRun, idempotency.ScopeApproval:
+		idempotency.ScopeSchedulerRun, idempotency.ScopeApproval,
+		// ScopeAgentTool as a PARENT is the nested case above: a tool operation may
+		// own another tool operation, one level per delegation hop. The derived key
+		// still carries the parent's key and fingerprint, so a worker's call is
+		// scoped to the exact swarm_spawn invocation that spawned it.
+		idempotency.ScopeAgentTool:
 	default:
 		return nil, errUnsupportedParentOperation
 	}
 	round, ok := modelRoundFromContext(ctx)
 	if !ok {
 		return nil, errMissingModelRound
-	}
-	toolFingerprint, err := tools.OperationFingerprint(spec, args)
-	if err != nil {
-		return nil, err
 	}
 	childKeyFingerprint, err := idempotency.FingerprintTyped(struct {
 		Version           string            `json:"version"`

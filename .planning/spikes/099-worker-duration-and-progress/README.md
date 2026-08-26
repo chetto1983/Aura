@@ -4,7 +4,7 @@ idea: durable-delegation
 name: worker-duration-and-progress
 type: standard
 validates: "Given a real fan-out on the live stack, when workers run to completion, then measured durations show whether a 120s wall-clock ceiling is survivable, and whether per-worker progress is observable enough to drive hermes-style staleness"
-verdict: BLOCKED
+verdict: PARTIAL
 related: [098]
 tags: [swarm, timeout, observability, defect]
 ---
@@ -139,13 +139,51 @@ Two things survive the contamination and are worth carrying forward:
    = 240s, twice the nominal cap.** Any lease or reclaim interval in spike 100's substrate
    that is sized against the nominal 120s would reclaim a worker that is still alive.
 
-## Verdict — BLOCKED
+## Re-measurement after the fix (2026-08-26)
 
-D-03's question cannot be answered until worker tool dispatch works. The blocking fact is
-worth more than the number the spike set out to collect:
+The defect is closed and the closure was measured on the same four-goal fan-out, on the
+live stack, with the rebuilt image. Ground truth is `aura.tool_invocations` and the daemon
+log — not the parent's prose, which lied the first time.
 
-- **New, live, deterministic defect:** a swarm worker cannot dispatch any agent-scoped tool.
-  Measured 4/4 workers, 100% of dispatches, root cause read in the code.
+| | first run (defect present) | after the fix |
+|---|---|---|
+| `operation fingerprint mismatch` | **41** across 4 workers, 100% of dispatches | **0** |
+| `shell_exec` actually executed | 0 | 3 rows `event_kind=end, status=ok, exit_code=0`, with real captured output |
+| worker outcomes | 4 `ok` having done nothing | 3 `ok`, 1 failed on an **OpenRouter** `context deadline exceeded` — upstream, not policy |
+
+The fix is in `deriveToolOperationContext` (`internal/agent/idempotency_operation.go`): the
+passthrough guard now keys on the whole identity of the call (scope AND fingerprint) instead
+of scope alone, and `ScopeAgentTool` is accepted as a PARENT scope so a nested call derives
+its own child key. Which of the three candidate sites to fix was left open by this spike;
+this one was chosen because it is the site that actually holds the wrong premise — the guard
+is a re-entry guard, and re-entry was being tested for with half of the call's identity.
+
+### D-03 is still not answered, for a second and unrelated reason
+
+Durations from this run are still not the number D-03 wants:
+
+| worker | duration | what it was doing |
+|---|---|---|
+| w4 | 6.18s | — |
+| w3 | 7.67s | — |
+| w1 | 70.31s | `find /` sweeps looking for a repo that is not there |
+| w2 | 120.00s → failed | OpenRouter deadline |
+
+**The goals were not executable inside the box.** They asked for counts under
+`internal/agent` and `internal/db/migrations`, and the sandbox answered
+`ls: cannot access '/workspace/internal/agent': No such file or directory`. Ten `start` rows
+against three `end` rows are workers burning rounds searching for the code, not workers
+being denied. A third run is owed, with goals that are genuinely executable inside the
+sandbox — that is what will finally produce the number.
+
+## Verdict — PARTIAL (was BLOCKED)
+
+The blocking fact was worth more than the number the spike set out to collect, and it has
+since been fixed and re-measured (above). What the spike delivered:
+
+- **New, live, deterministic defect, now fixed:** a swarm worker could not dispatch any
+  agent-scoped tool. Measured 4/4 workers, 100% of dispatches, root cause read in the code,
+  re-measured at 0 denials after the fix.
 - **Correction to a number Phase 51 would otherwise have trusted:** the child timeout is 120s
   nominal, 240s effective.
 - **The design direction for D-03 is nonetheless clear** and does not depend on the blocked
@@ -169,8 +207,9 @@ worth more than the number the spike set out to collect:
 
 ## What This Spike Does NOT Prove
 
-- No claim about worker durations under a *working* dispatch path — that measurement is still
-  owed once the defect is fixed.
+- **Still no claim about worker durations under a working dispatch path.** Dispatch works
+  now, but the re-measurement's goals were not executable inside the sandbox, so its
+  durations measure a search for absent files. The measurement is owed a third run.
 - One deployment, one routed model (`deepseek/deepseek-v4-flash-0731:nitro`, read from
   `aura.settings`), one profile (`single_user_hardened`). The denial is structural, so it
   should not be deployment-specific, but that has not been checked elsewhere.
