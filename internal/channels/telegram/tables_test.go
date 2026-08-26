@@ -279,3 +279,60 @@ func TestPreBlockTable_ColumnWidthMatchesWidestCell(t *testing.T) {
 		t.Errorf("expected 'Name' padded to align under 'Apple'; got:\n%s", out)
 	}
 }
+
+// The weather table Aura sent to Telegram on 2026-08-26 rendered "**Lun 24**"
+// with the asterisks drawn into the PNG: nothing stripped inline markup, and the
+// renderer expresses bold through the font instead.
+func TestParseMarkdownTableStripsInlineMarkup(t *testing.T) {
+	grid, ok := ParseMarkdownTable(strings.Join([]string{
+		"| Giorno | Min | Max |",
+		"| --- | --- | --- |",
+		"| **Lun 24** | 15° | 27° |",
+		"| __Mar 25__ | 18° | 27° |",
+		"| `Mer 26` | 18° | 29° |",
+		"| [Gio 27](https://example.com/x) | 19° | 25° |",
+	}, "\n"))
+	if !ok {
+		t.Fatal("table did not parse")
+	}
+	want := []string{"Lun 24", "Mar 25", "Mer 26", "Gio 27"}
+	for i, w := range want {
+		if got := grid[i+1][0]; got != w {
+			t.Errorf("row %d first cell = %q, want %q", i+1, got, w)
+		}
+	}
+}
+
+// Single * and _ are load-bearing content in this assistant's tables — a glob and
+// a snake_case identifier must survive untouched. Stripping them to fix a cosmetic
+// problem would corrupt real answers.
+func TestParseMarkdownTableKeepsGlobsAndIdentifiers(t *testing.T) {
+	grid, ok := ParseMarkdownTable(strings.Join([]string{
+		"| Pattern | Simbolo |",
+		"| --- | --- |",
+		"| *.go | snake_case |",
+		"| internal/*_test.go | total_cost_usd |",
+	}, "\n"))
+	if !ok {
+		t.Fatal("table did not parse")
+	}
+	for _, tc := range []struct {
+		row, col int
+		want     string
+	}{
+		{1, 0, "*.go"}, {1, 1, "snake_case"},
+		{2, 0, "internal/*_test.go"}, {2, 1, "total_cost_usd"},
+	} {
+		if got := grid[tc.row][tc.col]; got != tc.want {
+			t.Errorf("cell [%d][%d] = %q, want %q", tc.row, tc.col, got, tc.want)
+		}
+	}
+}
+
+// The separator row is parsed through the same splitRow, so stripping must not
+// disturb it or every table stops being recognised as a table.
+func TestSeparatorRowSurvivesStripping(t *testing.T) {
+	if _, ok := ParseMarkdownTable("| a | b |\n| :-- | --: |\n| 1 | 2 |"); !ok {
+		t.Fatal("aligned separator row no longer parses as a table")
+	}
+}
