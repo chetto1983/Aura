@@ -66,7 +66,12 @@ CONV=$(curl -sS -X POST "$BASE/api/conversations" \
 echo "conversation=$CONV"
 
 echo "== 4. start the fan-out =="
-PROMPT='Usa swarm_spawn (caricalo con tool_search se serve) con QUATTRO goal indipendenti, ognuno un brief completo che richiede di usare shell_exec: (1) Conta quanti file .go ci sono sotto internal/agent e riporta il numero; (2) Conta quante migration ci sono in internal/db/migrations e riporta il numero più alto; (3) Riporta le prime 3 righe di go.mod; (4) Riporta la dimensione in byte di CLAUDE.md. Poi elenca i quattro risultati.'
+# The goals live in goals.txt beside this script so a re-run measures the SAME
+# fan-out, and so a change to what the workers are asked shows up in the diff.
+# They must be executable INSIDE the sandbox: the second run's goals asked for
+# counts under a repo /workspace does not contain, and the workers spent their
+# rounds searching for it instead of working.
+PROMPT=$(sed 's/"/\\"/g' /work/goals.txt | tr -d '\015\012')
 MSG_ID=$(uuid)
 curl -sS -N -X POST "$BASE/agent/run" \
   -H "Content-Type: application/json" \

@@ -4,7 +4,7 @@ idea: durable-delegation
 name: worker-duration-and-progress
 type: standard
 validates: "Given a real fan-out on the live stack, when workers run to completion, then measured durations show whether a 120s wall-clock ceiling is survivable, and whether per-worker progress is observable enough to drive hermes-style staleness"
-verdict: PARTIAL
+verdict: validated
 related: [098]
 tags: [swarm, timeout, observability, defect]
 ---
@@ -158,25 +158,68 @@ its own child key. Which of the three candidate sites to fix was left open by th
 this one was chosen because it is the site that actually holds the wrong premise — the guard
 is a re-entry guard, and re-entry was being tested for with half of the call's identity.
 
-### D-03 is still not answered, for a second and unrelated reason
+### The second run's durations were still not the answer, for an unrelated reason
 
-Durations from this run are still not the number D-03 wants:
+That run's goals asked for counts under `internal/agent` and `internal/db/migrations`, and
+the sandbox answered `ls: cannot access '/workspace/internal/agent'`. Ten `start` rows
+against three `end` rows were workers burning rounds searching for a repo that is not in the
+box — not workers being denied. The goals now live in `goals.txt` beside the driver, are
+executable inside `/workspace`, and are what a re-run measures.
 
-| worker | duration | what it was doing |
+## D-03 answered (2026-08-26, third run, `01a03f9f-05ad-78c4-8a33-a0e2faf1c92e`)
+
+Four workers, four executable goals, all four `ok`, and every answer verified against ground
+truth taken independently from the box before the run:
+
+| worker | duration | goal | answer | ground truth |
+|---|---|---|---|---|
+| w3 | **5.15s** | lines of README.md + create_docx.py | 17, 39 | 17, 39 |
+| w2 | **5.51s** | files + subdirs under documents/ | 8, 8 | 8, 8 |
+| w1 | **7.58s** | bytes of faccia_divertente.png | 60650 | 60650 |
+| w4 | **7.80s** | sha256 of every top-level file | `8aa31133d523797f` first | `8aa31133d523797f` |
+
+### Is a 120s wall-clock ceiling survivable? Yes — and that is not the same as adequate.
+
+Every worker doing real, feasible work finished in **5-8s**, a 23× margin under the nominal
+cap. The cap is not the binding constraint on a healthy worker. But the three runs together
+show what the cap actually catches, and it is not slowness:
+
+| observation | run | what the 120s cap did |
 |---|---|---|
-| w4 | 6.18s | — |
-| w3 | 7.67s | — |
-| w1 | 70.31s | `find /` sweeps looking for a repo that is not there |
-| w2 | 120.00s → failed | OpenRouter deadline |
+| 5.15 - 7.80s, all ok | 3rd | nothing; margin was never approached |
+| 70.31s, ok | 2nd | nothing, yet the worker was *lost* the whole time doing `find /` for absent files |
+| 120.00s, failed | 2nd | fired — on an **OpenRouter** `context deadline exceeded`, an upstream stall |
 
-**The goals were not executable inside the box.** They asked for counts under
-`internal/agent` and `internal/db/migrations`, and the sandbox answered
-`ls: cannot access '/workspace/internal/agent': No such file or directory`. Ten `start` rows
-against three `end` rows are workers burning rounds searching for the code, not workers
-being denied. A third run is owed, with goals that are genuinely executable inside the
-sandbox — that is what will finally produce the number.
+The cap fired exactly once across three runs, and what it caught was a stalled upstream call,
+not a long computation. The 70s worker — the one genuinely worth intervening on, because it
+was making tool calls that could never succeed — sailed under the cap and returned `ok`.
+**A wall-clock ceiling is the wrong instrument for the failure that actually occurs**, which
+is what LibreChat's comment says in as many words and what hermes' progress counter acts on.
+The spread across a single fan-out (5.15s to 120s, 23×) is itself the argument: no single
+constant is right for both ends of it.
 
-## Verdict — PARTIAL (was BLOCKED)
+### Is per-worker progress observable enough for hermes-style staleness? Yes, but not from the ledger.
+
+Measured, not inferred — `aura.tool_invocations` for the third run:
+
+| tool | start rows | end rows |
+|---|---|---|
+| `shell_exec` | **6** | **1** |
+| `swarm_spawn` | 1 | 1 |
+| `tool_search` | 1 | 1 |
+
+The one `end` that landed carries the parent's own combined command (the table above is read
+from its preview). **The workers' own `shell_exec` calls record a `start` and no `end`** — the
+same shape as the second run's 10-against-3. So a staleness reaper built on the invocation
+ledger would see every worker as permanently in-flight and reap live workers.
+
+The signal that *does* exist is the one already named in the research above:
+`runChild`'s `for ev, err := range worker.Run(ic)` loop (`swarm.go:185`) sees every worker
+event, which is precisely where LibreChat calls `recordActivity`. **The liveness tick belongs
+in that loop, not in a query over `tool_invocations`.** That is the design answer D-03 owed,
+and it now rests on a measurement rather than on the reference implementations alone.
+
+## Verdict — validated (was BLOCKED)
 
 The blocking fact was worth more than the number the spike set out to collect, and it has
 since been fixed and re-measured (above). What the spike delivered:
@@ -186,9 +229,10 @@ since been fixed and re-measured (above). What the spike delivered:
   re-measured at 0 denials after the fix.
 - **Correction to a number Phase 51 would otherwise have trusted:** the child timeout is 120s
   nominal, 240s effective.
-- **The design direction for D-03 is nonetheless clear** and does not depend on the blocked
-  measurement: both references reap on inactivity, Aura reaps on age, and Aura already owns
-  the event loop where the liveness tick belongs.
+- **D-03 answered on measurement, agreeing with both references:** a healthy worker finishes
+  in 5-8s against a 120s cap the spread makes meaningless, the one cap firing caught an
+  upstream stall rather than slow work, and the ledger cannot drive staleness while the
+  event loop can.
 
 ## Investigation Trail
 
@@ -207,9 +251,13 @@ since been fixed and re-measured (above). What the spike delivered:
 
 ## What This Spike Does NOT Prove
 
-- **Still no claim about worker durations under a working dispatch path.** Dispatch works
-  now, but the re-measurement's goals were not executable inside the sandbox, so its
-  durations measure a search for absent files. The measurement is owed a third run.
+- **The durations are four workers on four small goals, not a load characterization.** They
+  prove a healthy worker finishes far under the cap; they say nothing about a worker doing
+  genuinely heavy work, which no run here produced.
+- **The missing worker `end` rows are measured, not explained.** Two runs show worker
+  `shell_exec` calls recording `start` without `end`; the cause was not traced, and this
+  spike does not claim one. The design conclusion does not depend on it — the event loop is
+  the better tick source regardless — but the gap itself is owed an investigation.
 - One deployment, one routed model (`deepseek/deepseek-v4-flash-0731:nitro`, read from
   `aura.settings`), one profile (`single_user_hardened`). The denial is structural, so it
   should not be deployment-specific, but that has not been checked elsewhere.
