@@ -258,6 +258,31 @@ Every worker call, no exceptions; no parent call, no exceptions.
 So a staleness reaper built on this ledger would not merely see live workers as in-flight;
 it would be reading a record that actively contradicts what happened.
 
+### Fixed, and re-measured
+
+`791dcd7e0` gives the gateway the other half of the row: it closes the reservation at its
+own terminal hooks (`CompleteOperation` / `MarkOperationIndeterminate`), gated on a context
+marker `runChild` sets, so a Runner-observed dispatch is untouched and keeps the Runner's
+richer end. The rule is LibreChat's (D-00) — whoever opens a record closes it, so no
+component ever has to find and close a row another one opened.
+
+Same fan-out, rebuilt image, live:
+
+| | starts | ends | orphans |
+|---|---|---|---|
+| workers (×4), before | 5 | **0** | 5, all later stamped indeterminate |
+| workers (×4), after | 5 | **5**, `meta.delegated` | **0** |
+| parent, after | 2 | 2 | 0 — unchanged |
+
+The reconciler's own anti-join over that conversation returns **0**. The delegated end rows
+carry the real output (`60650`, `17`/`39`, `FILE_REGOLARI=8`, `NUMERO_FILE=15 … 8aa…`).
+
+**This does not change D-03's design answer below.** The ledger now records that a worker's
+call ENDED; staleness needs to know a worker is still ALIVE part-way through one, and that
+signal is still only in `runChild`'s event loop — LibreChat fires `recordActivity` per
+emitted chunk, not per finished tool call. What the fix removes is the ledger actively
+lying, which is a precondition for spike 100 measuring anything on top of it.
+
 The signal that *does* exist is the one already named in the research above:
 `runChild`'s `for ev, err := range worker.Run(ic)` loop (`swarm.go:185`) sees every worker
 event, which is precisely where LibreChat calls `recordActivity`. **The liveness tick belongs
@@ -299,8 +324,8 @@ since been fixed and re-measured (above). What the spike delivered:
 - **The durations are four workers on four small goals, not a load characterization.** They
   prove a healthy worker finishes far under the cap; they say nothing about a worker doing
   genuinely heavy work, which no run here produced.
-- **The missing worker `end` rows are now explained and their consequence caught live**
-  (asymmetric writers; reconciler stamping succeeded calls as indeterminate at 20:10:31).
+- **The missing worker `end` rows were explained, their consequence caught live, and the
+  defect fixed and re-measured** (`791dcd7e0`: workers 5/5 closed, anti-join 0).
   The blast radius is small so far and was counted rather than guessed: **22 reconciled
   `end` rows exist in the whole ledger** (`meta->>'reconciled'='true'`), 18 of them written
   today by these three runs and only 4 before them (2026-08-15/16). What is NOT established

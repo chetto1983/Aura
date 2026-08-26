@@ -76,12 +76,17 @@ armchair. Full decision record: `.planning/phases/51-durable-delegation/51-CONTE
   `context deadline exceeded`, an upstream stall. The worker genuinely worth intervening on —
   70.31s spent calling tools that could never succeed — sailed under the cap and returned
   `ok`. The 23x spread inside one fan-out is itself the argument: no constant fits both ends.
-- **Staleness cannot be driven from `aura.tool_invocations`** (spike 099, measured twice). A
-  worker's `shell_exec` records a `start` and no `end` (third run: 6 starts, 1 end, and that
-  one is the parent's own call; second run: 10 against 3). A reaper querying the ledger would
-  see every worker as permanently in-flight and reap live ones. The tick belongs in
-  `runChild`'s event loop (`swarm.go:185`), where LibreChat puts `recordActivity`. The
-  missing `end` rows are measured but NOT explained — the cause is owed an investigation.
+- **A worker's tool call used to orphan its reservation; fixed in `791dcd7e0`** (spike 099,
+  measured, explained, re-measured). The gateway wrote `start`, the Runner wrote `end` from
+  turn frames a worker's stream never reaches, and the reconciler then stamped SUCCEEDED
+  worker calls as indeterminate failures 30 minutes later. The gateway now closes what it
+  opens, gated on a marker `runChild` sets: workers went 5 starts / 0 ends to 5 / 5, the
+  reconciler's anti-join returns 0, and the parent's richer end is untouched. The rule is
+  LibreChat's: whoever opens a record closes it.
+- **Staleness still cannot be driven from `aura.tool_invocations`** (spike 099). The rows are
+  honest now, but they say a call ENDED; staleness needs to know a worker is still ALIVE
+  part-way through one. LibreChat fires `recordActivity` per emitted chunk, not per finished
+  tool call, so the tick belongs in `runChild`'s event loop (`swarm.go:185`).
 - **Reap on inactivity, not on age** (spike 099 research). LibreChat refreshes `lastActivity`
   on every emitted chunk so *"a long but live stream is never reaped"*; hermes leaves an
   advancing child alone forever. Aura caps total age and consumes no liveness signal, although
