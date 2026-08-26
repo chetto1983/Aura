@@ -4,16 +4,16 @@ milestone: v2.1.0
 current_phase: 52
 current_phase_name: Mid-turn steering
 status: executing
-stopped_at: Phase 52 executed; Gate 3 scored 9.0/10 -- Telegram leg needs a human
-last_updated: "2026-08-25T13:25:33.684Z"
+stopped_at: Phase 51 context gathered; design-gate spike is the next action
+last_updated: "2026-08-26T17:58:22.715Z"
 last_activity: 2026-08-25
 last_activity_desc: Phase 52 execution resumed (wave continue)
-state_head: 27c3066e1e4c790d31028b948c343a4fafe9c964
+state_head: e906028cf010b383344b954c2b1e2b189aefd682
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 34
-  completed_plans: 33
+  completed_plans: 34
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -262,8 +262,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-25T07:42:33.403Z
-Stopped at: Phase 52 context gathered
+Last session: 2026-08-26T17:58:22.565Z
+Stopped at: Phase 51 context gathered; design-gate spike is the next action
 exited at its CONTEXT.md gate — Phase 45 has no CONTEXT.md, and discuss-phase must run as a
 top-level command (nested invocation breaks AskUserQuestion, GSD #1009). No phase directory
 was created and no planning agents were spawned.
@@ -276,6 +276,6 @@ build order extended with Phases 51/52 and the 53/54 renumber, requirement count
 to 77, the `tool_call_id` blocker marked resolved by `657c9e383`, and the CTX-V2-01 deferral
 re-pointed at Phase 53. REQUIREMENTS.md's two stale prose lines corrected to match.
 
-Resume file: .planning/phases/52-mid-turn-steering/52-CONTEXT.md
+Resume file: .planning/phases/51-durable-delegation/51-CONTEXT.md
 Next action: none assigned. Phase 52 is the next in order and is plan-ready, but nothing is
 scheduled — the operator drives.
