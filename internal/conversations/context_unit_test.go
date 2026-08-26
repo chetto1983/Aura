@@ -19,12 +19,12 @@ type fakeRotEmitter struct {
 }
 
 type rotCall struct {
-	conversationID            string
+	conversationID, action    string
 	pairsDropped, before, aft int
 }
 
-func (f *fakeRotEmitter) insertContextRotEvent(_ context.Context, convID string, pairs, before, after int) error {
-	f.calls = append(f.calls, rotCall{convID, pairs, before, after})
+func (f *fakeRotEmitter) insertContextRotEvent(_ context.Context, convID, action string, pairs, before, after int) error {
+	f.calls = append(f.calls, rotCall{convID, action, pairs, before, after})
 	return nil
 }
 

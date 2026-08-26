@@ -12,6 +12,7 @@ import (
 func TestConfigValidateTokenBudget(t *testing.T) {
 	valid := llm.Config{
 		ContextWindow:   128_000,
+		TotalTimeoutSec: 120,
 		MaxTokens:       4096,
 		MaxOutputTokens: 32_768,
 	}
@@ -22,6 +23,8 @@ func TestConfigValidateTokenBudget(t *testing.T) {
 	}{
 		{"zero context window", func(cfg *llm.Config) { cfg.ContextWindow = 0 }, "context_window"},
 		{"negative context window", func(cfg *llm.Config) { cfg.ContextWindow = -1 }, "context_window"},
+		{"zero total timeout", func(cfg *llm.Config) { cfg.TotalTimeoutSec = 0 }, "total_timeout_sec"},
+		{"negative total timeout", func(cfg *llm.Config) { cfg.TotalTimeoutSec = -1 }, "total_timeout_sec"},
 		{"zero max tokens", func(cfg *llm.Config) { cfg.MaxTokens = 0 }, "max_tokens"},
 		{"negative max tokens", func(cfg *llm.Config) { cfg.MaxTokens = -1 }, "max_tokens"},
 		{"zero output reserve", func(cfg *llm.Config) { cfg.MaxOutputTokens = 0 }, "max_output_tokens"},
@@ -58,6 +61,7 @@ func TestLoadRejectsInvalidTokenBudgetFromEnv(t *testing.T) {
 		env  map[string]string
 	}{
 		{"zero context", map[string]string{"AURA_MODEL_CONTEXT_WINDOW": "0"}},
+		{"zero total timeout", map[string]string{"AURA_LLM_TOTAL_TIMEOUT_SEC": "0"}},
 		{"negative max tokens", map[string]string{"AURA_LLM_MAX_TOKENS": "-1"}},
 		{"zero output reserve", map[string]string{"AURA_MODEL_MAX_OUTPUT_TOKENS": "0"}},
 		{"under reserved", map[string]string{
@@ -92,6 +96,7 @@ func TestLoadRejectsInvalidTokenBudgetFromFile(t *testing.T) {
 	path := filepath.Join(auraDir, "llm.json")
 	for name, payload := range map[string]string{
 		"zero":           `{"context_window":0}`,
+		"zero_timeout":   `{"total_timeout_sec":0}`,
 		"negative":       `{"max_tokens":-1}`,
 		"under_reserved": `{"max_tokens":4096,"max_output_tokens":4095}`,
 		// A 33000 window used to be the canonical no-budget case (33000 - 20000 - 13000 = 0).

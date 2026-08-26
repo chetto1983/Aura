@@ -16,6 +16,7 @@ export const footerEn = {
     gaugeValue: '{{used}} / {{window}} · {{percent}}%',
     contextLabel: 'Context budget - near at {{near}}%, critical at {{critical}}%',
     compacted: 'Compacted {{count}} older turns',
+    compactionFailed: 'Compaction failed; fallback dropped {{count}} older turns',
   },
 };
 
@@ -37,5 +38,6 @@ export const footerIt = {
     gaugeValue: '{{used}} / {{window}} · {{percent}}%',
     contextLabel: 'Budget di contesto - attenzione a {{near}}%, critico a {{critical}}%',
     compacted: 'Compattati {{count}} turni più vecchi',
+    compactionFailed: 'Compattazione fallita; il fallback ha eliminato {{count}} turni più vecchi',
   },
 };

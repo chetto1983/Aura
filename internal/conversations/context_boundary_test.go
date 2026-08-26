@@ -495,7 +495,7 @@ func TestLadder_UnreducibleAfterDrop_StillErrors(t *testing.T) {
 // propagation (context.go:135) is exercised.
 type errRotEmitter struct{ err error }
 
-func (e errRotEmitter) insertContextRotEvent(context.Context, string, int, int, int) error {
+func (e errRotEmitter) insertContextRotEvent(context.Context, string, string, int, int, int) error {
 	return e.err
 }
 

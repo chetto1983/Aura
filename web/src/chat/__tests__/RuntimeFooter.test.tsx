@@ -35,7 +35,10 @@ function urlOf(input: RequestInfo | URL): string {
 }
 
 // Stub GET /api/conversations/{id} (aggregate seed) + /rot-events (compaction).
-function stubFetch(opts?: { agg?: ConversationAggregate; rotEvents?: { PairsDropped: number }[] }) {
+function stubFetch(opts?: {
+  agg?: ConversationAggregate;
+  rotEvents?: { Action?: string; PairsDropped: number }[];
+}) {
   return vi.fn((input: RequestInfo | URL) => {
     const url = urlOf(input);
     if (url.includes('/rot-events')) {
@@ -44,7 +47,7 @@ function stubFetch(opts?: { agg?: ConversationAggregate; rotEvents?: { PairsDrop
           JSON.stringify(
             (opts?.rotEvents ?? []).map((e) => ({
               TS: '2026-06-17T00:00:00Z',
-              Action: 'hard_drop_pairs',
+              Action: e.Action ?? 'hard_drop_pairs',
               PairsDropped: e.PairsDropped,
               TokensBefore: 100,
               TokensAfter: 60,
@@ -417,6 +420,19 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
     await waitFor(() => {
       // 2 + 1 = 3 older turns compacted.
       expect(screen.getByText('Compacted 3 older turns')).toBeTruthy();
+    });
+  });
+
+  it('makes compaction-failure hard drops visible', async () => {
+    vi.stubGlobal(
+      'fetch',
+      stubFetch({
+        rotEvents: [{ Action: 'compaction_failed_hard_drop', PairsDropped: 2 }],
+      }),
+    );
+    renderFooter({ conversationId: 'c-1' });
+    await waitFor(() => {
+      expect(screen.getByText('Compaction failed; fallback dropped 2 older turns')).toBeTruthy();
     });
   });
 

@@ -1,5 +1,7 @@
 package conversations
 
+import "fmt"
+
 // The budget half of the context ladder: what a conversation is allowed to spend, and the
 // two thresholds derived from it. Split out of context.go when that file crossed the
 // 600-LOC cap; the ladder itself (which SPENDS the budget) stays there.
@@ -124,6 +126,30 @@ func (c ContextConfig) earlyCompactionTokens() int {
 		return 0
 	}
 	return budget
+}
+
+// ValidateCompactionTrigger rejects the one invalid state earlyCompactionTokens cannot
+// express: compaction and its early trigger are enabled, but fixed prompt overhead has
+// already spent the entire trigger allowance. Values 0 and 100 intentionally disable
+// EARLY compaction; the hard-cap L2.4 attempt remains available.
+func ValidateCompactionTrigger(enabled bool, contextWindow, triggerPercent, fixedOverhead int) error {
+	if !enabled || triggerPercent <= 0 || triggerPercent >= 100 {
+		return nil
+	}
+	if contextWindow <= 0 {
+		return fmt.Errorf("conversation compaction: context window %d must be positive", contextWindow)
+	}
+	triggerBudget := contextWindow * triggerPercent / 100
+	if triggerBudget-fixedOverhead <= 0 {
+		return fmt.Errorf(
+			"conversation compaction trigger %d%% is unreachable: context window %d gives %d tokens, fixed prompt overhead consumes %d; raise the trigger, reduce mounted tools, or increase the model context window",
+			triggerPercent,
+			contextWindow,
+			triggerBudget,
+			fixedOverhead,
+		)
+	}
+	return nil
 }
 
 // HardCap exposes the exact history cap to the final model-request guard.

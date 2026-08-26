@@ -193,8 +193,8 @@ func applyContextLadder(
 		// Failure here is free: nothing is over budget yet, so a summarizer error simply
 		// returns the L1 history and the next turn tries again.
 		if trigger := cfg.earlyCompactionTokens(); trigger > 0 && tokensAfterL1 > trigger {
-			if compacted, ok := tryCompact(ctx, cfg.Summarizer, cfg.compactionCache,
-				conversationID, cfg.branchID, enc, l1, ordinaryCap); ok {
+			if compacted, outcome := tryCompact(ctx, cfg.Summarizer, cfg.compactionCache,
+				conversationID, cfg.branchID, enc, l1, ordinaryCap); outcome == compactionSucceeded {
 				slog.Info("conversation context compacted early",
 					"conversation_id", conversationID,
 					"trigger_tokens", trigger,
@@ -210,9 +210,10 @@ func applyContextLadder(
 	// keeping the protected head and the active user-led round verbatim, so old context
 	// is condensed rather than lost. It runs BEFORE the deterministic L2.5 drop. On any
 	// summarizer error, empty result, or a summary that still overflows, tryCompact
-	// returns false and we fall through to L2.5 (the zero-LLM fail-safe) unchanged.
-	if compacted, ok := tryCompact(ctx, cfg.Summarizer, cfg.compactionCache,
-		conversationID, cfg.branchID, enc, l1, ordinaryCap); ok {
+	// reports failure and we fall through to L2.5 (the zero-LLM fail-safe).
+	compacted, compaction := tryCompact(ctx, cfg.Summarizer, cfg.compactionCache,
+		conversationID, cfg.branchID, enc, l1, ordinaryCap)
+	if compaction == compactionSucceeded {
 		slog.Info("conversation context compacted",
 			"conversation_id", conversationID,
 			"tokens_before", totalAfterL1,
@@ -239,7 +240,11 @@ func applyContextLadder(
 		// turn remains) → the explicit window-exceeded error (suggest `aura chat new`).
 		return nil, fmt.Errorf("%w (%d tokens, cap %d)", ErrContextWindowExceeded, tokensAfter+tailTokens, hardCap)
 	}
-	if err := emit.insertContextRotEvent(ctx, conversationID, pairsDropped, totalAfterL1, tokensAfter+tailTokens); err != nil {
+	action := rotActionHardDropPairs
+	if compaction == compactionFailed {
+		action = rotActionCompactionFailedHardDrop
+	}
+	if err := emit.insertContextRotEvent(ctx, conversationID, action, pairsDropped, totalAfterL1, tokensAfter+tailTokens); err != nil {
 		return nil, err
 	}
 	return injectTransientContext(repairManagedToolMessagePairs(toMessages(reduced)), tail), nil

@@ -308,7 +308,7 @@ func TestLoadManagedHistory_BadUUID(t *testing.T) {
 func TestInsertContextRotEvent_BadUUID(t *testing.T) {
 	t.Parallel()
 	s := New(nil, Config{RunDir: "/x"})
-	if err := s.insertContextRotEvent(context.Background(), "bad", 1, 10, 5); err == nil {
+	if err := s.insertContextRotEvent(context.Background(), "bad", rotActionHardDropPairs, 1, 10, 5); err == nil {
 		t.Error("insertContextRotEvent(bad id): want error")
 	}
 }

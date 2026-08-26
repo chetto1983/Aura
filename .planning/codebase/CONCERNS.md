@@ -26,7 +26,7 @@ ones.
 | Shared deployment catalogs need administrator-only mutation in multi-user operation | Medium | Closed 2026-08-26 | `internal/agent/tools/skill_manage.go`, `cmd/aura/serve_webui.go`, `internal/config/config_validate.go` |
 | Daemon-gated coverage tiers did not feed release readiness | Medium | Closed 2026-08-26 | `scripts/docker_coverage_gate.sh`, `scripts/agent_memory_eval.py`, `scripts/release_readiness_gate.py` |
 | Owned unit + database coverage remains aggregate, not per-package | Medium | Closed 2026-08-26 | `scripts/coverage_package_gate.py`, `scripts/coverage_package_policy.json`, `scripts/release_readiness_gate.py` |
-| Long-history compaction can disable itself silently and uses an unmeasured three-minute timeout | Medium | Open | `internal/conversations/context_budget.go`, `internal/conversations/compaction.go` |
+| Long-history compaction can disable itself silently and uses an unmeasured three-minute timeout | Medium | Closed 2026-08-26 | `internal/conversations/context_budget.go`, `internal/conversations/compaction.go`, `internal/runner/runner_context.go`, `web/src/chat/ContextBudgetGauge.tsx` |
 | Calendar MCP admin-token fallback was removed by identity-scoped OAuth | Medium | Closed 2026-08-26 | `internal/agui/connect_pim_api.go`, `cmd/aura/serve_agui.go`, `compose.yaml` |
 | Opt-in memory preload inserts recalled content into model-visible context with no dedicated poisoning threat model | Medium | Default off | `internal/runner/runner_context.go`, `internal/config/config.go` |
 | Test/evaluation evidence contains skipped, stale, flaky, or non-reproducible legs | Medium | Open | `scripts/agent_memory_eval.py`, `docs/aura-quality-snapshot.md`, `.planning/STATE.md` |
@@ -131,11 +131,12 @@ ones.
 - Cause: the query/sidecar/tokenizer safety cap is a row count independent of the selected model's context window. Older rows that were never compacted are unavailable to the ladder.
 - Improvement path: measure query/tokenizer cost at higher caps, then derive or advance the fetch window from durable compaction state and the model budget rather than relying on a fixed default.
 
-**Compaction can silently fall through after a long summarizer wait:**
-- Problem: a summary call can occupy a turn for up to three minutes; timeout or summarizer failure is intentionally silent and falls through to deterministic history dropping.
-- Files: `internal/conversations/compaction.go`, `internal/conversations/context.go`, `internal/conversations/context_budget.go`.
-- Cause: `compactionTimeout` is a hard-coded 3 minutes, and `earlyCompactionTokens` returns zero when fixed prompt overhead consumes the configured percentage.
-- Improvement path: measure long-history summary latency on the deployed model, expose or derive a bounded timeout, reject impossible trigger settings visibly, and emit an operator-visible degradation event when fallback drops history.
+**Closed 2026-08-26 — compaction budgets and degradation are explicit:**
+- Resolution: the private three-minute deadline was removed. L2.4 now inherits the positive deployment-wide `AURA_LLM_TOTAL_TIMEOUT_SEC` budget while the transport retains its independent `AURA_LLM_STREAM_IDLE_TIMEOUT_SEC` stall watchdog. Production boot measures the rendered manifest and rejects an enabled early trigger whose remaining history allowance is not positive.
+- Degradation contract: a failed, empty, or oversized LLM summary that forces L2.5 writes `compaction_failed_hard_drop`; a planned deterministic drop with no attempted compaction remains `hard_drop_pairs`. The rot-events API already carries the action, and the context gauge now renders the failed-fallback count as a visible danger message.
+- Comparative evidence: LibreChat agents `6e7632cc33c2` exposes impossible budgets and summary lifecycle failures while preserving overflow history; Hermes `68518c1f9bca` separates inactivity/absolute budgets and reports timeout fallback without dropping messages. Amendment #153 records the adopted Aura-specific contract.
+- Focused proof: the new configured-deadline, measured boot-gate, failed/oversized/nil-summarizer action, LLM timeout validation, and cockpit warning cases pass. Previously validated broad suites were not rerun.
+- Files: `internal/conversations/compaction.go`, `internal/conversations/context.go`, `internal/conversations/context_budget.go`, `internal/conversations/context_rot.go`, `internal/runner/runner_context.go`, `cmd/aura/chat_boot.go`, `web/src/chat/ContextBudgetGauge.tsx`.
 
 **Document retrieval quality has no current reproducible baseline:**
 - Problem: the document routing recall row is recorded UNKNOWN, while its former corpus is not repository-owned and the replacement non-commercial corpus was declined.

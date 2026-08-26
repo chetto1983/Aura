@@ -204,12 +204,14 @@ type Config struct {
 	OpenRouterMiddleOut bool
 }
 
-// Validate rejects token settings that would disable context protection or
-// reserve less output than the provider request may consume.
+// Validate rejects timeout/token settings that would disable bounded calls or context
+// protection, or reserve less output than the provider request may consume.
 func (c Config) Validate() error {
 	switch {
 	case c.ContextWindow <= 0:
 		return fmt.Errorf("llm: invalid context_window %d: must be positive", c.ContextWindow)
+	case c.TotalTimeoutSec <= 0:
+		return fmt.Errorf("llm: invalid total_timeout_sec %d: must be positive", c.TotalTimeoutSec)
 	case c.MaxTokens <= 0:
 		return fmt.Errorf("llm: invalid max_tokens %d: must be positive", c.MaxTokens)
 	case c.MaxOutputTokens <= 0:

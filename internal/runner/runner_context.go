@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/identityctx"
@@ -32,10 +33,6 @@ func (r *Runner) loadTurnHistory(
 }
 
 func (r *Runner) contextConfig(ctx context.Context, memory *conversations.TransientContext) conversations.ContextConfig {
-	var summarizer conversations.Summarizer
-	if r.compactionEnabled {
-		summarizer = conversations.NewLLMSummarizer(r.client, r.compactionModel, r.cfg.ContextWindow)
-	}
 	return conversations.ContextConfig{
 		ContextWindow:              r.cfg.ContextWindow,
 		CompactionTriggerPercent:   r.cfg.CompactionTriggerPercent,
@@ -46,8 +43,31 @@ func (r *Runner) contextConfig(ctx context.Context, memory *conversations.Transi
 		AlwaysBlock:                r.renderContextBlock(ctx),
 		TransientContext:           memory,
 		ProviderErrorReserveTokens: llm.ProviderErrorReserveTokens(r.cfg),
-		Summarizer:                 summarizer,
+		Summarizer:                 r.compactionSummarizer(),
 	}
+}
+
+func (r *Runner) compactionSummarizer() conversations.Summarizer {
+	if !r.compactionEnabled {
+		return nil
+	}
+	return conversations.NewLLMSummarizer(
+		r.client,
+		r.compactionModel,
+		r.cfg.ContextWindow,
+		time.Duration(r.cfg.TotalTimeoutSec)*time.Second,
+	)
+}
+
+// ValidateCompactionConfig measures the booted registry, not a guessed schema count, so an
+// enabled early trigger cannot silently disappear once the manifest is rendered.
+func (r *Runner) ValidateCompactionConfig() error {
+	return conversations.ValidateCompactionTrigger(
+		r.compactionEnabled,
+		r.cfg.ContextWindow,
+		r.cfg.CompactionTriggerPercent,
+		r.manifestOverheadTokens(),
+	)
 }
 
 // loadMemoryContext builds the pre-user memory block: the always-on query-less digest

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/llm"
@@ -120,6 +121,9 @@ func TestLadder_Compaction_FallsBackToDrop_OnSummarizerError(t *testing.T) {
 	if len(emit.calls) != 1 {
 		t.Fatalf("fallback to L2.5 must write exactly one rot event, got %d", len(emit.calls))
 	}
+	if emit.calls[0].action != rotActionCompactionFailedHardDrop {
+		t.Fatalf("fallback action = %q, want %q", emit.calls[0].action, rotActionCompactionFailedHardDrop)
+	}
 	if strings.Contains(joinContent(msgs), "earlier_conversation_summary") {
 		t.Errorf("no summary must be injected when the summarizer errors")
 	}
@@ -145,6 +149,9 @@ func TestLadder_Compaction_FallsBackToDrop_WhenSummaryOverflows(t *testing.T) {
 	if len(emit.calls) != 1 {
 		t.Fatalf("an oversized summary must fall through to L2.5, got %d rot events", len(emit.calls))
 	}
+	if emit.calls[0].action != rotActionCompactionFailedHardDrop {
+		t.Fatalf("oversized-summary action = %q, want %q", emit.calls[0].action, rotActionCompactionFailedHardDrop)
+	}
 }
 
 // TestLadder_NilSummarizer_UsesL25: with no summarizer the ladder behaves exactly as
@@ -161,19 +168,22 @@ func TestLadder_NilSummarizer_UsesL25(t *testing.T) {
 	if len(emit.calls) != 1 {
 		t.Fatalf("nil summarizer must use L2.5 (one rot event), got %d", len(emit.calls))
 	}
+	if emit.calls[0].action != rotActionHardDropPairs {
+		t.Fatalf("nil-summarizer action = %q, want %q", emit.calls[0].action, rotActionHardDropPairs)
+	}
 }
 
-// TestTryCompact_NoHistory_ReturnsFalse: when only head + active exist, there is
+// TestTryCompact_NoHistory_IsSkipped: when only head + active exist, there is
 // nothing older to condense, so the summarizer is never called.
-func TestTryCompact_NoHistory_ReturnsFalse(t *testing.T) {
+func TestTryCompact_NoHistory_IsSkipped(t *testing.T) {
 	enc := mustEncoderRaw(t)
 	sum := &fakeSummarizer{summary: "should not be used"}
 	turns := []Turn{
 		{Seq: 1, Role: llm.RoleSystem, Content: "sys"},
 		{Seq: 2, Role: llm.RoleUser, Content: "only round"},
 	}
-	if _, ok := tryCompact(context.Background(), sum, nil, "", "", enc, turns, 4000); ok {
-		t.Fatal("tryCompact must return false when there is no history to summarize")
+	if _, outcome := tryCompact(context.Background(), sum, nil, "", "", enc, turns, 4000); outcome != compactionSkipped {
+		t.Fatalf("tryCompact outcome = %v, want skipped when there is no history", outcome)
 	}
 	if sum.calls != 0 {
 		t.Fatalf("summarizer must not be called with no history, got %d", sum.calls)
@@ -306,7 +316,7 @@ func TestSummaryBudget_StaysInsideTheEnvelope(t *testing.T) {
 
 func TestLLMSummarizer_Success(t *testing.T) {
 	client := titleTextClient("stop", "condensed ", "summary")
-	s := NewLLMSummarizer(client, "test-model", 200000)
+	s := NewLLMSummarizer(client, "test-model", 200000, 2*time.Minute)
 	out, err := s.Summarize(context.Background(), []llm.Message{{Role: llm.RoleUser, Content: "hello"}})
 	if err != nil {
 		t.Fatalf("Summarize: %v", err)
@@ -333,7 +343,7 @@ func TestLLMSummarizer_Success(t *testing.T) {
 
 func TestLLMSummarizer_IncompleteStreamErrors(t *testing.T) {
 	client := titleTextClient("length", "half a ") // finish_reason != stop
-	s := NewLLMSummarizer(client, "m", 200000)
+	s := NewLLMSummarizer(client, "m", 200000, 2*time.Minute)
 	if _, err := s.Summarize(context.Background(), []llm.Message{{Role: llm.RoleUser, Content: "x"}}); err == nil {
 		t.Fatal("an incomplete stream must return an error")
 	}
@@ -341,7 +351,7 @@ func TestLLMSummarizer_IncompleteStreamErrors(t *testing.T) {
 
 func TestLLMSummarizer_EmptyTranscriptErrors(t *testing.T) {
 	client := titleTextClient("stop", "unused")
-	s := NewLLMSummarizer(client, "m", 200000)
+	s := NewLLMSummarizer(client, "m", 200000, 2*time.Minute)
 	// Only a system message → renderRoundsForSummary yields "" → error before any call.
 	if _, err := s.Summarize(context.Background(), []llm.Message{{Role: llm.RoleSystem, Content: "sys"}}); err == nil {
 		t.Fatal("an empty transcript must return an error")
@@ -349,7 +359,38 @@ func TestLLMSummarizer_EmptyTranscriptErrors(t *testing.T) {
 }
 
 func TestNewLLMSummarizer_NilClient(t *testing.T) {
-	if s := NewLLMSummarizer(nil, "m", 200000); s != nil {
+	if s := NewLLMSummarizer(nil, "m", 200000, 2*time.Minute); s != nil {
 		t.Fatal("a nil client must yield a nil Summarizer so ContextConfig.Summarizer stays nil")
+	}
+}
+
+type deadlineRecordingClient struct {
+	deadline time.Time
+	seenAt   time.Time
+	ok       bool
+}
+
+func (c *deadlineRecordingClient) Stream(ctx context.Context, _ llm.Request) (<-chan llm.Chunk, error) {
+	c.seenAt = time.Now()
+	c.deadline, c.ok = ctx.Deadline()
+	ch := make(chan llm.Chunk, 1)
+	ch <- llm.Chunk{Text: "summary", FinishReason: "stop"}
+	close(ch)
+	return ch, nil
+}
+
+func TestLLMSummarizer_UsesConfiguredTotalTimeout(t *testing.T) {
+	client := &deadlineRecordingClient{}
+	want := 7 * time.Second
+	s := NewLLMSummarizer(client, "m", 200000, want)
+	if _, err := s.Summarize(context.Background(), []llm.Message{{Role: llm.RoleUser, Content: "x"}}); err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if !client.ok {
+		t.Fatal("summarizer client context has no deadline")
+	}
+	remaining := client.deadline.Sub(client.seenAt)
+	if remaining < want-time.Second || remaining > want {
+		t.Fatalf("summarizer deadline remaining = %s, want configured %s", remaining, want)
 	}
 }

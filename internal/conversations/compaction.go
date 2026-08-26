@@ -22,18 +22,12 @@ const compactionMarker = "__aura_compaction__"
 const compactionHeader = compactionFraming
 const compactionFooter = compactionFramingEnd
 
-// compactionTimeout bounds the summarize call, and is the ONLY ceiling this file imposes on
-// it. The summary's length is asked for in the prompt and never capped on the wire; the
+// The summary's length is asked for in the prompt and never capped on the wire; the
 // transcript it summarizes is bounded in compaction_transcript.go, where hermes-agent's
-// numbers and its reasons are recorded.
-//
-// It is generous because an uncapped summary of a long history takes longer than a
-// truncated one, and because a timeout here is SILENT: the ladder falls through to the
-// deterministic drop, so a compaction that times out looks exactly like history vanishing.
-const (
-	compactionTimeout  = 3 * time.Minute
-	summaryTemperature = 0.3
-)
+// numbers and its reasons are recorded. The CALL has no private timeout: production passes
+// the same measured total-call budget as every other LLM request, while the transport owns
+// the independent stream-idle watchdog (amendment #153).
+const summaryTemperature = 0.3
 
 // Summarizer condenses a slice of earlier conversation rounds into a single dense
 // summary. It is the LLM seam the context ladder uses to compact history instead of
@@ -66,9 +60,17 @@ func compactionTurn(summary string, coversThroughSeq int) Turn {
 
 // tryCompact summarizes the historical rounds (everything between the protected head
 // and the active user-led round) into one synthetic summary turn, keeping head and
-// active verbatim. It returns (compacted, true) only when a non-empty summary was
-// produced AND the result fits under cap; otherwise (nil, false) so the caller falls
-// through to the deterministic L2.5 drop. It never mutates turns.
+// active verbatim. Its outcome distinguishes a skipped attempt (disabled/no history)
+// from a failed one (error/empty/oversized), so a later L2.5 drop can report degradation
+// without mislabelling ordinary deterministic reduction. It never mutates turns.
+type compactionAttemptStatus uint8
+
+const (
+	compactionSkipped compactionAttemptStatus = iota
+	compactionSucceeded
+	compactionFailed
+)
+
 func tryCompact(
 	ctx context.Context,
 	sum Summarizer,
@@ -77,18 +79,18 @@ func tryCompact(
 	enc *tiktoken.Tiktoken,
 	turns []Turn,
 	cap int,
-) ([]Turn, bool) {
+) ([]Turn, compactionAttemptStatus) {
 	if sum == nil {
-		return nil, false
+		return nil, compactionSkipped
 	}
 	head, history, active := splitHeadHistoryActive(turns)
 	history, active = protectRecentTail(enc, history, active, cap)
 	if len(history) == 0 {
-		return nil, false // nothing older than the protected tail to condense
+		return nil, compactionSkipped // nothing older than the protected tail to condense
 	}
 	summary, ok := compactionSummary(ctx, sum, cache, conversationID, branchID, history)
 	if !ok {
-		return nil, false
+		return nil, compactionFailed
 	}
 	// The ladder keeps whatever it produced. It only got here because the history no longer
 	// fits, so a summary beats the L2.5 hard drop waiting below even when it saves little.
@@ -102,9 +104,9 @@ func tryCompact(
 	out = append(out, compactionTurn(summary.Summary, history[len(history)-1].Seq))
 	out = append(out, active...)
 	if totalTokens(enc, out) > cap {
-		return nil, false // the summary itself (+ active + head) still overflows
+		return nil, compactionFailed // the summary itself (+ active + head) still overflows
 	}
-	return out, true
+	return out, compactionSucceeded
 }
 
 // llmSummarizer is the production Summarizer: it wraps an llm.Client and a model,
@@ -113,6 +115,7 @@ type llmSummarizer struct {
 	client        llm.Client
 	model         string
 	contextWindow int
+	totalTimeout  time.Duration
 }
 
 // NewLLMSummarizer builds a Summarizer over client+model. A nil client yields nil so
@@ -120,12 +123,15 @@ type llmSummarizer struct {
 //
 // contextWindow is the deployment's window: it ceilings the length the prompt asks for, so
 // a 32K model is not asked for the summary a 1M model can afford. Zero means unknown and
-// falls back to the fixed ceiling.
-func NewLLMSummarizer(client llm.Client, model string, contextWindow int) Summarizer {
+// falls back to the fixed ceiling. totalTimeout is the deployment's shared LLM total-call
+// budget; the transport independently applies its configured stream-idle watchdog.
+func NewLLMSummarizer(client llm.Client, model string, contextWindow int, totalTimeout time.Duration) Summarizer {
 	if client == nil {
 		return nil
 	}
-	return &llmSummarizer{client: client, model: model, contextWindow: contextWindow}
+	return &llmSummarizer{
+		client: client, model: model, contextWindow: contextWindow, totalTimeout: totalTimeout,
+	}
 }
 
 // Summarize renders the rounds to a bounded transcript and asks the model for a
@@ -138,7 +144,10 @@ func (s *llmSummarizer) Summarize(ctx context.Context, rounds []llm.Message) (st
 	if transcript == "" {
 		return "", fmt.Errorf("summarize: empty transcript")
 	}
-	ctx, cancel := context.WithTimeout(ctx, compactionTimeout)
+	if s.totalTimeout <= 0 {
+		return "", fmt.Errorf("summarize: total timeout must be positive, got %s", s.totalTimeout)
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.totalTimeout)
 	defer cancel()
 
 	enc, err := encoder()

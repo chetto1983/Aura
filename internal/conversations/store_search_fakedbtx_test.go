@@ -205,13 +205,13 @@ func (r *recordingCleaner) PurgeConversationDir(convID string) error {
 func TestInsertContextRotEvent_FakeSuccess(t *testing.T) {
 	t.Parallel()
 	s := fakeStore(t, &fakeDBTX{})
-	if err := s.insertContextRotEvent(context.Background(), uuid.Must(uuid.NewV7()).String(), 2, 100, 40); err != nil {
+	if err := s.insertContextRotEvent(context.Background(), uuid.Must(uuid.NewV7()).String(), rotActionHardDropPairs, 2, 100, 40); err != nil {
 		t.Errorf("insertContextRotEvent: %v", err)
 	}
 
 	boom := errors.New("rot insert failed")
 	sErr := fakeStore(t, &fakeDBTX{execErr: boom})
-	if err := sErr.insertContextRotEvent(context.Background(), uuid.Must(uuid.NewV7()).String(), 1, 10, 5); !errors.Is(err, boom) {
+	if err := sErr.insertContextRotEvent(context.Background(), uuid.Must(uuid.NewV7()).String(), rotActionHardDropPairs, 1, 10, 5); !errors.Is(err, boom) {
 		t.Errorf("insertContextRotEvent DB error must propagate: %v", err)
 	}
 }

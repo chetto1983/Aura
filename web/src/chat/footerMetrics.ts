@@ -152,6 +152,17 @@ export function totalPairsDropped(events: readonly { readonly PairsDropped: numb
   return events.reduce((sum, e) => sum + finiteNumber(e.PairsDropped, 0), 0);
 }
 
+export const COMPACTION_FAILED_HARD_DROP_ACTION = 'compaction_failed_hard_drop';
+
+/** Pairs dropped specifically because an attempted LLM compaction was unusable. */
+export function totalCompactionFailurePairs(
+  events: readonly { readonly Action: string; readonly PairsDropped: number }[],
+): number {
+  return totalPairsDropped(
+    events.filter((event) => event.Action === COMPACTION_FAILED_HARD_DROP_ACTION),
+  );
+}
+
 // The DeepSeek-V4 default context window (matches internal/llm defaultContextWindow
 // = 1_000_000). The window is runtime config, not on the conversation wire shape,
 // so the footer carries the default; a future plan can thread the live window in.

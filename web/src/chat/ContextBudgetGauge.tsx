@@ -6,6 +6,7 @@ import {
   contextPercent,
   formatTokens,
   gaugeTier,
+  totalCompactionFailurePairs,
   totalPairsDropped,
 } from './footerMetrics';
 
@@ -39,6 +40,7 @@ export function ContextBudgetGauge({
   const percent = contextPercent(usedTokens, windowTokens);
   const tier = gaugeTier(percent);
   const dropped = totalPairsDropped(rotEvents ?? []);
+  const failedDrop = totalCompactionFailurePairs(rotEvents ?? []);
   const fillClass =
     tier === 'critical' ? 'bg-danger' : tier === 'near' ? 'bg-warning' : 'bg-accent';
 
@@ -76,8 +78,12 @@ export function ContextBudgetGauge({
         />
       </div>
       {dropped > 0 ? (
-        <p className="font-mono text-[0.75rem] text-text-muted">
-          {t('footer.compacted', { count: dropped })}
+        <p
+          className={`font-mono text-[0.75rem] ${failedDrop > 0 ? 'text-danger' : 'text-text-muted'}`}
+        >
+          {t(failedDrop > 0 ? 'footer.compactionFailed' : 'footer.compacted', {
+            count: failedDrop > 0 ? failedDrop : dropped,
+          })}
         </p>
       ) : null}
     </div>

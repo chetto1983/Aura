@@ -19,14 +19,18 @@ import (
 // drops oldest user/assistant pairs (amendment #22).
 const rotActionHardDropPairs = "hard_drop_pairs"
 
+// rotActionCompactionFailedHardDrop distinguishes a planned deterministic L2.5
+// reduction from one reached only because an attempted L2.4 summary was unusable.
+const rotActionCompactionFailedHardDrop = "compaction_failed_hard_drop"
+
 // rotEmitter is the narrow write surface ApplyContextLadder needs to record an L2.5
 // drop. *Store satisfies it; unit tests pass a fake (no DB).
 type rotEmitter interface {
-	insertContextRotEvent(ctx context.Context, conversationID string, pairsDropped, before, after int) error
+	insertContextRotEvent(ctx context.Context, conversationID, action string, pairsDropped, before, after int) error
 }
 
 // insertContextRotEvent records one L2.5 hard-drop audit row (Store impl).
-func (s *Store) insertContextRotEvent(ctx context.Context, conversationID string, pairsDropped, before, after int) error {
+func (s *Store) insertContextRotEvent(ctx context.Context, conversationID, action string, pairsDropped, before, after int) error {
 	id, err := db.ParseUUID("conversation_id", conversationID)
 	if err != nil {
 		return fmt.Errorf("context rot event: %w", err)
@@ -34,7 +38,7 @@ func (s *Store) insertContextRotEvent(ctx context.Context, conversationID string
 	return s.scoped(ctx, func(q *sqlc.Queries) error {
 		if iErr := q.InsertContextRotEvent(ctx, sqlc.InsertContextRotEventParams{
 			ConversationID: id,
-			Action:         rotActionHardDropPairs,
+			Action:         action,
 			PairsDropped:   int32(pairsDropped),
 			TokensBefore:   int32(before),
 			TokensAfter:    int32(after),
