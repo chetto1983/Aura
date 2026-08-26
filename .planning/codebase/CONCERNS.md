@@ -7,9 +7,10 @@ last_audited_commit: 3ab589ee6e2302e7bf3ff865e0083a4f7475b63e
 
 **Analysis Date:** 2026-08-26
 
-**Audit refresh:** Amendment #150's measured correction separated tenant data from
-administrator control planes and closed the shared-skill mutation path; this is not a new
-codebase map. Historical closed entries are retained where they explain a ratified boundary.
+**Audit refresh:** Amendment #151 split coverage evidence by runtime tier. Unit plus
+`db_integration`, native Docker, and live ArcadeDB now publish independent candidate-bound
+reports; release readiness requires all three rather than manufacturing one aggregate. The
+remaining within-tier per-package masking risk stays explicit below.
 
 ## Severity Summary
 
@@ -22,7 +23,8 @@ codebase map. Historical closed entries are retained where they explain a ratifi
 | Amendment #115 still requires a real-production document E2E whose runner no longer exists | High | Closed 2026-08-25 | PRD amendment #141, `scripts/ingest_reconcile_e2e.sh`, `cmd/aura/document_agent_live_test.go` |
 | ArcadeDB tenant memory has no exercised backup/restore plane | High | Closed 2026-08-25 | `scripts/restore_drill.sh`, `scripts/release_readiness_gate.py`, `compose.yaml` |
 | Shared deployment catalogs need administrator-only mutation in multi-user operation | Medium | Closed 2026-08-26 | `internal/agent/tools/skill_manage.go`, `cmd/aura/serve_webui.go`, `internal/config/config_validate.go` |
-| Coverage is one aggregate at 86.4%; daemon-gated tiers do not feed that floor | Medium | Open/self-documented | `scripts/coverage_gate.sh`, `.github/workflows/ci.yml`, `docs/aura-quality-snapshot.md` |
+| Daemon-gated coverage tiers did not feed release readiness | Medium | Closed 2026-08-26 | `scripts/docker_coverage_gate.sh`, `scripts/agent_memory_eval.py`, `scripts/release_readiness_gate.py` |
+| Owned unit + database coverage remains aggregate, not per-package | Medium | Open/self-documented | `scripts/coverage_gate.sh`, `docs/aura-quality-snapshot.md`, `CLAUDE.md` |
 | Long-history compaction can disable itself silently and uses an unmeasured three-minute timeout | Medium | Open | `internal/conversations/context_budget.go`, `internal/conversations/compaction.go` |
 | Calendar MCP admin-token fallback was removed by identity-scoped OAuth | Medium | Closed 2026-08-26 | `internal/agui/connect_pim_api.go`, `cmd/aura/serve_agui.go`, `compose.yaml` |
 | Opt-in memory preload inserts recalled content into model-visible context with no dedicated poisoning threat model | Medium | Default off | `internal/runner/runner_context.go`, `internal/config/config.go` |
@@ -47,11 +49,11 @@ codebase map. Historical closed entries are retained where they explain a ratifi
 - Evidence: the WSL gate passed add, unchanged restart, modify, delete, live refresh, structural-schema, `.xls` extraction, two-identity isolation, migration 0102 up/down/up, production `document_search`, and a real-agent answer. `services/ingest/tests/test_arcade_integration.py` additionally proved live removal of retired values, properties, indexes, and types.
 - Cleanup: the always-null/duplicated passage fields, `HAS_PASSAGE`, `DocumentProjection`, Go-side duplicate DDL, retired document-pipeline knobs, the ignored projection writer copy, and the catalog-backed live test were removed. CocoIndex is the sole document-schema writer and lifecycle reconciler.
 
-**Coverage gate is aggregate, not per-package:**
-- Issue: `scripts/coverage_gate.sh` sums every filtered statement and performs one comparison against `AURA_COVERAGE_MIN`. There is no package loop or package minimum.
-- Files: `scripts/coverage_gate.sh`, `docs/aura-quality-snapshot.md`, `CLAUDE.md`.
-- Impact: a weak package can regress substantially while stronger packages keep the repository aggregate above 85%. The latest recorded owned-surface result is 26,820/31,045 = 86.4%, only 1.4 percentage points above the floor.
-- Fix approach: keep the aggregate gate but publish package deltas for touched packages, or introduce tag-aware per-package floors only after every package's real coverage tier can feed the calculation.
+**Coverage gate remains aggregate within unit + `db_integration`:**
+- Issue: `scripts/coverage_gate.sh` filters the owned statement surface and performs one exact comparison against `AURA_COVERAGE_MIN`. There is no package loop or package minimum.
+- Files: `scripts/coverage_gate.sh`, `scripts/coverage_profile_gate.sh`, `docs/aura-quality-snapshot.md`, `CLAUDE.md`.
+- Impact: a weak package can regress while stronger packages keep this tier above 85%. The exact-SHA CI result is 27,323/31,839 = 85.8161%, only 0.8161 percentage points above the floor.
+- Boundary: the new Docker and ArcadeDB floors close the former daemon-visibility gap but deliberately do not pretend to solve masking inside this unit/database aggregate. Cross-package `-coverpkg` attribution must be designed before a truthful per-package floor is introduced.
 
 **Manual OOXML parser is a broad custom maintenance surface:**
 - Issue: `internal/documents/filecard` manually parses ZIP/XML workbook and Office structures across `xlsx.go`, `ooxml.go`, `zip.go`, and `table.go` instead of using a workbook library. The implementation is split under the 600-line cap and well tested, but remains a large protocol parser owned by Aura.
@@ -173,11 +175,11 @@ codebase map. Historical closed entries are retained where they explain a ratifi
 - Limit: `AURA_MUSR_ISOLATION` remains opt-in and is refused outside strict profiles. This is a supported-runtime posture gate, not a tenant selector and not a claim that global catalogs contain tenant data.
 - Files: `internal/config/config_validate.go`, `internal/agent/tools/skill_manage.go`, `internal/settings/settings.go`, `internal/mcpregistry/store.go`.
 
-**Coverage cannot represent all runtime tiers in one number:**
-- Current capacity: the default floor runs only `db_integration`; the latest recorded aggregate is 86.4%.
-- Limit: `docker_integration` runs in its own CI job and contributes zero coverage; `arcadedb_integration` produces its own package profile in the memory evaluator but is not aggregated into the owned-surface floor.
-- Scaling path: keep daemon-free unit tests for pure logic, publish tier-specific coverage reports, and combine them only with an explicit rule for duplicate statements and required live services.
-- Files: `scripts/coverage_gate.sh`, `scripts/agent_memory_eval.py`, `.github/workflows/ci.yml`, `CLAUDE.md`.
+**Closed 2026-08-26 — runtime coverage is represented by independent tier reports:**
+- Resolution: unit plus `db_integration` remains one exact owned-surface profile; native `docker_integration` merges its test binaries with Go `covdata`; and the all-tier Agent Memory report remains the authority for live `arcadedb_integration` coverage. No profiles are concatenated, summed twice, averaged, or presented as one synthetic number.
+- Release rule: `scripts/release_readiness_gate.py` requires all three fresh reports from the exact candidate SHA, including the Docker-only tier marker and the passing `arcadedb_package_coverage` scenario inside an MRS-eligible Agent Memory report.
+- Evidence: clean candidate `4315db66b` measured unit/database at 27,323/31,839 = 85.8161%, native-Linux Docker at 2,856/3,313 = 86.2059%, and ArcadeDB at 1,241/1,412 = 87.8895% with MRS 100.00. All three reports are exact-SHA, tier-specific, non-empty, and green; Docker includes the native egress branches.
+- Files: `scripts/coverage_profile_gate.sh`, `scripts/docker_coverage_gate.sh`, `scripts/agent_memory_eval.py`, `scripts/release_readiness_gate.py`, `.github/workflows/ci.yml`, `.github/workflows/production-readiness.yml`.
 
 **Conversation recall is bounded by a row cap independently of token capacity:**
 - Current capacity: 50 turns by default, configurable from 4 to 1,000.
@@ -248,11 +250,11 @@ codebase map. Historical closed entries are retained where they explain a ratifi
 - Migration guard: the real migration-0102 up/down/up round-trip remains green even though expiry required no new schema migration.
 - Files: `internal/askuser/store_db_integration_test.go`, `internal/runner/approval_expiry_db_integration_test.go`, `internal/runner/live_e2e_expiry_test.go`, `cmd/aura/approval_expiry_test.go`.
 
-**Daemon-gated sandbox branches do not contribute to the coverage floor:**
-- What's not tested by the coverage metric: Docker lifecycle, egress enforcement, and routed tool branches under `docker_integration`.
-- Files: `internal/sandbox/usersandbox/*_integration_test.go`, `internal/agent/tools/*_docker_test.go`, `.github/workflows/ci.yml`, `scripts/coverage_gate.sh`.
-- Risk: the live job can fail behaviorally, but aggregate coverage does not reveal newly uncovered pure branches in these files.
-- Priority: Medium. Continue pairing every daemon branch with daemon-free unit tests and publish a separate Docker-tier profile if feasible.
+**Closed 2026-08-26 — daemon-gated sandbox branches have their own floor:**
+- Coverage: `scripts/docker_coverage_gate.sh` runs lifecycle, egress, and routed-tool tests under `docker_integration`, merges binary coverage with Go `covdata`, and applies an exact 85% floor over the owned usersandbox and agent-tool surfaces.
+- Evidence contract: a deterministic fake-Go test pins the tag, package set, `-coverpkg` scope, native merger, exact counts, and report fields. The native-Linux CI job publishes both the unique profile and `docker-coverage-report.json`; release readiness fails closed if it is absent, stale, below floor, or not Docker-only.
+- Evidence: Docker Desktop measured the declared lower bound at 2,835/3,313 = 85.5720% with native egress skipped; the exact-SHA hosted native-Linux job then passed at 2,856/3,313 = 86.2059%, exercising those additional branches.
+- Files: `scripts/docker_coverage_gate.sh`, `scripts/docker_coverage_gate_test.sh`, `.github/workflows/ci.yml`, `scripts/release_readiness_gate.py`.
 
 ---
 
