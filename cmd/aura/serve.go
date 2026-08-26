@@ -115,6 +115,12 @@ type serveEnv struct {
 	authulaProvider           *webauth.Provider
 	onboardingAuthulaProvider *webauth.Provider
 
+	// firstPartyGrants keeps a live OAuth grant for the sidecars Aura ships (calendar,
+	// memory, whatsapp) so they mount without a human at a consent screen. Nil on a
+	// deployment with no Authula authorization server. runServe EnsureNow/Starts it
+	// before the deferred OAuth mounts reconnect; drainShutdown Stops it.
+	firstPartyGrants *firstPartyGrantKeeper
+
 	// runRegistry is the detached-run session registry (fix-plan 1.3 Tier B); nil
 	// unless AURA_AGUI_RUN_DETACH=true. drainShutdown Closes it (cancel-walk every
 	// detached run + reaper join) BEFORE the HTTP drain so cancelled producers flush
@@ -199,6 +205,17 @@ func runServe(args []string) {
 	env.readiness.MarkListenerBound()
 	slog.Info("aura serve: agui http server listening", "addr", env.cfg.AGUIBind)
 	slog.Info("aura serve: private metrics server listening", "addr", serveObs.address())
+	// ORDER MATTERS. StartReconnect resolves each deferred server's owner from the grant
+	// store and SKIPS a server nobody holds a grant for, so the self-issued grants have to
+	// be in Postgres before it runs — a grant that lands afterwards is a mount that only
+	// arrives on the next restart. EnsureNow is therefore synchronous here, after the
+	// listener bound (the sidecars validate the bearer against this process's JWKS, so
+	// the port must be accepting) and before the reconnect goroutine starts. It is
+	// fail-soft: an unreachable authorization server must not take the daemon down.
+	if err := env.firstPartyGrants.EnsureNow(ctx); err != nil {
+		slog.Warn("aura serve: could not self-issue the first-party MCP grants", "err", err)
+	}
+	env.firstPartyGrants.Start(ctx)
 	if env.liveMCP != nil {
 		env.liveMCP.StartReconnect(ctx, env.cfg, env.pool)
 	}
@@ -417,7 +434,12 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	aguiServer.SetOnboardingService(buildOnboardingService(ctx, chat, onboardingAuthulaProvider, memoryProvisioner))
 	aguiServer.SetOnboardingStatusSource(newOnboardingStatusAdapter(chat))
 	aguiServer.SetProfileEditor(onboarding.NewProfileStore(chat.pool))
-	wireBootstrapService(aguiServer, chat.pool, authulaProvider, memoryProvisioner)
+	// Aura's own MCP sidecars are OAuth resource servers isolated by token subject
+	// (Amendment #147), and nothing but a browser could mint them a token — so they never
+	// mounted. The keeper self-issues that grant for the identities that own one, and
+	// creating an identity now provisions BOTH its ArcadeDB tenant and its sidecar grants.
+	firstPartyGrants := buildFirstPartyGrantKeeper(chat.cfg, chat.pool, chat.identity, authulaProvider)
+	wireBootstrapService(aguiServer, chat.pool, authulaProvider, memoryProvisioner, firstPartyGrants)
 	var resetTokenPepper []byte
 	if authulaProvider != nil {
 		resetTokenPepper, err = agui.DeriveResetTokenPepper(chat.cfg.AuthulaSecret)
@@ -492,6 +514,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		reconciler:                reconciler,
 		authulaProvider:           authulaProvider,
 		onboardingAuthulaProvider: onboardingAuthulaProvider,
+		firstPartyGrants:          firstPartyGrants,
 		runRegistry:               runRegistry,
 	}, nil
 }

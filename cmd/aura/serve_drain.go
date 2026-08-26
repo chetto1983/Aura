@@ -94,6 +94,9 @@ func drainShutdown(workCtx context.Context, env *serveEnv) {
 	if env.deleteReconciler != nil {
 		env.deleteReconciler.Stop()
 	}
+	// Same bounded join for the first-party MCP grant keeper: an in-flight mint finishes,
+	// a hung one cannot wedge shutdown. Nil-safe when the deployment never wired one.
+	env.firstPartyGrants.Stop()
 
 	// Fix-plan 1.3 Tier B (amendment #90 §1.1 bound 3c): cancel every detached run
 	// and join the reaper BEFORE the HTTP drain below. Detached producers ride

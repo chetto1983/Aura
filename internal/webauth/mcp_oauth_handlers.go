@@ -161,10 +161,7 @@ func (s *OAuthServer) exchangeAuthorizationCode(w http.ResponseWriter, r *http.R
 		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "authorization code is invalid or expired")
 		return
 	}
-	extra := map[string]any{
-		"iss": mcp.AuraAuthorizationServerIssuer, "aud": code.resource, "scope": code.scope,
-		"client_id": code.clientID, mcpSubjectClaim: code.identityID,
-	}
+	extra := mcpTokenClaims(code.resource, code.scope, code.clientID, code.identityID)
 	pair, err := s.tokens.jwt.GenerateUserToken(r.Context(), code.userID, code.sessionID, extra)
 	if err != nil {
 		writeOAuthError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "token generation failed")
