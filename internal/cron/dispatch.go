@@ -107,10 +107,29 @@ type DispatchDeps struct {
 	// imports neither askuser nor channels (import-cycle constraint).
 	ApprovalPauseEnsurer ApprovalPauseEnsurer
 	ApprovalChannel      ApprovalChannel
+	// ConversationRecorder writes a finished run's outcome back into the conversation
+	// the task was scheduled from. It is the cron-LOCAL consumer-declared interface the
+	// composition root adapts *conversations.Store onto, mirroring ChannelDeliverer —
+	// cron imports neither conversations nor config. Nil → no-op.
+	//
+	// It exists because a push is not a record. Measured 2026-08-26: an operator
+	// scheduled a reminder from the COCKPIT, the run completed, and the result went to
+	// Telegram — the only channel in the tree implementing Deliverer — while the cockpit
+	// conversation ended at "scheduled ✅" and never learned the outcome. The origin was
+	// on the task all along (origin_conversation_id) and only the approval-pause path
+	// read it. LibreChat's rule (D-00): the conversation IS the channel.
+	ConversationRecorder ConversationRecorder
 	// PreferOriginChannel is the AURA_SCHEDULER_PREFER_ORIGIN_CHANNEL kill-switch,
 	// resolved once at the composition root (default true). False → byte-identical
 	// legacy route-only behavior even when a ChannelDeliverer is wired (D-03).
 	PreferOriginChannel bool
+}
+
+// ConversationRecorder appends a finished run's outcome to the conversation the task
+// was scheduled from, so an operator who asked at their desk finds the answer where
+// they asked rather than only on whatever channel can push to them.
+type ConversationRecorder interface {
+	AppendAssistantTurn(ctx context.Context, conversationID, text string) error
 }
 
 // Dispatch routes a claimed task to its handler and owns the run lifecycle. It
@@ -196,6 +215,7 @@ func (d *Dispatch) Dispatch(ctx context.Context, task Task, c *Claim) (err error
 	}
 	d.complete(ctx, task, c.RunID, status, summary, runErr)
 	d.notify(ctx, task, c.RunID, summary, runErr)
+	d.recordToOrigin(ctx, task, summary, runErr)
 	return runErr
 }
 
@@ -332,6 +352,38 @@ func (d *Dispatch) deferred(task Task) bool {
 		return false
 	}
 	return d.deps.QuietHours(task.TZ)
+}
+
+// recordToOrigin writes the run's outcome into the conversation it was scheduled
+// from. It is deliberately NOT part of notify: a push tells an operator who is
+// elsewhere, a record answers the operator who asked here. Both are wanted, and the
+// live measurement that prompted this had the push succeed while the asking
+// conversation learned nothing.
+//
+// It reuses isSilentSuccessKind rather than restating the rule: a housekeeping
+// sweep's routine success is noise in a conversation for exactly the reason it is
+// noise on a channel. A FAILURE is recorded for every kind (D-21's reasoning) —
+// a failure is the outcome an operator must not have to go hunting for.
+//
+// Best-effort. The work already happened and is already on the run ledger, so a
+// failed write is a WARN and never a run failure.
+func (d *Dispatch) recordToOrigin(ctx context.Context, task Task, summary string, runErr error) {
+	if d.deps.ConversationRecorder == nil || task.OriginConversationID == "" {
+		return
+	}
+	text := summary
+	if runErr != nil {
+		text = string(task.Kind) + " failed: " + runErr.Error()
+	} else if isSilentSuccessKind(task.Kind) {
+		return
+	}
+	if text == "" {
+		return
+	}
+	if err := d.deps.ConversationRecorder.AppendAssistantTurn(ctx, task.OriginConversationID, text); err != nil {
+		slog.Warn("cron: could not record the run outcome in its origin conversation",
+			"kind", task.Kind, "conversation", task.OriginConversationID, "err", err)
+	}
 }
 
 func (d *Dispatch) deferredUntil(task Task) (time.Time, bool) {

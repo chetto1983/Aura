@@ -16,6 +16,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/channels"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/cron/handlers"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
@@ -100,6 +101,33 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, own
 		// serve boots (assembleChatEnv), so the sweep is live here (kill-switch is the cadence env).
 		ApprovalPauseEnsurer: approvalPauseEnsurer{pauses: chat.pause, minter: chat.run},
 		ApprovalChannel:      reg,
+		// Write the outcome back where it was asked for. The push above finds an operator
+		// who is elsewhere; this answers the one who is still looking at the conversation
+		// they scheduled from. Both are wanted — measured 2026-08-26, a reminder scheduled
+		// in the cockpit was delivered to Telegram while the cockpit conversation ended at
+		// "scheduled ✅" and never learned the outcome.
+		ConversationRecorder: conversationRecorder{store: chat.conv},
+	})
+}
+
+// conversationRecorder adapts *conversations.Store onto cron.ConversationRecorder, the
+// same consumer-declared-interface idiom as approvalPauseEnsurer: cron declares the one
+// method it needs and the composition root supplies it, so cron imports no conversation
+// package. Seq 0 lets AppendTurn allocate the next sequence under the conversation's row
+// lock, which is what an out-of-band append needs — the scheduler is not inside the
+// turn loop that would otherwise be numbering these.
+type conversationRecorder struct {
+	store *conversations.Store
+}
+
+func (r conversationRecorder) AppendAssistantTurn(ctx context.Context, conversationID, text string) error {
+	if r.store == nil {
+		return nil
+	}
+	return r.store.AppendTurn(ctx, conversations.AppendTurnParams{
+		ConversationID: conversationID,
+		Role:           "assistant",
+		Content:        text,
 	})
 }
 
