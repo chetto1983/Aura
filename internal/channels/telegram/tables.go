@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"image/draw"
 	"image/png"
+	"regexp"
 	"strings"
 
 	"golang.org/x/image/font"
@@ -76,9 +77,35 @@ func splitRow(line string) []string {
 	}
 	cells := make([]string, len(parts))
 	for i, p := range parts {
-		cells[i] = strings.TrimSpace(p)
+		cells[i] = strings.TrimSpace(stripInlineMarkdown(strings.TrimSpace(p)))
 	}
 	return cells
+}
+
+// Paired inline markers a model routinely emits inside table cells. Both consumers
+// of the parsed grid express emphasis by other means — RenderTablePNG through the
+// FONT (gomonobold header, gomono body) and PreBlockTable through a monospace pre
+// block — so a cell arriving as "**Lun 24**" was drawn with its asterisks intact.
+//
+// Single-character * and _ are deliberately NOT stripped. This assistant emits
+// globs (*.go) and identifiers (snake_case) inside tables far more often than it
+// emits single-delimiter emphasis, and unwrapping those would corrupt real content
+// to fix a cosmetic problem. Only unambiguous PAIRED markers are removed.
+var (
+	mdLinkPair  = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`)
+	mdBoldStar  = regexp.MustCompile(`\*\*([^*]+)\*\*`)
+	mdBoldScore = regexp.MustCompile(`__([^_]+)__`)
+	mdCodeSpan  = regexp.MustCompile("`([^`]+)`")
+)
+
+// stripInlineMarkdown removes paired inline markup so the cell renders as text.
+// Links go first: their label may itself be emphasised.
+func stripInlineMarkdown(s string) string {
+	s = mdLinkPair.ReplaceAllString(s, "$1")
+	s = mdBoldStar.ReplaceAllString(s, "$1")
+	s = mdBoldScore.ReplaceAllString(s, "$1")
+	s = mdCodeSpan.ReplaceAllString(s, "$1")
+	return s
 }
 
 // isSeparatorRow reports whether every cell is a markdown separator cell
