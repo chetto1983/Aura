@@ -62,6 +62,22 @@ proposes. Three questions were deliberately NOT answered from the armchair.
   without consuming budget, and without touching `history[0..2]` (the KV-cache prefix). The
   `Message.Source` field already carries the producing channel, so worker attribution rides
   for free. Operator decision: *"la steer e gia fatta"*.
+  - **AMENDED 2026-08-26 by spike 098 (3 live runs, `deepseek/deepseek-v4-flash-0731:nitro`):
+    the rail is validated, the ENVELOPE is not.** `drainSteer` demonstrably places the marker
+    outside the `trust="untrusted"` tool-output envelope at a real round boundary, the model
+    parses that structure correctly and quotes `SteerChannelNote` verbatim, `history[0..2]` is
+    untouched and every run reached `RUN_FINISHED`. But `<user_steer>` *declares the operator
+    as author*, and a worker report declares a worker: the model trusts the payload's
+    self-declared authorship over the envelope and discounts the entire report as an injection
+    attempt. It refused in all three shapes tested — an implausible worker, a contradicted
+    report, and a plausible uncontradicted report carrying a credible instruction. Since a
+    backgrounded worker's report is the ONLY copy of that result, SC#1 would pass mechanically
+    and fail semantically. **Keep the rail; mint a second envelope that declares worker
+    authorship and grants tool-result trust, not operator trust** — the two-envelope shape
+    (authority-conferring for the operator, authority-negating for background completions)
+    observed shipped in the Claude Code harness driving this session. D-04's "no second
+    delivery mechanism" survives; its implicit "and no second envelope" does not.
+    Evidence: `.planning/spikes/098-steer-carries-worker-result/README.md`.
 - **D-05:** **No channel is excluded from background delegation.** hermes gates background
   work behind `async_delivery_supported()` and refuses on channels that cannot deliver after
   the turn ends. Aura does not need that gate: steer already arrives from both the cockpit
