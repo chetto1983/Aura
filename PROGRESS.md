@@ -226,12 +226,27 @@ the Aura control plane. Legacy, dark, and dead tenant-routing code must be remov
   `3c1723cc5d3c4a23c9585c96b9c35d3d79416050`. Its immutable GHCR index is
   `ghcr.io/chetto1983/aura-arcadedb-mcp:3c1723cc5d3c4a23c9585c96b9c35d3d79416050@sha256:621438a7bb77983899c22f43c52714d08c25af1efcd9ad14fc3479e8893225a4`
   (linux/amd64 manifest `sha256:9a6d9507f477812f67385dca99bf0e1bb2fc0bd6ea691a239a93346ecea601ff`).
+- Commit `711f0820cd849ea08ca5252f4ebde91032cbf82b` pins that immutable ArcadeDB MCP
+  index in Compose and in the live Memory CI job; CI no longer rebuilds a different local
+  sidecar. Its scoped WSL gate is GREEN: workflow lint, Compose interpolation, `cmd/aura`
+  unit/race/vet/build, and three matched quality-snapshot rows. It is pushed to `master`.
+- The final cache-enabled Aura build from the integrated tree produced local manifest list
+  `sha256:cc708ef386f3a2a462327a36c5be74af44823ea119f596680e858b9030363d9f`.
+  Compose pulled the exact WhatsApp, Calendar, and ArcadeDB MCP GHCR indexes above and recreated
+  Aura plus all three loopback-networked sidecars together. All four are healthy; `aura-migrate`
+  exited 0 with `ok: no pending migrations`.
+- The final published-artifact production gate is GREEN. Container doctors open Calendar (1
+  tool), Memory (10), and WhatsApp (15) without login. Native WSL Node 24 bundled Chromium passed
+  the complete real Cockpit MCP spec 2/2 in 41.9s and the guarded live ArcadeDB graph spec 1/1 in
+  3.9s. The real agent delivered fake-SMTP message id 7 and reached `content_stop`. Final cleanup
+  is measured: Calendar `appsettings.json` contains zero `pim-e2e`, operator ArcadeDB has
+  `Entity=0` and `FACT=0`, and fresh Aura logs contain zero `invalid_grant`, zero missing-memory
+  warnings, and zero unavailable-memory-context warnings.
 
 ## Current repository state
 
-- Aura branch: `master`, HEAD `3fd0548688982ce614409eefc05943937efb827c`, equal to
-  `origin/master` before the final immutable ArcadeDB MCP pin. The pin, its Compose contract test,
-  CI artifact use, and this checkpoint are the only current working-tree delta.
+- Aura branch: `master`, HEAD `711f0820cd849ea08ca5252f4ebde91032cbf82b`, equal to
+  `origin/master` before this final evidence-only checkpoint update.
 - WhatsApp fork: `.planning/tmp/whatsapp-mcp-tenant`, HEAD
   `a463da57dd7afd243b2db8827dd26891b661df7e`, clean and pushed.
 - Calendar fork: `.planning/tmp/aura-pim-mcp-tenant`, HEAD
@@ -239,7 +254,8 @@ the Aura control plane. Legacy, dark, and dead tenant-routing code must be remov
 
 ## Implemented, not yet closed
 
-- Generic OAuth validation exists in all three MCP servers.
+- Generic OAuth validation exists in all three MCP servers and all three immutable resource-server
+  artifacts are deployed and verified.
 - Aura authorization server exposes standard metadata, authorization, token, DCR, and JWKS
   endpoints.
 - Calendar admin proxy restores/refreshes the identity-scoped OAuth grant.
@@ -250,17 +266,14 @@ the Aura control plane. Legacy, dark, and dead tenant-routing code must be remov
 - Calendar's production bearer verifier is generic OAuth/OIDC code; it contains no Aura
   tenant-routing contract.
 - The live PIM fake-SMTP route and canonical Cockpit account-connect route are implemented and
-  verified. All three MCP artifacts are published; the final ArcadeDB MCP Compose pin and exact
-  published-artifact E2E remain.
+  verified against the three exact published artifacts.
 
 ## Exact next actions
 
-1. Run the scoped `cmd/aura` post-pin gate, workflow lint, Compose validation, and quality gate.
-2. Commit/push the immutable ArcadeDB MCP pin, then pull and deploy the three exact GHCR indexes
-   while recreating Aura plus all loopback-networked sidecars together.
-3. Rerun the three production doctors, real Cockpit MCP 2/2, guarded graph 1/1, and cleanup/log
-   postconditions. Record the shipped evidence, push it, and check CI once without waiting 30
-   minutes.
+1. Commit/push this final evidence-only checkpoint.
+2. Check the new GitHub Actions dispatch once without waiting 30 minutes.
+3. Store only the verified shipped commit, immutable digests, and loopback recreation rule in the
+   persistent Aura memory index; then close this concern and move to the next one.
 
 ## Required WSL toolchain
 
