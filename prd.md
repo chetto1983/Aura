@@ -8790,3 +8790,46 @@ flusso completo, che funziona.
 > gold, tune on hidden operator data, switch the engine fusion strategy, or add an LLM
 > reranker. A diagnostic composition that remains below 0.750 is rejected rather than
 > shipped, and the 0.550 baseline is never presented as a passing release floor.
+
+## §Document evaluation gates the agent's answer, not a preferred filename (Amendment #159, 2026-08-27)
+
+> **Amendment #159 (2026-08-27 — measured correction of the document-eval oracle;
+> supersedes Amendment #158's use of passage R@1 >= 0.750 as the concern-closure
+> criterion).**
+>
+> **The measurement.** The new live harness drove `FusedCandidates` directly with
+> `cards=nil`, while production drives `HostRetriever`, queries both `IndexedDocument`
+> cards and passages, returns multiple documents, and lets the agent select evidence.
+> More fundamentally, several file qrels encode one preferred route rather than answer
+> correctness. For example, the query asking for Rossi SRL's VAT number marks only
+> `anagrafica_clienti.xlsx` gold even though Rossi invoices contain the same exact
+> `IT02345678901` value. The R@1 report calls a sufficient document wrong; conversely,
+> putting a named file first does not prove the agent read the right field or computed an
+> aggregate correctly. The measured 0.550 is a real passage-ranking diagnostic, but it is
+> not a valid behavioral release oracle. A rank-only card composition confirmed the
+> distinction by degrading R@1 to 0.500 without answering any user question.
+>
+> **Contract.** Preserve the 20-query per-arm R@1/R@3/MRR report as diagnostic evidence
+> and never tune its qrels after seeing a ranking. Release authority moves to nine real
+> agent cases covering every query the initial RRF run missed at rank 1. Each case runs a
+> fresh conversation at temperature zero against the disposable 21-file identity through
+> the production document library. It has machine-checkable ground truth taken from the
+> deterministic corpus: exact invoice/customer identifiers, numeric totals rendered
+> without separators where requested, the contest reason, payment term, and March invoice
+> set. `document_search` is required, `web_search` and `web_fetch` are forbidden, LLM calls
+> are bounded, and durable/event evidence records the actual tools and final reply. There
+> is no LLM judge and no requirement to open one preselected filename when another indexed
+> document contains sufficient evidence.
+>
+> The concern closes only when all nine behavioral cases pass in the same lifecycle run
+> that verifies corpus checksums, ingests all 21 objects, and emits the diagnostic retrieval
+> and abstention reports. A failed agent case is investigated at the layer its evidence
+> names: missing target in returned documents is retrieval debt; target present but ignored
+> is model/tool doctrine debt; a wrong computation is open/analysis debt. These categories
+> are not collapsed back into one ranking metric.
+>
+> **What this amendment does NOT claim.** Nine deterministic questions do not establish
+> population-level answer quality, and a correct answer does not make poor R@1 irrelevant.
+> The retrieval metrics remain visible debt indicators and may become a hard gate after a
+> measured correlation with agent failures. This amendment only refuses to use a preferred
+> filename as a substitute for the user-visible behavior Aura is supposed to deliver.
