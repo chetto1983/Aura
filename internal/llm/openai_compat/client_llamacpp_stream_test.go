@@ -73,10 +73,10 @@ func TestRequestBody_LlamaCppStreamOptions(t *testing.T) {
 // CONTESTO/CACHE gauges read (RuntimeFooter.tsx); a regression here reproduces
 // the stuck-at-0 bug.
 func TestStream_LlamaCppUsageChunk(t *testing.T) {
-	raw := "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n" +
-		"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n" +
-		"data: {\"choices\":[],\"usage\":{\"completion_tokens\":10,\"prompt_tokens\":42,\"total_tokens\":52,\"prompt_tokens_details\":{\"cached_tokens\":30}}}\n" +
-		"data: [DONE]\n"
+	raw := "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n" +
+		"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n" +
+		"data: {\"choices\":[],\"usage\":{\"completion_tokens\":10,\"prompt_tokens\":42,\"total_tokens\":52,\"prompt_tokens_details\":{\"cached_tokens\":30}}}\n\n" +
+		"data: [DONE]\n\n"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte(raw))

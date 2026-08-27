@@ -143,6 +143,11 @@ type Request struct {
 	// assistant content. No json tag — this struct is projected by buildWireRequest,
 	// never marshalled directly.
 	ToolChoice string
+
+	// ContentProjection is request-scoped authorization for explicit media refs. It
+	// never contains durable bytes; provider clients resolve and verify each ref just
+	// before the HTTP request and discard those bytes with the request.
+	ContentProjection *ContentProjection
 }
 
 // ReasoningEffort is the provider-neutral effort vocabulary used by reasoning

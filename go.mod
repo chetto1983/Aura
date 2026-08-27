@@ -27,6 +27,7 @@ require (
 	github.com/moby/moby/api v1.55.0
 	github.com/moby/moby/client v0.5.1
 	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/openai/openai-go/v3 v3.54.0
 	github.com/pkoukk/tiktoken-go v0.1.8
 	github.com/prometheus/client_golang v1.24.1
 	github.com/sergi/go-diff v1.4.0
@@ -188,6 +189,10 @@ require (
 	github.com/testcontainers/testcontainers-go v0.42.0 // indirect
 	github.com/testcontainers/testcontainers-go/modules/mysql v0.42.0 // indirect
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.42.0 // indirect
+	github.com/tidwall/gjson v1.19.0 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.1 // indirect
+	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect
 	github.com/tmthrgd/go-hex v0.0.0-20190904060850-447a3041c3bc // indirect

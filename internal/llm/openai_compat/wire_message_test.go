@@ -13,14 +13,17 @@ import (
 // projection the tool message went out WITHOUT content and strict llama.cpp rejected the
 // whole request with 400 "All non-assistant messages must contain 'content'" (OpenRouter
 // tolerated the omission, hiding the bug). Regression for the live Telegram outage.
-func TestToWireMessagesGuaranteesContentForNonAssistant(t *testing.T) {
+func TestToSDKMessagesGuaranteesContentForNonAssistant(t *testing.T) {
 	msgs := []llm.Message{
 		{Role: llm.RoleSystem, Content: "sys"},
 		{Role: llm.RoleUser, Content: "ciao"},
 		{Role: llm.RoleTool, ToolCallID: "call_1", Content: ""},                                // empty tool result — the trigger
 		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "call_1", Type: "function"}}}, // assistant w/ tool_calls, empty content
 	}
-	wire := toWireMessages(msgs)
+	wire, err := toSDKMessages(msgs, nil)
+	if err != nil {
+		t.Fatalf("toSDKMessages: %v", err)
+	}
 	if len(wire) != 4 {
 		t.Fatalf("len(wire)=%d, want 4", len(wire))
 	}
@@ -49,8 +52,11 @@ func TestToWireMessagesGuaranteesContentForNonAssistant(t *testing.T) {
 }
 
 // A non-empty assistant message still serializes its content.
-func TestToWireMessagesKeepsAssistantContent(t *testing.T) {
-	wire := toWireMessages([]llm.Message{{Role: llm.RoleAssistant, Content: "hi there"}})
+func TestToSDKMessagesKeepsAssistantContent(t *testing.T) {
+	wire, err := toSDKMessages([]llm.Message{{Role: llm.RoleAssistant, Content: "hi there"}}, nil)
+	if err != nil {
+		t.Fatalf("toSDKMessages: %v", err)
+	}
 	b, _ := json.Marshal(wire[0])
 	if !strings.Contains(string(b), `"content":"hi there"`) {
 		t.Fatalf("assistant content must survive, got %s", b)

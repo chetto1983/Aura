@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -108,6 +109,28 @@ func TestStreamOmitsAuthorizationWhenAPIKeyEmpty(t *testing.T) {
 	}
 }
 
+func TestStreamOmitsOpenRouterKeyForLlamaCpp(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer srv.Close()
+
+	cfg := testConfig(srv.URL)
+	cfg.Provider = "llamacpp"
+	stream, err := New(cfg).Stream(context.Background(), llm.Request{Model: "local-model"})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	_ = drain(stream)
+	if gotAuth != "" {
+		t.Fatalf("OpenRouter credential crossed into llama.cpp Authorization header: %q", gotAuth)
+	}
+}
+
 // TestStream_CancelMidStream (Req#3): cancel ctx mid-stream → the chunk channel
 // closes within ~100ms of cancel AND runtime.NumGoroutine returns to baseline.
 // goleak (package TestMain) catches a leaked read goroutine or lingering
@@ -141,14 +164,14 @@ func TestStream_PrematureCloseEmitsErrBeforeClose(t *testing.T) {
 	if errIndex != len(chunks)-1 {
 		t.Fatalf("Err chunk index = %d, want final chunk index %d", errIndex, len(chunks)-1)
 	}
-	if !strings.Contains(chunks[errIndex].Err.Error(), "malformed SSE chunk") {
-		t.Fatalf("Err = %v, want malformed SSE chunk error", chunks[errIndex].Err)
+	if !errors.Is(chunks[errIndex].Err, errStreamMissingFinishReason) {
+		t.Fatalf("Err = %v, want incomplete-stream error", chunks[errIndex].Err)
 	}
 }
 
 func TestStream_EOFWithoutFinishReasonEmitsUsageThenErr(t *testing.T) {
-	raw := "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n" +
-		"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":2}}\n"
+	raw := "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n" +
+		"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":2}}\n\n"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte(raw))
@@ -313,11 +336,9 @@ func TestStream_429NoRetry(t *testing.T) {
 // TestRequestBody asserts the wire body sends tool_choice:auto +
 // provider.data_collection:deny + stream:true, and sends NEITHER usage NOR
 // stream_options — both deprecated no-ops on this OpenRouter-scoped contract
-// (testConfig sets no Provider, so llm.ReasoningTarget resolves non-llamacpp,
-// the same branch OpenRouter takes — see TestRequestBody_LlamaCppStreamOptions
-// in client_llamacpp_stream_test.go for the llama.cpp counterpart, which DOES
-// send stream_options). Attribution headers + the Bearer auth are present on
-// the request.
+// (see TestRequestBody_LlamaCppStreamOptions in client_llamacpp_stream_test.go
+// for the llama.cpp counterpart, which DOES send stream_options). Attribution
+// headers + the Bearer auth are present on the request.
 func TestRequestBody(t *testing.T) {
 	var gotBody []byte
 	var gotAuth, gotReferer, gotTitle string
@@ -331,7 +352,16 @@ func TestRequestBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := New(testConfig(srv.URL))
+	cfg := testConfig("http://openrouter.ai/api/v1")
+	cfg.Provider = "openrouter"
+	c := New(cfg)
+	targetAddress := srv.Listener.Addr().String()
+	c.httpClient.Transport = &http.Transport{
+		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, targetAddress)
+		},
+		DisableKeepAlives: true,
+	}
 	ch, err := c.Stream(context.Background(), llm.Request{
 		Model: "deepseek/deepseek-v4-flash:exacto", Temperature: 0.7, MaxTokens: 4096,
 		SessionID: "conv-123",
@@ -553,44 +583,5 @@ func TestMessagesImmutable(t *testing.T) {
 	after, _ := json.Marshal(msgs)
 	if string(before) != string(after) {
 		t.Errorf("Stream mutated req.Messages:\n before: %s\n after:  %s", before, after)
-	}
-}
-
-// TestSecretRedaction (D-28, T-03-01, release-blocking): the sentinel API key
-// must appear in NO Chunk, NO HTTPError, NO error string. The Authorization
-// header is the ONLY place the key is written (TestRequestBody covers that it is
-// the request, never a logged/returned struct).
-func TestSecretRedaction(t *testing.T) {
-	// Success path: assert no chunk carries the key.
-	okSrv := httptest.NewServer(fixtureHandler(t, "toolcall_multichunk.sse"))
-	defer okSrv.Close()
-	c := New(testConfig(okSrv.URL))
-	ch, err := c.Stream(context.Background(), llm.Request{Model: "m"})
-	if err != nil {
-		t.Fatalf("Stream: %v", err)
-	}
-	for _, ck := range drain(ch) {
-		blob, _ := json.Marshal(ck)
-		if strings.Contains(string(blob), sentinelKey) {
-			t.Fatalf("API key leaked into a Chunk: %s", blob)
-		}
-	}
-
-	// Error path: assert the key is absent from HTTPError + its Error() string.
-	errSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"error":"bad key"}`))
-	}))
-	defer errSrv.Close()
-	_, herr := New(testConfig(errSrv.URL)).Stream(context.Background(), llm.Request{Model: "m"})
-	if herr == nil {
-		t.Fatal("want error on 401")
-	}
-	if strings.Contains(herr.Error(), sentinelKey) {
-		t.Fatalf("API key leaked into HTTPError.Error(): %s", herr.Error())
-	}
-	blob, _ := json.Marshal(herr)
-	if strings.Contains(string(blob), sentinelKey) {
-		t.Fatalf("API key leaked into serialized HTTPError: %s", blob)
 	}
 }

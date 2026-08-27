@@ -3,9 +3,59 @@ package openai_compat
 import (
 	"context"
 	"io"
+	"net/http"
 	"sync/atomic"
 	"time"
+
+	"github.com/openai/openai-go/v3/option"
 )
+
+type idleRequestContextKey struct{}
+
+type idleRequestControl struct {
+	window   time.Duration
+	cancel   context.CancelFunc
+	watchdog *idleWatchdog
+}
+
+func (c *idleRequestControl) firedIdle() bool {
+	return c != nil && c.watchdog.firedIdle()
+}
+
+func (c *idleRequestControl) stop() {
+	if c != nil {
+		c.watchdog.stop()
+	}
+}
+
+// idleResponseMiddleware wraps the SDK response body only after headers arrive,
+// so the timer measures stream-byte gaps rather than connection establishment.
+func idleResponseMiddleware(req *http.Request, next option.MiddlewareNext) (*http.Response, error) {
+	resp, err := next(req)
+	if err != nil || resp == nil || resp.Body == nil {
+		return resp, err
+	}
+	if resp.StatusCode/100 != 2 {
+		providerErr := newHTTPError(resp)
+		_ = resp.Body.Close()
+		return nil, providerErr
+	}
+	control, _ := req.Context().Value(idleRequestContextKey{}).(*idleRequestControl)
+	if control == nil || control.window <= 0 {
+		return resp, nil
+	}
+	control.watchdog = startIdleWatchdog(control.window, control.cancel)
+	resp.Body = &idleReadCloser{
+		Reader: &idleResettingReader{r: resp.Body, w: control.watchdog},
+		Closer: resp.Body,
+	}
+	return resp, nil
+}
+
+type idleReadCloser struct {
+	io.Reader
+	io.Closer
+}
 
 // idleWatchdog aborts a stalled stream (B-08). It arms a timer for the idle window;
 // each reset (called when bytes arrive) restarts it. If the window elapses with no

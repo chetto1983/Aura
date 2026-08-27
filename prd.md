@@ -9205,7 +9205,9 @@ flusso completo, che funziona.
 > SSE parser and delta accumulator with that SDK behind the unchanged provider-neutral
 > `llm.Client`. Provider-specific policy remains a thin adapter: zero SDK retries (the agent
 > owns retry), Aura's rolling idle watchdog, OpenRouter `provider`/`reasoning`/sticky-session
-> fields, and llama.cpp thinking fields. The dependency is pinned in `go.mod`; no vendored
+> fields and bearer credential, and llama.cpp thinking fields. OpenRouter's API key and
+> request extensions must never cross into a llama.cpp/vLLM request merely because the same
+> process also has `OPENROUTER_API_KEY` configured. The dependency is pinned in `go.mod`; no vendored
 > protocol copy or duplicate frontend/model setting is introduced.
 >
 > **Acceptance.** Fixture tests must prove OpenRouter image/audio/text capability parsing,
@@ -9219,7 +9221,9 @@ flusso completo, che funziona.
 > primary to a model whose provider advertises the tested modality, attach real Garage media
 > through the Cockpit, and obtain an answer that depends on the original media rather than
 > only its OCR/transcript. It then switches back to the text-only primary and proves the
-> indexed fallback without a hidden model call.
+> indexed fallback without a hidden model call. The live acceptance must also observe the
+> provider wire boundary: native mode contains `image_url`, explicit text-only mode does not,
+> and neither local request contains an OpenRouter bearer credential.
 >
 > **Evidence boundary.** The live probes establish the current providers' capability shapes
 > and the two models actually queried. They do not prove every OpenRouter provider honors

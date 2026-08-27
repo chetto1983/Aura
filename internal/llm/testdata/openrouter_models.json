@@ -4,6 +4,9 @@
     {
       "id": "deepseek/deepseek-v4-flash",
       "name": "DeepSeek: DeepSeek V4 Flash",
+      "architecture": {
+        "input_modalities": ["text"]
+      },
       "reasoning": {
         "supported_efforts": ["turbo", "low", "medium", "high", "xhigh", "max"],
         "default_effort": "high",
@@ -24,6 +27,9 @@
     {
       "id": "openai/o4-mini",
       "name": "OpenAI: o4 Mini",
+      "architecture": {
+        "input_modalities": ["text", "image", "audio", "future-modality"]
+      },
       "reasoning": {
         "supported_efforts": ["none", "low", "medium", "high"],
         "default_effort": "medium",
@@ -42,6 +48,9 @@
     {
       "id": "meta-llama/llama-3.3-70b-instruct",
       "name": "Meta: Llama 3.3 70B Instruct",
+      "architecture": {
+        "input_modalities": ["text", "image"]
+      },
       "supported_parameters": [
         "max_tokens",
         "temperature",
