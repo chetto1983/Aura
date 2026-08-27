@@ -63,6 +63,18 @@ type IngestionJobWorker struct {
 	RetryJitter   func(time.Duration) time.Duration
 	Clock         Clock
 
+	// JobType scopes Claim to a single job type. Left empty, Claim's job_type
+	// filter is NULL and matches every row regardless of type -- fine for a
+	// worker whose Handlers map covers every type that can ever be enqueued,
+	// but wrong the moment a SECOND typed worker polls the same table: an
+	// empty JobType worker races a type-scoped worker for its rows and, on
+	// winning, dead-letters them with handler_missing since it never has a
+	// handler for a type it wasn't meant to touch. Measured live 2026-08-27:
+	// the asset-processing worker (Handlers={asset_process}, JobType="")
+	// claimed a swarm_delegation row ahead of the delegation claim loop and
+	// dead-lettered it. Set JobType to the worker's own type to fix this.
+	JobType string
+
 	// QueueDepth is optional; when set, ProcessOnce samples the current queued
 	// backlog once per pass and records it to the ingestion_queue_depth gauge.
 	QueueDepth IngestionQueueDepthSource
@@ -78,6 +90,7 @@ func (w *IngestionJobWorker) ProcessOnce(ctx context.Context) (int, error) {
 	}
 	jobs, err := w.Store.Claim(ctx, ClaimIngestionJobsRequest{
 		IdentityID:    w.IdentityID,
+		JobType:       w.JobType,
 		WorkerID:      w.workerID(),
 		LeaseDuration: w.leaseDuration(),
 		BatchSize:     w.batchSize(),

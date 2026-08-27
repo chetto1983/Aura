@@ -128,6 +128,7 @@ func newRuntimeProcessingJobWorker(
 	worker := &documents.IngestionJobWorker{
 		Store:         store,
 		IdentityID:    identityID,
+		JobType:       assetProcessJobType,
 		WorkerID:      workerID,
 		LeaseDuration: leaseDuration,
 		BatchSize:     1,

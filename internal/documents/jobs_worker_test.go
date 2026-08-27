@@ -67,6 +67,33 @@ func TestIngestionJobWorkerMarksSucceeded(t *testing.T) {
 	}
 }
 
+// TestIngestionJobWorkerScopesClaimToItsOwnJobType pins the fix for a real
+// cross-worker race found by driving the live delegation tracer (2026-08-27):
+// a worker constructed with JobType=="" claims ANY due row regardless of
+// type (Claim's job_type filter is NULL, matching everything), so an
+// asset-processing worker whose Handlers map only knows "asset_process" can
+// win the race for a "swarm_delegation" row and dead-letter it with
+// handler_missing before the delegation claim loop ever sees it. Setting
+// JobType must propagate into the store's claim request so each typed
+// worker only ever competes for its own rows.
+func TestIngestionJobWorkerScopesClaimToItsOwnJobType(t *testing.T) {
+	store := &fakeIngestionJobQueue{}
+	worker := &IngestionJobWorker{
+		Store:      store,
+		IdentityID: testIngestionIdentityID,
+		WorkerID:   "worker-1",
+		JobType:    "asset_process",
+		Handlers:   map[string]IngestionJobHandler{},
+	}
+
+	if _, err := worker.ProcessOnce(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if store.claimReq.JobType != "asset_process" {
+		t.Fatalf("claim request JobType = %q, want %q", store.claimReq.JobType, "asset_process")
+	}
+}
+
 func TestIngestionJobWorkerIncludesEventInAtomicTransition(t *testing.T) {
 	store := &fakeIngestionJobQueue{
 		claimed: []IngestionJob{{
