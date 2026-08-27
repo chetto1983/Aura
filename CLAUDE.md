@@ -81,9 +81,19 @@ tutti e 67 i comandi `/gsd:*` locali avevano la skill HOME equivalente (HOME ne 
 HOME è un superset con matcher più larghi (`workflow-guard` locale su `Write|Edit`, HOME su
 `Bash|Edit|Write|MultiEdit`).
 
-**Resta project-local solo `.claude/agents/`** (33 agent): scope diversi non collidono, il
-progetto vince e basta, nessuna doppia esecuzione. **`gsd-tools.cjs` si invoca sempre da
-HOME.**
+**Anche `.claude/agents/` è stata ritirata il 2026-08-27**: l'installazione GSD è ora
+interamente in HOME. La motivazione del 2026-08-25 ("scope diversi non collidono, il progetto
+vince e basta") era corretta sul rischio doppia-esecuzione ma non aveva verificato che i corpi
+degli agent risolvessero ancora i propri `@`-include. Non lo facevano: **15 dei 33 agent
+project-local** (fra cui `gsd-executor`, `gsd-verifier`, `gsd-plan-checker`) puntavano a
+`/home/user/Aura/.claude/get-shit-done/...`, un path Linux inesistente su questo host, quindi
+perdevano silenziosamente `mandatory-initial-read`, `checkpoints.md`, `execute-mvp-tdd.md`,
+`executor-examples.md` e il template SUMMARY.
+
+Misurato prima di rimuoverli: i tool set registrati in sessione coincidevano con le copie di
+progetto (`gsd-executor` senza `Skill` né `mcp__plugin_context7_context7__*`), non con HOME --
+quindi "il progetto vince" era vero e per questo il danno era attivo, non teorico. HOME 1.11.0
+contiene tutti e 33 i nomi più uno. **`gsd-tools.cjs` e gli agent si invocano sempre da HOME.**
 
 > **`.planning/` ESISTE ed è tracciata in git.** Cancellata alla chiusura della milestone
 > v2.0.0, è stata **rigenerata il 2026-08-05** (`b1a95faf8`, apertura di v2.1.0
