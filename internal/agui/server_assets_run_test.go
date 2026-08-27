@@ -1,6 +1,9 @@
 package agui
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +12,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/documents"
+	"github.com/chetto1983/aura/internal/llm"
 )
 
 func TestServerRunPrependsAttachmentBlock(t *testing.T) {
@@ -44,6 +48,69 @@ func TestServerRunPrependsAttachmentBlock(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("model userMsg missing %q:\n%s", want, got)
 		}
+	}
+}
+
+func TestServerRunCarriesVerifiedGarageMediaProjection(t *testing.T) {
+	const tid = "88888888-8888-4888-8888-888888888888"
+	body := []byte("real-png-bytes")
+	digest := sha256.Sum256(body)
+	asset := assets.Asset{
+		ID:          "asset-image",
+		IdentityID:  assetAPIIdentityID,
+		ThreadID:    tid,
+		FileName:    "panel.png",
+		MIMEType:    "image/png",
+		Modality:    assets.ModalityImage,
+		Status:      assets.StatusComplete,
+		SizeBytes:   int64(len(body)),
+		ContentHash: hex.EncodeToString(digest[:]),
+		Summary:     "control panel",
+	}
+	run := &scriptedRunner{events: textTurn("ok")}
+	assetSvc := &fakeAssetService{
+		getResp:   asset,
+		openAsset: asset,
+		openResp:  io.NopCloser(strings.NewReader(string(body))),
+	}
+	s := NewServer(run, &fakeConvStore{known: map[string]bool{tid: true}}, ServerConfig{})
+	s.SetAssetService(assetSvc)
+
+	requestBody := `{"threadId":"` + tid + `","messages":[{"id":"m1","role":"user","content":"describe it"}],"aura":{"attachment_ids":["asset-image"]}}`
+	rec := serveRunWithPrincipal(t, s, requestBody)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
+	}
+	projection, ok := llm.ContentProjectionFromContext(run.turnCtx)
+	if !ok {
+		t.Fatal("run context has no content projection")
+	}
+	if projection.Principal.OwnerID != assetAPIIdentityID || len(projection.ReferenceIDs) != 1 || projection.ReferenceIDs[0] != "asset-image" {
+		t.Fatalf("projection = %+v", projection)
+	}
+	part, err := projection.Loader.LoadContentPart(context.Background(), "", projection.Principal.OwnerID, "asset-image")
+	if err != nil {
+		t.Fatalf("LoadContentPart: %v", err)
+	}
+	if string(part.Bytes) != string(body) || part.MIMEType != "image/png" || part.FallbackText != "control panel" {
+		t.Fatalf("verified part = %+v", part)
+	}
+	if assetSvc.openIdentityID != assetAPIIdentityID {
+		t.Fatalf("OpenForIdentity owner = %q", assetSvc.openIdentityID)
+	}
+}
+
+func TestGarageMediaProjectionRejectsDigestDrift(t *testing.T) {
+	assetSvc := &fakeAssetService{
+		openAsset: assets.Asset{
+			ID: "a1", ThreadID: "t1", MIMEType: "audio/wav", Modality: assets.ModalityAudio,
+			SizeBytes: 3, ContentHash: strings.Repeat("0", 64),
+		},
+		openResp: io.NopCloser(strings.NewReader("wav")),
+	}
+	loader := assetContentPartLoader{assets: assetSvc, threadID: "t1", allowed: map[string]bool{"a1": true}}
+	if _, err := loader.LoadContentPart(context.Background(), "", assetAPIIdentityID, "a1"); err == nil {
+		t.Fatal("digest drift was accepted")
 	}
 }
 

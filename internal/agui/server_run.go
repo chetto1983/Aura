@@ -74,7 +74,7 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	}
 	// Prepend per-turn context blocks (attachments + the thread's searchable-doc catalog)
 	// to the user turn; see buildTurnUserMessage (server_context.go).
-	modelUserMsg, code, emsg := s.buildTurnUserMessage(ctx, r, in.ThreadID, req.Aura.AttachmentIDs, userMsg)
+	ctx, modelUserMsg, code, emsg := s.buildTurnUserMessage(ctx, r, in.ThreadID, req.Aura.AttachmentIDs, userMsg)
 	if code != 0 {
 		http.Error(w, emsg, code)
 		return

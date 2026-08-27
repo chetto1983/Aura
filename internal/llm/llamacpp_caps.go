@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -128,13 +129,19 @@ func thinkingExplicitlyDisabled(caps map[string]any) bool {
 // fetchProps performs the GET /props round-trip and defensively parses it (body-size
 // capped, json.Decoder). No auth header — /props on a local llama-server is unauthenticated.
 func (s *llamaCppReasoningCaps) fetchProps(ctx context.Context) (llamaCppPropsResponse, error) {
+	return fetchLlamaCppProps(ctx, s.cfg, s.httpClient)
+}
+
+func fetchLlamaCppProps(ctx context.Context, cfg Config, httpClient *http.Client) (llamaCppPropsResponse, error) {
 	var out llamaCppPropsResponse
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.cfg.BaseURL+"/props", nil)
+	baseURL := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
+	baseURL = strings.TrimSuffix(baseURL, "/v1")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/props", nil)
 	if err != nil {
 		return out, err
 	}
 	req.Header.Set("Accept", "application/json")
-	resp, err := s.httpClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return out, err
 	}

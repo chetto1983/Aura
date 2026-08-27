@@ -15,6 +15,7 @@ export type GarageFolderLister = (path: string) => Promise<readonly IEntity[]>;
 export const GARAGE_TRIGGER_CHAR = '@';
 export const GARAGE_FILE_ITEM_TYPE = 'garage-file';
 export const GARAGE_FOLDER_ITEM_TYPE = 'garage-folder';
+export const GARAGE_FOLDER_NAV_ITEM_TYPE = 'garage-folder-nav';
 
 const GARAGE_MENTION = /(^|[\s([{])@(file|folder):("(?:\\.|[^"\\])*")(?=$|[\s)\]}.,;:!?])/g;
 
@@ -43,6 +44,9 @@ export function serializeGarageMention(item: Unstable_TriggerItem): string {
   const kind = itemKind(item);
   const path = itemPath(item);
   if (kind === undefined || path === undefined) return `${GARAGE_TRIGGER_CHAR}${item.id}`;
+  if (item.type === GARAGE_FOLDER_NAV_ITEM_TYPE) {
+    return `${GARAGE_TRIGGER_CHAR}${path}/`;
+  }
   return `${GARAGE_TRIGGER_CHAR}${kind}:${JSON.stringify(displayPath(path))}`;
 }
 
@@ -169,10 +173,25 @@ function triggerItem(entry: IEntity): Unstable_TriggerItem | undefined {
   if (path === undefined) return undefined;
   return {
     id: `${entry.type}:${path}`,
-    type: entry.type === 'file' ? GARAGE_FILE_ITEM_TYPE : GARAGE_FOLDER_ITEM_TYPE,
+    type: entry.type === 'file' ? GARAGE_FILE_ITEM_TYPE : GARAGE_FOLDER_NAV_ITEM_TYPE,
     label: entityLabel(entry),
     description: displayPath(path),
-    metadata: { kind: entry.type, path },
+    metadata:
+      entry.type === 'file'
+        ? { kind: entry.type, path }
+        : { kind: entry.type, path, browse: true },
+  };
+}
+
+function currentFolderItem(folder: string): Unstable_TriggerItem | undefined {
+  const path = normalizePath(folder);
+  if (path === undefined) return undefined;
+  return {
+    id: `folder:${path}`,
+    type: GARAGE_FOLDER_ITEM_TYPE,
+    label: path.slice(path.lastIndexOf('/') + 1),
+    description: displayPath(path),
+    metadata: { kind: 'folder', path },
   };
 }
 
@@ -212,9 +231,12 @@ export function createGarageMentionFetcher(
         (left, right) =>
           left.rank - right.rank || entityLabel(left.entry).localeCompare(entityLabel(right.entry)),
       );
-    return ranked.flatMap(({ entry }) => {
+    const items = ranked.flatMap(({ entry }) => {
       const item = triggerItem(entry);
       return item === undefined ? [] : [item];
     });
+    if (parsed.folder === '' || parsed.needle !== '' || parsed.kind === 'file') return items;
+    const folder = currentFolderItem(parsed.folder);
+    return folder === undefined ? items : [folder, ...items];
   };
 }

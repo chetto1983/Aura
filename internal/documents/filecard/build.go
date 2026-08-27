@@ -120,6 +120,8 @@ func handlerFor(ext string) (Kind, handlerFunc) {
 		return KindPDF, buildPDF
 	case ".png", ".jpg", ".jpeg", ".gif", ".webp":
 		return KindImage, buildImage
+	case ".aac", ".flac", ".m4a", ".mp3", ".mp4", ".oga", ".ogg", ".opus", ".wav", ".webm":
+		return KindAudio, buildAudio
 	default:
 		return KindFile, nil
 	}

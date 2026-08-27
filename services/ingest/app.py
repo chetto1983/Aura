@@ -27,7 +27,7 @@ import urllib.request
 import cocoindex as coco
 from cocoindex.connectors import amazon_s3, neo4j
 
-from ingest import arcade, chunk, extract, identity, source
+from ingest import arcade, chunk, extract, identity, media, source
 
 ARCADE_HTTP = os.environ.get("ARCADE_HTTP", "http://aura-arcadedb:2480")
 ARCADE_BOLT = os.environ.get("ARCADE_BOLT", "bolt://aura-arcadedb:7687")
@@ -53,6 +53,7 @@ async def coco_lifespan(builder: coco.EnvironmentBuilder):
     # Schema BEFORE any write: a Cypher MERGE against an untyped property makes
     # LSM_VECTOR refuse to index it (measured live in Task 5; arcade.py docstring).
     arcade.ensure_schema(ARCADE_HTTP, ARCADE_DB, ("root", ARCADE_PASSWORD), EMBED_DIMENSIONS)
+    builder.provide(media.CONFIG_FINGERPRINT, media.fingerprint())
     builder.provide(KG_DB, neo4j.ConnectionFactory(
         uri=ARCADE_BOLT, auth=("root", ARCADE_PASSWORD), database=ARCADE_DB))
     async with source.create_client(_S3_CONFIG) as client:
@@ -317,11 +318,12 @@ async def process_file(
             # examples do the same thing one level up, choosing the processor from the
             # path; this is that choice made where the extension is already known.
             #
-            # A non-textual file still gets its row: name-searchable, card-described,
-            # openable. Giving images their own embedding and audio its own transcript --
-            # the two examples above -- is the natural next step, and this leaves the
-            # seam for it rather than deciding it here.
-            text = extract.extract_text(ready) if extract.extractable(ready) else ""
+            if extract.extractable(ready):
+                text = extract.extract_text(ready)
+            elif media.kind(file_name) is not None:
+                text = media.extract_text(ready, file_name)
+            else:
+                text = ""
             card = _card(ready, _card_name(file_name, ready))
     source_kind = "s3"
     search_document_id = identity.search_document_id(identity_id, source_kind, key)

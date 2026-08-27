@@ -12,6 +12,15 @@ import (
 	"time"
 )
 
+// normalizeModelID removes an OpenRouter routing suffix while preserving the exact base id.
+func normalizeModelID(model string) string {
+	model = strings.TrimSpace(model)
+	if i := strings.IndexByte(model, ':'); i >= 0 {
+		model = model[:i]
+	}
+	return model
+}
+
 // maxModelsResponseBytes caps the GET /models response read (defensive). The real
 // OpenRouter list is multi-MB across ~400 models, so 16 MiB accommodates growth
 // while bounding memory against a hostile or runaway upstream (Threat
@@ -30,6 +39,7 @@ type ReasoningCapability struct {
 	DefaultEnabled   bool
 	Mandatory        bool     // true => reasoning cannot be turned off ("off"/none invalid)
 	SupportedParams  []string // reasoning / include_reasoning / reasoning_effort
+	InputModalities  []string // subset of {text,image,audio,file,video}, allowlist-clamped
 }
 
 // openRouterModelsResponse is the wire DTO for GET {BaseURL}/models. The nesting
@@ -41,7 +51,10 @@ type openRouterModelsResponse struct {
 }
 
 type openRouterModelEntry struct {
-	ID        string `json:"id"`
+	ID           string `json:"id"`
+	Architecture *struct {
+		InputModalities []string `json:"input_modalities"`
+	} `json:"architecture"`
 	Reasoning *struct {
 		SupportedEfforts []string `json:"supported_efforts"`
 		DefaultEffort    string   `json:"default_effort"`
@@ -64,6 +77,30 @@ var allowedReasoningEfforts = map[string]ReasoningEffort{
 	"medium": ReasoningEffortMedium,
 	"low":    ReasoningEffortLow,
 	"none":   ReasoningEffortNone,
+}
+
+var allowedInputModalities = map[string]string{
+	"text": "text", "image": "image", "audio": "audio", "file": "file", "video": "video",
+}
+
+func clampInputModalities(tokens []string) []string {
+	if len(tokens) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(tokens))
+	seen := make(map[string]bool, len(tokens))
+	for _, token := range tokens {
+		normalized, ok := allowedInputModalities[strings.ToLower(strings.TrimSpace(token))]
+		if !ok || seen[normalized] {
+			continue
+		}
+		seen[normalized] = true
+		out = append(out, normalized)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // clampEffort maps one advertised token through the allowlist; an unknown token
@@ -99,6 +136,9 @@ func clampEfforts(tokens []string) []ReasoningEffort {
 // or one that does not advertise reasoning) — never a panic on an absent nested object.
 func parseReasoningCapability(m openRouterModelEntry) ReasoningCapability {
 	rc := ReasoningCapability{SupportedParams: m.SupportedParameters}
+	if m.Architecture != nil {
+		rc.InputModalities = clampInputModalities(m.Architecture.InputModalities)
+	}
 	if m.Reasoning == nil {
 		return rc
 	}

@@ -304,11 +304,25 @@ func TestPDFWithoutMetadataSaysOnlyTheNameDescribesIt(t *testing.T) {
 	}
 }
 
-func TestImageCardRefusesToInventContent(t *testing.T) {
+func TestImageCardPointsAtSeparatelyIndexedVisualContent(t *testing.T) {
 	path := writeFile(t, "foto.png", "not really a png")
 	rendered := build(t, path, "foto.png").Render()
-	if !strings.Contains(rendered, "did not look at this image") {
-		t.Errorf("image card oversells itself:\n%s", rendered)
+	if !strings.Contains(rendered, "visual content is indexed in separate retrieval passages") {
+		t.Errorf("image card hides the media retrieval path:\n%s", rendered)
+	}
+	if strings.Contains(rendered, "did not look at this image") {
+		t.Errorf("image card contradicts media ingest:\n%s", rendered)
+	}
+}
+
+func TestAudioCardPointsAtSeparatelyIndexedTranscript(t *testing.T) {
+	path := writeFile(t, "nota.wav", "not really audio")
+	card := build(t, path, "nota.wav")
+	if card.Kind != KindAudio {
+		t.Errorf("kind = %q, want audio", card.Kind)
+	}
+	if !strings.Contains(card.Render(), "transcript is indexed in separate retrieval passages") {
+		t.Errorf("audio card hides the media retrieval path:\n%s", card.Render())
 	}
 }
 

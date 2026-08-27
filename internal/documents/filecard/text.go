@@ -175,12 +175,18 @@ func markdownHeading(line string) string {
 	return clean(strings.TrimLeft(line, "# "))
 }
 
-// buildImage states what is certain about an image and refuses to invent the
-// rest. Nothing reads pixels at ingest: an image is found by its name, its tags
-// and whatever the agent writes about it after looking.
+// Media cards stay compact because their derived text lives in separately embedded
+// retrieval passages. The card labels the original without pretending to contain it.
 func buildImage(_ Request, card Card) (Card, error) {
 	card.Caveats = append(card.Caveats,
-		"Aura did not look at this image at ingest: only its name and size are described here. "+
-			"Open it to see what it shows, then describe it.")
+		"The visual content is indexed in separate retrieval passages; this compact card only labels the original. "+
+			"Open the image to verify its contents.")
+	return card, nil
+}
+
+func buildAudio(_ Request, card Card) (Card, error) {
+	card.Caveats = append(card.Caveats,
+		"The transcript is indexed in separate retrieval passages; this compact card only labels the original. "+
+			"Open the audio to verify its contents.")
 	return card, nil
 }

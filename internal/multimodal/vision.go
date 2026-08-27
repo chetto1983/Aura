@@ -7,23 +7,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-
-	"github.com/chetto1983/aura/internal/llm"
 )
 
 // VisionConfig selects the image-analysis route. VisionCloud=false (default) uses
 // the local aura-ocr-vl sidecar (LocalBaseURL/LocalModel, no auth);
-// VisionCloud=true routes to OpenRouter — the PRIMARY Model when it
-// SupportsVision, else FallbackModel, so an image never reaches a non-vision
-// model (T-13-08-VisionMisroute). Both arms speak OpenAI /chat/completions, so
+// VisionCloud=true routes the operator-selected primary Model to its configured
+// endpoint. Both arms speak OpenAI /chat/completions, so
 // the base already carries any version segment and only "/chat/completions" is
 // appended (no /v1 doubling).
 type VisionConfig struct {
 	VisionCloud       bool
-	Model             string // primary LLM id, checked against SupportsVision
+	Model             string
 	LocalBaseURL      string
 	LocalModel        string
-	FallbackModel     string
 	OpenRouterBaseURL string
 	OpenRouterAPIKey  string
 	TimeoutSec        int
@@ -134,11 +130,7 @@ func (c *VisionClient) VisionModel() string {
 // route is the SINGLE config-only vision branch (Pitfall 6 / #60).
 func (c *VisionClient) route() (baseURL, apiKey, model string) {
 	if c.cfg.VisionCloud {
-		m := c.cfg.Model
-		if !llm.SupportsVision(m) {
-			m = c.cfg.FallbackModel
-		}
-		return c.cfg.OpenRouterBaseURL, c.cfg.OpenRouterAPIKey, m
+		return c.cfg.OpenRouterBaseURL, c.cfg.OpenRouterAPIKey, c.cfg.Model
 	}
 	return c.cfg.LocalBaseURL, "", c.cfg.LocalModel
 }

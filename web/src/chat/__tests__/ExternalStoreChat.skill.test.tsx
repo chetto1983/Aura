@@ -45,11 +45,15 @@ function sseResponse(): Response {
   return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
 }
 
-function stubFetch(garageFiles: readonly Record<string, unknown>[] = []) {
+function stubFetch(
+  garageFiles:
+    readonly Record<string, unknown>[] | ((url: string) => readonly Record<string, unknown>[]) = [],
+) {
   const fetchMock = vi.fn((url: unknown) => {
     if (typeof url === 'string' && url.startsWith('/api/filemanager/files')) {
+      const files = typeof garageFiles === 'function' ? garageFiles(url) : garageFiles;
       return Promise.resolve(
-        new Response(JSON.stringify(garageFiles), {
+        new Response(JSON.stringify(files), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         }),
@@ -76,8 +80,7 @@ function renderChat(ui: ReactElement) {
 
 function runPostBody(fetchMock: ReturnType<typeof stubFetch>): Record<string, unknown> {
   const post = fetchMock.mock.calls.find((call) => call[0] === '/agent/run') as
-    | [string, RequestInit]
-    | undefined;
+    [string, RequestInit] | undefined;
   if (post === undefined) throw new Error('expected /agent/run POST');
   return JSON.parse(post[1].body as string) as Record<string, unknown>;
 }
@@ -158,18 +161,42 @@ describe('ExternalStoreChat slash-skill', () => {
     });
   });
 
-  it('delegates the @ listbox and keyboard selection to assistant-ui', async () => {
-    const fetchMock = stubFetch([{ id: '/finance', type: 'folder', lazy: true }]);
+  it('navigates a Garage folder before selecting one of its documents', async () => {
+    const fetchMock = stubFetch((url) =>
+      url.includes('%2FDocumenti')
+        ? [{ id: '/Documenti/manuale.pdf', type: 'file' }]
+        : [{ id: '/Documenti', type: 'folder', lazy: true }],
+    );
     renderChat(<ExternalStoreChat threadId="conv-1" />);
     const input = screen.getByPlaceholderText<HTMLTextAreaElement>('Ask Aura');
 
     fireEvent.change(input, { target: { value: '@' } });
 
     const listbox = await screen.findByRole('listbox', { name: 'Garage files and folders' });
-    expect((await within(listbox).findByRole('option')).textContent).toContain('finance');
+    expect((await within(listbox).findByRole('option')).textContent).toContain('Documenti');
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
 
-    expect(input.value).toBe('@folder:"/finance" ');
+    await waitFor(() => {
+      expect(input.value).toBe('@Documenti/');
+    });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.map((call) => call[0])).toContain(
+        '/api/filemanager/files/%2FDocumenti',
+      );
+    });
+    await screen.findByText('manuale.pdf');
+    const nestedListbox = screen.getByRole('listbox', { name: 'Garage files and folders' });
+    const nestedOptions = await within(nestedListbox).findAllByRole('option');
+    expect(nestedOptions.map((option) => option.textContent)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Documenti'),
+        expect.stringContaining('manuale.pdf'),
+      ]),
+    );
+    fireEvent.keyDown(input, { key: 'ArrowDown', code: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+
+    expect(input.value).toBe('@file:"/Documenti/manuale.pdf" ');
     expect(fetchMock.mock.calls.some((call) => call[0] === '/agent/run')).toBe(false);
   });
 

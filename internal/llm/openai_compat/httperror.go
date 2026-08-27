@@ -1,15 +1,15 @@
-// Package openai_compat is the handrolled OpenAI-compatible HTTP+SSE streaming
-// client implementing llm.Client. There is deliberately no SDK (SPEC §2): the
-// SSE framing, tool-call delta accumulation, and ctx-cancel teardown need
-// byte-level control an SDK hides. The wire shape is the OpenAI chat-completions
-// streaming envelope as served by OpenRouter (deepseek/deepseek-v4-flash:nitro).
+// Package openai_compat adapts the official openai-go SDK to Aura's llm.Client.
 package openai_compat
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
+
+	openai "github.com/openai/openai-go/v3"
 )
 
 // maxErrorBodyBytes caps how much of a non-2xx provider response body we read
@@ -25,6 +25,26 @@ type HTTPError struct {
 	StatusCode    int
 	RetryAfterSec int
 	Body          string
+}
+
+func adaptSDKError(err error) error {
+	var apiErr *openai.Error
+	if !errors.As(err, &apiErr) {
+		return err
+	}
+	body := apiErr.RawJSON()
+	if len(body) > maxErrorBodyBytes {
+		body = body[:maxErrorBodyBytes]
+	}
+	result := &HTTPError{StatusCode: apiErr.StatusCode, Body: body}
+	if apiErr.StatusCode == http.StatusTooManyRequests && apiErr.Response != nil {
+		if value := strings.TrimSpace(apiErr.Response.Header.Get("Retry-After")); value != "" {
+			if seconds, parseErr := strconv.Atoi(value); parseErr == nil {
+				result.RetryAfterSec = seconds
+			}
+		}
+	}
+	return result
 }
 
 // Error renders the status and (on 429) the retry-after hint. It deliberately

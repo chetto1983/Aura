@@ -64,8 +64,7 @@ func TestVisionCloudRouteBearerAndModel(t *testing.T) {
 
 	c := NewVisionClient(VisionConfig{
 		VisionCloud:       true,
-		Model:             "deepseek/deepseek-v4-flash", // non-vision → fallback
-		FallbackModel:     "minimax/minimax-m3",
+		Model:             "qwen/qwen3.8-flash",
 		OpenRouterBaseURL: srv.URL,
 		OpenRouterAPIKey:  "shared-key",
 		HTTPClient:        srv.Client(),
@@ -76,13 +75,11 @@ func TestVisionCloudRouteBearerAndModel(t *testing.T) {
 	if gotAuth != "Bearer shared-key" {
 		t.Errorf("cloud Authorization = %q, want Bearer shared-key", gotAuth)
 	}
-	// The model on the wire must equal what the route resolves (internal
-	// consistency — avoids coupling the test to the SupportsVision table).
-	if gotModel != c.VisionModel() {
-		t.Errorf("wire model %q != VisionModel() %q", gotModel, c.VisionModel())
+	if gotModel != "qwen/qwen3.8-flash" {
+		t.Errorf("cloud vision model = %q, want the operator-selected primary model", gotModel)
 	}
-	if gotModel == "" {
-		t.Error("cloud vision sent an empty model id")
+	if got := c.VisionModel(); got != gotModel {
+		t.Errorf("VisionModel() = %q, want wire model %q", got, gotModel)
 	}
 }
 

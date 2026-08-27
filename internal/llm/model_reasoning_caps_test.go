@@ -140,6 +140,9 @@ func TestParseModelReasoningCaps(t *testing.T) {
 	if len(rc.SupportedParams) == 0 {
 		t.Error("SupportedParams should be parsed from supported_parameters")
 	}
+	if !slices.Equal(rc.InputModalities, []string{"text"}) {
+		t.Errorf("InputModalities = %v, want text-only", rc.InputModalities)
+	}
 
 	// mandatory model: mandatory + default_effort parsed.
 	rc2, ok2, err2 := c.ReasoningCapabilityFor(ctx, "openai/o4-mini")
@@ -151,6 +154,9 @@ func TestParseModelReasoningCaps(t *testing.T) {
 	}
 	if rc2.DefaultEffort != ReasoningEffortMedium {
 		t.Errorf("DefaultEffort = %q, want medium", rc2.DefaultEffort)
+	}
+	if !slices.Equal(rc2.InputModalities, []string{"text", "image", "audio"}) {
+		t.Errorf("InputModalities = %v, want strict allowlist without future-modality", rc2.InputModalities)
 	}
 
 	// no-reasoning model: present in the list but no reasoning object → empty efforts.
@@ -301,7 +307,7 @@ func TestModelCapabilityDefensiveParse(t *testing.T) {
 // --- Task 3 behavior: llama.cpp capability source ---
 
 func newTestLlamaCppSource(rt http.RoundTripper, provider string) *llamaCppReasoningCaps {
-	s := newLlamaCppReasoningCaps(Config{Provider: provider, BaseURL: "http://localhost:8080"})
+	s := newLlamaCppReasoningCaps(Config{Provider: provider, BaseURL: "http://localhost:8080/v1"})
 	s.httpClient = &http.Client{Transport: rt}
 	return s
 }
@@ -334,8 +340,8 @@ func TestLlamaCppReasoningCaps(t *testing.T) {
 	// narrow to {none} (off only), detected=true.
 	props := readFixture(t, "testdata/llamacpp_props.json")
 	narrowRT := &fakeRoundTripper{fn: func(r *http.Request) (*http.Response, error) {
-		if !strings.HasSuffix(r.URL.Path, "/props") {
-			t.Errorf("path = %s, want .../props", r.URL.Path)
+		if r.URL.Path != "/props" {
+			t.Errorf("path = %s, want /props", r.URL.Path)
 		}
 		return jsonResponse(http.StatusOK, props), nil
 	}}
@@ -392,6 +398,72 @@ func TestNewReasoningCapabilitySource(t *testing.T) {
 	vllmCfg := Config{Provider: "vllm", BaseURL: "http://dgx:8000/v1"}
 	if src := NewReasoningCapabilitySource(vllmCfg, time.Hour); src != nil {
 		t.Errorf("unrecognized target should select nil, got %T", src)
+	}
+}
+
+func TestOpenRouterContentCapabilities(t *testing.T) {
+	fixture := readFixture(t, "testdata/openrouter_models.json")
+	rt := &fakeRoundTripper{fn: func(_ *http.Request) (*http.Response, error) {
+		return jsonResponse(http.StatusOK, fixture), nil
+	}}
+	src := &openRouterContentCaps{
+		client: newTestCapClient(rt, nil, time.Hour),
+		model:  "openai/o4-mini",
+	}
+	caps, detected := src.ContentCapabilities(context.Background())
+	if !detected {
+		t.Fatal("multimodal OpenRouter model was not detected")
+	}
+	for _, modality := range []string{"text", "image", "audio"} {
+		if !caps.Modalities[modality] {
+			t.Errorf("modality %q missing from %v", modality, caps.Modalities)
+		}
+	}
+	if caps.Modalities["future-modality"] {
+		t.Fatalf("unknown modality survived the allowlist: %v", caps.Modalities)
+	}
+}
+
+func TestLlamaCppContentCapabilities(t *testing.T) {
+	rt := &fakeRoundTripper{fn: func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/props" {
+			t.Errorf("path = %s, want /props", r.URL.Path)
+		}
+		return jsonResponse(http.StatusOK, []byte(`{"modalities":{"vision":true,"video":true,"audio":false,"unknown":true}}`)), nil
+	}}
+	src := newLlamaCppContentCaps(Config{Provider: "llamacpp", BaseURL: "http://localhost:8080/v1"})
+	src.httpClient = &http.Client{Transport: rt}
+
+	caps, detected := src.ContentCapabilities(context.Background())
+	if !detected {
+		t.Fatal("llama.cpp /props modalities were not detected")
+	}
+	if !caps.Modalities["image"] || !caps.Modalities["video"] || caps.Modalities["audio"] {
+		t.Fatalf("modalities = %v, want image+video and no audio", caps.Modalities)
+	}
+	if _, ok := caps.Modalities["vision"]; ok {
+		t.Fatalf("llama.cpp wire name vision leaked instead of normalized image: %v", caps.Modalities)
+	}
+	if _, ok := caps.Modalities["unknown"]; ok {
+		t.Fatalf("unknown llama.cpp modality survived allowlist: %v", caps.Modalities)
+	}
+	if got := rt.callCount(); got != 1 {
+		t.Fatalf("/props calls = %d, want 1", got)
+	}
+	_, _ = src.ContentCapabilities(context.Background())
+	if got := rt.callCount(); got != 1 {
+		t.Fatalf("cached /props calls = %d, want 1", got)
+	}
+}
+
+func TestContentCapabilitiesFailureIsTextOnly(t *testing.T) {
+	rt := &fakeRoundTripper{fn: func(_ *http.Request) (*http.Response, error) {
+		return nil, errors.New("unreachable")
+	}}
+	src := newLlamaCppContentCaps(Config{Provider: "llamacpp", BaseURL: "http://localhost:8080"})
+	src.httpClient = &http.Client{Transport: rt}
+	if caps, detected := src.ContentCapabilities(context.Background()); detected || caps.SupportsMIME("image/png") {
+		t.Fatalf("failure must degrade to text-only: caps=%v detected=%v", caps.Modalities, detected)
 	}
 }
 

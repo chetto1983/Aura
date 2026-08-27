@@ -33,3 +33,23 @@ func TestContentProjectionMandatoryUnavailable(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+
+func TestContentProjectionContextCopiesReferenceIDs(t *testing.T) {
+	ids := []string{"a1", "a2"}
+	projection := ContentProjection{
+		Loader:       projectionLoader{},
+		Principal:    ProjectionPrincipal{OwnerID: "owner"},
+		ReferenceIDs: ids,
+	}
+	ctx := WithContentProjection(context.Background(), projection)
+	ids[0] = "mutated"
+	got, ok := ContentProjectionFromContext(ctx)
+	if !ok || got.ReferenceIDs[0] != "a1" {
+		t.Fatalf("projection = %+v ok=%v", got, ok)
+	}
+	got.ReferenceIDs[0] = "also-mutated"
+	again, _ := ContentProjectionFromContext(ctx)
+	if again.ReferenceIDs[0] != "a1" {
+		t.Fatalf("context projection was mutable through getter: %+v", again)
+	}
+}

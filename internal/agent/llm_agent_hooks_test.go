@@ -20,6 +20,12 @@ type recordingHook struct {
 	afterTool   func(context.Context, llm.ToolCall, tools.ToolResult) (*agent.ToolResultHookResult, error)
 }
 
+type hookProjectionLoader struct{}
+
+func (hookProjectionLoader) LoadContentPart(context.Context, string, string, string) (llm.VerifiedContentPart, error) {
+	return llm.VerifiedContentPart{}, nil
+}
+
 func (h *recordingHook) OnTurnStart(context.Context, agent.HookTurn) error {
 	h.events = append(h.events, "turn_start")
 	return nil
@@ -105,6 +111,29 @@ func TestLlmAgentHooks_BeforeModelShortCircuitsAfterBudget(t *testing.T) {
 	}
 	if got := ic.Budget.Remaining(); got != 0 {
 		t.Fatalf("budget remaining = %d, want 0 (ConsumeStep fires before hook)", got)
+	}
+}
+
+func TestLlmAgentThreadsContentProjectionIntoModelRequest(t *testing.T) {
+	var captured *llm.ContentProjection
+	h := &recordingHook{
+		beforeModel: func(_ context.Context, request *llm.Request) (*agent.ModelHookResult, error) {
+			captured = request.ContentProjection
+			return &agent.ModelHookResult{Content: "ok", FinishReason: "hook"}, nil
+		},
+	}
+	a := newHookAgent(t, agenttest.NewFakeClient(), agent.NewHookManager(h))
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(1)})
+	ic.Ctx = llm.WithContentProjection(ic.Ctx, llm.ContentProjection{
+		Loader:       hookProjectionLoader{},
+		Principal:    llm.ProjectionPrincipal{OwnerID: "owner"},
+		ReferenceIDs: []string{"asset-1"},
+	})
+	if _, err := collect(a.Run(ic)); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if captured == nil || captured.Principal.OwnerID != "owner" || len(captured.ReferenceIDs) != 1 || captured.ReferenceIDs[0] != "asset-1" {
+		t.Fatalf("captured projection = %+v", captured)
 	}
 }
 

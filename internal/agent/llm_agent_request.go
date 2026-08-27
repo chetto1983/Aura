@@ -28,6 +28,9 @@ func (a *LlmAgent) prepareReasoningRequest(
 ) (PreparedReasoningRequest, error) {
 	request := a.buildRequest(budget, tier, tierSet)
 	request.SessionID = a.sessionID
+	if projection, ok := llm.ContentProjectionFromContext(ctx); ok {
+		request.ContentProjection = &projection
+	}
 	hookResult, err := a.transformModelRequest(ctx, &request, round.requestID)
 	if err != nil {
 		return PreparedReasoningRequest{}, err

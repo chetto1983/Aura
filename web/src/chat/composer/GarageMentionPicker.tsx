@@ -1,12 +1,15 @@
 import { useMemo } from 'react';
-import { ComposerPrimitive, type Unstable_TriggerItem } from '@assistant-ui/react';
+import { ComposerPrimitive, useAui, type Unstable_TriggerItem } from '@assistant-ui/react';
 import { FileText, Folder } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   GARAGE_FILE_ITEM_TYPE,
+  GARAGE_FOLDER_ITEM_TYPE,
+  GARAGE_FOLDER_NAV_ITEM_TYPE,
   GARAGE_TRIGGER_CHAR,
   createGarageDirectiveFormatter,
   createGarageMentionFetcher,
+  serializeGarageMention,
 } from './garageMentions';
 import { useGarageCompletionAdapter } from './useGarageCompletionAdapter';
 import { createFileManagerProvider } from '@/files/filesApi';
@@ -23,6 +26,7 @@ export interface GarageMentionPickerProps {
  */
 export function GarageMentionPicker({ disabled = false, onSelect }: GarageMentionPickerProps) {
   const { t } = useTranslation();
+  const aui = useAui();
   const provider = useMemo(() => createFileManagerProvider(), []);
   const fetcher = useMemo(
     () => createGarageMentionFetcher((path) => provider.loadFiles(path)),
@@ -30,6 +34,23 @@ export function GarageMentionPicker({ disabled = false, onSelect }: GarageMentio
   );
   const completion = useGarageCompletionAdapter(fetcher, !disabled);
   const formatter = useMemo(() => createGarageDirectiveFormatter(), []);
+
+  const handleInserted = (item: Unstable_TriggerItem) => {
+    if (item.type === GARAGE_FOLDER_NAV_ITEM_TYPE) {
+      queueMicrotask(() => {
+        const directive = serializeGarageMention(item);
+        const text = aui.composer.getState().text;
+        const inserted = text.lastIndexOf(`${directive} `);
+        if (inserted >= 0) {
+          const separator = inserted + directive.length;
+          aui.composer.setText(text.slice(0, separator) + text.slice(separator + 1));
+        }
+        onSelect?.();
+      });
+      return;
+    }
+    onSelect?.();
+  };
 
   if (disabled) return null;
 
@@ -43,12 +64,13 @@ export function GarageMentionPicker({ disabled = false, onSelect }: GarageMentio
     >
       <ComposerPrimitive.Unstable_TriggerPopover.Directive
         formatter={formatter}
-        onInserted={onSelect}
+        onInserted={handleInserted}
       />
       <ComposerPrimitive.Unstable_TriggerPopoverItems className="max-h-72 overflow-y-auto p-1.5">
         {(items) =>
           items.map((item: Unstable_TriggerItem, index) => {
             const isFile = item.type === GARAGE_FILE_ITEM_TYPE;
+            const isFolderScope = item.type === GARAGE_FOLDER_ITEM_TYPE;
             const Icon = isFile ? FileText : Folder;
             return (
               <ComposerPrimitive.Unstable_TriggerPopoverItem
@@ -70,7 +92,14 @@ export function GarageMentionPicker({ disabled = false, onSelect }: GarageMentio
                     {item.label}
                   </span>
                   <span className="block truncate text-[11px] text-text-muted">
-                    {t(isFile ? 'chat.garagePicker.file' : 'chat.garagePicker.folder')} ·{' '}
+                    {t(
+                      isFile
+                        ? 'chat.garagePicker.file'
+                        : isFolderScope
+                          ? 'chat.garagePicker.useFolder'
+                          : 'chat.garagePicker.openFolder',
+                    )}{' '}
+                    ·{' '}
                     {item.description}
                   </span>
                 </span>

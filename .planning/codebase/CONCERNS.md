@@ -19,6 +19,9 @@ Amendment #162 bounds the retained OOXML card reader and adds openpyxl-oracle pa
 owned workbook; the measurement found and fixed the blank-before-header row-span defect.
 Amendment #163 keeps corpus inventory in the Files workspace and adds identity-scoped Garage
 `@file`/`@folder` selection that structurally constrains every document retrieval leg.
+Amendment #167 closes the lost image/audio concern: the selected primary model now receives
+verified native media only when live OpenRouter or llama.cpp metadata advertises that modality,
+with the existing indexed summary/transcript retained as the deterministic text fallback.
 
 ## Severity Summary
 
@@ -39,6 +42,7 @@ Amendment #163 keeps corpus inventory in the Files workspace and adds identity-s
 | Test/evaluation evidence contains skipped, stale, flaky, or non-reproducible legs | Medium | Closed 2026-08-27 | `scripts/agent_memory_eval.py`, `scripts/ingest_reconcile_e2e.sh`, `scripts/run_runner_integration.sh` |
 | Manual OOXML parser is a broad custom maintenance surface | Medium | Closed 2026-08-27 | PRD amendment #162, `docs/aura-ooxml-routing-card-boundary.md`, `internal/documents/filecard/corpus_parity_test.go` |
 | No model-facing document catalog operation | Medium | Closed 2026-08-27 | PRD amendment #163, `web/src/chat/composer/GarageMentionPicker.tsx`, `internal/documents/source_scope.go` |
+| Image/audio uploads reached indexing but not the selected model's native context | Medium | Closed 2026-08-27 | PRD amendment #167, `internal/llm/model_content_caps.go`, `internal/agui/asset_content_projection.go`, `internal/llm/openai_compat/client_multimodal_test.go` |
 
 ## Tech Debt
 
@@ -72,6 +76,15 @@ Amendment #163 keeps corpus inventory in the Files workspace and adds identity-s
 - Evidence: all 17 owned XLSX files and 18 sheets are hash-pinned in `ooxml_parity.json`. Before correction, sheet order/name/header/columns matched 18/18 but row span matched only 4/18; all 14 invoice sheets exposed the same blank-before-header +1 bug. The physical-row fix and corpus test now require 18/18 parity for row span and non-empty column counts as well.
 - Residual: macros, charts, external links, formula-heavy files and every producer variant are outside this small corpus. The original remains authoritative, and future compatibility fixes require a fixture plus oracle evidence rather than an unsupported claim of general OOXML coverage.
 - Files: `docs/aura-ooxml-routing-card-boundary.md`, `internal/documents/filecard/xlsx.go`, `internal/documents/filecard/table.go`, `internal/documents/filecard/card_test.go`, `internal/documents/filecard/corpus_parity_test.go`, `scripts/fixtures/document_retrieval_eval/ooxml_parity.json`.
+
+**Closed 2026-08-27 — selected-model native image/audio context is capability-gated and owner-verified:**
+- Resolution: explicit current-turn Garage image/audio refs ride request scope, not persistence. Immediately before the provider request Aura reopens each object through `OpenForIdentity`, rechecks its thread boundary, exact accepted size and SHA-256 digest, and discards the bytes after request construction. Raw media and base64 are absent from Postgres and reasoning traces.
+- Capability contract: OpenRouter uses the TTL-cached `GET /models` `architecture.input_modalities` surface; llama.cpp uses cached `GET /props` `modalities`, normalizing `vision` to `image`. Both are strict-allowlist parsed. An absent model, failed probe, unknown modality or unsupported audio encoding fails to text-only; model-name heuristics and a hidden fallback model are forbidden.
+- Single configuration source: the request targets the already-selected primary `AURA_LLM_MODEL`; no second cloud-model field, database row or frontend picker was added. The existing summary/transcript attachment block remains model-visible whenever native projection is unavailable.
+- SDK reduction: `openai-go/v3` 3.54.0 now owns Chat Completions encoding, SSE decoding, API errors and bounded tool-call accumulation. Aura deleted its manual SSE parser, usage DTO and tool-call accumulator while retaining zero retries, the stream-idle watchdog, provider-specific reasoning fields and OpenRouter data-collection denial.
+- Provider isolation: llama.cpp capability discovery strips the OpenAI-compatible `/v1` suffix before its root `/props` probe. OpenRouter-only bearer credentials, `provider` policy and sticky session fields are emitted only for an OpenRouter target; negative wire tests prevent those values leaking into llama.cpp/vLLM requests.
+- Evidence: unit/race tests cover capability cache/failure, owner/thread/size/digest checks, newest-user-message image/audio projection, text-only fallback, both reasoning delta names, a split tool call above 64 KiB and OpenRouter cost/cached-token usage. A live Cockpit upload with `aura-ingest` stopped and `/props.vision=true` sent `image_url` without an Authorization header to free `gemma4:31b-cloud` and read `ZEBRA 417` from the PNG pixels. Repeating with `/props.vision=false` waited for the OCR summary, sent no `image_url` and returned the same code through the text lane. The Ollama manifest exposed vision but not audio and the endpoint rejected `input_audio`, confirming why runtime capability metadata—not the marketing/model name—must control native audio.
+- Files: `internal/llm/model_content_caps.go`, `internal/llm/content_projection.go`, `internal/agui/asset_content_projection.go`, `internal/llm/openai_compat/client.go`, `internal/llm/openai_compat/request.go`, `internal/llm/openai_compat/response.go`.
 
 **Closed 2026-08-26 — legacy staged user files were removed:**
 - Resolution: the two recorded `aura-sendfile-*` directories are absent from the run root. The retired prefix no longer exists in source; the active sweeper continues to own only `$AURA_RUN_DIR/tmp/` by design.

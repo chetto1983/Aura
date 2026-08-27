@@ -28,12 +28,16 @@ export const composerGaragePickerEn = {
   ariaLabel: 'Garage files and folders',
   file: 'File',
   folder: 'Folder',
+  openFolder: 'Open folder',
+  useFolder: 'Use this folder',
 };
 
 export const composerGaragePickerIt = {
   ariaLabel: 'File e cartelle di Garage',
   file: 'File',
   folder: 'Cartella',
+  openFolder: 'Apri cartella',
+  useFolder: 'Usa questa cartella',
 };
 
 // The `chat.compaction.*` bundle: the in-chat marker the operator reads to see WHERE the

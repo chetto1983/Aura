@@ -234,7 +234,6 @@ services:
       AURA_VISION_CLOUD: ${AURA_VISION_CLOUD:-false}
       MULTIMODAL_BASE_URL: http://aura-ocr-vl:8082/v1
       MULTIMODAL_MODEL: ${MULTIMODAL_MODEL:-glm-ocr}
-      MULTIMODAL_FALLBACK_MODEL: ${MULTIMODAL_FALLBACK_MODEL:-minimax/minimax-m3}
       STT_BASE_URL: http://aura-stt:9000/v1
       STT_MODEL: ${STT_MODEL:-large-v3-turbo}
       STT_LANGUAGE: ${STT_LANGUAGE:-it}
@@ -244,9 +243,9 @@ services:
       MULTIMODAL_TIMEOUT_SEC: ${MULTIMODAL_TIMEOUT_SEC:-120}
       # Calendar/PIM connect proxy. Its bearer comes from the authenticated
       # identity's existing remote-MCP OAuth grant.
-      AURA_PIM_MCP_URL: http://127.0.0.1:8093
+      AURA_PIM_MCP_URL: http://aura-pim-mcp:8080
       # WhatsApp pairing is an internal management plane, separate from its MCP.
-      AURA_WHATSAPP_BRIDGE_URL: http://127.0.0.1:8094
+      AURA_WHATSAPP_BRIDGE_URL: http://whatsapp:8081
       AURA_PROFILE_DIR: ${AURA_PROFILE_DIR:-/var/lib/aura/agents}
       AURA_PROFILE_CERTAINTY_N: ${AURA_PROFILE_CERTAINTY_N:-3}
       # ↓↓ Phase 37 (SBX-05, ADR 0037) — per-identity full-capability sandbox ↓↓
@@ -297,13 +296,6 @@ services:
     ports:
       - "127.0.0.1:${AURA_AGUI_PORT:-9080}:9080"
       - "127.0.0.1:${AURA_SETUP_PORT:-9081}:9081"
-      # The OAuth SDK permits plain HTTP only for loopback resource servers. All
-      # three MCP sidecars share Aura's network namespace below, so these remain
-      # real 127.0.0.1 endpoints both inside the appliance and on its host.
-      - "127.0.0.1:${AURA_WHATSAPP_MCP_PORT:-8092}:8092"
-      - "127.0.0.1:${AURA_PIM_MCP_PORT:-8093}:8093"
-      - "127.0.0.1:${AURA_WHATSAPP_BRIDGE_PORT:-8094}:8094"
-      - "127.0.0.1:${AURA_ARCADEDB_MCP_PORT:-8096}:8096"
     networks:
       - default
       - aura-web
@@ -635,7 +627,6 @@ services:
     restart: unless-stopped
     mem_limit: 512m
     pids_limit: 256
-    network_mode: "service:aura"
     depends_on:
       aura:
         condition: service_started
@@ -663,8 +654,8 @@ services:
       # tenant credential, so it is a planned operation, not a restart.
       AURA_ARCADEDB_TENANT_SECRET: ${AURA_ARCADEDB_TENANT_SECRET:?AURA_ARCADEDB_TENANT_SECRET required in .env}
       MCP_OAUTH_ISSUER: http://127.0.0.1:9080
-      MCP_OAUTH_JWKS_URL: http://127.0.0.1:9080/oauth/jwks
-      MCP_OAUTH_RESOURCE: http://127.0.0.1:8096/mcp/
+      MCP_OAUTH_JWKS_URL: http://aura:9080/oauth/jwks
+      MCP_OAUTH_RESOURCE: http://aura-arcadedb-mcp:8096/mcp/
       MCP_OAUTH_SCOPE: mcp:tools
       # The dense leg of memory retrieval. An empty value selects bounded lexical
       # retrieval. Per-call embedder failures use the same fallback and the MCP
@@ -687,6 +678,8 @@ services:
       # deployment however it was set in .env -- measured 2026-08-15.
       AURA_MEMORY_OPERATOR_DISPLAY_NAME: ${AURA_MEMORY_OPERATOR_DISPLAY_NAME:-}
       AURA_ARCADEDB_MCP_BODY_MAX_BYTES: ${AURA_ARCADEDB_MCP_BODY_MAX_BYTES:-1048576}
+    ports:
+      - "127.0.0.1:${AURA_ARCADEDB_MCP_PORT:-8096}:8096"
     healthcheck:
       # The `aura` service gates its boot on this: memory is mounted INTO the agent
       # loop at startup and the in-process mount has no boot-retry, so a sidecar that
@@ -782,21 +775,13 @@ services:
   # passages with no delete worker running). Extraction is iscc-tika + LibreOffice +
   # poppler inside this sidecar.
   #
-  # Gated behind a profile and NOT started by a bare `docker compose up -d`:
-  # AURA_INGEST_IDENTITY_ID/S3_BUCKET/S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY default to
-  # empty on purpose. They are per-identity credentials Go-side provisioning mints
-  # (services/ingest/source.py), not a shared appliance secret, and compose interpolates
-  # the WHOLE file before it selects a service (see the ARCADEDB_PASSWORD comment
-  # elsewhere in this file) — a `:?required` default here would abort every `docker
-  # compose` invocation on this stack, not just this service's. The container's own
-  # source.py._required() raises loudly at boot if it is actually started without them.
-  # Naming the service explicitly (`docker compose up -d aura-ingest`, Task 10's gate)
-  # starts it regardless of the profile — Compose starts an explicitly targeted service
-  # even when its profile is not active.
+  # The supervisor resolves every active user's EXISTING encrypted Garage binding from
+  # Postgres and owns one isolated CocoIndex child per provisioned identity. Identity,
+  # bucket and S3 keys are not copied into Compose/.env and new identities need no
+  # container edit. Each child gets /state/<identity>/coco.db so memoization cannot cross.
   #
-  # The LMDB memoization state (COCOINDEX_DB=/state/coco.db, baked into the image) MUST
-  # live on the volume below: an ephemeral path silently reprocesses the whole corpus
-  # every run while every log line still looks like a correct incremental pass.
+  # Every child's LMDB memoization state MUST live under the volume below: an ephemeral
+  # or shared path silently reprocesses/cross-contaminates corpora while logs look valid.
   aura-ingest:
     build:
       context: .
@@ -804,13 +789,16 @@ services:
     image: ${AURA_INGEST_IMAGE:-aura-ingest:local}
     pull_policy: never
     container_name: aura-ingest
-    profiles: [ingest]
     restart: unless-stopped
     depends_on:
+      postgres:
+        condition: service_healthy
       arcadedb:
         condition: service_healthy
       aura-llama-embed:
         condition: service_healthy
+      garage:
+        condition: service_started
     environment:
       # Service-name DNS, not the container_name defaults baked into app.py/source.py
       # (aura-arcadedb/aura-garage): every other consumer in this file reaches ArcadeDB
@@ -824,27 +812,48 @@ services:
       # identity. Configuring it separately is how this sidecar spent its whole life
       # writing to "aura_ingest", a database the reader never opens.
       ARCADEDB_PASSWORD: ${ARCADEDB_PASSWORD:?ARCADEDB_PASSWORD required in .env}
+      # The same cockpit-owned aura.settings rows the daemon overlays at boot. DB wins;
+      # these existing envs are only the normal fallback when a row is absent.
+      AURA_DB_URL: postgres://${AURA_DB_APP_ROLE:-aura_app}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
+      AURA_AUTHULA_SECRET: ${AURA_AUTHULA_SECRET:?AURA_AUTHULA_SECRET required in .env}
+      AURA_OBJECTSTORE_ENDPOINT: ${AURA_OBJECTSTORE_ENDPOINT:-http://garage:3900}
+      AURA_OBJECTSTORE_REGION: ${AURA_OBJECTSTORE_REGION:-garage}
+      AURA_OBJECTSTORE_BUCKET: ${AURA_OBJECTSTORE_BUCKET:-aura-assets}
+      AURA_OBJECTSTORE_ACCESS_KEY: ${AURA_OBJECTSTORE_ACCESS_KEY:?AURA_OBJECTSTORE_ACCESS_KEY required in .env}
+      AURA_OBJECTSTORE_SECRET_KEY: ${AURA_OBJECTSTORE_SECRET_KEY:?AURA_OBJECTSTORE_SECRET_KEY required in .env}
+      AURA_LLM_PROVIDER: ${AURA_LLM_PROVIDER:-openrouter}
+      AURA_LLM_MODEL: ${AURA_LLM_MODEL:-deepseek/deepseek-v4-flash:nitro}
+      AURA_LLM_BASE_URL: ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      AURA_VISION_CLOUD: ${AURA_VISION_CLOUD:-false}
+      MULTIMODAL_BASE_URL: http://aura-ocr-vl:8082/v1
+      MULTIMODAL_MODEL: ${MULTIMODAL_MODEL:-glm-ocr}
+      STT_BASE_URL: http://aura-stt:9000/v1
+      STT_MODEL: ${STT_MODEL:-large-v3-turbo}
+      STT_LANGUAGE: ${STT_LANGUAGE:-it}
+      AURA_STT_CLOUD_MODEL: ${AURA_STT_CLOUD_MODEL:-}
+      MULTIMODAL_TIMEOUT_SEC: ${MULTIMODAL_TIMEOUT_SEC:-120}
       AURA_EMBED_BASE_URL: http://aura-llama-embed:8081
       AURA_EMBED_DIMENSIONS: ${AURA_EMBED_DIMENSIONS:-768}
-      # Catch-up mode by default. It does NOT fail closed, whatever this comment used to
+      # Catch-up mode does NOT fail closed, whatever this comment used to
       # claim: measured 2026-08-09, a per-file failure is caught by CocoIndex, printed as
       # "component build failed", and the pass carries on to exit 0 — in catch-up mode
       # exactly as in live. Two documents were lost that way on a 130-file corpus with a
-      # clean-looking log. What makes the loss visible is app.py's audit_pass(), which
-      # compares the bucket against the IndexedDocument rows after a catch-up pass, names
-      # every object with no row, and exits non-zero. Live never returns, so it gets no
-      # audit — that is the real difference between the two modes.
-      AURA_INGEST_LIVE: ${AURA_INGEST_LIVE:-false}
+      # clean-looking log. app.py compares the bucket against IndexedDocument after a
+      # catch-up pass and across consecutive live cycles, naming every persistent loss.
+      AURA_INGEST_LIVE: ${AURA_INGEST_LIVE:-true}
       AURA_INGEST_INTERVAL_SEC: ${AURA_INGEST_INTERVAL_SEC:-60}
-      AURA_INGEST_IDENTITY_ID: ${AURA_INGEST_IDENTITY_ID:-}
-      AURA_INGEST_S3_ENDPOINT: ${AURA_INGEST_S3_ENDPOINT:-http://garage:3900}
-      AURA_INGEST_S3_BUCKET: ${AURA_INGEST_S3_BUCKET:-}
-      AURA_INGEST_S3_ACCESS_KEY_ID: ${AURA_INGEST_S3_ACCESS_KEY_ID:-}
-      AURA_INGEST_S3_SECRET_ACCESS_KEY: ${AURA_INGEST_S3_SECRET_ACCESS_KEY:-}
-      AURA_INGEST_S3_REGION: ${AURA_INGEST_S3_REGION:-garage}
       AURA_INGEST_S3_PREFIX: ${AURA_INGEST_S3_PREFIX:-}
+      AURA_INGEST_SUPERVISOR_INTERVAL: ${AURA_INGEST_SUPERVISOR_INTERVAL:-15s}
+      AURA_INGEST_STATE_ROOT: /state
     volumes:
       - aura-ingest-state:/state
+    healthcheck:
+      test: ["CMD", "sh", "-c", "kill -0 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
 
 
   # WhatsApp remote MCP. Standard OAuth `sub` selects the tenant; the pairing
@@ -856,18 +865,17 @@ services:
     pull_policy: ${AURA_WHATSAPP_MCP_PULL_POLICY:-missing}
     container_name: aura-whatsapp
     restart: unless-stopped
-    network_mode: "service:aura"
     depends_on:
       aura:
         condition: service_started
     environment:
       WHATSAPP_BRIDGE_TOKEN: ${AURA_ACCESS_TOKEN:?AURA_ACCESS_TOKEN required in .env}
       MCP_OAUTH_ISSUER: http://127.0.0.1:9080
-      MCP_OAUTH_JWKS_URL: http://127.0.0.1:9080/oauth/jwks
-      MCP_OAUTH_RESOURCE: http://127.0.0.1:8092/mcp/
-      WHATSAPP_MCP_PORT: "8092"
-      WHATSAPP_GATEWAY_PORT: "8094"
-      WHATSAPP_API_URL: http://127.0.0.1:8094/api
+      MCP_OAUTH_JWKS_URL: http://aura:9080/oauth/jwks
+      MCP_OAUTH_RESOURCE: http://whatsapp:8080/mcp/
+      WHATSAPP_MCP_PORT: "8080"
+      WHATSAPP_GATEWAY_PORT: "8081"
+      WHATSAPP_API_URL: http://127.0.0.1:8081/api
       # The multi-tenant image (sha-a463da5) converts the pre-existing SINGLETON
       # store into a tenant-scoped one on first boot and refuses to start without
       # this — it will not guess which identity owns an existing session.
@@ -885,8 +893,11 @@ services:
       WHATSAPP_MIGRATION_TENANT_ID: ${AURA_WHATSAPP_MIGRATION_TENANT_ID:-}
     volumes:
       - aura-whatsapp-session:/app/whatsapp-bridge/store
+    ports:
+      - "127.0.0.1:${AURA_WHATSAPP_MCP_PORT:-8092}:8080"
+      - "127.0.0.1:${AURA_WHATSAPP_BRIDGE_PORT:-8094}:8081"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8094/healthz || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8081/healthz || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -1072,7 +1083,6 @@ services:
     pull_policy: ${AURA_PIM_MCP_PULL_POLICY:-missing}
     container_name: aura-pim-mcp
     restart: unless-stopped
-    network_mode: "service:aura"
     depends_on:
       aura:
         condition: service_started
@@ -1087,10 +1097,10 @@ services:
       - -c
       - "test -s /app/data/appsettings.json || printf '{\"CalendarMcp\":{\"Accounts\":[]}}' > /app/data/appsettings.json; exec dotnet CalendarMcp.HttpServer.dll"
     environment:
-      ASPNETCORE_URLS: http://0.0.0.0:8093
+      ASPNETCORE_URLS: http://0.0.0.0:8080
       CALENDAR_MCP_OAuth__Issuer: http://127.0.0.1:9080
-      CALENDAR_MCP_OAuth__MetadataAddress: http://127.0.0.1:9080/.well-known/oauth-authorization-server
-      CALENDAR_MCP_OAuth__Resource: http://127.0.0.1:8093/
+      CALENDAR_MCP_OAuth__MetadataAddress: http://aura:9080/.well-known/oauth-authorization-server
+      CALENDAR_MCP_OAuth__Resource: http://aura-pim-mcp:8080/
       # The external base the sidecar uses to build the Google OAuth redirect URI
       # (<base>/admin/auth/google/callback) — register that EXACT URI in the Google "Web
       # application" client. Default targets the loopback host-publish (works for a user on
@@ -1102,8 +1112,10 @@ services:
       CALENDAR_MCP_CalendarMcp__ExternalBaseUrl: ${AURA_PIM_EXTERNAL_BASE_URL:-http://localhost:8093}
     volumes:
       - aura-pim-data:/app/data
+    ports:
+      - "127.0.0.1:${AURA_PIM_MCP_PORT:-8093}:8080"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8093/health || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12
