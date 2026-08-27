@@ -8925,3 +8925,71 @@ flusso completo, che funziona.
 > spreadsheet computation. This decision closes the unmeasured maintenance concern by
 > naming the retained scope, security reason and reproducible parity contract; it does not
 > claim general Excel compatibility.
+
+## §Garage mentions scope retrieval without enumerating the corpus (Amendment #163, 2026-08-27)
+
+> **Amendment #163 (2026-08-27 — live inventory and upstream comparison before
+> implementation).**
+>
+> **Measured starting point.** The live Aura, Garage and ArcadeDB services were healthy.
+> The cockpit already ships `@assistant-ui/react` 0.15.14 and its composer already owns one
+> `ComposerPrimitive.Unstable_TriggerPopoverRoot` with the `/` picker beneath it. The
+> installed package also exports `unstable_useLiveCompletionAdapter`; a second hand-written
+> autocomplete would duplicate a working dependency seam. Garage already has an
+> authenticated, identity-scoped hierarchy at `GET /api/filemanager/files/{path...}`. It
+> lists one delimiter-grouped folder at a time, defaults to 200 entries, hides Aura's
+> reserved storage prefixes and resolves every read through the owner's own bucket
+> credentials. Conversely, `/agent/run` currently accepts only `attachment_ids`, `skill`
+> and `effort` in its strict `aura` envelope, and `document_search` can narrow only by at
+> most 100 `document_ids`. Worse, its card leg explicitly ignores that scope, so a degraded
+> card-only response can escape the caller's requested subset even though the passage leg
+> cannot.
+>
+> **Upstream inventory.** Hermes Agent's official context-reference surface keeps explicit
+> `@file:` and `@folder:` tokens in the message, resolves them inside the allowed workspace,
+> blocks traversal/sensitive paths and caps a folder expansion at 200 entries. Its folder
+> reference injects a directory listing; it is not a retrieval filter. LibreChat's `@`
+> picker selects models and agents rather than documents. Its relevant document contract is
+> instead structural: `tool_resources.file_search.file_ids` is filtered by user/agent
+> access, then the instantiated `file_search` tool closes over exactly those files and
+> queries each one. Aura adopts Hermes' explicit/discoverable `@` interaction and
+> LibreChat's enforced tool scope, not Hermes' prompt expansion and not LibreChat's
+> model-switching semantics.
+>
+> **Decision.** The cockpit gains `@file:` and `@folder:` Garage mentions through the same
+> assistant-ui trigger primitives used by `/`. Its async adapter reads the existing file
+> manager endpoint; a slash in the typed path descends to that folder rather than fetching
+> the whole tree. Selection leaves a readable reference in the visible/persisted user text
+> and sends a parallel, structured `aura.document_scope` entry containing only
+> `{kind,path}`. Prompt text is an audit trail, never the enforcement mechanism. The server
+> normalizes the structured paths, caps one turn at 16 scopes and carries them in the run
+> context. A file is an exact `source_key`; a folder is a literal slash-terminated
+> `source_key` prefix. The authenticated identity remains server-derived and cannot be
+> supplied by this envelope.
+>
+> `document_search` automatically intersects any model-supplied `document_ids` with the
+> operator's run scope. Both the document-card query and both fused passage sub-pipelines
+> receive the same exact-key/prefix predicate. Folder scopes are never expanded to an ID
+> array, prompt block or client payload, so a folder containing 10,000 indexed documents is
+> still one bounded filter and does not collide with the 100-ID cap. Literal wildcard
+> characters in Garage keys are escaped before ArcadeDB `LIKE` prefix matching. An empty
+> run scope preserves today's unscoped behavior byte-for-byte. A scoped query returning no
+> document returns no document; it must never fall back to the identity's whole corpus.
+>
+> **Product boundary and concern closure.** The existing Files workspace remains the
+> inventory owner; the agent does not gain a second catalog/list tool whose principal use
+> would be walking thousands of names. The `@` surface gives the operator deterministic
+> file/folder selection before inference, while retrieval answers content questions only
+> inside that selection. This closes the “No model-facing document catalog operation”
+> concern by rejecting its premise: inventory is a UI responsibility, and model-facing
+> access is a scoped search responsibility. It does not promise recursive fuzzy search over
+> every Garage key, eager full-file prompt injection, or mentions on non-web channels.
+>
+> **Acceptance.** Tests must prove assistant-ui owns keyboard/listbox behavior; path
+> completion reads only the addressed Garage page; the wire omits `document_scope` when no
+> mention exists; strict decoding rejects malformed/unknown scope fields; normalization
+> refuses blank, traversal-shaped, overlong and over-count input; exact-file and recursive
+> folder predicates reach card, vector and lexical legs; wildcard-shaped names remain
+> literal; degraded card-only retrieval cannot escape scope; an empty scoped result cannot
+> widen to all documents; and identity is always taken from the authenticated run context.
+> No LLM call is required for this contract gate.
