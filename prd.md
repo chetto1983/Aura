@@ -9130,3 +9130,33 @@ flusso completo, che funziona.
 > Calendar and WhatsApp MCP initialization through the production mount path. The probe
 > proves Compose 5.3.1 does not repair a stale shared namespace; it does not characterize
 > every Compose release, cross-host networking, Swarm/Kubernetes, or remote MCP servers.
+
+## §CocoIndex follows provisioned identities without duplicated Garage configuration (Amendment #166, 2026-08-27)
+
+> **Amendment #166 (2026-08-27 — live failure measured after the clean Compose restart).**
+> The Cockpit correctly resolved `/Documenti` from the authenticated identity's existing
+> Garage binding, but the production document query returned HTTP 500 because the matching
+> `mem_a696df2b_b7bc_4ee7_870b_15d2cced1839` database had no `IndexedDocument` type. The
+> cause is lifecycle, not retrieval: `aura-ingest` is profile-gated, requires four manually
+> copied `AURA_INGEST_*` identity/S3 values, and therefore was absent from the default stack.
+> A healthy Garage and ArcadeDB cannot create the schema or reconcile objects by themselves.
+>
+> **Decision.** The ingest container becomes an ordinary appliance service whose small Go
+> supervisor reuses `identity.Store` and `objectstore.IdentityStore`. On a bounded polling
+> interval it lists active user identities, resolves each identity's already-provisioned
+> encrypted Garage credential under the existing Postgres RLS scope, and owns one child
+> `python -m ingest.app` process per provisioned identity. Each child receives only that
+> identity's bucket/key and a distinct `/state/<identity>/coco.db`; model, ArcadeDB,
+> embedder and media settings remain inherited from the existing deployment/settings
+> wiring. A deactivated or deleted identity stops its child, a newly provisioned identity
+> starts without a Compose edit, and an unexpected child exit is retried by the next
+> reconciliation. The supervisor never logs secret values and introduces no second table,
+> frontend setting, S3 credential format or decryption implementation.
+>
+> **Acceptance.** Unit tests must prove active-user filtering, per-identity environment and
+> state isolation, no secret-bearing log/config projection, removal shutdown and child
+> restart. The production Compose contract must reject the old per-identity env inputs and
+> the optional `ingest` profile. A clean default `docker compose up --wait` must start the
+> ingest service, create `IndexedDocument` in the authenticated identity database, reconcile
+> the existing `/Documenti` objects, and let the production scoped document query complete
+> without widening or HTTP 500.
