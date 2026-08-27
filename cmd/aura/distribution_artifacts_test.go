@@ -190,8 +190,17 @@ func TestRetiredAuraImagesFailClosed(t *testing.T) {
 	if strings.Contains(readiness, "ghcr.io/chetto1983/aura:v1.0.1") {
 		t.Fatal("production readiness must not default to the retired v1.0.1 image")
 	}
+	// previous_image is no longer `required: true`: the first release has no
+	// approved image to roll back to, so bootstrap may omit it. The guard that
+	// `required: true` used to provide -- the input cannot be skipped, so the
+	// retired-digest check always runs -- now lives in the Validate step, and is
+	// pinned here in the stronger form: omitting the digest is refused unless
+	// bootstrap, and bootstrap itself is refused once any release exists.
 	for _, want := range []string{
-		`required: true`,
+		"previous_image must be an immutable image@sha256 digest",
+		"bootstrap takes no previous_image",
+		"bootstrap is first-release only",
+		`repos/$GITHUB_REPOSITORY/releases`,
 		`^.+@sha256:[0-9a-f]{64}$`,
 		"retired-aura-image-digests.txt",
 	} {

@@ -5,8 +5,15 @@ on:
     inputs:
       previous_image:
         description: Immutable previously-approved image used for the rollback rehearsal
-        required: true
+        required: false
         type: string
+      bootstrap:
+        description: >-
+          First release only. No approved image exists yet, so the rollback rehearsal
+          has nothing to roll back to. Refused once any release exists.
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   actions: read
@@ -52,10 +59,28 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Reject tag-only and retired rollback images
+      - name: Validate rollback input
         env:
           PREVIOUS_IMAGE: ${{ inputs.previous_image }}
+          BOOTSTRAP: ${{ inputs.bootstrap }}
+          GH_TOKEN: ${{ github.token }}
         run: |
+          if [[ "$BOOTSTRAP" == "true" ]]; then
+            if [[ -n "$PREVIOUS_IMAGE" ]]; then
+              echo "bootstrap takes no previous_image: there is nothing to roll back to" >&2
+              exit 1
+            fi
+            # The releases list is what makes bootstrap self-disabling: the moment a
+            # first release exists, an approved image exists, and the rehearsal is
+            # owed again. Without this the flag would stay available forever.
+            releases="$(gh api "repos/$GITHUB_REPOSITORY/releases" -F per_page=1 --jq 'length')"
+            if [[ "$releases" != "0" ]]; then
+              echo "bootstrap is first-release only; this repository already has a release" >&2
+              exit 1
+            fi
+            echo "bootstrap: no approved image exists, rollback rehearsal is not applicable"
+            exit 0
+          fi
           if [[ ! "$PREVIOUS_IMAGE" =~ ^.+@sha256:[0-9a-f]{64}$ ]]; then
             echo "previous_image must be an immutable image@sha256 digest" >&2
             exit 1
@@ -130,7 +155,9 @@ jobs:
           PREVIOUS_IMAGE: ${{ inputs.previous_image }}
           CANDIDATE_IMAGE: aura:candidate-${{ github.sha }}
         run: |
-          docker pull "$PREVIOUS_IMAGE"
+          if [[ -n "$PREVIOUS_IMAGE" ]]; then
+            docker pull "$PREVIOUS_IMAGE"
+          fi
           docker build --file docker/aura/Dockerfile --tag "$CANDIDATE_IMAGE" .
           echo "AURA_IMAGE=$CANDIDATE_IMAGE" >> "$GITHUB_ENV"
 
@@ -149,10 +176,16 @@ jobs:
         env:
           PREVIOUS_IMAGE: ${{ inputs.previous_image }}
           CANDIDATE_IMAGE: aura:candidate-${{ github.sha }}
+          BOOTSTRAP: ${{ inputs.bootstrap }}
         run: |
-          PYTHONPATH=scripts python3 scripts/rollback_rehearsal.py \
-            --previous-image "$PREVIOUS_IMAGE" \
-            --candidate-image "$CANDIDATE_IMAGE"
+          if [[ "$BOOTSTRAP" == "true" ]]; then
+            PYTHONPATH=scripts python3 scripts/rollback_rehearsal.py \
+              --bootstrap --candidate-image "$CANDIDATE_IMAGE"
+          else
+            PYTHONPATH=scripts python3 scripts/rollback_rehearsal.py \
+              --previous-image "$PREVIOUS_IMAGE" \
+              --candidate-image "$CANDIDATE_IMAGE"
+          fi
 
       - name: Fail-closed twelve-report release gate
         run: |

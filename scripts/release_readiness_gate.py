@@ -389,6 +389,24 @@ def validate_rollback(report: dict[str, Any]) -> dict[str, Any]:
     require(report.get("passed") is True, "rollback: report did not pass")
     previous = report.get("previous_image_digest")
     candidate = report.get("candidate_image_digest")
+    if report.get("bootstrap") is True:
+        # First release: there is no approved image to roll back TO, so the rehearsal
+        # is undefined rather than skipped. Accept it only in the exact shape
+        # rollback_rehearsal.py --bootstrap writes -- no previous image, a real
+        # candidate digest, a stated reason -- and hand the marker back so run_gate
+        # records it. An exception nobody can read in the artifact is a hole.
+        require(previous is None, "rollback: bootstrap must carry no previous digest")
+        require(
+            isinstance(candidate, str) and DIGEST.fullmatch(candidate),
+            "rollback: candidate digest invalid",
+        )
+        reason = report.get("bootstrap_reason")
+        require(isinstance(reason, str) and reason.strip(), "rollback: bootstrap reason missing")
+        return {
+            "bootstrap": True,
+            "bootstrap_reason": reason,
+            "candidate_image_digest": candidate,
+        }
     require(isinstance(previous, str) and DIGEST.fullmatch(previous), "rollback: previous digest invalid")
     require(
         isinstance(candidate, str) and DIGEST.fullmatch(candidate),
@@ -495,6 +513,9 @@ def run_gate(
         "score": 10.0,
         "required_gates": len(VALIDATORS),
         "passed_gates": len(VALIDATORS),
+        "bootstrap_gates": sorted(
+            item["gate"] for item in evidence if item.get("bootstrap") is True
+        ),
         "evidence": evidence,
     }
     output.parent.mkdir(parents=True, exist_ok=True)

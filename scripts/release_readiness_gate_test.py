@@ -281,6 +281,49 @@ class ReleaseReadinessGateTest(unittest.TestCase):
         self.assertEqual(len(report["evidence"]), 12)
         self.assertTrue(all(len(item["sha256"]) == 64 for item in report["evidence"]))
 
+    def test_bootstrap_rollback_passes_and_is_named_in_the_report(self) -> None:
+        evidence = valid_evidence()
+        evidence["rollback-report.json"] = common(
+            passed=True,
+            bootstrap=True,
+            bootstrap_reason="no previously-approved image exists: this is the first release",
+            previous_image_digest=None,
+            candidate_image_digest="sha256:" + "c" * 64,
+        )
+        result = self.run_gate(evidence)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = result.report  # type: ignore[attr-defined]
+        # The exception must be legible in the artifact, not merely absent from stderr.
+        self.assertEqual(report["bootstrap_gates"], ["rollback"])
+        rollback = next(i for i in report["evidence"] if i["gate"] == "rollback")
+        self.assertTrue(rollback["bootstrap"])
+
+    def test_non_bootstrap_run_names_no_bootstrap_gate(self) -> None:
+        result = self.run_gate(valid_evidence())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.report["bootstrap_gates"], [])  # type: ignore[attr-defined]
+
+    def test_bootstrap_rollback_fails_closed_when_malformed(self) -> None:
+        for label, overrides in (
+            ("carries a previous digest", {"previous_image_digest": "sha256:" + "b" * 64}),
+            ("has no reason", {"bootstrap_reason": "   "}),
+            ("has no candidate digest", {"candidate_image_digest": "not-a-digest"}),
+        ):
+            with self.subTest(label):
+                evidence = valid_evidence()
+                fields = {
+                    "passed": True,
+                    "bootstrap": True,
+                    "bootstrap_reason": "first release",
+                    "previous_image_digest": None,
+                    "candidate_image_digest": "sha256:" + "c" * 64,
+                }
+                fields.update(overrides)
+                evidence["rollback-report.json"] = common(**fields)
+                result = self.run_gate(evidence)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("rollback", result.stderr)
+
     def test_missing_artifact_fails_closed(self) -> None:
         evidence = valid_evidence()
         del evidence["rollback-report.json"]

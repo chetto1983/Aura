@@ -163,5 +163,45 @@ class RollbackRehearsalTest(unittest.TestCase):
                 )
 
 
+    def test_bootstrap_declares_the_absent_previous_image(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = pathlib.Path(raw)
+            args = self.args(root)
+            args.previous_image = ""
+            with (
+                mock.patch.object(
+                    rollback_rehearsal, "image_digest", return_value="sha256:" + "c" * 64
+                ) as digest,
+                mock.patch.object(
+                    rollback_rehearsal, "candidate_commit", return_value="a" * 40
+                ),
+            ):
+                report = rollback_rehearsal.run_bootstrap(args)
+
+        self.assertTrue(report["passed"])
+        self.assertTrue(report["bootstrap"])
+        self.assertIsNone(report["previous_image"])
+        self.assertIsNone(report["previous_image_digest"])
+        self.assertEqual(report["candidate_image_digest"], "sha256:" + "c" * 64)
+        self.assertTrue(report["bootstrap_reason"].strip())
+        # Only the candidate is resolved: bootstrap must never touch a previous image.
+        digest.assert_called_once_with("aura:candidate", mock.ANY)
+
+    def test_bootstrap_rejects_a_previous_image(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            args = self.args(pathlib.Path(raw))
+            with self.assertRaises(ValueError):
+                rollback_rehearsal.run_bootstrap(args)
+
+    def test_rehearsal_without_a_previous_image_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = pathlib.Path(raw)
+            (root / "compose.yaml").write_text("services: {}\n", encoding="utf-8")
+            args = self.args(root)
+            args.previous_image = ""
+            with self.assertRaises(ValueError):
+                rollback_rehearsal.run_rehearsal(args)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -68,6 +68,7 @@
     "github.com/chetto1983/aura/internal/skilladapters": {"mode": "baseline", "covered_statements": 31, "total_statements": 38},
     "github.com/chetto1983/aura/internal/skills": {"mode": "target"},
     "github.com/chetto1983/aura/internal/steer": {"mode": "target"},
+    "github.com/chetto1983/aura/internal/steer/steertest": {"mode": "target"},
     "github.com/chetto1983/aura/internal/swarm": {"mode": "target"},
     "github.com/chetto1983/aura/internal/toolinvocations": {"mode": "target"},
     "github.com/chetto1983/aura/internal/tracesink": {"mode": "baseline", "covered_statements": 47, "total_statements": 56},

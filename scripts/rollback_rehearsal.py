@@ -164,10 +164,42 @@ def wait_deployment(
         time.sleep(1)
 
 
+def run_bootstrap(args: argparse.Namespace) -> dict[str, Any]:
+    """Report for the FIRST release, where no previously-approved image exists.
+
+    A rollback rehearsal needs an image to roll back TO. Before the first release
+    there is none, so the rehearsal is not merely skipped, it is undefined. This
+    records that explicitly -- bootstrap plus a reason plus the candidate digest --
+    so the release gate can accept it as a declared exception instead of reading a
+    rehearsal that never ran as one that passed. The workflow refuses --bootstrap
+    once any release exists, which is what keeps this a first-release-only path.
+    """
+    repo = pathlib.Path(__file__).resolve().parents[1]
+    if args.previous_image:
+        raise ValueError("--bootstrap takes no --previous-image: there is nothing to roll back to")
+    return {
+        "schema_version": 1,
+        "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "candidate_commit": candidate_commit(repo),
+        "passed": True,
+        "bootstrap": True,
+        "bootstrap_reason": (
+            "no previously-approved image exists: this is the first release, so a "
+            "candidate-to-previous-to-candidate rehearsal has no previous image"
+        ),
+        "previous_image": None,
+        "previous_image_digest": None,
+        "candidate_image": args.candidate_image,
+        "candidate_image_digest": image_digest(args.candidate_image, repo),
+    }
+
+
 def run_rehearsal(args: argparse.Namespace) -> dict[str, Any]:
     repo = pathlib.Path(__file__).resolve().parents[1]
     if not args.compose_file.resolve().is_file():
         raise ValueError(f"compose file does not exist: {args.compose_file}")
+    if not args.previous_image:
+        raise ValueError("--previous-image is required unless --bootstrap is set")
     previous_digest = image_digest(args.previous_image, repo)
     candidate_digest = image_digest(args.candidate_image, repo)
     if previous_digest == candidate_digest:
@@ -229,7 +261,12 @@ def run_rehearsal(args: argparse.Namespace) -> dict[str, Any]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Aura image rollback rehearsal")
-    parser.add_argument("--previous-image", required=True)
+    parser.add_argument("--previous-image", default="")
+    parser.add_argument(
+        "--bootstrap",
+        action="store_true",
+        help="first release only: declare that no previous image exists to roll back to",
+    )
     parser.add_argument("--candidate-image", required=True)
     parser.add_argument(
         "--compose-file", type=pathlib.Path, default=pathlib.Path("compose.yaml")
@@ -250,15 +287,16 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     try:
-        report = run_rehearsal(args)
+        report = run_bootstrap(args) if args.bootstrap else run_rehearsal(args)
     except (RuntimeError, ValueError, OSError, subprocess.SubprocessError) as exc:
         print(f"rollback-rehearsal: FAIL: {exc}", file=sys.stderr)
         return 1
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    print(
-        "rollback-rehearsal: PASS: previous image healthy and candidate restored"
-    )
+    if args.bootstrap:
+        print("rollback-rehearsal: BOOTSTRAP: first release, no previous image to roll back to")
+    else:
+        print("rollback-rehearsal: PASS: previous image healthy and candidate restored")
     return 0
 
 
