@@ -119,8 +119,12 @@ async function uploadCodeImage(page: Page, threadID: string): Promise<string> {
         for (const [name, value] of Object.entries(presigned.upload.required_headers ?? {})) {
           request.setRequestHeader(name, value);
         }
-        request.onload = () => resolve(request.status);
-        request.onerror = () => reject(new Error('Garage upload failed'));
+        request.onload = () => {
+          resolve(request.status);
+        };
+        request.onerror = () => {
+          reject(new Error('Garage upload failed'));
+        };
         request.send(blob);
       });
       if (uploadStatus < 200 || uploadStatus >= 300) {

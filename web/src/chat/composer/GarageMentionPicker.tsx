@@ -99,8 +99,7 @@ export function GarageMentionPicker({ disabled = false, onSelect }: GarageMentio
                           ? 'chat.garagePicker.useFolder'
                           : 'chat.garagePicker.openFolder',
                     )}{' '}
-                    ·{' '}
-                    {item.description}
+                    · {item.description}
                   </span>
                 </span>
               </ComposerPrimitive.Unstable_TriggerPopoverItem>
