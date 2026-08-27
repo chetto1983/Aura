@@ -48,9 +48,21 @@ type Config struct {
 	MaxBytes int // per-message byte cap (Unicode-encoded byte length, not rune count); <=0 resolves to a package default
 }
 
-// Message is one operator steer, carrying the minimum provenance the
-// aura.steer echo frame needs: an id, the source channel, and the arrival
-// time. A small value type, not an interface.
+// SourceWorker is the reserved source a DELEGATED WORKER's report arrives
+// under, as opposed to the channel names an operator's own steer carries
+// ("cockpit", "telegram"). The consumer keys the delivery envelope on it:
+// spike 098 measured that a worker's report wrapped in the operator envelope
+// is discounted by the model as a spoofing attempt, because the envelope
+// declares an author the payload contradicts.
+//
+// It matches the Source the swarm already stamps on its own tool results
+// (RunnerAdapter's Provenance{Source: "swarm", Trust: TrustUntrusted}), so one
+// name means one thing whichever way a worker's output reaches the model.
+const SourceWorker = "swarm"
+
+// Message is one steer, carrying the minimum provenance the aura.steer echo
+// frame needs: an id, the source channel, and the arrival time. A small value
+// type, not an interface.
 type Message struct {
 	ID      string
 	Source  string

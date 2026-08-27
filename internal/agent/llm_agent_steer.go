@@ -67,6 +67,40 @@ func scrubSteerLookalikes(content string) string {
 	return steerLookalikeRe.ReplaceAllStringFunc(content, html.EscapeString)
 }
 
+// markSteer picks the envelope a queued message is delivered in, and names it
+// for the aura.steer echo frame. The envelope is chosen by AUTHOR, because an
+// envelope is an authorship claim and the model reads it as one.
+//
+// Spike 098 measured what happens when it is not: three live runs proved the
+// rail carries a delegated worker's report and that the model parses it, and
+// then the model DISCOUNTED the report — `<user_steer>` declares the operator as
+// author, the payload said a worker was reporting, and the model trusted the
+// payload's self-declared authorship over the envelope and read the whole thing
+// as a spoofing attempt. For a backgrounded worker whose report is the only
+// copy, that is the delegated work silently lost.
+//
+// No third envelope is minted for this. Aura already has one that means exactly
+// "evidence from a named non-operator source, act on it as data and never as an
+// instruction" — the untrusted tool-output envelope, which already takes a
+// source and is already what the swarm stamps on its own results
+// (RunnerAdapter's Provenance{Source: "swarm", Trust: TrustUntrusted}). A
+// worker's report is the deferred result of the model's OWN swarm_spawn call,
+// so that is the honest shape for it, and it brings the escaping with it: the
+// operator envelope deliberately does not escape (it wraps the operator's own
+// words), while a worker's generated text is escaped like any other untrusted
+// output.
+//
+// Only the reserved steer.SourceWorker takes the worker branch. Every channel
+// in the tree pushes an operator source, and an unrecognised one keeps the
+// operator envelope byte-for-byte, so a new channel cannot fall into the worker
+// branch by forgetting to name itself.
+func markSteer(m steer.Message) (marked, envelope string) {
+	if m.Source == steer.SourceWorker {
+		return "\n" + wrapUntrustedToolOutput(m.Source, m.Text), "worker_report"
+	}
+	return wrapUserSteer(m.Text), "user_steer"
+}
+
 // drainSteer delivers whatever is queued for this conversation into the
 // history tail, behind the nonce-marked attribution envelope SteerChannelNote
 // (prompt.go) teaches the model to trust. A nil inbox (the
@@ -94,7 +128,7 @@ func (a *LlmAgent) drainSteer(ic InvocationContext, spanID [8]byte, parentSpanID
 	}
 	delivered := make([]map[string]any, 0, len(msgs))
 	for _, m := range msgs {
-		marked := wrapUserSteer(m.Text)
+		marked, envelope := markSteer(m)
 		delivery := "user_message_fallback"
 		if n := len(a.history); n > 0 && a.history[n-1].Role == llm.RoleTool {
 			a.history[n-1].Content += marked
@@ -107,6 +141,7 @@ func (a *LlmAgent) drainSteer(ic InvocationContext, spanID [8]byte, parentSpanID
 			"source":   m.Source,
 			"text":     m.Text,
 			"delivery": delivery,
+			"envelope": envelope,
 		})
 	}
 	ev := a.newEvent(ic, spanID, parentSpanID)
