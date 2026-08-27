@@ -18,7 +18,8 @@ import (
 
 const (
 	memoryLatencySamples  = 25
-	memoryLatencyResource = "http://127.0.0.1:8096/mcp/"
+	memoryLatencyEndpoint = "http://127.0.0.1:8096/mcp/"
+	memoryLatencyResource = "http://aura-arcadedb-mcp:8096/mcp/"
 )
 
 type memoryLatencyEvidence struct {
@@ -61,7 +62,7 @@ func TestAgentMemoryCLILiveSearchP95(t *testing.T) {
 	seedMCPRegistry(t, mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
 		memoryServerName: {
 			Type:   mcp.ServerTypeStreamableHTTP,
-			URL:    memoryLatencyResource,
+			URL:    memoryLatencyEndpoint,
 			Env:    []string{"MCP_BEARER_TOKEN=" + token},
 			Source: mcp.SourceRecipeMemory,
 			Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},

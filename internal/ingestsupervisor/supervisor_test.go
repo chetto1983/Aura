@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -186,5 +187,123 @@ func TestProcessSpecEnvironmentContainsOnlyItsIdentityBinding(t *testing.T) {
 	}
 	if got := environmentCount(env, "AURA_INGEST_S3_SECRET_ACCESS_KEY"); got != 1 {
 		t.Errorf("secret env count = %d, want one override", got)
+	}
+}
+
+func TestSupervisorRunRejectsMissingDependencies(t *testing.T) {
+	supervisor := New(nil, nil, nil, Options{})
+
+	err := supervisor.Run(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "requires identity, credential, and process dependencies") {
+		t.Fatalf("Run error = %v, want missing-dependency refusal", err)
+	}
+}
+
+func TestSupervisorRunStopsChildrenOnCancellation(t *testing.T) {
+	identityID := "a696df2b-b7bc-4ee7-870b-15d2cced1839"
+	launcher := &fakeLauncher{}
+	supervisor := New(
+		&fakeLister{items: []identity.Identity{{ID: identityID, Kind: "user"}}},
+		&fakeResolver{credentials: map[string]objectstore.Credentials{
+			identityID: {Bucket: "aura-user", AccessKey: "key", SecretKey: "secret"},
+		}},
+		launcher,
+		Options{PollInterval: time.Hour, StateRoot: t.TempDir()},
+	)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	err := supervisor.Run(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run error = %v, want context cancellation", err)
+	}
+	if len(launcher.processes) != 1 || !launcher.processes[0].stopped {
+		t.Fatal("Run did not stop its active identity child during shutdown")
+	}
+	if len(supervisor.active) != 0 {
+		t.Fatalf("active children after shutdown = %d, want zero", len(supervisor.active))
+	}
+}
+
+func TestExecLauncherStartsWithPrivateIdentityEnvironment(t *testing.T) {
+	stateDB := filepath.Join(t.TempDir(), "nested", "coco.db")
+	launcher := &ExecLauncher{
+		Command: os.Args[0],
+		Args:    []string{"-test.run=^TestExecLauncherHelperProcess$"},
+		Env:     []string{"AURA_INGEST_HELPER_MODE=exit"},
+	}
+	process, err := launcher.Start(t.Context(), ProcessSpec{
+		IdentityID: "a696df2b-b7bc-4ee7-870b-15d2cced1839",
+		Bucket:     "aura-user",
+		AccessKey:  "user-key",
+		SecretKey:  "user-secret",
+		S3Endpoint: "http://garage:3900",
+		S3Region:   "garage",
+		StateDB:    stateDB,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	select {
+	case err := <-process.Done():
+		if err != nil {
+			t.Fatalf("helper process: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("helper process did not exit")
+	}
+}
+
+func TestExecLauncherStopCancelsRunningChild(t *testing.T) {
+	launcher := &ExecLauncher{
+		Command: os.Args[0],
+		Args:    []string{"-test.run=^TestExecLauncherHelperProcess$"},
+		Env:     []string{"AURA_INGEST_HELPER_MODE=wait"},
+	}
+	process, err := launcher.Start(t.Context(), ProcessSpec{StateDB: filepath.Join(t.TempDir(), "coco.db")})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	stopCtx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if err := process.Stop(stopCtx); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+}
+
+func TestNewExecLauncherUsesProductionDefaults(t *testing.T) {
+	launcher := NewExecLauncher()
+	if launcher.Command != "python" || strings.Join(launcher.Args, " ") != "-m ingest.app" {
+		t.Fatalf("launcher command = %q %q", launcher.Command, launcher.Args)
+	}
+	if launcher.Stdout != os.Stdout || launcher.Stderr != os.Stderr || len(launcher.Env) == 0 {
+		t.Fatal("launcher did not inherit the production process environment and streams")
+	}
+}
+
+func TestExecLauncherHelperProcess(t *testing.T) {
+	mode := os.Getenv("AURA_INGEST_HELPER_MODE")
+	if mode == "" {
+		return
+	}
+	for key, want := range map[string]string{
+		"AURA_INGEST_IDENTITY_ID":          "a696df2b-b7bc-4ee7-870b-15d2cced1839",
+		"AURA_INGEST_S3_BUCKET":            "aura-user",
+		"AURA_INGEST_S3_ACCESS_KEY_ID":     "user-key",
+		"AURA_INGEST_S3_SECRET_ACCESS_KEY": "user-secret",
+		"AURA_INGEST_S3_ENDPOINT":          "http://garage:3900",
+		"AURA_INGEST_S3_REGION":            "garage",
+	} {
+		if mode == "exit" && os.Getenv(key) != want {
+			t.Fatalf("%s = %q, want %q", key, os.Getenv(key), want)
+		}
+	}
+	if stateDB := os.Getenv("COCOINDEX_DB"); stateDB == "" {
+		t.Fatal("COCOINDEX_DB is empty")
+	} else if _, err := os.Stat(filepath.Dir(stateDB)); err != nil {
+		t.Fatalf("identity state directory: %v", err)
+	}
+	if mode == "wait" {
+		time.Sleep(time.Hour)
 	}
 }

@@ -37,6 +37,7 @@
     "github.com/chetto1983/aura/internal/identity": {"mode": "target"},
     "github.com/chetto1983/aura/internal/identityctx": {"mode": "target"},
     "github.com/chetto1983/aura/internal/idroot": {"mode": "target"},
+    "github.com/chetto1983/aura/internal/ingestsupervisor": {"mode": "target"},
     "github.com/chetto1983/aura/internal/llm": {"mode": "target"},
     "github.com/chetto1983/aura/internal/llm/openai_compat": {"mode": "target"},
     "github.com/chetto1983/aura/internal/mcp": {"mode": "target"},
