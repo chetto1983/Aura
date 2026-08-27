@@ -8717,3 +8717,41 @@ flusso completo, che funziona.
 > CI history is evidence that the warning is stale, not proof that concurrency can never regress.
 > Retiring unlicensed corpus code removes false evidence; it does not replace LOCOMO's research
 > claims with Aura's smaller owned fixture.
+
+## §Document recall has a measured floor distinct from its quality target (Amendment #157, 2026-08-27)
+
+> **Amendment #157 (2026-08-27 — live measurement refinement of Amendment #156's
+> previously unnumbered document-recall floor, before changing the gate).**
+>
+> **The measurement.** Exact candidate `e8283543931d4e2a929b39c9bf845bde651d7e2f`
+> completed the production lifecycle through Garage, CocoIndex, the real extractor,
+> 768-wide EmbeddingGemma, a disposable identity database and the real document agent.
+> All 21 owned fixtures matched `corpus.sha256`, all 21 were extracted, and the 20-query
+> qrels contract hashed to
+> `06ff59559ca71a7e54aceb858ee6ace6a2164de243190b7301c62ee2bcae9ed8`.
+> The shipped default RRF fusion measured **R@1 0.550, R@3 0.750, MRR 0.696**.
+> Diagnostic DBSF measured 0.600/0.850/0.738 and LINEAR 0.550/0.850/0.705. Nine
+> RRF queries missed at rank 1; inspection confirmed real ranking misses rather than
+> filename/qrels mapping errors. Four of them put an acceptable document at rank 2.
+>
+> **Contract.** The exact measured production R@1 of **0.550** is the initial
+> non-regression floor. The quality target remains **0.750 R@1** and is explicitly open.
+> The machine report carries separate `baseline_floor`, `baseline_passed`, `target` and
+> `target_met` fields; the runner fails below the baseline, while the quality snapshot
+> must say `BASELINE PASS / TARGET OPEN` until 0.750 is actually measured. Alternate
+> fusion arms remain diagnostic and cannot satisfy the production gate. A future higher
+> exact-candidate measurement may raise the floor; lowering it requires another measured
+> PRD amendment.
+>
+> **Why this is not a weakened green gate.** Applying the historical 0.750 target as if
+> it were a current floor made the newly executable harness fail on the exact code it was
+> introduced to measure. Lowering the target would hide product debt; pretending the
+> existing implementation clears it would fabricate evidence. Pinning the observed 0.550
+> baseline prevents regression today while preserving 0.750 as a visible, actionable
+> quality objective.
+>
+> **What this amendment does NOT prove.** The baseline does not establish acceptable
+> retrieval quality for production workloads, validate DBSF as a better default, or
+> authorize switching fusion strategies. The 20-query corpus remains a deterministic
+> regression fixture, not a statistical population. This refinement closes ambiguity in
+> the evidence contract; it does not close the separately visible recall-quality debt.
