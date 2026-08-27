@@ -9078,3 +9078,85 @@ flusso completo, che funziona.
 > the 9.8 gate without web fallback. The Ollama image and local STT measurements do not prove
 > Qwen availability, every media codec, population-level OCR/STT quality, or that a model
 > selected incorrectly by the operator supports the modality.
+
+## §MCP sidecars survive Aura container replacement without stale network namespaces (Amendment #165, 2026-08-27)
+
+> **Amendment #165 (2026-08-27 — live outage and disposable Compose measurement before
+> implementation).**
+>
+> **Measured failure.** `arcadedb-mcp`, `aura-pim-mcp` and `whatsapp` currently use
+> `network_mode: service:aura`. Recreating only `aura` left all three containers attached
+> to the removed parent's network namespace; the live stack showed the parent running
+> while the three children had exited with codes 128/143, and Aura stayed unhealthy because
+> its required memory capability could not mount. The same project had also been operated
+> from both `D:\Aura\compose.yaml` and `/mnt/d/Aura/compose.yaml`, which Docker reports as
+> two configuration paths under the one `aura` project. Deployment commands must use one
+> canonical host/path for a run, but that operational discipline does not repair the
+> namespace coupling.
+>
+> **The Compose flag does not close the gap.** Docker's current service reference says
+> `depends_on.<service>.restart: true` restarts a dependent after an explicit Compose update
+> of its dependency. A disposable two-service probe on Docker Compose 5.3.1 measured the
+> relevant edge case instead of inferring from that wording: after
+> `up -d --force-recreate parent`, the parent ID changed, the child ID did not, and the
+> child's `HostConfig.NetworkMode` still named the removed parent ID while Docker reported
+> the child process as running. `--remove-orphans` is likewise about containers absent from
+> the Compose model; it does not rebind a service-sharing namespace. Requiring operators to
+> remember a four-service force-recreate command would preserve the same latent outage.
+>
+> **Decision.** Remove `network_mode: service:aura` from all three MCP sidecars, following
+> the already-landed Prometheus/Tempo precedent in this same Compose file. They become
+> ordinary services on Aura's project network and Aura reaches them through stable Compose
+> DNS names. Their host-facing ports remain published on `127.0.0.1`, now from the owning
+> sidecar rather than from `aura`; no MCP or management port becomes non-loopback on the
+> host. PIM and WhatsApp return to their existing internal ports (`aura-pim-mcp:8080`,
+> `whatsapp:8080` MCP, `whatsapp:8081` bridge), while ArcadeDB MCP remains
+> `aura-arcadedb-mcp:8096`. The existing trusted-recipe SSRF policy and first-party resource
+> allowlist already name those exact private authorities; custom/private MCP endpoints do
+> not inherit that allowance.
+>
+> Sidecars still validate Aura-issued tokens with issuer
+> `http://127.0.0.1:9080`, but fetch authorization metadata/JWKS from `http://aura:9080`
+> inside the project network. Their OAuth resource identifiers and Aura's built-in recipe
+> URLs use the same internal DNS authorities, so stored grant audience, protected-resource
+> validation and transport cannot drift. Host-loopback publishes remain diagnostics and
+> local operator access, not a second resource identity.
+>
+> **Acceptance and evidence boundary.** Static contract tests must reject every remaining
+> `network_mode: service:aura`, require DNS-backed in-container recipes and loopback-only
+> host publishes on the owning services, and preserve strict-profile SSRF allowance only
+> for the exact three trusted recipes. A live test must recreate `aura` alone, prove the
+> three sidecar container IDs and health remain valid, then complete authenticated memory,
+> Calendar and WhatsApp MCP initialization through the production mount path. The probe
+> proves Compose 5.3.1 does not repair a stale shared namespace; it does not characterize
+> every Compose release, cross-host networking, Swarm/Kubernetes, or remote MCP servers.
+
+## §CocoIndex follows provisioned identities without duplicated Garage configuration (Amendment #166, 2026-08-27)
+
+> **Amendment #166 (2026-08-27 — live failure measured after the clean Compose restart).**
+> The Cockpit correctly resolved `/Documenti` from the authenticated identity's existing
+> Garage binding, but the production document query returned HTTP 500 because the matching
+> `mem_a696df2b_b7bc_4ee7_870b_15d2cced1839` database had no `IndexedDocument` type. The
+> cause is lifecycle, not retrieval: `aura-ingest` is profile-gated, requires four manually
+> copied `AURA_INGEST_*` identity/S3 values, and therefore was absent from the default stack.
+> A healthy Garage and ArcadeDB cannot create the schema or reconcile objects by themselves.
+>
+> **Decision.** The ingest container becomes an ordinary appliance service whose small Go
+> supervisor reuses `identity.Store` and `objectstore.IdentityStore`. On a bounded polling
+> interval it lists active user identities, resolves each identity's already-provisioned
+> encrypted Garage credential under the existing Postgres RLS scope, and owns one child
+> `python -m ingest.app` process per provisioned identity. Each child receives only that
+> identity's bucket/key and a distinct `/state/<identity>/coco.db`; model, ArcadeDB,
+> embedder and media settings remain inherited from the existing deployment/settings
+> wiring. A deactivated or deleted identity stops its child, a newly provisioned identity
+> starts without a Compose edit, and an unexpected child exit is retried by the next
+> reconciliation. The supervisor never logs secret values and introduces no second table,
+> frontend setting, S3 credential format or decryption implementation.
+>
+> **Acceptance.** Unit tests must prove active-user filtering, per-identity environment and
+> state isolation, no secret-bearing log/config projection, removal shutdown and child
+> restart. The production Compose contract must reject the old per-identity env inputs and
+> the optional `ingest` profile. A clean default `docker compose up --wait` must start the
+> ingest service, create `IndexedDocument` in the authenticated identity database, reconcile
+> the existing `/Documenti` objects, and let the production scoped document query complete
+> without widening or HTTP 500.
