@@ -8993,3 +8993,88 @@ flusso completo, che funziona.
 > literal; degraded card-only retrieval cannot escape scope; an empty scoped result cannot
 > widen to all documents; and identity is always taken from the authenticated run context.
 > No LLM call is required for this contract gate.
+
+## §Garage media becomes durable retrieval text through the existing model settings (Amendment #164, 2026-08-27)
+
+> **Amendment #164 (2026-08-27 — current-code audit and live media measurements before
+> implementation; supersedes Amendment #60 only where it requires the hidden
+> `MULTIMODAL_FALLBACK_MODEL` route).**
+>
+> **Measured gap.** `services/ingest/app.py` walks every Garage object, but calls
+> `extract.extract_text` only for the textual allowlist. A PNG/JPEG or audio object still
+> receives an `IndexedDocument` row, card and original-file open path, but produces zero
+> `Passage` rows. The existing Go asset pipeline already obtains image summaries and audio
+> transcripts through `internal/multimodal`; those results serve the immediate upload/chat
+> path and are not reconciled into ArcadeDB passages. Direct File Manager/Garage objects do
+> not enter that asset-processing queue at all. Therefore image pixels and spoken words are
+> absent from durable document retrieval even though the file itself is visible and
+> openable.
+>
+> **The configuration is already owned elsewhere. Do not duplicate it.** The cockpit writes
+> `aura.settings`, and daemon boot overlays those rows before `config.Load`. Its existing
+> controls already own the primary model/base URL/provider/key, the explicit vision switch,
+> and the cloud STT model: `AURA_LLM_MODEL`, `AURA_LLM_BASE_URL`,
+> `AURA_LLM_PROVIDER`, `OPENROUTER_API_KEY`, `AURA_VISION_CLOUD`, and
+> `AURA_STT_CLOUD_MODEL`. The ingest path must consume that same table and those same fields;
+> it must not add `AURA_INGEST_*` model IDs, a second settings table, or a second frontend
+> panel. Local operation continues to use the existing `MULTIMODAL_BASE_URL` /
+> `MULTIMODAL_MODEL` and `STT_BASE_URL` / `STT_MODEL` / `STT_LANGUAGE` deployment wiring.
+> A settings change takes effect on restart, as the cockpit already states, and its
+> non-secret effective route fingerprint participates in CocoIndex change detection so an
+> unchanged media object is re-derived exactly when its selected model/route changes.
+>
+> `MULTIMODAL_FALLBACK_MODEL` is the contrary, hidden path: it is neither stored in
+> `aura.settings` nor rendered by the cockpit, and the hard-coded `llm.SupportsVision`
+> allowlist makes a newly selected multimodal model silently fall back until Aura code is
+> edited. Retire both from vision routing. With `AURA_VISION_CLOUD=true`, the operator's
+> existing primary route is authoritative and receives image input; with it false, the
+> existing local vision sidecar remains authoritative. A provider rejection is surfaced as
+> an ingest failure, never converted into a silent model substitution. This makes changing
+> `qwen/qwen3.8-flash`, an Ollama Cloud tag, or another explicitly selected multimodal
+> primary a configuration action rather than a code-table edit. Audio remains independent:
+> an empty `AURA_STT_CLOUD_MODEL` selects local faster-whisper, and a value selects that
+> cloud transcription model through the existing primary base/key.
+>
+> **Live measurements.** Against the exact installed stack, the current indexing-oriented
+> image prompt sent to Ollama `gemma4:31b-cloud` stopped normally in 2.142 s and returned
+> searchable OCR including `customer-reconciliation`, `Pilot workspace`, and `Expired`;
+> EmbeddingGemma accepted the derived text and returned 768 dimensions. Prompt-only word
+> limits were not reliable, so image retrieval text needs an application hard cap in
+> addition to the instruction. A locally synthesized Italian clip was transcribed by the
+> existing `aura-stt` as “La verifica multimodale Aura riguarda il progetto Fenice 42 e
+> richiede approvazione manuale.” and that transcript also embedded to 768 dimensions. The
+> exact Ollama tag `gemma4:31b-cloud` reported vision but not audio capability and rejected
+> the valid WAV as an image MIME; the family-page audio badge does not authorize sending
+> audio to that tag. Two calls to `qwen/qwen3.8-flash` reached OpenRouter but its shared
+> upstream pool returned HTTP 429 before generation, so this amendment records no Qwen
+> quality or latency claim and authorizes no paid retry.
+>
+> **Reuse boundary.** CocoIndex 1.0.20 is already version-pinned and its installed public
+> surface provides memoized functions plus `ContextKey(..., detect_change=True)`; use that
+> dependency seam for incremental invalidation. It has a LiteLLM transcription operation,
+> but adopting it here would duplicate Aura's already-tested local/cloud wire formats,
+> credential boundary and retry policy. The ingest image therefore carries a thin Aura
+> executable that reuses `internal/multimodal` and the shared asset media preparation; the
+> Python app only classifies the file, invokes that executable and feeds returned text into
+> the existing chunk → EmbeddingGemma → ArcadeDB `Passage` path. No CLIP index, second vector
+> space, media-only database, or reranker is introduced. LibreChat corroborates the
+> transform-to-text boundary for audio and its explicit MIME dispatch; it does not provide
+> persistent multimodal RAG to copy. Hermes' relevant lesson remains explicit reference and
+> bounded context, not a second document store.
+>
+> Image instructions are user-supplied document pixels, not trusted agent memory. The
+> indexing prompt therefore treats visible instructions as document data and never follows
+> them; its output is provenance-bearing document text subject to the same retrieval/tool
+> boundary as every other uploaded document. This threat statement does not reclassify
+> agent-authored memory as untrusted.
+>
+> **Acceptance and evidence boundary.** Tests must prove image/audio MIME routing, the
+> selected existing settings route and model on the real wire payload, secret exclusion from
+> the Coco fingerprint, fingerprint change on model/route change, prompt-instruction
+> neutrality, the hard image-text cap, local multipart STT, cloud JSON STT, and unchanged
+> textual-document behavior. A live disposable Garage lifecycle must index OCR-only and
+> speech-only canaries into ArcadeDB passages, retrieve both through the production document
+> path, preserve add/modify/delete reconciliation, and complete one real agent answer above
+> the 9.8 gate without web fallback. The Ollama image and local STT measurements do not prove
+> Qwen availability, every media codec, population-level OCR/STT quality, or that a model
+> selected incorrectly by the operator supports the modality.
