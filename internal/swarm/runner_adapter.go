@@ -7,6 +7,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/identityctx"
 )
 
 // RunnerAdapter is the concrete swarmRunner the swarm_spawn tool delegates to
@@ -21,10 +22,18 @@ import (
 type RunnerAdapter struct {
 	Cfg   config.Config
 	Depth int
+	// Enqueuer is the SWARM-03/09 background-delegation seam (delegation_queue.go).
+	// nil (the zero value) means "no durable queue configured" -- Run then falls
+	// through to the synchronous waves byte-for-byte unchanged, so a boot with no
+	// Postgres pool (e.g. `aura swarm-demo`, tests) never regresses. Set by the
+	// composition root (cmd/aura) only when a pool is available.
+	Enqueuer *DelegationEnqueuer
 }
 
 // NewRunnerAdapter builds an adapter over the static config. Depth defaults to 1
 // (a parent-initiated spawn); a caller may raise it for forward-compat nesting.
+// Enqueuer starts nil -- set it on the returned adapter when a durable queue is
+// available (see cmd/aura/main.go's buildBaseRegistryWithHandles).
 func NewRunnerAdapter(cfg config.Config) *RunnerAdapter {
 	return &RunnerAdapter{Cfg: cfg, Depth: 1}
 }
@@ -52,6 +61,15 @@ func (a *RunnerAdapter) Run(ctx context.Context, goals []string) (tools.ToolResu
 		ConvID:         sc.ConvID,
 		Depth:          a.Depth,
 		Gateway:        sc.Gateway, // relay the parent's PEP to each worker (Open Q1 full enforcement)
+		// SWARM-03/09: identityctx is the SAME ambient host-derived actor context
+		// every other identity-scoped tool reads (document_search.go, skill_manage.go,
+		// send_file_ingest.go) -- internal/runner sets it once per turn
+		// (runner.go:337, identityctx.WithIdentityID(ctx, conv.IdentityID)) and it rides
+		// the SAME ctx this Run call receives, so no new plumbing threads it through
+		// LlmAgentConfig/SwarmContextValue. A nil a.Enqueuer (no Postgres pool at boot)
+		// leaves this branch inert -- Run falls through to the synchronous path.
+		IdentityID: identityctx.IdentityID(ctx),
+		Enqueuer:   a.Enqueuer,
 	}
 
 	out, err := Run(ctx, rc, goals)

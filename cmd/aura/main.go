@@ -35,6 +35,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/envutil"
 	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
@@ -298,7 +299,17 @@ func buildBaseRegistryWithHandles(
 	// does NOT satisfy the >=1-non-deferred guard (Pitfall 6) — the non-deferred
 	// built-ins above keep reg.Validate() green. The adapter resolves the live parent
 	// budget/registry/client/llmCfg/convID off the tool-call ctx (agent.WithSwarmContext).
-	reg.Register(&tools.SwarmSpawn{Runner: swarm.NewRunnerAdapter(*cfg), MaxGoals: cfg.MaxSwarmGoals})
+	swarmAdapter := swarm.NewRunnerAdapter(*cfg)
+	// SWARM-03/09: a top-level swarm_spawn call needs the durable delegation queue
+	// (aura.ingestion_jobs, job_type=swarm_delegation) to background instead of
+	// blocking the turn. Only wired when a real pool exists — the same nil-guard
+	// DocumentOpen uses just above — so a pool-less boot (tests, some CLI paths)
+	// keeps the synchronous path byte-for-byte unchanged (RunnerAdapter.Enqueuer stays
+	// nil, and swarm.Run's background branch is a strict no-op without it).
+	if pool := taskStorePool(ts); pool != nil {
+		swarmAdapter.Enqueuer = &swarm.DelegationEnqueuer{Store: documents.NewPostgresIngestionJobStore(pool)}
+	}
+	reg.Register(&tools.SwarmSpawn{Runner: swarmAdapter, MaxGoals: cfg.MaxSwarmGoals})
 	// D-10: fail closed at boot if no actionable tool exists (excluding tool_search).
 	// This is the shared composition root — buildRegistry and buildRegistryWithMCP
 	// both delegate here, so the guard covers every boot path.

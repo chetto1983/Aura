@@ -6,6 +6,8 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/documents"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"go.uber.org/goleak"
 )
 
@@ -74,5 +76,72 @@ func TestRunnerAdapterWorkerRegistryExcludesSwarmSpawn(t *testing.T) {
 	worker := tools.Without(parent, swarmSpawnTool)
 	if _, ok := worker.Get(swarmSpawnTool); ok {
 		t.Fatal("the worker registry must NOT contain swarm_spawn (flat v1, D-08/D-10)")
+	}
+}
+
+// fakeDelegationStore is a minimal in-memory DelegationJobStore double: only
+// Create is exercised by this test (background enqueue never claims/transitions
+// in the same call), so the rest just record they were never invoked.
+type fakeDelegationStore struct {
+	created []documents.CreateIngestionJobRequest
+}
+
+func (s *fakeDelegationStore) Create(_ context.Context, req documents.CreateIngestionJobRequest) (documents.IngestionJob, error) {
+	s.created = append(s.created, req)
+	return documents.IngestionJob{ID: "job-" + req.IdempotencyKey, IdentityID: req.IdentityID, JobType: req.JobType}, nil
+}
+
+func (s *fakeDelegationStore) Claim(context.Context, documents.ClaimIngestionJobsRequest) ([]documents.IngestionJob, error) {
+	return nil, nil
+}
+
+func (s *fakeDelegationStore) UpdateStatus(_ context.Context, req documents.TransitionIngestionJobRequest) (documents.IngestionJob, error) {
+	return documents.IngestionJob{ID: req.JobID, Status: req.Status}, nil
+}
+
+func (s *fakeDelegationStore) Retry(_ context.Context, req documents.RetryIngestionJobRequest) (documents.IngestionJob, error) {
+	return documents.IngestionJob{ID: req.JobID, Status: "queued"}, nil
+}
+
+func (s *fakeDelegationStore) Heartbeat(_ context.Context, req documents.HeartbeatIngestionJobRequest) (documents.IngestionJob, error) {
+	return documents.IngestionJob{ID: req.JobID, Status: "running"}, nil
+}
+
+// TestRunnerAdapterBackgroundsWhenEnqueuerConfigured proves the wiring gap this
+// tracer plan closes: a top-level RunnerAdapter with an Enqueuer configured
+// resolves the caller's identity off the SAME ambient identityctx every other
+// identity-scoped tool reads (no new plumbing through SwarmContextValue), writes
+// one durable row per goal, and returns WITHOUT ever dispatching a worker through
+// the router (the background path never calls Client.Stream).
+func TestRunnerAdapterBackgroundsWhenEnqueuerConfigured(t *testing.T) {
+	defer goleak.VerifyNone(t)
+	r := newRouter() // no routes configured -- a dispatch here would fail the test
+	rc := testRunConfig(t, r, 25)
+
+	store := &fakeDelegationStore{}
+	a := NewRunnerAdapter(rc.Cfg)
+	a.Enqueuer = &DelegationEnqueuer{Store: store}
+
+	ctx := agent.WithSwarmContext(withToolCtx(context.Background(), t),
+		rc.ParentBudget, rc.ParentRegistry, rc.Client, rc.LLM, rc.ConvID, rc.Gateway)
+	ctx = identityctx.WithIdentityID(ctx, "identity-adapter-test")
+
+	res, err := a.Run(ctx, []string{"alpha task", "bravo task"})
+	if err != nil {
+		t.Fatalf("adapter Run: %v", err)
+	}
+	if len(store.created) != 2 {
+		t.Fatalf("enqueued %d rows, want 2 (one per goal)", len(store.created))
+	}
+	for _, req := range store.created {
+		if req.IdentityID != "identity-adapter-test" {
+			t.Fatalf("enqueued row identity = %q, want the ambient identityctx value", req.IdentityID)
+		}
+		if req.JobType != JobTypeSwarmDelegation {
+			t.Fatalf("enqueued row job_type = %q, want %q", req.JobType, JobTypeSwarmDelegation)
+		}
+	}
+	if res.Preview == "" {
+		t.Fatal("background enqueue must still return a model-readable result")
 	}
 }
