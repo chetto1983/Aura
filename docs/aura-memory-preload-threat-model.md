@@ -140,6 +140,11 @@ Closure requires all of the following:
   normalized and escaped without creating a second memory boundary.
 - `go vet ./...`, `go build ./...`, and the full `internal/agent` plus `internal/runner`
   package suites passed on the protected tree.
+- The fresh disposable unit plus `db_integration` coverage matrix measured
+  **27,724/31,897 = 86.9173%** and passed both the aggregate 85% floor and package-local
+  policy. The critical `internal/agent/trust.go` mutation spot-check killed **17/17**
+  non-duplicate mutants (**100%**). The repository `make quality` gate also passed deadcode,
+  vet, build, file-size, model-contract, lint, full race and vulnerability checks.
 - The post-change live `TestAgentMemoryMCPLiveAbstainsOnNonexistentFact` path passed in 0.47
   seconds through the real ArcadeDB, 768-wide embedder, OAuth MCP session, disposable identity
   database and cleanup.
