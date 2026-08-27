@@ -58,8 +58,14 @@ type CreateIngestionJobRequest struct {
 }
 
 // ClaimIngestionJobsRequest carries owner-scoped worker lease parameters.
+// JobType is an OPTIONAL filter: empty means "claim across every job_type"
+// (the document ingestion worker's existing, unchanged behavior); a non-empty
+// value scopes the claim to that type (Phase 51's swarm delegation claim loop
+// uses this so it never steals a lease from the document ingestion worker,
+// and vice versa, even though both claim against the SAME table).
 type ClaimIngestionJobsRequest struct {
 	IdentityID    string
+	JobType       string
 	WorkerID      string
 	LeaseDuration time.Duration
 	BatchSize     int
@@ -141,7 +147,7 @@ func (s *PostgresIngestionJobStore) Claim(ctx context.Context, req ClaimIngestio
 	err = s.withIdentity(ctx, req.IdentityID, func(q *sqlc.Queries) error {
 		var queryErr error
 		rows, queryErr = q.ClaimIngestionJobs(ctx, sqlc.ClaimIngestionJobsParams{
-			IdentityID: identityID, LockedBy: pgText(req.WorkerID),
+			IdentityID: identityID, JobType: pgText(req.JobType), LockedBy: pgText(req.WorkerID),
 			LeaseDuration: pgInterval(req.LeaseDuration),
 			BatchSize:     int32(req.BatchSize), //nolint:gosec // configured worker batch is bounded.
 		})

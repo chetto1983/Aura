@@ -31,6 +31,13 @@ type Querier interface {
 	CanonicalBranchLeafSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	CaptureBenchmarkSetting(ctx context.Context, arg CaptureBenchmarkSettingParams) error
 	ClaimConversationDeleteTeardown(ctx context.Context, arg ClaimConversationDeleteTeardownParams) (int64, error)
+	// job_type is an OPTIONAL filter (sqlc.narg): NULL (the document ingestion
+	// worker's own call) claims across every job_type exactly as before this
+	// filter was added -- zero behavior change for that caller. A non-NULL value
+	// (the swarm delegation claim loop, job_type='swarm_delegation') scopes the
+	// claim so a background-delegation claim loop and the document ingestion
+	// worker can run concurrently against the SAME table without ever stealing
+	// each other's lease (Phase 51, SWARM-09).
 	ClaimIngestionJobs(ctx context.Context, arg ClaimIngestionJobsParams) ([]ClaimIngestionJobsRow, error)
 	ClaimRetentionItems(ctx context.Context, arg ClaimRetentionItemsParams) ([]AuraRetentionOperationItems, error)
 	CleanupResumedOlderThan(ctx context.Context, resumedAt pgtype.Timestamptz) error

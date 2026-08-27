@@ -17,19 +17,20 @@ WITH candidates AS (
     FROM aura.ingestion_jobs queued_job
     WHERE queued_job.identity_id = $1
       AND queued_job.attempt_count < queued_job.max_attempts
+      AND ($2::text IS NULL OR queued_job.job_type = $2::text)
       AND (
         (queued_job.status = 'queued' AND queued_job.next_attempt_at <= now()
          AND (queued_job.locked_until IS NULL OR queued_job.locked_until < now()))
         OR (queued_job.status = 'running' AND queued_job.locked_until < now())
       )
     ORDER BY queued_job.next_attempt_at, queued_job.created_at
-    LIMIT $2
+    LIMIT $3
     FOR UPDATE SKIP LOCKED
 ), claimed AS (
     UPDATE aura.ingestion_jobs job
     SET status = 'running',
-        locked_by = $3,
-        locked_until = now() + $4::interval,
+        locked_by = $4,
+        locked_until = now() + $5::interval,
         attempt_count = attempt_count + 1,
         lease_generation = lease_generation + 1,
         completed_at = NULL,
@@ -58,6 +59,7 @@ ORDER BY claimed.next_attempt_at, claimed.created_at
 
 type ClaimIngestionJobsParams struct {
 	IdentityID    pgtype.UUID     `json:"identity_id"`
+	JobType       pgtype.Text     `json:"job_type"`
 	BatchSize     int32           `json:"batch_size"`
 	LockedBy      pgtype.Text     `json:"locked_by"`
 	LeaseDuration pgtype.Interval `json:"lease_duration"`
@@ -87,9 +89,17 @@ type ClaimIngestionJobsRow struct {
 	LeaseGeneration    int64              `json:"lease_generation"`
 }
 
+// job_type is an OPTIONAL filter (sqlc.narg): NULL (the document ingestion
+// worker's own call) claims across every job_type exactly as before this
+// filter was added -- zero behavior change for that caller. A non-NULL value
+// (the swarm delegation claim loop, job_type='swarm_delegation') scopes the
+// claim so a background-delegation claim loop and the document ingestion
+// worker can run concurrently against the SAME table without ever stealing
+// each other's lease (Phase 51, SWARM-09).
 func (q *Queries) ClaimIngestionJobs(ctx context.Context, arg ClaimIngestionJobsParams) ([]ClaimIngestionJobsRow, error) {
 	rows, err := q.db.Query(ctx, claimIngestionJobs,
 		arg.IdentityID,
+		arg.JobType,
 		arg.BatchSize,
 		arg.LockedBy,
 		arg.LeaseDuration,

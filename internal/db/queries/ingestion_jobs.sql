@@ -24,11 +24,19 @@ ON CONFLICT (identity_id, job_type, idempotency_key) DO UPDATE
 SET updated_at = now()
 RETURNING *;
 -- name: ClaimIngestionJobs :many
+-- job_type is an OPTIONAL filter (sqlc.narg): NULL (the document ingestion
+-- worker's own call) claims across every job_type exactly as before this
+-- filter was added -- zero behavior change for that caller. A non-NULL value
+-- (the swarm delegation claim loop, job_type='swarm_delegation') scopes the
+-- claim so a background-delegation claim loop and the document ingestion
+-- worker can run concurrently against the SAME table without ever stealing
+-- each other's lease (Phase 51, SWARM-09).
 WITH candidates AS (
     SELECT queued_job.id, queued_job.status AS prior_status
     FROM aura.ingestion_jobs queued_job
     WHERE queued_job.identity_id = sqlc.arg(identity_id)
       AND queued_job.attempt_count < queued_job.max_attempts
+      AND (sqlc.narg(job_type)::text IS NULL OR queued_job.job_type = sqlc.narg(job_type)::text)
       AND (
         (queued_job.status = 'queued' AND queued_job.next_attempt_at <= now()
          AND (queued_job.locked_until IS NULL OR queued_job.locked_until < now()))

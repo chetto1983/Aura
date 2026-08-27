@@ -41,6 +41,17 @@ type RunConfig struct {
 	// headless swarm-child dispatch is enforced and keyed on the ORIGINATING
 	// conversation UUID (ConvID), never the flat worker session (Open Q1). nil is a no-op.
 	Gateway *gateway.Gateway
+
+	// IdentityID/ParentRunID/Enqueuer are the SWARM-03/09 background-delegation
+	// seam (delegation_queue.go). A nil Enqueuer means "no background path
+	// configured" and Run falls through to the synchronous waves below byte-for-
+	// byte unchanged -- every existing caller (RunnerAdapter, swarm-demo) that
+	// does not set these three fields keeps today's behavior with zero
+	// regression. IdentityID scopes the durable queue row; ParentRunID is
+	// carried into the payload for provenance only (runChild does not read it).
+	IdentityID  string
+	ParentRunID string
+	Enqueuer    *DelegationEnqueuer
 }
 
 // Run fans goals out as LlmAgent workers in budget-bounded leak-safe waves, isolates
@@ -53,6 +64,24 @@ type RunConfig struct {
 func Run(ctx context.Context, rc RunConfig, goals []string) (string, error) {
 	if msg, ok := preflight(rc, goals); !ok {
 		return msg, nil
+	}
+
+	// SWARM-03/SWARM-09: a top-level call (depth<=1, D-04's flat-v1 top level;
+	// see delegation_queue.go's RunConfig doc) with a configured Enqueuer stops
+	// holding the operator's turn hostage -- it durably enqueues one row per
+	// goal (D-01, no new table) and returns a model-readable "queued" summary
+	// IMMEDIATELY. No worker is constructed here; the daemon-resident
+	// DelegationClaimLoop (delegation_queue.go, wired at cmd/aura) runs them out
+	// of band and delivers the consolidated report via the shipped steer rail
+	// (D-04). depth>1 (a future nested/worker-issued delegation, SWARM-04,
+	// expanded in plan 51-05) is UNTOUCHED -- it always runs the synchronous
+	// waves below, regardless of whether an Enqueuer happens to be configured.
+	if rc.Enqueuer != nil && rc.Depth <= 1 {
+		return EnqueueDelegation(ctx, rc.Enqueuer, rc.IdentityID, goals, DelegationPayload{
+			ConversationID: rc.ConvID,
+			ParentRunID:    rc.ParentRunID,
+			Depth:          rc.Depth,
+		})
 	}
 
 	// AG-038: atomically RESERVE the parent's post-swarm synthesis budget before the

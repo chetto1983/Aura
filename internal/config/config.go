@@ -96,6 +96,14 @@ type Config struct {
 	SwarmChildTimeoutSec int // AURA_SWARM_CHILD_TIMEOUT_SEC — per-child wall-clock deadline (D-11)
 	MaxSwarmConcurrent   int // AURA_SWARM_MAX_CONCURRENT — wave width; goals beyond this run in sequential waves (D-12)
 
+	// Phase 51 (durable delegation) background-queue knobs. The lease default
+	// (300s) is deliberately LARGER than the measured effective worst-case
+	// worker lifetime (SwarmChildTimeoutSec + AURA_LLM_TOTAL_TIMEOUT_SEC =
+	// 240s, D-03/spike 099), never the nominal 120s alone, so a live worker's
+	// lease can never be reclaimed out from under it.
+	SwarmDelegationLeaseSec int // AURA_SWARM_DELEGATION_LEASE_SEC — durable delegation row lease duration
+	SwarmDelegationPollSec  int // AURA_SWARM_DELEGATION_POLL_SEC — claim-loop poll interval
+
 	// Scheduler agent_job wall-clock (#53/D-42). The 120s swarm-child analog starved
 	// real artifact jobs (a North-Star-class xlsx run measures 150-360s live); the
 	// serve composition root passes this into AgentDeps.MaxDuration.
@@ -419,6 +427,9 @@ func loadBase() *Config {
 		MaxSwarmGoals:        envutil.IntDefault("AURA_SWARM_MAX_GOALS", 8),
 		SwarmChildTimeoutSec: envutil.IntDefault("AURA_SWARM_CHILD_TIMEOUT_SEC", 120),
 		MaxSwarmConcurrent:   envutil.IntDefault("AURA_SWARM_MAX_CONCURRENT", 4),
+
+		SwarmDelegationLeaseSec: envutil.IntDefault("AURA_SWARM_DELEGATION_LEASE_SEC", 300),
+		SwarmDelegationPollSec:  envutil.IntDefault("AURA_SWARM_DELEGATION_POLL_SEC", 2),
 
 		AgentJobMaxDurationSec: envutil.IntDefault("AURA_AGENT_JOB_MAX_DURATION_SEC", 600),
 
