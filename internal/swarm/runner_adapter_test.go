@@ -2,6 +2,7 @@ package swarm
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent"
@@ -79,31 +80,98 @@ func TestRunnerAdapterWorkerRegistryExcludesSwarmSpawn(t *testing.T) {
 	}
 }
 
-// fakeDelegationStore is a minimal in-memory DelegationJobStore double: only
-// Create is exercised by this test (background enqueue never claims/transitions
-// in the same call), so the rest just record they were never invoked.
+// fakeDelegationStore is an in-memory DelegationJobStore double shared by the
+// enqueue tests here and the claim-loop tests in delegation_queue_unit_test.go.
+// Every method returns a plausible row by default so a test that does not care
+// about a leg can ignore it; the claim/error fields let a test drive one specific
+// branch without a database. Zero value = "Create works, Claim returns nothing",
+// which is exactly what the background-enqueue tests need.
+// It is mutex-guarded because the claim loop's heartbeat runs on its own
+// goroutine while the test observes the store -- the same reason routerClient
+// above is goroutine-safe. Read the counters through the accessors, never the
+// fields, or -race will (correctly) call it.
 type fakeDelegationStore struct {
+	mu      sync.Mutex
 	created []documents.CreateIngestionJobRequest
+
+	claimJobs  []documents.IngestionJob
+	claimErr   error
+	claimCalls int
+
+	transitions  []documents.TransitionIngestionJobRequest
+	transitErr   error
+	retries      []documents.RetryIngestionJobRequest
+	heartbeats   []documents.HeartbeatIngestionJobRequest
+	heartbeatErr error
+}
+
+func (s *fakeDelegationStore) claimCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.claimCalls
+}
+
+func (s *fakeDelegationStore) heartbeatCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.heartbeats)
+}
+
+func (s *fakeDelegationStore) transitionsSnapshot() []documents.TransitionIngestionJobRequest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]documents.TransitionIngestionJobRequest(nil), s.transitions...)
+}
+
+func (s *fakeDelegationStore) retriesSnapshot() []documents.RetryIngestionJobRequest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]documents.RetryIngestionJobRequest(nil), s.retries...)
 }
 
 func (s *fakeDelegationStore) Create(_ context.Context, req documents.CreateIngestionJobRequest) (documents.IngestionJob, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.created = append(s.created, req)
 	return documents.IngestionJob{ID: "job-" + req.IdempotencyKey, IdentityID: req.IdentityID, JobType: req.JobType}, nil
 }
 
 func (s *fakeDelegationStore) Claim(context.Context, documents.ClaimIngestionJobsRequest) ([]documents.IngestionJob, error) {
-	return nil, nil
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.claimCalls++
+	if s.claimErr != nil {
+		return nil, s.claimErr
+	}
+	jobs := s.claimJobs
+	s.claimJobs = nil // a second pass claims nothing, as a drained queue would
+	return jobs, nil
 }
 
 func (s *fakeDelegationStore) UpdateStatus(_ context.Context, req documents.TransitionIngestionJobRequest) (documents.IngestionJob, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.transitions = append(s.transitions, req)
+	if s.transitErr != nil {
+		return documents.IngestionJob{}, s.transitErr
+	}
 	return documents.IngestionJob{ID: req.JobID, Status: req.Status}, nil
 }
 
 func (s *fakeDelegationStore) Retry(_ context.Context, req documents.RetryIngestionJobRequest) (documents.IngestionJob, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.retries = append(s.retries, req)
 	return documents.IngestionJob{ID: req.JobID, Status: "queued"}, nil
 }
 
 func (s *fakeDelegationStore) Heartbeat(_ context.Context, req documents.HeartbeatIngestionJobRequest) (documents.IngestionJob, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.heartbeats = append(s.heartbeats, req)
+	if s.heartbeatErr != nil {
+		return documents.IngestionJob{}, s.heartbeatErr
+	}
 	return documents.IngestionJob{ID: req.JobID, Status: "running"}, nil
 }
 
