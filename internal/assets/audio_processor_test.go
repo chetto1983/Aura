@@ -173,6 +173,13 @@ func TestAudioProcessorRecoversOnRetry(t *testing.T) {
 	}
 }
 
+func TestTranscribeAudioForRetrievalRejectsMissingClient(t *testing.T) {
+	_, err := TranscribeAudioForRetrieval(context.Background(), nil, []byte("audio"), "voice.ogg", "ogg", nil)
+	if err == nil || !strings.Contains(err.Error(), "STT client is not configured") {
+		t.Fatalf("missing STT client error = %v, want configuration error", err)
+	}
+}
+
 // TestAudioFormat locks the exported container→STT-format map (37C-02): the
 // ";codecs=" media-type parameter a browser MediaRecorder emits is stripped
 // before the switch, so "audio/webm;codecs=opus" maps to "webm" (not the "ogg"

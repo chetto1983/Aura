@@ -21,11 +21,15 @@ func decodeVisionReq(t *testing.T, r *http.Request) visionChatRequest {
 }
 
 func TestVisionLocalRouteNoAuth(t *testing.T) {
-	var gotAuth, gotPath, gotModel string
+	var gotAuth, gotPath, gotModel, gotDataURL string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		gotPath = r.URL.Path
-		gotModel = decodeVisionReq(t, r).Model
+		req := decodeVisionReq(t, r)
+		gotModel = req.Model
+		if len(req.Messages) == 1 && len(req.Messages[0].Content) == 2 && req.Messages[0].Content[1].ImageURL != nil {
+			gotDataURL = req.Messages[0].Content[1].ImageURL.URL
+		}
 		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"a cat"}}]}`)
 	}))
 	defer srv.Close()
@@ -35,7 +39,7 @@ func TestVisionLocalRouteNoAuth(t *testing.T) {
 		LocalModel:   "local-vl",
 		HTTPClient:   srv.Client(),
 	})
-	out, err := c.Describe(t.Context(), []byte("img"), "image/png", "Describe this image.")
+	out, err := c.Describe(t.Context(), []byte("img"), "", "Describe this image.")
 	if err != nil {
 		t.Fatalf("Describe: %v", err)
 	}
@@ -50,6 +54,9 @@ func TestVisionLocalRouteNoAuth(t *testing.T) {
 	}
 	if gotModel != "local-vl" {
 		t.Errorf("model = %q, want local-vl", gotModel)
+	}
+	if !strings.HasPrefix(gotDataURL, "data:application/octet-stream;base64,") {
+		t.Errorf("empty MIME data URL = %q, want application/octet-stream fallback", gotDataURL)
 	}
 }
 
