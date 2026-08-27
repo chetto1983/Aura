@@ -8755,3 +8755,38 @@ flusso completo, che funziona.
 > authorize switching fusion strategies. The 20-query corpus remains a deterministic
 > regression fixture, not a statistical population. This refinement closes ambiguity in
 > the evidence contract; it does not close the separately visible recall-quality debt.
+
+## §The document-eval concern closes only at the 0.750 target (Amendment #158, 2026-08-27)
+
+> **Amendment #158 (2026-08-27 — operator decision and implementation contract;
+> supersedes Amendment #157's proposal to close the gate at the measured 0.550
+> non-regression baseline).**
+>
+> The 0.550 measurement remains the honest red baseline, but it is not an acceptable
+> closure result. The executable-evidence concern closes only when the shipped production
+> retrieval profile measures **R@1 >= 0.750** on the owned 20-query corpus. The report may
+> retain separate baseline and target fields for diagnostic continuity, but the release
+> verdict fails while `target_met` is false.
+>
+> **Inventory-backed correction path.** The reconciler already writes one
+> `IndexedDocument` card per object beside its passages, with full-text indexes over the
+> card and split filename. The production retriever already queries that card leg. The
+> current `rankDocuments` ordering nevertheless gives every fused passage result absolute
+> precedence and starts card-only results after the final passage, so a relevant card can
+> fill a missing document but cannot repair a wrong passage order. No new metadata store,
+> reranker service, corpus or dependency is authorized. Measure a document-level
+> rank-only fusion of the existing engine-fused passage ranking and existing card ranking;
+> change production ordering only if that exact candidate reaches the target without
+> degrading tenancy, citations, openability or the documented card-only fallback.
+>
+> A ranking change bumps `ProductionRetrievalProfile` so stored citation evidence remains
+> attributable to the ordering that produced it. Deterministic tests must cover a card
+> repairing a passage mis-rank, a passage-only and card-only document, stable tie-breaking,
+> deduplication, and unchanged degradation behavior. The live report must score the full
+> `HostRetriever` path rather than calling `FusedCandidates` with `cards=nil` and claiming
+> production equivalence.
+>
+> **What this amendment does NOT authorize.** It does not relabel additional documents as
+> gold, tune on hidden operator data, switch the engine fusion strategy, or add an LLM
+> reranker. A diagnostic composition that remains below 0.750 is rejected rather than
+> shipped, and the 0.550 baseline is never presented as a passing release floor.
