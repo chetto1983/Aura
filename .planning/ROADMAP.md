@@ -579,12 +579,12 @@ lands squarely on the memory correctness Phase 45 and 49 just established.
   4. A worker that needs the operator surfaces the question in the operator's channel, naming which worker raised it, and answering it resumes that worker's line of work.
   5. After a live fan-out where several workers each learn something durable, the graph holds one correctly-attributed fact per worker — no duplicates, no lost writes, no fact attributed to the parent.
 
-**Plans**: 11 plans in 6 waves
+**Plans**: 1/11 plans executed in 6 waves
 
 Plans:
 **Wave 1**
 
-- [ ] 51-01-PLAN.md — TRACER: durable delegation enqueue + claim loop + worker-envelope delivery (SWARM-03, SWARM-09) — wave 1
+- [x] 51-01-PLAN.md — TRACER: durable delegation enqueue + claim loop + worker-envelope delivery (SWARM-03, SWARM-09) — wave 1
 - [ ] 51-04-PLAN.md — Host-derived fact provenance, worker supersede refusal, concurrent fan-out proof (SWARM-07) — wave 1
 
 **Wave 2** *(blocked on Wave 1 completion)*
@@ -756,7 +756,7 @@ replay; the skill is now permanent surface, not a compensating workaround awaiti
 | 46. MCP trust and facade | 9/9 | Complete — 7 executed, 46-08 no-go, 46-09 operator-closed | 2026-08-25 |
 | 49. Memory tiers | 0/TBD | Not started | - |
 | 50. Context ladder legibility | 0/TBD | Not started | - |
-| 51. Durable delegation | 0/TBD | Not started | - |
+| 51. Durable delegation | 1/11 | In Progress|  |
 | 52. Mid-turn steering | 7/8 | In Progress|  |
 | 54. Milestone exit | 0/TBD | Not started | - |
 

@@ -5,15 +5,15 @@ current_phase: 51
 current_phase_name: Durable delegation
 status: executing
 stopped_at: Phase 51 context gathered; design-gate spike is the next action
-last_updated: "2026-08-27T09:25:16.181Z"
-last_activity: 2026-08-25
-last_activity_desc: Phase 52 execution resumed (wave continue)
-state_head: 4eac0a97371d58c153babc7ecc7b37cdefb0352c
+last_updated: "2026-08-27T12:06:01.056Z"
+last_activity: 2026-08-27
+last_activity_desc: Phase 51 execution started
+state_head: 177652e722005bb5fd215f9bc9c3b951906129ed
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 45
-  completed_plans: 34
+  completed_plans: 35
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -24,13 +24,13 @@ milestone_name: HERMES-CLAUDE_PARITY
 See: .planning/PROJECT.md (updated 2026-08-05)
 
 **Core value:** When Aura says she did something, she did it — and she can find what she knew.
-**Current focus:** Phase 52 — Mid-turn steering
+**Current focus:** Phase 51 — Durable delegation
 
 ## Current Position
 
-Phase: 51 (Durable delegation) — READY TO EXECUTE
+Phase: 51 (Durable delegation) — EXECUTING
 (corrected against hermes before any code existed), and every prerequisite was verified present.
-Status: Ready to execute
+Status: Executing Phase 51
 
 **The roadmap shrank on 2026-08-25 (operator decision).** Phases **47** (tool-surface ceremony
 strip), **48** (un-defer and merges) and **53** (summarization spike) are DELETED, not annotated —
@@ -49,7 +49,7 @@ plainly:** the MCP-01 distrust-framing and MCP-03 `TrustTrusted` tripwire tests 
 
 Prior status (Phase 46 execution):
 Phase 46 discussion are recorded in `46-CONTEXT.md` D-10..D-16 and in ROADMAP §45.1.
-Last activity: 2026-08-25 — Phase 52 execution resumed (wave continue)
+Last activity: 2026-08-27 — Phase 51 execution started
 failure is closed: a bridged tool never set `Multiplexed`, so `classify` gave ONE flat tier to the
 whole merged tool — `calendar(action=list_calendars)` and `calendar(action=send_email)` scored
 identically, with no panic to warn anyone. Now `bridge.go:211` sets `spec.Multiplexed =
@@ -117,6 +117,7 @@ Progress: [████████░░] 82%
 | Phase 46 P02 | 55min | 2 tasks | 1 files |
 | Phase 46 P05 | 180min | 2 tasks | 9 files (external repo) |
 | Phase 46 P06 | 145min | 3 tasks | 12 files |
+| Phase 51-durable-delegation P01 | 5h | 3 tasks | 19 files |
 
 ## Accumulated Context
 
@@ -200,6 +201,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 52]: 52-02 delivers a steer by appending it AFTER the closing </tool_output> of the last tool-result message, behind a nonce marker minted by trust.go's existing toolOutputNonce() -- there remains exactly one nonce minter in internal/agent
 - [Phase 52]: 52-02's GREEN commit for Task 2 (60836960e) carries the steer drain implementation (llm_agent.go, llm_agent_steer.go, trust.go) but its SUBJECT describes only a bundled Rule-3 lint unblock; the message misrepresents the diff. Left unrewritten deliberately: a concurrent session pushed ad0bee571 and merge 18231becc around it, and rewriting shared history another session may have pulled is worse than a wrong subject line. Recorded here so a later `git log --grep=steer` miss is explainable
 - [Phase 46]: 46-05 deleted the 14 orphaned MSTest files (2062 LOC) for the deleted raw tool classes rather than porting them to `CalendarActionTool` — no replacement unit coverage was written for the merged tool in this plan; flagged as a known gap/follow-up, not silently absorbed
+- [Phase 51]: 51-01: minted a new idempotency.ScopeSwarmDelegation trusted root for the daemon-resident delegation claim loop, mirroring the scheduler's own root-minting pattern
+- [Phase 51]: 51-01: scoped IngestionJobWorker.JobType per typed worker after live driving surfaced a cross-worker claim race between asset-processing and swarm delegation
 
 ### Pending Todos
 
@@ -262,7 +265,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-26T17:58:22.565Z
+Last session: 2026-08-27T11:58:57.132Z
 Stopped at: Phase 51 context gathered; design-gate spike is the next action
 exited at its CONTEXT.md gate — Phase 45 has no CONTEXT.md, and discuss-phase must run as a
 top-level command (nested invocation breaks AskUserQuestion, GSD #1009). No phase directory
