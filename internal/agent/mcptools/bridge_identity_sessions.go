@@ -24,6 +24,17 @@ type identitySessionEntry struct {
 // identitySessionPool keeps one SDK session per OAuth subject behind one global
 // tool manifest. Each child restores its token through the existing grant store;
 // the parent never owns a bearer and cannot accidentally share one across users.
+//
+// D-10 (Phase 51): the map key is identity+actor, not bare identity, but only a
+// WORKER dispatch diverges it (actorSessionKey) -- the operator's own turns
+// keep sharing one session, unchanged in cost, while a swarm worker gets its
+// own dedicated session for the run it belongs to. Every session's outbound
+// requests ALSO carry the calling actor as a per-request header
+// (mcp.SessionOptions.HeaderFunc, wired in mount.go's connect closures) --
+// that mechanism, not the key split, is what makes even the shared parent
+// session's header accurate call to call; the key split is an additional,
+// narrower isolation measure for the specific hazard SWARM-07/D-10 exists to
+// close (a worker's write being misattributed), not the whole fix.
 type identitySessionPool struct {
 	parent     *MountedServer
 	connect    openSessionFunc
@@ -46,9 +57,14 @@ func (p *identitySessionPool) openInitial(ctx context.Context) (*sdkmcp.ClientSe
 	if owner == "" {
 		return nil, nil, errMissingRemoteIdentity
 	}
+	// Mount time: no real turn is active yet, so actorFromContext's RunID is
+	// "" and actorSessionKey collapses to the bare identity -- identical to
+	// this pool's pre-D-10 behavior. The key only diverges once server(ctx)
+	// is reached during a genuine worker dispatch.
+	key := actorSessionKey(owner, actorFromContext(ctx))
 	entry := &identitySessionEntry{ready: make(chan struct{})}
 	p.mu.Lock()
-	p.entries[owner] = entry
+	p.entries[key] = entry
 	p.mu.Unlock()
 
 	child, session, advertised, err := p.open(ctx, owner)
@@ -56,7 +72,7 @@ func (p *identitySessionPool) openInitial(ctx context.Context) (*sdkmcp.ClientSe
 	close(entry.ready)
 	if err != nil {
 		p.mu.Lock()
-		delete(p.entries, owner)
+		delete(p.entries, key)
 		p.mu.Unlock()
 		return nil, nil, err
 	}
@@ -68,27 +84,30 @@ func (p *identitySessionPool) server(ctx context.Context) (*MountedServer, error
 	if owner == "" {
 		return nil, errMissingRemoteIdentity
 	}
+	key := actorSessionKey(owner, actorFromContext(ctx))
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
 		return nil, errIdentitySessionPoolClosed
 	}
-	entry, ok := p.entries[owner]
+	entry, ok := p.entries[key]
 	if !ok {
 		entry = &identitySessionEntry{ready: make(chan struct{})}
-		p.entries[owner] = entry
+		p.entries[key] = entry
 	}
 	p.mu.Unlock()
 
 	if !ok {
 		handshakeCtx, cancel := context.WithTimeout(ctx, defaultMCPRedialTimeout)
+		// open still authenticates as owner (the real identity): the key split
+		// is a client-side session bucket, never a second tenant selection.
 		child, _, _, err := p.open(handshakeCtx, owner)
 		cancel()
 		entry.server, entry.err = child, err
 		close(entry.ready)
 		if err != nil {
 			p.mu.Lock()
-			delete(p.entries, owner)
+			delete(p.entries, key)
 			p.mu.Unlock()
 		}
 	}

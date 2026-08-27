@@ -121,6 +121,12 @@ func mountManagedHTTPHost(processCtx, handshakeCtx context.Context, reg *tools.R
 		o.Sending = sendingMiddleware(policy, identityctx.IdentityID(hctx))
 		o.Elicitation = elicit
 		o.OAuth = opts.OAuth
+		// D-10 (Phase 51): only an identity-scoped mount (the memory/arcadedb-mcp
+		// surface today) needs the host-derived actor on the wire at all -- gated
+		// the same way sendingMiddleware already gates identity binding.
+		if policy.identityScoped {
+			o.HeaderFunc = actorHeaderFunc
+		}
 		return mcp.OpenSDKSession(hctx, name, server, opts.Egress, o)
 	}
 	if policy.identityScoped {
