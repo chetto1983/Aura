@@ -129,3 +129,10 @@ func TestImageProcessorCapsRetrievalText(t *testing.T) {
 		t.Fatalf("retrieval text runes = %d, want hard cap 4096", got)
 	}
 }
+
+func TestDescribeImageForRetrievalRejectsMissingClient(t *testing.T) {
+	_, err := DescribeImageForRetrieval(context.Background(), nil, []byte("image"), "image/png")
+	if err == nil || !strings.Contains(err.Error(), "vision client is not configured") {
+		t.Fatalf("missing vision client error = %v, want configuration error", err)
+	}
+}
