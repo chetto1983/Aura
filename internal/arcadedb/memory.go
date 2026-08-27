@@ -285,7 +285,7 @@ func (c *Client) UpsertFact(ctx context.Context, fact Fact, now time.Time) (Fact
 			statement = upsertTypedEntityStatement
 			params["kind"] = entity.kind
 		}
-		if _, err := c.Command(ctx, statement, params); err != nil {
+		if _, err := c.upsertEntityWithRetry(ctx, statement, params); err != nil {
 			return FactWrite{}, fmt.Errorf("arcadedb: upsert entity %q: %w", entity.name, err)
 		}
 	}
@@ -341,11 +341,8 @@ func (c *Client) UpsertFact(ctx context.Context, fact Fact, now time.Time) (Fact
 		params["embedding"] = vector
 		statement += createFactEmbeddingClause
 	}
-	if _, err := c.Command(ctx, statement, params); err != nil {
-		if attached, attachErr := c.attachFactSource(ctx, factKey, fact.Source, now); attachErr == nil && attached {
-			return written, nil
-		}
-		return FactWrite{}, fmt.Errorf("arcadedb: create fact: %w", err)
+	if err := c.createFactWithRetry(ctx, statement, params, factKey, fact.Source, now); err != nil {
+		return FactWrite{}, err
 	}
 	return written, nil
 }

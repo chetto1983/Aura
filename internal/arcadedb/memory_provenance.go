@@ -318,18 +318,76 @@ func sourcesParam(sources []FactSource) []map[string]any {
 	return out
 }
 
+// attachFactSource attaches source to the fact identified by factKey,
+// merging it into that fact's existing sources rather than creating a
+// duplicate edge (D-09). It retries a bounded number of times on a genuine
+// concurrent-write conflict -- see attachFactSourceOnce's doc comment for
+// what that conflict looks like and why a blind single write cannot detect
+// it.
 func (c *Client) attachFactSource(
 	ctx context.Context,
 	factKey string,
 	source FactSource,
 	now time.Time,
 ) (bool, error) {
+	for attempt := 0; attempt <= maxWriteConflictRetries; attempt++ {
+		attached, conflict, err := c.attachFactSourceOnce(ctx, factKey, source, now)
+		if err != nil {
+			return false, err
+		}
+		if !conflict {
+			return attached, nil
+		}
+		time.Sleep(writeConflictBackoff(attempt + 1))
+	}
+	return false, fmt.Errorf("arcadedb: attach fact source: too many concurrent writers for fact_key %q", factKey)
+}
+
+func sourceEqual(a, b FactSource) bool {
+	return a.RunID == b.RunID && slices.Equal(a.MemoryIDs, b.MemoryIDs)
+}
+
+// attachFactSourceOnce is ONE read-merge-write attempt, guarded by a
+// compare-and-swap on the `sources` property itself.
+//
+// A blind "UPDATE ... SET sources = :sources WHERE @rid = :rid" overwrites
+// the whole property, not a per-element append, so two goroutines both
+// attaching a DIFFERENT source to the SAME fact at the same moment can both
+// read the same "existing" list, both compute a merge that includes their
+// own addition, and both write -- the second write silently discards the
+// first goroutine's contribution (a lost update). Measured live under this
+// phase's concurrent fan-out test (51-04,
+// TestConcurrentWorkerFactWriteSameContentMergesIntoOneFact): 8 concurrent
+// attaches to one fact produced 4-5 surviving sources, not 8, with the
+// blind write.
+//
+// ArcadeDB exposes no `@version` column to condition on (verified live:
+// `SELECT @version FROM FACT` is a parse error on this server, unlike
+// OrientDB's SQL dialect it otherwise follows), but a WHERE clause
+// comparing a LIST OF MAP property for structural equality DOES work
+// (verified live against the same server: a matching value updates and
+// returns count 1, a stale one updates nothing and returns count 0). So the
+// write is conditioned on `sources` still equalling exactly what this call
+// just read -- `rawExisting` is passed back to the WHERE clause verbatim,
+// not rebuilt from FactSource structs, so the comparison is byte-for-bit
+// against the actual wire value and immune to any drift in how this
+// package would re-serialize it (e.g. a legacy fact with no writer_role
+// key at all, vs. one written with the key present and empty).
+func (c *Client) attachFactSourceOnce(
+	ctx context.Context,
+	factKey string,
+	source FactSource,
+	now time.Time,
+) (attached bool, conflict bool, err error) {
 	params := map[string]any{"fact_key": factKey, "now": now.UTC().Format(time.RFC3339Nano)}
 	if _, err := c.Command(ctx,
 		"UPDATE "+factEdgeType+" SET fact_key = NULL WHERE fact_key = :fact_key AND "+
 			"(expired_at IS NOT NULL OR (valid_to IS NOT NULL AND valid_to <= :now))",
 		params); err != nil {
-		return false, fmt.Errorf("arcadedb: release expired fact identity: %w", err)
+		if isTransientWriteConflict(err) {
+			return false, true, nil
+		}
+		return false, false, fmt.Errorf("arcadedb: release expired fact identity: %w", err)
 	}
 	rows, err := c.Query(ctx,
 		"SELECT @rid AS rid, sources FROM "+factEdgeType+
@@ -337,25 +395,37 @@ func (c *Client) attachFactSource(
 			"(valid_to IS NULL OR valid_to > :now) LIMIT 1",
 		params)
 	if err != nil {
-		return false, fmt.Errorf("arcadedb: find exact fact: %w", err)
+		return false, false, fmt.Errorf("arcadedb: find exact fact: %w", err)
 	}
 	if len(rows) == 0 {
-		return false, nil
+		return false, false, nil
 	}
 	rid := rowString(rows[0], "rid")
 	if rid == "" {
-		return false, fmt.Errorf("arcadedb: exact fact result has no RID")
+		return false, false, fmt.Errorf("arcadedb: exact fact result has no RID")
 	}
-	existing := factSources(rows[0]["sources"])
+	rawExisting := rows[0]["sources"]
+	existing := factSources(rawExisting)
 	merged := mergeFactSources(existing, source)
-	if slices.EqualFunc(existing, merged, func(a, b FactSource) bool {
-		return a.RunID == b.RunID && slices.Equal(a.MemoryIDs, b.MemoryIDs)
-	}) {
-		return true, nil
+	if slices.EqualFunc(existing, merged, sourceEqual) {
+		return true, false, nil
 	}
-	if _, err := c.Command(ctx, "UPDATE "+factEdgeType+" SET sources = :sources WHERE @rid = :rid",
-		map[string]any{"sources": sourcesParam(merged), "rid": rid}); err != nil {
-		return false, fmt.Errorf("arcadedb: attach fact source: %w", err)
+	updated, err := c.Command(ctx,
+		"UPDATE "+factEdgeType+" SET sources = :sources WHERE @rid = :rid AND sources = :expected",
+		map[string]any{"sources": sourcesParam(merged), "rid": rid, "expected": rawExisting})
+	if err != nil {
+		// A page-level conflict here (the same "Slot rebase ... please
+		// retry" class createFactWithRetry handles) is just as retryable
+		// as a CAS that ran but matched zero rows below -- both mean
+		// "someone else's write is contending for this exact record right
+		// now," not "this write is invalid."
+		if isTransientWriteConflict(err) {
+			return false, true, nil
+		}
+		return false, false, fmt.Errorf("arcadedb: attach fact source: %w", err)
 	}
-	return true, nil
+	if countUpdated(updated) == 0 {
+		return false, true, nil
+	}
+	return true, false, nil
 }
