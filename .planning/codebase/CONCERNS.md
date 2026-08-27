@@ -15,6 +15,8 @@ ones. Amendment #155 and `docs/aura-memory-preload-threat-model.md` now separate
 agent-memory provenance from instruction authority and close the preload poisoning seam.
 Amendments #159 and #161 replace skipped/stale evaluation proxies with executable owned-corpus
 evidence, and the Runner integration wrapper now provisions an isolated reproducible database.
+Amendment #162 bounds the retained OOXML card reader and adds openpyxl-oracle parity for every
+owned workbook; the measurement found and fixed the blank-before-header row-span defect.
 
 ## Severity Summary
 
@@ -33,6 +35,7 @@ evidence, and the Runner integration wrapper now provisions an isolated reproduc
 | Calendar MCP admin-token fallback was removed by identity-scoped OAuth | Medium | Closed 2026-08-26 | `internal/agui/connect_pim_api.go`, `cmd/aura/serve_agui.go`, `compose.yaml` |
 | Opt-in memory preload inserts recalled content into model-visible context with no dedicated poisoning threat model | Medium | Closed 2026-08-27 | `docs/aura-memory-preload-threat-model.md`, `internal/runner/runner_context.go`, `internal/agent/prompt.go` |
 | Test/evaluation evidence contains skipped, stale, flaky, or non-reproducible legs | Medium | Closed 2026-08-27 | `scripts/agent_memory_eval.py`, `scripts/ingest_reconcile_e2e.sh`, `scripts/run_runner_integration.sh` |
+| Manual OOXML parser is a broad custom maintenance surface | Medium | Closed 2026-08-27 | PRD amendment #162, `docs/aura-ooxml-routing-card-boundary.md`, `internal/documents/filecard/corpus_parity_test.go` |
 
 ## Tech Debt
 
@@ -60,11 +63,12 @@ evidence, and the Runner integration wrapper now provisions an isolated reproduc
 - Boundary: 12 package deficits remain named debt rather than being represented as 85%. Docker and ArcadeDB retain independent denominators; no cross-tier percentage is manufactured.
 - Files: `scripts/coverage_gate.sh`, `scripts/coverage_package_gate.py`, `scripts/coverage_package_policy.json`, `scripts/release_readiness_gate.py`, `internal/mcpregistry/store_test.go`, `internal/mcpregistry/store_integration_test.go`.
 
-**Manual OOXML parser is a broad custom maintenance surface:**
-- Issue: `internal/documents/filecard` manually parses ZIP/XML workbook and Office structures across `xlsx.go`, `ooxml.go`, `zip.go`, and `table.go` instead of using a workbook library. The implementation is split under the 600-line cap and well tested, but remains a large protocol parser owned by Aura.
-- Files: `internal/documents/filecard/xlsx.go`, `internal/documents/filecard/ooxml.go`, `internal/documents/filecard/zip.go`, `internal/documents/filecard/table.go`, `internal/documents/filecard/card_test.go`.
-- Impact: uncommon OOXML variants, relationships, cell encodings, and workbook features become Aura-specific compatibility work.
-- Fix approach: inventory the installed/version-pinned library surface before replacing anything; either document measured reasons for retaining the parser or migrate behind the existing `filecard.Build` boundary with corpus parity tests.
+**Closed 2026-08-27 — the manual OOXML surface is a bounded routing-card reader with an independent parity gate:**
+- Boundary: `filecard.Build` emits a lossy 4 KiB ingest routing card under explicit ZIP/XML, sheet, row, column and value caps. Exact workbook work stays on the original file in the LibreOffice/openpyxl/pandas sandbox; the card is not an Excel engine.
+- Inventory and decision: Aura has no Go workbook dependency. Sandbox openpyxl is a separate, currently unpinned runtime surface. The measured oracle is frozen at openpyxl 3.1.5. Current Excelize releases through 2.10.1 carry official advisory GHSA-q5j5-6p94-4gwc for attacker-controlled row-index allocation with no patched release listed, so adopting it for uploaded files would weaken the bounded read boundary.
+- Evidence: all 17 owned XLSX files and 18 sheets are hash-pinned in `ooxml_parity.json`. Before correction, sheet order/name/header/columns matched 18/18 but row span matched only 4/18; all 14 invoice sheets exposed the same blank-before-header +1 bug. The physical-row fix and corpus test now require 18/18 parity for row span and non-empty column counts as well.
+- Residual: macros, charts, external links, formula-heavy files and every producer variant are outside this small corpus. The original remains authoritative, and future compatibility fixes require a fixture plus oracle evidence rather than an unsupported claim of general OOXML coverage.
+- Files: `docs/aura-ooxml-routing-card-boundary.md`, `internal/documents/filecard/xlsx.go`, `internal/documents/filecard/table.go`, `internal/documents/filecard/card_test.go`, `internal/documents/filecard/corpus_parity_test.go`, `scripts/fixtures/document_retrieval_eval/ooxml_parity.json`.
 
 **Closed 2026-08-26 — legacy staged user files were removed:**
 - Resolution: the two recorded `aura-sendfile-*` directories are absent from the run root. The retired prefix no longer exists in source; the active sweeper continues to own only `$AURA_RUN_DIR/tmp/` by design.

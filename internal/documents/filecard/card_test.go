@@ -174,6 +174,26 @@ func TestHeaderIsFoundBelowABannerRow(t *testing.T) {
 	}
 }
 
+func TestWorkbookRowCountUsesPhysicalHeaderPosition(t *testing.T) {
+	path := writeZip(t, "listino.xlsx", map[string]string{
+		"xl/workbook.xml": `<workbook><sheets>` +
+			`<sheet name="Listino" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+		"xl/_rels/workbook.xml.rels": `<Relationships>` +
+			`<Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>`,
+		"xl/worksheets/sheet1.xml": `<worksheet><dimension ref="A1:B4"/><sheetData>` +
+			`<row r="1"><c r="A1" t="inlineStr"><is><t>Listino 2026</t></is></c></row>` +
+			`<row r="3"><c r="A3" t="inlineStr"><is><t>Codice</t></is></c>` +
+			`<c r="B3" t="inlineStr"><is><t>Prezzo</t></is></c></row>` +
+			`<row r="4"><c r="A4" t="inlineStr"><is><t>A1</t></is></c><c r="B4"><v>10</v></c></row>` +
+			`</sheetData></worksheet>`,
+	})
+
+	sheet := build(t, path, "listino.xlsx").Sheets[0]
+	if sheet.Rows != 1 {
+		t.Fatalf("rows after physical header row = %d, want 1", sheet.Rows)
+	}
+}
+
 // When nothing reads as labels the sheet is headerless, and the first data row
 // must survive as data rather than being consumed as column names.
 func TestHeaderlessTableKeepsItsFirstRow(t *testing.T) {

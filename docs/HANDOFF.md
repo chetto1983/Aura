@@ -111,7 +111,7 @@ perché restano aperte» non può in nessun caso far diventare verde quel gate.
 | **6.1e** | `llm.Config.Validate` pretende una finestra > 33.000, quindi **un modello a 32k non fa partire il daemon**. Le riserve sono costanti assolute. | Riserve proporzionali alla finestra. Prova: Qwen a 32.768 parte. |
 | **6.2** | I dump del grafo ci sono, il restore non è mai stato provato. | Un restore eseguito (HTTP, a server acceso, su database che non deve esistere) e `scripts/restore_drill.sh` che non mente più. |
 | **6.3** | `observability_sidecar_check.sh` non è agganciato a niente: né cron, né CI, né Makefile. | Agganciato al cron di Aura, che ha già `ReschedulesOnRecovery` e manda alert su Telegram. |
-| **6.5** | `filecard` scrive OOXML a mano (712 LOC) e `excelize` non è nemmeno in `go.mod`. | Sostituzione, o la ragione misurata per non farla. |
+| **6.5** | **CHIUSO 2026-08-27.** `filecard` resta un card reader OOXML limitato, non il lettore autorevole. | Amendment #162, oracle openpyxl 3.1.5 su 17 file/18 fogli, fix del conteggio fisico e gate 18/18. |
 | **6.6** | «che documenti ho caricato?» non ha niente da chiamare: `cmd/aura/docs.go:201-217` elenca job di ingest, non il catalogo. | Un verbo che risponde alla domanda. |
 | **6.7** | Immagini e audio non hanno una famiglia propria — `services/ingest/app.py:275-282` lo dichiara come seam lasciato aperto. | Famiglia, o seam chiuso dichiarando che non serve. |
 | **§5** | Resta da **misurare**, non da dedurre, se dei 2.012 LOC di `internal/documents` serva rimuovere ancora. | Un conteggio di chiamanti, non una stima. |
@@ -413,8 +413,13 @@ quattro file ha prodotto **Q3 = 862.523 €, esatto**, aprendoli tutti e quattro
 **Cosa questo NON dimostra:** non refuta #119, il cui caso era un corpus di 130 documenti con 75 CSV.
 Dice solo che a questa scala il consumatore non serve.
 
-**6.5 — filecard scrive OOXML a mano** (`xlsx.go` 442 LOC, `ooxml.go` 270) mentre `excelize` non è
-nemmeno in `go.mod`. *Confidenza: alta.*
+**6.5 — CHIUSO: `filecard` mantiene il reader OOXML limitato.** La misura openpyxl 3.1.5 sui 17
+XLSX posseduti ha trovato nomi/ordine/header/colonne corretti su 18/18 fogli ma il conteggio righe
+corretto solo su 4/18: una riga vuota prima dell'header faceva +1 in tutte le 14 fatture. Il fix
+usa la posizione fisica dell'header e il test del corpus ora pretende 18/18, inclusi hash e valori
+non vuoti per colonna. Non si adotta Excelize <=2.10.1: GHSA-q5j5-6p94-4gwc riguarda proprio
+allocazioni da indici di riga controllati dal file e non elenca una release corretta. Il confine,
+le cap e ciò che il corpus non prova sono in `docs/aura-ooxml-routing-card-boundary.md`.
 
 **6.6 — `"che documenti ho caricato?"` non ha niente da chiamare.** Solo `document_search` e
 `document_open` sono registrati; `cmd/aura/docs.go:201-217` elenca **job di ingest**, non il

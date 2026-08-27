@@ -240,6 +240,7 @@ func readWorksheet(file *zip.File, name string, shared []string) (Sheet, bool, e
 	table := newTable(name)
 	decoder := xml.NewDecoder(body)
 	declaredRows := int64(0)
+	physicalRow := int64(0)
 	rows := 0
 	capped := false
 	for {
@@ -268,8 +269,9 @@ func readWorksheet(file *zip.File, name string, shared []string) (Sheet, bool, e
 			if err != nil {
 				break
 			}
+			physicalRow = worksheetRowPosition(start, physicalRow+1)
 			rows++
-			table.addRow(values)
+			table.addRowAt(values, physicalRow)
 		}
 		if capped {
 			break
@@ -277,6 +279,20 @@ func readWorksheet(file *zip.File, name string, shared []string) (Sheet, bool, e
 	}
 	sheet := table.done(declaredRows)
 	return sheet, capped && sheet.Rows > int64(sheet.RowsScanned), nil
+}
+
+func worksheetRowPosition(element xml.StartElement, fallback int64) int64 {
+	for _, attr := range element.Attr {
+		if attr.Name.Local != "r" {
+			continue
+		}
+		position, err := strconv.ParseInt(attr.Value, 10, 64)
+		if err == nil && position > 0 {
+			return position
+		}
+		break
+	}
+	return fallback
 }
 
 // readRow consumes one <row>, returning its cells positioned by their column

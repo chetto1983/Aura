@@ -28,12 +28,14 @@ type tableBuilder struct {
 	headers  []string
 	columns  []*columnStats
 
-	probe       [][]string
-	headerFound bool
-	rowsScanned int
+	probe          [][]string
+	probePositions []int64
+	headerFound    bool
+	headerRow      int64
+	rowsScanned    int
 	// rowsSkipped counts the leading rows that are not data — the banner lines
-	// above the header, plus the header itself — so a declared total can be
-	// turned into a data-row count.
+	// above the header, plus the header itself — for formats that do not expose
+	// physical row positions.
 	rowsSkipped int
 
 	candidates [][]string
@@ -48,11 +50,16 @@ func newTable(name string) *tableBuilder {
 // addRow feeds one raw row. The first rows are buffered until the header row is
 // identified; everything after it is counted, sampled and forgotten.
 func (t *tableBuilder) addRow(values []string) {
+	t.addRowAt(values, 0)
+}
+
+func (t *tableBuilder) addRowAt(values []string, position int64) {
 	if !anyNonEmpty(values) {
 		return
 	}
 	if !t.headerFound {
 		t.probe = append(t.probe, clone(values))
+		t.probePositions = append(t.probePositions, position)
 		if len(t.probe) >= headerProbeRows {
 			t.resolveHeader()
 		}
@@ -71,7 +78,11 @@ func (t *tableBuilder) done(declaredTotal int64) Sheet {
 	}
 	rows := int64(t.rowsScanned)
 	if declaredTotal > 0 {
-		rows = max(declaredTotal-int64(t.rowsSkipped), 0)
+		if t.headerRow > 0 {
+			rows = max(declaredTotal-t.headerRow, 0)
+		} else {
+			rows = max(declaredTotal-int64(t.rowsSkipped), 0)
+		}
 	}
 	sheet := Sheet{Name: t.name, Rows: rows, RowsScanned: t.rowsScanned}
 	for _, col := range t.columns {
@@ -122,12 +133,14 @@ func (t *tableBuilder) resolveHeader() {
 		}
 		if i == pick {
 			t.setHeaders(row)
+			t.headerRow = t.probePositions[i]
 			t.rowsSkipped++
 			continue
 		}
 		t.consume(row)
 	}
 	t.probe = nil
+	t.probePositions = nil
 }
 
 func (t *tableBuilder) setHeaders(row []string) {
