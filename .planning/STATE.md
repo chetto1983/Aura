@@ -4,16 +4,16 @@ milestone: v2.1.0
 current_phase: 51
 current_phase_name: Durable delegation
 status: executing
-stopped_at: Phase 51 context gathered; design-gate spike is the next action
-last_updated: "2026-08-27T12:06:01.056Z"
+stopped_at: Completed 51-04-PLAN.md (D-09/D-10/D-11); human review recommended on the per-fact_key mutex scope before full closure
+last_updated: "2026-08-27T17:41:35.345Z"
 last_activity: 2026-08-27
 last_activity_desc: Phase 51 execution started
-state_head: 177652e722005bb5fd215f9bc9c3b951906129ed
+state_head: af56310d502cad57a7580a1cf98a1df7accd9022
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 45
-  completed_plans: 35
+  completed_plans: 36
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -118,6 +118,7 @@ Progress: [████████░░] 82%
 | Phase 46 P05 | 180min | 2 tasks | 9 files (external repo) |
 | Phase 46 P06 | 145min | 3 tasks | 12 files |
 | Phase 51-durable-delegation P01 | 5h | 3 tasks | 19 files |
+| Phase 51 P04 | 215min | 3 tasks | 21 files |
 
 ## Accumulated Context
 
@@ -203,6 +204,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 46]: 46-05 deleted the 14 orphaned MSTest files (2062 LOC) for the deleted raw tool classes rather than porting them to `CalendarActionTool` — no replacement unit coverage was written for the merged tool in this plan; flagged as a known gap/follow-up, not silently absorbed
 - [Phase 51]: 51-01: minted a new idempotency.ScopeSwarmDelegation trusted root for the daemon-resident delegation claim loop, mirroring the scheduler's own root-minting pattern
 - [Phase 51]: 51-01: scoped IngestionJobWorker.JobType per typed worker after live driving surfaced a cross-worker claim race between asset-processing and swarm delegation
+- [Phase 51]: D-10 write-path shape: split-write-shape — MemoryUpsertFactInput.Source got its own MemoryUpsertFactWriteSource with no run_id field; memory_forget/toHits keep MemoryFactSource.RunID unchanged
+- [Phase 51]: D-10 actor transport: host-derived actor rides HTTP connection headers on a per-actor MCP session (Rule-4 expansion, operator-approved), not JSON-RPC _meta
+- [Phase 51]: D-11: worker supersede refusal reuses existing FactWrite{Refused,Reason} fields, zero Command calls issued for a refused correction
+- [Phase 51]: D-09 concurrency fix: CAS then server-side append then explicit ArcadeDB transaction each independently failed under real Go goroutine concurrency; final fix is a per-fact_key striped in-process mutex (fact_lock.go) plus the transaction kept as cross-process defense-in-depth, verified with 70+ live -race stress runs, zero failures
 
 ### Pending Todos
 
@@ -265,8 +270,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-27T11:58:57.132Z
-Stopped at: Phase 51 context gathered; design-gate spike is the next action
+Last session: 2026-08-27T17:41:35.200Z
+Stopped at: Completed 51-04-PLAN.md (D-09/D-10/D-11); human review recommended on the per-fact_key mutex scope before full closure
 exited at its CONTEXT.md gate — Phase 45 has no CONTEXT.md, and discuss-phase must run as a
 top-level command (nested invocation breaks AskUserQuestion, GSD #1009). No phase directory
 was created and no planning agents were spawned.
