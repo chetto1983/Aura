@@ -20,6 +20,8 @@ package agenteval
 import (
 	"fmt"
 	"strings"
+
+	"github.com/chetto1983/aura/internal/llm"
 )
 
 // Case is one question with a machine-checkable expectation. Every field is
@@ -84,6 +86,30 @@ type Evidence struct {
 	// MemoryFactCounts holds one entry per memory-search result, in call order,
 	// carrying how many facts it returned.
 	MemoryFactCounts []int
+}
+
+// EvidenceFromMessages reads the durable conversation record. One persisted
+// assistant message is one model call; streamed deltas and tool-result previews
+// are deliberately not calls or answers.
+func EvidenceFromMessages(messages []llm.Message) Evidence {
+	var evidence Evidence
+	for _, message := range messages {
+		switch message.Role {
+		case llm.RoleAssistant:
+			evidence.LLMCalls++
+			for _, call := range message.ToolCalls {
+				evidence.Tools = append(evidence.Tools, call.Function.Name)
+			}
+			if answer := strings.TrimSpace(message.Content); answer != "" {
+				evidence.Answer = answer
+			}
+		case llm.RoleTool:
+			if count, ok := memoryFactCount(message.Content); ok {
+				evidence.MemoryFactCounts = append(evidence.MemoryFactCounts, count)
+			}
+		}
+	}
+	return evidence
 }
 
 // Check returns one line per violation. An empty slice means the case passed; the

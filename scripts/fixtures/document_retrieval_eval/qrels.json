@@ -21,17 +21,5 @@
     {"qid":"q18","query":"fatture emesse a marzo 2026","gold_docs":["contabilita_2026.xlsx","fattura_2026_005.xlsx","fattura_2026_006.xlsx","fattura_2026_007.xlsx"],"category":"TEMPORAL"},
     {"qid":"q19","query":"riepilogo generale dell'anno","gold_docs":["riepilogo_annuale.txt"],"category":"PROSE"},
     {"qid":"q20","query":"come sono archiviati i documenti amministrativi","gold_docs":["istruzioni_archivio.txt"],"category":"PROSE"}
-  ],
-  "abstention_queries": [
-    {"qid":"a01","query":"quali sono i termini di pagamento di Verdi Costruzioni","gold_docs":["anagrafica_clienti.xlsx"]},
-    {"qid":"a02","query":"perche Bianchi ha contestato una fattura","gold_docs":["note_pagamenti.txt"]},
-    {"qid":"a03","query":"totale IVA del secondo trimestre","gold_docs":["contabilita_2026.xlsx"]},
-    {"qid":"a04","query":"qual e' il foro competente del contratto ACME","gold_docs":["contratto_ACME_2026.txt"]},
-    {"qid":"a05","query":"quanti giorni di ritardo ha Verdi Costruzioni","gold_docs":["scadenzario.xlsx","note_pagamenti.txt"]},
-    {"qid":"u01","query":"qual e' il budget marketing di luglio 2026","gold_docs":[]},
-    {"qid":"u02","query":"chi e' il responsabile delle risorse umane","gold_docs":[]},
-    {"qid":"u03","query":"quante unita di magazzino sono disponibili oggi","gold_docs":[]},
-    {"qid":"u04","query":"cosa prevede il contratto con Omega","gold_docs":[]},
-    {"qid":"u05","query":"quali sono le previsioni meteo per domani","gold_docs":[]}
   ]
 }

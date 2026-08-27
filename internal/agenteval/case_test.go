@@ -3,7 +3,25 @@ package agenteval
 import (
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/llm"
 )
+
+func TestEvidenceFromMessagesCountsDurableAssistantTurns(t *testing.T) {
+	t.Parallel()
+	search := llm.ToolCall{ID: "call-1", Type: "function"}
+	search.Function.Name = "document_search"
+	evidence := EvidenceFromMessages([]llm.Message{
+		{Role: llm.RoleUser, Content: "domanda"},
+		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{search}},
+		{Role: llm.RoleTool, Content: `{"documents":[]}`},
+		{Role: llm.RoleAssistant, Content: "risposta esatta"},
+	})
+	if evidence.LLMCalls != 2 || strings.Join(evidence.Tools, ",") != "document_search" ||
+		evidence.Answer != "risposta esatta" {
+		t.Fatalf("durable evidence = %+v", evidence)
+	}
+}
 
 // TestCheckReportsEveryViolationAtOnce: a turn that answers wrong AND burns the
 // budget must say both. Reporting one at a time turns a single bad run into two

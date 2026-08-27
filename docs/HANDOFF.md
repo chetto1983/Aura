@@ -234,19 +234,13 @@ asserzioni, `internal/eval/skills_snippet_reuse_cot_eval_test.go`, è stato canc
 `acd029d47`. Il comando che lo snapshot stampa a `:467` punta a un package inesistente.
 **O si ritira la riga come le sorelle, o si ricostruisce l'harness.** *Confidenza: alta.*
 
-**3.3 — `recall@1` del routing documentale è UNKNOWN e nulla lo misura.**
-`docs/aura-quality-snapshot.md:62` non porta nessun numero. I due harness esistono
-(`internal/documents/retrieval_fusion_bench_test.go`, `retrieval_abstention_eval_test.go`) e
-**vengono compilati** — `scripts/tagged_tier_compile.sh:30` intercetta ogni tag che finisce in
-`_eval`, quindi non possono marcire in silenzio. Ma **nessuno li esegue**: né CI, né Makefile, né
-script. Il repo lo dice già di suo, alla lettera, in `.planning/codebase/TESTING.md:136`.
-Attenzione a un falso indizio: il `retrieval_eval` che compare in
-`docs/aura-quality-snapshot.md:21` è un harness RET-05 del 2026-06-28 sotto `internal/eval/`,
-albero cancellato il 2026-08-02 — non è prova che il recall documentale sia stato misurato.
-Peggio ancora, due delle tre leve citate dalla riga sono morte: `AURA_DOCUMENT_OCR_ENABLED` ha
-zero occorrenze nel codice e Docling è stato rimosso.
-*Confidenza: alta. L'apparato di misura esiste e compila; il numero non lo produrrà mai nessuno
-finché le cose stanno così.*
+**3.3 — CHIUSO 2026-08-27: la valutazione documentale ora viene eseguita.**
+`scripts/ingest_reconcile_e2e.sh` esegue il report diagnostico a 20 query sul corpus posseduto e
+la prova a nove casi attraverso Runner e strumenti di produzione. Il run misurato ha prodotto
+9/9 risposte esatte; l'unico rosso era il budget errato di sei turni su una risposta esatta in
+sette, ora corretto a nove. Il vecchio harness rerank/abstention è stato cancellato perché nessun
+path di produzione ne consumava i vettori o una soglia. ADR 0045 e amendment #161 registrano il
+confine: il ranking resta diagnostico, il comportamento dell'agente è l'oracolo di rilascio.
 
 **3.4 — Il North-Star xlsx delle skills non ha più l'harness Go.**
 `internal/eval/skills_cot_eval_test.go::TestSkillsE2E` cancellato in `acd029d47`.

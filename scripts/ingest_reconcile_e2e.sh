@@ -74,6 +74,7 @@ run_py_b() {
 cleanup() {
   local ec=$?
   set +e
+  docker rm -f "aura-egress-$identity_id" "aura-box-$identity_id" >/dev/null 2>&1
   if [ -n "$container_id" ]; then
     docker stop "$container_id" >/dev/null 2>&1
     docker rm "$container_id" >/dev/null 2>&1
@@ -450,6 +451,10 @@ export AURA_DOCUMENT_E2E_IDENTITY_A="$identity_id"
 export AURA_DOCUMENT_E2E_IDENTITY_B="$identity_id_b"
 export AURA_DOCUMENT_E2E_MARKER_A="$marker_a"
 export AURA_DOCUMENT_E2E_MARKER_B="$marker_b"
+export AURA_DOCUMENT_E2E_BUCKET="$bucket"
+export AURA_DOCUMENT_E2E_ACCESS_KEY="$access_key"
+export AURA_DOCUMENT_E2E_SECRET_KEY="$secret_key"
+export AURA_DOCUMENT_E2E_OBJECTSTORE_ENDPOINT="http://127.0.0.1:3900"
 
 go test -tags db_integration -run '^TestMigrate0102BackfillsDecisionPolicyRoundTrip$' \
   -timeout 3m -v ./internal/db
@@ -492,26 +497,23 @@ export AURA_ARCADEDB_ADMIN_PASSWORD="$ARCADEDB_ADMIN_PASSWORD"
 export AURA_BENCH_PILOT="$retrieval_fixture/qrels.json"
 export AURA_BENCH_OUT="$retrieval_report_dir/fusion.json"
 export AURA_BENCH_CANDIDATE="$candidate_sha"
-export AURA_ABSTAIN_QUERIES="$retrieval_fixture/qrels.json"
-export AURA_ABSTAIN_OUT="$retrieval_report_dir/abstention.json"
 
 go test -count=1 -tags retrieval_eval \
   -run '^Test(BenchmarkMetricsSupportMultipleGoldDocsAndExposeRegression|FusionBenchmark)$' \
   -timeout 35m -v ./internal/documents
-go test -count=1 -tags retrieval_eval -run '^TestAbstentionEvidence$' \
-  -timeout 35m -v ./internal/documents
+go test -count=1 -tags document_live_e2e -run '^TestDocumentCorpusAgentEval$' \
+  -timeout 35m -v ./cmd/aura
 
-python3 - "$AURA_BENCH_OUT" "$AURA_ABSTAIN_OUT" <<'PY'
+python3 - "$AURA_BENCH_OUT" <<'PY'
 import json, sys
 fusion = json.load(open(sys.argv[1], encoding="utf-8"))
-abstention = json.load(open(sys.argv[2], encoding="utf-8"))
 production = next(run for run in fusion["runs"] if run["production"])
 metrics = production["metrics"]
 print(
     "ok: native retrieval eval "
     f"candidate={fusion['candidate_sha']} arm={production['arm']} "
     f"R@1={metrics['recall_at_1']:.3f} R@3={metrics['recall_at_3']:.3f} "
-    f"MRR={metrics['mrr']:.3f}; abstention_vectors={len(abstention)}"
+    f"MRR={metrics['mrr']:.3f}"
 )
 PY
 

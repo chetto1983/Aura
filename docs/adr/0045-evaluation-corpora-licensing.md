@@ -1,69 +1,64 @@
 # ADR 0045 — Evaluation corpora: `open_ragbench` and LOCOMO declined
 
-- **Status:** Accepted
+- **Status:** Accepted; execution contract updated 2026-08-27
 - **Date:** 2026-08-22
-- **Requirement:** Document routing recall@1 (`docs/aura-quality-snapshot.md`) / agent-memory LOCOMO suite
-- **Relates to:** `prd.md` §Perimetro e licenze (`:6373`) and Amendment #119 (`:6292`)
+- **Requirement:** document answer quality / agent-memory cross-lingual retrieval
+- **Relates to:** PRD amendments #119, #159 and #161
 
 ## Context
 
-Two third-party corpora were staged as the reference data for measurements this project owes but
-has never produced:
+Two third-party corpora had been staged for measurements without an executable owner:
 
-- **`vectara/open_ragbench`** — 1,914 queries with real qrels, staged for the document-routing
-  `recall@1` row and for the abstention working point Amendment #119 ratifies as a direction but
-  never as a number. License: **CC-BY-NC-4.0**.
-- **`snap-research/locomo`** — staged for `internal/arcadedb/locomo_test.go`. License:
-  **NOASSERTION**.
+- `vectara/open_ragbench` is CC-BY-NC-4.0 and cannot be made a commercial release gate while
+  Aura's commercial posture is unsettled.
+- `snap-research/locomo` carries no asserted license. Absence of a license is not permission to
+  redistribute it or fetch it in CI.
 
-Neither is downloaded by any pipeline today: `AURA_LOCOMO_DIR` defaults to a WSL scratch path
-(`internal/arcadedb/locomo_test.go:86`) that no workflow sets, and `scripts/agent_memory_eval.py:52`
-skips `^TestLocomo` outright. The two retrieval harnesses
-(`internal/documents/retrieval_abstention_eval_test.go`,
-`retrieval_fusion_bench_test.go`, build tag `retrieval_eval`) are compiled by
-`scripts/tagged_tier_compile.sh` and executed by nothing. So nothing is in violation — but the
-decision was **due before** a pipeline fetches either one, not after, and `prd.md:6373` records it
-as outstanding. Wiring a download **is** taking the decision.
+The original implementation left LOCOMO tests permanently skipped and document retrieval tests
+compiled but unexecuted. That state was not evidence: it was stale code that looked like a gate.
 
 ## Decision
 
-**Both corpora are declined. Neither may be fetched by any pipeline, CI job, Makefile target, test
-helper, or container build.**
+Neither corpus may be fetched by a pipeline, CI job, Makefile target, test helper or container
+build. The retired LOCOMO tests are deleted rather than kept behind an unprovisionable skip.
+Cross-lingual memory retrieval is now a mandatory live scenario over self-authored facts in
+`scripts/agent_memory_eval.py`.
 
-- `open_ragbench` is declined because CC-BY-NC-4.0 restricts use to non-commercial purposes.
-  Aura's commercial posture is not settled, and a corpus baked into a CI gate is not a decision
-  that can be quietly reversed later: it would have to be un-measured, not just un-downloaded.
-- LOCOMO is declined because **NOASSERTION means no permission was granted**. Absence of a
-  license is not a permissive license.
+Document evaluation uses the checksummed, repository-owned 21-file corpus exercised by
+`scripts/ingest_reconcile_e2e.sh`:
 
-The measurements these corpora were staged for are **redefined, not cancelled**. Their replacement
-must be a corpus whose license permits redistribution and CI use, or one this project owns
-outright. The two harnesses stay on disk and stay compiled: they are the apparatus, and the
-apparatus is not what was declined.
+- `retrieval_fusion_bench_test.go` publishes a 20-query retrieval diagnostic. Its filename qrels
+  are not an answer-quality oracle and therefore do not block release at a synthetic R@1 target.
+- `TestDocumentCorpusAgentEval` is the behavior oracle: nine exact-answer cases, mandatory
+  `document_search`, forbidden web tools and at most nine durable assistant turns.
+- the unused rerank/abstention harness and qrel appendix are deleted. Production had no caller,
+  calibrated threshold or decision that consumed their vectors.
+
+## Measured evidence
+
+On 2026-08-27 the real production Runner answered all nine document cases exactly. Durable call
+counts were 3, 3, 5, 3, 7, 3, 3, 2 and 6; every case used `document_search` and none used a web
+tool. The harness initially reported 8/9 because `not-paid` had an arbitrary six-call budget even
+though its seven-call answer was exact. The budget is now uniformly nine, two turns above the
+measured maximum. No post-fix paid rerun is claimed or required to reinterpret the recorded run.
+
+The same lifecycle measured the retrieval diagnostic at approximately R@1 0.55, R@3 0.80 and
+MRR 0.699. These values diagnose candidate ordering; they do not supersede the nine-case agent
+oracle.
 
 ## Consequences
 
-- The document-routing `recall@1` row stays **UNKNOWN** until a permissible reference corpus with
-  qrels exists. Its acceptance criterion (`>=75% recall@1 on the reference corpus`) is unmeasurable
-  while "the reference corpus" is undefined, and the row must name the corpus it means before it
-  can carry a number. Two of the three levers it cites are already dead
-  (`AURA_DOCUMENT_OCR_ENABLED` has zero occurrences; Docling was removed), so the row is rewritten,
-  not merely filled.
-- The LOCOMO suite is **retired as specified**. `locomo_test.go` and the
-  `scripts/agent_memory_eval.py:52` skip stay as they are until a replacement corpus is chosen;
-  a skipped suite that nobody can provision is not a gap that closes by waiting.
-- Amendment #119's abstention working point stays **unset**. It ratifies a direction ("low
-  confidence must push toward `document_open`") and reports ROC AUC 0.880 with no working point.
-  Writing `if score < …` without a permissible corpus to fit it on is inventing the number.
-- A future ADR may reverse this for either corpus. Reversal requires a settled commercial posture
-  (for `open_ragbench`) or an explicit grant from the publisher (for LOCOMO) — not a re-reading of
-  the same license text.
+- No skipped LOCOMO suite or dead abstention report can be mistaken for current evidence.
+- Document retrieval changes still emit a pinned diagnostic, while releases are judged on answers
+  through the same tools and Runner users exercise.
+- A future statistical abstention mechanism requires a production consumer, a permissible corpus
+  and a separately measured operating point before a scoring harness is restored.
+- A future ADR may reverse either corpus decision only with an explicit compatible license or a
+  settled posture that permits the existing license.
 
-## What this decision does NOT establish
+## What this decision does not establish
 
-- It does not say the replacement corpus is smaller, weaker, or harder to obtain — nobody has
-  looked yet. It says only that these two are not it.
-- It does not measure anything. No number in this ADR is a measurement; the licenses are legal
-  facts and the file-level claims are reads of the tree at `9b053ee8e`.
-- It does not settle whether Aura is a commercial product. It removes that question from the
-  critical path of two measurements, which is the opposite of answering it.
+- Nine cases are a product regression gate, not a population-level claim about every workbook or
+  every unanswerable question.
+- The diagnostic R@1 target is not a production threshold.
+- This ADR does not settle whether Aura is a commercial product.

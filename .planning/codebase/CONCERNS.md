@@ -13,6 +13,8 @@ requires the independent unit/database, native Docker, and live ArcadeDB reports
 exact package-local policy result; known low packages can no longer regress behind stronger
 ones. Amendment #155 and `docs/aura-memory-preload-threat-model.md` now separate trusted
 agent-memory provenance from instruction authority and close the preload poisoning seam.
+Amendments #159 and #161 replace skipped/stale evaluation proxies with executable owned-corpus
+evidence, and the Runner integration wrapper now provisions an isolated reproducible database.
 
 ## Severity Summary
 
@@ -30,7 +32,7 @@ agent-memory provenance from instruction authority and close the preload poisoni
 | Long-history compaction can disable itself silently and uses an unmeasured three-minute timeout | Medium | Closed 2026-08-26 | `internal/conversations/context_budget.go`, `internal/conversations/compaction.go`, `internal/runner/runner_context.go`, `web/src/chat/ContextBudgetGauge.tsx` |
 | Calendar MCP admin-token fallback was removed by identity-scoped OAuth | Medium | Closed 2026-08-26 | `internal/agui/connect_pim_api.go`, `cmd/aura/serve_agui.go`, `compose.yaml` |
 | Opt-in memory preload inserts recalled content into model-visible context with no dedicated poisoning threat model | Medium | Closed 2026-08-27 | `docs/aura-memory-preload-threat-model.md`, `internal/runner/runner_context.go`, `internal/agent/prompt.go` |
-| Test/evaluation evidence contains skipped, stale, flaky, or non-reproducible legs | Medium | Open | `scripts/agent_memory_eval.py`, `docs/aura-quality-snapshot.md`, `.planning/STATE.md` |
+| Test/evaluation evidence contains skipped, stale, flaky, or non-reproducible legs | Medium | Closed 2026-08-27 | `scripts/agent_memory_eval.py`, `scripts/ingest_reconcile_e2e.sh`, `scripts/run_runner_integration.sh` |
 
 ## Tech Debt
 
@@ -43,7 +45,7 @@ agent-memory provenance from instruction authority and close the preload poisoni
 
 **Closed 2026-08-26 — quality snapshot distinguished historical rows from current gates:**
 - Resolution: the retired Neo4j HNSW baseline is explicitly historical and no longer claims a live migration-path gate. ADR 0038 is superseded as an active store choice, the removed Skills North-Star and snippet-reuse harnesses are explicitly retired, and the old machine-card document metric remains superseded rather than being quoted for the CocoIndex/ArcadeDB path. The 2026-08-23 handoff is explicitly archived instead of masquerading as a current work queue.
-- Boundary: the absence of a reproducible production document-retrieval baseline and the deliberately skipped LOCOMO/cross-lingual cases remain real evaluation gaps below. This closure removes stale claims; it does not manufacture replacement measurements.
+- Boundary update 2026-08-27: LOCOMO's unlicensed skipped code was deleted, cross-lingual memory is mandatory, and the owned document corpus now runs both a retrieval diagnostic and the real agent oracle. Historical numbers remain records rather than current claims.
 - Files: `docs/aura-quality-snapshot.md`, `docs/HANDOFF.md`, `docs/adr/0038-graph-store-license-neo4j-gplv3-vs-arcadedb-apache.md`, `docs/adr/0045-evaluation-corpora-licensing.md`.
 
 **Production document E2E contract has no runner — CLOSED 2026-08-25:**
@@ -89,11 +91,11 @@ agent-memory provenance from instruction authority and close the preload poisoni
 - Files: `internal/runner/approval_expiry.go`, `cmd/aura/approval_expiry.go`, `internal/askuser/store.go`, `internal/gateway/approvals.go`, `internal/runner/live_e2e_expiry_test.go`.
 - Evidence: targeted WSL race/vet/build and disposable-PostgreSQL integration tests are green; migration 0102 still round-trips; expiry mutation testing killed 14/14 mutants; the real OpenRouter-agent E2E scored 10.0/10.
 
-**Runner verification test is flaky under the full parallel gate:**
-- Symptoms: `TestVerifyOnStopFiresOnARealTurn` is recorded failing in the full parallel gate while passing repeatedly in isolation.
-- Files: `internal/runner/runner_verification_integration_test.go`, `docs/aura-quality-snapshot.md`.
-- Trigger: run the repository-wide parallel test/coverage workload; the exact scheduler interaction is not yet isolated.
-- Workaround: rerun the focused test to distinguish the known flake from a deterministic regression, but do not treat the rerun as a fix.
+**Closed 2026-08-27 — Runner verification evidence is reproducible:**
+- Root cause: the historical extra-call flake was already fixed in `63b456f8e` by counting agent rounds instead of the concurrent title request. The remaining documented runner command was independently broken: it targeted live database `aura`, which the current migration guard correctly refuses, and read a stale `~/aura.env` password instead of the running stack's credential.
+- Resolution: `scripts/run_runner_integration.sh` now honors an exported password or repository `.env`, validates a disposable database name, creates that database, and drops it on every exit path. A shell regression exercises provisioning, cleanup, credential precedence and live/malformed-name refusal.
+- Evidence: `TestVerifyOnStopFiresOnARealTurn` passed 20/20 under race; the complete `internal/runner` `db_integration` race package then passed through the same isolated wrapper.
+- Files: `scripts/run_runner_integration.sh`, `scripts/run_runner_integration_test.sh`, `internal/runner/runner_verification_integration_test.go`.
 
 ## Security Considerations
 
@@ -141,11 +143,11 @@ agent-memory provenance from instruction authority and close the preload poisoni
 - Focused proof: the new configured-deadline, measured boot-gate, failed/oversized/nil-summarizer action, LLM timeout validation, and cockpit warning cases pass. Previously validated broad suites were not rerun.
 - Files: `internal/conversations/compaction.go`, `internal/conversations/context.go`, `internal/conversations/context_budget.go`, `internal/conversations/context_rot.go`, `internal/runner/runner_context.go`, `cmd/aura/chat_boot.go`, `web/src/chat/ContextBudgetGauge.tsx`.
 
-**Document retrieval quality has no current reproducible baseline:**
-- Problem: the document routing recall row is recorded UNKNOWN, while its former corpus is not repository-owned and the replacement non-commercial corpus was declined.
-- Files: `docs/aura-quality-snapshot.md`, `docs/HANDOFF.md`, `docs/adr/0045-evaluation-corpora-licensing.md`, `internal/documents/retrieval_abstention_eval_test.go`.
-- Cause: the harness files compile, but no CI path executes them against a permitted, pinned reference corpus.
-- Improvement path: define a permissively licensed synthetic/reference corpus, pin expected queries and locators, and run it after ingestion settings change.
+**Closed 2026-08-27 — document quality has an owned executable baseline:**
+- Resolution: `scripts/ingest_reconcile_e2e.sh` checksums and ingests the repository-owned 21-file corpus, publishes the 20-query ranking diagnostic, and runs nine exact-answer questions through the production Runner.
+- Evidence: 9/9 answers were exact with mandatory `document_search`, no web tools and at most seven durable turns. The corrected nine-turn budget removes the only benchmark false negative without inventing a new behavioral measurement.
+- Boundary: the filename-qrel ranking report is diagnostic, not a release threshold; the agent cases are the behavior oracle. Population-level abstention remains unclaimed.
+- Files: `cmd/aura/document_agent_live_test.go`, `internal/documents/retrieval_fusion_bench_test.go`, `scripts/ingest_reconcile_e2e.sh`, `docs/adr/0045-evaluation-corpora-licensing.md`.
 
 ## Fragile Areas
 
@@ -233,17 +235,16 @@ agent-memory provenance from instruction authority and close the preload poisoni
 
 ## Test Coverage Gaps
 
-**LOCOMO and cross-lingual memory quality are deliberately skipped:**
-- What's not tested: LOCOMO answer-quality tests and `TestMemoryVectorAnswersACrossLingualQuestion` are excluded from the live ArcadeDB suite.
-- Files: `scripts/agent_memory_eval.py`, `internal/arcadedb/locomo_*.go`, `internal/arcadedb/memory_vector_live_test.go`, `docs/adr/0045-evaluation-corpora-licensing.md`.
-- Risk: the memory reliability score proves isolation, provenance, temporal behavior, runtime, coverage, and latency, but not LOCOMO-style answer quality; stale test code can be mistaken for an active gate.
-- Priority: High. Retire the declined-corpus tests or rebuild them over a permitted pinned corpus and state clearly that the new metric is not the old one.
+**Closed 2026-08-27 — declined LOCOMO code is retired and cross-lingual memory is mandatory:**
+- Resolution: all five unprovisionable LOCOMO test files were deleted. `TestMemoryVectorAnswersACrossLingualQuestion` was rebuilt around self-authored multilingual facts and is a required `arcadedb_live` scenario in `scripts/agent_memory_eval.py`, not an excluded regex.
+- Boundary: this proves the shipped hybrid retrieval path ranks the Italian target first for the pinned French query; it does not claim LOCOMO equivalence.
+- Files: `scripts/agent_memory_eval.py`, `internal/arcadedb/memory_vector_live_test.go`, `docs/adr/0045-evaluation-corpora-licensing.md`.
 
-**Document routing evaluation compiles but is not executed:**
-- What's not tested: current recall/abstention quality for the production document cascade against a reproducible corpus.
-- Files: `internal/documents/retrieval_abstention_eval_test.go`, `internal/documents/retrieval_fusion_bench_test.go`, `docs/aura-quality-snapshot.md`, `docs/adr/0045-evaluation-corpora-licensing.md`.
-- Risk: changes can preserve unit correctness while reducing real query recall, and the snapshot remains UNKNOWN.
-- Priority: High. Provide a permitted corpus and wire one report-producing command into CI or an explicitly operator-run release gate.
+**Closed 2026-08-27 — owned document evaluation runs in the ingest lifecycle:**
+- Resolution: the checksummed 21-file owned corpus now emits a 20-query retrieval diagnostic and runs nine exact questions through the production Runner and document tools. The dead rerank/abstention report and qrel appendix were removed because production consumed neither their vectors nor a threshold.
+- Evidence: all nine measured agent answers were exact with mandatory `document_search`, no web tools and 2–7 durable assistant turns. The harness's sole red was a six-call false negative on the exact seven-call `not-paid` answer; the bounded budget is now nine for every case. No post-fix paid rerun is claimed.
+- Boundary: diagnostic ranking values remain visible but are not a behavior oracle; Amendment #159 makes the nine agent cases the release authority.
+- Files: `cmd/aura/document_agent_live_test.go`, `internal/documents/retrieval_fusion_bench_test.go`, `scripts/ingest_reconcile_e2e.sh`, `docs/adr/0045-evaluation-corpora-licensing.md`.
 
 **Closed 2026-08-26 — MCP trusted-result stamp has a direct execution-path test:**
 - Coverage: `TestBridgedTool_Execute_MarksResultTrusted` asserts `ToolResultProvenance{Trust: TrustTrusted}` and the mounted source after a real bridged `Execute` call.
