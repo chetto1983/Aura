@@ -49,21 +49,25 @@ func reservedDispatchFromContext(ctx context.Context) (reservedDispatch, bool) {
 	return d, ok
 }
 
-type delegatedDispatchContextKey struct{}
-
 // WithDelegatedDispatch marks a dispatch whose events no Runner observes, which is
 // what makes the gateway responsible for the `end` row too. Set by the swarm for a
 // worker's context; absent everywhere else, so a parent's dispatch keeps the
 // Runner's richer end (exit code, duration, sidecar path) and the gateway stays out
 // of a first-writer-wins race it would win with a poorer row.
+//
+// The marker itself lives in internal/agent/tools (WithDelegatedDispatch /
+// IsDelegatedDispatch), not here: D-10 (Phase 51) needs the same "is this a
+// worker's dispatch" signal inside internal/agent/mcptools, which this package
+// cannot be imported from without a cycle (classify.go already imports
+// internal/agent/mcptools). This wrapper keeps the exported name and signature
+// identical so every existing caller (internal/swarm's runChild) is untouched.
 func WithDelegatedDispatch(ctx context.Context) context.Context {
-	return context.WithValue(ctx, delegatedDispatchContextKey{}, true)
+	return tools.WithDelegatedDispatch(ctx)
 }
 
 // isDelegatedDispatch reports whether this dispatch has no Runner observing it.
 func isDelegatedDispatch(ctx context.Context) bool {
-	marked, _ := ctx.Value(delegatedDispatchContextKey{}).(bool)
-	return marked
+	return tools.IsDelegatedDispatch(ctx)
 }
 
 // closeDelegatedReservation appends the terminal `end` row for a dispatch the

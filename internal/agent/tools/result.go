@@ -70,6 +70,34 @@ func RequestIDFromContext(ctx context.Context) string {
 	return v
 }
 
+// delegatedDispatchCtxKey marks a dispatch whose events no Runner observes --
+// set ONLY by internal/swarm's runChild for a worker's own InvocationContext,
+// absent everywhere else (a parent turn always flows through a Runner).
+//
+// This lives here, not in internal/gateway where it originated (delegated
+// reservation-closing, 791dcd7e0), because internal/gateway imports
+// internal/agent/mcptools (classify.go), and D-10 needs the SAME marker
+// readable from internal/agent/mcptools too (to pick the actor's WriterRole
+// for a host-derived memory-fact provenance header) -- importing
+// internal/gateway from internal/agent/mcptools would cycle back. Both
+// packages already depend on internal/agent/tools, so the primitive moved to
+// the one place both can reach without inventing a second marker meaning the
+// same thing (CLAUDE.md: never duplicate). internal/gateway.WithDelegatedDispatch
+// and its unexported reader now call straight through to these two functions,
+// so internal/swarm's call site is untouched.
+type delegatedDispatchCtxKey struct{}
+
+// WithDelegatedDispatch marks ctx as a delegated (worker) dispatch.
+func WithDelegatedDispatch(ctx context.Context) context.Context {
+	return context.WithValue(ctx, delegatedDispatchCtxKey{}, true)
+}
+
+// IsDelegatedDispatch reports whether ctx was marked by WithDelegatedDispatch.
+func IsDelegatedDispatch(ctx context.Context) bool {
+	marked, _ := ctx.Value(delegatedDispatchCtxKey{}).(bool)
+	return marked
+}
+
 // ToolCallIDFromContext returns the tool_call_id set by WithToolCallContext, or "".
 func ToolCallIDFromContext(ctx context.Context) string {
 	tc, ok := toolCallCtx(ctx)
