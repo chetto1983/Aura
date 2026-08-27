@@ -24,6 +24,8 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/documents"
+	"github.com/chetto1983/aura/internal/idempotency"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/steer"
 )
 
@@ -325,12 +327,71 @@ func (l *DelegationClaimLoop) runWithHeartbeat(ctx context.Context, job document
 		return ChildReport{}, fmt.Errorf("delegation job budget: %w", err)
 	}
 
-	report := runChild(runCtx, rc, budget, 0, payload.Goal)
+	// Mint the ROOT operation context here, mirroring cron/dispatch.go's
+	// scheduledOperationContext exactly: a worker's own mutating tool calls
+	// (shell_exec, write_file, ...) are denied "operation context missing" by
+	// gateway.beginOperation unless a trusted parent operation already sits on
+	// ctx (internal/agent/idempotency_operation.go's deriveToolOperationContext
+	// derives a CHILD from a parent -- it never mints a root). The HTTP ingress
+	// mints one for a live turn and the scheduler mints one for a cron dispatch;
+	// this claim loop is the third kind of trusted root and had none, which
+	// measured as a 100% deterministic denial of every worker tool call on the
+	// very first live delegation (the same shape as spike 099's Pitfall 1, one
+	// layer further out). Keyed on job.ID + LeaseGeneration so a reclaimed/retried
+	// attempt is a genuinely different operation -- never a replay of a dead
+	// attempt's stale result, exactly like a scheduler reclaim's fresh RunID.
+	delegationCtx, err := delegationOperationContext(runCtx, job, payload)
+	if err != nil {
+		cancel()
+		<-heartbeatErr
+		return ChildReport{}, fmt.Errorf("delegation operation context: %w", err)
+	}
+
+	report := runChild(delegationCtx, rc, budget, 0, payload.Goal)
 	cancel()
 	if hbErr := <-heartbeatErr; hbErr != nil {
 		return ChildReport{}, hbErr
 	}
 	return report, nil
+}
+
+// delegationOperationContext mints the trusted root operation context a
+// claimed delegation job's worker needs before it can dispatch ANY mutating
+// tool (gateway.beginOperation denies "operation context missing" otherwise --
+// see runWithHeartbeat's doc comment). It also binds identityctx.WithIdentityID
+// so the worker's own identity-scoped tools (document_search, skill_manage,
+// send_file_ingest, and a NESTED swarm_spawn once 51-05 lifts the registry
+// restriction) resolve the SAME identity the row is scoped to, not an absent
+// one -- mirroring cron/dispatch.go's scheduledOperationContext, one layer
+// further out (a worker instead of a scheduled task).
+func delegationOperationContext(ctx context.Context, job documents.IngestionJob, payload DelegationPayload) (context.Context, error) {
+	fingerprint, err := idempotency.FingerprintTyped(struct {
+		JobID    string `json:"job_id"`
+		Goal     string `json:"goal"`
+		ConvID   string `json:"conversation_id"`
+		ParentID string `json:"parent_run_id"`
+	}{JobID: job.ID, Goal: payload.Goal, ConvID: payload.ConversationID, ParentID: payload.ParentRunID})
+	if err != nil {
+		return nil, fmt.Errorf("delegation operation fingerprint: %w", err)
+	}
+	operation := idempotency.Operation{
+		Key: idempotency.OperationKey{
+			IdentityID: job.IdentityID,
+			Scope:      idempotency.ScopeSwarmDelegation,
+			// LeaseGeneration increments on every claim (including a reclaim after
+			// a dead worker's lease expired), so a retried attempt is always a
+			// DIFFERENT operation -- never a replay of a stale/abandoned attempt.
+			Key: job.ID + ":" + strconv.FormatInt(job.LeaseGeneration, 10),
+		},
+		Fingerprint: fingerprint,
+		Correlation: job.ID,
+	}
+	trusted := identityctx.WithIdentityID(ctx, job.IdentityID)
+	operationCtx, err := idempotency.WithOperation(trusted, operation)
+	if err != nil {
+		return nil, fmt.Errorf("delegation operation: %w", err)
+	}
+	return operationCtx, nil
 }
 
 func (l *DelegationClaimLoop) maintainLease(ctx context.Context, cancel context.CancelFunc, job documents.IngestionJob) error {

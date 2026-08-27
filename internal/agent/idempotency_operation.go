@@ -61,6 +61,11 @@ func deriveToolOperationContext(ctx context.Context, spec tools.Spec, args json.
 	switch parent.Key.Scope {
 	case idempotency.ScopeHTTPMutation, idempotency.ScopeCLICommand,
 		idempotency.ScopeSchedulerRun, idempotency.ScopeApproval,
+		// ScopeSwarmDelegation is the root a background delegation claim loop
+		// mints (internal/swarm/delegation_queue.go) before calling runChild --
+		// the same "trusted root with no upstream ingress operation" shape as
+		// ScopeSchedulerRun, just for a worker instead of a scheduled task.
+		idempotency.ScopeSwarmDelegation,
 		// ScopeAgentTool as a PARENT is the nested case above: a tool operation may
 		// own another tool operation, one level per delegation hop. The derived key
 		// still carries the parent's key and fingerprint, so a worker's call is

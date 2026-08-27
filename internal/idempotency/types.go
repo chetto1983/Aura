@@ -48,15 +48,23 @@ const (
 	ScopeSchedulerRun Scope = "scheduler.run"
 	ScopeApproval     Scope = "approval.resume"
 	ScopeMCPTool      Scope = "mcp.tool"
+	// ScopeSwarmDelegation roots the operation context a background delegation
+	// claim loop mints before calling runChild (Phase 51, internal/swarm/
+	// delegation_queue.go), mirroring scheduledOperationContext's ScopeSchedulerRun
+	// root exactly: a worker's own tool dispatch has no HTTP/CLI/scheduler ingress
+	// to inherit an operation from, so the claim loop is the trusted root the
+	// same way cron's dispatch is.
+	ScopeSwarmDelegation Scope = "swarm.delegation"
 )
 
 var validScopes = map[Scope]struct{}{
-	ScopeHTTPMutation: {},
-	ScopeCLICommand:   {},
-	ScopeAgentTool:    {},
-	ScopeSchedulerRun: {},
-	ScopeApproval:     {},
-	ScopeMCPTool:      {},
+	ScopeHTTPMutation:    {},
+	ScopeCLICommand:      {},
+	ScopeAgentTool:       {},
+	ScopeSchedulerRun:    {},
+	ScopeApproval:        {},
+	ScopeMCPTool:         {},
+	ScopeSwarmDelegation: {},
 }
 
 // Validate rejects scopes outside Aura's finite registry.

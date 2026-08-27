@@ -3,6 +3,10 @@ package swarm
 import (
 	"context"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/documents"
+	"github.com/chetto1983/aura/internal/idempotency"
+	"github.com/chetto1983/aura/internal/identityctx"
 )
 
 // TestDelegationIdempotencyKey pins delegationIdempotencyKey's determinism:
@@ -41,5 +45,49 @@ func TestEnqueueDelegationEmptyGoals(t *testing.T) {
 	const want = "error: no goals provided"
 	if len(msg) < len(want) || msg[:len(want)] != want {
 		t.Fatalf("EnqueueDelegation message = %q, want prefix %q", msg, want)
+	}
+}
+
+// TestDelegationOperationContextMintsTrustedRoot pins the fix for a real
+// defect found by driving the live agent (2026-08-27): a claimed delegation
+// job's worker denied EVERY mutating tool call with "operation context
+// missing" (gateway.beginOperation), because runChild's ctx carried no parent
+// operation for deriveToolOperationContext to derive a child from -- the
+// claim loop is a trusted root exactly like the HTTP ingress and the
+// scheduler, and had never minted one. Also asserts identityctx round-trips,
+// and that two different lease generations (a reclaim/retry) mint two
+// DIFFERENT operations -- a retried attempt must never replay a dead
+// attempt's stale result.
+func TestDelegationOperationContextMintsTrustedRoot(t *testing.T) {
+	job := documents.IngestionJob{ID: "job-1", IdentityID: "11111111-1111-1111-1111-111111111111", LeaseGeneration: 1}
+	payload := DelegationPayload{Goal: "do the thing", ConversationID: "conv-1"}
+
+	ctx, err := delegationOperationContext(context.Background(), job, payload)
+	if err != nil {
+		t.Fatalf("delegationOperationContext: %v", err)
+	}
+	op, ok := idempotency.OperationFromContext(ctx)
+	if !ok {
+		t.Fatal("delegationOperationContext did not mint an operation on ctx")
+	}
+	if op.Key.Scope != idempotency.ScopeSwarmDelegation {
+		t.Fatalf("operation scope = %q, want %q", op.Key.Scope, idempotency.ScopeSwarmDelegation)
+	}
+	if op.Key.IdentityID != job.IdentityID {
+		t.Fatalf("operation identity = %q, want %q", op.Key.IdentityID, job.IdentityID)
+	}
+	if got := identityctx.IdentityID(ctx); got != job.IdentityID {
+		t.Fatalf("identityctx.IdentityID(ctx) = %q, want %q", got, job.IdentityID)
+	}
+
+	retried := job
+	retried.LeaseGeneration = 2
+	retriedCtx, err := delegationOperationContext(context.Background(), retried, payload)
+	if err != nil {
+		t.Fatalf("delegationOperationContext (retry): %v", err)
+	}
+	retriedOp, _ := idempotency.OperationFromContext(retriedCtx)
+	if retriedOp.Key.Key == op.Key.Key {
+		t.Fatal("a reclaimed/retried attempt (different LeaseGeneration) must mint a DIFFERENT operation key")
 	}
 }
