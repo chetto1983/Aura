@@ -18,6 +18,22 @@ import (
 	"time"
 )
 
+func liveEmbedder(t *testing.T) Embedder {
+	t.Helper()
+	embedURL := strings.TrimSpace(os.Getenv("AURA_EMBED_BASE_URL"))
+	if embedURL == "" {
+		embedURL = "http://127.0.0.1:8081"
+	}
+	embedder := NewSidecarEmbedder(embedURL, os.Getenv("AURA_EMBED_MODEL"), "", 60*time.Second)
+	if embedder == nil {
+		liveGap(t, "no embedder configured")
+	}
+	if _, err := embedder.Embed(context.Background(), []string{"probe"}); err != nil {
+		liveGap(t, "embedding sidecar unreachable: %v", err)
+	}
+	return embedder
+}
+
 func vectorClient(t *testing.T) *Client {
 	t.Helper()
 	password := strings.TrimSpace(os.Getenv("ARCADEDB_PASSWORD"))
@@ -36,18 +52,7 @@ func vectorClient(t *testing.T) *Client {
 	if err != nil {
 		liveGap(t, "arcadedb: %v", err)
 	}
-	embedURL := strings.TrimSpace(os.Getenv("AURA_EMBED_BASE_URL"))
-	if embedURL == "" {
-		embedURL = "http://127.0.0.1:8081"
-	}
-	embedder := NewSidecarEmbedder(embedURL, os.Getenv("AURA_EMBED_MODEL"), "", 60*time.Second)
-	if embedder == nil {
-		liveGap(t, "no embedder configured")
-	}
-	if _, err := embedder.Embed(context.Background(), []string{"probe"}); err != nil {
-		liveGap(t, "embedding sidecar unreachable: %v", err)
-	}
-	return client.WithEmbedder(embedder)
+	return client.WithEmbedder(liveEmbedder(t))
 }
 
 func TestMemoryVectorSidecarReturnsTheIndexWidth(t *testing.T) {
@@ -63,67 +68,54 @@ func TestMemoryVectorSidecarReturnsTheIndexWidth(t *testing.T) {
 	}
 }
 
-// The whole point, end to end: schema, backfill, then a question in the wrong
-// language for the corpus.
+// The whole point, end to end: a self-seeded English fact in a disposable
+// database, then a semantically equivalent Italian question with no lexical
+// shortcut. Mutable operator memory is never evaluation input.
 func TestMemoryVectorAnswersACrossLingualQuestion(t *testing.T) {
-	client := vectorClient(t)
+	client := disposableMemoryClient(t).WithEmbedder(liveEmbedder(t))
 	ctx := context.Background()
-
-	if err := client.EnsureMemorySchema(ctx); err != nil {
-		t.Fatalf("schema: %v", err)
+	now := time.Now().UTC()
+	target := "The oriole project stores its quarterly invoices in the cobalt cabinet."
+	fixtures := []Fact{
+		{
+			Subject: "Oriole project", Predicate: "stores_quarterly_invoices", Object: "Cobalt cabinet",
+			Statement: target, Source: FactSource{RunID: "cross-lingual-eval", MemoryIDs: []string{"target"}},
+		},
+		{
+			Subject: "Kestrel project", Predicate: "stores_annual_reports", Object: "Amber archive",
+			Statement: "The kestrel project stores its annual reports in the amber archive.",
+			Source:    FactSource{RunID: "cross-lingual-eval", MemoryIDs: []string{"distractor-1"}},
+		},
+		{
+			Subject: "Heron project", Predicate: "keeps_design_samples", Object: "Northern laboratory",
+			Statement: "The heron project keeps its design samples in the northern laboratory.",
+			Source:    FactSource{RunID: "cross-lingual-eval", MemoryIDs: []string{"distractor-2"}},
+		},
 	}
-	embedded, err := client.EmbedMissingFacts(ctx, 200)
+	for i, fact := range fixtures {
+		write(t, client, fact, now.Add(time.Duration(i)*time.Second))
+	}
+
+	query := "Dove conserva le fatture trimestrali il progetto rigogolo?"
+	lexical, err := client.SearchFacts(ctx, query, 3, time.Time{})
 	if err != nil {
-		t.Fatalf("backfill: %v", err)
+		t.Fatalf("lexical-only comparison: %v", err)
 	}
-	t.Logf("backfilled %d fact vectors", embedded)
-
-	total := 0
-	if rows, err := client.Query(ctx, "SELECT count(*) AS n FROM "+factEdgeType, nil); err == nil && len(rows) > 0 {
-		switch n := rows[0]["n"].(type) {
-		case float64:
-			total = int(n)
-		case int:
-			total = n
+	for _, hit := range lexical {
+		if hit.Statement == target {
+			t.Fatalf("lexical retrieval found the target, so the fixture no longer proves the dense leg: %+v", lexical)
 		}
 	}
-	if total == 0 {
-		t.Skip("no facts stored; seed some before running this")
-	}
-	t.Logf("%d facts in memory", total)
 
-	// English: the lexical leg already answered this one, and must keep doing so.
-	english, err := client.SearchFactsHybrid(ctx, "analyzer recall Italian English", 3, time.Time{})
+	hybrid, err := client.SearchFactsHybrid(ctx, query, 3, time.Time{})
 	if err != nil {
-		t.Fatalf("english search: %v", err)
+		t.Fatalf("hybrid cross-lingual search: %v", err)
 	}
-	if len(english.Facts) == 0 {
-		t.Fatal("the English question lost its answer — the fusion regressed the lexical leg")
+	if hybrid.RetrievalPath != retrievalPathHybrid {
+		t.Fatalf("retrieval path = %q, want %q (reason=%q)", hybrid.RetrievalPath, retrievalPathHybrid, hybrid.Reason)
 	}
-	t.Logf("EN  %.90s", english.Facts[0].Statement)
-
-	// Italian: same question, the language the operator actually asks in. The
-	// facts are in English. Lexical retrieval returned zero here.
-	italian, err := client.SearchFactsHybrid(
-		ctx, "perche la ricerca testuale rendeva la meta in italiano", 3, time.Time{})
-	if err != nil {
-		t.Fatalf("italian search: %v", err)
-	}
-	if len(italian.Facts) == 0 {
-		t.Fatal("the Italian question found nothing: the dense leg is not contributing")
-	}
-	for i, hit := range italian.Facts {
-		t.Logf("IT%d %.90s", i+1, hit.Statement)
-	}
-
-	lexical, err := client.SearchFacts(ctx, "perche la ricerca testuale rendeva la meta in italiano", 3, time.Time{})
-	if err != nil {
-		t.Logf("lexical-only comparison errored (which is itself the old behaviour): %v", err)
-	}
-	t.Logf("lexical-only on the same Italian question: %d hits", len(lexical))
-	if len(lexical) >= len(italian.Facts) {
-		t.Logf("NOTE: lexical alone matched %d — the corpus may have grown Italian text since "+
-			"this gap was measured; the fusion must still not be WORSE", len(lexical))
+	if len(hybrid.Facts) == 0 || hybrid.Facts[0].Statement != target {
+		t.Fatalf("cross-lingual target was not rank 1: %+v", hybrid.Facts)
 	}
 }
 

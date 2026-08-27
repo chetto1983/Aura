@@ -21,7 +21,7 @@ from agent_memory_eval_metadata import (
 
 
 SCHEMA_ID = "aura.agent-memory-eval/v1"
-REVISION = 1
+REVISION = 2
 TOTAL_POINTS = 100.0
 PASS_THRESHOLD = 96.5
 P95_MAX_MS = 1000.0
@@ -49,7 +49,7 @@ def default_manifest() -> dict[str, Any]:
         ("arcadedb_unit", "deterministic", False, ["go", "test", "-json", "-count=1", "./internal/arcadedb/"]),
         ("arcadedb_mcp_unit", "deterministic", False, ["go", "test", "-json", "-count=1", "./cmd/arcadedb-mcp/"]),
         ("aura_memory_unit", "deterministic", False, ["go", "test", "-json", "-count=1", "-run", aura_unit_filter, "./cmd/aura/"]),
-        ("arcadedb_live", "live", True, ["go", "test", "-race", "-json", "-tags=arcadedb_integration", "-count=1", "-coverprofile={coverage_profile}", "-skip", "^TestLocomo|^TestMemoryVectorAnswersACrossLingualQuestion$", "./internal/arcadedb/"]),
+        ("arcadedb_live", "live", True, ["go", "test", "-race", "-json", "-tags=arcadedb_integration", "-count=1", "-coverprofile={coverage_profile}", "./internal/arcadedb/"]),
         ("arcadedb_mcp_live", "live", False, ["go", "test", "-race", "-json", "-tags=arcadedb_integration", "-count=1", "-run", "^TestAgentMemoryMCPLive", "./cmd/arcadedb-mcp/"]),
         ("aura_memory_latency_live", "live", False, ["go", "test", "-race", "-json", "-tags=arcadedb_integration", "-count=1", "-run", "^TestAgentMemoryCLILiveSearchP95$", "./cmd/aura/"]),
         ("arcadedb_purge_live", "live", False, ["go", "test", "-race", "-json", "-tags=arcadedb_integration", "-count=1", "-run", "^TestArcadeMemoryPurgeLive", "./cmd/aura/"]),
@@ -89,7 +89,8 @@ def default_manifest() -> dict[str, Any]:
         ("historical_as_of_is_queryable", "live", "retrieval_temporal", 3, "positive", "arcadedb_live", "TestAsOfReturnsWhatWasTrueThen"),
         ("exact_traversal_respects_time", "live", "retrieval_temporal", 3, "positive", "arcadedb_live", "TestFactsAboutAnswersExactlyAndRespectsTime"),
         ("studio_graph_preserves_direction", "live", "retrieval_temporal", 2, "positive", "arcadedb_live", "TestStudioGraphSerializerReturnsFactEndpoints"),
-        ("embeddinggemma_returns_768_dimensions", "live", "retrieval_temporal", 2, "positive", "arcadedb_live", "TestMemoryVectorSidecarReturnsTheIndexWidth"),
+        ("embeddinggemma_returns_768_dimensions", "live", "retrieval_temporal", 1, "positive", "arcadedb_live", "TestMemoryVectorSidecarReturnsTheIndexWidth"),
+        ("cross_lingual_hybrid_ranks_the_target_first", "live", "retrieval_temporal", 1, "positive", "arcadedb_live", "TestMemoryVectorAnswersACrossLingualQuestion"),
         ("nonexistent_fact_abstains_explicitly", "live", "retrieval_temporal", 3, "negative", "arcadedb_mcp_live", "TestAgentMemoryMCPLiveAbstainsOnNonexistentFact"),
         ("embedder_outage_degrades_to_lexical", "live", "mcp_runtime_resilience", 2, "negative", "arcadedb_live", "TestMemoryVectorDegradesWithoutAnEmbedder"),
         ("live_mcp_initialize_list_call", "live", "mcp_runtime_resilience", 5, "positive", "arcadedb_mcp_live", "TestAgentMemoryMCPLiveInitializeListCallAndIsolation"),
@@ -154,6 +155,7 @@ def default_manifest() -> dict[str, Any]:
             "zero_cross_tenant_leakage": ["zero_cross_tenant_leakage"],
             "live_mcp_initialize_list_call": ["live_mcp_initialize_list_call"],
             "embeddinggemma_768": ["embeddinggemma_returns_768_dimensions"],
+            "cross_lingual_hybrid": ["cross_lingual_hybrid_ranks_the_target_first"],
             "explicit_abstention": ["nonexistent_fact_abstains_explicitly"],
             "package_coverage_85": ["arcadedb_package_coverage"],
             "bounded_p95": ["live_mcp_bounded_p95"],
