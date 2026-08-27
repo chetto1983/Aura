@@ -6,6 +6,7 @@ export MSYS_NO_PATHCONV=1
 
 repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$repo_root"
+candidate_sha="$(git rev-parse HEAD)"
 
 retrieval_fixture="$repo_root/scripts/fixtures/document_retrieval_eval"
 retrieval_report_dir="${AURA_DOCUMENT_EVAL_REPORT_DIR:-$repo_root/artifacts/document-retrieval-eval}"
@@ -486,9 +487,11 @@ mkdir -p "$retrieval_report_dir"
 export AURA_BENCH_IDENTITY="$identity_id"
 export AURA_ARCADEDB_URL="http://127.0.0.1:2480"
 export AURA_ARCADEDB_DATABASE="$arcade_db"
+export AURA_ARCADEDB_ADMIN_USER="$ARCADEDB_ADMIN_USER"
+export AURA_ARCADEDB_ADMIN_PASSWORD="$ARCADEDB_ADMIN_PASSWORD"
 export AURA_BENCH_PILOT="$retrieval_fixture/qrels.json"
 export AURA_BENCH_OUT="$retrieval_report_dir/fusion.json"
-export AURA_BENCH_CANDIDATE="$(git rev-parse HEAD)"
+export AURA_BENCH_CANDIDATE="$candidate_sha"
 export AURA_ABSTAIN_QUERIES="$retrieval_fixture/qrels.json"
 export AURA_ABSTAIN_OUT="$retrieval_report_dir/abstention.json"
 
