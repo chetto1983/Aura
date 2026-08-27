@@ -41,7 +41,7 @@ func TestFactKeyClosesOnlyTheNamedSibling(t *testing.T) {
 		write(t, client, Fact{
 			Subject: subject, Predicate: "learned_lesson", Object: object,
 			Statement: subject + " learned: " + lesson,
-			Source:    FactSource{RunID: runID}, ValidFrom: learned,
+			Source:    FactSource{RunID: runID, WriterRole: WriterParent}, ValidFrom: learned,
 		}, now)
 		hits, err := client.FactsAbout(context.Background(), subject, "learned_lesson", 10, time.Time{})
 		if err != nil {
@@ -58,7 +58,7 @@ func TestFactKeyClosesOnlyTheNamedSibling(t *testing.T) {
 	written, err := client.UpsertFact(context.Background(), Fact{
 		Subject: subject, Predicate: "learned_lesson", Object: subject + "_lesson_0_corrected",
 		Statement: subject + " learned: first lesson, corrected",
-		Source:    FactSource{RunID: runID}, ValidFrom: corrected,
+		Source:    FactSource{RunID: runID, WriterRole: WriterParent}, ValidFrom: corrected,
 		Supersedes: true, TargetFactKey: keys[0],
 	}, now)
 	if err != nil {
@@ -117,13 +117,13 @@ func TestUpsertFactWithUnknownFactKeyRefusesAgainstALiveGraph(t *testing.T) {
 	write(t, client, Fact{
 		Subject: subject, Predicate: "lives_in", Object: subject + "_Torino",
 		Statement: subject + " lives in Torino.",
-		Source:    FactSource{RunID: runID},
+		Source:    FactSource{RunID: runID, WriterRole: WriterParent},
 	}, now)
 
 	written, err := client.UpsertFact(context.Background(), Fact{
 		Subject: subject, Predicate: "lives_in", Object: subject + "_Caraglio",
 		Statement:  subject + " lives in Caraglio.",
-		Source:     FactSource{RunID: runID},
+		Source:     FactSource{RunID: runID, WriterRole: WriterParent},
 		Supersedes: true, TargetFactKey: "fact-key-that-does-not-exist",
 	}, now.Add(time.Second))
 	if err != nil {
@@ -159,7 +159,7 @@ func TestSupersedeWithNoCandidatesRefusesAgainstALiveGraph(t *testing.T) {
 	written, err := client.UpsertFact(context.Background(), Fact{
 		Subject: subject, Predicate: "learned_lesson", Object: subject + "_lesson",
 		Statement:  subject + " learned a lesson.",
-		Source:     FactSource{RunID: "it-" + subject},
+		Source:     FactSource{RunID: "it-" + subject, WriterRole: WriterParent},
 		Supersedes: true,
 	}, now)
 	if err != nil {
@@ -199,19 +199,19 @@ func TestSupersedeReplaysF2EightFactsRefused(t *testing.T) {
 			Subject: subject, Predicate: "learned_lesson",
 			Object:    fmt.Sprintf("%s_lesson_%d", subject, i),
 			Statement: fmt.Sprintf("%s learned lesson number %d.", subject, i),
-			Source:    FactSource{RunID: runID},
+			Source:    FactSource{RunID: runID, WriterRole: WriterParent},
 		}, now)
 	}
 	write(t, client, Fact{
 		Subject: subject, Predicate: "lives_in", Object: subject + "_Torino",
 		Statement: subject + " lives in Torino.",
-		Source:    FactSource{RunID: runID},
+		Source:    FactSource{RunID: runID, WriterRole: WriterParent},
 	}, now)
 
 	written, err := client.UpsertFact(context.Background(), Fact{
 		Subject: subject, Predicate: "learned_lesson", Object: subject + "_lesson_blanket_correction",
 		Statement: subject + " learned a lesson, corrected.",
-		Source:    FactSource{RunID: runID}, Supersedes: true,
+		Source:    FactSource{RunID: runID, WriterRole: WriterParent}, Supersedes: true,
 	}, now)
 	if err != nil {
 		t.Fatalf("UpsertFact: %v", err)

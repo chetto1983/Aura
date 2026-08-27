@@ -28,7 +28,7 @@ func TestUpsertFactRejectsProseObjectAndCreatesNoEntity(t *testing.T) {
 		Subject: subject, Predicate: "learned_lesson",
 		Object:    "This reads like a full sentence and must be rejected outright.",
 		Statement: subject + " learned a lesson.",
-		Source:    FactSource{RunID: runID},
+		Source:    FactSource{RunID: runID, WriterRole: WriterParent},
 	}, time.Now())
 	if err == nil {
 		t.Fatal("a prose object was accepted")

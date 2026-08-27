@@ -125,7 +125,7 @@ func TestMemoryProvenanceReplayAttachDetachLifecycle(t *testing.T) {
 	fact := Fact{
 		Subject: subject, SubjectKind: "Person", Predicate: "lives_in",
 		Object: object, ObjectKind: "City", Statement: subject + " lives in Caraglio.",
-		Source: FactSource{RunID: runID, MemoryIDs: []string{"msg-1"}},
+		Source: FactSource{RunID: runID, MemoryIDs: []string{"msg-1"}, WriterRole: WriterParent},
 	}
 	write(t, client, fact, time.Now().UTC())
 	write(t, client, fact, time.Now().UTC().Add(time.Second))
@@ -142,7 +142,7 @@ func TestMemoryProvenanceReplayAttachDetachLifecycle(t *testing.T) {
 	}
 
 	secondRun := runID + "-second"
-	fact.Source = FactSource{RunID: secondRun, MemoryIDs: []string{"msg-2"}}
+	fact.Source = FactSource{RunID: secondRun, MemoryIDs: []string{"msg-2"}, WriterRole: WriterParent}
 	write(t, client, fact, time.Now().UTC().Add(2*time.Second))
 	hits, err = client.FactsAbout(context.Background(), subject, "lives_in", 10, time.Time{})
 	if err != nil {
@@ -266,18 +266,18 @@ func TestMemoryProvenanceRecurrencePreservesHistory(t *testing.T) {
 	base := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
 	first := Fact{
 		Subject: subject, Predicate: "lives_in", Object: subject + "_Torino",
-		Statement: subject + " lives in Torino.", Source: FactSource{RunID: runID + "-first"},
+		Statement: subject + " lives in Torino.", Source: FactSource{RunID: runID + "-first", WriterRole: WriterParent},
 		ValidFrom: base,
 	}
 	write(t, client, first, base)
 	second := Fact{
 		Subject: subject, Predicate: "lives_in", Object: subject + "_Caraglio",
-		Statement: subject + " lives in Caraglio.", Source: FactSource{RunID: runID + "-second"},
+		Statement: subject + " lives in Caraglio.", Source: FactSource{RunID: runID + "-second", WriterRole: WriterParent},
 		ValidFrom: base.Add(time.Second), Supersedes: true,
 	}
 	write(t, client, second, base.Add(time.Second))
 	recurrent := first
-	recurrent.Source = FactSource{RunID: runID + "-recurrent"}
+	recurrent.Source = FactSource{RunID: runID + "-recurrent", WriterRole: WriterParent}
 	recurrent.ValidFrom = base.Add(2 * time.Second)
 	recurrent.Supersedes = true
 	write(t, client, recurrent, base.Add(2*time.Second))
@@ -328,7 +328,7 @@ func TestStudioGraphSerializerReturnsFactEndpoints(t *testing.T) {
 	object := subject + "_ArcadeDB"
 	write(t, client, Fact{
 		Subject: subject, Predicate: "uses", Object: object,
-		Statement: subject + " uses ArcadeDB.", Source: FactSource{RunID: runID},
+		Statement: subject + " uses ArcadeDB.", Source: FactSource{RunID: runID, WriterRole: WriterParent},
 	}, time.Now().UTC())
 
 	graph, err := client.QueryStudioGraph(
@@ -362,7 +362,7 @@ func TestRetrievedFactCarriesItsEndpointsAndProvenance(t *testing.T) {
 	write(t, client, Fact{
 		Subject: subject, Predicate: "lives_in", Object: object,
 		Statement: subject + " lives in Caraglio.",
-		Source:    FactSource{RunID: runID, MemoryIDs: []string{"msg-7"}},
+		Source:    FactSource{RunID: runID, MemoryIDs: []string{"msg-7"}, WriterRole: WriterParent},
 	}, time.Now())
 
 	hits, err := client.SearchFacts(context.Background(), "Caraglio", 5, time.Time{})
@@ -395,7 +395,7 @@ func TestExpiredFactIsExcludedFromAPresentTenseSearch(t *testing.T) {
 	write(t, client, Fact{
 		Subject: subject, Predicate: "lives_in", Object: subject + "_Torino",
 		Statement: subject + " lives in Torino.",
-		Source:    FactSource{RunID: runID},
+		Source:    FactSource{RunID: runID, WriterRole: WriterParent},
 		ValidFrom: now.AddDate(-6, 0, 0), ValidTo: now.AddDate(-3, 0, 0),
 	}, now)
 
@@ -418,7 +418,7 @@ func TestAsOfReturnsWhatWasTrueThen(t *testing.T) {
 	write(t, client, Fact{
 		Subject: subject, Predicate: "lives_in", Object: subject + "_Torino",
 		Statement: subject + " lives in Torino.",
-		Source:    FactSource{RunID: runID},
+		Source:    FactSource{RunID: runID, WriterRole: WriterParent},
 		ValidFrom: now.AddDate(-6, 0, 0), ValidTo: now.AddDate(-3, 0, 0),
 	}, now)
 
@@ -446,14 +446,14 @@ func TestSupersessionClosesTheWindowAndKeepsThePastQueryable(t *testing.T) {
 	write(t, client, Fact{
 		Subject: subject, Predicate: "lives_in", Object: subject + "_Torino",
 		Statement: subject + " lives in Torino.",
-		Source:    FactSource{RunID: runID},
+		Source:    FactSource{RunID: runID, WriterRole: WriterParent},
 		ValidFrom: now.AddDate(-6, 0, 0),
 	}, now)
 
 	written := write(t, client, Fact{
 		Subject: subject, Predicate: "lives_in", Object: subject + "_Caraglio",
 		Statement: subject + " lives in Caraglio.",
-		Source:    FactSource{RunID: runID},
+		Source:    FactSource{RunID: runID, WriterRole: WriterParent},
 		ValidFrom: moved, Supersedes: true,
 	}, now)
 	if written.Superseded != 1 {
@@ -511,12 +511,12 @@ func TestFactsAboutAnswersExactlyAndRespectsTime(t *testing.T) {
 	write(t, client, Fact{
 		Subject: subject, Predicate: "works_for", Object: subject + "_PmSync",
 		Statement: subject + " works for PmSync.",
-		Source:    FactSource{RunID: runID}, ValidFrom: now.AddDate(-4, 0, 0),
+		Source:    FactSource{RunID: runID, WriterRole: WriterParent}, ValidFrom: now.AddDate(-4, 0, 0),
 	}, now)
 	write(t, client, Fact{
 		Subject: subject, Predicate: "lives_in", Object: subject + "_Torino",
 		Statement: subject + " lives in Torino.",
-		Source:    FactSource{RunID: runID},
+		Source:    FactSource{RunID: runID, WriterRole: WriterParent},
 		ValidFrom: now.AddDate(-6, 0, 0), ValidTo: now.AddDate(-3, 0, 0),
 	}, now)
 

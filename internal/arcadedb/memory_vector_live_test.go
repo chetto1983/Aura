@@ -79,17 +79,17 @@ func TestMemoryVectorAnswersACrossLingualQuestion(t *testing.T) {
 	fixtures := []Fact{
 		{
 			Subject: "Oriole project", Predicate: "stores_quarterly_invoices", Object: "Cobalt cabinet",
-			Statement: target, Source: FactSource{RunID: "cross-lingual-eval", MemoryIDs: []string{"target"}},
+			Statement: target, Source: FactSource{RunID: "cross-lingual-eval", MemoryIDs: []string{"target"}, WriterRole: WriterParent},
 		},
 		{
 			Subject: "Kestrel project", Predicate: "stores_annual_reports", Object: "Amber archive",
 			Statement: "The kestrel project stores its annual reports in the amber archive.",
-			Source:    FactSource{RunID: "cross-lingual-eval", MemoryIDs: []string{"distractor-1"}},
+			Source:    FactSource{RunID: "cross-lingual-eval", MemoryIDs: []string{"distractor-1"}, WriterRole: WriterParent},
 		},
 		{
 			Subject: "Heron project", Predicate: "keeps_design_samples", Object: "Northern laboratory",
 			Statement: "The heron project keeps its design samples in the northern laboratory.",
-			Source:    FactSource{RunID: "cross-lingual-eval", MemoryIDs: []string{"distractor-2"}},
+			Source:    FactSource{RunID: "cross-lingual-eval", MemoryIDs: []string{"distractor-2"}, WriterRole: WriterParent},
 		},
 	}
 	for i, fact := range fixtures {
