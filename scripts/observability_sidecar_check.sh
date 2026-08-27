@@ -19,7 +19,7 @@ probe() {
   # and reports a false unreachable. `2>&1 >/dev/null` captures wget's diagnostic while
   # discarding the response body — order matters, the reverse discards both.
   local err
-  if ! err="$(docker exec aura-grafana-1 wget -q -T 5 -O - "$1" 2>&1 >/dev/null)"; then
+  if ! err="$(docker compose exec -T grafana wget -q -T 5 -O - "$1" 2>&1 >/dev/null)"; then
     [[ -n "$err" ]] && printf '  %s\n' "$err" >&2
     return 1
   fi
@@ -28,11 +28,16 @@ probe() {
 fail=0
 probe "http://tempo:3200/ready"        || { echo "tempo unreachable at tempo:3200/ready"; fail=1; }
 probe "http://prometheus:9090/-/ready" || { echo "prometheus unreachable at prometheus:9090/-/ready"; fail=1; }
+probe "http://127.0.0.1:3000/api/health" || { echo "Grafana API unreachable"; fail=1; }
+probe "http://127.0.0.1:3000/api/datasources/uid/aura-tempo/health" || {
+  echo "Grafana Tempo datasource is not working"
+  fail=1
+}
 
 # up{job="aura"} is 1 only when the LAST scrape succeeded, so this is the difference
 # between "the metrics pipeline exists" and "the metrics pipeline works".
 if [[ "$fail" -eq 0 ]]; then
-  scraped="$(docker exec aura-grafana-1 wget -q -T 5 -O - \
+  scraped="$(docker compose exec -T grafana wget -q -T 5 -O - \
       'http://prometheus:9090/api/v1/query?query=up%7Bjob%3D%22aura%22%7D' 2>/dev/null |
     grep -o '"value":\[[^]]*"1"\]' || true)"
   if [[ -z "$scraped" ]]; then
@@ -41,5 +46,18 @@ if [[ "$fail" -eq 0 ]]; then
   fi
 fi
 
-[[ "$fail" -eq 0 ]] && echo "observability pack reachable and scraping aura"
+# Repeat the same assertion through Grafana's provisioned Prometheus datasource. A direct
+# Prometheus query alone stayed green while every dashboard returned HTTP 400 when this URL
+# still pointed at aura:9090 after the services stopped sharing Aura's network namespace.
+if [[ "$fail" -eq 0 ]]; then
+  grafana_scraped="$(docker compose exec -T grafana wget -q -T 5 -O - \
+      'http://127.0.0.1:3000/api/datasources/proxy/uid/aura-prometheus/api/v1/query?query=up%7Bjob%3D%22aura%22%7D' 2>/dev/null |
+    grep -o '"value":\[[^]]*"1"\]' || true)"
+  if [[ -z "$grafana_scraped" ]]; then
+    echo 'Grafana Prometheus datasource is not returning up{job="aura"} == 1'
+    fail=1
+  fi
+fi
+
+[[ "$fail" -eq 0 ]] && echo "observability pack and Grafana datasources reachable and scraping aura"
 exit "$fail"

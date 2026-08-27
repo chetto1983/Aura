@@ -9,6 +9,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/cron/handlers"
+	"github.com/chetto1983/aura/internal/obs"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/chetto1983/aura/internal/scoring"
 )
@@ -46,6 +48,15 @@ var _ cron.ApprovalChannel = (*channels.Registry)(nil)
 // by the handlers package) over the live LLM client.
 func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, ownerExportSweepers ...handlers.OwnerExportSweeper) *cron.Dispatch {
 	agentDeps := newCronAgentDeps(chat)
+	var observabilityChecker handlers.ObservabilityChecker
+	if chat.cfg.ObservabilityCheckEnabled {
+		observabilityChecker = obs.NewSidecarChecker(
+			&http.Client{Timeout: 5 * time.Second},
+			"http://tempo:3200",
+			"http://prometheus:9090",
+			"http://grafana:3000",
+		)
+	}
 	real := map[cron.TaskKind]handlers.Handler{
 		cron.KindReminder:       handlers.ReminderHandler{},
 		cron.KindAgentJob:       handlers.AgentJobHandler{Deps: agentDeps},
@@ -73,6 +84,7 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, own
 		// returns a bare nil when ArcadeDB or the embedding sidecar is unconfigured, which
 		// registers the disabled no-op sweep rather than a failing one.
 		cron.KindMemoryEmbedBackfill: handlers.NewMemoryEmbedBackfillHandler(buildMemoryEmbedBackfill(chat)),
+		cron.KindObservabilityCheck:  handlers.NewObservabilityCheckHandler(observabilityChecker),
 	}
 	hmap := make(map[cron.TaskKind]cron.Handler, len(real))
 	for kind, h := range real {

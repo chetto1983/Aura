@@ -48,6 +48,11 @@ type Config struct {
 	OtelExporter string // AURA_OTEL_EXPORTER ∈ {stdout,otlp,none} (D-06)
 	OtelEndpoint string // AURA_OTEL_ENDPOINT — OTLP/gRPC target (D-06)
 	MetricsBind  string // AURA_METRICS_BIND — private loopback Prometheus listener
+	// ObservabilityCheckEnabled installs the system scheduler probe that verifies
+	// Tempo/Prometheus readiness, up{job="aura"} == 1, and the same path through
+	// Grafana's provisioned datasources. It defaults off for bare binaries; Compose
+	// enables it together with the observability profile.
+	ObservabilityCheckEnabled bool // AURA_OBSERVABILITY_CHECK_ENABLED
 
 	// Phase 33 (Slice runtime-profiles) deployment posture. Distinct from the
 	// Agent.md per-identity ProfileDir below (RESEARCH Pitfall 1). Selects the
@@ -415,6 +420,9 @@ func loadBase() *Config {
 		OtelExporter:   envDefault("AURA_OTEL_EXPORTER", defaultOtelExporter),
 		OtelEndpoint:   envDefault("AURA_OTEL_ENDPOINT", defaultOtelEndpoint),
 		MetricsBind:    envDefault("AURA_METRICS_BIND", "127.0.0.1:9464"),
+		ObservabilityCheckEnabled: envutil.BoolDefault(
+			"AURA_OBSERVABILITY_CHECK_ENABLED", false,
+		),
 
 		Profile:   ParseProfile(os.Getenv("AURA_PROFILE")),
 		Retention: loadRetentionConfig(ParseProfile(os.Getenv("AURA_PROFILE"))),
@@ -573,25 +581,6 @@ func composeDSN(role, password, host, port, dbname, sslmode string) string {
 	q.Set("sslmode", sslmode)
 	u.RawQuery = q.Encode()
 	return u.String()
-}
-
-// defaultSkillInjectionBlocklist is the prd.md §Slice 7 builtin prompt-injection
-// blocklist (D-27/D-34): chat-template control tokens across the model families
-// Aura speaks. The validator NFKC-normalizes a skill body THEN literal-matches
-// each entry (write-boundary only, D-28).
-func defaultSkillInjectionBlocklist() []string {
-	return []string{
-		// OpenAI ChatML
-		"<|im_start|>", "<|im_end|>", "<|endoftext|>",
-		// Anthropic
-		"</system>", "</human>", "</assistant>", "\n\nHuman:", "\n\nAssistant:",
-		// Llama / Mistral
-		"[INST]", "[/INST]", "<<SYS>>", "<</SYS>>",
-		// Meta / Llama 3
-		"<|begin_of_text|>", "<|start_header_id|>", "<|end_header_id|>", "<|eot_id|>",
-		// DeepSeek / Gemma / Qwen
-		"<|fim_begin|>", "<|fim_hole|>", "<start_of_turn>", "<end_of_turn>",
-	}
 }
 
 // Path-default + normalization helpers (absRunDir, defaultRunDir, auraHomeDir,

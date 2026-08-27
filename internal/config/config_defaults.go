@@ -34,3 +34,22 @@ const (
 // tool output entering a context window. Paging should be the exception, not the
 // normal path.
 const defaultToolPreviewCapBytes = 30000
+
+// defaultSkillInjectionBlocklist is the prd.md §Slice 7 builtin prompt-injection
+// blocklist (D-27/D-34): chat-template control tokens across the model families
+// Aura speaks. The validator NFKC-normalizes a skill body THEN literal-matches
+// each entry (write-boundary only, D-28).
+func defaultSkillInjectionBlocklist() []string {
+	return []string{
+		// OpenAI ChatML
+		"<|im_start|>", "<|im_end|>", "<|endoftext|>",
+		// Anthropic
+		"</system>", "</human>", "</assistant>", "\n\nHuman:", "\n\nAssistant:",
+		// Llama / Mistral
+		"[INST]", "[/INST]", "<<SYS>>", "<</SYS>>",
+		// Meta / Llama 3
+		"<|begin_of_text|>", "<|start_header_id|>", "<|end_header_id|>", "<|eot_id|>",
+		// DeepSeek / Gemma / Qwen
+		"<|fim_begin|>", "<|fim_hole|>", "<start_of_turn>", "<end_of_turn>",
+	}
+}

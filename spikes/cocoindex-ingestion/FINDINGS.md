@@ -12,8 +12,9 @@ aggiungere un datastore. Tutte le cifre qui sotto sono misurate su questo host, 
 > markup RTF grezzo come se fosse testo, e **rompe la ricerca per frase esatta sui PDF
 > giustificati** emettendo doppi spazi (invisibile: produce più caratteri di un estrattore
 > pulito). Il candidato è **iscc-tika 0.6.0** — 15 formati su 16, 18× più veloce sul PDF.
-> Le misure stanno in `HANDOFF.md` §3.4. Le cifre qui sotto restano valide come confronto
-> con Docling, non come scelta.
+> Il verdetto corrente e i gap residui sono consolidati in
+> `.planning/codebase/CONCERNS.md`. Le cifre qui sotto restano valide come confronto con
+> Docling, non come scelta.
 
 ---
 
@@ -132,10 +133,10 @@ scambiare per una risposta. La distanza non può prendere quella decisione (pegg
 
 `document_search` guadagna il parametro che il tool Go non ha mai avuto: `prefix`.
 
-**Difetto aperto:** `Passage.document` porta il path del walker al momento dell'ingest
+**Difetto storico, ora chiuso:** `Passage.document` portava il path del walker al momento dell'ingest
 (`/corpus/…` da localfs, `mutuo.pdf` senza bucket da S3), che `document_open` non sa
-risolvere. La catena trova→apri è spezzata finché il passaggio non porta un'identità
-stabile. Vedi `HANDOFF.md` §5b.
+risolvere. La catena trova→apri è stata chiusa con l'identità stabile cross-language `doc_`;
+il confine corrente e le prove sono riassunti in `.planning/codebase/CONCERNS.md`.
 
 ---
 

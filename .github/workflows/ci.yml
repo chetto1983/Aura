@@ -265,6 +265,9 @@ jobs:
       - name: Negative verifier fixtures
         run: pwsh -NoProfile -File scripts/verify-observability.Tests.ps1
 
+      - name: Scheduled scrape-check contract
+        run: bash scripts/observability_sidecar_check_test.sh
+
       - name: Deployable observability contract
         run: pwsh -NoProfile -File scripts/verify-observability.ps1 -StaticOnly
 

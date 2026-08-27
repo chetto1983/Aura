@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/idempotency"
@@ -302,6 +303,16 @@ func (d *Dispatch) complete(ctx context.Context, task Task, runID, status, summa
 // advisory notification).
 func (d *Dispatch) notify(ctx context.Context, task Task, runID, summary string, runErr error) {
 	if d.deps.Notifier == nil {
+		return
+	}
+	// A transition-aware system probe returns an empty healthy summary so routine
+	// success stays on metrics/the run ledger only. It may also return a typed error
+	// for an outage already reported; keep the run failed without paging every tick.
+	if runErr == nil && strings.TrimSpace(summary) == "" {
+		return
+	}
+	var suppressor interface{ SuppressSchedulerNotification() bool }
+	if runErr != nil && errors.As(runErr, &suppressor) && suppressor.SuppressSchedulerNotification() {
 		return
 	}
 	// A system-seeded housekeeping sweep that succeeded is pure operational noise in

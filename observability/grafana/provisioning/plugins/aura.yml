@@ -1,0 +1,4 @@
+apiVersion: 1
+apps: []
+
+# Aura dashboards use only Grafana's built-in panels and data sources.

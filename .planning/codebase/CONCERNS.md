@@ -1,289 +1,198 @@
 ---
-last_mapped_commit: 8e7893b6fd8fc4727ae81810a87dd49ce294689b
-last_audited_commit: 3ab589ee6e2302e7bf3ff865e0083a4f7475b63e
+last_mapped_commit: 8e15e14b12f6cfb4eb9951f4563505478c1e3a70
+last_audited_commit: 8e15e14b12f6cfb4eb9951f4563505478c1e3a70
 ---
 
 # Codebase Concerns
 
-**Analysis Date:** 2026-08-27
+**Analysis date:** 2026-08-27
 
-**Audit refresh:** Amendments #151 and #152 split coverage evidence by runtime tier and add
-cross-package attribution inside the unit plus `db_integration` tier. Release readiness now
-requires the independent unit/database, native Docker, and live ArcadeDB reports, plus the
-exact package-local policy result; known low packages can no longer regress behind stronger
-ones. Amendment #155 and `docs/aura-memory-preload-threat-model.md` now separate trusted
-agent-memory provenance from instruction authority and close the preload poisoning seam.
-Amendments #159 and #161 replace skipped/stale evaluation proxies with executable owned-corpus
-evidence, and the Runner integration wrapper now provisions an isolated reproducible database.
-Amendment #162 bounds the retained OOXML card reader and adds openpyxl-oracle parity for every
-owned workbook; the measurement found and fixed the blank-before-header row-span defect.
-Amendment #163 keeps corpus inventory in the Files workspace and adds identity-scoped Garage
-`@file`/`@folder` selection that structurally constrains every document retrieval leg.
-Amendment #167 closes the lost image/audio concern: the selected primary model now receives
-verified native media only when live OpenRouter or llama.cpp metadata advertises that modality,
-with the existing indexed summary/transcript retained as the deterministic text fallback.
+This is the only current concern ledger. It was rebuilt adversarially from the live code,
+configuration and tests at the commit above. Old plans, summaries and spike findings are
+historical evidence, not a work queue. The two former handoff files were removed after their
+current claims and references were consolidated here; Git history remains their provenance.
 
-## Severity Summary
+## Active concerns
 
-| Concern | Severity | Status | Primary evidence |
-|---|---|---|---|
-| Approval resume enforces a persisted per-pause decision policy | High | Closed 2026-08-25 | `internal/runner/resume_policy.go`, `internal/db/migrations/0102_paused_state_decision_policy.up.sql`, `internal/runner/live_e2e_policy_test.go` |
-| Pending approvals have no expiry | High | Closed 2026-08-25 | `internal/runner/approval_expiry.go`, `cmd/aura/approval_expiry.go`, `internal/runner/live_e2e_expiry_test.go` |
-| Empty accepted approval answers resumed the model silently | High | Closed 2026-08-25 | `internal/agui/server_run_test.go`, `internal/runner/runner_resume_test.go`, `internal/askuser/store_mutation_test.go` |
-| Release disclosure register reported NO-GO | High | Closed 2026-08-25 | `docs/audit/README.md`, `scripts/audit_closure_gate.py` |
-| Amendment #115 still requires a real-production document E2E whose runner no longer exists | High | Closed 2026-08-25 | PRD amendment #141, `scripts/ingest_reconcile_e2e.sh`, `cmd/aura/document_agent_live_test.go` |
-| ArcadeDB tenant memory has no exercised backup/restore plane | High | Closed 2026-08-25 | `scripts/restore_drill.sh`, `scripts/release_readiness_gate.py`, `compose.yaml` |
-| Shared deployment catalogs need administrator-only mutation in multi-user operation | Medium | Closed 2026-08-26 | `internal/agent/tools/skill_manage.go`, `cmd/aura/serve_webui.go`, `internal/config/config_validate.go` |
-| Daemon-gated coverage tiers did not feed release readiness | Medium | Closed 2026-08-26 | `scripts/docker_coverage_gate.sh`, `scripts/agent_memory_eval.py`, `scripts/release_readiness_gate.py` |
-| Owned unit + database coverage remains aggregate, not per-package | Medium | Closed 2026-08-26 | `scripts/coverage_package_gate.py`, `scripts/coverage_package_policy.json`, `scripts/release_readiness_gate.py` |
-| Long-history compaction can disable itself silently and uses an unmeasured three-minute timeout | Medium | Closed 2026-08-26 | `internal/conversations/context_budget.go`, `internal/conversations/compaction.go`, `internal/runner/runner_context.go`, `web/src/chat/ContextBudgetGauge.tsx` |
-| Calendar MCP admin-token fallback was removed by identity-scoped OAuth | Medium | Closed 2026-08-26 | `internal/agui/connect_pim_api.go`, `cmd/aura/serve_agui.go`, `compose.yaml` |
-| Opt-in memory preload inserts recalled content into model-visible context with no dedicated poisoning threat model | Medium | Closed 2026-08-27 | `docs/aura-memory-preload-threat-model.md`, `internal/runner/runner_context.go`, `internal/agent/prompt.go` |
-| Test/evaluation evidence contains skipped, stale, flaky, or non-reproducible legs | Medium | Closed 2026-08-27 | `scripts/agent_memory_eval.py`, `scripts/ingest_reconcile_e2e.sh`, `scripts/run_runner_integration.sh` |
-| Manual OOXML parser is a broad custom maintenance surface | Medium | Closed 2026-08-27 | PRD amendment #162, `docs/aura-ooxml-routing-card-boundary.md`, `internal/documents/filecard/corpus_parity_test.go` |
-| No model-facing document catalog operation | Medium | Closed 2026-08-27 | PRD amendment #163, `web/src/chat/composer/GarageMentionPicker.tsx`, `internal/documents/source_scope.go` |
-| Image/audio uploads reached indexing but not the selected model's native context | Medium | Closed 2026-08-27 | PRD amendment #167, `internal/llm/model_content_caps.go`, `internal/agui/asset_content_projection.go`, `internal/llm/openai_compat/client_multimodal_test.go` |
+| Severity | Concern | Audit verdict |
+|---|---|---|
+| **High** | `read_file` has an unbounded in-process OOXML decompression path | **Confirmed; missing from the prior ledger** |
+| **Medium** | The owned document-agent oracle does not exercise the full-file or scanned-PDF lanes | **Confirmed; prior closure was too broad** |
+| **Medium** | Managed conversation history is truncated by a fixed 50-row default before token budgeting | **Confirmed; duplicated in the prior ledger** |
+| **Medium** | GSD planning state contradicts itself and the current checkout | **Confirmed from the old handoff** |
+| **Medium** | Aura cannot prove action-level coverage of the externally pinned Calendar/PIM fork | **Confirmed at the consumption boundary; fork internals not re-auditable here** |
+| **Low** | Server-generated approval questions remain hard-coded in English | **Confirmed from the old handoff** |
+| **Low** | Expired idempotency recovery is implemented and tested but unreachable in production | **Confirmed dark code / unresolved product decision** |
+| **Low** | Several owned files have almost no room under the enforced 600-line cap | **Confirmed; prior counts were stale** |
 
-## Tech Debt
+### High — `read_file` can expand attacker-controlled OOXML without a decompression budget
 
-**Closed 2026-08-26 — deferred manifest aligned with the curated Calendar surface:**
-- Resolution: the checked-in corpus now has 85 deferred specs: 10 built-ins, 1 Calendar, 55 Linear, 4 Memory, and 15 WhatsApp. The added `calendar__calendar` spec follows the immutable sidecar's single-tool flat-union contract, including its 29-action enum and sole root-required `action` field.
-- Drift gate: `TestDeferredManifestFixture_SourceInventory` pins every expected source count, so a curation change cannot silently leave the snapshot behind. The real-corpus ranking gate now includes a Calendar event query and therefore exercises the mounted capability instead of merely counting JSON rows.
-- Evidence: both new assertions were first observed red against the 84-entry fixture; after the atomic fixture update, source inventory is green and retrieval is **100% top-1 / 100% recall@3 (20/20)**.
-- Boundary: this closure uses the documented atomic-snapshot route, not a new live production-builder generator. Any future curated-surface change must update the fixture, pinned inventory, and ranking cases together.
-- Files: `internal/agent/tools/testdata/deferred_manifest.json`, `internal/agent/tools/search_gate_test.go`.
+- **What is true:** workspace reads cap the compressed input at 10 MiB
+  (`internal/agent/tools/fs.go:124-134`, `internal/agent/tools/sandbox_route.go:157-179`), but
+  `readZipXML` and `xlsxReadZipMember` call `io.ReadAll` on decompressed ZIP members
+  (`internal/agent/tools/document_extract.go:203-213`,
+  `internal/agent/tools/document_extract_xlsx.go:83-90`). The XML is then materialized as a full
+  pointer tree (`internal/agent/tools/document_extract.go:145-183`). The 5,000-row/256-column XLSX
+  limits run only after the complete sheet XML and shared-string table have been decompressed and
+  parsed (`internal/agent/tools/document_extract_xlsx.go:92-108,176-210`).
+- **Why it matters:** a small `.docx` or `.xlsx` in the caller's sandbox can expand far beyond the
+  input cap inside the Aura daemon, consuming memory and CPU before any rendering limit applies.
+  This is a second bespoke OOXML reader, separate from the bounded `filecard` routing-card parser;
+  the `filecard` parity closure did not cover it.
+- **Action:** first add a compressed-amplification regression that fails before allocating the
+  expanded member. Then either move exact Office extraction into the existing per-identity sandbox
+  toolchain or share a streaming reader with explicit per-member, aggregate, element-depth and
+  output budgets. Do not claim the `filecard` 4 KiB card is an exact-document substitute.
 
-**Closed 2026-08-26 — quality snapshot distinguished historical rows from current gates:**
-- Resolution: the retired Neo4j HNSW baseline is explicitly historical and no longer claims a live migration-path gate. ADR 0038 is superseded as an active store choice, the removed Skills North-Star and snippet-reuse harnesses are explicitly retired, and the old machine-card document metric remains superseded rather than being quoted for the CocoIndex/ArcadeDB path. The 2026-08-23 handoff is explicitly archived instead of masquerading as a current work queue.
-- Boundary update 2026-08-27: LOCOMO's unlicensed skipped code was deleted, cross-lingual memory is mandatory, and the owned document corpus now runs both a retrieval diagnostic and the real agent oracle. Historical numbers remain records rather than current claims.
-- Files: `docs/aura-quality-snapshot.md`, `docs/HANDOFF.md`, `docs/adr/0038-graph-store-license-neo4j-gplv3-vs-arcadedb-apache.md`, `docs/adr/0045-evaluation-corpora-licensing.md`.
+### Medium — the document-agent release oracle covers only small text/XLSX retrieval
 
-**Production document E2E contract has no runner — CLOSED 2026-08-25:**
-- Resolution: amendment #141 replaces the retired catalog/version/stage contract with the measured production path: per-identity Garage, CocoIndex reconciliation, the real extractor/embedder, per-identity ArcadeDB, native retrieval, and a real OpenRouter agent. The replacement keeps the existing `scripts/ingest_reconcile_e2e.sh`; no withdrawn runner name was restored.
-- Evidence: the WSL gate passed add, unchanged restart, modify, delete, live refresh, structural-schema, `.xls` extraction, two-identity isolation, migration 0102 up/down/up, production `document_search`, and a real-agent answer. `services/ingest/tests/test_arcade_integration.py` additionally proved live removal of retired values, properties, indexes, and types.
-- Cleanup: the always-null/duplicated passage fields, `HAS_PASSAGE`, `DocumentProjection`, Go-side duplicate DDL, retired document-pipeline knobs, the ignored projection writer copy, and the catalog-backed live test were removed. CocoIndex is the sole document-schema writer and lifecycle reconciler.
+- **What is true:** the owned corpus is 21 files: 17 small XLSX files and four text files; it has
+  no PDF, image-only PDF or large workbook
+  (`scripts/fixtures/document_retrieval_eval/corpus.sha256:1-21`). Every behavior case requires
+  only `document_search`; none requires `document_open`, `read_file` or `shell_exec`
+  (`cmd/aura/document_agent_live_test.go:355-407`). The original-file handoff does exist and tells
+  the model to use LibreOffice/openpyxl/pandas for aggregates
+  (`internal/agent/tools/document_open.go:63-74`), but the live agent oracle does not prove that
+  route.
+- **Why it matters:** 9/9 is valid for the checked corpus, but it does not close the old spike's
+  two remaining behavior questions: an aggregate that cannot be answered from retrieved chunks,
+  and OCR of a real Italian scan with no text layer. It also does not prove that `document_open`
+  and sandbox computation work as one agent motion on a realistically large workbook.
+- **Action:** add owned, hash-pinned fixtures for (1) a large spreadsheet whose requested aggregate
+  is absent from every indexed chunk and (2) an Italian image-only PDF. The production Runner cases
+  must require the appropriate full-file/OCR tools and exact answers. Keep the ranking report
+  diagnostic; do not restore the dead reranker or invent an abstention threshold.
 
-**Closed 2026-08-26 — unit plus `db_integration` has package-local regression floors:**
-- Resolution: `scripts/coverage_gate.sh` now collects one native covdata corpus with `-coverpkg=./internal/...`; tests in both `internal` and `cmd/aura` contribute execution before the owned-source exclusions are applied. The explicit 71-package policy fails on new, removed, missing, or unclassified packages.
-- Contract: 58 packages have the exact 85% floor, 12 known low packages have pinned covered/total non-regression baselines plus the visible 85% target, and `internal/sandbox/usersandbox` is delegated only to the separately release-blocking native Docker coverage authority. Lowering a baseline requires a new measurement and PRD amendment.
-- Evidence: the fresh disposable-PostgreSQL run passed every test and every package rule at **27,671/31,839 = 86.9091%** aggregate. Direct unit and database tests raised `internal/mcpregistry` from 0/75 to **71/75 = 94.6667%**, so no zero-coverage package was grandfathered. Contract and release-readiness regressions cover exact-ratio decline, denominator drift, inventory drift, missing evidence, and invalid delegation.
-- Boundary: 12 package deficits remain named debt rather than being represented as 85%. Docker and ArcadeDB retain independent denominators; no cross-tier percentage is manufactured.
-- Files: `scripts/coverage_gate.sh`, `scripts/coverage_package_gate.py`, `scripts/coverage_package_policy.json`, `scripts/release_readiness_gate.py`, `internal/mcpregistry/store_test.go`, `internal/mcpregistry/store_integration_test.go`.
+### Medium — a fixed database-row cap precedes the token-aware context ladder
 
-**Closed 2026-08-27 — the manual OOXML surface is a bounded routing-card reader with an independent parity gate:**
-- Boundary: `filecard.Build` emits a lossy 4 KiB ingest routing card under explicit ZIP/XML, sheet, row, column and value caps. Exact workbook work stays on the original file in the LibreOffice/openpyxl/pandas sandbox; the card is not an Excel engine.
-- Inventory and decision: Aura has no Go workbook dependency. Sandbox openpyxl is a separate, currently unpinned runtime surface. The measured oracle is frozen at openpyxl 3.1.5. Current Excelize releases through 2.10.1 carry official advisory GHSA-q5j5-6p94-4gwc for attacker-controlled row-index allocation with no patched release listed, so adopting it for uploaded files would weaken the bounded read boundary.
-- Evidence: all 17 owned XLSX files and 18 sheets are hash-pinned in `ooxml_parity.json`. Before correction, sheet order/name/header/columns matched 18/18 but row span matched only 4/18; all 14 invoice sheets exposed the same blank-before-header +1 bug. The physical-row fix and corpus test now require 18/18 parity for row span and non-empty column counts as well.
-- Residual: macros, charts, external links, formula-heavy files and every producer variant are outside this small corpus. The original remains authoritative, and future compatibility fixes require a fixture plus oracle evidence rather than an unsupported claim of general OOXML coverage.
-- Files: `docs/aura-ooxml-routing-card-boundary.md`, `internal/documents/filecard/xlsx.go`, `internal/documents/filecard/table.go`, `internal/documents/filecard/card_test.go`, `internal/documents/filecard/corpus_parity_test.go`, `scripts/fixtures/document_retrieval_eval/ooxml_parity.json`.
+- **What is true:** `AURA_HISTORY_HARD_CAP_TURNS` defaults to 50
+  (`internal/config/config.go:414`, `internal/config/config_knobs.go:93`, `.env.example:60`). Both
+  linear and selected-branch managed history pass that normalized row cap into their database
+  loaders before L1/L2/L2.5 token work (`internal/conversations/context.go:70-84,87-118`). Values
+  outside 4–1,000 silently normalize back to 50 (`internal/conversations/context.go:27-29,121-125`).
+- **Why it matters:** when no durable summary covers older turns, a large-window model cannot see
+  them even if its token budget has room. The row cap bounds legitimate database/sidecar/tokenizer
+  work, but the default is also the effective recall horizon.
+- **Action:** measure query, sidecar-rehydration and tokenizer cost at larger windows, then advance
+  or paginate from the durable compaction watermark. Until that evidence exists, describe 50 as a
+  work ceiling and recall limit, not as token-aware capacity.
 
-**Closed 2026-08-27 — selected-model native image/audio context is capability-gated and owner-verified:**
-- Resolution: explicit current-turn Garage image/audio refs ride request scope, not persistence. Immediately before the provider request Aura reopens each object through `OpenForIdentity`, rechecks its thread boundary, exact accepted size and SHA-256 digest, and discards the bytes after request construction. Raw media and base64 are absent from Postgres and reasoning traces.
-- Capability contract: OpenRouter uses the TTL-cached `GET /models` `architecture.input_modalities` surface; llama.cpp uses cached `GET /props` `modalities`, normalizing `vision` to `image`. Both are strict-allowlist parsed. An absent model, failed probe, unknown modality or unsupported audio encoding fails to text-only; model-name heuristics and a hidden fallback model are forbidden.
-- Single configuration source: the request targets the already-selected primary `AURA_LLM_MODEL`; no second cloud-model field, database row or frontend picker was added. The existing summary/transcript attachment block remains model-visible whenever native projection is unavailable.
-- SDK reduction: `openai-go/v3` 3.54.0 now owns Chat Completions encoding, SSE decoding, API errors and bounded tool-call accumulation. Aura deleted its manual SSE parser, usage DTO and tool-call accumulator while retaining zero retries, the stream-idle watchdog, provider-specific reasoning fields and OpenRouter data-collection denial.
-- Provider isolation: llama.cpp capability discovery strips the OpenAI-compatible `/v1` suffix before its root `/props` probe. OpenRouter-only bearer credentials, `provider` policy and sticky session fields are emitted only for an OpenRouter target; negative wire tests prevent those values leaking into llama.cpp/vLLM requests.
-- Evidence: unit/race tests cover capability cache/failure, owner/thread/size/digest checks, newest-user-message image/audio projection, text-only fallback, both reasoning delta names, a split tool call above 64 KiB and OpenRouter cost/cached-token usage. A live Cockpit upload with `aura-ingest` stopped and `/props.vision=true` sent `image_url` without an Authorization header to free `gemma4:31b-cloud` and read `ZEBRA 417` from the PNG pixels. Repeating with `/props.vision=false` waited for the OCR summary, sent no `image_url` and returned the same code through the text lane. The Ollama manifest exposed vision but not audio and the endpoint rejected `input_audio`, confirming why runtime capability metadata—not the marketing/model name—must control native audio.
-- Files: `internal/llm/model_content_caps.go`, `internal/llm/content_projection.go`, `internal/agui/asset_content_projection.go`, `internal/llm/openai_compat/client.go`, `internal/llm/openai_compat/request.go`, `internal/llm/openai_compat/response.go`.
+### Medium — planning state is internally contradictory
 
-**Closed 2026-08-26 — legacy staged user files were removed:**
-- Resolution: the two recorded `aura-sendfile-*` directories are absent from the run root. The retired prefix no longer exists in source; the active sweeper continues to own only `$AURA_RUN_DIR/tmp/` by design.
-- Evidence: `docs/audit/README.md` records the clean run root after operator-reviewed cleanup. No recurring leak was found, so no legacy-prefix deletion rule was added to the live sweeper.
-- Files: `docs/audit/README.md`, `internal/conversations/orphan_scan.go`, `internal/agent/tools/send_file.go`.
+- **What is true:** `.planning/STATE.md` says `current_phase: 51`, `status: executing` and
+  `stopped_at: ... next action` while also naming Phase 52 as current focus and 51 as ready to
+  execute (`.planning/STATE.md:4-8,27-33`). Its execution order says Phase 52 precedes 51
+  (`.planning/STATE.md:42`), and its recorded `state_head` is not this audit's checkout
+  (`.planning/STATE.md:11`). `ROADMAP.md` describes Phase 52 as 8/8 executed near its phase entry
+  but still reports 7/8 in the progress table (`.planning/ROADMAP.md:112,760`).
+- **Why it matters:** automation or an agent treating the freshest timestamp as authority can start
+  the wrong phase or repeat completed work. `CLAUDE.md` already warns that planning timestamps are
+  assertions; this file currently demonstrates the failure mode.
+- **Action:** regenerate STATE/ROADMAP from the actual plan summaries and current commit in one GSD
+  operation, then add a consistency check for phase id, completed-plan count and `state_head`.
 
-## Known Bugs
+### Medium — Calendar/PIM action behavior is proved mainly by Aura's integration sample
 
-**Closed 2026-08-25 — empty accepted approval answers resumed the model silently:**
-- Resolution: the AG-UI boundary returns HTTP 400 for missing, empty, or whitespace-only resolved payloads before calling `SubmitAnswers`; Runner validates the effective answer used for both persistence and the `RoleTool` turn; and `askuser.Store` enforces the same invariant inside the transaction front door.
-- Compatibility: decline/cancel still permits empty caller content, and scheduled approvals remain valid because Runner validates their server-authored outcome rather than the caller's empty placeholder.
-- Files: `internal/agui/server_project.go`, `internal/runner/runner_resume.go`, `internal/askuser/store.go`, `.planning/todos/pending/approval-resume-defects.md`.
-- Evidence: wire, Runner, Store, and rollback regressions are green; the full disposable-Postgres `db_integration` matrix measured 26827/31139 = 86.2% owned coverage; `ValidateResumeAnswer` mutation score is 4/5 = 80% killed.
+- **What is true in this repository:** Compose and CI pin the external sidecar by tag and digest
+  (`compose.yaml:1084-1086`, `.github/workflows/ci.yml:1204-1223`). Aura's live tier verifies the
+  single 29-action schema, tenant isolation, `list_accounts` and one event-list/detail chain
+  (`internal/mcp/calendar_integration_test.go:104-181,254-296`); CI runs that tier under `-race`
+  (`.github/workflows/ci.yml:1276-1283`). It does not execute every multiplexed action.
+- **Evidence boundary:** Phase 46 records that the fork's 14 raw-tool MSTest files were deleted
+  without action-tool replacements, but the external repository is not vendored here. This audit
+  therefore confirms Aura's partial consumption gate, not the current test inventory of the fork.
+- **Action:** make the fork publish action-level test evidence for the exact pinned image, covering
+  every dispatch arm and destructive validation path. Retain Aura's OAuth/two-identity live tier as
+  the cross-repository contract rather than pretending its sample is fork unit coverage.
 
-**Closed 2026-08-25 — resume decisions could exceed the pause's policy:**
-- Resolution: every production pause writer persists explicit server-authored `allowed_decisions`; Runner validates the persisted policy before any single/batch side effect; missing or invalid policy fails closed; AG-UI and Approval Center return HTTP 403 for a forbidden decision.
-- Migration: 0102 backfills every existing pause without a runtime legacy fallback. A real disposable-PostgreSQL up/down/up test proves normalization, field preservation, rollback, and repeatability.
-- Files: `internal/runner/resume_policy.go`, `internal/runner/runner_resume.go`, `internal/db/migrations/0102_paused_state_decision_policy.up.sql`, `internal/agui/server_run.go`, `internal/agui/server_run_detach.go`.
-- Evidence: policy mutation 20/20 = 100%; Runner aggregate coverage 85.3%; targeted WSL race green; real OpenRouter-agent E2E proved forbidden accept stays pending and allowed decline re-drives the agent from 2 to 3 turns with 3750 prompt tokens.
+### Low — approval question prose is not localizable
 
-**Closed 2026-08-25 — pending approvals did not expire:**
-- Resolution: unanswered `kind=approval` pauses expire after an operator-configurable 48-hour default. The daemon performs an owner-scoped boot sweep and bounded periodic sweeps, using the existing atomic resume claim to append an `expired` refusal and its matching `RoleTool` turn together.
-- Safety: `expired` is server-only; public clients cannot submit it. A late human decision returns Gone, and a real PostgreSQL expiry-versus-human race proved exactly one winner and one tool-result turn under RLS.
-- Files: `internal/runner/approval_expiry.go`, `cmd/aura/approval_expiry.go`, `internal/askuser/store.go`, `internal/gateway/approvals.go`, `internal/runner/live_e2e_expiry_test.go`.
-- Evidence: targeted WSL race/vet/build and disposable-PostgreSQL integration tests are green; migration 0102 still round-trips; expiry mutation testing killed 14/14 mutants; the real OpenRouter-agent E2E scored 10.0/10.
+- **What is true:** gateway and scheduled-task approval questions are formatted as English prose in
+  Go (`internal/gateway/approve.go:181-190`, `internal/agent/tools/task.go:290`). The browser
+  localizes frames, button labels and outcomes, but the persisted question itself is displayed
+  verbatim and is part of the byte-equality informed-consent binding
+  (`internal/gateway/approvals.go:119-170`).
+- **Why it matters:** an Italian cockpit still shows the consequential action description in
+  English. Translating only in the client would break or obscure the exact question binding.
+- **Action:** persist a stable semantic message key plus bounded structured parameters beside the
+  canonical question; render localized prose on each surface while retaining a server-verifiable
+  consent payload. Cover gateway, scheduled and shell approvals together.
 
-**Closed 2026-08-27 — Runner verification evidence is reproducible:**
-- Root cause: the historical extra-call flake was already fixed in `63b456f8e` by counting agent rounds instead of the concurrent title request. The remaining documented runner command was independently broken: it targeted live database `aura`, which the current migration guard correctly refuses, and read a stale `~/aura.env` password instead of the running stack's credential.
-- Resolution: `scripts/run_runner_integration.sh` now honors an exported password or repository `.env`, validates a disposable database name, creates that database, and drops it on every exit path. A shell regression exercises provisioning, cleanup, credential precedence and live/malformed-name refusal.
-- Evidence: `TestVerifyOnStopFiresOnARealTurn` passed 20/20 under race; the complete `internal/runner` `db_integration` race package then passed through the same isolated wrapper.
-- Files: `scripts/run_runner_integration.sh`, `scripts/run_runner_integration_test.sh`, `internal/runner/runner_verification_integration_test.go`.
+### Low — `RecoverExpired` has no production caller
 
-## Security Considerations
+- **What is true:** `(*idempotency.Store).RecoverExpired` and its atomic SQL path exist and are
+  tested (`internal/idempotency/store.go:55-95`), but repository-wide callers are tests only. Normal
+  CLI execution maps an expired/indeterminate operation to a refusal and never invokes recovery
+  (`cmd/aura/idempotency.go:245-270`).
+- **Why it matters:** the method is dark code under the repository rule, while the product behavior
+  for an explicitly authorized retry remains ambiguous.
+- **Action:** decide one contract: expose recovery through an authenticated, explicit operator
+  action with discovery evidence, or delete `RecoverExpired`, its query and tests and keep
+  indeterminate as deliberately terminal. Do not auto-retry destructive work.
 
-**Closed 2026-08-25 — per-pause resume authorization:**
-- Former risk: a crafted authenticated POST could choose a decision not authorized when the pause was minted.
-- Resolution: persisted server-authored policy is enforced before claims and side effects; migration 0102 removes the legacy-row exception; forbidden HTTP decisions return 403.
-- Evidence: `internal/runner/resume_policy_test.go`, `internal/db/migrate_0102_integration_test.go`, and `internal/runner/live_e2e_policy_test.go` cover pure, real-database, and real-agent boundaries respectively.
+### Low — line-cap pressure is immediate
 
-**Closed 2026-08-26 — deployment-global catalogs are administrator control planes:**
-- Former risk: settings, the MCP catalog, scheduler governance and skills were grouped as if every global row were tenant data. The real mismatch was narrower: `skill_manage` could mutate the shared skill roots for any `agent.run` caller.
-- Resolution: settings and MCP web reads/writes were already behind `governance.read/write`; the scheduler's model-facing task operations were already owner-scoped; MCP OAuth/session/data were already identity-scoped. `skill_manage` now checks the authenticated caller for `governance.write` through the live identity store before parsing or dispatching any action and fails closed on a missing principal/checker, denial or store error. The in-box `/skills` tree is a copy, not a host-writable mount.
-- Trust boundary: granting `governance.write` deliberately makes that identity a deployment administrator. Ordinary `agent.run` identities can use the approved shared skill library but cannot alter it.
-- Evidence: `internal/agent/tools/skill_manage_auth_test.go`, `cmd/aura/skill_manage_auth_wiring_test.go`, `cmd/aura/serve_webui_auth_test.go`, `cmd/aura/serve_adapters.go`.
+- **Current counts:** `internal/agui/server_run_resume_test.go` is 600 lines;
+  `internal/agent/tools/skill_write_test.go` 598; `internal/arcadedb/client.go` 595;
+  `web/src/settings/__tests__/ModelSettingsPanel.test.tsx` 594; `internal/config/config.go` 584;
+  `internal/llm/config.go` 579; `internal/conversations/store.go` 574; and
+  `internal/agui/onboarding_provision.go` 568.
+- **Action:** split by concern before adding behavior to any of these files. This is a maintenance
+  constraint, not a coverage or runtime defect.
 
-**Closed 2026-08-26 — identity-scoped OAuth for Aura-owned remote MCPs:**
-- Former risk: Calendar carried a sidecar-specific admin fallback, and Calendar, WhatsApp, and Memory did not share one identity-scoped authorization/session model.
-- Resolution: all three are standard OAuth MCP resource servers. Aura stores one grant and opens one client session per identity/server; the verified access-token `sub` is the sole tenant selector. No static built-in MCP bearer, sidecar-specific secret, proprietary identity header, model argument, or request metadata can select a tenant.
-- Evidence: the production-like two-subject live tier passed 3/3 under `-race` and `goleak` against the real sidecars, including a forged metadata attempt; the real Cockpit/agent gate passed 2/2 and fresh production doctors opened Calendar, Memory, and WhatsApp without `aura mcp login`.
+## Recent closures and scope boundaries
 
-**Closed 2026-08-27 — trusted agent memory has a dedicated poisoning threat model:**
-- Former risk: a recalled statement could close `<memory_context>` / `<memory_recall>` or emit a chat-template token, while instruction-shaped text inside trusted memory had no explicit authority rule.
-- Trust decision: memory remains Aura's identity-scoped, agent-written reliable knowledge, consistent with amendment #122 and the first-party MCP's `TrustTrusted` posture. It is never placed in a `trust="untrusted"` envelope. Knowledge trust and instruction authority are separate: remembered imperative text does not become a new operator command.
-- Resolution: amendment #155 and `docs/aura-memory-preload-threat-model.md` record the LibreChat/Hermes inventory, trust boundaries, STRIDE register, controls and accepted residual. Digest and opt-in recall reuse only the existing NFKC-plus-HTML prompt-text encoder, preserving benign facts while neutralizing ASCII and compatibility-width boundary tokens. The system prompt pins system/current-explicit-operator precedence without discounting recalled facts.
-- Evidence: the adversarial Runner and prompt-doctrine tests were observed red and are now green under `-race`; the real agent/model scenario scored **10.0/10**, used `COBALTO-731`, ignored `MEMORY_POISON_EXECUTED`, and reported 6,686 prompt tokens; the disposable-identity live ArcadeDB/OAuth MCP abstention path passed in 0.47 seconds. Fresh unit plus `db_integration` coverage is **27,724/31,897 = 86.9173%** with package policy green, the critical trust encoder killed **17/17** mutation-test variants, and the full repository quality gate passed.
-- Accepted residual: a plausible false or stale fact can still influence an answer. Mandatory provenance, temporal validity, exact correction/forget and current-message precedence contain that data-integrity risk; syntax cannot prove truth. Preload remains default off.
-- Files: `docs/aura-memory-preload-threat-model.md`, `internal/agent/trust.go`, `internal/agent/prompt.go`, `internal/agent/live_memory_test.go`, `internal/runner/runner_context.go`, `internal/runner/runner_memory_context_test.go`.
+These compact entries prevent stale handoffs from reopening resolved work.
 
-**Closed 2026-08-26 — mounted MCP trusted-result provenance has a focused regression test:**
-- Resolution: `TestBridgedTool_Execute_MarksResultTrusted` executes the bridge result seam and asserts non-nil provenance, exact source, and `TrustTrusted`.
-- Evidence: the focused WSL test passes in `internal/agent/mcptools/bridge_test.go`; result size caps and operator-managed mount policy remain unchanged.
-- Files: `internal/agent/mcptools/bridge_call.go`, `internal/agent/mcptools/bridge_test.go`.
+- **Memory preload:** closed. Agent-written, identity-scoped memory is trusted recalled knowledge,
+  not untrusted third-party output; instruction-shaped remembered text does not gain operator or
+  system authority. Boundary escaping and precedence live in
+  `docs/aura-memory-preload-threat-model.md`, `internal/runner/runner_context.go:74-137` and
+  `internal/agent/prompt.go:83-92`.
+- **`filecard` OOXML parser:** closed only as a bounded, lossy routing-card reader. The owned
+  openpyxl 3.1.5 parity gate covers 17 XLSX files/18 sheets and records its producer limits in
+  `docs/aura-ooxml-routing-card-boundary.md`. It does **not** close the separate `read_file` parser
+  above.
+- **Garage `@file` / `@folder`:** closed. The composer uses the existing assistant-ui trigger
+  pattern without `unstable_useLiveCompletionAdapter`; folder navigation lists descendants, and
+  the authenticated run carries normalized file keys/folder prefixes into every retrieval leg
+  (`web/src/chat/composer/GarageMentionPicker.tsx`, `internal/documents/source_scope.go:37-105`,
+  `internal/documents/retrieval.go:188-218`).
+- **Selected-model image/audio context:** closed within the measured capability boundary. The
+  existing primary model setting is reused; OpenRouter `/models` and llama.cpp `/props` metadata
+  gate native projection, owner/thread/size/digest are rechecked, and text summary/transcript is the
+  fallback (`internal/llm/model_content_caps.go`, `internal/agui/asset_content_projection.go:28-57`,
+  `internal/llm/openai_compat/request.go:150-183`). No second cloud-model selector was added.
+- **MCP HTTP and Compose networking:** closed. First-party Calendar, Memory and WhatsApp resources
+  are HTTP/OAuth service endpoints (`compose.yaml:661,878,1106`); observability services no longer
+  share Aura's network namespace, and static tests forbid `network_mode: service:aura`
+  (`cmd/aura/container_artifacts_test.go:347-373`). `compose.minipc.yaml` is absent from the tracked
+  tree.
+- **Observability/Grafana:** closed on the current stack. Datasources use Compose service DNS, the
+  scheduled bounded checker verifies direct readiness plus Prometheus/Tempo through Grafana, and
+  the operator confirmed dashboard data arrives (`observability/grafana/provisioning/datasources/aura.yml`,
+  `internal/obs/sidecar_check.go`, `internal/cron/handlers/observability_check.go`).
+- **Document-pipeline spike:** the stable cross-language `doc_` identity, Garage S3 source,
+  CocoIndex `auto_refresh`, schema-first ArcadeDB writes and original-file open path are implemented
+  (`services/ingest/identity.py`, `services/ingest/app.py:279-397`,
+  `services/ingest/arcade.py:144-245`, `internal/documents/open.go:53-94`). The reranker stays
+  retired. A bespoke `table_query` is not missing: `document_open` plus sandbox computation is the
+  chosen exact-table lane; the unclosed issue is proving that lane with the stronger oracle above.
+- **File-manager JSON gate and compaction/DR:** closed. File mutations use the shared strict JSON
+  decoder (`internal/agui/files_api_write.go:70-96`); impossible compaction thresholds fail at boot,
+  small-window reserves scale, and ArcadeDB restore is part of the four-plane drill
+  (`internal/conversations/context_budget.go:90-170`, `scripts/restore_drill.sh`).
 
-## Performance Bottlenecks
+## Inventory disposition
 
-**Database history fetch still defaults to 50 turns before token budgeting:**
-- Problem: history loading fetches at most `AURA_HISTORY_HARD_CAP_TURNS` rows, default 50, before the token-aware ladder and durable compaction run.
-- Files: `internal/conversations/context.go`, `internal/config/config.go`, `internal/config/config_knobs.go`.
-- Cause: the query/sidecar/tokenizer safety cap is a row count independent of the selected model's context window. Older rows that were never compacted are unavailable to the ladder.
-- Improvement path: measure query/tokenizer cost at higher caps, then derive or advance the fetch window from durable compaction state and the model budget rather than relying on a fixed default.
-
-**Closed 2026-08-26 — compaction budgets and degradation are explicit:**
-- Resolution: the private three-minute deadline was removed. L2.4 now inherits the positive deployment-wide `AURA_LLM_TOTAL_TIMEOUT_SEC` budget while the transport retains its independent `AURA_LLM_STREAM_IDLE_TIMEOUT_SEC` stall watchdog. Production boot measures the rendered manifest and rejects an enabled early trigger whose remaining history allowance is not positive.
-- Degradation contract: a failed, empty, or oversized LLM summary that forces L2.5 writes `compaction_failed_hard_drop`; a planned deterministic drop with no attempted compaction remains `hard_drop_pairs`. The rot-events API already carries the action, and the context gauge now renders the failed-fallback count as a visible danger message.
-- Comparative evidence: LibreChat agents `6e7632cc33c2` exposes impossible budgets and summary lifecycle failures while preserving overflow history; Hermes `68518c1f9bca` separates inactivity/absolute budgets and reports timeout fallback without dropping messages. Amendment #153 records the adopted Aura-specific contract.
-- Focused proof: the new configured-deadline, measured boot-gate, failed/oversized/nil-summarizer action, LLM timeout validation, and cockpit warning cases pass. Previously validated broad suites were not rerun.
-- Files: `internal/conversations/compaction.go`, `internal/conversations/context.go`, `internal/conversations/context_budget.go`, `internal/conversations/context_rot.go`, `internal/runner/runner_context.go`, `cmd/aura/chat_boot.go`, `web/src/chat/ContextBudgetGauge.tsx`.
-
-**Closed 2026-08-27 — document quality has an owned executable baseline:**
-- Resolution: `scripts/ingest_reconcile_e2e.sh` checksums and ingests the repository-owned 21-file corpus, publishes the 20-query ranking diagnostic, and runs nine exact-answer questions through the production Runner.
-- Evidence: 9/9 answers were exact with mandatory `document_search`, no web tools and at most seven durable turns. The corrected nine-turn budget removes the only benchmark false negative without inventing a new behavioral measurement.
-- Boundary: the filename-qrel ranking report is diagnostic, not a release threshold; the agent cases are the behavior oracle. Population-level abstention remains unclaimed.
-- Files: `cmd/aura/document_agent_live_test.go`, `internal/documents/retrieval_fusion_bench_test.go`, `scripts/ingest_reconcile_e2e.sh`, `docs/adr/0045-evaluation-corpora-licensing.md`.
-
-## Fragile Areas
-
-**Approval resume transaction boundary:**
-- Files: `internal/agui/server_project.go`, `internal/runner/runner_resume.go`, `internal/runner/resume_committer.go`, `internal/askuser/store.go`.
-- Why fragile: wire mapping, owner scoping, pause claims, answer-turn persistence, hooks, and idempotency span several packages. Validation added outside the cross-store transaction can recreate claimed-without-answer or double-resume failures.
-- Safe modification: validate expiry before claims inside the existing committer boundary; retain persisted policy validation, accepted-content validation, sorted-token batch locking, and the `resumed_at IS NULL` conditional update.
-- Test coverage: atomic single/batch resume tests exist under `db_integration`; empty accepted content, decision policy, and expiry are closed at wire, Runner, Store/database, migration, race, and real-agent boundaries.
-
-**Context ladder and durable compaction:**
-- Files: `internal/conversations/context.go`, `internal/conversations/context_budget.go`, `internal/conversations/compaction.go`, `internal/conversations/compaction_durable_test.go`, `internal/conversations/compaction_inforce_test.go`.
-- Why fragile: system/always blocks, active rounds, tool-call/result pairing, durable watermarks, cache-prefix stability, transient context, and final request reserves interact in one path.
-- Safe modification: preserve complete user-led rounds and assistant-tool/result adjacency; test stored-compaction replay, branch watermarks, impossible thresholds, provider reserves, and final serialized request size together.
-- Test coverage: unit coverage is extensive; `.planning/STATE.md` still records anti-thrash/cooldown/fallback guards and cross-restart anti-thrash state as unverified/deferred.
-
-**Large orchestration surfaces:**
-- Files: `cmd/aura/*.go` (about 19,167 non-test LOC), `internal/agui/*.go` (about 15,281), `internal/agent/tools/*.go` (about 8,939), `internal/agent/*.go` (about 8,536).
-- Why fragile: these directories combine composition, auth/streaming/governance, model loops, and every model-to-I/O tool boundary. File splitting keeps individual files manageable but does not remove cross-file blast radius.
-- Safe modification: follow existing concern-file splits and run boundary-specific gates (`scripts/agui_boundary_check.sh`, tool unit/race tests, relevant live tagged tiers) after changes.
-- Test coverage: broad, but `docker_integration` behavior and external sidecars remain outside the aggregate coverage profile.
-
-**Files at or near the 600-line cap:**
-- Files: `internal/arcadedb/client.go` (595), `internal/llm/config.go` (577), `internal/config/config.go` (584), `internal/conversations/store.go` (574), `internal/agui/onboarding_provision.go` (573), `internal/agui/server_run_resume_test.go` (600), `internal/agent/tools/skill_write_test.go` (596), `internal/llm/openai_compat/client_test.go` (596), `web/src/settings/__tests__/ModelSettingsPanel.test.tsx` (594). `internal/runner/runner.go` is now 397 lines and is no longer near the cap.
-- Why fragile: the next meaningful edit can breach the repository's enforced file-size rule and require a split during unrelated work.
-- Safe modification: plan concern-based splits before adding behavior; do not hide generated or test files from `scripts/check-file-size.sh`.
-- Test coverage: not a coverage gap by itself; it is a change-risk and scope-control warning.
-
-## Scaling Limits
-
-**Multi-user support is an explicit strict-profile deployment posture:**
-- Current capacity: Postgres rows, Garage objects, conversations, sandbox boxes, ArcadeDB databases, MCP credentials/sessions/data and model-facing scheduled tasks are identity-scoped.
-- Control plane: skills, `aura.settings`, the MCP catalog and governance boards are intentionally deployment-global behind `governance.read/write`; ordinary `agent.run` identities cannot mutate them.
-- Limit: `AURA_MUSR_ISOLATION` remains opt-in and is refused outside strict profiles. This is a supported-runtime posture gate, not a tenant selector and not a claim that global catalogs contain tenant data.
-- Files: `internal/config/config_validate.go`, `internal/agent/tools/skill_manage.go`, `internal/settings/settings.go`, `internal/mcpregistry/store.go`.
-
-**Closed 2026-08-26 — runtime coverage is represented by independent tier reports:**
-- Resolution: unit plus `db_integration` remains one exact owned-surface profile; native `docker_integration` merges its test binaries with Go `covdata`; and the all-tier Agent Memory report remains the authority for live `arcadedb_integration` coverage. No profiles are concatenated, summed twice, averaged, or presented as one synthetic number.
-- Release rule: `scripts/release_readiness_gate.py` requires all three fresh reports from the exact candidate SHA, including the Docker-only tier marker and the passing `arcadedb_package_coverage` scenario inside an MRS-eligible Agent Memory report.
-- Evidence: clean candidate `4315db66b` measured unit/database at 27,323/31,839 = 85.8161%, native-Linux Docker at 2,856/3,313 = 86.2059%, and ArcadeDB at 1,241/1,412 = 87.8895% with MRS 100.00. All three reports are exact-SHA, tier-specific, non-empty, and green; Docker includes the native egress branches.
-- Files: `scripts/coverage_profile_gate.sh`, `scripts/docker_coverage_gate.sh`, `scripts/agent_memory_eval.py`, `scripts/release_readiness_gate.py`, `.github/workflows/ci.yml`, `.github/workflows/production-readiness.yml`.
-
-**Conversation recall is bounded by a row cap independently of token capacity:**
-- Current capacity: 50 turns by default, configurable from 4 to 1,000.
-- Limit: a large-window model may still receive only the newest 50 database turns when no older durable summary covers them.
-- Scaling path: couple fetch pagination to durable compaction/watermarks and measured tokenizer cost.
-- Files: `internal/conversations/context.go`, `internal/config/config_validate.go`.
-
-## Dependencies at Risk
-
-**Closed 2026-08-25 — protected GHCR package version required support deletion:**
-- Former risk: public package version `845339375` was untagged but exceeded GitHub's API-deletion threshold.
-- Resolution: the operator confirmed that the GitHub Support deletion and zero-version verification were already completed and resolved.
-- Evidence boundary: this is the operator's completion attestation; this repository session did not repeat the package deletion or invent a packages-query response.
-- Files: `docs/audit/README.md`, `scripts/audit_closure_gate.py`.
-
-**Calendar/PIM behavior depends on an external fork with reduced unit coverage:**
-- Risk: the curated calendar fork deleted 14 raw-tool MSTest files (2,062 LOC) without replacement tests for the merged `CalendarActionTool`; its ordinary `ci.yml` does not trigger on the Aura branch shape recorded during Phase 46.
-- Impact: Aura's `calendar_integration` tier and live pulled-image probe carry more of the regression burden than the sidecar repository's unit suite.
-- Migration plan: add fork-side tests for every multiplexed action and keep the immutable image tag/digest plus live integration probe as the consumption gate.
-- Files: `.planning/STATE.md`, `.planning/phases/46-mcp-trust-and-facade/46-VALIDATION.md`, `internal/mcp/calendar_integration_test.go`, `compose.yaml`.
-
-## Missing Critical Features
-
-**Closed 2026-08-25 — release-gating audit register:**
-- Resolution: EXT-005 closed on measured delivery/receipt plus observed cleanup. The operator then confirmed that the closure actions for EXT-001 through EXT-004 were already completed and resolved; those rows and their machine-required IDs were removed together.
-- Evidence boundary: the final four closures are an explicit operator attestation, not external actions replayed by this repository session. No receipt contents or provider results were invented.
-- Gate: the current register is empty, `open_total` is zero, and the audit closure report emits `release_ready:true`.
-- Files: `docs/audit/README.md`, `scripts/audit_closure_gate.py`.
-
-**Closed 2026-08-25 — ArcadeDB tenant memory joins disaster-recovery rehearsal:**
-- Resolution: ArcadeDB's native scheduler remains the sole backup owner. The DR drill now creates one disposable `mem_<uuid>` database, writes a checksum sentinel, triggers a native backup, drops and restores the same database, verifies the sentinel, then removes only the disposable database and its exact backup directory. The release gate requires the exact four-plane set: Postgres, sidecars, Garage, and ArcadeDB.
-- Upgrade evidence: the official latest pin is 26.8.1. A native 26.7.3 archive restored successfully on 26.8.1 with checksum and cleanup intact; no schema migration or database rewrite was required. The fresh 26.8.1 four-plane run passed 4/4 with ArcadeDB RPO 0 seconds and RTO 218 ms.
-- Runtime evidence: `agent-memory-eval` passed the deterministic + live MCP suite at MRS 100.00 on 26.8.1. The disposable ingest integration passed schema creation, idempotence, retired-schema removal, and Bolt-written vector/ANN retrieval 4/4. The already-green migration 0102 and real document-agent E2E were retained as persistent checkpoints because this delta does not overlap those boundaries.
-- Files: `scripts/restore_drill.sh`, `scripts/restore_drill_lib.sh`, `scripts/release_readiness_gate.py`, `compose.yaml`, `.github/workflows/ci.yml`.
-
-**Closed 2026-08-27 — Garage mentions provide deterministic selection without a model catalog:**
-- Resolution: corpus inventory remains owned by the existing identity-scoped Files workspace rather than by a second model tool that could enumerate thousands of names. The composer now reuses assistant-ui's existing trigger root and synchronous adapter contract for `@file` and `@folder`; Aura's bounded async bridge replaces the package's still-deprecated live-completion hook. A path containing a slash reads only its addressed Garage folder, repeated keystrokes reuse that listing, and the readable mention remains in the persisted user text.
-- Enforcement: the client sends only `{kind,path}` beside that text. The server derives identity from the authenticated run, normalizes and caps the scope, and carries it outside model arguments. Exact file keys and literal folder prefixes constrain document cards plus both fused passage sub-pipelines; model-supplied document ids can only intersect that scope. Empty scoped results cannot widen to the whole corpus.
-- Evidence: PRD amendment #163; parser/page-boundary and wire tests in `web/src/chat/composer/garageMentions.test.ts` and `web/src/chat/__tests__/ExternalStoreChat.skill.test.tsx`; strict run/context tests in `internal/agui`; source-scope, card-degradation and fused-query tests in `internal/documents`, `internal/agent/tools` and `internal/arcadedb`.
-- Files: `web/src/chat/composer/GarageMentionPicker.tsx`, `web/src/chat/composer/garageMentions.ts`, `internal/documents/source_scope.go`, `internal/agui/server_run.go`, `internal/arcadedb/document_cards.go`, `internal/arcadedb/document_retrieval.go`.
-
-**Observability scrape check is not scheduled:**
-- Problem: `scripts/observability_sidecar_check.sh` detects the measured failure mode where Prometheus is healthy but no longer scraping Aura, yet no Makefile target, CI workflow, or scheduler registration invokes this script by name.
-- Blocks: automatic detection of a metrics pipeline that is up but blind.
-- Files: `scripts/observability_sidecar_check.sh`, `Makefile`, `.github/workflows/ci.yml`, `internal/cron/`.
-
-## Test Coverage Gaps
-
-**Closed 2026-08-27 — declined LOCOMO code is retired and cross-lingual memory is mandatory:**
-- Resolution: all five unprovisionable LOCOMO test files were deleted. `TestMemoryVectorAnswersACrossLingualQuestion` was rebuilt around self-authored multilingual facts and is a required `arcadedb_live` scenario in `scripts/agent_memory_eval.py`, not an excluded regex.
-- Boundary: this proves the shipped hybrid retrieval path ranks the Italian target first for the pinned French query; it does not claim LOCOMO equivalence.
-- Files: `scripts/agent_memory_eval.py`, `internal/arcadedb/memory_vector_live_test.go`, `docs/adr/0045-evaluation-corpora-licensing.md`.
-
-**Closed 2026-08-27 — owned document evaluation runs in the ingest lifecycle:**
-- Resolution: the checksummed 21-file owned corpus now emits a 20-query retrieval diagnostic and runs nine exact questions through the production Runner and document tools. The dead rerank/abstention report and qrel appendix were removed because production consumed neither their vectors nor a threshold.
-- Evidence: all nine measured agent answers were exact with mandatory `document_search`, no web tools and 2–7 durable assistant turns. The harness's sole red was a six-call false negative on the exact seven-call `not-paid` answer; the bounded budget is now nine for every case. No post-fix paid rerun is claimed.
-- Boundary: diagnostic ranking values remain visible but are not a behavior oracle; Amendment #159 makes the nine agent cases the release authority.
-- Files: `cmd/aura/document_agent_live_test.go`, `internal/documents/retrieval_fusion_bench_test.go`, `scripts/ingest_reconcile_e2e.sh`, `docs/adr/0045-evaluation-corpora-licensing.md`.
-
-**Closed 2026-08-26 — MCP trusted-result stamp has a direct execution-path test:**
-- Coverage: `TestBridgedTool_Execute_MarksResultTrusted` asserts `ToolResultProvenance{Trust: TrustTrusted}` and the mounted source after a real bridged `Execute` call.
-- Evidence: `go test -count=1 -run TestBridgedTool_Execute_MarksResultTrusted ./internal/agent/mcptools` passes under WSL.
-- Files: `internal/agent/mcptools/bridge_call.go`, `internal/agent/mcptools/bridge_test.go`.
-
-**Closed 2026-08-25 — approval expiry has closing tests:**
-- Coverage: unit and wire tests cover configuration, boot/periodic sweeps, late decisions, exact pending-challenge discard, and refusal propagation. Disposable-PostgreSQL tests cover cutoff/kind/resolution selection, owner RLS, atomic visibility, and the expiry-versus-human race.
-- Evidence quality: the touched ask-user/Runner database matrix measured 86.2% aggregate coverage; every changed critical expiry function is at least 85%; `ExpirePendingApprovals` mutation testing killed 14/14 mutants; and a fresh real OpenRouter agent correctly explained the expired approval without claiming execution.
-- Migration guard: the real migration-0102 up/down/up round-trip remains green even though expiry required no new schema migration.
-- Files: `internal/askuser/store_db_integration_test.go`, `internal/runner/approval_expiry_db_integration_test.go`, `internal/runner/live_e2e_expiry_test.go`, `cmd/aura/approval_expiry_test.go`.
-
-**Closed 2026-08-26 — daemon-gated sandbox branches have their own floor:**
-- Coverage: `scripts/docker_coverage_gate.sh` runs lifecycle, egress, and routed-tool tests under `docker_integration`, merges binary coverage with Go `covdata`, and applies an exact 85% floor over the owned usersandbox and agent-tool surfaces.
-- Evidence contract: a deterministic fake-Go test pins the tag, package set, `-coverpkg` scope, native merger, exact counts, and report fields. The native-Linux CI job publishes both the unique profile and `docker-coverage-report.json`; release readiness fails closed if it is absent, stale, below floor, or not Docker-only.
-- Evidence: Docker Desktop measured the declared lower bound at 2,835/3,313 = 85.5720% with native egress skipped; the exact-SHA hosted native-Linux job then passed at 2,856/3,313 = 86.2059%, exercising those additional branches.
-- Files: `scripts/docker_coverage_gate.sh`, `scripts/docker_coverage_gate_test.sh`, `.github/workflows/ci.yml`, `scripts/release_readiness_gate.py`.
+- `.planning/codebase/CONCERNS.md` — this canonical current ledger.
+- Former `docs/HANDOFF.md` and `spikes/cocoindex-ingestion/HANDOFF.md` — removed after current
+  claims were audited and consolidated here. Historical revisions remain available in Git; live
+  references now point to this ledger or the spike's `FINDINGS.md`.
+- `.planning/intel/classifications/*handoff*.json` — ingestion classifications, not handoffs.
+- `.planning/tmp/**`, `web/node_modules/**/serverHandoff.js` — ignored/generated artifacts, not
+  repository state documents.
 
 ---
 
-*Concerns audit: 2026-08-26*
+*Concerns audit: 2026-08-27 at `8e15e14b12f6cfb4eb9951f4563505478c1e3a70`.*

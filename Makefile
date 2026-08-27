@@ -6,7 +6,7 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help tools sqlc lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract llm-model-contract web-freshness web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval critical-mutation observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up arcadedb-integration ingest-test restore-drill load-chaos
+.PHONY: help tools sqlc lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract llm-model-contract web-freshness web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval critical-mutation observability-check observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up arcadedb-integration ingest-test restore-drill load-chaos
 
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
@@ -39,6 +39,7 @@ help:
 	@echo "make agent-memory-eval-contract — deterministic evaluator; never claims a live MRS"
 	@echo "make agent-memory-eval — blocking MRS over the already-running live memory stack"
 	@echo "make critical-mutation — >=70% per critical Go boundary + frontend, no averaging"
+	@echo "make observability-check — verify live Tempo/Prometheus readiness and Aura scrape"
 	@echo "make observability-evidence — fixtures + runtime smoke + live Aura endpoints"
 	@echo "make release-readiness — validate the twelve fresh reports for the current Git SHA"
 	@echo "make db-up         — docker compose up -d postgres (waits healthy)"
@@ -189,6 +190,9 @@ agent-memory-eval:
 critical-mutation:
 	PYTHONPATH=scripts python3 -m unittest scripts/critical_mutation_gate_test.py
 	PYTHONPATH=scripts python3 scripts/critical_mutation_gate.py
+
+observability-check:
+	bash scripts/observability_sidecar_check.sh
 
 observability-evidence:
 	PYTHONPATH=scripts python3 -m unittest scripts/observability_evidence_test.py

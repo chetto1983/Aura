@@ -83,13 +83,7 @@ func (m *liveMCPMount) StartReconnect(ctx context.Context, cfg *config.Config, p
 			slog.Warn("mcp oauth: load deferred mounts", "err", err)
 			return
 		}
-		names := make([]string, 0, len(policies))
-		for name, server := range policies {
-			if deferredOAuthMount(server) {
-				names = append(names, name)
-			}
-		}
-		sort.Strings(names)
+		names := deferredOAuthMountNames(policies)
 		for _, name := range names {
 			ownerCtx := mcpOwnerContext(ctx, cfg, pool, name, policies[name])
 			if identityctx.IdentityID(ownerCtx) == "" {
@@ -98,6 +92,24 @@ func (m *liveMCPMount) StartReconnect(ctx context.Context, cfg *config.Config, p
 			m.Mount(ownerCtx, name, policies[name])
 		}
 	}()
+}
+
+func deferredOAuthMountNames(policies map[string]mcp.ManagedServer) []string {
+	names := make([]string, 0, len(policies))
+	for name, server := range policies {
+		if deferredOAuthMount(server) {
+			names = append(names, name)
+		}
+	}
+	sort.Slice(names, func(i, j int) bool {
+		firstI := mcpmanager.FirstPartyRecipe(policies[names[i]])
+		firstJ := mcpmanager.FirstPartyRecipe(policies[names[j]])
+		if firstI != firstJ {
+			return firstI
+		}
+		return names[i] < names[j]
+	})
+	return names
 }
 
 // Mount brings a server's tools into the live registry, replacing any earlier mount of the

@@ -1,0 +1,4 @@
+apiVersion: 1
+
+# Alert evaluation is owned by the pinned Prometheus rule files. This valid empty
+# manifest keeps Grafana's provisioning directory present without a .gitkeep warning.

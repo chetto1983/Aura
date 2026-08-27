@@ -136,6 +136,11 @@ type captureNotifier struct {
 	errs   []error
 }
 
+type suppressedNotificationError struct{}
+
+func (suppressedNotificationError) Error() string                       { return "still unhealthy" }
+func (suppressedNotificationError) SuppressSchedulerNotification() bool { return true }
+
 func (n *captureNotifier) Notify(_ context.Context, route NotifyRoute, _ string, text string) error {
 	n.routes = append(n.routes, route)
 	n.texts = append(n.texts, text)
@@ -200,6 +205,35 @@ func TestDispatchFailureCompletesFailedAndNotifies(t *testing.T) {
 	if len(notif.texts) != 1 || notif.texts[0] == "" {
 		t.Fatalf("a failed job must still notify (D-21), got %v", notif.texts)
 	}
+}
+
+func TestDispatchTransitionAwareNotificationSuppression(t *testing.T) {
+	t.Parallel()
+	t.Run("empty healthy summary", func(t *testing.T) {
+		h := &fakeHandler{meta: HandlerMeta{Kind: KindObservabilityCheck}}
+		comp := &fakeCompleter{}
+		notif := &captureNotifier{}
+		d, c := newDispatchFor(t, h, KindObservabilityCheck, DispatchDeps{Store: comp, Notifier: notif})
+		if err := d.Dispatch(context.Background(), Task{ID: "obs-ok", Kind: KindObservabilityCheck}, c); err != nil {
+			t.Fatalf("Dispatch: %v", err)
+		}
+		if len(comp.calls) != 1 || comp.calls[0].Status != "completed" || len(notif.texts) != 0 {
+			t.Fatalf("empty healthy transition = runs %+v, notifications %v", comp.calls, notif.texts)
+		}
+	})
+
+	t.Run("repeated failure", func(t *testing.T) {
+		h := &fakeHandler{meta: HandlerMeta{Kind: KindObservabilityCheck}, err: suppressedNotificationError{}}
+		comp := &fakeCompleter{}
+		notif := &captureNotifier{}
+		d, c := newDispatchFor(t, h, KindObservabilityCheck, DispatchDeps{Store: comp, Notifier: notif})
+		if err := d.Dispatch(context.Background(), Task{ID: "obs-down", Kind: KindObservabilityCheck}, c); err == nil {
+			t.Fatal("Dispatch returned nil")
+		}
+		if len(comp.calls) != 1 || comp.calls[0].Status != "failed" || len(notif.texts) != 0 {
+			t.Fatalf("suppressed failure = runs %+v, notifications %v", comp.calls, notif.texts)
+		}
+	})
 }
 
 // TestDispatchSilentSuccessKindSuppressesRoutineNotification pins the fix for the
