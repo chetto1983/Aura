@@ -22,11 +22,19 @@ import (
 	"github.com/chetto1983/aura/internal/channels"
 	"github.com/chetto1983/aura/internal/llm"
 	profileflow "github.com/chetto1983/aura/internal/onboarding"
-	"github.com/chetto1983/aura/internal/steer"
 )
 
 // channelName keys AURA_CHANNEL_TELEGRAM_ENABLED (the registry enable gate).
 const channelName = "telegram"
+
+// SteerPusher is the narrow write-side contract steerBusyTurn needs from the shared
+// steer queue — defined HERE (telegram-local), never importing internal/steer's
+// concrete PostgresStore directly (Phase 51 plan 02, D-06's "adapt the new type to the
+// shipped contract" — this seam is the adaptation point, mirroring internal/agui's own
+// steerPusher). *steer.PostgresStore satisfies it by construction.
+type SteerPusher interface {
+	Push(conv, source, text string) error
+}
 
 // compile-time proof that *Telegram satisfies the narrow channels.Channel
 // lifecycle contract (Name/Start/Stop/IsHealthy) — the registry mounts it as one.
@@ -115,14 +123,20 @@ type Deps struct {
 	Resume resumeRunner
 
 	// Steer is the shared process-wide mid-turn steer inbox (amendment #132,
-	// D-01/D-12) — the SAME *steer.Inbox instance the composition root also wires
-	// into agui.Server.SetSteerInbox, so a cockpit steer and a Telegram steer for
-	// the same conversation can never land in two different queues (T-52-31). nil
-	// degrades BOTH the plain-text redirect branch (bot_dispatch_steer.go) and the
-	// media queue branch (bot_dispatch_queue.go) to today's turnBusyMessage — the
-	// composition root's explicit rollback darkens Telegram exactly like the
-	// cockpit route, never a half-live surface.
-	Steer *steer.Inbox
+	// D-01/D-12) — the SAME *steer.PostgresStore instance the composition root
+	// also wires into agui.Server.SetSteerInbox, so a cockpit steer and a
+	// Telegram steer for the same conversation can never land in two different
+	// queues (T-52-31). nil degrades BOTH the plain-text redirect branch
+	// (bot_dispatch_steer.go) and the media queue branch (bot_dispatch_queue.go)
+	// to today's turnBusyMessage — the composition root's explicit rollback
+	// darkens Telegram exactly like the cockpit route, never a half-live
+	// surface.
+	//
+	// SteerPusher (not the concrete *steer.PostgresStore), mirroring
+	// internal/agui's own steerPusher seam: this package unit-tests with a
+	// lightweight fake Push, never a live Postgres connection (Phase 51 plan 02,
+	// D-06). *steer.PostgresStore satisfies it by construction.
+	Steer SteerPusher
 
 	// StatusThrottle / ContentThrottle bound the two render consumers; ChatRate
 	// bounds the per-chat send queue. Zero → the package defaults (see config).

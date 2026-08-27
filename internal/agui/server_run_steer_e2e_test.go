@@ -21,6 +21,7 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/steer"
+	"github.com/chetto1983/aura/internal/steer/steertest"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 	"github.com/google/uuid"
 )
@@ -317,7 +318,7 @@ func (s *steerViaHTTPTool) result() (int, error) {
 // over the minimal e2e fakes, with the shared steer inbox already wired the
 // SAME way cmd/aura/chat_boot.go wires it in production (Steer field on
 // Deps) — the only difference from production is the store implementations.
-func newRealSteerRunner(t *testing.T, client llm.Client, inbox *steer.Inbox, extraTools ...tools.Tool) (*runner.Runner, *steerE2EConvStore) {
+func newRealSteerRunner(t *testing.T, client llm.Client, inbox *steertest.Fake, extraTools ...tools.Tool) (*runner.Runner, *steerE2EConvStore) {
 	t.Helper()
 	reg := tools.NewRegistry()
 	reg.Register(tools.TextResponse{})
@@ -347,7 +348,7 @@ func newRealSteerRunner(t *testing.T, client llm.Client, inbox *steer.Inbox, ext
 // and is persisted where it landed — exercising BOTH delivery branches (FA-1).
 func TestSteerEndToEndRedirectsNextRound(t *testing.T) {
 	t.Run("tool-result-append branch (tail IS a tool result)", func(t *testing.T) {
-		inbox := steer.New(steer.Config{Max: 8, MaxBytes: 16384})
+		inbox := steertest.New(steer.Config{Max: 8, MaxBytes: 16384})
 		client := agenttest.NewFakeClient(
 			agenttest.ToolCallTurn(agenttest.MakeToolCall("call-1", "steer_via_http", "{}")),
 			agenttest.ToolCallTurn(agenttest.MakeToolCall("call-2", "text_response", `{"text":"done"}`)),
@@ -419,7 +420,7 @@ func TestSteerEndToEndRedirectsNextRound(t *testing.T) {
 	})
 
 	t.Run("user-message fallback branch (tail is NOT a tool result)", func(t *testing.T) {
-		inbox := steer.New(steer.Config{Max: 8, MaxBytes: 16384})
+		inbox := steertest.New(steer.Config{Max: 8, MaxBytes: 16384})
 		client := agenttest.NewFakeClient(
 			agenttest.ToolCallTurn(agenttest.MakeToolCall("call-1", "text_response", `{"text":"done"}`)),
 		)

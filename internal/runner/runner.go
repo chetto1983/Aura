@@ -16,7 +16,6 @@ import (
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
-	"github.com/chetto1983/aura/internal/steer"
 	"github.com/google/uuid"
 )
 
@@ -111,8 +110,15 @@ type Runner struct {
 	// steer is the shared process-wide mid-turn steer inbox injected via
 	// Deps.Steer (amendment #132, AURA_AGUI_RUN_STEER); nil = the flag is off
 	// (D-12's explicit rollback). See runner_steer.go for the buildAgent
-	// threading and the drain-time persistence it also carries.
-	steer *steer.Inbox
+	// threading and the drain-time persistence it also carries. Typed as
+	// agent.SteerInbox (Drain-only) rather than the concrete
+	// *steer.PostgresStore (Phase 51 plan 02, D-06): deliverLeftoverSteer below
+	// only ever calls Drain, and this is the SAME interface buildAgent's
+	// LlmAgentConfig.Steer already needs, so no conversion helper is needed at
+	// that call site any more (steerInboxOrNil now lives at the ONE place a
+	// concrete *steer.PostgresStore is first boxed into this interface: the
+	// composition root, cmd/aura/chat_boot.go).
+	steer agent.SteerInbox
 
 	// threadLocks + sessions are the two per-conversation in-memory maps, BOTH keyed by
 	// the composite (identity, session) sessionKey (D-23, runner_session.go): threadLocks
@@ -384,7 +390,7 @@ func (r *Runner) buildAgent(ctx context.Context, convID string, requestID uuid.U
 		Ledger:            r.verificationLedger(ctx),
 		Gateway:           r.gateway,       // Phase-35 PEP; LedgerConversationID defaults to convID (UUID)
 		ReasoningOverride: reasoningEffort, // 37E fixed effort; "" => auto (adaptive path)
-		Steer:             steerInboxOrNil(r.steer),
+		Steer:             r.steer,
 	})
 	ic := agent.InvocationContext{
 		Ctx:       boundedCtx,

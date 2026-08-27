@@ -2,6 +2,8 @@ package runner
 
 import (
 	"context"
+	"github.com/chetto1983/aura/internal/steer"
+	"github.com/chetto1983/aura/internal/steer/steertest"
 	"strings"
 	"testing"
 	"time"
@@ -9,7 +11,6 @@ import (
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/llm"
-	"github.com/chetto1983/aura/internal/steer"
 )
 
 // runner_steer_leftover_test.go carries the 52-05 leftover-steer
@@ -57,7 +58,7 @@ func steerDeltaSteers(ev *agent.Event) []map[string]any {
 // real HTTP concurrency (mirrors steerInjectorTool's "no goroutine needed"
 // precedent above).
 func TestLeftoverSteerAutoDeliversAsNextTurn(t *testing.T) {
-	inbox := steer.New(steer.Config{Max: 8, MaxBytes: 16384})
+	inbox := steertest.New(steer.Config{Max: 8, MaxBytes: 16384})
 	client := agenttest.NewFakeClient(
 		agenttest.ToolCallTurn(textResponseCall("call-1", "round one done")),
 		agenttest.ToolCallTurn(textResponseCall("call-2", "round two done")),
@@ -138,7 +139,7 @@ func TestLeftoverSteerAutoDeliversAsNextTurn(t *testing.T) {
 // result if 52-04's drain-time persistSteerTurn branch ALSO fired for the
 // next-turn delivery form (T-52-26).
 func TestLeftoverSteerPersistsExactlyOneTurn(t *testing.T) {
-	inbox := steer.New(steer.Config{Max: 8, MaxBytes: 16384})
+	inbox := steertest.New(steer.Config{Max: 8, MaxBytes: 16384})
 	client := agenttest.NewFakeClient(
 		agenttest.ToolCallTurn(textResponseCall("call-1", "round one done")),
 		agenttest.ToolCallTurn(textResponseCall("call-2", "round two done")),
@@ -204,7 +205,7 @@ func TestLeftoverSteerNoLeftoverPathUnchanged(t *testing.T) {
 
 	steered := agenttest.NewFakeClient(agenttest.ToolCallTurn(textResponseCall("call-1", "done")))
 	rSteered, convSteered, _ := newTestRunner(t, steered)
-	rSteered.steer = steer.New(steer.Config{Max: 8, MaxBytes: 16384})
+	rSteered.steer = steertest.New(steer.Config{Max: 8, MaxBytes: 16384})
 	convIDSteered := newConvID(t)
 	mustCreate(t, rSteered, convIDSteered)
 	evsSteered, err := drain(rSteered.Turn(context.Background(), convIDSteered, new("please handle this task")))
@@ -265,7 +266,7 @@ func TestLeftoverSteerNilInboxIsInert(t *testing.T) {
 // honoring the iter.Seq2 contract even though a leftover is genuinely queued
 // and would otherwise trigger the auto-delivery notice + follow-on turn.
 func TestLeftoverSteerHonoursYieldAfterFalse(t *testing.T) {
-	inbox := steer.New(steer.Config{Max: 8, MaxBytes: 16384})
+	inbox := steertest.New(steer.Config{Max: 8, MaxBytes: 16384})
 	if err := inbox.Push("conv-stop-early", "cockpit", "never delivered"); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
@@ -299,7 +300,7 @@ func TestLeftoverSteerHonoursYieldAfterFalse(t *testing.T) {
 // which is non-terminal, so round 2's own drain point B (not a second
 // auto-delivery hop) is what would normally catch it.
 func TestAutoDeliveryChainIsBounded(t *testing.T) {
-	inbox := steer.New(steer.Config{Max: 8, MaxBytes: 16384})
+	inbox := steertest.New(steer.Config{Max: 8, MaxBytes: 16384})
 	convID := newConvID(t)
 	client := agenttest.NewFakeClient(
 		// Round 1: terminal call, so the FIRST leftover ("switch to plan B") is
@@ -384,7 +385,7 @@ func TestAutoDeliveryChainIsBounded(t *testing.T) {
 // test (caught by the test timeout), not a race-detector finding, so this
 // test's real assertion is that it completes at all.
 func TestDeliverLeftoverSteerRaceLockedContextReuse(t *testing.T) {
-	inbox := steer.New(steer.Config{Max: 8, MaxBytes: 16384})
+	inbox := steertest.New(steer.Config{Max: 8, MaxBytes: 16384})
 	client := agenttest.NewFakeClient(
 		agenttest.ToolCallTurn(textResponseCall("call-1", "round one done")),
 		agenttest.ToolCallTurn(textResponseCall("call-2", "round two done")),

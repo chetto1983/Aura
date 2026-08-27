@@ -56,6 +56,11 @@ type Querier interface {
 	// A reservation cannot be replaced or released after teardown starts. Once its exact
 	// row is absent, the worker holding that reservation committed the terminal delete.
 	ConversationDeleteCompleted(ctx context.Context, arg ConversationDeleteCompletedParams) (bool, error)
+	// The disambiguation probe PushSteerRow's Go caller runs only when execrows was 0:
+	// NULL means "conv has no resolvable owner" (ErrConversationUnknown-shaped wiring
+	// error); a non-NULL result together with a 0-row insert means the queue was full
+	// (steer.ErrQueueFull).
+	ConversationOwner(ctx context.Context, conversationID string) (pgtype.UUID, error)
 	CountBenchmarkSettingsOverrideRows(ctx context.Context, runID pgtype.UUID) (int32, error)
 	CountBenchmarkSettingsRestoreMismatches(ctx context.Context, runID pgtype.UUID) (int32, error)
 	CountConversationsForIdentityPurge(ctx context.Context, identityID pgtype.UUID) (int64, error)
@@ -104,6 +109,15 @@ type Querier interface {
 	// Bound ledger growth per session+root, keeping the newest $4 events. The row the
 	// state points at survives because it is always among the newest.
 	DeleteSupersededVerificationEvents(ctx context.Context, arg DeleteSupersededVerificationEventsParams) error
+	// The drain IS the claim (the same conditional-update-as-idempotency-key idiom as
+	// MarkPausedStateResumed, not a second concurrency story): FOR UPDATE serializes two
+	// concurrent Drain calls for the SAME conversation_id rather than racing them, so the
+	// second sees zero remaining undrained rows once the first commits -- disjoint sets by
+	// construction, matching the in-memory Inbox's mutex-guarded exact-once semantic.
+	// identity_id = owner.identity_id is defense in depth (T-51-07): every row for a given
+	// conv is written with that conv's TRUE owner by PushSteerRow, so this can only ever
+	// exclude a row in the event of data that did not come through Push.
+	DrainSteerRows(ctx context.Context, conversationID string) ([]DrainSteerRowsRow, error)
 	// Claim correctness is held by the per-task pg_try_advisory_lock (claim.go), NOT a
 	// row lock here: this SELECT runs on the autocommit pool, so any FOR UPDATE SKIP
 	// LOCKED would release the instant the SELECT returns (inert, L5). The advisory lock
@@ -265,6 +279,13 @@ type Querier interface {
 	// SELECT returns (inert). The dedup is the approval_reminded_at throttle stamp, not a row
 	// lock; a rare cross-instance double-nudge under HA is benign.
 	ListDuePendingApprovalReminders(ctx context.Context, arg ListDuePendingApprovalRemindersParams) ([]AuraSchedulerTasks, error)
+	// Unscoped by identity (aura.steer_queue carries no RLS, migration 0103): the sweep is a
+	// system-wide background job, not a per-identity request, exactly like
+	// ListExpiredPendingApprovals's own cross-tenant caller shape but WITHOUT that method's
+	// per-identity enumeration loop -- each returned row already carries its own
+	// identity_id, so the Go sweep opens ONE identity-scoped transaction per row rather than
+	// one unscoped pass per known identity.
+	ListDueSteerRows(ctx context.Context, arg ListDueSteerRowsParams) ([]AuraSteerQueue, error)
 	ListExpiredPendingApprovals(ctx context.Context, arg ListExpiredPendingApprovalsParams) ([]AuraPausedStates, error)
 	ListExpiredReplayBodies(ctx context.Context, arg ListExpiredReplayBodiesParams) ([]ListExpiredReplayBodiesRow, error)
 	ListGatewayApprovalGrants(ctx context.Context, identityID pgtype.UUID) ([]AuraGatewayApprovalGrants, error)
@@ -334,10 +355,30 @@ type Querier interface {
 	MarkOperationIndeterminate(ctx context.Context, arg MarkOperationIndeterminateParams) (int64, error)
 	MarkOperationRejected(ctx context.Context, arg MarkOperationRejectedParams) (int64, error)
 	MarkPausedStateResumed(ctx context.Context, arg MarkPausedStateResumedParams) (int64, error)
+	// WHERE ... AND expired_at IS NULL is the idempotency gate: a second sweep pass over an
+	// already-expired row affects 0 rows rather than re-writing a duplicate conversation
+	// trace (D-07's "the sweep is idempotent").
+	MarkSteerRowExpired(ctx context.Context, arg MarkSteerRowExpiredParams) (int64, error)
 	MarkUnknownRecovery(ctx context.Context, id pgtype.UUID) error
 	NextAssetEventSeq(ctx context.Context, assetID pgtype.UUID) (int32, error)
 	NextConversationTurnSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	PromoteAssetToLibrary(ctx context.Context, arg PromoteAssetToLibraryParams) (AuraAssets, error)
+	// The D-06/D-07/D-08 durable steer/delegation-result queue. Push and Drain satisfy a
+	// LOCKED interface contract (Push(conv, source, text string) error /
+	// Drain(conv string) []Message) that carries neither an identity nor a context.Context,
+	// so identity is derived from conv via aura.conversation_owner() (migration 0103) rather
+	// than set as an RLS session variable -- see that migration's header for why. The sweep
+	// (ListDueSteerRows / MarkSteerRowExpired) DOES have an identity in hand per row (the
+	// row's own identity_id column), so its conversation-trace write runs inside
+	// db.WithIdentityTx exactly like every other identity-scoped write in the tree.
+	// Guarded insert: 0 rows affected means EITHER conv has no resolvable owner (an unknown
+	// or not-yet-created conversation_id -- Go maps this to a wiring error, never silently)
+	// OR the (identity, conv) queue is already at cap (Go maps this to steer.ErrQueueFull,
+	// preserving the pre-Postgres Inbox's exact per-conversation Max semantic, D-11's
+	// catalogue-vs-behavior drift guard). The two are disambiguated in Go by a second,
+	// cheap owner-only probe (conversationOwner) only when execrows is 0 -- never a second
+	// round trip on the (overwhelmingly common) success path.
+	PushSteerRow(ctx context.Context, arg PushSteerRowParams) (int64, error)
 	RecordRetentionArtifactResult(ctx context.Context, arg RecordRetentionArtifactResultParams) (int64, error)
 	// A byte-identical deterministic plan receives a fresh authorization window only
 	// while it has not crossed the first-apply durability boundary. In-flight and

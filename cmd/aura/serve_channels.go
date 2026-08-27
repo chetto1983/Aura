@@ -38,6 +38,7 @@ import (
 	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/setup"
+	"github.com/chetto1983/aura/internal/steer"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -90,13 +91,27 @@ func buildTelegramDeps(chat *chatEnv, tgCfg telegram.Config) telegram.Deps {
 		Prices:             chat.cfg.LLM.Prices,
 		Model:              chat.cfg.LLM.Model,
 		Resume:             chat.run,
-		Steer:              chat.steer,
+		Steer:              telegramSteerOrNil(chat.steer),
 		StatusThrottleMS:   tgCfg.StatusThrottleMS,
 		ContentThrottleMS:  tgCfg.ContentThrottleMS,
 		ChatRateLimitMS:    tgCfg.ChatRateLimitMS,
 		ShowReasoning:      chat.cfg.LLM.ShowReasoning,
 		ReasoningFIFORunes: tgCfg.ReasoningFIFORunes,
 	}
+}
+
+// telegramSteerOrNil converts a concrete *steer.PostgresStore into the narrower
+// telegram.SteerPusher interface Deps.Steer needs, without the classic Go
+// nil-interface trap: assigning a nil *steer.PostgresStore directly into an
+// interface-typed field produces a NON-nil interface (type=*steer.PostgresStore,
+// value=nil), so bot_dispatch_turn.go's `if t.deps.Steer == nil` guard would
+// never fire on a disabled (AURA_AGUI_RUN_STEER=false) deployment — mirrors
+// runner.SteerInboxOrNil (Phase 51 plan 02, D-06).
+func telegramSteerOrNil(inbox *steer.PostgresStore) telegram.SteerPusher {
+	if inbox == nil {
+		return nil
+	}
+	return inbox
 }
 
 // multimodalConfig projects the central config.Config TTS knobs onto the

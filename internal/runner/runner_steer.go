@@ -35,17 +35,19 @@ var steerDeliveryForms = map[string]bool{
 	"user_message_fallback": true,
 }
 
-// steerInboxOrNil converts the Runner's concrete *steer.Inbox into the
-// narrower agent.SteerInbox interface buildAgent's LlmAgentConfig literal
-// needs, without the classic Go nil-interface trap: assigning a nil
-// *steer.Inbox directly into an interface-typed struct field produces a
-// NON-nil interface (type=*steer.Inbox, value=nil), so
-// llm_agent_steer.go's `if a.steer == nil` guard would never fire and the
-// first drainSteer call on a steer-off deployment (AURA_AGUI_RUN_STEER=false)
-// would nil-pointer-panic inside Inbox.Drain. This helper is the one place
-// that conversion happens, so there is exactly one nil check to get right,
-// not one per call site.
-func steerInboxOrNil(inbox *steer.Inbox) agent.SteerInbox {
+// SteerInboxOrNil converts a concrete *steer.PostgresStore into the narrower
+// agent.SteerInbox interface runner.Deps.Steer (and buildAgent's
+// LlmAgentConfig.Steer, transitively) needs, without the classic Go
+// nil-interface trap: assigning a nil *steer.PostgresStore directly into an
+// interface-typed field produces a NON-nil interface (type=*steer.PostgresStore,
+// value=nil), so `if a.steer == nil` (llm_agent_steer.go) or `if r.steer == nil`
+// (deliverLeftoverSteer below) would never fire and the first Drain call on a
+// steer-off deployment (AURA_AGUI_RUN_STEER=false) would nil-pointer-panic
+// inside PostgresStore.Drain. Exported so the ONE place this conversion needs
+// to happen — cmd/aura/chat_boot.go, building runner.Deps — has exactly one
+// nil check to get right, not one per call site (Phase 51 plan 02, D-06;
+// carries forward the pre-existing steerInboxOrNil idiom this replaces).
+func SteerInboxOrNil(inbox *steer.PostgresStore) agent.SteerInbox {
 	if inbox == nil {
 		return nil
 	}

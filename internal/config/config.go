@@ -104,6 +104,16 @@ type Config struct {
 	SwarmDelegationLeaseSec int // AURA_SWARM_DELEGATION_LEASE_SEC — durable delegation row lease duration
 	SwarmDelegationPollSec  int // AURA_SWARM_DELEGATION_POLL_SEC — claim-loop poll interval
 
+	// Phase 51 plan 02 (D-06/D-07): the two-TTL knobs steer.PostgresStore.Push derives
+	// each row's expires_at from, per its own kind. An operator steer is already
+	// harmful if delivered hours late ("stop, change direction"), so its TTL is short;
+	// a worker's report stays valid for hours, so its TTL is long — that asymmetry IS
+	// D-07's point. <=0 explicitly disables expiry for that kind, the shipped
+	// AURA_ASKUSER_PAUSE_TTL_SEC precedent, never a silent fall-through to "never
+	// expires" by omission.
+	SteerQueueTTLSec       int // AURA_STEER_QUEUE_TTL_SEC — operator steer row TTL, seconds (default 900)
+	DelegationResultTTLSec int // AURA_DELEGATION_RESULT_TTL_SEC — delegation-result row TTL, seconds (default 86400)
+
 	// Scheduler agent_job wall-clock (#53/D-42). The 120s swarm-child analog starved
 	// real artifact jobs (a North-Star-class xlsx run measures 150-360s live); the
 	// serve composition root passes this into AgentDeps.MaxDuration.
@@ -427,6 +437,9 @@ func loadBase() *Config {
 
 		SwarmDelegationLeaseSec: envutil.IntDefault("AURA_SWARM_DELEGATION_LEASE_SEC", 300),
 		SwarmDelegationPollSec:  envutil.IntDefault("AURA_SWARM_DELEGATION_POLL_SEC", 2),
+
+		SteerQueueTTLSec:       envutil.IntDefault("AURA_STEER_QUEUE_TTL_SEC", 900),
+		DelegationResultTTLSec: envutil.IntDefault("AURA_DELEGATION_RESULT_TTL_SEC", 86400),
 
 		AgentJobMaxDurationSec: envutil.IntDefault("AURA_AGENT_JOB_MAX_DURATION_SEC", 600),
 

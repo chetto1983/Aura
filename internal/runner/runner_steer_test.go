@@ -12,6 +12,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/steer"
+	"github.com/chetto1983/aura/internal/steer/steertest"
 	"github.com/google/uuid"
 )
 
@@ -165,8 +166,8 @@ func TestPersistedSteerCarriesRawText(t *testing.T) {
 }
 
 func TestSteerInboxOrNil(t *testing.T) {
-	if got := steerInboxOrNil(nil); got != nil {
-		t.Fatalf("steerInboxOrNil(nil) = %#v, want a genuinely nil interface (the Go nil-interface trap this helper exists to avoid)", got)
+	if got := SteerInboxOrNil(nil); got != nil {
+		t.Fatalf("SteerInboxOrNil(nil) = %#v, want a genuinely nil interface (the Go nil-interface trap this helper exists to avoid)", got)
 	}
 }
 
@@ -176,7 +177,7 @@ func TestSteerInboxOrNil(t *testing.T) {
 // synchronous dispatch path — no goroutine/timing race needed to prove the
 // drain-point ordering.
 type steerInjectorTool struct {
-	inbox  *steer.Inbox
+	inbox  *steertest.Fake
 	convID string
 	text   string
 }
@@ -228,7 +229,7 @@ func assertWireValidHistory(t *testing.T, hist []llm.Message) {
 // never a hand-built []llm.Message fixture), and asserts no user-role turn
 // sits between an assistant tool_calls turn and its answering tool results.
 func TestRehydratedSteeredHistoryIsWireValid(t *testing.T) {
-	inbox := steer.New(steer.Config{Max: 8, MaxBytes: 16384})
+	inbox := steertest.New(steer.Config{Max: 8, MaxBytes: 16384})
 	convID := newConvID(t)
 
 	client := agenttest.NewFakeClient(

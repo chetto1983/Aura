@@ -609,6 +609,25 @@ type AuraSkillAudit struct {
 	BlocklistOverride bool        `json:"blocklist_override"`
 }
 
+type AuraSteerQueue struct {
+	ID             pgtype.UUID `json:"id"`
+	IdentityID     pgtype.UUID `json:"identity_id"`
+	ConversationID string      `json:"conversation_id"`
+	// D-07: one table, rows typed by kind (steer|delegation_result), each deriving its OWN TTL from its own configured knob (AURA_STEER_QUEUE_TTL_SEC / AURA_DELEGATION_RESULT_TTL_SEC) at Push time -- never a single shared cutoff. NOT NULL with no default so a future variant cannot be inserted by forgetting to name itself; every read site derives behavior from this column, never assumes the steer TTL.
+	Kind      string             `json:"kind"`
+	Source    string             `json:"source"`
+	Body      string             `json:"body"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// D-07: computed from kind's configured TTL at Push time (now() + TTL). NULL means never expires -- a TTL knob <= 0 disables expiry for that kind, the shipped AURA_ASKUSER_PAUSE_TTL_SEC precedent. Drain excludes a row past expires_at even before the sweep catches up (lazy expiry on read).
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	DrainedAt pgtype.Timestamptz `json:"drained_at"`
+	ExpiredAt pgtype.Timestamptz `json:"expired_at"`
+	// D-08: set in the SAME transaction that sets expired_at, alongside the readable trace the sweep appends to the row's own conversation -- an expired row is never silently dropped ("errors should never pass silently").
+	ExpiryReason pgtype.Text `json:"expiry_reason"`
+	// Consumed by plan 51-10 (absent-operator push to the owning channel after a grace window). Landed in THIS migration, not 51-10's own, because 51-10 runs in the same wave as another migration-creating plan and two executors deriving the next slot from `ls internal/db/migrations | tail -1` in parallel would collide on it. Distinct from drained_at on purpose: drained_at means "the operator received this inside a turn"; nudged_at means "we pushed it to a channel because nobody did".
+	NudgedAt pgtype.Timestamptz `json:"nudged_at"`
+}
+
 // Known Telegram accounts (Slice 9a / Phase 13, amendment #58). PK telegram_user_id; identity_id FKs aura.identities (single-user `local` this phase, D-07).
 type AuraTelegramAccounts struct {
 	TelegramUserID int64              `json:"telegram_user_id"`

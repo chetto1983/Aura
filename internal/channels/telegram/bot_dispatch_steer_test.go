@@ -12,6 +12,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent"
 	assetspkg "github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/steer"
+	"github.com/chetto1983/aura/internal/steer/steertest"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -78,7 +79,7 @@ func TestPlainTextDuringLiveTurnSteers(t *testing.T) {
 	t.Parallel()
 	started := make(chan struct{})
 	var calls atomic.Int32
-	inbox := steer.New(steer.Config{})
+	inbox := steertest.New(steer.Config{})
 	rt := &recordingTurn{}
 	tg := dispatchChannel(t, rt, func(d *Deps) {
 		d.Steer = inbox
@@ -122,7 +123,7 @@ func TestSteerCarriesRawTextNotComposedContext(t *testing.T) {
 	t.Parallel()
 	started := make(chan struct{})
 	var calls atomic.Int32
-	inbox := steer.New(steer.Config{})
+	inbox := steertest.New(steer.Config{})
 	rt := &recordingTurn{}
 	tg := dispatchChannel(t, rt, func(d *Deps) {
 		d.Steer = inbox
@@ -155,7 +156,7 @@ func TestSteerCarriesRawTextNotComposedContext(t *testing.T) {
 // byte-identical turnBusyMessage even with a wired steer inbox, and never pushes.
 func TestHitlResumeIsNotASteer(t *testing.T) {
 	t.Parallel()
-	inbox := steer.New(steer.Config{})
+	inbox := steertest.New(steer.Config{})
 	rt := &recordingTurn{}
 	tg := dispatchChannel(t, rt, func(d *Deps) {
 		d.Steer = inbox
@@ -224,7 +225,7 @@ func TestTelegramConvIDIsTheInboxKey(t *testing.T) {
 	var once sync.Once
 	var mu sync.Mutex
 	var drivenConvID string
-	inbox := steer.New(steer.Config{})
+	inbox := steertest.New(steer.Config{})
 	rt := &recordingTurn{}
 	tg := dispatchChannel(t, rt, func(d *Deps) {
 		d.Steer = inbox

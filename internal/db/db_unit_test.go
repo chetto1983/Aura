@@ -357,14 +357,14 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A deliberate pin, moved deliberately: 0102_paused_state_decision_policy backfills
-	// an explicit server-authored decision set onto every persisted pause, so runtime
-	// authorization can remain fail-closed without a compatibility path. The
-	// test exists so a migration added without noticing breaks the build rather than the
-	// deployment, so bumping it is the intended way to acknowledge one -- never a fixup to
-	// make a red go away.
-	if head != 102 {
-		t.Fatalf("MigrationHead=%d, want embedded head 102", head)
+	// A deliberate pin, moved deliberately: 0103_steer_queue (Phase 51 D-06/D-07/D-08)
+	// creates the durable Postgres-backed steer/delegation-result queue, and
+	// 0104_scheduler_observability_check_kind (landed concurrently) widens a scheduler
+	// CHECK constraint. The test exists so a migration added without noticing breaks the
+	// build rather than the deployment, so bumping it is the intended way to acknowledge
+	// one -- never a fixup to make a red go away.
+	if head != 104 {
+		t.Fatalf("MigrationHead=%d, want embedded head 104", head)
 	}
 }
 

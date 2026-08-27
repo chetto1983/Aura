@@ -1,68 +1,70 @@
-// Package steer is the conversation-id-keyed bounded FIFO steer inbox.
+// Package steer is the conversation-id-keyed steer/delegation-result queue.
 //
-// It is an in-memory, single-replica-by-construction queue: a multi-replica
-// Aura would need cross-replica signalling, not a bigger queue (amendment
-// #133's stated boundary). It is keyed on conversation id, never run id,
-// because the Telegram dispatch path calls runner.Turn directly with no run
-// identity in scope at all (D-01) — a run-id-keyed inbox would be
-// unreachable from that half of the callers by construction.
+// It is Postgres-backed with a per-kind TTL (D-06/D-07, migration 0103): a steer or a
+// delegation_result row survives a daemon restart, so a background completion pushed
+// while no turn is running -- the normal case for a delegation that outlives its parent
+// turn -- is delivered on the next turn the operator opens on that conversation, never
+// silently lost. It is keyed on conversation id, never run id, because the Telegram
+// dispatch path calls runner.Turn directly with no run identity in scope at all (D-01) --
+// a run-id-keyed inbox would be unreachable from that half of the callers by
+// construction.
 //
-// It is NOT internal/agui's RunRegistry: no SSE fan-out, no subscriber set,
-// no replay-from-seq. A steer is consumed by Drain, never replayed.
+// It is NOT internal/agui's RunRegistry: no SSE fan-out, no subscriber set, no
+// replay-from-seq. A row is consumed by Drain, never replayed. The in-memory,
+// single-replica-by-construction *Inbox* this package shipped before Phase 51 is
+// DELETED, not kept behind a flag (D-06: "two live implementations of one contract" was
+// explicitly rejected) -- *PostgresStore (pg_store.go) is the sole implementation.
 package steer
 
 import (
 	"errors"
-	"strings"
-	"sync"
 	"time"
-
-	"github.com/google/uuid"
 )
 
-// defaultMax and defaultMaxBytes are the package-level fallbacks a
-// non-positive Config cap resolves to — the same <=0 → default convention
-// agui.NewRunRegistry uses. Deliberately NOT the ratified amendment #132
-// item 10 numbers: those live in config.AGUISteerConfig and arrive through
-// Config, never as a literal in this file (a D-11-shaped drift guard).
+// defaultMax and defaultMaxBytes are the package-level fallbacks a non-positive Config
+// cap resolves to — the same <=0 → default convention agui.NewRunRegistry uses.
+// Deliberately NOT the ratified amendment #132 item 10 numbers: those live in
+// config.AGUISteerConfig and arrive through Config, never as a literal in this file (a
+// D-11-shaped drift guard).
 const (
 	defaultMax      = 32
 	defaultMaxBytes = 32768
 )
 
-// Sentinel errors returned by Push, one per validation reason, so a caller
-// (the HTTP route in 52-04, the Telegram reply in 52-06) can render each
-// without string matching.
+// Sentinel errors returned by Push, one per validation reason, so a caller (the AG-UI
+// HTTP route, the Telegram reply) can render each without string matching.
 var (
 	ErrEmpty     = errors.New("steer: message is empty")
 	ErrTooLarge  = errors.New("steer: message exceeds max size")
 	ErrQueueFull = errors.New("steer: conversation queue is full")
-	ErrClosed    = errors.New("steer: inbox is closed")
+	// ErrClosed is preserved for the shipped writeSteerRefusal switch
+	// (internal/agui/server_run_steer.go) to keep compiling and rendering its ratified
+	// 410 branch. *PostgresStore never returns it: there is no "closed" state for a
+	// process-wide Postgres-backed store the way there was for the in-memory Inbox's
+	// explicit Close() (never called in production — grepped clean across the tree at
+	// the time of the D-06 migration). It stays defined, not reachable, rather than
+	// deleted, exactly as CLAUDE.md's "adapt the new type to the shipped contract"
+	// prohibition on widening/narrowing that switch requires.
+	ErrClosed = errors.New("steer: inbox is closed")
 )
 
-// Config bundles the caps New is configured with — this package's mirror of
-// config.AGUISteerConfig's Max/MaxBytes fields, kept separate so this
-// package never imports internal/config; the composition root converts.
-type Config struct {
-	Max      int // queued-message cap per conversation; <=0 resolves to a package default
-	MaxBytes int // per-message byte cap (Unicode-encoded byte length, not rune count); <=0 resolves to a package default
-}
-
-// SourceWorker is the reserved source a DELEGATED WORKER's report arrives
-// under, as opposed to the channel names an operator's own steer carries
-// ("cockpit", "telegram"). The consumer keys the delivery envelope on it:
-// spike 098 measured that a worker's report wrapped in the operator envelope
-// is discounted by the model as a spoofing attempt, because the envelope
-// declares an author the payload contradicts.
+// SourceWorker is the reserved source a DELEGATED WORKER's report arrives under, as
+// opposed to the channel names an operator's own steer carries ("cockpit", "telegram").
+// The consumer keys the delivery envelope on it: spike 098 measured that a worker's
+// report wrapped in the operator envelope is discounted by the model as a spoofing
+// attempt, because the envelope declares an author the payload contradicts. Also the
+// discriminator PostgresStore.Push derives a row's storage kind from (source ==
+// SourceWorker → KindDelegationResult, else → KindSteer): Push's signature carries no
+// separate kind parameter, so this is the ONLY signal that decides it.
 //
 // It matches the Source the swarm already stamps on its own tool results
-// (RunnerAdapter's Provenance{Source: "swarm", Trust: TrustUntrusted}), so one
-// name means one thing whichever way a worker's output reaches the model.
+// (RunnerAdapter's Provenance{Source: "swarm", Trust: TrustUntrusted}), so one name
+// means one thing whichever way a worker's output reaches the model.
 const SourceWorker = "swarm"
 
-// Message is one steer, carrying the minimum provenance the aura.steer echo
-// frame needs: an id, the source channel, and the arrival time. A small value
-// type, not an interface.
+// Message is one steer or delegation-result row, carrying the minimum provenance the
+// aura.steer echo frame needs: an id, the source channel, and the arrival time. A small
+// value type, not an interface.
 type Message struct {
 	ID      string
 	Source  string
@@ -70,82 +72,17 @@ type Message struct {
 	Arrived time.Time
 }
 
-// Inbox holds one mutex and one map[string][]Message — the queue itself.
-type Inbox struct {
-	mu     sync.Mutex
-	byConv map[string][]Message
-	cfg    Config
-	closed bool
-	now    func() time.Time
-}
-
-// New builds an Inbox from the resolved caps. A non-positive cap falls back
-// to the package default — a cap exists to bound memory, not to be silently
-// disabled by an unset/zero env value.
-func New(cfg Config) *Inbox {
-	if cfg.Max <= 0 {
-		cfg.Max = defaultMax
-	}
-	if cfg.MaxBytes <= 0 {
-		cfg.MaxBytes = defaultMaxBytes
-	}
-	return &Inbox{
-		byConv: make(map[string][]Message),
-		cfg:    cfg,
-		now:    time.Now,
-	}
-}
-
-// Push enqueues text for conv, tagged with source (the channel that produced
-// it — the cockpit HTTP route or the Telegram dispatch path). Validates in
-// order — empty/whitespace, oversize, closed, queue-full — returning a
-// distinct sentinel for each so a caller never has to string-match. A
-// refused Push never touches the queue.
-func (i *Inbox) Push(conv, source, text string) error {
-	if strings.TrimSpace(text) == "" {
-		return ErrEmpty
-	}
-	// Byte semantics, not runes: the cap bounds memory and wire size, and a
-	// rune cap would let a multi-byte body exceed the memory bound it exists
-	// to enforce. len(string) in Go already IS the encoded byte length.
-	if size := len([]byte(text)); size > i.cfg.MaxBytes {
-		return ErrTooLarge
-	}
-	i.mu.Lock()
-	defer i.mu.Unlock()
-	if i.closed {
-		return ErrClosed
-	}
-	if len(i.byConv[conv]) >= i.cfg.Max {
-		return ErrQueueFull
-	}
-	i.byConv[conv] = append(i.byConv[conv], Message{
-		ID:      uuid.NewString(),
-		Source:  source,
-		Text:    text,
-		Arrived: i.now(),
-	})
-	return nil
-}
-
-// Drain pops and returns everything queued for conv, atomically clearing the
-// slot — a second Drain on the same conv returns empty. Deletes the map key
-// so an idle conversation leaves no residue behind; a conv never pushed to
-// returns a nil (len 0) slice without allocating an entry.
-func (i *Inbox) Drain(conv string) []Message {
-	i.mu.Lock()
-	defer i.mu.Unlock()
-	msgs := i.byConv[conv]
-	delete(i.byConv, conv)
-	return msgs
-}
-
-// Close stops accepting new Push calls (which return ErrClosed from then
-// on); it does not discard whatever is already queued — Drain after Close
-// still returns the pending messages, so shutdown never silently destroys
-// operator input.
-func (i *Inbox) Close() {
-	i.mu.Lock()
-	i.closed = true
-	i.mu.Unlock()
+// Config bundles the caps PostgresStore is configured with — this package's mirror of
+// config.AGUISteerConfig's Max/MaxBytes fields plus the D-07 per-kind TTLs, kept
+// separate so this package never imports internal/config; the composition root
+// converts.
+type Config struct {
+	Max      int // queued-and-undrained-row cap per conversation (both kinds combined); <=0 resolves to a package default
+	MaxBytes int // per-message byte cap (Unicode-encoded byte length, not rune count); <=0 resolves to a package default
+	// SteerTTL/DelegationResultTTL are the D-07 per-kind TTLs a row's expires_at is
+	// derived from at Push time. <=0 explicitly disables expiry for that kind — the
+	// shipped AURA_ASKUSER_PAUSE_TTL_SEC precedent, never a silent fall-through to
+	// "never expires" by omission.
+	SteerTTL            time.Duration
+	DelegationResultTTL time.Duration
 }

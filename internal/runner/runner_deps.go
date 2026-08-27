@@ -12,7 +12,6 @@ import (
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/llm"
-	"github.com/chetto1983/aura/internal/steer"
 )
 
 // runner_deps.go carries the Runner's constructor surface — Deps, ResumeHook, and
@@ -123,12 +122,16 @@ type Deps struct {
 	ShareRevoker ShareRevoker
 	// Steer is the shared process-wide mid-turn steer inbox (amendment #132,
 	// AURA_AGUI_RUN_STEER, D-01/D-12). The composition root constructs ONE
-	// instance and injects it here AND into agui.Server (SetSteerInbox) so a
-	// push and a drain never disagree about which queue they mean (T-52-31).
-	// nil means the flag is off: buildAgent's steerInboxOrNil then leaves the
-	// per-turn agent's drain a total no-op, exactly like a nil gateway means
-	// Allow.
-	Steer *steer.Inbox
+	// *steer.PostgresStore and injects it here AND into agui.Server
+	// (SetSteerInbox) so a push and a drain never disagree about which queue
+	// they mean (T-52-31). Typed as agent.SteerInbox (Drain-only), not the
+	// concrete store: the composition root does the nil-safe box-into-interface
+	// conversion ONCE (cmd/aura/chat_boot.go's steerInboxOrNil, Phase 51 plan 02)
+	// before assigning here, avoiding the classic Go nil-interface trap a
+	// concrete-typed field would invite at every later read. nil means the flag
+	// is off: buildAgent's r.steer stays nil and the per-turn agent's drain is a
+	// total no-op, exactly like a nil gateway means Allow.
+	Steer agent.SteerInbox
 }
 
 // ResumeHook is called after a paused ask_user response is persisted and before

@@ -18,7 +18,6 @@ import (
 	"github.com/chetto1983/aura/internal/mcp"
 	runtimereadiness "github.com/chetto1983/aura/internal/readiness"
 	"github.com/chetto1983/aura/internal/runner"
-	"github.com/chetto1983/aura/internal/steer"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -174,9 +173,16 @@ type Server struct {
 	// AURA_AGUI_RUN_STEER). Nil = flag off (D-12's explicit rollback) = the
 	// steer route hides itself (404), exactly like a nil runs registry hides
 	// resume/cancel; wired via SetSteerInbox only when the flag is on. The SAME
-	// *steer.Inbox instance is also injected into runner.Deps.Steer and (52-06)
+	// *steer.PostgresStore instance is also injected into runner.Deps.Steer and
 	// telegram.Deps.Steer — one backend, multiple consumers (T-52-31).
-	steer *steer.Inbox
+	//
+	// steerPusher (not the concrete *steer.PostgresStore) so this package can be
+	// unit-tested with a lightweight fake Push, never a live Postgres connection —
+	// mirrors the SAME tool-package-interface-seam idiom SteerInbox
+	// (internal/agent/llm_agent_steer.go) and ChannelDeliverer (internal/cron/deliver.go)
+	// already use; *steer.PostgresStore satisfies it by construction (Phase 51 plan 02,
+	// D-06).
+	steer steerPusher
 
 	cfg           ServerConfig
 	readinessRuns readinessProbeCoordinator
@@ -259,11 +265,21 @@ func (s *Server) SetApprovalStore(store ApprovalStore) { s.approvals = store }
 // D-A2-02 narrow seam, mirroring SetApprovalStore.
 func (s *Server) SetRunRegistry(registry *RunRegistry) { s.runs = registry }
 
+// steerPusher is the narrow write-side contract handleRunSteer needs from the shared
+// steer queue — defined HERE (agui-local), never importing internal/steer's concrete
+// PostgresStore directly (Phase 51 plan 02, D-06's "adapt the new type to the shipped
+// contract" — this seam is the adaptation point). *steer.PostgresStore satisfies it by
+// construction (identical Push signature); a test fake needs neither a live Postgres
+// connection nor a *steer.PostgresStore to exercise handleRunSteer's status-code ladder.
+type steerPusher interface {
+	Push(conv, source, text string) error
+}
+
 // SetSteerInbox wires the shared mid-turn steer inbox (amendment #132,
 // AURA_AGUI_RUN_STEER). It is set by the daemon composition root ONLY when
 // the steer flag is on, mirroring SetRunRegistry: until set (nil),
 // handleRunSteer answers 404 rather than accepting a POST nothing drains.
-func (s *Server) SetSteerInbox(inbox *steer.Inbox) { s.steer = inbox }
+func (s *Server) SetSteerInbox(inbox steerPusher) { s.steer = inbox }
 
 // SetOperationRegistry installs the process-wide durable mutation registry.
 // Keeping this as a narrow consumer-side seam lets tests leave it nil while the

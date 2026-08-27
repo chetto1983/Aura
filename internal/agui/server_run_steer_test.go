@@ -13,6 +13,7 @@ import (
 	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/steer"
+	"github.com/chetto1983/aura/internal/steer/steertest"
 	"github.com/google/uuid"
 )
 
@@ -60,7 +61,7 @@ func TestHandleRunSteerHides404Ladder(t *testing.T) {
 
 	s, srv := newDetachTestServer(t, &scriptedRunner{events: textTurn("hi")},
 		&fakeConvStore{known: map[string]bool{tid: true}}, ServerConfig{})
-	s.SetSteerInbox(steer.New(steer.Config{Max: 8, MaxBytes: 16384}))
+	s.SetSteerInbox(steertest.New(steer.Config{Max: 8, MaxBytes: 16384}))
 
 	t.Run("malformed and unknown run ids answer the same 404", func(t *testing.T) {
 		for _, id := range []string{"not-a-run", "run-zzz", "run-00000000-0000-0000-0000-00000000dead"} {
@@ -123,7 +124,7 @@ func TestSteerRouteRendersInboxSentinels(t *testing.T) {
 	const tid = "46464646-4646-4646-4646-464646464646"
 	s, srv := newDetachTestServer(t, &scriptedRunner{events: textTurn("hi")},
 		&fakeConvStore{known: map[string]bool{tid: true}}, ServerConfig{})
-	inbox := steer.New(steer.Config{Max: 1, MaxBytes: 8})
+	inbox := steertest.New(steer.Config{Max: 1, MaxBytes: 8})
 	s.SetSteerInbox(inbox)
 	// A LIVE run, deliberately never driven to terminal: the sentinel-rendering
 	// ladder below (empty/oversize/queue-full/closed) is exercised only once
@@ -323,7 +324,7 @@ func TestSteerAtTerminalRunIs410(t *testing.T) {
 	const tid = "48484848-4848-4848-4848-484848484848"
 	s, srv := newDetachTestServer(t, &scriptedRunner{events: textTurn("hi")},
 		&fakeConvStore{known: map[string]bool{tid: true}}, ServerConfig{})
-	inbox := steer.New(steer.Config{Max: 8, MaxBytes: 16384})
+	inbox := steertest.New(steer.Config{Max: 8, MaxBytes: 16384})
 	s.SetSteerInbox(inbox)
 	runID := runDetachedToTerminal(t, srv, tid)
 
@@ -377,7 +378,7 @@ func TestSteerHasNoFourthOutcome(t *testing.T) {
 		// pre-existing TestSteerEndToEndRedirectsNextRound's own two real POSTs do
 		// not, by themselves, trigger it), so the cleanup lives here.
 		t.Cleanup(func() { http.DefaultClient.CloseIdleConnections() })
-		inbox := steer.New(steer.Config{Max: 8, MaxBytes: 16384})
+		inbox := steertest.New(steer.Config{Max: 8, MaxBytes: 16384})
 		client := agenttest.NewFakeClient(
 			agenttest.ToolCallTurn(agenttest.MakeToolCall("call-1", "steer_via_http", "{}")),
 			agenttest.ToolCallTurn(agenttest.MakeToolCall("call-2", "text_response", `{"text":"done"}`)),
@@ -415,7 +416,7 @@ func TestSteerHasNoFourthOutcome(t *testing.T) {
 	})
 
 	t.Run("auto-delivered next turn", func(t *testing.T) {
-		inbox := steer.New(steer.Config{Max: 8, MaxBytes: 16384})
+		inbox := steertest.New(steer.Config{Max: 8, MaxBytes: 16384})
 		client := agenttest.NewFakeClient(
 			agenttest.ToolCallTurn(agenttest.MakeToolCall("call-1", "text_response", `{"text":"round one done"}`)),
 			agenttest.ToolCallTurn(agenttest.MakeToolCall("call-2", "text_response", `{"text":"round two done"}`)),
@@ -473,7 +474,7 @@ func TestSteerHasNoFourthOutcome(t *testing.T) {
 		const tid = "49494949-4949-4949-4949-494949494949"
 		s, srv := newDetachTestServer(t, &scriptedRunner{events: textTurn("hi")},
 			&fakeConvStore{known: map[string]bool{tid: true}}, ServerConfig{})
-		s.SetSteerInbox(steer.New(steer.Config{Max: 8, MaxBytes: 16384}))
+		s.SetSteerInbox(steertest.New(steer.Config{Max: 8, MaxBytes: 16384}))
 		runID := runDetachedToTerminal(t, srv, tid)
 
 		resp := postSteer(t, srv.URL, runID, "too late")

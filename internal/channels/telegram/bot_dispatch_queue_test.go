@@ -10,6 +10,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent"
 	assetspkg "github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/steer"
+	"github.com/chetto1983/aura/internal/steer/steertest"
 )
 
 // gatedCall records one turnDriver invocation: the composed userMsg it was
@@ -55,7 +56,7 @@ func TestNonTextDuringLiveTurnIsQueuedNotDropped(t *testing.T) {
 	rt := &recordingTurn{}
 	driver, gates := gatedTurnDriver(&calls)
 	tg := dispatchChannel(t, rt, func(d *Deps) {
-		d.Steer = steer.New(steer.Config{})
+		d.Steer = steertest.New(steer.Config{})
 		d.Turn = driver
 	})
 
@@ -104,7 +105,7 @@ func TestQueuedTurnDeliveredAfterLiveTurnEnds(t *testing.T) {
 	rt := &recordingTurn{}
 	driver, gates := gatedTurnDriver(&calls)
 	tg := dispatchChannel(t, rt, func(d *Deps) {
-		d.Steer = steer.New(steer.Config{})
+		d.Steer = steertest.New(steer.Config{})
 		d.Turn = driver
 	})
 
@@ -146,7 +147,7 @@ func TestQueuedTurnNotDeliveredOnCancelIsAnnounced(t *testing.T) {
 	rt := &recordingTurn{}
 	driver, gates := gatedTurnDriver(&calls)
 	tg := dispatchChannel(t, rt, func(d *Deps) {
-		d.Steer = steer.New(steer.Config{})
+		d.Steer = steertest.New(steer.Config{})
 		d.Turn = driver
 	})
 
@@ -197,7 +198,7 @@ func TestQueueChainIsBounded(t *testing.T) {
 	rt := &recordingTurn{}
 	driver, gates := gatedTurnDriver(&calls)
 	tg := dispatchChannel(t, rt, func(d *Deps) {
-		d.Steer = steer.New(steer.Config{})
+		d.Steer = steertest.New(steer.Config{})
 		d.Turn = driver
 	})
 
