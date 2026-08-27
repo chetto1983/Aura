@@ -8833,3 +8833,28 @@ flusso completo, che funziona.
 > The retrieval metrics remain visible debt indicators and may become a hard gate after a
 > measured correlation with agent failures. This amendment only refuses to use a preferred
 > filename as a substitute for the user-visible behavior Aura is supposed to deliver.
+
+## §Document abstention evidence uses the pinned exact vector function (Amendment #160, 2026-08-27)
+
+> **Amendment #160 (2026-08-27 — live harness repair measured before implementation).**
+>
+> **The failure.** In the disposable 21-file lifecycle the retrieval report completed, but
+> `TestAbstentionEvidence` stopped on its first query because `vector.rerank` returned zero
+> rows for twenty fused candidates on the pinned ArcadeDB 26.8.1 server. That function is
+> not part of Aura's production retrieval path; it was a harness-only convenience whose
+> positional signature had previously been inferred from one live server. Treating its
+> empty response as a document-quality failure prevented both the abstention evidence and
+> the nine-case production-agent oracle from running.
+>
+> **Contract.** Keep the same evidence semantics: for each candidate in shipped fused order,
+> emit the exact full-precision cosine similarity between the stored passage embedding and
+> the query embedding. Compute it with ArcadeDB's documented, pinned
+> `vector.cosineSimilarity(embedding, :embedding)` scalar over the bounded twenty selected
+> passages. This is an evidence-only O(20) query, not a hot-path reranker and not a new
+> release threshold. The harness must reject missing, duplicate, non-numeric, or non-finite
+> scores and still publish every answerable/unanswerable record it actually measured.
+>
+> **Boundary.** Production fusion, candidate count, qrels, embeddings and the decision not
+> to install a score-based abstention gate remain unchanged. The lifecycle still fails if
+> either diagnostic report cannot be emitted, but a harness-private API drift can no longer
+> masquerade as a retrieval regression.
