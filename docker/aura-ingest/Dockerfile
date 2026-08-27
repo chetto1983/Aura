@@ -14,8 +14,12 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd/aura-filecard ./cmd/aura-filecard
+COPY cmd/aura-media-index ./cmd/aura-media-index
+COPY cmd/aura-ingest-supervisor ./cmd/aura-ingest-supervisor
 COPY internal ./internal
 RUN CGO_ENABLED=0 go build -trimpath -o /out/aura-filecard ./cmd/aura-filecard
+RUN CGO_ENABLED=0 go build -trimpath -o /out/aura-media-index ./cmd/aura-media-index
+RUN CGO_ENABLED=0 go build -trimpath -o /out/aura-ingest-supervisor ./cmd/aura-ingest-supervisor
 
 FROM python:3.12-slim-bookworm
 
@@ -43,14 +47,15 @@ COPY docker/aura-ingest/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 COPY --from=filecard /out/aura-filecard /usr/local/bin/aura-filecard
+COPY --from=filecard /out/aura-media-index /usr/local/bin/aura-media-index
+COPY --from=filecard /out/aura-ingest-supervisor /usr/local/bin/aura-ingest-supervisor
 
 COPY services/ingest /app/ingest
 WORKDIR /app
 
-# The LMDB state MUST resolve to a volume. In an ephemeral path every run starts
-# from zero: memoization silently stops working, the corpus is re-extracted and
-# re-embedded every pass, and nothing about it looks wrong.
+# The supervisor overrides this with /state/<identity>/coco.db for every child. The
+# fallback still resolves to the volume: an ephemeral path silently disables memoization.
 ENV COCOINDEX_DB=/state/coco.db
 VOLUME ["/state"]
 
-ENTRYPOINT ["python", "-m", "ingest.app"]
+ENTRYPOINT ["aura-ingest-supervisor"]

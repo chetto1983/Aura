@@ -1,10 +1,10 @@
 """The S3/Garage source binding: one identity's bucket, nothing else.
 
-"One CocoIndex app per identity" (plan §Self-Review, "The source decision") means the
-isolation boundary IS the credential this module is handed -- it never derives, mints,
-or looks up a tenant's key itself. That minting is Go-side provisioning (deferred to the
-compose/provisioning wiring that launches this container per identity); this module only
-reads the already-resolved values from its own environment.
+"One CocoIndex app per identity" means the isolation boundary IS the credential this
+module is handed -- it never derives, mints, or looks up a tenant's key itself. The Go
+supervisor resolves the existing encrypted binding through objectstore.IdentityStore and
+launches one child per provisioned active user; this module only reads that child's
+already-resolved values from its private environment.
 
 Garage is S3-compatible; amazon_s3.list_objects takes a client we build, so the custom
 endpoint lives here and the connector itself needs no knowledge of Garage.

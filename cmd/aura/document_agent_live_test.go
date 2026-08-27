@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/agenteval"
@@ -80,27 +81,8 @@ func TestDocumentProductionAgentE2E(t *testing.T) {
 	t.Cleanup(pool.Close)
 
 	for label, identityID := range map[string]string{"a": identityA, "b": identityB} {
-		name := fmt.Sprintf("document-e2e-%s-%s@example.test", label, identityID[:8])
-		if _, err := pool.Exec(ctx,
-			`INSERT INTO aura.identities (id, name, kind) VALUES ($1::uuid, $2, 'user')`,
-			identityID, name,
-		); err != nil {
-			t.Fatalf("insert identity %s: %v", label, err)
-		}
-		if err := db.WithIdentityTxRaw(ctx, pool, identityID, func(tx pgx.Tx) error {
-			_, grantErr := tx.Exec(ctx,
-				`INSERT INTO aura.capability_grants (identity_id, capability) VALUES ($1::uuid, 'agent.run')`,
-				identityID,
-			)
-			return grantErr
-		}); err != nil {
-			t.Fatalf("grant identity %s: %v", label, err)
-		}
+		registerDocumentE2EIdentity(t, ctx, pool, identityID, label)
 	}
-	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(),
-			`DELETE FROM aura.identities WHERE id = ANY($1::uuid[])`, []string{identityA, identityB})
-	})
 
 	library := newDocumentLibrary(pool, cfg)
 	assertDocumentMarker(t, library, identityA, "private launch code", markerA)
@@ -115,7 +97,100 @@ func TestDocumentProductionAgentE2E(t *testing.T) {
 		t.Fatalf("identity A recalled identity B marker %q", markerB)
 	}
 
-	recorded := &recordingDocumentLibrary{inner: library}
+	prompt := "Use document_search to answer this question from my uploaded alpha document: " +
+		"what is the private launch code? Return the code exactly."
+	reply, sawSearch, calls := runDocumentAgentTurn(t, ctx, pool, cfg, identityA, prompt)
+	if !sawSearch {
+		t.Fatal("real agent did not execute document_search")
+	}
+	if !strings.Contains(reply, markerA) || strings.Contains(reply, markerB) {
+		t.Fatalf("agent reply did not stay in identity A: %q", reply)
+	}
+	if len(calls) == 0 {
+		t.Fatal("document_search did not reach the production library")
+	}
+	for _, call := range calls {
+		if call.IdentityID != identityA {
+			t.Fatalf("agent search used identity %q, want %q", call.IdentityID, identityA)
+		}
+	}
+}
+
+func TestMediaDocumentProductionAgentE2E(t *testing.T) {
+	identityID := requiredDocumentLiveEnv(t, "AURA_DOCUMENT_E2E_MEDIA_IDENTITY")
+	requiredDocumentLiveEnv(t, "OPENROUTER_API_KEY")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	pool, err := db.Open(ctx, &cfg.DB)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	registerDocumentE2EIdentity(t, ctx, pool, identityID, "media")
+
+	if _, err := newRuntimeDocumentIndex(cfg, nil, true); err != nil {
+		t.Fatalf("configure media document index: %v", err)
+	}
+	library := newDocumentLibrary(pool, cfg)
+	assertDocumentMarker(t, library, identityID, "customer reconciliation", "Pilot workspace")
+	assertDocumentMarker(t, library, identityID, "progetto Fenice", "approvazione manuale")
+	prompt := "Use document_search on my uploaded image and audio. State exactly the workflow name, " +
+		"the pilot workspace option, the expired status, the spoken project, and the approval phrase."
+	reply, sawSearch, calls := runDocumentAgentTurn(t, ctx, pool, cfg, identityID, prompt)
+	if !sawSearch || len(calls) == 0 {
+		t.Fatalf("media agent did not use production document_search: saw=%v calls=%d", sawSearch, len(calls))
+	}
+	normalized := strings.ToLower(reply)
+	for _, marker := range []string{
+		"customer-reconciliation", "pilot workspace", "expired", "fenice", "approvazione manuale",
+	} {
+		if !strings.Contains(normalized, marker) {
+			t.Fatalf("media agent score below 10.0; missing %q in reply %q", marker, reply)
+		}
+	}
+	for _, call := range calls {
+		if call.IdentityID != identityID {
+			t.Fatalf("media search used identity %q, want %q", call.IdentityID, identityID)
+		}
+	}
+	t.Log("real-agent multimodal score: 10.0/10 (>9.8 PASS)")
+}
+
+func registerDocumentE2EIdentity(
+	t *testing.T, ctx context.Context, pool *pgxpool.Pool, identityID, label string,
+) {
+	t.Helper()
+	name := fmt.Sprintf("document-e2e-%s-%s@example.test", label, identityID[:8])
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO aura.identities (id, name, kind) VALUES ($1::uuid, $2, 'user')`,
+		identityID, name,
+	); err != nil {
+		t.Fatalf("insert identity %s: %v", label, err)
+	}
+	if err := db.WithIdentityTxRaw(ctx, pool, identityID, func(tx pgx.Tx) error {
+		_, grantErr := tx.Exec(ctx,
+			`INSERT INTO aura.capability_grants (identity_id, capability) VALUES ($1::uuid, 'agent.run')`,
+			identityID,
+		)
+		return grantErr
+	}); err != nil {
+		t.Fatalf("grant identity %s: %v", label, err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM aura.identities WHERE id = $1::uuid`, identityID)
+	})
+}
+
+func runDocumentAgentTurn(
+	t *testing.T, ctx context.Context, pool *pgxpool.Pool, cfg *config.Config,
+	identityID, prompt string,
+) (string, bool, []documents.RetrievalRequest) {
+	t.Helper()
+	recorded := &recordingDocumentLibrary{inner: newDocumentLibrary(pool, cfg)}
 	registry := tools.NewRegistry()
 	registry.Register(tools.TextResponse{})
 	registry.Register(&tools.DocumentSearch{Library: recorded})
@@ -130,7 +205,7 @@ func TestDocumentProductionAgentE2E(t *testing.T) {
 		Client:          openai_compat.New(cfg.LLM), Registry: registry, LLM: cfg.LLM,
 		RunDir: runDir, PreviewCap: 4096, TitleTimeout: 30 * time.Second, StopTimeout: 45 * time.Second,
 	})
-	ownerCtx := identityctx.WithIdentityID(ctx, identityA)
+	ownerCtx := identityctx.WithIdentityID(ctx, identityID)
 	conversationID := uuid.Must(uuid.NewV7()).String()
 	if _, err := r.NewConversationWithID(ownerCtx, conversationID); err != nil {
 		t.Fatalf("create conversation: %v", err)
@@ -140,8 +215,6 @@ func TestDocumentProductionAgentE2E(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM aura.conversations WHERE id = $1`, conversationID)
 	})
 
-	prompt := "Use document_search to answer this question from my uploaded alpha document: " +
-		"what is the private launch code? Return the code exactly."
 	var reply strings.Builder
 	sawSearch := false
 	for event, turnErr := range r.Turn(ownerCtx, conversationID, &prompt) {
@@ -156,21 +229,7 @@ func TestDocumentProductionAgentE2E(t *testing.T) {
 			sawSearch = true
 		}
 	}
-	if !sawSearch {
-		t.Fatal("real agent did not execute document_search")
-	}
-	if !strings.Contains(reply.String(), markerA) || strings.Contains(reply.String(), markerB) {
-		t.Fatalf("agent reply did not stay in identity A: %q", reply.String())
-	}
-	calls := recorded.requests()
-	if len(calls) == 0 {
-		t.Fatal("document_search did not reach the production library")
-	}
-	for _, call := range calls {
-		if call.IdentityID != identityA {
-			t.Fatalf("agent search used identity %q, want %q", call.IdentityID, identityA)
-		}
-	}
+	return reply.String(), sawSearch, recorded.requests()
 }
 
 func assertDocumentMarker(

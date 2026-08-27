@@ -72,19 +72,18 @@ func TestBuildObjectStoreBackends(t *testing.T) {
 
 func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
 	cfg := &config.Config{
-		ObjectStoreBucket:       "aura-assets",
-		AssetMaxDocumentBytes:   123,
-		AssetMaxImageBytes:      456,
-		AssetMaxAudioBytes:      789,
-		AssetPresignTTLSec:      42,
-		MultimodalTimeoutSec:    7,
-		VisionCloud:             true,
-		MultimodalBaseURL:       "http://vision-local.test/v1",
-		MultimodalModel:         "glm-ocr",
-		MultimodalFallbackModel: "minimax/minimax-m3",
-		STTBaseURL:              "http://stt.test/v1",
-		STTModel:                "large-v3-turbo",
-		STTLanguage:             "it",
+		ObjectStoreBucket:     "aura-assets",
+		AssetMaxDocumentBytes: 123,
+		AssetMaxImageBytes:    456,
+		AssetMaxAudioBytes:    789,
+		AssetPresignTTLSec:    42,
+		MultimodalTimeoutSec:  7,
+		VisionCloud:           true,
+		MultimodalBaseURL:     "http://vision-local.test/v1",
+		MultimodalModel:       "glm-ocr",
+		STTBaseURL:            "http://stt.test/v1",
+		STTModel:              "large-v3-turbo",
+		STTLanguage:           "it",
 		LLM: llmpkg.Config{
 			Model:   "deepseek/deepseek-v4-flash",
 			BaseURL: "http://openrouter.test/api/v1",
@@ -131,7 +130,6 @@ func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
 	if !vcfg.VisionCloud || vcfg.Model != "deepseek/deepseek-v4-flash" ||
 		vcfg.LocalBaseURL != "http://vision-local.test/v1" ||
 		vcfg.LocalModel != "glm-ocr" ||
-		vcfg.FallbackModel != "minimax/minimax-m3" ||
 		vcfg.OpenRouterBaseURL != "http://openrouter.test/api/v1" ||
 		vcfg.OpenRouterAPIKey != "test-key" ||
 		vcfg.TimeoutSec != 7 {

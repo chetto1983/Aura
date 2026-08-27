@@ -100,11 +100,11 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"127.0.0.1:${AURA_SETUP_PORT:-9081}:9081",
 		"whatsapp:",
 		"ghcr.io/chetto1983/whatsapp-mcp:sha-a463da5@sha256:006602da0893ada0eb80c812384032e262c1c7f0642866bf194041078e86130f",
-		"127.0.0.1:${AURA_WHATSAPP_MCP_PORT:-8092}:8092",
-		"127.0.0.1:${AURA_WHATSAPP_BRIDGE_PORT:-8094}:8094",
+		"127.0.0.1:${AURA_WHATSAPP_MCP_PORT:-8092}:8080",
+		"127.0.0.1:${AURA_WHATSAPP_BRIDGE_PORT:-8094}:8081",
 		"aura-whatsapp-session:/app/whatsapp-bridge/store",
 		"WHATSAPP_BRIDGE_TOKEN: ${AURA_ACCESS_TOKEN:?AURA_ACCESS_TOKEN required in .env}",
-		"MCP_OAUTH_RESOURCE: http://127.0.0.1:8092/mcp/",
+		"MCP_OAUTH_RESOURCE: http://whatsapp:8080/mcp/",
 		"caddy:",
 		"0.0.0.0:${AURA_HTTPS_PORT:-443}:443",
 		"caddy-data:/data",
@@ -117,7 +117,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"garage:",
 		"image: ${AURA_GARAGE_IMAGE:-dxflrs/garage:v2.3.0}",
 		"GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?GARAGE_RPC_SECRET required in .env}",
-		"CALENDAR_MCP_OAuth__Resource: http://127.0.0.1:8093/",
+		"CALENDAR_MCP_OAuth__Resource: http://aura-pim-mcp:8080/",
 		"SEARXNG_SECRET: ${SEARXNG_SECRET:?SEARXNG_SECRET required in .env}",
 		"/etc/searxng/settings.template.yml",
 		"/etc/searxng/limiter.toml",
@@ -138,7 +138,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"aura-arcadedb:/home/arcadedb/databases",
 		"arcadedb-mcp:",
 		"ghcr.io/chetto1983/aura-arcadedb-mcp:3c1723cc5d3c4a23c9585c96b9c35d3d79416050@sha256:621438a7bb77983899c22f43c52714d08c25af1efcd9ad14fc3479e8893225a4",
-		"MCP_OAUTH_RESOURCE: http://127.0.0.1:8096/mcp/",
+		"MCP_OAUTH_RESOURCE: http://aura-arcadedb-mcp:8096/mcp/",
 		"127.0.0.1:${AURA_ARCADEDB_MCP_PORT:-8096}:8096",
 		`test: ["CMD", "wget", "--spider", "-q", "-T", "3", "http://127.0.0.1:8096/health"]`,
 	} {
@@ -363,18 +363,64 @@ func TestGarageBootstrapCanReachIdempotencyRegistry(t *testing.T) {
 	}
 }
 
-func TestMemorySidecarSharesAuraLoopbackNamespaceAndHasHealthcheck(t *testing.T) {
+func TestMCPServicesOwnTheirNetworkLifecycleAndLoopbackPublishes(t *testing.T) {
 	root := repoRootForTest(t)
 	compose := readProjectFile(t, root, "compose.yaml")
-	mcpService := composeServiceBlock(t, compose, "arcadedb-mcp")
+	for _, name := range []string{"arcadedb-mcp", "aura-pim-mcp", "whatsapp"} {
+		service := composeServiceBlock(t, compose, name)
+		if strings.Contains(service, "network_mode:") {
+			t.Fatalf("%s must not share Aura's replaceable network namespace:\n%s", name, service)
+		}
+		for _, want := range []string{"aura:\n        condition: service_started", "healthcheck:"} {
+			if !strings.Contains(service, want) {
+				t.Fatalf("%s missing %q:\n%s", name, want, service)
+			}
+		}
+	}
 	for _, want := range []string{
-		`network_mode: "service:aura"`,
-		"aura:\n        condition: service_started",
+		"127.0.0.1:${AURA_ARCADEDB_MCP_PORT:-8096}:8096",
+		"127.0.0.1:${AURA_PIM_MCP_PORT:-8093}:8080",
+		"127.0.0.1:${AURA_WHATSAPP_MCP_PORT:-8092}:8080",
+		"127.0.0.1:${AURA_WHATSAPP_BRIDGE_PORT:-8094}:8081",
+		"MCP_OAUTH_JWKS_URL: http://aura:9080/oauth/jwks",
+	} {
+		if !strings.Contains(compose, want) {
+			t.Fatalf("compose.yaml missing stable MCP network contract %q", want)
+		}
+	}
+}
+
+func TestIngestSupervisorUsesExistingIdentityGarageBindings(t *testing.T) {
+	root := repoRootForTest(t)
+	compose := readProjectFile(t, root, "compose.yaml")
+	service := composeServiceBlock(t, compose, "aura-ingest")
+	for _, forbidden := range []string{
+		"profiles:",
+		"AURA_INGEST_IDENTITY_ID:",
+		"AURA_INGEST_S3_BUCKET:",
+		"AURA_INGEST_S3_ACCESS_KEY_ID:",
+		"AURA_INGEST_S3_SECRET_ACCESS_KEY:",
+	} {
+		if strings.Contains(service, forbidden) {
+			t.Fatalf("aura-ingest still carries duplicated per-identity input %q:\n%s", forbidden, service)
+		}
+	}
+	for _, want := range []string{
+		"AURA_DB_URL:",
+		"AURA_AUTHULA_SECRET:",
+		"AURA_OBJECTSTORE_ENDPOINT:",
+		"AURA_OBJECTSTORE_BUCKET:",
+		"AURA_INGEST_LIVE: ${AURA_INGEST_LIVE:-true}",
+		"AURA_INGEST_STATE_ROOT: /state",
 		"healthcheck:",
 	} {
-		if !strings.Contains(mcpService, want) {
-			t.Fatalf("arcadedb-mcp missing %q:\n%s", want, mcpService)
+		if !strings.Contains(service, want) {
+			t.Fatalf("aura-ingest missing supervisor contract %q:\n%s", want, service)
 		}
+	}
+	dockerfile := readProjectFile(t, root, filepath.Join("docker", "aura-ingest", "Dockerfile"))
+	if !strings.Contains(dockerfile, `ENTRYPOINT ["aura-ingest-supervisor"]`) {
+		t.Fatalf("ingest image does not start the identity supervisor:\n%s", dockerfile)
 	}
 }
 

@@ -211,22 +211,19 @@ type Config struct {
 	// code dup (#60 / Pitfall 6).
 	VisionCloud bool // AURA_VISION_CLOUD — false=local GLM-OCR sidecar, true=cloud vision
 
-	// Multimodal sidecar URLs/models (upstream naming, CLAUDE.md third-party
-	// exception). MultimodalFallbackModel is the cloud vision model used when
-	// VisionCloud is true and the primary model lacks SupportsVision.
-	MultimodalBaseURL       string // MULTIMODAL_BASE_URL — aura-ocr-vl OpenAI-compat base
-	MultimodalModel         string // MULTIMODAL_MODEL — local vision model id
-	MultimodalFallbackModel string // MULTIMODAL_FALLBACK_MODEL — cloud vision fallback (default minimax/minimax-m3)
-	STTBaseURL              string // STT_BASE_URL — aura-stt OpenAI-compat base
-	STTModel                string // STT_MODEL — LOCAL faster-whisper model id (NOT the cloud switch)
-	STTCloudModel           string // AURA_STT_CLOUD_MODEL — set to a cloud STT model (e.g. openai/whisper-large-v3) to swap STT to OpenRouter; empty = local faster-whisper sidecar
-	STTLanguage             string // STT_LANGUAGE — transcription language hint (default "it"; "" = whisper auto-detect, unreliable on short clips — spike-027)
-	TTSBaseURL              string // TTS_BASE_URL — aura-tts OpenAI-compat base
-	TTSModel                string // AURA_TTS_MODEL — set to a cloud TTS model (e.g. hexgrad/kokoro-82m) to swap TTS to OpenRouter; empty = local Kokoro sidecar
-	TTSVoice                string // TTS_VOICE — Kokoro voice id (default if_sara)
-	TTSFormat               string // TTS_FORMAT — voice-note audio format (default opus)
-	MultimodalTimeoutSec    int    // MULTIMODAL_TIMEOUT_SEC — per-request sidecar ceiling (default 120s; CPU OCR on a downscaled photo is well under, but vision needs more headroom than STT/TTS)
-	TTSMaxChars             int    // AURA_TTS_MAX_CHARS — soft input cap for POST /api/tts (default 4096, the OpenAI /audio/speech ceiling OpenRouter proxies; a longer input 400s)
+	// Multimodal sidecar URLs/models (upstream naming, CLAUDE.md third-party exception).
+	MultimodalBaseURL    string // MULTIMODAL_BASE_URL — aura-ocr-vl OpenAI-compat base
+	MultimodalModel      string // MULTIMODAL_MODEL — local vision model id
+	STTBaseURL           string // STT_BASE_URL — aura-stt OpenAI-compat base
+	STTModel             string // STT_MODEL — LOCAL faster-whisper model id (NOT the cloud switch)
+	STTCloudModel        string // AURA_STT_CLOUD_MODEL — set to a cloud STT model (e.g. openai/whisper-large-v3) to swap STT to OpenRouter; empty = local faster-whisper sidecar
+	STTLanguage          string // STT_LANGUAGE — transcription language hint (default "it"; "" = whisper auto-detect, unreliable on short clips — spike-027)
+	TTSBaseURL           string // TTS_BASE_URL — aura-tts OpenAI-compat base
+	TTSModel             string // AURA_TTS_MODEL — set to a cloud TTS model (e.g. hexgrad/kokoro-82m) to swap TTS to OpenRouter; empty = local Kokoro sidecar
+	TTSVoice             string // TTS_VOICE — Kokoro voice id (default if_sara)
+	TTSFormat            string // TTS_FORMAT — voice-note audio format (default opus)
+	MultimodalTimeoutSec int    // MULTIMODAL_TIMEOUT_SEC — per-request sidecar ceiling (default 120s; CPU OCR on a downscaled photo is well under, but vision needs more headroom than STT/TTS)
+	TTSMaxChars          int    // AURA_TTS_MAX_CHARS — soft input cap for POST /api/tts (default 4096, the OpenAI /audio/speech ceiling OpenRouter proxies; a longer input 400s)
 
 	// Phase 14 (Slice 10) Agent.md profile knobs.
 	ProfileDir        string // AURA_PROFILE_DIR — per-identity Agent.md root, default ~/.aura/agents
@@ -490,19 +487,18 @@ func loadBase() *Config {
 		SetupToken:  os.Getenv("AURA_SETUP_TOKEN"),
 		VisionCloud: envutil.BoolDefault("AURA_VISION_CLOUD", false),
 
-		MultimodalBaseURL:       os.Getenv("MULTIMODAL_BASE_URL"),
-		MultimodalModel:         os.Getenv("MULTIMODAL_MODEL"),
-		MultimodalFallbackModel: envDefault("MULTIMODAL_FALLBACK_MODEL", "minimax/minimax-m3"),
-		STTBaseURL:              os.Getenv("STT_BASE_URL"),
-		STTModel:                os.Getenv("STT_MODEL"),
-		STTCloudModel:           os.Getenv("AURA_STT_CLOUD_MODEL"),
-		STTLanguage:             envDefault("STT_LANGUAGE", "it"),
-		TTSBaseURL:              os.Getenv("TTS_BASE_URL"),
-		TTSModel:                os.Getenv("AURA_TTS_MODEL"),
-		TTSVoice:                envDefault("TTS_VOICE", "if_sara"),
-		TTSFormat:               envDefault("TTS_FORMAT", "opus"),
-		MultimodalTimeoutSec:    envutil.IntDefault("MULTIMODAL_TIMEOUT_SEC", 120),
-		TTSMaxChars:             envutil.IntDefault("AURA_TTS_MAX_CHARS", 4096),
+		MultimodalBaseURL:    os.Getenv("MULTIMODAL_BASE_URL"),
+		MultimodalModel:      os.Getenv("MULTIMODAL_MODEL"),
+		STTBaseURL:           os.Getenv("STT_BASE_URL"),
+		STTModel:             os.Getenv("STT_MODEL"),
+		STTCloudModel:        os.Getenv("AURA_STT_CLOUD_MODEL"),
+		STTLanguage:          envDefault("STT_LANGUAGE", "it"),
+		TTSBaseURL:           os.Getenv("TTS_BASE_URL"),
+		TTSModel:             os.Getenv("AURA_TTS_MODEL"),
+		TTSVoice:             envDefault("TTS_VOICE", "if_sara"),
+		TTSFormat:            envDefault("TTS_FORMAT", "opus"),
+		MultimodalTimeoutSec: envutil.IntDefault("MULTIMODAL_TIMEOUT_SEC", 120),
+		TTSMaxChars:          envutil.IntDefault("AURA_TTS_MAX_CHARS", 4096),
 
 		ProfileDir:        envDefault("AURA_PROFILE_DIR", idroot.DefaultRoot()),
 		ProfileCertaintyN: envutil.IntDefault("AURA_PROFILE_CERTAINTY_N", 3),

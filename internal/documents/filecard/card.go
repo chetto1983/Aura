@@ -50,6 +50,7 @@ const (
 	KindText         Kind = "text file"
 	KindPDF          Kind = "PDF"
 	KindImage        Kind = "image"
+	KindAudio        Kind = "audio"
 	KindFile         Kind = "file"
 )
 

@@ -26,9 +26,6 @@ func TestPhase13ConfigDefaultsAndOverrides(t *testing.T) {
 	if cfg.VisionCloud {
 		t.Error("VisionCloud default = true, want false (local GLM-OCR sidecar)")
 	}
-	if cfg.MultimodalFallbackModel != "minimax/minimax-m3" {
-		t.Errorf("MultimodalFallbackModel default = %q, want minimax/minimax-m3", cfg.MultimodalFallbackModel)
-	}
 	if cfg.TTSVoice != "if_sara" {
 		t.Errorf("TTSVoice default = %q, want if_sara", cfg.TTSVoice)
 	}
@@ -46,7 +43,6 @@ func TestPhase13ConfigDefaultsAndOverrides(t *testing.T) {
 	t.Setenv("AURA_VISION_CLOUD", "true")
 	t.Setenv("MULTIMODAL_BASE_URL", "http://aura-ocr-vl:8082/v1")
 	t.Setenv("MULTIMODAL_MODEL", "glm-ocr")
-	t.Setenv("MULTIMODAL_FALLBACK_MODEL", "openrouter/some-vision")
 	t.Setenv("STT_BASE_URL", "http://aura-stt:9000/v1")
 	t.Setenv("STT_MODEL", "large-v3-turbo")
 	t.Setenv("TTS_BASE_URL", "http://aura-tts:8880/v1")
@@ -68,9 +64,6 @@ func TestPhase13ConfigDefaultsAndOverrides(t *testing.T) {
 	}
 	if cfg.MultimodalModel != "glm-ocr" {
 		t.Errorf("MultimodalModel override = %q", cfg.MultimodalModel)
-	}
-	if cfg.MultimodalFallbackModel != "openrouter/some-vision" {
-		t.Errorf("MultimodalFallbackModel override = %q", cfg.MultimodalFallbackModel)
 	}
 	if cfg.STTBaseURL != "http://aura-stt:9000/v1" || cfg.STTModel != "large-v3-turbo" {
 		t.Errorf("STT override = %q / %q", cfg.STTBaseURL, cfg.STTModel)

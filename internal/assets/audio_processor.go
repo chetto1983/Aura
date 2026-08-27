@@ -77,7 +77,18 @@ func (p *AudioProcessor) ProcessAsset(ctx context.Context, asset Asset) (Result,
 // schedule and returning the last error once the attempts are exhausted. A cancelled
 // ctx aborts the wait immediately rather than sleeping out the schedule.
 func (p *AudioProcessor) transcribe(ctx context.Context, audio []byte, fileName, format string) (string, error) {
-	backoff := p.Backoff
+	return TranscribeAudioForRetrieval(ctx, p.STT, audio, fileName, format, p.Backoff)
+}
+
+// TranscribeAudioForRetrieval is the shared speech-to-text boundary for immediate asset
+// summaries and durable Garage indexing.
+func TranscribeAudioForRetrieval(
+	ctx context.Context, stt *multimodal.STTClient, audio []byte, fileName, format string,
+	backoff []time.Duration,
+) (string, error) {
+	if stt == nil {
+		return "", fmt.Errorf("STT client is not configured")
+	}
 	if backoff == nil {
 		backoff = defaultSTTBackoff
 	}
@@ -88,13 +99,13 @@ func (p *AudioProcessor) transcribe(ctx context.Context, audio []byte, fileName,
 				return "", ctx.Err()
 			}
 		}
-		transcript, err := p.STT.Transcribe(ctx, audio, fileName, format)
+		transcript, err := stt.Transcribe(ctx, audio, fileName, format)
 		if err == nil {
 			return transcript, nil
 		}
 		lastErr = err
 	}
-	return "", fmt.Errorf("asset stt: transcription failed after %d attempts: %w", 1+len(backoff), lastErr)
+	return "", fmt.Errorf("stt: transcription failed after %d attempts: %w", 1+len(backoff), lastErr)
 }
 
 // sleepCtx waits for d, reporting false if ctx was cancelled during the wait.
