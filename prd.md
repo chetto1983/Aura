@@ -8858,3 +8858,25 @@ flusso completo, che funziona.
 > to install a score-based abstention gate remain unchanged. The lifecycle still fails if
 > either diagnostic report cannot be emitted, but a harness-private API drift can no longer
 > masquerade as a retrieval regression.
+
+## §Retire the unconsumed document rerank/abstention harness (Amendment #161, 2026-08-27)
+
+> **Amendment #161 (2026-08-27 — operator correction; supersedes Amendment #160 and
+> Amendment #156's requirement to publish document abstention vectors).**
+>
+> `vector.rerank` is dead code with respect to Aura: production never calls it, no
+> calibrated threshold consumes its score vector, and Amendment #128 explicitly rejected
+> a score-based document-abstention gate after the real agent handled answerability from
+> content. Replacing the broken harness call with exact cosine similarity would preserve a
+> report with no decision consumer. That is evaluation theatre, not coverage.
+>
+> Delete `retrieval_abstention_eval_test.go`, its answerable/unanswerable qrel appendix,
+> environment variables, artifact and lifecycle step. The owned 20-query retrieval report
+> remains diagnostic. The release oracle is the nine-case real production agent run from
+> Amendment #159, which checks exact answers, mandatory `document_search`, forbidden web
+> tools and bounded model calls on the same checksummed 21-file ingest lifecycle.
+>
+> This retirement does not claim that document answerability is solved statistically. It
+> removes an unconsumed proxy. A future abstention mechanism requires a production consumer,
+> a permissibly licensed/self-owned calibration corpus and a separately measured operating
+> point before any scoring harness is added back.
