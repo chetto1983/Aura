@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -69,6 +70,7 @@ type benchReport struct {
 }
 
 const productionRecallAt1Floor = 0.75
+const documentRRFK = 60
 
 func benchEnv(t *testing.T, name string) string {
 	t.Helper()
@@ -132,19 +134,28 @@ func TestFusionBenchmark(t *testing.T) {
 		t.Fatalf("document index: %v", err)
 	}
 	cfg := normalizedRetrievalConfig(RetrievalConfig{})
-	const topK = 10
-
 	strategies := []arcadedb.FusionStrategy{arcadedb.FusionRRF, arcadedb.FusionDBSF, arcadedb.FusionLINEAR}
 	runs := []benchRun{
 		{Arm: "fuse-RRF", Ranking: map[string][]string{}},
 		{Arm: "fuse-DBSF", Ranking: map[string][]string{}},
 		{Arm: "fuse-LINEAR", Ranking: map[string][]string{}},
+		{Arm: "candidate-card+fuse-RRF", Ranking: map[string][]string{}},
+		{Arm: "candidate-card+fuse-DBSF", Ranking: map[string][]string{}},
+		{Arm: "candidate-card+fuse-LINEAR", Ranking: map[string][]string{}},
 	}
 	for i, strategy := range strategies {
 		runs[i].Production = strategy == cfg.FusionStrategy
 	}
 
 	for _, question := range pilot.Questions {
+		cards, err := index.DocumentCards(ctx, identity, question.Query, cfg.CandidateLimit)
+		if err != nil {
+			t.Fatalf("cards %q: %v", question.QID, err)
+		}
+		cardRanking := make([]string, 0, len(cards))
+		for _, card := range cards {
+			cardRanking = append(cardRanking, benchDocName(card.SourceKey))
+		}
 		vectors, err := embedder.Embed(ctx, embeddings.RetrievalQueries([]string{question.Query}))
 		if err != nil || len(vectors) != 1 {
 			t.Fatalf("embed %q: %v", question.QID, err)
@@ -164,11 +175,14 @@ func TestFusionBenchmark(t *testing.T) {
 			// nil names: this arm ranks passages only, and the bench resolves its own
 			// display name from SourceKey below, so the lookup map rankDocuments uses
 			// for card enrichment has nothing to contribute here.
-			for _, doc := range rankDocuments(nil, fused, nil, topK, cfg.TopPassages, false) {
+			for _, doc := range rankDocuments(nil, fused, nil, cfg.CandidateLimit, cfg.TopPassages, false) {
 				runs[armIndex].Ranking[question.QID] = append(
 					runs[armIndex].Ranking[question.QID], benchDocName(doc.SourceKey),
 				)
 			}
+			runs[armIndex+len(strategies)].Ranking[question.QID] = reciprocalRankDocuments(
+				runs[armIndex].Ranking[question.QID], cardRanking,
+			)
 		}
 	}
 
@@ -234,6 +248,51 @@ func scoreBenchmark(questions []benchQuestion, ranking map[string][]string) benc
 	return metrics
 }
 
+func reciprocalRankDocuments(rankings ...[]string) []string {
+	type ranked struct {
+		document string
+		score    float64
+		bestRank int
+	}
+	byDocument := make(map[string]*ranked)
+	for _, ranking := range rankings {
+		seen := make(map[string]struct{}, len(ranking))
+		for position, document := range ranking {
+			if _, duplicate := seen[document]; duplicate {
+				continue
+			}
+			seen[document] = struct{}{}
+			item := byDocument[document]
+			if item == nil {
+				item = &ranked{document: document, bestRank: position}
+				byDocument[document] = item
+			}
+			item.score += 1 / float64(documentRRFK+position+1)
+			if position < item.bestRank {
+				item.bestRank = position
+			}
+		}
+	}
+	ordered := make([]*ranked, 0, len(byDocument))
+	for _, item := range byDocument {
+		ordered = append(ordered, item)
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].score != ordered[j].score {
+			return ordered[i].score > ordered[j].score
+		}
+		if ordered[i].bestRank != ordered[j].bestRank {
+			return ordered[i].bestRank < ordered[j].bestRank
+		}
+		return ordered[i].document < ordered[j].document
+	})
+	out := make([]string, len(ordered))
+	for i, item := range ordered {
+		out[i] = item.document
+	}
+	return out
+}
+
 func TestBenchmarkMetricsSupportMultipleGoldDocsAndExposeRegression(t *testing.T) {
 	questions := []benchQuestion{{QID: "q1", GoldDocs: []string{"a", "b"}}, {QID: "q2", GoldDocs: []string{"c"}}}
 	good := scoreBenchmark(questions, map[string][]string{"q1": {"b"}, "q2": {"x", "c"}})
@@ -243,5 +302,12 @@ func TestBenchmarkMetricsSupportMultipleGoldDocsAndExposeRegression(t *testing.T
 	degraded := scoreBenchmark(questions, map[string][]string{"q1": {"x"}, "q2": {"x"}})
 	if degraded.RecallAt1 >= productionRecallAt1Floor {
 		t.Fatalf("degraded ranking %.3f unexpectedly clears %.2f", degraded.RecallAt1, productionRecallAt1Floor)
+	}
+	combined := reciprocalRankDocuments(
+		[]string{"passage-first", "shared", "passage-only"},
+		[]string{"shared", "card-first", "card-only"},
+	)
+	if strings.Join(combined, ",") != "shared,passage-first,card-first,card-only,passage-only" {
+		t.Fatalf("document RRF = %v", combined)
 	}
 }
