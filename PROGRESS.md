@@ -102,8 +102,9 @@ the Aura control plane. Legacy, dark, and dead tenant-routing code must be remov
   current names/surface and is GREEN at top-1 100% (19/19), recall@3 100% (19/19), with its
   90%/100% floors unchanged. `internal/agent/tools` and `internal/agui` unit/race/vet/build gates
   are GREEN.
-- `docs/HANDOFF.md`, `docs/mcp-manager.md`, and the PIM proxy comments now describe the standard
-  identity-scoped bearer/`sub` contract rather than the retired proprietary tenant wire. The
+- The canonical `.planning/codebase/CONCERNS.md`, `docs/mcp-manager.md`, and the PIM proxy comments
+  describe the standard identity-scoped bearer/`sub` contract rather than the retired proprietary
+  tenant wire. The
   operational files and generated fixture contain no retired wire literals.
 - OAuth-aware CLI diagnostics now resolve the operator identity before opening a remote session.
   The exact production symptom is GREEN in the rebuilt container: `aura mcp tools calendar`

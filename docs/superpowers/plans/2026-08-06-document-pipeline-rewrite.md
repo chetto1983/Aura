@@ -125,12 +125,14 @@ Expected: exit 0. **Never import `extractous` and `iscc_tika` in the same proces
 
 - [ ] **Step 4: Record the outcome**
 
-Write the three results into `spikes/cocoindex-ingestion/HANDOFF.md` §3 as a dated "verified at HEAD" line. If any step failed, STOP and report — do not proceed.
+This historical recording step is superseded: keep the measured spike results in
+`spikes/cocoindex-ingestion/FINDINGS.md` and record only current residual gaps in the canonical
+`.planning/codebase/CONCERNS.md`. If any step failed, STOP and report — do not proceed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add spikes/cocoindex-ingestion/HANDOFF.md
+git add spikes/cocoindex-ingestion/FINDINGS.md .planning/codebase/CONCERNS.md
 git commit -m "Verify the three load-bearing spike claims at HEAD before building on them"
 ```
 

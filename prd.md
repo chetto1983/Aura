@@ -7921,7 +7921,7 @@ flusso completo, che funziona.
 > `aura.mcp_server` remains deployment-scoped, while the authenticated Aura identity is the owner of
 > the connection opened from that recipe. Aura resolves that identity from its Postgres-backed web or
 > agent context and passes it across the trusted internal boundary; neither the browser nor a model
-> argument can choose it. The process-wide remote-MCP registry limitation recorded in `docs/HANDOFF.md`
+> argument can choose it. The historical process-wide remote-MCP registry limitation
 > is not copied into these sidecars: Calendar and WhatsApp dispatch every request through a runtime
 > keyed by identity, so two identities may use the same recipe concurrently without sharing a grant,
 > account, session, or client.
