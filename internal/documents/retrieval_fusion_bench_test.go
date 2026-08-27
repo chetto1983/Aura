@@ -19,7 +19,9 @@ package documents
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path"
 	"strings"
@@ -31,19 +33,42 @@ import (
 )
 
 type benchQuestion struct {
-	QID     string `json:"qid"`
-	Query   string `json:"query"`
-	GoldDoc string `json:"gold_doc"`
+	QID      string   `json:"qid"`
+	Query    string   `json:"query"`
+	GoldDocs []string `json:"gold_docs"`
+	Category string   `json:"category,omitempty"`
 }
 
 type benchPilot struct {
-	Questions []benchQuestion `json:"questions"`
+	SchemaID          string          `json:"schema_id"`
+	Questions         []benchQuestion `json:"questions"`
+	AbstentionQueries []benchQuestion `json:"abstention_queries"`
+}
+
+type benchMetrics struct {
+	Queries   int     `json:"queries"`
+	RecallAt1 float64 `json:"recall_at_1"`
+	RecallAt3 float64 `json:"recall_at_3"`
+	MRR       float64 `json:"mrr"`
 }
 
 type benchRun struct {
-	Arm     string              `json:"arm"`
-	Ranking map[string][]string `json:"ranking"`
+	Arm        string              `json:"arm"`
+	Production bool                `json:"production"`
+	Ranking    map[string][]string `json:"ranking"`
+	Metrics    benchMetrics        `json:"metrics"`
+	Passed     bool                `json:"passed"`
+	Floor      *float64            `json:"recall_at_1_floor,omitempty"`
 }
+
+type benchReport struct {
+	SchemaID     string     `json:"schema_id"`
+	CandidateSHA string     `json:"candidate_sha"`
+	QrelsSHA256  string     `json:"qrels_sha256"`
+	Runs         []benchRun `json:"runs"`
+}
+
+const productionRecallAt1Floor = 0.75
 
 func benchEnv(t *testing.T, name string) string {
 	t.Helper()
@@ -78,6 +103,14 @@ func TestFusionBenchmark(t *testing.T) {
 	if err := json.Unmarshal(raw, &pilot); err != nil {
 		t.Fatalf("decode pilot: %v", err)
 	}
+	if pilot.SchemaID != "aura.document-retrieval-eval/v1" || len(pilot.Questions) == 0 {
+		t.Fatalf("pilot contract is missing or empty: schema=%q questions=%d", pilot.SchemaID, len(pilot.Questions))
+	}
+	for _, question := range pilot.Questions {
+		if question.QID == "" || question.Query == "" || len(question.GoldDocs) == 0 {
+			t.Fatalf("invalid scored question: %+v", question)
+		}
+	}
 
 	credentials, err := arcadedb.NewTenantCredentials()
 	if err != nil {
@@ -101,10 +134,14 @@ func TestFusionBenchmark(t *testing.T) {
 	cfg := normalizedRetrievalConfig(RetrievalConfig{})
 	const topK = 10
 
+	strategies := []arcadedb.FusionStrategy{arcadedb.FusionRRF, arcadedb.FusionDBSF, arcadedb.FusionLINEAR}
 	runs := []benchRun{
 		{Arm: "fuse-RRF", Ranking: map[string][]string{}},
 		{Arm: "fuse-DBSF", Ranking: map[string][]string{}},
 		{Arm: "fuse-LINEAR", Ranking: map[string][]string{}},
+	}
+	for i, strategy := range strategies {
+		runs[i].Production = strategy == cfg.FusionStrategy
 	}
 
 	for _, question := range pilot.Questions {
@@ -116,9 +153,7 @@ func TestFusionBenchmark(t *testing.T) {
 
 		// One arm per strategy, all through the SHIPPED FusedCandidates. The Go tier
 		// ladder these were first measured against no longer exists.
-		for armIndex, fusion := range []arcadedb.FusionStrategy{
-			arcadedb.FusionRRF, arcadedb.FusionDBSF, arcadedb.FusionLINEAR,
-		} {
+		for armIndex, fusion := range strategies {
 			fused, err := index.FusedCandidates(ctx, arcadedb.FusedCandidateQuery{
 				CandidateFilter: filter, Query: question.Query,
 				Embedding: vectors[0], Strategy: fusion,
@@ -137,12 +172,76 @@ func TestFusionBenchmark(t *testing.T) {
 		}
 	}
 
-	encoded, err := json.MarshalIndent(runs, "", " ")
+	productionPassed := false
+	for i := range runs {
+		runs[i].Metrics = scoreBenchmark(pilot.Questions, runs[i].Ranking)
+		runs[i].Passed = true
+		if runs[i].Production {
+			floor := productionRecallAt1Floor
+			runs[i].Floor = &floor
+			runs[i].Passed = runs[i].Metrics.RecallAt1 >= floor
+			productionPassed = runs[i].Passed
+		}
+	}
+	report := benchReport{
+		SchemaID: "aura.document-retrieval-eval-report/v1", CandidateSHA: benchEnv(t, "AURA_BENCH_CANDIDATE"),
+		QrelsSHA256: fmt.Sprintf("%x", sha256.Sum256(raw)), Runs: runs,
+	}
+	encoded, err := json.MarshalIndent(report, "", " ")
 	if err != nil {
 		t.Fatalf("encode runs: %v", err)
 	}
 	if err := os.WriteFile(outPath, encoded, 0o600); err != nil {
 		t.Fatalf("write runs: %v", err)
 	}
-	t.Logf("wrote %d arms x %d questions to %s", len(runs), len(pilot.Questions), outPath)
+	for _, run := range runs {
+		t.Logf("%s production=%t R@1=%.3f R@3=%.3f MRR=%.3f", run.Arm, run.Production,
+			run.Metrics.RecallAt1, run.Metrics.RecallAt3, run.Metrics.MRR)
+	}
+	if !productionPassed {
+		t.Fatalf("production fusion recall@1 is below %.2f; report=%s", productionRecallAt1Floor, outPath)
+	}
+	t.Logf("wrote %d scored arms x %d questions to %s", len(runs), len(pilot.Questions), outPath)
+}
+
+func scoreBenchmark(questions []benchQuestion, ranking map[string][]string) benchMetrics {
+	metrics := benchMetrics{Queries: len(questions)}
+	for _, question := range questions {
+		gold := make(map[string]struct{}, len(question.GoldDocs))
+		for _, document := range question.GoldDocs {
+			gold[document] = struct{}{}
+		}
+		for rank, document := range ranking[question.QID] {
+			if _, ok := gold[document]; !ok {
+				continue
+			}
+			if rank == 0 {
+				metrics.RecallAt1++
+			}
+			if rank < 3 {
+				metrics.RecallAt3++
+			}
+			metrics.MRR += 1 / float64(rank+1)
+			break
+		}
+	}
+	if metrics.Queries > 0 {
+		denominator := float64(metrics.Queries)
+		metrics.RecallAt1 /= denominator
+		metrics.RecallAt3 /= denominator
+		metrics.MRR /= denominator
+	}
+	return metrics
+}
+
+func TestBenchmarkMetricsSupportMultipleGoldDocsAndExposeRegression(t *testing.T) {
+	questions := []benchQuestion{{QID: "q1", GoldDocs: []string{"a", "b"}}, {QID: "q2", GoldDocs: []string{"c"}}}
+	good := scoreBenchmark(questions, map[string][]string{"q1": {"b"}, "q2": {"x", "c"}})
+	if good.RecallAt1 != 0.5 || good.RecallAt3 != 1 || good.MRR != 0.75 {
+		t.Fatalf("multi-gold metrics = %+v", good)
+	}
+	degraded := scoreBenchmark(questions, map[string][]string{"q1": {"x"}, "q2": {"x"}})
+	if degraded.RecallAt1 >= productionRecallAt1Floor {
+		t.Fatalf("degraded ranking %.3f unexpectedly clears %.2f", degraded.RecallAt1, productionRecallAt1Floor)
+	}
 }

@@ -26,13 +26,16 @@ della rappresentazione del *contenuto*, non un regalo del nome file.
 ## Come si esegue
 
 ```bash
-pip install openpyxl          # unica dipendenza
-python3 generate_corpus.py    # crea corpus/ (21 file)
+pip install openpyxl                       # unica dipendenza
+python3 generate_corpus.py --out corpus    # ricrea il corpus locale dello spike
 python3 benchmark.py          # stampa metriche + demo (vedi results.txt)
 ```
 
-Deterministico e offline (BM25 fatto a mano, nessun modello). `results.txt` è
-l'output committato.
+Senza `--out`, il generatore ricrea la fixture di release in
+`scripts/fixtures/document_retrieval_eval/corpus` e il relativo `corpus.sha256`.
+Gli XLSX hanno metadati OOXML e timestamp ZIP normalizzati, quindi la generazione
+è byte-per-byte riproducibile. Il benchmark dello spike resta deterministico e
+offline (BM25 fatto a mano, nessun modello). `results.txt` è l'output committato.
 
 ## Risultati
 

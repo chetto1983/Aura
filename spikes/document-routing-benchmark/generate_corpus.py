@@ -1,6 +1,6 @@
 """Generate a small, realistic, INTERLINKED Italian-accounting corpus.
 
-20 files that reference each other:
+21 files that reference each other:
   - 14 invoice workbooks (fattura_2026_NNN.xlsx)
   - 1 master ledger (contabilita_2026.xlsx)   <- links every invoice
   - 1 client registry (anagrafica_clienti.xlsx)
@@ -14,11 +14,20 @@ the routing question real -- the answer to an aggregation query lives in ONE
 file (the ledger), computed from the others.
 """
 
+import argparse
+import datetime as dt
+import hashlib
 import os
+import zipfile
 from openpyxl import Workbook
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(HERE, "corpus")
+DEFAULT_OUT = os.path.abspath(os.path.join(
+    HERE, "..", "..", "scripts", "fixtures", "document_retrieval_eval", "corpus"
+))
+OUT = DEFAULT_OUT
+FIXED_DOCUMENT_TIME = dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)
+FIXED_ZIP_TIME = (2026, 1, 1, 0, 0, 0)
 
 VAT = 0.22
 
@@ -78,6 +87,25 @@ def derive(num, client_idx, date, imponibile, stato):
 ROWS = [derive(*r) for r in INVOICES]
 
 
+def save_workbook(wb, filename):
+    """Write byte-for-byte stable XLSX fixtures, including ZIP metadata."""
+    wb.properties.created = FIXED_DOCUMENT_TIME
+    wb.properties.modified = FIXED_DOCUMENT_TIME
+    target = os.path.join(OUT, filename)
+    wb.save(target)
+
+    normalized = target + ".normalized"
+    with zipfile.ZipFile(target, "r") as source, zipfile.ZipFile(
+        normalized, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9
+    ) as destination:
+        for source_info in source.infolist():
+            info = zipfile.ZipInfo(source_info.filename, FIXED_ZIP_TIME)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = source_info.external_attr
+            destination.writestr(info, source.read(source_info.filename))
+    os.replace(normalized, target)
+
+
 def write_invoice(inv):
     wb = Workbook()
     ws = wb.active
@@ -95,7 +123,7 @@ def write_invoice(inv):
     ws.append(["Imponibile", inv["imponibile"]])
     ws.append(["IVA 22%", inv["iva"]])
     ws.append(["Totale documento", inv["totale"]])
-    wb.save(os.path.join(OUT, f"fattura_{inv['id']}.xlsx"))
+    save_workbook(wb, f"fattura_{inv['id']}.xlsx")
 
 
 def write_ledger():
@@ -126,7 +154,7 @@ def write_ledger():
             money(sum(r["iva"] for r in sub)),
             money(sum(r["totale"] for r in sub)),
         ])
-    wb.save(os.path.join(OUT, "contabilita_2026.xlsx"))
+    save_workbook(wb, "contabilita_2026.xlsx")
 
 
 def write_registry():
@@ -144,7 +172,7 @@ def write_registry():
     for name, piva, terms in CLIENTS:
         slug = name.split()[0].lower()
         ws.append([name, piva, addr[name], f"info@{slug}.it", terms])
-    wb.save(os.path.join(OUT, "anagrafica_clienti.xlsx"))
+    save_workbook(wb, "anagrafica_clienti.xlsx")
 
 
 def write_aging():
@@ -163,7 +191,7 @@ def write_aging():
         if r["id"] in aging:
             scad, ritardo = aging[r["id"]]
             ws.append([r["id"], r["cliente"], scad, ritardo, r["totale"], r["stato"]])
-    wb.save(os.path.join(OUT, "scadenzario.xlsx"))
+    save_workbook(wb, "scadenzario.xlsx")
 
 
 def write_txt(name, text):
@@ -214,6 +242,11 @@ IVA, indirizzi e termini di pagamento. Lo scadenzario elenca le posizioni aperte
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--out", default=DEFAULT_OUT, help="fixture output directory")
+    args = parser.parse_args()
+    global OUT
+    OUT = os.path.abspath(args.out)
     os.makedirs(OUT, exist_ok=True)
     for inv in ROWS:
         write_invoice(inv)
@@ -222,7 +255,15 @@ def main():
     write_aging()
     write_prose()
     files = sorted(os.listdir(OUT))
+    checksum_path = os.path.join(os.path.dirname(OUT), "corpus.sha256")
+    corpus_name = os.path.basename(OUT)
+    with open(checksum_path, "w", encoding="ascii", newline="\n") as checksums:
+        for filename in files:
+            with open(os.path.join(OUT, filename), "rb") as fixture:
+                digest = hashlib.sha256(fixture.read()).hexdigest()
+            checksums.write(f"{digest}  {corpus_name}/{filename}\n")
     print(f"generated {len(files)} files in {OUT}")
+    print(f"wrote checksums to {checksum_path}")
     for f in files:
         print("  ", f)
 

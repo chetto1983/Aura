@@ -41,18 +41,18 @@ import (
 )
 
 type abstentionQuery struct {
-	QID   string `json:"qid"`
-	Query string `json:"query"`
-	// GoldDoc is empty for a query with no answer in the corpus. Those are not noise:
+	QID      string   `json:"qid"`
+	Query    string   `json:"query"`
+	GoldDocs []string `json:"gold_docs"`
+	// GoldDocs is empty for a query with no answer in the corpus. Those are not noise:
 	// the paper scores abstention against ranking QUALITY, so an unanswerable query
 	// enters as a zero-quality case, and that mapping has to be written down rather
 	// than discovered when the numbers look odd.
-	GoldDoc string `json:"gold_doc"`
 }
 
 type abstentionRecord struct {
 	QID        string    `json:"qid"`
-	GoldDoc    string    `json:"gold_doc"`
+	GoldDocs   []string  `json:"gold_docs"`
 	Documents  []string  `json:"documents"`
 	FusedScore []float64 `json:"fused_score"`
 	Similarity []float64 `json:"similarity"`
@@ -108,7 +108,7 @@ func TestAbstentionEvidence(t *testing.T) {
 		if err != nil {
 			t.Fatalf("similarity %q: %v", question.QID, err)
 		}
-		record := abstentionRecord{QID: question.QID, GoldDoc: question.GoldDoc}
+		record := abstentionRecord{QID: question.QID, GoldDocs: question.GoldDocs}
 		for _, candidate := range fused {
 			score, ok := similarity[candidate.PassageID]
 			if !ok {
@@ -144,7 +144,7 @@ func loadAbstentionQueries(t *testing.T, pilotPath string) []abstentionQuery {
 		t.Fatalf("read queries: %v", err)
 	}
 	var pilot struct {
-		Queries []abstentionQuery `json:"queries"`
+		Queries []abstentionQuery `json:"abstention_queries"`
 	}
 	if err := json.Unmarshal(raw, &pilot); err != nil {
 		t.Fatalf("decode queries: %v", err)

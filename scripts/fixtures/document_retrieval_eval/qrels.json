@@ -1,0 +1,37 @@
+{
+  "schema_id": "aura.document-retrieval-eval/v1",
+  "questions": [
+    {"qid":"q01","query":"dettaglio della fattura 2026_007","gold_docs":["fattura_2026_007.xlsx"],"category":"EXACT"},
+    {"qid":"q02","query":"voglio vedere la fattura numero 011","gold_docs":["fattura_2026_011.xlsx"],"category":"EXACT"},
+    {"qid":"q03","query":"fattura di febbraio emessa a Bianchi","gold_docs":["fattura_2026_003.xlsx","contabilita_2026.xlsx"],"category":"EXACT"},
+    {"qid":"q04","query":"quanto abbiamo fatturato in totale ad ACME nel 2026","gold_docs":["contabilita_2026.xlsx"],"category":"AGG"},
+    {"qid":"q05","query":"totale IVA del secondo trimestre","gold_docs":["contabilita_2026.xlsx"],"category":"AGG"},
+    {"qid":"q06","query":"qual e' il totale complessivo fatturato nell'anno","gold_docs":["contabilita_2026.xlsx"],"category":"AGG"},
+    {"qid":"q07","query":"qual e' la fattura piu alta emessa a Verdi Costruzioni","gold_docs":["contabilita_2026.xlsx","fattura_2026_009.xlsx"],"category":"AGG"},
+    {"qid":"q08","query":"quali fatture non sono state pagate","gold_docs":["contabilita_2026.xlsx","scadenzario.xlsx"],"category":"FILTER"},
+    {"qid":"q09","query":"tutte le fatture del cliente Gialli Import","gold_docs":["contabilita_2026.xlsx","fattura_2026_007.xlsx","fattura_2026_011.xlsx"],"category":"FILTER"},
+    {"qid":"q10","query":"quali clienti sono in ritardo con i pagamenti","gold_docs":["scadenzario.xlsx","note_pagamenti.txt"],"category":"AGING"},
+    {"qid":"q11","query":"quanti giorni di ritardo ha Verdi Costruzioni","gold_docs":["scadenzario.xlsx","note_pagamenti.txt"],"category":"AGING"},
+    {"qid":"q12","query":"perche Bianchi ha contestato una fattura","gold_docs":["note_pagamenti.txt"],"category":"PROSE"},
+    {"qid":"q13","query":"qual e' il problema con la fattura 2026_006","gold_docs":["note_pagamenti.txt"],"category":"PROSE"},
+    {"qid":"q14","query":"quali sono i termini di pagamento di Verdi Costruzioni","gold_docs":["anagrafica_clienti.xlsx"],"category":"CROSSREF"},
+    {"qid":"q15","query":"la partita IVA di Rossi SRL","gold_docs":["anagrafica_clienti.xlsx"],"category":"CROSSREF"},
+    {"qid":"q16","query":"cosa prevede il contratto con ACME","gold_docs":["contratto_ACME_2026.txt"],"category":"PROSE"},
+    {"qid":"q17","query":"qual e' il foro competente del contratto ACME","gold_docs":["contratto_ACME_2026.txt"],"category":"PROSE"},
+    {"qid":"q18","query":"fatture emesse a marzo 2026","gold_docs":["contabilita_2026.xlsx","fattura_2026_005.xlsx","fattura_2026_006.xlsx","fattura_2026_007.xlsx"],"category":"TEMPORAL"},
+    {"qid":"q19","query":"riepilogo generale dell'anno","gold_docs":["riepilogo_annuale.txt"],"category":"PROSE"},
+    {"qid":"q20","query":"come sono archiviati i documenti amministrativi","gold_docs":["istruzioni_archivio.txt"],"category":"PROSE"}
+  ],
+  "abstention_queries": [
+    {"qid":"a01","query":"quali sono i termini di pagamento di Verdi Costruzioni","gold_docs":["anagrafica_clienti.xlsx"]},
+    {"qid":"a02","query":"perche Bianchi ha contestato una fattura","gold_docs":["note_pagamenti.txt"]},
+    {"qid":"a03","query":"totale IVA del secondo trimestre","gold_docs":["contabilita_2026.xlsx"]},
+    {"qid":"a04","query":"qual e' il foro competente del contratto ACME","gold_docs":["contratto_ACME_2026.txt"]},
+    {"qid":"a05","query":"quanti giorni di ritardo ha Verdi Costruzioni","gold_docs":["scadenzario.xlsx","note_pagamenti.txt"]},
+    {"qid":"u01","query":"qual e' il budget marketing di luglio 2026","gold_docs":[]},
+    {"qid":"u02","query":"chi e' il responsabile delle risorse umane","gold_docs":[]},
+    {"qid":"u03","query":"quante unita di magazzino sono disponibili oggi","gold_docs":[]},
+    {"qid":"u04","query":"cosa prevede il contratto con Omega","gold_docs":[]},
+    {"qid":"u05","query":"quali sono le previsioni meteo per domani","gold_docs":[]}
+  ]
+}

@@ -7,6 +7,9 @@ export MSYS_NO_PATHCONV=1
 repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$repo_root"
 
+retrieval_fixture="$repo_root/scripts/fixtures/document_retrieval_eval"
+retrieval_report_dir="${AURA_DOCUMENT_EVAL_REPORT_DIR:-$repo_root/artifacts/document-retrieval-eval}"
+
 img="${AURA_INGEST_IMAGE:-aura-ingest:local}"
 net="${AURA_NETWORK:-aura_default}"
 suffix="$(date +%s)-$$"
@@ -53,6 +56,7 @@ run_py() {  # run_py <heredoc-on-stdin>, with ARCADE_*/S3_* already exported bel
     -e AURA_INGEST_IDENTITY_ID="$identity_id" -e AURA_INGEST_S3_BUCKET="$bucket" \
     -e AURA_INGEST_S3_ACCESS_KEY_ID="$access_key" -e AURA_INGEST_S3_SECRET_ACCESS_KEY="$secret_key" \
     -v "$repo_root/scripts/fixtures/document_pipeline_e2e:/fixtures:ro" \
+    -v "$retrieval_fixture/corpus:/retrieval-corpus:ro" \
     --entrypoint python "$img" -
 }
 
@@ -451,5 +455,62 @@ go test -tags db_integration -run '^TestMigrate0102BackfillsDecisionPolicyRoundT
 go test -tags document_live_e2e -run '^TestDocumentProductionAgentE2E$' \
   -timeout 5m -v ./cmd/aura
 
+echo "== Native document retrieval release eval: owned 21-file corpus / 20 qrels =="
+(cd "$retrieval_fixture" && sha256sum -c corpus.sha256)
+run_py <<'PY'
+import asyncio, os
+from pathlib import Path
+from aiobotocore.session import get_session
+
+async def main():
+    session = get_session()
+    async with session.create_client(
+        "s3", endpoint_url=os.environ["S3_ENDPOINT"], aws_access_key_id=os.environ["S3_ACCESS_KEY"],
+        aws_secret_access_key=os.environ["S3_SECRET_KEY"], region_name="garage") as c:
+        paginator = c.get_paginator("list_objects_v2")
+        async for page in paginator.paginate(Bucket=os.environ["S3_BUCKET"]):
+            for obj in page.get("Contents", []):
+                await c.delete_object(Bucket=os.environ["S3_BUCKET"], Key=obj["Key"])
+        for fixture in sorted(Path("/retrieval-corpus").iterdir()):
+            await c.put_object(Bucket=os.environ["S3_BUCKET"], Key=fixture.name, Body=fixture.read_bytes())
+
+asyncio.run(main())
+PY
+run_pass
+[ "$EXTRACT_COUNT" -eq 21 ] || {
+  echo "FAIL: expected all 21 release fixtures to be extracted, got $EXTRACT_COUNT" >&2
+  exit 1
+}
+
+mkdir -p "$retrieval_report_dir"
+export AURA_BENCH_IDENTITY="$identity_id"
+export AURA_ARCADEDB_URL="http://127.0.0.1:2480"
+export AURA_ARCADEDB_DATABASE="$arcade_db"
+export AURA_BENCH_PILOT="$retrieval_fixture/qrels.json"
+export AURA_BENCH_OUT="$retrieval_report_dir/fusion.json"
+export AURA_BENCH_CANDIDATE="$(git rev-parse HEAD)"
+export AURA_ABSTAIN_QUERIES="$retrieval_fixture/qrels.json"
+export AURA_ABSTAIN_OUT="$retrieval_report_dir/abstention.json"
+
+go test -count=1 -tags retrieval_eval \
+  -run '^Test(BenchmarkMetricsSupportMultipleGoldDocsAndExposeRegression|FusionBenchmark)$' \
+  -timeout 35m -v ./internal/documents
+go test -count=1 -tags retrieval_eval -run '^TestAbstentionEvidence$' \
+  -timeout 35m -v ./internal/documents
+
+python3 - "$AURA_BENCH_OUT" "$AURA_ABSTAIN_OUT" <<'PY'
+import json, sys
+fusion = json.load(open(sys.argv[1], encoding="utf-8"))
+abstention = json.load(open(sys.argv[2], encoding="utf-8"))
+production = next(run for run in fusion["runs"] if run["production"])
+metrics = production["metrics"]
+print(
+    "ok: native retrieval eval "
+    f"candidate={fusion['candidate_sha']} arm={production['arm']} "
+    f"R@1={metrics['recall_at_1']:.3f} R@3={metrics['recall_at_3']:.3f} "
+    f"MRR={metrics['mrr']:.3f}; abstention_vectors={len(abstention)}"
+)
+PY
+
 echo
-echo "ok: production document E2E -- reconciliation, migration, isolation and real agent"
+echo "ok: production document E2E -- reconciliation, migration, isolation, real agent and scored native retrieval"
