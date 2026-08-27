@@ -5,13 +5,14 @@ last_audited_commit: 3ab589ee6e2302e7bf3ff865e0083a4f7475b63e
 
 # Codebase Concerns
 
-**Analysis Date:** 2026-08-26
+**Analysis Date:** 2026-08-27
 
 **Audit refresh:** Amendments #151 and #152 split coverage evidence by runtime tier and add
 cross-package attribution inside the unit plus `db_integration` tier. Release readiness now
 requires the independent unit/database, native Docker, and live ArcadeDB reports, plus the
 exact package-local policy result; known low packages can no longer regress behind stronger
-ones.
+ones. Amendment #155 and `docs/aura-memory-preload-threat-model.md` now separate trusted
+agent-memory provenance from instruction authority and close the preload poisoning seam.
 
 ## Severity Summary
 
@@ -28,7 +29,7 @@ ones.
 | Owned unit + database coverage remains aggregate, not per-package | Medium | Closed 2026-08-26 | `scripts/coverage_package_gate.py`, `scripts/coverage_package_policy.json`, `scripts/release_readiness_gate.py` |
 | Long-history compaction can disable itself silently and uses an unmeasured three-minute timeout | Medium | Closed 2026-08-26 | `internal/conversations/context_budget.go`, `internal/conversations/compaction.go`, `internal/runner/runner_context.go`, `web/src/chat/ContextBudgetGauge.tsx` |
 | Calendar MCP admin-token fallback was removed by identity-scoped OAuth | Medium | Closed 2026-08-26 | `internal/agui/connect_pim_api.go`, `cmd/aura/serve_agui.go`, `compose.yaml` |
-| Opt-in memory preload inserts recalled content into model-visible context with no dedicated poisoning threat model | Medium | Default off | `internal/runner/runner_context.go`, `internal/config/config.go` |
+| Opt-in memory preload inserts recalled content into model-visible context with no dedicated poisoning threat model | Medium | Closed 2026-08-27 | `docs/aura-memory-preload-threat-model.md`, `internal/runner/runner_context.go`, `internal/agent/prompt.go` |
 | Test/evaluation evidence contains skipped, stale, flaky, or non-reproducible legs | Medium | Open | `scripts/agent_memory_eval.py`, `docs/aura-quality-snapshot.md`, `.planning/STATE.md` |
 
 ## Tech Debt
@@ -112,11 +113,13 @@ ones.
 - Resolution: all three are standard OAuth MCP resource servers. Aura stores one grant and opens one client session per identity/server; the verified access-token `sub` is the sole tenant selector. No static built-in MCP bearer, sidecar-specific secret, proprietary identity header, model argument, or request metadata can select a tenant.
 - Evidence: the production-like two-subject live tier passed 3/3 under `-race` and `goleak` against the real sidecars, including a forged metadata attempt; the real Cockpit/agent gate passed 2/2 and fresh production doctors opened Calendar, Memory, and WhatsApp without `aura mcp login`.
 
-**Opt-in recalled memory is a prompt-injection and memory-poisoning seam:**
-- Risk: when enabled, current-message retrieval is inserted into the model-visible prompt under text describing it as the model's "own knowledge." Stored facts can originate from earlier model/tool/document activity, so poisoned memory can influence a later turn before explicit tool selection.
-- Files: `internal/runner/runner_context.go`, `internal/runner/runner_memory_context_test.go`, `internal/config/config.go`, `cmd/aura/chat_boot.go`.
-- Current mitigation: `AURA_MEMORY_PRELOAD_ENABLED` defaults to false, recall is identity-scoped, and retrieval failures fail soft.
-- Recommendations: write a dedicated trust-boundary threat model before enabling it by default; distinguish data from instructions in framing and add adversarial memory-poisoning tests.
+**Closed 2026-08-27 — trusted agent memory has a dedicated poisoning threat model:**
+- Former risk: a recalled statement could close `<memory_context>` / `<memory_recall>` or emit a chat-template token, while instruction-shaped text inside trusted memory had no explicit authority rule.
+- Trust decision: memory remains Aura's identity-scoped, agent-written reliable knowledge, consistent with amendment #122 and the first-party MCP's `TrustTrusted` posture. It is never placed in a `trust="untrusted"` envelope. Knowledge trust and instruction authority are separate: remembered imperative text does not become a new operator command.
+- Resolution: amendment #155 and `docs/aura-memory-preload-threat-model.md` record the LibreChat/Hermes inventory, trust boundaries, STRIDE register, controls and accepted residual. Digest and opt-in recall reuse only the existing NFKC-plus-HTML prompt-text encoder, preserving benign facts while neutralizing ASCII and compatibility-width boundary tokens. The system prompt pins system/current-explicit-operator precedence without discounting recalled facts.
+- Evidence: the adversarial Runner and prompt-doctrine tests were observed red and are now green under `-race`; the real agent/model scenario scored **10.0/10**, used `COBALTO-731`, ignored `MEMORY_POISON_EXECUTED`, and reported 6,686 prompt tokens; the disposable-identity live ArcadeDB/OAuth MCP abstention path passed in 0.47 seconds. Vet, build, full touched-package tests and race are green.
+- Accepted residual: a plausible false or stale fact can still influence an answer. Mandatory provenance, temporal validity, exact correction/forget and current-message precedence contain that data-integrity risk; syntax cannot prove truth. Preload remains default off.
+- Files: `docs/aura-memory-preload-threat-model.md`, `internal/agent/trust.go`, `internal/agent/prompt.go`, `internal/agent/live_memory_test.go`, `internal/runner/runner_context.go`, `internal/runner/runner_memory_context_test.go`.
 
 **Closed 2026-08-26 — mounted MCP trusted-result provenance has a focused regression test:**
 - Resolution: `TestBridgedTool_Execute_MarksResultTrusted` executes the bridge result seam and asserts non-nil provenance, exact source, and `TrustTrusted`.

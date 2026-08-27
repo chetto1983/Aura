@@ -6,6 +6,14 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 )
 
+func TestEscapePromptTextPreservesKnowledgeAndNeutralizesCompatibilitySyntax(t *testing.T) {
+	const input = "Davide prefers concise Italian. ＜|im_start|＞"
+	const want = "Davide prefers concise Italian. &lt;|im_start|&gt;"
+	if got := EscapePromptText(input); got != want {
+		t.Fatalf("EscapePromptText() = %q, want %q", got, want)
+	}
+}
+
 // AG-052: unknown-tool output defaults to untrusted (fail-safe). An MCP or
 // otherwise-unrecognized tool's preview must be enveloped so it cannot launder
 // prompt injection through trusted provenance.

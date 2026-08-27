@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
@@ -88,13 +89,13 @@ func (r *Runner) loadMemoryContext(ctx context.Context, userMsg *string) *conver
 
 	var b strings.Builder
 	if digest != "" {
-		b.WriteString(memoryContextHeader + "\n" + digest + "\n" + memoryContextFooter)
+		b.WriteString(memoryContextHeader + "\n" + agent.EscapePromptText(digest) + "\n" + memoryContextFooter)
 	}
 	if recall != "" {
 		if b.Len() > 0 {
 			b.WriteString("\n")
 		}
-		b.WriteString(memoryRecallHeader + "\n" + recall + "\n" + memoryRecallFooter)
+		b.WriteString(memoryRecallHeader + "\n" + agent.EscapePromptText(recall) + "\n" + memoryRecallFooter)
 	}
 	if b.Len() == 0 {
 		return nil

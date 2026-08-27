@@ -69,9 +69,15 @@ func untrustedSource(toolName string, res tools.ToolResult) (string, bool) {
 func wrapUntrustedToolOutput(source, content string) string {
 	nonce := toolOutputNonce()
 	escapedSource := html.EscapeString(source)
-	escapedContent := html.EscapeString(norm.NFKC.String(content))
+	escapedContent := EscapePromptText(content)
 	return `<tool_output source="` + escapedSource + `" trust="untrusted" nonce="` + nonce + `">` +
 		"\n" + escapedContent + "\n</tool_output>"
+}
+
+// EscapePromptText neutralizes prompt-control syntax without assigning a trust class.
+// Memory reuses this encoding but deliberately not the untrusted tool-output envelope.
+func EscapePromptText(content string) string {
+	return html.EscapeString(norm.NFKC.String(content))
 }
 
 func toolOutputNonce() string {
