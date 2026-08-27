@@ -8647,3 +8647,73 @@ flusso completo, che funziona.
 > preload, and it does not claim parity with LibreChat/Hermes write-time filters. The
 > memory-specific authority doctrine is behavioral defense; the gateway remains the mandatory
 > capability boundary even though the memory itself remains trusted knowledge.
+
+## §Evaluation evidence is executable, current, and explicit about exclusions (Amendment #156, 2026-08-27)
+
+> **Amendment #156 (2026-08-27 — measured closure contract for the skipped, stale,
+> flaky, or non-reproducible evaluation-evidence concern, before implementation).**
+>
+> **The measurement.** On exact candidate `04047f9631c`, the hosted Agent Memory MRS
+> reported **100.0/100.0** and the database integration job passed, but the report's own
+> command excluded every `TestLocomo*` case and
+> `TestMemoryVectorAnswersACrossLingualQuestion`. The five LOCOMO files total **1,233 LOC**
+> behind `arcadedb_integration`; ADR-0045 has already declined that externally sourced corpus
+> because its license metadata is `NOASSERTION`, so those files are retired apparatus rather
+> than deferred release evidence. The cross-lingual test is a different defect: it queries
+> mutable operator data, skips when no historical facts happen to exist, and is therefore
+> neither hermetic nor credited by the MRS.
+>
+> The Runner warning is stale, not a newly reproduced flake. Commit `63b456f8e` changed
+> `TestVerifyOnStopFiresOnARealTurn` to count agent rounds rather than unrelated asynchronous
+> title traffic. The exact-candidate database job passed, and none of the six failed hosted
+> CI runs inspected after that fix contained this test name. That evidence does not prove that
+> a future timing defect is impossible; it does supersede an active concern stated without a
+> current reproducer.
+>
+> The two `retrieval_eval` document harnesses compile but have no repository runner and do not
+> enforce a retrieval-quality threshold. No new external benchmark is required: Aura already
+> owns a deterministic 21-file document-routing corpus and 20 Italian queries with acceptable
+> target sets under `spikes/document-routing-benchmark`. The production lifecycle runner
+> `scripts/ingest_reconcile_e2e.sh` already provisions disposable Garage buckets, identity
+> databases, CocoIndex, extractor and embedder, drives the real document path, and cleans up;
+> the missing piece is an executable scored leg, not another orchestration layer. Finally,
+> `.planning/STATE.md` names inconsistent current/stopped phases and the GSD phase query returns
+> `phase_found=false`, so it cannot serve as current execution evidence until reconciled.
+>
+> **Contract.** Delete the five declined LOCOMO test files and remove the evaluator skip rather
+> than preserving dead tests that can never turn a gate red. Replace the cross-lingual case with
+> a disposable-identity, self-seeded live test: one English target fact plus distractors, an
+> Italian query with no lexical shortcut, an assertion that lexical retrieval alone misses the
+> target, and an assertion that the shipped hybrid vector path ranks it first. The Agent Memory
+> manifest assigns this case a named score and a hard gate; absence, skip, failure, wrong
+> embedding width, or report drift makes the MRS fail closed.
+>
+> Promote the existing Aura-authored document corpus and qrels into a stable repository fixture.
+> Extend the existing ingest/reconcile lifecycle runner to execute the existing native
+> `retrieval_eval` harnesses against that fixture and publish machine-readable per-arm
+> recall@1, recall@3 and MRR plus abstention evidence. The shipped production fusion path must
+> enforce a declared recall floor on the exact candidate; diagnostic alternate fusion arms may
+> be reported without masquerading as release authority. Multi-acceptable-document qrels are
+> first-class. The quality snapshot names the current native ArcadeDB passage-retrieval metric,
+> runner, corpus, candidate SHA and result instead of the superseded machine-card path.
+>
+> Reconcile `.planning/STATE.md` with the actual roadmap without claiming that Phase 52 is closed:
+> Phase 51 is the current planned design-gate work, while Phase 52 remains held at its recorded
+> human Telegram check. Replace the Runner flake note with the measured fix and current CI
+> evidence. A skipped or compile-only leg is listed as an exclusion, never counted as a pass.
+>
+> **Closure proof.** The new cross-lingual case must be observed through the real disposable
+> ArcadeDB and 768-wide embedder, appear in the MRS report, and be required by manifest-contract
+> tests. The document fixture must be generated reproducibly, ingested through the real stack,
+> scored by the repository harness, and fail deterministically when a gold ranking is degraded
+> below the declared floor. Vet, build, focused race tests, the full coverage matrix, critical
+> mutation, quality-snapshot validation and exact-candidate hosted gates remain required.
+>
+> **What this amendment does NOT prove.** One authored 20-query corpus is a regression gate,
+> not a statistically representative domain benchmark. One English-to-Italian memory scenario
+> does not establish universal multilingual retrieval quality or another embedding model's
+> behavior. Abstention score capture does not establish a production threshold unless that
+> threshold is separately fitted and contracted. Absence of the old Runner failure in inspected
+> CI history is evidence that the warning is stale, not proof that concurrency can never regress.
+> Retiring unlicensed corpus code removes false evidence; it does not replace LOCOMO's research
+> claims with Aura's smaller owned fixture.
