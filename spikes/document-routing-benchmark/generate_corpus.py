@@ -18,6 +18,7 @@ import argparse
 import datetime as dt
 import hashlib
 import os
+import re
 import zipfile
 from openpyxl import Workbook
 
@@ -102,7 +103,16 @@ def save_workbook(wb, filename):
             info = zipfile.ZipInfo(source_info.filename, FIXED_ZIP_TIME)
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = source_info.external_attr
-            destination.writestr(info, source.read(source_info.filename))
+            payload = source.read(source_info.filename)
+            # openpyxl overwrites modified with wall-clock time during save even
+            # when Workbook.properties.modified was set immediately beforehand.
+            if source_info.filename == "docProps/core.xml":
+                payload = re.sub(
+                    rb"(<dcterms:modified\b[^>]*>).*?(</dcterms:modified>)",
+                    rb"\g<1>2026-01-01T00:00:00Z\g<2>",
+                    payload,
+                )
+            destination.writestr(info, payload)
     os.replace(normalized, target)
 
 
@@ -195,7 +205,9 @@ def write_aging():
 
 
 def write_txt(name, text):
-    with open(os.path.join(OUT, name), "w", encoding="utf-8") as f:
+    # Stable across Windows and Linux checkouts: Git must not silently change the
+    # bytes after corpus.sha256 has been computed.
+    with open(os.path.join(OUT, name), "w", encoding="utf-8", newline="\n") as f:
         f.write(text.strip() + "\n")
 
 
