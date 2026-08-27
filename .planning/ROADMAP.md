@@ -108,7 +108,7 @@ harness is built; `internal/eval/` stays deleted.
 - [x] **Phase 46: MCP trust and facade** - Ratify the trust posture that already shipped; curation moves into the forks, not into Aura — **closed 2026-08-25: 7 plans executed, 46-08 a recorded no-go (amendment #131), 46-09 closed by the operator**
 - [ ] **Phase 49: Memory tiers** - Short-term searchable retrieval and a PRD-amendment-gated reasoning tier — **scoped down: `memory_recall` and `internal/reasoningtrace` already exist**
 - [ ] **Phase 50: Context ladder legibility** - Real token accounting, eviction, and per-category visibility — **re-hosted: the consumer is now the compaction trigger**
-- [ ] **Phase 51: Durable delegation** - The approved swarm substrate gets built; workers get a real brief, real limits, and a turn that no longer blocks — **needs a design gate before it can be planned**
+- [ ] **Phase 51: Durable delegation** - The approved swarm substrate gets built; workers get a real brief, real limits, and a turn that no longer blocks — design gate closed 2026-08-27 (PRD #154); 8 plans in 5 waves
 - [ ] **Phase 52: Mid-turn steering** - The operator can type into a running turn and redirect it at the next round boundary — **8/8 plans executed, Gate 3 live E2E scored 9.0/10 (2026-08-26): SC#1-#4 and RESUME-01 fully live-proven (backend + browser), SC#5's Telegram leg not live-proven this session (structural: no scriptable Telegram session) — see `52-VALIDATION.md`. Does not close per CLAUDE.md's >9.8 bar; needs one human Telegram check.**
 - [ ] **Phase 54: Milestone exit** - Retire the nine compensating `learned_lesson` facts and validate parity live — **narrowed 2026-08-25: the `always-deliver-files` skill STAYS, because AUTO-01 was deleted with Phase 47**
 
@@ -504,7 +504,14 @@ context can't be reduced) closes the ladder's failure-mode legibility gap.
 
 ### Phase 51: Durable delegation
 
-> **REVISED 2026-08-24 — NOT plan-ready, and now runs AFTER Phase 52.** Two measured reasons.
+> **DESIGN GATE CLOSED 2026-08-27 — PLANNED.** PRD Amendment #154 (`prd.md:8504-8585`)
+> closed the gate with four live spikes (`.planning/spikes/098`, `099`, `100`, `101`): the durable
+> substrate is a generalization of `aura.ingestion_jobs` (no new table), `agent_message_send` and
+> the 4-table messaging schema are OUT (the steer rail plus the shipped outbox suffice), and worker
+> termination reaps on inactivity — the nominal 120s child timeout is measured at ~240s effective.
+> The banner below is the pre-gate text, kept for provenance; it no longer blocks planning.
+>
+> **SUPERSEDED — REVISED 2026-08-24 — NOT plan-ready, and now runs AFTER Phase 52.** Two measured reasons.
 > First, the substrate is entirely on paper: the approved design doc exists (26 KB) but there is
 > **no mailbox, relay or claimable-task code anywhere in the tree** — `swarm_spawn.go` is a
 > 112-line tool delegating to an injected runner. Second, this block's own rationale still carries
@@ -572,7 +579,17 @@ lands squarely on the memory correctness Phase 45 and 49 just established.
   4. A worker that needs the operator surfaces the question in the operator's channel, naming which worker raised it, and answering it resumes that worker's line of work.
   5. After a live fan-out where several workers each learn something durable, the graph holds one correctly-attributed fact per worker — no duplicates, no lost writes, no fact attributed to the parent.
 
-**Plans**: TBD
+**Plans**: 8 plans in 5 waves
+
+Plans:
+- [ ] 51-01-PLAN.md — TRACER: durable delegation enqueue + claim loop + worker-envelope delivery (SWARM-03, SWARM-09)
+- [ ] 51-02-PLAN.md — Postgres steer queue, kind-typed rows, two TTLs, one sweep, trace on expiry (D-06/07/08)
+- [ ] 51-03-PLAN.md — Worker brief goal/context split + live-rendered cap schema (SWARM-01, SWARM-02)
+- [ ] 51-04-PLAN.md — Host-derived fact provenance, worker supersede refusal, concurrent fan-out proof (SWARM-07)
+- [ ] 51-05-PLAN.md — Depth-bounded nesting, synchronous nested delegation, SWARM-08 guard extension (SWARM-04, SWARM-05, SWARM-08)
+- [ ] 51-06-PLAN.md — Per-worker fenced pause and attributed operator relay (SWARM-06)
+- [ ] 51-07-PLAN.md — Live transcript read surface + SWARM-11 verification (SWARM-10, SWARM-11)
+- [ ] 51-08-PLAN.md — Live SC#1–SC#5 driver, quality snapshot re-attestation, PRD measurement
 
 ### Phase 52: Mid-turn steering
 
