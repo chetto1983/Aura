@@ -261,6 +261,8 @@ $providerText = Get-Content -LiteralPath (Join-Path $repoRoot $yamlPaths[1]) -Ra
 $tempoText = Get-Content -LiteralPath (Join-Path $repoRoot $yamlPaths[2]) -Raw
 Assert-Observability ($datasourceText -cmatch 'uid:\s+aura-prometheus') 'Prometheus datasource UID is not stable'
 Assert-Observability ($datasourceText -cmatch 'uid:\s+aura-tempo') 'Tempo datasource UID is not stable'
+Assert-Observability ($datasourceText -cmatch 'url:\s+http://prometheus:9090') 'Prometheus datasource must use Compose service DNS'
+Assert-Observability ($datasourceText -cmatch 'url:\s+http://tempo:3200') 'Tempo datasource must use Compose service DNS'
 Assert-Observability ($datasourceText -cmatch 'exemplarTraceIdDestinations:') 'Prometheus datasource lacks trace exemplar drilldown'
 Assert-Observability ($datasourceText -cmatch 'tracesToMetrics:') 'Tempo datasource lacks trace-to-metrics drilldown'
 Assert-Observability ($providerText -cmatch 'allowUiUpdates:\s+false') 'provisioned dashboards must be read-only'
@@ -342,6 +344,8 @@ Assert-Observability ($auraBlock -notmatch '(?m)^      - "?127\.0\.0\.1:\d+:9464
 Assert-Observability ($prometheusBlock -notmatch '(?m)^    ports:') 'Prometheus scrape port 9090 must not be host-published'
 Assert-Observability ($tempoBlock -notmatch '(?m)^    ports:') 'Tempo ingestion port 4317 must not be host-published'
 Assert-Observability ($grafanaBlock -match '127\.0\.0\.1:\$\{AURA_GRAFANA_PORT:-3000\}:3000') 'Grafana must publish only on host loopback'
+Assert-Observability ($grafanaBlock -match 'GF_PLUGINS_PREINSTALL_DISABLED:\s+"true"') 'Grafana suggested-plugin downloads must be disabled'
+Assert-Observability ($grafanaBlock -match 'GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES:\s+"false"') 'Grafana plugin update checks must be disabled'
 Assert-Observability ($prometheusBlock -match 'prometheus\.yml:/etc/prometheus/prometheus\.yml:ro') 'Prometheus config mount must be read-only'
 Assert-Observability ($tempoBlock -match 'tempo\.yml:/etc/tempo/tempo\.yml:ro') 'Tempo config mount must be read-only'
 Assert-Observability ($grafanaBlock -match 'provisioning:/etc/grafana/provisioning:ro') 'Grafana provisioning mount must be read-only'
@@ -358,6 +362,41 @@ $ciPath = Join-Path $repoRoot '.github/workflows/ci.yml'
 $ciText = Get-Content -LiteralPath $ciPath -Raw
 Assert-Observability ($ciText.Contains('pwsh -NoProfile -File scripts/verify-observability.ps1 -StaticOnly')) 'CI must run the same observability verifier entry point'
 Assert-Observability ($ciText.Contains('pwsh -NoProfile -File scripts/verify-observability.Tests.ps1')) 'CI must run observability negative fixtures'
+Assert-Observability ($ciText.Contains('bash scripts/observability_sidecar_check_test.sh')) 'CI must run the scheduled scrape-check contract'
+$makeText = Get-Content -LiteralPath (Join-Path $repoRoot 'Makefile') -Raw
+Assert-Observability ($makeText.Contains('bash scripts/observability_sidecar_check.sh')) 'Makefile must expose the live scrape check'
+$sidecarCheckPath = Join-Path $repoRoot 'scripts/observability_sidecar_check.sh'
+Assert-Observability (Test-Path -LiteralPath $sidecarCheckPath -PathType Leaf) 'scheduled scrape-check script is missing'
+$sidecarCheckText = Get-Content -LiteralPath $sidecarCheckPath -Raw
+Assert-Observability ($sidecarCheckText.Contains('docker compose exec -T grafana')) 'scrape check must resolve Grafana through Compose, not a fixed container name'
+
+$envExampleText = Get-Content -LiteralPath (Join-Path $repoRoot '.env.example') -Raw
+Assert-Observability ($envExampleText -match '(?m)^COMPOSE_PROFILES=observability\s*$') '.env.example must enable the observability profile'
+Assert-Observability ($envExampleText -match '(?m)^AURA_OTEL_ENDPOINT=tempo:4317\s*$') '.env.example OTLP endpoint must use Tempo service DNS'
+Assert-Observability ($envExampleText -match '(?m)^AURA_OBSERVABILITY_CHECK_ENABLED=true\s*$') '.env.example must enable the scheduled scrape check'
+Assert-Observability ($auraBlock -match 'AURA_OBSERVABILITY_CHECK_ENABLED:\s+\$\{AURA_OBSERVABILITY_CHECK_ENABLED:-false\}') 'Aura service must receive the scheduled scrape-check switch'
+
+$installerText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/install.sh') -Raw
+$installerAssets = @(
+    'scripts/observability_sidecar_check.sh',
+    'observability/grafana/provisioning/alerting/aura.yml',
+    'observability/grafana/provisioning/dashboards/aura.yml',
+    'observability/grafana/provisioning/datasources/aura.yml',
+    'observability/grafana/provisioning/plugins/aura.yml',
+    'observability/grafana/dashboards/aura-agents.json',
+    'observability/grafana/dashboards/aura-data-retention.json',
+    'observability/grafana/dashboards/aura-overview.json',
+    'observability/grafana/dashboards/aura-tools-mcp.json',
+    'observability/prometheus/prometheus.yml',
+    'observability/prometheus/rules/aura-alerts.yml',
+    'observability/prometheus/rules/aura-recording.yml',
+    'observability/prometheus/tests/aura-rules.test.yml',
+    'observability/tempo/tempo.yml'
+)
+foreach ($asset in $installerAssets) {
+    Assert-Observability ($installerText.Contains("download_file $asset $asset")) "installer does not distribute $asset"
+}
+Assert-Observability ($installerText.Contains('scripts/observability_sidecar_check.sh')) 'installer must run the live scrape check'
 
 if (-not $SkipContainerTools) {
     Assert-Observability ($null -ne (Get-Command docker -ErrorAction SilentlyContinue)) 'Docker is required for hermetic validation'
@@ -453,7 +492,7 @@ function Invoke-ObservabilitySmoke {
         $prometheusConfigArgument = ConvertTo-NativeDottedArgument '--config.file=/etc/prometheus/prometheus.yml'
         $prometheusStorageArgument = ConvertTo-NativeDottedArgument '--storage.tsdb.path=/prometheus'
         Invoke-CheckedTool 'Prometheus smoke start' docker @('run', '-d', '--name', $prometheus, '--network', $network, '--network-alias', 'prometheus', '--user', '0:0', '--volume', "$(Join-Path $repoRoot 'observability/prometheus'):/etc/prometheus:ro", '--tmpfs', '/prometheus:rw', '--entrypoint', '/bin/prometheus', $prometheusImage, $prometheusConfigArgument, $prometheusStorageArgument) | Out-Null
-        Invoke-CheckedTool 'Grafana smoke start' docker @('run', '-d', '--name', $grafana, '--network', $network, '--volume', "$(Join-Path $repoRoot 'observability/grafana/provisioning'):/etc/grafana/provisioning:ro", '--volume', "$(Join-Path $repoRoot 'observability/grafana/dashboards'):/var/lib/grafana/dashboards:ro", '--tmpfs', '/tmp/grafana-data:rw,uid=472,gid=0,mode=0755', '-e', 'GF_PATHS_DATA=/tmp/grafana-data', '-e', 'GF_PATHS_PLUGINS=/tmp/grafana-data/plugins', '-e', 'GF_AUTH_ANONYMOUS_ENABLED=true', '-e', 'GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer', '-e', 'GF_AUTH_DISABLE_LOGIN_FORM=true', '-e', 'GF_ANALYTICS_REPORTING_ENABLED=false', '-e', 'GF_ANALYTICS_CHECK_FOR_UPDATES=false', '-e', 'GF_PLUGINS_PREINSTALL_DISABLED=true', $grafanaImage) | Out-Null
+        Invoke-CheckedTool 'Grafana smoke start' docker @('run', '-d', '--name', $grafana, '--network', $network, '--volume', "$(Join-Path $repoRoot 'observability/grafana/provisioning'):/etc/grafana/provisioning:ro", '--volume', "$(Join-Path $repoRoot 'observability/grafana/dashboards'):/var/lib/grafana/dashboards:ro", '--tmpfs', '/tmp/grafana-data:rw,uid=472,gid=0,mode=0755', '-e', 'GF_PATHS_DATA=/tmp/grafana-data', '-e', 'GF_PATHS_PLUGINS=/tmp/grafana-data/plugins', '-e', 'GF_AUTH_ANONYMOUS_ENABLED=true', '-e', 'GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer', '-e', 'GF_AUTH_DISABLE_LOGIN_FORM=true', '-e', 'GF_ANALYTICS_REPORTING_ENABLED=false', '-e', 'GF_ANALYTICS_CHECK_FOR_UPDATES=false', '-e', 'GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES=false', '-e', 'GF_PLUGINS_PREINSTALL_DISABLED=true', $grafanaImage) | Out-Null
 
         # Service names, not 127.0.0.1: the sidecars no longer share the keeper's
         # namespace, so the probes now cross the network exactly as they do in compose.
@@ -468,6 +507,8 @@ function Invoke-ObservabilitySmoke {
         # the network and scraped it. Under the old shared namespace this passed even
         # when the real deployment's target had been dead for hours.
         Wait-SmokeEndpoint $keeper 'http://prometheus:9090/api/v1/query?query=up%7Bjob%3D%22aura%22%7D%20%3D%3D%201' '"job":"aura"' | Out-Null
+        Wait-SmokeEndpoint $keeper "http://${grafana}:3000/api/datasources/proxy/uid/aura-prometheus/api/v1/query?query=up%7Bjob%3D%22aura%22%7D" '"job":"aura"' | Out-Null
+        Wait-SmokeEndpoint $keeper "http://${grafana}:3000/api/datasources/uid/aura-tempo/health" 'Data source is working' | Out-Null
         foreach ($uid in $dashboardContracts.Values) {
             Wait-SmokeEndpoint $keeper "http://${grafana}:3000/api/dashboards/uid/${uid}" $uid | Out-Null
         }

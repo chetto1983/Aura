@@ -54,6 +54,11 @@ const identityPurgeSweepMinutes = 15
 // identity — so the floor costs little and buys the shortest gap the scheduler allows.
 const memoryEmbedBackfillSweepMinutes = cron.MinScheduleEveryMinutes
 
+// The scrape check runs at the scheduler's minimum cadence. The handler alerts only
+// on unhealthy/recovered transitions, so a five-minute detection window does not
+// become one notification every five minutes during an outage.
+const observabilityCheckSweepMinutes = cron.MinScheduleEveryMinutes
+
 var (
 	_ agui.ObjectStoreProvisioner = (*objectStoreProvisionAdapter)(nil)
 	_ agui.FilesystemProvisioner  = filesystemProvisionAdapter{}
@@ -321,8 +326,8 @@ func buildDeprovisioner(chat *chatEnv) *agui.Deprovisioner {
 
 // seedEveryCronSweep idempotently seeds a fixed-interval system-seeded sweep: it scans the
 // active tasks for an existing entry of kind and only inserts one if absent. Shared by the
-// three `every` sweeps (identity_purge, sandbox_reap, memory_embed_backfill) for the same
-// reason seedDailyCronSweep is shared by the daily ones — three byte-identical copies modulo
+// four `every` sweeps (identity_purge, sandbox_reap, memory_embed_backfill, observability_check)
+// for the same reason seedDailyCronSweep is shared by the daily ones — byte-identical copies modulo
 // four literals is what golangci-lint's dupl exists to catch (CLAUDE.md REUSABLE CODE). A
 // seed failure is non-fatal (logged by the caller); the daemon still runs.
 func seedEveryCronSweep(ctx context.Context, store *cron.Store, kind cron.TaskKind, everyMinutes int, label string) error {
@@ -377,6 +382,11 @@ func seedSandboxReapSweep(ctx context.Context, store *cron.Store, idleTTLSec int
 func seedMemoryEmbedBackfillSweep(ctx context.Context, store *cron.Store) error {
 	return seedEveryCronSweep(ctx, store, cron.KindMemoryEmbedBackfill,
 		memoryEmbedBackfillSweepMinutes, "memory embed backfill sweep")
+}
+
+func seedObservabilityCheckSweep(ctx context.Context, store *cron.Store) error {
+	return seedEveryCronSweep(ctx, store, cron.KindObservabilityCheck,
+		observabilityCheckSweepMinutes, "observability scrape check")
 }
 
 // sandboxReapSweepMinutes derives the reap-sweep cadence (in minutes) from the idle-TTL seconds

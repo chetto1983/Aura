@@ -11,7 +11,17 @@ function Copy-ContractFixture {
 
     $root = Join-Path $tempRoot $Name
     New-Item -ItemType Directory -Path $root -Force | Out-Null
-    foreach ($relative in @('internal/obs/catalog.go', 'observability', 'compose.yaml', '.github/workflows/ci.yml')) {
+    foreach ($relative in @(
+        'internal/obs/catalog.go',
+        'observability',
+        'compose.yaml',
+        '.github/workflows/ci.yml',
+        '.env.example',
+        'Makefile',
+        'scripts/install.sh',
+        'scripts/observability_sidecar_check.sh',
+        'scripts/observability_sidecar_check_test.sh'
+    )) {
         $source = Join-Path $sourceRoot $relative
         $target = Join-Path $root $relative
         $parent = Split-Path -Parent $target

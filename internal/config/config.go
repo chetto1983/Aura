@@ -48,6 +48,11 @@ type Config struct {
 	OtelExporter string // AURA_OTEL_EXPORTER ∈ {stdout,otlp,none} (D-06)
 	OtelEndpoint string // AURA_OTEL_ENDPOINT — OTLP/gRPC target (D-06)
 	MetricsBind  string // AURA_METRICS_BIND — private loopback Prometheus listener
+	// ObservabilityCheckEnabled installs the system scheduler probe that verifies
+	// Tempo/Prometheus readiness, up{job="aura"} == 1, and the same path through
+	// Grafana's provisioned datasources. It defaults off for bare binaries; Compose
+	// enables it together with the observability profile.
+	ObservabilityCheckEnabled bool // AURA_OBSERVABILITY_CHECK_ENABLED
 
 	// Phase 33 (Slice runtime-profiles) deployment posture. Distinct from the
 	// Agent.md per-identity ProfileDir below (RESEARCH Pitfall 1). Selects the
@@ -397,6 +402,9 @@ func loadBase() *Config {
 		OtelExporter:   envDefault("AURA_OTEL_EXPORTER", defaultOtelExporter),
 		OtelEndpoint:   envDefault("AURA_OTEL_ENDPOINT", defaultOtelEndpoint),
 		MetricsBind:    envDefault("AURA_METRICS_BIND", "127.0.0.1:9464"),
+		ObservabilityCheckEnabled: envutil.BoolDefault(
+			"AURA_OBSERVABILITY_CHECK_ENABLED", false,
+		),
 
 		Profile:   ParseProfile(os.Getenv("AURA_PROFILE")),
 		Retention: loadRetentionConfig(ParseProfile(os.Getenv("AURA_PROFILE"))),

@@ -357,14 +357,13 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A deliberate pin, moved deliberately: 0102_paused_state_decision_policy backfills
-	// an explicit server-authored decision set onto every persisted pause, so runtime
-	// authorization can remain fail-closed without a compatibility path. The
+	// A deliberate pin, moved deliberately: 0104 admits the system-seeded
+	// observability_check kind after its handler and deployment switch were added. The
 	// test exists so a migration added without noticing breaks the build rather than the
 	// deployment, so bumping it is the intended way to acknowledge one -- never a fixup to
 	// make a red go away.
-	if head != 102 {
-		t.Fatalf("MigrationHead=%d, want embedded head 102", head)
+	if head != 104 {
+		t.Fatalf("MigrationHead=%d, want embedded head 104", head)
 	}
 }
 

@@ -26,6 +26,7 @@ func clearPostgresEnv(t *testing.T) {
 		"AURA_LLM_ADAPTIVE_REASONING", "AURA_SHOW_REASONING", "AURA_COMPLETION_GATE",
 		"AURA_COMPLETION_CRITIC_MODEL",
 		"AURA_OTEL_EXPORTER", "AURA_OTEL_ENDPOINT", "AURA_METRICS_BIND",
+		"AURA_OBSERVABILITY_CHECK_ENABLED",
 		"AURA_SANDBOX_AGENT_URL", "AURA_SANDBOX_AGENT_TIMEOUT_SEC", "AURA_SANDBOX_AGENT_TOKEN",
 		"SEARXNG_URL", "AURA_WEB_DNS_PIN_TTL_SEC", "AURA_WEB_FETCH_MAX_BODY_BYTES",
 		"AURA_WEB_CACHE_PERSISTENT", "AURA_WEB_SEARCH_TIMEOUT_SEC",
@@ -180,10 +181,17 @@ func TestLoad_LLMAndOtelComposed(t *testing.T) {
 	if cfg.MetricsBind != "127.0.0.1:9464" {
 		t.Errorf("MetricsBind: want default 127.0.0.1:9464, got %q", cfg.MetricsBind)
 	}
+	if cfg.ObservabilityCheckEnabled {
+		t.Error("ObservabilityCheckEnabled: bare-binary default must be false")
+	}
 
 	t.Setenv("AURA_METRICS_BIND", "127.0.0.1:19464")
+	t.Setenv("AURA_OBSERVABILITY_CHECK_ENABLED", "true")
 	if got := LoadDB().MetricsBind; got != "127.0.0.1:19464" {
 		t.Errorf("MetricsBind override = %q, want 127.0.0.1:19464", got)
+	}
+	if !LoadDB().ObservabilityCheckEnabled {
+		t.Error("ObservabilityCheckEnabled override = false, want true")
 	}
 }
 

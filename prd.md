@@ -9230,3 +9230,47 @@ flusso completo, che funziona.
 > every advertised audio codec, that all future llama.cpp builds keep experimental
 > multimodal behavior unchanged, that the current DeepSeek primary is multimodal (it is
 > explicitly not), or that OCR/STT quality is sufficient for every fallback corpus.
+
+## §The shipped observability pack detects a healthy-but-blind metrics pipeline (Amendment #168, 2026-08-27)
+
+> **Amendment #168 (2026-08-27 — current Compose, installer and live-stack audit).**
+> The existing sidecar script already distinguished a healthy Prometheus process from a
+> successful `up{job="aura"} == 1` scrape, but nothing invoked it by name from Make, CI or
+> Aura's scheduler. The installer omitted the entire `observability/` tree, default startup
+> did not activate the profile, and the sample OTLP endpoint still named host loopback even
+> though Tempo is an ordinary Compose service. Grafana also attempted suggested-plugin
+> downloads at boot and logged missing provisioning directories. A nominally running pack
+> could therefore be blind, absent from a fresh installation, or noisy without an owned
+> detection path.
+>
+> **Decision.** The appliance `.env` contract activates the observability profile, sends
+> OTLP to `tempo:4317`, and enables one native scheduled `observability_check`. The handler
+> uses bounded HTTP calls to Tempo/Prometheus readiness, the exact Aura `up` query, and
+> the same Prometheus result plus Tempo health through Grafana's provisioned datasources;
+> it never mounts the Docker socket or shells out from the daemon. It records every
+> run, notifies only on the first failure and first recovery, and suppresses steady healthy
+> and repeated-failure notification noise. Migration `0104` admits the new task kind behind
+> the existing scheduler table and composition boundary.
+>
+> The shell probe remains the operator/CI boundary: Make invokes it by name, a fake-Compose
+> contract test covers healthy, scrape-down and Tempo-down outcomes, and CI runs that test.
+> The installer distributes every pinned Prometheus, Tempo and Grafana asset, creates all
+> provisioning directories, starts with `--wait`, and runs the live probe before reporting
+> success. Grafana disables automatic suggested-plugin preinstallation; the provisioned
+> dashboards and datasources are the complete shipped surface.
+>
+> **Boot acceptance discovered and closed a separate head-of-line failure.** Deferred OAuth
+> MCP reconnects were serial and alphabetical, so a 151-second Linear handshake held the
+> required first-party memory mount behind it and made Compose declare Aura unhealthy.
+> Reconnect now deterministically mounts Aura-owned sidecars before remote MCP servers; a
+> remote network timeout can no longer delay the memory readiness dependency.
+>
+> **Acceptance and evidence boundary.** Unit tests cover HTTP status, response bounds,
+> malformed Prometheus responses and notification transitions; a PostgreSQL integration
+> test proves the migrated kind is admitted. Static packaging checks and the shell contract
+> test must pass. A clean normal `docker compose up -d --wait` — without an ad-hoc profile or
+> endpoint override — must apply migration `0104`, make Aura/Grafana/Prometheus/Tempo healthy,
+> show `up{job="aura"} == 1` both directly and through Grafana, execute the scheduled handler, and produce no OTLP connection
+> refusal, plugin-download attempt or missing-provisioning-directory error. This proves the
+> single-host Compose appliance path, not remote collectors, HA Prometheus/Grafana or every
+> notification transport.

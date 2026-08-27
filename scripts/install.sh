@@ -384,6 +384,23 @@ ensure_internal_env_secrets() {
   ensure_env_default ARCADEDB_DATABASE "aura_memory"
   ensure_env_default POSTGRES_IMAGE "${POSTGRES_IMAGE:-postgres:18.4-alpine3.24}"
   ensure_env_default AURA_IMAGE "${AURA_IMAGE:-$DEFAULT_IMAGE}"
+
+  # Observability is an appliance default, not a hidden profile an operator must
+  # remember after every reboot. Preserve additional profiles and explicit off
+  # switches, but migrate the one known-stale endpoint from the old shared-network
+  # topology.
+  profiles="$(env_value COMPOSE_PROFILES)"
+  case ",${profiles}," in
+    *,observability,*) ;;
+    ,,) set_env_value COMPOSE_PROFILES observability ;;
+    *) set_env_value COMPOSE_PROFILES "${profiles},observability" ;;
+  esac
+  ensure_env_default AURA_OTEL_EXPORTER otlp
+  ensure_env_default AURA_OBSERVABILITY_CHECK_ENABLED true
+  ensure_env_default AURA_OTEL_ENDPOINT tempo:4317
+  if [ "$(env_value AURA_OTEL_ENDPOINT)" = "localhost:4317" ]; then
+    set_env_value AURA_OTEL_ENDPOINT tempo:4317
+  fi
 }
 
 ensure_objectstore_public_endpoint() {
@@ -435,6 +452,10 @@ AURA_WHATSAPP_MCP_PORT=8092
 AURA_ARCADEDB_MCP_PORT=8096
 AURA_BACKUP_DIR=./backups
 SEARXNG_SECRET=${searxng_secret}
+COMPOSE_PROFILES=observability
+AURA_OTEL_EXPORTER=otlp
+AURA_OTEL_ENDPOINT=tempo:4317
+AURA_OBSERVABILITY_CHECK_ENABLED=true
 
 AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda
 AURA_EMBED_MODEL_PATH=/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf
@@ -529,7 +550,15 @@ preflight_hw
 install_docker
 provision_gvisor
 
-as_root mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/caddy" "$INSTALL_DIR/deploy" "$INSTALL_DIR/backups" "$INSTALL_DIR/scripts" "$INSTALL_DIR/searxng"
+as_root mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/caddy" "$INSTALL_DIR/deploy" "$INSTALL_DIR/backups" "$INSTALL_DIR/scripts" "$INSTALL_DIR/searxng" \
+  "$INSTALL_DIR/observability/grafana/dashboards" \
+  "$INSTALL_DIR/observability/grafana/provisioning/dashboards" \
+  "$INSTALL_DIR/observability/grafana/provisioning/datasources" \
+  "$INSTALL_DIR/observability/grafana/provisioning/alerting" \
+  "$INSTALL_DIR/observability/grafana/provisioning/plugins" \
+  "$INSTALL_DIR/observability/prometheus/rules" \
+  "$INSTALL_DIR/observability/prometheus/tests" \
+  "$INSTALL_DIR/observability/tempo"
 if need_sudo; then
   as_root chown -R "$(id -u):$(id -g)" "$INSTALL_DIR"
 fi
@@ -542,7 +571,21 @@ download_file searxng/settings.yml searxng/settings.yml
 download_file searxng/limiter.toml searxng/limiter.toml
 download_file scripts/garage_bootstrap.sh scripts/garage_bootstrap.sh
 download_file scripts/fetch_embedding_model.sh scripts/fetch_embedding_model.sh
-chmod +x scripts/garage_bootstrap.sh scripts/fetch_embedding_model.sh
+download_file scripts/observability_sidecar_check.sh scripts/observability_sidecar_check.sh
+download_file observability/grafana/provisioning/alerting/aura.yml observability/grafana/provisioning/alerting/aura.yml
+download_file observability/grafana/provisioning/dashboards/aura.yml observability/grafana/provisioning/dashboards/aura.yml
+download_file observability/grafana/provisioning/datasources/aura.yml observability/grafana/provisioning/datasources/aura.yml
+download_file observability/grafana/provisioning/plugins/aura.yml observability/grafana/provisioning/plugins/aura.yml
+download_file observability/grafana/dashboards/aura-agents.json observability/grafana/dashboards/aura-agents.json
+download_file observability/grafana/dashboards/aura-data-retention.json observability/grafana/dashboards/aura-data-retention.json
+download_file observability/grafana/dashboards/aura-overview.json observability/grafana/dashboards/aura-overview.json
+download_file observability/grafana/dashboards/aura-tools-mcp.json observability/grafana/dashboards/aura-tools-mcp.json
+download_file observability/prometheus/prometheus.yml observability/prometheus/prometheus.yml
+download_file observability/prometheus/rules/aura-alerts.yml observability/prometheus/rules/aura-alerts.yml
+download_file observability/prometheus/rules/aura-recording.yml observability/prometheus/rules/aura-recording.yml
+download_file observability/prometheus/tests/aura-rules.test.yml observability/prometheus/tests/aura-rules.test.yml
+download_file observability/tempo/tempo.yml observability/tempo/tempo.yml
+chmod +x scripts/garage_bootstrap.sh scripts/fetch_embedding_model.sh scripts/observability_sidecar_check.sh
 
 write_env_if_missing
 
@@ -560,7 +603,8 @@ if [ "${aura_image}" != "aura:local" ]; then
 fi
 
 ensure_embed_model
-docker compose up -d
+docker compose up -d --wait --wait-timeout 300
+scripts/observability_sidecar_check.sh
 install_systemd_unit
 
 token="$(env_value AURA_ACCESS_TOKEN)"
@@ -578,5 +622,5 @@ Next steps:
   docker compose -f ${INSTALL_DIR}/compose.yaml logs -f aura
   Import Caddy's local CA from the caddy-data volume on LAN clients if the browser warns.
 
-Re-running this installer will keep ${INSTALL_DIR}/.env byte-identical.
+Re-running preserves secrets and explicit settings; known-safe deployment defaults may be migrated.
 EOF

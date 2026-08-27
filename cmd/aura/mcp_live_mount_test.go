@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/mcp"
@@ -50,6 +51,27 @@ func TestOAuthMountDeferralPreservesNonOAuthAndInvalidConfiguration(t *testing.T
 				t.Fatal("server must remain on the synchronous mount path")
 			}
 		})
+	}
+}
+
+// A slow remote MCP must not hold the appliance's required memory mount behind its
+// network timeout. Within each ownership class the order stays deterministic.
+func TestDeferredOAuthMountsPrioritizeFirstPartyServers(t *testing.T) {
+	remote := mcp.ManagedServer{
+		Type:  mcp.ServerTypeStreamableHTTP,
+		URL:   "https://mcp.linear.app/mcp",
+		Trust: mcp.ManagedTrust{Class: mcp.TrustRemoteHTTP},
+	}
+	policies := map[string]mcp.ManagedServer{
+		"z-remote": remote,
+		"memory":   firstPartyMemoryServer(t),
+		"a-remote": remote,
+	}
+
+	got := deferredOAuthMountNames(policies)
+	want := []string{"memory", "a-remote", "z-remote"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("mount order = %v, want first-party servers before remote servers %v", got, want)
 	}
 }
 

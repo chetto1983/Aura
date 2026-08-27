@@ -249,10 +249,11 @@ with the existing indexed summary/transcript retained as the deterministic text 
 - Evidence: PRD amendment #163; parser/page-boundary and wire tests in `web/src/chat/composer/garageMentions.test.ts` and `web/src/chat/__tests__/ExternalStoreChat.skill.test.tsx`; strict run/context tests in `internal/agui`; source-scope, card-degradation and fused-query tests in `internal/documents`, `internal/agent/tools` and `internal/arcadedb`.
 - Files: `web/src/chat/composer/GarageMentionPicker.tsx`, `web/src/chat/composer/garageMentions.ts`, `internal/documents/source_scope.go`, `internal/agui/server_run.go`, `internal/arcadedb/document_cards.go`, `internal/arcadedb/document_retrieval.go`.
 
-**Observability scrape check is not scheduled:**
-- Problem: `scripts/observability_sidecar_check.sh` detects the measured failure mode where Prometheus is healthy but no longer scraping Aura, yet no Makefile target, CI workflow, or scheduler registration invokes this script by name.
-- Blocks: automatic detection of a metrics pipeline that is up but blind.
-- Files: `scripts/observability_sidecar_check.sh`, `Makefile`, `.github/workflows/ci.yml`, `internal/cron/`.
+**Closed 2026-08-27 — the observability pack detects a healthy-but-blind pipeline:**
+- Resolution: migration `0104` admits a system-seeded `observability_check` every five minutes. Its native bounded-HTTP handler checks Tempo/Prometheus readiness, the exact `up{job="aura"} == 1` result, and that same result plus Tempo health through Grafana's provisioned datasources, without a Docker socket; the run ledger stays truthful while notifications emit only on failure/recovery transitions.
+- Deployment: the appliance profile, service-DNS OTLP endpoint and scheduler switch are defaulted together. The installer distributes every Grafana/Prometheus/Tempo asset, starts with `--wait` and runs the live probe. Make invokes that probe by name and CI executes its healthy/scrape-down/Tempo-down contract test.
+- Live evidence: normal `docker compose up -d --wait` applied schema version `104|false`; Aura, Prometheus, Tempo and Grafana became healthy; the script reported the pack and Grafana datasources reachable and scraping Aura; two production scheduler runs completed. A live Grafana proxy query returned `up{job="aura"}=1`, the Tempo datasource returned `status=OK`, and the operator confirmed dashboard data arrived after the stale `aura:9090/3200` datasource URLs were replaced by Compose service DNS.
+- Files: `internal/obs/sidecar_check.go`, `internal/cron/handlers/observability_check.go`, `internal/db/migrations/0104_scheduler_observability_check_kind.up.sql`, `scripts/observability_sidecar_check.sh`, `scripts/install.sh`, `compose.yaml`, `Makefile`, `.github/workflows/ci.yml`.
 
 ## Test Coverage Gaps
 
@@ -286,4 +287,4 @@ with the existing indexed summary/transcript retained as the deterministic text 
 
 ---
 
-*Concerns audit: 2026-08-26*
+*Concerns audit: 2026-08-27*
