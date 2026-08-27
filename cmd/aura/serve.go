@@ -37,6 +37,7 @@ import (
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/readiness"
+	"github.com/chetto1983/aura/internal/swarm"
 	"github.com/chetto1983/aura/internal/webauth"
 )
 
@@ -102,6 +103,12 @@ type serveEnv struct {
 	// assetProcessingWorker claims durable asset_process ingestion jobs and runs the
 	// shared asset processor pipeline. runServe Start/Stops it with the daemon.
 	assetProcessingWorker *runtimeProcessingWorkers
+
+	// delegationWorker claims durable swarm_delegation ingestion jobs (Phase 51,
+	// SWARM-03/09) and runs each through the swarm engine's own runChild, pushing
+	// the consolidated report via steer.SourceWorker. runServe Start/Stops it with
+	// the daemon, same lifecycle as assetProcessingWorker.
+	delegationWorker *runtimeProcessingWorkers
 
 	// reconciler is the crash-orphan reconciler (D-01d / GATE-03 durability + GATE-04
 	// recovery): it closes a start∧¬end reservation left by a crash by appending a
@@ -232,6 +239,7 @@ func runServe(args []string) {
 	env.approvalExpirySweeper.SweepNow(ctx)
 	env.approvalExpirySweeper.Start(ctx)
 	env.assetProcessingWorker.Start(ctx)
+	env.delegationWorker.Start(ctx)
 	// Crash-orphan reconciler (D-01d): launched on the work ctx like the sweeper so a
 	// SIGTERM does not abort an in-flight anti-join mid-sweep; the drain joins it. A boot
 	// one-shot fires immediately, then it ticks; a disabled/nil store launches no goroutine.
@@ -486,6 +494,18 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	assetProcessingWorker := newRuntimeAssetProcessingWorker(
 		chat.cfg, chat.pool, chat.assets, chat.cfg.AssetProcessingConcurrent,
 	)
+	// The delegation claim loop is bound to the SAME steer inbox instance the
+	// AG-UI steer route and the Telegram dispatch already push operator steers
+	// into (chat.steer, D-04/D-05) — a worker report and an operator steer land
+	// in one queue. chat.steer is *steer.Inbox, which satisfies swarm.SteerPublisher
+	// (Push(conv, source, text string) error) by construction; a nil chat.steer
+	// degrades to a nil interface value, which DelegationClaimLoop treats as
+	// "no delivery configured" rather than dereferencing.
+	var delegationSteer swarm.SteerPublisher
+	if chat.steer != nil {
+		delegationSteer = chat.steer
+	}
+	delegationWorker := newRuntimeDelegationWorker(chat, delegationSteer)
 
 	// Crash-orphan reconciler (D-01d): closes a start∧¬end reservation left by a crash
 	// between reserve and Execute by APPENDING a terminal indeterminate `end` fact — it
@@ -511,6 +531,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		sweeper:                   sweeper,
 		approvalExpirySweeper:     approvalExpirySweeper,
 		assetProcessingWorker:     assetProcessingWorker,
+		delegationWorker:          delegationWorker,
 		reconciler:                reconciler,
 		authulaProvider:           authulaProvider,
 		onboardingAuthulaProvider: onboardingAuthulaProvider,
