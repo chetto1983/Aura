@@ -88,7 +88,10 @@ func TestAgentMemoryMCPLiveInitializeListCallAndIsolation(t *testing.T) {
 		"object":       "Analytical Engine notes",
 		"object_kind":  "document",
 		"statement":    "Ada Lovelace keeps the Analytical Engine notes.",
-		"source":       alphaSource,
+		// D-10: run_id is no longer a write-path field -- alphaSource still
+		// names it for the READ-side assertion below, but it must not be sent
+		// here, or this call would be lying about what the model can control.
+		"source": map[string]any{"memory_ids": alphaSource.MemoryIDs},
 	})
 
 	alpha := callAgentMemoryLiveJSON[agentMemoryLiveSearchOutput](
@@ -98,8 +101,12 @@ func TestAgentMemoryMCPLiveInitializeListCallAndIsolation(t *testing.T) {
 	if len(alpha.Facts) != 1 || alpha.Facts[0].Statement != "Ada Lovelace keeps the Analytical Engine notes." {
 		t.Fatalf("tenant alpha facts = %+v", alpha.Facts)
 	}
-	if len(alpha.Facts[0].Sources) != 1 || alpha.Facts[0].Sources[0].RunID != alphaSource.RunID {
-		t.Fatalf("tenant alpha provenance = %+v, want %+v", alpha.Facts[0].Sources, alphaSource)
+	// run_id is host-derived (D-10), never alphaSource's -- every session
+	// this harness opens carries the SAME fixed parent actor
+	// (agentMemoryLiveActorHeaders), so that is what a real write persists.
+	if len(alpha.Facts[0].Sources) != 1 || alpha.Facts[0].Sources[0].RunID != agentMemoryLiveParentRunID {
+		t.Fatalf("tenant alpha provenance = %+v, want host-derived run_id %q",
+			alpha.Facts[0].Sources, agentMemoryLiveParentRunID)
 	}
 
 	alphaFromBeta := callAgentMemoryLiveJSON[agentMemoryLiveSearchOutput](
@@ -120,7 +127,7 @@ func TestAgentMemoryMCPLiveInitializeListCallAndIsolation(t *testing.T) {
 		"object":       "compiler behavior",
 		"object_kind":  "topic",
 		"statement":    "Grace Hopper documents compiler behavior.",
-		"source":       betaSource,
+		"source":       map[string]any{"memory_ids": betaSource.MemoryIDs},
 	})
 
 	betaFromAlpha := callAgentMemoryLiveJSON[agentMemoryLiveSearchOutput](
@@ -168,9 +175,9 @@ func TestAgentMemoryMCPLiveAbstainsOnNonexistentFact(t *testing.T) {
 		"object":       "Caraglio",
 		"object_kind":  "place",
 		"statement":    "Davide lives in Caraglio.",
-		"source": agentMemoryLiveSource{
-			RunID: "live-abstention", MemoryIDs: []string{"known-message-1"},
-		},
+		// D-10: memory_ids only -- run_id is host-derived, not a field this
+		// call can set.
+		"source": map[string]any{"memory_ids": []string{"known-message-1"}},
 	})
 
 	out := callAgentMemoryLiveJSON[agentMemoryLiveSearchOutput](
@@ -201,7 +208,9 @@ func TestAgentMemoryMCPLiveSupersedeRefusalThenFactKeyCloses(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), agentMemoryLiveTimeout)
 	defer cancel()
 
-	source := agentMemoryLiveSource{RunID: "live-supersede", MemoryIDs: []string{"m1"}}
+	// D-10: memory_ids only in every write call below -- run_id is
+	// host-derived (agentMemoryLiveActorHeaders), not a field these calls set.
+	source := map[string]any{"memory_ids": []string{"m1"}}
 	write := func(object, statement string) {
 		callAgentMemoryLiveJSON[agentMemoryLiveUpsertOutput](t, ctx, session, "memory_upsert_fact", map[string]any{
 			"subject":      "Isaac Newton",

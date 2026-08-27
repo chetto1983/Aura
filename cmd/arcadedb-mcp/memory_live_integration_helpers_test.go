@@ -148,7 +148,15 @@ func newAgentMemoryLiveMCP(
 				identity, defaultOAuthScope, time.Now().Add(time.Hour))},
 			Trust: auramcp.ManagedTrust{Class: auramcp.TrustTrustedRecipe},
 		}
-		session, openErr := auramcp.OpenSDKSession(t.Context(), "agent-memory-live", managed, auramcp.EgressPolicy{}, auramcp.SessionOptions{})
+		// D-10: real production traffic carries a host-derived actor on this
+		// same HeaderFunc mechanism (internal/agent/mcptools/mount.go); this
+		// generic harness calls auramcp.OpenSDKSession directly, bypassing
+		// mount.go entirely, so it must attach the SAME header itself or
+		// every memory_upsert_fact call below fails with "missing host-
+		// derived actor" -- these sessions all represent an operator's own
+		// foreground turn, so a fixed PARENT actor is the correct shape.
+		session, openErr := auramcp.OpenSDKSession(t.Context(), "agent-memory-live", managed, auramcp.EgressPolicy{},
+			auramcp.SessionOptions{HeaderFunc: agentMemoryLiveActorHeaders})
 		if openErr != nil {
 			t.Fatalf("initialize live MCP for %s: %v", identity, openErr)
 		}
@@ -166,6 +174,20 @@ func newAgentMemoryLiveMCP(
 		MCPServerVersion:   serverVersion,
 		EmbeddingModel:     agentMemoryLiveModelLabel(),
 		EmbeddingDimension: embeddingDimension,
+	}
+}
+
+// agentMemoryLiveParentRunID is the fixed actor run id every session this
+// harness opens carries (D-10) -- these tests exercise tenant isolation and
+// retrieval, not actor attribution, so one shared parent run id across all
+// sessions is correct: isolation here comes from each session's OWN OAuth
+// identity resolving to its OWN tenant database, never from the actor.
+const agentMemoryLiveParentRunID = "live-test-parent-run"
+
+func agentMemoryLiveActorHeaders(context.Context) map[string]string {
+	return map[string]string{
+		memoryActorRunIDHeader: agentMemoryLiveParentRunID,
+		memoryActorRoleHeader:  string(arcadedb.WriterParent),
 	}
 }
 
@@ -298,6 +320,14 @@ func assertAgentMemoryLiveSourceSchema(t *testing.T, tools []*officialmcp.Tool) 
 		}
 		if strings.Contains(schema, `"source_run_id"`) || strings.Contains(schema, `"source_memory_ids"`) {
 			t.Fatalf("memory_upsert_fact schema advertises retired provenance fields: %s", schema)
+		}
+		// D-10 (Phase 51): the model must have no field left to assert who
+		// wrote a fact -- run_id left the WRITE schema entirely (it still
+		// exists on memory_forget's filter and on read-back, a DIFFERENT
+		// type, MemoryFactSource; this asserts on memory_upsert_fact's own
+		// InputSchema only).
+		if strings.Contains(schema, `"run_id"`) {
+			t.Fatalf("memory_upsert_fact schema still advertises run_id on the WRITE path (D-10): %s", schema)
 		}
 		if strings.Contains(schema, `"user_identifier"`) {
 			t.Fatalf("memory_upsert_fact schema still advertises user_identifier (D-108): %s", schema)
