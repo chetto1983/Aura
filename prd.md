@@ -9161,3 +9161,68 @@ flusso completo, che funziona.
 > ingest service, create `IndexedDocument` in the authenticated identity database, reconcile
 > the existing `/Documenti` objects, and let the production scoped document query complete
 > without widening or HTTP 500.
+
+## §The selected primary model receives supported Garage media natively (Amendment #167, 2026-08-27)
+
+> **Amendment #167 (2026-08-27 — live provider capability measurement plus installed-SDK
+> inventory; supersedes Amendment #60(a)/(b)/(d)'s hard-coded `SupportsVision` table and
+> hidden `MULTIMODAL_FALLBACK_MODEL`).** The production primary is currently
+> `deepseek/deepseek-v4-flash-0731:nitro`; a live authenticated OpenRouter
+> `GET /api/v1/models` returned `architecture.input_modalities=["text"]` for its normalized
+> model ID. The running llama.cpp `b10603` OCR server returned
+> `GET /props` with `modalities={"vision":true,"video":true,"audio":false}`. These are
+> model/server facts that the providers already expose, so Aura must not infer modality
+> from names, retain a hand-written model table, or silently substitute a second model.
+> OpenRouter documents `architecture.input_modalities` on its model catalog and llama.cpp
+> documents the loaded server's `modalities` on `/props`; llama.cpp's multimodal contract
+> accepts image/audio/video through the OpenAI-compatible chat endpoint.
+>
+> **Decision.** The operator-selected primary `AURA_LLM_MODEL` remains the only agent model.
+> For OpenRouter, Aura extends the existing bounded, TTL-cached `/models` capability client
+> to read the active entry's input modalities. For an explicit llama.cpp primary, it reads
+> the loaded model's `/props.modalities` through the existing cached probe. A positive
+> capability projects this turn's owner-authorized Garage image/audio as native content
+> parts on the newest model-visible user message. A missing model, failed probe, unknown
+> modality or explicit `false` fails closed to the existing text summary/transcript; it
+> never guesses support and never routes bytes to another paid model. OCR/STT and CocoIndex
+> remain the retrieval/indexing and text-only fallback lanes; their output no longer
+> replaces the original media when the selected primary accepts it.
+>
+> Native media is request-scoped: attachment IDs and visible user text remain canonical in
+> conversation storage, while raw/base64 bytes are neither copied into Postgres nor replayed
+> from client-authored URLs. Immediately before request construction Aura re-resolves the
+> asset through the existing owner-scoped `OpenForIdentity` path, applies the shipped asset
+> size/MIME limits, and verifies the stored SHA-256 before projection. The detached-run path
+> carries only the authorized reference/loader through context, preserving the same reload
+> check after HTTP disconnect. Only this turn's explicit attachment IDs are eligible; a
+> Garage catalog entry or document mention is not an implicit media upload.
+>
+> **Protocol implementation.** The installed public surface of
+> `github.com/openai/openai-go/v3@v3.54.0` was inventoried before implementation. It already
+> supplies typed text/image/input-audio parts, tool-call and usage stream types, an SSE
+> stream, a bounded tool-call accumulator, custom BaseURL/headers, request JSON extensions
+> and caller-supplied HTTP transport. Aura replaces its hand-written OpenAI request DTO,
+> SSE parser and delta accumulator with that SDK behind the unchanged provider-neutral
+> `llm.Client`. Provider-specific policy remains a thin adapter: zero SDK retries (the agent
+> owns retry), Aura's rolling idle watchdog, OpenRouter `provider`/`reasoning`/sticky-session
+> fields, and llama.cpp thinking fields. The dependency is pinned in `go.mod`; no vendored
+> protocol copy or duplicate frontend/model setting is introduced.
+>
+> **Acceptance.** Fixture tests must prove OpenRouter image/audio/text capability parsing,
+> routing-suffix normalization and fail-closed cache behavior; llama.cpp `/props` must prove
+> independent vision/audio flags and failure fallback. Wire tests must prove text-only
+> requests stay equivalent, supported images serialize as `image_url` data URLs, supported
+> audio serializes as `input_audio`, unsupported media emits only its stored fallback text,
+> tool calls/usage/reasoning still stream correctly, SDK retries are disabled, and the idle
+> watchdog still cancels a stalled stream. Owner/thread mismatch, digest mismatch and
+> oversize reads must fail before provider exposure. A live E2E must switch the configured
+> primary to a model whose provider advertises the tested modality, attach real Garage media
+> through the Cockpit, and obtain an answer that depends on the original media rather than
+> only its OCR/transcript. It then switches back to the text-only primary and proves the
+> indexed fallback without a hidden model call.
+>
+> **Evidence boundary.** The live probes establish the current providers' capability shapes
+> and the two models actually queried. They do not prove every OpenRouter provider honors
+> every advertised audio codec, that all future llama.cpp builds keep experimental
+> multimodal behavior unchanged, that the current DeepSeek primary is multimodal (it is
+> explicitly not), or that OCR/STT quality is sufficient for every fallback corpus.
