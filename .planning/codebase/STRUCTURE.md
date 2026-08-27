@@ -182,7 +182,7 @@ Aura/
 - `web/tsconfig.json`, `web/vite.config.ts`, `web/eslint.config.js`: Frontend compiler/build/lint configuration.
 - `sqlc.yaml`: SQL generation mapping.
 - `.golangci.yml`, `.editorconfig`, `lefthook.yml`: Repository style and local gates.
-- `compose.yaml`, `compose.minipc.yaml`: Appliance topology; do not read secret-bearing runtime environment files.
+- `compose.yaml`: Appliance topology; do not read secret-bearing runtime environment files.
 
 **Core Logic:**
 - `internal/runner/runner.go`: Durable turn lifecycle.

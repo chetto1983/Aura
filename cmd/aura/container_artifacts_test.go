@@ -15,7 +15,6 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	}
 	dockerfile := readProjectFile(t, root, "docker/aura/Dockerfile")
 	compose := readProjectFile(t, root, "compose.yaml")
-	minipc := readProjectFile(t, root, "compose.minipc.yaml")
 	installer := readProjectFile(t, root, "scripts/install.sh")
 	caddyfile := readProjectFile(t, root, "caddy/Caddyfile")
 	dockerignore := readProjectFile(t, root, ".dockerignore")
@@ -250,18 +249,6 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		t.Fatalf("docker/aura/Dockerfile warms a uvx package: the /root/.cache/uv volume shadows it at runtime")
 	}
 
-	// The mini PC file is the only other compose the installer ships; it must keep the
-	// GPU-less machine GPU-less. A default inherited from the base is how the CUDA image
-	// ended up on a box with no GPU, where llama.cpp only WARNS and falls back to CPU.
-	for _, want := range []string{
-		"AURA_EMBED_IMAGE:-ghcr.io/ggml-org/llama.cpp:server}",
-		"deploy: !reset null",
-		"COMPOSE_FILE=compose.yaml:compose.minipc.yaml",
-	} {
-		if !strings.Contains(minipc, want) {
-			t.Fatalf("compose.minipc.yaml missing %q:\n%s", want, minipc)
-		}
-	}
 	for _, want := range []string{
 		"**\n",
 		"!cmd/aura/**",
@@ -398,7 +385,6 @@ func TestRetiredGraphPlaneStaysOutOfTheComposeDeclarations(t *testing.T) {
 	root := repoRootForTest(t)
 	for _, rel := range []string{
 		"compose.yaml",
-		"compose.minipc.yaml",
 		".github/compose.ci-cache.yaml",
 	} {
 		contents := readProjectFile(t, root, rel)
@@ -427,7 +413,7 @@ func TestRetiredGraphPlaneStaysOutOfTheComposeDeclarations(t *testing.T) {
 // nothing depends on is clutter; a dead service the daemon GATES ON is an outage.
 func TestRetiredConverterStaysOutOfTheComposeDeclarations(t *testing.T) {
 	root := repoRootForTest(t)
-	for _, rel := range []string{"compose.yaml", "compose.minipc.yaml"} {
+	for _, rel := range []string{"compose.yaml"} {
 		contents := strings.ReplaceAll(readProjectFile(t, root, rel), "\r\n", "\n")
 		for _, banned := range []string{
 			"\n  aura-docling:\n",

@@ -536,7 +536,6 @@ fi
 
 cd "$INSTALL_DIR"
 download_file compose.yaml compose.yaml
-download_file compose.minipc.yaml compose.minipc.yaml
 download_file caddy/Caddyfile caddy/Caddyfile
 download_file deploy/aura.service deploy/aura.service
 download_file searxng/settings.yml searxng/settings.yml
@@ -549,13 +548,8 @@ write_env_if_missing
 
 ensure_objectstore_public_endpoint
 
-# Quale stack e quale runtime: entrambi finiscono in .env, non in un -f. Cosi' ogni
-# comando successivo — il nostro, quello di systemd, quello che l'operatore digita a mano
-# sei mesi dopo — vede la stessa configurazione senza doversi ricordare niente.
-if [ "$APPLIANCE" -eq 1 ]; then
-  set_env_value COMPOSE_FILE compose.yaml:compose.minipc.yaml
-  set_env_value AURA_EMBED_NGL 0
-fi
+# The optional container runtime travels in .env so installer, systemd and manual
+# compose commands all resolve the same sandbox posture.
 if [ "$GVISOR" -eq 1 ]; then
   set_env_value AURA_RUNTIME runsc
 fi

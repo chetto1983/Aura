@@ -741,7 +741,8 @@ jobs:
       ARCADEDB_URL: http://127.0.0.1:2480
       ARCADEDB_DATABASE: aura_memory
       AURA_EMBED_BASE_URL: http://127.0.0.1:8081
-      COMPOSE_FILE: compose.yaml:compose.minipc.yaml
+      COMPOSE_FILE: compose.yaml:.github/compose.ci-cache.yaml
+      AURA_CI_LLAMA_CACHE_DIR: /tmp/aura-ci-cache/llama.cpp
       AURA_EMBED_IMAGE: ghcr.io/ggml-org/llama.cpp:server
       AURA_EMBED_NGL: "0"
       AURA_ARCADEDB_MCP_IMAGE: ghcr.io/chetto1983/aura-arcadedb-mcp:3c1723cc5d3c4a23c9585c96b9c35d3d79416050@sha256:621438a7bb77983899c22f43c52714d08c25af1efcd9ad14fc3479e8893225a4
@@ -851,7 +852,8 @@ jobs:
       # resolves garage-bootstrap's AURA_DB_URL and fails without this. Same footgun compose.yaml
       # documents on the aura-ingest service.
       POSTGRES_PASSWORD: ci-test-password
-      COMPOSE_FILE: compose.yaml:compose.minipc.yaml
+      COMPOSE_FILE: compose.yaml:.github/compose.ci-cache.yaml
+      AURA_CI_LLAMA_CACHE_DIR: /tmp/aura-ci-cache/llama.cpp
       AURA_EMBED_IMAGE: ghcr.io/ggml-org/llama.cpp:server
       AURA_EMBED_NGL: "0"
     steps:
@@ -932,9 +934,10 @@ jobs:
     # case above the measured 95%.
     env:
       CI: "true"
-      # Merge the CPU appliance overlay so Compose removes the base service's
+      # Merge the CI CPU/cache overlay so Compose removes the base service's
       # structural NVIDIA reservation as well as selecting CPU runtime settings.
-      COMPOSE_FILE: compose.yaml:compose.minipc.yaml
+      COMPOSE_FILE: compose.yaml:.github/compose.ci-cache.yaml
+      AURA_CI_LLAMA_CACHE_DIR: /tmp/aura-ci-cache/llama.cpp
       # Arms requireEmbedder's t.Fatal path: under $CI an unreachable sidecar is a
       # FAILURE, never a skip. Otherwise this job would go green having classified nothing.
       AURA_EMBED_BASE_URL: http://127.0.0.1:8081
