@@ -64,7 +64,7 @@ func validFact() Fact {
 		Predicate: "lives_in",
 		Object:    "Caraglio",
 		Statement: "Davide lives in Caraglio.",
-		Source:    FactSource{RunID: "run-1"},
+		Source:    FactSource{RunID: "run-1", WriterRole: WriterParent},
 	}
 }
 

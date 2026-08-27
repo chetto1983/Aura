@@ -78,10 +78,29 @@ func (c *Client) EnsureMemorySchema(ctx context.Context) error {
 	return nil
 }
 
+// WriterRole names who wrote a FactSource: the operator's own turn, or a
+// swarm worker acting on its behalf. Host-derived at the cmd/arcadedb-mcp
+// boundary (D-10) -- never a value the model supplies -- so "no fact
+// attributed to the parent" (SWARM-07) is checkable rather than assumed, and
+// D-11's supersede refusal (fact_authority.go) has something real to key on.
+type WriterRole string
+
+const (
+	// WriterParent is the operator's own foreground turn (or a host-driven /
+	// CLI write with no worker context at all -- see actorFromContext in
+	// internal/agent/mcptools, which defaults to this role absent a
+	// delegated-dispatch marker).
+	WriterParent WriterRole = "parent"
+	// WriterWorker is a swarm worker's own dispatch (internal/swarm's
+	// runChild). A worker may ADD facts; it may not supersede one (D-11).
+	WriterWorker WriterRole = "worker"
+)
+
 // FactSource identifies one extraction run supporting a fact.
 type FactSource struct {
-	RunID     string   `json:"run_id"`
-	MemoryIDs []string `json:"memory_ids"`
+	RunID      string     `json:"run_id"`
+	MemoryIDs  []string   `json:"memory_ids"`
+	WriterRole WriterRole `json:"writer_role,omitempty"`
 }
 
 // Fact is one assertion about the world, as stored on an edge.
@@ -173,6 +192,14 @@ func (f Fact) validate(limits MemoryLimits) error {
 		return fmt.Errorf("arcadedb: fact statement must be non-empty")
 	case strings.TrimSpace(f.Source.RunID) == "":
 		return fmt.Errorf("arcadedb: fact source run_id must be non-empty")
+	// D-10: WriterRole is host-derived (cmd/arcadedb-mcp's hostDerivedActor,
+	// or any other in-process caller building a Fact directly) and MUST be
+	// one of the two known values -- never empty, never a third string. A
+	// missing/unknown role is a wiring bug the caller must fix, not a fact
+	// this package can guess an attribution for and write anyway.
+	case f.Source.WriterRole != WriterParent && f.Source.WriterRole != WriterWorker:
+		return fmt.Errorf("arcadedb: fact source writer_role must be %q or %q, got %q",
+			WriterParent, WriterWorker, f.Source.WriterRole)
 	// MEM-05 (D-18): the object names an entity, not prose -- the detail
 	// belongs in statement, which is the field that gets embedded and
 	// searched. Subject is deliberately NOT checked here; MEM-04's subject
@@ -270,6 +297,16 @@ func (c *Client) UpsertFact(ctx context.Context, fact Fact, now time.Time) (Fact
 		return written, nil
 	}
 	if fact.Supersedes {
+		// D-11: the authority check runs BEFORE closeSuperseded is ever called,
+		// so a worker's refusal issues zero Command calls against the fact it
+		// asked to close -- not merely a refusal closeSuperseded itself decides
+		// to make. Same early-return shape as closeSuperseded's own ambiguity
+		// refusal: nothing closed, and the new fact itself is not created
+		// either, so a refused correction never silently becomes a different
+		// write than the one asked for.
+		if allowed, reason := maySupersede(actorFromSource(fact.Source)); !allowed {
+			return FactWrite{Statement: fact.Statement, Refused: true, Reason: reason}, nil
+		}
 		outcome, err := c.closeSuperseded(ctx, fact, factKey, validFrom, now)
 		if err != nil {
 			return FactWrite{}, err

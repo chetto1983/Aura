@@ -119,7 +119,7 @@ func TestUpsertFactReplaysAndAttachesSourcesWithoutDuplicateEdges(t *testing.T) 
 	if _, err := client.UpsertFact(context.Background(), fact, now.Add(time.Second)); err != nil {
 		t.Fatalf("exact replay: %v", err)
 	}
-	fact.Source = FactSource{RunID: "run-2", MemoryIDs: []string{"m9"}}
+	fact.Source = FactSource{RunID: "run-2", MemoryIDs: []string{"m9"}, WriterRole: WriterParent}
 	if _, err := client.UpsertFact(context.Background(), fact, now.Add(2*time.Second)); err != nil {
 		t.Fatalf("second source: %v", err)
 	}

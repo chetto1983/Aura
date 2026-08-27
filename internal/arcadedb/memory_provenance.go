@@ -250,6 +250,11 @@ func factSources(value any) []FactSource {
 		}
 		source := normalizeFactSource(FactSource{
 			RunID: rowString(entry, "run_id"), MemoryIDs: rowStrings(entry, "memory_ids"),
+			// A fact written before D-10 has no "writer_role" property at all;
+			// rowString returns "" for it, which reads back as an unknown role
+			// rather than a guessed one -- Fact.validate's role check only
+			// gates NEW writes through UpsertFact, never a read-back.
+			WriterRole: WriterRole(rowString(entry, "writer_role")),
 		})
 		if source.RunID != "" {
 			sources = mergeFactSources(sources, source)
@@ -258,20 +263,35 @@ func factSources(value any) []FactSource {
 	return sources
 }
 
+// factSourceBucket accumulates one run's memory ids and its writer role while
+// mergeFactSources groups by RunID. Role is set once, from whichever
+// occurrence supplies it first (a run's role does not change mid-merge in
+// practice: it is host-derived per call, not per source, so two additions
+// sharing a RunID always carry the same role).
+type factSourceBucket struct {
+	role WriterRole
+	ids  []string
+}
+
 func mergeFactSources(existing []FactSource, additions ...FactSource) []FactSource {
-	byRun := make(map[string][]string, len(existing)+len(additions))
+	byRun := make(map[string]*factSourceBucket, len(existing)+len(additions))
 	for _, source := range append(slices.Clone(existing), additions...) {
 		source = normalizeFactSource(source)
 		if source.RunID == "" {
 			continue
 		}
-		for _, id := range source.MemoryIDs {
-			if !slices.Contains(byRun[source.RunID], id) {
-				byRun[source.RunID] = append(byRun[source.RunID], id)
-			}
+		bucket, exists := byRun[source.RunID]
+		if !exists {
+			bucket = &factSourceBucket{}
+			byRun[source.RunID] = bucket
 		}
-		if _, exists := byRun[source.RunID]; !exists {
-			byRun[source.RunID] = nil
+		if bucket.role == "" && source.WriterRole != "" {
+			bucket.role = source.WriterRole
+		}
+		for _, id := range source.MemoryIDs {
+			if !slices.Contains(bucket.ids, id) {
+				bucket.ids = append(bucket.ids, id)
+			}
 		}
 	}
 	runs := make([]string, 0, len(byRun))
@@ -281,8 +301,8 @@ func mergeFactSources(existing []FactSource, additions ...FactSource) []FactSour
 	sort.Strings(runs)
 	merged := make([]FactSource, 0, len(runs))
 	for _, run := range runs {
-		sort.Strings(byRun[run])
-		merged = append(merged, FactSource{RunID: run, MemoryIDs: byRun[run]})
+		sort.Strings(byRun[run].ids)
+		merged = append(merged, FactSource{RunID: run, MemoryIDs: byRun[run].ids, WriterRole: byRun[run].role})
 	}
 	return merged
 }
@@ -290,7 +310,10 @@ func mergeFactSources(existing []FactSource, additions ...FactSource) []FactSour
 func sourcesParam(sources []FactSource) []map[string]any {
 	out := make([]map[string]any, 0, len(sources))
 	for _, source := range mergeFactSources(nil, sources...) {
-		out = append(out, map[string]any{"run_id": source.RunID, "memory_ids": source.MemoryIDs})
+		out = append(out, map[string]any{
+			"run_id": source.RunID, "memory_ids": source.MemoryIDs,
+			"writer_role": string(source.WriterRole),
+		})
 	}
 	return out
 }
