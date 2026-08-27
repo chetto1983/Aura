@@ -38,14 +38,44 @@ const (
 	transportLabelHTTP  = "http"
 )
 
-// SessionOptions is the seam later plans fill: sending middleware (45.1-05 stamps the
-// calling identity onto _meta), the tool-list-changed notification, and elicitation
-// (45.1-07). Every field is usable now; this plan wires only Logger.
+// SessionOptions is the seam later plans fill: sending middleware, the
+// tool-list-changed notification, and elicitation (45.1-07). Every field is
+// usable now.
+//
+// Corrected 2026-08-27 (Phase 51, D-10): this comment used to say "45.1-05
+// stamps the calling identity onto _meta" -- that was the plan at seam-creation
+// time, but internal/agent/mcptools.IdentityBindingMiddleware's own doc comment
+// records the shipped decision: "nothing proprietary is written to MCP request
+// metadata". Identity selection rides the standard bearer `sub` instead.
+// Headers/HeaderFunc are the seam Phase 51 actually uses for a host-derived
+// value the far side must read beside `sub`: connection-scoped HTTP headers
+// (below _meta, at the transport layer), never JSON-RPC request metadata.
 type SessionOptions struct {
 	Logger          *slog.Logger
 	Sending         []sdkmcp.Middleware
 	ToolListChanged func(context.Context, *sdkmcp.ToolListChangedRequest)
 	Elicitation     func(context.Context, *sdkmcp.ElicitRequest) (*sdkmcp.ElicitResult, error)
+	// Headers are extra static HTTP headers attached to every request this
+	// session's underlying transport sends, applied via the SAME
+	// withStaticHeaders/headerRoundTripper mechanism MCP_HEADER_* env entries
+	// already use (httpAuthFromEnv) -- not a new customization surface, the
+	// existing one, given a second caller. nil/empty adds nothing. Streamable-HTTP
+	// only: OpenSDKSessionForConfig's stdio branch has no HTTP transport to attach
+	// headers to.
+	Headers map[string]string
+	// HeaderFunc, when set, is called with EACH request's own ctx and its
+	// return value is applied the same way Headers is -- the ctx-parameterized
+	// sibling Headers cannot be: a session opened once and reused across many
+	// calls (internal/agent/mcptools' identity-scoped session, shared across
+	// every turn an identity runs) cannot bake a per-call-accurate value in at
+	// connect time without going stale the moment a second turn starts. This
+	// package stays oblivious to what the returned headers MEAN (D-10's
+	// run-id/writer-role actor is internal/agent/mcptools' concept, not this
+	// package's) -- it only knows to call the function and apply what comes
+	// back, the same contract Sending already has for opaque middleware.
+	// nil/empty return adds nothing for that request. Streamable-HTTP only,
+	// same reason as Headers.
+	HeaderFunc func(context.Context) map[string]string
 	// OAuth carries the per-identity authorization wiring for remote servers. Its zero
 	// value is meaningful: no store and no fetcher still attaches a handler, so a
 	// server that needs authorization says so instead of returning a bare 401.
@@ -139,6 +169,16 @@ func openSDKHTTP(ctx context.Context, name string, server ManagedServer, egress 
 
 	headers, _ := httpAuthFromEnv(server.Env)
 	httpClient = withStaticHeaders(httpClient, headers)
+	// SessionOptions.Headers rides the SAME wrapper as MCP_HEADER_* -- a second
+	// caller of an existing seam, not a new one. Applied after the operator's own
+	// static headers so a caller-supplied actor header (D-10) cannot be shadowed
+	// by an env-declared one sharing the same name; distinct header names in
+	// practice, ordering recorded for when they are not.
+	httpClient = withStaticHeaders(httpClient, o.Headers)
+	// HeaderFunc runs last and per-request: it is how a REUSED session (one
+	// identity's session, shared across many different turns) stays accurate
+	// call-to-call, which a value fixed here at connect time cannot.
+	httpClient = withContextHeaders(httpClient, o.HeaderFunc)
 
 	// Bounded because the SDK is not: see bounded_call.go.
 	transport := &sdkmcp.StreamableClientTransport{
@@ -270,6 +310,44 @@ func withStaticHeaders(base *http.Client, headers map[string]string) *http.Clien
 		inner = http.DefaultTransport
 	}
 	cloned.Transport = &headerRoundTripper{base: inner, headers: headers}
+	return &cloned
+}
+
+// ctxHeaderRoundTripper is headerRoundTripper's ctx-parameterized sibling
+// (SessionOptions.HeaderFunc): headers are computed FRESH from each request's
+// own context rather than fixed once when the client was built, which is what
+// a REUSED session across many different calls (D-10, Phase 51) needs.
+type ctxHeaderRoundTripper struct {
+	base http.RoundTripper
+	fn   func(context.Context) map[string]string
+}
+
+func (h *ctxHeaderRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	headers := h.fn(req.Context())
+	if len(headers) == 0 {
+		return h.base.RoundTrip(req)
+	}
+	// Clone: RoundTrip must not mutate the request it was handed.
+	clone := req.Clone(req.Context())
+	for key, value := range headers {
+		clone.Header.Set(key, value)
+	}
+	return h.base.RoundTrip(clone)
+}
+
+// withContextHeaders wraps client's transport so fn's per-request headers ride
+// every request, in addition to (and applied after) any withStaticHeaders
+// wrapping already on base.
+func withContextHeaders(base *http.Client, fn func(context.Context) map[string]string) *http.Client {
+	if fn == nil {
+		return base
+	}
+	cloned := *base
+	inner := cloned.Transport
+	if inner == nil {
+		inner = http.DefaultTransport
+	}
+	cloned.Transport = &ctxHeaderRoundTripper{base: inner, fn: fn}
 	return &cloned
 }
 
