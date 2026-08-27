@@ -177,9 +177,7 @@ function triggerItem(entry: IEntity): Unstable_TriggerItem | undefined {
     label: entityLabel(entry),
     description: displayPath(path),
     metadata:
-      entry.type === 'file'
-        ? { kind: entry.type, path }
-        : { kind: entry.type, path, browse: true },
+      entry.type === 'file' ? { kind: entry.type, path } : { kind: entry.type, path, browse: true },
   };
 }
 
