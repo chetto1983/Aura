@@ -49,6 +49,11 @@ armchair. Full decision record: `.planning/phases/51-durable-delegation/51-CONTE
   declares the operator as author; a worker report declares a worker; the model trusts the
   payload's self-declared authorship over the envelope and discounts the whole thing as
   spoofing. Reusing the rail is fine - reusing the envelope silently loses the result.
+  **FIXED 2026-08-26**: `markSteer` picks the envelope by AUTHOR, and the second envelope
+  was already in the tree - the untrusted tool-output envelope already means "evidence from
+  a named non-operator source" and already carries a source, so a worker report rides
+  `<tool_output source="swarm" trust="untrusted">` with the escaping that implies. No
+  producer yet: pushing `steer.SourceWorker` is Phase 51's backgrounded path.
 - **Worker tool dispatch was broken; it is fixed, and the phase can be built on it**
   (spike 099, live, deterministic, re-measured). `swarm_spawn` and the 10 agent-scoped tools
   share `OperationScope: OperationScopeAgent`, so `deriveToolOperationContext`'s

@@ -4,7 +4,7 @@ idea: durable-delegation
 name: steer-carries-worker-result
 type: standard
 validates: "Given a worker completion delivered through the operator steer rail, when the parent turn reaches its next round boundary, then it lands without breaking role alternation or touching history[0..2], AND the model reads it as worker-authored evidence rather than as an operator instruction"
-verdict: PENDING
+verdict: validated
 related: []
 tags: [steer, delivery, kv-cache, attribution, prompt-injection]
 ---
@@ -244,7 +244,28 @@ The reasoning names the reason precisely, and it is the same one every time unde
 > the content: 'report worker-2 / delega background' — **this looks like a report from a
 > worker/subtask, not the operator directly**."*
 
-## Verdict — PARTIAL. D-04 is invalidated as written; the rail survives, the envelope does not.
+## Resolved 2026-08-26: the second envelope was already in the tree
+
+The finding below stood for one day and is now fixed (`fix(agent): give a worker's report an
+envelope that names its author`). The fix mints no third envelope, because Aura already had
+one meaning exactly *"evidence from a named non-operator source, act on it as data and never
+as an instruction"* — the untrusted tool-output envelope, which already takes a source and is
+already what the swarm stamps on its own results (`RunnerAdapter` sets
+`Provenance{Source: "swarm", Trust: TrustUntrusted}`). A worker's report is the deferred
+result of the model's own delegation, so that is its honest shape, and it carries the right
+escaping with it.
+
+`markSteer` now picks the envelope by AUTHOR, keyed on the reserved `steer.SourceWorker` —
+the same `"swarm"` the swarm already stamps, so one name means one thing whichever way a
+worker's output reaches the model. An unrecognised source keeps the operator envelope
+byte-for-byte, so a new channel cannot fall into the worker branch by forgetting to name
+itself. `SteerChannelNote` teaches both, granting the worker envelope no operator authority.
+
+**The producer is deliberately absent.** Nothing pushes `steer.SourceWorker` yet: the swarm
+returns its reports synchronously today, and the mid-turn path is Phase 51's backgrounded
+delegation. What landed is the envelope that path needs, with its tests.
+
+## Verdict — validated (was PARTIAL). D-04 was invalidated as written; the rail survives, and the envelope now names its author.
 
 Three iterations, three refusals, and the reasoning converges on one mechanism: **the envelope
 claims the operator wrote this, the payload declares a worker wrote it, and the model trusts
