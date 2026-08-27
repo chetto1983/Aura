@@ -119,3 +119,4 @@ backups/
 # for the current dispatch so the guard hooks can read it; regenerated every run
 # and meaningless across machines.
 .gsd/
+.planning/phases/51-durable-delegation/live-check/out/
