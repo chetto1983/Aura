@@ -119,3 +119,34 @@ func TestMarkAndTraceSurfacesMarkFailure(t *testing.T) {
 		t.Fatal("appendTrace was called despite the mark step failing")
 	}
 }
+
+// TestExpireOneRejectsRowWithoutIdentity covers the guard that runs BEFORE any pool
+// access: a queue row whose identity_id did not scan is refused by name rather than
+// carried into WithIdentityTx, where an empty tenant would widen the transaction's
+// scope instead of failing it.
+func TestExpireOneRejectsRowWithoutIdentity(t *testing.T) {
+	s := &Sweeper{} // no pool, no conv: the guard must fire before either is touched
+	err := s.expireOne(context.Background(), sqlc.AuraSteerQueue{})
+	if err == nil {
+		t.Fatal("expireOne(row without identity_id) = nil, want an error")
+	}
+	if !strings.Contains(err.Error(), "identity_id") {
+		t.Fatalf("expireOne error = %v, want it to name identity_id", err)
+	}
+}
+
+// TestAllocateSweepTurnSeqRejectsMalformedConversationID pins that the conversation id
+// is parsed before the two queries run, so a malformed id is a named error here rather
+// than an opaque cast error from the server. q is nil precisely to prove no query runs.
+func TestAllocateSweepTurnSeqRejectsMalformedConversationID(t *testing.T) {
+	seq, err := allocateSweepTurnSeq(context.Background(), nil, "not-a-uuid")
+	if err == nil {
+		t.Fatal("allocateSweepTurnSeq(malformed) = nil error, want a parse error")
+	}
+	if seq != 0 {
+		t.Fatalf("allocateSweepTurnSeq(malformed) seq = %d, want 0", seq)
+	}
+	if !strings.Contains(err.Error(), "invalid conversation_id") {
+		t.Fatalf("error = %v, want it to name the invalid conversation_id", err)
+	}
+}

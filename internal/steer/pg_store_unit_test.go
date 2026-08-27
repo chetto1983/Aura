@@ -1,10 +1,14 @@
 package steer
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // pg_store_unit_test.go is the daemon-free half of PostgresStore's coverage (no build
@@ -117,5 +121,70 @@ func TestExpiryReasonForNamesTheKind(t *testing.T) {
 	}
 	if got := expiryReasonFor("unknown-future-kind"); got != "steer_ttl_expired" {
 		t.Errorf("expiryReasonFor(unrecognized) = %q, want the steer fallback (never a panic or empty string)", got)
+	}
+}
+
+// TestPostgresStorePushUnconfiguredPool covers the wiring guard between the pure
+// validation and the first pool access: a store built with no pool must name itself
+// unconfigured rather than panic on the transaction. The body is deliberately valid, so
+// the earlier ErrEmpty/ErrTooLarge returns cannot mask this branch.
+func TestPostgresStorePushUnconfiguredPool(t *testing.T) {
+	s := NewPostgresStore(nil, Config{Max: 8, MaxBytes: 64})
+	err := s.Push("conv", "cockpit", "a real body")
+	if err == nil {
+		t.Fatal("Push with a nil pool = nil, want a configuration error")
+	}
+	if !strings.Contains(err.Error(), "not configured") {
+		t.Fatalf("Push with a nil pool = %v, want it to say the store is not configured", err)
+	}
+}
+
+// TestDiagnosePushRefusalNamesMalformedConversationID pins the ordering that makes the
+// refusal diagnosis readable: a non-uuid conv is named here, before the owner lookup,
+// so a caller never sees a server-side cast error standing in for a client mistake. The
+// nil pool proves no query is reached.
+func TestDiagnosePushRefusalNamesMalformedConversationID(t *testing.T) {
+	s := NewPostgresStore(nil, Config{Max: 8, MaxBytes: 64})
+	err := s.diagnosePushRefusal(context.Background(), "not-a-uuid")
+	if err == nil {
+		t.Fatal("diagnosePushRefusal(malformed) = nil, want a parse error")
+	}
+	if errors.Is(err, ErrQueueFull) {
+		t.Fatal("diagnosePushRefusal(malformed) reported ErrQueueFull, want the parse error")
+	}
+	if !strings.Contains(err.Error(), "not a valid uuid") {
+		t.Fatalf("diagnosePushRefusal error = %v, want it to name the invalid uuid", err)
+	}
+}
+
+// TestUUIDStringOnInvalidValue pins the empty string for a NULL/unscanned uuid: Drain
+// maps every row through uuidString, and a zero uuid rendered as the all-zero string
+// would look like a real message id to a consumer.
+func TestUUIDStringOnInvalidValue(t *testing.T) {
+	if got := uuidString(pgtype.UUID{}); got != "" {
+		t.Fatalf("uuidString(invalid) = %q, want the empty string", got)
+	}
+	id := pgtype.UUID{Bytes: [16]byte{0x01, 0x02, 0x03}, Valid: true}
+	if got := uuidString(id); got == "" {
+		t.Fatal("uuidString(valid) = empty, want the rendered uuid")
+	}
+}
+
+// TestDrainRejectsMalformedConversationIDWithoutQuerying covers Drain's own uuid guard,
+// which sits between the nil-pool check and the transaction. It needs a non-nil pool to
+// be reached at all; pgxpool.New opens no connection (MinConns defaults to 0), so no
+// database is involved and the guard returning before WithTx is what the empty result
+// proves. Drain's contract is best-effort — a malformed conv degrades to "nothing to
+// deliver", never to an error the agent has no channel to report.
+func TestDrainRejectsMalformedConversationIDWithoutQuerying(t *testing.T) {
+	pool, err := pgxpool.New(context.Background(), "postgres://unused:unused@127.0.0.1:1/unused")
+	if err != nil {
+		t.Fatalf("pgxpool.New: %v", err)
+	}
+	defer pool.Close() // stops the background health-check goroutine
+
+	s := NewPostgresStore(pool, Config{Max: 8, MaxBytes: 64})
+	if got := s.Drain("not-a-uuid"); len(got) != 0 {
+		t.Fatalf("Drain(malformed) = %v, want no messages", got)
 	}
 }
