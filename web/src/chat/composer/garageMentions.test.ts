@@ -90,5 +90,32 @@ describe('Garage assistant-ui completion source', () => {
 
     expect(list).toHaveBeenCalledWith('');
     expect(items.map((item) => item.label)).toEqual(['finance', 'z.pdf']);
+    expect(items[0]).toMatchObject({
+      type: 'garage-folder-nav',
+      metadata: { kind: 'folder', path: 'finance', browse: true },
+    });
+    const rootFolder = items[0];
+    if (rootFolder === undefined) throw new Error('missing root folder completion');
+    expect(serializeGarageMention(rootFolder)).toBe('@finance/');
+  });
+
+  it('offers the addressed folder itself before its immediate children', async () => {
+    const list = vi.fn<(path: string) => Promise<readonly IEntity[]>>().mockResolvedValue([
+      { id: '/finance/q1.pdf', type: 'file' },
+      { id: '/finance/archive', type: 'folder' },
+    ]);
+
+    const items = await createGarageMentionFetcher(list)('finance/');
+
+    expect(list).toHaveBeenCalledWith('/finance');
+    expect(items.map((item) => item.type)).toEqual([
+      'garage-folder',
+      'garage-folder-nav',
+      'garage-file',
+    ]);
+    expect(items[0]?.metadata).toEqual({ kind: 'folder', path: 'finance' });
+    const currentFolder = items[0];
+    if (currentFolder === undefined) throw new Error('missing current folder completion');
+    expect(serializeGarageMention(currentFolder)).toBe('@folder:"/finance"');
   });
 });
