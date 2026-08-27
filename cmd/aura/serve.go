@@ -37,6 +37,7 @@ import (
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/readiness"
+	"github.com/chetto1983/aura/internal/steer"
 	"github.com/chetto1983/aura/internal/swarm"
 	"github.com/chetto1983/aura/internal/webauth"
 )
@@ -99,6 +100,11 @@ type serveEnv struct {
 	// approvalExpirySweeper closes unanswered approval pauses through Runner's atomic
 	// resume committer. It is owner-scoped and disabled when the configured TTL is <=0.
 	approvalExpirySweeper *conversations.Sweeper
+	// steerQueueSweeper expires due aura.steer_queue rows (D-07/D-08), writing a
+	// readable conversation trace per expired row. Unscoped across identities (the
+	// table carries no RLS, migration 0103); disabled when both configured TTLs are
+	// <=0. runServe SweepNow/Starts it; drainShutdown Stops it.
+	steerQueueSweeper *conversations.Sweeper
 
 	// assetProcessingWorker claims durable asset_process ingestion jobs and runs the
 	// shared asset processor pipeline. runServe Start/Stops it with the daemon.
@@ -238,6 +244,8 @@ func runServe(args []string) {
 	env.sweeper.Start(ctx)
 	env.approvalExpirySweeper.SweepNow(ctx)
 	env.approvalExpirySweeper.Start(ctx)
+	env.steerQueueSweeper.SweepNow(ctx)
+	env.steerQueueSweeper.Start(ctx)
 	env.assetProcessingWorker.Start(ctx)
 	env.delegationWorker.Start(ctx)
 	// Crash-orphan reconciler (D-01d): launched on the work ctx like the sweeper so a
@@ -491,6 +499,15 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		chat.identity,
 		time.Duration(chat.cfg.AskUser.PauseTTLSec)*time.Second,
 	)
+	// steerQueueSweeper reuses chat.conv, the SAME *conversations.Store the runner's
+	// own resume committer writes turns through — no second conversation-write path
+	// (steer.Sweeper's own doc). chat.pool nil (no Postgres configured) degrades to a
+	// steer.Sweeper whose ExpireDue is a guarded no-op, matching newRuntimeDelegationWorker.
+	steerQueueSweeper := newSteerQueueSweeper(
+		steer.NewSweeper(chat.pool, chat.conv),
+		time.Duration(chat.cfg.SteerQueueTTLSec)*time.Second,
+		time.Duration(chat.cfg.DelegationResultTTLSec)*time.Second,
+	)
 	assetProcessingWorker := newRuntimeAssetProcessingWorker(
 		chat.cfg, chat.pool, chat.assets, chat.cfg.AssetProcessingConcurrent,
 	)
@@ -530,6 +547,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		setupSrv:                  setupSrv,
 		sweeper:                   sweeper,
 		approvalExpirySweeper:     approvalExpirySweeper,
+		steerQueueSweeper:         steerQueueSweeper,
 		assetProcessingWorker:     assetProcessingWorker,
 		delegationWorker:          delegationWorker,
 		reconciler:                reconciler,
