@@ -5,7 +5,7 @@ services:
   aura-llama-embed:
     # compose.yaml deliberately reserves NVIDIA on the local GPU workstation.
     # Hosted runners have no NVIDIA runtime, so CI must select the CPU image and
-    # remove the structural device reservation, just like compose.minipc.yaml.
+    # remove the structural device reservation here.
     image: ${AURA_EMBED_IMAGE:-ghcr.io/ggml-org/llama.cpp:server}
     deploy: !reset null
     volumes:

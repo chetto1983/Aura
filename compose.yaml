@@ -543,7 +543,7 @@ services:
   # The shipped local contract is ggml-org EmbeddingGemma-300M Q8_0 at 768d; the
   # model file declares its own pooling and llama.cpp obeys it. Appliance and CI
   # flows materialize that exact GGUF before startup. The base service is GPU-first;
-  # compose.minipc.yaml and the CI cache overlay remove its NVIDIA reservation.
+  # the CI cache overlay removes its NVIDIA reservation on hosted runners.
   # ↓↓ ArcadeDB — graph substrate for long-term memory ↓↓
   # Retrieval is full-text + graph, with an optional dense leg over the sidecar
   # embedder (LSM_VECTOR + vector.fuse); see internal/arcadedb/memory_vector.go.
@@ -760,7 +760,7 @@ services:
     # compose.gpu.yaml, and the day someone ran `docker compose up -d` without it the
     # CUDA image started anyway and silently fell back to CPU — "no usable GPU found" is
     # a warning, not an error, so nothing failed and embeddings just got ~8x slower.
-    # A GPU-less host removes it via compose.minipc.yaml, which is an explicit act.
+    # CI removes it through its committed cache overlay; the shipped runtime stays GPU-first.
     deploy:
       resources:
         reservations:

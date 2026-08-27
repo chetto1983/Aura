@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -40,10 +42,7 @@ func TestDistributionSurfaceArtifactsMatchReleaseContract(t *testing.T) {
 		"download_file searxng/limiter.toml searxng/limiter.toml",
 		"download_file scripts/garage_bootstrap.sh scripts/garage_bootstrap.sh",
 		"AURA_ACCESS_TOKEN",
-		// No -f: the file set comes from COMPOSE_FILE in .env, and an explicit -f here
-		// would WIN over it — silently ignoring compose.minipc.yaml on every appliance.
 		"docker compose up -d",
-		"set_env_value COMPOSE_FILE compose.yaml:compose.minipc.yaml",
 		"https://${host}/setup/?token=${token}",
 	} {
 		if !strings.Contains(installer, want) {
@@ -73,9 +72,6 @@ func TestDistributionSurfaceArtifactsMatchReleaseContract(t *testing.T) {
 	for _, want := range []string{
 		"After=network-online.target docker.service",
 		"WorkingDirectory=/opt/aura",
-		// No -f, deliberately: an explicit -f WINS over COMPOSE_FILE, so hardcoding one
-		// here would make every appliance silently ignore compose.minipc.yaml. The unit
-		// stays identical on both machines and .env decides the file set.
 		"ExecStart=/usr/bin/docker compose up -d",
 		"ExecStop=/usr/bin/docker compose down",
 		"WantedBy=multi-user.target",
@@ -85,6 +81,44 @@ func TestDistributionSurfaceArtifactsMatchReleaseContract(t *testing.T) {
 	} {
 		if !strings.Contains(unit, want) {
 			t.Fatalf("deploy/aura.service missing %q:\n%s", want, unit)
+		}
+	}
+}
+
+func TestRetiredMiniPCComposeStaysOutOfDistribution(t *testing.T) {
+	root := repoRootForTest(t)
+	if _, err := os.Stat(filepath.Join(root, "compose.minipc.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("compose.minipc.yaml must stay retired, stat err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "docs", "deployment", "mini-pc-cloud-appliance.md")); !os.IsNotExist(err) {
+		t.Fatalf("retired Mini-PC guide must stay absent, stat err=%v", err)
+	}
+
+	for _, rel := range []string{
+		".env.example",
+		".github/workflows/ci.yml",
+		".planning/codebase/STRUCTURE.md",
+		"compose.yaml",
+		"deploy/aura.service",
+		"scripts/install.sh",
+	} {
+		contents := readProjectFile(t, root, rel)
+		if strings.Contains(contents, "compose.minipc.yaml") {
+			t.Errorf("%s still references the retired Mini-PC compose file", rel)
+		}
+	}
+
+	workflow := readProjectFile(t, root, ".github/workflows/ci.yml")
+	cacheOverlay := readProjectFile(t, root, ".github/compose.ci-cache.yaml")
+	if !strings.Contains(workflow, "COMPOSE_FILE: compose.yaml:.github/compose.ci-cache.yaml") {
+		t.Fatal("CPU CI jobs do not select the surviving CI cache overlay")
+	}
+	for _, want := range []string{
+		"AURA_EMBED_IMAGE:-ghcr.io/ggml-org/llama.cpp:server}",
+		"deploy: !reset null",
+	} {
+		if !strings.Contains(cacheOverlay, want) {
+			t.Fatalf(".github/compose.ci-cache.yaml missing %q:\n%s", want, cacheOverlay)
 		}
 	}
 }
