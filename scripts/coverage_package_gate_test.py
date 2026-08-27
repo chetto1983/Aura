@@ -155,5 +155,23 @@ class CoveragePackageGateTest(unittest.TestCase):
         self.assertIn("unsupported delegated authority", result.stderr)
 
 
+    def test_every_violating_package_is_reported_not_only_the_first(self) -> None:
+        # A fail-fast gate made each unmet package cost a whole CI round to find, so
+        # one merge that moved several read as several unrelated failures. Both
+        # violations must appear in a single run, and the gate must still fail.
+        result = self.run_gate(
+            profile_rows(
+                ("example/internal/target", 10, 0),   # 0% -- below the 85% target
+                ("example/internal/debt", 10, 0),     # 0/10 -- regressed below 7/10
+                ("example/internal/sandbox", 10, 0),  # delegated: never a violation
+            )
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("example/internal/target", result.stderr)
+        self.assertIn("example/internal/debt", result.stderr)
+        self.assertIn("2 package(s) violate the policy", result.stderr)
+        self.assertNotIn("example/internal/sandbox", result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

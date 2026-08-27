@@ -114,6 +114,11 @@ def apply_policy(
     results: list[dict[str, Any]] = []
     below_target: list[str] = []
     delegated: list[dict[str, str]] = []
+    # Every violating package is reported, not just the first. The gate is still
+    # fail-closed and nothing it accepts has changed -- but a fail-fast raise made
+    # each unmet package cost a full CI round to discover, so a merge that moved
+    # three of them looked like three unrelated failures instead of one regression.
+    violations: list[str] = []
     for package in sorted(policy_packages):
         rule = policy_packages[package]
         mode = str(rule["mode"])
@@ -129,17 +134,27 @@ def apply_policy(
             "statements_percent": percent,
         }
         if mode == "target":
-            require(covered * 100 >= target * total,
-                    f"{package}: coverage {covered}/{total} is below target {target:g}%")
+            if covered * 100 < target * total:
+                violations.append(
+                    f"{package}: coverage {covered}/{total} ({percent:.2f}%) "
+                    f"is below target {target:g}%"
+                )
+                result["passed"] = False
             result["minimum_percent"] = target
         elif mode == "baseline":
             baseline_covered = int(rule["covered_statements"])
             baseline_total = int(rule["total_statements"])
-            require(total == baseline_total,
-                    f"{package}: statement denominator changed from {baseline_total} to {total}")
-            require(covered * baseline_total >= baseline_covered * total,
+            if total != baseline_total:
+                violations.append(
+                    f"{package}: statement denominator changed from {baseline_total} to {total}"
+                )
+                result["passed"] = False
+            elif covered * baseline_total < baseline_covered * total:
+                violations.append(
                     f"{package}: coverage {covered}/{total} regressed below baseline "
-                    f"{baseline_covered}/{baseline_total}")
+                    f"{baseline_covered}/{baseline_total}"
+                )
+                result["passed"] = False
             result["baseline_covered_statements"] = baseline_covered
             result["baseline_total_statements"] = baseline_total
             result["baseline_percent"] = baseline_covered * 100 / baseline_total
@@ -150,6 +165,11 @@ def apply_policy(
         if mode != "delegated" and covered * 100 < target * total:
             below_target.append(package)
         results.append(result)
+
+    require(
+        not violations,
+        f"{len(violations)} package(s) violate the policy:\n  - " + "\n  - ".join(violations),
+    )
 
     return {
         "passed": True,
