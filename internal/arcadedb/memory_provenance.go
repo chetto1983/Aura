@@ -347,85 +347,156 @@ func sourceEqual(a, b FactSource) bool {
 	return a.RunID == b.RunID && slices.Equal(a.MemoryIDs, b.MemoryIDs)
 }
 
-// attachFactSourceOnce is ONE read-merge-write attempt, guarded by a
-// compare-and-swap on the `sources` property itself.
+// attachFactSourceOnce is ONE read-then-write attempt, run inside an
+// EXPLICIT ArcadeDB transaction (transaction.go) rather than as a bare
+// auto-committed statement. That distinction is the whole fix this function
+// exists to document.
 //
-// A blind "UPDATE ... SET sources = :sources WHERE @rid = :rid" overwrites
-// the whole property, not a per-element append, so two goroutines both
-// attaching a DIFFERENT source to the SAME fact at the same moment can both
-// read the same "existing" list, both compute a merge that includes their
-// own addition, and both write -- the second write silently discards the
-// first goroutine's contribution (a lost update). Measured live under this
-// phase's concurrent fan-out test (51-04,
-// TestConcurrentWorkerFactWriteSameContentMergesIntoOneFact): 8 concurrent
-// attaches to one fact produced 4-5 surviving sources, not 8, with the
-// blind write.
+// ArcadeDB exposes no `@version` column to condition a compare-and-swap on
+// (verified live: `SELECT @version FROM FACT` is a parse error on this
+// server, unlike OrientDB's SQL dialect it otherwise follows). This
+// function's FIRST design instead auto-committed a single UPDATE conditioned
+// on a WHERE clause comparing the whole `sources` LIST OF MAP property for
+// structural equality against the value just read (`WHERE sources =
+// :expected`). An isolated probe (8 simultaneous CAS attempts sharing one
+// `expected` snapshot, direct curl, no Go client involved) showed that
+// applying correctly: exactly one attempt matched and updated, the rest
+// matched zero rows. But under this phase's REAL concurrent fan-out test,
+// that CAS still lost writes intermittently (measured live, ~1 in 15-20
+// runs of 8-way contention): a captured debug trace showed TWO different
+// CAS commands, both conditioned on the identical 2-source `expected`
+// snapshot, both reporting `count=1` (a server-confirmed match-and-update)
+// -- only possible if ArcadeDB evaluates a non-indexed LIST OF MAP equality
+// predicate against the row as it stood at STATEMENT START and does not
+// re-validate it at commit.
 //
-// ArcadeDB exposes no `@version` column to condition on (verified live:
-// `SELECT @version FROM FACT` is a parse error on this server, unlike
-// OrientDB's SQL dialect it otherwise follows), but a WHERE clause
-// comparing a LIST OF MAP property for structural equality DOES work
-// (verified live against the same server: a matching value updates and
-// returns count 1, a stale one updates nothing and returns count 0). So the
-// write is conditioned on `sources` still equalling exactly what this call
-// just read -- `rawExisting` is passed back to the WHERE clause verbatim,
-// not rebuilt from FactSource structs, so the comparison is byte-for-bit
-// against the actual wire value and immune to any drift in how this
-// package would re-serialize it (e.g. a legacy fact with no writer_role
-// key at all, vs. one written with the key present and empty).
+// The SECOND design replaced the CAS with a server-side append,
+// `sources = sources || :addition` (still auto-committed, still a bare
+// single statement) evaluated against the row's CURRENT value rather than a
+// client-read snapshot. An isolated 8-way curl probe of THIS shape also
+// looked clean. It was not: a dedicated isolated Go-level probe
+// (TestZZProbeRawAppendConcurrency, 8 real goroutines through this
+// package's own *Client, no createFactWithRetry involved) reproduced the
+// SAME class of loss at the SAME rate (~1 in 15), proving the defect is not
+// specific to the CAS predicate -- ArcadeDB's auto-commit path for a single
+// UPDATE against one record does not reliably serialize truly concurrent
+// writers, REGARDLESS of what the SET expression reads.
+//
+// An explicit transaction is a genuine improvement over both auto-commit
+// designs above -- a curl-driven probe (one OS process per request, begin,
+// read+write inside the session, commit) never lost a write across dozens
+// of 8-way runs, and unlike either auto-commit design, a transaction's
+// commit gives a caller an explicit, checkable signal for whether its write
+// took effect at all, rather than reporting a bare row-count against
+// whatever the server happened to compare it to. But it is NOT, by itself,
+// sufficient: a Go-level probe replaying the identical statement sequence
+// through THIS package's own commandInTx/queryInTx/commitTx
+// (TestZZProbeTransactionalAppendConcurrency, since deleted) still reproduced
+// a low but real lost-update rate (roughly 1 in 6 to 1 in 25) when driven by
+// real goroutines rather than curl's naturally-spaced OS processes, with
+// every commit reporting success. That gap is closed one level up, in
+// UpsertFact: fact_lock.go's per-fact_key mutex serializes this entire
+// function against any OTHER concurrent call for the SAME fact_key within
+// this process -- which is airtight for the actual deployed topology
+// (TenantClients.For memoizes one *Client per identity, so concurrent swarm
+// workers for one identity are goroutines sharing this exact Client, never
+// separate processes). The transaction here still matters as the SECOND
+// layer: it is what makes a genuine cross-process conflict (an operator's
+// CLI hitting the same identity at the same instant) fail closed as a
+// retryable conflict instead of a silent lost write, which the lock alone
+// cannot provide.
 func (c *Client) attachFactSourceOnce(
 	ctx context.Context,
 	factKey string,
 	source FactSource,
 	now time.Time,
 ) (attached bool, conflict bool, err error) {
+	sessionID, err := c.beginTx(ctx)
+	if err != nil {
+		return false, false, fmt.Errorf("arcadedb: attach fact source: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			c.rollbackTx(context.WithoutCancel(ctx), sessionID)
+		}
+	}()
+
+	commit := func() (bool, error) {
+		if err := c.commitTx(ctx, sessionID); err != nil {
+			if isTransientWriteConflict(err) {
+				return true, nil
+			}
+			return false, fmt.Errorf("arcadedb: attach fact source: %w", err)
+		}
+		committed = true
+		return false, nil
+	}
+
 	params := map[string]any{"fact_key": factKey, "now": now.UTC().Format(time.RFC3339Nano)}
-	if _, err := c.Command(ctx,
+	if _, err := c.commandInTx(ctx, sessionID,
 		"UPDATE "+factEdgeType+" SET fact_key = NULL WHERE fact_key = :fact_key AND "+
 			"(expired_at IS NOT NULL OR (valid_to IS NOT NULL AND valid_to <= :now))",
 		params); err != nil {
+		// Not observed live (in-transaction commands reported success even for
+		// transactions whose LATER commit failed -- ArcadeDB defers its
+		// conflict check to commit, not to each statement inside one), but
+		// treated the same as a commit-time conflict defensively rather than
+		// as fatal, matching this function's pre-transaction behavior.
 		if isTransientWriteConflict(err) {
 			return false, true, nil
 		}
 		return false, false, fmt.Errorf("arcadedb: release expired fact identity: %w", err)
 	}
-	rows, err := c.Query(ctx,
+	rows, err := c.queryInTx(ctx, sessionID,
 		"SELECT @rid AS rid, sources FROM "+factEdgeType+
 			" WHERE fact_key = :fact_key AND expired_at IS NULL AND "+
 			"(valid_to IS NULL OR valid_to > :now) LIMIT 1",
 		params)
 	if err != nil {
+		if isTransientWriteConflict(err) {
+			return false, true, nil
+		}
 		return false, false, fmt.Errorf("arcadedb: find exact fact: %w", err)
 	}
 	if len(rows) == 0 {
-		return false, false, nil
+		conflict, err := commit()
+		return false, conflict, err
 	}
 	rid := rowString(rows[0], "rid")
 	if rid == "" {
 		return false, false, fmt.Errorf("arcadedb: exact fact result has no RID")
 	}
-	rawExisting := rows[0]["sources"]
-	existing := factSources(rawExisting)
-	merged := mergeFactSources(existing, source)
-	if slices.EqualFunc(existing, merged, sourceEqual) {
-		return true, false, nil
+	existing := factSources(rows[0]["sources"])
+	normalized := normalizeFactSource(source)
+
+	var priorForRun bool
+	for _, candidate := range existing {
+		if candidate.RunID == normalized.RunID {
+			priorForRun = true
+			break
+		}
 	}
-	updated, err := c.Command(ctx,
-		"UPDATE "+factEdgeType+" SET sources = :sources WHERE @rid = :rid AND sources = :expected",
-		map[string]any{"sources": sourcesParam(merged), "rid": rid, "expected": rawExisting})
-	if err != nil {
-		// A page-level conflict here (the same "Slot rebase ... please
-		// retry" class createFactWithRetry handles) is just as retryable
-		// as a CAS that ran but matched zero rows below -- both mean
-		// "someone else's write is contending for this exact record right
-		// now," not "this write is invalid."
+	writeStatement := "UPDATE " + factEdgeType + " SET sources = sources || :addition WHERE @rid = :rid"
+	writeParams := map[string]any{"addition": sourcesParam([]FactSource{normalized}), "rid": rid}
+	if priorForRun {
+		merged := mergeFactSources(existing, normalized)
+		if slices.EqualFunc(existing, merged, sourceEqual) {
+			// Nothing new to add for this run, but the release-expired
+			// statement above may still be a real change worth keeping --
+			// commit rather than rolling it back.
+			conflict, err := commit()
+			return !conflict && err == nil, conflict, err
+		}
+		writeStatement = "UPDATE " + factEdgeType + " SET sources = :sources WHERE @rid = :rid"
+		writeParams = map[string]any{"sources": sourcesParam(merged), "rid": rid}
+	}
+	if _, err := c.commandInTx(ctx, sessionID, writeStatement, writeParams); err != nil {
 		if isTransientWriteConflict(err) {
 			return false, true, nil
 		}
 		return false, false, fmt.Errorf("arcadedb: attach fact source: %w", err)
 	}
-	if countUpdated(updated) == 0 {
-		return false, true, nil
-	}
-	return true, false, nil
+	conflict, err = commit()
+	return !conflict && err == nil, conflict, err
 }

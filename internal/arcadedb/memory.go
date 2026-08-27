@@ -290,6 +290,12 @@ func (c *Client) UpsertFact(ctx context.Context, fact Fact, now time.Time) (Fact
 		}
 	}
 	factKey := factIdentity(fact)
+	// Serializes this whole attach-or-create-or-supersede sequence against
+	// any OTHER concurrent UpsertFact call for the SAME fact_key in this
+	// process -- see fact_lock.go's doc comment for why this, not just the
+	// transactional write inside attachFactSource, is what actually closes
+	// D-09's concurrent-write race for the topology this package has.
+	defer c.facts.lock(factKey)()
 	written := FactWrite{Statement: fact.Statement}
 	if attached, err := c.attachFactSource(ctx, factKey, fact.Source, now); err != nil {
 		return FactWrite{}, err

@@ -11,17 +11,24 @@ import (
 
 // maxWriteConflictRetries bounds the retry loops below. ArcadeDB's own error
 // for a page-level write conflict says "Please retry the operation" -- these
-// helpers are that retry, kept unconditional and lock-free (no cross-
-// statement transaction, no per-identity serializer) so N concurrent workers
-// stay fully concurrent; only a losing attempt pays a few extra round trips.
-// Extracted into their own file rather than grown inline in memory.go
-// (already at 580/600 LOC -- CLAUDE.md's NO GOD CLASS), mirroring
-// fact_authority.go's precedent of one narrow concern per file. Sized
-// generously (not the minimum that happened to pass once): measured live
-// with 8-way contention on one row (this phase's concurrent fan-out test),
-// a low retry ceiling combined with a non-jittered backoff occasionally
-// exhausted every attempt with 1 of 8 sources still unmerged.
-const maxWriteConflictRetries = 10
+// helpers are that retry. createFactWithRetry's caller (UpsertFact) now holds
+// fact_lock.go's per-fact_key mutex for the duration of this whole sequence,
+// so within ONE process these retries mostly absorb the entity-upsert race
+// below and any residual cross-process contention (a second Aura process, or
+// an operator's CLI, touching the SAME identity's database at the same
+// instant) -- not concurrent SWARM WORKERS, who no longer reach this
+// unserialized in the common case. Extracted into their own file rather than
+// grown inline in memory.go (already at 580/600 LOC -- CLAUDE.md's NO GOD
+// CLASS), mirroring fact_authority.go's precedent of one narrow concern per
+// file.
+//
+// AURA_SWARM_MAX_CONCURRENT defaults to 4 (internal/config/config.go);
+// maxWriteConflictRetries stays sized for the harder 8-goroutine case this
+// phase's own concurrent fan-out test drives on purpose
+// (AURA_SWARM_MAX_GOALS's default), which is what first measured every
+// number in this file live before fact_lock.go's mutex closed the race
+// these retries alone could not (see attachFactSourceOnce's doc comment).
+const maxWriteConflictRetries = 20
 
 // isTransientWriteConflict reports whether err is ArcadeDB's own signal that
 // a concurrent writer raced this one and the caller should retry -- observed
@@ -51,16 +58,29 @@ func isTransientWriteConflict(err error) bool {
 	return serverErr.Status == http.StatusServiceUnavailable || serverErr.Status == http.StatusConflict
 }
 
-// writeConflictBackoff is "full jitter" (a random duration between 0 and a
-// ceiling that grows with attempt), not a fixed delay. Measured live: N
-// goroutines that started retrying at the same instant and share a fixed,
-// non-jittered backoff formula wake up and retry at the SAME wall-clock
-// offsets round after round, so they keep colliding with each other in
-// lockstep instead of fanning out -- exactly the AWS architecture blog's
-// well-documented "backoff without jitter" failure mode for optimistic
-// retries against shared state.
+// writeConflictBackoffCeiling bounds writeConflictBackoff's ceiling so a
+// slow straggler attempt never waits an absurd amount of time -- 20 attempts
+// of unbounded exponential growth would reach seconds, which is a worse
+// failure mode (a hung-looking call) than the conflict it is recovering
+// from.
+const writeConflictBackoffCeiling = 100 * time.Millisecond
+
+// writeConflictBackoff is "full jitter, exponential ceiling" (a random
+// duration between 0 and a ceiling that DOUBLES with attempt, capped), not a
+// fixed delay and not linear growth. Measured live under this phase's own
+// 8-way concurrent fan-out test: a fixed, non-jittered backoff lets
+// goroutines that started retrying at the same instant collide again on
+// the same wall-clock offsets round after round (the AWS architecture
+// blog's documented "backoff without jitter" failure mode); a linear
+// jittered ceiling (attempt*5ms) widens too slowly to reliably separate 8
+// simultaneous racers within maxWriteConflictRetries -- exponential growth
+// spreads the SAME 8 racers across an exponentially larger window each
+// round, so the group thins out fast rather than gradually.
 func writeConflictBackoff(attempt int) time.Duration {
-	ceiling := time.Duration(attempt) * 5 * time.Millisecond
+	ceiling := 3 * time.Millisecond << attempt // attempt is always small (<= maxWriteConflictRetries)
+	if ceiling <= 0 || ceiling > writeConflictBackoffCeiling {
+		ceiling = writeConflictBackoffCeiling
+	}
 	// #nosec G404 -- timing jitter for a retry backoff, not a secret or a
 	// security decision; crypto/rand buys nothing here and only adds a
 	// syscall to a hot retry path.

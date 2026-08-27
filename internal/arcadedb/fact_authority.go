@@ -7,15 +7,20 @@ package arcadedb
 // file it serves (resume_policy.go beside runner.go).
 //
 // D-11: a worker ADDS facts; closing a still-valid fact stays with the parent
-// turn and the operator. This removes the concurrency hazard by SCOPE rather
-// than by locking -- UpsertFact is a sequence of separate Command calls, each
-// its own transaction, and only the create leg (attachFactSource) has race
-// compensation. closeSuperseded has none, so letting N concurrent workers
-// each attempt a correction would race two UPDATE...WHERE valid_to IS NULL
-// statements against the same rows with no serialization at all. Scoping
-// supersede to the parent/operator removes the race by removing the second
-// writer, not by adding a lock this phase explicitly defers (the Script
-// BEGIN/COMMIT method, internal/arcadedb/client.go:268, stays unused).
+// turn and the operator. This removes closeSuperseded's OWN concurrency
+// hazard by SCOPE rather than by locking: it runs a bare, uncompensated
+// UPDATE...WHERE valid_to IS NULL with no retry and no lock, so letting N
+// concurrent workers each attempt a correction would race that statement
+// against the same rows with no serialization at all. Scoping supersede to
+// the parent/operator removes the race by removing the second writer.
+//
+// This is deliberately DIFFERENT from the create/attach leg's fix
+// (fact_lock.go's per-fact_key mutex plus attachFactSourceOnce's explicit
+// transaction, added when this phase's own concurrent fan-out test proved a
+// worker-vs-worker race D-09 needed closed): D-11 does not need a lock or a
+// transaction here because there is no legal SECOND writer to race against
+// in the first place, once a worker's supersede attempt is refused before
+// closeSuperseded is ever called.
 
 // Actor identifies who is attempting a write or a supersede: the same
 // RunID+WriterRole a Fact's Source carries, named separately here because

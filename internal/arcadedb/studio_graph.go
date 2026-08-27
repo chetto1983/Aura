@@ -68,7 +68,7 @@ func (c *Client) QueryStudioGraph(
 	var decoded struct {
 		Result StudioGraph `json:"result"`
 	}
-	if err := c.executeJSON(ctx, c.queryURL, payload, &decoded); err != nil {
+	if err := c.executeJSON(ctx, c.queryURL, "", payload, &decoded); err != nil {
 		return StudioGraph{}, err
 	}
 	if decoded.Result.Vertices == nil {

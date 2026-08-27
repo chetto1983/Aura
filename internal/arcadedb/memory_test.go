@@ -30,6 +30,9 @@ func recordingClient(t *testing.T, body string) (*Client, *recorder) {
 	t.Helper()
 	rec := &recorder{body: body}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if handleTransactionEndpoints(w, r) {
+			return
+		}
 		raw, _ := io.ReadAll(r.Body)
 		var payload struct {
 			Command  string         `json:"command"`

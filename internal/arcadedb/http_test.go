@@ -5,8 +5,31 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
+
+// handleTransactionEndpoints answers ArcadeDB's explicit-transaction
+// lifecycle (transaction.go: begin/commit/rollback) with a synthetic
+// session before a mock server's own statement-recording/routing logic
+// ever sees the request. These mocks exist to assert on the SQL statements
+// attachFactSourceOnce sends, not to model ArcadeDB's transaction protocol
+// itself (that is exercised for real only against the live server, e.g.
+// TestZZProbeRawAppendConcurrency and the concurrent fan-out tests under
+// the arcadedb_integration tag). It reports whether it handled the request
+// so the caller can return early rather than recording/routing it.
+func handleTransactionEndpoints(w http.ResponseWriter, r *http.Request) bool {
+	switch {
+	case strings.Contains(r.URL.Path, "/api/v1/begin/"):
+		w.Header().Set("arcadedb-session-id", "AS-mock-session")
+		w.WriteHeader(http.StatusNoContent)
+		return true
+	case strings.Contains(r.URL.Path, "/api/v1/commit/"), strings.Contains(r.URL.Path, "/api/v1/rollback/"):
+		w.WriteHeader(http.StatusNoContent)
+		return true
+	}
+	return false
+}
 
 type recordedRequest struct {
 	Method   string
@@ -28,6 +51,9 @@ func routedClient(
 	t.Helper()
 	requests := []recordedRequest{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if handleTransactionEndpoints(w, r) {
+			return
+		}
 		raw, _ := io.ReadAll(r.Body)
 		request := recordedRequest{
 			Method: r.Method, Path: r.URL.Path, RawQuery: r.URL.RawQuery,

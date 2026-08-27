@@ -102,7 +102,11 @@ func TestUpsertFactReplaysAndAttachesSourcesWithoutDuplicateEdges(t *testing.T) 
 			return testResponse{Body: `{"result":[{"count":1}]}`}
 		case strings.HasPrefix(statement, "UPDATE FACT SET sources"):
 			updates++
-			stored = factSources(params["sources"])
+			if addition, ok := params["addition"]; ok {
+				stored = mergeFactSources(stored, factSources(addition)...)
+			} else {
+				stored = factSources(params["sources"])
+			}
 			return testResponse{Body: `{"result":[{"count":1}]}`}
 		default:
 			return testResponse{Body: `{"result":[]}`}
@@ -156,7 +160,11 @@ func TestUpsertFactRecoversAConcurrentExactCreate(t *testing.T) {
 			}}})
 			return testResponse{Body: string(body)}
 		case strings.HasPrefix(statement, "UPDATE FACT SET sources"):
-			stored = factSources(params["sources"])
+			if addition, ok := params["addition"]; ok {
+				stored = mergeFactSources(stored, factSources(addition)...)
+			} else {
+				stored = factSources(params["sources"])
+			}
 			return testResponse{Body: `{"result":[{"count":1}]}`}
 		default:
 			return testResponse{Body: `{"result":[]}`}
