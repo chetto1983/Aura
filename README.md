@@ -94,9 +94,15 @@ TLS/token access, and optional MCP siblings.
 
 ## Quick Start
 
+> **There is no published release yet.** `ghcr.io/chetto1983/aura` is pushed by the
+> `Release` workflow on the first `v*` tag, and no tag exists — so `vX.Y.Z` below has
+> nothing behind it and the URLs 404. To run Aura today, build the image from a
+> checkout (see [Development](#development)) and set `AURA_IMAGE=aura:local`.
+
 ### Linux or macOS
 
-Install Docker, then run the installer from a release tag:
+Install Docker, then run the installer from a release tag — replace `vX.Y.Z` with the
+tag you are installing:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/chetto1983/Aura/vX.Y.Z/scripts/install.sh | bash
@@ -264,6 +270,14 @@ lefthook install
 make db-migrate memory-up
 go run ./cmd/aura version
 go run ./cmd/aura agent dry-run --request-id auto
+```
+
+To run the Compose appliance from source while no release tag exists, build the image
+the release would have published and point `.env` at it:
+
+```bash
+docker build -f docker/aura/Dockerfile -t aura:local .
+# then in .env:  AURA_IMAGE=aura:local
 ```
 
 Quality gates:

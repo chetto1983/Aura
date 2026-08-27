@@ -58,13 +58,13 @@ if [ -z "$INSTALL_DIR" ]; then
   fi
 fi
 
-RAW_REF="${AURA_INSTALL_REF:-main}"
+RAW_REF="${AURA_INSTALL_REF:-master}"
 RAW_BASE="${AURA_INSTALL_BASE_URL:-https://raw.githubusercontent.com/chetto1983/Aura/${RAW_REF}}"
 IMAGE_TAG="${AURA_IMAGE_TAG:-${RAW_REF}}"
 DEFAULT_IMAGE="ghcr.io/chetto1983/aura:${IMAGE_TAG}"
 
-if [ "$IMAGE_TAG" = "main" ] && [ -z "${AURA_IMAGE:-}" ]; then
-  echo "WARN: AURA_INSTALL_REF is main; set AURA_IMAGE or AURA_INSTALL_REF to a release tag for a clean-host install." >&2
+if [ "$IMAGE_TAG" = "master" ] && [ -z "${AURA_IMAGE:-}" ]; then
+  echo "WARN: AURA_INSTALL_REF is master; set AURA_IMAGE or AURA_INSTALL_REF to a release tag for a clean-host install." >&2
 fi
 
 need_sudo() {
