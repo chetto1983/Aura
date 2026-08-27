@@ -7536,6 +7536,11 @@ flusso completo, che funziona.
 > **Amendment #138 (2026-08-24, Phase 51/SWARM — BLOCKING for Phase 51 planning: a design gate is
 > required before `/gsd-plan-phase` is run against it.)**
 >
+> **SUPERSEDED 2026-08-26 by Amendment #154**, which closed this gate with four live spikes. Read
+> #154 for the answers; the paragraph below on the 2026-06-29 design's stale premises was right,
+> and #154 says exactly how: the substrate that document specifies is largely `aura.ingestion_jobs`,
+> already in the tree under a name that hid it.
+>
 > **What was measured.** The approved substrate is entirely on paper.
 > `docs/superpowers/specs/2026-06-29-durable-swarm-messaging-design.md` exists (26,320 bytes) and
 > specifies claimable tasks, short leases with heartbeat extension, fencing on
@@ -8495,3 +8500,86 @@ flusso completo, che funziona.
 > within the default 120 seconds, add a retry loop, or remove the deterministic L2.5 safety net.
 > Latency tuning remains deployment configuration backed by observed provider behavior; failure
 > is bounded and visible, not converted into an unbounded turn.
+
+## §The Phase 51 design gate is closed by measurement (Amendment #154, 2026-08-26)
+
+> **Amendment #154 (2026-08-26, Phase 51/SWARM — CLOSES the blocking gate Amendment #138 opened.
+> `/gsd-plan-phase` may now be run against Phase 51.)**
+>
+> **What was measured.** Four spikes on the live stack (`.planning/spikes/098`, `099`, `100`,
+> `101`) answered the three questions `51-CONTEXT.md` delegated to measurement, and the answer to
+> all three is the same shape: **the substrate is already in the tree, and what is missing is a
+> path into it.**
+>
+> **D-01, the durable substrate: generalize `aura.ingestion_jobs`. Do not build a delegation
+> table.** Its own first line calls it *"The GENERIC asset queue"*, and it has already survived one
+> de-specialization (0098). The three failure modes D-01 named were built as real rows under a
+> synthetic `job_type` and the claim predicate applied verbatim as a SELECT: a worker that died
+> mid-flight (`running`, lease expired) **is** reclaimed; one at `attempt_count = max_attempts`
+> is **not**, so delivery failing eight times stops rather than looping; a worker holding a live
+> lease is **not** robbed. A daemon restart needs no new recovery path — that same steady-state
+> claim already is one. This corrects #138's own premise: the 2026-06-29 design specifies claimable
+> tasks, short leases, fencing on `attempt_count`+`locked_by` and at-least-once delivery, and
+> **the tree already has all four**, under a name that hid them.
+>
+> **D-02, the message channel: `agent_message_send` and the four-table messaging schema do NOT
+> belong in Phase 51.** Measured end-to-end: a reminder scheduled from the cockpit was delivered to
+> Telegram with **zero rows in any messaging table**. Aura already has both delivery modes — the
+> steer rail for a present operator, and `pending_notifications` + `cron/deliver.go` →
+> `channels.Registry.DeliverToIdentity` for an absent one, with backoff, an attempts budget and a
+> tri-state contract that refuses to double-deliver. The happy path delivers inline; the durable
+> outbox is the **retry** substrate, not the delivery one. LibreChat corroborates by absence: forty
+> schemas and not one is a delivery channel — the conversation IS the channel.
+>
+> **D-03, the termination model: a wall-clock cap is the wrong instrument.** Four workers on
+> executable goals finished in **5.15 / 5.51 / 7.58 / 7.80s** against a 120s cap — a 23× margin,
+> every answer verified against ground truth taken from the box beforehand. Across three runs the
+> cap fired **once**, and what it caught was an OpenRouter `context deadline exceeded` — an upstream
+> stall, not slow work — while the worker genuinely worth interrupting (70.31s spent calling tools
+> that could never succeed) sailed under it and returned `ok`. Both references reap on inactivity
+> rather than age, and Aura already owns the event loop where the tick belongs
+> (`runChild`, `swarm.go:185`). **Correction to a number Phase 51 would otherwise have trusted:
+> `AURA_SWARM_CHILD_TIMEOUT_SEC` is 120s nominal but 240s effective**, because a budget trip severs
+> the expired deadline (`llm_agent.go:307-314`) and the recovery call is then bounded by
+> `AURA_LLM_TOTAL_TIMEOUT_SEC`. Any lease sized against the nominal 120s would reclaim a live worker.
+>
+> **Three live defects were found by driving the real agent, and all three are fixed.**
+> (1) A swarm worker could dispatch **no** agent-scoped tool: `swarm_spawn` shares
+> `OperationScopeAgent` with the ten tools a worker may call, so `deriveToolOperationContext`'s
+> scope-only passthrough left `swarm_spawn`'s operation in the worker's context and the gateway
+> denied every dispatch on fingerprint mismatch — 41 denials across 4 workers, 100%, deterministic
+> (`67d24aee4`, re-measured at 0). (2) Every worker tool call **orphaned its reservation**, because
+> the gateway writes `start` and the Runner writes `end` from frames a worker's stream never
+> reaches; thirty minutes later the reconciler stamped SUCCEEDED calls as
+> `crash-orphaned … indeterminate` in an append-only ledger — 5/5 worker calls against 0/3 parent
+> calls (`791dcd7e0`, re-measured at 5/5 closed, anti-join 0). (3) A scheduled run's outcome
+> **never reached the conversation it was scheduled from**, though `origin_conversation_id` was
+> recorded and threaded into the `Job` all along (`268580e23`, validated live).
+>
+> **The one thing still open is spike 098's second envelope.** The steer rail carries a worker's
+> report correctly — `drainSteer` places the marker outside `trust="untrusted"` and the model parses
+> it — but `<user_steer>` *declares the operator as author*, so the model trusts the payload's
+> self-declared authorship over the envelope and discounts a worker report as a spoofing attempt.
+> For a backgrounded worker whose report is the only copy, SC#1 would pass mechanically and fail
+> semantically. **Keep the rail; mint a second envelope that declares worker authorship and grants
+> tool-result trust, not operator trust.**
+>
+> **Two inventory facts worth carrying into planning.** `aura.agent_job_runs` already has
+> `last_heartbeat_at` and an `UpdateHeartbeat` statement, so heartbeat-based liveness for background
+> runs is not new ground. And `Registry.DeliverToIdentity` picks the channel that **owns** the
+> identity, not the one that asked — it walks started channels in `sort.Strings` order,
+> first-delivers-wins, with no origin concept; Telegram is currently the only `Deliverer` in the
+> tree, so that choice has never actually been made between two candidates.
+>
+> **What this measurement does NOT prove.** The queue's claim **predicate** was measured, not the Go
+> claim path under a real restart — no job flowed through `ClaimIngestionJobs` and its store code
+> while the daemon died. Nothing here says how a swarm worker becomes a queue row: payload shape,
+> who enqueues, and whether the parent turn blocks are design questions the spikes deliberately left
+> open. The crash test SIGKILLed the daemon two seconds in, **before any worker had dispatched a
+> tool**, so a crash after partial side effects is unmeasured. The durations are four workers on four
+> small goals, not a load characterization. The delivery measurement is one channel, one identity,
+> one delivery — the fan-out's choice between candidates and its owns-but-failed leg were never
+> exercised, and the outbox's retry, backoff and dead-letter behaviour are read from the schema
+> rather than measured, because the happy path bypassed it entirely. And every run was one
+> deployment, one profile (`single_user_hardened`), one routed model
+> (`deepseek/deepseek-v4-flash-0731:nitro`).
