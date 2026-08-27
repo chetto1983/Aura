@@ -899,7 +899,7 @@
         },
         "source": {
           "additionalProperties": false,
-          "description": "required provenance supporting this fact",
+          "description": "provenance supporting this fact (memory ids only -- who wrote it is derived by the host, not asserted here)",
           "properties": {
             "memory_ids": {
               "description": "message or memory ids supporting this fact",
@@ -910,15 +910,8 @@
                 "null",
                 "array"
               ]
-            },
-            "run_id": {
-              "description": "the extraction or operator run supporting this fact",
-              "type": "string"
             }
           },
-          "required": [
-            "run_id"
-          ],
           "type": "object"
         },
         "statement": {

@@ -77,7 +77,7 @@ func TestUpsertFactCanonicalizesOperatorSubject(t *testing.T) {
 	in := validFactInput()
 	in.Subject = testIdentity // the identity UUID, not the display name
 	_, _, err := memoryUpsertFactHandler(singleTenant(t, client), testClock, "Davide")(
-		context.Background(), reqWithIdentity(testIdentity), in)
+		context.Background(), reqWithParentActor(testIdentity, testParentRunID), in)
 	if err != nil {
 		t.Fatalf("upsert: %v", err)
 	}

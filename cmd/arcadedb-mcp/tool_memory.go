@@ -14,11 +14,71 @@ import (
 // clock is injected so a test can assert on the timestamps that were written.
 type clock func() time.Time
 
-// MemoryFactSource is the single provenance shape accepted and returned by the
-// memory MCP.
+// MemoryFactSource is the provenance shape for memory_forget's FILTER
+// (tool_forget.go: MemoryForgetInput.Source, ForgetFilter.SourceRunID) and
+// for read-back (toHits, memory_search/memory_facts_about/memory_recall's
+// output). It is deliberately NOT memory_upsert_fact's write-path input type
+// (see MemoryUpsertFactWriteSource below) -- D-10 (Phase 51, split-write-
+// shape, operator decision 2026-08-27) removed run_id from the WRITE schema
+// entirely, but memory_forget's whole reason for existing is "detach
+// everything a named run wrote" (its own doc comment), which is a QUERY
+// against a run id already on the graph, not an ASSERTION of one, so it
+// keeps reading RunID here unchanged. This struct doubling as "the single
+// provenance shape" for both write and read used to be true and is not
+// anymore -- do not restore that claim; a run_id sent to memory_upsert_fact
+// is silently ignored (unknown JSON field), and believing otherwise is
+// exactly the loophole D-10 closes.
 type MemoryFactSource struct {
 	RunID     string   `json:"run_id" jsonschema:"the extraction or operator run supporting this fact"`
 	MemoryIDs []string `json:"memory_ids,omitempty" jsonschema:"message or memory ids supporting this fact"`
+}
+
+// MemoryUpsertFactWriteSource is memory_upsert_fact's OWN provenance input,
+// a different type from MemoryFactSource by construction (D-10): run_id and
+// writer_role are host-derived from the call's connection headers
+// (hostDerivedActor below), set by internal/agent/mcptools/bridge_actor.go
+// on the OTHER end of this same wire -- so there is no field here for the
+// model to assert them in, not merely a value the host overwrites.
+// MemoryIDs stays model-supplied: which retrieved memories support a fact
+// is genuinely the model's own knowledge, and D-10 never claimed otherwise.
+type MemoryUpsertFactWriteSource struct {
+	MemoryIDs []string `json:"memory_ids,omitempty" jsonschema:"message or memory ids supporting this fact"`
+}
+
+// Header names carrying the host-derived actor (D-10). Defined independently
+// here rather than imported from internal/agent/mcptools/bridge_actor.go:
+// cmd/arcadedb-mcp is a separate binary reached over loopback HTTP, so the
+// two sides share a wire contract, not a Go package -- these two literals
+// MUST match bridge_actor.go's actorRunIDHeader/actorRoleHeader exactly.
+const (
+	memoryActorRunIDHeader = "X-Aura-Actor-Run-Id"
+	memoryActorRoleHeader  = "X-Aura-Actor-Role"
+)
+
+// hostDerivedActor reads the actor internal/agent/mcptools attached to this
+// connection (D-10) -- never a field the model can set. Its absence is a
+// wiring bug, not a malformed call the model could fix by retrying: every
+// identity-scoped mount attaches these headers via
+// mcp.SessionOptions.HeaderFunc (internal/agent/mcptools/mount.go), so a
+// missing header means this request did not arrive through that path at
+// all, and a real Go error (not a refused-with-reason FactWrite) is the
+// correct signal for that.
+func hostDerivedActor(req *mcp.CallToolRequest) (arcadedb.Actor, error) {
+	if req == nil || req.Extra == nil {
+		return arcadedb.Actor{}, fmt.Errorf("memory_upsert_fact: no request context to derive an actor from")
+	}
+	runID := strings.TrimSpace(req.Extra.Header.Get(memoryActorRunIDHeader))
+	if runID == "" {
+		return arcadedb.Actor{}, fmt.Errorf(
+			"memory_upsert_fact: missing host-derived actor run id (%s header)", memoryActorRunIDHeader)
+	}
+	role := arcadedb.WriterRole(strings.TrimSpace(req.Extra.Header.Get(memoryActorRoleHeader)))
+	if role != arcadedb.WriterParent && role != arcadedb.WriterWorker {
+		return arcadedb.Actor{}, fmt.Errorf(
+			"memory_upsert_fact: missing or unknown host-derived actor role %q (%s header)",
+			role, memoryActorRoleHeader)
+	}
+	return arcadedb.Actor{RunID: runID, Role: role}, nil
 }
 
 // MemoryUpsertFactInput mirrors arcadedb.Fact minus the embedding, which the
@@ -42,8 +102,8 @@ type MemoryUpsertFactInput struct {
 	// from a fact_key a prior memory_search/memory_facts_about/memory_recall
 	// result returned, and is the way to disambiguate after a refused
 	// correction (D-15/D-17).
-	SupersedesFactKey string           `json:"supersedes_fact_key,omitempty" jsonschema:"the fact_key of the exact fact to close, taken from a prior recall result; set this to disambiguate after a refused correction"`
-	Source            MemoryFactSource `json:"source" jsonschema:"required provenance supporting this fact"`
+	SupersedesFactKey string                      `json:"supersedes_fact_key,omitempty" jsonschema:"the fact_key of the exact fact to close, taken from a prior recall result; set this to disambiguate after a refused correction"`
+	Source            MemoryUpsertFactWriteSource `json:"source" jsonschema:"provenance supporting this fact (memory ids only -- who wrote it is derived by the host, not asserted here)"`
 }
 
 // MemoryUpsertFactOutput reports what changed.
@@ -92,6 +152,10 @@ func memoryUpsertFactHandler(
 		if err != nil {
 			return nil, MemoryUpsertFactOutput{}, err
 		}
+		actor, err := hostDerivedActor(req)
+		if err != nil {
+			return nil, MemoryUpsertFactOutput{}, err
+		}
 		validFrom, err := parseOptionalTime(in.ValidFrom, "valid_from")
 		if err != nil {
 			return nil, MemoryUpsertFactOutput{}, err
@@ -121,7 +185,7 @@ func memoryUpsertFactHandler(
 			Supersedes:    in.Supersedes || targetFactKey != "",
 			TargetFactKey: targetFactKey,
 			Source: arcadedb.FactSource{
-				RunID: in.Source.RunID, MemoryIDs: in.Source.MemoryIDs,
+				RunID: actor.RunID, WriterRole: actor.Role, MemoryIDs: in.Source.MemoryIDs,
 			},
 		}
 		written, err := client.UpsertFact(ctx, fact, now())

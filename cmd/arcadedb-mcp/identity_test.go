@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 	"sync"
 	"testing"
@@ -18,6 +19,31 @@ func reqWithIdentity(identity string) *mcp.CallToolRequest {
 		Params: &mcp.CallToolParamsRaw{},
 		Extra:  &mcp.RequestExtra{TokenInfo: &auth.TokenInfo{UserID: identity}},
 	}
+}
+
+// testParentRunID is the fixed actor run id most memory_upsert_fact tests
+// route through (tool_memory_test.go's upsert helper) -- the actor itself is
+// not what those tests are about. tool_memory_actor_test.go exercises actor
+// derivation directly: a missing/unknown actor, and a worker's refusal.
+const testParentRunID = "test-parent-run"
+
+// reqWithParentActor builds a request carrying both the authenticated
+// identity and a host-derived PARENT actor (D-10) -- the shape every real
+// call has once it reaches memoryUpsertFactHandler through
+// internal/agent/mcptools's HeaderFunc wiring (mount.go).
+func reqWithParentActor(identity, runID string) *mcp.CallToolRequest {
+	return reqWithActor(identity, runID, string(arcadedb.WriterParent))
+}
+
+// reqWithActor builds a request carrying an arbitrary actor role, so a test
+// can exercise the worker-supersede-refusal path through the full handler.
+func reqWithActor(identity, runID, role string) *mcp.CallToolRequest {
+	req := reqWithIdentity(identity)
+	req.Extra.Header = http.Header{
+		memoryActorRunIDHeader: {runID},
+		memoryActorRoleHeader:  {role},
+	}
+	return req
 }
 
 func TestIdentityFromToken(t *testing.T) {

@@ -76,10 +76,14 @@ func validFactInput() MemoryUpsertFactInput {
 		Object:      "Caraglio",
 		ObjectKind:  "Location",
 		Statement:   "Davide lives in Caraglio.",
-		Source:      MemoryFactSource{RunID: "run-1", MemoryIDs: []string{"mem-1"}},
+		Source:      MemoryUpsertFactWriteSource{MemoryIDs: []string{"mem-1"}},
 	}
 }
 
+// upsert routes every non-actor-specific test through a fixed, valid PARENT
+// actor (testParentRunID) — the actor itself is not what these tests are
+// about. tool_memory_actor_test.go covers the actor derivation directly:
+// a missing/unknown actor, and a worker's supersede refusal.
 func upsert(
 	t *testing.T,
 	client *arcadedb.Client,
@@ -87,7 +91,7 @@ func upsert(
 ) (MemoryUpsertFactOutput, error) {
 	t.Helper()
 	_, out, err := memoryUpsertFactHandler(singleTenant(t, client), testClock, "")(
-		context.Background(), reqWithIdentity(testIdentity), in)
+		context.Background(), reqWithParentActor(testIdentity, testParentRunID), in)
 	return out, err
 }
 
@@ -129,8 +133,11 @@ func TestUpsertFactStoresProvenance(t *testing.T) {
 		t.Fatalf("sources = %v", params["sources"])
 	}
 	source, ok := sources[0].(map[string]any)
-	if !ok || source["run_id"] != "run-1" {
-		t.Fatalf("source = %v", sources[0])
+	// run_id is no longer a field the caller supplied (D-10): it is
+	// host-derived, so what shows up here is upsert()'s fixed test actor,
+	// never the "run-1" this test used to pass in.
+	if !ok || source["run_id"] != testParentRunID {
+		t.Fatalf("source = %v, want host-derived run_id %q", sources[0], testParentRunID)
 	}
 	ids, ok := source["memory_ids"].([]any)
 	if !ok || len(ids) != 1 || ids[0] != "mem-1" {
@@ -348,7 +355,6 @@ func TestUpsertFactRejectsBadInput(t *testing.T) {
 		"no predicate":   func(in *MemoryUpsertFactInput) { in.Predicate = "" },
 		"no object":      func(in *MemoryUpsertFactInput) { in.Object = "" },
 		"no statement":   func(in *MemoryUpsertFactInput) { in.Statement = "  " },
-		"no provenance":  func(in *MemoryUpsertFactInput) { in.Source.RunID = "" },
 		"bad valid_from": func(in *MemoryUpsertFactInput) { in.ValidFrom = "yesterday" },
 		"bad valid_to":   func(in *MemoryUpsertFactInput) { in.ValidTo = "soon" },
 		"window backwards": func(in *MemoryUpsertFactInput) {
