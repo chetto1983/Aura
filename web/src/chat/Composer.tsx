@@ -3,6 +3,7 @@ import { ArrowUp, ChevronDown, Mic, Paperclip, Square } from 'lucide-react';
 import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AttachmentChip } from './attachments/AttachmentChip';
+import { GarageMentionPicker } from './composer/GarageMentionPicker';
 import { SkillPicker } from './composer/SkillPicker';
 import type { ComposerSkillRow } from './composer/api';
 import { useVoiceMode } from './voice/voiceModeContext';
@@ -332,9 +333,8 @@ export function Composer({
           : '';
 
   return (
-    // The trigger root groups the '/'-popover with the input it reads from; the popover
-    // registers itself by char, so a second trigger (e.g. '@') would be another child here
-    // rather than another state machine.
+    // The trigger root groups the '/' and '@' popovers with the input they read from. Each
+    // registers by character, so both share assistant-ui's trigger state machine.
     <ComposerPrimitive.Unstable_TriggerPopoverRoot>
       {/* Root is the FORM — it is what turns Enter and the Send button into a submit — so the
           dropzone is NESTED inside it, exactly as assistant-ui's own composer nests it. Merging
@@ -363,6 +363,10 @@ export function Composer({
               skills={skillList}
               disabled={approvalLocked}
               onCommand={onCommand}
+              onSelect={focusComposerEnd}
+            />
+            <GarageMentionPicker
+              disabled={approvalLocked || isRunning}
               onSelect={focusComposerEnd}
             />
             <div className="flex flex-wrap gap-2 empty:hidden">

@@ -22,6 +22,7 @@ import { EmptyThreadStarters } from './EmptyThreadStarters';
 import { listThreadAssets } from './attachments/api';
 import { createAuraAttachmentAdapter } from './attachments/auraAttachmentAdapter';
 import { useComposerSkills } from './composer/useComposerSkills';
+import { resolveGarageMentions } from './composer/garageMentions';
 import { resolveSlashSubmission } from './composer/skillTrigger';
 import { CompactionMarker } from './compaction/CompactionMarker';
 import { CompactionStatus } from './compaction/CompactionStatus';
@@ -149,6 +150,7 @@ export function ExternalStoreChat({
       // The '/'-command is part of the message the operator typed, so the skill is read
       // back out of it here rather than held in a separate pinned-chip state.
       const { skill, command, text } = resolveSlashSubmission(appendMessageText(message), skills);
+      const documentScope = resolveGarageMentions(text);
       // A command is not a message. The menu normally executes it on selection, but the
       // text can reach a send whole — typed out, menu dismissed — and a '/compact' that
       // silently became a question to the agent would be the worst of both.
@@ -209,6 +211,7 @@ export function ExternalStoreChat({
           userText: text,
           attachmentIds: readyAttachmentIds,
           ...(skill !== null ? { skill } : {}),
+          ...(documentScope.length > 0 ? { documentScope } : {}),
           effort,
           signal: controller.signal,
           connectionLostNote: t('chat.error.connectionLost'),

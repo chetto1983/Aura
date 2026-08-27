@@ -50,8 +50,20 @@ func (d *DocumentIndex) DocumentCards(
 	query string,
 	limit int,
 ) ([]DocumentCard, error) {
-	identityID = strings.TrimSpace(identityID)
-	if err := validateIdentifier("document identity", identityID); err != nil {
+	return d.DocumentCardsScoped(ctx, CandidateFilter{
+		IdentityID: identityID, Limit: limit,
+	}, query)
+}
+
+// DocumentCardsScoped is the degraded-capable card leg constrained by the same document
+// ids and Garage source coordinates as the fused passage leg.
+func (d *DocumentIndex) DocumentCardsScoped(
+	ctx context.Context,
+	filter CandidateFilter,
+	query string,
+) ([]DocumentCard, error) {
+	filter, err := d.normalizeCandidateFilter(filter)
+	if err != nil {
 		return nil, err
 	}
 	query = strings.TrimSpace(query)
@@ -61,28 +73,27 @@ func (d *DocumentIndex) DocumentCards(
 	if utf8.RuneCountInString(query) > d.config.MaxQueryRunes {
 		return nil, fmt.Errorf("arcadedb: document query exceeds %d characters", d.config.MaxQueryRunes)
 	}
-	if limit <= 0 {
-		limit = min(20, d.config.MaxRetrievalCandidates)
-	}
-	if limit > d.config.MaxRetrievalCandidates {
-		return nil, fmt.Errorf(
-			"arcadedb: document card limit %d exceeds maximum %d", limit, d.config.MaxRetrievalCandidates)
-	}
-	client, err := d.tenantClient(ctx, identityID)
+	client, err := d.tenantClient(ctx, filter.IdentityID)
 	if err != nil {
 		return nil, err
 	}
+	where, params := candidateWhere(filter)
+	params["query"] = escapeLucene(query)
+	// AND binds more tightly than OR, so parenthesize the two SEARCH_INDEX legs before
+	// applying the scope; otherwise a card-text match could bypass every source filter.
 	statement := "SELECT " + documentCardFields + ", $score AS card_score FROM " +
-		IndexedDocumentType + " WHERE SEARCH_INDEX('" + IndexedDocumentType +
+		IndexedDocumentType + " WHERE (SEARCH_INDEX('" + IndexedDocumentType +
 		"[card]', :query) = true OR SEARCH_INDEX('" + IndexedDocumentType +
-		"[file_name_words]', :query) = true" +
-		" ORDER BY card_score DESC, search_document_id ASC LIMIT " + strconv.Itoa(limit)
-	rows, err := client.Query(ctx, statement, map[string]any{"query": escapeLucene(query)})
+		"[file_name_words]', :query) = true) AND " + where +
+		" ORDER BY card_score DESC, search_document_id ASC LIMIT " + strconv.Itoa(filter.Limit)
+	rows, err := client.Query(ctx, statement, params)
 	if err != nil {
 		return nil, fmt.Errorf("arcadedb: document cards: %w", err)
 	}
-	if len(rows) > limit {
-		return nil, fmt.Errorf("arcadedb: document card response has %d rows, limit is %d", len(rows), limit)
+	if len(rows) > filter.Limit {
+		return nil, fmt.Errorf(
+			"arcadedb: document card response has %d rows, limit is %d", len(rows), filter.Limit,
+		)
 	}
 	cards := make([]DocumentCard, 0, len(rows))
 	seen := make(map[string]struct{}, len(rows))

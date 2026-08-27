@@ -576,6 +576,19 @@ describe('buildAuraRunBody — the aura run envelope fold (WEBSKILL-02)', () => 
     expect(body.aura).toEqual({ skill: 'skill-creator' });
   });
 
+  it('folds Garage mentions into structured scope without rewriting visible user text', () => {
+    const body = buildAuraRunBody('m1', {
+      ...base,
+      userText: 'Review @folder:"/finance/2026"',
+      documentScope: [{ kind: 'folder', path: 'finance/2026' }],
+    });
+    expect(body).toEqual({
+      threadId: 'thread-1',
+      messages: [{ id: 'm1', role: 'user', content: 'Review @folder:"/finance/2026"' }],
+      aura: { document_scope: [{ kind: 'folder', path: 'finance/2026' }] },
+    });
+  });
+
   it('emits NO aura key when neither a skill nor attachments are set (byte-identical to today)', () => {
     const body = buildAuraRunBody('m1', base);
     expect(body).not.toHaveProperty('aura');

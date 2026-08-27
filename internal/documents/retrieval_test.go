@@ -18,13 +18,15 @@ const (
 )
 
 type fakeRetrievalControl struct {
-	scopeRequest []string
-	scope        []string
-	cards        []RetrievalCard
-	names        map[string]string
-	namesRequest []string
-	namesErr     error
-	err          error
+	scopeRequest      []string
+	scope             []string
+	cardDocumentScope []string
+	cardSourceScope   []SourceScope
+	cards             []RetrievalCard
+	names             map[string]string
+	namesRequest      []string
+	namesErr          error
+	err               error
 }
 
 func (f *fakeRetrievalControl) DocumentNames(
@@ -48,8 +50,10 @@ func (f *fakeRetrievalControl) ResolveDocumentScope(
 }
 
 func (f *fakeRetrievalControl) RouteDocumentCards(
-	_ context.Context, _ string, _ string, _ []string, _ int,
+	_ context.Context, _ string, _ string, documentIDs []string, sourceScopes []SourceScope, _ int,
 ) ([]RetrievalCard, error) {
+	f.cardDocumentScope = append([]string(nil), documentIDs...)
+	f.cardSourceScope = append([]SourceScope(nil), sourceScopes...)
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -127,6 +131,49 @@ func TestHostRetrieverReturnsCitationEvidence(t *testing.T) {
 	}
 	if len(embedder.inputs) != 1 || embedder.inputs[0] != "task: search result | query: codice cliente WPT" {
 		t.Fatalf("embedding inputs = %#v", embedder.inputs)
+	}
+}
+
+func TestHostRetrieverThreadsGarageScopeToCardsAndBothPassageLegs(t *testing.T) {
+	control := &fakeRetrievalControl{cards: []RetrievalCard{retrievalCard()}}
+	passages := &fakePassageIndex{}
+	scopes := []SourceScope{
+		{Kind: SourceScopeFolder, Path: "/finance/2026/"},
+		{Kind: SourceScopeFile, Path: "/manual.pdf"},
+	}
+	_, err := (&HostRetriever{
+		ControlPlane: control,
+		PassageIndex: passages,
+		Embedder:     &fakeRetrievalEmbedder{vector: []float64{0.1, 0.2}},
+	}).Retrieve(t.Context(), RetrievalRequest{
+		IdentityID: retrievalIdentity, Query: "revenue", SourceScopes: scopes,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantScopes := []SourceScope{
+		{Kind: SourceScopeFolder, Path: "finance/2026"},
+		{Kind: SourceScopeFile, Path: "manual.pdf"},
+	}
+	if !reflect.DeepEqual(control.cardSourceScope, wantScopes) {
+		t.Fatalf("card source scope = %#v, want %#v", control.cardSourceScope, wantScopes)
+	}
+	if !reflect.DeepEqual(passages.fusedQuery.SourceKeys, []string{"manual.pdf"}) ||
+		!reflect.DeepEqual(passages.fusedQuery.SourcePrefixes, []string{"finance/2026/"}) {
+		t.Fatalf("passage source scope = %#v", passages.fusedQuery.CandidateFilter)
+	}
+}
+
+func TestHostRetrieverNeverWidensAnEmptyResolvedDocumentScope(t *testing.T) {
+	control := &fakeRetrievalControl{}
+	_, err := (&HostRetriever{ControlPlane: control}).Retrieve(t.Context(), RetrievalRequest{
+		IdentityID: retrievalIdentity, Query: "secret", DocumentIDs: []string{"not-visible"},
+	})
+	if !errors.Is(err, ErrInvalidDocumentScope) {
+		t.Fatalf("error = %v, want ErrInvalidDocumentScope", err)
+	}
+	if control.cardDocumentScope != nil {
+		t.Fatalf("card query still ran with %#v", control.cardDocumentScope)
 	}
 }
 

@@ -55,6 +55,30 @@ func TestDocumentCardsAnswerAnUnscopedQuery(t *testing.T) {
 	}
 }
 
+func TestDocumentCardsApplyTheSameDocumentAndSourceScope(t *testing.T) {
+	var statement string
+	index, _ := testDocumentIndex(t, func(request recordedRequest) testResponse {
+		statement, _ = request.Payload["command"].(string)
+		return testResponse{Body: resultBody([]any{})}
+	})
+	_, err := index.DocumentCardsScoped(t.Context(), CandidateFilter{
+		IdentityID: documentTestIdentity, Limit: 3,
+		DocumentIDs: []string{"doc_" + strings.Repeat("a", 32)},
+		SourceKeys:  []string{"manual.pdf"}, SourcePrefixes: []string{"finance/"},
+	}, "Torino")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"search_document_id IN :document_ids", "source_key IN :source_keys",
+		"source_key LIKE :source_prefix_0",
+	} {
+		if !strings.Contains(statement, want) {
+			t.Fatalf("card scope lost %q: %s", want, statement)
+		}
+	}
+}
+
 // A file that could not be described still exists, is still findable by name and can still
 // be opened, so an empty card must not fail the decode -- filecard returns one for a
 // truncated zip by design.

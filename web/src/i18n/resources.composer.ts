@@ -24,6 +24,18 @@ export const composerSkillPickerIt = {
   cmdCompactSubtitle: 'Condensa i turni precedenti in un riassunto',
 };
 
+export const composerGaragePickerEn = {
+  ariaLabel: 'Garage files and folders',
+  file: 'File',
+  folder: 'Folder',
+};
+
+export const composerGaragePickerIt = {
+  ariaLabel: 'File e cartelle di Garage',
+  file: 'File',
+  folder: 'Cartella',
+};
+
 // The `chat.compaction.*` bundle: the in-chat marker the operator reads to see WHERE the
 // replayed history stops being verbatim, and the states `/compact` passes through. The
 // marker is drawn for every compaction, not only requested ones — the automatic L2.4 pass

@@ -22,6 +22,7 @@ import {
   type TurnUsage,
 } from './sseAdapter_usage';
 import { buildAuraRunBody } from './auraRunBody';
+import type { GarageDocumentScope } from './composer/garageMentions';
 
 // sseAdapter maps Aura's AG-UI/SSE event stream (POST /agent/run) onto
 // assistant-ui's ThreadMessageLike model. It is a PURE reducer + a thin
@@ -384,6 +385,8 @@ export interface StreamRunOptions {
   readonly userText: string;
   readonly signal: AbortSignal;
   readonly attachmentIds?: readonly string[];
+  /** Operator-selected Garage scope; enforced by document_search outside model arguments. */
+  readonly documentScope?: readonly GarageDocumentScope[];
   /** 37D pinned skill name (a SkillPicker selection); folded into the same aura envelope. */
   readonly skill?: string;
   readonly effort?: string; // 37E reasoning-effort symbol; folded into aura for fixed levels, omitted for 'auto'.

@@ -5,6 +5,8 @@ import {
   chatCompactionIt,
   composerEffortEn,
   composerEffortIt,
+  composerGaragePickerEn,
+  composerGaragePickerIt,
   composerSkillPickerEn,
   composerSkillPickerIt,
 } from './resources.composer';
@@ -80,6 +82,7 @@ export const resources = {
           effort: composerEffortEn,
         },
         skillPicker: composerSkillPickerEn,
+        garagePicker: composerGaragePickerEn,
         compaction: chatCompactionEn,
         attachments: {
           add: 'Add files',
@@ -353,6 +356,7 @@ export const resources = {
           effort: composerEffortIt,
         },
         skillPicker: composerSkillPickerIt,
+        garagePicker: composerGaragePickerIt,
         compaction: chatCompactionIt,
         attachments: {
           add: 'Aggiungi file',

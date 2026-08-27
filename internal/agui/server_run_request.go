@@ -7,12 +7,16 @@ import (
 	"net/http"
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/types"
+	"github.com/chetto1983/aura/internal/documents"
 )
 
 type runAgentRequest struct {
 	RunAgentInput types.RunAgentInput
 	Aura          struct {
 		AttachmentIDs []string `json:"attachment_ids"`
+		// DocumentScope is the operator's structured @file/@folder selection. It narrows
+		// document_search for this run; identity is always taken from the server context.
+		DocumentScope []documents.SourceScope `json:"document_scope"`
 		// Skill is the optional pinned skill NAME (37D / WEBSKILL-02). handleRun resolves it
 		// to a body via the loader snapshot and applies Mechanism A; it is a loader key only,
 		// never a filesystem path (T-37D-02).
@@ -55,9 +59,14 @@ func decodeRunAgentRequest(dec *json.Decoder) (runAgentRequest, error) {
 		}
 		for key := range auraFields {
 			switch key {
-			case "attachment_ids", "skill", "effort":
+			case "attachment_ids", "document_scope", "skill", "effort":
 			default:
 				return runAgentRequest{}, fmt.Errorf("json: unknown field %q in aura", key)
+			}
+		}
+		if scope, ok := auraFields["document_scope"]; ok {
+			if err := strictDecodeDocumentScope(scope); err != nil {
+				return runAgentRequest{}, err
 			}
 		}
 	}
@@ -67,15 +76,32 @@ func decodeRunAgentRequest(dec *json.Decoder) (runAgentRequest, error) {
 	}
 	var ext struct {
 		Aura struct {
-			AttachmentIDs []string `json:"attachment_ids"`
-			Skill         string   `json:"skill"`
-			Effort        string   `json:"effort"`
+			AttachmentIDs []string                `json:"attachment_ids"`
+			DocumentScope []documents.SourceScope `json:"document_scope"`
+			Skill         string                  `json:"skill"`
+			Effort        string                  `json:"effort"`
 		} `json:"aura"`
 	}
 	if err := json.Unmarshal(raw, &ext); err != nil {
 		return runAgentRequest{}, err
 	}
 	return runAgentRequest{RunAgentInput: in, Aura: ext.Aura}, nil
+}
+
+func strictDecodeDocumentScope(raw json.RawMessage) error {
+	var entries []json.RawMessage
+	if err := json.Unmarshal(raw, &entries); err != nil {
+		return fmt.Errorf("decode aura.document_scope: %w", err)
+	}
+	for i, entry := range entries {
+		dec := json.NewDecoder(bytes.NewReader(entry))
+		dec.DisallowUnknownFields()
+		var scope documents.SourceScope
+		if err := dec.Decode(&scope); err != nil {
+			return fmt.Errorf("decode aura.document_scope[%d]: %w", i, err)
+		}
+	}
+	return nil
 }
 
 func runAgentFieldAllowed(key string) bool {

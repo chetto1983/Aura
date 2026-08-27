@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '../../i18n/i18n';
 import { ExternalStoreChat } from '../ExternalStoreChat';
@@ -45,8 +45,16 @@ function sseResponse(): Response {
   return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
 }
 
-function stubFetch() {
+function stubFetch(garageFiles: readonly Record<string, unknown>[] = []) {
   const fetchMock = vi.fn((url: unknown) => {
+    if (typeof url === 'string' && url.startsWith('/api/filemanager/files')) {
+      return Promise.resolve(
+        new Response(JSON.stringify(garageFiles), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    }
     if (typeof url === 'string' && url.startsWith('/threads/')) {
       return Promise.resolve(
         new Response(JSON.stringify({ type: 'MESSAGES_SNAPSHOT', messages: [] }), {
@@ -123,6 +131,46 @@ describe('ExternalStoreChat slash-skill', () => {
       expect(fetchMock.mock.calls.some((call) => call[0] === '/agent/run')).toBe(true);
     });
     expect(runPostBody(fetchMock)).not.toHaveProperty('aura');
+  });
+
+  it('keeps Garage mentions visible and sends their structural document scope', async () => {
+    const fetchMock = stubFetch();
+    renderChat(<ExternalStoreChat threadId="conv-1" />);
+
+    send('Review @file:"/finance/q1.pdf" with @folder:"/policies/current" now');
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some((call) => call[0] === '/agent/run')).toBe(true);
+    });
+    expect(runPostBody(fetchMock)).toMatchObject({
+      messages: [
+        {
+          role: 'user',
+          content: 'Review @file:"/finance/q1.pdf" with @folder:"/policies/current" now',
+        },
+      ],
+      aura: {
+        document_scope: [
+          { kind: 'file', path: 'finance/q1.pdf' },
+          { kind: 'folder', path: 'policies/current' },
+        ],
+      },
+    });
+  });
+
+  it('delegates the @ listbox and keyboard selection to assistant-ui', async () => {
+    const fetchMock = stubFetch([{ id: '/finance', type: 'folder', lazy: true }]);
+    renderChat(<ExternalStoreChat threadId="conv-1" />);
+    const input = screen.getByPlaceholderText<HTMLTextAreaElement>('Ask Aura');
+
+    fireEvent.change(input, { target: { value: '@' } });
+
+    const listbox = await screen.findByRole('listbox', { name: 'Garage files and folders' });
+    expect((await within(listbox).findByRole('option')).textContent).toContain('finance');
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+
+    expect(input.value).toBe('@folder:"/finance" ');
+    expect(fetchMock.mock.calls.some((call) => call[0] === '/agent/run')).toBe(false);
   });
 
   // A slash word that names nothing installed must not be turned into a skill: the operator

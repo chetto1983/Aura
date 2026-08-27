@@ -6,6 +6,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/google/uuid"
 )
@@ -57,6 +58,14 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	var effortOK bool
 	if ctx, effortOK = s.applyReasoningEffort(ctx, w, in.ThreadID, req.Aura.Effort); !effortOK {
 		return
+	}
+	sourceScopes, err := documents.NormalizeSourceScopes(req.Aura.DocumentScope)
+	if err != nil {
+		http.Error(w, "invalid document scope", http.StatusBadRequest)
+		return
+	}
+	if len(sourceScopes) > 0 {
+		ctx = documents.WithSourceScopes(ctx, sourceScopes)
 	}
 	userMsg, err := lastUserMessage(in.Messages)
 	if err != nil {

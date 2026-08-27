@@ -321,13 +321,17 @@ describe('Composer skill trigger', () => {
   it('mounts the trigger when skills are installed', () => {
     render(<Composer skills={SKILLS} />);
 
-    expect(screen.getByTestId('trigger-popover').getAttribute('data-char')).toBe('/');
+    expect(
+      screen.getAllByTestId('trigger-popover').map((node) => node.getAttribute('data-char')),
+    ).toEqual(['/', '@']);
   });
 
   it('degrades to a no-op when the skills list is empty (D-09)', () => {
     render(<Composer skills={[]} />);
 
-    expect(screen.queryByTestId('trigger-popover')).toBeNull();
+    expect(
+      screen.getAllByTestId('trigger-popover').map((node) => node.getAttribute('data-char')),
+    ).toEqual(['@']);
   });
 
   it('renders no pinned-skill chip above the composer', () => {
