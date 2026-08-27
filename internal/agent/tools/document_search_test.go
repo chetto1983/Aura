@@ -165,3 +165,23 @@ func TestDocumentSearchThreadsOwnerIdentity(t *testing.T) {
 		}
 	})
 }
+
+func TestDocumentSearchEnforcesTheRunGarageScopeOutsideModelArguments(t *testing.T) {
+	library := &fakeLibrary{}
+	ctx := documents.WithSourceScopes(toolTestContext(t), []documents.SourceScope{
+		{Kind: documents.SourceScopeFolder, Path: "finance/2026"},
+	})
+	_, err := (&DocumentSearch{Library: library}).Execute(
+		ctx, json.RawMessage(`{"query":"revenue","document_ids":["doc_named"]}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(library.request.SourceScopes) != 1 ||
+		library.request.SourceScopes[0].Path != "finance/2026" {
+		t.Fatalf("run scope = %#v", library.request.SourceScopes)
+	}
+	if len(library.request.DocumentIDs) != 1 || library.request.DocumentIDs[0] != "doc_named" {
+		t.Fatalf("model ids were not intersectable: %#v", library.request.DocumentIDs)
+	}
+}

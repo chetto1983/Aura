@@ -48,10 +48,11 @@ const (
 // the host stamps it from the authenticated turn, so a tool payload can never widen its own
 // tenancy. An empty DocumentIDs means "every ready document", not "no document".
 type RetrievalRequest struct {
-	IdentityID  string   `json:"-"`
-	Query       string   `json:"query"`
-	Limit       int      `json:"limit,omitempty"`
-	DocumentIDs []string `json:"document_ids,omitempty"`
+	IdentityID   string        `json:"-"`
+	Query        string        `json:"query"`
+	Limit        int           `json:"limit,omitempty"`
+	DocumentIDs  []string      `json:"document_ids,omitempty"`
+	SourceScopes []SourceScope `json:"-"`
 }
 
 // RetrievalResponse reports which production legs ran and what they returned.
@@ -124,7 +125,9 @@ type RetrievalCard struct {
 // RetrievalControlPlane bounds identity scope and routes IndexedDocument cards in ArcadeDB.
 type RetrievalControlPlane interface {
 	ResolveDocumentScope(context.Context, string, []string) ([]string, error)
-	RouteDocumentCards(context.Context, string, string, []string, int) ([]RetrievalCard, error)
+	RouteDocumentCards(
+		context.Context, string, string, []string, []SourceScope, int,
+	) ([]RetrievalCard, error)
 	DocumentNames(context.Context, string, []string) (map[string]string, error)
 }
 
@@ -175,8 +178,14 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 	if err != nil {
 		return RetrievalResponse{}, err
 	}
+	// ResolveDocumentScope uses an empty slice for the intentionally unscoped path. If the
+	// caller DID name ids and none survive owner resolution, treating that same empty slice
+	// as unscoped would widen a failed filter to the owner's whole corpus.
+	if len(request.DocumentIDs) > 0 && len(scope) == 0 {
+		return RetrievalResponse{}, fmt.Errorf("%w: no named document is visible", ErrInvalidDocumentScope)
+	}
 	cards, err := r.ControlPlane.RouteDocumentCards(
-		ctx, request.IdentityID, request.Query, scope, cfg.CandidateLimit,
+		ctx, request.IdentityID, request.Query, scope, request.SourceScopes, cfg.CandidateLimit,
 	)
 	if err != nil {
 		return RetrievalResponse{}, fmt.Errorf("documents: route document cards: %w", err)
@@ -200,9 +209,11 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 		response.Documents = rankCardsOnly(cards, request.Limit, cfg.TopPassages)
 		return response, nil
 	}
+	sourceKeys, sourcePrefixes := ArcadeSourceFilters(request.SourceScopes)
 	fused, err := r.PassageIndex.FusedCandidates(ctx, arcadedb.FusedCandidateQuery{
 		CandidateFilter: arcadedb.CandidateFilter{
 			IdentityID: request.IdentityID, Limit: cfg.CandidateLimit, DocumentIDs: scope,
+			SourceKeys: sourceKeys, SourcePrefixes: sourcePrefixes,
 		},
 		Query: request.Query, Embedding: vectors, Strategy: cfg.FusionStrategy,
 	})
@@ -317,6 +328,11 @@ func normalizeRetrievalRequest(request RetrievalRequest, cfg RetrievalConfig) (R
 	}
 	sort.Strings(ids)
 	request.DocumentIDs = ids
+	sourceScopes, err := NormalizeSourceScopes(request.SourceScopes)
+	if err != nil {
+		return RetrievalRequest{}, cfg, fmt.Errorf("%w: %v", ErrInvalidDocumentScope, err)
+	}
+	request.SourceScopes = sourceScopes
 	return request, cfg, nil
 }
 

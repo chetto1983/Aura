@@ -38,6 +38,7 @@ type scriptedRunner struct {
 	gotTurnUserMsg       *string                 // the userMsg Turn was called with (nil = continue-after-resume)
 	gotVisibleUserMsg    *string
 	gotModelUserMsg      *string
+	turnCtx              context.Context
 	newConversationID    string
 	newConversationErr   error
 	newConversationCalls int
@@ -52,8 +53,9 @@ type scriptedRunner struct {
 	delay time.Duration
 }
 
-func (s *scriptedRunner) Turn(_ context.Context, _ string, userMsg *string) iter.Seq2[*agent.Event, error] {
+func (s *scriptedRunner) Turn(ctx context.Context, _ string, userMsg *string) iter.Seq2[*agent.Event, error] {
 	s.turnCalled = true
+	s.turnCtx = ctx
 	s.gotTurnUserMsg = userMsg
 	return func(yield func(*agent.Event, error) bool) {
 		for _, ev := range s.events {
@@ -70,8 +72,9 @@ func (s *scriptedRunner) Turn(_ context.Context, _ string, userMsg *string) iter
 	}
 }
 
-func (s *scriptedRunner) TurnWithModelUserMessage(_ context.Context, _ string, visibleUserMsg, modelUserMsg string) iter.Seq2[*agent.Event, error] {
+func (s *scriptedRunner) TurnWithModelUserMessage(ctx context.Context, _ string, visibleUserMsg, modelUserMsg string) iter.Seq2[*agent.Event, error] {
 	s.turnCalled = true
+	s.turnCtx = ctx
 	s.gotTurnUserMsg = &visibleUserMsg
 	s.gotVisibleUserMsg = &visibleUserMsg
 	s.gotModelUserMsg = &modelUserMsg

@@ -17,6 +17,8 @@ Amendments #159 and #161 replace skipped/stale evaluation proxies with executabl
 evidence, and the Runner integration wrapper now provisions an isolated reproducible database.
 Amendment #162 bounds the retained OOXML card reader and adds openpyxl-oracle parity for every
 owned workbook; the measurement found and fixed the blank-before-header row-span defect.
+Amendment #163 keeps corpus inventory in the Files workspace and adds identity-scoped Garage
+`@file`/`@folder` selection that structurally constrains every document retrieval leg.
 
 ## Severity Summary
 
@@ -36,6 +38,7 @@ owned workbook; the measurement found and fixed the blank-before-header row-span
 | Opt-in memory preload inserts recalled content into model-visible context with no dedicated poisoning threat model | Medium | Closed 2026-08-27 | `docs/aura-memory-preload-threat-model.md`, `internal/runner/runner_context.go`, `internal/agent/prompt.go` |
 | Test/evaluation evidence contains skipped, stale, flaky, or non-reproducible legs | Medium | Closed 2026-08-27 | `scripts/agent_memory_eval.py`, `scripts/ingest_reconcile_e2e.sh`, `scripts/run_runner_integration.sh` |
 | Manual OOXML parser is a broad custom maintenance surface | Medium | Closed 2026-08-27 | PRD amendment #162, `docs/aura-ooxml-routing-card-boundary.md`, `internal/documents/filecard/corpus_parity_test.go` |
+| No model-facing document catalog operation | Medium | Closed 2026-08-27 | PRD amendment #163, `web/src/chat/composer/GarageMentionPicker.tsx`, `internal/documents/source_scope.go` |
 
 ## Tech Debt
 
@@ -227,10 +230,11 @@ owned workbook; the measurement found and fixed the blank-before-header row-span
 - Runtime evidence: `agent-memory-eval` passed the deterministic + live MCP suite at MRS 100.00 on 26.8.1. The disposable ingest integration passed schema creation, idempotence, retired-schema removal, and Bolt-written vector/ANN retrieval 4/4. The already-green migration 0102 and real document-agent E2E were retained as persistent checkpoints because this delta does not overlap those boundaries.
 - Files: `scripts/restore_drill.sh`, `scripts/restore_drill_lib.sh`, `scripts/release_readiness_gate.py`, `compose.yaml`, `.github/workflows/ci.yml`.
 
-**No model-facing document catalog operation:**
-- Problem: `document_search` requires a query and `document_open` requires an id from a hit; the former `aura docs list/status` ledger was removed. The agent has no direct operation for "which documents have I uploaded?" independent of content search.
-- Blocks: reliable inventory questions and deterministic user selection when no topical query is available.
-- Files: `cmd/aura/docs.go`, `internal/agent/tools/document_search.go`, `internal/agent/tools/document_open.go`, `internal/agent/tools/manifest.go`.
+**Closed 2026-08-27 — Garage mentions provide deterministic selection without a model catalog:**
+- Resolution: corpus inventory remains owned by the existing identity-scoped Files workspace rather than by a second model tool that could enumerate thousands of names. The composer now reuses assistant-ui's existing trigger root and synchronous adapter contract for `@file` and `@folder`; Aura's bounded async bridge replaces the package's still-deprecated live-completion hook. A path containing a slash reads only its addressed Garage folder, repeated keystrokes reuse that listing, and the readable mention remains in the persisted user text.
+- Enforcement: the client sends only `{kind,path}` beside that text. The server derives identity from the authenticated run, normalizes and caps the scope, and carries it outside model arguments. Exact file keys and literal folder prefixes constrain document cards plus both fused passage sub-pipelines; model-supplied document ids can only intersect that scope. Empty scoped results cannot widen to the whole corpus.
+- Evidence: PRD amendment #163; parser/page-boundary and wire tests in `web/src/chat/composer/garageMentions.test.ts` and `web/src/chat/__tests__/ExternalStoreChat.skill.test.tsx`; strict run/context tests in `internal/agui`; source-scope, card-degradation and fused-query tests in `internal/documents`, `internal/agent/tools` and `internal/arcadedb`.
+- Files: `web/src/chat/composer/GarageMentionPicker.tsx`, `web/src/chat/composer/garageMentions.ts`, `internal/documents/source_scope.go`, `internal/agui/server_run.go`, `internal/arcadedb/document_cards.go`, `internal/arcadedb/document_retrieval.go`.
 
 **Observability scrape check is not scheduled:**
 - Problem: `scripts/observability_sidecar_check.sh` detects the measured failure mode where Prometheus is healthy but no longer scraping Aura, yet no Makefile target, CI workflow, or scheduler registration invokes this script by name.

@@ -78,6 +78,7 @@ func (t *DocumentSearch) Execute(ctx context.Context, raw json.RawMessage) (Tool
 	response, err := t.Library.Retrieve(ctx, documents.RetrievalRequest{
 		IdentityID: ownerFromContext(ctx), Query: args.Query,
 		Limit: effectiveDocumentLimit(args.Limit), DocumentIDs: args.DocumentIDs,
+		SourceScopes: documents.SourceScopesFromContext(ctx),
 	})
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("document_search: %w", err)

@@ -47,9 +47,11 @@ const (
 
 // CandidateFilter is the bounded tenant and document subset shared by both legs.
 type CandidateFilter struct {
-	IdentityID  string
-	Limit       int
-	DocumentIDs []string
+	IdentityID     string
+	Limit          int
+	DocumentIDs    []string
+	SourceKeys     []string
+	SourcePrefixes []string
 }
 
 // FusedCandidateQuery searches both indexes and fuses them server-side, in one query.
@@ -119,7 +121,7 @@ func (d *DocumentIndex) FusedCandidates(
 	if err != nil {
 		return nil, err
 	}
-	where, params := candidateWhere(filter.DocumentIDs)
+	where, params := candidateWhere(filter)
 	params["embedding"] = append([]float64(nil), request.Embedding...)
 	params["query"] = escapeLucene(query)
 	params["fetch"] = fusedDenseNeighbours
@@ -184,17 +186,83 @@ func (d *DocumentIndex) normalizeCandidateFilter(filter CandidateFilter) (Candid
 	}
 	sort.Strings(documentIDs)
 	filter.DocumentIDs = documentIDs
+	sourceKeys, err := normalizeSourceFilters(
+		"key", filter.SourceKeys, d.config.MaxDocumentFilters,
+	)
+	if err != nil {
+		return CandidateFilter{}, err
+	}
+	filter.SourceKeys = sourceKeys
+	sourcePrefixes, err := normalizeSourceFilters(
+		"prefix", filter.SourcePrefixes, d.config.MaxDocumentFilters,
+	)
+	if err != nil {
+		return CandidateFilter{}, err
+	}
+	filter.SourcePrefixes = sourcePrefixes
+	if len(filter.SourceKeys)+len(filter.SourcePrefixes) > d.config.MaxDocumentFilters {
+		return CandidateFilter{}, fmt.Errorf(
+			"arcadedb: source filter count %d exceeds maximum %d",
+			len(filter.SourceKeys)+len(filter.SourcePrefixes), d.config.MaxDocumentFilters,
+		)
+	}
 	return filter, nil
 }
 
-func candidateWhere(documentIDs []string) (string, map[string]any) {
+func normalizeSourceFilters(kind string, values []string, limit int) ([]string, error) {
+	seen := make(map[string]struct{}, len(values))
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || strings.ContainsRune(value, '\x00') {
+			return nil, fmt.Errorf("arcadedb: document source %s must be non-empty", kind)
+		}
+		if utf8.RuneCountInString(value) > 2048 {
+			return nil, fmt.Errorf("arcadedb: document source %s exceeds 2048 characters", kind)
+		}
+		if _, duplicate := seen[value]; duplicate {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+	if len(normalized) > limit {
+		return nil, fmt.Errorf(
+			"arcadedb: document source %s count %d exceeds maximum %d", kind, len(normalized), limit,
+		)
+	}
+	sort.Strings(normalized)
+	return normalized, nil
+}
+
+func candidateWhere(filter CandidateFilter) (string, map[string]any) {
 	params := make(map[string]any)
 	where := "1 = 1"
-	if len(documentIDs) > 0 {
+	if len(filter.DocumentIDs) > 0 {
 		where += " AND search_document_id IN :document_ids"
-		params["document_ids"] = documentIDs
+		params["document_ids"] = filter.DocumentIDs
+	}
+	if len(filter.SourceKeys) > 0 || len(filter.SourcePrefixes) > 0 {
+		parts := make([]string, 0, 1+len(filter.SourcePrefixes))
+		if len(filter.SourceKeys) > 0 {
+			parts = append(parts, "source_key IN :source_keys")
+			params["source_keys"] = filter.SourceKeys
+		}
+		for index, prefix := range filter.SourcePrefixes {
+			name := "source_prefix_" + strconv.Itoa(index)
+			parts = append(parts, "source_key LIKE :"+name)
+			params[name] = escapeLikePrefix(prefix)
+		}
+		where += " AND (" + strings.Join(parts, " OR ") + ")"
 	}
 	return where, params
+}
+
+// escapeLikePrefix keeps Garage keys containing ArcadeDB LIKE wildcards literal. The only
+// wildcard this function introduces is the final %, which means "descendant of folder".
+func escapeLikePrefix(prefix string) string {
+	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `?`, `\?`)
+	return replacer.Replace(prefix) + "%"
 }
 
 func validateDenseVector(vector []float64, dimensions int) error {

@@ -191,6 +191,35 @@ func TestFusedCandidatesSendTheMeasuredQueryAndKeepEngineOrder(t *testing.T) {
 	}
 }
 
+func TestFusedCandidatesApplyLiteralSourceScopeToBothLegs(t *testing.T) {
+	var statement string
+	var params map[string]any
+	index, _ := testDocumentIndex(t, func(request recordedRequest) testResponse {
+		statement, _ = request.Payload["command"].(string)
+		params, _ = request.Payload["params"].(map[string]any)
+		return testResponse{Body: resultBody([]any{})}
+	})
+	_, err := index.FusedCandidates(t.Context(), FusedCandidateQuery{
+		CandidateFilter: CandidateFilter{
+			IdentityID: documentTestIdentity, Limit: 4,
+			SourceKeys: []string{"manual.pdf"}, SourcePrefixes: []string{"finance/%Q?/"},
+		},
+		Query: "revenue", Embedding: []float64{1, 0, 0},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The same WHERE fragment is embedded in the vector-neighbour filter and the lexical
+	// sub-query. A predicate on only one side would let fusion re-admit out-of-scope rows.
+	if strings.Count(statement, "source_key IN :source_keys") != 2 ||
+		strings.Count(statement, "source_key LIKE :source_prefix_0") != 2 {
+		t.Fatalf("scope did not reach both fused legs: %s", statement)
+	}
+	if params["source_prefix_0"] != `finance/\%Q\?/%` {
+		t.Fatalf("prefix parameter = %#v, want literal wildcard escaping", params["source_prefix_0"])
+	}
+}
+
 func TestFusedCandidatesRejectAnUnknownStrategy(t *testing.T) {
 	index, _ := testDocumentIndex(t, func(recordedRequest) testResponse {
 		return testResponse{Body: resultBody([]any{})}

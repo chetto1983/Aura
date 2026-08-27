@@ -11,7 +11,7 @@ import (
 // struct and the inner ext-decode struct (the existing double-decode idiom), so handleRun
 // reads a populated req.Aura.Skill next to req.Aura.AttachmentIDs.
 func TestDecodeRunAgentRequest_Skill(t *testing.T) {
-	const body = `{"threadId":"t1","messages":[{"id":"m1","role":"user","content":"hi"}],"aura":{"attachment_ids":["a1"],"skill":"skill-creator","effort":"high"}}`
+	const body = `{"threadId":"t1","messages":[{"id":"m1","role":"user","content":"hi"}],"aura":{"attachment_ids":["a1"],"document_scope":[{"kind":"folder","path":"finance"}],"skill":"skill-creator","effort":"high"}}`
 
 	req, err := decodeRunAgentRequest(json.NewDecoder(strings.NewReader(body)))
 	if err != nil {
@@ -26,6 +26,16 @@ func TestDecodeRunAgentRequest_Skill(t *testing.T) {
 	// 37E: the effort symbol rides the SAME aura envelope, decoding alongside skill/attachment_ids.
 	if req.Aura.Effort != "high" {
 		t.Fatalf("Aura.Effort = %q, want %q", req.Aura.Effort, "high")
+	}
+	if len(req.Aura.DocumentScope) != 1 || req.Aura.DocumentScope[0].Path != "finance" {
+		t.Fatalf("Aura.DocumentScope = %#v", req.Aura.DocumentScope)
+	}
+}
+
+func TestDecodeRunAgentRequestRejectsUnknownDocumentScopeFields(t *testing.T) {
+	const body = `{"threadId":"t1","messages":[],"aura":{"document_scope":[{"kind":"file","path":"x","identity_id":"foreign"}]}}`
+	if _, err := decodeRunAgentRequest(json.NewDecoder(strings.NewReader(body))); err == nil {
+		t.Fatal("unknown nested document scope field was accepted")
 	}
 }
 

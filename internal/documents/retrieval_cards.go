@@ -42,19 +42,24 @@ func (c *ArcadeRetrievalControlPlane) DocumentNames(
 	return c.Index.DocumentNames(ctx, identityID, documentIDs)
 }
 
-// RouteDocumentCards ranks documents by their own description.
-//
-// The scope argument is accepted and ignored, and that is not an oversight: the card leg
-// answers "which documents look relevant at all", so narrowing it to a scope the caller
-// already named would only return what the caller already had. The scope constrains the
-// passage legs, where it decides which passages may be searched.
+// RouteDocumentCards ranks documents by their own description inside the exact same scope
+// as the passage leg. This is load-bearing in card-only degradation: an ignored filter here
+// would turn a scoped search into an unscoped one precisely when embeddings are unavailable.
 func (c *ArcadeRetrievalControlPlane) RouteDocumentCards(
-	ctx context.Context, identityID, query string, _ []string, limit int,
+	ctx context.Context,
+	identityID, query string,
+	documentIDs []string,
+	sourceScopes []SourceScope,
+	limit int,
 ) ([]RetrievalCard, error) {
 	if c == nil || c.Index == nil {
 		return nil, errRetrievalControlPlaneUnset
 	}
-	found, err := c.Index.DocumentCards(ctx, identityID, query, limit)
+	sourceKeys, sourcePrefixes := ArcadeSourceFilters(sourceScopes)
+	found, err := c.Index.DocumentCardsScoped(ctx, arcadedb.CandidateFilter{
+		IdentityID: identityID, Limit: limit, DocumentIDs: documentIDs,
+		SourceKeys: sourceKeys, SourcePrefixes: sourcePrefixes,
+	}, query)
 	if err != nil {
 		return nil, err
 	}

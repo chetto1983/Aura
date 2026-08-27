@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/assets"
+	"github.com/chetto1983/aura/internal/documents"
 )
 
 func TestServerRunPrependsAttachmentBlock(t *testing.T) {
@@ -83,6 +84,36 @@ func TestServerRunInjectsKnowledgeCatalogWithoutAttachment(t *testing.T) {
 	}
 	if assetSvc.listThreadID != tid {
 		t.Fatalf("ListForThread thread = %q, want %q", assetSvc.listThreadID, tid)
+	}
+}
+
+func TestServerRunCarriesNormalizedGarageScopeOnlyInTheRunContext(t *testing.T) {
+	const tid = "66666666-6666-4666-8666-666666666666"
+	run := &scriptedRunner{events: textTurn("ok")}
+	s := NewServer(run, &fakeConvStore{known: map[string]bool{tid: true}}, ServerConfig{})
+	body := `{"threadId":"` + tid + `","messages":[{"id":"m1","role":"user","content":"review @folder:\"/finance/2026\""}],"aura":{"document_scope":[{"kind":"folder","path":"/finance/2026/"}]}}`
+	rec := serveRunWithPrincipal(t, s, body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
+	}
+	scopes := documents.SourceScopesFromContext(run.turnCtx)
+	if len(scopes) != 1 || scopes[0].Kind != documents.SourceScopeFolder ||
+		scopes[0].Path != "finance/2026" {
+		t.Fatalf("run scopes = %#v", scopes)
+	}
+	if run.gotTurnUserMsg == nil || *run.gotTurnUserMsg != `review @folder:"/finance/2026"` {
+		t.Fatalf("visible message changed: %v", run.gotTurnUserMsg)
+	}
+}
+
+func TestServerRunRejectsInvalidGarageScopeBeforeTheRunner(t *testing.T) {
+	const tid = "77777777-7777-4777-8777-777777777777"
+	run := &scriptedRunner{events: textTurn("should not run")}
+	s := NewServer(run, &fakeConvStore{known: map[string]bool{tid: true}}, ServerConfig{})
+	body := `{"threadId":"` + tid + `","messages":[{"id":"m1","role":"user","content":"x"}],"aura":{"document_scope":[{"kind":"folder","path":"../private"}]}}`
+	rec := serveRunWithPrincipal(t, s, body)
+	if rec.Code != http.StatusBadRequest || run.turnCalled {
+		t.Fatalf("status = %d, turnCalled = %v", rec.Code, run.turnCalled)
 	}
 }
 
