@@ -8,11 +8,12 @@
 - The `reasoning_live` accuracy gate must execute the production embedding model
   on ordinary GitHub-hosted CPU runners. Selecting the CPU llama.cpp image and
   setting `AURA_EMBED_NGL=0` is insufficient while the base Compose service still
-  reserves an NVIDIA device; the job must also merge `compose.minipc.yaml`, whose
-  explicit contract is to remove that structural GPU reservation.
+  reserves an NVIDIA device; the job must also merge
+  `.github/compose.ci-cache.yaml`, whose explicit CI contract removes that
+  structural GPU reservation and supplies the runner cache mounts.
 - The correction must not skip the live test, relax its accuracy floors, or add a
-  second CI-only service definition. The existing appliance CPU overlay is the
-  single reusable source of truth.
+  second CI-only service definition. The existing CI cache overlay is the single
+  reusable source of truth; the retired `compose.minipc.yaml` must not be restored.
 - The deterministic capability manifest must name tests for the current shipped
   contracts. When a legacy subsystem is intentionally removed, its scenarios are
   replaced by positive and negative coverage of the surviving boundary; deleted
