@@ -1,18 +1,18 @@
 ---
 gsd_state_version: 1.0
 milestone: v2.1.0
-current_phase: 52
-current_phase_name: Mid-turn steering
+current_phase: 51
+current_phase_name: Durable delegation
 status: executing
 stopped_at: Phase 51 context gathered; design-gate spike is the next action
-last_updated: "2026-08-26T17:58:22.715Z"
+last_updated: "2026-08-27T09:25:16.181Z"
 last_activity: 2026-08-25
 last_activity_desc: Phase 52 execution resumed (wave continue)
-state_head: e906028cf010b383344b954c2b1e2b189aefd682
+state_head: 4eac0a97371d58c153babc7ecc7b37cdefb0352c
 progress:
   total_phases: 8
   completed_phases: 1
-  total_plans: 34
+  total_plans: 45
   completed_plans: 34
 milestone_name: HERMES-CLAUDE_PARITY
 ---
@@ -28,9 +28,9 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 
 ## Current Position
 
-Phase: 52 (Mid-turn steering) — EXECUTING
+Phase: 51 (Durable delegation) — READY TO EXECUTE
 (corrected against hermes before any code existed), and every prerequisite was verified present.
-Status: Executing Phase 52
+Status: Ready to execute
 
 **The roadmap shrank on 2026-08-25 (operator decision).** Phases **47** (tool-surface ceremony
 strip), **48** (un-defer and merges) and **53** (summarization spike) are DELETED, not annotated —

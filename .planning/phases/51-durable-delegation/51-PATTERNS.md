@@ -713,6 +713,23 @@ create new files for these:
 | Migration for D-06/D-07 (new steer/delegation-result table) | migration | schema | No existing table in this tree combines "one table, two row kinds, two TTL knobs" — `aura.ingestion_jobs` is the closest lease-queue shape but has no row-kind discriminator; the column SET should be designed fresh (kind, ttl-relevant timestamp(s), payload) informed by, not copied from, `ingestion_jobs`' lease columns (a delegation result does not need `locked_by`/`lease_generation` — it is not claimed/leased, it is delivered-once via `Drain`) |
 | SWARM-02's live-render-into-schema mechanism itself | tool/controller | request-response | No existing `Spec()` in this codebase renders config values into its JSON Parameters at call time (every other tool's `Spec()` returns a `json.RawMessage` literal) — this is genuinely new plumbing; the Open Question in RESEARCH.md about NOT conflating this with the Tier A/B knob-catalog test is the relevant caution, not a missing analog for the mechanism |
 
+## File Targets Added After This Document Was Written
+
+This document predates the plan revision that introduced `delegation_delivery.go`,
+`delegation_resume.go`, `child_staleness.go`, `worker_pause_sweep.go` and `transcript_api.go`.
+Their analogs are deliberately NOT restated here: each is named inline in its own plan's
+`<read_first>` WITH a line range, which is a stronger pointer than a second copy that can drift
+out of sync with the plan it describes.
+
+| New file target | Plan | Where its analog is named (verified present in that plan) |
+|---|---|---|
+| `internal/swarm/delegation_delivery.go` | 51-10 | `internal/cron/dispatch.go:110-133` (`ConversationRecorder`) and `:358-390` (`recordToOrigin`); `cmd/aura/serve_dispatch.go:95-130` (the `*conversations.Store` adapter and the `Seq 0` rationale); `internal/cron/record_origin_test.go` (the `fakeConversationRecorder` shape) |
+| the nudge/undrained push leg | 51-10 | `internal/cron/deliver.go` in full (the `ChannelDeliverer` tri-state contract, `originGate`, `deliverToOrigin`); `internal/cron/dispatch.go:395-418` (`insertPendingNotification`) |
+| `internal/swarm/delegation_resume.go` | 51-06b | `internal/documents/jobs_worker.go` (`ProcessOnce`'s claim/handle/transition shape, which the observer must not duplicate); `internal/agent/llm_agent_construct.go:30-50` and `llm_agent_promote.go` (the promoted set is re-derived at construction) |
+| `internal/runner/worker_pause_sweep.go` | 51-06b | `internal/runner/approval_expiry.go` (41 LOC, read in full); `internal/runner/resume_committer.go` |
+| `internal/swarm/child_staleness.go` | 51-09 | `internal/documents/jobs_worker.go` (`handleWithHeartbeat`/`maintainLease` — the goroutine-racing-the-handler shape) |
+| `internal/swarm/transcript_api.go` | 51-07 | `internal/swarm/report.go:49-69` (`dumpTranscript`); `internal/agui/server_run_steer.go` (the authenticated AG-UI route shape) |
+
 ## Metadata
 
 **Analog search scope:** `internal/documents/` (jobs_store.go, jobs_worker.go, tests),

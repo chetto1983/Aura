@@ -579,17 +579,37 @@ lands squarely on the memory correctness Phase 45 and 49 just established.
   4. A worker that needs the operator surfaces the question in the operator's channel, naming which worker raised it, and answering it resumes that worker's line of work.
   5. After a live fan-out where several workers each learn something durable, the graph holds one correctly-attributed fact per worker — no duplicates, no lost writes, no fact attributed to the parent.
 
-**Plans**: 8 plans in 5 waves
+**Plans**: 11 plans in 6 waves
 
 Plans:
-- [ ] 51-01-PLAN.md — TRACER: durable delegation enqueue + claim loop + worker-envelope delivery (SWARM-03, SWARM-09)
-- [ ] 51-02-PLAN.md — Postgres steer queue, kind-typed rows, two TTLs, one sweep, trace on expiry (D-06/07/08)
-- [ ] 51-03-PLAN.md — Worker brief goal/context split + live-rendered cap schema (SWARM-01, SWARM-02)
-- [ ] 51-04-PLAN.md — Host-derived fact provenance, worker supersede refusal, concurrent fan-out proof (SWARM-07)
-- [ ] 51-05-PLAN.md — Depth-bounded nesting, synchronous nested delegation, SWARM-08 guard extension (SWARM-04, SWARM-05, SWARM-08)
-- [ ] 51-06-PLAN.md — Per-worker fenced pause and attributed operator relay (SWARM-06)
-- [ ] 51-07-PLAN.md — Live transcript read surface + SWARM-11 verification (SWARM-10, SWARM-11)
-- [ ] 51-08-PLAN.md — Live SC#1–SC#5 driver, quality snapshot re-attestation, PRD measurement
+**Wave 1**
+
+- [ ] 51-01-PLAN.md — TRACER: durable delegation enqueue + claim loop + worker-envelope delivery (SWARM-03, SWARM-09) — wave 1
+- [ ] 51-04-PLAN.md — Host-derived fact provenance, worker supersede refusal, concurrent fan-out proof (SWARM-07) — wave 1
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 51-02-PLAN.md — Postgres steer queue, kind-typed rows, two TTLs, one sweep, trace on expiry (D-06/07/08) — wave 2
+- [ ] 51-03-PLAN.md — Worker brief goal/context split + live-rendered cap schema (SWARM-01, SWARM-02) — wave 2
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 51-05-PLAN.md — Depth-bounded nesting, synchronous nested delegation, SWARM-08 guard extension (SWARM-04, SWARM-05, SWARM-08) — wave 3
+- [ ] 51-06a-PLAN.md — Pause fencing column + fenced conditional resume inside the shipped transaction (SWARM-06, D-12/D-13) — wave 3
+- [ ] 51-10-PLAN.md — SC#1's conversation write + the absent-operator outbox leg (SWARM-03, SWARM-09, D-02) — wave 3
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 51-06b-PLAN.md — Worker opens its own pause, and answering RESUMES that worker (SWARM-06, SC#4) — wave 4
+- [ ] 51-07-PLAN.md — Live transcript read surface + SWARM-11 verification (SWARM-10, SWARM-11) — wave 4
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 51-09-PLAN.md — D-03's measured termination model: reap on inactivity, retire the wall clock (SWARM-03/04/09) — wave 5
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 51-08-PLAN.md — Live SC#1–SC#5 driver, quality snapshot re-attestation, PRD measurement — wave 6
 
 ### Phase 52: Mid-turn steering
 

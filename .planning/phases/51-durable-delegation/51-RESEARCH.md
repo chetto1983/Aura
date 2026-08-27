@@ -645,9 +645,16 @@ func markSteer(m steer.Message) (marked, envelope string) {
 **If this table is empty:** N/A — see rows above. Everything else in this document traces to a
 spike README, a committed diff, or a direct code read, and is tagged accordingly in-line.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Does SWARM-02's "tool schema shows real caps" conflict with the Tier A/B "knob catalog"
+All three carry a `Recommendation:` line, and the plans adopted all three.
+Q1 — closed by **51-03** (the caps are injected into `swarm_spawn`'s own rendered schema) and
+**51-05**. Q2 — closed by **51-01** (the enqueue/payload contract on `aura.ingestion_jobs`).
+Q3 — closed by **51-08** plus the `51-VALIDATION.md` Manual-Only table, which carries the
+crash-after-partial-side-effects case as an explicitly stated verdict rather than a silent
+assumption.
+
+1. **(RESOLVED — 51-03 / 51-05)** **Does SWARM-02's "tool schema shows real caps" conflict with the Tier A/B "knob catalog"
    test banning `AURA_SWARM_MAX_DEPTH`?**
    - What we know: `internal/config/config_knobs_test.go:105` bans `AURA_SWARM_MAX_DEPTH` (and
      `AURA_LOOP_*`/`AURA_LLM_*`/`AURA_FS_*`) from an operator-facing "Tier A+B" knob registry
@@ -662,7 +669,7 @@ spike README, a committed diff, or a direct code read, and is tagged accordingly
      (and the other two caps) into the tool's OWN schema/description without touching or
      needing an entry in the Tier A/B knob test's registry.
 
-2. **What payload/enqueue contract does the background delegation row actually need?**
+2. **(RESOLVED — 51-01)** **What payload/enqueue contract does the background delegation row actually need?**
    - What we know: the goal text is already durable inside `swarm_spawn`'s reservation
      `args_raw` (spike 100), so the DATA exists; what's missing is a row that says the work is
      owed.
@@ -673,7 +680,7 @@ spike README, a committed diff, or a direct code read, and is tagged accordingly
      spikes deliberately left it open (stated explicitly in spike 100's "What This Spike Does
      NOT Prove"). Do not treat any payload shape in this document as settled.
 
-3. **Should the crash-after-partial-side-effects case (unmeasured by spike 100) get its own
+3. **(RESOLVED — 51-08 + VALIDATION.md Manual-Only)** **Should the crash-after-partial-side-effects case (unmeasured by spike 100) get its own
    validation task, or is it acceptable residual risk for this phase?**
    - What we know: the only crash test SIGKILLed the daemon 2 seconds in, before any worker
      tool dispatch. A worker that ran `shell_exec`, produced a side effect, and then the daemon
