@@ -12,22 +12,32 @@ const workerOverlay = "You are a headless swarm worker. You cannot see the conve
 	"self-contained final report. The parent agent reads ONLY your final text answer — anything you " +
 	"do not state in the final answer is lost."
 
-// The four D-07 section markers. They are load-bearing literals — structuredBrief
-// emits each one verbatim and a test asserts all four are present (the
-// finalizeNudge substring-assert idiom).
+// The five D-07/SWARM-01 section markers. They are load-bearing literals —
+// structuredBrief emits each one verbatim and a test asserts all four original
+// markers are present (the finalizeNudge substring-assert idiom); briefContext is
+// SWARM-01's new goal/context split, emitted only when a caller supplies context.
 const (
 	briefObjective  = "## Objective"
+	briefContext    = "## Context"
 	briefOutput     = "## Output format"
 	briefTools      = "## Tool guidance"
 	briefBoundaries = "## Task boundaries"
 )
 
-// structuredBrief builds the deterministic D-07 4-part worker brief for one goal,
-// prefixed by the D-06 worker overlay. The byte content is a pure function of goal,
-// so two workers handed the same goal get the same brief (KV-cache friendly). It is
-// returned as the body of a single RoleUser message (messages[1]); messages[0] (the
-// system prompt) is appended unchanged by agent.NewLlmAgent.
-func structuredBrief(goal string) string {
+// structuredBrief builds the deterministic D-07 worker brief for one goal,
+// prefixed by the D-06 worker overlay. SWARM-01 splits the file paths, error
+// messages and constraints (context) from the objective (goal) into their own
+// section, so a worker no longer has to parse them back apart out of one
+// undifferentiated string. The byte content is a pure function of (goal,
+// context), so two workers handed the same inputs get the same brief (KV-cache
+// friendly). It is returned as the body of a single RoleUser message
+// (messages[1]); messages[0] (the system prompt) is appended unchanged by
+// agent.NewLlmAgent.
+//
+// RED (51-03): the signature is widened to (goal, context) so every call site
+// compiles against the new shape, but context is not yet rendered — the
+// section-split lands in the GREEN commit.
+func structuredBrief(goal, context string) string {
 	var b strings.Builder
 	b.WriteString(workerOverlay)
 	b.WriteString("\n\n")

@@ -203,7 +203,7 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 		// flat worker SessionID above — uuid.Parse fails on the flat session (Open Q1).
 		LedgerConversationID: rc.ConvID,
 		Gateway:              rc.Gateway,
-		UserTurns:            []llm.Message{{Role: llm.RoleUser, Content: structuredBrief(goal)}},
+		UserTurns:            []llm.Message{{Role: llm.RoleUser, Content: structuredBrief(goal, "")}},
 	})
 
 	slog.Info("swarm.child.spawned", "child", childID, "goal_index", idx)
