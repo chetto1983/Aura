@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
-	"path/filepath"
 
 	"github.com/chetto1983/aura/internal/agent"
 )
@@ -43,11 +42,17 @@ type ChildReport struct {
 // dumpTranscript appends ev (via Event.MarshalJSON, one JSON object per line) to
 // <runDir>/<convID>/swarm/<childID>.jsonl. This is a SEPARATE direct write, NOT
 // the tool-spillover sidecar (D-18, Pitfall 4): childID is the flat worker id (no
-// slash), so the path is controlled and never model-traversable. It is best-effort
-// — a write error is logged and swallowed (return nil) so a dump failure never
-// fails the swarm.
+// slash), so the path is controlled and never model-traversable — hardened via the
+// SAME transcriptDir/transcriptPath helpers (transcript_api.go) the SWARM-10 read
+// surface validates against, so the write and read sides agree on one path rule. It
+// is best-effort — a write error (including a rejected path) is logged and
+// swallowed (return nil) so a dump failure never fails the swarm.
 func dumpTranscript(runDir, convID, childID string, ev agent.Event) error {
-	dir := filepath.Join(runDir, convID, "swarm")
+	dir, err := transcriptDir(runDir, convID)
+	if err != nil {
+		slog.Warn("swarm transcript path rejected", "child", childID, "err", err)
+		return nil
+	}
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		slog.Warn("swarm transcript mkdir failed", "child", childID, "err", err)
 		return nil
@@ -57,11 +62,12 @@ func dumpTranscript(runDir, convID, childID string, ev agent.Event) error {
 		slog.Warn("swarm transcript marshal failed", "child", childID, "err", err)
 		return nil
 	}
-	// G304 is a false positive here: childID is the internally-generated flat
-	// worker id ("w1".."wN", no path separator — Pitfall 4), and runDir/convID are
-	// operator config, never model-controlled, so the path cannot be traversed.
-	path := filepath.Join(dir, childID+".jsonl")
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) //nolint:gosec // G304: childID is a controlled flat id, path is not model-traversable
+	path, err := transcriptPath(runDir, convID, childID)
+	if err != nil {
+		slog.Warn("swarm transcript path rejected", "child", childID, "err", err)
+		return nil
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) //nolint:gosec // G304: path is built from validatePathSegment-hardened convID/childID, never model-traversable.
 	if err != nil {
 		slog.Warn("swarm transcript open failed", "child", childID, "err", err)
 		return nil
