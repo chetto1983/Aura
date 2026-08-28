@@ -334,3 +334,118 @@ func TestSiblingWorkersOfOneSpawnCollapseOnAnIdenticalCall(t *testing.T) {
 		t.Fatalf("sibling keys diverged (%s vs %s) — worker identity entered the key; update D-10 and this test's rationale together", first, second)
 	}
 }
+
+// TestDeriveToolOperationContextDerivesForDelegatedDispatch (SWARM-08, plan
+// 51-05): 67d24aee4 fixed deriveToolOperationContext to key its re-entry guard on
+// scope AND fingerprint, and TestDeriveToolOperationContextDerivesForNestedToolCall
+// pins the single-hop case that was measured live (spike 099, 4/4 workers). Plan
+// 51-05 opens two dispatch paths that did NOT exist when that fix was measured — a
+// nested (worker-issued) swarm_spawn call, and a claim-loop-dispatched worker's own
+// tool call — and 51-RESEARCH.md is explicit that lifting the registry restriction
+// reopens exactly the fingerprint-collapse defect class if either path ever skips
+// derivation. This builds no production code: it extends the SAME regression guard
+// to both new paths.
+//
+// Both subtests assert the DISPATCH derivation itself (the operation a worker's
+// tool call actually gets), never registry membership — a membership-only
+// assertion would have passed throughout the entire period the shipped defect
+// existed (nothing about the registry changed; only the fingerprint comparison
+// did).
+func TestDeriveToolOperationContextDerivesForDelegatedDispatch(t *testing.T) {
+	t.Run("nested worker's own tool call, two delegation hops deep", func(t *testing.T) {
+		// depth-1 worker's ambient operation: already a derived child of the
+		// top-level swarm_spawn call (swarmParentOperationContextFor's own shape).
+		depthOneCtx := swarmParentOperationContextFor(t, `{"goals":["alpha","beta"]}`)
+
+		// The depth-1 worker itself issues a NESTED swarm_spawn call — plan 51-05
+		// opens exactly this path (workerRegistry grants swarm_spawn below the
+		// depth cap). Derive the depth-2 worker's ambient operation from it.
+		nestedSwarmSpec := tools.Spec{
+			Name: "swarm_spawn", Mutating: true,
+			OperationScope: tools.OperationScopeAgent, OperationNormalizer: tools.OperationNormalizerCanonical,
+			ReplayPolicy: tools.ReplayToolResult,
+		}
+		nestedGoals := json.RawMessage(`{"goals":["gamma"]}`)
+		depthTwoCtx, err := deriveToolOperationContext(depthOneCtx, nestedSwarmSpec, nestedGoals)
+		if err != nil {
+			t.Fatalf("derive nested swarm_spawn operation: %v", err)
+		}
+
+		// The depth-2 worker now dispatches its OWN tool — this must derive a key
+		// off ITS tool's fingerprint, never inherit the nested swarm_spawn's (the
+		// exact shape of the spike 099 defect, one hop further in).
+		spec := childOperationSpec()
+		args := json.RawMessage(`{"action":"restore","name":"calc"}`)
+		want, err := tools.OperationFingerprint(spec, args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		derived, err := deriveToolOperationContext(depthTwoCtx, spec, args)
+		if err != nil {
+			t.Fatalf("depth-2 tool derive: %v", err)
+		}
+		op, ok := idempotency.OperationFromContext(derived)
+		if !ok {
+			t.Fatal("depth-2 tool derive: no operation in context")
+		}
+		if op.Fingerprint != want {
+			t.Fatalf("depth-2 worker's tool call carried the NESTED swarm_spawn's fingerprint %s, want its own tool's %s — "+
+				"the gateway would deny this as an operation fingerprint mismatch",
+				idempotency.FingerprintHex(op.Fingerprint), idempotency.FingerprintHex(want))
+		}
+		if op.Key.Scope != spec.OperationScope {
+			t.Fatalf("depth-2 tool derive scope = %q, want %q", op.Key.Scope, spec.OperationScope)
+		}
+	})
+
+	t.Run("claim-loop-dispatched worker's own tool call", func(t *testing.T) {
+		// Mirrors internal/swarm/delegation_queue.go's delegationOperationContext:
+		// the trusted root a background delegation claim loop mints before calling
+		// runChild for a claimed job's worker.
+		fingerprint, err := idempotency.FingerprintTyped(struct {
+			JobID string `json:"job_id"`
+			Goal  string `json:"goal"`
+		}{JobID: "job-1", Goal: "background goal"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		parent := idempotency.Operation{
+			Key: idempotency.OperationKey{
+				IdentityID: identityctx.LocalOperatorIdentity,
+				Scope:      idempotency.ScopeSwarmDelegation,
+				Key:        "job-1:0",
+			},
+			Fingerprint: fingerprint,
+			Correlation: "job-1",
+		}
+		ctx, err := idempotency.WithOperation(
+			identityctx.WithIdentityID(context.Background(), identityctx.LocalOperatorIdentity), parent,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx = withModelRound(ctx, modelRound{requestID: uuid.Must(uuid.NewV7()), ordinal: 1})
+
+		spec := childOperationSpec()
+		args := json.RawMessage(`{"action":"restore","name":"calc"}`)
+		want, err := tools.OperationFingerprint(spec, args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		derived, err := deriveToolOperationContext(ctx, spec, args)
+		if err != nil {
+			t.Fatalf("claim-loop worker tool derive: %v", err)
+		}
+		op, ok := idempotency.OperationFromContext(derived)
+		if !ok {
+			t.Fatal("claim-loop worker tool derive: no operation in context")
+		}
+		if op.Fingerprint != want {
+			t.Fatalf("claim-loop worker's tool call carried the delegation root's fingerprint %s, want its own tool's %s",
+				idempotency.FingerprintHex(op.Fingerprint), idempotency.FingerprintHex(want))
+		}
+		if op.Key.Scope != spec.OperationScope {
+			t.Fatalf("claim-loop tool derive scope = %q, want %q", op.Key.Scope, spec.OperationScope)
+		}
+	})
+}
