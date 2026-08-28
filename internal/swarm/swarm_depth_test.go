@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"go.uber.org/goleak"
 )
 
@@ -182,5 +183,26 @@ func TestWorkerRegistryDepthBoundary(t *testing.T) {
 	}
 	if _, ok := checkDepth(3, 3); ok {
 		t.Error("checkDepth: a call AT depth 3 (cap) must be rejected")
+	}
+}
+
+// TestWorkerRegistryNeverGrantsATheParentLacked (T-51-19, threat model): raising
+// AURA_SWARM_MAX_DEPTH is not enough to hand a worker swarm_spawn if its OWN
+// parent registry never carried the tool in the first place -- workerRegistry
+// derives strictly from rc.ParentRegistry, never from a root manifest, so a
+// deployment that never wired swarm_spawn at all never grants it to a worker
+// either.
+func TestWorkerRegistryNeverGrantsATheParentLacked(t *testing.T) {
+	t.Setenv("AURA_SWARM_MAX_DEPTH", "5") // generous cap -- canNest(1) would be true
+	rc := testRunConfig(t, newRouter(), 25)
+	rc.ParentRegistry = tools.Without(rc.ParentRegistry, swarmSpawnTool) // parent never had it
+	rc.Depth = 1
+
+	reg, closed := workerRegistry(rc)
+	if _, ok := reg.Get(swarmSpawnTool); ok {
+		t.Error("workerRegistry granted swarm_spawn to a worker whose PARENT registry never carried it (T-51-19)")
+	}
+	if closed {
+		t.Error("a parent that never had swarm_spawn should not surface the nesting-closed notice either -- there was nothing to close")
 	}
 }
