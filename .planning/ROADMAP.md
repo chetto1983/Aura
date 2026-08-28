@@ -593,7 +593,7 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 
 - [x] 51-05-PLAN.md — Depth-bounded nesting, synchronous nested delegation, SWARM-08 guard extension (SWARM-04, SWARM-05, SWARM-08) — wave 3
-- [ ] 51-06a-PLAN.md — Pause fencing column + fenced conditional resume inside the shipped transaction (SWARM-06, D-12/D-13) — wave 3
+- [x] 51-06a-PLAN.md — Pause fencing column + fenced conditional resume inside the shipped transaction (SWARM-06, D-12/D-13) — wave 3
 - [x] 51-10-PLAN.md — SC#1's conversation write + the absent-operator outbox leg (SWARM-03, SWARM-09, D-02) — wave 3
 
 **Wave 4** *(blocked on Wave 3 completion)*

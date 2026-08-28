@@ -4,16 +4,16 @@ milestone: v2.1.0
 current_phase: 51
 current_phase_name: Durable delegation
 status: executing
-stopped_at: Completed 51-10-PLAN.md (SWARM-03 SC#1 conversation record, SWARM-09 absent-operator channel nudge)
-last_updated: "2026-08-28T10:34:05.000Z"
+stopped_at: Completed 51-06a-PLAN.md (SWARM-06 fencing/attribution guard rails; SWARM-06 not yet complete, pending 51-06b)
+last_updated: "2026-08-28T12:16:13.245Z"
 last_activity: 2026-08-28
 last_activity_desc: Phase 51 execution resumed (wave continue)
-state_head: 2d9a65dcd62870de7631e4a5d5cc0a9131f3ae74
+state_head: 90997061c39ffba58548e5b386f509b2de77a655
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 45
-  completed_plans: 40
+  completed_plans: 41
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -102,6 +102,7 @@ Progress: [██████████] 100% (Phase 46 dispositions)
 | Phase 51 P03 | ~55 min | 2 tasks | 12 files |
 | Phase 51 P05 | 40min | 2 tasks | 6 files |
 | Phase 51 P10 | ~1h30m | 2 tasks | 22 files |
+| Phase 51-durable-delegation P06a | 90min | 1 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -197,6 +198,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 51]: 51-10 widened aura.pending_notifications (migration 0105) with a nullable steer_queue_id sibling to run_id rather than reusing agent_job_runs' FK or a second outbox table — the row the absent-operator nudge retries is a steer_queue row, not the (already-succeeded) delegation job; CHECK (run_id IS NOT NULL OR steer_queue_id IS NOT NULL) enforces exactly one owner
 - [Phase 51]: 51-10 claims a steer_queue nudge row (MarkSteerRowNudged's conditional UPDATE) BEFORE pushing to the channel, not after — generalizes DrainSteerRows' "the drain IS the claim" idiom to a sweep that spans a network call and cannot hold one transaction open across it; proven under real concurrency against live Postgres (TestNudgeOnceUnderConcurrency)
 - [Phase 51]: 51-10 wraps the RECORDED conversation copy with an explicit worker/goal attribution (attributedWorkerReport, T-51-38) but leaves the pushed steer copy raw/unchanged from 51-01 — one shared wrapper would have been wrong for either reader, since the steer copy earns its own attribution downstream at drain time
+- [Phase 51]: [Phase 51] 51-06a: checkpoint resolved `new-columns` — owning_worker_id is a NEW host-written column; proxied_from_child_id/proxied_tool_call_id keep meaning exactly what they mean today (synchronous, model-relayed). paused_states_worker_attribution_exclusive CHECK makes the two mutually exclusive at the DB layer, enforcing T-51-47 rather than merely documenting it.
+- [Phase 51]: [Phase 51] 51-06a: MarkResumedBatchTx's map value type changed to FencedResumeAnswer (Tx-bound internal method only); the PUBLIC MarkResumedBatch/PauseStore interface signature stayed byte-identical to avoid rippling through 5+ existing test fakes across the repo.
+- [Phase 51]: [Phase 51] 51-06a: PoolResumeCommitter.CommitResume (single-claim) was also switched onto the fenced path, not only CommitResumeBatch -- ResumeClaim.ExpectActionID is one shared struct field for both, so leaving CommitResume unfenced would have been a silent gap for whichever resume shape 51-06b needs.
 
 ### Pending Todos
 
@@ -261,8 +265,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-28T10:34:05.000Z
-Stopped at: Completed 51-10-PLAN.md (SWARM-03 SC#1 conversation record, SWARM-09 absent-operator channel nudge)
+Last session: 2026-08-28T12:16:13.100Z
+Stopped at: Completed 51-06a-PLAN.md (SWARM-06 fencing/attribution guard rails; SWARM-06 not yet complete, pending 51-06b)
 exited at its CONTEXT.md gate — Phase 45 has no CONTEXT.md, and discuss-phase must run as a
 top-level command (nested invocation breaks AskUserQuestion, GSD #1009). No phase directory
 was created and no planning agents were spawned.
