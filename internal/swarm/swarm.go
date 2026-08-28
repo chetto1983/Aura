@@ -2,6 +2,7 @@ package swarm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
@@ -61,6 +62,16 @@ type RunConfig struct {
 	IdentityID  string
 	ParentRunID string
 	Enqueuer    *DelegationEnqueuer
+
+	// ResumeTurns is the 51-06b resume seam (Task 2): when non-empty, runChild seeds
+	// LlmAgentConfig.UserTurns with THIS instead of structuredBrief(goal) -- everything
+	// else about the worker's construction stays byte-identical, so there is still
+	// exactly one worker construction in the tree (the invariant plan 51-01 established
+	// and plan 51-09 depends on). buildResumeTurns (delegation_resume.go) is the one
+	// caller: the persisted DelegationResumeState.History plus one final RoleTool
+	// message answering the pending ask_user call. Empty for every ordinary (never-
+	// paused) swarm_spawn call -- zero regression.
+	ResumeTurns []llm.Message
 }
 
 // Run fans goals out as LlmAgent workers in budget-bounded leak-safe waves, isolates
@@ -177,7 +188,10 @@ func runWave(ctx context.Context, rc RunConfig, goals []string, reports []ChildR
 			}
 			childCtx, ccancel := context.WithTimeout(egCtx, childTimeout)
 			defer ccancel()
-			reports[idx] = runChild(childCtx, rc, childBudget, idx, goals[idx])
+			// The synchronous wave path has no use for the reconstructed history
+			// (that is the background delegation path's own concern,
+			// delegation_queue.go's runWithHeartbeat) -- discarded here.
+			reports[idx], _ = runChild(childCtx, rc, childBudget, idx, goals[idx])
 			return nil // D-02: a child failure NEVER cancels siblings
 		})
 	}
@@ -203,7 +217,17 @@ func panicChildReport(idx int, recovered any) ChildReport {
 // particular Run call is at, so the depth-conditional registry and the
 // gateway.WithDelegatedDispatch reservation below both apply identically at any
 // nesting level.
-func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, goal string) ChildReport {
+//
+// The second return value is the reconstructed accumulated history (51-06b Task 2):
+// the seeded UserTurns plus every tool-call/tool-result pair the worker actually ran,
+// in order, plus (on a fresh pause) the synthesized ask_user assistant message. It is
+// captured via historyRecorder, an agent.Hook -- the ONLY exported extension point
+// LlmAgentConfig accepts -- so this file never reads internal/agent's private
+// a.history field and internal/agent stays untouched by this plan. The synchronous
+// swarm_spawn wave (runWave) discards it; the background delegation path
+// (delegation_queue.go's runWithHeartbeat) is the one caller that needs it, to persist
+// DelegationResumeState when the worker pauses.
+func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, goal string) (ChildReport, []llm.Message) {
 	childID := fmt.Sprintf("w%d", idx+1)
 	report := ChildReport{GoalIndex: idx, ChildID: childID, Status: StatusOK}
 
@@ -213,6 +237,17 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 		briefContext = appendNestingClosedNotice(briefContext)
 	}
 
+	// userTurns is whatever this run's worker is ACTUALLY seeded with -- a resume's
+	// persisted history + answer (rc.ResumeTurns) when resuming, or the ordinary fresh
+	// brief otherwise. It is the reconstruction's own seed (below), so a SECOND pause
+	// during a resumed run reconstructs correctly without special-casing: the seed for
+	// THIS run is always exactly what was passed to NewLlmAgent this time.
+	userTurns := rc.ResumeTurns
+	if len(userTurns) == 0 {
+		userTurns = []llm.Message{{Role: llm.RoleUser, Content: structuredBrief(goal, briefContext)}}
+	}
+
+	rec := newHistoryRecorder()
 	worker := agent.NewLlmAgent(agent.LlmAgentConfig{
 		Client:     rc.Client,
 		LLM:        rc.LLM,
@@ -224,7 +259,11 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 		// flat worker SessionID above — uuid.Parse fails on the flat session (Open Q1).
 		LedgerConversationID: rc.ConvID,
 		Gateway:              rc.Gateway,
-		UserTurns:            []llm.Message{{Role: llm.RoleUser, Content: structuredBrief(goal, briefContext)}},
+		UserTurns:            userTurns,
+		// FailOpen (not the Register/NewHookManager default FailClosed): a recorder bug
+		// must degrade to "resume state incomplete", never abort a live worker turn --
+		// this hook is a best-effort observer, not a security gate.
+		HookManager: agent.NewHookManagerWithPolicy(agent.FailOpen, rec),
 	})
 
 	slog.Info("swarm.child.spawned", "child", childID, "goal_index", idx)
@@ -242,6 +281,7 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 		Budget:    budget,
 	}
 
+	var pauseCall *llm.ToolCall
 	for ev, err := range worker.Run(ic) {
 		if err != nil {
 			report.Status, report.Error = StatusFailed, err.Error()
@@ -257,6 +297,7 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 			report.Question = ai.Question
 			report.Options = optionLabels(ai.Options)
 			report.ToolCallID = ai.ToolCallID
+			pauseCall = pauseAskUserCall(ai)
 			continue
 		}
 		if ev.LLMResponse != nil && ev.LLMResponse.Content != "" {
@@ -277,8 +318,13 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 		report.Summary = ""
 	}
 
+	history := append(append([]llm.Message(nil), userTurns...), rec.messages()...)
+	if report.Status == StatusNeedsUserInput && pauseCall != nil {
+		history = append(history, llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{*pauseCall}})
+	}
+
 	slog.Info("swarm.child.completed", "child", childID, "status", report.Status, "dur", time.Since(started))
-	return report
+	return report, history
 }
 
 // optionLabels projects the Event-model PauseOption values onto the flat []string
@@ -293,3 +339,92 @@ func optionLabels(opts []agent.PauseOption) []string {
 	}
 	return out
 }
+
+// pauseAskUserArgs is the reconstructed wire shape of the ask_user call that paused --
+// close enough to what the model actually emitted (question/options/kind) for a rebuilt
+// worker's history to stay wire-valid and legible, without needing the model's own
+// original raw Arguments JSON (Actions.AwaitingInput does not carry it, by design --
+// the agent stays DB-free and the Event model is deliberately minimal, D-A1-03).
+type pauseAskUserArgs struct {
+	Question string   `json:"question"`
+	Options  []string `json:"options,omitempty"`
+	Kind     string   `json:"kind,omitempty"`
+}
+
+// pauseAskUserCall synthesizes the assistant ask_user tool_calls entry that MUST
+// precede the resume's injected RoleTool answer for the seeded history to be
+// wire-valid (an OpenAI-compatible "tool" message must directly follow the assistant
+// message whose tool_calls contains its matching id). ai.ToolCallID is REAL (the
+// worker's own id, stamped by the dispatch loop before the Event is emitted); the
+// Arguments JSON is a faithful reconstruction of what the model asked, not a byte-exact
+// replay of what it originally emitted.
+func pauseAskUserCall(ai *agent.AwaitingInput) *llm.ToolCall {
+	if ai == nil || ai.ToolCallID == "" {
+		return nil
+	}
+	args, err := json.Marshal(pauseAskUserArgs{
+		Question: ai.Question,
+		Options:  optionLabels(ai.Options),
+		Kind:     ai.Kind,
+	})
+	if err != nil {
+		args = []byte(`{}`)
+	}
+	call := llm.ToolCall{ID: ai.ToolCallID, Type: "function"}
+	call.Function.Name = "ask_user"
+	call.Function.Arguments = string(args)
+	return &call
+}
+
+// historyRecorder is the ONLY exported extension point runChild needs to reconstruct a
+// worker's accumulated history from outside internal/agent: agent.Hook.AfterTool fires,
+// serially, in the SAME original-call order internal/agent's own a.history append does
+// (dispatch.go's result loop is explicitly serial "so the wire contract and cache
+// stability hold"), so no lock is needed here.
+//
+// It records the RAW tool-result preview (res.Preview, tools.ToolResult's own field),
+// not the model-facing WRAPPED rendering internal/agent's private a.history actually
+// stores for untrusted tools (renderToolResultForPrompt's nonce envelope, AG-052) --
+// that wrap cannot be reproduced from outside the package (its nonce is
+// crypto/rand-minted per call and never surfaces on any Event or hook). For the ONE
+// pair this mechanism is load-bearing for, tool_search, this is a non-issue:
+// tool_search is on internal/agent's own trustedToolNames allowlist, so its result is
+// NEVER wrapped -- res.Preview there IS byte-identical to what a.history actually
+// stores. For every OTHER tool, a resumed worker's replayed history carries that tool's
+// raw output without the untrusted-envelope trust framing it originally had -- a
+// documented, narrower scope than byte-perfect verbatim (recorded in the plan SUMMARY),
+// not a silent gap.
+type historyRecorder struct {
+	msgs []llm.Message
+}
+
+func newHistoryRecorder() *historyRecorder { return &historyRecorder{} }
+
+// messages returns a defensive copy of everything recorded so far.
+func (r *historyRecorder) messages() []llm.Message {
+	return append([]llm.Message(nil), r.msgs...)
+}
+
+func (r *historyRecorder) OnTurnStart(context.Context, agent.HookTurn) error { return nil }
+
+func (r *historyRecorder) BeforeModel(context.Context, *llm.Request) (*agent.ModelHookResult, error) {
+	return nil, nil
+}
+
+func (r *historyRecorder) BeforeTool(context.Context, llm.ToolCall) (*agent.ToolHookResult, error) {
+	return nil, nil
+}
+
+// AfterTool never rewrites the result (always returns nil, nil) -- it is a pure
+// observer, mirroring a passive audit hook rather than a policy one.
+func (r *historyRecorder) AfterTool(_ context.Context, call llm.ToolCall, res tools.ToolResult) (*agent.ToolResultHookResult, error) {
+	r.msgs = append(r.msgs,
+		llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{call}},
+		llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Content: res.Preview},
+	)
+	return nil, nil
+}
+
+func (r *historyRecorder) OnTurnEnd(context.Context, agent.HookTurn) error { return nil }
+
+var _ agent.Hook = (*historyRecorder)(nil)

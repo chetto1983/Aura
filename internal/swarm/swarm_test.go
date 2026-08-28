@@ -22,7 +22,7 @@ import (
 
 // outcome scripts one worker's behavior, keyed by a goal substring.
 type outcome struct {
-	kind     string // "ok" | "fail" | "pause" | "block" | "steps"
+	kind     string // "ok" | "fail" | "pause" | "block" | "steps" | "pause_then_ok"
 	text     string // ok summary
 	question string // pause question
 	options  []string
@@ -114,6 +114,22 @@ func (r *routerClient) Stream(ctx context.Context, req llm.Request) (<-chan llm.
 		if call <= o.steps {
 			args, _ := json.Marshal(map[string]string{"v": fmt.Sprintf("%s-%d", sub, call)})
 			return toolChan(agenttest.MakeToolCall(fmt.Sprintf("c-%s-%d", sub, call), "echo", string(args))), nil
+		}
+		return closedChan(llm.Chunk{Text: o.text}, llm.Chunk{FinishReason: "stop"}), nil
+	case "pause_then_ok":
+		// 51-06b Task 2: the FIRST Stream call against this goal pauses (same shape as
+		// "pause"); every call after that -- i.e. the rebuilt worker's first call once
+		// runChild is re-invoked with ResumeTurns seeded -- answers ok. Distinguishing by
+		// r.calls[sub] (not request content) is deliberate: it proves the SECOND runChild
+		// invocation is a genuinely NEW model call driven by the resumed history, not a
+		// replay of the first.
+		if call <= 1 {
+			args, _ := json.Marshal(map[string]any{
+				"question": o.question,
+				"kind":     "choice",
+				"options":  o.options,
+			})
+			return toolChan(agenttest.MakeToolCall(fmt.Sprintf("call-%s", sub), "ask_user", string(args))), nil
 		}
 		return closedChan(llm.Chunk{Text: o.text}, llm.Chunk{FinishReason: "stop"}), nil
 	default: // "ok"
@@ -339,7 +355,7 @@ func TestRunChildTimeoutDoesNotClobberCompletedSuccess(t *testing.T) {
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer cancel()
 
-	rep := runChild(ctx, rc, rc.ParentBudget, 0, "alpha task")
+	rep, _ := runChild(ctx, rc, rc.ParentBudget, 0, "alpha task")
 	if rep.Status != StatusOK {
 		t.Fatalf("a completed worker must keep StatusOK past a tripped deadline, got {%q,%q}", rep.Status, rep.Error)
 	}

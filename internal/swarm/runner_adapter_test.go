@@ -129,6 +129,17 @@ type fakeDelegationStore struct {
 	retries      []documents.RetryIngestionJobRequest
 	heartbeats   []documents.HeartbeatIngestionJobRequest
 	heartbeatErr error
+
+	// answered/unparks back the 51-06b Task 2 DelegationResumeObserver legs
+	// (DelegationJobStore.ListAnsweredAwaitingInput/UnparkIngestionJob). Zero
+	// value = "nothing answered, unpark matches nothing", the same
+	// ignore-it-if-you-don't-care-about-this-leg default every other field here
+	// follows.
+	answered   []documents.AnsweredAwaitingInputJob
+	answerErr  error
+	unparks    []documents.UnparkIngestionJobRequest
+	unparkRows int64
+	unparkErr  error
 }
 
 func (s *fakeDelegationStore) claimCount() int {
@@ -199,6 +210,25 @@ func (s *fakeDelegationStore) Heartbeat(_ context.Context, req documents.Heartbe
 		return documents.IngestionJob{}, s.heartbeatErr
 	}
 	return documents.IngestionJob{ID: req.JobID, Status: "running"}, nil
+}
+
+func (s *fakeDelegationStore) ListAnsweredAwaitingInput(context.Context, string, int) ([]documents.AnsweredAwaitingInputJob, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.answerErr != nil {
+		return nil, s.answerErr
+	}
+	return append([]documents.AnsweredAwaitingInputJob(nil), s.answered...), nil
+}
+
+func (s *fakeDelegationStore) UnparkIngestionJob(_ context.Context, req documents.UnparkIngestionJobRequest) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.unparks = append(s.unparks, req)
+	if s.unparkErr != nil {
+		return 0, s.unparkErr
+	}
+	return s.unparkRows, nil
 }
 
 // TestRunnerAdapterBackgroundsWhenEnqueuerConfigured proves the wiring gap this

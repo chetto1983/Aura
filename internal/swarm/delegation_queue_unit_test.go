@@ -180,9 +180,10 @@ func (f *fakeSteerPublisher) Push(conv, source, text string) error {
 func TestNewDelegationClaimLoopBindsItsArguments(t *testing.T) {
 	store := &fakeDelegationStore{}
 	delivery := &DelegationDelivery{}
-	l := NewDelegationClaimLoop(store, delivery, "identity-1", RunConfig{ConvID: "seed"}, 9*time.Second, 3*time.Second)
-	if l.Store != store || l.Delivery != delivery {
-		t.Fatal("constructor did not bind the store and delivery")
+	parker := &fakePauseAndPark{}
+	l := NewDelegationClaimLoop(store, delivery, parker, "identity-1", RunConfig{ConvID: "seed"}, 9*time.Second, 3*time.Second)
+	if l.Store != store || l.Delivery != delivery || l.PauseParker != parker {
+		t.Fatal("constructor did not bind the store, delivery and pause parker")
 	}
 	if l.IdentityID != "identity-1" || l.LeaseDuration != 9*time.Second || l.PollInterval != 3*time.Second {
 		t.Fatalf("constructor bound %+v, want the passed identity and durations", l)
@@ -487,9 +488,9 @@ func TestRunSwallowsAPassErrorAndStopsOnCancel(t *testing.T) {
 // through runWithHeartbeat and the SAME runChild a synchronous swarm invocation uses
 // -- no second worker construction -- with a scripted client standing in for the
 // model. The three cases are the three terminal shapes processJob must distinguish:
-// a delivered report, a failed worker, and a pause that this phase deliberately does
-// not yet handle (51-06b) and therefore must fail loudly with the question preserved
-// rather than silently succeed.
+// a delivered report, a failed worker, and (51-06b Task 1) a pause the worker opens
+// its OWN attributed pause for and parks its row, rather than dead-lettering the
+// question away.
 func TestProcessJobRunsTheWorkerAndRoutesEveryOutcome(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
@@ -497,6 +498,7 @@ func TestProcessJobRunsTheWorkerAndRoutesEveryOutcome(t *testing.T) {
 		wantPushes  int
 		wantStatus  string
 		wantRetried bool
+		wantPaused  bool
 		wantInMsg   string
 	}{
 		{
@@ -508,8 +510,11 @@ func TestProcessJobRunsTheWorkerAndRoutesEveryOutcome(t *testing.T) {
 			wantPushes: 0, wantRetried: true,
 		},
 		{
+			// openPauseAndPark delivers the question through the SAME plan-51-10
+			// seam a consolidated report uses -- 1 push, not 0 (D-04, no new
+			// delivery policy).
 			name: "paused for input", out: outcome{kind: "pause", question: "which inbox?"},
-			wantPushes: 0, wantRetried: true, wantInMsg: "which inbox?",
+			wantPushes: 1, wantPaused: true, wantInMsg: "which inbox?",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -526,9 +531,10 @@ func TestProcessJobRunsTheWorkerAndRoutesEveryOutcome(t *testing.T) {
 				MaxAttempts: 3,
 			}}}
 			pub := &fakeSteerPublisher{}
+			parker := newFakePauseAndPark()
 			l := &DelegationClaimLoop{
 				Store: store, Delivery: &DelegationDelivery{Recorder: &fakeConversationRecorder{}, Steer: pub}, IdentityID: identityID,
-				Worker: rc, LeaseDuration: time.Minute,
+				Worker: rc, LeaseDuration: time.Minute, PauseParker: parker,
 			}
 
 			n, err := l.ProcessOnce(withToolCtx(context.Background(), t))
@@ -549,9 +555,33 @@ func TestProcessJobRunsTheWorkerAndRoutesEveryOutcome(t *testing.T) {
 			if tc.wantRetried && len(store.retriesSnapshot()) != 1 {
 				t.Fatalf("retries = %d, want 1", len(store.retriesSnapshot()))
 			}
-			if msg := store.retriesSnapshot(); tc.wantInMsg != "" && !strings.Contains(msg[0].ErrorMessage, tc.wantInMsg) {
+			if msg := store.retriesSnapshot(); tc.wantInMsg != "" && !tc.wantPaused && !strings.Contains(msg[0].ErrorMessage, tc.wantInMsg) {
 				t.Fatalf("retry message = %q, want it to preserve %q",
 					msg[0].ErrorMessage, tc.wantInMsg)
+			}
+			if tc.wantPaused {
+				calls := parker.callsSnapshot()
+				if len(calls) != 1 {
+					t.Fatalf("OpenPauseAndPark calls = %d, want 1", len(calls))
+				}
+				if calls[0].pause.Question != tc.wantInMsg {
+					t.Fatalf("pause question = %q, want %q", calls[0].pause.Question, tc.wantInMsg)
+				}
+				if calls[0].pause.OwningWorkerID == nil || *calls[0].pause.OwningWorkerID != "j1" {
+					t.Fatalf("pause OwningWorkerID = %v, want job.ID j1 (D-13)", calls[0].pause.OwningWorkerID)
+				}
+				if calls[0].pause.PendingActionID == nil || *calls[0].pause.PendingActionID == "" {
+					t.Fatal("pause PendingActionID must be minted fresh (D-12)")
+				}
+				if calls[0].park.JobID != "j1" {
+					t.Fatalf("park JobID = %q, want j1", calls[0].park.JobID)
+				}
+				// The row is neither retried nor dead-lettered/succeeded -- it is
+				// parked, a non-terminal state distinct from all three.
+				if len(store.retriesSnapshot()) != 0 || len(store.transitionsSnapshot()) != 0 {
+					t.Fatalf("a paused row must not be retried/transitioned by the queue lifecycle, got retries=%v transitions=%v",
+						store.retriesSnapshot(), store.transitionsSnapshot())
+				}
 			}
 		})
 	}

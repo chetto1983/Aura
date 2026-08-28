@@ -22,10 +22,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/documents"
-	"github.com/chetto1983/aura/internal/idempotency"
-	"github.com/chetto1983/aura/internal/identityctx"
 )
 
 // JobTypeSwarmDelegation is the aura.ingestion_jobs discriminator for a
@@ -55,6 +52,14 @@ type DelegationPayload struct {
 	ConversationID string `json:"conversation_id"`
 	ParentRunID    string `json:"parent_run_id,omitempty"`
 	Depth          int    `json:"depth"`
+	// Resume is the 51-06b continuation snapshot (D-01: no new table, the queue row's
+	// EXISTING payload carries it): nil on every ordinary delegation that has never
+	// paused; set by Task 1 the moment a worker's report comes back
+	// StatusNeedsUserInput, and completed with the operator's answer by the resume
+	// observer immediately before un-parking. Its presence, not a separate status flag,
+	// is what tells processJob to rebuild through runChild with ResumeTurns instead of
+	// a fresh brief.
+	Resume *DelegationResumeState `json:"resume,omitempty"`
 }
 
 // SteerPublisher is the narrow steer-push seam the claim loop needs to
@@ -77,6 +82,12 @@ type DelegationJobStore interface {
 	UpdateStatus(ctx context.Context, req documents.TransitionIngestionJobRequest) (documents.IngestionJob, error)
 	Retry(ctx context.Context, req documents.RetryIngestionJobRequest) (documents.IngestionJob, error)
 	Heartbeat(ctx context.Context, req documents.HeartbeatIngestionJobRequest) (documents.IngestionJob, error)
+	// ListAnsweredAwaitingInput + UnparkIngestionJob back DelegationResumeObserver
+	// (delegation_resume.go, 51-06b Task 2): which parked jobs may now resume, and
+	// returning one to claimable exactly once. *documents.PostgresIngestionJobStore
+	// satisfies both by construction, alongside the five methods above.
+	ListAnsweredAwaitingInput(ctx context.Context, identityID string, limit int) ([]documents.AnsweredAwaitingInputJob, error)
+	UnparkIngestionJob(ctx context.Context, req documents.UnparkIngestionJobRequest) (int64, error)
 }
 
 // DelegationEnqueuer writes one durable job_type=swarm_delegation row per
@@ -188,13 +199,20 @@ type DelegationClaimLoop struct {
 	BatchSize     int
 	RetryBackoff  time.Duration
 	Worker        RunConfig
+	// PauseParker is the 51-06b Task 1 seam: a claimed job's AwaitingInput report opens
+	// its own attributed pause and parks its row in ONE transaction (delegation_resume.go).
+	// A nil PauseParker degrades a StatusNeedsUserInput report to a hard config error
+	// (openPauseAndPark's own guard), never a silent skip -- mirrors Delivery's own
+	// nil-receiver posture for the SC#1 write.
+	PauseParker PauseAndPark
 }
 
 // NewDelegationClaimLoop builds a claim loop bound to one identity's queue.
-func NewDelegationClaimLoop(store DelegationJobStore, delivery *DelegationDelivery, identityID string, worker RunConfig, leaseDuration, pollInterval time.Duration) *DelegationClaimLoop {
+func NewDelegationClaimLoop(store DelegationJobStore, delivery *DelegationDelivery, pauseParker PauseAndPark, identityID string, worker RunConfig, leaseDuration, pollInterval time.Duration) *DelegationClaimLoop {
 	return &DelegationClaimLoop{
 		Store:         store,
 		Delivery:      delivery,
+		PauseParker:   pauseParker,
 		IdentityID:    identityID,
 		LeaseDuration: leaseDuration,
 		PollInterval:  pollInterval,
@@ -264,7 +282,20 @@ func (l *DelegationClaimLoop) processJob(ctx context.Context, job documents.Inge
 		return l.recordFailure(ctx, job, fmt.Errorf("delegation payload: %w", err))
 	}
 
-	report, err := l.runWithHeartbeat(ctx, job, payload)
+	// 51-06b (T-51-36, D-00's second LibreChat trap): a resume state whose
+	// AgentIdentity does not match the identity this job is claimed under refuses
+	// loudly, runs nothing -- never a silent rebuild under someone else's registry,
+	// gateway or budget. Checked BEFORE runWithHeartbeat so a mismatch never
+	// constructs a worker at all (runWithHeartbeat's own error return is reserved for
+	// "lease lost mid-run", which must NOT record a failure -- a distinct case this
+	// check keeps separate).
+	if payload.Resume != nil && payload.Resume.AgentIdentity != job.IdentityID {
+		return l.recordFailure(ctx, job, fmt.Errorf(
+			"delegation resume: agent identity mismatch (state=%s job=%s) -- refusing to rebuild",
+			payload.Resume.AgentIdentity, job.IdentityID))
+	}
+
+	report, history, err := l.runWithHeartbeat(ctx, job, payload)
 	if err != nil {
 		// Lease lost mid-run: another worker now owns this row. Writing any
 		// further state here would race that worker's own transition.
@@ -275,12 +306,9 @@ func (l *DelegationClaimLoop) processJob(ctx context.Context, job documents.Inge
 	case StatusOK:
 		return l.deliverSuccess(ctx, job, payload, report)
 	case StatusNeedsUserInput:
-		// A persisted, resumable per-worker pause is plan 51-06b's work
-		// (SWARM-06). At this wave a paused delegation fails loudly with the
-		// question preserved in the error rather than implying it is handled.
-		return l.recordFailure(ctx, job, fmt.Errorf(
-			"worker paused for operator input (not yet handled by this phase's tracer -- see plan 51-06b): %s",
-			report.Question))
+		// 51-06b Task 1/2: the worker opens its OWN attributed, fenced pause and
+		// parks its row instead of failing -- the resumable path this phase closes.
+		return l.openPauseAndPark(ctx, job, payload, report, history)
 	default:
 		msg := report.Error
 		if msg == "" {
@@ -288,114 +316,6 @@ func (l *DelegationClaimLoop) processJob(ctx context.Context, job documents.Inge
 		}
 		return l.recordFailure(ctx, job, errors.New(msg))
 	}
-}
-
-// runWithHeartbeat runs the claimed job through the SAME runChild every
-// synchronous swarm invocation uses -- no second worker construction, no
-// second event loop, so Pitfall 2's fix (791dcd7e0, gateway.WithDelegatedDispatch)
-// rides along automatically -- while a sibling goroutine renews the Postgres
-// lease on a fixed interval, copying jobs_worker.go's
-// handleWithHeartbeat/maintainLease shape (goroutine racing the handler,
-// context.WithCancel, buffered result channel).
-//
-// INTERIM (D-03): the heartbeat tick source here is a fixed ticker, not
-// runChild's own per-event loop. runChild is called as one opaque blocking
-// unit precisely so its ONE event loop stays in swarm.go (this plan's own
-// prohibition on cloning it); threading a per-event liveness hook through it
-// is D-03's REAL fix and is plan 51-09's job (child_staleness.go), once the
-// termination model itself changes from a wall-clock cap to inactivity-based
-// (unbounded worker lifetime). A fixed ticker is safe here because the
-// configured lease default (AURA_SWARM_DELEGATION_LEASE_SEC=300) already
-// exceeds the measured worst-case worker lifetime -- SwarmChildTimeoutSec +
-// LLMTotalTimeoutSec = 240s effective (spike 099) -- so a missed tick cannot
-// expire the lease before the worker naturally terminates. This is an INTERIM
-// bound, not this phase's answer to D-03.
-func (l *DelegationClaimLoop) runWithHeartbeat(ctx context.Context, job documents.IngestionJob, payload DelegationPayload) (ChildReport, error) {
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	heartbeatErr := make(chan error, 1)
-	go func() {
-		heartbeatErr <- l.maintainLease(runCtx, cancel, job)
-	}()
-
-	rc := l.Worker
-	rc.ConvID = payload.ConversationID
-	rc.Depth = payload.Depth
-	rc.Context = payload.Context
-
-	budget, err := agent.NewBudgetFromEnv()
-	if err != nil {
-		cancel()
-		<-heartbeatErr
-		return ChildReport{}, fmt.Errorf("delegation job budget: %w", err)
-	}
-
-	// Mint the ROOT operation context here, mirroring cron/dispatch.go's
-	// scheduledOperationContext exactly: a worker's own mutating tool calls
-	// (shell_exec, write_file, ...) are denied "operation context missing" by
-	// gateway.beginOperation unless a trusted parent operation already sits on
-	// ctx (internal/agent/idempotency_operation.go's deriveToolOperationContext
-	// derives a CHILD from a parent -- it never mints a root). The HTTP ingress
-	// mints one for a live turn and the scheduler mints one for a cron dispatch;
-	// this claim loop is the third kind of trusted root and had none, which
-	// measured as a 100% deterministic denial of every worker tool call on the
-	// very first live delegation (the same shape as spike 099's Pitfall 1, one
-	// layer further out). Keyed on job.ID + LeaseGeneration so a reclaimed/retried
-	// attempt is a genuinely different operation -- never a replay of a dead
-	// attempt's stale result, exactly like a scheduler reclaim's fresh RunID.
-	delegationCtx, err := delegationOperationContext(runCtx, job, payload)
-	if err != nil {
-		cancel()
-		<-heartbeatErr
-		return ChildReport{}, fmt.Errorf("delegation operation context: %w", err)
-	}
-
-	report := runChild(delegationCtx, rc, budget, 0, payload.Goal)
-	cancel()
-	if hbErr := <-heartbeatErr; hbErr != nil {
-		return ChildReport{}, hbErr
-	}
-	return report, nil
-}
-
-// delegationOperationContext mints the trusted root operation context a
-// claimed delegation job's worker needs before it can dispatch ANY mutating
-// tool (gateway.beginOperation denies "operation context missing" otherwise --
-// see runWithHeartbeat's doc comment). It also binds identityctx.WithIdentityID
-// so the worker's own identity-scoped tools (document_search, skill_manage,
-// send_file_ingest, and a NESTED swarm_spawn once 51-05 lifts the registry
-// restriction) resolve the SAME identity the row is scoped to, not an absent
-// one -- mirroring cron/dispatch.go's scheduledOperationContext, one layer
-// further out (a worker instead of a scheduled task).
-func delegationOperationContext(ctx context.Context, job documents.IngestionJob, payload DelegationPayload) (context.Context, error) {
-	fingerprint, err := idempotency.FingerprintTyped(struct {
-		JobID    string `json:"job_id"`
-		Goal     string `json:"goal"`
-		ConvID   string `json:"conversation_id"`
-		ParentID string `json:"parent_run_id"`
-	}{JobID: job.ID, Goal: payload.Goal, ConvID: payload.ConversationID, ParentID: payload.ParentRunID})
-	if err != nil {
-		return nil, fmt.Errorf("delegation operation fingerprint: %w", err)
-	}
-	operation := idempotency.Operation{
-		Key: idempotency.OperationKey{
-			IdentityID: job.IdentityID,
-			Scope:      idempotency.ScopeSwarmDelegation,
-			// LeaseGeneration increments on every claim (including a reclaim after
-			// a dead worker's lease expired), so a retried attempt is always a
-			// DIFFERENT operation -- never a replay of a stale/abandoned attempt.
-			Key: job.ID + ":" + strconv.FormatInt(job.LeaseGeneration, 10),
-		},
-		Fingerprint: fingerprint,
-		Correlation: job.ID,
-	}
-	trusted := identityctx.WithIdentityID(ctx, job.IdentityID)
-	operationCtx, err := idempotency.WithOperation(trusted, operation)
-	if err != nil {
-		return nil, fmt.Errorf("delegation operation: %w", err)
-	}
-	return operationCtx, nil
 }
 
 func (l *DelegationClaimLoop) maintainLease(ctx context.Context, cancel context.CancelFunc, job documents.IngestionJob) error {

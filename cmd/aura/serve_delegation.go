@@ -181,18 +181,53 @@ func newRuntimeDelegationWorker(chat *chatEnv, delivery *swarm.DelegationDeliver
 		ParentRegistry: chat.reg,
 		Gateway:        chat.gateway,
 	}
+	// pauseParker is 51-06b Task 1's one-transaction seam: a claimed job's
+	// AwaitingInput report opens its own attributed pause AND parks its row
+	// atomically (delegation_pause_committer.go), mirroring
+	// runner.PoolResumeCommitter's own cross-store tx composition.
+	pauseParker := newDelegationPauseCommitter(chat.pool, chat.pause, store)
 	claimLoop := &runtimeTenantIngestionProcessor{
 		identities:     identity.New(chat.pool),
 		width:          1,
 		workerIDPrefix: runtimeDelegationWorkerIDPrefix,
 		worker: func(identityID, workerID string) runtimeIngestionProcessor {
-			loop := swarm.NewDelegationClaimLoop(store, delivery, identityID, workerTemplate, leaseDuration, pollInterval)
+			loop := swarm.NewDelegationClaimLoop(store, delivery, pauseParker, identityID, workerTemplate, leaseDuration, pollInterval)
 			loop.WorkerID = workerID
 			return loop
 		},
 	}
+	// resumeObserver is 51-06b Task 2: it watches for delegation pauses that have been
+	// answered through the SAME generic /api/approvals -> Runner.SubmitAnswer bridge
+	// every other pause resolves through, and returns their parked queue row to
+	// claimable exactly once -- it does not answer pauses and does not run the worker,
+	// riding the SAME runtimeTenantIngestionProcessor identity-enumeration wrapper as
+	// the claim loop above (no second scheduler).
+	resumeObserver := &runtimeTenantIngestionProcessor{
+		identities:     identity.New(chat.pool),
+		width:          1,
+		workerIDPrefix: runtimeDelegationWorkerIDPrefix + "-resume",
+		worker: func(identityID, workerID string) runtimeIngestionProcessor {
+			return delegationResumeObserverAdapter{
+				observer:   swarm.NewDelegationResumeObserver(store),
+				identityID: identityID,
+			}
+		},
+	}
 	return &runtimeProcessingWorkers{workers: []*runtimeIngestionWorker{
 		newRuntimeIngestionWorker(claimLoop, pollInterval),
+		newRuntimeIngestionWorker(resumeObserver, pollInterval),
 		newRuntimeIngestionWorker(&delegationNudgeProcessor{delivery: delivery}, pollInterval),
 	}}
+}
+
+// delegationResumeObserverAdapter binds *swarm.DelegationResumeObserver's explicit-
+// identity ProcessOnce(ctx, identityID, limit) onto the ctx-only runtimeIngestionProcessor
+// shape runtimeTenantIngestionProcessor's per-identity worker factory expects.
+type delegationResumeObserverAdapter struct {
+	observer   *swarm.DelegationResumeObserver
+	identityID string
+}
+
+func (a delegationResumeObserverAdapter) ProcessOnce(ctx context.Context) (int, error) {
+	return a.observer.ProcessOnce(ctx, a.identityID, runtimeDelegationNudgeBatchSize)
 }
