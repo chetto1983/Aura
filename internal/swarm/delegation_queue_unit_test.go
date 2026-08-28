@@ -262,7 +262,7 @@ func TestProcessOnceRejectsAMisroutedRow(t *testing.T) {
 			if n != 0 {
 				t.Fatalf("processed = %d, want 0 -- a misrouted row is never run", n)
 			}
-			if len(store.transitions) != 0 || len(store.retries) != 0 {
+			if len(store.transitionsSnapshot()) != 0 || len(store.retriesSnapshot()) != 0 {
 				t.Fatal("a misrouted row must not be transitioned or retried by this loop")
 			}
 		})
@@ -287,13 +287,13 @@ func TestProcessOnceRetriesAnUndecodableRow(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("processed = %d, want 1", n)
 	}
-	if len(store.retries) != 1 {
-		t.Fatalf("retries = %d, want 1 below the attempt cap", len(store.retries))
+	if len(store.retriesSnapshot()) != 1 {
+		t.Fatalf("retries = %d, want 1 below the attempt cap", len(store.retriesSnapshot()))
 	}
-	if !strings.Contains(store.retries[0].ErrorMessage, "missing goal") {
-		t.Fatalf("retry message = %q, want the decode reason preserved", store.retries[0].ErrorMessage)
+	if !strings.Contains(store.retriesSnapshot()[0].ErrorMessage, "missing goal") {
+		t.Fatalf("retry message = %q, want the decode reason preserved", store.retriesSnapshot()[0].ErrorMessage)
 	}
-	if len(store.transitions) != 0 {
+	if len(store.transitionsSnapshot()) != 0 {
 		t.Fatal("a retryable failure must not dead-letter the row")
 	}
 }
@@ -309,14 +309,14 @@ func TestRecordFailureDeadLettersAtTheAttemptCap(t *testing.T) {
 	if err := l.recordFailure(context.Background(), job, errors.New("worker exploded")); err != nil {
 		t.Fatalf("recordFailure = %v, want nil once the row is dead-lettered", err)
 	}
-	if len(store.retries) != 0 {
+	if len(store.retriesSnapshot()) != 0 {
 		t.Fatal("a row at the attempt cap must not be retried")
 	}
-	if len(store.transitions) != 1 || store.transitions[0].Status != "dead_letter" {
-		t.Fatalf("transitions = %+v, want one dead_letter", store.transitions)
+	if tr := store.transitionsSnapshot(); len(tr) != 1 || tr[0].Status != "dead_letter" {
+		t.Fatalf("transitions = %+v, want one dead_letter", tr)
 	}
-	if !strings.Contains(store.transitions[0].ErrorMessage, "worker exploded") {
-		t.Fatalf("dead_letter message = %q, want the cause preserved", store.transitions[0].ErrorMessage)
+	if msg := store.transitionsSnapshot()[0].ErrorMessage; !strings.Contains(msg, "worker exploded") {
+		t.Fatalf("dead_letter message = %q, want the cause preserved", msg)
 	}
 }
 
@@ -340,8 +340,8 @@ func TestDeliverSuccessPushesBeforeTransitioning(t *testing.T) {
 	if !strings.HasPrefix(pub.pushes[0], "conv-7|"+steer.SourceWorker+"|") {
 		t.Fatalf("push = %q, want it addressed to the payload conversation under SourceWorker", pub.pushes[0])
 	}
-	if len(store.transitions) != 1 || store.transitions[0].Status != "succeeded" {
-		t.Fatalf("transitions = %+v, want one succeeded", store.transitions)
+	if tr := store.transitionsSnapshot(); len(tr) != 1 || tr[0].Status != "succeeded" {
+		t.Fatalf("transitions = %+v, want one succeeded", tr)
 	}
 }
 
@@ -355,7 +355,7 @@ func TestDeliverSuccessDoesNotTransitionWhenThePushFails(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "push") {
 		t.Fatalf("deliverSuccess = %v, want the push failure surfaced", err)
 	}
-	if len(store.transitions) != 0 {
+	if len(store.transitionsSnapshot()) != 0 {
 		t.Fatal("the row must NOT be marked succeeded when the report was never delivered")
 	}
 }
@@ -504,16 +504,16 @@ func TestProcessJobRunsTheWorkerAndRoutesEveryOutcome(t *testing.T) {
 				t.Fatalf("pushes = %d, want %d", len(pub.pushes), tc.wantPushes)
 			}
 			if tc.wantStatus != "" {
-				if len(store.transitions) != 1 || store.transitions[0].Status != tc.wantStatus {
-					t.Fatalf("transitions = %+v, want one %q", store.transitions, tc.wantStatus)
+				if tr := store.transitionsSnapshot(); len(tr) != 1 || tr[0].Status != tc.wantStatus {
+					t.Fatalf("transitions = %+v, want one %q", tr, tc.wantStatus)
 				}
 			}
-			if tc.wantRetried && len(store.retries) != 1 {
-				t.Fatalf("retries = %d, want 1", len(store.retries))
+			if tc.wantRetried && len(store.retriesSnapshot()) != 1 {
+				t.Fatalf("retries = %d, want 1", len(store.retriesSnapshot()))
 			}
-			if tc.wantInMsg != "" && !strings.Contains(store.retries[0].ErrorMessage, tc.wantInMsg) {
+			if msg := store.retriesSnapshot(); tc.wantInMsg != "" && !strings.Contains(msg[0].ErrorMessage, tc.wantInMsg) {
 				t.Fatalf("retry message = %q, want it to preserve %q",
-					store.retries[0].ErrorMessage, tc.wantInMsg)
+					msg[0].ErrorMessage, tc.wantInMsg)
 			}
 		})
 	}
