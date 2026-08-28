@@ -319,6 +319,7 @@ func (l *DelegationClaimLoop) runWithHeartbeat(ctx context.Context, job document
 	rc := l.Worker
 	rc.ConvID = payload.ConversationID
 	rc.Depth = payload.Depth
+	rc.Context = payload.Context
 
 	budget, err := agent.NewBudgetFromEnv()
 	if err != nil {

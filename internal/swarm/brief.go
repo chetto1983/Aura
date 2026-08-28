@@ -34,9 +34,9 @@ const (
 // (messages[1]); messages[0] (the system prompt) is appended unchanged by
 // agent.NewLlmAgent.
 //
-// RED (51-03): the signature is widened to (goal, context) so every call site
-// compiles against the new shape, but context is not yet rendered — the
-// section-split lands in the GREEN commit.
+// An empty (or whitespace-only) context emits NO context section at all — not
+// an empty one — so a goal with nothing to add stays byte-identical to the
+// pre-SWARM-01 brief.
 func structuredBrief(goal, context string) string {
 	var b strings.Builder
 	b.WriteString(workerOverlay)
@@ -45,6 +45,12 @@ func structuredBrief(goal, context string) string {
 	b.WriteString("\n")
 	b.WriteString(goal)
 	b.WriteString("\n\n")
+	if trimmed := strings.TrimSpace(context); trimmed != "" {
+		b.WriteString(briefContext)
+		b.WriteString("\n")
+		b.WriteString(trimmed)
+		b.WriteString("\n\n")
+	}
 	b.WriteString(briefOutput)
 	b.WriteString("\nAnswer with a concise, self-contained final report addressing the objective. " +
 		"State every fact you found; do not refer to context you cannot include here.\n\n")
