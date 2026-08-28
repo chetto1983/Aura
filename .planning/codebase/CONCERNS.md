@@ -1,14 +1,15 @@
 ---
-last_mapped_commit: 8e15e14b12f6cfb4eb9951f4563505478c1e3a70
+last_mapped_commit: a357a7b75b34d4d31f0ee6cf716626675610e39a
 last_audited_commit: 8e15e14b12f6cfb4eb9951f4563505478c1e3a70
 ---
 
 # Codebase Concerns
 
-**Analysis date:** 2026-08-27
+**Analysis date:** 2026-08-28
 
 This is the only current concern ledger. It was rebuilt adversarially from the live code,
-configuration and tests at the commit above. Old plans, summaries and spike findings are
+configuration and tests at `last_audited_commit`, with verified closures mapped through
+`last_mapped_commit`. Old plans, summaries and spike findings are
 historical evidence, not a work queue. The two former handoff files were removed after their
 current claims and references were consolidated here; Git history remains their provenance.
 
@@ -16,28 +17,8 @@ current claims and references were consolidated here; Git history remains their 
 
 | Severity | Concern | Audit verdict |
 |---|---|---|
-| **Medium** | The owned document-agent oracle does not exercise the full-file or scanned-PDF lanes | **Confirmed; prior closure was too broad** |
 | **Medium** | Aura cannot prove action-level coverage of the externally pinned Calendar/PIM fork | **Confirmed at the consumption boundary; fork internals not re-auditable here** |
 | **Low** | Server-generated approval questions remain hard-coded in English | **Confirmed from the old handoff** |
-
-### Medium — the document-agent release oracle covers only small text/XLSX retrieval
-
-- **What is true:** the owned corpus is 21 files: 17 small XLSX files and four text files; it has
-  no PDF, image-only PDF or large workbook
-  (`scripts/fixtures/document_retrieval_eval/corpus.sha256:1-21`). Every behavior case requires
-  only `document_search`; none requires `document_open`, `read_file` or `shell_exec`
-  (`cmd/aura/document_agent_live_test.go:355-407`). The original-file handoff does exist and tells
-  the model to use LibreOffice/openpyxl/pandas for aggregates
-  (`internal/agent/tools/document_open.go:63-74`), but the live agent oracle does not prove that
-  route.
-- **Why it matters:** 9/9 is valid for the checked corpus, but it does not close the old spike's
-  two remaining behavior questions: an aggregate that cannot be answered from retrieved chunks,
-  and OCR of a real Italian scan with no text layer. It also does not prove that `document_open`
-  and sandbox computation work as one agent motion on a realistically large workbook.
-- **Action:** add owned, hash-pinned fixtures for (1) a large spreadsheet whose requested aggregate
-  is absent from every indexed chunk and (2) an Italian image-only PDF. The production Runner cases
-  must require the appropriate full-file/OCR tools and exact answers. Keep the ranking report
-  diagnostic; do not restore the dead reranker or invent an abstention threshold.
 
 ### Medium — Calendar/PIM action behavior is proved mainly by Aura's integration sample
 
@@ -104,7 +85,7 @@ These compact entries prevent stale handoffs from reopening resolved work.
   this historical closure note.
 - **600-line headroom:** reclassified as an enforced maintenance constraint, not an active defect.
   `scripts/check-file-size.sh` checks every tracked Go/TypeScript source file (tests included), CI
-  runs it, and the current 2,454-file inventory has zero violations. Files exactly at the limit
+  runs it, and the current 2,460-file inventory has zero violations. Files exactly at the limit
   cannot accept another line: `CLAUDE.md` already requires a concern split on touch. Lowering the
   global cap would force dozens of behavior-neutral test-file moves without reducing runtime risk,
   so no cosmetic refactor was manufactured to close this ledger.
@@ -114,7 +95,7 @@ These compact entries prevent stale handoffs from reopening resolved work.
   `docs/aura-memory-preload-threat-model.md`, `internal/runner/runner_context.go:74-137` and
   `internal/agent/prompt.go:83-92`.
 - **`filecard` OOXML parser:** closed only as a bounded, lossy routing-card reader. The owned
-  openpyxl 3.1.5 parity gate covers 17 XLSX files/18 sheets and records its producer limits in
+  openpyxl 3.1.5 parity gate covers 18 XLSX files/19 sheets and records its producer limits in
   `docs/aura-ooxml-routing-card-boundary.md`. It does **not** close the separate `read_file` parser
   above.
 - **Garage `@file` / `@folder`:** closed. The composer uses the existing assistant-ui trigger
@@ -122,11 +103,16 @@ These compact entries prevent stale handoffs from reopening resolved work.
   the authenticated run carries normalized file keys/folder prefixes into every retrieval leg
   (`web/src/chat/composer/GarageMentionPicker.tsx`, `internal/documents/source_scope.go:37-105`,
   `internal/documents/retrieval.go:188-218`).
-- **Selected-model image/audio context:** closed within the measured capability boundary. The
+- **Selected-model image/audio/scanned-PDF context:** closed within the measured capability
+  boundary. The
   existing primary model setting is reused; OpenRouter `/models` and llama.cpp `/props` metadata
   gate native projection, owner/thread/size/digest are rechecked, and text summary/transcript is the
   fallback (`internal/llm/model_content_caps.go`, `internal/agui/asset_content_projection.go:28-57`,
-  `internal/llm/openai_compat/request.go:150-183`). No second cloud-model selector was added.
+  `internal/llm/openai_compat/request.go:150-183`). Digital PDFs remain on Tika; only an entirely
+  blank text layer enters the existing selected vision route. Rasterization is private, bounded to
+  20 pages/2048 pixels, probes page 21 to reject rather than truncate larger scans, and fails the
+  whole document on any empty/error page (`services/ingest/media.py`,
+  `cmd/aura-media-index/main.go`). No second cloud-model selector was added.
 - **MCP HTTP and Compose networking:** closed. First-party Calendar, Memory and WhatsApp resources
   are HTTP/OAuth service endpoints (`compose.yaml:661,878,1106`); observability services no longer
   share Aura's network namespace, and static tests forbid `network_mode: service:aura`
@@ -141,7 +127,14 @@ These compact entries prevent stale handoffs from reopening resolved work.
   (`services/ingest/identity.py`, `services/ingest/app.py:279-397`,
   `services/ingest/arcade.py:144-245`, `internal/documents/open.go:53-94`). The reranker stays
   retired. A bespoke `table_query` is not missing: `document_open` plus sandbox computation is the
-  chosen exact-table lane; the unclosed issue is proving that lane with the stronger oracle above.
+  chosen exact-table lane. Commit `a357a7b75` closes the former oracle gap with a deterministic
+  5,000-row XLSX whose answer is absent from indexed chunks, an image-only Italian PDF, ordered
+  `document_search -> document_open -> shell_exec` evidence, and a 23/23 disposable live run. A
+  separate public 96-page Constitution witness proved digital PDFs stay on Tika when the vision
+  binary is unavailable and the real Gemma/Ollama agent recovered an edition-specific footnote by
+  opening the full file in seven calls. The operator-supplied large private workbook independently
+  returned the expected aggregate `262`; neither operator file nor path is retained. Amendment
+  #170 records the measured boundary and deliberately leaves ranking diagnostic.
 - **File-manager JSON gate and compaction/DR:** closed. File mutations use the shared strict JSON
   decoder (`internal/agui/files_api_write.go:70-96`); impossible compaction thresholds fail at boot,
   small-window reserves scale, and ArcadeDB restore is part of the four-plane drill
@@ -159,4 +152,5 @@ These compact entries prevent stale handoffs from reopening resolved work.
 
 ---
 
-*Concerns audit: 2026-08-27 at `8e15e14b12f6cfb4eb9951f4563505478c1e3a70`.*
+*Concerns map: 2026-08-28 through `a357a7b75b34d4d31f0ee6cf716626675610e39a`;
+last full adversarial audit: 2026-08-27 at `8e15e14b12f6cfb4eb9951f4563505478c1e3a70`.*

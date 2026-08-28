@@ -34,7 +34,10 @@ assert amazon_s3.list_objects, 'amazon_s3 connector did not import cleanly'
 print('python ok: cocoindex', cocoindex.__version__)
 "
 
-docker run --rm --entrypoint sh "$img" -lc \
-  'command -v soffice >/dev/null || { echo "soffice missing" >&2; exit 1; }; echo "soffice ok"'
+docker run --rm --entrypoint sh "$img" -lc '
+  command -v soffice >/dev/null || { echo "soffice missing" >&2; exit 1; }
+  command -v pdftoppm >/dev/null || { echo "pdftoppm missing" >&2; exit 1; }
+  echo "soffice + pdftoppm ok"
+'
 
 echo "ok: ingest image contract"

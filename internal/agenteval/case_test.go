@@ -77,6 +77,31 @@ func TestCheckPassesACleanTurn(t *testing.T) {
 	}
 }
 
+func TestCheckRequiresDeclaredToolSequence(t *testing.T) {
+	t.Parallel()
+	c := Case{RequiredToolSequence: []string{"document_search", "document_open", "shell_exec"}}
+	for name, evidence := range map[string]Evidence{
+		"missing open":   {Tools: []string{"document_search", "shell_exec"}},
+		"wrong order":    {Tools: []string{"document_open", "document_search", "shell_exec"}},
+		"only search":    {Tools: []string{"document_search"}},
+		"empty evidence": {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got := c.Check(evidence)
+			if len(got) != 1 || !strings.Contains(got[0], "document_search document_open shell_exec") {
+				t.Fatalf("incomplete sequence was not reported: %v", got)
+			}
+		})
+	}
+	clean := Evidence{Tools: []string{
+		"tool_search", "document_search", "read_tool_output", "document_open", "shell_exec",
+	}}
+	if got := c.Check(clean); len(got) != 0 {
+		t.Fatalf("ordered sequence with intervening tools reported violations: %v", got)
+	}
+}
+
 // TestCheckToolNamesMatchExactly: a namespaced MCP tool must never satisfy — or
 // trip — a rule written for a built-in whose name it merely contains.
 func TestCheckToolNamesMatchExactly(t *testing.T) {

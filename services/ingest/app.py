@@ -318,12 +318,7 @@ async def process_file(
             # examples do the same thing one level up, choosing the processor from the
             # path; this is that choice made where the extension is already known.
             #
-            if extract.extractable(ready):
-                text = extract.extract_text(ready)
-            elif media.kind(file_name) is not None:
-                text = media.extract_text(ready, file_name)
-            else:
-                text = ""
+            text = media.index_text(ready, file_name)
             card = _card(ready, _card_name(file_name, ready))
     source_kind = "s3"
     search_document_id = identity.search_document_id(identity_id, source_kind, key)

@@ -53,6 +53,12 @@ type Case struct {
 	// fail on an improvement.
 	RequiredTools []string
 
+	// RequiredToolSequence passes only when every named tool was called in this
+	// order (other calls may appear between them). Use it for workflows whose
+	// correctness depends on the whole route, such as finding a document, opening
+	// its original bytes, and computing over the full file.
+	RequiredToolSequence []string
+
 	// ForbiddenTools must never be called. This is the sharp end: it is what
 	// catches her reaching for the open internet to answer a question about the
 	// operator's own files.
@@ -132,6 +138,12 @@ func (c Case) Check(e Evidence) []string {
 	if len(c.RequiredTools) > 0 && !anyCalled(e.Tools, c.RequiredTools) {
 		failures = append(failures, fmt.Sprintf("none of the required tools %v was called; called: %v", c.RequiredTools, e.Tools))
 	}
+	if len(c.RequiredToolSequence) > 0 && !calledInOrder(e.Tools, c.RequiredToolSequence) {
+		failures = append(failures, fmt.Sprintf(
+			"required tool sequence %v was not completed in order; called: %v",
+			c.RequiredToolSequence, e.Tools,
+		))
+	}
 	for _, banned := range c.ForbiddenTools {
 		if countCalled(e.Tools, banned) > 0 {
 			failures = append(failures, fmt.Sprintf("forbidden tool %q was called (%d times); called: %v", banned, countCalled(e.Tools, banned), e.Tools))
@@ -162,6 +174,19 @@ func anyCalled(called, wanted []string) bool {
 	for _, w := range wanted {
 		if countCalled(called, w) > 0 {
 			return true
+		}
+	}
+	return false
+}
+
+func calledInOrder(called, wanted []string) bool {
+	next := 0
+	for _, name := range called {
+		if name == wanted[next] {
+			next++
+			if next == len(wanted) {
+				return true
+			}
 		}
 	}
 	return false

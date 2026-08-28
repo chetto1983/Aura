@@ -18,6 +18,7 @@
     {"file":"fattura_2026_012.xlsx","sha256":"8d298055a9a0aa8eba4ad2fb1951e7a694a25f1c7896ee36f2281507b9822b31","sheets":[{"name":"fattura","max_row":12,"max_column":4,"header_row":7,"headers":["Descrizione","Quantita","Prezzo unitario","Importo"],"non_empty":[4,4,1,1]}]},
     {"file":"fattura_2026_013.xlsx","sha256":"46ebe7df5672c44b0743dc9241a21cf68eb1bba856dc5cf40e9e324dddf102c8","sheets":[{"name":"fattura","max_row":12,"max_column":4,"header_row":7,"headers":["Descrizione","Quantita","Prezzo unitario","Importo"],"non_empty":[4,4,1,1]}]},
     {"file":"fattura_2026_014.xlsx","sha256":"009da1ab5e0da152562953d4d1e62d31dc1bf6210c970311ade7da4928e96e87","sheets":[{"name":"fattura","max_row":12,"max_column":4,"header_row":7,"headers":["Descrizione","Quantita","Prezzo unitario","Importo"],"non_empty":[4,4,1,1]}]},
+    {"file":"movimenti_analitici_5000.xlsx","sha256":"f819efd45a8629d815514e68b5a606bef56aab0fdeac2758cdfc60a55b8e45ef","sheets":[{"name":"Movimenti","max_row":5001,"max_column":5,"header_row":1,"headers":["ID Movimento","Centro","Stato","Quantita","PrezzoUnitario"],"non_empty":[5000,5000,5000,5000,5000]}]},
     {"file":"scadenzario.xlsx","sha256":"f4a8ec72a4152e3bdd65736345d26e45254a2fc500b26cec25126a5f61ee53de","sheets":[{"name":"scadenzario","max_row":5,"max_column":6,"header_row":1,"headers":["n_fattura","cliente","data_scadenza","giorni_ritardo","importo","stato"],"non_empty":[4,4,4,4,4,4]}]}
   ]
 }
