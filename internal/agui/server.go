@@ -236,6 +236,13 @@ type Server struct {
 	// the call route then answers 503, so a host that renders views but wired no
 	// caller refuses the request instead of half-answering it.
 	mcpViewCaller MCPViewToolCaller
+
+	// swarmTranscripts is the SWARM-10 read surface (server_swarm_transcript.go)
+	// over dumpTranscript's (internal/swarm) on-disk JSONL output. Nil until
+	// SetSwarmTranscripts wires it (the daemon composition root, over
+	// chat.cfg.RunDir); until then the transcript route hides itself (404),
+	// mirroring SetGraphView's best-effort posture.
+	swarmTranscripts swarmTranscriptReader
 }
 
 // NewServer builds the gateway over the supplied driver + store + config. The
@@ -479,6 +486,12 @@ func (s *Server) Mux() http.Handler {
 	// — an operator enters their own Google OAuth client and links an account) lives in
 	// cmd/aura/serve_webui.go.
 	s.registerConnectPIMRoutes(mux)
+	// SWARM-10 (Phase 51 plan 07): GET .../swarm/{childID}/transcript, the
+	// operator-facing read over a backgrounded worker's live transcript.
+	// Colocated with its handler (server_swarm_transcript.go); inherits
+	// RequireAuth from the parent-mux mount (no separate auth check here — the
+	// handler itself owner-scopes via s.conv.GetForIdentity before touching disk).
+	s.registerSwarmTranscriptRoutes(mux)
 	if s.operations == nil {
 		return mux
 	}
