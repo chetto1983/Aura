@@ -62,11 +62,15 @@ var (
 // since migration 0089, so a statement that does not set app.current_identity sees no
 // pause and can insert none; scoped() is therefore the ONE way this store reaches the
 // table, and the *Tx methods hand the work to a transaction the caller has already scoped.
+//
+// pauseTTLSec is the D-12/D-13 lazy-expiry window (store_fencing.go); <=0 disables it,
+// mirroring the AURA_ASKUSER_PAUSE_TTL_SEC <=0-disables precedent.
 type Store struct {
-	pool *pgxpool.Pool
+	pool        *pgxpool.Pool
+	pauseTTLSec int
 }
 
-// New builds a Store over an open pool.
+// New builds a Store over an open pool with lazy pause expiry disabled (ttlSec=0).
 func New(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
 }
@@ -83,6 +87,8 @@ func (s *Store) scoped(ctx context.Context, fn func(*sqlc.Queries) error) error 
 // proxies for, or "" for a direct (non-proxied) call — it is the APRV-01 "source
 // thread" the cross-thread approval list shows so the operator knows which (possibly
 // background) thread raised the interrupt.
+// PendingActionID/OwningWorkerID are D-12/D-13 (store_fencing.go): call WorkerID(),
+// never read either field directly, to answer "which worker owns this pause".
 type Pending struct {
 	Token              string
 	ConversationID     string
@@ -93,6 +99,8 @@ type Pending struct {
 	ToolCallID         string
 	ResumeContext      json.RawMessage
 	ProxiedFromChildID string
+	PendingActionID    string
+	OwningWorkerID     string
 }
 
 // ResumeAnswer is the AM-02 resolution payload persisted as resumed_answer jsonb.
@@ -105,6 +113,9 @@ type ResumeAnswer struct {
 // (D-A1-04): the caller (the Runner, observing the pause Event) supplies these.
 // ProxiedFromChildID/ProxiedToolCallID are the optional D-05 swarm-relay ids: a
 // nil child id (and an empty tool_call id) persist as SQL NULL for direct calls.
+// PendingActionID/OwningWorkerID are D-12/D-13 (store_fencing.go): nil persists as SQL
+// NULL. OwningWorkerID/ProxiedFromChildID are DB-enforced mutually exclusive — setting
+// both fails the Insert closed (T-51-47).
 type InsertParams struct {
 	Token              string
 	ConversationID     string
@@ -116,6 +127,8 @@ type InsertParams struct {
 	ResumeContext      json.RawMessage
 	ProxiedFromChildID *string
 	ProxiedToolCallID  string
+	PendingActionID    *string
+	OwningWorkerID     *string
 }
 
 // InsertTx persists one pending pause using the caller-supplied Queries (bound to the
@@ -155,6 +168,14 @@ func insertArgs(p InsertParams) (sqlc.InsertPausedStateParams, error) {
 	if p.ProxiedFromChildID != nil {
 		proxiedChild = pgtype.Text{String: *p.ProxiedFromChildID, Valid: true}
 	}
+	var pendingActionID pgtype.Text
+	if p.PendingActionID != nil {
+		pendingActionID = pgtype.Text{String: *p.PendingActionID, Valid: true}
+	}
+	var owningWorker pgtype.Text
+	if p.OwningWorkerID != nil {
+		owningWorker = pgtype.Text{String: *p.OwningWorkerID, Valid: true}
+	}
 	return sqlc.InsertPausedStateParams{
 		Token:              token,
 		ConversationID:     convID,
@@ -166,6 +187,8 @@ func insertArgs(p InsertParams) (sqlc.InsertPausedStateParams, error) {
 		ToolCallID:         p.ToolCallID,
 		ProxiedFromChildID: proxiedChild,
 		ProxiedToolCallID:  pgtype.Text{String: p.ProxiedToolCallID, Valid: p.ProxiedToolCallID != ""},
+		PendingActionID:    pendingActionID,
+		OwningWorkerID:     owningWorker,
 	}, nil
 }
 
@@ -207,6 +230,10 @@ func (s *Store) GetByToken(ctx context.Context, token string) (Pending, error) {
 		}
 		if stateErr := resolvedStateError(row.ResumedAt.Valid, row.ResumedAnswer); stateErr != nil {
 			return stateErr
+		}
+		if s.pauseExpired(row.CreatedAt) {
+			// Lazy expiry (D-12/D-13, store_fencing.go): a stale row reads as absent.
+			return ErrPauseNotFound
 		}
 		pending = fromRow(row)
 		return nil
@@ -386,7 +413,14 @@ func (s *Store) MarkResumed(ctx context.Context, token string, ans ResumeAnswer)
 // now-committed row, matches 0 rows, and gets a clean ErrPauseNotFound (→ its tx rolls
 // back). Every token must resolve a still-pending row; the first unknown/already-resumed
 // token aborts the whole batch with ErrPauseNotFound (no partial resolution).
-func (s *Store) MarkResumedBatchTx(ctx context.Context, q *sqlc.Queries, answers map[string]ResumeAnswer) error {
+//
+// D-12 fencing (SWARM-06, 51-06a) is applied HERE, inside the per-token loop, not as a
+// pre-check before the caller's transaction (approval-resume-defects: "new validation
+// goes inside that transaction's front door, never as a second path around it"). Every
+// claim goes through markPausedStateResumedFencedTx (store_fencing.go); an empty
+// ExpectActionID applies no extra predicate beyond the shipped `pending_action_id IS
+// NULL` half, so an ordinary/legacy batch resumes exactly as before migration 0106.
+func (s *Store) MarkResumedBatchTx(ctx context.Context, q *sqlc.Queries, answers map[string]FencedResumeAnswer) error {
 	if len(answers) == 0 {
 		return nil
 	}
@@ -400,11 +434,12 @@ func (s *Store) MarkResumedBatchTx(ctx context.Context, q *sqlc.Queries, answers
 		if err != nil {
 			return fmt.Errorf("mark resumed batch: %w", err)
 		}
-		answer, err := encodeAnswer(answers[token])
+		fa := answers[token]
+		answer, err := encodeAnswer(fa.Answer)
 		if err != nil {
 			return fmt.Errorf("mark resumed batch %s: %w", token, err)
 		}
-		n, err := q.MarkPausedStateResumed(ctx, sqlc.MarkPausedStateResumedParams{Token: id, ResumedAnswer: answer})
+		n, err := markPausedStateResumedFencedTx(ctx, q, id, answer, fa.ExpectActionID)
 		if err != nil {
 			return fmt.Errorf("mark resumed batch %s: %w", token, err)
 		}
@@ -418,13 +453,21 @@ func (s *Store) MarkResumedBatchTx(ctx context.Context, q *sqlc.Queries, answers
 // MarkResumedBatch resolves many pauses atomically (one identity-scoped tx over
 // MarkResumedBatchTx). Every token must resolve a still-pending row; if any token is
 // unknown/already-resumed the whole batch rolls back with ErrPauseNotFound (no partial
-// resolution). An empty map is a no-op that opens no transaction.
+// resolution). An empty map is a no-op that opens no transaction. This is the UNFENCED
+// public entry point (PauseStore's shape, unchanged since before 51-06a): every claim
+// carries an empty ExpectActionID, so it resolves a NULL-fenced pause but never a fenced
+// one — a fenced resume goes through MarkResumedFenced (store_fencing.go) or the
+// runner's PoolResumeCommitter.
 func (s *Store) MarkResumedBatch(ctx context.Context, answers map[string]ResumeAnswer) error {
 	if len(answers) == 0 {
 		return nil
 	}
+	fenced := make(map[string]FencedResumeAnswer, len(answers))
+	for token, ans := range answers {
+		fenced[token] = FencedResumeAnswer{Answer: ans}
+	}
 	return s.scoped(ctx, func(q *sqlc.Queries) error {
-		return s.MarkResumedBatchTx(ctx, q, answers)
+		return s.MarkResumedBatchTx(ctx, q, fenced)
 	})
 }
 
@@ -481,6 +524,14 @@ func fromRow(r sqlc.AuraPausedStates) Pending {
 	if r.ProxiedFromChildID.Valid {
 		proxiedChild = r.ProxiedFromChildID.String
 	}
+	var pendingActionID string
+	if r.PendingActionID.Valid {
+		pendingActionID = r.PendingActionID.String
+	}
+	var owningWorker string
+	if r.OwningWorkerID.Valid {
+		owningWorker = r.OwningWorkerID.String
+	}
 	return Pending{
 		Token:              uuid.UUID(r.Token.Bytes).String(),
 		ConversationID:     uuid.UUID(r.ConversationID.Bytes).String(),
@@ -491,6 +542,8 @@ func fromRow(r sqlc.AuraPausedStates) Pending {
 		ToolCallID:         r.ToolCallID,
 		ResumeContext:      append(json.RawMessage(nil), r.ResumeContext...),
 		ProxiedFromChildID: proxiedChild,
+		PendingActionID:    pendingActionID,
+		OwningWorkerID:     owningWorker,
 	}
 }
 

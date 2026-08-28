@@ -43,7 +43,8 @@ func (q *Queries) CleanupResumedOlderThan(ctx context.Context, resumedAt pgtype.
 const getPausedStateByToken = `-- name: GetPausedStateByToken :one
 SELECT token, conversation_id, kind, question, options, priority,
        resume_context, tool_call_id, proxied_from_child_id, proxied_tool_call_id,
-       created_at, resumed_at, resumed_answer, identity_id
+       created_at, resumed_at, resumed_answer, identity_id,
+       pending_action_id, owning_worker_id
 FROM aura.paused_states
 WHERE token = $1
 `
@@ -66,6 +67,8 @@ func (q *Queries) GetPausedStateByToken(ctx context.Context, token pgtype.UUID) 
 		&i.ResumedAt,
 		&i.ResumedAnswer,
 		&i.IdentityID,
+		&i.PendingActionID,
+		&i.OwningWorkerID,
 	)
 	return i, err
 }
@@ -73,7 +76,8 @@ func (q *Queries) GetPausedStateByToken(ctx context.Context, token pgtype.UUID) 
 const getPausedStateByTokenForIdentity = `-- name: GetPausedStateByTokenForIdentity :one
 SELECT token, conversation_id, kind, question, options, priority,
        resume_context, tool_call_id, proxied_from_child_id, proxied_tool_call_id,
-       created_at, resumed_at, resumed_answer, identity_id
+       created_at, resumed_at, resumed_answer, identity_id,
+       pending_action_id, owning_worker_id
 FROM aura.paused_states
 WHERE token = $1
   AND identity_id = $2
@@ -106,6 +110,8 @@ func (q *Queries) GetPausedStateByTokenForIdentity(ctx context.Context, arg GetP
 		&i.ResumedAt,
 		&i.ResumedAnswer,
 		&i.IdentityID,
+		&i.PendingActionID,
+		&i.OwningWorkerID,
 	)
 	return i, err
 }
@@ -113,8 +119,9 @@ func (q *Queries) GetPausedStateByTokenForIdentity(ctx context.Context, arg GetP
 const insertPausedState = `-- name: InsertPausedState :exec
 INSERT INTO aura.paused_states (
     token, conversation_id, kind, question, options, priority,
-    resume_context, tool_call_id, proxied_from_child_id, proxied_tool_call_id
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    resume_context, tool_call_id, proxied_from_child_id, proxied_tool_call_id,
+    pending_action_id, owning_worker_id
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 `
 
 type InsertPausedStateParams struct {
@@ -128,6 +135,8 @@ type InsertPausedStateParams struct {
 	ToolCallID         string      `json:"tool_call_id"`
 	ProxiedFromChildID pgtype.Text `json:"proxied_from_child_id"`
 	ProxiedToolCallID  pgtype.Text `json:"proxied_tool_call_id"`
+	PendingActionID    pgtype.Text `json:"pending_action_id"`
+	OwningWorkerID     pgtype.Text `json:"owning_worker_id"`
 }
 
 func (q *Queries) InsertPausedState(ctx context.Context, arg InsertPausedStateParams) error {
@@ -142,6 +151,8 @@ func (q *Queries) InsertPausedState(ctx context.Context, arg InsertPausedStatePa
 		arg.ToolCallID,
 		arg.ProxiedFromChildID,
 		arg.ProxiedToolCallID,
+		arg.PendingActionID,
+		arg.OwningWorkerID,
 	)
 	return err
 }
@@ -149,7 +160,8 @@ func (q *Queries) InsertPausedState(ctx context.Context, arg InsertPausedStatePa
 const listAllPendingPausedStates = `-- name: ListAllPendingPausedStates :many
 SELECT token, conversation_id, kind, question, options, priority,
        resume_context, tool_call_id, proxied_from_child_id, proxied_tool_call_id,
-       created_at, resumed_at, resumed_answer, identity_id
+       created_at, resumed_at, resumed_answer, identity_id,
+       pending_action_id, owning_worker_id
 FROM aura.paused_states
 WHERE resumed_at IS NULL
 ORDER BY priority DESC, created_at ASC, token ASC
@@ -188,6 +200,8 @@ func (q *Queries) ListAllPendingPausedStates(ctx context.Context, limit int32) (
 			&i.ResumedAt,
 			&i.ResumedAnswer,
 			&i.IdentityID,
+			&i.PendingActionID,
+			&i.OwningWorkerID,
 		); err != nil {
 			return nil, err
 		}
@@ -202,7 +216,8 @@ func (q *Queries) ListAllPendingPausedStates(ctx context.Context, limit int32) (
 const listAllPendingPausedStatesForIdentity = `-- name: ListAllPendingPausedStatesForIdentity :many
 SELECT token, conversation_id, kind, question, options, priority,
        resume_context, tool_call_id, proxied_from_child_id, proxied_tool_call_id,
-       created_at, resumed_at, resumed_answer, identity_id
+       created_at, resumed_at, resumed_answer, identity_id,
+       pending_action_id, owning_worker_id
 FROM aura.paused_states
 WHERE resumed_at IS NULL
   AND identity_id = $1
@@ -241,6 +256,8 @@ func (q *Queries) ListAllPendingPausedStatesForIdentity(ctx context.Context, arg
 			&i.ResumedAt,
 			&i.ResumedAnswer,
 			&i.IdentityID,
+			&i.PendingActionID,
+			&i.OwningWorkerID,
 		); err != nil {
 			return nil, err
 		}
@@ -255,7 +272,8 @@ func (q *Queries) ListAllPendingPausedStatesForIdentity(ctx context.Context, arg
 const listExpiredPendingApprovals = `-- name: ListExpiredPendingApprovals :many
 SELECT token, conversation_id, kind, question, options, priority,
        resume_context, tool_call_id, proxied_from_child_id, proxied_tool_call_id,
-       created_at, resumed_at, resumed_answer, identity_id
+       created_at, resumed_at, resumed_answer, identity_id,
+       pending_action_id, owning_worker_id
 FROM aura.paused_states
 WHERE kind = 'approval'
   AND resumed_at IS NULL
@@ -293,6 +311,8 @@ func (q *Queries) ListExpiredPendingApprovals(ctx context.Context, arg ListExpir
 			&i.ResumedAt,
 			&i.ResumedAnswer,
 			&i.IdentityID,
+			&i.PendingActionID,
+			&i.OwningWorkerID,
 		); err != nil {
 			return nil, err
 		}
@@ -307,7 +327,8 @@ func (q *Queries) ListExpiredPendingApprovals(ctx context.Context, arg ListExpir
 const listPendingPausedStates = `-- name: ListPendingPausedStates :many
 SELECT token, conversation_id, kind, question, options, priority,
        resume_context, tool_call_id, proxied_from_child_id, proxied_tool_call_id,
-       created_at, resumed_at, resumed_answer, identity_id
+       created_at, resumed_at, resumed_answer, identity_id,
+       pending_action_id, owning_worker_id
 FROM aura.paused_states
 WHERE conversation_id = $1
   AND resumed_at IS NULL
@@ -338,6 +359,8 @@ func (q *Queries) ListPendingPausedStates(ctx context.Context, conversationID pg
 			&i.ResumedAt,
 			&i.ResumedAnswer,
 			&i.IdentityID,
+			&i.PendingActionID,
+			&i.OwningWorkerID,
 		); err != nil {
 			return nil, err
 		}
@@ -352,7 +375,8 @@ func (q *Queries) ListPendingPausedStates(ctx context.Context, conversationID pg
 const listRecentPausedStates = `-- name: ListRecentPausedStates :many
 SELECT token, conversation_id, kind, question, options, priority,
        resume_context, tool_call_id, proxied_from_child_id, proxied_tool_call_id,
-       created_at, resumed_at, resumed_answer, identity_id
+       created_at, resumed_at, resumed_answer, identity_id,
+       pending_action_id, owning_worker_id
 FROM aura.paused_states
 ORDER BY created_at DESC, token ASC
 LIMIT $1
@@ -382,6 +406,8 @@ func (q *Queries) ListRecentPausedStates(ctx context.Context, limit int32) ([]Au
 			&i.ResumedAt,
 			&i.ResumedAnswer,
 			&i.IdentityID,
+			&i.PendingActionID,
+			&i.OwningWorkerID,
 		); err != nil {
 			return nil, err
 		}
@@ -408,6 +434,41 @@ type MarkPausedStateResumedParams struct {
 
 func (q *Queries) MarkPausedStateResumed(ctx context.Context, arg MarkPausedStateResumedParams) (int64, error) {
 	result, err := q.db.Exec(ctx, markPausedStateResumed, arg.Token, arg.ResumedAnswer)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const markPausedStateResumedFenced = `-- name: MarkPausedStateResumedFenced :execrows
+UPDATE aura.paused_states
+SET resumed_at = now(),
+    resumed_answer = $2
+WHERE token = $1
+  AND resumed_at IS NULL
+  AND (pending_action_id IS NULL OR pending_action_id = $3)
+`
+
+type MarkPausedStateResumedFencedParams struct {
+	Token          pgtype.UUID `json:"token"`
+	ResumedAnswer  []byte      `json:"resumed_answer"`
+	ExpectActionID pgtype.Text `json:"expect_action_id"`
+}
+
+// D-12 fencing (SWARM-06, 51-06a): the same conditional UPDATE as
+// MarkPausedStateResumed, with ONE more predicate. A NULL pending_action_id (every row
+// that predates migration 0106, and every ordinary operator pause) matches regardless of
+// what the caller supplies via expect_action_id, so the fence is additive — never a new
+// precondition on the shipped path. A NON-NULL pending_action_id matches only an EQUAL
+// expect_action_id: a stale OR ABSENT fence on a fenced row matches zero rows (`x = NULL`
+// is NULL, never true), which is the "a stale decision can't resume a pause that has
+// since paused for a different action" guarantee. resumed_at IS NULL stays the shipped
+// idempotency key (approval-resume-defects) — the fence is an ADDITIONAL guard, never a
+// replacement for it. Both MarkResumedFencedTx (single) and MarkResumedBatchTx's
+// per-token loop (internal/askuser/store.go) call this SAME query — there is one fenced
+// predicate to drift, not two independently-written ones.
+func (q *Queries) MarkPausedStateResumedFenced(ctx context.Context, arg MarkPausedStateResumedFencedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markPausedStateResumedFenced, arg.Token, arg.ResumedAnswer, arg.ExpectActionID)
 	if err != nil {
 		return 0, err
 	}

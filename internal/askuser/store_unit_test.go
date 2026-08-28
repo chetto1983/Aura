@@ -318,9 +318,12 @@ func TestMarkResumedBatchTx_ClaimsInSortedTokenOrder(t *testing.T) {
 		"77777777-7777-7777-7777-777777777777",
 		"44444444-4444-4444-4444-444444444444",
 	}
-	answers := make(map[string]ResumeAnswer, len(tokens))
+	// FencedResumeAnswer with an empty ExpectActionID (51-06a/D-12): no fence supplied,
+	// so this is the pre-migration-0106 unfenced batch shape — the sorted-claim-order
+	// guarantee under test is orthogonal to fencing.
+	answers := make(map[string]FencedResumeAnswer, len(tokens))
 	for _, tok := range tokens {
-		answers[tok] = ResumeAnswer{Action: ActionAccept, Content: "ok"}
+		answers[tok] = FencedResumeAnswer{Answer: ResumeAnswer{Action: ActionAccept, Content: "ok"}}
 	}
 
 	if err := s.MarkResumedBatchTx(context.Background(), q, answers); err != nil {

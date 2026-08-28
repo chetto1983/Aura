@@ -366,6 +366,19 @@ type Querier interface {
 	MarkOperationIndeterminate(ctx context.Context, arg MarkOperationIndeterminateParams) (int64, error)
 	MarkOperationRejected(ctx context.Context, arg MarkOperationRejectedParams) (int64, error)
 	MarkPausedStateResumed(ctx context.Context, arg MarkPausedStateResumedParams) (int64, error)
+	// D-12 fencing (SWARM-06, 51-06a): the same conditional UPDATE as
+	// MarkPausedStateResumed, with ONE more predicate. A NULL pending_action_id (every row
+	// that predates migration 0106, and every ordinary operator pause) matches regardless of
+	// what the caller supplies via expect_action_id, so the fence is additive — never a new
+	// precondition on the shipped path. A NON-NULL pending_action_id matches only an EQUAL
+	// expect_action_id: a stale OR ABSENT fence on a fenced row matches zero rows (`x = NULL`
+	// is NULL, never true), which is the "a stale decision can't resume a pause that has
+	// since paused for a different action" guarantee. resumed_at IS NULL stays the shipped
+	// idempotency key (approval-resume-defects) — the fence is an ADDITIONAL guard, never a
+	// replacement for it. Both MarkResumedFencedTx (single) and MarkResumedBatchTx's
+	// per-token loop (internal/askuser/store.go) call this SAME query — there is one fenced
+	// predicate to drift, not two independently-written ones.
+	MarkPausedStateResumedFenced(ctx context.Context, arg MarkPausedStateResumedFencedParams) (int64, error)
 	// WHERE ... AND expired_at IS NULL is the idempotency gate: a second sweep pass over an
 	// already-expired row affects 0 rows rather than re-writing a duplicate conversation
 	// trace (D-07's "the sweep is idempotent").

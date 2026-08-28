@@ -466,6 +466,10 @@ type AuraPausedStates struct {
 	ResumedAnswer      []byte             `json:"resumed_answer"`
 	// Owning identity (Phase 36, OQ2): a first-class column backfilled from the parent aura.conversations.identity_id so the plan-04 kernel-isolation / RLS owner filter keys on the row, not a subquery. NULLABLE until the plan-05 write path populates it.
 	IdentityID pgtype.UUID `json:"identity_id"`
+	// Fencing id (D-12), mirroring LibreChat ApprovalLifecycle's flat pendingActionId: a resume must supply the SAME value or the conditional UPDATE (MarkPausedStateResumedFenced) matches zero rows -- a stale decision cannot resume a pause that has since moved on. A column, never a resume_context jsonb path: a nested JSON field cannot be compared inside a Postgres conditional UPDATE. NULL for every pre-migration row and every ordinary operator pause -- the fence is additive, never a new precondition on the shipped resume path.
+	PendingActionID pgtype.Text `json:"pending_action_id"`
+	// Level identity (D-13) for a BACKGROUND per-worker pause the worker itself owns and can be resumed into directly -- host-written, never model-supplied. AUTHORITATIVE for a background per-worker pause; proxied_from_child_id/proxied_tool_call_id stay AUTHORITATIVE for a SYNCHRONOUS model-relayed pause. The two never coexist on one row (see paused_states_worker_attribution_exclusive below), so a single accessor (askuser.Pending.WorkerID) can answer "which worker owns this pause" without a model-controlled field ever outranking a host-written one (T-51-47).
+	OwningWorkerID pgtype.Text `json:"owning_worker_id"`
 }
 
 // Durable scheduler notification queue (Phase 19 H6/H7): quiet-hours deferred notifications and failed self-send retry state.

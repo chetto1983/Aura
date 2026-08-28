@@ -99,10 +99,21 @@ type ApprovalExpiryStore interface {
 // cross-store tx (D-03). Turn.Seq is left 0 by the caller: the atomic Pool impl
 // reserves the seq under the conversation row-lock inside its tx; the pool-less split
 // fallback lets conversations.Store.AppendTurn allocate it.
+//
+// ExpectActionID is the D-12 fencing id (SWARM-06, 51-06a): empty means the caller
+// supplies no fence, so a NULL-fenced (ordinary/legacy) pause resumes exactly as it did
+// before migration 0106; non-empty must EQUAL the pause's stored pending_action_id or the
+// claim matches zero rows (askuser.ErrPauseNotFound) — a stale decision cannot resume a
+// pause that has since paused for a different action. PoolResumeCommitter honors it on
+// BOTH CommitResume and CommitResumeBatch (the same struct backs both paths); the
+// pool-less splitResumeCommitter fallback does NOT (it calls the unfenced
+// MarkResumed/MarkResumedBatch, matching its own documented non-atomic/compatibility
+// scope).
 type ResumeClaim struct {
-	Token  string
-	Answer askuser.ResumeAnswer
-	Turn   conversations.AppendTurnParams
+	Token          string
+	Answer         askuser.ResumeAnswer
+	Turn           conversations.AppendTurnParams
+	ExpectActionID string
 }
 
 // ResumeCommitter is the narrow cross-store HITL-durability seam the Runner consumes

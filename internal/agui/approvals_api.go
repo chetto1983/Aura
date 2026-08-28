@@ -139,7 +139,9 @@ func (s *Server) handleRevokeApprovalGrant(w http.ResponseWriter, r *http.Reques
 // approvalItem is the JSON projection of one cross-thread pending pause (APRV-01). It
 // carries everything the operator needs to triage and jump to the source thread:
 // the question (sanitized), the option set, priority, kind, the owning conversation,
-// and the proxied source-thread id (the flat swarm-worker id, "" for a direct call).
+// and the source-thread id (the flat swarm-worker id, "" for a direct call) — read via
+// askuser.Pending.WorkerID(), never ProxiedFromChildID/OwningWorkerID directly (D-13,
+// 51-06a): that accessor is the one place "which worker owns this pause" is answered.
 type approvalItem struct {
 	Token          string          `json:"token"`
 	ConversationID string          `json:"conversation_id"`
@@ -175,7 +177,7 @@ func (s *Server) handleListApprovals(w http.ResponseWriter, r *http.Request) {
 			Question:       SanitizeString(p.Question), // V7: a question may echo a secret
 			Options:        p.Options,
 			Priority:       p.Priority,
-			Source:         p.ProxiedFromChildID,
+			Source:         p.WorkerID(),
 		})
 	}
 	writeJSON(w, items)

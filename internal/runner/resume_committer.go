@@ -49,11 +49,16 @@ func NewPoolResumeCommitter(pool *pgxpool.Pool, conv *conversations.Store, pause
 // CommitResume claims the pause then appends its answer turn in one tx. A failed claim
 // (rows==0 → ErrPauseNotFound) returns before any append; a failed append rolls the
 // claim back, leaving resumed_at IS NULL so the user can retry (D-06/LOOP-03).
+//
+// The claim runs through MarkResumedFencedTx (not the unfenced MarkResumedTx) so
+// claim.ExpectActionID (D-12, SWARM-06/51-06a) is honored: an empty fence resumes a
+// NULL-fenced pause exactly as before migration 0106, a non-empty one must match the
+// pause's stored pending_action_id or the claim reports ErrPauseNotFound.
 func (p *PoolResumeCommitter) CommitResume(ctx context.Context, claim ResumeClaim) (err error) {
 	ctx, end := resumeCommitBoundary.Start(ctx)
 	defer end.PanicSafe(&err)
 	return db.WithCallerIdentityTx(ctx, p.pool, func(q *sqlc.Queries) error {
-		if err := p.pause.MarkResumedTx(ctx, q, claim.Token, claim.Answer); err != nil {
+		if err := p.pause.MarkResumedFencedTx(ctx, q, claim.Token, claim.Answer, claim.ExpectActionID); err != nil {
 			return err
 		}
 		return p.appendAnswerTx(ctx, q, claim.Turn)
@@ -65,15 +70,19 @@ func (p *PoolResumeCommitter) CommitResume(ctx context.Context, claim ResumeClai
 // one tx. Any rows==0 claim rolls the whole tx back → exactly one answer per pause, no
 // orphan RoleTool turns (D-04/LOOP-02). Appends run in sorted-token order too so the
 // reserved seqs are deterministic.
+//
+// Each claim's ExpectActionID (D-12) rides into MarkResumedBatchTx via
+// askuser.FencedResumeAnswer, so the batch honors the same fencing guarantee as the
+// single-claim CommitResume above.
 func (p *PoolResumeCommitter) CommitResumeBatch(ctx context.Context, claims []ResumeClaim) (err error) {
 	ctx, end := resumeCommitBoundary.Start(ctx)
 	defer end.PanicSafe(&err)
 	if len(claims) == 0 {
 		return nil
 	}
-	answers := make(map[string]askuser.ResumeAnswer, len(claims))
+	answers := make(map[string]askuser.FencedResumeAnswer, len(claims))
 	for _, c := range claims {
-		answers[c.Token] = c.Answer
+		answers[c.Token] = askuser.FencedResumeAnswer{Answer: c.Answer, ExpectActionID: c.ExpectActionID}
 	}
 	ordered := append([]ResumeClaim(nil), claims...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Token < ordered[j].Token })
@@ -156,6 +165,12 @@ func allocateResumeTurnSeq(ctx context.Context, q *sqlc.Queries, conversationID 
 // inject-first bug), insert-then-append for a pause — but WITHOUT a cross-store tx, so a
 // mid-sequence failure is not rolled back. runner.New defaults to it when
 // Deps.ResumeCommitter is nil.
+//
+// It does NOT honor ResumeClaim.ExpectActionID (D-12): it calls the narrow PauseStore
+// interface's unfenced MarkResumed/MarkResumedBatch, which can resolve a NULL-fenced
+// (ordinary) pause but never a fenced one. Matches its own documented scope — a
+// non-atomic compatibility path, never the production resume path
+// (cmd/aura/chat_boot.go injects PoolResumeCommitter).
 type splitResumeCommitter struct {
 	conv  ConversationStore
 	pause PauseStore
