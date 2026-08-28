@@ -18,7 +18,6 @@ current claims and references were consolidated here; Git history remains their 
 |---|---|---|
 | **Medium** | The owned document-agent oracle does not exercise the full-file or scanned-PDF lanes | **Confirmed; prior closure was too broad** |
 | **Medium** | Managed conversation history is truncated by a fixed 50-row default before token budgeting | **Confirmed; duplicated in the prior ledger** |
-| **Medium** | GSD planning state contradicts itself and the current checkout | **Confirmed from the old handoff** |
 | **Medium** | Aura cannot prove action-level coverage of the externally pinned Calendar/PIM fork | **Confirmed at the consumption boundary; fork internals not re-auditable here** |
 | **Low** | Server-generated approval questions remain hard-coded in English | **Confirmed from the old handoff** |
 | **Low** | Expired idempotency recovery is implemented and tested but unreachable in production | **Confirmed dark code / unresolved product decision** |
@@ -56,20 +55,6 @@ current claims and references were consolidated here; Git history remains their 
 - **Action:** measure query, sidecar-rehydration and tokenizer cost at larger windows, then advance
   or paginate from the durable compaction watermark. Until that evidence exists, describe 50 as a
   work ceiling and recall limit, not as token-aware capacity.
-
-### Medium — planning state is internally contradictory
-
-- **What is true:** `.planning/STATE.md` says `current_phase: 51`, `status: executing` and
-  `stopped_at: ... next action` while also naming Phase 52 as current focus and 51 as ready to
-  execute (`.planning/STATE.md:4-8,27-33`). Its execution order says Phase 52 precedes 51
-  (`.planning/STATE.md:42`), and its recorded `state_head` is not this audit's checkout
-  (`.planning/STATE.md:11`). `ROADMAP.md` describes Phase 52 as 8/8 executed near its phase entry
-  but still reports 7/8 in the progress table (`.planning/ROADMAP.md:112,760`).
-- **Why it matters:** automation or an agent treating the freshest timestamp as authority can start
-  the wrong phase or repeat completed work. `CLAUDE.md` already warns that planning timestamps are
-  assertions; this file currently demonstrates the failure mode.
-- **Action:** regenerate STATE/ROADMAP from the actual plan summaries and current commit in one GSD
-  operation, then add a consistency check for phase id, completed-plan count and `state_head`.
 
 ### Medium — Calendar/PIM action behavior is proved mainly by Aura's integration sample
 
@@ -134,6 +119,12 @@ These compact entries prevent stale handoffs from reopening resolved work.
   Regressions cover a DOCX that compresses below the workspace cap but expands past the member
   limit, aggregate expansion, deep XML and shared-string output amplification
   (`internal/agent/tools/document_extract_test.go`).
+- **GSD planning consistency:** closed. `STATE.md` now derives 45 total plans, 37 matching plan
+  summaries, three completed phases and the Phase 51 focus from the live planning tree; ROADMAP's
+  Phase 52 row now records the actual 8/8 executed plans while retaining its honest In Progress
+  validation status. `scripts/check_planning_consistency.py` independently checks those counts,
+  every phase/progress row, current phase/name/status and the Git input commit recorded by
+  `state_head`; the build-and-lint job runs it on every change (`.github/workflows/ci.yml`).
 - **Memory preload:** closed. Agent-written, identity-scoped memory is trusted recalled knowledge,
   not untrusted third-party output; instruction-shaped remembered text does not gain operator or
   system authority. Boundary escaping and precedence live in

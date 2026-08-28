@@ -5,15 +5,15 @@ current_phase: 51
 current_phase_name: Durable delegation
 status: executing
 stopped_at: Completed 51-04-PLAN.md (D-09/D-10/D-11); human review recommended on the per-fact_key mutex scope before full closure
-last_updated: "2026-08-27T17:51:44.435Z"
-last_activity: 2026-08-27
-last_activity_desc: Phase 51 execution resumed (wave continue)
-state_head: 80a26abb29db3a90c91ce4d34dee18cc105e9ad4
+last_updated: "2026-08-28T06:36:09Z"
+last_activity: 2026-08-28
+last_activity_desc: Reconciled GSD state and roadmap against plans and summaries
+state_head: dd7a9a0aa3ef3298451b325b4efb85de1035003f
 progress:
   total_phases: 8
-  completed_phases: 1
+  completed_phases: 3
   total_plans: 45
-  completed_plans: 36
+  completed_plans: 37
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -49,7 +49,7 @@ plainly:** the MCP-01 distrust-framing and MCP-03 `TrustTrusted` tripwire tests 
 
 Prior status (Phase 46 execution):
 Phase 46 discussion are recorded in `46-CONTEXT.md` D-10..D-16 and in ROADMAP §45.1.
-Last activity: 2026-08-27 — Phase 51 execution resumed (wave continue)
+Last activity: 2026-08-28 — reconciled STATE/ROADMAP against the live plan and summary inventory
 failure is closed: a bridged tool never set `Multiplexed`, so `classify` gave ONE flat tier to the
 whole merged tool — `calendar(action=list_calendars)` and `calendar(action=send_email)` scored
 identically, with no panic to warn anyone. Now `bridge.go:211` sets `spec.Multiplexed =

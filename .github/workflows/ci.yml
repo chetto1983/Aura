@@ -73,6 +73,9 @@ jobs:
       - name: Workflow pin gate
         run: bash scripts/workflow_pin_gate.sh
 
+      - name: GSD planning consistency
+        run: python3 scripts/check_planning_consistency.py
+
       - name: EmbeddingGemma cache helper self-test
         run: make embedding-model-contract
       - name: LLM model fetch contract (pinned size + sha256, model + MTP drafter)
