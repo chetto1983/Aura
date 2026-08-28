@@ -309,7 +309,15 @@ func buildBaseRegistryWithHandles(
 	if pool := taskStorePool(ts); pool != nil {
 		swarmAdapter.Enqueuer = &swarm.DelegationEnqueuer{Store: documents.NewPostgresIngestionJobStore(pool)}
 	}
-	reg.Register(&tools.SwarmSpawn{Runner: swarmAdapter, MaxGoals: cfg.MaxSwarmGoals})
+	reg.Register(&tools.SwarmSpawn{Runner: swarmAdapter, Caps: tools.SwarmCaps{
+		MaxGoals:        cfg.MaxSwarmGoals,
+		MaxConcurrent:   cfg.MaxSwarmConcurrent,
+		ChildTimeoutSec: cfg.SwarmChildTimeoutSec,
+		// MaxDepth: AURA_SWARM_MAX_DEPTH, exported by internal/swarm for exactly
+		// this render (see swarm.MaxDepth's own doc comment on why it stays out
+		// of the Tier A/B knob registry).
+		MaxDepth: swarm.MaxDepth(),
+	}})
 	// D-10: fail closed at boot if no actionable tool exists (excluding tool_search).
 	// This is the shared composition root — buildRegistry and buildRegistryWithMCP
 	// both delegate here, so the guard covers every boot path.

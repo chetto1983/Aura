@@ -24,7 +24,7 @@ func withToolCtx(ctx context.Context, t *testing.T) context.Context {
 func TestRunnerAdapterMissingContext(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	a := NewRunnerAdapter(testRunConfig(t, newRouter(), 25).Cfg)
-	_, err := a.Run(withToolCtx(context.Background(), t), []string{"x"})
+	_, err := a.Run(withToolCtx(context.Background(), t), []string{"x"}, "")
 	if err == nil {
 		t.Fatal("missing context must return an execution error")
 	}
@@ -46,7 +46,7 @@ func TestRunnerAdapterDrivesEngine(t *testing.T) {
 		rc.ParentBudget, rc.ParentRegistry, rc.Client, rc.LLM, rc.ConvID, rc.Gateway)
 	a := NewRunnerAdapter(rc.Cfg)
 
-	res, err := a.Run(ctx, []string{"alpha task", "bravo task"})
+	res, err := a.Run(ctx, []string{"alpha task", "bravo task"}, "")
 	if err != nil {
 		t.Fatalf("adapter Run: %v", err)
 	}
@@ -62,6 +62,32 @@ func TestRunnerAdapterDrivesEngine(t *testing.T) {
 	}
 	if res.Provenance.Source != "swarm" || res.Provenance.Trust != tools.TrustUntrusted {
 		t.Fatalf("swarm provenance = %+v, want source=swarm trust=untrusted", res.Provenance)
+	}
+}
+
+// TestRunnerAdapterThreadsContextToWorkerBrief proves the SWARM-01 context arg
+// makes it all the way through RunnerAdapter.Run -> RunConfig.Context ->
+// runChild -> structuredBrief for the SYNCHRONOUS path: the router matches on a
+// substring that lives ONLY in the context text (never in the goal), so a
+// successful report is only possible if the worker's actual outgoing brief
+// carried it.
+func TestRunnerAdapterThreadsContextToWorkerBrief(t *testing.T) {
+	defer goleak.VerifyNone(t)
+	const contextMarker = "marker-only-in-context-9f2a"
+	r := newRouter().route(contextMarker, outcome{kind: "ok", text: "done"})
+	rc := testRunConfig(t, r, 25)
+
+	ctx := agent.WithSwarmContext(withToolCtx(context.Background(), t),
+		rc.ParentBudget, rc.ParentRegistry, rc.Client, rc.LLM, rc.ConvID, rc.Gateway)
+	a := NewRunnerAdapter(rc.Cfg)
+
+	res, err := a.Run(ctx, []string{"a goal with no marker in it"}, contextMarker)
+	if err != nil {
+		t.Fatalf("adapter Run: %v", err)
+	}
+	reports := parseReports(t, res.Preview)
+	if len(reports) != 1 || reports[0].Status != StatusOK {
+		t.Fatalf("want 1 ok report (proves the router matched the context marker inside the worker's real brief), got %+v: %s", reports, res.Preview)
 	}
 }
 
@@ -194,7 +220,7 @@ func TestRunnerAdapterBackgroundsWhenEnqueuerConfigured(t *testing.T) {
 		rc.ParentBudget, rc.ParentRegistry, rc.Client, rc.LLM, rc.ConvID, rc.Gateway)
 	ctx = identityctx.WithIdentityID(ctx, "identity-adapter-test")
 
-	res, err := a.Run(ctx, []string{"alpha task", "bravo task"})
+	res, err := a.Run(ctx, []string{"alpha task", "bravo task"}, "shared background context")
 	if err != nil {
 		t.Fatalf("adapter Run: %v", err)
 	}
@@ -207,6 +233,12 @@ func TestRunnerAdapterBackgroundsWhenEnqueuerConfigured(t *testing.T) {
 		}
 		if req.JobType != JobTypeSwarmDelegation {
 			t.Fatalf("enqueued row job_type = %q, want %q", req.JobType, JobTypeSwarmDelegation)
+		}
+		// SWARM-01 (51-03): the context arg threads through RunnerAdapter.Run ->
+		// RunConfig.Context -> the enqueue branch's DelegationPayload, so a
+		// background-delegated worker's brief still carries it.
+		if got, _ := req.Payload["context"].(string); got != "shared background context" {
+			t.Fatalf("enqueued row payload context = %q, want %q", got, "shared background context")
 		}
 	}
 	if res.Preview == "" {
