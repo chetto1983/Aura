@@ -43,56 +43,12 @@ type ExpiryReport struct {
 
 type operationQueries interface {
 	TryStartOperation(context.Context, sqlc.TryStartOperationParams) (int64, error)
-	TryRecoverExpiredOperation(context.Context, sqlc.TryRecoverExpiredOperationParams) (int64, error)
 	GetOperation(context.Context, sqlc.GetOperationParams) (sqlc.GetOperationRow, error)
 	CompleteOperation(context.Context, sqlc.CompleteOperationParams) (int64, error)
 	MarkOperationIndeterminate(context.Context, sqlc.MarkOperationIndeterminateParams) (int64, error)
 	MarkOperationRejected(context.Context, sqlc.MarkOperationRejectedParams) (int64, error)
 	ListExpiredReplayBodies(context.Context, sqlc.ListExpiredReplayBodiesParams) ([]sqlc.ListExpiredReplayBodiesRow, error)
 	ClearExpiredReplayBody(context.Context, sqlc.ClearExpiredReplayBodyParams) (int64, error)
-}
-
-// RecoverExpired atomically renews only the exact expired in-progress operation.
-func (s *Store) RecoverExpired(
-	ctx context.Context,
-	request BeginRequest,
-) (ClaimToken, bool, error) {
-	if err := request.Validate(); err != nil {
-		return 0, false, err
-	}
-	now := s.now().UTC()
-	identityID, _ := operationUUID(request.Operation.IdentityID)
-	params := sqlc.TryRecoverExpiredOperationParams{
-		LeaseExpiresAt: timestamp(now.Add(s.leaseDuration)),
-		RetryAfter:     timestamp(now.Add(s.retryAfter)),
-		Now:            timestamp(now),
-		IdentityID:     identityID,
-		OperationScope: string(request.Operation.Scope),
-		OperationKey:   request.Operation.Key,
-		PayloadHash:    append([]byte(nil), request.Fingerprint[:]...),
-	}
-	var token ClaimToken
-	var recovered bool
-	err := s.withIdentity(ctx, request.Operation.IdentityID, func(q operationQueries) error {
-		generation, qErr := q.TryRecoverExpiredOperation(ctx, params)
-		if errors.Is(qErr, pgx.ErrNoRows) {
-			return nil
-		}
-		if qErr != nil {
-			return fmt.Errorf("recover expired idempotency operation: %w", qErr)
-		}
-		if generation <= 0 {
-			return fmt.Errorf(
-				"recover expired idempotency operation: invalid claim token",
-			)
-		}
-		token, recovered = ClaimToken(generation), true
-		return nil
-	})
-	if err != nil {
-		return 0, false, err
-	}
-	return token, recovered, nil
 }
 
 // Store owns atomic operation acquisition, terminal transitions, replay, and

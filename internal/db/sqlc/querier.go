@@ -417,7 +417,6 @@ type Querier interface {
 	SoftDeleteAsset(ctx context.Context, arg SoftDeleteAssetParams) (AuraAssets, error)
 	SweepDueNotifications(ctx context.Context, arg SweepDueNotificationsParams) ([]AuraPendingNotifications, error)
 	TouchTelegramLastSeen(ctx context.Context, telegramUserID int64) error
-	TryRecoverExpiredOperation(ctx context.Context, arg TryRecoverExpiredOperationParams) (int64, error)
 	TryStartOperation(ctx context.Context, arg TryStartOperationParams) (int64, error)
 	UpdateAssetAccepted(ctx context.Context, arg UpdateAssetAcceptedParams) (AuraAssets, error)
 	UpdateAssetResult(ctx context.Context, arg UpdateAssetResultParams) (AuraAssets, error)

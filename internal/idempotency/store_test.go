@@ -18,7 +18,6 @@ var errFakeQuery = errors.New("fake idempotency query failure")
 
 type fakeOperationQueries struct {
 	tryStart      tryStartQuery
-	recover       recoverExpiredOperationQuery
 	get           getOperationQuery
 	complete      completeOperationQuery
 	indeterminate markIndeterminateQuery
@@ -28,7 +27,6 @@ type fakeOperationQueries struct {
 }
 
 type tryStartQuery func(context.Context, sqlc.TryStartOperationParams) (int64, error)
-type recoverExpiredOperationQuery func(context.Context, sqlc.TryRecoverExpiredOperationParams) (int64, error)
 type getOperationQuery func(context.Context, sqlc.GetOperationParams) (sqlc.GetOperationRow, error)
 type completeOperationQuery func(context.Context, sqlc.CompleteOperationParams) (int64, error)
 type markIndeterminateQuery func(context.Context, sqlc.MarkOperationIndeterminateParams) (int64, error)
@@ -41,16 +39,6 @@ func (f *fakeOperationQueries) TryStartOperation(ctx context.Context, arg sqlc.T
 		return 0, errors.New("unexpected TryStartOperation")
 	}
 	return f.tryStart(ctx, arg)
-}
-
-func (f *fakeOperationQueries) TryRecoverExpiredOperation(
-	ctx context.Context,
-	arg sqlc.TryRecoverExpiredOperationParams,
-) (int64, error) {
-	if f.recover == nil {
-		return 0, errors.New("unexpected TryRecoverExpiredOperation")
-	}
-	return f.recover(ctx, arg)
 }
 
 func (f *fakeOperationQueries) GetOperation(ctx context.Context, arg sqlc.GetOperationParams) (sqlc.GetOperationRow, error) {
@@ -210,77 +198,6 @@ func TestStoreBeginFailedConflictReadNeverInfersOwnership(t *testing.T) {
 	}
 }
 
-func TestStoreRecoverExpiredRequiresExactOperationAndRenewsLease(t *testing.T) {
-	t.Parallel()
-	now := time.Date(2026, 7, 26, 14, 0, 0, 0, time.UTC)
-	request := testBeginRequest(t, "recover-expired")
-	queries := &fakeOperationQueries{
-		recover: func(
-			_ context.Context,
-			arg sqlc.TryRecoverExpiredOperationParams,
-		) (int64, error) {
-			if arg.OperationScope != string(request.Operation.Scope) ||
-				arg.OperationKey != request.Operation.Key ||
-				!bytes.Equal(arg.PayloadHash, request.Fingerprint[:]) ||
-				!arg.Now.Time.Equal(now) ||
-				!arg.LeaseExpiresAt.Time.Equal(now.Add(2*time.Minute)) ||
-				!arg.RetryAfter.Time.Equal(now.Add(3*time.Second)) {
-				t.Fatalf("recovery parameters = %#v", arg)
-			}
-			return 8, nil
-		},
-	}
-	store := newStore(queries, Config{
-		Now: func() time.Time { return now }, LeaseDuration: 2 * time.Minute,
-		RetryAfter: 3 * time.Second,
-	})
-	claimToken, recovered, err := store.RecoverExpired(t.Context(), request)
-	if err != nil {
-		t.Fatalf("RecoverExpired: %v", err)
-	}
-	if !recovered || claimToken != ClaimToken(8) {
-		t.Fatalf("RecoverExpired = %d/%t, want 8/true", claimToken, recovered)
-	}
-}
-
-func TestStoreRecoverExpiredDoesNotAcquireUnexpiredOrChangedOperation(
-	t *testing.T,
-) {
-	t.Parallel()
-	request := testBeginRequest(t, "not-recoverable")
-	store := newStore(&fakeOperationQueries{
-		recover: func(
-			context.Context,
-			sqlc.TryRecoverExpiredOperationParams,
-		) (int64, error) {
-			return 0, pgx.ErrNoRows
-		},
-	}, Config{})
-	claimToken, recovered, err := store.RecoverExpired(t.Context(), request)
-	if err != nil {
-		t.Fatalf("RecoverExpired: %v", err)
-	}
-	if recovered || claimToken != 0 {
-		t.Fatalf("RecoverExpired = %d/%t, want zero/false", claimToken, recovered)
-	}
-}
-
-func TestStoreRecoverExpiredRejectsInvalidClaimToken(t *testing.T) {
-	t.Parallel()
-	request := testBeginRequest(t, "invalid-recovery-count")
-	store := newStore(&fakeOperationQueries{
-		recover: func(
-			context.Context,
-			sqlc.TryRecoverExpiredOperationParams,
-		) (int64, error) {
-			return 0, nil
-		},
-	}, Config{})
-	if _, _, err := store.RecoverExpired(t.Context(), request); err == nil {
-		t.Fatal("RecoverExpired accepted an invalid claim token")
-	}
-}
-
 func TestStoreTerminalTransitionsAreConditional(t *testing.T) {
 	now := time.Date(2026, 7, 21, 10, 0, 0, 0, time.UTC)
 	req := testBeginRequest(t, "terminal")
@@ -335,12 +252,6 @@ func TestStoreRejectsInvalidInputBeforePersistence(t *testing.T) {
 	store := newStore(queries, Config{})
 	if _, err := store.Begin(context.Background(), BeginRequest{}); err == nil {
 		t.Fatal("Begin accepted invalid request")
-	}
-	if _, _, err := store.RecoverExpired(
-		context.Background(),
-		BeginRequest{},
-	); err == nil {
-		t.Fatal("RecoverExpired accepted invalid request")
 	}
 	if err := store.Complete(context.Background(), CompleteRequest{}); err == nil {
 		t.Fatal("Complete accepted invalid request")

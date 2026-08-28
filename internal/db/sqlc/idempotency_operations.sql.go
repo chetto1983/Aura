@@ -405,46 +405,6 @@ func (q *Queries) MarkOperationRejected(ctx context.Context, arg MarkOperationRe
 	return result.RowsAffected(), nil
 }
 
-const tryRecoverExpiredOperation = `-- name: TryRecoverExpiredOperation :one
-UPDATE aura.idempotency_operations
-SET lease_expires_at = $1,
-    retry_after = $2,
-    updated_at = $3,
-    version = version + 1
-WHERE identity_id = $4
-  AND operation_scope = $5
-  AND operation_key = $6
-  AND state = 'in_progress'
-  AND payload_hash = $7
-  AND lease_expires_at <= $3
-RETURNING version
-`
-
-type TryRecoverExpiredOperationParams struct {
-	LeaseExpiresAt pgtype.Timestamptz `json:"lease_expires_at"`
-	RetryAfter     pgtype.Timestamptz `json:"retry_after"`
-	Now            pgtype.Timestamptz `json:"now"`
-	IdentityID     pgtype.UUID        `json:"identity_id"`
-	OperationScope string             `json:"operation_scope"`
-	OperationKey   string             `json:"operation_key"`
-	PayloadHash    []byte             `json:"payload_hash"`
-}
-
-func (q *Queries) TryRecoverExpiredOperation(ctx context.Context, arg TryRecoverExpiredOperationParams) (int64, error) {
-	row := q.db.QueryRow(ctx, tryRecoverExpiredOperation,
-		arg.LeaseExpiresAt,
-		arg.RetryAfter,
-		arg.Now,
-		arg.IdentityID,
-		arg.OperationScope,
-		arg.OperationKey,
-		arg.PayloadHash,
-	)
-	var version int64
-	err := row.Scan(&version)
-	return version, err
-}
-
 const tryStartOperation = `-- name: TryStartOperation :one
 INSERT INTO aura.idempotency_operations (
     identity_id,

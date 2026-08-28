@@ -29,20 +29,6 @@ INSERT INTO aura.idempotency_operations (
 ON CONFLICT (identity_id, operation_scope, operation_key) DO NOTHING
 RETURNING version;
 
--- name: TryRecoverExpiredOperation :one
-UPDATE aura.idempotency_operations
-SET lease_expires_at = sqlc.arg(lease_expires_at),
-    retry_after = sqlc.arg(retry_after),
-    updated_at = sqlc.arg(now),
-    version = version + 1
-WHERE identity_id = sqlc.arg(identity_id)
-  AND operation_scope = sqlc.arg(operation_scope)
-  AND operation_key = sqlc.arg(operation_key)
-  AND state = 'in_progress'
-  AND payload_hash = sqlc.arg(payload_hash)
-  AND lease_expires_at <= sqlc.arg(now)
-RETURNING version;
-
 -- name: GetOperation :one
 SELECT
     identity_id,

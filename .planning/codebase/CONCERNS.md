@@ -20,7 +20,6 @@ current claims and references were consolidated here; Git history remains their 
 | **Medium** | Managed conversation history is truncated by a fixed 50-row default before token budgeting | **Confirmed; duplicated in the prior ledger** |
 | **Medium** | Aura cannot prove action-level coverage of the externally pinned Calendar/PIM fork | **Confirmed at the consumption boundary; fork internals not re-auditable here** |
 | **Low** | Server-generated approval questions remain hard-coded in English | **Confirmed from the old handoff** |
-| **Low** | Expired idempotency recovery is implemented and tested but unreachable in production | **Confirmed dark code / unresolved product decision** |
 | **Low** | Several owned files have almost no room under the enforced 600-line cap | **Confirmed; prior counts were stale** |
 
 ### Medium — the document-agent release oracle covers only small text/XLSX retrieval
@@ -83,18 +82,6 @@ current claims and references were consolidated here; Git history remains their 
   canonical question; render localized prose on each surface while retaining a server-verifiable
   consent payload. Cover gateway, scheduled and shell approvals together.
 
-### Low — `RecoverExpired` has no production caller
-
-- **What is true:** `(*idempotency.Store).RecoverExpired` and its atomic SQL path exist and are
-  tested (`internal/idempotency/store.go:55-95`), but repository-wide callers are tests only. Normal
-  CLI execution maps an expired/indeterminate operation to a refusal and never invokes recovery
-  (`cmd/aura/idempotency.go:245-270`).
-- **Why it matters:** the method is dark code under the repository rule, while the product behavior
-  for an explicitly authorized retry remains ambiguous.
-- **Action:** decide one contract: expose recovery through an authenticated, explicit operator
-  action with discovery evidence, or delete `RecoverExpired`, its query and tests and keep
-  indeterminate as deliberately terminal. Do not auto-retry destructive work.
-
 ### Low — line-cap pressure is immediate
 
 - **Current counts:** `internal/agui/server_run_resume_test.go` is 600 lines;
@@ -125,6 +112,12 @@ These compact entries prevent stale handoffs from reopening resolved work.
   validation status. `scripts/check_planning_consistency.py` independently checks those counts,
   every phase/progress row, current phase/name/status and the Git input commit recorded by
   `state_head`; the build-and-lint job runs it on every change (`.github/workflows/ci.yml`).
+- **Expired idempotency recovery:** closed by choosing the existing production contract:
+  indeterminate operations remain terminal and destructive work is never reclaimed implicitly.
+  The unreachable `Store.RecoverExpired` method, generated `TryRecoverExpiredOperation` query,
+  fake hooks and unit/integration tests for that nonexistent product path were deleted; CLI
+  refusal and stale-claim fencing remain covered. `git grep` now finds no recovery symbol outside
+  this historical closure note.
 - **Memory preload:** closed. Agent-written, identity-scoped memory is trusted recalled knowledge,
   not untrusted third-party output; instruction-shaped remembered text does not gain operator or
   system authority. Boundary escaping and precedence live in

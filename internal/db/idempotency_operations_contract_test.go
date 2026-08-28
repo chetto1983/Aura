@@ -58,7 +58,6 @@ func TestIdempotencyOperationsQueryContract(t *testing.T) {
 	queries := compactSQL(t, "queries/idempotency_operations.sql")
 	for _, name := range []string{
 		"-- name: trystartoperation :one",
-		"-- name: tryrecoverexpiredoperation :one",
 		"-- name: getoperation :one",
 		"-- name: lockoperationreceipt :one",
 		"-- name: completeoperation :execrows",
@@ -73,21 +72,6 @@ func TestIdempotencyOperationsQueryContract(t *testing.T) {
 
 	assertSQLSectionContains(t, queries, "trystartoperation", "on conflict (identity_id, operation_scope, operation_key) do nothing")
 	assertSQLSectionContains(t, queries, "trystartoperation", "returning version")
-	recoverExpired := sqlSection(queries, "tryrecoverexpiredoperation")
-	for _, want := range []string{
-		"set lease_expires_at = sqlc.arg(lease_expires_at)",
-		"retry_after = sqlc.arg(retry_after)",
-		"updated_at = sqlc.arg(now)",
-		"version = version + 1",
-		"state = 'in_progress'",
-		"payload_hash = sqlc.arg(payload_hash)",
-		"lease_expires_at <= sqlc.arg(now)",
-		"returning version",
-	} {
-		if !strings.Contains(recoverExpired, want) {
-			t.Errorf("TryRecoverExpiredOperation query missing %q", want)
-		}
-	}
 	lockReceipt := sqlSection(queries, "lockoperationreceipt")
 	wantLockReceipt := "lockoperationreceipt :one -- this must run on transaction-bound queries because autocommit releases the row lock when the statement returns. select identity_id, operation_scope, operation_key, payload_hash, state, version, created_at from aura.idempotency_operations where identity_id = sqlc.arg(identity_id) and operation_scope = sqlc.arg(operation_scope) and operation_key = sqlc.arg(operation_key) for update;"
 	if strings.TrimSpace(lockReceipt) != wantLockReceipt {
