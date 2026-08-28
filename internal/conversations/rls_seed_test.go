@@ -61,7 +61,7 @@ func ownerCtx() context.Context {
 // including overriding it to ” when the context carries no principal. A store method that
 // dropped its carrier would still fail closed, which TestStoreFailsClosedWithoutIdentityOnContext pins on a pool
 // that deliberately has no session identity.
-func sessionScopedAppURL(t *testing.T, appURL, identityID string) string {
+func sessionScopedAppURL(t testing.TB, appURL, identityID string) string {
 	t.Helper()
 	u, err := url.Parse(appURL)
 	if err != nil {

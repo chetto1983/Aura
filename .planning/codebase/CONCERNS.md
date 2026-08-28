@@ -50,9 +50,16 @@ current claims and references were consolidated here; Git history remains their 
 - **Why it matters:** when no durable summary covers older turns, a large-window model cannot see
   them even if its token budget has room. The row cap bounds legitimate database/sidecar/tokenizer
   work, but the default is also the effective recall horizon.
+- **Measured 2026-08-28:** on a disposable database against the live Postgres 18.4 stack, the
+  existing query + rehydration + tokenizer path took 6.64/9.14/39.49/137.89 ms for
+  50/250/1,000/5,000 inline turns. The same sizes with one real 4 KiB sidecar per non-system
+  turn took 0.553/2.538/9.953/50.564 s. The current live corpus was too small to expose either
+  curve; the owned fixture is `internal/conversations/context_paging_benchmark_test.go`.
 - **Action:** measure query, sidecar-rehydration and tokenizer cost at larger windows, then advance
-  or paginate from the durable compaction watermark. Until that evidence exists, describe 50 as a
-  work ceiling and recall limit, not as token-aware capacity.
+  or paginate from the durable compaction watermark. Amendment #169 records the measured design:
+  50 becomes a query-page size, traversal must reach the exact watermark/root, covered sidecars
+  are not opened, and any independent work ceiling fails explicitly instead of returning a partial
+  history.
 
 ### Medium — Calendar/PIM action behavior is proved mainly by Aura's integration sample
 

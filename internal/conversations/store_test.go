@@ -34,7 +34,7 @@ import (
 
 const localID = "00000000-0000-0000-0000-000000000001"
 
-func envOrSkip(t *testing.T, key string) string {
+func envOrSkip(t testing.TB, key string) string {
 	t.Helper()
 	v := os.Getenv(key)
 	if v == "" {
@@ -47,7 +47,7 @@ func envOrSkip(t *testing.T, key string) string {
 	return v
 }
 
-func migratedPool(t *testing.T) *pgxpool.Pool {
+func migratedPool(t testing.TB) *pgxpool.Pool {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(ownerCtx(), 30*time.Second)
 	defer cancel()
@@ -80,13 +80,13 @@ func migratedPool(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-func newStore(t *testing.T, pool *pgxpool.Pool) *Store {
+func newStore(t testing.TB, pool *pgxpool.Pool) *Store {
 	t.Helper()
 	runDir := t.TempDir()
 	return New(pool, Config{RunDir: runDir, TurnCapBytes: 65536})
 }
 
-func newConversation(t *testing.T, s *Store) string {
+func newConversation(t testing.TB, s *Store) string {
 	t.Helper()
 	id := uuid.Must(uuid.NewV7()).String()
 	if _, err := s.Create(ownerCtx(), CreateParams{
