@@ -361,6 +361,74 @@ func (q *Queries) ListAnsweredAwaitingInputJobs(ctx context.Context, arg ListAns
 	return items, nil
 }
 
+const listExpiredAwaitingInputJobs = `-- name: ListExpiredAwaitingInputJobs :many
+SELECT job.id, job.identity_id,
+       pause.token AS pause_token, pause.pending_action_id, pause.tool_call_id,
+       pause.kind, pause.question, pause.conversation_id
+FROM aura.ingestion_jobs job
+JOIN aura.paused_states pause
+  ON pause.token = (job.payload->'resume'->>'pause_token')::uuid
+WHERE job.identity_id = $1
+  AND job.status = 'awaiting_input'
+  AND pause.resumed_at IS NULL
+  AND pause.created_at <= $2
+ORDER BY pause.created_at, job.id
+LIMIT $3
+`
+
+type ListExpiredAwaitingInputJobsParams struct {
+	IdentityID pgtype.UUID        `json:"identity_id"`
+	Cutoff     pgtype.Timestamptz `json:"cutoff"`
+	RowLimit   int32              `json:"row_limit"`
+}
+
+type ListExpiredAwaitingInputJobsRow struct {
+	ID              pgtype.UUID `json:"id"`
+	IdentityID      pgtype.UUID `json:"identity_id"`
+	PauseToken      pgtype.UUID `json:"pause_token"`
+	PendingActionID pgtype.Text `json:"pending_action_id"`
+	ToolCallID      string      `json:"tool_call_id"`
+	Kind            string      `json:"kind"`
+	Question        string      `json:"question"`
+	ConversationID  pgtype.UUID `json:"conversation_id"`
+}
+
+// 51-06b (Task 3, D-08 extended to the queue row): the per-worker pause TTL sweep's
+// read -- which parked jobs carry a pause the operator never answered, older than the
+// cutoff. Same join as ListAnsweredAwaitingInputJobs (the pause TOKEN this park cycle
+// minted, never owning_worker_id alone) and the same scope boundary (internal/askuser
+// stays untouched): a parked row that must not wait forever is the QUEUE's concern.
+// pause.created_at is the TTL clock, exactly as ListExpiredPendingApprovals measures an
+// approval's age; the sweep's cutoff is now - AURA_ASKUSER_PAUSE_TTL_SEC.
+func (q *Queries) ListExpiredAwaitingInputJobs(ctx context.Context, arg ListExpiredAwaitingInputJobsParams) ([]ListExpiredAwaitingInputJobsRow, error) {
+	rows, err := q.db.Query(ctx, listExpiredAwaitingInputJobs, arg.IdentityID, arg.Cutoff, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListExpiredAwaitingInputJobsRow{}
+	for rows.Next() {
+		var i ListExpiredAwaitingInputJobsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.IdentityID,
+			&i.PauseToken,
+			&i.PendingActionID,
+			&i.ToolCallID,
+			&i.Kind,
+			&i.Question,
+			&i.ConversationID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const parkIngestionJobAwaitingInput = `-- name: ParkIngestionJobAwaitingInput :execrows
 UPDATE aura.ingestion_jobs
 SET status = 'awaiting_input',

@@ -229,6 +229,26 @@ WHERE job.identity_id = sqlc.arg(identity_id)
   AND pause.resumed_at IS NOT NULL
 ORDER BY job.created_at
 LIMIT sqlc.arg(row_limit);
+-- name: ListExpiredAwaitingInputJobs :many
+-- 51-06b (Task 3, D-08 extended to the queue row): the per-worker pause TTL sweep's
+-- read -- which parked jobs carry a pause the operator never answered, older than the
+-- cutoff. Same join as ListAnsweredAwaitingInputJobs (the pause TOKEN this park cycle
+-- minted, never owning_worker_id alone) and the same scope boundary (internal/askuser
+-- stays untouched): a parked row that must not wait forever is the QUEUE's concern.
+-- pause.created_at is the TTL clock, exactly as ListExpiredPendingApprovals measures an
+-- approval's age; the sweep's cutoff is now - AURA_ASKUSER_PAUSE_TTL_SEC.
+SELECT job.id, job.identity_id,
+       pause.token AS pause_token, pause.pending_action_id, pause.tool_call_id,
+       pause.kind, pause.question, pause.conversation_id
+FROM aura.ingestion_jobs job
+JOIN aura.paused_states pause
+  ON pause.token = (job.payload->'resume'->>'pause_token')::uuid
+WHERE job.identity_id = sqlc.arg(identity_id)
+  AND job.status = 'awaiting_input'
+  AND pause.resumed_at IS NULL
+  AND pause.created_at <= sqlc.arg(cutoff)
+ORDER BY pause.created_at, job.id
+LIMIT sqlc.arg(row_limit);
 -- aura.ingestion_events has no standalone statement of its own for the shipped
 -- fenced/terminal transitions above CreateIngestionJob/ClaimIngestionJobs/
 -- UpdateIngestionJobStatus/RetryIngestionJob: every one of those writes an `events` CTE

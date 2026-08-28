@@ -9,11 +9,14 @@ import (
 	"context"
 	"time"
 
+	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/channels"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
+	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/steer"
 	"github.com/chetto1983/aura/internal/swarm"
 )
@@ -213,12 +216,107 @@ func newRuntimeDelegationWorker(chat *chatEnv, delivery *swarm.DelegationDeliver
 			}
 		},
 	}
+	// pauseSweep is 51-06b Task 3: it expires background-worker pauses past
+	// AURA_ASKUSER_PAUSE_TTL_SEC and takes their parked queue row with them (D-08
+	// extended to the queue row), riding the SAME identity-enumeration wrapper as the
+	// claim loop and resume observer above -- one lifecycle, one shutdown-cancellable
+	// context, no second scheduler. Its tick is approvalExpiryInterval(ttl), the SAME
+	// cadence the approval sweep derives from the same knob; a ttl <= 0 yields interval
+	// 0, which runtimeIngestionWorker.Start treats as "never start" -- the shipped
+	// "TTL <= 0 disables expiry" precedent, reached through the existing guard.
+	pauseTTL := time.Duration(chat.cfg.AskUser.PauseTTLSec) * time.Second
+	pauseExpirer := runner.NewPoolWorkerPauseExpirer(chat.pool, chat.conv, chat.pause, workerPauseQueueAdapter{store: store})
+	pauseSweep := &runtimeTenantIngestionProcessor{
+		identities:     identity.New(chat.pool),
+		width:          1,
+		workerIDPrefix: runtimeDelegationWorkerIDPrefix + "-pause-sweep",
+		worker: func(identityID, _ string) runtimeIngestionProcessor {
+			return workerPauseSweepAdapter{
+				run:        chat.run,
+				identityID: identityID,
+				ttl:        pauseTTL,
+				deps:       runner.WorkerPauseSweepDeps{Lister: workerPauseListerAdapter{store: store}, Expirer: pauseExpirer},
+			}
+		},
+	}
 	return &runtimeProcessingWorkers{workers: []*runtimeIngestionWorker{
 		newRuntimeIngestionWorker(claimLoop, pollInterval),
 		newRuntimeIngestionWorker(resumeObserver, pollInterval),
 		newRuntimeIngestionWorker(&delegationNudgeProcessor{delivery: delivery}, pollInterval),
+		newRuntimeIngestionWorker(pauseSweep, approvalExpiryInterval(pauseTTL)),
 	}}
 }
+
+// runtimeWorkerPauseSweepBatchSize bounds one ExpireWorkerPauses pass per identity
+// (51-06b Task 3) -- the same width the resume observer uses.
+const runtimeWorkerPauseSweepBatchSize = runtimeDelegationNudgeBatchSize
+
+// workerPauseSweepAdapter binds *runner.Runner.ExpireWorkerPauses' explicit-identity,
+// explicit-deps signature onto the ctx-only runtimeIngestionProcessor shape
+// runtimeTenantIngestionProcessor's per-identity worker factory expects -- mirroring
+// delegationResumeObserverAdapter's own binding shape below.
+type workerPauseSweepAdapter struct {
+	run        *runner.Runner
+	identityID string
+	ttl        time.Duration
+	deps       runner.WorkerPauseSweepDeps
+}
+
+func (a workerPauseSweepAdapter) ProcessOnce(ctx context.Context) (int, error) {
+	return a.run.ExpireWorkerPauses(ctx, a.deps, a.identityID, time.Now(), a.ttl, runtimeWorkerPauseSweepBatchSize)
+}
+
+// workerPauseListerAdapter adapts *documents.PostgresIngestionJobStore.
+// ListExpiredAwaitingInput onto runner.WorkerPauseLister: the two packages declare
+// their row types independently (internal/runner must not import internal/documents
+// for one sweep), so this is the ONE translation, a sibling of steerNudgeAdapter.
+// OwningWorkerID is the job id by construction (51-06b Task 1 parks with
+// OwningWorkerID = job.ID), so the mapping restates that rather than re-reading it.
+type workerPauseListerAdapter struct {
+	store *documents.PostgresIngestionJobStore
+}
+
+func (a workerPauseListerAdapter) ListExpiredWorkerPauses(ctx context.Context, identityID string, cutoff time.Time, limit int) ([]runner.ExpiredWorkerPause, error) {
+	rows, err := a.store.ListExpiredAwaitingInput(ctx, identityID, cutoff, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]runner.ExpiredWorkerPause, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, runner.ExpiredWorkerPause{
+			JobID:      r.JobID,
+			IdentityID: r.IdentityID,
+			Pause: askuser.Pending{
+				Token:           r.PauseToken,
+				ConversationID:  r.ConversationID,
+				Kind:            r.Kind,
+				Question:        r.Question,
+				ToolCallID:      r.ToolCallID,
+				PendingActionID: r.PendingActionID,
+				OwningWorkerID:  r.JobID,
+			},
+		})
+	}
+	return out, nil
+}
+
+var _ runner.WorkerPauseLister = workerPauseListerAdapter{}
+
+// workerPauseQueueAdapter adapts the Tx-bound
+// *documents.PostgresIngestionJobStore.ResolveIngestionJobAwaitingInputTx onto
+// runner.WorkerPauseQueueResolver, so PoolWorkerPauseExpirer resolves the parked row
+// on ITS transaction (the pause claim, the trace and the row die together, D-08).
+type workerPauseQueueAdapter struct {
+	store *documents.PostgresIngestionJobStore
+}
+
+func (a workerPauseQueueAdapter) ResolveAwaitingInputTx(ctx context.Context, q *sqlc.Queries, identityID, jobID, errorMessage string) (int64, error) {
+	return a.store.ResolveIngestionJobAwaitingInputTx(ctx, q, documents.ResolveAwaitingInputRequest{
+		IdentityID: identityID, JobID: jobID, ErrorMessage: errorMessage,
+	})
+}
+
+var _ runner.WorkerPauseQueueResolver = workerPauseQueueAdapter{}
 
 // delegationResumeObserverAdapter binds *swarm.DelegationResumeObserver's explicit-
 // identity ProcessOnce(ctx, identityID, limit) onto the ctx-only runtimeIngestionProcessor

@@ -300,6 +300,14 @@ type Querier interface {
 	// identity_id, so the Go sweep opens ONE identity-scoped transaction per row rather than
 	// one unscoped pass per known identity.
 	ListDueSteerRows(ctx context.Context, arg ListDueSteerRowsParams) ([]AuraSteerQueue, error)
+	// 51-06b (Task 3, D-08 extended to the queue row): the per-worker pause TTL sweep's
+	// read -- which parked jobs carry a pause the operator never answered, older than the
+	// cutoff. Same join as ListAnsweredAwaitingInputJobs (the pause TOKEN this park cycle
+	// minted, never owning_worker_id alone) and the same scope boundary (internal/askuser
+	// stays untouched): a parked row that must not wait forever is the QUEUE's concern.
+	// pause.created_at is the TTL clock, exactly as ListExpiredPendingApprovals measures an
+	// approval's age; the sweep's cutoff is now - AURA_ASKUSER_PAUSE_TTL_SEC.
+	ListExpiredAwaitingInputJobs(ctx context.Context, arg ListExpiredAwaitingInputJobsParams) ([]ListExpiredAwaitingInputJobsRow, error)
 	ListExpiredPendingApprovals(ctx context.Context, arg ListExpiredPendingApprovalsParams) ([]AuraPausedStates, error)
 	ListExpiredReplayBodies(ctx context.Context, arg ListExpiredReplayBodiesParams) ([]ListExpiredReplayBodiesRow, error)
 	ListGatewayApprovalGrants(ctx context.Context, identityID pgtype.UUID) ([]AuraGatewayApprovalGrants, error)

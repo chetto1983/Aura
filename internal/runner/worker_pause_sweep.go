@@ -21,9 +21,12 @@ package runner
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/chetto1983/aura/internal/askuser"
+	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/llm"
 )
 
 // ExpiredWorkerPause is one background worker's pause past AURA_ASKUSER_PAUSE_TTL_SEC
@@ -81,15 +84,66 @@ type WorkerPauseSweepDeps struct {
 // can tell which sweep closed a row without joining anything.
 const expiredWorkerPauseContent = "expired: the operator never answered"
 
-var errWorkerPauseSweepNotImplemented = errors.New("expire worker pauses: not implemented")
-
 // ExpireWorkerPauses expires identityID's background-worker pauses older than
 // now-ttl and resolves their parked queue rows, at most limit per pass. A ttl <= 0
 // disables expiry entirely (the shipped AURA_ASKUSER_PAUSE_TTL_SEC precedent). It
 // returns the number of pauses actually expired this pass; on an expirer error it
 // returns the count so far and the error, so a partial sweep is never reported as
-// a full one.
-func (r *Runner) ExpireWorkerPauses(ctx context.Context, deps WorkerPauseSweepDeps, identityID string, now time.Time, ttl time.Duration, limit int) (int, error) {
-	_, _, _, _, _, _ = ctx, deps, identityID, now, ttl, limit
-	return 0, errWorkerPauseSweepNotImplemented
+// a full one. Idempotent by construction: an expired pause has resumed_at set and
+// its row is no longer awaiting_input, so a second pass lists nothing.
+//
+// The receiver carries no state the sweep reads; the method lives on *Runner because
+// the expiry's wording and fencing are HITL policy the Runner owns (its sibling
+// ExpirePendingApprovals is the precedent), and cmd/aura wires both sweeps off the
+// same *Runner.
+func (*Runner) ExpireWorkerPauses(ctx context.Context, deps WorkerPauseSweepDeps, identityID string, now time.Time, ttl time.Duration, limit int) (int, error) {
+	if ttl <= 0 {
+		return 0, nil
+	}
+	if deps.Lister == nil || deps.Expirer == nil {
+		return 0, fmt.Errorf("expire worker pauses: sweep is not configured")
+	}
+	if identityID == "" {
+		return 0, fmt.Errorf("expire worker pauses: identity is required")
+	}
+	due, err := deps.Lister.ListExpiredWorkerPauses(ctx, identityID, now.Add(-ttl), limit)
+	if err != nil {
+		return 0, fmt.Errorf("expire worker pauses: %w", err)
+	}
+	expired := 0
+	for _, pause := range due {
+		if err := deps.Expirer.ExpireWorkerPause(ctx, workerPauseExpiry(pause)); err != nil {
+			if errors.Is(err, askuser.ErrPauseNotFound) {
+				continue
+			}
+			return expired, fmt.Errorf("expire worker pause %s: %w", pause.Pause.Token, err)
+		}
+		expired++
+	}
+	return expired, nil
+}
+
+// workerPauseExpiry turns one due pause into the three-legged outcome the expirer
+// commits. The trace names WHICH worker asked and WHAT went unanswered, so the agent
+// can truthfully report what did NOT happen (the worker was stopped, its work was not
+// completed); the queue row's error_message carries the same fact for an operator
+// reading aura.ingestion_jobs directly.
+func workerPauseExpiry(p ExpiredWorkerPause) WorkerPauseExpiry {
+	trace := fmt.Sprintf("Background worker %s asked: %q -- %s before AURA_ASKUSER_PAUSE_TTL_SEC elapsed. The worker was stopped and its task was NOT completed.",
+		p.JobID, p.Pause.Question, expiredWorkerPauseContent)
+	return WorkerPauseExpiry{
+		Claim: ResumeClaim{
+			Token:  p.Pause.Token,
+			Answer: askuser.ResumeAnswer{Action: askuser.ActionExpired, Content: expiredWorkerPauseContent},
+			Turn: conversations.AppendTurnParams{
+				ConversationID: p.Pause.ConversationID,
+				Role:           llm.RoleAssistant,
+				Content:        trace,
+			},
+			ExpectActionID: p.Pause.PendingActionID,
+		},
+		JobID:        p.JobID,
+		IdentityID:   p.IdentityID,
+		ErrorMessage: fmt.Sprintf("%s: %s", expiredWorkerPauseContent, p.Pause.Question),
+	}
 }
