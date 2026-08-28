@@ -16,7 +16,6 @@ current claims and references were consolidated here; Git history remains their 
 
 | Severity | Concern | Audit verdict |
 |---|---|---|
-| **High** | `read_file` has an unbounded in-process OOXML decompression path | **Confirmed; missing from the prior ledger** |
 | **Medium** | The owned document-agent oracle does not exercise the full-file or scanned-PDF lanes | **Confirmed; prior closure was too broad** |
 | **Medium** | Managed conversation history is truncated by a fixed 50-row default before token budgeting | **Confirmed; duplicated in the prior ledger** |
 | **Medium** | GSD planning state contradicts itself and the current checkout | **Confirmed from the old handoff** |
@@ -24,25 +23,6 @@ current claims and references were consolidated here; Git history remains their 
 | **Low** | Server-generated approval questions remain hard-coded in English | **Confirmed from the old handoff** |
 | **Low** | Expired idempotency recovery is implemented and tested but unreachable in production | **Confirmed dark code / unresolved product decision** |
 | **Low** | Several owned files have almost no room under the enforced 600-line cap | **Confirmed; prior counts were stale** |
-
-### High — `read_file` can expand attacker-controlled OOXML without a decompression budget
-
-- **What is true:** workspace reads cap the compressed input at 10 MiB
-  (`internal/agent/tools/fs.go:124-134`, `internal/agent/tools/sandbox_route.go:157-179`), but
-  `readZipXML` and `xlsxReadZipMember` call `io.ReadAll` on decompressed ZIP members
-  (`internal/agent/tools/document_extract.go:203-213`,
-  `internal/agent/tools/document_extract_xlsx.go:83-90`). The XML is then materialized as a full
-  pointer tree (`internal/agent/tools/document_extract.go:145-183`). The 5,000-row/256-column XLSX
-  limits run only after the complete sheet XML and shared-string table have been decompressed and
-  parsed (`internal/agent/tools/document_extract_xlsx.go:92-108,176-210`).
-- **Why it matters:** a small `.docx` or `.xlsx` in the caller's sandbox can expand far beyond the
-  input cap inside the Aura daemon, consuming memory and CPU before any rendering limit applies.
-  This is a second bespoke OOXML reader, separate from the bounded `filecard` routing-card parser;
-  the `filecard` parity closure did not cover it.
-- **Action:** first add a compressed-amplification regression that fails before allocating the
-  expanded member. Then either move exact Office extraction into the existing per-identity sandbox
-  toolchain or share a streaming reader with explicit per-member, aggregate, element-depth and
-  output budgets. Do not claim the `filecard` 4 KiB card is an exact-document substitute.
 
 ### Medium — the document-agent release oracle covers only small text/XLSX retrieval
 
@@ -144,6 +124,16 @@ current claims and references were consolidated here; Git history remains their 
 
 These compact entries prevent stale handoffs from reopening resolved work.
 
+- **`read_file` OOXML expansion:** closed. Exact DOCX/XLSX extraction now rejects declared
+  oversized members before opening them, verifies the actual stream through a `limit+1` reader,
+  shares a 32 MiB decompression budget across the package, and caps XML depth, node count,
+  character data and rendered output (`internal/agent/tools/document_extract_ooxml.go`,
+  `internal/agent/tools/document_extract.go:145-288`,
+  `internal/agent/tools/document_extract_xlsx.go:27-111`). Security-limit errors are propagated
+  through XLSX's compatibility skips instead of being mistaken for malformed optional parts.
+  Regressions cover a DOCX that compresses below the workspace cap but expands past the member
+  limit, aggregate expansion, deep XML and shared-string output amplification
+  (`internal/agent/tools/document_extract_test.go`).
 - **Memory preload:** closed. Agent-written, identity-scoped memory is trusted recalled knowledge,
   not untrusted third-party output; instruction-shaped remembered text does not gain operator or
   system authority. Boundary escaping and precedence live in
