@@ -17,11 +17,13 @@ type swarmCtxKey struct{}
 
 // SwarmContextValue carries the parent deps the internal/swarm RunnerAdapter needs
 // to build a swarm RunConfig: the shared Budget tree, the parent tool Registry
-// (the adapter derives the worker registry via Without(reg, "swarm_spawn")), the
-// LLM Client + Config the workers run against, and the conversation id that keys
-// each worker SessionID and the transcript dir. config.Config (RunDir, swarm caps)
-// is NOT carried here — the adapter holds it as a construction-time field, so this
-// package never imports internal/config.
+// (internal/swarm's workerRegistry derives each worker's own registry from it,
+// keeping swarm_spawn only while nesting stays under AURA_SWARM_MAX_DEPTH — plan
+// 51-05, SWARM-05; flat v1 always dropped it unconditionally via
+// Without(reg, "swarm_spawn")), the LLM Client + Config the workers run against,
+// and the conversation id that keys each worker SessionID and the transcript dir.
+// config.Config (RunDir, swarm caps) is NOT carried here — the adapter holds it as
+// a construction-time field, so this package never imports internal/config.
 //
 // CONCURRENT-READ CONTRACT (AG-062): every field is shared READ-ONLY across the
 // fanned-out swarm workers. The *Registry is immutable post-boot (the agent

@@ -21,8 +21,10 @@ import (
 // so this reserve protects the parent's aggregation turn, not the children.
 const budgetReserve = 3
 
-// swarmSpawnTool is the tool name dropped from every worker's registry (D-08/D-10):
-// flat v1 forbids nested swarms.
+// swarmSpawnTool is the tool swarm_depth.go's workerRegistry drops from a
+// worker's registry once nesting would exceed AURA_SWARM_MAX_DEPTH (D-08/D-10,
+// SWARM-05) -- not unconditionally any more. See workerRegistry's doc comment
+// for the depth-conditional grant that replaced flat v1's blanket strip.
 const swarmSpawnTool = "swarm_spawn"
 
 // RunConfig carries the inputs the ephemeral runner needs for one swarm_spawn call.
@@ -191,19 +193,30 @@ func panicChildReport(idx int, recovered any) ChildReport {
 	}
 }
 
-// runChild constructs one worker (parent registry minus swarm_spawn, flat SessionID,
-// the D-07 brief) and drains its Event stream into a ChildReport. A worker error →
-// {failed} (D-02); an ask_user pause Event → {needs_user_input} (D-04); the final
-// LLM Event → {ok, summary}. Every event is dumped to the per-child transcript
-// (D-18, best-effort). It NEVER returns an error — failures live in the report.
+// runChild constructs one worker (the workerRegistry-derived, depth-conditional
+// registry, flat SessionID, the D-07 brief) and drains its Event stream into a
+// ChildReport. A worker error → {failed} (D-02); an ask_user pause Event →
+// {needs_user_input} (D-04); the final LLM Event → {ok, summary}. Every event is
+// dumped to the per-child transcript (D-18, best-effort). It NEVER returns an
+// error — failures live in the report. Reused unchanged for a NESTED worker's own
+// children (plan 51-05, SWARM-04/05): the caller's rc.Depth is whatever depth this
+// particular Run call is at, so the depth-conditional registry and the
+// gateway.WithDelegatedDispatch reservation below both apply identically at any
+// nesting level.
 func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, goal string) ChildReport {
 	childID := fmt.Sprintf("w%d", idx+1)
 	report := ChildReport{GoalIndex: idx, ChildID: childID, Status: StatusOK}
 
+	registry, nestingClosed := workerRegistry(rc)
+	briefContext := rc.Context
+	if nestingClosed {
+		briefContext = appendNestingClosedNotice(briefContext)
+	}
+
 	worker := agent.NewLlmAgent(agent.LlmAgentConfig{
 		Client:     rc.Client,
 		LLM:        rc.LLM,
-		Registry:   tools.Without(rc.ParentRegistry, swarmSpawnTool),
+		Registry:   registry,
 		PreviewCap: rc.Cfg.ToolPreviewCap,
 		RunDir:     rc.Cfg.RunDir,
 		SessionID:  fmt.Sprintf("%s-swarm-%s", rc.ConvID, childID), // FLAT — no slash (Pitfall 4)
@@ -211,7 +224,7 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 		// flat worker SessionID above — uuid.Parse fails on the flat session (Open Q1).
 		LedgerConversationID: rc.ConvID,
 		Gateway:              rc.Gateway,
-		UserTurns:            []llm.Message{{Role: llm.RoleUser, Content: structuredBrief(goal, rc.Context)}},
+		UserTurns:            []llm.Message{{Role: llm.RoleUser, Content: structuredBrief(goal, briefContext)}},
 	})
 
 	slog.Info("swarm.child.spawned", "child", childID, "goal_index", idx)
