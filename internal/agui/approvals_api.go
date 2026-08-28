@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/approvalgrants"
+	"github.com/chetto1983/aura/internal/approvaltext"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/google/uuid"
@@ -141,13 +142,14 @@ func (s *Server) handleRevokeApprovalGrant(w http.ResponseWriter, r *http.Reques
 // the question (sanitized), the option set, priority, kind, the owning conversation,
 // and the proxied source-thread id (the flat swarm-worker id, "" for a direct call).
 type approvalItem struct {
-	Token          string          `json:"token"`
-	ConversationID string          `json:"conversation_id"`
-	Kind           string          `json:"kind"`
-	Question       string          `json:"question"`
-	Options        json.RawMessage `json:"options,omitempty"`
-	Priority       int             `json:"priority"`
-	Source         string          `json:"source,omitempty"`
+	Token          string                     `json:"token"`
+	ConversationID string                     `json:"conversation_id"`
+	Kind           string                     `json:"kind"`
+	Question       string                     `json:"question"`
+	Presentation   *approvaltext.Presentation `json:"presentation,omitempty"`
+	Options        json.RawMessage            `json:"options,omitempty"`
+	Priority       int                        `json:"priority"`
+	Source         string                     `json:"source,omitempty"`
 }
 
 // handleListApprovals returns ListPendingAll(ctx, limit) projected to JSON — the
@@ -173,12 +175,32 @@ func (s *Server) handleListApprovals(w http.ResponseWriter, r *http.Request) {
 			ConversationID: p.ConversationID,
 			Kind:           p.Kind,
 			Question:       SanitizeString(p.Question), // V7: a question may echo a secret
+			Presentation:   approvalPresentation(p),
 			Options:        p.Options,
 			Priority:       p.Priority,
 			Source:         p.ProxiedFromChildID,
 		})
 	}
 	writeJSON(w, items)
+}
+
+// approvalPresentation exposes only recognized metadata that still matches a fresh derivation
+// from the canonical question. It is display-only, never authoritative. Every parameter is
+// sanitized independently because renderers interpolate it instead of the canonical question.
+func approvalPresentation(p askuser.Pending) *approvaltext.Presentation {
+	if p.Kind != "approval" {
+		return nil
+	}
+	presentation, ok := approvaltext.FromContext(p.Question, p.ResumeContext)
+	if !ok {
+		return nil
+	}
+	params := make(map[string]string, len(presentation.Params))
+	for key, value := range presentation.Params {
+		params[key] = SanitizeString(value)
+	}
+	presentation.Params = params
+	return &presentation
 }
 
 // resolveBody is the POST /resolve request payload. action is accept|decline|cancel;

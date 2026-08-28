@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/approvaltext"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
@@ -37,6 +38,10 @@ func (r *Runner) MintApprovalPause(ctx context.Context, convID, question string,
 	resumeContext, err := resumeContextWithDecisionPolicy(resumeContext, allowedDecisions)
 	if err != nil {
 		return "", fmt.Errorf("mint approval pause: decision policy: %w", err)
+	}
+	resumeContext, err = approvaltext.Enrich(question, resumeContext)
+	if err != nil {
+		return "", fmt.Errorf("mint approval pause: presentation: %w", err)
 	}
 	token, err := uuid.NewV7()
 	if err != nil {

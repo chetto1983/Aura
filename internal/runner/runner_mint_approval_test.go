@@ -6,6 +6,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/approvaltext"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -96,6 +97,33 @@ func TestMintApprovalPause_PersistsRestrictedDecisions(t *testing.T) {
 	}
 	if want := []string{"decline", "cancel"}; !slices.Equal(payload.AllowedDecisions, want) {
 		t.Fatalf("allowed_decisions = %v, want %v", payload.AllowedDecisions, want)
+	}
+}
+
+func TestMintApprovalPauseDerivesScheduledPresentation(t *testing.T) {
+	conv := newFakeConvStore()
+	pause := newFakePauseStore()
+	r := &Runner{resumeCommitter: newSplitResumeCommitter(conv, pause), pause: pause}
+	const (
+		convID = "44444444-4444-4444-4444-444444444444"
+		taskID = "019f9349-e0e5-77cc-9639-804bcf88b968"
+	)
+	question := "Scheduled agent_job task 019f9349 needs your approval. Approve or reject it below."
+	token, err := r.MintApprovalPause(
+		context.Background(), convID, question,
+		json.RawMessage(`{"type":"scheduled_task_approval","task_id":"`+taskID+`"}`),
+		allResumeDecisions(),
+	)
+	if err != nil {
+		t.Fatalf("MintApprovalPause: %v", err)
+	}
+	got, err := pause.GetByToken(context.Background(), token)
+	if err != nil {
+		t.Fatalf("GetByToken(%s): %v", token, err)
+	}
+	presentation, ok := approvaltext.FromContext(question, got.ResumeContext)
+	if !ok || presentation.Key != approvaltext.ScheduledKey || presentation.Params["task"] != "019f9349" {
+		t.Fatalf("scheduled presentation = %+v, %v; context=%s", presentation, ok, got.ResumeContext)
 	}
 }
 

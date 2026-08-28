@@ -1221,9 +1221,9 @@ jobs:
       # The job runs the sidecar via `docker run` (NOT `docker compose`): compose would
       # interpolate the WHOLE compose.yaml and fail on the unrelated `aura` service's
       # :?-required POSTGRES_PASSWORD. The standalone GHCR image has no compose deps.
-      # Pinned by commit, matching compose.yaml: `:sidecar` moved on 2026-08-22, and a
-      # floating tag is how CI and dev end up exercising different servers.
-      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:b1d584a4645c41b8e23e176af258befd9e598de5@sha256:ecb4a77957c012e61da1aebd69b17213e584e10215718b1195174216e6461af0
+      # Pinned by commit, matching compose.yaml; a floating tag is how CI and dev end up
+      # exercising different servers.
+      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:5909c808f75bb1c612256666dd0f1aacf6921dd4@sha256:1d0e9c3f62aba446eb123ea39d5abb9d97e6be7784d2dac403ea1e1e5e4a6986
       # The container's MCP-over-HTTP path is the root "/" (spike 064); we publish it on
       # host 127.0.0.1:8093 (the container listens on 8080).
       AURA_PIM_MCP_URL: http://127.0.0.1:8093/
@@ -1507,7 +1507,7 @@ jobs:
       AURA_OBJECTSTORE_SECRET_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
       AURA_OBJECTSTORE_PATH_STYLE: "true"
       AURA_ARCADEDB_MCP_IMAGE: ghcr.io/chetto1983/aura-arcadedb-mcp:3c1723cc5d3c4a23c9585c96b9c35d3d79416050@sha256:621438a7bb77983899c22f43c52714d08c25af1efcd9ad14fc3479e8893225a4
-      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:b1d584a4645c41b8e23e176af258befd9e598de5@sha256:ecb4a77957c012e61da1aebd69b17213e584e10215718b1195174216e6461af0
+      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:5909c808f75bb1c612256666dd0f1aacf6921dd4@sha256:1d0e9c3f62aba446eb123ea39d5abb9d97e6be7784d2dac403ea1e1e5e4a6986
       AURA_WHATSAPP_MCP_IMAGE: ghcr.io/chetto1983/whatsapp-mcp:sha-a463da5@sha256:006602da0893ada0eb80c812384032e262c1c7f0642866bf194041078e86130f
     steps:
       - name: Checkout

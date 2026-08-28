@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/approvaltext"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/cachemetrics"
 	"github.com/chetto1983/aura/internal/conversations"
@@ -380,6 +381,10 @@ func (r *Runner) persistPause(ctx context.Context, tr *turnTracker, ai *agent.Aw
 	resumeContext, err := resumeContextWithDecisionPolicy(ai.ResumeContext, allResumeDecisions())
 	if err != nil {
 		return fmt.Errorf("persist pause decision policy: %w", err)
+	}
+	resumeContext, err = approvaltext.Enrich(ai.Question, resumeContext)
+	if err != nil {
+		return fmt.Errorf("persist pause presentation: %w", err)
 	}
 	// D-05 relay ids: a non-empty child id is forwarded as a non-nil *string (→
 	// proxied_from_child_id); an empty one stays nil (→ SQL NULL for direct calls).

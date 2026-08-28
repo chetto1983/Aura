@@ -1075,14 +1075,15 @@ services:
   # CI-built + published to GHCR (public) by the fork's aura-publish-image workflow.
   # Aura's catalog points at the loopback publish; Aura boot never depends on this service.
   #
-  # PINNED BY COMMIT. b1d584a4645c41b8e23e176af258befd9e598de5 is the generic OAuth
+  # PINNED BY COMMIT. 5909c808f75bb1c612256666dd0f1aacf6921dd4 adds the exhaustive
+  # 29-action CalendarActionTool route/validation contract over the generic OAuth
   # resource server: the standard `sub` scopes MCP and admin requests to one tenant. A floating
   # `:sidecar` tag is forbidden because pull_policy=missing can otherwise retain old
   # bytes under an unchanged name. Published index digest:
-  # sha256:ecb4a77957c012e61da1aebd69b17213e584e10215718b1195174216e6461af0.
+  # sha256:1d0e9c3f62aba446eb123ea39d5abb9d97e6be7784d2dac403ea1e1e5e4a6986.
   # Bump by reading the 40-hex tag the workflow minted for the target commit.
   aura-pim-mcp:
-    image: ${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:b1d584a4645c41b8e23e176af258befd9e598de5@sha256:ecb4a77957c012e61da1aebd69b17213e584e10215718b1195174216e6461af0}
+    image: ${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:5909c808f75bb1c612256666dd0f1aacf6921dd4@sha256:1d0e9c3f62aba446eb123ea39d5abb9d97e6be7784d2dac403ea1e1e5e4a6986}
     pull_policy: ${AURA_PIM_MCP_PULL_POLICY:-missing}
     container_name: aura-pim-mcp
     restart: unless-stopped

@@ -300,21 +300,19 @@ Plans:
 
 ### Phase 46: MCP trust and facade
 
-> **REVISED 2026-08-24 (measured on the running stack).** 7 of 9 plans are complete. **Plan
-> 46-08's fork curation is a recorded NO-GO**, not pending work — PRD amendment #131: the
-> WhatsApp view calls back by raw name into THREE tools (`list_chats`, `list_messages`,
-> `get_media_data`), not two, so a curated WhatsApp lands at 4 model-facing tools, over D-27's
-> ceiling, and stays deferred exactly as it is deferred today. The manifest collapse the curation
-> was for saves nothing that is being paid. **Only plan 46-09 remains.** The design doc's §5b
-> exemption table and `ui://` bindings are stale and amendment #131 supersedes them.
+> **CLOSED 2026-08-25; evidence refreshed 2026-08-28.** All 9 plans have a disposition: seven
+> executed, 46-08 is the measured NO-GO recorded by PRD amendment #131, and 46-09 was closed by the
+> operator. The WhatsApp view calls back by raw name into THREE tools (`list_chats`,
+> `list_messages`, `get_media_data`), so a curated WhatsApp would expose 4 model-facing tools,
+> exceed D-27's ceiling and remain deferred. Calendar owns the one useful curated loaded slot.
 
 See `.planning/phases/46-mcp-trust-and-facade/46-CONTEXT.md` for the decisions and their rationale.
 
 **Goal**: The trust posture that already shipped is ratified in the PRD rather than re-implemented;
 every mounted MCP server — bundled recipe, ad hoc mount, or one Aura mints herself — works with
-**zero Aura-side code and zero declaration**; and calendar/WhatsApp collapse from raw tools into
-**two always-loaded curated slots** — one multiplexed tool per sidecar — curated inside the forks,
-not behind a facade in Aura's tree.
+**zero Aura-side code and zero declaration**; Calendar collapses into one always-loaded multiplexed
+tool curated in its fork; and WhatsApp remains a generic deferred mount after amendment #131 proved
+its view-bound exemptions make curation cost-neutral.
 
 **Depends on**: **Phase 45.1** (native MCP client) — complete (`63b456f8e`/`02a291530`), landed
 first so this phase's remaining work is written once against the surviving seam. And Phase 45's
@@ -373,14 +371,14 @@ passages remain `TrustUntrusted`, so instructions inside a document stay data, n
 
 **Success Criteria** (what must be TRUE):
 
-  1. In a live conversation, the tool manifest shows calendar and WhatsApp reachable through **two always-loaded curated slots**, not the raw 28 underlying MCP tools — and the curation is visible in the forks' own `tools/list`, with no Aura-side hide-list doing it.
+  1. **AMENDED by #131:** Calendar is reachable through one always-loaded curated slot; WhatsApp remains reachable as a deferred generic mount because its three view-bound exemptions make a curated surface exceed the `<=3` ceiling. No Aura-side hide-list implements either outcome.
   2. A calendar or WhatsApp destructive action (send a message, send an email) produces the fail-closed risk gate / approval flow live, **while a read action in the same merged tool does not** — proving per-action classification survived the merge (see D-21).
   3. Reading the rendered tool descriptions in a live turn shows every mounted MCP server — bundled recipes and any ad hoc mount alike — presented as ordinary text, with no untrusted-data framing anywhere.
   4. `accountId` never appears in the model's dispatched arguments for a live calendar call — `aura.tool_invocations` shows the model passing back only an opaque reference the fork itself issued. ([earlier rewording note](#fn-46-e))
   5. ~~A live turn whose MCP tool result carries instruction-shaped text does not act on it, proving the result-fencing envelope carried the defense.~~ **DELETED 2026-08-16 (D-07):** there is no envelope; the criterion cannot pass as written and must not be silently reinterpreted.
   6. Mounting a **new** MCP server — one with no entry anywhere in Aura's tree — makes its tools usable in a live turn with no code change and no configuration beyond the mount itself, fail-closed at `Mutating+Destructive`.
 
-**Plans**: 7/9 plans executed
+**Plans**: 9/9 dispositions (7 executed, 1 measured no-go, 1 operator close)
 
 Plans:
 **Wave 1**
@@ -404,11 +402,11 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 46-08-PLAN.md — WhatsApp fork curated + its table re-key, classifier and pin in the second atomic commit
+- [x] 46-08-PLAN.md — measured NO-GO; amendment #131 records why WhatsApp stays deferred and uncurated
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 46-09-PLAN.md — SC#6 via the calculator mount, trust-posture tripwire tests, tool-search fixture repair, and the phase-close gates
+- [x] 46-09-PLAN.md — closed by the operator; current trust tripwires and later evidence are inventoried in STATE.md and the canonical concern ledger
 
 #### Footnotes — superseded Phase 46 wording
 

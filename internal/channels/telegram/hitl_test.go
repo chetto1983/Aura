@@ -10,6 +10,7 @@ import (
 
 	tele "gopkg.in/telebot.v4"
 
+	"github.com/chetto1983/aura/internal/approvaltext"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/runner"
 )
@@ -152,6 +153,39 @@ func (b *hitlBot) recorded() []hitlSend {
 	out := make([]hitlSend, len(b.sends))
 	copy(out, b.sends)
 	return out
+}
+
+func TestApprovalQuestionUsesTrustedItalianPresentation(t *testing.T) {
+	t.Parallel()
+	canonical := "Approve files.delete (risk=high)?\nThis mutating action is WITHHELD until you accept.\nargs: path"
+	contextJSON, err := approvaltext.Enrich(canonical, json.RawMessage(
+		`{"type":"gateway_approval","tool":"files.delete","tier":"high"}`,
+	))
+	if err != nil {
+		t.Fatalf("Enrich: %v", err)
+	}
+	pending := askuser.Pending{
+		Token: "11112222-3333-4444-5555-666677778888", Kind: "approval",
+		Question: canonical, ResumeContext: contextJSON,
+	}
+	resume := &fakeResume{pending: []askuser.Pending{pending}}
+	h := newHitl(resume, nil)
+	bot := &hitlBot{}
+	h.prompt(context.Background(), bot, 42, "conv")
+	sends := bot.recorded()
+	if len(sends) != 1 || !strings.HasPrefix(sends[0].text, "Approva files.delete (rischio=high)?") {
+		t.Fatalf("localized prompt = %+v", sends)
+	}
+	if got := h.questionFor(context.Background(), "conv", pending.Token); got != sends[0].text {
+		t.Fatalf("details = %q, prompt = %q", got, sends[0].text)
+	}
+
+	legacy := pending
+	legacy.Question = "Legacy canonical question"
+	legacy.ResumeContext = nil
+	if got := localizedApprovalQuestion(legacy); got != legacy.Question {
+		t.Fatalf("legacy fallback = %q, want %q", got, legacy.Question)
+	}
 }
 
 // TestApprovalMarkupsMatchWhatTheTextShows pins the split live E2E forced: Dettagli exists ONLY on

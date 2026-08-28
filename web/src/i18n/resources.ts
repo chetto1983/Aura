@@ -227,6 +227,16 @@ export const resources = {
           review: 'Review the scope and consequence before continuing.',
         },
         lock: 'Answer the request above to continue.',
+        question: {
+          none: '(none)',
+          gateway:
+            'Approve {{tool}} (risk={{risk}})?\nThis mutating action is WITHHELD until you accept.\nargs: {{args}}',
+          shell:
+            'Approve the shell_exec command?\ndirectory: {{cwd}}\ncommand:\n{{command}}\nsha256: {{digest}}',
+          scheduled: 'Approve scheduled {{kind}} task {{task}}? It will not run until you approve.',
+          scheduledDetailed:
+            'Approve scheduled {{kind}} task {{task}} ({{schedule}}, risk={{risk}})? It will not run until you approve.',
+        },
         // The gateway's approval scopes (amendment #127). It ships a stable code and an
         // English fallback; these are the words the cockpit puts on the buttons.
         scope: {
@@ -501,6 +511,17 @@ export const resources = {
           review: 'Controlla ambito e conseguenze prima di continuare.',
         },
         lock: 'Rispondi alla richiesta qui sopra per continuare.',
+        question: {
+          none: '(nessuno)',
+          gateway:
+            'Approva {{tool}} (rischio={{risk}})?\nQuesta azione mutante resta BLOCCATA finché non accetti.\nargomenti: {{args}}',
+          shell:
+            'Approva il comando shell_exec?\ndirectory: {{cwd}}\ncomando:\n{{command}}\nsha256: {{digest}}',
+          scheduled:
+            "Approva l'attività pianificata {{kind}} {{task}}? Non verrà eseguita finché non approvi.",
+          scheduledDetailed:
+            "Approva l'attività pianificata {{kind}} {{task}} ({{schedule}}, rischio={{risk}})? Non verrà eseguita finché non approvi.",
+        },
         scope: {
           once: 'Approva una volta',
           session: 'Approva {{subject}} per questa conversazione',

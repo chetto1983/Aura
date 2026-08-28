@@ -15,11 +15,13 @@ package agui
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/approvaltext"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db"
@@ -79,6 +81,73 @@ func seedPause(t *testing.T, store *askuser.Store, pool *pgxpool.Pool, kind, que
 		t.Fatalf("Insert pause: %v", err)
 	}
 	return convID, token
+}
+
+// TestApprovalsAPI_ListCanonicalBoundPresentation proves the real persistence-to-HTTP seam used
+// by the browser and channel renderers. The localized prose is deliberately not stored: only the
+// stable key and data parameters cross the API, while Question remains the consent payload.
+func TestApprovalsAPI_ListCanonicalBoundPresentation(t *testing.T) {
+	pool := migratedPool(t)
+	store := askuser.New(pool)
+	convID := seedConversationRow(t, pool)
+	token := uuid.Must(uuid.NewV7()).String()
+	question := "Approve calendar__calendar (risk=destructive)?\nThis mutating action is WITHHELD until you accept.\nargs: {\"action\":\"delete_event\"}"
+	resumeContext, err := approvaltext.Enrich(question, json.RawMessage(`{
+		"type":"gateway_approval",
+		"tool":"calendar__calendar",
+		"tier":"destructive"
+	}`))
+	if err != nil {
+		t.Fatalf("Enrich approval context: %v", err)
+	}
+	if err := store.Insert(ownerCtx(), askuser.InsertParams{
+		Token:          token,
+		ConversationID: convID,
+		Kind:           "approval",
+		Question:       question,
+		Priority:       5,
+		ToolCallID:     "tc-presentation",
+		ResumeContext:  resumeContext,
+	}); err != nil {
+		t.Fatalf("Insert pause: %v", err)
+	}
+
+	srv := newApprovalsAPIServer(t, pool, &scriptedRunner{}, store)
+	resp, err := http.Get(srv.URL + "/api/approvals")
+	if err != nil {
+		t.Fatalf("GET /api/approvals: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var items []struct {
+		Token        string                     `json:"token"`
+		Question     string                     `json:"question"`
+		Presentation *approvaltext.Presentation `json:"presentation"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&items); err != nil {
+		t.Fatalf("decode items: %v", err)
+	}
+	for _, item := range items {
+		if item.Token != token {
+			continue
+		}
+		if item.Question != question {
+			t.Fatalf("canonical question changed on the wire: %q", item.Question)
+		}
+		if item.Presentation == nil || item.Presentation.Key != approvaltext.GatewayKey {
+			t.Fatalf("presentation = %+v", item.Presentation)
+		}
+		want := map[string]string{
+			"tool": "calendar__calendar", "risk": "destructive", "args": `{"action":"delete_event"}`,
+		}
+		if !maps.Equal(item.Presentation.Params, want) {
+			t.Fatalf("presentation params = %#v, want %#v", item.Presentation.Params, want)
+		}
+		return
+	}
+	t.Fatalf("seeded approval %s missing from API response", token)
 }
 
 // TestApprovalsAPI_ListCrossThread asserts GET /api/approvals returns the cross-thread
