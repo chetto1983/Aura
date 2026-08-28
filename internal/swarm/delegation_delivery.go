@@ -18,7 +18,13 @@ package swarm
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"strings"
 	"time"
+
+	"github.com/chetto1983/aura/internal/steer"
 )
 
 // ConversationRecorder appends a finished delegation's consolidated report to
@@ -110,16 +116,155 @@ func NewDelegationDelivery(
 	}
 }
 
-// Deliver is not yet implemented (RED, plan 51-10 Task 1): a stub that
-// records nothing and pushes nothing, so every test asserting the SC#1
-// write's real behavior fails for the right reason ahead of the GREEN commit.
+// Deliver runs the SC#1 write, THEN the present-operator steer push -- the
+// order is load-bearing (a push is not a record; the record is the durable
+// copy and the push is the courtesy, never the reverse). recorded reports
+// whether the conversation record succeeded, so the caller
+// (delegation_queue.go's deliverSuccess) can gate the job's succeeded
+// transition on it: a report that reached neither the conversation nor (once
+// nudged) a channel has not been delivered and must be retried by the
+// shipped backoff, never marked succeeded by omission.
+//
+// An empty report records nothing and pushes nothing (recorded=true: there is
+// nothing to retry, so this is not a delivery failure).
+//
+// A push (steer.Push) failure is a hard infrastructure error, returned
+// unchanged -- the SAME contract deliverSuccess carried before this plan
+// (51-01). A RECORD failure is NOT a hard Go error: it is a WARN (the work
+// already happened; only the durable copy failed to write) reflected solely
+// through recorded=false, mirroring internal/cron/dispatch.go's own
+// recordToOrigin ("a failed write is a WARN and never a run failure").
+//
+// The RECORDED copy is attributed (T-51-38, threat model "mitigate"): it is
+// wrapped naming the worker and the goal, never written as Aura's own
+// unqualified words, so a LATER turn re-reading aura.conversation_turns
+// cannot mistake a worker's output for the assistant's own conclusion. The
+// PUSHED copy (text, unwrapped) is unchanged from 51-01 -- it gets its own
+// attribution downstream, at drain time, from markSteer/
+// wrapUntrustedToolOutput (internal/agent/llm_agent_steer.go), which already
+// treats steer.SourceWorker as untrusted content. These are two separate
+// envelopes for two separate readers (durable history vs. a live turn), not
+// one shared wrapping.
 func (d *DelegationDelivery) Deliver(ctx context.Context, payload DelegationPayload, text string) (recorded bool, err error) {
-	return false, nil
+	if d == nil || d.Recorder == nil {
+		return false, fmt.Errorf("swarm: delegation delivery has no conversation recorder configured")
+	}
+	if strings.TrimSpace(text) == "" {
+		return true, nil
+	}
+	if rerr := d.Recorder.AppendAssistantTurn(ctx, payload.ConversationID, attributedWorkerReport(payload.Goal, text)); rerr != nil {
+		slog.Warn("swarm.delegation.record_failed",
+			"conversation", payload.ConversationID, "err", rerr)
+		recorded = false
+	} else {
+		recorded = true
+	}
+	if d.Steer != nil {
+		if perr := d.Steer.Push(payload.ConversationID, steer.SourceWorker, text); perr != nil {
+			return recorded, fmt.Errorf("delegation report push: %w", perr)
+		}
+	}
+	return recorded, nil
 }
 
-// NudgeUndrained is not yet implemented (RED, plan 51-10 Task 2): a stub that
-// nudges nothing, so every tri-state/idempotency test fails for the right
-// reason ahead of the GREEN commit.
+// attributedWorkerReport is the SC#1 conversation record's own attribution
+// (T-51-38): names the delegated worker's goal so a later turn re-reading
+// history reads this as reported-by-a-worker content, never as Aura's own
+// unqualified words. Distinct from the untrusted-tool-output envelope the
+// steer rail applies at drain time (internal/agent/llm_agent_steer.go) --
+// that envelope is minted per-drain for a live model turn; this one is
+// written once, durably, into aura.conversation_turns itself.
+func attributedWorkerReport(goal, text string) string {
+	return fmt.Sprintf("[Delegated worker report -- goal: %q]\n%s", goal, text)
+}
+
+// NudgeUndrained is the absent-operator leg's periodic sweep (SWARM-03/09):
+// for every aura.steer_queue delegation_result row the operator has not
+// drained (drained_at IS NULL) that is older than NudgeAfter, push it to the
+// owning identity's channel EXACTLY ONCE. A drained row (the operator was
+// present, the steer rail already delivered it mid-turn) is never nudged --
+// the point is telling an ABSENT operator once, never repeating what a
+// present one already received.
+//
+// NudgeAfter<=0 disables this leg entirely: record + steer keep working via
+// Deliver, only the channel push is off.
+//
+// Claim BEFORE push, never the reverse -- the same "the drain IS the claim"
+// idiom internal/db/queries/steer_queue.sql's own DrainSteerRows already
+// uses, generalized from a FOR-UPDATE transaction to a conditional UPDATE:
+// MarkSteerRowNudged's `WHERE nudged_at IS NULL` is what makes two CONCURRENT
+// sweep passes over the SAME row push at most once (SWARM-09 edge). A bare
+// SELECT for the candidate list, with the mark-as-claimed done only AFTER a
+// successful push, would let two passes both observe the row as unclaimed and
+// both call DeliverToIdentity before either commits -- a real double-push.
+// Claiming first closes that window: the loser of the race sees
+// claimed=false and does nothing further for that row.
+//
+// The tri-state branch mirrors internal/cron/deliver.go's deliverToOrigin
+// verbatim, because a delegation result has no NotifyRoute and no per-task
+// route chain behind it (unlike a scheduled task, PRD Amendment #154):
+// delivered -> stop (already claimed). Nobody owns the identity -> ALSO stop
+// -- the conversation record Deliver already wrote IS the delivery, and there
+// is no per-task route to fall back to. Owns-but-failed -> insert a
+// pending_notifications retry row (migration 0105's steer_queue_id leg, the
+// shipped outbox); the row stays claimed (nudged_at is already set), so the
+// retry from here on belongs entirely to pending_notifications' own
+// sweep/backoff, never re-attempted by a later NudgeUndrained pass.
+//
+// What this does NOT prove (state plainly, per Amendment #154): the fan-out's
+// choice between two candidate channels and its owns-but-failed leg have
+// never been exercised live -- Telegram is the only shipped Deliverer -- and
+// the outbox's retry/backoff/dead-letter behaviour is read from the schema,
+// not measured.
 func (d *DelegationDelivery) NudgeUndrained(ctx context.Context, now time.Time, limit int) (int, error) {
-	return 0, nil
+	if d == nil || d.Nudge == nil || d.Channel == nil || d.NudgeAfter <= 0 {
+		return 0, nil
+	}
+	cutoff := now.Add(-d.NudgeAfter)
+	rows, err := d.Nudge.ListUnnudgedDelegationResults(ctx, cutoff, limit)
+	if err != nil {
+		return 0, fmt.Errorf("swarm: list unnudged delegation results: %w", err)
+	}
+	nudged := 0
+	var errs []error
+	for _, row := range rows {
+		ok, err := d.nudgeOne(ctx, row)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("nudge steer row %s: %w", row.ID, err))
+			continue
+		}
+		if ok {
+			nudged++
+		}
+	}
+	return nudged, errors.Join(errs...)
+}
+
+// nudgeOne claims one undrained row (the concurrency-safety mutex), then
+// pushes it through the shipped tri-state. It reports whether THIS pass
+// claimed the row (true even on owns-but-failed: the row is still claimed,
+// only its delivery is deferred to pending_notifications) versus a
+// concurrent pass having already claimed it (false, not an error).
+func (d *DelegationDelivery) nudgeOne(ctx context.Context, row UndrainedResult) (bool, error) {
+	claimed, err := d.Nudge.MarkSteerRowNudged(ctx, row.ID, row.IdentityID)
+	if err != nil {
+		return false, fmt.Errorf("mark nudged: %w", err)
+	}
+	if !claimed {
+		return false, nil
+	}
+	// delivered=true and delivered=false-nobody-owns both need nothing further
+	// here: DeliverToIdentity's bool distinguishes them only to decide whether
+	// a SIBLING channel should be tried, which is entirely
+	// Registry.DeliverToIdentity's own internal fan-out (sort.Strings,
+	// first-delivers-wins) -- this caller has nothing further to do in either
+	// case, per this function's own doc.
+	if _, err := d.Channel.DeliverToIdentity(ctx, row.IdentityID, row.Body); err != nil {
+		if d.Pending != nil {
+			if perr := d.Pending.InsertPendingNotification(ctx, row.ID, row.IdentityID, row.Body, err.Error()); perr != nil {
+				slog.Warn("swarm.delegation.nudge_retry_persist_failed", "steer_row", row.ID, "err", perr)
+			}
+		}
+	}
+	return true, nil
 }
