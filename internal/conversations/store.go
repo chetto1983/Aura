@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 
 	"github.com/chetto1983/aura/internal/db"
@@ -423,85 +422,6 @@ func (s *Store) loadTurns(ctx context.Context, conversationID string) ([]Turn, e
 		out = append(out, t)
 	}
 	return out, nil
-}
-
-func (s *Store) loadRecentTurns(
-	ctx context.Context,
-	conversationID string,
-	hardCap int,
-) ([]Turn, error) {
-	id, err := db.ParseUUID("conversation_id", conversationID)
-	if err != nil {
-		return nil, fmt.Errorf("load recent turns: %w", err)
-	}
-	var rows []sqlc.ListRecentTurnsBySeqRow
-	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
-		listed, lErr := q.ListRecentTurnsBySeq(
-			ctx,
-			sqlc.ListRecentTurnsBySeqParams{
-				TargetConversationID: id,
-				HardCap:              int32(hardCap),
-			},
-		)
-		if lErr != nil {
-			return fmt.Errorf("load recent turns %s: %w", conversationID, lErr)
-		}
-		rows = listed
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	out := make([]Turn, 0, len(rows))
-	for _, row := range rows {
-		turn := turnFromRow(sqlc.ListTurnsBySeqRow(row))
-		if turn.ContentSidecarPath != "" {
-			data, readErr := s.readTurnSidecar(conversationID, turn.Seq)
-			if readErr != nil {
-				return nil, fmt.Errorf(
-					"load recent turns %s seq %d: read sidecar: %w",
-					conversationID,
-					turn.Seq,
-					readErr,
-				)
-			}
-			turn.Content = string(data)
-		}
-		out = append(out, turn)
-	}
-	return out, nil
-}
-
-// readTurnSidecar reads a spilled turn's content through an os.Root fenced to the
-// run dir (LOOP-05 / F-005 / D-08). The DB content_sidecar_path column is a
-// did-spill FLAG only: the on-disk path is RECONSTRUCTED from (runDir, convID, seq)
-// — identical to what maybeSpill wrote — so a poisoned column value cannot redirect
-// the read anywhere, and os.Root refuses to follow a symlink swapped at the
-// <seq>.content leaf out of runDir (ASVS V12 path traversal). It mirrors the
-// reconstruct-don't-trust fence in agent/tools/read_tool_output.go and adds the
-// symlink-leaf neutralization that plain os.Open lacks. Both loadTurns and
-// loadBranchTurns call it (DRY). A missing sidecar for a spilled turn stays a HARD
-// error the callers wrap — never a silent empty.
-func (s *Store) readTurnSidecar(conversationID string, seq int) ([]byte, error) {
-	// os.Root.ReadFile takes a RELATIVE path and rejects an absolute one; a relative
-	// runDir would resolve the sidecar against the process cwd. Assert an absolute
-	// runDir first (mirror read_tool_output.go), then join under the opened root.
-	if !filepath.IsAbs(s.runDir) {
-		return nil, fmt.Errorf("sidecar runDir %q is not absolute", s.runDir)
-	}
-	if err := validateID("conversation_id", conversationID); err != nil {
-		return nil, err
-	}
-	root, err := os.OpenRoot(s.runDir)
-	if err != nil {
-		return nil, fmt.Errorf("open run root %q: %w", s.runDir, err)
-	}
-	defer func() {
-		_ = root.Close()
-	}()
-	// path.Join (forward-slash, relative), NOT filepath.Join — os.Root paths are
-	// always slash-separated relative to the root, never OS-native absolutes.
-	rel := path.Join("conversations", conversationID, fmt.Sprintf("%d.content", seq))
-	return root.ReadFile(rel)
 }
 
 // Delete removes the conversation row (conversation_turns + paused_states cascade

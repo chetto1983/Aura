@@ -9274,3 +9274,52 @@ flusso completo, che funziona.
 > refusal, plugin-download attempt or missing-provisioning-directory error. This proves the
 > single-host Compose appliance path, not remote collectors, HA Prometheus/Grafana or every
 > notification transport.
+
+## §Conversation history pages from a proven compaction boundary (Amendment #169, 2026-08-28)
+
+> **Amendment #169 (2026-08-28 — live Postgres/sidecar/tokenizer measurement before code).**
+> The former interpretation of `AURA_HISTORY_HARD_CAP_TURNS=50` as an aggregate recall
+> ceiling is superseded. It ran before the token-aware ladder, so turn 51 disappeared without
+> an L2.5 rot event even when the selected model still had ample context. The value remains for
+> compatibility but becomes the keyset page size: one query may read at most that many rows;
+> it may not decide which conversation content the model is allowed to remember.
+>
+> A disposable `aura_bench` database on the live Postgres 18.4 Compose service measured the
+> existing query + rehydration + `cl100k_base` tokenizer path in WSL on an i7-11850H. One cold
+> iteration took 6.64/9.14/39.49/137.89 ms for 50/250/1,000/5,000 inline 128-byte turns.
+> Rehydrating a real 4 KiB sidecar for every non-system turn took 0.553/2.538/9.953/50.564 s.
+> The benchmark fixture and allocation counts live in
+> `internal/conversations/context_paging_benchmark_test.go`. This proves that row count alone
+> is not the expensive dimension on this appliance; per-file sidecar I/O is. It does not
+> predict another filesystem, warm-cache steady state, larger sidecars, simultaneous users or
+> provider token accounting.
+>
+> The same fixture after implementation measured an uncompacted all-sidecar history at
+> 0.505/2.459/9.982/49.473 s for 50/250/1,000/5,000 turns. A durable watermark that leaves a
+> 50-turn sidecar tail measured 0.491/0.470/0.546 s for 250/1,000/5,000 total turns, with about
+> 8.27 MiB allocated in each case. The covered-prefix size therefore no longer determines file
+> I/O on this appliance. A measured concurrent sidecar fan-out did not improve the NTFS/WSL
+> curve and was removed; the simpler sequential reader remains cancellable and bounded.
+>
+> **Boundary contract.** Linear history keyset-pages newest-to-oldest; selected branches page
+> the `parent_seq` chain. Loading stops only after reaching the exact durable compaction
+> watermark or the root. A watermark absent from the selected path is ignored and traversal
+> continues to the root; it may never summarize or skip a gap. A valid stored summary is
+> injected immediately before every post-watermark turn even when no covered raw row was
+> loaded. Covered sidecars are never opened. Branch parents must be strictly older and cycle
+> free. Total row/byte and individual-sidecar safety ceilings fail with an explicit history
+> work-limit error; they never return a partial history as success.
+>
+> L1 still pointerizes old retrievable tool output and L2.4 still updates the rolling durable
+> summary; L2.5 remains the audited deterministic pair-drop after token budgeting. The old
+> amendment #22 wording that equated L2.5 with a pre-ladder 50-row buffer, and amendment #106's
+> aggregate-row interpretation of the knob, are superseded by this page-boundary contract.
+> Hermes supplies the persisted transcript/cursor and contiguous-prefix precedent; LibreChat's
+> retained-from message boundary and fail-closed overflow summarization supply the same
+> no-gap invariant independently. Neither implementation is copied as a new context engine.
+>
+> **Acceptance.** Database integration tests exceed 50 turns in both linear and selected-branch
+> paths, cross several pages, reconstruct summary + tail across the exact watermark, reject a
+> missing watermark/cycle/work-ceiling without advancing compaction, and prove covered
+> sidecars are not read. The post-implementation benchmark above is the reproducible performance
+> witness; it establishes this appliance/filesystem boundary, not a universal latency claim.

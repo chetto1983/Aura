@@ -24,9 +24,9 @@ const l2MinOutputReservation = 20000
 const l2WarnRatio = 0.75
 
 const (
-	defaultHistoryHardCapTurns = 50
-	minHistoryHardCapTurns     = 4
-	maxHistoryHardCapTurns     = 1000
+	defaultHistoryPageTurns = 50
+	minHistoryPageTurns     = 4
+	maxHistoryPageTurns     = 1000
 )
 
 // alwaysBlockSeq is the synthetic seq the messages[1] always-block turn carries when
@@ -70,23 +70,21 @@ var ErrContextWindowExceeded = errors.New("conversation context exceeds the mode
 // LoadManagedHistory loads the raw turns and applies the L1/L2/L2.5 ladder, the
 // entry point the Runner calls (D-A2-06: the ladder is applied in/around
 // LoadHistory). It uses the Store as the rot emitter. The database retains the
-// protected system head and returns only the configured newest rows, bounding query,
-// sidecar, and tokenizer work before the ladder runs.
+// protected system head and keyset-pages to the exact durable watermark or root. The
+// configured turn count bounds each query, never recall.
 func (s *Store) LoadManagedHistory(ctx context.Context, conversationID string, cfg ContextConfig) ([]llm.Message, error) {
-	turns, err := s.loadRecentTurns(
-		ctx,
-		conversationID,
-		normalizeHistoryTurnCap(cfg.HistoryHardCapTurns),
-	)
+	loaded, err := s.loadManagedLinearTurns(ctx, conversationID, cfg.branchID,
+		normalizeHistoryPageSize(cfg.HistoryHardCapTurns), cfg.ToolEvictAfterTurns)
 	if err != nil {
 		return nil, err
 	}
-	return s.managedFromTurns(ctx, conversationID, turns, cfg)
+	cfg.compactionCache = loaded.cache
+	return s.managedFromTurns(ctx, conversationID, loaded.turns, cfg)
 }
 
 // LoadManagedHistoryForBranch is the path-aware variant (D-09 / CHAT-05): it walks the
 // SELECTED branch path (leaf -> root via parent_seq, returned root -> leaf) with
-// recursion bounded by HistoryHardCapTurns, then feeds that deterministic turn list
+// recursion in HistoryHardCapTurns-sized pages, then feeds that deterministic turn list
 // into the SAME L1/L2/L2.5 ladder. A leafSeq <= 0 selects
 // the conversation's canonical branch leaf, so the default selection reconstructs the
 // linear history (the 0017 backfill chains the canonical branch parent_seq = seq-1).
@@ -101,26 +99,23 @@ func (s *Store) LoadManagedHistoryForBranch(ctx context.Context, conversationID 
 		}
 		leafSeq = leaf
 	}
-	turns, err := s.loadRecentBranchTurns(
-		ctx,
-		conversationID,
-		leafSeq,
-		normalizeHistoryTurnCap(cfg.HistoryHardCapTurns),
-	)
-	if err != nil {
-		return nil, err
-	}
 	// Which branch this path belongs to, so the durable summary is filed under it. The
 	// leaf's branch id is the path's identity and it is stable while the branch grows:
 	// every turn appended to it carries the same id, so the watermark keeps advancing on
 	// one row instead of colliding with a sibling's.
 	cfg.branchID = s.branchIDForLeaf(ctx, conversationID, leafSeq)
-	return s.managedFromTurns(ctx, conversationID, turns, cfg)
+	loaded, err := s.loadManagedBranchTurns(ctx, conversationID, cfg.branchID, leafSeq,
+		normalizeHistoryPageSize(cfg.HistoryHardCapTurns), cfg.ToolEvictAfterTurns)
+	if err != nil {
+		return nil, err
+	}
+	cfg.compactionCache = loaded.cache
+	return s.managedFromTurns(ctx, conversationID, loaded.turns, cfg)
 }
 
-func normalizeHistoryTurnCap(value int) int {
-	if value < minHistoryHardCapTurns || value > maxHistoryHardCapTurns {
-		return defaultHistoryHardCapTurns
+func normalizeHistoryPageSize(value int) int {
+	if value < minHistoryPageTurns || value > maxHistoryPageTurns {
+		return defaultHistoryPageTurns
 	}
 	return value
 }
@@ -133,7 +128,9 @@ func (s *Store) managedFromTurns(ctx context.Context, conversationID string, tur
 	if err != nil {
 		return nil, fmt.Errorf("load managed history %s: tiktoken encoder: %w", conversationID, err)
 	}
-	cfg.compactionCache = s
+	if cfg.compactionCache == nil {
+		cfg.compactionCache = s
+	}
 	return applyContextLadder(ctx, conversationID, turns, cfg, enc, s)
 }
 

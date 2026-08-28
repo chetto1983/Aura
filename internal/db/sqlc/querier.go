@@ -199,7 +199,7 @@ type Querier interface {
 	InsertCacheMetric(ctx context.Context, arg InsertCacheMetricParams) error
 	InsertContextRotEvent(ctx context.Context, arg InsertContextRotEventParams) error
 	// parent_seq maintains the canonical leaf->root chain the branch walk recurses on
-	// (ListRecentTurnsByBranchPath joins `t.seq = p.parent_seq`). It is derived here rather
+	// (ListManagedBranchPathPage joins `t.seq = p.parent_seq`). It is derived here rather
 	// than bound as a parameter so no call site can forget it — which is exactly what
 	// happened: 0017 added the column, backfilled `seq - 1` for the rows present at
 	// migration time, and gave it no default, so EVERY turn appended since carried NULL. A
@@ -301,17 +301,18 @@ type Querier interface {
 	// operator can approve a gated task on-screen. Ordered by next fire (pending rows have a
 	// non-null next_run_at too — it is the first fire computed at schedule time).
 	ListManageableTasks(ctx context.Context) ([]AuraSchedulerTasks, error)
+	// One bounded leaf->root page. Go resumes from the last row's parent_seq, checks strict
+	// monotonicity/cycles, and stops only at the exact durable watermark or NULL root.
+	ListManagedBranchPathPage(ctx context.Context, arg ListManagedBranchPathPageParams) ([]ListManagedBranchPathPageRow, error)
+	// The protected system root is fetched once, independently of body pagination. :many
+	// deliberately represents an empty conversation without pgx.ErrNoRows.
+	ListManagedHistoryHead(ctx context.Context, conversationID pgtype.UUID) ([]ListManagedHistoryHeadRow, error)
+	// AURA_HISTORY_HARD_CAP_TURNS is a keyset page size, never a recall boundary. The
+	// caller keeps paging until the exact durable watermark or the root is observed.
+	ListManagedTurnsPageBySeq(ctx context.Context, arg ListManagedTurnsPageBySeqParams) ([]ListManagedTurnsPageBySeqRow, error)
 	ListMcpAudit(ctx context.Context, arg ListMcpAuditParams) ([]AuraMcpAudit, error)
 	ListPendingPausedStates(ctx context.Context, conversationID pgtype.UUID) ([]AuraPausedStates, error)
 	ListRecentPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error)
-	// Managed branch-history query: cap recursive parent traversal itself, then add the
-	// protected system head in a separate O(1) lookup. This keeps branch reconstruction
-	// bounded without losing messages[0].
-	ListRecentTurnsByBranchPath(ctx context.Context, arg ListRecentTurnsByBranchPathParams) ([]ListRecentTurnsByBranchPathRow, error)
-	// Managed-history query: retain the earliest system head plus only the newest rows
-	// that fit the declared aggregate hard cap. The database, sidecar reads, and tokenizer
-	// therefore all see O(hard_cap) rows instead of every turn ever persisted.
-	ListRecentTurnsBySeq(ctx context.Context, arg ListRecentTurnsBySeqParams) ([]ListRecentTurnsBySeqRow, error)
 	ListReservedConversationDeletes(ctx context.Context, arg ListReservedConversationDeletesParams) ([]ListReservedConversationDeletesRow, error)
 	ListRunsForTask(ctx context.Context, arg ListRunsForTaskParams) ([]AuraAgentJobRuns, error)
 	ListSettings(ctx context.Context) ([]AuraSettings, error)

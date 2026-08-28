@@ -82,16 +82,23 @@ func (s *Store) Compact(ctx context.Context, conversationID string, cfg ContextC
 	if err != nil {
 		return CompactionResult{}, fmt.Errorf("compact %s: tiktoken encoder: %w", conversationID, err)
 	}
-	turns, err := s.loadRecentTurns(ctx, conversationID, normalizeHistoryTurnCap(cfg.HistoryHardCapTurns))
+	loaded, err := s.loadManagedLinearTurns(ctx, conversationID, cfg.branchID,
+		normalizeHistoryPageSize(cfg.HistoryHardCapTurns), cfg.ToolEvictAfterTurns)
 	if err != nil {
 		return CompactionResult{}, err
 	}
-	prepared := prepareTurns(turns, cfg)
+	prepared := prepareTurns(loaded.turns, cfg)
 	head, history, active := splitHeadHistoryActive(prepared)
 	if len(history) == 0 {
 		return CompactionResult{}, ErrNothingToCompact
 	}
-	summary, ok := compactionSummary(ctx, cfg.Summarizer, s, conversationID, cfg.branchID, history)
+	cache := loaded.cache
+	if snapshot, ok := cache.(*compactionSnapshot); ok && !snapshot.writable {
+		manual := *snapshot
+		manual.writable = true
+		cache = &manual
+	}
+	summary, ok := compactionSummary(ctx, cfg.Summarizer, cache, conversationID, cfg.branchID, history)
 	if !ok {
 		return CompactionResult{}, fmt.Errorf("compact %s: %w", conversationID, ErrCompactionFailed)
 	}
@@ -119,7 +126,7 @@ func (s *Store) Compact(ctx context.Context, conversationID string, cfg ContextC
 		if result.TokensAfter >= result.TokensBefore {
 			return CompactionResult{}, ErrCompactionNotWorthwhile
 		}
-		storeCompaction(ctx, s, conversationID, cfg.branchID, summary)
+		storeCompaction(ctx, cache, conversationID, cfg.branchID, summary)
 	}
 	return result, nil
 }

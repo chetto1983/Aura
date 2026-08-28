@@ -63,7 +63,7 @@ type Config struct {
 	// Non-fatal envutil.IntDefault fallbacks (an ad-hoc tweak typo falls back, not boots-fatal).
 	ConversationTurnCapBytes   int // AURA_CONVERSATION_TURN_CAP_BYTES — content > this spills to a sidecar file
 	ContextToolEvictAfterTurns int // AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS — L1 microcompact eviction age
-	HistoryHardCapTurns        int // AURA_HISTORY_HARD_CAP_TURNS — aggregate rows fetched before the context ladder
+	HistoryHardCapTurns        int // AURA_HISTORY_HARD_CAP_TURNS — managed-history keyset page size
 	// ContextCompactionEnabled turns on L2.4 LLM compaction: over-budget history is
 	// summarized into one turn before the deterministic L2.5 drop. Default true — it
 	// fires only when the history is ALREADY over the hard cap (where the alternative is
