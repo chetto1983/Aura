@@ -179,10 +179,10 @@ func (f *fakeSteerPublisher) Push(conv, source, text string) error {
 
 func TestNewDelegationClaimLoopBindsItsArguments(t *testing.T) {
 	store := &fakeDelegationStore{}
-	pub := &fakeSteerPublisher{}
-	l := NewDelegationClaimLoop(store, pub, "identity-1", RunConfig{ConvID: "seed"}, 9*time.Second, 3*time.Second)
-	if l.Store != store || l.Steer != pub {
-		t.Fatal("constructor did not bind the store and publisher")
+	delivery := &DelegationDelivery{}
+	l := NewDelegationClaimLoop(store, delivery, "identity-1", RunConfig{ConvID: "seed"}, 9*time.Second, 3*time.Second)
+	if l.Store != store || l.Delivery != delivery {
+		t.Fatal("constructor did not bind the store and delivery")
 	}
 	if l.IdentityID != "identity-1" || l.LeaseDuration != 9*time.Second || l.PollInterval != 3*time.Second {
 		t.Fatalf("constructor bound %+v, want the passed identity and durations", l)
@@ -321,18 +321,22 @@ func TestRecordFailureDeadLettersAtTheAttemptCap(t *testing.T) {
 }
 
 // TestDeliverSuccessPushesBeforeTransitioning pins D-04's ordering: the report is
-// pushed under steer.SourceWorker FIRST, and the row is only marked succeeded after.
-// A push failure must abort before any transition -- otherwise a report nobody
-// received would be recorded as delivered.
+// recorded (SC#1) and pushed under steer.SourceWorker BEFORE the row is marked
+// succeeded. A delivery failure must abort before any transition -- otherwise a
+// report nobody received would be recorded as delivered.
 func TestDeliverSuccessPushesBeforeTransitioning(t *testing.T) {
 	store := &fakeDelegationStore{}
 	pub := &fakeSteerPublisher{}
-	l := &DelegationClaimLoop{Store: store, Steer: pub, IdentityID: "identity-1"}
+	recorder := &fakeConversationRecorder{}
+	l := &DelegationClaimLoop{Store: store, Delivery: &DelegationDelivery{Recorder: recorder, Steer: pub}, IdentityID: "identity-1"}
 	job := documents.IngestionJob{ID: "j1", IdentityID: "identity-1"}
 	payload := DelegationPayload{Goal: "g", ConversationID: "conv-7"}
 
 	if err := l.deliverSuccess(context.Background(), job, payload, ChildReport{Status: StatusOK, Summary: "done"}); err != nil {
 		t.Fatalf("deliverSuccess = %v", err)
+	}
+	if len(recorder.appended) != 1 || recorder.appended[0].conversationID != "conv-7" {
+		t.Fatalf("appended = %+v, want one SC#1 turn to conv-7", recorder.appended)
 	}
 	if len(pub.pushes) != 1 {
 		t.Fatalf("pushes = %d, want exactly 1", len(pub.pushes))
@@ -348,7 +352,7 @@ func TestDeliverSuccessPushesBeforeTransitioning(t *testing.T) {
 func TestDeliverSuccessDoesNotTransitionWhenThePushFails(t *testing.T) {
 	store := &fakeDelegationStore{}
 	pub := &fakeSteerPublisher{err: errors.New("inbox gone")}
-	l := &DelegationClaimLoop{Store: store, Steer: pub, IdentityID: "identity-1"}
+	l := &DelegationClaimLoop{Store: store, Delivery: &DelegationDelivery{Recorder: &fakeConversationRecorder{}, Steer: pub}, IdentityID: "identity-1"}
 
 	err := l.deliverSuccess(context.Background(), documents.IngestionJob{ID: "j1"},
 		DelegationPayload{ConversationID: "conv-7"}, ChildReport{Status: StatusOK})
@@ -362,12 +366,46 @@ func TestDeliverSuccessDoesNotTransitionWhenThePushFails(t *testing.T) {
 
 func TestDeliverSuccessSurfacesATransitionFailure(t *testing.T) {
 	store := &fakeDelegationStore{transitErr: errors.New("row vanished")}
-	l := &DelegationClaimLoop{Store: store, Steer: &fakeSteerPublisher{}, IdentityID: "identity-1"}
+	l := &DelegationClaimLoop{Store: store, Delivery: &DelegationDelivery{Recorder: &fakeConversationRecorder{}, Steer: &fakeSteerPublisher{}}, IdentityID: "identity-1"}
 
 	err := l.deliverSuccess(context.Background(), documents.IngestionJob{ID: "j1"},
 		DelegationPayload{ConversationID: "conv-7"}, ChildReport{Status: StatusOK})
 	if err == nil || !strings.Contains(err.Error(), "succeed transition") {
 		t.Fatalf("deliverSuccess = %v, want the transition failure named", err)
+	}
+}
+
+// TestRecordFailureBlocksSucceeded is the plan's own named acceptance test:
+// when the SC#1 conversation record fails (a WARN inside Deliver, not a hard
+// Go error), deliverSuccess must NOT transition the row to succeeded --
+// instead it retries via the shipped attempt_count/next_attempt_at backoff,
+// exactly like any other retryable failure. The push still happens (D-04):
+// a present operator is not denied the mid-turn rail just because the durable
+// copy failed to write.
+func TestRecordFailureBlocksSucceeded(t *testing.T) {
+	store := &fakeDelegationStore{}
+	pub := &fakeSteerPublisher{}
+	recorder := &fakeConversationRecorder{err: errors.New("pool exhausted")}
+	l := &DelegationClaimLoop{
+		Store:      store,
+		Delivery:   &DelegationDelivery{Recorder: recorder, Steer: pub},
+		IdentityID: "identity-1",
+	}
+	job := documents.IngestionJob{ID: "j1", IdentityID: "identity-1", MaxAttempts: 3}
+	payload := DelegationPayload{Goal: "g", ConversationID: "conv-7"}
+
+	if err := l.deliverSuccess(context.Background(), job, payload, ChildReport{Status: StatusOK, Summary: "done"}); err != nil {
+		t.Fatalf("deliverSuccess = %v, want the record failure absorbed into a retry, not surfaced", err)
+	}
+	if len(store.transitionsSnapshot()) != 0 {
+		t.Fatal("the row must NOT be marked succeeded when the SC#1 record failed")
+	}
+	if len(store.retriesSnapshot()) != 1 {
+		t.Fatalf("retries = %d, want 1 -- a record failure must be retried by the shipped backoff", len(store.retriesSnapshot()))
+	}
+	// D-04: the push still happens even though the record failed.
+	if len(pub.pushes) != 1 {
+		t.Fatalf("pushes = %d, want 1 -- a record failure must not suppress the present-operator rail", len(pub.pushes))
 	}
 }
 
@@ -489,7 +527,7 @@ func TestProcessJobRunsTheWorkerAndRoutesEveryOutcome(t *testing.T) {
 			}}}
 			pub := &fakeSteerPublisher{}
 			l := &DelegationClaimLoop{
-				Store: store, Steer: pub, IdentityID: identityID,
+				Store: store, Delivery: &DelegationDelivery{Recorder: &fakeConversationRecorder{}, Steer: pub}, IdentityID: identityID,
 				Worker: rc, LeaseDuration: time.Minute,
 			}
 

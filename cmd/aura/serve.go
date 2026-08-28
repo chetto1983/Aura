@@ -38,7 +38,6 @@ import (
 	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/readiness"
 	"github.com/chetto1983/aura/internal/steer"
-	"github.com/chetto1983/aura/internal/swarm"
 	"github.com/chetto1983/aura/internal/webauth"
 )
 
@@ -519,18 +518,16 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	assetProcessingWorker := newRuntimeAssetProcessingWorker(
 		chat.cfg, chat.pool, chat.assets, chat.cfg.AssetProcessingConcurrent,
 	)
-	// The delegation claim loop is bound to the SAME steer inbox instance the
-	// AG-UI steer route and the Telegram dispatch already push operator steers
-	// into (chat.steer, D-04/D-05) — a worker report and an operator steer land
-	// in one queue. chat.steer is *steer.Inbox, which satisfies swarm.SteerPublisher
-	// (Push(conv, source, text string) error) by construction; a nil chat.steer
-	// degrades to a nil interface value, which DelegationClaimLoop treats as
-	// "no delivery configured" rather than dereferencing.
-	var delegationSteer swarm.SteerPublisher
-	if chat.steer != nil {
-		delegationSteer = chat.steer
-	}
-	delegationWorker := newRuntimeDelegationWorker(chat, delegationSteer)
+	// The delegation claim loop's delivery concern (plan 51-10, SWARM-03/09)
+	// carries three legs: the SC#1 conversation record, the SAME steer inbox
+	// instance the AG-UI steer route and the Telegram dispatch already push
+	// operator steers into (chat.steer, D-04/D-05 — a worker report and an
+	// operator steer land in one queue), and the absent-operator channel nudge
+	// through reg (*channels.Registry, already built above). A nil chat.steer
+	// or nil chat.pool degrades every leg to a no-op rather than dereferencing —
+	// see newDelegationDelivery.
+	delegationDelivery := newDelegationDelivery(chat, store, reg)
+	delegationWorker := newRuntimeDelegationWorker(chat, delegationDelivery)
 
 	// Crash-orphan reconciler (D-01d): closes a start∧¬end reservation left by a crash
 	// between reserve and Execute by APPENDING a terminal indeterminate `end` fact — it

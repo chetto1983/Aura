@@ -26,7 +26,6 @@ import (
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/identityctx"
-	"github.com/chetto1983/aura/internal/steer"
 )
 
 // JobTypeSwarmDelegation is the aura.ingestion_jobs discriminator for a
@@ -176,8 +175,12 @@ func delegationPayloadFromJob(job documents.IngestionJob) (DelegationPayload, er
 // gateway, Cfg) runChild needs; ConvID and Depth are overridden per claimed
 // job from its payload.
 type DelegationClaimLoop struct {
-	Store         DelegationJobStore
-	Steer         SteerPublisher
+	Store DelegationJobStore
+	// Delivery is the SC#1 conversation record + present-operator steer push +
+	// absent-operator channel nudge (plan 51-10, delegation_delivery.go). A nil
+	// Delivery degrades deliverSuccess to a hard config error (Deliver's own
+	// nil-receiver guard) rather than silently skipping the SC#1 write.
+	Delivery      *DelegationDelivery
 	IdentityID    string
 	WorkerID      string
 	LeaseDuration time.Duration
@@ -188,10 +191,10 @@ type DelegationClaimLoop struct {
 }
 
 // NewDelegationClaimLoop builds a claim loop bound to one identity's queue.
-func NewDelegationClaimLoop(store DelegationJobStore, steerPub SteerPublisher, identityID string, worker RunConfig, leaseDuration, pollInterval time.Duration) *DelegationClaimLoop {
+func NewDelegationClaimLoop(store DelegationJobStore, delivery *DelegationDelivery, identityID string, worker RunConfig, leaseDuration, pollInterval time.Duration) *DelegationClaimLoop {
 	return &DelegationClaimLoop{
 		Store:         store,
-		Steer:         steerPub,
+		Delivery:      delivery,
 		IdentityID:    identityID,
 		LeaseDuration: leaseDuration,
 		PollInterval:  pollInterval,
@@ -423,23 +426,28 @@ func (l *DelegationClaimLoop) maintainLease(ctx context.Context, cancel context.
 	}
 }
 
-// deliverSuccess pushes the consolidated report under steer.SourceWorker
-// (D-04) BEFORE transitioning the row -- the transition is gated on the push
-// having been attempted, never the other way around, so a delivery failure
-// never gets silently reported as succeeded. markSteer
-// (internal/agent/llm_agent_steer.go) picks the untrusted-tool-output
-// envelope for this Source; any other Source string falls through to the
-// operator-authority envelope and the model discounts the report as a
-// spoofing attempt (spike 098, Pitfall 5).
+// deliverSuccess runs the claimed job's report through Delivery.Deliver --
+// the SC#1 conversation record BEFORE the present-operator steer push (plan
+// 51-10) -- and gates the row's succeeded transition on the record having
+// actually succeeded, never on the push alone. A push (steer publish)
+// INFRASTRUCTURE failure propagates as a hard error exactly as before this
+// plan (51-01's original contract, unchanged); a RECORD failure is not a hard
+// error (Deliver WARNs and returns recorded=false) but must still stop the
+// row from being marked succeeded -- a report that reached neither the
+// conversation nor (once nudged) a channel has not been delivered, so it is
+// retried by the shipped attempt_count/next_attempt_at backoff instead.
 func (l *DelegationClaimLoop) deliverSuccess(ctx context.Context, job documents.IngestionJob, payload DelegationPayload, report ChildReport) error {
 	text, err := marshalReports([]ChildReport{report})
 	if err != nil {
 		return fmt.Errorf("delegation report marshal: %w", err)
 	}
-	if l.Steer != nil {
-		if err := l.Steer.Push(payload.ConversationID, steer.SourceWorker, text); err != nil {
-			return fmt.Errorf("delegation report push: %w", err)
-		}
+	recorded, err := l.Delivery.Deliver(ctx, payload, text)
+	if err != nil {
+		return fmt.Errorf("delegation report deliver: %w", err)
+	}
+	if !recorded {
+		return l.recordFailure(ctx, job, fmt.Errorf(
+			"delegation report was not recorded to its origin conversation %s", payload.ConversationID))
 	}
 	if _, err := l.Store.UpdateStatus(ctx, documents.TransitionIngestionJobRequest{
 		IdentityID: job.IdentityID, JobID: job.ID, WorkerID: l.workerID(),

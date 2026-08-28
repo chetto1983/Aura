@@ -203,3 +203,82 @@ func uuidString(v pgtype.UUID) string {
 	}
 	return uuid.UUID(v.Bytes).String()
 }
+
+// UnnudgedDelegationResult is one aura.steer_queue delegation_result row past
+// the nudge grace window that the operator never drained (plan 51-10's
+// absent-operator leg). Declared here rather than reusing swarm.UndrainedResult:
+// internal/steer must not import internal/swarm, which already imports
+// internal/steer for steer.SourceWorker -- the reverse edge would cycle. The
+// cmd/aura composition root is the one place that translates between the two
+// packages' independently-declared, structurally-identical row types.
+type UnnudgedDelegationResult struct {
+	ID         string
+	IdentityID string
+	Body       string
+}
+
+// ListUnnudgedDelegationResults returns delegation_result rows older than
+// cutoff that the operator never drained (drained_at IS NULL), not expired,
+// not already nudged. Unscoped by identity, exactly like Sweeper.ExpireDue's
+// own ListDueSteerRows call (aura.steer_queue carries no RLS, migration
+// 0103): a system-wide sweep, each row carrying its own identity_id.
+func (s *PostgresStore) ListUnnudgedDelegationResults(ctx context.Context, cutoff time.Time, limit int) ([]UnnudgedDelegationResult, error) {
+	if s == nil || s.pool == nil {
+		return nil, fmt.Errorf("steer: list unnudged delegation results: store is not configured")
+	}
+	var rows []sqlc.AuraSteerQueue
+	err := db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
+		var qErr error
+		rows, qErr = q.ListUnnudgedDelegationResults(ctx, sqlc.ListUnnudgedDelegationResultsParams{
+			Cutoff:   pgtype.Timestamptz{Time: cutoff, Valid: true},
+			RowLimit: int32(limit), //nolint:gosec // an operator-configured sweep batch size, always small.
+		})
+		return qErr
+	})
+	if err != nil {
+		return nil, fmt.Errorf("steer: list unnudged delegation results: %w", err)
+	}
+	out := make([]UnnudgedDelegationResult, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, UnnudgedDelegationResult{
+			ID:         uuidString(r.ID),
+			IdentityID: uuidString(r.IdentityID),
+			Body:       r.Body,
+		})
+	}
+	return out, nil
+}
+
+// MarkSteerRowNudged is the claim-before-push idempotency key (SWARM-09
+// edge): a conditional UPDATE ... WHERE nudged_at IS NULL, so two CONCURRENT
+// sweep passes over the SAME row race for exactly one winner (RowsAffected==1
+// for the winner, 0 for the loser) -- the same conditional-update-as-claim
+// idiom DrainSteerRows' FOR UPDATE already establishes for the operator-
+// present path, generalized here to a plain conditional UPDATE since there is
+// no multi-row candidate SET to lock ahead of time.
+func (s *PostgresStore) MarkSteerRowNudged(ctx context.Context, id, identityID string) (bool, error) {
+	if s == nil || s.pool == nil {
+		return false, fmt.Errorf("steer: mark steer row nudged: store is not configured")
+	}
+	rowID, err := uuid.Parse(id)
+	if err != nil {
+		return false, fmt.Errorf("steer: mark steer row nudged: invalid id %q: %w", id, err)
+	}
+	identity, err := uuid.Parse(identityID)
+	if err != nil {
+		return false, fmt.Errorf("steer: mark steer row nudged: invalid identity_id %q: %w", identityID, err)
+	}
+	var affected int64
+	err = db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
+		var qErr error
+		affected, qErr = q.MarkSteerRowNudged(ctx, sqlc.MarkSteerRowNudgedParams{
+			ID:         pgtype.UUID{Bytes: rowID, Valid: true},
+			IdentityID: pgtype.UUID{Bytes: identity, Valid: true},
+		})
+		return qErr
+	})
+	if err != nil {
+		return false, fmt.Errorf("steer: mark steer row nudged %s: %w", id, err)
+	}
+	return affected > 0, nil
+}

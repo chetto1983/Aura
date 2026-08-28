@@ -119,6 +119,14 @@ type Config struct {
 	SteerQueueTTLSec       int // AURA_STEER_QUEUE_TTL_SEC — operator steer row TTL, seconds (default 900)
 	DelegationResultTTLSec int // AURA_DELEGATION_RESULT_TTL_SEC — delegation-result row TTL, seconds (default 86400)
 
+	// Phase 51 plan 10 (SWARM-03/09): the absent-operator leg's grace window. A
+	// delegation_result steer row still undrained (nobody's turn picked it up
+	// via the mid-turn rail) after this many seconds gets nudged to its owning
+	// channel exactly once. <=0 disables the channel leg entirely — the shipped
+	// AURA_ASKUSER_PAUSE_TTL_SEC <=0-disables precedent — leaving the SC#1
+	// conversation record and the present-operator steer push unaffected.
+	SwarmDelegationNudgeSec int // AURA_SWARM_DELEGATION_NUDGE_SEC — undrained-report nudge grace window, seconds (default 60)
+
 	// Scheduler agent_job wall-clock (#53/D-42). The 120s swarm-child analog starved
 	// real artifact jobs (a North-Star-class xlsx run measures 150-360s live); the
 	// serve composition root passes this into AgentDeps.MaxDuration.
@@ -448,6 +456,8 @@ func loadBase() *Config {
 
 		SteerQueueTTLSec:       envutil.IntDefault("AURA_STEER_QUEUE_TTL_SEC", 900),
 		DelegationResultTTLSec: envutil.IntDefault("AURA_DELEGATION_RESULT_TTL_SEC", 86400),
+
+		SwarmDelegationNudgeSec: envutil.IntDefault("AURA_SWARM_DELEGATION_NUDGE_SEC", 60),
 
 		AgentJobMaxDurationSec: envutil.IntDefault("AURA_AGENT_JOB_MAX_DURATION_SEC", 600),
 
