@@ -446,9 +446,9 @@ func (l *DelegationClaimLoop) retryBackoff() time.Duration {
 // DelegationClaimLoop without a config-derived LeaseDuration (e.g. a unit
 // test). Production wiring (cmd/aura) always passes
 // AURA_SWARM_DELEGATION_LEASE_SEC via config.Config, whose own default (300s)
-// is asserted >= this same floor by config_test.go. 240s is the measured
-// effective worst-case worker lifetime (SwarmChildTimeoutSec +
-// LLMTotalTimeoutSec, spike 099, D-03) -- this constant MUST NOT be sized
-// against the nominal 120s alone, or a live worker's lease could be reclaimed
-// out from under it.
+// is asserted >= this same floor by config_test.go. D-03's termination model
+// (plan 51-09) reaps a worker on INACTIVITY (AURA_SWARM_CHILD_IDLE_SEC,
+// default 120), not on age -- config.GuardSwarmStaleness refuses to boot
+// unless the idle deadline is strictly shorter than this lease, so a lease
+// reclaim can never race a goroutine that is still alive.
 const defaultDelegationLeaseSec = 300

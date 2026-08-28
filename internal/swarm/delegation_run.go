@@ -137,18 +137,16 @@ func pauseOptionsJSON(labels []string) (json.RawMessage, error) {
 // handleWithHeartbeat/maintainLease shape (goroutine racing the handler,
 // context.WithCancel, buffered result channel).
 //
-// INTERIM (D-03): the heartbeat tick source here is a fixed ticker, not
-// runChild's own per-event loop. runChild is called as one opaque blocking
-// unit precisely so its ONE event loop stays in swarm.go (this plan's own
-// prohibition on cloning it); threading a per-event liveness hook through it
-// is D-03's REAL fix and is plan 51-09's job (child_staleness.go), once the
-// termination model itself changes from a wall-clock cap to inactivity-based
-// (unbounded worker lifetime). A fixed ticker is safe here because the
-// configured lease default (AURA_SWARM_DELEGATION_LEASE_SEC=300) already
-// exceeds the measured worst-case worker lifetime -- SwarmChildTimeoutSec +
-// LLMTotalTimeoutSec = 240s effective (spike 099) -- so a missed tick cannot
-// expire the lease before the worker naturally terminates. This is an INTERIM
-// bound, not this phase's answer to D-03.
+// The lease heartbeat here and D-03's own inactivity tick (child_staleness.go,
+// plan 51-09) are deliberately TWO independent bounds, not one: the heartbeat
+// keeps the QUEUE ROW's lease alive on a fixed interval regardless of worker
+// activity (so a lease reclaim never races a live worker), while
+// child_staleness.go -- ticked from inside runChild's own event loop, the ONE
+// place a worker's liveness is judged for every caller -- reaps the WORKER
+// itself on genuine silence. config.GuardSwarmStaleness enforces at boot that
+// the inactivity deadline (AURA_SWARM_CHILD_IDLE_SEC) stays strictly shorter
+// than this lease (AURA_SWARM_DELEGATION_LEASE_SEC), so the two bounds can
+// never cross.
 func (l *DelegationClaimLoop) runWithHeartbeat(ctx context.Context, job documents.IngestionJob, payload DelegationPayload) (ChildReport, []llm.Message, error) {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()

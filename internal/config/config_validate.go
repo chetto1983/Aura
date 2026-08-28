@@ -101,6 +101,7 @@ func (c *Config) ValidateProfile(p RuntimeProfile) []Violation {
 	vs = append(vs, c.gateAssetProcessingLease()...)
 	vs = append(vs, c.gateRetention()...)
 	vs = append(vs, c.gateMultiUserRequiresStrictProfile(p)...)
+	vs = append(vs, c.gateSwarmStaleness(p)...)
 	return vs
 }
 
@@ -316,4 +317,39 @@ func (c *Config) gateObjectStoreEndpoint(p RuntimeProfile) []Violation {
 func isLoopbackEndpoint(endpoint string) bool {
 	e := strings.ToLower(endpoint)
 	return strings.Contains(e, "127.0.0.1") || strings.Contains(e, "localhost") || strings.Contains(e, "::1")
+}
+
+// GuardSwarmStaleness is the D-03 two-bound boot policy (mirrors GuardWebBind's
+// shape — a pure, total function naming the offending knobs, never coercing): the
+// inactivity deadline that reaps a stalled background worker must be strictly
+// shorter than the delegation lease that reclaims its queue row. A lease is
+// renewed on worker events (plan 51-01), so it expires `lease` seconds after the
+// worker's LAST event — if idle >= lease, the row becomes reclaimable at or before
+// the moment the stalled goroutine is actually cancelled, and a lease reclaim can
+// race a goroutine that is still alive. Either knob <=0 is out of scope: idle<=0
+// disables inactivity reaping outright (leaving only the shared agent.Budget
+// wallclock as the ceiling), and a non-positive lease is a different malformed-
+// value class the generic reparse pass already flags.
+// RED (TDD): naive stub -- always passes, so TestGuardSwarmStaleness's refusal
+// subtests fail for a real reason (the boot gate never refuses) rather than a
+// build error. GREEN restores the real idle<lease comparison.
+func GuardSwarmStaleness(idleSec, leaseSec int) error {
+	return nil
+}
+
+// gateSwarmStaleness wraps GuardSwarmStaleness as a Violation: Fatal under a strict
+// runtime profile, Warn under a lenient one — mirroring reparsePass's severity split
+// for a reliability/correctness knob rather than a pure security-posture one, since
+// the hazard (a lease reclaim racing a still-live worker) is real regardless of
+// deployment tier, not something a lenient dev profile can legitimately opt out of.
+func (c *Config) gateSwarmStaleness(p RuntimeProfile) []Violation {
+	err := GuardSwarmStaleness(c.SwarmChildIdleSec, c.SwarmDelegationLeaseSec)
+	if err == nil {
+		return nil
+	}
+	sev := Warn
+	if p.Strict() {
+		sev = Fatal
+	}
+	return []Violation{{Knob: "AURA_SWARM_CHILD_IDLE_SEC", Sev: sev, Msg: err.Error()}}
 }

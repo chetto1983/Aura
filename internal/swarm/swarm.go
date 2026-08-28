@@ -162,16 +162,16 @@ func preflight(rc RunConfig, goals []string) (string, bool) {
 
 // runWave runs goals[start:end] concurrently and collects each into reports[i]. It
 // copies parallel.go's leak-safety invariants VERBATIM (errgroup.WithContext,
-// defer cancel(), the #61611 spawn-loop guard, a per-child WithTimeout + defer
+// defer cancel(), the #61611 spawn-loop guard, a per-child WithCancel + defer
 // cancel) but DIVERGES on error handling: a child error is captured into its report
-// slot and the goroutine returns NIL, so egCtx never cancels siblings (D-02).
+// slot and the goroutine returns NIL, so egCtx never cancels siblings (D-02). The
+// per-child deadline this comment used to describe is gone (D-03) — runChild owns
+// the inactivity-based staleness timer instead (child_staleness.go).
 func runWave(ctx context.Context, rc RunConfig, goals []string, reports []ChildReport, start, end int) {
 	width := end - start
 	eg, egCtx := errgroup.WithContext(ctx)
 	egCtx, cancel := context.WithCancel(egCtx)
 	defer cancel()
-
-	childTimeout := time.Duration(rc.Cfg.SwarmChildTimeoutSec) * time.Second
 
 	for i := start; i < end; i++ {
 		idx := i
@@ -186,7 +186,12 @@ func runWave(ctx context.Context, rc RunConfig, goals []string, reports []ChildR
 			if egCtx.Err() != nil { // #61611 spawn-loop guard
 				return nil
 			}
-			childCtx, ccancel := context.WithTimeout(egCtx, childTimeout)
+			// D-03: no per-child wall-clock deadline any more -- runChild itself owns
+			// the inactivity-based staleness timer (child_staleness.go) as the ONE
+			// place a worker's liveness is judged. This WithCancel is ordinary
+			// leak-safety cancellation propagation (mirrors parallel.go's own
+			// invariant), never a deadline.
+			childCtx, ccancel := context.WithCancel(egCtx)
 			defer ccancel()
 			// The synchronous wave path has no use for the reconstructed history
 			// (that is the background delegation path's own concern,
@@ -269,6 +274,16 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 	slog.Info("swarm.child.spawned", "child", childID, "goal_index", idx)
 	started := time.Now()
 
+	// workerCtx/cancel is the staleness handle (D-03): runChild is the ONE place a
+	// worker is constructed for EVERY caller (the synchronous wave above AND the
+	// background claim loop's runWithHeartbeat, delegation_run.go), so this is the
+	// ONE place the inactivity deadline lives -- never duplicated per caller.
+	workerCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	idleDur := time.Duration(rc.Cfg.SwarmChildIdleSec) * time.Second
+	staleness := newChildStaleness(cancel, idleDur)
+	defer staleness.Stop()
+
 	ic := agent.InvocationContext{
 		// A worker's events are consumed by the loop below and dumped to a per-child
 		// transcript; they never reach the Runner that writes a dispatch's `end` row.
@@ -276,7 +291,7 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 		// itself — without it every worker tool call orphaned a `start`, and the
 		// reconciler stamped succeeded calls as indeterminate half an hour later
 		// (spike 099: 5/5 worker calls, 0/3 parent calls).
-		Ctx:       gateway.WithDelegatedDispatch(ctx),
+		Ctx:       gateway.WithDelegatedDispatch(workerCtx),
 		RequestID: uuid.Must(uuid.NewV7()),
 		Budget:    budget,
 	}
@@ -291,6 +306,7 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 		if ev == nil {
 			continue
 		}
+		staleness.Progress() // a worker that streams is a worker that is alive
 		_ = dumpTranscript(rc.Cfg.RunDir, rc.ConvID, childID, *ev)
 		if ai := ev.Actions.AwaitingInput; ai != nil {
 			report.Status = StatusNeedsUserInput
@@ -305,18 +321,7 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 		}
 	}
 
-	// D-11: normalize a deadline trip to a uniform {failed, "timeout"} — but NOT when
-	// the worker already produced a terminal success (StatusOK + a populated Summary).
-	// A worker that streamed its final ok answer and was then descheduled past the
-	// deadline keeps its success rather than being clobbered into a spurious timeout
-	// failure (WR-01). A worker that surfaced the cancellation as a stream error
-	// (StatusFailed with the raw ctx error) is re-labeled to the uniform "timeout"; a
-	// worker that produced nothing terminal (still default StatusOK, empty Summary) is
-	// failed as a timeout.
-	if ctx.Err() == context.DeadlineExceeded && (report.Status != StatusOK || report.Summary == "") {
-		report.Status, report.Error = StatusFailed, "timeout"
-		report.Summary = ""
-	}
+	report = normalizeStaleReport(report, staleness.Stalled(), idleDur)
 
 	history := append(append([]llm.Message(nil), userTurns...), rec.messages()...)
 	if report.Status == StatusNeedsUserInput && pauseCall != nil {
@@ -325,6 +330,30 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 
 	slog.Info("swarm.child.completed", "child", childID, "status", report.Status, "dur", time.Since(started))
 	return report, history
+}
+
+// normalizeStaleReport applies the D-11 uniform-stall normalization (this package's
+// own numbering -- NOT 51-CONTEXT.md's D-11): a worker whose OWN staleness timer
+// fired is relabeled {failed, "stalled: no worker event for <idle>"} -- distinguishable
+// in the report text from a budget trip and from a genuine tool error -- UNLESS it
+// already produced a terminal success (StatusOK + a populated Summary), which
+// survives untouched (WR-01, carried verbatim from the wall-clock version this
+// replaces: a worker that streamed its final ok answer and was then reaped in the
+// race window right after keeps its success). stalled is staleness.Stalled() --
+// OUR OWN timer having fired -- never a generic ctx.Err(), so a worker cancelled for
+// any OTHER reason (the parent turn ending, a budget trip) is never mislabeled as
+// stalled: Amendment #154 measured the wall clock as catching exactly the wrong
+// worker (an upstream stall, not slow work), and a generic ctx.Err() check would
+// repeat that same false-positive shape.
+//
+// Extracted as a pure function so "a late reap never clobbers a completed success"
+// is directly unit-testable without racing a real timer against a real event loop.
+func normalizeStaleReport(report ChildReport, stalled bool, idle time.Duration) ChildReport {
+	if stalled && (report.Status != StatusOK || report.Summary == "") {
+		report.Status, report.Error = StatusFailed, fmt.Sprintf("stalled: no worker event for %s", idle)
+		report.Summary = ""
+	}
+	return report
 }
 
 // optionLabels projects the Event-model PauseOption values onto the flat []string

@@ -318,6 +318,67 @@ func TestGateRunDir(t *testing.T) {
 	}
 }
 
+// TestGuardSwarmStaleness locks the D-03 boot policy at the pure-function level
+// (plan 51-09): idle strictly < lease passes; idle == lease and idle > lease both
+// refuse, naming BOTH knobs; either knob <=0 is out of scope for the gate.
+func TestGuardSwarmStaleness(t *testing.T) {
+	tests := []struct {
+		name        string
+		idle, lease int
+		wantErr     bool
+	}{
+		{name: "idle strictly less than lease passes", idle: 119, lease: 120, wantErr: false},
+		{name: "idle == lease refuses (the exact boundary)", idle: 120, lease: 120, wantErr: true},
+		{name: "idle == lease-1 passes (the exact boundary)", idle: 119, lease: 120, wantErr: false},
+		{name: "idle greater than lease refuses", idle: 300, lease: 120, wantErr: true},
+		{name: "shipped defaults pass (120 < 300)", idle: 120, lease: 300, wantErr: false},
+		{name: "idle <=0 is out of scope regardless of lease", idle: 0, lease: 10, wantErr: false},
+		{name: "idle negative is out of scope regardless of lease", idle: -1, lease: 10, wantErr: false},
+		{name: "lease <=0 is out of scope regardless of idle", idle: 999, lease: 0, wantErr: false},
+		{name: "both non-positive is out of scope", idle: 0, lease: 0, wantErr: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := GuardSwarmStaleness(tc.idle, tc.lease)
+			if tc.wantErr && err == nil {
+				t.Fatalf("GuardSwarmStaleness(%d, %d) = nil, want a refusal", tc.idle, tc.lease)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("GuardSwarmStaleness(%d, %d) = %v, want nil", tc.idle, tc.lease, err)
+			}
+			if tc.wantErr {
+				if !strings.Contains(err.Error(), "AURA_SWARM_CHILD_IDLE_SEC") || !strings.Contains(err.Error(), "AURA_SWARM_DELEGATION_LEASE_SEC") {
+					t.Errorf("refusal must NAME both knobs, got %q", err.Error())
+				}
+			}
+		})
+	}
+}
+
+// TestGateSwarmStaleness proves the Violation wrapper's severity split: Fatal
+// under a strict runtime profile, Warn under a lenient one — the hazard is real in
+// every tier, but only a strict deployment refuses to boot over it.
+func TestGateSwarmStaleness(t *testing.T) {
+	for _, p := range allProfiles {
+		t.Run(string(p), func(t *testing.T) {
+			violated := (&Config{SwarmChildIdleSec: 120, SwarmDelegationLeaseSec: 120}).gateSwarmStaleness(p)
+			if p.Strict() {
+				if !hasViolation(violated, "AURA_SWARM_CHILD_IDLE_SEC", Fatal) {
+					t.Errorf("idle==lease under %s must be Fatal naming AURA_SWARM_CHILD_IDLE_SEC, got %+v", p, violated)
+				}
+			} else {
+				if !hasViolation(violated, "AURA_SWARM_CHILD_IDLE_SEC", Warn) {
+					t.Errorf("idle==lease under lenient %s must be Warn naming AURA_SWARM_CHILD_IDLE_SEC, got %+v", p, violated)
+				}
+			}
+			ok := (&Config{SwarmChildIdleSec: 120, SwarmDelegationLeaseSec: 300}).gateSwarmStaleness(p)
+			if len(ok) != 0 {
+				t.Errorf("shipped defaults under %s must yield no violation, got %+v", p, ok)
+			}
+		})
+	}
+}
+
 // TestValidateProfile proves the aggregator lists EVERY unmet requirement (never
 // first-fail, criterion #1) and that Validate() is profile-aware (criterion #3/#4).
 func TestValidateProfile(t *testing.T) {

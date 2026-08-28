@@ -101,11 +101,11 @@ type Config struct {
 	SwarmChildTimeoutSec int // AURA_SWARM_CHILD_TIMEOUT_SEC — per-child wall-clock deadline (D-11)
 	MaxSwarmConcurrent   int // AURA_SWARM_MAX_CONCURRENT — wave width; goals beyond this run in sequential waves (D-12)
 
-	// Phase 51 (durable delegation) background-queue knobs. The lease default
-	// (300s) is deliberately LARGER than the measured effective worst-case
-	// worker lifetime (SwarmChildTimeoutSec + AURA_LLM_TOTAL_TIMEOUT_SEC =
-	// 240s, D-03/spike 099), never the nominal 120s alone, so a live worker's
-	// lease can never be reclaimed out from under it.
+	// Phase 51 (durable delegation) background-queue knobs. AURA_SWARM_CHILD_IDLE_SEC
+	// (D-03) is the inactivity deadline reset on every worker event; it must stay
+	// strictly less than the lease below (GuardSwarmStaleness enforces this at boot)
+	// or a reclaim can race a goroutine that is still alive.
+	SwarmChildIdleSec       int // AURA_SWARM_CHILD_IDLE_SEC — per-worker inactivity deadline, seconds (default 120, D-03)
 	SwarmDelegationLeaseSec int // AURA_SWARM_DELEGATION_LEASE_SEC — durable delegation row lease duration
 	SwarmDelegationPollSec  int // AURA_SWARM_DELEGATION_POLL_SEC — claim-loop poll interval
 
@@ -451,6 +451,7 @@ func loadBase() *Config {
 		SwarmChildTimeoutSec: envutil.IntDefault("AURA_SWARM_CHILD_TIMEOUT_SEC", 120),
 		MaxSwarmConcurrent:   envutil.IntDefault("AURA_SWARM_MAX_CONCURRENT", 4),
 
+		SwarmChildIdleSec:       envutil.IntDefault("AURA_SWARM_CHILD_IDLE_SEC", 120),
 		SwarmDelegationLeaseSec: envutil.IntDefault("AURA_SWARM_DELEGATION_LEASE_SEC", 300),
 		SwarmDelegationPollSec:  envutil.IntDefault("AURA_SWARM_DELEGATION_POLL_SEC", 2),
 

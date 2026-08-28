@@ -212,11 +212,11 @@ func testRunConfig(t testLike, client llm.Client, maxSteps int) RunConfig {
 		Client:         client,
 		LLM:            llm.Config{Model: "m", Provider: "openrouter", TotalTimeoutSec: 30},
 		Cfg: config.Config{
-			RunDir:               tempDir(t),
-			ToolPreviewCap:       2048,
-			MaxSwarmGoals:        8,
-			SwarmChildTimeoutSec: 30,
-			MaxSwarmConcurrent:   4,
+			RunDir:             tempDir(t),
+			ToolPreviewCap:     2048,
+			MaxSwarmGoals:      8,
+			SwarmChildIdleSec:  30,
+			MaxSwarmConcurrent: 4,
 		},
 		ConvID: "conv1",
 		Depth:  1,
@@ -316,15 +316,16 @@ func TestSwarmPanicIsolation(t *testing.T) {
 	}
 }
 
-// TestSwarmChildTimeout (D-11): a worker that blocks past the per-child timeout
-// becomes {failed, "timeout"}; the sibling is unaffected.
-func TestSwarmChildTimeout(t *testing.T) {
+// TestWorkerStalledReport (D-03, SWARM-03 edge: silence): a worker that emits
+// nothing for AURA_SWARM_CHILD_IDLE_SEC has its context cancelled exactly once and
+// is reported {failed, "stalled: ..."}; the sibling, unaffected, still completes ok.
+func TestWorkerStalledReport(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	r := newRouter().
 		route("alpha", outcome{kind: "ok", text: "A done"}).
 		route("bravo", outcome{kind: "block"})
 	rc := testRunConfig(t, r, 25)
-	rc.Cfg.SwarmChildTimeoutSec = 1 // tight deadline for the blocking worker
+	rc.Cfg.SwarmChildIdleSec = 1 // tight inactivity window for a fast test
 
 	out, err := Run(context.Background(), rc, []string{"alpha task", "bravo task"})
 	if err != nil {
@@ -332,35 +333,73 @@ func TestSwarmChildTimeout(t *testing.T) {
 	}
 	reports := parseReports(t, out)
 	if reports[0].Status != StatusOK {
-		t.Errorf("sibling affected by timeout: [0]=%q", reports[0].Status)
+		t.Errorf("sibling affected by reap: [0]=%q", reports[0].Status)
 	}
-	if reports[1].Status != StatusFailed || reports[1].Error != "timeout" {
-		t.Errorf("report[1] = {%q,%q}, want {failed,timeout}", reports[1].Status, reports[1].Error)
+	if reports[1].Status != StatusFailed || !strings.Contains(reports[1].Error, "stalled") {
+		t.Errorf("report[1] = {%q,%q}, want {failed, contains \"stalled\"}", reports[1].Status, reports[1].Error)
 	}
 }
 
-// TestRunChildTimeoutDoesNotClobberCompletedSuccess (WR-01): a worker that
-// streamed its final ok answer is NOT rewritten to {failed, "timeout"} just
-// because the per-child deadline elapsed in the race window before the post-drain
-// check. The worker here completes ok, but runChild is handed an already
-// deadline-exceeded ctx; the populated Summary must survive as authoritative over
-// the post-hoc deadline observation.
-func TestRunChildTimeoutDoesNotClobberCompletedSuccess(t *testing.T) {
+// TestStreamingWorkerNotReaped (D-03, SWARM-03 edge: N < idle): a worker emitting
+// an event at intervals well under AURA_SWARM_CHILD_IDLE_SEC runs past what the OLD
+// wall-clock-equivalent bound would have killed it at (each Stream call here carries
+// a real delay, and their SUM exceeds the idle window) and still completes ok --
+// proving the deadline resets on progress rather than accumulating age.
+func TestStreamingWorkerNotReaped(t *testing.T) {
 	defer goleak.VerifyNone(t)
-	r := newRouter().route("alpha", outcome{kind: "ok", text: "A done"})
+	r := newRouter().route("alpha", outcome{kind: "steps", steps: 3, text: "A done", delay: 500 * time.Millisecond})
 	rc := testRunConfig(t, r, 25)
+	rc.Cfg.SwarmChildIdleSec = 2 // each step's 500ms gap is well under the 2s idle window
 
-	// A context whose deadline has already elapsed: ctx.Err() == DeadlineExceeded
-	// after the (immediate) drain, exercising the WR-01 guard.
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
-	defer cancel()
+	out, err := Run(context.Background(), rc, []string{"alpha task"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	reports := parseReports(t, out)
+	if reports[0].Status != StatusOK {
+		t.Fatalf("report[0].Status = %q, want ok (total wall time exceeded the idle window, but no single gap did)", reports[0].Status)
+	}
+	if reports[0].Summary != "A done" {
+		t.Errorf("report[0].Summary = %q, want %q", reports[0].Summary, "A done")
+	}
+}
 
-	rep, _ := runChild(ctx, rc, rc.ParentBudget, 0, "alpha task")
+// TestNormalizeStaleReportDoesNotClobberCompletedSuccess (WR-01): a worker that
+// already produced a terminal success (StatusOK + a populated Summary) is NOT
+// rewritten to {failed, "stalled: ..."} even when stalled=true -- the race window
+// between a worker's last event and a coincidentally-firing staleness timer must
+// never clobber a genuine completion. A pure-function test (not a real timer race)
+// per the same reasoning the original wall-clock version of this test used: the
+// GUARANTEE is deterministically testable without needing to win a real race.
+func TestNormalizeStaleReportDoesNotClobberCompletedSuccess(t *testing.T) {
+	rep := normalizeStaleReport(ChildReport{Status: StatusOK, Summary: "A done"}, true, time.Second)
 	if rep.Status != StatusOK {
-		t.Fatalf("a completed worker must keep StatusOK past a tripped deadline, got {%q,%q}", rep.Status, rep.Error)
+		t.Fatalf("a completed worker must keep StatusOK despite stalled=true, got {%q,%q}", rep.Status, rep.Error)
 	}
 	if rep.Summary != "A done" {
 		t.Errorf("the streamed summary must survive, got %q", rep.Summary)
+	}
+}
+
+// TestNormalizeStaleReportRelabelsNonTerminalOutcomes proves the OTHER two branches
+// of the same guard: a worker that surfaced the cancellation as a stream error is
+// re-labeled to the uniform stall message, and a worker with no terminal Summary at
+// all is failed as stalled. Both only when stalled=true; stalled=false is always a
+// no-op regardless of report shape.
+func TestNormalizeStaleReportRelabelsNonTerminalOutcomes(t *testing.T) {
+	failed := normalizeStaleReport(ChildReport{Status: StatusFailed, Error: "context canceled"}, true, 2*time.Second)
+	if failed.Status != StatusFailed || !strings.Contains(failed.Error, "stalled") {
+		t.Errorf("failed report = {%q,%q}, want relabeled to contain \"stalled\"", failed.Status, failed.Error)
+	}
+
+	empty := normalizeStaleReport(ChildReport{Status: StatusOK}, true, 2*time.Second)
+	if empty.Status != StatusFailed || !strings.Contains(empty.Error, "stalled") {
+		t.Errorf("empty-summary OK report = {%q,%q}, want failed/stalled", empty.Status, empty.Error)
+	}
+
+	untouched := normalizeStaleReport(ChildReport{Status: StatusFailed, Error: "boom"}, false, 2*time.Second)
+	if untouched.Status != StatusFailed || untouched.Error != "boom" {
+		t.Errorf("stalled=false must be a no-op, got {%q,%q}", untouched.Status, untouched.Error)
 	}
 }
 

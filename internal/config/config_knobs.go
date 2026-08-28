@@ -105,6 +105,7 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_WEB_FETCH_TIMEOUT_SEC", Kind: KindInt, Default: "10"},
 		{Name: "AURA_SWARM_MAX_GOALS", Kind: KindInt, Default: "8"},
 		{Name: "AURA_SWARM_CHILD_TIMEOUT_SEC", Kind: KindInt, Default: "120"},
+		{Name: "AURA_SWARM_CHILD_IDLE_SEC", Kind: KindInt, Default: "120"},
 		{Name: "AURA_SWARM_MAX_CONCURRENT", Kind: KindInt, Default: "4"},
 		{Name: "AURA_SWARM_DELEGATION_NUDGE_SEC", Kind: KindInt, Default: "60"},
 		{Name: "AURA_AGENT_JOB_MAX_DURATION_SEC", Kind: KindInt, Default: "600"},
