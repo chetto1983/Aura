@@ -4,16 +4,16 @@ milestone: v2.1.0
 current_phase: 51
 current_phase_name: Durable delegation
 status: executing
-stopped_at: Completed 51-04-PLAN.md (D-09/D-10/D-11); human review recommended on the per-fact_key mutex scope before full closure
-last_updated: "2026-08-28T06:36:09Z"
+stopped_at: Completed 51-03-PLAN.md (SWARM-01 goal/context split, SWARM-02 live-cap schema render)
+last_updated: "2026-08-28T06:56:00.406Z"
 last_activity: 2026-08-28
-last_activity_desc: Reconciled GSD state and roadmap against plans and summaries
-state_head: dd7a9a0aa3ef3298451b325b4efb85de1035003f
+last_activity_desc: Phase 51 execution resumed (wave continue)
+state_head: 4dbd38ccf7abbe71e90b6ada0f41787f2f9eb742
 progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 45
-  completed_plans: 37
+  completed_plans: 38
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -49,7 +49,7 @@ plainly:** the MCP-01 distrust-framing and MCP-03 `TrustTrusted` tripwire tests 
 
 Prior status (Phase 46 execution):
 Phase 46 discussion are recorded in `46-CONTEXT.md` D-10..D-16 and in ROADMAP §45.1.
-Last activity: 2026-08-28 — reconciled STATE/ROADMAP against the live plan and summary inventory
+Last activity: 2026-08-28 — Phase 51 execution resumed (wave continue)
 failure is closed: a bridged tool never set `Multiplexed`, so `classify` gave ONE flat tier to the
 whole merged tool — `calendar(action=list_calendars)` and `calendar(action=send_email)` scored
 identically, with no panic to warn anyone. Now `bridge.go:211` sets `spec.Multiplexed =
@@ -119,6 +119,7 @@ Progress: [████████░░] 82%
 | Phase 46 P06 | 145min | 3 tasks | 12 files |
 | Phase 51-durable-delegation P01 | 5h | 3 tasks | 19 files |
 | Phase 51 P04 | 215min | 3 tasks | 21 files |
+| Phase 51 P03 | ~55 min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -208,6 +209,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 51]: D-10 actor transport: host-derived actor rides HTTP connection headers on a per-actor MCP session (Rule-4 expansion, operator-approved), not JSON-RPC _meta
 - [Phase 51]: D-11: worker supersede refusal reuses existing FactWrite{Refused,Reason} fields, zero Command calls issued for a refused correction
 - [Phase 51]: D-09 concurrency fix: CAS then server-side append then explicit ArcadeDB transaction each independently failed under real Go goroutine concurrency; final fix is a per-fact_key striped in-process mutex (fact_lock.go) plus the transaction kept as cross-process defense-in-depth, verified with 70+ live -race stress runs, zero failures
+- [Phase 51]: 51-03: widened the existing swarmRunner interface (Run(ctx, goals, context)) instead of adding a second interface, per 51-PATTERNS.md's explicit instruction
+- [Phase 51]: 51-03: exported SwarmCaps and swarm.MaxDepth() so cmd/aura's composition root can construct/read them cross-package, without adding AURA_SWARM_MAX_DEPTH to the Tier A/B knob registry
 
 ### Pending Todos
 
@@ -270,8 +273,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-27T17:41:35.200Z
-Stopped at: Completed 51-04-PLAN.md (D-09/D-10/D-11); human review recommended on the per-fact_key mutex scope before full closure
+Last session: 2026-08-28T06:56:00.264Z
+Stopped at: Completed 51-03-PLAN.md (SWARM-01 goal/context split, SWARM-02 live-cap schema render)
 exited at its CONTEXT.md gate — Phase 45 has no CONTEXT.md, and discuss-phase must run as a
 top-level command (nested invocation breaks AskUserQuestion, GSD #1009). No phase directory
 was created and no planning agents were spawned.
@@ -284,6 +287,6 @@ build order extended with Phases 51/52 and the 53/54 renumber, requirement count
 to 77, the `tool_call_id` blocker marked resolved by `657c9e383`, and the CTX-V2-01 deferral
 re-pointed at Phase 53. REQUIREMENTS.md's two stale prose lines corrected to match.
 
-Resume file: .planning/phases/51-durable-delegation/51-CONTEXT.md
+Resume file: None
 Next action: none assigned. Phase 52 is the next in order and is plan-ready, but nothing is
 scheduled — the operator drives.

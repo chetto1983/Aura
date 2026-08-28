@@ -10,13 +10,15 @@ import (
 // fakeSwarmRunner records whether Run was invoked so the goals-cap test can assert
 // the over-cap path short-circuits BEFORE any engine call.
 type fakeSwarmRunner struct {
-	called   bool
-	gotGoals []string
+	called     bool
+	gotGoals   []string
+	gotContext string
 }
 
-func (f *fakeSwarmRunner) Run(ctx context.Context, goals []string) (ToolResult, error) {
+func (f *fakeSwarmRunner) Run(ctx context.Context, goals []string, context string) (ToolResult, error) {
 	f.called = true
 	f.gotGoals = goals
+	f.gotContext = context
 	return NewResult(ctx, `[]`)
 }
 
@@ -43,7 +45,7 @@ func TestSwarmSpawnDescriptionLiteral(t *testing.T) {
 // string and NEVER reaches the runner (D-13).
 func TestSwarmSpawnGoalsCap(t *testing.T) {
 	r := &fakeSwarmRunner{}
-	tool := &SwarmSpawn{Runner: r, MaxGoals: 2}
+	tool := &SwarmSpawn{Runner: r, Caps: SwarmCaps{MaxGoals: 2}}
 	ctx := ctxWith(t, "sess-swarm", "call-swarm")
 
 	res, err := tool.Execute(ctx, json.RawMessage(`{"goals":["a","b","c"]}`))
@@ -65,7 +67,7 @@ func TestSwarmSpawnGoalsCap(t *testing.T) {
 // verbatim (the happy path the engine drives).
 func TestSwarmSpawnDelegatesUnderCap(t *testing.T) {
 	r := &fakeSwarmRunner{}
-	tool := &SwarmSpawn{Runner: r, MaxGoals: 8}
+	tool := &SwarmSpawn{Runner: r, Caps: SwarmCaps{MaxGoals: 8}}
 	ctx := ctxWith(t, "sess-swarm", "call-swarm")
 
 	if _, err := tool.Execute(ctx, json.RawMessage(`{"goals":["x","y"]}`)); err != nil {
@@ -76,6 +78,22 @@ func TestSwarmSpawnDelegatesUnderCap(t *testing.T) {
 	}
 	if len(r.gotGoals) != 2 || r.gotGoals[0] != "x" || r.gotGoals[1] != "y" {
 		t.Fatalf("runner got goals %v, want [x y]", r.gotGoals)
+	}
+}
+
+// TestSwarmSpawnDelegatesContext asserts the SWARM-01 context arg reaches the
+// runner verbatim, alongside goals — the widened swarmRunner seam, not a
+// second parameter path.
+func TestSwarmSpawnDelegatesContext(t *testing.T) {
+	r := &fakeSwarmRunner{}
+	tool := &SwarmSpawn{Runner: r, Caps: SwarmCaps{MaxGoals: 8}}
+	ctx := ctxWith(t, "sess-swarm", "call-swarm")
+
+	if _, err := tool.Execute(ctx, json.RawMessage(`{"goals":["x"],"context":"path=/a/b"}`)); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if r.gotContext != "path=/a/b" {
+		t.Fatalf("runner got context %q, want %q", r.gotContext, "path=/a/b")
 	}
 }
 
@@ -111,7 +129,7 @@ func TestSwarmSpawnSchema(t *testing.T) {
 // TestSwarmSpawnMissingRunner asserts a nil runner (composition-root wiring bug) is a
 // real Go error, distinct from the inline domain errors.
 func TestSwarmSpawnMissingRunner(t *testing.T) {
-	tool := &SwarmSpawn{Runner: nil, MaxGoals: 8}
+	tool := &SwarmSpawn{Runner: nil, Caps: SwarmCaps{MaxGoals: 8}}
 	ctx := ctxWith(t, "sess-swarm", "call-swarm")
 	if _, err := tool.Execute(ctx, json.RawMessage(`{"goals":["x"]}`)); err == nil {
 		t.Fatal("a nil runner must surface as a Go error (wiring bug), not a silent no-op")

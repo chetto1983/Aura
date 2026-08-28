@@ -44,8 +44,10 @@ func NewRunnerAdapter(cfg config.Config) *RunnerAdapter {
 // agent loop — a wiring bug, surfaced without panicking). The engine's marshal
 // error is the only real Go error; domain rejections ride in the JSON string. The
 // returned report JSON is wrapped via tools.NewResult so a large report spills to a
-// sidecar (D-15 — the ONLY spillover path).
-func (a *RunnerAdapter) Run(ctx context.Context, goals []string) (tools.ToolResult, error) {
+// sidecar (D-15 — the ONLY spillover path). context is the SWARM-01 goal/context
+// split (plan 51-03) — threaded into RunConfig.Context, which both the
+// synchronous runChild path and the background EnqueueDelegation payload read.
+func (a *RunnerAdapter) Run(ctx context.Context, goals []string, context string) (tools.ToolResult, error) {
 	sc, ok := agent.SwarmContext(ctx)
 	if !ok {
 		return tools.ToolResult{}, errors.New(
@@ -60,6 +62,7 @@ func (a *RunnerAdapter) Run(ctx context.Context, goals []string) (tools.ToolResu
 		Cfg:            a.Cfg,
 		ConvID:         sc.ConvID,
 		Depth:          a.Depth,
+		Context:        context,
 		Gateway:        sc.Gateway, // relay the parent's PEP to each worker (Open Q1 full enforcement)
 		// SWARM-03/09: identityctx is the SAME ambient host-derived actor context
 		// every other identity-scoped tool reads (document_search.go, skill_manage.go,

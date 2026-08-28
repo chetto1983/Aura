@@ -23,7 +23,7 @@ func (stubTool) Execute(context.Context, json.RawMessage) (tools.ToolResult, err
 // D-06 worker overlay and the goal text (the finalizeNudge substring-assert idiom).
 func TestStructuredBrief(t *testing.T) {
 	const goal = "Summarize the unread mail from Andrea"
-	b := structuredBrief(goal)
+	b := structuredBrief(goal, "")
 
 	for _, marker := range []string{briefObjective, briefOutput, briefTools, briefBoundaries} {
 		if !strings.Contains(b, marker) {
@@ -37,7 +37,7 @@ func TestStructuredBrief(t *testing.T) {
 		t.Error("structuredBrief missing the goal text")
 	}
 	// Deterministic for a given goal (KV-cache friendly).
-	if structuredBrief(goal) != b {
+	if structuredBrief(goal, "") != b {
 		t.Error("structuredBrief is not deterministic for the same goal")
 	}
 }

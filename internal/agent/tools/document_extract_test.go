@@ -174,7 +174,7 @@ func TestExtractXlsxRejectsRenderedOutputAmplification(t *testing.T) {
 	// One shared string can be referenced by every cell. Its XML stays small while the rendered
 	// table multiplies that value, so the output budget must be checked before strings.Join.
 	var cells strings.Builder
-	for col := 0; col < maxXlsxCols; col++ {
+	for range maxXlsxCols {
 		cells.WriteString(`<c t="s"><v>0</v></c>`)
 	}
 	sheet := `<worksheet xmlns="` + spreadsheetNS + `"><sheetData><row>` + cells.String() +

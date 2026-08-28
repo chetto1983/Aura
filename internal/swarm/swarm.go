@@ -37,6 +37,13 @@ type RunConfig struct {
 	Cfg            config.Config
 	ConvID         string
 	Depth          int
+	// Context is the SWARM-01 goal/context split (plan 51-03): the file paths,
+	// error messages and constraints the caller supplies alongside the goal,
+	// rendered into structuredBrief's own section rather than concatenated into
+	// the objective. Shared across every goal in this call — one swarm_spawn
+	// invocation, one context. Empty is the zero value and renders no section
+	// (structuredBrief's own empty-context contract).
+	Context string
 	// Gateway is the parent's Phase-35 policy PEP, injected into each worker so a
 	// headless swarm-child dispatch is enforced and keyed on the ORIGINATING
 	// conversation UUID (ConvID), never the flat worker session (Open Q1). nil is a no-op.
@@ -78,6 +85,7 @@ func Run(ctx context.Context, rc RunConfig, goals []string) (string, error) {
 	// waves below, regardless of whether an Enqueuer happens to be configured.
 	if rc.Enqueuer != nil && rc.Depth <= 1 {
 		return EnqueueDelegation(ctx, rc.Enqueuer, rc.IdentityID, goals, DelegationPayload{
+			Context:        rc.Context,
 			ConversationID: rc.ConvID,
 			ParentRunID:    rc.ParentRunID,
 			Depth:          rc.Depth,
@@ -203,7 +211,7 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 		// flat worker SessionID above — uuid.Parse fails on the flat session (Open Q1).
 		LedgerConversationID: rc.ConvID,
 		Gateway:              rc.Gateway,
-		UserTurns:            []llm.Message{{Role: llm.RoleUser, Content: structuredBrief(goal)}},
+		UserTurns:            []llm.Message{{Role: llm.RoleUser, Content: structuredBrief(goal, rc.Context)}},
 	})
 
 	slog.Info("swarm.child.spawned", "child", childID, "goal_index", idx)

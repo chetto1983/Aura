@@ -267,8 +267,7 @@ func extractDocx(raw []byte) (string, error) {
 			}
 		}
 		walk(para)
-		paragraphLines := strings.Split(buf.String(), "\n")
-		for _, line := range paragraphLines {
+		for line := range strings.SplitSeq(buf.String(), "\n") {
 			if err := addOOXMLOutput(&outputBytes, len(line)+1); err != nil {
 				return "", err
 			}
