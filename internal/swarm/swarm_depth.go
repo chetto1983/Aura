@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+
+	"github.com/chetto1983/aura/internal/agent/tools"
 )
 
 // defaultMaxDepth is the AURA_SWARM_MAX_DEPTH builtin (D-10). Flat v1 never reaches
@@ -46,4 +48,39 @@ func checkDepth(depth, max int) (string, bool) {
 		return fmt.Sprintf("MAX_SPAWN_DEPTH=%d exceeded", max), false
 	}
 	return "", true
+}
+
+// canNest reports whether a worker built at rc.Depth (THIS Run call's own
+// invocation depth) may itself hold swarm_spawn: only when its OWN spawn call,
+// landing at depth+1, would still clear checkDepth against the live
+// AURA_SWARM_MAX_DEPTH cap. Reuses checkDepth/maxDepth rather than re-deriving the
+// comparison (D-10's guard stays the single source of the boundary).
+//
+// TODO(RED): stub for the RED test phase -- always closed, matching flat v1's
+// unconditional strip. GREEN wires the real depth+1 comparison.
+func canNest(depth int) bool {
+	return false
+}
+
+// nestingClosedNotice is the model-readable degrade-to-leaf framing (mirrors
+// hermes' delegate_tool.py role:leaf|orchestrator, which degrades orchestrator to
+// leaf past max_spawn_depth) a worker reads in its own brief when workerRegistry
+// withheld swarm_spawn for the depth cap.
+//
+// TODO(RED): placeholder text for the RED test phase.
+const nestingClosedNotice = "nesting-closed-notice-red-stub"
+
+// workerRegistry returns the registry granted to a worker built from this Run
+// call (rc.Depth is THIS call's own depth), and whether nesting is closed for it
+// because of the depth cap (the caller uses this to surface nestingClosedNotice).
+//
+// TODO(RED): stub for the RED test phase -- canNest always reports false, so
+// every worker strips swarm_spawn (today's flat-v1 behavior) and the
+// nesting-closed notice is never surfaced. GREEN replaces the branch bodies with
+// the real depth-conditional grant.
+func workerRegistry(rc RunConfig) (*tools.Registry, bool) {
+	if !canNest(rc.Depth) {
+		return tools.Without(rc.ParentRegistry, swarmSpawnTool), false
+	}
+	return tools.Without(rc.ParentRegistry, swarmSpawnTool), false
 }

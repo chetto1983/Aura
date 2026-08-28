@@ -96,7 +96,7 @@ func TestRunnerAdapterThreadsContextToWorkerBrief(t *testing.T) {
 // Without(parentRegistry, "swarm_spawn") never contains swarm_spawn (D-08/D-10), so a
 // worker cannot recursively fan out (T-09-12 mitigation).
 func TestRunnerAdapterWorkerRegistryExcludesSwarmSpawn(t *testing.T) {
-	parent := workerRegistry() // includes a stub swarm_spawn entry
+	parent := stubWorkerRegistry() // includes a stub swarm_spawn entry
 	if _, ok := parent.Get(swarmSpawnTool); !ok {
 		t.Fatal("precondition: the parent registry must carry swarm_spawn")
 	}

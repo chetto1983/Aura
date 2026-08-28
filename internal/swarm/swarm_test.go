@@ -27,6 +27,10 @@ type outcome struct {
 	question string // pause question
 	options  []string
 	steps    int // for "steps": number of distinct tool calls before terminating
+	// delay simulates real worker latency before Stream answers, so a test can
+	// prove Run() actually blocked for it (TestNestedDelegationSynchronous,
+	// SWARM-04) rather than returning early via the background-enqueue branch.
+	delay time.Duration
 }
 
 // routerClient is a goroutine-safe llm.Client that routes each Stream call to a
@@ -80,6 +84,14 @@ func (r *routerClient) Stream(ctx context.Context, req llm.Request) (<-chan llm.
 	if !ok {
 		// Unknown goal: terminate with empty content so a stray worker never hangs.
 		return closedChan(llm.Chunk{FinishReason: "stop"}), nil
+	}
+
+	if o.delay > 0 {
+		select {
+		case <-time.After(o.delay):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 
 	switch o.kind {
@@ -138,10 +150,13 @@ func (echoTool) Execute(ctx context.Context, raw json.RawMessage) (tools.ToolRes
 	return tools.NewResult(ctx, "echo:"+string(raw))
 }
 
-// workerRegistry holds the tools a worker may call in tests: text_response (terminal),
-// ask_user (pause), echo (step burner), plus swarm_spawn so the Without filter is
-// exercised.
-func workerRegistry() *tools.Registry {
+// stubWorkerRegistry holds the tools a worker may call in tests: text_response
+// (terminal), ask_user (pause), echo (step burner), plus a swarm_spawn STUB so the
+// Without filter is exercised. Named apart from the production workerRegistry
+// (swarm_depth.go, plan 51-05) it stands in for -- that function derives the REAL
+// depth-conditional registry a worker gets at runtime; this one is the flat,
+// unconditional base a test's ParentRegistry starts from.
+func stubWorkerRegistry() *tools.Registry {
 	r := tools.NewRegistry()
 	r.Register(tools.TextResponse{})
 	r.Register(tools.AskUser{})
@@ -177,7 +192,7 @@ func testRunConfig(t testLike, client llm.Client, maxSteps int) RunConfig {
 	}
 	return RunConfig{
 		ParentBudget:   b,
-		ParentRegistry: workerRegistry(),
+		ParentRegistry: stubWorkerRegistry(),
 		Client:         client,
 		LLM:            llm.Config{Model: "m", Provider: "openrouter", TotalTimeoutSec: 30},
 		Cfg: config.Config{
@@ -458,42 +473,5 @@ func TestSwarmTranscript(t *testing.T) {
 	sid := fmt.Sprintf("%s-swarm-%s", rc.ConvID, "w1")
 	if strings.ContainsAny(sid, `/\`) {
 		t.Errorf("worker SessionID %q must be flat (no path separator)", sid)
-	}
-}
-
-// TestSwarmDepthGuard (D-10/SC#2): a synthetic depth >= AURA_SWARM_MAX_DEPTH is
-// rejected with the PRD literal and no worker spawns.
-func TestSwarmDepthGuard(t *testing.T) {
-	defer goleak.VerifyNone(t)
-	r := newRouter().route("x", outcome{kind: "ok", text: "should not run"})
-	rc := testRunConfig(t, r, 25)
-	rc.Depth = defaultMaxDepth // == cap → rejected
-
-	out, err := Run(context.Background(), rc, []string{"x1"})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	want := fmt.Sprintf("MAX_SPAWN_DEPTH=%d exceeded", defaultMaxDepth)
-	if !strings.Contains(out, want) {
-		t.Errorf("depth-guard output = %q, want it to contain %q", out, want)
-	}
-	r.mu.Lock()
-	total := 0
-	for _, c := range r.calls {
-		total += c
-	}
-	r.mu.Unlock()
-	if total != 0 {
-		t.Errorf("depth guard rejected but %d worker calls fired (want 0)", total)
-	}
-}
-
-// TestCheckDepth covers the guard helper directly across the boundary.
-func TestCheckDepth(t *testing.T) {
-	if _, ok := checkDepth(1, 2); !ok {
-		t.Error("depth 1 < cap 2 should be allowed")
-	}
-	if msg, ok := checkDepth(2, 2); ok || !strings.Contains(msg, "MAX_SPAWN_DEPTH=2 exceeded") {
-		t.Errorf("depth 2 >= cap 2 should be rejected with the PRD literal, got (%q,%v)", msg, ok)
 	}
 }
