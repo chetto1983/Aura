@@ -18,6 +18,7 @@ import (
 
 	tele "gopkg.in/telebot.v4"
 
+	"github.com/chetto1983/aura/internal/approvaltext"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/runner"
 )
@@ -95,6 +96,7 @@ func (h *hitl) prompt(ctx context.Context, bot botSender, chatID int64, convID s
 	to := tele.ChatID(chatID)
 	switch p.Kind {
 	case "approval":
+		question := localizedApprovalQuestion(p)
 		// An approval that carries options is one the gateway attached approval SCOPES to
 		// (amendment #127): the operator picks how long their yes lasts, not merely whether
 		// it is a yes. Without this branch the fixed Sì/No keyboard answered with an empty
@@ -102,9 +104,9 @@ func (h *hitl) prompt(ctx context.Context, bot botSender, chatID int64, convID s
 		// silently withheld a choice the operator had been offered. A bare approval keeps
 		// the fixed keyboard.
 		if len(decodeOptions(p.Options)) > 0 {
-			return h.send(bot, to, p.Question, approvalScopeMarkup(p.Token, p.Options))
+			return h.send(bot, to, question, approvalScopeMarkup(p.Token, p.Options))
 		}
-		return h.send(bot, to, p.Question, approvalMarkup(p.Token))
+		return h.send(bot, to, question, approvalMarkup(p.Token))
 	case "choice":
 		return h.send(bot, to, p.Question, choiceMarkup(p.Token, p.Options))
 	default: // clarification (free-text): force the client into a reply
@@ -210,10 +212,24 @@ func (h *hitl) questionFor(ctx context.Context, convID, token string) string {
 	}
 	for _, p := range pending {
 		if p.Token == token {
-			return p.Question
+			return localizedApprovalQuestion(p)
 		}
 	}
 	return ""
+}
+
+// localizedApprovalQuestion renders only recognized metadata still bound to the canonical
+// question. Ordinary and legacy pauses retain that question verbatim; consent verification still
+// uses the canonical persisted value, never this display-only string.
+func localizedApprovalQuestion(p askuser.Pending) string {
+	if p.Kind != "approval" {
+		return p.Question
+	}
+	presentation, ok := approvaltext.FromContext(p.Question, p.ResumeContext)
+	if !ok {
+		return p.Question
+	}
+	return approvaltext.RenderItalian(presentation, p.Question)
 }
 
 // handleTextReply resolves a free-text ForceReply answer: it reads the first

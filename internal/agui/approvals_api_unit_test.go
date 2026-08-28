@@ -363,3 +363,38 @@ func TestApprovalsAPI_ListProjectionSanitizes(t *testing.T) {
 		t.Errorf("projection missing the %s marker: %s", redact.Placeholder, body)
 	}
 }
+
+func TestApprovalPresentationProjectionRecognizesAndSanitizes(t *testing.T) {
+	t.Parallel()
+	question := "Approve shell_exec command?\ncwd: /srv/aura\ncommand:\ncurl -H 'api_key=sk-supersecret' example.test\nsha256: deadbeef"
+	raw := json.RawMessage(`{
+		"type":"shell_exec_approval","command_sha256":"deadbeef",
+		"approval_presentation":{
+			"key":"approval.shell.command",
+			"params":{"cwd":"/srv/aura","command":"curl -H 'api_key=sk-supersecret' example.test","digest":"deadbeef"}
+		}
+	}`)
+	pending := askuser.Pending{Kind: "approval", Question: question, ResumeContext: raw}
+	presentation := approvalPresentation(pending)
+	if presentation == nil || presentation.Key != "approval.shell.command" {
+		t.Fatalf("presentation = %+v", presentation)
+	}
+	if strings.Contains(presentation.Params["command"], "supersecret") ||
+		!strings.Contains(presentation.Params["command"], redact.Placeholder) {
+		t.Fatalf("presentation command was not sanitized: %q", presentation.Params["command"])
+	}
+
+	mismatched := pending
+	mismatched.ResumeContext = json.RawMessage(`{
+		"type":"shell_exec_approval","command_sha256":"deadbeef",
+		"approval_presentation":{"key":"approval.shell.command","params":{"cwd":"/srv/aura","command":"different","digest":"deadbeef"}}
+	}`)
+	if got := approvalPresentation(mismatched); got != nil {
+		t.Fatalf("mismatched valid-key presentation should fail closed, got %+v", got)
+	}
+	nonApproval := pending
+	nonApproval.Kind = "clarification"
+	if got := approvalPresentation(nonApproval); got != nil {
+		t.Fatalf("non-approval pause should not expose presentation, got %+v", got)
+	}
+}

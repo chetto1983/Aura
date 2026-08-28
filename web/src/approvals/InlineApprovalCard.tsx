@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ariaInvalid } from '../a11y/aria';
+import { approvalQuestion } from './approvalQuestion';
 import { isTerminal, parseOptions, parseScopeChoice } from './approvalState';
 import type { ApprovalResolution, ApprovalResolutionAttempt } from './useThreadApprovals';
 import {
@@ -17,9 +18,9 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 
 // InlineApprovalCard renders a pending ask_user interrupt in its conversation.
-// The complete server-sanitized question remains escaped React text. The DTO has
-// no trusted install subtype, so framing stays generic and the URL capability
-// token never appears as a dedicated visible field.
+// Recognized approval metadata is rendered in the active locale; legacy/unknown questions remain
+// escaped React text. Framing stays generic and the URL capability token never appears as a
+// dedicated visible field.
 
 type CardState = 'pending' | 'answered' | 'declined' | 'cancelled';
 
@@ -298,6 +299,7 @@ function CardShell({
   readonly header: ReactNode;
   readonly children: ReactNode;
 }) {
+  const { t } = useTranslation();
   return (
     <Card
       data-approval-token={approval.token}
@@ -306,7 +308,7 @@ function CardShell({
     >
       {header}
       <p className="overflow-x-auto text-sm leading-relaxed whitespace-pre-wrap text-text break-words [overflow-wrap:anywhere]">
-        {approval.question}
+        {approvalQuestion(approval, t)}
       </p>
       {children}
     </Card>

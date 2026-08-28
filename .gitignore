@@ -120,3 +120,4 @@ backups/
 # and meaningless across machines.
 .gsd/
 .planning/phases/51-durable-delegation/live-check/out/
+tmp/*

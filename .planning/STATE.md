@@ -41,50 +41,30 @@ falsifies TOOL-01's *"hard cap, not a target"*), **#134** (TOOL-01's `comms` row
 without reopening D-17 or D-27) and **#137** (Phase 53's deliverable shipped as L3 compaction on
 2026-08-12). Execution order is now `45 ✓ → 45.1 ✓ → 46 ✓ → 52 → 50 → 49 → 51 → 54`.
 
-Phase 46 closed the same day at 9/9: seven plans executed, 46-08 a recorded no-go (amendment #131 —
-the WhatsApp view calls back into three tools, so a curated WhatsApp would be four model-facing,
-over the ceiling), and 46-09 closed by the operator. **What 46-09 did not leave behind, stated
-plainly:** the MCP-01 distrust-framing and MCP-03 `TrustTrusted` tripwire tests do not exist, and
-`deferred_manifest.json` still holds its pre-curation 55 entries. See `46-09-SUMMARY.md`.
+Phase 46 is closed at 9/9 dispositions: seven plans executed, 46-08 is the measured no-go recorded
+by amendment #131, and 46-09 was closed by the operator. The old 46-06/07/09 summaries and draft
+validation are historical execution records, not the current work queue.
 
-Prior status (Phase 46 execution):
-Phase 46 discussion are recorded in `46-CONTEXT.md` D-10..D-16 and in ROADMAP §45.1.
+Current evidence (2026-08-28) supersedes their stale gaps. External fork commit
+`5909c808f75bb1c612256666dd0f1aacf6921dd4` restores exhaustive coverage of the merged 29-action
+`CalendarActionTool`: 233/233 tests pass, including every dispatch arm, destructive validation,
+unknown actions and opaque event references; its CI and image-publish workflows are green. Aura
+pins the immutable published index at
+`sha256:1d0e9c3f62aba446eb123ea39d5abb9d97e6be7784d2dac403ea1e1e5e4a6986`, and the running
+`aura-pim-mcp` container is healthy on that exact digest. Aura's `calendar_integration` tier passed
+under `-race` against the pin, proving the one-tool schema, two-identity isolation, and the complete
+`get_calendar_events` → opaque `eventId` → `get_calendar_event_details` round-trip with no
+caller-supplied `accountId`. MCP-05 is therefore no longer half-proven.
+
+The two trust-posture tripwires that 46-09-SUMMARY called absent are present on the current tree:
+`TestBridge_CapsDescriptions`/`TestBridge_CapsManifestSummaries` forbid distrust framing while
+retaining byte caps, and `TestBridgedTool_Execute_MarksResultTrusted` pins MCP result provenance.
+The remaining unchecked MCP-02 item in REQUIREMENTS is its separate live unlisted-server proof;
+it is a roadmap acceptance obligation, not an unrecorded Calendar fork gap.
+
 Last activity: 2026-08-28 — Phase 51 execution resumed (wave continue)
-failure is closed: a bridged tool never set `Multiplexed`, so `classify` gave ONE flat tier to the
-whole merged tool — `calendar(action=list_calendars)` and `calendar(action=send_email)` scored
-identically, with no panic to warn anyone. Now `bridge.go:211` sets `spec.Multiplexed =
-isKnownMultiplexedMCPTool(name)` (D-34: earned by having a classifier, NEVER inferred from a schema
-carrying an `action` property, or a stranger's server would panic boot), `internal/gateway`
-registers `classifyCalendarAction`, and `trustedRecipeActions[calendarRecipeSource]`'s 14 keys are
-read as action names — no relabeling needed, the fork's enum already matched. The mixed key spaces
-(calendar action-keyed, memory/whatsapp raw-tool-name-keyed) are documented ON the table per D-35.
-Per D-32 the pin, the re-key, the Multiplexed flip and the classifier entry landed in ONE commit
-(`2edbc3910`), preceded by its RED (`09e87b8d5`), so no window existed where calendar reads demanded
-approval or the merged tool classified flat.
 
-Proven live, not just green: the `aura-pim-mcp` service was recreated onto
-`:38c94fd9d22d85c4b89f3d5b1f8202970faed117` and `tools/list` now returns exactly ONE tool,
-`calendar`; the `calendar_integration` tier ran against it (`TestCalendarServerLive` PASS, protocol
-`2025-11-25`). `-race` green in WSL on both touched packages.
-
-Carried forward, honestly: **the MCP-05 round-trip is only half-proven** — this host has ZERO
-connected accounts, so `get_calendar_events` returns no `eventId` to chain a detail call from. The
-schema half is exercised, the opaque-reference round-trip is not. 46-07 must connect a real account
-or MCP-05 stays unproven for the whole phase. Also inherited from 46-05 and still open: the fork
-deleted 14 MSTest files (2,062 LOC) with no replacement and its `ci.yml` never triggers on
-`aura/pim-sidecar`, so the `calendar_integration` tier is the ONLY automated proof of that surface.
-
-Process note: three gsd-executor dispatches were killed by the harness's 600s stream-idle watchdog
-(the same failure that killed three executors in Phase 45.1). Both plan commits are the executor's,
-made across resumes; the orchestrator ran the gates, recreated the sidecar, ran the live tier and
-wrote the SUMMARY inline at the operator's direction. No plan content was weakened to finish.
-
-Next: Plan 46-07 — the tracer GATE. Drive one real conversation through the running stack, capture
-the per-action evidence rows, and score the scenario into 46-VALIDATION.md. Connect at least one
-real account first, or the MCP-05 round-trip cannot be closed. See
-`.planning/phases/46-mcp-trust-and-facade/46-06-SUMMARY.md` for full detail.
-
-Progress: [████████░░] 82%
+Progress: [██████████] 100% (Phase 46 dispositions)
 
 ## Performance Metrics
 
@@ -204,7 +184,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 52]: 52-04 closes the Wave-2 cap-drift by wiring newSteerInbox(cfg.AGUISteer) at the composition root (cmd/aura/chat_boot.go) and pinning the WIRED caps to 8/16384 in chat_boot_test.go. internal/steer's own 32/32768 fallbacks are kept DELIBERATELY divergent so the package never imports internal/config -- a zero Config is then visibly wrong rather than silently plausible
 - [Phase 52]: 52-02 delivers a steer by appending it AFTER the closing </tool_output> of the last tool-result message, behind a nonce marker minted by trust.go's existing toolOutputNonce() -- there remains exactly one nonce minter in internal/agent
 - [Phase 52]: 52-02's GREEN commit for Task 2 (60836960e) carries the steer drain implementation (llm_agent.go, llm_agent_steer.go, trust.go) but its SUBJECT describes only a bundled Rule-3 lint unblock; the message misrepresents the diff. Left unrewritten deliberately: a concurrent session pushed ad0bee571 and merge 18231becc around it, and rewriting shared history another session may have pulled is worse than a wrong subject line. Recorded here so a later `git log --grep=steer` miss is explainable
-- [Phase 46]: 46-05 deleted the 14 orphaned MSTest files (2062 LOC) for the deleted raw tool classes rather than porting them to `CalendarActionTool` — no replacement unit coverage was written for the merged tool in this plan; flagged as a known gap/follow-up, not silently absorbed
+- [Phase 46]: 46-05's deleted raw-tool MSTest coverage was replaced after the phase by fork commit `5909c808f75bb1c612256666dd0f1aacf6921dd4`: 233/233 tests now cover all 29 merged dispatch arms and destructive validation paths; CI/publish and Aura's immutable pin were verified 2026-08-28
 - [Phase 51]: 51-01: minted a new idempotency.ScopeSwarmDelegation trusted root for the daemon-resident delegation claim loop, mirroring the scheduler's own root-minting pattern
 - [Phase 51]: 51-01: scoped IngestionJobWorker.JobType per typed worker after live driving surfaced a cross-worker claim race between asset-processing and swarm delegation
 - [Phase 51]: D-10 write-path shape: split-write-shape — MemoryUpsertFactInput.Source got its own MemoryUpsertFactWriteSource with no run_id field; memory_forget/toHits keep MemoryFactSource.RunID unchanged
@@ -256,7 +236,7 @@ None yet.
 - 45.1-08 (phase close) must re-run bash scripts/coverage_docker.sh (full aggregate 85% owned-surface gate) once plan 45.1-04 lands and the tree is quiescent -- not run during 45.1-03 because a concurrent unrelated in-flight session held compose.yaml and internal/agent/mcptools/bridge_risk.go dirty in the same checkout
 - 45.1-08 must also run a mutation spot-check on internal/agent/mcptools/bridge_risk.go -- not run during 45.1-04; the file is at 100% per-function coverage and bridge_supervisor.go scored 99/99, but neither is a mutation score for this file
 - 45.1-08 must also cover 45.1-07: no mutation spot-check on elicitation.go/elicitation_consent.go, and no LIVE E2E of a real mounted server issuing a real elicitation to a real channel -- the in-memory pair proves the protocol path, not a Telegram delivery
-- 46-05 (calendar fork curation) deleted 14 orphaned MSTest files (2062 LOC) for the raw tool classes it removed, with no replacement unit coverage written for the merged `CalendarActionTool` -- flagged for a future fork-side follow-up, not something this milestone's own coverage gates measure (aura-pim-mcp is an external repo)
+- ~~46-05 deleted 14 orphaned raw-tool MSTest files without replacement coverage.~~ **CLOSED 2026-08-28:** fork commit `5909c808f75bb1c612256666dd0f1aacf6921dd4` adds exhaustive 29-action route and destructive-validation coverage (233/233), with green CI/publish and an immutable Aura pin.
 - 46-05 found `ci.yml` structurally never triggers on `aura/pim-sidecar` (push/PR to `main` only) -- if a future plan expects a green `ci.yml` run on this branch as evidence, it will not exist; use `aura-publish-image.yml`'s run history plus a live pulled-image probe instead
 - ~~**52-04 MUST wire the steer inbox from config.**~~ **CLOSED 2026-08-25 by 52-04** (dbec0dcc4/03b7d7d32): wired at the composition root with a cap-pinning test. Original text:  `internal/steer/inbox.go` carries package-level fallbacks `defaultMax=32` / `defaultMaxBytes=32768`, while the ratified amendment #132 item 10 values in `internal/config/config_agui_steer.go` are `Max=8` / `MaxBytes=16384`. There are currently ZERO non-test callers of `steer.New`, so nothing yet resolves the disagreement. If 52-04 constructs the inbox with a zero `steer.Config`, the caps silently become 4x the ratified numbers and no test fails -- the D-11 catalogue-vs-loader drift reproduced one layer down. 52-04 must pass `config.AGUISteer` explicitly AND add a test pinning the wired caps to the config values.
 - **PHASE 52 DOES NOT CLOSE: the Telegram leg of STEER-05 is not live-proven, and cannot be from this host.** The bot long-polls `getUpdates` against the real Telegram Bot API; there is no local-bot-api sidecar, no Telethon/Pyrogram session, and no API_ID/API_HASH in .env, so an inbound message cannot be scripted as a real Telegram user. Three claims need a HUMAN with their own Telegram client: (1) a plain-text message redirects a live turn with the exact turnSteeredMessage echo; (2) a photo sent mid-turn is queued and its own turn ACTUALLY RUNS afterwards (a conversation-turn row, not just a reply promising it); (3) /cancel during a queued photo announces turnQueuedNotDeliveredMessage rather than going silent. 52-06's unit tests assert the wiring but ACC-01 says a green suite alone is not evidence.

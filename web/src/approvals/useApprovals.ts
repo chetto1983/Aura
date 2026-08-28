@@ -27,6 +27,8 @@ export interface Approval {
   readonly kind: string;
   /** Server-sanitized ask_user question — rendered completely as escaped React text. */
   readonly question: string;
+  /** Canonical-bound display metadata; it is non-authoritative and the question remains the consent payload. */
+  readonly presentation?: ApprovalPresentation;
   /** Raw JSON option set (string[] | null) the pause offered; absent for free-form. */
   readonly options?: unknown;
   readonly priority: number;
@@ -34,6 +36,11 @@ export interface Approval {
   readonly source?: string;
   /** D-06: a terminal (expired / auto-resolved) marker so the row never vanishes. */
   readonly terminal?: boolean;
+}
+
+export interface ApprovalPresentation {
+  readonly key: string;
+  readonly params: Readonly<Record<string, string>>;
 }
 
 /** The three resolve verbs (D-05) — 1:1 with askuser.Action* (store.go:35-37). */

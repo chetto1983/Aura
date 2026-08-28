@@ -1,6 +1,6 @@
 ---
-last_mapped_commit: a357a7b75b34d4d31f0ee6cf716626675610e39a
-last_audited_commit: 8e15e14b12f6cfb4eb9951f4563505478c1e3a70
+last_mapped_commit: a6242a054
+last_audited_commit: a6242a054
 ---
 
 # Codebase Concerns
@@ -17,39 +17,29 @@ current claims and references were consolidated here; Git history remains their 
 
 | Severity | Concern | Audit verdict |
 |---|---|---|
-| **Medium** | Aura cannot prove action-level coverage of the externally pinned Calendar/PIM fork | **Confirmed at the consumption boundary; fork internals not re-auditable here** |
-| **Low** | Server-generated approval questions remain hard-coded in English | **Confirmed from the old handoff** |
+| — | No active codebase concerns at the audited commit | **Closed; roadmap requirements and planning-ingest conflicts remain tracked separately** |
 
-### Medium — Calendar/PIM action behavior is proved mainly by Aura's integration sample
-
-- **What is true in this repository:** Compose and CI pin the external sidecar by tag and digest
-  (`compose.yaml:1084-1086`, `.github/workflows/ci.yml:1204-1223`). Aura's live tier verifies the
-  single 29-action schema, tenant isolation, `list_accounts` and one event-list/detail chain
-  (`internal/mcp/calendar_integration_test.go:104-181,254-296`); CI runs that tier under `-race`
-  (`.github/workflows/ci.yml:1276-1283`). It does not execute every multiplexed action.
-- **Evidence boundary:** Phase 46 records that the fork's 14 raw-tool MSTest files were deleted
-  without action-tool replacements, but the external repository is not vendored here. This audit
-  therefore confirms Aura's partial consumption gate, not the current test inventory of the fork.
-- **Action:** make the fork publish action-level test evidence for the exact pinned image, covering
-  every dispatch arm and destructive validation path. Retain Aura's OAuth/two-identity live tier as
-  the cross-repository contract rather than pretending its sample is fork unit coverage.
-
-### Low — approval question prose is not localizable
-
-- **What is true:** gateway and scheduled-task approval questions are formatted as English prose in
-  Go (`internal/gateway/approve.go:181-190`, `internal/agent/tools/task.go:290`). The browser
-  localizes frames, button labels and outcomes, but the persisted question itself is displayed
-  verbatim and is part of the byte-equality informed-consent binding
-  (`internal/gateway/approvals.go:119-170`).
-- **Why it matters:** an Italian cockpit still shows the consequential action description in
-  English. Translating only in the client would break or obscure the exact question binding.
-- **Action:** persist a stable semantic message key plus bounded structured parameters beside the
-  canonical question; render localized prose on each surface while retaining a server-verifiable
-  consent payload. Cover gateway, scheduled and shell approvals together.
+This is deliberately scoped to audited codebase concerns. It does not claim that every roadmap
+acceptance item is complete: MCP-02 still requires its separate live unlisted-server proof, and
+`.planning/INGEST-CONFLICTS.md` remains the generated planning-synthesis conflict report.
 
 ## Recent closures and scope boundaries
 
 These compact entries prevent stale handoffs from reopening resolved work.
+
+- **Calendar/PIM exhaustive proof:** closed. Fork commit
+  `5909c808f75bb1c612256666dd0f1aacf6921dd4` passes 233/233 tests across all 29 dispatch arms,
+  destructive validation and unknown actions; fork CI/publish are green. Compose and CI pin the
+  published index digest `sha256:1d0e9c3f62aba446eb123ea39d5abb9d97e6be7784d2dac403ea1e1e5e4a6986`.
+  Aura's fresh `-race` live tier against that exact image proved the single curated schema,
+  two-identity isolation and opaque event-reference list→detail round-trip without `accountId`.
+- **Localized approval presentation:** closed without weakening consent. The canonical persisted
+  question remains the authoritative approval payload; the runner derives a bounded, display-only
+  semantic key and parameters from it. API and Telegram recompute and require exact equality before
+  rendering; relayed, forged or malformed metadata fails closed to the canonical question. Browser
+  EN/IT and Telegram IT rendering cover gateway mutations, shell commands and scheduled tasks.
+  Real disposable-Postgres persist→GET, race tests, 28 web tests and the 87.0% owned-surface gate
+  passed at `a6242a054`.
 
 - **Managed conversation history:** closed. `AURA_HISTORY_HARD_CAP_TURNS=50` remains the existing
   compatibility knob but now controls keyset page size, not recall. Linear and selected-branch
@@ -146,11 +136,14 @@ These compact entries prevent stale handoffs from reopening resolved work.
 - Former `docs/HANDOFF.md` and `spikes/cocoindex-ingestion/HANDOFF.md` — removed after current
   claims were audited and consolidated here. Historical revisions remain available in Git; live
   references now point to this ledger or the spike's `FINDINGS.md`.
+- Former root `PROGRESS.md` — removed after its live claims were consolidated into this ledger and
+  the canonical planning state; Git history retains provenance.
+- `.planning/INGEST-CONFLICTS.md` — generated planning-ingest conflict report, not a codebase
+  concern ledger; its unresolved synthesis items remain intentionally separate.
 - `.planning/intel/classifications/*handoff*.json` — ingestion classifications, not handoffs.
 - `.planning/tmp/**`, `web/node_modules/**/serverHandoff.js` — ignored/generated artifacts, not
   repository state documents.
 
 ---
 
-*Concerns map: 2026-08-28 through `a357a7b75b34d4d31f0ee6cf716626675610e39a`;
-last full adversarial audit: 2026-08-27 at `8e15e14b12f6cfb4eb9951f4563505478c1e3a70`.*
+*Concerns map and full adversarial audit: 2026-08-28 through `a6242a054`.*

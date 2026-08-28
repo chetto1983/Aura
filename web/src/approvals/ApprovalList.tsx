@@ -1,6 +1,7 @@
 import { ExternalLink, Inbox } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
+import { approvalQuestion } from './approvalQuestion';
 import { isTerminal } from './approvalState';
 import { useApprovals, type Approval } from './useApprovals';
 import { Badge } from '@/components/ui/badge';
@@ -18,8 +19,8 @@ import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empt
 // state (`Expired — auto-resolved.`, text-warning) — it is NEVER silently dropped,
 // so the operator does not lose track of a background HITL.
 //
-// Questions render as React text nodes (auto-escaped); the row never uses raw HTML
-// (T-25-20).
+// Localized approval presentations and canonical fallbacks both render as React text nodes
+// (auto-escaped); the row never uses raw HTML (T-25-20).
 
 export interface ApprovalListProps {
   /** Title lookup for a conversation id (the sidebar's cached titles); falls back
@@ -88,7 +89,7 @@ function ApprovalRow({ row, title, onOpen }: ApprovalRowProps) {
       <Card className="gap-2 bg-surface-2 p-2">
         <p className="truncate text-[0.8125rem] font-medium text-text">
           {title} <span className="text-text-faint">·</span>{' '}
-          <span className="font-normal text-text-muted">{row.question}</span>
+          <span className="font-normal text-text-muted">{approvalQuestion(row, t)}</span>
         </p>
         <div className="flex items-center justify-between gap-2">
           {terminal ? (
