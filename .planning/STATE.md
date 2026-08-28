@@ -4,16 +4,16 @@ milestone: v2.1.0
 current_phase: 51
 current_phase_name: Durable delegation
 status: executing
-stopped_at: Completed 51-05-PLAN.md (SWARM-04/05 depth-bounded nesting, SWARM-08 extended regression guard)
-last_updated: "2026-08-28T08:14:26.919Z"
+stopped_at: Completed 51-10-PLAN.md (SWARM-03 SC#1 conversation record, SWARM-09 absent-operator channel nudge)
+last_updated: "2026-08-28T10:34:05.000Z"
 last_activity: 2026-08-28
 last_activity_desc: Phase 51 execution resumed (wave continue)
-state_head: a871b95779fe3cd2b6706b377c07dee396691372
+state_head: 2d9a65dcd62870de7631e4a5d5cc0a9131f3ae74
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 45
-  completed_plans: 39
+  completed_plans: 40
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -121,6 +121,7 @@ Progress: [████████░░] 82%
 | Phase 51 P04 | 215min | 3 tasks | 21 files |
 | Phase 51 P03 | ~55 min | 2 tasks | 12 files |
 | Phase 51 P05 | 40min | 2 tasks | 6 files |
+| Phase 51 P10 | ~1h30m | 2 tasks | 22 files |
 
 ## Accumulated Context
 
@@ -213,6 +214,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 51]: 51-03: widened the existing swarmRunner interface (Run(ctx, goals, context)) instead of adding a second interface, per 51-PATTERNS.md's explicit instruction
 - [Phase 51]: 51-03: exported SwarmCaps and swarm.MaxDepth() so cmd/aura's composition root can construct/read them cross-package, without adding AURA_SWARM_MAX_DEPTH to the Tier A/B knob registry
 - [Phase 51]: workerRegistry(rc RunConfig) not workerRegistry(parent, depth): the plan's two-arg signature could not actually bound recursion since the shared static RunnerAdapter's Depth never advances across nesting levels — A literal (parent, depth) reading would reuse the same tool object at every nesting level, pinning checkDepth's comparison at depth=1 forever and turning any AURA_SWARM_MAX_DEPTH>2 into unbounded recursion (T-51-18 DoS). The fix rebinds swarm_spawn to a fresh RunnerAdapter{Depth: rc.Depth+1} per grant.
+- [Phase 51]: 51-10 widened aura.pending_notifications (migration 0105) with a nullable steer_queue_id sibling to run_id rather than reusing agent_job_runs' FK or a second outbox table — the row the absent-operator nudge retries is a steer_queue row, not the (already-succeeded) delegation job; CHECK (run_id IS NOT NULL OR steer_queue_id IS NOT NULL) enforces exactly one owner
+- [Phase 51]: 51-10 claims a steer_queue nudge row (MarkSteerRowNudged's conditional UPDATE) BEFORE pushing to the channel, not after — generalizes DrainSteerRows' "the drain IS the claim" idiom to a sweep that spans a network call and cannot hold one transaction open across it; proven under real concurrency against live Postgres (TestNudgeOnceUnderConcurrency)
+- [Phase 51]: 51-10 wraps the RECORDED conversation copy with an explicit worker/goal attribution (attributedWorkerReport, T-51-38) but leaves the pushed steer copy raw/unchanged from 51-01 — one shared wrapper would have been wrong for either reader, since the steer copy earns its own attribution downstream at drain time
 
 ### Pending Todos
 
@@ -261,6 +265,8 @@ None yet.
 - **52-07 leaves must-have truth #1 literally unsatisfied, by measurement, and it needs an amendment.** The 52-07 plan's truth #1 says "the input is not dead and the send is not disabled"; its action text (line 280) says "whatever the Step-1 measurement requires -- a sendDisabled change AND/OR the dedicated control". The measurement forced the dedicated control, so assistant-ui's Send REMAINS disabled during a live run and the steer goes through a separate affordance. Truth and action text contradicted each other inside the same plan; per PRD-first (misura poi emenda) the measurement wins and the DOCUMENT must be corrected with date + evidence. 52-08 must either carry that amendment or the verifier will read truth #1 as an unmet must-have. Not a code defect -- a record defect.
 - **52-07's dist freshness is unproven by CI on this host.** The bundle was produced by a docker webbuild extraction rather than by `scripts/web_dist_freshness.sh`, which needs a native Linux Node 24. The CI job `web-dist-freshness` is the only real check; confirm it green on push before treating the committed dist as canonical.
 - Env catalog gap (found in 45.1-07, PRD-amendment shaped): the whole AURA_MCP_* family is uncatalogued in prd.md -- AURA_MCP_MOUNT_TIMEOUT and AURA_MCP_SHUTDOWN_TIMEOUT are absent, AURA_MCP_CALL_TIMEOUT_SEC appears only in amendment prose, and AURA_MCP_ELICITATION_TIMEOUT_SEC was deliberately not added alone
+- **51-10 owes a WSL/CI `-race` run** on `internal/swarm/...`, `internal/config/...`, `cmd/aura/...` (this Windows host has no cgo toolchain, `-race` cannot run here at all) — not fixed, not skipped-as-green, recorded per plan's own `<verification>` block; see `51-10-SUMMARY.md` Issues Encountered.
+- **51-10's channel fan-out and owns-but-failed leg are unexercised by real multi-channel concurrency**: Telegram is the only shipped `ChannelDeliverer`, so the candidate-choice-between-two-channels path has never actually been taken live; the `pending_notifications` retry/backoff itself is the SAME machinery `internal/cron` already relies on, reused not re-verified (Amendment #154 disclaimer, per plan text).
 
 ## Deferred Items
 
@@ -275,8 +281,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-28T08:14:26.769Z
-Stopped at: Completed 51-05-PLAN.md (SWARM-04/05 depth-bounded nesting, SWARM-08 extended regression guard)
+Last session: 2026-08-28T10:34:05.000Z
+Stopped at: Completed 51-10-PLAN.md (SWARM-03 SC#1 conversation record, SWARM-09 absent-operator channel nudge)
 exited at its CONTEXT.md gate — Phase 45 has no CONTEXT.md, and discuss-phase must run as a
 top-level command (nested invocation breaks AskUserQuestion, GSD #1009). No phase directory
 was created and no planning agents were spawned.
