@@ -4,7 +4,7 @@ milestone: v2.1.0
 current_phase: 51
 current_phase_name: Durable delegation
 status: executing
-stopped_at: Completed 51-06a-PLAN.md (SWARM-06 fencing/attribution guard rails; SWARM-06 not yet complete, pending 51-06b)
+stopped_at: Completed 51-06b-PLAN.md (SWARM-06 code-complete: worker opens own pause, resumes on the answer, TTL sweep with trace; live SC#4 proof owed by 51-08)
 last_updated: "2026-08-28T16:59:04.196Z"
 last_activity: 2026-08-28
 last_activity_desc: Phase 51 execution resumed (wave continue)
@@ -271,7 +271,7 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-08-28T16:58:23.764Z
-Stopped at: Completed 51-06a-PLAN.md (SWARM-06 fencing/attribution guard rails; SWARM-06 not yet complete, pending 51-06b)
+Stopped at: Completed 51-06b-PLAN.md (SWARM-06 code-complete: worker opens own pause, resumes on the answer, TTL sweep with trace; live SC#4 proof owed by 51-08)
 exited at its CONTEXT.md gate — Phase 45 has no CONTEXT.md, and discuss-phase must run as a
 top-level command (nested invocation breaks AskUserQuestion, GSD #1009). No phase directory
 was created and no planning agents were spawned.
