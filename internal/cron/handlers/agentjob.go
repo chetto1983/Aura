@@ -14,7 +14,7 @@ import (
 )
 
 // agentJobMaxDuration is the fallback wall-clock budget when AgentDeps.MaxDuration is
-// unset — mirrors the swarm child timeout default (AURA_SWARM_CHILD_TIMEOUT_SEC=120).
+// unset — mirrors the swarm worker's default inactivity deadline (AURA_SWARM_CHILD_IDLE_SEC=120).
 const agentJobMaxDuration = 120 * time.Second
 
 // autoRejectMarker is the synthesized RoleTool answer injected when an agent_job

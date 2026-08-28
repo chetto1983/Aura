@@ -26,8 +26,8 @@ func swarmSpawnParametersJSON(t *testing.T, tool *SwarmSpawn) map[string]any {
 // with different caps render two different schemas from the same source code —
 // proving nothing is a static literal.
 func TestSwarmSpawnSpecReflectsConfig(t *testing.T) {
-	capsA := SwarmCaps{MaxGoals: 8, MaxConcurrent: 3, ChildTimeoutSec: 120, MaxDepth: 2}
-	capsB := SwarmCaps{MaxGoals: 3, MaxConcurrent: 5, ChildTimeoutSec: 90, MaxDepth: 4}
+	capsA := SwarmCaps{MaxGoals: 8, MaxConcurrent: 3, ChildIdleSec: 120, MaxDepth: 2}
+	capsB := SwarmCaps{MaxGoals: 3, MaxConcurrent: 5, ChildIdleSec: 90, MaxDepth: 4}
 
 	toolA := &SwarmSpawn{Caps: capsA}
 	toolB := &SwarmSpawn{Caps: capsB}
@@ -56,7 +56,7 @@ func TestSwarmSpawnSpecReflectsConfig(t *testing.T) {
 	for _, want := range []string{
 		strconv.Itoa(capsA.MaxGoals),
 		strconv.Itoa(capsA.MaxConcurrent),
-		strconv.Itoa(capsA.ChildTimeoutSec),
+		strconv.Itoa(capsA.ChildIdleSec),
 		strconv.Itoa(capsA.MaxDepth),
 	} {
 		if !strings.Contains(rawA, want) {
@@ -65,9 +65,9 @@ func TestSwarmSpawnSpecReflectsConfig(t *testing.T) {
 	}
 
 	// The env var NAME must never appear in the rendered schema — only the value
-	// (plan 51-09 retires AURA_SWARM_CHILD_TIMEOUT_SEC; a hardcoded name would go
-	// stale silently).
-	for _, forbidden := range []string{"AURA_SWARM_MAX_GOALS", "AURA_SWARM_MAX_CONCURRENT", "AURA_SWARM_CHILD_TIMEOUT_SEC", "AURA_SWARM_MAX_DEPTH"} {
+	// (AURA_SWARM_CHILD_TIMEOUT_SEC was retired by plan 51-09 in favour of
+	// AURA_SWARM_CHILD_IDLE_SEC; a hardcoded name here would go stale silently).
+	for _, forbidden := range []string{"AURA_SWARM_MAX_GOALS", "AURA_SWARM_MAX_CONCURRENT", "AURA_SWARM_CHILD_IDLE_SEC", "AURA_SWARM_MAX_DEPTH"} {
 		if strings.Contains(rawA, forbidden) {
 			t.Errorf("rendered schema hardcodes env var name %q — must render the VALUE, not the name:\n%s", forbidden, rawA)
 		}
@@ -85,7 +85,7 @@ func TestSwarmSpawnSpecReflectsConfig(t *testing.T) {
 // above: renderSwarmSpawnParams must exist as the one production path building
 // Parameters.
 func TestSwarmSpawnSpecNoStaticParamsLiteral(t *testing.T) {
-	tool := &SwarmSpawn{Caps: SwarmCaps{MaxGoals: 5, MaxConcurrent: 2, ChildTimeoutSec: 60, MaxDepth: 2}}
+	tool := &SwarmSpawn{Caps: SwarmCaps{MaxGoals: 5, MaxConcurrent: 2, ChildIdleSec: 60, MaxDepth: 2}}
 	params := renderSwarmSpawnParams(tool.Caps)
 	if len(params) == 0 {
 		t.Fatal("renderSwarmSpawnParams returned empty output")

@@ -168,8 +168,9 @@ func classifyTask(raw json.RawMessage) scoring.RiskTier {
 // discouraged.
 //
 // The fan-out is bounded on every axis that could run away: AURA_SWARM_MAX_GOALS (8),
-// AURA_SWARM_MAX_CONCURRENT (4), AURA_SWARM_CHILD_TIMEOUT_SEC (120) and a budget preflight,
-// plus the AURA_SWARM_MAX_DEPTH guard behind the structural removal.
+// AURA_SWARM_MAX_CONCURRENT (4), AURA_SWARM_CHILD_IDLE_SEC (120, a worker is reaped
+// for silence rather than age — D-03) and a budget preflight, plus the
+// AURA_SWARM_MAX_DEPTH guard behind the structural removal.
 //
 // The AG-016 parity it was modelled on does not transfer. A scheduled agent_job saturates
 // upward because it runs LATER and UNATTENDED — the operator is not there to see it. A swarm

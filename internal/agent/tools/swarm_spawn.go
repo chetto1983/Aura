@@ -32,10 +32,16 @@ type swarmRunner interface {
 // model-facing tool schema is a different catalog, per 51-RESEARCH.md Open
 // Question 1).
 type SwarmCaps struct {
-	MaxGoals        int
-	MaxConcurrent   int
-	ChildTimeoutSec int
-	MaxDepth        int
+	MaxGoals      int
+	MaxConcurrent int
+	// ChildIdleSec is AURA_SWARM_CHILD_IDLE_SEC (D-03, plan 51-09): the per-worker
+	// INACTIVITY deadline a worker's own event loop resets on every progress event
+	// -- not a wall-clock age bound. Renamed from the retired
+	// AURA_SWARM_CHILD_TIMEOUT_SEC (Amendment #154 measured the wall clock as the
+	// wrong instrument: four workers, a 23x margin, the cap firing once on an
+	// upstream stall while the worker worth interrupting sailed under it).
+	ChildIdleSec int
+	MaxDepth     int
 }
 
 // swarmSpawnDescription is the load-bearing D-24 anti-over-spawn literal. It is the
@@ -155,19 +161,20 @@ type swarmSpawnItemsSpec struct {
 // renderSwarmSpawnParams builds swarm_spawn's JSON Parameters from the injected
 // live caps via a typed struct + encoding/json marshal — never a static
 // json.RawMessage literal (SWARM-02's own prohibition) and never a hardcoded
-// env var NAME (only the VALUE, per the plan's explicit prohibition: plan 51-09
-// retires AURA_SWARM_CHILD_TIMEOUT_SEC in favour of AURA_SWARM_CHILD_IDLE_SEC,
-// and a hardcoded name here would go stale silently). encoding/json marshals
-// map keys in sorted order, so the output is deterministic across repeated
-// calls with the same caps (Spec() is read at call time, never cached).
+// env var NAME (only the VALUE — AURA_SWARM_CHILD_TIMEOUT_SEC was retired by
+// plan 51-09 in favour of AURA_SWARM_CHILD_IDLE_SEC, and a hardcoded name here
+// would have gone stale silently). encoding/json marshals map keys in sorted
+// order, so the output is deterministic across repeated calls with the same
+// caps (Spec() is read at call time, never cached).
 func renderSwarmSpawnParams(caps SwarmCaps) json.RawMessage {
 	schema := swarmSpawnSchema{
 		Type: "object",
 		Description: fmt.Sprintf(
 			"Operator caps in effect for this call: up to %d goals per call, "+
-				"%d running concurrently per wave, each worker bounded to %d seconds, "+
-				"and nested delegation capped at depth %d.",
-			caps.MaxGoals, caps.MaxConcurrent, caps.ChildTimeoutSec, caps.MaxDepth),
+				"%d running concurrently per wave, each worker reaped after %d seconds "+
+				"with no progress (D-03: silence, not age), and nested delegation capped "+
+				"at depth %d.",
+			caps.MaxGoals, caps.MaxConcurrent, caps.ChildIdleSec, caps.MaxDepth),
 		Properties: map[string]swarmSpawnPropSpec{
 			"goals": {
 				Type:     "array",

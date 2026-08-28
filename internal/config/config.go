@@ -95,11 +95,12 @@ type Config struct {
 	WebFetchTimeoutSec   int    // AURA_WEB_FETCH_TIMEOUT_SEC — fetch wall-clock deadline (D-23)
 	WebUserAgent         string // AURA_WEB_USER_AGENT — see defaultWebUserAgent
 
-	// Phase 9 (Slice 3) swarm knobs (D-11/D-12/D-13). All non-fatal
-	// envutil.IntDefault fallbacks — a typo falls back rather than booting fatal.
-	MaxSwarmGoals        int // AURA_SWARM_MAX_GOALS — hard cap on goals per swarm_spawn call (D-13)
-	SwarmChildTimeoutSec int // AURA_SWARM_CHILD_TIMEOUT_SEC — per-child wall-clock deadline (D-11)
-	MaxSwarmConcurrent   int // AURA_SWARM_MAX_CONCURRENT — wave width; goals beyond this run in sequential waves (D-12)
+	// Phase 9 (Slice 3) swarm knobs (D-12/D-13). All non-fatal envutil.IntDefault
+	// fallbacks — a typo falls back rather than booting fatal. The per-child
+	// wall-clock deadline (D-11) that used to live here (AURA_SWARM_CHILD_TIMEOUT_SEC)
+	// is RETIRED — see SwarmChildIdleSec below (Phase 51, D-03).
+	MaxSwarmGoals      int // AURA_SWARM_MAX_GOALS — hard cap on goals per swarm_spawn call (D-13)
+	MaxSwarmConcurrent int // AURA_SWARM_MAX_CONCURRENT — wave width; goals beyond this run in sequential waves (D-12)
 
 	// Phase 51 (durable delegation) background-queue knobs. AURA_SWARM_CHILD_IDLE_SEC
 	// (D-03) is the inactivity deadline reset on every worker event; it must stay
@@ -447,9 +448,8 @@ func loadBase() *Config {
 		RunDirSweepIntervalSec:     envutil.IntDefault("AURA_RUN_DIR_SWEEP_INTERVAL_SEC", 3600),
 		ReasoningPersistMaxRunes:   envutil.IntDefault("AURA_REASONING_PERSIST_MAX_RUNES", 65536),
 
-		MaxSwarmGoals:        envutil.IntDefault("AURA_SWARM_MAX_GOALS", 8),
-		SwarmChildTimeoutSec: envutil.IntDefault("AURA_SWARM_CHILD_TIMEOUT_SEC", 120),
-		MaxSwarmConcurrent:   envutil.IntDefault("AURA_SWARM_MAX_CONCURRENT", 4),
+		MaxSwarmGoals:      envutil.IntDefault("AURA_SWARM_MAX_GOALS", 8),
+		MaxSwarmConcurrent: envutil.IntDefault("AURA_SWARM_MAX_CONCURRENT", 4),
 
 		SwarmChildIdleSec:       envutil.IntDefault("AURA_SWARM_CHILD_IDLE_SEC", 120),
 		SwarmDelegationLeaseSec: envutil.IntDefault("AURA_SWARM_DELEGATION_LEASE_SEC", 300),

@@ -32,7 +32,7 @@ func clearPostgresEnv(t *testing.T) {
 		"AURA_WEB_CACHE_PERSISTENT", "AURA_WEB_SEARCH_TIMEOUT_SEC",
 		"AURA_WEB_FETCH_TIMEOUT_SEC", "AURA_WEB_USER_AGENT",
 
-		"AURA_SWARM_MAX_GOALS", "AURA_SWARM_CHILD_TIMEOUT_SEC", "AURA_SWARM_MAX_CONCURRENT",
+		"AURA_SWARM_MAX_GOALS", "AURA_SWARM_CHILD_IDLE_SEC", "AURA_SWARM_MAX_CONCURRENT",
 		"AURA_AGUI_BIND", "AURA_AGUI_BUFFER_CAP", "AURA_AGUI_SSE_HEARTBEAT_SEC",
 		"AURA_AGUI_RUN_DETACH", "AURA_AGUI_RUN_BUFFER_EVENTS", "AURA_AGUI_RUN_LINGER_SEC",
 		"AURA_AGUI_RUN_MAX_WALLCLOCK_SEC", "AURA_AGUI_RUN_MAX_LIVE",
@@ -66,8 +66,10 @@ func clearPostgresEnv(t *testing.T) {
 	t.Setenv("OPENROUTER_API_KEY", "sk-test-config")
 }
 
-// TestSwarmConfigDefaultsAndOverrides locks the Phase 9 swarm knobs (D-11/D-12/D-13):
-// unset → builtin defaults; set → overrides.
+// TestSwarmConfigDefaultsAndOverrides locks the Phase 9/51 swarm knobs
+// (D-03/D-12/D-13): unset → builtin defaults; set → overrides.
+// AURA_SWARM_CHILD_TIMEOUT_SEC (D-11) is RETIRED — AURA_SWARM_CHILD_IDLE_SEC
+// (D-03, plan 51-09) is its replacement, asserted here instead.
 func TestSwarmConfigDefaultsAndOverrides(t *testing.T) {
 	clearPostgresEnv(t)
 
@@ -75,25 +77,40 @@ func TestSwarmConfigDefaultsAndOverrides(t *testing.T) {
 	if cfg.MaxSwarmGoals != 8 {
 		t.Errorf("MaxSwarmGoals default = %d, want 8", cfg.MaxSwarmGoals)
 	}
-	if cfg.SwarmChildTimeoutSec != 120 {
-		t.Errorf("SwarmChildTimeoutSec default = %d, want 120", cfg.SwarmChildTimeoutSec)
+	if cfg.SwarmChildIdleSec != 120 {
+		t.Errorf("SwarmChildIdleSec default = %d, want 120", cfg.SwarmChildIdleSec)
 	}
 	if cfg.MaxSwarmConcurrent != 4 {
 		t.Errorf("MaxSwarmConcurrent default = %d, want 4", cfg.MaxSwarmConcurrent)
 	}
 
 	t.Setenv("AURA_SWARM_MAX_GOALS", "5")
-	t.Setenv("AURA_SWARM_CHILD_TIMEOUT_SEC", "60")
+	t.Setenv("AURA_SWARM_CHILD_IDLE_SEC", "60")
 	t.Setenv("AURA_SWARM_MAX_CONCURRENT", "2")
 	cfg = LoadDB()
 	if cfg.MaxSwarmGoals != 5 {
 		t.Errorf("MaxSwarmGoals override = %d, want 5", cfg.MaxSwarmGoals)
 	}
-	if cfg.SwarmChildTimeoutSec != 60 {
-		t.Errorf("SwarmChildTimeoutSec override = %d, want 60", cfg.SwarmChildTimeoutSec)
+	if cfg.SwarmChildIdleSec != 60 {
+		t.Errorf("SwarmChildIdleSec override = %d, want 60", cfg.SwarmChildIdleSec)
 	}
 	if cfg.MaxSwarmConcurrent != 2 {
 		t.Errorf("MaxSwarmConcurrent override = %d, want 2", cfg.MaxSwarmConcurrent)
+	}
+}
+
+// TestSwarmChildTimeoutSecRetiredIsIgnored is the D-03/plan-51-09 dark-knob guard
+// (T-51-43 residual, documented not silently fixed): an operator's leftover
+// AURA_SWARM_CHILD_TIMEOUT_SEC in their environment is read by NOTHING. envutil
+// ignores it; the live bound is AURA_SWARM_CHILD_IDLE_SEC only.
+func TestSwarmChildTimeoutSecRetiredIsIgnored(t *testing.T) {
+	clearPostgresEnv(t)
+	t.Setenv("AURA_SWARM_CHILD_TIMEOUT_SEC", "999999")
+
+	cfg := LoadDB()
+	if cfg.SwarmChildIdleSec != 120 {
+		t.Errorf("a set-but-retired AURA_SWARM_CHILD_TIMEOUT_SEC must not affect "+
+			"SwarmChildIdleSec, got %d, want the untouched default 120", cfg.SwarmChildIdleSec)
 	}
 }
 

@@ -310,9 +310,9 @@ func buildBaseRegistryWithHandles(
 		swarmAdapter.Enqueuer = &swarm.DelegationEnqueuer{Store: documents.NewPostgresIngestionJobStore(pool)}
 	}
 	reg.Register(&tools.SwarmSpawn{Runner: swarmAdapter, Caps: tools.SwarmCaps{
-		MaxGoals:        cfg.MaxSwarmGoals,
-		MaxConcurrent:   cfg.MaxSwarmConcurrent,
-		ChildTimeoutSec: cfg.SwarmChildTimeoutSec,
+		MaxGoals:      cfg.MaxSwarmGoals,
+		MaxConcurrent: cfg.MaxSwarmConcurrent,
+		ChildIdleSec:  cfg.SwarmChildIdleSec,
 		// MaxDepth: AURA_SWARM_MAX_DEPTH, exported by internal/swarm for exactly
 		// this render (see swarm.MaxDepth's own doc comment on why it stays out
 		// of the Tier A/B knob registry).
