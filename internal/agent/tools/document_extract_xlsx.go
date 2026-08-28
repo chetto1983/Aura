@@ -3,8 +3,8 @@ package tools
 import (
 	"archive/zip"
 	"bytes"
+	"errors"
 	"fmt"
-	"io"
 	"strconv"
 	"strings"
 )
@@ -34,20 +34,22 @@ func extractXlsx(raw []byte) (string, error) {
 		names[f.Name] = true
 	}
 
-	shared, err := xlsxSharedStrings(zr, names)
+	budget := newOOXMLBudget()
+	shared, err := xlsxSharedStrings(zr, names, budget)
 	if err != nil {
 		return "", err
 	}
-	sheets, err := xlsxWorkbookSheets(zr)
+	sheets, err := xlsxWorkbookSheets(zr, budget)
 	if err != nil {
 		return "", err
 	}
-	rels, err := xlsxWorkbookRels(zr, names)
+	rels, err := xlsxWorkbookRels(zr, names, budget)
 	if err != nil {
 		return "", err
 	}
 
 	var out []string
+	outputBytes := 0
 	for _, sheet := range sheets {
 		if sheet.state == "hidden" || sheet.state == "veryHidden" {
 			continue
@@ -56,21 +58,44 @@ func extractXlsx(raw []byte) (string, error) {
 		if part == "" || !names[part] {
 			continue
 		}
-		data, err := xlsxReadZipMember(zr, part)
+		data, err := xlsxReadZipMember(zr, part, budget)
 		if err != nil {
+			if errors.Is(err, errOOXMLLimit) {
+				return "", err
+			}
 			continue
 		}
 		root, err := parseXMLTree(data)
 		if err != nil {
+			if errors.Is(err, errOOXMLLimit) {
+				return "", err
+			}
 			continue // malformed sheet XML: skip, matching read_extract's ET.ParseError swallow
 		}
 		rows := xlsxSheetRows(root, shared)
-		out = append(out, fmt.Sprintf("# ── Sheet: %s ──", sheet.name))
+		header := fmt.Sprintf("# ── Sheet: %s ──", sheet.name)
+		if err := addOOXMLOutput(&outputBytes, len(header)+1); err != nil {
+			return "", err
+		}
+		out = append(out, header)
 		for _, row := range rows {
+			rowBytes := max(0, len(row)-1)
+			for _, cell := range row {
+				rowBytes += len(cell)
+			}
+			if err := addOOXMLOutput(&outputBytes, rowBytes+1); err != nil {
+				return "", err
+			}
 			out = append(out, strings.Join(row, "\t"))
 		}
 		if len(rows) == 0 {
+			if err := addOOXMLOutput(&outputBytes, len("(empty)")+1); err != nil {
+				return "", err
+			}
 			out = append(out, "(empty)")
+		}
+		if err := addOOXMLOutput(&outputBytes, 1); err != nil {
+			return "", err
 		}
 		out = append(out, "")
 	}
@@ -80,28 +105,26 @@ func extractXlsx(raw []byte) (string, error) {
 	return strings.TrimRight(strings.Join(out, "\n"), "\n") + "\n", nil
 }
 
-func xlsxReadZipMember(zr *zip.Reader, name string) ([]byte, error) {
-	f, err := zr.Open(name)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = f.Close() }()
-	return io.ReadAll(f)
+func xlsxReadZipMember(zr *zip.Reader, name string, budget *ooxmlBudget) ([]byte, error) {
+	return budget.readMember(zr, name)
 }
 
-func xlsxSharedStrings(zr *zip.Reader, names map[string]bool) ([]string, error) {
+func xlsxSharedStrings(zr *zip.Reader, names map[string]bool, budget *ooxmlBudget) ([]string, error) {
 	if !names["xl/sharedStrings.xml"] {
 		return nil, nil
 	}
-	root, err := readZipXML(zr, "xl/sharedStrings.xml")
+	root, err := readZipXML(zr, "xl/sharedStrings.xml", budget)
 	if err != nil {
+		if errors.Is(err, errOOXMLLimit) {
+			return nil, err
+		}
 		return nil, nil // malformed: matches read_extract's parse-error swallow (returns [])
 	}
 	var out []string
 	for _, si := range xmlDescendants(root, spreadsheetNS, "si") {
 		var b strings.Builder
 		for _, t := range xmlDescendants(si, spreadsheetNS, "t") {
-			b.WriteString(t.text)
+			_, _ = b.Write(t.text)
 		}
 		out = append(out, b.String())
 	}
@@ -110,8 +133,8 @@ func xlsxSharedStrings(zr *zip.Reader, names map[string]bool) ([]string, error) 
 
 type xlsxSheetMeta struct{ name, state, relID string }
 
-func xlsxWorkbookSheets(zr *zip.Reader) ([]xlsxSheetMeta, error) {
-	root, err := readZipXML(zr, "xl/workbook.xml")
+func xlsxWorkbookSheets(zr *zip.Reader, budget *ooxmlBudget) ([]xlsxSheetMeta, error) {
+	root, err := readZipXML(zr, "xl/workbook.xml", budget)
 	if err != nil {
 		return nil, err
 	}
@@ -130,13 +153,16 @@ func xlsxWorkbookSheets(zr *zip.Reader) ([]xlsxSheetMeta, error) {
 	return out, nil
 }
 
-func xlsxWorkbookRels(zr *zip.Reader, names map[string]bool) (map[string]string, error) {
+func xlsxWorkbookRels(zr *zip.Reader, names map[string]bool, budget *ooxmlBudget) (map[string]string, error) {
 	const relsPath = "xl/_rels/workbook.xml.rels"
 	if !names[relsPath] {
 		return map[string]string{}, nil
 	}
-	root, err := readZipXML(zr, relsPath)
+	root, err := readZipXML(zr, relsPath, budget)
 	if err != nil {
+		if errors.Is(err, errOOXMLLimit) {
+			return nil, err
+		}
 		return map[string]string{}, nil
 	}
 	out := map[string]string{}
@@ -223,7 +249,7 @@ func xlsxCellValue(c *xmlNode, shared []string) string {
 	value := ""
 	for _, v := range c.children {
 		if v.space == spreadsheetNS && v.local == "v" {
-			value = v.text
+			value = string(v.text)
 			break
 		}
 	}
@@ -238,7 +264,7 @@ func xlsxCellValue(c *xmlNode, shared []string) string {
 			if is.space == spreadsheetNS && is.local == "is" {
 				var b strings.Builder
 				for _, t := range xmlDescendants(is, spreadsheetNS, "t") {
-					b.WriteString(t.text)
+					_, _ = b.Write(t.text)
 				}
 				return b.String()
 			}

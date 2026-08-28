@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	pathpkg "path"
@@ -138,7 +139,7 @@ func extractNotebook(raw []byte) (string, error) {
 type xmlNode struct {
 	space, local string
 	attrs        map[string]string
-	text         string
+	text         []byte
 	children     []*xmlNode
 }
 
@@ -146,6 +147,8 @@ func parseXMLTree(data []byte) (*xmlNode, error) {
 	dec := xml.NewDecoder(bytes.NewReader(data))
 	var stack []*xmlNode
 	var root *xmlNode
+	nodes := 0
+	textBytes := 0
 	for {
 		tok, err := dec.Token()
 		if err == io.EOF {
@@ -156,6 +159,13 @@ func parseXMLTree(data []byte) (*xmlNode, error) {
 		}
 		switch t := tok.(type) {
 		case xml.StartElement:
+			if len(stack) >= maxOOXMLDepth {
+				return nil, ooxmlLimitErr("XML nesting exceeds %d elements", maxOOXMLDepth)
+			}
+			nodes++
+			if nodes > maxOOXMLNodes {
+				return nil, ooxmlLimitErr("XML tree exceeds %d elements", maxOOXMLNodes)
+			}
 			n := &xmlNode{space: t.Name.Space, local: t.Name.Local, attrs: map[string]string{}}
 			for _, a := range t.Attr {
 				n.attrs[a.Name.Local] = a.Value
@@ -173,7 +183,11 @@ func parseXMLTree(data []byte) (*xmlNode, error) {
 			}
 		case xml.CharData:
 			if len(stack) > 0 {
-				stack[len(stack)-1].text += string(t)
+				textBytes += len(t)
+				if textBytes > maxOOXMLTextBytes {
+					return nil, ooxmlLimitErr("XML character data exceeds %d bytes", maxOOXMLTextBytes)
+				}
+				stack[len(stack)-1].text = append(stack[len(stack)-1].text, t...)
 			}
 		}
 	}
@@ -200,18 +214,19 @@ func xmlDescendants(n *xmlNode, space, local string) []*xmlNode {
 	return out
 }
 
-func readZipXML(zr *zip.Reader, name string) (*xmlNode, error) {
-	f, err := zr.Open(name)
+func readZipXML(zr *zip.Reader, name string, budget *ooxmlBudget) (*xmlNode, error) {
+	data, err := budget.readMember(zr, name)
 	if err != nil {
-		return nil, extractErr("missing %s", name)
-	}
-	defer func() { _ = f.Close() }()
-	data, err := io.ReadAll(f)
-	if err != nil {
+		if errors.Is(err, errOOXMLLimit) {
+			return nil, err
+		}
 		return nil, extractErr("reading %s: %v", name, err)
 	}
 	root, err := parseXMLTree(data)
 	if err != nil {
+		if errors.Is(err, errOOXMLLimit) {
+			return nil, err
+		}
 		return nil, extractErr("malformed XML in %s: %v", name, err)
 	}
 	return root, nil
@@ -228,19 +243,20 @@ func extractDocx(raw []byte) (string, error) {
 	if err != nil {
 		return "", extractErr("not a valid DOCX: %v", err)
 	}
-	root, err := readZipXML(zr, "word/document.xml")
+	root, err := readZipXML(zr, "word/document.xml", newOOXMLBudget())
 	if err != nil {
 		return "", err
 	}
 
 	var lines []string
+	outputBytes := 0
 	for _, para := range xmlDescendants(root, wordNS, "p") {
 		var buf strings.Builder
 		var walk func(*xmlNode)
 		walk = func(n *xmlNode) {
 			switch {
 			case n.space == wordNS && n.local == "t":
-				buf.WriteString(n.text)
+				_, _ = buf.Write(n.text)
 			case n.space == wordNS && n.local == "tab":
 				buf.WriteByte('\t')
 			case n.space == wordNS && (n.local == "br" || n.local == "cr"):
@@ -251,7 +267,12 @@ func extractDocx(raw []byte) (string, error) {
 			}
 		}
 		walk(para)
-		lines = append(lines, strings.Split(buf.String(), "\n")...)
+		for line := range strings.SplitSeq(buf.String(), "\n") {
+			if err := addOOXMLOutput(&outputBytes, len(line)+1); err != nil {
+				return "", err
+			}
+			lines = append(lines, line)
+		}
 	}
 
 	anyText := false

@@ -3,6 +3,7 @@ package tools
 import (
 	"archive/zip"
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -83,6 +84,53 @@ func TestExtractDocxRejectsNonZipAndMissingPart(t *testing.T) {
 	}
 }
 
+func TestExtractDocxRejectsCompressedAmplification(t *testing.T) {
+	// The workspace cap applies to compressed bytes. A highly compressible XML member can stay
+	// below that boundary while expanding far beyond it, so extraction needs its own limit.
+	doc := `<w:document xmlns:w="` + wordNS + `"><w:body><w:p><w:r><w:t>` +
+		strings.Repeat("x", (17<<20)) +
+		`</w:t></w:r></w:p></w:body></w:document>`
+	raw := zipOf(t, map[string]string{"word/document.xml": doc})
+	if len(raw) >= defaultFSMaxReadBytes {
+		t.Fatalf("regression fixture must pass the compressed workspace cap: %d bytes", len(raw))
+	}
+	if _, err := extractDocumentText("/workspace/bomb.docx", raw); err == nil ||
+		!errors.Is(err, errOOXMLLimit) {
+		t.Fatalf("compressed amplification must fail with the OOXML limit, got %v", err)
+	}
+}
+
+func TestExtractDocxRejectsExcessiveXMLDepth(t *testing.T) {
+	const nestedElements = 140
+	doc := `<w:document xmlns:w="` + wordNS + `"><w:body><w:p>` +
+		strings.Repeat("<w:custom>", nestedElements) + `<w:t>testo</w:t>` +
+		strings.Repeat("</w:custom>", nestedElements) +
+		`</w:p></w:body></w:document>`
+	if _, err := extractDocumentText("/workspace/deep.docx", zipOf(t, map[string]string{
+		"word/document.xml": doc,
+	})); err == nil || !errors.Is(err, errOOXMLLimit) {
+		t.Fatalf("excessive XML depth must fail with the OOXML limit, got %v", err)
+	}
+}
+
+func TestOOXMLBudgetRejectsAggregateExpansion(t *testing.T) {
+	raw := zipOf(t, map[string]string{
+		"a.xml": strings.Repeat("a", 48),
+		"b.xml": strings.Repeat("b", 48),
+	})
+	zr, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
+	if err != nil {
+		t.Fatalf("open fixture: %v", err)
+	}
+	budget := &ooxmlBudget{remaining: 80}
+	if _, err := budget.readMember(zr, "a.xml"); err != nil {
+		t.Fatalf("first member should fit the aggregate budget: %v", err)
+	}
+	if _, err := budget.readMember(zr, "b.xml"); !errors.Is(err, errOOXMLLimit) {
+		t.Fatalf("second member must exceed the aggregate budget, got %v", err)
+	}
+}
+
 // xlsxPackage assembles the four parts a workbook needs, so each test states only what it varies.
 func xlsxPackage(sheetXML, sharedXML, sheetName, state string) map[string]string {
 	parts := map[string]string{
@@ -119,6 +167,24 @@ func TestExtractXlsxResolvesSharedStringsAndCellTypes(t *testing.T) {
 	}
 	if strings.Contains(got, ">0<") {
 		t.Errorf("a shared-string index leaked as a value:\n%s", got)
+	}
+}
+
+func TestExtractXlsxRejectsRenderedOutputAmplification(t *testing.T) {
+	// One shared string can be referenced by every cell. Its XML stays small while the rendered
+	// table multiplies that value, so the output budget must be checked before strings.Join.
+	var cells strings.Builder
+	for range maxXlsxCols {
+		cells.WriteString(`<c t="s"><v>0</v></c>`)
+	}
+	sheet := `<worksheet xmlns="` + spreadsheetNS + `"><sheetData><row>` + cells.String() +
+		`</row></sheetData></worksheet>`
+	shared := `<sst xmlns="` + spreadsheetNS + `"><si><t>` + strings.Repeat("v", 40<<10) +
+		`</t></si></sst>`
+	_, err := extractDocumentText("/workspace/amplified.xlsx", zipOf(t,
+		xlsxPackage(sheet, shared, "Amplified", "visible")))
+	if !errors.Is(err, errOOXMLLimit) {
+		t.Fatalf("rendered shared-string amplification must hit the output limit, got %v", err)
 	}
 }
 

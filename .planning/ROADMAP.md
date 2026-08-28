@@ -753,11 +753,12 @@ replay; the skill is now permanent surface, not a compensating workaround awaiti
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 45. Harness correctness | 9/9 | Complete    | 2026-08-15 |
+| 45.1. Native MCP client | 8/8 | Complete | 2026-08-17 |
 | 46. MCP trust and facade | 9/9 | Complete — 7 executed, 46-08 no-go, 46-09 operator-closed | 2026-08-25 |
 | 49. Memory tiers | 0/TBD | Not started | - |
 | 50. Context ladder legibility | 0/TBD | Not started | - |
 | 51. Durable delegation | 3/11 | In Progress|  |
-| 52. Mid-turn steering | 7/8 | In Progress|  |
+| 52. Mid-turn steering | 8/8 | In Progress|  |
 | 54. Milestone exit | 0/TBD | Not started | - |
 
 ## Notes on conditional scope
