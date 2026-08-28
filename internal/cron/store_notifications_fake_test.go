@@ -15,8 +15,9 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// pendingRow returns the 11-column AuraPendingNotifications value-set in the
-// InsertPendingNotification/SweepDueNotifications RETURNING order.
+// pendingRow returns the 12-column AuraPendingNotifications value-set (migration 0105
+// added steer_queue_id) in the InsertPendingNotification/SweepDueNotifications
+// RETURNING order.
 func pendingRow(t *testing.T) []any {
 	t.Helper()
 	now := time.Date(2026, 6, 13, 9, 30, 0, 0, time.UTC)
@@ -32,6 +33,7 @@ func pendingRow(t *testing.T) []any {
 		pgtype.Timestamptz{Time: now, Valid: true},   // created_at
 		pgtype.Timestamptz{Time: now, Valid: true},   // updated_at
 		pgtype.Text{String: "id-owner", Valid: true}, // identity_id
+		pgtype.UUID{}, // steer_queue_id (unset for a RunID-owned row)
 	}
 }
 

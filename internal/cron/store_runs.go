@@ -15,6 +15,7 @@ import (
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -153,17 +154,30 @@ type PendingNotification struct {
 	// channel-independent route-back key for the deferred/failed sweep. "" for
 	// legacy/CLI rows (NULL column) → the sweep falls back to NotifyRoute.
 	IdentityID string
+	// SteerQueueID is the migration-0105 sibling of RunID: set instead of RunID
+	// when the row's owner is an aura.steer_queue row being retried (plan 51-10's
+	// delegation nudge sweep), which has no aura.agent_job_runs row. "" for every
+	// scheduler-originated row (unchanged).
+	SteerQueueID string
 }
 
 // InsertPendingNotificationParams carries one durable notification queue write.
+// Exactly one of RunID / SteerQueueID must be set — mirrors the DB-level
+// pending_notifications_owner_chk CHECK (migration 0105) so a wiring bug fails loud in
+// Go before the round trip, not as an opaque constraint-violation error.
 type InsertPendingNotificationParams struct {
-	RunID       string
-	NotifyRoute string
-	Body        string
-	NotifyAfter time.Time
-	Attempts    int
-	LastError   string
-	Status      string
+	// RunID is the owning aura.agent_job_runs row (the scheduler's own callers,
+	// unchanged). Leave empty when SteerQueueID is set instead.
+	RunID string
+	// SteerQueueID is the owning aura.steer_queue row (plan 51-10's delegation
+	// nudge sweep, owns-but-failed leg). Leave empty when RunID is set instead.
+	SteerQueueID string
+	NotifyRoute  string
+	Body         string
+	NotifyAfter  time.Time
+	Attempts     int
+	LastError    string
+	Status       string
 	// IdentityID snapshots the owning identity so the Step-2 sweep can route the
 	// row back to its origin channel (empty → NULL → route fallback).
 	IdentityID string
@@ -188,11 +202,29 @@ func (s *Store) ScanStaleRuns(ctx context.Context, staleSeconds float64) ([]Stal
 }
 
 // InsertPendingNotification persists a notification that must be delivered by a
-// later scheduler sweep: either a quiet-hours defer or a failed MCP self-send.
+// later scheduler sweep: either a quiet-hours defer, a failed MCP self-send, or (plan
+// 51-10) a delegation nudge's owns-but-failed leg. Exactly one of RunID /
+// SteerQueueID must be set — mirrored in Go ahead of the DB-level
+// pending_notifications_owner_chk CHECK (migration 0105) so a wiring bug returns a
+// named Go error rather than an opaque constraint violation.
 func (s *Store) InsertPendingNotification(ctx context.Context, p InsertPendingNotificationParams) (PendingNotification, error) {
-	runID, err := db.ParseUUID("uuid", p.RunID)
-	if err != nil {
-		return PendingNotification{}, fmt.Errorf("insert pending notification: %w", err)
+	if (p.RunID == "") == (p.SteerQueueID == "") {
+		return PendingNotification{}, fmt.Errorf("insert pending notification: exactly one of RunID / SteerQueueID must be set")
+	}
+	var runID, steerQueueID pgtype.UUID
+	if p.RunID != "" {
+		var err error
+		runID, err = db.ParseUUID("uuid", p.RunID)
+		if err != nil {
+			return PendingNotification{}, fmt.Errorf("insert pending notification: %w", err)
+		}
+	}
+	if p.SteerQueueID != "" {
+		var err error
+		steerQueueID, err = db.ParseUUID("steer_queue_id", p.SteerQueueID)
+		if err != nil {
+			return PendingNotification{}, fmt.Errorf("insert pending notification: %w", err)
+		}
 	}
 	status := p.Status
 	if status == "" {
@@ -203,15 +235,16 @@ func (s *Store) InsertPendingNotification(ctx context.Context, p InsertPendingNo
 		notifyAfter = time.Now().UTC()
 	}
 	row, err := s.q.InsertPendingNotification(ctx, sqlc.InsertPendingNotificationParams{
-		ID:          newUUID(),
-		RunID:       runID,
-		NotifyRoute: text(p.NotifyRoute),
-		Body:        p.Body,
-		NotifyAfter: tsOrNull(notifyAfter),
-		Attempts:    int32(p.Attempts),
-		LastError:   text(p.LastError),
-		Status:      status,
-		IdentityID:  text(p.IdentityID),
+		ID:           newUUID(),
+		RunID:        runID,
+		SteerQueueID: steerQueueID,
+		NotifyRoute:  text(p.NotifyRoute),
+		Body:         p.Body,
+		NotifyAfter:  tsOrNull(notifyAfter),
+		Attempts:     int32(p.Attempts),
+		LastError:    text(p.LastError),
+		Status:       status,
+		IdentityID:   text(p.IdentityID),
 	})
 	if err != nil {
 		return PendingNotification{}, fmt.Errorf("insert pending notification for run %q: %w", p.RunID, err)
@@ -294,16 +327,17 @@ func (s *Store) MarkUnknownRecovery(ctx context.Context, runID string) error {
 
 func pendingNotificationFromRow(r sqlc.AuraPendingNotifications) PendingNotification {
 	return PendingNotification{
-		ID:          uuidString(r.ID),
-		RunID:       uuidString(r.RunID),
-		NotifyRoute: r.NotifyRoute.String,
-		Body:        r.Body,
-		NotifyAfter: r.NotifyAfter.Time,
-		Attempts:    int(r.Attempts),
-		LastError:   r.LastError.String,
-		Status:      r.Status,
-		CreatedAt:   r.CreatedAt.Time,
-		UpdatedAt:   r.UpdatedAt.Time,
-		IdentityID:  r.IdentityID.String,
+		ID:           uuidString(r.ID),
+		RunID:        uuidString(r.RunID),
+		NotifyRoute:  r.NotifyRoute.String,
+		Body:         r.Body,
+		NotifyAfter:  r.NotifyAfter.Time,
+		Attempts:     int(r.Attempts),
+		LastError:    r.LastError.String,
+		Status:       r.Status,
+		CreatedAt:    r.CreatedAt.Time,
+		UpdatedAt:    r.UpdatedAt.Time,
+		IdentityID:   r.IdentityID.String,
+		SteerQueueID: uuidString(r.SteerQueueID),
 	}
 }

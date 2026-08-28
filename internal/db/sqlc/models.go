@@ -482,6 +482,8 @@ type AuraPendingNotifications struct {
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 	// Stable owning identity snapshot (Phase 20, Fork 1): the channel-independent delivery key for the deferred/failed sweep route-back. Plain text, no FK — survives a deleted origin conversation. NULL for legacy/CLI rows → falls back to notify_route.
 	IdentityID pgtype.Text `json:"identity_id"`
+	// Plan 51-10: the owns-but-failed leg of the delegation nudge sweep (SWARM-03/09) inserts a retry row keyed on the aura.steer_queue row it is retrying delivery for -- NOT the (by then already-succeeded) aura.ingestion_jobs delegation row, since the nudge fires only after that job is long finished. NULL for every scheduler- originated row (unchanged). ON DELETE CASCADE mirrors run_id's own cleanup contract so a retry row can never outlive its owner.
+	SteerQueueID pgtype.UUID `json:"steer_queue_id"`
 }
 
 // Resumable provisioning/de-provisioning saga journal (Phase 36, D-14/D-27). MUTABLE: step status transitions pending -> done/failed for forward recovery. identity_id has NO FK so a de-provision saga survives the identity deletion it is executing.

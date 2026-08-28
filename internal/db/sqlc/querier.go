@@ -214,6 +214,9 @@ type Querier interface {
 	InsertPasswordResetChallenge(ctx context.Context, arg InsertPasswordResetChallengeParams) (AuraPasswordResetChallenges, error)
 	InsertPasswordResetToken(ctx context.Context, arg InsertPasswordResetTokenParams) (AuraPasswordResetTokens, error)
 	InsertPausedState(ctx context.Context, arg InsertPausedStateParams) error
+	// run_id / steer_queue_id are both nullable (migration 0105); the DB-level
+	// pending_notifications_owner_chk CHECK is the enforcement point, mirrored in Go by
+	// cron.Store.InsertPendingNotification so a wiring bug fails loud before the round trip.
 	InsertPendingNotification(ctx context.Context, arg InsertPendingNotificationParams) (AuraPendingNotifications, error)
 	InsertRun(ctx context.Context, arg InsertRunParams) (AuraAgentJobRuns, error)
 	InsertSkillAudit(ctx context.Context, arg InsertSkillAuditParams) (AuraSkillAudit, error)
@@ -333,6 +336,13 @@ type Querier interface {
 	// not present) yields an empty path. Walk terminates at parent_seq IS NULL (the root).
 	ListTurnsByBranchPath(ctx context.Context, arg ListTurnsByBranchPathParams) ([]ListTurnsByBranchPathRow, error)
 	ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID) ([]ListTurnsBySeqRow, error)
+	// Plan 51-10's absent-operator leg: delegation_result rows the operator never drained
+	// (drained_at IS NULL), not expired, not already nudged, past the nudge grace window.
+	// A drained row is EXCLUDED by construction (the operator already received it inside a
+	// turn -- D-04 -- so nudging it would tell them twice). Unscoped by identity like
+	// ListDueSteerRows (aura.steer_queue carries no RLS, migration 0103): a system-wide
+	// sweep, not a per-identity request -- each returned row carries its own identity_id.
+	ListUnnudgedDelegationResults(ctx context.Context, arg ListUnnudgedDelegationResultsParams) ([]AuraSteerQueue, error)
 	LockConversationForTurnAppend(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 	// This must run on transaction-bound Queries because autocommit releases the row lock when the statement returns.
 	LockOperationReceipt(ctx context.Context, arg LockOperationReceiptParams) (LockOperationReceiptRow, error)
@@ -360,6 +370,11 @@ type Querier interface {
 	// already-expired row affects 0 rows rather than re-writing a duplicate conversation
 	// trace (D-07's "the sweep is idempotent").
 	MarkSteerRowExpired(ctx context.Context, arg MarkSteerRowExpiredParams) (int64, error)
+	// The conditional UPDATE ... WHERE nudged_at IS NULL IS the idempotency key (SWARM-09
+	// edge): two concurrent sweep passes over the SAME row nudge exactly once -- the
+	// winner sees RowsAffected==1, the loser sees 0 and skips its own push-outcome
+	// bookkeeping for that row.
+	MarkSteerRowNudged(ctx context.Context, arg MarkSteerRowNudgedParams) (int64, error)
 	MarkUnknownRecovery(ctx context.Context, id pgtype.UUID) error
 	NextAssetEventSeq(ctx context.Context, assetID pgtype.UUID) (int32, error)
 	NextConversationTurnSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)

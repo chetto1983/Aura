@@ -94,3 +94,30 @@ SET expired_at = now(), expiry_reason = sqlc.arg(expiry_reason)
 WHERE id = sqlc.arg(id)
   AND identity_id = sqlc.arg(identity_id)
   AND expired_at IS NULL;
+
+-- name: ListUnnudgedDelegationResults :many
+-- Plan 51-10's absent-operator leg: delegation_result rows the operator never drained
+-- (drained_at IS NULL), not expired, not already nudged, past the nudge grace window.
+-- A drained row is EXCLUDED by construction (the operator already received it inside a
+-- turn -- D-04 -- so nudging it would tell them twice). Unscoped by identity like
+-- ListDueSteerRows (aura.steer_queue carries no RLS, migration 0103): a system-wide
+-- sweep, not a per-identity request -- each returned row carries its own identity_id.
+SELECT * FROM aura.steer_queue
+WHERE kind = 'delegation_result'
+  AND drained_at IS NULL
+  AND expired_at IS NULL
+  AND nudged_at IS NULL
+  AND created_at < sqlc.arg(cutoff)::timestamptz
+ORDER BY created_at, id
+LIMIT sqlc.arg(row_limit);
+
+-- name: MarkSteerRowNudged :execrows
+-- The conditional UPDATE ... WHERE nudged_at IS NULL IS the idempotency key (SWARM-09
+-- edge): two concurrent sweep passes over the SAME row nudge exactly once -- the
+-- winner sees RowsAffected==1, the loser sees 0 and skips its own push-outcome
+-- bookkeeping for that row.
+UPDATE aura.steer_queue
+SET nudged_at = now()
+WHERE id = sqlc.arg(id)
+  AND identity_id = sqlc.arg(identity_id)
+  AND nudged_at IS NULL;

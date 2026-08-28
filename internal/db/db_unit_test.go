@@ -357,13 +357,13 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A deliberate pin, moved deliberately: 0104 admits the system-seeded
-	// observability_check kind after its handler and deployment switch were added. The
-	// test exists so a migration added without noticing breaks the build rather than the
-	// deployment, so bumping it is the intended way to acknowledge one -- never a fixup to
-	// make a red go away.
-	if head != 104 {
-		t.Fatalf("MigrationHead=%d, want embedded head 104", head)
+	// A deliberate pin, moved deliberately: 0105 widens aura.pending_notifications to
+	// accept an aura.steer_queue row as an alternate owner (plan 51-10's delegation
+	// nudge sweep retry-outbox leg). The test exists so a migration added without
+	// noticing breaks the build rather than the deployment, so bumping it is the
+	// intended way to acknowledge one -- never a fixup to make a red go away.
+	if head != 105 {
+		t.Fatalf("MigrationHead=%d, want embedded head 105", head)
 	}
 }
 
