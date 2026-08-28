@@ -9323,3 +9323,73 @@ flusso completo, che funziona.
 > missing watermark/cycle/work-ceiling without advancing compaction, and prove covered
 > sidecars are not read. The post-implementation benchmark above is the reproducible performance
 > witness; it establishes this appliance/filesystem boundary, not a universal latency claim.
+
+## §The document oracle proves full-file computation and scanned-PDF OCR (Amendment #170, 2026-08-28)
+
+> **Amendment #170 (2026-08-28 — current pipeline audit, official pattern comparison and
+> live private-workbook witness).** The former 21-file release corpus proved ranked retrieval
+> over small text/XLSX documents, but no behavior case required the original-file path and no
+> fixture lacked a PDF text layer. That left two different capabilities unproved: an aggregate
+> that cannot exist in a retrieved chunk, and OCR of a real scan. A generated image-only PDF
+> measured against the shipped `iscc-tika` path returned only whitespace, confirming the latter
+> was an implementation gap rather than a test-only omission.
+>
+> **External pattern boundary.** LibreChat's official OCR documentation gives configured OCR
+> precedence over speech-to-text and its document parser, while its upload-as-text path documents
+> the parser fallback. Hermes' owned PDF skill extracts an existing text layer first and hands
+> scanned/image-only pages to OCR/vision. Aura adopts the narrower Hermes-style decision at the
+> complete-file boundary: digital PDFs stay on the fast local Tika route; only a PDF whose full
+> extracted text is blank is rasterized. CocoIndex still owns the single memoized `process_file`
+> transform and its model/config fingerprint, so this does not create a parallel ingestion graph.
+> References: `https://www.librechat.ai/docs/features/ocr`,
+> `https://www.librechat.ai/docs/features/upload_as_text`, and
+> `https://github.com/NousResearch/hermes-agent/blob/main/skills/productivity/pdf/SKILL.md`.
+>
+> **OCR boundary.** `aura-media-index` renders into a private temporary directory with
+> `pdftoppm`, bounds the raster to 2048 pixels on its long side and accepts at most 20 pages.
+> It deliberately asks for page 21 and rejects the whole document if that page exists; a large
+> scan can never look like a successfully indexed truncated scan. Rendering has a two-minute
+> deadline, every page must produce non-empty vision text, and any page failure fails the
+> component so the existing bucket-versus-index audit names the missing document. Visible image
+> instructions remain inert document data under the existing neutral OCR prompt.
+>
+> The vision request uses the same `AURA_VISION_CLOUD`, `AURA_LLM_PROVIDER`,
+> `AURA_LLM_MODEL` and `AURA_LLM_BASE_URL` rows the cockpit already owns. No OCR-model row,
+> fallback selector or frontend control is added. The runtime setting was exercised with
+> `AURA_VISION_CLOUD=true` and the existing primary rows pointed at Ollama
+> `gemma4:31b-cloud`; `/api/show` reported `vision` and the scanned-PDF wire call returned the
+> expected Italian text. The same API did not report `audio`, so this measurement does not widen
+> Aura's separate STT contract based on a catalog badge.
+>
+> **Owned oracle.** The hash-pinned corpus is now 23 files. Its 5,000-row workbook contains no
+> precomputed answer for the requested filtered multiplication sum; the real production Runner
+> must complete `document_search -> document_open -> shell_exec` in order and return `533030`.
+> Its one-page Italian PDF contains only a raster image and must return `ITALIA-7391`, `48270`
+> and `GIULIA BIANCHI` through `document_search` without web tools. `agenteval.Case` has a
+> dedicated ordered-tool-sequence assertion because the existing `RequiredTools` field is
+> intentionally any-of and would otherwise permit a false green after search alone.
+>
+> **Live evidence.** A disposable Garage/CocoIndex/ArcadeDB run indexed 23/23 files with zero
+> missing, preserved add/modify/delete and live-refresh behavior, and passed all eleven production
+> agent cases on the free Gemma route in 98.9 seconds. Separately, the operator-supplied private
+> workbook (58,634 data rows) was mounted read-only, uploaded only to a disposable bucket and
+> queried without logging customer rows. The agent returned the independently calculated
+> aggregate `262` after the required search/open/shell sequence; cleanup removed the bucket,
+> database, sandbox containers and state volume. The private workbook and its path are not part
+> of the repository corpus.
+>
+> A second disposable witness used the operator-supplied public 96-page `Costituzione.pdf`.
+> Tika produced 30 passages while `AURA_MEDIA_INDEX_BIN` deliberately pointed to a nonexistent
+> executable, proving that a digital PDF does not spend a vision call. A search-only attempt did
+> not rank the article-58 footnote, so the release oracle preserves the honest full-file route:
+> `document_search -> document_open -> shell_exec`. The real Gemma/Ollama agent completed that
+> sequence in seven LLM calls and returned the edition-specific law date and Gazzetta Ufficiale
+> number/date exactly. The PDF, its local path, disposable bucket/database/volume and temporary
+> Ollama proxy are not retained in the repository or runtime.
+>
+> **Evidence boundary.** These tests prove one Italian raster scan, bounded multi-page
+> orchestration, one synthetic whole-workbook aggregate and one private large-workbook witness.
+> They do not claim handwriting quality, arbitrary document-layout accuracy, PDFs over 20 pages,
+> every Office producer variant or direct native-audio support from Gemma. Ranking remains the
+> existing diagnostic RRF report; the retired reranker and an invented abstention threshold do
+> not return.

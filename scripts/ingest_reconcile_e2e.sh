@@ -8,6 +8,22 @@ repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$repo_root"
 candidate_sha="$(git rev-parse HEAD)"
 
+# The repository .env is CRLF because it is shared with Windows. Normalize only the
+# sourced stream; never rewrite the operator's file. Loading it before ingestion lets
+# aura-media-index overlay the same DB-backed model choice the cockpit uses.
+set -a
+source <(sed 's/\r$//' .env)
+set +a
+# Live release gates may use a zero-cost OpenAI-compatible model without changing
+# product defaults. These are test-process overrides only; ingestion itself still reads
+# the cockpit-owned aura.settings rows through AURA_DB_URL below.
+export AURA_LLM_PROVIDER="${AURA_DOCUMENT_E2E_LLM_PROVIDER:-${AURA_LLM_PROVIDER:-openrouter}}"
+export AURA_LLM_MODEL="${AURA_DOCUMENT_E2E_LLM_MODEL:-${AURA_LLM_MODEL:-}}"
+export AURA_LLM_BASE_URL="${AURA_DOCUMENT_E2E_LLM_BASE_URL:-${AURA_LLM_BASE_URL:-}}"
+if [ -n "${AURA_DOCUMENT_E2E_LLM_API_KEY:-}" ]; then
+  export OPENROUTER_API_KEY="$AURA_DOCUMENT_E2E_LLM_API_KEY"
+fi
+
 retrieval_fixture="$repo_root/scripts/fixtures/document_retrieval_eval"
 retrieval_report_dir="${AURA_DOCUMENT_EVAL_REPORT_DIR:-$repo_root/artifacts/document-retrieval-eval}"
 
@@ -28,7 +44,7 @@ identity_id_b="$(python3 -c 'import uuid; print(uuid.uuid4())')"
 arcade_db_b="mem_${identity_id_b//-/_}"
 marker_b="VERMILION${suffix//-/}"
 
-for c in aura-arcadedb aura-garage aura-llama-embed; do
+for c in aura-postgres aura-arcadedb aura-garage aura-llama-embed aura-ingest; do
   if [ "$(docker inspect -f '{{.State.Running}}' "$c" 2>/dev/null || echo false)" != "true" ]; then
     echo "FAIL: $c is not running -- bring the stack up first" >&2
     exit 1
@@ -37,6 +53,13 @@ done
 
 arcade_pw="$(docker inspect aura-arcadedb --format '{{range .Config.Env}}{{println .}}{{end}}' \
   | grep -oP '(?<=rootPassword=)\S+')"
+settings_db_url=""
+while IFS= read -r entry; do
+  case "$entry" in
+    AURA_DB_URL=*) settings_db_url="${entry#AURA_DB_URL=}" ;;
+  esac
+done < <(docker inspect aura-ingest --format '{{range .Config.Env}}{{println .}}{{end}}')
+[ -n "$settings_db_url" ] || { echo "FAIL: aura-ingest has no AURA_DB_URL" >&2; exit 1; }
 
 scratch="$(mktemp -d)"
 access_key=""
@@ -161,11 +184,17 @@ run_pass() {
   if ! docker run --rm --network "$net" \
     -e ARCADEDB_PASSWORD="$arcade_pw" -e ARCADE_HTTP="http://aura-arcadedb:2480" \
     -e ARCADE_BOLT="bolt://aura-arcadedb:7687" \
+    -e AURA_DB_URL="$settings_db_url" \
+    -e AURA_LLM_PROVIDER="$AURA_LLM_PROVIDER" -e AURA_LLM_MODEL="$AURA_LLM_MODEL" \
+    -e AURA_LLM_BASE_URL="$AURA_LLM_BASE_URL" -e OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}" \
+    -e MULTIMODAL_BASE_URL="http://aura-ocr-vl:8082/v1" \
+    -e MULTIMODAL_MODEL="${MULTIMODAL_MODEL:-glm-ocr}" \
+    -e MULTIMODAL_TIMEOUT_SEC="${MULTIMODAL_TIMEOUT_SEC:-120}" \
     -e AURA_INGEST_IDENTITY_ID="$identity_id" \
     -e AURA_INGEST_S3_ENDPOINT="http://aura-garage:3900" -e AURA_INGEST_S3_BUCKET="$bucket" \
     -e AURA_INGEST_S3_ACCESS_KEY_ID="$access_key" -e AURA_INGEST_S3_SECRET_ACCESS_KEY="$secret_key" \
     -v "$volume:/state" \
-    "$img" > "$log" 2>&1; then
+    --entrypoint python "$img" -m ingest.app > "$log" 2>&1; then
     cat "$log" >&2
     return 1
   fi
@@ -345,11 +374,17 @@ echo "== Assertion (d): live mode really performs a second cycle =="
 container_id="$(docker run -d --network "$net" \
   -e ARCADEDB_PASSWORD="$arcade_pw" -e ARCADE_HTTP="http://aura-arcadedb:2480" \
   -e ARCADE_BOLT="bolt://aura-arcadedb:7687" \
+  -e AURA_DB_URL="$settings_db_url" \
+  -e AURA_LLM_PROVIDER="$AURA_LLM_PROVIDER" -e AURA_LLM_MODEL="$AURA_LLM_MODEL" \
+  -e AURA_LLM_BASE_URL="$AURA_LLM_BASE_URL" -e OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}" \
+  -e MULTIMODAL_BASE_URL="http://aura-ocr-vl:8082/v1" \
+  -e MULTIMODAL_MODEL="${MULTIMODAL_MODEL:-glm-ocr}" \
+  -e MULTIMODAL_TIMEOUT_SEC="${MULTIMODAL_TIMEOUT_SEC:-120}" \
   -e AURA_INGEST_IDENTITY_ID="$identity_id" \
   -e AURA_INGEST_S3_ENDPOINT="http://aura-garage:3900" -e AURA_INGEST_S3_BUCKET="$bucket" \
   -e AURA_INGEST_S3_ACCESS_KEY_ID="$access_key" -e AURA_INGEST_S3_SECRET_ACCESS_KEY="$secret_key" \
   -e AURA_INGEST_LIVE=1 -e AURA_INGEST_INTERVAL_SEC=5 \
-  -v "$volume:/state" "$img")"
+  -v "$volume:/state" --entrypoint python "$img" -m ingest.app)"
 sleep 3
 run_py <<'PY'
 import asyncio, os
@@ -411,10 +446,13 @@ PY
 if ! docker run --rm --network "$net" \
   -e ARCADEDB_PASSWORD="$arcade_pw" -e ARCADE_HTTP="http://aura-arcadedb:2480" \
   -e ARCADE_BOLT="bolt://aura-arcadedb:7687" \
+  -e AURA_DB_URL="$settings_db_url" \
+  -e AURA_LLM_PROVIDER="$AURA_LLM_PROVIDER" -e AURA_LLM_MODEL="$AURA_LLM_MODEL" \
+  -e AURA_LLM_BASE_URL="$AURA_LLM_BASE_URL" -e OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}" \
   -e AURA_INGEST_IDENTITY_ID="$identity_id_b" \
   -e AURA_INGEST_S3_ENDPOINT="http://aura-garage:3900" -e AURA_INGEST_S3_BUCKET="$bucket_b" \
   -e AURA_INGEST_S3_ACCESS_KEY_ID="$access_key_b" -e AURA_INGEST_S3_SECRET_ACCESS_KEY="$secret_key_b" \
-  -v "$volume_b:/state" "$img" >"$scratch/run-b.log" 2>&1; then
+  -v "$volume_b:/state" --entrypoint python "$img" -m ingest.app >"$scratch/run-b.log" 2>&1; then
   cat "$scratch/run-b.log" >&2
   exit 1
 fi
@@ -434,14 +472,10 @@ print("ok: identity B marker exists only in its own per-identity projection")
 PY
 
 echo "== Latest migration round-trip and real-agent document E2E =="
-set -a
-# The repository .env is CRLF because it is shared with Windows. Normalize only the
-# sourced stream; never rewrite the operator's file.
-source <(sed 's/\r$//' .env)
-set +a
 export AURA_PROFILE=dev
-export AURA_DB_URL="postgres://aura_app:${POSTGRES_PASSWORD}@127.0.0.1:5432/aura?sslmode=disable"
-export AURA_DB_MIGRATE_URL="postgres://aura_migrate:${POSTGRES_PASSWORD}@127.0.0.1:5432/aura?sslmode=disable"
+export AURA_DB_URL="${settings_db_url/@postgres:5432/@127.0.0.1:5432}"
+export AURA_DB_URL="${AURA_DB_URL/@aura-postgres:5432/@127.0.0.1:5432}"
+export AURA_DB_MIGRATE_URL="${AURA_DB_URL/\/\/${AURA_DB_APP_ROLE:-aura_app}:/\/\/aura_migrate:}"
 export ARCADEDB_URL="http://127.0.0.1:2480"
 export ARCADEDB_ADMIN_USER=root
 export ARCADEDB_ADMIN_PASSWORD="$arcade_pw"
@@ -461,7 +495,7 @@ go test -tags db_integration -run '^TestMigrate0102BackfillsDecisionPolicyRoundT
 go test -tags document_live_e2e -run '^TestDocumentProductionAgentE2E$' \
   -timeout 5m -v ./cmd/aura
 
-echo "== Native document retrieval release eval: owned 21-file corpus / 20 qrels =="
+echo "== Native document retrieval release eval: owned 23-file corpus / 20 qrels =="
 (cd "$retrieval_fixture" && sha256sum -c corpus.sha256)
 run_py <<'PY'
 import asyncio, os
@@ -483,8 +517,8 @@ async def main():
 asyncio.run(main())
 PY
 run_pass
-[ "$EXTRACT_COUNT" -eq 21 ] || {
-  echo "FAIL: expected all 21 release fixtures to be extracted, got $EXTRACT_COUNT" >&2
+[ "$EXTRACT_COUNT" -eq 23 ] || {
+  echo "FAIL: expected all 23 release fixtures to be extracted, got $EXTRACT_COUNT" >&2
   exit 1
 }
 

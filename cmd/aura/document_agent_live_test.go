@@ -397,9 +397,48 @@ func TestDocumentCorpusAgentEval(t *testing.T) {
 				"emesse a marzo 2026.",
 			AnswerContains: []string{"2026_005", "2026_006", "2026_007"},
 		},
+		{
+			Name: "full-workbook-aggregate", Question: "Usa document_search per trovare il workbook movimenti analitici, " +
+				"poi document_open per aprire il file originale e shell_exec con Python/openpyxl per calcolare la somma di " +
+				"Quantita per PrezzoUnitario su tutte le righe in cui Centro e' ALFA e Stato e' VALIDO. " +
+				"Non stimare dai passaggi indicizzati. Rispondi con il totale solo in cifre, senza separatori.",
+			AnswerContains:       []string{"533030"},
+			RequiredTools:        []string{"document_search"},
+			RequiredToolSequence: []string{"document_search", "document_open", "shell_exec"},
+		},
+		{
+			Name: "scanned-pdf-ocr", Question: "Usa document_search sul verbale scansionato italiano. " +
+				"Dammi codice pratica, importo approvato e responsabile esattamente come compaiono nel documento.",
+			AnswerContains: []string{"ITALIA-7391", "48270", "GIULIA BIANCHI"},
+		},
+	}
+	if expected := strings.TrimSpace(os.Getenv("AURA_DOCUMENT_E2E_PRIVATE_WORKBOOK_EXPECTED")); expected != "" {
+		cases = append(cases, agenteval.Case{
+			Name: "private-workbook-full-file", Question: "Usa document_search per trovare il grande workbook clienti " +
+				"caricato, poi document_open e shell_exec con Python/openpyxl sul file originale. Conta tutte le righe " +
+				"dati in cui Prov. e' AL, CN oppure AT e la Descriz. Pagamento, dopo trim, e' lunga almeno 20 caratteri. " +
+				"Non mostrare dati cliente e non stimare dai passaggi indicizzati. Rispondi solo con il conteggio in cifre.",
+			AnswerContains:       []string{expected},
+			RequiredTools:        []string{"document_search"},
+			RequiredToolSequence: []string{"document_search", "document_open", "shell_exec"},
+		})
+	}
+	if os.Getenv("AURA_DOCUMENT_E2E_PUBLIC_CONSTITUTION") == "1" {
+		cases = append(cases, agenteval.Case{
+			Name: "public-constitution-pdf", Question: "Usa document_search soltanto per individuare il PDF " +
+				"della Costituzione caricato, poi document_open per aprire l'originale e un solo shell_exec con " +
+				"pdftotext per cercare la nota (1) dell'articolo 58 nel testo completo. Considera le parole " +
+				"sillabate a fine riga. Indica la data della legge costituzionale che ha modificato l'articolo e " +
+				"il numero e la data della Gazzetta Ufficiale. Rispondi solo con questi dati.",
+			AnswerContains:       []string{"18 ottobre 2021", "251", "20 ottobre 2021"},
+			RequiredTools:        []string{"document_search"},
+			RequiredToolSequence: []string{"document_search", "document_open", "shell_exec"},
+		})
 	}
 	for i := range cases {
-		cases[i].RequiredTools = []string{"document_search"}
+		if len(cases[i].RequiredTools) == 0 {
+			cases[i].RequiredTools = []string{"document_search"}
+		}
 		cases[i].ForbiddenTools = []string{"web_search", "web_fetch"}
 		// The complete production-agent measurement peaked at seven durable
 		// assistant turns. Nine leaves bounded recovery room without rejecting

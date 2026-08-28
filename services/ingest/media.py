@@ -11,6 +11,7 @@ _IMAGE_EXTENSIONS = frozenset({".gif", ".jpeg", ".jpg", ".png", ".webp"})
 _AUDIO_EXTENSIONS = frozenset({
     ".aac", ".flac", ".m4a", ".mp3", ".mp4", ".oga", ".ogg", ".opus", ".wav", ".webm",
 })
+_PDF_EXTENSION = ".pdf"
 
 CONFIG_FINGERPRINT = coco.ContextKey[str]("media_config_fingerprint", detect_change=True)
 _BINARY = "aura-media-index"
@@ -55,9 +56,25 @@ def derive(path: str, file_name: str) -> str:
     )
 
 
+def derive_scanned_pdf(path: str, file_name: str) -> str:
+    """Render and OCR an image-only PDF through the existing selected vision model."""
+    request_timeout = max(1, int(os.environ.get("MULTIMODAL_TIMEOUT_SEC", "120")))
+    return _run(
+        ["-kind", "pdf", "-name", file_name, path],
+        timeout=(3 * request_timeout) + 30,
+    )
+
+
 def index_text(path: str, file_name: str) -> str:
     if extract.extractable(path):
-        return extract.extract_text(path)
+        text = extract.extract_text(path)
+        # LibreChat gives configured OCR precedence over its document parser; Hermes
+        # extracts text first and hands image-only pages to vision. Aura takes the narrow
+        # latter boundary: digital PDFs stay on the fast local parser, while a PDF whose
+        # complete text layer is blank uses the already-selected, DB-overlaid vision route.
+        if pathlib.PurePath(path).suffix.lower() == _PDF_EXTENSION and not text.strip():
+            return extract_scanned_pdf(path, file_name)
+        return text
     return derive(path, file_name)
 
 
@@ -65,3 +82,9 @@ def index_text(path: str, file_name: str) -> str:
 def extract_text(path: str, file_name: str) -> str:
     coco.use_context(CONFIG_FINGERPRINT)
     return derive(path, file_name)
+
+
+@coco.fn(memo=True, version=1)
+def extract_scanned_pdf(path: str, file_name: str) -> str:
+    coco.use_context(CONFIG_FINGERPRINT)
+    return derive_scanned_pdf(path, file_name)
