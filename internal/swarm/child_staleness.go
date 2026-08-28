@@ -55,15 +55,11 @@ func newChildStaleness(cancel context.CancelFunc, idle time.Duration) *childStal
 // streaming. A no-op when idle<=0 disabled the timer, or once the deadline has
 // already fired (never re-arm a tripped deadline, mirroring idleWatchdog.reset's
 // same guard).
-//
-// RED (TDD): naive stub -- Reset is intentionally NOT called, so
-// TestChildStalenessResetKeepsAlive fails for a real reason (repeated progress
-// does not keep the worker alive) rather than a build error. GREEN restores the
-// real Reset call.
 func (cs *childStaleness) Progress() {
 	if cs == nil || cs.timer == nil || cs.stalled.Load() {
 		return
 	}
+	cs.timer.Reset(cs.idle)
 }
 
 // Stop releases the timer without firing cancel -- the normal-completion path

@@ -330,11 +330,18 @@ func isLoopbackEndpoint(endpoint string) bool {
 // disables inactivity reaping outright (leaving only the shared agent.Budget
 // wallclock as the ceiling), and a non-positive lease is a different malformed-
 // value class the generic reparse pass already flags.
-// RED (TDD): naive stub -- always passes, so TestGuardSwarmStaleness's refusal
-// subtests fail for a real reason (the boot gate never refuses) rather than a
-// build error. GREEN restores the real idle<lease comparison.
 func GuardSwarmStaleness(idleSec, leaseSec int) error {
-	return nil
+	if idleSec <= 0 || leaseSec <= 0 {
+		return nil
+	}
+	if idleSec < leaseSec {
+		return nil
+	}
+	return fmt.Errorf("config: AURA_SWARM_CHILD_IDLE_SEC=%d must be strictly less than "+
+		"AURA_SWARM_DELEGATION_LEASE_SEC=%d — a lease renewed only on worker events expires "+
+		"exactly `lease` seconds after the worker's last event, so an inactivity deadline "+
+		"that is not strictly shorter lets a reclaim race a goroutine that may still be alive",
+		idleSec, leaseSec)
 }
 
 // gateSwarmStaleness wraps GuardSwarmStaleness as a Violation: Fatal under a strict
