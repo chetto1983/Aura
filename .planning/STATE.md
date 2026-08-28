@@ -5,15 +5,15 @@ current_phase: 51
 current_phase_name: Durable delegation
 status: executing
 stopped_at: Completed 51-06a-PLAN.md (SWARM-06 fencing/attribution guard rails; SWARM-06 not yet complete, pending 51-06b)
-last_updated: "2026-08-28T12:16:13.245Z"
+last_updated: "2026-08-28T16:59:04.196Z"
 last_activity: 2026-08-28
 last_activity_desc: Phase 51 execution resumed (wave continue)
-state_head: 90997061c39ffba58548e5b386f509b2de77a655
+state_head: 9645a42821fcb337095a10a2d2bf0ec353663970
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 45
-  completed_plans: 41
+  completed_plans: 42
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -103,6 +103,7 @@ Progress: [██████████] 100% (Phase 46 dispositions)
 | Phase 51 P05 | 40min | 2 tasks | 6 files |
 | Phase 51 P10 | ~1h30m | 2 tasks | 22 files |
 | Phase 51-durable-delegation P06a | 90min | 1 tasks | 16 files |
+| Phase 51 P06b | ~4h (2 sessions) | 3 tasks | 22 files |
 
 ## Accumulated Context
 
@@ -201,6 +202,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 51]: [Phase 51] 51-06a: checkpoint resolved `new-columns` — owning_worker_id is a NEW host-written column; proxied_from_child_id/proxied_tool_call_id keep meaning exactly what they mean today (synchronous, model-relayed). paused_states_worker_attribution_exclusive CHECK makes the two mutually exclusive at the DB layer, enforcing T-51-47 rather than merely documenting it.
 - [Phase 51]: [Phase 51] 51-06a: MarkResumedBatchTx's map value type changed to FencedResumeAnswer (Tx-bound internal method only); the PUBLIC MarkResumedBatch/PauseStore interface signature stayed byte-identical to avoid rippling through 5+ existing test fakes across the repo.
 - [Phase 51]: [Phase 51] 51-06a: PoolResumeCommitter.CommitResume (single-claim) was also switched onto the fenced path, not only CommitResumeBatch -- ResumeClaim.ExpectActionID is one shared struct field for both, so leaving CommitResume unfenced would have been a silent gap for whichever resume shape 51-06b needs.
+- [Phase 51]: [Phase 51] 51-06b: a worker pause's expiry trace is a plain ASSISTANT turn in the origin conversation, not the RoleTool answer ExpirePendingApprovals writes -- the worker's ask_user tool_call lives in its own persisted history, so a RoleTool turn keyed by it in the origin conversation would be an orphan (wire-invalid); same shape 51-10's DelegationDelivery used to surface the question
+- [Phase 51]: [Phase 51] 51-06b: the TTL sweep's read joins from aura.ingestion_jobs into paused_states on the pause TOKEN this park cycle minted (ListExpiredAwaitingInputJobs), keeping internal/askuser untouched and the sweep per-identity/RLS-scoped like the observer; pause.created_at is the TTL clock as in ListExpiredPendingApprovals
+- [Phase 51]: [Phase 51] 51-06b: PoolWorkerPauseExpirer commits fenced claim + trace + queue-row resolution in ONE db.WithIdentityTx (D-08 extended to the queue row); a resolution matching zero rows after a successful claim is a hard rollback, never a skip. ExpireWorkerPauses takes Lister/Expirer per call (WorkerPauseSweepDeps) rather than widening runner.Deps for one sweep
+- [Phase 51]: [Phase 51] 51-06b: recovered from a session that died mid-plan with ~2000 uncommitted lines and notes describing Task 3 files that never existed; every claim was re-verified in WSL before commit and Task 3 was rebuilt RED->GREEN. One TestNudgeSkipsDrained (51-10) flake seen in 1/3 full swarm db_integration runs, green in isolation -- recorded, not hidden
 
 ### Pending Todos
 
@@ -265,7 +270,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-28T12:16:13.100Z
+Last session: 2026-08-28T16:58:23.764Z
 Stopped at: Completed 51-06a-PLAN.md (SWARM-06 fencing/attribution guard rails; SWARM-06 not yet complete, pending 51-06b)
 exited at its CONTEXT.md gate — Phase 45 has no CONTEXT.md, and discuss-phase must run as a
 top-level command (nested invocation breaks AskUserQuestion, GSD #1009). No phase directory
