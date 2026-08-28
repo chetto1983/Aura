@@ -18,8 +18,6 @@ type cliMemoryRegistry struct {
 	request          *idempotency.BeginRequest
 	replay           *idempotency.ReplayResult
 	marked           int
-	recover          bool
-	recovered        int
 	activeClaimToken idempotency.ClaimToken
 }
 
@@ -63,26 +61,6 @@ func (m *cliMemoryRegistry) MarkIndeterminate(
 	}
 	m.marked++
 	return nil
-}
-
-func (m *cliMemoryRegistry) RecoverExpired(
-	_ context.Context,
-	request idempotency.BeginRequest,
-) (idempotency.ClaimToken, bool, error) {
-	m.recovered++
-	if m.request == nil ||
-		m.request.Operation != request.Operation ||
-		m.request.Fingerprint != request.Fingerprint {
-		return 0, false, nil
-	}
-	if !m.recover {
-		return 0, false, nil
-	}
-	if m.activeClaimToken == 0 {
-		m.activeClaimToken = 1
-	}
-	m.activeClaimToken++
-	return m.activeClaimToken, true, nil
 }
 
 // cliOperationFromContext reads back what prepareCLIIdempotency stamped on the context.
