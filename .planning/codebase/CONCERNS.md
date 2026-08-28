@@ -17,7 +17,6 @@ current claims and references were consolidated here; Git history remains their 
 | Severity | Concern | Audit verdict |
 |---|---|---|
 | **Medium** | The owned document-agent oracle does not exercise the full-file or scanned-PDF lanes | **Confirmed; prior closure was too broad** |
-| **Medium** | Managed conversation history is truncated by a fixed 50-row default before token budgeting | **Confirmed; duplicated in the prior ledger** |
 | **Medium** | Aura cannot prove action-level coverage of the externally pinned Calendar/PIM fork | **Confirmed at the consumption boundary; fork internals not re-auditable here** |
 | **Low** | Server-generated approval questions remain hard-coded in English | **Confirmed from the old handoff** |
 
@@ -39,27 +38,6 @@ current claims and references were consolidated here; Git history remains their 
   is absent from every indexed chunk and (2) an Italian image-only PDF. The production Runner cases
   must require the appropriate full-file/OCR tools and exact answers. Keep the ranking report
   diagnostic; do not restore the dead reranker or invent an abstention threshold.
-
-### Medium — a fixed database-row cap precedes the token-aware context ladder
-
-- **What is true:** `AURA_HISTORY_HARD_CAP_TURNS` defaults to 50
-  (`internal/config/config.go:414`, `internal/config/config_knobs.go:93`, `.env.example:60`). Both
-  linear and selected-branch managed history pass that normalized row cap into their database
-  loaders before L1/L2/L2.5 token work (`internal/conversations/context.go:70-84,87-118`). Values
-  outside 4–1,000 silently normalize back to 50 (`internal/conversations/context.go:27-29,121-125`).
-- **Why it matters:** when no durable summary covers older turns, a large-window model cannot see
-  them even if its token budget has room. The row cap bounds legitimate database/sidecar/tokenizer
-  work, but the default is also the effective recall horizon.
-- **Measured 2026-08-28:** on a disposable database against the live Postgres 18.4 stack, the
-  existing query + rehydration + tokenizer path took 6.64/9.14/39.49/137.89 ms for
-  50/250/1,000/5,000 inline turns. The same sizes with one real 4 KiB sidecar per non-system
-  turn took 0.553/2.538/9.953/50.564 s. The current live corpus was too small to expose either
-  curve; the owned fixture is `internal/conversations/context_paging_benchmark_test.go`.
-- **Action:** measure query, sidecar-rehydration and tokenizer cost at larger windows, then advance
-  or paginate from the durable compaction watermark. Amendment #169 records the measured design:
-  50 becomes a query-page size, traversal must reach the exact watermark/root, covered sidecars
-  are not opened, and any independent work ceiling fails explicitly instead of returning a partial
-  history.
 
 ### Medium — Calendar/PIM action behavior is proved mainly by Aura's integration sample
 
@@ -92,6 +70,16 @@ current claims and references were consolidated here; Git history remains their 
 
 These compact entries prevent stale handoffs from reopening resolved work.
 
+- **Managed conversation history:** closed. `AURA_HISTORY_HARD_CAP_TURNS=50` remains the existing
+  compatibility knob but now controls keyset page size, not recall. Linear and selected-branch
+  loaders traverse to the exact durable compaction watermark or root, never accept a watermark
+  across a gap, never open covered sidecars, and fail explicitly at independent row/byte/sidecar
+  work ceilings instead of returning partial history (`internal/conversations/store_managed_history.go`,
+  `internal/db/queries/conversation_turns.sql`). Disposable-Postgres integration tests cover
+  multi-page linear/branch histories, invalid paths, missing watermarks and work limits. The owned
+  benchmark measured a 50-sidecar tail at 0.491/0.470/0.546 s with 250/1,000/5,000 total turns,
+  showing covered-prefix-independent I/O on this NTFS/WSL appliance; amendment #169 records the
+  boundary and the wider baseline.
 - **`read_file` OOXML expansion:** closed. Exact DOCX/XLSX extraction now rejects declared
   oversized members before opening them, verifies the actual stream through a `limit+1` reader,
   shares a 32 MiB decompression budget across the package, and caps XML depth, node count,

@@ -9,6 +9,7 @@ package conversations
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -194,5 +195,23 @@ func TestReadTurnSidecar_GuardsRunDirAndConvID(t *testing.T) {
 	absolute := &Store{runDir: t.TempDir()}
 	if _, err := absolute.readTurnSidecar("../escape", 1); err == nil {
 		t.Error("traversal conversation id must be rejected before the join")
+	}
+}
+
+func TestReadTurnSidecar_BoundedReadRejectsBeforeReservation(t *testing.T) {
+	t.Parallel()
+	runDir := t.TempDir()
+	s, convID := fenceStore(t, runDir, "did-spill")
+	writeReconstructed(t, runDir, convID, 2, "five!")
+	reserved := false
+	_, err := s.readTurnSidecarReserved(convID, 2, 4, func(int64) error {
+		reserved = true
+		return errors.New("must not run")
+	})
+	if err == nil {
+		t.Fatal("oversized sidecar must fail")
+	}
+	if reserved {
+		t.Fatal("oversized sidecar reserved aggregate bytes before its individual cap")
 	}
 }

@@ -14,14 +14,27 @@ const benchmarkSidecarBytes = 4096
 func BenchmarkManagedHistoryWork(b *testing.B) {
 	pool := migratedPool(b)
 	for _, turns := range []int{50, 250, 1000, 5000} {
-		for _, sidecars := range []bool{false, true} {
-			name := fmt.Sprintf("turns_%d/inline", turns)
-			if sidecars {
-				name = fmt.Sprintf("turns_%d/sidecar_%dB", turns, benchmarkSidecarBytes)
+		for _, mode := range []string{"inline", "sidecar", "compacted_sidecar"} {
+			if mode == "compacted_sidecar" && turns <= defaultHistoryPageTurns {
+				continue
 			}
+			sidecars := mode != "inline"
+			name := fmt.Sprintf("turns_%d/%s", turns, mode)
 			b.Run(name, func(b *testing.B) {
 				store := newStore(b, pool)
 				conversationID := seedManagedHistoryBenchmark(b, store, turns, sidecars)
+				want := turns
+				if mode == "compacted_sidecar" {
+					watermark := turns - defaultHistoryPageTurns
+					if err := store.SaveCompaction(ownerCtx(), conversationID, "", Compaction{
+						Summary:          "benchmark compacted prefix",
+						CoversThroughSeq: watermark,
+						SourceTurns:      watermark - 1,
+					}); err != nil {
+						b.Fatalf("save benchmark compaction: %v", err)
+					}
+					want = defaultHistoryPageTurns + 2
+				}
 				enc, err := encoder()
 				if err != nil {
 					b.Fatalf("encoder: %v", err)
@@ -29,14 +42,15 @@ func BenchmarkManagedHistoryWork(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
 				for range b.N {
-					loaded, loadErr := store.loadRecentTurns(ownerCtx(), conversationID, turns)
+					loaded, loadErr := store.loadManagedLinearTurns(
+						ownerCtx(), conversationID, "", defaultHistoryPageTurns, 0)
 					if loadErr != nil {
 						b.Fatalf("load %d turns: %v", turns, loadErr)
 					}
-					if len(loaded) != turns {
-						b.Fatalf("loaded %d turns, want %d", len(loaded), turns)
+					if len(loaded.turns) != want {
+						b.Fatalf("loaded %d turns, want %d", len(loaded.turns), want)
 					}
-					_ = totalTokens(enc, loaded)
+					_ = totalTokens(enc, loaded.turns)
 				}
 			})
 		}

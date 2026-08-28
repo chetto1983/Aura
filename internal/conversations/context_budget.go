@@ -30,9 +30,10 @@ type ContextConfig struct {
 	CompactionTriggerPercent int
 	MaxOutputTokens          int
 	ToolEvictAfterTurns      int
-	// HistoryHardCapTurns bounds rows fetched, sidecars rehydrated, and turns
-	// tokenized before the L1/L2 ladder. The protected system head counts toward
-	// this aggregate cap.
+	// HistoryHardCapTurns is the retained environment name for the number of rows in
+	// one keyset page. Paging continues to the exact durable watermark or root; separate
+	// fail-closed work limits bound aggregate rows and bytes without returning a partial
+	// history as success.
 	HistoryHardCapTurns int
 	// AlwaysBlock is the rendered messages[1] always-on skill block (D-07). When
 	// non-empty the ladder injects it as a PROTECTED user-role turn immediately after

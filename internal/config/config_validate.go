@@ -140,7 +140,7 @@ func gateHistoryHardCap() []Violation {
 		return []Violation{{
 			Knob: "AURA_HISTORY_HARD_CAP_TURNS",
 			Sev:  Fatal,
-			Msg:  "must be between 4 and 1000 aggregate persisted turns",
+			Msg:  "must be between 4 and 1000 rows per managed-history page",
 		}}
 	}
 	return nil

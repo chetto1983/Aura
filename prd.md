@@ -9294,6 +9294,13 @@ flusso completo, che funziona.
 > predict another filesystem, warm-cache steady state, larger sidecars, simultaneous users or
 > provider token accounting.
 >
+> The same fixture after implementation measured an uncompacted all-sidecar history at
+> 0.505/2.459/9.982/49.473 s for 50/250/1,000/5,000 turns. A durable watermark that leaves a
+> 50-turn sidecar tail measured 0.491/0.470/0.546 s for 250/1,000/5,000 total turns, with about
+> 8.27 MiB allocated in each case. The covered-prefix size therefore no longer determines file
+> I/O on this appliance. A measured concurrent sidecar fan-out did not improve the NTFS/WSL
+> curve and was removed; the simpler sequential reader remains cancellable and bounded.
+>
 > **Boundary contract.** Linear history keyset-pages newest-to-oldest; selected branches page
 > the `parent_seq` chain. Loading stops only after reaching the exact durable compaction
 > watermark or the root. A watermark absent from the selected path is ignored and traversal
@@ -9314,4 +9321,5 @@ flusso completo, che funziona.
 > **Acceptance.** Database integration tests exceed 50 turns in both linear and selected-branch
 > paths, cross several pages, reconstruct summary + tail across the exact watermark, reject a
 > missing watermark/cycle/work-ceiling without advancing compaction, and prove covered
-> sidecars are not read. The 50/250/1,000/5,000 benchmark is rerun after implementation.
+> sidecars are not read. The post-implementation benchmark above is the reproducible performance
+> witness; it establishes this appliance/filesystem boundary, not a universal latency claim.

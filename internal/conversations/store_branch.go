@@ -100,63 +100,6 @@ func (s *Store) loadBranchTurns(ctx context.Context, conversationID string, leaf
 	return out, nil
 }
 
-func (s *Store) loadRecentBranchTurns(
-	ctx context.Context,
-	conversationID string,
-	leafSeq int,
-	hardCap int,
-) ([]Turn, error) {
-	id, err := db.ParseUUID("conversation_id", conversationID)
-	if err != nil {
-		return nil, fmt.Errorf("load recent branch turns: %w", err)
-	}
-	var seq int32
-	if leafSeq > 0 && leafSeq <= math.MaxInt32 {
-		seq = int32(leafSeq)
-	}
-	var rows []sqlc.ListRecentTurnsByBranchPathRow
-	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
-		listed, lErr := q.ListRecentTurnsByBranchPath(
-			ctx,
-			sqlc.ListRecentTurnsByBranchPathParams{
-				TargetConversationID: id,
-				LeafSeq:              seq,
-				HardCap:              int32(hardCap),
-			},
-		)
-		if lErr != nil {
-			return fmt.Errorf(
-				"load recent branch turns %s leaf %d: %w",
-				conversationID,
-				leafSeq,
-				lErr,
-			)
-		}
-		rows = listed
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	out := make([]Turn, 0, len(rows))
-	for _, row := range rows {
-		turn := turnFromRow(sqlc.ListTurnsBySeqRow(row))
-		if turn.ContentSidecarPath != "" {
-			data, readErr := s.readTurnSidecar(conversationID, turn.Seq)
-			if readErr != nil {
-				return nil, fmt.Errorf(
-					"load recent branch turns %s seq %d: read sidecar: %w",
-					conversationID,
-					turn.Seq,
-					readErr,
-				)
-			}
-			turn.Content = string(data)
-		}
-		out = append(out, turn)
-	}
-	return out, nil
-}
-
 // branchPathRowAsSeqRow adapts the field-identical ListTurnsByBranchPath row onto the
 // ListTurnsBySeq row so the single turnFromRow projection serves both loaders (the two
 // sqlc query-row structs carry the same 11 SELECTed columns; only the source query

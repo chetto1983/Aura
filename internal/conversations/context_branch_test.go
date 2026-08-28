@@ -11,7 +11,9 @@
 package conversations
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/llm"
@@ -113,7 +115,7 @@ func TestBranchManaged_ProtectedHeadAcrossBranches(t *testing.T) {
 	}
 }
 
-func TestManagedHistoryHardCapBoundsLinearAndBranchQueries(t *testing.T) {
+func TestManagedHistoryPageSizeDoesNotBoundRecall(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
 	convID := newConversation(t, s)
@@ -136,7 +138,7 @@ func TestManagedHistoryHardCapBoundsLinearAndBranchQueries(t *testing.T) {
 	chainCanonical(t, s, convID, 1, 2, 3, 4, 5, 6, 7)
 
 	cfg := branchCtxCfg()
-	cfg.HistoryHardCapTurns = 5
+	cfg.HistoryHardCapTurns = 4
 	linear, err := s.LoadManagedHistory(ctx, convID, cfg)
 	if err != nil {
 		t.Fatalf("linear managed history: %v", err)
@@ -149,18 +151,17 @@ func TestManagedHistoryHardCapBoundsLinearAndBranchQueries(t *testing.T) {
 		"linear": linear,
 		"branch": branch,
 	} {
-		if len(history) != 5 {
-			t.Fatalf("%s history length = %d, want 5", name, len(history))
+		if len(history) != len(turns) {
+			t.Fatalf("%s history length = %d, want %d", name, len(history), len(turns))
 		}
-		got := []string{
-			history[0].Content,
-			history[1].Content,
-			history[2].Content,
-			history[3].Content,
-			history[4].Content,
+		got := make([]string, 0, len(history))
+		for _, message := range history {
+			got = append(got, message.Content)
 		}
 		want := []string{
 			"system",
+			"old user",
+			"old answer",
 			"middle user",
 			"middle answer",
 			"latest user",
@@ -169,5 +170,111 @@ func TestManagedHistoryHardCapBoundsLinearAndBranchQueries(t *testing.T) {
 		if fmt.Sprint(got) != fmt.Sprint(want) {
 			t.Fatalf("%s history = %v, want %v", name, got, want)
 		}
+	}
+
+	if err := s.SaveCompaction(ctx, convID, "", Compaction{
+		Summary:          "not on this path",
+		CoversThroughSeq: 99,
+		SourceTurns:      99,
+	}); err != nil {
+		t.Fatalf("save invalid-boundary compaction: %v", err)
+	}
+	for name, load := range map[string]func() ([]llm.Message, error){
+		"linear": func() ([]llm.Message, error) {
+			return s.LoadManagedHistory(ctx, convID, cfg)
+		},
+		"branch": func() ([]llm.Message, error) {
+			return s.LoadManagedHistoryForBranch(ctx, convID, 7, cfg)
+		},
+	} {
+		history, loadErr := load()
+		if loadErr != nil {
+			t.Fatalf("%s invalid-boundary load: %v", name, loadErr)
+		}
+		if len(history) != len(turns) {
+			t.Fatalf("%s invalid watermark hid raw turns: got %d, want %d", name, len(history), len(turns))
+		}
+		for _, message := range history {
+			if strings.Contains(message.Content, "not on this path") {
+				t.Fatalf("%s applied a summary whose watermark is absent from the path", name)
+			}
+		}
+	}
+}
+
+func TestManagedHistoryExactWatermarkSkipsCoveredSidecars(t *testing.T) {
+	pool := migratedPool(t)
+	s := newStore(t, pool)
+	convID := newConversation(t, s)
+	ctx := ownerCtx()
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO aura.conversation_turns (
+			conversation_id, seq, role, content, content_sidecar_path, parent_seq
+		) VALUES
+			($1, 1, 'system', 'system', NULL, NULL),
+			($1, 2, 'user', NULL, 'missing', 1),
+			($1, 3, 'assistant', NULL, 'missing', 2),
+			($1, 4, 'user', NULL, 'missing', 3),
+			($1, 5, 'assistant', NULL, 'missing', 4),
+			($1, 6, 'assistant', NULL, 'missing', 5),
+			($1, 7, 'user', 'latest user', NULL, 6),
+			($1, 8, 'assistant', 'latest answer', NULL, 7)`, convID); err != nil {
+		t.Fatalf("seed watermark history: %v", err)
+	}
+	if err := s.SaveCompaction(ctx, convID, "", Compaction{
+		Summary:          "covered through six",
+		CoversThroughSeq: 6,
+		SourceTurns:      5,
+	}); err != nil {
+		t.Fatalf("save compaction: %v", err)
+	}
+	cfg := branchCtxCfg()
+	cfg.HistoryHardCapTurns = 4
+	for name, load := range map[string]func() ([]llm.Message, error){
+		"linear": func() ([]llm.Message, error) {
+			return s.LoadManagedHistory(ctx, convID, cfg)
+		},
+		"branch": func() ([]llm.Message, error) {
+			return s.LoadManagedHistoryForBranch(ctx, convID, 8, cfg)
+		},
+	} {
+		history, err := load()
+		if err != nil {
+			t.Fatalf("%s managed history read a covered missing sidecar: %v", name, err)
+		}
+		if len(history) != 4 {
+			t.Fatalf("%s history length = %d, want head + summary + tail = 4", name, len(history))
+		}
+		if history[0].Content != "system" ||
+			!strings.Contains(history[1].Content, "covered through six") ||
+			history[2].Content != "latest user" || history[3].Content != "latest answer" {
+			t.Fatalf("%s history boundary = %#v", name, history)
+		}
+	}
+}
+
+func TestManagedHistoryBranchRejectsNonOlderParent(t *testing.T) {
+	pool := migratedPool(t)
+	s := newStore(t, pool)
+	convID := newConversation(t, s)
+	ctx := ownerCtx()
+	for _, turn := range []AppendTurnParams{
+		{ConversationID: convID, Seq: 1, Role: llm.RoleSystem, Content: "system"},
+		{ConversationID: convID, Seq: 2, Role: llm.RoleUser, Content: "question"},
+		{ConversationID: convID, Seq: 3, Role: llm.RoleAssistant, Content: "answer"},
+	} {
+		if err := s.AppendTurn(ctx, turn); err != nil {
+			t.Fatalf("append seq %d: %v", turn.Seq, err)
+		}
+	}
+	if _, err := pool.Exec(ctx, `
+		UPDATE aura.conversation_turns
+		SET parent_seq = 3
+		WHERE conversation_id = $1 AND seq = 2`, convID); err != nil {
+		t.Fatalf("seed non-older parent: %v", err)
+	}
+	_, err := s.LoadManagedHistoryForBranch(ctx, convID, 3, branchCtxCfg())
+	if !errors.Is(err, ErrManagedHistoryPath) {
+		t.Fatalf("non-older parent error = %v, want ErrManagedHistoryPath", err)
 	}
 }
