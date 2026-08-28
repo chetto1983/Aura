@@ -76,8 +76,6 @@ type swarmSpawnArgs struct {
 }
 
 func (e *SwarmSpawn) Spec() Spec {
-	// RED (51-03): renderSwarmSpawnParams does not yet read e.Caps — the live-cap
-	// render lands in the GREEN commit.
 	params := renderSwarmSpawnParams(e.Caps)
 	return Spec{
 		Name: "swarm_spawn",
@@ -128,27 +126,72 @@ func (e *SwarmSpawn) Execute(ctx context.Context, raw json.RawMessage) (ToolResu
 	return e.Runner.Run(ctx, a.Goals, a.Context)
 }
 
+// swarmSpawnSchema is the typed JSON-schema shape renderSwarmSpawnParams
+// marshals — a struct, not a hand-built string, so the live cap values are
+// interpolated through Go's own type system rather than string-templated into
+// a literal. Description carries the SWARM-02 live-cap summary at the schema
+// root (json schema's own "description" annotation slot); the per-property
+// descriptions stay scoped to their own arg.
+type swarmSpawnSchema struct {
+	Type        string                        `json:"type"`
+	Description string                        `json:"description"`
+	Properties  map[string]swarmSpawnPropSpec `json:"properties"`
+	Required    []string                      `json:"required"`
+}
+
+// swarmSpawnPropSpec is one JSON-schema property. Items/MinItems are omitted
+// (omitempty) for the context property, which is a plain string.
+type swarmSpawnPropSpec struct {
+	Type        string               `json:"type"`
+	Items       *swarmSpawnItemsSpec `json:"items,omitempty"`
+	MinItems    int                  `json:"minItems,omitempty"`
+	Description string               `json:"description"`
+}
+
+type swarmSpawnItemsSpec struct {
+	Type string `json:"type"`
+}
+
 // renderSwarmSpawnParams builds swarm_spawn's JSON Parameters from the injected
 // live caps via a typed struct + encoding/json marshal — never a static
 // json.RawMessage literal (SWARM-02's own prohibition) and never a hardcoded
-// env var NAME (only the VALUE). map keys marshal in sorted order, so the
-// output is deterministic across repeated calls with the same caps.
-//
-// RED (51-03): caps is not read yet — the schema is still the pre-SWARM-01/02
-// static shape (goals only, no context, no cap values). The live render lands
-// in the GREEN commit.
+// env var NAME (only the VALUE, per the plan's explicit prohibition: plan 51-09
+// retires AURA_SWARM_CHILD_TIMEOUT_SEC in favour of AURA_SWARM_CHILD_IDLE_SEC,
+// and a hardcoded name here would go stale silently). encoding/json marshals
+// map keys in sorted order, so the output is deterministic across repeated
+// calls with the same caps (Spec() is read at call time, never cached).
 func renderSwarmSpawnParams(caps SwarmCaps) json.RawMessage {
-	_ = caps
-	return json.RawMessage(`{
-  "type": "object",
-  "properties": {
-    "goals": {
-      "type": "array",
-      "items": {"type": "string"},
-      "minItems": 1,
-      "description": "Two or more independent, self-contained subtask briefs. Each entry is one worker's complete instructions (objective + output format + boundaries); the worker sees only this text."
-    }
-  },
-  "required": ["goals"]
-}`)
+	schema := swarmSpawnSchema{
+		Type: "object",
+		Description: fmt.Sprintf(
+			"Operator caps in effect for this call: up to %d goals per call, "+
+				"%d running concurrently per wave, each worker bounded to %d seconds, "+
+				"and nested delegation capped at depth %d.",
+			caps.MaxGoals, caps.MaxConcurrent, caps.ChildTimeoutSec, caps.MaxDepth),
+		Properties: map[string]swarmSpawnPropSpec{
+			"goals": {
+				Type:     "array",
+				Items:    &swarmSpawnItemsSpec{Type: "string"},
+				MinItems: 1,
+				Description: fmt.Sprintf(
+					"Two or more independent, self-contained subtask briefs (up to %d per call). "+
+						"Each entry is one worker's complete instructions (objective + output format + boundaries); "+
+						"the worker sees only this text.",
+					caps.MaxGoals),
+			},
+			"context": {
+				Type: "string",
+				Description: "The file paths, error messages and constraints the worker needs — " +
+					"kept separate from the goal.",
+			},
+		},
+		Required: []string{"goals"},
+	}
+	b, err := json.Marshal(schema)
+	if err != nil {
+		// schema is a static Go struct with no dynamic/unmarshalable field types —
+		// a marshal failure here is a programmer error, not a runtime condition.
+		panic(fmt.Sprintf("swarm_spawn: render params: %v", err))
+	}
+	return json.RawMessage(b)
 }
