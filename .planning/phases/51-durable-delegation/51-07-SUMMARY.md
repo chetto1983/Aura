@@ -187,3 +187,10 @@ None — no new env var, no manual step.
 ---
 *Phase: 51-durable-delegation*
 *Completed: 2026-08-28*
+
+## Self-Check: PASSED
+
+- Five task commits plus the SUMMARY commit present in `git log --grep=51-07` (spot-checked by the orchestrator: `8442b363e`, `74a3a1fcf`, `357faec39`, `894c33a5b`, `8be9ef1b6`, `e0db96c73`)
+- `key-files.created` all exist on disk (`transcript_api.go` 145 LOC, `server_swarm_transcript.go` 100 LOC)
+- Post-merge gate after wave 4, in WSL: `go build ./...` clean, `make test` (full untagged suite, 90 packages) exit 0
+- `execute:wave:post` gates: schema-drift none, ui.safety-gate no block
