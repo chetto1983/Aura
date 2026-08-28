@@ -357,14 +357,14 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A deliberate pin, moved deliberately: 0106 adds aura.paused_states.pending_action_id
-	// (D-12 fencing) and .owning_worker_id (D-13 level identity, plan 51-06a's checkpoint
-	// decision `new-columns`) plus the paused_states_worker_attribution_exclusive CHECK
-	// constraint. The test exists so a migration added without noticing breaks the build
-	// rather than the deployment, so bumping it is the intended way to acknowledge one --
-	// never a fixup to make a red go away.
-	if head != 106 {
-		t.Fatalf("MigrationHead=%d, want embedded head 106", head)
+	// A deliberate pin, moved deliberately: 0107 widens aura.ingestion_jobs.status's CHECK
+	// to add 'awaiting_input' (51-06b Task 1, SWARM-06/SC#4) -- a claim-loop worker's
+	// AwaitingInput report parks its row non-terminal and non-claimable instead of
+	// succeeding, failing or dead-lettering. The test exists so a migration added without
+	// noticing breaks the build rather than the deployment, so bumping it is the intended
+	// way to acknowledge one -- never a fixup to make a red go away.
+	if head != 107 {
+		t.Fatalf("MigrationHead=%d, want embedded head 107", head)
 	}
 }
 

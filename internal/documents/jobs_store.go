@@ -255,6 +255,182 @@ func (s *PostgresIngestionJobStore) CountByStatus(ctx context.Context, identityI
 	return count, nil
 }
 
+// ParkAwaitingInputRequest carries the conditional-update args for parking a claimed
+// job at status='awaiting_input' (D-12/D-13 background worker pause, 51-06b Task 1).
+// LockedBy/LeaseGeneration must match the CURRENT claim exactly -- the same fencing
+// every other transition on this table already applies (Claim/UpdateStatus/Retry/
+// Heartbeat) -- so a stale claim (its lease already reclaimed) parks nothing.
+type ParkAwaitingInputRequest struct {
+	IdentityID      string
+	JobID           string
+	WorkerID        string
+	LeaseGeneration int64
+	Payload         map[string]any
+}
+
+// ParkIngestionJobAwaitingInputTx parks ONE claimed job as awaiting_input using the
+// caller-supplied Queries (bound to the caller's transaction -- it opens NO transaction
+// of its own). RowsAffected==0 means the lease was already lost between the claim and
+// this call; the caller MUST NOT also write a pause in that case (a pause with no parked
+// row would be answered into nothing -- Task 1's own atomicity requirement). This is the
+// Tx-bound half a cross-package "pause + park in one transaction" composer (built at
+// cmd/aura, mirroring runner.PoolResumeCommitter's cross-store tx composition) calls
+// alongside askuser.Store.InsertTx.
+func (s *PostgresIngestionJobStore) ParkIngestionJobAwaitingInputTx(ctx context.Context, q *sqlc.Queries, req ParkAwaitingInputRequest) (int64, error) {
+	identityID, jobID, err := ingestionJobFence(req.IdentityID, req.JobID)
+	if err != nil {
+		return 0, err
+	}
+	payload, err := ingestionJobPayloadJSON(req.Payload)
+	if err != nil {
+		return 0, fmt.Errorf("park ingestion job payload: %w", err)
+	}
+	return q.ParkIngestionJobAwaitingInput(ctx, sqlc.ParkIngestionJobAwaitingInputParams{
+		Payload: payload, ID: jobID, IdentityID: identityID,
+		LockedBy: pgText(req.WorkerID), LeaseGeneration: req.LeaseGeneration,
+	})
+}
+
+// ParkIngestionJobAwaitingInput parks ONE claimed job as awaiting_input, in a
+// transaction scoped to identityID. Thin wrapper over the Tx variant for a caller with
+// no cross-store atomicity requirement of its own (e.g. a test fixture).
+func (s *PostgresIngestionJobStore) ParkIngestionJobAwaitingInput(ctx context.Context, req ParkAwaitingInputRequest) (int64, error) {
+	var n int64
+	err := s.withIdentity(ctx, req.IdentityID, func(q *sqlc.Queries) error {
+		var qErr error
+		n, qErr = s.ParkIngestionJobAwaitingInputTx(ctx, q, req)
+		return qErr
+	})
+	if err != nil {
+		return 0, fmt.Errorf("park ingestion job awaiting input: %w", err)
+	}
+	return n, nil
+}
+
+// UnparkIngestionJobRequest carries the args for returning an answered pause's parked
+// row to claimable (51-06b Task 2). Payload is the CALLER's already-merged
+// DelegationResumeState (the original payload plus the operator's answer content) --
+// UnparkIngestionJob replaces the stored payload wholesale so the row the shipped
+// ClaimIngestionJobs loop next claims already carries everything the resume rebuild
+// needs.
+type UnparkIngestionJobRequest struct {
+	IdentityID string
+	JobID      string
+	Payload    map[string]any
+}
+
+// UnparkIngestionJob returns ONE answered pause's parked row to status='queued'. The
+// conditional UPDATE (status must still be 'awaiting_input') is the idempotency key:
+// RowsAffected==1 for exactly one caller, 0 for a second observer pass or a racing one.
+// attempt_count is untouched -- an answered question is not a retry.
+func (s *PostgresIngestionJobStore) UnparkIngestionJob(ctx context.Context, req UnparkIngestionJobRequest) (int64, error) {
+	identityID, jobID, err := ingestionJobFence(req.IdentityID, req.JobID)
+	if err != nil {
+		return 0, err
+	}
+	payload, err := ingestionJobPayloadJSON(req.Payload)
+	if err != nil {
+		return 0, fmt.Errorf("unpark ingestion job payload: %w", err)
+	}
+	var n int64
+	err = s.withIdentity(ctx, req.IdentityID, func(q *sqlc.Queries) error {
+		var qErr error
+		n, qErr = q.UnparkIngestionJob(ctx, sqlc.UnparkIngestionJobParams{
+			Payload: payload, ID: jobID, IdentityID: identityID,
+		})
+		return qErr
+	})
+	if err != nil {
+		return 0, fmt.Errorf("unpark ingestion job: %w", err)
+	}
+	return n, nil
+}
+
+// ResolveAwaitingInputRequest carries the args for expiring an unanswered worker pause's
+// parked row to its terminal state (D-08 extended to the queue row, 51-06b Task 3).
+type ResolveAwaitingInputRequest struct {
+	IdentityID   string
+	JobID        string
+	ErrorMessage string
+}
+
+// ResolveIngestionJobAwaitingInput transitions ONE parked row straight to 'failed' --
+// never dead_letter, which means "retried to exhaustion", a different outcome from a
+// human declining to answer. The conditional UPDATE (status must still be
+// 'awaiting_input') is the idempotency key: a sweep racing an operator's late answer (or
+// a second sweep pass over an already-resolved row) resolves zero rows, so this is safe
+// to retry after a partial failure elsewhere in the sweep (e.g. a subsequent
+// trace-write failure never leaves this row silently re-resolved).
+func (s *PostgresIngestionJobStore) ResolveIngestionJobAwaitingInput(ctx context.Context, req ResolveAwaitingInputRequest) (int64, error) {
+	identityID, jobID, err := ingestionJobFence(req.IdentityID, req.JobID)
+	if err != nil {
+		return 0, err
+	}
+	var n int64
+	err = s.withIdentity(ctx, req.IdentityID, func(q *sqlc.Queries) error {
+		var qErr error
+		n, qErr = q.ResolveIngestionJobAwaitingInput(ctx, sqlc.ResolveIngestionJobAwaitingInputParams{
+			ErrorMessage: req.ErrorMessage, ID: jobID, IdentityID: identityID,
+		})
+		return qErr
+	})
+	if err != nil {
+		return 0, fmt.Errorf("resolve ingestion job awaiting input: %w", err)
+	}
+	return n, nil
+}
+
+// AnsweredAwaitingInputJob is one parked job whose pause has been answered (the resume
+// observer's read, 51-06b Task 2).
+type AnsweredAwaitingInputJob struct {
+	JobID           string
+	IdentityID      string
+	Payload         map[string]any
+	PauseToken      string
+	PendingActionID string
+	ResumedAnswer   []byte // raw {action,content} jsonb -- the caller decodes as askuser.ResumeAnswer
+}
+
+// ListAnsweredAwaitingInput lists parked jobs for identityID whose pause has been
+// answered (resumed_at IS NOT NULL), joined via the pause token this specific park
+// cycle minted (job.payload.resume.pause_token) -- disambiguating a job's CURRENT pause
+// from an older, already-resolved one across repeated pause/resume cycles on the same
+// job. limit<=0 falls back to 100.
+func (s *PostgresIngestionJobStore) ListAnsweredAwaitingInput(ctx context.Context, identityID string, limit int) ([]AnsweredAwaitingInputJob, error) {
+	pgIdentityID, err := pgUUID("ingestion job identity id", identityID)
+	if err != nil {
+		return nil, err
+	}
+	lim := limit
+	if lim <= 0 {
+		lim = 100
+	}
+	var rows []sqlc.ListAnsweredAwaitingInputJobsRow
+	err = s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
+		var qErr error
+		rows, qErr = q.ListAnsweredAwaitingInputJobs(ctx, sqlc.ListAnsweredAwaitingInputJobsParams{
+			IdentityID: pgIdentityID, RowLimit: int32(lim), //nolint:gosec // an operator-configured sweep batch size, always small.
+		})
+		return qErr
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list answered awaiting input jobs: %w", err)
+	}
+	out := make([]AnsweredAwaitingInputJob, 0, len(rows))
+	for _, r := range rows {
+		payload, pErr := ingestionJobPayloadFromJSON(r.Payload)
+		if pErr != nil {
+			return nil, pErr
+		}
+		out = append(out, AnsweredAwaitingInputJob{
+			JobID: uuidString(r.ID), IdentityID: uuidString(r.IdentityID), Payload: payload,
+			PauseToken: uuidString(r.PauseToken), PendingActionID: textString(r.PendingActionID),
+			ResumedAnswer: r.ResumedAnswer,
+		})
+	}
+	return out, nil
+}
+
 func (s *PostgresIngestionJobStore) withIdentity(ctx context.Context, identityID string, fn func(*sqlc.Queries) error) error {
 	if s == nil || s.pool == nil {
 		return fmt.Errorf("ingestion job store is not configured")

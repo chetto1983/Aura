@@ -151,6 +151,90 @@ SELECT retried.id, retried.job_type, retried.status, retried.idempotency_key, re
 -- name: CountIngestionJobsByStatus :one
 SELECT count(*) FROM aura.ingestion_jobs
 WHERE identity_id = sqlc.arg(identity_id) AND status = sqlc.arg(status);
--- aura.ingestion_events has no standalone statement of its own: every row is written by
--- the `events` CTE inside the job statement that caused it, so the timeline can never
--- disagree with the transition it records.
+-- name: ParkIngestionJobAwaitingInput :execrows
+-- 51-06b (SWARM-06 SC#4, Task 1): a claim-loop worker's AwaitingInput report parks its
+-- row instead of succeeding, failing or dead-lettering. The conditional UPDATE (status
+-- must still be 'running', owned by the SAME lease_generation the claim minted) IS the
+-- atomicity gate the caller relies on: RowsAffected==0 means the lease was already lost
+-- (reclaimed/expired) between the claim and this call, and the caller MUST NOT also
+-- write a pause -- a pause with no parked row would be answered into nothing (Task 1's
+-- own atomicity requirement). payload is REPLACED wholesale (not merged): the caller
+-- computes the full updated map (the original DelegationPayload plus its new `resume`
+-- sub-object) in Go and passes it whole, mirroring CreateIngestionJob's own plain
+-- sqlc.arg(payload) rather than a jsonb `||` merge. attempt_count is untouched
+-- deliberately -- a human being asked a question is not a failed attempt.
+UPDATE aura.ingestion_jobs
+SET status = 'awaiting_input',
+    locked_by = NULL,
+    locked_until = NULL,
+    payload = sqlc.arg(payload),
+    updated_at = now()
+WHERE id = sqlc.arg(id)
+  AND identity_id = sqlc.arg(identity_id)
+  AND status = 'running'
+  AND locked_by = sqlc.arg(locked_by)
+  AND lease_generation = sqlc.arg(lease_generation);
+-- name: UnparkIngestionJob :execrows
+-- 51-06b (Task 2): the resume observer's un-park, once the worker's pause has been
+-- answered. The conditional UPDATE (status must still be 'awaiting_input') IS the
+-- idempotency key -- RowsAffected==1 for exactly one caller; a second observer pass, or
+-- an observer racing a concurrent one, un-parks zero rows. payload is REPLACED wholesale
+-- with the caller's already-merged DelegationResumeState (History + the operator's
+-- AnswerContent), so the SHIPPED ClaimIngestionJobs loop that claims this row next reads
+-- everything the resume rebuild needs with no second read of aura.paused_states.
+-- attempt_count stays untouched -- an answered question is not a retry.
+UPDATE aura.ingestion_jobs
+SET status = 'queued',
+    next_attempt_at = now(),
+    payload = sqlc.arg(payload),
+    updated_at = now()
+WHERE id = sqlc.arg(id)
+  AND identity_id = sqlc.arg(identity_id)
+  AND status = 'awaiting_input';
+-- name: ResolveIngestionJobAwaitingInput :execrows
+-- 51-06b (Task 3, D-08 extended to the queue row): an unanswered worker pause expires
+-- and its parked row must not be left waiting for a human who never came. `failed` (not
+-- dead_letter) is the terminal state: dead_letter means "retried to exhaustion", and a
+-- human declining to answer is a different outcome from the worker's own retry budget
+-- running out. The conditional UPDATE (status must still be 'awaiting_input') is the
+-- idempotency key -- a second sweep pass, or a sweep racing an operator's late answer
+-- that already un-parked the row, resolves zero rows.
+UPDATE aura.ingestion_jobs
+SET status = 'failed',
+    error_code = 'awaiting_input_expired',
+    error_message = sqlc.arg(error_message),
+    completed_at = now(),
+    updated_at = now()
+WHERE id = sqlc.arg(id)
+  AND identity_id = sqlc.arg(identity_id)
+  AND status = 'awaiting_input';
+-- name: ListAnsweredAwaitingInputJobs :many
+-- 51-06b (Task 2): the resume observer's read -- which parked jobs may now resume. The
+-- join crosses into aura.paused_states (RLS-scoped to the SAME identity_id predicate
+-- below via db.WithIdentityTx's app.current_identity carrier) rather than living in
+-- paused_states.sql: this is the OBSERVER's own concern (which parked job, read from the
+-- ingestion_jobs side), and internal/askuser stays untouched by this plan. The join key is
+-- the pause TOKEN this specific park cycle minted (job.payload->'resume'->>'pause_token'),
+-- not owning_worker_id alone -- a job can pause more than once across its lifetime
+-- (resume, do more work, pause again), and owning_worker_id (= the job's own id) would be
+-- identical across every one of those pauses, so only the fresh token disambiguates THIS
+-- park cycle's pause from an older, already-resumed one.
+SELECT job.id, job.identity_id, job.payload,
+       pause.token AS pause_token, pause.pending_action_id, pause.resumed_answer
+FROM aura.ingestion_jobs job
+JOIN aura.paused_states pause
+  ON pause.token = (job.payload->'resume'->>'pause_token')::uuid
+WHERE job.identity_id = sqlc.arg(identity_id)
+  AND job.status = 'awaiting_input'
+  AND pause.resumed_at IS NOT NULL
+ORDER BY job.created_at
+LIMIT sqlc.arg(row_limit);
+-- aura.ingestion_events has no standalone statement of its own for the shipped
+-- fenced/terminal transitions above CreateIngestionJob/ClaimIngestionJobs/
+-- UpdateIngestionJobStatus/RetryIngestionJob: every one of those writes an `events` CTE
+-- row so the timeline can never disagree with the transition it records. The three
+-- 51-06b :execrows statements above (Park/Unpark/Resolve) deliberately do NOT, matching
+-- the plan's own :execrows shape (a plain conditional UPDATE, mirroring
+-- MarkPausedStateResumedFenced) rather than a CTE -- a park/un-park/expire cycle is
+-- already fully reconstructable from aura.paused_states' own created_at/resumed_at and
+-- the job's updated_at, so this is a documented scope boundary, not an oversight.

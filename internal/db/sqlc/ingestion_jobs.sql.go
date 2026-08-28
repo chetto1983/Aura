@@ -297,6 +297,150 @@ func (q *Queries) HeartbeatIngestionJob(ctx context.Context, arg HeartbeatIngest
 	return i, err
 }
 
+const listAnsweredAwaitingInputJobs = `-- name: ListAnsweredAwaitingInputJobs :many
+SELECT job.id, job.identity_id, job.payload,
+       pause.token AS pause_token, pause.pending_action_id, pause.resumed_answer
+FROM aura.ingestion_jobs job
+JOIN aura.paused_states pause
+  ON pause.token = (job.payload->'resume'->>'pause_token')::uuid
+WHERE job.identity_id = $1
+  AND job.status = 'awaiting_input'
+  AND pause.resumed_at IS NOT NULL
+ORDER BY job.created_at
+LIMIT $2
+`
+
+type ListAnsweredAwaitingInputJobsParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	RowLimit   int32       `json:"row_limit"`
+}
+
+type ListAnsweredAwaitingInputJobsRow struct {
+	ID              pgtype.UUID `json:"id"`
+	IdentityID      pgtype.UUID `json:"identity_id"`
+	Payload         []byte      `json:"payload"`
+	PauseToken      pgtype.UUID `json:"pause_token"`
+	PendingActionID pgtype.Text `json:"pending_action_id"`
+	ResumedAnswer   []byte      `json:"resumed_answer"`
+}
+
+// 51-06b (Task 2): the resume observer's read -- which parked jobs may now resume. The
+// join crosses into aura.paused_states (RLS-scoped to the SAME identity_id predicate
+// below via db.WithIdentityTx's app.current_identity carrier) rather than living in
+// paused_states.sql: this is the OBSERVER's own concern (which parked job, read from the
+// ingestion_jobs side), and internal/askuser stays untouched by this plan. The join key is
+// the pause TOKEN this specific park cycle minted (job.payload->'resume'->>'pause_token'),
+// not owning_worker_id alone -- a job can pause more than once across its lifetime
+// (resume, do more work, pause again), and owning_worker_id (= the job's own id) would be
+// identical across every one of those pauses, so only the fresh token disambiguates THIS
+// park cycle's pause from an older, already-resumed one.
+func (q *Queries) ListAnsweredAwaitingInputJobs(ctx context.Context, arg ListAnsweredAwaitingInputJobsParams) ([]ListAnsweredAwaitingInputJobsRow, error) {
+	rows, err := q.db.Query(ctx, listAnsweredAwaitingInputJobs, arg.IdentityID, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAnsweredAwaitingInputJobsRow{}
+	for rows.Next() {
+		var i ListAnsweredAwaitingInputJobsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.IdentityID,
+			&i.Payload,
+			&i.PauseToken,
+			&i.PendingActionID,
+			&i.ResumedAnswer,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const parkIngestionJobAwaitingInput = `-- name: ParkIngestionJobAwaitingInput :execrows
+UPDATE aura.ingestion_jobs
+SET status = 'awaiting_input',
+    locked_by = NULL,
+    locked_until = NULL,
+    payload = $1,
+    updated_at = now()
+WHERE id = $2
+  AND identity_id = $3
+  AND status = 'running'
+  AND locked_by = $4
+  AND lease_generation = $5
+`
+
+type ParkIngestionJobAwaitingInputParams struct {
+	Payload         []byte      `json:"payload"`
+	ID              pgtype.UUID `json:"id"`
+	IdentityID      pgtype.UUID `json:"identity_id"`
+	LockedBy        pgtype.Text `json:"locked_by"`
+	LeaseGeneration int64       `json:"lease_generation"`
+}
+
+// 51-06b (SWARM-06 SC#4, Task 1): a claim-loop worker's AwaitingInput report parks its
+// row instead of succeeding, failing or dead-lettering. The conditional UPDATE (status
+// must still be 'running', owned by the SAME lease_generation the claim minted) IS the
+// atomicity gate the caller relies on: RowsAffected==0 means the lease was already lost
+// (reclaimed/expired) between the claim and this call, and the caller MUST NOT also
+// write a pause -- a pause with no parked row would be answered into nothing (Task 1's
+// own atomicity requirement). payload is REPLACED wholesale (not merged): the caller
+// computes the full updated map (the original DelegationPayload plus its new `resume`
+// sub-object) in Go and passes it whole, mirroring CreateIngestionJob's own plain
+// sqlc.arg(payload) rather than a jsonb `||` merge. attempt_count is untouched
+// deliberately -- a human being asked a question is not a failed attempt.
+func (q *Queries) ParkIngestionJobAwaitingInput(ctx context.Context, arg ParkIngestionJobAwaitingInputParams) (int64, error) {
+	result, err := q.db.Exec(ctx, parkIngestionJobAwaitingInput,
+		arg.Payload,
+		arg.ID,
+		arg.IdentityID,
+		arg.LockedBy,
+		arg.LeaseGeneration,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const resolveIngestionJobAwaitingInput = `-- name: ResolveIngestionJobAwaitingInput :execrows
+UPDATE aura.ingestion_jobs
+SET status = 'failed',
+    error_code = 'awaiting_input_expired',
+    error_message = $1,
+    completed_at = now(),
+    updated_at = now()
+WHERE id = $2
+  AND identity_id = $3
+  AND status = 'awaiting_input'
+`
+
+type ResolveIngestionJobAwaitingInputParams struct {
+	ErrorMessage string      `json:"error_message"`
+	ID           pgtype.UUID `json:"id"`
+	IdentityID   pgtype.UUID `json:"identity_id"`
+}
+
+// 51-06b (Task 3, D-08 extended to the queue row): an unanswered worker pause expires
+// and its parked row must not be left waiting for a human who never came. `failed` (not
+// dead_letter) is the terminal state: dead_letter means "retried to exhaustion", and a
+// human declining to answer is a different outcome from the worker's own retry budget
+// running out. The conditional UPDATE (status must still be 'awaiting_input') is the
+// idempotency key -- a second sweep pass, or a sweep racing an operator's late answer
+// that already un-parked the row, resolves zero rows.
+func (q *Queries) ResolveIngestionJobAwaitingInput(ctx context.Context, arg ResolveIngestionJobAwaitingInputParams) (int64, error) {
+	result, err := q.db.Exec(ctx, resolveIngestionJobAwaitingInput, arg.ErrorMessage, arg.ID, arg.IdentityID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const retryIngestionJob = `-- name: RetryIngestionJob :one
 WITH target AS (
     SELECT target_job.id, target_job.status AS prior_status FROM aura.ingestion_jobs target_job
@@ -400,6 +544,39 @@ func (q *Queries) RetryIngestionJob(ctx context.Context, arg RetryIngestionJobPa
 		&i.LeaseGeneration,
 	)
 	return i, err
+}
+
+const unparkIngestionJob = `-- name: UnparkIngestionJob :execrows
+UPDATE aura.ingestion_jobs
+SET status = 'queued',
+    next_attempt_at = now(),
+    payload = $1,
+    updated_at = now()
+WHERE id = $2
+  AND identity_id = $3
+  AND status = 'awaiting_input'
+`
+
+type UnparkIngestionJobParams struct {
+	Payload    []byte      `json:"payload"`
+	ID         pgtype.UUID `json:"id"`
+	IdentityID pgtype.UUID `json:"identity_id"`
+}
+
+// 51-06b (Task 2): the resume observer's un-park, once the worker's pause has been
+// answered. The conditional UPDATE (status must still be 'awaiting_input') IS the
+// idempotency key -- RowsAffected==1 for exactly one caller; a second observer pass, or
+// an observer racing a concurrent one, un-parks zero rows. payload is REPLACED wholesale
+// with the caller's already-merged DelegationResumeState (History + the operator's
+// AnswerContent), so the SHIPPED ClaimIngestionJobs loop that claims this row next reads
+// everything the resume rebuild needs with no second read of aura.paused_states.
+// attempt_count stays untouched -- an answered question is not a retry.
+func (q *Queries) UnparkIngestionJob(ctx context.Context, arg UnparkIngestionJobParams) (int64, error) {
+	result, err := q.db.Exec(ctx, unparkIngestionJob, arg.Payload, arg.ID, arg.IdentityID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateIngestionJobStatus = `-- name: UpdateIngestionJobStatus :one

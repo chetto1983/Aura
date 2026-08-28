@@ -246,6 +246,17 @@ type Querier interface {
 	// Owner-scoped cross-thread pending list (Phase 36 MUSR-01 / APRV-01): ListAllPendingPausedStates
 	// restricted to one identity's pauses. Same total order (priority DESC, created_at ASC, token ASC).
 	ListAllPendingPausedStatesForIdentity(ctx context.Context, arg ListAllPendingPausedStatesForIdentityParams) ([]AuraPausedStates, error)
+	// 51-06b (Task 2): the resume observer's read -- which parked jobs may now resume. The
+	// join crosses into aura.paused_states (RLS-scoped to the SAME identity_id predicate
+	// below via db.WithIdentityTx's app.current_identity carrier) rather than living in
+	// paused_states.sql: this is the OBSERVER's own concern (which parked job, read from the
+	// ingestion_jobs side), and internal/askuser stays untouched by this plan. The join key is
+	// the pause TOKEN this specific park cycle minted (job.payload->'resume'->>'pause_token'),
+	// not owning_worker_id alone -- a job can pause more than once across its lifetime
+	// (resume, do more work, pause again), and owning_worker_id (= the job's own id) would be
+	// identical across every one of those pauses, so only the fresh token disambiguates THIS
+	// park cycle's pause from an older, already-resumed one.
+	ListAnsweredAwaitingInputJobs(ctx context.Context, arg ListAnsweredAwaitingInputJobsParams) ([]ListAnsweredAwaitingInputJobsRow, error)
 	ListAssetsForLibrary(ctx context.Context, arg ListAssetsForLibraryParams) ([]AuraAssets, error)
 	ListAssetsForThread(ctx context.Context, arg ListAssetsForThreadParams) ([]AuraAssets, error)
 	// Amendment #91 (fix-plan 1.12) display-only read: the reasoning columns for every
@@ -391,6 +402,18 @@ type Querier interface {
 	MarkUnknownRecovery(ctx context.Context, id pgtype.UUID) error
 	NextAssetEventSeq(ctx context.Context, assetID pgtype.UUID) (int32, error)
 	NextConversationTurnSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
+	// 51-06b (SWARM-06 SC#4, Task 1): a claim-loop worker's AwaitingInput report parks its
+	// row instead of succeeding, failing or dead-lettering. The conditional UPDATE (status
+	// must still be 'running', owned by the SAME lease_generation the claim minted) IS the
+	// atomicity gate the caller relies on: RowsAffected==0 means the lease was already lost
+	// (reclaimed/expired) between the claim and this call, and the caller MUST NOT also
+	// write a pause -- a pause with no parked row would be answered into nothing (Task 1's
+	// own atomicity requirement). payload is REPLACED wholesale (not merged): the caller
+	// computes the full updated map (the original DelegationPayload plus its new `resume`
+	// sub-object) in Go and passes it whole, mirroring CreateIngestionJob's own plain
+	// sqlc.arg(payload) rather than a jsonb `||` merge. attempt_count is untouched
+	// deliberately -- a human being asked a question is not a failed attempt.
+	ParkIngestionJobAwaitingInput(ctx context.Context, arg ParkIngestionJobAwaitingInputParams) (int64, error)
 	PromoteAssetToLibrary(ctx context.Context, arg PromoteAssetToLibraryParams) (AuraAssets, error)
 	// The D-06/D-07/D-08 durable steer/delegation-result queue. Push and Drain satisfy a
 	// LOCKED interface contract (Push(conv, source, text string) error /
@@ -427,6 +450,14 @@ type Querier interface {
 	// Reusing the same deterministic reservation is idempotent after a process retry.
 	ReserveConversationDeleteForIdentityIfVersion(ctx context.Context, arg ReserveConversationDeleteForIdentityIfVersionParams) (int64, error)
 	ResetAssetForIngestionRetry(ctx context.Context, arg ResetAssetForIngestionRetryParams) (AuraAssets, error)
+	// 51-06b (Task 3, D-08 extended to the queue row): an unanswered worker pause expires
+	// and its parked row must not be left waiting for a human who never came. `failed` (not
+	// dead_letter) is the terminal state: dead_letter means "retried to exhaustion", and a
+	// human declining to answer is a different outcome from the worker's own retry budget
+	// running out. The conditional UPDATE (status must still be 'awaiting_input') is the
+	// idempotency key -- a second sweep pass, or a sweep racing an operator's late answer
+	// that already un-parked the row, resolves zero rows.
+	ResolveIngestionJobAwaitingInput(ctx context.Context, arg ResolveIngestionJobAwaitingInputParams) (int64, error)
 	RestoreBenchmarkSetting(ctx context.Context, arg RestoreBenchmarkSettingParams) error
 	RetryIngestionJob(ctx context.Context, arg RetryIngestionJobParams) (RetryIngestionJobRow, error)
 	RetryRetentionItem(ctx context.Context, arg RetryRetentionItemParams) (int64, error)
@@ -447,6 +478,15 @@ type Querier interface {
 	SweepDueNotifications(ctx context.Context, arg SweepDueNotificationsParams) ([]AuraPendingNotifications, error)
 	TouchTelegramLastSeen(ctx context.Context, telegramUserID int64) error
 	TryStartOperation(ctx context.Context, arg TryStartOperationParams) (int64, error)
+	// 51-06b (Task 2): the resume observer's un-park, once the worker's pause has been
+	// answered. The conditional UPDATE (status must still be 'awaiting_input') IS the
+	// idempotency key -- RowsAffected==1 for exactly one caller; a second observer pass, or
+	// an observer racing a concurrent one, un-parks zero rows. payload is REPLACED wholesale
+	// with the caller's already-merged DelegationResumeState (History + the operator's
+	// AnswerContent), so the SHIPPED ClaimIngestionJobs loop that claims this row next reads
+	// everything the resume rebuild needs with no second read of aura.paused_states.
+	// attempt_count stays untouched -- an answered question is not a retry.
+	UnparkIngestionJob(ctx context.Context, arg UnparkIngestionJobParams) (int64, error)
 	UpdateAssetAccepted(ctx context.Context, arg UpdateAssetAcceptedParams) (AuraAssets, error)
 	UpdateAssetResult(ctx context.Context, arg UpdateAssetResultParams) (AuraAssets, error)
 	UpdateAssetStatus(ctx context.Context, arg UpdateAssetStatusParams) (AuraAssets, error)
