@@ -579,7 +579,7 @@ lands squarely on the memory correctness Phase 45 and 49 just established.
   4. A worker that needs the operator surfaces the question in the operator's channel, naming which worker raised it, and answering it resumes that worker's line of work.
   5. After a live fan-out where several workers each learn something durable, the graph holds one correctly-attributed fact per worker — no duplicates, no lost writes, no fact attributed to the parent.
 
-**Plans**: 4/11 plans executed in 6 waves
+**Plans**: 5/11 plans executed in 6 waves
 
 Plans:
 **Wave 1**
@@ -594,7 +594,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 51-05-PLAN.md — Depth-bounded nesting, synchronous nested delegation, SWARM-08 guard extension (SWARM-04, SWARM-05, SWARM-08) — wave 3
+- [x] 51-05-PLAN.md — Depth-bounded nesting, synchronous nested delegation, SWARM-08 guard extension (SWARM-04, SWARM-05, SWARM-08) — wave 3
 - [ ] 51-06a-PLAN.md — Pause fencing column + fenced conditional resume inside the shipped transaction (SWARM-06, D-12/D-13) — wave 3
 - [ ] 51-10-PLAN.md — SC#1's conversation write + the absent-operator outbox leg (SWARM-03, SWARM-09, D-02) — wave 3
 
@@ -757,7 +757,7 @@ replay; the skill is now permanent surface, not a compensating workaround awaiti
 | 46. MCP trust and facade | 9/9 | Complete — 7 executed, 46-08 no-go, 46-09 operator-closed | 2026-08-25 |
 | 49. Memory tiers | 0/TBD | Not started | - |
 | 50. Context ladder legibility | 0/TBD | Not started | - |
-| 51. Durable delegation | 4/11 | In Progress|  |
+| 51. Durable delegation | 5/11 | In Progress|  |
 | 52. Mid-turn steering | 8/8 | In Progress|  |
 | 54. Milestone exit | 0/TBD | Not started | - |
 

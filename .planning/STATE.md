@@ -4,16 +4,16 @@ milestone: v2.1.0
 current_phase: 51
 current_phase_name: Durable delegation
 status: executing
-stopped_at: Completed 51-03-PLAN.md (SWARM-01 goal/context split, SWARM-02 live-cap schema render)
-last_updated: "2026-08-28T06:56:00.406Z"
+stopped_at: Completed 51-05-PLAN.md (SWARM-04/05 depth-bounded nesting, SWARM-08 extended regression guard)
+last_updated: "2026-08-28T08:14:26.919Z"
 last_activity: 2026-08-28
 last_activity_desc: Phase 51 execution resumed (wave continue)
-state_head: 4dbd38ccf7abbe71e90b6ada0f41787f2f9eb742
+state_head: a871b95779fe3cd2b6706b377c07dee396691372
 progress:
   total_phases: 8
-  completed_phases: 3
+  completed_phases: 1
   total_plans: 45
-  completed_plans: 38
+  completed_plans: 39
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -120,6 +120,7 @@ Progress: [████████░░] 82%
 | Phase 51-durable-delegation P01 | 5h | 3 tasks | 19 files |
 | Phase 51 P04 | 215min | 3 tasks | 21 files |
 | Phase 51 P03 | ~55 min | 2 tasks | 12 files |
+| Phase 51 P05 | 40min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -211,6 +212,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 51]: D-09 concurrency fix: CAS then server-side append then explicit ArcadeDB transaction each independently failed under real Go goroutine concurrency; final fix is a per-fact_key striped in-process mutex (fact_lock.go) plus the transaction kept as cross-process defense-in-depth, verified with 70+ live -race stress runs, zero failures
 - [Phase 51]: 51-03: widened the existing swarmRunner interface (Run(ctx, goals, context)) instead of adding a second interface, per 51-PATTERNS.md's explicit instruction
 - [Phase 51]: 51-03: exported SwarmCaps and swarm.MaxDepth() so cmd/aura's composition root can construct/read them cross-package, without adding AURA_SWARM_MAX_DEPTH to the Tier A/B knob registry
+- [Phase 51]: workerRegistry(rc RunConfig) not workerRegistry(parent, depth): the plan's two-arg signature could not actually bound recursion since the shared static RunnerAdapter's Depth never advances across nesting levels — A literal (parent, depth) reading would reuse the same tool object at every nesting level, pinning checkDepth's comparison at depth=1 forever and turning any AURA_SWARM_MAX_DEPTH>2 into unbounded recursion (T-51-18 DoS). The fix rebinds swarm_spawn to a fresh RunnerAdapter{Depth: rc.Depth+1} per grant.
 
 ### Pending Todos
 
@@ -273,8 +275,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-28T06:56:00.264Z
-Stopped at: Completed 51-03-PLAN.md (SWARM-01 goal/context split, SWARM-02 live-cap schema render)
+Last session: 2026-08-28T08:14:26.769Z
+Stopped at: Completed 51-05-PLAN.md (SWARM-04/05 depth-bounded nesting, SWARM-08 extended regression guard)
 exited at its CONTEXT.md gate — Phase 45 has no CONTEXT.md, and discuss-phase must run as a
 top-level command (nested invocation breaks AskUserQuestion, GSD #1009). No phase directory
 was created and no planning agents were spawned.
