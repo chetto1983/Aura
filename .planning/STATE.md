@@ -4,16 +4,16 @@ milestone: v2.1.0
 current_phase: 51
 current_phase_name: Durable delegation
 status: executing
-stopped_at: Completed 51-06b-PLAN.md (SWARM-06 code-complete: worker opens own pause, resumes on the answer, TTL sweep with trace; live SC#4 proof owed by 51-08)
-last_updated: "2026-08-28T16:59:04.196Z"
+stopped_at: Completed 51-07-PLAN.md (SWARM-10 transcript read surface + HTTP route wired; SWARM-11 verified from git)
+last_updated: "2026-08-28T21:44:22.333Z"
 last_activity: 2026-08-28
 last_activity_desc: Phase 51 execution resumed (wave continue)
-state_head: 9645a42821fcb337095a10a2d2bf0ec353663970
+state_head: e0db96c73ed3a8221eef61ecb6587f0a78cb2240
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 45
-  completed_plans: 42
+  completed_plans: 43
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -104,6 +104,7 @@ Progress: [██████████] 100% (Phase 46 dispositions)
 | Phase 51 P10 | ~1h30m | 2 tasks | 22 files |
 | Phase 51-durable-delegation P06a | 90min | 1 tasks | 16 files |
 | Phase 51 P06b | ~4h (2 sessions) | 3 tasks | 22 files |
+| Phase 51 P07 | single session (continuation) | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -206,6 +207,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 51]: [Phase 51] 51-06b: the TTL sweep's read joins from aura.ingestion_jobs into paused_states on the pause TOKEN this park cycle minted (ListExpiredAwaitingInputJobs), keeping internal/askuser untouched and the sweep per-identity/RLS-scoped like the observer; pause.created_at is the TTL clock as in ListExpiredPendingApprovals
 - [Phase 51]: [Phase 51] 51-06b: PoolWorkerPauseExpirer commits fenced claim + trace + queue-row resolution in ONE db.WithIdentityTx (D-08 extended to the queue row); a resolution matching zero rows after a successful claim is a hard rollback, never a skip. ExpireWorkerPauses takes Lister/Expirer per call (WorkerPauseSweepDeps) rather than widening runner.Deps for one sweep
 - [Phase 51]: [Phase 51] 51-06b: recovered from a session that died mid-plan with ~2000 uncommitted lines and notes describing Task 3 files that never existed; every claim was re-verified in WSL before commit and Task 3 was rebuilt RED->GREEN. One TestNudgeSkipsDrained (51-10) flake seen in 1/3 full swarm db_integration runs, green in isolation -- recorded, not hidden
+- [Phase 51]: [Phase 51] 51-07: shared transcriptPath hardening between dumpTranscript (writer) and ReadTranscript (reader) so both enforce one path-traversal rule; report_test.go stayed byte-identical
+- [Phase 51]: [Phase 51] 51-07: SetSwarmTranscripts wiring lands in cmd/aura/serve_agui.go's existing wireAGUIServer (not serve.go, which the plan's files_modified listed) -- the already-correct composition point for every other agui seam
 
 ### Pending Todos
 
@@ -270,8 +273,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-28T16:58:23.764Z
-Stopped at: Completed 51-06b-PLAN.md (SWARM-06 code-complete: worker opens own pause, resumes on the answer, TTL sweep with trace; live SC#4 proof owed by 51-08)
+Last session: 2026-08-28T21:44:22.178Z
+Stopped at: Completed 51-07-PLAN.md (SWARM-10 transcript read surface + HTTP route wired; SWARM-11 verified from git)
 exited at its CONTEXT.md gate — Phase 45 has no CONTEXT.md, and discuss-phase must run as a
 top-level command (nested invocation breaks AskUserQuestion, GSD #1009). No phase directory
 was created and no planning agents were spawned.

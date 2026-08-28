@@ -146,8 +146,8 @@
 - [x] **SWARM-07**: Concurrent workers writing durable facts (AUTO-03) and reasoning traces (MEM-03) into one identity's graph neither corrupt nor duplicate, and each write names the worker that made it
 - [x] **SWARM-08**: Workers reason over the same flattened tool surface the parent does, verified against the live surface rather than assumed from registry inheritance — the un-defer this was written to follow was deleted 2026-08-25
 - [x] **SWARM-09**: Delegated work is durable — a task survives a process restart, is claimable from Postgres, and is never silently lost nor silently retried. Implements the approved-but-unbuilt [durable swarm messaging design](../docs/superpowers/specs/2026-06-29-durable-swarm-messaging-design.md); SWARM-03's background delegation is this substrate's first consumer, not a parallel mechanism
-- [ ] **SWARM-10**: The operator (and the parent) can watch a worker work — a tail-able live transcript per child, rather than waiting blind for the consolidated report
-- [ ] **SWARM-11**: The PRD amendment ratifying the durable swarm substrate is committed **before** any of its code
+- [x] **SWARM-10**: The operator (and the parent) can watch a worker work — a tail-able live transcript per child, rather than waiting blind for the consolidated report
+- [x] **SWARM-11**: The PRD amendment ratifying the durable swarm substrate is committed **before** any of its code
 
 ### Steering
 
@@ -270,8 +270,8 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 | SWARM-07 | Phase 51 | Complete |
 | SWARM-08 | Phase 51 | Complete |
 | SWARM-09 | Phase 51 | Complete |
-| SWARM-10 | Phase 51 | Pending |
-| SWARM-11 | Phase 51 | Pending |
+| SWARM-10 | Phase 51 | Complete |
+| SWARM-11 | Phase 51 | Complete |
 | TOOL-05 | Phase 49 | Pending |
 | TOOL-13 | Phase 50 | Pending |
 | TOOL-14 | Phase 46 | Complete |
