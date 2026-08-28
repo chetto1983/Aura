@@ -18,8 +18,20 @@ import (
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/readiness"
+	"github.com/chetto1983/aura/internal/swarm"
 	"github.com/chetto1983/aura/internal/web"
 )
+
+// swarmTranscriptAdapter closes swarm.ReadTranscript (a package-level function, not
+// a method) over the daemon's resolved RunDir, satisfying agui's unexported
+// swarmTranscriptReader seam (D-A2-02) without agui importing internal/swarm's
+// concrete types — the SAME "tools-package interface seam" idiom swarmRunner
+// (internal/agent/tools/swarm_spawn.go) already uses.
+type swarmTranscriptAdapter struct{ runDir string }
+
+func (a swarmTranscriptAdapter) ReadTranscript(ctx context.Context, conv, childID string, fromOffset int64) ([]byte, int64, error) {
+	return swarm.ReadTranscript(ctx, a.runDir, conv, childID, fromOffset)
+}
 
 // wireAGUIServer builds the agui.Server over the daemon's already-composed seams
 // (Runner, ConversationStore, object store, share/document/governance/voice/reasoning
@@ -89,6 +101,11 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 		aguiServer.SetSteerInbox(chat.steer)
 	}
 	aguiServer.SetOperationRegistry(chat.operations)
+	// SWARM-10 (Phase 51 plan 07): the operator-facing read over a backgrounded
+	// worker's live transcript. Always wired (RunDir is a required boot config, not
+	// optional like the graph/voice providers) — there is no "disabled" posture for
+	// this route the way there is for an unconfigured sidecar.
+	aguiServer.SetSwarmTranscripts(swarmTranscriptAdapter{runDir: chat.cfg.RunDir})
 	aguiServer.SetAssetService(chat.assets)
 	aguiServer.SetOwnerExportDestination(ownerExports)
 	aguiServer.SetShareService(shareAPI)
