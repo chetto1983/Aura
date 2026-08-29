@@ -100,3 +100,13 @@ again); the Telegram nudge's arrival (fired without error).
 
 Lesson recorded in the code comment: the daemon's own ticker is the loop; a pass must claim what
 fits in the free slots and return. `Wait()` exists for tests and one-shot callers only.
+
+Also measured on `fef1928cc` (run 5): the 4-document delegation completed `ok` at the **first attempt** —
+`0ff698b8` `succeeded`, `attempt_count=1`, report row in `conversation_turns` at 09:16:12, one
+`delegation_result` steer row — the "no reclaim under a live worker" assertion §5 could only support
+indirectly is now observed directly. The stall probe was reaped three times at ~120 s and
+dead-lettered at 09:22:20 with no `sleep 480` left in the box at 09:32. Perimeter: recreating the
+`aura` container (`compose up -d` with a new image) kills the daemon's goroutines but holds no handle
+on box processes, so a `shell_exec` in flight at that moment runs to its natural end inside the box
+(one such `sleep 480` from the 09:15 recreate was alive at 09:18, gone by 09:23) — a restart is not a
+reap, and the lease reclaim on the next boot is the only recovery for the row.
