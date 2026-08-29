@@ -222,47 +222,46 @@ func NewDelegationClaimLoop(store DelegationJobStore, delivery *DelegationDelive
 	}
 }
 
-// ProcessOnce claims one batch of due job_type=swarm_delegation rows (the
-// query filters at claim time -- an ingestion row is never claimed, and never
-// stolen from the document ingestion worker's own claim loop) and runs each
-// to a terminal state. It mirrors IngestionJobWorker.ProcessOnce's shape
-// (jobs_worker.go) verbatim.
-func (l *DelegationClaimLoop) ProcessOnce(ctx context.Context) (int, error) {
+// claimBatch claims up to n due job_type=swarm_delegation rows (the query
+// filters at claim time -- an ingestion row is never claimed, and never stolen
+// from the document ingestion worker's own claim loop) and refuses a misrouted
+// row BEFORE anything in the batch runs.
+func (l *DelegationClaimLoop) claimBatch(ctx context.Context, n int) ([]documents.IngestionJob, error) {
 	if l == nil || l.Store == nil {
-		return 0, fmt.Errorf("delegation claim loop has no store")
+		return nil, fmt.Errorf("delegation claim loop has no store")
 	}
 	if l.IdentityID == "" {
-		return 0, fmt.Errorf("delegation claim loop has no identity")
+		return nil, fmt.Errorf("delegation claim loop has no identity")
 	}
 	jobs, err := l.Store.Claim(ctx, documents.ClaimIngestionJobsRequest{
 		IdentityID:    l.IdentityID,
 		JobType:       JobTypeSwarmDelegation,
 		WorkerID:      l.workerID(),
 		LeaseDuration: l.leaseDuration(),
-		BatchSize:     l.batchSize(),
+		BatchSize:     n,
 	})
+	if err != nil {
+		return nil, err
+	}
+	for _, job := range jobs {
+		if job.IdentityID != l.IdentityID {
+			return nil, fmt.Errorf("claimed delegation job %q has unexpected identity %q", job.ID, job.IdentityID)
+		}
+		if job.JobType != JobTypeSwarmDelegation {
+			return nil, fmt.Errorf("claimed delegation job %q has unexpected job_type %q", job.ID, job.JobType)
+		}
+	}
+	return jobs, nil
+}
+
+// ProcessOnce is ONE blocking pass: claim a batch, run every row concurrently,
+// wait for all of them. It mirrors IngestionJobWorker.ProcessOnce's shape
+// (jobs_worker.go); the daemon loop is Run, which does not wait.
+func (l *DelegationClaimLoop) ProcessOnce(ctx context.Context) (int, error) {
+	jobs, err := l.claimBatch(ctx, l.batchSize())
 	if err != nil {
 		return 0, err
 	}
-	// A misrouted row is refused BEFORE anything in the batch runs.
-	for _, job := range jobs {
-		if job.IdentityID != l.IdentityID {
-			return 0, fmt.Errorf("claimed delegation job %q has unexpected identity %q", job.ID, job.IdentityID)
-		}
-		if job.JobType != JobTypeSwarmDelegation {
-			return 0, fmt.Errorf("claimed delegation job %q has unexpected job_type %q", job.ID, job.JobType)
-		}
-	}
-	// The batch runs CONCURRENTLY. Every claimed row holds a lease from the claim
-	// onward, but the heartbeat that renews it only starts inside processJob -- a row
-	// waiting its turn behind a sibling is a lease ticking with nobody renewing it.
-	// Measured live 2026-08-29 (live-check/d03/RESULTS.md finding F): two delegations
-	// issued 1s apart were claimed in one batch and ran serially, the second waiting
-	// 125s behind a stalled worker; a worker ahead of it running to the shared
-	// AURA_LOOP_MAX_WALLCLOCK_SEC ceiling (300s) would have let that lease (300s
-	// default) expire before the row ever started, so its own transitions would then
-	// fence out as lease-lost and the work be lost. Each processJob runs its own
-	// heartbeat and reports its own error; the pass returns them joined.
 	errs := make([]error, len(jobs))
 	var wg sync.WaitGroup
 	for i, job := range jobs {
@@ -278,20 +277,54 @@ func (l *DelegationClaimLoop) ProcessOnce(ctx context.Context) (int, error) {
 	return processed, errors.Join(errs...)
 }
 
-// Run polls ProcessOnce until ctx is cancelled. A pass error is logged and
-// swallowed -- one bad pass never kills the daemon-resident loop, mirroring
-// internal/cron's own "log and continue" lifecycle discipline.
+// Run is the daemon-resident loop: every tick it claims only as many rows as
+// there are free slots (batchSize) and dispatches each to its own goroutine
+// WITHOUT waiting, so the loop keeps claiming while workers run. A claim error
+// is logged and swallowed -- one bad pass never kills the loop, mirroring
+// internal/cron's "log and continue" discipline; a job's own failure is already
+// recorded on its row by processJob, so it is only logged here. On ctx
+// cancellation Run waits for the in-flight jobs (their workers are cancelled
+// through the same ctx) and returns nil.
+//
+// Why not one blocking pass per tick (the shape before 2026-08-29): a row that
+// arrives after a pass has claimed waits until EVERY job of that pass finishes,
+// and a row claimed in the same pass waited behind its siblings with its lease
+// ticking and nobody renewing it (the heartbeat starts inside processJob).
+// Measured live (live-check/d03/RESULTS.md finding F): two delegations issued
+// 1s apart -- the second spawned 125s after the first, once the first was
+// reaped; then, with only intra-batch concurrency, a row created 3s after a
+// claim was still queued two minutes later. A 300s worker ahead of a claimed
+// row would let the 300s lease expire in the queue and the row fence out as
+// lease-lost: work silently lost, which SWARM-09 forbids.
 func (l *DelegationClaimLoop) Run(ctx context.Context) error {
+	slots := make(chan struct{}, l.batchSize())
+	var inFlight sync.WaitGroup
 	ticker := time.NewTicker(l.pollInterval())
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
+			inFlight.Wait()
 			return nil
 		case <-ticker.C:
-			if _, err := l.ProcessOnce(ctx); err != nil {
-				slog.Warn("swarm.delegation.process_once_failed", "err", err)
-			}
+		}
+		free := cap(slots) - len(slots)
+		if free == 0 {
+			continue
+		}
+		jobs, err := l.claimBatch(ctx, free)
+		if err != nil {
+			slog.Warn("swarm.delegation.claim_failed", "err", err)
+			continue
+		}
+		for _, job := range jobs {
+			slots <- struct{}{}
+			inFlight.Go(func() {
+				defer func() { <-slots }()
+				if err := l.processJob(ctx, job); err != nil {
+					slog.Warn("swarm.delegation.job_failed", "job_id", job.ID, "err", err)
+				}
+			})
 		}
 	}
 }

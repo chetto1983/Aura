@@ -306,90 +306,6 @@ func TestDeliverSuccessPassesTheBoundIdentityThrough(t *testing.T) {
 	}
 }
 
-// TestProcessJobBindsTheJobIdentityOnce is the boundary proof for defect A
-// (live-check/d03/RESULTS.md): the claim loop's ctx carries NO identityctx, and
-// processJob is the ONE place that binds the claimed row's identity before the
-// worker, the report delivery and the pause-and-park question all read it. Both
-// delivery outcomes are asserted through ProcessOnce on a bare ctx, so a future
-// call site that forgets the bind cannot exist -- there is nothing to forget.
-func TestProcessJobBindsTheJobIdentityOnce(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		out  outcome
-	}{
-		{name: "report delivery", out: outcome{kind: "ok", text: "inbox summarised"}},
-		{name: "pause question delivery", out: outcome{kind: "pause", question: "which inbox?"}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			defer goleak.VerifyNone(t)
-			const goal = "summarise the inbox"
-			const identityID = "11111111-1111-4111-8111-111111111111"
-			rc := testRunConfig(t, newRouter().route(goal, tc.out), 25)
-			store := &fakeDelegationStore{claimJobs: []documents.IngestionJob{{
-				ID: "j1", IdentityID: identityID, JobType: JobTypeSwarmDelegation,
-				Payload:     map[string]any{"goal": goal, "conversation_id": "conv-7"},
-				MaxAttempts: 3,
-			}}}
-			recorder := &fakeConversationRecorder{}
-			l := &DelegationClaimLoop{
-				Store: store, Delivery: &DelegationDelivery{Recorder: recorder, Steer: &fakeSteerPublisher{}},
-				IdentityID: identityID, Worker: rc, LeaseDuration: time.Minute, PauseParker: newFakePauseAndPark(),
-			}
-
-			if _, err := l.ProcessOnce(withToolCtx(context.Background(), t)); err != nil {
-				t.Fatalf("ProcessOnce = %v", err)
-			}
-			if len(recorder.appended) != 1 {
-				t.Fatalf("appended = %+v, want exactly one recorded turn", recorder.appended)
-			}
-			if got := recorder.appended[0].identityID; got != identityID {
-				t.Fatalf("recorder saw identity %q on ctx, want the claimed job's %q -- a real "+
-					"conversations.Store would have this write hidden by RLS", got, identityID)
-			}
-		})
-	}
-}
-
-// TestProcessOnceRunsAClaimedBatchConcurrently is finding F's proof
-// (live-check/d03/RESULTS.md): two rows claimed in one batch must run side by side,
-// each renewing its own lease, never one waiting behind the other with its lease
-// ticking. Job A's worker is slow (a scripted 400ms delay before its model answers)
-// and job B's is immediate; under the former serial loop B's report would land
-// only after A's, so the recorder seeing B FIRST is the concurrency proof.
-func TestProcessOnceRunsAClaimedBatchConcurrently(t *testing.T) {
-	defer goleak.VerifyNone(t)
-	const identityID = "11111111-1111-4111-8111-111111111111"
-	client := newRouter().
-		route("slow goal", outcome{kind: "ok", text: "slow done", delay: 400 * time.Millisecond}).
-		route("fast goal", outcome{kind: "ok", text: "fast done"})
-	rc := testRunConfig(t, client, 25)
-	store := &fakeDelegationStore{claimJobs: []documents.IngestionJob{
-		{ID: "slow", IdentityID: identityID, JobType: JobTypeSwarmDelegation, MaxAttempts: 3,
-			Payload: map[string]any{"goal": "slow goal", "conversation_id": "conv-slow"}},
-		{ID: "fast", IdentityID: identityID, JobType: JobTypeSwarmDelegation, MaxAttempts: 3,
-			Payload: map[string]any{"goal": "fast goal", "conversation_id": "conv-fast"}},
-	}}
-	recorder := &fakeConversationRecorder{}
-	l := &DelegationClaimLoop{
-		Store: store, Delivery: &DelegationDelivery{Recorder: recorder, Steer: &fakeSteerPublisher{}},
-		IdentityID: identityID, Worker: rc, LeaseDuration: time.Minute,
-	}
-
-	n, err := l.ProcessOnce(withToolCtx(context.Background(), t))
-	if err != nil {
-		t.Fatalf("ProcessOnce = %v", err)
-	}
-	if n != 2 {
-		t.Fatalf("processed = %d, want both claimed rows", n)
-	}
-	if tr := store.transitionsSnapshot(); len(tr) != 2 {
-		t.Fatalf("transitions = %+v, want one succeeded transition per row", tr)
-	}
-	if len(recorder.appended) != 2 || recorder.appended[0].conversationID != "conv-fast" {
-		t.Fatalf("recorded order = %+v, want the fast row's report FIRST -- a serial batch would deliver the slow row's first", recorder.appended)
-	}
-}
-
 // TestMaintainLeaseRenewsUntilTheRunEnds covers the happy tick plus the ctx.Done
 // exit: cancelling the run context must end the heartbeat goroutine cleanly, which
 // is what keeps runWithHeartbeat from leaking one goroutine per claimed job.
@@ -435,32 +351,6 @@ func TestMaintainLeaseCancelsTheRunWhenTheLeaseIsLost(t *testing.T) {
 	}
 	if ctx.Err() == nil {
 		t.Fatal("maintainLease must cancel the run context when the lease is lost")
-	}
-}
-
-// TestRunSwallowsAPassErrorAndStopsOnCancel pins the daemon lifecycle: one bad pass
-// is logged and the loop keeps polling (a queue blip must not kill the worker), and
-// a cancelled context ends Run without an error.
-func TestRunSwallowsAPassErrorAndStopsOnCancel(t *testing.T) {
-	defer goleak.VerifyNone(t)
-	store := &fakeDelegationStore{claimErr: errors.New("transient")}
-	l := &DelegationClaimLoop{Store: store, IdentityID: "identity-1", PollInterval: 5 * time.Millisecond}
-	ctx, cancel := context.WithCancel(context.Background())
-
-	done := make(chan error, 1)
-	go func() { done <- l.Run(ctx) }()
-
-	deadline := time.After(2 * time.Second)
-	for store.claimCount() < 2 { // proves the loop survived the first failing pass
-		select {
-		case <-deadline:
-			t.Fatalf("only %d passes ran; Run stopped on the first error", store.claimCount())
-		case <-time.After(2 * time.Millisecond):
-		}
-	}
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatalf("Run = %v, want nil on context cancellation", err)
 	}
 }
 

@@ -121,6 +121,7 @@ type fakeDelegationStore struct {
 	created []documents.CreateIngestionJobRequest
 
 	claimJobs  []documents.IngestionJob
+	claimNext  []documents.IngestionJob // handed out by the claim AFTER claimJobs drained (rows that arrived later)
 	claimErr   error
 	claimCalls int
 
@@ -181,7 +182,8 @@ func (s *fakeDelegationStore) Claim(context.Context, documents.ClaimIngestionJob
 		return nil, s.claimErr
 	}
 	jobs := s.claimJobs
-	s.claimJobs = nil // a second pass claims nothing, as a drained queue would
+	s.claimJobs = s.claimNext // the next pass sees what arrived meanwhile; then the queue is drained
+	s.claimNext = nil
 	return jobs, nil
 }
 
