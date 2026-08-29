@@ -22,6 +22,39 @@ func TestAskUser_Spec_NonDeferred(t *testing.T) {
 	}
 }
 
+func TestAskUser_Spec_ChoiceOptionsUsePortableUnion(t *testing.T) {
+	s := AskUser{}.Spec()
+	var schema struct {
+		Properties map[string]struct {
+			Items map[string]any `json:"items"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(s.Parameters, &schema); err != nil {
+		t.Fatalf("Parameters not valid JSON: %v", err)
+	}
+
+	items := schema.Properties["options"].Items
+	if _, exists := items["type"]; exists {
+		t.Fatal("options.items must use anyOf, not a multi-type array that llama.cpp Minja cannot render")
+	}
+	variants, ok := items["anyOf"].([]any)
+	if !ok || len(variants) != 2 {
+		t.Fatalf("options.items.anyOf = %#v, want string and object variants", items["anyOf"])
+	}
+	got := map[string]bool{}
+	for _, variant := range variants {
+		definition, ok := variant.(map[string]any)
+		if !ok {
+			t.Fatalf("options.items.anyOf variant = %#v, want schema object", variant)
+		}
+		kind, _ := definition["type"].(string)
+		got[kind] = true
+	}
+	if !got["string"] || !got["object"] {
+		t.Fatalf("options.items.anyOf types = %v, want string and object", got)
+	}
+}
+
 func TestErrAwaitingUserInputError(t *testing.T) {
 	err := (&ErrAwaitingUserInput{Question: "continue?"}).Error()
 	if err != "awaiting user input" {
