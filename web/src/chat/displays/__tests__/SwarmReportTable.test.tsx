@@ -33,10 +33,10 @@ const reports: readonly DisplayChildReport[] = [
 ];
 
 describe('SwarmReportTable (SWARM-01 / D-08)', () => {
-  it('renders the four column headers (# / Worker / Status / Summary)', () => {
+  it('renders worker, status, goal, duration, summary, and action columns', () => {
     render(<SwarmReportTable payload={payload(reports)} />);
     const headers = screen.getAllByRole('columnheader').map((h) => h.textContent);
-    expect(headers).toEqual(['#', 'Worker', 'Status', 'Summary']);
+    expect(headers).toEqual(['#', 'Worker', 'Status', 'Goal', 'Duration', 'Summary', '']);
   });
 
   it('renders one row per ChildReport with goal index, worker id, status, summary', () => {
@@ -168,7 +168,7 @@ describe('SwarmReportTable (SWARM-01 / D-08)', () => {
   it('opens the selected worker through the shared watch provider', () => {
     const onWatchWorker = vi.fn();
     render(
-      <WorkerWatchProvider onWatchWorker={onWatchWorker} onViewReport={vi.fn()}>
+      <WorkerWatchProvider conversationId="" onWatchWorker={onWatchWorker} onViewReport={vi.fn()}>
         <SwarmReportTable payload={payload(reports)} />
       </WorkerWatchProvider>,
     );
@@ -178,6 +178,21 @@ describe('SwarmReportTable (SWARM-01 / D-08)', () => {
     expect(watch?.className).toContain('min-h-[44px]');
     fireEvent.click(watch);
     expect(onWatchWorker).toHaveBeenCalledWith('w2');
+  });
+
+  it('shows Watch on every row and View report only for terminal statuses', () => {
+    const mixed: readonly DisplayChildReport[] = [
+      { goal_index: 0, child_id: 'live', status: 'running', goal: 'Keep working' },
+      { goal_index: 1, child_id: 'done', status: 'ok', goal: 'Finish work' },
+      { goal_index: 2, child_id: 'stuck', status: 'stalled', goal: 'Wait for IO' },
+      { goal_index: 3, child_id: 'dead', status: 'dead_letter', goal: 'Exhaust retries' },
+    ];
+    render(<SwarmReportTable payload={payload(mixed)} />);
+
+    expect(screen.getAllByRole('button', { name: 'Watch worker' })).toHaveLength(4);
+    expect(screen.getAllByRole('button', { name: 'View report' })).toHaveLength(2);
+    expect(screen.getByText('Stalled')).toBeTruthy();
+    expect(document.querySelector('[data-worker-status-icon="Clock"]')).toBeTruthy();
   });
 
   it('shows the empty state when there are no workers', () => {
