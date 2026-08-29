@@ -175,6 +175,31 @@ proposes. Three questions were deliberately NOT answered from the armchair.
   the landing place: `resume_context`, normalized by migration 0102, where
   `allowed_decisions` lives. Missing are the fencing id (D-12) and the level identity.
 
+### Delivery envelope UX (SWARM-12, added 2026-08-29 after the D-03 live checkpoint)
+
+- **D-15:** **The chat gets a chip, the canvas gets the content, Telegram gets one short static
+  message, and a worker is a thread the operator can switch to.** Measured 2026-08-29 (PRD
+  Amendment #172): the absent-operator nudge pushed the raw JSON report to Telegram in chunks,
+  the SC#1 record writes `[Delegated worker report -- goal: ...]
+<JSON>` as an assistant
+  bubble, and the 51-07 transcript has no cockpit viewer. Operator decisions, verbatim: *"il
+  transcript deve arrivare in un canvas a parte ed in telegram deve arrivare solo un
+  messaggio"*, *"aggiungerei anche sul cockpit la possibilità di vedere l'agente lavorare su
+  una chat parallela"*, *"telegram deve essere semplice"*. Reference reading and the Aura
+  inventory (everything reused, nothing invented: `ArtifactsPanel` + the `aura.artifact` seam
+  `send_file` uses, `agui.Translate` over the transcript's own `agent.Event` type, the
+  `sseAdapter` frame->part mapping, `toolSummary.ts`, assistant-ui's second read-only `Thread`)
+  are in `51-UX-ENVELOPE-RESEARCH.md`; the planner reads it before writing the gap plan.
+  - **Telegram is decided, not open:** exactly one message — status, goal in one line, a
+    bounded summary, "dettagli nel cockpit". No edited-in-place status message (hermes gateway
+    pattern rejected for Telegram), no narration, no body, no progress relay.
+  - **Open for the planner** (ask, do not assume): third resizable panel vs a tab of the
+    Artifacts panel; reasoning deltas in the pane or tool calls + text only.
+  - **Sequencing:** the gap plan (51-11) runs BEFORE the live DoD gate 51-08, which then scores
+    the envelope the operator asked for, not the measured one. 51-08's `depends_on` gains 51-11.
+  - **Reversibility:** two-way for the cockpit and the card; the artifact persisted for the full
+    report reuses the existing artifact store, no new schema (D-02 stands).
+
 ### Sequencing
 
 - **D-14:** **Spike -> PRD amendment -> one single Phase 51.** The spike runs first and IS

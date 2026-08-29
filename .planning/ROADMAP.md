@@ -532,7 +532,7 @@ context can't be reduced) closes the ladder's failure-mode legibility gap.
 orchestrate workers of its own, and a top-level delegation stops holding the operator's turn
 hostage — results re-enter the conversation when the work is actually done.
 **Depends on**: Phase 49 (SWARM-07 needs the memory and reasoning tiers to exist before deciding what concurrent workers may write into them). The former dependencies on Phases 47 and 48 died with those phases on 2026-08-25 — SWARM-08 now verifies workers against a tool surface nobody is renumbering, and SWARM-06's relay rides the shipped `ask_user` shape rather than a reworked one.
-**Requirements**: SWARM-01, SWARM-02, SWARM-03, SWARM-04, SWARM-05, SWARM-06, SWARM-07, SWARM-08, SWARM-09, SWARM-10, SWARM-11
+**Requirements**: SWARM-01, SWARM-02, SWARM-03, SWARM-04, SWARM-05, SWARM-06, SWARM-07, SWARM-08, SWARM-09, SWARM-10, SWARM-11, SWARM-12 (added 2026-08-29, PRD Amendment #172 — gap plan before the live DoD gate)
 **Rationale**: Operator decision, 2026-08-05, taken after reading hermes' `delegate_task`
 against Aura's `swarm_spawn`.
 

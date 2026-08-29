@@ -9512,3 +9512,73 @@ flusso completo, che funziona.
 > the operator can attest to that. And, as with Amendment #154, every run in this check was one
 > deployment, one profile (`single_user_hardened`), one routed model
 > (`deepseek/deepseek-v4-flash-0731:nitro`).
+
+## §The delegation report reaches the operator as a card, the transcript as a canvas, Telegram as one message (Amendment #172, 2026-08-29)
+
+> **Amendment #172 (2026-08-29, Phase 51/SWARM — measured during the same D-03 live checkpoint
+> as Amendment #171, decided by the operator the same morning, recorded here BEFORE the gap
+> plan that implements it is written: measure, amend, implement.)**
+>
+> **What was measured.** Same stack, image and model as Amendment #171. When the long-run
+> worker finished (`swarm.child.completed status=ok dur=293.4s`), the absent-operator nudge
+> pushed the RAW consolidated report — `[{"goal_index":0,"child_id":"w1","status":"ok",
+> "summary":"All 10 documents…` — to Telegram through `channels.Registry.DeliverToIdentity`,
+> split into message-sized chunks: JSON on a phone, not prose. The SC#1 record
+> (`attributedWorkerReport`) writes `[Delegated worker report -- goal: …]\n<same JSON>` as an
+> assistant bubble in the conversation; today it was invisible only because the write failed
+> (defect A), and with that fix landed the raw bubble now appears in the cockpit chat. The
+> 51-07 transcript route serves the worker's full event log (247 800 bytes mid-run) but the
+> cockpit has no viewer for it — the transcript exists as an HTTP resource, not as a place the
+> operator can look. Evidence: `.planning/phases/51-durable-delegation/live-check/d03/`
+> (`evidence/`, `RESULTS.md` §1) and `51-UX-ENVELOPE-RESEARCH.md`.
+>
+> **What the references do (read locally on 2026-08-29, sources named in
+> `51-UX-ENVELOPE-RESEARCH.md`).** hermes-agent injects the completion as a turn and lets the
+> model narrate it, caps the summary and spills the full text to a file, and on a gateway
+> channel edits ONE status message in place. LibreChat renders a hand-off as one line
+> ("Transferred to *agent*") and reserves the Artifacts panel for substantial self-contained
+> content. open-claude-cowork keeps prose in the chat and one card per tool call in a side
+> panel. assistant-ui 0.15 (the cockpit's own library) renders the tool call as a chip and lets
+> a canvas read the last tool-call part from thread state, and supports a second read-only
+> `Thread` beside the main one by construction. codex's TUI treats every sub-agent as a real
+> thread with a spawn edge, switchable from a picker while the parent stays live. The common
+> rule: **the chat gets a chip, the canvas gets the content, the mobile channel gets short
+> prose, and a worker is a thread you can switch to.** Aura today violates all four legs.
+>
+> **Operator decisions (verbatim, 2026-08-29).** *"il transcript deve arrivare in un canvas a
+> parte ed in telegram deve arrivare solo un messaggio"*; *"aggiungerei anche sul cockpit la
+> possibilità di vedere l'agente lavorare su una chat parallela"*; *"telegram deve essere
+> semplice"*. Ratified as requirement **SWARM-12** and as the Phase 51 gap plan that precedes the
+> live DoD gate (51-08), so that the DoD scores the envelope the operator asked for, not the one
+> measured above:
+> 1. **The durable record and the channel nudge carry a card, not the JSON** — per-worker
+>    status, the goal in one line, duration, a bounded summary, and a pointer to the
+>    conversation. The full consolidated report is persisted as an **artifact** (the same
+>    `aura.artifact` seam `send_file` already uses, D-11's auto-open) so it lands in the
+>    Artifacts panel and survives reload.
+> 2. **Telegram receives exactly one short, static message** — status, goal, bounded summary,
+>    "dettagli nel cockpit". No in-place-edited status message, no model narration, no report
+>    body, no progress relay: hermes's gateway pattern is explicitly NOT adopted for Telegram.
+> 3. **The cockpit shows a worker as a parallel, read-only thread** — a `swarm_spawn` chip in the
+>    parent chat with one row per worker and live status; a pane that replays the child's
+>    transcript through the existing AG-UI translator (`agui.Translate` consumes exactly the
+>    `agent.Event` type `dumpTranscript` stores) and tails it while the worker is live; a picker
+>    to switch between workers with the parent chat staying live beside it.
+>
+> **What this amendment does NOT decide.** Where the pane lives (third resizable panel vs a tab
+> of the Artifacts panel; a drawer on mobile either way) and whether it shows reasoning deltas
+> or only tool calls + text are left to the gap plan's discussion. Kill/pause of a worker from
+> the pane is out of scope until the pane exists. D-02 (one queue, no second delivery channel)
+> and the 51-07 prohibition on cockpit-side polling both stand: the pane is push (SSE), the chip
+> reads the same stream. Not measured: the card's rendering on a phone, the pane's behaviour
+> across a daemon restart mid-worker, and the artifact's size at the 25-step/300 s budget cap —
+> those are the gap plan's own live checks.
+>
+> **A class, not four bugs (recorded, not acted on).** The operator observed the same morning
+> that *"sta repo sta diventando sempre più complessa"*. The four defects Amendment #171 fixed
+> share one shape — a constraint expressed in several places that must agree (identity bound
+> per call site rather than once at the claim-loop boundary; two sandbox exec paths with one
+> kill mechanism; four configuration layers where a `.env` row can be dead silently; three
+> independent timers that coincide). Consolidation candidates are listed in
+> `51-UX-ENVELOPE-RESEARCH.md` §Consolidation follow-ups for a post-51-08 audit; none is
+> scheduled by this amendment.
