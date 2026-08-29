@@ -243,6 +243,7 @@ type Server struct {
 	// chat.cfg.RunDir); until then the transcript route hides itself (404),
 	// mirroring SetGraphView's best-effort posture.
 	swarmTranscripts swarmTranscriptReader
+	swarmWorkerIdle  time.Duration
 }
 
 // NewServer builds the gateway over the supplied driver + store + config. The
@@ -492,6 +493,7 @@ func (s *Server) Mux() http.Handler {
 	// RequireAuth from the parent-mux mount (no separate auth check here — the
 	// handler itself owner-scopes via s.conv.GetForIdentity before touching disk).
 	s.registerSwarmTranscriptRoutes(mux)
+	s.registerSwarmWorkerEventRoutes(mux)
 	if s.operations == nil {
 		return mux
 	}

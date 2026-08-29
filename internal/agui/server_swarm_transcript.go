@@ -27,6 +27,7 @@ import (
 // package from importing internal/swarm's concrete types.
 type swarmTranscriptReader interface {
 	ReadTranscript(ctx context.Context, conv, childID string, fromOffset int64) ([]byte, int64, error)
+	ListChildTranscripts(ctx context.Context, conv string) ([]string, error)
 }
 
 // SetSwarmTranscripts wires the SWARM-10 transcript reader. Set by the daemon

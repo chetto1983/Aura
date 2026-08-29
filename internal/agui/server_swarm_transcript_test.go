@@ -35,6 +35,10 @@ func (f *fakeSwarmTranscriptReader) ReadTranscript(_ context.Context, conv, chil
 	return f.body, f.offset, f.err
 }
 
+func (f *fakeSwarmTranscriptReader) ListChildTranscripts(context.Context, string) ([]string, error) {
+	return nil, nil
+}
+
 func swarmTranscriptTestServer(t *testing.T, store ConversationStore, reader swarmTranscriptReader) *httptest.Server {
 	t.Helper()
 	s := NewServer(&scriptedRunner{conv: store}, store, ServerConfig{})

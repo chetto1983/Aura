@@ -234,7 +234,7 @@ func TestSwarmWorkerEventsStopsOnIdleWithoutMarker(t *testing.T) {
 		t.Fatalf("idle stream did not close itself: %v", err)
 	}
 	types, data := sseFrames(t, string(body))
-	if len(types) == 0 || types[len(types)-1] != "RUN_FINISHED" || !strings.Contains(data, `"swarm_child_status":"stalled"`) {
+	if len(types) == 0 || types[len(types)-1] != "RUN_FINISHED" || !strings.Contains(data, `"path":"/swarm_child_status","value":"stalled"`) {
 		t.Fatalf("idle terminal frames/data = %v / %s", types, data)
 	}
 }

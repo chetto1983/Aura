@@ -33,6 +33,10 @@ func (a swarmTranscriptAdapter) ReadTranscript(ctx context.Context, conv, childI
 	return swarm.ReadTranscript(ctx, a.runDir, conv, childID, fromOffset)
 }
 
+func (a swarmTranscriptAdapter) ListChildTranscripts(ctx context.Context, conv string) ([]string, error) {
+	return swarm.ListChildTranscripts(ctx, a.runDir, conv)
+}
+
 // wireAGUIServer builds the agui.Server over the daemon's already-composed seams
 // (Runner, ConversationStore, object store, share/document/governance/voice/reasoning
 // providers) and returns it wired, together with the detached-run RunRegistry (nil
@@ -106,6 +110,7 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	// optional like the graph/voice providers) — there is no "disabled" posture for
 	// this route the way there is for an unconfigured sidecar.
 	aguiServer.SetSwarmTranscripts(swarmTranscriptAdapter{runDir: chat.cfg.RunDir})
+	aguiServer.SetSwarmWorkerIdle(time.Duration(chat.cfg.SwarmChildIdleSec) * time.Second)
 	aguiServer.SetAssetService(chat.assets)
 	aguiServer.SetOwnerExportDestination(ownerExports)
 	aguiServer.SetShareService(shareAPI)
