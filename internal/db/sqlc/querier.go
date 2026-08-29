@@ -294,6 +294,10 @@ type Querier interface {
 	// Owner-scoped conversation list (Phase 36 MUSR-01): ListConversations restricted to one
 	// identity. identity_id is NOT NULL (0005) so every conversation is attributable.
 	ListConversationsForIdentity(ctx context.Context, arg ListConversationsForIdentityParams) ([]AuraConversations, error)
+	// The conversation id lives in payload because D-01 reused the generic ingestion queue.
+	// identity_id provides tenant isolation; child_id is optional so targeted reads do
+	// not become false not-found results when the worker is older than the list cap.
+	ListDelegationJobsForConversation(ctx context.Context, arg ListDelegationJobsForConversationParams) ([]ListDelegationJobsForConversationRow, error)
 	// fix-plan 1.7 / Amendment #92 (REVISED): the per-tick approval-reminder sweep. Every
 	// pending_approval task with an ORIGIN CONVERSATION whose throttle stamp is due (never
 	// reminded, or older than the cadence cutoff computed in Go: now() -

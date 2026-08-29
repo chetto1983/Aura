@@ -29,7 +29,7 @@
     "github.com/chetto1983/aura/internal/cron": {"mode": "target"},
     "github.com/chetto1983/aura/internal/cron/handlers": {"mode": "target"},
     "github.com/chetto1983/aura/internal/db": {"mode": "baseline", "covered_statements": 263, "total_statements": 315},
-    "github.com/chetto1983/aura/internal/documents": {"mode": "baseline", "covered_statements": 440, "total_statements": 622},
+    "github.com/chetto1983/aura/internal/documents": {"mode": "baseline", "covered_statements": 599, "total_statements": 742},
     "github.com/chetto1983/aura/internal/documents/filecard": {"mode": "target"},
     "github.com/chetto1983/aura/internal/embeddings": {"mode": "target"},
     "github.com/chetto1983/aura/internal/envutil": {"mode": "target"},

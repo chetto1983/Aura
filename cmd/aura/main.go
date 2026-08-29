@@ -318,6 +318,17 @@ func buildBaseRegistryWithHandles(
 		// of the Tier A/B knob registry).
 		MaxDepth: swarm.MaxDepth(),
 	}})
+	// swarm_status is SWARM-10's missing leg (51-11 Task 4, 51-UX-ENVELOPE-RESEARCH.md
+	// §G3): reads the durable job row plus the transcript tail, so it needs the SAME
+	// pool DocumentOpen/the delegation enqueuer above already gate on -- a pool-less
+	// boot registers nothing, matching every other Postgres-backed tool here.
+	if pool := taskStorePool(ts); pool != nil {
+		reg.Register(&tools.SwarmStatus{Reader: swarmStatusAdapter{
+			store:   documents.NewPostgresIngestionJobStore(pool),
+			runDir:  cfg.RunDir,
+			maxJobs: cfg.MaxSwarmGoals,
+		}})
+	}
 	// D-10: fail closed at boot if no actionable tool exists (excluding tool_search).
 	// This is the shared composition root — buildRegistry and buildRegistryWithMCP
 	// both delegate here, so the guard covers every boot path.

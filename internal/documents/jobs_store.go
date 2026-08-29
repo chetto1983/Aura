@@ -18,6 +18,9 @@ import (
 // must not publish any further state for that attempt.
 var ErrIngestionJobLeaseLost = errors.New("ingestion job lease lost")
 
+// Kept local because swarm already imports documents; importing swarm here would cycle.
+const delegationJobType = "swarm_delegation"
+
 // IngestionJob is the durable document/asset processing queue row.
 type IngestionJob struct {
 	ID                 string         `json:"id"`
@@ -276,6 +279,85 @@ func (s *PostgresIngestionJobStore) CountUnfinishedDelegationJobs(ctx context.Co
 		return 0, fmt.Errorf("count unfinished delegation jobs for fanout: %w", err)
 	}
 	return int(count), nil
+}
+
+// DelegationJobRow is the durable worker state exposed to swarm_status.
+type DelegationJobRow struct {
+	ID           string
+	Goal         string
+	ChildID      string
+	Status       string
+	AttemptCount int
+	MaxAttempts  int
+	CreatedAt    time.Time
+	CompletedAt  time.Time
+	ErrorMessage string
+}
+
+// ListDelegationJobs returns the newest workers for one identity and conversation.
+func (s *PostgresIngestionJobStore) ListDelegationJobs(ctx context.Context, identityID, conversationID string, limit int) ([]DelegationJobRow, error) {
+	return s.listDelegationJobs(ctx, identityID, conversationID, pgtype.Text{}, limit)
+}
+
+// FindDelegationJob resolves a child without applying the bounded list window.
+func (s *PostgresIngestionJobStore) FindDelegationJob(ctx context.Context, identityID, conversationID, childID string) (DelegationJobRow, bool, error) {
+	rows, err := s.listDelegationJobs(ctx, identityID, conversationID, pgtype.Text{String: childID, Valid: true}, 1)
+	if err != nil {
+		return DelegationJobRow{}, false, err
+	}
+	if len(rows) == 0 {
+		return DelegationJobRow{}, false, nil
+	}
+	return rows[0], true, nil
+}
+
+func (s *PostgresIngestionJobStore) listDelegationJobs(ctx context.Context, identityID, conversationID string, childID pgtype.Text, limit int) ([]DelegationJobRow, error) {
+	if limit <= 0 || int64(limit) > int64(1<<31-1) {
+		return nil, fmt.Errorf("delegation job limit must be between 1 and %d", int64(1<<31-1))
+	}
+	pgIdentityID, err := pgUUID("ingestion job identity id", identityID)
+	if err != nil {
+		return nil, err
+	}
+	var rows []sqlc.ListDelegationJobsForConversationRow
+	err = s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
+		var queryErr error
+		rows, queryErr = q.ListDelegationJobsForConversation(ctx, sqlc.ListDelegationJobsForConversationParams{
+			IdentityID: pgIdentityID, JobType: delegationJobType, ConversationID: conversationID,
+			ChildID: childID, RowLimit: int32(limit),
+		})
+		return queryErr
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list delegation jobs: %w", err)
+	}
+	out := make([]DelegationJobRow, 0, len(rows))
+	for _, r := range rows {
+		row, decodeErr := delegationJobRowFromSQL(r)
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		out = append(out, row)
+	}
+	return out, nil
+}
+
+func delegationJobRowFromSQL(r sqlc.ListDelegationJobsForConversationRow) (DelegationJobRow, error) {
+	payload, err := ingestionJobPayloadFromJSON(r.Payload)
+	if err != nil {
+		return DelegationJobRow{}, fmt.Errorf("decode delegation job %s payload: %w", uuidString(r.ID), err)
+	}
+	goal, goalOK := payload["goal"].(string)
+	childID, childIDOK := payload["child_id"].(string)
+	if !goalOK || goal == "" || !childIDOK || childID == "" {
+		return DelegationJobRow{}, fmt.Errorf("decode delegation job %s payload: goal and child_id are required", uuidString(r.ID))
+	}
+	return DelegationJobRow{
+		ID: uuidString(r.ID), Goal: goal, ChildID: childID, Status: r.Status,
+		AttemptCount: int(r.AttemptCount), MaxAttempts: int(r.MaxAttempts),
+		CreatedAt: timeValue(r.CreatedAt), CompletedAt: timeValue(r.CompletedAt),
+		ErrorMessage: r.ErrorMessage,
+	}, nil
 }
 
 func (s *PostgresIngestionJobStore) withIdentity(ctx context.Context, identityID string, fn func(*sqlc.Queries) error) error {

@@ -393,6 +393,74 @@ func (q *Queries) ListAnsweredAwaitingInputJobs(ctx context.Context, arg ListAns
 	return items, nil
 }
 
+const listDelegationJobsForConversation = `-- name: ListDelegationJobsForConversation :many
+SELECT id, status, attempt_count, max_attempts, payload, created_at, completed_at, error_message
+FROM aura.ingestion_jobs
+WHERE identity_id = $1
+  AND job_type = $2
+  AND payload->>'conversation_id' = $3::text
+  AND ($4::text IS NULL OR payload->>'child_id' = $4::text)
+ORDER BY created_at DESC
+LIMIT $5
+`
+
+type ListDelegationJobsForConversationParams struct {
+	IdentityID     pgtype.UUID `json:"identity_id"`
+	JobType        string      `json:"job_type"`
+	ConversationID string      `json:"conversation_id"`
+	ChildID        pgtype.Text `json:"child_id"`
+	RowLimit       int32       `json:"row_limit"`
+}
+
+type ListDelegationJobsForConversationRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	Status       string             `json:"status"`
+	AttemptCount int32              `json:"attempt_count"`
+	MaxAttempts  int32              `json:"max_attempts"`
+	Payload      []byte             `json:"payload"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	CompletedAt  pgtype.Timestamptz `json:"completed_at"`
+	ErrorMessage string             `json:"error_message"`
+}
+
+// The conversation id lives in payload because D-01 reused the generic ingestion queue.
+// identity_id provides tenant isolation; child_id is optional so targeted reads do
+// not become false not-found results when the worker is older than the list cap.
+func (q *Queries) ListDelegationJobsForConversation(ctx context.Context, arg ListDelegationJobsForConversationParams) ([]ListDelegationJobsForConversationRow, error) {
+	rows, err := q.db.Query(ctx, listDelegationJobsForConversation,
+		arg.IdentityID,
+		arg.JobType,
+		arg.ConversationID,
+		arg.ChildID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDelegationJobsForConversationRow{}
+	for rows.Next() {
+		var i ListDelegationJobsForConversationRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Status,
+			&i.AttemptCount,
+			&i.MaxAttempts,
+			&i.Payload,
+			&i.CreatedAt,
+			&i.CompletedAt,
+			&i.ErrorMessage,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listExpiredAwaitingInputJobs = `-- name: ListExpiredAwaitingInputJobs :many
 SELECT job.id, job.identity_id,
        pause.token AS pause_token, pause.pending_action_id, pause.tool_call_id,

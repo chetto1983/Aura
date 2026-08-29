@@ -357,14 +357,12 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A deliberate pin, moved deliberately: 0107 widens aura.ingestion_jobs.status's CHECK
-	// to add 'awaiting_input' (51-06b Task 1, SWARM-06/SC#4) -- a claim-loop worker's
-	// AwaitingInput report parks its row non-terminal and non-claimable instead of
-	// succeeding, failing or dead-lettering. The test exists so a migration added without
-	// noticing breaks the build rather than the deployment, so bumping it is the intended
-	// way to acknowledge one -- never a fixup to make a red go away.
-	if head != 107 {
-		t.Fatalf("MigrationHead=%d, want embedded head 107", head)
+	// A deliberate pin, moved deliberately: 0108 adds the nullable steer_queue fanout_key
+	// used to claim one Telegram nudge per swarm_spawn fan-out (51-11 Task 3). The test
+	// exists so a migration added without noticing breaks the build rather than deployment;
+	// bumping it is the intended acknowledgement, never an incidental red-to-green fix.
+	if head != 108 {
+		t.Fatalf("MigrationHead=%d, want embedded head 108", head)
 	}
 }
 

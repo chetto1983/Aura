@@ -169,6 +169,18 @@ WHERE identity_id = sqlc.arg(identity_id)
   AND job_type = 'swarm_delegation'
   AND payload->>'fanout_key' = sqlc.arg(fanout_key)::text
   AND status IN ('queued', 'running', 'awaiting_input');
+-- name: ListDelegationJobsForConversation :many
+-- The conversation id lives in payload because D-01 reused the generic ingestion queue.
+-- identity_id provides tenant isolation; child_id is optional so targeted reads do
+-- not become false not-found results when the worker is older than the list cap.
+SELECT id, status, attempt_count, max_attempts, payload, created_at, completed_at, error_message
+FROM aura.ingestion_jobs
+WHERE identity_id = sqlc.arg(identity_id)
+  AND job_type = sqlc.arg(job_type)
+  AND payload->>'conversation_id' = sqlc.arg(conversation_id)::text
+  AND (sqlc.narg(child_id)::text IS NULL OR payload->>'child_id' = sqlc.narg(child_id)::text)
+ORDER BY created_at DESC
+LIMIT sqlc.arg(row_limit);
 -- name: ParkIngestionJobAwaitingInput :execrows
 -- 51-06b (SWARM-06 SC#4, Task 1): a claim-loop worker's AwaitingInput report parks its
 -- row instead of succeeding, failing or dead-lettering. The conditional UPDATE (status
