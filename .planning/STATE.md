@@ -4,11 +4,11 @@ milestone: v2.1.0
 current_phase: 51
 current_phase_name: Durable delegation
 status: executing
-stopped_at: Completed 51-09-PLAN.md (D-03 inactivity termination model live-proven; checkpoint's own defects A/E/D fixed; findings B/C recorded for 51-08)
-last_updated: "2026-08-29T08:03:51.000Z"
+stopped_at: Phase 51 UI-SPEC approved (gap plan SWARM-12/SWARM-10 parent leg)
+last_updated: "2026-08-29T11:43:45.828Z"
 last_activity: 2026-08-29
 last_activity_desc: Phase 51 execution resumed (wave continue)
-state_head: f993228f7f4a8e6137639d8dbd1ca7b1c0edfd53
+state_head: 625984c7b361bdce4cc55b19e261d8b1cfd50566
 progress:
   total_phases: 8
   completed_phases: 1
@@ -278,8 +278,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-29T08:03:51.000Z
-Stopped at: Completed 51-09-PLAN.md (D-03 inactivity termination model live-proven; checkpoint's own defects A/E/D fixed; findings B/C recorded for 51-08)
+Last session: 2026-08-29T11:43:45.547Z
+Stopped at: Phase 51 UI-SPEC approved (gap plan SWARM-12/SWARM-10 parent leg)
 exited at its CONTEXT.md gate — Phase 45 has no CONTEXT.md, and discuss-phase must run as a
 top-level command (nested invocation breaks AskUserQuestion, GSD #1009). No phase directory
 was created and no planning agents were spawned.
@@ -292,6 +292,6 @@ build order extended with Phases 51/52 and the 53/54 renumber, requirement count
 to 77, the `tool_call_id` blocker marked resolved by `657c9e383`, and the CTX-V2-01 deferral
 re-pointed at Phase 53. REQUIREMENTS.md's two stale prose lines corrected to match.
 
-Resume file: None
+Resume file: .planning/phases/51-durable-delegation/51-UI-SPEC.md
 Next action: none assigned. Phase 52 is the next in order and is plan-ready, but nothing is
 scheduled — the operator drives.
