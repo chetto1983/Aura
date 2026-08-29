@@ -37,11 +37,12 @@ must_haves:
     - "The route is identity-scoped and 404-hiding exactly like the 51-07 transcript route: a bad conversation id, a foreign conversation, an unwired reader and a rejected child id all render the same opaque 404 body, indistinguishable on the wire"
     - "The stream is PUSH: the server tails the file on a fixed package-constant interval and pushes what it reads; there is no route a browser can usefully re-request, which is what makes 51-07's no-polling prohibition enforceable on the client side in 51-12b"
     - "A worker's reasoning deltas never leave the server — the translator is called with showReasoning false, so a worker's raw chain of thought is not in the bytes at all, not merely hidden by the client (UI-SPEC Decision B; ADK's is_final_response precedent)"
-    - "The stream ends on its own when the transcript's terminal marker line is observed — the swarm_child_status state-delta key plan 51-11 writes — and unwinds cleanly on client disconnect with no goroutine left behind (goleak, this package's shipped convention)"
+    - "The stream ends on its own when the transcript's terminal marker line is observed — the swarm_child_status state-delta key plan 51-11 writes — or when the transcript has been idle longer than the shipped AURA_SWARM_CHILD_IDLE_SEC threshold (the process-death case, the only transcript without a marker), and unwinds cleanly on client disconnect with no goroutine left behind (goleak, this package's shipped convention)"
     - "A JSONL line that fails to unmarshal is skipped with a WARN and never yielded as an error, so one malformed line cannot kill a stream the operator is watching"
     - "Without a child parameter the SAME route emits one aura.swarm.worker CUSTOM event per child whenever that child's derived state changes, plus one per known child at connect so a client that joins late is never blank"
     - "The multiplexed mode emits only child_id, status, last_event_at, events and duration_sec — never transcript content — so the chip's stream discloses strictly less than the pane's"
-    - "Server-side status derivation is one rule in one place: the terminal marker's swarm_child_status when present; otherwise awaiting_input when the last event carries an awaiting-input action; otherwise stalled when the last event is older than the configured idle threshold; otherwise running"
+    - "Server-side status derivation is one rule in one place: the terminal marker's swarm_child_status when present; otherwise needs_user_input when the last event carries an awaiting-input action; otherwise stalled when the last event is older than the configured idle threshold; otherwise running"
+    - "The status values this route can emit are EXACTLY the display vocabulary — ok, failed, needs_user_input, running, stalled, dead_letter — the six values swarm.Status* / display.Status* name after plan 51-11 and the six isSwarmStatus accepts after plan 51-12b. The job-row spelling awaiting_input (the aura.ingestion_jobs CHECK vocabulary) NEVER crosses this wire: a parked worker is needs_user_input on the wire, as swarm.ChildReport has always spelled it. A cross-plan test asserts the emitted set as a literal list"
     - "The idle threshold is the SHIPPED AURA_SWARM_CHILD_IDLE_SEC read through chat.cfg — this plan adds no env var, and the operator tunes one knob, not two"
     - "The swarm_spawn display normalizer decodes BOTH shapes through ONE path: a synchronous []ChildReport array exactly as today, and plan 51-11's queued dispatch object by returning its workers array — so the background dispatch and the synchronous result render through the same component and cannot drift"
     - "Any other preview payload still returns not-recognized, so the over-cap and context-unavailable inline errors keep degrading to the escaped raw panel (D-FALLBACK)"
@@ -212,7 +213,13 @@ conv, child, offset)`, splits the returned bytes on newlines, unmarshals each co
 `agent.Event`, yields it, advances the offset to the value `ReadTranscript` returned, and then
 sleeps a package-constant tail interval (one second — a constant in this file, not an env var, and
 not a knob) before reading again. It stops when the terminal marker is seen — a line whose
-`Actions.StateDelta` carries the `swarm_child_status` key plan 51-11 writes — or when `ctx` is done.
+`Actions.StateDelta` carries the `swarm_child_status` key plan 51-11 writes — or when `ctx` is done,
+or when the transcript has not grown for longer than `s.swarmWorkerIdle` (the field this task adds,
+the same knob Task 2's status mode reads; zero or negative disables the stop). The third exit exists
+for the one transcript that never gets a marker: a worker whose PROCESS died (daemon recreate
+mid-worker — 51-11 Task 2 states the marker is written on every other exit, the reap included).
+Without it a pane left open on such a transcript tails forever. On that exit emit the same terminal
+frame the marker exit emits, with the status `stalled`.
 A line that fails to unmarshal is skipped with a WARN, never yielded as an error that would kill the
 stream.
 
@@ -228,7 +235,9 @@ the only shape that makes that prohibition enforceable rather than merely assert
 Test it in `server_swarm_events_test.go` with a fake reader over an in-memory JSONL fixture: the
 404 ladder including a foreign identity and a byte-comparison of the four bodies, the replay order,
 the tail picking up an event appended AFTER the stream is open, the terminal-marker stop, the
-malformed-line skip, and `goleak` cleanliness (the package's existing convention).
+malformed-line skip, the idle stop over a transcript that NEVER terminates (a fixture with no
+marker and a threshold of a few milliseconds — the stream must end on its own with the `stalled`
+terminal frame), and `goleak` cleanliness (the package's existing convention).
   </action>
   <verify>
     <automated>wsl.exe -e bash -lc 'export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"; cd /mnt/d/Repo/Aura &amp;&amp; go build ./... &amp;&amp; go vet ./internal/agui/... ./cmd/aura/... &amp;&amp; go test ./internal/agui/ -run "TestSwarmWorkerEvents" -count=1'</automated>
@@ -241,6 +250,7 @@ malformed-line skip, and `goleak` cleanliness (the package's existing convention
     - `go test ./internal/agui/ -run TestSwarmWorkerEventsForeignIdentityIs404 -count=1 -v` passes and the test compares the four 404 bodies for byte equality.
     - `go test ./internal/agui/ -run TestSwarmWorkerEventsTailsAppendedEvent -count=1 -v` passes and the fixture appends AFTER the stream is open.
     - `go test ./internal/agui/ -run TestSwarmWorkerEventsSkipsMalformedLine -count=1 -v` passes with the surrounding events still delivered.
+    - `go test ./internal/agui/ -run TestSwarmWorkerEventsStopsOnIdleWithoutMarker -count=1 -v` passes: the fixture has no terminal marker, the idle threshold is milliseconds, and the stream ends by itself with a `stalled` terminal frame.
     - `wc -l internal/agui/server.go internal/agui/server_swarm_events.go` — both at or under 600.
     - `git diff --name-only` lists nothing under `web/`.
   </acceptance_criteria>
@@ -262,7 +272,7 @@ malformed-line skip, and `goleak` cleanliness (the package's existing convention
   <behavior>
     - `GET /api/conversations/{conv}/swarm/events` with no `child` parameter emits one `aura.swarm.worker` event per child of the conversation carrying `child_id`, `status`, `last_event_at`, `events` and `duration_sec` — and nothing else. Transcript content never appears in this mode.
     - One event per known child is emitted at connect, so a client that joins late is not blank; afterwards an event is emitted for a child only when its derived state DIFFERS from the state last emitted for that child.
-    - Status derivation, in order: the terminal marker's `swarm_child_status` when present; otherwise `awaiting_input` when the last event carries an awaiting-input action; otherwise `stalled` when the last event is older than the configured idle threshold; otherwise `running`.
+    - Status derivation, in order: the terminal marker's `swarm_child_status` when present; otherwise `display.StatusNeedsUserInput` (`needs_user_input`) when the last event carries an awaiting-input action; otherwise `display.StatusStalled` when the last event is older than the configured idle threshold; otherwise `display.StatusRunning`. The literal set this branch can emit is `ok | failed | needs_user_input | running | stalled | dead_letter` — the display vocabulary, never the job-row spelling `awaiting_input`, which the chip's `isSwarmStatus` would degrade to the danger dot and the "Unknown" label for a worker that is merely waiting for the operator.
     - The idle threshold comes from `s.swarmWorkerIdle`, set at `cmd/aura/serve_agui.go` from the shipped config field. A zero or negative value disables the stalled branch rather than marking every child stalled.
     - The multiplexed branch answers the same opaque 404 ladder as the child branch — grouping does not weaken scoping.
     - `decodeToolPreview("swarm_spawn", <a JSON array of ChildReport>)` keeps returning that array unchanged — every synchronous swarm renders exactly as today.
@@ -329,6 +339,7 @@ fell below 85%, the fix is a test in this plan, never an edit to the policy file
     - `grep -n 'SwarmWorkerEventName' internal/agui/translator.go internal/agui/server_swarm_events_status.go` matches in both.
     - `go test ./internal/agui/ -run TestSwarmWorkerStatusEmitsOnlyOnChange -count=1 -v` passes, and a second identical read produces no second event for that child.
     - `go test ./internal/agui/ -run TestSwarmWorkerStatusCarriesNoTranscriptText -count=1 -v` passes against a fixture whose transcript contains a distinctive sentinel string.
+    - `go test ./internal/agui/ -run TestSwarmWorkerStatusVocabulary -count=1 -v` passes: it drives the derivation through every branch (marker for each of the six statuses, awaiting-input action, idle, fresh) and asserts every emitted status is in the literal set `{ok, failed, needs_user_input, running, stalled, dead_letter}`; `grep -rn 'awaiting_input' internal/agui/server_swarm_events_status.go` returns nothing.
     - `grep -rn 'AURA_SWARM' internal/agui/` shows no new env var name.
     - `wc -l internal/agui/server_swarm_events.go internal/agui/server_swarm_events_status.go internal/agui/translator.go` — every file at or under 600.
     - `scripts/coverage_docker.sh` reported `internal/agui` and `internal/agent/display` at or above 85%, and `git diff scripts/coverage_package_policy.json` is empty (both are target-mode; a diff here means something moved that this plan did not expect and must be explained, not committed silently).

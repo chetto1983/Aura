@@ -316,6 +316,7 @@ produced by `docker compose build aura` in Task 3.
   </read_first>
   <behavior>
     - `isSwarmStatus` accepts `running`, `stalled` and `dead_letter` in addition to the three shipped values; `running` maps to the info dot, `stalled` and `needs_user_input` both map to the warning dot but carry different icons and different labels; an unknown value still degrades to the danger dot with the unknown label.
+    - The widened enum is EXACTLY `'ok' | 'failed' | 'needs_user_input' | 'running' | 'stalled' | 'dead_letter'` — the literal set plan 51-12a's status route emits (its `TestSwarmWorkerStatusVocabulary` pins the same six). A parked worker arrives as `needs_user_input`, never as the job-row spelling `awaiting_input`; a unit test feeds all six through `isSwarmStatus` and asserts true, and feeds `awaiting_input` and asserts false — if the server ever leaks the job-row spelling, the cross-plan contract fails here loudly rather than rendering a waiting worker as a red "Unknown".
     - `statusIconName(status)` is a pure function returning the lucide icon name that differentiates the two warning states, unit-testable without a render.
     - A row renders index, child id, status dot and label, goal on one line, a duration, and a bounded summary; the duration ticks while the status is running and freezes on a terminal status.
     - The Watch control is present on every row; the View report control is present only on a terminal row.
@@ -374,6 +375,7 @@ The bundle is still NOT built on this host — `docker compose build aura` in Ta
     - `grep -rn 'setInterval\|refetchInterval' web/src/chat/workers/` returns nothing.
     - `grep -n 'useElapsed\|formatElapsed' web/src/chat/displays/SwarmReportTable.tsx` matches — no second duration formatter was written.
     - `grep -n 'aria-selected' web/src/chat/workers/WorkerPicker.tsx` matches, and the keyboard test asserts ArrowLeft, ArrowRight, Home, End, Enter and Space.
+    - The `swarmRow` test asserts `isSwarmStatus` is true for exactly the six literals `ok, failed, needs_user_input, running, stalled, dead_letter` and false for `awaiting_input` — the same list 51-12a's `TestSwarmWorkerStatusVocabulary` pins on the server.
     - The `useWorkerStatuses` test asserts exactly one opened connection for a six-worker conversation, and that it is closed on unmount.
     - `git diff --stat -- web/package.json web/package-lock.json` is empty.
     - `wc -l web/src/chat/displays/SwarmReportTable.tsx` is at or under 600 (or the row was extracted).
