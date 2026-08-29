@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.1.0
 current_phase: 51
-current_phase_name: durable-delegation
+current_phase_name: Durable delegation
 status: executing
 stopped_at: Completed 51-12a-PLAN.md
 last_updated: "2026-08-29T20:57:12.192Z"
 last_activity: 2026-08-29
 last_activity_desc: Phase 51 plan 51-12a completed with verified worker transcript and status streams
-state_head: 3263163f316b0e295e3cea1123e2fca1f2e35363
+state_head: aff73bd55ab2cd356611763cf03bff37d2f234a1
 progress:
   total_phases: 8
-  completed_phases: 1
+  completed_phases: 3
   total_plans: 48
   completed_plans: 46
 milestone_name: HERMES-CLAUDE_PARITY
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 
 ## Current Position
 
-Phase: 51 (durable-delegation) — 12/14 plans complete
+Phase: 51 (Durable delegation) — EXECUTING
 Plan 51-12a is closed with verified worker transcript replay/tail and multiplexed status streams.
 Status: In progress; next dependency-ready plan is 51-12b
 
