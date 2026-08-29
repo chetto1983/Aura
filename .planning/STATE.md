@@ -4,16 +4,16 @@ milestone: v2.1.0
 current_phase: 51
 current_phase_name: durable-delegation
 status: executing
-stopped_at: Phase 51 UI-SPEC approved (gap plan SWARM-12/SWARM-10 parent leg)
-last_updated: "2026-08-29T12:49:02.523Z"
+stopped_at: Completed 51-11-PLAN.md
+last_updated: "2026-08-29T19:32:50.961Z"
 last_activity: 2026-08-29
-last_activity_desc: Phase 51 execution resumed (wave continue)
-state_head: 5074534c812fb3361609073edd05ce95a033b21e
+last_activity_desc: Phase 51 plan 51-11 completed after approved live delivery-envelope check
+state_head: 1c507db93f4949e0d73f3838f1afff9ff062bd73
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 48
-  completed_plans: 44
+  completed_plans: 45
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -28,9 +28,9 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 
 ## Current Position
 
-Phase: 51 (durable-delegation) — READY TO EXECUTE
-(corrected against hermes before any code existed), and every prerequisite was verified present.
-Status: Ready to execute
+Phase: 51 (durable-delegation) — 11/14 plans complete
+Plan 51-11 is closed after its Telegram-origin live checkpoint passed 5/5 and the operator approved it.
+Status: In progress; next dependency-ready plan is 51-12a
 
 **The roadmap shrank on 2026-08-25 (operator decision).** Phases **47** (tool-surface ceremony
 strip), **48** (un-defer and merges) and **53** (summarization spike) are DELETED, not annotated —
@@ -62,9 +62,9 @@ retaining byte caps, and `TestBridgedTool_Execute_MarksResultTrusted` pins MCP r
 The remaining unchecked MCP-02 item in REQUIREMENTS is its separate live unlisted-server proof;
 it is a roadmap acceptance obligation, not an unrecorded Calendar fork gap.
 
-Last activity: 2026-08-29 — Phase 51 execution resumed (wave continue)
+Last activity: 2026-08-29 — Plan 51-11 delivery envelope approved and closed
 
-Progress: [██████████] 100% (Phase 46 dispositions)
+Progress: [█████████░] 94% (45/48 milestone plans)
 
 ## Performance Metrics
 
@@ -106,6 +106,7 @@ Progress: [██████████] 100% (Phase 46 dispositions)
 | Phase 51 P06b | ~4h (2 sessions) | 3 tasks | 22 files |
 | Phase 51 P07 | single session (continuation) | 2 tasks | 7 files |
 | Phase 51 P09 | ~3h (continuation, after prior-session Task 1/2) | 3 tasks | 30 files |
+| Phase 51 P11 | 375min | 5 tasks | 44 files |
 
 ## Accumulated Context
 
@@ -214,6 +215,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 51]: [Phase 51] 51-09: Task 3's live checkpoint found and this plan fixed three defects the design measurement could not see -- SC#1's delivery failing under RLS because deliverSuccess/openPauseAndPark called Deliver on an identity-less ctx (defect A), a reaped shell_exec leaving its process running in the sandbox because Exec never signalled the box-side process group (defect E, fixed by reusing ExecStream's own PID-file kill mechanism), and compose.yaml never mapping .env's loop budget (defect D) -- recorded as PRD Amendment #171
 - [Phase 51]: [Phase 51] 51-09: internal/runner's 51-06b expiry-trace write was audited for the same RLS gap defect A found and cleared -- it threads identity explicitly through db.WithIdentityTx rather than reading it off ctx
 - [Phase 51]: [Phase 51] 51-09: two findings recorded but not fixed, both named decisions for plan 51-08 -- Finding B (the shipped retry policy re-runs a reaped worker AND a record-only-failure worker identically) and Finding C (AURA_SWARM_CHILD_IDLE_SEC equals AURA_LLM_TOTAL_TIMEOUT_SEC by default, so an upstream stall and a genuine reap both read "stalled")
+- [Phase 51]: 51-11 keeps delegation delivery origin-scoped: a cockpit-owned conversation is not pushed to Telegram; a Telegram proof starts from a Telegram-owned conversation.
+- [Phase 51]: 51-11 roots Telegram mutating turns with convID(chatID) plus inbound messageID; chatID identifies the private conversation, while messageID prevents separate turns from sharing one idempotency root.
+- [Phase 51]: 51-11 renders grouped delivery from the complete rows returned by the claiming UPDATE, never from the earlier candidate snapshot.
 
 ### Pending Todos
 
@@ -278,20 +282,10 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-29T11:43:45.547Z
-Stopped at: Phase 51 UI-SPEC approved (gap plan SWARM-12/SWARM-10 parent leg)
-exited at its CONTEXT.md gate — Phase 45 has no CONTEXT.md, and discuss-phase must run as a
-top-level command (nested invocation breaks AskUserQuestion, GSD #1009). No phase directory
-was created and no planning agents were spawned.
+Last session: 2026-08-29T19:31:44.759Z
+Stopped at: Completed 51-11-PLAN.md
+The Telegram-origin delivery envelope passed all five verdicts on the fresh healthy image. The
+operator approved the blocking checkpoint; SUMMARY.md and durable browser evidence are committed.
 
-While reporting that, STATE.md was found describing the milestone's *first* shape (8 phases,
-45-52, 52 requirements) rather than its current one. ROADMAP.md and the REQUIREMENTS.md
-traceability table were already correct; only the prose around them had drifted. Reconciled
-on 2026-08-13: STATE.md frontmatter `total_phases` 8→10, current position 45-of-52→45-of-54,
-build order extended with Phases 51/52 and the 53/54 renumber, requirement count re-measured
-to 77, the `tool_call_id` blocker marked resolved by `657c9e383`, and the CTX-V2-01 deferral
-re-pointed at Phase 53. REQUIREMENTS.md's two stale prose lines corrected to match.
-
-Resume file: .planning/phases/51-durable-delegation/51-UI-SPEC.md
-Next action: none assigned. Phase 52 is the next in order and is plan-ready, but nothing is
-scheduled — the operator drives.
+Resume file: None
+Next action: execute 51-12a, then 51-12b; 51-08 remains the phase-level live Definition of Done.
