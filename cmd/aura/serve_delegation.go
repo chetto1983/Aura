@@ -82,13 +82,20 @@ func (a steerNudgeAdapter) ListUnnudgedDelegationResults(ctx context.Context, cu
 	}
 	out := make([]swarm.UndrainedResult, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, swarm.UndrainedResult{ID: r.ID, IdentityID: r.IdentityID, Body: r.Body})
+		out = append(out, swarm.UndrainedResult{ID: r.ID, IdentityID: r.IdentityID, Body: r.Body, FanoutKey: r.FanoutKey})
 	}
 	return out, nil
 }
 
 func (a steerNudgeAdapter) MarkSteerRowNudged(ctx context.Context, id, identityID string) (bool, error) {
 	return a.store.MarkSteerRowNudged(ctx, id, identityID)
+}
+
+// MarkFanoutNudged (51-11 Task 3) adapts *steer.PostgresStore's own method onto the
+// swarm.SteerNudgeStore seam verbatim -- no translation, unlike the row types above,
+// since both sides already agree on ([]string, error).
+func (a steerNudgeAdapter) MarkFanoutNudged(ctx context.Context, identityID, fanoutKey string) ([]string, error) {
+	return a.store.MarkFanoutNudged(ctx, identityID, fanoutKey)
 }
 
 var _ swarm.SteerNudgeStore = steerNudgeAdapter{}
@@ -143,6 +150,20 @@ func (a delegationReportArchiver) ArchiveReport(ctx context.Context, identityID,
 	return asset.ID, nil
 }
 
+// delegationJobCounterAdapter adapts *documents.PostgresIngestionJobStore onto
+// swarm.FanoutJobCounter (51-11 Task 3) via CountUnfinishedDelegationJobs -- the same
+// lightweight per-function store construction newRuntimeDelegationWorker already does
+// (NewPostgresIngestionJobStore wraps a pool; it opens no new connection).
+type delegationJobCounterAdapter struct {
+	store *documents.PostgresIngestionJobStore
+}
+
+func (a delegationJobCounterAdapter) CountUnfinishedDelegationJobs(ctx context.Context, identityID, fanoutKey string) (int, error) {
+	return a.store.CountUnfinishedDelegationJobs(ctx, identityID, fanoutKey)
+}
+
+var _ swarm.FanoutJobCounter = delegationJobCounterAdapter{}
+
 // delegationNudgeProcessor adapts DelegationDelivery.NudgeUndrained onto
 // runtimeIngestionProcessor so it rides the SAME runtimeProcessingWorkers
 // container (Start/Stop, same context) the claim loop already uses — no
@@ -157,9 +178,10 @@ func (p *delegationNudgeProcessor) ProcessOnce(ctx context.Context) (int, error)
 
 // newDelegationDelivery builds the plan 51-10/51-11 delivery concern from the
 // live runtime: the SC#1 conversation record, the unchanged present-operator
-// steer push (D-04), the absent-operator channel nudge (D-02), and (51-11)
-// the report archive. A nil chat.steer (no Postgres configured), a nil reg,
-// or a nil chat.assets degrades those legs to a no-op/no-artifact-pointer
+// steer push (D-04), the absent-operator channel nudge (D-02), (51-11) the
+// report archive, and (51-11 Task 3) the fan-out eligibility counter. A nil
+// chat.steer (no Postgres configured), a nil reg, a nil chat.assets, or a nil
+// chat.pool degrades those legs to a no-op/no-artifact-pointer/always-eligible
 // rather than dereferencing — Deliver/DeliverReport's own nil-receiver guard
 // on Recorder is the hard stop (a wiring bug, not a domain rejection).
 func newDelegationDelivery(chat *chatEnv, store *cron.Store, reg *channels.Registry) *swarm.DelegationDelivery {
@@ -177,6 +199,10 @@ func newDelegationDelivery(chat *chatEnv, store *cron.Store, reg *channels.Regis
 	if chat.assets != nil {
 		archiver = delegationReportArchiver{svc: chat.assets}
 	}
+	var counter swarm.FanoutJobCounter
+	if chat.pool != nil {
+		counter = delegationJobCounterAdapter{store: documents.NewPostgresIngestionJobStore(chat.pool)}
+	}
 	return swarm.NewDelegationDelivery(
 		delegationConversationRecorder{store: chat.conv},
 		steerPub,
@@ -184,6 +210,7 @@ func newDelegationDelivery(chat *chatEnv, store *cron.Store, reg *channels.Regis
 		nudge,
 		delegationPendingNotifier{store: store},
 		archiver,
+		counter,
 		time.Duration(chat.cfg.SwarmDelegationNudgeSec)*time.Second,
 	)
 }

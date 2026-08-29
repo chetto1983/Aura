@@ -161,6 +161,38 @@ func (q *Queries) CountIngestionJobsByStatus(ctx context.Context, arg CountInges
 	return count, err
 }
 
+const countUnfinishedDelegationJobsForFanout = `-- name: CountUnfinishedDelegationJobsForFanout :one
+SELECT count(*) FROM aura.ingestion_jobs
+WHERE identity_id = $1
+  AND job_type = 'swarm_delegation'
+  AND payload->>'fanout_key' = $2::text
+  AND status IN ('queued', 'running', 'awaiting_input')
+`
+
+type CountUnfinishedDelegationJobsForFanoutParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	FanoutKey  string      `json:"fanout_key"`
+}
+
+// 51-11 Task 3: the fan-out nudge sweep's eligibility check (delegation_fanout.go's
+// nudgeFanout) -- how many job_type=swarm_delegation rows of one identity still carry this
+// fan-out key in their payload and have not reached a terminal outcome. The three
+// non-terminal statuses are named as a literal list (queued, running, awaiting_input), not
+// as a negation over the terminal ones (succeeded, failed, dead_letter, canceled), so a
+// FUTURE status added to the CHECK vocabulary defaults to "terminal, does not block a
+// fan-out" only if someone deliberately adds it here -- a negation would have silently
+// treated it as non-terminal and blocked every fan-out sharing that status forever.
+// awaiting_input blocks on purpose: a parked worker is going to produce a report, and the
+// operator is already being asked about it through the shipped HITL relay (51-06b) -- the
+// fan-out is not done until that answer resolves the pause one way or another. A fan-out
+// key nobody wrote (or one whose every job already finished) returns 0.
+func (q *Queries) CountUnfinishedDelegationJobsForFanout(ctx context.Context, arg CountUnfinishedDelegationJobsForFanoutParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countUnfinishedDelegationJobsForFanout, arg.IdentityID, arg.FanoutKey)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createIngestionJob = `-- name: CreateIngestionJob :one
 
 INSERT INTO aura.ingestion_jobs (

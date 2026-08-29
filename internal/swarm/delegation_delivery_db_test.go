@@ -25,6 +25,7 @@ import (
 	"github.com/chetto1983/aura/internal/steer"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -50,6 +51,30 @@ func seedDelegationDeliveryConversation(t *testing.T, pool *pgxpool.Pool) (ident
 	return identityID, conversationID
 }
 
+// seedDelegationJobRow inserts one aura.ingestion_jobs row directly (bypassing
+// DelegationEnqueuer.Create's own fencing/idempotency concerns, which have
+// their own dedicated coverage elsewhere) purely to give
+// CountUnfinishedDelegationJobsForFanout a real row to count against.
+// aura.ingestion_jobs carries identity-scoped RLS (measured live: a bare
+// pool.Exec as aura_app with no app.current_identity set is refused with
+// "new row violates row-level security policy"), so the insert runs through
+// db.WithIdentityTxRaw -- the SAME identity-scoping seam
+// dbConversationRecorderAdapter's own AppendAssistantTurn uses below.
+func seedDelegationJobRow(t *testing.T, pool *pgxpool.Pool, identityID, fanoutKey, status string) {
+	t.Helper()
+	payload := fmt.Sprintf(`{"goal":"g","conversation_id":"c","fanout_key":%q}`, fanoutKey)
+	err := db.WithIdentityTxRaw(context.Background(), pool, identityID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(context.Background(),
+			`INSERT INTO aura.ingestion_jobs (identity_id, job_type, status, idempotency_key, stage, max_attempts, next_attempt_at, payload)
+			 VALUES ($1, 'swarm_delegation', $2, $3, 'dispatch', 3, now(), $4::jsonb)`,
+			identityID, status, uuid.NewString(), payload)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("seed delegation job row: %v", err)
+	}
+}
+
 // dbNudgeAdapter wraps *steer.PostgresStore onto SteerNudgeStore -- the SAME
 // translation cmd/aura/serve_delegation.go's own steerNudgeAdapter performs,
 // copied here so this proof runs against the REAL steer_queue SQL rather
@@ -65,13 +90,17 @@ func (a dbNudgeAdapter) ListUnnudgedDelegationResults(ctx context.Context, cutof
 	}
 	out := make([]UndrainedResult, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, UndrainedResult{ID: r.ID, IdentityID: r.IdentityID, Body: r.Body})
+		out = append(out, UndrainedResult{ID: r.ID, IdentityID: r.IdentityID, Body: r.Body, FanoutKey: r.FanoutKey})
 	}
 	return out, nil
 }
 
 func (a dbNudgeAdapter) MarkSteerRowNudged(ctx context.Context, id, identityID string) (bool, error) {
 	return a.store.MarkSteerRowNudged(ctx, id, identityID)
+}
+
+func (a dbNudgeAdapter) MarkFanoutNudged(ctx context.Context, identityID, fanoutKey string) ([]string, error) {
+	return a.store.MarkFanoutNudged(ctx, identityID, fanoutKey)
 }
 
 // channelCounterFunc adapts a plain func() into ChannelDeliverer for the
@@ -219,5 +248,110 @@ func TestDeliverSuccessRecordsUnderRealRLSAsAuraApp(t *testing.T) {
 	}
 	if !strings.Contains(content, "all done") {
 		t.Fatalf("recorded content = %q, want it to contain the delegation report", content)
+	}
+}
+
+// TestDeliverReportWritesFanoutKeyUnderRealRLS is the db_integration
+// counterpart to TestDeliverReportWritesTheFanoutKey's fake-based proof
+// (51-11 Task 3, acceptance criteria's own named case): DeliverReport pushes
+// through a REAL steer.PostgresStore.PushDelegationResult, and the row read
+// back from aura.steer_queue carries fanout_key set, non-NULL, equal to the
+// payload's key -- as aura_app, never the superuser aura role, which is
+// BYPASSRLS and would give a false green on this exact write path.
+func TestDeliverReportWritesFanoutKeyUnderRealRLS(t *testing.T) {
+	pool := delegationDisposablePool(t)
+	identityID, convID := seedDelegationDeliveryConversation(t, pool)
+	recorder := dbConversationRecorderAdapter{pool: pool}
+	store := steer.NewPostgresStore(pool, steer.Config{Max: 8, MaxBytes: 16384})
+	d := &DelegationDelivery{Recorder: recorder, Steer: store}
+
+	report := ChildReport{ChildID: "w1-real", Status: StatusOK, Goal: "goal", Summary: "summary"}
+	payload := DelegationPayload{ConversationID: convID, FanoutKey: "f-realkey0123456"}
+	bound := identityctx.WithIdentityID(context.Background(), identityID)
+	if _, err := d.DeliverReport(bound, payload, report, time.Minute); err != nil {
+		t.Fatalf("DeliverReport = %v", err)
+	}
+
+	var fanoutKey pgtype.Text
+	readErr := db.WithIdentityTxRaw(context.Background(), pool, identityID, func(tx pgx.Tx) error {
+		return tx.QueryRow(context.Background(),
+			`SELECT fanout_key FROM aura.steer_queue WHERE conversation_id = $1 AND kind = 'delegation_result'`,
+			convID).Scan(&fanoutKey)
+	})
+	if readErr != nil {
+		t.Fatalf("read back fanout_key: %v", readErr)
+	}
+	if !fanoutKey.Valid {
+		t.Fatal("fanout_key is NULL, want it set")
+	}
+	if fanoutKey.String != payload.FanoutKey {
+		t.Fatalf("fanout_key = %q, want payload.FanoutKey %q", fanoutKey.String, payload.FanoutKey)
+	}
+}
+
+// TestFanoutRealDBSkipsWhileUnfinishedThenDeliversOnce is the db_integration
+// counterpart to TestFanoutSkipsWhileAWorkerRuns/TestFanoutClaimsRendersOnceAndDelivers
+// (51-11 Task 3): exercises CountUnfinishedDelegationJobsForFanout and
+// MarkFanoutNudged against a REAL Postgres connection, as aura_app --
+// *documents.PostgresIngestionJobStore satisfies swarm.FanoutJobCounter by
+// construction (its CountUnfinishedDelegationJobs method signature matches
+// the interface exactly), so no adapter is needed here.
+func TestFanoutRealDBSkipsWhileUnfinishedThenDeliversOnce(t *testing.T) {
+	pool := delegationDisposablePool(t)
+	identityID, convID := seedDelegationDeliveryConversation(t, pool)
+	steerStore := steer.NewPostgresStore(pool, steer.Config{Max: 8, MaxBytes: 16384})
+	jobStore := documents.NewPostgresIngestionJobStore(pool)
+	fanoutKey := "f-realfanout0001"
+
+	seedDelegationJobRow(t, pool, identityID, fanoutKey, "running")
+
+	report1, err := marshalReports([]ChildReport{{GoalIndex: 0, ChildID: "w1", Status: StatusOK, Goal: "g1", Summary: "s1"}})
+	if err != nil {
+		t.Fatalf("marshalReports: %v", err)
+	}
+	report2, err := marshalReports([]ChildReport{{GoalIndex: 1, ChildID: "w2", Status: StatusOK, Goal: "g2", Summary: "s2"}})
+	if err != nil {
+		t.Fatalf("marshalReports: %v", err)
+	}
+	if err := steerStore.PushDelegationResult(convID, steer.SourceWorker, report1, fanoutKey); err != nil {
+		t.Fatalf("push 1: %v", err)
+	}
+	if err := steerStore.PushDelegationResult(convID, steer.SourceWorker, report2, fanoutKey); err != nil {
+		t.Fatalf("push 2: %v", err)
+	}
+
+	channel := &fakeChannelDeliverer{delivered: true}
+	d := &DelegationDelivery{Channel: channel, Nudge: dbNudgeAdapter{store: steerStore}, Counter: jobStore, NudgeAfter: time.Minute}
+
+	n, err := d.NudgeUndrained(context.Background(), time.Now().Add(time.Hour), 10)
+	if err != nil {
+		t.Fatalf("NudgeUndrained (still running): %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("nudged = %d, want 0 while a sibling job is still running", n)
+	}
+	if len(channel.calls) != 0 {
+		t.Fatalf("channel calls = %d, want 0", len(channel.calls))
+	}
+
+	err = db.WithIdentityTxRaw(context.Background(), pool, identityID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(context.Background(),
+			`UPDATE aura.ingestion_jobs SET status = 'succeeded', completed_at = now() WHERE identity_id = $1 AND payload->>'fanout_key' = $2`,
+			identityID, fanoutKey)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("finish the fan-out's job: %v", err)
+	}
+
+	n, err = d.NudgeUndrained(context.Background(), time.Now().Add(time.Hour), 10)
+	if err != nil {
+		t.Fatalf("NudgeUndrained (finished): %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("nudged = %d, want 1 once the fan-out's job is finished", n)
+	}
+	if len(channel.calls) != 1 {
+		t.Fatalf("channel calls = %d, want exactly 1", len(channel.calls))
 	}
 }

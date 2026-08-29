@@ -26,9 +26,9 @@ WITH owner AS (
       AND q.expired_at IS NULL
       AND (q.expires_at IS NULL OR q.expires_at > now())
 )
-INSERT INTO aura.steer_queue (identity_id, conversation_id, kind, source, body, expires_at)
+INSERT INTO aura.steer_queue (identity_id, conversation_id, kind, source, body, expires_at, fanout_key)
 SELECT owner.identity_id, sqlc.arg(conversation_id), sqlc.arg(kind), sqlc.arg(source),
-       sqlc.arg(body), sqlc.narg(expires_at)
+       sqlc.arg(body), sqlc.narg(expires_at), sqlc.narg(fanout_key)
 FROM owner, capacity
 WHERE owner.identity_id IS NOT NULL
   AND capacity.n < sqlc.arg(max_queue)::int;
@@ -121,3 +121,18 @@ SET nudged_at = now()
 WHERE id = sqlc.arg(id)
   AND identity_id = sqlc.arg(identity_id)
   AND nudged_at IS NULL;
+
+-- name: MarkFanoutNudged :many
+-- 51-11 Task 3: MarkSteerRowNudged's own conditional-UPDATE idempotency argument,
+-- generalized from one row to the whole set that shares one (identity, fanout_key) pair --
+-- the unclaimed predicate is still nudged_at IS NULL, the entire idempotency key a single
+-- row's version already used. RETURNING id is what tells the caller which rows THIS pass
+-- won: two concurrent sweep passes over the SAME complete fan-out race for the SAME set of
+-- unclaimed rows, and the loser's UPDATE matches zero of them (every row already has
+-- nudged_at set by the winner), so it returns an empty result and sends nothing.
+UPDATE aura.steer_queue
+SET nudged_at = now()
+WHERE identity_id = sqlc.arg(identity_id)
+  AND fanout_key = sqlc.arg(fanout_key)
+  AND nudged_at IS NULL
+RETURNING id;

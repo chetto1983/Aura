@@ -70,7 +70,33 @@ func NewPostgresStore(pool *pgxpool.Pool, cfg Config) *PostgresStore {
 // (migration 0103) inside the SAME guarded INSERT that enforces the capacity cap — see
 // that migration's header for why a context.Background()-scoped plain transaction,
 // rather than db.WithIdentityTx, is correct here.
+//
+// Push writes a NULL fanout_key (51-11 Task 3) -- it is Push, not PushDelegationResult,
+// specifically because its signature is locked and cannot grow a fifth argument; a plain
+// operator steer or a lone (N=1) delegation report never belongs to a grouped fan-out
+// send either way.
 func (s *PostgresStore) Push(conv, source, text string) error {
+	return s.push(conv, source, text, "")
+}
+
+// PushDelegationResult is Push's fan-out-aware counterpart (51-11 Task 3, CONTEXT D-15):
+// the SAME guarded INSERT, capacity cap, TTL derivation and sentinel errors, with one
+// additional value written -- the fanout_key every row of one swarm_spawn call shares, so
+// the absent-operator nudge sweep can claim and deliver the whole fan-out in one message.
+// It shares this method's body with Push through the unexported push helper below rather
+// than duplicating the validation ladder or the transaction; Push itself keeps its own
+// locked, unwidenable (conv, source, text string) error signature untouched (this doc's
+// own paragraph above), so a fourth argument was never an option there -- this is a
+// second, additive method instead of a fifth Push argument.
+func (s *PostgresStore) PushDelegationResult(conv, source, text, fanoutKey string) error {
+	return s.push(conv, source, text, fanoutKey)
+}
+
+// push is Push and PushDelegationResult's shared body: identical validation ladder,
+// identical kind/TTL derivation from source, identical guarded INSERT and disambiguation
+// probe on a 0-row result -- the only difference is whether fanoutKey travels into
+// PushSteerRowParams.FanoutKey as NULL (Push, empty string) or set (PushDelegationResult).
+func (s *PostgresStore) push(conv, source, text, fanoutKey string) error {
 	// The nil-receiver guard MUST run before any field access on s: a
 	// *PostgresStore boxed into an interface (telegram.Deps.Steer,
 	// agui's steerPusher) can be a non-nil interface wrapping a nil pointer
@@ -101,6 +127,10 @@ func (s *PostgresStore) Push(conv, source, text string) error {
 	if ttl > 0 {
 		expiresAt = pgtype.Timestamptz{Time: s.now().Add(ttl), Valid: true}
 	}
+	var fanoutKeyArg pgtype.Text
+	if fanoutKey != "" {
+		fanoutKeyArg = pgtype.Text{String: fanoutKey, Valid: true}
+	}
 
 	ctx := context.Background()
 	var affected int64
@@ -113,6 +143,7 @@ func (s *PostgresStore) Push(conv, source, text string) error {
 			Body:           text,
 			ExpiresAt:      expiresAt,
 			MaxQueue:       int32(s.cfg.Max), //nolint:gosec // Config.Max is an operator-configured cap, always small.
+			FanoutKey:      fanoutKeyArg,
 		})
 		return qErr
 	})
@@ -215,6 +246,10 @@ type UnnudgedDelegationResult struct {
 	ID         string
 	IdentityID string
 	Body       string
+	// FanoutKey (51-11 Task 3) groups the N rows one swarm_spawn call produced. Empty
+	// (a NULL column reads as the Go zero value) means "not part of a fan-out" -- a
+	// legacy pre-migration row or a worker's own question (Deliver, never DeliverReport).
+	FanoutKey string
 }
 
 // ListUnnudgedDelegationResults returns delegation_result rows older than
@@ -244,6 +279,7 @@ func (s *PostgresStore) ListUnnudgedDelegationResults(ctx context.Context, cutof
 			ID:         uuidString(r.ID),
 			IdentityID: uuidString(r.IdentityID),
 			Body:       r.Body,
+			FanoutKey:  r.FanoutKey.String,
 		})
 	}
 	return out, nil
@@ -281,4 +317,37 @@ func (s *PostgresStore) MarkSteerRowNudged(ctx context.Context, id, identityID s
 		return false, fmt.Errorf("steer: mark steer row nudged %s: %w", id, err)
 	}
 	return affected > 0, nil
+}
+
+// MarkFanoutNudged is MarkSteerRowNudged's own conditional-UPDATE idempotency argument
+// (51-11 Task 3), generalized from one row to every unclaimed row of one (identity,
+// fanout_key) pair, claimed in ONE statement: two concurrent sweep passes over the SAME
+// complete fan-out race for the SAME set of unclaimed rows, and the loser's UPDATE matches
+// zero of them (the winner already set nudged_at on all of them), returning an empty
+// slice -- never an error, and never a partial claim split across two callers.
+func (s *PostgresStore) MarkFanoutNudged(ctx context.Context, identityID, fanoutKey string) ([]string, error) {
+	if s == nil || s.pool == nil {
+		return nil, fmt.Errorf("steer: mark fanout nudged: store is not configured")
+	}
+	identity, err := uuid.Parse(identityID)
+	if err != nil {
+		return nil, fmt.Errorf("steer: mark fanout nudged: invalid identity_id %q: %w", identityID, err)
+	}
+	var rows []pgtype.UUID
+	err = db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
+		var qErr error
+		rows, qErr = q.MarkFanoutNudged(ctx, sqlc.MarkFanoutNudgedParams{
+			IdentityID: pgtype.UUID{Bytes: identity, Valid: true},
+			FanoutKey:  pgtype.Text{String: fanoutKey, Valid: true},
+		})
+		return qErr
+	})
+	if err != nil {
+		return nil, fmt.Errorf("steer: mark fanout nudged %s/%s: %w", identityID, fanoutKey, err)
+	}
+	ids := make([]string, 0, len(rows))
+	for _, r := range rows {
+		ids = append(ids, uuidString(r))
+	}
+	return ids, nil
 }

@@ -44,9 +44,9 @@ WITH owner AS (
     SET drained_at = now()
     FROM candidates c
     WHERE q.id = c.id
-    RETURNING q.id, q.identity_id, q.conversation_id, q.kind, q.source, q.body, q.created_at, q.expires_at, q.drained_at, q.expired_at, q.expiry_reason, q.nudged_at
+    RETURNING q.id, q.identity_id, q.conversation_id, q.kind, q.source, q.body, q.created_at, q.expires_at, q.drained_at, q.expired_at, q.expiry_reason, q.nudged_at, q.fanout_key
 )
-SELECT id, identity_id, conversation_id, kind, source, body, created_at, expires_at, drained_at, expired_at, expiry_reason, nudged_at FROM drained ORDER BY created_at, id
+SELECT id, identity_id, conversation_id, kind, source, body, created_at, expires_at, drained_at, expired_at, expiry_reason, nudged_at, fanout_key FROM drained ORDER BY created_at, id
 `
 
 type DrainSteerRowsRow struct {
@@ -62,6 +62,7 @@ type DrainSteerRowsRow struct {
 	ExpiredAt      pgtype.Timestamptz `json:"expired_at"`
 	ExpiryReason   pgtype.Text        `json:"expiry_reason"`
 	NudgedAt       pgtype.Timestamptz `json:"nudged_at"`
+	FanoutKey      pgtype.Text        `json:"fanout_key"`
 }
 
 // The drain IS the claim (the same conditional-update-as-idempotency-key idiom as
@@ -94,6 +95,7 @@ func (q *Queries) DrainSteerRows(ctx context.Context, conversationID string) ([]
 			&i.ExpiredAt,
 			&i.ExpiryReason,
 			&i.NudgedAt,
+			&i.FanoutKey,
 		); err != nil {
 			return nil, err
 		}
@@ -106,7 +108,7 @@ func (q *Queries) DrainSteerRows(ctx context.Context, conversationID string) ([]
 }
 
 const listDueSteerRows = `-- name: ListDueSteerRows :many
-SELECT id, identity_id, conversation_id, kind, source, body, created_at, expires_at, drained_at, expired_at, expiry_reason, nudged_at FROM aura.steer_queue
+SELECT id, identity_id, conversation_id, kind, source, body, created_at, expires_at, drained_at, expired_at, expiry_reason, nudged_at, fanout_key FROM aura.steer_queue
 WHERE drained_at IS NULL
   AND expired_at IS NULL
   AND expires_at IS NOT NULL
@@ -148,6 +150,7 @@ func (q *Queries) ListDueSteerRows(ctx context.Context, arg ListDueSteerRowsPara
 			&i.ExpiredAt,
 			&i.ExpiryReason,
 			&i.NudgedAt,
+			&i.FanoutKey,
 		); err != nil {
 			return nil, err
 		}
@@ -160,7 +163,7 @@ func (q *Queries) ListDueSteerRows(ctx context.Context, arg ListDueSteerRowsPara
 }
 
 const listUnnudgedDelegationResults = `-- name: ListUnnudgedDelegationResults :many
-SELECT id, identity_id, conversation_id, kind, source, body, created_at, expires_at, drained_at, expired_at, expiry_reason, nudged_at FROM aura.steer_queue
+SELECT id, identity_id, conversation_id, kind, source, body, created_at, expires_at, drained_at, expired_at, expiry_reason, nudged_at, fanout_key FROM aura.steer_queue
 WHERE kind = 'delegation_result'
   AND drained_at IS NULL
   AND expired_at IS NULL
@@ -203,10 +206,52 @@ func (q *Queries) ListUnnudgedDelegationResults(ctx context.Context, arg ListUnn
 			&i.ExpiredAt,
 			&i.ExpiryReason,
 			&i.NudgedAt,
+			&i.FanoutKey,
 		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markFanoutNudged = `-- name: MarkFanoutNudged :many
+UPDATE aura.steer_queue
+SET nudged_at = now()
+WHERE identity_id = $1
+  AND fanout_key = $2
+  AND nudged_at IS NULL
+RETURNING id
+`
+
+type MarkFanoutNudgedParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	FanoutKey  pgtype.Text `json:"fanout_key"`
+}
+
+// 51-11 Task 3: MarkSteerRowNudged's own conditional-UPDATE idempotency argument,
+// generalized from one row to the whole set that shares one (identity, fanout_key) pair --
+// the unclaimed predicate is still nudged_at IS NULL, the entire idempotency key a single
+// row's version already used. RETURNING id is what tells the caller which rows THIS pass
+// won: two concurrent sweep passes over the SAME complete fan-out race for the SAME set of
+// unclaimed rows, and the loser's UPDATE matches zero of them (every row already has
+// nudged_at set by the winner), so it returns an empty result and sends nothing.
+func (q *Queries) MarkFanoutNudged(ctx context.Context, arg MarkFanoutNudgedParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, markFanoutNudged, arg.IdentityID, arg.FanoutKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -277,12 +322,12 @@ WITH owner AS (
       AND q.expired_at IS NULL
       AND (q.expires_at IS NULL OR q.expires_at > now())
 )
-INSERT INTO aura.steer_queue (identity_id, conversation_id, kind, source, body, expires_at)
+INSERT INTO aura.steer_queue (identity_id, conversation_id, kind, source, body, expires_at, fanout_key)
 SELECT owner.identity_id, $1, $2, $3,
-       $4, $5
+       $4, $5, $6
 FROM owner, capacity
 WHERE owner.identity_id IS NOT NULL
-  AND capacity.n < $6::int
+  AND capacity.n < $7::int
 `
 
 type PushSteerRowParams struct {
@@ -291,6 +336,7 @@ type PushSteerRowParams struct {
 	Source         string             `json:"source"`
 	Body           string             `json:"body"`
 	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	FanoutKey      pgtype.Text        `json:"fanout_key"`
 	MaxQueue       int32              `json:"max_queue"`
 }
 
@@ -316,6 +362,7 @@ func (q *Queries) PushSteerRow(ctx context.Context, arg PushSteerRowParams) (int
 		arg.Source,
 		arg.Body,
 		arg.ExpiresAt,
+		arg.FanoutKey,
 		arg.MaxQueue,
 	)
 	if err != nil {

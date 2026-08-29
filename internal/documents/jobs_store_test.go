@@ -1,6 +1,7 @@
 package documents
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"testing"
@@ -68,6 +69,26 @@ func TestNewPostgresIngestionJobStoreWiresQueries(t *testing.T) {
 	store := NewPostgresIngestionJobStore(nil)
 	if store == nil {
 		t.Fatalf("NewPostgresIngestionJobStore = %#v", store)
+	}
+}
+
+// TestCountUnfinishedDelegationJobsUnconfiguredStore (51-11 Task 3) mirrors
+// CountByStatus's own nil-safe posture: a nil store names itself
+// unconfigured rather than panicking, reached through withIdentity's own
+// s == nil guard.
+func TestCountUnfinishedDelegationJobsUnconfiguredStore(t *testing.T) {
+	var store *PostgresIngestionJobStore
+	if _, err := store.CountUnfinishedDelegationJobs(context.Background(), "00000000-0000-0000-0000-000000000001", "f-key"); err == nil {
+		t.Fatal("CountUnfinishedDelegationJobs on a nil store = nil, want a configuration error")
+	}
+}
+
+// TestCountUnfinishedDelegationJobsRejectsInvalidIdentity pins that a
+// malformed identityID is named before ever reaching withIdentity.
+func TestCountUnfinishedDelegationJobsRejectsInvalidIdentity(t *testing.T) {
+	store := NewPostgresIngestionJobStore(nil)
+	if _, err := store.CountUnfinishedDelegationJobs(context.Background(), "not-a-uuid", "f-key"); err == nil {
+		t.Fatal("CountUnfinishedDelegationJobs(invalid identity) = nil, want an error")
 	}
 }
 

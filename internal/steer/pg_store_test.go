@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"go.uber.org/goleak"
 )
 
@@ -269,6 +270,94 @@ func TestQueueTTLDisabledByNonPositiveValue(t *testing.T) {
 	}
 	if expiresAtValid {
 		t.Error("expires_at is set for a <=0 TTL, want NULL (never expires)")
+	}
+}
+
+// TestPostgresSteerQueuePushDelegationResultRoundTrip proves PushDelegationResult
+// (51-11 Task 3) against a REAL Postgres connection: the row it writes carries
+// fanout_key set, and a plain Push (no key) round-trips a NULL one --
+// migration 0108's own "NULL means not part of a fan-out" contract.
+func TestPostgresSteerQueuePushDelegationResultRoundTrip(t *testing.T) {
+	pool := steerDisposablePool(t)
+	_, convID := seedIdentityAndConversation(t, pool)
+	store := NewPostgresStore(pool, Config{Max: 8, MaxBytes: 16384})
+
+	if err := store.PushDelegationResult(convID, SourceWorker, "fan-out report", "f-roundtrip123"); err != nil {
+		t.Fatalf("PushDelegationResult: %v", err)
+	}
+	if err := store.Push(convID, SourceWorker, "lone report"); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+
+	rows, err := pool.Query(t.Context(),
+		"SELECT body, fanout_key FROM aura.steer_queue WHERE conversation_id = $1 ORDER BY created_at", convID)
+	if err != nil {
+		t.Fatalf("query rows: %v", err)
+	}
+	defer rows.Close()
+	type row struct {
+		body      string
+		fanoutKey pgtype.Text
+	}
+	var got []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.body, &r.fanoutKey); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		got = append(got, r)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("rows = %d, want 2", len(got))
+	}
+	if got[0].body != "fan-out report" || !got[0].fanoutKey.Valid || got[0].fanoutKey.String != "f-roundtrip123" {
+		t.Fatalf("PushDelegationResult row = %+v, want fanout_key set to f-roundtrip123", got[0])
+	}
+	if got[1].body != "lone report" || got[1].fanoutKey.Valid {
+		t.Fatalf("Push row = %+v, want fanout_key NULL", got[1])
+	}
+}
+
+// TestPostgresSteerQueueMarkFanoutNudgedClaimsWholeGroupOnce proves
+// MarkFanoutNudged's own contract against a REAL connection: it claims every
+// unclaimed row of one (identity, fanout_key) pair in ONE statement, and a
+// second call over the SAME group claims nothing (the loser of a race sees
+// an empty result, never a partial claim).
+func TestPostgresSteerQueueMarkFanoutNudgedClaimsWholeGroupOnce(t *testing.T) {
+	pool := steerDisposablePool(t)
+	identityID, convID := seedIdentityAndConversation(t, pool)
+	store := NewPostgresStore(pool, Config{Max: 8, MaxBytes: 16384})
+
+	fanoutKey := "f-claimonce456"
+	if err := store.PushDelegationResult(convID, SourceWorker, "worker one", fanoutKey); err != nil {
+		t.Fatalf("PushDelegationResult 1: %v", err)
+	}
+	if err := store.PushDelegationResult(convID, SourceWorker, "worker two", fanoutKey); err != nil {
+		t.Fatalf("PushDelegationResult 2: %v", err)
+	}
+	// A steer-kind row (no fan-out key) in the same conversation must never be
+	// swept up by a fan-out-scoped claim.
+	if err := store.Push(convID, "cockpit", "unrelated steer"); err != nil {
+		t.Fatalf("Push (unrelated): %v", err)
+	}
+
+	claimed, err := store.MarkFanoutNudged(t.Context(), identityID, fanoutKey)
+	if err != nil {
+		t.Fatalf("MarkFanoutNudged: %v", err)
+	}
+	if len(claimed) != 2 {
+		t.Fatalf("claimed = %v, want 2 rows", claimed)
+	}
+
+	again, err := store.MarkFanoutNudged(t.Context(), identityID, fanoutKey)
+	if err != nil {
+		t.Fatalf("MarkFanoutNudged (second pass): %v", err)
+	}
+	if len(again) != 0 {
+		t.Fatalf("second MarkFanoutNudged claimed = %v, want none -- both rows already nudged", again)
 	}
 }
 

@@ -79,9 +79,17 @@ type DelegationPayload struct {
 // deliver a consolidated worker report (D-04). Declared HERE (the consuming
 // package), never importing a concrete steer type directly -- the same shape
 // as SteerInbox (internal/agent/llm_agent_steer.go) and ChannelDeliverer
-// (internal/cron/deliver.go). *steer.Inbox satisfies this by construction.
+// (internal/cron/deliver.go). *steer.PostgresStore satisfies this by
+// construction.
+//
+// PushDelegationResult (51-11 Task 3) is Push widened in place with the
+// fan-out key -- 51-PATTERNS.md's rule for exactly this situation is to
+// extend the SAME interface, never declare a second one. Push's own locked
+// (conv, source, text string) error signature is unchanged; every existing
+// caller of the narrower Push method keeps compiling untouched.
 type SteerPublisher interface {
 	Push(conv, source, text string) error
+	PushDelegationResult(conv, source, text, fanoutKey string) error
 }
 
 // DelegationJobStore is the seam over the shared Postgres ingestion-job queue

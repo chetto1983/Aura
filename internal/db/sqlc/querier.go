@@ -70,6 +70,19 @@ type Querier interface {
 	CountRetentionBacklog(ctx context.Context) (int64, error)
 	CountTelegramAccounts(ctx context.Context) (int64, error)
 	CountTurns(ctx context.Context, conversationID pgtype.UUID) (int64, error)
+	// 51-11 Task 3: the fan-out nudge sweep's eligibility check (delegation_fanout.go's
+	// nudgeFanout) -- how many job_type=swarm_delegation rows of one identity still carry this
+	// fan-out key in their payload and have not reached a terminal outcome. The three
+	// non-terminal statuses are named as a literal list (queued, running, awaiting_input), not
+	// as a negation over the terminal ones (succeeded, failed, dead_letter, canceled), so a
+	// FUTURE status added to the CHECK vocabulary defaults to "terminal, does not block a
+	// fan-out" only if someone deliberately adds it here -- a negation would have silently
+	// treated it as non-terminal and blocked every fan-out sharing that status forever.
+	// awaiting_input blocks on purpose: a parked worker is going to produce a report, and the
+	// operator is already being asked about it through the shipped HITL relay (51-06b) -- the
+	// fan-out is not done until that answer resolves the pause one way or another. A fan-out
+	// key nobody wrote (or one whose every job already finished) returns 0.
+	CountUnfinishedDelegationJobsForFanout(ctx context.Context, arg CountUnfinishedDelegationJobsForFanoutParams) (int64, error)
 	CreateAsset(ctx context.Context, arg CreateAssetParams) (AuraAssets, error)
 	CreateConversation(ctx context.Context, arg CreateConversationParams) (AuraConversations, error)
 	CreateIdentity(ctx context.Context, arg CreateIdentityParams) (AuraIdentities, error)
@@ -371,6 +384,14 @@ type Querier interface {
 	MarkApprovalReminded(ctx context.Context, id pgtype.UUID) error
 	MarkAssetDeleted(ctx context.Context, arg MarkAssetDeletedParams) (AuraAssets, error)
 	MarkBenchmarkSettingsOverrideRestoring(ctx context.Context, runID pgtype.UUID) (int64, error)
+	// 51-11 Task 3: MarkSteerRowNudged's own conditional-UPDATE idempotency argument,
+	// generalized from one row to the whole set that shares one (identity, fanout_key) pair --
+	// the unclaimed predicate is still nudged_at IS NULL, the entire idempotency key a single
+	// row's version already used. RETURNING id is what tells the caller which rows THIS pass
+	// won: two concurrent sweep passes over the SAME complete fan-out race for the SAME set of
+	// unclaimed rows, and the loser's UPDATE matches zero of them (every row already has
+	// nudged_at set by the winner), so it returns an empty result and sends nothing.
+	MarkFanoutNudged(ctx context.Context, arg MarkFanoutNudgedParams) ([]pgtype.UUID, error)
 	MarkNotificationDelivered(ctx context.Context, id pgtype.UUID) error
 	MarkNotificationFailed(ctx context.Context, arg MarkNotificationFailedParams) error
 	// The onboarding gate. Two timestamps rather than a state enum: they say WHEN, which a

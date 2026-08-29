@@ -255,6 +255,29 @@ func (s *PostgresIngestionJobStore) CountByStatus(ctx context.Context, identityI
 	return count, nil
 }
 
+// CountUnfinishedDelegationJobs returns how many job_type=swarm_delegation rows of
+// identityID still carry fanoutKey in their payload and sit in queued, running or
+// awaiting_input (51-11 Task 3, the fan-out nudge sweep's eligibility check). A fanoutKey
+// nobody wrote, or one whose every job already reached a terminal status, returns 0.
+func (s *PostgresIngestionJobStore) CountUnfinishedDelegationJobs(ctx context.Context, identityID, fanoutKey string) (int, error) {
+	pgIdentityID, err := pgUUID("ingestion job identity id", identityID)
+	if err != nil {
+		return 0, err
+	}
+	var count int64
+	err = s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
+		var queryErr error
+		count, queryErr = q.CountUnfinishedDelegationJobsForFanout(ctx, sqlc.CountUnfinishedDelegationJobsForFanoutParams{
+			IdentityID: pgIdentityID, FanoutKey: fanoutKey,
+		})
+		return queryErr
+	})
+	if err != nil {
+		return 0, fmt.Errorf("count unfinished delegation jobs for fanout: %w", err)
+	}
+	return int(count), nil
+}
+
 func (s *PostgresIngestionJobStore) withIdentity(ctx context.Context, identityID string, fn func(*sqlc.Queries) error) error {
 	if s == nil || s.pool == nil {
 		return fmt.Errorf("ingestion job store is not configured")

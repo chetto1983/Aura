@@ -124,6 +124,63 @@ func TestExpiryReasonForNamesTheKind(t *testing.T) {
 	}
 }
 
+// TestPushDelegationResultSharesPushValidation (51-11 Task 3) pins that
+// PushDelegationResult runs through the SAME unexported push helper Push
+// itself calls -- empty/oversize rejection happens identically for both
+// entry points, never re-implemented a second time.
+func TestPushDelegationResultSharesPushValidation(t *testing.T) {
+	s := NewPostgresStore(nil, Config{Max: 8, MaxBytes: 64})
+	if err := s.PushDelegationResult("conv", SourceWorker, "", "f-key"); !errors.Is(err, ErrEmpty) {
+		t.Fatalf(`PushDelegationResult(text="") = %v, want ErrEmpty`, err)
+	}
+	body := strings.Repeat("x", 65)
+	if err := s.PushDelegationResult("conv", SourceWorker, body, "f-key"); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("PushDelegationResult(oversize) = %v, want ErrTooLarge", err)
+	}
+}
+
+// TestPushDelegationResultNilReceiverSafe mirrors Push's own nil-receiver
+// guard ordering (a *PostgresStore boxed into swarm.SteerPublisher can be a
+// non-nil interface wrapping a nil pointer).
+func TestPushDelegationResultNilReceiverSafe(t *testing.T) {
+	var s *PostgresStore
+	if err := s.PushDelegationResult("conv", SourceWorker, "hi", "f-key"); err == nil {
+		t.Fatal("PushDelegationResult on a nil *PostgresStore = nil, want a non-nil wiring error")
+	}
+}
+
+// TestMarkFanoutNudgedUnconfiguredPool mirrors MarkSteerRowNudged's own
+// wiring guard -- a nil pool names itself unconfigured rather than panicking
+// on the transaction.
+func TestMarkFanoutNudgedUnconfiguredPool(t *testing.T) {
+	s := NewPostgresStore(nil, Config{Max: 8, MaxBytes: 64})
+	_, err := s.MarkFanoutNudged(context.Background(), "00000000-0000-0000-0000-000000000001", "f-key")
+	if err == nil {
+		t.Fatal("MarkFanoutNudged with a nil pool = nil, want a configuration error")
+	}
+	if !strings.Contains(err.Error(), "not configured") {
+		t.Fatalf("MarkFanoutNudged with a nil pool = %v, want it to say the store is not configured", err)
+	}
+}
+
+// TestMarkFanoutNudgedRejectsMalformedIdentity mirrors
+// MarkSteerRowNudged's own uuid guard: a malformed identityID is named
+// before ever reaching the transaction. Needs a non-nil pool to prove the
+// guard runs before WithTx (pgxpool.New opens no connection); a nil pool
+// would instead surface the earlier "not configured" branch.
+func TestMarkFanoutNudgedRejectsMalformedIdentity(t *testing.T) {
+	pool, err := pgxpool.New(context.Background(), "postgres://unused:unused@127.0.0.1:1/unused")
+	if err != nil {
+		t.Fatalf("pgxpool.New: %v", err)
+	}
+	defer pool.Close()
+
+	s := NewPostgresStore(pool, Config{Max: 8, MaxBytes: 64})
+	if _, err := s.MarkFanoutNudged(context.Background(), "not-a-uuid", "f-key"); err == nil {
+		t.Fatal("MarkFanoutNudged(malformed identity) = nil, want a parse error")
+	}
+}
+
 // TestPostgresStorePushUnconfiguredPool covers the wiring guard between the pure
 // validation and the first pool access: a store built with no pool must name itself
 // unconfigured rather than panic on the transaction. The body is deliberately valid, so

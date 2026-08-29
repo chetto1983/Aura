@@ -58,6 +58,12 @@ type UndrainedResult struct {
 	ID         string
 	IdentityID string
 	Body       string
+	// FanoutKey (51-11 Task 3, CONTEXT D-15) groups the N rows one swarm_spawn call
+	// produced -- empty means "not part of a fan-out" (a legacy pre-migration row, or a
+	// worker's own question via Deliver, which never writes one). groupByFanout
+	// (delegation_fanout.go) routes an empty-key row through the pre-existing per-row
+	// nudgeOne path unchanged.
+	FanoutKey string
 }
 
 // SteerNudgeStore is the absent-operator leg's read/write seam over
@@ -70,6 +76,11 @@ type UndrainedResult struct {
 type SteerNudgeStore interface {
 	ListUnnudgedDelegationResults(ctx context.Context, cutoff time.Time, limit int) ([]UndrainedResult, error)
 	MarkSteerRowNudged(ctx context.Context, id, identityID string) (bool, error)
+	// MarkFanoutNudged (51-11 Task 3) is MarkSteerRowNudged generalized from one row to
+	// every unclaimed row of one (identityID, fanoutKey) pair, claimed in ONE statement
+	// -- see delegation_fanout.go's nudgeFanout for why claiming the whole group
+	// atomically, rather than looping MarkSteerRowNudged per row, is load-bearing.
+	MarkFanoutNudged(ctx context.Context, identityID, fanoutKey string) ([]string, error)
 }
 
 // PendingNotificationStore is the retry-outbox seam the absent-operator leg's
@@ -97,6 +108,10 @@ type DelegationDelivery struct {
 	// (51-11, UI-SPEC §2). nil-safe: DeliverReport degrades to a card with no
 	// artifact pointer rather than failing (delegation_artifact.go).
 	Archiver ReportArchiver
+	// Counter is the fan-out eligibility check (51-11 Task 3, delegation_fanout.go's
+	// nudgeFanout). nil-safe: a nil Counter degrades every fan-out to "eligible" --
+	// today's behaviour before this task, never a delivery block forever.
+	Counter FanoutJobCounter
 	// NudgeAfter is AURA_SWARM_DELEGATION_NUDGE_SEC. <=0 disables the channel
 	// leg entirely (the shipped AURA_ASKUSER_PAUSE_TTL_SEC <=0-disables
 	// precedent): NudgeUndrained becomes a no-op, leaving record + steer only.
@@ -111,6 +126,7 @@ func NewDelegationDelivery(
 	nudge SteerNudgeStore,
 	pending PendingNotificationStore,
 	archiver ReportArchiver,
+	counter FanoutJobCounter,
 	nudgeAfter time.Duration,
 ) *DelegationDelivery {
 	return &DelegationDelivery{
@@ -120,6 +136,7 @@ func NewDelegationDelivery(
 		Nudge:      nudge,
 		Pending:    pending,
 		Archiver:   archiver,
+		Counter:    counter,
 		NudgeAfter: nudgeAfter,
 	}
 }
@@ -202,9 +219,11 @@ func attributedWorkerReport(goal, text string) string {
 // terminal transition on it, never marking a lost report delivered by
 // omission. A push (steer.Push) failure remains a hard infrastructure error.
 //
-// Push here calls Steer.Push, byte-identical to Deliver's own push -- Task 3
-// (51-11) switches this ONE call site to PushDelegationResult carrying the
-// payload's fan-out key; nothing else about the push changes.
+// Push here calls Steer.PushDelegationResult carrying payload.FanoutKey (51-11
+// Task 3) -- the ONE call site that ever writes a non-empty fanout_key, which is
+// what makes groupByFanout route this row into the grouped send instead of the
+// keyless per-row nudgeOne path. Deliver (a worker's question) keeps calling
+// the plain Steer.Push -- it never belongs to a fan-out's terminal-report send.
 func (d *DelegationDelivery) DeliverReport(ctx context.Context, payload DelegationPayload, report ChildReport, elapsed time.Duration) (recorded bool, err error) {
 	if d == nil || d.Recorder == nil {
 		return false, fmt.Errorf("swarm: delegation delivery has no conversation recorder configured")
@@ -227,20 +246,24 @@ func (d *DelegationDelivery) DeliverReport(ctx context.Context, payload Delegati
 		if merr != nil {
 			return recorded, fmt.Errorf("delegation report marshal: %w", merr)
 		}
-		if perr := d.Steer.Push(payload.ConversationID, steer.SourceWorker, text); perr != nil {
+		if perr := d.Steer.PushDelegationResult(payload.ConversationID, steer.SourceWorker, text, payload.FanoutKey); perr != nil {
 			return recorded, fmt.Errorf("delegation report push: %w", perr)
 		}
 	}
 	return recorded, nil
 }
 
-// NudgeUndrained is the absent-operator leg's periodic sweep (SWARM-03/09):
-// for every aura.steer_queue delegation_result row the operator has not
-// drained (drained_at IS NULL) that is older than NudgeAfter, push it to the
-// owning identity's channel EXACTLY ONCE. A drained row (the operator was
-// present, the steer rail already delivered it mid-turn) is never nudged --
-// the point is telling an ABSENT operator once, never repeating what a
-// present one already received.
+// NudgeUndrained is the absent-operator leg's periodic sweep (SWARM-03/09).
+// The unit of delivery is the FAN-OUT, not the row (51-11 Task 3, CONTEXT
+// D-15, the operator's own words: "uno per fan-out") -- for every
+// aura.steer_queue delegation_result row the operator has not drained
+// (drained_at IS NULL) that is older than NudgeAfter, the sweep groups the
+// candidates by fan-out key (groupByFanout, delegation_fanout.go) and pushes
+// to the owning identity's channel EXACTLY ONCE per fan-out (or once per
+// keyless row, for a legacy row or a fan-out of one). A drained row (the
+// operator was present, the steer rail already delivered it mid-turn) is
+// never nudged -- the point is telling an ABSENT operator once, never
+// repeating what a present one already received.
 //
 // NudgeAfter<=0 disables this leg entirely: record + steer keep working via
 // Deliver, only the channel push is off.
@@ -248,30 +271,39 @@ func (d *DelegationDelivery) DeliverReport(ctx context.Context, payload Delegati
 // Claim BEFORE push, never the reverse -- the same "the drain IS the claim"
 // idiom internal/db/queries/steer_queue.sql's own DrainSteerRows already
 // uses, generalized from a FOR-UPDATE transaction to a conditional UPDATE:
-// MarkSteerRowNudged's `WHERE nudged_at IS NULL` is what makes two CONCURRENT
-// sweep passes over the SAME row push at most once (SWARM-09 edge). A bare
-// SELECT for the candidate list, with the mark-as-claimed done only AFTER a
-// successful push, would let two passes both observe the row as unclaimed and
-// both call DeliverToIdentity before either commits -- a real double-push.
-// Claiming first closes that window: the loser of the race sees
-// claimed=false and does nothing further for that row.
+// MarkSteerRowNudged/MarkFanoutNudged's `WHERE nudged_at IS NULL` is what
+// makes two CONCURRENT sweep passes over the SAME row (or the SAME fan-out)
+// push at most once (SWARM-09 edge). A bare SELECT for the candidate list,
+// with the mark-as-claimed done only AFTER a successful push, would let two
+// passes both observe the row(s) as unclaimed and both call
+// DeliverToIdentity before either commits -- a real double-push. Claiming
+// first closes that window: the loser of the race sees claimed=false (an
+// empty MarkFanoutNudged result, or claimed=false from MarkSteerRowNudged)
+// and does nothing further.
 //
 // The tri-state branch mirrors internal/cron/deliver.go's deliverToOrigin
 // verbatim, because a delegation result has no NotifyRoute and no per-task
 // route chain behind it (unlike a scheduled task, PRD Amendment #154):
 // delivered -> stop (already claimed). Nobody owns the identity -> ALSO stop
-// -- the conversation record Deliver already wrote IS the delivery, and there
-// is no per-task route to fall back to. Owns-but-failed -> insert a
-// pending_notifications retry row (migration 0105's steer_queue_id leg, the
-// shipped outbox); the row stays claimed (nudged_at is already set), so the
-// retry from here on belongs entirely to pending_notifications' own
-// sweep/backoff, never re-attempted by a later NudgeUndrained pass.
+// -- the conversation record Deliver/DeliverReport already wrote IS the
+// delivery, and there is no per-task route to fall back to. Owns-but-failed
+// -> insert ONE pending_notifications retry row per fan-out (migration
+// 0105's steer_queue_id leg, the shipped outbox, referencing the fan-out's
+// FIRST claimed row -- never N rows and never the raw report); the rows stay
+// claimed (nudged_at is already set), so the retry from here on belongs
+// entirely to pending_notifications' own sweep/backoff, never re-attempted
+// by a later NudgeUndrained pass.
 //
 // What this does NOT prove (state plainly, per Amendment #154): the fan-out's
 // choice between two candidate channels and its owns-but-failed leg have
 // never been exercised live -- Telegram is the only shipped Deliverer -- and
 // the outbox's retry/backoff/dead-letter behaviour is read from the schema,
-// not measured.
+// not measured. Extended by 51-11 Task 3's own named cost: a fan-out holding
+// one worker parked in awaiting_input keeps the phone silent about its
+// finished siblings until that question is answered or the row's TTL expires
+// it (CountUnfinishedDelegationJobs counts awaiting_input as unfinished on
+// purpose), while the cockpit card for each sibling lands immediately either
+// way -- DeliverReport's conversation-append leg never waits on the sweep.
 func (d *DelegationDelivery) NudgeUndrained(ctx context.Context, now time.Time, limit int) (int, error) {
 	if d == nil || d.Nudge == nil || d.Channel == nil || d.NudgeAfter <= 0 {
 		return 0, nil
@@ -281,12 +313,23 @@ func (d *DelegationDelivery) NudgeUndrained(ctx context.Context, now time.Time, 
 	if err != nil {
 		return 0, fmt.Errorf("swarm: list unnudged delegation results: %w", err)
 	}
+	groups, keyless := groupByFanout(rows)
 	nudged := 0
 	var errs []error
-	for _, row := range rows {
+	for _, row := range keyless {
 		ok, err := d.nudgeOne(ctx, row)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("nudge steer row %s: %w", row.ID, err))
+			continue
+		}
+		if ok {
+			nudged++
+		}
+	}
+	for _, group := range groups {
+		ok, err := d.nudgeFanout(ctx, group)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("nudge fanout %s/%s: %w", group.identityID, group.fanoutKey, err))
 			continue
 		}
 		if ok {

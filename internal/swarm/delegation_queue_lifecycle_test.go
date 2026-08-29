@@ -23,22 +23,36 @@ import (
 // (CLAUDE.md's 600-LOC ceiling) -- that file keeps the config resolvers and the payload
 // codec, both pure and unrelated to the loop's own runtime behaviour.
 
-// fakeSteerPublisher records the pushes deliverSuccess makes, and can fail one, so
-// the ordering contract (push attempted BEFORE the row is transitioned) is
-// observable without a queue.
+// fakeSteerPublisher records the pushes deliverSuccess/DeliverReport make, and
+// can fail one, so the ordering contract (push attempted BEFORE the row is
+// transitioned) is observable without a queue. fanoutKeys is parallel to
+// pushes (51-11 Task 3): index i is the fanout key PushDelegationResult was
+// called with at pushes[i], or "" for a plain Push -- so a test can assert
+// DeliverReport wrote payload.FanoutKey without disturbing the many existing
+// assertions against pushes' own "conv|source|text" shape.
 type fakeSteerPublisher struct {
-	mu     sync.Mutex // ProcessOnce runs a claimed batch concurrently (finding F)
-	pushes []string
-	err    error
+	mu         sync.Mutex // ProcessOnce runs a claimed batch concurrently (finding F)
+	pushes     []string
+	fanoutKeys []string
+	err        error
 }
 
 func (f *fakeSteerPublisher) Push(conv, source, text string) error {
+	return f.push(conv, source, text, "")
+}
+
+func (f *fakeSteerPublisher) PushDelegationResult(conv, source, text, fanoutKey string) error {
+	return f.push(conv, source, text, fanoutKey)
+}
+
+func (f *fakeSteerPublisher) push(conv, source, text, fanoutKey string) error {
 	if f.err != nil {
 		return f.err
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.pushes = append(f.pushes, conv+"|"+source+"|"+text)
+	f.fanoutKeys = append(f.fanoutKeys, fanoutKey)
 	return nil
 }
 
