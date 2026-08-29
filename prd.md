@@ -9580,6 +9580,10 @@ flusso completo, che funziona.
 > 2. **Telegram receives exactly one short, static message** — status, goal, bounded summary,
 >    "dettagli nel cockpit". No in-place-edited status message, no model narration, no report
 >    body, no progress relay: hermes's gateway pattern is explicitly NOT adopted for Telegram.
+>    **Per fan-out, not per worker (operator, 2026-08-29 plan review: "uno per fan-out"):** N
+>    workers of one `swarm_spawn` call yield ONE aggregated message when the last of them reaches a
+>    terminal state — N status lines, ≤300 runes total. The cockpit card updates per worker; the
+>    phone waits for the slowest worker. This is what "solo un messaggio" means.
 > 3. **The cockpit shows a worker as a parallel, read-only thread** — a `swarm_spawn` chip in the
 >    parent chat with one row per worker and live status; a pane that replays the child's
 >    transcript through the existing AG-UI translator (`agui.Translate` consumes exactly the

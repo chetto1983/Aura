@@ -193,6 +193,11 @@ proposes. Three questions were deliberately NOT answered from the armchair.
   - **Telegram is decided, not open:** exactly one message — status, goal in one line, a
     bounded summary, "dettagli nel cockpit". No edited-in-place status message (hermes gateway
     pattern rejected for Telegram), no narration, no body, no progress relay.
+    **Fan-out (decided 2026-08-29 at plan review, operator: "uno per fan-out"):** N workers of one
+    `swarm_spawn` call produce ONE aggregated Telegram message, sent when the LAST worker of the
+    fan-out reaches a terminal state (ok / failed / stalled / dead_letter) — N status lines in the
+    body, ≤300 runes total — never one message per worker. The cockpit card still updates per
+    worker as each report lands; only the phone waits for the slowest worker.
   - **The parent agent's own leg of SWARM-10 is part of this gap:** measured 2026-08-29 in the
     cockpit — asked *"puoi vedere l'avanzamento?"*, Aura answered that no endpoint lets her
     poll a queued worker's state and then guessed its fate from the clock. 51-07 shipped the
