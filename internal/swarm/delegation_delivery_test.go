@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/steer"
 )
 
@@ -22,10 +23,15 @@ import (
 // own db_integration tier, where the SQL that enforces them actually runs.
 
 // recordedDeliveryTurn is one AppendAssistantTurn call fakeConversationRecorder
-// captured.
+// captured. identityID is identityctx.IdentityID(ctx) AT CALL TIME -- the RLS
+// carrier the real conversations.Store.AppendTurn reads (defect A, 51-09
+// live-check/d03/RESULTS.md): a caller that binds no identity on ctx would have
+// its write silently hidden by RLS against a real database, even though this
+// fake accepts it unconditionally.
 type recordedDeliveryTurn struct {
 	conversationID string
 	text           string
+	identityID     string
 }
 
 // fakeConversationRecorder captures AppendAssistantTurn calls and can be made
@@ -36,11 +42,13 @@ type fakeConversationRecorder struct {
 	err      error
 }
 
-func (f *fakeConversationRecorder) AppendAssistantTurn(_ context.Context, conversationID, text string) error {
+func (f *fakeConversationRecorder) AppendAssistantTurn(ctx context.Context, conversationID, text string) error {
 	if f.err != nil {
 		return f.err
 	}
-	f.appended = append(f.appended, recordedDeliveryTurn{conversationID: conversationID, text: text})
+	f.appended = append(f.appended, recordedDeliveryTurn{
+		conversationID: conversationID, text: text, identityID: identityctx.IdentityID(ctx),
+	})
 	return nil
 }
 

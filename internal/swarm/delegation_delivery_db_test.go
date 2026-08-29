@@ -13,11 +13,15 @@ package swarm
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/documents"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/steer"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -147,5 +151,69 @@ func TestNudgeOnceUnderConcurrency(t *testing.T) {
 
 	if calls != 1 {
 		t.Fatalf("channel called %d times, want exactly 1 under concurrent sweep passes", calls)
+	}
+}
+
+// dbConversationRecorderAdapter mirrors the identity-scoping half of the REAL
+// conversations.Store.AppendTurn write path -- db.WithCallerIdentityTx reads
+// identityctx.IdentityID(ctx) to set the RLS carrier, then allocateTurnSeq locks the
+// owning conversations row with the SAME query this adapter runs (LockConversationForTurnAppend,
+// `SELECT id FROM aura.conversations WHERE id=$1 FOR UPDATE`) -- without importing
+// internal/conversations, which this package's own D-02 hygiene test
+// (TestSwarmPackageImportsNeitherConversationsNorChannels) forbids even from a test file
+// (it globs every *.go in the package directory). A ctx with no identity bound cannot see
+// the row under RLS and the lock returns zero rows -- the SAME "conversation not found"
+// shape defect A measured live (live-check/d03/RESULTS.md).
+type dbConversationRecorderAdapter struct {
+	pool *pgxpool.Pool
+}
+
+func (r dbConversationRecorderAdapter) AppendAssistantTurn(ctx context.Context, conversationID, text string) error {
+	return db.WithIdentityTxRaw(ctx, r.pool, identityctx.IdentityID(ctx), func(tx pgx.Tx) error {
+		var id string
+		if err := tx.QueryRow(ctx, `SELECT id FROM aura.conversations WHERE id = $1 FOR UPDATE`, conversationID).Scan(&id); err != nil {
+			return fmt.Errorf("lock conversation %s: %w", conversationID, err)
+		}
+		_, err := tx.Exec(ctx,
+			`INSERT INTO aura.conversation_turns (conversation_id, seq, role, content) VALUES ($1, 1, 'assistant', $2)`,
+			conversationID, text)
+		return err
+	})
+}
+
+// TestDeliverSuccessRecordsUnderRealRLSAsAuraApp is defect A's live proof at the db_integration
+// tier (live-check/d03/RESULTS.md): deliverSuccess is called with a ctx carrying NO identity --
+// exactly ProcessOnce's own daemon background loop shape -- against a REAL Postgres connection
+// as aura_app (never the superuser aura role, which is BYPASSRLS and would give a false green
+// on this exact RLS-scoping bug). Before the fix this fails "lock conversation: no rows":
+// aura.conversations' RLS policy hides the row with no app.current_identity set. After the fix,
+// the write lands and reads back.
+func TestDeliverSuccessRecordsUnderRealRLSAsAuraApp(t *testing.T) {
+	pool := delegationDisposablePool(t)
+	identityID, convID := seedDelegationDeliveryConversation(t, pool)
+	recorder := dbConversationRecorderAdapter{pool: pool}
+
+	l := &DelegationClaimLoop{
+		Store:      &fakeDelegationStore{},
+		Delivery:   &DelegationDelivery{Recorder: recorder, Steer: &fakeSteerPublisher{}},
+		IdentityID: identityID,
+	}
+	job := documents.IngestionJob{ID: "j1", IdentityID: identityID}
+	payload := DelegationPayload{Goal: "summarise the inbox", ConversationID: convID}
+
+	if err := l.deliverSuccess(context.Background(), job, payload, ChildReport{Status: StatusOK, Summary: "all done"}); err != nil {
+		t.Fatalf("deliverSuccess = %v, want the SC#1 write to succeed under real RLS", err)
+	}
+
+	var content string
+	readErr := db.WithIdentityTxRaw(context.Background(), pool, identityID, func(tx pgx.Tx) error {
+		return tx.QueryRow(context.Background(),
+			`SELECT content FROM aura.conversation_turns WHERE conversation_id = $1`, convID).Scan(&content)
+	})
+	if readErr != nil {
+		t.Fatalf("read back recorded turn: %v", readErr)
+	}
+	if !strings.Contains(content, "all done") {
+		t.Fatalf("recorded content = %q, want it to contain the delegation report", content)
 	}
 }
