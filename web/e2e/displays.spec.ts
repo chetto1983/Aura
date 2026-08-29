@@ -286,7 +286,7 @@ test.describe('Phase 26 — typed displays (desktop + mobile)', () => {
 
     // Row-expand reveals summary + error in place.
     await page.getByRole('button', { name: 'Toggle worker details' }).nth(1).click();
-    await expect(page.getByText('rate limited')).toBeVisible();
+    await expect(page.getByRole('definition').filter({ hasText: 'rate limited' })).toBeVisible();
 
     // D-08: no inter-agent chat / mailbox affordance INSIDE the swarm card. Scope the
     // assertion to the assistant answer message (the page-level "Ask Aura" composer is
