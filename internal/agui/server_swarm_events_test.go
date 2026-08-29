@@ -1,6 +1,7 @@
 package agui
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -256,4 +257,121 @@ func TestSwarmWorkerEventsRedactsReasoning(t *testing.T) {
 	if strings.Contains(string(body), "private-chain-of-thought") || !strings.Contains(string(body), redactedReasoningDelta) {
 		t.Fatalf("reasoning privacy posture failed: %s", body)
 	}
+}
+
+func TestSwarmWorkerStatusEmitsOnlyOnChange(t *testing.T) {
+	reader := newFakeSwarmEventReader(map[string][]byte{"w1": swarmTextLine(t, "private transcript sentinel")})
+	srv := newSwarmWorkerEventsServer(t, newOwnerConvStore(goodID, localIdentityID), reader, 0)
+	resp, scanner := openSwarmStatusStream(t, srv)
+	defer resp.Body.Close()
+
+	first := readSwarmStatusFrame(t, scanner)
+	if first.Status != "running" {
+		t.Fatalf("first status = %q", first.Status)
+	}
+	reader.append("w1", swarmTerminalLine(t, "ok"))
+	second := readSwarmStatusFrame(t, scanner)
+	if second.Status != "ok" {
+		t.Fatalf("second status = %q, want ok without an unchanged duplicate", second.Status)
+	}
+}
+
+func TestSwarmWorkerStatusCarriesNoTranscriptText(t *testing.T) {
+	reader := newFakeSwarmEventReader(map[string][]byte{"w1": swarmTextLine(t, "private transcript sentinel")})
+	srv := newSwarmWorkerEventsServer(t, newOwnerConvStore(goodID, localIdentityID), reader, 0)
+	resp, scanner := openSwarmStatusStream(t, srv)
+	defer resp.Body.Close()
+	frame := readSwarmStatusFrame(t, scanner)
+	body, _ := json.Marshal(frame)
+	if strings.Contains(string(body), "private transcript sentinel") {
+		t.Fatalf("status payload leaked transcript text: %s", body)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(body, &fields); err != nil {
+		t.Fatalf("decode status payload: %v", err)
+	}
+	for _, key := range []string{"child_id", "status", "last_event_at", "events", "duration_sec"} {
+		if _, ok := fields[key]; !ok {
+			t.Fatalf("status payload missing %q: %s", key, body)
+		}
+	}
+	if len(fields) != 5 {
+		t.Fatalf("status payload exposed fields outside the bounded contract: %s", body)
+	}
+}
+
+func TestSwarmWorkerStatusVocabulary(t *testing.T) {
+	now := time.Date(2026, 8, 29, 20, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name string
+		ev   agent.Event
+		idle time.Duration
+		want string
+	}{
+		{name: "ok marker", ev: agent.Event{Actions: agent.Actions{StateDelta: map[string]any{"swarm_child_status": "ok"}}}, want: "ok"},
+		{name: "failed marker", ev: agent.Event{Actions: agent.Actions{StateDelta: map[string]any{"swarm_child_status": "failed"}}}, want: "failed"},
+		{name: "needs marker", ev: agent.Event{Actions: agent.Actions{StateDelta: map[string]any{"swarm_child_status": "needs_user_input"}}}, want: "needs_user_input"},
+		{name: "running marker", ev: agent.Event{Actions: agent.Actions{StateDelta: map[string]any{"swarm_child_status": "running"}}}, want: "running"},
+		{name: "stalled marker", ev: agent.Event{Actions: agent.Actions{StateDelta: map[string]any{"swarm_child_status": "stalled"}}}, want: "stalled"},
+		{name: "dead letter marker", ev: agent.Event{Actions: agent.Actions{StateDelta: map[string]any{"swarm_child_status": "dead_letter"}}}, want: "dead_letter"},
+		{name: "awaiting input", ev: agent.Event{Actions: agent.Actions{AwaitingInput: &agent.AwaitingInput{Question: "continue?"}}}, want: "needs_user_input"},
+		{name: "fresh", ev: agent.Event{Timestamp: time.Now().UTC()}, idle: time.Second, want: "running"},
+		{name: "idle", ev: agent.Event{Timestamp: now.Add(-2 * time.Second)}, idle: time.Second, want: "stalled"},
+		{name: "idle disabled", ev: agent.Event{Timestamp: now.Add(-2 * time.Second)}, want: "running"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			reader := newFakeSwarmEventReader(map[string][]byte{"w1": swarmEventLine(t, tc.ev)})
+			srv := newSwarmWorkerEventsServer(t, newOwnerConvStore(goodID, localIdentityID), reader, tc.idle)
+			resp, scanner := openSwarmStatusStream(t, srv)
+			defer resp.Body.Close()
+			if got := readSwarmStatusFrame(t, scanner).Status; got != tc.want {
+				t.Fatalf("status = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+type swarmStatusFrame struct {
+	ChildID     string `json:"child_id"`
+	Status      string `json:"status"`
+	LastEventAt string `json:"last_event_at"`
+	Events      int    `json:"events"`
+	DurationSec int64  `json:"duration_sec"`
+}
+
+func openSwarmStatusStream(t *testing.T, srv *httptest.Server) (*http.Response, *bufio.Scanner) {
+	t.Helper()
+	resp, err := http.Get(srv.URL + swarmWorkerEventsPath(goodID, ""))
+	if err != nil {
+		t.Fatalf("GET status stream: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "text/event-stream" {
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		t.Fatalf("status/content-type/body = %d/%q/%q", resp.StatusCode, resp.Header.Get("Content-Type"), body)
+	}
+	return resp, bufio.NewScanner(resp.Body)
+}
+
+func readSwarmStatusFrame(t *testing.T, scanner *bufio.Scanner) swarmStatusFrame {
+	t.Helper()
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		var envelope struct {
+			Name  string           `json:"name"`
+			Value swarmStatusFrame `json:"value"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &envelope); err != nil {
+			t.Fatalf("decode CUSTOM event: %v", err)
+		}
+		if envelope.Name == "aura.swarm.worker" {
+			return envelope.Value
+		}
+	}
+	t.Fatalf("status stream ended before a worker event: %v", scanner.Err())
+	return swarmStatusFrame{}
 }

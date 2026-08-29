@@ -1,6 +1,9 @@
 package display
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 // TestNormalizeSwarm (SWARM-01): a []ChildReport becomes a swarm_report payload
 // carrying every ChildReport field for in-place row expansion (D-08).
@@ -35,5 +38,18 @@ func TestNormalizeSwarmCopiesInput(t *testing.T) {
 	p.Swarm[0].Status = StatusFailed
 	if reports[0].Status != StatusOK {
 		t.Fatalf("normalizeSwarm aliased the caller's slice")
+	}
+}
+
+func TestChildReportBackgroundFieldsKeepWireTags(t *testing.T) {
+	typ := reflect.TypeFor[ChildReport]()
+	for name, wantTag := range map[string]string{"Goal": "goal,omitempty", "Attempts": "attempts,omitempty"} {
+		field, ok := typ.FieldByName(name)
+		if !ok {
+			t.Fatalf("ChildReport missing %s", name)
+		}
+		if got := field.Tag.Get("json"); got != wantTag {
+			t.Fatalf("ChildReport.%s json tag = %q, want %q", name, got, wantTag)
+		}
 	}
 }

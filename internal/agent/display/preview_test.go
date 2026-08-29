@@ -2,6 +2,7 @@ package display
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/web"
@@ -99,6 +100,37 @@ func TestNormalizeToolPreviewParitySwarm(t *testing.T) {
 	if string(lb) != string(rb) {
 		t.Fatalf("swarm replay diverged:\n live=%s\nreplay=%s", lb, rb)
 	}
+}
+
+func TestDecodeSwarmSpawnPreview(t *testing.T) {
+	t.Run("synchronous array", func(t *testing.T) {
+		got, ok := decodeToolPreview("swarm_spawn", `[{"goal_index":0,"child_id":"w1","status":"ok"}]`)
+		reports, typed := got.([]ChildReport)
+		if !ok || !typed || len(reports) != 1 || reports[0].ChildID != "w1" {
+			t.Fatalf("decode = %#v, %v", got, ok)
+		}
+	})
+	t.Run("queued object", func(t *testing.T) {
+		got, ok := decodeToolPreview("swarm_spawn", `{"queued":true,"note":"background","workers":[{"goal_index":0,"child_id":"w1","status":"running","goal":"inspect","attempts":1}]}`)
+		reports, typed := got.([]ChildReport)
+		if !ok || !typed || len(reports) != 1 {
+			t.Fatalf("decode = %#v, %v", got, ok)
+		}
+		body, _ := json.Marshal(reports[0])
+		if !strings.Contains(string(body), `"goal":"inspect"`) || !strings.Contains(string(body), `"attempts":1`) {
+			t.Fatalf("background fields lost: %s", body)
+		}
+	})
+	t.Run("queued object without workers", func(t *testing.T) {
+		if _, ok := decodeToolPreview("swarm_spawn", `{"queued":true,"note":"background"}`); ok {
+			t.Fatal("queued object without workers must use the raw fallback")
+		}
+	})
+	t.Run("plain string", func(t *testing.T) {
+		if _, ok := decodeToolPreview("swarm_spawn", `capacity unavailable`); ok {
+			t.Fatal("plain string must use the raw fallback")
+		}
+	})
 }
 
 // TestNormalizeToolPreviewShell (DISP-02): a shell_exec output preview wraps into a code
