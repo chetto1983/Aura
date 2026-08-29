@@ -196,9 +196,14 @@ describe('ExternalStoreChat slash-skill', () => {
       ]),
     );
     fireEvent.keyDown(input, { key: 'ArrowDown', code: 'ArrowDown' });
+    await waitFor(() => {
+      expect(nestedOptions[1]?.getAttribute('aria-selected')).toBe('true');
+    });
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
 
-    expect(input.value).toBe('@file:"/Documenti/manuale.pdf" ');
+    await waitFor(() => {
+      expect(input.value).toBe('@file:"/Documenti/manuale.pdf" ');
+    });
     expect(fetchMock.mock.calls.some((call) => call[0] === '/agent/run')).toBe(false);
   });
 

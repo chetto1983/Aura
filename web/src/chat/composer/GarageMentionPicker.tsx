@@ -1,5 +1,10 @@
-import { useMemo } from 'react';
-import { ComposerPrimitive, useAui, type Unstable_TriggerItem } from '@assistant-ui/react';
+import { useEffect, useMemo } from 'react';
+import {
+  ComposerPrimitive,
+  unstable_useTriggerPopoverScopeContext,
+  useAui,
+  type Unstable_TriggerItem,
+} from '@assistant-ui/react';
 import { FileText, Folder } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -20,13 +25,35 @@ export interface GarageMentionPickerProps {
   readonly onSelect?: (() => void) | undefined;
 }
 
+function GarageFolderNavigationOverride({ onSelect }: Pick<GarageMentionPickerProps, 'onSelect'>) {
+  const aui = useAui();
+  const triggerPopover = unstable_useTriggerPopoverScopeContext();
+
+  useEffect(
+    () =>
+      triggerPopover.registerSelectItemOverride((item) => {
+        if (item.type !== GARAGE_FOLDER_NAV_ITEM_TYPE) return false;
+        const text = aui.composer.getState().text;
+        const trigger = `${GARAGE_TRIGGER_CHAR}${triggerPopover.query}`;
+        const offset = text.lastIndexOf(trigger);
+        if (offset < 0) return false;
+        const after = text.slice(offset + trigger.length);
+        aui.composer.setText(text.slice(0, offset) + serializeGarageMention(item) + after);
+        onSelect?.();
+        return true;
+      }),
+    [aui, onSelect, triggerPopover],
+  );
+
+  return null;
+}
+
 /**
  * Garage's @ picker is only the data/presentation half. assistant-ui's existing trigger
  * root owns detection, debounce lifecycle, keyboard navigation, highlight and listbox ARIA.
  */
 export function GarageMentionPicker({ disabled = false, onSelect }: GarageMentionPickerProps) {
   const { t } = useTranslation();
-  const aui = useAui();
   const provider = useMemo(() => createFileManagerProvider(), []);
   const fetcher = useMemo(
     () => createGarageMentionFetcher((path) => provider.loadFiles(path)),
@@ -34,23 +61,6 @@ export function GarageMentionPicker({ disabled = false, onSelect }: GarageMentio
   );
   const completion = useGarageCompletionAdapter(fetcher, !disabled);
   const formatter = useMemo(() => createGarageDirectiveFormatter(), []);
-
-  const handleInserted = (item: Unstable_TriggerItem) => {
-    if (item.type === GARAGE_FOLDER_NAV_ITEM_TYPE) {
-      queueMicrotask(() => {
-        const directive = serializeGarageMention(item);
-        const text = aui.composer.getState().text;
-        const inserted = text.lastIndexOf(`${directive} `);
-        if (inserted >= 0) {
-          const separator = inserted + directive.length;
-          aui.composer.setText(text.slice(0, separator) + text.slice(separator + 1));
-        }
-        onSelect?.();
-      });
-      return;
-    }
-    onSelect?.();
-  };
 
   if (disabled) return null;
 
@@ -64,8 +74,9 @@ export function GarageMentionPicker({ disabled = false, onSelect }: GarageMentio
     >
       <ComposerPrimitive.Unstable_TriggerPopover.Directive
         formatter={formatter}
-        onInserted={handleInserted}
+        onInserted={onSelect}
       />
+      <GarageFolderNavigationOverride onSelect={onSelect} />
       <ComposerPrimitive.Unstable_TriggerPopoverItems className="max-h-72 overflow-y-auto p-1.5">
         {(items) =>
           items.map((item: Unstable_TriggerItem, index) => {
