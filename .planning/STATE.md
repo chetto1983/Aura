@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v2.1.0
 current_phase: 51
-current_phase_name: Durable delegation
+current_phase_name: durable-delegation
 status: executing
 stopped_at: Phase 51 UI-SPEC approved (gap plan SWARM-12/SWARM-10 parent leg)
-last_updated: "2026-08-29T11:43:45.828Z"
+last_updated: "2026-08-29T12:49:02.523Z"
 last_activity: 2026-08-29
 last_activity_desc: Phase 51 execution resumed (wave continue)
-state_head: 625984c7b361bdce4cc55b19e261d8b1cfd50566
+state_head: 5074534c812fb3361609073edd05ce95a033b21e
 progress:
   total_phases: 8
   completed_phases: 1
-  total_plans: 45
+  total_plans: 48
   completed_plans: 44
 milestone_name: HERMES-CLAUDE_PARITY
 ---
@@ -28,9 +28,9 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 
 ## Current Position
 
-Phase: 51 (Durable delegation) — EXECUTING
+Phase: 51 (durable-delegation) — READY TO EXECUTE
 (corrected against hermes before any code existed), and every prerequisite was verified present.
-Status: Executing Phase 51
+Status: Ready to execute
 
 **The roadmap shrank on 2026-08-25 (operator decision).** Phases **47** (tool-surface ceremony
 strip), **48** (un-defer and merges) and **53** (summarization spike) are DELETED, not annotated —
