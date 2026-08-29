@@ -26,6 +26,38 @@ export interface WorkerStatusStreamHandlers {
   readonly onError: () => void;
 }
 
+const workerFrameEventNames = [
+  'RUN_STARTED',
+  'TEXT_MESSAGE_START',
+  'TEXT_MESSAGE_CONTENT',
+  'TEXT_MESSAGE_END',
+  'REASONING_START',
+  'REASONING_MESSAGE_START',
+  'REASONING_MESSAGE_CONTENT',
+  'REASONING_MESSAGE_END',
+  'REASONING_END',
+  'TOOL_CALL_START',
+  'TOOL_CALL_ARGS',
+  'TOOL_CALL_END',
+  'TOOL_CALL_RESULT',
+  'STATE_DELTA',
+  'RUN_FINISHED',
+  'RUN_ERROR',
+  'CUSTOM',
+] as const satisfies readonly AguiFrame['type'][];
+
+function subscribeEventSource(
+  source: EventSource,
+  eventNames: readonly string[],
+  listener: EventListener,
+): () => void {
+  const names = ['message', ...eventNames];
+  for (const name of names) source.addEventListener(name, listener);
+  return () => {
+    for (const name of names) source.removeEventListener(name, listener);
+  };
+}
+
 function workerEventsURL(conversationId: string, childId?: string): string {
   const base = `/api/conversations/${encodeURIComponent(conversationId)}/swarm/events`;
   return childId === undefined ? base : `${base}?child=${encodeURIComponent(childId)}`;
@@ -61,12 +93,12 @@ export function openWorkerStream(
     handlers.onError();
   };
 
-  source.addEventListener('message', onMessage);
+  const removeFrameListeners = subscribeEventSource(source, workerFrameEventNames, onMessage);
   source.addEventListener('error', onError);
 
   return {
     close: () => {
-      source.removeEventListener('message', onMessage);
+      removeFrameListeners();
       source.removeEventListener('error', onError);
       source.close();
     },
@@ -115,11 +147,11 @@ export function openWorkerStatusStream(
   const onError: EventListener = () => {
     handlers.onError();
   };
-  source.addEventListener('message', onMessage);
+  const removeFrameListeners = subscribeEventSource(source, ['CUSTOM'], onMessage);
   source.addEventListener('error', onError);
   return {
     close: () => {
-      source.removeEventListener('message', onMessage);
+      removeFrameListeners();
       source.removeEventListener('error', onError);
       source.close();
     },
