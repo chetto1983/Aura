@@ -106,7 +106,10 @@ func (l *DelegationClaimLoop) openPauseAndPark(ctx context.Context, job document
 
 	if l.Delivery != nil {
 		questionText := fmt.Sprintf("Worker asks: %s", report.Question)
-		if _, derr := l.Delivery.Deliver(ctx, payload, questionText); derr != nil {
+		// Same RLS bind deliverSuccess needs (delegation_queue.go, defect A): this Deliver
+		// call shares the identical ConversationRecorder seam, which reads
+		// identityctx.IdentityID(ctx) to scope the write.
+		if _, derr := l.Delivery.Deliver(identityctx.WithIdentityID(ctx, job.IdentityID), payload, questionText); derr != nil {
 			return fmt.Errorf("delegation question deliver: %w", derr)
 		}
 	}

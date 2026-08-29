@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/documents"
+	"github.com/chetto1983/aura/internal/identityctx"
 )
 
 // JobTypeSwarmDelegation is the aura.ingestion_jobs discriminator for a
@@ -361,7 +362,15 @@ func (l *DelegationClaimLoop) deliverSuccess(ctx context.Context, job documents.
 	if err != nil {
 		return fmt.Errorf("delegation report marshal: %w", err)
 	}
-	recorded, err := l.Delivery.Deliver(ctx, payload, text)
+	// The claim loop's own ctx (ProcessOnce's daemon background loop, never a per-request
+	// context) carries no identityctx. Deliver's ConversationRecorder writes through
+	// conversations.Store.AppendTurn, which reads identityctx.IdentityID(ctx) to set the RLS
+	// carrier (db.WithCallerIdentityTx) -- without this bind RLS hides the conversation and
+	// the write fails "conversation not found". Measured live 2026-08-29
+	// (live-check/d03/RESULTS.md defect A): every delegation attempt failed to record, the
+	// queue retried the WHOLE worker from scratch (re-running up to 5 minutes of real tool
+	// calls per attempt), and every run in that check dead-lettered at the attempt cap.
+	recorded, err := l.Delivery.Deliver(identityctx.WithIdentityID(ctx, job.IdentityID), payload, text)
 	if err != nil {
 		return fmt.Errorf("delegation report deliver: %w", err)
 	}
