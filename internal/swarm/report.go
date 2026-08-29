@@ -16,10 +16,19 @@ import (
 
 // Status values a ChildReport can carry (D-15). They are model-readable: the
 // parent LLM reads these off the collected report to decide aggregation / proxying.
+// StatusRunning, StatusStalled and StatusDeadLetter (51-11, SWARM-12) name the
+// three additional terminal-or-in-flight states the delegation delivery
+// envelope's card and Telegram rendering distinguish (UI-SPEC §4's glyph
+// vocabulary): a background worker still in flight, a worker reaped by its
+// own inactivity timer (D-03 -- a stall is final, not a special case of
+// StatusFailed), and a job whose retry budget is exhausted.
 const (
 	StatusOK             = "ok"
 	StatusFailed         = "failed"
 	StatusNeedsUserInput = "needs_user_input"
+	StatusRunning        = "running"
+	StatusStalled        = "stalled"
+	StatusDeadLetter     = "dead_letter"
 )
 
 // ChildReport is one worker's slot in the swarm result, ordered by goal index
@@ -27,7 +36,10 @@ const (
 // contains no path separator so it is safe as both the worker SessionID suffix
 // and the transcript filename (Pitfall 4). The needs_user_input fields
 // (Question/Options/ToolCallID) carry the worker's ask_user pause payload (D-04)
-// so the parent can proxy it via D-05.
+// so the parent can proxy it via D-05. Goal and Attempts (51-11) are additive
+// and omitempty: every existing wire consumer, including the shipped
+// swarm_report display normalizer, is byte-unchanged for a synchronous swarm
+// that never sets them.
 type ChildReport struct {
 	GoalIndex  int      `json:"goal_index"`
 	ChildID    string   `json:"child_id"`
@@ -37,6 +49,8 @@ type ChildReport struct {
 	Question   string   `json:"question,omitempty"`
 	Options    []string `json:"options,omitempty"`
 	ToolCallID string   `json:"tool_call_id,omitempty"`
+	Goal       string   `json:"goal,omitempty"`
+	Attempts   int      `json:"attempts,omitempty"`
 }
 
 // dumpTranscript appends ev (via Event.MarshalJSON, one JSON object per line) to

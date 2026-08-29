@@ -355,3 +355,213 @@ func TestNudgeUndrainedNoopWithoutCollaborators(t *testing.T) {
 		t.Fatalf("NudgeUndrained with no collaborators = (%d, %v), want (0, nil)", n, err)
 	}
 }
+
+// TestNudgeOneRendersBoundedMessageNeverRawBody (51-11): the fan-out-of-one
+// path decodes row.Body and renders it through TelegramDelegationMessage --
+// the SAME bounded rendering the grouped fan-out (Task 3) uses -- instead of
+// forwarding the raw steer_queue body, which is the raw []ChildReport JSON
+// Amendment #172 measured landing on the phone.
+func TestNudgeOneRendersBoundedMessageNeverRawBody(t *testing.T) {
+	reports := []ChildReport{{GoalIndex: 0, Status: StatusOK, Goal: "goal", Summary: "summary"}}
+	body, err := marshalReports(reports)
+	if err != nil {
+		t.Fatalf("marshalReports = %v", err)
+	}
+	channel := &fakeChannelDeliverer{delivered: true}
+	nudge := &fakeSteerNudgeStore{rows: []UndrainedResult{{ID: "row-1", IdentityID: "id-1", Body: body}}}
+	d := &DelegationDelivery{Channel: channel, Nudge: nudge, NudgeAfter: time.Minute}
+
+	if _, err := d.NudgeUndrained(context.Background(), time.Now(), 10); err != nil {
+		t.Fatalf("NudgeUndrained = %v", err)
+	}
+	if len(channel.calls) != 1 {
+		t.Fatalf("channel calls = %d, want 1", len(channel.calls))
+	}
+	got := channel.calls[0].text
+	if got == body {
+		t.Fatal("the raw steer_queue body must never reach DeliverToIdentity verbatim")
+	}
+	if want := TelegramDelegationMessage(reports); got != want {
+		t.Fatalf("delivered text = %q, want the rendered TelegramDelegationMessage %q", got, want)
+	}
+}
+
+// TestNudgeOneUndecodableBodySendsTheNoReportShape: a row whose body does not
+// decode as []ChildReport still sends ONE bounded message ending in the
+// closing line -- never the raw undecodable body.
+func TestNudgeOneUndecodableBodySendsTheNoReportShape(t *testing.T) {
+	channel := &fakeChannelDeliverer{delivered: true}
+	nudge := &fakeSteerNudgeStore{rows: []UndrainedResult{{ID: "row-1", IdentityID: "id-1", Body: "not json"}}}
+	d := &DelegationDelivery{Channel: channel, Nudge: nudge, NudgeAfter: time.Minute}
+
+	if _, err := d.NudgeUndrained(context.Background(), time.Now(), 10); err != nil {
+		t.Fatalf("NudgeUndrained = %v", err)
+	}
+	if len(channel.calls) != 1 {
+		t.Fatalf("channel calls = %d, want 1", len(channel.calls))
+	}
+	if want := TelegramDelegationMessage(nil); channel.calls[0].text != want {
+		t.Fatalf("undecodable body delivered = %q, want the no-report shape %q", channel.calls[0].text, want)
+	}
+}
+
+// --- DeliverReport (Task 1, the terminal-report counterpart to Deliver) ---
+
+// archiverFunc adapts a plain func to ReportArchiver, so each test scripts
+// exactly the archive behaviour it needs without a dedicated struct.
+type archiverFunc func(ctx context.Context, identityID, conversationID, filename, markdown string) (string, error)
+
+func (f archiverFunc) ArchiveReport(ctx context.Context, identityID, conversationID, filename, markdown string) (string, error) {
+	return f(ctx, identityID, conversationID, filename, markdown)
+}
+
+// TestDeliverReportArchivesRecordsThenPushes pins DeliverReport's own
+// load-bearing order: archive (so the card's artifact line has a filename to
+// point to), THEN record (the durable copy), THEN push (the courtesy) --
+// mirroring TestDeliveryRecordsBeforePush's record-before-push assertion for
+// Deliver, extended one step earlier.
+func TestDeliverReportArchivesRecordsThenPushes(t *testing.T) {
+	var order []string
+	archiver := archiverFunc(func(context.Context, string, string, string, string) (string, error) {
+		order = append(order, "archive")
+		return "asset-1", nil
+	})
+	recorder := &orderedConversationRecorder{order: &order}
+	pub := &orderedSteerPublisher{order: &order}
+	d := &DelegationDelivery{Recorder: recorder, Steer: pub, Archiver: archiver}
+
+	report := ChildReport{ChildID: "w1-abc", Status: StatusOK, Goal: "goal", Summary: "summary"}
+	recorded, err := d.DeliverReport(context.Background(), DelegationPayload{ConversationID: "conv-9"}, report, 90*time.Second)
+	if err != nil {
+		t.Fatalf("DeliverReport = %v", err)
+	}
+	if !recorded {
+		t.Fatal("recorded = false, want true")
+	}
+	want := []string{"archive", "record", "push"}
+	if len(order) != len(want) {
+		t.Fatalf("order = %v, want %v", order, want)
+	}
+	for i := range want {
+		if order[i] != want[i] {
+			t.Fatalf("order = %v, want %v", order, want)
+		}
+	}
+	if !strings.Contains(recorder.lastText, "w1-abc.md") {
+		t.Fatalf("recorded card = %q, want the archived filename named", recorder.lastText)
+	}
+}
+
+// orderedConversationRecorder/orderedSteerPublisher append to a shared *order
+// slice so archive-then-record-then-push is asserted as ONE sequence, not
+// three independent side effects that could still interleave.
+type orderedConversationRecorder struct {
+	order    *[]string
+	lastText string
+}
+
+func (r *orderedConversationRecorder) AppendAssistantTurn(_ context.Context, _, text string) error {
+	*r.order = append(*r.order, "record")
+	r.lastText = text
+	return nil
+}
+
+type orderedSteerPublisher struct{ order *[]string }
+
+func (p *orderedSteerPublisher) Push(_, _, _ string) error {
+	*p.order = append(*p.order, "push")
+	return nil
+}
+
+// TestDeliverReportPushesFullReport is this plan's own named prohibition
+// check (threat register / prohibitions list): the pushed steer copy stays
+// the UNCHANGED full report JSON, byte-identical to marshalReports' own
+// output -- the card is the bounded DURABLE record, never a replacement for
+// the present-operator steer push's own payload.
+func TestDeliverReportPushesFullReport(t *testing.T) {
+	recorder := &fakeConversationRecorder{}
+	pub := &fakeSteerPublisher{}
+	d := &DelegationDelivery{Recorder: recorder, Steer: pub}
+
+	report := ChildReport{ChildID: "w1", Status: StatusOK, Goal: "goal", Summary: "the whole summary text"}
+	if _, err := d.DeliverReport(context.Background(), DelegationPayload{ConversationID: "conv-3"}, report, 30*time.Second); err != nil {
+		t.Fatalf("DeliverReport = %v", err)
+	}
+	if len(pub.pushes) != 1 {
+		t.Fatalf("pushes = %d, want 1", len(pub.pushes))
+	}
+	pushed := strings.TrimPrefix(pub.pushes[0], "conv-3|"+steer.SourceWorker+"|")
+	wantJSON, err := marshalReports([]ChildReport{report})
+	if err != nil {
+		t.Fatalf("marshalReports = %v", err)
+	}
+	if pushed != wantJSON {
+		t.Fatalf("pushed text = %q, want the unchanged full report JSON %q", pushed, wantJSON)
+	}
+	if len(recorder.appended) != 1 || pushed == recorder.appended[0].text {
+		t.Fatal("the pushed copy must not be the same bounded card as the recorded copy")
+	}
+}
+
+// TestDeliverReportNilArchiverDegradesToNoArtifactPointer: a nil Archiver
+// (a pool-less boot, matching newDelegationDelivery's other nil-safe
+// collaborators) must never fail the delivery -- the card simply carries no
+// artifact line.
+func TestDeliverReportNilArchiverDegradesToNoArtifactPointer(t *testing.T) {
+	recorder := &fakeConversationRecorder{}
+	d := &DelegationDelivery{Recorder: recorder}
+	report := ChildReport{ChildID: "w1", Status: StatusOK, Goal: "goal", Summary: "summary"}
+	recorded, err := d.DeliverReport(context.Background(), DelegationPayload{ConversationID: "conv-4"}, report, time.Minute)
+	if err != nil || !recorded {
+		t.Fatalf("DeliverReport = (%v, %v), want (true, nil)", recorded, err)
+	}
+	if strings.Contains(recorder.appended[0].text, "Report completo") {
+		t.Fatalf("card must carry no artifact line when Archiver is nil: %q", recorder.appended[0].text)
+	}
+}
+
+// TestDeliverReportArchiveErrorDegradesToNoArtifactPointer: an ArchiveReport
+// error is a best-effort WARN, never a delivery failure -- a Garage/object-
+// store hiccup must not block SC#1's own write.
+func TestDeliverReportArchiveErrorDegradesToNoArtifactPointer(t *testing.T) {
+	recorder := &fakeConversationRecorder{}
+	archiver := archiverFunc(func(context.Context, string, string, string, string) (string, error) {
+		return "", errors.New("garage down")
+	})
+	d := &DelegationDelivery{Recorder: recorder, Archiver: archiver}
+	report := ChildReport{ChildID: "w1", Status: StatusOK, Goal: "goal", Summary: "summary"}
+	recorded, err := d.DeliverReport(context.Background(), DelegationPayload{ConversationID: "conv-5"}, report, time.Minute)
+	if err != nil || !recorded {
+		t.Fatalf("DeliverReport = (%v, %v), want (true, nil): an archive failure must never fail delivery", recorded, err)
+	}
+	if strings.Contains(recorder.appended[0].text, "Report completo") {
+		t.Fatal("card must carry no artifact line when the archive call errors")
+	}
+}
+
+// TestDeliverReportRecordFailureReturnsFalse mirrors Deliver's own record-
+// failure contract: a WARN, never a hard Go error, reflected solely through
+// recorded=false so the caller's succeeded transition stays gated.
+func TestDeliverReportRecordFailureReturnsFalse(t *testing.T) {
+	recorder := &fakeConversationRecorder{err: errors.New("db down")}
+	d := &DelegationDelivery{Recorder: recorder}
+	report := ChildReport{ChildID: "w1", Status: StatusOK, Goal: "goal", Summary: "summary"}
+	recorded, err := d.DeliverReport(context.Background(), DelegationPayload{ConversationID: "conv-6"}, report, time.Minute)
+	if err != nil {
+		t.Fatalf("DeliverReport = %v, want no hard error on a record failure", err)
+	}
+	if recorded {
+		t.Fatal("recorded = true, want false on a conversation-append failure")
+	}
+}
+
+// TestDeliverReportNoRecorderIsAWiringError mirrors Deliver's own guard: SC#1
+// cannot be satisfied without a Recorder, so DeliverReport refuses rather
+// than silently dropping the write.
+func TestDeliverReportNoRecorderIsAWiringError(t *testing.T) {
+	d := &DelegationDelivery{}
+	_, err := d.DeliverReport(context.Background(), DelegationPayload{ConversationID: "conv-1"}, ChildReport{Status: StatusOK}, time.Minute)
+	if err == nil {
+		t.Fatal("DeliverReport with no Recorder configured = nil error, want a wiring error")
+	}
+}

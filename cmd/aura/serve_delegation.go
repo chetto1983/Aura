@@ -7,9 +7,11 @@ package main
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/askuser"
+	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/channels"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
@@ -116,6 +118,31 @@ func (n delegationPendingNotifier) InsertPendingNotification(ctx context.Context
 
 var _ swarm.PendingNotificationStore = delegationPendingNotifier{}
 
+// delegationReportArchiver adapts *assets.Service onto swarm.ReportArchiver
+// (51-11, UI-SPEC §2) via the SAME IngestAgentFile seam send_file's own
+// sendFileAssetAdapter uses -- no new artifact store, no new frame type
+// (D-02's closed shape). ThreadID is the origin conversation id, so the
+// shipped GET /api/assets?thread_id= the Artifacts panel already polls needs
+// nothing new to find it.
+type delegationReportArchiver struct{ svc *assets.Service }
+
+var _ swarm.ReportArchiver = delegationReportArchiver{}
+
+func (a delegationReportArchiver) ArchiveReport(ctx context.Context, identityID, conversationID, filename, markdown string) (string, error) {
+	asset, err := a.svc.IngestAgentFile(ctx, assets.AgentIngestRequest{
+		IdentityID: identityID,
+		ThreadID:   conversationID,
+		FileName:   filename,
+		MIMEType:   "text/markdown",
+		SizeBytes:  int64(len(markdown)),
+		Reader:     strings.NewReader(markdown),
+	})
+	if err != nil {
+		return "", err
+	}
+	return asset.ID, nil
+}
+
 // delegationNudgeProcessor adapts DelegationDelivery.NudgeUndrained onto
 // runtimeIngestionProcessor so it rides the SAME runtimeProcessingWorkers
 // container (Start/Stop, same context) the claim loop already uses — no
@@ -128,12 +155,13 @@ func (p *delegationNudgeProcessor) ProcessOnce(ctx context.Context) (int, error)
 	return p.delivery.NudgeUndrained(ctx, time.Now(), runtimeDelegationNudgeBatchSize)
 }
 
-// newDelegationDelivery builds the plan 51-10 delivery concern from the live
-// runtime: the SC#1 conversation record, the unchanged present-operator steer
-// push (D-04), and the absent-operator channel nudge (D-02). A nil chat.steer
-// (no Postgres configured) or a nil reg degrades those legs to a no-op rather
-// than dereferencing — Deliver's own nil-receiver guard on Recorder is the
-// hard stop (a wiring bug, not a domain rejection).
+// newDelegationDelivery builds the plan 51-10/51-11 delivery concern from the
+// live runtime: the SC#1 conversation record, the unchanged present-operator
+// steer push (D-04), the absent-operator channel nudge (D-02), and (51-11)
+// the report archive. A nil chat.steer (no Postgres configured), a nil reg,
+// or a nil chat.assets degrades those legs to a no-op/no-artifact-pointer
+// rather than dereferencing — Deliver/DeliverReport's own nil-receiver guard
+// on Recorder is the hard stop (a wiring bug, not a domain rejection).
 func newDelegationDelivery(chat *chatEnv, store *cron.Store, reg *channels.Registry) *swarm.DelegationDelivery {
 	var steerPub swarm.SteerPublisher
 	var nudge swarm.SteerNudgeStore
@@ -145,12 +173,17 @@ func newDelegationDelivery(chat *chatEnv, store *cron.Store, reg *channels.Regis
 	if reg != nil {
 		channel = reg
 	}
+	var archiver swarm.ReportArchiver
+	if chat.assets != nil {
+		archiver = delegationReportArchiver{svc: chat.assets}
+	}
 	return swarm.NewDelegationDelivery(
 		delegationConversationRecorder{store: chat.conv},
 		steerPub,
 		channel,
 		nudge,
 		delegationPendingNotifier{store: store},
+		archiver,
 		time.Duration(chat.cfg.SwarmDelegationNudgeSec)*time.Second,
 	)
 }

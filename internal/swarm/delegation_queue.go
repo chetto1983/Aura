@@ -425,13 +425,19 @@ func (l *DelegationClaimLoop) maintainLease(ctx context.Context, cancel context.
 // conversation nor (once nudged) a channel has not been delivered, so it is
 // retried by the shipped attempt_count/next_attempt_at backoff instead.
 func (l *DelegationClaimLoop) deliverSuccess(ctx context.Context, job documents.IngestionJob, payload DelegationPayload, report ChildReport) error {
-	text, err := marshalReports([]ChildReport{report})
-	if err != nil {
-		return fmt.Errorf("delegation report marshal: %w", err)
-	}
-	// ctx already carries the job's identity (bound once in processJob); Deliver's
-	// ConversationRecorder reads it to scope the RLS write.
-	recorded, err := l.Delivery.Deliver(ctx, payload, text)
+	// Goal/Attempts (51-11) travel from the payload/job row, not from runChild's
+	// own report -- a worker never sees its own dispatch metadata, only its goal
+	// text as a prompt. GoalIndex/ChildID are set on the report by runChild
+	// already (delegation_queue.go's caller chain); Task 2 of this plan makes
+	// that value the payload's own deterministic id instead of the flat "w1"
+	// every background worker shares today.
+	report.Goal = payload.Goal
+	report.Attempts = job.AttemptCount
+	elapsed := time.Now().UTC().Sub(job.CreatedAt).Truncate(time.Second)
+	// ctx already carries the job's identity (bound once in processJob);
+	// DeliverReport's ConversationRecorder reads it to scope the RLS write, and
+	// its ReportArchiver reads it to scope the archived asset.
+	recorded, err := l.Delivery.DeliverReport(ctx, payload, report, elapsed)
 	if err != nil {
 		return fmt.Errorf("delegation report deliver: %w", err)
 	}
@@ -464,6 +470,7 @@ func (l *DelegationClaimLoop) recordFailure(ctx context.Context, job documents.I
 			return err
 		}
 		slog.Warn("swarm.delegation.dead_letter", "job_id", job.ID, "attempts", job.AttemptCount, "err", message)
+		l.deliverDeadLetter(ctx, job, message)
 		return nil
 	}
 	if _, err := l.Store.Retry(ctx, documents.RetryIngestionJobRequest{
@@ -475,6 +482,41 @@ func (l *DelegationClaimLoop) recordFailure(ctx context.Context, job documents.I
 		return err
 	}
 	return nil
+}
+
+// deliverDeadLetter is recordFailure's dead-letter tail (51-11, SWARM-12
+// leg 1, T-51-55): AFTER the dead_letter transition has already succeeded,
+// it re-decodes the job's payload and records a card + pushes a steer row
+// for the exhausted-retry outcome, so an operator whose worker ran out of
+// attempts learns of it instead of learning nothing (D-08's "errors never
+// pass silently" applied to the queue's own terminal failure). Best-effort:
+// a payload that fails to decode here (it decoded fine earlier in
+// processJob for every path that reaches recordFailure WITH a payload; a
+// payload-decode failure itself is one of the causes that reaches
+// recordFailure) logs a warning and skips the record -- the job is ALREADY
+// dead_letter regardless, and this must never re-open that transition.
+//
+// ChildID is job.ID: recordFailure can fire before any worker ever started
+// (a payload decode failure, an identity mismatch), so there is no
+// worker-produced child id to attribute this synthetic report to -- the job
+// row's own id is the one identity that is always available.
+func (l *DelegationClaimLoop) deliverDeadLetter(ctx context.Context, job documents.IngestionJob, message string) {
+	payload, err := delegationPayloadFromJob(job)
+	if err != nil {
+		slog.Warn("swarm.delegation.dead_letter_record_skipped", "job_id", job.ID, "err", err)
+		return
+	}
+	report := ChildReport{
+		ChildID:  job.ID,
+		Status:   StatusDeadLetter,
+		Error:    message,
+		Goal:     payload.Goal,
+		Attempts: job.AttemptCount,
+	}
+	elapsed := time.Now().UTC().Sub(job.CreatedAt).Truncate(time.Second)
+	if _, err := l.Delivery.DeliverReport(ctx, payload, report, elapsed); err != nil {
+		slog.Warn("swarm.delegation.dead_letter_record_failed", "job_id", job.ID, "err", err)
+	}
 }
 
 func (l *DelegationClaimLoop) workerID() string {

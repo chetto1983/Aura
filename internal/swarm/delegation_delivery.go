@@ -18,12 +18,14 @@ package swarm
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/steer"
 )
 
@@ -91,6 +93,10 @@ type DelegationDelivery struct {
 	Channel  ChannelDeliverer
 	Nudge    SteerNudgeStore
 	Pending  PendingNotificationStore
+	// Archiver persists a terminal report's full markdown as an owned asset
+	// (51-11, UI-SPEC §2). nil-safe: DeliverReport degrades to a card with no
+	// artifact pointer rather than failing (delegation_artifact.go).
+	Archiver ReportArchiver
 	// NudgeAfter is AURA_SWARM_DELEGATION_NUDGE_SEC. <=0 disables the channel
 	// leg entirely (the shipped AURA_ASKUSER_PAUSE_TTL_SEC <=0-disables
 	// precedent): NudgeUndrained becomes a no-op, leaving record + steer only.
@@ -104,6 +110,7 @@ func NewDelegationDelivery(
 	channel ChannelDeliverer,
 	nudge SteerNudgeStore,
 	pending PendingNotificationStore,
+	archiver ReportArchiver,
 	nudgeAfter time.Duration,
 ) *DelegationDelivery {
 	return &DelegationDelivery{
@@ -112,6 +119,7 @@ func NewDelegationDelivery(
 		Channel:    channel,
 		Nudge:      nudge,
 		Pending:    pending,
+		Archiver:   archiver,
 		NudgeAfter: nudgeAfter,
 	}
 }
@@ -176,6 +184,54 @@ func (d *DelegationDelivery) Deliver(ctx context.Context, payload DelegationPayl
 // written once, durably, into aura.conversation_turns itself.
 func attributedWorkerReport(goal, text string) string {
 	return fmt.Sprintf("[Delegated worker report -- goal: %q]\n%s", goal, text)
+}
+
+// DeliverReport is Deliver's counterpart for a TERMINAL worker outcome
+// (51-11, SWARM-12 legs 1+2): it archives the full
+// report markdown FIRST (best-effort, delegation_artifact.go), THEN records
+// the bounded card (never the raw report JSON Amendment #172 measured
+// landing in aura.conversation_turns), THEN pushes the unchanged full report
+// JSON on the steer rail -- the SAME record-before-push ordering Deliver's
+// own doc comment states, with the archive step ahead of both because the
+// card's own artifact-pointer line needs the archived filename to exist
+// first.
+//
+// recorded/err carry the SAME contract as Deliver: recorded=false (never a
+// Go error) on a conversation-append failure, so the caller
+// (delegation_queue.go's deliverSuccess/recordFailure) still gates the row's
+// terminal transition on it, never marking a lost report delivered by
+// omission. A push (steer.Push) failure remains a hard infrastructure error.
+//
+// Push here calls Steer.Push, byte-identical to Deliver's own push -- Task 3
+// (51-11) switches this ONE call site to PushDelegationResult carrying the
+// payload's fan-out key; nothing else about the push changes.
+func (d *DelegationDelivery) DeliverReport(ctx context.Context, payload DelegationPayload, report ChildReport, elapsed time.Duration) (recorded bool, err error) {
+	if d == nil || d.Recorder == nil {
+		return false, fmt.Errorf("swarm: delegation delivery has no conversation recorder configured")
+	}
+	identityID := identityctx.IdentityID(ctx)
+	artifactName := archiveReport(ctx, d.Archiver, identityID, payload.ConversationID, report.ChildID,
+		DelegationReportMarkdown(report, elapsed))
+
+	card := DelegationRecordCard(report, elapsed, artifactName)
+	if rerr := d.Recorder.AppendAssistantTurn(ctx, payload.ConversationID, card); rerr != nil {
+		slog.Warn("swarm.delegation.record_failed",
+			"conversation", payload.ConversationID, "err", rerr)
+		recorded = false
+	} else {
+		recorded = true
+	}
+
+	if d.Steer != nil {
+		text, merr := marshalReports([]ChildReport{report})
+		if merr != nil {
+			return recorded, fmt.Errorf("delegation report marshal: %w", merr)
+		}
+		if perr := d.Steer.Push(payload.ConversationID, steer.SourceWorker, text); perr != nil {
+			return recorded, fmt.Errorf("delegation report push: %w", perr)
+		}
+	}
+	return recorded, nil
 }
 
 // NudgeUndrained is the absent-operator leg's periodic sweep (SWARM-03/09):
@@ -245,6 +301,13 @@ func (d *DelegationDelivery) NudgeUndrained(ctx context.Context, now time.Time, 
 // claimed the row (true even on owns-but-failed: the row is still claimed,
 // only its delivery is deferred to pending_notifications) versus a
 // concurrent pass having already claimed it (false, not an error).
+//
+// This is the fan-out-of-one path (51-11): row.Body is decoded into
+// []ChildReport and rendered through TelegramDelegationMessage -- the SAME
+// bounded, glyph-vocabulary rendering the fan-out grouping (Task 3) uses for
+// N>1, applied here to N=1. A body that fails to decode still sends ONE
+// bounded message (the no-report shape), never the raw body -- row.Body
+// itself never reaches DeliverToIdentity.
 func (d *DelegationDelivery) nudgeOne(ctx context.Context, row UndrainedResult) (bool, error) {
 	claimed, err := d.Nudge.MarkSteerRowNudged(ctx, row.ID, row.IdentityID)
 	if err != nil {
@@ -253,15 +316,18 @@ func (d *DelegationDelivery) nudgeOne(ctx context.Context, row UndrainedResult) 
 	if !claimed {
 		return false, nil
 	}
+	var reports []ChildReport
+	_ = json.Unmarshal([]byte(row.Body), &reports) // decode failure -> nil slice -> the no-report shape
+	message := TelegramDelegationMessage(reports)
 	// delivered=true and delivered=false-nobody-owns both need nothing further
 	// here: DeliverToIdentity's bool distinguishes them only to decide whether
 	// a SIBLING channel should be tried, which is entirely
 	// Registry.DeliverToIdentity's own internal fan-out (sort.Strings,
 	// first-delivers-wins) -- this caller has nothing further to do in either
 	// case, per this function's own doc.
-	if _, err := d.Channel.DeliverToIdentity(ctx, row.IdentityID, row.Body); err != nil {
+	if _, err := d.Channel.DeliverToIdentity(ctx, row.IdentityID, message); err != nil {
 		if d.Pending != nil {
-			if perr := d.Pending.InsertPendingNotification(ctx, row.ID, row.IdentityID, row.Body, err.Error()); perr != nil {
+			if perr := d.Pending.InsertPendingNotification(ctx, row.ID, row.IdentityID, message, err.Error()); perr != nil {
 				slog.Warn("swarm.delegation.nudge_retry_persist_failed", "steer_row", row.ID, "err", perr)
 			}
 		}
