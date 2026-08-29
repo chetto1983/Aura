@@ -577,7 +577,7 @@ lands squarely on the memory correctness Phase 45 and 49 just established.
   4. A worker that needs the operator surfaces the question in the operator's channel, naming which worker raised it, and answering it resumes that worker's line of work.
   5. After a live fan-out where several workers each learn something durable, the graph holds one correctly-attributed fact per worker — no duplicates, no lost writes, no fact attributed to the parent.
 
-**Plans**: 10/13 plans executed in 7 waves
+**Plans**: 10/14 plans executed in 9 waves
 
 Plans:
 **Wave 1**
@@ -607,12 +607,25 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 51-11-PLAN.md — Delivery envelope: record card, report artifact, one static Telegram message, stable child ids, `swarm_status` (SWARM-12, SWARM-10) — wave 6
-- [ ] 51-12-PLAN.md — Cockpit worker surface: worker-events SSE route, read-only parallel pane, picker, live chip (SWARM-12, SWARM-10) — wave 6
+- [ ] 51-11-PLAN.md — Delivery envelope: per-worker record card, report artifact, ONE Telegram message per fan-out, stable child ids, `swarm_status` (SWARM-12, SWARM-10) — wave 6
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 51-08-PLAN.md — Live SC#1–SC#5 driver, quality snapshot re-attestation, PRD measurement — wave 7
+- [ ] 51-12a-PLAN.md — Worker-events SSE route (transcript replay+tail and per-child status) + the swarm_spawn display normalizer, Go only (SWARM-12, SWARM-10) — wave 7
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [ ] 51-12b-PLAN.md — Cockpit worker surface: read-only parallel pane, picker, live chip, live drive, PRD measurement (SWARM-12, SWARM-10) — wave 8
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [ ] 51-08-PLAN.md — Live SC#1–SC#5 driver, quality snapshot re-attestation, PRD measurement — wave 9
+
+> **51-12 was split into 51-12a/51-12b at plan-check on 2026-08-29** (blocker B3): the single plan
+> carried 27 `files_modified` with a first task touching 15 files and 8 new TypeScript modules —
+> about 1.5x the smart-zone budget. 51-12a is the Go server half and is provable without a browser;
+> 51-12b is the cockpit, the live drive and the PRD record, and depends on it. Both now run after
+> 51-11, whose queued `swarm_spawn` result object and transcript terminal marker they consume.
 
 ### Phase 52: Mid-turn steering
 

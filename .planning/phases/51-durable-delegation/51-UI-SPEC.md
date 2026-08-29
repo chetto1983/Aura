@@ -169,14 +169,14 @@ rows, E2 worker pane, E3 worker picker, E4 report artifact, E5 Telegram message,
 | long-text | E3 worker picker | resolved | explicit | The goal truncates to one line; the entry's `title` attribute carries the full goal |
 | overflow | E4 report artifact | resolved | explicit | The full report opens in `ArtifactsPanel`/`PreviewModal`, which scroll; the existing `text` renderer (escaped `<pre>`, D-07) applies |
 | long-text | E4 report artifact | resolved | explicit | The artifact holds the WHOLE consolidated report (`text/markdown`), never truncated; the card and Telegram carry the bounded summary and point here |
-| unclassified | E5 Telegram message | resolved | explicit | Exactly one static message per terminal outcome: status glyph, goal on one line (≤80 runes), summary (≤300 runes, server-truncated), "Dettagli nel cockpit."; nothing is sent for running/stalled/awaiting states, and no message is ever edited in place |
+| unclassified | E5 Telegram message | resolved | explicit | **Amended 2026-08-29 (operator fan-out decision, CONTEXT D-15 / PRD Amendment #172 point 2):** exactly one static message **per fan-out**, not per worker — sent when the LAST worker of one `swarm_spawn` call reaches a terminal state (`ok`/`failed`/`stalled`/`dead_letter`), carrying N status lines (≤300 runes of body in total) and then "Dettagli nel cockpit.". With N=1 the three single-worker shapes below are unchanged. Nothing is sent for a running/awaiting worker, and no message is ever edited in place |
 | empty | E6 durable record card | dismissed | — | A record turn exists only when a report exists; there is no empty card |
 | loading | E6 durable record card | dismissed | — | A persisted assistant turn re-rendered from history has no loading state of its own |
 | error | E6 durable record card | resolved | explicit | A failed/stalled/dead-letter outcome renders the same card with the danger/warning status and the error text — never the raw JSON bubble |
 | populated | E6 durable record card | resolved | explicit | The card shows status, goal (one line), duration, bounded summary and the artifact pointer, and re-renders identically from the stored turn after reload |
 | partial | E6 durable record card | dismissed | — | The record is written once, at completion (SC#1); there is no partial record |
 | overflow | E6 durable record card | resolved | explicit | The summary is bounded (≤300 runes); the rest lives in the artifact the card points to |
-| zero-one-many | E6 durable record card | resolved | explicit | One card per delegation report; N workers become N rows inside that one card, never N cards |
+| zero-one-many | E6 durable record card | resolved | explicit | **Amended 2026-08-29 (operator fan-out decision, CONTEXT D-15).** The durable record lands **per worker**: one card per `delegation_result` row, each card carrying that worker's own status, goal, duration, bounded summary and artifact pointer. Rationale: a report arrives when its own job reaches terminal, and the conversation append is what makes it durable — holding N reports back to rewrite one card would mean either editing a persisted turn in place (which `aura.conversation_turns` does not do) or delaying every finished worker behind the slowest one in the cockpit too. N workers therefore produce N cards. The single-message aggregation applies to **Telegram only** (E5); the phone waits for the slowest worker, the cockpit does not. |
 
 ## Delegation Delivery Envelope Contract
 
@@ -317,6 +317,38 @@ Dettagli nel cockpit.
 
 Dettagli nel cockpit.
 ```
+
+**Fan-out (N > 1) — added 2026-08-29 by the operator's decision (*"uno per fan-out"*).** The three
+shapes above are the **N = 1** rendering and are unchanged. When one `swarm_spawn` call dispatched N
+workers, the phone gets **ONE** message for the whole fan-out, sent when the LAST of those N workers
+reaches a terminal state:
+
+```
+✅ <goal 1, per-line cap, one line>: completato
+❌ <goal 2, per-line cap, one line>: fallito
+⚠️ <goal 3, per-line cap, one line>: non consegnato
+
+Dettagli nel cockpit.
+```
+
+- **One line per worker**, ordered by `goal_index`, each `<glyph> <goal>: <label>` with the same
+  glyph vocabulary as the N = 1 shapes plus ⏱ for `stalled`. Labels: `completato` (ok),
+  `fallito` (failed), `bloccato` (stalled), `non consegnato` (dead_letter).
+- **The status lines together are ≤300 runes** — the same locked budget D-15 gives the single-worker
+  summary, now spent across N lines. The per-line goal cap is derived, not fixed:
+  `clamp(300/N − 16, 12, 80)` runes. If the assembled body still exceeds 300 runes, trailing lines are
+  dropped and the last body line reads `+<M> altri` — a worker is never silently omitted, its
+  existence is always counted.
+- **All-failed is not a special case**: N lines, every one carrying ❌. There is no "everything
+  failed" summary sentence — the operator reads which goal failed, not a verdict about the batch.
+- **No report at all** (every worker reaped or dead-lettered before writing one): ONE message saying
+  so, ending in the same closing line — never silence, never an empty string.
+- **The closing line is unchanged and still always last.**
+- **Named cost of the decision:** a fan-out with one worker parked on its own `ask_user` question
+  keeps the phone silent about its finished siblings until that question is answered (the parked
+  worker is already talking to the operator through the shipped HITL relay, so the channel is not
+  silent about *it*). The cockpit card for each finished sibling lands immediately regardless, and
+  the steer row's own `AURA_DELEGATION_RESULT_TTL_SEC` plus D-08's expiry trace bound the silence.
 
 - **Glyphs:** ✅ `ok`, ❌ `failed`, ⚠️ `dead_letter` (delivery exhausted its retry budget —
   `attempt_count == max_attempts`, D-01's measured terminal case). No glyph exists for
