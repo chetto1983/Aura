@@ -9,7 +9,7 @@ each new agent session and whenever it changes. Do not rely on remembered,
 summarized, or assumed versions of its rules.
 
 Every delegated task must explicitly require the receiving agent to read
-`D:\Aura\CLAUDE.md` completely before acting.
+`CLAUDE.md` completely before acting.
 
 This file deliberately points to `CLAUDE.md` instead of duplicating its rules,
 so the instructions cannot drift. More-specific nested `AGENTS.md` files may add
