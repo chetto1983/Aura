@@ -6055,8 +6055,8 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_SANDBOX_MAX_CONCURRENT_SESSIONS` | `5` | cap | 2b | Hard cap session concurrent per istanza Aura. |
 | `AURA_SANDBOX_WORKSPACE_MAX_BYTES` | `104857600` (100 MiB) | cap | 2b | Quota per workspace mount per conversation. |
 | `AURA_SANDBOX_NETWORK_ALLOW_HOSTS` | `` (empty = deny totale) | operative | 2b | CSV hosts allowlist (es. `pypi.org,files.pythonhosted.org`). Empty mantiene `network_mode: none` Slice 2a. Non-empty attiva tier Risk-Based RISKY. |
-| `AURA_LOOP_MAX_STEPS` | `25` | cap | 0.9 | Tool-call iteration cap per `Run` (amendment #19, Pitfall #9 P0). Child agents inherit parent's REMAINING (not fresh). Trip → `Event.FinishReason='max_steps'`. |
-| `AURA_LOOP_MAX_WALLCLOCK_SEC` | `300` | cap | 0.9 | Wallclock budget per `Run` in seconds (amendment #19, Pitfall #9 P0). Children inherit parent's absolute deadline. Trip → `Event.FinishReason='max_wallclock'`. |
+| `AURA_LOOP_MAX_STEPS` | `25` | cap | 0.9 | Tool-call iteration cap per `Run` (amendment #19, Pitfall #9 P0). Child agents inherit parent's REMAINING (not fresh). Trip → `Event.FinishReason='max_steps'`. **Fixed 2026-08-29 (plan 51-09, defect D, Amendment #171):** unmapped in `compose.yaml` until this date, so `.env`'s value was silently ignored and the container always ran on this compiled default regardless of what `.env` said. Now mapped `${AURA_LOOP_MAX_STEPS:-25}` in the `aura` service. |
+| `AURA_LOOP_MAX_WALLCLOCK_SEC` | `300` | cap | 0.9 | Wallclock budget per `Run` in seconds (amendment #19, Pitfall #9 P0). Children inherit parent's absolute deadline. Trip → `Event.FinishReason='max_wallclock'`. **Fixed 2026-08-29 (plan 51-09, defect D, Amendment #171):** same unmapped-in-`compose.yaml` gap as `AURA_LOOP_MAX_STEPS` above, now mapped `${AURA_LOOP_MAX_WALLCLOCK_SEC:-300}`. D-03 (below) retired the per-child wall clock, which makes THIS shared budget the background delegation worker's actual absolute ceiling — a 327.5s live completion measured the same day would have been cut at this 300s default. |
 | `AURA_LOOP_DEDUP_WINDOW` | `3` | cap | 0.9 | Sliding window size for tool-call dedup (amendment #19, Pitfall #9 P0). If last N tool calls have identical `tool_name + args_hash`, trip → `Event.FinishReason='dedup_loop'`. |
 | `AURA_LOOP_DEDUP_EXEMPT_TOOLS` | `` (empty) | operative | 0.9 | CSV allowlist of tool names exempt from the two-phase dedup check (A7, D-19). Tools whose constant-result output is legitimately repeated (e.g. a poll) bypass the dedup veto and terminate only via the hard step/wallclock caps. |
 | `AURA_LOOP_BRANCH_SOFT_FRACTION` | `1.0` | cap | 0.9 | Passive per-branch fair-share fraction in `(0,1]` (A7, D-12). A parallel branch's advisory soft cap is `ceil(remaining × frac / fanout)`; non-terminal — the shared hard `AURA_LOOP_MAX_STEPS` counter stays authoritative. |
@@ -6069,7 +6069,7 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_SWARM_MODEL_WORKER` | `=AURA_LLM_MODEL` | operative | 3 | Tier override (v1 NO-OP per amendment #12 — all tiers resolve to `AURA_LLM_MODEL`; enforcement deferred to v2 SWARM-V2-01). |
 | `AURA_SWARM_MAX_GOALS` | `8` | cap | 9 | **Goals-array cap (amendment #44, D-13)**: `len(goals) > AURA_SWARM_MAX_GOALS` in a single `swarm_spawn` call → model-readable tool error (Anthropic over-spawn failure mode #1). Bounds the total fan-out per call; the per-child summary cap (reuses `AURA_CONTEXT_PREVIEW_CAP_BYTES`) bounds each report. |
 | ~~`AURA_SWARM_CHILD_TIMEOUT_SEC`~~ | ~~`120`~~ | **RETIRED 2026-08-29 (plan 51-09, D-03)** | 9/51 | Was: per-worker `context.WithTimeout` ctx deadline (amendment #44, D-11). Retired because amendment #154 measured it as the wrong instrument — four workers finished in 5.15/5.51/7.58/7.80s against the 120s cap (23× margin), the cap fired once and caught an upstream `context deadline exceeded` stall rather than slow work, and the worker genuinely worth interrupting (70.31s spent calling tools that could never succeed) sailed under it and returned `ok`. Zero references remain outside this row and Amendment #154's own record. Superseded by `AURA_SWARM_CHILD_IDLE_SEC` below. |
-| `AURA_SWARM_CHILD_IDLE_SEC` | `120` | cap | 51 (D-03) | **Per-worker inactivity deadline (plan 51-09, replaces `AURA_SWARM_CHILD_TIMEOUT_SEC`)**: a resettable timer (`internal/swarm/child_staleness.go`) armed at worker start and `Reset` on every event the worker's own loop observes (`runChild`, `swarm.go`); silence for this many seconds reaps the worker and yields a `{status:"failed", error:"stalled: no worker event for …"}` report entry, siblings unaffected. Boot-gated by `config.GuardSwarmStaleness`: fatal (strict profiles) / warn (lenient) if `AURA_SWARM_CHILD_IDLE_SEC >= AURA_SWARM_DELEGATION_LEASE_SEC`, since a lease renewed only on worker events expires exactly `lease` seconds after the worker's last event — an inactivity deadline that is not strictly shorter lets a reclaim race a goroutine that may still be alive. `_SEC` suffix per the naming convention below. |
+| `AURA_SWARM_CHILD_IDLE_SEC` | `120` | cap | 51 (D-03) | **Per-worker inactivity deadline (plan 51-09, replaces `AURA_SWARM_CHILD_TIMEOUT_SEC`)**: a resettable timer (`internal/swarm/child_staleness.go`) armed at worker start and `Reset` on every event the worker's own loop observes (`runChild`, `swarm.go`); silence for this many seconds reaps the worker and yields a `{status:"failed", error:"stalled: no worker event for …"}` report entry, siblings unaffected. Boot-gated by `config.GuardSwarmStaleness`: fatal (strict profiles) / warn (lenient) if `AURA_SWARM_CHILD_IDLE_SEC >= AURA_SWARM_DELEGATION_LEASE_SEC`, since a lease renewed only on worker events expires exactly `lease` seconds after the worker's last event — an inactivity deadline that is not strictly shorter lets a reclaim race a goroutine that may still be alive. `_SEC` suffix per the naming convention below. **Finding C (live check 2026-08-29, plan 51-09 Task 3, Amendment #171 — label ambiguity, not fixed):** the shipped default (`120`) equals `AURA_LLM_TOTAL_TIMEOUT_SEC`'s shipped default (`120`), so an LLM stream-open deadline (`kind=stream_open_deadline`, `context deadline exceeded`) and a genuine staleness reap (`context canceled`) can fire in the same millisecond, and the report reads `stalled` for what is actually an upstream stall. Correct under D-03's own definition — no progress is no progress — but the report text cannot currently distinguish the two causes for an operator reading it. |
 | `AURA_WEB_FETCH_ALLOW_LOOPBACK` | `0` (false) | operative | 5 | Permit loopback URLs in web_fetch. |
 | `AURA_WEB_FETCH_ALLOW_HOSTS` | `` (empty) | operative | 5 | CSV allowed hosts override. |
 | `AURA_WEB_FETCH_TIMEOUT_SEC` | `10` | cap | 5 | One wall-clock budget for direct fetch DNS, connect, redirects, retry, body read, and extraction (amendment #104). |
@@ -9394,3 +9394,121 @@ flusso completo, che funziona.
 > every Office producer variant or direct native-audio support from Gemma. Ranking remains the
 > existing diagnostic RRF report; the retired reranker and an invented abstention threshold do
 > not return.
+
+## §The termination model's live check finds two write-path defects the design measurement could not see (Amendment #171, 2026-08-29)
+
+> **Amendment #171 (2026-08-29, Phase 51/SWARM plan 51-09 Task 3 — live checkpoint of the D-03
+> termination model, executed on the operator's behalf and recorded here as a register of what
+> was measured, per this PRD's own PRD-first discipline: a measurement corrects the document, the
+> document never overrides a measurement.)**
+>
+> **What was measured.** `aura:local` `sha256:9c12bd4a…` built 06:30:58Z from HEAD `34c5428e0`
+> (image freshness confirmed before driving — a stale image has produced false verdicts on this
+> phase twice before). LLM `deepseek/deepseek-v4-flash-0731:nitro` (read from `aura.settings`, not
+> assumed). Container knobs during the runs: `AURA_SWARM_CHILD_IDLE_SEC=120`,
+> `AURA_SWARM_DELEGATION_LEASE_SEC` unmapped → code default `300`, `AURA_LLM_TOTAL_TIMEOUT_SEC=120`,
+> `AURA_LLM_STREAM_IDLE_TIMEOUT_SEC=60`. For one long-delegation run only, a temporary
+> `compose.d03.yaml` override raised `AURA_LOOP_MAX_WALLCLOCK_SEC=1200` /
+> `AURA_LOOP_MAX_STEPS=60` to let a genuinely multi-minute goal run past the shipped Budget
+> ceiling; restored to shipped defaults immediately afterward (verified). Full transcript, job
+> ids, log lines and evidence files: `.planning/phases/51-durable-delegation/live-check/d03/`.
+>
+> **D-03's core model is proven, not just designed.** A worker making continuous tool-call
+> progress completed real work (10 documents: `soffice`→PDF, `pdftoppm` 300dpi, `tesseract` OCR,
+> `pdftotext`, sha256) at **293.4s and 327.5s** — past the RETIRED `AURA_SWARM_CHILD_TIMEOUT_SEC`'s
+> ~240s effective wall clock — and was never reaped. A worker that emitted no event for
+> `AURA_SWARM_CHILD_IDLE_SEC` was reaped exactly once, at **120.2s**, its context cancelled
+> (`context canceled`, distinct from an LLM deadline's `context deadline exceeded`), its report
+> reading `stalled: no worker event for 2m0s`, the reap visible and attributed in the daemon log.
+> `AURA_SWARM_CHILD_IDLE_SEC == AURA_SWARM_DELEGATION_LEASE_SEC` refused to boot (exit 71), naming
+> both knobs. The 51-07 transcript route (SWARM-10) read a live mid-run transcript correctly
+> (200/247800 bytes/16ms), 404 on path traversal, 401 unauthenticated.
+>
+> **Defect A (fixed): the consolidated report never reached `conversation_turns` — SC#1 was
+> broken live under RLS.** `DelegationClaimLoop.deliverSuccess` (and, on the pause path,
+> `openPauseAndPark`) called `DelegationDelivery.Deliver` on the claim loop's own daemon-background
+> `ctx`, which carries no `identityctx`. `conversations.Store`'s scoped-transaction seam sets
+> `app.current_identity` from `identityctx.IdentityID(ctx)`; with none set, `aura.conversations`'
+> RLS policy hides the row and the write fails "conversation not found" (measured live, verbatim:
+> `swarm.delegation.record_failed err="append turn … seq 0: allocate turn seq …: conversation not
+> found"`). Measured three times in the long run: every attempt's report failed to record, the
+> queue retried the WHOLE worker (up to 5 minutes of REAL tool calls re-run from scratch each
+> time — the shipped 51-01 retry policy has no cheaper path), and the job dead-lettered at the
+> attempt cap despite the underlying work having genuinely succeeded twice. The claimed worker's
+> OWN tool calls were never affected — `delegationOperationContext` already binds identity onto
+> the WORKER's context (`delegation_run.go:238`); only the delivery call sites downstream of
+> `processJob`'s own daemon ctx were missing the bind. Fixed by binding
+> `identityctx.WithIdentityID(ctx, job.IdentityID)` at both `Deliver` call sites (`deliverSuccess`
+> in `delegation_queue.go`, `openPauseAndPark` in `delegation_run.go`) — a one-line fix at each of
+> the two places that needed it, not a redesign. Proven RED→GREEN by a daemon-free unit test on the
+> seam (a fake recorder asserting `identityctx.IdentityID(ctx) == job.IdentityID`) and by a
+> `db_integration` test that reproduces the exact measured failure (`lock conversation: no rows`)
+> against a REAL Postgres connection scoped as `aura_app` — never the superuser `aura` role, which
+> is `BYPASSRLS` and would give a false green on precisely this bug. `internal/runner`'s sibling
+> 51-06b expiry-trace write (`PoolWorkerPauseExpirer.ExpireWorkerPause`) was audited and found NOT
+> to share this defect: it threads the pause's identity explicitly through `db.WithIdentityTx`
+> rather than reading it off `ctx`, so it was never exposed to this class of bug.
+>
+> **Defect E (fixed): a reaped/cancelled `shell_exec` left its process running in the sandbox.**
+> `usersandbox.DockerBackend.Exec` on `ctx` cancellation only closed the hijacked exec stream and
+> returned `ctx.Err()`; nothing signalled the box-side process. Measured live: after the 120.2s
+> staleness reap of a `shell_exec sleep 480` probe, `docker top` on the identity's box still showed
+> the reaped attempt's process (pid 53680, elapsed 2:54) running alongside the retried attempt's
+> own copy of the same command — under the shipped retry policy this is N concurrent copies of one
+> command accumulating in a single box per reap. The kill mechanism this needed already existed in
+> the SAME file for background jobs (`ExecStream`/`ExecStreamHandle.Kill`: a wrapper shell records
+> its own PID to a per-job file before running the command, and `Kill` signals the recorded process
+> group from a separate box exec — the Docker exec API has no kill-exec verb, so detaching a stream
+> alone cannot terminate what it was attached to). Fixed by extracting that mechanism into two pure
+> shell-string builders (`wrapCommandWithPIDFile`, `killProcessGroupCommand`) and a shared
+> `killBoxProcessGroup` helper, then having the synchronous `Exec` path use the identical mechanism
+> on cancel/timeout — one kill implementation for both the synchronous and the streamed exec paths,
+> never two. Proven by daemon-free unit tests pinning both pure shell-string builders; the
+> docker-gated cancel/kill behaviour itself is proven live (a repeat of the stall probe +
+> `docker top`) by this same checkpoint's own follow-up, not re-verified by a second live run here.
+>
+> **Defect D (fixed): dark config — `.env`'s loop budget never reached the container.** `.env`
+> carried `AURA_LOOP_MAX_WALLCLOCK_SEC=300` / `AURA_LOOP_MAX_STEPS=25`, but `compose.yaml` mapped
+> neither into the `aura` service's environment, so the container always ran on
+> `internal/agent/budget.go`'s compiled defaults (also `300`/`25`, so the gap was invisible until an
+> operator tried to raise either) regardless of what `.env` said. D-03 removed the per-child wall
+> clock (`AURA_SWARM_CHILD_TIMEOUT_SEC`, retired above), which makes this SHARED `agent.Budget`
+> wallclock the background delegation worker's actual absolute ceiling now — the 327.5s completion
+> measured in this same check would have been cut at the shipped 300s default. Fixed by mapping
+> both vars in `compose.yaml`'s `aura` service with the same `${VAR:-default}` shape as the rest of
+> the swarm block; catalog rows updated (§Caps & Limits, above) to record the fix and cite the
+> measurement.
+>
+> **Two findings recorded, neither changed here — both are named decisions for plan 51-08 or the
+> operator, not defects this plan's own scope covers.**
+> **Finding B (retry semantics).** The shipped 51-01 policy (`defaultDelegationMaxAttempts=3`, 15s
+> backoff) retries a reaped worker AND a successful worker whose report merely failed to record
+> (defect A's shape), re-running the goal from scratch either way. Plan 51-09's own Task 3
+> checklist expected "no second worker picked up the SAME goal afterwards" in the stalled case;
+> what the tree actually does is retry the SAME queue row serially, never two workers concurrently
+> alive on it at once (the plan's own threat T-51-44 forbids only that concurrent shape, and it was
+> not observed — every `swarm.child.spawned` in this check followed a prior `completed`). Both
+> stalls measured in this check were upstream OpenRouter stream-open deadlines, exactly the case a
+> retry exists for; the SAME policy is correct there and expensive for defect A's shape (a
+> successful worker re-run purely because its OWN report failed to write). No policy change is made
+> here — the two shapes now both have live evidence for whoever decides in 51-08 whether a
+> record-only failure deserves a cheaper retry than a full worker re-run.
+> **Finding C (label ambiguity).** `AURA_SWARM_CHILD_IDLE_SEC` (`120`) equals
+> `AURA_LLM_TOTAL_TIMEOUT_SEC` (`120`), so an LLM stream-open timeout and a genuine staleness reap
+> can fire in the same millisecond and the report reads `stalled` for what is actually an upstream
+> stall. This is correct under D-03's own definition — no progress is no progress, and the reap IS
+> real — but the report text cannot currently tell an operator which of the two caused it. Catalog
+> row updated (§Caps & Limits, above); not fixed here.
+>
+> **What this measurement does NOT show.** The >4-minute completions (293.4s/327.5s) were measured
+> under the temporary `compose.d03.yaml` override, restored immediately afterward — under the
+> shipped defaults, now correctly wired end-to-end by the defect D fix, `agent.Budget`'s 300s
+> wallclock remains the ceiling for any single worker turn, background or not. `attempt_count`
+> staying at exactly 1 through an entire successful, undisturbed run was not directly observed —
+> every run in this check was retried because of defect A, so "a lease reclaim never races a live
+> worker" is supported only indirectly here (no concurrent `swarm.child.spawned` ever overlapped a
+> still-live one across every run in this check). The Telegram nudge fired without an error at
+> 06:44:51+grace but its arrival on the operator's phone was not confirmed by this checkpoint — only
+> the operator can attest to that. And, as with Amendment #154, every run in this check was one
+> deployment, one profile (`single_user_hardened`), one routed model
+> (`deepseek/deepseek-v4-flash-0731:nitro`).

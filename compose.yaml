@@ -163,6 +163,17 @@ services:
       # Unset leaves the view routes at 503 and the cockpit renders the tool's text,
       # which is the extension's own progressive-enhancement contract.
       AURA_MCP_SANDBOX_ORIGIN: ${AURA_MCP_SANDBOX_ORIGIN:-}
+      # Defect D (51-09 live-check/d03/RESULTS.md, measured 2026-08-29): unmapped here,
+      # .env's AURA_LOOP_MAX_WALLCLOCK_SEC/AURA_LOOP_MAX_STEPS were silently ignored --
+      # the container ran on internal/agent/budget.go's compiled defaults (300s/25 steps)
+      # regardless of what .env said. D-03 removed the per-child wall clock
+      # (AURA_SWARM_CHILD_IDLE_SEC below reaps on INACTIVITY instead), which makes THIS
+      # shared agent.Budget wallclock the background worker's absolute ceiling -- a
+      # genuinely-working delegation now dies at this cap, not at ~240s. Measured: a
+      # 327.5s completion in the same check would have been cut at the shipped 300s
+      # default.
+      AURA_LOOP_MAX_WALLCLOCK_SEC: ${AURA_LOOP_MAX_WALLCLOCK_SEC:-300}
+      AURA_LOOP_MAX_STEPS: ${AURA_LOOP_MAX_STEPS:-25}
       AURA_SWARM_MAX_GOALS: ${AURA_SWARM_MAX_GOALS:-8}
       AURA_SWARM_CHILD_IDLE_SEC: ${AURA_SWARM_CHILD_IDLE_SEC:-120}
       AURA_SWARM_MAX_CONCURRENT: ${AURA_SWARM_MAX_CONCURRENT:-4}
