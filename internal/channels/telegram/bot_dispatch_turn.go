@@ -7,9 +7,13 @@ package telegram
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
+	"github.com/google/uuid"
+
 	"github.com/chetto1983/aura/internal/assets"
+	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/identityctx"
 	tele "gopkg.in/telebot.v4"
 )
@@ -39,7 +43,11 @@ func (t *Telegram) runTurnWithAssets(daemonCtx context.Context, c tele.Context, 
 	sender := t.sender(c)
 	notifier, _ := c.Bot().(botNotifier)
 	to := c.Recipient()
-	t.startTurn(daemonCtx, sender, notifier, to, chatID, &composedText, inboundWasVoice,
+	messageID := 0
+	if msg := c.Message(); msg != nil {
+		messageID = msg.ID
+	}
+	t.startTurn(daemonCtx, sender, notifier, to, chatID, messageID, &composedText, inboundWasVoice,
 		t.onBusyRedirect(c, chatID, rawText, composedText, len(attachments) > 0, inboundWasVoice))
 }
 
@@ -88,6 +96,7 @@ func (t *Telegram) startTurn(
 	notifier botNotifier,
 	to tele.Recipient,
 	chatID int64,
+	messageID int,
 	text *string,
 	inboundWasVoice bool,
 	onBusy func(),
@@ -114,7 +123,12 @@ func (t *Telegram) startTurn(
 		slog.Warn("telegram: unscoped turn refused (no linked identity)", "chat", chatID)
 		return
 	}
-	daemonCtx = scoped
+	rooted, err := telegramTurnOperation(scoped, chatID, messageID)
+	if err != nil {
+		slog.Error("telegram: turn operation context failed", "chat", chatID, "err", err)
+		return
+	}
+	daemonCtx = rooted
 
 	turnCtx, cancel := context.WithCancel(daemonCtx)
 	if !t.cmds.registerTurn(chatID, cancel) {
@@ -146,6 +160,58 @@ func (t *Telegram) startTurn(
 		// function returns) — so a media message queued while THIS turn was live is
 		// delivered under the SAME registration and the SAME scoped turnCtx (D-05).
 		t.deliverPendingTurn(turnCtx, sender, chatID)
+	})
+}
+
+// telegramTurnOperation attaches the trusted parent operation from which the
+// agent derives one stable idempotency child per mutating tool call. A normal
+// Telegram update is identified by its deterministic chat conversation plus
+// message id, so replaying the same update reuses the root while later messages
+// cannot collide. Synthetic continuations without an inbound message id receive
+// an explicit nonce instead.
+//
+// Telegram is an interactive operator ingress like the REPL, so it uses the
+// existing ScopeCLICommand registry entry; the telegram-turn key prefix keeps
+// the two ingress namespaces disjoint without widening the persisted finite-scope
+// CHECK.
+func telegramTurnOperation(ctx context.Context, chatID int64, messageID int) (context.Context, error) {
+	identityID := identityctx.IdentityID(ctx)
+	if identityID == "" {
+		return ctx, nil
+	}
+	conversationID := convID(chatID)
+	seed := struct {
+		Version        string `json:"version"`
+		ConversationID string `json:"conversation_id"`
+		MessageID      int    `json:"message_id,omitempty"`
+		Nonce          string `json:"nonce,omitempty"`
+	}{
+		Version:        "telegram-turn-v2",
+		ConversationID: conversationID,
+		MessageID:      messageID,
+	}
+	key := fmt.Sprintf("telegram-turn:%s:%d", conversationID, messageID)
+	if messageID <= 0 {
+		nonce, err := uuid.NewV7()
+		if err != nil {
+			return nil, fmt.Errorf("mint telegram continuation operation id: %w", err)
+		}
+		seed.Version = "telegram-turn-continuation-v1"
+		seed.MessageID = 0
+		seed.Nonce = nonce.String()
+		key = fmt.Sprintf("telegram-turn:%s:continuation:%s", conversationID, nonce)
+	}
+	fingerprint, err := idempotency.FingerprintTyped(seed)
+	if err != nil {
+		return nil, fmt.Errorf("fingerprint telegram turn operation: %w", err)
+	}
+	return idempotency.WithOperation(ctx, idempotency.Operation{
+		Key: idempotency.OperationKey{
+			IdentityID: identityID,
+			Scope:      idempotency.ScopeCLICommand,
+			Key:        key,
+		},
+		Fingerprint: fingerprint,
 	})
 }
 
