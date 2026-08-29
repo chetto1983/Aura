@@ -9987,3 +9987,24 @@ flusso completo, che funziona.
 > **What this does not prove.** A typed snapshot and unit test do not prove the pane tails a live
 > worker, that picker switching preserves the parent thread, or that the status stream is singular.
 > Those remain browser verdicts in the next 51-12b live drive.
+
+## §Worker EventSource clients subscribe to named AG-UI events (Amendment #180, 2026-08-30)
+
+> **Amendment #180 (2026-08-30 - measured in the Phase 51 live worker pane before the fix).**
+> The worker transcript contained a real `shell_exec` start and end, and the server routes both
+> through the shared SSE writer as named records (`event: TOOL_CALL_START`,
+> `event: TOOL_CALL_RESULT`, plus the JSON `type`). The browser clients registered only a default
+> `message` listener. Native EventSource does not dispatch a named SSE record to that listener, so
+> the pane stayed empty and the multiplexed `CUSTOM` status records were likewise ignored. The
+> test fake hid the defect by dispatching every frame as `message`. Redacted evidence:
+> `.planning/phases/51-durable-delegation/live-check/cockpit/EVENTSOURCE-MEASUREMENT.md`.
+>
+> **Decision.** The child client subscribes to every reducer-relevant AG-UI event name and retains
+> `message` only as a compatibility fallback. The status client subscribes to `CUSTOM` and the
+> fallback. Teardown removes the complete listener set before closing the EventSource. Tests model
+> native dispatch by using each frame's `type` as its event name; they no longer redefine the
+> server's named wire as default messages.
+>
+> **What this does not prove.** Correct listener registration does not by itself prove live tailing,
+> picker switching, long-result layout, or exactly one connection per watched worker. Those remain
+> Playwright verdicts on the rebuilt stack.
