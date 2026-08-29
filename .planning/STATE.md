@@ -4,16 +4,16 @@ milestone: v2.1.0
 current_phase: 51
 current_phase_name: durable-delegation
 status: executing
-stopped_at: Completed 51-11-PLAN.md
-last_updated: "2026-08-29T19:32:50.961Z"
+stopped_at: Completed 51-12a-PLAN.md
+last_updated: "2026-08-29T20:57:12.192Z"
 last_activity: 2026-08-29
 last_activity_desc: Phase 51 plan 51-11 completed after approved live delivery-envelope check
-state_head: 1c507db93f4949e0d73f3838f1afff9ff062bd73
+state_head: 3263163f316b0e295e3cea1123e2fca1f2e35363
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 48
-  completed_plans: 45
+  completed_plans: 46
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -107,6 +107,7 @@ Progress: [█████████░] 94% (45/48 milestone plans)
 | Phase 51 P07 | single session (continuation) | 2 tasks | 7 files |
 | Phase 51 P09 | ~3h (continuation, after prior-session Task 1/2) | 3 tasks | 30 files |
 | Phase 51 P11 | 375min | 5 tasks | 44 files |
+| Phase 51 P12a | 45min | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -282,8 +283,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-29T19:31:44.759Z
-Stopped at: Completed 51-11-PLAN.md
+Last session: 2026-08-29T20:57:12.001Z
+Stopped at: Completed 51-12a-PLAN.md
 The Telegram-origin delivery envelope passed all five verdicts on the fresh healthy image. The
 operator approved the blocking checkpoint; SUMMARY.md and durable browser evidence are committed.
 
