@@ -6075,8 +6075,7 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_WEB_FETCH_TIMEOUT_SEC` | `10` | cap | 5 | One wall-clock budget for direct fetch DNS, connect, redirects, retry, body read, and extraction (amendment #104). |
 | `AURA_RISK_ALERT_THRESHOLD` | `risky` | cap | RBG | Notifier IMMEDIATE alert threshold (≥ tier). |
 | `AURA_SCHEDULER_TZ` | `Europe/Rome` | operative | 6 | Default IANA timezone per i task `cron` privi di un `tz` esplicito (amendment #46, D-06/D-07). DST-safe: il DB resta UTC, solo il calcolo di `next_run_at` è tz-aware. |
-| `AURA_SCHEDULER_NOTIFY_DEFAULT` | `stdout` | operative | 6 | Route di notifica fallback globale ∈ `{whatsapp, email, stdout, telegram}` (amendment #46, D-19/D-20; `telegram` aggiunta dal fix-plan 2.1 / BUG-2). La route per-task `notify` nel payload la sovrascrive. `whatsapp`/`email` sono self-send MCP eseguiti dal composite Notifier; **`telegram` NON lo è** — è consegnata dall'origin gate del dispatcher via `ChannelDeliverer` (l'unico strato che ha identity + channel registry), quindi richiede un account Telegram collegato e `AURA_SCHEDULER_PREFER_ORIGIN_CHANNEL` attivo. `cron.ValidNotifyRoute` è la fonte di verità unica dell'enum per tool, API cockpit e CLI. |
-| `AURA_SCHEDULER_NOTIFY_RECIPIENT` | `` (empty) | operative | 6 | Recipient JID/email di default per la route fallback globale (amendment #46, D-20). |
+| `AURA_SCHEDULER_NOTIFY_RECIPIENT` | `` (empty) | operative | 6 | Recipient JID/email predefinito usato soltanto da una route esterna per-task scelta esplicitamente (amendment #46, D-20; amendment #176 rimuove il default globale della route). |
 | `AURA_SCHEDULER_QUIET_HOURS` | `` (empty = off) | operative | 6 | Finestra quiet-hours `HH:MM-HH:MM` (es. `23:00-07:30`): le notifiche non-DESTRUCTIVE differiscono alla fine della finestra (amendment #46, D-23). I reminder schedulati esplicitamente dentro la finestra firano comunque al loro orario. |
 | `AURA_SCHEDULER_TICK_SECONDS` | `30` | cap | 6 | Intervallo del tick loop DIY in secondi (amendment #46). |
 | `AURA_SCHEDULER_READY_MAX_STALE_SEC` | `max(3×tick, 90)` | cap | 6 | `/readyz` scheduler staleness window (fix-plan 1.4 residual). Default derivato dal tick RISOLTO (`AURA_SCHEDULER_TICK_SECONDS`), non hardcoded — un tick allargato senza questo knob faceva riportare `scheduler_stalled` tra un tick e l'altro (falso 503, healthcheck compose rotto). Se valorizzato (intero positivo, secondi) vince verbatim sulla derivazione. |
@@ -9680,3 +9679,215 @@ flusso completo, che funziona.
 > still unsupported rather than sniffed, and the model-visible error string changes from
 > `"only HTML content is supported"` to `"only HTML and readable text content is supported"` —
 > the `unsupported_content_type` CODE is unchanged and remains the D-38 contract.
+
+## §A finished background shell re-enters its owning conversation (Amendment #174, 2026-08-29)
+
+> **Amendment #174 (2026-08-29 — current-tree inventory, local reference comparison and live
+> Playwright failure measured before the runtime change: measure, amend, implement.)**
+>
+> **What was measured.** `shell_exec(background=true)` already returns a crypto-random
+> `shell_id`; the process-scoped `BackgroundShells` registry owns the streamed box handle,
+> combined bounded output, exit status, owner identity and conversation/session id; `shell_poll`
+> and `shell_kill` read that same registry. `runBackgroundShellReaper`, however, ends at
+> `sh.finish(wait())`: it changes local state and tells nobody. The shared Postgres steer inbox
+> can already carry a deferred non-operator result across turns and `Runner.runTurn` already
+> serialises every turn by `(identity, conversation)`, but no shell-exit producer joins those two
+> shipped seams.
+>
+> The new real-browser test `web/e2e/background-shell-completion-real.spec.ts` drove the current
+> image on `127.0.0.1:9080` with the installed Playwright suite and the real routed model. The
+> first turn called exactly one `shell_exec` with `background:true`, received shell id
+> `cf37e8467827470db5fc687748640273`, did not poll, and completed normally. The command itself
+> exited after four seconds. Ninety seconds later `GET /threads/{id}/messages` still contained
+> only the original user turn, the `shell_exec` call/result, and the first assistant answer:
+> no completion notice, no `shell_poll`, no follow-on answer. That timeout is the missing-hook
+> failure, not a provider failure or a command failure.
+>
+> **What the local references do.** Codex's unified exec has separate output and exit watchers:
+> the exit watcher waits until trailing output is drained and emits one terminal exec event.
+> Hermes-agent makes the next leg explicit: a completion has a stable producer identity, enters
+> one shared notification queue, is deduplicated, carries its originating session route, and is
+> reinjected as an internal message that starts a fresh turn when the session is idle. Hermes
+> also distinguishes a read-only status observation from actual output consumption so it does
+> not suppress the autonomous delivery accidentally. The Copilot/Grok/Antigravity contracts in
+> `D:/tmp/system_prompts_leaks` converge on the model-facing rule: completion is announced
+> automatically; the agent then reads the retained process output through the existing output
+> tool. Aura adopts that rule and the stable routing/dedup properties, not Hermes's separate
+> scheduler or its raw output copy.
+>
+> **Decision.** A terminal `BackgroundShells` job emits exactly one small completion fact after
+> its state is final: `shell_id`, owner identity, owning conversation/session, terminal status
+> and duration. It does **not** copy command text or buffered stdout/stderr into the event;
+> `shell_poll` remains the one owner-authorised, redacted, bounded output reader. In `aura serve`,
+> a process-lifecycle dispatcher routes that fact back to the owning conversation through the
+> existing Postgres steer store and starts a fresh Runner turn. The source is reserved as
+> `shell`, carried in the same untrusted tool-output envelope used for deferred worker evidence,
+> never the `<user_steer>` operator-authorship envelope. The runtime message tells the model to
+> call `shell_poll` with that id and continue the original task.
+>
+> **The lock order is part of the requirement.** The dispatcher first waits for Runner's existing
+> per-identity/per-conversation lock, then pushes the completion steer, then drives the ordinary
+> locked turn. Pushing before acquiring that lock has a real race: the ending foreground turn
+> can drain the row while a separately scheduled wake is waiting, after which the wake runs an
+> empty duplicate turn. Pushing after the lock makes the dispatcher the only actor that can own
+> delivery: a still-live foreground turn finishes before the completion row exists, then the
+> dispatcher inserts that row and drives the next turn under the same lock. Multiple completed
+> shells for one conversation may coalesce into
+> one serial follow-on cycle, but each shell id appears once.
+>
+> **Acceptance.** Daemon-free tests pin normal exit, kill/expiry and panic completion as one-shot;
+> owner/session routing; the reserved untrusted `shell` envelope; lock-before-push ordering; and
+> no wake after dispatcher shutdown. The live Playwright scenario above must turn green on the
+> rebuilt image: the browser sends one initial `/agent/run`, initial SSE proves
+> `shell_exec(background=true)` and no `shell_poll`, then the persisted snapshot proves exactly
+> one runtime notice, exactly one `shell_poll`, and exactly one completion answer without a
+> second browser request. The ordinary `shell_poll`/`shell_kill`, TTL and output-cap tests remain
+> green.
+>
+> **Boundary.** This is the daemon/cockpit path first. `aura chat` retains explicit polling rather
+> than printing an unsolicited concurrent REPL turn. The shell registry and box stream are still
+> process-scoped, so this amendment does not claim that a host/container restart preserves a
+> running command; durable cross-restart execution would require a durable job/process owner and
+> is a separate design, not a hidden promise of this hook. `AURA_AGUI_RUN_STEER=false` remains the
+> explicit rollback and therefore disables autonomous shell reinjection with the rest of that
+> rail. No new environment variable, table, scheduler or output buffer is introduced.
+
+## §Async outcomes stay on their owning conversation; cross-channel push is explicit (Amendment #175, 2026-08-29)
+
+> **Amendment #175 (2026-08-29 — live forensics plus three parallel architecture/reference
+> inventories, recorded before changing delivery: measure, amend, implement.)**
+>
+> **What was measured.** The first real background-shell completion did reach the model. One
+> `source=shell` steer row was created at 17:18:30.922Z and drained at 17:18:31.238Z on the same
+> cockpit conversation; the autonomous turn then called `shell_poll`, read `HOOK_TEST done`, and
+> persisted its final answer. The shell dispatcher never called Telegram: it drove
+> `Runner.WakeWithSteer` and discarded the resulting live `agent.Event` stream. The independent
+> cross-surface defect is older: `channels.Registry.DeliverToIdentity` knows an identity but no
+> conversation. It asks the first started push channel that owns that identity, and Telegram is
+> currently the only shipped `Deliverer`. Scheduler and swarm therefore treat “this operator has
+> Telegram” as “this cockpit/CLI work originated on Telegram”. The repository's own Phase-20 live
+> spike recorded exactly that outcome for a cockpit-created reminder.
+>
+> **Reference convergence.** Codex keeps background completion transport-neutral and binds it to
+> the owning session/turn before persistence and publication. Hermes has useful exactly-once
+> completion ownership but demonstrates the cost of carrying platform/chat routing inside every
+> producer. Open WebUI and AG-UI distinguish a conversation/thread projection from a call to one
+> connected client. Aura adopts the common rule: **the conversation is the authority; a channel is
+> a projection of that conversation, never an identity-wide fallback.**
+>
+> **Decision.** The channel registry gains one conversation-aware delivery seam. A channel may
+> accept `(identity_id, conversation_id, text)` only when it can prove that the conversation is
+> one of its own threads. Telegram proves this by comparing the supplied id with the existing
+> deterministic `convID(chatID)` for the resolved account; owning the identity alone is
+> insufficient. Default/unset and implicit `stdout` scheduler outcomes, swarm nudges and runtime
+> completions use this seam. `DeliverToIdentity` remains only for deliberately out-of-band
+> messages (account recovery/security) and an explicit `notify=telegram` route. There is no
+> fallback from an absent cockpit/CLI viewer to Telegram.
+>
+> **Retry and record invariants.** The authoritative outcome is appended once to the exact origin
+> conversation. A courtesy push may fail without changing that record. A retry must recover the
+> same conversation from its already-durable owner: scheduler notifications through
+> `pending_notifications.run_id -> agent_job_runs.task_id -> scheduler_tasks.origin_conversation_id`,
+> delegation nudges through `pending_notifications.steer_queue_id -> steer_queue.conversation_id`.
+> It must never retry using identity alone, and an owns-but-failed channel must not fall through to
+> a sibling. No new routing table or per-feature channel metadata is introduced.
+>
+> **Surface semantics.** Cockpit-origin work updates the cockpit conversation and causes zero
+> implicit Telegram sends. Telegram-origin work uses its deterministic conversation and may emit
+> one Telegram projection. CLI-origin work is persisted for resume and causes zero implicit push;
+> its process-local background shell remains explicit-polling as bounded by Amendment #174.
+> `notify=telegram` is the sole scheduler opt-in that deliberately crosses from another origin to
+> Telegram. “Same across CLI, cockpit and Telegram” means the same conversation-scoped transcript
+> and runtime semantics, not one conversation per identity and not identical liveness capabilities
+> for processes that are not attached to the daemon.
+>
+> **Acceptance.** Unit/integration tests pin deterministic registry fan-out; Telegram identity+
+> conversation ownership; no-send on a cockpit conversation despite a linked Telegram account;
+> explicit `notify=telegram`; scheduler live and retry paths; swarm single-row and grouped fan-out
+> nudges; and owner isolation. The real cockpit Playwright scenario keeps its exactly-once wake,
+> persisted completion and one-poll assertions against the rebuilt container. Channel recorders
+> prove that the same cockpit-origin run performs zero Telegram `Send`/`Edit`; this remains a
+> separate assertion until successful Telegram sends have a durable audit stream that Playwright
+> can query without instrumenting production. Symmetric channel tests prove one projection for a
+> Telegram-owned conversation and zero for CLI/cockpit origins. A future common live replay broker may reuse
+> AG-UI `RunSession`/`RunRegistry`, but it is not required to close identity-based misrouting and
+> must not be smuggled into this fix as a second transport architecture.
+>
+> **Operator clarification (same day).** *“Se voglio fare uno scheduler che manda su Telegram
+> devo poterlo fare; aggiungerei un campo al tool, con il modello che chiede la scelta se non
+> indicata.”* The `task` tool already has the wire field `notify`; it is therefore amended instead
+> of adding a duplicate. For `action=schedule`, `notify` becomes a required product choice even
+> though it remains optional at the JSON-schema root for OpenAI-compatible provider safety. When
+> omitted, the tool persists nothing and returns a structured directive telling the model to call
+> `ask_user(kind="choice")` with delivery choices, then retry `task` with the selected value.
+> `telegram` means an intentional identity-level Telegram push; `stdout` is presented as “this
+> conversation” and follows the conversation-aware route first; `whatsapp` and `email` retain
+> their explicit external self-send semantics. This removes the last ambiguous scheduler default:
+> neither an environment fallback nor a linked account may silently choose the operator's phone.
+
+## §No legacy delivery mode remains behind the conversation route (Amendment #176, 2026-08-29)
+
+> **Amendment #176 (2026-08-29 — measured tagged-tier failure plus explicit operator
+> correction).** The disposable `db_integration` coverage run reached the real
+> `pending_notifications` sweep and failed on an owner whose recovered conversation was NULL;
+> the same tier also compiled a swarm fake that still implemented the removed identity-only
+> contract. Source inventory then found three active compatibility paths contradicting
+> Amendment #175: empty `notify_route` resolved through `AURA_SCHEDULER_NOTIFY_DEFAULT`,
+> `AURA_SCHEDULER_PREFER_ORIGIN_CHANNEL=false` restored route-only dispatch, and keyless
+> `delegation_result` rows used a separate per-row nudge. The live envelope check independently
+> proved that a cockpit conversation is not Telegram-owned; its missing Telegram push is the
+> expected outcome of origin-scoped delivery, not a reason to resurrect identity fallback.
+> A read-only live inventory immediately before the migration found 15 scheduler tasks with an
+> empty/NULL route, 8 keyless `delegation_result` rows, 19 `swarm_delegation` job payloads
+> without a fan-out key (11 succeeded, 7 dead-lettered, 1 running), and exactly zero pending
+> notifications with a missing route, missing identity, both owners or neither owner.
+> What these measurements do **not** prove is that every historical nullable row has a meaningful
+> origin conversation: explicit Telegram, WhatsApp, email and CLI stdout routes may legitimately
+> be out-of-conversation. The operator resolved the policy explicitly: *“legacy deve sparire”*.
+>
+> **One explicit route, one routing contract.** Every operator-created scheduler task must carry
+> exactly one non-empty route in `{none, stdout, telegram, whatsapp, email}`. If the natural-language
+> request omitted it, the `task` tool creates nothing and asks the choice described by Amendment
+> #175. Empty/unknown routes are rejected at the tool, CLI/API and store boundaries; the notifier
+> never reads a global default and never silently maps an unknown route to stdout. The environment
+> old global-default variable and origin-routing kill-switch are removed from active code,
+> config, compose and the environment catalog.
+> `none` is an explicit durable instruction to keep success and failure on the run ledger/logs and
+> produce no conversation/channel notification. `telegram` remains the deliberate identity-level push; `stdout` uses the exact origin
+> conversation when one exists and is literal process output for an explicitly CLI/system-owned
+> task; WhatsApp and email remain deliberate external self-sends. Delivery failure may still write
+> a diagnostic stdout copy while returning an undelivered error — that is bounded failure evidence,
+> not route selection or compatibility behavior.
+>
+> **System cron is not operator messaging.** After the first draft, the operator corrected a
+> second ambiguity: *“attento perché non tutti i cron sono da mandare ai canali”*. Live inventory
+> showed the active route-less rows are the system-seeded purge, reap, retention, share/skill TTL
+> and embedding-backfill sweeps plus one local backup; user-facing route-less reminder/agent rows
+> are cancelled historical checks. The migration therefore maps every formerly empty route to the
+> explicit fail-closed `none`, never to `stdout`. Composition-root seeders also persist `none`
+> explicitly. Operator-created tasks may select “No notification”; omitted choice still creates
+> nothing and asks. `none` bypasses quiet-hours/outbox/channel delivery and origin transcript
+> projection, while the terminal run record remains mandatory.
+>
+> **Data is upgraded once; runtime compatibility code is deleted.** Migration `0109` backfills
+> nullable scheduler routes to the explicit `none` value, derives pending-notification route and
+> identity from its exactly-one durable owner, tightens both route enums/non-null constraints,
+> changes the owner check from OR to XOR, and assigns deterministic singleton keys to existing
+> keyless `delegation_result` rows. A deployment check then found that `0109` had already reached
+> the live database before the 19 keyless `swarm_delegation` job payloads were added to its draft.
+> An applied migration is immutable: follow-up `0110` backfills those job payloads and adds their
+> non-empty-key constraint instead of rewriting `0109`; fresh and upgraded databases therefore
+> converge on the same schema. Thereafter payload decoding and `PushDelegationResult` reject an
+> empty key and the nudge sweep has only grouped fan-out delivery: no keyless slice,
+> `MarkSteerRowNudged`, per-row renderer, null-owner projection or “legacy route” test remains.
+> Non-delegation steer rows keep `fanout_key=NULL`; external scheduler routes may keep an empty
+> origin conversation because their explicit destination is already authoritative.
+>
+> **Acceptance.** Migration up/down and disposable PostgreSQL tests prove the backfill, XOR owner
+> invariant, route constraints and mandatory delegation key. Unit/race tests prove omitted task
+> choice persists nothing, all five explicit routes remain accepted, invalid/empty routes fail,
+> conversation delivery skips unrelated channel capabilities, and every nudge is grouped by
+> identity + conversation + fan-out. Active config/compose search must find neither removed knob,
+> and runtime/test search must find no comment promising legacy route/keyless behavior. The rebuilt container must be
+> healthy; the real Playwright shell-completion scenario must still wake exactly once on its owning
+> cockpit conversation, while channel recorders prove zero implicit Telegram projection.
