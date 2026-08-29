@@ -168,6 +168,40 @@ func TestFanoutClaimsRendersOnceAndDelivers(t *testing.T) {
 	}
 }
 
+// TestFanoutClaimIncludesRowInsertedAfterCandidateSnapshot reproduces the live
+// completion race: the slow worker commits after ListUnnudgedDelegationResults
+// returned the fast row but before MarkFanoutNudged runs. The atomic claim must
+// return and render both rows; using the stale candidate group loses the slow
+// report permanently because both rows are already marked nudged.
+func TestFanoutClaimIncludesRowInsertedAfterCandidateSnapshot(t *testing.T) {
+	channel := &fakeChannelDeliverer{delivered: true}
+	nudge := &fakeSteerNudgeStore{
+		rows: []UndrainedResult{
+			{ID: "r1", IdentityID: "id-1", FanoutKey: "f-a", Body: oneReportBody(t, 0, StatusOK, "fast goal")},
+		},
+		rowsOnMark: []UndrainedResult{
+			{ID: "r2", IdentityID: "id-1", FanoutKey: "f-a", Body: oneReportBody(t, 1, StatusOK, "slow goal")},
+		},
+	}
+	counter := &fakeFanoutJobCounter{counts: map[string]int{"id-1/f-a": 0}}
+	d := &DelegationDelivery{Channel: channel, Nudge: nudge, Counter: counter, NudgeAfter: time.Minute}
+
+	n, err := d.NudgeUndrained(context.Background(), time.Now(), 10)
+	if err != nil {
+		t.Fatalf("NudgeUndrained = %v", err)
+	}
+	if n != 1 || len(channel.calls) != 1 {
+		t.Fatalf("nudged/calls = %d/%d, want exactly one grouped delivery", n, len(channel.calls))
+	}
+	want := TelegramDelegationMessage([]ChildReport{
+		{GoalIndex: 0, ChildID: "w1", Status: StatusOK, Goal: "fast goal", Summary: "summary"},
+		{GoalIndex: 1, ChildID: "w2", Status: StatusOK, Goal: "slow goal", Summary: "summary"},
+	})
+	if channel.calls[0].text != want {
+		t.Fatalf("delivered text = %q, want both atomically claimed reports: %q", channel.calls[0].text, want)
+	}
+}
+
 // TestFanoutUndecodableBodyStillSendsAndCounts: a row whose body fails to
 // decode contributes nothing to the rendered reports but still counts as
 // claimed -- an all-undecodable group still sends the no-report shape rather

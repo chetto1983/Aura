@@ -247,11 +247,12 @@ func (f *fakeChannelDeliverer) DeliverToIdentity(_ context.Context, identityID, 
 // MarkSteerRowNudged implements the SAME conditional-claim semantics the real
 // SQL's `WHERE nudged_at IS NULL` enforces (a row can be claimed at most once).
 type fakeSteerNudgeStore struct {
-	mu      sync.Mutex // a concurrency test races two NudgeUndrained passes over this store
-	rows    []UndrainedResult
-	listErr error
-	claimed map[string]bool
-	markErr error
+	mu         sync.Mutex // a concurrency test races two NudgeUndrained passes over this store
+	rows       []UndrainedResult
+	rowsOnMark []UndrainedResult
+	listErr    error
+	claimed    map[string]bool
+	markErr    error
 }
 
 func (f *fakeSteerNudgeStore) ListUnnudgedDelegationResults(_ context.Context, _ time.Time, _ int) ([]UndrainedResult, error) {
@@ -283,7 +284,7 @@ func (f *fakeSteerNudgeStore) MarkSteerRowNudged(_ context.Context, id, _ string
 // still observes at-most-once claiming per row. Locked so a real concurrency
 // test (two goroutines racing the SAME fan-out) exercises MarkFanoutNudged's
 // documented one-winner contract rather than a data race in the fake itself.
-func (f *fakeSteerNudgeStore) MarkFanoutNudged(_ context.Context, identityID, fanoutKey string) ([]string, error) {
+func (f *fakeSteerNudgeStore) MarkFanoutNudged(_ context.Context, identityID, fanoutKey string) ([]UndrainedResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.markErr != nil {
@@ -292,15 +293,19 @@ func (f *fakeSteerNudgeStore) MarkFanoutNudged(_ context.Context, identityID, fa
 	if f.claimed == nil {
 		f.claimed = map[string]bool{}
 	}
-	var claimedIDs []string
+	if len(f.rowsOnMark) > 0 {
+		f.rows = append(f.rows, f.rowsOnMark...)
+		f.rowsOnMark = nil
+	}
+	var claimedRows []UndrainedResult
 	for _, row := range f.rows {
 		if row.IdentityID != identityID || row.FanoutKey != fanoutKey || f.claimed[row.ID] {
 			continue
 		}
 		f.claimed[row.ID] = true
-		claimedIDs = append(claimedIDs, row.ID)
+		claimedRows = append(claimedRows, row)
 	}
-	return claimedIDs, nil
+	return claimedRows, nil
 }
 
 // fakePendingNotificationStore captures the owns-but-failed retry-outbox

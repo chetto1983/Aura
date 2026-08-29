@@ -68,8 +68,11 @@ func groupByFanout(rows []UndrainedResult) (groups []fanoutGroup, keyless []Undr
 //
 // Once eligible, it claims every unclaimed row of the group through MarkFanoutNudged in
 // ONE statement -- the same claim-before-push ordering nudgeOne uses, generalized from one
-// row to the set (NudgeUndrained's own doc) -- then decodes and concatenates every CLAIMED
-// row's body into []ChildReport, sorts by GoalIndex, and renders ONCE through
+// row to the set (NudgeUndrained's own doc). The UPDATE returns every claimed row's body,
+// including a sibling inserted after the candidate SELECT but before the claim; rendering
+// from the pre-claim group would mark that late row without ever including it. It then
+// decodes and concatenates every CLAIMED row's body into []ChildReport, sorts by GoalIndex,
+// and renders ONCE through
 // TelegramDelegationMessage: the same bounded, glyph-vocabulary rendering nudgeOne already
 // uses for a fan-out of one, generalized to N. A row whose body fails to decode
 // contributes nothing to the slice but still counts as claimed (row.ID matched
@@ -87,24 +90,17 @@ func (d *DelegationDelivery) nudgeFanout(ctx context.Context, group fanoutGroup)
 			return false, nil
 		}
 	}
-	claimedIDs, err := d.Nudge.MarkFanoutNudged(ctx, group.identityID, group.fanoutKey)
+	claimedRows, err := d.Nudge.MarkFanoutNudged(ctx, group.identityID, group.fanoutKey)
 	if err != nil {
 		return false, fmt.Errorf("mark fanout nudged: %w", err)
 	}
-	if len(claimedIDs) == 0 {
+	if len(claimedRows) == 0 {
 		return false, nil
 	}
-	claimed := make(map[string]bool, len(claimedIDs))
-	for _, id := range claimedIDs {
-		claimed[id] = true
-	}
 	var reports []ChildReport
-	var firstClaimedRowID string
-	for _, row := range group.rows {
-		if !claimed[row.ID] {
-			continue
-		}
-		if firstClaimedRowID == "" {
+	firstClaimedRowID := claimedRows[0].ID
+	for _, row := range claimedRows {
+		if row.ID < firstClaimedRowID {
 			firstClaimedRowID = row.ID
 		}
 		var rowReports []ChildReport

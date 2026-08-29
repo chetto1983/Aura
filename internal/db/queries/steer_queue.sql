@@ -126,8 +126,10 @@ WHERE id = sqlc.arg(id)
 -- 51-11 Task 3: MarkSteerRowNudged's own conditional-UPDATE idempotency argument,
 -- generalized from one row to the whole set that shares one (identity, fanout_key) pair --
 -- the unclaimed predicate is still nudged_at IS NULL, the entire idempotency key a single
--- row's version already used. RETURNING id is what tells the caller which rows THIS pass
--- won: two concurrent sweep passes over the SAME complete fan-out race for the SAME set of
+-- row's version already used. RETURNING the complete claimed rows tells the caller which
+-- rows THIS pass won and supplies the exact bodies it marked: a sibling inserted after the
+-- candidate SELECT but before this UPDATE must be rendered, not silently marked nudged.
+-- Two concurrent sweep passes over the SAME complete fan-out race for the SAME set of
 -- unclaimed rows, and the loser's UPDATE matches zero of them (every row already has
 -- nudged_at set by the winner), so it returns an empty result and sends nothing.
 UPDATE aura.steer_queue
@@ -135,4 +137,4 @@ SET nudged_at = now()
 WHERE identity_id = sqlc.arg(identity_id)
   AND fanout_key = sqlc.arg(fanout_key)
   AND nudged_at IS NULL
-RETURNING id;
+RETURNING id, identity_id, body, fanout_key;

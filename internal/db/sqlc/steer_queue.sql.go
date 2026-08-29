@@ -224,7 +224,7 @@ SET nudged_at = now()
 WHERE identity_id = $1
   AND fanout_key = $2
   AND nudged_at IS NULL
-RETURNING id
+RETURNING id, identity_id, body, fanout_key
 `
 
 type MarkFanoutNudgedParams struct {
@@ -232,26 +232,40 @@ type MarkFanoutNudgedParams struct {
 	FanoutKey  pgtype.Text `json:"fanout_key"`
 }
 
+type MarkFanoutNudgedRow struct {
+	ID         pgtype.UUID `json:"id"`
+	IdentityID pgtype.UUID `json:"identity_id"`
+	Body       string      `json:"body"`
+	FanoutKey  pgtype.Text `json:"fanout_key"`
+}
+
 // 51-11 Task 3: MarkSteerRowNudged's own conditional-UPDATE idempotency argument,
 // generalized from one row to the whole set that shares one (identity, fanout_key) pair --
 // the unclaimed predicate is still nudged_at IS NULL, the entire idempotency key a single
-// row's version already used. RETURNING id is what tells the caller which rows THIS pass
-// won: two concurrent sweep passes over the SAME complete fan-out race for the SAME set of
+// row's version already used. RETURNING the complete claimed rows tells the caller which
+// rows THIS pass won and supplies the exact bodies it marked: a sibling inserted after the
+// candidate SELECT but before this UPDATE must be rendered, not silently marked nudged.
+// Two concurrent sweep passes over the SAME complete fan-out race for the SAME set of
 // unclaimed rows, and the loser's UPDATE matches zero of them (every row already has
 // nudged_at set by the winner), so it returns an empty result and sends nothing.
-func (q *Queries) MarkFanoutNudged(ctx context.Context, arg MarkFanoutNudgedParams) ([]pgtype.UUID, error) {
+func (q *Queries) MarkFanoutNudged(ctx context.Context, arg MarkFanoutNudgedParams) ([]MarkFanoutNudgedRow, error) {
 	rows, err := q.db.Query(ctx, markFanoutNudged, arg.IdentityID, arg.FanoutKey)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []pgtype.UUID{}
+	items := []MarkFanoutNudgedRow{}
 	for rows.Next() {
-		var id pgtype.UUID
-		if err := rows.Scan(&id); err != nil {
+		var i MarkFanoutNudgedRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.IdentityID,
+			&i.Body,
+			&i.FanoutKey,
+		); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

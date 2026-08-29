@@ -80,7 +80,7 @@ type SteerNudgeStore interface {
 	// every unclaimed row of one (identityID, fanoutKey) pair, claimed in ONE statement
 	// -- see delegation_fanout.go's nudgeFanout for why claiming the whole group
 	// atomically, rather than looping MarkSteerRowNudged per row, is load-bearing.
-	MarkFanoutNudged(ctx context.Context, identityID, fanoutKey string) ([]string, error)
+	MarkFanoutNudged(ctx context.Context, identityID, fanoutKey string) ([]UndrainedResult, error)
 }
 
 // PendingNotificationStore is the retry-outbox seam the absent-operator leg's

@@ -91,11 +91,18 @@ func (a steerNudgeAdapter) MarkSteerRowNudged(ctx context.Context, id, identityI
 	return a.store.MarkSteerRowNudged(ctx, id, identityID)
 }
 
-// MarkFanoutNudged (51-11 Task 3) adapts *steer.PostgresStore's own method onto the
-// swarm.SteerNudgeStore seam verbatim -- no translation, unlike the row types above,
-// since both sides already agree on ([]string, error).
-func (a steerNudgeAdapter) MarkFanoutNudged(ctx context.Context, identityID, fanoutKey string) ([]string, error) {
-	return a.store.MarkFanoutNudged(ctx, identityID, fanoutKey)
+// MarkFanoutNudged adapts the complete rows returned by the atomic claim. This is the
+// same package-cycle boundary ListUnnudgedDelegationResults crosses above.
+func (a steerNudgeAdapter) MarkFanoutNudged(ctx context.Context, identityID, fanoutKey string) ([]swarm.UndrainedResult, error) {
+	rows, err := a.store.MarkFanoutNudged(ctx, identityID, fanoutKey)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]swarm.UndrainedResult, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, swarm.UndrainedResult{ID: r.ID, IdentityID: r.IdentityID, Body: r.Body, FanoutKey: r.FanoutKey})
+	}
+	return out, nil
 }
 
 var _ swarm.SteerNudgeStore = steerNudgeAdapter{}

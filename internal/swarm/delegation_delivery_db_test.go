@@ -99,8 +99,16 @@ func (a dbNudgeAdapter) MarkSteerRowNudged(ctx context.Context, id, identityID s
 	return a.store.MarkSteerRowNudged(ctx, id, identityID)
 }
 
-func (a dbNudgeAdapter) MarkFanoutNudged(ctx context.Context, identityID, fanoutKey string) ([]string, error) {
-	return a.store.MarkFanoutNudged(ctx, identityID, fanoutKey)
+func (a dbNudgeAdapter) MarkFanoutNudged(ctx context.Context, identityID, fanoutKey string) ([]UndrainedResult, error) {
+	rows, err := a.store.MarkFanoutNudged(ctx, identityID, fanoutKey)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]UndrainedResult, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, UndrainedResult{ID: r.ID, IdentityID: r.IdentityID, Body: r.Body, FanoutKey: r.FanoutKey})
+	}
+	return out, nil
 }
 
 // channelCounterFunc adapts a plain func() into ChannelDeliverer for the

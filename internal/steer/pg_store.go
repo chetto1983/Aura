@@ -324,8 +324,10 @@ func (s *PostgresStore) MarkSteerRowNudged(ctx context.Context, id, identityID s
 // fanout_key) pair, claimed in ONE statement: two concurrent sweep passes over the SAME
 // complete fan-out race for the SAME set of unclaimed rows, and the loser's UPDATE matches
 // zero of them (the winner already set nudged_at on all of them), returning an empty
-// slice -- never an error, and never a partial claim split across two callers.
-func (s *PostgresStore) MarkFanoutNudged(ctx context.Context, identityID, fanoutKey string) ([]string, error) {
+// slice -- never an error, and never a partial claim split across two callers. Each
+// returned row carries the body captured by that same UPDATE so a sibling inserted
+// after the candidate SELECT cannot be marked without being rendered.
+func (s *PostgresStore) MarkFanoutNudged(ctx context.Context, identityID, fanoutKey string) ([]UnnudgedDelegationResult, error) {
 	if s == nil || s.pool == nil {
 		return nil, fmt.Errorf("steer: mark fanout nudged: store is not configured")
 	}
@@ -333,7 +335,7 @@ func (s *PostgresStore) MarkFanoutNudged(ctx context.Context, identityID, fanout
 	if err != nil {
 		return nil, fmt.Errorf("steer: mark fanout nudged: invalid identity_id %q: %w", identityID, err)
 	}
-	var rows []pgtype.UUID
+	var rows []sqlc.MarkFanoutNudgedRow
 	err = db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
 		var qErr error
 		rows, qErr = q.MarkFanoutNudged(ctx, sqlc.MarkFanoutNudgedParams{
@@ -345,9 +347,14 @@ func (s *PostgresStore) MarkFanoutNudged(ctx context.Context, identityID, fanout
 	if err != nil {
 		return nil, fmt.Errorf("steer: mark fanout nudged %s/%s: %w", identityID, fanoutKey, err)
 	}
-	ids := make([]string, 0, len(rows))
+	claimed := make([]UnnudgedDelegationResult, 0, len(rows))
 	for _, r := range rows {
-		ids = append(ids, uuidString(r))
+		claimed = append(claimed, UnnudgedDelegationResult{
+			ID:         uuidString(r.ID),
+			IdentityID: uuidString(r.IdentityID),
+			Body:       r.Body,
+			FanoutKey:  r.FanoutKey.String,
+		})
 	}
-	return ids, nil
+	return claimed, nil
 }
