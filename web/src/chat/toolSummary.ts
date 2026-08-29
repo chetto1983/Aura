@@ -39,7 +39,7 @@ function firstString(args: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
-function cap(value: string, max: number): string {
+export function cap(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max)}…` : value;
 }
 

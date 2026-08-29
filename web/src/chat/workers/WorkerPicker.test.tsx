@@ -24,15 +24,31 @@ const statuses = new Map<string, WorkerStatus>([
   ],
 ]);
 
+function tabAt(tabs: readonly HTMLElement[], index: number): HTMLElement {
+  const tab = tabs[index];
+  if (tab === undefined) throw new Error(`worker tab ${String(index)} missing`);
+  return tab;
+}
+
 describe('WorkerPicker', () => {
-  it('keeps all entries visible, selected, titled, and at least 44px tall', () => {
+  it('renders the same selected entry layout for exactly one worker', () => {
     render(
       <WorkerPicker
-        workers={workers}
-        statuses={statuses}
-        watchedChildId="w2"
+        workers={workers.slice(0, 1)}
+        statuses={new Map()}
+        watchedChildId="w1"
         onSelect={vi.fn()}
       />,
+    );
+
+    const only = screen.getByRole('tab');
+    expect(only.getAttribute('aria-selected')).toBe('true');
+    expect(only.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('keeps all entries visible, selected, titled, and at least 44px tall', () => {
+    render(
+      <WorkerPicker workers={workers} statuses={statuses} watchedChildId="w2" onSelect={vi.fn()} />,
     );
 
     expect(screen.getByRole('tablist', { name: 'Workers' })).toBeTruthy();
@@ -54,26 +70,25 @@ describe('WorkerPicker', () => {
       />,
     );
     const tabs = screen.getAllByRole('tab');
-    const middle = tabs[1];
-    if (middle === undefined) throw new Error('middle worker missing');
+    const middle = tabAt(tabs, 1);
     middle.focus();
 
     fireEvent.keyDown(middle, { key: 'ArrowRight' });
-    expect(document.activeElement).toBe(tabs[2]);
-    fireEvent.keyDown(tabs[2]!, { key: 'Enter' });
+    expect(document.activeElement).toBe(tabAt(tabs, 2));
+    fireEvent.keyDown(tabAt(tabs, 2), { key: 'Enter' });
     expect(onSelect).toHaveBeenLastCalledWith('w3');
 
-    fireEvent.keyDown(tabs[2]!, { key: 'ArrowLeft' });
-    fireEvent.keyDown(tabs[1]!, { key: 'Home' });
-    expect(document.activeElement).toBe(tabs[0]);
-    fireEvent.keyDown(tabs[0]!, { key: 'End' });
-    expect(document.activeElement).toBe(tabs[2]);
-    fireEvent.keyDown(tabs[2]!, { key: ' ' });
+    fireEvent.keyDown(tabAt(tabs, 2), { key: 'ArrowLeft' });
+    fireEvent.keyDown(tabAt(tabs, 1), { key: 'Home' });
+    expect(document.activeElement).toBe(tabAt(tabs, 0));
+    fireEvent.keyDown(tabAt(tabs, 0), { key: 'End' });
+    expect(document.activeElement).toBe(tabAt(tabs, 2));
+    fireEvent.keyDown(tabAt(tabs, 2), { key: ' ' });
     expect(onSelect).toHaveBeenLastCalledWith('w3');
 
-    fireEvent.keyDown(tabs[2]!, { key: 'ArrowUp' });
-    expect(document.activeElement).toBe(tabs[1]);
-    fireEvent.keyDown(tabs[1]!, { key: 'ArrowDown' });
-    expect(document.activeElement).toBe(tabs[2]);
+    fireEvent.keyDown(tabAt(tabs, 2), { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(tabAt(tabs, 1));
+    fireEvent.keyDown(tabAt(tabs, 1), { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(tabAt(tabs, 2));
   });
 });

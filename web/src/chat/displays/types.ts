@@ -12,6 +12,7 @@
 // remap, so the contract drift surface is exactly one literal pin test.
 
 import type { McpViewDescriptor } from '../mcpapps/hostProtocol';
+import type { SwarmStatus } from './swarmRow';
 
 /**
  * The discriminant — one per Go `display.Kind` constant, plus `mcp_view`.
@@ -98,7 +99,9 @@ export interface DisplaySystem {
 export interface DisplayChildReport {
   readonly goal_index: number;
   readonly child_id: string;
-  readonly status: 'ok' | 'failed' | 'needs_user_input';
+  readonly status: SwarmStatus;
+  readonly goal?: string;
+  readonly attempts?: number;
   readonly summary?: string;
   readonly error?: string;
   readonly question?: string;

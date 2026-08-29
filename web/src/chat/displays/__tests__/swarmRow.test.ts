@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   hasField,
   hasOptions,
+  isTerminalSwarmStatus,
   isSwarmStatus,
   statusDotClass,
   statusIconName,
@@ -51,10 +52,25 @@ describe('statusLabelKey', () => {
 });
 
 describe('statusIconName', () => {
-  it('gives the two warning states distinct non-colour signals', () => {
+  it('maps every state and fallback to a distinct non-colour signal', () => {
+    expect(statusIconName('ok')).toBe('CircleCheck');
+    expect(statusIconName('failed')).toBe('CircleX');
     expect(statusIconName('needs_user_input')).toBe('MessageCircleQuestion');
-    expect(statusIconName('stalled')).toBe('Clock');
     expect(statusIconName('running')).toBe('LoaderCircle');
+    expect(statusIconName('stalled')).toBe('Clock');
+    expect(statusIconName('dead_letter')).toBe('MailX');
+    expect(statusIconName('mystery')).toBe('TriangleAlert');
+  });
+});
+
+describe('isTerminalSwarmStatus', () => {
+  it('accepts only completed, failed, and dead-letter workers', () => {
+    expect(isTerminalSwarmStatus('ok')).toBe(true);
+    expect(isTerminalSwarmStatus('failed')).toBe(true);
+    expect(isTerminalSwarmStatus('dead_letter')).toBe(true);
+    expect(isTerminalSwarmStatus('needs_user_input')).toBe(false);
+    expect(isTerminalSwarmStatus('running')).toBe(false);
+    expect(isTerminalSwarmStatus('stalled')).toBe(false);
   });
 });
 

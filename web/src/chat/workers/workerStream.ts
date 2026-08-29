@@ -2,6 +2,7 @@ import type { ThreadMessageLike } from '@assistant-ui/react';
 import { reduceFrame } from '../sseAdapter';
 import type { AguiFrame } from '../sseAdapter_frames';
 import { newAssistantTurn } from '../sseAdapter_parts';
+import { isSwarmStatus, type SwarmStatus } from '../displays/swarmRow';
 
 export interface WorkerStreamHandlers {
   readonly onMessages: (messages: readonly ThreadMessageLike[]) => void;
@@ -10,6 +11,19 @@ export interface WorkerStreamHandlers {
 
 export interface WorkerStreamSubscription {
   readonly close: () => void;
+}
+
+export interface WorkerStatus {
+  readonly child_id: string;
+  readonly status: SwarmStatus;
+  readonly last_event_at: string;
+  readonly events: number;
+  readonly duration_sec: number;
+}
+
+export interface WorkerStatusStreamHandlers {
+  readonly onStatus: (status: WorkerStatus) => void;
+  readonly onError: () => void;
 }
 
 function workerEventsURL(conversationId: string, childId?: string): string {
@@ -59,4 +73,57 @@ export function openWorkerStream(
   };
 }
 
-export { workerEventsURL };
+function decodeWorkerStatus(value: unknown): WorkerStatus | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.child_id !== 'string' ||
+    typeof candidate.status !== 'string' ||
+    !isSwarmStatus(candidate.status) ||
+    typeof candidate.last_event_at !== 'string' ||
+    typeof candidate.events !== 'number' ||
+    typeof candidate.duration_sec !== 'number'
+  ) {
+    return null;
+  }
+  return {
+    child_id: candidate.child_id,
+    status: candidate.status,
+    last_event_at: candidate.last_event_at,
+    events: candidate.events,
+    duration_sec: candidate.duration_sec,
+  };
+}
+
+/** Subscribe once to the conversation-wide bounded worker-status stream. */
+export function openWorkerStatusStream(
+  conversationId: string,
+  handlers: WorkerStatusStreamHandlers,
+): WorkerStreamSubscription {
+  const source = new EventSource(workerEventsURL(conversationId));
+  const onMessage: EventListener = (event) => {
+    if (!(event instanceof MessageEvent) || typeof event.data !== 'string') return;
+    try {
+      const frame = JSON.parse(event.data) as AguiFrame;
+      if (frame.type !== 'CUSTOM' || frame.name !== 'aura.swarm.worker') return;
+      const status = decodeWorkerStatus(frame.value);
+      if (status !== null) handlers.onStatus(status);
+    } catch {
+      handlers.onError();
+    }
+  };
+  const onError: EventListener = () => {
+    handlers.onError();
+  };
+  source.addEventListener('message', onMessage);
+  source.addEventListener('error', onError);
+  return {
+    close: () => {
+      source.removeEventListener('message', onMessage);
+      source.removeEventListener('error', onError);
+      source.close();
+    },
+  };
+}
+
+export { decodeWorkerStatus, workerEventsURL };

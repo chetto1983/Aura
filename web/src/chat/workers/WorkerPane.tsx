@@ -14,6 +14,8 @@ import {
 import { ToolFallback } from '../ExternalStoreChat_messages';
 import { MarkdownText } from '../MarkdownText';
 import { openWorkerStream } from './workerStream';
+import { WorkerPicker } from './WorkerPicker';
+import { useWatchWorker } from './workerWatchControls';
 
 export interface WorkerPaneProps {
   readonly conversationId: string;
@@ -51,6 +53,7 @@ function WorkerMessage() {
 
 export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps) {
   const { t } = useTranslation();
+  const { workers, statuses, watchWorker } = useWatchWorker();
   const streamKey = `${conversationId}\u0000${childId}`;
   const [streamState, setStreamState] = useState<{
     readonly key: string;
@@ -89,6 +92,18 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
     convertMessage: (message) => message,
     onNew: () => Promise.resolve(),
   });
+  const pickerWorkers = useMemo(() => {
+    if (workers.some((worker) => worker.child_id === childId)) return workers;
+    return [
+      ...workers,
+      {
+        goal_index: workers.length,
+        child_id: childId,
+        status: statuses.get(childId)?.status ?? ('running' as const),
+        goal: childId,
+      },
+    ];
+  }, [childId, statuses, workers]);
 
   return (
     <section className="flex h-full min-h-0 flex-col px-3 pb-3 pt-3">
@@ -109,6 +124,16 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
           <X className="size-4" aria-hidden="true" />
         </button>
       </div>
+
+      <WorkerPicker
+        key={childId}
+        workers={pickerWorkers}
+        statuses={statuses}
+        watchedChildId={childId}
+        onSelect={(nextChildId) => {
+          watchWorker(nextChildId, pickerWorkers);
+        }}
+      />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {current.failed ? (

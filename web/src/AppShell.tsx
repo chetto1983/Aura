@@ -408,7 +408,11 @@ export function AppShell() {
   );
 
   return (
-    <WorkerWatchProvider onWatchWorker={workerPane.openWorker} onViewReport={openArtifacts}>
+    <WorkerWatchProvider
+      conversationId={activeThreadId}
+      onWatchWorker={workerPane.openWorker}
+      onViewReport={openArtifacts}
+    >
       {/* `relative` is load-bearing, not cosmetic: it makes the shell the containing
           block for stray position:absolute descendants (sr-only status spans in the
           chat/tool cards) that would otherwise resolve to the ICB at their deep static

@@ -70,14 +70,16 @@ describe('SwarmReportTable (SWARM-01 / D-08)', () => {
 
   it('expands a row in place to show summary + error in the danger tone', () => {
     render(<SwarmReportTable payload={payload(reports)} />);
-    // The failed worker's error is only shown once its row is expanded.
-    expect(screen.queryByText('connect tcp 10.0.0.1:443: blocked')).toBeNull();
+    // The failed worker's error is bounded in the collapsed row and repeated in detail on expand.
+    expect(screen.getAllByText('connect tcp 10.0.0.1:443: blocked')).toHaveLength(1);
     fireEvent.click(screen.getByText('w2'));
-    const errorValue = screen.getByText('connect tcp 10.0.0.1:443: blocked');
+    const errorValue = screen
+      .getAllByText('connect tcp 10.0.0.1:443: blocked')
+      .find((element) => element.tagName.toLowerCase() === 'dd');
     expect(errorValue).toBeTruthy();
     expect(screen.getByText('Error')).toBeTruthy();
     // The error field value carries the danger tone (Field tone="danger").
-    expect(errorValue.className).toContain('text-danger');
+    expect(errorValue?.className).toContain('text-danger');
   });
 
   it('shows question + options for a needs_user_input child on expand', () => {
@@ -92,9 +94,9 @@ describe('SwarmReportTable (SWARM-01 / D-08)', () => {
     render(<SwarmReportTable payload={payload(reports)} />);
     const row = screen.getByText('w2');
     fireEvent.click(row);
-    expect(screen.getByText('connect tcp 10.0.0.1:443: blocked')).toBeTruthy();
+    expect(screen.getAllByText('connect tcp 10.0.0.1:443: blocked')).toHaveLength(2);
     fireEvent.click(row);
-    expect(screen.queryByText('connect tcp 10.0.0.1:443: blocked')).toBeNull();
+    expect(screen.getAllByText('connect tcp 10.0.0.1:443: blocked')).toHaveLength(1);
   });
 
   it('conveys status by dot + text (a labelled status, not color alone)', () => {
@@ -107,10 +109,11 @@ describe('SwarmReportTable (SWARM-01 / D-08)', () => {
 
   it('uses the enum status word, NOT the free-form error text, in the row status cell', () => {
     render(<SwarmReportTable payload={payload(reports)} />);
-    const failedRow = screen.getByText('w2').closest('button') as HTMLElement;
+    const statusCell = screen.getByText('Failed').parentElement;
+    if (statusCell === null) throw new Error('failed status cell missing');
     // The collapsed row's status cell reads "Failed" (enum), never the error string.
-    expect(within(failedRow).getByText('Failed')).toBeTruthy();
-    expect(within(failedRow).queryByText(/connect tcp/)).toBeNull();
+    expect(within(statusCell).getByText('Failed')).toBeTruthy();
+    expect(within(statusCell).queryByText(/connect tcp/)).toBeNull();
   });
 
   it('falls to a safe "Unknown" label for an out-of-enum status', () => {
@@ -143,7 +146,7 @@ describe('SwarmReportTable (SWARM-01 / D-08)', () => {
     fireEvent.click(screen.getByText('w1'));
     // The expand region carries the Summary field but no Error/Question/Options for
     // an OK child with an empty error (the column header "Summary" is a separate <th>).
-    expect(screen.getByRole('definition')).toBeTruthy();
+    expect(screen.getAllByRole('definition')).toHaveLength(2);
     expect(screen.queryByText('Error')).toBeNull();
     expect(screen.queryByText('Question')).toBeNull();
     expect(screen.queryByText('Options')).toBeNull();
