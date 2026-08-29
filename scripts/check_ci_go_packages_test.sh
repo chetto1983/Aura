@@ -3,8 +3,7 @@
 #
 # Proves the lint PROVABLY exits non-zero on a planted raw `go test ./...` (no-skip-as-green:
 # a gate that can never fail is worthless), and exits 0 on a clean fixture. Mirrors
-# scripts/quality_snapshot_gate_test.sh + scripts/cache_invariant_negative_test.sh — the
-# house gate+self-test precedent that points the gate at a tmp fixture via env and asserts rc.
+# scripts/cache_invariant_negative_test.sh: point the gate at a temporary fixture and assert rc.
 #
 # The raw-root token is assembled from $ROOT_PKGS (a quoted literal) rather than written
 # inline, so THIS script's own source never carries a standalone-root `./...` — otherwise

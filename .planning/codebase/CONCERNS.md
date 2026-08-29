@@ -61,12 +61,10 @@ These compact entries prevent stale handoffs from reopening resolved work.
   Regressions cover a DOCX that compresses below the workspace cap but expands past the member
   limit, aggregate expansion, deep XML and shared-string output amplification
   (`internal/agent/tools/document_extract_test.go`).
-- **GSD planning consistency:** closed. `STATE.md` now derives 45 total plans, 37 matching plan
-  summaries, three completed phases and the Phase 51 focus from the live planning tree; ROADMAP's
-  Phase 52 row now records the actual 8/8 executed plans while retaining its honest In Progress
-  validation status. `scripts/check_planning_consistency.py` independently checks those counts,
-  every phase/progress row, current phase/name/status and the Git input commit recorded by
-  `state_head`; the build-and-lint job runs it on every change (`.github/workflows/ci.yml`).
+- **GSD planning consistency gate:** retired by PRD amendment #177. `STATE.md`, ROADMAP, plans and
+  summaries remain the working ledger, but their redundant display names, counters, prose status
+  and input SHA no longer gate executable CI. Reconcile them in the planning workflow when useful;
+  do not infer product health from whether every projection changed in the same commit.
 - **Expired idempotency recovery:** closed by choosing the existing production contract:
   indeterminate operations remain terminal and destructive work is never reclaimed implicitly.
   The unreachable `Store.RecoverExpired` method, generated `TryRecoverExpiredOperation` query,

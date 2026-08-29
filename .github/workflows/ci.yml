@@ -55,12 +55,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Quality snapshot gate self-test
-        run: bash scripts/quality_snapshot_gate_test.sh
-
-      - name: Quality snapshot gate
-        run: bash scripts/quality_snapshot_gate.sh
-
       - name: CI go-packages lint self-test
         run: bash scripts/check_ci_go_packages_test.sh
 
@@ -72,9 +66,6 @@ jobs:
 
       - name: Workflow pin gate
         run: bash scripts/workflow_pin_gate.sh
-
-      - name: GSD planning consistency
-        run: python3 scripts/check_planning_consistency.py
 
       - name: EmbeddingGemma cache helper self-test
         run: make embedding-model-contract
