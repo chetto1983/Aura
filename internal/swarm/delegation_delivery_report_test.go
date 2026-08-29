@@ -2,6 +2,7 @@ package swarm
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -89,17 +90,30 @@ func (p *orderedSteerPublisher) PushDelegationResult(_, _, _, _ string) error {
 	return nil
 }
 
-// TestDeliverReportPushesFullReport is this plan's own named prohibition
-// check (threat register / prohibitions list): the pushed steer copy stays
-// the UNCHANGED full report JSON, byte-identical to marshalReports' own
-// output -- the card is the bounded DURABLE record, never a replacement for
-// the present-operator steer push's own payload.
-func TestDeliverReportPushesFullReport(t *testing.T) {
+// TestDeliverReportBoundsSteerCopyButArchivesFullReport is Amendment #178's
+// measured regression: a model can return more than steer's 32 KiB message
+// cap even though the full Markdown archive succeeds. The courtesy steer
+// copy must remain structured and useful without making the completed job
+// retry solely because its report is long.
+func TestDeliverReportBoundsSteerCopyButArchivesFullReport(t *testing.T) {
 	recorder := &fakeConversationRecorder{}
-	pub := &fakeSteerPublisher{}
-	d := &DelegationDelivery{Recorder: recorder, Steer: pub}
+	pub := &fakeSteerPublisher{maxBytes: 32768}
+	var archivedMarkdown string
+	archiver := archiverFunc(func(_ context.Context, _, _, _, markdown string) (string, error) {
+		archivedMarkdown = markdown
+		return "asset-1", nil
+	})
+	d := &DelegationDelivery{Recorder: recorder, Steer: pub, Archiver: archiver}
 
-	report := ChildReport{ChildID: "w1", Status: StatusOK, Goal: "goal", Summary: "the whole summary text"}
+	fullSummary := strings.Repeat("long worker result with quoted JSON: {\"ok\":true}\n", 2500)
+	report := ChildReport{
+		GoalIndex: 1,
+		ChildID:   "w2",
+		Status:    StatusOK,
+		Goal:      "produce a detailed report",
+		Summary:   fullSummary,
+		Attempts:  2,
+	}
 	if _, err := d.DeliverReport(context.Background(), DelegationPayload{ConversationID: "conv-3", FanoutKey: "f-test"}, report, 30*time.Second); err != nil {
 		t.Fatalf("DeliverReport = %v", err)
 	}
@@ -107,15 +121,25 @@ func TestDeliverReportPushesFullReport(t *testing.T) {
 		t.Fatalf("pushes = %d, want 1", len(pub.pushes))
 	}
 	pushed := strings.TrimPrefix(pub.pushes[0], "conv-3|"+steer.SourceWorker+"|")
-	wantJSON, err := marshalReports([]ChildReport{report})
-	if err != nil {
-		t.Fatalf("marshalReports = %v", err)
+	if len([]byte(pushed)) > pub.maxBytes {
+		t.Fatalf("pushed bytes = %d, want <= %d", len([]byte(pushed)), pub.maxBytes)
 	}
-	if pushed != wantJSON {
-		t.Fatalf("pushed text = %q, want the unchanged full report JSON %q", pushed, wantJSON)
+	var reports []ChildReport
+	if err := json.Unmarshal([]byte(pushed), &reports); err != nil {
+		t.Fatalf("pushed text is not ChildReport JSON: %v", err)
 	}
-	if len(recorder.appended) != 1 || pushed == recorder.appended[0].text {
-		t.Fatal("the pushed copy must not be the same bounded card as the recorded copy")
+	if len(reports) != 1 {
+		t.Fatalf("pushed reports = %d, want 1", len(reports))
+	}
+	got := reports[0]
+	if got.GoalIndex != report.GoalIndex || got.ChildID != report.ChildID || got.Status != report.Status || got.Attempts != report.Attempts {
+		t.Fatalf("pushed report identity = %+v, want structural fields from %+v", got, report)
+	}
+	if got.Summary == fullSummary || !strings.HasSuffix(got.Summary, "…") {
+		t.Fatalf("pushed summary must be rune-bounded with an ellipsis, got %d bytes", len([]byte(got.Summary)))
+	}
+	if !strings.Contains(archivedMarkdown, fullSummary) {
+		t.Fatal("archived Markdown must retain the complete uncapped summary")
 	}
 }
 

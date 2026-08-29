@@ -35,6 +35,7 @@ type fakeSteerPublisher struct {
 	pushes     []string
 	fanoutKeys []string
 	err        error
+	maxBytes   int
 }
 
 func (f *fakeSteerPublisher) Push(conv, source, text string) error {
@@ -48,6 +49,9 @@ func (f *fakeSteerPublisher) PushDelegationResult(conv, source, text, fanoutKey 
 func (f *fakeSteerPublisher) push(conv, source, text, fanoutKey string) error {
 	if f.err != nil {
 		return f.err
+	}
+	if f.maxBytes > 0 && len([]byte(text)) > f.maxBytes {
+		return steer.ErrTooLarge
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
