@@ -28,11 +28,24 @@ var _ Backend = (*DockerBackend)(nil)
 
 // Exec runs req.Command inside the box via /bin/sh -c, returning the demuxed stdout/stderr
 // and the process exit code. The env is secret-scrubbed. It honors ctx cancellation: on
-// cancel it closes the hijacked stream and waits for the demux goroutine to exit (goleak-
-// clean) before returning ctx.Err().
+// cancel/timeout it signals the box-side process group (the SAME PID-file mechanism
+// ExecStream/Kill uses, below -- one kill implementation, not two) before closing the
+// hijacked stream, then waits for the demux goroutine to exit (goleak-clean).
+//
+// Before this fix, cancel/timeout only closed the stream and returned: the box-side
+// process kept running with nothing left to observe it. Measured live 2026-08-29
+// (live-check/d03/RESULTS.md defect E): a staleness-reaped `shell_exec sleep 480` was
+// still alive in `docker top` almost three minutes after its reap, next to the retried
+// attempt's own copy of the same command -- N concurrent copies of one command in one
+// box under the shipped delegation retry policy.
 func (b *DockerBackend) Exec(ctx context.Context, h BoxHandle, req ExecRequest) (ExecResult, error) {
+	token, err := randHexToken()
+	if err != nil {
+		return ExecResult{}, fmt.Errorf("box exec pid token: %w", err)
+	}
+	pidFile := "/tmp/.aura-exec-" + token + ".pid"
 	ec, err := b.cli.ExecCreate(ctx, h.ContainerID, client.ExecCreateOptions{
-		Cmd:          []string{"/bin/sh", "-c", req.Command},
+		Cmd:          []string{"/bin/sh", "-c", wrapCommandWithPIDFile(pidFile, req.Command)},
 		WorkingDir:   req.Dir,
 		Env:          scrubEnv(req.Env),
 		AttachStdout: true,
@@ -56,7 +69,9 @@ func (b *DockerBackend) Exec(ctx context.Context, h BoxHandle, req ExecRequest) 
 
 	select {
 	case <-ctx.Done():
-		// Unblock the demux read, then wait for the goroutine to exit (no leak).
+		// Signal the box-side process group BEFORE detaching -- detaching alone (the
+		// pre-fix behaviour) leaves the process running with no handle left to kill it.
+		killBoxProcessGroup(b.cli, h.ContainerID, pidFile)
 		att.Close()
 		<-copyDone
 		return ExecResult{}, ctx.Err()
@@ -103,12 +118,8 @@ func (b *DockerBackend) ExecStream(ctx context.Context, h BoxHandle, req ExecReq
 		return nil, err
 	}
 	pidFile := "/tmp/.aura-bg-" + token + ".pid"
-	// No `exec` prefix: the command may be a compound line / builtin / pipeline, so it runs as
-	// children of this wrapper sh. $$ is the wrapper's PID; runc starts each exec as a session
-	// leader, so $$ is also the process-group id Kill signals to terminate the whole job tree.
-	wrapped := "echo $$ > '" + pidFile + "'; " + req.Command
 	ec, err := b.cli.ExecCreate(ctx, h.ContainerID, client.ExecCreateOptions{
-		Cmd:          []string{"/bin/sh", "-c", wrapped},
+		Cmd:          []string{"/bin/sh", "-c", wrapCommandWithPIDFile(pidFile, req.Command)},
 		WorkingDir:   req.Dir,
 		Env:          scrubEnv(req.Env),
 		AttachStdout: true,
@@ -154,18 +165,43 @@ func (s *ExecStreamHandle) pump(out io.Writer) {
 	}
 }
 
-// sigterm signals the job's process group (and the wrapper directly) from a separate short-lived
-// box exec. Best-effort: a job that already exited leaves no PID to signal (|| true keeps the kill
-// exec's own exit clean). Runs in the pump goroutine, so Kill itself stays non-blocking.
+// sigterm signals the job's process group from a separate short-lived box exec. Runs in the
+// pump goroutine, so Kill itself stays non-blocking.
 func (s *ExecStreamHandle) sigterm() {
+	killBoxProcessGroup(s.cli, s.container, s.pidFile)
+}
+
+// wrapCommandWithPIDFile prefixes cmd with a shell snippet that records the wrapper shell's own
+// PID to pidFile before cmd runs -- the ONE PID-file kill mechanism this package uses, shared by
+// ExecStream's background jobs and Exec's synchronous cancel/timeout path (defect E, above). No
+// `exec` prefix: the command may be a compound line / builtin / pipeline, so it runs as a child of
+// this wrapper sh. $$ is the wrapper's PID; runc starts each exec as a session leader, so $$ is
+// also the process-group id killBoxProcessGroup signals to terminate the whole job tree.
+func wrapCommandWithPIDFile(pidFile, cmd string) string {
+	return "echo $$ > '" + pidFile + "'; " + cmd
+}
+
+// killProcessGroupCommand is the pure shell snippet killBoxProcessGroup runs in a separate,
+// short-lived box exec: read the PID wrapCommandWithPIDFile recorded and signal both the process
+// group (the negative PID) and the process itself, best-effort. A job that already exited leaves
+// no PID to signal, so the trailing `; true` keeps the kill exec's own exit clean either way.
+func killProcessGroupCommand(pidFile string) string {
+	return "P=$(cat '" + pidFile + "' 2>/dev/null); [ -n \"$P\" ] && { kill -TERM -\"$P\" 2>/dev/null; kill -TERM \"$P\" 2>/dev/null; }; true"
+}
+
+// killBoxProcessGroup signals the process group recorded in pidFile from a separate, short-lived
+// box exec -- the Docker exec API has no kill-exec verb, and closing/detaching the original exec's
+// hijacked stream alone leaves the box-side process running (37-RESEARCH A5; defect E, above).
+// Best-effort and silent on failure: a box that is already gone, or a job that already exited,
+// leaves nothing to signal and nothing to report.
+func killBoxProcessGroup(cli *client.Client, containerID, pidFile string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	kill := "P=$(cat '" + s.pidFile + "' 2>/dev/null); [ -n \"$P\" ] && { kill -TERM -\"$P\" 2>/dev/null; kill -TERM \"$P\" 2>/dev/null; }; true"
-	ec, err := s.cli.ExecCreate(ctx, s.container, client.ExecCreateOptions{Cmd: []string{"/bin/sh", "-c", kill}})
+	ec, err := cli.ExecCreate(ctx, containerID, client.ExecCreateOptions{Cmd: []string{"/bin/sh", "-c", killProcessGroupCommand(pidFile)}})
 	if err != nil {
 		return
 	}
-	att, err := s.cli.ExecAttach(ctx, ec.ID, client.ExecAttachOptions{})
+	att, err := cli.ExecAttach(ctx, ec.ID, client.ExecAttachOptions{})
 	if err != nil {
 		return
 	}
@@ -212,15 +248,4 @@ func scrubEnv(env []string) []string {
 		out = append(out, kv)
 	}
 	return out
-}
-
-// wrapCommandWithPIDFile and killProcessGroupCommand are placeholder stubs (defect E,
-// RED phase): the pure shell-string builders the fix needs, not yet correct and not yet
-// wired into Exec/ExecStream.
-func wrapCommandWithPIDFile(pidFile, cmd string) string {
-	return cmd
-}
-
-func killProcessGroupCommand(pidFile string) string {
-	return ""
 }
