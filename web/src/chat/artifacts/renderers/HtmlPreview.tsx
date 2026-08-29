@@ -32,7 +32,12 @@ import { PreviewError, PreviewLoading, type RendererProps } from './PreviewStatu
 /** The sealed document lane: the server renders, we only frame it. */
 function RenderedFrame({ src, title }: { readonly src: string; readonly title: string }) {
   return (
-    <iframe src={src} sandbox="allow-scripts" title={title} className="h-full w-full border-0 bg-white" />
+    <iframe
+      src={src}
+      sandbox="allow-scripts"
+      title={title}
+      className="h-full w-full border-0 bg-white"
+    />
   );
 }
 
@@ -77,11 +82,14 @@ export default function HtmlPreview({ assetId, fileName }: RendererProps) {
   // for "what is this actually doing", not the landing state.
   const [tab, setTab] = useState<ArtifactTab>('rendered');
 
-  const tabs: readonly { readonly id: ArtifactTab; readonly label: string; readonly Icon: typeof Eye }[] =
-    [
-      { id: 'rendered', label: t('artifacts.preview.tabRendered'), Icon: Eye },
-      { id: 'source', label: t('artifacts.preview.tabSource'), Icon: Code2 },
-    ];
+  const tabs: readonly {
+    readonly id: ArtifactTab;
+    readonly label: string;
+    readonly Icon: typeof Eye;
+  }[] = [
+    { id: 'rendered', label: t('artifacts.preview.tabRendered'), Icon: Eye },
+    { id: 'source', label: t('artifacts.preview.tabSource'), Icon: Code2 },
+  ];
 
   return (
     <div className="flex h-full flex-col">

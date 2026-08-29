@@ -170,9 +170,7 @@ describe('HtmlPreview (WEBART-07 / T-37B-08)', () => {
 
   it('percent-encodes the asset id in the render URL', async () => {
     stubFetch({ text: 'x' });
-    const { container } = render(
-      <HtmlPreview {...props} assetId="a/b?c" fileName="page.html" />,
-    );
+    const { container } = render(<HtmlPreview {...props} assetId="a/b?c" fileName="page.html" />);
     await waitFor(() => {
       expect(container.querySelector('iframe')).not.toBeNull();
     });

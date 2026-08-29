@@ -71,11 +71,14 @@ test.describe('live artifact render lane', () => {
 
     const src = await frame.getAttribute('src');
     expect(src).not.toBeNull();
+    if (src === null) {
+      throw new Error('sealed artifact iframe has no src');
+    }
 
     // 2) The response is a real document with real headers — which is the whole point of
     //    moving off srcdoc. Fetched from INSIDE the page so the __Host- session cookie rides
     //    along (page.request does not carry it).
-    const sealed = (await page.evaluate(async (url: string) => {
+    const sealed: SealedProbe = await page.evaluate(async (url: string) => {
       const res = await fetch(url, { credentials: 'same-origin' });
       return {
         status: res.status,
@@ -85,7 +88,7 @@ test.describe('live artifact render lane', () => {
         cacheControl: res.headers.get('cache-control'),
         body: await res.text(),
       };
-    }, src as string)) as SealedProbe;
+    }, src);
 
     expect(sealed.status).toBe(200);
     expect(sealed.contentType).toContain('text/html');
@@ -101,7 +104,9 @@ test.describe('live artifact render lane', () => {
     // 3) The scrub ran: no <base>, no meta refresh, no fetch-on-parse <link>.
     expect(sealed.body).not.toMatch(/<base\b/i);
     expect(sealed.body).not.toMatch(/http-equiv\s*=\s*["']?refresh/i);
-    expect(sealed.body).not.toMatch(/rel\s*=\s*["']?(preload|prefetch|dns-prefetch|preconnect|modulepreload)/i);
+    expect(sealed.body).not.toMatch(
+      /rel\s*=\s*["']?(preload|prefetch|dns-prefetch|preconnect|modulepreload)/i,
+    );
     // …and the policy precedes the shim, so the shim itself runs under it.
     const metaAt = sealed.body.search(/http-equiv\s*=\s*["']?Content-Security-Policy/i);
     const shimAt = sealed.body.indexOf('__aura_artifact_probe__');
@@ -111,9 +116,8 @@ test.describe('live artifact render lane', () => {
 
     // 4) THE POINT: the document actually renders. Count real element nodes in the frame's
     //    body — a blank artifact (the React #299 failure this lane was built around) yields 0.
-    const rendered = await frame.contentFrame();
-    expect(rendered).not.toBeNull();
-    const painted = await rendered!.locator('body').evaluate((body: HTMLElement) => ({
+    const rendered = frame.contentFrame();
+    const painted = await rendered.locator('body').evaluate((body: HTMLElement) => ({
       elements: body.querySelectorAll('*').length,
       text: (body.innerText ?? '').trim().length,
     }));
@@ -132,7 +136,7 @@ test.describe('live artifact render lane', () => {
 
     // 6) …and back to the rendered tab, which must re-frame the same sealed route.
     await dialog.getByRole('tab', { name: 'Preview' }).click();
-    await expect(dialog.locator('iframe')).toHaveAttribute('src', src as string, {
+    await expect(dialog.locator('iframe')).toHaveAttribute('src', src, {
       timeout: 15_000,
     });
     proofs += 1;
