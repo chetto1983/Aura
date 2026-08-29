@@ -84,6 +84,10 @@ type serveEnv struct {
 	scheduler *cron.Scheduler
 	httpSrv   *http.Server // the AG-UI gateway (Slice 8b), mounted alongside the tick loop
 	readiness *readiness.Snapshot
+	// shellCompletions owns autonomous background-shell wake goroutines. It is
+	// installed only when the shared steer rail is live and stops before shell
+	// shutdown, so daemon termination never manufactures a fresh agent turn.
+	shellCompletions *shellCompletionDispatcher
 
 	// channels is the Phase-13 channels Registry (Telegram). It mounts as a
 	// fail-soft daemon sibling of the AG-UI gateway; runServe StartAll/StopAll it.
@@ -256,6 +260,10 @@ func runServe(args []string) {
 	// work ctx as the sweeper; the drain's BackgroundShells.Shutdown joins it. A disabled
 	// TTL / nil registry launches no goroutine.
 	if env.toolHandles.BackgroundShells != nil {
+		if env.steer != nil {
+			env.shellCompletions = newShellCompletionDispatcher(ctx, env.run, env.steer)
+			env.toolHandles.BackgroundShells.SetCompletionHook(env.shellCompletions.Notify)
+		}
 		env.toolHandles.BackgroundShells.StartReaper(ctx)
 	}
 

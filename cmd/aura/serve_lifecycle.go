@@ -19,6 +19,16 @@ type schedulerLifecycle interface {
 }
 
 func shutdownBackgroundShells(env *serveEnv) {
+	if env.shellCompletions != nil {
+		if env.toolHandles.BackgroundShells != nil {
+			env.toolHandles.BackgroundShells.SetCompletionHook(nil)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := env.shellCompletions.Stop(ctx); err != nil {
+			slog.Warn("aura serve: background shell completion dispatcher shutdown", "err", err)
+		}
+		cancel()
+	}
 	if env.toolHandles.BackgroundShells == nil {
 		return
 	}

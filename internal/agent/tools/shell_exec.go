@@ -70,7 +70,7 @@ func (s *ShellExec) Spec() Spec {
     "cwd": {"type": "string", "description": "Optional working directory override, as an absolute path inside your workspace container (e.g. \"/workspace/project\"). Your working directory PERSISTS between calls (a cd carries over) and starts at /workspace."},
     "timeout_ms": {"type": "integer", "minimum": 0, "description": "Optional timeout in milliseconds. Omit for the default (120s)."},
     "env": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Optional extra environment variables for this command only."},
-    "background": {"type": "boolean", "description": "Run the command in the background and return a shell_id immediately instead of blocking. Read its output later with shell_poll and stop it with shell_kill. Use for long jobs (builds, downloads, dev servers)."}
+    "background": {"type": "boolean", "description": "Run the command in the background and return a shell_id immediately instead of blocking. Aura notifies the owning conversation automatically when the job exits; then use shell_poll once to read its retained final output. Stop a running job with shell_kill. Use for long jobs (builds, downloads, dev servers)."}
   },
   "required": ["command"]
 }`)
@@ -83,7 +83,7 @@ func (s *ShellExec) Spec() Spec {
 			"Pipes, redirects, && chains, any installed interpreter (python, node), git, and filesystem work all just work. " +
 			"Your working directory persists between calls (a cd carries over) and starts at /workspace. " +
 			"Returns combined stdout and stderr plus a final [aura_shell {...}] JSON footer with exit_code, cwd, duration_ms, and timed_out; rely on that footer instead of spending separate pwd or exit-code calls. " +
-			"For a long-running job set \"background\": true — it returns immediately with a shell_id you read with shell_poll and stop with shell_kill.\n\n" +
+			"For a long-running job set \"background\": true — it returns immediately with a shell_id. Aura automatically notifies this conversation when the job exits; then call shell_poll once to read the retained final output. Stop a running job with shell_kill.\n\n" +
 			// These four rules used to live in the system prompt, where they were read
 			// thousands of tokens before the decision they govern. They belong with the
 			// schema: the model reads them exactly when it is about to run a command.
@@ -170,7 +170,7 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 			}
 			return sandboxUnavailableResult("shell_exec", err), nil
 		}
-		rendered := fmt.Sprintf("Started in the background as %s. Read its output with shell_poll (shell_id=%q); stop it with shell_kill.\n[aura_shell_bg {\"shell_id\":%q,\"status\":\"running\"}]", id, id, id)
+		rendered := fmt.Sprintf("Started in the background as %s. Aura will notify this conversation when it exits; then read its final output with shell_poll (shell_id=%q). Stop it with shell_kill.\n[aura_shell_bg {\"shell_id\":%q,\"status\":\"running\"}]", id, id, id)
 		res, err := NewResult(ctx, rendered)
 		if err != nil {
 			return ToolResult{}, err

@@ -36,6 +36,9 @@ type BackgroundShells struct {
 	bufCap int
 	max    int
 	shells map[string]*bgShell
+	// completionHook is copied onto each new shell. The daemon sets it before
+	// serving; the CLI leaves it nil and keeps explicit shell_poll semantics.
+	completionHook BackgroundShellCompletionHook
 
 	// Router is the per-identity box routing seam (SBX-01, plan 37-09) and the only way a
 	// background job starts: shell_exec routes, then startBox runs the job INSIDE the box via
@@ -93,6 +96,11 @@ type bgShell struct {
 	killed   bool
 	expired  bool // TTL reaper terminated it (status "expired", MUSR-04)
 	exitCode *int
+
+	// completionHook is the registry hook captured at start; completionSent is
+	// the exactly-once fence shared by normal, killed/expired and panic exits.
+	completionHook BackgroundShellCompletionHook
+	completionSent bool
 }
 
 // Write is the io.Writer wired to both cmd.Stdout and cmd.Stderr; the mutex makes
@@ -177,19 +185,23 @@ func (s *bgShell) snapshot(filter *regexp.Regexp) (chunk, status string) {
 		s.buf = s.buf[s.readOff:]
 		s.readOff = 0
 	}
+	status = s.statusLocked()
+	return chunk, status
+}
+
+func (s *bgShell) statusLocked() string {
 	switch {
 	case s.expired:
-		status = "expired"
+		return "expired"
 	case s.killed:
-		status = "killed"
+		return "killed"
 	case !s.done:
-		status = "running"
+		return "running"
 	case s.exitCode != nil:
-		status = fmt.Sprintf("exited:%d", *s.exitCode)
+		return fmt.Sprintf("exited:%d", *s.exitCode)
 	default:
-		status = "killed"
+		return "killed"
 	}
-	return chunk, status
 }
 
 // startBox launches command DETACHED from the per-call ctx (which dies the moment Execute
@@ -244,13 +256,17 @@ func (b *BackgroundShells) startBox(callerCtx context.Context, h usersandbox.Box
 // the routed startBox so the authority model is IDENTICAL on both paths; only cancel and the
 // process handle differ.
 func (b *BackgroundShells) newShell(callerCtx context.Context, id string) *bgShell {
+	b.mu.Lock()
+	completionHook := b.completionHook
+	b.mu.Unlock()
 	return &bgShell{
-		id:        id,
-		ownerID:   ownerFromContext(callerCtx),
-		sessionID: shellSessionKey(callerCtx),
-		startedAt: time.Now(),
-		ttl:       b.ttl,
-		bufCap:    b.bufCap,
+		id:             id,
+		ownerID:        ownerFromContext(callerCtx),
+		sessionID:      shellSessionKey(callerCtx),
+		startedAt:      time.Now(),
+		ttl:            b.ttl,
+		bufCap:         b.bufCap,
+		completionHook: completionHook,
 	}
 }
 
@@ -297,9 +313,11 @@ func runBackgroundShellReaper(sh *bgShell, wait func() error, cancel context.Can
 		if r := recover(); r != nil {
 			panicobs.Record(panicobs.SiteShellBGReaper)
 			sh.finishPanic(r)
+			sh.notifyCompletion()
 		}
 	}()
 	sh.finish(wait())
+	sh.notifyCompletion()
 }
 
 func (b *BackgroundShells) pruneFinishedLocked() {
