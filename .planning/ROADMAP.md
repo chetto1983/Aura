@@ -577,7 +577,7 @@ lands squarely on the memory correctness Phase 45 and 49 just established.
   4. A worker that needs the operator surfaces the question in the operator's channel, naming which worker raised it, and answering it resumes that worker's line of work.
   5. After a live fan-out where several workers each learn something durable, the graph holds one correctly-attributed fact per worker — no duplicates, no lost writes, no fact attributed to the parent.
 
-**Plans**: 10/11 plans executed in 6 waves
+**Plans**: 10/13 plans executed in 7 waves
 
 Plans:
 **Wave 1**
@@ -607,7 +607,12 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 51-08-PLAN.md — Live SC#1–SC#5 driver, quality snapshot re-attestation, PRD measurement — wave 6
+- [ ] 51-11-PLAN.md — Delivery envelope: record card, report artifact, one static Telegram message, stable child ids, `swarm_status` (SWARM-12, SWARM-10) — wave 6
+- [ ] 51-12-PLAN.md — Cockpit worker surface: worker-events SSE route, read-only parallel pane, picker, live chip (SWARM-12, SWARM-10) — wave 6
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 51-08-PLAN.md — Live SC#1–SC#5 driver, quality snapshot re-attestation, PRD measurement — wave 7
 
 ### Phase 52: Mid-turn steering
 
