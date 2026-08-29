@@ -134,23 +134,49 @@ Accent is never used for a status dot, a background fill, or as a generic "impor
 
 ## UI Considerations
 
-Applicable state considerations resolved: 9 covered, 2 backstop, 0 unresolved.
+Probe run 2026-08-29 (`ui-consideration-probe.cjs` over the six surfaces this contract describes: E1 chip
+rows, E2 worker pane, E3 worker picker, E4 report artifact, E5 Telegram message, E6 durable record card).
+34 applicable considerations: **26 resolved (explicit)**, **3 resolved (backstop)**, **5 dismissed with reason**,
+0 unresolved. E5 came back `unclassified` (a message, not a UI element) and was resolved by manual review.
+`resolved` (explicit) rows are truths the planner lifts as strings; `backstop` rows lift as
+`{ statement, verification: backstop }` and route to `human_needed` at verify time unless wired with evidence.
 
-| Category | Element(s) | Status | Resolution / Reason |
-|----------|------------|--------|---------------------|
-| empty | Worker pane before first event | ✅ covered | Shows `swarm.pane.connecting` copy, not a blank pane — the pane never renders truly empty chrome |
-| empty | Chip row set (0 workers) | ✅ covered | Reuses existing `swarm.emptyHeading`/`emptyBody` — already shipped, unchanged |
-| error | Worker pane transcript stream fails | ✅ covered | `swarm.pane.error` copy, with a pointer back to the report artifact as the fallback path |
-| error | Telegram delivery for a `dead_letter` job (8 failed delivery attempts) | ✅ covered | Telegram message uses the ⚠️ glyph variant, see Delivery Envelope contract |
-| stalled | Chip status dot for D-03's inactivity signal | ✅ covered | `--color-warning` dot + distinct icon (`Clock`/hourglass) vs. `awaiting_input`'s `HelpCircle`, per the color-is-never-the-only-signal rule |
-| awaiting_input | Chip + pane while a worker's own `ask_user` pause is open | ✅ covered | Reuses the SAME warning dot family; the pane shows the pending question read-only (no answer composer in the pane — SWARM-06's answer path is the operator's own ask_user flow, unchanged by this gap) |
-| overflow | Many workers (up to `AURA_SWARM_MAX_GOALS=8`) in the chip stack | ✅ covered | Chip rows scroll inside their existing card container (`overflow-x-auto` pattern from `SwarmReportTable`); picker in the pane is a horizontally scrollable tablist, never wraps to a second row |
-| overflow | Goal / summary text overflow in a chip row | ✅ covered | Single-line truncation with ellipsis (existing `cap()`/`truncate` pattern from `toolSummary.ts`/`SwarmRow`); full text available in the row's existing expand-in-place disclosure |
-| long-text | Telegram summary | ✅ covered | Hard cap at ≤300 runes per D-15, server-truncated before send (see Delivery Envelope contract) |
-| zero-one-many | 1 worker vs. N workers in the pane picker | 🧪 backstop | With exactly 1 worker the picker MUST still render (not collapse to a bare pane) so the operator always sees which worker they are watching — verify visually, no distinct single-worker layout is designed |
-| long-text | Worker pane message text (nested `MessagePartPrimitive.Messages`) | 🧪 backstop | Inherits `ToolFallback`/`toolSummary.ts`'s existing wrapping/truncation by scope inheritance (per assistant-ui's documented behavior) — verify the inheritance actually applies at implementation time, do not assume |
-
----
+| Category | Element | Status | Verification | Resolution / Reason |
+|----------|---------|--------|--------------|---------------------|
+| empty | E1 chip rows | resolved | explicit | With zero workers the chip shows the shipped `swarm.emptyHeading` / `swarm.emptyBody` copy ("No workers" / "This run dispatched no swarm workers.") — no blank card |
+| loading | E1 chip rows | resolved | explicit | A row exists from the `swarm_spawn` call onward with status `running` (`--color-info` dot + `swarm.status.running`) before any worker event; no separate spinner |
+| error | E1 chip rows | resolved | explicit | A `failed` row shows the danger dot + "Failed" label + the error text on one line (existing `SwarmReportTable` failed state); a `stalled` row shows the warning dot + `Clock` icon + `swarm.status.stalled` |
+| populated | E1 chip rows | resolved | explicit | One row per worker: status dot+label, goal (one line), duration (`useElapsed`/`formatElapsed`), bounded summary, "Watch worker" always, "View report" only on terminal rows; both controls ≥44px tall in px |
+| partial | E1 chip rows | resolved | explicit | Rows update independently from the same stream: finished rows carry "View report" while sibling rows still read `running` |
+| overflow | E1 chip rows | resolved | explicit | Rows scroll inside the card (`overflow-x-auto`, the `SwarmReportTable` pattern); at most `AURA_SWARM_MAX_GOALS` (8) rows |
+| zero-one-many | E1 chip rows | resolved | explicit | 0 rows → empty copy; 1 row and N rows share the identical row layout (no single-row special case) |
+| long-text | E1 chip rows | resolved | explicit | Goal and summary truncate to one line with ellipsis (`cap()`/`truncate` from `toolSummary.ts`/`swarmRow.ts`); the full text is reachable in the row's existing expand |
+| empty | E2 worker pane | resolved | explicit | Before the first transcript event the pane shows `swarm.pane.connecting` ("Connecting to worker…" / "Connessione al worker…"), never empty chrome |
+| loading | E2 worker pane | resolved | backstop | While the transcript replay is still streaming, the pane keeps the connecting copy until the first message renders (visual test: open the pane on a worker with a large transcript) |
+| error | E2 worker pane | resolved | explicit | On stream/fetch failure the pane shows `swarm.pane.error` with a pointer to the report artifact as the fallback path |
+| populated | E2 worker pane | resolved | explicit | Read-only messages (tool calls + text, no reasoning deltas) rendered through `ReadonlyThreadProvider` with the parent toolkit's `ToolFallback` renderers by scope inheritance; no composer, no steer |
+| partial | E2 worker pane | resolved | backstop | A worker mid-tool-call shows that tool's chip in its running state inside the pane (visual test against a live `shell_exec`) |
+| overflow | E2 worker pane | resolved | explicit | The pane scrolls vertically inside a third `ResizablePanel` (desktop, mutually exclusive with Artifacts) or a full-height Drawer (mobile) |
+| zero-one-many | E2 worker pane | resolved | explicit | With exactly one worker the picker still renders with that worker selected, so the pane always names what it shows |
+| long-text | E2 worker pane | resolved | backstop | Long tool outputs inside the pane wrap/truncate exactly as in the main thread by scope inheritance (visual test with a >2 000-character tool result) |
+| empty | E3 worker picker | dismissed | — | The pane opens only from a worker row's "Watch worker", so the picker never renders with zero workers |
+| loading | E3 worker picker | dismissed | — | The picker lists the rows already known from the `swarm_spawn` call; there is no asynchronous load of its own |
+| error | E3 worker picker | dismissed | — | No fetch of its own; entries mirror chip-row status, whose error state E1 covers |
+| populated | E3 worker picker | resolved | explicit | One entry per worker (status dot + goal truncated), the watched worker highlighted; ←/→ or ↑/↓ switch workers, Enter selects; each entry ≥44px in px |
+| partial | E3 worker picker | dismissed | — | Entries mirror row status (running / terminal); there is no picker state distinct from populated |
+| overflow | E3 worker picker | resolved | explicit | ≤8 entries (`AURA_SWARM_MAX_GOALS`) wrap onto a second line rather than clip; no hidden entries |
+| zero-one-many | E3 worker picker | resolved | explicit | One worker → one selected entry, still rendered; N workers → N entries |
+| long-text | E3 worker picker | resolved | explicit | The goal truncates to one line; the entry's `title` attribute carries the full goal |
+| overflow | E4 report artifact | resolved | explicit | The full report opens in `ArtifactsPanel`/`PreviewModal`, which scroll; the existing `text` renderer (escaped `<pre>`, D-07) applies |
+| long-text | E4 report artifact | resolved | explicit | The artifact holds the WHOLE consolidated report (`text/markdown`), never truncated; the card and Telegram carry the bounded summary and point here |
+| unclassified | E5 Telegram message | resolved | explicit | Exactly one static message per terminal outcome: status glyph, goal on one line (≤80 runes), summary (≤300 runes, server-truncated), "Dettagli nel cockpit."; nothing is sent for running/stalled/awaiting states, and no message is ever edited in place |
+| empty | E6 durable record card | dismissed | — | A record turn exists only when a report exists; there is no empty card |
+| loading | E6 durable record card | dismissed | — | A persisted assistant turn re-rendered from history has no loading state of its own |
+| error | E6 durable record card | resolved | explicit | A failed/stalled/dead-letter outcome renders the same card with the danger/warning status and the error text — never the raw JSON bubble |
+| populated | E6 durable record card | resolved | explicit | The card shows status, goal (one line), duration, bounded summary and the artifact pointer, and re-renders identically from the stored turn after reload |
+| partial | E6 durable record card | dismissed | — | The record is written once, at completion (SC#1); there is no partial record |
+| overflow | E6 durable record card | resolved | explicit | The summary is bounded (≤300 runes); the rest lives in the artifact the card points to |
+| zero-one-many | E6 durable record card | resolved | explicit | One card per delegation report; N workers become N rows inside that one card, never N cards |
 
 ## Delegation Delivery Envelope Contract
 
@@ -308,6 +334,21 @@ Dettagli nel cockpit.
   a trailing `…`; truncation happens server-side before send, not client-displayed.
 
 ---
+
+### Checker recommendations (accepted 2026-08-29, non-blocking FLAGs)
+
+- **Placement (Visuals):** desktop `AppShell` order is `chat-navigation` | `chat-workspace` | one right-hand
+  slot that holds EITHER the Artifacts panel OR the worker pane (mutually exclusive, the pane reuses the
+  same dynamic `panelIds` slot and resize handle); "Watch worker" swaps the slot to the pane, "View report"
+  swaps it back to Artifacts. Mobile: the same `Drawer` overlay the Artifacts panel already uses. The
+  picker is a plain row of buttons under the pane header styled like the shipped Artifacts tab strip —
+  no new tablist treatment.
+- **Color split:** dominant = the existing surface/background tokens (~60%), secondary = card and panel
+  fills (~30%), accent (~10%) restricted to the four uses named in §Color (watch-worker control, active
+  picker underline, focus rings, report-artifact pointer). Status colors are semantic and never the only
+  signal.
+- **Type weights:** 600 semibold is inherited byte-for-byte from `ArtifactsPanel`'s shipped heading; this
+  contract introduces no new weight — new elements use 400/500 only.
 
 ## Registry Safety
 
