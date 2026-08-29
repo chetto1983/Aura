@@ -61,6 +61,29 @@ tells the calling agent which external CLI (Gemini, Aider, Copilot) to run; it s
 nothing and returns no transcript. Not a UX reference for this gap; at most a pointer for a future
 "external CLI as a swarm worker" idea, which is out of scope here.
 
+## Google ADK, read on request (2026-08-29) — `.planning/research/adk-subagent-visibility-2026-08-29.md`
+
+Docs + `adk-python`/`adk-go`/`adk-web` clones under `D:	mp`, every claim cited there. What is worth
+borrowing, and only that:
+- **One event stream, attributed:** every ADK `Event` carries `author` and `branch`
+  (`agent_1.agent_2`; 2.0 keys sub-branches on the function-call id, `name@run_id`), and a parent
+  re-yields its children's events into the SAME stream — the UI filters by branch, it does not open a
+  second channel. Aura's `agent.Event` already has `Author`, `Branch`, `ArtifactDelta`,
+  `SpanID/ParentSpanID`: the pane is a **branch filter over the parent run's AG-UI stream** with the
+  `.jsonl` route as replay, keyed on `swarm_spawn`'s tool_call_id + `w1..wN`.
+- **What becomes a bubble:** only `is_final_response()` text renders as chat; a `function_response`
+  never does. That is the direct answer to the raw-JSON bubble/Telegram: the report is a tool-result
+  display payload (the card), the parent's own text is the bubble.
+- **Artifacts are pull-on-delta:** `save_artifact` → version; the wire carries only
+  `artifact_delta {filename: version}` and the UI fetches the body — never body-through-chat. Same as
+  our `aura.artifact` frame + ArtifactsPanel fetch.
+- **Long-running tools** return `{id, status: "pending"}` and the declaration gets "do not call this
+  tool again if it has already returned a pending status" — vocabulary for `swarm_status`. ADK has
+  **no parent-side status query** at all (the parent LLM never runs concurrently with its children),
+  so G3 is beyond it, not copied from it.
+- Not borrowed: ADK's dev UI maps every non-user author to `'bot'` (no worker view), `AgentTool` forwards
+  no child events, cancel/resume are language-specific.
+
 ## What Aura already has (inventory — nothing here needs inventing)
 
 - Tool-call rendering with per-tool summaries: `web/src/chat/ExternalStoreChat_messages.tsx:367` `ToolFallback`, `web/src/chat/toolSummary.ts` (special-cases `shell_exec`, `send_file`).
