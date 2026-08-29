@@ -48,7 +48,7 @@ var wikiBoilerplateRe = regexp.MustCompile(`(?im)^\s*From Wikipedia, the free en
 // bypassed (the self-fetching readability entry point is forbidden, T-07-22).
 // pageURL anchors relative link resolution (D-19). title is art.Title() only (no
 // byline/excerpt/site/time, D-18). Readable text shorter than lowContentRunes
-// returns markdown with warning="low_content" and a nil error (D-22).
+// returns markdown with warning=WarningLowContent and a nil error (D-22).
 func ExtractMarkdown(body []byte, pageURL *url.URL) (title, markdown string, links []string, warning string, err error) {
 	art, perr := readability.FromReader(bytes.NewReader(body), pageURL)
 	if perr != nil {
@@ -57,7 +57,7 @@ func ExtractMarkdown(body []byte, pageURL *url.URL) (title, markdown string, lin
 	title = art.Title()
 
 	if art.Node == nil {
-		return title, "", nil, "low_content", nil
+		return title, "", nil, WarningLowContent, nil
 	}
 
 	md, cErr := convertNode(art.Node)
@@ -70,7 +70,7 @@ func ExtractMarkdown(body []byte, pageURL *url.URL) (title, markdown string, lin
 	// Re-evaluate low_content AFTER cleanup so a page that becomes thin once the
 	// citation/references noise is stripped is correctly flagged (D-22).
 	if utf8.RuneCountInString(strings.TrimSpace(md)) < lowContentRunes {
-		warning = "low_content"
+		warning = WarningLowContent
 	}
 	return title, md, links, warning, nil
 }

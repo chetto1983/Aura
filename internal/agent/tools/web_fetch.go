@@ -46,9 +46,14 @@ func (e *WebFetch) Spec() Spec {
   "required": ["url"]
 }`)
 	return Spec{
-		Name:    "web_fetch",
-		Summary: "Fetch a public web page and return it as readable markdown.",
-		Description: "Fetch a single public web page over http/https and get back its main content as clean, readable markdown (navigation, ads, and footer chrome are stripped). " +
+		Name: "web_fetch",
+		// The summary is the ONLY line the model sees before deciding whether to load this
+		// tool's schema, so it must name the JSON/API case explicitly. Measured 2026-08-29:
+		// with the previous "Fetch a public web page … as readable markdown", a request to
+		// read a JSON endpoint went to `shell_exec curl` instead — the tool was widened to
+		// handle it and the model still had no way to know.
+		Summary: "Fetch a public URL — a web page as markdown, or a JSON/CSV/text API response verbatim. Prefer over curl.",
+		Description: "Fetch a single public URL over http/https. An HTML page comes back as clean, readable markdown (navigation, ads, and footer chrome are stripped); a JSON, CSV, XML, YAML or plain-text response comes back VERBATIM in a labelled code fence with warning=raw_content, so use this for a REST/JSON API too rather than shelling out to curl — only this path applies the SSRF guard, the size cap and the fetch audit trail. " +
 			"Use it to read a page you found via web_search or a URL the user gave you. " +
 			"Only http and https URLs to public hosts are allowed — private, loopback, and cloud-metadata targets are blocked, and a redirect to a blocked target is rejected. " +
 			"A large page is truncated in the preview with a tool_call_id you can page through with read_tool_output. " +

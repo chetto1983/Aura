@@ -19,6 +19,16 @@ const (
 	CodeExtractionFailed   = "extraction_failed"
 )
 
+// Model-visible Page.Warning values — a soft downgrade, never an error channel.
+const (
+	// WarningLowContent marks a page whose readable text fell under the D-22 floor.
+	WarningLowContent = "low_content"
+	// WarningRawContent marks a non-HTML body served verbatim in a fenced block
+	// (fetcher_text.go): nothing was extracted or summarised, so the model is reading
+	// third-party bytes exactly as the origin sent them.
+	WarningRawContent = "raw_content"
+)
+
 // Stable, non-sensitive reason strings. Reasons name a CLASS of block, never a
 // concrete IP/host/CIDR (D-27): "private_or_metadata_target" not "169.254.169.254".
 const (

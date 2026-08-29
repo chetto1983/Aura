@@ -39,6 +39,15 @@ var allowedContentTypes = map[string]struct{}{
 	"application/xhtml+xml": {},
 }
 
+// gatedBody is a response that cleared the Content-Type and size gates, carried
+// together with the lane it was classified into so the caller renders it as what the
+// origin declared rather than re-sniffing the bytes.
+type gatedBody struct {
+	data  []byte
+	media string
+	kind  contentKind
+}
+
 // errRetryable is the internal sentinel a transient/408/429/5xx response wraps so
 // the one-retry loop can distinguish a retryable failure from a hard one (D-42).
 var errRetryable = errors.New("retryable fetch failure")
@@ -72,36 +81,51 @@ func (c *Client) Fetch(ctx context.Context, convID, rawURL string) (Page, error)
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(c.cfg.WebFetchTimeoutSec)*time.Second)
 	defer cancel()
 
-	body, finalURL, err := c.fetchBody(ctx, convID, u)
+	gated, finalURL, err := c.fetchBody(ctx, convID, u)
 	if err != nil {
 		return Page{}, err
 	}
 
-	title, md, links, warning, eErr := ExtractMarkdown(body, finalURL)
-	if eErr != nil {
-		return Page{}, eErr
+	page, err := renderPage(gated, finalURL)
+	if err != nil {
+		return Page{}, err
 	}
-	page := Page{Title: title, URL: finalURL.String(), ContentMD: md, Links: links, Warning: warning}
 	c.fetchToCache(rawURL, page)
 	return page, nil
+}
+
+// renderPage turns a gated body into a Page along the lane its Content-Type chose.
+// HTML goes through readability→markdown; readable non-HTML is fenced verbatim
+// (fetcher_text.go). A text body yields no Title and no Links: inventing either would
+// mean parsing bytes this lane exists precisely NOT to parse.
+func renderPage(gated gatedBody, finalURL *url.URL) (Page, error) {
+	if gated.kind == kindText {
+		md, warning := renderText(gated.data, gated.media)
+		return Page{URL: finalURL.String(), ContentMD: md, Warning: warning}, nil
+	}
+	title, md, links, warning, err := ExtractMarkdown(gated.data, finalURL)
+	if err != nil {
+		return Page{}, err
+	}
+	return Page{Title: title, URL: finalURL.String(), ContentMD: md, Links: links, Warning: warning}, nil
 }
 
 // fetchBody drives the manual redirect loop and gates the response, returning the
 // size-capped body and the final URL. It runs the one-retry policy around the
 // whole hop sequence: a retryable failure triggers exactly one re-attempt within
 // the deadline (D-42).
-func (c *Client) fetchBody(ctx context.Context, convID string, start *url.URL) ([]byte, *url.URL, error) {
+func (c *Client) fetchBody(ctx context.Context, convID string, start *url.URL) (gatedBody, *url.URL, error) {
 	for attempt := range 2 {
-		body, finalURL, err := c.doHops(ctx, convID, start)
+		gated, finalURL, err := c.doHops(ctx, convID, start)
 		if err == nil {
-			return body, finalURL, nil
+			return gated, finalURL, nil
 		}
 		if errors.Is(err, errRetryable) && attempt == 0 && ctx.Err() == nil {
 			continue // one retry within the deadline
 		}
-		return nil, nil, c.classifyFetchErr(err)
+		return gatedBody{}, nil, c.classifyFetchErr(err)
 	}
-	return nil, nil, &WebError{Code: CodeHTTPError, Message: "fetch failed"}
+	return gatedBody{}, nil, &WebError{Code: CodeHTTPError, Message: "fetch failed"}
 }
 
 // doHops issues GETs following each 3xx Location manually, re-entering the SSRF
@@ -109,38 +133,38 @@ func (c *Client) fetchBody(ctx context.Context, convID string, start *url.URL) (
 // first hop is dialed by the hardened transport (whose dialContext pins it); a
 // redirect to a blocked target is rejected AT THE HOP — the blocked target is
 // never dialed. On a 2xx it gates Content-Type and size, then returns the body.
-func (c *Client) doHops(ctx context.Context, convID string, current *url.URL) ([]byte, *url.URL, error) {
+func (c *Client) doHops(ctx context.Context, convID string, current *url.URL) (gatedBody, *url.URL, error) {
 	reqCtx := withConvID(ctx, convID)
 	for range maxRedirectHops {
 		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, current.String(), nil)
 		if err != nil {
-			return nil, nil, err
+			return gatedBody{}, nil, err
 		}
 		req.Header.Set("User-Agent", c.userAgent())
 
 		resp, err := c.transport.client.Do(req)
 		if err != nil {
-			return nil, nil, classifyTransportErr(err)
+			return gatedBody{}, nil, classifyTransportErr(err)
 		}
 
 		if isRedirect(resp.StatusCode) {
 			next, rErr := c.resolveRedirect(ctx, convID, current, resp)
 			_ = resp.Body.Close()
 			if rErr != nil {
-				return nil, nil, rErr
+				return gatedBody{}, nil, rErr
 			}
 			current = next
 			continue
 		}
 
-		body, gErr := gateAndRead(resp, c.cfg.WebFetchMaxBodyBytes)
+		gated, gErr := gateAndRead(resp, c.cfg.WebFetchMaxBodyBytes)
 		_ = resp.Body.Close()
 		if gErr != nil {
-			return nil, nil, gErr
+			return gatedBody{}, nil, gErr
 		}
-		return body, current, nil
+		return gated, current, nil
 	}
-	return nil, nil, &WebError{Code: CodeHTTPError, Reason: "too_many_redirects", Message: "redirect limit exceeded"}
+	return gatedBody{}, nil, &WebError{Code: CodeHTTPError, Reason: "too_many_redirects", Message: "redirect limit exceeded"}
 }
 
 // resolveRedirect reads the Location header, resolves it against the current URL,
@@ -170,33 +194,26 @@ func (c *Client) resolveRedirect(ctx context.Context, convID string, current *ur
 // reads through an io.LimitReader(cap+1) so a body that fills the extra byte is
 // rejected as response_too_large (D-16, Pitfall 6). A retryable status wraps
 // errRetryable; a non-retryable non-2xx is a hard http_error.
-func gateAndRead(resp *http.Response, capBytes int) ([]byte, error) {
+func gateAndRead(resp *http.Response, capBytes int) (gatedBody, error) {
 	if isRetryableStatus(resp.StatusCode) {
-		return nil, errRetryable
+		return gatedBody{}, errRetryable
 	}
 	if resp.StatusCode/100 != 2 {
-		return nil, &WebError{Code: CodeHTTPError, Message: "non-success status", StatusCode: resp.StatusCode}
+		return gatedBody{}, &WebError{Code: CodeHTTPError, Message: "non-success status", StatusCode: resp.StatusCode}
 	}
-	if !contentTypeAllowed(resp.Header.Get("Content-Type")) {
-		return nil, &WebError{Code: CodeUnsupportedContent, Message: "only HTML content is supported"}
+	media, kind := classifyContentType(resp.Header.Get("Content-Type"))
+	if kind == kindUnsupported {
+		return gatedBody{}, &WebError{Code: CodeUnsupportedContent, Message: "only HTML and readable text content is supported"}
 	}
 	limited := io.LimitReader(resp.Body, int64(capBytes)+1)
 	body, err := io.ReadAll(limited)
 	if err != nil {
-		return nil, &WebError{Code: CodeHTTPError, Message: "read body failed"}
+		return gatedBody{}, &WebError{Code: CodeHTTPError, Message: "read body failed"}
 	}
 	if len(body) > capBytes {
-		return nil, &WebError{Code: CodeResponseTooLarge, Message: "response exceeds size cap"}
+		return gatedBody{}, &WebError{Code: CodeResponseTooLarge, Message: "response exceeds size cap"}
 	}
-	return body, nil
-}
-
-// contentTypeAllowed matches the header's media type (charset and other params
-// stripped) against the allowlist.
-func contentTypeAllowed(ct string) bool {
-	media := strings.ToLower(strings.TrimSpace(strings.SplitN(ct, ";", 2)[0]))
-	_, ok := allowedContentTypes[media]
-	return ok
+	return gatedBody{data: body, media: media, kind: kind}, nil
 }
 
 // isRedirect reports whether status is a 3xx that carries a Location to follow.

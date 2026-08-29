@@ -9619,3 +9619,64 @@ flusso completo, che funziona.
 > independent timers that coincide). Consolidation candidates are listed in
 > `51-UX-ENVELOPE-RESEARCH.md` §Consolidation follow-ups for a post-51-08 audit; none is
 > scheduled by this amendment.
+
+## §web_fetch admits readable non-HTML, because refusing it moved the traffic to curl (Amendment #173, 2026-08-29)
+
+> **Amendment #173 (2026-08-29 — measured on the live stack during the artifact-viewer drive,
+> recorded here before the fix landed: measure, amend, implement.)**
+>
+> **What was measured.** Driving the real agent with *"crea un artifact con il meteo di
+> caraglio"* (conversation `01a04d97-bb08-759e-9e5b-3ff277d62730`, 12:56 CEST), turn 4 called
+> `web_fetch` on `api.open-meteo.com/v1/forecast?…` and turn 5 answered
+> `{"error":"unsupported_content_type","message":"only HTML content is supported"}`. Turn 6
+> reached the same URL with `shell_exec` + `curl` and succeeded. The refusal did not keep the
+> request from happening; it relocated it.
+>
+> **Why that is the security regression, not the fix.** `internal/web` is where the request
+> controls live: `ssrf.go` classifies every resolved IP (loopback, private, link-local) and
+> pins it before the dial, `doHops` re-validates each redirect hop, `gateAndRead` caps the body
+> with `io.LimitReader(cap+1)`, and the whole path is auditable per conversation. `curl` inside
+> the box has none of that. Every JSON API the agent needs was therefore being fetched through
+> the ONE path with no SSRF guard, no size cap and no audit trail — the exact inversion of what
+> the allowlist was meant to achieve.
+>
+> **What the allowlist actually was.** Not a threat control. `text/html` +
+> `application/xhtml+xml` (`fetcher.go:37`) is a *consequence of the output shape*: `Fetch`
+> ended in `ExtractMarkdown`, and `Page{Title, ContentMD, Links}` is a rendered-page struct.
+> Types readability cannot process were excluded at the door instead of being given a lane.
+> The SSRF and DoS gates are content-type agnostic and run BEFORE this check; widening it moves
+> neither.
+>
+> **What the references do (read 2026-08-29).** Anthropic's own `web_fetch` returns
+> `unsupported_content_type` only outside *text, HTML and PDF*, and hands non-HTML back as a
+> document block with `media_type: text/plain` — raw, not converted. The official MCP fetch
+> server has no allowlist at all: HTML becomes markdown, anything else is returned verbatim
+> under `"Content type … cannot be simplified to markdown, but here is the raw content"`. Both
+> converge on the same shape — HTML to markdown, everything readable verbatim and labelled.
+>
+> **Decision.** `web_fetch` gains a second lane (`internal/web/fetcher_text.go`). `application/
+> json`, `application/xml`, `application/x-ndjson`, `application/yaml`, `text/plain`,
+> `text/csv`, `text/markdown`, `text/tab-separated-values`, `text/xml` and `text/yaml` are
+> admitted, plus the RFC 6839 structured suffixes `+json` / `+xml` / `+yaml` **restricted to
+> `application/` and `text/` top-level types** — that restriction is load-bearing and a test
+> caught its absence: a bare `HasSuffix("+xml")` admits `image/svg+xml`, which
+> `fetcher_image.go` excludes BY NAME because an SVG carries inline `<script>`. A text body is
+> returned verbatim in a fenced block labelled with its media type, `Page.Warning =
+> "raw_content"`, `Title` empty and `Links` nil (inventing either would mean parsing what this
+> lane exists not to parse). The fence outgrows the longest backtick run in the body, so a
+> payload cannot close its own fence and let the remainder read as instructions.
+>
+> **No truncation and no new env**, deliberately: `tools.NewResult` already caps the tool
+> result, spills the remainder to a sidecar and appends the `read_tool_output(tool_call_id,
+> offset, limit)` footer — the same capability Anthropic spells `max_content_tokens` and the
+> MCP server spells `max_length` + `start_index`. A second truncation here would cut the
+> content before the mechanism that hands back the rest ever saw it.
+>
+> **What this does NOT establish.** It is not a claim that indirect prompt injection is
+> handled: untrusted third-party text already reached the model through the HTML lane, and HTML
+> remains the worse carrier (hidden nodes, off-screen text, an accessibility tree the model
+> reads and a human never sees). The fence delimits, it does not sanitise. Binary types still
+> refuse (`application/pdf`, `application/octet-stream`, `image/*`), an absent Content-Type is
+> still unsupported rather than sniffed, and the model-visible error string changes from
+> `"only HTML content is supported"` to `"only HTML and readable text content is supported"` —
+> the `unsupported_content_type` CODE is unchanged and remains the D-38 contract.
