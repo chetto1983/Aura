@@ -140,7 +140,7 @@
 - [ ] **SWARM-01**: A worker brief separates *what to accomplish* from *the context it needs* — file paths, error messages, constraints — instead of forcing both into one string
 - [ ] **SWARM-02**: The model sees the operator's actual concurrency and depth limits in the tool schema, rather than discovering them by failing
 - [x] **SWARM-03**: A top-level delegation returns the turn immediately; its results re-enter the conversation when the work finishes, and the model cannot opt out of this
-- [ ] **SWARM-04**: A delegation issued *by a worker* runs synchronously — an orchestrating worker needs its own workers' results inside its own turn
+- [x] **SWARM-04**: A delegation issued *by a worker* runs synchronously — an orchestrating worker needs its own workers' results inside its own turn
 - [ ] **SWARM-05**: A worker can itself orchestrate, bounded by the configured depth — opening the nesting the PRD designed and the current registry-minus-`swarm_spawn` implementation forecloses
 - [ ] **SWARM-06**: A worker that needs the operator reaches them, attributed to the worker that asked — the relay survives — TOOL-03's approval rework was deleted 2026-08-25, so it rides the shipped `ask_user` shape rather than a reworked one
 - [x] **SWARM-07**: Concurrent workers writing durable facts (AUTO-03) and reasoning traces (MEM-03) into one identity's graph neither corrupt nor duplicate, and each write names the worker that made it
@@ -264,7 +264,7 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 | SWARM-01 | Phase 51 | Pending |
 | SWARM-02 | Phase 51 | Pending |
 | SWARM-03 | Phase 51 | Complete |
-| SWARM-04 | Phase 51 | Pending |
+| SWARM-04 | Phase 51 | Complete |
 | SWARM-05 | Phase 51 | Pending |
 | SWARM-06 | Phase 51 | Pending |
 | SWARM-07 | Phase 51 | Complete |

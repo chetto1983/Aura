@@ -4,16 +4,16 @@ milestone: v2.1.0
 current_phase: 51
 current_phase_name: Durable delegation
 status: executing
-stopped_at: Completed 51-07-PLAN.md (SWARM-10 transcript read surface + HTTP route wired; SWARM-11 verified from git)
-last_updated: "2026-08-28T21:44:22.333Z"
-last_activity: 2026-08-28
+stopped_at: Completed 51-09-PLAN.md (D-03 inactivity termination model live-proven; checkpoint's own defects A/E/D fixed; findings B/C recorded for 51-08)
+last_updated: "2026-08-29T08:03:51.000Z"
+last_activity: 2026-08-29
 last_activity_desc: Phase 51 execution resumed (wave continue)
-state_head: e0db96c73ed3a8221eef61ecb6587f0a78cb2240
+state_head: f993228f7f4a8e6137639d8dbd1ca7b1c0edfd53
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 45
-  completed_plans: 43
+  completed_plans: 44
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -62,7 +62,7 @@ retaining byte caps, and `TestBridgedTool_Execute_MarksResultTrusted` pins MCP r
 The remaining unchecked MCP-02 item in REQUIREMENTS is its separate live unlisted-server proof;
 it is a roadmap acceptance obligation, not an unrecorded Calendar fork gap.
 
-Last activity: 2026-08-28 — Phase 51 execution resumed (wave continue)
+Last activity: 2026-08-29 — Phase 51 execution resumed (wave continue)
 
 Progress: [██████████] 100% (Phase 46 dispositions)
 
@@ -105,6 +105,7 @@ Progress: [██████████] 100% (Phase 46 dispositions)
 | Phase 51-durable-delegation P06a | 90min | 1 tasks | 16 files |
 | Phase 51 P06b | ~4h (2 sessions) | 3 tasks | 22 files |
 | Phase 51 P07 | single session (continuation) | 2 tasks | 7 files |
+| Phase 51 P09 | ~3h (continuation, after prior-session Task 1/2) | 3 tasks | 30 files |
 
 ## Accumulated Context
 
@@ -209,6 +210,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 51]: [Phase 51] 51-06b: recovered from a session that died mid-plan with ~2000 uncommitted lines and notes describing Task 3 files that never existed; every claim was re-verified in WSL before commit and Task 3 was rebuilt RED->GREEN. One TestNudgeSkipsDrained (51-10) flake seen in 1/3 full swarm db_integration runs, green in isolation -- recorded, not hidden
 - [Phase 51]: [Phase 51] 51-07: shared transcriptPath hardening between dumpTranscript (writer) and ReadTranscript (reader) so both enforce one path-traversal rule; report_test.go stayed byte-identical
 - [Phase 51]: [Phase 51] 51-07: SetSwarmTranscripts wiring lands in cmd/aura/serve_agui.go's existing wireAGUIServer (not serve.go, which the plan's files_modified listed) -- the already-correct composition point for every other agui seam
+- [Phase 51]: [Phase 51] 51-09: D-03 replaces the ~240s-effective wall clock with an inactivity deadline (child_staleness.go) that resets on every worker event; the boot gate refuses idle >= lease so a reclaim can never race a live goroutine
+- [Phase 51]: [Phase 51] 51-09: Task 3's live checkpoint found and this plan fixed three defects the design measurement could not see -- SC#1's delivery failing under RLS because deliverSuccess/openPauseAndPark called Deliver on an identity-less ctx (defect A), a reaped shell_exec leaving its process running in the sandbox because Exec never signalled the box-side process group (defect E, fixed by reusing ExecStream's own PID-file kill mechanism), and compose.yaml never mapping .env's loop budget (defect D) -- recorded as PRD Amendment #171
+- [Phase 51]: [Phase 51] 51-09: internal/runner's 51-06b expiry-trace write was audited for the same RLS gap defect A found and cleared -- it threads identity explicitly through db.WithIdentityTx rather than reading it off ctx
+- [Phase 51]: [Phase 51] 51-09: two findings recorded but not fixed, both named decisions for plan 51-08 -- Finding B (the shipped retry policy re-runs a reaped worker AND a record-only-failure worker identically) and Finding C (AURA_SWARM_CHILD_IDLE_SEC equals AURA_LLM_TOTAL_TIMEOUT_SEC by default, so an upstream stall and a genuine reap both read "stalled")
 
 ### Pending Todos
 
@@ -273,8 +278,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-28T21:44:22.178Z
-Stopped at: Completed 51-07-PLAN.md (SWARM-10 transcript read surface + HTTP route wired; SWARM-11 verified from git)
+Last session: 2026-08-29T08:03:51.000Z
+Stopped at: Completed 51-09-PLAN.md (D-03 inactivity termination model live-proven; checkpoint's own defects A/E/D fixed; findings B/C recorded for 51-08)
 exited at its CONTEXT.md gate — Phase 45 has no CONTEXT.md, and discuss-phase must run as a
 top-level command (nested invocation breaks AskUserQuestion, GSD #1009). No phase directory
 was created and no planning agents were spawned.
