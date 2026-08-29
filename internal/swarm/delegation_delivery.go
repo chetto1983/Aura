@@ -199,11 +199,13 @@ func attributedWorkerReport(goal, text string) string {
 // (51-11, SWARM-12 legs 1+2): it archives the full
 // report markdown FIRST (best-effort, delegation_artifact.go), THEN records
 // the bounded card (never the raw report JSON Amendment #172 measured
-// landing in aura.conversation_turns), THEN pushes the unchanged full report
-// JSON on the steer rail -- the SAME record-before-push ordering Deliver's
+// landing in aura.conversation_turns), THEN pushes a bounded ChildReport JSON
+// projection on the steer rail. The full uncapped report remains in the
+// archive; bounding the courtesy copy prevents a completed worker from being
+// retried solely because JSON encoding exceeds steer's message cap (Amendment
+// #178). The ordering remains the SAME record-before-push ordering Deliver's
 // own doc comment states, with the archive step ahead of both because the
-// card's own artifact-pointer line needs the archived filename to exist
-// first.
+// card's own artifact-pointer line needs the archived filename to exist first.
 //
 // recorded/err carry the SAME contract as Deliver: recorded=false (never a
 // Go error) on a conversation-append failure, so the caller
@@ -235,7 +237,7 @@ func (d *DelegationDelivery) DeliverReport(ctx context.Context, payload Delegati
 	}
 
 	if d.Steer != nil {
-		text, merr := marshalReports([]ChildReport{report})
+		text, merr := marshalReports([]ChildReport{boundedDeliveryReport(report)})
 		if merr != nil {
 			return recorded, fmt.Errorf("delegation report marshal: %w", merr)
 		}

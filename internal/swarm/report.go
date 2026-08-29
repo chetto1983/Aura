@@ -103,3 +103,27 @@ func marshalReports(reports []ChildReport) (string, error) {
 	}
 	return string(b), nil
 }
+
+// boundedDeliveryReport keeps the steer rail a notification path rather than
+// a second report archive. The complete report is archived before this copy is
+// built; reuse the human-facing rune caps so JSON escaping cannot turn a long
+// model response into a queue-size failure.
+func boundedDeliveryReport(report ChildReport) ChildReport {
+	report.Goal = capRunes(report.Goal, maxCardGoalRunes)
+	report.Summary = capRunes(report.Summary, maxCardSummaryRunes)
+	report.Error = capRunes(report.Error, maxCardSummaryRunes)
+	report.Question = capRunes(report.Question, maxCardSummaryRunes)
+
+	const maxAskUserOptions = 4
+	if len(report.Options) > maxAskUserOptions {
+		report.Options = report.Options[:maxAskUserOptions]
+	}
+	if len(report.Options) > 0 {
+		options := make([]string, len(report.Options))
+		for i, option := range report.Options {
+			options[i] = capRunes(option, maxCardGoalRunes)
+		}
+		report.Options = options
+	}
+	return report
+}
