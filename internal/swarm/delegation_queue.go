@@ -13,13 +13,9 @@ package swarm
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"sync"
 	"time"
 
@@ -54,6 +50,21 @@ type DelegationPayload struct {
 	ConversationID string `json:"conversation_id"`
 	ParentRunID    string `json:"parent_run_id,omitempty"`
 	Depth          int    `json:"depth"`
+	// ChildID/GoalIndex/FanoutKey (51-11) ride the payload JSONB -- no migration
+	// for any of them. ChildID is this goal's deterministic, stable worker id
+	// (delegationChildID), minted once at EnqueueDelegation time and carried
+	// unchanged through every retry of the same job: two concurrently claimed
+	// jobs of one conversation therefore write to two DIFFERENT transcript
+	// files, instead of every background worker sharing runChild's own "w1"
+	// fallback. GoalIndex is this goal's position in the ORIGINAL swarm_spawn
+	// call -- runWithHeartbeat always calls runChild with a hardcoded index 0,
+	// so deliverSuccess/deliverDeadLetter restore the real index from here.
+	// FanoutKey is the ONE identity every goal of the SAME swarm_spawn call
+	// shares (delegationFanoutKey) -- the grouping key the fan-out nudge sweep
+	// (delegation_fanout.go) claims and delivers by.
+	ChildID   string `json:"child_id,omitempty"`
+	GoalIndex int    `json:"goal_index,omitempty"`
+	FanoutKey string `json:"fanout_key,omitempty"`
 	// Resume is the 51-06b continuation snapshot (D-01: no new table, the queue row's
 	// EXISTING payload carries it): nil on every ordinary delegation that has never
 	// paused; set by Task 1 the moment a worker's report comes back
@@ -92,95 +103,9 @@ type DelegationJobStore interface {
 	UnparkIngestionJob(ctx context.Context, req documents.UnparkIngestionJobRequest) (int64, error)
 }
 
-// DelegationEnqueuer writes one durable job_type=swarm_delegation row per
-// goal. A zero-value Store is a wiring bug (real Go error), never a domain
-// rejection.
-type DelegationEnqueuer struct {
-	Store DelegationJobStore
-}
-
-// EnqueueDelegation writes one durable row per goal and returns a
-// model-readable summary immediately -- no worker is constructed here (the
-// claim loop does that out of band). An empty goal slice is a model-readable
-// rejection, not a Go error (D-15's established domain-rejection idiom), so
-// zero rows are enqueued and the model can self-correct without a stack
-// trace.
-func EnqueueDelegation(ctx context.Context, enq *DelegationEnqueuer, identityID string, goals []string, brief DelegationPayload) (string, error) {
-	if len(goals) == 0 {
-		return "error: no goals provided -- background delegation needs at least one goal", nil
-	}
-	if enq == nil || enq.Store == nil {
-		return "", fmt.Errorf("swarm: delegation enqueuer is not configured")
-	}
-	queued := 0
-	for i, goal := range goals {
-		key := delegationIdempotencyKey(identityID, brief.ConversationID, brief.ParentRunID, i, goal)
-		payload := brief
-		payload.Goal = goal
-		m, err := delegationPayloadMap(payload)
-		if err != nil {
-			return "", fmt.Errorf("swarm: delegation payload for goal %d: %w", i, err)
-		}
-		if _, err := enq.Store.Create(ctx, documents.CreateIngestionJobRequest{
-			IdentityID:     identityID,
-			JobType:        JobTypeSwarmDelegation,
-			Status:         "queued",
-			IdempotencyKey: key,
-			MaxAttempts:    defaultDelegationMaxAttempts,
-			Payload:        m,
-		}); err != nil {
-			return "", fmt.Errorf("swarm: enqueue delegation goal %d: %w", i, err)
-		}
-		queued++
-	}
-	return fmt.Sprintf(
-		"queued: %d worker(s) dispatched in the background; you can keep talking, results will arrive as they complete",
-		queued), nil
-}
-
-// delegationIdempotencyKey is deterministic over its inputs: the same
-// (identity, conversation, parent run, goal index, goal text) always produces
-// the same key, and a different goal index always produces a different one
-// (the ON CONFLICT (identity_id, job_type, idempotency_key) unique key is what
-// makes a re-run of the same enqueue add no second row).
-func delegationIdempotencyKey(identityID, convID, parentRunID string, goalIndex int, goal string) string {
-	h := sha256.New()
-	for _, part := range []string{identityID, convID, parentRunID, strconv.Itoa(goalIndex), goal} {
-		h.Write([]byte(part))
-		h.Write([]byte{0})
-	}
-	return "swarm_delegation:" + hex.EncodeToString(h.Sum(nil))
-}
-
-func delegationPayloadMap(p DelegationPayload) (map[string]any, error) {
-	b, err := json.Marshal(p)
-	if err != nil {
-		return nil, err
-	}
-	var m map[string]any
-	if err := json.Unmarshal(b, &m); err != nil {
-		return nil, err
-	}
-	return m, nil
-}
-
-func delegationPayloadFromJob(job documents.IngestionJob) (DelegationPayload, error) {
-	b, err := json.Marshal(job.Payload)
-	if err != nil {
-		return DelegationPayload{}, fmt.Errorf("delegation payload encode: %w", err)
-	}
-	var p DelegationPayload
-	if err := json.Unmarshal(b, &p); err != nil {
-		return DelegationPayload{}, fmt.Errorf("delegation payload decode: %w", err)
-	}
-	if p.Goal == "" {
-		return DelegationPayload{}, errors.New("delegation payload missing goal")
-	}
-	if p.ConversationID == "" {
-		return DelegationPayload{}, errors.New("delegation payload missing conversation_id")
-	}
-	return p, nil
-}
+// DelegationEnqueuer, EnqueueDelegation, delegationIdempotencyKey,
+// delegationChildID, delegationFanoutKey and the payload codec live in
+// delegation_enqueue.go (split out, 51-11, CLAUDE.md's 600-LOC ceiling).
 
 // DelegationClaimLoop is the daemon-resident claim loop for
 // job_type=swarm_delegation rows (SWARM-09). Worker is the static
@@ -425,13 +350,15 @@ func (l *DelegationClaimLoop) maintainLease(ctx context.Context, cancel context.
 // conversation nor (once nudged) a channel has not been delivered, so it is
 // retried by the shipped attempt_count/next_attempt_at backoff instead.
 func (l *DelegationClaimLoop) deliverSuccess(ctx context.Context, job documents.IngestionJob, payload DelegationPayload, report ChildReport) error {
-	// Goal/Attempts (51-11) travel from the payload/job row, not from runChild's
-	// own report -- a worker never sees its own dispatch metadata, only its goal
-	// text as a prompt. GoalIndex/ChildID are set on the report by runChild
-	// already (delegation_queue.go's caller chain); Task 2 of this plan makes
-	// that value the payload's own deterministic id instead of the flat "w1"
-	// every background worker shares today.
+	// Goal/Attempts/GoalIndex (51-11) travel from the payload/job row, not from
+	// runChild's own report -- a worker never sees its own dispatch metadata,
+	// only its goal text as a prompt, and runWithHeartbeat always calls
+	// runChild with a hardcoded index 0 (the index only feeds the SYNCHRONOUS
+	// wave's own per-goal report slot). ChildID needs no override here: once
+	// runWithHeartbeat sets rc.ChildID = payload.ChildID, runChild's own
+	// report already carries the correct, stable id.
 	report.Goal = payload.Goal
+	report.GoalIndex = payload.GoalIndex
 	report.Attempts = job.AttemptCount
 	elapsed := time.Now().UTC().Sub(job.CreatedAt).Truncate(time.Second)
 	// ctx already carries the job's identity (bound once in processJob);
@@ -496,22 +423,28 @@ func (l *DelegationClaimLoop) recordFailure(ctx context.Context, job documents.I
 // recordFailure) logs a warning and skips the record -- the job is ALREADY
 // dead_letter regardless, and this must never re-open that transition.
 //
-// ChildID is job.ID: recordFailure can fire before any worker ever started
-// (a payload decode failure, an identity mismatch), so there is no
-// worker-produced child id to attribute this synthetic report to -- the job
-// row's own id is the one identity that is always available.
+// ChildID prefers payload.ChildID (51-11's stable, deterministic id, minted
+// at EnqueueDelegation time) and falls back to job.ID only when it is empty
+// -- a row enqueued before this field existed. recordFailure can fire before
+// any worker ever started (a payload decode failure, an identity mismatch),
+// so there is no worker-produced child id to prefer instead.
 func (l *DelegationClaimLoop) deliverDeadLetter(ctx context.Context, job documents.IngestionJob, message string) {
 	payload, err := delegationPayloadFromJob(job)
 	if err != nil {
 		slog.Warn("swarm.delegation.dead_letter_record_skipped", "job_id", job.ID, "err", err)
 		return
 	}
+	childID := payload.ChildID
+	if childID == "" {
+		childID = job.ID
+	}
 	report := ChildReport{
-		ChildID:  job.ID,
-		Status:   StatusDeadLetter,
-		Error:    message,
-		Goal:     payload.Goal,
-		Attempts: job.AttemptCount,
+		ChildID:   childID,
+		GoalIndex: payload.GoalIndex,
+		Status:    StatusDeadLetter,
+		Error:     message,
+		Goal:      payload.Goal,
+		Attempts:  job.AttemptCount,
 	}
 	elapsed := time.Now().UTC().Sub(job.CreatedAt).Truncate(time.Second)
 	if _, err := l.Delivery.DeliverReport(ctx, payload, report, elapsed); err != nil {

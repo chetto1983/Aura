@@ -1,6 +1,8 @@
 package swarm
 
 import (
+	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -155,5 +157,125 @@ func TestMaxDepthFallsBackOnUnsetAndUnparseable(t *testing.T) {
 	t.Setenv("AURA_SWARM_MAX_DEPTH", "5")
 	if got := maxDepth(); got != 5 {
 		t.Errorf("maxDepth() with an explicit value = %d, want 5", got)
+	}
+}
+
+// TestDelegationChildID (51-11) pins determinism, per-index distinctness, and
+// validatePathSegment acceptance -- including a hostile-looking goal string
+// fed through the idempotency key it derives from, which can never leak into
+// the id's own fixed alphabet.
+func TestDelegationChildID(t *testing.T) {
+	key := delegationIdempotencyKey("identity-1", "conv-1", "run-1", 0, "goal text")
+
+	a := delegationChildID(key, 0)
+	b := delegationChildID(key, 0)
+	if a != b {
+		t.Fatalf("delegationChildID is not deterministic over the same (key, index): %q != %q", a, b)
+	}
+
+	c := delegationChildID(key, 1)
+	if a == c {
+		t.Fatalf("delegationChildID did not vary with goal index (same key): both = %q", a)
+	}
+
+	hostileGoal := "../../etc/passwd\x00\n<script>alert(1)</script> " + strings.Repeat("x", 500)
+	hostileKey := delegationIdempotencyKey("identity-1", "conv-1", "run-1", 2, hostileGoal)
+	for i := range 3 {
+		id := delegationChildID(hostileKey, i)
+		if err := validatePathSegment("child id", id); err != nil {
+			t.Fatalf("delegationChildID(%d) over a hostile goal = %q, rejected by validatePathSegment: %v", i, id, err)
+		}
+	}
+}
+
+// TestDelegationFanoutKey (51-11) pins the ONE key every goal of a single
+// swarm_spawn call shares, and that the key changes with anything that makes
+// it a genuinely different fan-out.
+func TestDelegationFanoutKey(t *testing.T) {
+	goals := []string{"goal a", "goal b"}
+
+	a := delegationFanoutKey("identity-1", "conv-1", "run-1", goals)
+	b := delegationFanoutKey("identity-1", "conv-1", "run-1", goals)
+	if a != b {
+		t.Fatalf("delegationFanoutKey is not deterministic over identical inputs: %q != %q", a, b)
+	}
+
+	diffGoals := delegationFanoutKey("identity-1", "conv-1", "run-1", []string{"goal a", "goal c"})
+	if a == diffGoals {
+		t.Fatal("delegationFanoutKey did not vary when the goal list changed")
+	}
+
+	diffConv := delegationFanoutKey("identity-1", "conv-2", "run-1", goals)
+	if a == diffConv {
+		t.Fatal("delegationFanoutKey did not vary when the conversation changed -- two swarm_spawn calls in different conversations must be different fan-outs")
+	}
+}
+
+// TestEnqueueDelegationQueuedResultShape (51-11) decodes EnqueueDelegation's
+// return value into the typed struct plan 51-12a's own decoder expects,
+// asserting the exact key set and that Workers round-trips into
+// []ChildReport (the deliberate json-tag mirror).
+func TestEnqueueDelegationQueuedResultShape(t *testing.T) {
+	store := &fakeDelegationStore{}
+	enq := &DelegationEnqueuer{Store: store}
+	goals := []string{"first goal", "second goal"}
+	brief := DelegationPayload{ConversationID: "conv-1", ParentRunID: "run-1", Depth: 1}
+
+	msg, err := EnqueueDelegation(context.Background(), enq, "identity-1", goals, brief)
+	if err != nil {
+		t.Fatalf("EnqueueDelegation: %v", err)
+	}
+
+	var decoded struct {
+		Queued  int    `json:"queued"`
+		Note    string `json:"note"`
+		Workers []struct {
+			GoalIndex int    `json:"goal_index"`
+			ChildID   string `json:"child_id"`
+			Status    string `json:"status"`
+			Goal      string `json:"goal"`
+		} `json:"workers"`
+	}
+	if err := json.Unmarshal([]byte(msg), &decoded); err != nil {
+		t.Fatalf("EnqueueDelegation result did not decode as the queued-result shape: %v\nmsg=%s", err, msg)
+	}
+	if decoded.Queued != len(goals) {
+		t.Fatalf("queued = %d, want %d", decoded.Queued, len(goals))
+	}
+	if decoded.Note == "" {
+		t.Fatal("note must not be empty -- it is the model's only signal not to wait/re-dispatch")
+	}
+	if len(decoded.Workers) != len(goals) {
+		t.Fatalf("workers = %d entries, want %d (one per goal)", len(decoded.Workers), len(goals))
+	}
+	seen := map[string]bool{}
+	for i, w := range decoded.Workers {
+		if w.GoalIndex != i {
+			t.Fatalf("workers[%d].goal_index = %d, want %d", i, w.GoalIndex, i)
+		}
+		if w.ChildID == "" || seen[w.ChildID] {
+			t.Fatalf("workers[%d].child_id = %q, want a non-empty, unique id", i, w.ChildID)
+		}
+		seen[w.ChildID] = true
+		if w.Status != StatusRunning {
+			t.Fatalf("workers[%d].status = %q, want %q", i, w.Status, StatusRunning)
+		}
+		if w.Goal != goals[i] {
+			t.Fatalf("workers[%d].goal = %q, want %q", i, w.Goal, goals[i])
+		}
+	}
+
+	// The deliberate json-tag mirror with ChildReport: the SAME bytes decode
+	// straight into []ChildReport (round-trip through the "workers" array).
+	workersJSON, err := json.Marshal(decoded.Workers)
+	if err != nil {
+		t.Fatalf("marshal decoded workers: %v", err)
+	}
+	var reports []ChildReport
+	if err := json.Unmarshal(workersJSON, &reports); err != nil {
+		t.Fatalf("workers array did not round-trip into []ChildReport: %v", err)
+	}
+	if len(reports) != len(goals) || reports[0].Status != StatusRunning {
+		t.Fatalf("round-tripped reports = %+v, want %d entries carrying StatusRunning", reports, len(goals))
 	}
 }

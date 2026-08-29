@@ -530,3 +530,6 @@ func TestSwarmTranscript(t *testing.T) {
 		t.Errorf("worker SessionID %q must be flat (no path separator)", sid)
 	}
 }
+
+// runChild's 51-11 ChildID-fallback and terminal-marker coverage lives in
+// swarm_childid_test.go (split out, CLAUDE.md's 600-LOC ceiling).

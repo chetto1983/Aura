@@ -72,6 +72,17 @@ type RunConfig struct {
 	// message answering the pending ask_user call. Empty for every ordinary (never-
 	// paused) swarm_spawn call -- zero regression.
 	ResumeTurns []llm.Message
+
+	// ChildID (51-11) is the background delegation path's stable, deterministic
+	// per-worker id (delegationChildID, delegation_queue.go), set by
+	// runWithHeartbeat from payload.ChildID. runChild prefers it over its own
+	// "w<idx+1>" fallback when non-empty; empty is the zero value, so every
+	// SYNCHRONOUS swarm_spawn caller (runWave, never sets this field) keeps
+	// today's flat "w1".."wN" derivation byte-for-byte. Without this, two
+	// concurrently claimed background jobs of one conversation would BOTH
+	// derive "w1" (runWithHeartbeat always calls runChild with a hardcoded
+	// index 0) and interleave into the SAME transcript file.
+	ChildID string
 }
 
 // Run fans goals out as LlmAgent workers in budget-bounded leak-safe waves, isolates
@@ -233,7 +244,13 @@ func panicChildReport(idx int, recovered any) ChildReport {
 // (delegation_queue.go's runWithHeartbeat) is the one caller that needs it, to persist
 // DelegationResumeState when the worker pauses.
 func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, goal string) (ChildReport, []llm.Message) {
-	childID := fmt.Sprintf("w%d", idx+1)
+	// ChildID (51-11): the background delegation path's stable, deterministic
+	// id takes precedence over the flat "w<idx+1>" every SYNCHRONOUS
+	// swarm_spawn wave still uses (rc.ChildID's own doc comment).
+	childID := rc.ChildID
+	if childID == "" {
+		childID = fmt.Sprintf("w%d", idx+1)
+	}
 	report := ChildReport{GoalIndex: idx, ChildID: childID, Status: StatusOK}
 
 	registry, nestingClosed := workerRegistry(rc)
@@ -322,6 +339,44 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 	}
 
 	report = normalizeStaleReport(report, staleness.Stalled(), idleDur)
+
+	// Terminal marker (51-11): every transcript line up to here only echoes the
+	// worker's OWN stream -- nothing was ever written AFTER the loop to say how
+	// it ended. A reader of the file alone (the cockpit worker pane and its
+	// status stream, plan 51-12a; a human tail-ing it) could not distinguish a
+	// finished worker from one that is merely quiet, and would have to guess
+	// from the clock -- the exact failure Amendment #172 recorded for the
+	// PARENT MODEL itself (asked "puoi vedere l'avanzamento?", it guessed from
+	// the wall clock instead of reading a fact).
+	//
+	// Written on EVERY way out of this loop, the reap included: after 51-09 a
+	// stall is THIS function's own staleness timer (newChildStaleness above)
+	// cancelling the loop, and a lease loss or daemon shutdown is the parent
+	// delegationCtx cancelling it -- both exit the range loop and both reach
+	// normalizeStaleReport just above, so a reaped worker's transcript ends
+	// with swarm_child_status "failed" (the D-11 normalization's own
+	// "stalled: no worker event for <idle>" text lives in report.Error), never
+	// silence. The ONLY transcript with no marker is one whose PROCESS died
+	// (SIGKILL, container recreate mid-worker): no goroutine survives to write
+	// anything, and that crash case's recovery is the lease reclaim, not the
+	// file.
+	//
+	// This is a CROSS-PLAN CONTRACT: plan 51-12a's worker-events route keys on
+	// these three state-delta key names verbatim. Do not rename them; adding a
+	// fourth key is fine but must be called out in the SUMMARY.
+	markerEvent := agent.Event{
+		RequestID: uuid.Must(uuid.NewV7()),
+		Author:    childID,
+		Timestamp: time.Now().UTC(),
+		Actions: agent.Actions{
+			StateDelta: map[string]any{
+				"swarm_child_status":       report.Status,
+				"swarm_child_id":           childID,
+				"swarm_child_duration_sec": int64(time.Since(started).Truncate(time.Second).Seconds()),
+			},
+		},
+	}
+	_ = dumpTranscript(rc.Cfg.RunDir, rc.ConvID, childID, markerEvent)
 
 	history := append(append([]llm.Message(nil), userTurns...), rec.messages()...)
 	if report.Status == StatusNeedsUserInput && pauseCall != nil {

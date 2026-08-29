@@ -160,6 +160,11 @@ func (l *DelegationClaimLoop) runWithHeartbeat(ctx context.Context, job document
 	rc.ConvID = payload.ConversationID
 	rc.Depth = payload.Depth
 	rc.Context = payload.Context
+	// ChildID (51-11): payload.ChildID is EnqueueDelegation's deterministic,
+	// stable per-goal id -- runChild prefers it over its own "w1" fallback, so
+	// two concurrently claimed jobs of one conversation write to two DIFFERENT
+	// transcript files instead of interleaving into the same one.
+	rc.ChildID = payload.ChildID
 	if payload.Resume != nil {
 		// 51-06b Task 2: the ENTIRE tool-permission story. Seeding UserTurns (via
 		// ResumeTurns, below runChild) with the persisted history re-derives the
