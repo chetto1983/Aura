@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import '../../../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
 import { SwarmReportTable } from '../SwarmReportTable';
 import type { DisplayChildReport, DisplayPayload } from '../types';
+import { WorkerWatchProvider } from '../../workers/WorkerWatchProvider';
 
 // SwarmReportTable (SWARM-01 / D-08): one row per ChildReport, row-expand to
 // summary/error (+question/options for needs-input), status from the enum ONLY, no
@@ -162,6 +163,21 @@ describe('SwarmReportTable (SWARM-01 / D-08)', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('opens the selected worker through the shared watch provider', () => {
+    const onWatchWorker = vi.fn();
+    render(
+      <WorkerWatchProvider onWatchWorker={onWatchWorker} onViewReport={vi.fn()}>
+        <SwarmReportTable payload={payload(reports)} />
+      </WorkerWatchProvider>,
+    );
+
+    const watch = screen.getAllByRole('button', { name: 'Watch worker' })[1];
+    if (watch === undefined) throw new Error('second worker watch control missing');
+    expect(watch?.className).toContain('min-h-[44px]');
+    fireEvent.click(watch);
+    expect(onWatchWorker).toHaveBeenCalledWith('w2');
   });
 
   it('shows the empty state when there are no workers', () => {

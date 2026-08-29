@@ -58,6 +58,8 @@ export interface ArtifactsPanelState {
   readonly toggleArtifacts: () => void;
   /** Collapse the desktop panel (its internal close control). */
   readonly closeDesktopPanel: () => void;
+  /** Close whichever Artifacts surface is live and release the shared mobile overlay. */
+  readonly closePanel: (intent?: 'explicit' | 'swipe') => void;
 }
 
 // The panel lives in two surfaces (D-01/D-04): a persisted ResizablePanel on desktop, the shared
@@ -66,6 +68,7 @@ export interface ArtifactsPanelState {
 export function useArtifactsPanel(
   surfaces: SurfaceRestore,
   basePanelIds: readonly string[],
+  onBeforeOpen: () => void = () => undefined,
 ): ArtifactsPanelState {
   const isDesktop = useIsArtifactsDesktop();
   const [artifactsOpen, setArtifactsOpen] = useState<boolean>(readArtifactsOpen);
@@ -79,26 +82,44 @@ export function useArtifactsPanel(
   }, [artifactsOpen]);
 
   const openArtifacts = useCallback(() => {
+    onBeforeOpen();
+    setArtifactsOpen(true);
     if (isDesktop) {
-      setArtifactsOpen(true);
+      return;
     } else {
       surfaces.openOverlay();
     }
-  }, [isDesktop, surfaces]);
+  }, [isDesktop, onBeforeOpen, surfaces]);
 
   const toggleArtifacts = useCallback(() => {
     if (isDesktop) {
-      setArtifactsOpen((open) => !open);
-    } else if (surfaces.overlayOpen) {
+      if (artifactsOpen) {
+        setArtifactsOpen(false);
+      } else {
+        onBeforeOpen();
+        setArtifactsOpen(true);
+      }
+    } else if (artifactsOpen && surfaces.overlayOpen) {
+      setArtifactsOpen(false);
       surfaces.closeOverlay('explicit');
     } else {
+      onBeforeOpen();
+      setArtifactsOpen(true);
       surfaces.openOverlay();
     }
-  }, [isDesktop, surfaces]);
+  }, [artifactsOpen, isDesktop, onBeforeOpen, surfaces]);
 
   const closeDesktopPanel = useCallback(() => {
     setArtifactsOpen(false);
   }, []);
+
+  const closePanel = useCallback(
+    (intent: 'explicit' | 'swipe' = 'explicit') => {
+      setArtifactsOpen(false);
+      if (!isDesktop && surfaces.overlayOpen) surfaces.closeOverlay(intent);
+    },
+    [isDesktop, surfaces],
+  );
 
   const artifactsPanelMounted = isDesktop && artifactsOpen;
   const panelIds = artifactsPanelMounted
@@ -107,11 +128,12 @@ export function useArtifactsPanel(
 
   return {
     isDesktop,
-    artifactsActive: isDesktop ? artifactsOpen : surfaces.overlayOpen,
+    artifactsActive: isDesktop ? artifactsOpen : artifactsOpen && surfaces.overlayOpen,
     artifactsPanelMounted,
     panelIds,
     openArtifacts,
     toggleArtifacts,
     closeDesktopPanel,
+    closePanel,
   };
 }

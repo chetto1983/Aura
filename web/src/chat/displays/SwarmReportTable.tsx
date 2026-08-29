@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
+import { useWatchWorker } from '../workers/workerWatchControls';
 import type { DisplayChildReport } from './types';
 import { DisplayCardShell } from './DisplayCardShell';
 import { hasField, hasOptions, statusDotClass, statusLabelKey } from './swarmRow';
@@ -22,6 +23,7 @@ export interface SwarmReportTableProps {
 
 export function SwarmReportTable({ payload }: SwarmReportTableProps) {
   const { t } = useTranslation();
+  const { watchWorker } = useWatchWorker();
   const [open, setOpen] = useState<number | null>(null);
   const reports = payload.swarm ?? [];
   const label = t('display.type.swarm_report');
@@ -69,6 +71,9 @@ export function SwarmReportTable({ payload }: SwarmReportTableProps) {
                   onToggle={() => {
                     setOpen(expanded ? null : i);
                   }}
+                  onWatch={() => {
+                    watchWorker(r.child_id, reports);
+                  }}
                   t={t}
                 />
               );
@@ -84,10 +89,11 @@ interface SwarmRowProps {
   readonly report: DisplayChildReport;
   readonly expanded: boolean;
   readonly onToggle: () => void;
+  readonly onWatch: () => void;
   readonly t: TFunction;
 }
 
-function SwarmRow({ report, expanded, onToggle, t }: SwarmRowProps) {
+function SwarmRow({ report, expanded, onToggle, onWatch, t }: SwarmRowProps) {
   const dotClass = statusDotClass(report.status);
   const statusLabel = t(statusLabelKey(report.status));
 
@@ -95,29 +101,40 @@ function SwarmRow({ report, expanded, onToggle, t }: SwarmRowProps) {
     <>
       <tr>
         <td colSpan={4} className="border-b border-border p-0">
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={onToggle}
-            aria-expanded={expanded}
-            aria-label={t('swarm.expand')}
-            className="grid h-auto min-h-11 w-full grid-cols-[3rem_1fr_8rem_2fr] justify-normal gap-2 rounded-none px-3 py-2 text-left hover:bg-surface"
-          >
-            <span className="font-mono text-[0.75rem] tabular-nums text-text-faint">
-              {report.goal_index}
-            </span>
-            <span className="truncate font-mono text-xs text-text-muted">{report.child_id}</span>
-            <span className="flex items-center gap-2">
-              <span
-                aria-hidden="true"
-                className={`inline-block h-2 w-2 shrink-0 rounded-sm ${dotClass}`}
-              />
-              <span className="text-[0.75rem] font-medium text-text">{statusLabel}</span>
-            </span>
-            <span className="truncate text-sm text-text-muted">
-              {report.summary ?? t('swarm.noSummary')}
-            </span>
-          </Button>
+          <div className="grid min-h-[var(--row-h)] grid-cols-[minmax(0,1fr)_auto] items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={onToggle}
+              aria-expanded={expanded}
+              aria-label={t('swarm.expand')}
+              className="grid h-auto min-h-[var(--row-h)] w-full grid-cols-[3rem_1fr_8rem_2fr] justify-normal gap-2 rounded-none px-3 py-2 text-left hover:bg-surface"
+            >
+              <span className="font-mono text-[0.75rem] tabular-nums text-text-faint">
+                {report.goal_index}
+              </span>
+              <span className="truncate font-mono text-xs text-text-muted">{report.child_id}</span>
+              <span className="flex items-center gap-2">
+                <span
+                  aria-hidden="true"
+                  className={`inline-block h-2 w-2 shrink-0 rounded-sm ${dotClass}`}
+                />
+                <span className="text-[0.75rem] font-medium text-text">{statusLabel}</span>
+              </span>
+              <span className="truncate text-sm text-text-muted">
+                {report.summary ?? t('swarm.noSummary')}
+              </span>
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={onWatch}
+              data-required-touch-target
+              className="min-h-[44px] min-w-[44px] rounded-none px-3 text-accent-text focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {t('swarm.watch')}
+            </Button>
+          </div>
         </td>
       </tr>
       {expanded ? (

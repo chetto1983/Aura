@@ -22,11 +22,9 @@ describe('WorkerPane', () => {
 
   it('shows connecting copy, exposes a literal 44px close target, and closes the stream', () => {
     const onClose = vi.fn();
-    const view = render(
-      <WorkerPane conversationId="conv-1" childId="child-1" onClose={onClose} />,
-    );
+    const view = render(<WorkerPane conversationId="conv-1" childId="child-1" onClose={onClose} />);
 
-    expect(screen.getByText('Connecting to worker...')).toBeTruthy();
+    expect(screen.getByText('Connecting to worker…')).toBeTruthy();
     const closeButton = screen.getByRole('button', { name: 'Close worker pane' });
     expect(closeButton.className).toContain('min-h-[44px]');
     expect(closeButton.className).toContain('min-w-[44px]');
@@ -46,6 +44,25 @@ describe('WorkerPane', () => {
     });
 
     expect(screen.getByRole('alert').textContent).toContain('check the report artifact');
-    expect(screen.queryByText('Connecting to worker...')).toBeNull();
+    expect(screen.queryByText('Connecting to worker…')).toBeNull();
+  });
+
+  it('renders the reduced read-only message once the first part arrives', () => {
+    render(<WorkerPane conversationId="conv-1" childId="child-1" onClose={vi.fn()} />);
+
+    act(() => {
+      handlers?.onMessages([
+        {
+          id: 'child-1',
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Worker result' }],
+          status: { type: 'complete', reason: 'stop' },
+        },
+      ]);
+    });
+
+    expect(screen.getByText('Worker result')).toBeTruthy();
+    expect(screen.queryByText('Connecting to worker…')).toBeNull();
+    expect(screen.queryByRole('textbox')).toBeNull();
   });
 });

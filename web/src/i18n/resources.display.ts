@@ -179,6 +179,14 @@ export const displayEn = {
       status: 'Status',
       summary: 'Summary',
     },
+    watch: 'Watch worker',
+    pane: {
+      title: 'Worker',
+      close: 'Close worker pane',
+      connecting: 'Connecting to worker…',
+      error:
+        "Couldn't reach this worker's transcript. It may have finished — check the report artifact.",
+    },
     status: {
       ok: 'OK',
       failed: 'Failed',
@@ -395,6 +403,14 @@ export const displayIt = {
       worker: 'Worker',
       status: 'Stato',
       summary: 'Riepilogo',
+    },
+    watch: 'Osserva worker',
+    pane: {
+      title: 'Worker',
+      close: 'Chiudi pannello worker',
+      connecting: 'Connessione al worker…',
+      error:
+        "Impossibile raggiungere il transcript di questo worker. Potrebbe aver terminato — controlla l'artefatto del report.",
     },
     status: {
       ok: 'OK',

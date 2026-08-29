@@ -364,7 +364,7 @@ const INLINE_DISPLAY_TYPES = new Set<string>(['system_event', 'local_artifact'])
  * chip click opens the SHARED Source Explorer (the same sheet the answer-level
  * "Sources (N)" button opens) over THIS turn's registry, focused on the refId.
  */
-const ToolFallback: ToolCallMessagePartComponent = ({
+export const ToolFallback: ToolCallMessagePartComponent = ({
   toolCallId,
   toolName,
   argsText,

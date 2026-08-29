@@ -1,11 +1,30 @@
 import { act, renderHook } from '@testing-library/react';
 import { useEffect, useRef } from 'react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { useArtifactsPanel } from './useArtifactsPanel';
 import { useSurfaceRestore } from './useSurfaceRestore';
 import { useWorkerPane } from './useWorkerPane';
 
 const BASE_PANEL_IDS = ['chat-navigation', 'chat-workspace'] as const;
+
+beforeEach(() => {
+  localStorage.clear();
+  window.matchMedia = (query: string) =>
+    ({
+      matches: true,
+      media: query,
+      onchange: null,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      dispatchEvent: () => false,
+    }) as MediaQueryList;
+});
+
+afterEach(() => {
+  localStorage.clear();
+});
 
 function useExclusiveRightRail() {
   const surfaces = useSurfaceRestore();
