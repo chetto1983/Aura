@@ -9966,3 +9966,24 @@ flusso completo, che funziona.
 > artifact-size ceiling, or local-LLM multi-slot throughput. It also does not prove the final
 > cockpit and Telegram acceptance criteria; those remain the 51-12b live checkpoint after the
 > bounded projection is deployed.
+
+## §The background swarm display decodes the producer's numeric queue count (Amendment #179, 2026-08-30)
+
+> **Amendment #179 (2026-08-30 - measured in two real Phase 51 cockpit drives before the fix).**
+> The persisted background `swarm_spawn` result had the documented object keys
+> `note, queued, workers`, two valid worker rows, and `queued: 2`. The producer defines that field
+> as `delegationQueuedResult.Queued int`. The display decoder instead declared an unused
+> `Queued bool`; `json.Unmarshal` rejected the numeric production value, the messages snapshot
+> omitted `display`, and Playwright observed the escaped raw-result fallback with no worker table.
+> Redacted evidence:
+> `.planning/phases/51-durable-delegation/live-check/cockpit/DISPLAY-NORMALIZER-MEASUREMENT.md`.
+>
+> **Decision.** The background wrapper decoder reads only the `workers` member it consumes and
+> ignores `queued` and `note` as ordinary JSON wrapper metadata. Its regression fixture uses the
+> producer's numeric queue count and exercises the public `NormalizeToolPreview` path. This keeps
+> the synchronous array and background object on the one normalizer required by Amendment #172
+> without maintaining a second, partial copy of `delegationQueuedResult`.
+>
+> **What this does not prove.** A typed snapshot and unit test do not prove the pane tails a live
+> worker, that picker switching preserves the parent thread, or that the status stream is singular.
+> Those remain browser verdicts in the next 51-12b live drive.
