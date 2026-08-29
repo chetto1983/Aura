@@ -104,7 +104,7 @@ func (AskUser) Spec() Spec {
   "type": "object",
   "properties": {
     "question": {"type": "string", "description": "The question or request to put to the user. Be specific and self-contained."},
-    "options": {"type": "array", "minItems": 2, "maxItems": 4, "items": {"type": ["string", "object"]}, "description": "For kind=choice: 2-4 distinct options, each a string or {label, value} object."},
+    "options": {"type": "array", "minItems": 2, "maxItems": 4, "items": {"anyOf": [{"type": "string"}, {"type": "object"}]}, "description": "For kind=choice: 2-4 distinct options, each a string or {label, value} object."},
     "kind": {"type": "string", "enum": ["clarification", "approval", "choice"], "description": "clarification = free-text answer; approval = yes/no for an action; choice = pick one of the supplied options."},
     "priority": {"type": "integer", "minimum": 0, "maximum": 100, "description": "Optional 0-100 ordering hint when several pauses are pending (higher = answered first). Defaults to 0."},
     "resume_context": {"type": "object", "description": "Optional machine-readable resume payload for host-side approval handlers. Omit it unless a tool told you which payload to send — ordinary user questions never need one."},
