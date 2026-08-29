@@ -9891,3 +9891,50 @@ flusso completo, che funziona.
 > and runtime/test search must find no comment promising legacy route/keyless behavior. The rebuilt container must be
 > healthy; the real Playwright shell-completion scenario must still wake exactly once on its owning
 > cockpit conversation, while channel recorders prove zero implicit Telegram projection.
+
+## §Planning and quality ledgers stop gating executable CI (Amendment #177, 2026-08-30)
+
+> **Amendment #177 (2026-08-30 — measured false positive during the operator-requested master
+> push, followed by an explicit operator decision).** The quality-snapshot freshness check blocked
+> the corrective push after every executable pre-push gate had passed. The two commits in the
+> range changed only `.planning/STATE.md` and the Linux-generated
+> `internal/webui/dist/**` bundle. Because the owned-Go-coverage row uses the necessary broad glob
+> `internal/**`, generated JavaScript made that Go measurement appear stale even though no Go
+> source, test, coverage denominator or runtime tier changed. Satisfying the check would require a
+> new date and a metric-neutral paragraph whose only evidence is that the metric was not measured.
+> The operator classified that upkeep as unmaintainable and directed that the check be removed
+> from CI.
+>
+> The same push exposed the planning-consistency check as a second bookkeeping gate. Phase 51 and
+> its plan inventory were present, but CI failed because `current_phase_name` held the directory
+> slug instead of the ROADMAP display title, `completed_phases` retained an older count, the prose
+> position carried `12/14 plans complete` instead of the checker's uppercase status token, and
+> `state_head` named an older planning input. None described an executable product defect. The
+> operator explicitly directed that this phase check be removed as well.
+>
+> **Decision.** The date-versus-diff freshness mechanism introduced by Amendment #20 is retired.
+> `docs/aura-quality-snapshot.md` remains the historical measurement ledger and is updated when a
+> metric is actually measured, invalidated, superseded or retired; an unrelated commit does not
+> rewrite its date or prepend a synthetic re-attestation. CI and pre-push stop invoking the
+> freshness script, and the gate, wrapper and gate self-test are deleted rather than retained as
+> dead compatibility surface. Amendment #20's HNSW and retrieval decisions are unaffected; only
+> its snapshot-date enforcement and later requirements that depend on that enforcement are
+> superseded.
+>
+> **Planning decision.** `.planning/STATE.md`, `ROADMAP.md`, plans and summaries remain the working
+> project ledger, but their redundant names, counters, prose status and input SHA do not gate the
+> product build. The CI planning-consistency step and its checker are deleted. Reviewers and GSD
+> workflows may still reconcile planning documents when useful; CI does not infer product health
+> from whether multiple human-readable projections changed in the same commit.
+>
+> **Quality boundary.** This removes no executable quality measurement. The owned-package 85%
+> coverage policy, native Docker coverage, live ArcadeDB/MRS evidence, race detector, mutation
+> thresholds, lint, dead-code, vulnerability, integration and E2E jobs remain release gates and
+> continue to publish their machine-readable evidence. Phase validation may still cite the quality
+> snapshot, but passing CI is never evidence that a prose row was freshly measured.
+>
+> **Acceptance.** No active GitHub workflow or Lefthook command invokes quality-snapshot freshness
+> or planning-ledger consistency; the four gate-only scripts have no repository path; the
+> canonical repository rules describe the quality ledger as measurement-driven rather than
+> date-driven; workflow and hook configuration still parse; and the complete remaining pre-push
+> and hosted CI gates pass on the corrective SHA.
