@@ -56,6 +56,26 @@ RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
+# pnpm 10+ refuses to run a dependency's install/postinstall scripts unless the operator
+# approves them, and `pnpm approve-builds` is INTERACTIVE — which no box shell can answer.
+# That gate hard-blocks the `web-artifacts-builder` skill: its bundle-artifact.sh runs
+# `pnpm add -D parcel @parcel/config-default parcel-resolver-tspaths html-inline`, and all
+# four native deps (@parcel/watcher, @swc/core, lmdb, msgpackr-extract) need their build
+# scripts. Parcel then re-enters the same wall from its own runDepsStatusCheck → runPnpmCli.
+#
+# MEASURED 2026-08-29 in this image against pnpm 11.24.0 (what `npm install -g pnpm` resolves
+# to today): the documented precise escape hatch — `onlyBuiltDependencies` in
+# pnpm-workspace.yaml — did NOT clear ERR_PNPM_IGNORED_BUILDS, neither inside `pnpm add` nor
+# on a follow-up `pnpm install`. This env var was the only non-interactive setting that let
+# all four compile. Measured on pnpm 11.24.0 only: it does NOT establish behaviour for other
+# pnpm majors, and it is NOT a claim that the precise list is wrong in general.
+#
+# Allowing arbitrary postinstall scripts is acceptable HERE and only here: the box already
+# runs the model's own shell (a plain `npm install` executes the same code), so the container
+# boundary — per-identity volume + cgroup caps + egress netns — is the control, never pnpm's
+# prompt. Do NOT copy this into docker/aura/Dockerfile: the daemon image is not the box.
+ENV PNPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS=true
+
 # uv/uvx as static binaries from the DIGEST-PINNED astral image (sandbox-runtime finding:
 # COPY the binaries, never pip-install uv). uv drives the on-demand long-tail dep installs
 # into the shared warm-cache volume (D-13).

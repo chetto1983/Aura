@@ -218,6 +218,8 @@ export const displayEn = {
       download: 'Download {{name}}',
       description: 'Preview of {{name}}. Use the download button to save the original file.',
       unsupported: "This file type can't be previewed safely — download it to open.",
+      tabSource: 'Source',
+      tabRendered: 'Preview',
     },
   },
 } as const;
@@ -435,6 +437,8 @@ export const displayIt = {
         'Anteprima di {{name}}. Usa il pulsante di download per salvare il file originale.',
       unsupported:
         'Questo tipo di file non può essere mostrato in anteprima — scaricalo per aprirlo.',
+      tabSource: 'Sorgente',
+      tabRendered: 'Anteprima',
     },
   },
 } as const;

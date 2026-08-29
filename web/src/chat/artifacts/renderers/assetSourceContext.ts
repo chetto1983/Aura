@@ -27,11 +27,21 @@ export interface AssetSource {
   readonly assetUrl: (assetId: string) => string;
   /** The `fetch()` credentials mode a renderer should pair with `assetUrl`. */
   readonly credentials: RequestCredentials;
+  /** The URL that serves an HTML artifact as a real DOCUMENT for `<iframe src=>` — sealed
+   *  under its own Content-Security-Policy by the server (internal/agui/assets_render_api.go).
+   *
+   *  OPTIONAL because only the identity-scoped lane has such a route today. A tier that omits
+   *  it (the public/internal share pages, which serve asset bytes but no sealed document) makes
+   *  HtmlPreview fall back to `srcdoc` — the pre-existing behavior for those pages, not a
+   *  regression. Giving the share tiers their own render route is what would let this become
+   *  required. */
+  readonly renderUrl?: (assetId: string) => string;
 }
 
 const IDENTITY_SCOPED: AssetSource = {
   assetUrl: (assetId) => `/api/assets/${encodeURIComponent(assetId)}/download`,
   credentials: 'same-origin',
+  renderUrl: (assetId) => `/api/assets/${encodeURIComponent(assetId)}/render`,
 };
 
 // No explicit generic type argument on createContext here: IDENTITY_SCOPED is already typed

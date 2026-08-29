@@ -62,6 +62,12 @@ After installing:
 1. Read the skill with `skill action=info name=<name>` and follow what it says.
 2. Run any bundled script BY PATH with its interpreter (e.g. `python3 <path>`) — never
    rely on the exec bit.
+3. **Deliver the result with `send_file`.** A skill was written for whatever host its
+   author used, and it ends by telling you to display, preview, open or serve the file
+   there. None of that reaches the user here: writing a file is not delivering it, and
+   `send_file` with the absolute path is the only act that puts a deliverable in the
+   conversation. Ignore the skill's final step and use it — a viewer skill's own local
+   server is unreachable, so never hand the user a URL it prints.
 
 ## If nothing fits
 

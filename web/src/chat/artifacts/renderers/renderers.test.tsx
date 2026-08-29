@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { renderAsync } from 'docx-preview';
 import { read } from 'xlsx';
 import '../../../i18n/i18n'; // side-effect: initialise i18next so preview t() keys resolve
@@ -7,6 +7,7 @@ import ImagePreview from './ImagePreview';
 import PdfPreview from './PdfPreview';
 import TextPreview from './TextPreview';
 import HtmlPreview from './HtmlPreview';
+import { AssetSourceContext, type AssetSource } from './assetSourceContext';
 import DocxPreview from './DocxPreview';
 import XlsxPreview from './XlsxPreview';
 
@@ -142,7 +143,12 @@ describe('TextPreview', () => {
 });
 
 describe('HtmlPreview (WEBART-07 / T-37B-08)', () => {
-  it('renders a NULL-ORIGIN iframe: sandbox=allow-scripts, no allow-same-origin, srcDoc not src', async () => {
+  // These assertions were rewritten when the rendered lane moved from srcdoc to the sealed
+  // src= document: the OLD test pinned `srcdoc == the fetched bytes`, which is exactly the
+  // property the change removes (a srcdoc document inherits the embedder's CSP and can carry
+  // no policy of its own). The null-origin invariant it also pinned is preserved verbatim
+  // below, and the srcdoc lane still has a test of its own — on the tier that still uses it.
+  it('rendered lane frames the SEALED document: src=/render, never srcdoc, null origin', async () => {
     stubFetch({ text: '<h1>hello</h1>' });
     const { container } = render(<HtmlPreview {...props} fileName="page.html" />);
 
@@ -152,16 +158,69 @@ describe('HtmlPreview (WEBART-07 / T-37B-08)', () => {
     const frame = iframeOf(container);
     expect(frame.getAttribute('sandbox')).toBe('allow-scripts');
     expect(frame.getAttribute('sandbox')).not.toContain('allow-same-origin');
-    expect(frame.getAttribute('srcdoc')).toBe('<h1>hello</h1>');
-    expect(frame.getAttribute('src')).toBeNull();
+    expect(frame.getAttribute('src')).toBe('/api/assets/asset-1/render');
+    expect(frame.getAttribute('srcdoc')).toBeNull();
   });
 
-  it('shows the error state when the fetch fails', async () => {
+  it('does not fetch the body for the rendered lane — the frame does', () => {
+    stubFetch({ text: '<h1>hello</h1>' });
+    render(<HtmlPreview {...props} fileName="page.html" />);
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+  });
+
+  it('percent-encodes the asset id in the render URL', async () => {
+    stubFetch({ text: 'x' });
+    const { container } = render(
+      <HtmlPreview {...props} assetId="a/b?c" fileName="page.html" />,
+    );
+    await waitFor(() => {
+      expect(container.querySelector('iframe')).not.toBeNull();
+    });
+    expect(iframeOf(container).getAttribute('src')).toBe('/api/assets/a%2Fb%3Fc/render');
+  });
+
+  it('source tab shows the markup ESCAPED, never parsed', async () => {
+    stubFetch({ text: '<script>alert(1)</script>' });
+    const { container } = render(<HtmlPreview {...props} fileName="page.html" />);
+    fireEvent.click(screen.getByRole('tab', { name: /source|sorgente/i }));
+
+    await waitFor(() => {
+      expect(container.querySelector('pre')).not.toBeNull();
+    });
+    const pre = container.querySelector('pre');
+    expect(pre?.textContent).toBe('<script>alert(1)</script>');
+    // Escaped, so the markup never became a node of ours.
+    expect(pre?.querySelector('script')).toBeNull();
+  });
+
+  it('shows the error state when the SOURCE fetch fails', async () => {
     stubFetch({ ok: false, status: 500 });
     render(<HtmlPreview {...props} fileName="page.html" />);
+    fireEvent.click(screen.getByRole('tab', { name: /source|sorgente/i }));
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeTruthy();
     });
+  });
+
+  it('falls back to the null-origin srcdoc lane when the tier has no render route', async () => {
+    stubFetch({ text: '<h1>shared</h1>' });
+    const shareTier: AssetSource = {
+      assetUrl: (id) => `/s/tok/asset/${id}`,
+      credentials: 'omit',
+    };
+    const { container } = render(
+      <AssetSourceContext.Provider value={shareTier}>
+        <HtmlPreview {...props} fileName="page.html" />
+      </AssetSourceContext.Provider>,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector('iframe')).not.toBeNull();
+    });
+    const frame = iframeOf(container);
+    expect(frame.getAttribute('srcdoc')).toBe('<h1>shared</h1>');
+    expect(frame.getAttribute('src')).toBeNull();
+    expect(frame.getAttribute('sandbox')).toBe('allow-scripts');
   });
 });
 

@@ -14,6 +14,9 @@ func (s *Server) registerAssetRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/assets/{id}/finalize", s.handleAssetFinalize)
 	mux.HandleFunc("GET /api/assets/{id}", s.handleAssetGet)
 	mux.HandleFunc("GET /api/assets/{id}/download", s.handleAssetDownload)
+	// The framed-document sibling of download: same ownership gate, HTML only, served
+	// under its own sealed CSP so the cockpit can frame it with src= (assets_render_api.go).
+	mux.HandleFunc("GET /api/assets/{id}/render", s.handleAssetRender)
 	mux.HandleFunc("GET /api/assets", s.handleAssetList)
 	mux.HandleFunc("POST /api/assets/{id}/promote", s.handleAssetPromote)
 	mux.HandleFunc("POST /api/assets/{id}/retry", s.handleAssetRetry)
