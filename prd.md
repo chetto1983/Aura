@@ -9938,3 +9938,31 @@ flusso completo, che funziona.
 > canonical repository rules describe the quality ledger as measurement-driven rather than
 > date-driven; workflow and hook configuration still parse; and the complete remaining pre-push
 > and hosted CI gates pass on the corrective SHA.
+
+## §A delegation steer row is a bounded projection, not the report archive (Amendment #178, 2026-08-30)
+
+> **Amendment #178 (2026-08-30 - measured on the live Phase 51 cockpit drive before the fix).**
+> A two-worker fan-out running through local `gemma-4-12b` completed both workers. The long
+> worker's complete Markdown report was archived successfully as a 16,808-byte thread asset, then
+> `DeliverReport` failed with `delegation report push: steer: message exceeds max size`. The
+> `delegation_result` producer was JSON-encoding the uncapped `ChildReport` and sending it through
+> the steer store's 32,768-byte per-message boundary. The completed job therefore remained
+> retryable even though the durable report and conversation card already existed. Redacted
+> evidence: `.planning/phases/51-durable-delegation/live-check/cockpit/REPORT-SIZE-MEASUREMENT.md`.
+>
+> **Decision.** Amendment #172's artifact is the authoritative full report. The steer copy is a
+> bounded `ChildReport` projection used for live parent context and fan-out notification
+> bookkeeping: structural fields remain intact, while model-authored text is capped on rune
+> boundaries before JSON encoding. This supersedes Phase 51 plan 11's prohibition and regression
+> test that required the steer payload to remain byte-identical to the uncapped report. The card
+> and Telegram limits remain unchanged, and the full Markdown archive remains uncapped.
+>
+> **Why the queue cap is not widened.** Increasing `AURA_AGUI_STEER_MAX_BYTES` would only move the
+> failure threshold and would make one worker result consume an unbounded amount of the parent
+> model's next turn. The queue is a delivery rail, not the artifact store already established by
+> Amendment #172.
+>
+> **What this does not prove.** The measurement does not establish a new steer default, an
+> artifact-size ceiling, or local-LLM multi-slot throughput. It also does not prove the final
+> cockpit and Telegram acceptance criteria; those remain the 51-12b live checkpoint after the
+> bounded projection is deployed.
