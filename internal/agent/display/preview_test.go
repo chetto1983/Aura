@@ -111,14 +111,19 @@ func TestDecodeSwarmSpawnPreview(t *testing.T) {
 		}
 	})
 	t.Run("queued object", func(t *testing.T) {
-		got, ok := decodeToolPreview("swarm_spawn", `{"queued":true,"note":"background","workers":[{"goal_index":0,"child_id":"w1","status":"running","goal":"inspect","attempts":1}]}`)
+		const preview = `{"queued":2,"note":"background","workers":[{"goal_index":0,"child_id":"w1","status":"running","goal":"inspect","attempts":1},{"goal_index":1,"child_id":"w2","status":"running","goal":"compare","attempts":1}]}`
+		got, ok := decodeToolPreview("swarm_spawn", preview)
 		reports, typed := got.([]ChildReport)
-		if !ok || !typed || len(reports) != 1 {
+		if !ok || !typed || len(reports) != 2 {
 			t.Fatalf("decode = %#v, %v", got, ok)
 		}
 		body, _ := json.Marshal(reports[0])
 		if !strings.Contains(string(body), `"goal":"inspect"`) || !strings.Contains(string(body), `"attempts":1`) {
 			t.Fatalf("background fields lost: %s", body)
+		}
+		payload, normalized := NormalizeToolPreview("call-background", "swarm_spawn", preview, NewRegistry())
+		if !normalized || payload.Type != KindSwarmReport || payload.ToolCallID != "call-background" || len(payload.Swarm) != 2 {
+			t.Fatalf("NormalizeToolPreview = %+v, %v; want a two-row swarm_report", payload, normalized)
 		}
 	})
 	t.Run("queued object without workers", func(t *testing.T) {
