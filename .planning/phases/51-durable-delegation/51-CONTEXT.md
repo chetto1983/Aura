@@ -193,6 +193,12 @@ proposes. Three questions were deliberately NOT answered from the armchair.
   - **Telegram is decided, not open:** exactly one message — status, goal in one line, a
     bounded summary, "dettagli nel cockpit". No edited-in-place status message (hermes gateway
     pattern rejected for Telegram), no narration, no body, no progress relay.
+  - **The parent agent's own leg of SWARM-10 is part of this gap:** measured 2026-08-29 in the
+    cockpit — asked *"puoi vedere l'avanzamento?"*, Aura answered that no endpoint lets her
+    poll a queued worker's state and then guessed its fate from the clock. 51-07 shipped the
+    operator's HTTP route only. Close it with a deferred tool (`swarm_status`) that reuses
+    `internal/swarm/transcript_api.go`'s `ReadTranscript`/`ListChildTranscripts` and the
+    delegation job row (status, attempt, last event time) — no new reader, no new store.
   - **Open for the planner** (ask, do not assume): third resizable panel vs a tab of the
     Artifacts panel; reasoning deltas in the pane or tool calls + text only.
   - **Sequencing:** the gap plan (51-11) runs BEFORE the live DoD gate 51-08, which then scores

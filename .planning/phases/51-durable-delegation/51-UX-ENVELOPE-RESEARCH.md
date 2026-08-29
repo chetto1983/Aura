@@ -102,6 +102,18 @@ nothing and returns no transcript. Not a UX reference for this gap; at most a po
 3. Status in the parent chat: the chip updates from the same SSE (running → ok/failed/stalled, duration),
    so the parent thread shows codex's `SubAgentActivity`-style summary without the transcript leaking in.
 
+### G3 — The parent agent can look at its own workers (SWARM-10's missing leg)
+Measured 2026-08-29 in the cockpit (operator: "questo è un altro problema"): asked *"puoi vedere
+l'avanzamento?"* about a background worker, Aura answered she cannot — "non c'è un endpoint per
+pollare lo stato intermedio di un worker già accodato" — and reasoned about the worker from
+wall-clock guesses. hermes gives the model `check_task`-style status on async delegations; codex's
+`/agent` feed does the same for the TUI. Aura: one deferred tool `swarm_status` (deferred-tool
+pattern, `internal/agent/tools/`) returning, per child of the current conversation: job status
+(`queued`/`running`/`succeeded`/`dead_letter`), attempt/max, last event timestamp, elapsed, and the
+tail of the transcript (bounded, via `ReadTranscript` with an offset) — reusing 51-07's readers and
+the job store; nothing new to persist. The model then answers from facts, and the chip (G1.3) and
+the pane (G2) show the same facts to the operator.
+
 ### Perimeter / not proposed
 - No cockpit-side polling loop for delegation status (51-07 prohibition stands): the pane is push (SSE),
   the chip reads the same stream.

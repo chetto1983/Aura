@@ -9564,6 +9564,18 @@ flusso completo, che funziona.
 >    transcript through the existing AG-UI translator (`agui.Translate` consumes exactly the
 >    `agent.Event` type `dumpTranscript` stores) and tails it while the worker is live; a picker
 >    to switch between workers with the parent chat staying live beside it.
+> 4. **The parent agent can look at its own workers** (added the same morning, measured in the
+>    cockpit: asked *"puoi vedere l'avanzamento?"* about a background worker, Aura answered
+>    verbatim *"non vedo l'avanzamento in tempo reale. I worker swarm non espongono progress
+>    live — l'unico segnale visibile è il report finale … Non c'è un endpoint per pollare lo
+>    stato intermedio di un worker già accodato"* — and then reasoned about the worker's fate
+>    from wall-clock guesses). SWARM-10 promised the transcript to "the operator (and the
+>    parent)"; 51-07 shipped the operator's HTTP leg only. The parent leg is a deferred tool
+>    (`swarm_status`, deferred-tool pattern) over what already exists — the 51-07
+>    `ReadTranscript`/`ListChildTranscripts` readers and the delegation job row (status,
+>    attempt, last event, `stalled`/`ok`/`failed`) — so the model answers such a question
+>    from the transcript tail and the row, never from a guess. The operator's remark on
+>    reading Aura's answer: *"questo è un altro problema"*.
 >
 > **What this amendment does NOT decide.** Where the pane lives (third resizable panel vs a tab
 > of the Artifacts panel; a drawer on mobile either way) and whether it shows reasoning deltas
