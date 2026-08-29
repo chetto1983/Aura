@@ -1,16 +1,12 @@
 package cron
 
-// deliver.go is the origin-channel precedence helper (Phase 20 R4/R7). It sits in
-// FRONT of the per-task Notifier route chain (notify.go): when the default-on
-// kill-switch is on and a task carries an owning identity snapshot (no explicit
-// route), the dispatcher prefers the origin channel — a reminder set in a Telegram
-// DM lands back in that DM, not on the stdout/whatsapp fallback route.
+// deliver.go projects explicit stdout routes to their owning conversation and explicit
+// Telegram routes to the identity's Telegram account before the external notifier.
 //
 // ChannelDeliverer is a cron-LOCAL consumer-declared interface (the notify.go
 // SelfSendResolver/Notifier idiom): cron declares the shape it needs and the
 // composition root (cmd/aura) adapts *channels.Registry onto it. cron imports
-// NEITHER internal/channels NOR internal/config — the kill-switch bool is resolved
-// once at the root via envBoolDefault and injected as DispatchDeps.PreferOriginChannel.
+// neither internal/channels nor internal/config.
 
 import (
 	"context"
@@ -18,54 +14,48 @@ import (
 	"time"
 )
 
-// ChannelDeliverer pushes a notification to whatever channel owns identityID. It is
-// the cron-local seam the composition root adapts *channels.Registry onto (the
-// Registry.DeliverToIdentity fan-out, 20-01). The tri-state return mirrors the
-// channels.Deliverer contract: (true,nil)=delivered → stop; (false,nil)=no channel
-// owns the identity → caller falls back to the route; (false,err)=owns-but-failed →
-// caller queues a same-channel retry and does NOT fall back (no double-delivery).
+// ChannelDeliverer exposes two deliberately separate rails. Conversation delivery
+// proves the exact origin thread; identity delivery is reserved for an explicit
+// cross-channel route such as notify=telegram. Both keep the tri-state contract:
+// (true,nil)=delivered, (false,nil)=not owned, (false,err)=owns-but-failed.
 type ChannelDeliverer interface {
 	DeliverToIdentity(ctx context.Context, identityID, text string) (delivered bool, err error)
+	DeliverToConversation(ctx context.Context, identityID, conversationID, text string) (delivered bool, err error)
 }
 
-// originGate decides whether a notification keyed on (identityID, notifyRoute)
+// originGate decides whether a notification keyed on
+// (identityID, conversationID, notifyRoute)
 // should prefer the origin channel over the per-task Notifier route. It is the
 // SINGLE source of the precedence semantics, shared by BOTH the live-task notify
 // path (deliverToOrigin) and the swept-row sweep path (deliverSweptRow) — no
 // duplicated precedence logic (Pitfall 2 / R4).
 //
 // The gate order is load-bearing:
-//  1. kill-switch off / no ChannelDeliverer → false (legacy route-only, regression guard).
-//  2. a DELIBERATE alternate-channel NotifyRoute (whatsapp/email) wins (channel skipped, R7);
-//     an un-owned identity ("" / "local") → route fallback. Checked BEFORE the channel.
+//  1. no ChannelDeliverer → false.
+//  2. none/whatsapp/email are already authoritative destinations; an un-owned identity
+//     ("" / "local") cannot be projected to a channel.
 //
-// "stdout" is the always-available fallback sink (notify.go), NOT a deliberate external
-// channel: the scheduling agent fills it in as the implicit default route, so it must
-// defer to the origin channel exactly like an unset route — otherwise the headline case
-// (a Telegram reminder routing back to its DM) silently lands on the server console. Only
-// whatsapp/email pre-empt origin (R7 amended after the Phase 20 live gate proved the agent
-// auto-populates notify="stdout").
-func (d *Dispatch) originGate(identityID, notifyRoute string) bool {
-	if !d.deps.PreferOriginChannel || d.deps.ChannelDeliverer == nil {
+// stdout means the exact origin conversation when one exists; without one it remains
+// literal process output. Telegram is the only explicit identity-level cross-channel push.
+func (d *Dispatch) originGate(identityID, conversationID, notifyRoute string) bool {
+	if d.deps.ChannelDeliverer == nil {
 		return false
 	}
 	if !originPreferring(notifyRoute) || identityID == "" || identityID == "local" {
+		return false
+	}
+	if notifyRoute != string(RouteTelegram) && conversationID == "" {
 		return false
 	}
 	return true
 }
 
 // originPreferring splits the routes that DEFER to the origin channel from the ones that
-// deliberately pre-empt it. whatsapp and email are alternate destinations: choosing one
-// means "send it somewhere else", so they skip the channel (R7). "" and "stdout" defer
-// because neither expresses a destination — the agent auto-fills stdout as the implicit
-// default. "telegram" deferring is the opposite of a fallback: it is the operator asking
-// for the origin channel BY NAME, which the composite Notifier cannot honour (it holds no
-// identity and no channel registry — notify.go), so the only layer that can deliver it is
-// this one.
+// deliberately pre-empt it. none, whatsapp and email skip this projection; stdout and
+// telegram are the two routes this layer can deliver.
 func originPreferring(route string) bool {
 	switch route {
-	case "", string(RouteStdout), string(RouteTelegram):
+	case string(RouteStdout), string(RouteTelegram):
 		return true
 	default:
 		return false
@@ -81,10 +71,16 @@ func originPreferring(route string) bool {
 // keyed on task.IdentityID) and returns handled=true WITHOUT calling Notifier
 // (Pitfall 3 — the owns-but-failed branch must never fall back to a sibling route).
 func (d *Dispatch) deliverToOrigin(ctx context.Context, task Task, runID, text string) (handled bool) {
-	if !d.originGate(task.IdentityID, task.NotifyRoute) {
+	if !d.originGate(task.IdentityID, task.OriginConversationID, task.NotifyRoute) {
 		return false
 	}
-	delivered, err := d.deps.ChannelDeliverer.DeliverToIdentity(ctx, task.IdentityID, text)
+	var delivered bool
+	var err error
+	if task.NotifyRoute == string(RouteTelegram) {
+		delivered, err = d.deps.ChannelDeliverer.DeliverToIdentity(ctx, task.IdentityID, text)
+	} else {
+		delivered, err = d.deps.ChannelDeliverer.DeliverToConversation(ctx, task.IdentityID, task.OriginConversationID, text)
+	}
 	if err != nil {
 		// owns-but-failed → queue a failed pending row (the Step-2 sweep re-attempts
 		// the SAME channel, keyed on the persisted identity by 20-04) and stop. Do NOT
@@ -101,7 +97,7 @@ func (d *Dispatch) deliverToOrigin(ctx context.Context, task Task, runID, text s
 type sweepOutcome int
 
 const (
-	// sweepFallback: no origin channel owns the row → caller delivers via Notifier.Notify.
+	// sweepFallback: the explicit route is handled by Notifier.Notify.
 	sweepFallback sweepOutcome = iota
 	// sweepDelivered: the origin channel delivered → caller marks the row delivered.
 	sweepDelivered
@@ -117,10 +113,16 @@ const (
 // never inserts a new pending row: the row already exists, so owns-but-failed returns
 // sweepKeep and the caller marks the existing row failed for the next sweep.
 func (d *Dispatch) deliverSweptRow(ctx context.Context, n PendingNotification) sweepOutcome {
-	if !d.originGate(n.IdentityID, n.NotifyRoute) {
+	if !d.originGate(n.IdentityID, n.OriginConversationID, n.NotifyRoute) {
 		return sweepFallback
 	}
-	delivered, err := d.deps.ChannelDeliverer.DeliverToIdentity(ctx, n.IdentityID, n.Body)
+	var delivered bool
+	var err error
+	if n.NotifyRoute == string(RouteTelegram) {
+		delivered, err = d.deps.ChannelDeliverer.DeliverToIdentity(ctx, n.IdentityID, n.Body)
+	} else {
+		delivered, err = d.deps.ChannelDeliverer.DeliverToConversation(ctx, n.IdentityID, n.OriginConversationID, n.Body)
+	}
 	if err != nil {
 		slog.Warn("origin-channel sweep delivery failed (kept for next sweep)", "notification", n.ID, "err", err)
 		return sweepKeep

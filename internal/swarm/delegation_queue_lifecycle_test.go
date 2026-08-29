@@ -215,7 +215,7 @@ func TestDeliverSuccessPushesBeforeTransitioning(t *testing.T) {
 	recorder := &fakeConversationRecorder{}
 	l := &DelegationClaimLoop{Store: store, Delivery: &DelegationDelivery{Recorder: recorder, Steer: pub}, IdentityID: "identity-1"}
 	job := documents.IngestionJob{ID: "j1", IdentityID: "identity-1"}
-	payload := DelegationPayload{Goal: "g", ConversationID: "conv-7"}
+	payload := DelegationPayload{Goal: "g", ConversationID: "conv-7", FanoutKey: "f-test"}
 
 	if err := l.deliverSuccess(context.Background(), job, payload, ChildReport{Status: StatusOK, Summary: "done"}); err != nil {
 		t.Fatalf("deliverSuccess = %v", err)
@@ -240,7 +240,7 @@ func TestDeliverSuccessDoesNotTransitionWhenThePushFails(t *testing.T) {
 	l := &DelegationClaimLoop{Store: store, Delivery: &DelegationDelivery{Recorder: &fakeConversationRecorder{}, Steer: pub}, IdentityID: "identity-1"}
 
 	err := l.deliverSuccess(context.Background(), documents.IngestionJob{ID: "j1"},
-		DelegationPayload{ConversationID: "conv-7"}, ChildReport{Status: StatusOK})
+		DelegationPayload{ConversationID: "conv-7", FanoutKey: "f-test"}, ChildReport{Status: StatusOK})
 	if err == nil || !strings.Contains(err.Error(), "push") {
 		t.Fatalf("deliverSuccess = %v, want the push failure surfaced", err)
 	}
@@ -254,7 +254,7 @@ func TestDeliverSuccessSurfacesATransitionFailure(t *testing.T) {
 	l := &DelegationClaimLoop{Store: store, Delivery: &DelegationDelivery{Recorder: &fakeConversationRecorder{}, Steer: &fakeSteerPublisher{}}, IdentityID: "identity-1"}
 
 	err := l.deliverSuccess(context.Background(), documents.IngestionJob{ID: "j1"},
-		DelegationPayload{ConversationID: "conv-7"}, ChildReport{Status: StatusOK})
+		DelegationPayload{ConversationID: "conv-7", FanoutKey: "f-test"}, ChildReport{Status: StatusOK})
 	if err == nil || !strings.Contains(err.Error(), "succeed transition") {
 		t.Fatalf("deliverSuccess = %v, want the transition failure named", err)
 	}
@@ -277,7 +277,7 @@ func TestRecordFailureBlocksSucceeded(t *testing.T) {
 		IdentityID: "identity-1",
 	}
 	job := documents.IngestionJob{ID: "j1", IdentityID: "identity-1", MaxAttempts: 3}
-	payload := DelegationPayload{Goal: "g", ConversationID: "conv-7"}
+	payload := DelegationPayload{Goal: "g", ConversationID: "conv-7", FanoutKey: "f-test"}
 
 	if err := l.deliverSuccess(context.Background(), job, payload, ChildReport{Status: StatusOK, Summary: "done"}); err != nil {
 		t.Fatalf("deliverSuccess = %v, want the record failure absorbed into a retry, not surfaced", err)
@@ -308,7 +308,7 @@ func TestDeliverSuccessPassesTheBoundIdentityThrough(t *testing.T) {
 	recorder := &fakeConversationRecorder{}
 	l := &DelegationClaimLoop{Store: store, Delivery: &DelegationDelivery{Recorder: recorder, Steer: pub}, IdentityID: "identity-1"}
 	job := documents.IngestionJob{ID: "j1", IdentityID: "identity-1"}
-	payload := DelegationPayload{Goal: "g", ConversationID: "conv-7"}
+	payload := DelegationPayload{Goal: "g", ConversationID: "conv-7", FanoutKey: "f-test"}
 
 	// The bind is processJob's (TestProcessJobBindsTheJobIdentityOnce); deliverSuccess
 	// must hand the SAME ctx to the recorder, never strip or re-derive it.
@@ -416,7 +416,7 @@ func TestProcessJobRunsTheWorkerAndRoutesEveryOutcome(t *testing.T) {
 			rc := testRunConfig(t, newRouter().route(goal, tc.out), 25)
 			store := &fakeDelegationStore{claimJobs: []documents.IngestionJob{{
 				ID: "j1", IdentityID: identityID, JobType: JobTypeSwarmDelegation,
-				Payload:     map[string]any{"goal": goal, "conversation_id": "conv-7"},
+				Payload:     map[string]any{"goal": goal, "conversation_id": "conv-7", "fanout_key": "f-test"},
 				MaxAttempts: 3,
 			}}}
 			pub := &fakeSteerPublisher{}

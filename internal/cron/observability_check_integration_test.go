@@ -20,7 +20,7 @@ func TestObservabilityCheckSeedKindIsAdmitted(t *testing.T) {
 		t.Fatalf("NextRunAt: %v", err)
 	}
 	task, err := store.CreateTask(context.Background(), CreateTaskParams{
-		Kind: KindObservabilityCheck, Spec: spec, NextRunAt: next,
+		Kind: KindObservabilityCheck, Spec: spec, NextRunAt: next, NotifyRoute: "none",
 	})
 	if err != nil {
 		t.Fatalf("CreateTask(observability_check) rejected; migration 0104 did not widen the kind check: %v", err)

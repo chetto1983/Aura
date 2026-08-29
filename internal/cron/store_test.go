@@ -198,11 +198,12 @@ func TestCreateTask_GatedStatusIsAtomic(t *testing.T) {
 
 	spec, _ := ParseSchedule("every", "", 5, time.Time{}, "Europe/Rome")
 	created, err := s.CreateTask(ctx, CreateTaskParams{
-		Kind:      KindAgentJob,
-		Spec:      spec,
-		Payload:   []byte(`{"goal":"drop the staging database"}`),
-		NextRunAt: time.Now().Add(-time.Minute), // would be due IF it were active
-		Status:    "pending_approval",
+		Kind:        KindAgentJob,
+		Spec:        spec,
+		Payload:     []byte(`{"goal":"drop the staging database"}`),
+		NextRunAt:   time.Now().Add(-time.Minute), // would be due IF it were active
+		Status:      "pending_approval",
+		NotifyRoute: "none",
 	})
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
@@ -252,7 +253,7 @@ func TestCompleteRun_IdempotencyHash(t *testing.T) {
 
 	spec, _ := ParseSchedule("every", "", 5, time.Time{}, "Europe/Rome")
 	created, err := s.CreateTask(ctx, CreateTaskParams{
-		Kind: KindReminder, Spec: spec, NextRunAt: time.Now().Add(5 * time.Minute),
+		Kind: KindReminder, Spec: spec, NextRunAt: time.Now().Add(5 * time.Minute), NotifyRoute: "none",
 	})
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
@@ -288,7 +289,7 @@ func TestCreateRunAndAdvance_Atomic(t *testing.T) {
 
 	spec, _ := ParseSchedule("every", "", 5, time.Time{}, "Europe/Rome")
 	first := time.Now().Add(5 * time.Minute).Truncate(time.Second)
-	created, err := s.CreateTask(ctx, CreateTaskParams{Kind: KindReminder, Spec: spec, NextRunAt: first})
+	created, err := s.CreateTask(ctx, CreateTaskParams{Kind: KindReminder, Spec: spec, NextRunAt: first, NotifyRoute: "none"})
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -323,7 +324,7 @@ func TestDueTasks_ClampsBadLimit(t *testing.T) {
 
 	spec, _ := ParseSchedule("every", "", 5, time.Time{}, "Europe/Rome")
 	due, err := s.CreateTask(ctx, CreateTaskParams{
-		Kind: KindReminder, Spec: spec, NextRunAt: time.Now().Add(-time.Minute),
+		Kind: KindReminder, Spec: spec, NextRunAt: time.Now().Add(-time.Minute), NotifyRoute: "none",
 	})
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
@@ -356,17 +357,17 @@ func TestListUpdateCancelAndHeartbeat(t *testing.T) {
 	spec, _ := ParseSchedule("every", "", 5, time.Time{}, "Europe/Rome")
 	first := time.Now().Add(5 * time.Minute).Truncate(time.Second)
 	second := first.Add(5 * time.Minute)
-	soon, err := s.CreateTask(ctx, CreateTaskParams{Kind: KindReminder, Spec: spec, NextRunAt: first})
+	soon, err := s.CreateTask(ctx, CreateTaskParams{Kind: KindReminder, Spec: spec, NextRunAt: first, NotifyRoute: "none"})
 	if err != nil {
 		t.Fatalf("CreateTask soon: %v", err)
 	}
 	t.Cleanup(func() { cleanupTask(t, pool, soon.ID) })
-	later, err := s.CreateTask(ctx, CreateTaskParams{Kind: KindBackupPostgres, Spec: spec, NextRunAt: second})
+	later, err := s.CreateTask(ctx, CreateTaskParams{Kind: KindBackupPostgres, Spec: spec, NextRunAt: second, NotifyRoute: "none"})
 	if err != nil {
 		t.Fatalf("CreateTask later: %v", err)
 	}
 	t.Cleanup(func() { cleanupTask(t, pool, later.ID) })
-	cancelled, err := s.CreateTask(ctx, CreateTaskParams{Kind: KindBackupPostgres, Spec: spec, NextRunAt: first.Add(time.Minute)})
+	cancelled, err := s.CreateTask(ctx, CreateTaskParams{Kind: KindBackupPostgres, Spec: spec, NextRunAt: first.Add(time.Minute), NotifyRoute: "none"})
 	if err != nil {
 		t.Fatalf("CreateTask cancelled: %v", err)
 	}

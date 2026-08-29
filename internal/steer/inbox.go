@@ -53,9 +53,8 @@ var (
 // The consumer keys the delivery envelope on it: spike 098 measured that a worker's
 // report wrapped in the operator envelope is discounted by the model as a spoofing
 // attempt, because the envelope declares an author the payload contradicts. Also the
-// discriminator PostgresStore.Push derives a row's storage kind from (source ==
-// SourceWorker → KindDelegationResult, else → KindSteer): Push's signature carries no
-// separate kind parameter, so this is the ONLY signal that decides it.
+// storage source label. PostgresStore.PushDelegationResult explicitly selects the
+// delegation-result kind; PostgresStore.Push writes KindSteer even for worker questions.
 //
 // It matches the Source the swarm already stamps on its own tool results
 // (RunnerAdapter's Provenance{Source: "swarm", Trust: TrustUntrusted}), so one name

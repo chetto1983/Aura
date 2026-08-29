@@ -15,10 +15,8 @@ import (
 )
 
 // QueueKind discriminates aura.steer_queue rows (D-07): one table, rows typed by kind,
-// each deriving its TTL from its own configured knob. NOT model-facing and not a Push
-// parameter — Push's signature is the shipped, unwidenable (conv, source, text string)
-// error contract, so a row's kind is DERIVED from source (source == SourceWorker →
-// KindDelegationResult, every other source → KindSteer), never supplied directly.
+// each deriving its TTL from its own configured knob. Push creates KindSteer rows;
+// PushDelegationResult creates KindDelegationResult rows and requires a fan-out key.
 type QueueKind string
 
 // The two kinds aura.steer_queue accepts. These literals are duplicated in migration
@@ -71,12 +69,10 @@ func NewPostgresStore(pool *pgxpool.Pool, cfg Config) *PostgresStore {
 // that migration's header for why a context.Background()-scoped plain transaction,
 // rather than db.WithIdentityTx, is correct here.
 //
-// Push writes a NULL fanout_key (51-11 Task 3) -- it is Push, not PushDelegationResult,
-// specifically because its signature is locked and cannot grow a fifth argument; a plain
-// operator steer or a lone (N=1) delegation report never belongs to a grouped fan-out
-// send either way.
+// Push writes a KindSteer row with a NULL fanout_key. Worker questions use this path too:
+// they belong to the live steer rail, never the absent-operator result nudge sweep.
 func (s *PostgresStore) Push(conv, source, text string) error {
-	return s.push(conv, source, text, "")
+	return s.push(conv, source, text, KindSteer, "")
 }
 
 // PushDelegationResult is Push's fan-out-aware counterpart (51-11 Task 3, CONTEXT D-15):
@@ -89,14 +85,16 @@ func (s *PostgresStore) Push(conv, source, text string) error {
 // own paragraph above), so a fourth argument was never an option there -- this is a
 // second, additive method instead of a fifth Push argument.
 func (s *PostgresStore) PushDelegationResult(conv, source, text, fanoutKey string) error {
-	return s.push(conv, source, text, fanoutKey)
+	if strings.TrimSpace(fanoutKey) == "" {
+		return fmt.Errorf("steer: push delegation result: fan-out key is required")
+	}
+	return s.push(conv, source, text, KindDelegationResult, fanoutKey)
 }
 
 // push is Push and PushDelegationResult's shared body: identical validation ladder,
-// identical kind/TTL derivation from source, identical guarded INSERT and disambiguation
-// probe on a 0-row result -- the only difference is whether fanoutKey travels into
-// PushSteerRowParams.FanoutKey as NULL (Push, empty string) or set (PushDelegationResult).
-func (s *PostgresStore) push(conv, source, text, fanoutKey string) error {
+// guarded INSERT and disambiguation probe. Its callers select the explicit row kind;
+// only PushDelegationResult can provide a fan-out key.
+func (s *PostgresStore) push(conv, source, text string, kind QueueKind, fanoutKey string) error {
 	// The nil-receiver guard MUST run before any field access on s: a
 	// *PostgresStore boxed into an interface (telegram.Deps.Steer,
 	// agui's steerPusher) can be a non-nil interface wrapping a nil pointer
@@ -117,10 +115,8 @@ func (s *PostgresStore) push(conv, source, text, fanoutKey string) error {
 	if s.pool == nil {
 		return fmt.Errorf("steer: push: store is not configured")
 	}
-	kind := KindSteer
 	ttl := s.cfg.SteerTTL
-	if source == SourceWorker {
-		kind = KindDelegationResult
+	if kind == KindDelegationResult {
 		ttl = s.cfg.DelegationResultTTL
 	}
 	var expiresAt pgtype.Timestamptz
@@ -243,12 +239,12 @@ func uuidString(v pgtype.UUID) string {
 // cmd/aura composition root is the one place that translates between the two
 // packages' independently-declared, structurally-identical row types.
 type UnnudgedDelegationResult struct {
-	ID         string
-	IdentityID string
-	Body       string
-	// FanoutKey (51-11 Task 3) groups the N rows one swarm_spawn call produced. Empty
-	// (a NULL column reads as the Go zero value) means "not part of a fan-out" -- a
-	// legacy pre-migration row or a worker's own question (Deliver, never DeliverReport).
+	ID             string
+	IdentityID     string
+	ConversationID string
+	Body           string
+	// FanoutKey groups the N rows one swarm_spawn call produced. It is mandatory for
+	// every row projected here.
 	FanoutKey string
 }
 
@@ -276,57 +272,23 @@ func (s *PostgresStore) ListUnnudgedDelegationResults(ctx context.Context, cutof
 	out := make([]UnnudgedDelegationResult, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, UnnudgedDelegationResult{
-			ID:         uuidString(r.ID),
-			IdentityID: uuidString(r.IdentityID),
-			Body:       r.Body,
-			FanoutKey:  r.FanoutKey.String,
+			ID:             uuidString(r.ID),
+			IdentityID:     uuidString(r.IdentityID),
+			ConversationID: r.ConversationID,
+			Body:           r.Body,
+			FanoutKey:      r.FanoutKey.String,
 		})
 	}
 	return out, nil
 }
 
-// MarkSteerRowNudged is the claim-before-push idempotency key (SWARM-09
-// edge): a conditional UPDATE ... WHERE nudged_at IS NULL, so two CONCURRENT
-// sweep passes over the SAME row race for exactly one winner (RowsAffected==1
-// for the winner, 0 for the loser) -- the same conditional-update-as-claim
-// idiom DrainSteerRows' FOR UPDATE already establishes for the operator-
-// present path, generalized here to a plain conditional UPDATE since there is
-// no multi-row candidate SET to lock ahead of time.
-func (s *PostgresStore) MarkSteerRowNudged(ctx context.Context, id, identityID string) (bool, error) {
-	if s == nil || s.pool == nil {
-		return false, fmt.Errorf("steer: mark steer row nudged: store is not configured")
-	}
-	rowID, err := uuid.Parse(id)
-	if err != nil {
-		return false, fmt.Errorf("steer: mark steer row nudged: invalid id %q: %w", id, err)
-	}
-	identity, err := uuid.Parse(identityID)
-	if err != nil {
-		return false, fmt.Errorf("steer: mark steer row nudged: invalid identity_id %q: %w", identityID, err)
-	}
-	var affected int64
-	err = db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
-		var qErr error
-		affected, qErr = q.MarkSteerRowNudged(ctx, sqlc.MarkSteerRowNudgedParams{
-			ID:         pgtype.UUID{Bytes: rowID, Valid: true},
-			IdentityID: pgtype.UUID{Bytes: identity, Valid: true},
-		})
-		return qErr
-	})
-	if err != nil {
-		return false, fmt.Errorf("steer: mark steer row nudged %s: %w", id, err)
-	}
-	return affected > 0, nil
-}
-
-// MarkFanoutNudged is MarkSteerRowNudged's own conditional-UPDATE idempotency argument
-// (51-11 Task 3), generalized from one row to every unclaimed row of one (identity,
-// fanout_key) pair, claimed in ONE statement: two concurrent sweep passes over the SAME
+// MarkFanoutNudged claims every unclaimed row of one (identity, fanout_key) pair in ONE
+// statement: two concurrent sweep passes over the SAME
 // complete fan-out race for the SAME set of unclaimed rows, and the loser's UPDATE matches
 // zero of them (the winner already set nudged_at on all of them), returning an empty
 // slice -- never an error, and never a partial claim split across two callers. Each
-// returned row carries the body captured by that same UPDATE so a sibling inserted
-// after the candidate SELECT cannot be marked without being rendered.
+// returned row carries the body and route captured by that same UPDATE so a sibling
+// inserted after the candidate SELECT cannot be marked without being rendered.
 func (s *PostgresStore) MarkFanoutNudged(ctx context.Context, identityID, fanoutKey string) ([]UnnudgedDelegationResult, error) {
 	if s == nil || s.pool == nil {
 		return nil, fmt.Errorf("steer: mark fanout nudged: store is not configured")
@@ -350,10 +312,11 @@ func (s *PostgresStore) MarkFanoutNudged(ctx context.Context, identityID, fanout
 	claimed := make([]UnnudgedDelegationResult, 0, len(rows))
 	for _, r := range rows {
 		claimed = append(claimed, UnnudgedDelegationResult{
-			ID:         uuidString(r.ID),
-			IdentityID: uuidString(r.IdentityID),
-			Body:       r.Body,
-			FanoutKey:  r.FanoutKey.String,
+			ID:             uuidString(r.ID),
+			IdentityID:     uuidString(r.IdentityID),
+			ConversationID: r.ConversationID,
+			Body:           r.Body,
+			FanoutKey:      r.FanoutKey.String,
 		})
 	}
 	return claimed, nil

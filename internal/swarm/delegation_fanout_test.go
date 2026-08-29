@@ -40,23 +40,20 @@ func (f *fakeFanoutJobCounter) CountUnfinishedDelegationJobs(_ context.Context, 
 	return f.counts[identityID+"/"+fanoutKey], nil
 }
 
-// TestGroupByFanoutPartitionsMixedRows: two fan-outs plus one legacy keyless
-// row -- groups are keyed by (identityID, fanoutKey), row order within a
-// group is preserved, and the keyless row is returned separately rather than
-// as a third one-row group.
+// TestGroupByFanoutPartitionsMixedRows: two fan-outs are keyed by their
+// explicit route, and row order within a group is preserved.
 func TestGroupByFanoutPartitionsMixedRows(t *testing.T) {
 	rows := []UndrainedResult{
-		{ID: "r1", IdentityID: "id-1", FanoutKey: "f-a", Body: "one"},
-		{ID: "r2", IdentityID: "id-1", FanoutKey: "f-b", Body: "two"},
-		{ID: "r3", IdentityID: "id-1", FanoutKey: "f-a", Body: "three"},
-		{ID: "r4", IdentityID: "id-1", Body: "legacy, no key"},
+		{ID: "r1", IdentityID: "id-1", ConversationID: "conv-1", FanoutKey: "f-a", Body: "one"},
+		{ID: "r2", IdentityID: "id-1", ConversationID: "conv-1", FanoutKey: "f-b", Body: "two"},
+		{ID: "r3", IdentityID: "id-1", ConversationID: "conv-1", FanoutKey: "f-a", Body: "three"},
 	}
-	groups, keyless := groupByFanout(rows)
+	groups, err := groupByFanout(rows)
+	if err != nil {
+		t.Fatalf("groupByFanout = %v", err)
+	}
 	if len(groups) != 2 {
 		t.Fatalf("groups = %d, want 2", len(groups))
-	}
-	if len(keyless) != 1 || keyless[0].ID != "r4" {
-		t.Fatalf("keyless = %+v, want exactly row r4", keyless)
 	}
 	var groupA, groupB *fanoutGroup
 	for i := range groups {
@@ -78,6 +75,13 @@ func TestGroupByFanoutPartitionsMixedRows(t *testing.T) {
 	}
 }
 
+func TestGroupByFanoutRejectsMissingExplicitKey(t *testing.T) {
+	_, err := groupByFanout([]UndrainedResult{{ID: "r1", IdentityID: "id-1", ConversationID: "conv-1"}})
+	if err == nil {
+		t.Fatal("groupByFanout accepted a delegation result without fanout_key")
+	}
+}
+
 // TestGroupByFanoutScopesByIdentity: two DIFFERENT identities sharing the SAME
 // fanout_key string (a theoretical collision, since delegationFanoutKey hashes
 // identityID in) must never be merged into one group.
@@ -89,6 +93,17 @@ func TestGroupByFanoutScopesByIdentity(t *testing.T) {
 	groups, _ := groupByFanout(rows)
 	if len(groups) != 2 {
 		t.Fatalf("groups = %d, want 2 (scoped by identity, not fanout_key alone)", len(groups))
+	}
+}
+
+func TestGroupByFanoutScopesByConversation(t *testing.T) {
+	rows := []UndrainedResult{
+		{ID: "r1", IdentityID: "id-1", ConversationID: "conv-a", FanoutKey: "f-shared"},
+		{ID: "r2", IdentityID: "id-1", ConversationID: "conv-b", FanoutKey: "f-shared"},
+	}
+	groups, _ := groupByFanout(rows)
+	if len(groups) != 2 {
+		t.Fatalf("groups = %d, want 2 (conversation routes must never merge)", len(groups))
 	}
 }
 
@@ -140,8 +155,8 @@ func TestFanoutSkipsWhileAWorkerRuns(t *testing.T) {
 func TestFanoutClaimsRendersOnceAndDelivers(t *testing.T) {
 	channel := &fakeChannelDeliverer{delivered: true}
 	nudge := &fakeSteerNudgeStore{rows: []UndrainedResult{
-		{ID: "r1", IdentityID: "id-1", FanoutKey: "f-a", Body: oneReportBody(t, 1, StatusFailed, "second goal")},
-		{ID: "r2", IdentityID: "id-1", FanoutKey: "f-a", Body: oneReportBody(t, 0, StatusOK, "first goal")},
+		{ID: "r1", IdentityID: "id-1", ConversationID: "conv-1", FanoutKey: "f-a", Body: oneReportBody(t, 1, StatusFailed, "second goal")},
+		{ID: "r2", IdentityID: "id-1", ConversationID: "conv-1", FanoutKey: "f-a", Body: oneReportBody(t, 0, StatusOK, "first goal")},
 	}}
 	counter := &fakeFanoutJobCounter{counts: map[string]int{"id-1/f-a": 0}}
 	d := &DelegationDelivery{Channel: channel, Nudge: nudge, Counter: counter, NudgeAfter: time.Minute}
@@ -155,6 +170,9 @@ func TestFanoutClaimsRendersOnceAndDelivers(t *testing.T) {
 	}
 	if len(channel.calls) != 1 {
 		t.Fatalf("channel calls = %d, want exactly 1 -- one message for the whole fan-out, never one per worker", len(channel.calls))
+	}
+	if channel.calls[0].conversationID != "conv-1" {
+		t.Fatalf("channel conversation = %q, want conv-1", channel.calls[0].conversationID)
 	}
 	want := TelegramDelegationMessage([]ChildReport{
 		{GoalIndex: 0, ChildID: "w1", Status: StatusOK, Goal: "first goal", Summary: "summary"},
@@ -177,10 +195,10 @@ func TestFanoutClaimIncludesRowInsertedAfterCandidateSnapshot(t *testing.T) {
 	channel := &fakeChannelDeliverer{delivered: true}
 	nudge := &fakeSteerNudgeStore{
 		rows: []UndrainedResult{
-			{ID: "r1", IdentityID: "id-1", FanoutKey: "f-a", Body: oneReportBody(t, 0, StatusOK, "fast goal")},
+			{ID: "r1", IdentityID: "id-1", ConversationID: "conv-1", FanoutKey: "f-a", Body: oneReportBody(t, 0, StatusOK, "fast goal")},
 		},
 		rowsOnMark: []UndrainedResult{
-			{ID: "r2", IdentityID: "id-1", FanoutKey: "f-a", Body: oneReportBody(t, 1, StatusOK, "slow goal")},
+			{ID: "r2", IdentityID: "id-1", ConversationID: "conv-1", FanoutKey: "f-a", Body: oneReportBody(t, 1, StatusOK, "slow goal")},
 		},
 	}
 	counter := &fakeFanoutJobCounter{counts: map[string]int{"id-1/f-a": 0}}

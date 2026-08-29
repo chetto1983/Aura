@@ -90,13 +90,9 @@ func (a dbNudgeAdapter) ListUnnudgedDelegationResults(ctx context.Context, cutof
 	}
 	out := make([]UndrainedResult, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, UndrainedResult{ID: r.ID, IdentityID: r.IdentityID, Body: r.Body, FanoutKey: r.FanoutKey})
+		out = append(out, UndrainedResult{ID: r.ID, IdentityID: r.IdentityID, ConversationID: r.ConversationID, Body: r.Body, FanoutKey: r.FanoutKey})
 	}
 	return out, nil
-}
-
-func (a dbNudgeAdapter) MarkSteerRowNudged(ctx context.Context, id, identityID string) (bool, error) {
-	return a.store.MarkSteerRowNudged(ctx, id, identityID)
 }
 
 func (a dbNudgeAdapter) MarkFanoutNudged(ctx context.Context, identityID, fanoutKey string) ([]UndrainedResult, error) {
@@ -106,7 +102,7 @@ func (a dbNudgeAdapter) MarkFanoutNudged(ctx context.Context, identityID, fanout
 	}
 	out := make([]UndrainedResult, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, UndrainedResult{ID: r.ID, IdentityID: r.IdentityID, Body: r.Body, FanoutKey: r.FanoutKey})
+		out = append(out, UndrainedResult{ID: r.ID, IdentityID: r.IdentityID, ConversationID: r.ConversationID, Body: r.Body, FanoutKey: r.FanoutKey})
 	}
 	return out, nil
 }
@@ -116,7 +112,7 @@ func (a dbNudgeAdapter) MarkFanoutNudged(ctx context.Context, identityID, fanout
 // (delegation_delivery_test.go) is not safe for concurrent callers.
 type channelCounterFunc func()
 
-func (f channelCounterFunc) DeliverToIdentity(_ context.Context, _, _ string) (bool, error) {
+func (f channelCounterFunc) DeliverToConversation(_ context.Context, _, _, _ string) (bool, error) {
 	f()
 	return true, nil
 }
@@ -130,8 +126,8 @@ func TestNudgeSkipsDrained(t *testing.T) {
 	_, convID := seedDelegationDeliveryConversation(t, pool)
 	store := steer.NewPostgresStore(pool, steer.Config{Max: 8, MaxBytes: 16384})
 
-	if err := store.Push(convID, steer.SourceWorker, "the report"); err != nil {
-		t.Fatalf("Push: %v", err)
+	if err := store.PushDelegationResult(convID, steer.SourceWorker, "the report", "f-drained"); err != nil {
+		t.Fatalf("PushDelegationResult: %v", err)
 	}
 	// The operator's turn drains it -- the present-operator rail already
 	// delivered it (D-04), so it must never be nudged.
@@ -155,17 +151,16 @@ func TestNudgeSkipsDrained(t *testing.T) {
 }
 
 // TestNudgeOnceUnderConcurrency proves the SWARM-09 edge: two sweep passes
-// racing over the SAME undrained row push at most once. MarkSteerRowNudged's
-// conditional UPDATE (WHERE nudged_at IS NULL) is the idempotency key --
-// claim happens BEFORE push (DelegationDelivery.nudgeOne's own doc), so the
+// racing over the SAME one-row fan-out push at most once. MarkFanoutNudged's
+// conditional UPDATE (WHERE nudged_at IS NULL) is the idempotency key, so the
 // loser of the race never calls the channel at all.
 func TestNudgeOnceUnderConcurrency(t *testing.T) {
 	pool := delegationDisposablePool(t)
 	_, convID := seedDelegationDeliveryConversation(t, pool)
 	store := steer.NewPostgresStore(pool, steer.Config{Max: 8, MaxBytes: 16384})
 
-	if err := store.Push(convID, steer.SourceWorker, "the report"); err != nil {
-		t.Fatalf("Push: %v", err)
+	if err := store.PushDelegationResult(convID, steer.SourceWorker, "the report", "f-concurrent"); err != nil {
+		t.Fatalf("PushDelegationResult: %v", err)
 	}
 
 	var mu sync.Mutex
@@ -236,7 +231,7 @@ func TestDeliverSuccessRecordsUnderRealRLSAsAuraApp(t *testing.T) {
 		IdentityID: identityID,
 	}
 	job := documents.IngestionJob{ID: "j1", IdentityID: identityID}
-	payload := DelegationPayload{Goal: "summarise the inbox", ConversationID: convID}
+	payload := DelegationPayload{Goal: "summarise the inbox", ConversationID: convID, FanoutKey: "f-rls-delivery"}
 
 	// processJob binds the identity once at the claim-loop boundary (unit-proven by
 	// TestProcessJobBindsTheJobIdentityOnce); this test proves the OTHER half of defect A

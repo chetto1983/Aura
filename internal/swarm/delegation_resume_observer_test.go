@@ -285,7 +285,7 @@ func TestDelegationResumeStateHistoryRoundTripsTheToolSearchPair(t *testing.T) {
 		PendingToolCallID: "call-pause", PendingActionID: "fence-1", PauseToken: "token-1",
 		AgentIdentity: "identity-1", History: history,
 	}
-	payload := DelegationPayload{Goal: "g", ConversationID: "conv-1", Resume: state}
+	payload := DelegationPayload{Goal: "g", ConversationID: "conv-1", FanoutKey: "f-test", Resume: state}
 
 	m, err := delegationPayloadMap(payload)
 	if err != nil {
@@ -327,7 +327,7 @@ func TestProcessJobRefusesAnAgentIdentityMismatch(t *testing.T) {
 	store := &fakeDelegationStore{claimJobs: []documents.IngestionJob{{
 		ID: "j1", IdentityID: "identity-claimed", JobType: JobTypeSwarmDelegation,
 		Payload: map[string]any{
-			"goal": "g", "conversation_id": "conv-1",
+			"goal": "g", "conversation_id": "conv-1", "fanout_key": "f-test",
 			"resume": map[string]any{
 				"agent_identity":       "identity-that-paused",
 				"pending_tool_call_id": "call-1",

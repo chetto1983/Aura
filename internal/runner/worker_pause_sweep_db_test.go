@@ -71,9 +71,10 @@ type parkedWorkerPause struct {
 func parkWorkerPause(t *testing.T, pool *pgxpool.Pool, store *documents.PostgresIngestionJobStore, pause *askuser.Store, convID, key, question string, createdAt time.Time) parkedWorkerPause {
 	t.Helper()
 	ctx := ownerCtx()
+	fanoutKey := "f-" + key
 	job, err := store.Create(ctx, documents.CreateIngestionJobRequest{
 		IdentityID: localIdentityID, JobType: testWorkerPauseJobType, Status: "queued",
-		IdempotencyKey: key, MaxAttempts: 3, Payload: map[string]any{"goal": "g", "conversation_id": convID},
+		IdempotencyKey: key, MaxAttempts: 3, Payload: map[string]any{"goal": "g", "conversation_id": convID, "fanout_key": fanoutKey},
 	})
 	if err != nil {
 		t.Fatalf("create job: %v", err)
@@ -103,7 +104,7 @@ func parkWorkerPause(t *testing.T, pool *pgxpool.Pool, store *documents.Postgres
 	}
 	n, err := store.ParkIngestionJobAwaitingInput(ctx, documents.ParkAwaitingInputRequest{
 		IdentityID: localIdentityID, JobID: row.ID, WorkerID: "w-" + key, LeaseGeneration: row.LeaseGeneration,
-		Payload: map[string]any{"goal": "g", "conversation_id": convID, "resume": map[string]any{
+		Payload: map[string]any{"goal": "g", "conversation_id": convID, "fanout_key": fanoutKey, "resume": map[string]any{
 			"pause_token": token, "pending_action_id": fence, "worker_id": job.ID,
 		}},
 	})

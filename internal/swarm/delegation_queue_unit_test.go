@@ -75,9 +75,10 @@ func TestDelegationPayloadFromJobRequiresGoalAndConversation(t *testing.T) {
 		payload map[string]any
 		want    string
 	}{
-		{"missing goal", map[string]any{"conversation_id": "conv-1"}, "missing goal"},
-		{"empty goal", map[string]any{"goal": "", "conversation_id": "conv-1"}, "missing goal"},
-		{"missing conversation", map[string]any{"goal": "do the thing"}, "missing conversation_id"},
+		{"missing goal", map[string]any{"conversation_id": "conv-1", "fanout_key": "f-test"}, "missing goal"},
+		{"empty goal", map[string]any{"goal": "", "conversation_id": "conv-1", "fanout_key": "f-test"}, "missing goal"},
+		{"missing conversation", map[string]any{"goal": "do the thing", "fanout_key": "f-test"}, "missing conversation_id"},
+		{"missing fanout", map[string]any{"goal": "do the thing", "conversation_id": "conv-1"}, "missing fanout_key"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := delegationPayloadFromJob(documents.IngestionJob{Payload: tc.payload})
@@ -97,6 +98,7 @@ func TestDelegationPayloadFromJobDecodesAWorkableRow(t *testing.T) {
 	job := documents.IngestionJob{Payload: map[string]any{
 		"goal":            "summarise the inbox",
 		"conversation_id": "conv-42",
+		"fanout_key":      "f-test",
 	}}
 	p, err := delegationPayloadFromJob(job)
 	if err != nil {
@@ -107,6 +109,9 @@ func TestDelegationPayloadFromJobDecodesAWorkableRow(t *testing.T) {
 	}
 	if p.ConversationID != "conv-42" {
 		t.Errorf("ConversationID = %q, want the payload conversation", p.ConversationID)
+	}
+	if p.FanoutKey != "f-test" {
+		t.Errorf("FanoutKey = %q, want f-test", p.FanoutKey)
 	}
 }
 
@@ -129,7 +134,7 @@ func TestDelegationPayloadFromJobRejectsAMistypedRow(t *testing.T) {
 // to the job row must carry the same two fields the claim side requires, or a job
 // would be enqueued that can never be decoded.
 func TestDelegationPayloadMapRoundTrips(t *testing.T) {
-	m, err := delegationPayloadMap(DelegationPayload{Goal: "g", ConversationID: "c"})
+	m, err := delegationPayloadMap(DelegationPayload{Goal: "g", ConversationID: "c", FanoutKey: "f-test"})
 	if err != nil {
 		t.Fatalf("delegationPayloadMap: %v", err)
 	}

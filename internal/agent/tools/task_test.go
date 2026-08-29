@@ -102,7 +102,7 @@ func TestTaskScheduleCronGoesActive(t *testing.T) {
 	store := &fakeTaskStore{createID: "abc"}
 	tool := &TaskTool{Store: store}
 
-	args := json.RawMessage(`{"action":"schedule","schedule_kind":"cron","cron":"30 9 * * 1-5","kind":"reminder","payload":{"text":"standup"}}`)
+	args := json.RawMessage(`{"action":"schedule","schedule_kind":"cron","cron":"30 9 * * 1-5","kind":"reminder","payload":{"text":"standup"},"notify":"stdout"}`)
 	res, err := tool.Execute(context.Background(), args)
 	if err != nil {
 		t.Fatalf("schedule cron: %v", err)
@@ -116,8 +116,53 @@ func TestTaskScheduleCronGoesActive(t *testing.T) {
 	if store.created.NextRunAt.IsZero() {
 		t.Error("NextRunAt must be computed for a cron schedule")
 	}
+	if store.created.NotifyRoute != "stdout" {
+		t.Errorf("NotifyRoute = %q, want explicit stdout", store.created.NotifyRoute)
+	}
 	if !strings.Contains(res.Preview, "abc") {
 		t.Errorf("preview should name the created id, got %q", res.Preview)
+	}
+}
+
+func TestTaskScheduleMissingNotifyRequiresChoiceBeforePersist(t *testing.T) {
+	store := &fakeTaskStore{}
+	tool := &TaskTool{Store: store}
+
+	res, err := tool.Execute(context.Background(), json.RawMessage(`{"action":"schedule","schedule_kind":"every","every_minutes":10,"kind":"reminder","payload":{"text":"standup"}}`))
+	if err != nil {
+		t.Fatalf("schedule without notify: %v", err)
+	}
+	if store.created.Kind != "" {
+		t.Fatal("missing notify must persist nothing before the operator chooses")
+	}
+	var got struct {
+		Status  string `json:"status"`
+		Options []struct {
+			Label string `json:"label"`
+			Value string `json:"value"`
+		} `json:"options"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(res.Preview), &got); err != nil {
+		t.Fatalf("choice directive is not JSON: %v; preview=%q", err, res.Preview)
+	}
+	if got.Status != "delivery_choice_required" || len(got.Options) != 5 {
+		t.Fatalf("directive = status %q options %d, want delivery_choice_required/5", got.Status, len(got.Options))
+	}
+	want := map[string]string{"No notification": "none", "This conversation": "stdout", "Telegram": "telegram", "WhatsApp": "whatsapp", "Email": "email"}
+	for _, option := range got.Options {
+		if want[option.Label] != option.Value {
+			t.Errorf("option %q=%q is not in %v", option.Label, option.Value, want)
+		}
+		delete(want, option.Label)
+	}
+	if len(want) != 0 {
+		t.Errorf("missing options: %v", want)
+	}
+	for _, needle := range []string{"ask_user", "kind=\"choice\"", "No task was created"} {
+		if !strings.Contains(got.Message, needle) {
+			t.Errorf("directive message missing %q: %q", needle, got.Message)
+		}
 	}
 }
 
@@ -127,7 +172,7 @@ func TestTaskScheduleDestructivePayloadGated(t *testing.T) {
 
 	// An agent_job whose payload matches a destructive keyword jumps to Destructive,
 	// so scoring.GateRecommended routes it to pending_approval (T-10-12 / D-27).
-	args := json.RawMessage(`{"action":"schedule","schedule_kind":"every","every_minutes":10,"kind":"agent_job","payload":{"goal":"drop the staging database"}}`)
+	args := json.RawMessage(`{"action":"schedule","schedule_kind":"every","every_minutes":10,"kind":"agent_job","payload":{"goal":"drop the staging database"},"notify":"stdout"}`)
 	res, err := tool.Execute(context.Background(), args)
 	if err != nil {
 		t.Fatalf("schedule destructive: %v", err)
@@ -151,13 +196,16 @@ func TestTaskScheduleApprovalDirective(t *testing.T) {
 	tool := &TaskTool{Store: store}
 
 	// Every agent_job is gated to pending_approval (AG-016), independent of risk.
-	args := json.RawMessage(`{"action":"schedule","schedule_kind":"cron","cron":"30 9 * * *","kind":"agent_job","payload":{"goal":"summarize the news"}}`)
+	args := json.RawMessage(`{"action":"schedule","schedule_kind":"cron","cron":"30 9 * * *","kind":"agent_job","payload":{"goal":"summarize the news"},"notify":"telegram"}`)
 	res, err := tool.Execute(context.Background(), args)
 	if err != nil {
 		t.Fatalf("schedule agent_job: %v", err)
 	}
 	if store.created.Status != "pending_approval" {
 		t.Fatalf("agent_job must be pending_approval, got %q", store.created.Status)
+	}
+	if store.created.NotifyRoute != "telegram" {
+		t.Fatalf("NotifyRoute = %q, want explicit telegram", store.created.NotifyRoute)
 	}
 
 	var got struct {
@@ -200,7 +248,7 @@ func TestTaskScheduleInvalidCronRejectedBeforePersist(t *testing.T) {
 	store := &fakeTaskStore{}
 	tool := &TaskTool{Store: store}
 
-	args := json.RawMessage(`{"action":"schedule","schedule_kind":"cron","cron":"not a cron","kind":"reminder"}`)
+	args := json.RawMessage(`{"action":"schedule","schedule_kind":"cron","cron":"not a cron","kind":"reminder","notify":"stdout"}`)
 	if _, err := tool.Execute(context.Background(), args); err == nil {
 		t.Fatal("an invalid cron expression must be rejected (gronx.IsValid, T-10-14)")
 	}
@@ -323,7 +371,7 @@ func TestTaskStoreErrorPropagates(t *testing.T) {
 	sentinel := errors.New("db down")
 	store := &fakeTaskStore{createErr: sentinel}
 	tool := &TaskTool{Store: store}
-	_, err := tool.Execute(context.Background(), json.RawMessage(`{"action":"schedule","schedule_kind":"every","every_minutes":5,"kind":"reminder"}`))
+	_, err := tool.Execute(context.Background(), json.RawMessage(`{"action":"schedule","schedule_kind":"every","every_minutes":5,"kind":"reminder","notify":"stdout"}`))
 	if !errors.Is(err, sentinel) {
 		t.Errorf("store error must propagate, got %v", err)
 	}
@@ -334,7 +382,7 @@ func TestTaskStoreErrorPropagates(t *testing.T) {
 // CreateTaskInput.OriginConversationID, and that a bare ctx (CLI / unit test) yields
 // "" with no panic (Pitfall 5 — the two-value toolCallCtx read must be bare-ctx-safe).
 func TestActionScheduleCapturesOrigin(t *testing.T) {
-	scheduleArgs := json.RawMessage(`{"action":"schedule","schedule_kind":"every","every_minutes":10,"kind":"reminder","payload":{"text":"standup"}}`)
+	scheduleArgs := json.RawMessage(`{"action":"schedule","schedule_kind":"every","every_minutes":10,"kind":"reminder","payload":{"text":"standup"},"notify":"stdout"}`)
 
 	tests := []struct {
 		name      string

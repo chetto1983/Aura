@@ -14,16 +14,27 @@ type fakeChannelDeliverer struct {
 	err       error
 
 	calls []struct {
-		identityID string
-		text       string
+		identityID     string
+		conversationID string
+		text           string
 	}
 }
 
 func (f *fakeChannelDeliverer) DeliverToIdentity(_ context.Context, identityID, text string) (bool, error) {
 	f.calls = append(f.calls, struct {
-		identityID string
-		text       string
+		identityID     string
+		conversationID string
+		text           string
 	}{identityID: identityID, text: text})
+	return f.delivered, f.err
+}
+
+func (f *fakeChannelDeliverer) DeliverToConversation(_ context.Context, identityID, conversationID, text string) (bool, error) {
+	f.calls = append(f.calls, struct {
+		identityID     string
+		conversationID string
+		text           string
+	}{identityID: identityID, conversationID: conversationID, text: text})
 	return f.delivered, f.err
 }
 
@@ -44,92 +55,59 @@ func TestDeliverToOrigin(t *testing.T) {
 	}
 
 	cases := []struct {
-		name                string
-		preferOriginChannel bool
-		nilDeliverer        bool
-		notifyRoute         string
-		identityID          string
-		delivered           bool
-		deliverErr          error
-		want                want
+		name         string
+		nilDeliverer bool
+		notifyRoute  string
+		identityID   string
+		delivered    bool
+		deliverErr   error
+		want         want
 	}{
 		{
-			// channel delivers: gate on, no explicit route, real identity, (true,nil) →
-			// the channel handles it; the per-task Notifier is NOT called.
-			name:                "channel delivers ⇒ no Notifier",
-			preferOriginChannel: true,
-			identityID:          ownedIdentity,
-			delivered:           true,
-			want:                want{channelCalled: true, notifierCalled: false},
+			name:        "stdout projects to exact origin conversation",
+			notifyRoute: "stdout",
+			identityID:  ownedIdentity,
+			delivered:   true,
+			want:        want{channelCalled: true},
 		},
 		{
-			// explicit route wins (R7): a set NotifyRoute skips the channel entirely and
-			// goes straight to the route — even with the kill-switch on and a real identity.
-			name:                "explicit route wins ⇒ channel skipped + Notifier",
-			preferOriginChannel: true,
-			notifyRoute:         "whatsapp",
-			identityID:          ownedIdentity,
-			want:                want{channelCalled: false, notifierCalled: true},
+			name:        "whatsapp stays on explicit notifier route",
+			notifyRoute: "whatsapp",
+			identityID:  ownedIdentity,
+			want:        want{notifierCalled: true},
 		},
 		{
-			// "stdout" is the always-available fallback sink the scheduling agent fills in
-			// as the implicit default route — NOT a deliberate external channel. It must
-			// defer to the origin channel exactly like an unset route (R7 amended after the
-			// Phase 20 live gate: the agent auto-populates notify="stdout"). Only whatsapp/email
-			// pre-empt origin. Without this the headline Telegram-reminder case lands on stdout.
-			name:                "stdout route defers to origin ⇒ channel + no Notifier",
-			preferOriginChannel: true,
-			notifyRoute:         "stdout",
-			identityID:          ownedIdentity,
-			delivered:           true,
-			want:                want{channelCalled: true, notifierCalled: false},
+			name:        "telegram explicitly targets identity channel",
+			notifyRoute: "telegram",
+			identityID:  ownedIdentity,
+			delivered:   true,
+			want:        want{channelCalled: true},
 		},
 		{
-			// fix-plan 2.1 / operator BUG-2: "telegram" is the OPPOSITE of an alternate
-			// channel — it names the origin channel explicitly, and the composite Notifier
-			// cannot deliver it (it holds no identity and no channel registry). Before this
-			// it fell into the whatsapp/email branch and degraded to stdout, so an operator
-			// whose only live channel is Telegram got scheduled output on a server console.
-			name:                "telegram route defers to origin ⇒ channel + no Notifier",
-			preferOriginChannel: true,
-			notifyRoute:         "telegram",
-			identityID:          ownedIdentity,
-			delivered:           true,
-			want:                want{channelCalled: true, notifierCalled: false},
+			name:        "local stdout stays on notifier",
+			notifyRoute: "stdout",
+			identityID:  "local",
+			want:        want{notifierCalled: true},
 		},
 		{
-			// un-owned identity ('local'): the gate falls back to the route BEFORE asking
-			// the channel — no stray channel push for a non-onboarded identity.
-			name:                "no owning channel (local) ⇒ Notifier",
-			preferOriginChannel: true,
-			identityID:          "local",
-			want:                want{channelCalled: false, notifierCalled: true},
+			name:        "origin channel failure queues same-route retry",
+			notifyRoute: "stdout",
+			identityID:  ownedIdentity,
+			deliverErr:  errSend,
+			want:        want{channelCalled: true, failedInserted: true},
 		},
 		{
-			// owns-but-fails: (false,err) queues a failed pending row (the same-channel
-			// retry key) and STOPS — the Notifier is NOT called (no double-delivery, Pitfall 3).
-			name:                "owns but fails ⇒ failed pending row + no Notifier",
-			preferOriginChannel: true,
-			identityID:          ownedIdentity,
-			deliverErr:          errSend,
-			want:                want{channelCalled: true, notifierCalled: false, failedInserted: true},
+			name:         "missing channel adapter uses explicit stdout notifier",
+			nilDeliverer: true,
+			notifyRoute:  "stdout",
+			identityID:   ownedIdentity,
+			want:         want{notifierCalled: true},
 		},
 		{
-			// kill-switch off: the channel is never consulted; behavior regresses to
-			// today's route-only delivery.
-			name:                "kill-switch off ⇒ no channel + Notifier",
-			preferOriginChannel: false,
-			identityID:          ownedIdentity,
-			delivered:           true,
-			want:                want{channelCalled: false, notifierCalled: true},
-		},
-		{
-			// nil ChannelDeliverer: legacy route-only behavior (the regression guard).
-			name:                "nil deliverer ⇒ legacy Notifier",
-			preferOriginChannel: true,
-			nilDeliverer:        true,
-			identityID:          ownedIdentity,
-			want:                want{channelCalled: false, notifierCalled: true},
+			name:        "none is silent",
+			notifyRoute: "none",
+			identityID:  ownedIdentity,
+			want:        want{},
 		},
 	}
 
@@ -142,22 +120,19 @@ func TestDeliverToOrigin(t *testing.T) {
 			notif := &captureNotifier{}
 			deliverer := &fakeChannelDeliverer{delivered: tc.delivered, err: tc.deliverErr}
 
-			deps := DispatchDeps{
-				Store:               store,
-				Notifier:            notif,
-				PreferOriginChannel: tc.preferOriginChannel,
-			}
+			deps := DispatchDeps{Store: store, Notifier: notif}
 			if !tc.nilDeliverer {
 				deps.ChannelDeliverer = deliverer
 			}
 
 			d, c := newDispatchFor(t, h, KindReminder, deps)
 			task := Task{
-				ID:          "tdo",
-				Kind:        KindReminder,
-				Payload:     []byte(`{"text":"drink water"}`),
-				NotifyRoute: tc.notifyRoute,
-				IdentityID:  tc.identityID,
+				ID:                   "tdo",
+				Kind:                 KindReminder,
+				Payload:              []byte(`{"text":"drink water"}`),
+				NotifyRoute:          tc.notifyRoute,
+				IdentityID:           tc.identityID,
+				OriginConversationID: "conv-origin",
 			}
 			if err := d.Dispatch(context.Background(), task, c); err != nil {
 				t.Fatalf("Dispatch: %v", err)
@@ -171,6 +146,13 @@ func TestDeliverToOrigin(t *testing.T) {
 				if got := deliverer.calls[0].identityID; got != tc.identityID {
 					t.Fatalf("channel delivered to identity %q, want %q", got, tc.identityID)
 				}
+				wantConversation := "conv-origin"
+				if tc.notifyRoute == string(RouteTelegram) {
+					wantConversation = "" // explicit cross-channel route uses identity delivery
+				}
+				if got := deliverer.calls[0].conversationID; got != wantConversation {
+					t.Fatalf("channel conversation = %q, want %q for notify=%q", got, wantConversation, tc.notifyRoute)
+				}
 				if got := deliverer.calls[0].text; got != "drink water" {
 					t.Fatalf("channel delivered text %q, want the reminder summary", got)
 				}
@@ -180,7 +162,7 @@ func TestDeliverToOrigin(t *testing.T) {
 			if notifierCalled != tc.want.notifierCalled {
 				t.Fatalf("Notifier called = %v, want %v (routes=%v texts=%v)", notifierCalled, tc.want.notifierCalled, notif.routes, notif.texts)
 			}
-			if tc.want.notifierCalled && tc.notifyRoute != "" {
+			if tc.want.notifierCalled {
 				if got := string(notif.routes[0]); got != tc.notifyRoute {
 					t.Fatalf("Notifier route = %q, want the explicit %q (R7)", got, tc.notifyRoute)
 				}

@@ -34,9 +34,10 @@ func TestSkillTTLSeed(t *testing.T) {
 	}
 
 	task, err := store.CreateTask(ctx, CreateTaskParams{
-		Kind:      KindSkillTTLSweep,
-		Spec:      spec,
-		NextRunAt: next,
+		Kind:        KindSkillTTLSweep,
+		Spec:        spec,
+		NextRunAt:   next,
+		NotifyRoute: "none",
 	})
 	if err != nil {
 		// A 23514 check_violation here is the A2 landmine: the 0010 migration did not

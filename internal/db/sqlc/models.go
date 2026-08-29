@@ -474,9 +474,10 @@ type AuraPausedStates struct {
 
 // Durable scheduler notification queue (Phase 19 H6/H7): quiet-hours deferred notifications and failed self-send retry state.
 type AuraPendingNotifications struct {
-	ID          pgtype.UUID        `json:"id"`
-	RunID       pgtype.UUID        `json:"run_id"`
-	NotifyRoute pgtype.Text        `json:"notify_route"`
+	ID    pgtype.UUID `json:"id"`
+	RunID pgtype.UUID `json:"run_id"`
+	// Amendment #176: explicit retry destination; never NULL and never inferred from process configuration.
+	NotifyRoute string             `json:"notify_route"`
 	Body        string             `json:"body"`
 	NotifyAfter pgtype.Timestamptz `json:"notify_after"`
 	Attempts    int32              `json:"attempts"`
@@ -484,8 +485,8 @@ type AuraPendingNotifications struct {
 	Status      string             `json:"status"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-	// Stable owning identity snapshot (Phase 20, Fork 1): the channel-independent delivery key for the deferred/failed sweep route-back. Plain text, no FK — survives a deleted origin conversation. NULL for legacy/CLI rows → falls back to notify_route.
-	IdentityID pgtype.Text `json:"identity_id"`
+	// Amendment #176: mandatory owning identity snapshot recovered from the row's exactly-one durable owner.
+	IdentityID string `json:"identity_id"`
 	// Plan 51-10: the owns-but-failed leg of the delegation nudge sweep (SWARM-03/09) inserts a retry row keyed on the aura.steer_queue row it is retrying delivery for -- NOT the (by then already-succeeded) aura.ingestion_jobs delegation row, since the nudge fires only after that job is long finished. NULL for every scheduler- originated row (unchanged). ON DELETE CASCADE mirrors run_id's own cleanup contract so a retry row can never outlive its owner.
 	SteerQueueID pgtype.UUID `json:"steer_queue_id"`
 }
@@ -553,7 +554,7 @@ type AuraSchedulerTasks struct {
 	StepBudget           pgtype.Int4        `json:"step_budget"`
 	Status               string             `json:"status"`
 	NextRunAt            pgtype.Timestamptz `json:"next_run_at"`
-	NotifyRoute          pgtype.Text        `json:"notify_route"`
+	NotifyRoute          string             `json:"notify_route"`
 	IdentityID           string             `json:"identity_id"`
 	OriginConversationID pgtype.UUID        `json:"origin_conversation_id"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`

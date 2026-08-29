@@ -21,7 +21,7 @@ func seedDelegationJobRowForTest(t *testing.T, ctx context.Context, store *Postg
 	if _, err := store.Create(ctx, CreateIngestionJobRequest{
 		IdentityID: identityID, JobType: delegationJobType, Status: "queued",
 		IdempotencyKey: goal + "|" + childID, MaxAttempts: 3,
-		Payload: map[string]any{"goal": goal, "conversation_id": conversationID, "child_id": childID},
+		Payload: map[string]any{"goal": goal, "conversation_id": conversationID, "child_id": childID, "fanout_key": "f-" + conversationID},
 	}); err != nil {
 		t.Fatalf("seed delegation job row: %v", err)
 	}

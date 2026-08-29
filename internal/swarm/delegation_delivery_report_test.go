@@ -42,7 +42,7 @@ func TestDeliverReportArchivesRecordsThenPushes(t *testing.T) {
 	d := &DelegationDelivery{Recorder: recorder, Steer: pub, Archiver: archiver}
 
 	report := ChildReport{ChildID: "w1-abc", Status: StatusOK, Goal: "goal", Summary: "summary"}
-	recorded, err := d.DeliverReport(context.Background(), DelegationPayload{ConversationID: "conv-9"}, report, 90*time.Second)
+	recorded, err := d.DeliverReport(context.Background(), DelegationPayload{ConversationID: "conv-9", FanoutKey: "f-test"}, report, 90*time.Second)
 	if err != nil {
 		t.Fatalf("DeliverReport = %v", err)
 	}
@@ -100,7 +100,7 @@ func TestDeliverReportPushesFullReport(t *testing.T) {
 	d := &DelegationDelivery{Recorder: recorder, Steer: pub}
 
 	report := ChildReport{ChildID: "w1", Status: StatusOK, Goal: "goal", Summary: "the whole summary text"}
-	if _, err := d.DeliverReport(context.Background(), DelegationPayload{ConversationID: "conv-3"}, report, 30*time.Second); err != nil {
+	if _, err := d.DeliverReport(context.Background(), DelegationPayload{ConversationID: "conv-3", FanoutKey: "f-test"}, report, 30*time.Second); err != nil {
 		t.Fatalf("DeliverReport = %v", err)
 	}
 	if len(pub.pushes) != 1 {
@@ -124,8 +124,8 @@ func TestDeliverReportPushesFullReport(t *testing.T) {
 // -- this asserts the fake publisher's recorded key equals payload.FanoutKey
 // by value, the assertion this task's own action text calls "the step that
 // makes the whole task real". Without it every aura.steer_queue.fanout_key
-// would stay NULL and groupByFanout would route every row to the keyless
-// per-row nudgeOne path regardless of how many workers a swarm_spawn call
+// would violate the explicit fan-out invariant and make grouped delivery impossible
+// regardless of how many workers a swarm_spawn call
 // dispatched -- the exact defect D-15/Amendment #172 point 2 forbid.
 func TestDeliverReportWritesTheFanoutKey(t *testing.T) {
 	recorder := &fakeConversationRecorder{}
@@ -153,7 +153,7 @@ func TestDeliverReportNilArchiverDegradesToNoArtifactPointer(t *testing.T) {
 	recorder := &fakeConversationRecorder{}
 	d := &DelegationDelivery{Recorder: recorder}
 	report := ChildReport{ChildID: "w1", Status: StatusOK, Goal: "goal", Summary: "summary"}
-	recorded, err := d.DeliverReport(context.Background(), DelegationPayload{ConversationID: "conv-4"}, report, time.Minute)
+	recorded, err := d.DeliverReport(context.Background(), DelegationPayload{ConversationID: "conv-4", FanoutKey: "f-test"}, report, time.Minute)
 	if err != nil || !recorded {
 		t.Fatalf("DeliverReport = (%v, %v), want (true, nil)", recorded, err)
 	}
@@ -172,7 +172,7 @@ func TestDeliverReportArchiveErrorDegradesToNoArtifactPointer(t *testing.T) {
 	})
 	d := &DelegationDelivery{Recorder: recorder, Archiver: archiver}
 	report := ChildReport{ChildID: "w1", Status: StatusOK, Goal: "goal", Summary: "summary"}
-	recorded, err := d.DeliverReport(context.Background(), DelegationPayload{ConversationID: "conv-5"}, report, time.Minute)
+	recorded, err := d.DeliverReport(context.Background(), DelegationPayload{ConversationID: "conv-5", FanoutKey: "f-test"}, report, time.Minute)
 	if err != nil || !recorded {
 		t.Fatalf("DeliverReport = (%v, %v), want (true, nil): an archive failure must never fail delivery", recorded, err)
 	}
@@ -188,7 +188,7 @@ func TestDeliverReportRecordFailureReturnsFalse(t *testing.T) {
 	recorder := &fakeConversationRecorder{err: errors.New("db down")}
 	d := &DelegationDelivery{Recorder: recorder}
 	report := ChildReport{ChildID: "w1", Status: StatusOK, Goal: "goal", Summary: "summary"}
-	recorded, err := d.DeliverReport(context.Background(), DelegationPayload{ConversationID: "conv-6"}, report, time.Minute)
+	recorded, err := d.DeliverReport(context.Background(), DelegationPayload{ConversationID: "conv-6", FanoutKey: "f-test"}, report, time.Minute)
 	if err != nil {
 		t.Fatalf("DeliverReport = %v, want no hard error on a record failure", err)
 	}

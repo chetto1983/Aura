@@ -93,9 +93,8 @@ type DispatchDeps struct {
 	// window ends. It is paired with QuietHours so deferred notifications get a
 	// durable notify_after instead of being dropped.
 	QuietHoursEnd func(tz string) (time.Time, bool)
-	// ChannelDeliverer prefers the origin channel over the per-task route (Phase 20
-	// R4/R7). Nil → legacy route-only behavior (the regression guard); the
-	// composition root adapts *channels.Registry onto it.
+	// ChannelDeliverer projects stdout to its exact origin conversation and explicit
+	// telegram to the linked identity. The composition root adapts the channel registry.
 	ChannelDeliverer ChannelDeliverer
 	// ApprovalReminderStore backs the per-tick pending-approval reminder sweep (fix-plan
 	// 1.7 / Amendment #92). Nil → no sweep (defaulted from Store in NewDispatch when the
@@ -120,10 +119,6 @@ type DispatchDeps struct {
 	// on the task all along (origin_conversation_id) and only the approval-pause path
 	// read it. LibreChat's rule (D-00): the conversation IS the channel.
 	ConversationRecorder ConversationRecorder
-	// PreferOriginChannel is the AURA_SCHEDULER_PREFER_ORIGIN_CHANNEL kill-switch,
-	// resolved once at the composition root (default true). False → byte-identical
-	// legacy route-only behavior even when a ChannelDeliverer is wired (D-03).
-	PreferOriginChannel bool
 }
 
 // ConversationRecorder appends a finished run's outcome to the conversation the task
@@ -228,8 +223,8 @@ func scheduledOperationContext(ctx context.Context, task Task, claim *Claim) (co
 		return nil, errors.New("cron dispatch: nil claim")
 	}
 	identityID := task.IdentityID
-	// Legacy/system scheduler rows may carry the historical "local" sentinel
-	// rather than a UUID. The effect still retains task.IdentityID for delivery,
+	// System scheduler rows may carry the "local" sentinel rather than a UUID. The
+	// effect still retains task.IdentityID for delivery,
 	// while registry ownership maps that non-tenant sentinel to the seeded local
 	// operator UUID. A valid durable tenant UUID is preserved exactly.
 	if _, err := uuid.Parse(identityID); err != nil {
@@ -302,6 +297,9 @@ func (d *Dispatch) complete(ctx context.Context, task Task, runID, status, summa
 // skipped this tick (D-23); a reminder still fires (its delivery IS the task, not an
 // advisory notification).
 func (d *Dispatch) notify(ctx context.Context, task Task, runID, summary string, runErr error) {
+	if task.NotifyRoute == string(RouteNone) {
+		return
+	}
 	if d.deps.Notifier == nil {
 		return
 	}
@@ -313,13 +311,6 @@ func (d *Dispatch) notify(ctx context.Context, task Task, runID, summary string,
 	}
 	var suppressor interface{ SuppressSchedulerNotification() bool }
 	if runErr != nil && errors.As(runErr, &suppressor) && suppressor.SuppressSchedulerNotification() {
-		return
-	}
-	// A system-seeded housekeeping sweep that succeeded is pure operational noise in
-	// the user's channel ("identity purge ok: purged 0 ..." every ~15m). Suppress the
-	// routine-success push — the audit summary is still on the run ledger (CompleteRun).
-	// A FAILURE still flows through (D-21): an errored purge/reap must surface.
-	if runErr == nil && isSilentSuccessKind(task.Kind) {
 		return
 	}
 	tier := d.taskTier(task)
@@ -343,8 +334,7 @@ func (d *Dispatch) notify(ctx context.Context, task Task, runID, summary string,
 	// Prefer the origin channel (R4/R7): a reminder set in a Telegram DM lands back
 	// in that DM. deliverToOrigin returns true when delivery is the channel's concern
 	// (delivered, or owns-but-failed-and-queued) — only fall through to the per-task
-	// route when no channel owns the identity / an explicit route was set / the
-	// kill-switch is off.
+	// route when the explicit route is not a channel projection.
 	if d.deliverToOrigin(ctx, task, runID, text) {
 		return
 	}
@@ -371,22 +361,15 @@ func (d *Dispatch) deferred(task Task) bool {
 // live measurement that prompted this had the push succeed while the asking
 // conversation learned nothing.
 //
-// It reuses isSilentSuccessKind rather than restating the rule: a housekeeping
-// sweep's routine success is noise in a conversation for exactly the reason it is
-// noise on a channel. A FAILURE is recorded for every kind (D-21's reasoning) —
-// a failure is the outcome an operator must not have to go hunting for.
-//
 // Best-effort. The work already happened and is already on the run ledger, so a
 // failed write is a WARN and never a run failure.
 func (d *Dispatch) recordToOrigin(ctx context.Context, task Task, summary string, runErr error) {
-	if d.deps.ConversationRecorder == nil || task.OriginConversationID == "" {
+	if task.NotifyRoute == string(RouteNone) || d.deps.ConversationRecorder == nil || task.OriginConversationID == "" {
 		return
 	}
 	text := summary
 	if runErr != nil {
 		text = string(task.Kind) + " failed: " + runErr.Error()
-	} else if isSilentSuccessKind(task.Kind) {
-		return
 	}
 	if text == "" {
 		return
@@ -427,23 +410,6 @@ func (d *Dispatch) insertPendingNotification(
 		IdentityID:  task.IdentityID,
 	})
 	return err
-}
-
-// isSilentSuccessKind reports the system-seeded housekeeping sweeps whose ROUTINE
-// SUCCESS must not reach the user's channel. They are not model-schedulable — the
-// composition root seeds them on a fixed cadence (identity_purge ~every 15m,
-// sandbox_reap on the idle-TTL cadence, memory_embed_backfill every few minutes,
-// skill_ttl_sweep + share_expiry_sweep daily) — so a per-tick "ok" summary is noise, not
-// signal. Their FAILURE still notifies (D-21) and the audit summary is always written to
-// the run ledger; only the success push is skipped.
-func isSilentSuccessKind(kind TaskKind) bool {
-	switch kind {
-	case KindIdentityPurge, KindSandboxReap, KindSkillTTLSweep, KindShareExpirySweep,
-		KindRetentionSweep, KindMemoryEmbedBackfill:
-		return true
-	default:
-		return false
-	}
 }
 
 // taskTier recomputes the risk tier at dispatch from the task's kind + payload (the
@@ -490,8 +456,7 @@ func (d *Dispatch) sweepNotifications(ctx context.Context) error {
 			d.markSweptFailed(ctx, n.ID, "origin-channel delivery failed")
 			continue
 		case sweepFallback:
-			// no origin channel owns the row (NULL/legacy identity, explicit route, or
-			// kill-switch off) → today's per-task route, byte-identical to pre-Phase-20.
+			// The explicit route is not a conversation projection; use its notifier.
 		}
 		if err := d.deps.Notifier.Notify(ctx, NotifyRoute(n.NotifyRoute), "", n.Body); err != nil {
 			d.markSweptFailed(ctx, n.ID, err.Error())

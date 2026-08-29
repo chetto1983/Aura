@@ -16,6 +16,7 @@ import (
 // capability — the Registry runtime-asserts it to route identity-keyed pushes
 // (Phase 20 R3) without any registry change.
 var _ channels.Deliverer = (*Telegram)(nil)
+var _ channels.ConversationDeliverer = (*Telegram)(nil)
 
 // compile-time proof that *Telegram ALSO satisfies the optional channels.ApprovalDeliverer
 // capability — the scheduler approval-reminder sweep fans out through it to render a real
@@ -41,6 +42,20 @@ type accountResolver interface {
 // deref a racing nil bot); a nil bot or nil Store means the channel cannot push,
 // so it returns (false, nil) and lets the route fall-back handle delivery.
 func (t *Telegram) Deliver(ctx context.Context, identityID, text string) (bool, error) {
+	return t.deliver(ctx, identityID, "", text)
+}
+
+// DeliverConversation pushes only when conversationID is the deterministic
+// Telegram thread for the resolved account. A linked Telegram account does not
+// make arbitrary cockpit or CLI conversations Telegram-owned.
+func (t *Telegram) DeliverConversation(ctx context.Context, identityID, conversationID, text string) (bool, error) {
+	if conversationID == "" {
+		return false, nil
+	}
+	return t.deliver(ctx, identityID, conversationID, text)
+}
+
+func (t *Telegram) deliver(ctx context.Context, identityID, requiredConversationID, text string) (bool, error) {
 	t.mu.Lock()
 	sender := t.deliverSender()
 	t.mu.Unlock()
@@ -58,6 +73,9 @@ func (t *Telegram) Deliver(ctx context.Context, identityID, text string) (bool, 
 			return false, nil // not my user → try next channel
 		}
 		return false, fmt.Errorf("telegram deliver: resolve identity %s: %w", identityID, err)
+	}
+	if requiredConversationID != "" && convID(acct.TelegramUserID) != requiredConversationID {
+		return false, nil
 	}
 	// The Bot API rejects a message over 4096 runes outright, so an unsplit push of a
 	// long agent_job summary was lost in full — the interactive path has always split

@@ -118,7 +118,7 @@ const taskParamsSchema = `{
     "kind": {"type": "string", "enum": ["reminder", "agent_job", "backup_postgres"], "description": "Required when action=schedule. The task kind: reminder (deliver text), agent_job (run an agent turn), backup_postgres (database dump)."},
     "payload": {"type": "object", "description": "Optional when action=schedule. The task payload: for a reminder {\"text\": \"...\"}, for an agent_job {\"goal\": \"...\"}. Scanned for destructive intent (rm/drop/delete) which gates the task to pending_approval."},
     "step_budget": {"type": "integer", "description": "Optional when action=schedule and kind=agent_job. Maximum agent steps for the job run."},
-    "notify": {"type": "string", "enum": ["whatsapp", "email", "stdout", "telegram"], "description": "Optional when action=schedule. Where the task output is delivered. telegram delivers to the operator's bound Telegram chat; whatsapp and email are self-sends to an external address; stdout is the server-console fallback. Defaults to the scheduler default route."},
+    "notify": {"type": "string", "enum": ["none", "whatsapp", "email", "stdout", "telegram"], "description": "Required when action=schedule. Where the task output is delivered. If the operator did not choose, call ask_user(kind=choice) before scheduling. An omitted value persists nothing and returns the same choice directive. none keeps the outcome only in the run ledger; telegram is an intentional push to the bound Telegram chat; whatsapp/email are explicit external self-sends; stdout means the owning conversation when present or literal CLI/system output."},
     "task_id": {"type": "string", "description": "Required when action=cancel or run_now. The id of the target task."}
   },
   "required": ["action"]
@@ -132,6 +132,7 @@ func (t *TaskTool) Spec() Spec {
 		Summary: "Schedule, list, cancel, or run background tasks and reminders.",
 		Description: "Manage scheduled work via a single action enum. action=schedule creates a one-shot (at), interval (every), or cron task of a kind (reminder|agent_job|backup_postgres); action=list shows active and awaiting-approval tasks; action=cancel/run_now operate on a task_id. " +
 			"When the operator asks for recurring or future work (a daily summary, a morning digest, a periodic check, a reminder), schedule it here instead of trying to do it now: a reminder delivers its payload text; an agent_job runs a fresh agent turn AT FIRE TIME with the goal in its payload, so you do NOT need the job's tools available now — the job resolves its own tools when it runs. Put the operator's intent in the payload goal and schedule it. " +
+			"For action=schedule always honor an explicit notify choice. If the operator did not specify one, call ask_user(kind=choice) before scheduling. An omitted notify persists nothing and returns a delivery_choice_required guard directive. " +
 			"Destructive payloads (rm/drop/delete) are routed to pending_approval and require operator approval outside this model-facing tool before they fire.",
 		Parameters: json.RawMessage(taskParamsSchema),
 		// Deferred: 795 token per una capacita' che entra in gioco solo quando l'operatore
@@ -200,6 +201,9 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 	if a.Kind == "" {
 		return ToolResult{}, fmt.Errorf("task schedule: kind is required")
 	}
+	if strings.TrimSpace(a.Notify) == "" {
+		return taskNotifyChoiceRequiredResult(), nil
+	}
 	spec, next, err := t.resolveSchedule(a)
 	if err != nil {
 		return ToolResult{}, err
@@ -211,11 +215,9 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 		Payload:      a.Payload,
 	})
 	// The JSON-schema enum is advisory: an OpenAI-compat provider may pass anything
-	// through, and a route that survives to the notifier silently degrades to stdout —
-	// i.e. the operator asks for Telegram and the output lands on a console nobody
-	// reads. Reject it here, where the model can still correct itself.
+	// through. Reject it here, where the model can still correct itself.
 	if !cron.ValidNotifyRoute(a.Notify) {
-		return ToolResult{}, fmt.Errorf("task schedule: notify %q is not a delivery route (want whatsapp|email|stdout|telegram, or omit it for the default)", a.Notify)
+		return ToolResult{}, fmt.Errorf("task schedule: notify %q is not a delivery route (want none|whatsapp|email|stdout|telegram)", a.Notify)
 	}
 
 	status := "active"
@@ -273,6 +275,31 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 	}
 	s := b.String()
 	return ToolResult{Preview: s, Bytes: len(s)}, nil
+}
+
+func taskNotifyChoiceRequiredResult() ToolResult {
+	payload := struct {
+		Status   string              `json:"status"`
+		Question string              `json:"question"`
+		Options  []map[string]string `json:"options"`
+		Message  string              `json:"message"`
+	}{
+		Status:   "delivery_choice_required",
+		Question: "Where should the scheduled task deliver its result?",
+		Options: []map[string]string{
+			{"label": "No notification", "value": string(cron.RouteNone)},
+			{"label": "This conversation", "value": string(cron.RouteStdout)},
+			{"label": "Telegram", "value": string(cron.RouteTelegram)},
+			{"label": "WhatsApp", "value": string(cron.RouteWhatsApp)},
+			{"label": "Email", "value": string(cron.RouteEmail)},
+		},
+		Message: "No task was created. Call ask_user with kind=\"choice\", the question and options above. After the operator answers, call task action=\"schedule\" again with notify set to the selected option value.",
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		raw = []byte(`{"status":"delivery_choice_required"}`)
+	}
+	return ToolResult{Preview: string(raw), Bytes: len(raw)}
 }
 
 // scheduledApprovalRequiredResult builds the pending_approval directive (the

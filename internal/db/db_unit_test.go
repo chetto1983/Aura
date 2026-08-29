@@ -357,12 +357,12 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A deliberate pin, moved deliberately: 0108 adds the nullable steer_queue fanout_key
-	// used to claim one Telegram nudge per swarm_spawn fan-out (51-11 Task 3). The test
+	// A deliberate pin, moved deliberately: 0110 completes the durable fan-out
+	// constraint for delegation job payloads without rewriting deployed 0109. The test
 	// exists so a migration added without noticing breaks the build rather than deployment;
 	// bumping it is the intended acknowledgement, never an incidental red-to-green fix.
-	if head != 108 {
-		t.Fatalf("MigrationHead=%d, want embedded head 108", head)
+	if head != 110 {
+		t.Fatalf("MigrationHead=%d, want embedded head 110", head)
 	}
 }
 

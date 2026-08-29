@@ -60,7 +60,7 @@ func TestCatchUpMissed_CollapsesMultipleWindowsToOne(t *testing.T) {
 	}
 	overdue := now.Add(-1 * time.Hour) // 12 missed every-5m windows
 	task, err := s.store.CreateTask(ctx, CreateTaskParams{
-		Kind: KindReminder, Spec: spec, StepBudget: 8, NextRunAt: overdue,
+		Kind: KindReminder, Spec: spec, StepBudget: 8, NextRunAt: overdue, NotifyRoute: "none",
 	})
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
@@ -110,7 +110,7 @@ func TestCatchUpMissed_SkipsFutureTasks(t *testing.T) {
 
 	spec, _ := ParseSchedule("every", "", 5, time.Time{}, "Europe/Rome")
 	future := now.Add(30 * time.Minute)
-	task, err := s.store.CreateTask(ctx, CreateTaskParams{Kind: KindReminder, Spec: spec, NextRunAt: future})
+	task, err := s.store.CreateTask(ctx, CreateTaskParams{Kind: KindReminder, Spec: spec, NextRunAt: future, NotifyRoute: "none"})
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -158,13 +158,13 @@ func TestCatchUpMissed_ConsultsReschedulesOnRecovery(t *testing.T) {
 	}
 	overdue := now.Add(-time.Hour) // 12 missed every-5m windows
 
-	noReplay, err := store.CreateTask(ctx, CreateTaskParams{Kind: KindSkillTTLSweep, Spec: spec, StepBudget: 8, NextRunAt: overdue})
+	noReplay, err := store.CreateTask(ctx, CreateTaskParams{Kind: KindSkillTTLSweep, Spec: spec, StepBudget: 8, NextRunAt: overdue, NotifyRoute: "none"})
 	if err != nil {
 		t.Fatalf("CreateTask skill_ttl_sweep: %v", err)
 	}
 	t.Cleanup(func() { cleanupTask(t, pool, noReplay.ID) })
 
-	replay, err := store.CreateTask(ctx, CreateTaskParams{Kind: KindAgentJob, Spec: spec, StepBudget: 8, NextRunAt: overdue})
+	replay, err := store.CreateTask(ctx, CreateTaskParams{Kind: KindAgentJob, Spec: spec, StepBudget: 8, NextRunAt: overdue, NotifyRoute: "none"})
 	if err != nil {
 		t.Fatalf("CreateTask agent_job: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestStartDispatchesMissedAtBoot(t *testing.T) {
 	}
 	overdue := now.Add(-time.Hour) // 12 missed every-5m windows → ONE catch-up fire
 	task, err := store.CreateTask(ctx(t), CreateTaskParams{
-		Kind: KindReminder, Spec: spec, StepBudget: 8, NextRunAt: overdue,
+		Kind: KindReminder, Spec: spec, StepBudget: 8, NextRunAt: overdue, NotifyRoute: "none",
 	})
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)

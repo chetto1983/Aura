@@ -101,11 +101,8 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, own
 		// (D-23); it holds no tick state, so the live scheduler's method is the predicate.
 		QuietHours:    quietScheduler.DuringQuietHours,
 		QuietHoursEnd: quietScheduler.QuietHoursEnd,
-		// Prefer the origin channel (Phase 20 R4/R7): the *channels.Registry satisfies
-		// cron.ChannelDeliverer via DeliverToIdentity. The default-on kill-switch is
-		// resolved once at config load (AURA_SCHEDULER_PREFER_ORIGIN_CHANNEL, default true).
-		ChannelDeliverer:    reg,
-		PreferOriginChannel: chat.cfg.SchedulerPreferOriginChannel,
+		// The registry satisfies both exact-conversation and explicit Telegram delivery.
+		ChannelDeliverer: reg,
 		// On-channel HITL re-surface of a pending_approval task (Amendment #92 revised): the
 		// sweep ensures a real scheduled_task_approval pause on the task's origin conversation
 		// (reused from the model relay, else minted host-side via the Runner) and pushes the

@@ -229,12 +229,12 @@ type fakeChannelDeliverer struct {
 	mu        sync.Mutex
 	delivered bool
 	err       error
-	calls     []struct{ identityID, text string }
+	calls     []struct{ identityID, conversationID, text string }
 }
 
-func (f *fakeChannelDeliverer) DeliverToIdentity(_ context.Context, identityID, text string) (bool, error) {
+func (f *fakeChannelDeliverer) DeliverToConversation(_ context.Context, identityID, conversationID, text string) (bool, error) {
 	f.mu.Lock()
-	f.calls = append(f.calls, struct{ identityID, text string }{identityID, text})
+	f.calls = append(f.calls, struct{ identityID, conversationID, text string }{identityID, conversationID, text})
 	f.mu.Unlock()
 	if f.err != nil {
 		return false, f.err
@@ -242,46 +242,30 @@ func (f *fakeChannelDeliverer) DeliverToIdentity(_ context.Context, identityID, 
 	return f.delivered, nil
 }
 
-// fakeSteerNudgeStore is an in-memory aura.steer_queue nudge-column stand-in:
-// ListUnnudgedDelegationResults returns a fixed candidate set, and
-// MarkSteerRowNudged implements the SAME conditional-claim semantics the real
-// SQL's `WHERE nudged_at IS NULL` enforces (a row can be claimed at most once).
+// fakeSteerNudgeStore is an in-memory aura.steer_queue nudge-column stand-in.
+// Its grouped claim mirrors the real conditional fan-out UPDATE.
 type fakeSteerNudgeStore struct {
-	mu         sync.Mutex // a concurrency test races two NudgeUndrained passes over this store
-	rows       []UndrainedResult
+	mu      sync.Mutex // a concurrency test races two NudgeUndrained passes over this store
+	rows    []UndrainedResult
+	listErr error
+	claimed map[string]bool
+	markErr error
+	// rowsOnMark simulates a result committed after the candidate SELECT but
+	// before the atomic fan-out UPDATE.
 	rowsOnMark []UndrainedResult
-	listErr    error
-	claimed    map[string]bool
-	markErr    error
 }
 
 func (f *fakeSteerNudgeStore) ListUnnudgedDelegationResults(_ context.Context, _ time.Time, _ int) ([]UndrainedResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
-	return f.rows, nil
-}
-
-func (f *fakeSteerNudgeStore) MarkSteerRowNudged(_ context.Context, id, _ string) (bool, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.markErr != nil {
-		return false, f.markErr
-	}
-	if f.claimed == nil {
-		f.claimed = map[string]bool{}
-	}
-	if f.claimed[id] {
-		return false, nil
-	}
-	f.claimed[id] = true
-	return true, nil
+	return append([]UndrainedResult(nil), f.rows...), nil
 }
 
 // MarkFanoutNudged (51-11 Task 3) claims every row of one (identityID,
-// fanoutKey) group not already in the SHARED claimed map -- the same map
-// MarkSteerRowNudged uses, so a concurrency test racing both entry points
-// still observes at-most-once claiming per row. Locked so a real concurrency
+// fanoutKey) group not already in the claimed map. Locked so a real concurrency
 // test (two goroutines racing the SAME fan-out) exercises MarkFanoutNudged's
 // documented one-winner contract rather than a data race in the fake itself.
 func (f *fakeSteerNudgeStore) MarkFanoutNudged(_ context.Context, identityID, fanoutKey string) ([]UndrainedResult, error) {
@@ -320,7 +304,7 @@ func (f *fakePendingNotificationStore) InsertPendingNotification(_ context.Conte
 	return f.err
 }
 
-// TestNudgeUndrainedTriState covers all three DeliverToIdentity outcomes
+// TestNudgeUndrainedTriState covers all three DeliverToConversation outcomes
 // (SWARM-03 edge, unclassified/duplication): delivered and nobody-owns both
 // claim the row and stop; owns-but-failed claims the row too (so a later pass
 // never re-attempts the push) but ALSO queues a pending_notifications retry.
@@ -338,7 +322,7 @@ func TestNudgeUndrainedTriState(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			channel := &fakeChannelDeliverer{delivered: tc.delivered, err: tc.channelErr}
-			nudge := &fakeSteerNudgeStore{rows: []UndrainedResult{{ID: "row-1", IdentityID: "id-1", Body: "the report"}}}
+			nudge := &fakeSteerNudgeStore{rows: []UndrainedResult{{ID: "row-1", IdentityID: "id-1", ConversationID: "conv-1", FanoutKey: "f-one", Body: "the report"}}}
 			pending := &fakePendingNotificationStore{}
 			d := &DelegationDelivery{Channel: channel, Nudge: nudge, Pending: pending, NudgeAfter: time.Minute}
 
@@ -351,6 +335,9 @@ func TestNudgeUndrainedTriState(t *testing.T) {
 			}
 			if len(channel.calls) != 1 || channel.calls[0].identityID != "id-1" {
 				t.Fatalf("channel calls = %+v, want exactly one call for id-1", channel.calls)
+			}
+			if channel.calls[0].conversationID != "conv-1" {
+				t.Fatalf("channel conversation = %q, want conv-1", channel.calls[0].conversationID)
 			}
 			if len(pending.calls) != tc.wantPending {
 				t.Fatalf("pending notification inserts = %d, want %d", len(pending.calls), tc.wantPending)
@@ -368,7 +355,7 @@ func TestNudgeUndrainedTriState(t *testing.T) {
 func TestNudgeUndrainedDisabledWhenNudgeAfterNonPositive(t *testing.T) {
 	for _, nudgeAfter := range []time.Duration{0, -time.Second} {
 		channel := &fakeChannelDeliverer{delivered: true}
-		nudge := &fakeSteerNudgeStore{rows: []UndrainedResult{{ID: "row-1", IdentityID: "id-1", Body: "x"}}}
+		nudge := &fakeSteerNudgeStore{rows: []UndrainedResult{{ID: "row-1", IdentityID: "id-1", ConversationID: "conv-1", FanoutKey: "f-one", Body: "x"}}}
 		d := &DelegationDelivery{Channel: channel, Nudge: nudge, NudgeAfter: nudgeAfter}
 
 		n, err := d.NudgeUndrained(context.Background(), time.Now(), 10)
@@ -395,19 +382,19 @@ func TestNudgeUndrainedNoopWithoutCollaborators(t *testing.T) {
 	}
 }
 
-// TestNudgeOneRendersBoundedMessageNeverRawBody (51-11): the fan-out-of-one
+// TestFanoutOfOneRendersBoundedMessageNeverRawBody (51-11): the fan-out-of-one
 // path decodes row.Body and renders it through TelegramDelegationMessage --
 // the SAME bounded rendering the grouped fan-out (Task 3) uses -- instead of
 // forwarding the raw steer_queue body, which is the raw []ChildReport JSON
 // Amendment #172 measured landing on the phone.
-func TestNudgeOneRendersBoundedMessageNeverRawBody(t *testing.T) {
+func TestFanoutOfOneRendersBoundedMessageNeverRawBody(t *testing.T) {
 	reports := []ChildReport{{GoalIndex: 0, Status: StatusOK, Goal: "goal", Summary: "summary"}}
 	body, err := marshalReports(reports)
 	if err != nil {
 		t.Fatalf("marshalReports = %v", err)
 	}
 	channel := &fakeChannelDeliverer{delivered: true}
-	nudge := &fakeSteerNudgeStore{rows: []UndrainedResult{{ID: "row-1", IdentityID: "id-1", Body: body}}}
+	nudge := &fakeSteerNudgeStore{rows: []UndrainedResult{{ID: "row-1", IdentityID: "id-1", ConversationID: "conv-1", FanoutKey: "f-one", Body: body}}}
 	d := &DelegationDelivery{Channel: channel, Nudge: nudge, NudgeAfter: time.Minute}
 
 	if _, err := d.NudgeUndrained(context.Background(), time.Now(), 10); err != nil {
@@ -418,19 +405,19 @@ func TestNudgeOneRendersBoundedMessageNeverRawBody(t *testing.T) {
 	}
 	got := channel.calls[0].text
 	if got == body {
-		t.Fatal("the raw steer_queue body must never reach DeliverToIdentity verbatim")
+		t.Fatal("the raw steer_queue body must never reach DeliverToConversation verbatim")
 	}
 	if want := TelegramDelegationMessage(reports); got != want {
 		t.Fatalf("delivered text = %q, want the rendered TelegramDelegationMessage %q", got, want)
 	}
 }
 
-// TestNudgeOneUndecodableBodySendsTheNoReportShape: a row whose body does not
+// TestFanoutOfOneUndecodableBodySendsTheNoReportShape: a row whose body does not
 // decode as []ChildReport still sends ONE bounded message ending in the
 // closing line -- never the raw undecodable body.
-func TestNudgeOneUndecodableBodySendsTheNoReportShape(t *testing.T) {
+func TestFanoutOfOneUndecodableBodySendsTheNoReportShape(t *testing.T) {
 	channel := &fakeChannelDeliverer{delivered: true}
-	nudge := &fakeSteerNudgeStore{rows: []UndrainedResult{{ID: "row-1", IdentityID: "id-1", Body: "not json"}}}
+	nudge := &fakeSteerNudgeStore{rows: []UndrainedResult{{ID: "row-1", IdentityID: "id-1", ConversationID: "conv-1", FanoutKey: "f-one", Body: "not json"}}}
 	d := &DelegationDelivery{Channel: channel, Nudge: nudge, NudgeAfter: time.Minute}
 
 	if _, err := d.NudgeUndrained(context.Background(), time.Now(), 10); err != nil {

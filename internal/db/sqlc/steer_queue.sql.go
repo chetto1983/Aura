@@ -165,6 +165,7 @@ func (q *Queries) ListDueSteerRows(ctx context.Context, arg ListDueSteerRowsPara
 const listUnnudgedDelegationResults = `-- name: ListUnnudgedDelegationResults :many
 SELECT id, identity_id, conversation_id, kind, source, body, created_at, expires_at, drained_at, expired_at, expiry_reason, nudged_at, fanout_key FROM aura.steer_queue
 WHERE kind = 'delegation_result'
+  AND fanout_key IS NOT NULL
   AND drained_at IS NULL
   AND expired_at IS NULL
   AND nudged_at IS NULL
@@ -224,7 +225,7 @@ SET nudged_at = now()
 WHERE identity_id = $1
   AND fanout_key = $2
   AND nudged_at IS NULL
-RETURNING id, identity_id, body, fanout_key
+RETURNING id, identity_id, conversation_id, body, fanout_key
 `
 
 type MarkFanoutNudgedParams struct {
@@ -233,21 +234,22 @@ type MarkFanoutNudgedParams struct {
 }
 
 type MarkFanoutNudgedRow struct {
-	ID         pgtype.UUID `json:"id"`
-	IdentityID pgtype.UUID `json:"identity_id"`
-	Body       string      `json:"body"`
-	FanoutKey  pgtype.Text `json:"fanout_key"`
+	ID             pgtype.UUID `json:"id"`
+	IdentityID     pgtype.UUID `json:"identity_id"`
+	ConversationID string      `json:"conversation_id"`
+	Body           string      `json:"body"`
+	FanoutKey      pgtype.Text `json:"fanout_key"`
 }
 
-// 51-11 Task 3: MarkSteerRowNudged's own conditional-UPDATE idempotency argument,
-// generalized from one row to the whole set that shares one (identity, fanout_key) pair --
-// the unclaimed predicate is still nudged_at IS NULL, the entire idempotency key a single
-// row's version already used. RETURNING the complete claimed rows tells the caller which
-// rows THIS pass won and supplies the exact bodies it marked: a sibling inserted after the
-// candidate SELECT but before this UPDATE must be rendered, not silently marked nudged.
-// Two concurrent sweep passes over the SAME complete fan-out race for the SAME set of
+// The conditional UPDATE is the claim-before-push idempotency key for one complete
+// (identity, fanout_key) set. RETURNING tells the caller which rows THIS pass won: two
+// concurrent sweep passes over the SAME complete fan-out race for the SAME set of
 // unclaimed rows, and the loser's UPDATE matches zero of them (every row already has
 // nudged_at set by the winner), so it returns an empty result and sends nothing.
+// Returning the complete delivery inputs is load-bearing: a sibling result can be
+// inserted after the sweep's candidate SELECT but before this UPDATE. The claim sees
+// and marks that late row, so the renderer must use this atomic result set rather than
+// its stale pre-claim snapshot or the late report is permanently omitted.
 func (q *Queries) MarkFanoutNudged(ctx context.Context, arg MarkFanoutNudgedParams) ([]MarkFanoutNudgedRow, error) {
 	rows, err := q.db.Query(ctx, markFanoutNudged, arg.IdentityID, arg.FanoutKey)
 	if err != nil {
@@ -260,6 +262,7 @@ func (q *Queries) MarkFanoutNudged(ctx context.Context, arg MarkFanoutNudgedPara
 		if err := rows.Scan(
 			&i.ID,
 			&i.IdentityID,
+			&i.ConversationID,
 			&i.Body,
 			&i.FanoutKey,
 		); err != nil {
@@ -292,31 +295,6 @@ type MarkSteerRowExpiredParams struct {
 // trace (D-07's "the sweep is idempotent").
 func (q *Queries) MarkSteerRowExpired(ctx context.Context, arg MarkSteerRowExpiredParams) (int64, error) {
 	result, err := q.db.Exec(ctx, markSteerRowExpired, arg.ExpiryReason, arg.ID, arg.IdentityID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const markSteerRowNudged = `-- name: MarkSteerRowNudged :execrows
-UPDATE aura.steer_queue
-SET nudged_at = now()
-WHERE id = $1
-  AND identity_id = $2
-  AND nudged_at IS NULL
-`
-
-type MarkSteerRowNudgedParams struct {
-	ID         pgtype.UUID `json:"id"`
-	IdentityID pgtype.UUID `json:"identity_id"`
-}
-
-// The conditional UPDATE ... WHERE nudged_at IS NULL IS the idempotency key (SWARM-09
-// edge): two concurrent sweep passes over the SAME row nudge exactly once -- the
-// winner sees RowsAffected==1, the loser sees 0 and skips its own push-outcome
-// bookkeeping for that row.
-func (q *Queries) MarkSteerRowNudged(ctx context.Context, arg MarkSteerRowNudgedParams) (int64, error) {
-	result, err := q.db.Exec(ctx, markSteerRowNudged, arg.ID, arg.IdentityID)
 	if err != nil {
 		return 0, err
 	}

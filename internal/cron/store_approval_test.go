@@ -38,7 +38,7 @@ func TestListDueApprovalReminders_FiltersAndThrottle(t *testing.T) {
 	mk := func(identity, status, originConv string) string {
 		task, err := s.CreateTask(ctx, CreateTaskParams{
 			Kind: KindAgentJob, Spec: spec, Payload: []byte(`{"goal":"x"}`),
-			NextRunAt: next, IdentityID: identity, Status: status, OriginConversationID: originConv,
+			NextRunAt: next, IdentityID: identity, Status: status, OriginConversationID: originConv, NotifyRoute: "none",
 		})
 		if err != nil {
 			t.Fatalf("CreateTask(%s,%s): %v", identity, status, err)

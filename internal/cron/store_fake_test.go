@@ -155,19 +155,19 @@ func schedulerTaskRow(t *testing.T) []any {
 		"reminder",             // kind
 		"cron",                 // schedule_kind
 		pgtype.Text{String: "30 9 * * *", Valid: true}, // cron_expr
-		pgtype.Int4{},                                // every_minutes (NULL)
-		pgtype.Timestamptz{},                         // run_at (NULL)
-		"Europe/Rome",                                // tz
-		[]byte(`{"text":"hydrate"}`),                 // payload
-		pgtype.Int4{Int32: 7, Valid: true},           // step_budget
-		"active",                                     // status
-		pgtype.Timestamptz{Time: now, Valid: true},   // next_run_at
-		pgtype.Text{String: "whatsapp", Valid: true}, // notify_route
-		"id-owner",                                   // identity_id
-		uuidVal(t, fakeConvID),                       // origin_conversation_id
-		pgtype.Timestamptz{Time: now, Valid: true},   // created_at
-		pgtype.Timestamptz{Time: now, Valid: true},   // updated_at
-		pgtype.Timestamptz{},                         // approval_reminded_at (NULL)
+		pgtype.Int4{},                              // every_minutes (NULL)
+		pgtype.Timestamptz{},                       // run_at (NULL)
+		"Europe/Rome",                              // tz
+		[]byte(`{"text":"hydrate"}`),               // payload
+		pgtype.Int4{Int32: 7, Valid: true},         // step_budget
+		"active",                                   // status
+		pgtype.Timestamptz{Time: now, Valid: true}, // next_run_at
+		"whatsapp",                                 // notify_route
+		"id-owner",                                 // identity_id
+		uuidVal(t, fakeConvID),                     // origin_conversation_id
+		pgtype.Timestamptz{Time: now, Valid: true}, // created_at
+		pgtype.Timestamptz{Time: now, Valid: true}, // updated_at
+		pgtype.Timestamptz{},                       // approval_reminded_at (NULL)
 	}
 }
 
@@ -183,9 +183,10 @@ func TestStoreFakeCreateTaskSuccessAndDefaults(t *testing.T) {
 	s := storeWithFake(f)
 
 	got, err := s.CreateTask(context.Background(), CreateTaskParams{
-		Kind:    KindReminder,
-		Spec:    ScheduleSpec{Kind: KindCron, CronExpr: "30 9 * * *", TZ: "Europe/Rome"},
-		Payload: []byte(`{"text":"hydrate"}`),
+		Kind:        KindReminder,
+		Spec:        ScheduleSpec{Kind: KindCron, CronExpr: "30 9 * * *", TZ: "Europe/Rome"},
+		Payload:     []byte(`{"text":"hydrate"}`),
+		NotifyRoute: "none",
 	})
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
@@ -216,10 +217,11 @@ func TestStoreFakeCreateTaskEmptyPayloadFallsBackToEmptyObject(t *testing.T) {
 	s := storeWithFake(f)
 
 	if _, err := s.CreateTask(context.Background(), CreateTaskParams{
-		Kind:       KindAgentJob,
-		Spec:       ScheduleSpec{Kind: KindEvery, EveryMinutes: 5, TZ: "UTC"},
-		IdentityID: "id-explicit",
-		Status:     "pending_approval",
+		Kind:        KindAgentJob,
+		Spec:        ScheduleSpec{Kind: KindEvery, EveryMinutes: 5, TZ: "UTC"},
+		IdentityID:  "id-explicit",
+		Status:      "pending_approval",
+		NotifyRoute: "none",
 	}); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -239,7 +241,7 @@ func TestStoreFakeCreateTaskDBErrorWraps(t *testing.T) {
 	f := &cronFakeDBTX{queryRowVal: &cronFakeRow{scanErr: errDB}}
 	s := storeWithFake(f)
 
-	_, err := s.CreateTask(context.Background(), CreateTaskParams{Kind: KindReminder, Spec: ScheduleSpec{Kind: KindCron, CronExpr: "* * * * *", TZ: "UTC"}})
+	_, err := s.CreateTask(context.Background(), CreateTaskParams{Kind: KindReminder, Spec: ScheduleSpec{Kind: KindCron, CronExpr: "* * * * *", TZ: "UTC"}, NotifyRoute: "none"})
 	if err == nil || !errors.Is(err, errDB) {
 		t.Fatalf("CreateTask must wrap the DB error, got %v", err)
 	}

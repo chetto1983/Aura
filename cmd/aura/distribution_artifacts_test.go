@@ -292,7 +292,6 @@ func TestDotEnvTemplateHygiene(t *testing.T) {
 		"TELEGRAM_FILE_BASE_URL=",
 		"AURA_TELEGRAM_LOCAL_BOT_API=",
 		"AURA_PROFILE_DIR=",
-		"AURA_SCHEDULER_PREFER_ORIGIN_CHANNEL=",
 	} {
 		if !hasActiveEnvAssignment(envExample, strings.TrimSuffix(want, "=")) {
 			t.Fatalf(".env.example missing active assignment for %q", want)

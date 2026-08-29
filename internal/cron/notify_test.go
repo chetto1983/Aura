@@ -109,26 +109,28 @@ func TestNotifyStdoutRouteAlwaysDelivers(t *testing.T) {
 	}
 }
 
-func TestNotifyDefaultRouteFromEnv(t *testing.T) {
-	t.Setenv("AURA_SCHEDULER_NOTIFY_DEFAULT", "email")
+func TestNotifyNoneIsSilent(t *testing.T) {
+	var buf bytes.Buffer
 	fss := &fakeSelfSend{}
-	n := NewNotifier(fss)
-	if err := n.Notify(context.Background(), "", "a@b.com", "via default"); err != nil {
-		t.Fatalf("Notify: %v", err)
+	n := &compositeNotifier{resolver: fss, out: &buf}
+	if err := n.Notify(context.Background(), RouteNone, "", "silent"); err != nil {
+		t.Fatalf("Notify(none): %v", err)
 	}
-	if len(fss.resolved) != 1 || fss.resolved[0] != "send_email" {
-		t.Fatalf("empty route should fall through to AURA_SCHEDULER_NOTIFY_DEFAULT=email, got %v", fss.resolved)
+	if len(fss.resolved) != 0 || buf.Len() != 0 {
+		t.Fatalf("none touched a delivery sink: resolved=%v stdout=%q", fss.resolved, buf.String())
 	}
 }
 
-func TestNotifyUnknownRouteDegradesToStdout(t *testing.T) {
+func TestNotifyRejectsMissingOrUnknownRoute(t *testing.T) {
 	t.Parallel()
-	var buf bytes.Buffer
-	n := &compositeNotifier{resolver: &fakeSelfSend{}, out: &buf}
-	if err := n.Notify(context.Background(), NotifyRoute("carrier-pigeon"), "x", "garbled"); err != nil {
-		t.Fatalf("an unknown route must degrade to stdout, got %v", err)
-	}
-	if !strings.Contains(buf.String(), "garbled") {
-		t.Fatalf("unknown route should still write to stdout, got %q", buf.String())
+	for _, route := range []NotifyRoute{"", "carrier-pigeon"} {
+		var buf bytes.Buffer
+		n := &compositeNotifier{resolver: &fakeSelfSend{}, out: &buf}
+		if err := n.Notify(context.Background(), route, "x", "garbled"); err == nil {
+			t.Fatalf("route %q = nil error, want explicit validation failure", route)
+		}
+		if buf.Len() != 0 {
+			t.Fatalf("invalid route %q wrote to stdout: %q", route, buf.String())
+		}
 	}
 }

@@ -92,7 +92,7 @@ func TestOpenPauseAndParkPassesTheBoundIdentityThrough(t *testing.T) {
 		IdentityID:  "identity-1",
 	}
 	job := documents.IngestionJob{ID: "j1", IdentityID: "identity-1"}
-	payload := DelegationPayload{Goal: "g", ConversationID: "conv-7"}
+	payload := DelegationPayload{Goal: "g", ConversationID: "conv-7", FanoutKey: "f-test"}
 	report := ChildReport{Question: "which inbox?", ToolCallID: "call-1"}
 
 	bound := identityctx.WithIdentityID(context.Background(), job.IdentityID)

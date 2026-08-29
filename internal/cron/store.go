@@ -143,6 +143,9 @@ type CreateTaskParams struct {
 // crash between two statements can no longer leave a destructive task claimable
 // (WR-03 atomic gate; the sqlc query already binds status as a parameter).
 func (s *Store) CreateTask(ctx context.Context, p CreateTaskParams) (Task, error) {
+	if !ValidNotifyRoute(p.NotifyRoute) {
+		return Task{}, fmt.Errorf("create task: notify route %q is not explicit", p.NotifyRoute)
+	}
 	identityID := p.IdentityID
 	if identityID == "" {
 		identityID = "local"
@@ -163,7 +166,7 @@ func (s *Store) CreateTask(ctx context.Context, p CreateTaskParams) (Task, error
 		StepBudget:           int4OrNull(p.StepBudget),
 		Status:               status,
 		NextRunAt:            tsOrNull(p.NextRunAt),
-		NotifyRoute:          text(p.NotifyRoute),
+		NotifyRoute:          p.NotifyRoute,
 		IdentityID:           identityID,
 		OriginConversationID: uuidOrNull(p.OriginConversationID),
 	})
@@ -331,7 +334,7 @@ func taskFromRow(r sqlc.AuraSchedulerTasks) Task {
 		StepBudget:           int(r.StepBudget.Int32),
 		Status:               r.Status,
 		NextRunAt:            r.NextRunAt.Time,
-		NotifyRoute:          r.NotifyRoute.String,
+		NotifyRoute:          r.NotifyRoute,
 		IdentityID:           r.IdentityID,
 		OriginConversationID: uuidString(r.OriginConversationID),
 		CreatedAt:            r.CreatedAt.Time,

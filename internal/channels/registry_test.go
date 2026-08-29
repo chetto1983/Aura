@@ -281,6 +281,31 @@ func (d *fakeDeliverer) delivers() int {
 	return d.deliverCalls
 }
 
+type fakeConversationDeliverer struct {
+	fakeChannel
+	delivered        bool
+	deliverErr       error
+	mu               sync.Mutex
+	deliverCalls     int
+	lastIdentity     string
+	lastConversation string
+}
+
+func (d *fakeConversationDeliverer) DeliverConversation(_ context.Context, identityID, conversationID, _ string) (bool, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.deliverCalls++
+	d.lastIdentity = identityID
+	d.lastConversation = conversationID
+	return d.delivered, d.deliverErr
+}
+
+func (d *fakeConversationDeliverer) delivers() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.deliverCalls
+}
+
 // fakeApprovalDeliverer is a fakeChannel that ALSO implements ApprovalDeliverer, mirroring
 // fakeDeliverer, so TestRegistryDeliverApproval exercises the actionable-approval fan-out.
 type fakeApprovalDeliverer struct {
@@ -493,6 +518,83 @@ func TestRegistryDeliverToIdentity(t *testing.T) {
 		}
 		if deliv.delivers() != 1 {
 			t.Errorf("deliverer delivers = %d, want 1", deliv.delivers())
+		}
+	})
+}
+
+func TestRegistryDeliverToConversation(t *testing.T) {
+	errSend := errors.New("send failed")
+
+	t.Run("passes exact identity and conversation in sorted order", func(t *testing.T) {
+		a := &fakeConversationDeliverer{fakeChannel: fakeChannel{name: "a"}, delivered: true}
+		b := &fakeConversationDeliverer{fakeChannel: fakeChannel{name: "b"}, delivered: true}
+		reg := NewRegistry()
+		reg.Register(b)
+		reg.Register(a)
+		if err := reg.StartAll(context.Background()); err != nil {
+			t.Fatalf("StartAll: %v", err)
+		}
+		ok, err := reg.DeliverToConversation(context.Background(), "id-1", "conv-1", "hi")
+		if err != nil || !ok {
+			t.Fatalf("DeliverToConversation = (%v, %v), want (true, nil)", ok, err)
+		}
+		if a.lastIdentity != "id-1" || a.lastConversation != "conv-1" {
+			t.Fatalf("route = (%q, %q), want (id-1, conv-1)", a.lastIdentity, a.lastConversation)
+		}
+		if b.delivers() != 0 {
+			t.Fatalf("second channel calls = %d, want 0", b.delivers())
+		}
+	})
+
+	t.Run("never falls back to identity-only deliverer", func(t *testing.T) {
+		identityOnly := &fakeDeliverer{fakeChannel: fakeChannel{name: "identity"}, delivered: true}
+		reg := NewRegistry()
+		reg.Register(identityOnly)
+		if err := reg.StartAll(context.Background()); err != nil {
+			t.Fatalf("StartAll: %v", err)
+		}
+		ok, err := reg.DeliverToConversation(context.Background(), "id-1", "cockpit-conv", "hi")
+		if err != nil || ok {
+			t.Fatalf("DeliverToConversation = (%v, %v), want (false, nil)", ok, err)
+		}
+		if identityOnly.delivers() != 0 {
+			t.Fatalf("identity-only calls = %d, want 0", identityOnly.delivers())
+		}
+	})
+
+	t.Run("owns-but-failed stops siblings", func(t *testing.T) {
+		a := &fakeConversationDeliverer{fakeChannel: fakeChannel{name: "a"}, deliverErr: errSend}
+		b := &fakeConversationDeliverer{fakeChannel: fakeChannel{name: "b"}, delivered: true}
+		reg := NewRegistry()
+		reg.Register(a)
+		reg.Register(b)
+		if err := reg.StartAll(context.Background()); err != nil {
+			t.Fatalf("StartAll: %v", err)
+		}
+		ok, err := reg.DeliverToConversation(context.Background(), "id-1", "conv-1", "hi")
+		if ok || !errors.Is(err, errSend) {
+			t.Fatalf("DeliverToConversation = (%v, %v), want (false, errSend)", ok, err)
+		}
+		if b.delivers() != 0 {
+			t.Fatalf("sibling calls = %d, want 0", b.delivers())
+		}
+	})
+
+	t.Run("empty route fails closed", func(t *testing.T) {
+		d := &fakeConversationDeliverer{fakeChannel: fakeChannel{name: "a"}, delivered: true}
+		reg := NewRegistry()
+		reg.Register(d)
+		if err := reg.StartAll(context.Background()); err != nil {
+			t.Fatalf("StartAll: %v", err)
+		}
+		for _, tc := range []struct{ identity, conversation string }{{"", "conv"}, {"id", ""}} {
+			ok, err := reg.DeliverToConversation(context.Background(), tc.identity, tc.conversation, "hi")
+			if ok || err != nil {
+				t.Fatalf("DeliverToConversation(%q,%q) = (%v,%v), want (false,nil)", tc.identity, tc.conversation, ok, err)
+			}
+		}
+		if d.delivers() != 0 {
+			t.Fatalf("calls = %d, want 0", d.delivers())
 		}
 	})
 }
