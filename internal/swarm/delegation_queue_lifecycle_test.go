@@ -10,6 +10,7 @@ import (
 	"go.uber.org/goleak"
 
 	"github.com/chetto1983/aura/internal/documents"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/steer"
 )
 
@@ -278,7 +279,7 @@ func TestRecordFailureBlocksSucceeded(t *testing.T) {
 // to scope the RLS carrier -- an unbound ctx makes the write invisible to itself and fails
 // "conversation not found", which measured live as every delegation attempt failing to
 // record, the queue retrying the whole worker from scratch, and dead-lettering at the cap.
-func TestDeliverSuccessBindsTheJobIdentityForRLS(t *testing.T) {
+func TestDeliverSuccessPassesTheBoundIdentityThrough(t *testing.T) {
 	store := &fakeDelegationStore{}
 	pub := &fakeSteerPublisher{}
 	recorder := &fakeConversationRecorder{}
@@ -286,7 +287,10 @@ func TestDeliverSuccessBindsTheJobIdentityForRLS(t *testing.T) {
 	job := documents.IngestionJob{ID: "j1", IdentityID: "identity-1"}
 	payload := DelegationPayload{Goal: "g", ConversationID: "conv-7"}
 
-	if err := l.deliverSuccess(context.Background(), job, payload, ChildReport{Status: StatusOK, Summary: "done"}); err != nil {
+	// The bind is processJob's (TestProcessJobBindsTheJobIdentityOnce); deliverSuccess
+	// must hand the SAME ctx to the recorder, never strip or re-derive it.
+	bound := identityctx.WithIdentityID(context.Background(), job.IdentityID)
+	if err := l.deliverSuccess(bound, job, payload, ChildReport{Status: StatusOK, Summary: "done"}); err != nil {
 		t.Fatalf("deliverSuccess = %v", err)
 	}
 	if len(recorder.appended) != 1 {
@@ -295,6 +299,50 @@ func TestDeliverSuccessBindsTheJobIdentityForRLS(t *testing.T) {
 	if got := recorder.appended[0].identityID; got != job.IdentityID {
 		t.Fatalf("recorder saw identity %q on ctx, want the job's identity %q -- a real "+
 			"conversations.Store would have this write hidden by RLS", got, job.IdentityID)
+	}
+}
+
+// TestProcessJobBindsTheJobIdentityOnce is the boundary proof for defect A
+// (live-check/d03/RESULTS.md): the claim loop's ctx carries NO identityctx, and
+// processJob is the ONE place that binds the claimed row's identity before the
+// worker, the report delivery and the pause-and-park question all read it. Both
+// delivery outcomes are asserted through ProcessOnce on a bare ctx, so a future
+// call site that forgets the bind cannot exist -- there is nothing to forget.
+func TestProcessJobBindsTheJobIdentityOnce(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		out  outcome
+	}{
+		{name: "report delivery", out: outcome{kind: "ok", text: "inbox summarised"}},
+		{name: "pause question delivery", out: outcome{kind: "pause", question: "which inbox?"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defer goleak.VerifyNone(t)
+			const goal = "summarise the inbox"
+			const identityID = "11111111-1111-4111-8111-111111111111"
+			rc := testRunConfig(t, newRouter().route(goal, tc.out), 25)
+			store := &fakeDelegationStore{claimJobs: []documents.IngestionJob{{
+				ID: "j1", IdentityID: identityID, JobType: JobTypeSwarmDelegation,
+				Payload:     map[string]any{"goal": goal, "conversation_id": "conv-7"},
+				MaxAttempts: 3,
+			}}}
+			recorder := &fakeConversationRecorder{}
+			l := &DelegationClaimLoop{
+				Store: store, Delivery: &DelegationDelivery{Recorder: recorder, Steer: &fakeSteerPublisher{}},
+				IdentityID: identityID, Worker: rc, LeaseDuration: time.Minute, PauseParker: newFakePauseAndPark(),
+			}
+
+			if _, err := l.ProcessOnce(withToolCtx(context.Background(), t)); err != nil {
+				t.Fatalf("ProcessOnce = %v", err)
+			}
+			if len(recorder.appended) != 1 {
+				t.Fatalf("appended = %+v, want exactly one recorded turn", recorder.appended)
+			}
+			if got := recorder.appended[0].identityID; got != identityID {
+				t.Fatalf("recorder saw identity %q on ctx, want the claimed job's %q -- a real "+
+					"conversations.Store would have this write hidden by RLS", got, identityID)
+			}
+		})
 	}
 }
 

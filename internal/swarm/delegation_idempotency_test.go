@@ -57,12 +57,15 @@ func TestEnqueueDelegationEmptyGoals(t *testing.T) {
 // scheduler, and had never minted one. Also asserts identityctx round-trips,
 // and that two different lease generations (a reclaim/retry) mint two
 // DIFFERENT operations -- a retried attempt must never replay a dead
-// attempt's stale result.
+// attempt's stale result. The identity itself is bound ONCE upstream, in
+// processJob (TestProcessJobBindsTheJobIdentityOnce); this function must only
+// preserve it, never be a second place that binds it.
 func TestDelegationOperationContextMintsTrustedRoot(t *testing.T) {
 	job := documents.IngestionJob{ID: "job-1", IdentityID: "11111111-1111-1111-1111-111111111111", LeaseGeneration: 1}
 	payload := DelegationPayload{Goal: "do the thing", ConversationID: "conv-1"}
 
-	ctx, err := delegationOperationContext(context.Background(), job, payload)
+	bound := identityctx.WithIdentityID(context.Background(), job.IdentityID)
+	ctx, err := delegationOperationContext(bound, job, payload)
 	if err != nil {
 		t.Fatalf("delegationOperationContext: %v", err)
 	}
@@ -77,12 +80,12 @@ func TestDelegationOperationContextMintsTrustedRoot(t *testing.T) {
 		t.Fatalf("operation identity = %q, want %q", op.Key.IdentityID, job.IdentityID)
 	}
 	if got := identityctx.IdentityID(ctx); got != job.IdentityID {
-		t.Fatalf("identityctx.IdentityID(ctx) = %q, want %q", got, job.IdentityID)
+		t.Fatalf("identityctx.IdentityID(ctx) = %q, want the identity processJob bound (%q) preserved", got, job.IdentityID)
 	}
 
 	retried := job
 	retried.LeaseGeneration = 2
-	retriedCtx, err := delegationOperationContext(context.Background(), retried, payload)
+	retriedCtx, err := delegationOperationContext(bound, retried, payload)
 	if err != nil {
 		t.Fatalf("delegationOperationContext (retry): %v", err)
 	}

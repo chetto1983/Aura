@@ -177,8 +177,12 @@ func (s *ExecStreamHandle) sigterm() {
 // `exec` prefix: the command may be a compound line / builtin / pipeline, so it runs as a child of
 // this wrapper sh. $$ is the wrapper's PID; runc starts each exec as a session leader, so $$ is
 // also the process-group id killBoxProcessGroup signals to terminate the whole job tree.
+// The EXIT trap removes the file on a normal exit so a long-lived box does not accumulate
+// one file per shell_exec call; a wrapper killed by killBoxProcessGroup's TERM exits
+// without running it, which leaves a file naming a dead PID -- harmless, and
+// killProcessGroupCommand's `2>/dev/null` already tolerates it.
 func wrapCommandWithPIDFile(pidFile, cmd string) string {
-	return "echo $$ > '" + pidFile + "'; " + cmd
+	return "echo $$ > '" + pidFile + "'; trap 'rm -f " + pidFile + "' EXIT; " + cmd
 }
 
 // killProcessGroupCommand is the pure shell snippet killBoxProcessGroup runs in a separate,

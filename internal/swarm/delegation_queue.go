@@ -278,6 +278,18 @@ func (l *DelegationClaimLoop) Run(ctx context.Context) error {
 }
 
 func (l *DelegationClaimLoop) processJob(ctx context.Context, job documents.IngestionJob) error {
+	// The ONE place a claimed row's identity is bound onto ctx. The claim loop's own
+	// ctx (ProcessOnce's daemon background loop, never a per-request context) carries
+	// no identityctx, and every per-identity write downstream reads it: the worker's
+	// own identity-scoped tools (delegationOperationContext), Deliver's
+	// ConversationRecorder (conversations.Store.AppendTurn sets the RLS carrier from
+	// identityctx.IdentityID), and the pause-and-park question delivery. Measured live
+	// 2026-08-29 (live-check/d03/RESULTS.md defect A) when only the worker had the bind:
+	// every report failed "conversation not found", the queue re-ran the WHOLE worker
+	// per attempt and dead-lettered. Binding per call site fixed it and was then
+	// consolidated here the same day -- one boundary, no site left to forget.
+	ctx = identityctx.WithIdentityID(ctx, job.IdentityID)
+
 	payload, err := delegationPayloadFromJob(job)
 	if err != nil {
 		return l.recordFailure(ctx, job, fmt.Errorf("delegation payload: %w", err))
@@ -362,15 +374,9 @@ func (l *DelegationClaimLoop) deliverSuccess(ctx context.Context, job documents.
 	if err != nil {
 		return fmt.Errorf("delegation report marshal: %w", err)
 	}
-	// The claim loop's own ctx (ProcessOnce's daemon background loop, never a per-request
-	// context) carries no identityctx. Deliver's ConversationRecorder writes through
-	// conversations.Store.AppendTurn, which reads identityctx.IdentityID(ctx) to set the RLS
-	// carrier (db.WithCallerIdentityTx) -- without this bind RLS hides the conversation and
-	// the write fails "conversation not found". Measured live 2026-08-29
-	// (live-check/d03/RESULTS.md defect A): every delegation attempt failed to record, the
-	// queue retried the WHOLE worker from scratch (re-running up to 5 minutes of real tool
-	// calls per attempt), and every run in that check dead-lettered at the attempt cap.
-	recorded, err := l.Delivery.Deliver(identityctx.WithIdentityID(ctx, job.IdentityID), payload, text)
+	// ctx already carries the job's identity (bound once in processJob); Deliver's
+	// ConversationRecorder reads it to scope the RLS write.
+	recorded, err := l.Delivery.Deliver(ctx, payload, text)
 	if err != nil {
 		return fmt.Errorf("delegation report deliver: %w", err)
 	}

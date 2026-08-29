@@ -19,7 +19,6 @@ import (
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/idempotency"
-	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -106,10 +105,8 @@ func (l *DelegationClaimLoop) openPauseAndPark(ctx context.Context, job document
 
 	if l.Delivery != nil {
 		questionText := fmt.Sprintf("Worker asks: %s", report.Question)
-		// Same RLS bind deliverSuccess needs (delegation_queue.go, defect A): this Deliver
-		// call shares the identical ConversationRecorder seam, which reads
-		// identityctx.IdentityID(ctx) to scope the write.
-		if _, derr := l.Delivery.Deliver(identityctx.WithIdentityID(ctx, job.IdentityID), payload, questionText); derr != nil {
+		// ctx carries the job's identity (bound once in processJob) for the recorder's RLS write.
+		if _, derr := l.Delivery.Deliver(ctx, payload, questionText); derr != nil {
 			return fmt.Errorf("delegation question deliver: %w", derr)
 		}
 	}
@@ -210,12 +207,12 @@ func (l *DelegationClaimLoop) runWithHeartbeat(ctx context.Context, job document
 // delegationOperationContext mints the trusted root operation context a
 // claimed delegation job's worker needs before it can dispatch ANY mutating
 // tool (gateway.beginOperation denies "operation context missing" otherwise --
-// see runWithHeartbeat's doc comment). It also binds identityctx.WithIdentityID
-// so the worker's own identity-scoped tools (document_search, skill_manage,
-// send_file_ingest, and a NESTED swarm_spawn once 51-05 lifts the registry
-// restriction) resolve the SAME identity the row is scoped to, not an absent
-// one -- mirroring cron/dispatch.go's scheduledOperationContext, one layer
-// further out (a worker instead of a scheduled task).
+// see runWithHeartbeat's doc comment). ctx must already carry the job's
+// identity -- processJob binds it once at the claim-loop boundary, and the
+// worker's own identity-scoped tools (document_search, skill_manage,
+// send_file_ingest, a NESTED swarm_spawn) resolve it from there. Mirrors
+// cron/dispatch.go's scheduledOperationContext, one layer further out (a
+// worker instead of a scheduled task).
 func delegationOperationContext(ctx context.Context, job documents.IngestionJob, payload DelegationPayload) (context.Context, error) {
 	fingerprint, err := idempotency.FingerprintTyped(struct {
 		JobID    string `json:"job_id"`
@@ -238,8 +235,7 @@ func delegationOperationContext(ctx context.Context, job documents.IngestionJob,
 		Fingerprint: fingerprint,
 		Correlation: job.ID,
 	}
-	trusted := identityctx.WithIdentityID(ctx, job.IdentityID)
-	operationCtx, err := idempotency.WithOperation(trusted, operation)
+	operationCtx, err := idempotency.WithOperation(ctx, operation)
 	if err != nil {
 		return nil, fmt.Errorf("delegation operation: %w", err)
 	}

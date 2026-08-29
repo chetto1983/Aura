@@ -24,6 +24,43 @@ no viewer for it.
 Common rule across all five: **the chat gets a chip/row, the canvas gets the content, the mobile
 channel gets short prose (or one edited status message), and a worker is a thread you can switch to.**
 
+## assistant-ui already ships the sub-agent surface (operator: "c'è già tutto basta solo riusare", 2026-08-29)
+
+Read on 2026-08-29: https://www.assistant-ui.com/docs/tools/multi-agent and
+https://www.assistant-ui.com/docs/cloud/ai-sdk#sub-agent-model-tracking, then verified against the
+INSTALLED `@assistant-ui/react` 0.15.14 in `web/node_modules` (not the docs site):
+
+- **`ToolCallMessagePart.messages?: readonly ThreadMessage[]`** (`@assistant-ui/core/dist/types/message.d.ts:220`):
+  a sub-agent's conversation travels INSIDE the tool-call part that spawned it. The backend puts a
+  `messages` array in the tool result; the frontend sees it on the part.
+- **`MessagePartPrimitive.Messages`** renders that nested conversation inside the tool's toolkit
+  `render` — read-only by construction ("no editing, branching, or composing"), recursive (a
+  sub-agent's own tool calls can carry their own `messages`), and with **scope inheritance** (the
+  parent's toolkit renderers — our `ToolFallback`/`toolSummary` — apply to the nested messages for free).
+- **`ReadonlyThreadProvider`** (exported from `@assistant-ui/react/dist/index.d.ts`, re-exported from
+  `@assistant-ui/core/react`) renders a `ThreadMessage[]` OUTSIDE a tool-call context — i.e. in a side
+  panel — with the same scope inheritance. That is the parallel pane, with no second runtime.
+- **Sub-agent model tracking** (`createSamplingCollector` / `wrapSamplingHandler`, `samplingCalls`
+  metadata keyed by `toolCallId`) is an **Assistant Cloud** dashboard feature; no self-hosted
+  equivalent is documented. Not applicable — Aura's per-worker token accounting stays in its own
+  transcript/metrics.
+
+Consequence for G2 (revises the proposal below): the worker pane is NOT a second `Thread` bound to a
+second runtime. It is (a) the `swarm_spawn` tool-call part carrying `messages` = the child transcript
+converted to `ThreadMessage[]` (the same `agent.Event` → part mapping `sseAdapter.ts` already does for
+the main thread, applied to the transcript's events), rendered nested via `MessagePartPrimitive.Messages`
+inside the `swarm_spawn` chip, and (b) the same array handed to `ReadonlyThreadProvider` in the side
+panel for the "watch it work" view. Live tail: `ExternalStoreChat` owns the message array, so the
+worker SSE (or the transcript offset poll the 51-07 route already supports — push preferred) appends
+to the part's `messages` and both views update. The server-side `Translate()` path stays as the wire
+format; the browser needs no new protocol.
+
+Also read on request: https://github.com/carlosduplar/multi-agent-mcp (Python, MIT, 0 stars, hackathon
+2025) — a *routing-guidance* MCP server (`get_routing_guidance`, `discover_agents`, `list_agents`) that
+tells the calling agent which external CLI (Gemini, Aider, Copilot) to run; it spawns nothing, tracks
+nothing and returns no transcript. Not a UX reference for this gap; at most a pointer for a future
+"external CLI as a swarm worker" idea, which is out of scope here.
+
 ## What Aura already has (inventory — nothing here needs inventing)
 
 - Tool-call rendering with per-tool summaries: `web/src/chat/ExternalStoreChat_messages.tsx:367` `ToolFallback`, `web/src/chat/toolSummary.ts` (special-cases `shell_exec`, `send_file`).
@@ -51,7 +88,7 @@ channel gets short prose (or one edited status message), and a worker is a threa
    status (LibreChat's `AgentHandoff` shape, assistant-ui's toolkit chip); click → opens the report
    artifact or the worker pane (G2).
 
-### G2 — Watch a worker in a parallel pane (codex model, assistant-ui mechanics)
+### G2 — Watch a worker in a parallel pane (codex model, assistant-ui mechanics — see §assistant-ui above: `messages` on the tool-call part + `MessagePartPrimitive.Messages` + `ReadonlyThreadProvider`; the points below are the original proposal, superseded where they differ)
 1. Server: `GET /api/conversations/{conv}/swarm/{childID}/events` — SSE that replays the transcript
    JSONL through `Translate()` and then **tails** it while the worker is live (the JSONL is already
    append-only and `tail -f`-able; the 51-07 route's offset semantics give the cursor). Identity-scoped

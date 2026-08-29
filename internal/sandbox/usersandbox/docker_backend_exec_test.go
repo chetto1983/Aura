@@ -32,6 +32,9 @@ func TestWrapCommandWithPIDFile_RecordsPIDBeforeRunningCmd(t *testing.T) {
 		if !strings.HasSuffix(got, cmd) {
 			t.Fatalf("wrapCommandWithPIDFile(%q) = %q, want cmd appended verbatim (no `exec` prefix)", cmd, got)
 		}
+		if !strings.Contains(got, "trap 'rm -f /tmp/.aura-exec-deadbeef.pid' EXIT; ") {
+			t.Fatalf("wrapCommandWithPIDFile(%q) = %q, want an EXIT trap removing the PID file so a long-lived box does not accumulate one per call", cmd, got)
+		}
 	}
 }
 

@@ -201,7 +201,11 @@ func TestDeliverSuccessRecordsUnderRealRLSAsAuraApp(t *testing.T) {
 	job := documents.IngestionJob{ID: "j1", IdentityID: identityID}
 	payload := DelegationPayload{Goal: "summarise the inbox", ConversationID: convID}
 
-	if err := l.deliverSuccess(context.Background(), job, payload, ChildReport{Status: StatusOK, Summary: "all done"}); err != nil {
+	// processJob binds the identity once at the claim-loop boundary (unit-proven by
+	// TestProcessJobBindsTheJobIdentityOnce); this test proves the OTHER half of defect A
+	// against real RLS as aura_app -- with that identity on ctx the write lands.
+	bound := identityctx.WithIdentityID(context.Background(), identityID)
+	if err := l.deliverSuccess(bound, job, payload, ChildReport{Status: StatusOK, Summary: "all done"}); err != nil {
 		t.Fatalf("deliverSuccess = %v, want the SC#1 write to succeed under real RLS", err)
 	}
 

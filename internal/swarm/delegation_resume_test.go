@@ -7,6 +7,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/documents"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -77,12 +78,12 @@ func TestMintFreshUUIDProducesDistinctValidUUIDs(t *testing.T) {
 	}
 }
 
-// TestOpenPauseAndParkBindsTheJobIdentityForRLS is openPauseAndPark's own leg of defect A
+// TestOpenPauseAndParkPassesTheBoundIdentityThrough is openPauseAndPark's own leg of defect A
 // (live-check/d03/RESULTS.md): the question it surfaces through l.Delivery.Deliver shares
-// the SAME ConversationRecorder seam deliverSuccess uses (delegation_queue_unit_test.go's
-// TestDeliverSuccessBindsTheJobIdentityForRLS), so it needs the identical identity bind --
-// the claim loop's own ctx (ProcessOnce's daemon background loop) carries none.
-func TestOpenPauseAndParkBindsTheJobIdentityForRLS(t *testing.T) {
+// the SAME ConversationRecorder seam deliverSuccess uses. The identity is bound ONCE, in
+// processJob (delegation_queue_lifecycle_test.go's TestProcessJobBindsTheJobIdentityOnce,
+// "pause question delivery" case); this function must hand that ctx through unchanged.
+func TestOpenPauseAndParkPassesTheBoundIdentityThrough(t *testing.T) {
 	parker := newFakePauseAndPark()
 	recorder := &fakeConversationRecorder{}
 	l := &DelegationClaimLoop{
@@ -94,7 +95,8 @@ func TestOpenPauseAndParkBindsTheJobIdentityForRLS(t *testing.T) {
 	payload := DelegationPayload{Goal: "g", ConversationID: "conv-7"}
 	report := ChildReport{Question: "which inbox?", ToolCallID: "call-1"}
 
-	if err := l.openPauseAndPark(context.Background(), job, payload, report, nil); err != nil {
+	bound := identityctx.WithIdentityID(context.Background(), job.IdentityID)
+	if err := l.openPauseAndPark(bound, job, payload, report, nil); err != nil {
 		t.Fatalf("openPauseAndPark = %v", err)
 	}
 	if len(recorder.appended) != 1 {
