@@ -1,0 +1,10 @@
+# Temporary override for the 51-09 Task 3 long-run measurement ONLY.
+# Raises the agent tree Budget ceiling so the D-03 claim ("a worker that keeps
+# making progress is not reaped, however long it runs") can be observed beyond
+# the 300s code default. Shipped defaults are restored by recreating aura
+# without this file.
+services:
+  aura:
+    environment:
+      AURA_LOOP_MAX_WALLCLOCK_SEC: "1200"
+      AURA_LOOP_MAX_STEPS: "60"

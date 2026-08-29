@@ -1,0 +1,7 @@
+# Temporary override for 51-09 Task 3 step 6 ONLY: idle == lease must refuse to boot.
+# AURA_SWARM_DELEGATION_LEASE_SEC is not mapped by compose (code default 300), so
+# setting the idle deadline to 300 makes the two equal.
+services:
+  aura:
+    environment:
+      AURA_SWARM_CHILD_IDLE_SEC: "300"

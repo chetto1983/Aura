@@ -1,0 +1,4 @@
+53652               04:38               /bin/sh -c { sleep 480 && echo STALL-PROBE-DONE } __aura_ec=$? printf '\n%s %s\n' '__AURA_CWD__' "$(pwd)" exit $__aura_ec
+53680               04:38               sleep 480
+57121               02:18               /bin/sh -c { sleep 480 && echo STALL-PROBE-DONE } __aura_ec=$? printf '\n%s %s\n' '__AURA_CWD__' "$(pwd)" exit $__aura_ec
+57127               02:18               sleep 480
