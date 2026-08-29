@@ -276,6 +276,7 @@ func TestDelegationPauseResumeFullLifecycle(t *testing.T) {
 	if n, err := l.ProcessOnce(withToolCtx(ctx, t)); err != nil || n != 2 {
 		t.Fatalf("first ProcessOnce = (%d, %v), want (2, nil)", n, err)
 	}
+	l.Wait()
 	if status := jobStatus(t, ctx, pool, identityID, jobA.ID); status != "awaiting_input" {
 		t.Fatalf("job A status = %q, want awaiting_input", status)
 	}
@@ -317,6 +318,7 @@ func TestDelegationPauseResumeFullLifecycle(t *testing.T) {
 	if n, err := l.ProcessOnce(withToolCtx(ctx, t)); err != nil || n != 1 {
 		t.Fatalf("resume ProcessOnce = (%d, %v), want (1, nil) -- only the answered job resumes", n, err)
 	}
+	l.Wait()
 	if status := jobStatus(t, ctx, pool, identityID, jobA.ID); status != "succeeded" {
 		t.Fatalf("job A status = %q after resume, want succeeded (the worker completed post-answer)", status)
 	}

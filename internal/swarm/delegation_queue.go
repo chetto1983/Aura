@@ -207,6 +207,13 @@ type DelegationClaimLoop struct {
 	// (openPauseAndPark's own guard), never a silent skip -- mirrors Delivery's own
 	// nil-receiver posture for the SC#1 write.
 	PauseParker PauseAndPark
+
+	// slots bounds the jobs in flight at once (batchSize); inFlight joins them
+	// (Wait). Both belong to the loop, not to a pass: ProcessOnce dispatches and
+	// returns, so the runtime ticker keeps claiming while workers run.
+	slots     chan struct{}
+	slotsOnce sync.Once
+	inFlight  sync.WaitGroup
 }
 
 // NewDelegationClaimLoop builds a claim loop bound to one identity's queue.
@@ -254,77 +261,73 @@ func (l *DelegationClaimLoop) claimBatch(ctx context.Context, n int) ([]document
 	return jobs, nil
 }
 
-// ProcessOnce is ONE blocking pass: claim a batch, run every row concurrently,
-// wait for all of them. It mirrors IngestionJobWorker.ProcessOnce's shape
-// (jobs_worker.go); the daemon loop is Run, which does not wait.
+// ProcessOnce is one claim pass: it claims only as many due rows as there are
+// free slots (batchSize) and dispatches each to its own goroutine WITHOUT
+// waiting, returning the number dispatched. cmd/aura drives it from the shared
+// runtime ticker (runtimeTenantIngestionProcessor, asset_processing_worker.go)
+// exactly like every other resident processor; Wait joins the dispatched jobs.
+// A job's own failure is already recorded on its row by processJob, so here it
+// is only logged.
+//
+// Why dispatch-and-return (the shape before 2026-08-29 claimed a batch and ran
+// it to completion inside the pass): every claimed row holds a lease from the
+// claim onward, but the heartbeat that renews it only starts inside processJob,
+// and a row that arrives after the pass claimed waits until EVERY job of that
+// pass finishes. Measured live (live-check/d03/RESULTS.md finding F): two
+// delegations issued 1s apart -- the second spawned 125s after the first, once
+// the first was reaped; then, with the batch merely concurrent inside the pass,
+// a row created 3s after a claim was still queued two minutes later. A 300s
+// worker (the AURA_LOOP_MAX_WALLCLOCK_SEC ceiling) ahead of a waiting row lets
+// the 300s lease expire in the queue and the row fence out as lease-lost: work
+// silently lost, which SWARM-09 forbids.
 func (l *DelegationClaimLoop) ProcessOnce(ctx context.Context) (int, error) {
-	jobs, err := l.claimBatch(ctx, l.batchSize())
+	if l == nil {
+		return 0, fmt.Errorf("delegation claim loop has no store")
+	}
+	l.slotsOnce.Do(func() { l.slots = make(chan struct{}, l.batchSize()) })
+	free := cap(l.slots) - len(l.slots)
+	if free == 0 {
+		return 0, nil
+	}
+	jobs, err := l.claimBatch(ctx, free)
 	if err != nil {
 		return 0, err
 	}
-	errs := make([]error, len(jobs))
-	var wg sync.WaitGroup
-	for i, job := range jobs {
-		wg.Go(func() { errs[i] = l.processJob(ctx, job) })
+	for _, job := range jobs {
+		l.slots <- struct{}{}
+		l.inFlight.Go(func() {
+			defer func() { <-l.slots }()
+			if err := l.processJob(ctx, job); err != nil {
+				slog.Warn("swarm.delegation.job_failed", "job_id", job.ID, "err", err)
+			}
+		})
 	}
-	wg.Wait()
-	processed := 0
-	for _, err := range errs {
-		if err == nil {
-			processed++
-		}
-	}
-	return processed, errors.Join(errs...)
+	return len(jobs), nil
 }
 
-// Run is the daemon-resident loop: every tick it claims only as many rows as
-// there are free slots (batchSize) and dispatches each to its own goroutine
-// WITHOUT waiting, so the loop keeps claiming while workers run. A claim error
-// is logged and swallowed -- one bad pass never kills the loop, mirroring
-// internal/cron's "log and continue" discipline; a job's own failure is already
-// recorded on its row by processJob, so it is only logged here. On ctx
-// cancellation Run waits for the in-flight jobs (their workers are cancelled
-// through the same ctx) and returns nil.
-//
-// Why not one blocking pass per tick (the shape before 2026-08-29): a row that
-// arrives after a pass has claimed waits until EVERY job of that pass finishes,
-// and a row claimed in the same pass waited behind its siblings with its lease
-// ticking and nobody renewing it (the heartbeat starts inside processJob).
-// Measured live (live-check/d03/RESULTS.md finding F): two delegations issued
-// 1s apart -- the second spawned 125s after the first, once the first was
-// reaped; then, with only intra-batch concurrency, a row created 3s after a
-// claim was still queued two minutes later. A 300s worker ahead of a claimed
-// row would let the 300s lease expire in the queue and the row fence out as
-// lease-lost: work silently lost, which SWARM-09 forbids.
+// Wait blocks until every job ProcessOnce dispatched has finished. Tests and
+// one-shot callers pair it with ProcessOnce; the daemon never waits (a worker
+// cancelled at shutdown records nothing further -- its lease reclaim on the
+// next boot is the recovery path, as for any crash).
+func (l *DelegationClaimLoop) Wait() {
+	l.inFlight.Wait()
+}
+
+// Run polls ProcessOnce until ctx is cancelled, then waits for the jobs in
+// flight. A pass error is logged and swallowed -- one bad pass never kills the
+// loop, mirroring internal/cron's own "log and continue" discipline.
 func (l *DelegationClaimLoop) Run(ctx context.Context) error {
-	slots := make(chan struct{}, l.batchSize())
-	var inFlight sync.WaitGroup
 	ticker := time.NewTicker(l.pollInterval())
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			inFlight.Wait()
+			l.Wait()
 			return nil
 		case <-ticker.C:
-		}
-		free := cap(slots) - len(slots)
-		if free == 0 {
-			continue
-		}
-		jobs, err := l.claimBatch(ctx, free)
-		if err != nil {
-			slog.Warn("swarm.delegation.claim_failed", "err", err)
-			continue
-		}
-		for _, job := range jobs {
-			slots <- struct{}{}
-			inFlight.Go(func() {
-				defer func() { <-slots }()
-				if err := l.processJob(ctx, job); err != nil {
-					slog.Warn("swarm.delegation.job_failed", "job_id", job.ID, "err", err)
-				}
-			})
+			if _, err := l.ProcessOnce(ctx); err != nil {
+				slog.Warn("swarm.delegation.process_once_failed", "err", err)
+			}
 		}
 	}
 }

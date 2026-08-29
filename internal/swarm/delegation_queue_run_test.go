@@ -117,11 +117,12 @@ func TestProcessOnceRunsAClaimedBatchConcurrently(t *testing.T) {
 	}
 
 	n, err := l.ProcessOnce(withToolCtx(context.Background(), t))
+	l.Wait()
 	if err != nil {
 		t.Fatalf("ProcessOnce = %v", err)
 	}
 	if n != 2 {
-		t.Fatalf("processed = %d, want both claimed rows", n)
+		t.Fatalf("dispatched = %d, want both claimed rows", n)
 	}
 	if tr := store.transitionsSnapshot(); len(tr) != 2 {
 		t.Fatalf("transitions = %+v, want one succeeded transition per row", tr)
@@ -164,6 +165,7 @@ func TestProcessJobBindsTheJobIdentityOnce(t *testing.T) {
 			if _, err := l.ProcessOnce(withToolCtx(context.Background(), t)); err != nil {
 				t.Fatalf("ProcessOnce = %v", err)
 			}
+			l.Wait()
 			if len(recorder.appended) != 1 {
 				t.Fatalf("appended = %+v, want exactly one recorded turn", recorder.appended)
 			}

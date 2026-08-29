@@ -344,6 +344,7 @@ func TestProcessJobRefusesAnAgentIdentityMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ProcessOnce = %v, want the mismatch handled (not propagated) via recordFailure", err)
 	}
+	l.Wait()
 	if n != 1 {
 		t.Fatalf("processed = %d, want 1 (the mismatched row still counts as handled)", n)
 	}

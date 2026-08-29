@@ -72,6 +72,7 @@ func TestProcessOnceRefusesAnUnconfiguredLoop(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			n, err := tc.loop.ProcessOnce(context.Background())
+			tc.loop.Wait()
 			if err == nil {
 				t.Fatalf("ProcessOnce on a loop with %s = nil error", tc.name)
 			}
@@ -89,6 +90,7 @@ func TestProcessOnceSurfacesAClaimFailure(t *testing.T) {
 	store := &fakeDelegationStore{claimErr: errors.New("queue unreachable")}
 	l := &DelegationClaimLoop{Store: store, IdentityID: "identity-1"}
 	n, err := l.ProcessOnce(context.Background())
+	l.Wait()
 	if err == nil || !strings.Contains(err.Error(), "queue unreachable") {
 		t.Fatalf("ProcessOnce = %v, want the claim error surfaced", err)
 	}
@@ -122,6 +124,8 @@ func TestProcessOnceRejectsAMisroutedRow(t *testing.T) {
 			store := &fakeDelegationStore{claimJobs: []documents.IngestionJob{tc.job}}
 			l := &DelegationClaimLoop{Store: store, IdentityID: "identity-1"}
 			n, err := l.ProcessOnce(context.Background())
+			l.Wait()
+			l.Wait()
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("ProcessOnce = %v, want an error naming %q", err, tc.want)
 			}
@@ -147,6 +151,7 @@ func TestProcessOnceRetriesAnUndecodableRow(t *testing.T) {
 	}}}
 	l := &DelegationClaimLoop{Store: store, IdentityID: "identity-1"}
 	n, err := l.ProcessOnce(context.Background())
+	l.Wait()
 	if err != nil {
 		t.Fatalf("ProcessOnce = %v, want the undecodable row handled, not propagated", err)
 	}
@@ -408,6 +413,7 @@ func TestProcessJobRunsTheWorkerAndRoutesEveryOutcome(t *testing.T) {
 			}
 
 			n, err := l.ProcessOnce(withToolCtx(context.Background(), t))
+			l.Wait()
 			if err != nil {
 				t.Fatalf("ProcessOnce = %v", err)
 			}
