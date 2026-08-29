@@ -66,10 +66,10 @@ func decodeToolPreview(toolName, preview string) (any, bool) {
 			return reports, true
 		}
 		// Background dispatch and the synchronous result deliberately share this
-		// normalizer so their cockpit rows cannot drift.
+		// normalizer so their cockpit rows cannot drift. Decode only the member this
+		// package consumes: queued is a producer-owned numeric count, not a second
+		// contract for the display layer to redeclare.
 		var queued struct {
-			Queued  bool           `json:"queued"`
-			Note    string         `json:"note"`
 			Workers *[]ChildReport `json:"workers"`
 		}
 		if err := json.Unmarshal([]byte(preview), &queued); err != nil || queued.Workers == nil {
