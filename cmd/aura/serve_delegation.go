@@ -35,7 +35,7 @@ const runtimeDelegationWorkerIDPrefix = "aura-swarm-delegation"
 const runtimeDelegationNudgeBatchSize = 20
 
 // var _ asserts at the composition root that *channels.Registry satisfies the
-// swarm-local ChannelDeliverer seam (via its 20-01 DeliverToIdentity method) —
+// swarm-local conversation-scoped ChannelDeliverer seam —
 // the assertion lives in cmd/aura, NOT in swarm (swarm must not import channels).
 var _ swarm.ChannelDeliverer = (*channels.Registry)(nil)
 
@@ -82,13 +82,9 @@ func (a steerNudgeAdapter) ListUnnudgedDelegationResults(ctx context.Context, cu
 	}
 	out := make([]swarm.UndrainedResult, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, swarm.UndrainedResult{ID: r.ID, IdentityID: r.IdentityID, Body: r.Body, FanoutKey: r.FanoutKey})
+		out = append(out, swarm.UndrainedResult{ID: r.ID, IdentityID: r.IdentityID, ConversationID: r.ConversationID, Body: r.Body, FanoutKey: r.FanoutKey})
 	}
 	return out, nil
-}
-
-func (a steerNudgeAdapter) MarkSteerRowNudged(ctx context.Context, id, identityID string) (bool, error) {
-	return a.store.MarkSteerRowNudged(ctx, id, identityID)
 }
 
 // MarkFanoutNudged adapts the complete rows returned by the atomic claim. This is the
@@ -100,7 +96,7 @@ func (a steerNudgeAdapter) MarkFanoutNudged(ctx context.Context, identityID, fan
 	}
 	out := make([]swarm.UndrainedResult, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, swarm.UndrainedResult{ID: r.ID, IdentityID: r.IdentityID, Body: r.Body, FanoutKey: r.FanoutKey})
+		out = append(out, swarm.UndrainedResult{ID: r.ID, IdentityID: r.IdentityID, ConversationID: r.ConversationID, Body: r.Body, FanoutKey: r.FanoutKey})
 	}
 	return out, nil
 }
@@ -123,6 +119,7 @@ func (n delegationPendingNotifier) InsertPendingNotification(ctx context.Context
 	_, err := n.store.InsertPendingNotification(ctx, cron.InsertPendingNotificationParams{
 		SteerQueueID: steerQueueID,
 		IdentityID:   identityID,
+		NotifyRoute:  string(cron.RouteStdout),
 		Body:         body,
 		Status:       "failed",
 		LastError:    lastErr,

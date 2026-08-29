@@ -108,7 +108,6 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_SWARM_MAX_CONCURRENT", Kind: KindInt, Default: "4"},
 		{Name: "AURA_SWARM_DELEGATION_NUDGE_SEC", Kind: KindInt, Default: "60"},
 		{Name: "AURA_AGENT_JOB_MAX_DURATION_SEC", Kind: KindInt, Default: "600"},
-		{Name: "AURA_SCHEDULER_PREFER_ORIGIN_CHANNEL", Kind: KindBool, Default: "true"},
 		{Name: "AURA_SKILL_BODY_CAP_BYTES", Kind: KindInt, Default: "32768"},
 		{Name: "AURA_SKILL_MANIFEST_CAP_BYTES", Kind: KindInt, Default: "8192"},
 		{Name: "AURA_SKILL_SNIPPET_TTL_DAYS", Kind: KindInt, Default: "90"},

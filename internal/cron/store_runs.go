@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/db"
@@ -151,14 +152,17 @@ type PendingNotification struct {
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	// IdentityID is the stable owning-identity snapshot (Phase 20 R6/Fork 1): the
-	// channel-independent route-back key for the deferred/failed sweep. "" for
-	// legacy/CLI rows (NULL column) → the sweep falls back to NotifyRoute.
+	// channel-independent route-back key for the deferred/failed sweep.
 	IdentityID string
 	// SteerQueueID is the migration-0105 sibling of RunID: set instead of RunID
 	// when the row's owner is an aura.steer_queue row being retried (plan 51-10's
 	// delegation nudge sweep), which has no aura.agent_job_runs row. "" for every
 	// scheduler-originated row (unchanged).
 	SteerQueueID string
+	// OriginConversationID is recovered from the durable owner during a sweep:
+	// scheduler run -> task origin, or steer row -> owning conversation. It is
+	// never inferred from IdentityID.
+	OriginConversationID string
 }
 
 // InsertPendingNotificationParams carries one durable notification queue write.
@@ -178,8 +182,7 @@ type InsertPendingNotificationParams struct {
 	Attempts     int
 	LastError    string
 	Status       string
-	// IdentityID snapshots the owning identity so the Step-2 sweep can route the
-	// row back to its origin channel (empty → NULL → route fallback).
+	// IdentityID snapshots the owning identity so the sweep can route explicitly.
 	IdentityID string
 }
 
@@ -211,6 +214,12 @@ func (s *Store) InsertPendingNotification(ctx context.Context, p InsertPendingNo
 	if (p.RunID == "") == (p.SteerQueueID == "") {
 		return PendingNotification{}, fmt.Errorf("insert pending notification: exactly one of RunID / SteerQueueID must be set")
 	}
+	if !ValidNotifyRoute(p.NotifyRoute) {
+		return PendingNotification{}, fmt.Errorf("insert pending notification: notify route %q is not explicit", p.NotifyRoute)
+	}
+	if strings.TrimSpace(p.IdentityID) == "" {
+		return PendingNotification{}, fmt.Errorf("insert pending notification: identity is required")
+	}
 	var runID, steerQueueID pgtype.UUID
 	if p.RunID != "" {
 		var err error
@@ -238,13 +247,13 @@ func (s *Store) InsertPendingNotification(ctx context.Context, p InsertPendingNo
 		ID:           newUUID(),
 		RunID:        runID,
 		SteerQueueID: steerQueueID,
-		NotifyRoute:  text(p.NotifyRoute),
+		NotifyRoute:  p.NotifyRoute,
 		Body:         p.Body,
 		NotifyAfter:  tsOrNull(notifyAfter),
 		Attempts:     int32(p.Attempts),
 		LastError:    text(p.LastError),
 		Status:       status,
-		IdentityID:   text(p.IdentityID),
+		IdentityID:   p.IdentityID,
 	})
 	if err != nil {
 		return PendingNotification{}, fmt.Errorf("insert pending notification for run %q: %w", p.RunID, err)
@@ -266,7 +275,7 @@ func (s *Store) SweepDueNotifications(ctx context.Context, attemptBound, limit i
 	if limit > 0 && limit <= math.MaxInt32 {
 		lim = int32(limit)
 	}
-	var rows []sqlc.AuraPendingNotifications
+	var rows []sqlc.SweepDueNotificationsRow
 	err := db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
 		var err error
 		rows, err = q.SweepDueNotifications(ctx, sqlc.SweepDueNotificationsParams{
@@ -280,7 +289,7 @@ func (s *Store) SweepDueNotifications(ctx context.Context, attemptBound, limit i
 	}
 	out := make([]PendingNotification, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, pendingNotificationFromRow(r))
+		out = append(out, pendingNotificationFromSweepRow(r))
 	}
 	return out, nil
 }
@@ -329,7 +338,7 @@ func pendingNotificationFromRow(r sqlc.AuraPendingNotifications) PendingNotifica
 	return PendingNotification{
 		ID:           uuidString(r.ID),
 		RunID:        uuidString(r.RunID),
-		NotifyRoute:  r.NotifyRoute.String,
+		NotifyRoute:  r.NotifyRoute,
 		Body:         r.Body,
 		NotifyAfter:  r.NotifyAfter.Time,
 		Attempts:     int(r.Attempts),
@@ -337,7 +346,25 @@ func pendingNotificationFromRow(r sqlc.AuraPendingNotifications) PendingNotifica
 		Status:       r.Status,
 		CreatedAt:    r.CreatedAt.Time,
 		UpdatedAt:    r.UpdatedAt.Time,
-		IdentityID:   r.IdentityID.String,
+		IdentityID:   r.IdentityID,
 		SteerQueueID: uuidString(r.SteerQueueID),
+	}
+}
+
+func pendingNotificationFromSweepRow(r sqlc.SweepDueNotificationsRow) PendingNotification {
+	return PendingNotification{
+		ID:                   uuidString(r.ID),
+		RunID:                uuidString(r.RunID),
+		NotifyRoute:          r.NotifyRoute,
+		Body:                 r.Body,
+		NotifyAfter:          r.NotifyAfter.Time,
+		Attempts:             int(r.Attempts),
+		LastError:            r.LastError.String,
+		Status:               r.Status,
+		CreatedAt:            r.CreatedAt.Time,
+		UpdatedAt:            r.UpdatedAt.Time,
+		IdentityID:           r.IdentityID,
+		SteerQueueID:         uuidString(r.SteerQueueID),
+		OriginConversationID: r.OriginConversationID,
 	}
 }

@@ -158,7 +158,7 @@ func TestMigration0033SchedulerIdentityPurgeKind(t *testing.T) {
 func insertPurgeTask0033(ctx context.Context, pool *pgxpool.Pool) error {
 	id := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	_, err := pool.Exec(ctx,
-		`INSERT INTO aura.scheduler_tasks (id, kind, schedule_kind, every_minutes) VALUES ($1, 'identity_purge', 'every', 15)`,
+		`INSERT INTO aura.scheduler_tasks (id, kind, schedule_kind, every_minutes, notify_route) VALUES ($1, 'identity_purge', 'every', 15, 'none')`,
 		id)
 	return err
 }

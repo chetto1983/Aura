@@ -25,8 +25,7 @@ import (
 	"strings"
 )
 
-// NotifyRoute is the per-task delivery channel (D-20). An unset route falls through
-// to AURA_SCHEDULER_NOTIFY_DEFAULT then the stdout sink.
+// NotifyRoute is the per-task delivery instruction (D-20).
 type NotifyRoute string
 
 // The delivery routes. WhatsApp and email are MCP self-sends (D-19) this composite
@@ -37,6 +36,7 @@ type NotifyRoute string
 // reaching this composite WITH it means the origin gate already declined, and
 // sendViaMCP says so rather than mis-sending it as a WhatsApp message.
 const (
+	RouteNone     NotifyRoute = "none"
 	RouteWhatsApp NotifyRoute = "whatsapp"
 	RouteEmail    NotifyRoute = "email"
 	RouteStdout   NotifyRoute = "stdout"
@@ -44,12 +44,11 @@ const (
 )
 
 // ValidNotifyRoute is the SINGLE source of truth for the route enum, consumed by every
-// validating caller (the task tool, the cockpit scheduler API, the CLI flag). An empty
-// string is VALID: it means "use the default route". Re-listing the routes at a call
-// site is how one of them ends up accepting a value the others reject.
+// validating caller (the task tool, the cockpit scheduler API, the CLI flag). Empty is
+// invalid: omission must reach the operator-choice flow rather than an implicit default.
 func ValidNotifyRoute(route string) bool {
 	switch NotifyRoute(route) {
-	case "", RouteWhatsApp, RouteEmail, RouteStdout, RouteTelegram:
+	case RouteNone, RouteWhatsApp, RouteEmail, RouteStdout, RouteTelegram:
 		return true
 	default:
 		return false
@@ -85,55 +84,40 @@ type Notifier interface {
 	// Notify delivers text to recipient over route. It returns nil on delivery
 	// (including the stdout fallback), and a non-nil error ONLY when the MCP
 	// self-send failed (even though the stdout fallback was written) — so the
-	// dispatcher marks the run notification-undelivered and bound-retries (D-22). An
-	// empty route resolves to the configured default.
+	// dispatcher marks the run notification-undelivered and bound-retries (D-22).
 	Notify(ctx context.Context, route NotifyRoute, recipient, text string) error
 }
 
-// compositeNotifier resolves a route to an MCP self-send tool and falls back to
-// stdout. A nil resolver (no MCP mounted) degrades every route to the stdout sink,
-// which is always available.
+// compositeNotifier resolves an explicit route to an MCP self-send tool. Failed
+// external sends leave a diagnostic stdout copy but remain failed for bounded retry.
 type compositeNotifier struct {
 	resolver SelfSendResolver
 	out      io.Writer
 }
 
 // NewNotifier builds the composite Notifier over the self-send resolver. A nil
-// resolver is valid: delivery degrades to stdout (the fallback sink is never absent).
+// resolver is valid for none/stdout and makes external routes fail explicitly.
 func NewNotifier(resolver SelfSendResolver) Notifier {
 	return &compositeNotifier{resolver: resolver, out: os.Stdout}
 }
 
-// Notify resolves the route (per-task → AURA_SCHEDULER_NOTIFY_DEFAULT → stdout),
-// attempts the MCP self-send, and on ANY failure falls back to stdout while
-// surfacing the undelivered signal (D-22). The bounded retry across ticks is the
-// dispatcher's concern.
+// Notify accepts only an explicit route. RouteNone is intentionally silent; a failed
+// external send writes a diagnostic stdout copy and still returns an undelivered error.
 func (n *compositeNotifier) Notify(ctx context.Context, route NotifyRoute, recipient, text string) error {
-	resolved := n.resolveRoute(route)
-	if resolved == RouteStdout {
-		return n.stdout(resolved, recipient, text)
+	if route == RouteNone {
+		return nil
 	}
-	if err := n.sendViaMCP(ctx, resolved, recipient, text); err != nil {
-		_ = n.stdout(resolved, recipient, text) // fail-soft fallback (D-22)
-		return fmt.Errorf("notify %s: MCP self-send failed, fell back to stdout: %w", resolved, err)
+	if !ValidNotifyRoute(string(route)) {
+		return fmt.Errorf("notify: invalid explicit route %q", route)
+	}
+	if route == RouteStdout {
+		return n.stdout(route, recipient, text)
+	}
+	if err := n.sendViaMCP(ctx, route, recipient, text); err != nil {
+		_ = n.stdout(route, recipient, text)
+		return fmt.Errorf("notify %s: MCP self-send failed, wrote diagnostic stdout copy: %w", route, err)
 	}
 	return nil
-}
-
-// resolveRoute applies the route precedence: explicit per-task route →
-// AURA_SCHEDULER_NOTIFY_DEFAULT → stdout. An unknown value degrades to stdout
-// (fail-safe: a misconfigured route never silently swallows output).
-func (n *compositeNotifier) resolveRoute(route NotifyRoute) NotifyRoute {
-	r := route
-	if r == "" {
-		r = NotifyRoute(strings.TrimSpace(os.Getenv("AURA_SCHEDULER_NOTIFY_DEFAULT")))
-	}
-	switch r {
-	case RouteWhatsApp, RouteEmail, RouteStdout, RouteTelegram:
-		return r
-	default:
-		return RouteStdout
-	}
 }
 
 // sendViaMCP resolves the route to its MCP tool and executes the self-send. A missing
@@ -142,8 +126,8 @@ func (n *compositeNotifier) resolveRoute(route NotifyRoute) NotifyRoute {
 func (n *compositeNotifier) sendViaMCP(ctx context.Context, route NotifyRoute, recipient, text string) error {
 	if route == RouteTelegram {
 		// Telegram never had an MCP self-send; the Dispatch origin gate delivers it. Being
-		// here means that gate declined — no channel owns this identity, the kill-switch is
-		// off, or no deliverer is wired — so the honest answer is undelivered. Notify then
+		// here means that gate declined because no channel owns this identity or no
+		// deliverer is wired, so the honest answer is undelivered. Notify then
 		// writes the stdout fallback AND returns non-nil, which is the D-22 contract the
 		// dispatcher retries on.
 		return fmt.Errorf("route %s has no MCP self-send: no live channel owns this task's identity", route)
@@ -151,7 +135,10 @@ func (n *compositeNotifier) sendViaMCP(ctx context.Context, route NotifyRoute, r
 	if n.resolver == nil {
 		return fmt.Errorf("no MCP self-send resolver mounted for route %s", route)
 	}
-	bareName, args := buildSend(route, recipient, text)
+	bareName, args, err := buildSend(route, recipient, text)
+	if err != nil {
+		return err
+	}
 	tool, ok := n.resolver.Resolve(bareName)
 	if !ok {
 		return fmt.Errorf("no mounted MCP tool for route %s (want *%s)", route, bareName)
@@ -166,16 +153,16 @@ func (n *compositeNotifier) sendViaMCP(ctx context.Context, route NotifyRoute, r
 // recipient falls back to AURA_SCHEDULER_NOTIFY_RECIPIENT when the per-task field is
 // empty (D-20). The argument shapes match the canonical WhatsApp/mail MCP servers
 // (recipient+message / to+subject+body); the upstream schema validates them.
-func buildSend(route NotifyRoute, recipient, text string) (string, json.RawMessage) {
+func buildSend(route NotifyRoute, recipient, text string) (string, json.RawMessage, error) {
 	if strings.TrimSpace(recipient) == "" {
 		recipient = strings.TrimSpace(os.Getenv("AURA_SCHEDULER_NOTIFY_RECIPIENT"))
 	}
-	whatsapp := func() (string, json.RawMessage) {
+	whatsapp := func() (string, json.RawMessage, error) {
 		args, _ := json.Marshal(map[string]string{
 			"recipient": recipient,
 			"message":   text,
 		})
-		return toolSendMessage, args
+		return toolSendMessage, args, nil
 	}
 	switch route {
 	case RouteEmail:
@@ -184,15 +171,11 @@ func buildSend(route NotifyRoute, recipient, text string) (string, json.RawMessa
 			"subject": "Aura scheduled task",
 			"body":    text,
 		})
-		return toolSendEmail, args
+		return toolSendEmail, args, nil
 	case RouteWhatsApp:
 		return whatsapp()
 	default:
-		// Named explicitly rather than left implicit: this branch used to mean "anything
-		// unrecognized is a WhatsApp message", which would have silently shipped a
-		// telegram-routed notification to WhatsApp. sendViaMCP now refuses telegram before
-		// reaching here, and any future route lands on this same conservative default.
-		return whatsapp()
+		return "", nil, fmt.Errorf("route %q has no MCP self-send mapping", route)
 	}
 }
 

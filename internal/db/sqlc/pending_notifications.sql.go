@@ -24,19 +24,19 @@ RETURNING id, run_id, notify_route, body, notify_after, attempts, last_error,
 type InsertPendingNotificationParams struct {
 	ID           pgtype.UUID        `json:"id"`
 	RunID        pgtype.UUID        `json:"run_id"`
-	NotifyRoute  pgtype.Text        `json:"notify_route"`
+	NotifyRoute  string             `json:"notify_route"`
 	Body         string             `json:"body"`
 	NotifyAfter  pgtype.Timestamptz `json:"notify_after"`
 	Attempts     int32              `json:"attempts"`
 	LastError    pgtype.Text        `json:"last_error"`
 	Status       string             `json:"status"`
-	IdentityID   pgtype.Text        `json:"identity_id"`
+	IdentityID   string             `json:"identity_id"`
 	SteerQueueID pgtype.UUID        `json:"steer_queue_id"`
 }
 
-// run_id / steer_queue_id are both nullable (migration 0105); the DB-level
-// pending_notifications_owner_chk CHECK is the enforcement point, mirrored in Go by
-// cron.Store.InsertPendingNotification so a wiring bug fails loud before the round trip.
+// Exactly one of run_id / steer_queue_id owns the row (migration 0109). Route and
+// identity are mandatory snapshots; cron.Store mirrors all three invariants before the
+// round trip.
 func (q *Queries) InsertPendingNotification(ctx context.Context, arg InsertPendingNotificationParams) (AuraPendingNotifications, error) {
 	row := q.db.QueryRow(ctx, insertPendingNotification,
 		arg.ID,
@@ -99,14 +99,18 @@ func (q *Queries) MarkNotificationFailed(ctx context.Context, arg MarkNotificati
 }
 
 const sweepDueNotifications = `-- name: SweepDueNotifications :many
-SELECT id, run_id, notify_route, body, notify_after, attempts, last_error,
-    status, created_at, updated_at, identity_id, steer_queue_id
-FROM aura.pending_notifications
-WHERE (status = 'pending' AND notify_after <= now())
-   OR (status = 'failed' AND attempts < $1)
-ORDER BY notify_after ASC, created_at ASC
+SELECT n.id, n.run_id, n.notify_route, n.body, n.notify_after, n.attempts, n.last_error,
+    n.status, n.created_at, n.updated_at, n.identity_id, n.steer_queue_id,
+    COALESCE(t.origin_conversation_id::text, s.conversation_id, '') AS origin_conversation_id
+FROM aura.pending_notifications AS n
+LEFT JOIN aura.agent_job_runs AS r ON r.id = n.run_id
+LEFT JOIN aura.scheduler_tasks AS t ON t.id = r.task_id
+LEFT JOIN aura.steer_queue AS s ON s.id = n.steer_queue_id
+WHERE (n.status = 'pending' AND n.notify_after <= now())
+   OR (n.status = 'failed' AND n.attempts < $1)
+ORDER BY n.notify_after ASC, n.created_at ASC
 LIMIT $2
-FOR UPDATE SKIP LOCKED
+FOR UPDATE OF n SKIP LOCKED
 `
 
 type SweepDueNotificationsParams struct {
@@ -114,15 +118,31 @@ type SweepDueNotificationsParams struct {
 	Limit    int32 `json:"limit"`
 }
 
-func (q *Queries) SweepDueNotifications(ctx context.Context, arg SweepDueNotificationsParams) ([]AuraPendingNotifications, error) {
+type SweepDueNotificationsRow struct {
+	ID                   pgtype.UUID        `json:"id"`
+	RunID                pgtype.UUID        `json:"run_id"`
+	NotifyRoute          string             `json:"notify_route"`
+	Body                 string             `json:"body"`
+	NotifyAfter          pgtype.Timestamptz `json:"notify_after"`
+	Attempts             int32              `json:"attempts"`
+	LastError            pgtype.Text        `json:"last_error"`
+	Status               string             `json:"status"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	IdentityID           string             `json:"identity_id"`
+	SteerQueueID         pgtype.UUID        `json:"steer_queue_id"`
+	OriginConversationID string             `json:"origin_conversation_id"`
+}
+
+func (q *Queries) SweepDueNotifications(ctx context.Context, arg SweepDueNotificationsParams) ([]SweepDueNotificationsRow, error) {
 	rows, err := q.db.Query(ctx, sweepDueNotifications, arg.Attempts, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []AuraPendingNotifications{}
+	items := []SweepDueNotificationsRow{}
 	for rows.Next() {
-		var i AuraPendingNotifications
+		var i SweepDueNotificationsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.RunID,
@@ -136,6 +156,7 @@ func (q *Queries) SweepDueNotifications(ctx context.Context, arg SweepDueNotific
 			&i.UpdatedAt,
 			&i.IdentityID,
 			&i.SteerQueueID,
+			&i.OriginConversationID,
 		); err != nil {
 			return nil, err
 		}

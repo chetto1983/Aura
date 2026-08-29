@@ -143,7 +143,7 @@ func TestSchedulerNorthStarE2E(t *testing.T) {
 		// instant when the suite runs after that local time, and the model then
 		// (correctly) declines to schedule a past reminder, which is a test-prompt flaw,
 		// not a wiring bug (Gate-3 finding, 10-06).
-		prompt := "Ricordami di chiamare Monica domani alle 9:30."
+		prompt := "Ricordami in questa conversazione di chiamare Monica domani alle 9:30."
 		assertNoSchedulingLiteral(t, prompt)
 		before := time.Now().UTC()
 		driveTurn(t, ctx, client, *baseCfg, reg, cfg, prompt)
@@ -161,7 +161,7 @@ func TestSchedulerNorthStarE2E(t *testing.T) {
 	// HARD scaffold gate is the persisted cron agent_job row; the live fire + delivery
 	// read-back is the operator checkpoint (Task 3, recorded in the quality snapshot).
 	t.Run("Q1_cron_agent_job", func(t *testing.T) {
-		prompt := "Ogni mattina alle 9:30 fammi un riassunto delle mail da evadere."
+		prompt := "Ogni mattina alle 9:30 fammi un riassunto delle mail da evadere e consegnalo in questa conversazione."
 		assertNoSchedulingLiteral(t, prompt)
 		before := time.Now().UTC()
 		driveTurn(t, ctx, client, *baseCfg, reg, cfg, prompt)

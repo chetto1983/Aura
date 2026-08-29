@@ -127,7 +127,7 @@ func TestOpenPauseAndParkAtomicity(t *testing.T) {
 		job, err := store.Create(ctx, documents.CreateIngestionJobRequest{
 			IdentityID: identityID, JobType: JobTypeSwarmDelegation, Status: "queued",
 			IdempotencyKey: "pause-atomic-ok", MaxAttempts: 3,
-			Payload: map[string]any{"goal": "g", "conversation_id": convID},
+			Payload: map[string]any{"goal": "g", "conversation_id": convID, "fanout_key": "f-test"},
 		})
 		if err != nil {
 			t.Fatalf("create: %v", err)
@@ -153,7 +153,7 @@ func TestOpenPauseAndParkAtomicity(t *testing.T) {
 			documents.ParkAwaitingInputRequest{
 				IdentityID: identityID, JobID: row.ID, WorkerID: "w",
 				LeaseGeneration: row.LeaseGeneration,
-				Payload:         map[string]any{"goal": "g", "conversation_id": convID},
+				Payload:         map[string]any{"goal": "g", "conversation_id": convID, "fanout_key": "f-test"},
 			})
 		if err != nil {
 			t.Fatalf("OpenPauseAndPark: %v", err)
@@ -190,7 +190,7 @@ func TestOpenPauseAndParkAtomicity(t *testing.T) {
 		job, err := store.Create(ctx, documents.CreateIngestionJobRequest{
 			IdentityID: identityID, JobType: JobTypeSwarmDelegation, Status: "queued",
 			IdempotencyKey: "pause-atomic-rollback", MaxAttempts: 3,
-			Payload: map[string]any{"goal": "g", "conversation_id": convID},
+			Payload: map[string]any{"goal": "g", "conversation_id": convID, "fanout_key": "f-test"},
 		})
 		if err != nil {
 			t.Fatalf("create: %v", err)
@@ -207,7 +207,7 @@ func TestOpenPauseAndParkAtomicity(t *testing.T) {
 			documents.ParkAwaitingInputRequest{
 				IdentityID: identityID, JobID: job.ID, WorkerID: "w",
 				LeaseGeneration: 0, // never claimed -- the row's real generation is not 0
-				Payload:         map[string]any{"goal": "g", "conversation_id": convID},
+				Payload:         map[string]any{"goal": "g", "conversation_id": convID, "fanout_key": "f-test"},
 			})
 		if err != nil {
 			t.Fatalf("OpenPauseAndPark: %v", err)
@@ -258,7 +258,7 @@ func TestDelegationPauseResumeFullLifecycle(t *testing.T) {
 	jobA, err := store.Create(ctx, documents.CreateIngestionJobRequest{
 		IdentityID: identityID, JobType: JobTypeSwarmDelegation, Status: "queued",
 		IdempotencyKey: "lifecycle-a", MaxAttempts: 3,
-		Payload: map[string]any{"goal": goalA, "conversation_id": convA},
+		Payload: map[string]any{"goal": goalA, "conversation_id": convA, "fanout_key": "f-a"},
 	})
 	if err != nil {
 		t.Fatalf("create job A: %v", err)
@@ -266,7 +266,7 @@ func TestDelegationPauseResumeFullLifecycle(t *testing.T) {
 	jobB, err := store.Create(ctx, documents.CreateIngestionJobRequest{
 		IdentityID: identityID, JobType: JobTypeSwarmDelegation, Status: "queued",
 		IdempotencyKey: "lifecycle-b", MaxAttempts: 3,
-		Payload: map[string]any{"goal": goalB, "conversation_id": convB},
+		Payload: map[string]any{"goal": goalB, "conversation_id": convB, "fanout_key": "f-b"},
 	})
 	if err != nil {
 		t.Fatalf("create job B: %v", err)

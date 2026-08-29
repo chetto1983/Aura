@@ -192,7 +192,7 @@ func TestDelegationClaimReclaim(t *testing.T) {
 	if _, err := store.Create(ctx, documents.CreateIngestionJobRequest{
 		IdentityID: foreignIdentity, JobType: JobTypeSwarmDelegation, Status: "queued",
 		IdempotencyKey: "foreign-row", MaxAttempts: 3,
-		Payload: map[string]any{"goal": "foreign goal", "conversation_id": "conv-foreign"},
+		Payload: map[string]any{"goal": "foreign goal", "conversation_id": "conv-foreign", "fanout_key": "f-foreign"},
 	}); err != nil {
 		t.Fatalf("create foreign row: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestDelegationClaimReclaim(t *testing.T) {
 	delegationJob, err := store.Create(ctx, documents.CreateIngestionJobRequest{
 		IdentityID: ownIdentity, JobType: JobTypeSwarmDelegation, Status: "queued",
 		IdempotencyKey: "own-delegation-row", MaxAttempts: 3,
-		Payload: map[string]any{"goal": "own goal", "conversation_id": "conv-own"},
+		Payload: map[string]any{"goal": "own goal", "conversation_id": "conv-own", "fanout_key": "f-own"},
 	})
 	if err != nil {
 		t.Fatalf("create delegation row: %v", err)
@@ -278,7 +278,7 @@ func TestDelegationDeadLettersAtMaxAttempts(t *testing.T) {
 	job, err := store.Create(ctx, documents.CreateIngestionJobRequest{
 		IdentityID: identityID, JobType: JobTypeSwarmDelegation, Status: "queued",
 		IdempotencyKey: "dead-letter-row", MaxAttempts: 1,
-		Payload: map[string]any{"goal": "will fail", "conversation_id": "conv-fail"},
+		Payload: map[string]any{"goal": "will fail", "conversation_id": "conv-fail", "fanout_key": "f-fail"},
 	})
 	if err != nil {
 		t.Fatalf("create row: %v", err)

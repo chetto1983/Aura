@@ -26,7 +26,7 @@ func seedTaskWithRuns(t *testing.T, ctx context.Context, s *Store, now time.Time
 	if err != nil {
 		t.Fatalf("ParseSchedule: %v", err)
 	}
-	task, err := s.CreateTask(ctx, CreateTaskParams{Kind: KindReminder, Spec: spec, StepBudget: 8, NextRunAt: now})
+	task, err := s.CreateTask(ctx, CreateTaskParams{Kind: KindReminder, Spec: spec, StepBudget: 8, NextRunAt: now, NotifyRoute: "none"})
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}

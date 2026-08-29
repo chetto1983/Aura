@@ -48,7 +48,7 @@ func TestCompletedRunLandsInItsOriginConversation(t *testing.T) {
 		ConversationRecorder: recorder,
 	})
 
-	task := Task{ID: "task-1", Kind: KindReminder, OriginConversationID: "conv-1"}
+	task := Task{ID: "task-1", Kind: KindReminder, NotifyRoute: "stdout", OriginConversationID: "conv-1"}
 	if err := d.Dispatch(context.Background(), task, &Claim{RunID: "run-1"}); err != nil {
 		t.Fatalf("Dispatch: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestFailedRunAlsoLandsInItsOriginConversation(t *testing.T) {
 
 	// Dispatch surfaces the handler's error to its caller; the recording is what this
 	// test is about, so the error is expected rather than fatal.
-	task := Task{ID: "task-1", Kind: KindReminder, OriginConversationID: "conv-1"}
+	task := Task{ID: "task-1", Kind: KindReminder, NotifyRoute: "stdout", OriginConversationID: "conv-1"}
 	if err := d.Dispatch(context.Background(), task, &Claim{RunID: "run-1"}); err == nil {
 		t.Fatal("a failing handler must still surface its error")
 	}
@@ -90,11 +90,8 @@ func TestFailedRunAlsoLandsInItsOriginConversation(t *testing.T) {
 	}
 }
 
-// TestHousekeepingSweepsDoNotLandInAConversation reuses the notify path's own rule
-// rather than inventing a second one: the system-seeded sweeps run on a fixed cadence
-// nobody asked for, so their routine success is noise in a conversation exactly as it
-// is on a channel. They also have no origin conversation to land in, which is the
-// belt to this braces.
+// TestHousekeepingSweepsDoNotLandInAConversation proves the explicit `none` route
+// suppresses conversation projection even if malformed input carries an origin id.
 func TestHousekeepingSweepsDoNotLandInAConversation(t *testing.T) {
 	t.Parallel()
 
@@ -105,7 +102,7 @@ func TestHousekeepingSweepsDoNotLandInAConversation(t *testing.T) {
 		ConversationRecorder: recorder,
 	})
 
-	task := Task{ID: "task-1", Kind: KindIdentityPurge, OriginConversationID: "conv-1"}
+	task := Task{ID: "task-1", Kind: KindIdentityPurge, NotifyRoute: "none", OriginConversationID: "conv-1"}
 	if err := d.Dispatch(context.Background(), task, &Claim{RunID: "run-1"}); err != nil {
 		t.Fatalf("Dispatch: %v", err)
 	}
@@ -127,7 +124,7 @@ func TestOriginRecordingFailureDoesNotFailTheRun(t *testing.T) {
 		ConversationRecorder: recorder,
 	})
 
-	task := Task{ID: "task-1", Kind: KindReminder, OriginConversationID: "conv-1"}
+	task := Task{ID: "task-1", Kind: KindReminder, NotifyRoute: "stdout", OriginConversationID: "conv-1"}
 	if err := d.Dispatch(context.Background(), task, &Claim{RunID: "run-1"}); err != nil {
 		t.Fatalf("a failed conversation write must not fail the run: %v", err)
 	}

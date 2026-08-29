@@ -349,9 +349,10 @@ func seedEveryCronSweep(ctx context.Context, store *cron.Store, kind cron.TaskKi
 		return fmt.Errorf("compute next run: %w", err)
 	}
 	if _, err := store.CreateTask(ctx, cron.CreateTaskParams{
-		Kind:      kind,
-		Spec:      spec,
-		NextRunAt: next,
+		Kind:        kind,
+		Spec:        spec,
+		NextRunAt:   next,
+		NotifyRoute: string(cron.RouteNone),
 	}); err != nil {
 		return fmt.Errorf("create %s task: %w", string(kind), err)
 	}
@@ -428,9 +429,10 @@ func seedDailyCronSweep(ctx context.Context, store *cron.Store, kind cron.TaskKi
 		return fmt.Errorf("compute next run: %w", err)
 	}
 	if _, err := store.CreateTask(ctx, cron.CreateTaskParams{
-		Kind:      kind,
-		Spec:      spec,
-		NextRunAt: next,
+		Kind:        kind,
+		Spec:        spec,
+		NextRunAt:   next,
+		NotifyRoute: string(cron.RouteNone),
 	}); err != nil {
 		return fmt.Errorf("create %s task: %w", string(kind), err)
 	}

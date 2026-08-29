@@ -56,7 +56,7 @@ func TestRunKeepsClaimingWhileAJobIsInFlight(t *testing.T) {
 	rc := testRunConfig(t, client, 25)
 	row := func(id, goal string) documents.IngestionJob {
 		return documents.IngestionJob{ID: id, IdentityID: identityID, JobType: JobTypeSwarmDelegation, MaxAttempts: 3,
-			Payload: map[string]any{"goal": goal, "conversation_id": "conv-" + id}}
+			Payload: map[string]any{"goal": goal, "conversation_id": "conv-" + id, "fanout_key": "f-" + id}}
 	}
 	store := &fakeDelegationStore{claimJobs: []documents.IngestionJob{row("slow", "slow goal")}, claimNext: []documents.IngestionJob{row("fast", "fast goal")}}
 	recorder := &fakeConversationRecorder{}
@@ -106,9 +106,9 @@ func TestProcessOnceRunsAClaimedBatchConcurrently(t *testing.T) {
 	rc := testRunConfig(t, client, 25)
 	store := &fakeDelegationStore{claimJobs: []documents.IngestionJob{
 		{ID: "slow", IdentityID: identityID, JobType: JobTypeSwarmDelegation, MaxAttempts: 3,
-			Payload: map[string]any{"goal": "slow goal", "conversation_id": "conv-slow"}},
+			Payload: map[string]any{"goal": "slow goal", "conversation_id": "conv-slow", "fanout_key": "f-slow"}},
 		{ID: "fast", IdentityID: identityID, JobType: JobTypeSwarmDelegation, MaxAttempts: 3,
-			Payload: map[string]any{"goal": "fast goal", "conversation_id": "conv-fast"}},
+			Payload: map[string]any{"goal": "fast goal", "conversation_id": "conv-fast", "fanout_key": "f-fast"}},
 	}}
 	recorder := &fakeConversationRecorder{}
 	l := &DelegationClaimLoop{
@@ -153,7 +153,7 @@ func TestProcessJobBindsTheJobIdentityOnce(t *testing.T) {
 			rc := testRunConfig(t, newRouter().route(goal, tc.out), 25)
 			store := &fakeDelegationStore{claimJobs: []documents.IngestionJob{{
 				ID: "j1", IdentityID: identityID, JobType: JobTypeSwarmDelegation,
-				Payload:     map[string]any{"goal": goal, "conversation_id": "conv-7"},
+				Payload:     map[string]any{"goal": goal, "conversation_id": "conv-7", "fanout_key": "f-test"},
 				MaxAttempts: 3,
 			}}}
 			recorder := &fakeConversationRecorder{}

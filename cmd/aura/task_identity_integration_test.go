@@ -72,7 +72,7 @@ func TestCLIScheduledTaskCarriesAnOwner(t *testing.T) {
 
 	var stored, route string
 	if err := pool.QueryRow(ctx,
-		`SELECT identity_id, coalesce(notify_route, '') FROM aura.scheduler_tasks WHERE id = $1`, id,
+		`SELECT identity_id, notify_route FROM aura.scheduler_tasks WHERE id = $1`, id,
 	).Scan(&stored, &route); err != nil {
 		t.Fatalf("read back scheduled task: %v", err)
 	}

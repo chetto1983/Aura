@@ -90,13 +90,16 @@ func scrubSteerLookalikes(content string) string {
 // words), while a worker's generated text is escaped like any other untrusted
 // output.
 //
-// Only the reserved steer.SourceWorker takes the worker branch. Every channel
+// Only the reserved non-operator sources take an untrusted branch. Every channel
 // in the tree pushes an operator source, and an unrecognised one keeps the
-// operator envelope byte-for-byte, so a new channel cannot fall into the worker
+// operator envelope byte-for-byte, so a new channel cannot fall into a runtime
 // branch by forgetting to name itself.
 func markSteer(m steer.Message) (marked, envelope string) {
-	if m.Source == steer.SourceWorker {
+	switch m.Source {
+	case steer.SourceWorker:
 		return "\n" + wrapUntrustedToolOutput(m.Source, m.Text), "worker_report"
+	case steer.SourceShell:
+		return "\n" + wrapUntrustedToolOutput(m.Source, m.Text), "background_shell"
 	}
 	return wrapUserSteer(m.Text), "user_steer"
 }

@@ -20,6 +20,15 @@ type Deliverer interface {
 	Deliver(ctx context.Context, identityID, text string) (delivered bool, err error)
 }
 
+// ConversationDeliverer is the conversation-scoped counterpart to Deliverer.
+// A channel returns true only when both the identity and conversation belong to
+// that channel. Owning the identity alone is insufficient: asynchronous outcomes
+// must stay on the surface they originated from. The tri-state contract is the
+// same as Deliverer.
+type ConversationDeliverer interface {
+	DeliverConversation(ctx context.Context, identityID, conversationID, text string) (delivered bool, err error)
+}
+
 // ApprovalDeliverer is an OPTIONAL channel capability distinct from Deliverer: a channel MAY
 // implement it to render an ACTIONABLE approval prompt (inline accept/reject bound to the pause
 // token) rather than plain text. The scheduler approval-reminder sweep uses it to re-surface a

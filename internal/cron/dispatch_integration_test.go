@@ -72,7 +72,7 @@ func TestDispatchCompletionIsIdempotent(t *testing.T) {
 
 	spec, _ := ParseSchedule("every", "", 5, time.Time{}, "Europe/Rome")
 	task, err := s.CreateTask(ctx, CreateTaskParams{
-		Kind: KindReminder, Spec: spec, NextRunAt: time.Now().Add(5 * time.Minute),
+		Kind: KindReminder, Spec: spec, NextRunAt: time.Now().Add(5 * time.Minute), NotifyRoute: "none",
 	})
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
@@ -259,9 +259,11 @@ func TestDispatchPendingNotificationIdentityRoundTrip(t *testing.T) {
 	s := New(pool)
 
 	spec, _ := ParseSchedule("every", "", 5, time.Time{}, "Europe/Rome")
+	const wantConversation = "11111111-1111-1111-1111-111111111111"
 	task, err := s.CreateTask(ctx, CreateTaskParams{
 		Kind: KindAgentJob, Spec: spec, Payload: []byte(`{"goal":"summarize the news"}`),
 		NextRunAt: time.Now().Add(5 * time.Minute), NotifyRoute: "whatsapp",
+		OriginConversationID: wantConversation,
 	})
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
@@ -306,6 +308,9 @@ func TestDispatchPendingNotificationIdentityRoundTrip(t *testing.T) {
 	}
 	if got.IdentityID != wantIdentity {
 		t.Fatalf("identity_id did not round-trip through SweepDueNotifications: got %q, want %q", got.IdentityID, wantIdentity)
+	}
+	if got.OriginConversationID != wantConversation {
+		t.Fatalf("origin conversation did not round-trip through the durable owner: got %q, want %q", got.OriginConversationID, wantConversation)
 	}
 
 }

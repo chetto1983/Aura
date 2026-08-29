@@ -194,7 +194,7 @@ func (s *cronTaskStore) ListScheduledTasks(ctx context.Context) ([]tools.Schedul
 		return nil, err
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, kind, schedule_kind, status, next_run_at, payload, coalesce(notify_route, '')
+		SELECT id, kind, schedule_kind, status, next_run_at, payload, notify_route
 		FROM aura.scheduler_tasks
 		WHERE identity_id = $1::uuid
 		  AND status IN ('active', 'pending_approval')

@@ -62,7 +62,7 @@ type CreateTaskParams struct {
 	StepBudget           pgtype.Int4        `json:"step_budget"`
 	Status               string             `json:"status"`
 	NextRunAt            pgtype.Timestamptz `json:"next_run_at"`
-	NotifyRoute          pgtype.Text        `json:"notify_route"`
+	NotifyRoute          string             `json:"notify_route"`
 	IdentityID           string             `json:"identity_id"`
 	OriginConversationID pgtype.UUID        `json:"origin_conversation_id"`
 }
@@ -415,7 +415,7 @@ type UpdateTaskScheduleRowParams struct {
 	RunAt        pgtype.Timestamptz `json:"run_at"`
 	Tz           string             `json:"tz"`
 	Payload      []byte             `json:"payload"`
-	NotifyRoute  pgtype.Text        `json:"notify_route"`
+	NotifyRoute  string             `json:"notify_route"`
 	NextRunAt    pgtype.Timestamptz `json:"next_run_at"`
 }
 

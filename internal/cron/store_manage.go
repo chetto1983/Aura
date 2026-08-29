@@ -89,6 +89,9 @@ type UpdateTaskParams struct {
 // UpdateTask rewrites a task's schedule + payload + notify route (the cockpit edit). Only
 // an active/pending row updates; a cancelled/completed/absent task is ErrTaskNotFound.
 func (s *Store) UpdateTask(ctx context.Context, id string, p UpdateTaskParams) error {
+	if !ValidNotifyRoute(p.NotifyRoute) {
+		return fmt.Errorf("update task: notify route %q is not explicit", p.NotifyRoute)
+	}
 	u, err := db.ParseUUID("uuid", id)
 	if err != nil {
 		return fmt.Errorf("update task: %w", err)
@@ -101,7 +104,7 @@ func (s *Store) UpdateTask(ctx context.Context, id string, p UpdateTaskParams) e
 		RunAt:        tsOrNull(p.Spec.RunAt),
 		Tz:           p.Spec.TZ,
 		Payload:      payloadOrEmpty(p.Payload),
-		NotifyRoute:  text(p.NotifyRoute),
+		NotifyRoute:  p.NotifyRoute,
 		NextRunAt:    tsOrNull(p.NextRunAt),
 	})
 	if err != nil {

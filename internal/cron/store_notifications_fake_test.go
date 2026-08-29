@@ -22,17 +22,17 @@ func pendingRow(t *testing.T) []any {
 	t.Helper()
 	now := time.Date(2026, 6, 13, 9, 30, 0, 0, time.UTC)
 	return []any{
-		uuidVal(t, fakeNotifID),                    // id
-		uuidVal(t, fakeRunID),                      // run_id
-		pgtype.Text{String: "email", Valid: true},  // notify_route
-		"late summary",                             // body
+		uuidVal(t, fakeNotifID), // id
+		uuidVal(t, fakeRunID),   // run_id
+		"email",                 // notify_route
+		"late summary",          // body
 		pgtype.Timestamptz{Time: now, Valid: true}, // notify_after
 		int32(2),                                 // attempts
 		pgtype.Text{String: "boom", Valid: true}, // last_error
 		"failed",                                 // status
-		pgtype.Timestamptz{Time: now, Valid: true},   // created_at
-		pgtype.Timestamptz{Time: now, Valid: true},   // updated_at
-		pgtype.Text{String: "id-owner", Valid: true}, // identity_id
+		pgtype.Timestamptz{Time: now, Valid: true}, // created_at
+		pgtype.Timestamptz{Time: now, Valid: true}, // updated_at
+		"id-owner",    // identity_id
 		pgtype.UUID{}, // steer_queue_id (unset for a RunID-owned row)
 	}
 }
@@ -45,7 +45,7 @@ func TestStoreFakeInsertPendingNotificationSuccessAndDefaults(t *testing.T) {
 	s := storeWithFake(f)
 
 	got, err := s.InsertPendingNotification(context.Background(), InsertPendingNotificationParams{
-		RunID: fakeRunID, Body: "late summary", // Status + NotifyAfter intentionally unset → defaulted
+		RunID: fakeRunID, NotifyRoute: "none", IdentityID: "local", Body: "late summary", // Status + NotifyAfter intentionally unset → defaulted
 	})
 	if err != nil {
 		t.Fatalf("InsertPendingNotification: %v", err)
@@ -77,7 +77,7 @@ func TestStoreFakeInsertPendingNotificationExplicitFields(t *testing.T) {
 	if na := f.gotArgs[4].(pgtype.Timestamptz); !na.Time.Equal(after) {
 		t.Fatalf("explicit NotifyAfter must bind verbatim, got %v", na.Time)
 	}
-	if id := f.gotArgs[8].(pgtype.Text); !id.Valid || id.String != "id-X" {
+	if id := f.gotArgs[8].(string); id != "id-X" {
 		t.Fatalf("IdentityID must bind as the snapshot text, got %#v", id)
 	}
 }
@@ -85,7 +85,7 @@ func TestStoreFakeInsertPendingNotificationExplicitFields(t *testing.T) {
 func TestStoreFakeInsertPendingNotificationInvalidRunUUID(t *testing.T) {
 	t.Parallel()
 	s := storeWithFake(&cronFakeDBTX{})
-	if _, err := s.InsertPendingNotification(context.Background(), InsertPendingNotificationParams{RunID: "bogus", Body: "x"}); err == nil {
+	if _, err := s.InsertPendingNotification(context.Background(), InsertPendingNotificationParams{RunID: "bogus", NotifyRoute: "none", IdentityID: "local", Body: "x"}); err == nil {
 		t.Fatal("InsertPendingNotification must reject an invalid run UUID")
 	}
 }
@@ -94,7 +94,7 @@ func TestStoreFakeInsertPendingNotificationDBErrorWraps(t *testing.T) {
 	t.Parallel()
 	f := &cronFakeDBTX{queryRowVal: &cronFakeRow{scanErr: errDB}}
 	s := storeWithFake(f)
-	if _, err := s.InsertPendingNotification(context.Background(), InsertPendingNotificationParams{RunID: fakeRunID, Body: "x"}); !errors.Is(err, errDB) {
+	if _, err := s.InsertPendingNotification(context.Background(), InsertPendingNotificationParams{RunID: fakeRunID, NotifyRoute: "none", IdentityID: "local", Body: "x"}); !errors.Is(err, errDB) {
 		t.Fatalf("InsertPendingNotification must wrap the DB error, got %v", err)
 	}
 }

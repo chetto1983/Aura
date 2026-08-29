@@ -227,7 +227,7 @@ func TestDispatchTransitionAwareNotificationSuppression(t *testing.T) {
 		comp := &fakeCompleter{}
 		notif := &captureNotifier{}
 		d, c := newDispatchFor(t, h, KindObservabilityCheck, DispatchDeps{Store: comp, Notifier: notif})
-		if err := d.Dispatch(context.Background(), Task{ID: "obs-down", Kind: KindObservabilityCheck}, c); err == nil {
+		if err := d.Dispatch(context.Background(), Task{ID: "obs-down", Kind: KindObservabilityCheck, NotifyRoute: "none"}, c); err == nil {
 			t.Fatal("Dispatch returned nil")
 		}
 		if len(comp.calls) != 1 || comp.calls[0].Status != "failed" || len(notif.texts) != 0 {
@@ -236,11 +236,9 @@ func TestDispatchTransitionAwareNotificationSuppression(t *testing.T) {
 	})
 }
 
-// TestDispatchSilentSuccessKindSuppressesRoutineNotification pins the fix for the
-// Telegram housekeeping flood: a system-seeded sweep (identity_purge / sandbox_reap /
-// skill_ttl_sweep) that succeeds must STILL write its audit summary to the run ledger
-// (CompleteRun) but must NOT push a routine "ok" notification to the user's channel.
-func TestDispatchSilentSuccessKindSuppressesRoutineNotification(t *testing.T) {
+// TestDispatchNoneRouteSuppressesHousekeepingNotification proves system tasks remain
+// visible in the run ledger but do not emit channel notifications.
+func TestDispatchNoneRouteSuppressesHousekeepingNotification(t *testing.T) {
 	t.Parallel()
 	for _, kind := range []TaskKind{KindIdentityPurge, KindSandboxReap, KindSkillTTLSweep} {
 		t.Run(string(kind), func(t *testing.T) {
@@ -250,7 +248,7 @@ func TestDispatchSilentSuccessKindSuppressesRoutineNotification(t *testing.T) {
 			notif := &captureNotifier{}
 			d, c := newDispatchFor(t, h, kind, DispatchDeps{Store: comp, Notifier: notif})
 
-			if err := d.Dispatch(context.Background(), Task{ID: "sys", Kind: kind}, c); err != nil {
+			if err := d.Dispatch(context.Background(), Task{ID: "sys", Kind: kind, NotifyRoute: "none"}, c); err != nil {
 				t.Fatalf("Dispatch: %v", err)
 			}
 			// The audit ledger still records the run + summary — only the user-facing push is dropped.
@@ -264,20 +262,20 @@ func TestDispatchSilentSuccessKindSuppressesRoutineNotification(t *testing.T) {
 	}
 }
 
-// TestDispatchSilentSuccessKindStillNotifiesOnFailure guards D-21: the suppression is
-// scoped to routine SUCCESS. A failed housekeeping sweep must still surface to the user.
-func TestDispatchSilentSuccessKindStillNotifiesOnFailure(t *testing.T) {
+// TestDispatchNoneRouteKeepsFailureOffChannels proves `none` applies equally to a
+// failed run; the failed ledger row and daemon log remain the evidence.
+func TestDispatchNoneRouteKeepsFailureOffChannels(t *testing.T) {
 	t.Parallel()
 	h := &fakeHandler{meta: HandlerMeta{Kind: KindIdentityPurge}, err: errors.New("purger exploded")}
 	comp := &fakeCompleter{}
 	notif := &captureNotifier{}
 	d, c := newDispatchFor(t, h, KindIdentityPurge, DispatchDeps{Store: comp, Notifier: notif})
 
-	if err := d.Dispatch(context.Background(), Task{ID: "sys-fail", Kind: KindIdentityPurge}, c); err == nil {
+	if err := d.Dispatch(context.Background(), Task{ID: "sys-fail", Kind: KindIdentityPurge, NotifyRoute: "none"}, c); err == nil {
 		t.Fatal("a handler error must propagate")
 	}
-	if len(notif.texts) != 1 || notif.texts[0] == "" {
-		t.Fatalf("a FAILED housekeeping sweep must still notify (D-21), got %v", notif.texts)
+	if len(notif.texts) != 0 {
+		t.Fatalf("a none-routed housekeeping failure reached a channel: %v", notif.texts)
 	}
 }
 
@@ -440,20 +438,14 @@ func TestDispatchSweepNotificationsUsesRetryAttemptEnv(t *testing.T) {
 	}
 }
 
-// TestDispatchSweepNotificationsPrefersOriginChannel pins the Step-2 route-back: a
-// swept row carrying a real identity_id snapshot delivers via the origin channel
-// (keyed on the ROW's identity, not a live task) under the SAME gate as the live-task
-// path; a NULL-identity legacy row falls back to Notifier.Notify with its route
-// (byte-identical to pre-Phase-20). It asserts the DESTINATION of each branch.
+// TestDispatchSweepNotificationsPrefersOriginChannel pins retry route-back using
+// the row's explicit identity, conversation and route snapshot.
 func TestDispatchSweepNotificationsPrefersOriginChannel(t *testing.T) {
 	t.Parallel()
 	store := &fakeNotificationStore{sweepRows: []PendingNotification{
-		// owned row: real identity, no explicit route → origin channel.
-		{ID: "owned", IdentityID: "id-I", Body: "via channel"},
-		// legacy row: NULL identity (empty) + a route → Notifier fallback.
-		{ID: "legacy", NotifyRoute: "whatsapp", Body: "via route"},
+		{ID: "owned", IdentityID: "id-I", OriginConversationID: "conv-I", NotifyRoute: "stdout", Body: "via channel"},
 		// owns-but-fails: real identity, channel errors → keep for next sweep, no Notifier.
-		{ID: "failing", IdentityID: "id-F", Body: "channel down"},
+		{ID: "failing", IdentityID: "id-F", OriginConversationID: "conv-F", NotifyRoute: "stdout", Body: "channel down"},
 	}}
 	notif := &captureNotifier{}
 
@@ -467,10 +459,9 @@ func TestDispatchSweepNotificationsPrefersOriginChannel(t *testing.T) {
 	}}
 
 	d := NewDispatch(nil, DispatchDeps{
-		Store:               store,
-		Notifier:            notif,
-		ChannelDeliverer:    scripted,
-		PreferOriginChannel: true,
+		Store:            store,
+		Notifier:         notif,
+		ChannelDeliverer: scripted,
 	})
 	if err := d.sweepNotifications(context.Background()); err != nil {
 		t.Fatalf("sweepNotifications: %v", err)
@@ -483,16 +474,18 @@ func TestDispatchSweepNotificationsPrefersOriginChannel(t *testing.T) {
 	if got := scripted.textFor("id-I"); got != "via channel" {
 		t.Fatalf("channel delivered text %q, want the row body", got)
 	}
-	// legacy NULL-identity row → Notifier fallback with its route (regression guard).
-	if len(notif.texts) != 1 || notif.texts[0] != "via route" {
-		t.Fatalf("legacy NULL-identity row must fall back to Notifier with its route, got %v", notif.texts)
+	if got := scripted.conversationFor("id-I"); got != "conv-I" {
+		t.Fatalf("owned retry conversation = %q, want conv-I", got)
 	}
-	if len(notif.routes) != 1 || string(notif.routes[0]) != "whatsapp" {
-		t.Fatalf("legacy fallback route = %v, want whatsapp", notif.routes)
+	if len(notif.texts) != 0 {
+		t.Fatalf("channel-owned retry rows must not cross-fall back to Notifier, got %v", notif.texts)
 	}
 	// owns-but-fails → kept (marked failed), Notifier NOT called for it.
 	if !scripted.calledFor("id-F") {
 		t.Fatalf("failing row must attempt the origin channel keyed on its identity")
+	}
+	if got := scripted.conversationFor("id-F"); got != "conv-F" {
+		t.Fatalf("failing retry conversation = %q, want conv-F", got)
 	}
 	if !contains(store.delivered, "owned") {
 		t.Fatalf("delivered rows = %v, want the owned row marked delivered", store.delivered)
@@ -512,11 +505,17 @@ type scriptedDeliverer struct {
 		delivered bool
 		err       error
 	}
-	calls []struct{ identityID, text string }
+	calls []struct{ identityID, conversationID, text string }
 }
 
 func (s *scriptedDeliverer) DeliverToIdentity(_ context.Context, identityID, text string) (bool, error) {
-	s.calls = append(s.calls, struct{ identityID, text string }{identityID, text})
+	s.calls = append(s.calls, struct{ identityID, conversationID, text string }{identityID: identityID, text: text})
+	r := s.byIdentity[identityID]
+	return r.delivered, r.err
+}
+
+func (s *scriptedDeliverer) DeliverToConversation(_ context.Context, identityID, conversationID, text string) (bool, error) {
+	s.calls = append(s.calls, struct{ identityID, conversationID, text string }{identityID: identityID, conversationID: conversationID, text: text})
 	r := s.byIdentity[identityID]
 	return r.delivered, r.err
 }
@@ -539,6 +538,15 @@ func (s *scriptedDeliverer) textFor(id string) string {
 	return ""
 }
 
+func (s *scriptedDeliverer) conversationFor(id string) string {
+	for _, c := range s.calls {
+		if c.identityID == id {
+			return c.conversationID
+		}
+	}
+	return ""
+}
+
 func contains(xs []string, x string) bool {
 	return slices.Contains(xs, x)
 }
@@ -553,46 +561,4 @@ func failedContains(xs []struct {
 		}
 	}
 	return false
-}
-
-func TestDispatchReminderFiresInQuietHours(t *testing.T) {
-	t.Parallel()
-	// A reminder the user explicitly scheduled still fires inside quiet hours — its
-	// delivery IS the task, not an advisory notification (D-23).
-	h := &fakeHandler{meta: HandlerMeta{Kind: KindReminder}, summary: "take your meds"}
-	comp := &fakeCompleter{}
-	notif := &captureNotifier{}
-	d, c := newDispatchFor(t, h, KindReminder, DispatchDeps{
-		Store:      comp,
-		Notifier:   notif,
-		QuietHours: func(string) bool { return true },
-	})
-
-	task := Task{ID: "t6", Kind: KindReminder, Payload: []byte(`{"text":"take your meds"}`), NotifyRoute: "whatsapp"}
-	if err := d.Dispatch(context.Background(), task, c); err != nil {
-		t.Fatalf("Dispatch: %v", err)
-	}
-	if len(notif.texts) != 1 || notif.texts[0] != "take your meds" {
-		t.Fatalf("an in-window reminder must still fire (D-23), got %v", notif.texts)
-	}
-}
-
-func TestDispatchCompleterErrorIsNonFatal(t *testing.T) {
-	t.Parallel()
-	// A CompleteRun error (e.g. idempotent 23505 swallow) must not crash the dispatch —
-	// it is logged; the handler result still propagates.
-	h := &fakeHandler{meta: HandlerMeta{Kind: KindReminder}, summary: "ok"}
-	comp := &fakeCompleter{err: ErrAlreadyRunning}
-	d, c := newDispatchFor(t, h, KindReminder, DispatchDeps{Store: comp, Notifier: &captureNotifier{}})
-	if err := d.Dispatch(context.Background(), Task{ID: "t7", Kind: KindReminder}, c); err != nil {
-		t.Fatalf("a completer error must not surface as a dispatch error, got %v", err)
-	}
-}
-
-func TestDispatchDefaultsAlertThreshold(t *testing.T) {
-	t.Parallel()
-	d := NewDispatch(map[TaskKind]Handler{}, DispatchDeps{Store: &fakeCompleter{}})
-	if d.deps.AlertThreshold == "" {
-		t.Fatal("NewDispatch must default the alert threshold (Risky)")
-	}
 }

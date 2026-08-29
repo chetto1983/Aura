@@ -86,32 +86,6 @@ func TestPostgresStoreTTLNotDefaulted(t *testing.T) {
 	}
 }
 
-// TestQueueKindDerivedFromSource pins the discriminator Push's implementation relies
-// on: SourceWorker maps to KindDelegationResult, every other source maps to KindSteer.
-// Exercised here through the SAME branch Push itself uses, kept in sync by literally
-// calling it (not a re-derivation) so a future refactor cannot let the two drift.
-func TestQueueKindDerivedFromSource(t *testing.T) {
-	cases := []struct {
-		source string
-		want   QueueKind
-	}{
-		{source: SourceWorker, want: KindDelegationResult},
-		{source: "cockpit", want: KindSteer},
-		{source: "telegram", want: KindSteer},
-		{source: "", want: KindSteer},
-		{source: "swarm-lookalike", want: KindSteer}, // must NOT fuzzy-match SourceWorker
-	}
-	for _, tc := range cases {
-		kind := KindSteer
-		if tc.source == SourceWorker {
-			kind = KindDelegationResult
-		}
-		if kind != tc.want {
-			t.Errorf("source %q -> kind %q, want %q", tc.source, kind, tc.want)
-		}
-	}
-}
-
 func TestExpiryReasonForNamesTheKind(t *testing.T) {
 	if got := expiryReasonFor(string(KindDelegationResult)); got != "delegation_result_ttl_expired" {
 		t.Errorf("expiryReasonFor(delegation_result) = %q", got)
@@ -139,6 +113,15 @@ func TestPushDelegationResultSharesPushValidation(t *testing.T) {
 	}
 }
 
+func TestPushDelegationResultRequiresFanoutKey(t *testing.T) {
+	s := NewPostgresStore(nil, Config{Max: 8, MaxBytes: 64})
+	for _, key := range []string{"", "   "} {
+		if err := s.PushDelegationResult("conv", SourceWorker, "report", key); err == nil || !strings.Contains(err.Error(), "fan-out key is required") {
+			t.Fatalf("PushDelegationResult(key=%q) = %v, want explicit key error", key, err)
+		}
+	}
+}
+
 // TestPushDelegationResultNilReceiverSafe mirrors Push's own nil-receiver
 // guard ordering (a *PostgresStore boxed into swarm.SteerPublisher can be a
 // non-nil interface wrapping a nil pointer).
@@ -149,8 +132,8 @@ func TestPushDelegationResultNilReceiverSafe(t *testing.T) {
 	}
 }
 
-// TestMarkFanoutNudgedUnconfiguredPool mirrors MarkSteerRowNudged's own
-// wiring guard -- a nil pool names itself unconfigured rather than panicking
+// TestMarkFanoutNudgedUnconfiguredPool pins that a nil pool names itself
+// unconfigured rather than panicking
 // on the transaction.
 func TestMarkFanoutNudgedUnconfiguredPool(t *testing.T) {
 	s := NewPostgresStore(nil, Config{Max: 8, MaxBytes: 64})
@@ -163,8 +146,7 @@ func TestMarkFanoutNudgedUnconfiguredPool(t *testing.T) {
 	}
 }
 
-// TestMarkFanoutNudgedRejectsMalformedIdentity mirrors
-// MarkSteerRowNudged's own uuid guard: a malformed identityID is named
+// TestMarkFanoutNudgedRejectsMalformedIdentity pins that a malformed identityID is named
 // before ever reaching the transaction. Needs a non-nil pool to prove the
 // guard runs before WithTx (pgxpool.New opens no connection); a nil pool
 // would instead surface the earlier "not configured" branch.

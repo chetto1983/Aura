@@ -52,8 +52,8 @@ func seedPendingApprovalTask(t *testing.T, pool *pgxpool.Pool, convID string) st
 	id := uuid.Must(uuid.NewV7()).String()
 	if _, err := pool.Exec(ownerCtx(), `
 		INSERT INTO aura.scheduler_tasks
-			(id, kind, schedule_kind, every_minutes, status, origin_conversation_id)
-		VALUES ($1, 'agent_job', 'every', 60, 'pending_approval', $2)`, id, convID); err != nil {
+			(id, kind, schedule_kind, every_minutes, status, origin_conversation_id, notify_route)
+		VALUES ($1, 'agent_job', 'every', 60, 'pending_approval', $2, 'stdout')`, id, convID); err != nil {
 		t.Fatalf("seed pending_approval task: %v", err)
 	}
 	t.Cleanup(func() {

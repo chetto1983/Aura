@@ -117,16 +117,7 @@ func (r *Registry) StopAll(ctx context.Context) error {
 // The lock is held only to snapshot r.started — a Deliver call can block on the
 // network, so it runs unlocked (mirrors StopAll's snapshot-then-release idiom).
 func (r *Registry) DeliverToIdentity(ctx context.Context, identityID, text string) (bool, error) {
-	r.mu.Lock()
-	names := make([]string, 0, len(r.started))
-	snap := make(map[string]Channel, len(r.started))
-	for n, ch := range r.started {
-		names = append(names, n)
-		snap[n] = ch
-	}
-	r.mu.Unlock()
-
-	sort.Strings(names)
+	names, snap := r.startedSnapshot()
 	for _, n := range names {
 		d, ok := snap[n].(Deliverer)
 		if !ok {
@@ -141,6 +132,44 @@ func (r *Registry) DeliverToIdentity(ctx context.Context, identityID, text strin
 		}
 	}
 	return false, nil // not-my-user across all → caller falls back to the route
+}
+
+// DeliverToConversation fans a push out only to a started channel that proves
+// ownership of both identityID and conversationID. It deliberately does not
+// fall back to Deliverer: doing so would recreate identity-wide cross-channel
+// routing for work that originated in a cockpit or CLI conversation.
+func (r *Registry) DeliverToConversation(ctx context.Context, identityID, conversationID, text string) (bool, error) {
+	if identityID == "" || conversationID == "" {
+		return false, nil
+	}
+	names, snap := r.startedSnapshot()
+	for _, n := range names {
+		d, ok := snap[n].(ConversationDeliverer)
+		if !ok {
+			continue
+		}
+		delivered, err := d.DeliverConversation(ctx, identityID, conversationID, text)
+		if err != nil {
+			return false, err
+		}
+		if delivered {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (r *Registry) startedSnapshot() ([]string, map[string]Channel) {
+	r.mu.Lock()
+	names := make([]string, 0, len(r.started))
+	snap := make(map[string]Channel, len(r.started))
+	for n, ch := range r.started {
+		names = append(names, n)
+		snap[n] = ch
+	}
+	r.mu.Unlock()
+	sort.Strings(names)
+	return names, snap
 }
 
 // DeliverApproval fans an ACTIONABLE approval prompt out to the started channel that owns

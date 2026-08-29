@@ -205,8 +205,8 @@ func TestQueueTTLDerivedPerKind(t *testing.T) {
 	if err := store.Push(convID, "cockpit", "steer row"); err != nil {
 		t.Fatalf("Push(steer): %v", err)
 	}
-	if err := store.Push(convID, SourceWorker, "delegation row"); err != nil {
-		t.Fatalf("Push(delegation_result): %v", err)
+	if err := store.PushDelegationResult(convID, SourceWorker, "delegation row", "f-ttl"); err != nil {
+		t.Fatalf("PushDelegationResult: %v", err)
 	}
 
 	var kind, expiresAt string
@@ -275,8 +275,7 @@ func TestQueueTTLDisabledByNonPositiveValue(t *testing.T) {
 
 // TestPostgresSteerQueuePushDelegationResultRoundTrip proves PushDelegationResult
 // (51-11 Task 3) against a REAL Postgres connection: the row it writes carries
-// fanout_key set, and a plain Push (no key) round-trips a NULL one --
-// migration 0108's own "NULL means not part of a fan-out" contract.
+// fanout_key set, and a plain steer Push round-trips a NULL one.
 func TestPostgresSteerQueuePushDelegationResultRoundTrip(t *testing.T) {
 	pool := steerDisposablePool(t)
 	_, convID := seedIdentityAndConversation(t, pool)
@@ -285,7 +284,7 @@ func TestPostgresSteerQueuePushDelegationResultRoundTrip(t *testing.T) {
 	if err := store.PushDelegationResult(convID, SourceWorker, "fan-out report", "f-roundtrip123"); err != nil {
 		t.Fatalf("PushDelegationResult: %v", err)
 	}
-	if err := store.Push(convID, SourceWorker, "lone report"); err != nil {
+	if err := store.Push(convID, SourceWorker, "worker question"); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 
@@ -316,7 +315,7 @@ func TestPostgresSteerQueuePushDelegationResultRoundTrip(t *testing.T) {
 	if got[0].body != "fan-out report" || !got[0].fanoutKey.Valid || got[0].fanoutKey.String != "f-roundtrip123" {
 		t.Fatalf("PushDelegationResult row = %+v, want fanout_key set to f-roundtrip123", got[0])
 	}
-	if got[1].body != "lone report" || got[1].fanoutKey.Valid {
+	if got[1].body != "worker question" || got[1].fanoutKey.Valid {
 		t.Fatalf("Push row = %+v, want fanout_key NULL", got[1])
 	}
 }

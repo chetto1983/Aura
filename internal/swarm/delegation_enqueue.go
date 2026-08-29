@@ -194,5 +194,8 @@ func delegationPayloadFromJob(job documents.IngestionJob) (DelegationPayload, er
 	if p.ConversationID == "" {
 		return DelegationPayload{}, errors.New("delegation payload missing conversation_id")
 	}
+	if strings.TrimSpace(p.FanoutKey) == "" {
+		return DelegationPayload{}, errors.New("delegation payload missing fanout_key")
+	}
 	return p, nil
 }

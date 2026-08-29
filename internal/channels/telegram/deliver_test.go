@@ -228,6 +228,42 @@ func TestDeliver(t *testing.T) {
 	})
 }
 
+func TestDeliverConversation(t *testing.T) {
+	t.Parallel()
+	const validUUID = "11111111-1111-1111-1111-111111111111"
+	const chatID int64 = 4242
+
+	t.Run("telegram-owned conversation sends", func(t *testing.T) {
+		bot := &sendRecorder{}
+		tg := NewChannel(Deps{Offline: true})
+		tg.deliverBot = bot
+		tg.deliverResolver = &stubResolver{acct: Account{TelegramUserID: chatID, IdentityID: validUUID}}
+
+		ok, err := tg.DeliverConversation(context.Background(), validUUID, convID(chatID), "done")
+		if err != nil || !ok {
+			t.Fatalf("DeliverConversation = (%v, %v), want (true, nil)", ok, err)
+		}
+		if sends := bot.recorded(); len(sends) != 1 || sends[0].text != "done" {
+			t.Fatalf("sends = %+v, want one unchanged message", sends)
+		}
+	})
+
+	t.Run("linked identity cannot claim cockpit conversation", func(t *testing.T) {
+		bot := &sendRecorder{}
+		tg := NewChannel(Deps{Offline: true})
+		tg.deliverBot = bot
+		tg.deliverResolver = &stubResolver{acct: Account{TelegramUserID: chatID, IdentityID: validUUID}}
+
+		ok, err := tg.DeliverConversation(context.Background(), validUUID, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "done")
+		if err != nil || ok {
+			t.Fatalf("DeliverConversation = (%v, %v), want (false, nil)", ok, err)
+		}
+		if sends := bot.recorded(); len(sends) != 0 {
+			t.Fatalf("sends = %d, want 0", len(sends))
+		}
+	})
+}
+
 // TestDeliverChunksOverTelegramCap is fix-plan 2.2. The Bot API refuses a message over
 // 4096 characters, so an unsplit push — a long scheduled agent_job summary, typically —
 // was lost in FULL: the interactive renderer has always split, this path never did.

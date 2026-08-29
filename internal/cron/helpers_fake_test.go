@@ -202,23 +202,23 @@ func TestRunFromRowProjectsNullColumns(t *testing.T) {
 	}
 }
 
-func TestPendingNotificationFromRowProjectsNullIdentity(t *testing.T) {
+func TestPendingNotificationFromRowProjectsExplicitDelivery(t *testing.T) {
 	t.Parallel()
-	// A legacy row: NULL identity_id + NULL notify_route project to empty (route fallback).
 	r := sqlc.AuraPendingNotifications{
-		ID:       mustUUID(t, "44444444-4444-4444-4444-444444444444"),
-		RunID:    mustUUID(t, "22222222-2222-2222-2222-222222222222"),
-		Body:     "legacy body",
-		Attempts: 3,
-		Status:   "failed",
-		// NotifyRoute, LastError, IdentityID NULL.
+		ID:          mustUUID(t, "44444444-4444-4444-4444-444444444444"),
+		RunID:       mustUUID(t, "22222222-2222-2222-2222-222222222222"),
+		NotifyRoute: "none",
+		IdentityID:  "local",
+		Body:        "silent body",
+		Attempts:    3,
+		Status:      "failed",
 	}
 	got := pendingNotificationFromRow(r)
-	if got.Body != "legacy body" || got.Attempts != 3 || got.Status != "failed" {
+	if got.Body != "silent body" || got.NotifyRoute != "none" || got.IdentityID != "local" || got.Attempts != 3 || got.Status != "failed" {
 		t.Fatalf("projection mismatch: %+v", got)
 	}
-	if got.NotifyRoute != "" || got.IdentityID != "" || got.LastError != "" {
-		t.Fatalf("NULL columns must project to empty (route fallback), got %+v", got)
+	if got.LastError != "" {
+		t.Fatalf("NULL last_error must project to empty, got %+v", got)
 	}
 }
 

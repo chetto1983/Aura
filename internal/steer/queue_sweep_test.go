@@ -15,10 +15,8 @@ import (
 // TestExpireDue proves D-07/D-08 end-to-end: a due row is marked expired AND leaves a
 // readable conversation trace, in the same transaction, naming its kind and source.
 //
-// Pushed via SourceWorker, so Push derives KindDelegationResult (source == SourceWorker
-// -> delegation_result, steer.go's own discriminator) and therefore reads its TTL from
-// Config.DelegationResultTTL, never SteerTTL -- a row of this kind with SteerTTL set but
-// DelegationResultTTL left at its zero value would never get an expires_at at all.
+// Pushed through the explicit delegation-result entry point, so it reads its TTL from
+// Config.DelegationResultTTL, never SteerTTL.
 func TestExpireDue(t *testing.T) {
 	pool := steerDisposablePool(t)
 	conv := conversations.New(pool, conversations.Config{})
@@ -26,8 +24,8 @@ func TestExpireDue(t *testing.T) {
 	identityID, convID := seedIdentityAndConversation(t, pool)
 	store := NewPostgresStore(pool, Config{Max: 8, MaxBytes: 16384, DelegationResultTTL: time.Millisecond})
 
-	if err := store.Push(convID, SourceWorker, "worker report, never delivered"); err != nil {
-		t.Fatalf("Push: %v", err)
+	if err := store.PushDelegationResult(convID, SourceWorker, "worker report, never delivered", "f-expire"); err != nil {
+		t.Fatalf("PushDelegationResult: %v", err)
 	}
 	time.Sleep(5 * time.Millisecond)
 

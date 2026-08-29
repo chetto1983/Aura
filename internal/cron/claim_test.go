@@ -39,10 +39,11 @@ func seedDueTask(t *testing.T, s *Scheduler, now time.Time) Task {
 		t.Fatalf("ParseSchedule: %v", err)
 	}
 	task, err := s.store.CreateTask(ctx, CreateTaskParams{
-		Kind:       KindReminder,
-		Spec:       spec,
-		StepBudget: 8,
-		NextRunAt:  now.Add(-time.Minute), // already due
+		Kind:        KindReminder,
+		Spec:        spec,
+		StepBudget:  8,
+		NextRunAt:   now.Add(-time.Minute), // already due
+		NotifyRoute: "none",
 	})
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
