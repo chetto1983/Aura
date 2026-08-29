@@ -213,3 +213,14 @@ func scrubEnv(env []string) []string {
 	}
 	return out
 }
+
+// wrapCommandWithPIDFile and killProcessGroupCommand are placeholder stubs (defect E,
+// RED phase): the pure shell-string builders the fix needs, not yet correct and not yet
+// wired into Exec/ExecStream.
+func wrapCommandWithPIDFile(pidFile, cmd string) string {
+	return cmd
+}
+
+func killProcessGroupCommand(pidFile string) string {
+	return ""
+}
