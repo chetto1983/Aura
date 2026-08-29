@@ -7,7 +7,7 @@ status: executing
 stopped_at: Completed 51-12a-PLAN.md
 last_updated: "2026-08-29T20:57:12.192Z"
 last_activity: 2026-08-29
-last_activity_desc: Phase 51 plan 51-11 completed after approved live delivery-envelope check
+last_activity_desc: Phase 51 plan 51-12a completed with verified worker transcript and status streams
 state_head: 3263163f316b0e295e3cea1123e2fca1f2e35363
 progress:
   total_phases: 8
@@ -28,9 +28,9 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 
 ## Current Position
 
-Phase: 51 (durable-delegation) — 11/14 plans complete
-Plan 51-11 is closed after its Telegram-origin live checkpoint passed 5/5 and the operator approved it.
-Status: In progress; next dependency-ready plan is 51-12a
+Phase: 51 (durable-delegation) — 12/14 plans complete
+Plan 51-12a is closed with verified worker transcript replay/tail and multiplexed status streams.
+Status: In progress; next dependency-ready plan is 51-12b
 
 **The roadmap shrank on 2026-08-25 (operator decision).** Phases **47** (tool-surface ceremony
 strip), **48** (un-defer and merges) and **53** (summarization spike) are DELETED, not annotated —
@@ -62,9 +62,9 @@ retaining byte caps, and `TestBridgedTool_Execute_MarksResultTrusted` pins MCP r
 The remaining unchecked MCP-02 item in REQUIREMENTS is its separate live unlisted-server proof;
 it is a roadmap acceptance obligation, not an unrecorded Calendar fork gap.
 
-Last activity: 2026-08-29 — Plan 51-11 delivery envelope approved and closed
+Last activity: 2026-08-29 — Plan 51-12a worker event streams verified and closed
 
-Progress: [█████████░] 94% (45/48 milestone plans)
+Progress: [██████████] 96% (46/48 milestone plans)
 
 ## Performance Metrics
 
@@ -289,4 +289,4 @@ The Telegram-origin delivery envelope passed all five verdicts on the fresh heal
 operator approved the blocking checkpoint; SUMMARY.md and durable browser evidence are committed.
 
 Resume file: None
-Next action: execute 51-12a, then 51-12b; 51-08 remains the phase-level live Definition of Done.
+Next action: execute 51-12b; 51-08 remains the phase-level live Definition of Done.
