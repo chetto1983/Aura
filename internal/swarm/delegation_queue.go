@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/chetto1983/aura/internal/documents"
@@ -243,20 +244,38 @@ func (l *DelegationClaimLoop) ProcessOnce(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	processed := 0
+	// A misrouted row is refused BEFORE anything in the batch runs.
 	for _, job := range jobs {
 		if job.IdentityID != l.IdentityID {
-			return processed, fmt.Errorf("claimed delegation job %q has unexpected identity %q", job.ID, job.IdentityID)
+			return 0, fmt.Errorf("claimed delegation job %q has unexpected identity %q", job.ID, job.IdentityID)
 		}
 		if job.JobType != JobTypeSwarmDelegation {
-			return processed, fmt.Errorf("claimed delegation job %q has unexpected job_type %q", job.ID, job.JobType)
+			return 0, fmt.Errorf("claimed delegation job %q has unexpected job_type %q", job.ID, job.JobType)
 		}
-		if err := l.processJob(ctx, job); err != nil {
-			return processed, err
-		}
-		processed++
 	}
-	return processed, nil
+	// The batch runs CONCURRENTLY. Every claimed row holds a lease from the claim
+	// onward, but the heartbeat that renews it only starts inside processJob -- a row
+	// waiting its turn behind a sibling is a lease ticking with nobody renewing it.
+	// Measured live 2026-08-29 (live-check/d03/RESULTS.md finding F): two delegations
+	// issued 1s apart were claimed in one batch and ran serially, the second waiting
+	// 125s behind a stalled worker; a worker ahead of it running to the shared
+	// AURA_LOOP_MAX_WALLCLOCK_SEC ceiling (300s) would have let that lease (300s
+	// default) expire before the row ever started, so its own transitions would then
+	// fence out as lease-lost and the work be lost. Each processJob runs its own
+	// heartbeat and reports its own error; the pass returns them joined.
+	errs := make([]error, len(jobs))
+	var wg sync.WaitGroup
+	for i, job := range jobs {
+		wg.Go(func() { errs[i] = l.processJob(ctx, job) })
+	}
+	wg.Wait()
+	processed := 0
+	for _, err := range errs {
+		if err == nil {
+			processed++
+		}
+	}
+	return processed, errors.Join(errs...)
 }
 
 // Run polls ProcessOnce until ctx is cancelled. A pass error is logged and

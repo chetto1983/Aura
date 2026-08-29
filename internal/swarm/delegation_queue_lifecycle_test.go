@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 // the ordering contract (push attempted BEFORE the row is transitioned) is
 // observable without a queue.
 type fakeSteerPublisher struct {
+	mu     sync.Mutex // ProcessOnce runs a claimed batch concurrently (finding F)
 	pushes []string
 	err    error
 }
@@ -34,6 +36,8 @@ func (f *fakeSteerPublisher) Push(conv, source, text string) error {
 	if f.err != nil {
 		return f.err
 	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.pushes = append(f.pushes, conv+"|"+source+"|"+text)
 	return nil
 }
@@ -343,6 +347,46 @@ func TestProcessJobBindsTheJobIdentityOnce(t *testing.T) {
 					"conversations.Store would have this write hidden by RLS", got, identityID)
 			}
 		})
+	}
+}
+
+// TestProcessOnceRunsAClaimedBatchConcurrently is finding F's proof
+// (live-check/d03/RESULTS.md): two rows claimed in one batch must run side by side,
+// each renewing its own lease, never one waiting behind the other with its lease
+// ticking. Job A's worker is slow (a scripted 400ms delay before its model answers)
+// and job B's is immediate; under the former serial loop B's report would land
+// only after A's, so the recorder seeing B FIRST is the concurrency proof.
+func TestProcessOnceRunsAClaimedBatchConcurrently(t *testing.T) {
+	defer goleak.VerifyNone(t)
+	const identityID = "11111111-1111-4111-8111-111111111111"
+	client := newRouter().
+		route("slow goal", outcome{kind: "ok", text: "slow done", delay: 400 * time.Millisecond}).
+		route("fast goal", outcome{kind: "ok", text: "fast done"})
+	rc := testRunConfig(t, client, 25)
+	store := &fakeDelegationStore{claimJobs: []documents.IngestionJob{
+		{ID: "slow", IdentityID: identityID, JobType: JobTypeSwarmDelegation, MaxAttempts: 3,
+			Payload: map[string]any{"goal": "slow goal", "conversation_id": "conv-slow"}},
+		{ID: "fast", IdentityID: identityID, JobType: JobTypeSwarmDelegation, MaxAttempts: 3,
+			Payload: map[string]any{"goal": "fast goal", "conversation_id": "conv-fast"}},
+	}}
+	recorder := &fakeConversationRecorder{}
+	l := &DelegationClaimLoop{
+		Store: store, Delivery: &DelegationDelivery{Recorder: recorder, Steer: &fakeSteerPublisher{}},
+		IdentityID: identityID, Worker: rc, LeaseDuration: time.Minute,
+	}
+
+	n, err := l.ProcessOnce(withToolCtx(context.Background(), t))
+	if err != nil {
+		t.Fatalf("ProcessOnce = %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("processed = %d, want both claimed rows", n)
+	}
+	if tr := store.transitionsSnapshot(); len(tr) != 2 {
+		t.Fatalf("transitions = %+v, want one succeeded transition per row", tr)
+	}
+	if len(recorder.appended) != 2 || recorder.appended[0].conversationID != "conv-fast" {
+		t.Fatalf("recorded order = %+v, want the fast row's report FIRST -- a serial batch would deliver the slow row's first", recorder.appended)
 	}
 }
 

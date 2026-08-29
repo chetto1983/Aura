@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -38,6 +39,7 @@ type recordedDeliveryTurn struct {
 // to fail once (err), so Deliver's record-before-push ordering and its
 // record-failure contract are observable without a queue.
 type fakeConversationRecorder struct {
+	mu       sync.Mutex // ProcessOnce runs a claimed batch concurrently (finding F)
 	appended []recordedDeliveryTurn
 	err      error
 }
@@ -46,6 +48,8 @@ func (f *fakeConversationRecorder) AppendAssistantTurn(ctx context.Context, conv
 	if f.err != nil {
 		return f.err
 	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.appended = append(f.appended, recordedDeliveryTurn{
 		conversationID: conversationID, text: text, identityID: identityctx.IdentityID(ctx),
 	})
