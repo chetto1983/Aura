@@ -9512,9 +9512,14 @@ flusso completo, che funziona.
 > removes its own file on exit. **Finding F (new, fixed the same day):** two delegations issued 1s
 > apart were claimed in one batch and run serially — the second waited 125s behind a stalled
 > worker with its lease ticking from the claim; a 300s worker ahead of it would have let the 300s
-> lease expire in the queue and the row fence out as lease-lost. `ProcessOnce` now runs a claimed
-> batch concurrently, one heartbeat per row. Finding C reproduced at the same shape (an upstream
-> `stream_open_deadline` after a 47-page document's tool result, reported as `stalled`).
+> lease expire in the queue and the row fence out as lease-lost. Fixed at the seam the daemon
+> actually drives — `cmd/aura` ticks `ProcessOnce` per identity from the shared runtime processor,
+> never `Run` — so `ProcessOnce` now claims what fits in the free slots (`batchSize`), dispatches
+> each row to its own goroutine with its own heartbeat, and returns; measured on the rebuilt image:
+> two rows issued 1 s apart both `running` within 2 s, two `swarm.child.spawned` 0.3 ms apart
+> (`live-check/d03/RESULTS.md` §7, which also records the two intermediate builds that fixed the
+> wrong half). Finding C reproduced at the same shape (an upstream `stream_open_deadline` after a
+> 47-page document's tool result, reported as `stalled`).
 >
 > **What this measurement does NOT show.** The >4-minute completions (293.4s/327.5s) were measured
 > under the temporary `compose.d03.yaml` override, restored immediately afterward — under the

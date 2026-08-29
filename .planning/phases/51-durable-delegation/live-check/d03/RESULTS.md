@@ -88,3 +88,15 @@ Both operator turns returned in **13 s** with `swarm_spawn` on the wire.
 
 Not shown here: `attempt_count = 1` on an undisturbed successful run (attempt 1 stalled upstream
 again); the Telegram nudge's arrival (fired without error).
+
+## 7. Finding F, measured three times before it was fixed for real (2026-08-29)
+
+| build | what happened to two delegations issued 1 s apart | verdict |
+|---|---|---|
+| `e5c8227b2` (serial pass) | claimed together 08:38:39; the second **spawned 08:40:44**, 125 s later, after the first was reaped — a lease ticking in the queue with nobody renewing it | F found |
+| `02a2092d0` (batch concurrent inside the pass) | first claimed within its second (08:54:42); the second row, created 3 s later, **still `queued` at 08:56:35** — the pass blocks until its workers finish, and nothing claims in the meantime | F half-fixed |
+| `ca1673b8d` (`Run` keeps claiming) | both rows **`queued` at 09:07:45**, 60 s after issue: `cmd/aura` never calls `Run` — it drives `ProcessOnce` from the shared runtime ticker (`serve_delegation.go:197`, `asset_processing_worker.go`), and `ProcessOnce` still ran its pass to completion | wrong seam |
+| `fef1928cc` (`ProcessOnce` dispatches and returns; image `8761e305…`) | both rows created 09:15:38, both **`running` at 09:15:40**, two `swarm.child.spawned` at **09:15:40.026** (0.3 ms apart) | **F fixed** |
+
+Lesson recorded in the code comment: the daemon's own ticker is the loop; a pass must claim what
+fits in the free slots and return. `Wait()` exists for tests and one-shot callers only.

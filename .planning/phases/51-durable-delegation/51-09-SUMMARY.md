@@ -231,9 +231,11 @@ None — no new env var requires operator action; `AURA_LOOP_MAX_WALLCLOCK_SEC`/
 - **Consolidation (`e5c8227b2`):** the identity bind moved from three call sites to ONE
   (`processJob`) at the operator's remark; tests rewritten as boundary proof
   (`TestProcessJobBindsTheJobIdentityOnce`) + pass-through; PID-file wrapper self-cleans.
-- **Finding F (`02a2092d0`):** a claimed batch ran serially — a row waited 125 s behind a stalled
-  sibling with its lease ticking; `ProcessOnce` now runs the batch concurrently, one heartbeat per
-  row. Live proof of the concurrent spawn: RESULTS.md §7.
+- **Finding F (`02a2092d0` → `ca1673b8d` → `fef1928cc`):** a claimed batch ran serially and a pass
+  blocked the daemon ticker until its workers finished — a row waited 125 s behind a stalled sibling
+  with its lease ticking. `ProcessOnce` (the seam `cmd/aura` actually ticks) now claims what fits in
+  the free slots, dispatches and returns; `Wait()` for tests. Live: two workers spawned 0.3 ms apart
+  (RESULTS.md §7, with the two intermediate builds that fixed the wrong half).
 - **Findings B and C** stay recorded for 51-08; C reproduced at the same shape (upstream
   `stream_open_deadline` after a large document's tool result, reported as `stalled`).
 - **New gap (not this plan):** SWARM-12 / SWARM-10 parent leg — PRD Amendment #172.
