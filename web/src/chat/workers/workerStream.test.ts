@@ -29,8 +29,14 @@ class FakeEventSource {
   }
 
   push(frame: unknown): void {
-    const event = new MessageEvent('message', { data: JSON.stringify(frame) });
-    for (const listener of this.listeners.get('message') ?? []) listener(event);
+    const type =
+      typeof frame === 'object' &&
+      frame !== null &&
+      typeof (frame as { type?: unknown }).type === 'string'
+        ? (frame as { type: string }).type
+        : 'message';
+    const event = new MessageEvent(type, { data: JSON.stringify(frame) });
+    for (const listener of this.listeners.get(type) ?? []) listener(event);
   }
 
   emit(type: string, event: Event): void {
