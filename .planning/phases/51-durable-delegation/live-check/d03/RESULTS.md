@@ -69,3 +69,22 @@ NOT shown / found instead:
 - **Finding D (dark config):** `.env` carries `AURA_LOOP_MAX_WALLCLOCK_SEC=300` / `AURA_LOOP_MAX_STEPS=25` but `compose.yaml` does not map either, so the container runs on code defaults regardless of `.env`. The 327 s completion above would have been cut at 300 s by the Budget wallclock under shipped defaults: D-03 removes the per-child wall clock, the tree Budget (300 s / 25 steps) remains the ceiling until the knobs are mapped and raised.
 - Not measured: `attempt_count` staying at 1 on a successful run (step 3) — every run here was retried for defect A, so the "no reclaim under a live worker" assertion is only supported indirectly (no concurrent `swarm.child.spawned` ever overlapped a live one; each spawn followed a `completed`).
 - Not measured: the Telegram nudge's arrival on the operator's phone (fired without error at 06:44:51+grace; only the operator can confirm).
+
+## 6. Re-verification after the fixes (image `a119b9a6…` built 08:37:51Z from `e5c8227b2`, 2026-08-29)
+
+Shipped defaults throughout (`AURA_SWARM_CHILD_IDLE_SEC=120`, `AURA_LOOP_MAX_WALLCLOCK_SEC=300` and
+`AURA_LOOP_MAX_STEPS=25` now visible in `docker exec aura env` — defect D wired). Two probes issued
+1 s apart from the throwaway curl container: `stall` (conv `01a04cab-a178-…`, job `12cf82b2…`) and
+`long4` (conv `01a04cab-a7fb-…`, job `f1550cc1…`, 4 documents so the goal fits the 300 s budget).
+Both operator turns returned in **13 s** with `swarm_spawn` on the wire.
+
+| what | measured | verdict |
+|---|---|---|
+| **Defect E** (box process leak) | stall attempt 1: tool call 08:38:44, reaped 08:40:44 (`dur=124.8s`, `context canceled`, transcript `[command cancelled]`). At 08:42:07 `docker top aura-box-b130c94d…` shows **no `sleep 480`** (yesterday's shape: alive at 2:54 elapsed). `/tmp/.aura-exec-79050c1c….pid` remains, `pid=14` dead — the killed wrapper skips its EXIT trap, as documented; the long4 worker's own `shell_exec` files were removed by the trap (one seen at 08:41, gone by 08:42). | **fixed** |
+| **Defect A** (SC#1 record under RLS) | long4 attempt 2 completed `status=ok dur=182.0s` at 08:48:58 → `aura.ingestion_jobs` **`succeeded`** (attempt 2), `aura.conversation_turns` has the assistant row `[Delegated worker report -- goal: "Lavora SOLO dentro /workspace …` at 08:48:58, `aura.steer_queue` has one `delegation_result` (drained=f, nudged=t: no live turn at delivery, so the channel nudge is per policy). | **fixed** |
+| **Finding C** again | long4 attempt 1: last event 08:41:51 (`Costituzione_della_Repubblica_italiana.pdf: pagine=47 parole=14137`), then `agent llm call error kind=stream_open_deadline` at 08:43:51.397 and the reap in the same millisecond → row `stalled: no worker event for 2m0s`. Second time today at the same shape (after a large document's tool result). The report says `stalled`; the cause was upstream. | unchanged, recorded |
+| **Finding F — NEW (fixed in `02a2092d0`)** | the two rows were claimed together (`defaultDelegationBatchSize=4`) and `ProcessOnce` ran them **serially**: long4 claimed 08:38:39 but spawned only at 08:40:44, after the stall worker's reap — 125 s waiting with its lease ticking and nobody renewing it. With a 300 s worker ahead of it the 300 s lease would have expired in the queue and the row fenced out as lease-lost. `ProcessOnce` now runs the batch concurrently, one heartbeat per row (unit-proven: slow+fast rows claimed together, fast report recorded first). | fixed, live proof in §7 |
+| operator experience | the operator (in the cockpit, 08:45:11) asked *"qualcosa non ha funzionato?"* — the 3-minute job took 10 minutes wall-clock (attempt 1 reaped on an upstream stall, attempt 2 queued behind the stall probe) and the parent agent could only `ls` the box to guess; then, at 08:48:58, the raw JSON report appeared as an assistant bubble. Both are the SWARM-12 gap (PRD Amendment #172), not this plan. | measured, gap plan |
+
+Not shown here: `attempt_count = 1` on an undisturbed successful run (attempt 1 stalled upstream
+again); the Telegram nudge's arrival (fired without error).

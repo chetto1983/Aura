@@ -9500,6 +9500,22 @@ flusso completo, che funziona.
 > real — but the report text cannot currently tell an operator which of the two caused it. Catalog
 > row updated (§Caps & Limits, above); not fixed here.
 >
+> **Re-verified after the fixes (same day, image built from `e5c8227b2`, shipped defaults; full
+> table in `live-check/d03/RESULTS.md` §6).** Defect E: after the 124.8s staleness reap of the
+> `sleep 480` probe, `docker top` on the identity's box shows **no** `sleep 480` (the morning run
+> had it alive 2:54 later). Defect A: a 4-document delegation completed `ok` in 182.0s, the job
+> row reads `succeeded`, and `aura.conversation_turns` holds the `[Delegated worker report …]`
+> assistant row at 08:48:58 with one `delegation_result` steer row beside it. Defect D: the loop
+> budget knobs are now visible in the container's environment. The identity bind was then
+> consolidated from three call sites to ONE (`processJob`, the claim-loop boundary) at the
+> operator's remark that the context was "sparsa in troppi punti", and the PID-file wrapper now
+> removes its own file on exit. **Finding F (new, fixed the same day):** two delegations issued 1s
+> apart were claimed in one batch and run serially — the second waited 125s behind a stalled
+> worker with its lease ticking from the claim; a 300s worker ahead of it would have let the 300s
+> lease expire in the queue and the row fence out as lease-lost. `ProcessOnce` now runs a claimed
+> batch concurrently, one heartbeat per row. Finding C reproduced at the same shape (an upstream
+> `stream_open_deadline` after a 47-page document's tool result, reported as `stalled`).
+>
 > **What this measurement does NOT show.** The >4-minute completions (293.4s/327.5s) were measured
 > under the temporary `compose.d03.yaml` override, restored immediately afterward — under the
 > shipped defaults, now correctly wired end-to-end by the defect D fix, `agent.Budget`'s 300s

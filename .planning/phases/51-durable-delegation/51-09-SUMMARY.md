@@ -223,6 +223,21 @@ None — no new env var requires operator action; `AURA_LOOP_MAX_WALLCLOCK_SEC`/
 - The docker-gated live proof of defect E's fix (re-running the stall probe + `docker top`) is the orchestrator's own follow-up after this plan returns, per the checkpoint's own resume instructions.
 - **Unrelated, noticed but not touched:** `.planning/phases/51-durable-delegation/51-UX-ENVELOPE-RESEARCH.md` appeared as an untracked file during this session (a concurrent research artifact for a future gap plan, dated after this checkpoint's own operator decision). Not created by this plan, not staged, not committed here.
 
+## Orchestrator addendum (2026-08-29, after the continuation returned)
+
+- **Live re-verification on the rebuilt image** (`live-check/d03/RESULTS.md` §6): defect E fixed
+  (no `sleep 480` in the box after the reap), defect A fixed (4-document delegation `succeeded`,
+  assistant report row in `conversation_turns`), defect D visible in the container env.
+- **Consolidation (`e5c8227b2`):** the identity bind moved from three call sites to ONE
+  (`processJob`) at the operator's remark; tests rewritten as boundary proof
+  (`TestProcessJobBindsTheJobIdentityOnce`) + pass-through; PID-file wrapper self-cleans.
+- **Finding F (`02a2092d0`):** a claimed batch ran serially — a row waited 125 s behind a stalled
+  sibling with its lease ticking; `ProcessOnce` now runs the batch concurrently, one heartbeat per
+  row. Live proof of the concurrent spawn: RESULTS.md §7.
+- **Findings B and C** stay recorded for 51-08; C reproduced at the same shape (upstream
+  `stream_open_deadline` after a large document's tool result, reported as `stalled`).
+- **New gap (not this plan):** SWARM-12 / SWARM-10 parent leg — PRD Amendment #172.
+
 ## Self-Check: PASSED
 
 - `internal/swarm/child_staleness.go` — FOUND
