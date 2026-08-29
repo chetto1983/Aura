@@ -25,6 +25,10 @@ const ArtifactEventName = "aura.artifact"
 // application's custom events.
 const DisplayEventName = "aura.display"
 
+// SwarmWorkerEventName is the stable CUSTOM-event name shared by the live
+// worker-status stream, the swarm chip, and the worker picker.
+const SwarmWorkerEventName = "aura.swarm.worker"
+
 // ViewEventName is the stable AG-UI CUSTOM-event name the MCP Apps branch emits:
 // a mounted server bound this tool to a `ui://` document, and here is the payload
 // that document renders (internal/agent/mcptools/bridge_views.go).

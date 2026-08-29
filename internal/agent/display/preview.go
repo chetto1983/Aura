@@ -62,10 +62,20 @@ func decodeToolPreview(toolName, preview string) (any, bool) {
 		// A non-array preview (the over-cap / context-unavailable inline error strings)
 		// fails to unmarshal → raw card, exactly as live.
 		var reports []ChildReport
-		if err := json.Unmarshal([]byte(preview), &reports); err != nil {
+		if err := json.Unmarshal([]byte(preview), &reports); err == nil {
+			return reports, true
+		}
+		// Background dispatch and the synchronous result deliberately share this
+		// normalizer so their cockpit rows cannot drift.
+		var queued struct {
+			Queued  bool           `json:"queued"`
+			Note    string         `json:"note"`
+			Workers *[]ChildReport `json:"workers"`
+		}
+		if err := json.Unmarshal([]byte(preview), &queued); err != nil || queued.Workers == nil {
 			return nil, false
 		}
-		return reports, true
+		return *queued.Workers, true
 	case "shell_exec", "sandbox_exec":
 		// A code-producing tool's preview is plain combined output text, not JSON; wrap it
 		// as the code body. Lang is empty (shell output has no single language) and the

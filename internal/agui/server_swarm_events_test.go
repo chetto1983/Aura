@@ -149,6 +149,32 @@ func TestSwarmWorkerEventsForeignIdentityIs404(t *testing.T) {
 	}
 }
 
+func TestSwarmWorkerStatusForeignIdentityIs404(t *testing.T) {
+	rejected := newFakeSwarmEventReader(map[string][]byte{"w1": nil})
+	rejected.listErr = errors.New("list refused")
+	cases := []struct {
+		name   string
+		conv   string
+		store  ConversationStore
+		reader swarmTranscriptReader
+	}{
+		{name: "malformed", conv: "not-a-uuid", store: newOwnerConvStore(goodID, localIdentityID), reader: newFakeSwarmEventReader(nil)},
+		{name: "foreign", conv: goodID, store: newOwnerConvStore(goodID, uuid.Must(uuid.NewV7()).String()), reader: newFakeSwarmEventReader(nil)},
+		{name: "unwired", conv: goodID, store: newOwnerConvStore(goodID, localIdentityID)},
+		{name: "rejected-list", conv: goodID, store: newOwnerConvStore(goodID, localIdentityID), reader: rejected},
+	}
+	wantBody := swarmTranscriptNotFoundBody + "\n"
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newSwarmWorkerEventsServer(t, tc.store, tc.reader, 0)
+			code, body := req(t, srv, http.MethodGet, swarmWorkerEventsPath(tc.conv, ""), "")
+			if code != http.StatusNotFound || body != wantBody {
+				t.Fatalf("status/body = %d/%q, want opaque 404 %q", code, body, wantBody)
+			}
+		})
+	}
+}
+
 func TestSwarmWorkerEventsReplayAndStopsOnTerminal(t *testing.T) {
 	reader := newFakeSwarmEventReader(map[string][]byte{"w1": {}})
 	reader.append("w1", swarmTextLine(t, "first"), swarmTextLine(t, "second"), swarmTerminalLine(t, "ok"))

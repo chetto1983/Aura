@@ -123,6 +123,8 @@ type ChildReport struct {
 	Question   string   `json:"question,omitempty"`
 	Options    []string `json:"options,omitempty"`
 	ToolCallID string   `json:"tool_call_id,omitempty"`
+	Goal       string   `json:"goal,omitempty"`
+	Attempts   int      `json:"attempts,omitempty"`
 }
 
 // Source is one registry entry (D-05 / R5). RefID is the stable URL-keyed id the

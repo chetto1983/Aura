@@ -7,6 +7,9 @@ const (
 	StatusOK             = "ok"
 	StatusFailed         = "failed"
 	StatusNeedsUserInput = "needs_user_input"
+	StatusRunning        = "running"
+	StatusStalled        = "stalled"
+	StatusDeadLetter     = "dead_letter"
 )
 
 // normalizeSwarm maps a swarm_spawn result ([]ChildReport) to a swarm_report

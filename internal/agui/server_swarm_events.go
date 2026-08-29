@@ -68,11 +68,6 @@ func (s *Server) handleSwarmWorkerEvents(w http.ResponseWriter, r *http.Request)
 	s.streamSSE(ctx, w, stream)
 }
 
-// Task 2 replaces this opaque placeholder with the multiplexed status stream.
-func (s *Server) handleSwarmWorkerStatuses(w http.ResponseWriter, _ *http.Request, _ string) {
-	http.Error(w, swarmTranscriptNotFoundBody, http.StatusNotFound)
-}
-
 func (s *Server) swarmChildEventSequence(
 	ctx context.Context,
 	conv string,
