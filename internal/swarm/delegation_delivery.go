@@ -40,6 +40,14 @@ type ConversationRecorder interface {
 	AppendAssistantTurn(ctx context.Context, conversationID, text string) error
 }
 
+type idempotentConversationRecorder interface {
+	AppendAssistantTurnIdempotent(ctx context.Context, conversationID, deliveryKey, text string) error
+}
+
+type idempotentSteerPublisher interface {
+	PushDelegationResultIdempotent(conv, source, text, fanoutKey, deliveryKey string) error
+}
+
 // ChannelDeliverer pushes text only to a channel that owns the exact
 // (identity, conversation) pair. The tri-state contract remains:
 // (true,nil)=delivered; (false,nil)=no channel owns that conversation;
@@ -70,18 +78,25 @@ type UndrainedResult struct {
 // adapter is the one translation layer that shape difference costs.
 type SteerNudgeStore interface {
 	ListUnnudgedDelegationResults(ctx context.Context, cutoff time.Time, limit int) ([]UndrainedResult, error)
-	// MarkFanoutNudged claims every unclaimed row of one identity/fan-out pair in one
-	// statement; see delegation_fanout.go for the claim-before-push invariant.
-	MarkFanoutNudged(ctx context.Context, identityID, fanoutKey string) ([]UndrainedResult, error)
 }
 
-// PendingNotificationStore is the retry-outbox seam the absent-operator leg's
-// owns-but-failed branch needs (migration 0105's steer_queue_id leg):
-// declared here, adapted at cmd/aura onto *cron.Store -- the SAME store
-// internal/cron/deliver.go's own owns-but-failed leg already writes through,
-// never a second outbox (D-02).
+// FanoutBodyBuilder renders the exact rows claimed inside the outbox transaction.
+type FanoutBodyBuilder func([]UndrainedResult) (string, error)
+
+// FanoutNotification is the durable row created with a fan-out claim.
+type FanoutNotification struct {
+	ID             string
+	IdentityID     string
+	ConversationID string
+	Body           string
+}
+
+// PendingNotificationStore atomically claims a fan-out and creates its existing
+// pending_notifications outbox row before any external channel call.
 type PendingNotificationStore interface {
-	InsertPendingNotification(ctx context.Context, steerQueueID, identityID, body, lastErr string) error
+	ClaimFanoutNotification(ctx context.Context, candidates []UndrainedResult, build FanoutBodyBuilder) (FanoutNotification, bool, error)
+	MarkFanoutNotificationDelivered(ctx context.Context, notificationID string) error
+	MarkFanoutNotificationFailed(ctx context.Context, notificationID, lastErr string) error
 }
 
 // DelegationDelivery is the single delivery concern a claimed delegation's
@@ -217,18 +232,38 @@ func attributedWorkerReport(goal, text string) string {
 // (a worker's question) keeps calling plain Steer.Push because it is not a terminal
 // delegation_result and does not enter the absent-operator fan-out sweep.
 func (d *DelegationDelivery) DeliverReport(ctx context.Context, payload DelegationPayload, report ChildReport, elapsed time.Duration) (recorded bool, err error) {
+	identityID := identityctx.IdentityID(ctx)
+	artifactName := archiveReport(ctx, d.Archiver, identityID, payload.ConversationID, report.ChildID,
+		DelegationReportMarkdown(report, elapsed))
+	return d.deliverReportProjection(ctx, payload, report, elapsed, artifactName, "")
+}
+
+// DeliverPreparedReport retries staged terminal delivery without rerunning the worker.
+func (d *DelegationDelivery) DeliverPreparedReport(ctx context.Context, payload DelegationPayload, report ChildReport, elapsed time.Duration, artifactName, deliveryKey string) (recorded bool, err error) {
+	if strings.TrimSpace(deliveryKey) == "" {
+		return false, fmt.Errorf("swarm: prepared delegation report has no delivery key")
+	}
+	return d.deliverReportProjection(ctx, payload, report, elapsed, artifactName, deliveryKey)
+}
+
+func (d *DelegationDelivery) deliverReportProjection(ctx context.Context, payload DelegationPayload, report ChildReport, elapsed time.Duration, artifactName, deliveryKey string) (recorded bool, err error) {
 	if d == nil || d.Recorder == nil {
 		return false, fmt.Errorf("swarm: delegation delivery has no conversation recorder configured")
 	}
 	if strings.TrimSpace(payload.FanoutKey) == "" {
 		return false, fmt.Errorf("swarm: delegation report has no fan-out key")
 	}
-	identityID := identityctx.IdentityID(ctx)
-	artifactName := archiveReport(ctx, d.Archiver, identityID, payload.ConversationID, report.ChildID,
-		DelegationReportMarkdown(report, elapsed))
 
 	card := DelegationRecordCard(report, elapsed, artifactName)
-	if rerr := d.Recorder.AppendAssistantTurn(ctx, payload.ConversationID, card); rerr != nil {
+	var rerr error
+	if deliveryKey == "" {
+		rerr = d.Recorder.AppendAssistantTurn(ctx, payload.ConversationID, card)
+	} else if recorder, ok := d.Recorder.(idempotentConversationRecorder); ok {
+		rerr = recorder.AppendAssistantTurnIdempotent(ctx, payload.ConversationID, deliveryKey, card)
+	} else {
+		return false, fmt.Errorf("swarm: delegation recorder does not support idempotent delivery")
+	}
+	if rerr != nil {
 		slog.Warn("swarm.delegation.record_failed",
 			"conversation", payload.ConversationID, "err", rerr)
 		recorded = false
@@ -241,7 +276,15 @@ func (d *DelegationDelivery) DeliverReport(ctx context.Context, payload Delegati
 		if merr != nil {
 			return recorded, fmt.Errorf("delegation report marshal: %w", merr)
 		}
-		if perr := d.Steer.PushDelegationResult(payload.ConversationID, steer.SourceWorker, text, payload.FanoutKey); perr != nil {
+		var perr error
+		if deliveryKey == "" {
+			perr = d.Steer.PushDelegationResult(payload.ConversationID, steer.SourceWorker, text, payload.FanoutKey)
+		} else if publisher, ok := d.Steer.(idempotentSteerPublisher); ok {
+			perr = publisher.PushDelegationResultIdempotent(payload.ConversationID, steer.SourceWorker, text, payload.FanoutKey, deliveryKey)
+		} else {
+			return recorded, fmt.Errorf("swarm: steer publisher does not support idempotent delivery")
+		}
+		if perr != nil {
 			return recorded, fmt.Errorf("delegation report push: %w", perr)
 		}
 	}
@@ -253,8 +296,9 @@ func (d *DelegationDelivery) DeliverReport(ctx context.Context, payload Delegati
 // D-15, the operator's own words: "uno per fan-out") -- for every
 // aura.steer_queue delegation_result row the operator has not drained
 // (drained_at IS NULL) that is older than NudgeAfter, the sweep groups the
-// candidates by fan-out key (groupByFanout, delegation_fanout.go) and pushes
-// to the owning identity's channel EXACTLY ONCE per fan-out. A drained row (the
+// candidates by fan-out key (groupByFanout, delegation_fanout.go), claims the
+// group, and creates one durable outbox row before calling the owning channel.
+// A drained row (the
 // operator was present, the steer rail already delivered it mid-turn) is
 // never nudged -- the point is telling an ABSENT operator once, never
 // repeating what a present one already received.
@@ -262,29 +306,14 @@ func (d *DelegationDelivery) DeliverReport(ctx context.Context, payload Delegati
 // NudgeAfter<=0 disables this leg entirely: record + steer keep working via
 // Deliver, only the channel push is off.
 //
-// Claim BEFORE push, never the reverse -- the same "the drain IS the claim"
-// idiom internal/db/queries/steer_queue.sql's own DrainSteerRows already
-// uses, generalized from a FOR-UPDATE transaction to a conditional UPDATE:
-// MarkFanoutNudged's `WHERE nudged_at IS NULL` is what
-// makes two CONCURRENT sweep passes over the SAME fan-out
-// push at most once (SWARM-09 edge). A bare SELECT for the candidate list,
-// with the mark-as-claimed done only AFTER a successful push, would let two
-// passes both observe the row(s) as unclaimed and both call
-// DeliverToConversation before either commits -- a real double-push. Claiming
-// first closes that window: the loser sees an empty MarkFanoutNudged result.
-//
-// The tri-state branch mirrors internal/cron/deliver.go's deliverToOrigin
-// verbatim, because a delegation result has no NotifyRoute and no per-task
-// route chain behind it (unlike a scheduled task, PRD Amendment #154):
-// delivered -> stop (already claimed). Nobody owns the identity -> ALSO stop
-// -- the conversation record Deliver/DeliverReport already wrote IS the
-// delivery, and there is no per-task route to fall back to. Owns-but-failed
-// -> insert ONE pending_notifications retry row per fan-out (migration
-// 0105's steer_queue_id leg, the shipped outbox, referencing the fan-out's
-// FIRST claimed row -- never N rows and never the raw report); the rows stay
-// claimed (nudged_at is already set), so the retry from here on belongs
-// entirely to pending_notifications' own sweep/backoff, never re-attempted
-// by a later NudgeUndrained pass.
+// The claim and pending_notifications insert share one database transaction.
+// If rendering or insertion fails, nudged_at rolls back too; concurrent sweep
+// passes create at most one outbox row for the group. The external channel call
+// is at-least-once: a crash or lost acknowledgement after a successful call can
+// leave the outbox eligible for another attempt, but cannot lose the message.
+// Success marks the outbox delivered; owns-but-failed marks the same row failed
+// for the shipped retry sweep. The steer rows remain claimed in either case, so
+// later NudgeUndrained passes never create a second outbox row.
 //
 // What this does NOT prove (state plainly, per Amendment #154): the fan-out's
 // choice between two candidate channels and its owns-but-failed leg have
@@ -297,7 +326,7 @@ func (d *DelegationDelivery) DeliverReport(ctx context.Context, payload Delegati
 // purpose), while the cockpit card for each sibling lands immediately either
 // way -- DeliverReport's conversation-append leg never waits on the sweep.
 func (d *DelegationDelivery) NudgeUndrained(ctx context.Context, now time.Time, limit int) (int, error) {
-	if d == nil || d.Nudge == nil || d.Channel == nil || d.NudgeAfter <= 0 {
+	if d == nil || d.Nudge == nil || d.Pending == nil || d.Channel == nil || d.NudgeAfter <= 0 {
 		return 0, nil
 	}
 	cutoff := now.Add(-d.NudgeAfter)

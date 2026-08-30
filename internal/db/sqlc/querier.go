@@ -220,7 +220,7 @@ type Querier interface {
 	// measured 2026-08-13 against the live schema, one turn, not even the system head — and
 	// the model lost the whole prior conversation on any edit/regenerate.
 	// NULLIF keeps seq=1 (the root) at NULL, matching that backfill's `WHERE seq > 1`.
-	InsertConversationTurn(ctx context.Context, arg InsertConversationTurnParams) error
+	InsertConversationTurn(ctx context.Context, arg InsertConversationTurnParams) (int64, error)
 	InsertIdentityAudit(ctx context.Context, arg InsertIdentityAuditParams) (AuraIdentityAudit, error)
 	InsertIdentityRecoveryAudit(ctx context.Context, arg InsertIdentityRecoveryAuditParams) (AuraIdentityRecoveryAudit, error)
 	InsertMcpAudit(ctx context.Context, arg InsertMcpAuditParams) (AuraMcpAudit, error)
@@ -466,6 +466,7 @@ type Querier interface {
 	// while it has not crossed the first-apply durability boundary. In-flight and
 	// terminal operations are immutable replays of their original snapshot.
 	RefreshPlannedRetentionOperation(ctx context.Context, arg RefreshPlannedRetentionOperationParams) (int64, error)
+	RejectAnsweredDelegation(ctx context.Context, arg RejectAnsweredDelegationParams) (bool, error)
 	ReleaseConversationDeleteLease(ctx context.Context, arg ReleaseConversationDeleteLeaseParams) (int64, error)
 	ReleaseReservedConversationDelete(ctx context.Context, arg ReleaseReservedConversationDeleteParams) (int64, error)
 	RenameConversation(ctx context.Context, arg RenameConversationParams) error
@@ -505,6 +506,7 @@ type Querier interface {
 	// uses when an edit/regenerate forks a new sibling branch off an existing parent turn.
 	SetTurnBranchPointers(ctx context.Context, arg SetTurnBranchPointersParams) error
 	SoftDeleteAsset(ctx context.Context, arg SoftDeleteAssetParams) (AuraAssets, error)
+	StageDelegationDelivery(ctx context.Context, arg StageDelegationDeliveryParams) (AuraIngestionJobs, error)
 	SweepDueNotifications(ctx context.Context, arg SweepDueNotificationsParams) ([]SweepDueNotificationsRow, error)
 	TouchTelegramLastSeen(ctx context.Context, telegramUserID int64) error
 	TryStartOperation(ctx context.Context, arg TryStartOperationParams) (int64, error)

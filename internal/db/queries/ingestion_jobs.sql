@@ -35,7 +35,11 @@ WITH candidates AS (
     SELECT queued_job.id, queued_job.status AS prior_status
     FROM aura.ingestion_jobs queued_job
     WHERE queued_job.identity_id = sqlc.arg(identity_id)
-      AND queued_job.attempt_count < queued_job.max_attempts
+      AND (
+        queued_job.attempt_count < queued_job.max_attempts
+        OR (queued_job.job_type = 'swarm_delegation' AND queued_job.payload ? 'pending_delivery')
+        OR (queued_job.job_type = 'swarm_delegation' AND queued_job.status = 'running')
+      )
       AND (sqlc.narg(job_type)::text IS NULL OR queued_job.job_type = sqlc.narg(job_type)::text)
       AND (
         (queued_job.status = 'queued' AND queued_job.next_attempt_at <= now()
@@ -254,11 +258,50 @@ SELECT job.id, job.identity_id, job.payload,
 FROM aura.ingestion_jobs job
 JOIN aura.paused_states pause
   ON pause.token = (job.payload->'resume'->>'pause_token')::uuid
+ AND pause.owning_worker_id = job.id::text
 WHERE job.identity_id = sqlc.arg(identity_id)
   AND job.status = 'awaiting_input'
   AND pause.resumed_at IS NOT NULL
 ORDER BY job.created_at
 LIMIT sqlc.arg(row_limit);
+-- name: RejectAnsweredDelegation :one
+WITH target AS (
+    SELECT job.id, job.status AS prior_status
+    FROM aura.ingestion_jobs job
+    JOIN aura.paused_states pause
+      ON pause.token = (job.payload->'resume'->>'pause_token')::uuid
+     AND pause.owning_worker_id = job.id::text
+    WHERE job.id = sqlc.arg(id)
+      AND job.identity_id = sqlc.arg(identity_id)
+      AND job.status = 'awaiting_input'
+      AND pause.pending_action_id = sqlc.arg(pending_action_id)::text
+      AND pause.resumed_at IS NOT NULL
+    FOR UPDATE OF job
+), transitioned AS (
+    UPDATE aura.ingestion_jobs job
+    SET status = 'dead_letter',
+        error_code = sqlc.arg(error_code),
+        error_message = sqlc.arg(error_message),
+        locked_by = NULL,
+        locked_until = NULL,
+        completed_at = now(),
+        updated_at = now()
+    FROM target
+    WHERE job.id = target.id
+    RETURNING job.*, target.prior_status
+), events AS (
+    INSERT INTO aura.ingestion_events (
+        identity_id, entity_type, entity_id, job_id, from_status, to_status,
+        event_type, message, pipeline_generation, attempt_generation, lease_generation
+    )
+    SELECT transitioned.identity_id, 'ingestion_job', transitioned.id, transitioned.id,
+           transitioned.prior_status, 'dead_letter', 'swarm_delegation.invalid_resume',
+           sqlc.arg(error_message), transitioned.pipeline_generation,
+           transitioned.attempt_generation, transitioned.lease_generation
+    FROM transitioned
+    RETURNING job_id
+)
+SELECT EXISTS(SELECT 1 FROM events) AS rejected;
 -- name: ListExpiredAwaitingInputJobs :many
 -- 51-06b (Task 3, D-08 extended to the queue row): the per-worker pause TTL sweep's
 -- read -- which parked jobs carry a pause the operator never answered, older than the
@@ -273,6 +316,7 @@ SELECT job.id, job.identity_id,
 FROM aura.ingestion_jobs job
 JOIN aura.paused_states pause
   ON pause.token = (job.payload->'resume'->>'pause_token')::uuid
+ AND pause.owning_worker_id = job.id::text
 WHERE job.identity_id = sqlc.arg(identity_id)
   AND job.status = 'awaiting_input'
   AND pause.resumed_at IS NULL

@@ -273,12 +273,15 @@ func TestDelegationDeadLettersAtMaxAttempts(t *testing.T) {
 	identityID := seedSwarmTestIdentity(t, ctx, pool)
 
 	store := documents.NewPostgresIngestionJobStore(pool)
-	loop := &DelegationClaimLoop{Store: store, IdentityID: identityID, WorkerID: "test-worker"}
+	loop := &DelegationClaimLoop{
+		Store: store, IdentityID: identityID, WorkerID: "test-worker",
+		Delivery: &DelegationDelivery{Recorder: &fakeConversationRecorder{}},
+	}
 
 	job, err := store.Create(ctx, documents.CreateIngestionJobRequest{
 		IdentityID: identityID, JobType: JobTypeSwarmDelegation, Status: "queued",
 		IdempotencyKey: "dead-letter-row", MaxAttempts: 1,
-		Payload: map[string]any{"goal": "will fail", "conversation_id": "conv-fail", "fanout_key": "f-fail"},
+		Payload: map[string]any{"goal": "will fail", "conversation_id": "conv-fail", "child_id": "w1", "fanout_key": "f-fail"},
 	})
 	if err != nil {
 		t.Fatalf("create row: %v", err)

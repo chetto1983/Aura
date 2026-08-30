@@ -16,7 +16,11 @@ WITH candidates AS (
     SELECT queued_job.id, queued_job.status AS prior_status
     FROM aura.ingestion_jobs queued_job
     WHERE queued_job.identity_id = $1
-      AND queued_job.attempt_count < queued_job.max_attempts
+      AND (
+        queued_job.attempt_count < queued_job.max_attempts
+        OR (queued_job.job_type = 'swarm_delegation' AND queued_job.payload ? 'pending_delivery')
+        OR (queued_job.job_type = 'swarm_delegation' AND queued_job.status = 'running')
+      )
       AND ($2::text IS NULL OR queued_job.job_type = $2::text)
       AND (
         (queued_job.status = 'queued' AND queued_job.next_attempt_at <= now()
@@ -335,6 +339,7 @@ SELECT job.id, job.identity_id, job.payload,
 FROM aura.ingestion_jobs job
 JOIN aura.paused_states pause
   ON pause.token = (job.payload->'resume'->>'pause_token')::uuid
+ AND pause.owning_worker_id = job.id::text
 WHERE job.identity_id = $1
   AND job.status = 'awaiting_input'
   AND pause.resumed_at IS NOT NULL
@@ -468,6 +473,7 @@ SELECT job.id, job.identity_id,
 FROM aura.ingestion_jobs job
 JOIN aura.paused_states pause
   ON pause.token = (job.payload->'resume'->>'pause_token')::uuid
+ AND pause.owning_worker_id = job.id::text
 WHERE job.identity_id = $1
   AND job.status = 'awaiting_input'
   AND pause.resumed_at IS NULL
@@ -574,6 +580,67 @@ func (q *Queries) ParkIngestionJobAwaitingInput(ctx context.Context, arg ParkIng
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const rejectAnsweredDelegation = `-- name: RejectAnsweredDelegation :one
+WITH target AS (
+    SELECT job.id, job.status AS prior_status
+    FROM aura.ingestion_jobs job
+    JOIN aura.paused_states pause
+      ON pause.token = (job.payload->'resume'->>'pause_token')::uuid
+     AND pause.owning_worker_id = job.id::text
+    WHERE job.id = $1
+      AND job.identity_id = $2
+      AND job.status = 'awaiting_input'
+      AND pause.pending_action_id = $3::text
+      AND pause.resumed_at IS NOT NULL
+    FOR UPDATE OF job
+), transitioned AS (
+    UPDATE aura.ingestion_jobs job
+    SET status = 'dead_letter',
+        error_code = $4,
+        error_message = $5,
+        locked_by = NULL,
+        locked_until = NULL,
+        completed_at = now(),
+        updated_at = now()
+    FROM target
+    WHERE job.id = target.id
+    RETURNING job.id, job.job_type, job.status, job.idempotency_key, job.stage, job.attempt_count, job.max_attempts, job.locked_by, job.locked_until, job.next_attempt_at, job.payload, job.error_code, job.error_message, job.created_at, job.updated_at, job.completed_at, job.identity_id, job.asset_id, job.pipeline_generation, job.attempt_generation, job.lease_generation, target.prior_status
+), events AS (
+    INSERT INTO aura.ingestion_events (
+        identity_id, entity_type, entity_id, job_id, from_status, to_status,
+        event_type, message, pipeline_generation, attempt_generation, lease_generation
+    )
+    SELECT transitioned.identity_id, 'ingestion_job', transitioned.id, transitioned.id,
+           transitioned.prior_status, 'dead_letter', 'swarm_delegation.invalid_resume',
+           $5, transitioned.pipeline_generation,
+           transitioned.attempt_generation, transitioned.lease_generation
+    FROM transitioned
+    RETURNING job_id
+)
+SELECT EXISTS(SELECT 1 FROM events) AS rejected
+`
+
+type RejectAnsweredDelegationParams struct {
+	ID              pgtype.UUID `json:"id"`
+	IdentityID      pgtype.UUID `json:"identity_id"`
+	PendingActionID string      `json:"pending_action_id"`
+	ErrorCode       string      `json:"error_code"`
+	ErrorMessage    string      `json:"error_message"`
+}
+
+func (q *Queries) RejectAnsweredDelegation(ctx context.Context, arg RejectAnsweredDelegationParams) (bool, error) {
+	row := q.db.QueryRow(ctx, rejectAnsweredDelegation,
+		arg.ID,
+		arg.IdentityID,
+		arg.PendingActionID,
+		arg.ErrorCode,
+		arg.ErrorMessage,
+	)
+	var rejected bool
+	err := row.Scan(&rejected)
+	return rejected, err
 }
 
 const resolveIngestionJobAwaitingInput = `-- name: ResolveIngestionJobAwaitingInput :execrows

@@ -11,8 +11,8 @@ package swarm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 )
@@ -66,15 +66,14 @@ func groupByFanout(rows []UndrainedResult) ([]fanoutGroup, error) {
 // while each finished sibling's own cockpit card (DeliverReport) lands immediately either
 // way.
 //
-// Once eligible, it claims every unclaimed row of the group through MarkFanoutNudged in
-// ONE statement. The UPDATE returns every claimed row's body,
+// Once eligible, PendingNotificationStore claims every unclaimed row and creates the
+// durable notification in one transaction. The claim returns every won row's body,
 // including a sibling inserted after the candidate SELECT but before this claim; rendering
 // from the pre-claim group would mark that late row without ever including it. It then
 // decodes and concatenates every CLAIMED row's body into []ChildReport, sorts by GoalIndex,
 // and renders ONCE through
 // TelegramDelegationMessage's bounded, glyph-vocabulary rendering. A row whose body fails to decode
-// contributes nothing to the slice but still counts as claimed (row.ID matched
-// MarkFanoutNudged's returned set); an all-undecodable group still sends the no-report
+// contributes nothing to the slice but still counts as claimed; an all-undecodable group still sends the no-report
 // message rather than nothing. An empty claim (every row already claimed by a concurrent
 // pass) returns claimed=false with no further action.
 func (d *DelegationDelivery) nudgeFanout(ctx context.Context, group fanoutGroup) (bool, error) {
@@ -87,19 +86,32 @@ func (d *DelegationDelivery) nudgeFanout(ctx context.Context, group fanoutGroup)
 			return false, nil
 		}
 	}
-	claimedRows, err := d.Nudge.MarkFanoutNudged(ctx, group.identityID, group.fanoutKey)
+	notification, claimed, err := d.Pending.ClaimFanoutNotification(ctx, group.rows, renderFanoutRows)
 	if err != nil {
-		return false, fmt.Errorf("mark fanout nudged: %w", err)
+		return false, fmt.Errorf("claim fanout notification: %w", err)
 	}
-	if len(claimedRows) == 0 {
+	if !claimed {
 		return false, nil
 	}
-	var reports []ChildReport
-	firstClaimedRowID := claimedRows[0].ID
-	for _, row := range claimedRows {
-		if row.ID < firstClaimedRowID {
-			firstClaimedRowID = row.ID
+	_, deliveryErr := d.Channel.DeliverToConversation(ctx, notification.IdentityID, notification.ConversationID, notification.Body)
+	if deliveryErr != nil {
+		if markErr := d.Pending.MarkFanoutNotificationFailed(ctx, notification.ID, deliveryErr.Error()); markErr != nil {
+			return true, errors.Join(deliveryErr, fmt.Errorf("mark fanout notification failed: %w", markErr))
 		}
+		return true, nil
+	}
+	if err := d.Pending.MarkFanoutNotificationDelivered(ctx, notification.ID); err != nil {
+		return true, fmt.Errorf("mark fanout notification delivered: %w", err)
+	}
+	return true, nil
+}
+
+func renderFanoutRows(claimedRows []UndrainedResult) (string, error) {
+	if len(claimedRows) == 0 {
+		return "", fmt.Errorf("render fanout: empty claim")
+	}
+	var reports []ChildReport
+	for _, row := range claimedRows {
 		var rowReports []ChildReport
 		if err := json.Unmarshal([]byte(row.Body), &rowReports); err != nil {
 			continue // undecodable body contributes nothing but still counts as claimed
@@ -107,14 +119,5 @@ func (d *DelegationDelivery) nudgeFanout(ctx context.Context, group fanoutGroup)
 		reports = append(reports, rowReports...)
 	}
 	sort.Slice(reports, func(i, j int) bool { return reports[i].GoalIndex < reports[j].GoalIndex })
-	message := TelegramDelegationMessage(reports)
-	// delivered=true and delivered=false-nobody-owns both complete this fan-out claim.
-	if _, err := d.Channel.DeliverToConversation(ctx, group.identityID, group.conversationID, message); err != nil {
-		if d.Pending != nil && firstClaimedRowID != "" {
-			if perr := d.Pending.InsertPendingNotification(ctx, firstClaimedRowID, group.identityID, message, err.Error()); perr != nil {
-				slog.Warn("swarm.delegation.fanout_retry_persist_failed", "steer_row", firstClaimedRowID, "err", perr)
-			}
-		}
-	}
-	return true, nil
+	return TelegramDelegationMessage(reports), nil
 }

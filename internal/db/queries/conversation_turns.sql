@@ -1,4 +1,4 @@
--- name: InsertConversationTurn :exec
+-- name: InsertConversationTurn :execrows
 -- parent_seq maintains the canonical leaf->root chain the branch walk recurses on
 -- (ListManagedBranchPathPage joins `t.seq = p.parent_seq`). It is derived here rather
 -- than bound as a parameter so no call site can forget it — which is exactly what
@@ -11,8 +11,13 @@
 INSERT INTO aura.conversation_turns (
     conversation_id, seq, role, content, content_sidecar_path,
     tool_call_id, tool_calls, input_tokens, output_tokens, cached_tokens,
-    reasoning, reasoning_duration_ms, parent_seq
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NULLIF($2::int - 1, 0));
+    reasoning, reasoning_duration_ms, parent_seq, delivery_key
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+    NULLIF($2::int - 1, 0), sqlc.narg(delivery_key)
+)
+ON CONFLICT (conversation_id, delivery_key) WHERE delivery_key IS NOT NULL
+DO NOTHING;
 
 -- name: LockConversationForTurnAppend :one
 SELECT id

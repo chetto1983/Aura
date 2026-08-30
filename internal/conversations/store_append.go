@@ -37,12 +37,15 @@ type AppendTurnParams struct {
 	Seq            int
 	Role           string
 	Content        string
-	ToolCallID     string
-	ToolCalls      []byte
-	InputTokens    int
-	OutputTokens   int
-	CachedTokens   int
-	CostUSD        float64
+	// DeliveryKey makes an asynchronous append idempotent within its conversation.
+	// Ordinary interactive turns leave it empty.
+	DeliveryKey  string
+	ToolCallID   string
+	ToolCalls    []byte
+	InputTokens  int
+	OutputTokens int
+	CachedTokens int
+	CostUSD      float64
 	// Reasoning is the turn's accumulated chain-of-thought, persisted DISPLAY-ONLY
 	// on the final assistant answer turn (amendment #91 / fix-plan 1.12). "" maps to
 	// SQL NULL (mirrors ToolCallID/optionalText). It is bounded upstream by the
@@ -253,6 +256,7 @@ func (s *Store) appendTurnWrites(p AppendTurnParams) (sqlc.InsertConversationTur
 		// NUL-scrubbed like content (model text can carry \x00, which pg text rejects).
 		Reasoning:           optionalText(db.PostgresTextSafe(p.Reasoning)),
 		ReasoningDurationMs: optionalInt8(p.ReasoningDurationMS),
+		DeliveryKey:         optionalText(p.DeliveryKey),
 	}
 	agg := sqlc.UpdateConversationAggregatesParams{
 		InputTokens:  int64(p.InputTokens),
@@ -266,8 +270,12 @@ func (s *Store) appendTurnWrites(p AppendTurnParams) (sqlc.InsertConversationTur
 }
 
 func insertTurnAndAggregates(ctx context.Context, q *sqlc.Queries, turn sqlc.InsertConversationTurnParams, agg sqlc.UpdateConversationAggregatesParams) error {
-	if err := q.InsertConversationTurn(ctx, turn); err != nil {
+	inserted, err := q.InsertConversationTurn(ctx, turn)
+	if err != nil {
 		return fmt.Errorf("insert turn: %w", err)
+	}
+	if inserted == 0 {
+		return nil
 	}
 	if err := q.UpdateConversationAggregates(ctx, agg); err != nil {
 		return fmt.Errorf("update aggregates: %w", err)

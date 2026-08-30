@@ -20,6 +20,7 @@ import (
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/secret"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // TestAppendTurnTx_RequiresSeq: the tx-inner body never allocates a seq, so a
@@ -50,6 +51,21 @@ func TestAppendTurnTx_InsertsViaSuppliedQueries(t *testing.T) {
 		ConversationID: convID, Seq: 5, Role: "tool", Content: "the user's short reply", ToolCallID: "call_1",
 	}); err != nil {
 		t.Fatalf("AppendTurnTx: %v", err)
+	}
+}
+
+func TestAppendTurnTx_DeliveryKeyConflictSkipsAggregateUpdate(t *testing.T) {
+	t.Parallel()
+	fake := &fakeDBTX{execTags: []pgconn.CommandTag{pgconn.NewCommandTag("INSERT 0 0")}}
+	s := fakeStore(t, fake)
+	convID := uuid.Must(uuid.NewV7()).String()
+	if err := s.AppendTurnTx(context.Background(), sqlc.New(fake), AppendTurnParams{
+		ConversationID: convID, Seq: 5, Role: "assistant", Content: "card", DeliveryKey: "job-1:terminal",
+	}); err != nil {
+		t.Fatalf("AppendTurnTx duplicate delivery: %v", err)
+	}
+	if fake.execCalls != 1 {
+		t.Fatalf("exec calls = %d, want only the idempotent insert and no aggregate update", fake.execCalls)
 	}
 }
 

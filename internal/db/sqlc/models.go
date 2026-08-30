@@ -188,6 +188,8 @@ type AuraConversationTurns struct {
 	Reasoning pgtype.Text `json:"reasoning"`
 	// Wall time (ms) from the first to the last reasoning delta of the turn (amendment #91, UI-spec OQ-1 "Thought for X s"); NULL when unknown.
 	ReasoningDurationMs pgtype.Int8 `json:"reasoning_duration_ms"`
+	// Amendment #190: optional job-level idempotency key for durable asynchronous delivery.
+	DeliveryKey pgtype.Text `json:"delivery_key"`
 }
 
 // Multi-thread persisted conversations (Slice 1.8). Aggregates token + USD totals per thread.
@@ -635,6 +637,8 @@ type AuraSteerQueue struct {
 	NudgedAt pgtype.Timestamptz `json:"nudged_at"`
 	// 51-11 Task 3 (CONTEXT D-15): groups the N delegation_result rows produced by ONE swarm_spawn call so the absent-operator nudge sweep sends ONE Telegram message for the whole fan-out, not one per worker. conversation_id cannot do this job -- two swarm_spawn calls in one conversation are two DIFFERENT fan-outs. NULL means "not part of a fan-out": every steer-kind row, and every delegation_result row written before this migration -- both keep sweeping through the pre-existing per-row path.
 	FanoutKey pgtype.Text `json:"fanout_key"`
+	// Amendment #190: optional job-level idempotency key for durable asynchronous delivery.
+	DeliveryKey pgtype.Text `json:"delivery_key"`
 }
 
 // Known Telegram accounts (Slice 9a / Phase 13, amendment #58). PK telegram_user_id; identity_id FKs aura.identities (single-user `local` this phase, D-07).

@@ -11,7 +11,9 @@ package swarm
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,6 +39,17 @@ type testPauseAndPark struct {
 	pool  *pgxpool.Pool
 	pause *askuser.Store
 	jobs  *documents.PostgresIngestionJobStore
+}
+
+type testAnsweredRejector struct {
+	store *documents.PostgresIngestionJobStore
+}
+
+func (r testAnsweredRejector) RejectAnsweredDelegation(ctx context.Context, req RejectAnsweredDelegationRequest) (bool, error) {
+	return r.store.RejectAnsweredDelegation(ctx, documents.RejectAnsweredDelegationRequest{
+		IdentityID: req.IdentityID, JobID: req.JobID, PendingActionID: req.PendingActionID,
+		ErrorCode: req.ErrorCode, ErrorMessage: req.ErrorMessage,
+	})
 }
 
 var errTestParkLost = errors.New("test pause and park: park lost lease")
@@ -222,6 +235,85 @@ func TestOpenPauseAndParkAtomicity(t *testing.T) {
 			t.Fatalf("job status = %q, want queued (untouched by the rolled-back park)", status)
 		}
 	})
+}
+
+func TestInvalidAnsweredDelegationIsQuarantinedInPostgres(t *testing.T) {
+	pool := delegationDisposablePool(t)
+	ctx := context.Background()
+	identityID := seedSwarmTestIdentity(t, ctx, pool)
+	convID := seedSwarmConversation(t, ctx, pool, identityID)
+	store := documents.NewPostgresIngestionJobStore(pool)
+	pauseStore := askuser.New(pool)
+	parker := &testPauseAndPark{pool: pool, pause: pauseStore, jobs: store}
+
+	job, err := store.Create(ctx, documents.CreateIngestionJobRequest{
+		IdentityID: identityID, JobType: JobTypeSwarmDelegation, Status: "queued",
+		IdempotencyKey: "invalid-resume-quarantine", MaxAttempts: 3,
+		Payload: map[string]any{"goal": "g", "conversation_id": convID, "child_id": "w1", "fanout_key": "f-test"},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	claimed, err := store.Claim(ctx, documents.ClaimIngestionJobsRequest{
+		IdentityID: identityID, JobType: JobTypeSwarmDelegation, WorkerID: "w",
+		LeaseDuration: time.Minute, BatchSize: 1,
+	})
+	if err != nil || len(claimed) != 1 {
+		t.Fatalf("claim = %d, %v", len(claimed), err)
+	}
+	token := uuid.Must(uuid.NewV7()).String()
+	fence := uuid.Must(uuid.NewV7()).String()
+	resume := &DelegationResumeState{
+		WorkerID: job.ID, Goal: "g", ConversationID: convID,
+		PendingToolCallID: "call-1", PendingActionID: fence, PauseToken: token,
+		AgentIdentity: identityID,
+	}
+	payloadMap, err := delegationPayloadMap(DelegationPayload{
+		Goal: "g", ConversationID: convID, ChildID: "w1", FanoutKey: "f-test", Resume: resume,
+	})
+	if err != nil {
+		t.Fatalf("encode parked payload: %v", err)
+	}
+	owner := job.ID
+	parked, err := parker.OpenPauseAndPark(ctx, askuser.InsertParams{
+		Token: token, ConversationID: convID, Kind: "clarification", Question: "which inbox?",
+		ToolCallID: "call-1", OwningWorkerID: &owner, PendingActionID: &fence,
+	}, documents.ParkAwaitingInputRequest{
+		IdentityID: identityID, JobID: job.ID, WorkerID: "w",
+		LeaseGeneration: claimed[0].LeaseGeneration, Payload: payloadMap,
+	})
+	if err != nil || !parked {
+		t.Fatalf("park = %v, %v", parked, err)
+	}
+	if err := pauseStore.MarkResumed(withIdentity(ctx, identityID), token,
+		askuser.ResumeAnswer{Action: askuser.ActionAccept, Content: "answer"}); err != nil {
+		t.Fatalf("answer pause: %v", err)
+	}
+
+	resumeMap := payloadMap["resume"].(map[string]any)
+	resumeMap["pending_action_id"] = uuid.Must(uuid.NewV7()).String()
+	encoded, err := json.Marshal(payloadMap)
+	if err != nil {
+		t.Fatalf("encode poisoned payload: %v", err)
+	}
+	if err := db.WithIdentityTxRaw(ctx, pool, identityID, func(tx pgx.Tx) error {
+		_, updateErr := tx.Exec(ctx, "UPDATE aura.ingestion_jobs SET payload = $2::jsonb WHERE id = $1", job.ID, string(encoded))
+		return updateErr
+	}); err != nil {
+		t.Fatalf("poison parked payload: %v", err)
+	}
+
+	observer := NewDelegationResumeObserver(store)
+	observer.Rejector = testAnsweredRejector{store: store}
+	if n, err := observer.ProcessOnce(ctx, identityID, 10); n != 0 || err == nil || !strings.Contains(err.Error(), "fence mismatch") {
+		t.Fatalf("poison observer = %d, %v; want quarantine with the structural error reported", n, err)
+	}
+	if status := jobStatus(t, ctx, pool, identityID, job.ID); status != "dead_letter" {
+		t.Fatalf("poison job status = %q, want dead_letter", status)
+	}
+	if n, err := observer.ProcessOnce(ctx, identityID, 10); n != 0 || err != nil {
+		t.Fatalf("second observer = %d, %v; quarantined row must not recur", n, err)
+	}
 }
 
 // TestDelegationPauseResumeFullLifecycle drives the plan's own named end-to-end

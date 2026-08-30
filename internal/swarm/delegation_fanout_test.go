@@ -128,7 +128,7 @@ func TestFanoutSkipsWhileAWorkerRuns(t *testing.T) {
 		{ID: "r1", IdentityID: "id-1", FanoutKey: "f-a", Body: oneReportBody(t, 0, StatusOK, "goal 1")},
 	}}
 	counter := &fakeFanoutJobCounter{counts: map[string]int{"id-1/f-a": 1}}
-	d := &DelegationDelivery{Channel: channel, Nudge: nudge, Counter: counter, NudgeAfter: time.Minute}
+	d := &DelegationDelivery{Channel: channel, Nudge: nudge, Pending: newFakePendingNotificationStore(nudge), Counter: counter, NudgeAfter: time.Minute}
 
 	n, err := d.NudgeUndrained(context.Background(), time.Now(), 10)
 	if err != nil {
@@ -159,7 +159,7 @@ func TestFanoutClaimsRendersOnceAndDelivers(t *testing.T) {
 		{ID: "r2", IdentityID: "id-1", ConversationID: "conv-1", FanoutKey: "f-a", Body: oneReportBody(t, 0, StatusOK, "first goal")},
 	}}
 	counter := &fakeFanoutJobCounter{counts: map[string]int{"id-1/f-a": 0}}
-	d := &DelegationDelivery{Channel: channel, Nudge: nudge, Counter: counter, NudgeAfter: time.Minute}
+	d := &DelegationDelivery{Channel: channel, Nudge: nudge, Pending: newFakePendingNotificationStore(nudge), Counter: counter, NudgeAfter: time.Minute}
 
 	n, err := d.NudgeUndrained(context.Background(), time.Now(), 10)
 	if err != nil {
@@ -202,7 +202,7 @@ func TestFanoutClaimIncludesRowInsertedAfterCandidateSnapshot(t *testing.T) {
 		},
 	}
 	counter := &fakeFanoutJobCounter{counts: map[string]int{"id-1/f-a": 0}}
-	d := &DelegationDelivery{Channel: channel, Nudge: nudge, Counter: counter, NudgeAfter: time.Minute}
+	d := &DelegationDelivery{Channel: channel, Nudge: nudge, Pending: newFakePendingNotificationStore(nudge), Counter: counter, NudgeAfter: time.Minute}
 
 	n, err := d.NudgeUndrained(context.Background(), time.Now(), 10)
 	if err != nil {
@@ -230,7 +230,7 @@ func TestFanoutUndecodableBodyStillSendsAndCounts(t *testing.T) {
 		{ID: "r1", IdentityID: "id-1", FanoutKey: "f-a", Body: "not json"},
 		{ID: "r2", IdentityID: "id-1", FanoutKey: "f-a", Body: "also not json"},
 	}}
-	d := &DelegationDelivery{Channel: channel, Nudge: nudge, NudgeAfter: time.Minute}
+	d := &DelegationDelivery{Channel: channel, Nudge: nudge, Pending: newFakePendingNotificationStore(nudge), NudgeAfter: time.Minute}
 
 	n, err := d.NudgeUndrained(context.Background(), time.Now(), 10)
 	if err != nil {
@@ -259,7 +259,7 @@ func TestFanoutOwnsButFailedWritesOneOutboxRow(t *testing.T) {
 		{ID: "r1", IdentityID: "id-1", FanoutKey: "f-a", Body: oneReportBody(t, 0, StatusOK, "goal")},
 		{ID: "r2", IdentityID: "id-1", FanoutKey: "f-a", Body: oneReportBody(t, 1, StatusFailed, "goal 2")},
 	}}
-	pending := &fakePendingNotificationStore{}
+	pending := newFakePendingNotificationStore(nudge)
 	d := &DelegationDelivery{Channel: channel, Nudge: nudge, Pending: pending, NudgeAfter: time.Minute}
 
 	n, err := d.NudgeUndrained(context.Background(), time.Now(), 10)
@@ -272,11 +272,30 @@ func TestFanoutOwnsButFailedWritesOneOutboxRow(t *testing.T) {
 	if len(pending.calls) != 1 {
 		t.Fatalf("pending calls = %d, want exactly 1 for the whole fan-out", len(pending.calls))
 	}
-	if pending.calls[0].steerQueueID != "r1" {
-		t.Fatalf("pending steerQueueID = %q, want the FIRST claimed row's id r1", pending.calls[0].steerQueueID)
-	}
 	if strings.Contains(pending.calls[0].body, `"goal_index"`) {
 		t.Fatalf("pending body = %q, want the rendered message, never the raw report JSON", pending.calls[0].body)
+	}
+}
+
+func TestFanoutOutboxFailureLeavesClaimRetryable(t *testing.T) {
+	channel := &fakeChannelDeliverer{delivered: true}
+	nudge := &fakeSteerNudgeStore{rows: []UndrainedResult{
+		{ID: "r1", IdentityID: "id-1", ConversationID: "conv-1", FanoutKey: "f-a", Body: oneReportBody(t, 0, StatusOK, "goal")},
+	}}
+	pending := newFakePendingNotificationStore(nudge)
+	pending.claimErr = errors.New("outbox insert failed")
+	d := &DelegationDelivery{Channel: channel, Nudge: nudge, Pending: pending, NudgeAfter: time.Minute}
+
+	if _, err := d.NudgeUndrained(context.Background(), time.Now(), 10); err == nil {
+		t.Fatal("NudgeUndrained accepted a failed atomic claim/outbox write")
+	}
+	if len(nudge.claimed) != 0 || len(channel.calls) != 0 {
+		t.Fatalf("failed outbox write claimed/sent = %v/%d, want neither", nudge.claimed, len(channel.calls))
+	}
+
+	pending.claimErr = nil
+	if n, err := d.NudgeUndrained(context.Background(), time.Now(), 10); err != nil || n != 1 {
+		t.Fatalf("retry NudgeUndrained = (%d, %v), want (1, nil)", n, err)
 	}
 }
 
@@ -292,7 +311,7 @@ func TestFanoutSendsOnceUnderConcurrency(t *testing.T) {
 		{ID: "r2", IdentityID: "id-1", FanoutKey: "f-a", Body: oneReportBody(t, 1, StatusOK, "goal 2")},
 	}}
 	counter := &fakeFanoutJobCounter{counts: map[string]int{"id-1/f-a": 0}}
-	d := &DelegationDelivery{Channel: channel, Nudge: nudge, Counter: counter, NudgeAfter: time.Minute}
+	d := &DelegationDelivery{Channel: channel, Nudge: nudge, Pending: newFakePendingNotificationStore(nudge), Counter: counter, NudgeAfter: time.Minute}
 
 	var wg sync.WaitGroup
 	results := make([]int, 2)

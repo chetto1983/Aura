@@ -72,7 +72,7 @@ func NewPostgresStore(pool *pgxpool.Pool, cfg Config) *PostgresStore {
 // Push writes a KindSteer row with a NULL fanout_key. Worker questions use this path too:
 // they belong to the live steer rail, never the absent-operator result nudge sweep.
 func (s *PostgresStore) Push(conv, source, text string) error {
-	return s.push(conv, source, text, KindSteer, "")
+	return s.push(conv, source, text, KindSteer, "", "")
 }
 
 // PushDelegationResult is Push's fan-out-aware counterpart (51-11 Task 3, CONTEXT D-15):
@@ -88,13 +88,25 @@ func (s *PostgresStore) PushDelegationResult(conv, source, text, fanoutKey strin
 	if strings.TrimSpace(fanoutKey) == "" {
 		return fmt.Errorf("steer: push delegation result: fan-out key is required")
 	}
-	return s.push(conv, source, text, KindDelegationResult, fanoutKey)
+	return s.push(conv, source, text, KindDelegationResult, fanoutKey, "")
+}
+
+// PushDelegationResultIdempotent publishes one job-keyed terminal projection.
+// Repeating the same conversation/key pair preserves the first body and fan-out.
+func (s *PostgresStore) PushDelegationResultIdempotent(conv, source, text, fanoutKey, deliveryKey string) error {
+	if strings.TrimSpace(fanoutKey) == "" {
+		return fmt.Errorf("steer: push delegation result: fan-out key is required")
+	}
+	if strings.TrimSpace(deliveryKey) == "" {
+		return fmt.Errorf("steer: push delegation result: delivery key is required")
+	}
+	return s.push(conv, source, text, KindDelegationResult, fanoutKey, deliveryKey)
 }
 
 // push is Push and PushDelegationResult's shared body: identical validation ladder,
 // guarded INSERT and disambiguation probe. Its callers select the explicit row kind;
 // only PushDelegationResult can provide a fan-out key.
-func (s *PostgresStore) push(conv, source, text string, kind QueueKind, fanoutKey string) error {
+func (s *PostgresStore) push(conv, source, text string, kind QueueKind, fanoutKey, deliveryKey string) error {
 	// The nil-receiver guard MUST run before any field access on s: a
 	// *PostgresStore boxed into an interface (telegram.Deps.Steer,
 	// agui's steerPusher) can be a non-nil interface wrapping a nil pointer
@@ -127,6 +139,10 @@ func (s *PostgresStore) push(conv, source, text string, kind QueueKind, fanoutKe
 	if fanoutKey != "" {
 		fanoutKeyArg = pgtype.Text{String: fanoutKey, Valid: true}
 	}
+	var deliveryKeyArg pgtype.Text
+	if deliveryKey != "" {
+		deliveryKeyArg = pgtype.Text{String: deliveryKey, Valid: true}
+	}
 
 	ctx := context.Background()
 	var affected int64
@@ -140,6 +156,7 @@ func (s *PostgresStore) push(conv, source, text string, kind QueueKind, fanoutKe
 			ExpiresAt:      expiresAt,
 			MaxQueue:       int32(s.cfg.Max), //nolint:gosec // Config.Max is an operator-configured cap, always small.
 			FanoutKey:      fanoutKeyArg,
+			DeliveryKey:    deliveryKeyArg,
 		})
 		return qErr
 	})

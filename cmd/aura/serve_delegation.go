@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -15,12 +16,16 @@ import (
 	"github.com/chetto1983/aura/internal/channels"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/steer"
 	"github.com/chetto1983/aura/internal/swarm"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // runtimeDelegationWorkerIDPrefix names the delegation claim loop's per-identity
@@ -62,6 +67,19 @@ func (r delegationConversationRecorder) AppendAssistantTurn(ctx context.Context,
 	})
 }
 
+func (r delegationConversationRecorder) AppendAssistantTurnIdempotent(ctx context.Context, conversationID, deliveryKey, text string) error {
+	if r.store == nil {
+		return nil
+	}
+	return r.store.AppendTurn(ctx, conversations.AppendTurnParams{
+		ConversationID: conversationID,
+		Seq:            0,
+		Role:           "assistant",
+		Content:        text,
+		DeliveryKey:    deliveryKey,
+	})
+}
+
 var _ swarm.ConversationRecorder = delegationConversationRecorder{}
 
 // steerNudgeAdapter adapts *steer.PostgresStore onto swarm.SteerNudgeStore:
@@ -87,20 +105,6 @@ func (a steerNudgeAdapter) ListUnnudgedDelegationResults(ctx context.Context, cu
 	return out, nil
 }
 
-// MarkFanoutNudged adapts the complete rows returned by the atomic claim. This is the
-// same package-cycle boundary ListUnnudgedDelegationResults crosses above.
-func (a steerNudgeAdapter) MarkFanoutNudged(ctx context.Context, identityID, fanoutKey string) ([]swarm.UndrainedResult, error) {
-	rows, err := a.store.MarkFanoutNudged(ctx, identityID, fanoutKey)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]swarm.UndrainedResult, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, swarm.UndrainedResult{ID: r.ID, IdentityID: r.IdentityID, ConversationID: r.ConversationID, Body: r.Body, FanoutKey: r.FanoutKey})
-	}
-	return out, nil
-}
-
 var _ swarm.SteerNudgeStore = steerNudgeAdapter{}
 
 // delegationPendingNotifier adapts *cron.Store onto
@@ -109,22 +113,80 @@ var _ swarm.SteerNudgeStore = steerNudgeAdapter{}
 // internal/cron/deliver.go's own owns-but-failed leg already writes through
 // for a scheduled task, never a second outbox (D-02).
 type delegationPendingNotifier struct {
+	pool  *pgxpool.Pool
 	store *cron.Store
 }
 
-func (n delegationPendingNotifier) InsertPendingNotification(ctx context.Context, steerQueueID, identityID, body, lastErr string) error {
-	if n.store == nil {
-		return nil
+func (n delegationPendingNotifier) ClaimFanoutNotification(ctx context.Context, candidates []swarm.UndrainedResult, build swarm.FanoutBodyBuilder) (swarm.FanoutNotification, bool, error) {
+	if n.pool == nil || n.store == nil {
+		return swarm.FanoutNotification{}, false, fmt.Errorf("delegation fanout outbox is not configured")
 	}
-	_, err := n.store.InsertPendingNotification(ctx, cron.InsertPendingNotificationParams{
-		SteerQueueID: steerQueueID,
-		IdentityID:   identityID,
-		NotifyRoute:  string(cron.RouteStdout),
-		Body:         body,
-		Status:       "failed",
-		LastError:    lastErr,
+	if len(candidates) == 0 {
+		return swarm.FanoutNotification{}, false, fmt.Errorf("delegation fanout claim has no candidates")
+	}
+	identityID, fanoutKey := candidates[0].IdentityID, candidates[0].FanoutKey
+	identity, err := uuid.Parse(identityID)
+	if err != nil {
+		return swarm.FanoutNotification{}, false, fmt.Errorf("delegation fanout identity: %w", err)
+	}
+	var notification swarm.FanoutNotification
+	claimed := false
+	err = db.WithTx(ctx, n.pool, func(q *sqlc.Queries) error {
+		rows, queryErr := q.MarkFanoutNudged(ctx, sqlc.MarkFanoutNudgedParams{
+			IdentityID: pgtype.UUID{Bytes: identity, Valid: true},
+			FanoutKey:  pgtype.Text{String: fanoutKey, Valid: true},
+		})
+		if queryErr != nil || len(rows) == 0 {
+			return queryErr
+		}
+		claimedRows := make([]swarm.UndrainedResult, 0, len(rows))
+		for _, row := range rows {
+			projected := swarm.UndrainedResult{
+				ID: uuid.UUID(row.ID.Bytes).String(), IdentityID: uuid.UUID(row.IdentityID.Bytes).String(),
+				ConversationID: row.ConversationID, Body: row.Body, FanoutKey: row.FanoutKey.String,
+			}
+			if projected.IdentityID != identityID || projected.FanoutKey != fanoutKey ||
+				(len(claimedRows) > 0 && projected.ConversationID != claimedRows[0].ConversationID) {
+				return fmt.Errorf("delegation fanout claim returned a mismatched route")
+			}
+			claimedRows = append(claimedRows, projected)
+		}
+		body, buildErr := build(claimedRows)
+		if buildErr != nil {
+			return buildErr
+		}
+		notificationID, newErr := uuid.NewV7()
+		if newErr != nil {
+			return fmt.Errorf("delegation fanout notification id: %w", newErr)
+		}
+		ownerID, parseErr := uuid.Parse(claimedRows[0].ID)
+		if parseErr != nil {
+			return fmt.Errorf("delegation fanout owner id: %w", parseErr)
+		}
+		if _, queryErr = q.InsertPendingNotification(ctx, sqlc.InsertPendingNotificationParams{
+			ID: pgtype.UUID{Bytes: notificationID, Valid: true}, NotifyRoute: string(cron.RouteStdout),
+			Body: body, NotifyAfter: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+			Status: "pending", IdentityID: identityID,
+			SteerQueueID: pgtype.UUID{Bytes: ownerID, Valid: true},
+		}); queryErr != nil {
+			return queryErr
+		}
+		notification = swarm.FanoutNotification{ID: notificationID.String(), IdentityID: identityID, ConversationID: claimedRows[0].ConversationID, Body: body}
+		claimed = true
+		return nil
 	})
-	return err
+	if err != nil {
+		return swarm.FanoutNotification{}, false, err
+	}
+	return notification, claimed, nil
+}
+
+func (n delegationPendingNotifier) MarkFanoutNotificationDelivered(ctx context.Context, notificationID string) error {
+	return n.store.MarkNotificationDelivered(ctx, notificationID)
+}
+
+func (n delegationPendingNotifier) MarkFanoutNotificationFailed(ctx context.Context, notificationID, lastErr string) error {
+	return n.store.MarkNotificationFailed(ctx, notificationID, lastErr)
 }
 
 var _ swarm.PendingNotificationStore = delegationPendingNotifier{}
@@ -176,6 +238,19 @@ type delegationNudgeProcessor struct {
 	delivery *swarm.DelegationDelivery
 }
 
+type delegationAnsweredRejector struct {
+	store *documents.PostgresIngestionJobStore
+}
+
+func (a delegationAnsweredRejector) RejectAnsweredDelegation(ctx context.Context, req swarm.RejectAnsweredDelegationRequest) (bool, error) {
+	return a.store.RejectAnsweredDelegation(ctx, documents.RejectAnsweredDelegationRequest{
+		IdentityID: req.IdentityID, JobID: req.JobID, PendingActionID: req.PendingActionID,
+		ErrorCode: req.ErrorCode, ErrorMessage: req.ErrorMessage,
+	})
+}
+
+var _ swarm.AnsweredDelegationRejector = delegationAnsweredRejector{}
+
 func (p *delegationNudgeProcessor) ProcessOnce(ctx context.Context) (int, error) {
 	return p.delivery.NudgeUndrained(ctx, time.Now(), runtimeDelegationNudgeBatchSize)
 }
@@ -212,7 +287,7 @@ func newDelegationDelivery(chat *chatEnv, store *cron.Store, reg *channels.Regis
 		steerPub,
 		channel,
 		nudge,
-		delegationPendingNotifier{store: store},
+		delegationPendingNotifier{pool: chat.pool, store: store},
 		archiver,
 		counter,
 		time.Duration(chat.cfg.SwarmDelegationNudgeSec)*time.Second,
@@ -275,8 +350,10 @@ func newRuntimeDelegationWorker(chat *chatEnv, delivery *swarm.DelegationDeliver
 		width:          1,
 		workerIDPrefix: runtimeDelegationWorkerIDPrefix + "-resume",
 		worker: func(identityID, workerID string) runtimeIngestionProcessor {
+			observer := swarm.NewDelegationResumeObserver(store)
+			observer.Rejector = delegationAnsweredRejector{store: store}
 			return delegationResumeObserverAdapter{
-				observer:   swarm.NewDelegationResumeObserver(store),
+				observer:   observer,
 				identityID: identityID,
 			}
 		},

@@ -33,6 +33,7 @@ type recordedDeliveryTurn struct {
 	conversationID string
 	text           string
 	identityID     string
+	deliveryKey    string
 }
 
 // fakeConversationRecorder captures AppendAssistantTurn calls and can be made
@@ -42,6 +43,27 @@ type fakeConversationRecorder struct {
 	mu       sync.Mutex // ProcessOnce runs a claimed batch concurrently (finding F)
 	appended []recordedDeliveryTurn
 	err      error
+	keys     map[string]bool
+}
+
+func (f *fakeConversationRecorder) AppendAssistantTurnIdempotent(ctx context.Context, conversationID, deliveryKey, text string) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.keys == nil {
+		f.keys = make(map[string]bool)
+	}
+	key := conversationID + "\x00" + deliveryKey
+	if f.keys[key] {
+		return nil
+	}
+	f.keys[key] = true
+	f.appended = append(f.appended, recordedDeliveryTurn{
+		conversationID: conversationID, text: text, identityID: identityctx.IdentityID(ctx), deliveryKey: deliveryKey,
+	})
+	return nil
 }
 
 func (f *fakeConversationRecorder) AppendAssistantTurn(ctx context.Context, conversationID, text string) error {
@@ -292,16 +314,79 @@ func (f *fakeSteerNudgeStore) MarkFanoutNudged(_ context.Context, identityID, fa
 	return claimedRows, nil
 }
 
-// fakePendingNotificationStore captures the owns-but-failed retry-outbox
-// insert without a queue.
+// fakePendingNotificationStore makes the claim and outbox insert one locked step.
 type fakePendingNotificationStore struct {
-	calls []struct{ steerQueueID, identityID, body, lastErr string }
-	err   error
+	mu        sync.Mutex
+	nudge     *fakeSteerNudgeStore
+	calls     []struct{ id, body string }
+	delivered int
+	failed    int
+	claimErr  error
+	markErr   error
+	claimed   bool
 }
 
-func (f *fakePendingNotificationStore) InsertPendingNotification(_ context.Context, steerQueueID, identityID, body, lastErr string) error {
-	f.calls = append(f.calls, struct{ steerQueueID, identityID, body, lastErr string }{steerQueueID, identityID, body, lastErr})
-	return f.err
+func newFakePendingNotificationStore(nudge *fakeSteerNudgeStore) *fakePendingNotificationStore {
+	return &fakePendingNotificationStore{nudge: nudge}
+}
+
+func (f *fakePendingNotificationStore) ClaimFanoutNotification(_ context.Context, candidates []UndrainedResult, build FanoutBodyBuilder) (FanoutNotification, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.claimErr != nil {
+		return FanoutNotification{}, false, f.claimErr
+	}
+	if f.claimed {
+		return FanoutNotification{}, false, nil
+	}
+	rows := candidates
+	if f.nudge != nil {
+		f.nudge.mu.Lock()
+		defer f.nudge.mu.Unlock()
+		if f.nudge.markErr != nil {
+			return FanoutNotification{}, false, f.nudge.markErr
+		}
+		if f.nudge.claimed == nil {
+			f.nudge.claimed = map[string]bool{}
+		}
+		if len(f.nudge.rowsOnMark) > 0 {
+			f.nudge.rows = append(f.nudge.rows, f.nudge.rowsOnMark...)
+			f.nudge.rowsOnMark = nil
+		}
+		rows = nil
+		for _, row := range f.nudge.rows {
+			if row.IdentityID != candidates[0].IdentityID || row.FanoutKey != candidates[0].FanoutKey || f.nudge.claimed[row.ID] {
+				continue
+			}
+			f.nudge.claimed[row.ID] = true
+			rows = append(rows, row)
+		}
+	}
+	if len(rows) == 0 {
+		return FanoutNotification{}, false, nil
+	}
+	body, err := build(rows)
+	if err != nil {
+		return FanoutNotification{}, false, err
+	}
+	id := "pending-1"
+	f.calls = append(f.calls, struct{ id, body string }{id, body})
+	f.claimed = true
+	return FanoutNotification{ID: id, IdentityID: rows[0].IdentityID, ConversationID: rows[0].ConversationID, Body: body}, true, nil
+}
+
+func (f *fakePendingNotificationStore) MarkFanoutNotificationDelivered(_ context.Context, _ string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.delivered++
+	return f.markErr
+}
+
+func (f *fakePendingNotificationStore) MarkFanoutNotificationFailed(_ context.Context, _, _ string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failed++
+	return f.markErr
 }
 
 // TestNudgeUndrainedTriState covers all three DeliverToConversation outcomes
@@ -313,17 +398,17 @@ func TestNudgeUndrainedTriState(t *testing.T) {
 		name          string
 		delivered     bool
 		channelErr    error
-		wantPending   int
+		wantFailed    int
 		wantNudgedCnt int
 	}{
 		{name: "delivered", delivered: true, wantNudgedCnt: 1},
 		{name: "nobody owns the identity", delivered: false, wantNudgedCnt: 1},
-		{name: "owns but failed", channelErr: errors.New("telegram down"), wantPending: 1, wantNudgedCnt: 1},
+		{name: "owns but failed", channelErr: errors.New("telegram down"), wantFailed: 1, wantNudgedCnt: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			channel := &fakeChannelDeliverer{delivered: tc.delivered, err: tc.channelErr}
 			nudge := &fakeSteerNudgeStore{rows: []UndrainedResult{{ID: "row-1", IdentityID: "id-1", ConversationID: "conv-1", FanoutKey: "f-one", Body: "the report"}}}
-			pending := &fakePendingNotificationStore{}
+			pending := newFakePendingNotificationStore(nudge)
 			d := &DelegationDelivery{Channel: channel, Nudge: nudge, Pending: pending, NudgeAfter: time.Minute}
 
 			n, err := d.NudgeUndrained(context.Background(), time.Now(), 10)
@@ -339,8 +424,14 @@ func TestNudgeUndrainedTriState(t *testing.T) {
 			if channel.calls[0].conversationID != "conv-1" {
 				t.Fatalf("channel conversation = %q, want conv-1", channel.calls[0].conversationID)
 			}
-			if len(pending.calls) != tc.wantPending {
-				t.Fatalf("pending notification inserts = %d, want %d", len(pending.calls), tc.wantPending)
+			if len(pending.calls) != 1 {
+				t.Fatalf("pending notification inserts = %d, want 1 before every send", len(pending.calls))
+			}
+			if pending.failed != tc.wantFailed {
+				t.Fatalf("failed notification marks = %d, want %d", pending.failed, tc.wantFailed)
+			}
+			if tc.wantFailed == 0 && pending.delivered != 1 {
+				t.Fatalf("delivered notification marks = %d, want 1", pending.delivered)
 			}
 			if !nudge.claimed["row-1"] {
 				t.Fatal("row-1 must be claimed (nudged_at set) in every tri-state branch")
@@ -395,7 +486,7 @@ func TestFanoutOfOneRendersBoundedMessageNeverRawBody(t *testing.T) {
 	}
 	channel := &fakeChannelDeliverer{delivered: true}
 	nudge := &fakeSteerNudgeStore{rows: []UndrainedResult{{ID: "row-1", IdentityID: "id-1", ConversationID: "conv-1", FanoutKey: "f-one", Body: body}}}
-	d := &DelegationDelivery{Channel: channel, Nudge: nudge, NudgeAfter: time.Minute}
+	d := &DelegationDelivery{Channel: channel, Nudge: nudge, Pending: newFakePendingNotificationStore(nudge), NudgeAfter: time.Minute}
 
 	if _, err := d.NudgeUndrained(context.Background(), time.Now(), 10); err != nil {
 		t.Fatalf("NudgeUndrained = %v", err)
@@ -418,7 +509,7 @@ func TestFanoutOfOneRendersBoundedMessageNeverRawBody(t *testing.T) {
 func TestFanoutOfOneUndecodableBodySendsTheNoReportShape(t *testing.T) {
 	channel := &fakeChannelDeliverer{delivered: true}
 	nudge := &fakeSteerNudgeStore{rows: []UndrainedResult{{ID: "row-1", IdentityID: "id-1", ConversationID: "conv-1", FanoutKey: "f-one", Body: "not json"}}}
-	d := &DelegationDelivery{Channel: channel, Nudge: nudge, NudgeAfter: time.Minute}
+	d := &DelegationDelivery{Channel: channel, Nudge: nudge, Pending: newFakePendingNotificationStore(nudge), NudgeAfter: time.Minute}
 
 	if _, err := d.NudgeUndrained(context.Background(), time.Now(), 10); err != nil {
 		t.Fatalf("NudgeUndrained = %v", err)

@@ -25,13 +25,24 @@ WITH owner AS (
       AND q.drained_at IS NULL
       AND q.expired_at IS NULL
       AND (q.expires_at IS NULL OR q.expires_at > now())
+), existing_delivery AS (
+    SELECT 1
+    FROM aura.steer_queue q, owner
+    WHERE q.identity_id = owner.identity_id
+      AND q.conversation_id = sqlc.arg(conversation_id)
+      AND sqlc.narg(delivery_key)::text IS NOT NULL
+      AND q.delivery_key = sqlc.narg(delivery_key)::text
 )
-INSERT INTO aura.steer_queue (identity_id, conversation_id, kind, source, body, expires_at, fanout_key)
+INSERT INTO aura.steer_queue (
+    identity_id, conversation_id, kind, source, body, expires_at, fanout_key, delivery_key
+)
 SELECT owner.identity_id, sqlc.arg(conversation_id), sqlc.arg(kind), sqlc.arg(source),
-       sqlc.arg(body), sqlc.narg(expires_at), sqlc.narg(fanout_key)
+       sqlc.arg(body), sqlc.narg(expires_at), sqlc.narg(fanout_key), sqlc.narg(delivery_key)
 FROM owner, capacity
 WHERE owner.identity_id IS NOT NULL
-  AND capacity.n < sqlc.arg(max_queue)::int;
+  AND (capacity.n < sqlc.arg(max_queue)::int OR EXISTS (SELECT 1 FROM existing_delivery))
+ON CONFLICT (identity_id, conversation_id, delivery_key) WHERE delivery_key IS NOT NULL
+DO UPDATE SET delivery_key = EXCLUDED.delivery_key;
 
 -- name: ConversationOwner :one
 -- The disambiguation probe PushSteerRow's Go caller runs only when execrows was 0:
@@ -127,4 +138,7 @@ SET nudged_at = now()
 WHERE identity_id = sqlc.arg(identity_id)
   AND fanout_key = sqlc.arg(fanout_key)
   AND nudged_at IS NULL
+  AND drained_at IS NULL
+  AND expired_at IS NULL
+  AND (expires_at IS NULL OR expires_at > now())
 RETURNING id, identity_id, conversation_id, body, fanout_key;

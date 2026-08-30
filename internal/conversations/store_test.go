@@ -166,7 +166,7 @@ func TestAppendTurn_AtomicRollback(t *testing.T) {
 	id, _ := db.ParseUUID("id", convID)
 	injected := errors.New("injected failure between INSERT and UPDATE")
 	err := db.WithTx(ctx, pool, func(q *sqlc.Queries) error {
-		if ierr := q.InsertConversationTurn(ctx, sqlc.InsertConversationTurnParams{
+		if _, ierr := q.InsertConversationTurn(ctx, sqlc.InsertConversationTurnParams{
 			ConversationID: id, Seq: 99, Role: llm.RoleUser,
 			Content: pgtype.Text{String: "doomed turn", Valid: true},
 		}); ierr != nil {
@@ -180,6 +180,33 @@ func TestAppendTurn_AtomicRollback(t *testing.T) {
 	}
 	if after := countTurns(t, pool, convID); after != before {
 		t.Errorf("SC-2 violated: turn count %d -> %d (partial turn survived a rollback)", before, after)
+	}
+}
+
+func TestAppendTurn_DeliveryKeyIsIdempotent(t *testing.T) {
+	pool := migratedPool(t)
+	s := newStore(t, pool)
+	convID := newConversation(t, s)
+	ctx := ownerCtx()
+
+	for _, content := range []string{"first card", "duplicate card"} {
+		if err := s.AppendTurn(ctx, AppendTurnParams{
+			ConversationID: convID, Role: llm.RoleAssistant, Content: content,
+			DeliveryKey: "job-1:terminal",
+		}); err != nil {
+			t.Fatalf("AppendTurn(%q): %v", content, err)
+		}
+	}
+	var count int
+	var content string
+	if err := pool.QueryRow(ctx, `
+		SELECT count(*), min(content)
+		FROM aura.conversation_turns
+		WHERE conversation_id = $1 AND delivery_key = $2`, convID, "job-1:terminal").Scan(&count, &content); err != nil {
+		t.Fatalf("query idempotent turn: %v", err)
+	}
+	if count != 1 || content != "first card" {
+		t.Fatalf("delivery turns = count %d content %q, want 1/first card", count, content)
 	}
 }
 

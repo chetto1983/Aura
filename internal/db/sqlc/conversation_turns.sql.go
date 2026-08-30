@@ -108,12 +108,17 @@ func (q *Queries) GetTurnPointers(ctx context.Context, arg GetTurnPointersParams
 	return i, err
 }
 
-const insertConversationTurn = `-- name: InsertConversationTurn :exec
+const insertConversationTurn = `-- name: InsertConversationTurn :execrows
 INSERT INTO aura.conversation_turns (
     conversation_id, seq, role, content, content_sidecar_path,
     tool_call_id, tool_calls, input_tokens, output_tokens, cached_tokens,
-    reasoning, reasoning_duration_ms, parent_seq
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NULLIF($2::int - 1, 0))
+    reasoning, reasoning_duration_ms, parent_seq, delivery_key
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+    NULLIF($2::int - 1, 0), $13
+)
+ON CONFLICT (conversation_id, delivery_key) WHERE delivery_key IS NOT NULL
+DO NOTHING
 `
 
 type InsertConversationTurnParams struct {
@@ -129,6 +134,7 @@ type InsertConversationTurnParams struct {
 	CachedTokens        int32       `json:"cached_tokens"`
 	Reasoning           pgtype.Text `json:"reasoning"`
 	ReasoningDurationMs pgtype.Int8 `json:"reasoning_duration_ms"`
+	DeliveryKey         pgtype.Text `json:"delivery_key"`
 }
 
 // parent_seq maintains the canonical leaf->root chain the branch walk recurses on
@@ -140,8 +146,8 @@ type InsertConversationTurnParams struct {
 // measured 2026-08-13 against the live schema, one turn, not even the system head — and
 // the model lost the whole prior conversation on any edit/regenerate.
 // NULLIF keeps seq=1 (the root) at NULL, matching that backfill's `WHERE seq > 1`.
-func (q *Queries) InsertConversationTurn(ctx context.Context, arg InsertConversationTurnParams) error {
-	_, err := q.db.Exec(ctx, insertConversationTurn,
+func (q *Queries) InsertConversationTurn(ctx context.Context, arg InsertConversationTurnParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertConversationTurn,
 		arg.ConversationID,
 		arg.Seq,
 		arg.Role,
@@ -154,8 +160,12 @@ func (q *Queries) InsertConversationTurn(ctx context.Context, arg InsertConversa
 		arg.CachedTokens,
 		arg.Reasoning,
 		arg.ReasoningDurationMs,
+		arg.DeliveryKey,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const listAssistantTurnReasoning = `-- name: ListAssistantTurnReasoning :many

@@ -34,6 +34,7 @@ type fakeSteerPublisher struct {
 	mu         sync.Mutex // ProcessOnce runs a claimed batch concurrently (finding F)
 	pushes     []string
 	fanoutKeys []string
+	keys       map[string]bool
 	err        error
 	maxBytes   int
 }
@@ -44,6 +45,28 @@ func (f *fakeSteerPublisher) Push(conv, source, text string) error {
 
 func (f *fakeSteerPublisher) PushDelegationResult(conv, source, text, fanoutKey string) error {
 	return f.push(conv, source, text, fanoutKey)
+}
+
+func (f *fakeSteerPublisher) PushDelegationResultIdempotent(conv, source, text, fanoutKey, deliveryKey string) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.keys == nil {
+		f.keys = make(map[string]bool)
+	}
+	key := conv + "\x00" + deliveryKey
+	if f.keys[key] {
+		return nil
+	}
+	if f.maxBytes > 0 && len([]byte(text)) > f.maxBytes {
+		return steer.ErrTooLarge
+	}
+	f.keys[key] = true
+	f.pushes = append(f.pushes, conv+"|"+source+"|"+text)
+	f.fanoutKeys = append(f.fanoutKeys, fanoutKey)
+	return nil
 }
 
 func (f *fakeSteerPublisher) push(conv, source, text, fanoutKey string) error {
@@ -206,61 +229,6 @@ func TestRecordFailureDeadLettersAtTheAttemptCap(t *testing.T) {
 	}
 	if msg := store.transitionsSnapshot()[0].ErrorMessage; !strings.Contains(msg, "worker exploded") {
 		t.Fatalf("dead_letter message = %q, want the cause preserved", msg)
-	}
-}
-
-// TestDeliverSuccessPushesBeforeTransitioning pins D-04's ordering: the report is
-// recorded (SC#1) and pushed under steer.SourceWorker BEFORE the row is marked
-// succeeded. A delivery failure must abort before any transition -- otherwise a
-// report nobody received would be recorded as delivered.
-func TestDeliverSuccessPushesBeforeTransitioning(t *testing.T) {
-	store := &fakeDelegationStore{}
-	pub := &fakeSteerPublisher{}
-	recorder := &fakeConversationRecorder{}
-	l := &DelegationClaimLoop{Store: store, Delivery: &DelegationDelivery{Recorder: recorder, Steer: pub}, IdentityID: "identity-1"}
-	job := documents.IngestionJob{ID: "j1", IdentityID: "identity-1"}
-	payload := DelegationPayload{Goal: "g", ConversationID: "conv-7", FanoutKey: "f-test"}
-
-	if err := l.deliverSuccess(context.Background(), job, payload, ChildReport{Status: StatusOK, Summary: "done"}); err != nil {
-		t.Fatalf("deliverSuccess = %v", err)
-	}
-	if len(recorder.appended) != 1 || recorder.appended[0].conversationID != "conv-7" {
-		t.Fatalf("appended = %+v, want one SC#1 turn to conv-7", recorder.appended)
-	}
-	if len(pub.pushes) != 1 {
-		t.Fatalf("pushes = %d, want exactly 1", len(pub.pushes))
-	}
-	if !strings.HasPrefix(pub.pushes[0], "conv-7|"+steer.SourceWorker+"|") {
-		t.Fatalf("push = %q, want it addressed to the payload conversation under SourceWorker", pub.pushes[0])
-	}
-	if tr := store.transitionsSnapshot(); len(tr) != 1 || tr[0].Status != "succeeded" {
-		t.Fatalf("transitions = %+v, want one succeeded", tr)
-	}
-}
-
-func TestDeliverSuccessDoesNotTransitionWhenThePushFails(t *testing.T) {
-	store := &fakeDelegationStore{}
-	pub := &fakeSteerPublisher{err: errors.New("inbox gone")}
-	l := &DelegationClaimLoop{Store: store, Delivery: &DelegationDelivery{Recorder: &fakeConversationRecorder{}, Steer: pub}, IdentityID: "identity-1"}
-
-	err := l.deliverSuccess(context.Background(), documents.IngestionJob{ID: "j1"},
-		DelegationPayload{ConversationID: "conv-7", FanoutKey: "f-test"}, ChildReport{Status: StatusOK})
-	if err == nil || !strings.Contains(err.Error(), "push") {
-		t.Fatalf("deliverSuccess = %v, want the push failure surfaced", err)
-	}
-	if len(store.transitionsSnapshot()) != 0 {
-		t.Fatal("the row must NOT be marked succeeded when the report was never delivered")
-	}
-}
-
-func TestDeliverSuccessSurfacesATransitionFailure(t *testing.T) {
-	store := &fakeDelegationStore{transitErr: errors.New("row vanished")}
-	l := &DelegationClaimLoop{Store: store, Delivery: &DelegationDelivery{Recorder: &fakeConversationRecorder{}, Steer: &fakeSteerPublisher{}}, IdentityID: "identity-1"}
-
-	err := l.deliverSuccess(context.Background(), documents.IngestionJob{ID: "j1"},
-		DelegationPayload{ConversationID: "conv-7", FanoutKey: "f-test"}, ChildReport{Status: StatusOK})
-	if err == nil || !strings.Contains(err.Error(), "succeed transition") {
-		t.Fatalf("deliverSuccess = %v, want the transition failure named", err)
 	}
 }
 

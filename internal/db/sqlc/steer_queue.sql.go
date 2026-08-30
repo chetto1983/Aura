@@ -44,9 +44,9 @@ WITH owner AS (
     SET drained_at = now()
     FROM candidates c
     WHERE q.id = c.id
-    RETURNING q.id, q.identity_id, q.conversation_id, q.kind, q.source, q.body, q.created_at, q.expires_at, q.drained_at, q.expired_at, q.expiry_reason, q.nudged_at, q.fanout_key
+    RETURNING q.id, q.identity_id, q.conversation_id, q.kind, q.source, q.body, q.created_at, q.expires_at, q.drained_at, q.expired_at, q.expiry_reason, q.nudged_at, q.fanout_key, q.delivery_key
 )
-SELECT id, identity_id, conversation_id, kind, source, body, created_at, expires_at, drained_at, expired_at, expiry_reason, nudged_at, fanout_key FROM drained ORDER BY created_at, id
+SELECT id, identity_id, conversation_id, kind, source, body, created_at, expires_at, drained_at, expired_at, expiry_reason, nudged_at, fanout_key, delivery_key FROM drained ORDER BY created_at, id
 `
 
 type DrainSteerRowsRow struct {
@@ -63,6 +63,7 @@ type DrainSteerRowsRow struct {
 	ExpiryReason   pgtype.Text        `json:"expiry_reason"`
 	NudgedAt       pgtype.Timestamptz `json:"nudged_at"`
 	FanoutKey      pgtype.Text        `json:"fanout_key"`
+	DeliveryKey    pgtype.Text        `json:"delivery_key"`
 }
 
 // The drain IS the claim (the same conditional-update-as-idempotency-key idiom as
@@ -96,6 +97,7 @@ func (q *Queries) DrainSteerRows(ctx context.Context, conversationID string) ([]
 			&i.ExpiryReason,
 			&i.NudgedAt,
 			&i.FanoutKey,
+			&i.DeliveryKey,
 		); err != nil {
 			return nil, err
 		}
@@ -108,7 +110,7 @@ func (q *Queries) DrainSteerRows(ctx context.Context, conversationID string) ([]
 }
 
 const listDueSteerRows = `-- name: ListDueSteerRows :many
-SELECT id, identity_id, conversation_id, kind, source, body, created_at, expires_at, drained_at, expired_at, expiry_reason, nudged_at, fanout_key FROM aura.steer_queue
+SELECT id, identity_id, conversation_id, kind, source, body, created_at, expires_at, drained_at, expired_at, expiry_reason, nudged_at, fanout_key, delivery_key FROM aura.steer_queue
 WHERE drained_at IS NULL
   AND expired_at IS NULL
   AND expires_at IS NOT NULL
@@ -151,6 +153,7 @@ func (q *Queries) ListDueSteerRows(ctx context.Context, arg ListDueSteerRowsPara
 			&i.ExpiryReason,
 			&i.NudgedAt,
 			&i.FanoutKey,
+			&i.DeliveryKey,
 		); err != nil {
 			return nil, err
 		}
@@ -163,7 +166,7 @@ func (q *Queries) ListDueSteerRows(ctx context.Context, arg ListDueSteerRowsPara
 }
 
 const listUnnudgedDelegationResults = `-- name: ListUnnudgedDelegationResults :many
-SELECT id, identity_id, conversation_id, kind, source, body, created_at, expires_at, drained_at, expired_at, expiry_reason, nudged_at, fanout_key FROM aura.steer_queue
+SELECT id, identity_id, conversation_id, kind, source, body, created_at, expires_at, drained_at, expired_at, expiry_reason, nudged_at, fanout_key, delivery_key FROM aura.steer_queue
 WHERE kind = 'delegation_result'
   AND fanout_key IS NOT NULL
   AND drained_at IS NULL
@@ -208,6 +211,7 @@ func (q *Queries) ListUnnudgedDelegationResults(ctx context.Context, arg ListUnn
 			&i.ExpiryReason,
 			&i.NudgedAt,
 			&i.FanoutKey,
+			&i.DeliveryKey,
 		); err != nil {
 			return nil, err
 		}
@@ -225,6 +229,9 @@ SET nudged_at = now()
 WHERE identity_id = $1
   AND fanout_key = $2
   AND nudged_at IS NULL
+  AND drained_at IS NULL
+  AND expired_at IS NULL
+  AND (expires_at IS NULL OR expires_at > now())
 RETURNING id, identity_id, conversation_id, body, fanout_key
 `
 
@@ -313,13 +320,24 @@ WITH owner AS (
       AND q.drained_at IS NULL
       AND q.expired_at IS NULL
       AND (q.expires_at IS NULL OR q.expires_at > now())
+), existing_delivery AS (
+    SELECT 1
+    FROM aura.steer_queue q, owner
+    WHERE q.identity_id = owner.identity_id
+      AND q.conversation_id = $1
+      AND $7::text IS NOT NULL
+      AND q.delivery_key = $7::text
 )
-INSERT INTO aura.steer_queue (identity_id, conversation_id, kind, source, body, expires_at, fanout_key)
+INSERT INTO aura.steer_queue (
+    identity_id, conversation_id, kind, source, body, expires_at, fanout_key, delivery_key
+)
 SELECT owner.identity_id, $1, $2, $3,
-       $4, $5, $6
+       $4, $5, $6, $7
 FROM owner, capacity
 WHERE owner.identity_id IS NOT NULL
-  AND capacity.n < $7::int
+  AND (capacity.n < $8::int OR EXISTS (SELECT 1 FROM existing_delivery))
+ON CONFLICT (identity_id, conversation_id, delivery_key) WHERE delivery_key IS NOT NULL
+DO UPDATE SET delivery_key = EXCLUDED.delivery_key
 `
 
 type PushSteerRowParams struct {
@@ -329,6 +347,7 @@ type PushSteerRowParams struct {
 	Body           string             `json:"body"`
 	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
 	FanoutKey      pgtype.Text        `json:"fanout_key"`
+	DeliveryKey    pgtype.Text        `json:"delivery_key"`
 	MaxQueue       int32              `json:"max_queue"`
 }
 
@@ -355,6 +374,7 @@ func (q *Queries) PushSteerRow(ctx context.Context, arg PushSteerRowParams) (int
 		arg.Body,
 		arg.ExpiresAt,
 		arg.FanoutKey,
+		arg.DeliveryKey,
 		arg.MaxQueue,
 	)
 	if err != nil {

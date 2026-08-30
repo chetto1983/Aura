@@ -100,6 +100,7 @@ type SteerPublisher interface {
 type DelegationJobStore interface {
 	Create(ctx context.Context, req documents.CreateIngestionJobRequest) (documents.IngestionJob, error)
 	Claim(ctx context.Context, req documents.ClaimIngestionJobsRequest) ([]documents.IngestionJob, error)
+	StageDelegationDelivery(ctx context.Context, req documents.StageDelegationDeliveryRequest) (documents.IngestionJob, error)
 	UpdateStatus(ctx context.Context, req documents.TransitionIngestionJobRequest) (documents.IngestionJob, error)
 	Retry(ctx context.Context, req documents.RetryIngestionJobRequest) (documents.IngestionJob, error)
 	Heartbeat(ctx context.Context, req documents.HeartbeatIngestionJobRequest) (documents.IngestionJob, error)
@@ -282,6 +283,13 @@ func (l *DelegationClaimLoop) processJob(ctx context.Context, job documents.Inge
 	if err != nil {
 		return l.recordFailure(ctx, job, fmt.Errorf("delegation payload: %w", err))
 	}
+	pending, err := pendingDeliveryFromJob(job)
+	if err != nil {
+		return l.recordFailure(ctx, job, err)
+	}
+	if pending != nil {
+		return l.deliverPending(ctx, job, payload, pending)
+	}
 
 	// 51-06b (T-51-36, D-00's second LibreChat trap): a resume state whose
 	// AgentIdentity does not match the identity this job is claimed under refuses
@@ -347,16 +355,10 @@ func (l *DelegationClaimLoop) maintainLease(ctx context.Context, cancel context.
 	}
 }
 
-// deliverSuccess runs the claimed job's report through Delivery.Deliver --
-// the SC#1 conversation record BEFORE the present-operator steer push (plan
-// 51-10) -- and gates the row's succeeded transition on the record having
-// actually succeeded, never on the push alone. A push (steer publish)
-// INFRASTRUCTURE failure propagates as a hard error exactly as before this
-// plan (51-01's original contract, unchanged); a RECORD failure is not a hard
-// error (Deliver WARNs and returns recorded=false) but must still stop the
-// row from being marked succeeded -- a report that reached neither the
-// conversation nor (once nudged) a channel has not been delivered, so it is
-// retried by the shipped attempt_count/next_attempt_at backoff instead.
+// deliverSuccess persists the terminal report under the active lease before
+// projecting it to the conversation and steer queues. Any projection or final
+// transition failure schedules a delivery-only retry; processJob detects the
+// staged payload on the next claim and never invokes the model again.
 func (l *DelegationClaimLoop) deliverSuccess(ctx context.Context, job documents.IngestionJob, payload DelegationPayload, report ChildReport) error {
 	// Goal/Attempts/GoalIndex (51-11) travel from the payload/job row, not from
 	// runChild's own report -- a worker never sees its own dispatch metadata,
@@ -368,26 +370,12 @@ func (l *DelegationClaimLoop) deliverSuccess(ctx context.Context, job documents.
 	report.Goal = payload.Goal
 	report.GoalIndex = payload.GoalIndex
 	report.Attempts = job.AttemptCount
-	elapsed := time.Now().UTC().Sub(job.CreatedAt).Truncate(time.Second)
-	// ctx already carries the job's identity (bound once in processJob);
-	// DeliverReport's ConversationRecorder reads it to scope the RLS write, and
-	// its ReportArchiver reads it to scope the archived asset.
-	recorded, err := l.Delivery.DeliverReport(ctx, payload, report, elapsed)
+	pending, err := l.stageTerminalDelivery(ctx, job, payload, report, "succeeded", "", "",
+		"swarm_delegation.succeeded", "delegation delivered")
 	if err != nil {
-		return fmt.Errorf("delegation report deliver: %w", err)
+		return err
 	}
-	if !recorded {
-		return l.recordFailure(ctx, job, fmt.Errorf(
-			"delegation report was not recorded to its origin conversation %s", payload.ConversationID))
-	}
-	if _, err := l.Store.UpdateStatus(ctx, documents.TransitionIngestionJobRequest{
-		IdentityID: job.IdentityID, JobID: job.ID, WorkerID: l.workerID(),
-		LeaseGeneration: job.LeaseGeneration, Status: "succeeded",
-		EventType: "swarm_delegation.succeeded", EventMessage: "delegation delivered",
-	}); err != nil {
-		return fmt.Errorf("delegation succeed transition: %w", err)
-	}
-	return nil
+	return l.deliverPending(ctx, job, payload, pending)
 }
 
 // recordFailure reuses jobs_worker.go's recordHandlerFailure branch verbatim:
@@ -396,17 +384,7 @@ func (l *DelegationClaimLoop) deliverSuccess(ctx context.Context, job documents.
 func (l *DelegationClaimLoop) recordFailure(ctx context.Context, job documents.IngestionJob, cause error) error {
 	message := cause.Error()
 	if job.MaxAttempts > 0 && job.AttemptCount >= job.MaxAttempts {
-		if _, err := l.Store.UpdateStatus(ctx, documents.TransitionIngestionJobRequest{
-			IdentityID: job.IdentityID, JobID: job.ID, WorkerID: l.workerID(),
-			LeaseGeneration: job.LeaseGeneration, Status: "dead_letter",
-			ErrorCode: "handler_failed", ErrorMessage: message,
-			EventType: "swarm_delegation.dead_letter", EventMessage: message,
-		}); err != nil {
-			return err
-		}
-		slog.Warn("swarm.delegation.dead_letter", "job_id", job.ID, "attempts", job.AttemptCount, "err", message)
-		l.deliverDeadLetter(ctx, job, message)
-		return nil
+		return l.deliverDeadLetter(ctx, job, message)
 	}
 	if _, err := l.Store.Retry(ctx, documents.RetryIngestionJobRequest{
 		IdentityID: job.IdentityID, JobID: job.ID, WorkerID: l.workerID(),
@@ -420,27 +398,28 @@ func (l *DelegationClaimLoop) recordFailure(ctx context.Context, job documents.I
 }
 
 // deliverDeadLetter is recordFailure's dead-letter tail (51-11, SWARM-12
-// leg 1, T-51-55): AFTER the dead_letter transition has already succeeded,
-// it re-decodes the job's payload and records a card + pushes a steer row
-// for the exhausted-retry outcome, so an operator whose worker ran out of
-// attempts learns of it instead of learning nothing (D-08's "errors never
-// pass silently" applied to the queue's own terminal failure). Best-effort:
-// a payload that fails to decode here (it decoded fine earlier in
-// processJob for every path that reaches recordFailure WITH a payload; a
-// payload-decode failure itself is one of the causes that reaches
-// recordFailure) logs a warning and skips the record -- the job is ALREADY
-// dead_letter regardless, and this must never re-open that transition.
+// leg 1, T-51-55). For a valid payload it stages and projects the terminal
+// failure before transitioning the job, so delivery infrastructure failure
+// remains retryable even after the worker attempt cap. A malformed payload
+// cannot produce an addressed report; that branch transitions directly and
+// logs the skipped projection.
 //
 // ChildID prefers payload.ChildID (51-11's stable, deterministic id, minted
 // at EnqueueDelegation time) and falls back to job.ID only when it is empty
 // -- a row enqueued before this field existed. recordFailure can fire before
 // any worker ever started (a payload decode failure, an identity mismatch),
 // so there is no worker-produced child id to prefer instead.
-func (l *DelegationClaimLoop) deliverDeadLetter(ctx context.Context, job documents.IngestionJob, message string) {
+func (l *DelegationClaimLoop) deliverDeadLetter(ctx context.Context, job documents.IngestionJob, message string) error {
 	payload, err := delegationPayloadFromJob(job)
 	if err != nil {
 		slog.Warn("swarm.delegation.dead_letter_record_skipped", "job_id", job.ID, "err", err)
-		return
+		_, transitionErr := l.Store.UpdateStatus(ctx, documents.TransitionIngestionJobRequest{
+			IdentityID: job.IdentityID, JobID: job.ID, WorkerID: l.workerID(),
+			LeaseGeneration: job.LeaseGeneration, Status: "dead_letter",
+			ErrorCode: "handler_failed", ErrorMessage: message,
+			EventType: "swarm_delegation.dead_letter", EventMessage: message,
+		})
+		return transitionErr
 	}
 	childID := payload.ChildID
 	if childID == "" {
@@ -454,10 +433,13 @@ func (l *DelegationClaimLoop) deliverDeadLetter(ctx context.Context, job documen
 		Goal:      payload.Goal,
 		Attempts:  job.AttemptCount,
 	}
-	elapsed := time.Now().UTC().Sub(job.CreatedAt).Truncate(time.Second)
-	if _, err := l.Delivery.DeliverReport(ctx, payload, report, elapsed); err != nil {
-		slog.Warn("swarm.delegation.dead_letter_record_failed", "job_id", job.ID, "err", err)
+	pending, err := l.stageTerminalDelivery(ctx, job, payload, report, "dead_letter", "handler_failed", message,
+		"swarm_delegation.dead_letter", message)
+	if err != nil {
+		return err
 	}
+	slog.Warn("swarm.delegation.dead_letter", "job_id", job.ID, "attempts", job.AttemptCount, "err", message)
+	return l.deliverPending(ctx, job, payload, pending)
 }
 
 func (l *DelegationClaimLoop) workerID() string {

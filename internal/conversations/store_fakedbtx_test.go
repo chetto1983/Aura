@@ -33,13 +33,19 @@ import (
 // returns queryRowVal; Query returns queryRows (or queryErr); Exec returns execErr.
 type fakeDBTX struct {
 	execErr     error
+	execTags    []pgconn.CommandTag
+	execCalls   int
 	queryErr    error
 	queryRows   *fakeRows
 	queryRowVal *fakeRow
 }
 
 func (f *fakeDBTX) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
-	return pgconn.CommandTag{}, f.execErr
+	f.execCalls++
+	if f.execCalls <= len(f.execTags) {
+		return f.execTags[f.execCalls-1], f.execErr
+	}
+	return pgconn.NewCommandTag("UPDATE 1"), f.execErr
 }
 
 func (f *fakeDBTX) Query(_ context.Context, _ string, _ ...any) (pgx.Rows, error) {

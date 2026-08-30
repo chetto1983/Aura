@@ -128,6 +128,9 @@ type fakeDelegationStore struct {
 	transitions  []documents.TransitionIngestionJobRequest
 	transitErr   error
 	retries      []documents.RetryIngestionJobRequest
+	retryErr     error
+	stages       []documents.StageDelegationDeliveryRequest
+	stageErr     error
 	heartbeats   []documents.HeartbeatIngestionJobRequest
 	heartbeatErr error
 
@@ -167,6 +170,12 @@ func (s *fakeDelegationStore) retriesSnapshot() []documents.RetryIngestionJobReq
 	return append([]documents.RetryIngestionJobRequest(nil), s.retries...)
 }
 
+func (s *fakeDelegationStore) stagesSnapshot() []documents.StageDelegationDeliveryRequest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]documents.StageDelegationDeliveryRequest(nil), s.stages...)
+}
+
 func (s *fakeDelegationStore) Create(_ context.Context, req documents.CreateIngestionJobRequest) (documents.IngestionJob, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -201,7 +210,20 @@ func (s *fakeDelegationStore) Retry(_ context.Context, req documents.RetryIngest
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.retries = append(s.retries, req)
+	if s.retryErr != nil {
+		return documents.IngestionJob{}, s.retryErr
+	}
 	return documents.IngestionJob{ID: req.JobID, Status: "queued"}, nil
+}
+
+func (s *fakeDelegationStore) StageDelegationDelivery(_ context.Context, req documents.StageDelegationDeliveryRequest) (documents.IngestionJob, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.stages = append(s.stages, req)
+	if s.stageErr != nil {
+		return documents.IngestionJob{}, s.stageErr
+	}
+	return documents.IngestionJob{ID: req.JobID, IdentityID: req.IdentityID, Payload: req.Payload}, nil
 }
 
 func (s *fakeDelegationStore) Heartbeat(_ context.Context, req documents.HeartbeatIngestionJobRequest) (documents.IngestionJob, error) {

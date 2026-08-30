@@ -63,6 +63,30 @@ func TestPostgresSteerQueueWorkerSourceRoundTrips(t *testing.T) {
 	}
 }
 
+func TestPushDelegationResultIdempotentPreservesFirstProjection(t *testing.T) {
+	pool := steerDisposablePool(t)
+	_, convID := seedIdentityAndConversation(t, pool)
+	store := NewPostgresStore(pool, Config{Max: 8, MaxBytes: 16384})
+
+	if err := store.PushDelegationResultIdempotent(convID, SourceWorker, "first", "f-one", "job-1:terminal"); err != nil {
+		t.Fatalf("first push: %v", err)
+	}
+	if err := store.PushDelegationResultIdempotent(convID, SourceWorker, "duplicate", "f-two", "job-1:terminal"); err != nil {
+		t.Fatalf("duplicate push: %v", err)
+	}
+	var count int
+	var body, fanout string
+	if err := pool.QueryRow(t.Context(), `
+		SELECT count(*), min(body), min(fanout_key)
+		FROM aura.steer_queue
+		WHERE conversation_id = $1 AND delivery_key = $2`, convID, "job-1:terminal").Scan(&count, &body, &fanout); err != nil {
+		t.Fatalf("query idempotent projection: %v", err)
+	}
+	if count != 1 || body != "first" || fanout != "f-one" {
+		t.Fatalf("projection = count %d body %q fanout %q, want 1/first/f-one", count, body, fanout)
+	}
+}
+
 // TestPostgresSteerQueueRespectsMaxCap preserves the deleted in-memory Inbox's exact
 // per-conversation cap semantic (Config.Max, combined across both kinds) — moved here
 // from cmd/aura/chat_boot_test.go because a successful Push now requires a real

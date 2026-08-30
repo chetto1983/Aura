@@ -121,6 +121,8 @@ const invalidDelegationResumeCode = "invalid_delegation_resume"
 
 var errInvalidAnsweredDelegation = errors.New("invalid answered delegation")
 
+// RejectAnsweredDelegationRequest describes one invalid answered row that must
+// be terminally quarantined under its resumed pause fence.
 type RejectAnsweredDelegationRequest struct {
 	IdentityID      string
 	JobID           string

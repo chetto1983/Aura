@@ -136,7 +136,7 @@ func TestNudgeSkipsDrained(t *testing.T) {
 	}
 
 	channel := &fakeChannelDeliverer{delivered: true}
-	d := &DelegationDelivery{Channel: channel, Nudge: dbNudgeAdapter{store: store}, NudgeAfter: time.Minute}
+	d := &DelegationDelivery{Channel: channel, Nudge: dbNudgeAdapter{store: store}, Pending: &fakePendingNotificationStore{}, NudgeAfter: time.Minute}
 
 	n, err := d.NudgeUndrained(context.Background(), time.Now().Add(time.Hour), 10)
 	if err != nil {
@@ -167,13 +167,14 @@ func TestNudgeOnceUnderConcurrency(t *testing.T) {
 	calls := 0
 	channel := channelCounterFunc(func() { mu.Lock(); calls++; mu.Unlock() })
 	adapter := dbNudgeAdapter{store: store}
+	pending := &fakePendingNotificationStore{}
 
 	var wg sync.WaitGroup
 	for range 2 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			d := &DelegationDelivery{Channel: channel, Nudge: adapter, NudgeAfter: time.Minute}
+			d := &DelegationDelivery{Channel: channel, Nudge: adapter, Pending: pending, NudgeAfter: time.Minute}
 			if _, err := d.NudgeUndrained(context.Background(), time.Now().Add(time.Hour), 10); err != nil {
 				t.Errorf("NudgeUndrained: %v", err)
 			}
@@ -209,6 +210,21 @@ func (r dbConversationRecorderAdapter) AppendAssistantTurn(ctx context.Context, 
 		_, err := tx.Exec(ctx,
 			`INSERT INTO aura.conversation_turns (conversation_id, seq, role, content) VALUES ($1, 1, 'assistant', $2)`,
 			conversationID, text)
+		return err
+	})
+}
+
+func (r dbConversationRecorderAdapter) AppendAssistantTurnIdempotent(ctx context.Context, conversationID, deliveryKey, text string) error {
+	return db.WithIdentityTxRaw(ctx, r.pool, identityctx.IdentityID(ctx), func(tx pgx.Tx) error {
+		var id string
+		if err := tx.QueryRow(ctx, `SELECT id FROM aura.conversations WHERE id = $1 FOR UPDATE`, conversationID).Scan(&id); err != nil {
+			return fmt.Errorf("lock conversation %s: %w", conversationID, err)
+		}
+		_, err := tx.Exec(ctx,
+			`INSERT INTO aura.conversation_turns (conversation_id, seq, role, content, delivery_key)
+			 VALUES ($1, 1, 'assistant', $2, $3)
+			 ON CONFLICT (conversation_id, delivery_key) WHERE delivery_key IS NOT NULL DO NOTHING`,
+			conversationID, text, deliveryKey)
 		return err
 	})
 }
@@ -324,7 +340,7 @@ func TestFanoutRealDBSkipsWhileUnfinishedThenDeliversOnce(t *testing.T) {
 	}
 
 	channel := &fakeChannelDeliverer{delivered: true}
-	d := &DelegationDelivery{Channel: channel, Nudge: dbNudgeAdapter{store: steerStore}, Counter: jobStore, NudgeAfter: time.Minute}
+	d := &DelegationDelivery{Channel: channel, Nudge: dbNudgeAdapter{store: steerStore}, Pending: &fakePendingNotificationStore{}, Counter: jobStore, NudgeAfter: time.Minute}
 
 	n, err := d.NudgeUndrained(context.Background(), time.Now().Add(time.Hour), 10)
 	if err != nil {

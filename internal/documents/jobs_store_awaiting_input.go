@@ -160,6 +160,37 @@ type AnsweredAwaitingInputJob struct {
 	ResumedAnswer   []byte // raw {action,content} jsonb -- the caller decodes as askuser.ResumeAnswer
 }
 
+// RejectAnsweredDelegationRequest fences terminal quarantine of an invalid
+// answered delegation against its identity, job, and resumed pause action.
+type RejectAnsweredDelegationRequest struct {
+	IdentityID      string
+	JobID           string
+	PendingActionID string
+	ErrorCode       string
+	ErrorMessage    string
+}
+
+// RejectAnsweredDelegation terminally quarantines an invalid answered job once.
+func (s *PostgresIngestionJobStore) RejectAnsweredDelegation(ctx context.Context, req RejectAnsweredDelegationRequest) (bool, error) {
+	identityID, jobID, err := ingestionJobFence(req.IdentityID, req.JobID)
+	if err != nil {
+		return false, err
+	}
+	var rejected bool
+	err = s.withIdentity(ctx, req.IdentityID, func(q *sqlc.Queries) error {
+		var queryErr error
+		rejected, queryErr = q.RejectAnsweredDelegation(ctx, sqlc.RejectAnsweredDelegationParams{
+			ID: jobID, IdentityID: identityID, PendingActionID: req.PendingActionID,
+			ErrorCode: req.ErrorCode, ErrorMessage: req.ErrorMessage,
+		})
+		return queryErr
+	})
+	if err != nil {
+		return false, fmt.Errorf("reject answered delegation: %w", err)
+	}
+	return rejected, nil
+}
+
 // ListAnsweredAwaitingInput lists parked jobs for identityID whose pause has been
 // answered (resumed_at IS NOT NULL), joined via the pause token this specific park
 // cycle minted (job.payload.resume.pause_token) -- disambiguating a job's CURRENT pause
