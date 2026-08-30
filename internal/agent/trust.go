@@ -42,7 +42,7 @@ func renderToolResultForPrompt(toolName string, res tools.ToolResult) string {
 	if !ok {
 		return scrubbed
 	}
-	return wrapUntrustedToolOutput(source, scrubbed)
+	return FrameUntrustedPromptContent(source, scrubbed)
 }
 
 func untrustedSource(toolName string, res tools.ToolResult) (string, bool) {
@@ -66,12 +66,18 @@ func untrustedSource(toolName string, res tools.ToolResult) (string, bool) {
 	return toolName, true
 }
 
-func wrapUntrustedToolOutput(source, content string) string {
+// FrameUntrustedPromptContent wraps model-facing untrusted data in the shared
+// nonce-bearing envelope used for tool output and delegated input.
+func FrameUntrustedPromptContent(source, content string) string {
 	nonce := toolOutputNonce()
 	escapedSource := html.EscapeString(source)
 	escapedContent := EscapePromptText(content)
 	return `<tool_output source="` + escapedSource + `" trust="untrusted" nonce="` + nonce + `">` +
 		"\n" + escapedContent + "\n</tool_output>"
+}
+
+func wrapUntrustedToolOutput(source, content string) string {
+	return FrameUntrustedPromptContent(source, content)
 }
 
 // EscapePromptText neutralizes prompt-control syntax without assigning a trust class.

@@ -41,12 +41,8 @@ type RunConfig struct {
 	Cfg            config.Config
 	ConvID         string
 	Depth          int
-	// Context is the SWARM-01 goal/context split (plan 51-03): the file paths,
-	// error messages and constraints the caller supplies alongside the goal,
-	// rendered into structuredBrief's own section rather than concatenated into
-	// the objective. Shared across every goal in this call — one swarm_spawn
-	// invocation, one context. Empty is the zero value and renders no section
-	// (structuredBrief's own empty-context contract).
+	// Context is the SWARM-01 goal/context split (plan 51-03), framed with the goal
+	// as untrusted RoleUser data. Shared across every goal in this call.
 	Context string
 	// Gateway is the parent's Phase-35 policy PEP, injected into each worker so a
 	// headless swarm-child dispatch is enforced and keyed on the ORIGINATING
@@ -65,7 +61,7 @@ type RunConfig struct {
 	Enqueuer    *DelegationEnqueuer
 
 	// ResumeTurns is the 51-06b resume seam (Task 2): when non-empty, runChild seeds
-	// LlmAgentConfig.UserTurns with THIS instead of structuredBrief(goal) -- everything
+	// LlmAgentConfig.UserTurns with THIS instead of workerBriefTurns -- everything
 	// else about the worker's construction stays byte-identical, so there is still
 	// exactly one worker construction in the tree (the invariant plan 51-01 established
 	// and plan 51-09 depends on). buildResumeTurns (delegation_resume.go) is the one
@@ -267,7 +263,7 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 	// THIS run is always exactly what was passed to NewLlmAgent this time.
 	userTurns := rc.ResumeTurns
 	if len(userTurns) == 0 {
-		userTurns = []llm.Message{{Role: llm.RoleUser, Content: structuredBrief(goal, briefContext)}}
+		userTurns = workerBriefTurns(goal, briefContext)
 	}
 
 	rec := newHistoryRecorder()
