@@ -46,11 +46,11 @@ default) plus a few local CPU sidecars. It is built as a **product, not a protot
 | **Language** | Go 1.26 |
 | **Size** | ~98k LOC non-test (`cmd` + `internal`, of which ~7k sqlc-generated) · 68 internal packages |
 | **Tests** | ~143k LOC — table-driven · property-based · fuzz · `-race` · `goleak` · mutation |
-| **Test coverage** | owned-surface floor **≥85% per package**, enforced in CI on every push |
-| **CI** | green — build/vet/lint · CodeQL · integration (Postgres / ArcadeDB) |
-| **Persistence** | Postgres (sqlc, pgx) + ArcadeDB (graph memory, full-text + LSM vector index) |
-| **Default LLM** | DeepSeek-V4 via OpenRouter — provider-neutral, swap by config |
-| **Status** | v0.0.0 substrate + v1.0.0 web cockpit shipped · v2.0.0 industrial hardening in progress (8/12 phases) |
+| **Test coverage** | owned-surface aggregate **≥85%** (87.0% measured 2026-08-30) plus a fail-closed per-package policy, enforced in CI on every push |
+| **CI** | build/vet/lint · CodeQL · `-race` + goleak · db/ArcadeDB/embed integration · MUSR two-identity E2E · web lint/test/mutation/Playwright · critical mutation ≥70% killed |
+| **Persistence** | Postgres (sqlc, pgx) + ArcadeDB (graph memory, full-text + LSM vector index) + Garage (S3 object store) |
+| **Default LLM** | DeepSeek-V4 via OpenRouter — provider-neutral; the active profile (provider, model, budgets) is hot-reloaded from the cockpit settings, no restart |
+| **Status** | v1.0.1 tagged 2026-06-20 · v2.0.0 industrial hardening shipped · v2.1.0 (Hermes/Claude-Code parity) in progress, 3/8 phases closed · `v1.0.2-rc1` being cut through the exact-SHA readiness gate |
 
 ## Key features
 
@@ -60,7 +60,9 @@ default) plus a few local CPU sidecars. It is built as a **product, not a protot
 - **Full host terminal + filesystem tools** — real operating power, with destructive-command approval gates and secret redaction.
 - **Graph-native memory** — bitemporal facts and entities live in an ArcadeDB graph (full-text + optional dense leg); conversations persist with a context-management ladder.
 - **Self-extension** — the agent authors and runs its own skills, and mounts MCP servers (calculator, calendar, whatsapp, memory).
-- **Multi-channel** — CLI REPL, Telegram (voice/photo/docs/HITL), and a web cockpit over AG-UI/SSE.
+- **Scheduler and self wake-ups** — one `task` tool (`at | every | cron`) for reminders and `agent_job` runs: the agent can schedule itself to wake up later and act; every agent_job is approval-gated on the channel it was scheduled from.
+- **Per-identity sandbox** — a full-capability box per operator (gVisor `runsc` on native Linux), with deliverables handed back over the channel (`send_file`), never as a path.
+- **Multi-channel** — CLI REPL, Telegram (voice/photo/docs/HITL), and a web cockpit over AG-UI/SSE with mid-turn steering, approvals, and live settings.
 
 ## Architecture (one screen)
 
@@ -81,6 +83,7 @@ Observability      obs · panicobs · reasoningtrace · toolinvocations · cache
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the system is built — layers, turn lifecycle, invariants |
 | [docs/TECHNICAL_OVERVIEW.md](docs/TECHNICAL_OVERVIEW.md) | CTO / due-diligence overview — problem, differentiators, maturity |
 | [docs/CAPABILITIES.md](docs/CAPABILITIES.md) | Capability matrix — shipped / in-progress / roadmap |
+| [docs/release-readiness.md](docs/release-readiness.md) | How a release is cut — the twelve-report exact-SHA gate, rollback rule, operational checks |
 | [.planning/codebase/](.planning/codebase/) | Package-level inventory + conventions + concerns — generated, refresh with `/gsd-map-codebase` |
 | [CLAUDE.md](CLAUDE.md) · [prd.md](prd.md) | Engineering guidance · product requirements (source of truth) |
 
@@ -94,10 +97,15 @@ TLS/token access, and optional MCP siblings.
 
 ## Quick Start
 
-> **There is no published release yet.** `ghcr.io/chetto1983/aura` is pushed by the
-> `Release` workflow on the first `v*` tag, and no tag exists — so `vX.Y.Z` below has
-> nothing behind it and the URLs 404. To run Aura today, build the image from a
-> checkout (see [Development](#development)) and set `AURA_IMAGE=aura:local`.
+> **Releases.** `ghcr.io/chetto1983/aura:<tag>` and the binary archives are published by
+> the `Release` workflow on a `v*` tag, and only after the exact-SHA *Production
+> Readiness* check passed for that commit ([docs/release-readiness.md](docs/release-readiness.md)).
+> Tags `v1.0.0`/`v1.0.1` exist, but every earlier appliance image was retired (PRD
+> amendment #106.4) and no GitHub Release is currently published — check the
+> [Releases page](https://github.com/chetto1983/Aura/releases) for the current tag
+> (`v1.0.2-rc1` is the one being cut) and use it as `vX.Y.Z` below. While no image is
+> on GHCR, build it from a checkout (see [Development](#development)) and set
+> `AURA_IMAGE=aura:local`.
 
 ### Linux or macOS
 
@@ -138,9 +146,17 @@ ARCADEDB_APP_PASSWORD=$(New-Hex)
 AURA_ARCADEDB_TENANT_SECRET=$(New-Hex)
 AURA_IMAGE=ghcr.io/chetto1983/aura:vX.Y.Z
 AURA_ACCESS_TOKEN=$(New-Hex)
+AURA_AUTHULA_SECRET=$(New-Hex)
+SEARXNG_SECRET=$(New-Hex)
+AURA_OBJECTSTORE_ACCESS_KEY=GK$((New-Hex).Substring(0,24))
+AURA_OBJECTSTORE_SECRET_KEY=$(New-Hex)
+GARAGE_RPC_SECRET=$(New-Hex)
+AURA_GARAGE_ADMIN_TOKEN=$(New-Hex)
 AURA_BACKUP_DIR=./backups
 AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda
 AURA_EMBED_MODEL_PATH=/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf
+AURA_EMBED_REVISION=0f741b5a6585bd53aeb15cd1372c56f2a0f65e12
+AURA_EMBED_FINGERPRINT=b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63
 AURA_EMBED_NGL=99
 AURA_EMBED_DIMENSIONS=768
 OPENROUTER_API_KEY=
@@ -244,13 +260,25 @@ appliance.
 ## CLI
 
 ```text
-aura serve              run the long-lived agent runtime
-aura shell              interactive REPL against the agent loop
-aura agent dry-run      drive a mock LoopAgent through the Budget tree
-aura tools              print the tool manifest
-aura mcp <sub>          managed MCP servers: install | add | list | doctor | tools | enable | disable | remove
-aura db <sub>           Postgres lifecycle: migrate | ping | status | reset
-aura version            build metadata
+aura serve                    run the long-lived agent runtime (channels, cockpit, scheduler)
+aura shell | chat <sub>       interactive REPL / chat conversations against the agent loop
+aura doctor | config <sub>    environment diagnostics / effective configuration
+aura agent dry-run            drive a mock LoopAgent through the Budget tree
+aura tools                    print the tool manifest
+aura task <sub>               operator parity with the model-facing `task` tool:
+                              schedule | list | cancel | run_now | approve | runs | doctor
+aura mcp <sub>                managed MCP servers: install | add | list | doctor | tools | enable | disable | remove
+aura memory <sub>             ArcadeDB memory administration
+aura identity <sub>           identities, capability grants, operator break-glass recovery
+aura gateway grants <sub>     AG-UI gateway approval grants
+aura paused-states <sub>      HITL pauses
+aura skills <sub> | pack <sub> skill lifecycle · packs: list | show | install | trust
+aura retention <plan|apply>   retention sweep
+aura db <sub>                 Postgres lifecycle: migrate | ping | status | reset
+aura objectstore <sub>        Garage object-store administration
+aura web <doctor|tool ...>    web tools (search/fetch) from the CLI
+aura docs <sub>               document ingestion
+aura version                  build metadata
 ```
 
 ## Development
@@ -272,8 +300,10 @@ go run ./cmd/aura version
 go run ./cmd/aura agent dry-run --request-id auto
 ```
 
-To run the Compose appliance from source while no release tag exists, build the image
-the release would have published and point `.env` at it:
+To run the Compose appliance from source while no image is published on GHCR, build
+the image the release would have published and point `.env` at it (the image builds
+`web/` in its own stage; the committed `internal/webui/dist` only feeds a host `go build`
+and is refreshed from that stage, never from a host `vite build`):
 
 ```bash
 docker build -f docker/aura/Dockerfile -t aura:local .
