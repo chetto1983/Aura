@@ -71,6 +71,7 @@ export function openWorkerStream(
 ): WorkerStreamSubscription {
   const source = new EventSource(workerEventsURL(conversationId, childId));
   const state = newAssistantTurn(childId);
+  let terminal = false;
 
   const onMessage: EventListener = (event) => {
     if (!(event instanceof MessageEvent) || typeof event.data !== 'string') return;
@@ -85,12 +86,16 @@ export function openWorkerStream(
           status: state.status,
         },
       ]);
+      if (frame.type === 'RUN_FINISHED' || frame.type === 'RUN_ERROR') {
+        terminal = true;
+        source.close();
+      }
     } catch {
       handlers.onError();
     }
   };
   const onError: EventListener = () => {
-    handlers.onError();
+    if (!terminal) handlers.onError();
   };
 
   const removeFrameListeners = subscribeEventSource(source, workerFrameEventNames, onMessage);
