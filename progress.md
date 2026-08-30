@@ -441,11 +441,26 @@ Green:
   zero critical, warning, or info findings. Two typed reviewer dispatches were
   non-terminal and closed without output; the operator directed the same review
   scope to be completed inline.
+- Canonical backend `make quality` passed after the migration-head repair:
+  deadcode, vet, file-size, model contracts, lint, the full race suite,
+  `govulncheck`, and build are green. The subsequent HEAD movement only refreshed
+  the committed Web dist from the already-tested source tree.
+- `make tagged-tier-compile` passed all 24 tiers across 40 tagged packages on
+  `0b84cb157`.
+- Canonical `make web-quality` passed on `0b84cb157`: 228 files and 1,917 tests,
+  91.16% statements / 85.22% branches / 90.36% functions / 93.13% lines, and a
+  75.34% mutation score against the 70% floor. One test timed out only while this
+  gate competed with tagged compilation; the isolated case passed in 880 ms and
+  the sequential full rerun was green.
+- Disposable-Postgres coverage passed on the exact candidate `0b84cb157` with
+  the `db_integration` tier: 87.03% owned statements against the 85% floor, zero
+  empty tiers. The disposable container was removed on completion.
+- `sqlc generate` completed without tracked drift.
 
 Needs completion:
 
-- Re-run the complete WSL Go/vet/build/race and web lint/typecheck/test/build
-  matrix, then rebuild/deploy the final image.
+- Re-run the backend quality gate after the dist-only merge, then rebuild/deploy
+  the final image.
 - Run the repository Playwright E2E repeatedly against that final image and
   verify the container PID/start/image/restart tuple remains unchanged during
   endpoint switches, with zero OpenRouter traffic.
