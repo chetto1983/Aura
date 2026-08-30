@@ -132,6 +132,12 @@ export function ExternalStoreChat({
     reasoningCaps.levels,
     reasoningCaps.settled,
   );
+  // assistant-ui publishes adapter callbacks in a passive effect; an older onNew callback must
+  // still observe a selection committed by the current render.
+  const effortRef = useRef(effort);
+  useLayoutEffect(() => {
+    effortRef.current = effort;
+  }, [effort]);
 
   const invalidateRuntimeReads = useCallback(
     (id = threadId) => {
@@ -212,7 +218,7 @@ export function ExternalStoreChat({
           attachmentIds: readyAttachmentIds,
           ...(skill !== null ? { skill } : {}),
           ...(documentScope.length > 0 ? { documentScope } : {}),
-          effort,
+          effort: effortRef.current,
           signal: controller.signal,
           connectionLostNote: t('chat.error.connectionLost'),
           onRunId: (runId) => {
@@ -267,7 +273,6 @@ export function ExternalStoreChat({
       t,
       attachments,
       skills,
-      effort,
       prepareUsageBaseline,
       compaction,
       steer,

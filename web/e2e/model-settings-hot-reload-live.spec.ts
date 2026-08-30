@@ -23,6 +23,7 @@ interface RouteProfile {
 
 interface RunEvidence {
   readonly frames: readonly Record<string, unknown>[];
+  readonly requestEffort: unknown;
   readonly text: string;
 }
 
@@ -186,14 +187,19 @@ async function runSentinel(
       response.request().method() === 'POST',
     { timeout: 300_000 },
   );
-  await composer.fill(`Non usare strumenti. Rispondi soltanto con ${sentinel}`);
+  const prompt =
+    effort === undefined
+      ? `Non usare strumenti. Rispondi soltanto con ${sentinel}`
+      : `Non usare strumenti. Ragiona internamente e verifica il prodotto 173 * 219, poi rispondi soltanto con ${sentinel}`;
+  await composer.fill(prompt);
   await composer.press('Enter');
   const response = await responsePromise;
   expect(response.status()).toBe(200);
   const frames = streamFrames(await response.text());
+  const requestBody = response.request().postDataJSON() as { readonly aura?: { effort?: unknown } };
   expect(frames.some((frame) => frame.type === 'RUN_STARTED')).toBe(true);
   expect(frames.some((frame) => frame.type === 'RUN_FINISHED')).toBe(true);
-  return { frames, text: reassembledText(frames) };
+  return { frames, requestEffort: requestBody.aura?.effort, text: reassembledText(frames) };
 }
 
 test.describe('live primary-model hot reload', () => {
@@ -226,7 +232,11 @@ test.describe('live primary-model hot reload', () => {
           typeof frame.delta === 'string' &&
           frame.delta.length > 0,
       );
-      expect(reasoningFrames.length).toBeGreaterThan(0);
+      expect(ollamaRun.requestEffort).toBe('high');
+      expect(
+        reasoningFrames.length,
+        `frame types: ${ollamaRun.frames.map((frame) => String(frame.type)).join(', ')}`,
+      ).toBeGreaterThan(0);
       expect(reasoningFrames.every((frame) => frame.delta !== '[reasoning redacted]')).toBe(true);
       await expect(page.getByTestId('reasoning-pill')).toBeVisible();
 
@@ -244,7 +254,10 @@ test.describe('live primary-model hot reload', () => {
         expect(witness.api_show).toBeGreaterThanOrEqual(1);
         expect(witness.chat_completions).toBeGreaterThanOrEqual(1);
       } else {
-        expect(ollamaRun.text).toContain('AURA_OLLAMA_ROUTE_OK');
+        expect(
+          ollamaRun.text,
+          `frame types: ${ollamaRun.frames.map((frame) => String(frame.type)).join(', ')}`,
+        ).toContain('AURA_OLLAMA_ROUTE_OK');
       }
 
       await putProfile(page, localProfile);
