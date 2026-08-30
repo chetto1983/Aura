@@ -43,6 +43,13 @@ type settingsStore interface {
 	Delete(ctx context.Context, key string) error
 }
 
+// llmRouteReloader validates and publishes the complete persisted primary-route
+// override set. The composition root supplies the boot fallback and concrete client.
+type llmRouteReloader interface {
+	Validate(overrides map[string]string) error
+	Apply(overrides map[string]string)
+}
+
 // TelegramBotProbe validates a Telegram Bot API token and returns the bot username.
 // The token is a secret and must never be logged or echoed by the probe caller.
 type TelegramBotProbe func(ctx context.Context, token string) (username string, err error)
@@ -52,6 +59,9 @@ type TelegramBotProbe func(ctx context.Context, token string) (username string, 
 // answer 503 so a stack without a pool degrades gracefully (the SetCalendarMCP
 // precedent).
 func (s *Server) SetSettingsStore(store settingsStore) { s.settings = store }
+
+// SetLLMRouteReloader wires the hot primary-LLM route publisher.
+func (s *Server) SetLLMRouteReloader(reloader llmRouteReloader) { s.llmRouteReloader = reloader }
 
 // SetTelegramBotProbe wires the live getMe validator used by the Settings Telegram
 // recovery panel. Until set, the availability check answers 503.

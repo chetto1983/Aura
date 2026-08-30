@@ -146,6 +146,7 @@ type Server struct {
 	governanceWrite  GovernanceWriteProviders
 	mcpAuth          MCPAuthorizationProvider
 	settings         settingsStore
+	llmRouteReloader llmRouteReloader
 	audit            auditReader
 	idAdmin          identityAdmin
 	telegramProbe    TelegramBotProbe

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,6 +18,21 @@ type fakeSettingsStore struct {
 	rows     []sqlc.AuraSettings
 	upserted map[string]string
 	deleted  []string
+}
+
+type fakeLLMRouteReloader struct {
+	validated []map[string]string
+	applied   []map[string]string
+	err       error
+}
+
+func (f *fakeLLMRouteReloader) Validate(overrides map[string]string) error {
+	f.validated = append(f.validated, maps.Clone(overrides))
+	return f.err
+}
+
+func (f *fakeLLMRouteReloader) Apply(overrides map[string]string) {
+	f.applied = append(f.applied, maps.Clone(overrides))
 }
 
 func (f *fakeSettingsStore) List(context.Context) ([]sqlc.AuraSettings, error) { return f.rows, nil }
@@ -88,6 +104,30 @@ func TestHandleListSettingsNilStore(t *testing.T) {
 	}
 }
 
+func TestHandleListSettingsDoesNotRequireRestartForHotLLMRoute(t *testing.T) {
+	t.Setenv("AURA_LLM_PROVIDER", "openrouter")
+	t.Setenv("AURA_LLM_BASE_URL", "https://openrouter.ai/api/v1")
+	t.Setenv("AURA_LLM_MODEL", "cloud-model")
+	s := &Server{
+		settings: &fakeSettingsStore{rows: []sqlc.AuraSettings{
+			{Key: "AURA_LLM_PROVIDER", Value: "llamacpp"},
+			{Key: "AURA_LLM_BASE_URL", Value: "http://aura-llm:8084/v1"},
+			{Key: "AURA_LLM_MODEL", Value: "gemma-4-12b"},
+		}},
+		llmRouteReloader: &fakeLLMRouteReloader{},
+	}
+	rr := httptest.NewRecorder()
+	s.handleListSettings(rr, httptest.NewRequest(http.MethodGet, "/api/settings", nil))
+
+	var got settingsListDTO
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.RestartRequired {
+		t.Fatal("primary LLM route is hot but restart_required is true")
+	}
+}
+
 func putReq(t *testing.T, key, value, principal string) (*httptest.ResponseRecorder, *http.Request) {
 	t.Helper()
 	body, _ := json.Marshal(putSettingBody{Value: value})
@@ -145,6 +185,32 @@ func TestHandlePutSetting(t *testing.T) {
 		}
 		if store.upserted["AURA_EMBED_MODEL"] != "qwen/qwen3-embedding-8b" {
 			t.Errorf("upserted = %v, want the new value", store.upserted)
+		}
+	})
+
+	t.Run("primary route validates and publishes complete overrides", func(t *testing.T) {
+		store := &fakeSettingsStore{rows: []sqlc.AuraSettings{
+			{Key: "AURA_LLM_PROVIDER", Value: "llamacpp"},
+			{Key: "AURA_LLM_BASE_URL", Value: "http://aura-llm:8084/v1"},
+			{Key: "AURA_LLM_MODEL", Value: "old-model"},
+		}}
+		reloader := &fakeLLMRouteReloader{}
+		s := &Server{settings: store, llmRouteReloader: reloader}
+		rr, r := putReq(t, "AURA_LLM_MODEL", "gemma-4-12b", "op-1")
+
+		s.handlePutSetting(rr, r)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+		}
+		if len(reloader.validated) != 1 || len(reloader.applied) != 1 {
+			t.Fatalf("reload calls = validate %d apply %d, want 1/1", len(reloader.validated), len(reloader.applied))
+		}
+		if got := reloader.applied[0]["AURA_LLM_MODEL"]; got != "gemma-4-12b" {
+			t.Fatalf("applied model = %q, want gemma-4-12b", got)
+		}
+		if got := reloader.applied[0]["AURA_LLM_BASE_URL"]; got != "http://aura-llm:8084/v1" {
+			t.Fatalf("applied base URL = %q, want existing local override", got)
 		}
 	})
 }
