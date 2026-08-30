@@ -57,7 +57,8 @@ Current execution checklist:
    implemented; committed.
 6. Race/build/frontend/live no-restart verification: complete.
 7. Resume and complete 51-08: execution complete; review remediation active.
-8. Fix and re-review Amendment #190 findings: in progress.
+8. Fix Amendment #190 findings: implemented in atomic commits; focused unit,
+   race, and disposable-Postgres gates are green. Re-review is pending.
 9. Run the final full matrix and repeated live E2E on the final image: pending.
 10. Insert and plan provider-native subscription phase: pending.
 
@@ -124,6 +125,22 @@ Current execution checklist:
 - `6f4f9fa1e docs(51): record delegation review gaps`
   - PRD Amendment #190 classifies confirmed gaps, accepted at-least-once
     boundaries, required regression coverage, and the final E2E completion gate.
+- `e9e6850da fix(51): WR-04 isolate worker state by conversation`
+  - Scopes and resets cockpit worker state when conversations change.
+- `f1159244d fix(51): CR-05 preserve framed tool history`
+  - Preserves model-facing trust framing when delegated workers resume.
+- `5e4401c1f fix(51): WR-01 make delegation fanout enqueue atomic`
+  - Creates a fan-out batch in one identity-scoped transaction.
+- `51b0691b7 fix(51): CR-06 isolate worker policy`
+  - Separates trusted worker policy from untrusted delegated goal data.
+- `adb14e99b fix(51): WR-02 freeze delegation runtime`
+  - Freezes one runtime snapshot for the whole delegated operation.
+- `e0752cc5c fix(51): WR-03 quarantine invalid resumes`
+  - Continues past poison answered rows and terminally quarantines them.
+- `46f7f2dec fix(51): make delegation recovery durable`
+  - Stages terminal reports before projection, retries delivery without rerunning
+    the model, deduplicates conversation/steer writes, persists fan-out outbox
+    claims atomically, and wires Postgres resume quarantine.
 
 PRD amendment #185 records these decisions:
 
@@ -385,11 +402,13 @@ Green:
 - `npm run build` passed twice after `npm ci` with 4,331 modules and zero
   regenerated diff.
 - `TestProductionContainerArtifactsMatchFatImageContract` passed.
+- Amendment #190 focused gates on `46f7f2dec`: WSL unit tests and vet passed for
+  swarm/conversations/steer/documents/cmd; WSL `db_integration -race` passed for
+  swarm, conversations, and steer; the cmd/aura fan-out transaction test passed
+  against a migrated disposable database; file-size and pre-commit lint passed.
 
 Needs completion:
 
-- Remediate the confirmed Amendment #190 findings with focused fault-injection
-  and adversarial tests, keeping the accepted exactly-once residual unchanged.
 - Re-run GSD code review after remediation and update `51-REVIEW.md` from the
   measured result.
 - Re-run the complete WSL Go/vet/build/race and web lint/typecheck/test/build
@@ -421,12 +440,10 @@ For subsequent commits:
 
 ## Next actions
 
-1. Implement the Amendment #190 fixes in atomic commits and add focused
-   regression tests for every confirmed failure window.
-2. Re-run GSD code review, the full verification matrix, and the repeated live
+1. Re-run GSD code review, the full verification matrix, and the repeated live
    Playwright E2E on the final deployed image.
-3. Run the GSD verifier and mark Phase 51 complete only after every gate passes.
-4. Insert, discuss, specify, and plan the provider-native subscription phase via
+2. Run the GSD verifier and mark Phase 51 complete only after every gate passes.
+3. Insert, discuss, specify, and plan the provider-native subscription phase via
    GSD after Phase 51 is complete.
 
 ## Resume commands
