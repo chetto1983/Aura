@@ -10727,6 +10727,14 @@ flusso completo, che funziona.
 > defect; an operator-time cost of building on the appliance host, recorded so it is not
 > repeated.
 >
+> Live closure on the rebuilt image (master `cc1873439`, container recreated 18:38:34Z,
+> Telegram channel back at 18:38:35Z): `GET /api/me` read 1,000,000 at boot (the `.env` pin
+> is the boot fallback by #187), 81,920 after a route switch to `llamacpp/gemma-4-12b`,
+> 262,144 after the switch back to `ollama/gemma4:31b-cloud`, **262,144 after
+> `PUT /api/settings/AURA_LOOP_MAX_STEPS=60`** and after its `DELETE`; the Settings list then
+> shows `AURA_MODEL_CONTEXT_WINDOW=262144 overridden=false applied=live`. The route rows were
+> restored to the exact previous values; the two transitions took 30 ms of wall time.
+>
 > What this does NOT prove: that a correct window alone changes the operator's thread —
 > at 262,144 × 60% the early trigger is ~157k, still above its 50k replay, so it condenses
 > only on the local route (81,920 × 60% ≈ 49k) or with a lower trigger percent, both hot
