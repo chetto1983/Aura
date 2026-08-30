@@ -10052,3 +10052,72 @@ flusso completo, che funziona.
 > model will obey it. The same real cockpit question must be repeated against the rebuilt local
 > image while a worker is running, and the final answer must visibly include elapsed time before
 > verdict 5 can pass.
+
+## Section The durable delegation envelope passes its live acceptance (Amendment #183, 2026-08-30)
+
+> **Amendment #183 (2026-08-30 - measured after Amendments #178 through #182 were deployed).**
+> Phase 51's complete delivery envelope passed all six verdicts at **9.9/10** on healthy image
+> `aura:local` digest
+> `sha256:699ce1260f16f7974f6d9885121ad8b109f22e5f867065a76d626c54f9ee95ca`, created at
+> `2026-08-30T01:21:54.878858656Z`, with the cockpit-persisted route
+> `llamacpp / http://aura-llm:8084/v1 / gemma-4-12b`. No OpenRouter model participated.
+> Evidence is redacted at
+> `.planning/phases/51-durable-delegation/live-check/cockpit/RESULTS.md`; no Telegram chat id,
+> conversation id, message text, session data or screenshot is retained.
+>
+> **What shipped.** The envelope has four operator-facing legs. Each terminal worker appends one
+> compact record card to the origin conversation; its complete Markdown report is an owned
+> `text/markdown` artifact on that thread; Telegram receives one bounded static notification for
+> the whole fan-out only after every sibling is terminal; and the cockpit exposes each worker as a
+> switchable read-only thread beside the still-live parent chat. The chip and picker update from one
+> metadata status stream plus one transcript stream for the watched child. There is no browser
+> polling loop, no worker composer and no second frame-to-part mapping.
+>
+> **The fan-out remains the Telegram unit.** The operator's decision is *"uno per fan-out"*.
+> Its substrate is one deterministic `fanout_key` in every job payload plus the nullable
+> `aura.steer_queue.fanout_key` column created in migration `0108`; later migration `0109` made the
+> key mandatory for `delegation_result` rows and `0110` converged pre-existing job payloads. The
+> final measured fan-out reached its first terminal worker at `02:42:15` and its last at `02:47:32`.
+> The authenticated Telegram surface showed no intervening completion notification, then one at
+> the terminal minute; PostgreSQL recorded one shared nudge at `02:47:33` for both rows. Across the
+> two Telegram trials the surface showed exactly two structurally complete terminal notifications,
+> one per trial, each with two status markers and the fixed closing-line structure. Message content
+> was neither read into the evidence nor copied here.
+>
+> **Stable wire contracts.** Other code may depend on these exact shapes:
+>
+> 1. A queued background `swarm_spawn` returns `{queued, note, workers}`; each worker entry carries
+>    `goal_index`, `child_id`, `status` and `goal`.
+> 2. A transcript's final event carries `swarm_child_status`, `swarm_child_id` and
+>    `swarm_child_duration_sec` in `Actions.StateDelta`.
+> 3. The multiplexed status route emits the AG-UI CUSTOM event `aura.swarm.worker`, bounded to
+>    `child_id`, `status`, `last_event_at`, `events` and `duration_sec`.
+>
+> **Measured verdicts.** (1) Each two-worker run produced two cards and zero raw report-JSON
+> bubbles. (2) Each run produced two distinct accepted Markdown report artifacts; the cockpit listed
+> two and opened the preview. (3) The negative and positive fan-out halves passed as described
+> above: zero early notifications and one terminal notification per trial, with one fan-out key and
+> one nudge timestamp. (4) The live cockpit showed two independently updating rows, opened a running
+> `shell_exec`, switched workers without reloading, and used exactly one status EventSource plus two
+> distinct child EventSources over the drive; both transcript files ended in terminal markers.
+> (5) The parent called Deferred `swarm_status` exactly once while a sibling was running, and the
+> final answer surfaced the worker id, status, elapsed duration and observed `shell_exec` activity.
+> (6) The pane held its connecting state during replay, rendered the running tool state, and showed
+> a 2,504-character result at `clientWidth=345` and `scrollWidth=345`, with no horizontal overflow.
+>
+> **Quality-ledger handling.** Amendment #177 supersedes plan 51-12b's older instruction to bump
+> every path-matched quality row with a metric-neutral re-attestation. This drive measured the new
+> delegation-envelope acceptance, not the existing Swarm row's mail/WhatsApp, timing and judge
+> metric or the AG-UI row's reasoning, coverage and mutation metric. The historical snapshot is
+> therefore unchanged, and the retired `quality_snapshot_gate.sh` cannot be invoked. Focused web
+> tests, lint and typecheck passed; Go build and vet passed; focused `swarm_status` tests and their
+> WSL race run passed. These executable results support this acceptance but do not rewrite a
+> different metric.
+>
+> **What this measurement does not prove.** A sibling parked in `awaiting_input` still delays the
+> fan-out's Telegram notification, so the phone remains silent about completed siblings until the
+> question is answered or expiry makes the parked row terminal. The drive does not prove worker-pane
+> recovery across a daemon restart, card rendering on a phone viewport, artifact behavior at the
+> step or wall-clock caps, or lossless recovery from a non-terminal child-stream disconnect.
+> Telegram remains the only shipped Deliverer for the tested identity, so selection between two
+> simultaneously eligible channel Deliverers is still unmeasured.
