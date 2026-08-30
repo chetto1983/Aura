@@ -357,12 +357,14 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A deliberate pin, moved deliberately: 0110 completes the durable fan-out
-	// constraint for delegation job payloads without rewriting deployed 0109. The test
-	// exists so a migration added without noticing breaks the build rather than deployment;
-	// bumping it is the intended acknowledgement, never an incidental red-to-green fix.
-	if head != 110 {
-		t.Fatalf("MigrationHead=%d, want embedded head 110", head)
+	// A deliberate pin, moved deliberately: 0111 adds the delegation delivery key on
+	// conversation_turns and 0112 the agent-asset idempotency index (phase 51, durable
+	// delegation), both shipped without moving this pin — which is exactly the miss it
+	// exists to catch. The test exists so a migration added without noticing breaks the
+	// build rather than deployment; bumping it is the intended acknowledgement, never an
+	// incidental red-to-green fix.
+	if head != 112 {
+		t.Fatalf("MigrationHead=%d, want embedded head 112", head)
 	}
 }
 
