@@ -10741,3 +10741,36 @@ flusso completo, che funziona.
 > settings the operator can set; nor that a compacted replay keeps a weak model on topic —
 > that needs the same drive after a compaction, not asserted here. The removal of the two
 > `AURA_MODEL_*` pins from the appliance `.env` (measured by #187) remains an operator action.
+
+## Section A vision-capable Ollama model must receive the image, not its file name (Amendment #197, 2026-08-30)
+
+> **Amendment #197 (2026-08-30 - measured through the cockpit attachment path on the
+> running stack, route `ollama/gemma4:31b-cloud`).** A synthetic 800×500 PNG (red circle,
+> blue triangle, green rectangle labelled "AURA 42", a three-bar chart 3/7/5 labelled
+> A/B/C, the words "3 barre") was uploaded exactly as `web/src/chat/attachments` does —
+> `POST /api/assets/presign` → SigV4 `PUT` to Garage → `POST /api/assets/{id}/finalize`
+> (status `accepted`, 11,307 bytes, digest recorded) — and sent with
+> `aura.attachment_ids` and "descrivi esattamente cosa vedi". The model answered with a
+> confident description of **a Snellen eye chart** (rows of letters, 20/200 … 20/20). It
+> never received the image: `NewContentCapabilitySource` returns nil for every target but
+> OpenRouter and llama.cpp, `projectNativeMedia` then projects nothing, and the user turn
+> carries only the attachment catalog (file name, MIME, size) — from which the model
+> confabulated content. Ollama itself advertises the modality: `POST /api/show` for
+> `gemma4:31b-cloud` returns `capabilities: ["completion","thinking","tools","vision"]`
+> (Ollama 0.33.2).
+>
+> Rule: the Ollama target gets a content-capability source like llama.cpp's, read from the
+> same `/api/show` call the model profile already makes (`fetchOllamaShow`, one fetcher for
+> context window and capabilities). Only `vision` names an input modality → `image`; the
+> generation features (`completion`, `tools`, `thinking`) are not modalities and must not
+> leak into the map. A model without `vision` is detected text-only (`detected=true`, no
+> image), a failed probe stays text-only, and the probe is cached for the client TTL.
+> `TestOllamaContentCapabilitiesFromShow` pins the mapping, the leak guard, the caching and
+> the text-only model. The llama.cpp source was folded into the same `probedContentCaps`
+> cache rather than duplicated.
+>
+> What this does NOT prove: that a model whose capabilities lack `vision` is told so
+> instead of guessing — the reference-only catalog still names the file, and the Snellen
+> answer shows a confident model fills the gap; whether the catalog should state "this
+> model cannot see the attachment" is a separate, unmeasured change. Audio on Ollama is not
+> claimed (no capability token names it).

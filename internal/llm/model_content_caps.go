@@ -5,6 +5,7 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -24,7 +25,15 @@ func (s *openRouterContentCaps) ContentCapabilities(ctx context.Context) (Provid
 	return capabilitiesFromModalities(capability.InputModalities), true
 }
 
-type llamaCppContentCaps struct {
+// modalityProbe asks one local backend which native input modalities the active model
+// accepts, in Aura's normalized names (the wire name "vision" is already "image").
+type modalityProbe func(ctx context.Context, cfg Config, httpClient *http.Client) ([]string, error)
+
+// probedContentCaps caches one modality probe of a local backend for ttl and answers
+// text-only (detected=false) for any other target or for a failed probe.
+type probedContentCaps struct {
+	target     ReasoningTargetKind
+	probe      modalityProbe
 	cfg        Config
 	httpClient *http.Client
 	ttl        time.Duration
@@ -37,17 +46,19 @@ type llamaCppContentCaps struct {
 	detected bool
 }
 
-var _ ContentCapabilitySource = (*llamaCppContentCaps)(nil)
+var _ ContentCapabilitySource = (*probedContentCaps)(nil)
 
-func newLlamaCppContentCaps(cfg Config) *llamaCppContentCaps {
+func newProbedContentCaps(cfg Config, target ReasoningTargetKind, probe modalityProbe) *probedContentCaps {
 	connect := time.Duration(cfg.ConnectTimeoutSec) * time.Second
 	if connect <= 0 {
 		connect = 2 * time.Second
 	}
-	return &llamaCppContentCaps{
-		cfg: cfg,
-		ttl: time.Minute,
-		now: time.Now,
+	return &probedContentCaps{
+		target: target,
+		probe:  probe,
+		cfg:    cfg,
+		ttl:    time.Minute,
+		now:    time.Now,
 		httpClient: &http.Client{
 			Timeout: 3 * time.Second,
 			Transport: &http.Transport{
@@ -58,8 +69,16 @@ func newLlamaCppContentCaps(cfg Config) *llamaCppContentCaps {
 	}
 }
 
-func (s *llamaCppContentCaps) ContentCapabilities(ctx context.Context) (ProviderContentCapabilities, bool) {
-	if ReasoningTarget(s.cfg.Provider, s.cfg.BaseURL) != ReasoningTargetLlamaCpp {
+func newLlamaCppContentCaps(cfg Config) *probedContentCaps {
+	return newProbedContentCaps(cfg, ReasoningTargetLlamaCpp, llamaCppModalities)
+}
+
+func newOllamaContentCaps(cfg Config) *probedContentCaps {
+	return newProbedContentCaps(cfg, ReasoningTargetOllama, ollamaModalities)
+}
+
+func (s *probedContentCaps) ContentCapabilities(ctx context.Context) (ProviderContentCapabilities, bool) {
+	if ReasoningTarget(s.cfg.Provider, s.cfg.BaseURL) != s.target {
 		return ProviderContentCapabilities{}, false
 	}
 	s.mu.Lock()
@@ -67,13 +86,24 @@ func (s *llamaCppContentCaps) ContentCapabilities(ctx context.Context) (Provider
 	if s.probed && s.now().Sub(s.probedAt) < s.ttl {
 		return cloneContentCapabilities(s.caps), s.detected
 	}
-	props, err := fetchLlamaCppProps(ctx, s.cfg, s.httpClient)
+	modalities, err := s.probe(ctx, s.cfg, s.httpClient)
 	s.probed = true
 	s.probedAt = s.now()
 	if err != nil {
 		s.caps = ProviderContentCapabilities{}
 		s.detected = false
 		return ProviderContentCapabilities{}, false
+	}
+	s.caps = capabilitiesFromModalities(clampInputModalities(modalities))
+	s.detected = true
+	return cloneContentCapabilities(s.caps), true
+}
+
+// llamaCppModalities reads GET /props `modalities` ({"vision":true,"audio":false,...}).
+func llamaCppModalities(ctx context.Context, cfg Config, httpClient *http.Client) ([]string, error) {
+	props, err := fetchLlamaCppProps(ctx, cfg, httpClient)
+	if err != nil {
+		return nil, err
 	}
 	modalities := make([]string, 0, len(props.Modalities))
 	for name, enabled := range props.Modalities {
@@ -85,9 +115,24 @@ func (s *llamaCppContentCaps) ContentCapabilities(ctx context.Context) (Provider
 		}
 		modalities = append(modalities, name)
 	}
-	s.caps = capabilitiesFromModalities(clampInputModalities(modalities))
-	s.detected = true
-	return cloneContentCapabilities(s.caps), true
+	return modalities, nil
+}
+
+// ollamaModalities reads POST /api/show `capabilities` (["completion","tools","vision",...]
+// — measured on Ollama 0.33.2 for gemma4:31b-cloud, amendment #197). Only "vision" names an
+// input modality; the rest describe generation features and are not modalities.
+func ollamaModalities(ctx context.Context, cfg Config, httpClient *http.Client) ([]string, error) {
+	show, err := fetchOllamaShow(ctx, httpClient, cfg.BaseURL, cfg.Model)
+	if err != nil {
+		return nil, err
+	}
+	modalities := make([]string, 0, 1)
+	for _, capability := range show.Capabilities {
+		if strings.EqualFold(strings.TrimSpace(capability), "vision") {
+			modalities = append(modalities, "image")
+		}
+	}
+	return modalities, nil
 }
 
 func capabilitiesFromModalities(modalities []string) ProviderContentCapabilities {
@@ -119,6 +164,12 @@ func NewContentCapabilitySource(cfg Config, ttl time.Duration) ContentCapability
 		}
 	case ReasoningTargetLlamaCpp:
 		source := newLlamaCppContentCaps(cfg)
+		if ttl > 0 {
+			source.ttl = ttl
+		}
+		return source
+	case ReasoningTargetOllama:
+		source := newOllamaContentCaps(cfg)
 		if ttl > 0 {
 			source.ttl = ttl
 		}

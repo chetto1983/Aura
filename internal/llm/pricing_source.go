@@ -65,7 +65,41 @@ type modelsWire struct {
 const maxOllamaShowResponseBytes = 1 << 20
 
 type ollamaShowWire struct {
-	ModelInfo map[string]json.RawMessage `json:"model_info"`
+	ModelInfo    map[string]json.RawMessage `json:"model_info"`
+	Capabilities []string                   `json:"capabilities"`
+}
+
+// fetchOllamaShow POSTs /api/show for one model — the single Ollama metadata call the
+// model profile (context window) and the content capabilities (vision) both read.
+func fetchOllamaShow(ctx context.Context, client *http.Client, baseURL, model string) (ollamaShowWire, error) {
+	var wire ollamaShowWire
+	showURL, err := ollamaShowURL(baseURL)
+	if err != nil {
+		return wire, err
+	}
+	body, err := json.Marshal(struct {
+		Model string `json:"model"`
+	}{Model: model})
+	if err != nil {
+		return wire, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, showURL, bytes.NewReader(body))
+	if err != nil {
+		return wire, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return wire, err
+	}
+	defer resp.Body.Close() //nolint:errcheck // read-only response
+	if resp.StatusCode != http.StatusOK {
+		return wire, fmt.Errorf("POST /api/show returned %d", resp.StatusCode)
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxOllamaShowResponseBytes)).Decode(&wire); err != nil {
+		return wire, fmt.Errorf("decode /api/show: %w", err)
+	}
+	return wire, nil
 }
 
 // FetchModelProfile resolves context, output cap and rates from the selected
@@ -140,32 +174,9 @@ func FetchModelProfile(
 func fetchOllamaModelProfile(
 	ctx context.Context, client *http.Client, baseURL, model string,
 ) (ModelProfileMetadata, error) {
-	showURL, err := ollamaShowURL(baseURL)
+	wire, err := fetchOllamaShow(ctx, client, baseURL, model)
 	if err != nil {
 		return ModelProfileMetadata{}, err
-	}
-	body, err := json.Marshal(struct {
-		Model string `json:"model"`
-	}{Model: model})
-	if err != nil {
-		return ModelProfileMetadata{}, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, showURL, bytes.NewReader(body))
-	if err != nil {
-		return ModelProfileMetadata{}, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		return ModelProfileMetadata{}, err
-	}
-	defer resp.Body.Close() //nolint:errcheck // read-only response
-	if resp.StatusCode != http.StatusOK {
-		return ModelProfileMetadata{}, fmt.Errorf("POST /api/show returned %d", resp.StatusCode)
-	}
-	var wire ollamaShowWire
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxOllamaShowResponseBytes)).Decode(&wire); err != nil {
-		return ModelProfileMetadata{}, fmt.Errorf("decode /api/show: %w", err)
 	}
 	contextValues := make([]json.RawMessage, 0, 1)
 	for key, value := range wire.ModelInfo {

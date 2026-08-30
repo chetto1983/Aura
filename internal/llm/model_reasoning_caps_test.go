@@ -3,6 +3,7 @@ package llm
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -463,6 +464,57 @@ func TestLlamaCppContentCapabilities(t *testing.T) {
 	_, _ = src.ContentCapabilities(context.Background())
 	if got := rt.callCount(); got != 1 {
 		t.Fatalf("cached /props calls = %d, want 1", got)
+	}
+}
+
+// Ollama advertises input modalities as /api/show "capabilities" (measured on 0.33.2:
+// ["completion","thinking","tools","vision"] for gemma4:31b-cloud). Only vision is an
+// input modality; the generation features must not leak into the modality map.
+func TestOllamaContentCapabilitiesFromShow(t *testing.T) {
+	rt := &fakeRoundTripper{fn: func(r *http.Request) (*http.Response, error) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/show" {
+			return jsonResponse(http.StatusNotFound, []byte(`{}`)), nil
+		}
+		var body struct {
+			Model string `json:"model"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Model != "gemma4:31b-cloud" {
+			return jsonResponse(http.StatusBadRequest, []byte(`{}`)), nil
+		}
+		return jsonResponse(http.StatusOK, []byte(`{"capabilities":["completion","thinking","tools","vision"],"model_info":{"gemma4.context_length":262144}}`)), nil
+	}}
+	src := newOllamaContentCaps(Config{Provider: "ollama", BaseURL: "http://localhost:11434/v1", Model: "gemma4:31b-cloud"})
+	src.httpClient = &http.Client{Transport: rt}
+
+	caps, detected := src.ContentCapabilities(context.Background())
+	if !detected {
+		t.Fatal("Ollama /api/show capabilities were not detected")
+	}
+	if !caps.SupportsMIME("image/png") || caps.Modalities["audio"] {
+		t.Fatalf("modalities = %v, want image only", caps.Modalities)
+	}
+	for _, leaked := range []string{"vision", "tools", "thinking", "completion"} {
+		if _, ok := caps.Modalities[leaked]; ok {
+			t.Fatalf("Ollama capability %q leaked into the modality map: %v", leaked, caps.Modalities)
+		}
+	}
+	if got := rt.callCount(); got != 1 {
+		t.Fatalf("/api/show calls = %d, want 1", got)
+	}
+	_, _ = src.ContentCapabilities(context.Background())
+	if got := rt.callCount(); got != 1 {
+		t.Fatalf("cached /api/show calls = %d, want 1", got)
+	}
+
+	textOnly := newOllamaContentCaps(Config{Provider: "ollama", BaseURL: "http://localhost:11434/v1", Model: "text-model"})
+	textOnly.httpClient = &http.Client{Transport: &fakeRoundTripper{fn: func(*http.Request) (*http.Response, error) {
+		return jsonResponse(http.StatusOK, []byte(`{"capabilities":["completion","tools"]}`)), nil
+	}}}
+	if caps, detected := textOnly.ContentCapabilities(context.Background()); !detected || caps.SupportsMIME("image/png") {
+		t.Fatalf("a model without vision must be detected text-only: caps=%v detected=%v", caps.Modalities, detected)
+	}
+	if src := NewContentCapabilitySource(Config{Provider: "ollama", BaseURL: "http://localhost:11434/v1", Model: "m"}, 0); src == nil {
+		t.Fatal("NewContentCapabilitySource returned nil for the Ollama target")
 	}
 }
 
