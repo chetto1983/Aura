@@ -10031,3 +10031,24 @@ flusso completo, che funziona.
 > be watched before completion, that a non-terminal disconnect resumes without loss, or that picker
 > switching opens exactly one child stream per watched worker. Those remain the live Playwright
 > verdicts after this lifecycle correction is deployed.
+
+## Section swarm_status must carry elapsed time into the operator answer (Amendment #182, 2026-08-30)
+
+> **Amendment #182 (2026-08-30 - measured in a real Phase 51 cockpit drive with the local
+> `gemma-4-12b` route before the fix).** While one delegated worker was still running, the parent
+> called `swarm_status` and its technical result contained `child_id`, `status`, `elapsed_sec` and a
+> transcript tail naming `shell_exec`. The parent answer correctly reported the worker id, status
+> and current tool but omitted elapsed time. This fails plan 51-12b's fact-based progress verdict:
+> the operator answer, not only the hidden tool result, must state the elapsed duration.
+>
+> **Decision.** The Deferred tool's model-visible Summary and full Description must explicitly
+> require a progress answer to include `child_id`, `status`, `elapsed_sec` and one fact from recent
+> activity. The JSON result and adapter remain unchanged because they already carry the complete
+> data. No renderer or post-processor rewrites model prose; the correction stays at the tool
+> contract that tells the model how to use those facts. A unit test pins all four required field
+> names in both discovery layers before the rebuilt stack is driven again.
+>
+> **What this does not prove.** A stronger tool contract and a unit test do not prove a particular
+> model will obey it. The same real cockpit question must be repeated against the rebuilt local
+> image while a worker is running, and the final answer must visibly include elapsed time before
+> verdict 5 can pass.
