@@ -10875,3 +10875,12 @@ flusso completo, che funziona.
 > 19:52 with the same model. One sample each: the divergence shows honesty under a miss
 > is model-variance, which is exactly why the gate does not rely on it. The 3-minute
 > Telegram bound stands at >4x the measured 42s end-to-end answerability.
+>
+> Live closure (operator retest on Telegram, 20:13Z, rebuilt image with the gate): the
+> resent PDF ingested (806,422 bytes, document_id minted), the status copy went out
+> on-channel, the gated turn started and the model called `document_open` then read the
+> file (`pdftotext` in the sandbox) and answered with the REAL bill's content — grounded,
+> no confabulation; operator confirmed ("ha funzionato"). Perimeter: because the 19:52
+> upload had already been extracted, the index held this document_id up front, so the
+> retest exercised the gate's immediate-hit path; the wait-then-proceed path is proven by
+> the unit suite and the cockpit +42s measurement, not by this live sample.
