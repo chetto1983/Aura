@@ -10453,3 +10453,63 @@ flusso completo, che funziona.
 > of the day's stubs were overruns rather than genuine empty completions — the ledger stores
 > the outcome, not the finish reason. The truncated-with-content case keeps D-21's
 > `[risposta troncata: max_tokens]` notice and no auto-continue.
+
+## Section Phase 51 review finds recovery and trust-boundary gaps behind the passing happy path (Amendment #190, 2026-08-30)
+
+> **Amendment #190 (2026-08-30 - measured by the Phase 51 standard-depth review over 143
+> changed files, independently checked against the concrete control flow and focused package
+> tests; evidence: `.planning/phases/51-durable-delegation/51-REVIEW.md`).** The live acceptance
+> in Amendment #183 and the provider E2E in Amendment #187 prove the successful delegation and
+> hot-route paths, but they do not exercise process death between durable writes, a failed
+> terminal transition, malformed answered pauses, adversarial persisted tool output, or a
+> conversation change while the worker pane stays mounted. The review found real gaps in those
+> unmeasured legs. Existing focused suites remain green because they do not inject these exact
+> windows; that absence is part of the finding, not evidence that the windows are safe.
+>
+> **Confirmed recovery gaps.** The fan-out sweep sets `nudged_at` before channel I/O and creates
+> its retry row only after a failed send, so death before I/O or failure of the retry insert can
+> permanently lose the notification; its conditional claim also omits the selected row's
+> undrained/unexpired predicates. Successful report delivery performs archive, conversation and
+> steer side effects before the fenced job transition, so a transition failure reruns the worker
+> and can duplicate delivery. Dead-letter delivery similarly becomes best-effort after the
+> terminal transition: malformed payload skip remains the explicit 51-11 contract, but recorder
+> or steer infrastructure failure currently has no durable retry. One `swarm_spawn` writes each
+> goal in an independent transaction, so a middle failure leaves a partial fan-out claimable.
+> The answered-pause observer stops at the first malformed oldest row and leaves it eligible,
+> starving every valid answer behind it.
+>
+> **Confirmed trust, snapshot and UI gaps.** The live model receives nonce-framed untrusted tool
+> output, but the hook persists the raw tool result preview and a resumed worker injects that raw
+> value as `RoleTool`; adversarial output therefore loses its trust boundary across pause/resume.
+> Worker policy and raw goal/context currently share one `RoleUser` message, allowing forged
+> policy-like headings in delegated data to compete at the same role. A background delegation
+> reads the hot runtime profile for its budget and then reads it again for execution, so one job
+> can mix two profile generations. The mounted worker provider retains child/watch state across
+> conversation changes and can request an old child under the new conversation.
+>
+> **Decision.** Fan-out claim and durable notification intent become one transaction; external
+> delivery completes only a durable retryable item, and every conditional claim repeats the
+> eligibility predicates. Terminal success/dead-letter notification work is keyed by job and
+> made retryable independently of worker execution, so a delivery failure never reruns completed
+> model/tool work. A multi-goal enqueue is all-or-nothing under one identity transaction.
+> Answered-pause processing continues past per-row failures, aggregates infrastructure errors,
+> and terminally quarantines structurally invalid rows so they cannot starve valid resumptions.
+> The exact nonce-framed model-facing tool preview is what continuation history persists; static
+> worker policy moves to `RoleSystem`, while goal/context remain explicitly framed untrusted
+> `RoleUser` data. One immutable runtime snapshot supplies both budget and child execution.
+> Worker watch state is scoped/reset by conversation identity.
+>
+> Regression proof must cover each failure window with focused tests, then pass the full WSL Go
+> test/vet/build/race matrix, the complete web lint/typecheck/test/build matrix and repository
+> Playwright E2E against the final deployed image. Phase 51 remains `verifying` until the final
+> E2E passes repeatedly, the Aura container keeps the same PID/start/image/restart tuple through
+> hot endpoint changes, and logs show no OpenRouter traffic.
+>
+> **Accepted boundaries, unchanged.** Phase 51 remains an at-least-once substrate: process death
+> after a mutating tool's external side effect but before the operation ledger write can execute
+> that side effect again after lease reclaim, as Amendment #154 already states. A malformed
+> payload that cannot identify an origin after dead-letter may still be logged without a card,
+> per plan 51-11. `stalled` continues to mean an orphan transcript without a terminal report
+> artifact; normal worker termination is `failed`, so the report action correctly excludes
+> `stalled`. This amendment does not claim exactly-once external tools, invent a second delivery
+> route, or prove crash recovery live; those windows require deterministic fault-injection tests.
