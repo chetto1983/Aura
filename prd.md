@@ -10270,3 +10270,42 @@ flusso completo, che funziona.
 > billing amounts or authorize direct `ollama.com` API-key support. Streaming and tool behavior
 > must be exercised through Aura's existing OpenAI-compatible client before this route is used for
 > the Phase 51 live run.
+
+## Section Ollama reasoning and model limits belong to the active OpenAI-compatible profile (Amendment #187, 2026-08-30)
+
+> **Amendment #187 (2026-08-30 - measured against the running Ollama 0.33.2 bridge and
+> Cockpit before the fix).** Direct keyless requests to the installed Ollama daemon's existing
+> `POST /v1/chat/completions` endpoint showed that `reasoning_effort:"none"` returns no reasoning
+> field, while `reasoning_effort:"high"` returns non-empty streamed and non-streamed `reasoning`
+> alongside the final content. Aura's OpenAI-compatible request builder instead discarded every
+> reasoning control when `provider=ollama`, and its capability source exposed only the degraded
+> `{auto,off}` floor. No OpenRouter endpoint, routing extension, credential or inference request
+> participated in this measurement.
+>
+> The same running profile exposed a second contradiction. Ollama `POST /api/show` reported
+> `context_length=262144`, but authenticated `GET /api/me` and the Cockpit footer reported
+> `1,000,000`. The active runtime snapshot and footer wiring were already hot; the discovered
+> value was suppressed because compose always injected `AURA_MODEL_CONTEXT_WINDOW=1000000`,
+> marking the fallback as an explicit operator override, and a historical Settings row retained
+> the same global value across a provider/model switch.
+>
+> **Decision.** Ollama remains on the same OpenAI Chat Completions transport. Aura projects
+> `none`, `low`, `medium` and `high` to the standard `reasoning_effort` request field; internal
+> `xhigh` and `max` clamp to Ollama's highest supported `high` value. The request carries no
+> OpenRouter `reasoning`, `provider`, `transforms` or `session_id` extension and no llama.cpp
+> `thinking_budget_tokens` or `chat_template_kwargs`. Streaming usage remains enabled so the
+> provider-neutral context telemetry receives the terminal usage chunk. Cockpit capability
+> discovery advertises exactly `{auto,off,low,mid,high}` for this measured bridge.
+>
+> Context and output limits are model-profile fields, not portable global route values. Compose
+> no longer manufactures configured overrides when the host leaves the two `AURA_MODEL_*` vars
+> unset. When provider, base URL or model changes atomically and the same mutation does not carry
+> an explicit context/output value, Settings removes the previous model's persisted limit
+> overrides before publishing the newly measured profile. An operator may still pin either limit
+> explicitly for the selected profile. The cleanup and profile publication share the existing
+> Settings write transaction; endpoint changes still do not restart Aura.
+>
+> **What this measurement does not prove.** It does not prove reasoning support for every Ollama
+> model, generation near 262,144 tokens, or a provider-reported maximum output limit. The direct
+> probes prove the installed bridge's wire behavior, not that Aura's corrected parser and Cockpit
+> selector work end to end; focused tests and an operator-authorized live run must establish that.
