@@ -10346,10 +10346,25 @@ flusso completo, che funziona.
 > Tool/result boundaries reset that per-round witness. This preserves the existing no-double-
 > stream rule while making `text_response` and non-streaming terminal fallbacks visible.
 >
+> **Current live E2E closure (2026-08-30).** Four authenticated repository Playwright runs passed
+> against the installed Ollama image
+> `sha256:ed60b940c495248e2747b7d57adfb4d8b23c7b30dbdd1a731599dff2d92e399b`: one ordinary run and
+> `--repeat-each=3`. Every run switched the active route between Ollama and llama.cpp from the
+> Cockpit, asserted authenticated `/api/me` `context_window=262144` and the exact measured Ollama
+> reasoning-level set `{auto, off, low, mid, high}`, then issued a real `/agent/run` carrying
+> `aura.effort=high`. Each run
+> observed non-empty streamed reasoning, the visible final sentinel, and restoration of the prior
+> route. No OpenRouter endpoint, credential or request participated.
+>
+> The Aura container baseline and post-run state were byte-identical: PID `19645`, StartedAt
+> `2026-08-30T10:43:20.631079759Z`, RestartCount `0`, the same image, and healthy. The route and
+> reasoning changes therefore remained hot settings throughout; no daemon restart or container
+> recreation is hidden inside the successful result.
+>
 > **What this measurement does not prove.** It does not prove reasoning support for every Ollama
-> model, generation near 262,144 tokens, or a provider-reported maximum output limit. The direct
-> probes prove the installed bridge's wire behavior, not that Aura's corrected parser and Cockpit
-> selector work end to end; focused tests and an operator-authorized live run must establish that.
+> model, generation near 262,144 tokens, or a provider-reported maximum output limit. It proves the
+> corrected parser, selector, request effort, streamed reasoning, terminal answer and restore path
+> end to end for this installed profile only.
 
 ## Section Loop budget, compaction trigger and API key are hot profile fields; every setting reports its own application state (Amendment #188, 2026-08-30)
 
