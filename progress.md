@@ -420,10 +420,21 @@ Green:
 - Live `gemma4:31b-cloud` gate: profile discovery, streaming completion, and
   streaming tool call all passed; goleak passed after closing idle metadata
   connections.
-- Rebuilt `aura:local` from the committed tree and reached healthy on the new
-  image.
-- Playwright live hot-route gate passed four consecutive times; PID, start time,
-  restart count, image, and health remained unchanged.
+- Final `aura:local` image `sha256:858869f95e26b0c267d706fd7fbadb970ddd83bf5fa013c38fa4ecce258a0cab`
+  was built from and reports commit `215b8d039ed69c96515cdd10cc66158a727e5de7`.
+  The migration one-shot reported no pending migrations and the recreated Aura
+  container reached healthy with restart count zero.
+- The complete repository Playwright suite passed against that image: 145
+  passed, 39 intentional opt-in/project skips, zero failures across Chrome and
+  mobile Chrome. The mobile onboarding fix also passed five sequential repeats.
+- The live hot-route witness passed once and then three sequential repeats. Each
+  cycle published Ollama `gemma4:31b-cloud`, verified 262144 context and streamed
+  high-effort reasoning, switched to llama.cpp `gemma-4-12b`, completed a real
+  sentinel turn on both routes, and restored Ollama in `finally`.
+- Across all four live cycles the runtime tuple stayed exactly
+  `65a30445f962ae5f1886f26802c671ccfcea6d7ce440d9bc8df1cd778759a3a0|48689|2026-08-30T16:31:30.724438531Z|0|sha256:858869f95e26b0c267d706fd7fbadb970ddd83bf5fa013c38fa4ecce258a0cab`.
+  Post-deploy logs contain zero OpenRouter references and show both Ollama and
+  llama.cpp traffic.
 - `npm run build` passed twice after `npm ci` with 4,331 modules and zero
   regenerated diff.
 - `TestProductionContainerArtifactsMatchFatImageContract` passed.
@@ -445,33 +456,30 @@ Green:
   deadcode, vet, file-size, model contracts, lint, the full race suite,
   `govulncheck`, and build are green. The subsequent HEAD movement only refreshed
   the committed Web dist from the already-tested source tree.
-- `make tagged-tier-compile` passed all 24 tiers across 40 tagged packages on
-  `0b84cb157`.
-- Canonical `make web-quality` passed on `0b84cb157`: 228 files and 1,917 tests,
+- `make tagged-tier-compile` passed all 24 tiers across 40 tagged packages.
+- Canonical `make web-quality` passed: 228 files and 1,917 tests,
   91.16% statements / 85.22% branches / 90.36% functions / 93.13% lines, and a
   75.34% mutation score against the 70% floor. One test timed out only while this
   gate competed with tagged compilation; the isolated case passed in 880 ms and
   the sequential full rerun was green.
-- Disposable-Postgres coverage passed on the exact candidate `0b84cb157` with
-  the `db_integration` tier: 87.03% owned statements against the 85% floor, zero
-  empty tiers. The disposable container was removed on completion.
+- Disposable-Postgres coverage passed on exact candidate `c02a5835032da5096f2ed0ba265b5326217ccd02`
+  with the `db_integration` tier: 30,516 / 35,069 owned statements, 87.017%
+  against the 85% floor, and zero empty tiers. The disposable container was
+  removed on completion.
 - `sqlc generate` completed without tracked drift.
 
 Needs completion:
 
-- Re-run the backend quality gate after the dist-only merge, then rebuild/deploy
-  the final image.
-- Run the repository Playwright E2E repeatedly against that final image and
-  verify the container PID/start/image/restart tuple remains unchanged during
-  endpoint switches, with zero OpenRouter traffic.
+- Run the GSD phase verifier and complete the phase only on a passing verdict.
+
+Known nonblocking portability note:
+
 - Native Windows `go test ./...` passes every changed package but still exits
   non-zero on three unrelated portability assertions: two `internal/agent` tests
   compare `%TEMP%` paths using POSIX separator assumptions, and one
   `internal/agent/tools` test expects POSIX mode `0600` from Windows. These files
   are outside the implementation diff. The authoritative Linux/WSL full suite is
   green; do not widen this phase into unrelated Windows-only test maintenance.
-- Run the GSD phase review/verifier and complete the phase only on a passing
-  verdict.
 
 ## Files and staging
 
@@ -488,10 +496,8 @@ For subsequent commits:
 
 ## Next actions
 
-1. Run the full verification matrix and the repeated live Playwright E2E on the
-   final deployed image.
-2. Run the GSD verifier and mark Phase 51 complete only after every gate passes.
-3. Insert, discuss, specify, and plan the provider-native subscription phase via
+1. Run the GSD verifier and mark Phase 51 complete only after its passing verdict.
+2. Insert, discuss, specify, and plan the provider-native subscription phase via
    GSD after Phase 51 is complete.
 
 ## Resume commands
