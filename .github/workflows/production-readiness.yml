@@ -46,6 +46,9 @@ env:
   AURA_DB_URL: postgres://aura_app:readiness-db-password@127.0.0.1:5432/aura?sslmode=disable
   AURA_DB_MIGRATE_URL: postgres://aura_migrate:readiness-db-password@127.0.0.1:5432/aura?sslmode=disable
   AURA_CI_LLAMA_CACHE_DIR: /tmp/aura-readiness-cache/llama.cpp
+  # compose.yaml requires the embed sidecar pins (:?) — same values ci.yml exports.
+  AURA_EMBED_REVISION: 0f741b5a6585bd53aeb15cd1372c56f2a0f65e12
+  AURA_EMBED_FINGERPRINT: b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63
   COMPOSE_FILE: compose.yaml:.github/compose.ci-musr.yaml:.github/compose.ci-cache.yaml
 
 jobs:
@@ -73,7 +76,10 @@ jobs:
             # The releases list is what makes bootstrap self-disabling: the moment a
             # first release exists, an approved image exists, and the rehearsal is
             # owed again. Without this the flag would stay available forever.
-            releases="$(gh api "repos/$GITHUB_REPOSITORY/releases" -F per_page=1 --jq 'length')"
+            # -X GET is load-bearing: a -F field alone makes gh POST, which the releases
+            # endpoint answers with 422 "tag_name wasn't supplied" (measured 2026-08-30 on
+            # the first bootstrap dispatch ever — the July runs all used previous_image).
+            releases="$(gh api -X GET "repos/$GITHUB_REPOSITORY/releases" -F per_page=1 --jq 'length')"
             if [[ "$releases" != "0" ]]; then
               echo "bootstrap is first-release only; this repository already has a release" >&2
               exit 1
