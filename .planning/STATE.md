@@ -3,17 +3,17 @@ gsd_state_version: 1.0
 milestone: v2.1.0
 current_phase: 51
 current_phase_name: Durable delegation
-status: executing
-stopped_at: Completed 51-12b-PLAN.md
-last_updated: "2026-08-30T06:47:54.083Z"
+status: verifying
+stopped_at: Completed 51-08-PLAN.md; awaiting phase verifier
+last_updated: "2026-08-30T11:17:05Z"
 last_activity: 2026-08-30
-last_activity_desc: Phase 51 plan 51-12b completed with a 6/6 live delivery-envelope acceptance at 9.9/10
-state_head: 9b869b80ef4e716bb3eddb5e15e42036462a0740
+last_activity_desc: Phase 51 plan 51-08 reconciled the accepted 6/6 live gate and current Ollama E2E
+state_head: 236bf469211a8fc76e2275377d6e01c5d01d252b
 progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 48
-  completed_plans: 47
+  completed_plans: 48
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -28,9 +28,9 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 
 ## Current Position
 
-Phase: 51 (Durable delegation) — EXECUTING
-Plan 51-12b is closed with the worker cockpit and full delivery envelope verified live at 9.9/10.
-Status: In progress; next dependency-ready plan is 51-08
+Phase: 51 (Durable delegation) — VERIFYING
+Plan 51-08 is complete with the worker-cockpit envelope reconciled at 9.9/10.
+Status: Awaiting the orchestrator/verifier; the phase is not marked complete by this plan.
 
 **The roadmap shrank on 2026-08-25 (operator decision).** Phases **47** (tool-surface ceremony
 strip), **48** (un-defer and merges) and **53** (summarization spike) are DELETED, not annotated —
@@ -224,6 +224,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 51]: 51-12b keeps the complete worker report in the Markdown artifact and sends only a rune-bounded projection through the steer rail.
 - [Phase 51]: 51-12b closes private Telegram evidence from structural timing and counts only; message text, identifiers, screenshots and session data are never retained.
 
+- [Phase 51]: 51-08 accepts Amendment #183's six-verdict fresh-image result instead of fabricating or rerunning the obsolete monolithic drive-sc.sh.
+- [Phase 51]: Amendment #177 retires the quality-snapshot freshness gate; plan 51-08 did not run or recreate the deleted script and did not touch the historical snapshot.
+- [Phase 51]: Amendment #187's four authenticated Ollama runs passed, but a later shared-container recreation invalidates the old process tuple as a current final no-restart baseline; crash-after-partial-side-effects remains open.
+
 ### Pending Todos
 
 None yet.
@@ -287,10 +291,11 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-30T06:47:54.083Z
-Stopped at: Completed 51-12b-PLAN.md
-The live worker cockpit and full delivery envelope passed all six verdicts at 9.9/10 on the fresh
-healthy local-model image. RESULTS.md, PRD Amendment #183 and 51-12b-SUMMARY.md are committed.
+Last session: 2026-08-30T11:17:05Z
+Stopped at: Completed 51-08-PLAN.md; awaiting phase verifier
+The accepted fresh-image delivery envelope is reconciled in 51-VALIDATION.md at 6/6 and 9.9/10.
+Amendment #187 records four authenticated Ollama runs; crash-after-partial-side-effects remains an
+explicit residual risk. No runtime action was taken by plan 51-08.
 
 Resume file: None
-Next action: execute 51-08, the final phase-level live Definition of Done.
+Next action: orchestrator/verifier performs Phase 51 verification and completion.
