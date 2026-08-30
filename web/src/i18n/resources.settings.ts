@@ -77,10 +77,14 @@ export const settingsEn = {
     },
     help: {
       maxTokens: 'Per-request cap on the answer sent to the provider (max_tokens).',
-      contextWindow: 'Total tokens the model can hold; the budget ladder and the footer gauge use it.',
-      maxOutputTokens: 'Tokens reserved for the answer when budgeting the prompt — the reservation, not the cap.',
-      loopMaxSteps: 'LLM calls or tool rounds one turn may spend before Aura wraps up (default 25).',
-      loopMaxWallclock: 'Seconds one turn may run, tools included, before Aura wraps up (default 300).',
+      contextWindow:
+        'Total tokens the model can hold; the budget ladder and the footer gauge use it.',
+      maxOutputTokens:
+        'Tokens reserved for the answer when budgeting the prompt — the reservation, not the cap.',
+      loopMaxSteps:
+        'LLM calls or tool rounds one turn may spend before Aura wraps up (default 25).',
+      loopMaxWallclock:
+        'Seconds one turn may run, tools included, before Aura wraps up (default 300).',
     },
     backends: {
       heading: 'Sidecar and cloud backends',
@@ -201,10 +205,14 @@ export const settingsIt = {
     },
     help: {
       maxTokens: 'Tetto per richiesta sulla risposta inviato al provider (max_tokens).',
-      contextWindow: 'Token totali che il modello può tenere; la scala dei budget e l’indicatore nel footer lo usano.',
-      maxOutputTokens: 'Token riservati alla risposta quando si calcola il budget del prompt — la riserva, non il tetto.',
-      loopMaxSteps: 'Chiamate LLM o giri di strumenti che un turno può spendere prima che Aura concluda (default 25).',
-      loopMaxWallclock: 'Secondi che un turno può durare, strumenti inclusi, prima che Aura concluda (default 300).',
+      contextWindow:
+        'Token totali che il modello può tenere; la scala dei budget e l’indicatore nel footer lo usano.',
+      maxOutputTokens:
+        'Token riservati alla risposta quando si calcola il budget del prompt — la riserva, non il tetto.',
+      loopMaxSteps:
+        'Chiamate LLM o giri di strumenti che un turno può spendere prima che Aura concluda (default 25).',
+      loopMaxWallclock:
+        'Secondi che un turno può durare, strumenti inclusi, prima che Aura concluda (default 300).',
     },
     backends: {
       heading: 'Sidecar e backend cloud',

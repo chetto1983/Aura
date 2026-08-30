@@ -90,7 +90,10 @@ describe('openWorkerStream', () => {
 
   it.each([
     [{ type: 'RUN_FINISHED' }, { type: 'complete', reason: 'stop' }],
-    [{ type: 'RUN_ERROR', message: 'worker failed' }, { type: 'incomplete', reason: 'error' }],
+    [
+      { type: 'RUN_ERROR', message: 'worker failed' },
+      { type: 'incomplete', reason: 'error' },
+    ],
   ] as const)(
     'treats terminal frame %# as completion when EventSource reports the closing EOF',
     (terminalFrame, expectedStatus) => {
