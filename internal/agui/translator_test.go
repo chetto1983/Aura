@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -193,6 +194,19 @@ func TestTranslatorFinalEventNoDoubleStream(t *testing.T) {
 	}
 	if got := countType(evs, "TEXT_MESSAGE_END"); got != 1 {
 		t.Fatalf("END = %d, want 1", got)
+	}
+}
+
+func TestTranslatorTerminalEventWithoutStreamEmitsAnswerBeforeState(t *testing.T) {
+	final := finalChunk("AURA_OLLAMA_ROUTE_OK", "stop")
+	final.Actions.StateDelta = map[string]any{"prompt_tokens": 15_200}
+	evs := collect(t, "thread-1", "run-1", &fixedIDGen{}, []*agent.Event{final})
+	if got := typesOf(evs); !slices.Equal(got, []string{
+		"RUN_STARTED",
+		"TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END",
+		"STATE_DELTA", "RUN_FINISHED",
+	}) {
+		t.Fatalf("terminal-only answer events = %v", got)
 	}
 }
 
