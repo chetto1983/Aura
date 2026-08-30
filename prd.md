@@ -10305,6 +10305,22 @@ flusso completo, che funziona.
 > explicitly for the selected profile. The cleanup and profile publication share the existing
 > Settings write transaction; endpoint changes still do not restart Aura.
 >
+> **Live E2E correction (2026-08-30).** The first rebuilt-Cockpit gate changed llama.cpp to
+> Ollama and observed correct Ollama reasoning capabilities but `GET /api/me` still returned
+> `context_window=1000000` for the model whose `/api/show` reports 262144. Container inspection
+> established the remaining precedence fault: this installed appliance has historical
+> `AURA_MODEL_CONTEXT_WINDOW=1000000` and `AURA_MODEL_MAX_OUTPUT_TOKENS=32768` values in `.env`.
+> Deleting the DB rows was therefore insufficient because the hot-route resolver restored those
+> startup values and their configured flags before discovery.
+>
+> A route-change reset must consequently reach both persistence and runtime resolution. When a
+> provider/base/model mutation omits a model limit, the resolver clears that limit's configured
+> flag regardless of whether the inherited value came from Settings or startup environment, then
+> lets the selected provider's metadata fill it before publication. Startup environment values
+> remain the boot fallback when no hot route transition has occurred; a limit supplied in the
+> same profile mutation remains an explicit pin. This is still one hot transaction and never a
+> daemon restart.
+>
 > **What this measurement does not prove.** It does not prove reasoning support for every Ollama
 > model, generation near 262,144 tokens, or a provider-reported maximum output limit. The direct
 > probes prove the installed bridge's wire behavior, not that Aura's corrected parser and Cockpit
