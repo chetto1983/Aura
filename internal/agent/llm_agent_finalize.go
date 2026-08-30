@@ -13,6 +13,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"maps"
 	"strings"
 	"time"
@@ -82,6 +83,31 @@ func (a *LlmAgent) maybeRecoverEmptyResponse() bool {
 	}
 	a.recoveryAttempts++
 	a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: recoveryNudgeEmpty})
+	return true
+}
+
+// recoveryNudgeOverrun is the reasoning-overrun variant (amendment #189): the
+// completion hit max_tokens with NO content because reasoning consumed the whole
+// output budget. Measured 2026-08-30 on the local llama.cpp route: 23,863 completion
+// tokens, 61,738 chars of reasoning, empty answer, nothing in the cockpit.
+const recoveryNudgeOverrun = "Your last response spent the whole output budget on reasoning and produced no answer. " +
+	"Answer the user's question now, directly and concisely, without extended reasoning."
+
+// maybeRecoverReasoningOverrun mirrors maybeRecoverEmptyResponse for
+// finish_reason="length" with empty content. Besides the nudge it pins this run's
+// reasoning override to "none" so the retry cannot burn the budget the same way:
+// the wire-level fit (openai_compat.fitThinkingBudget) covers numeric llama.cpp
+// budgets, this covers "max"/unlimited and providers whose reasoning never shows on
+// the stream. Same one-turn counter as the other recoveries — never a loop.
+func (a *LlmAgent) maybeRecoverReasoningOverrun(requestID string, usage llm.Usage) bool {
+	if a.recoveryAttempts >= 1 {
+		return false
+	}
+	a.recoveryAttempts++
+	a.reasoningOverride = llm.ReasoningEffortNone
+	slog.Warn("agent reasoning overrun: output budget exhausted before any answer, retrying without reasoning",
+		"request_id", requestID, "thread_id", a.sessionID, "completion_tokens", usage.CompletionTokens)
+	a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: recoveryNudgeOverrun})
 	return true
 }
 

@@ -55,7 +55,7 @@ func (c *Client) buildSDKRequest(ctx context.Context, req llm.Request) (openai.C
 		}
 	}
 	requestOpts = appendSamplingOptions(requestOpts, req.Sampling)
-	requestOpts = appendReasoningOptions(requestOpts, c.cfg, req.Reasoning, &params)
+	requestOpts = appendReasoningOptions(requestOpts, c.cfg, req.Reasoning, req.MaxTokens, &params)
 	if llm.ReasoningTarget(c.cfg.Provider, c.cfg.BaseURL) == llm.ReasoningTargetOpenRouter && c.cfg.OpenRouterMiddleOut {
 		requestOpts = append(requestOpts, option.WithJSONSet("transforms", []string{"middle-out"}))
 	}
@@ -216,7 +216,7 @@ func appendSamplingOptions(opts []option.RequestOption, sampling llm.Sampling) [
 	return opts
 }
 
-func appendReasoningOptions(opts []option.RequestOption, cfg llm.Config, reasoning llm.ReasoningConfig, params *openai.ChatCompletionNewParams) []option.RequestOption {
+func appendReasoningOptions(opts []option.RequestOption, cfg llm.Config, reasoning llm.ReasoningConfig, maxTokens int, params *openai.ChatCompletionNewParams) []option.RequestOption {
 	target := llm.ReasoningTarget(cfg.Provider, cfg.BaseURL)
 	if target == llm.ReasoningTargetOllama {
 		params.StreamOptions.IncludeUsage = param.NewOpt(true)
@@ -232,12 +232,24 @@ func appendReasoningOptions(opts []option.RequestOption, cfg llm.Config, reasoni
 		return opts
 	}
 	if target == llm.ReasoningTargetLlamaCpp {
-		if budget, thinking := llamaCppReasoning(reasoning); budget != nil {
-			opts = append(opts, option.WithJSONSet("thinking_budget_tokens", *budget))
-		} else if thinking != nil {
-			opts = append(opts, option.WithJSONSet("chat_template_kwargs", map[string]bool{"enable_thinking": *thinking}))
-		}
 		params.StreamOptions.IncludeUsage = param.NewOpt(true)
+		budget, thinking := llamaCppReasoning(reasoning)
+		if budget != nil && *budget > 0 {
+			fittedMax, fittedBudget := fitThinkingBudget(maxTokens, *budget, llm.OutputReserve(cfg.ContextWindow, cfg.MaxOutputTokens))
+			if fittedMax > 0 {
+				params.MaxTokens = param.NewOpt(int64(fittedMax))
+			}
+			if fittedBudget == 0 {
+				return append(opts, option.WithJSONSet("chat_template_kwargs", map[string]bool{"enable_thinking": false}))
+			}
+			budget = &fittedBudget
+		}
+		if budget != nil {
+			return append(opts, option.WithJSONSet("thinking_budget_tokens", *budget))
+		}
+		if thinking != nil {
+			return append(opts, option.WithJSONSet("chat_template_kwargs", map[string]bool{"enable_thinking": *thinking}))
+		}
 		return opts
 	}
 	wire := map[string]any{}
@@ -271,6 +283,35 @@ func ollamaReasoningEffort(reasoning llm.ReasoningConfig) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+// answerFloorTokens is the smallest visible-answer allowance kept after a numeric
+// thinking budget when max_tokens cannot grow any further (pi-agent's
+// adjustMaxTokensForThinking, read 2026-08-30).
+const answerFloorTokens = 1024
+
+// fitThinkingBudget sizes max_tokens and the thinking budget together (amendment
+// #189). llama.cpp generates the reasoning inside max_tokens, so a budget at or above
+// the cap ends the turn at finish_reason=length with reasoning and no answer
+// (measured 2026-08-30: 8,192 budget under an 8,092 cap, 23,863-token completions
+// with empty content). The cap grows by the budget up to ceiling — the context
+// budget's output reserve — and never below the operator's cap; when that still
+// leaves less than the answer floor, the budget shrinks instead, down to 0, which
+// the caller sends as thinking off.
+func fitThinkingBudget(maxTokens, budget, ceiling int) (fittedMax, fittedBudget int) {
+	if maxTokens <= 0 || budget <= 0 {
+		return maxTokens, budget
+	}
+	fittedMax = maxTokens + budget
+	if ceiling > 0 {
+		fittedMax = min(fittedMax, ceiling)
+	}
+	fittedMax = max(fittedMax, maxTokens)
+	fittedBudget = budget
+	if fittedMax-fittedBudget < answerFloorTokens {
+		fittedBudget = max(fittedMax-answerFloorTokens, 0)
+	}
+	return fittedMax, fittedBudget
 }
 
 const (
