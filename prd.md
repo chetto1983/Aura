@@ -10681,3 +10681,55 @@ flusso completo, che funziona.
 > readiness is an open question, not a measurement); nor that a CI run of the new producer
 > emits the field — the next candidate's `production-load-chaos` artifact measures that
 > before the tag.
+
+## Section A "lost context" after a turn is the replay, not the turn boundary (Amendment #196, 2026-08-30)
+
+> **Amendment #196 (2026-08-30 - measured on the running stack after the operator report
+> "se il turno finisce e si fa una domanda Aura si perde e fa confusione").** Four drives
+> through the cockpit API, each POST carrying only the new user message exactly as the
+> cockpit does (`auraRunBody.ts`), history rebuilt from `conversation_turns`:
+> (A) facts in turn 1, asked back in turn 2 → correct; (B) `write_file` + `send_file` in
+> turn 1, "what did you do and what was in the file" in turn 2 → correct; (C) four
+> `shell_exec` steps, then "which code name, which steps" → correct; (D) the operator's own
+> Ethereum exchange replayed on a fresh thread (price → short-term forecast → "Quindi compro
+> o vendo?" → "A lungo termine?" → "Cosa ti manca per avere la sicurezza?") → every
+> follow-up stayed on Ethereum. The turn boundary loses nothing.
+>
+> The failure is real and lives in the operator's Telegram thread `03b9c7c2` (401 turns since
+> 2026-08-13, 6.2M input tokens, one compaction covering seq ≤ 240): at seq 380-391 the same
+> four questions got answers about "pianificare azioni", "affidabilità delle mie risposte"
+> and "a cosa ti riferisci con farlo"; the model's own turn 387 reads "ho sballato
+> completamente il contesto". Each call there replays ~48-51k tokens: ~15k of system prompt
+> + manifest, the 22-fact memory digest, a 4.4k-char summary, and **140 verbatim turns**
+> (50 user, 79 assistant, 32 tool = 67k chars, none evicted — L1 only evicts sidecar-backed
+> results), 30 of the 50 user turns being meta-talk about Aura itself. Per-turn
+> `input_tokens` is the SUM over the round's calls (249,850 at seq 360 = five calls), not a
+> prompt size; no provider truncation occurred (llama.cpp `truncated = 0`, Ollama log clean).
+> `AURA_MEMORY_PRELOAD_ENABLED` is unset (default off): the per-message recall the model
+> blamed was NOT in its prompt — only the query-less digest was.
+>
+> Why the replay never condenses: the ladder compacts early at
+> `AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT` (60) of the model window, and the effective window
+> was **1,000,000** (`GET /api/me`) while the live model `gemma4:31b-cloud` reports
+> `context_length=262144` and the alternate local route `gemma-4-12b` serves `n_ctx=81920`
+> (`/props`). Amendment #187 had already measured the `.env` pin and closed a route-change
+> reset that lets discovery fill the limits; the residual defect measured today is that the
+> hot resolver (`primaryLLMRouteReloader.resolve`) restored the startup pin on EVERY
+> non-route write — one `PUT /api/settings/AURA_LOOP_MAX_STEPS` at 18:16Z republished the
+> profile and put the window back to 1,000,000. Rule: the two model limits inherit the
+> runtime snapshot's value and pin state; only `resetKeys` clears them and only an explicit
+> override pins them. `TestPrimaryLLMRouteReloaderKeepsDiscoveredLimitsAcrossNonRouteWrites`
+> pins it (red before, green after).
+>
+> Three of the thread's runs (seq 393, 395, 399, 17:42-17:45Z) ended "[run interrupted]"
+> with `stream_open_canceled` / `lookup host.docker.internal: i/o timeout`: that window is
+> exactly the 7m37s six-target goreleaser snapshot build run on the same host. Not a daemon
+> defect; an operator-time cost of building on the appliance host, recorded so it is not
+> repeated.
+>
+> What this does NOT prove: that a correct window alone changes the operator's thread —
+> at 262,144 × 60% the early trigger is ~157k, still above its 50k replay, so it condenses
+> only on the local route (81,920 × 60% ≈ 49k) or with a lower trigger percent, both hot
+> settings the operator can set; nor that a compacted replay keeps a weak model on topic —
+> that needs the same drive after a compaction, not asserted here. The removal of the two
+> `AURA_MODEL_*` pins from the appliance `.env` (measured by #187) remains an operator action.

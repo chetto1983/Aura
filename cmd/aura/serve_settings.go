@@ -105,10 +105,12 @@ func (r *primaryLLMRouteReloader) resolve(overrides map[string]string, resetKeys
 		cfg.BaseURL = r.fallback.BaseURL
 		cfg.Model = r.fallback.Model
 		cfg.MaxTokens = r.fallback.MaxTokens
-		cfg.ContextWindow = r.fallback.ContextWindow
-		cfg.ContextWindowConfigured = r.fallback.ContextWindowConfigured
-		cfg.MaxOutputTokens = r.fallback.MaxOutputTokens
-		cfg.MaxOutputTokensConfigured = r.fallback.MaxOutputTokensConfigured
+		// The two model limits are the exception: they are profile fields (amendment
+		// #187), so they inherit the SNAPSHOT's value and pin state. Once a route
+		// transition has let the provider's metadata fill them, a later write of any
+		// other hot key must not restore the startup pin — measured 2026-08-30: one
+		// AURA_LOOP_MAX_STEPS write put /api/me back to 1,000,000 on a 262,144 model
+		// (amendment #196). resetKeys and explicit overrides below still clear or pin them.
 		cfg.CompactionTriggerPercent = r.fallback.CompactionTriggerPercent
 		cfg.APIKey = r.fallback.APIKey
 		cfg.LoopMaxSteps = r.fallback.LoopMaxSteps

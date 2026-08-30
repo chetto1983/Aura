@@ -233,6 +233,47 @@ func TestPrimaryLLMRouteReloaderPublishesOllamaCloudProfile(t *testing.T) {
 	}
 }
 
+// A hot write of a non-route key (loop budget, trigger, API key) after a route
+// transition must keep the provider-discovered model limits: the startup .env pin is
+// the boot fallback, not something every later write restores (amendment #196).
+func TestPrimaryLLMRouteReloaderKeepsDiscoveredLimitsAcrossNonRouteWrites(t *testing.T) {
+	srv := ollamaProfileServer(t)
+	fallback := validFallbackLLMConfig()
+	fallback.ContextWindowConfigured = true
+	fallback.MaxOutputTokensConfigured = true
+	runtime := llm.NewRuntime(&settingsRuntimeClient{route: "old"}, fallback)
+	r := &primaryLLMRouteReloader{fallback: fallback, runtime: runtime}
+	route := map[string]string{
+		"AURA_LLM_PROVIDER": "ollama",
+		"AURA_LLM_BASE_URL": srv.URL + "/v1",
+		"AURA_LLM_MODEL":    "gemma4:31b-cloud",
+	}
+	transition, err := r.Prepare(context.Background(), route, []string{"AURA_MODEL_CONTEXT_WINDOW", "AURA_MODEL_MAX_OUTPUT_TOKENS"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	transition()
+
+	later := maps.Clone(route)
+	later["AURA_LOOP_MAX_STEPS"] = "60"
+	apply, err := r.Prepare(context.Background(), later, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apply()
+
+	got := runtime.Snapshot().Config
+	if got.ContextWindow != 262144 || got.ContextWindowConfigured {
+		t.Fatalf("loop-budget write restored the startup context pin: window=%d configured=%v", got.ContextWindow, got.ContextWindowConfigured)
+	}
+	if got.MaxOutputTokensConfigured {
+		t.Fatal("loop-budget write restored the startup max-output pin")
+	}
+	if got.LoopMaxSteps != 60 {
+		t.Fatalf("loop budget = %d, want 60", got.LoopMaxSteps)
+	}
+}
+
 func TestPrimaryLLMRouteReloaderRejectsInvalidRoute(t *testing.T) {
 	r := &primaryLLMRouteReloader{fallback: validFallbackLLMConfig()}
 	for name, overrides := range map[string]map[string]string{
