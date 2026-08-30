@@ -255,13 +255,35 @@ container on `aura_default` (login → `PUT /api/settings/llm-profile` →
 | Reasoning overrun, wire layer (#189) | Same route and cap, effort `high` (8,192 budget → `max_tokens` fitted to 9,692): one call, `finish_reason=stop`, 3,140 reasoning deltas then a complete 13,721-char strategy, `completion_tokens=4687` — above the 1,500 operator cap, which is the proof the fit was on the wire; no recovery, no truncation notice. |
 | Restore | Profile rows put back (Ollama cloud route, `8092`), `DELETE /api/settings/AURA_LOOP_MAX_STEPS` → `deleted:true`, list shows `25, overridden:false, applied:"live"`. |
 
-Observed and **not fixed here** (parallel session owns the AG-UI translator,
-`c9e8b3664` "stream terminal-only answers"): on the second trip run the model
-answered in prose at step 2 ("Il budget … è esaurito …"), the completion gate
-vetoed it, the third call tripped `max_steps`, and the synthesized answer was
-appended to the SAME text message — the cockpit stream carries the vetoed prose
-followed by the final one, one `TEXT_MESSAGE_START`/`END` pair. The vetoed round's
-deltas are never repudiated on the wire (B-12 does that only for stream errors).
+Observed on the second trip run and fixed as **amendment #191** (`4343507e5`):
+the model answered in prose at step 2 ("Il budget … è esaurito …"), the
+completion gate vetoed it, the third call tripped `max_steps`, and the
+synthesized answer was appended to the SAME text message — the vetoed round's
+deltas were never repudiated on the wire (B-12 did that only for stream errors).
+Re-driven on the rebuilt image: `TEXT msg-be733168…` (draft) → `CUSTOM
+aura.discard{message_id: msg-be733168…}` → `TEXT msg-46b14f05…` (final answer)
+→ `STATE_DELTA limit_hit/steps_consumed=2`.
+
+## Live E2E, amendment #192 (2026-08-30, image built from master `ea1ab71fe`)
+
+Trigger measured in the DB first (Telegram conversation, 30 days): 11
+`write_file` deliverables under `/workspace/artifacts/`, 9 sent in the same
+turn, 2 only after the operator asked. Drive: Ollama cloud `gemma4:31b-cloud`,
+effort `off`, thread `01a05302-2fb3-7059-b4e9-98ffe7f164f1`, prompt "crea con
+write_file `/workspace/artifacts/gate192.html` … rispondimi indicando solo il
+percorso" — the exact shape of the two misses.
+
+| Seam | Wire / ledger |
+|---|---|
+| Write | `write_file` 14:10:48 → `ok, wrote 175 bytes … verified:true`. |
+| Path-only stop | The model terminated with `text_response` (call `3j8ubf0u`); the gate answered it with a `TOOL_CALL_RESULT` whose preview is `delivery gate: artifact not sent` — one deterministic round, no critic call. |
+| Delivery | Next call: `send_file` 14:10:51 → `queued gate192.html for delivery`, `CUSTOM aura.artifact`, `aura.assets` row `gate192.html accepted 175 B` — same turn, same request. |
+| After delivery | The model streamed "Dato che non hai fornito un nuovo comando, resto in attesa…"; the completion critic vetoed it → `CUSTOM aura.discard` (#191 shape on the wire) → final `TEXT` `/workspace/artifacts/gate192.html` → `RUN_FINISHED`. |
+
+Not proven: files written by a shell command (no `write_file` row → no edited
+path; the prompt half is the only guard), and the Telegram rendering of the
+delivered artifact (no bot session for this driver; `send_file` → `sendDocument`
+was already exercised by the 9 accepted assets in the ledger).
 
 Not driven: the Telegram pane (no bot session available to this driver; its
 `limit_hit`/`steps_consumed` rendering is unit-tested only), the browser
