@@ -1287,7 +1287,8 @@ jobs:
   # this workflow file.
   # The industrial set mirrors the Go gates: web-lint (eslint/tsc/prettier),
   # web-test (vitest + ≥85% coverage), web-mutation (Stryker ≥70% killed),
-  # web-dist-freshness (embed tamper-evidence), web-e2e (Playwright).
+  # web-e2e (Playwright). The committed-dist freshness job was retired (PRD
+  # amendment #193): the appliance image builds web/ itself in its webbuild stage.
 
   web-lint:
     name: Web lint (eslint --max-warnings=0 + prettier + tsc)
@@ -1420,48 +1421,6 @@ jobs:
             artifacts/production-readiness/mutation-logs/
             web/reports/mutation/mutation.json
           if-no-files-found: error
-
-  web-dist-freshness:
-    name: Web dist freshness (committed internal/webui/dist == fresh build, D-05)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-
-      - name: Detect web changes
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
-        id: changes
-        with:
-          filters: |
-            web:
-              - 'web/**'
-              - 'internal/webui/dist/**'
-              - '.github/workflows/ci.yml'
-
-      - name: Set up Node
-        if: steps.changes.outputs.web == 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: ${{ env.AURA_CI_NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-
-      - name: Rebuild + diff committed embed dist (D-05 stale guard)
-        # Build writes to ../internal/webui/dist (vite outDir); the script diffs that
-        # path, not web/dist. First Linux-Node-24 run is the byte-canonical proof.
-        if: steps.changes.outputs.web == 'true'
-        run: bash scripts/web_dist_freshness.sh
-
-      - name: No-skip-as-green backstop (filter must not have misfired)
-        # WR-05: see web-lint. This job already checks out with fetch-depth: 0, so the
-        # range cross-check is fully reliable here. Fails if web==false but web changed.
-        if: steps.changes.outputs.web != 'true'
-        run: |
-          bash scripts/web_filter_backstop.sh \
-            "${{ github.event.pull_request.base.sha || github.event.before }}" \
-            "${{ github.event.pull_request.head.sha || github.sha }}"
 
   web-e2e:
     name: Web E2E (Playwright boots aura serve over docker-compose Postgres + Garage)

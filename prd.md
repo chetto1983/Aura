@@ -10583,3 +10583,20 @@ flusso completo, che funziona.
 > `artifacts/` file (the nudge lets the model answer "no delivery needed"); or the Telegram
 > rendering live (the driver has no bot session; `send_file` → `sendDocument` was already
 > proven by the accepted assets).
+
+## Section A the committed-dist freshness CI job is retired (Amendment #193, 2026-08-30)
+
+> **Amendment #193 (2026-08-30 - operator decision).** The `web-dist-freshness` CI job
+> (T-23-01 "D-05 tamper-evidence": rebuild `web/` on Linux Node 24 and `git diff` the
+> committed `internal/webui/dist`) is removed, together with its local mirror
+> (`make web-freshness`, `scripts/web_dist_freshness.sh`). Measured cost: an `npm ci` +
+> Vite build on every web change, and a gate that a host build could fail without any
+> pre-push signal (Phase 52-07 had to substitute the Docker webbuild stage for it because
+> no native Linux Node host exists here). What it guarded is covered elsewhere: the
+> appliance image (`docker/aura/Dockerfile`, goreleaser `dockers_v2`) builds `web/` in its
+> own `webbuild` stage and never reads the committed dist, so the shipped bytes are always a
+> fresh build; the committed `internal/webui/dist` only feeds a host `go build` embed.
+> Unchanged: `internal/webui/dist` stays committed and is refreshed from the Docker
+> webbuild stage, never by a host `vite build` (which re-hashes chunks). What this does NOT
+> prove: that a hand-edited committed dist would be noticed before a host-built binary
+> ships it — that surface is the developer's, not the release pipeline's.

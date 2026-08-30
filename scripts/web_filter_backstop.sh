@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # web_filter_backstop.sh — no-skip-as-green backstop for the path-filtered web CI
-# jobs (WR-05). The web-lint/web-test/web-dist-freshness jobs gate their real work
+# jobs (WR-05). The web-lint/web-test jobs gate their real work
 # on `dorny/paths-filter` reporting web == 'true'; when it reports 'false' the job
 # would otherwise report SUCCESS having run nothing. This step runs in exactly that
 # branch and FAILS if the diff for the event range actually touched a web path —
