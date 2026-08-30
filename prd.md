@@ -10321,6 +10321,16 @@ flusso completo, che funziona.
 > same profile mutation remains an explicit pin. This is still one hot transaction and never a
 > daemon restart.
 >
+> **Composer live-race correction (2026-08-30).** Repeating the rebuilt-Cockpit witness exposed
+> a second ordering defect: one immediate select-`high` then send carried `aura.effort=high` and
+> streamed reasoning, while the next omitted the field and rehydrated the selector to `Auto`.
+> The external assistant runtime installs each new adapter in a passive React effect, so its
+> submit path can invoke the previous render's `onNew` callback before that effect runs. The
+> callback had captured the previous effort value. The composer submission path must therefore
+> read the current effort from a render-synchronized ref; the ref identity is stable even when
+> the external runtime temporarily retains an older callback. The request witness must assert
+> `aura.effort=high`, not infer it from the visible select value.
+>
 > **What this measurement does not prove.** It does not prove reasoning support for every Ollama
 > model, generation near 262,144 tokens, or a provider-reported maximum output limit. The direct
 > probes prove the installed bridge's wire behavior, not that Aura's corrected parser and Cockpit
