@@ -359,7 +359,8 @@ func (r *Runner) appendUserTurn(ctx context.Context, convID, content string) err
 // (a persisted seq=1), it is dropped here so the agent's own system message is not
 // duplicated.
 func (r *Runner) buildAgent(ctx context.Context, convID string, requestID uuid.UUID, history []llm.Message) (*agent.LlmAgent, agent.InvocationContext, context.CancelFunc, error) {
-	bud, err := agent.NewBudget(agent.BudgetOptions{})
+	runtime := r.llmSnapshot(ctx)
+	bud, err := agent.NewBudget(agent.BudgetOptionsFromConfig(runtime.Config))
 	if err != nil {
 		return nil, agent.InvocationContext{}, nil, fmt.Errorf("budget config (check AURA_LOOP_* env): %w", err)
 	}
@@ -373,7 +374,6 @@ func (r *Runner) buildAgent(ctx context.Context, convID string, requestID uuid.U
 	// (37E). Absent => zero effort => the agent's adaptive path runs unchanged (D-04);
 	// a fixed level bypasses the classifier and forces req.Reasoning (D-08).
 	reasoningEffort, _ := reasoningOverride(ctx)
-	runtime := r.llmSnapshot(ctx)
 	la := agent.NewLlmAgent(agent.LlmAgentConfig{
 		Client:     runtime.Client,
 		LLM:        runtime.Config,

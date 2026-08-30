@@ -65,11 +65,6 @@ func (h AgentJobHandler) Run(ctx context.Context, job Job) (string, error) {
 		return "", fmt.Errorf("agent_job: payload has no goal")
 	}
 
-	budget, err := newJobBudget(job.StepBudget)
-	if err != nil {
-		return "", fmt.Errorf("agent_job: budget: %w", err)
-	}
-
 	runCtx, cancel := context.WithTimeout(ctx, h.Meta().MaxDuration)
 	defer cancel()
 	// One scheduled run retains one route even if the operator changes Settings while
@@ -78,6 +73,10 @@ func (h AgentJobHandler) Run(ctx context.Context, job Job) (string, error) {
 	if deps.Runtime != nil {
 		runtime := deps.Runtime.Snapshot()
 		deps.Client, deps.LLM, deps.Runtime = runtime.Client, runtime.Config, nil
+	}
+	budget, err := newJobBudget(job.StepBudget, deps.LLM)
+	if err != nil {
+		return "", fmt.Errorf("agent_job: budget: %w", err)
 	}
 
 	prior := []llm.Message{{Role: llm.RoleUser, Content: goal}}
@@ -139,11 +138,12 @@ func drain(ctx context.Context, worker *agent.LlmAgent, budget *agent.Budget) (s
 }
 
 // newJobBudget builds the agent_job budget with MaxSteps INHERITED from the row
-// (D-24): a positive Job.StepBudget overrides the AURA_LOOP_MAX_STEPS default; a
-// zero/absent budget falls through to the env/builtin default (the task never set
-// one). The wallclock + dedup stay at their env/default values.
-func newJobBudget(stepBudget int) (*agent.Budget, error) {
-	opts := agent.BudgetOptions{}
+// (D-24): a positive Job.StepBudget overrides the runtime profile's loop budget
+// (amendment #188), which in turn overrides the AURA_LOOP_* env/builtin default;
+// a zero/absent step_budget means the task never set one. The wallclock follows
+// the profile the same way; dedup stays at its env/default value.
+func newJobBudget(stepBudget int, cfg llm.Config) (*agent.Budget, error) {
+	opts := agent.BudgetOptionsFromConfig(cfg)
 	if stepBudget > 0 {
 		s := stepBudget
 		opts.MaxSteps = &s

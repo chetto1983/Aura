@@ -36,14 +36,30 @@ var (
 	errInvalidBool = errors.New("value must be a boolean (true/false)")
 )
 
+// hotLLMProfileKeys are the rows the wired reloader publishes into the runtime
+// snapshot on every write: the route, its token limits, the compaction trigger,
+// the API key and the agent-loop budget (amendments #184, #185, #188). Every
+// other allow-listed key is boot-bound and reports itself as such.
 var hotLLMProfileKeys = map[string]struct{}{
-	"AURA_LLM_PROVIDER":            {},
-	"AURA_LLM_BASE_URL":            {},
-	"AURA_LLM_MODEL":               {},
-	"AURA_LLM_MAX_TOKENS":          {},
-	"AURA_MODEL_CONTEXT_WINDOW":    {},
-	"AURA_MODEL_MAX_OUTPUT_TOKENS": {},
+	"AURA_LLM_PROVIDER":                       {},
+	"AURA_LLM_BASE_URL":                       {},
+	"AURA_LLM_MODEL":                          {},
+	"AURA_LLM_MAX_TOKENS":                     {},
+	"AURA_MODEL_CONTEXT_WINDOW":               {},
+	"AURA_MODEL_MAX_OUTPUT_TOKENS":            {},
+	"AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT": {},
+	"OPENROUTER_API_KEY":                      {},
+	"AURA_LOOP_MAX_STEPS":                     {},
+	"AURA_LOOP_MAX_WALLCLOCK_SEC":             {},
 }
+
+// Application state of one setting row, reported per item so the cockpit can say
+// WHICH field is waiting for what instead of one list-level banner.
+const (
+	appliedLive    = "live"    // a hot profile key: the runtime already carries this value
+	appliedBoot    = "boot"    // boot-bound key whose value is what the process booted with
+	appliedRestart = "restart" // boot-bound key persisted after boot: needs a restart
+)
 
 // settingsStore is the aura.settings CRUD seam the handlers need
 // (internal/settings.Store satisfies it). Kept narrow so tests inject a fake.
@@ -99,13 +115,17 @@ type settingItemDTO struct {
 	Value      string `json:"value"`
 	HasValue   bool   `json:"has_value"`
 	Overridden bool   `json:"overridden"`
+	Applied    string `json:"applied"`
 	UpdatedAt  string `json:"updated_at,omitempty"`
 	UpdatedBy  string `json:"updated_by,omitempty"`
 }
 
+// settingsListDTO: restart_required stays as the derived boolean; restart_keys
+// names the rows behind it so the banner can be specific (amendment #188).
 type settingsListDTO struct {
 	Settings        []settingItemDTO `json:"settings"`
 	RestartRequired bool             `json:"restart_required"`
+	RestartKeys     []string         `json:"restart_keys"`
 }
 
 func (s *Server) handleListSettings(w http.ResponseWriter, r *http.Request) {
@@ -131,20 +151,22 @@ func (s *Server) handleListSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Strings(keys)
 
-	out := settingsListDTO{Settings: make([]settingItemDTO, 0, len(keys))}
+	out := settingsListDTO{Settings: make([]settingItemDTO, 0, len(keys)), RestartKeys: []string{}}
 	for _, key := range keys {
 		meta := settings.AllowedKeys[key]
 		row, overridden := byKey[key]
 		item := settingItemDTO{
 			Key: key, Label: meta.Label, Kind: string(meta.Kind), Secret: meta.Secret, Overridden: overridden,
+			Applied: appliedBoot,
 		}
 		// Effective value: the DB value when overridden, else the active runtime for a
-		// hot model-profile key, else the process env. A
-		// post-boot difference flags restart_required unless this key is one of the
-		// primary-route values the wired runtime reloader has already published.
+		// hot model-profile key, else the process env. A hot key is always "live"; a
+		// boot-bound key persisted after boot (its row differs from what the process
+		// booted with) is "restart" and is named in restart_keys.
 		effective := os.Getenv(key)
-		if !overridden && s.hotLLMRouteEnabled(key) {
-			if value, ok := s.llmRouteReloader.EffectiveValue(key); ok {
+		if s.hotLLMRouteEnabled(key) {
+			item.Applied = appliedLive
+			if value, ok := s.llmRouteReloader.EffectiveValue(key); ok && !overridden {
 				effective = value
 			}
 		}
@@ -157,7 +179,9 @@ func (s *Server) handleListSettings(w http.ResponseWriter, r *http.Request) {
 				item.UpdatedBy = row.UpdatedBy.String
 			}
 			if row.Value != os.Getenv(key) && !s.hotLLMRouteEnabled(key) {
+				item.Applied = appliedRestart
 				out.RestartRequired = true
+				out.RestartKeys = append(out.RestartKeys, key)
 			}
 		}
 		item.HasValue = effective != ""

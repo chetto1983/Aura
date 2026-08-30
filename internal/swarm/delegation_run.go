@@ -174,7 +174,7 @@ func (l *DelegationClaimLoop) runWithHeartbeat(ctx context.Context, job document
 		rc.ResumeTurns = buildResumeTurns(payload.Resume)
 	}
 
-	budget, err := agent.NewBudgetFromEnv()
+	budget, err := delegationBudget(rc)
 	if err != nil {
 		cancel()
 		<-heartbeatErr
@@ -245,4 +245,17 @@ func delegationOperationContext(ctx context.Context, job documents.IngestionJob,
 		return nil, fmt.Errorf("delegation operation: %w", err)
 	}
 	return operationCtx, nil
+}
+
+// delegationBudget builds the claimed job's shared agent.Budget from the loop
+// profile of the runtime snapshot the worker is about to run on (amendment #188):
+// a Settings change to AURA_LOOP_MAX_STEPS / AURA_LOOP_MAX_WALLCLOCK_SEC reaches
+// the next claimed job without a restart, while the boot config stays the
+// fallback for a worker wired without a Runtime (tests, static callers).
+func delegationBudget(rc RunConfig) (*agent.Budget, error) {
+	cfg := rc.LLM
+	if rc.Runtime != nil {
+		cfg = rc.Runtime.Snapshot().Config
+	}
+	return agent.NewBudget(agent.BudgetOptionsFromConfig(cfg))
 }
