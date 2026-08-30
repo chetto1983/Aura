@@ -8,8 +8,8 @@ survives context compaction.
 
 ## Objective
 
-Finish GSD Phase 51, plan 51-08, without spending OpenRouter credits. Aura must
-support both the local llama.cpp model `gemma-4-12b` and the operator's Ollama
+GSD Phase 51 and plan 51-08 are complete without spending OpenRouter credits. Aura
+now supports both the local llama.cpp model `gemma-4-12b` and the operator's Ollama
 bridge with `gemma4:31b-cloud`, expose measured context/cost provenance
 consistently, and switch LLM endpoints/models at runtime without restarting the
 Aura container.
@@ -34,32 +34,31 @@ being folded into Phase 51.
 
 ## GSD state
 
-- Active command: `gsd-execute-phase 51`.
-- Phase 51 has 14 of 14 plans executed, but remains `verifying`. The focused
-  standard-depth remediation re-review is clean; global gates, final deployment,
-  complete Playwright E2E, and the phase verifier remain required.
+- Completed command: `gsd-execute-phase 51`.
+- Phase 51 has 14 of 14 plans executed and is complete. The inline adversarial
+  verifier passed 5/5 success criteria and 12/12 requirements with no outstanding
+  human check.
 - Plan `.planning/phases/51-durable-delegation/51-08-PLAN.md` is complete.
 - The hot-route defect is fixed and verified through the authenticated Cockpit.
 - The official GSD executor reconciled plan 51-08 with Amendment #183's
   already-recorded 9.9/10 acceptance and Amendment #177's retired ledger gate.
-- After Phase 51 is complete, insert and plan a provider-native phase through
-  GSD. It should not move the current phase pointer while 51-08 is unfinished.
+- The GSD phase pointer is now Phase 49. The operator-requested next work is to
+  insert and plan a provider-native subscription phase before starting it.
 
 Current execution checklist:
 
 1. PRD hot-route contract: complete.
 2. RED runtime tests: complete.
-3. Prepare and publish a complete model profile: implemented, verification in
-   progress; committed.
+3. Prepare and publish a complete model profile: complete and committed.
 4. Add the measured Ollama provider/profile and verify it live through Aura's
    existing client: implemented; focused and live tests green.
 5. Align Settings batch update, cockpit, AG-UI, and Telegram runtime consumers:
    implemented; committed.
 6. Race/build/frontend/live no-restart verification: complete.
-7. Resume and complete 51-08: execution complete; final verification active.
+7. Resume and complete 51-08: complete.
 8. Fix Amendment #190 and follow-up review findings: complete. The focused
    standard-depth re-review is clean with zero findings.
-9. Run the final full matrix and repeated live E2E on the final image: pending.
+9. Run the final full matrix and repeated live E2E on the final image: complete.
 10. Insert and plan provider-native subscription phase: pending.
 
 ## Committed decisions
@@ -468,9 +467,13 @@ Green:
   removed on completion.
 - `sqlc generate` completed without tracked drift.
 
-Needs completion:
+Phase closure:
 
-- Run the GSD phase verifier and complete the phase only on a passing verdict.
+- GSD verification passed at 5/5 success criteria with 12/12 requirements.
+- `phase.complete 51` updated ROADMAP, STATE, and REQUIREMENTS; the generated
+  SWARM-10/state counters were reconciled against the verified phase evidence.
+- The verification report records the at-least-once crash boundary and other
+  non-claims; no residual was silently promoted to an exactly-once guarantee.
 
 Known nonblocking portability note:
 
@@ -496,9 +499,8 @@ For subsequent commits:
 
 ## Next actions
 
-1. Run the GSD verifier and mark Phase 51 complete only after its passing verdict.
-2. Insert, discuss, specify, and plan the provider-native subscription phase via
-   GSD after Phase 51 is complete.
+1. Insert, discuss, specify, and plan the provider-native subscription phase via
+   GSD, covering native OpenAI and Anthropic API/subscription authentication.
 
 ## Resume commands
 

@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v2.1.0
-current_phase: 51
-current_phase_name: Durable delegation
-status: verifying
-stopped_at: Completed 51-08-PLAN.md; awaiting phase verifier
-last_updated: "2026-08-30T11:17:05Z"
+current_phase: 49
+current_phase_name: Memory tiers
+status: planning
+stopped_at: Phase 51 complete, ready to plan Phase 49
+last_updated: "2026-08-30T16:49:01.672Z"
 last_activity: 2026-08-30
-last_activity_desc: Phase 51 plan 51-08 reconciled the accepted 6/6 live gate and current Ollama E2E
-state_head: 236bf469211a8fc76e2275377d6e01c5d01d252b
+last_activity_desc: Phase 51 complete, transitioned to Phase 49
+state_head: f99a5cbcb716d800fae1f424bd680ab57c1f3bf7
 progress:
   total_phases: 8
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 48
   completed_plans: 48
 milestone_name: HERMES-CLAUDE_PARITY
@@ -24,13 +24,13 @@ milestone_name: HERMES-CLAUDE_PARITY
 See: .planning/PROJECT.md (updated 2026-08-05)
 
 **Core value:** When Aura says she did something, she did it — and she can find what she knew.
-**Current focus:** Phase 51 — Durable delegation
+**Current focus:** Phase 49 — Memory tiers
 
 ## Current Position
 
-Phase: 51 (Durable delegation) — VERIFYING
-Plan 51-08 is complete with the worker-cockpit envelope reconciled at 9.9/10.
-Status: Awaiting the orchestrator/verifier; the phase is not marked complete by this plan.
+Phase: 49 — Memory tiers
+Phase 51 is complete: 14/14 plans, 5/5 success criteria, and 12/12 requirements verified.
+Status: Ready to plan
 
 **The roadmap shrank on 2026-08-25 (operator decision).** Phases **47** (tool-surface ceremony
 strip), **48** (un-defer and merges) and **53** (summarization spike) are DELETED, not annotated —
@@ -62,15 +62,15 @@ retaining byte caps, and `TestBridgedTool_Execute_MarksResultTrusted` pins MCP r
 The remaining unchecked MCP-02 item in REQUIREMENTS is its separate live unlisted-server proof;
 it is a roadmap acceptance obligation, not an unrecorded Calendar fork gap.
 
-Last activity: 2026-08-30 — Plan 51-12b live worker cockpit and delivery envelope verified and closed
+Last activity: 2026-08-30 — Phase 51 complete, transitioned to Phase 49
 
-Progress: [██████████] 98% (47/48 milestone plans)
+Progress: [██████████] 100% (48/48 currently planned milestone plans)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 9
+- Total plans completed: 23
 - Average duration: — min
 - Total execution time: 0 hours
 
@@ -79,6 +79,7 @@ Progress: [██████████] 98% (47/48 milestone plans)
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 45 | 9 | - | - |
+| 51 | 14 | - | - |
 
 **Recent Trend:**
 
@@ -291,11 +292,12 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-30T11:17:05Z
-Stopped at: Completed 51-08-PLAN.md; awaiting phase verifier
+Last session: 2026-08-30T16:49:01Z
+Stopped at: Phase 51 complete, ready to plan Phase 49
 The accepted fresh-image delivery envelope is reconciled in 51-VALIDATION.md at 6/6 and 9.9/10.
-Amendment #187 records four authenticated Ollama runs; crash-after-partial-side-effects remains an
-explicit residual risk. No runtime action was taken by plan 51-08.
+The final image passed the complete repository Playwright suite (145 pass, 39 intentional skips,
+zero failures) and four hot-route cycles without a restart or an OpenRouter request.
+Crash-after-partial-side-effects remains an explicit residual risk and is not an exactly-once claim.
 
 Resume file: None
-Next action: orchestrator/verifier performs Phase 51 verification and completion.
+Next action: insert, discuss, specify, and plan the provider-native subscription phase through GSD.

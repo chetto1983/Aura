@@ -137,16 +137,16 @@
 <!-- Hermes parity. Aura's swarm today: one goal string per worker, parent blocks, workers
      cannot delegate further (their registry is Without(reg, "swarm_spawn")). -->
 
-- [ ] **SWARM-01**: A worker brief separates *what to accomplish* from *the context it needs* — file paths, error messages, constraints — instead of forcing both into one string
-- [ ] **SWARM-02**: The model sees the operator's actual concurrency and depth limits in the tool schema, rather than discovering them by failing
+- [x] **SWARM-01**: A worker brief separates *what to accomplish* from *the context it needs* — file paths, error messages, constraints — instead of forcing both into one string
+- [x] **SWARM-02**: The model sees the operator's actual concurrency and depth limits in the tool schema, rather than discovering them by failing
 - [x] **SWARM-03**: A top-level delegation returns the turn immediately; its results re-enter the conversation when the work finishes, and the model cannot opt out of this
 - [x] **SWARM-04**: A delegation issued *by a worker* runs synchronously — an orchestrating worker needs its own workers' results inside its own turn
-- [ ] **SWARM-05**: A worker can itself orchestrate, bounded by the configured depth — opening the nesting the PRD designed and the current registry-minus-`swarm_spawn` implementation forecloses
-- [ ] **SWARM-06**: A worker that needs the operator reaches them, attributed to the worker that asked — the relay survives — TOOL-03's approval rework was deleted 2026-08-25, so it rides the shipped `ask_user` shape rather than a reworked one
+- [x] **SWARM-05**: A worker can itself orchestrate, bounded by the configured depth — opening the nesting the PRD designed and the current registry-minus-`swarm_spawn` implementation forecloses
+- [x] **SWARM-06**: A worker that needs the operator reaches them, attributed to the worker that asked — the relay survives — TOOL-03's approval rework was deleted 2026-08-25, so it rides the shipped `ask_user` shape rather than a reworked one
 - [x] **SWARM-07**: Concurrent workers writing durable facts (AUTO-03) and reasoning traces (MEM-03) into one identity's graph neither corrupt nor duplicate, and each write names the worker that made it
 - [x] **SWARM-08**: Workers reason over the same flattened tool surface the parent does, verified against the live surface rather than assumed from registry inheritance — the un-defer this was written to follow was deleted 2026-08-25
 - [x] **SWARM-09**: Delegated work is durable — a task survives a process restart, is claimable from Postgres, and is never silently lost nor silently retried. Implements the approved-but-unbuilt [durable swarm messaging design](../docs/superpowers/specs/2026-06-29-durable-swarm-messaging-design.md); SWARM-03's background delegation is this substrate's first consumer, not a parallel mechanism
-- [ ] **SWARM-10**: The operator (and the parent) can watch a worker work — a tail-able live transcript per child, rather than waiting blind for the consolidated report. **Operator leg shipped (51-07, HTTP route); parent leg measured MISSING 2026-08-29** (Aura, asked in the cockpit: "non c'è un endpoint per pollare lo stato intermedio di un worker già accodato") — closed by the gap plan's `swarm_status` deferred tool over the 51-07 readers (PRD Amendment #172, point 4)
+- [x] **SWARM-10**: The operator (and the parent) can watch a worker work — a tail-able live transcript per child, rather than waiting blind for the consolidated report. **Operator leg shipped (51-07, HTTP route); parent leg measured MISSING 2026-08-29** (Aura, asked in the cockpit: "non c'è un endpoint per pollare lo stato intermedio di un worker già accodato") — closed by the gap plan's `swarm_status` deferred tool over the 51-07 readers (PRD Amendment #172, point 4)
 - [x] **SWARM-11**: The PRD amendment ratifying the durable swarm substrate is committed **before** any of its code
 - [x] **SWARM-12**: A delegation's result reaches the operator as a card, its full report as a canvas artifact, Telegram as exactly one short static message, and the cockpit shows a worker as a parallel read-only thread — measured 2026-08-29 (PRD Amendment #172): today the raw JSON report lands on the phone in chunks and as a bubble in the chat, and the 51-07 transcript has no viewer
 
@@ -262,16 +262,16 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 | STEER-06 | Phase 52 | Complete (closed 52-08 by git history: amendment predates first code commit) |
 | SURF-04 | Phase 50 | Pending |
 | SURF-05 | Phase 54 | Pending |
-| SWARM-01 | Phase 51 | Pending |
-| SWARM-02 | Phase 51 | Pending |
+| SWARM-01 | Phase 51 | Complete |
+| SWARM-02 | Phase 51 | Complete |
 | SWARM-03 | Phase 51 | Complete |
 | SWARM-04 | Phase 51 | Complete |
-| SWARM-05 | Phase 51 | Pending |
-| SWARM-06 | Phase 51 | Pending |
+| SWARM-05 | Phase 51 | Complete |
+| SWARM-06 | Phase 51 | Complete |
 | SWARM-07 | Phase 51 | Complete |
 | SWARM-08 | Phase 51 | Complete |
 | SWARM-09 | Phase 51 | Complete |
-| SWARM-10 | Phase 51 | Pending (parent leg — gap plan; operator leg complete in 51-07) |
+| SWARM-10 | Phase 51 | Complete |
 | SWARM-11 | Phase 51 | Complete |
 | SWARM-12 | Phase 51 | Complete |
 | TOOL-05 | Phase 49 | Pending |

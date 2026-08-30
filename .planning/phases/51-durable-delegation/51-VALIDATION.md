@@ -37,9 +37,10 @@ transition.
 | Go static/build | PASS - WSL `go vet ./...` and `go build ./cmd/aura`; one transient NTFS/WSL embed-visibility error was investigated and the immediate rerun passed |
 | Go race | PASS - `./internal/agent/... ./internal/llm/... ./internal/agui ./internal/settings ./cmd/aura` |
 | Web lint/typecheck | PASS - `npm run lint`, `npm run typecheck` |
-| Web tests | PASS - 226 files / 1905 tests; 91.12% statements, 85.14% branches, 90.30% functions, 93.10% lines on final HEAD |
+| Web tests | PASS - 228 files / 1917 tests; 91.16% statements, 85.22% branches, 90.36% functions, 93.13% lines on final HEAD |
 | Web production build | PASS - two builds from `npm ci`, 4,331 modules each, zero regenerated diff |
 | Packaging | PASS - fat-image contract test |
+| Complete Playwright | PASS - 145 passed, 39 intentional opt-in/project skips, zero failures across desktop and mobile Chrome on the final image |
 | Patch hygiene | PASS - `git diff --check` |
 
 ## Per-Task Verification Map
@@ -97,7 +98,7 @@ terminal notification per fan-out, live worker threads, fact-based progress, and
 layout. No OpenRouter request participated. Telegram evidence is cited only in its existing
 redacted structural form; no content, session material or identifiers are repeated here.
 
-### Amendment #187 current E2E
+### Amendment #187 E2E history
 
 Four authenticated Playwright runs passed on the installed Ollama image
 `sha256:ed60b940c495248e2747b7d57adfb4d8b23c7b30dbdd1a731599dff2d92e399b`: one normal run and
@@ -118,7 +119,26 @@ The replacement image
 independent `--repeat-each=3` drives. The final drive followed the concurrent source merge and the
 clean full verification matrix. Before and after it, Aura remained PID `74261`, StartedAt
 `2026-08-30T11:05:53.971427258Z`, RestartCount `0`, the same image, and healthy. Logs from that
-baseline contain zero OpenRouter references. This is the current final no-restart witness.
+baseline contain zero OpenRouter references. That replacement tuple is also historical after the
+final source rollout below.
+
+### Final deployed witness
+
+The final `aura:local` image
+`sha256:858869f95e26b0c267d706fd7fbadb970ddd83bf5fa013c38fa4ecce258a0cab`
+reports source commit `215b8d039ed69c96515cdd10cc66158a727e5de7`. Its migration one-shot found no
+pending migration and the recreated container reached healthy with restart count zero.
+
+The complete repository Playwright suite then passed against that exact image: 145 tests passed,
+39 intentional opt-in/project skips, and zero failures across Chrome and mobile Chrome. The live
+model-route witness passed once and then three sequential repeats. Every cycle published Ollama
+`gemma4:31b-cloud`, verified context 262144 and non-empty high-effort streamed reasoning, switched
+to llama.cpp `gemma-4-12b`, completed a real sentinel turn on both routes, and restored Ollama in
+`finally`.
+
+Across all four route cycles the container tuple remained
+`65a30445f962ae5f1886f26802c671ccfcea6d7ce440d9bc8df1cd778759a3a0|48689|2026-08-30T16:31:30.724438531Z|0|sha256:858869f95e26b0c267d706fd7fbadb970ddd83bf5fa013c38fa4ecce258a0cab`.
+Post-deploy logs contain zero OpenRouter references and show both Ollama and llama.cpp traffic.
 
 ## Residual Risks And Non-Claims
 
@@ -141,4 +161,5 @@ baseline contain zero OpenRouter references. This is the current final no-restar
 - [x] No Telegram content, session data, identifiers, screenshot, trace, or video was added.
 - [ ] Crash-after-partial-side-effects exercised live.
 
-**Approval:** accepted live checkpoint; phase completion remains with the orchestrator/verifier.
+**Approval:** accepted live checkpoint; the inline GSD verifier passed all five success criteria
+with 12/12 requirements satisfied and no outstanding human check.

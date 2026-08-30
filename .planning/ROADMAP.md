@@ -108,7 +108,7 @@ harness is built; `internal/eval/` stays deleted.
 - [x] **Phase 46: MCP trust and facade** - Ratify the trust posture that already shipped; curation moves into the forks, not into Aura — **closed 2026-08-25: 7 plans executed, 46-08 a recorded no-go (amendment #131), 46-09 closed by the operator**
 - [ ] **Phase 49: Memory tiers** - Short-term searchable retrieval and a PRD-amendment-gated reasoning tier — **scoped down: `memory_recall` and `internal/reasoningtrace` already exist**
 - [ ] **Phase 50: Context ladder legibility** - Real token accounting, eviction, and per-category visibility — **re-hosted: the consumer is now the compaction trigger**
-- [ ] **Phase 51: Durable delegation** - The approved swarm substrate gets built; workers get a real brief, real limits, and a turn that no longer blocks — design gate closed 2026-08-27 (PRD #154); 8 plans in 5 waves
+- [x] **Phase 51: Durable delegation** - The approved swarm substrate gets built; workers get a real brief, real limits, and a turn that no longer blocks — design gate closed 2026-08-27 (PRD #154); 14 plans in 9 waves (completed 2026-08-30)
 - [ ] **Phase 52: Mid-turn steering** - The operator can type into a running turn and redirect it at the next round boundary — **8/8 plans executed, Gate 3 live E2E scored 9.0/10 (2026-08-26): SC#1-#4 and RESUME-01 fully live-proven (backend + browser), SC#5's Telegram leg not live-proven this session (structural: no scriptable Telegram session) — see `52-VALIDATION.md`. Does not close per CLAUDE.md's >9.8 bar; needs one human Telegram check.**
 - [ ] **Phase 54: Milestone exit** - Retire the nine compensating `learned_lesson` facts and validate parity live — **narrowed 2026-08-25: the `always-deliver-files` skill STAYS, because AUTO-01 was deleted with Phase 47**
 
@@ -577,7 +577,7 @@ lands squarely on the memory correctness Phase 45 and 49 just established.
   4. A worker that needs the operator surfaces the question in the operator's channel, naming which worker raised it, and answering it resumes that worker's line of work.
   5. After a live fan-out where several workers each learn something durable, the graph holds one correctly-attributed fact per worker — no duplicates, no lost writes, no fact attributed to the parent.
 
-**Plans**: 13/14 plans executed in 9 waves
+**Plans**: 14/14 plans executed in 9 waves
 
 Plans:
 **Wave 1**
@@ -619,7 +619,7 @@ Plans:
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
-- [ ] 51-08-PLAN.md — Live SC#1–SC#5 driver, quality snapshot re-attestation, PRD measurement — wave 9
+- [x] 51-08-PLAN.md — Live SC#1–SC#5 driver, quality snapshot re-attestation, PRD measurement — wave 9
 
 > **51-12 was split into 51-12a/51-12b at plan-check on 2026-08-29** (blocker B3): the single plan
 > carried 27 `files_modified` with a first task touching 15 files and 8 new TypeScript modules —
@@ -773,7 +773,7 @@ replay; the skill is now permanent surface, not a compensating workaround awaiti
 | 46. MCP trust and facade | 9/9 | Complete — 7 executed, 46-08 no-go, 46-09 operator-closed | 2026-08-25 |
 | 49. Memory tiers | 0/TBD | Not started | - |
 | 50. Context ladder legibility | 0/TBD | Not started | - |
-| 51. Durable delegation | 13/14 | In Progress|  |
+| 51. Durable delegation | 14/14 | Complete    | 2026-08-30 |
 | 52. Mid-turn steering | 8/8 | In Progress|  |
 | 54. Milestone exit | 0/TBD | Not started | - |
 
