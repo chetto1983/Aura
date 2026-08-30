@@ -238,3 +238,35 @@ as a GSD phase (it is not a `gsd-quick`: it touches `llm`, `agent`, `runner`,
 - It did not measure the cost of hot-swapping the embedding or voice sidecar
   clients; F4's "cost" column is a code-reading estimate.
 - `.env` was not opened (permission withheld); F7 rests on the container env.
+
+## Live E2E after implementation (2026-08-30, image built from master `82dc63ec8`)
+
+Driven through the authenticated cockpit API from a throwaway `curlimages/curl`
+container on `aura_default` (login → `PUT /api/settings/llm-profile` →
+`POST /agent/run`, SSE captured to file). Amendments #188 (F2/F3/F5/F6) and #189
+(reasoning overrun, reported mid-task); F1 landed separately as #187.
+
+| Check | Result |
+|---|---|
+| Hot turn budget without restart (F2) | `PUT llm-profile {AURA_LOOP_MAX_STEPS:"2"}` → 200 `restart_required:false`; `GET /api/settings` shows `value:"2", overridden:true, applied:"live"`; the next run made 2 `shell_exec` calls then stopped: `STATE_DELTA /limit_hit=max_steps`, `/termination_reason=budget_exhausted`, non-empty final answer. Daemon `StartedAt` unchanged across the whole drive (`10:54:08Z`, later `11:05:53Z` after the deliberate rebuild), `RestartCount=0`. |
+| Per-field state (F3) | `applied:"live"` on every hot profile key, `applied:"boot"` on `AURA_VISION_CLOUD` (overridden but equal to the process env), `restart_keys:[]`. |
+| Trip visible (F5) | The first drive showed `/limit_hit` **without** `/steps_consumed`: only the workflow `LoopAgent` emitted the count, the production `LlmAgent` path did not (the cockpit notice would have read "0 steps"). Fixed on touch (`77090d8f6`), rebuilt, re-driven: `/steps_consumed=2` on the wire. |
+| Reasoning overrun, loop layer (#189) | Local llama.cpp `gemma-4-12b`, `AURA_LLM_MAX_TOKENS=1500`, effort `max` (unlimited budget, not fitted): first call `finish_reason=length`, no content → `WARN agent reasoning overrun … retrying without reasoning` → second call `finish_reason=stop`, 6,238-char answer, `completion_tokens=2260`. |
+| Reasoning overrun, wire layer (#189) | Same route and cap, effort `high` (8,192 budget → `max_tokens` fitted to 9,692): one call, `finish_reason=stop`, 3,140 reasoning deltas then a complete 13,721-char strategy, `completion_tokens=4687` — above the 1,500 operator cap, which is the proof the fit was on the wire; no recovery, no truncation notice. |
+| Restore | Profile rows put back (Ollama cloud route, `8092`), `DELETE /api/settings/AURA_LOOP_MAX_STEPS` → `deleted:true`, list shows `25, overridden:false, applied:"live"`. |
+
+Observed and **not fixed here** (parallel session owns the AG-UI translator,
+`c9e8b3664` "stream terminal-only answers"): on the second trip run the model
+answered in prose at step 2 ("Il budget … è esaurito …"), the completion gate
+vetoed it, the third call tripped `max_steps`, and the synthesized answer was
+appended to the SAME text message — the cockpit stream carries the vetoed prose
+followed by the final one, one `TEXT_MESSAGE_START`/`END` pair. The vetoed round's
+deltas are never repudiated on the wire (B-12 does that only for stream errors).
+
+Not driven: the Telegram pane (no bot session available to this driver; its
+`limit_hit`/`steps_consumed` rendering is unit-tested only), the browser
+rendering of `BudgetLimitNotice` and the per-field badges (unit-tested; the
+STATE_DELTA and `applied` fields they read were verified on the wire above).
+
+Write-path gotcha for the next driver: `PUT/DELETE /api/settings*` require an
+`Idempotency-Key` header like `/api/conversations` and `/agent/run` (400 without).
