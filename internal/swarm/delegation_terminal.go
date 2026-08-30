@@ -13,16 +13,15 @@ import (
 const pendingDeliveryPayloadKey = "pending_delivery"
 
 type delegationPendingDelivery struct {
-	DeliveryKey      string      `json:"delivery_key"`
-	Report           ChildReport `json:"report"`
-	ElapsedSeconds   int64       `json:"elapsed_seconds"`
-	TargetStatus     string      `json:"target_status"`
-	ErrorCode        string      `json:"error_code,omitempty"`
-	ErrorMessage     string      `json:"error_message,omitempty"`
-	EventType        string      `json:"event_type"`
-	EventMessage     string      `json:"event_message"`
-	ArchiveAttempted bool        `json:"archive_attempted,omitempty"`
-	ArtifactName     string      `json:"artifact_name,omitempty"`
+	DeliveryKey    string      `json:"delivery_key"`
+	Report         ChildReport `json:"report"`
+	ElapsedSeconds int64       `json:"elapsed_seconds"`
+	TargetStatus   string      `json:"target_status"`
+	ErrorCode      string      `json:"error_code,omitempty"`
+	ErrorMessage   string      `json:"error_message,omitempty"`
+	EventType      string      `json:"event_type"`
+	EventMessage   string      `json:"event_message"`
+	ArtifactName   string      `json:"artifact_name,omitempty"`
 }
 
 func pendingDeliveryFromJob(job documents.IngestionJob) (*delegationPendingDelivery, error) {
@@ -83,18 +82,16 @@ func (l *DelegationClaimLoop) deliverPending(ctx context.Context, job documents.
 	if l.Delivery == nil {
 		return l.retryPendingDelivery(ctx, job, fmt.Errorf("delegation delivery is not configured"))
 	}
-	if !pending.ArchiveAttempted {
-		pending.ArchiveAttempted = true
-		if err := l.persistPendingDelivery(ctx, job, payload, pending); err != nil {
-			return err
-		}
-		pending.ArtifactName = archiveReport(ctx, l.Delivery.Archiver, identityctx.IdentityID(ctx),
-			payload.ConversationID, pending.Report.ChildID,
+	if pending.ArtifactName == "" {
+		artifactName, err := archivePreparedReport(ctx, l.Delivery.Archiver, identityctx.IdentityID(ctx),
+			payload.ConversationID, pending.DeliveryKey, pending.Report.ChildID,
 			DelegationReportMarkdown(pending.Report, time.Duration(pending.ElapsedSeconds)*time.Second))
-		if pending.ArtifactName != "" {
-			if err := l.persistPendingDelivery(ctx, job, payload, pending); err != nil {
-				return err
-			}
+		if err != nil {
+			return l.retryPendingDelivery(ctx, job, err)
+		}
+		pending.ArtifactName = artifactName
+		if err := l.persistPendingDelivery(ctx, job, payload, pending); err != nil {
+			return l.retryPendingDelivery(ctx, job, fmt.Errorf("checkpoint delegation report archive: %w", err))
 		}
 	}
 

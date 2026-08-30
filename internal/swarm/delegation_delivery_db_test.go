@@ -243,7 +243,7 @@ func TestDeliverSuccessRecordsUnderRealRLSAsAuraApp(t *testing.T) {
 
 	l := &DelegationClaimLoop{
 		Store:      &fakeDelegationStore{},
-		Delivery:   &DelegationDelivery{Recorder: recorder, Steer: &fakeSteerPublisher{}},
+		Delivery:   &DelegationDelivery{Recorder: recorder, Steer: &fakeSteerPublisher{}, Archiver: successfulReportArchiver()},
 		IdentityID: identityID,
 	}
 	job := documents.IngestionJob{ID: "j1", IdentityID: identityID}

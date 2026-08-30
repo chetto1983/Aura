@@ -275,7 +275,7 @@ func TestDelegationDeadLettersAtMaxAttempts(t *testing.T) {
 	store := documents.NewPostgresIngestionJobStore(pool)
 	loop := &DelegationClaimLoop{
 		Store: store, IdentityID: identityID, WorkerID: "test-worker",
-		Delivery: &DelegationDelivery{Recorder: &fakeConversationRecorder{}},
+		Delivery: &DelegationDelivery{Recorder: &fakeConversationRecorder{}, Archiver: successfulReportArchiver()},
 	}
 
 	job, err := store.Create(ctx, documents.CreateIngestionJobRequest{
@@ -343,7 +343,7 @@ func TestExpiredFinalAttemptRecoversAsDeliveryOnly(t *testing.T) {
 	loop := &DelegationClaimLoop{
 		Store: store, IdentityID: identityID, WorkerID: "recovery-worker",
 		Worker: testRunConfig(t, router, 25), RetryBackoff: time.Nanosecond,
-		Delivery: &DelegationDelivery{Recorder: recorder, Steer: pub},
+		Delivery: &DelegationDelivery{Recorder: recorder, Steer: pub, Archiver: successfulReportArchiver()},
 	}
 
 	job, err := store.Create(ctx, documents.CreateIngestionJobRequest{

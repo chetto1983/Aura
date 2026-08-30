@@ -12,6 +12,7 @@ package swarm
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 )
 
@@ -21,7 +22,7 @@ import (
 // AssetDeliverer follows -- so nothing about the concrete asset service
 // leaks into this package.
 type ReportArchiver interface {
-	ArchiveReport(ctx context.Context, identityID, conversationID, filename, markdown string) (assetID string, err error)
+	ArchiveReport(ctx context.Context, identityID, conversationID, deliveryKey, filename, markdown string) (assetID string, err error)
 }
 
 // archiveReport is DeliverReport's best-effort call site: a nil archiver (a
@@ -40,10 +41,25 @@ func archiveReport(ctx context.Context, archiver ReportArchiver, identityID, con
 		return ""
 	}
 	filename := childID + ".md"
-	if _, err := archiver.ArchiveReport(ctx, identityID, conversationID, filename, markdown); err != nil {
+	if _, err := archiver.ArchiveReport(ctx, identityID, conversationID, "", filename, markdown); err != nil {
 		slog.Warn("swarm.delegation.archive_failed",
 			"conversation", conversationID, "child", childID, "err", err)
 		return ""
 	}
 	return filename
+}
+
+// archivePreparedReport is the durable terminal path. Unlike legacy
+// DeliverReport's best-effort helper above, a missing or failed archiver keeps
+// the queue row retryable. deliveryKey is persisted before this call and makes
+// asset creation idempotent across every failure window after it returns.
+func archivePreparedReport(ctx context.Context, archiver ReportArchiver, identityID, conversationID, deliveryKey, childID, markdown string) (string, error) {
+	if archiver == nil {
+		return "", fmt.Errorf("delegation report archiver is not configured")
+	}
+	filename := childID + ".md"
+	if _, err := archiver.ArchiveReport(ctx, identityID, conversationID, deliveryKey, filename, markdown); err != nil {
+		return "", fmt.Errorf("archive delegation report: %w", err)
+	}
+	return filename, nil
 }

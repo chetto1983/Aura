@@ -61,7 +61,7 @@ func TestRunKeepsClaimingWhileAJobIsInFlight(t *testing.T) {
 	store := &fakeDelegationStore{claimJobs: []documents.IngestionJob{row("slow", "slow goal")}, claimNext: []documents.IngestionJob{row("fast", "fast goal")}}
 	recorder := &fakeConversationRecorder{}
 	l := &DelegationClaimLoop{
-		Store: store, Delivery: &DelegationDelivery{Recorder: recorder, Steer: &fakeSteerPublisher{}},
+		Store: store, Delivery: &DelegationDelivery{Recorder: recorder, Steer: &fakeSteerPublisher{}, Archiver: successfulReportArchiver()},
 		IdentityID: identityID, Worker: rc, LeaseDuration: time.Minute, PollInterval: 10 * time.Millisecond,
 	}
 	ctx, cancel := context.WithCancel(withToolCtx(context.Background(), t))
@@ -112,7 +112,7 @@ func TestProcessOnceRunsAClaimedBatchConcurrently(t *testing.T) {
 	}}
 	recorder := &fakeConversationRecorder{}
 	l := &DelegationClaimLoop{
-		Store: store, Delivery: &DelegationDelivery{Recorder: recorder, Steer: &fakeSteerPublisher{}},
+		Store: store, Delivery: &DelegationDelivery{Recorder: recorder, Steer: &fakeSteerPublisher{}, Archiver: successfulReportArchiver()},
 		IdentityID: identityID, Worker: rc, LeaseDuration: time.Minute,
 	}
 
@@ -158,7 +158,7 @@ func TestProcessJobBindsTheJobIdentityOnce(t *testing.T) {
 			}}}
 			recorder := &fakeConversationRecorder{}
 			l := &DelegationClaimLoop{
-				Store: store, Delivery: &DelegationDelivery{Recorder: recorder, Steer: &fakeSteerPublisher{}},
+				Store: store, Delivery: &DelegationDelivery{Recorder: recorder, Steer: &fakeSteerPublisher{}, Archiver: successfulReportArchiver()},
 				IdentityID: identityID, Worker: rc, LeaseDuration: time.Minute, PauseParker: newFakePauseAndPark(),
 			}
 

@@ -21,10 +21,16 @@ import (
 
 // archiverFunc adapts a plain func to ReportArchiver, so each test scripts
 // exactly the archive behaviour it needs without a dedicated struct.
-type archiverFunc func(ctx context.Context, identityID, conversationID, filename, markdown string) (string, error)
+type archiverFunc func(ctx context.Context, identityID, conversationID, deliveryKey, filename, markdown string) (string, error)
 
-func (f archiverFunc) ArchiveReport(ctx context.Context, identityID, conversationID, filename, markdown string) (string, error) {
-	return f(ctx, identityID, conversationID, filename, markdown)
+func (f archiverFunc) ArchiveReport(ctx context.Context, identityID, conversationID, deliveryKey, filename, markdown string) (string, error) {
+	return f(ctx, identityID, conversationID, deliveryKey, filename, markdown)
+}
+
+func successfulReportArchiver() ReportArchiver {
+	return archiverFunc(func(context.Context, string, string, string, string, string) (string, error) {
+		return "asset-1", nil
+	})
 }
 
 // TestDeliverReportArchivesRecordsThenPushes pins DeliverReport's own
@@ -34,7 +40,7 @@ func (f archiverFunc) ArchiveReport(ctx context.Context, identityID, conversatio
 // Deliver, extended one step earlier.
 func TestDeliverReportArchivesRecordsThenPushes(t *testing.T) {
 	var order []string
-	archiver := archiverFunc(func(context.Context, string, string, string, string) (string, error) {
+	archiver := archiverFunc(func(context.Context, string, string, string, string, string) (string, error) {
 		order = append(order, "archive")
 		return "asset-1", nil
 	})
@@ -99,7 +105,7 @@ func TestDeliverReportBoundsSteerCopyButArchivesFullReport(t *testing.T) {
 	recorder := &fakeConversationRecorder{}
 	pub := &fakeSteerPublisher{maxBytes: 32768}
 	var archivedMarkdown string
-	archiver := archiverFunc(func(_ context.Context, _, _, _, markdown string) (string, error) {
+	archiver := archiverFunc(func(_ context.Context, _, _, _, _, markdown string) (string, error) {
 		archivedMarkdown = markdown
 		return "asset-1", nil
 	})
@@ -191,7 +197,7 @@ func TestDeliverReportNilArchiverDegradesToNoArtifactPointer(t *testing.T) {
 // store hiccup must not block SC#1's own write.
 func TestDeliverReportArchiveErrorDegradesToNoArtifactPointer(t *testing.T) {
 	recorder := &fakeConversationRecorder{}
-	archiver := archiverFunc(func(context.Context, string, string, string, string) (string, error) {
+	archiver := archiverFunc(func(context.Context, string, string, string, string, string) (string, error) {
 		return "", errors.New("garage down")
 	})
 	d := &DelegationDelivery{Recorder: recorder, Archiver: archiver}

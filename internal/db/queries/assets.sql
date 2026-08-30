@@ -8,6 +8,9 @@ INSERT INTO aura.assets (
     $7, $8, $9, $10, $11,
     $12, $13
 )
+ON CONFLICT (identity_id, source_kind, source_ref)
+    WHERE source_kind = 'agent' AND source_ref <> ''
+DO UPDATE SET updated_at = aura.assets.updated_at
 RETURNING *;
 
 -- name: GetAsset :one

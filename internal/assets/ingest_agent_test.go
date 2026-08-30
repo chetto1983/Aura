@@ -87,6 +87,36 @@ func TestIngestAgentFileStoresAcceptedAssetSkippingProcess(t *testing.T) {
 	}
 }
 
+func TestIngestAgentFileReusesStableSourceReference(t *testing.T) {
+	svc, store := newAssetServiceTestRig(t, Limits{})
+	request := func() AgentIngestRequest {
+		return AgentIngestRequest{
+			IdentityID: serviceIdentityID,
+			ThreadID:   "thread-agent-idempotent",
+			SourceRef:  "swarm-report:job-1:terminal",
+			FileName:   "worker-1.md",
+			MIMEType:   "text/markdown",
+			SizeBytes:  int64(len("stable report")),
+			Reader:     strings.NewReader("stable report"),
+		}
+	}
+
+	first, err := svc.IngestAgentFile(context.Background(), request())
+	if err != nil {
+		t.Fatalf("first IngestAgentFile: %v", err)
+	}
+	second, err := svc.IngestAgentFile(context.Background(), request())
+	if err != nil {
+		t.Fatalf("retry IngestAgentFile: %v", err)
+	}
+	if second.ID != first.ID || second.ObjectKey != first.ObjectKey {
+		t.Fatalf("retry asset = %s/%s, want stable %s/%s", second.ID, second.ObjectKey, first.ID, first.ObjectKey)
+	}
+	if len(store.assets) != 1 {
+		t.Fatalf("asset rows = %d, want exactly one for the stable source_ref", len(store.assets))
+	}
+}
+
 // TestIngestAgentFileBypassesLimits proves D-04: a file that exceeds the per-modality Limits cap
 // (which IngestTelegramFile would refuse) still ingests to Accepted — send_file's 50 MiB gate is
 // the single authoritative delivery ceiling, so Limits.Validate is skipped for agent deliveries.

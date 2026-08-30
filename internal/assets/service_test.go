@@ -358,6 +358,13 @@ func newFakeAssetStore() *fakeAssetStore {
 func (s *fakeAssetStore) Create(_ context.Context, req CreateRequest) (Asset, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if req.SourceKind == SourceAgent && req.SourceRef != "" {
+		for _, asset := range s.assets {
+			if asset.IdentityID == req.IdentityID && asset.SourceKind == req.SourceKind && asset.SourceRef == req.SourceRef {
+				return asset, nil
+			}
+		}
+	}
 	s.next++
 	id := "asset-test-" + string(rune('0'+s.next))
 	asset := Asset{

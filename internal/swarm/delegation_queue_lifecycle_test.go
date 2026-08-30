@@ -245,7 +245,7 @@ func TestRecordFailureBlocksSucceeded(t *testing.T) {
 	recorder := &fakeConversationRecorder{err: errors.New("pool exhausted")}
 	l := &DelegationClaimLoop{
 		Store:      store,
-		Delivery:   &DelegationDelivery{Recorder: recorder, Steer: pub},
+		Delivery:   &DelegationDelivery{Recorder: recorder, Steer: pub, Archiver: successfulReportArchiver()},
 		IdentityID: "identity-1",
 	}
 	job := documents.IngestionJob{ID: "j1", IdentityID: "identity-1", MaxAttempts: 3}
@@ -278,7 +278,7 @@ func TestDeliverSuccessPassesTheBoundIdentityThrough(t *testing.T) {
 	store := &fakeDelegationStore{}
 	pub := &fakeSteerPublisher{}
 	recorder := &fakeConversationRecorder{}
-	l := &DelegationClaimLoop{Store: store, Delivery: &DelegationDelivery{Recorder: recorder, Steer: pub}, IdentityID: "identity-1"}
+	l := &DelegationClaimLoop{Store: store, Delivery: &DelegationDelivery{Recorder: recorder, Steer: pub, Archiver: successfulReportArchiver()}, IdentityID: "identity-1"}
 	job := documents.IngestionJob{ID: "j1", IdentityID: "identity-1"}
 	payload := DelegationPayload{Goal: "g", ConversationID: "conv-7", FanoutKey: "f-test"}
 
@@ -394,7 +394,7 @@ func TestProcessJobRunsTheWorkerAndRoutesEveryOutcome(t *testing.T) {
 			pub := &fakeSteerPublisher{}
 			parker := newFakePauseAndPark()
 			l := &DelegationClaimLoop{
-				Store: store, Delivery: &DelegationDelivery{Recorder: &fakeConversationRecorder{}, Steer: pub}, IdentityID: identityID,
+				Store: store, Delivery: &DelegationDelivery{Recorder: &fakeConversationRecorder{}, Steer: pub, Archiver: successfulReportArchiver()}, IdentityID: identityID,
 				Worker: rc, LeaseDuration: time.Minute, PauseParker: parker,
 			}
 

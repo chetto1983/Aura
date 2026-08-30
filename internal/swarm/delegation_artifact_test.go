@@ -18,9 +18,12 @@ func TestArchiveReportNilArchiverReturnsEmptyName(t *testing.T) {
 
 func TestArchiveReportSuccessReturnsChildIDDotMD(t *testing.T) {
 	var gotFilename, gotMarkdown string
-	archiver := archiverFunc(func(_ context.Context, identityID, conversationID, filename, markdown string) (string, error) {
+	archiver := archiverFunc(func(_ context.Context, identityID, conversationID, deliveryKey, filename, markdown string) (string, error) {
 		if identityID != "id-1" || conversationID != "conv-1" {
 			t.Fatalf("ArchiveReport called with (%q, %q), want (id-1, conv-1)", identityID, conversationID)
+		}
+		if deliveryKey != "" {
+			t.Fatalf("legacy archive delivery key = %q, want empty", deliveryKey)
 		}
 		gotFilename, gotMarkdown = filename, markdown
 		return "asset-123", nil
@@ -35,7 +38,7 @@ func TestArchiveReportSuccessReturnsChildIDDotMD(t *testing.T) {
 }
 
 func TestArchiveReportErrorDegradesToEmptyName(t *testing.T) {
-	archiver := archiverFunc(func(context.Context, string, string, string, string) (string, error) {
+	archiver := archiverFunc(func(context.Context, string, string, string, string, string) (string, error) {
 		return "", errors.New("garage unreachable")
 	})
 	got := archiveReport(context.Background(), archiver, "id-1", "conv-1", "w1", "markdown")

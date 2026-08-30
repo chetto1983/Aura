@@ -69,7 +69,6 @@ func (s *Service) ingestObject(ctx context.Context, in objectIngest) (Asset, err
 	}
 	assetID := newAssetID()
 	place := objectstore.PlaceAsset(assetID, name)
-	key := place.Key
 	asset, err := s.Store.Create(ctx, CreateRequest{
 		IdentityID:        in.identityID,
 		ThreadID:          in.threadID,
@@ -81,13 +80,20 @@ func (s *Service) ingestObject(ctx context.Context, in objectIngest) (Asset, err
 		MIMEType:          mimeType,
 		DeclaredSizeBytes: in.sizeBytes,
 		ObjectBucket:      bucket,
-		ObjectKey:         key,
+		ObjectKey:         place.Key,
 		Metadata:          in.metadata,
 	})
 	if err != nil {
 		return Asset{}, err
 	}
-	ref := objectstore.ObjectRef{Bucket: bucket, Key: key}
+	// A stable source_ref can return an existing row after a retry. Accepted is
+	// already complete; earlier states resume against the row's persisted object
+	// placement, never the throwaway asset id generated for this Create attempt.
+	if in.sourceRef != "" && asset.Status == StatusAccepted {
+		return asset, nil
+	}
+	place = objectstore.PlaceAsset(asset.ID, asset.FileName)
+	ref := objectstore.ObjectRef{Bucket: asset.ObjectBucket, Key: asset.ObjectKey}
 	attrs, err := objects.Put(ctx, ref, in.reader,
 		objectstore.PutOptions{MIMEType: mimeType, Size: in.sizeBytes, Metadata: place.Metadata})
 	if err != nil {
@@ -138,6 +144,7 @@ func (s *Service) IngestAgentFile(ctx context.Context, req AgentIngestRequest) (
 		identityID:    req.IdentityID,
 		threadID:      req.ThreadID,
 		sourceKind:    SourceAgent,
+		sourceRef:     req.SourceRef,
 		fileName:      req.FileName,
 		mimeType:      req.MIMEType,
 		modality:      req.Modality,

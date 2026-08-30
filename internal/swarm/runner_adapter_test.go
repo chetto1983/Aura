@@ -2,6 +2,7 @@ package swarm
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"testing"
 
@@ -131,6 +132,7 @@ type fakeDelegationStore struct {
 	retryErr     error
 	stages       []documents.StageDelegationDeliveryRequest
 	stageErr     error
+	stageErrAt   int
 	heartbeats   []documents.HeartbeatIngestionJobRequest
 	heartbeatErr error
 
@@ -219,8 +221,17 @@ func (s *fakeDelegationStore) Retry(_ context.Context, req documents.RetryIngest
 func (s *fakeDelegationStore) StageDelegationDelivery(_ context.Context, req documents.StageDelegationDeliveryRequest) (documents.IngestionJob, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	encoded, err := json.Marshal(req.Payload)
+	if err != nil {
+		return documents.IngestionJob{}, err
+	}
+	var persisted map[string]any
+	if err := json.Unmarshal(encoded, &persisted); err != nil {
+		return documents.IngestionJob{}, err
+	}
+	req.Payload = persisted
 	s.stages = append(s.stages, req)
-	if s.stageErr != nil {
+	if s.stageErr != nil && (s.stageErrAt == 0 || len(s.stages) == s.stageErrAt) {
 		return documents.IngestionJob{}, s.stageErr
 	}
 	return documents.IngestionJob{ID: req.JobID, IdentityID: req.IdentityID, Payload: req.Payload}, nil

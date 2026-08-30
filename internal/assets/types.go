@@ -165,12 +165,14 @@ type DocumentIngestRequest struct {
 
 // AgentIngestRequest carries one agent-produced deliverable (send_file host file) into the
 // shared asset pipeline as a delivery-only, owned thread asset (WEBART-01/D-06). It mirrors
-// TelegramIngestRequest minus the Telegram source-reference fields (there is no ChatID /
-// MessageID / FileID / SourceRef for an agent delivery). The caller opens the host file and
-// closes the Reader after ingest.
+// TelegramIngestRequest minus the Telegram source-reference fields. SourceRef is optional:
+// send_file leaves it empty, while durable producers use a namespaced stable key to make a
+// retried delivery resolve the same asset row and object key. The caller opens the host file
+// and closes the Reader after ingest.
 type AgentIngestRequest struct {
 	IdentityID string
 	ThreadID   string
+	SourceRef  string
 	FileName   string
 	MIMEType   string
 	Modality   Modality

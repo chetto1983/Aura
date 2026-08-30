@@ -15,11 +15,11 @@ func TestDeliverSuccessStagesAndProjectsBeforeTransitioning(t *testing.T) {
 	store := &fakeDelegationStore{}
 	pub := &fakeSteerPublisher{}
 	recorder := &fakeConversationRecorder{}
-	l := &DelegationClaimLoop{Store: store, Delivery: &DelegationDelivery{Recorder: recorder, Steer: pub}, IdentityID: "identity-1"}
+	l := &DelegationClaimLoop{Store: store, Delivery: &DelegationDelivery{Recorder: recorder, Steer: pub, Archiver: successfulReportArchiver()}, IdentityID: "identity-1"}
 	job := documents.IngestionJob{ID: "j1", IdentityID: "identity-1"}
-	payload := DelegationPayload{Goal: "g", ConversationID: "conv-7", FanoutKey: "f-test"}
+	payload := DelegationPayload{Goal: "g", ConversationID: "conv-7", ChildID: "w1", FanoutKey: "f-test"}
 
-	if err := l.deliverSuccess(context.Background(), job, payload, ChildReport{Status: StatusOK, Summary: "done"}); err != nil {
+	if err := l.deliverSuccess(context.Background(), job, payload, ChildReport{ChildID: "w1", Status: StatusOK, Summary: "done"}); err != nil {
 		t.Fatalf("deliverSuccess = %v", err)
 	}
 	if len(recorder.appended) != 1 || recorder.appended[0].conversationID != "conv-7" {
@@ -32,17 +32,112 @@ func TestDeliverSuccessStagesAndProjectsBeforeTransitioning(t *testing.T) {
 		t.Fatalf("transitions = %+v, want one succeeded", tr)
 	}
 	if stages := store.stagesSnapshot(); len(stages) < 2 {
-		t.Fatalf("stages = %d, want terminal report plus archive-attempt checkpoint", len(stages))
+		t.Fatalf("stages = %d, want terminal report plus successful archive checkpoint", len(stages))
+	}
+}
+
+func TestTerminalStageFailureDoesNotStartArchive(t *testing.T) {
+	store := &fakeDelegationStore{stageErr: errors.New("stage unavailable")}
+	archiveCalls := 0
+	archiver := archiverFunc(func(context.Context, string, string, string, string, string) (string, error) {
+		archiveCalls++
+		return "asset-1", nil
+	})
+	l := &DelegationClaimLoop{Store: store, Delivery: &DelegationDelivery{
+		Recorder: &fakeConversationRecorder{}, Archiver: archiver,
+	}}
+	job := documents.IngestionJob{ID: "j1", IdentityID: "identity-1"}
+	payload := DelegationPayload{Goal: "g", ConversationID: "conv-7", ChildID: "w1", FanoutKey: "f-test"}
+
+	if err := l.deliverSuccess(context.Background(), job, payload, ChildReport{ChildID: "w1", Status: StatusOK}); err == nil {
+		t.Fatal("deliverSuccess = nil, want terminal staging failure")
+	}
+	if archiveCalls != 0 {
+		t.Fatalf("archive calls = %d, want zero before durable terminal staging", archiveCalls)
+	}
+}
+
+func TestArchiveFailureSchedulesDeliveryOnlyRetryBeforeProjection(t *testing.T) {
+	store := &fakeDelegationStore{}
+	recorder := &fakeConversationRecorder{}
+	pub := &fakeSteerPublisher{}
+	archiver := archiverFunc(func(context.Context, string, string, string, string, string) (string, error) {
+		return "", errors.New("garage unavailable")
+	})
+	l := &DelegationClaimLoop{Store: store, Delivery: &DelegationDelivery{
+		Recorder: recorder, Steer: pub, Archiver: archiver,
+	}}
+	job := documents.IngestionJob{ID: "j1", IdentityID: "identity-1"}
+	payload := DelegationPayload{ConversationID: "conv-7", ChildID: "w1", FanoutKey: "f-test"}
+
+	if err := l.deliverSuccess(context.Background(), job, payload, ChildReport{ChildID: "w1", Status: StatusOK}); err != nil {
+		t.Fatalf("deliverSuccess = %v, want archive error converted to delivery retry", err)
+	}
+	if retries := store.retriesSnapshot(); len(retries) != 1 || !strings.Contains(retries[0].ErrorMessage, "archive delegation report") {
+		t.Fatalf("retries = %+v, want one archive delivery retry", retries)
+	}
+	if len(recorder.appended) != 0 || len(pub.pushes) != 0 || len(store.transitionsSnapshot()) != 0 {
+		t.Fatal("archive failure must not project or terminally transition the job")
+	}
+}
+
+func TestArchiveCheckpointFailureReusesOneLogicalArtifact(t *testing.T) {
+	store := &fakeDelegationStore{stageErr: errors.New("checkpoint unavailable"), stageErrAt: 2}
+	recorder := &fakeConversationRecorder{}
+	pub := &fakeSteerPublisher{}
+	archiveCalls := 0
+	artifacts := map[string]string{}
+	archiver := archiverFunc(func(_ context.Context, _, _, deliveryKey, filename, _ string) (string, error) {
+		archiveCalls++
+		if existing, ok := artifacts[deliveryKey]; ok {
+			return existing, nil
+		}
+		artifacts[deliveryKey] = filename
+		return filename, nil
+	})
+	l := &DelegationClaimLoop{Store: store, Delivery: &DelegationDelivery{
+		Recorder: recorder, Steer: pub, Archiver: archiver,
+	}}
+	job := documents.IngestionJob{ID: "j1", IdentityID: "identity-1", CreatedAt: time.Now()}
+	payload := DelegationPayload{Goal: "g", ConversationID: "conv-7", ChildID: "w1", FanoutKey: "f-test"}
+
+	if err := l.deliverSuccess(context.Background(), job, payload, ChildReport{ChildID: "w1", Status: StatusOK}); err != nil {
+		t.Fatalf("deliverSuccess = %v, want checkpoint failure converted to delivery retry", err)
+	}
+	if len(store.retriesSnapshot()) != 1 || len(artifacts) != 1 || archiveCalls != 1 {
+		t.Fatalf("first attempt = retries:%d artifacts:%d archive calls:%d", len(store.retriesSnapshot()), len(artifacts), archiveCalls)
+	}
+	stages := store.stagesSnapshot()
+	if len(stages) < 2 {
+		t.Fatalf("stages = %d, want initial stage plus failed archive checkpoint", len(stages))
+	}
+	stagedPending, err := pendingDeliveryFromJob(documents.IngestionJob{ID: job.ID, Payload: stages[0].Payload})
+	if err != nil || stagedPending == nil || stagedPending.ArtifactName != "" {
+		t.Fatalf("initial pending delivery = %+v, %v, want no persisted artifact checkpoint", stagedPending, err)
+	}
+
+	store.stageErr = nil
+	retryJob := job
+	retryJob.Payload = stages[0].Payload // the failed checkpoint did not persist ArtifactName
+	retryJob.LeaseGeneration++
+	if err := l.processJob(context.Background(), retryJob); err != nil {
+		t.Fatalf("delivery-only retry: %v", err)
+	}
+	if len(artifacts) != 1 || archiveCalls != 2 {
+		t.Fatalf("retry archive = logical artifacts:%d calls:%d, want one idempotent artifact across two calls", len(artifacts), archiveCalls)
+	}
+	if len(recorder.appended) != 1 || !strings.Contains(recorder.appended[0].text, "w1.md") || len(pub.pushes) != 1 {
+		t.Fatalf("final projections = turns:%+v pushes:%d, want one referenced artifact", recorder.appended, len(pub.pushes))
 	}
 }
 
 func TestDeliverSuccessRetriesOnlyDeliveryWhenThePushFails(t *testing.T) {
 	store := &fakeDelegationStore{}
 	pub := &fakeSteerPublisher{err: errors.New("inbox gone")}
-	l := &DelegationClaimLoop{Store: store, Delivery: &DelegationDelivery{Recorder: &fakeConversationRecorder{}, Steer: pub}, IdentityID: "identity-1"}
+	l := &DelegationClaimLoop{Store: store, Delivery: &DelegationDelivery{Recorder: &fakeConversationRecorder{}, Steer: pub, Archiver: successfulReportArchiver()}, IdentityID: "identity-1"}
 
 	err := l.deliverSuccess(context.Background(), documents.IngestionJob{ID: "j1"},
-		DelegationPayload{ConversationID: "conv-7", FanoutKey: "f-test"}, ChildReport{Status: StatusOK})
+		DelegationPayload{ConversationID: "conv-7", ChildID: "w1", FanoutKey: "f-test"}, ChildReport{ChildID: "w1", Status: StatusOK})
 	if err != nil {
 		t.Fatalf("deliverSuccess = %v, want the staged delivery failure converted to a queue retry", err)
 	}
@@ -58,7 +153,7 @@ func TestDeliverSuccessRetriesOnlyDeliveryWhenTransitionFails(t *testing.T) {
 	store := &fakeDelegationStore{transitErr: errors.New("row vanished")}
 	recorder := &fakeConversationRecorder{}
 	pub := &fakeSteerPublisher{}
-	l := &DelegationClaimLoop{Store: store, Delivery: &DelegationDelivery{Recorder: recorder, Steer: pub}, IdentityID: "identity-1"}
+	l := &DelegationClaimLoop{Store: store, Delivery: &DelegationDelivery{Recorder: recorder, Steer: pub, Archiver: successfulReportArchiver()}, IdentityID: "identity-1"}
 	job := documents.IngestionJob{ID: "j1", IdentityID: "identity-1", JobType: JobTypeSwarmDelegation, CreatedAt: time.Now()}
 	payload := DelegationPayload{Goal: "g", ConversationID: "conv-7", ChildID: "w1", FanoutKey: "f-test"}
 
@@ -91,7 +186,7 @@ func TestPendingDeliveryRetrySkipsWorkerAndDeduplicatesProjections(t *testing.T)
 	pub := &fakeSteerPublisher{err: errors.New("inbox gone")}
 	store := &fakeDelegationStore{}
 	l := &DelegationClaimLoop{
-		Store: store, Delivery: &DelegationDelivery{Recorder: recorder, Steer: pub},
+		Store: store, Delivery: &DelegationDelivery{Recorder: recorder, Steer: pub, Archiver: successfulReportArchiver()},
 		IdentityID: identityID, Worker: testRunConfig(t, router, 25),
 	}
 	job := documents.IngestionJob{
@@ -136,7 +231,7 @@ func TestDeadLetterDeliveryFailureRemainsRetryable(t *testing.T) {
 	store := &fakeDelegationStore{}
 	pub := &fakeSteerPublisher{err: errors.New("inbox gone")}
 	l := &DelegationClaimLoop{
-		Store: store, Delivery: &DelegationDelivery{Recorder: &fakeConversationRecorder{}, Steer: pub},
+		Store: store, Delivery: &DelegationDelivery{Recorder: &fakeConversationRecorder{}, Steer: pub, Archiver: successfulReportArchiver()},
 		IdentityID: "identity-1",
 	}
 	job := documents.IngestionJob{

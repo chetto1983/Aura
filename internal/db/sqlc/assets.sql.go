@@ -21,6 +21,9 @@ INSERT INTO aura.assets (
     $7, $8, $9, $10, $11,
     $12, $13
 )
+ON CONFLICT (identity_id, source_kind, source_ref)
+    WHERE source_kind = 'agent' AND source_ref <> ''
+DO UPDATE SET updated_at = aura.assets.updated_at
 RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation
 `
 

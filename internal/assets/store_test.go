@@ -192,3 +192,44 @@ func TestPostgresAssetStoreRoundTrip(t *testing.T) {
 		t.Fatalf("SetResult deleted asset error = %v, want pgx.ErrNoRows", err)
 	}
 }
+
+func TestPostgresAssetStoreDeduplicatesAgentSourceReference(t *testing.T) {
+	pool := migratedAssetPool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	key := fmt.Sprintf("swarm-report:test-%d", time.Now().UnixNano())
+	store := NewStore(pool)
+	create := func(objectKey string) (Asset, error) {
+		return store.Create(ctx, CreateRequest{
+			IdentityID: localIdentityID, SourceKind: SourceAgent, SourceRef: key,
+			ThreadID: "agent-idempotency", Scope: ScopeThread, Modality: ModalityDocument,
+			FileName: "worker.md", MIMEType: "text/markdown", DeclaredSizeBytes: 12,
+			ObjectBucket: "asset-test", ObjectKey: objectKey,
+		})
+	}
+	first, err := create("assets/first/worker.md")
+	if err != nil {
+		t.Fatalf("first Create: %v", err)
+	}
+	second, err := create("assets/second/worker.md")
+	if err != nil {
+		t.Fatalf("retry Create: %v", err)
+	}
+	if second.ID != first.ID || second.ObjectKey != first.ObjectKey {
+		t.Fatalf("retry row = %s/%s, want stable %s/%s", second.ID, second.ObjectKey, first.ID, first.ObjectKey)
+	}
+	listed, err := store.ListForThread(ctx, localIdentityID, "agent-idempotency")
+	if err != nil {
+		t.Fatalf("ListForThread: %v", err)
+	}
+	count := 0
+	for _, asset := range listed {
+		if asset.SourceRef == key {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("stable source rows = %d, want 1", count)
+	}
+}

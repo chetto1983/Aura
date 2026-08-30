@@ -201,10 +201,15 @@ type delegationReportArchiver struct{ svc *assets.Service }
 
 var _ swarm.ReportArchiver = delegationReportArchiver{}
 
-func (a delegationReportArchiver) ArchiveReport(ctx context.Context, identityID, conversationID, filename, markdown string) (string, error) {
+func (a delegationReportArchiver) ArchiveReport(ctx context.Context, identityID, conversationID, deliveryKey, filename, markdown string) (string, error) {
+	sourceRef := ""
+	if deliveryKey != "" {
+		sourceRef = "swarm-report:" + deliveryKey
+	}
 	asset, err := a.svc.IngestAgentFile(ctx, assets.AgentIngestRequest{
 		IdentityID: identityID,
 		ThreadID:   conversationID,
+		SourceRef:  sourceRef,
 		FileName:   filename,
 		MIMEType:   "text/markdown",
 		SizeBytes:  int64(len(markdown)),
