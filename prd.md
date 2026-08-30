@@ -10008,3 +10008,26 @@ flusso completo, che funziona.
 > **What this does not prove.** Correct listener registration does not by itself prove live tailing,
 > picker switching, long-result layout, or exactly one connection per watched worker. Those remain
 > Playwright verdicts on the rebuilt stack.
+
+## Â§A terminal worker EventSource close is completion, not transport failure (Amendment #181, 2026-08-30)
+
+> **Amendment #181 (2026-08-30 - measured on a rebuilt Phase 51 cockpit replay before the fix).**
+> The corrected named-event client received a complete terminal replay: one `RUN_STARTED`, one
+> `TOOL_CALL_START` naming `shell_exec`, one `TOOL_CALL_RESULT`, two `STATE_DELTA` frames, and one
+> `RUN_FINISHED`, with zero JSON parse errors. The server then correctly ended the terminal SSE
+> response. Native EventSource surfaced that EOF as `error`; `openWorkerStream` treated it as a
+> transport failure, and the pane replaced the reconstructed message with its artifact fallback.
+> Redacted evidence:
+> `.planning/phases/51-durable-delegation/live-check/cockpit/EVENTSOURCE-TERMINAL-MEASUREMENT.md`.
+>
+> **Decision.** `RUN_FINISHED` and `RUN_ERROR` are terminal protocol frames. After reducing and
+> publishing either frame, the worker client records terminal state and closes the EventSource so
+> the browser does not reconnect a completed transcript. An `error` after that terminal boundary is
+> ignored; an `error` before it remains a transport failure and preserves the existing fallback.
+> Unit tests must model both paths: terminal frame followed by browser error is not a failure,
+> while a pre-terminal error is.
+>
+> **What this does not prove.** A successful terminal replay does not prove a running tool card can
+> be watched before completion, that a non-terminal disconnect resumes without loss, or that picker
+> switching opens exactly one child stream per watched worker. Those remain the live Playwright
+> verdicts after this lifecycle correction is deployed.
