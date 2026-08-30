@@ -167,13 +167,25 @@ jobs:
           docker build --file docker/aura/Dockerfile --tag "$CANDIDATE_IMAGE" .
           echo "AURA_IMAGE=$CANDIDATE_IMAGE" >> "$GITHUB_ENV"
 
-      - name: Start rollback dependencies and migrate
+      - name: Restore llama.cpp embedding model cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: /tmp/aura-readiness-cache/llama.cpp
+          key: llama-cpp-embeddinggemma-300m-768d-q8-${{ runner.os }}-bind-v1
+
+      - name: Materialize the validated EmbeddingGemma model
+        # memory-up's embed sidecar mounts the cache dir and exits at once without a
+        # model in it (2026-08-30, run 33323312333: "aura-llama-embed is unhealthy" two
+        # seconds after start). Same fetch every ci.yml memory-up job runs first.
         run: |
           mkdir -p \
             "$AURA_CI_LLAMA_CACHE_DIR/llama.cpp" \
             "$AURA_CI_LLAMA_CACHE_DIR/huggingface"
           chmod -R a+rwX "$AURA_CI_LLAMA_CACHE_DIR"
-          make db-migrate memory-up
+          bash scripts/fetch_embedding_model.sh "$AURA_CI_LLAMA_CACHE_DIR/llama.cpp/embeddinggemma-300M-Q8_0.gguf"
+
+      - name: Start rollback dependencies and migrate
+        run: make db-migrate memory-up
           docker compose up -d garage
           docker compose up -d --build \
             garage-bootstrap whatsapp aura-pim-mcp
