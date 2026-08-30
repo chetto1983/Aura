@@ -471,6 +471,9 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				// task alive; a second empty routes to finalize — no path ever emits
 				// an empty terminal (Req#2).
 				if strings.TrimSpace(text) == "" {
+					if finish == "length" && a.maybeRecoverReasoningOverrun(requestID, turnU.total()) {
+						continue
+					}
 					if a.maybeRecoverEmptyResponse() {
 						continue
 					}

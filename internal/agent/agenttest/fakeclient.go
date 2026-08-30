@@ -116,6 +116,18 @@ func TextChunks(finish string, parts ...string) FakeTurn {
 	return FakeTurn{Chunks: chunks}
 }
 
+// ReasoningChunks builds a turn that streams ONLY reasoning deltas and then a
+// finish_reason — the shape of a thinking model whose output budget ran out before
+// any answer (amendment #189: finish "length", no text, no tool calls).
+func ReasoningChunks(finish string, parts ...string) FakeTurn {
+	chunks := make([]llm.Chunk, 0, len(parts)+1)
+	for _, p := range parts {
+		chunks = append(chunks, llm.Chunk{Reasoning: p})
+	}
+	chunks = append(chunks, llm.Chunk{FinishReason: finish})
+	return FakeTurn{Chunks: chunks}
+}
+
 // TextThenErr builds a turn that streams partial assistant content and then a
 // terminal stream Err chunk. Consumers must not treat the partial text as a
 // complete answer.
