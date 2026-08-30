@@ -63,7 +63,7 @@
     "github.com/chetto1983/aura/internal/scoring": {"mode": "target"},
     "github.com/chetto1983/aura/internal/secret": {"mode": "target"},
     "github.com/chetto1983/aura/internal/semindex": {"mode": "target"},
-    "github.com/chetto1983/aura/internal/settings": {"mode": "baseline", "covered_statements": 9, "total_statements": 38},
+    "github.com/chetto1983/aura/internal/settings": {"mode": "target"},
     "github.com/chetto1983/aura/internal/setup": {"mode": "target"},
     "github.com/chetto1983/aura/internal/share": {"mode": "target"},
     "github.com/chetto1983/aura/internal/skilladapters": {"mode": "baseline", "covered_statements": 31, "total_statements": 38},
