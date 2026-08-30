@@ -152,6 +152,13 @@ var gateCases = []gateCase{
 	{"poll a still-running background command", []string{"shell_poll"}},
 	{"what time is it", []string{"current_time"}},
 	{"schedule a recurring task", []string{"task"}},
+	// Amendment #194: the six phrasings that found nothing on 2026-08-30.
+	{"scheduling", []string{"task"}},
+	{"scheduler", []string{"task"}},
+	{"wake me up later", []string{"task"}},
+	{"periodic check", []string{"task"}},
+	{"timer", []string{"task"}},
+	{"run this again tomorrow morning", []string{"task"}},
 	{"keep a todo list of the current work", []string{"todo_write"}},
 	{"run subtasks in parallel with worker agents", []string{"swarm_spawn"}},
 	{"read a knowledge-work plugin pack and its connectors", []string{"plugin_pack"}},
