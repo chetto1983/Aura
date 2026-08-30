@@ -8,6 +8,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -51,9 +52,14 @@ func (f *fakeSettingsStore) Upsert(_ context.Context, key, value, _ string) (sql
 	return sqlc.AuraSettings{Key: key, Value: value}, nil
 }
 
-func (f *fakeSettingsStore) UpsertMany(
-	ctx context.Context, values map[string]string, by string,
+func (f *fakeSettingsStore) ReplaceMany(
+	ctx context.Context, values map[string]string, deletes []string, by string,
 ) ([]sqlc.AuraSettings, error) {
+	for _, key := range deletes {
+		if err := f.Delete(ctx, key); err != nil {
+			return nil, err
+		}
+	}
 	rows := make([]sqlc.AuraSettings, 0, len(values))
 	for key, value := range values {
 		row, err := f.Upsert(ctx, key, value, by)
@@ -192,6 +198,60 @@ func TestHandlePutLLMProfilePreparesThenPersistsAndPublishesOnce(t *testing.T) {
 	}
 	if len(store.upserted) != 3 || store.upserted["AURA_LLM_MODEL"] != "gemma-4-12b" {
 		t.Fatalf("atomic profile rows = %v", store.upserted)
+	}
+}
+
+func TestHandlePutLLMProfileDropsPreviousModelLimitsOnRouteChange(t *testing.T) {
+	store := &fakeSettingsStore{rows: []sqlc.AuraSettings{
+		{Key: "AURA_LLM_PROVIDER", Value: "openrouter"},
+		{Key: "AURA_LLM_BASE_URL", Value: "https://openrouter.ai/api/v1"},
+		{Key: "AURA_LLM_MODEL", Value: "cloud-model"},
+		{Key: "AURA_MODEL_CONTEXT_WINDOW", Value: "1000000"},
+		{Key: "AURA_MODEL_MAX_OUTPUT_TOKENS", Value: "32768"},
+	}}
+	reloader := &fakeLLMRouteReloader{}
+	s := &Server{settings: store, llmRouteReloader: reloader}
+	body := strings.NewReader(`{"settings":{` +
+		`"AURA_LLM_PROVIDER":"ollama",` +
+		`"AURA_LLM_BASE_URL":"http://host.docker.internal:11434/v1",` +
+		`"AURA_LLM_MODEL":"gemma4:31b-cloud"}}`)
+	r := withPrincipal(httptest.NewRequest(http.MethodPut, "/api/settings/llm-profile", body), "op-1")
+	rr := httptest.NewRecorder()
+
+	s.handlePutLLMProfile(rr, r)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rr.Code, rr.Body.String())
+	}
+	if len(reloader.validated) != 1 {
+		t.Fatalf("prepare calls = %d, want 1", len(reloader.validated))
+	}
+	for _, key := range []string{"AURA_MODEL_CONTEXT_WINDOW", "AURA_MODEL_MAX_OUTPUT_TOKENS"} {
+		if _, present := reloader.validated[0][key]; present {
+			t.Fatalf("new model inherited %s: %v", key, reloader.validated[0])
+		}
+		if !slices.Contains(store.deleted, key) {
+			t.Fatalf("stale model limit %s was not deleted: %v", key, store.deleted)
+		}
+	}
+}
+
+func TestModelLimitResetKeysPreservesExplicitLimitsAndSameRoute(t *testing.T) {
+	rows := []sqlc.AuraSettings{
+		{Key: "AURA_LLM_PROVIDER", Value: "openrouter"},
+		{Key: "AURA_LLM_MODEL", Value: "cloud-model"},
+		{Key: "AURA_MODEL_CONTEXT_WINDOW", Value: "1000000"},
+		{Key: "AURA_MODEL_MAX_OUTPUT_TOKENS", Value: "32768"},
+	}
+	withExplicitContext := modelLimitResetKeys(rows, map[string]string{
+		"AURA_LLM_MODEL":            "local-model",
+		"AURA_MODEL_CONTEXT_WINDOW": "81920",
+	})
+	if !slices.Equal(withExplicitContext, []string{"AURA_MODEL_MAX_OUTPUT_TOKENS"}) {
+		t.Fatalf("route switch resets = %v, want only inherited output limit", withExplicitContext)
+	}
+	if got := modelLimitResetKeys(rows, map[string]string{"AURA_LLM_MODEL": "cloud-model"}); len(got) != 0 {
+		t.Fatalf("unchanged route reset model limits: %v", got)
 	}
 }
 

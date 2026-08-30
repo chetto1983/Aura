@@ -50,7 +50,7 @@ var hotLLMProfileKeys = map[string]struct{}{
 type settingsStore interface {
 	List(ctx context.Context) ([]sqlc.AuraSettings, error)
 	Upsert(ctx context.Context, key, value, by string) (sqlc.AuraSettings, error)
-	UpsertMany(ctx context.Context, values map[string]string, by string) ([]sqlc.AuraSettings, error)
+	ReplaceMany(ctx context.Context, values map[string]string, deletes []string, by string) ([]sqlc.AuraSettings, error)
 	Delete(ctx context.Context, key string) error
 }
 
@@ -221,12 +221,16 @@ func (s *Server) handlePutLLMProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	overrides := llmProfileOverrides(rows)
 	maps.Copy(overrides, body.Settings)
+	resetKeys := modelLimitResetKeys(rows, body.Settings)
+	for _, key := range resetKeys {
+		delete(overrides, key)
+	}
 	apply, err := s.llmRouteReloader.Prepare(r.Context(), overrides)
 	if err != nil {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	if _, err := s.settings.UpsertMany(r.Context(), body.Settings, actor); err != nil {
+	if _, err := s.settings.ReplaceMany(r.Context(), body.Settings, resetKeys, actor); err != nil {
 		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "settings store unavailable"})
 		return
 	}
@@ -234,6 +238,36 @@ func (s *Server) handlePutLLMProfile(w http.ResponseWriter, r *http.Request) {
 	writeJSONStatus(w, http.StatusOK, map[string]any{
 		"updated": len(body.Settings), "restart_required": false,
 	})
+}
+
+var modelRouteKeys = []string{"AURA_LLM_PROVIDER", "AURA_LLM_BASE_URL", "AURA_LLM_MODEL"}
+var modelLimitKeys = []string{"AURA_MODEL_CONTEXT_WINDOW", "AURA_MODEL_MAX_OUTPUT_TOKENS"}
+
+func modelLimitResetKeys(rows []sqlc.AuraSettings, next map[string]string) []string {
+	current := make(map[string]string, len(rows))
+	for _, row := range rows {
+		current[row.Key] = row.Value
+	}
+	routeChanged := false
+	for _, key := range modelRouteKeys {
+		if value, present := next[key]; present && strings.TrimSpace(value) != strings.TrimSpace(current[key]) {
+			routeChanged = true
+			break
+		}
+	}
+	if !routeChanged {
+		return nil
+	}
+	reset := make([]string, 0, len(modelLimitKeys))
+	for _, key := range modelLimitKeys {
+		if _, explicit := next[key]; explicit {
+			continue
+		}
+		if _, persisted := current[key]; persisted {
+			reset = append(reset, key)
+		}
+	}
+	return reset
 }
 
 func (s *Server) handlePutSetting(w http.ResponseWriter, r *http.Request) {

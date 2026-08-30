@@ -115,19 +115,26 @@ func (s *Store) Upsert(ctx context.Context, key, value, by string) (sqlc.AuraSet
 	return row, err
 }
 
-// UpsertMany writes a model-profile mutation under one advisory-locked transaction.
-// Callers prepare the complete runtime snapshot first, persist every durable row here,
-// then publish the prepared snapshot only after this transaction commits.
-func (s *Store) UpsertMany(
-	ctx context.Context, values map[string]string, by string,
+// ReplaceMany writes one model-profile mutation under one advisory-locked transaction.
+// Model-scoped limits from the previous route are deleted in the same commit as the new
+// route rows, then the caller publishes its already-prepared runtime snapshot.
+func (s *Store) ReplaceMany(
+	ctx context.Context, values map[string]string, deletes []string, by string,
 ) ([]sqlc.AuraSettings, error) {
 	keys := make([]string, 0, len(values))
 	for key := range values {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
+	deleteKeys := append([]string(nil), deletes...)
+	sort.Strings(deleteKeys)
 	rows := make([]sqlc.AuraSettings, 0, len(keys))
 	err := s.withWriteLock(ctx, func(q *sqlc.Queries) error {
+		for _, key := range deleteKeys {
+			if err := q.DeleteSetting(ctx, key); err != nil {
+				return err
+			}
+		}
 		for _, key := range keys {
 			meta := AllowedKeys[key]
 			var updatedBy pgtype.Text
