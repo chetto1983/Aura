@@ -35,7 +35,9 @@ being folded into Phase 51.
 ## GSD state
 
 - Active command: `gsd-execute-phase 51`.
-- Phase 51 has 14 of 14 plans complete and is in verifier handoff.
+- Phase 51 has 14 of 14 plans executed, but remains `verifying`: the standard
+  code review found recovery, trust-boundary, snapshot, resume-fairness, and UI
+  isolation gaps that must be fixed before verifier handoff.
 - Plan `.planning/phases/51-durable-delegation/51-08-PLAN.md` is complete.
 - The hot-route defect is fixed and verified through the authenticated Cockpit.
 - The official GSD executor reconciled plan 51-08 with Amendment #183's
@@ -54,8 +56,10 @@ Current execution checklist:
 5. Align Settings batch update, cockpit, AG-UI, and Telegram runtime consumers:
    implemented; committed.
 6. Race/build/frontend/live no-restart verification: complete.
-7. Resume and complete 51-08: complete; phase verifier pending.
-8. Insert and plan provider-native subscription phase: pending.
+7. Resume and complete 51-08: execution complete; review remediation active.
+8. Fix and re-review Amendment #190 findings: in progress.
+9. Run the final full matrix and repeated live E2E on the final image: pending.
+10. Insert and plan provider-native subscription phase: pending.
 
 ## Committed decisions
 
@@ -115,6 +119,11 @@ Current execution checklist:
 - `58685403e`, `236bf4692`, `7aee86ba3` (`docs(51-08)`)
   - Reconcile validation, delimit the superseded baseline, create the final plan
     summary, and hand Phase 51 to its verifier.
+- `3c60158f2 docs(51): add code review report`
+  - Records the 143-file standard-depth Phase 51 review and its 11 findings.
+- `6f4f9fa1e docs(51): record delegation review gaps`
+  - PRD Amendment #190 classifies confirmed gaps, accepted at-least-once
+    boundaries, required regression coverage, and the final E2E completion gate.
 
 PRD amendment #185 records these decisions:
 
@@ -379,6 +388,15 @@ Green:
 
 Needs completion:
 
+- Remediate the confirmed Amendment #190 findings with focused fault-injection
+  and adversarial tests, keeping the accepted exactly-once residual unchanged.
+- Re-run GSD code review after remediation and update `51-REVIEW.md` from the
+  measured result.
+- Re-run the complete WSL Go/vet/build/race and web lint/typecheck/test/build
+  matrix, then rebuild/deploy the final image.
+- Run the repository Playwright E2E repeatedly against that final image and
+  verify the container PID/start/image/restart tuple remains unchanged during
+  endpoint switches, with zero OpenRouter traffic.
 - Native Windows `go test ./...` passes every changed package but still exits
   non-zero on three unrelated portability assertions: two `internal/agent` tests
   compare `%TEMP%` paths using POSIX separator assumptions, and one
@@ -403,9 +421,12 @@ For subsequent commits:
 
 ## Next actions
 
-1. Run the GSD phase review/verifier and mark the phase complete only if
-   verification passes.
-2. Insert, discuss, specify, and plan the provider-native subscription phase via
+1. Implement the Amendment #190 fixes in atomic commits and add focused
+   regression tests for every confirmed failure window.
+2. Re-run GSD code review, the full verification matrix, and the repeated live
+   Playwright E2E on the final deployed image.
+3. Run the GSD verifier and mark Phase 51 complete only after every gate passes.
+4. Insert, discuss, specify, and plan the provider-native subscription phase via
    GSD after Phase 51 is complete.
 
 ## Resume commands
