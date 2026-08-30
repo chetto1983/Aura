@@ -9,6 +9,7 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"io"
 	"iter"
 	"log/slog"
 	"net/http"
@@ -51,6 +52,10 @@ type turnDriver func(ctx context.Context, convID string, userMsg *string) iter.S
 type assetIngress interface {
 	IngestTelegramFile(ctx context.Context, req assets.TelegramIngestRequest) (assets.Asset, error)
 	GetForIdentity(ctx context.Context, assetID, identityID string) (assets.Asset, error)
+	// OpenForIdentity feeds assets.TurnMediaLoader so a just-ingested photo or voice
+	// note reaches the model as a native content part — the same projection seam the
+	// AG-UI gateway sets (amendment #198). Ownership is re-checked at read time.
+	OpenForIdentity(ctx context.Context, id, identityID string) (io.ReadCloser, assets.Asset, error)
 	// BuildTurnContext composes the channel-agnostic per-turn context (this turn's
 	// attachments + the thread's knowledge catalog) onto the user text — the same seam
 	// the AG-UI gateway uses, so catalog/attachment injection is not duplicated per channel.

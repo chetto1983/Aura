@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"errors"
+	"io"
 	"iter"
 	"strings"
 	"sync"
@@ -44,6 +45,10 @@ func (composedTextAssets) IngestTelegramFile(context.Context, assetspkg.Telegram
 
 func (composedTextAssets) GetForIdentity(context.Context, string, string) (assetspkg.Asset, error) {
 	return assetspkg.Asset{}, errors.New("not used")
+}
+
+func (composedTextAssets) OpenForIdentity(context.Context, string, string) (io.ReadCloser, assetspkg.Asset, error) {
+	return nil, assetspkg.Asset{}, errors.New("no media in this harness")
 }
 
 func (composedTextAssets) BuildTurnContext(_ context.Context, _, _ string, _ []assetspkg.Asset, userText string) string {

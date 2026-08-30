@@ -53,7 +53,7 @@ func (s *Server) buildTurnUserMessage(ctx context.Context, r *http.Request, thre
 	}
 	if len(mediaIDs) > 0 {
 		ctx = llm.WithContentProjection(ctx, llm.ContentProjection{
-			Loader:       assetContentPartLoader{assets: s.assets, threadID: threadID, allowed: allowed},
+			Loader:       assets.TurnMediaLoader{Opener: s.assets, ThreadID: threadID, Allowed: allowed},
 			Principal:    llm.ProjectionPrincipal{OwnerID: identityID},
 			ReferenceIDs: mediaIDs,
 		})

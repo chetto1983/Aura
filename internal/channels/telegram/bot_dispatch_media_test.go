@@ -55,6 +55,9 @@ func TestOnPhotoRoutesThroughAssetIngress(t *testing.T) {
 	if !strings.Contains(msgs[0], "asset-photo") || !strings.Contains(msgs[0], "una foto di un gatto") {
 		t.Fatalf("turn userMsg missing photo asset context:\n%s", msgs[0])
 	}
+	if !strings.Contains(msgs[0], "cosa c'e qui?") {
+		t.Fatalf("the photo caption is the operator's instruction and must drive the turn, got:\n%s", msgs[0])
+	}
 	req := assetIngress.reqs[0]
 	if req.IdentityID != profileAccount().IdentityID || req.ChatID != 21 || req.FileID != "photo-file" ||
 		req.FileName != "photo.jpg" || req.MIMEType != photoMIME || req.Modality != assetspkg.ModalityImage ||

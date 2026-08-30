@@ -40,6 +40,7 @@ func (t *Telegram) runTurnWithAssets(daemonCtx context.Context, c tele.Context, 
 	// turn only.
 	rawText := text
 	composedText := t.composeTurnContext(daemonCtx, c, chatID, attachments, text)
+	daemonCtx = t.withTurnMediaProjection(daemonCtx, chatID, attachments)
 	sender := t.sender(c)
 	notifier, _ := c.Bot().(botNotifier)
 	to := c.Recipient()

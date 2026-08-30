@@ -11,10 +11,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/chetto1983/aura/internal/assets"
 	tele "gopkg.in/telebot.v4"
 )
+
+// defaultAttachmentTurnText drives the turn when the operator sent the file without a
+// caption; a caption is the operator's own instruction and takes its place.
+const defaultAttachmentTurnText = "Analizza l'allegato Telegram."
 
 func (t *Telegram) ingestTelegramAsset(
 	ctx context.Context,
@@ -25,6 +30,7 @@ func (t *Telegram) ingestTelegramAsset(
 	mimeType string,
 	modality assets.Modality,
 	sizeBytes int64,
+	turnText string,
 	failCopy string,
 	inboundWasVoice bool,
 ) error {
@@ -75,7 +81,11 @@ func (t *Telegram) ingestTelegramAsset(
 	}
 	// The shared seam composes this asset's attachment block AND the thread's knowledge
 	// catalog (other searchable docs) — same path as a no-attachment text turn.
-	t.runTurnWithAssets(ctx, c, msg.Chat.ID, "Analizza l'allegato Telegram.", []assets.Asset{asset}, inboundWasVoice)
+	text := strings.TrimSpace(turnText)
+	if text == "" {
+		text = defaultAttachmentTurnText
+	}
+	t.runTurnWithAssets(ctx, c, msg.Chat.ID, text, []assets.Asset{asset}, inboundWasVoice)
 	return nil
 }
 

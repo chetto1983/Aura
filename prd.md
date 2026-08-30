@@ -10781,3 +10781,45 @@ flusso completo, che funziona.
 > answer shows a confident model fills the gap; whether the catalog should state "this
 > model cannot see the attachment" is a separate, unmeasured change. Audio on Ollama is not
 > claimed (no capability token names it).
+
+## Section Telegram is a wrapper: every attachment fails or flows on the shared pipeline (Amendment #198, 2026-08-30)
+
+> **Amendment #198 (2026-08-30 - measured on the running stack through the operator's
+> real Telegram account).** A photo sent at 19:31:48Z answered "❌ Analisi dell'immagine
+> non disponibile."; a 787.5 KB PDF (`01G202600029561_Dettaglio.PDF`) sent at 19:41:23Z
+> answered "❌ Lettura del documento non disponibile.". The daemon log carries the same
+> line for both: `telegram: asset ingest failed ... operation error S3: PutObject, failed
+> to compute payload hash: failed to seek body to start, request stream is not seekable`.
+> The channel architecture was already the wanted wrapper — one ingress
+> (`ingestTelegramAsset`) handing the Telegram stream to `assets.Service` — but the shared
+> pipeline broke it twice and lied about it twice:
+>
+> 1. **`objectstore.S3Store.Put` required a seekable body.** The AWS SDK computes the
+>    SigV4 payload hash by seeking the body; the cockpit path never noticed because the
+>    HTTP asset handler hands it a buffered reader, while Telegram streams the Bot-API
+>    `getFile` download straight in (by design — the channel must not buffer). Fix in the
+>    PIPELINE, not the channel: `seekableBody` spools a non-seekable stream to a temp file
+>    (`s3_seekable.go`), so every current and future producer may stream.
+> 2. **Only the AG-UI gateway ever armed `llm.ContentProjection`**, so even a successfully
+>    ingested Telegram photo would have reached the model as a catalog entry — the exact
+>    confabulation defect of Amendment #197, one channel over. The loader moved out of
+>    `internal/agui` into `internal/assets.TurnMediaLoader` (channel-agnostic, digest
+>    re-verified at projection time) and Telegram arms the same seam per turn
+>    (`withTurnMediaProjection`).
+> 3. **The caption was discarded.** `msg.Caption` on a photo/document is the operator's
+>    instruction; it now drives the turn text (voice keeps the default prompt).
+> 4. **The failure copy blamed the wrong stage.** "Analisi non disponibile" / "Lettura non
+>    disponibile" claimed a model/pipeline limitation when not one byte had been stored.
+>    The ingress-failure copy now says what happened: "Non sono riuscito a ricevere la
+>    foto/il documento: riprova.".
+>
+> Rule: the Telegram channel carries bytes and renders outcomes — nothing else. Any
+> attachment behaviour (storage, verification, projection, catalog) belongs to the shared
+> pipeline where the cockpit path exercises it too; a defect only reproducible via
+> Telegram is by definition a pipeline defect against a streaming producer.
+>
+> What this does NOT prove: the busy-queue path (`enqueueBusyTurn` delivers a held media
+> turn after the live turn ends) re-arms the projection on delivery — unmeasured; audio
+> projection on Telegram voice notes (Ollama claims no audio modality, #197); and the
+> document flow past ingest (extraction/catalog) on this PDF — live closure pending the
+> rebuilt image.

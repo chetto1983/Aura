@@ -128,6 +128,11 @@ func (s *S3Store) ConfigureBrowserUploadCORS(ctx context.Context, bucket string)
 }
 
 func (s *S3Store) Put(ctx context.Context, ref ObjectRef, body io.Reader, opts PutOptions) (Attrs, error) {
+	body, cleanup, err := seekableBody(body)
+	if err != nil {
+		return Attrs{}, err
+	}
+	defer cleanup()
 	in := &s3.PutObjectInput{
 		Bucket:      aws.String(ref.Bucket),
 		Key:         aws.String(ref.Key),

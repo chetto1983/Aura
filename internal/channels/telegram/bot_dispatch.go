@@ -43,8 +43,8 @@ const photoMIME = "image/jpeg"
 // The refuse copies name the actual cause so a rejected upload is actionable: a file
 // the operator can shrink or re-export reads differently from a sidecar being down.
 const (
-	describeFailMessage     = "❌ Analisi dell'immagine non disponibile."
-	convertFailMessage      = "❌ Lettura del documento non disponibile."
+	describeFailMessage     = "❌ Non sono riuscito a ricevere la foto: riprova."
+	convertFailMessage      = "❌ Non sono riuscito a ricevere il documento: riprova."
 	assetTooLargeMessage    = "❌ File troppo grande: riprova con uno più piccolo."
 	assetUnsupportedMessage = "❌ Formato non supportato: inviami un PDF, un Office, un CSV o del testo."
 	turnBusyMessage         = "⏳ Sto ancora elaborando la richiesta precedente. Usa /cancel per annullarla."
@@ -361,7 +361,7 @@ func (t *Telegram) onVoice(daemonCtx context.Context) tele.HandlerFunc {
 		defer stop()
 		return t.ingestTelegramAsset(daemonCtx, c, msg, &msg.Voice.File,
 			telegramVoiceFileName(), telegramVoiceMIME(msg.Voice),
-			assets.ModalityAudio, msg.Voice.FileSize, transcribeFailMessage, true)
+			assets.ModalityAudio, msg.Voice.FileSize, "", transcribeFailMessage, true)
 	}
 }
 
@@ -380,7 +380,7 @@ func (t *Telegram) onPhoto(daemonCtx context.Context) tele.HandlerFunc {
 		defer stop()
 		return t.ingestTelegramAsset(daemonCtx, c, msg, &msg.Photo.File,
 			"photo.jpg", photoMIME,
-			assets.ModalityImage, msg.Photo.FileSize, describeFailMessage, false)
+			assets.ModalityImage, msg.Photo.FileSize, msg.Caption, describeFailMessage, false)
 	}
 }
 
@@ -401,7 +401,7 @@ func (t *Telegram) onDocument(daemonCtx context.Context) tele.HandlerFunc {
 		defer stop()
 		return t.ingestTelegramAsset(daemonCtx, c, msg, &msg.Document.File,
 			msg.Document.FileName, msg.Document.MIME,
-			assets.ModalityDocument, msg.Document.FileSize, convertFailMessage, false)
+			assets.ModalityDocument, msg.Document.FileSize, msg.Caption, convertFailMessage, false)
 	}
 }
 

@@ -231,3 +231,16 @@ func (r *recordingAssetIngress) GetForIdentity(_ context.Context, assetID, ident
 func (r *recordingAssetIngress) BuildTurnContext(_ context.Context, _, _ string, attachments []assetspkg.Asset, userText string) string {
 	return assetspkg.WithContextBlocks(userText, assetspkg.BuildAttachmentBlock(attachments))
 }
+
+// OpenForIdentity mirrors the real Service seam: it re-checks ownership and streams
+// back the last ingested payload, so projection tests read exactly what was stored.
+func (r *recordingAssetIngress) OpenForIdentity(_ context.Context, assetID, identityID string) (io.ReadCloser, assetspkg.Asset, error) {
+	if r.asset.ID != assetID || r.asset.IdentityID != identityID {
+		return nil, assetspkg.Asset{}, errors.New("asset not found")
+	}
+	payload := ""
+	if len(r.payloads) > 0 {
+		payload = r.payloads[len(r.payloads)-1]
+	}
+	return io.NopCloser(strings.NewReader(payload)), r.asset, nil
+}

@@ -108,7 +108,7 @@ func TestGarageMediaProjectionRejectsDigestDrift(t *testing.T) {
 		},
 		openResp: io.NopCloser(strings.NewReader("wav")),
 	}
-	loader := assetContentPartLoader{assets: assetSvc, threadID: "t1", allowed: map[string]bool{"a1": true}}
+	loader := assets.TurnMediaLoader{Opener: assetSvc, ThreadID: "t1", Allowed: map[string]bool{"a1": true}}
 	if _, err := loader.LoadContentPart(context.Background(), "", assetAPIIdentityID, "a1"); err == nil {
 		t.Fatal("digest drift was accepted")
 	}
