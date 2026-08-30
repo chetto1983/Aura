@@ -471,19 +471,6 @@ func pauseAskUserCall(ai *agent.AwaitingInput) *llm.ToolCall {
 // serially, in the SAME original-call order internal/agent's own a.history append does
 // (dispatch.go's result loop is explicitly serial "so the wire contract and cache
 // stability hold"), so no lock is needed here.
-//
-// It records the RAW tool-result preview (res.Preview, tools.ToolResult's own field),
-// not the model-facing WRAPPED rendering internal/agent's private a.history actually
-// stores for untrusted tools (renderToolResultForPrompt's nonce envelope, AG-052) --
-// that wrap cannot be reproduced from outside the package (its nonce is
-// crypto/rand-minted per call and never surfaces on any Event or hook). For the ONE
-// pair this mechanism is load-bearing for, tool_search, this is a non-issue:
-// tool_search is on internal/agent's own trustedToolNames allowlist, so its result is
-// NEVER wrapped -- res.Preview there IS byte-identical to what a.history actually
-// stores. For every OTHER tool, a resumed worker's replayed history carries that tool's
-// raw output without the untrusted-envelope trust framing it originally had -- a
-// documented, narrower scope than byte-perfect verbatim (recorded in the plan SUMMARY),
-// not a silent gap.
 type historyRecorder struct {
 	msgs []llm.Message
 }
@@ -505,16 +492,19 @@ func (r *historyRecorder) BeforeTool(context.Context, llm.ToolCall) (*agent.Tool
 	return nil, nil
 }
 
-// AfterTool never rewrites the result (always returns nil, nil) -- it is a pure
-// observer, mirroring a passive audit hook rather than a policy one.
-func (r *historyRecorder) AfterTool(_ context.Context, call llm.ToolCall, res tools.ToolResult) (*agent.ToolResultHookResult, error) {
+func (r *historyRecorder) AfterTool(context.Context, llm.ToolCall, tools.ToolResult) (*agent.ToolResultHookResult, error) {
+	return nil, nil
+}
+
+func (r *historyRecorder) AfterToolHistory(_ context.Context, call llm.ToolCall, message llm.Message) error {
 	r.msgs = append(r.msgs,
 		llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{call}},
-		llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Content: res.Preview},
+		message,
 	)
-	return nil, nil
+	return nil
 }
 
 func (r *historyRecorder) OnTurnEnd(context.Context, agent.HookTurn) error { return nil }
 
 var _ agent.Hook = (*historyRecorder)(nil)
+var _ agent.ToolHistoryObserver = (*historyRecorder)(nil)

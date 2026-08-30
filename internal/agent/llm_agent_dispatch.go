@@ -139,7 +139,11 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 			// makes them callable WITH their schema. Race-free: this is the serial result
 			// loop (executeBatch already joined); the concurrent batch only reads a.activated.
 			a.promoteFromMeta(run.Result.Meta)
-			a.history = append(a.history, llm.Message{Role: llm.RoleTool, ToolCallID: calls[i].ID, Content: run.Preview})
+			historyMessage := llm.Message{Role: llm.RoleTool, ToolCallID: calls[i].ID, Content: run.Preview}
+			if err := a.hooks.AfterToolHistory(ic.Ctx, calls[i], historyMessage); err != nil {
+				return false, err
+			}
+			a.history = append(a.history, historyMessage)
 			// Dedup hashes the RAW result preview, not run.Preview: the prompt-facing
 			// rendering wraps untrusted output in a per-call random nonce envelope
 			// (AG-052), which would make every identical result look different and

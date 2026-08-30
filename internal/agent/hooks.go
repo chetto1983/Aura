@@ -60,6 +60,14 @@ type ToolResultHookResult struct {
 	Result *tools.ToolResult
 }
 
+// ToolHistoryObserver receives the exact RoleTool message after result rewrites and
+// trust framing have finished. It is optional so existing policy hooks keep their
+// current surface; durable continuation recorders can implement it without seeing or
+// reconstructing raw untrusted output.
+type ToolHistoryObserver interface {
+	AfterToolHistory(context.Context, llm.ToolCall, llm.Message) error
+}
+
 // Hook is the in-process plugin surface for one LlmAgent turn.
 type Hook interface {
 	OnTurnStart(context.Context, HookTurn) error
@@ -263,6 +271,28 @@ func (m *HookManager) AfterTool(ctx context.Context, call llm.ToolCall, res tool
 	}
 	recordHookOutcome("after_tool", "allow")
 	return nil, nil
+}
+
+// AfterToolHistory notifies optional observers with the exact model-facing message.
+func (m *HookManager) AfterToolHistory(ctx context.Context, call llm.ToolCall, message llm.Message) error {
+	if m == nil {
+		return nil
+	}
+	for i, h := range m.hooks {
+		observer, ok := h.(ToolHistoryObserver)
+		if !ok {
+			continue
+		}
+		err := recoverHook("after_tool_history", func() error {
+			return observer.AfterToolHistory(ctx, call, message)
+		})
+		if err != nil {
+			if aborted := m.hookFault(i, "after_tool_history", err); aborted != nil {
+				return aborted
+			}
+		}
+	}
+	return nil
 }
 
 // OnTurnEnd runs registered end hooks in order.
