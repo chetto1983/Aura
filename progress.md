@@ -38,10 +38,9 @@ being folded into Phase 51.
 - Phase 51 has 13 of 14 plans complete.
 - Remaining plan: `.planning/phases/51-durable-delegation/51-08-PLAN.md`.
 - Plan 51-08 is wave 9 and owns the live SC#1-SC#5 validation.
-- It was paused because the live process still used its boot-time OpenRouter
-  route even though the database held a local llama.cpp route.
-- Current work fixes that runtime publication defect before resuming the live
-  acceptance run.
+- The hot-route defect is fixed and verified through the authenticated Cockpit.
+- The official GSD executor is reconciling plan 51-08 with Amendment #183's
+  already-recorded 9.9/10 acceptance and Amendment #177's retired ledger gate.
 - After Phase 51 is complete, insert and plan a provider-native phase through
   GSD. It should not move the current phase pointer while 51-08 is unfinished.
 
@@ -55,8 +54,8 @@ Current execution checklist:
    existing client: implemented; focused and live tests green.
 5. Align Settings batch update, cockpit, AG-UI, and Telegram runtime consumers:
    implemented; committed.
-6. Race/build/frontend/live no-restart verification: in progress.
-7. Resume and complete 51-08: pending.
+6. Race/build/frontend/live no-restart verification: complete.
+7. Resume and complete 51-08: in progress.
 8. Insert and plan provider-native subscription phase: pending.
 
 ## Committed decisions
@@ -83,6 +82,37 @@ Current execution checklist:
   - Adds the three provider presets, batch save, tests, and rebuilt embedded UI.
 - `37a344e9f test(llm): drain large SSE fixture requests`
   - Stabilizes large loopback SSE fixtures on Windows.
+- `d6c60b408 test(settings): prove live primary route hot reload`
+  - Adds the opt-in authenticated Playwright witness for Ollama and llama.cpp.
+- `ce2935734 docs(llm): record measured Ollama reasoning profile`
+  - Records the direct reasoning and context contradiction before implementation.
+- `1f01dcdfd fix(llm): project Ollama reasoning effort`
+  - Maps Aura effort to Ollama's standard `reasoning_effort` field and exposes
+    the measured capability levels.
+- `ae9c59fe1 fix(settings): follow active model limits`
+  - Clears persisted model-limit overrides when the selected route changes.
+- `23356e179 fix(web): refresh hot model metadata`
+  - Invalidates active profile and reasoning metadata after a Settings save.
+- `3cbd008e5 test(e2e): cover Ollama reasoning and context`
+  - Extends the live Playwright witness through context, effort, reasoning, and
+    final-answer assertions.
+- `253c4b967 docs(llm): record inherited limit precedence failure`
+  - Records the first live correction after startup env values defeated DB cleanup.
+- `9adaf6e35 fix(settings): reset inherited startup limits`
+  - Propagates route reset intent through prepare and clears configured flags
+    before provider discovery.
+- `7cd32f581 docs(llm): record composer effort race`
+  - Records the intermittent immediate-select/send failure.
+- `0c59905d4 fix(web): submit the current reasoning effort`
+  - Makes the retained assistant-ui callback read a render-synchronized effort ref.
+- `7301dfead docs(agui): record terminal answer drop`
+  - Records the final-only `text_response` loss found by three live runs.
+- `c9e8b3664 fix(agui): stream terminal-only answers`
+  - Emits one text lifecycle for terminal-only answers without duplicating normal
+    streamed responses.
+- `6d651fc84 build(web): align embedded assets with lockfile`
+  - Regenerates the embedded distribution after `npm ci`; a second build is
+    byte-stable.
 
 PRD amendment #185 records these decisions:
 
@@ -122,10 +152,10 @@ Relevant findings:
 - pi distinguishes `openai` (`openai-responses`, API key) from
   `openai-codex` (`openai-codex-responses`, ChatGPT Plus/Pro OAuth).
 - pi uses native `anthropic-messages` with API key or Claude Pro/Max OAuth.
-- Hermes also separates provider/auth type and carries explicit cost source and
-  status.
-- LibreChat supports authoritative administrator metadata overrides, otherwise
-  provider metadata fetch/cache scoped by provider and tenant.
+- Hermes uses typed provider profiles, route-keyed metadata/context caches, and
+  explicit price provenance.
+- LibreChat uses descriptor-driven custom endpoints, provider-specific reasoning
+  mappings, separate metadata/tokenomics, and identity-aware invalidation.
 - Aura's current Slice 13 contract is an OpenAI-compatible remote/local router;
   provider-native subscriptions therefore need their own phase.
 
@@ -153,17 +183,44 @@ Ollama 0.33.2 live measurement:
 - The profile is `subscription-included` with no fabricated or inherited numeric
   token price.
 
-Aura baseline for the later no-restart witness:
+Aura baseline before the software rollout:
 
 - container PID: `75817`
 - started at: `2026-08-30T01:22:21.123134167Z`
 - restart count: `0`
 - image: `sha256:699ce1260f16f7974f6d9885121ad8b109f22e5f867065a76d626c54f9ee95ca`
 
-The final live proof must show a Settings mutation and successful local use while
-the same PID, start time, and restart count remain unchanged. Loading a newly
-built binary is a separate rollout concern and must not be confused with the
-runtime endpoint-switch contract.
+The software rollout built image
+`sha256:9d6b3fef42ceecb008103e9acb1ff8852ca4889bb838a9df90f6a71aef881e93`
+from the committed implementation and recreated Aura once. The post-rollout
+no-restart baseline and final witness are identical:
+
+- container PID: `46356`
+- started at: `2026-08-30T09:17:19.214549326Z`
+- restart count: `0`
+- health: `healthy`
+
+Authenticated Cockpit Settings then moved the runtime through Ollama and back to
+llama.cpp. The Ollama witness proxy observed one keyless `/api/show` and two
+`/v1/chat/completions` requests, with zero Authorization headers. The local turn
+returned its requested sentinel. Playwright passed in 1.5 minutes without a
+container restart. A separate Cockpit session subsequently selected the direct
+Ollama route on port 11434; that operator choice was left intact.
+
+The final software image is
+`sha256:ed60b940c495248e2747b7d57adfb4d8b23c7b30dbdd1a731599dff2d92e399b`.
+Its pre-drive and post-drive container witness is identical:
+
+- container PID: `19645`
+- started at: `2026-08-30T10:43:20.631079759Z`
+- restart count: `0`
+- health: `healthy`
+
+One Playwright run and a separate `--repeat-each=3` run all passed. Every run
+changed profiles through Cockpit, observed Ollama context `262144`, selected
+`high`, asserted the actual `/agent/run` payload carried `aura.effort=high`,
+received non-empty reasoning frames and the requested final sentinel, exercised
+llama.cpp, and restored Ollama in `finally`. No OpenRouter request participated.
 
 ## Current implementation
 
@@ -203,8 +260,8 @@ The implementation below is committed in the scoped changes listed above.
 
 ### Settings prepare, persist, publish
 
-- `internal/settings/settings.go` has advisory-lock-protected `UpsertMany` in one
-  transaction.
+- `internal/settings/settings.go` has advisory-lock-protected `ReplaceMany` for
+  atomic writes and deletes in one transaction.
 - `PUT /api/settings/llm-profile` accepts only hot-profile keys.
 - A reloader prepares and validates the complete client/profile before database
   mutation, persists all keys in one transaction, then executes one publication
@@ -216,12 +273,20 @@ The implementation below is committed in the scoped changes listed above.
   errors.
 - Active non-profile configuration, including a database-overlaid API key, is
   retained while a profile changes.
+- Route changes reset model limits even when the stale configured value came
+  from startup environment rather than a Settings row. An explicit limit in the
+  same mutation remains pinned.
 
 ### Runtime consumers
 
 - AG-UI reads model context directly from the same atomic runtime snapshot used
   for the client, preventing model/context mismatch.
 - Reasoning capabilities refresh with the published profile.
+- Ollama effort uses the same OpenAI-compatible endpoint: none/low/medium/high
+  map to `reasoning_effort`, while xhigh/max clamp to high. No OpenRouter or
+  llama.cpp-only extension is projected.
+- AG-UI emits terminal-only final content before StateDelta when no text chunks
+  preceded it; normal streamed answers remain non-duplicated.
 - Telegram `/cost` snapshots the current runtime for model, prices, and spend
   backend. Tests use synthetic data only; no Telegram identifiers are retained.
 
@@ -235,6 +300,9 @@ The implementation below is committed in the scoped changes listed above.
   Ollama selects `http://host.docker.internal:11434/v1` and
   `gemma4:31b-cloud` in the same batch.
 - The embedded Web UI distribution was rebuilt after the source changes.
+- Capability queries and `/api/me` are invalidated after a hot profile save.
+- The external runtime's retained submit callback reads current effort from a
+  layout-synchronized ref, closing the select-high/send race.
 
 ## Tests added or updated
 
@@ -256,8 +324,14 @@ The implementation below is committed in the scoped changes listed above.
   compatibility.
 - Opt-in live Ollama tests for profile discovery, SSE completion, and streamed
   tool calls through Aura's production client.
+- Opt-in authenticated Playwright route witness that publishes Ollama and
+  llama.cpp profiles, drives a real turn on each, asserts the request effort,
+  reasoning frames, active context and final answer, and restores Ollama in
+  `finally`.
 - The large SSE fixture drains the POST body before returning its 70 KB response,
   preventing Windows from resetting and truncating the loopback connection.
+- AG-UI translator coverage for terminal-only content followed by StateDelta,
+  alongside the existing no-double-stream regression.
 
 ## Verification status
 
@@ -271,20 +345,27 @@ Green:
 - `npm run typecheck`
 - `npm run build`
 - `npm run lint`
-- Full frontend test run: 222 files, 1,897 tests passed.
-- Frontend coverage: 91.06% statements, 85.05% branches, 90.26% functions,
-  93.04% lines.
+- Full frontend test run after clean `npm ci`: 226 files, 1,905 tests passed.
+- Frontend coverage: 91.23% statements, 85.13% branches, 90.47% functions,
+  93.15% lines.
 - Split Model Settings routing tests: 2 files, 25 tests passed.
 - The previously failing 70 KB SDK stream test passed 20 consecutive runs after
   the fixture correction, and `internal/llm/openai_compat` passes in the full run.
-- WSL race matrix passed for `internal/llm`, `internal/agui`, `internal/runner`,
-  `internal/cron/handlers`, `internal/swarm`, `internal/channels/telegram`, and
-  `cmd/aura`.
-- Full Linux/WSL `go test ./...` passed.
+- WSL race matrix passed for `internal/llm/...`, `internal/agent/prompt`,
+  `internal/agui`, `internal/settings`, and `cmd/aura`; the broader earlier
+  runtime/cron/swarm/channel matrix also remains green.
+- Full Linux/WSL `go test -count=1 ./...` passed after all fixes.
 - `git diff --check`
 - Live `gemma4:31b-cloud` gate: profile discovery, streaming completion, and
   streaming tool call all passed; goleak passed after closing idle metadata
   connections.
+- Rebuilt `aura:local` from the committed tree and reached healthy on the new
+  image.
+- Playwright live hot-route gate passed four consecutive times; PID, start time,
+  restart count, image, and health remained unchanged.
+- `npm run build` passed twice after `npm ci` with 4,331 modules and zero
+  regenerated diff.
+- `TestProductionContainerArtifactsMatchFatImageContract` passed.
 
 Needs completion:
 
@@ -294,9 +375,7 @@ Needs completion:
   `internal/agent/tools` test expects POSIX mode `0600` from Windows. These files
   are outside the implementation diff. The authoritative Linux/WSL full suite is
   green; do not widen this phase into unrelated Windows-only test maintenance.
-- Re-run the authoritative full WSL Go suite after the final Ollama additions.
-- Perform the live no-restart Settings witness against local llama.cpp.
-- Resume plan 51-08 SC#1-SC#5 only after the route is proven local.
+- Complete GSD plan 51-08 reconciliation and run the phase verifier.
 
 ## Files and staging
 
@@ -313,13 +392,9 @@ For subsequent commits:
 
 ## Next actions
 
-1. Re-run the full WSL Go suite and final repository integrity checks.
-2. Deploy only through a path that preserves the distinction between a software
-   rollout and subsequent no-restart endpoint changes.
-3. Use the Settings batch endpoint to publish the local llama.cpp profile and
-   capture the unchanged-container witness.
-4. Finish Phase 51 plan 51-08 and its GSD verification/summary artifacts.
-5. Insert, discuss, specify, and plan the provider-native subscription phase via
+1. Finish Phase 51 plan 51-08, run the GSD phase verifier, and mark the phase
+   complete only if verification passes.
+2. Insert, discuss, specify, and plan the provider-native subscription phase via
    GSD after Phase 51 is complete.
 
 ## Resume commands
