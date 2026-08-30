@@ -14,16 +14,12 @@
 // history (internal/agent/llm_agent_construct.go:38-39), so DelegationResumeState
 // carries NO derived tool list -- persisting one would be exactly the unanchored path
 // deriveActivated's tool_call anchoring exists to forbid.
-//
-// SCOPE BOUNDARY: internal/agent is untouched by this plan -- git diff --stat
-// internal/agent/ must come back empty. The history-capture mechanism (swarm.go's
-// historyRecorder) uses ONLY the exported agent.Hook extension point every LlmAgent
-// already accepts via LlmAgentConfig.HookManager; it adds no new agent surface.
 package swarm
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/chetto1983/aura/internal/askuser"
@@ -121,6 +117,24 @@ type PauseAndPark interface {
 	OpenPauseAndPark(ctx context.Context, pause askuser.InsertParams, park documents.ParkAwaitingInputRequest) (parked bool, err error)
 }
 
+const invalidDelegationResumeCode = "invalid_delegation_resume"
+
+var errInvalidAnsweredDelegation = errors.New("invalid answered delegation")
+
+type RejectAnsweredDelegationRequest struct {
+	IdentityID      string
+	JobID           string
+	PendingActionID string
+	ErrorCode       string
+	ErrorMessage    string
+}
+
+// AnsweredDelegationRejector terminally resolves a structurally invalid answered
+// row under its pending-action fence so it cannot be selected again.
+type AnsweredDelegationRejector interface {
+	RejectAnsweredDelegation(context.Context, RejectAnsweredDelegationRequest) (bool, error)
+}
+
 // DelegationResumeObserver watches for delegation pauses that have been answered
 // (through the SAME generic /api/approvals -> Runner.SubmitAnswers bridge every other
 // pause resolves through -- 51-06a's Source: p.WorkerID() projection is what surfaces a
@@ -129,19 +143,24 @@ type PauseAndPark interface {
 // ClaimIngestionJobs loop claims the un-parked row, and delegation_queue.go's
 // processJob detects the resume state and rebuilds through runChild.
 type DelegationResumeObserver struct {
-	Store DelegationJobStore
+	Store    DelegationJobStore
+	Rejector AnsweredDelegationRejector
 }
 
 // NewDelegationResumeObserver builds an observer bound to store.
 func NewDelegationResumeObserver(store DelegationJobStore) *DelegationResumeObserver {
-	return &DelegationResumeObserver{Store: store}
+	observer := &DelegationResumeObserver{Store: store}
+	if rejector, ok := store.(AnsweredDelegationRejector); ok {
+		observer.Rejector = rejector
+	}
+	return observer
 }
 
 // ProcessOnce lists identityID's answered-but-still-parked jobs and un-parks each
 // EXACTLY ONCE: RowsAffected==1 for exactly one caller is UnparkIngestionJob's own
 // conditional-UPDATE idempotency key, so a second observer pass -- or one racing this
-// same pass -- un-parks zero rows for an already-claimed job. It returns the number of
-// rows actually un-parked this pass.
+// same pass -- un-parks zero rows for an already-claimed job. Per-row failures are
+// aggregated after the batch; structurally invalid rows are terminally rejected.
 func (o *DelegationResumeObserver) ProcessOnce(ctx context.Context, identityID string, limit int) (int, error) {
 	if o == nil || o.Store == nil {
 		return 0, fmt.Errorf("delegation resume observer has no store")
@@ -154,16 +173,40 @@ func (o *DelegationResumeObserver) ProcessOnce(ctx context.Context, identityID s
 		return 0, fmt.Errorf("delegation resume observer list: %w", err)
 	}
 	unparked := 0
+	var batchErrors []error
 	for _, job := range jobs {
 		ok, err := o.unparkOne(ctx, job)
 		if err != nil {
-			return unparked, err
+			if errors.Is(err, errInvalidAnsweredDelegation) {
+				if rejectErr := o.rejectInvalid(ctx, job, err); rejectErr != nil {
+					batchErrors = append(batchErrors, errors.Join(err, rejectErr))
+				} else {
+					batchErrors = append(batchErrors, err)
+				}
+			} else {
+				batchErrors = append(batchErrors, err)
+			}
+			continue
 		}
 		if ok {
 			unparked++
 		}
 	}
-	return unparked, nil
+	return unparked, errors.Join(batchErrors...)
+}
+
+func (o *DelegationResumeObserver) rejectInvalid(ctx context.Context, job documents.AnsweredAwaitingInputJob, cause error) error {
+	if o.Rejector == nil {
+		return fmt.Errorf("delegation resume observer job %s: no answered-row rejector configured", job.JobID)
+	}
+	_, err := o.Rejector.RejectAnsweredDelegation(ctx, RejectAnsweredDelegationRequest{
+		IdentityID: job.IdentityID, JobID: job.JobID, PendingActionID: job.PendingActionID,
+		ErrorCode: invalidDelegationResumeCode, ErrorMessage: cause.Error(),
+	})
+	if err != nil {
+		return fmt.Errorf("delegation resume observer job %s: reject invalid row: %w", job.JobID, err)
+	}
+	return nil
 }
 
 // unparkOne completes the job's payload with the answer and un-parks it. A payload that
@@ -174,23 +217,23 @@ func (o *DelegationResumeObserver) ProcessOnce(ctx context.Context, identityID s
 func (o *DelegationResumeObserver) unparkOne(ctx context.Context, job documents.AnsweredAwaitingInputJob) (bool, error) {
 	payload, err := delegationPayloadFromMap(job.Payload)
 	if err != nil {
-		return false, fmt.Errorf("delegation resume observer job %s: %w", job.JobID, err)
+		return false, fmt.Errorf("%w: delegation resume observer job %s: %v", errInvalidAnsweredDelegation, job.JobID, err)
 	}
 	if payload.Resume == nil {
-		return false, fmt.Errorf("delegation resume observer job %s: parked with no resume state", job.JobID)
+		return false, fmt.Errorf("%w: delegation resume observer job %s: parked with no resume state", errInvalidAnsweredDelegation, job.JobID)
 	}
 	if payload.Resume.PendingActionID != job.PendingActionID {
-		return false, fmt.Errorf("delegation resume observer job %s: fence mismatch (state=%s pause=%s)",
+		return false, fmt.Errorf("%w: delegation resume observer job %s: fence mismatch (state=%s pause=%s)", errInvalidAnsweredDelegation,
 			job.JobID, payload.Resume.PendingActionID, job.PendingActionID)
 	}
 	var answer askuser.ResumeAnswer
 	if err := json.Unmarshal(job.ResumedAnswer, &answer); err != nil {
-		return false, fmt.Errorf("delegation resume observer job %s: decode answer: %w", job.JobID, err)
+		return false, fmt.Errorf("%w: delegation resume observer job %s: decode answer: %v", errInvalidAnsweredDelegation, job.JobID, err)
 	}
 	payload.Resume.AnswerContent = answer.Content
 	payloadMap, err := delegationPayloadMap(payload)
 	if err != nil {
-		return false, fmt.Errorf("delegation resume observer job %s: encode payload: %w", job.JobID, err)
+		return false, fmt.Errorf("%w: delegation resume observer job %s: encode payload: %v", errInvalidAnsweredDelegation, job.JobID, err)
 	}
 	n, err := o.Store.UnparkIngestionJob(ctx, documents.UnparkIngestionJobRequest{
 		IdentityID: job.IdentityID, JobID: job.JobID, Payload: payloadMap,

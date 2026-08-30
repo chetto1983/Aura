@@ -34,13 +34,22 @@ type fakeResumeStore struct {
 	unparkRows         map[string]int64 // job id -> RowsAffected UnparkIngestionJob should report
 	unparkErr          error
 	unparked           []documents.UnparkIngestionJobRequest
+	rejectErr          error
+	rejected           []RejectAnsweredDelegationRequest
+	resolved           map[string]bool
 }
 
 func (s *fakeResumeStore) ListAnsweredAwaitingInput(context.Context, string, int) ([]documents.AnsweredAwaitingInputJob, error) {
 	if s.listErr != nil {
 		return nil, s.listErr
 	}
-	return s.jobs, nil
+	jobs := make([]documents.AnsweredAwaitingInputJob, 0, len(s.jobs))
+	for _, job := range s.jobs {
+		if !s.resolved[job.JobID] {
+			jobs = append(jobs, job)
+		}
+	}
+	return jobs, nil
 }
 
 func (s *fakeResumeStore) UnparkIngestionJob(_ context.Context, req documents.UnparkIngestionJobRequest) (int64, error) {
@@ -49,9 +58,32 @@ func (s *fakeResumeStore) UnparkIngestionJob(_ context.Context, req documents.Un
 	}
 	s.unparked = append(s.unparked, req)
 	if s.unparkRows == nil {
+		if s.resolved == nil {
+			s.resolved = make(map[string]bool)
+		}
+		s.resolved[req.JobID] = true
 		return 1, nil
 	}
-	return s.unparkRows[req.JobID], nil
+	rows := s.unparkRows[req.JobID]
+	if rows > 0 {
+		if s.resolved == nil {
+			s.resolved = make(map[string]bool)
+		}
+		s.resolved[req.JobID] = true
+	}
+	return rows, nil
+}
+
+func (s *fakeResumeStore) RejectAnsweredDelegation(_ context.Context, req RejectAnsweredDelegationRequest) (bool, error) {
+	s.rejected = append(s.rejected, req)
+	if s.rejectErr != nil {
+		return false, s.rejectErr
+	}
+	if s.resolved == nil {
+		s.resolved = make(map[string]bool)
+	}
+	s.resolved[req.JobID] = true
+	return true, nil
 }
 
 // answeredJobPayload builds a plausible AnsweredAwaitingInputJob payload map: a
@@ -170,6 +202,49 @@ func TestDelegationResumeObserverRefusesAJobWithNoResumeState(t *testing.T) {
 	_, err := o.ProcessOnce(context.Background(), "identity-1", 10)
 	if err == nil || !strings.Contains(err.Error(), "no resume state") {
 		t.Fatalf("ProcessOnce = %v, want a no-resume-state error", err)
+	}
+}
+
+func TestDelegationResumeObserverContinuesAndQuarantinesPoisonRows(t *testing.T) {
+	missingResume := documents.AnsweredAwaitingInputJob{
+		JobID: "poison-no-resume", IdentityID: "identity-1", PendingActionID: "fence-1",
+		Payload: answeredJobPayload(t, nil), ResumedAnswer: []byte(`{"content":"answer"}`),
+	}
+	badAnswer := documents.AnsweredAwaitingInputJob{
+		JobID: "poison-bad-answer", IdentityID: "identity-1", PendingActionID: "fence-2",
+		Payload:       answeredJobPayload(t, &DelegationResumeState{PendingActionID: "fence-2"}),
+		ResumedAnswer: []byte(`{"content":`),
+	}
+	valid := documents.AnsweredAwaitingInputJob{
+		JobID: "valid", IdentityID: "identity-1", PendingActionID: "fence-3",
+		Payload:       answeredJobPayload(t, &DelegationResumeState{PendingActionID: "fence-3"}),
+		ResumedAnswer: []byte(`{"content":"resume me"}`),
+	}
+	store := &fakeResumeStore{jobs: []documents.AnsweredAwaitingInputJob{missingResume, badAnswer, valid}}
+	observer := NewDelegationResumeObserver(store)
+
+	unparked, err := observer.ProcessOnce(context.Background(), "identity-1", 10)
+	if unparked != 1 {
+		t.Fatalf("ProcessOnce unparked %d jobs, want the valid later row", unparked)
+	}
+	if err == nil || !strings.Contains(err.Error(), "no resume state") || !strings.Contains(err.Error(), "decode answer") {
+		t.Fatalf("ProcessOnce error = %v, want both poison-row errors aggregated", err)
+	}
+	if len(store.unparked) != 1 || store.unparked[0].JobID != "valid" {
+		t.Fatalf("unparked requests = %+v, want only the valid row", store.unparked)
+	}
+	if len(store.rejected) != 2 {
+		t.Fatalf("rejected requests = %+v, want both poison rows quarantined", store.rejected)
+	}
+	for _, req := range store.rejected {
+		if req.ErrorCode != invalidDelegationResumeCode || req.PendingActionID == "" {
+			t.Fatalf("reject request lacks terminal reason/fence: %+v", req)
+		}
+	}
+
+	unparked, err = observer.ProcessOnce(context.Background(), "identity-1", 10)
+	if err != nil || unparked != 0 {
+		t.Fatalf("second ProcessOnce = %d, %v; quarantined poison rows must not recur", unparked, err)
 	}
 }
 
