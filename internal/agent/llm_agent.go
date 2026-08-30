@@ -490,14 +490,23 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				// runs FIRST because it costs no model call and the completion critic
 				// costs one — a turn the free gate sends back never pays for the paid one.
 				if nudge, ok := a.gateVerification(); ok {
+					if !a.repudiateStreamed(ic, spanID, parentSpanID, yield) {
+						turnReason = "consumer_stopped"
+						return
+					}
 					a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: nudge})
 					continue
 				}
 				// Completion gate (D-43): content-stop is also a voluntary termination.
 				// No tool_call to attach feedback to here, so a veto appends only the
-				// user-role nudge. The vetoed answer must not become durable history:
-				// finalize copies history forward on budget trips.
+				// user-role nudge. The vetoed answer must not become durable history
+				// (finalize copies history forward on budget trips) NOR stay on the
+				// wire: the draft was streamed live, so it is repudiated first (#191).
 				if veto, feedback := a.gateCompletion(ic, answer); veto {
+					if !a.repudiateStreamed(ic, spanID, parentSpanID, yield) {
+						turnReason = "consumer_stopped"
+						return
+					}
 					a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: feedback})
 					continue
 				}

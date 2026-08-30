@@ -189,6 +189,15 @@ func TestCompletionGate_NotDone_VetoesOnceThenAccepts(t *testing.T) {
 	if got == "I wrote the script, you run it" {
 		t.Error("the vetoed hand-off answer was accepted as terminal")
 	}
+	discards := 0
+	for _, ev := range evs {
+		if ev != nil && ev.Actions.DiscardStreamed {
+			discards++
+		}
+	}
+	if discards != 1 {
+		t.Errorf("DiscardStreamed events = %d, want one per veto (amendment #191)", discards)
+	}
 }
 
 // TestCompletionGate_NotDone_VetoesTwiceThenAccepts: gate ON, a critic that

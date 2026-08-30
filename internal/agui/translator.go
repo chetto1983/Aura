@@ -48,6 +48,13 @@ const ViewEventName = "aura.mcp_view"
 // ring, with no special-cased storage of its own.
 const SteerEventName = "aura.steer"
 
+// DiscardEventName is the stable AG-UI CUSTOM-event name the repudiation branch
+// emits (amendment #191): the agent threw away the prose it had already streamed on
+// the named TEXT_MESSAGE — a content-stop the completion/verification gate vetoed, or
+// a mid-stream retry (B-12) — and every consumer must drop that message. Value:
+// {"message_id": <the repudiated messageId>}.
+const DiscardEventName = "aura.discard"
+
 // redactedReasoningDelta is the placeholder the translator substitutes for a real
 // chain-of-thought delta when showReasoning is false (the default privacy posture).
 // A consumer that opts in (Telegram's AURA_TELEGRAM_SHOW_REASONING) receives the real
@@ -108,6 +115,26 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 				return
 			}
 			if ev == nil {
+				continue
+			}
+
+			// A repudiation (Actions.DiscardStreamed: a vetoed content-stop, a
+			// mid-stream retry) makes the prose this round streamed stale. Close the
+			// runs, name the message so the cockpit and Telegram drop it, and forget
+			// it was streamed: measured live 2026-08-30 (amendment #191), two vetoed
+			// drafts coalesced into one TEXT_MESSAGE and the synthesized answer that
+			// followed was suppressed as END-only, so the user saw the drafts and
+			// never the answer the database holds.
+			if ev.Actions.DiscardStreamed {
+				if !closeRuns() {
+					return
+				}
+				if id := st.lastMsgID; textStreamed && id != "" {
+					if !yield(events.NewCustomEvent(DiscardEventName, events.WithValue(map[string]any{"message_id": id})), nil) {
+						return
+					}
+				}
+				textStreamed = false
 				continue
 			}
 
@@ -293,12 +320,16 @@ type textRunState struct {
 	idgen IDGenerator
 	msgID string
 	open  bool
+	// lastMsgID survives close so a repudiation that arrives after the run ended
+	// (the veto fires once the whole content-stop is in) can still name it.
+	lastMsgID string
 }
 
 // content emits a CONTENT delta, opening the run (START) lazily on the first one.
 func (s *textRunState) content(yield func(events.Event, error) bool, delta string) bool {
 	if !s.open {
 		s.msgID = s.idgen.NewMessageID()
+		s.lastMsgID = s.msgID
 		s.open = true
 		if !yield(events.NewTextMessageStartEvent(s.msgID, events.WithRole("assistant")), nil) {
 			return false

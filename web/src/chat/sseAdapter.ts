@@ -4,7 +4,9 @@ import { isMcpViewDescriptor } from './mcpapps/hostProtocol';
 import { errorDetail, type AguiFrame } from './sseAdapter_frames';
 import {
   ensureReasoning,
+  discardText,
   ensureText,
+  isDiscardNotice,
   ensureTool,
   frameTimestamp,
   newAssistantTurn,
@@ -291,6 +293,12 @@ export function reduceFrame(state: AssistantTurnState, frame: AguiFrame): Assist
           ...part,
           display: { type: 'mcp_view', tool_call_id: d.tool_call_id, mcp_view: d },
         });
+      }
+      // aura.discard (amendment #191): the agent repudiated the prose it streamed on
+      // this message. Drop that text part so the answer that follows renders alone,
+      // never after a draft the completion gate threw away.
+      if (frame.name === 'aura.discard' && isDiscardNotice(frame.value)) {
+        discardText(state, frame.value.message_id);
       }
       // aura.steer (amendment #132, STEER-03) is deliberately NOT handled here: it falls
       // through to the default no-op below every branch above, exactly as an unrecognized
