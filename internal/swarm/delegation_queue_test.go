@@ -324,3 +324,103 @@ func TestDelegationDeadLettersAtMaxAttempts(t *testing.T) {
 		t.Fatalf("claimed %d rows after dead-letter, want 0 (stops being claimed, does not loop)", len(again))
 	}
 }
+
+// TestExpiredFinalAttemptRecoversAsDeliveryOnly proves a process death during
+// the final worker execution cannot turn the configured attempt cap into an
+// unbounded replay loop. The first recovery stages a dead-letter report and a
+// failed projection schedules delivery-only work; the second recovery finishes
+// that delivery without invoking the model on either pass.
+func TestExpiredFinalAttemptRecoversAsDeliveryOnly(t *testing.T) {
+	pool := delegationDisposablePool(t)
+	ctx := context.Background()
+	identityID := seedSwarmTestIdentity(t, ctx, pool)
+
+	const goal = "must not execute again"
+	router := newRouter().route(goal, outcome{kind: "fail"})
+	recorder := &fakeConversationRecorder{}
+	pub := &fakeSteerPublisher{err: fmt.Errorf("steer unavailable")}
+	store := documents.NewPostgresIngestionJobStore(pool)
+	loop := &DelegationClaimLoop{
+		Store: store, IdentityID: identityID, WorkerID: "recovery-worker",
+		Worker: testRunConfig(t, router, 25), RetryBackoff: time.Nanosecond,
+		Delivery: &DelegationDelivery{Recorder: recorder, Steer: pub},
+	}
+
+	job, err := store.Create(ctx, documents.CreateIngestionJobRequest{
+		IdentityID: identityID, JobType: JobTypeSwarmDelegation, Status: "queued",
+		IdempotencyKey: "expired-final-attempt", MaxAttempts: 2,
+		Payload: map[string]any{
+			"goal": goal, "conversation_id": "conv-expired", "child_id": "w-expired", "fanout_key": "f-expired",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create row: %v", err)
+	}
+	err = db.WithIdentityTxRaw(ctx, pool, identityID, func(tx pgx.Tx) error {
+		_, updateErr := tx.Exec(ctx, `
+			UPDATE aura.ingestion_jobs
+			SET status = 'running', attempt_count = max_attempts,
+			    locked_by = 'crashed-worker', locked_until = now() - interval '1 second'
+			WHERE id = $1::uuid`, job.ID)
+		return updateErr
+	})
+	if err != nil {
+		t.Fatalf("seed expired final attempt: %v", err)
+	}
+
+	claimed, err := store.Claim(ctx, documents.ClaimIngestionJobsRequest{
+		IdentityID: identityID, JobType: JobTypeSwarmDelegation, WorkerID: "recovery-worker",
+		LeaseDuration: 5 * time.Second, BatchSize: 1,
+	})
+	if err != nil || len(claimed) != 1 {
+		t.Fatalf("claim expired final attempt = %+v, %v", claimed, err)
+	}
+	if claimed[0].AttemptCount <= claimed[0].MaxAttempts {
+		t.Fatalf("attempt count = %d, want post-claim count above cap %d", claimed[0].AttemptCount, claimed[0].MaxAttempts)
+	}
+	if err := loop.processJob(ctx, claimed[0]); err != nil {
+		t.Fatalf("first recovery: %v", err)
+	}
+
+	var status, errorCode string
+	err = db.WithIdentityTxRaw(ctx, pool, identityID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			UPDATE aura.ingestion_jobs SET next_attempt_at = now()
+			WHERE id = $1::uuid
+			RETURNING status, error_code`, job.ID).Scan(&status, &errorCode)
+	})
+	if err != nil {
+		t.Fatalf("read retry state: %v", err)
+	}
+	if status != "queued" || errorCode != "delivery_failed" {
+		t.Fatalf("first recovery state = %s/%s, want queued/delivery_failed", status, errorCode)
+	}
+
+	pub.err = nil
+	claimed, err = store.Claim(ctx, documents.ClaimIngestionJobsRequest{
+		IdentityID: identityID, JobType: JobTypeSwarmDelegation, WorkerID: "recovery-worker",
+		LeaseDuration: 5 * time.Second, BatchSize: 1,
+	})
+	if err != nil || len(claimed) != 1 {
+		t.Fatalf("claim delivery-only retry = %+v, %v", claimed, err)
+	}
+	if err := loop.processJob(ctx, claimed[0]); err != nil {
+		t.Fatalf("delivery-only recovery: %v", err)
+	}
+
+	router.mu.Lock()
+	modelCalls := router.calls[goal]
+	router.mu.Unlock()
+	if modelCalls != 0 {
+		t.Fatalf("model calls = %d, want zero beyond the final attempt", modelCalls)
+	}
+	if len(recorder.appended) != 1 || len(pub.pushes) != 1 {
+		t.Fatalf("terminal projections = turns:%d pushes:%d, want exactly one each", len(recorder.appended), len(pub.pushes))
+	}
+	err = db.WithIdentityTxRaw(ctx, pool, identityID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT status FROM aura.ingestion_jobs WHERE id = $1::uuid`, job.ID).Scan(&status)
+	})
+	if err != nil || status != "dead_letter" {
+		t.Fatalf("terminal state = %q, %v, want dead_letter", status, err)
+	}
+}

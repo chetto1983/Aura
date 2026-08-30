@@ -290,6 +290,13 @@ func (l *DelegationClaimLoop) processJob(ctx context.Context, job documents.Inge
 	if pending != nil {
 		return l.deliverPending(ctx, job, payload, pending)
 	}
+	// A delivery-only retry is intentionally claimable beyond max_attempts, but an
+	// expired worker lease is not a fresh execution budget. Claim increments the
+	// count, so a running row reclaimed after its final attempt arrives here at
+	// max+1 and must be dead-lettered without constructing another worker.
+	if job.MaxAttempts > 0 && job.AttemptCount > job.MaxAttempts {
+		return l.recordFailure(ctx, job, errors.New("delegation lease expired after final attempt"))
+	}
 
 	// 51-06b (T-51-36, D-00's second LibreChat trap): a resume state whose
 	// AgentIdentity does not match the identity this job is claimed under refuses
