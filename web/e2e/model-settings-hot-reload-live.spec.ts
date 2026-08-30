@@ -26,6 +26,16 @@ interface RunEvidence {
   readonly text: string;
 }
 
+interface RuntimeMetadata {
+  readonly capabilities: {
+    readonly backend: string;
+    readonly default: string;
+    readonly detected: boolean;
+    readonly levels: readonly string[];
+  };
+  readonly contextWindow: number;
+}
+
 const localProfile: RouteProfile = {
   provider: 'llamacpp',
   baseURL: 'http://aura-llm:8084/v1',
@@ -71,6 +81,35 @@ async function putProfile(page: Page, profile: RouteProfile): Promise<void> {
   });
   expect(response.status, response.text).toBe(200);
   expect(JSON.parse(response.text)).toMatchObject({ updated: 3, restart_required: false });
+}
+
+async function readRuntimeMetadata(page: Page): Promise<RuntimeMetadata | null> {
+  const [meResponse, capabilitiesResponse] = await Promise.all([
+    sameOriginFetch(page, '/api/me'),
+    sameOriginFetch(page, '/api/composer/reasoning-capabilities'),
+  ]);
+  if (meResponse.status !== 200 || capabilitiesResponse.status !== 200) return null;
+
+  const me = JSON.parse(meResponse.text) as { readonly context_window?: number };
+  const capabilities = JSON.parse(capabilitiesResponse.text) as RuntimeMetadata['capabilities'];
+  return {
+    capabilities,
+    contextWindow: me.context_window ?? 0,
+  };
+}
+
+async function expectOllamaRuntimeMetadata(page: Page): Promise<void> {
+  await expect
+    .poll(() => readRuntimeMetadata(page), { timeout: 30_000 })
+    .toEqual({
+      capabilities: {
+        backend: 'ollama',
+        default: 'auto',
+        detected: true,
+        levels: ['auto', 'off', 'low', 'mid', 'high'],
+      },
+      contextWindow: 262_144,
+    });
 }
 
 async function createConversation(page: Page, title: string): Promise<string> {
@@ -123,10 +162,24 @@ async function runSentinel(
   page: Page,
   conversationID: string,
   sentinel: string,
+  effort?: 'high',
 ): Promise<RunEvidence> {
   await page.goto(`/c/${encodeURIComponent(conversationID)}`, { waitUntil: 'domcontentloaded' });
   const composer = page.getByRole('textbox', { name: 'Ask Aura' });
   await expect(composer).toBeVisible({ timeout: 30_000 });
+  if (effort !== undefined) {
+    const selector = page.getByRole('combobox', { name: 'Reasoning effort' });
+    await expect(selector.locator('option')).toHaveText([
+      'Auto',
+      'Off',
+      'Low',
+      'Medium',
+      'High',
+    ]);
+    await selector.selectOption(effort);
+    await expect(selector).toHaveValue(effort);
+    await expect(page.getByTestId('footer-visible-metrics')).toContainText('262k');
+  }
   const responsePromise = page.waitForResponse(
     (response) =>
       new URL(response.url()).pathname === '/agent/run' &&
@@ -153,13 +206,29 @@ test.describe('live primary-model hot reload', () => {
 
     const conversations: string[] = [];
     try {
+      await putProfile(page, localProfile);
       await putProfile(page, ollamaProfile);
+      await expectOllamaRuntimeMetadata(page);
       const ollamaConversation = await createConversation(
         page,
         `Ollama route ${String(Date.now())}`,
       );
       conversations.push(ollamaConversation);
-      const ollamaRun = await runSentinel(page, ollamaConversation, 'AURA_OLLAMA_ROUTE_OK');
+      const ollamaRun = await runSentinel(
+        page,
+        ollamaConversation,
+        'AURA_OLLAMA_ROUTE_OK',
+        'high',
+      );
+      const reasoningFrames = ollamaRun.frames.filter(
+        (frame) =>
+          frame.type === 'REASONING_MESSAGE_CONTENT' &&
+          typeof frame.delta === 'string' &&
+          frame.delta.length > 0,
+      );
+      expect(reasoningFrames.length).toBeGreaterThan(0);
+      expect(reasoningFrames.every((frame) => frame.delta !== '[reasoning redacted]')).toBe(true);
+      await expect(page.getByTestId('reasoning-pill')).toBeVisible();
 
       if (witnessURL !== undefined) {
         const witnessResponse = await page.request.get(witnessURL);
@@ -184,7 +253,7 @@ test.describe('live primary-model hot reload', () => {
       const localRun = await runSentinel(page, localConversation, 'AURA_LOCAL_ROUTE_OK');
       expect(localRun.text).toContain('AURA_LOCAL_ROUTE_OK');
     } finally {
-      await putProfile(page, localProfile);
+      await putProfile(page, ollamaProfile);
       for (const conversationID of conversations) {
         await deleteConversation(page, conversationID);
       }
