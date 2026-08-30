@@ -10600,3 +10600,33 @@ flusso completo, che funziona.
 > webbuild stage, never by a host `vite build` (which re-hashes chunks). What this does NOT
 > prove: that a hand-edited committed dist would be noticed before a host-built binary
 > ships it — that surface is the developer's, not the release pipeline's.
+
+## Section A the scheduler must be findable by the words operators use (Amendment #194, 2026-08-30)
+
+> **Amendment #194 (2026-08-30 - measured on the Telegram conversation and
+> `aura.scheduler_tasks`/`aura.agent_job_runs`).** Operator, 14:09-14:11: "Hai il cron?" →
+> "No, non ho un cron interno"; "Hai anche un tool scheduler" → the model called
+> `tool_search("scheduling")`, got `no matching tools`, and answered that it cannot wake
+> itself up. The ledger says otherwise: the `task` tool (Slice 6, `at | every | cron`,
+> `reminder | agent_job`) has been called 8 times, and 3 `agent_job` + 5 `reminder` fires
+> completed — the last one on 2026-08-29 was a wake-up the model scheduled for itself to
+> check a background shell. The wake-ups exist and work; the model could not find them.
+> Two causes, both measured: `82dc4706e` deferred `task` on token measurement (795 tokens per
+> turn, kept — the decision stands), so the roster line and `tool_search` are its only doors;
+> and `tool_search`'s BM25 indexes **Name + Summary only** (`searchDocument`), while the old
+> Summary ("Schedule, list, cancel, or run background tasks and reminders") missed the
+> operator's vocabulary — a regression test over 12 phrasings found `task` first for only 6
+> (`scheduling`, `scheduler`, `wake me up later`, `periodic check`, `timer` returned nothing;
+> `run this again tomorrow morning` ranked `shell_bg` first).
+>
+> Rule: a deferred tool's **Summary** carries every word an operator uses for its capability,
+> because it is both the roster line the model reads and the whole search document. `task`'s
+> Summary now names scheduler, timer, scheduling, periodic, recurring, wake-ups, later,
+> tomorrow, cron; `TestToolSearchFindsTaskForSchedulingQueries` pins the 12 phrasings. No
+> tokenizer stemming was added: `foldPlural` stays a suffix rule by design (bm25.go), and the
+> fix belongs to the text, not the ranker.
+>
+> What this does NOT prove: that the model, having found `task`, schedules an `agent_job`
+> rather than answering in prose (live drive owed on the next image); that the roster line
+> alone — without a `tool_search` — is enough for the model to mention the capability; or
+> anything about the Telegram approval path for `pending_approval` jobs (Amendment #92).
