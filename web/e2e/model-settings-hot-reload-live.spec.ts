@@ -170,21 +170,14 @@ async function runSentinel(
   await expect(composer).toBeVisible({ timeout: 30_000 });
   if (effort !== undefined) {
     const selector = page.getByRole('combobox', { name: 'Reasoning effort' });
-    await expect(selector.locator('option')).toHaveText([
-      'Auto',
-      'Off',
-      'Low',
-      'Medium',
-      'High',
-    ]);
+    await expect(selector.locator('option')).toHaveText(['Auto', 'Off', 'Low', 'Medium', 'High']);
     await selector.selectOption(effort);
     await expect(selector).toHaveValue(effort);
     await expect(page.getByTestId('footer-visible-metrics')).toContainText('262k');
   }
   const responsePromise = page.waitForResponse(
     (response) =>
-      new URL(response.url()).pathname === '/agent/run' &&
-      response.request().method() === 'POST',
+      new URL(response.url()).pathname === '/agent/run' && response.request().method() === 'POST',
     { timeout: 300_000 },
   );
   const prompt =
@@ -220,12 +213,7 @@ test.describe('live primary-model hot reload', () => {
         `Ollama route ${String(Date.now())}`,
       );
       conversations.push(ollamaConversation);
-      const ollamaRun = await runSentinel(
-        page,
-        ollamaConversation,
-        'AURA_OLLAMA_ROUTE_OK',
-        'high',
-      );
+      const ollamaRun = await runSentinel(page, ollamaConversation, 'AURA_OLLAMA_ROUTE_OK', 'high');
       const reasoningFrames = ollamaRun.frames.filter(
         (frame) =>
           frame.type === 'REASONING_MESSAGE_CONTENT' &&

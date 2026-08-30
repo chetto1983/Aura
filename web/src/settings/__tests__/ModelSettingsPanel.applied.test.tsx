@@ -43,7 +43,13 @@ const LIST = {
   settings: [
     item({ key: 'AURA_LOOP_MAX_STEPS', kind: 'int', value: '25', applied: 'live' }),
     item({ key: 'AURA_LOOP_MAX_WALLCLOCK_SEC', kind: 'int', value: '300', applied: 'live' }),
-    item({ key: 'AURA_VISION_CLOUD', kind: 'bool', value: 'true', overridden: true, applied: 'restart' }),
+    item({
+      key: 'AURA_VISION_CLOUD',
+      kind: 'bool',
+      value: 'true',
+      overridden: true,
+      applied: 'restart',
+    }),
     item({ key: 'AURA_EMBED_DIMENSIONS', kind: 'int', value: '768', applied: 'boot' }),
   ],
 };
@@ -67,7 +73,8 @@ function stubFetch() {
       const method = init?.method ?? 'GET';
       const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as unknown) : undefined;
       calls.push({ method, url: urlOf(input), body });
-      if (method === 'PUT') return Promise.resolve(jsonResponse({ updated: 1, restart_required: false }));
+      if (method === 'PUT')
+        return Promise.resolve(jsonResponse({ updated: 1, restart_required: false }));
       return Promise.resolve(jsonResponse(LIST));
     }),
   );
@@ -85,7 +92,9 @@ describe('ModelSettingsPanel — application state and turn budget', () => {
     await screen.findByRole('heading', { name: 'Token and turn budget' });
 
     const stepsField = screen.getByLabelText('Max steps per turn').closest('div.flex.min-h-32');
-    expect(stepsField?.querySelector('[data-applied="live"]')?.textContent).toBe('Applies immediately');
+    expect(stepsField?.querySelector('[data-applied="live"]')?.textContent).toBe(
+      'Applies immediately',
+    );
     const visionField = screen.getByLabelText('Vision uses cloud').closest('div.flex.min-h-32');
     expect(visionField?.querySelector('[data-applied="restart"]')?.textContent).toBe(
       'Saved — needs a restart',
@@ -94,7 +103,9 @@ describe('ModelSettingsPanel — application state and turn budget', () => {
     expect(embedField?.querySelector('[data-applied="boot"]')?.textContent).toBe(
       'Applied at start-up',
     );
-    expect(screen.getByRole('note').textContent).toContain('Restart Aura to apply: AURA_VISION_CLOUD');
+    expect(screen.getByRole('note').textContent).toContain(
+      'Restart Aura to apply: AURA_VISION_CLOUD',
+    );
   });
 
   it('saves the turn budget through the hot-profile batch, not the boot-bound single-key route', async () => {
