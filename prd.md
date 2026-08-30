@@ -10393,3 +10393,34 @@ flusso completo, che funziona.
 > token): they remain honest restarts and are now labelled as such per field. Reference
 > behaviour was read, not executed. The stale-limit-row and compose-default half of the same
 > audit is Amendment #187's scope, not this one's.
+
+## Section Reasoning must leave room for the answer (Amendment #189, 2026-08-30)
+
+> **Amendment #189 (2026-08-30 - measured on the running deployment, `aura.conversation_turns`
+> and the container env; reference rule read from pi-agent).** Operator report: "quando il
+> modello ragiona molto manca la risposta". The turn ledger confirms it: the largest completion
+> of the day carried **23,863 output tokens with 61,738 characters of reasoning**, and the
+> day's terminal outcomes included one truncated answer and two deterministic stubs. Since
+> 08:37Z the profile caps output at `AURA_LLM_MAX_TOKENS=8092`, while the Composer's "high"
+> effort maps to `thinking_budget_tokens=8192` on the local llama.cpp route: the thinking
+> budget alone exceeds the whole output cap, so every "high" turn on that route can end at
+> `finish_reason=length` with reasoning and **no answer**. The loop then treated the empty
+> completion like a provider hiccup (one generic nudge, same effort) and finalized to a stub.
+>
+> Rule, in two layers. **Wire (llama.cpp only, numeric budgets):** `max_tokens` is sized
+> *with* the budget — `min(max_tokens + budget, OutputReserve(window, max_output))`, never
+> below the operator's cap; if the result still leaves less than 1,024 tokens for the
+> visible answer the *budget* shrinks instead, down to thinking off. This is pi-agent's
+> `adjustMaxTokensForThinking`, read 2026-08-30. "max" (unlimited, `-1`) is not fitted.
+> **Loop (every provider):** `finish_reason=length` with empty content is a *reasoning
+> overrun*, not a hiccup: the single recovery turn now pins the run's reasoning effort to
+> `none`, carries a dedicated nudge, and logs a `WARN` with the completion tokens burnt. A
+> second overrun still finalizes through the existing synthesis/stub path (Req#2: no empty
+> terminal).
+>
+> What this measurement does NOT prove: that OpenRouter counts reasoning inside `max_tokens`
+> (the 2026-06-11 probe says it does not, so the wire fit stays llama.cpp-only); that the
+> Ollama bridge exposes a numeric budget (it accepts only `reasoning_effort`); or what share
+> of the day's stubs were overruns rather than genuine empty completions — the ledger stores
+> the outcome, not the finish reason. The truncated-with-content case keeps D-21's
+> `[risposta troncata: max_tokens]` notice and no auto-continue.
