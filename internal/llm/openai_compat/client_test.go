@@ -45,7 +45,8 @@ func fixtureHandler(t *testing.T, name string) http.HandlerFunc {
 	if err != nil {
 		t.Fatalf("read fixture %s: %v", name, err)
 	}
-	return func(w http.ResponseWriter, _ *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write(data)
 	}
