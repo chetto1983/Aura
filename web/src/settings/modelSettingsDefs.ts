@@ -23,6 +23,8 @@ export type SettingsKey =
   | 'AURA_MODEL_CONTEXT_WINDOW'
   | 'AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT'
   | 'AURA_MODEL_MAX_OUTPUT_TOKENS'
+  | 'AURA_LOOP_MAX_STEPS'
+  | 'AURA_LOOP_MAX_WALLCLOCK_SEC'
   | 'AURA_EMBED_MODEL'
   | 'AURA_EMBED_BASE_URL'
   | 'AURA_EMBED_DIMENSIONS'
@@ -36,6 +38,9 @@ export interface SettingDef {
   readonly secret?: boolean;
   readonly labelKey: string;
   readonly placeholder?: string;
+  /** One line under the input saying what the number governs, for knobs whose label
+   *  alone reads ambiguously (two output caps side by side, a step vs. a token). */
+  readonly helpKey?: string;
 }
 
 export const PRIMARY_SETTINGS: readonly SettingDef[] = [
@@ -75,18 +80,21 @@ export const TOKEN_SETTINGS: readonly SettingDef[] = [
     kind: 'int',
     labelKey: 'settings.fields.maxTokens',
     placeholder: '4096',
+    helpKey: 'settings.help.maxTokens',
   },
   {
     key: 'AURA_MODEL_CONTEXT_WINDOW',
     kind: 'int',
     labelKey: 'settings.fields.contextWindow',
     placeholder: '1000000',
+    helpKey: 'settings.help.contextWindow',
   },
   {
     key: 'AURA_MODEL_MAX_OUTPUT_TOKENS',
     kind: 'int',
     labelKey: 'settings.fields.maxOutputTokens',
     placeholder: '32768',
+    helpKey: 'settings.help.maxOutputTokens',
   },
   // A percentage, not a token count: it is the share of the window a conversation may
   // spend replaying itself verbatim before the older rounds are condensed. Empty means
@@ -96,6 +104,22 @@ export const TOKEN_SETTINGS: readonly SettingDef[] = [
     kind: 'int',
     labelKey: 'settings.fields.compactionTrigger',
     placeholder: '50',
+  },
+  // The agent-loop budget (amendment #188): steps are LLM calls / tool rounds, not
+  // tokens. Empty means the deployment env, then the built-in 25 / 300.
+  {
+    key: 'AURA_LOOP_MAX_STEPS',
+    kind: 'int',
+    labelKey: 'settings.fields.loopMaxSteps',
+    placeholder: '25',
+    helpKey: 'settings.help.loopMaxSteps',
+  },
+  {
+    key: 'AURA_LOOP_MAX_WALLCLOCK_SEC',
+    kind: 'int',
+    labelKey: 'settings.fields.loopMaxWallclock',
+    placeholder: '300',
+    helpKey: 'settings.help.loopMaxWallclock',
   },
 ];
 

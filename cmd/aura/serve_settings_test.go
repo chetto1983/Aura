@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -86,24 +87,87 @@ func TestPrimaryLLMRouteReloaderResolvesOverridesAndDeleteFallback(t *testing.T)
 	}
 }
 
-func TestPrimaryLLMRouteReloaderPreservesActiveNonProfileSecrets(t *testing.T) {
+// The API key is a hot profile row (amendment #188): the persisted row is what the
+// runtime carries, and its absence means the pre-overlay boot key — never
+// "whatever happened to be live", which is how a rotated key used to survive only
+// until the next restart.
+func TestPrimaryLLMRouteReloaderAppliesPersistedAPIKeyAndRevertsOnDelete(t *testing.T) {
 	fallback := validFallbackLLMConfig()
+	fallback.APIKey = "boot-env-key"
 	active := fallback
 	active.APIKey = "db-overlaid-key"
 	r := &primaryLLMRouteReloader{
 		fallback: fallback,
 		runtime:  llm.NewRuntime(nil, active),
 	}
-	got, err := r.resolve(map[string]string{
+	route := map[string]string{
 		"AURA_LLM_PROVIDER": "llamacpp",
 		"AURA_LLM_BASE_URL": "http://aura-llm:8084/v1",
 		"AURA_LLM_MODEL":    "gemma-4-12b",
+	}
+	withRow := maps.Clone(route)
+	withRow["OPENROUTER_API_KEY"] = " rotated-key "
+	got, err := r.resolve(withRow, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.APIKey != "rotated-key" {
+		t.Fatalf("api key = %q, want the persisted row applied (trimmed)", got.APIKey)
+	}
+	reverted, err := r.resolve(route, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reverted.APIKey != "boot-env-key" {
+		t.Fatalf("api key after delete = %q, want boot fallback", reverted.APIKey)
+	}
+}
+
+// The loop budget and the compaction trigger ride the same profile (amendment
+// #188): pinned rows publish into the snapshot, absent rows revert to the boot
+// value (0 = env/default for the loop), and each is range-checked before persistence.
+func TestPrimaryLLMRouteReloaderResolvesLoopBudgetAndCompactionTrigger(t *testing.T) {
+	fallback := validFallbackLLMConfig()
+	fallback.CompactionTriggerPercent = 50
+	r := &primaryLLMRouteReloader{fallback: fallback, runtime: llm.NewRuntime(nil, fallback)}
+	got, err := r.resolve(map[string]string{
+		"AURA_LOOP_MAX_STEPS":                     "60",
+		"AURA_LOOP_MAX_WALLCLOCK_SEC":             "1200",
+		"AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT": "0",
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.APIKey != "db-overlaid-key" {
-		t.Fatal("hot profile discarded the active DB-overlaid API key")
+	if got.LoopMaxSteps != 60 || got.LoopMaxWallclockSec != 1200 || got.CompactionTriggerPercent != 0 {
+		t.Fatalf("resolved loop/trigger = %d/%d/%d", got.LoopMaxSteps, got.LoopMaxWallclockSec, got.CompactionTriggerPercent)
+	}
+	reverted, err := r.resolve(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reverted.LoopMaxSteps != 0 || reverted.LoopMaxWallclockSec != 0 || reverted.CompactionTriggerPercent != 50 {
+		t.Fatalf("delete fallback loop/trigger = %d/%d/%d, want 0/0/50", reverted.LoopMaxSteps, reverted.LoopMaxWallclockSec, reverted.CompactionTriggerPercent)
+	}
+	for key, bad := range map[string]string{
+		"AURA_LOOP_MAX_STEPS":                     "0",
+		"AURA_LOOP_MAX_WALLCLOCK_SEC":             "-5",
+		"AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT": "101",
+	} {
+		if _, err := r.resolve(map[string]string{key: bad}, nil); err == nil {
+			t.Fatalf("%s=%q accepted, want a range error", key, bad)
+		}
+	}
+
+	r.runtime.Replace(nil, got)
+	if v, ok := r.EffectiveValue("AURA_LOOP_MAX_STEPS"); !ok || v != "60" {
+		t.Fatalf("effective steps = (%q,%v)", v, ok)
+	}
+	if v, ok := r.EffectiveValue("AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT"); !ok || v != "0" {
+		t.Fatalf("effective trigger = (%q,%v)", v, ok)
+	}
+	r.runtime.Replace(nil, reverted)
+	if _, ok := r.EffectiveValue("AURA_LOOP_MAX_STEPS"); ok {
+		t.Fatal("an unpinned loop budget must fall through to the process env, not report 0")
 	}
 }
 

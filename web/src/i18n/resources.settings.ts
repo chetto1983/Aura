@@ -12,6 +12,12 @@ export const settingsEn = {
     error: "Couldn't load runtime settings. Check the server and try again.",
     restartRequired:
       'Saved changes are in Postgres. Restart Aura to apply them to already-created model clients.',
+    restartRequiredFor: 'Saved. Restart Aura to apply: {{keys}}. Everything else is already live.',
+    applied: {
+      live: 'Applies immediately',
+      boot: 'Applied at start-up',
+      restart: 'Saved — needs a restart',
+    },
     saved: 'Runtime settings saved.',
     saveError:
       "Couldn't save: {{message}}. Your changes are still here — fix the value and try again.",
@@ -66,8 +72,15 @@ export const settingsEn = {
       ollama: 'Ollama',
     },
     tokens: {
-      heading: 'Token budget',
-      body: 'Tune the response cap and context window Aura uses when planning chat turns and history compaction.',
+      heading: 'Token and turn budget',
+      body: 'Tune the response cap, context window, compaction trigger and per-turn step limit Aura uses when running a turn.',
+    },
+    help: {
+      maxTokens: 'Per-request cap on the answer sent to the provider (max_tokens).',
+      contextWindow: 'Total tokens the model can hold; the budget ladder and the footer gauge use it.',
+      maxOutputTokens: 'Tokens reserved for the answer when budgeting the prompt — the reservation, not the cap.',
+      loopMaxSteps: 'LLM calls or tool rounds one turn may spend before Aura wraps up (default 25).',
+      loopMaxWallclock: 'Seconds one turn may run, tools included, before Aura wraps up (default 300).',
     },
     backends: {
       heading: 'Sidecar and cloud backends',
@@ -82,6 +95,8 @@ export const settingsEn = {
       contextWindow: 'Context window tokens',
       maxOutputTokens: 'Reserved output tokens',
       compactionTrigger: 'Compact history at % of window',
+      loopMaxSteps: 'Max steps per turn',
+      loopMaxWallclock: 'Max seconds per turn',
       embedBaseUrl: 'Embedding base URL',
       embedModel: 'Embedding model',
       embedDimensions: 'Embedding dimensions',
@@ -121,6 +136,12 @@ export const settingsIt = {
     error: 'Impossibile caricare le impostazioni runtime. Controlla il server e riprova.',
     restartRequired:
       'Modifiche salvate in Postgres. Riavvia Aura per applicarle ai client modello gia creati.',
+    restartRequiredFor: 'Salvato. Riavvia Aura per applicare: {{keys}}. Il resto è già attivo.',
+    applied: {
+      live: 'Si applica subito',
+      boot: 'Applicato all’avvio',
+      restart: 'Salvato — richiede riavvio',
+    },
     saved: 'Impostazioni runtime salvate.',
     saveError:
       'Salvataggio non riuscito: {{message}}. Le modifiche sono ancora qui — correggi il valore e riprova.',
@@ -175,8 +196,15 @@ export const settingsIt = {
       ollama: 'Ollama',
     },
     tokens: {
-      heading: 'Budget token',
-      body: 'Regola limite risposta e finestra contesto usati da Aura per chat e compattazione cronologia.',
+      heading: 'Budget token e turni',
+      body: 'Regola limite risposta, finestra contesto, soglia di compattazione e numero massimo di passi per turno.',
+    },
+    help: {
+      maxTokens: 'Tetto per richiesta sulla risposta inviato al provider (max_tokens).',
+      contextWindow: 'Token totali che il modello può tenere; la scala dei budget e l’indicatore nel footer lo usano.',
+      maxOutputTokens: 'Token riservati alla risposta quando si calcola il budget del prompt — la riserva, non il tetto.',
+      loopMaxSteps: 'Chiamate LLM o giri di strumenti che un turno può spendere prima che Aura concluda (default 25).',
+      loopMaxWallclock: 'Secondi che un turno può durare, strumenti inclusi, prima che Aura concluda (default 300).',
     },
     backends: {
       heading: 'Sidecar e backend cloud',
@@ -191,6 +219,8 @@ export const settingsIt = {
       contextWindow: 'Token finestra contesto',
       maxOutputTokens: 'Token output riservati',
       compactionTrigger: 'Comprimi la cronologia al % della finestra',
+      loopMaxSteps: 'Passi massimi per turno',
+      loopMaxWallclock: 'Secondi massimi per turno',
       embedBaseUrl: 'URL base embedding',
       embedModel: 'Modello embedding',
       embedDimensions: 'Dimensioni embedding',

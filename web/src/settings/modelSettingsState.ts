@@ -15,10 +15,14 @@ export interface LoadedState {
   readonly values: Record<string, string>;
   readonly initial: Record<string, string>;
   readonly restartRequired: boolean;
+  /** The keys behind restartRequired (amendment #188); empty on an older daemon. */
+  readonly restartKeys: readonly string[];
 }
 
 export type LoadStatus = 'loading' | 'ready' | 'error';
 
+// Mirrors the daemon's hotLLMProfileKeys (internal/agui/settings_api.go): these rows go
+// through PUT /api/settings/llm-profile in one prepare→persist→publish batch.
 const HOT_LLM_PROFILE_KEYS = new Set<SettingsKey>([
   'AURA_LLM_PROVIDER',
   'AURA_LLM_BASE_URL',
@@ -26,6 +30,10 @@ const HOT_LLM_PROFILE_KEYS = new Set<SettingsKey>([
   'AURA_LLM_MAX_TOKENS',
   'AURA_MODEL_CONTEXT_WINDOW',
   'AURA_MODEL_MAX_OUTPUT_TOKENS',
+  'AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT',
+  'OPENROUTER_API_KEY',
+  'AURA_LOOP_MAX_STEPS',
+  'AURA_LOOP_MAX_WALLCLOCK_SEC',
 ]);
 
 function emptyItem(def: SettingDef): SettingItem {
@@ -37,6 +45,7 @@ function emptyItem(def: SettingDef): SettingItem {
     value: '',
     has_value: false,
     overridden: false,
+    applied: HOT_LLM_PROFILE_KEYS.has(def.key) ? 'live' : 'boot',
   };
 }
 
@@ -59,7 +68,13 @@ function buildState(list: Awaited<ReturnType<typeof fetchSettings>>): LoadedStat
     values[def.key] = value;
     initial[def.key] = value;
   }
-  return { rows, values, initial, restartRequired: list.restart_required };
+  return {
+    rows,
+    values,
+    initial,
+    restartRequired: list.restart_required,
+    restartKeys: list.restart_keys ?? [],
+  };
 }
 
 // errorMessage pulls the human part out of whatever the API layer threw. settingsApi

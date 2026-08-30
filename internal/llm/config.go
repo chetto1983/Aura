@@ -185,9 +185,17 @@ type Config struct {
 	// occupy before L2.4 condenses it, even though nothing is over budget yet. 0 leaves
 	// compaction to the hard cap alone; 100 is the same thing by another route.
 	CompactionTriggerPercent int
-	Headers                  map[string]string
-	Prices                   map[string]Price
-	CostStatus               CostStatus
+	// LoopMaxSteps / LoopMaxWallclockSec are the hot agent-loop budget (amendment
+	// #188): the Settings profile publishes them here so every run builds its
+	// agent.Budget from the snapshot it already holds. 0 means "not set on the
+	// profile" and agent.NewBudget falls through to AURA_LOOP_* env, then the
+	// builtin default (D-06). They ride in llm.Config for the same reason the
+	// completion-gate knobs do: the runtime snapshot is the one per-run carrier.
+	LoopMaxSteps        int
+	LoopMaxWallclockSec int
+	Headers             map[string]string
+	Prices              map[string]Price
+	CostStatus          CostStatus
 
 	// CompletionGate enables the agent's completion critic gate (amendment #54 /
 	// D-43): a voluntary termination (text_response / content-stop) on a turn

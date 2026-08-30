@@ -21,6 +21,8 @@ import (
 	"strconv"
 	"sync/atomic"
 	"time"
+
+	"github.com/chetto1983/aura/internal/llm"
 )
 
 // AURA_LOOP_* env var names (AURA_<DOMAIN>_<UNIT> convention). The hard 3-cap
@@ -98,6 +100,22 @@ type BudgetOptions struct {
 // (D-06); see NewBudget for the precedence rules.
 func NewBudgetFromEnv() (*Budget, error) {
 	return NewBudget(BudgetOptions{})
+}
+
+// BudgetOptionsFromConfig lifts the hot loop budget off the runtime profile
+// (amendment #188): a positive LoopMaxSteps / LoopMaxWallclockSec becomes an
+// explicit override, a zero field stays nil so NewBudget falls through to the
+// AURA_LOOP_* env and the builtin default (D-06). Callers that hold a stronger
+// override (a per-job step_budget, a CLI flag) set it on the returned value.
+func BudgetOptionsFromConfig(cfg llm.Config) BudgetOptions {
+	var opts BudgetOptions
+	if cfg.LoopMaxSteps > 0 {
+		opts.MaxSteps = &cfg.LoopMaxSteps
+	}
+	if cfg.LoopMaxWallclockSec > 0 {
+		opts.MaxWallclockSec = &cfg.LoopMaxWallclockSec
+	}
+	return opts
 }
 
 // NewBudget builds a Budget applying CLI > env > builtin-default precedence (D-06)

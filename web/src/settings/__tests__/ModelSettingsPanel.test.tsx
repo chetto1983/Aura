@@ -281,13 +281,18 @@ describe('ModelSettingsPanel', () => {
 
     expect(await screen.findByText('Runtime settings saved.')).toBeTruthy();
     const puts = calls.filter((call) => call.method === 'PUT');
+    // The API key is a hot profile row (amendment #188): it rides the same batch as
+    // the route the Cloud button wrote, never its own single-key PUT.
     expect(
       puts.some(
         (call) =>
-          call.url === '/api/settings/OPENROUTER_API_KEY' &&
-          call.body === JSON.stringify({ value: 'sk-or-newkey' }),
+          call.url === '/api/settings/llm-profile' &&
+          call.body !== undefined &&
+          (JSON.parse(call.body) as { settings: Record<string, string> }).settings
+            .OPENROUTER_API_KEY === 'sk-or-newkey',
       ),
     ).toBe(true);
+    expect(puts.some((call) => call.url === '/api/settings/OPENROUTER_API_KEY')).toBe(false);
     expect(
       puts.some(
         (call) =>

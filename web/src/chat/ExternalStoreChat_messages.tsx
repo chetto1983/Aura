@@ -13,6 +13,8 @@ import { useVoiceMode } from './voice/voiceModeContext';
 import { AttachmentCard } from './attachments/AttachmentCard';
 import type { Asset } from './attachments/types';
 import { BranchPicker } from './BranchPicker';
+import { messageBudgetLimit } from './budgetLimit';
+import { BudgetLimitNotice } from './BudgetLimitNotice';
 import { DisplayRouter } from './displays/DisplayRouter';
 import { aggregateAnswerSources } from './displays/answerSources';
 import { useSourceExplorer } from './displays/sourceExplorerControls';
@@ -152,6 +154,8 @@ export function AssistantMessage() {
           }}
         />
       </div>
+      {/* Amendment #188: a turn the loop budget cut says so under its answer. */}
+      <BudgetLimitNotice limit={messageBudgetLimit(message)} />
       {/* D-15: durable authenticated download chip(s) for agent deliverables folded
           onto THIS assistant turn on saved-conversation load. Uses only asset_id →
           GET /api/assets/{id}/download (the 37A-proven auth path); NEVER an

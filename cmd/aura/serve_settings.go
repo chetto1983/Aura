@@ -68,17 +68,38 @@ func (r *primaryLLMRouteReloader) EffectiveValue(key string) (string, bool) {
 		return strconv.Itoa(cfg.ContextWindow), true
 	case "AURA_MODEL_MAX_OUTPUT_TOKENS":
 		return strconv.Itoa(cfg.MaxOutputTokens), true
+	case "AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT":
+		return strconv.Itoa(cfg.CompactionTriggerPercent), true
+	case "OPENROUTER_API_KEY":
+		// Read only for has_value: the Settings GET never puts a secret on the wire.
+		return cfg.APIKey, true
+	case "AURA_LOOP_MAX_STEPS":
+		return optionalLoopSetting(cfg.LoopMaxSteps)
+	case "AURA_LOOP_MAX_WALLCLOCK_SEC":
+		return optionalLoopSetting(cfg.LoopMaxWallclockSec)
 	default:
 		return "", false
 	}
 }
 
+// optionalLoopSetting reports a loop-budget field only when the profile pins it;
+// zero means the run falls through to AURA_LOOP_* env / builtin default, which
+// the Settings GET then shows from the process env like any unpinned key.
+func optionalLoopSetting(n int) (string, bool) {
+	if n <= 0 {
+		return "", false
+	}
+	return strconv.Itoa(n), true
+}
+
 func (r *primaryLLMRouteReloader) resolve(overrides map[string]string, resetKeys []string) (llm.Config, error) {
 	cfg := r.fallback
 	if r.runtime != nil {
-		// Non-profile settings (most importantly the DB-overlaid API key) come
-		// from the active config. Only absent hot keys revert to the pre-overlay
-		// deployment fallback captured for DELETE.
+		// Non-profile settings come from the active config. Every hot profile key
+		// (route, limits, compaction trigger, API key, loop budget — amendment #188)
+		// starts from the pre-overlay deployment fallback captured for DELETE and is
+		// then re-applied from the persisted overrides below, so an absent row means
+		// "back to the boot value", never "keep whatever was live".
 		cfg = r.runtime.Snapshot().Config
 		cfg.Provider = r.fallback.Provider
 		cfg.BaseURL = r.fallback.BaseURL
@@ -88,6 +109,10 @@ func (r *primaryLLMRouteReloader) resolve(overrides map[string]string, resetKeys
 		cfg.ContextWindowConfigured = r.fallback.ContextWindowConfigured
 		cfg.MaxOutputTokens = r.fallback.MaxOutputTokens
 		cfg.MaxOutputTokensConfigured = r.fallback.MaxOutputTokensConfigured
+		cfg.CompactionTriggerPercent = r.fallback.CompactionTriggerPercent
+		cfg.APIKey = r.fallback.APIKey
+		cfg.LoopMaxSteps = r.fallback.LoopMaxSteps
+		cfg.LoopMaxWallclockSec = r.fallback.LoopMaxWallclockSec
 	}
 	cfg.Headers = maps.Clone(cfg.Headers)
 	cfg.Prices = maps.Clone(r.fallback.Prices)
@@ -98,6 +123,30 @@ func (r *primaryLLMRouteReloader) resolve(overrides map[string]string, resetKeys
 		case "AURA_MODEL_MAX_OUTPUT_TOKENS":
 			cfg.MaxOutputTokensConfigured = false
 		}
+	}
+	if value, ok := overrides["OPENROUTER_API_KEY"]; ok {
+		cfg.APIKey = strings.TrimSpace(value)
+	}
+	if value, ok := overrides["AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT"]; ok {
+		parsed, err := percentLLMSetting("AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT", value)
+		if err != nil {
+			return llm.Config{}, err
+		}
+		cfg.CompactionTriggerPercent = parsed
+	}
+	if value, ok := overrides["AURA_LOOP_MAX_STEPS"]; ok {
+		parsed, err := positiveLLMSetting("AURA_LOOP_MAX_STEPS", value)
+		if err != nil {
+			return llm.Config{}, err
+		}
+		cfg.LoopMaxSteps = parsed
+	}
+	if value, ok := overrides["AURA_LOOP_MAX_WALLCLOCK_SEC"]; ok {
+		parsed, err := positiveLLMSetting("AURA_LOOP_MAX_WALLCLOCK_SEC", value)
+		if err != nil {
+			return llm.Config{}, err
+		}
+		cfg.LoopMaxWallclockSec = parsed
 	}
 	if value, ok := overrides["AURA_LLM_PROVIDER"]; ok {
 		cfg.Provider = strings.TrimSpace(value)
@@ -152,6 +201,16 @@ func positiveLLMSetting(key, value string) (int, error) {
 	parsed, err := strconv.Atoi(strings.TrimSpace(value))
 	if err != nil || parsed <= 0 {
 		return 0, fmt.Errorf("%s must be a positive integer", key)
+	}
+	return parsed, nil
+}
+
+// percentLLMSetting accepts 0..100 inclusive: 0 and 100 both switch the early
+// compaction trigger off (context_budget.go), so they are valid, not errors.
+func percentLLMSetting(key, value string) (int, error) {
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || parsed < 0 || parsed > 100 {
+		return 0, fmt.Errorf("%s must be a percentage between 0 and 100", key)
 	}
 	return parsed, nil
 }

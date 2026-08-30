@@ -16,6 +16,7 @@ import {
   type AssistantTurnState,
 } from './sseAdapter_parts';
 import {
+  budgetLimitFromStateDelta,
   isUsageDelta,
   toolCallIdFromDelta,
   usageFromStateDelta,
@@ -217,6 +218,12 @@ export function reduceFrame(state: AssistantTurnState, frame: AguiFrame): Assist
       }
       if (isUsageDelta(frame.delta)) {
         state.usage = usageFromStateDelta(frame.delta);
+      }
+      // The finalize path folds the trip keys INTO the usage delta (one terminal
+      // Event), so this is a second projection of the same frame, not an else-branch.
+      const limit = budgetLimitFromStateDelta(frame.delta);
+      if (limit !== undefined) {
+        state.limit = limit;
       }
       return state;
     }
@@ -529,9 +536,11 @@ export {
 } from './sseAdapter_parts';
 export { fetchThreadMessages, snapshotToThreadMessages } from './sseAdapter_snapshot';
 export {
+  budgetLimitFromStateDelta,
   cacheHitRatio,
   isUsageDelta,
   toolCallIdFromDelta,
   usageFromStateDelta,
+  type BudgetLimit,
   type TurnUsage,
 } from './sseAdapter_usage';

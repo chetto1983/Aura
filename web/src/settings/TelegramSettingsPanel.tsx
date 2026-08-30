@@ -31,6 +31,7 @@ function emptyTelegramSetting(): SettingItem {
     value: '',
     has_value: false,
     overridden: false,
+    applied: 'boot',
   };
 }
 

@@ -58,14 +58,19 @@ var AllowedKeys = map[string]KeyMeta{
 	// and because it is a percentage, which is the one form of this number a person can
 	// judge without knowing the tokenizer.
 	"AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT": {Kind: KindInt, Label: "Compact history at % of window"},
-	"OPENROUTER_API_KEY":                      {Secret: true, Kind: KindString, Label: "OpenRouter API key"},
-	"AURA_EMBED_MODEL":                        {Kind: KindString, Label: "Embedding cloud model"},
-	"AURA_EMBED_DIMENSIONS":                   {Kind: KindInt, Label: "Embedding dimensions"},
-	"AURA_EMBED_BASE_URL":                     {Kind: KindString, Label: "Embedding base URL"},
-	"AURA_TTS_MODEL":                          {Kind: KindString, Label: "TTS cloud model"},
-	"AURA_STT_CLOUD_MODEL":                    {Kind: KindString, Label: "STT cloud model"},
-	"AURA_VISION_CLOUD":                       {Kind: KindBool, Label: "Vision uses cloud"},
-	"TELEGRAM_BOT_TOKEN":                      {Secret: true, Kind: KindString, Label: "Telegram bot token"},
+	// The agent-loop budget (amendment #188): hot like the model profile, so the
+	// operator who needs more than the shipped 25 steps for one real delegation no
+	// longer recreates the container to get them.
+	"AURA_LOOP_MAX_STEPS":         {Kind: KindInt, Label: "Max agent steps per turn"},
+	"AURA_LOOP_MAX_WALLCLOCK_SEC": {Kind: KindInt, Label: "Max wallclock per turn (seconds)"},
+	"OPENROUTER_API_KEY":          {Secret: true, Kind: KindString, Label: "OpenRouter API key"},
+	"AURA_EMBED_MODEL":            {Kind: KindString, Label: "Embedding cloud model"},
+	"AURA_EMBED_DIMENSIONS":       {Kind: KindInt, Label: "Embedding dimensions"},
+	"AURA_EMBED_BASE_URL":         {Kind: KindString, Label: "Embedding base URL"},
+	"AURA_TTS_MODEL":              {Kind: KindString, Label: "TTS cloud model"},
+	"AURA_STT_CLOUD_MODEL":        {Kind: KindString, Label: "STT cloud model"},
+	"AURA_VISION_CLOUD":           {Kind: KindBool, Label: "Vision uses cloud"},
+	"TELEGRAM_BOT_TOKEN":          {Secret: true, Kind: KindString, Label: "Telegram bot token"},
 }
 
 // Allowed reports whether key may be set through the Settings layer.

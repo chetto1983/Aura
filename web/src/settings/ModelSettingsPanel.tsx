@@ -180,7 +180,9 @@ export function ModelSettingsPanel({
           role="note"
           className="rounded-md border border-warning bg-warning/10 px-4 py-3 text-[13px] text-warning"
         >
-          {t('settings.restartRequired')}
+          {loaded.restartKeys.length > 0
+            ? t('settings.restartRequiredFor', { keys: loaded.restartKeys.join(', ') })
+            : t('settings.restartRequired')}
         </div>
       ) : null}
 
