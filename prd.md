@@ -10332,6 +10332,20 @@ flusso completo, che funziona.
 > the external runtime temporarily retains an older callback. The request witness must assert
 > `aura.effort=high`, not infer it from the visible select value.
 >
+> **Terminal-answer live correction (2026-08-30).** Three consecutive runs after the composer
+> fix all carried `aura.effort=high` and emitted non-empty reasoning lifecycles, but the Cockpit
+> still showed no final prose. Daemon evidence showed `finish_reason=tool_calls` with one call:
+> the model followed Aura's system contract and ended through the internal `text_response` tool.
+> That terminal answer exists only on the agent's final Event, together with usage StateDelta;
+> unlike content-stop answers it has no preceding streamed text chunks. The AG-UI translator's
+> generic StateDelta branch ran first and continued, so it discarded the terminal content.
+>
+> A final Event with non-empty content must therefore emit one text-message lifecycle when no
+> text delta has been emitted for the current answer round, before its StateDelta. When streamed
+> deltas already exist, the final Event remains END-only so the full answer is not duplicated.
+> Tool/result boundaries reset that per-round witness. This preserves the existing no-double-
+> stream rule while making `text_response` and non-streaming terminal fallbacks visible.
+>
 > **What this measurement does not prove.** It does not prove reasoning support for every Ollama
 > model, generation near 262,144 tokens, or a provider-reported maximum output limit. The direct
 > probes prove the installed bridge's wire behavior, not that Aura's corrected parser and Cockpit
