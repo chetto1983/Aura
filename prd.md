@@ -10547,3 +10547,39 @@ flusso completo, che funziona.
 > (an honest "budget exhausted, here is what I have" was vetoed twice and cost two model
 > calls — the gate's policy on budget-explained partial answers is a separate question); nor
 > the Telegram path live (unit-tested only, the driver has no bot session).
+
+## Section A deliverable written this turn is delivered this turn (Amendment #192, 2026-08-30)
+
+> **Amendment #192 (2026-08-30 - measured on `aura.tool_invocations`, `aura.assets` and the
+> Telegram conversation `03b9c7c2-eb3f-5583-b13f-39b23bf4de8b`).** Operator report: "Aura si
+> dimentica spesso di mandarmi i file". Ledger, last 30 days: 11 `write_file` deliverables under
+> `/workspace/artifacts/` (scripts, JSON and text excluded); **9 were delivered with
+> `send_file` in the same turn, 2 only in a later turn after the operator asked** —
+> `meteo_caraglio.html` on Telegram (13:29:32 written, answer "Ecco l'artifact web … `/workspace/
+> artifacts/meteo_caraglio.html`", `send_file` only at 13:29:46 after "Devi sempre mandarmelo")
+> and `report_di_test.md` on 2026-08-08. Both misses are the same shape: the model reports the
+> path and stops. Files produced by a shell script (e.g. `btc_weekly.png`) leave no `write_file`
+> row, so the ledger cannot count those misses; the sandbox `artifacts/` directory holds one such
+> never-delivered intermediate (`meteo_caraglio.json`). The system prompt said only "hand them
+> over with the delivery capability" while the safety section asks to "report the absolute path
+> of every file you deliver" — reporting the path is exactly what the model did.
+>
+> Rule, two layers. **Prompt:** `<workspace>` now says the operator cannot open a `/workspace`
+> path (Telegram, the cockpit), so every deliverable in `artifacts/` is delivered with `send_file`
+> before the turn finishes; a path in the answer is a pointer, not a delivery. **Loop (the
+> deliver-on-stop gate, `llm_agent_delivery.go`):** at both voluntary-termination seams (content
+> stop and `text_response`), after the verify-on-stop gate and before the completion critic, a
+> deterministic check compares the paths this run's write tools touched under
+> `<workspace>/artifacts/` with the paths `send_file` delivered (a delivery counts only when the
+> tool produced its artifact descriptor). Any undelivered artifact injects ONE nudge per run
+> ("[System: You wrote … but did not deliver …]", RoleUser at content stop, RoleTool on the
+> terminal call) naming the files, and repudiates the streamed draft like any other veto (#191).
+> The nudge is an agent nudge for the completion critic (`isAgentNudge`). No model call is spent
+> by the gate itself; a run that writes nothing under `artifacts/`, or already delivered
+> everything, is byte-identical to before.
+>
+> What this does NOT prove: delivery of files a shell script writes (no `write_file` row, no
+> edited path — the prompt half is the only guard there); that the operator wanted every
+> `artifacts/` file (the nudge lets the model answer "no delivery needed"); or the Telegram
+> rendering live (the driver has no bot session; `send_file` → `sendDocument` was already
+> proven by the accepted assets).
