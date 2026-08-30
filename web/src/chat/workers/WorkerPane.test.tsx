@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import '../../i18n/i18n';
+import type { DisplayChildReport } from '../displays/types';
 import type { WorkerStreamHandlers } from './workerStream';
 import { WorkerPane } from './WorkerPane';
 import { useWatchWorker } from './workerWatchControls';
@@ -20,29 +21,55 @@ vi.mock('./workerStream', () => ({
   openWorkerStream: (...args: Parameters<typeof openWorkerStream>) => openWorkerStream(...args),
 }));
 
+const threadAWorkers: readonly DisplayChildReport[] = [
+  { goal_index: 0, child_id: 'child-a', status: 'running', goal: 'Thread A work' },
+];
+const threadBWorkers: readonly DisplayChildReport[] = [
+  { goal_index: 0, child_id: 'child-b', status: 'running', goal: 'Thread B work' },
+];
+
+function WorkerRegistration({
+  registrationId,
+  workers,
+}: {
+  readonly registrationId: string;
+  readonly workers: readonly DisplayChildReport[];
+}) {
+  const { registerWorkers } = useWatchWorker();
+  useEffect(
+    () => registerWorkers(registrationId, workers),
+    [registerWorkers, registrationId, workers],
+  );
+  return null;
+}
+
 function OwnedPaneProbe({ conversationId }: { readonly conversationId: string }) {
   const [open, setOpen] = useState(false);
   const { watchWorker } = useWatchWorker();
-  return open ? (
-    <WorkerPane
-      conversationId={conversationId}
-      childId="child-a"
-      onClose={() => {
-        setOpen(false);
-      }}
-    />
-  ) : (
-    <button
-      type="button"
-      onClick={() => {
-        watchWorker('child-a', [
-          { goal_index: 0, child_id: 'child-a', status: 'running', goal: 'Thread A work' },
-        ]);
-        setOpen(true);
-      }}
-    >
-      Open child A
-    </button>
+  const workers = conversationId === 'thread-a' ? threadAWorkers : threadBWorkers;
+  return (
+    <>
+      <WorkerRegistration registrationId="owned-pane" workers={workers} />
+      {open ? (
+        <WorkerPane
+          conversationId={conversationId}
+          childId="child-a"
+          onClose={() => {
+            setOpen(false);
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => {
+            watchWorker('child-a');
+            setOpen(true);
+          }}
+        >
+          Open child A
+        </button>
+      )}
+    </>
   );
 }
 
@@ -103,6 +130,7 @@ describe('WorkerPane', () => {
     const onClose = vi.fn();
     render(
       <WorkerWatchProvider conversationId="thread-b" onWatchWorker={vi.fn()} onViewReport={vi.fn()}>
+        <WorkerRegistration registrationId="thread-b-card" workers={threadBWorkers} />
         <WorkerPane conversationId="thread-b" childId="child-a" onClose={onClose} />
       </WorkerWatchProvider>,
     );
@@ -112,6 +140,46 @@ describe('WorkerPane', () => {
     await waitFor(() => {
       expect(onClose).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('waits for delayed registry hydration before restoring an owned worker', async () => {
+    const onClose = vi.fn();
+
+    function DelayedRegistry() {
+      const [ready, setReady] = useState(false);
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              setReady(true);
+            }}
+          >
+            Hydrate workers
+          </button>
+          {ready ? (
+            <WorkerRegistration registrationId="delayed-card" workers={threadAWorkers} />
+          ) : null}
+          <WorkerPane conversationId="thread-a" childId="child-a" onClose={onClose} />
+        </>
+      );
+    }
+
+    render(
+      <WorkerWatchProvider conversationId="thread-a" onWatchWorker={vi.fn()} onViewReport={vi.fn()}>
+        <DelayedRegistry />
+      </WorkerWatchProvider>,
+    );
+
+    expect(openWorkerStream).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hydrate workers' }));
+
+    await waitFor(() => {
+      expect(openWorkerStream).toHaveBeenCalledWith('thread-a', 'child-a', expect.any(Object));
+    });
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('closes child A without requesting it under thread B when the conversation changes', async () => {

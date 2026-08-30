@@ -26,13 +26,24 @@ afterEach(() => {
   localStorage.clear();
 });
 
-function useExclusiveRightRail() {
+interface StoredWorkerPane {
+  readonly conversationId: string;
+  readonly childId: string;
+  readonly open: boolean;
+}
+
+function readStoredWorkerPane(): StoredWorkerPane | null {
+  const raw = localStorage.getItem('aura.shell.worker-pane');
+  return raw === null ? null : (JSON.parse(raw) as StoredWorkerPane);
+}
+
+function useExclusiveRightRail(conversationId = 'thread-1') {
   const surfaces = useSurfaceRestore();
   const closeWorkerRef = useRef<() => void>(() => undefined);
   const artifacts = useArtifactsPanel(surfaces, BASE_PANEL_IDS, () => {
     closeWorkerRef.current();
   });
-  const worker = useWorkerPane(surfaces, artifacts.panelIds, artifacts.closePanel);
+  const worker = useWorkerPane(surfaces, artifacts.panelIds, artifacts.closePanel, conversationId);
 
   useEffect(() => {
     closeWorkerRef.current = worker.closeWorker;
@@ -66,8 +77,10 @@ describe('useWorkerPane', () => {
   });
 
   it('persists the last open worker intent and contributes one dynamic panel id', () => {
-    localStorage.setItem('aura.shell.worker-child', 'child-restored');
-    localStorage.setItem('aura.shell.worker-open', '1');
+    localStorage.setItem(
+      'aura.shell.worker-pane',
+      JSON.stringify({ conversationId: 'thread-1', childId: 'child-restored', open: true }),
+    );
 
     const { result } = renderHook(() => useExclusiveRightRail());
     expect(result.current.worker.watchedChildId).toBe('child-restored');
@@ -81,7 +94,11 @@ describe('useWorkerPane', () => {
     act(() => {
       result.current.worker.openWorker('child-1');
     });
-    expect(localStorage.getItem('aura.shell.worker-child')).toBe('child-1');
+    expect(readStoredWorkerPane()).toEqual({
+      conversationId: 'thread-1',
+      childId: 'child-1',
+      open: true,
+    });
 
     act(() => {
       result.current.worker.closeWorker();
@@ -90,8 +107,42 @@ describe('useWorkerPane', () => {
     expect(result.current.worker.watchedChildId).toBe('');
     expect(result.current.worker.workerPanelMounted).toBe(false);
     await waitFor(() => {
-      expect(localStorage.getItem('aura.shell.worker-child')).toBeNull();
-      expect(localStorage.getItem('aura.shell.worker-open')).toBe('0');
+      expect(readStoredWorkerPane()).toEqual({ conversationId: '', childId: '', open: false });
+    });
+  });
+
+  it('does not restore a persisted worker under another conversation', async () => {
+    localStorage.setItem(
+      'aura.shell.worker-pane',
+      JSON.stringify({ conversationId: 'thread-a', childId: 'child-a', open: true }),
+    );
+
+    const { result } = renderHook(() => useExclusiveRightRail('thread-b'));
+
+    expect(result.current.worker.watchedChildId).toBe('');
+    expect(result.current.worker.workerPanelMounted).toBe(false);
+    await waitFor(() => {
+      expect(readStoredWorkerPane()).toEqual({ conversationId: '', childId: '', open: false });
+    });
+  });
+
+  it('closes the persisted worker immediately when the active conversation changes', async () => {
+    const { result, rerender } = renderHook(
+      ({ conversationId }) => useExclusiveRightRail(conversationId),
+      { initialProps: { conversationId: 'thread-a' } },
+    );
+
+    act(() => {
+      result.current.worker.openWorker('child-a');
+    });
+    expect(result.current.worker.workerPanelMounted).toBe(true);
+
+    rerender({ conversationId: 'thread-b' });
+
+    expect(result.current.worker.watchedChildId).toBe('');
+    expect(result.current.worker.workerPanelMounted).toBe(false);
+    await waitFor(() => {
+      expect(readStoredWorkerPane()).toEqual({ conversationId: '', childId: '', open: false });
     });
   });
 });

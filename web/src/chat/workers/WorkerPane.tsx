@@ -53,7 +53,7 @@ function WorkerMessage() {
 
 export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps) {
   const { t } = useTranslation();
-  const { workers, statuses, ownsWorker, watchWorker } = useWatchWorker();
+  const { workers, statuses, registryReady, ownsWorker, watchWorker } = useWatchWorker();
   const workerOwned = conversationId.length > 0 && ownsWorker(childId);
   const streamKey = `${conversationId}\u0000${childId}`;
   const [streamState, setStreamState] = useState<{
@@ -82,8 +82,8 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
   }, [childId, conversationId, streamKey, workerOwned]);
 
   useEffect(() => {
-    if (!workerOwned) onClose();
-  }, [onClose, workerOwned]);
+    if (registryReady && !workerOwned) onClose();
+  }, [onClose, registryReady, workerOwned]);
 
   const readonlyMessages = useMemo(
     () => current.messages.map((message) => toReadonlyMessage(message, childId)),
@@ -111,7 +111,7 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
     ];
   }, [childId, statuses, workers]);
 
-  if (!workerOwned) return null;
+  if (!registryReady || !workerOwned) return null;
 
   return (
     <section className="flex h-full min-h-0 flex-col px-3 pb-3 pt-3">

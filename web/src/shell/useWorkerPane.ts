@@ -1,17 +1,56 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CloseIntent, SurfaceRestore } from './useSurfaceRestore';
 
 export const CHAT_WORKER_PANEL_ID = 'chat-worker';
-const WORKER_OPEN_KEY = 'aura.shell.worker-open';
-const WORKER_CHILD_KEY = 'aura.shell.worker-child';
+const WORKER_STATE_KEY = 'aura.shell.worker-pane';
 const WORKER_DESKTOP_QUERY = '(min-width: 64rem)';
 
-function readStored(key: string): string {
+interface StoredWorkerPane {
+  readonly conversationId: string;
+  readonly childId: string;
+  readonly open: boolean;
+}
+
+const CLOSED_WORKER_PANE: StoredWorkerPane = { conversationId: '', childId: '', open: false };
+
+interface WorkerPaneSession {
+  readonly activeConversationId: string;
+  readonly pane: StoredWorkerPane;
+  readonly routeResetCount: number;
+}
+
+function readStoredWorkerPane(): StoredWorkerPane {
   try {
-    return localStorage.getItem(key) ?? '';
+    const raw = localStorage.getItem(WORKER_STATE_KEY);
+    if (raw === null) return CLOSED_WORKER_PANE;
+    const value: unknown = JSON.parse(raw);
+    if (
+      typeof value !== 'object' ||
+      value === null ||
+      !('conversationId' in value) ||
+      typeof value.conversationId !== 'string' ||
+      !('childId' in value) ||
+      typeof value.childId !== 'string' ||
+      !('open' in value) ||
+      typeof value.open !== 'boolean'
+    ) {
+      return CLOSED_WORKER_PANE;
+    }
+    return { conversationId: value.conversationId, childId: value.childId, open: value.open };
   } catch {
-    return '';
+    return CLOSED_WORKER_PANE;
   }
+}
+
+function initialWorkerPaneSession(conversationId: string): WorkerPaneSession {
+  const pane = readStoredWorkerPane();
+  const belongsElsewhere =
+    conversationId.length > 0 && pane.open && pane.conversationId !== conversationId;
+  return {
+    activeConversationId: conversationId,
+    pane: belongsElsewhere ? CLOSED_WORKER_PANE : pane,
+    routeResetCount: 0,
+  };
 }
 
 function useIsWorkerDesktop(): boolean {
@@ -49,44 +88,71 @@ export function useWorkerPane(
   surfaces: SurfaceRestore,
   basePanelIds: readonly string[],
   onBeforeOpen: () => void,
+  conversationId: string,
 ): WorkerPaneState {
   const isDesktop = useIsWorkerDesktop();
-  const [watchedChildId, setWatchedChildId] = useState(() => readStored(WORKER_CHILD_KEY));
-  const [workerOpen, setWorkerOpen] = useState(
-    () => readStored(WORKER_OPEN_KEY) === '1' && readStored(WORKER_CHILD_KEY).length > 0,
+  const { closeOverlay, openOverlay, overlayOpen } = surfaces;
+  const [workerSession, setWorkerSession] = useState(() =>
+    initialWorkerPaneSession(conversationId),
   );
+  let currentSession = workerSession;
+  if (workerSession.activeConversationId !== conversationId) {
+    const belongsElsewhere =
+      conversationId.length > 0 &&
+      workerSession.pane.open &&
+      workerSession.pane.conversationId !== conversationId;
+    currentSession = {
+      activeConversationId: conversationId,
+      pane: belongsElsewhere ? CLOSED_WORKER_PANE : workerSession.pane,
+      routeResetCount: workerSession.routeResetCount + (belongsElsewhere ? 1 : 0),
+    };
+    setWorkerSession(currentSession);
+  }
+  const storedPane = currentSession.pane;
+  const belongsToConversation =
+    conversationId.length > 0 && storedPane.conversationId === conversationId;
+  const watchedChildId = belongsToConversation ? storedPane.childId : '';
+  const workerOpen = belongsToConversation && storedPane.open && watchedChildId.length > 0;
 
   useEffect(() => {
     try {
-      localStorage.setItem(WORKER_OPEN_KEY, workerOpen ? '1' : '0');
-      if (watchedChildId.length > 0) {
-        localStorage.setItem(WORKER_CHILD_KEY, watchedChildId);
-      } else {
-        localStorage.removeItem(WORKER_CHILD_KEY);
-      }
+      localStorage.setItem(WORKER_STATE_KEY, JSON.stringify(storedPane));
     } catch {
       // Persistence is best-effort; the current rail state remains authoritative.
     }
-  }, [watchedChildId, workerOpen]);
+  }, [storedPane]);
+
+  const handledRouteReset = useRef(0);
+  useEffect(() => {
+    if (handledRouteReset.current === currentSession.routeResetCount) return;
+    handledRouteReset.current = currentSession.routeResetCount;
+    if (!isDesktop && overlayOpen) closeOverlay('explicit');
+  }, [closeOverlay, currentSession.routeResetCount, isDesktop, overlayOpen]);
 
   const openWorker = useCallback(
     (childId: string) => {
-      if (childId.length === 0) return;
+      if (childId.length === 0 || conversationId.length === 0) return;
       onBeforeOpen();
-      setWatchedChildId(childId);
-      setWorkerOpen(true);
-      if (!isDesktop) surfaces.openOverlay();
+      setWorkerSession((current) => ({
+        activeConversationId: conversationId,
+        pane: { conversationId, childId, open: true },
+        routeResetCount: current.routeResetCount,
+      }));
+      if (!isDesktop) openOverlay();
     },
-    [isDesktop, onBeforeOpen, surfaces],
+    [conversationId, isDesktop, onBeforeOpen, openOverlay],
   );
 
   const closeWorker = useCallback(
     (intent: CloseIntent = 'explicit') => {
-      setWorkerOpen(false);
-      setWatchedChildId('');
-      if (!isDesktop && surfaces.overlayOpen) surfaces.closeOverlay(intent);
+      setWorkerSession((current) => ({
+        activeConversationId: conversationId,
+        pane: CLOSED_WORKER_PANE,
+        routeResetCount: current.routeResetCount,
+      }));
+      if (!isDesktop && overlayOpen) closeOverlay(intent);
     },
-    [isDesktop, surfaces],
+    [closeOverlay, conversationId, isDesktop, overlayOpen],
   );
 
   const workerPanelMounted = isDesktop && workerOpen && watchedChildId.length > 0;
@@ -95,7 +161,7 @@ export function useWorkerPane(
   return {
     isDesktop,
     watchedChildId,
-    workerActive: isDesktop ? workerOpen : workerOpen && surfaces.overlayOpen,
+    workerActive: isDesktop ? workerOpen : workerOpen && overlayOpen,
     workerPanelMounted,
     panelIds,
     openWorker,

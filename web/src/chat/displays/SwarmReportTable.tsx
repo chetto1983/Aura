@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import {
@@ -48,12 +48,13 @@ export function SwarmReportTable({ payload }: SwarmReportTableProps) {
   const { t } = useTranslation();
   const { registerWorkers, statuses, viewReport, watchWorker } = useWatchWorker();
   const [open, setOpen] = useState<number | null>(null);
+  const registrationId = useId();
   const reports = payload.swarm ?? EMPTY_REPORTS;
   const label = t('display.type.swarm_report');
 
   useEffect(() => {
-    if (reports.length > 0) registerWorkers(reports);
-  }, [registerWorkers, reports]);
+    return registerWorkers(registrationId, reports);
+  }, [registerWorkers, registrationId, reports]);
 
   if (reports.length === 0) {
     return (

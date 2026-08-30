@@ -1,4 +1,5 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
+import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DisplayChildReport } from '../displays/types';
 import { useWatchWorker } from './workerWatchControls';
@@ -30,20 +31,42 @@ class FakeEventSource {
 const threadAWorkers: readonly DisplayChildReport[] = [
   { goal_index: 0, child_id: 'child-a', status: 'running', goal: 'Thread A work' },
 ];
+const threadBWorkers: readonly DisplayChildReport[] = [
+  { goal_index: 0, child_id: 'child-b', status: 'running', goal: 'Thread B work' },
+];
+
+function WorkerRegistration({
+  registrationId,
+  workers,
+}: {
+  readonly registrationId: string;
+  readonly workers: readonly DisplayChildReport[];
+}) {
+  const { registerWorkers } = useWatchWorker();
+  useEffect(
+    () => registerWorkers(registrationId, workers),
+    [registerWorkers, registrationId, workers],
+  );
+  return null;
+}
 
 function RegistryProbe() {
-  const { registerWorkers, workers } = useWatchWorker();
+  const { workers } = useWatchWorker();
+  return (
+    <output aria-label="registered workers">
+      {workers.map((worker) => worker.child_id).join(',')}
+    </output>
+  );
+}
+
+function ConversationRegistry({ showThreadA = true }: { readonly showThreadA?: boolean }) {
   return (
     <>
-      <button
-        type="button"
-        onClick={() => {
-          registerWorkers(threadAWorkers);
-        }}
-      >
-        Register A
-      </button>
-      <output>{workers.map((worker) => worker.child_id).join(',')}</output>
+      {showThreadA ? (
+        <WorkerRegistration registrationId="thread-a-card" workers={threadAWorkers} />
+      ) : null}
+      <WorkerRegistration registrationId="thread-b-card" workers={threadBWorkers} />
+      <RegistryProbe />
     </>
   );
 }
@@ -61,11 +84,11 @@ describe('WorkerWatchProvider conversation scope', () => {
   it('drops thread A workers and closes its status subscription when thread B becomes active', async () => {
     const view = render(
       <WorkerWatchProvider conversationId="thread-a" onWatchWorker={vi.fn()} onViewReport={vi.fn()}>
+        <WorkerRegistration registrationId="thread-a-card" workers={threadAWorkers} />
         <RegistryProbe />
       </WorkerWatchProvider>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Register A' }));
     expect(screen.getByText('child-a')).toBeTruthy();
     expect(FakeEventSource.instances).toHaveLength(1);
     expect(FakeEventSource.instances[0]?.url).toBe('/api/conversations/thread-a/swarm/events');
@@ -87,5 +110,25 @@ describe('WorkerWatchProvider conversation scope', () => {
       expect(FakeEventSource.instances[0]?.closed).toBe(true);
     });
     expect(FakeEventSource.instances).toHaveLength(1);
+  });
+
+  it('unions mounted swarm cards and removes only the card that unmounts', async () => {
+    const view = render(
+      <WorkerWatchProvider conversationId="thread-a" onWatchWorker={vi.fn()} onViewReport={vi.fn()}>
+        <ConversationRegistry />
+      </WorkerWatchProvider>,
+    );
+
+    expect(screen.getByLabelText('registered workers').textContent).toBe('child-a,child-b');
+
+    view.rerender(
+      <WorkerWatchProvider conversationId="thread-a" onWatchWorker={vi.fn()} onViewReport={vi.fn()}>
+        <ConversationRegistry showThreadA={false} />
+      </WorkerWatchProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('registered workers').textContent).toBe('child-b');
+    });
   });
 });

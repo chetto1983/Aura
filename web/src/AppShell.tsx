@@ -128,7 +128,7 @@ export function AppShell() {
     closeDesktopPanel,
     closePanel: closeArtifacts,
   } = useArtifactsPanel(surfaces, CHAT_SHELL_PANEL_IDS, closeWorkerBeforeArtifacts);
-  const workerPane = useWorkerPane(surfaces, artifactPanelIds, closeArtifacts);
+  const workerPane = useWorkerPane(surfaces, artifactPanelIds, closeArtifacts, activeThreadId);
   useEffect(() => {
     closeWorkerRef.current = workerPane.closeWorker;
   }, [workerPane.closeWorker]);
