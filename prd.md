@@ -10121,3 +10121,40 @@ flusso completo, che funziona.
 > step or wall-clock caps, or lossless recovery from a non-terminal child-stream disconnect.
 > Telegram remains the only shipped Deliverer for the tested identity, so selection between two
 > simultaneously eligible channel Deliverers is still unmeasured.
+
+## Section Primary LLM route changes are hot settings, not daemon lifecycle operations (Amendment #184, 2026-08-30)
+
+> **Amendment #184 (2026-08-30 - measured on the running Phase 51 stack before the fix).**
+> PostgreSQL already held the operator-selected primary route
+> `llamacpp / http://aura-llm:8084/v1 / gemma-4-12b`, and the local sidecar health endpoint
+> answered `{"status":"ok"}`. The running `aura` process still held the boot environment's
+> OpenRouter base URL and model. Its container had `RestartCount=0` and had been running since
+> `2026-08-30T01:22:21.123134167Z`. Code inspection then located the mechanism: the Settings PUT
+> persisted a row but invoked no runtime callback, `GET /api/settings` classified every DB/env
+> difference as `restart_required`, and the interactive runner, resident delegation worker and
+> scheduled `agent_job` each retained the LLM client/config pair assembled at boot.
+>
+> **Decision.** `AURA_LLM_PROVIDER`, `AURA_LLM_BASE_URL` and `AURA_LLM_MODEL` form one hot primary
+> route. Cockpit writes continue through the authenticated Settings API and remain durable in
+> `aura.settings`; direct database mutation is not the product path. After each successful PUT or
+> DELETE, Aura validates the complete effective trio and atomically publishes one immutable
+> client/config snapshot. New interactive turns, scheduled agent jobs and resident delegation
+> workers read that snapshot when their run begins. A run already in flight keeps the snapshot it
+> started with. DELETE restores the pre-overlay boot fallback captured before `aura.settings` is
+> applied. No setting change restarts or recreates the Aura container.
+>
+> **Control-plane response.** `GET /api/settings` reports the three route rows as already applied
+> when the hot reloader is wired, so their DB/env difference alone does not set
+> `restart_required`. Other allow-listed model-backend settings retain the existing boot-only
+> behavior and may still require a restart. The reasoning-capability source is replaced with the
+> same route snapshot so Composer validation cannot advertise the previous provider after a hot
+> switch. A software rollout is still required once to deploy this correction; that rollout is
+> not an endpoint-change mechanism and does not authorize future per-setting reboots.
+>
+> **What this measurement does not prove.** Reading process environment and static construction
+> sites proves configuration drift, not that a particular request reached OpenRouter or incurred a
+> charge. The pre-fix measurement also does not prove the corrected concurrency boundary, fallback
+> deletion, reasoning-capability refresh or resident-worker behavior; those require RED/GREEN tests
+> and a post-deployment live route witness with unchanged container PID/`StartedAt` across the
+> Settings mutation. It establishes no hot-reload contract for embedding, vision, STT, TTS,
+> Telegram credentials or token-budget settings.
