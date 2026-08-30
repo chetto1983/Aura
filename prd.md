@@ -6046,6 +6046,7 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS` | `10` | cap | 1.8b | Microcompact L1 threshold. |
 | `AURA_MODEL_CONTEXT_WINDOW` | (auto, per provider) | operative | 1.8b | Override context window calc. |
 | `AURA_MODEL_MAX_OUTPUT_TOKENS` | (auto, per provider) | operative | 1.8b | Override max output calc. |
+| `AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT` | `50` | cap | 51 | Share of the context window the replayed history may occupy before L2.4 condenses it (0 or 100 = early trigger off). Cockpit-editable; hot since Amendment #188. |
 | `AURA_MODEL_LLAMACPP_ERROR_RESERVE_TOKENS` | `4096` | cap | 1.10 | Extra L2 hard-cap headroom reserved ONLY on the local llama.cpp path (`provider=llamacpp`) for the tiktoken-vs-local-tokenizer gap — no provider-side overflow net there. `0` disables; OpenRouter reserves nothing. |
 | `AURA_LLM_OPENROUTER_MIDDLE_OUT` | `false` | operative | 1.11 | Opt-in belt: when `true` AND the resolved reasoning target is OpenRouter, `wireRequest` sends `transforms:["middle-out"]` — a provider-side LOSSY truncation with no tool-pair awareness, NOT a compaction mechanism (Aura's own context ladder stays primary). Last-resort net against a hard 400 "context length exceeded" when the local trim under-counts. Default off; dormant on the llama.cpp target regardless of the knob. |
 | `AURA_CONVERSATION_TURN_CAP_BYTES` | `65536` (64 KiB) | cap | 1.8 | DB cell spillover boundary. (Era erroneamente 262144 in tabella; codice + §L968/L4620 = 65536 — fix doc-verify 2026-06-01.) |
@@ -6055,8 +6056,8 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_SANDBOX_MAX_CONCURRENT_SESSIONS` | `5` | cap | 2b | Hard cap session concurrent per istanza Aura. |
 | `AURA_SANDBOX_WORKSPACE_MAX_BYTES` | `104857600` (100 MiB) | cap | 2b | Quota per workspace mount per conversation. |
 | `AURA_SANDBOX_NETWORK_ALLOW_HOSTS` | `` (empty = deny totale) | operative | 2b | CSV hosts allowlist (es. `pypi.org,files.pythonhosted.org`). Empty mantiene `network_mode: none` Slice 2a. Non-empty attiva tier Risk-Based RISKY. |
-| `AURA_LOOP_MAX_STEPS` | `25` | cap | 0.9 | Tool-call iteration cap per `Run` (amendment #19, Pitfall #9 P0). Child agents inherit parent's REMAINING (not fresh). Trip → `Event.FinishReason='max_steps'`. **Fixed 2026-08-29 (plan 51-09, defect D, Amendment #171):** unmapped in `compose.yaml` until this date, so `.env`'s value was silently ignored and the container always ran on this compiled default regardless of what `.env` said. Now mapped `${AURA_LOOP_MAX_STEPS:-25}` in the `aura` service. |
-| `AURA_LOOP_MAX_WALLCLOCK_SEC` | `300` | cap | 0.9 | Wallclock budget per `Run` in seconds (amendment #19, Pitfall #9 P0). Children inherit parent's absolute deadline. Trip → `Event.FinishReason='max_wallclock'`. **Fixed 2026-08-29 (plan 51-09, defect D, Amendment #171):** same unmapped-in-`compose.yaml` gap as `AURA_LOOP_MAX_STEPS` above, now mapped `${AURA_LOOP_MAX_WALLCLOCK_SEC:-300}`. D-03 (below) retired the per-child wall clock, which makes THIS shared budget the background delegation worker's actual absolute ceiling — a 327.5s live completion measured the same day would have been cut at this 300s default. |
+| `AURA_LOOP_MAX_STEPS` | `25` | cap | 0.9 | **Cockpit-editable hot setting since Amendment #188 (2026-08-30):** an `aura.settings` row publishes into the runtime snapshot; new runs take it, in-flight runs keep theirs. Env is the boot fallback only. Tool-call iteration cap per `Run` (amendment #19, Pitfall #9 P0). Child agents inherit parent's REMAINING (not fresh). Trip → `Event.FinishReason='max_steps'`. **Fixed 2026-08-29 (plan 51-09, defect D, Amendment #171):** unmapped in `compose.yaml` until this date, so `.env`'s value was silently ignored and the container always ran on this compiled default regardless of what `.env` said. Now mapped `${AURA_LOOP_MAX_STEPS:-25}` in the `aura` service. |
+| `AURA_LOOP_MAX_WALLCLOCK_SEC` | `300` | cap | 0.9 | **Cockpit-editable hot setting since Amendment #188 (2026-08-30)**, same mechanism as `AURA_LOOP_MAX_STEPS`. Wallclock budget per `Run` in seconds (amendment #19, Pitfall #9 P0). Children inherit parent's absolute deadline. Trip → `Event.FinishReason='max_wallclock'`. **Fixed 2026-08-29 (plan 51-09, defect D, Amendment #171):** same unmapped-in-`compose.yaml` gap as `AURA_LOOP_MAX_STEPS` above, now mapped `${AURA_LOOP_MAX_WALLCLOCK_SEC:-300}`. D-03 (below) retired the per-child wall clock, which makes THIS shared budget the background delegation worker's actual absolute ceiling — a 327.5s live completion measured the same day would have been cut at this 300s default. |
 | `AURA_LOOP_DEDUP_WINDOW` | `3` | cap | 0.9 | Sliding window size for tool-call dedup (amendment #19, Pitfall #9 P0). If last N tool calls have identical `tool_name + args_hash`, trip → `Event.FinishReason='dedup_loop'`. |
 | `AURA_LOOP_DEDUP_EXEMPT_TOOLS` | `` (empty) | operative | 0.9 | CSV allowlist of tool names exempt from the two-phase dedup check (A7, D-19). Tools whose constant-result output is legitimately repeated (e.g. a poll) bypass the dedup veto and terminate only via the hard step/wallclock caps. |
 | `AURA_LOOP_BRANCH_SOFT_FRACTION` | `1.0` | cap | 0.9 | Passive per-branch fair-share fraction in `(0,1]` (A7, D-12). A parallel branch's advisory soft cap is `ceil(remaining × frac / fanout)`; non-terminal — the shared hard `AURA_LOOP_MAX_STEPS` counter stays authoritative. |
@@ -10309,3 +10310,46 @@ flusso completo, che funziona.
 > model, generation near 262,144 tokens, or a provider-reported maximum output limit. The direct
 > probes prove the installed bridge's wire behavior, not that Aura's corrected parser and Cockpit
 > selector work end to end; focused tests and an operator-authorized live run must establish that.
+
+## Section Loop budget, compaction trigger and API key are hot profile fields; every setting reports its own application state (Amendment #188, 2026-08-30)
+
+> **Amendment #188 (2026-08-30 - measured on the running deployment, image `9d6b3fef42ce`
+> built from HEAD `6db93d459`, container started `2026-08-30T09:17:19Z`, `RestartCount=0`;
+> full evidence in `docs/audit/settings-hot-reload-and-turn-budget-2026-08-30.md`).**
+> The agent-loop turn budget (`AURA_LOOP_MAX_STEPS=25`, `AURA_LOOP_MAX_WALLCLOCK_SEC=300`)
+> was readable only from process environment: absent from `settings.AllowedKeys`, from the
+> Cockpit "Budget token" pane and from the knob catalogue. The one operator who needed more
+> than 25 steps for a real delegation (plan 51-09 live check, `AURA_LOOP_MAX_STEPS=60`) got it
+> through a temporary compose override, i.e. a container recreate — the operation Amendment
+> #184 forbids for a setting change. Authenticated `GET /api/settings` reported
+> `restart_required:true` as ONE list-level boolean; the only row explaining it was
+> `AURA_VISION_CLOUD=true` written after boot, yet the Cockpit banner rendered under the
+> token pane and blamed "model clients". `AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT` sat in the
+> same pane as three hot keys, rendered identically, but was not hot; a rotated
+> `OPENROUTER_API_KEY` was persisted while the runtime kept the boot key. A `max_steps` trip
+> reached the wire as `STATE_DELTA {limit_hit, steps_consumed}` and was read by nothing in
+> `web/src`; Telegram rendered nothing either. Reference inventory (read-only): LibreChat
+> exposes `recursion_limit` per agent in its UI and re-reads it per request; Hermes exposes
+> `agent.max_turns`, re-reads config per turn and pokes the value onto its cached agent, and
+> tells the user "iteration budget exhausted (n/max) — send `continue`"; pi has no turn limit.
+>
+> **Decision.** `AURA_LOOP_MAX_STEPS` and `AURA_LOOP_MAX_WALLCLOCK_SEC` become allow-listed
+> integer settings (`>= 1`) and join the hot profile together with
+> `AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT` (`0..100`) and `OPENROUTER_API_KEY`. The runtime
+> snapshot carries the loop budget; every run (interactive runner, resident delegation
+> worker, scheduled `agent_job`) builds its `agent.Budget` from the snapshot it already holds,
+> so the existing D-06 precedence is preserved with the snapshot inserted between the CLI
+> flag / per-job `step_budget` (which still win) and the process environment (which is now
+> only the boot fallback DELETE restores). In-flight runs keep their budget. A DB row for the
+> API key is a profile override like the others: absent means the pre-overlay boot key.
+> `GET /api/settings` reports, per row, `applied ∈ {live, boot, restart}` and the list-level
+> `restart_keys`; `restart_required` stays as the derived boolean. The Cockpit badges each
+> field with its application state and the banner names the keys. The budget trip is shown
+> where the answer is: the Cockpit renders the assistant turn's `limit_hit`/`steps_consumed`
+> as a notice with a "continue" hint, and Telegram appends the same line to its status pane.
+>
+> **What this measurement does not prove.** It does not prove generation at any window
+> limit, and it does not change the boot-bound backends (embedding, STT/TTS, vision, Telegram
+> token): they remain honest restarts and are now labelled as such per field. Reference
+> behaviour was read, not executed. The stale-limit-row and compose-default half of the same
+> audit is Amendment #187's scope, not this one's.
