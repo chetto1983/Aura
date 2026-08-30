@@ -28,6 +28,10 @@ const budgetReserve = 3
 // for the depth-conditional grant that replaced flat v1's blanket strip.
 const swarmSpawnTool = "swarm_spawn"
 
+type runtimeSnapshotter interface {
+	Snapshot() llm.RuntimeSnapshot
+}
+
 // RunConfig carries the inputs the ephemeral runner needs for one swarm_spawn call.
 // Depth is the invocation depth (a parent-initiated spawn is depth 1); the D-10
 // guard rejects depth >= AURA_SWARM_MAX_DEPTH. ConvID keys the per-child SessionID
@@ -37,7 +41,7 @@ type RunConfig struct {
 	ParentRegistry *tools.Registry
 	Client         llm.Client
 	LLM            llm.Config
-	Runtime        *llm.Runtime
+	Runtime        runtimeSnapshotter
 	Cfg            config.Config
 	ConvID         string
 	Depth          int

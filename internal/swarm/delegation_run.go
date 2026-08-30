@@ -148,6 +148,7 @@ func pauseOptionsJSON(labels []string) (json.RawMessage, error) {
 // than this lease (AURA_SWARM_DELEGATION_LEASE_SEC), so the two bounds can
 // never cross.
 func (l *DelegationClaimLoop) runWithHeartbeat(ctx context.Context, job documents.IngestionJob, payload DelegationPayload) (ChildReport, []llm.Message, error) {
+	rc := snapshotDelegationRunConfig(l.Worker)
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -156,7 +157,6 @@ func (l *DelegationClaimLoop) runWithHeartbeat(ctx context.Context, job document
 		heartbeatErr <- l.maintainLease(runCtx, cancel, job)
 	}()
 
-	rc := l.Worker
 	rc.ConvID = payload.ConversationID
 	rc.Depth = payload.Depth
 	rc.Context = payload.Context
@@ -247,15 +247,19 @@ func delegationOperationContext(ctx context.Context, job documents.IngestionJob,
 	return operationCtx, nil
 }
 
-// delegationBudget builds the claimed job's shared agent.Budget from the loop
-// profile of the runtime snapshot the worker is about to run on (amendment #188):
-// a Settings change to AURA_LOOP_MAX_STEPS / AURA_LOOP_MAX_WALLCLOCK_SEC reaches
-// the next claimed job without a restart, while the boot config stays the
-// fallback for a worker wired without a Runtime (tests, static callers).
-func delegationBudget(rc RunConfig) (*agent.Budget, error) {
-	cfg := rc.LLM
-	if rc.Runtime != nil {
-		cfg = rc.Runtime.Snapshot().Config
+func snapshotDelegationRunConfig(rc RunConfig) RunConfig {
+	if rc.Runtime == nil {
+		return rc
 	}
-	return agent.NewBudget(agent.BudgetOptionsFromConfig(cfg))
+	snapshot := rc.Runtime.Snapshot()
+	rc.Client = snapshot.Client
+	rc.LLM = snapshot.Config
+	rc.Runtime = nil
+	return rc
+}
+
+// delegationBudget builds the claimed job's shared budget from the same frozen
+// profile runChild uses. Static callers use RunConfig.LLM directly.
+func delegationBudget(rc RunConfig) (*agent.Budget, error) {
+	return agent.NewBudget(agent.BudgetOptionsFromConfig(rc.LLM))
 }

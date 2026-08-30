@@ -11,8 +11,9 @@ func TestSwarmWorkerUsesReplacementLLMRuntime(t *testing.T) {
 	oldClient := newRouter().route("hot-route", outcome{kind: "ok", text: "old"})
 	newClient := newRouter().route("hot-route", outcome{kind: "ok", text: "new"})
 	rc := testRunConfig(t, oldClient, 25)
-	rc.Runtime = llm.NewRuntime(oldClient, rc.LLM)
-	rc.Runtime.Replace(newClient, llm.Config{Model: "gemma-4-12b", Provider: "llamacpp", TotalTimeoutSec: 30})
+	runtime := llm.NewRuntime(oldClient, rc.LLM)
+	rc.Runtime = runtime
+	runtime.Replace(newClient, llm.Config{Model: "gemma-4-12b", Provider: "llamacpp", TotalTimeoutSec: 30})
 
 	out, err := Run(context.Background(), rc, []string{"hot-route task"})
 	if err != nil {
