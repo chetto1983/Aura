@@ -57,7 +57,7 @@ type settingsStore interface {
 // llmRouteReloader validates and publishes the complete persisted primary-profile
 // override set. The composition root supplies the boot fallback and concrete client.
 type llmRouteReloader interface {
-	Prepare(ctx context.Context, overrides map[string]string) (apply func(), err error)
+	Prepare(ctx context.Context, overrides map[string]string, resetKeys []string) (apply func(), err error)
 	EffectiveValue(key string) (string, bool)
 }
 
@@ -225,7 +225,7 @@ func (s *Server) handlePutLLMProfile(w http.ResponseWriter, r *http.Request) {
 	for _, key := range resetKeys {
 		delete(overrides, key)
 	}
-	apply, err := s.llmRouteReloader.Prepare(r.Context(), overrides)
+	apply, err := s.llmRouteReloader.Prepare(r.Context(), overrides, resetKeys)
 	if err != nil {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -263,9 +263,7 @@ func modelLimitResetKeys(rows []sqlc.AuraSettings, next map[string]string) []str
 		if _, explicit := next[key]; explicit {
 			continue
 		}
-		if _, persisted := current[key]; persisted {
-			reset = append(reset, key)
-		}
+		reset = append(reset, key)
 	}
 	return reset
 }
@@ -322,7 +320,7 @@ func (s *Server) handlePutSetting(w http.ResponseWriter, r *http.Request) {
 	if s.hotLLMRouteEnabled(key) {
 		routeOverrides = llmProfileOverrides(rows)
 		routeOverrides[key] = body.Value
-		applyRoute, err = s.llmRouteReloader.Prepare(r.Context(), routeOverrides)
+		applyRoute, err = s.llmRouteReloader.Prepare(r.Context(), routeOverrides, nil)
 		if err != nil {
 			writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
@@ -365,7 +363,7 @@ func (s *Server) handleDeleteSetting(w http.ResponseWriter, r *http.Request) {
 		}
 		routeOverrides = llmProfileOverrides(rows)
 		delete(routeOverrides, key)
-		applyRoute, err = s.llmRouteReloader.Prepare(r.Context(), routeOverrides)
+		applyRoute, err = s.llmRouteReloader.Prepare(r.Context(), routeOverrides, nil)
 		if err != nil {
 			writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return

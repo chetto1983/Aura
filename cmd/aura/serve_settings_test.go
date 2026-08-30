@@ -69,7 +69,7 @@ func TestPrimaryLLMRouteReloaderResolvesOverridesAndDeleteFallback(t *testing.T)
 		"AURA_LLM_PROVIDER": "llamacpp",
 		"AURA_LLM_BASE_URL": "http://aura-llm:8084/v1",
 		"AURA_LLM_MODEL":    "gemma-4-12b",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestPrimaryLLMRouteReloaderResolvesOverridesAndDeleteFallback(t *testing.T)
 		t.Fatalf("local route = %q %q %q", local.Provider, local.BaseURL, local.Model)
 	}
 
-	reverted, err := r.resolve(nil)
+	reverted, err := r.resolve(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestPrimaryLLMRouteReloaderPreservesActiveNonProfileSecrets(t *testing.T) {
 		"AURA_LLM_PROVIDER": "llamacpp",
 		"AURA_LLM_BASE_URL": "http://aura-llm:8084/v1",
 		"AURA_LLM_MODEL":    "gemma-4-12b",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestPrimaryLLMRouteReloaderApplyPublishesRuntimeSnapshot(t *testing.T) {
 		"AURA_LLM_PROVIDER": "llamacpp",
 		"AURA_LLM_BASE_URL": srv.URL + "/v1",
 		"AURA_LLM_MODEL":    "gemma-4-12b",
-	})
+	}, []string{"AURA_MODEL_CONTEXT_WINDOW", "AURA_MODEL_MAX_OUTPUT_TOKENS"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,6 +139,8 @@ func TestPrimaryLLMRouteReloaderPublishesOllamaCloudProfile(t *testing.T) {
 	srv := ollamaProfileServer(t)
 	fallback := validFallbackLLMConfig()
 	fallback.APIKey = "retained-cloud-key"
+	fallback.ContextWindowConfigured = true
+	fallback.MaxOutputTokensConfigured = true
 	runtime := llm.NewRuntime(&settingsRuntimeClient{route: "old"}, fallback)
 	r := &primaryLLMRouteReloader{fallback: fallback, runtime: runtime}
 
@@ -146,7 +148,7 @@ func TestPrimaryLLMRouteReloaderPublishesOllamaCloudProfile(t *testing.T) {
 		"AURA_LLM_PROVIDER": "ollama",
 		"AURA_LLM_BASE_URL": srv.URL + "/v1",
 		"AURA_LLM_MODEL":    "gemma4:31b-cloud",
-	})
+	}, []string{"AURA_MODEL_CONTEXT_WINDOW", "AURA_MODEL_MAX_OUTPUT_TOKENS"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,6 +157,9 @@ func TestPrimaryLLMRouteReloaderPublishesOllamaCloudProfile(t *testing.T) {
 	got := runtime.Snapshot().Config
 	if got.Provider != "ollama" || got.ContextWindow != 262144 {
 		t.Fatalf("published Ollama profile = provider %q, context %d", got.Provider, got.ContextWindow)
+	}
+	if got.ContextWindowConfigured || got.MaxOutputTokensConfigured {
+		t.Fatalf("inherited startup limits remained configured: context=%v output=%v", got.ContextWindowConfigured, got.MaxOutputTokensConfigured)
 	}
 	if got.CostStatus != llm.CostStatusSubscriptionIncluded {
 		t.Fatalf("cost status = %q", got.CostStatus)
@@ -172,7 +177,7 @@ func TestPrimaryLLMRouteReloaderRejectsInvalidRoute(t *testing.T) {
 		"base URL": {"AURA_LLM_BASE_URL": "aura-llm:8084/v1"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := r.Prepare(context.Background(), overrides); err == nil {
+			if _, err := r.Prepare(context.Background(), overrides, nil); err == nil {
 				t.Fatal("Prepare accepted an invalid primary route")
 			}
 		})

@@ -23,13 +23,15 @@ type fakeSettingsStore struct {
 
 type fakeLLMRouteReloader struct {
 	validated []map[string]string
+	resets    [][]string
 	applied   []map[string]string
 	effective map[string]string
 	err       error
 }
 
-func (f *fakeLLMRouteReloader) Prepare(_ context.Context, overrides map[string]string) (func(), error) {
+func (f *fakeLLMRouteReloader) Prepare(_ context.Context, overrides map[string]string, resetKeys []string) (func(), error) {
 	f.validated = append(f.validated, maps.Clone(overrides))
+	f.resets = append(f.resets, slices.Clone(resetKeys))
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -233,6 +235,23 @@ func TestHandlePutLLMProfileDropsPreviousModelLimitsOnRouteChange(t *testing.T) 
 		if !slices.Contains(store.deleted, key) {
 			t.Fatalf("stale model limit %s was not deleted: %v", key, store.deleted)
 		}
+		if !slices.Contains(reloader.resets[0], key) {
+			t.Fatalf("stale model limit %s was not reset at runtime: %v", key, reloader.resets[0])
+		}
+	}
+}
+
+func TestModelLimitResetKeysIncludesStartupOnlyLimits(t *testing.T) {
+	rows := []sqlc.AuraSettings{
+		{Key: "AURA_LLM_PROVIDER", Value: "llamacpp"},
+		{Key: "AURA_LLM_MODEL", Value: "local-model"},
+	}
+	got := modelLimitResetKeys(rows, map[string]string{
+		"AURA_LLM_PROVIDER": "ollama",
+		"AURA_LLM_MODEL":    "gemma4:31b-cloud",
+	})
+	if !slices.Equal(got, modelLimitKeys) {
+		t.Fatalf("route switch resets = %v, want startup model limits %v", got, modelLimitKeys)
 	}
 }
 
