@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Cloud, Cpu, RefreshCw, Save } from 'lucide-react';
+import { Cloud, Cpu, RefreshCw, Save, Server } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
 import { SettingsFields } from './SettingField';
@@ -8,9 +8,14 @@ import {
   ALL_MODEL_GROUPS,
   CLOUD_PROVIDER,
   LOCAL_BASE_URL,
+  LOCAL_MODEL,
   LOCAL_PROVIDER,
   MODEL_SETTINGS_GROUPS,
+  OLLAMA_BASE_URL,
+  OLLAMA_MODEL,
+  OLLAMA_PROVIDER,
   OPENROUTER_BASE_URL,
+  OPENROUTER_MODEL,
   resolveProvider,
   type ModelSettingsGroup,
 } from './modelSettingsDefs';
@@ -124,6 +129,7 @@ export function ModelSettingsPanel({
                 aria-pressed={provider === 'cloud'}
                 onClick={() => {
                   setValue('AURA_LLM_BASE_URL', OPENROUTER_BASE_URL);
+                  setValue('AURA_LLM_MODEL', OPENROUTER_MODEL);
                   setValue('AURA_LLM_PROVIDER', CLOUD_PROVIDER);
                 }}
               >
@@ -136,11 +142,25 @@ export function ModelSettingsPanel({
                 aria-pressed={provider === 'local'}
                 onClick={() => {
                   setValue('AURA_LLM_BASE_URL', LOCAL_BASE_URL);
+                  setValue('AURA_LLM_MODEL', LOCAL_MODEL);
                   setValue('AURA_LLM_PROVIDER', LOCAL_PROVIDER);
                 }}
               >
                 <Cpu aria-hidden="true" />
                 {t('settings.provider.local')}
+              </Button>
+              <Button
+                type="button"
+                variant={provider === 'ollama' ? 'default' : 'outline'}
+                aria-pressed={provider === 'ollama'}
+                onClick={() => {
+                  setValue('AURA_LLM_BASE_URL', OLLAMA_BASE_URL);
+                  setValue('AURA_LLM_MODEL', OLLAMA_MODEL);
+                  setValue('AURA_LLM_PROVIDER', OLLAMA_PROVIDER);
+                }}
+              >
+                <Server aria-hidden="true" />
+                {t('settings.provider.ollama')}
               </Button>
             </div>
           ) : null}

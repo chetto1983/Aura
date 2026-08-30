@@ -77,6 +77,16 @@ export async function putSetting(key: string, value: string): Promise<SettingIte
   return readJSON<SettingItem>(res);
 }
 
+export async function putLLMProfile(settings: Readonly<Record<string, string>>): Promise<void> {
+  const res = await fetch('/api/settings/llm-profile', {
+    method: 'PUT',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({ settings }),
+  });
+  await readJSON<unknown>(res);
+}
+
 export async function deleteSetting(key: string): Promise<{
   readonly key: string;
   readonly deleted: boolean;

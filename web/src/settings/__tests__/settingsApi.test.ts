@@ -5,6 +5,7 @@ import {
   deleteSetting,
   fetchSettings,
   fetchTelegramLinkStatus,
+  putLLMProfile,
   putSetting,
 } from '../settingsApi';
 
@@ -57,6 +58,25 @@ describe('settingsApi', () => {
       method: 'DELETE',
       headers: { Accept: 'application/json' },
       credentials: 'same-origin',
+    });
+  });
+
+  it('writes one model profile mutation as a batch', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('{"ok":true}', { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    const settings = {
+      AURA_LLM_PROVIDER: 'llamacpp',
+      AURA_LLM_BASE_URL: 'http://aura-llm:8084/v1',
+      AURA_LLM_MODEL: 'gemma-4-12b',
+    };
+
+    await putLLMProfile(settings);
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/settings/llm-profile', {
+      method: 'PUT',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ settings }),
     });
   });
 

@@ -1,13 +1,18 @@
 import type { SettingKind } from './settingsApi';
 
 export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+export const OPENROUTER_MODEL = 'deepseek/deepseek-v4-flash:nitro';
 // The local chat server, the `localllm` compose profile, not the vLLM sidecar this
 // used to name:
 // `aura-vllm-chat` resolves nowhere in any compose file, so the Local button wrote a
 // base URL pointing at a host that does not exist.
 export const LOCAL_BASE_URL = 'http://aura-llm:8084/v1';
+export const LOCAL_MODEL = 'gemma-4-12b';
+export const OLLAMA_BASE_URL = 'http://host.docker.internal:11434/v1';
+export const OLLAMA_MODEL = 'gemma4:31b-cloud';
 export const CLOUD_PROVIDER = 'openrouter';
 export const LOCAL_PROVIDER = 'llamacpp';
+export const OLLAMA_PROVIDER = 'ollama';
 
 export type SettingsKey =
   | 'AURA_LLM_MODEL'
@@ -56,10 +61,10 @@ export const PRIMARY_SETTINGS: readonly SettingDef[] = [
 ];
 
 // AURA_LLM_PROVIDER is loaded and saved like any other row but never rendered: the
-// Cloud/Local buttons are its editor. It has to be here — settings rows overlay the
-// process env at daemon boot and outrank both .env and ~/.aura/llm.json, so a panel
-// that moves the base URL without it leaves the previous provider's adapter serving
-// the new endpoint (live 2026-07-27: the llama.cpp adapter pointed at OpenRouter).
+// Route buttons are its editor. It has to be here: provider, base URL and model
+// form the hot runtime route, so moving the URL without its provider would publish the
+// previous adapter against the new endpoint (live 2026-07-27: llama.cpp pointed at
+// OpenRouter).
 export const ROUTING_SETTINGS: readonly SettingDef[] = [
   { key: 'AURA_LLM_PROVIDER', kind: 'string', labelKey: 'settings.fields.primaryProvider' },
 ];
@@ -117,19 +122,33 @@ function isLocalBaseURL(value: string): boolean {
   );
 }
 
+function isOllamaBaseURL(value: string): boolean {
+  try {
+    const parsed = new URL(value.trim());
+    return parsed.port === '11434' || parsed.hostname.toLowerCase() === 'ollama';
+  } catch {
+    return false;
+  }
+}
+
 // resolveProvider decides which routing button reads as active. The stored provider is
 // authoritative because it is what the daemon actually boots with; the URL heuristic is
 // only the fallback for a deployment whose row was never written.
-export function resolveProvider(storedProvider: string, baseURL: string): 'cloud' | 'local' {
+export function resolveProvider(
+  storedProvider: string,
+  baseURL: string,
+): 'cloud' | 'local' | 'ollama' {
   const normalized = storedProvider.trim().toLowerCase();
+  if (normalized === OLLAMA_PROVIDER) return 'ollama';
   if (normalized === LOCAL_PROVIDER) return 'local';
   if (normalized === CLOUD_PROVIDER) return 'cloud';
+  if (isOllamaBaseURL(baseURL)) return 'ollama';
   return isLocalBaseURL(baseURL) ? 'local' : 'cloud';
 }
 
 // A group is one settings pane: the fields it renders plus any key it must dirty-track
-// without rendering. `tracked` exists for AURA_LLM_PROVIDER — the Cloud/Local buttons are
-// its editor, so a routing pane that did not track it would save a base URL and leave the
+// without rendering. Route buttons edit AURA_LLM_PROVIDER, so a routing pane that did
+// not track it would save a base URL and leave the
 // previous provider's adapter serving the new endpoint.
 export type ModelSettingsGroup = 'routing' | 'tokens' | 'backends';
 

@@ -57,12 +57,13 @@ export const settingsEn = {
     },
     modelRouting: {
       heading: 'Model routing',
-      body: 'Choose whether Aura uses a cloud OpenRouter endpoint or a local OpenAI-compatible model server, then set the model and token budget.',
+      body: 'Choose OpenRouter, the local llama.cpp server, or Ollama, then set the model and token budget.',
     },
     provider: {
       label: 'Primary model provider',
       cloud: 'Cloud',
       local: 'Local',
+      ollama: 'Ollama',
     },
     tokens: {
       heading: 'Token budget',
@@ -165,12 +166,13 @@ export const settingsIt = {
     },
     modelRouting: {
       heading: 'Instradamento modello',
-      body: 'Scegli se Aura usa OpenRouter cloud o un server locale compatibile OpenAI, poi imposta modello e budget token.',
+      body: 'Scegli OpenRouter, il server llama.cpp locale oppure Ollama, poi imposta modello e budget token.',
     },
     provider: {
       label: 'Provider modello primario',
       cloud: 'Cloud',
       local: 'Locale',
+      ollama: 'Ollama',
     },
     tokens: {
       heading: 'Budget token',

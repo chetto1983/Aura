@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { deleteSetting, fetchSettings, putSetting, type SettingItem } from './settingsApi';
+import {
+  deleteSetting,
+  fetchSettings,
+  putLLMProfile,
+  putSetting,
+  type SettingItem,
+} from './settingsApi';
 import { ALL_SETTINGS, type SettingDef, type SettingsKey } from './modelSettingsDefs';
 
 export interface LoadedState {
@@ -10,6 +16,15 @@ export interface LoadedState {
 }
 
 export type LoadStatus = 'loading' | 'ready' | 'error';
+
+const HOT_LLM_PROFILE_KEYS = new Set<SettingsKey>([
+  'AURA_LLM_PROVIDER',
+  'AURA_LLM_BASE_URL',
+  'AURA_LLM_MODEL',
+  'AURA_LLM_MAX_TOKENS',
+  'AURA_MODEL_CONTEXT_WINDOW',
+  'AURA_MODEL_MAX_OUTPUT_TOKENS',
+]);
 
 function emptyItem(def: SettingDef): SettingItem {
   return {
@@ -139,7 +154,13 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
       setSaved(false);
       setSaveError(undefined);
       try {
-        for (const key of dirtyKeys) {
+        const profileKeys = dirtyKeys.filter((key) => HOT_LLM_PROFILE_KEYS.has(key));
+        if (profileKeys.length > 0) {
+          await putLLMProfile(
+            Object.fromEntries(profileKeys.map((key) => [key, loaded.values[key] ?? ''])),
+          );
+        }
+        for (const key of dirtyKeys.filter((key) => !HOT_LLM_PROFILE_KEYS.has(key))) {
           await putSetting(key, loaded.values[key] ?? '');
         }
         const settings = await fetchSettings();

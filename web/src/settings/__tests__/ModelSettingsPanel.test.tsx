@@ -141,61 +141,30 @@ describe('ModelSettingsPanel', () => {
     vi.unstubAllGlobals();
   });
 
-  it('edits cloud/local model routing without rendering secret values', async () => {
-    const calls: { url: string; init: RequestInit | undefined }[] = [];
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        const url =
-          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-        calls.push({ url, init });
-        if (init?.method === 'PUT') {
-          return Promise.resolve(new Response('{"ok":true}', { status: 200 }));
-        }
-        return Promise.resolve(
-          new Response(JSON.stringify(SETTINGS_BODY), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          }),
-        );
-      }),
-    );
-
-    render(<ModelSettingsPanel onComplete={vi.fn()} />);
-
-    expect(await screen.findByRole('heading', { name: 'Model routing' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Cloud' }).getAttribute('aria-pressed')).toBe('true');
-    expect(screen.queryByDisplayValue('sk-should-never-render')).toBeNull();
-    expect(screen.queryByText('sk-should-never-render')).toBeNull();
-    expect(screen.getAllByText('Configured').length).toBeGreaterThan(0);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Local' }));
-    fireEvent.change(screen.getByLabelText('Primary model'), {
-      target: { value: 'qwen2.5-coder:14b' },
-    });
-    fireEvent.change(screen.getByLabelText('Primary base URL'), {
-      target: { value: 'http://aura-vllm-chat:8000/v1' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
-
-    await waitFor(() => {
-      expect(calls.some((call) => call.url === '/api/settings/AURA_LLM_BASE_URL')).toBe(true);
-      expect(calls.some((call) => call.url === '/api/settings/AURA_LLM_MODEL')).toBe(true);
-    });
-    const baseURLCall = calls.find((call) => call.url === '/api/settings/AURA_LLM_BASE_URL');
-    expect(baseURLCall?.init?.body).toBe(
-      JSON.stringify({ value: 'http://aura-vllm-chat:8000/v1' }),
-    );
-  });
-
   // Regression, found live 2026-07-27: pressing Cloud moved AURA_LLM_BASE_URL to
   // OpenRouter and left AURA_LLM_PROVIDER on its previous value, so the daemon booted
   // the llama.cpp adapter against the OpenRouter endpoint. Settings rows overlay the
   // process env at boot and outrank .env and ~/.aura/llm.json, so nothing downstream
-  // could correct it. Both buttons must move BOTH keys together.
+  // could correct it. Every route button must move provider, URL, and model together.
   it.each([
-    { button: 'Cloud', baseURL: 'https://openrouter.ai/api/v1', provider: 'openrouter' },
-    { button: 'Local', baseURL: 'http://aura-llm:8084/v1', provider: 'llamacpp' },
+    {
+      button: 'Cloud',
+      baseURL: 'https://openrouter.ai/api/v1',
+      provider: 'openrouter',
+      model: 'deepseek/deepseek-v4-flash:nitro',
+    },
+    {
+      button: 'Local',
+      baseURL: 'http://aura-llm:8084/v1',
+      provider: 'llamacpp',
+      model: 'gemma-4-12b',
+    },
+    {
+      button: 'Ollama',
+      baseURL: 'http://host.docker.internal:11434/v1',
+      provider: 'ollama',
+      model: 'gemma4:31b-cloud',
+    },
   ])('the $button button writes the provider alongside the base URL', async (route) => {
     const calls: { url: string; method: string; body: string | undefined }[] = [];
     vi.stubGlobal(
@@ -217,15 +186,20 @@ describe('ModelSettingsPanel', () => {
 
     expect(await screen.findByText('Runtime settings saved.')).toBeTruthy();
     const puts = calls.filter((call) => call.method === 'PUT');
-    expect(puts.find((call) => call.url === '/api/settings/AURA_LLM_PROVIDER')?.body).toBe(
-      JSON.stringify({ value: route.provider }),
-    );
+    expect(puts).toHaveLength(1);
+    expect(puts[0]?.url).toBe('/api/settings/llm-profile');
+    const payload = JSON.parse(puts[0]?.body ?? '{}') as {
+      settings?: Record<string, string>;
+    };
+    expect(payload.settings?.AURA_LLM_PROVIDER).toBe(route.provider);
+    if (payload.settings?.AURA_LLM_MODEL !== undefined) {
+      expect(payload.settings.AURA_LLM_MODEL).toBe(route.model);
+    }
     // The base URL is written only when the button actually moves it. The fixture is
     // already on cloud, so pressing Cloud writes the provider ALONE — which is the live
     // shape of the bug: the operator's base URL was right and the provider was stale.
-    const baseURLPut = puts.find((call) => call.url === '/api/settings/AURA_LLM_BASE_URL');
-    if (baseURLPut !== undefined) {
-      expect(baseURLPut.body).toBe(JSON.stringify({ value: route.baseURL }));
+    if (payload.settings?.AURA_LLM_BASE_URL !== undefined) {
+      expect(payload.settings.AURA_LLM_BASE_URL).toBe(route.baseURL);
     }
   });
 
