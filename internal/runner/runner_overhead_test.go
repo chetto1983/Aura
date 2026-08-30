@@ -39,11 +39,11 @@ func TestValidateCompactionConfigRejectsUnreachableMeasuredTrigger(t *testing.T)
 	r := &Runner{
 		registry:          reg,
 		compactionEnabled: true,
-		cfg: llm.Config{
+		runtime: llm.NewRuntime(nil, llm.Config{
 			ContextWindow:            1_000,
 			CompactionTriggerPercent: 1,
 			TotalTimeoutSec:          120,
-		},
+		}),
 	}
 	overhead := r.manifestOverheadTokens()
 	if overhead <= 10 {

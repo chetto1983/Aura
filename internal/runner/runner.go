@@ -65,12 +65,11 @@ type Runner struct {
 	memoryContext   MemoryContextProvider
 	resumeCommitter ResumeCommitter // cross-store HITL-durability seam (D-03/D-05); split fallback when unset
 
-	client   llm.Client
+	runtime  *llm.Runtime
 	registry *tools.Registry
 	location *time.Location
 	profiles ProfileProvider
 	overheadFields
-	cfg        llm.Config
 	breaker    *llm.Breaker // SHARED process-lifetime LLM circuit breaker, injected into every per-turn agent (B-05)
 	runDir     string
 	previewCap int
@@ -207,6 +206,8 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 			return
 		}
 		ctx = scopedCtx
+		turnRuntime := r.llmSnapshot(ctx)
+		ctx = withLLMRuntimeSnapshot(ctx, turnRuntime)
 		requestID, err := uuid.NewV7()
 		if err != nil {
 			yield(nil, fmt.Errorf("mint request id: %w", err))
@@ -222,7 +223,7 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 			}
 			if answer, ok := fastReplyFor(*input.visibleUserMsg); ok {
 				ev := fastReplyEvent(convID, requestID, answer)
-				tr := &turnTracker{convID: convID}
+				tr := &turnTracker{convID: convID, llmRuntime: turnRuntime}
 				if err := r.persistEvent(ctx, tr, ev); err != nil {
 					yield(nil, err)
 					return
@@ -264,7 +265,7 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 		// them as ONE assistant turn (CR-02). The flush is deferred to round end
 		// because the agent emits one pause Event per call but rewrites its history to
 		// a single multi-tool_call assistant message.
-		tr := &turnTracker{convID: convID}
+		tr := &turnTracker{convID: convID, llmRuntime: turnRuntime}
 		// flushPause writes the single combined assistant ask_user tool_call turn (CR-02)
 		// — the message the injected RoleTool answers attach to on resume. It MUST run
 		// even when the consumer stops iterating ON the pause Event: the AG-UI translator
@@ -372,9 +373,10 @@ func (r *Runner) buildAgent(ctx context.Context, convID string, requestID uuid.U
 	// (37E). Absent => zero effort => the agent's adaptive path runs unchanged (D-04);
 	// a fixed level bypasses the classifier and forces req.Reasoning (D-08).
 	reasoningEffort, _ := reasoningOverride(ctx)
+	runtime := r.llmSnapshot(ctx)
 	la := agent.NewLlmAgent(agent.LlmAgentConfig{
-		Client:     r.client,
-		LLM:        r.cfg,
+		Client:     runtime.Client,
+		LLM:        runtime.Config,
 		Registry:   r.registry,
 		PreviewCap: r.previewCap,
 		RunDir:     r.runDir,

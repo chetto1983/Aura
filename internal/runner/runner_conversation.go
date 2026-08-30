@@ -38,7 +38,7 @@ func (r *Runner) NewConversationWithID(ctx context.Context, conversationID strin
 	if _, err := r.Conv.Create(ctx, conversations.CreateParams{
 		ID:         conversationID,
 		IdentityID: owner.ID,
-		Model:      r.cfg.Model,
+		Model:      r.llmSnapshot(ctx).Config.Model,
 	}); err != nil {
 		return "", fmt.Errorf("new conversation: %w", err)
 	}

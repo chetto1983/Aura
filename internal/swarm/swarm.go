@@ -37,6 +37,7 @@ type RunConfig struct {
 	ParentRegistry *tools.Registry
 	Client         llm.Client
 	LLM            llm.Config
+	Runtime        *llm.Runtime
 	Cfg            config.Config
 	ConvID         string
 	Depth          int
@@ -270,9 +271,14 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 	}
 
 	rec := newHistoryRecorder()
+	client, cfg := rc.Client, rc.LLM
+	if rc.Runtime != nil {
+		runtime := rc.Runtime.Snapshot()
+		client, cfg = runtime.Client, runtime.Config
+	}
 	worker := agent.NewLlmAgent(agent.LlmAgentConfig{
-		Client:     rc.Client,
-		LLM:        rc.LLM,
+		Client:     client,
+		LLM:        cfg,
 		Registry:   registry,
 		PreviewCap: rc.Cfg.ToolPreviewCap,
 		RunDir:     rc.Cfg.RunDir,

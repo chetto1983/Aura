@@ -244,6 +244,7 @@ func newRuntimeDelegationWorker(chat *chatEnv, delivery *swarm.DelegationDeliver
 	workerTemplate := swarm.RunConfig{
 		Client:         chat.client,
 		LLM:            chat.cfg.LLM,
+		Runtime:        chat.llmRuntime,
 		Cfg:            *chat.cfg,
 		ParentRegistry: chat.reg,
 		Gateway:        chat.gateway,

@@ -144,6 +144,7 @@ func newCronAgentDeps(chat *chatEnv) handlers.AgentDeps {
 	return handlers.AgentDeps{
 		Client:     chat.client,
 		LLM:        chat.cfg.LLM,
+		Runtime:    chat.llmRuntime,
 		Registry:   chat.reg,
 		PreviewCap: chat.cfg.ToolPreviewCap,
 		RunDir:     chat.cfg.RunDir,

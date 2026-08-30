@@ -41,7 +41,7 @@ func captureSDKBody(t *testing.T, cfg llm.Config, request llm.Request) map[strin
 }
 
 func TestSDKRequestCapabilityEnvelope(t *testing.T) {
-	for _, provider := range []string{"openrouter", "llamacpp", "vllm"} {
+	for _, provider := range []string{"openrouter", "llamacpp", "ollama", "vllm"} {
 		t.Run(provider, func(t *testing.T) {
 			body := captureSDKBody(t, llm.Config{Provider: provider}, llm.Request{
 				Model: "m", SessionID: "session-1",
@@ -140,6 +140,15 @@ func TestSDKRequestReasoningTargets(t *testing.T) {
 	}
 	if auto["stream_options"].(map[string]any)["include_usage"] != true {
 		t.Fatalf("auto stream_options = %#v", auto["stream_options"])
+	}
+
+	ollama := captureSDKBody(t, llm.Config{Provider: "ollama"}, llm.Request{
+		Model: "gemma4:31b-cloud", Reasoning: llm.ReasoningConfig{Effort: llm.ReasoningEffortHigh},
+	})
+	for _, forbidden := range []string{"reasoning", "thinking_budget_tokens", "chat_template_kwargs"} {
+		if _, present := ollama[forbidden]; present {
+			t.Fatalf("Ollama received unsupported %q: %#v", forbidden, ollama)
+		}
 	}
 }
 

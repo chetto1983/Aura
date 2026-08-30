@@ -177,12 +177,17 @@ type Config struct {
 	ShowReasoning   bool
 	ContextWindow   int // total model context window (tokens); L2 budget input
 	MaxOutputTokens int // output-token reservation cap; L2 budget input
+	// Configured flags distinguish an operator override from the built-in cloud
+	// defaults. Live provider metadata may replace only an unconfigured value.
+	ContextWindowConfigured   bool
+	MaxOutputTokensConfigured bool
 	// CompactionTriggerPercent is the share of ContextWindow the replayed history may
 	// occupy before L2.4 condenses it, even though nothing is over budget yet. 0 leaves
 	// compaction to the hard cap alone; 100 is the same thing by another route.
 	CompactionTriggerPercent int
 	Headers                  map[string]string
 	Prices                   map[string]Price
+	CostStatus               CostStatus
 
 	// CompletionGate enables the agent's completion critic gate (amendment #54 /
 	// D-43): a voluntary termination (text_response / content-stop) on a turn
@@ -426,9 +431,11 @@ func overlayFile(cfg *Config, fc *fileConfig) {
 	}
 	if fc.ContextWindow != nil {
 		cfg.ContextWindow = *fc.ContextWindow
+		cfg.ContextWindowConfigured = true
 	}
 	if fc.MaxOutputTokens != nil {
 		cfg.MaxOutputTokens = *fc.MaxOutputTokens
+		cfg.MaxOutputTokensConfigured = true
 	}
 	maps.Copy(cfg.Headers, fc.Headers)
 	maps.Copy(cfg.Prices, fc.Prices)
@@ -470,11 +477,13 @@ func applyEnvOverrides(cfg *Config) error {
 		return err
 	} else if ok {
 		cfg.ContextWindow = v
+		cfg.ContextWindowConfigured = true
 	}
 	if v, ok, err := envInt(envMaxOutputTokens); err != nil {
 		return err
 	} else if ok {
 		cfg.MaxOutputTokens = v
+		cfg.MaxOutputTokensConfigured = true
 	}
 	if v, ok, err := envInt(envCompactionTrigger); err != nil {
 		return err

@@ -34,6 +34,8 @@ const ledgerInsertTimeout = 5 * time.Second
 type turnTracker struct {
 	convID string
 	paused bool
+	// llmRuntime is the immutable route snapshot retained for this complete turn.
+	llmRuntime llm.RuntimeSnapshot
 	// answered records that the round's assistant answer reached the store. A round ends
 	// well by answering or by pausing; without either, recordInterruptedRound is what says
 	// so in the conversation instead of leaving the question hanging.
@@ -301,12 +303,13 @@ func toolInvocationTimestamp(ti *agent.ToolInvocation, fallback time.Time) time.
 // failed turn while the conversation history already contains the answer.
 func (r *Runner) persistAssistantAnswer(ctx context.Context, tr *turnTracker, ev *agent.Event) error {
 	u := usageFromStateDelta(ev.Actions.StateDelta)
+	runtime := r.trackerLLMSnapshot(tr)
 	// Prefer the provider's wire-reported cost (D-18); fall back to the rate resolved
 	// at boot from /models (D-23, amendment #93) when the provider omits it, so a priced
 	// turn never persists $0 while the displayed footer (same llm.CostUSD precedence)
 	// shows the computed price. An unresolved model stays 0.0 — the honest numeric "n/a".
 	cost := 0.0
-	if v, ok := llm.CostUSDValue(r.cfg.Prices, r.cfg.Model, u); ok {
+	if v, ok := llm.CostUSDValue(runtime.Config.Prices, runtime.Config.Model, u); ok {
 		cost = v
 	}
 	reasoning, reasoningDurationMS := tr.persistedReasoning()

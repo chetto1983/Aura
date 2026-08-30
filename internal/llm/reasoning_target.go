@@ -20,6 +20,10 @@ const (
 	// chat_template_kwargs:{enable_thinking} + thinking_budget_tokens (spike 095) and
 	// IGNORES the OpenRouter reasoning object.
 	ReasoningTargetLlamaCpp
+	// ReasoningTargetOllama marks Ollama's OpenAI-compatible bridge. pi's measured
+	// compatibility profile does not send OpenRouter reasoning fields or llama.cpp
+	// chat-template extensions through this route.
+	ReasoningTargetOllama
 )
 
 // ReasoningTarget classifies provider/baseURL into a ReasoningTargetKind.
@@ -34,6 +38,9 @@ const (
 func ReasoningTarget(provider, baseURL string) ReasoningTargetKind {
 	if strings.EqualFold(provider, "llamacpp") {
 		return ReasoningTargetLlamaCpp
+	}
+	if strings.EqualFold(provider, "ollama") {
+		return ReasoningTargetOllama
 	}
 	if strings.EqualFold(provider, "openrouter") {
 		base := strings.ToLower(strings.TrimSpace(baseURL))

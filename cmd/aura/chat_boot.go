@@ -49,6 +49,8 @@ type chatEnv struct {
 	identity         *identity.Store
 	run              *runner.Runner
 	client           llm.Client
+	llmRuntime       *llm.Runtime
+	llmFallback      llm.Config
 	reg              *tools.Registry
 	gateway          *gateway.Gateway
 	operations       *idempotency.Store
@@ -165,13 +167,24 @@ func bootServeChatEnv(ctx context.Context) (*chatEnv, error) {
 }
 
 func bootChatEnvWithConfig(ctx context.Context, loadConfig func() (*config.Config, error)) (*chatEnv, error) {
+	// Capture the pre-settings route once. DELETE on a hot route must restore this
+	// deployment fallback, not the DB value OverlayEnv copies into process env below.
+	baseline, baselineErr := loadConfig()
 	cfg, pool, err := resolveConfigAndPool(ctx, loadConfig, db.Open)
 	if err != nil {
 		return nil, err
 	}
-	return assembleChatEnvAtMigrationHead(
+	env, err := assembleChatEnvAtMigrationHead(
 		ctx, cfg, pool, db.CheckMigrationHead, db.VerifyRLSEnforced, assembleChatEnv,
 	)
+	if err != nil {
+		return nil, err
+	}
+	env.llmFallback = cfg.LLM
+	if baselineErr == nil && baseline != nil {
+		env.llmFallback = baseline.LLM
+	}
+	return env, nil
 }
 
 // dbOpener opens a pgx pool from a DB config; it matches db.Open. resolveConfigAndPool
@@ -430,17 +443,15 @@ func assembleChatEnv(
 	if err != nil {
 		return nil, fmt.Errorf("command hooks: %w", err)
 	}
-	// Resolve the configured model's fallback rate from the live catalogue (amendment
-	// #93 — there is no hardcoded seed to go stale). Never fatal: an unreadable price
-	// list must not stop a boot that can still serve turns, and the provider's own
-	// usage.cost stays the preferred source either way (D-18).
-	switch err := cfg.LLM.ResolvePricing(ctx); {
-	case err == nil, errors.Is(err, llm.ErrPricingNotApplicable):
-	default:
-		slog.Warn("model pricing unresolved: a turn whose wire usage omits cost will render n/a rather than a guess",
-			"model", cfg.LLM.Model, "err", err)
+	// Resolve provider-published context, output cap, and rates before constructing
+	// the boot snapshot. Metadata remains fail-soft at boot so an unavailable catalogue
+	// cannot prevent Aura from starting with its validated deployment fallback.
+	if err := cfg.LLM.ResolveModelProfile(ctx); err != nil {
+		slog.Warn("model profile unresolved; using configured fallback",
+			"provider", cfg.LLM.Provider, "model", cfg.LLM.Model, "err", err)
 	}
 	client := newLLMClient(cfg.LLM)
+	llmRuntime := llm.NewRuntime(client, cfg.LLM)
 	// The mid-turn steer inbox (amendment #132, D-01/D-12): ONE
 	// *steer.PostgresStore instance for the whole process, gated on its own
 	// flag exactly as RunRegistry is gated on AGUIRun.Detach, so the explicit
@@ -466,6 +477,7 @@ func assembleChatEnv(
 		// a pause claim + its answer turn (and pause exposure) in ONE db.WithTx.
 		ResumeCommitter: runner.NewPoolResumeCommitter(pool, convStore, pauseStore),
 		Client:          client,
+		Runtime:         llmRuntime,
 		Registry:        reg,
 		Timezone:        cfg.Timezone,
 		// The operator profile from Postgres (migration 0097): the clock zone this turn
@@ -514,7 +526,7 @@ func assembleChatEnv(
 		return nil, fmt.Errorf("chat boot: %w", err)
 	}
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: runner.NewDeleteReconciler(run, time.Minute), toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, elicitation: elicitation, steer: steerInbox}, nil
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, llmRuntime: llmRuntime, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: runner.NewDeleteReconciler(run, time.Minute), toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, elicitation: elicitation, steer: steerInbox}, nil
 }
 
 // newSteerInbox builds the process-wide mid-turn steer/delegation-result store from

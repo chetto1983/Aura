@@ -19,6 +19,10 @@ var ErrSpendUnavailable = errors.New("provider spend unavailable")
 // fetch. A local llama.cpp/vLLM server has no account behind it.
 var ErrSpendNotApplicable = errors.New("provider spend not applicable to this backend")
 
+// ErrSpendSubscriptionIncluded marks a subscription-backed route whose local bridge
+// exposes no per-key spend endpoint. It must not be probed with a retained API key.
+var ErrSpendSubscriptionIncluded = errors.New("provider spend is included in a subscription")
+
 // Spend is what the provider itself says this API key has cost. It is measured, not
 // derived: the alternative is multiplying stored token counts by a rate table, which
 // misses every request that did not go through the turn-persistence path — vision,
@@ -83,9 +87,16 @@ func FetchSpend(ctx context.Context, client *http.Client, baseURL, apiKey string
 // cannot. It is a live call with no cache: the figure it answers is "what has this key
 // cost", which changes with every turn, so a stale one would be worse than none.
 func (c *Config) Spend(ctx context.Context) (Spend, error) {
-	if ReasoningTarget(c.Provider, c.BaseURL) == ReasoningTargetLlamaCpp {
+	switch ReasoningTarget(c.Provider, c.BaseURL) {
+	case ReasoningTargetLlamaCpp:
 		return Spend{}, fmt.Errorf("%w: local backend bills nothing", ErrSpendNotApplicable)
+	case ReasoningTargetOllama:
+		if c.CostStatus == CostStatusSubscriptionIncluded {
+			return Spend{}, fmt.Errorf("%w: Ollama bridge exposes no per-key spend", ErrSpendSubscriptionIncluded)
+		}
+		return Spend{}, fmt.Errorf("%w: local Ollama backend bills nothing", ErrSpendNotApplicable)
 	}
 	client := &http.Client{Timeout: 10 * time.Second}
+	defer client.CloseIdleConnections()
 	return FetchSpend(ctx, client, c.BaseURL, c.APIKey)
 }

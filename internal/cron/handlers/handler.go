@@ -81,6 +81,7 @@ type Handler interface {
 type AgentDeps struct {
 	Client     llm.Client
 	LLM        llm.Config
+	Runtime    *llm.Runtime
 	Registry   *tools.Registry
 	PreviewCap int
 	RunDir     string
@@ -120,9 +121,14 @@ func newAgentWorker(deps AgentDeps, runID, ledgerConvID string, prior []llm.Mess
 			ws = filepath.ToSlash(wd)
 		}
 	}
+	client, cfg := deps.Client, deps.LLM
+	if deps.Runtime != nil {
+		runtime := deps.Runtime.Snapshot()
+		client, cfg = runtime.Client, runtime.Config
+	}
 	return agent.NewLlmAgent(agent.LlmAgentConfig{
-		Client:     deps.Client,
-		LLM:        deps.LLM,
+		Client:     client,
+		LLM:        cfg,
 		Registry:   childRegistry(deps.Registry),
 		PreviewCap: deps.PreviewCap,
 		RunDir:     deps.RunDir,

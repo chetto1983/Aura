@@ -72,12 +72,19 @@ func (h AgentJobHandler) Run(ctx context.Context, job Job) (string, error) {
 
 	runCtx, cancel := context.WithTimeout(ctx, h.Meta().MaxDuration)
 	defer cancel()
+	// One scheduled run retains one route even if the operator changes Settings while
+	// it is active. A later run snapshots the replacement.
+	deps := h.Deps
+	if deps.Runtime != nil {
+		runtime := deps.Runtime.Snapshot()
+		deps.Client, deps.LLM, deps.Runtime = runtime.Client, runtime.Config, nil
+	}
 
 	prior := []llm.Message{{Role: llm.RoleUser, Content: goal}}
 	var summary strings.Builder
 
 	for attempt := 0; attempt <= maxAutoRejects; attempt++ {
-		worker := newAgentWorker(h.Deps, job.RunID, job.OriginConversationID, prior)
+		worker := newAgentWorker(deps, job.RunID, job.OriginConversationID, prior)
 		content, pause, runErr := drain(runCtx, worker, budget)
 		if runErr != nil {
 			return summary.String(), fmt.Errorf("agent_job run: %w", runErr)

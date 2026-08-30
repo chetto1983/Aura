@@ -85,6 +85,7 @@ func TestLLMConfiguredClientBypassesKeylessGuard(t *testing.T) {
 func TestLLMLocalOpenAICompatClientAllowsEmptyCloudKey(t *testing.T) {
 	for _, baseURL := range []string{
 		"http://127.0.0.1:8080/v1",
+		"http://aura-llm:8084/v1",
 		"http://aura-vllm-chat:8000/v1",
 		"http://192.168.1.40:11434/v1",
 	} {

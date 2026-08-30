@@ -38,11 +38,12 @@ func (r *Runner) maybeAutoTitle(turnCtx context.Context, convID string, history 
 	// "nobody mutates history after maybeAutoTitle returns" coupling so a future
 	// in-place mutation cannot race the title worker.
 	hist := append([]llm.Message(nil), history...)
+	runtime := r.llmSnapshot(turnCtx)
 	r.wg.Go(func() {
 		ctx := context.WithoutCancel(turnCtx) // load-bearing: turnCtx cancels on Turn return
 		ctx, cancel := context.WithTimeout(ctx, r.titleTimeout)
 		defer cancel()
-		title, gerr := conversations.GenerateTitle(ctx, r.client, r.cfg.Model, hist)
+		title, gerr := conversations.GenerateTitle(ctx, runtime.Client, runtime.Config.Model, hist)
 		if gerr != nil {
 			// Do not attach convID or gerr: both may contain user/provider-controlled text,
 			// which would let control characters forge adjacent text-handler log records.

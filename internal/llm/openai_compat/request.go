@@ -217,6 +217,9 @@ func appendSamplingOptions(opts []option.RequestOption, sampling llm.Sampling) [
 }
 
 func appendReasoningOptions(opts []option.RequestOption, cfg llm.Config, reasoning llm.ReasoningConfig, params *openai.ChatCompletionNewParams) []option.RequestOption {
+	if llm.ReasoningTarget(cfg.Provider, cfg.BaseURL) == llm.ReasoningTargetOllama {
+		return opts
+	}
 	if reasoning.Empty() {
 		if llm.ReasoningTarget(cfg.Provider, cfg.BaseURL) == llm.ReasoningTargetLlamaCpp {
 			params.StreamOptions.IncludeUsage = param.NewOpt(true)

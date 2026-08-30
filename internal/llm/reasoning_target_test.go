@@ -25,6 +25,8 @@ func TestReasoningTarget(t *testing.T) {
 		{"llamacpp any baseURL", "llamacpp", "http://localhost:8080/v1", llm.ReasoningTargetLlamaCpp},
 		{"llamacpp empty baseURL", "llamacpp", "", llm.ReasoningTargetLlamaCpp},
 		{"llamacpp case-insensitive", "LLAMACPP", "http://localhost:8080", llm.ReasoningTargetLlamaCpp},
+		{"ollama explicit provider", "ollama", "http://localhost:11434/v1", llm.ReasoningTargetOllama},
+		{"ollama case-insensitive", "Ollama", "http://localhost:11434/v1", llm.ReasoningTargetOllama},
 		{"vllm dgx local path is not llamacpp", "vllm", "http://dgx:8000", llm.ReasoningTargetNone},
 		{"anthropic is none", "anthropic", "", llm.ReasoningTargetNone},
 		{"empty provider is none", "", "", llm.ReasoningTargetNone},

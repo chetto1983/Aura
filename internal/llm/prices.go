@@ -2,6 +2,19 @@ package llm
 
 import "fmt"
 
+// CostStatus records why a model profile does or does not have a numeric rate.
+// Numeric zero alone cannot distinguish included local compute from an unknown
+// remote price, while subscription-backed models may have no per-token bill at all.
+type CostStatus string
+
+// Cost status values distinguish measured rates from included or unknown pricing.
+const (
+	CostStatusUnknown              CostStatus = "unknown"
+	CostStatusRateEstimate         CostStatus = "rate-estimate"
+	CostStatusLocalIncluded        CostStatus = "local-included"
+	CostStatusSubscriptionIncluded CostStatus = "subscription-included"
+)
+
 // Price is a per-model fallback rate in USD per 1,000,000 tokens (D-23). It is the
 // safety net only — OpenRouter's reported usage.cost is always preferred when present
 // (D-18), because it already nets cache reads/writes and inference.

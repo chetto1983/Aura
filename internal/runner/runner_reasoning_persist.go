@@ -25,15 +25,15 @@ const reasoningTruncationMarker = "\n… [reasoning truncated]"
 //   - !cfg.ShowReasoning → the stream is redacted at the source (the agent replaces
 //     every delta with its redaction constant — llm_agent_events.go), so NOTHING is
 //     accumulated: a hidden stream must never become a stored verbatim trace. This
-//     reads the SAME llm.Config the runner hands the agent (LLM: r.cfg in
-//     buildAgent), so the two gates cannot diverge — no string comparison against
+//     reads the SAME immutable runtime snapshot the runner hands the agent, so the
+//     two gates cannot diverge — no string comparison against
 //     the redaction constant is needed.
 //
 // Timestamps are stamped on EVERY delta (even after the rune cap truncates the
 // text) so the persisted duration covers the whole reasoning phase the user
 // watched, not just the stored head.
 func (r *Runner) observeReasoning(tr *turnTracker, ev *agent.Event) {
-	if r.reasoningPersistMaxRunes <= 0 || !r.cfg.ShowReasoning {
+	if r.reasoningPersistMaxRunes <= 0 || !r.trackerLLMSnapshot(tr).Config.ShowReasoning {
 		return
 	}
 	ts := ev.Timestamp

@@ -37,7 +37,7 @@ func allowsKeylessLLMBaseURL(raw string) bool {
 		return true
 	}
 	switch host {
-	case "ollama", "vllm", "llama", "llama-cpp", "aura-vllm-chat", "aura-llama-chat", "aura-llama":
+	case "ollama", "vllm", "llama", "llama-cpp", "aura-llm", "aura-vllm-chat", "aura-llama-chat", "aura-llama":
 		return true
 	}
 	ip := net.ParseIP(host)

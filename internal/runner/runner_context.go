@@ -34,39 +34,45 @@ func (r *Runner) loadTurnHistory(
 }
 
 func (r *Runner) contextConfig(ctx context.Context, memory *conversations.TransientContext) conversations.ContextConfig {
+	runtime := r.llmSnapshot(ctx)
 	return conversations.ContextConfig{
-		ContextWindow:              r.cfg.ContextWindow,
-		CompactionTriggerPercent:   r.cfg.CompactionTriggerPercent,
+		ContextWindow:              runtime.Config.ContextWindow,
+		CompactionTriggerPercent:   runtime.Config.CompactionTriggerPercent,
 		FixedOverheadTokens:        r.manifestOverheadTokens(),
-		MaxOutputTokens:            r.cfg.MaxOutputTokens,
+		MaxOutputTokens:            runtime.Config.MaxOutputTokens,
 		ToolEvictAfterTurns:        r.evictAfter,
 		HistoryHardCapTurns:        r.historyCap,
 		AlwaysBlock:                r.renderContextBlock(ctx),
 		TransientContext:           memory,
-		ProviderErrorReserveTokens: llm.ProviderErrorReserveTokens(r.cfg),
-		Summarizer:                 r.compactionSummarizer(),
+		ProviderErrorReserveTokens: llm.ProviderErrorReserveTokens(runtime.Config),
+		Summarizer:                 r.compactionSummarizer(runtime),
 	}
 }
 
-func (r *Runner) compactionSummarizer() conversations.Summarizer {
+func (r *Runner) compactionSummarizer(runtime llm.RuntimeSnapshot) conversations.Summarizer {
 	if !r.compactionEnabled {
 		return nil
 	}
+	model := r.compactionModel
+	if model == "" {
+		model = runtime.Config.Model
+	}
 	return conversations.NewLLMSummarizer(
-		r.client,
-		r.compactionModel,
-		r.cfg.ContextWindow,
-		time.Duration(r.cfg.TotalTimeoutSec)*time.Second,
+		runtime.Client,
+		model,
+		runtime.Config.ContextWindow,
+		time.Duration(runtime.Config.TotalTimeoutSec)*time.Second,
 	)
 }
 
 // ValidateCompactionConfig measures the booted registry, not a guessed schema count, so an
 // enabled early trigger cannot silently disappear once the manifest is rendered.
 func (r *Runner) ValidateCompactionConfig() error {
+	runtime := r.llmSnapshot(context.Background())
 	return conversations.ValidateCompactionTrigger(
 		r.compactionEnabled,
-		r.cfg.ContextWindow,
-		r.cfg.CompactionTriggerPercent,
+		runtime.Config.ContextWindow,
+		runtime.Config.CompactionTriggerPercent,
 		r.manifestOverheadTokens(),
 	)
 }

@@ -47,7 +47,10 @@ type Deps struct {
 	// pool-less splitResumeCommitter (unit tests, cache_audit) with no code change.
 	ResumeCommitter ResumeCommitter
 	Client          llm.Client
-	Registry        *tools.Registry
+	// Runtime is the hot primary-route source shared by interactive turns and the
+	// daemon's resident workers. nil preserves hand-built callers by wrapping Client/LLM.
+	Runtime  *llm.Runtime
+	Registry *tools.Registry
 	// Timezone is the DEPLOYMENT fallback zone; an identity's own profile wins. Empty means
 	// the process zone. See internal/agent/tools/clock.go for why UTC is not neutral.
 	Timezone string
@@ -66,7 +69,7 @@ type Deps struct {
 	EvictAfter int // AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS — L1 eviction age
 	// CompactionEnabled turns on L2.4 LLM compaction in the context ladder
 	// (AURA_CONTEXT_COMPACTION_ENABLED). CompactionModel overrides the summarizer model
-	// (AURA_CONTEXT_COMPACTION_MODEL); empty → the main chat model (d.LLM.Model).
+	// (AURA_CONTEXT_COMPACTION_MODEL); empty selects the snapshotted main chat model.
 	CompactionEnabled bool
 	CompactionModel   string
 	// MemoryPreloadEnabled turns on the proactive per-message memory preload
@@ -159,11 +162,9 @@ func New(d Deps) *Runner {
 			workspace = filepath.ToSlash(wd)
 		}
 	}
-	// Resolve the compaction summarizer model once: an empty knob falls back to the
-	// main chat model, mirroring the llm.Config secondary-model convention.
-	compactionModel := d.CompactionModel
-	if compactionModel == "" {
-		compactionModel = d.LLM.Model
+	runtime := d.Runtime
+	if runtime == nil {
+		runtime = llm.NewRuntime(d.Client, d.LLM)
 	}
 	// Build the static curated-seed reasoning classifier once so its anchors are
 	// amortized across every turn.
@@ -182,17 +183,16 @@ func New(d Deps) *Runner {
 		cacheMetrics:             d.CacheMetrics,
 		toolInvocations:          d.ToolInvocations,
 		memoryContext:            d.MemoryContext,
-		client:                   d.Client,
+		runtime:                  runtime,
 		registry:                 d.Registry,
 		location:                 tools.LocationOrUTC(d.Timezone),
 		profiles:                 d.Profiles,
-		cfg:                      d.LLM,
 		runDir:                   d.RunDir,
 		previewCap:               d.PreviewCap,
 		historyCap:               d.HistoryCap,
 		evictAfter:               d.EvictAfter,
 		compactionEnabled:        d.CompactionEnabled,
-		compactionModel:          compactionModel,
+		compactionModel:          d.CompactionModel,
 		memoryPreloadEnabled:     d.MemoryPreloadEnabled,
 		workspace:                workspace,
 		reasoningPersistMaxRunes: d.ReasoningPersistMaxRunes,

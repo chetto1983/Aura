@@ -115,3 +115,16 @@ func TestConfigSpendSkipsLocalBackend(t *testing.T) {
 		t.Error("a local backend must not report ErrSpendUnavailable — nothing failed")
 	}
 }
+
+func TestConfigSpendDoesNotSendRetainedKeyToOllamaCloud(t *testing.T) {
+	cfg := llm.Config{
+		Provider:   "ollama",
+		BaseURL:    "http://127.0.0.1:1/v1",
+		APIKey:     "retained-openrouter-key",
+		CostStatus: llm.CostStatusSubscriptionIncluded,
+	}
+	_, err := cfg.Spend(context.Background())
+	if !errors.Is(err, llm.ErrSpendSubscriptionIncluded) {
+		t.Fatalf("err = %v, want ErrSpendSubscriptionIncluded without a network call", err)
+	}
+}
