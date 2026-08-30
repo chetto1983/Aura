@@ -10864,3 +10864,14 @@ flusso completo, che funziona.
 > the 37s measurement on a smaller file); and behaviour when the sidecar is down (the
 > wait times out honestly, but nothing tells the operator the sidecar itself is the
 > problem). Live closure pending the rebuilt image and the operator resending the PDF.
+>
+> Cockpit latency measurement (2026-08-30, rebuilt image, 459-byte PDF carrying the
+> string MELANZANA-77, driven exactly as `web/src/chat/attachments`): finalize 20:06:30Z
+> → `document_id` minted +1.5s → sidecar `[extract]` +18s → a fresh turn at **+42s**
+> answered the secret correctly via `document_open` (run itself 5s). The ungated run #1,
+> fired at +0s with the attachment, called `document_search`+`document_open`, missed, and
+> answered HONESTLY on the cockpit ("potrebbe essere necessario un momento per
+> l'indicizzazione") — no confabulation in this sample, unlike the Telegram turn at
+> 19:52 with the same model. One sample each: the divergence shows honesty under a miss
+> is model-variance, which is exactly why the gate does not rely on it. The 3-minute
+> Telegram bound stands at >4x the measured 42s end-to-end answerability.
