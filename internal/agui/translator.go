@@ -81,10 +81,24 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 		}
 		st := textRunState{idgen: idgen}
 		rs := reasoningRunState{idgen: idgen, threadID: threadID, runID: runID, showReasoning: showReasoning}
+		textStreamed := false
 		// closeRuns ends BOTH open runs (reasoning before text is irrelevant since
 		// they never coexist) so any interruption — tool/state/final/pause/error —
 		// drains a dangling reasoning OR text run before the next family opens.
 		closeRuns := func() bool { return rs.close(yield) && st.close(yield) }
+		// text_response and forced synthesis carry their answer only on the terminal
+		// Event. Content-stop carries the same full answer after streamed deltas, so
+		// emit the terminal payload only when this answer round has streamed none.
+		emitTerminalFallback := func(ev *agent.Event) bool {
+			if textStreamed || ev.LLMResponse == nil || ev.LLMResponse.FinishReason == "" || ev.LLMResponse.Content == "" {
+				return true
+			}
+			if !rs.close(yield) || !st.content(yield, ev.LLMResponse.Content) {
+				return false
+			}
+			textStreamed = true
+			return true
+		}
 		for ev, err := range seq {
 			if err != nil {
 				if !closeRuns() {
@@ -113,6 +127,7 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 				if !closeRuns() {
 					return
 				}
+				textStreamed = false
 				if !emitToolInvocation(yield, idgen, ti) {
 					return
 				}
@@ -137,6 +152,7 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 				if !closeRuns() {
 					return
 				}
+				textStreamed = false
 				preview := ""
 				if ev.LLMResponse != nil {
 					preview = ev.LLMResponse.Content
@@ -157,6 +173,7 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 				if !closeRuns() {
 					return
 				}
+				textStreamed = false
 				if !yield(events.NewCustomEvent(artifactEventName, events.WithValue(ev.Actions.ArtifactDelta)), nil) {
 					return
 				}
@@ -173,6 +190,7 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 				if !closeRuns() {
 					return
 				}
+				textStreamed = false
 				if !yield(events.NewCustomEvent(DisplayEventName, events.WithValue(ev.Actions.Display)), nil) {
 					return
 				}
@@ -188,6 +206,7 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 				if !closeRuns() {
 					return
 				}
+				textStreamed = false
 				if !yield(events.NewCustomEvent(SteerEventName, events.WithValue(ev.Actions.SteerDelta)), nil) {
 					return
 				}
@@ -197,12 +216,16 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 			// A non-tool_call_id StateDelta (usage/cost/termination) interrupts the
 			// open run and maps to STATE_DELTA over SORTED keys (deterministic).
 			if len(ev.Actions.StateDelta) > 0 {
+				if !emitTerminalFallback(ev) {
+					return
+				}
 				if !closeRuns() {
 					return
 				}
 				if !yield(events.NewStateDeltaEvent(stateDeltaOps(ev.Actions.StateDelta)), nil) {
 					return
 				}
+				textStreamed = false
 				continue
 			}
 
@@ -212,6 +235,9 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 			// The final Event carries the full answer + FinishReason: close the run as
 			// END-only, do NOT re-emit its Content (OQ1 policy a).
 			if ev.LLMResponse.FinishReason != "" {
+				if !emitTerminalFallback(ev) {
+					return
+				}
 				if !closeRuns() {
 					return
 				}
@@ -251,6 +277,7 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 				if !st.content(yield, ev.LLMResponse.Content) {
 					return
 				}
+				textStreamed = true
 			}
 		}
 		if !closeRuns() {
