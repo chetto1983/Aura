@@ -10219,3 +10219,54 @@ flusso completo, che funziona.
 > subscription phase therefore requires its own specification, threat model, protocol tests and
 > an operator-authorized live login; no existing Telegram session, chat identifier or provider
 > credential may be used as test evidence or committed.
+
+## Section Ollama cloud is a keyless local bridge over OpenAI Chat Completions (Amendment #186, 2026-08-30)
+
+> **Amendment #186 (2026-08-30 - measured against the operator's installed Ollama 0.33.2
+> before implementation).** Aura's running container reached the Windows Ollama daemon at
+> `http://host.docker.internal:11434` without a container or daemon restart. The selected model
+> `gemma4:31b-cloud` was absent from both `GET /api/tags` and `GET /v1/models`, but
+> `POST /api/show` resolved it as family `gemma4`, 32,682,372,656 parameters, BF16, with
+> `gemma4.context_length=262144` and completion, thinking, tools and vision capabilities. A native
+> non-streaming `POST /api/chat` returned the requested sentinel, and the same model returned a
+> second requested sentinel through `POST /v1/chat/completions` with ordinary OpenAI usage fields.
+> No OpenRouter request was made.
+>
+> Local `pi` inventory confirms the transport boundary: its documented custom Ollama provider is
+> keyless, uses the existing `openai-completions` implementation at an `/v1` base URL and supplies
+> model metadata as a provider-scoped profile. Its compatibility guidance disables unsupported
+> developer-role and `reasoning_effort` assumptions for Ollama-class servers instead of inventing
+> a separate chat protocol. Aura therefore adds the explicit provider id `ollama` to the existing
+> OpenAI-compatible client; it does not copy TypeScript runtime code or introduce another LLM
+> client. The provider sends no retained OpenRouter credential and applies no OpenRouter or
+> llama.cpp-specific request extensions.
+>
+> **Discovery and profile contract.** Ollama cloud models cannot be discovered from the measured
+> model-list endpoints, so profile preparation derives the daemon root structurally from the
+> configured `/v1` URL and reads the selected model with bounded `POST /api/show`. The single
+> positive `*.context_length` model-info value supplies the context window; an explicit
+> `AURA_MODEL_CONTEXT_WINDOW` still wins. `/api/show` did not report a maximum output length, so
+> the explicit/configured output cap remains authoritative. Missing, ambiguous or malformed
+> context metadata rejects a Settings mutation before persistence. Metadata requests are keyless
+> even when the fallback profile retains an OpenRouter key for a later switch.
+>
+> **Cost boundary.** `gemma4:31b-cloud` executes behind the operator's Ollama cloud subscription.
+> It is not local-included inference, and Aura must not manufacture a zero token rate by copying
+> pi's local-model example. Until Ollama exposes request or account cost through this route, the
+> numeric rate remains absent and the profile's cost provenance is subscription-included/unknown,
+> never an inherited OpenRouter rate. The local daemon bridge and its cloud execution class are
+> separate facts.
+>
+> **Hot route and UI.** Cockpit exposes Ollama as a third primary-route mode with defaults
+> `http://host.docker.internal:11434/v1` and `gemma4:31b-cloud`. It uses the same prepare, atomic
+> batch persistence and immutable runtime publication defined by Amendments #184 and #185. Once
+> the supporting Aura binary is deployed, switching among OpenRouter, llama.cpp and Ollama is a
+> Settings operation and does not restart or recreate Aura.
+>
+> **What this measurement does not prove.** The two successful non-streaming probes do not prove
+> Aura's SDK streaming parser, streamed tool-call assembly, reasoning representation, vision
+> projection, long-context generation or every Ollama cloud model. `/api/show` proves advertised
+> context, not generation at 262,144 tokens. The measurement also does not expose subscription
+> billing amounts or authorize direct `ollama.com` API-key support. Streaming and tool behavior
+> must be exercised through Aura's existing OpenAI-compatible client before this route is used for
+> the Phase 51 live run.
