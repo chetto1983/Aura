@@ -185,7 +185,8 @@ jobs:
           bash scripts/fetch_embedding_model.sh "$AURA_CI_LLAMA_CACHE_DIR/llama.cpp/embeddinggemma-300M-Q8_0.gguf"
 
       - name: Start rollback dependencies and migrate
-        run: make db-migrate memory-up
+        run: |
+          make db-migrate memory-up
           docker compose up -d garage
           docker compose up -d --build \
             garage-bootstrap whatsapp aura-pim-mcp
