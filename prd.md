@@ -10769,6 +10769,13 @@ flusso completo, che funziona.
 > the text-only model. The llama.cpp source was folded into the same `probedContentCaps`
 > cache rather than duplicated.
 >
+> Live closure on the rebuilt image (`e648577c0`, container recreated 18:56:12Z): the same
+> upload and question on the same route answered "un cerchio rosso a sinistra, un
+> triangolo blu al centro, un rettangolo verde a destra che contiene il testo AURA 42 in
+> bianco; tre barre arancione su una linea nera, lettere A, B, C, numeri 3, 7, 5; a destra
+> la scritta 3 barre di colore viola" — every shape, colour, label and number of the
+> synthetic image, no tool call, `RUN_FINISHED` once.
+>
 > What this does NOT prove: that a model whose capabilities lack `vision` is told so
 > instead of guessing — the reference-only catalog still names the file, and the Snellen
 > answer shows a confident model fills the gap; whether the catalog should state "this
