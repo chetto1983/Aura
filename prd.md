@@ -10626,7 +10626,20 @@ flusso completo, che funziona.
 > tokenizer stemming was added: `foldPlural` stays a suffix rule by design (bm25.go), and the
 > fix belongs to the text, not the ranker.
 >
-> What this does NOT prove: that the model, having found `task`, schedules an `agent_job`
-> rather than answering in prose (live drive owed on the next image); that the roster line
-> alone — without a `tool_search` — is enough for the model to mention the capability; or
-> anything about the Telegram approval path for `pending_approval` jobs (Amendment #92).
+> Live drive on the rebuilt image (2026-08-30 17:50, cockpit API, thread
+> `01a0535d-c436-73dd-bbf9-21d5e05d09de`, "Hai un tool scheduler o un cron? … svegliati tra
+> 2 minuti e scrivimi che ore sono"): `tool_search("select:scheduling__schedule_task,…")` →
+> unknown-name report suggesting `task` → `tool_search("select:task")` → `task(action=schedule,
+> kind=agent_job, at=+2m, notify=stdout)` → `pending_approval` (AG-016 gates every
+> agent_job) → the model did NOT relay the `ask_user` approval and answered in prose that a
+> confirmation would arrive → the #92 sweep minted the pause on the origin conversation
+> within the 60 s grace (`GET /api/approvals` listed it, `POST …/resolve accept` →
+> `approved`) → the cron fired at 15:53:11Z, the run completed at 15:53:19Z, and turn 10
+> on the origin conversation reads "L'ora esatta in questo momento è 17:53:17." The
+> wake-up round trip is proven end to end on the cockpit path.
+>
+> What this does NOT prove: the same round trip on Telegram (the approval there is the
+> inline Sì/No of Amendment #92, not driven here); that the model relays the approval as
+> `ask_user` itself rather than leaving it to the sweep (it did not, twice today — the
+> sweep is the guarantor by design); or that the roster line alone, without a `tool_search`,
+> makes the model mention the capability unprompted.
