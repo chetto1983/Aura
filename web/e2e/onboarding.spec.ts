@@ -136,11 +136,15 @@ async function openOnboarding(page: Page) {
       { timeout: 10_000 },
     )
     .toBe(true);
-  if (!(await hasVisibleCandidate(settingsButtons))) {
+  if (await openNavigation.isVisible().catch(() => false)) {
     await openNavigation.click();
+    const mobileNavigation = page.getByRole('dialog', { name: 'Aura' });
+    await expect(mobileNavigation).toBeVisible();
+    await mobileNavigation.getByRole('button', { name: 'Settings' }).click();
+  } else {
+    await waitForVisibleCandidate(settingsButtons);
+    await clickFirstVisible(settingsButtons);
   }
-  await waitForVisibleCandidate(settingsButtons);
-  await clickFirstVisible(settingsButtons);
   // Settings is a section rail now, and it opens on the profile pane. Identity creation
   // lives on the Identities & access pane, so the wizard is two clicks in, not one.
   const identitiesSection = page.getByRole('button', { name: 'Identities & access' });
