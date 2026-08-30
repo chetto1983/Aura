@@ -21,7 +21,10 @@ single Go binary via `//go:embed all:dist`. `aura serve` serves the embedded she
 `npm run build` writes to `../internal/webui/dist/` (NOT `web/dist/`). Go `//go:embed`
 is package-relative and cannot reach `../web/dist`, so the committed embed source is
 co-located with `internal/webui/embed.go`. Sourcemaps are disabled so the committed
-bytes stay byte-stable for the `web-dist-freshness` CI gate (23-03).
+bytes stay byte-stable across rebuilds. Refresh the committed dist from the Docker
+`webbuild` stage (Linux Node 24), never from a host `vite build`: the appliance image
+builds `web/` itself, the committed dist only feeds a host `go build` embed (PRD
+amendment #193 retired the CI freshness gate).
 
 ## Design tokens
 
