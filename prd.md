@@ -10513,3 +10513,37 @@ flusso completo, che funziona.
 > artifact; normal worker termination is `failed`, so the report action correctly excludes
 > `stalled`. This amendment does not claim exactly-once external tools, invent a second delivery
 > route, or prove crash recovery live; those windows require deterministic fault-injection tests.
+
+## Section A vetoed draft is repudiated on the wire, so the real answer can follow it (Amendment #191, 2026-08-30)
+
+> **Amendment #191 (2026-08-30 - measured on the running deployment, thread
+> `01a05259-7994-773e-9f61-550f12f05390`, SSE capture + `aura.conversation_turns` + daemon log).**
+> Under a 2-step loop budget the model called `shell_exec` once, then answered in prose at
+> step 2 ("Il budget per questa sessione è esaurito…"). The completion gate vetoed that
+> content-stop; the model answered in prose again ("Ecco l'output del primo comando…"); the
+> gate vetoed again; the third call tripped `max_steps` and `finalize` synthesized the real
+> answer ("Ecco i risultati ottenuti dai comandi richiesti: 1. date … 2. uname -a: Non
+> eseguito …"). The database holds that synthesized answer (213 chars) — and **nothing else
+> was ever shown**: the SSE carried ONE `TEXT_MESSAGE_START/END` pair whose 152 deltas are the
+> two vetoed drafts back to back, and the final answer never reached the wire. Cause, in two
+> halves: (1) the loop's veto sites (`llm_agent.go` content-stop, `llm_agent_tool.go`
+> text_response) appended their nudge and `continue`d **without** the `DiscardStreamed`
+> marker that only the B-12 mid-stream retry emitted, so no consumer could drop the draft;
+> (2) the AG-UI translator had **no branch at all** for `DiscardStreamed` (the marker fell
+> through to `continue`), so even the B-12 retry duplicated on the cockpit — and because the
+> drafts had set `textStreamed`, the terminal Event's content was emitted END-only and lost.
+> Persistence was correct throughout (`persistEvent` stores the terminal Event's content, and
+> already resets its reasoning buffer on the marker); the REPL renderer already erased on it.
+>
+> Rule: **a round whose prose the loop throws away repudiates it before the next round
+> streams.** Every gate veto yields the `DiscardStreamed` marker (the same signal as B-12).
+> The translator closes the open runs on it, emits ONE `CUSTOM aura.discard {message_id}`
+> naming the repudiated `TEXT_MESSAGE` (silent when nothing was streamed), and resets
+> `textStreamed` so a terminal-only answer streams on a fresh message. The cockpit reducer
+> drops that text part (index maps shift, `text` is rebuilt); the Telegram renderer resets
+> its msg #2 buffer and re-arms its final flush so the next delta edits the draft away.
+>
+> What this does NOT prove: that the completion critic's verdicts on those drafts were right
+> (an honest "budget exhausted, here is what I have" was vetoed twice and cost two model
+> calls — the gate's policy on budget-explained partial answers is a separate question); nor
+> the Telegram path live (unit-tested only, the driver has no bot session).
