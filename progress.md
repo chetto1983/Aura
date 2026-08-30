@@ -35,10 +35,9 @@ being folded into Phase 51.
 ## GSD state
 
 - Active command: `gsd-execute-phase 51`.
-- Phase 51 has 14 of 14 plans executed, but remains `verifying`: the latest
-  standard-depth re-review found two recovery blockers and one UI restoration
-  warning. All three are fixed in atomic commits; a clean re-review, global
-  gates, final deployment, and complete Playwright E2E remain required.
+- Phase 51 has 14 of 14 plans executed, but remains `verifying`. The focused
+  standard-depth remediation re-review is clean; global gates, final deployment,
+  complete Playwright E2E, and the phase verifier remain required.
 - Plan `.planning/phases/51-durable-delegation/51-08-PLAN.md` is complete.
 - The hot-route defect is fixed and verified through the authenticated Cockpit.
 - The official GSD executor reconciled plan 51-08 with Amendment #183's
@@ -57,10 +56,9 @@ Current execution checklist:
 5. Align Settings batch update, cockpit, AG-UI, and Telegram runtime consumers:
    implemented; committed.
 6. Race/build/frontend/live no-restart verification: complete.
-7. Resume and complete 51-08: execution complete; review remediation active.
-8. Fix Amendment #190 and follow-up review findings: implemented in atomic
-   commits; focused unit, race, disposable-Postgres, frontend test, typecheck,
-   and lint gates are green. Clean re-review is pending.
+7. Resume and complete 51-08: execution complete; final verification active.
+8. Fix Amendment #190 and follow-up review findings: complete. The focused
+   standard-depth re-review is clean with zero findings.
 9. Run the final full matrix and repeated live E2E on the final image: pending.
 10. Insert and plan provider-native subscription phase: pending.
 
@@ -155,6 +153,9 @@ Current execution checklist:
 - `7b6a3fb44 fix(51): scope worker pane to conversation`
   - Persists the originating conversation, waits for registry hydration, and
     unions independently mounted swarm report cards with scoped cleanup.
+- `cb3708936 docs(51): add code review report`
+  - Records the clean focused re-review of attempt-cap recovery, idempotent
+    report archives, and conversation-scoped worker-pane hydration.
 
 PRD amendment #185 records these decisions:
 
@@ -436,11 +437,13 @@ Green:
 - Follow-up frontend remediation on `7b6a3fb44`: 29 focused Vitest tests,
   full-project TypeScript typecheck, scoped ESLint, formatting, file-size,
   duplication, and pre-commit vet all passed.
+- Focused standard-depth remediation review on `cb3708936`: 23 files reviewed,
+  zero critical, warning, or info findings. Two typed reviewer dispatches were
+  non-terminal and closed without output; the operator directed the same review
+  scope to be completed inline.
 
 Needs completion:
 
-- Re-run GSD code review after remediation and update `51-REVIEW.md` from the
-  measured result.
 - Re-run the complete WSL Go/vet/build/race and web lint/typecheck/test/build
   matrix, then rebuild/deploy the final image.
 - Run the repository Playwright E2E repeatedly against that final image and
@@ -470,8 +473,8 @@ For subsequent commits:
 
 ## Next actions
 
-1. Re-run GSD code review, the full verification matrix, and the repeated live
-   Playwright E2E on the final deployed image.
+1. Run the full verification matrix and the repeated live Playwright E2E on the
+   final deployed image.
 2. Run the GSD verifier and mark Phase 51 complete only after every gate passes.
 3. Insert, discuss, specify, and plan the provider-native subscription phase via
    GSD after Phase 51 is complete.
