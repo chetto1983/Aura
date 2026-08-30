@@ -35,9 +35,10 @@ being folded into Phase 51.
 ## GSD state
 
 - Active command: `gsd-execute-phase 51`.
-- Phase 51 has 14 of 14 plans executed, but remains `verifying`: the standard
-  code review found recovery, trust-boundary, snapshot, resume-fairness, and UI
-  isolation gaps that must be fixed before verifier handoff.
+- Phase 51 has 14 of 14 plans executed, but remains `verifying`: the latest
+  standard-depth re-review found two recovery blockers and one UI restoration
+  warning. All three are fixed in atomic commits; a clean re-review, global
+  gates, final deployment, and complete Playwright E2E remain required.
 - Plan `.planning/phases/51-durable-delegation/51-08-PLAN.md` is complete.
 - The hot-route defect is fixed and verified through the authenticated Cockpit.
 - The official GSD executor reconciled plan 51-08 with Amendment #183's
@@ -57,8 +58,9 @@ Current execution checklist:
    implemented; committed.
 6. Race/build/frontend/live no-restart verification: complete.
 7. Resume and complete 51-08: execution complete; review remediation active.
-8. Fix Amendment #190 findings: implemented in atomic commits; focused unit,
-   race, and disposable-Postgres gates are green. Re-review is pending.
+8. Fix Amendment #190 and follow-up review findings: implemented in atomic
+   commits; focused unit, race, disposable-Postgres, frontend test, typecheck,
+   and lint gates are green. Clean re-review is pending.
 9. Run the final full matrix and repeated live E2E on the final image: pending.
 10. Insert and plan provider-native subscription phase: pending.
 
@@ -141,6 +143,18 @@ Current execution checklist:
   - Stages terminal reports before projection, retries delivery without rerunning
     the model, deduplicates conversation/steer writes, persists fan-out outbox
     claims atomically, and wires Postgres resume quarantine.
+- `cc6235f68 docs(51): refresh code review report`
+  - Records the 173-file standard-depth re-review and its two recovery blockers
+    plus one worker-pane restoration warning.
+- `8d8295601 fix(51): cap expired delegation recovery`
+  - Prevents an expired final attempt from rerunning the worker while preserving
+    delivery-only recovery beyond the attempt cap.
+- `580714e26 fix(51): make report archives idempotent`
+  - Keys agent assets by delivery identity, retries archive failures before
+    projection, and resumes success-before-checkpoint without duplicate reports.
+- `7b6a3fb44 fix(51): scope worker pane to conversation`
+  - Persists the originating conversation, waits for registry hydration, and
+    unions independently mounted swarm report cards with scoped cleanup.
 
 PRD amendment #185 records these decisions:
 
@@ -339,6 +353,10 @@ The implementation below is committed in the scoped changes listed above.
 - Capability queries and `/api/me` are invalidated after a hot profile save.
 - The external runtime's retained submit callback reads current effort from a
   layout-synchronized ref, closing the select-high/send race.
+- Worker-pane persistence is conversation-scoped and is discarded on a route
+  mismatch instead of opening a child from another conversation.
+- Worker registrations are aggregated per mounted swarm report card; delayed
+  hydration no longer closes a valid restored pane.
 
 ## Tests added or updated
 
@@ -368,6 +386,12 @@ The implementation below is committed in the scoped changes listed above.
   preventing Windows from resetting and truncating the loopback connection.
 - AG-UI translator coverage for terminal-only content followed by StateDelta,
   alongside the existing no-double-stream regression.
+- Expired-final-attempt recovery with a real disposable PostgreSQL database,
+  proving zero worker reruns and delivery-only dead-letter retry.
+- Stable report-asset source references across archive errors and
+  success-before-checkpoint retries, including reversible migration coverage.
+- Worker-pane route mismatch, delayed registry hydration, and multi-card union
+  cleanup: 29 focused Vitest tests pass across four files.
 
 ## Verification status
 
@@ -406,6 +430,12 @@ Green:
   swarm/conversations/steer/documents/cmd; WSL `db_integration -race` passed for
   swarm, conversations, and steer; the cmd/aura fan-out transaction test passed
   against a migrated disposable database; file-size and pre-commit lint passed.
+- Follow-up recovery remediation: the real PostgreSQL expired-attempt test and
+  idempotent asset test passed against disposable databases; migration 0112
+  down/up reversibility passed; focused WSL assets/swarm/cmd tests passed.
+- Follow-up frontend remediation on `7b6a3fb44`: 29 focused Vitest tests,
+  full-project TypeScript typecheck, scoped ESLint, formatting, file-size,
+  duplication, and pre-commit vet all passed.
 
 Needs completion:
 
