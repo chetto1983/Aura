@@ -26,6 +26,9 @@ func (e errSettingsStore) List(context.Context) ([]sqlc.AuraSettings, error) { r
 func (e errSettingsStore) Upsert(context.Context, string, string, string) (sqlc.AuraSettings, error) {
 	return sqlc.AuraSettings{}, e.err
 }
+func (e errSettingsStore) UpsertMany(context.Context, map[string]string, string) ([]sqlc.AuraSettings, error) {
+	return nil, e.err
+}
 func (e errSettingsStore) Delete(context.Context, string) error { return e.err }
 
 func TestSetSettingsStoreAndProbeOffConstructor(t *testing.T) {

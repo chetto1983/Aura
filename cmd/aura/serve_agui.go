@@ -200,7 +200,7 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	// SetGraphView best-effort precedent). The reads inherit RequireAuth from the parent
 	// mux; no capability gate (read-only).
 	aguiServer.SetGovernanceProviders(buildGovernanceProviders(chat.cfg, chat.pool, store, live))
-	wireSettingsProviders(aguiServer, chat.pool)
+	wireSettingsProviders(aguiServer, chat)
 	// Wire the 37C web-voice providers (WEBVOICE-01/02/03, D-12/D-13): a DEDICATED mp3
 	// web TTSClient (Format="mp3", distinct from Telegram's opus client) + a cloud-only
 	// STTClient, each built ONLY when its cloud model is configured, injected via

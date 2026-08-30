@@ -108,7 +108,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "capability store unavailable"})
 		return
 	}
-	writeJSON(w, meDTO{IdentityID: id, Capabilities: caps, ContextWindow: s.contextWindow})
+	writeJSON(w, meDTO{IdentityID: id, Capabilities: caps, ContextWindow: s.activeContextWindow()})
 }
 
 // adminIdentityDTO is one row of the admin identity roster: the identity + its current

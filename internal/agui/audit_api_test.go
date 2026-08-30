@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/redact"
 )
 
@@ -137,6 +138,20 @@ func TestSetContextWindowWiresServer(t *testing.T) {
 	s.SetContextWindow(131072)
 	if s.contextWindow != 131072 {
 		t.Fatalf("contextWindow = %d, want 131072 after SetContextWindow", s.contextWindow)
+	}
+}
+
+func TestActiveContextWindowReadsHotRuntimeSnapshot(t *testing.T) {
+	s := NewServer(&scriptedRunner{}, nil, ServerConfig{})
+	runtime := llm.NewRuntime(nil, llm.Config{ContextWindow: 81920})
+	s.SetContextWindow(1_000_000)
+	s.SetLLMRuntime(runtime)
+	if got := s.activeContextWindow(); got != 81920 {
+		t.Fatalf("active context = %d, want runtime context 81920", got)
+	}
+	runtime.Replace(nil, llm.Config{ContextWindow: 131072})
+	if got := s.activeContextWindow(); got != 131072 {
+		t.Fatalf("active context after hot swap = %d, want 131072", got)
 	}
 }
 

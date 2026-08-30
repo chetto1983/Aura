@@ -204,6 +204,7 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	// same gate as the MCP/skills writes. Method+path-specific so each wins Go 1.22
 	// longest-pattern precedence over the bare "/api/" carve-out.
 	mux.Handle("GET /api/settings", agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
+	mux.Handle("PUT /api/settings/llm-profile", agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle("PUT /api/settings/{key}", agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle("DELETE /api/settings/{key}", agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(settingsTelegramCheckRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
@@ -328,10 +329,9 @@ func isPublicPasswordResetRoute(r *http.Request) bool {
 	}
 }
 
-// reasoningCapsTTL is the TTL of the 37E model reasoning-capability cache (D-13). The active
-// model's advertised effort set changes rarely and is boot-stable (AURA_LLM_MODEL applies only on
-// restart), so a long TTL keeps the endpoint + Stage-2 validator memory-served with at most
-// hours-long staleness — never a per-turn /models fetch.
+// reasoningCapsTTL is the TTL of one route snapshot's 37E reasoning-capability cache. A Settings
+// route change replaces the whole source; within one snapshot the advertised effort set changes
+// rarely, so a long TTL avoids a per-turn /models fetch.
 const reasoningCapsTTL = 6 * time.Hour
 
 // wireReasoningCapabilities injects the 37E reasoning-capability source (WEBMODEL-01 / D-13) into

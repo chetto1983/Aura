@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
@@ -147,6 +148,7 @@ type Server struct {
 	mcpAuth          MCPAuthorizationProvider
 	settings         settingsStore
 	llmRouteReloader llmRouteReloader
+	settingsMu       sync.Mutex
 	audit            auditReader
 	idAdmin          identityAdmin
 	telegramProbe    TelegramBotProbe
@@ -217,6 +219,7 @@ type Server struct {
 	// reports; it is injected alongside the source (llm.ReasoningTarget is known only at boot).
 	reasoningCaps    llm.ReasoningCapabilitySource
 	reasoningBackend string
+	reasoningMu      sync.RWMutex
 
 	// contextWindow is the active model's total context window (tokens), sourced from
 	// llm.Config.ContextWindow (AURA_MODEL_CONTEXT_WINDOW) and wired via SetContextWindow at
@@ -224,7 +227,9 @@ type Server struct {
 	// shows the LIVE window instead of falling back to its DeepSeek-V4 1M default
 	// (footerMetrics.DEFAULT_CONTEXT_WINDOW). Zero until wired — the DTO then carries 0 and the
 	// frontend keeps its own fallback.
-	contextWindow int
+	contextWindow   int
+	contextWindowMu sync.RWMutex
+	llmRuntime      *llm.Runtime
 
 	// mcpViews holds the `ui://` documents mounted MCP servers served at boot, and
 	// mcpSandboxOrigin is the DIFFERENT origin the cockpit must frame them from
@@ -323,22 +328,28 @@ func (s *Server) SetImageProxy(images ImageFetcher) { s.images = images }
 // constructor so existing NewServer callers/tests stay unchanged (D-A2-02 narrow seam).
 func (s *Server) SetGraphView(gv GraphView) { s.graph = gv }
 
-// SetReasoningCapabilitySource wires the active model's reasoning-capability source (37E /
-// WEBMODEL-01, D-13) plus its non-secret backend label, both selected at boot by
-// llm.ReasoningTarget. It backs Stage-2 of the /agent/run effort governance AND the
-// GET /api/composer/reasoning-capabilities endpoint, which share the one in-memory TTL-cached
-// set (no per-turn fetch). Set by the daemon composition root after NewServer; a nil source
-// degrades to the safe floor {auto,off} (never 503), mirroring SetSettingsStore.
-func (s *Server) SetReasoningCapabilitySource(src llm.ReasoningCapabilitySource, backend string) {
-	s.reasoningCaps = src
-	s.reasoningBackend = backend
-}
-
 // SetContextWindow wires the active model's context window (tokens) so GET /api/me can
 // report it to the cockpit footer gauge. Set by the daemon composition root after NewServer
 // from llm.Config.ContextWindow; until set it stays 0 (existing NewServer callers/tests
 // unchanged, D-A2-02 narrow seam).
-func (s *Server) SetContextWindow(tokens int) { s.contextWindow = tokens }
+func (s *Server) SetContextWindow(tokens int) {
+	s.contextWindowMu.Lock()
+	s.contextWindow = tokens
+	s.contextWindowMu.Unlock()
+}
+
+// SetLLMRuntime makes model-dependent read surfaces use the same atomic snapshot
+// as new turns. SetContextWindow remains the fallback for tests and static callers.
+func (s *Server) SetLLMRuntime(runtime *llm.Runtime) { s.llmRuntime = runtime }
+
+func (s *Server) activeContextWindow() int {
+	if s.llmRuntime != nil {
+		return s.llmRuntime.Snapshot().Config.ContextWindow
+	}
+	s.contextWindowMu.RLock()
+	defer s.contextWindowMu.RUnlock()
+	return s.contextWindow
+}
 
 // parseEffortSymbol maps a Composer UI effort SYMBOL to the internal llm.ReasoningEffort,
 // returning (effort, isFixed, ok). It is the WEBMODEL-03 no-bypass gate (T-37E-06-ENUM): the
@@ -449,7 +460,8 @@ func (s *Server) Mux() http.Handler {
 	// RequireCapability(governance.write) lives in cmd/aura/serve_webui.go.
 	s.registerGovernanceWriteRoutes(mux)
 	// SETTINGS-01 cockpit Settings page: GET /api/settings (effective model-backend
-	// knobs, secrets redacted) + PUT/DELETE /api/settings/{key}. Colocated with their
+	// knobs, secrets redacted) + atomic PUT /api/settings/llm-profile +
+	// PUT/DELETE /api/settings/{key}. Colocated with their
 	// handlers; the parent-mux mount (RequireCapability(governance.read) on GET,
 	// governance.write on PUT/DELETE) lives in cmd/aura/serve_webui.go.
 	s.registerSettingsRoutes(mux)

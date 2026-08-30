@@ -23,16 +23,22 @@ type fakeSettingsStore struct {
 type fakeLLMRouteReloader struct {
 	validated []map[string]string
 	applied   []map[string]string
+	effective map[string]string
 	err       error
 }
 
-func (f *fakeLLMRouteReloader) Validate(overrides map[string]string) error {
+func (f *fakeLLMRouteReloader) Prepare(_ context.Context, overrides map[string]string) (func(), error) {
 	f.validated = append(f.validated, maps.Clone(overrides))
-	return f.err
+	if f.err != nil {
+		return nil, f.err
+	}
+	prepared := maps.Clone(overrides)
+	return func() { f.applied = append(f.applied, prepared) }, nil
 }
 
-func (f *fakeLLMRouteReloader) Apply(overrides map[string]string) {
-	f.applied = append(f.applied, maps.Clone(overrides))
+func (f *fakeLLMRouteReloader) EffectiveValue(key string) (string, bool) {
+	value, ok := f.effective[key]
+	return value, ok
 }
 
 func (f *fakeSettingsStore) List(context.Context) ([]sqlc.AuraSettings, error) { return f.rows, nil }
@@ -43,6 +49,20 @@ func (f *fakeSettingsStore) Upsert(_ context.Context, key, value, _ string) (sql
 	}
 	f.upserted[key] = value
 	return sqlc.AuraSettings{Key: key, Value: value}, nil
+}
+
+func (f *fakeSettingsStore) UpsertMany(
+	ctx context.Context, values map[string]string, by string,
+) ([]sqlc.AuraSettings, error) {
+	rows := make([]sqlc.AuraSettings, 0, len(values))
+	for key, value := range values {
+		row, err := f.Upsert(ctx, key, value, by)
+		if err != nil {
+			return nil, err
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
 }
 
 func (f *fakeSettingsStore) Delete(_ context.Context, key string) error {
@@ -125,6 +145,53 @@ func TestHandleListSettingsDoesNotRequireRestartForHotLLMRoute(t *testing.T) {
 	}
 	if got.RestartRequired {
 		t.Fatal("primary LLM route is hot but restart_required is true")
+	}
+}
+
+func TestHandleListSettingsUsesActiveProfileAfterDeleteInsteadOfBootOverlayEnv(t *testing.T) {
+	t.Setenv("AURA_LLM_MODEL", "stale-db-model-copied-at-boot")
+	s := &Server{
+		settings: &fakeSettingsStore{},
+		llmRouteReloader: &fakeLLMRouteReloader{effective: map[string]string{
+			"AURA_LLM_MODEL": "boot-fallback-model",
+		}},
+	}
+	rr := httptest.NewRecorder()
+	s.handleListSettings(rr, httptest.NewRequest(http.MethodGet, "/api/settings", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rr.Code, rr.Body.String())
+	}
+	item := settingItemByKey(t, rr.Body.Bytes(), "AURA_LLM_MODEL")
+	if item.Value != "boot-fallback-model" || item.Overridden {
+		t.Fatalf("model item = %+v, want active non-overridden fallback", item)
+	}
+}
+
+func TestHandlePutLLMProfilePreparesThenPersistsAndPublishesOnce(t *testing.T) {
+	store := &fakeSettingsStore{rows: []sqlc.AuraSettings{
+		{Key: "AURA_LLM_PROVIDER", Value: "openrouter"},
+		{Key: "AURA_LLM_BASE_URL", Value: "https://openrouter.ai/api/v1"},
+		{Key: "AURA_LLM_MODEL", Value: "cloud-model"},
+	}}
+	reloader := &fakeLLMRouteReloader{}
+	s := &Server{settings: store, llmRouteReloader: reloader}
+	body := strings.NewReader(`{"settings":{` +
+		`"AURA_LLM_PROVIDER":"llamacpp",` +
+		`"AURA_LLM_BASE_URL":"http://aura-llm:8084/v1",` +
+		`"AURA_LLM_MODEL":"gemma-4-12b"}}`)
+	r := withPrincipal(httptest.NewRequest(http.MethodPut, "/api/settings/llm-profile", body), "op-1")
+	rr := httptest.NewRecorder()
+
+	s.handlePutLLMProfile(rr, r)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rr.Code, rr.Body.String())
+	}
+	if len(reloader.validated) != 1 || len(reloader.applied) != 1 {
+		t.Fatalf("prepare/apply calls = %d/%d, want 1/1", len(reloader.validated), len(reloader.applied))
+	}
+	if len(store.upserted) != 3 || store.upserted["AURA_LLM_MODEL"] != "gemma-4-12b" {
+		t.Fatalf("atomic profile rows = %v", store.upserted)
 	}
 }
 
@@ -213,6 +280,55 @@ func TestHandlePutSetting(t *testing.T) {
 			t.Fatalf("applied base URL = %q, want existing local override", got)
 		}
 	})
+
+	t.Run("invalid primary route is rejected before persistence", func(t *testing.T) {
+		store := &fakeSettingsStore{}
+		reloader := &fakeLLMRouteReloader{err: errors.New("invalid route")}
+		s := &Server{settings: store, llmRouteReloader: reloader}
+		rr, r := putReq(t, "AURA_LLM_MODEL", "bad-model", "op-1")
+
+		s.handlePutSetting(rr, r)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", rr.Code)
+		}
+		if len(store.upserted) != 0 || len(reloader.applied) != 0 {
+			t.Fatalf("invalid route persisted/applied: store=%v apply=%v", store.upserted, reloader.applied)
+		}
+	})
+}
+
+func TestHandleDeleteSettingHotLLMRoutePublishesFallbackOverrides(t *testing.T) {
+	store := &fakeSettingsStore{rows: []sqlc.AuraSettings{
+		{Key: "AURA_LLM_PROVIDER", Value: "llamacpp"},
+		{Key: "AURA_LLM_BASE_URL", Value: "http://aura-llm:8084/v1"},
+		{Key: "AURA_LLM_MODEL", Value: "gemma-4-12b"},
+	}}
+	reloader := &fakeLLMRouteReloader{}
+	s := &Server{settings: store, llmRouteReloader: reloader}
+	r := httptest.NewRequest(http.MethodDelete, "/api/settings/AURA_LLM_MODEL", nil)
+	r.SetPathValue("key", "AURA_LLM_MODEL")
+	r = withPrincipal(r, "op-1")
+	rr := httptest.NewRecorder()
+
+	s.handleDeleteSetting(rr, r)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if len(reloader.validated) != 1 || len(reloader.applied) != 1 {
+		t.Fatalf("reload calls = validate %d apply %d, want 1/1", len(reloader.validated), len(reloader.applied))
+	}
+	if _, present := reloader.applied[0]["AURA_LLM_MODEL"]; present {
+		t.Fatal("deleted model remained in the persisted override set")
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if restart, _ := body["restart_required"].(bool); restart {
+		t.Fatal("hot route delete requested a restart")
+	}
 }
 
 func TestHandlePutSettingRejectsInvalidLLMTokenBudget(t *testing.T) {

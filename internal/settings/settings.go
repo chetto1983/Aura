@@ -5,7 +5,8 @@
 // daemon boot OverlayEnv applies them onto the process environment BEFORE
 // config.Load, so the existing env readers pick them up with NO per-field mapping;
 // DB values WIN over pre-set env (the operator's UI choice is authoritative).
-// Changes take effect on the next restart (the clients are built at boot).
+// The primary LLM profile is also published to the live runtime by the Settings API;
+// the remaining backend knobs still take effect on restart.
 //
 // The overlay applies ONLY an allowlist of model-backend keys, so a settings row
 // can never clobber connection/security env (POSTGRES_*, ARCADEDB_PASSWORD,
@@ -15,6 +16,7 @@ package settings
 import (
 	"context"
 	"os"
+	"sort"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -44,7 +46,7 @@ type KeyMeta struct {
 // OverlayEnv + the API enforce it: a key outside this map is rejected/ignored, so
 // the settings layer can never reach connection or security env.
 var AllowedKeys = map[string]KeyMeta{
-	"AURA_LLM_PROVIDER":            {Kind: KindString, Label: "Primary LLM provider (openrouter|llamacpp)"},
+	"AURA_LLM_PROVIDER":            {Kind: KindString, Label: "Primary LLM provider (openrouter|llamacpp|ollama)"},
 	"AURA_LLM_MODEL":               {Kind: KindString, Label: "Primary LLM model"},
 	"AURA_LLM_BASE_URL":            {Kind: KindString, Label: "Primary LLM base URL"},
 	"AURA_LLM_MAX_TOKENS":          {Kind: KindInt, Label: "Max response tokens"},
@@ -113,7 +115,40 @@ func (s *Store) Upsert(ctx context.Context, key, value, by string) (sqlc.AuraSet
 	return row, err
 }
 
-// Delete removes a key, reverting it to its environment/.env default on restart.
+// UpsertMany writes a model-profile mutation under one advisory-locked transaction.
+// Callers prepare the complete runtime snapshot first, persist every durable row here,
+// then publish the prepared snapshot only after this transaction commits.
+func (s *Store) UpsertMany(
+	ctx context.Context, values map[string]string, by string,
+) ([]sqlc.AuraSettings, error) {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	rows := make([]sqlc.AuraSettings, 0, len(keys))
+	err := s.withWriteLock(ctx, func(q *sqlc.Queries) error {
+		for _, key := range keys {
+			meta := AllowedKeys[key]
+			var updatedBy pgtype.Text
+			if by != "" {
+				updatedBy = pgtype.Text{String: by, Valid: true}
+			}
+			row, err := q.UpsertSetting(ctx, sqlc.UpsertSettingParams{
+				Key: key, Value: values[key], IsSecret: meta.Secret, UpdatedBy: updatedBy,
+			})
+			if err != nil {
+				return err
+			}
+			rows = append(rows, row)
+		}
+		return nil
+	})
+	return rows, err
+}
+
+// Delete removes a key. The hot primary-route reloader restores its captured boot
+// fallback immediately; other keys revert to environment/.env on restart.
 func (s *Store) Delete(ctx context.Context, key string) error {
 	return s.withWriteLock(ctx, func(q *sqlc.Queries) error {
 		return q.DeleteSetting(ctx, key)

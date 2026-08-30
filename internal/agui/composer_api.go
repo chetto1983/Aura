@@ -51,13 +51,14 @@ type reasoningCapabilitiesDTO struct {
 // composer must degrade, never break (37D D-09) — and Stage-2 rejects any graduated level while
 // undetected, so the floor is honest.
 func (s *Server) handleReasoningCapabilities(w http.ResponseWriter, r *http.Request) {
-	if s.reasoningCaps == nil {
-		writeJSON(w, reasoningCapabilitiesDTO{Levels: []string{"auto", "off"}, Default: "auto", Backend: s.reasoningBackend, Detected: false})
+	caps, backend := s.reasoningCapabilitySnapshot()
+	if caps == nil {
+		writeJSON(w, reasoningCapabilitiesDTO{Levels: []string{"auto", "off"}, Default: "auto", Backend: backend, Detected: false})
 		return
 	}
-	efforts, _, detected := s.reasoningCaps.AllowedEfforts(r.Context())
+	efforts, _, detected := caps.AllowedEfforts(r.Context())
 	if !detected {
-		writeJSON(w, reasoningCapabilitiesDTO{Levels: []string{"auto", "off"}, Default: "auto", Backend: s.reasoningBackend, Detected: false})
+		writeJSON(w, reasoningCapabilitiesDTO{Levels: []string{"auto", "off"}, Default: "auto", Backend: backend, Detected: false})
 		return
 	}
 	levels := make([]string, 0, len(efforts)+1)
@@ -67,7 +68,7 @@ func (s *Server) handleReasoningCapabilities(w http.ResponseWriter, r *http.Requ
 			levels = append(levels, sym)
 		}
 	}
-	writeJSON(w, reasoningCapabilitiesDTO{Levels: levels, Default: "auto", Backend: s.reasoningBackend, Detected: true})
+	writeJSON(w, reasoningCapabilitiesDTO{Levels: levels, Default: "auto", Backend: backend, Detected: true})
 }
 
 // effortToUISymbol maps an internal llm.ReasoningEffort to the Composer UI symbol (the inverse

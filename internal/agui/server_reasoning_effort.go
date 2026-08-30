@@ -10,10 +10,23 @@ import (
 	"github.com/chetto1983/aura/internal/runner"
 )
 
-// server_reasoning_effort.go carries the two-stage per-turn reasoning-effort governance the
-// run handler applies (37E / WEBMODEL-02/03, D-05/D-13). It is split out of server.go (which
-// keeps parseEffortSymbol + the SetReasoningCapabilitySource setter) so that file stays under
-// the 600-LOC ceiling — the plan sanctions extracting the two-stage helper to a sibling.
+// SetReasoningCapabilitySource atomically replaces the active model's capability source and
+// non-secret backend label. Settings hot reload uses the same setter as boot wiring.
+func (s *Server) SetReasoningCapabilitySource(src llm.ReasoningCapabilitySource, backend string) {
+	s.reasoningMu.Lock()
+	defer s.reasoningMu.Unlock()
+	s.reasoningCaps = src
+	s.reasoningBackend = backend
+}
+
+func (s *Server) reasoningCapabilitySnapshot() (llm.ReasoningCapabilitySource, string) {
+	s.reasoningMu.RLock()
+	defer s.reasoningMu.RUnlock()
+	return s.reasoningCaps, s.reasoningBackend
+}
+
+// server_reasoning_effort.go carries the active capability source and the two-stage per-turn
+// reasoning-effort governance the run handler applies (37E / WEBMODEL-02/03, D-05/D-13).
 //
 // The control is the no-bypass enforcement (WEBMODEL-03): the client sends a symbol, never a
 // ReasoningConfig. Stage 1 (syntactic) rejects any non-enum value; Stage 2 (capability) rejects
@@ -41,8 +54,9 @@ func (s *Server) applyReasoningEffort(ctx context.Context, w http.ResponseWriter
 	}
 	// Stage 2 — CAPABILITY: a FIXED level must be advertised by the active model (D-13). When
 	// detection failed only off/auto are safe (the graduated levels are unverifiable, D-12).
-	if isFixed && s.reasoningCaps != nil {
-		allowed, _, detected := s.reasoningCaps.AllowedEfforts(ctx)
+	caps, _ := s.reasoningCapabilitySnapshot()
+	if isFixed && caps != nil {
+		allowed, _, detected := caps.AllowedEfforts(ctx)
 		if detected {
 			if !containsEffort(allowed, effort) {
 				http.Error(w, "effort not supported by the active model", http.StatusBadRequest)

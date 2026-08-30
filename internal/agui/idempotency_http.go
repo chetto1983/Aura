@@ -118,6 +118,7 @@ var httpMutationRoutes = map[string]mutationRouteMeta{
 	"POST /api/onboarding/{sessionToken}/provision":            httpMutationMeta("onboarding_provision"),
 	"POST /api/settings/telegram/link":                         httpMutationMeta("settings_telegram_link"),
 	"PUT /api/settings/{key}":                                  httpMutationMeta("setting_put"),
+	"PUT /api/settings/llm-profile":                            httpMutationMeta("llm_profile_put"),
 	"DELETE /api/settings/{key}":                               httpMutationMeta("setting_delete"),
 	"POST /api/shares":                                         httpMutationMeta("share_create"),
 	"PATCH /api/shares/{id}/snapshot":                          httpMutationMeta("share_snapshot"),

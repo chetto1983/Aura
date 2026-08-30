@@ -2,10 +2,10 @@ package agui
 
 // settings_api.go is the cockpit "Settings" page backend (SETTINGS-01): the model-
 // backend knobs the operator swaps local↔cloud (embed/STT/TTS/vision), the single
-// OpenRouter key, and the embed dimension. Rows live in aura.settings and
-// are overlaid onto the environment at boot (internal/settings.OverlayEnv), so a
-// change takes effect on the NEXT RESTART — the GET response carries
-// restart_required so the page shows a "restart to apply" banner.
+// OpenRouter key, and the embed dimension. Rows live in aura.settings and are
+// overlaid onto the environment at boot (internal/settings.OverlayEnv). The primary
+// LLM profile is additionally hot-published; restart_required covers
+// only a persisted difference whose runtime remains boot-bound.
 //
 // GET returns the allowlist + current effective values with SECRETS REDACTED (the
 // real value never crosses the wire on read). PUT/DELETE are operator write-class
@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"os"
 	"sort"
@@ -35,19 +36,29 @@ var (
 	errInvalidBool = errors.New("value must be a boolean (true/false)")
 )
 
+var hotLLMProfileKeys = map[string]struct{}{
+	"AURA_LLM_PROVIDER":            {},
+	"AURA_LLM_BASE_URL":            {},
+	"AURA_LLM_MODEL":               {},
+	"AURA_LLM_MAX_TOKENS":          {},
+	"AURA_MODEL_CONTEXT_WINDOW":    {},
+	"AURA_MODEL_MAX_OUTPUT_TOKENS": {},
+}
+
 // settingsStore is the aura.settings CRUD seam the handlers need
 // (internal/settings.Store satisfies it). Kept narrow so tests inject a fake.
 type settingsStore interface {
 	List(ctx context.Context) ([]sqlc.AuraSettings, error)
 	Upsert(ctx context.Context, key, value, by string) (sqlc.AuraSettings, error)
+	UpsertMany(ctx context.Context, values map[string]string, by string) ([]sqlc.AuraSettings, error)
 	Delete(ctx context.Context, key string) error
 }
 
-// llmRouteReloader validates and publishes the complete persisted primary-route
+// llmRouteReloader validates and publishes the complete persisted primary-profile
 // override set. The composition root supplies the boot fallback and concrete client.
 type llmRouteReloader interface {
-	Validate(overrides map[string]string) error
-	Apply(overrides map[string]string)
+	Prepare(ctx context.Context, overrides map[string]string) (apply func(), err error)
+	EffectiveValue(key string) (string, bool)
 }
 
 // TelegramBotProbe validates a Telegram Bot API token and returns the bot username.
@@ -60,7 +71,7 @@ type TelegramBotProbe func(ctx context.Context, token string) (username string, 
 // precedent).
 func (s *Server) SetSettingsStore(store settingsStore) { s.settings = store }
 
-// SetLLMRouteReloader wires the hot primary-LLM route publisher.
+// SetLLMRouteReloader wires the hot primary-LLM profile publisher.
 func (s *Server) SetLLMRouteReloader(reloader llmRouteReloader) { s.llmRouteReloader = reloader }
 
 // SetTelegramBotProbe wires the live getMe validator used by the Settings Telegram
@@ -69,6 +80,7 @@ func (s *Server) SetTelegramBotProbe(probe TelegramBotProbe) { s.telegramProbe =
 
 func (s *Server) registerSettingsRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/settings", s.handleListSettings)
+	mux.HandleFunc("PUT /api/settings/llm-profile", s.handlePutLLMProfile)
 	mux.HandleFunc("POST /api/settings/telegram/check", s.handleCheckTelegramAvailability)
 	mux.HandleFunc("POST /api/settings/telegram/link", s.handleCreateSettingsTelegramLink)
 	mux.HandleFunc("GET /api/settings/telegram/{sessionToken}/status", s.handleSettingsTelegramStatus)
@@ -101,6 +113,8 @@ func (s *Server) handleListSettings(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "settings not configured"})
 		return
 	}
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
 	rows, err := s.settings.List(r.Context())
 	if err != nil {
 		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "settings store unavailable"})
@@ -124,10 +138,16 @@ func (s *Server) handleListSettings(w http.ResponseWriter, r *http.Request) {
 		item := settingItemDTO{
 			Key: key, Label: meta.Label, Kind: string(meta.Kind), Secret: meta.Secret, Overridden: overridden,
 		}
-		// Effective value: the pending DB value when overridden, else the current
-		// process env (which the boot overlay already reflects). A change made after
-		// boot (DB value != live env) flags restart_required.
+		// Effective value: the DB value when overridden, else the active runtime for a
+		// hot model-profile key, else the process env. A
+		// post-boot difference flags restart_required unless this key is one of the
+		// primary-route values the wired runtime reloader has already published.
 		effective := os.Getenv(key)
+		if !overridden && s.hotLLMRouteEnabled(key) {
+			if value, ok := s.llmRouteReloader.EffectiveValue(key); ok {
+				effective = value
+			}
+		}
 		if overridden {
 			effective = row.Value
 			if row.UpdatedAt.Valid {
@@ -136,7 +156,7 @@ func (s *Server) handleListSettings(w http.ResponseWriter, r *http.Request) {
 			if row.UpdatedBy.Valid {
 				item.UpdatedBy = row.UpdatedBy.String
 			}
-			if row.Value != os.Getenv(key) {
+			if row.Value != os.Getenv(key) && !s.hotLLMRouteEnabled(key) {
 				out.RestartRequired = true
 			}
 		}
@@ -151,6 +171,69 @@ func (s *Server) handleListSettings(w http.ResponseWriter, r *http.Request) {
 
 type putSettingBody struct {
 	Value string `json:"value"`
+}
+
+type putLLMProfileBody struct {
+	Settings map[string]string `json:"settings"`
+}
+
+// handlePutLLMProfile prepares one complete model profile, persists every edited
+// row in one transaction, then publishes the already-prepared snapshot. The cockpit
+// uses this route for cloud/local changes so no mixed provider/base/model state can
+// become visible between sequential key writes.
+func (s *Server) handlePutLLMProfile(w http.ResponseWriter, r *http.Request) {
+	if s.settings == nil || s.llmRouteReloader == nil {
+		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "LLM profile settings not configured"})
+		return
+	}
+	actor, ok := principalIdentityID(r)
+	if !ok {
+		writeJSONStatus(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	raw, ok := readCappedBody(w, r)
+	if !ok {
+		return
+	}
+	var body putLLMProfileBody
+	if err := json.Unmarshal(raw, &body); err != nil || len(body.Settings) == 0 {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "invalid LLM profile body"})
+		return
+	}
+	for key, value := range body.Settings {
+		if _, hot := hotLLMProfileKeys[key]; !hot {
+			writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "LLM profile contains an unsupported key"})
+			return
+		}
+		meta := settings.AllowedKeys[key]
+		if err := validateSettingValue(meta.Kind, value); err != nil {
+			writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+	}
+
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
+	rows, err := s.settings.List(r.Context())
+	if err != nil {
+		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "settings store unavailable"})
+		return
+	}
+	overrides := llmProfileOverrides(rows)
+	maps.Copy(overrides, body.Settings)
+	apply, err := s.llmRouteReloader.Prepare(r.Context(), overrides)
+	if err != nil {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if _, err := s.settings.UpsertMany(r.Context(), body.Settings, actor); err != nil {
+		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "settings store unavailable"})
+		return
+	}
+	apply()
+	writeJSONStatus(w, http.StatusOK, map[string]any{
+		"updated": len(body.Settings), "restart_required": false,
+	})
 }
 
 func (s *Server) handlePutSetting(w http.ResponseWriter, r *http.Request) {
@@ -182,13 +265,31 @@ func (s *Server) handlePutSetting(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	if isLLMTokenSetting(key) {
-		rows, err := s.settings.List(r.Context())
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
+	var rows []sqlc.AuraSettings
+	if s.hotLLMRouteEnabled(key) || isLLMTokenSetting(key) {
+		var err error
+		rows, err = s.settings.List(r.Context())
 		if err != nil {
 			writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "settings store unavailable"})
 			return
 		}
+	}
+	if isLLMTokenSetting(key) {
 		if err := validatePendingLLMTokenSetting(rows, key, body.Value); err != nil {
+			writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+	}
+	var routeOverrides map[string]string
+	var applyRoute func()
+	var err error
+	if s.hotLLMRouteEnabled(key) {
+		routeOverrides = llmProfileOverrides(rows)
+		routeOverrides[key] = body.Value
+		applyRoute, err = s.llmRouteReloader.Prepare(r.Context(), routeOverrides)
+		if err != nil {
 			writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
@@ -197,6 +298,9 @@ func (s *Server) handlePutSetting(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "settings store unavailable"})
 		return
+	}
+	if applyRoute != nil {
+		applyRoute()
 	}
 	writeJSON(w, settingItemFromRow(meta, row))
 }
@@ -215,11 +319,49 @@ func (s *Server) handleDeleteSetting(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
+	var routeOverrides map[string]string
+	var applyRoute func()
+	if s.hotLLMRouteEnabled(key) {
+		rows, err := s.settings.List(r.Context())
+		if err != nil {
+			writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "settings store unavailable"})
+			return
+		}
+		routeOverrides = llmProfileOverrides(rows)
+		delete(routeOverrides, key)
+		applyRoute, err = s.llmRouteReloader.Prepare(r.Context(), routeOverrides)
+		if err != nil {
+			writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+	}
 	if err := s.settings.Delete(r.Context(), key); err != nil {
 		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "settings store unavailable"})
 		return
 	}
-	writeJSONStatus(w, http.StatusOK, map[string]any{"key": key, "deleted": true, "restart_required": true})
+	if applyRoute != nil {
+		applyRoute()
+	}
+	writeJSONStatus(w, http.StatusOK, map[string]any{
+		"key": key, "deleted": true, "restart_required": routeOverrides == nil,
+	})
+}
+
+func (s *Server) hotLLMRouteEnabled(key string) bool {
+	_, hot := hotLLMProfileKeys[key]
+	return hot && s.llmRouteReloader != nil
+}
+
+func llmProfileOverrides(rows []sqlc.AuraSettings) map[string]string {
+	overrides := make(map[string]string, len(hotLLMProfileKeys))
+	for _, row := range rows {
+		if _, hot := hotLLMProfileKeys[row.Key]; hot {
+			overrides[row.Key] = row.Value
+		}
+	}
+	return overrides
 }
 
 type telegramAvailabilityRequest struct {
@@ -385,14 +527,15 @@ func applyLLMTokenSetting(cfg *llm.Config, key, value string) error {
 		cfg.MaxTokens = parsed
 	case "AURA_MODEL_CONTEXT_WINDOW":
 		cfg.ContextWindow = parsed
+		cfg.ContextWindowConfigured = true
 	case "AURA_MODEL_MAX_OUTPUT_TOKENS":
 		cfg.MaxOutputTokens = parsed
+		cfg.MaxOutputTokensConfigured = true
 	}
 	return nil
 }
 
-// settingItemFromRow projects a stored row to the redacted DTO returned by a write
-// (a freshly-set value is always overridden + pending a restart).
+// settingItemFromRow projects a stored row to the redacted DTO returned by a write.
 func settingItemFromRow(meta settings.KeyMeta, row sqlc.AuraSettings) settingItemDTO {
 	item := settingItemDTO{
 		Key: row.Key, Label: meta.Label, Kind: string(meta.Kind), Secret: meta.Secret,
