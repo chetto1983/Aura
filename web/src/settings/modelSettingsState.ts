@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { REASONING_CAPABILITIES_QUERY_KEY } from '../chat/composer/useReasoningCapabilities';
 import {
   deleteSetting,
   fetchSettings,
@@ -101,6 +103,7 @@ export interface ModelSettingsState {
 // the set of keys THIS pane may write: a pane that showed only the token budgets must not push
 // the backend rows it happens to be holding in state.
 export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsState {
+  const queryClient = useQueryClient();
   const [loaded, setLoaded] = useState<LoadedState | undefined>(undefined);
   const [loadStatus, setLoadStatus] = useState<LoadStatus>('loading');
   const [saving, setSaving] = useState(false);
@@ -174,6 +177,10 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
           await putLLMProfile(
             Object.fromEntries(profileKeys.map((key) => [key, loaded.values[key] ?? ''])),
           );
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ['me'] }),
+            queryClient.invalidateQueries({ queryKey: REASONING_CAPABILITIES_QUERY_KEY }),
+          ]);
         }
         for (const key of dirtyKeys.filter((key) => !HOT_LLM_PROFILE_KEYS.has(key))) {
           await putSetting(key, loaded.values[key] ?? '');
@@ -192,7 +199,7 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
         setSaving(false);
       }
     },
-    [dirtyKeys, loaded, saving],
+    [dirtyKeys, loaded, queryClient, saving],
   );
 
   const resetSetting = useCallback(
@@ -202,6 +209,12 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
       setSaveError(undefined);
       try {
         await deleteSetting(key);
+        if (HOT_LLM_PROFILE_KEYS.has(key)) {
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ['me'] }),
+            queryClient.invalidateQueries({ queryKey: REASONING_CAPABILITIES_QUERY_KEY }),
+          ]);
+        }
         await reload();
       } catch (err) {
         // Reset had no error handling at all: a rejected delete only cleared the spinner, so
@@ -211,7 +224,7 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
         setResetting(undefined);
       }
     },
-    [reload, resetting],
+    [queryClient, reload, resetting],
   );
 
   return {

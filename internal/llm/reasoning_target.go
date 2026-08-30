@@ -20,9 +20,8 @@ const (
 	// chat_template_kwargs:{enable_thinking} + thinking_budget_tokens (spike 095) and
 	// IGNORES the OpenRouter reasoning object.
 	ReasoningTargetLlamaCpp
-	// ReasoningTargetOllama marks Ollama's OpenAI-compatible bridge. pi's measured
-	// compatibility profile does not send OpenRouter reasoning fields or llama.cpp
-	// chat-template extensions through this route.
+	// ReasoningTargetOllama marks Ollama's OpenAI-compatible bridge, which accepts
+	// reasoning_effort without OpenRouter or llama.cpp extensions.
 	ReasoningTargetOllama
 )
 

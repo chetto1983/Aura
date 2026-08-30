@@ -142,13 +142,46 @@ func TestSDKRequestReasoningTargets(t *testing.T) {
 		t.Fatalf("auto stream_options = %#v", auto["stream_options"])
 	}
 
-	ollama := captureSDKBody(t, llm.Config{Provider: "ollama"}, llm.Request{
-		Model: "gemma4:31b-cloud", Reasoning: llm.ReasoningConfig{Effort: llm.ReasoningEffortHigh},
-	})
-	for _, forbidden := range []string{"reasoning", "thinking_budget_tokens", "chat_template_kwargs"} {
-		if _, present := ollama[forbidden]; present {
-			t.Fatalf("Ollama received unsupported %q: %#v", forbidden, ollama)
-		}
+	ollamaCases := []struct {
+		effort llm.ReasoningEffort
+		wire   string
+	}{
+		{effort: llm.ReasoningEffortNone, wire: "none"},
+		{effort: llm.ReasoningEffortLow, wire: "low"},
+		{effort: llm.ReasoningEffortMedium, wire: "medium"},
+		{effort: llm.ReasoningEffortHigh, wire: "high"},
+		{effort: llm.ReasoningEffortXHigh, wire: "high"},
+		{effort: llm.ReasoningEffortMax, wire: "high"},
+	}
+	for _, testCase := range ollamaCases {
+		t.Run("ollama_"+string(testCase.effort), func(t *testing.T) {
+			body := captureSDKBody(t, llm.Config{Provider: "ollama", OpenRouterMiddleOut: true}, llm.Request{
+				Model: "gemma4:31b-cloud", SessionID: "must-not-leak",
+				Reasoning: llm.ReasoningConfig{Effort: testCase.effort},
+			})
+			if body["reasoning_effort"] != testCase.wire {
+				t.Fatalf("reasoning_effort = %#v, want %q", body["reasoning_effort"], testCase.wire)
+			}
+			streamOptions, _ := body["stream_options"].(map[string]any)
+			if streamOptions["include_usage"] != true {
+				t.Fatalf("stream_options = %#v", streamOptions)
+			}
+			for _, forbidden := range []string{
+				"reasoning", "thinking_budget_tokens", "chat_template_kwargs",
+				"provider", "session_id", "transforms",
+			} {
+				if _, present := body[forbidden]; present {
+					t.Fatalf("Ollama received provider-specific %q: %#v", forbidden, body)
+				}
+			}
+		})
+	}
+	ollamaAuto := captureSDKBody(t, llm.Config{Provider: "ollama"}, llm.Request{Model: "gemma4:31b-cloud"})
+	if _, present := ollamaAuto["reasoning_effort"]; present {
+		t.Fatalf("Ollama auto request forced reasoning_effort: %#v", ollamaAuto)
+	}
+	if ollamaAuto["stream_options"].(map[string]any)["include_usage"] != true {
+		t.Fatalf("Ollama auto stream_options = %#v", ollamaAuto["stream_options"])
 	}
 }
 

@@ -1,5 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createElement, type ReactNode } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { buildAuraRunBody } from '../../auraRunBody';
 import type { StreamRunOptions } from '../../sseAdapter';
 import {
@@ -7,7 +9,10 @@ import {
   REASONING_CAPABILITIES_FLOOR,
   REASONING_CAPABILITIES_PATH,
 } from '../api';
-import { useReasoningCapabilities } from '../useReasoningCapabilities';
+import {
+  REASONING_CAPABILITIES_QUERY_KEY,
+  useReasoningCapabilities,
+} from '../useReasoningCapabilities';
 import { useReasoningEffort } from '../useReasoningEffort';
 
 // reasoningEffort.test.ts is the WEBMODEL-01/03 state+wire unit gate: the run-body effort fold
@@ -31,6 +36,12 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { 'Content-Type': 'application/json' },
   });
+}
+
+function queryWrapper(client: QueryClient) {
+  return function Wrapper({ children }: { readonly children: ReactNode }) {
+    return createElement(QueryClientProvider, { client }, children);
+  };
 }
 
 describe('buildAuraRunBody effort fold', () => {
@@ -124,7 +135,10 @@ describe('useReasoningCapabilities', () => {
         ),
       ),
     );
-    const { result } = renderHook(() => useReasoningCapabilities());
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result } = renderHook(() => useReasoningCapabilities(), {
+      wrapper: queryWrapper(client),
+    });
     expect(result.current).toEqual({ ...REASONING_CAPABILITIES_FLOOR, settled: false });
     await waitFor(() => {
       expect(result.current).toEqual({
@@ -133,6 +147,36 @@ describe('useReasoningCapabilities', () => {
         detected: true,
         settled: true,
       });
+    });
+  });
+
+  it('refetches the active model capabilities after profile invalidation', async () => {
+    let provider: 'openrouter' | 'ollama' = 'openrouter';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          jsonResponse(
+            provider === 'openrouter'
+              ? { levels: ['auto', 'off', 'max'], default: 'auto', detected: true }
+              : { levels: ['auto', 'off', 'low', 'mid', 'high'], default: 'auto', detected: true },
+          ),
+        ),
+      ),
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result } = renderHook(() => useReasoningCapabilities(), {
+      wrapper: queryWrapper(client),
+    });
+    await waitFor(() => {
+      expect(result.current.levels).toContain('max');
+    });
+
+    provider = 'ollama';
+    await client.invalidateQueries({ queryKey: REASONING_CAPABILITIES_QUERY_KEY });
+
+    await waitFor(() => {
+      expect(result.current.levels).toEqual(['auto', 'off', 'low', 'mid', 'high']);
     });
   });
 });

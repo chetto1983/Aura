@@ -1,11 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactElement } from 'react';
 import '../../i18n/i18n';
 import { ModelSettingsPanel } from '../ModelSettingsPanel';
 
 // Amendment #188: every field reports how it reaches the running daemon, the banner
 // names the rows waiting for a restart, and the turn budget is saved through the
 // hot-profile batch like the route it belongs to.
+
+function renderPanel(
+  panel: ReactElement,
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
+  return render(<QueryClientProvider client={client}>{panel}</QueryClientProvider>);
+}
 
 interface RawItem {
   readonly key: string;
@@ -72,7 +81,7 @@ describe('ModelSettingsPanel — application state and turn budget', () => {
 
   it('labels each field with how it applies and names the restart-bound rows in the banner', async () => {
     stubFetch();
-    render(<ModelSettingsPanel />);
+    renderPanel(<ModelSettingsPanel />);
     await screen.findByRole('heading', { name: 'Token and turn budget' });
 
     const stepsField = screen.getByLabelText('Max steps per turn').closest('div.flex.min-h-32');
@@ -90,7 +99,7 @@ describe('ModelSettingsPanel — application state and turn budget', () => {
 
   it('saves the turn budget through the hot-profile batch, not the boot-bound single-key route', async () => {
     const calls = stubFetch();
-    render(<ModelSettingsPanel groups={['tokens']} />);
+    renderPanel(<ModelSettingsPanel groups={['tokens']} />);
     const steps = await screen.findByLabelText('Max steps per turn');
     fireEvent.change(steps, { target: { value: '60' } });
     fireEvent.change(screen.getByLabelText('Max seconds per turn'), { target: { value: '1200' } });

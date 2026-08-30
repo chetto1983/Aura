@@ -31,8 +31,8 @@ type primaryLLMRouteReloader struct {
 	server   *agui.Server
 }
 
-func (r *primaryLLMRouteReloader) Prepare(ctx context.Context, overrides map[string]string) (func(), error) {
-	cfg, err := r.resolve(overrides)
+func (r *primaryLLMRouteReloader) Prepare(ctx context.Context, overrides map[string]string, resetKeys []string) (func(), error) {
+	cfg, err := r.resolve(overrides, resetKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +92,7 @@ func optionalLoopSetting(n int) (string, bool) {
 	return strconv.Itoa(n), true
 }
 
-func (r *primaryLLMRouteReloader) resolve(overrides map[string]string) (llm.Config, error) {
+func (r *primaryLLMRouteReloader) resolve(overrides map[string]string, resetKeys []string) (llm.Config, error) {
 	cfg := r.fallback
 	if r.runtime != nil {
 		// Non-profile settings come from the active config. Every hot profile key
@@ -116,6 +116,14 @@ func (r *primaryLLMRouteReloader) resolve(overrides map[string]string) (llm.Conf
 	}
 	cfg.Headers = maps.Clone(cfg.Headers)
 	cfg.Prices = maps.Clone(r.fallback.Prices)
+	for _, key := range resetKeys {
+		switch key {
+		case "AURA_MODEL_CONTEXT_WINDOW":
+			cfg.ContextWindowConfigured = false
+		case "AURA_MODEL_MAX_OUTPUT_TOKENS":
+			cfg.MaxOutputTokensConfigured = false
+		}
+	}
 	if value, ok := overrides["OPENROUTER_API_KEY"]; ok {
 		cfg.APIKey = strings.TrimSpace(value)
 	}

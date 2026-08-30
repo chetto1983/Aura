@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '../../i18n/i18n';
 import { ModelSettingsPanel } from '../ModelSettingsPanel';
 import { resolveProvider } from '../modelSettingsDefs';
@@ -75,7 +76,12 @@ describe('ModelSettingsPanel routes', () => {
       }),
     );
 
-    render(<ModelSettingsPanel onComplete={vi.fn()} />);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <ModelSettingsPanel onComplete={vi.fn()} />
+      </QueryClientProvider>,
+    );
 
     expect(await screen.findByRole('heading', { name: 'Model routing' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Cloud' }).getAttribute('aria-pressed')).toBe('true');

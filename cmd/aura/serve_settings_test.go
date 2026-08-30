@@ -70,7 +70,7 @@ func TestPrimaryLLMRouteReloaderResolvesOverridesAndDeleteFallback(t *testing.T)
 		"AURA_LLM_PROVIDER": "llamacpp",
 		"AURA_LLM_BASE_URL": "http://aura-llm:8084/v1",
 		"AURA_LLM_MODEL":    "gemma-4-12b",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestPrimaryLLMRouteReloaderResolvesOverridesAndDeleteFallback(t *testing.T)
 		t.Fatalf("local route = %q %q %q", local.Provider, local.BaseURL, local.Model)
 	}
 
-	reverted, err := r.resolve(nil)
+	reverted, err := r.resolve(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,14 +107,14 @@ func TestPrimaryLLMRouteReloaderAppliesPersistedAPIKeyAndRevertsOnDelete(t *test
 	}
 	withRow := maps.Clone(route)
 	withRow["OPENROUTER_API_KEY"] = " rotated-key "
-	got, err := r.resolve(withRow)
+	got, err := r.resolve(withRow, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.APIKey != "rotated-key" {
 		t.Fatalf("api key = %q, want the persisted row applied (trimmed)", got.APIKey)
 	}
-	reverted, err := r.resolve(route)
+	reverted, err := r.resolve(route, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,14 +134,14 @@ func TestPrimaryLLMRouteReloaderResolvesLoopBudgetAndCompactionTrigger(t *testin
 		"AURA_LOOP_MAX_STEPS":                     "60",
 		"AURA_LOOP_MAX_WALLCLOCK_SEC":             "1200",
 		"AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT": "0",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.LoopMaxSteps != 60 || got.LoopMaxWallclockSec != 1200 || got.CompactionTriggerPercent != 0 {
 		t.Fatalf("resolved loop/trigger = %d/%d/%d", got.LoopMaxSteps, got.LoopMaxWallclockSec, got.CompactionTriggerPercent)
 	}
-	reverted, err := r.resolve(nil)
+	reverted, err := r.resolve(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func TestPrimaryLLMRouteReloaderResolvesLoopBudgetAndCompactionTrigger(t *testin
 		"AURA_LOOP_MAX_WALLCLOCK_SEC":             "-5",
 		"AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT": "101",
 	} {
-		if _, err := r.resolve(map[string]string{key: bad}); err == nil {
+		if _, err := r.resolve(map[string]string{key: bad}, nil); err == nil {
 			t.Fatalf("%s=%q accepted, want a range error", key, bad)
 		}
 	}
@@ -181,7 +181,7 @@ func TestPrimaryLLMRouteReloaderApplyPublishesRuntimeSnapshot(t *testing.T) {
 		"AURA_LLM_PROVIDER": "llamacpp",
 		"AURA_LLM_BASE_URL": srv.URL + "/v1",
 		"AURA_LLM_MODEL":    "gemma-4-12b",
-	})
+	}, []string{"AURA_MODEL_CONTEXT_WINDOW", "AURA_MODEL_MAX_OUTPUT_TOKENS"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,6 +203,8 @@ func TestPrimaryLLMRouteReloaderPublishesOllamaCloudProfile(t *testing.T) {
 	srv := ollamaProfileServer(t)
 	fallback := validFallbackLLMConfig()
 	fallback.APIKey = "retained-cloud-key"
+	fallback.ContextWindowConfigured = true
+	fallback.MaxOutputTokensConfigured = true
 	runtime := llm.NewRuntime(&settingsRuntimeClient{route: "old"}, fallback)
 	r := &primaryLLMRouteReloader{fallback: fallback, runtime: runtime}
 
@@ -210,7 +212,7 @@ func TestPrimaryLLMRouteReloaderPublishesOllamaCloudProfile(t *testing.T) {
 		"AURA_LLM_PROVIDER": "ollama",
 		"AURA_LLM_BASE_URL": srv.URL + "/v1",
 		"AURA_LLM_MODEL":    "gemma4:31b-cloud",
-	})
+	}, []string{"AURA_MODEL_CONTEXT_WINDOW", "AURA_MODEL_MAX_OUTPUT_TOKENS"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,6 +221,9 @@ func TestPrimaryLLMRouteReloaderPublishesOllamaCloudProfile(t *testing.T) {
 	got := runtime.Snapshot().Config
 	if got.Provider != "ollama" || got.ContextWindow != 262144 {
 		t.Fatalf("published Ollama profile = provider %q, context %d", got.Provider, got.ContextWindow)
+	}
+	if got.ContextWindowConfigured || got.MaxOutputTokensConfigured {
+		t.Fatalf("inherited startup limits remained configured: context=%v output=%v", got.ContextWindowConfigured, got.MaxOutputTokensConfigured)
 	}
 	if got.CostStatus != llm.CostStatusSubscriptionIncluded {
 		t.Fatalf("cost status = %q", got.CostStatus)
@@ -236,7 +241,7 @@ func TestPrimaryLLMRouteReloaderRejectsInvalidRoute(t *testing.T) {
 		"base URL": {"AURA_LLM_BASE_URL": "aura-llm:8084/v1"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := r.Prepare(context.Background(), overrides); err == nil {
+			if _, err := r.Prepare(context.Background(), overrides, nil); err == nil {
 				t.Fatal("Prepare accepted an invalid primary route")
 			}
 		})

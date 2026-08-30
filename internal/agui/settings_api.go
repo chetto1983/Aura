@@ -66,14 +66,14 @@ const (
 type settingsStore interface {
 	List(ctx context.Context) ([]sqlc.AuraSettings, error)
 	Upsert(ctx context.Context, key, value, by string) (sqlc.AuraSettings, error)
-	UpsertMany(ctx context.Context, values map[string]string, by string) ([]sqlc.AuraSettings, error)
+	ReplaceMany(ctx context.Context, values map[string]string, deletes []string, by string) ([]sqlc.AuraSettings, error)
 	Delete(ctx context.Context, key string) error
 }
 
 // llmRouteReloader validates and publishes the complete persisted primary-profile
 // override set. The composition root supplies the boot fallback and concrete client.
 type llmRouteReloader interface {
-	Prepare(ctx context.Context, overrides map[string]string) (apply func(), err error)
+	Prepare(ctx context.Context, overrides map[string]string, resetKeys []string) (apply func(), err error)
 	EffectiveValue(key string) (string, bool)
 }
 
@@ -245,12 +245,16 @@ func (s *Server) handlePutLLMProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	overrides := llmProfileOverrides(rows)
 	maps.Copy(overrides, body.Settings)
-	apply, err := s.llmRouteReloader.Prepare(r.Context(), overrides)
+	resetKeys := modelLimitResetKeys(rows, body.Settings)
+	for _, key := range resetKeys {
+		delete(overrides, key)
+	}
+	apply, err := s.llmRouteReloader.Prepare(r.Context(), overrides, resetKeys)
 	if err != nil {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	if _, err := s.settings.UpsertMany(r.Context(), body.Settings, actor); err != nil {
+	if _, err := s.settings.ReplaceMany(r.Context(), body.Settings, resetKeys, actor); err != nil {
 		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "settings store unavailable"})
 		return
 	}
@@ -258,6 +262,34 @@ func (s *Server) handlePutLLMProfile(w http.ResponseWriter, r *http.Request) {
 	writeJSONStatus(w, http.StatusOK, map[string]any{
 		"updated": len(body.Settings), "restart_required": false,
 	})
+}
+
+var modelRouteKeys = []string{"AURA_LLM_PROVIDER", "AURA_LLM_BASE_URL", "AURA_LLM_MODEL"}
+var modelLimitKeys = []string{"AURA_MODEL_CONTEXT_WINDOW", "AURA_MODEL_MAX_OUTPUT_TOKENS"}
+
+func modelLimitResetKeys(rows []sqlc.AuraSettings, next map[string]string) []string {
+	current := make(map[string]string, len(rows))
+	for _, row := range rows {
+		current[row.Key] = row.Value
+	}
+	routeChanged := false
+	for _, key := range modelRouteKeys {
+		if value, present := next[key]; present && strings.TrimSpace(value) != strings.TrimSpace(current[key]) {
+			routeChanged = true
+			break
+		}
+	}
+	if !routeChanged {
+		return nil
+	}
+	reset := make([]string, 0, len(modelLimitKeys))
+	for _, key := range modelLimitKeys {
+		if _, explicit := next[key]; explicit {
+			continue
+		}
+		reset = append(reset, key)
+	}
+	return reset
 }
 
 func (s *Server) handlePutSetting(w http.ResponseWriter, r *http.Request) {
@@ -312,7 +344,7 @@ func (s *Server) handlePutSetting(w http.ResponseWriter, r *http.Request) {
 	if s.hotLLMRouteEnabled(key) {
 		routeOverrides = llmProfileOverrides(rows)
 		routeOverrides[key] = body.Value
-		applyRoute, err = s.llmRouteReloader.Prepare(r.Context(), routeOverrides)
+		applyRoute, err = s.llmRouteReloader.Prepare(r.Context(), routeOverrides, nil)
 		if err != nil {
 			writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
@@ -355,7 +387,7 @@ func (s *Server) handleDeleteSetting(w http.ResponseWriter, r *http.Request) {
 		}
 		routeOverrides = llmProfileOverrides(rows)
 		delete(routeOverrides, key)
-		applyRoute, err = s.llmRouteReloader.Prepare(r.Context(), routeOverrides)
+		applyRoute, err = s.llmRouteReloader.Prepare(r.Context(), routeOverrides, nil)
 		if err != nil {
 			writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
@@ -388,66 +420,6 @@ func llmProfileOverrides(rows []sqlc.AuraSettings) map[string]string {
 	return overrides
 }
 
-type telegramAvailabilityRequest struct {
-	Token string `json:"token,omitempty"`
-}
-
-type telegramAvailabilityDTO struct {
-	Configured      bool   `json:"configured"`
-	Available       bool   `json:"available"`
-	BotUsername     string `json:"botUsername,omitempty"`
-	RequiresRestart bool   `json:"requiresRestart"`
-	Error           string `json:"error,omitempty"`
-}
-
-func (s *Server) handleCheckTelegramAvailability(w http.ResponseWriter, r *http.Request) {
-	if s.telegramProbe == nil {
-		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "telegram validation not configured"})
-		return
-	}
-	raw, ok := readCappedBody(w, r)
-	if !ok {
-		return
-	}
-	var req telegramAvailabilityRequest
-	if strings.TrimSpace(string(raw)) != "" {
-		if err := json.Unmarshal(raw, &req); err != nil {
-			writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
-			return
-		}
-	}
-	token := strings.TrimSpace(req.Token)
-	if token == "" {
-		var err error
-		token, err = s.effectiveSettingValue(r.Context(), "TELEGRAM_BOT_TOKEN")
-		if err != nil {
-			writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "settings store unavailable"})
-			return
-		}
-	}
-	if token == "" {
-		writeJSON(w, telegramAvailabilityDTO{Configured: false, Available: false})
-		return
-	}
-	username, err := s.telegramProbe(r.Context(), token)
-	requiresRestart := token != os.Getenv("TELEGRAM_BOT_TOKEN")
-	if err != nil {
-		writeJSON(w, telegramAvailabilityDTO{
-			Configured:      true,
-			Available:       false,
-			RequiresRestart: requiresRestart,
-			Error:           "bot token validation failed",
-		})
-		return
-	}
-	writeJSON(w, telegramAvailabilityDTO{
-		Configured:      true,
-		Available:       true,
-		BotUsername:     username,
-		RequiresRestart: requiresRestart,
-	})
-}
-
 func (s *Server) effectiveSettingValue(ctx context.Context, key string) (string, error) {
 	if s.settings != nil {
 		rows, err := s.settings.List(ctx)
@@ -461,38 +433,6 @@ func (s *Server) effectiveSettingValue(ctx context.Context, key string) (string,
 		}
 	}
 	return strings.TrimSpace(os.Getenv(key)), nil
-}
-
-// handleCreateSettingsTelegramLink mints the one-time Telegram linking code for the
-// AUTHENTICATED caller (D-02: a normal self-scoped USER action, each user links their
-// own Telegram to their OWN identity — NEVER operator-pinned). It is the web half of the
-// D-24 web-initiated linking flow: CreateTelegramLink scopes to `requester` (the bound
-// principal, never the seeded local admin), and the returned deep-link carries the code
-// ONLY on the <=1h `?start=` setup-bootstrap URL — no long-lived session token ever
-// crosses a URL/query string (MUSR-06). The bot then binds this sender's chat-id to
-// `requester`'s identity when the code arrives via /start (telegram onboarding consume).
-func (s *Server) handleCreateSettingsTelegramLink(w http.ResponseWriter, r *http.Request) {
-	if s.onboarding == nil {
-		http.Error(w, "onboarding service not configured", http.StatusServiceUnavailable)
-		return
-	}
-	requester, ok := principalIdentityID(r)
-	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	link, err := s.onboarding.CreateTelegramLink(r.Context(), requester)
-	if err != nil {
-		s.writeOnboardingError(w, err)
-		return
-	}
-	writeJSON(w, link)
-}
-
-func (s *Server) handleSettingsTelegramStatus(w http.ResponseWriter, r *http.Request) {
-	handleOnboardingSessionRequest(s, w, r, func(ctx context.Context, requester, token string) (OnboardingTelegramStatus, error) {
-		return s.onboarding.TelegramStatus(ctx, requester, token)
-	})
 }
 
 // validateSettingValue rejects a value that does not parse for its Kind (an int

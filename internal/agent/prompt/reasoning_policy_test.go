@@ -9,7 +9,7 @@ import (
 )
 
 // TestIsReasoningTarget covers the GENERALIZED fixed-path gate (D-08): true for
-// OpenRouter OR llama.cpp, false for anything else. It also re-asserts that the
+// OpenRouter, llama.cpp, or Ollama; false for anything else. It also re-asserts that the
 // refactored IsOpenRouterReasoningTarget (now delegating to llm.ReasoningTarget)
 // still returns the exact pre-refactor results — the regression guard the plan
 // requires (existing callers unchanged).
@@ -19,7 +19,7 @@ func TestIsReasoningTarget(t *testing.T) {
 		name        string
 		provider    string
 		baseURL     string
-		wantAny     bool // IsReasoningTarget (OpenRouter OR LlamaCpp)
+		wantAny     bool // IsReasoningTarget (all supported reasoning backends)
 		wantOpenRtr bool // IsOpenRouterReasoningTarget (regression: OpenRouter only)
 	}{
 		{"openrouter_default_url", "openrouter", "https://openrouter.ai/api/v1", true, true},
@@ -27,6 +27,7 @@ func TestIsReasoningTarget(t *testing.T) {
 		{"openrouter_case_insensitive", "OpenRouter", "https://openrouter.ai/api/v1", true, true},
 		{"llamacpp_fires_generalized_only", "llamacpp", "http://127.0.0.1:8080/v1", true, false},
 		{"llamacpp_case_insensitive", "LlamaCpp", "", true, false},
+		{"ollama_fires_generalized_only", "ollama", "http://127.0.0.1:11434/v1", true, false},
 		{"vllm_local_is_none", "vllm", "http://127.0.0.1:8000/v1", false, false},
 		{"openrouter_provider_foreign_url_is_none", "openrouter", "http://127.0.0.1:8080/v1", false, false},
 		{"anthropic_is_none", "anthropic", "", false, false},
@@ -88,6 +89,18 @@ func TestApplyFixedReasoning(t *testing.T) {
 		}
 		if req.Reasoning.Exclude == nil {
 			t.Fatal("llama.cpp Exclude must be set from ShowReasoning even though the wire ignores it (D-10 parity at the policy layer)")
+		}
+	})
+
+	t.Run("ollama_high_fires_generalized_path", func(t *testing.T) {
+		t.Parallel()
+		cfg := testConfig()
+		cfg.Provider = "ollama"
+		cfg.BaseURL = "http://127.0.0.1:11434/v1"
+		req := &llm.Request{}
+		ApplyFixedReasoning(req, "ollama", cfg, llm.ReasoningEffortHigh)
+		if req.Reasoning.Effort != llm.ReasoningEffortHigh {
+			t.Fatalf("Ollama Effort = %q, want high", req.Reasoning.Effort)
 		}
 	})
 

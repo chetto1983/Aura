@@ -151,6 +151,14 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	if !regexp.MustCompile(`AURA_LLM_MODEL: \$\{AURA_LLM_MODEL:-[^}]+\}`).MatchString(compose) {
 		t.Fatalf("compose.yaml missing env-overridable AURA_LLM_MODEL default pattern (AURA_LLM_MODEL: ${AURA_LLM_MODEL:-...})")
 	}
+	for _, knob := range []string{"AURA_MODEL_CONTEXT_WINDOW", "AURA_MODEL_MAX_OUTPUT_TOKENS"} {
+		if !strings.Contains(compose, knob+": ${"+knob+":-}") {
+			t.Fatalf("compose.yaml must leave %s unset so model discovery remains reachable", knob)
+		}
+		if regexp.MustCompile(`\$\{` + knob + `:-[^}]+\}`).MatchString(compose) {
+			t.Fatalf("compose.yaml manufactured an explicit %s override", knob)
+		}
+	}
 	// The embedding sidecar's model follows the same rule, for the same reason: which
 	// model embeds is a deployment decision (it changed the day the graph stopped
 	// discriminating), and pinning it here only guarantees this contract goes red
