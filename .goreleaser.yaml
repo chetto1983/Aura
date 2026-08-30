@@ -72,12 +72,16 @@ dockers_v2:
       # across releases (the runner env is exposed by ghaction-github-runtime).
       - "--cache-from=type=gha"
       - "--cache-to=type=gha,mode=max"
+    # The Dockerfile builds from source and copies docker/aura/aura-garage-bootstrap.sh
+    # into the image (2026-08-30, v1.0.2-rc1 first cut: the context lacked docker/aura
+    # and buildx failed with "not found" after 10 minutes of building).
     extra_files:
       - go.mod
       - go.sum
       - cmd
       - internal
       - web
+      - docker/aura
     labels:
       org.opencontainers.image.title: Aura
       org.opencontainers.image.source: https://github.com/chetto1983/Aura
