@@ -10,6 +10,8 @@ import sys
 from collections.abc import Callable
 from typing import Any
 
+from production_load_chaos_support import CHAOS_SCENARIO_ZERO_FIELDS
+
 
 class GateError(RuntimeError):
     pass
@@ -314,12 +316,7 @@ def validate_chaos(report: dict[str, Any]) -> dict[str, Any]:
     indexed = {
         item.get("id"): item for item in scenarios if isinstance(item, dict) and item.get("id")
     }
-    required = {
-        "database-outage-recovery",
-        "mcp-timeout-storm",
-        "garage-outage-recovery",
-        "process-kill-write-atomicity",
-    }
+    required = CHAOS_SCENARIO_ZERO_FIELDS.keys()
     missing = required - indexed.keys()
     require(not missing, f"chaos: missing scenarios {sorted(missing)}")
     for scenario_id in sorted(required):
@@ -327,14 +324,11 @@ def validate_chaos(report: dict[str, Any]) -> dict[str, Any]:
         require(scenario.get("executed") is True, f"chaos: {scenario_id} did not execute")
         require(scenario.get("passed") is True, f"chaos: {scenario_id} failed")
         require(scenario.get("cleanup_ok") is True, f"chaos: {scenario_id} cleanup failed")
-        require(
-            scenario.get("false_ready_responses") == 0,
-            f"chaos: {scenario_id} emitted false readiness",
-        )
-        require(
-            scenario.get("duplicate_side_effects") == 0,
-            f"chaos: {scenario_id} duplicated a side effect",
-        )
+        for field in CHAOS_SCENARIO_ZERO_FIELDS[scenario_id]:
+            require(
+                scenario.get(field) == 0,
+                f"chaos: {scenario_id} must report {field} == 0",
+            )
     return {"scenarios": len(required)}
 
 

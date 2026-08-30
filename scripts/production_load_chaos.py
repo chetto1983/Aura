@@ -18,7 +18,6 @@ import uuid
 from evidence_metadata import candidate_commit
 from production_load_chaos_support import (
     MCPFixture,
-    REQUIRED_CHAOS_SCENARIOS,
     ResourceSampler,
     TOXIPROXY_VERSION,
     Toxiproxy,
@@ -391,7 +390,10 @@ def garage_scenario(
     started = time.monotonic()
     failed = objectstore_probe(binary, "verify", key, env, check=False)
     outage_ms = int((time.monotonic() - started) * 1000)
-    if failed.returncode == 0 or outage_ms > 5000:
+    # Garage has no /readyz probe: false readiness here is the object-store verify
+    # answering success while the proxy is closed.
+    false_ready = 1 if failed.returncode == 0 else 0
+    if false_ready or outage_ms > 5000:
         raise RuntimeError("Garage outage did not fail within budget")
     proxy.enable("garage", True)
     started = time.monotonic()
@@ -418,6 +420,7 @@ def garage_scenario(
             "objects_after_recovery": 1,
             "objects_after_cleanup": 0,
             "checksum_ok": True,
+            "false_ready_responses": false_ready,
             "duplicate_side_effects": 0,
         }
     )

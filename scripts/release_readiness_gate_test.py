@@ -8,6 +8,8 @@ import sys
 import tempfile
 import unittest
 
+from production_load_chaos_support import CHAOS_SCENARIO_ZERO_FIELDS
+
 
 CANDIDATE = "a" * 40
 NOW = dt.datetime.now(dt.timezone.utc).isoformat()
@@ -174,21 +176,17 @@ def valid_evidence() -> dict[str, dict[str, object]]:
         ),
         "chaos-report.json": common(
             passed=True,
+            # Mirrors what scripts/production_load_chaos.py emits per scenario; a
+            # fixture richer than the producer hid a gate no real report could pass.
             scenarios=[
                 {
                     "id": name,
                     "executed": True,
                     "passed": True,
                     "cleanup_ok": True,
-                    "false_ready_responses": 0,
-                    "duplicate_side_effects": 0,
+                    **{field: 0 for field in fields},
                 }
-                for name in (
-                    "database-outage-recovery",
-                    "mcp-timeout-storm",
-                    "garage-outage-recovery",
-                    "process-kill-write-atomicity",
-                )
+                for name, fields in CHAOS_SCENARIO_ZERO_FIELDS.items()
             ],
         ),
         "dr-report.json": common(
@@ -360,6 +358,17 @@ class ReleaseReadinessGateTest(unittest.TestCase):
             result = self.run_gate(evidence)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("missing", result.stderr)
+
+    def test_chaos_zero_postconditions_fail_closed_per_scenario(self) -> None:
+        for scenario_id, fields in CHAOS_SCENARIO_ZERO_FIELDS.items():
+            for field in fields:
+                evidence = valid_evidence()
+                scenarios = evidence["chaos-report.json"]["scenarios"]  # type: ignore[index]
+                scenario = next(item for item in scenarios if item["id"] == scenario_id)
+                del scenario[field]
+                result = self.run_gate(evidence)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f"{scenario_id} must report {field} == 0", result.stderr)
 
     def test_tiered_coverage_evidence_fails_closed(self) -> None:
         evidence = valid_evidence()

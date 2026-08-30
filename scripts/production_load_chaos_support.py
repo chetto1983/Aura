@@ -19,12 +19,22 @@ TOXIPROXY_IMAGE = (
     "ghcr.io/shopify/toxiproxy@"
     "sha256:9378ed52a28bc50edc1350f936f518f31fa95f0d15917d6eb40b8e376d1a214e"
 )
-REQUIRED_CHAOS_SCENARIOS = (
-    "database-outage-recovery",
-    "mcp-timeout-storm",
-    "garage-outage-recovery",
-    "process-kill-write-atomicity",
-)
+# One contract for the producer-side check and the release gate. The three outage
+# scenarios observe a readiness surface, so they must report zero false-ready answers;
+# the kill test has no HTTP surface and asserts no partially promoted artifact instead.
+# Before this table the gate demanded false_ready_responses of every scenario while the
+# producer never emitted it for two of them, and the gate's own fixture fabricated the
+# field: no real chaos report had ever passed the gate (PRD Amendment #195).
+CHAOS_SCENARIO_ZERO_FIELDS = {
+    "database-outage-recovery": ("false_ready_responses", "duplicate_side_effects"),
+    "mcp-timeout-storm": ("false_ready_responses", "duplicate_side_effects"),
+    "garage-outage-recovery": ("false_ready_responses", "duplicate_side_effects"),
+    "process-kill-write-atomicity": (
+        "partial_promoted_artifacts",
+        "duplicate_side_effects",
+    ),
+}
+REQUIRED_CHAOS_SCENARIOS = tuple(CHAOS_SCENARIO_ZERO_FIELDS)
 
 
 def validate_load_report(report: dict) -> None:
@@ -66,6 +76,11 @@ def validate_chaos_report(report: dict) -> None:
             raise ValueError(f"chaos scenario failed: {scenario_id}")
         if not scenario.get("cleanup_ok"):
             raise ValueError(f"chaos scenario cleanup failed: {scenario_id}")
+        for field in CHAOS_SCENARIO_ZERO_FIELDS[scenario_id]:
+            if scenario.get(field) != 0:
+                raise ValueError(
+                    f"chaos scenario {scenario_id} must report {field} == 0"
+                )
 
 
 class MCPFixtureHandler(http.server.BaseHTTPRequestHandler):

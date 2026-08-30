@@ -10643,3 +10643,41 @@ flusso completo, che funziona.
 > `ask_user` itself rather than leaving it to the sweep (it did not, twice today — the
 > sweep is the guarantor by design); or that the roster line alone, without a `tool_search`,
 > makes the model mention the capability unprompted.
+
+## Section A the chaos gate and its producer share one postcondition table (Amendment #195, 2026-08-30)
+
+> **Amendment #195 (2026-08-30 - measured on Production Readiness run 33326406362,
+> candidate `234eb1e71`).** The first readiness dispatch ever to reach the twelve-report
+> gate (the July runs and today's three earlier ones died before it: rollback input,
+> compose interpolation, the embed sidecar without a model) failed with
+> `chaos: garage-outage-recovery emitted false readiness`. The chaos report of the exact-SHA
+> CI run (33325341736) shows why: `release_readiness_gate.validate_chaos` has required
+> `false_ready_responses == 0` of all four scenarios since `350e9d071`, while
+> `production_load_chaos.py` emits that field only for `database-outage-recovery` and
+> `mcp-timeout-storm`; the CI-side check (`validate_chaos_report`) never asked for it, and the
+> gate's own fixture fabricated it for every scenario. No real chaos report had ever passed
+> the gate, and the CI job was green because its check was looser than the release gate's.
+>
+> Rule: the postconditions a chaos scenario must report are ONE table,
+> `CHAOS_SCENARIO_ZERO_FIELDS` in `scripts/production_load_chaos_support.py`, read by the
+> producer-side check and by the release gate. The outage scenarios (database, MCP, Garage)
+> report `false_ready_responses` and `duplicate_side_effects`; the kill test reports
+> `partial_promoted_artifacts` and `duplicate_side_effects` — it has no HTTP surface, so
+> "no false readiness" is not a claim it can make. `garage-outage-recovery` now records
+> false readiness as measured: Garage has no `/readyz` probe (`internal/readiness` codes are
+> postgres, memory, sandbox, listener, migration, scheduler, draining), so the surface is the
+> object-store verify itself, and a success while the proxy is closed is the false-ready
+> answer (it also fails the scenario, as before). Both test fixtures are built from the
+> table; `test_every_scenario_must_report_its_zero_postconditions` and
+> `test_chaos_zero_postconditions_fail_closed_per_scenario` pin each field absent and nonzero.
+>
+> Replayed locally on the run's own evidence bundle: verbatim → FAIL at the same message;
+> with the garage scenario carrying the field the producer now emits →
+> `PASS: 12/12 gates, score 10.0/10`. The contract was the only blocker on that bundle.
+>
+> What this does NOT prove: that a Garage outage makes `/readyz` say anything — it does not,
+> and this amendment adds no object-store readiness probe (a Garage outage degrades the
+> document and artifact plane while the agent keeps answering; whether that should flip
+> readiness is an open question, not a measurement); nor that a CI run of the new producer
+> emits the field — the next candidate's `production-load-chaos` artifact measures that
+> before the tag.

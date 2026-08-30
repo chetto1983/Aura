@@ -8,7 +8,6 @@ from unittest import mock
 
 from production_load_chaos import (
     MCPFixture,
-    REQUIRED_CHAOS_SCENARIOS,
     Toxiproxy,
     install_fixture_memory,
     materialize_sandbox_image,
@@ -16,6 +15,24 @@ from production_load_chaos import (
     validate_chaos_report,
     validate_load_report,
 )
+from production_load_chaos_support import CHAOS_SCENARIO_ZERO_FIELDS
+
+
+def producer_shaped_chaos_report() -> dict:
+    """A report with exactly the fields each scenario in production_load_chaos.py emits."""
+    return {
+        "passed": True,
+        "scenarios": [
+            {
+                "id": scenario_id,
+                "executed": True,
+                "passed": True,
+                "cleanup_ok": True,
+                **{field: 0 for field in fields},
+            }
+            for scenario_id, fields in CHAOS_SCENARIO_ZERO_FIELDS.items()
+        ],
+    }
 
 
 class EvidenceMetadataTest(unittest.TestCase):
@@ -101,22 +118,29 @@ class LoadReportValidationTest(unittest.TestCase):
 
 class ChaosReportValidationTest(unittest.TestCase):
     def test_requires_every_scenario_and_postcondition(self):
-        report = {
-            "passed": True,
-            "scenarios": [
-                {
-                    "id": scenario,
-                    "executed": True,
-                    "passed": True,
-                    "cleanup_ok": True,
-                }
-                for scenario in REQUIRED_CHAOS_SCENARIOS
-            ],
-        }
+        report = producer_shaped_chaos_report()
         validate_chaos_report(report)
         report["scenarios"][0]["cleanup_ok"] = False
         with self.assertRaisesRegex(ValueError, "cleanup"):
             validate_chaos_report(report)
+
+    def test_every_scenario_must_report_its_zero_postconditions(self):
+        # The release gate reads the same table, so a report the producer check accepts
+        # is a report the gate accepts: the 2026-08-30 readiness run failed on a field
+        # the producer had never emitted and this check had never demanded.
+        for scenario_id, fields in CHAOS_SCENARIO_ZERO_FIELDS.items():
+            for field in fields:
+                for broken in ({field: 1}, None):
+                    report = producer_shaped_chaos_report()
+                    scenario = next(
+                        item for item in report["scenarios"] if item["id"] == scenario_id
+                    )
+                    if broken is None:
+                        del scenario[field]
+                    else:
+                        scenario.update(broken)
+                    with self.assertRaisesRegex(ValueError, f"{scenario_id} must report {field}"):
+                        validate_chaos_report(report)
 
 
 class MCPFixtureTest(unittest.TestCase):
