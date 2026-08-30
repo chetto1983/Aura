@@ -422,6 +422,35 @@ Plans:
 
 ### Phase 49: Memory tiers
 
+> **REVISED 2026-08-30 (ricognizione fuori-GSD) — ~40% is already shipped; plan FOUR deliverables plus one amendment, not eight.**
+> Shipped outside GSD: **TOOL-05 is essentially complete** — `memory_recall` is the one
+> question (`query`|`entity`), the host picks the path internally and REPORTS it in the
+> result (`retrieval.path` = graph/hybrid/lexical), and every other memory tool is hidden
+> from the model (`internal/agent/mcptools/bridge_policy.go:39-46`; amendments #110/#120 +
+> Phase 51-04). **CTX-05's exclusion boundary is done and regression-pinned**
+> (`internal/conversations/history_reasoning_free_test.go` — `llm.Message` is structurally
+> reasoning-free; summarizer runs at `ReasoningEffortNone`) but holds vacuously: once
+> reasoning becomes graph-resident (MEM-03) it needs a real guard in the recall path.
+> **HARN-05's transactional substrate exists** (`internal/arcadedb/transaction.go` +
+> `fact_lock.go`, commit `af56310d5`) — only the multi-op API is missing. **AUTO-03 is
+> partial**: write mandate in `prompt.go:113` + host-derived provenance (`hostDerivedActor`
+> → `FactSource{RunID, WriterRole}`); missing only the live measurement.
+> Genuinely open: **MEM-01** (the graph holds ONLY `Entity`+`FACT` — no conversation
+> projection; amendment #108 says so explicitly), **MEM-03**'s graph half (zero reasoning in
+> the graph today), **MEM-02's actual span** (today's `memory_recall` routes over long-term
+> facts only — #136's "the name is not the contract" confirmed), **HARN-05's batch API**.
+> **MEM-06's gate is intact and cheap**: no #91-extending amendment exists AND no
+> reasoning-tier code has landed — write the amendment as the phase's first commit and SC#1
+> passes by construction.
+> Two corrections to the 2026-08-24 note below: (1) `AURA_CONTEXT_MEMORY_RECALL` is DEAD
+> (removed 2026-08-02 with the adaptive dynamic-recall leg) — the live injection seam is the
+> newer digest (#110) + `AURA_MEMORY_PRELOAD_ENABLED` (#120) at
+> `internal/runner/runner_context.go:78-141`. (2) "`internal/reasoningtrace` at ~838 LOC" is
+> misleading: 267 LOC of production code, an env-gated JSONL debug sink with zero graph
+> involvement — NOT MEM-03 groundwork. Design reference for MEM-01/MEM-03: the retired
+> Neo4j `agent-memory` sidecar (prd.md:4387) shipped BOTH tiers; this is re-acquisition,
+> not greenfield.
+
 > **REVISED 2026-08-24 — scope narrowed by measurement.** Parts of this phase already exist:
 > `memory_recall` is served by `cmd/arcadedb-mcp` alongside `memory_search`, `memory_facts_about`,
 > `memory_digest` and `memory_upsert_fact`; `internal/reasoningtrace` exists at ~838 LOC; and the
@@ -461,6 +490,33 @@ already exhibited once.
 **Plans**: TBD
 
 ### Phase 50: Context ladder legibility
+
+> **REVISED 2026-08-30 (ricognizione fuori-GSD) — ~1.5/8 requirements closed, the live
+> pain already fixed, and TWO items need a decision before any planning.**
+> Shipped outside GSD (2026-08-16 → 2026-08-30): **SURF-04 DONE** (dropped deferred tool
+> still callable via `everLoaded` in `llm_agent_promote.go:217-235`; memory legibility via
+> the `<memory_context>`/`<memory_recall>` blocks + `prompt.go:88`). **CTX-07 ~75% done**
+> (typed, worded, numeric failure at `context.go:238`; silent degradation closed by
+> `b8875d135` with rot action `compaction_failed_hard_drop` surfaced in the cockpit; boot
+> fail-fast on an unreachable trigger). Last mile ~20 lines: the reason is yielded as a run
+> error (`runner.go:240-244`) but never stated IN the turn. And three CTX-01 sub-pieces
+> that were the live failure are fixed: manifest overhead counted in the trigger
+> (`aaa3e3102`), trigger % hot from the cockpit (#188), **denominator = the real discovered
+> context window, not the .env pin** (#185/#187/#196, `serve_settings.go:104-116`).
+> **Decision 1 — CTX-01 has a new measured blocker**: amendment #196 proved persisted
+> `input_tokens` is the SUM of the round's billing calls, not a prompt size
+> (`runner_persist.go:320`). The correct figure (`Usage.ContextTokens`,
+> `turn_usage.go:22-24`) reaches the wire but is NOT persisted — CTX-01 needs a
+> `context_tokens` column first.
+> **Decision 2 — CTX-02 has been deliberately REVERSED in code and test**:
+> `context.go:316-331` exempts `tool_search` results from L1 eviction and
+> `TestL1_NeverEvictsAToolSearchResult` pins it; the accumulation pressure was answered on
+> the manifest side (`maxPromotedDeferredTools = 10`). Replan as a re-decision, not work.
+> Genuinely untouched: **CTX-04** (cockpit shows a single fullness bar —
+> `ContextBudgetGauge.tsx:13-19`), **CTX-08** (only per-result caps; `executeBatch` has no
+> aggregate accounting), **TOOL-13** (`read_tool_output.go:47` still `Deferred: false`),
+> **CTX-03** (the generic evicted-result marker names the tool but only fires for
+> sidecar-backed results; no skill-aware marker anywhere).
 
 > **REVISED 2026-08-24 — the diagnosis holds, the target moved.** CTX-01's premise is still true:
 > the real token count is persisted and NOT used for the decision. `LastInputTokens` is read only
@@ -629,6 +685,27 @@ Plans:
 
 ### Phase 52: Mid-turn steering
 
+> **REVISED 2026-08-30 (ricognizione fuori-GSD) — the code is FINISHED; closure blocks on
+> one short human Telegram session, nothing else.** `52-UAT.md` holds the checklist: 3
+> tests, all `[pending]`, all Telegram-only — (1) plain text during a live turn →
+> `turnSteeredMessage` echo and the next round acts on it (SC#5/STEER-05); (2) photo
+> mid-turn → `turnQueuedForNextTurnMessage` AND a real second turn afterwards; (3)
+> `/cancel` with a queued photo → `turnQueuedNotDeliveredMessage`. The Telegram leg is
+> fully shipped and wired (`bot_dispatch_steer.go`, `onBusyRedirect`'s three-arm router,
+> the D-05 media queue, `serve_channels.go:95` + `telegramSteerOrNil`). Per
+> `52-VALIDATION.md` (9.0/10), after the human check only the Success-Criteria section is
+> re-run — gates and coverage stay valid.
+> Two facts the 2026-08-26 validation could not know: the steer substrate was REPLACED
+> after scoring — `12d76b45c` (51-02, durable Postgres steer queue behind the unchanged
+> inbox contract, Telegram adapted via the local `SteerPusher` seam) — and the 2026-08-30
+> document-gating work (`bot_dispatch_docwait.go`, amendments #198/#199) touches the same
+> attachment paths UAT tests 2-3 exercise. The human check therefore validates NEWER code
+> than 52-08 scored: an argument for doing it, not against. Residual doc drift: the
+> Progress notes below still say "only pending-approval expiry remains open", but expiry
+> was closed live in 52-08 (400/403/expiry proven) — `.planning/todos/pending/
+> approval-resume-defects.md` can be retired at closure. FA-5 (exhaustive #132 re-read)
+> stays open independently of the human check.
+
 > **REVISED 2026-08-24 — PLAN-READY, and promoted ahead of Phase 51.** STEER-06's PRD amendment
 > is committed (#132), which the original block required before any code. Every prerequisite the
 > study names was verified present: `internal/agui/{runregistry,runsession,server_run_detach,
@@ -710,9 +787,26 @@ Plans:
 
 ### Phase 54: Milestone exit
 
-**Goal**: The nine `learned_lesson` facts and the `always-deliver-files` skill — Aura's own
-bug report on herself — are retired, and a live replay of the audited scenarios proves the
-defects they compensated for are actually gone, not just believed gone.
+> **REVISED 2026-08-30 (ricognizione fuori-GSD) — contradiction fixed + two planning
+> facts.** (1) This block's Goal and SC#1 still demanded deleting the
+> `always-deliver-files` skill, contradicting the 2026-08-25 narrowing 40 lines away
+> (Progress notes + REQUIREMENTS.md:133,172: the skill STAYS because AUTO-01 was deleted
+> rather than built). Both are rewritten below to the narrowed scope. (2) The audited
+> 2026-08-04 scenarios (`docs/audit/live-conversations-2026-08-04/`) do NOT exist in the
+> working tree nor anywhere in git history (checked including the `fb8c40c0f` audit-retire
+> commit): they live only in the live `aura.conversations` export, so SC#2 must be planned
+> as the "equivalent live re-run" its wording already permits. (3) The nine
+> `learned_lesson` facts are counted but never enumerated in the repo — the inventory is an
+> execution-time ArcadeDB query. Precondition status: F-1 (idempotent replay) and F-2
+> (`supersedes` closure) are fixed and live-proven (Phase 45); the tool-surface gaps were
+> closed by requirement deletion (#134/#139); the memory/legibility half (Phases 49-50)
+> is still open — whichever lessons compensate retrieval friction can only be shown
+> unnecessary by SC#2's replay after those phases land.
+
+**Goal**: The nine `learned_lesson` facts — Aura's own bug report on herself — are
+retired, and a live replay of the audited scenarios proves the defects they compensated
+for are actually gone, not just believed gone. (The `always-deliver-files` skill STAYS —
+scope narrowed 2026-08-25 with AUTO-01's deletion; see the Progress notes.)
 **Depends on**: Phases 45-53 — this is the milestone exit gate; retiring the compensating lessons presupposes the defects they compensate for are fixed, and the replay validates everything shipped, not one phase in isolation.
 **Requirements**: SURF-05, ACC-03
 **Rationale**: This is the milestone's own stated finish line (PROJECT.md, REQUIREMENTS.md
@@ -724,7 +818,7 @@ precondition of the validation, not a separate cleanup step. ACC-01/ACC-02's pol
 the four named signals, never a green test suite.
 **Success Criteria** (what must be TRUE):
 
-  1. The nine `learned_lesson` facts and the `always-deliver-files` skill are deleted from Aura's live memory/skill store — confirmed by querying ArcadeDB and the skills directory directly.
+  1. The nine `learned_lesson` facts are deleted from Aura's live memory store — confirmed by querying ArcadeDB directly. (The `always-deliver-files` skill is NOT deleted — permanent surface since the 2026-08-25 narrowing.)
   2. Replaying the audited 2026-08-04 scenarios (or an equivalent live re-run of the same tasks) against the current stack produces correct tool choice on the first attempt, automatic file delivery, and successful self-retrieval of what she needed — verified via `aura.tool_invocations`/`aura.conversation_turns`.
   3. Across a fresh live run of those scenarios, Aura does not re-learn or re-write any of the nine retired lessons back into memory — confirmed by inspecting ArcadeDB after the run.
 
