@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SecretInput } from '@/components/ui/secret-input';
+import { cn } from '@/lib/utils';
 
 function SettingsGrid({ children }: { readonly children: ReactNode }) {
   return <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{children}</div>;
@@ -122,8 +123,24 @@ function SettingField({
           className="font-mono text-[13px]"
         />
       )}
+      {def.helpKey === undefined ? null : (
+        <p className="text-[12px] leading-snug text-text-muted">{t(def.helpKey)}</p>
+      )}
       <div className="mt-auto flex items-center justify-between gap-2">
-        <code className="min-w-0 break-all text-[12px] text-text-faint">{def.key}</code>
+        <div className="flex min-w-0 flex-col gap-1">
+          <code className="min-w-0 break-all text-[12px] text-text-faint">{def.key}</code>
+          {/* Amendment #188: each field says how it reaches the running daemon, so a
+              pending restart is attributed to THIS row instead of a pane-level banner. */}
+          <span
+            data-applied={item.applied}
+            className={cn(
+              'text-[12px]',
+              item.applied === 'restart' ? 'font-medium text-warning' : 'text-text-faint',
+            )}
+          >
+            {t(`settings.applied.${item.applied}`)}
+          </span>
+        </div>
         {item.overridden ? (
           <Button type="button" variant="ghost" size="sm" disabled={resetting} onClick={onReset}>
             {resetting ? <Spinner /> : <RotateCcw aria-hidden="true" />}

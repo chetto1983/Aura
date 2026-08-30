@@ -1,5 +1,10 @@
 export type SettingKind = 'string' | 'bool' | 'int';
 
+// How a row reaches the running daemon (amendment #188): a hot profile key is `live`
+// as soon as it is saved; a boot-bound key is `boot` while its row matches what the
+// process started with and `restart` once a save has outrun the running process.
+export type SettingApplied = 'live' | 'boot' | 'restart';
+
 export interface SettingItem {
   readonly key: string;
   readonly label: string;
@@ -8,6 +13,7 @@ export interface SettingItem {
   readonly value: string;
   readonly has_value: boolean;
   readonly overridden: boolean;
+  readonly applied: SettingApplied;
   readonly updated_at?: string;
   readonly updated_by?: string;
 }
@@ -15,6 +21,8 @@ export interface SettingItem {
 export interface SettingsList {
   readonly settings: readonly SettingItem[];
   readonly restart_required: boolean;
+  /** The rows behind restart_required, so the banner can name them. */
+  readonly restart_keys?: readonly string[];
 }
 
 export interface TelegramAvailability {

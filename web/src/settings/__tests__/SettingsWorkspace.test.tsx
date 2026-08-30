@@ -20,7 +20,7 @@ vi.mock('../SharedLinksSection', () => ({
 const SECTION_LABELS = [
   'Your profile',
   'Model routing',
-  'Token budget',
+  'Token and turn budget',
   'Sidecar and cloud backends',
   'Identities & access',
   'Telegram',
@@ -101,9 +101,9 @@ describe('SettingsWorkspace', () => {
     stubFetch(['*']);
     renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Token budget' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Token and turn budget' }));
 
-    expect(await screen.findByRole('heading', { name: 'Token budget' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Token and turn budget' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Model routing' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Sidecar and cloud backends' })).toBeNull();
   });
