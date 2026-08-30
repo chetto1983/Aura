@@ -85,6 +85,12 @@ func (t *Telegram) ingestTelegramAsset(
 	if text == "" {
 		text = defaultAttachmentTurnText
 	}
+	if modality == assets.ModalityDocument && asset.DocumentID != "" {
+		// A document turn is gated on the index holding it (amendment #199); the
+		// operator gets the status on-channel while the sidecar works.
+		t.startDocumentTurnWhenIndexed(ctx, c, msg.Chat.ID, text, asset)
+		return nil
+	}
 	t.runTurnWithAssets(ctx, c, msg.Chat.ID, text, []assets.Asset{asset}, inboundWasVoice)
 	return nil
 }

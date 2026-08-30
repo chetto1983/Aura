@@ -51,6 +51,8 @@ func (composedTextAssets) OpenForIdentity(context.Context, string, string) (io.R
 	return nil, assetspkg.Asset{}, errors.New("no media in this harness")
 }
 
+func (composedTextAssets) WaitDocumentIndexed(context.Context, string, string) error { return nil }
+
 func (composedTextAssets) BuildTurnContext(_ context.Context, _, _ string, _ []assetspkg.Asset, userText string) string {
 	return "[CATALOG]\n" + userText
 }

@@ -56,6 +56,10 @@ type assetIngress interface {
 	// note reaches the model as a native content part — the same projection seam the
 	// AG-UI gateway sets (amendment #198). Ownership is re-checked at read time.
 	OpenForIdentity(ctx context.Context, id, identityID string) (io.ReadCloser, assets.Asset, error)
+	// WaitDocumentIndexed gates a document turn on the index actually holding the
+	// document (amendment #199): starting earlier hands the model a document_search
+	// miss and it confabulates the content. ctx bounds the wait.
+	WaitDocumentIndexed(ctx context.Context, identityID, documentID string) error
 	// BuildTurnContext composes the channel-agnostic per-turn context (this turn's
 	// attachments + the thread's knowledge catalog) onto the user text — the same seam
 	// the AG-UI gateway uses, so catalog/attachment injection is not duplicated per channel.

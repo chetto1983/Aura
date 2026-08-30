@@ -10823,3 +10823,44 @@ flusso completo, che funziona.
 > projection on Telegram voice notes (Ollama claims no audio modality, #197); and the
 > document flow past ingest (extraction/catalog) on this PDF — live closure pending the
 > rebuilt image.
+>
+> Live closure (operator retest on the rebuilt image, 19:51-19:52Z): the photo leg is
+> CLOSED — the resent photo ingested (status `complete`, real vision summary) and the
+> model described it correctly on-channel. The document leg ingested (806,422 bytes,
+> hash, document_id minted) but exposed the next defect, measured and governed by
+> Amendment #199 below.
+
+## Section A document turn starts when the index holds the document, and the operator sees the state (Amendment #199, 2026-08-30)
+
+> **Amendment #199 (2026-08-30 - measured on the running stack, operator's Telegram
+> account, conversation 03b9c7c2).** The resent PDF ingested at 19:52:18.7Z and the turn
+> started immediately: at 19:52:21.0Z the model called
+> `document_search("01G202600029561_Dettaglio.PDF")` and the index answered with the
+> WRONG document (the photo.jpg card, score 0.016 — the PDF was not there yet: the
+> sidecar logged its `[extract]` only after the turn). At 19:52:29.5Z the model answered
+> with a confident, fully confabulated reading ("è in realtà un file che contiene lo
+> screenshot di una conversazione su Telegram..."). Every stage was honest — the
+> attachment block said "is stored; the ingest sidecar indexes it from the bucket", the
+> tool returned a miss — and the model still invented content. Design context: Postgres
+> `processing` is terminal for documents by design; searchability is ArcadeDB's answer
+> via `DocumentScope` (amendment history in document_processor.go), and indexing takes
+> tens of seconds (37s measured 2026-08-17).
+>
+> Rule (operator directive): **a document turn starts only when the document is
+> processed, and the channel reports the state on Telegram.** The wait belongs to the
+> shared pipeline: `assets.WaitDocumentIndexed` polls the SAME `DocumentScope` seam the
+> knowledge catalog asks (2s interval), so "indexed" and "advertised as retrievable" can
+> never disagree. The Telegram channel only renders status: "📄 Ho ricevuto <file>: lo
+> sto indicizzando..." at ingest, "✅ <file> indicizzato: ci lavoro ora." when the index
+> answers (then the turn runs, its context composed AFTER indexing so the retrieval
+> lines are true), and "⏳ L'indicizzazione ... non è ancora finita: riprova ..." on the
+> 3-minute bound — in that case the turn does NOT run: an honest "not yet" beats a
+> confident invention. A deferred turn that lands on a busy chat is held in the existing
+> D-05 pending slot (c-free enqueue), never dropped.
+>
+> What this does NOT prove: the cockpit document path (agui streams asset status over
+> SSE but does not gate the turn — unmeasured whether the same confabulation reproduces
+> there); ArcadeDB indexing latency for THIS 806 KB PDF (the 3-minute bound derives from
+> the 37s measurement on a smaller file); and behaviour when the sidecar is down (the
+> wait times out honestly, but nothing tells the operator the sidecar itself is the
+> problem). Live closure pending the rebuilt image and the operator resending the PDF.

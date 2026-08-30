@@ -60,24 +60,32 @@ type pendingTurn struct {
 // pending slot and tells the operator it will run after the current request.
 // Past mediaQueueMaxPerChat it refuses instead of enqueueing.
 func (t *Telegram) enqueueBusyTurn(c tele.Context, chatID int64, composedText string, inboundWasVoice bool) {
-	t.pendingMu.Lock()
-	full := len(t.pendingTurns[chatID]) >= mediaQueueMaxPerChat
-	if !full {
-		if t.pendingTurns == nil {
-			t.pendingTurns = make(map[int64][]pendingTurn)
-		}
-		t.pendingTurns[chatID] = append(t.pendingTurns[chatID], pendingTurn{
-			text:            composedText,
-			inboundWasVoice: inboundWasVoice,
-			arrived:         time.Now(),
-		})
-	}
-	t.pendingMu.Unlock()
-	if full {
+	if !t.enqueuePendingTurn(chatID, composedText, inboundWasVoice) {
 		t.reply(c, turnQueueFullMessage)
 		return
 	}
 	t.reply(c, turnQueuedForNextTurnMessage)
+}
+
+// enqueuePendingTurn is the c-free core of enqueueBusyTurn: the deferred document
+// turn (bot_dispatch_docwait.go) hits busy AFTER the tele.Context was recycled, so
+// the notice goes out via sendPlain there. Returns false when the chat's slot is
+// already at mediaQueueMaxPerChat.
+func (t *Telegram) enqueuePendingTurn(chatID int64, composedText string, inboundWasVoice bool) bool {
+	t.pendingMu.Lock()
+	defer t.pendingMu.Unlock()
+	if len(t.pendingTurns[chatID]) >= mediaQueueMaxPerChat {
+		return false
+	}
+	if t.pendingTurns == nil {
+		t.pendingTurns = make(map[int64][]pendingTurn)
+	}
+	t.pendingTurns[chatID] = append(t.pendingTurns[chatID], pendingTurn{
+		text:            composedText,
+		inboundWasVoice: inboundWasVoice,
+		arrived:         time.Now(),
+	})
+	return true
 }
 
 // takePendingTurns atomically pops and clears chatID's pending slot. ok is false

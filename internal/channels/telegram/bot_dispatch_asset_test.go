@@ -195,10 +195,12 @@ type recordingAssetIngress struct {
 	bot               *dispatchBot
 	asset             assetspkg.Asset
 	err               error
+	waitErr           error
 	calls             int
 	reqs              []assetspkg.TelegramIngestRequest
 	payloads          []string
 	readsBeforeIngest []int
+	waits             []string
 }
 
 func (r *recordingAssetIngress) IngestTelegramFile(_ context.Context, req assetspkg.TelegramIngestRequest) (assetspkg.Asset, error) {
@@ -243,4 +245,11 @@ func (r *recordingAssetIngress) OpenForIdentity(_ context.Context, assetID, iden
 		payload = r.payloads[len(r.payloads)-1]
 	}
 	return io.NopCloser(strings.NewReader(payload)), r.asset, nil
+}
+
+// WaitDocumentIndexed records the gate and answers immediately — the poll loop
+// itself is pinned in internal/assets.
+func (r *recordingAssetIngress) WaitDocumentIndexed(_ context.Context, _, documentID string) error {
+	r.waits = append(r.waits, documentID)
+	return r.waitErr
 }
