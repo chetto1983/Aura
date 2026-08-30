@@ -1,6 +1,6 @@
 import type { ThreadMessageLike } from '@assistant-ui/react';
 import type { AguiFrame, ChatPart, ReasoningPart, TextPart, ToolPart } from './sseAdapter_frames';
-import type { TurnUsage } from './sseAdapter_usage';
+import type { BudgetLimit, TurnUsage } from './sseAdapter_usage';
 
 // sseAdapter_parts — the assistant-turn accumulator + its part builders, split
 // out of sseAdapter.ts (600-LOC cap, the sseAdapter_frames/_usage sibling
@@ -28,6 +28,8 @@ export interface AssistantTurnState {
   readonly tools: Map<string, ToolPart>;
   readonly toolIndexById: Map<string, number>;
   usage?: TurnUsage;
+  /** Set when the terminal STATE_DELTA says the loop budget cut this turn. */
+  limit?: BudgetLimit;
   error?: string;
   status: AssistantStatus;
 }
@@ -174,5 +176,9 @@ export function toThreadMessage(state: AssistantTurnState): ThreadMessageLike {
     role: 'assistant',
     content,
     status: state.status,
+    // The budget trip rides as metadata, not as a text part: a synthetic part would be
+    // prose the runtime could branch from or re-send (the CompactionMarker/SteerNotice
+    // argument), while metadata stays a fact ABOUT this turn that AssistantMessage renders.
+    ...(state.limit === undefined ? {} : { metadata: { custom: { budgetLimit: state.limit } } }),
   };
 }

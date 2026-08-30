@@ -20,7 +20,7 @@ import { loginEn, loginIt } from './resources.login';
 import { onboardingEn, onboardingIt } from './resources.onboarding';
 import { profileEn, profileIt, settingsEn, settingsIt } from './resources.settings';
 import { shareEn, shareIt } from './resources.share';
-import { chatSteerEn, chatSteerIt } from './resources.steer';
+import { chatTurnNoticesEn, chatTurnNoticesIt } from './resources.turnnotices';
 
 export const resources = {
   en: {
@@ -103,7 +103,7 @@ export const resources = {
         liveRun: {
           hint: 'A run is still in progress. Type to redirect it, or tap Stop.',
         },
-        steer: chatSteerEn,
+        ...chatTurnNoticesEn,
         error: {
           stream:
             'The response stopped unexpectedly. Retry the last message or check the runtime status.',
@@ -388,7 +388,7 @@ export const resources = {
         liveRun: {
           hint: "Un'esecuzione è ancora in corso. Scrivi per reindirizzarla, oppure premi Ferma.",
         },
-        steer: chatSteerIt,
+        ...chatTurnNoticesIt,
         error: {
           stream:
             "La risposta si è interrotta inaspettatamente. Riprova l'ultimo messaggio o controlla lo stato del runtime.",

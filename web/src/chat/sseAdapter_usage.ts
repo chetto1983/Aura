@@ -68,3 +68,23 @@ export function cacheHitRatio(usage: TurnUsage): number {
   if (usage.promptTokens <= 0) return 0;
   return usage.cacheHitTokens / usage.promptTokens;
 }
+
+// ---------------------------------------------------------------------------
+// Budget trip — the terminal STATE_DELTA's limit_hit / steps_consumed (amendment
+// #188). The daemon has always sent it; nothing read it, so a turn cut at the step
+// cap looked like a finished answer.
+// ---------------------------------------------------------------------------
+
+export interface BudgetLimit {
+  /** "max_steps" | "wallclock" | "dedup" — the agent's own reason vocabulary. */
+  readonly reason: string;
+  readonly stepsConsumed: number;
+}
+
+/** The budget trip a STATE_DELTA carries, or undefined when it carries none. */
+export function budgetLimitFromStateDelta(ops: readonly JSONPatchOp[]): BudgetLimit | undefined {
+  const byPath = new Map(ops.map((o) => [o.path, o.value]));
+  const reason = byPath.get('/limit_hit');
+  if (typeof reason !== 'string' || reason === '') return undefined;
+  return { reason, stepsConsumed: Number(byPath.get('/steps_consumed') ?? 0) };
+}

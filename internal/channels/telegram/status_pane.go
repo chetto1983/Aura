@@ -77,8 +77,13 @@ type statusPane struct {
 	answer   *activityState
 	thinking string
 	cost     string
-	failed   bool
-	done     bool
+	// limit / limitSteps carry the terminal STATE_DELTA's limit_hit / steps_consumed
+	// (amendment #188) so a turn cut by the loop budget says so under the answer
+	// instead of reading as a finished one.
+	limit      string
+	limitSteps string
+	failed     bool
+	done       bool
 
 	// showReasoning surfaces the live CoT in the 💭 block via fifo (a rolling rune-capped
 	// window); started stamps RUN_STARTED for the elapsed-time header. When showReasoning
@@ -318,8 +323,35 @@ func (p *statusPane) applyCost(ops []events.JSONPatchOperation) {
 				p.cost = fmt.Sprintf("%v", op.Value)
 				p.dirty = true
 			}
+		case "limit_hit":
+			if reason, ok := op.Value.(string); ok && reason != "" {
+				p.limit = reason
+				p.dirty = true
+			}
+		case "steps_consumed":
+			p.limitSteps = fmt.Sprintf("%v", op.Value)
+			p.dirty = true
 		}
 	}
+}
+
+// limitText is the budget-trip line under the cost footer: which cap cut the turn,
+// how many steps it spent, and the one thing the user can do about it.
+func (p *statusPane) limitText() string {
+	if p.limit == "" {
+		return ""
+	}
+	label := "budget esaurito (" + p.limit + ")"
+	switch p.limit {
+	case "max_steps":
+		label = "limite di passi raggiunto"
+	case "wallclock":
+		label = "limite di tempo raggiunto"
+	}
+	if p.limitSteps != "" {
+		label += " · " + p.limitSteps + " passi"
+	}
+	return "\n⚠️ Turno interrotto: " + label + ". Scrivi «continua» per proseguire."
 }
 
 // render edits msg #1 with the current pane text, coalescing to the throttle. final
@@ -401,11 +433,11 @@ func (p *statusPane) render(_ context.Context, final bool) {
 // parse-entity 400.
 func (p *statusPane) text() string {
 	base := p.baseText()
-	cost := p.costText()
-	if over := runeLen(base) + runeLen(cost) - telegramTextCap; over > 0 {
+	footer := p.costText() + p.limitText()
+	if over := runeLen(base) + runeLen(footer) - telegramTextCap; over > 0 {
 		base = capRunes(base, max(0, runeLen(base)-over))
 	}
-	return base + p.reasoningSection(base, cost) + cost
+	return base + p.reasoningSection(base, footer) + footer
 }
 
 // reasoningSection renders the optional live 💭 block within the Telegram budget
