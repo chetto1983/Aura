@@ -115,6 +115,10 @@ type Deps struct {
 	Clear  clearBackend
 	Prices map[string]llm.Price
 	Model  string
+	// LLMRuntime supersedes the boot-only Spend/Prices/Model fields when wired.
+	// Each command snapshots it once so a concurrent settings change cannot mix
+	// provider spend with another model's rates.
+	LLMRuntime *llm.Runtime
 
 	// Resume is the HITL seam (hitl.go): the Runner's pause surface
 	// (PendingFor/SubmitAnswer — *runner.Runner satisfies it). Nil → HITL is inert

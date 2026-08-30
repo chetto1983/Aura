@@ -129,3 +129,41 @@ func TestCostDegradesOnProviderError(t *testing.T) {
 		t.Errorf("a failed lookup must not render as zero spend: %s", reply)
 	}
 }
+
+func TestCostReadsTheHotRuntimeProfileInsteadOfBootPrices(t *testing.T) {
+	est := &countingCost{fakeCost: fakeCost{prompt: 1_000_000, completion: 1_000_000}}
+	runtime := llm.NewRuntime(nil, llm.Config{
+		Provider: "llamacpp",
+		BaseURL:  "http://aura-llm:8084/v1",
+		Model:    "gemma-4-12b",
+		Prices:   map[string]llm.Price{"gemma-4-12b": {}},
+	})
+	cmds := newTestCommands(commandDeps{
+		Search: &fakeSearch{}, Cost: est,
+		Prices:  map[string]llm.Price{"cloud": {InputPer1M: 99, OutputPer1M: 99}},
+		Model:   "cloud",
+		Runtime: runtime,
+	})
+
+	_, reply := cmds.dispatch(context.Background(), 42, "/cost")
+	if !strings.Contains(reply, "$0.000000") {
+		t.Fatalf("hot local profile was not used: %s", reply)
+	}
+}
+
+func TestCostLabelsOllamaCloudAsSubscriptionIncluded(t *testing.T) {
+	est := &countingCost{fakeCost: fakeCost{prompt: 1_000_000, completion: 1_000_000}}
+	runtime := llm.NewRuntime(nil, llm.Config{
+		Provider: "ollama", BaseURL: "http://host.docker.internal:11434/v1",
+		Model: "gemma4:31b-cloud", CostStatus: llm.CostStatusSubscriptionIncluded,
+	})
+	cmds := newTestCommands(commandDeps{Search: &fakeSearch{}, Cost: est, Runtime: runtime})
+
+	_, reply := cmds.dispatch(context.Background(), 42, "/cost")
+	if !strings.Contains(reply, "abbonamento Ollama") || strings.Contains(reply, "$0") {
+		t.Fatalf("subscription cost reply = %q", reply)
+	}
+	if est.calls != 0 {
+		t.Fatalf("subscription route consulted a numeric estimate %d times", est.calls)
+	}
+}

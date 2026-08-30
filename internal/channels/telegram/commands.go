@@ -72,12 +72,13 @@ const (
 // commandDeps are the dispatcher inputs: the two reused backends plus the price
 // table + model that drive the /cost render (identical to the CLI cost footer).
 type commandDeps struct {
-	Search searchBackend
-	Cost   costBackend
-	Spend  spendBackend
-	Clear  clearBackend
-	Prices map[string]llm.Price
-	Model  string
+	Search  searchBackend
+	Cost    costBackend
+	Spend   spendBackend
+	Clear   clearBackend
+	Prices  map[string]llm.Price
+	Model   string
+	Runtime *llm.Runtime
 }
 
 // commands intercepts Telegram slash-commands. It also owns the per-chat
@@ -241,7 +242,11 @@ func (c *commands) clear(ctx context.Context, chatID int64) string {
 // measured traffic mix. When the provider figure is used, the token counts still ride
 // along — they explain the number rather than producing it.
 func (c *commands) cost(ctx context.Context) string {
-	if spend, err := c.spendFromProvider(ctx); err == nil {
+	prices, model, costStatus, spendBackend := c.activeModelProfile()
+	if costStatus == llm.CostStatusSubscriptionIncluded {
+		return "Costo modello incluso nell'abbonamento Ollama; importo non disponibile dal provider."
+	}
+	if spend, err := c.spendFromProvider(ctx, spendBackend); err == nil {
 		return spend
 	}
 	if c.deps.Cost == nil {
@@ -251,7 +256,7 @@ func (c *commands) cost(ctx context.Context) string {
 	if err != nil {
 		return "Costo non disponibile per ora."
 	}
-	display, _ := llm.CostUSD(c.deps.Prices, c.deps.Model, llm.Usage{
+	display, _ := llm.CostUSD(prices, model, llm.Usage{
 		PromptTokens:     prompt,
 		CompletionTokens: completion,
 		Cost:             provider,
@@ -262,16 +267,25 @@ func (c *commands) cost(ctx context.Context) string {
 // spendFromProvider renders the billed figure, or an error the caller degrades from.
 // A local backend bills nothing, so it is treated as "no provider figure" rather than a
 // failure, and the estimate below it stays the honest answer.
-func (c *commands) spendFromProvider(ctx context.Context) (string, error) {
-	if c.deps.Spend == nil {
+func (c *commands) spendFromProvider(ctx context.Context, backend spendBackend) (string, error) {
+	if backend == nil {
 		return "", llm.ErrSpendUnavailable
 	}
-	s, err := c.deps.Spend.Spend(ctx)
+	s, err := backend.Spend(ctx)
 	if err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("Spesa di oggi: $%.4f\nQuesta settimana: $%.4f · Questo mese: $%.4f · In totale: $%.4f",
 		s.Daily, s.Weekly, s.Monthly, s.Total), nil
+}
+
+func (c *commands) activeModelProfile() (map[string]llm.Price, string, llm.CostStatus, spendBackend) {
+	if c.deps.Runtime == nil {
+		return c.deps.Prices, c.deps.Model, llm.CostStatusUnknown, c.deps.Spend
+	}
+	snapshot := c.deps.Runtime.Snapshot()
+	cfg := snapshot.Config
+	return cfg.Prices, cfg.Model, cfg.CostStatus, &cfg
 }
 
 // searchRich reuses conversations.SearchConversationTurns byte-for-byte and renders

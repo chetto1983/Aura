@@ -56,12 +56,13 @@ const (
 // shared asset pipeline.
 func (t *Telegram) buildDispatch() {
 	t.cmds = newCommands(commandDeps{
-		Search: t.deps.Search,
-		Cost:   t.deps.Cost,
-		Spend:  t.deps.Spend,
-		Clear:  t.deps.Clear,
-		Prices: t.deps.Prices,
-		Model:  t.deps.Model,
+		Search:  t.deps.Search,
+		Cost:    t.deps.Cost,
+		Spend:   t.deps.Spend,
+		Clear:   t.deps.Clear,
+		Prices:  t.deps.Prices,
+		Model:   t.deps.Model,
+		Runtime: t.deps.LLMRuntime,
 	})
 	var onboardStore onboardingStore
 	if t.deps.Store != nil {
