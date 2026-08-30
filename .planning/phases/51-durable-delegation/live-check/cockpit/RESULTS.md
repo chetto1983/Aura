@@ -2,12 +2,13 @@
 
 Date: 2026-08-30
 
-Overall result: **PENDING HUMAN DEVICE CONFIRMATION**
+Overall result: **PASS**
 
+- Verdicts: **6/6 pass**
 - Automated verdicts: **5/5 pass**
 - Telegram database gate: **pass for both negative and positive halves**
-- Telegram device arrival: **pending operator confirmation**
-- Current DoD score: **9.7/10**, below the required `>9.8` until device arrival is confirmed
+- Telegram device arrival: **pass on the operator-supplied authenticated Telegram Web surface**
+- Final DoD score: **9.9/10**, above the required `>9.8`
 
 No verdict below is derived from grepping an SSE stream. Browser evidence came from
 privacy-safe Playwright assertions over the accessible DOM and browser network requests.
@@ -82,7 +83,7 @@ origin conversation after the operator turn.
   thread, `2` distinct names, `856..868` bytes
 - final cockpit run: `2` assets, both `accepted text/markdown`, `2` distinct names
 
-### 3. One Telegram Message Per Fan-out, Not Before - PENDING DEVICE
+### 3. One Telegram Message Per Fan-out, Not Before - PASS
 
 **Negative half, database PASS.** Source: `aura.ingestion_jobs.status`,
 `aura.steer_queue.kind`, `drained_at`, `nudged_at`, `fanout_key`, and
@@ -106,10 +107,24 @@ terminal.
 - distinct non-null `nudged_at` timestamps: `1`
 - pending notifications: `0`
 
-**Device source:** pending operator confirmation. The operator must confirm that no message
-arrived at the negative checkpoint and that exactly one message per run arrived only after
-the slower worker, with two status lines and the closing line. No message text should be
-pasted into this report.
+**Device source:** repository Playwright attached over the existing browser's local CDP endpoint
+to the operator-supplied authenticated Telegram Web page. No MCP server was used. The assertion
+read only message direction, order, displayed minute and structural counts; it did not read or
+retain message text, identifiers, chat metadata or session data.
+
+- distinct inbound terminal notifications for the two Telegram trials: `2`, displayed at `02:26`
+  and `02:47`
+- first and last worker terminal times for the final trial: `02:42:15` and `02:47:32`
+- database nudge time for that fan-out: `02:47:33`
+- inbound notifications between the prior terminal notification and the final trial's last-worker
+  completion: `0`
+- inbound notifications when the final fan-out became terminal: `1`
+- status markers in each terminal notification: `2`
+- fixed closing-line structure in each terminal notification: present
+
+This closes both device halves: the page remained silent while the sibling was running, then
+showed one structurally complete notification per trial only at terminal fan-out. No message
+content is copied into this report.
 
 ### 4. Live Worker Pane - PASS
 
@@ -189,9 +204,9 @@ remains visible after terminal EOF instead of switching to the fallback.
 
 ## DoD Score
 
-Current score: **9.7/10**.
+Final score: **9.9/10**.
 
 The real scenario, persistence, worker execution, live browser surface, local model, restart
-image provenance and automated regressions all pass. The score cannot exceed the project's
-`>9.8` completion gate until the operator confirms the Telegram device's negative and positive
-observations. On a matching confirmation, verdict 3 becomes PASS and the score is **9.9/10**.
+image provenance and automated regressions all pass. The authenticated Telegram Web observation
+closes the negative and positive device halves without retaining private Telegram data, so the
+project's `>9.8` completion gate is met.
