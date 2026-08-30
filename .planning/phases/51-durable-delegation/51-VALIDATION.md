@@ -24,8 +24,9 @@ transition.
   produced Amendment #183 supersedes that speculative artifact; no missing script is fabricated.
 - PRD Amendment #177 retired and deleted `scripts/quality_snapshot_gate.sh`. The historical
   quality snapshot is not rewritten and the deleted command is not reported as passing.
-- PRD Amendment #187 now has a current four-run authenticated Cockpit E2E for Ollama reasoning,
-  context discovery, final-answer visibility, route restore, and process stability.
+- PRD Amendment #187 has four authenticated passes on the original corrected image and six more
+  on the replacement image, covering Ollama reasoning, context discovery, final-answer visibility,
+  route restore, and process stability.
 - No closure claim is made for items from the deleted legacy eval harness that were not run.
 
 ## Current Verification
@@ -34,9 +35,9 @@ transition.
 |---|---|
 | Go unit suite | PASS - WSL `go test -count=1 ./...` |
 | Go static/build | PASS - WSL `go vet ./...` and `go build ./cmd/aura`; one transient NTFS/WSL embed-visibility error was investigated and the immediate rerun passed |
-| Go race | PASS - `./internal/llm/... ./internal/agent/prompt ./internal/agui ./internal/settings ./cmd/aura` |
+| Go race | PASS - `./internal/agent/... ./internal/llm/... ./internal/agui ./internal/settings ./cmd/aura` |
 | Web lint/typecheck | PASS - `npm run lint`, `npm run typecheck` |
-| Web tests | PASS - 226 files / 1905 tests; 91.23% statements, 85.13% branches, 90.47% functions, 93.15% lines |
+| Web tests | PASS - 226 files / 1905 tests; 91.12% statements, 85.14% branches, 90.30% functions, 93.10% lines on final HEAD |
 | Web production build | PASS - two builds from `npm ci`, 4,331 modules each, zero regenerated diff |
 | Packaging | PASS - fat-image contract test |
 | Patch hygiene | PASS - `git diff --check` |
@@ -108,11 +109,16 @@ the visible final sentinel, then restored the prior route. No OpenRouter request
 The Aura container was byte-for-byte stable before and after: PID `19645`, StartedAt
 `2026-08-30T10:43:20.631079759Z`, RestartCount `0`, the same image, and healthy.
 
-That equality is scoped to the four-run evidence window only. The operator reports that the
-shared container was recreated afterward at `2026-08-30T11:05:53Z` on image prefix
-`ff68727c...`; the earlier tuple is therefore not a current final no-restart baseline. Plan 51-08
-performed no Docker or live-test action after that recreation and makes no claim about the new
-runtime state.
+That equality is scoped to the four-run evidence window. A concurrent software rollout later
+recreated the shared container, so the earlier tuple is historical rather than the current final
+baseline.
+
+The replacement image
+`sha256:ff68727c255cb2b19d684be4bc6d7bb044459a4fa48328f2dc04bdec5bdac878` then passed two
+independent `--repeat-each=3` drives. The final drive followed the concurrent source merge and the
+clean full verification matrix. Before and after it, Aura remained PID `74261`, StartedAt
+`2026-08-30T11:05:53.971427258Z`, RestartCount `0`, the same image, and healthy. Logs from that
+baseline contain zero OpenRouter references. This is the current final no-restart witness.
 
 ## Residual Risks And Non-Claims
 

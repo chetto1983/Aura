@@ -10361,11 +10361,18 @@ flusso completo, che funziona.
 > reasoning changes therefore remained hot settings throughout; no daemon restart or container
 > recreation is hidden inside the successful result.
 >
-> This equality is scoped to the four-run evidence window. The operator reports that the shared
-> container was recreated afterward at `2026-08-30T11:05:53Z` on image prefix `ff68727c...`.
-> That later mutation invalidates the tuple as a current final no-restart baseline, but does not
-> rewrite what the four completed runs observed. Plan 51-08 performed no Docker or live-test action
-> after the recreation and makes no claim about the replacement runtime state.
+> This equality is scoped to the four-run evidence window. A concurrent software rollout then
+> recreated the shared container at `2026-08-30T11:05:53.971427258Z` on image
+> `sha256:ff68727c255cb2b19d684be4bc6d7bb044459a4fa48328f2dc04bdec5bdac878`, invalidating the
+> earlier process tuple as a current baseline without rewriting what those runs observed.
+>
+> **Replacement-image closure.** After that rollout, two separate `--repeat-each=3` drives passed
+> all six runs against the replacement image. The final drive ran after the concurrent source
+> merge and its clean full Go/web verification; a production web rebuild produced zero embedded-
+> asset diff. Before and after the drive Aura remained PID `74261`, StartedAt
+> `2026-08-30T11:05:53.971427258Z`, RestartCount `0`, the same image, and healthy. Container logs
+> from that baseline contain zero OpenRouter references. Endpoint/model/effort transitions are
+> therefore proven hot on the current replacement runtime as well as in the earlier window.
 >
 > **What this measurement does not prove.** It does not prove reasoning support for every Ollama
 > model, generation near 262,144 tokens, or a provider-reported maximum output limit. It proves the

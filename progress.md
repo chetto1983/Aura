@@ -35,11 +35,10 @@ being folded into Phase 51.
 ## GSD state
 
 - Active command: `gsd-execute-phase 51`.
-- Phase 51 has 13 of 14 plans complete.
-- Remaining plan: `.planning/phases/51-durable-delegation/51-08-PLAN.md`.
-- Plan 51-08 is wave 9 and owns the live SC#1-SC#5 validation.
+- Phase 51 has 14 of 14 plans complete and is in verifier handoff.
+- Plan `.planning/phases/51-durable-delegation/51-08-PLAN.md` is complete.
 - The hot-route defect is fixed and verified through the authenticated Cockpit.
-- The official GSD executor is reconciling plan 51-08 with Amendment #183's
+- The official GSD executor reconciled plan 51-08 with Amendment #183's
   already-recorded 9.9/10 acceptance and Amendment #177's retired ledger gate.
 - After Phase 51 is complete, insert and plan a provider-native phase through
   GSD. It should not move the current phase pointer while 51-08 is unfinished.
@@ -55,7 +54,7 @@ Current execution checklist:
 5. Align Settings batch update, cockpit, AG-UI, and Telegram runtime consumers:
    implemented; committed.
 6. Race/build/frontend/live no-restart verification: complete.
-7. Resume and complete 51-08: in progress.
+7. Resume and complete 51-08: complete; phase verifier pending.
 8. Insert and plan provider-native subscription phase: pending.
 
 ## Committed decisions
@@ -113,6 +112,9 @@ Current execution checklist:
 - `6d651fc84 build(web): align embedded assets with lockfile`
   - Regenerates the embedded distribution after `npm ci`; a second build is
     byte-stable.
+- `58685403e`, `236bf4692`, `7aee86ba3` (`docs(51-08)`)
+  - Reconcile validation, delimit the superseded baseline, create the final plan
+    summary, and hand Phase 51 to its verifier.
 
 PRD amendment #185 records these decisions:
 
@@ -221,6 +223,14 @@ changed profiles through Cockpit, observed Ollama context `262144`, selected
 `high`, asserted the actual `/agent/run` payload carried `aura.effort=high`,
 received non-empty reasoning frames and the requested final sentinel, exercised
 llama.cpp, and restored Ollama in `finally`. No OpenRouter request participated.
+
+A concurrent software rollout subsequently replaced the shared container with
+image `sha256:ff68727c255cb2b19d684be4bc6d7bb044459a4fa48328f2dc04bdec5bdac878`.
+Two independent `--repeat-each=3` drives then passed on that image. The final
+pre/post tuple is identical: PID `74261`, StartedAt
+`2026-08-30T11:05:53.971427258Z`, RestartCount `0`, same image, healthy. Logs
+from that baseline contain zero OpenRouter references. This supersedes the older
+tuple as the current no-restart witness.
 
 ## Current implementation
 
@@ -346,8 +356,8 @@ Green:
 - `npm run build`
 - `npm run lint`
 - Full frontend test run after clean `npm ci`: 226 files, 1,905 tests passed.
-- Frontend coverage: 91.23% statements, 85.13% branches, 90.47% functions,
-  93.15% lines.
+- Frontend coverage on final HEAD: 91.12% statements, 85.14% branches, 90.30%
+  functions, 93.10% lines.
 - Split Model Settings routing tests: 2 files, 25 tests passed.
 - The previously failing 70 KB SDK stream test passed 20 consecutive runs after
   the fixture correction, and `internal/llm/openai_compat` passes in the full run.
@@ -375,7 +385,8 @@ Needs completion:
   `internal/agent/tools` test expects POSIX mode `0600` from Windows. These files
   are outside the implementation diff. The authoritative Linux/WSL full suite is
   green; do not widen this phase into unrelated Windows-only test maintenance.
-- Complete GSD plan 51-08 reconciliation and run the phase verifier.
+- Run the GSD phase review/verifier and complete the phase only on a passing
+  verdict.
 
 ## Files and staging
 
@@ -392,8 +403,8 @@ For subsequent commits:
 
 ## Next actions
 
-1. Finish Phase 51 plan 51-08, run the GSD phase verifier, and mark the phase
-   complete only if verification passes.
+1. Run the GSD phase review/verifier and mark the phase complete only if
+   verification passes.
 2. Insert, discuss, specify, and plan the provider-native subscription phase via
    GSD after Phase 51 is complete.
 

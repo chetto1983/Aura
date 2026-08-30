@@ -35,7 +35,7 @@ key-files:
 key-decisions:
   - "Amendment #183 is the accepted Phase 51 live gate; no missing monolithic drive-sc.sh is fabricated or rerun"
   - "Amendment #177 retires the quality-snapshot freshness gate; the deleted script and historical snapshot remain untouched"
-  - "The four-run no-restart tuple is evidence for that run window only; the later shared-container recreation invalidates it as a current final baseline"
+  - "The four-run tuple remains historical evidence; six subsequent passes establish a new no-restart baseline on the replacement image"
 
 requirements-completed: [SWARM-01, SWARM-02, SWARM-03, SWARM-04, SWARM-05, SWARM-06, SWARM-07, SWARM-09, SWARM-10]
 
@@ -94,7 +94,9 @@ status: complete
   reasoning levels, 262,144 context discovery, real high-effort submission, streamed reasoning,
   visible terminal answer and route restore.
 - Recorded that the shared container's later 11:05:53Z recreation invalidates the earlier process
-  tuple as a current final baseline without rewriting what the completed run observed.
+  tuple as a current baseline without rewriting what the completed run observed.
+- Incorporated the orchestrator's post-recreation verification: two further triplicate Cockpit
+  drives passed on image `ff68727c...` with an unchanged container tuple and no OpenRouter log hit.
 
 ## Task Commits
 
@@ -145,8 +147,8 @@ checkpoint. They did not create new runtime artifacts in this execution.
 - **Found during:** documentation closeout.
 - **Issue:** the shared container was recreated at 11:05:53Z on image prefix `ff68727c...`, so the
   earlier no-restart tuple cannot serve as the final current-state baseline.
-- **Fix:** scope that tuple to the four-run observation window and make no claim about replacement
-  runtime state.
+- **Fix:** scope that tuple to its four-run observation window, then establish a new final baseline
+  with six passing runs after the replacement rollout and concurrent merge.
 
 ## Residual Risk
 
@@ -156,9 +158,10 @@ No uncovered item from the deleted legacy eval harness is claimed as closed.
 
 ## Verification
 
-No Docker, Compose, container, browser or live-test command was run by plan 51-08. Existing evidence
-was reconciled only. Documentation checks passed with `git diff --check`; the first documentation
-commit's repository hook also ran `go vet` successfully before the operator's stop instruction.
+The GSD executor ran no Docker, Compose, container, browser or live-test command; it reconciled
+existing evidence only. The orchestrator subsequently ran the replacement-image verification and
+recorded it in this summary. Documentation checks passed with `git diff --check`; the first
+documentation commit's repository hook also ran `go vet` successfully.
 
 ## User Setup Required
 
