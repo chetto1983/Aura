@@ -10361,6 +10361,12 @@ flusso completo, che funziona.
 > reasoning changes therefore remained hot settings throughout; no daemon restart or container
 > recreation is hidden inside the successful result.
 >
+> This equality is scoped to the four-run evidence window. The operator reports that the shared
+> container was recreated afterward at `2026-08-30T11:05:53Z` on image prefix `ff68727c...`.
+> That later mutation invalidates the tuple as a current final no-restart baseline, but does not
+> rewrite what the four completed runs observed. Plan 51-08 performed no Docker or live-test action
+> after the recreation and makes no claim about the replacement runtime state.
+>
 > **What this measurement does not prove.** It does not prove reasoning support for every Ollama
 > model, generation near 262,144 tokens, or a provider-reported maximum output limit. It proves the
 > corrected parser, selector, request effort, streamed reasoning, terminal answer and restore path

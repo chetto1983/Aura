@@ -108,6 +108,12 @@ the visible final sentinel, then restored the prior route. No OpenRouter request
 The Aura container was byte-for-byte stable before and after: PID `19645`, StartedAt
 `2026-08-30T10:43:20.631079759Z`, RestartCount `0`, the same image, and healthy.
 
+That equality is scoped to the four-run evidence window only. The operator reports that the
+shared container was recreated afterward at `2026-08-30T11:05:53Z` on image prefix
+`ff68727c...`; the earlier tuple is therefore not a current final no-restart baseline. Plan 51-08
+performed no Docker or live-test action after that recreation and makes no claim about the new
+runtime state.
+
 ## Residual Risks And Non-Claims
 
 | Item | Verdict |
