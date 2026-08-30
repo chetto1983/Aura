@@ -10383,7 +10383,8 @@ flusso completo, che funziona.
 
 > **Amendment #188 (2026-08-30 - measured on the running deployment, image `9d6b3fef42ce`
 > built from HEAD `6db93d459`, container started `2026-08-30T09:17:19Z`, `RestartCount=0`;
-> full evidence in `docs/audit/settings-hot-reload-and-turn-budget-2026-08-30.md`).**
+> full evidence in `.planning/research/settings-hot-reload-and-turn-budget-2026-08-30.md`;
+> `docs/audit/` holds only the current register, per its README).**
 > The agent-loop turn budget (`AURA_LOOP_MAX_STEPS=25`, `AURA_LOOP_MAX_WALLCLOCK_SEC=300`)
 > was readable only from process environment: absent from `settings.AllowedKeys`, from the
 > Cockpit "Budget token" pane and from the knob catalogue. The one operator who needed more
