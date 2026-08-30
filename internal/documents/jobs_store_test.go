@@ -72,6 +72,17 @@ func TestNewPostgresIngestionJobStoreWiresQueries(t *testing.T) {
 	}
 }
 
+func TestCreateBatchRejectsMixedIdentities(t *testing.T) {
+	store := NewPostgresIngestionJobStore(nil)
+	_, err := store.CreateBatch(context.Background(), []CreateIngestionJobRequest{
+		{IdentityID: "10000000-0000-0000-0000-000000000001", JobType: "test", Status: "queued", IdempotencyKey: "one", MaxAttempts: 1},
+		{IdentityID: "10000000-0000-0000-0000-000000000002", JobType: "test", Status: "queued", IdempotencyKey: "two", MaxAttempts: 1},
+	})
+	if err == nil {
+		t.Fatal("CreateBatch with mixed identities = nil error, want rejection before opening a transaction")
+	}
+}
+
 // TestCountUnfinishedDelegationJobsUnconfiguredStore (51-11 Task 3) mirrors
 // CountByStatus's own nil-safe posture: a nil store names itself
 // unconfigured rather than panicking, reached through withIdentity's own

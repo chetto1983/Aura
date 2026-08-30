@@ -124,20 +124,50 @@ func NewPostgresIngestionJobStore(pool *pgxpool.Pool) *PostgresIngestionJobStore
 
 // Create inserts or returns a durable ingestion job by stable identity-scoped key.
 func (s *PostgresIngestionJobStore) Create(ctx context.Context, req CreateIngestionJobRequest) (IngestionJob, error) {
-	p, err := createIngestionJobParams(req)
+	jobs, err := s.CreateBatch(ctx, []CreateIngestionJobRequest{req})
 	if err != nil {
 		return IngestionJob{}, err
 	}
-	var row sqlc.AuraIngestionJobs
-	err = s.withIdentity(ctx, req.IdentityID, func(q *sqlc.Queries) error {
-		var queryErr error
-		row, queryErr = q.CreateIngestionJob(ctx, p)
-		return queryErr
+	return jobs[0], nil
+}
+
+// CreateBatch inserts or returns every job in one identity-scoped transaction.
+func (s *PostgresIngestionJobStore) CreateBatch(ctx context.Context, reqs []CreateIngestionJobRequest) ([]IngestionJob, error) {
+	if len(reqs) == 0 {
+		return []IngestionJob{}, nil
+	}
+	identityID := reqs[0].IdentityID
+	params := make([]sqlc.CreateIngestionJobParams, len(reqs))
+	for i, req := range reqs {
+		if req.IdentityID != identityID {
+			return nil, fmt.Errorf("create ingestion job batch: request %d identity does not match batch identity", i)
+		}
+		p, err := createIngestionJobParams(req)
+		if err != nil {
+			return nil, fmt.Errorf("create ingestion job batch request %d: %w", i, err)
+		}
+		params[i] = p
+	}
+
+	jobs := make([]IngestionJob, 0, len(params))
+	err := s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
+		for i, p := range params {
+			row, queryErr := q.CreateIngestionJob(ctx, p)
+			if queryErr != nil {
+				return fmt.Errorf("create ingestion job batch request %d: %w", i, queryErr)
+			}
+			job, convertErr := ingestionJobFromSQL(row)
+			if convertErr != nil {
+				return fmt.Errorf("decode ingestion job batch request %d: %w", i, convertErr)
+			}
+			jobs = append(jobs, job)
+		}
+		return nil
 	})
 	if err != nil {
-		return IngestionJob{}, err
+		return nil, err
 	}
-	return ingestionJobFromSQL(row)
+	return jobs, nil
 }
 
 // Claim leases queued or expired-running jobs for one owner.

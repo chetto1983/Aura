@@ -21,11 +21,16 @@ import (
 	"github.com/chetto1983/aura/internal/documents"
 )
 
-// DelegationEnqueuer writes one durable job_type=swarm_delegation row per
-// goal. A zero-value Store is a wiring bug (real Go error), never a domain
-// rejection.
+// DelegationEnqueueStore persists one complete swarm_spawn fan-out atomically.
+type DelegationEnqueueStore interface {
+	CreateBatch(context.Context, []documents.CreateIngestionJobRequest) ([]documents.IngestionJob, error)
+}
+
+// DelegationEnqueuer writes one atomic batch with one durable
+// job_type=swarm_delegation row per goal. A zero-value Store is a wiring bug
+// (real Go error), never a domain rejection.
 type DelegationEnqueuer struct {
-	Store DelegationJobStore
+	Store DelegationEnqueueStore
 }
 
 // delegationQueuedResult is EnqueueDelegation's typed return shape (51-11):
@@ -77,7 +82,7 @@ func EnqueueDelegation(ctx context.Context, enq *DelegationEnqueuer, identityID 
 	// shares the SAME fan-out key (delegationFanoutKey's own doc).
 	fanoutKey := delegationFanoutKey(identityID, brief.ConversationID, brief.ParentRunID, goals)
 	workers := make([]delegationQueuedWorker, 0, len(goals))
-	queued := 0
+	requests := make([]documents.CreateIngestionJobRequest, 0, len(goals))
 	for i, goal := range goals {
 		key := delegationIdempotencyKey(identityID, brief.ConversationID, brief.ParentRunID, i, goal)
 		childID := delegationChildID(key, i)
@@ -90,20 +95,20 @@ func EnqueueDelegation(ctx context.Context, enq *DelegationEnqueuer, identityID 
 		if err != nil {
 			return "", fmt.Errorf("swarm: delegation payload for goal %d: %w", i, err)
 		}
-		if _, err := enq.Store.Create(ctx, documents.CreateIngestionJobRequest{
+		requests = append(requests, documents.CreateIngestionJobRequest{
 			IdentityID:     identityID,
 			JobType:        JobTypeSwarmDelegation,
 			Status:         "queued",
 			IdempotencyKey: key,
 			MaxAttempts:    defaultDelegationMaxAttempts,
 			Payload:        m,
-		}); err != nil {
-			return "", fmt.Errorf("swarm: enqueue delegation goal %d: %w", i, err)
-		}
-		queued++
+		})
 		workers = append(workers, delegationQueuedWorker{GoalIndex: i, ChildID: childID, Status: StatusRunning, Goal: goal})
 	}
-	b, err := json.Marshal(delegationQueuedResult{Queued: queued, Note: delegationEnqueueNote, Workers: workers})
+	if _, err := enq.Store.CreateBatch(ctx, requests); err != nil {
+		return "", fmt.Errorf("swarm: enqueue delegation batch: %w", err)
+	}
+	b, err := json.Marshal(delegationQueuedResult{Queued: len(requests), Note: delegationEnqueueNote, Workers: workers})
 	if err != nil {
 		return "", fmt.Errorf("swarm: delegation queued result: %w", err)
 	}
