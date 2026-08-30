@@ -284,11 +284,19 @@ func usageStateDelta(usage llm.Usage) map[string]any {
 // wallclock, dedup}.
 func (a *LlmAgent) terminalBudgetEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, reason string) *Event {
 	ev := a.newEvent(ic, spanID, parentSpanID)
+	// steps_consumed is the LoopAgent contract (workflow/loop.go) the cockpit and
+	// Telegram notices read; measured absent on this path 2026-08-30 (amendment #188
+	// live E2E: /limit_hit arrived, the notice said "0 steps").
+	stepsConsumed := 0
+	if ic.Budget != nil {
+		stepsConsumed = ic.Budget.BranchConsumed()
+	}
 	ev.Actions = Actions{
 		Escalate: true,
 		StateDelta: map[string]any{
 			"termination_reason": "budget_exhausted",
 			"limit_hit":          reason,
+			"steps_consumed":     stepsConsumed,
 		},
 	}
 	return ev

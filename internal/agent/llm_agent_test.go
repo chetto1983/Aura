@@ -286,6 +286,11 @@ func TestLlmAgent_StepCap_Trips(t *testing.T) {
 	if last.Actions.StateDelta["limit_hit"] != "max_steps" {
 		t.Errorf("terminal limit_hit = %v, want max_steps", last.Actions.StateDelta["limit_hit"])
 	}
+	// The notices under the answer (cockpit + Telegram) read the count; it was
+	// missing on this path until the amendment #188 live E2E (2026-08-30).
+	if got := last.Actions.StateDelta["steps_consumed"]; got != maxSteps {
+		t.Errorf("terminal steps_consumed = %v, want %d", got, maxSteps)
+	}
 	if fc.CallCount() > maxSteps+2 {
 		t.Errorf("client called %d times, want <= %d (3 step cap + 1 recovery + 1 forced finalize)", fc.CallCount(), maxSteps+2)
 	}
