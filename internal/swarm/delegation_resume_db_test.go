@@ -343,7 +343,10 @@ func TestDelegationPauseResumeFullLifecycle(t *testing.T) {
 	l := &DelegationClaimLoop{
 		Store: store, IdentityID: identityID, WorkerID: "w",
 		Worker: worker, LeaseDuration: time.Minute,
-		Delivery:    &DelegationDelivery{Recorder: &fakeConversationRecorder{}},
+		// The durable terminal path treats a missing archiver as a retryable delivery
+		// failure (archivePreparedReport, 580714e26), so the resumed job would bounce
+		// back to queued instead of succeeding without one.
+		Delivery:    &DelegationDelivery{Recorder: &fakeConversationRecorder{}, Archiver: successfulReportArchiver()},
 		PauseParker: parker,
 	}
 
