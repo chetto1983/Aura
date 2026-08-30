@@ -39,31 +39,40 @@ func (a *LlmAgent) runTerminal(ic InvocationContext, spanID [8]byte, parentSpanI
 		// yield false (consumer stopped) → done=true; otherwise continue the loop.
 		return !yield(a.toolPreviewEvent(ic, spanID, parentSpanID, call.ID, "parse error"), nil)
 	}
-	// Verification gate first, for the reason it goes first at the content-stop seam:
-	// it is deterministic and free, and the critic below costs a model call. Unlike
-	// that seam there IS a tool_call to answer here, so the nudge rides a RoleTool
-	// result on the terminal call id — a RoleUser message would leave this
-	// text_response unanswered and break the wire.
-	// Either veto also repudiates any prose the round streamed before its
-	// text_response (#191): the consumers drop it, the translator is silent when
-	// there was none.
-	if nudge, ok := a.gateVerification(); ok {
-		a.history = append(a.history, llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Content: nudge})
-		if !a.repudiateStreamed(ic, spanID, parentSpanID, yield) {
-			return true
-		}
-		return !yield(a.toolPreviewEvent(ic, spanID, parentSpanID, call.ID, "verification gate: unverified edit"), nil)
-	}
-	if veto, feedback := a.gateCompletion(ic, answer); veto {
+	// Unlike the content-stop seam there IS a tool_call to answer here, so the
+	// follow-up rides a RoleTool result on the terminal call id — a RoleUser message
+	// would leave this text_response unanswered and break the wire. A veto also
+	// repudiates any prose the round streamed before its text_response (#191): the
+	// consumers drop it, the translator is silent when there was none.
+	if feedback, reason, veto := a.gateVoluntaryStop(ic, answer); veto {
 		a.history = append(a.history, llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Content: feedback})
 		if !a.repudiateStreamed(ic, spanID, parentSpanID, yield) {
 			return true
 		}
-		return !yield(a.toolPreviewEvent(ic, spanID, parentSpanID, call.ID, "completion gate: not done"), nil)
+		return !yield(a.toolPreviewEvent(ic, spanID, parentSpanID, call.ID, reason), nil)
 	}
 	a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, Content: answer})
 	yield(a.finalEvent(ic, spanID, parentSpanID, requestID, answer, "stop", acc.total()), nil)
 	return true
+}
+
+// gateVoluntaryStop runs the termination gates in cost order and returns the one
+// follow-up the turn owes, with the preview reason the tool seam reports. The
+// deterministic gates (verification, delivery #192) go first because they spend no
+// model call and the completion critic (D-43) spends one — a turn a free gate sends
+// back never pays for the paid one. Both seams call this, so the order and the
+// per-run counters can never diverge between prose stops and text_response.
+func (a *LlmAgent) gateVoluntaryStop(ic InvocationContext, answer string) (feedback, reason string, veto bool) {
+	if nudge, ok := a.gateVerification(); ok {
+		return nudge, "verification gate: unverified edit", true
+	}
+	if nudge, ok := a.gateDelivery(); ok {
+		return nudge, "delivery gate: artifact not sent", true
+	}
+	if vetoed, critique := a.gateCompletion(ic, answer); vetoed {
+		return critique, "completion gate: not done", true
+	}
+	return "", "", false
 }
 
 func (a *LlmAgent) appendSyntheticToolResults(calls []llm.ToolCall, content string) {

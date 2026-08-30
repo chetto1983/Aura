@@ -113,6 +113,13 @@ type LlmAgent struct {
 	verificationAttempts int
 	editedPaths          []string
 
+	// deliveredPaths accumulates the paths this run's send_file calls delivered and
+	// deliveryAttempts is the deliver-on-stop gate's own veto counter (max
+	// deliveryMaxAttempts, llm_agent_delivery.go); both per-run, both written only
+	// from the serial result loop like editedPaths.
+	deliveredPaths   []string
+	deliveryAttempts int
+
 	streamRetryUsed bool
 
 	// truncatedToolTurns counts consecutive turns whose tool call was cut mid-JSON by
@@ -485,24 +492,13 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				if finish == "length" {
 					answer += truncationNotice // D-21 — no auto-continue
 				}
-				// Verification gate: an edit with no fresh passing evidence gets one
-				// deterministic follow-up, injected exactly like a completion veto. It
-				// runs FIRST because it costs no model call and the completion critic
-				// costs one — a turn the free gate sends back never pays for the paid one.
-				if nudge, ok := a.gateVerification(); ok {
-					if !a.repudiateStreamed(ic, spanID, parentSpanID, yield) {
-						turnReason = "consumer_stopped"
-						return
-					}
-					a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: nudge})
-					continue
-				}
-				// Completion gate (D-43): content-stop is also a voluntary termination.
-				// No tool_call to attach feedback to here, so a veto appends only the
-				// user-role nudge. The vetoed answer must not become durable history
-				// (finalize copies history forward on budget trips) NOR stay on the
-				// wire: the draft was streamed live, so it is repudiated first (#191).
-				if veto, feedback := a.gateCompletion(ic, answer); veto {
+				// Content-stop is a voluntary termination, so the same gates as
+				// text_response run here (gateVoluntaryStop). No tool_call to attach
+				// feedback to, so a veto appends only the user-role follow-up. The
+				// vetoed answer must not become durable history (finalize copies history
+				// forward on budget trips) NOR stay on the wire: the draft was streamed
+				// live, so it is repudiated first (#191).
+				if feedback, _, veto := a.gateVoluntaryStop(ic, answer); veto {
 					if !a.repudiateStreamed(ic, spanID, parentSpanID, yield) {
 						turnReason = "consumer_stopped"
 						return

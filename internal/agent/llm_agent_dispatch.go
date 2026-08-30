@@ -134,6 +134,8 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 				// Mutating before execTool, and a failed write did touch the workspace.
 				a.recordEditedPath(calls[i])
 			}
+			// The delivery gate (#192) pairs those edits with what send_file actually sent.
+			a.recordDeliveredPath(calls[i], run.Result)
 			// Full-promotion parity: if this run was a tool_search hit, promote the tools
 			// it loaded (MetaActivatedTools) into a.activated so the NEXT turn's buildRequest
 			// makes them callable WITH their schema. Race-free: this is the serial result
