@@ -50,7 +50,7 @@ default) plus a few local CPU sidecars. It is built as a **product, not a protot
 | **CI** | build/vet/lint · CodeQL · `-race` + goleak · db/ArcadeDB/embed integration · MUSR two-identity E2E · web lint/test/mutation/Playwright · critical mutation ≥70% killed |
 | **Persistence** | Postgres (sqlc, pgx) + ArcadeDB (graph memory, full-text + LSM vector index) + Garage (S3 object store) |
 | **Default LLM** | DeepSeek-V4 via OpenRouter — provider-neutral; the active profile (provider, model, budgets) is hot-reloaded from the cockpit settings, no restart |
-| **Status** | v1.0.1 tagged 2026-06-20 · v2.0.0 industrial hardening shipped · v2.1.0 (Hermes/Claude-Code parity) in progress, 3/8 phases closed · `v1.0.2-rc1` being cut through the exact-SHA readiness gate |
+| **Status** | v1.0.1 tagged 2026-06-20 · v2.0.0 industrial hardening shipped · v2.1.0 (Hermes/Claude-Code parity) in progress, 3/8 phases closed · `v1.0.2-rc1` published on GHCR through the exact-SHA readiness gate (2026-08-30) |
 
 ## Key features
 
@@ -103,7 +103,7 @@ TLS/token access, and optional MCP siblings.
 > Tags `v1.0.0`/`v1.0.1` exist, but every earlier appliance image was retired (PRD
 > amendment #106.4) and no GitHub Release is currently published — check the
 > [Releases page](https://github.com/chetto1983/Aura/releases) for the current tag
-> (`v1.0.2-rc1` is the one being cut) and use it as `vX.Y.Z` below. While no image is
+> (`v1.0.2-rc1` is the latest) and use it as `vX.Y.Z` below. While no image is
 > on GHCR, build it from a checkout (see [Development](#development)) and set
 > `AURA_IMAGE=aura:local`.
 
