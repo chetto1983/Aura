@@ -4,16 +4,16 @@ milestone: v2.1.0
 current_phase: 51
 current_phase_name: Durable delegation
 status: executing
-stopped_at: Completed 51-12a-PLAN.md
-last_updated: "2026-08-29T20:57:12.192Z"
-last_activity: 2026-08-29
-last_activity_desc: Phase 51 plan 51-12a completed with verified worker transcript and status streams
-state_head: aff73bd55ab2cd356611763cf03bff37d2f234a1
+stopped_at: Completed 51-12b-PLAN.md
+last_updated: "2026-08-30T06:47:54.083Z"
+last_activity: 2026-08-30
+last_activity_desc: Phase 51 plan 51-12b completed with a 6/6 live delivery-envelope acceptance at 9.9/10
+state_head: 9b869b80ef4e716bb3eddb5e15e42036462a0740
 progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 48
-  completed_plans: 46
+  completed_plans: 47
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -29,8 +29,8 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 ## Current Position
 
 Phase: 51 (Durable delegation) — EXECUTING
-Plan 51-12a is closed with verified worker transcript replay/tail and multiplexed status streams.
-Status: In progress; next dependency-ready plan is 51-12b
+Plan 51-12b is closed with the worker cockpit and full delivery envelope verified live at 9.9/10.
+Status: In progress; next dependency-ready plan is 51-08
 
 **The roadmap shrank on 2026-08-25 (operator decision).** Phases **47** (tool-surface ceremony
 strip), **48** (un-defer and merges) and **53** (summarization spike) are DELETED, not annotated —
@@ -62,9 +62,9 @@ retaining byte caps, and `TestBridgedTool_Execute_MarksResultTrusted` pins MCP r
 The remaining unchecked MCP-02 item in REQUIREMENTS is its separate live unlisted-server proof;
 it is a roadmap acceptance obligation, not an unrecorded Calendar fork gap.
 
-Last activity: 2026-08-29 — Plan 51-12a worker event streams verified and closed
+Last activity: 2026-08-30 — Plan 51-12b live worker cockpit and delivery envelope verified and closed
 
-Progress: [██████████] 96% (46/48 milestone plans)
+Progress: [██████████] 98% (47/48 milestone plans)
 
 ## Performance Metrics
 
@@ -108,6 +108,7 @@ Progress: [██████████] 96% (46/48 milestone plans)
 | Phase 51 P09 | ~3h (continuation, after prior-session Task 1/2) | 3 tasks | 30 files |
 | Phase 51 P11 | 375min | 5 tasks | 44 files |
 | Phase 51 P12a | 45min | 2 tasks | 13 files |
+| Phase 51 P12b | 9h38m | 4 tasks | 209 files |
 
 ## Accumulated Context
 
@@ -219,6 +220,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 51]: 51-11 keeps delegation delivery origin-scoped: a cockpit-owned conversation is not pushed to Telegram; a Telegram proof starts from a Telegram-owned conversation.
 - [Phase 51]: 51-11 roots Telegram mutating turns with convID(chatID) plus inbound messageID; chatID identifies the private conversation, while messageID prevents separate turns from sharing one idempotency root.
 - [Phase 51]: 51-11 renders grouped delivery from the complete rows returned by the claiming UPDATE, never from the earlier candidate snapshot.
+- [Phase 51]: 51-12b subscribes worker clients to native named AG-UI EventSource records and treats terminal RUN_FINISHED/RUN_ERROR EOF as successful completion; only a pre-terminal transport error selects the artifact fallback.
+- [Phase 51]: 51-12b keeps the complete worker report in the Markdown artifact and sends only a rune-bounded projection through the steer rail.
+- [Phase 51]: 51-12b closes private Telegram evidence from structural timing and counts only; message text, identifiers, screenshots and session data are never retained.
 
 ### Pending Todos
 
@@ -283,10 +287,10 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-29T20:57:12.001Z
-Stopped at: Completed 51-12a-PLAN.md
-The Telegram-origin delivery envelope passed all five verdicts on the fresh healthy image. The
-operator approved the blocking checkpoint; SUMMARY.md and durable browser evidence are committed.
+Last session: 2026-08-30T06:47:54.083Z
+Stopped at: Completed 51-12b-PLAN.md
+The live worker cockpit and full delivery envelope passed all six verdicts at 9.9/10 on the fresh
+healthy local-model image. RESULTS.md, PRD Amendment #183 and 51-12b-SUMMARY.md are committed.
 
 Resume file: None
-Next action: execute 51-12b; 51-08 remains the phase-level live Definition of Done.
+Next action: execute 51-08, the final phase-level live Definition of Done.

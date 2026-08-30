@@ -148,7 +148,7 @@
 - [x] **SWARM-09**: Delegated work is durable — a task survives a process restart, is claimable from Postgres, and is never silently lost nor silently retried. Implements the approved-but-unbuilt [durable swarm messaging design](../docs/superpowers/specs/2026-06-29-durable-swarm-messaging-design.md); SWARM-03's background delegation is this substrate's first consumer, not a parallel mechanism
 - [ ] **SWARM-10**: The operator (and the parent) can watch a worker work — a tail-able live transcript per child, rather than waiting blind for the consolidated report. **Operator leg shipped (51-07, HTTP route); parent leg measured MISSING 2026-08-29** (Aura, asked in the cockpit: "non c'è un endpoint per pollare lo stato intermedio di un worker già accodato") — closed by the gap plan's `swarm_status` deferred tool over the 51-07 readers (PRD Amendment #172, point 4)
 - [x] **SWARM-11**: The PRD amendment ratifying the durable swarm substrate is committed **before** any of its code
-- [ ] **SWARM-12**: A delegation's result reaches the operator as a card, its full report as a canvas artifact, Telegram as exactly one short static message, and the cockpit shows a worker as a parallel read-only thread — measured 2026-08-29 (PRD Amendment #172): today the raw JSON report lands on the phone in chunks and as a bubble in the chat, and the 51-07 transcript has no viewer
+- [x] **SWARM-12**: A delegation's result reaches the operator as a card, its full report as a canvas artifact, Telegram as exactly one short static message, and the cockpit shows a worker as a parallel read-only thread — measured 2026-08-29 (PRD Amendment #172): today the raw JSON report lands on the phone in chunks and as a bubble in the chat, and the 51-07 transcript has no viewer
 
 ### Steering
 
@@ -273,7 +273,7 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 | SWARM-09 | Phase 51 | Complete |
 | SWARM-10 | Phase 51 | Pending (parent leg — gap plan; operator leg complete in 51-07) |
 | SWARM-11 | Phase 51 | Complete |
-| SWARM-12 | Phase 51 | Pending |
+| SWARM-12 | Phase 51 | Complete |
 | TOOL-05 | Phase 49 | Pending |
 | TOOL-13 | Phase 50 | Pending |
 | TOOL-14 | Phase 46 | Complete |
