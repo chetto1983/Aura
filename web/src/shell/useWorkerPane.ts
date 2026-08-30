@@ -59,7 +59,11 @@ export function useWorkerPane(
   useEffect(() => {
     try {
       localStorage.setItem(WORKER_OPEN_KEY, workerOpen ? '1' : '0');
-      if (watchedChildId.length > 0) localStorage.setItem(WORKER_CHILD_KEY, watchedChildId);
+      if (watchedChildId.length > 0) {
+        localStorage.setItem(WORKER_CHILD_KEY, watchedChildId);
+      } else {
+        localStorage.removeItem(WORKER_CHILD_KEY);
+      }
     } catch {
       // Persistence is best-effort; the current rail state remains authoritative.
     }
@@ -79,6 +83,7 @@ export function useWorkerPane(
   const closeWorker = useCallback(
     (intent: CloseIntent = 'explicit') => {
       setWorkerOpen(false);
+      setWatchedChildId('');
       if (!isDesktop && surfaces.overlayOpen) surfaces.closeOverlay(intent);
     },
     [isDesktop, surfaces],

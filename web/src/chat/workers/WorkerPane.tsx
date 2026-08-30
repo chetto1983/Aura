@@ -53,7 +53,8 @@ function WorkerMessage() {
 
 export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps) {
   const { t } = useTranslation();
-  const { workers, statuses, watchWorker } = useWatchWorker();
+  const { workers, statuses, ownsWorker, watchWorker } = useWatchWorker();
+  const workerOwned = conversationId.length > 0 && ownsWorker(childId);
   const streamKey = `${conversationId}\u0000${childId}`;
   const [streamState, setStreamState] = useState<{
     readonly key: string;
@@ -64,6 +65,7 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
     streamState.key === streamKey ? streamState : { key: streamKey, messages: [], failed: false };
 
   useEffect(() => {
+    if (!workerOwned) return;
     const stream = openWorkerStream(conversationId, childId, {
       onMessages: (messages) => {
         setStreamState({ key: streamKey, messages, failed: false });
@@ -77,7 +79,11 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
       },
     });
     return stream.close;
-  }, [childId, conversationId, streamKey]);
+  }, [childId, conversationId, streamKey, workerOwned]);
+
+  useEffect(() => {
+    if (!workerOwned) onClose();
+  }, [onClose, workerOwned]);
 
   const readonlyMessages = useMemo(
     () => current.messages.map((message) => toReadonlyMessage(message, childId)),
@@ -104,6 +110,8 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
       },
     ];
   }, [childId, statuses, workers]);
+
+  if (!workerOwned) return null;
 
   return (
     <section className="flex h-full min-h-0 flex-col px-3 pb-3 pt-3">

@@ -3,6 +3,13 @@ import type { DisplayChildReport } from '../displays/types';
 import { useWorkerStatuses } from './useWorkerStatuses';
 import { WorkerWatchContext, type WorkerWatchController } from './workerWatchControls';
 
+interface WorkerRegistry {
+  readonly conversationId: string;
+  readonly workers: readonly DisplayChildReport[];
+}
+
+const EMPTY_WORKERS: readonly DisplayChildReport[] = [];
+
 export function WorkerWatchProvider({
   children,
   conversationId,
@@ -14,23 +21,32 @@ export function WorkerWatchProvider({
   readonly onWatchWorker: (childId: string) => void;
   readonly onViewReport: () => void;
 }) {
-  const [workers, setWorkers] = useState<readonly DisplayChildReport[]>([]);
+  const [registry, setRegistry] = useState<WorkerRegistry>({ conversationId, workers: [] });
+  const workers = registry.conversationId === conversationId ? registry.workers : EMPTY_WORKERS;
   const statuses = useWorkerStatuses(workers.length > 0 ? conversationId : '');
-  const registerWorkers = useCallback((nextWorkers: readonly DisplayChildReport[]) => {
-    setWorkers(nextWorkers);
-  }, []);
+  const registerWorkers = useCallback(
+    (nextWorkers: readonly DisplayChildReport[]) => {
+      setRegistry({ conversationId, workers: nextWorkers });
+    },
+    [conversationId],
+  );
+
+  const ownsWorker = useCallback(
+    (childId: string) => workers.some((worker) => worker.child_id === childId),
+    [workers],
+  );
 
   const watchWorker = useCallback(
     (childId: string, nextWorkers?: readonly DisplayChildReport[]) => {
-      if (nextWorkers !== undefined) setWorkers(nextWorkers);
+      if (nextWorkers !== undefined) setRegistry({ conversationId, workers: nextWorkers });
       onWatchWorker(childId);
     },
-    [onWatchWorker],
+    [conversationId, onWatchWorker],
   );
 
   const controller = useMemo<WorkerWatchController>(
-    () => ({ workers, statuses, registerWorkers, watchWorker, viewReport: onViewReport }),
-    [onViewReport, registerWorkers, statuses, watchWorker, workers],
+    () => ({ workers, statuses, ownsWorker, registerWorkers, watchWorker, viewReport: onViewReport }),
+    [onViewReport, ownsWorker, registerWorkers, statuses, watchWorker, workers],
   );
 
   return <WorkerWatchContext.Provider value={controller}>{children}</WorkerWatchContext.Provider>;

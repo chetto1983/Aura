@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { useEffect, useRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { useArtifactsPanel } from './useArtifactsPanel';
@@ -73,5 +73,25 @@ describe('useWorkerPane', () => {
     expect(result.current.worker.watchedChildId).toBe('child-restored');
     expect(result.current.worker.workerPanelMounted).toBe(true);
     expect(result.current.worker.panelIds).toEqual([...BASE_PANEL_IDS, 'chat-worker']);
+  });
+
+  it('clears the watched child identity when the pane closes', async () => {
+    const { result } = renderHook(() => useExclusiveRightRail());
+
+    act(() => {
+      result.current.worker.openWorker('child-1');
+    });
+    expect(localStorage.getItem('aura.shell.worker-child')).toBe('child-1');
+
+    act(() => {
+      result.current.worker.closeWorker();
+    });
+
+    expect(result.current.worker.watchedChildId).toBe('');
+    expect(result.current.worker.workerPanelMounted).toBe(false);
+    await waitFor(() => {
+      expect(localStorage.getItem('aura.shell.worker-child')).toBeNull();
+      expect(localStorage.getItem('aura.shell.worker-open')).toBe('0');
+    });
   });
 });
