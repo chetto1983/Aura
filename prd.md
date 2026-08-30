@@ -10158,3 +10158,64 @@ flusso completo, che funziona.
 > and a post-deployment live route witness with unchanged container PID/`StartedAt` across the
 > Settings mutation. It establishes no hot-reload contract for embedding, vision, STT, TTS,
 > Telegram credentials or token-budget settings.
+
+## Section A hot primary route publishes one measured model profile (Amendment #185, 2026-08-30)
+
+> **Amendment #185 (2026-08-30 - correction to #184 after live metadata measurement and
+> provider-reference inventory).** The running llama.cpp sidecar reported model
+> `gemma-4-12b` and `n_ctx=81920` through `GET /v1/models`; its `/props` response reported the
+> same loaded context. Aura still advertised and budgeted `1,000,000` tokens, inherited from the
+> DeepSeek/OpenRouter boot default. Code inspection also showed that #184's first implementation
+> cloned the fallback price map during a route change, left `/api/me` and Telegram `/cost` bound
+> to the boot config, and made a DELETE fall back in the runtime while `GET /api/settings` kept
+> showing the deleted value copied into process env by the boot overlay. The route client was hot;
+> the model profile around it was not.
+>
+> Local inventory of Hermes Agent, LibreChat and `pi` measured the missing abstraction. Provider,
+> wire API and authentication are separate dimensions: OpenAI API-key access uses OpenAI
+> Responses, ChatGPT subscription access is a distinct `openai-codex` OAuth provider and wire
+> protocol, and Anthropic uses native Messages with API-key or subscription OAuth credentials.
+> A model is identified by `(provider, model_id)` and owns context window, output cap, pricing,
+> cache rates and capabilities. An endpoint string alone cannot safely select those semantics.
+>
+> **Immediate hot-route contract.** For the currently shipped `openrouter` and `llamacpp`
+> providers, a prepared route is one immutable snapshot containing client, provider, wire API,
+> model id, context window, maximum output, prices and capability source. Settings validation
+> resolves the selected model's live metadata before persistence; persistence and publication do
+> not perform a second network lookup. The whole route is saved through one batch mutation so a
+> cloud/local switch never publishes a mixed provider/base/model intermediate state. New runs and
+> every model-dependent read surface consume that same snapshot; in-flight runs retain the one
+> they started with.
+>
+> llama.cpp context comes from the selected row's `meta.n_ctx` in its OpenAI-compatible
+> `/models` response and local per-token price is an explicit zero/included value, not an unknown
+> rate inherited from a cloud model. OpenRouter context, maximum output and prompt/completion/cache
+> rates come from its live `/models` row in one bounded request. An explicit operator
+> `AURA_MODEL_CONTEXT_WINDOW` or `AURA_MODEL_MAX_OUTPUT_TOKENS` override wins over discovered
+> metadata; absent overrides use the provider value. Missing or malformed metadata rejects a new
+> route before persistence, while a boot may retain its last valid configured profile with an
+> explicit degraded warning. Logs name provider and model only; they never emit a raw base URL,
+> credential or URL userinfo/query.
+>
+> **Provider-native follow-on.** Subscription providers are a dedicated GSD phase, not extra
+> aliases accepted by the OpenAI-compatible constructor. Its provider registry must support at
+> least `openai` (API key + Responses), `openai-codex` (ChatGPT subscription OAuth + Codex
+> Responses semantics), and `anthropic` (native Messages + API-key/OAuth auth variants), while
+> preserving `openrouter` and local OpenAI-compatible providers. OAuth credentials are encrypted
+> operator/identity-scoped records with refresh and revocation; they never enter `aura.settings`,
+> process env, logs, planning artifacts or git. The phase must verify the transport against the
+> current provider implementation before enabling it and must not disguise an unsupported
+> subscription flow as a configurable base URL.
+>
+> Model catalog entries and caches are provider-scoped and, whenever credentials or headers can
+> alter visibility, identity-scoped. Explicit administrator overrides are authoritative; otherwise
+> live provider metadata is cached with a last-known-good fallback and visible provenance. Cost
+> state distinguishes provider-reported actual, rate-derived estimate, subscription-included,
+> local-included and unknown; numeric zero alone is not enough to represent those states.
+>
+> **What this amendment does not prove.** A metadata GET proves the loaded local context but does
+> not prove generation at that limit. Reference code proves viable provider boundaries, not that
+> Aura's future OAuth clients are accepted by current OpenAI or Anthropic services. The
+> subscription phase therefore requires its own specification, threat model, protocol tests and
+> an operator-authorized live login; no existing Telegram session, chat identifier or provider
+> credential may be used as test evidence or committed.
