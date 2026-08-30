@@ -12,12 +12,16 @@ import (
 	"github.com/chetto1983/aura/internal/scoring"
 )
 
-// TaskTool is the ONE non-deferred scheduling verb the model sees (D-09/D-11).
-// A single manifest entry — name "task" — fronts the whole scheduler grammar via
-// an `action` enum (schedule|list|cancel|run_now) dispatched through an
-// ActionRouter, replacing the pre-rewrite 587-LOC five-tool god-class. It is
-// NON-deferred (D-11): scheduling/reminders are a core verb the model must always
-// see, so its spec stays in the default manifest. The schema is OpenAI-wire-safe
+// TaskTool is the ONE scheduling verb the model sees (D-09/D-11). A single entry —
+// name "task" — fronts the whole scheduler grammar via an `action` enum
+// (schedule|list|cancel|run_now) dispatched through an ActionRouter, replacing the
+// pre-rewrite 587-LOC five-tool god-class. D-11 made it non-deferred; 82dc4706e
+// (2026-07-30) deferred it on measurement (795 tokens on every turn for a verb a
+// fraction of turns use), so the roster line and tool_search's BM25 over this spec
+// are the only two ways the model reaches it — the Summary and Description must
+// carry every word an operator uses for "later / periodically / wake up / cron"
+// (measured 2026-08-30: "scheduling" and "scheduler" found nothing and the model
+// told the operator it could not wake itself up). The schema is OpenAI-wire-safe
 // (D-10): top-level required=["action"] ONLY, with NO root oneOf/anyOf/enum (a
 // root enum 400s DeepSeek, which is OpenAI-compat) — per-action requirements live
 // in the field `description` strings.
@@ -129,9 +133,9 @@ const taskParamsSchema = `{
 func (t *TaskTool) Spec() Spec {
 	return Spec{
 		Name:    "task",
-		Summary: "Schedule, list, cancel, or run background tasks and reminders.",
-		Description: "Manage scheduled work via a single action enum. action=schedule creates a one-shot (at), interval (every), or cron task of a kind (reminder|agent_job|backup_postgres); action=list shows active and awaiting-approval tasks; action=cancel/run_now operate on a task_id. " +
-			"When the operator asks for recurring or future work (a daily summary, a morning digest, a periodic check, a reminder), schedule it here instead of trying to do it now: a reminder delivers its payload text; an agent_job runs a fresh agent turn AT FIRE TIME with the goal in its payload, so you do NOT need the job's tools available now — the job resolves its own tools when it runs. Put the operator's intent in the payload goal and schedule it. " +
+		Summary: "Your scheduler and timer (scheduling): schedule future, periodic or recurring work — reminders and agent_job wake-ups later, tomorrow, at a time, every N minutes or on a cron; list, cancel, or run one now.",
+		Description: "Aura's scheduler, timer and scheduling wake-up: manage scheduled work via a single action enum. action=schedule creates a one-shot (at), interval (every), or cron task of a kind (reminder|agent_job|backup_postgres); action=list shows active and awaiting-approval tasks; action=cancel/run_now operate on a task_id. " +
+			"When the operator asks for recurring or future work (a daily summary, a morning digest, a periodic check, a reminder, something later or tomorrow), or when you need to wake up later to check on something, schedule it here instead of trying to do it now: a reminder delivers its payload text; an agent_job runs a fresh agent turn AT FIRE TIME with the goal in its payload, so you do NOT need the job's tools available now — the job resolves its own tools when it runs. Put the operator's intent in the payload goal and schedule it. " +
 			"For action=schedule always honor an explicit notify choice. If the operator did not specify one, call ask_user(kind=choice) before scheduling. An omitted notify persists nothing and returns a delivery_choice_required guard directive. " +
 			"Destructive payloads (rm/drop/delete) are routed to pending_approval and require operator approval outside this model-facing tool before they fire.",
 		Parameters: json.RawMessage(taskParamsSchema),
