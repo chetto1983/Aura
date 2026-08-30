@@ -1,0 +1,344 @@
+# Progress
+
+Last updated: 2026-08-30
+
+This file is the durable handoff for the current work. Update it after each
+meaningful implementation, verification, commit, or live-stack step so the work
+survives context compaction.
+
+## Objective
+
+Finish GSD Phase 51, plan 51-08, without spending OpenRouter credits. Aura must
+support both the local llama.cpp model `gemma-4-12b` and the operator's Ollama
+bridge with `gemma4:31b-cloud`, expose measured context/cost provenance
+consistently, and switch LLM endpoints/models at runtime without restarting the
+Aura container.
+
+A separate follow-on GSD phase will add provider-native OpenAI and Anthropic
+routes, including subscription authentication. That work is deliberately not
+being folded into Phase 51.
+
+## Non-negotiable constraints
+
+- Use GSD artifacts and phase workflow for the work.
+- Do not run inference through OpenRouter. Use local `gemma-4-12b` or the
+  operator-authorized Ollama subscription model `gemma4:31b-cloud`.
+- Endpoint/model/profile changes must not restart or recreate Aura.
+- Never inspect, retain, write, or commit Telegram chat content, identifiers,
+  credentials, authorization data, or session material.
+- Never write raw provider credentials or credential-bearing URLs to logs,
+  settings, git, planning artifacts, or this file.
+- Never run the retired `scripts/quality_snapshot_gate.sh` (PRD amendment #177).
+- Never stage `.bg-shell/`, `.mcp.json`, or `.planning/milestone.lock`.
+- The repositories under `D:/tmp` are read-only implementation references.
+
+## GSD state
+
+- Active command: `gsd-execute-phase 51`.
+- Phase 51 has 13 of 14 plans complete.
+- Remaining plan: `.planning/phases/51-durable-delegation/51-08-PLAN.md`.
+- Plan 51-08 is wave 9 and owns the live SC#1-SC#5 validation.
+- It was paused because the live process still used its boot-time OpenRouter
+  route even though the database held a local llama.cpp route.
+- Current work fixes that runtime publication defect before resuming the live
+  acceptance run.
+- After Phase 51 is complete, insert and plan a provider-native phase through
+  GSD. It should not move the current phase pointer while 51-08 is unfinished.
+
+Current execution checklist:
+
+1. PRD hot-route contract: complete.
+2. RED runtime tests: complete.
+3. Prepare and publish a complete model profile: implemented, verification in
+   progress; committed.
+4. Add the measured Ollama provider/profile and verify it live through Aura's
+   existing client: implemented; focused and live tests green.
+5. Align Settings batch update, cockpit, AG-UI, and Telegram runtime consumers:
+   implemented; committed.
+6. Race/build/frontend/live no-restart verification: in progress.
+7. Resume and complete 51-08: pending.
+8. Insert and plan provider-native subscription phase: pending.
+
+## Committed decisions
+
+- `ab2c576c5 docs(settings): define hot primary LLM route`
+  - PRD amendment #184 defines runtime endpoint/model switching.
+- `b11fa906b test(settings): expose missing hot LLM route`
+  - Adds the RED runtime behavior tests.
+- `7c8ce61ab docs(settings): define measured model profile`
+  - PRD amendment #185 records the measured local context and provider/profile
+    design contract.
+- `ea5dcfbef docs(settings): define measured Ollama cloud route`
+  - PRD amendment #186 records Ollama 0.33.2, the keyless OpenAI-compatible
+    bridge, `/api/show` discovery, subscription cost semantics, and live-test
+    boundary.
+- `f4cd74342 feat(llm): publish provider model profiles atomically`
+  - Adds immutable operation snapshots, provider metadata resolution, Ollama
+    pricing provenance, and runner/cron/swarm integration.
+- `7ab98b356 feat(settings): hot-reload complete LLM profiles`
+  - Adds prepare-before-persist batch Settings updates and hot AG-UI publication.
+- `e74da321d feat(telegram): follow the hot LLM cost profile`
+  - Makes `/cost` follow the active snapshot without retaining Telegram data.
+- `213e617f5 feat(web): switch primary LLM routes atomically`
+  - Adds the three provider presets, batch save, tests, and rebuilt embedded UI.
+- `37a344e9f test(llm): drain large SSE fixture requests`
+  - Stabilizes large loopback SSE fixtures on Windows.
+
+PRD amendment #185 records these decisions:
+
+- The live llama.cpp `/v1/models` response identifies `gemma-4-12b` and reports
+  `meta.n_ctx=81920`. Aura had incorrectly advertised and budgeted 1,000,000.
+- Provider identity, API/protocol, authentication, and model profile are
+  separate concerns.
+- A hot profile includes client, provider, model, context window, maximum output,
+  prices/caps, and explicit override provenance.
+- Prepare the full profile before persistence, persist it as one batch, then
+  publish one immutable runtime snapshot.
+- Local inference has an explicit zero/included cost instead of unknown remote
+  pricing.
+- Explicit context/max-output settings override provider metadata.
+- Future provider-native support distinguishes OpenAI API-key Responses from
+  ChatGPT subscription OAuth/Codex Responses, and uses native Anthropic Messages
+  for Anthropic key/OAuth routes.
+- Cost status must distinguish actual, estimated, subscription-included,
+  local-included, and unknown.
+
+## Reference inventory
+
+Inspected local sources:
+
+- `D:/tmp/pi/packages/ai/src/providers`
+- `D:/tmp/hermes-agent`
+- `D:/tmp/LibreChat`
+- `D:/tmp/codex`
+
+Relevant findings:
+
+- pi keys models by `(provider, id)` and keeps API type, auth, context, max
+  tokens, cost, caching tiers, and capabilities in the provider/model profile.
+- pi's custom Ollama pattern reuses `openai-completions` at an `/v1` base URL,
+  resolves keyless auth, and suppresses unsupported developer-role/reasoning
+  assumptions instead of creating a separate client.
+- pi distinguishes `openai` (`openai-responses`, API key) from
+  `openai-codex` (`openai-codex-responses`, ChatGPT Plus/Pro OAuth).
+- pi uses native `anthropic-messages` with API key or Claude Pro/Max OAuth.
+- Hermes also separates provider/auth type and carries explicit cost source and
+  status.
+- LibreChat supports authoritative administrator metadata overrides, otherwise
+  provider metadata fetch/cache scoped by provider and tenant.
+- Aura's current Slice 13 contract is an OpenAI-compatible remote/local router;
+  provider-native subscriptions therefore need their own phase.
+
+## Live measurements
+
+Before this fix, the database route was:
+
+- provider: `llamacpp`
+- base URL: `http://aura-llm:8084/v1`
+- model: `gemma-4-12b`
+
+The sidecar metadata endpoint reports context window 81920. No OpenRouter
+inference request or charge was incurred.
+
+Ollama 0.33.2 live measurement:
+
+- Aura's container reaches `http://host.docker.internal:11434` without restart.
+- `gemma4:31b-cloud` is not listed by `/api/tags` or `/v1/models`.
+- `POST /api/show` reports `gemma4.context_length=262144`, BF16, and completion,
+  thinking, tools, and vision capabilities.
+- Native `/api/chat` and non-streaming `/v1/chat/completions` returned their
+  requested sentinels.
+- Aura's `openai_compat.Client` passed real SSE completion, `/api/show` profile
+  resolution, and streamed tool-call assembly against the model.
+- The profile is `subscription-included` with no fabricated or inherited numeric
+  token price.
+
+Aura baseline for the later no-restart witness:
+
+- container PID: `75817`
+- started at: `2026-08-30T01:22:21.123134167Z`
+- restart count: `0`
+- image: `sha256:699ce1260f16f7974f6d9885121ad8b109f22e5f867065a76d626c54f9ee95ca`
+
+The final live proof must show a Settings mutation and successful local use while
+the same PID, start time, and restart count remain unchanged. Loading a newly
+built binary is a separate rollout concern and must not be confused with the
+runtime endpoint-switch contract.
+
+## Current implementation
+
+The implementation below is committed in the scoped changes listed above.
+
+### Atomic LLM runtime
+
+- `internal/llm/runtime.go` publishes immutable `RuntimeSnapshot{Client, Config}`
+  values atomically and clones mutable maps before publication.
+- Runner, cron handlers, resident swarm workers, AG-UI, and Telegram snapshot the
+  runtime at the start of an operation.
+- In-flight operations retain their original client/profile while new operations
+  observe the replacement.
+- Boot captures the pre-settings fallback before applying database environment
+  overlays.
+
+### Model metadata and pricing
+
+- `internal/llm/config.go` tracks whether context window and maximum output were
+  explicitly configured.
+- `internal/llm/pricing_source.go` fetches one provider model projection and can
+  read OpenRouter context/max-output/pricing plus llama.cpp `meta.n_ctx`.
+- `ResolveModelProfile` clones config maps, applies measured metadata only where
+  no explicit override exists, assigns explicit zero local pricing, validates,
+  and leaves the original config unchanged on failure.
+- Provider metadata requests scope credentials by provider: an OpenRouter key is
+  retained in the active configuration for a later cloud switch but is never sent
+  to a local llama.cpp metadata endpoint.
+- Boot profile resolution degrades to configured fallback without logging raw
+  base URLs.
+- Ollama model metadata uses bounded keyless `POST /api/show`; the configured
+  `/v1` URL is parsed structurally to derive the native endpoint.
+- Ollama local models receive explicit local-included zero cost; `*-cloud`
+  models receive subscription-included provenance and no numeric price.
+- Provider spend never sends a retained OpenRouter key to Ollama.
+- One-shot profile, pricing, and spend clients close idle connections after use.
+
+### Settings prepare, persist, publish
+
+- `internal/settings/settings.go` has advisory-lock-protected `UpsertMany` in one
+  transaction.
+- `PUT /api/settings/llm-profile` accepts only hot-profile keys.
+- A reloader prepares and validates the complete client/profile before database
+  mutation, persists all keys in one transaction, then executes one publication
+  closure.
+- Single-key PUT/DELETE uses the same prepare-before-persist behavior.
+- GET after DELETE reads the active runtime value instead of a stale process
+  environment overlay.
+- URL validation rejects userinfo, query, and fragment data and returns generic
+  errors.
+- Active non-profile configuration, including a database-overlaid API key, is
+  retained while a profile changes.
+
+### Runtime consumers
+
+- AG-UI reads model context directly from the same atomic runtime snapshot used
+  for the client, preventing model/context mismatch.
+- Reasoning capabilities refresh with the published profile.
+- Telegram `/cost` snapshots the current runtime for model, prices, and spend
+  backend. Tests use synthetic data only; no Telegram identifiers are retained.
+
+### Frontend
+
+- The Settings API exposes `putLLMProfile`.
+- Model Settings saves dirty hot-profile fields in one batch request and saves
+  unrelated settings individually.
+- The default local URL is `http://aura-llm:8084/v1`.
+- The routing control now has atomic OpenRouter, llama.cpp, and Ollama presets;
+  Ollama selects `http://host.docker.internal:11434/v1` and
+  `gemma4:31b-cloud` in the same batch.
+- The embedded Web UI distribution was rebuilt after the source changes.
+
+## Tests added or updated
+
+- Runtime map cloning and replacement behavior.
+- Runner, cron, and swarm operation-level snapshot behavior.
+- Local profile context 81920 and explicit zero price.
+- OpenRouter context/max-output/pricing projection and explicit override
+  precedence.
+- Failed profile resolution does not mutate source configuration.
+- Local profile metadata requests never receive a retained cloud bearer token.
+- Active database-overlaid API key survives a hot profile change.
+- Settings batch prepares, persists, and applies exactly once.
+- Settings GET after DELETE returns active fallback instead of stale env data.
+- AG-UI context follows runtime replacement.
+- Telegram cost output follows the current synthetic runtime profile.
+- Frontend batch endpoint and one-request Model Settings behavior.
+- Ollama `/api/show` projection, malformed/ambiguous context rejection, local vs
+  cloud cost provenance, credential isolation, Settings publication, and wire
+  compatibility.
+- Opt-in live Ollama tests for profile discovery, SSE completion, and streamed
+  tool calls through Aura's production client.
+- The large SSE fixture drains the POST body before returning its 70 KB response,
+  preventing Windows from resetting and truncating the loopback connection.
+
+## Verification status
+
+Green:
+
+- Focused Go tests for `internal/llm`, `internal/agui`,
+  `internal/channels/telegram`, `internal/settings`, `cmd/aura`, runner, cron, and
+  swarm.
+- `go vet ./...`
+- `go build ./cmd/aura`
+- `npm run typecheck`
+- `npm run build`
+- `npm run lint`
+- Full frontend test run: 222 files, 1,897 tests passed.
+- Frontend coverage: 91.06% statements, 85.05% branches, 90.26% functions,
+  93.04% lines.
+- Split Model Settings routing tests: 2 files, 25 tests passed.
+- The previously failing 70 KB SDK stream test passed 20 consecutive runs after
+  the fixture correction, and `internal/llm/openai_compat` passes in the full run.
+- WSL race matrix passed for `internal/llm`, `internal/agui`, `internal/runner`,
+  `internal/cron/handlers`, `internal/swarm`, `internal/channels/telegram`, and
+  `cmd/aura`.
+- Full Linux/WSL `go test ./...` passed.
+- `git diff --check`
+- Live `gemma4:31b-cloud` gate: profile discovery, streaming completion, and
+  streaming tool call all passed; goleak passed after closing idle metadata
+  connections.
+
+Needs completion:
+
+- Native Windows `go test ./...` passes every changed package but still exits
+  non-zero on three unrelated portability assertions: two `internal/agent` tests
+  compare `%TEMP%` paths using POSIX separator assumptions, and one
+  `internal/agent/tools` test expects POSIX mode `0600` from Windows. These files
+  are outside the implementation diff. The authoritative Linux/WSL full suite is
+  green; do not widen this phase into unrelated Windows-only test maintenance.
+- Re-run the authoritative full WSL Go suite after the final Ollama additions.
+- Perform the live no-restart Settings witness against local llama.cpp.
+- Resume plan 51-08 SC#1-SC#5 only after the route is proven local.
+
+## Files and staging
+
+The implementation and rebuilt Web UI are committed. The remaining untracked
+local files are `.bg-shell/`, `.mcp.json`, and `.planning/milestone.lock`; they
+must remain outside git.
+
+For subsequent commits:
+
+- Keep the implementation and tests in scoped atomic commits.
+- Update the Phase 51 plan/summary/state only from measured verification.
+- Do not stage `.bg-shell/`, `.mcp.json`, or `.planning/milestone.lock`.
+- Do not stage or commit any messaging session or account material.
+
+## Next actions
+
+1. Re-run the full WSL Go suite and final repository integrity checks.
+2. Deploy only through a path that preserves the distinction between a software
+   rollout and subsequent no-restart endpoint changes.
+3. Use the Settings batch endpoint to publish the local llama.cpp profile and
+   capture the unchanged-container witness.
+4. Finish Phase 51 plan 51-08 and its GSD verification/summary artifacts.
+5. Insert, discuss, specify, and plan the provider-native subscription phase via
+   GSD after Phase 51 is complete.
+
+## Resume commands
+
+Run from `D:/Repo/Aura`:
+
+```powershell
+go test ./internal/llm/openai_compat -run TestSDKStreamAccumulatesSplitToolCallAndUsage -count=1
+go test ./...
+npm run lint
+npm run typecheck
+npm test
+npm run build
+git diff --check
+git status --short
+```
+
+Race verification:
+
+```powershell
+wsl bash -lc 'cd /mnt/d/Repo/Aura && go test -race ./internal/llm ./internal/agui ./internal/runner ./internal/cron/handlers ./internal/swarm ./internal/channels/telegram ./cmd/aura'
+```
