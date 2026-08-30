@@ -322,3 +322,17 @@ func TestSwarmStatusSpecIsDeferred(t *testing.T) {
 		t.Fatal("Summary and Description must both be non-empty")
 	}
 }
+
+func TestSwarmStatusSpecRequiresFactBasedOperatorAnswer(t *testing.T) {
+	spec := (&SwarmStatus{}).Spec()
+	for surface, text := range map[string]string{
+		"summary":     spec.Summary,
+		"description": spec.Description,
+	} {
+		for _, field := range []string{"child_id", "status", "elapsed_sec", "recent activity"} {
+			if !strings.Contains(text, field) {
+				t.Errorf("%s does not require %q in the operator answer", surface, field)
+			}
+		}
+	}
+}
