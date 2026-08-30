@@ -55,14 +55,23 @@ func (a *LlmAgent) reasoningChunkEvent(ic InvocationContext, spanID [8]byte, par
 	return ev
 }
 
-// discardStreamedEvent is the mid-stream-retry repudiation signal (B-12): a marker
-// Event (no LLMResponse) whose Actions.DiscardStreamed tells a streaming consumer to
-// drop the partial chunks the failed attempt already showed, so the retry renders
-// over a blank slate. Emitted once, right before the retry re-enters the loop.
+// discardStreamedEvent is the repudiation signal: a marker Event (no LLMResponse)
+// whose Actions.DiscardStreamed tells a streaming consumer to drop the chunks this
+// round already showed, so what follows renders over a blank slate. It fires on a
+// mid-stream retry (B-12) and on a gate veto (amendment #191: a vetoed content-stop
+// draft otherwise stays on the wire and, worse, marks the round as "already
+// streamed" so the real answer is never emitted).
 func (a *LlmAgent) discardStreamedEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte) *Event {
 	ev := a.newEvent(ic, spanID, parentSpanID)
 	ev.Actions.DiscardStreamed = true
 	return ev
+}
+
+// repudiateStreamed yields the DiscardStreamed marker for a round whose prose the
+// loop is about to throw away. Returns false when the consumer stopped (iter.Seq2
+// contract: no further yield after a false return).
+func (a *LlmAgent) repudiateStreamed(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, yield func(*Event, error) bool) bool {
+	return yield(a.discardStreamedEvent(ic, spanID, parentSpanID), nil)
 }
 
 // toolCallEvent announces a finalized tool call before dispatch (D-12 activity).

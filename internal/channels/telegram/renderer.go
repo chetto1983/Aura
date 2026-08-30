@@ -96,6 +96,15 @@ func (r *renderer) consume(ctx context.Context, ch <-chan events.Event) {
 			r.flush(ctx, false)
 		case *events.TextMessageEndEvent:
 			r.flush(ctx, true)
+		case *events.CustomEvent:
+			// aura.discard (amendment #191): the agent repudiated the prose it had
+			// streamed. Forget it — and re-arm the final flush — so the next delta
+			// edits msg #2 over a blank slate instead of appending the real answer
+			// to a draft the agent threw away.
+			if e.Name == agui.DiscardEventName {
+				r.buf.Reset()
+				r.textDone = false
+			}
 		case *events.RunFinishedEvent:
 			// Finalize any buffered content the END frame did not flush (a run that
 			// ends without a trailing TEXT_MESSAGE_END still delivers its text).

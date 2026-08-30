@@ -74,6 +74,35 @@ export function updateText(state: AssistantTurnState, messageId: string, text: s
   state.content[index] = { ...part, text };
 }
 
+/** The `aura.discard` CUSTOM payload (amendment #191): the agent repudiated the prose
+ *  it streamed on `message_id` — a draft the completion gate vetoed, or a partial a
+ *  mid-stream retry replaced. */
+export function isDiscardNotice(value: unknown): value is { readonly message_id: string } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { readonly message_id?: unknown }).message_id === 'string'
+  );
+}
+
+/**
+ * Drop the text part a repudiated message streamed. The part leaves `content`, every
+ * index map shifts down past it, and `text` is rebuilt from what remains, so the real
+ * answer renders alone — measured live 2026-08-30, the cockpit showed two vetoed
+ * drafts and never the answer that followed them.
+ */
+export function discardText(state: AssistantTurnState, messageId: string): void {
+  const index = state.textById.get(messageId);
+  if (index === undefined) return;
+  state.content.splice(index, 1);
+  state.textById.delete(messageId);
+  for (const map of [state.textById, state.reasoningById, state.toolIndexById]) {
+    for (const [key, i] of map) if (i > index) map.set(key, i - 1);
+  }
+  state.text = state.content.map((part) => (part.type === 'text' ? part.text : '')).join('');
+  state.textOpen = false;
+}
+
 export function ensureReasoning(state: AssistantTurnState, messageId: string): ReasoningPart {
   const existingIndex = state.reasoningById.get(messageId);
   if (existingIndex !== undefined) {

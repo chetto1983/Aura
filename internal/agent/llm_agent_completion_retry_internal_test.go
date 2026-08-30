@@ -91,6 +91,20 @@ func TestContentStopVetoDoesNotPersistIntoFinalize(t *testing.T) {
 	if strings.Contains(final, vetoed) {
 		t.Fatalf("finalize output leaked the vetoed answer: %q", final)
 	}
+	// The vetoed draft was streamed live, so the round must repudiate it on the
+	// wire too (amendment #191) — exactly once, before the finalize answer.
+	discards := 0
+	for i, ev := range evs {
+		if ev != nil && ev.Actions.DiscardStreamed {
+			discards++
+			if ev.LLMResponse != nil || i == len(evs)-1 {
+				t.Fatalf("discard event %d malformed or terminal: %+v", i, ev)
+			}
+		}
+	}
+	if discards != 1 {
+		t.Fatalf("DiscardStreamed events = %d, want exactly one for the vetoed content-stop round", discards)
+	}
 	for _, msg := range a.history {
 		if msg.Role == llm.RoleAssistant && strings.Contains(msg.Content, vetoed) {
 			t.Fatalf("vetoed content-stop answer persisted as assistant history: %#v", a.history)

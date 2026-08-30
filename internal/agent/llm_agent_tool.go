@@ -44,12 +44,21 @@ func (a *LlmAgent) runTerminal(ic InvocationContext, spanID [8]byte, parentSpanI
 	// that seam there IS a tool_call to answer here, so the nudge rides a RoleTool
 	// result on the terminal call id — a RoleUser message would leave this
 	// text_response unanswered and break the wire.
+	// Either veto also repudiates any prose the round streamed before its
+	// text_response (#191): the consumers drop it, the translator is silent when
+	// there was none.
 	if nudge, ok := a.gateVerification(); ok {
 		a.history = append(a.history, llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Content: nudge})
+		if !a.repudiateStreamed(ic, spanID, parentSpanID, yield) {
+			return true
+		}
 		return !yield(a.toolPreviewEvent(ic, spanID, parentSpanID, call.ID, "verification gate: unverified edit"), nil)
 	}
 	if veto, feedback := a.gateCompletion(ic, answer); veto {
 		a.history = append(a.history, llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Content: feedback})
+		if !a.repudiateStreamed(ic, spanID, parentSpanID, yield) {
+			return true
+		}
 		return !yield(a.toolPreviewEvent(ic, spanID, parentSpanID, call.ID, "completion gate: not done"), nil)
 	}
 	a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, Content: answer})
