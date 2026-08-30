@@ -44,8 +44,8 @@ default) plus a few local CPU sidecars. It is built as a **product, not a protot
 | | |
 |---|---|
 | **Language** | Go 1.26 |
-| **Size** | ~98k LOC non-test (`cmd` + `internal`, of which ~7k sqlc-generated) · 68 internal packages |
-| **Tests** | ~143k LOC — table-driven · property-based · fuzz · `-race` · `goleak` · mutation |
+| **Size** | ~148k lines of non-test Go (`cmd` + `internal`, of which ~10k sqlc-generated) · 77 `internal` packages · ~41k lines of TypeScript in `web/` (measured 2026-08-30) |
+| **Tests** | ~210k lines of Go tests + ~46k of web tests — table-driven · property-based · fuzz · `-race` · `goleak` · mutation |
 | **Test coverage** | owned-surface aggregate **≥85%** (87.0% measured 2026-08-30) plus a fail-closed per-package policy, enforced in CI on every push |
 | **CI** | build/vet/lint · CodeQL · `-race` + goleak · db/ArcadeDB/embed integration · MUSR two-identity E2E · web lint/test/mutation/Playwright · critical mutation ≥70% killed |
 | **Persistence** | Postgres (sqlc, pgx) + ArcadeDB (graph memory, full-text + LSM vector index) + Garage (S3 object store) |
