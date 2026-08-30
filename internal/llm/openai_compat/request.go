@@ -217,16 +217,21 @@ func appendSamplingOptions(opts []option.RequestOption, sampling llm.Sampling) [
 }
 
 func appendReasoningOptions(opts []option.RequestOption, cfg llm.Config, reasoning llm.ReasoningConfig, params *openai.ChatCompletionNewParams) []option.RequestOption {
-	if llm.ReasoningTarget(cfg.Provider, cfg.BaseURL) == llm.ReasoningTargetOllama {
+	target := llm.ReasoningTarget(cfg.Provider, cfg.BaseURL)
+	if target == llm.ReasoningTargetOllama {
+		params.StreamOptions.IncludeUsage = param.NewOpt(true)
+		if effort, ok := ollamaReasoningEffort(reasoning); ok {
+			return append(opts, option.WithJSONSet("reasoning_effort", effort))
+		}
 		return opts
 	}
 	if reasoning.Empty() {
-		if llm.ReasoningTarget(cfg.Provider, cfg.BaseURL) == llm.ReasoningTargetLlamaCpp {
+		if target == llm.ReasoningTargetLlamaCpp {
 			params.StreamOptions.IncludeUsage = param.NewOpt(true)
 		}
 		return opts
 	}
-	if llm.ReasoningTarget(cfg.Provider, cfg.BaseURL) == llm.ReasoningTargetLlamaCpp {
+	if target == llm.ReasoningTargetLlamaCpp {
 		if budget, thinking := llamaCppReasoning(reasoning); budget != nil {
 			opts = append(opts, option.WithJSONSet("thinking_budget_tokens", *budget))
 		} else if thinking != nil {
@@ -249,6 +254,23 @@ func appendReasoningOptions(opts []option.RequestOption, cfg llm.Config, reasoni
 		wire["enabled"] = *reasoning.Enabled
 	}
 	return append(opts, option.WithJSONSet("reasoning", wire))
+}
+
+func ollamaReasoningEffort(reasoning llm.ReasoningConfig) (string, bool) {
+	if reasoning.Enabled != nil && !*reasoning.Enabled {
+		return "none", true
+	}
+	switch reasoning.Effort {
+	case llm.ReasoningEffortNone, llm.ReasoningEffortLow,
+		llm.ReasoningEffortMedium, llm.ReasoningEffortHigh:
+		return string(reasoning.Effort), true
+	case llm.ReasoningEffortMinimal:
+		return "low", true
+	case llm.ReasoningEffortXHigh, llm.ReasoningEffortMax:
+		return "high", true
+	default:
+		return "", false
+	}
 }
 
 const (

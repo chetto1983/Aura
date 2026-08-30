@@ -337,7 +337,8 @@ const reasoningCapsTTL = 6 * time.Hour
 // wireReasoningCapabilities injects the 37E reasoning-capability source (WEBMODEL-01 / D-13) into
 // the agui Server after NewServer (called from the serve composition root). The source is selected
 // by llm.ReasoningTarget: OpenRouter → a TTL-cached GET /models client; llama.cpp → the
-// provider+ops-contract source; any other backend → nil (the endpoint then degrades to the safe
+// provider+ops-contract source; Ollama → its OpenAI-compatible effort set; any other
+// backend → nil (the endpoint then degrades to the safe
 // floor {auto,off}). The composer reasoning-capabilities endpoint AND Stage-2 of the /agent/run
 // effort governance share this one cached source (no per-turn fetch). The cache is warmed once in
 // a bounded fire-and-forget goroutine so the first hit is memory-served — serve boot NEVER blocks
@@ -350,6 +351,8 @@ func wireReasoningCapabilities(server *agui.Server, cfg llm.Config) {
 		backend = "openrouter"
 	case llm.ReasoningTargetLlamaCpp:
 		backend = "llamacpp"
+	case llm.ReasoningTargetOllama:
+		backend = "ollama"
 	}
 	server.SetReasoningCapabilitySource(src, backend)
 	if src == nil {

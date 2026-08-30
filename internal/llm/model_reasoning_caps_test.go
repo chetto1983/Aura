@@ -394,6 +394,16 @@ func TestNewReasoningCapabilitySource(t *testing.T) {
 	if _, ok := NewReasoningCapabilitySource(lcCfg, time.Hour).(*llamaCppReasoningCaps); !ok {
 		t.Error("llamacpp target should select *llamaCppReasoningCaps")
 	}
+	ollamaCfg := Config{Provider: "ollama", BaseURL: "http://localhost:11434/v1"}
+	ollama, ok := NewReasoningCapabilitySource(ollamaCfg, time.Hour).(*ollamaReasoningCaps)
+	if !ok {
+		t.Fatalf("ollama target should select *ollamaReasoningCaps, got %T", NewReasoningCapabilitySource(ollamaCfg, time.Hour))
+	}
+	efforts, deflt, detected := ollama.AllowedEfforts(context.Background())
+	want := []ReasoningEffort{ReasoningEffortNone, ReasoningEffortLow, ReasoningEffortMedium, ReasoningEffortHigh}
+	if !detected || deflt != "" || !slices.Equal(efforts, want) {
+		t.Fatalf("Ollama efforts = (%v,%q,%v), want (%v,empty,true)", efforts, deflt, detected, want)
+	}
 	// unrecognized (e.g. local vLLM) → nil source (caller shows the safe floor).
 	vllmCfg := Config{Provider: "vllm", BaseURL: "http://dgx:8000/v1"}
 	if src := NewReasoningCapabilitySource(vllmCfg, time.Hour); src != nil {
