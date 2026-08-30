@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactElement } from 'react';
 import '../../i18n/i18n';
 import { ModelSettingsPanel } from '../ModelSettingsPanel';
+import { REASONING_CAPABILITIES_QUERY_KEY } from '../../chat/composer/useReasoningCapabilities';
 
 const SETTINGS_BODY = {
   restart_required: true,
@@ -102,6 +105,13 @@ function urlOf(input: RequestInfo | URL): string {
   return typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
 }
 
+function renderPanel(
+  panel: ReactElement,
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
+  return render(<QueryClientProvider client={client}>{panel}</QueryClientProvider>);
+}
+
 async function expectResetClears(targetKey: string) {
   const calls: string[] = [];
   let getCount = 0;
@@ -127,7 +137,7 @@ async function expectResetClears(targetKey: string) {
     }),
   );
 
-  render(<ModelSettingsPanel />);
+  renderPanel(<ModelSettingsPanel />);
   await screen.findByRole('heading', { name: 'Model routing' });
   fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
   await waitFor(() => {
@@ -178,7 +188,9 @@ describe('ModelSettingsPanel', () => {
       }),
     );
 
-    render(<ModelSettingsPanel onComplete={vi.fn()} />);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    renderPanel(<ModelSettingsPanel onComplete={vi.fn()} />, client);
     await screen.findByRole('heading', { name: 'Model routing' });
 
     fireEvent.click(screen.getByRole('button', { name: route.button }));
@@ -201,6 +213,8 @@ describe('ModelSettingsPanel', () => {
     if (payload.settings?.AURA_LLM_BASE_URL !== undefined) {
       expect(payload.settings.AURA_LLM_BASE_URL).toBe(route.baseURL);
     }
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['me'] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: REASONING_CAPABILITIES_QUERY_KEY });
   });
 
   it('recovers from a load error via retry and surfaces a failing reload', async () => {
@@ -220,7 +234,7 @@ describe('ModelSettingsPanel', () => {
       }),
     );
 
-    render(<ModelSettingsPanel />);
+    renderPanel(<ModelSettingsPanel />);
 
     expect(await screen.findByText(LOAD_ERROR_TEXT)).toBeTruthy();
 
@@ -249,7 +263,7 @@ describe('ModelSettingsPanel', () => {
       }),
     );
 
-    render(<ModelSettingsPanel onComplete={vi.fn()} />);
+    renderPanel(<ModelSettingsPanel onComplete={vi.fn()} />);
     await screen.findByRole('heading', { name: 'Model routing' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Cloud' }));
@@ -302,7 +316,7 @@ describe('ModelSettingsPanel', () => {
       ),
     );
 
-    render(<ModelSettingsPanel />);
+    renderPanel(<ModelSettingsPanel />);
     await screen.findByRole('heading', { name: 'Model routing' });
 
     const checkbox = screen.getByRole('checkbox');
@@ -325,7 +339,7 @@ describe('ModelSettingsPanel', () => {
       }),
     );
 
-    render(<ModelSettingsPanel onComplete={onComplete} />);
+    renderPanel(<ModelSettingsPanel onComplete={onComplete} />);
     await screen.findByRole('heading', { name: 'Model routing' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
@@ -357,7 +371,7 @@ describe('ModelSettingsPanel', () => {
       }),
     );
 
-    render(<ModelSettingsPanel />);
+    renderPanel(<ModelSettingsPanel />);
     await screen.findByRole('heading', { name: 'Model routing' });
 
     fireEvent.change(screen.getByLabelText('Primary model'), {
@@ -393,7 +407,7 @@ describe('ModelSettingsPanel', () => {
       }),
     );
 
-    render(<ModelSettingsPanel />);
+    renderPanel(<ModelSettingsPanel />);
     await screen.findByRole('heading', { name: 'Model routing' });
 
     const resetButtons = screen.getAllByRole('button', { name: 'Reset' });
@@ -444,7 +458,7 @@ describe('ModelSettingsPanel', () => {
       }),
     );
 
-    render(<ModelSettingsPanel />);
+    renderPanel(<ModelSettingsPanel />);
     await screen.findByRole('heading', { name: 'Model routing' });
 
     fireEvent.change(screen.getByLabelText('Primary model'), {
@@ -472,7 +486,7 @@ describe('ModelSettingsPanel', () => {
       vi.fn(() => getPromise),
     );
 
-    const { unmount } = render(<ModelSettingsPanel />);
+    const { unmount } = renderPanel(<ModelSettingsPanel />);
     unmount();
     await act(async () => {
       resolveGet?.(jsonResponse(SETTINGS_BODY));
@@ -492,7 +506,7 @@ describe('ModelSettingsPanel', () => {
       vi.fn(() => getPromise),
     );
 
-    const { unmount } = render(<ModelSettingsPanel />);
+    const { unmount } = renderPanel(<ModelSettingsPanel />);
     unmount();
     await act(async () => {
       rejectGet?.(new Error('boom'));
@@ -523,7 +537,7 @@ describe('ModelSettingsPanel', () => {
       }),
     );
 
-    render(<ModelSettingsPanel />);
+    renderPanel(<ModelSettingsPanel />);
     const field = await screen.findByDisplayValue('4096');
     fireEvent.change(field, { target: { value: '8192' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
@@ -553,7 +567,7 @@ describe('ModelSettingsPanel', () => {
       }),
     );
 
-    render(<ModelSettingsPanel />);
+    renderPanel(<ModelSettingsPanel />);
     const field = await screen.findByDisplayValue('4096');
     fireEvent.change(field, { target: { value: '8192' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
