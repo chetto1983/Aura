@@ -88,6 +88,27 @@ describe('openWorkerStream', () => {
     expect(onMessages).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    [{ type: 'RUN_FINISHED' }, { type: 'complete', reason: 'stop' }],
+    [{ type: 'RUN_ERROR', message: 'worker failed' }, { type: 'incomplete', reason: 'error' }],
+  ] as const)(
+    'treats terminal frame %# as completion when EventSource reports the closing EOF',
+    (terminalFrame, expectedStatus) => {
+      const onMessages = vi.fn<(messages: readonly ThreadMessageLike[]) => void>();
+      const onError = vi.fn();
+      openWorkerStream('conv', 'child', { onMessages, onError });
+      const source = FakeEventSource.instances[0];
+
+      source?.push({ type: 'TOOL_CALL_START', toolCallId: 'call-1', toolCallName: 'shell_exec' });
+      source?.push(terminalFrame);
+      source?.emit('error', new Event('error'));
+
+      expect(onMessages.mock.calls.at(-1)?.[0]?.[0]?.status).toEqual(expectedStatus);
+      expect(source?.closed).toBe(true);
+      expect(onError).not.toHaveBeenCalled();
+    },
+  );
+
   it('ignores non-message events and reports malformed frames and transport errors', () => {
     const onMessages = vi.fn<(messages: readonly ThreadMessageLike[]) => void>();
     const onError = vi.fn();
