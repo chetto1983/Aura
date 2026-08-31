@@ -51,6 +51,7 @@ const (
 	sagaStepMemory        = "memory"
 	sagaStepObjectStore   = "objectstore"
 	sagaStepDirs          = "dirs"
+	sagaStepSandbox       = "sandbox"
 	sagaStepIdentityRow   = "identity_row"
 	sagaStepAuthula       = "authula"
 )

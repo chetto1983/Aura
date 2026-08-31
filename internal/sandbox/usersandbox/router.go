@@ -17,6 +17,7 @@ package usersandbox
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -129,6 +130,42 @@ func (r *SandboxRouter) specFor(id string) SandboxSpec {
 			PidsLimit:   r.cfg.PidsLimit,
 		},
 	}
+}
+
+// Destroy tears down one identity's box: the egress sidecar, the container, and the
+// per-identity workspace volume (Backend.Stop, ShutdownPolicy:Delete). It is the deprovision
+// counterpart to Route, and it is the ONLY per-identity teardown the router has -- SuspendIdle
+// sweeps by idleness and retains everything, which is the opposite intent.
+//
+// It is safe on a COLD process, which is the case that actually matters: an identity is
+// usually deleted in a later daemon lifetime than the one that started its box, so the
+// handles map is empty and there is nothing cached to stop. Synthesizing the handle is sound
+// rather than a guess -- boxName derives the container name from the identity id alone, by
+// construction, which is the same property Suspend/Resume/Stop already rely on to manage the
+// egress sidecar from a BoxHandle without the full spec. Resolving first would be worse than
+// useless: it would CREATE the box in order to delete it.
+//
+// Idempotent by delegation: removing an absent container or volume is not an error the
+// backend raises, so a re-run over an already-destroyed identity converges. A nil receiver or
+// a backend-less router reports the same denial Route does, because a deprovision that
+// silently did nothing would leave an orphan nobody sweeps.
+func (r *SandboxRouter) Destroy(ctx context.Context, identityID string) error {
+	if r == nil || r.backend == nil {
+		return errBackendUnavailable
+	}
+	identityID = strings.TrimSpace(identityID)
+	if identityID == "" {
+		return errors.New("sandbox destroy: identity is required")
+	}
+	r.mu.Lock()
+	handle, cached := r.handles[identityID]
+	delete(r.handles, identityID)
+	delete(r.lastUsed, identityID)
+	r.mu.Unlock()
+	if !cached {
+		handle = BoxHandle{ContainerID: boxName(identityID), IdentityID: identityID}
+	}
+	return r.backend.Stop(ctx, handle)
 }
 
 // clock returns the current time via the injectable now (tests) or time.Now().UTC().

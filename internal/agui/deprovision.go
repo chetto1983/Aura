@@ -73,6 +73,17 @@ type MemoryPurger interface {
 	PurgeMemory(ctx context.Context, identityID string) error
 }
 
+// SandboxPurger destroys the identity's per-identity box: the container, its egress
+// sidecar, and the workspace volume. Idempotent -- destroying an absent box converges,
+// because the backend does not raise removing something that is already gone.
+//
+// It is the box's ONLY teardown. Nothing else sweeps one: the idle reaper suspends and
+// retains by design, and the container name is derived from the identity id, so a box
+// outliving its identity is an orphan no later run can attribute to anyone.
+type SandboxPurger interface {
+	DestroySandbox(ctx context.Context, identityID string) error
+}
+
 // IdentityDeleter hard-deletes the aura identity by name, cascading capability_grants, the
 // identity_auth_link, and the identity_object_store row via FK ON DELETE CASCADE. Idempotent
 // (deleting an absent identity affects zero rows). It is the AuraLegWriter.DeleteIdentity
@@ -99,6 +110,7 @@ type DeprovisionDeps struct {
 	Memory         MemoryPurger
 	ObjectStore    ObjectStoreProvisioner
 	Filesystem     FilesystemProvisioner
+	Sandbox        SandboxPurger
 	IdentityDelete IdentityDeleter
 	AuthulaDelete  AuthulaUserDeleter
 	GraceWindow    time.Duration
@@ -173,6 +185,17 @@ func (d *Deprovisioner) Purge(ctx context.Context, target DeprovisionTarget) err
 	}
 	run := newSagaRun(ctx, d.deps.Journal, sagaKindDeprovision, target.IdentityID)
 
+	// FIRST, ahead of every data plane. The box is the only LIVE COMPUTE this identity
+	// owns: it holds a shell that can still write to the workspace volume, and through the
+	// materialized mounts to the very filesystem roots the dirs step removes below. Erasing
+	// a plane while something can still write to it is how an orphan is made.
+	if d.deps.Sandbox != nil {
+		if err := run.step(ctx, sagaStepSandbox, func(ctx context.Context) error {
+			return d.deps.Sandbox.DestroySandbox(ctx, target.IdentityID)
+		}); err != nil {
+			return err
+		}
+	}
 	if d.deps.Conversations != nil {
 		if err := run.step(ctx, sagaStepConversations, func(ctx context.Context) error {
 			return d.deps.Conversations.PurgeConversations(ctx, target.IdentityID)

@@ -19,6 +19,7 @@ type fakeBackend struct {
 
 	resolved  []SandboxSpec
 	suspended []BoxHandle
+	stopped   []BoxHandle
 }
 
 func (f *fakeBackend) Resolve(_ context.Context, spec SandboxSpec) (BoxHandle, error) {
@@ -39,7 +40,11 @@ func (f *fakeBackend) Suspend(_ context.Context, h BoxHandle) error {
 }
 
 func (f *fakeBackend) Resume(context.Context, BoxHandle) error { return nil }
-func (f *fakeBackend) Stop(context.Context, BoxHandle) error   { return nil }
+
+func (f *fakeBackend) Stop(_ context.Context, h BoxHandle) error {
+	f.stopped = append(f.stopped, h)
+	return nil
+}
 
 // unitSandboxConfig is a sane, non-degenerate config for the router unit tests.
 func unitSandboxConfig() config.SandboxConfig {

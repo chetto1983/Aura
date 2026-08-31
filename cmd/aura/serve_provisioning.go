@@ -18,6 +18,7 @@ import (
 	"github.com/chetto1983/aura/internal/idroot"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/objectstore/garageadmin"
+	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 )
 
 // serve_provisioning.go promotes the shipped live saga TEST adapters
@@ -287,6 +288,25 @@ func buildProvisioningPorts(chat *chatEnv) (agui.ObjectStoreProvisioner, agui.Fi
 	return objProv, fsProv, jrnl
 }
 
+// sandboxPurgeAdapter is the deprovision half of the box lifecycle, over the SAME router
+// the tools route through. It is wired only when a router exists; a live but backend-less
+// router (an unreachable Docker daemon) deliberately FAILS the step rather than skipping
+// it, because "we could not check" and "there is no box" are different facts and only one
+// of them is safe to record as done. The saga is resumable, so the purge converges on a
+// re-run once the daemon is back.
+type sandboxPurgeAdapter struct{ router *usersandbox.SandboxRouter }
+
+func (a sandboxPurgeAdapter) DestroySandbox(ctx context.Context, identityID string) error {
+	return a.router.Destroy(ctx, identityID)
+}
+
+func sandboxPurgerFor(router *usersandbox.SandboxRouter) agui.SandboxPurger {
+	if router == nil {
+		return nil
+	}
+	return sandboxPurgeAdapter{router: router}
+}
+
 // buildDeprovisioner assembles the D-27 de-provisioning saga over the chat-reachable ports.
 // A nil pool yields an empty Deprovisioner whose PurgeExpired is a safe no-op (nil
 // Deactivator). The owned Postgres conversation plane and the ArcadeDB
@@ -320,6 +340,7 @@ func buildDeprovisioner(chat *chatEnv) *agui.Deprovisioner {
 		Memory:         buildArcadeMemoryPurger(chat.cfg),
 		ObjectStore:    objProv,
 		Filesystem:     fsProv,
+		Sandbox:        sandboxPurgerFor(chat.sandboxRouter),
 		IdentityDelete: auraLegAdapter{pool: chat.pool},
 	})
 }
