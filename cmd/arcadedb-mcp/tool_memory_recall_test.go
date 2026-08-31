@@ -169,9 +169,11 @@ func TestMemoryRecallModeContract(t *testing.T) {
 		if !slices.Equal(got, want) {
 			t.Fatalf("mode enum = %v, want %v", got, want)
 		}
-		for _, required := range schema["required"].([]any) {
-			if required == "mode" {
-				t.Fatal("mode is required; omission must preserve semantic recall")
+		if required, ok := schema["required"].([]any); ok {
+			for _, name := range required {
+				if name == "mode" {
+					t.Fatal("mode is required; omission must preserve semantic recall")
+				}
 			}
 		}
 	}

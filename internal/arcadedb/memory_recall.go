@@ -174,6 +174,17 @@ func (c *Client) RecallMemory(ctx context.Context, request RecallRequest) (Recal
 	switch request.Mode {
 	case RecallModeSemantic:
 		result, err = c.recallSemantic(ctx, request)
+	case RecallModeRecent:
+		result, err = c.recallRecent(ctx, request)
+	case RecallModeOpen:
+		result, err = c.recallOpen(ctx, request)
+	case RecallModeScroll:
+		result, err = c.recallScroll(ctx, request)
+	case RecallModeReasoning:
+		result = RecallResult{
+			Evidence: make([]RecallEvidence, 0), Abstained: true,
+			Reason: "reasoning_not_available",
+		}
 	default:
 		err = fmt.Errorf("arcadedb: unsupported memory recall mode %q", request.Mode)
 	}

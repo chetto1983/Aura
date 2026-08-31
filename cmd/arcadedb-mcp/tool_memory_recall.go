@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -72,9 +73,18 @@ type MemoryRecallOutput struct {
 }
 
 func addMemoryRecallTool(server *mcp.Server, tenants *tenants) {
+	inputSchema, err := jsonschema.For[MemoryRecallInput](nil)
+	if err != nil {
+		panic(fmt.Sprintf("memory_recall input schema: %v", err))
+	}
+	inputSchema.Properties["mode"].Enum = []any{
+		"semantic", "recent", "open", "scroll", "reasoning",
+	}
+	inputSchema.Properties["direction"].Enum = []any{"before", "after"}
 	mcp.AddTool(server, &mcp.Tool{
-		Name:  "memory_recall",
-		Title: "Recall memory",
+		Name:        "memory_recall",
+		Title:       "Recall memory",
+		InputSchema: inputSchema,
 		Description: "The single deep-read operation for Aura memory. Semantic mode (the default) " +
 			"can return typed fact and historical-conversation evidence together. Recent, open, and " +
 			"scroll progressively browse bounded conversation windows; reasoning is reserved until " +
