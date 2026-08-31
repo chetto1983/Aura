@@ -52,7 +52,8 @@
     "ui_review": true,
     "use_worktrees": false,
     "_auto_chain_active": false,
-    "test_gate_timeout": 1800
+    "test_gate_timeout": 1800,
+    "subagent_timeout": 3600000
   },
   "ship": {
     "pr_body_sections": []
@@ -79,5 +80,9 @@
   },
   "model_overrides": {
     "gsd-plan-checker": "opus"
+  },
+  "planner": {
+    "stall_threshold_minutes": 60,
+    "stall_detect_interval_minutes": 5
   }
 }
