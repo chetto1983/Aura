@@ -919,16 +919,6 @@ services:
       retries: 12
       start_period: 30s
 
-  # SMTP sink for real PIM send tests. MailCatcher accepts SMTP on 1025 and exposes
-  # the captured messages on 1080; both host publishes stay loopback-only.
-  aura-fake-smtp:
-    image: haravich/fake-smtp-server:main-32d1bc1@sha256:d0d4f283e2727724f664fca85b9337f685e2b939c7f96852a56ae206405d50db
-    container_name: aura-fake-smtp
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:1025:1025"
-      - "127.0.0.1:1080:1080"
-
   # Local SearXNG backend. Aura reaches it through Compose DNS on aura-web via
   # SEARXNG_URL; the host reaches it through loopback for local doctor/smoke probes.
   # SearXNG needs outbound egress to query upstream engines; loopback publishing

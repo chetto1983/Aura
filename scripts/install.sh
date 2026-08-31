@@ -612,6 +612,10 @@ fi
 cd "$INSTALL_DIR"
 download_file compose.yaml compose.yaml
 download_file caddy/Caddyfile caddy/Caddyfile
+# compose bind-mounts this FILE into the garage container; without it Docker
+# fabricates a directory at the mount source and garage crash-loops on
+# "IO error: Is a directory" (measured 2026-08-31, clean-host E2E kill #3).
+download_file docker/garage/garage.toml docker/garage/garage.toml
 download_file deploy/aura.service deploy/aura.service
 download_file deploy/aura-image-update.sh deploy/aura-image-update.sh
 download_file deploy/aura-image-update.service deploy/aura-image-update.service
