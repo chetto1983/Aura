@@ -158,7 +158,7 @@ func (tx *clientMemoryBatchTx) Persist(
 		}
 	}
 
-	for _, name := range sortedMemoryBatchEntities(after.Entities) {
+	for _, name := range memoryBatchEntitiesToUpsert(before, after) {
 		kind := after.Entities[name]
 		statement := upsertEntityStatement
 		params := map[string]any{"name": name}
@@ -199,6 +199,24 @@ func (tx *clientMemoryBatchTx) Persist(
 		}
 	}
 	return nil
+}
+
+func memoryBatchEntitiesToUpsert(before, after memoryBatchState) []string {
+	needed := map[string]string{}
+	for name, kind := range after.Entities {
+		if oldKind, exists := before.Entities[name]; !exists || oldKind != kind {
+			needed[name] = kind
+		}
+	}
+	for key, fact := range after.Facts {
+		oldFact, exists := before.Facts[key]
+		if exists && !memoryBatchEndpointsChanged(oldFact, fact) {
+			continue
+		}
+		needed[fact.Fact.Subject] = after.Entities[fact.Fact.Subject]
+		needed[fact.Fact.Object] = after.Entities[fact.Fact.Object]
+	}
+	return sortedMemoryBatchEntities(needed)
 }
 
 func (tx *clientMemoryBatchTx) updateFact(ctx context.Context, fact memoryBatchFact) error {
@@ -308,11 +326,18 @@ func parseMemoryBatchTime(value string) (time.Time, error) {
 	if value == "" {
 		return time.Time{}, nil
 	}
-	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if parsed, err := time.Parse(time.RFC3339Nano, value); err == nil {
+		return parsed.UTC(), nil
+	}
+	// ArcadeDB renders DATETIME with its documented default without a zone,
+	// even when Aura inserted an RFC3339 UTC value. Aura's memory timestamps
+	// are UTC, so restore the zone the wire representation omits.
+	// https://docs.arcadedb.com/arcadedb/reference/managing-dates
+	parsed, err := time.ParseInLocation("2006-01-02 15:04:05", value, time.UTC)
 	if err != nil {
 		return time.Time{}, err
 	}
-	return parsed.UTC(), nil
+	return parsed, nil
 }
 
 func nullableMemoryBatchTime(value time.Time) any {

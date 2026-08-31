@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"strings"
@@ -290,9 +291,41 @@ func applyMemoryBatch(
 
 	unlock := memoryBatchIdentityLocks.lock(actor.IdentityID)
 	defer unlock()
+	receiptKey := memoryBatchReceiptKey(actor.IdentityID, request.IdempotencyKey)
+	var lastErr error
+	for attempt := 0; attempt <= maxWriteConflictRetries; attempt++ {
+		result, retry, err := applyMemoryBatchAttempt(
+			ctx, actor, request, compiled, now, limits, receiptKey, backend,
+		)
+		if !retry {
+			return result, err
+		}
+		lastErr = err
+		if attempt == maxWriteConflictRetries {
+			break
+		}
+		if err := waitMemoryBatchRetry(ctx, attempt+1); err != nil {
+			return MemoryBatchResult{}, err
+		}
+	}
+	return MemoryBatchResult{}, fmt.Errorf(
+		"arcadedb: memory batch exhausted conflict retries: %w", lastErr)
+}
+
+func applyMemoryBatchAttempt(
+	ctx context.Context,
+	actor MemoryBatchActor,
+	request MemoryBatchRequest,
+	compiled CompiledMemoryBatch,
+	now time.Time,
+	limits MemoryLimits,
+	receiptKey string,
+	backend memoryBatchBackend,
+) (MemoryBatchResult, bool, error) {
 	tx, err := backend.Begin(ctx, actor.IdentityID)
 	if err != nil {
-		return MemoryBatchResult{}, fmt.Errorf("arcadedb: begin memory batch: %w", err)
+		wrapped := fmt.Errorf("arcadedb: begin memory batch: %w", err)
+		return MemoryBatchResult{}, retryMemoryBatchFailure(ctx, err, false), wrapped
 	}
 	committed := false
 	defer func() {
@@ -301,36 +334,39 @@ func applyMemoryBatch(
 		}
 	}()
 
-	receiptKey := memoryBatchReceiptKey(actor.IdentityID, request.IdempotencyKey)
 	receipt, err := tx.LoadReceipt(ctx, receiptKey)
 	if err != nil {
-		return MemoryBatchResult{}, fmt.Errorf("arcadedb: read memory batch receipt: %w", err)
+		wrapped := fmt.Errorf("arcadedb: read memory batch receipt: %w", err)
+		return MemoryBatchResult{}, retryMemoryBatchFailure(ctx, err, false), wrapped
 	}
 	if receipt != nil {
 		if receipt.IdentityID != actor.IdentityID || receipt.RequestHash != compiled.RequestHash {
-			return MemoryBatchResult{}, memoryBatchEnvelopeError(
+			return MemoryBatchResult{}, false, memoryBatchEnvelopeError(
 				"idempotency_conflict", fmt.Errorf("idempotency key is already bound to a different request"))
 		}
 		if err := tx.Commit(ctx); err != nil {
-			return MemoryBatchResult{}, fmt.Errorf("arcadedb: commit memory batch replay: %w", err)
+			wrapped := fmt.Errorf("arcadedb: commit memory batch replay: %w", err)
+			return MemoryBatchResult{}, retryMemoryBatchFailure(ctx, err, true), wrapped
 		}
 		committed = true
 		result := receipt.Result
 		result.Replayed = true
-		return result, nil
+		return result, false, nil
 	}
 
 	live, err := tx.LoadState(ctx)
 	if err != nil {
-		return MemoryBatchResult{}, fmt.Errorf("arcadedb: load memory batch state: %w", err)
+		wrapped := fmt.Errorf("arcadedb: load memory batch state: %w", err)
+		return MemoryBatchResult{}, retryMemoryBatchFailure(ctx, err, false), wrapped
 	}
 	working := cloneMemoryBatchState(live)
 	operationResults, err := applyCompiledMemoryBatch(working, compiled, now, limits)
 	if err != nil {
-		return MemoryBatchResult{}, err
+		return MemoryBatchResult{}, false, err
 	}
 	if err := tx.Persist(ctx, live, working); err != nil {
-		return MemoryBatchResult{}, fmt.Errorf("arcadedb: persist memory batch: %w", err)
+		wrapped := fmt.Errorf("arcadedb: persist memory batch: %w", err)
+		return MemoryBatchResult{}, retryMemoryBatchFailure(ctx, err, false), wrapped
 	}
 	result := MemoryBatchResult{
 		RequestHash: compiled.RequestHash,
@@ -341,13 +377,40 @@ func applyMemoryBatch(
 		IdentityID: actor.IdentityID, IdempotencyKey: strings.TrimSpace(request.IdempotencyKey),
 		RequestHash: compiled.RequestHash, Result: result,
 	}); err != nil {
-		return MemoryBatchResult{}, fmt.Errorf("arcadedb: save memory batch receipt: %w", err)
+		wrapped := fmt.Errorf("arcadedb: save memory batch receipt: %w", err)
+		return MemoryBatchResult{}, retryMemoryBatchFailure(ctx, err, false), wrapped
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return MemoryBatchResult{}, fmt.Errorf("arcadedb: commit memory batch: %w", err)
+		wrapped := fmt.Errorf("arcadedb: commit memory batch: %w", err)
+		return MemoryBatchResult{}, retryMemoryBatchFailure(ctx, err, true), wrapped
 	}
 	committed = true
-	return result, nil
+	return result, false, nil
+}
+
+func retryMemoryBatchFailure(ctx context.Context, err error, commit bool) bool {
+	if err == nil || ctx.Err() != nil {
+		return false
+	}
+	if isTransientWriteConflict(err) {
+		return true
+	}
+	if !commit {
+		return false
+	}
+	var serverErr *ServerError
+	return !errors.As(err, &serverErr)
+}
+
+func waitMemoryBatchRetry(ctx context.Context, attempt int) error {
+	timer := time.NewTimer(writeConflictBackoff(attempt))
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("arcadedb: memory batch retry: %w", ctx.Err())
+	case <-timer.C:
+		return nil
+	}
 }
 
 func authorizeMemoryBatch(actor MemoryBatchActor, compiled CompiledMemoryBatch) error {

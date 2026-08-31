@@ -453,3 +453,14 @@ func TestMemoryBatch_NoPartialObserver(t *testing.T) {
 		}
 	}
 }
+
+func TestMemoryBatch_NativeDateTimeFormat(t *testing.T) {
+	parsed, err := parseMemoryBatchTime("2026-08-31 13:00:07")
+	if err != nil {
+		t.Fatalf("parse native DATETIME: %v", err)
+	}
+	want := time.Date(2026, 8, 31, 13, 0, 7, 0, time.UTC)
+	if !parsed.Equal(want) {
+		t.Fatalf("parsed = %s, want %s", parsed, want)
+	}
+}
