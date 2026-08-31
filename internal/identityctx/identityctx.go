@@ -16,10 +16,14 @@ import "context"
 // it is still the truth.
 const LocalOperatorIdentity = "00000000-0000-0000-0000-000000000001"
 
-// CLIServiceIdentity is the non-human principal used only to own durable CLI
-// idempotency records. Unlike LocalOperatorIdentity, it survives first-login
-// retirement of the legacy `local` identity (serve_auth.go) and carries no user
-// capabilities. Migration 0049 seeds it as kind=service.
+// CLIServiceIdentity is the non-human principal that owns durable idempotency records
+// for callers with no authenticated user: the CLI, and the public HTTP mutations
+// (bootstrap, password reset) that by definition run before anyone is signed in.
+//
+// Unlike LocalOperatorIdentity it survives first-login retirement of the legacy `local`
+// identity (serve_auth.go) and carries no user capabilities. Migration 0049 seeds it as
+// kind=service. That survival is the whole reason it must be used here: an owner the
+// product deletes is an FK violation waiting for its first operator.
 const CLIServiceIdentity = "00000000-0000-0000-0000-000000000039"
 
 type key struct{}

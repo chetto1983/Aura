@@ -44,21 +44,7 @@ import (
 type sandboxStarter func(ctx context.Context, identityID string) error
 
 // mcpReconnect re-runs the deferred-OAuth mount pass.
-//
-// It takes NO context, and that is the whole point. StartReconnect spawns a goroutine whose
-// sessions must outlive the call — Mount says so itself: "the session itself must outlive the
-// request that triggered the mount, so the process context is what the transport is given."
-// The only caller here is an HTTP request handler, so handing it the ctx it has would hand it
-// the wrong one. Measured live on 2026-08-31, on the first run of this very code: the operator
-// was created, the 201 was written, the request context was cancelled, and all three servers
-// died in the goroutine behind it —
-//
-//	mcp oauth: could not resolve the grant owner  err="context already done: context canceled"
-//	mcp live mount failed                         err="context canceled"
-//
-// so the composition root closes over the daemon-lifetime context and this signature makes
-// passing anything else unrepresentable.
-type mcpReconnect func()
+type mcpReconnect func(ctx context.Context)
 
 // newSandboxStarter adapts the router's own get-or-create seam. Route is idempotent and
 // already does everything a box needs — resolve-or-create, resume a suspended box,
@@ -122,6 +108,6 @@ func (r bootstrapResources) provision(ctx context.Context, identityID string) {
 	// which the agent asked tool_search for memory_recall three times and was told each
 	// time that it is not a registered tool.
 	if r.remountMCP != nil {
-		r.remountMCP()
+		r.remountMCP(ctx)
 	}
 }

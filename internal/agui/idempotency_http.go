@@ -198,9 +198,29 @@ func (s *Server) idempotencyMutation(next http.Handler, meta mutationRouteMeta) 
 		}
 		identityID := identityctx.IdentityID(r.Context())
 		if identityID == "" {
-			// Public bootstrap/recovery mutations have no authenticated principal.
-			// Give them the seeded local owner instead of accepting an unowned key.
-			identityID = identityctx.LocalOperatorIdentity
+			// Public bootstrap/recovery mutations have no authenticated principal, so the
+			// key is owned by the SERVICE identity — the one that survives.
+			//
+			// It used to be LocalOperatorIdentity, which identityctx's own doc warns is "a
+			// seed, not a fallback": serve_auth.go's retireLegacyLocalIdentityForAuthulaUser
+			// migrates every reference onto the first enrolled operator and DELETES that row.
+			// idempotency_operations.identity_id is FK'd to identities ON DELETE CASCADE, so
+			// from the moment a deployment gains its first operator every public mutation
+			// wrote a foreign key to a row that no longer existed, Begin failed, and the
+			// endpoint answered 503 "operation registry unavailable" forever.
+			//
+			// Measured live 2026-08-31: an operator locked out of a fresh appliance hit
+			// POST /api/auth/password-reset/start three times and got 503 every time, on the
+			// one screen that exists to let them back in. The bootstrap route fails the same
+			// way, which is worse — it is how the FIRST operator is created, so a deployment
+			// that retired its seed and lost its operator could never make another.
+			//
+			// CLIServiceIdentity is seeded by migration 0049 as kind=service, carries no user
+			// capabilities, and is documented as surviving exactly this retirement. Owning
+			// these records by a service principal is also the right answer on its own terms:
+			// an unauthenticated stranger's reset attempt has no business being attributed to
+			// the operator, and the RLS owner-isolation policy keys off this column.
+			identityID = identityctx.CLIServiceIdentity
 		}
 		operation := idempotency.Operation{
 			Key:         idempotency.OperationKey{IdentityID: identityID, Scope: meta.Scope, Key: key},

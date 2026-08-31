@@ -484,12 +484,9 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		objectStore: bootstrapObjProv,
 		filesystem:  bootstrapFSProv,
 		sandbox:     newSandboxStarter(chat.sandboxRouter),
-		// ctx is bootServe's DAEMON-lifetime context, deliberately, not the HTTP request's
-		// — the mounted sessions have to outlive the request that triggered them, exactly as
-		// the boot-time call on line ~236 does.
-		remountMCP: func() {
+		remountMCP: func(remountCtx context.Context) {
 			if chat.liveMCP != nil {
-				chat.liveMCP.StartReconnect(ctx, chat.cfg, chat.pool)
+				chat.liveMCP.StartReconnect(remountCtx, chat.cfg, chat.pool)
 			}
 		},
 	})

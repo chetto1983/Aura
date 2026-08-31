@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"time"
 
@@ -465,12 +466,40 @@ type passwordResetCoreProvider interface {
 	CoreServices() *authulaservices.CoreServices
 }
 
+// wirePasswordResetService returns false when a dependency is missing, and SAYS WHICH.
+//
+// It used to return a bare false. The only symptom then was /api/auth/password-reset/start
+// answering 503 "password reset service not configured" -- to an operator who is locked out,
+// on the one screen that exists to let them back in, with nothing in the log to say what was
+// missing. Measured 2026-08-31: an operator hit that 503 three times in a row and the daemon
+// logged nothing at all about it.
+//
+// This is the same shape as the MCP mount skip fixed earlier the same day: a capability that
+// silently does not exist is worse than one that fails loudly, because nobody can tell the
+// difference between "off" and "broken".
 func wirePasswordResetService(server passwordResetServer, pool *pgxpool.Pool, deliverer recoveryCodeDeliverer, provider passwordResetCoreProvider, pepper []byte) bool {
-	if isNilPasswordResetDependency(server) || pool == nil || isNilPasswordResetDependency(deliverer) || isNilPasswordResetDependency(provider) || len(pepper) == 0 {
+	missing := ""
+	switch {
+	case isNilPasswordResetDependency(server):
+		missing = "agui server"
+	case pool == nil:
+		missing = "postgres pool"
+	case isNilPasswordResetDependency(deliverer):
+		missing = "recovery-code deliverer (the channels registry — a reset code is delivered over Telegram)"
+	case isNilPasswordResetDependency(provider):
+		missing = "authula provider"
+	case len(pepper) == 0:
+		missing = "reset-token pepper (derived from AURA_AUTHULA_SECRET)"
+	}
+	if missing != "" {
+		slog.Warn("aura serve: self-service password reset DISABLED — /api/auth/password-reset/* will answer 503",
+			"missing", missing)
 		return false
 	}
 	core := provider.CoreServices()
 	if core == nil {
+		slog.Warn("aura serve: self-service password reset DISABLED — /api/auth/password-reset/* will answer 503",
+			"missing", "authula core services")
 		return false
 	}
 	server.SetPasswordResetService(agui.NewPasswordResetService(agui.PasswordResetDeps{
