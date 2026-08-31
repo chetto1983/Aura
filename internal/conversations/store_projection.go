@@ -38,6 +38,14 @@ type ProjectionTurn struct {
 	SourceRef      string
 }
 
+// ProjectionTombstone is an authoritative soft-deletion marker. Hard-deleted
+// rows are detected by graph pruning against a complete source replay.
+type ProjectionTombstone struct {
+	IdentityID     string
+	ConversationID string
+	DeletedAt      time.Time
+}
+
 func projectionTurnEligible(role, content, toolCallID string, toolCalls []byte) bool {
 	if role != "user" && role != "assistant" {
 		return false
@@ -120,6 +128,15 @@ SELECT c.identity_id::text, t.conversation_id::text, t.seq, t.role,
 		return nil, after, err
 	}
 	return out, next, nil
+}
+
+// ListProjectionTombstones reads deleted conversations in stable ID order.
+func (s *Store) ListProjectionTombstones(
+	ctx context.Context,
+	identityID, afterConversationID string,
+	limit int,
+) ([]ProjectionTombstone, string, error) {
+	return nil, afterConversationID, fmt.Errorf("list projection tombstones: not implemented")
 }
 
 func projectionPageSize(limit int) int {

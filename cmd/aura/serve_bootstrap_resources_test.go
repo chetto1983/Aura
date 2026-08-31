@@ -51,7 +51,7 @@ func TestBootstrapResourcesRunEveryLegEvenWhenOneFails(t *testing.T) {
 			boxIdentity = id
 			return errors.New("no box image")
 		},
-		remountMCP: func(context.Context) { remounted = true },
+		remountMCP: func() { remounted = true },
 	}
 
 	res.provision(t.Context(), bootstrapTestIdentity)

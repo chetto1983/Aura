@@ -84,3 +84,26 @@ func (p *ConversationProjector) ProjectPage(
 	}
 	return next, nil
 }
+
+// OfferConversation schedules fail-soft projection work for an identity.
+func (p *ConversationProjector) OfferConversation(identityID string) bool { return false }
+
+// Flush waits for every accepted offer and reports projection failures.
+func (p *ConversationProjector) Flush(ctx context.Context) error {
+	return fmt.Errorf("runner: conversation projection flush: not implemented")
+}
+
+// Reconcile replays PostgreSQL from the beginning and prunes absent graph records.
+func (p *ConversationProjector) Reconcile(ctx context.Context, identityID string) error {
+	return fmt.Errorf("runner: conversation projection reconcile: not implemented")
+}
+
+// DeleteConversation removes one derived projection idempotently.
+func (p *ConversationProjector) DeleteConversation(ctx context.Context, identityID, conversationID string) error {
+	return fmt.Errorf("runner: delete conversation projection: not implemented")
+}
+
+// Close drains accepted work and joins the ordered worker.
+func (p *ConversationProjector) Close(ctx context.Context) error {
+	return fmt.Errorf("runner: close conversation projector: not implemented")
+}

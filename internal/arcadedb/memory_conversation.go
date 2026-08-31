@@ -88,8 +88,10 @@ func conversationSchemaStatements() []string {
 			"{ \"dimensions\": " + strconv.Itoa(vectorDimensions) +
 			", \"similarity\": \"COSINE\", \"quantization\": \"" + vectorQuantization + "\" }",
 
-		"CREATE EDGE TYPE " + hasTurnEdgeType + " LIGHTWEIGHT UNIQUE IF NOT EXISTS",
-		"CREATE EDGE TYPE " + nextTurnEdgeType + " LIGHTWEIGHT UNIQUE IF NOT EXISTS",
+		"CREATE EDGE TYPE " + hasTurnEdgeType + " IF NOT EXISTS",
+		"CREATE INDEX IF NOT EXISTS ON " + hasTurnEdgeType + " (`@out`, `@in`) UNIQUE",
+		"CREATE EDGE TYPE " + nextTurnEdgeType + " IF NOT EXISTS",
+		"CREATE INDEX IF NOT EXISTS ON " + nextTurnEdgeType + " (`@out`, `@in`) UNIQUE",
 	}
 }
 
@@ -356,4 +358,19 @@ func conversationContentHash(content string) string {
 
 func conversationSourceRef(conversationID string) string {
 	return "postgres://aura/conversations/" + conversationID
+}
+
+// DeleteConversationProjection removes all derived records for one source conversation.
+func (c *Client) DeleteConversationProjection(ctx context.Context, identityID, conversationID string) error {
+	return fmt.Errorf("arcadedb: delete conversation projection: not implemented")
+}
+
+// DeleteIdentityConversationProjections removes the complete derived conversation tier.
+func (c *Client) DeleteIdentityConversationProjections(ctx context.Context, identityID string) error {
+	return fmt.Errorf("arcadedb: delete identity conversation projections: not implemented")
+}
+
+// PruneConversationProjections removes graph conversations absent from the source replay.
+func (c *Client) PruneConversationProjections(ctx context.Context, identityID string, liveConversationIDs []string) error {
+	return fmt.Errorf("arcadedb: prune conversation projections: not implemented")
 }
