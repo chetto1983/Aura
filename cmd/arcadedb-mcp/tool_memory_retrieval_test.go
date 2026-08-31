@@ -217,7 +217,11 @@ func TestMemoryRecallSelectsOneDeterministicReadPath(t *testing.T) {
 	})
 
 	t.Run("natural-language query uses ranked retrieval", func(t *testing.T) {
-		client, rec := newRecordingDB(t, oneFactRow)
+		client, rec := newRecordingDB(t,
+			`{"result":[{"rid":"#10:1","score":0.03}]}`,
+			`{"result":[{"@rid":"#10:1","statement":"Davide lives in Caraglio.","predicate":"lives_in","subject":"Davide","subject_kind":"Person","object":"Caraglio","object_kind":"Location","valid_from":"2026-01-01T00:00:00Z","fact_key":"solo-key","sources":[{"run_id":"run-1","memory_ids":["mem-1"]}]}]}`,
+			`{"result":[]}`,
+		)
 		_, out, err := memoryRecallHandler(singleTenant(t, client))(
 			context.Background(), reqWithIdentity(testIdentity), MemoryRecallInput{
 				Query: "where does Davide live",

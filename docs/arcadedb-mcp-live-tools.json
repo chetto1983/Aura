@@ -557,28 +557,48 @@
       "idempotentHint": false,
       "readOnlyHint": true
     },
-    "description": "The single deep-read operation for Aura memory. Current profile facts are already supplied in conversation context; call this only for a fact outside that bounded index or for a historical as_of question. Give entity when its exact name is known; otherwise give query. Returns explicit abstention instead of an approximate unrelated fact.",
+    "description": "The single deep-read operation for Aura memory. Semantic mode (the default) can return typed fact and historical-conversation evidence together. Recent, open, and scroll progressively browse bounded conversation windows; reasoning is reserved until the explicit reasoning contract ships. Weak evidence abstains explicitly.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "anchor_seq": {
+          "description": "stable turn sequence used by open and scroll",
+          "type": "integer"
+        },
         "as_of": {
           "description": "RFC3339 instant; return facts valid then rather than now",
           "type": "string"
         },
+        "conversation_id": {
+          "description": "stable conversation id used by open and scroll",
+          "type": "string"
+        },
+        "cursor": {
+          "description": "opaque cursor returned by an earlier open or scroll call",
+          "type": "string"
+        },
+        "direction": {
+          "description": "before or after the stable anchor",
+          "type": "string"
+        },
         "entity": {
-          "description": "exact entity name when known; selects graph traversal instead of semantic search",
+          "description": "exact entity name when known; selects graph traversal in semantic mode",
           "type": "string"
         },
         "limit": {
-          "description": "how many facts to return",
+          "description": "bounded number of evidence records or conversation turns",
           "type": "integer"
+        },
+        "mode": {
+          "description": "semantic (default), recent, open, scroll, or reserved reasoning",
+          "type": "string"
         },
         "predicate": {
           "description": "optional relation filter used with entity",
           "type": "string"
         },
         "query": {
-          "description": "what to recall in natural language; required when entity is empty",
+          "description": "what to recall in natural language; used by semantic mode",
           "type": "string"
         }
       },
@@ -588,6 +608,162 @@
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
+        "abstained": {
+          "type": "boolean"
+        },
+        "evidence": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "conversation": {
+                "additionalProperties": false,
+                "properties": {
+                  "anchor_seq": {
+                    "type": "integer"
+                  },
+                  "conversation_id": {
+                    "type": "string"
+                  },
+                  "turns": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "content": {
+                          "type": "string"
+                        },
+                        "occurred_at": {
+                          "type": "string"
+                        },
+                        "role": {
+                          "type": "string"
+                        },
+                        "seq": {
+                          "type": "integer"
+                        },
+                        "source_ref": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "role",
+                        "content",
+                        "occurred_at",
+                        "source_ref"
+                      ],
+                      "type": "object"
+                    },
+                    "type": [
+                      "null",
+                      "array"
+                    ]
+                  }
+                },
+                "required": [
+                  "conversation_id",
+                  "anchor_seq",
+                  "turns"
+                ],
+                "type": [
+                  "null",
+                  "object"
+                ]
+              },
+              "fact": {
+                "additionalProperties": false,
+                "properties": {
+                  "fact_key": {
+                    "description": "identifies this fact for a later correction; pass it back as supersedes_fact_key",
+                    "type": "string"
+                  },
+                  "object": {
+                    "type": "string"
+                  },
+                  "object_kind": {
+                    "type": "string"
+                  },
+                  "predicate": {
+                    "type": "string"
+                  },
+                  "sources": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "memory_ids": {
+                          "description": "message or memory ids supporting this fact",
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": [
+                            "null",
+                            "array"
+                          ]
+                        },
+                        "run_id": {
+                          "description": "the extraction or operator run supporting this fact",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "run_id"
+                      ],
+                      "type": "object"
+                    },
+                    "type": [
+                      "null",
+                      "array"
+                    ]
+                  },
+                  "statement": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "subject_kind": {
+                    "type": "string"
+                  },
+                  "valid_from": {
+                    "type": "string"
+                  },
+                  "valid_to": {
+                    "description": "absent while the fact still holds",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "statement",
+                  "predicate",
+                  "subject",
+                  "object",
+                  "sources"
+                ],
+                "type": [
+                  "null",
+                  "object"
+                ]
+              },
+              "kind": {
+                "type": "string"
+              },
+              "rank": {
+                "type": "integer"
+              },
+              "score": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "kind",
+              "rank"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
         "facts": {
           "items": {
             "additionalProperties": false,
@@ -665,31 +841,52 @@
             "array"
           ]
         },
+        "next_cursor": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
         "retrieval": {
           "additionalProperties": false,
           "properties": {
             "abstained": {
-              "description": "true when no fact met the retrieval contract",
               "type": "boolean"
             },
+            "conversation_count": {
+              "type": "integer"
+            },
+            "effective_path": {
+              "type": "string"
+            },
+            "fact_count": {
+              "type": "integer"
+            },
             "path": {
-              "description": "effective retrieval path: hybrid, lexical, or graph",
               "type": "string"
             },
             "reason": {
-              "description": "named fallback or abstention reason",
               "type": "string"
+            },
+            "reasoning_count": {
+              "type": "integer"
             }
           },
           "required": [
+            "effective_path",
             "path",
+            "fact_count",
+            "conversation_count",
+            "reasoning_count",
             "abstained"
           ],
           "type": "object"
         }
       },
       "required": [
+        "evidence",
         "facts",
+        "abstained",
         "retrieval"
       ],
       "type": "object"

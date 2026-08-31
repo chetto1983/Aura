@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
 )
@@ -104,13 +106,15 @@ func memoryRecallHandler(tenants *tenants) mcp.ToolHandlerFor[MemoryRecallInput,
 		if err != nil {
 			return nil, MemoryRecallOutput{}, fmt.Errorf("memory_recall: %w", err)
 		}
+		recordMemoryRecallTelemetry(ctx, in.Mode, result)
 		return nil, memoryRecallOutput(result), nil
 	}
 }
 
 func memoryRecallOutput(result arcadedb.RecallResult) MemoryRecallOutput {
-	return MemoryRecallOutput{
-		Evidence: make([]MemoryRecallEvidence, 0), Facts: make([]MemorySearchHit, 0),
+	output := MemoryRecallOutput{
+		Evidence:  make([]MemoryRecallEvidence, 0, len(result.Evidence)),
+		Facts:     make([]MemorySearchHit, 0, result.Retrieval.FactCount),
 		Abstained: result.Abstained, Reason: result.Reason, NextCursor: result.NextCursor,
 		Retrieval: MemoryRecallRetrievalMetadata{
 			EffectivePath: result.Retrieval.EffectivePath, Path: result.Retrieval.Path,
@@ -119,4 +123,51 @@ func memoryRecallOutput(result arcadedb.RecallResult) MemoryRecallOutput {
 			Abstained:      result.Abstained, Reason: result.Reason,
 		},
 	}
+	for _, evidence := range result.Evidence {
+		item := MemoryRecallEvidence{
+			Kind: string(evidence.Kind), Rank: evidence.Rank, Score: evidence.Score,
+		}
+		if evidence.Fact != nil {
+			facts := toHits([]arcadedb.FactHit{*evidence.Fact})
+			if len(facts) == 1 {
+				fact := facts[0]
+				item.Fact = &fact
+				output.Facts = append(output.Facts, fact)
+			}
+		}
+		if evidence.Conversation != nil {
+			conversation := MemoryConversationEvidence{
+				ConversationID: evidence.Conversation.ConversationID,
+				AnchorSeq:      evidence.Conversation.AnchorSeq,
+				Turns:          make([]MemoryConversationTurn, 0, len(evidence.Conversation.Turns)),
+			}
+			for _, turn := range evidence.Conversation.Turns {
+				conversation.Turns = append(conversation.Turns, MemoryConversationTurn{
+					Seq: turn.Seq, Role: turn.Role, Content: turn.Content,
+					OccurredAt: turn.OccurredAt, SourceRef: turn.SourceRef,
+				})
+			}
+			item.Conversation = &conversation
+		}
+		output.Evidence = append(output.Evidence, item)
+	}
+	return output
+}
+
+func recordMemoryRecallTelemetry(ctx context.Context, mode string, result arcadedb.RecallResult) {
+	if mode == "" {
+		mode = string(arcadedb.RecallModeSemantic)
+	}
+	trace.SpanFromContext(ctx).SetAttributes(
+		attribute.String("memory.recall.mode", mode),
+		attribute.String("memory.recall.effective_path", result.Retrieval.EffectivePath),
+		attribute.String("memory.recall.path", result.Retrieval.Path),
+		attribute.Int("memory.recall.fact_candidates", result.Retrieval.FactCandidateCount),
+		attribute.Int("memory.recall.conversation_candidates", result.Retrieval.ConversationCandidates),
+		attribute.Int("memory.recall.fact_count", result.Retrieval.FactCount),
+		attribute.Int("memory.recall.conversation_count", result.Retrieval.ConversationCount),
+		attribute.Int("memory.recall.reasoning_count", result.Retrieval.ReasoningCount),
+		attribute.String("memory.recall.abstention_reason", result.Reason),
+		attribute.Float64("memory.recall.backend_latency_ms", float64(result.Retrieval.BackendLatency.Microseconds())/1000),
+	)
 }
