@@ -1,0 +1,31 @@
+# Aura appliance edge image update — one shot, driven by the .timer.
+#
+# Install (beside deploy/aura.service):
+#   sudo install -m 0755 deploy/aura-image-update.sh /usr/local/sbin/aura-image-update.sh
+#   sudo cp deploy/aura-image-update.service /etc/systemd/system/
+#   sudo cp deploy/aura-image-update.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now aura-image-update.timer
+#   journalctl -u aura-image-update.service -f
+#
+# /opt/aura/.env must point the aura service at the edge channel, and each MCP
+# sidecar the machine runs at its moving tag (a SHA-pinned default is a no-op):
+#   AURA_IMAGE=ghcr.io/chetto1983/aura:edge
+#   AURA_PULL_POLICY=always
+#   AURA_ARCADEDB_MCP_IMAGE=ghcr.io/chetto1983/aura-arcadedb-mcp:edge
+#   AURA_PIM_MCP_IMAGE=ghcr.io/chetto1983/aura-pim-mcp:sidecar
+#   AURA_WHATSAPP_MCP_IMAGE=ghcr.io/chetto1983/whatsapp-mcp:latest
+
+[Unit]
+Description=Aura appliance image update from GHCR
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/default/aura
+ExecStart=/usr/local/sbin/aura-image-update.sh
+TimeoutStartSec=15min
+
+[Install]
+WantedBy=multi-user.target

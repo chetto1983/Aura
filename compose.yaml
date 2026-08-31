@@ -18,7 +18,11 @@ services:
       # default -> `commit: unknown`, identical to pre-stamp behaviour.
       args: {VCS_REF: "${VCS_REF:-}"}
     image: ${AURA_IMAGE:-aura:local}
-    pull_policy: never
+    # `never` keeps the dev flow source-built; an appliance tracking the GHCR edge
+    # channel sets AURA_IMAGE=ghcr.io/chetto1983/aura:edge and AURA_PULL_POLICY=always
+    # so deploy/aura-image-update.sh can pull it. The same pair governs aura-migrate
+    # and garage-bootstrap below — the migrator MUST run the binary it migrates for.
+    pull_policy: ${AURA_PULL_POLICY:-never}
     container_name: aura
     restart: unless-stopped
     # Tier di isolamento opzionale (PRD amendment #63): AURA_RUNTIME=runsc mette gVisor
@@ -361,7 +365,7 @@ services:
       context: .
       dockerfile: docker/aura/Dockerfile
     image: ${AURA_IMAGE:-aura:local}
-    pull_policy: never
+    pull_policy: ${AURA_PULL_POLICY:-never}
     container_name: aura-migrate
     restart: "no"
     # Postgres only: ArcadeDB's schema is idempotent DDL applied at connect, so there
@@ -385,7 +389,7 @@ services:
       context: .
       dockerfile: docker/aura/Dockerfile
     image: ${AURA_IMAGE:-aura:local}
-    pull_policy: never
+    pull_policy: ${AURA_PULL_POLICY:-never}
     container_name: aura-garage-bootstrap
     restart: "no"
     entrypoint: ["sh", "-lc", "aura-garage-bootstrap.sh && aura objectstore bootstrap"]

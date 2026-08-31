@@ -48,6 +48,11 @@ jobs:
           file: docker/aura/Dockerfile
           platforms: linux/amd64
           push: true
+          # Same stamp compose.yaml passes locally: `aura version` inside the
+          # image must name this commit, so the appliance's image-update timer
+          # logs checkable provenance instead of trusting the moving tag.
+          build-args: |
+            VCS_REF=${{ github.sha }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/aura:edge
             ghcr.io/${{ github.repository_owner }}/aura:master-${{ github.sha }}

@@ -46,7 +46,11 @@ jobs:
           file: docker/arcadedb-mcp/Dockerfile
           platforms: linux/amd64
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/aura-arcadedb-mcp:${{ github.sha }}
+          # The per-SHA tag stays the pinning channel compose defaults to; `edge`
+          # is the moving tag deploy/aura-image-update.sh tracks on appliances.
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/aura-arcadedb-mcp:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/aura-arcadedb-mcp:edge
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
