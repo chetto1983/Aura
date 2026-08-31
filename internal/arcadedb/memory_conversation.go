@@ -161,6 +161,14 @@ func (c *Client) ApplyConversationProjection(ctx context.Context, projection Con
 		if _, err := c.Command(ctx, statement, turnParams); err != nil {
 			return fmt.Errorf("arcadedb: upsert conversation turn %d: %w", turn.Seq, err)
 		}
+		if _, hasVector := turnParams["embedding"]; !hasVector {
+			if _, err := c.Command(ctx,
+				"UPDATE "+conversationTurnType+" REMOVE embedding"+
+					" WHERE identity_id = :identity_id AND conversation_id = :conversation_id AND turn_seq = :turn_seq",
+				turnParams); err != nil {
+				return fmt.Errorf("arcadedb: clear stale conversation embedding %d: %w", turn.Seq, err)
+			}
+		}
 		if _, err := c.Command(ctx, createHasTurnStatement, turnParams); err != nil {
 			return fmt.Errorf("arcadedb: link conversation turn %d: %w", turn.Seq, err)
 		}
@@ -362,15 +370,69 @@ func conversationSourceRef(conversationID string) string {
 
 // DeleteConversationProjection removes all derived records for one source conversation.
 func (c *Client) DeleteConversationProjection(ctx context.Context, identityID, conversationID string) error {
-	return fmt.Errorf("arcadedb: delete conversation projection: not implemented")
+	if strings.TrimSpace(identityID) == "" || strings.TrimSpace(conversationID) == "" {
+		return fmt.Errorf("arcadedb: delete conversation projection requires identity and conversation")
+	}
+	params := map[string]any{"identity_id": identityID, "conversation_id": conversationID}
+	if _, err := c.Command(ctx,
+		"DELETE FROM "+conversationTurnType+
+			" WHERE identity_id = :identity_id AND conversation_id = :conversation_id", params); err != nil {
+		return fmt.Errorf("arcadedb: delete conversation turns: %w", err)
+	}
+	if _, err := c.Command(ctx,
+		"DELETE FROM "+conversationVertexType+
+			" WHERE identity_id = :identity_id AND conversation_id = :conversation_id", params); err != nil {
+		return fmt.Errorf("arcadedb: delete conversation: %w", err)
+	}
+	return nil
 }
 
 // DeleteIdentityConversationProjections removes the complete derived conversation tier.
 func (c *Client) DeleteIdentityConversationProjections(ctx context.Context, identityID string) error {
-	return fmt.Errorf("arcadedb: delete identity conversation projections: not implemented")
+	if strings.TrimSpace(identityID) == "" {
+		return fmt.Errorf("arcadedb: delete identity conversation projections requires identity")
+	}
+	params := map[string]any{"identity_id": identityID}
+	if _, err := c.Command(ctx,
+		"DELETE FROM "+conversationTurnType+" WHERE identity_id = :identity_id", params); err != nil {
+		return fmt.Errorf("arcadedb: delete identity conversation turns: %w", err)
+	}
+	if _, err := c.Command(ctx,
+		"DELETE FROM "+conversationVertexType+" WHERE identity_id = :identity_id", params); err != nil {
+		return fmt.Errorf("arcadedb: delete identity conversations: %w", err)
+	}
+	return nil
 }
 
 // PruneConversationProjections removes graph conversations absent from the source replay.
 func (c *Client) PruneConversationProjections(ctx context.Context, identityID string, liveConversationIDs []string) error {
-	return fmt.Errorf("arcadedb: prune conversation projections: not implemented")
+	if strings.TrimSpace(identityID) == "" {
+		return fmt.Errorf("arcadedb: prune conversation projections requires identity")
+	}
+	rows, err := c.Query(ctx,
+		"SELECT identity_id, conversation_id FROM "+conversationVertexType+
+			" WHERE identity_id = :identity_id",
+		map[string]any{"identity_id": identityID})
+	if err != nil {
+		return fmt.Errorf("arcadedb: list conversation projections for pruning: %w", err)
+	}
+	live := make(map[string]struct{}, len(liveConversationIDs))
+	for _, conversationID := range liveConversationIDs {
+		if conversationID = strings.TrimSpace(conversationID); conversationID != "" {
+			live[conversationID] = struct{}{}
+		}
+	}
+	for _, row := range rows {
+		if rowString(row, "identity_id") != identityID {
+			continue
+		}
+		conversationID := rowString(row, "conversation_id")
+		if _, ok := live[conversationID]; ok {
+			continue
+		}
+		if err := c.DeleteConversationProjection(ctx, identityID, conversationID); err != nil {
+			return err
+		}
+	}
+	return nil
 }

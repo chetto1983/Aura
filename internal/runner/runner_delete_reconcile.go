@@ -23,8 +23,9 @@ type reservedDeleteRecoveryStore interface {
 // DeleteReconciler resumes export-delete operations from their stored operation
 // reservation after cancellation, transient failure, or process restart.
 type DeleteReconciler struct {
-	runner   *Runner
-	interval time.Duration
+	runner    *Runner
+	interval  time.Duration
+	projector *ConversationProjector
 
 	wg   sync.WaitGroup
 	stop chan struct{}
@@ -34,6 +35,15 @@ type DeleteReconciler struct {
 // NewDeleteReconciler constructs the boot-one-shot and interval recovery worker.
 func NewDeleteReconciler(runner *Runner, interval time.Duration) *DeleteReconciler {
 	return &DeleteReconciler{runner: runner, interval: interval, stop: make(chan struct{})}
+}
+
+// SetConversationProjector joins derived deletion to reserved-delete recovery.
+// Projection failure is reported but never rolls back PostgreSQL authority;
+// full replay pruning remains the crash/outage repair path.
+func (r *DeleteReconciler) SetConversationProjector(projector *ConversationProjector) {
+	if r != nil {
+		r.projector = projector
+	}
 }
 
 // Start launches recovery when the store exposes durable reservations.
@@ -81,12 +91,22 @@ func (r *DeleteReconciler) Stop() {
 func (r *DeleteReconciler) reconcile(parent context.Context) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), conversationDeleteFinalizeTimeout)
 	defer cancel()
-	if _, err := r.runner.reconcileReservedConversationDeletes(ctx, deleteRecoveryBatch); err != nil {
+	if _, err := r.runner.reconcileReservedConversationDeletesWithProjection(
+		ctx, deleteRecoveryBatch, r.projector,
+	); err != nil {
 		slog.Warn("delete recovery: reconcile reserved conversations", "err", err)
 	}
 }
 
 func (r *Runner) reconcileReservedConversationDeletes(ctx context.Context, limit int32) (int, error) {
+	return r.reconcileReservedConversationDeletesWithProjection(ctx, limit, nil)
+}
+
+func (r *Runner) reconcileReservedConversationDeletesWithProjection(
+	ctx context.Context,
+	limit int32,
+	projector *ConversationProjector,
+) (int, error) {
 	store, ok := r.Conv.(reservedDeleteRecoveryStore)
 	if !ok {
 		return 0, errors.New("delete recovery: reserved conversation store unavailable")
@@ -98,6 +118,11 @@ func (r *Runner) reconcileReservedConversationDeletes(ctx context.Context, limit
 	completed := 0
 	var failures []error
 	for _, item := range items {
+		if projector != nil {
+			if projectionErr := projector.DeleteConversation(ctx, item.IdentityID, item.ConversationID); projectionErr != nil {
+				failures = append(failures, fmt.Errorf("conversation %s projection: %w", item.ConversationID, projectionErr))
+			}
+		}
 		affected, resumeErr := r.resumeReservedConversationDelete(ctx, item.IdentityID, item.ConversationID, item.Reservation)
 		if resumeErr != nil {
 			failures = append(failures, fmt.Errorf("conversation %s: %w", item.ConversationID, resumeErr))

@@ -65,6 +65,7 @@ func TestConversationProjectionTracer(t *testing.T) {
 		t.Fatalf("arcadedb.New: %v", err)
 	}
 	projector := NewConversationProjector(source, sink, 16)
+	t.Cleanup(func() { _ = projector.Close(context.Background()) })
 
 	cursor, err := projector.ProjectPage(context.Background(), "identity-a", conversations.ProjectionCursor{})
 	if err != nil {
@@ -73,8 +74,8 @@ func TestConversationProjectionTracer(t *testing.T) {
 	if cursor.ConversationID != "conversation-1" || cursor.Seq != 1 {
 		t.Fatalf("cursor = %+v", cursor)
 	}
-	if commandCount != 4 {
-		t.Fatalf("ArcadeDB commands = %d, want conversation upsert, turn upsert, HAS_TURN, NEXT_TURN", commandCount)
+	if commandCount != 5 {
+		t.Fatalf("ArcadeDB commands = %d, want conversation upsert, turn upsert, stale-vector clear, HAS_TURN, NEXT_TURN", commandCount)
 	}
 	result, err := sink.SearchConversationTurnsHybrid(context.Background(), "identity-a", "blue notebook", 5)
 	if err != nil {
@@ -276,9 +277,12 @@ func TestConversationProjectionDeleteConverges(t *testing.T) {
 	if err := projector.Reconcile(context.Background(), "identity-a"); err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
+	source.mu.Lock()
+	source.turns = nil
+	source.mu.Unlock()
 	for range 2 {
-		if err := projector.DeleteConversation(context.Background(), "identity-a", "conversation-1"); err != nil {
-			t.Fatalf("DeleteConversation: %v", err)
+		if err := projector.Reconcile(context.Background(), "identity-a"); err != nil {
+			t.Fatalf("Reconcile(delete): %v", err)
 		}
 	}
 	if len(sink.turns) != 0 {

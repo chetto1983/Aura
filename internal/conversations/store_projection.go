@@ -136,7 +136,44 @@ func (s *Store) ListProjectionTombstones(
 	identityID, afterConversationID string,
 	limit int,
 ) ([]ProjectionTombstone, string, error) {
-	return nil, afterConversationID, fmt.Errorf("list projection tombstones: not implemented")
+	identityUUID, err := db.ParseUUID("identity_id", identityID)
+	if err != nil {
+		return nil, afterConversationID, fmt.Errorf("list projection tombstones: %w", err)
+	}
+	if s == nil || s.pool == nil {
+		return nil, afterConversationID, fmt.Errorf("list projection tombstones: store is not initialized")
+	}
+	limit = projectionPageSize(limit)
+	out := make([]ProjectionTombstone, 0, limit)
+	next := afterConversationID
+	err = db.WithIdentityTxRaw(ctx, s.pool, identityID, func(tx pgx.Tx) error {
+		rows, queryErr := tx.Query(ctx, `
+SELECT identity_id::text, id::text, last_active_at
+  FROM aura.conversations
+ WHERE identity_id = $1
+   AND status = 'deleted'
+   AND id::text > $2
+ ORDER BY id::text
+ LIMIT $3`, identityUUID, afterConversationID, limit)
+		if queryErr != nil {
+			return fmt.Errorf("query projection tombstones: %w", queryErr)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var tombstone ProjectionTombstone
+			if scanErr := rows.Scan(&tombstone.IdentityID, &tombstone.ConversationID, &tombstone.DeletedAt); scanErr != nil {
+				return fmt.Errorf("scan projection tombstone: %w", scanErr)
+			}
+			tombstone.DeletedAt = tombstone.DeletedAt.UTC()
+			next = tombstone.ConversationID
+			out = append(out, tombstone)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, afterConversationID, err
+	}
+	return out, next, nil
 }
 
 func projectionPageSize(limit int) int {
