@@ -10,9 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/steer"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -484,4 +487,48 @@ func TestNewSteerInboxDisabledLeavesFieldNil(t *testing.T) {
 	if steerInbox != nil {
 		t.Fatalf("steerInbox = %#v, want nil when AGUISteer.Enabled is false", steerInbox)
 	}
+}
+
+type emptyProjectionSource struct{}
+
+func (emptyProjectionSource) ListProjectionTurns(
+	context.Context,
+	string,
+	conversations.ProjectionCursor,
+	int,
+) ([]conversations.ProjectionTurn, conversations.ProjectionCursor, error) {
+	return nil, conversations.ProjectionCursor{}, nil
+}
+
+type emptyProjectionSink struct{}
+
+func (emptyProjectionSink) ApplyConversationProjection(context.Context, arcadedb.ConversationProjection) error {
+	return nil
+}
+func (emptyProjectionSink) DeleteConversationProjection(context.Context, string, string) error {
+	return nil
+}
+func (emptyProjectionSink) DeleteIdentityConversationProjections(context.Context, string) error {
+	return nil
+}
+func (emptyProjectionSink) PruneConversationProjections(context.Context, string, []string) error {
+	return nil
+}
+
+func TestChatBootMemoryProjection(t *testing.T) {
+	t.Setenv("AURA_ARCADEDB_TENANT_SECRET", strings.Repeat("s", 32))
+	cfg := validBootConfig()
+	cfg.ArcadeDB.BaseURL = "http://127.0.0.1:2480"
+	projector := newChatConversationProjector(cfg, emptyProjectionSource{})
+	if projector == nil {
+		t.Fatal("configured chat boot did not construct the conversation projector")
+	}
+
+	owned := runner.NewConversationProjector(emptyProjectionSource{}, emptyProjectionSink{}, 1)
+	env := &chatEnv{conversationProjector: owned}
+	env.close()
+	if owned.OfferConversation("00000000-0000-0000-0000-000000000001") {
+		t.Fatal("chat shutdown left the boot-owned projector accepting work")
+	}
+	_ = projector.Close(context.Background())
 }

@@ -42,21 +42,22 @@ import (
 // chatEnv is the booted composition root shared by every chat subcommand: the
 // config, the open pool, the three Stores, and the Runner that drives the REPL.
 type chatEnv struct {
-	cfg              *config.Config
-	pool             *pgxpool.Pool
-	conv             *conversations.Store
-	pause            *askuser.Store
-	identity         *identity.Store
-	run              *runner.Runner
-	client           llm.Client
-	llmRuntime       *llm.Runtime
-	llmFallback      llm.Config
-	reg              *tools.Registry
-	gateway          *gateway.Gateway
-	operations       *idempotency.Store
-	toolInvocations  *toolinvocations.Store // the append-only ledger the gateway reserves + the reconciler sweeps
-	deleteReconciler *runner.DeleteReconciler
-	assets           *assets.Service
+	cfg                   *config.Config
+	pool                  *pgxpool.Pool
+	conv                  *conversations.Store
+	pause                 *askuser.Store
+	identity              *identity.Store
+	run                   *runner.Runner
+	client                llm.Client
+	llmRuntime            *llm.Runtime
+	llmFallback           llm.Config
+	reg                   *tools.Registry
+	gateway               *gateway.Gateway
+	operations            *idempotency.Store
+	toolInvocations       *toolinvocations.Store // the append-only ledger the gateway reserves + the reconciler sweeps
+	deleteReconciler      *runner.DeleteReconciler
+	conversationProjector *runner.ConversationProjector
+	assets                *assets.Service
 	// shareSvc is the WEBSHARE-02/03 share lifecycle (buildShareService, share_service_wiring.go,
 	// serve-only — nil under `aura chat`). Backs three composition-root seams at once: the HTTP
 	// surface (via SetShareService's adapter), the D-15 delete cascade (chat.run.SetShareRevoker),

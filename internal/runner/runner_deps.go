@@ -41,6 +41,9 @@ type Deps struct {
 	CacheMetrics    CacheMetricStore
 	ToolInvocations ToolInvocationStore
 	MemoryContext   MemoryContextProvider
+	// ConversationProjector receives post-commit eligible-turn offers. It is
+	// fail-soft because PostgreSQL remains the conversation authority.
+	ConversationProjector *ConversationProjector
 	// ResumeCommitter is the cross-store HITL-durability seam (D-03/D-05). The
 	// composition root injects a pool-owning *PoolResumeCommitter so single/batch resume
 	// and pause exposure each commit in ONE db.WithTx; nil => New defaults to the
@@ -183,6 +186,7 @@ func New(d Deps) *Runner {
 		cacheMetrics:             d.CacheMetrics,
 		toolInvocations:          d.ToolInvocations,
 		memoryContext:            d.MemoryContext,
+		conversationProjector:    d.ConversationProjector,
 		runtime:                  runtime,
 		registry:                 d.Registry,
 		location:                 tools.LocationOrUTC(d.Timezone),

@@ -57,14 +57,15 @@ func threadLockHeld(ctx context.Context) bool {
 // CLI read conversations directly (list/search/lifecycle) without re-plumbing the
 // narrow interface; pause/title orchestration stays in the Runner.
 type Runner struct {
-	Conv            ConversationStore
-	pause           PauseStore
-	approvalExpiry  ApprovalExpiryStore
-	identity        IdentityStore
-	cacheMetrics    CacheMetricStore
-	toolInvocations ToolInvocationStore
-	memoryContext   MemoryContextProvider
-	resumeCommitter ResumeCommitter // cross-store HITL-durability seam (D-03/D-05); split fallback when unset
+	Conv                  ConversationStore
+	pause                 PauseStore
+	approvalExpiry        ApprovalExpiryStore
+	identity              IdentityStore
+	cacheMetrics          CacheMetricStore
+	toolInvocations       ToolInvocationStore
+	memoryContext         MemoryContextProvider
+	conversationProjector *ConversationProjector
+	resumeCommitter       ResumeCommitter // cross-store HITL-durability seam (D-03/D-05); split fallback when unset
 
 	runtime  *llm.Runtime
 	registry *tools.Registry
@@ -347,9 +348,13 @@ func (r *Runner) scopeContextToConversation(ctx context.Context, convID string) 
 
 // appendUserTurn persists the user message as the next turn.
 func (r *Runner) appendUserTurn(ctx context.Context, convID, content string) error {
-	return r.Conv.AppendTurn(ctx, conversations.AppendTurnParams{
+	if err := r.Conv.AppendTurn(ctx, conversations.AppendTurnParams{
 		ConversationID: convID, Role: llm.RoleUser, Content: content,
-	})
+	}); err != nil {
+		return err
+	}
+	r.offerConversationProjection(ctx)
+	return nil
 }
 
 // buildAgent constructs a FRESH LlmAgent seeded with the rehydrated history

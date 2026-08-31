@@ -23,6 +23,8 @@ import (
 // detached from the caller's (see persistToolInvocationLedger), so it needs its own deadline.
 const ledgerInsertTimeout = 5 * time.Second
 
+func (r *Runner) offerConversationProjection(_ context.Context) {}
+
 // turnTracker accumulates per-round persistence state: whether the round paused (so
 // the auto-title worker is skipped), the running conversation id, and the round's
 // ask_user pauses. When a round pauses on >=2 ask_user calls the agent rewrites its
@@ -331,6 +333,7 @@ func (r *Runner) persistAssistantAnswer(ctx context.Context, tr *turnTracker, ev
 	if err := r.Conv.AppendAssistantTurnWithCacheMetric(ctx, turn, metric); err != nil {
 		return fmt.Errorf("persist assistant answer: %w", err)
 	}
+	r.offerConversationProjection(ctx)
 	tr.answered = true
 	return nil
 }
