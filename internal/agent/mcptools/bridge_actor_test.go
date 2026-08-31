@@ -103,6 +103,13 @@ func TestRecallContextHeaders(t *testing.T) {
 	if valueA == "" {
 		t.Fatal("active-source header is absent")
 	}
+	sourcesA, err := decodeRecallContextHeader(valueA)
+	if err != nil {
+		t.Fatalf("decode first active-source header: %v", err)
+	}
+	if len(sourcesA) != 1 || sourcesA[0] != (recallSourceKey{ConversationID: "conversation-a", TurnID: "turn-a"}) {
+		t.Fatalf("first active sources = %+v", sourcesA)
+	}
 
 	ctx = tools.WithRequestID(context.Background(), "turn-b")
 	ctx = tools.WithToolCallContext(ctx, "conversation-b", "call-b", t.TempDir(), 2048)
@@ -111,12 +118,19 @@ func TestRecallContextHeaders(t *testing.T) {
 	if valueB == "" || valueB == valueA {
 		t.Fatalf("reused-session headers are stale: first=%q second=%q", valueA, valueB)
 	}
+	sourcesB, err := decodeRecallContextHeader(valueB)
+	if err != nil {
+		t.Fatalf("decode second active-source header: %v", err)
+	}
+	if len(sourcesB) != 1 || sourcesB[0] != (recallSourceKey{ConversationID: "conversation-b", TurnID: "turn-b"}) {
+		t.Fatalf("second active sources = %+v", sourcesB)
+	}
 
 	if got := memoryHeaderFunc(context.Background()); got != nil {
 		t.Fatalf("bare context headers = %v, want nil", got)
 	}
 
-	_, err := encodeRecallContextHeader([]recallSourceKey{{
+	_, err = encodeRecallContextHeader([]recallSourceKey{{
 		ConversationID: strings.Repeat("c", 4096), TurnID: "turn-over-cap",
 	}})
 	if err == nil {

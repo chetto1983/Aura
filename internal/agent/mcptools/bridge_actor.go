@@ -2,6 +2,7 @@ package mcptools
 
 import (
 	"context"
+	"maps"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 )
@@ -91,8 +92,17 @@ func actorHeaderFunc(ctx context.Context) map[string]string {
 	return actorHeaders(actorFromContext(ctx))
 }
 
-// memoryHeaderFunc composes the actor and active-recall headers for one request.
-// The RED stub deliberately omits actor composition until Task 1 GREEN.
+// memoryHeaderFunc composes actor and active-recall headers for one request.
+// Each source function is evaluated on that request's context, so a reused MCP
+// session cannot retain either a prior turn's actor or recall exclusion.
 func memoryHeaderFunc(ctx context.Context) map[string]string {
-	return recallContextHeaderFunc(ctx)
+	actor := actorHeaderFunc(ctx)
+	recall := recallContextHeaderFunc(ctx)
+	if len(actor) == 0 && len(recall) == 0 {
+		return nil
+	}
+	headers := make(map[string]string, len(actor)+len(recall))
+	maps.Copy(headers, actor)
+	maps.Copy(headers, recall)
+	return headers
 }
