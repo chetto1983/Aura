@@ -2,18 +2,19 @@
 gsd_state_version: 1.0
 milestone: v2.1.0
 current_phase: 49
-current_phase_name: memory-tiers
+current_phase_name: Memory tiers
+current_plan: 2
 status: executing
-stopped_at: Phase 49 context gathered
-last_updated: "2026-08-31T16:23:31.418Z"
+stopped_at: Completed 49-01-PLAN.md
+last_updated: "2026-08-31T17:44:38.818Z"
 last_activity: 2026-08-31
-last_activity_desc: Phase 49 context gathered, ready for planning
-state_head: 3fabcb79dd76f96fc9c58926323a36705623c52d
+last_activity_desc: Completed Phase 49 Plan 01
+state_head: 40821c37ebf4411e493bf03f15cfdcaf138f7077
 progress:
   total_phases: 8
-  completed_phases: 4
+  completed_phases: 2
   total_plans: 62
-  completed_plans: 48
+  completed_plans: 49
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -28,9 +29,11 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 
 ## Current Position
 
-Phase: 49 (memory-tiers) — READY TO EXECUTE
+Phase: 49 (Memory tiers) — EXECUTING
 Phase 51 is complete: 14/14 plans, 5/5 success criteria, and 12/12 requirements verified.
 Status: Ready to execute
+Current Plan: 2
+Total Plans in Phase: 14
 
 **The roadmap shrank on 2026-08-25 (operator decision).** Phases **47** (tool-surface ceremony
 strip), **48** (un-defer and merges) and **53** (summarization spike) are DELETED, not annotated —
@@ -62,9 +65,9 @@ retaining byte caps, and `TestBridgedTool_Execute_MarksResultTrusted` pins MCP r
 The remaining unchecked MCP-02 item in REQUIREMENTS is its separate live unlisted-server proof;
 it is a roadmap acceptance obligation, not an unrecorded Calendar fork gap.
 
-Last activity: 2026-08-30 — Phase 51 complete, transitioned to Phase 49
+Last activity: 2026-08-31 — Completed Phase 49 Plan 01
 
-Progress: [██████████] 100% (48/48 currently planned milestone plans)
+Progress: [████████░░] 79% (49/62 milestone plans)
 
 ## Performance Metrics
 
@@ -110,6 +113,7 @@ Progress: [██████████] 100% (48/48 currently planned milesto
 | Phase 51 P11 | 375min | 5 tasks | 44 files |
 | Phase 51 P12a | 45min | 2 tasks | 13 files |
 | Phase 51 P12b | 9h38m | 4 tasks | 209 files |
+| Phase 49 P01 | 1h 5m | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -228,6 +232,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 51]: 51-08 accepts Amendment #183's six-verdict fresh-image result instead of fabricating or rerunning the obsolete monolithic drive-sc.sh.
 - [Phase 51]: Amendment #177 retires the quality-snapshot freshness gate; plan 51-08 did not run or recreate the deleted script and did not touch the historical snapshot.
 - [Phase 51]: Amendment #187's four authenticated Ollama runs passed, but a later shared-container recreation invalidates the old process tuple as a current final no-restart baseline; crash-after-partial-side-effects remains open.
+- [Phase 49]: Phase 49 uses measured Amendment #201 because #181 and #200 were already occupied; all executable ancestry gates bind to #201.
+- [Phase 49]: Phase 49 evaluator keeps tier contribution separate from actual backend path and represents absent final evidence as not_observed.
 
 ### Pending Todos
 
@@ -292,12 +298,12 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-31T07:44:10.732Z
-Stopped at: Phase 49 context gathered
+Last session: 2026-08-31T17:44:38.457Z
+Stopped at: Completed 49-01-PLAN.md
 The accepted fresh-image delivery envelope is reconciled in 51-VALIDATION.md at 6/6 and 9.9/10.
 The final image passed the complete repository Playwright suite (145 pass, 39 intentional skips,
 zero failures) and four hot-route cycles without a restart or an OpenRouter request.
 Crash-after-partial-side-effects remains an explicit residual risk and is not an exactly-once claim.
 
-Resume file: .planning/phases/49-memory-tiers/49-CONTEXT.md
+Resume file: None
 Next action: plan Phase 49 from .planning/phases/49-memory-tiers/49-CONTEXT.md.
