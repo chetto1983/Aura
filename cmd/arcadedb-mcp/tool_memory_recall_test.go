@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -126,4 +127,55 @@ func recallAttribute(attrs []attribute.KeyValue, key string) string {
 		}
 	}
 	return ""
+}
+
+func TestMemoryRecallModeContract(t *testing.T) {
+	session := inMemoryIdentityServer(t, newServer(nil, testClock, ""))
+	listed, err := session.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	var recallToolFound bool
+	for _, tool := range listed.Tools {
+		if tool.Name != "memory_recall" {
+			continue
+		}
+		recallToolFound = true
+		schema, ok := tool.InputSchema.(map[string]any)
+		if !ok {
+			t.Fatalf("input schema = %T", tool.InputSchema)
+		}
+		properties, ok := schema["properties"].(map[string]any)
+		if !ok {
+			t.Fatalf("properties = %T", schema["properties"])
+		}
+		mode, ok := properties["mode"].(map[string]any)
+		if !ok {
+			t.Fatalf("mode schema = %T", properties["mode"])
+		}
+		rawEnum, ok := mode["enum"].([]any)
+		if !ok {
+			t.Fatalf("mode enum = %T (%v)", mode["enum"], mode["enum"])
+		}
+		got := make([]string, 0, len(rawEnum))
+		for _, value := range rawEnum {
+			text, ok := value.(string)
+			if !ok {
+				t.Fatalf("enum value = %T", value)
+			}
+			got = append(got, text)
+		}
+		want := []string{"semantic", "recent", "open", "scroll", "reasoning"}
+		if !slices.Equal(got, want) {
+			t.Fatalf("mode enum = %v, want %v", got, want)
+		}
+		for _, required := range schema["required"].([]any) {
+			if required == "mode" {
+				t.Fatal("mode is required; omission must preserve semantic recall")
+			}
+		}
+	}
+	if !recallToolFound {
+		t.Fatal("memory_recall is not advertised")
+	}
 }

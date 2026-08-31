@@ -2,6 +2,8 @@ package arcadedb
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -120,4 +122,189 @@ func TestMemoryRecallAbstains(t *testing.T) {
 	if result.Retrieval.BackendLatency < 0 || result.Retrieval.BackendLatency > time.Minute {
 		t.Fatalf("backend latency = %s", result.Retrieval.BackendLatency)
 	}
+}
+
+func TestMemoryRecallModeContract(t *testing.T) {
+	t.Run("omitted mode remains semantic", func(t *testing.T) {
+		call := func(mode RecallMode) RecallResult {
+			client, _ := routedClient(t, func(request recordedRequest) testResponse {
+				statement, _ := request.Payload["command"].(string)
+				switch {
+				case strings.Contains(statement, "vector.fuse"):
+					return testResponse{Body: `{"result":[{"rid":"#10:1","score":0.03}]}`}
+				case strings.Contains(statement, "FROM FACT") && strings.Contains(statement, "@rid IN"):
+					return testResponse{Body: recallFactRow}
+				default:
+					return testResponse{Body: `{"result":[]}`}
+				}
+			})
+			result, err := client.RecallMemory(context.Background(), RecallRequest{
+				IdentityID: "identity-a", Mode: mode, Query: "blue notebook",
+			})
+			if err != nil {
+				t.Fatalf("RecallMemory(%q): %v", mode, err)
+			}
+			return result
+		}
+		omitted, explicit := call(""), call(RecallModeSemantic)
+		if omitted.Retrieval.Path != explicit.Retrieval.Path ||
+			omitted.Retrieval.EffectivePath != explicit.Retrieval.EffectivePath ||
+			len(omitted.Evidence) != len(explicit.Evidence) {
+			t.Fatalf("omitted=%+v explicit=%+v", omitted, explicit)
+		}
+	})
+
+	t.Run("reasoning is reserved", func(t *testing.T) {
+		client, rec := recordingClient(t, `{"result":[]}`)
+		result, err := client.RecallMemory(context.Background(), RecallRequest{
+			IdentityID: "identity-a", Mode: RecallModeReasoning,
+		})
+		if err != nil {
+			t.Fatalf("reserved reasoning mode: %v", err)
+		}
+		if !result.Abstained || result.Reason != "reasoning_not_available" {
+			t.Fatalf("result = %+v", result)
+		}
+		if len(rec.statements) != 0 {
+			t.Fatalf("reserved mode queried storage: %v", rec.statements)
+		}
+	})
+
+	t.Run("unknown mode fails before access", func(t *testing.T) {
+		client, rec := recordingClient(t, `{"result":[]}`)
+		_, err := client.RecallMemory(context.Background(), RecallRequest{
+			IdentityID: "identity-a", Mode: "invented",
+		})
+		if err == nil || !strings.Contains(err.Error(), "unsupported") {
+			t.Fatalf("err = %v", err)
+		}
+		if len(rec.statements) != 0 {
+			t.Fatalf("unknown mode queried storage: %v", rec.statements)
+		}
+	})
+}
+
+func TestMemoryRecallWindow(t *testing.T) {
+	t.Run("recent is capped", func(t *testing.T) {
+		responseIndex := 0
+		client, requests := routedClient(t, func(recordedRequest) testResponse {
+			responses := []string{recallAnchorRow, recallWindowRows}
+			response := responses[min(responseIndex, len(responses)-1)]
+			responseIndex++
+			return testResponse{Body: response}
+		})
+		result, err := client.RecallMemory(context.Background(), RecallRequest{
+			IdentityID: "identity-a", Mode: RecallModeRecent, Limit: 1000,
+		})
+		if err != nil {
+			t.Fatalf("recent: %v", err)
+		}
+		if len(result.Evidence) != 1 || result.Evidence[0].Conversation == nil {
+			t.Fatalf("evidence = %+v", result.Evidence)
+		}
+		params := (*requests)[0].Payload["params"].(map[string]any)
+		if got := params["recent_limit"]; got != float64(20) {
+			t.Fatalf("recent limit = %v, want server cap 20", got)
+		}
+	})
+
+	t.Run("open returns a bounded cursor", func(t *testing.T) {
+		client, rec := recordingClient(t, recallWindowRows)
+		result, err := client.RecallMemory(context.Background(), RecallRequest{
+			IdentityID: "identity-a", Mode: RecallModeOpen,
+			ConversationID: "conversation-1", AnchorSeq: 7,
+			Direction: RecallDirectionAfter, Limit: 1000,
+		})
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		if len(result.Evidence) != 1 || result.NextCursor == "" {
+			t.Fatalf("result = %+v", result)
+		}
+		decoded := decodeTestRecallCursor(t, result.NextCursor)
+		if decoded.Version != 1 || decoded.IdentityID != "identity-a" ||
+			decoded.ConversationID != "conversation-1" || decoded.PageSize != 20 {
+			t.Fatalf("cursor = %+v", decoded)
+		}
+		raw, _ := base64.RawURLEncoding.DecodeString(result.NextCursor)
+		if strings.Contains(string(raw), "#") {
+			t.Fatalf("cursor leaked a RID: %s", raw)
+		}
+		if got := rec.params[0]["page_size"]; got != float64(20) {
+			t.Fatalf("page size = %v", got)
+		}
+	})
+}
+
+func TestRecallCursorFailsClosedBeforeQuery(t *testing.T) {
+	valid := RecallCursor{
+		Version: 1, IdentityID: "identity-a", ConversationID: "conversation-1",
+		AnchorSeq: 7, Direction: RecallDirectionAfter, PageSize: 3,
+	}
+	unknownField := base64.RawURLEncoding.EncodeToString([]byte(
+		`{"version":1,"identity_id":"identity-a","conversation_id":"conversation-1","anchor_seq":7,"direction":"after","page_size":3,"rid":"#3:1"}`,
+	))
+	tests := []struct {
+		name   string
+		cursor string
+		mutate func(*RecallRequest)
+		want   string
+	}{
+		{name: "malformed", cursor: "%%%", want: "cursor"},
+		{name: "oversized", cursor: strings.Repeat("a", 2049), want: "cursor"},
+		{name: "wrong version", cursor: encodeTestRecallCursor(t, withRecallCursor(valid, func(cursor *RecallCursor) { cursor.Version = 2 })), want: "version"},
+		{name: "foreign identity", cursor: encodeTestRecallCursor(t, withRecallCursor(valid, func(cursor *RecallCursor) { cursor.IdentityID = "identity-b" })), want: "identity"},
+		{name: "wrong conversation", cursor: encodeTestRecallCursor(t, withRecallCursor(valid, func(cursor *RecallCursor) { cursor.ConversationID = "conversation-2" })), want: "conversation"},
+		{name: "direction mismatch", cursor: encodeTestRecallCursor(t, valid), mutate: func(request *RecallRequest) { request.Direction = RecallDirectionBefore }, want: "direction"},
+		{name: "anchor mismatch", cursor: encodeTestRecallCursor(t, valid), mutate: func(request *RecallRequest) { request.AnchorSeq = 8 }, want: "anchor"},
+		{name: "page cap", cursor: encodeTestRecallCursor(t, withRecallCursor(valid, func(cursor *RecallCursor) { cursor.PageSize = 999 })), want: "page"},
+		{name: "RID field", cursor: unknownField, want: "unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, rec := recordingClient(t, `{"result":[]}`)
+			request := RecallRequest{
+				IdentityID: "identity-a", Mode: RecallModeScroll,
+				ConversationID: "conversation-1", AnchorSeq: 7,
+				Direction: RecallDirectionAfter, Cursor: tt.cursor,
+			}
+			if tt.mutate != nil {
+				tt.mutate(&request)
+			}
+			_, err := client.RecallMemory(context.Background(), request)
+			if err == nil || !strings.Contains(strings.ToLower(err.Error()), strings.ToLower(tt.want)) {
+				t.Fatalf("err = %v, want %q", err, tt.want)
+			}
+			if len(rec.statements) != 0 {
+				t.Fatalf("invalid cursor reached query: %v", rec.statements)
+			}
+		})
+	}
+}
+
+func encodeTestRecallCursor(t *testing.T, cursor RecallCursor) string {
+	t.Helper()
+	raw, err := json.Marshal(cursor)
+	if err != nil {
+		t.Fatalf("marshal cursor: %v", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(raw)
+}
+
+func decodeTestRecallCursor(t *testing.T, encoded string) RecallCursor {
+	t.Helper()
+	raw, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatalf("decode cursor: %v", err)
+	}
+	var cursor RecallCursor
+	if err := json.Unmarshal(raw, &cursor); err != nil {
+		t.Fatalf("unmarshal cursor: %v", err)
+	}
+	return cursor
+}
+
+func withRecallCursor(cursor RecallCursor, mutate func(*RecallCursor)) RecallCursor {
+	mutate(&cursor)
+	return cursor
 }
