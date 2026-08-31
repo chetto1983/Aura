@@ -7,6 +7,7 @@ package agent
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -120,6 +121,17 @@ func TestPassedWorkspaceDoesNotNudge(t *testing.T) {
 }
 
 func TestNoSuiteNudgeNamesTheDirectoryTheClassifierAccepts(t *testing.T) {
+	// POSIX-only by subject, not by convenience. The classifier reads commands that ran
+	// through shell_exec, which always executes inside the Linux box, so every path it
+	// can ever see is POSIX. This test builds one with filepath.Join, and on Windows that
+	// yields backslashes which the shell tokenizer correctly eats as escapes — measured:
+	// "python C:\Users\...\aura-check.py" tokenizes to
+	// ["python" "C:UsersAppDataLocalTempaura-check.py"]. The tokenizer is right; the path
+	// is the thing that cannot occur. Guarded as result_test.go guards its own
+	// platform-unrepresentable assertion.
+	if runtime.GOOS == "windows" {
+		t.Skip("shell_exec runs POSIX commands inside the box; a Windows-native path is not a case the classifier can see")
+	}
 	// The nudge's script directory and ClassifyVerificationCommand's isUnderTempDir
 	// must be the SAME directory, or the agent writes the ad-hoc check where the
 	// classifier refuses to read it as evidence and gets nudged a second time for

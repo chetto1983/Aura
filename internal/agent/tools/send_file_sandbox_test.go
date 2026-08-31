@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -66,12 +67,20 @@ func TestStageBoxArtifact_ExtractsRegularFile(t *testing.T) {
 	if err != nil || string(got) != "XLSXDATA" {
 		t.Fatalf("staged content = %q (err %v), want XLSXDATA", got, err)
 	}
-	info, err := os.Stat(staged)
-	if err != nil {
-		t.Fatalf("stat staged file: %v", err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("staged mode = %v, want 0600", info.Mode().Perm())
+	// 0600 is the privacy of a staged copy: the artifact lands in the shared run dir and
+	// must not be readable by anything else on the host. Windows cannot express it —
+	// os.Chmod there toggles only the read-only bit, so a file created 0600 stats back as
+	// 0666 — and asserting it anyway fails on a guarantee the OS does not offer rather
+	// than on a defect. Guarded exactly as result_test.go guards the identical check on
+	// the sidecar file; production runs on Linux, where this still fails loudly.
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(staged)
+		if err != nil {
+			t.Fatalf("stat staged file: %v", err)
+		}
+		if info.Mode().Perm() != 0o600 {
+			t.Fatalf("staged mode = %v, want 0600", info.Mode().Perm())
+		}
 	}
 }
 
