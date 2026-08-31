@@ -297,10 +297,10 @@ func TestConversationProjectionDeleteConverges(t *testing.T) {
 }
 
 type postCommitProjectionSource struct {
-	mu    sync.Mutex
-	turns []conversations.ProjectionTurn
-	calls int
-	order []string
+	mu               sync.Mutex
+	turns            []conversations.ProjectionTurn
+	calls            int
+	committedAtOffer []int
 }
 
 func (s *postCommitProjectionSource) record(ctx context.Context, p conversations.AppendTurnParams) {
@@ -310,7 +310,6 @@ func (s *postCommitProjectionSource) record(ctx context.Context, p conversations
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.order = append(s.order, "append")
 	sum := sha256.Sum256([]byte(p.Content))
 	seq := len(s.turns) + 1
 	s.turns = append(s.turns, conversations.ProjectionTurn{
@@ -331,7 +330,7 @@ func (s *postCommitProjectionSource) ListProjectionTurns(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.calls++
-	s.order = append(s.order, "offer")
+	s.committedAtOffer = append(s.committedAtOffer, len(s.turns))
 	out := make([]conversations.ProjectionTurn, 0, limit)
 	next := after
 	for _, turn := range s.turns {
@@ -413,11 +412,14 @@ func TestConversationProjectionPostCommit(t *testing.T) {
 		t.Fatalf("flush projection: %v", err)
 	}
 	source.mu.Lock()
-	order := append([]string(nil), source.order...)
+	committedAtOffer := append([]int(nil), source.committedAtOffer...)
 	source.mu.Unlock()
-	for i := 0; i < len(order); i += 2 {
-		if i+1 >= len(order) || order[i] != "append" || order[i+1] != "offer" {
-			t.Fatalf("projection order = %v, want append before every offer", order)
+	if len(committedAtOffer) != 3 {
+		t.Fatalf("projection offers = %v, want one per eligible source commit", committedAtOffer)
+	}
+	for i, committed := range committedAtOffer {
+		if committed < i+1 {
+			t.Fatalf("offer %d observed only %d committed turns", i+1, committed)
 		}
 	}
 	if got := sink.order; len(got) != 3 || got[0] != 1 || got[1] != 2 || got[2] != 3 {
@@ -433,6 +435,25 @@ func TestConversationProjectionPostCommit(t *testing.T) {
 	source.mu.Unlock()
 	if callsAfterReasoning != 3 {
 		t.Fatalf("ineligible reasoning event offered projection work: calls=%d", callsAfterReasoning)
+	}
+	for _, event := range []string{agent.ToolInvocationStart, agent.ToolInvocationEnd} {
+		if err := r.persistEvent(ctx, tr, &agent.Event{Actions: agent.Actions{
+			ToolInvocation: &agent.ToolInvocation{
+				Event: event, ToolCallID: "call-1", ToolName: "shell_exec",
+				BatchSize: 1, ResultPreview: "tool output",
+			},
+		}}); err != nil {
+			t.Fatalf("persist %s tool event: %v", event, err)
+		}
+	}
+	if err := r.conversationProjector.Flush(flushCtx); err != nil {
+		t.Fatalf("flush after ineligible events: %v", err)
+	}
+	source.mu.Lock()
+	callsAfterTool := source.calls
+	source.mu.Unlock()
+	if callsAfterTool != callsAfterReasoning {
+		t.Fatalf("tool/system scaffolding offered projection work: before=%d after=%d", callsAfterReasoning, callsAfterTool)
 	}
 }
 

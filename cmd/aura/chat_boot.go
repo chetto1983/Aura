@@ -94,6 +94,13 @@ func (e *chatEnv) close() {
 	if e.deleteReconciler != nil {
 		e.deleteReconciler.Stop()
 	}
+	if e.conversationProjector != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := e.conversationProjector.Close(ctx); err != nil {
+			slog.Warn("conversation projector shutdown incomplete", "error", err)
+		}
+		cancel()
+	}
 	if e.toolHandles.BackgroundShells != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -466,14 +473,16 @@ func assembleChatEnv(
 		memoryContext = newMemoryContextProvider(toolHandles.Memory, cfg.MemoryPreloadTopK, time.Duration(cfg.MemoryPreloadTimeoutMS)*time.Millisecond)
 	}
 	toolHandles.MemoryContext = memoryContext
+	conversationProjector := newChatConversationProjector(cfg, convStore)
 	deps := runner.Deps{
-		Conv:            convStore,
-		Pause:           pauseStore,
-		ApprovalExpiry:  pauseStore,
-		Identity:        idStore,
-		CacheMetrics:    cacheStore,
-		ToolInvocations: toolInvocationStore,
-		MemoryContext:   memoryContext,
+		Conv:                  convStore,
+		Pause:                 pauseStore,
+		ApprovalExpiry:        pauseStore,
+		Identity:              idStore,
+		CacheMetrics:          cacheStore,
+		ToolInvocations:       toolInvocationStore,
+		MemoryContext:         memoryContext,
+		ConversationProjector: conversationProjector,
 		// Atomic cross-store HITL durability (D-03/D-05): the pool-owning committer spans
 		// a pause claim + its answer turn (and pause exposure) in ONE db.WithTx.
 		ResumeCommitter: runner.NewPoolResumeCommitter(pool, convStore, pauseStore),
@@ -526,8 +535,10 @@ func assembleChatEnv(
 	if err := run.ValidateCompactionConfig(); err != nil {
 		return nil, fmt.Errorf("chat boot: %w", err)
 	}
+	deleteReconciler := runner.NewDeleteReconciler(run, time.Minute)
+	deleteReconciler.SetConversationProjector(conversationProjector)
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, llmRuntime: llmRuntime, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: runner.NewDeleteReconciler(run, time.Minute), toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, elicitation: elicitation, steer: steerInbox}, nil
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, llmRuntime: llmRuntime, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: deleteReconciler, conversationProjector: conversationProjector, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, elicitation: elicitation, steer: steerInbox}, nil
 }
 
 // newSteerInbox builds the process-wide mid-turn steer/delegation-result store from

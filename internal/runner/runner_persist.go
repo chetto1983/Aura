@@ -14,6 +14,7 @@ import (
 	"github.com/chetto1983/aura/internal/cachemetrics"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 	"github.com/google/uuid"
@@ -23,7 +24,19 @@ import (
 // detached from the caller's (see persistToolInvocationLedger), so it needs its own deadline.
 const ledgerInsertTimeout = 5 * time.Second
 
-func (r *Runner) offerConversationProjection(_ context.Context) {}
+func (r *Runner) offerConversationProjection(ctx context.Context) {
+	if r == nil || r.conversationProjector == nil {
+		return
+	}
+	identityID := identityctx.IdentityID(ctx)
+	if identityID == "" {
+		slog.Warn("conversation projection offer missing authenticated identity; reconciliation will repair lag")
+		return
+	}
+	if !r.conversationProjector.OfferConversation(identityID) {
+		slog.Warn("conversation projection queue unavailable; reconciliation will repair lag")
+	}
+}
 
 // turnTracker accumulates per-round persistence state: whether the round paused (so
 // the auto-title worker is skipped), the running conversation id, and the round's
