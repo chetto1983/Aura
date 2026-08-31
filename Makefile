@@ -238,7 +238,7 @@ endef
 
 # ↓↓ live stack: graph substrate (ArcadeDB + its MCP) + embed sidecar ↓↓
 #
-# ArcadeDB needs no migration job — its schema is idempotent DDL applied at
+# ArcadeDB needs no migration job for the MEMORY schema — Entity/FACT are idempotent DDL applied at
 # connect — so this target only brings the services up healthy. A tagged tier that
 # wants the whole live stack asks for `db-migrate memory-up`.
 memory-up:

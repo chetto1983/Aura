@@ -81,7 +81,7 @@ func (r ReasoningConfig) Empty() bool { ... }
 (`internal/llm/openai_compat/client.go`) serializes it to OpenRouter's
 `reasoning` object with `omitempty` on `exclude`/`enabled`.
 
-### 2. The tier policy (no max_tokens, OpenRouter-only)
+### 2. The tier policy (no max_tokens; OpenRouter-only until 2026-08-31, now every recognized backend)
 
 `internal/agent/prompt/reasoning_policy.go` — `ApplyAdaptiveReasoning`:
 

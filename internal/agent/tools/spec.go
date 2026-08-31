@@ -39,8 +39,15 @@ const MetaActivatedTools = "activated_tools"
 
 // Spec is the LLM-visible metadata for a tool.
 type Spec struct {
-	Name        string
-	Summary     string          // one line, always shown in the manifest
+	Name string
+	// Summary is one line describing the tool. It is NOT always on the wire, despite what
+	// this field said until 2026-08-31: RenderToolDefs omits a deferred tool entirely, and
+	// DeferredRoster lists it by NAME alone, so a deferred tool's Summary reaches the model
+	// only once tool_search promotes it (which also brings the full Description). It IS used
+	// for the Render() text manifest and as the wire Description fallback for a tool that
+	// has none. Bare names in the roster match Claude Code, the agent this pattern is
+	// modeled on (amendment #202).
+	Summary     string
 	Description string          // full description; only shown when not Deferred OR after a tool_search hit
 	Parameters  json.RawMessage // JSON-schema for the tool arguments
 	Deferred    bool            // true → full spec hidden until tool_search loads it

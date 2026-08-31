@@ -3541,7 +3541,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 > - **WEBMODEL-01** — the Composer exposes a reasoning-effort selector whose levels are auto-detected per active model from the set `auto·off·low·mid·high·extra·max` (never a hard-coded or placebo list — D-12/D-13); the choice is persisted per-conversation (`aura.conversations.metadata` jsonb, no migration) and restored on reopen.
 > - **WEBMODEL-02** — `/agent/run` accepts an optional symbolic `effort` override; the server maps the symbol → `llm.ReasoningConfig` and validates it in two stages (syntactic enum, then capability against the active model's advertised `supported_efforts`); a non-enum OR non-advertised value → 400; absent/`auto` → today's adaptive default (no regression). Effort takes effect on BOTH OpenRouter AND a local llama.cpp backend (D-08).
 > - **WEBMODEL-03** — no bypass of governance: the client sends a symbol, never a raw `ReasoningConfig`/budget/model; the server owns the symbol→config map and the capability gate; every UI level maps to a real spike-validated wire knob (D-12, no placebo — `reasoning.max_tokens` is NOT resurrected as a hard cap). Unit + e2e; coverage ≥85%.
-> **(2) The seven-level symbolic scale + the level→wire map for BOTH backends (D-02 revised / D-03 / spikes 095+096 — VOIDs the earlier same-day "no Max" D-09a).** The selector's full vocabulary is the 7 symbols `auto · off · low · mid · high · extra · max` — Aura's adaptive `auto` (retained DEFAULT, zero-regression) plus the Claude-parity graduated scale. These are **symbolic UI values**; the client NEVER sends a raw provider reasoning payload — the server owns the symbol→`llm.ReasoningConfig` map (D-05). ⚠ **The earlier same-day D-09a resolution (which capped the scale at five levels and excluded an unlimited-budget top level) is VOID** and is deleted/superseded across ROADMAP.md + REQUIREMENTS.md + this PRD by the 7-level capability-gated scale (D-02 revised). Level→wire map (empirically frozen — do not re-probe): **auto** → no `reasoning` object (adaptive policy, OpenRouter-only) / no llama.cpp reasoning fields (default thinking ON); **off** → OpenRouter `reasoning:{effort:"none"}` (or `{enabled:false}`) / llama.cpp `chat_template_kwargs:{enable_thinking:false}`; **low** → `effort:"low"` / `thinking_budget_tokens:512`; **mid** → `effort:"medium"` / `thinking_budget_tokens:2048`; **high** → `effort:"high"` / `thinking_budget_tokens:8192`; **extra** → `effort:"xhigh"` (`ReasoningEffortXHigh`, exists) / `thinking_budget_tokens:16384` *(planner-tunable)*; **max** → `effort:"max"` (`ReasoningEffortMax`, NET-NEW const) / `thinking_budget_tokens:-1` (unlimited). `exclude` on the OpenRouter rows stays `boolPtr(!AURA_SHOW_REASONING)` — the selector controls **effort, not visibility** (D-10). The OpenRouter wire SHAPE is unchanged (spike 096: OFF already works; `buildWireReasoning` already serializes `Effort: string(r.Effort)`, so `xhigh`/`max` project once the `max` const exists); the llama.cpp branch is net-new (spike 095: Aura's `reasoning:{effort}` object is a NO-OP on llama-server).
+> **(2) The seven-level symbolic scale + the level→wire map for BOTH backends (D-02 revised / D-03 / spikes 095+096 — VOIDs the earlier same-day "no Max" D-09a).** The selector's full vocabulary is the 7 symbols `auto · off · low · mid · high · extra · max` — Aura's adaptive `auto` (retained DEFAULT, zero-regression) plus the Claude-parity graduated scale. These are **symbolic UI values**; the client NEVER sends a raw provider reasoning payload — the server owns the symbol→`llm.ReasoningConfig` map (D-05). ⚠ **The earlier same-day D-09a resolution (which capped the scale at five levels and excluded an unlimited-budget top level) is VOID** and is deleted/superseded across ROADMAP.md + REQUIREMENTS.md + this PRD by the 7-level capability-gated scale (D-02 revised). Level→wire map (empirically frozen — do not re-probe): **auto** → no `reasoning` object (adaptive policy; OpenRouter-only until amendment #202, now applied on every recognized reasoning backend) / no llama.cpp reasoning fields (default thinking ON); **off** → OpenRouter `reasoning:{effort:"none"}` (or `{enabled:false}`) / llama.cpp `chat_template_kwargs:{enable_thinking:false}`; **low** → `effort:"low"` / `thinking_budget_tokens:512`; **mid** → `effort:"medium"` / `thinking_budget_tokens:2048`; **high** → `effort:"high"` / `thinking_budget_tokens:8192`; **extra** → `effort:"xhigh"` (`ReasoningEffortXHigh`, exists) / `thinking_budget_tokens:16384` *(planner-tunable)*; **max** → `effort:"max"` (`ReasoningEffortMax`, NET-NEW const) / `thinking_budget_tokens:-1` (unlimited). `exclude` on the OpenRouter rows stays `boolPtr(!AURA_SHOW_REASONING)` — the selector controls **effort, not visibility** (D-10). The OpenRouter wire SHAPE is unchanged (spike 096: OFF already works; `buildWireReasoning` already serializes `Effort: string(r.Effort)`, so `xhigh`/`max` project once the `max` const exists); the llama.cpp branch is net-new (spike 095: Aura's `reasoning:{effort}` object is a NO-OP on llama-server).
 > **(3) The `aura.effort` run-request field + two-stage server validation (D-05/D-12/D-13).** The pinned effort rides the **existing** `aura` run-request envelope (symmetric with 37D's `aura.skill`): `POST /agent/run` `{ aura: { …, effort? } }`; the server decodes `req.Aura.Effort` and runs, after the owner-scope `GetForIdentity` gate, **two stages**: (1) **syntactic** — `parseEffortSymbol` accepts ONLY the 7-symbol enum, anything else → **400**; (2) **capability** — a fixed level must be in the ACTIVE model's advertised `supported_efforts` (else **400**), so the UI can never request a placebo (D-12/D-13). `""`/`auto` → no override → today's adaptive `ApplyAdaptiveReasoning` path, byte-identical (D-04, no regression). A **fixed** level bypasses the adaptive classifier and forces `req.Reasoning` via a new `ApplyFixedReasoning` seam gated on a **generalized** reasoning-target recognizer (OpenRouter **or** llama.cpp, D-08). The client sends a **symbol**, never a `ReasoningConfig` — this is the WEBMODEL-03 no-bypass control.
 > **(4) llama.cpp server ops contract (spike 095, MANDATORY for the graduated path).** The llama.cpp `thinking_budget_tokens` path is unlocked ONLY when llama-server runs **WITH `--jinja`** (else `chat_template_kwargs` is ignored) and **WITHOUT `--reasoning-budget`** (else per-request `thinking_budget_tokens` is locked out — llama.cpp discussion #21445). `off` uses `chat_template_kwargs:{enable_thinking:false}`; graduated uses `thinking_budget_tokens:N`. Validated local model: unsloth `gemma-4-E2B-it-qat` UD-Q4_K_XL (spike-095 launch: `-ngl 99 -c 4096 --temp 0 --jinja --reasoning-format auto`). To positively identify a llama.cpp backend at request time (the DGX/vLLM local path also emits `reasoning`), 37E keys on the explicit **`AURA_LLM_PROVIDER=llamacpp`** knob (net-new, (6)), NOT a baseURL heuristic.
 > **(5) Per-conversation persistence — `aura.conversations.metadata` jsonb, NO new migration (D-06).** The chosen level is written into the **existing** `metadata jsonb` column of `aura.conversations` (added in migration **0005** `0005_conversations.up.sql`) via a parameterized owner-scoped `jsonb_set` update — so **NO new migration is required and the migration numbering is UNCHANGED** (the truth-source migration ledger in §Persistence is untouched by 37E). On thread open the level hydrates from the same column onto the `Conversation` projection (already SELECTed but dropped in `conversationFromRow` today), restoring the selector (Claude parity); a stored level no longer advertised by the active model clamps back to `auto`. New conversations default to `auto` (zero regression, D-07). A typed column is NOT justified (read once on open, never filtered/sorted).
@@ -6029,7 +6029,7 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_LLM_MIN_P` | (unset) | operative | 1 | Min-p sampling. A configured **`0.0` is a real instruction, not absence** (Qwen3.5's card asks for it explicitly); the pointer in `llm.Sampling` is what keeps the two distinguishable. |
 | `AURA_LLM_PRESENCE_PENALTY` | (unset) | operative | 1 | Presence penalty. Qwen3.5's card offers it (0-2) against repetition, at the stated cost of occasional language mixing. |
 | `AURA_LLM_REPETITION_PENALTY` | (unset) | operative | 1 | Repetition penalty. Same origin and same caveat as presence penalty. |
-| `AURA_LLM_ADAPTIVE_REASONING` | `true` | operative | 1 | OpenRouter-only adaptive reasoning policy: greeting/factual -> `reasoning.effort=none`, news/search -> `low`, code/proof/debug -> `high`; local/non-OpenRouter endpoints are left unchanged. |
+| `AURA_LLM_ADAPTIVE_REASONING` | `true` | operative | 1 | Adaptive reasoning policy on EVERY recognized reasoning backend (amendment #202, 2026-08-31): greeting/factual -> `effort=none`, news/search -> `low`, code/proof/debug -> `high`. It was OpenRouter-only until then, which left it silently inert on Ollama and llama.cpp; an unrecognized backend still receives no reasoning field, because none is defined for it. |
 | `AURA_SHOW_REASONING` | `false` | operative | 1 (+9) | Master switch for surfacing the model's live chain-of-thought. Default `false` redacts it end-to-end (the privacy posture). When `true` the adaptive policy requests reasoning UNEXCLUDED (`reasoning.exclude=false` — verified live: `exclude:true` streams ZERO reasoning deltas; tokens are billed either way, so surfacing costs only delta bandwidth), and the composition root propagates it to the Telegram channel so the AG-UI translator passes the real delta through (the HTTP/SSE gateway stays redacted) and both the REPL (`cmd/aura` bounded in-place 💭 line) and the Telegram status pane render the rolling window. |
 | `AURA_REASONING_FIFO_RUNES` | `4096` | cap | 9 | Rune cap of the Telegram status-pane live-CoT rolling window (`internal/reasoningfifo`, tail-keep/front-evict). Ignored unless `AURA_SHOW_REASONING=true`. The REPL uses its own narrower in-place line cap. |
 | `AURA_REASONING_PERSIST_MAX_RUNES` | `65536` | cap | — (amendment #91) | Rune cap of the per-turn display-only CoT the runner accumulates and persists onto `conversation_turns.reasoning` (head-keep + truncation marker over cap); `<=0` disabilita del tutto la persistenza. Ignored unless `AURA_SHOW_REASONING=true` (stream redatto ⇒ nulla viene salvato, HARDEN-05). Display-only: mai rientra nel contesto LLM (pinned by regression test). |
@@ -11009,3 +11009,70 @@ flusso completo, che funziona.
 > rank, or one conversation into a capacity or distribution claim. Finally, it does NOT
 > prove whole-Aura readiness: the daemon health check was failing during the otherwise
 > healthy memory-service measurement.
+
+> **Amendment #202 (2026-08-31 — measured live on Ollama 0.33.2 with `gemma4:31b-cloud`;
+> supersedes D-04's OpenRouter-only scope for the ADAPTIVE path and records what the
+> deferred-tool roster actually carries).**
+>
+> **Adaptive reasoning is provider-agnostic.** Two gates restricted it to OpenRouter, one
+> upstream of the other: `adaptiveReasoningTier` returned early on a non-OpenRouter target,
+> so the tier was never COMPUTED, and `ApplyAdaptiveReasoning` then discarded whatever it
+> was handed. They had to be lifted together — widening only the second changed nothing
+> observable, which is how the first was found. Neither restriction was justified by the
+> wire: the classifier grades the CONVERSATION, and each backend already had its own
+> translation of the resulting `ReasoningConfig` (OpenRouter `reasoning{effort}`, Ollama
+> `reasoning_effort`, llama.cpp `thinking_budget_tokens` / `enable_thinking`). A MANUAL
+> composer selection reached Ollama throughout, because `ApplyFixedReasoning` already gated
+> on the generalized predicate; only the automatic path was inert.
+>
+> **Measured.** The same `/v1/chat/completions` call to `gemma4:31b-cloud` returns no
+> `reasoning` field when `reasoning_effort` is absent and one when it is present, so the
+> capability was there and unused. After the change, live: `tier=high effort=high` for
+> "Progetta uno schema di sharding multi-tenant per 10000 tenant", `tier=none effort=none`
+> for "ciao, come stai?". Per-model effort classes now come from Ollama's own
+> `POST /api/show` `capabilities` — the endpoint and field the vision probe already read —
+> measured as `["completion","thinking","tools","vision"]` for `gemma4:31b-cloud` and
+> `["completion","tools","thinking"]` for `qwen3:0.6b`; a model that does not advertise
+> `thinking` is offered `none` alone. The probe is TTL-cached and FAIL-OPEN, because
+> disabling reasoning on an unreachable daemon would be a worse error than the one fixed.
+>
+> **What this does NOT prove.** It does not prove the llama.cpp arm end to end: that
+> mapping is unchanged, pre-existing and unit-tested, but no live llama-server turn was
+> measured. It does not prove any latency, cost or answer-quality effect of turning
+> adaptive reasoning on for local backends — only that the effort now reaches them. It says
+> nothing about `xhigh`/`max`, which Ollama collapses to `high`. And it does not establish
+> that the oracle's tier choices are CORRECT, only that they differ by prompt and are
+> applied.
+>
+> **The deferred-tool roster carries names only, and that matches the agent Aura copied.**
+> Surveyed 2026-08-31. Of the three reference agents in `d:/tmp`, two do not defer at all —
+> hermes-agent sends full definitions and accounts them as a fixed `tool_definitions` cost
+> in its context breakdown, and LibreChat's `manifest.js` is a UI catalogue keyed by
+> `pluginKey` for choosing which tools to enable, never a model-facing roster. The third,
+> pi, defers by POSITION: `splitDeferredTools` moves the COMPLETE schema out of the cached
+> prefix into a mid-transcript system message (Kimi style) to protect the KV prefix, and
+> never hides it.
+>
+> The fourth reference is the decisive one and was initially missed: **Claude Code, the
+> agent this pattern is explicitly modeled on, surfaces its own deferred tools as BARE
+> NAMES** grouped by source, with an instruction to load schemas via `ToolSearch` — no
+> summaries, exactly like `Registry.DeferredRoster`. Observed directly in a live Claude
+> Code session, 2026-08-31. So Aura is not an outlier here; the first three simply do not
+> have the pattern.
+>
+> This voids the "Aura shows the model less than anyone" framing that was briefly written
+> into this amendment. `Spec.Summary` is still documented as "one line, always shown in the
+> manifest" and still never reaches the wire for a deferred tool — that comment is wrong
+> and should be corrected — but the behaviour it misdescribes is the reference behaviour,
+> not a defect.
+>
+> **Measured cost of adding summaries anyway: 32 → 261 tokens per turn (+229) for all eight
+> deferred built-ins**, of which `swarm_spawn` alone is ~90 because its Summary is a
+> Description in disguise. Against a 4,945-token default manifest that is ~4.6%. NOT
+> DECIDED and NOT implemented. The case for it is weaker than it first appeared: both
+> Claude Code and Aura back the bare roster with a SEARCH that indexes text the model
+> cannot see (Aura's is BM25, `internal/agent/tools/bm25.go`), so a summary in the roster
+> is not the only path to finding a tool. Nothing measured here prices the round trips the
+> bare names cost, and the live evidence once read as such — an agent searching "memory"
+> and getting "no matching tools" — turned out to be the unmounted memory MCP, not a
+> description gap.
