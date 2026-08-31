@@ -123,6 +123,11 @@ func defaultDoctorProbeEmbed(ctx context.Context, cfg *config.Config) (string, e
 // disabled/blocked entries, and the streamable_http filter below drops stdio. A
 // single unreachable server fails only its own name in the aggregated detail,
 // never the others.
+// doctorScopeToOperator is the operator-identity resolver the MCP probe scopes itself with.
+// It is a var so the probe's own tests can drive both arms — credentialed and not — without
+// a live Postgres, exactly like doctorRuntimeMCPServers just below.
+var doctorScopeToOperator = withOperatorIdentity
+
 func defaultDoctorProbeMCPServers(ctx context.Context, cfg *config.Config) (string, error) {
 	runnable, err := doctorRuntimeMCPServers()
 	if err != nil {
@@ -141,17 +146,40 @@ func defaultDoctorProbeMCPServers(ctx context.Context, cfg *config.Config) (stri
 		return "no HTTP MCP servers configured", nil
 	}
 
+	// The sidecars Aura ships are OAuth resource servers isolated by token subject, so a
+	// probe carrying no identity carries no bearer and is answered 401 — which this probe
+	// used to report as "unreachable". Measured 2026-08-31 on a stack whose daemon had all
+	// three MOUNTED and healthy: `aura doctor` said "3/3 HTTP MCP servers unreachable:
+	// calendar, memory, whatsapp" and exited FAIL, while a bare curl to the same sidecar
+	// answered 401 — reachable, unauthenticated. An operator finishing an install reads
+	// that as a broken machine.
+	//
+	// withOperatorIdentity is the same resolver the `aura memory` CLI already uses for the
+	// same reason. It legitimately fails on an appliance before first login (nobody has
+	// enrolled) or on a multi-operator deployment (guessing is worse than failing), so a
+	// failure here does NOT fail the probe: it downgrades it to an unauthenticated reach
+	// test and says so, rather than reporting a credential gap as a dead server.
+	probeCtx := ctx
+	credentials := ""
+	if scoped, scopeErr := doctorScopeToOperator(ctx); scopeErr == nil {
+		probeCtx = scoped
+	} else {
+		credentials = " (probed WITHOUT operator credentials, so an OAuth-protected sidecar" +
+			" answers 401 and reads as unreachable: " + scopeErr.Error() + ")"
+	}
+
 	var unreachable []string
 	for _, name := range names {
-		probeCtx, cancel := context.WithTimeout(ctx, resolveMCPProbeTimeout())
-		res := probeManagedMCPServer(probeCtx, name, runnable[name])
+		attemptCtx, cancel := context.WithTimeout(probeCtx, resolveMCPProbeTimeout())
+		res := probeManagedMCPServer(attemptCtx, name, runnable[name])
 		cancel()
 		if !res.OK {
 			unreachable = append(unreachable, name)
 		}
 	}
 	if len(unreachable) > 0 {
-		return "", fmt.Errorf("%d/%d HTTP MCP servers unreachable: %s", len(unreachable), len(names), strings.Join(unreachable, ", "))
+		return "", fmt.Errorf("%d/%d HTTP MCP servers unreachable: %s%s",
+			len(unreachable), len(names), strings.Join(unreachable, ", "), credentials)
 	}
 	return fmt.Sprintf("%d/%d HTTP MCP servers reachable", len(names), len(names)), nil
 }
