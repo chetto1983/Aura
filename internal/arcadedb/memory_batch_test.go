@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"net/http"
 	"reflect"
 	"sync"
 	"testing"
@@ -11,10 +12,19 @@ import (
 )
 
 type memoryBatchFakeBackend struct {
-	mu       sync.Mutex
-	states   map[string]memoryBatchState
-	receipts map[string]map[string]memoryBatchReceipt
-	commits  int
+	mu                    sync.Mutex
+	states                map[string]memoryBatchState
+	receipts              map[string]map[string]memoryBatchReceipt
+	commits               int
+	mutatingCommits       int
+	commitAttempts        int
+	commitConflicts       int
+	ambiguousCommits      int
+	conflictStateMutation func(memoryBatchState) memoryBatchState
+	persistErr            error
+	beforeCommit          chan struct{}
+	allowCommit           chan struct{}
+	blockCommitOnce       sync.Once
 }
 
 func newMemoryBatchFakeBackend(identity string, state memoryBatchState) *memoryBatchFakeBackend {
@@ -47,6 +57,7 @@ type memoryBatchFakeTx struct {
 	state    memoryBatchState
 	receipts map[string]memoryBatchReceipt
 	closed   bool
+	dirty    bool
 }
 
 func (tx *memoryBatchFakeTx) LoadReceipt(_ context.Context, key string) (*memoryBatchReceipt, error) {
@@ -63,7 +74,11 @@ func (tx *memoryBatchFakeTx) LoadState(context.Context) (memoryBatchState, error
 }
 
 func (tx *memoryBatchFakeTx) Persist(_ context.Context, _ memoryBatchState, after memoryBatchState) error {
+	if tx.backend.persistErr != nil {
+		return tx.backend.persistErr
+	}
 	tx.state = cloneMemoryBatchTestState(after)
+	tx.dirty = true
 	return nil
 }
 
@@ -72,6 +87,7 @@ func (tx *memoryBatchFakeTx) SaveReceipt(_ context.Context, key string, receipt 
 		tx.receipts = map[string]memoryBatchReceipt{}
 	}
 	tx.receipts[key] = receipt
+	tx.dirty = true
 	return nil
 }
 
@@ -79,16 +95,46 @@ func (tx *memoryBatchFakeTx) Commit(context.Context) error {
 	if tx.closed {
 		return errors.New("transaction already closed")
 	}
+	tx.backend.blockCommitOnce.Do(func() {
+		if tx.backend.beforeCommit != nil {
+			close(tx.backend.beforeCommit)
+		}
+		if tx.backend.allowCommit != nil {
+			<-tx.backend.allowCommit
+		}
+	})
 	tx.backend.mu.Lock()
 	defer tx.backend.mu.Unlock()
+	tx.backend.commitAttempts++
+	if tx.backend.commitConflicts > 0 {
+		tx.backend.commitConflicts--
+		if tx.backend.conflictStateMutation != nil {
+			tx.backend.states[tx.identity] = tx.backend.conflictStateMutation(
+				cloneMemoryBatchTestState(tx.backend.states[tx.identity]))
+		}
+		tx.closed = true
+		return &ServerError{Status: http.StatusServiceUnavailable, Detail: "please retry transaction"}
+	}
+	tx.publishLocked()
+	if tx.backend.ambiguousCommits > 0 {
+		tx.backend.ambiguousCommits--
+		tx.closed = true
+		return errors.New("commit response lost after server applied transaction")
+	}
+	tx.closed = true
+	return nil
+}
+
+func (tx *memoryBatchFakeTx) publishLocked() {
 	tx.backend.states[tx.identity] = cloneMemoryBatchTestState(tx.state)
 	if tx.backend.receipts[tx.identity] == nil {
 		tx.backend.receipts[tx.identity] = map[string]memoryBatchReceipt{}
 	}
 	maps.Copy(tx.backend.receipts[tx.identity], tx.receipts)
 	tx.backend.commits++
-	tx.closed = true
-	return nil
+	if tx.dirty {
+		tx.backend.mutatingCommits++
+	}
 }
 
 func (tx *memoryBatchFakeTx) Rollback(context.Context) { tx.closed = true }
@@ -229,5 +275,181 @@ func TestMemoryBatch_IdempotentReplay(t *testing.T) {
 	}
 	if len(backend.snapshot(identity).Facts) != 1 || backend.commits != 2 {
 		t.Fatalf("replay duplicated effect: facts=%d commits=%d", len(backend.snapshot(identity).Facts), backend.commits)
+	}
+
+	t.Run("ambiguous commit outcome", func(t *testing.T) {
+		ambiguous := newMemoryBatchFakeBackend(identity, memoryBatchTestState())
+		ambiguous.ambiguousCommits = 1
+		result, err := applyMemoryBatch(
+			context.Background(), memoryBatchTestActor(identity), request, now,
+			defaultMemoryLimits, ambiguous,
+		)
+		if err != nil {
+			t.Fatalf("ambiguous outcome was not reconciled through its receipt: %v", err)
+		}
+		if !result.Replayed || len(ambiguous.snapshot(identity).Facts) != 1 {
+			t.Fatalf("result=%+v state=%+v", result, ambiguous.snapshot(identity))
+		}
+		if ambiguous.mutatingCommits != 1 {
+			t.Fatalf("mutating commits = %d, want exactly one", ambiguous.mutatingCommits)
+		}
+	})
+}
+
+func TestMemoryBatch_ConflictRetry(t *testing.T) {
+	const identity = "identity-a"
+	initial := memoryBatchTestState(memoryBatchTestStoredFact("Davide", "likes", "Coffee", "run-old"))
+	backend := newMemoryBatchFakeBackend(identity, initial)
+	backend.commitConflicts = 1
+	backend.conflictStateMutation = func(state memoryBatchState) memoryBatchState {
+		for key, fact := range state.Facts {
+			fact.Sources = mergeFactSources(fact.Sources, FactSource{
+				RunID: "run-concurrent", WriterRole: WriterParent,
+			})
+			state.Facts[key] = fact
+		}
+		return state
+	}
+	request := MemoryBatchRequest{IdempotencyKey: "conflict-1", Operations: []MemoryBatchOperation{
+		{Type: MemoryBatchForget, Forget: &ForgetFilter{SourceRunID: "run-old"}},
+	}}
+
+	_, err := applyMemoryBatch(
+		context.Background(), memoryBatchTestActor(identity), request, now,
+		defaultMemoryLimits, backend,
+	)
+	if err != nil {
+		t.Fatalf("conflict retry: %v", err)
+	}
+	final := backend.snapshot(identity)
+	if len(final.Facts) != 1 {
+		t.Fatalf("retry reused stale deleted state: %+v", final)
+	}
+	for _, fact := range final.Facts {
+		if len(fact.Sources) != 1 || fact.Sources[0].RunID != "run-concurrent" {
+			t.Fatalf("retry did not recompile from fresh committed state: %+v", fact.Sources)
+		}
+	}
+	if backend.commitAttempts != 2 || backend.mutatingCommits != 1 {
+		t.Fatalf("attempts=%d mutating_commits=%d", backend.commitAttempts, backend.mutatingCommits)
+	}
+}
+
+func TestMemoryBatch_LateRollback(t *testing.T) {
+	const identity = "identity-a"
+	initial := memoryBatchTestState(memoryBatchTestStoredFact("Davide", "likes", "Coffee", "run-old"))
+	backend := newMemoryBatchFakeBackend(identity, initial)
+	lateErr := errors.New("forced late persistence failure")
+	backend.persistErr = lateErr
+	request := MemoryBatchRequest{IdempotencyKey: "late-1", Operations: []MemoryBatchOperation{
+		memoryBatchTestUpsert("Davide", "lives_in", "Caraglio", "run-new"),
+	}}
+
+	_, err := applyMemoryBatch(
+		context.Background(), memoryBatchTestActor(identity), request, now,
+		defaultMemoryLimits, backend,
+	)
+	if !errors.Is(err, lateErr) {
+		t.Fatalf("error = %v, want exact late failure", err)
+	}
+	if got := backend.snapshot(identity); !reflect.DeepEqual(got, initial) {
+		t.Fatalf("late failure changed live state: got=%+v want=%+v", got, initial)
+	}
+	if backend.commits != 0 {
+		t.Fatalf("late failure committed %d times", backend.commits)
+	}
+}
+
+func TestMemoryBatch_CrossIdentity(t *testing.T) {
+	backend := newMemoryBatchFakeBackend("identity-a", memoryBatchTestState())
+	backend.states["identity-b"] = memoryBatchTestState()
+	for _, test := range []struct {
+		identity string
+		object   string
+	}{
+		{identity: "identity-a", object: "Coffee"},
+		{identity: "identity-b", object: "Tea"},
+	} {
+		request := MemoryBatchRequest{IdempotencyKey: "shared-key", Operations: []MemoryBatchOperation{
+			memoryBatchTestUpsert("Davide", "likes", test.object, "run-"+test.identity),
+		}}
+		if _, err := applyMemoryBatch(
+			context.Background(), memoryBatchTestActor(test.identity), request, now,
+			defaultMemoryLimits, backend,
+		); err != nil {
+			t.Fatalf("%s batch: %v", test.identity, err)
+		}
+	}
+	for identity, object := range map[string]string{"identity-a": "Coffee", "identity-b": "Tea"} {
+		state := backend.snapshot(identity)
+		if len(state.Facts) != 1 {
+			t.Fatalf("%s facts = %+v", identity, state.Facts)
+		}
+		for _, fact := range state.Facts {
+			if fact.Fact.Object != object {
+				t.Fatalf("%s observed foreign object %q", identity, fact.Fact.Object)
+			}
+		}
+	}
+	before := backend.snapshot("identity-a")
+	_, err := applyMemoryBatch(
+		context.Background(), MemoryBatchActor{IdentityID: "identity-a", WriterRole: WriterWorker},
+		MemoryBatchRequest{IdempotencyKey: "worker-delete", Operations: []MemoryBatchOperation{
+			{Type: MemoryBatchForget, Forget: &ForgetFilter{Subject: "Davide"}},
+		}}, now, defaultMemoryLimits, backend,
+	)
+	var batchErr *MemoryBatchError
+	if !errors.As(err, &batchErr) || batchErr.Code != "unauthorized_actor" {
+		t.Fatalf("worker destructive error = %v", err)
+	}
+	if got := backend.snapshot("identity-a"); !reflect.DeepEqual(got, before) {
+		t.Fatalf("unauthorized worker changed identity state: got=%+v want=%+v", got, before)
+	}
+}
+
+func TestMemoryBatch_NoPartialObserver(t *testing.T) {
+	const identity = "identity-a"
+	initial := memoryBatchTestState(memoryBatchTestStoredFact("Davide", "lives_in", "Torino", "run-old"))
+	backend := newMemoryBatchFakeBackend(identity, initial)
+	backend.beforeCommit = make(chan struct{})
+	backend.allowCommit = make(chan struct{})
+	request := MemoryBatchRequest{IdempotencyKey: "observer-1", Operations: []MemoryBatchOperation{
+		{Type: MemoryBatchForget, Forget: &ForgetFilter{Subject: "Davide"}},
+		memoryBatchTestUpsert("Davide", "lives_in", "Caraglio", "run-new"),
+	}}
+	result := make(chan error, 1)
+	go func() {
+		_, err := applyMemoryBatch(
+			context.Background(), memoryBatchTestActor(identity), request, now,
+			defaultMemoryLimits, backend,
+		)
+		result <- err
+	}()
+
+	select {
+	case <-backend.beforeCommit:
+	case <-time.After(5 * time.Second):
+		t.Fatal("batch did not reach the commit barrier")
+	}
+	if observed := backend.snapshot(identity); !reflect.DeepEqual(observed, initial) {
+		t.Fatalf("observer saw an intermediate state: got=%+v want=%+v", observed, initial)
+	}
+	close(backend.allowCommit)
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("batch: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("batch did not finish after commit was released")
+	}
+	final := backend.snapshot(identity)
+	if len(final.Facts) != 1 {
+		t.Fatalf("final state = %+v", final)
+	}
+	for _, fact := range final.Facts {
+		if fact.Fact.Object != "Caraglio" {
+			t.Fatalf("final object = %q", fact.Fact.Object)
+		}
 	}
 }
