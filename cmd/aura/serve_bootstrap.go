@@ -46,6 +46,7 @@ func wireBootstrapService(
 	provider bootstrapProvider,
 	memory agui.MemoryProvisioner,
 	grants firstPartyGrantProvisioner,
+	resources bootstrapResources,
 ) bool {
 	if isNilBootstrapDependency(server) || pool == nil || isNilBootstrapDependency(provider) || isNilBootstrapDependency(memory) {
 		return false
@@ -63,6 +64,7 @@ func wireBootstrapService(
 		pool:           pool,
 		memory:         memory,
 		grants:         grants,
+		resources:      resources,
 		identityDelete: auraLegAdapter{pool: pool},
 	})
 	return true
@@ -88,6 +90,7 @@ type firstOperatorBootstrapService struct {
 	pool           *pgxpool.Pool
 	memory         agui.MemoryProvisioner
 	grants         firstPartyGrantProvisioner
+	resources      bootstrapResources
 	identityDelete agui.IdentityDeleter
 }
 
@@ -118,6 +121,10 @@ func (s *firstOperatorBootstrapService) provisionTenantMemory(
 		}
 		return err
 	}
+	// Memory is the only leg worth destroying an account over — an operator whose
+	// long-term memory does not exist is not an operator. The rest (bucket, filesystem
+	// roots, box, MCP remount) are fail-soft and loud, in serve_bootstrap_resources.go.
+	s.resources.provision(ctx, identityID)
 	return nil
 }
 

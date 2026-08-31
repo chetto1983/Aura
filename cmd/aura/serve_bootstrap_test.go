@@ -70,7 +70,7 @@ func TestWireBootstrapServiceRequiresPoolAndAuthulaProvider(t *testing.T) {
 	provider := fakeBootstrapProvider{core: &authulaservices.CoreServices{}}
 	memory := &fakeBootstrapMemory{}
 
-	if !wireBootstrapService(server, pool, provider, memory, nil) {
+	if !wireBootstrapService(server, pool, provider, memory, nil, bootstrapResources{}) {
 		t.Fatal("wireBootstrapService returned false with pool and Authula provider")
 	}
 	if server.service == nil {
@@ -90,7 +90,7 @@ func TestWireBootstrapServiceRequiresPoolAndAuthulaProvider(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := &fakeBootstrapServer{}
-			if wireBootstrapService(server, tc.pool, tc.provider, tc.memory, nil) {
+			if wireBootstrapService(server, tc.pool, tc.provider, tc.memory, nil, bootstrapResources{}) {
 				t.Fatal("wireBootstrapService returned true for incomplete dependencies")
 			}
 			if server.service != nil {
@@ -105,7 +105,7 @@ func TestWireBootstrapServiceTreatsTypedNilProviderAsMissing(t *testing.T) {
 	pool := &pgxpool.Pool{}
 	var provider *panicBootstrapProvider
 
-	if wireBootstrapService(server, pool, provider, &fakeBootstrapMemory{}, nil) {
+	if wireBootstrapService(server, pool, provider, &fakeBootstrapMemory{}, nil, bootstrapResources{}) {
 		t.Fatal("wireBootstrapService returned true for typed nil provider")
 	}
 	if server.service != nil {
@@ -193,7 +193,7 @@ func TestBootstrapSurvivesAFirstPartyGrantFailure(t *testing.T) {
 func TestBootstrapWithoutAGrantProvisionerStillProvisionsMemory(t *testing.T) {
 	server := &fakeBootstrapServer{}
 	var absent *firstPartyGrantKeeper
-	if !wireBootstrapService(server, &pgxpool.Pool{}, fakeBootstrapProvider{core: &authulaservices.CoreServices{}}, &fakeBootstrapMemory{}, absent) {
+	if !wireBootstrapService(server, &pgxpool.Pool{}, fakeBootstrapProvider{core: &authulaservices.CoreServices{}}, &fakeBootstrapMemory{}, absent, bootstrapResources{}) {
 		t.Fatal("a typed-nil grant provisioner must not disable bootstrap")
 	}
 	memory := &fakeBootstrapMemory{}

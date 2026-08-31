@@ -470,7 +470,26 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// mounted. The keeper self-issues that grant for the identities that own one, and
 	// creating an identity now provisions BOTH its ArcadeDB tenant and its sidecar grants.
 	firstPartyGrants := buildFirstPartyGrantKeeper(chat.cfg, chat.pool, chat.identity, authulaProvider)
-	wireBootstrapService(aguiServer, chat.pool, authulaProvider, memoryProvisioner, firstPartyGrants)
+	// The first operator gets the SAME resource legs the provisioning saga gives every
+	// later identity, over the SAME adapters (serve_bootstrap_resources.go). Until
+	// 2026-08-31 it got memory and its sidecar grants and nothing else, so it owned no
+	// Garage bucket — and with no bucket the ingest sidecar never runs, never applies
+	// services/ingest's DDL, and the document library cannot work on a fresh install.
+	// The remount closes the other half: boot resolves each deferred OAuth server's owner
+	// from the grant store, and on a fresh install there is no human identity yet, so the
+	// sidecars Aura ships stay unmounted until a restart. This identity is the first one
+	// there is, so it is also the first moment that pass can succeed.
+	bootstrapObjProv, bootstrapFSProv, _ := buildProvisioningPorts(chat)
+	wireBootstrapService(aguiServer, chat.pool, authulaProvider, memoryProvisioner, firstPartyGrants, bootstrapResources{
+		objectStore: bootstrapObjProv,
+		filesystem:  bootstrapFSProv,
+		sandbox:     newSandboxStarter(chat.sandboxRouter),
+		remountMCP: func(remountCtx context.Context) {
+			if chat.liveMCP != nil {
+				chat.liveMCP.StartReconnect(remountCtx, chat.cfg, chat.pool)
+			}
+		},
+	})
 	var resetTokenPepper []byte
 	if authulaProvider != nil {
 		resetTokenPepper, err = agui.DeriveResetTokenPepper(chat.cfg.AuthulaSecret)
