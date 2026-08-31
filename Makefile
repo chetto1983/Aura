@@ -6,7 +6,7 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help tools sqlc lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract llm-model-contract web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval critical-mutation observability-check observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up arcadedb-integration ingest-test restore-drill load-chaos
+.PHONY: help tools sqlc lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract llm-model-contract web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval critical-mutation observability-check observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up sandbox-images arcadedb-integration ingest-test restore-drill load-chaos
 
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
@@ -37,6 +37,7 @@ help:
 	@echo "make evidence-contracts — self-test every candidate-bound release report parser"
 	@echo "make agent-memory-eval-contract — deterministic evaluator; never claims a live MRS"
 	@echo "make agent-memory-eval — blocking MRS over the already-running live memory stack"
+	@echo "make sandbox-images — build the per-identity box + egress images the daemon needs"
 	@echo "make critical-mutation — >=70% per critical Go boundary + frontend, no averaging"
 	@echo "make observability-check — verify live Tempo/Prometheus readiness and Aura scrape"
 	@echo "make observability-evidence — fixtures + runtime smoke + live Aura endpoints"
@@ -245,6 +246,23 @@ memory-up:
 	$(call wait_compose_healthy,arcadedb)
 	$(call wait_compose_healthy,arcadedb-mcp)
 	$(call wait_compose_healthy,aura-llama-embed)
+	@echo "ok"
+
+# The per-identity box and its egress sidecar. They are NOT compose services --
+# the daemon builds one box per identity through usersandbox -- so nothing in
+# `docker compose up` ever produces them, and until 2026-08-31 the ONLY build of
+# aura-sandbox in the repo lived in scripts/production_load_chaos.py. The gap is
+# not cosmetic: ensureImage cannot find the image, Resolve fails, Route denies,
+# and every box-capable tool (shell_exec, read_file, write_file, patch,
+# search_files, send_file, document_open) denies with it while the sandbox
+# readiness probe holds the daemon unhealthy.
+#
+# An appliance never runs this -- it pulls the published edge tags that
+# scripts/install.sh pins. This target is for a developer working from the repo,
+# where the default image names are the bare local ones.
+sandbox-images:
+	docker build -f docker/aura-sandbox/Dockerfile -t $${AURA_SANDBOX_IMAGE:-aura-sandbox:latest} .
+	docker build -f docker/aura-egress/Dockerfile -t $${AURA_SANDBOX_EGRESS_IMAGE:-aura-egress:latest} .
 	@echo "ok"
 
 # Compatibility name for operators' muscle memory. The MRS evaluator is the

@@ -62,12 +62,12 @@ jobs:
           cache-from: type=gha,scope=aura-edge
           cache-to: type=gha,mode=max,scope=aura-edge
 
-      # caddy and aura-ingest are the two other compose services whose image is
-      # built from this repo. Without a published tag a fresh appliance install
-      # tries to `docker build` them and dies on the missing build context
-      # (measured 2026-08-31: `lstat /opt/aura/docker: no such file or
-      # directory` killed the first clean-host E2E). Appliances pull — they
-      # never build — so the edge channel must carry all three images.
+      # Every image built from this repo must be published here. Without a
+      # published tag a fresh appliance install tries to `docker build` it and
+      # dies on the missing build context (measured 2026-08-31: `lstat
+      # /opt/aura/docker: no such file or directory` killed the first clean-host
+      # E2E). Appliances pull — they never build — so the edge channel carries
+      # all five: aura, caddy, ingest, and the two box images below.
       - name: Build and push caddy
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
@@ -99,3 +99,50 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=aura-ingest-edge
           cache-to: type=gha,mode=max,scope=aura-ingest-edge
+
+      # aura-sandbox and aura-egress are NOT compose services — the daemon
+      # creates them per identity through usersandbox — which is exactly why
+      # they were missed: nothing in compose, the Makefile or install.sh ever
+      # named them, so the only build of aura-sandbox in the whole repo lived in
+      # scripts/production_load_chaos.py and aura-egress's in one ci.yml job.
+      # The effect on a fresh appliance is total: ensureImage cannot find the
+      # image, Resolve fails, SandboxRouter.Route denies, and EVERY box-capable
+      # tool (shell_exec, read_file, write_file, patch, search_files, send_file,
+      # document_open) denies with it, while the sandbox readiness probe holds
+      # the daemon unhealthy forever. Measured 2026-08-31 on a clean host:
+      # `box image "aura-sandbox:latest" unavailable: No such image`.
+      - name: Build and push the per-identity box image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          file: docker/aura-sandbox/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/aura-sandbox:edge
+            ghcr.io/${{ github.repository_owner }}/aura-sandbox:master-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=aura-sandbox-edge
+          cache-to: type=gha,mode=max,scope=aura-sandbox-edge
+
+      # The egress sidecar rides beside every box (SBX-04). Its image default is
+      # deliberately NON-empty in config, so the tenancy floor is on by default
+      # and box creation is fail-closed without it: publishing the box image
+      # without this one would still leave every tool denied.
+      - name: Build and push the box egress sidecar image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          file: docker/aura-egress/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/aura-egress:edge
+            ghcr.io/${{ github.repository_owner }}/aura-egress:master-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=aura-egress-edge
+          cache-to: type=gha,mode=max,scope=aura-egress-edge

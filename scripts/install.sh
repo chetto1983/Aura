@@ -390,6 +390,17 @@ ensure_edge_channel_env() {
       ensure_env_default AURA_CADDY_PULL_POLICY always
       ensure_env_default AURA_INGEST_IMAGE ghcr.io/chetto1983/aura-ingest:edge
       ensure_env_default AURA_INGEST_PULL_POLICY always
+      # The per-identity box and its egress sidecar are repo-built too, but they
+      # are NOT compose services -- the daemon creates them per identity -- so
+      # they escaped the pin above and defaulted to the bare local names
+      # aura-sandbox:latest / aura-egress:latest, which no appliance has ever
+      # built and no registry serves. The daemon's ensureImage then cannot find
+      # them, Route denies, and EVERY box-capable tool denies with it while the
+      # sandbox readiness probe holds the machine unhealthy. Pointing them at
+      # the edge tags makes ensureImage pull on first box creation, which is the
+      # whole install: there is nothing to build here.
+      ensure_env_default AURA_SANDBOX_IMAGE ghcr.io/chetto1983/aura-sandbox:edge
+      ensure_env_default AURA_SANDBOX_EGRESS_IMAGE ghcr.io/chetto1983/aura-egress:edge
       ;;
   esac
 }
