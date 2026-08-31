@@ -536,7 +536,10 @@ func assembleChatEnv(
 		return nil, fmt.Errorf("chat boot: %w", err)
 	}
 	deleteReconciler := runner.NewDeleteReconciler(run, time.Minute)
-	deleteReconciler.SetConversationProjector(conversationProjector)
+	wireChatConversationReconciliation(
+		deleteReconciler, conversationProjector, identityRoster{store: idStore},
+	)
+	deleteReconciler.Start(ctx)
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
 	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, llmRuntime: llmRuntime, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: deleteReconciler, conversationProjector: conversationProjector, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, elicitation: elicitation, steer: steerInbox}, nil
 }

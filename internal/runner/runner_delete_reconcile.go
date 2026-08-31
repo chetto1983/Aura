@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,9 +36,12 @@ type DeleteReconciler struct {
 	projector            *ConversationProjector
 	projectionIdentities ConversationProjectionIdentities
 
-	wg   sync.WaitGroup
-	stop chan struct{}
-	once sync.Once
+	wg        sync.WaitGroup
+	stop      chan struct{}
+	once      sync.Once
+	startOnce sync.Once
+	cancelMu  sync.Mutex
+	cancel    context.CancelFunc
 }
 
 // NewDeleteReconciler constructs the boot-one-shot and interval recovery worker.
@@ -66,32 +71,76 @@ func (r *DeleteReconciler) SetConversationProjection(
 }
 
 // ReconcileConversationProjection repairs derived graph lag from PostgreSQL.
-func (r *DeleteReconciler) ReconcileConversationProjection(context.Context) error {
-	return nil
+func (r *DeleteReconciler) ReconcileConversationProjection(ctx context.Context) error {
+	if r == nil || r.projector == nil || r.projectionIdentities == nil {
+		return nil
+	}
+	identityIDs, err := r.projectionIdentities.IdentityIDs(ctx)
+	if err != nil {
+		return fmt.Errorf("conversation projection: list authoritative identities: %w", err)
+	}
+	clean := make([]string, 0, len(identityIDs))
+	seen := make(map[string]struct{}, len(identityIDs))
+	var failures []error
+	for _, identityID := range identityIDs {
+		identityID = strings.TrimSpace(identityID)
+		if identityID == "" {
+			failures = append(failures, errors.New("conversation projection: authoritative identity is empty"))
+			continue
+		}
+		if _, duplicate := seen[identityID]; duplicate {
+			continue
+		}
+		seen[identityID] = struct{}{}
+		clean = append(clean, identityID)
+	}
+	sort.Strings(clean)
+	for _, identityID := range clean {
+		if err := r.projector.Reconcile(ctx, identityID); err != nil {
+			failures = append(failures, fmt.Errorf("conversation projection identity %s: %w", identityID, err))
+		}
+	}
+	return errors.Join(failures...)
 }
 
-// Start launches recovery when the store exposes durable reservations.
+// Start launches one immediate recovery pass followed by periodic reconciliation.
 func (r *DeleteReconciler) Start(ctx context.Context) {
-	if r == nil || r.runner == nil || r.interval <= 0 {
+	if r == nil || r.interval <= 0 {
 		return
 	}
-	if _, ok := r.runner.Conv.(reservedDeleteRecoveryStore); !ok {
+	hasDeleteRecovery := false
+	if r.runner != nil {
+		_, hasDeleteRecovery = r.runner.Conv.(reservedDeleteRecoveryStore)
+	}
+	hasProjectionRecovery := r.projector != nil && r.projectionIdentities != nil
+	if !hasDeleteRecovery && !hasProjectionRecovery {
 		return
 	}
-	r.wg.Go(func() {
-		r.reconcile(ctx)
-		ticker := time.NewTicker(r.interval)
-		defer ticker.Stop()
-		for {
+	r.startOnce.Do(func() {
+		workerCtx, cancel := context.WithCancel(ctx)
+		r.cancelMu.Lock()
+		r.cancel = cancel
+		r.cancelMu.Unlock()
+		r.wg.Go(func() {
 			select {
-			case <-ctx.Done():
-				return
 			case <-r.stop:
 				return
-			case <-ticker.C:
-				r.reconcile(ctx)
+			default:
 			}
-		}
+			r.reconcile(workerCtx)
+			ticker := time.NewTicker(r.interval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-workerCtx.Done():
+					return
+				case <-r.stop:
+					return
+				case <-ticker.C:
+					r.reconcile(workerCtx)
+				}
+			}
+		})
 	})
 }
 
@@ -100,7 +149,15 @@ func (r *DeleteReconciler) Stop() {
 	if r == nil {
 		return
 	}
-	r.once.Do(func() { close(r.stop) })
+	r.once.Do(func() {
+		close(r.stop)
+		r.cancelMu.Lock()
+		cancel := r.cancel
+		r.cancelMu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+	})
 	done := make(chan struct{})
 	go func() {
 		r.wg.Wait()
@@ -113,12 +170,19 @@ func (r *DeleteReconciler) Stop() {
 }
 
 func (r *DeleteReconciler) reconcile(parent context.Context) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), conversationDeleteFinalizeTimeout)
+	ctx, cancel := context.WithTimeout(parent, conversationDeleteFinalizeTimeout)
 	defer cancel()
-	if _, err := r.runner.reconcileReservedConversationDeletesWithProjection(
-		ctx, deleteRecoveryBatch, r.projector,
-	); err != nil {
-		slog.Warn("delete recovery: reconcile reserved conversations", "err", err)
+	if r.runner != nil {
+		if _, ok := r.runner.Conv.(reservedDeleteRecoveryStore); ok {
+			if _, err := r.runner.reconcileReservedConversationDeletesWithProjection(
+				ctx, deleteRecoveryBatch, r.projector,
+			); err != nil {
+				slog.Warn("delete recovery: reconcile reserved conversations", "err", err)
+			}
+		}
+	}
+	if err := r.ReconcileConversationProjection(ctx); err != nil {
+		slog.Warn("conversation projection reconciliation failed", "err", err)
 	}
 }
 

@@ -98,8 +98,11 @@ func newChatConversationProjector(
 }
 
 func wireChatConversationReconciliation(
-	_ *runner.DeleteReconciler,
-	_ *runner.ConversationProjector,
-	_ runner.ConversationProjectionIdentities,
+	reconciler *runner.DeleteReconciler,
+	projector *runner.ConversationProjector,
+	identities runner.ConversationProjectionIdentities,
 ) {
+	if reconciler != nil {
+		reconciler.SetConversationProjection(projector, identities)
+	}
 }
