@@ -2,6 +2,7 @@ package arcadedb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -11,6 +12,30 @@ import (
 // IndexedDocumentType is the vertex type services/ingest writes one record per object to.
 // Its DDL lives in services/ingest/arcade.py, which mirrors document_schema.go.
 const IndexedDocumentType = "IndexedDocument"
+
+// missingIndexedDocumentType reports whether err is ArcadeDB refusing a query because this
+// tenant's database has no IndexedDocument type yet.
+//
+// That is not a fault, it is the empty library. The type's DDL belongs to services/ingest
+// (arcade.py ensure_schema, applied on every ingestion run), NOT to Aura's connect-time
+// schema -- which is why an identity that has never had a document ingested legitimately
+// has no such type, and why dropping the graph removes it until the next run.
+//
+// Measured live on 2026-08-31, after the memory graph was emptied: document_search handed
+// the model `http 500: Type with name 'IndexedDocument' was not found`. It read that as a
+// broken tool rather than an empty shelf, went looking for another way in, and burned the
+// rest of the turn. An empty result is both the truth and the answer it can act on.
+//
+// The match is deliberately narrow -- the typed ServerError, ArcadeDB's own SchemaException
+// class, AND the quoted type name -- so a real schema fault still surfaces as one.
+func missingIndexedDocumentType(err error) bool {
+	var serverErr *ServerError
+	if !errors.As(err, &serverErr) {
+		return false
+	}
+	return strings.Contains(serverErr.Exception, "SchemaException") &&
+		strings.Contains(serverErr.Detail, "'"+IndexedDocumentType+"'")
+}
 
 // DocumentCard is one document's own description, as the reconciler recorded it.
 //
@@ -88,6 +113,9 @@ func (d *DocumentIndex) DocumentCardsScoped(
 		" ORDER BY card_score DESC, search_document_id ASC LIMIT " + strconv.Itoa(filter.Limit)
 	rows, err := client.Query(ctx, statement, params)
 	if err != nil {
+		if missingIndexedDocumentType(err) {
+			return nil, nil // nothing ingested yet — an empty library, not a failure
+		}
 		return nil, fmt.Errorf("arcadedb: document cards: %w", err)
 	}
 	if len(rows) > filter.Limit {
@@ -144,6 +172,9 @@ func (d *DocumentIndex) ResolveDocumentScope(
 			" WHERE search_document_id IN :ids ORDER BY search_document_id",
 		map[string]any{"ids": requested})
 	if err != nil {
+		if missingIndexedDocumentType(err) {
+			return nil, nil // no library, so none of the requested ids are in scope
+		}
 		return nil, fmt.Errorf("arcadedb: resolve document scope: %w", err)
 	}
 	scope := make([]string, 0, len(rows))
@@ -184,6 +215,11 @@ func (d *DocumentIndex) DocumentByID(
 			" WHERE search_document_id = :id LIMIT 2",
 		map[string]any{"id": searchDocumentID})
 	if err != nil {
+		if missingIndexedDocumentType(err) {
+			// Identical to the zero-row case below: the caller asked for a document that
+			// is not there, and an empty library is one way for that to be true.
+			return DocumentCard{}, fmt.Errorf("arcadedb: document %s not found", searchDocumentID)
+		}
 		return DocumentCard{}, fmt.Errorf("arcadedb: document by id: %w", err)
 	}
 	if len(rows) == 0 {
@@ -258,6 +294,9 @@ func (d *DocumentIndex) DocumentNames(
 			" WHERE search_document_id IN :ids",
 		map[string]any{"ids": requested})
 	if err != nil {
+		if missingIndexedDocumentType(err) {
+			return nil, nil // no library, so no names to resolve
+		}
 		return nil, fmt.Errorf("arcadedb: document names: %w", err)
 	}
 	names := make(map[string]string, len(rows))
