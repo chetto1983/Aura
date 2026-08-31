@@ -1,5 +1,6 @@
 {
   "model_profile": "adaptive",
+  "context_window": 500000,
   "commit_docs": true,
   "parallelization": true,
   "search_gitignored": false,
