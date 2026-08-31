@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/mcp"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 // mount_retry.go bounds a TRANSIENT mount failure at boot so a managed sidecar that is briefly
@@ -74,7 +75,7 @@ func MountWithRetry(
 		}
 		delay := mountRetryDelay(attempt, policy)
 		slog.Warn("mcp mount transient failure; retrying",
-			"server", name, "attempt", attempt+1, "attempts", attempts, "backoff", delay.String(), "err", err)
+			"server", redact.Line(name), "attempt", attempt+1, "attempts", attempts, "backoff", delay.String(), "err", err)
 		if waitErr := sleepContext(ctx, delay); waitErr != nil {
 			return nil, nil, waitErr
 		}

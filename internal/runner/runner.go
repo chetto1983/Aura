@@ -16,6 +16,7 @@ import (
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/redact"
 	"github.com/google/uuid"
 )
 
@@ -291,11 +292,11 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 		defer func() {
 			if err := flushOnce(); err != nil {
 				slog.Error("runner: flush pause assistant turn failed; resume history may be malformed",
-					"conv", convID, "err", err)
+					"conv", redact.Line(convID), "err", redact.Line(err.Error()))
 			}
 			if err := r.recordInterruptedRound(ctx, tr, roundErr); err != nil {
 				slog.Error("runner: could not record an interrupted round; the question stays unanswered with nothing to say so",
-					"conv", convID, "err", err)
+					"conv", redact.Line(convID), "err", redact.Line(err.Error()))
 			}
 		}()
 		for ev, runErr := range la.Run(ic) {

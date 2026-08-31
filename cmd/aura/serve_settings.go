@@ -11,6 +11,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/redact"
 	"github.com/chetto1983/aura/internal/settings"
 )
 
@@ -46,7 +47,7 @@ func (r *primaryLLMRouteReloader) Prepare(ctx context.Context, overrides map[str
 			wireReasoningCapabilities(r.server, cfg)
 			r.server.SetContextWindow(cfg.ContextWindow)
 		}
-		slog.Info("primary LLM profile updated", "provider", cfg.Provider, "model", cfg.Model)
+		slog.Info("primary LLM profile updated", "provider", redact.Line(cfg.Provider), "model", redact.Line(cfg.Model))
 	}, nil
 }
 

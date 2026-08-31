@@ -16,6 +16,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcpoauth"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 // oauth_tokensource.go is the half that makes an authorization SURVIVE. Without it the
@@ -318,12 +319,12 @@ func restoreTokenSource(ctx context.Context, serverName string, store GrantStore
 	rc, err := decodeResolvedClient(grant.ClientInfo)
 	if err != nil {
 		log.Warn("mcp oauth: stored client is unreadable, re-authorization required",
-			"server", serverName, "error", err)
+			"server", redact.Line(serverName), "error", err)
 		return nil, nil
 	}
 	if rc.TokenEndpoint == "" {
 		log.Warn("mcp oauth: stored grant has no token endpoint, re-authorization required",
-			"server", serverName)
+			"server", redact.Line(serverName))
 		return nil, nil
 	}
 	// oauth2.HTTPClient, not the SDK's Config.Client: a refresh rebuilt HERE never

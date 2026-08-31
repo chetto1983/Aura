@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/redact"
 	"github.com/pkoukk/tiktoken-go"
 )
 
@@ -193,7 +194,7 @@ func applyContextLadder(
 			if compacted, outcome := tryCompact(ctx, cfg.Summarizer, cfg.compactionCache,
 				conversationID, cfg.branchID, enc, l1, ordinaryCap); outcome == compactionSucceeded {
 				slog.Info("conversation context compacted early",
-					"conversation_id", conversationID,
+					"conversation_id", redact.Line(conversationID),
 					"trigger_tokens", trigger,
 					"tokens_before", totalAfterL1,
 					"tokens_after", totalTokens(enc, compacted)+tailTokens)
@@ -212,7 +213,7 @@ func applyContextLadder(
 		conversationID, cfg.branchID, enc, l1, ordinaryCap)
 	if compaction == compactionSucceeded {
 		slog.Info("conversation context compacted",
-			"conversation_id", conversationID,
+			"conversation_id", redact.Line(conversationID),
 			"tokens_before", totalAfterL1,
 			"tokens_after", totalTokens(enc, compacted)+tailTokens)
 		return injectTransientContext(repairManagedToolMessagePairs(toMessages(compacted)), tail), nil

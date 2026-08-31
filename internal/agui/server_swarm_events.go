@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/redact"
 	"github.com/google/uuid"
 )
 
@@ -84,7 +85,7 @@ func (s *Server) swarmChildEventSequence(
 				}
 				var ev agent.Event
 				if err := json.Unmarshal(line, &ev); err != nil {
-					slog.Warn("agui: skipping malformed swarm transcript line", "child", childID, "err", err)
+					slog.Warn("agui: skipping malformed swarm transcript line", "child", redact.Line(childID), "err", err)
 					continue
 				}
 				if !yield(&ev, nil) {

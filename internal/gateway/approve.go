@@ -17,6 +17,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/redact"
 	"github.com/chetto1983/aura/internal/scoring"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 )
@@ -119,7 +120,7 @@ func (g *Gateway) routeApprove(ctx context.Context, spec tools.Spec, tier scorin
 		missReason = "no_pending_challenge"
 	}
 	slog.Info("gateway approval ledger miss",
-		"conversation_id", key.ConversationID,
+		"conversation_id", redact.Line(key.ConversationID),
 		"tool", spec.Name,
 		"args_fingerprint", fp,
 		"pending_count", pendingCount,

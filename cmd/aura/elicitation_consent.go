@@ -10,6 +10,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/mcptools"
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 // elicitation_consent.go is the composition-root half of SEP-2322 elicitation:
@@ -90,7 +91,7 @@ func (c *surfacingElicitationConsent) AskOperator(ctx context.Context, req mcpto
 	deliver := c.deliverer()
 	if deliver == nil {
 		slog.Warn("mcp elicitation not surfaced: no channel registry bound",
-			"server", req.Server, "action", "decline")
+			"server", redact.Line(req.Server), "action", "decline")
 		return "decline", nil, nil
 	}
 
@@ -100,7 +101,7 @@ func (c *surfacingElicitationConsent) AskOperator(ctx context.Context, req mcpto
 		// there is no operator to reach, so nothing is delivered. Declining is
 		// already the outcome; the WARN is what makes the gap visible.
 		slog.Warn("mcp elicitation not surfaced: no identity on the call",
-			"server", req.Server, "action", "decline")
+			"server", redact.Line(req.Server), "action", "decline")
 		return "decline", nil, nil
 	}
 
@@ -111,13 +112,13 @@ func (c *surfacingElicitationConsent) AskOperator(ctx context.Context, req mcpto
 		// error rides back so the handler records it rather than logging a
 		// success that never reached anyone.
 		slog.Warn("mcp elicitation delivery failed",
-			"server", req.Server, "identity_id", identityID, "action", "decline", "err", err)
+			"server", redact.Line(req.Server), "identity_id", identityID, "action", "decline", "err", err)
 		return "decline", nil, err
 	case !delivered:
 		// No channel owns this identity — a WebUI-origin operator, for instance.
 		// Not an error, but not a delivery either, and saying so is the point.
 		slog.Info("mcp elicitation not surfaced: no channel owns this identity",
-			"server", req.Server, "identity_id", identityID, "action", "decline")
+			"server", redact.Line(req.Server), "identity_id", identityID, "action", "decline")
 	}
 	return "decline", nil, nil
 }

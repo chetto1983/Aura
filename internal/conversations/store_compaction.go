@@ -9,6 +9,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/redact"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -126,7 +127,7 @@ func (s *Store) branchIDForLeaf(ctx context.Context, conversationID string, leaf
 	}); err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			slog.Warn("branch id unreadable; compaction falls back to the canonical branch",
-				"conversation_id", conversationID, "leaf_seq", leafSeq, "err", err)
+				"conversation_id", redact.Line(conversationID), "leaf_seq", leafSeq, "err", err)
 		}
 		return ""
 	}

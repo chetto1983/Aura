@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/mcp"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 var (
@@ -149,7 +150,8 @@ func (s *Server) handleMCPViewCall(w http.ResponseWriter, r *http.Request) {
 	}
 	payload, err := s.mcpViewCaller.CallForView(r.Context(), req.Server, req.Tool, req.Arguments)
 	if err != nil {
-		slog.Warn("mcp view tool call refused", "server", req.Server, "tool", req.Tool, "error", err)
+		slog.Warn("mcp view tool call refused",
+			"server", redact.Line(req.Server), "tool", redact.Line(req.Tool), "error", redact.Line(err.Error()))
 		http.Error(w, "tool call refused", http.StatusForbidden)
 		return
 	}

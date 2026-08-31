@@ -15,6 +15,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcpoauth"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 // oauth_handler.go attaches an authorization flow to a remote MCP mount. It is the piece
@@ -234,7 +235,7 @@ func persistOnAuthorization(mountCtx context.Context, name, resourceURL string, 
 			// The session works; only its survival across a restart is lost, so it is
 			// logged rather than swallowed.
 			resolveLogger(logger).Warn("mcp oauth: authorization succeeded but could not be persisted",
-				"server", name, "error", err)
+				"server", redact.Line(name), "error", redact.Line(err.Error()))
 		}
 		return newPersistingTokenSource(detached, cfg.TokenSource(detached, tok), name, resourceURL, rc, store, logger, tok.AccessToken, persisted), nil
 	}

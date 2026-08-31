@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/redact"
 	"github.com/pkoukk/tiktoken-go"
 )
 
@@ -192,7 +193,7 @@ func loadStoredCompaction(
 	stored, ok, err := cache.LoadCompaction(ctx, conversationID, branchID)
 	if err != nil {
 		slog.Warn("durable compaction unreadable; summarizing from scratch",
-			"conversation_id", conversationID, "err", err)
+			"conversation_id", redact.Line(conversationID), "err", redact.Line(err.Error()))
 		return Compaction{}, false
 	}
 	return stored, ok
@@ -208,7 +209,7 @@ func saveCompaction(
 	}
 	if err := cache.SaveCompaction(ctx, conversationID, branchID, c); err != nil {
 		slog.Warn("durable compaction not stored; the next turn will summarize again",
-			"conversation_id", conversationID, "err", err)
+			"conversation_id", redact.Line(conversationID), "err", redact.Line(err.Error()))
 	}
 }
 

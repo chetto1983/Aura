@@ -9,6 +9,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/redact"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -215,7 +216,7 @@ func (s *PostgresStore) Drain(conv string) []Message {
 		return nil
 	}
 	if _, parseErr := uuid.Parse(conv); parseErr != nil {
-		slog.Warn("steer: drain: conversation id is not a valid uuid", "conv", conv, "err", parseErr)
+		slog.Warn("steer: drain: conversation id is not a valid uuid", "conv", redact.Line(conv), "err", parseErr)
 		return nil
 	}
 	ctx := context.Background()
@@ -226,7 +227,7 @@ func (s *PostgresStore) Drain(conv string) []Message {
 		return qErr
 	})
 	if err != nil {
-		slog.Warn("steer: drain failed", "conv", conv, "err", err)
+		slog.Warn("steer: drain failed", "conv", redact.Line(conv), "err", err)
 		return nil
 	}
 	msgs := make([]Message, 0, len(rows))

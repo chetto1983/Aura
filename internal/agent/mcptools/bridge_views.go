@@ -9,6 +9,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/chetto1983/aura/internal/mcp"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 // bridge_views.go is the MCP Apps half of the bridge: a mounted server may bind a
@@ -106,15 +107,15 @@ func hydrateViews(ctx context.Context, session *sdkmcp.ClientSession, server str
 	for _, uri := range viewURIs(policy, advertised) {
 		doc, err := readViewDocument(ctx, session, server, uri)
 		if err != nil {
-			slog.Warn("mcp view read failed", "server", server, "uri", uri, "error", err)
+			slog.Warn("mcp view read failed", "server", redact.Line(server), "uri", uri, "error", err)
 			continue
 		}
 		if err := catalog.Put(doc); err != nil {
-			slog.Warn("mcp view rejected", "server", server, "uri", uri, "error", err)
+			slog.Warn("mcp view rejected", "server", redact.Line(server), "uri", uri, "error", err)
 			continue
 		}
 		slog.Info("mcp view catalogued",
-			"server", server, "uri", uri,
+			"server", redact.Line(server), "uri", uri,
 			"bytes", len(doc.HTML), "sealed", doc.Policy.Sealed())
 	}
 }

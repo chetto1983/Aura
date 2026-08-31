@@ -21,6 +21,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/prompt"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 // finalizeNudge is the D-03 synthesis instruction appended (as a trailing user
@@ -106,7 +107,7 @@ func (a *LlmAgent) maybeRecoverReasoningOverrun(requestID string, usage llm.Usag
 	a.recoveryAttempts++
 	a.reasoningOverride = llm.ReasoningEffortNone
 	slog.Warn("agent reasoning overrun: output budget exhausted before any answer, retrying without reasoning",
-		"request_id", requestID, "thread_id", a.sessionID, "completion_tokens", usage.CompletionTokens)
+		"request_id", requestID, "thread_id", redact.Line(a.sessionID), "completion_tokens", usage.CompletionTokens)
 	a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: recoveryNudgeOverrun})
 	return true
 }

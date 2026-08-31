@@ -28,6 +28,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/redact"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -279,7 +280,7 @@ func (a LedgerAdapter) VerificationStatusFor(sessionID, cwd string) Verification
 	defer cancel()
 	status, err := a.Store.VerificationStatus(ctx, a.IdentityID, sessionID, facts.Root)
 	if err != nil {
-		slog.Warn("verification ledger: read status", "error", err, "session_id", sessionID, "root", facts.Root)
+		slog.Warn("verification ledger: read status", "error", err, "session_id", redact.Line(sessionID), "root", facts.Root)
 		return VerificationStatus{Status: StatusNotApplicable}
 	}
 	return status

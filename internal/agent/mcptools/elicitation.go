@@ -13,6 +13,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/chetto1983/aura/internal/obs"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 // elicitation.go implements SEP-2322 server-initiated elicitation for the
@@ -134,27 +135,27 @@ func NewElicitationHandler(server string, consent ElicitationConsent) func(conte
 // OBSERVABILITY ONLY — the handler never forwards it to the SDK.
 func elicit(ctx context.Context, server string, consent ElicitationConsent, req *sdkmcp.ElicitRequest) (string, map[string]any, error) {
 	if req == nil || req.Params == nil {
-		slog.Warn("mcp elicitation without params", "server", server, "action", elicitActionDecline)
+		slog.Warn("mcp elicitation without params", "server", redact.Line(server), "action", elicitActionDecline)
 		return elicitActionDecline, nil, nil
 	}
 	params := req.Params
 
 	if strings.EqualFold(strings.TrimSpace(params.Mode), elicitModeURL) {
 		// The URL is deliberately absent from this record. T-45.1-31.
-		slog.Info("mcp elicitation declined: url mode is opt-out", "server", server, "action", elicitActionDecline)
+		slog.Info("mcp elicitation declined: url mode is opt-out", "server", redact.Line(server), "action", elicitActionDecline)
 		return elicitActionDecline, nil, nil
 	}
 
 	timeout := configuredElicitationTimeout()
 	if timeout <= 0 {
 		slog.Info("mcp elicitation declined: disabled by configuration",
-			"server", server, "env", envMCPElicitationTimeoutSec, "action", elicitActionDecline)
+			"server", redact.Line(server), "env", envMCPElicitationTimeoutSec, "action", elicitActionDecline)
 		return elicitActionDecline, nil, nil
 	}
 
 	if consent == nil {
 		slog.Warn("mcp elicitation declined: no consent surface wired",
-			"server", server, "action", elicitActionDecline)
+			"server", redact.Line(server), "action", elicitActionDecline)
 		return elicitActionDecline, nil, nil
 	}
 
@@ -169,11 +170,11 @@ func elicit(ctx context.Context, server string, consent ElicitationConsent, req 
 	switch {
 	case err != nil && askCtx.Err() != nil:
 		// The deadline (or a cancelled parent) won, not the surface.
-		slog.Warn("mcp elicitation cancelled", "server", server, "action", elicitActionCancel, "err", err)
+		slog.Warn("mcp elicitation cancelled", "server", redact.Line(server), "action", elicitActionCancel, "err", err)
 		return elicitActionCancel, nil, askCtx.Err()
 	case err != nil:
 		slog.Warn("mcp elicitation declined: consent surface failed",
-			"server", server, "action", elicitActionDecline, "err", err)
+			"server", redact.Line(server), "action", elicitActionDecline, "err", err)
 		return elicitActionDecline, nil, err
 	}
 
@@ -186,7 +187,7 @@ func elicit(ctx context.Context, server string, consent ElicitationConsent, req 
 		return elicitActionDecline, nil, nil
 	default:
 		slog.Warn("mcp elicitation declined: consent surface returned an unrecognised action",
-			"server", server, "returned", truncateUTF8Bytes(action, maxElicitationTypeBytes), "action", elicitActionDecline)
+			"server", redact.Line(server), "returned", redact.Line(truncateUTF8Bytes(action, maxElicitationTypeBytes)), "action", elicitActionDecline)
 		return elicitActionDecline, nil, nil
 	}
 }

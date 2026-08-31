@@ -23,6 +23,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/mcp"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 // openSessionFunc is the pluggable session-open seam: mount.go fills it with a
@@ -162,7 +163,7 @@ func (s *MountedServer) watch(session *sdkmcp.ClientSession) {
 	}
 	s.mu.Unlock()
 	if dead {
-		slog.Warn("mcp session closed", "server", s.name, "error", err)
+		slog.Warn("mcp session closed", "server", redact.Line(s.name), "error", err)
 	}
 }
 

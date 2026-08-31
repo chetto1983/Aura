@@ -13,6 +13,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/chetto1983/aura/internal/procgroup"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 // sdkclient.go is the ONE place Aura constructs an MCP client. Everything that used
@@ -274,7 +275,7 @@ func logNegotiatedProtocol(logger *slog.Logger, name, transport string, cs *sdkm
 		version = result.ProtocolVersion
 	}
 	logger.Info("mcp session open",
-		"server", name,
+		"server", redact.Line(name),
 		"transport", transport,
 		"protocol_version", version,
 		"session_id", cs.ID(),

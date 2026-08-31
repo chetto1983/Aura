@@ -6,6 +6,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 // interruptedRoundMarker is what a person reads where the answer should have been.
@@ -46,7 +47,7 @@ func (r *Runner) recordInterruptedRound(ctx context.Context, tr *turnTracker, ro
 		cause = ctx.Err()
 	}
 	slog.Warn("runner: round ended with no answer; recording it in the conversation",
-		"conv", tr.convID, "cause", cause)
+		"conv", redact.Line(tr.convID), "cause", redact.Line(cause.Error()))
 	return r.Conv.AppendTurn(context.WithoutCancel(ctx), conversations.AppendTurnParams{
 		ConversationID: tr.convID,
 		Role:           llm.RoleAssistant,

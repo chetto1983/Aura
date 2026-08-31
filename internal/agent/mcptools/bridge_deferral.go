@@ -25,6 +25,7 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/chetto1983/aura/internal/redact"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -74,12 +75,12 @@ func grantLoadedSlot(namespace string, modelFacing int) bool {
 	defer loadedSlotBudget.mu.Unlock()
 	if loadedSlotBudget.spent >= maxAlwaysLoadedMCPSlots {
 		slog.Info("mcp always-loaded slot refused: budget exhausted",
-			"namespace", namespace, "model_facing", modelFacing)
+			"namespace", redact.Line(namespace), "model_facing", modelFacing)
 		return false
 	}
 	loadedSlotBudget.spent++
 	slog.Info("mcp always-loaded slot granted",
-		"namespace", namespace, "model_facing", modelFacing,
+		"namespace", redact.Line(namespace), "model_facing", modelFacing,
 		"slots_remaining", maxAlwaysLoadedMCPSlots-loadedSlotBudget.spent)
 	return true
 }

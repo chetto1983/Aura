@@ -18,6 +18,7 @@ import (
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 	"github.com/chetto1983/aura/internal/mcpoauth"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 // liveMCPMount owns post-listener OAuth mounting. The mounted host exposes one shared tool
@@ -155,10 +156,10 @@ func (m *liveMCPMount) Mount(ctx context.Context, name string, server mcp.Manage
 	closer, mounted, err := mcptools.MountWithRetry(
 		handshakeCtx, name, mcpMountRetryPolicy(), mountOnce)
 	if err != nil {
-		slog.Warn("mcp live mount failed", "server", name, "err", err)
+		slog.Warn("mcp live mount failed", "server", redact.Line(name), "err", err)
 		return
 	}
-	slog.Info("mcp live mounted", "server", name, "tools", len(mounted))
+	slog.Info("mcp live mounted", "server", redact.Line(name), "tools", len(mounted))
 
 	m.mu.Lock()
 	if m.closed {
@@ -220,7 +221,7 @@ func (m *liveMCPMount) unmountLocked(name string) {
 	// existing name, so a remount MUST clear the previous one first or it fails as a
 	// collision with itself.
 	if dropped := m.reg.Forget(name + "__"); dropped > 0 {
-		slog.Info("mcp live unmounted", "server", name, "tools", dropped)
+		slog.Info("mcp live unmounted", "server", redact.Line(name), "tools", dropped)
 	}
 	m.mu.Lock()
 	closer := m.closers[name]
