@@ -150,6 +150,16 @@ class Phase49EvidenceContractTest(unittest.TestCase):
         self.assertEqual(mixed["retrieval"]["path"], "hybrid")
         self.assertEqual(mixed["tier_counts"], {"facts": 1, "conversations": 0, "reasoning": 0})
         self.assertEqual(mixed["tier_ranks"], {"facts": [1], "conversations": [], "reasoning": []})
+        self.assertEqual(mixed["latency_ms"]["p95"], 85.395)
+        self.assertEqual(
+            mixed["abstention"],
+            {
+                "observed": True,
+                "abstained": True,
+                "reason": "no_qualified_candidates",
+                "backend_path": "hybrid",
+            },
+        )
         self.assertEqual(mixed["otel"]["memory.recall.effective_path"], "facts")
         self.assertEqual(mixed["otel"]["memory.recall.path"], "hybrid")
 

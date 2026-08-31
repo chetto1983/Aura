@@ -12,6 +12,7 @@ import tempfile
 import time
 from typing import Any
 
+import agent_memory_eval_phase49 as phase49
 from agent_memory_eval_metadata import (
     RUNTIME_MARKER,
     candidate_state,
@@ -149,6 +150,7 @@ def default_manifest() -> dict[str, Any]:
         "total_points": TOTAL_POINTS,
         "pass_threshold": {"operator": ">", "value": PASS_THRESHOLD},
         "dimensions": DIMENSIONS,
+        "phase49_evidence": phase49.default_contract(),
         "suites": suites,
         "scenarios": scenarios,
         "hard_gates": {
@@ -173,6 +175,7 @@ def validate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("manifest total_points must be 100")
     if manifest.get("dimensions") != DIMENSIONS:
         raise ValueError("manifest dimensions do not match the v1 contract")
+    phase49.validate(manifest.get("phase49_evidence"))
     suites = manifest.get("suites")
     scenarios = manifest.get("scenarios")
     if not isinstance(suites, list) or not isinstance(scenarios, list):
@@ -535,6 +538,7 @@ def score(manifest: dict[str, Any], suites: dict[str, Any], tier: str, candidate
             "dataset_hashes": {"scenario_manifest": manifest_sha256(manifest)},
             "seed": "not_applicable_deterministic_fixtures",
         },
+        "phase49_evidence": manifest["phase49_evidence"],
         "tier": tier,
         "verdict": verdict,
         "passed": passed,
