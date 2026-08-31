@@ -30,7 +30,7 @@
 - [x] **HARN-02**: A genuinely retried dispatch (CLI or scheduler restart, approval resume) still executes at most once
 - [x] **HARN-03**: When a replay is correct, the returned result is labelled as replayed so the model can tell it apart from a fresh execution
 - [x] **HARN-04**: A memory correction closes exactly the fact it names and leaves sibling facts sharing the same subject and predicate untouched
-- [ ] **HARN-05**: Several memory operations apply as one atomic call, validated on the final state, so a correction cannot destroy what it was meant to replace
+- [x] **HARN-05**: Several memory operations apply as one atomic call, validated on the final state, so a correction cannot destroy what it was meant to replace
 - [x] **HARN-06**: A turn does not end on a stated-but-unexecuted intention — either the action runs, or the turn says plainly it did not and why
 - [x] **HARN-07**: The reply is in the operator's language, and internal deliberation never reaches it as user-facing text
 - [x] **HARN-08**: Two tool calls arriving in one assistant message with the same id are repaired **deterministically** before the request is sent (`<id>_d<n>`, never a random id, which would break prompt-cache prefix stability). Aura has no such repair today and DeepSeek — her default model — is named by hermes as a provider that rejects duplicate ids outright; a degraded long-context turn emitting two calls under one id fails the request
@@ -232,7 +232,7 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 | HARN-02 | Phase 45 | Complete |
 | HARN-03 | Phase 45 | Complete |
 | HARN-04 | Phase 45 | Complete |
-| HARN-05 | Phase 49 | Pending |
+| HARN-05 | Phase 49 | Complete |
 | HARN-06 | Phase 45 | Complete |
 | HARN-07 | Phase 45 | Complete |
 | HARN-08 | Phase 45 | Complete |
