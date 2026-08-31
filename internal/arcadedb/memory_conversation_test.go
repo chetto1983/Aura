@@ -73,3 +73,26 @@ func TestConversationProjectionIsIdempotentAndIdentityScoped(t *testing.T) {
 		t.Fatal("foreign projection reached ArcadeDB")
 	}
 }
+
+func TestConversationProjectionSearchFailsClosedAcrossIdentity(t *testing.T) {
+	const row = `{"result":[{"identity_id":"identity-a","conversation_id":"conversation-1","turn_seq":1,"role":"user","content":"Remember the blue notebook","content_hash":"hash-1","occurred_at":"2026-08-31T12:00:00Z","source_ref":"postgres://conversation/conversation-1/turn/1"}]}`
+	client, rec := recordingClient(t, row)
+	result, err := client.SearchConversationTurnsHybrid(context.Background(), "identity-a", "blue notebook", 5)
+	if err != nil {
+		t.Fatalf("SearchConversationTurnsHybrid: %v", err)
+	}
+	if len(result.Turns) != 1 || result.Turns[0].SourceRef == "" {
+		t.Fatalf("result = %+v", result)
+	}
+	if !strings.Contains(rec.statements[0], "identity_id = :identity_id") || rec.params[0]["identity_id"] != "identity-a" {
+		t.Fatalf("search is not identity-scoped: %s params=%v", rec.statements[0], rec.params[0])
+	}
+
+	foreign, err := client.SearchConversationTurnsHybrid(context.Background(), "identity-b", "blue notebook", 5)
+	if err != nil {
+		t.Fatalf("foreign SearchConversationTurnsHybrid: %v", err)
+	}
+	if len(foreign.Turns) != 0 {
+		t.Fatalf("foreign identity observed turn: %+v", foreign.Turns)
+	}
+}
