@@ -267,8 +267,7 @@ describe('InlineApprovalCard (APRV-02/03 / D-03/D-05/D-06)', () => {
       expect(onResolutionFailed).toHaveBeenCalledTimes(1);
     });
     const failed = onResolutionFailed.mock.calls[0]?.[0] as
-      | { action: string; attemptId: string }
-      | undefined;
+      { action: string; attemptId: string } | undefined;
     expect(failed?.action).toBe('cancel');
     expect(failed?.attemptId.length).toBeGreaterThan(0);
     expect(onResolved).not.toHaveBeenCalled();

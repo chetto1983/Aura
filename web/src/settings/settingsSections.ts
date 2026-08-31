@@ -6,13 +6,7 @@ import type { LucideIcon } from 'lucide-react';
 // PANE'S OWN heading key, not a rail-only string — the entry that opens a section and the
 // section's title are then the same string by construction and cannot drift apart.
 export type SettingsSectionId =
-  | 'profile'
-  | 'model'
-  | 'budget'
-  | 'backends'
-  | 'identities'
-  | 'channels'
-  | 'sharing';
+  'profile' | 'model' | 'budget' | 'backends' | 'identities' | 'channels' | 'sharing';
 
 export type SettingsGroupId = 'personal' | 'runtime' | 'access';
 

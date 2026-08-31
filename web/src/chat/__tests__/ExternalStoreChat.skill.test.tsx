@@ -47,8 +47,7 @@ function sseResponse(): Response {
 
 function stubFetch(
   garageFiles:
-    | readonly Record<string, unknown>[]
-    | ((url: string) => readonly Record<string, unknown>[]) = [],
+    readonly Record<string, unknown>[] | ((url: string) => readonly Record<string, unknown>[]) = [],
 ) {
   const fetchMock = vi.fn((url: unknown) => {
     if (typeof url === 'string' && url.startsWith('/api/filemanager/files')) {
@@ -81,8 +80,7 @@ function renderChat(ui: ReactElement) {
 
 function runPostBody(fetchMock: ReturnType<typeof stubFetch>): Record<string, unknown> {
   const post = fetchMock.mock.calls.find((call) => call[0] === '/agent/run') as
-    | [string, RequestInit]
-    | undefined;
+    [string, RequestInit] | undefined;
   if (post === undefined) throw new Error('expected /agent/run POST');
   return JSON.parse(post[1].body as string) as Record<string, unknown>;
 }

@@ -110,8 +110,7 @@ describe('ArcadeGraphCanvas', () => {
       />,
     );
     const tapHandler = mocks.core.on.mock.calls[0]?.[2] as
-      | ((event: { target: { id: () => string } }) => void)
-      | undefined;
+      ((event: { target: { id: () => string } }) => void) | undefined;
     act(() => tapHandler?.({ target: { id: () => 'n1' } }));
     expect(onNodeClick).toHaveBeenCalledWith('n1');
 

@@ -100,8 +100,7 @@ describe('ExternalStoreChat attachments', () => {
 
     await waitFor(() => {
       const post = fetchMock.mock.calls.find((call) => call[0] === '/agent/run') as
-        | [string, RequestInit]
-        | undefined;
+        [string, RequestInit] | undefined;
       expect(post).toBeDefined();
       if (post === undefined) throw new Error('expected /agent/run POST');
       expect(JSON.parse(post[1].body as string)).toMatchObject({

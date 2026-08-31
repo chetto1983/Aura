@@ -25,9 +25,7 @@ type SubmitState = 'idle' | 'submitting';
 type AuthulaStep = 'credentials' | 'totp';
 type SubmitOutcome = 'done' | 'continue' | 'failed';
 type LoginErrorKey =
-  | 'login.errors.wrongCredentials'
-  | 'login.errors.wrongCode'
-  | 'login.errors.network';
+  'login.errors.wrongCredentials' | 'login.errors.wrongCode' | 'login.errors.network';
 
 interface ParticlePoint {
   id: string;

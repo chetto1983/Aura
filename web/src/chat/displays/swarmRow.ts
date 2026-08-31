@@ -3,12 +3,7 @@
 // tableData.ts idiom). The .tsx keeps only rendering.
 
 export type SwarmStatus =
-  | 'ok'
-  | 'failed'
-  | 'needs_user_input'
-  | 'running'
-  | 'stalled'
-  | 'dead_letter';
+  'ok' | 'failed' | 'needs_user_input' | 'running' | 'stalled' | 'dead_letter';
 
 export const SWARM_DOT_CLASS: Record<SwarmStatus, string> = {
   ok: 'bg-success',

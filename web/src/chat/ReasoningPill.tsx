@@ -30,7 +30,7 @@ export interface ReasoningPillProps {
 
 /** The last non-empty line of the streamed text — the §2.2 ticker content. */
 function lastLine(text: string): string {
-  for (let i = text.length - 1; i >= 0; ) {
+  for (let i = text.length - 1; i >= 0;) {
     const start = text.lastIndexOf('\n', i);
     const line = text.slice(start + 1, i + 1).trim();
     if (line.length > 0) return line;
