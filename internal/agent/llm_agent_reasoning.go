@@ -20,8 +20,15 @@ func resolveClassifier(cfg LlmAgentConfig) *prompt.ReasoningClassifier {
 	return prompt.NewReasoningClassifier(cfg.Embedder)
 }
 
+// adaptiveReasoningTier classifies the CONVERSATION, so it gates on the generalized
+// IsReasoningTarget — the same predicate ApplyAdaptiveReasoning and ApplyFixedReasoning
+// use. It was OpenRouter-only, upstream of the identical restriction in
+// ApplyAdaptiveReasoning: on every other backend the tier was never even COMPUTED, so
+// lifting the downstream gate alone changed nothing. Measured live on Ollama 0.33.2 with
+// gemma4:31b-cloud, 2026-08-31 — with only the downstream gate widened, a turn produced
+// no tier decision at all.
 func (a *LlmAgent) adaptiveReasoningTier(ctx context.Context) (prompt.ReasoningTier, bool) {
-	if !a.cfg.AdaptiveReasoning || !prompt.IsOpenRouterReasoningTarget(a.cfg.Provider, a.cfg.BaseURL) {
+	if !a.cfg.AdaptiveReasoning || !prompt.IsReasoningTarget(a.cfg.Provider, a.cfg.BaseURL) {
 		return "", false
 	}
 	user := prompt.LastGenuineUserContent(a.history)

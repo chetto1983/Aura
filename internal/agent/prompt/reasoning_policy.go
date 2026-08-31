@@ -1,6 +1,7 @@
 package prompt
 
 import (
+	"log/slog"
 	"slices"
 	"strings"
 
@@ -36,11 +37,44 @@ func (t ReasoningTier) Valid() bool {
 // 2026-06-14), so the operator-configured cfg.MaxTokens is left untouched. It never
 // forces ToolChoice="none" either: the hot manifest keeps active tools and deferred tool
 // names visible, so the model can still call tool_search when needed.
+//
+// It gates on the GENERALIZED IsReasoningTarget, like ApplyFixedReasoning already did.
+// It used to gate on IsOpenRouterReasoningTarget, on the reasoning that "local backends
+// never ran the classifier tiering" — but the classifier runs on the CONVERSATION, not on
+// the backend, and the per-provider translation of a ReasoningConfig has existed on every
+// arm for as long as the restriction did: OpenRouter takes reasoning{effort},
+// Ollama takes reasoning_effort, and llamaCppReasoning maps every effort symbol onto
+// thinking_budget_tokens / enable_thinking. The oracle was choosing a tier and the gate
+// was throwing it away.
+//
+// What that cost, measured live on Ollama 0.33.2 with gemma4:31b-cloud on 2026-08-31:
+// req.Reasoning stayed empty, appendReasoningOptions sent no reasoning_effort, and the
+// model's default is not to think — so adaptive reasoning was silently OFF on every turn,
+// for the life of the deployment. The same call WITH reasoning_effort comes back carrying
+// a `reasoning` field, so the capability was there and unused. The absurdity was that a
+// manual selection from the composer DID reach Ollama (ApplyFixedReasoning), so the
+// automatic path was the only one restricted.
+//
+// What a model can actually honour is a separate question, answered separately by
+// llm.ReasoningCapabilitySource per backend (OpenRouter /models, Ollama /api/show
+// capabilities, llama.cpp /props). A tier this function sets is still bounded there.
 func ApplyAdaptiveReasoning(req *llm.Request, provider string, cfg llm.Config, tier ReasoningTier) {
-	if !cfg.AdaptiveReasoning || !IsOpenRouterReasoningTarget(provider, cfg.BaseURL) || !tier.Valid() {
+	if !cfg.AdaptiveReasoning {
+		return
+	}
+	if !IsReasoningTarget(provider, cfg.BaseURL) || !tier.Valid() {
+		// SAY SO. The adaptive path logged nothing at all, so a backend it silently
+		// skipped was indistinguishable from a model that had chosen not to think — which
+		// is exactly how it went unnoticed on Ollama that adaptive reasoning had never
+		// once been applied.
+		slog.Debug("adaptive reasoning: not applied",
+			"target", llm.ReasoningTarget(provider, cfg.BaseURL), "tier", string(tier))
 		return
 	}
 	req.Reasoning = tier.reasoning(cfg.ShowReasoning)
+	slog.Info("adaptive reasoning: tier applied",
+		"target", llm.ReasoningTarget(provider, cfg.BaseURL),
+		"tier", string(tier), "effort", string(req.Reasoning.Effort))
 }
 
 // ApplyFixedReasoning forces a per-turn reasoning EFFORT chosen by the user (the web
@@ -70,9 +104,9 @@ func IsOpenRouterReasoningTarget(provider, baseURL string) bool {
 }
 
 // IsReasoningTarget reports whether provider/baseURL is ANY recognized reasoning
-// backend (D-08). The FIXED per-turn effort override gates on this generalized recognition;
-// the ADAPTIVE path stays OpenRouter-only (IsOpenRouterReasoningTarget, D-04)
-// because local backends never ran the classifier tiering.
+// backend (D-08). BOTH the fixed per-turn effort override and the adaptive path gate on
+// it: the adaptive path was OpenRouter-only until 2026-08-31, which left the classifier
+// choosing a tier that no other backend ever received (see ApplyAdaptiveReasoning).
 func IsReasoningTarget(provider, baseURL string) bool {
 	switch llm.ReasoningTarget(provider, baseURL) {
 	case llm.ReasoningTargetOpenRouter, llm.ReasoningTargetLlamaCpp, llm.ReasoningTargetOllama:

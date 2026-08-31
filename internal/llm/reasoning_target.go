@@ -25,6 +25,23 @@ const (
 	ReasoningTargetOllama
 )
 
+// String names the target for logs. Without it an operator reading
+// "adaptive reasoning: tier applied target=3" has to go count iota constants to learn
+// which backend answered — the value appears in exactly the lines someone reads when
+// they are trying to find out whether reasoning reached their model at all.
+func (k ReasoningTargetKind) String() string {
+	switch k {
+	case ReasoningTargetOpenRouter:
+		return "openrouter"
+	case ReasoningTargetLlamaCpp:
+		return "llamacpp"
+	case ReasoningTargetOllama:
+		return "ollama"
+	default:
+		return "none"
+	}
+}
+
 // ReasoningTarget classifies provider/baseURL into a ReasoningTargetKind.
 //
 // OpenRouter is recognized exactly as the historical prompt.IsOpenRouterReasoningTarget
