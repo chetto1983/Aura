@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-# Aura appliance installer. Intended usage:
+# Aura appliance installer. Intended usage (equivalent — the npx bin is a veneer
+# over this script, see scripts/create-aura.mjs):
+#   sudo npx github:chetto1983/Aura -- --appliance
 #   curl -fsSL https://raw.githubusercontent.com/chetto1983/Aura/<tag>/scripts/install.sh | bash
+#
+# Without AURA_INSTALL_REF the install tracks master and defaults the image to
+# the ghcr :edge moving tag (published on every master push); --appliance then
+# also enables the aura-image-update timer so the machine self-updates.
 #
 # Optional env:
 #   AURA_INSTALL_REF=vX.Y.Z
@@ -61,11 +67,14 @@ fi
 RAW_REF="${AURA_INSTALL_REF:-master}"
 RAW_BASE="${AURA_INSTALL_BASE_URL:-https://raw.githubusercontent.com/chetto1983/Aura/${RAW_REF}}"
 IMAGE_TAG="${AURA_IMAGE_TAG:-${RAW_REF}}"
-DEFAULT_IMAGE="ghcr.io/chetto1983/aura:${IMAGE_TAG}"
-
-if [ "$IMAGE_TAG" = "master" ] && [ -z "${AURA_IMAGE:-}" ]; then
-  echo "WARN: AURA_INSTALL_REF is master; set AURA_IMAGE or AURA_INSTALL_REF to a release tag for a clean-host install." >&2
+# A master install rides the continuous-delivery channel: every master push
+# publishes ghcr.io/chetto1983/aura:edge (there is no :master image tag), and
+# the aura-image-update timer keeps the appliance tracking it. Pinned installs
+# (AURA_INSTALL_REF=vX.Y.Z) keep the exact-tag image and skip the timer.
+if [ "$IMAGE_TAG" = "master" ]; then
+  IMAGE_TAG="edge"
 fi
+DEFAULT_IMAGE="ghcr.io/chetto1983/aura:${IMAGE_TAG}"
 
 need_sudo() {
   [ "$(id -u)" -ne 0 ]
@@ -363,6 +372,21 @@ ensure_embed_provenance() {
   ensure_env_default AURA_EMBED_FINGERPRINT "$fingerprint"
 }
 
+# An :edge install tracks GHCR continuously (deploy/aura-image-update.*): compose
+# must re-pull the moving tag on every up, and each MCP sidecar the machine runs
+# needs its own moving tag — a SHA-pinned default would make the update timer a
+# no-op. Idempotent like the rest: explicit operator choices are preserved.
+ensure_edge_channel_env() {
+  case "$(env_value AURA_IMAGE)" in
+    *:edge)
+      ensure_env_default AURA_PULL_POLICY always
+      ensure_env_default AURA_ARCADEDB_MCP_IMAGE ghcr.io/chetto1983/aura-arcadedb-mcp:edge
+      ensure_env_default AURA_PIM_MCP_IMAGE ghcr.io/chetto1983/aura-pim-mcp:sidecar
+      ensure_env_default AURA_WHATSAPP_MCP_IMAGE ghcr.io/chetto1983/whatsapp-mcp:latest
+      ;;
+  esac
+}
+
 ensure_internal_env_secrets() {
   command -v openssl >/dev/null 2>&1 || {
     echo "FAIL: openssl is required to generate Aura internal secrets." >&2
@@ -384,6 +408,7 @@ ensure_internal_env_secrets() {
   ensure_env_default ARCADEDB_DATABASE "aura_memory"
   ensure_env_default POSTGRES_IMAGE "${POSTGRES_IMAGE:-postgres:18.4-alpine3.24}"
   ensure_env_default AURA_IMAGE "${AURA_IMAGE:-$DEFAULT_IMAGE}"
+  ensure_edge_channel_env
 
   # Observability is an appliance default, not a hidden profile an operator must
   # remember after every reboot. Preserve additional profiles and explicit off
@@ -530,8 +555,20 @@ install_systemd_unit() {
   as_root cp deploy/aura.service /etc/systemd/system/aura.service
   # Nessun drop-in per gVisor: il runtime e' AURA_RUNTIME in .env, quindi l'unit di base
   # va bene identica in entrambi i casi.
+  # Edge appliances also get the self-update timer, so the machine keeps tracking
+  # GHCR without an operator; a version-pinned install deliberately does not.
+  case "$(env_value AURA_IMAGE)" in
+    *:edge)
+      as_root install -m 0755 deploy/aura-image-update.sh /usr/local/sbin/aura-image-update.sh
+      as_root cp deploy/aura-image-update.service /etc/systemd/system/aura-image-update.service
+      as_root cp deploy/aura-image-update.timer /etc/systemd/system/aura-image-update.timer
+      ;;
+  esac
   as_root systemctl daemon-reload
   as_root systemctl enable --now aura.service
+  case "$(env_value AURA_IMAGE)" in
+    *:edge) as_root systemctl enable --now aura-image-update.timer ;;
+  esac
 }
 
 host_for_summary() {
@@ -567,6 +604,9 @@ cd "$INSTALL_DIR"
 download_file compose.yaml compose.yaml
 download_file caddy/Caddyfile caddy/Caddyfile
 download_file deploy/aura.service deploy/aura.service
+download_file deploy/aura-image-update.sh deploy/aura-image-update.sh
+download_file deploy/aura-image-update.service deploy/aura-image-update.service
+download_file deploy/aura-image-update.timer deploy/aura-image-update.timer
 download_file searxng/settings.yml searxng/settings.yml
 download_file searxng/limiter.toml searxng/limiter.toml
 download_file scripts/garage_bootstrap.sh scripts/garage_bootstrap.sh
@@ -585,7 +625,7 @@ download_file observability/prometheus/rules/aura-alerts.yml observability/prome
 download_file observability/prometheus/rules/aura-recording.yml observability/prometheus/rules/aura-recording.yml
 download_file observability/prometheus/tests/aura-rules.test.yml observability/prometheus/tests/aura-rules.test.yml
 download_file observability/tempo/tempo.yml observability/tempo/tempo.yml
-chmod +x scripts/garage_bootstrap.sh scripts/fetch_embedding_model.sh scripts/observability_sidecar_check.sh
+chmod +x scripts/garage_bootstrap.sh scripts/fetch_embedding_model.sh scripts/observability_sidecar_check.sh deploy/aura-image-update.sh
 
 write_env_if_missing
 

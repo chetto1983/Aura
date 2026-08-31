@@ -1,0 +1,20 @@
+{
+  "name": "create-aura-appliance",
+  "version": "0.1.0",
+  "description": "One-shot installer for an Aura appliance host — npx veneer over scripts/install.sh. Run: sudo npx github:chetto1983/Aura -- --appliance",
+  "bin": {
+    "create-aura-appliance": "scripts/create-aura.mjs"
+  },
+  "files": [
+    "scripts/install.sh",
+    "scripts/create-aura.mjs"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chetto1983/Aura.git"
+  },
+  "license": "MIT"
+}

@@ -103,28 +103,35 @@ TLS/token access, and optional MCP siblings.
 > Tags `v1.0.0`/`v1.0.1` exist, but every earlier appliance image was retired (PRD
 > amendment #106.4) and no GitHub Release is currently published — check the
 > [Releases page](https://github.com/chetto1983/Aura/releases) for the current tag
-> (`v1.0.2-rc1` is the latest) and use it as `vX.Y.Z` below. While no image is
-> on GHCR, build it from a checkout (see [Development](#development)) and set
-> `AURA_IMAGE=aura:local`.
+> (`v1.0.2-rc1` is the latest) and use it as `vX.Y.Z` below. Independently of
+> releases, every master push publishes the moving `ghcr.io/chetto1983/aura:edge`
+> image (plus an immutable `master-<sha>` tag) — the continuous-delivery channel a
+> default install tracks.
 
 ### Linux or macOS
 
-Install Docker, then run the installer from a release tag — replace `vX.Y.Z` with the
-tag you are installing:
+Install Docker, then run the installer. One command on a machine with Node 18+
+(`npx` fetches the repo and runs `scripts/install.sh`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/chetto1983/Aura/vX.Y.Z/scripts/install.sh | bash
+sudo npx github:chetto1983/Aura -- --appliance
+```
+
+or the curl equivalent of the same script — use `master` to track the edge
+channel, or a release tag `vX.Y.Z` to pin:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/chetto1983/Aura/master/scripts/install.sh | sudo bash -s -- --appliance
 ```
 
 The installer checks hardware, creates `.env` with generated `POSTGRES_PASSWORD`,
 the three `ARCADEDB_*` secrets, and `AURA_ACCESS_TOKEN`, downloads the Compose/Caddy assets, and
-starts the stack. Re-running it keeps an existing `.env` intact.
-
-Optional appliance mode installs a systemd unit under `/opt/aura`:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/chetto1983/Aura/vX.Y.Z/scripts/install.sh | sudo bash -s -- --appliance
-```
+starts the stack. Re-running it keeps an existing `.env` intact. A master/edge
+install points `.env` at the `:edge` moving tags, and `--appliance` also enables
+the `aura-image-update` systemd timer: from then on the machine re-pulls aura and
+its MCP sidecars from GHCR on its own, migrations included, with no operator
+involved. Without `--appliance` (no systemd units, no timer), the stack still
+starts; updates stay manual.
 
 Add `--gvisor` on native Linux Docker hosts that should run Aura under `runsc`.
 Docker Desktop is intentionally not supported for that isolation tier.
@@ -194,9 +201,15 @@ docker compose exec caddy cat /data/caddy/pki/authorities/local/root.crt > aura-
 
 ## Updates
 
-Update the appliance with Compose. Volumes persist, and the `aura-migrate`
-one-shot runs the Postgres migrations before the Aura service starts (ArcadeDB
-needs none — the MCP creates each identity's database on first use):
+An edge appliance installed with `--appliance` updates itself: the
+`aura-image-update.timer` (5-minute cadence, flock-guarded) pulls the moving
+tags and recreates only what changed, running migrations first. Watch it with
+`journalctl -u aura-image-update.service -f`.
+
+Manual update (pinned installs, or no systemd). Volumes persist, and the
+`aura-migrate` one-shot runs the Postgres migrations before the Aura service
+starts (ArcadeDB needs none — the MCP creates each identity's database on first
+use):
 
 ```bash
 docker compose pull
