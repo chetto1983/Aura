@@ -383,6 +383,13 @@ ensure_edge_channel_env() {
       ensure_env_default AURA_ARCADEDB_MCP_IMAGE ghcr.io/chetto1983/aura-arcadedb-mcp:edge
       ensure_env_default AURA_PIM_MCP_IMAGE ghcr.io/chetto1983/aura-pim-mcp:sidecar
       ensure_env_default AURA_WHATSAPP_MCP_IMAGE ghcr.io/chetto1983/whatsapp-mcp:latest
+      # caddy and ingest are repo-built images: without a published pin a fresh
+      # appliance tries to `docker build` them against a payload that has no
+      # build context and dies (measured 2026-08-31, first clean-host E2E).
+      ensure_env_default AURA_CADDY_IMAGE ghcr.io/chetto1983/aura-caddy:edge
+      ensure_env_default AURA_CADDY_PULL_POLICY always
+      ensure_env_default AURA_INGEST_IMAGE ghcr.io/chetto1983/aura-ingest:edge
+      ensure_env_default AURA_INGEST_PULL_POLICY always
       ;;
   esac
 }
@@ -520,7 +527,9 @@ native_linux_docker() {
 }
 
 provision_gvisor() {
-  [ "$GVISOR" -eq 1 ] || return
+  # return 0, not bare return: bare return propagates the failed test's status 1,
+  # and under top-level `set -e` that silently kills every install without --gvisor.
+  [ "$GVISOR" -eq 1 ] || return 0
   native_linux_docker || {
     echo "FAIL: --gvisor is only supported on native Linux Docker, not Docker Desktop or ${OS}." >&2
     exit 1
@@ -542,7 +551,7 @@ provision_gvisor() {
 }
 
 install_systemd_unit() {
-  [ "$APPLIANCE" -eq 1 ] || return
+  [ "$APPLIANCE" -eq 1 ] || return 0
   if [ "$OS" != "Linux" ]; then
     echo "WARN: --appliance systemd autostart is Linux-only; skipping unit install." >&2
     return

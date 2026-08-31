@@ -12,6 +12,8 @@
 #   AURA_ARCADEDB_MCP_IMAGE=ghcr.io/chetto1983/aura-arcadedb-mcp:edge
 #   AURA_PIM_MCP_IMAGE=ghcr.io/chetto1983/aura-pim-mcp:sidecar
 #   AURA_WHATSAPP_MCP_IMAGE=ghcr.io/chetto1983/whatsapp-mcp:latest
+#   AURA_CADDY_IMAGE=ghcr.io/chetto1983/aura-caddy:edge  (+ AURA_CADDY_PULL_POLICY=always)
+#   AURA_INGEST_IMAGE=ghcr.io/chetto1983/aura-ingest:edge  (+ AURA_INGEST_PULL_POLICY=always)
 
 set -Eeuo pipefail
 
@@ -88,7 +90,12 @@ update_sidecar() {
     return 0
   fi
   svc_before="$(container_image_id "${svc}")"
-  docker compose pull "${svc}"
+  # Tolerate an unpullable pin (a :local image, or a registry blip): the timer
+  # must keep refreshing everything else and retry on its next tick.
+  docker compose pull "${svc}" || {
+    echo "${svc}: pull failed (local-only pin or registry unreachable); skipped."
+    return 0
+  }
   docker compose up -d --no-deps "${svc}"
   deadline=$((SECONDS + HEALTH_TIMEOUT_SECONDS))
   until service_is_healthy "${svc}"; do
@@ -106,6 +113,10 @@ update_sidecar() {
 update_sidecar arcadedb-mcp
 update_sidecar aura-pim-mcp
 update_sidecar whatsapp
+# Repo-built core services on the edge channel (published by the same workflow
+# as aura itself); on a machine pinned to :local these skip via pull tolerance.
+update_sidecar caddy
+update_sidecar aura-ingest
 
 # Remove only untagged images left behind by a successful replacement.
 docker image prune --force >/dev/null

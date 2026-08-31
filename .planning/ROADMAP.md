@@ -487,7 +487,15 @@ already exhibited once.
   3. After a turn involving extended reasoning, the ArcadeDB graph shows the reasoning trace persisted with edges to the entities it touched, and a later turn's injected context does NOT include that reasoning content unless explicitly retrieved.
   4. A durable fact revealed mid-task (stated during a live shell/file task) is captured as a memory fact by the time the task completes — checking its recorded provenance shows it was captured directly, never sourced from a reasoning-trace summarizer.
 
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+- [ ] 49-01-PLAN.md — Measure the live baseline, commit Amendment #181 independently, and freeze the unified retrieval contract.
+- [ ] 49-02-PLAN.md — Project PostgreSQL-authoritative conversation turns into an identity-isolated searchable ArcadeDB tier.
+- [ ] 49-03-PLAN.md — Fuse fact and conversation evidence behind one observable `memory_recall` surface.
+- [ ] 49-04-PLAN.md — Persist entity-linked reasoning graphs and enforce explicit-only retrieval.
+- [ ] 49-05-PLAN.md — Capture direct-evidence facts through an ordered queue with a terminal durability barrier.
+- [ ] 49-06-PLAN.md — Publish an atomic final-state multi-operation memory batch API.
 
 ### Phase 50: Context ladder legibility
 

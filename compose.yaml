@@ -465,7 +465,7 @@ services:
       context: .
       dockerfile: docker/caddy/Dockerfile
     image: ${AURA_CADDY_IMAGE:-aura-caddy:local}
-    pull_policy: never
+    pull_policy: ${AURA_CADDY_PULL_POLICY:-never}
     container_name: aura-caddy
     restart: unless-stopped
     depends_on:
@@ -803,7 +803,7 @@ services:
       context: .
       dockerfile: docker/aura-ingest/Dockerfile
     image: ${AURA_INGEST_IMAGE:-aura-ingest:local}
-    pull_policy: never
+    pull_policy: ${AURA_INGEST_PULL_POLICY:-never}
     container_name: aura-ingest
     restart: unless-stopped
     depends_on:

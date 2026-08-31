@@ -43,7 +43,23 @@ created: 2026-08-31
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| _filled by planner_ | | | | | | | | | ⬜ pending |
+| 49-01-T1 | 01 | 1 | MEM-06 | T-4901-01/02 | Isolated measured amendment ancestor with explicit non-proofs | repository | `bash -lc 'grep -qE "^## §.*\(Amendment #181, 2026-08-31\)" prd.md && grep -q "extends amendment #91" prd.md && grep -q "What this measurement does NOT prove" prd.md && grep -q "production semantic quality" prd.md'` | ⚠️ target tracked | ⬜ pending |
+| 49-01-T2 | 01 | 1 | TOOL-05 | T-4901-04 | Unified retrieval surface and no skip-green evaluator | unit/contract | `python -m unittest scripts.agent_memory_eval_test && go test ./internal/agent/mcptools -run '^TestMemorySurfacePolicy_' -count=1 -v` | ⚠️ cases pending | ⬜ pending |
+| 49-02-T1 | 02 | 2 | MEM-01 | T-4902-01/02/03 | Eligible projection is idempotent and identity-isolated | tracer/unit | `go test ./internal/conversations ./internal/arcadedb ./internal/runner -run 'Test(ProjectionTurnEligibility|ConversationProjectionTracer)' -count=1 -v` | ❌ Wave 0 | ⬜ pending |
+| 49-02-T2 | 02 | 2 | MEM-01 | T-4902-04 | Post-commit ordered projection is fail-soft | unit/goleak | `go test ./internal/runner ./cmd/aura -run 'Test(ConversationProjectionPostCommit|ConversationProjectionFailSoft|ChatBootMemoryProjection)' -count=1 -v` | ❌ Wave 0 | ⬜ pending |
+| 49-02-T3 | 02 | 2 | MEM-01 | T-4902-02/05 | Restart/edit/delete convergence from PostgreSQL | live/race | `go test -race -tags=arcadedb_integration -count=1 ./internal/arcadedb/ -run '^TestConversationProjectionLive_' -v` | ❌ Wave 0 | ⬜ pending |
+| 49-06-T1 | 06 | 2 | HARN-05 | T-4906-02/03 | Final-state batch commits once or rolls back | tracer/unit | `go test ./internal/arcadedb -run 'TestMemoryBatch_(FinalStateTracer|RollbackFirstError|IdempotentReplay)' -count=1 -v` | ❌ Wave 0 | ⬜ pending |
+| 49-06-T2 | 06 | 2 | HARN-05 | T-4906-01/04 | Identity-free API has correct risk/replay policy | unit/contract | `go test ./cmd/arcadedb-mcp ./internal/agent/mcptools -run 'Test(MemoryBatchTool|MemoryBatchRisk|MemorySurfacePolicy_)' -count=1 -v` | ❌ Wave 0 | ⬜ pending |
+| 49-06-T3 | 06 | 2 | HARN-05 | T-4906-02/03/05 | Concurrent retries expose no partial state | live/race | `go test -race -tags=arcadedb_integration -count=1 ./internal/arcadedb/ -run '^TestMemoryBatchLive_' -v` | ❌ Wave 0 | ⬜ pending |
+| 49-03-T1 | 03 | 3 | MEM-02, TOOL-05 | T-4903-03/05/06 | Deterministic mixed RRF and abstention | tracer/unit | `go test ./internal/arcadedb ./cmd/arcadedb-mcp -run 'Test(MemoryRecallMixedTierTracer|ReciprocalRankFuse|MemoryRecallAbstains)' -count=1 -v` | ❌ Wave 0 | ⬜ pending |
+| 49-03-T2 | 03 | 3 | MEM-02 | T-4903-01/02 | Host-derived active conversation is excluded | unit/contract | `go test ./internal/agent/tools ./internal/agent/mcptools ./cmd/arcadedb-mcp -run 'Test(SessionIDFromContext|RecallContextHeaders|MemoryRecallSuppressesActiveConversation)' -count=1 -v` | ❌ Wave 0 | ⬜ pending |
+| 49-03-T3 | 03 | 3 | MEM-02, TOOL-05 | T-4903-02/04/05 | Live mixed result and OTel path agree | live/race/E2E | `go test -race -tags=arcadedb_integration -count=1 -run '^TestAgentMemoryMCPLive_MixedTierRecall$' ./cmd/arcadedb-mcp/ -v` | ❌ Wave 0 | ⬜ pending |
+| 49-04-T1 | 04 | 4 | MEM-03 | T-4904-01/02/03 | Amendment-gated trace persists post-commit | tracer/repository | `bash -lc 'amend=$(git log --format=%H --grep="Amendment #181" -n 1); test -n "$amend" && git merge-base --is-ancestor "$amend" HEAD && go test ./internal/runner -run "^TestReasoningGraphTracer$" -count=1 -v'` | ❌ Wave 0 | ⬜ pending |
+| 49-04-T2 | 04 | 4 | MEM-03, CTX-05 | T-4904-01/04/06 | Explicit-only bounded reasoning; automatic paths untouched | unit/structural | `go test ./internal/arcadedb ./cmd/arcadedb-mcp ./internal/conversations -run 'Test(ReasoningRecallExplicitOnly|ReasoningToolMetadataBounded|HistoryReasoningFree)' -count=1 -v` | ⚠️ base test tracked | ⬜ pending |
+| 49-04-T3 | 04 | 4 | MEM-03, CTX-05 | T-4904-01/04 | Live explicit isolation and source deletion | live/race | `go test -race -tags=arcadedb_integration -count=1 ./internal/arcadedb/ -run '^TestReasoningGraphLive_' -v` | ❌ Wave 0 | ⬜ pending |
+| 49-05-T1 | 05 | 5 | AUTO-03, CTX-05 | T-4905-01/03/06 | Direct capture is durable before completion | tracer/unit | `go test ./internal/runner -run 'Test(MemoryCaptureTracer|MemoryCaptureRejectsIneligibleSources|MemoryCaptureTerminalBarrier)' -count=1 -v` | ❌ Wave 0 | ⬜ pending |
+| 49-05-T2 | 05 | 5 | AUTO-03 | T-4905-02/04/05 | Replay/contradiction converge; worker cannot supersede | unit/concurrency | `go test ./internal/arcadedb -run 'TestAcceptedCapture_(Idempotent|Contradiction|WorkerAuthority|Retry)' -count=1 -v` | ❌ Wave 0 | ⬜ pending |
+| 49-05-T3 | 05 | 5 | AUTO-03 | T-4905-01/03/06 | Live direct provenance and terminal barrier | live/race/E2E | `go test -race -tags=arcadedb_integration -count=1 ./internal/runner -run '^TestMemoryCaptureLive_MidTaskDurableBeforeCompletion$' -v` | ❌ Wave 0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -64,7 +80,7 @@ created: 2026-08-31
 
 ## Wave 0 Requirements
 
-- [ ] Freeze the additive `memory_recall` mode/evidence/cursor schema, trusted active-context metadata route, and atomic batch-operation schema in tests.
+- [ ] Freeze the additive `memory_recall` mode/evidence/cursor schema, host-derived per-request active-conversation header route, and atomic batch-operation schema in tests.
 - [ ] Add an authoritative paged eligible-turn fixture covering spilled content, edit/delete, and replay.
 - [ ] Update `scripts/agent_memory_eval.py`: the current exact-latency `cli_identity_mcp_search` path exercises raw search, not the final one-read mixed recall contract.
 - [ ] Add daemon-free pure tests for projection decisions, trace segmentation/redaction, cursor codec, capture sequencing and terminal barrier, and the final-state batch compiler.
