@@ -111,11 +111,11 @@ func sendingMiddleware(policy bridgePolicy, owner string) []sdkmcp.Middleware {
 }
 
 // configureIdentityScopedHeaders is the single production assignment point for
-// host-derived memory headers. The RED shape preserves the already-shipped actor
-// carrier while Task 2's failing test requires active recall composition too.
+// host-derived memory headers. Non-identity mounts receive neither actor nor
+// recall metadata; identity-scoped mounts derive both fresh on every request.
 func configureIdentityScopedHeaders(options *mcp.SessionOptions, policy bridgePolicy) {
 	if policy.identityScoped {
-		options.HeaderFunc = actorHeaderFunc
+		options.HeaderFunc = memoryHeaderFunc
 	}
 }
 

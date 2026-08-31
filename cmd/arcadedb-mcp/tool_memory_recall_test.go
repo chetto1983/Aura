@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -239,6 +240,41 @@ func TestMemoryRecallActiveSourceHeader(t *testing.T) {
 			t.Fatalf("actor mismatch reached database: %v", rec.statements)
 		}
 	})
+
+	t.Run("source count is bounded before database access", func(t *testing.T) {
+		sources := make([]memoryRecallActiveSource, 0, memoryRecallMaxActiveSources+1)
+		for index := range memoryRecallMaxActiveSources + 1 {
+			sources = append(sources, memoryRecallActiveSource{
+				ConversationID: fmt.Sprintf("conversation-%02d", index), TurnID: "turn-current",
+			})
+		}
+		client, rec := newRecordingDB(t)
+		req := recallRequestWithActiveSource(t, testIdentity, "turn-current", sources...)
+		_, _, err := memoryRecallHandler(singleTenant(t, client))(
+			context.Background(), req, MemoryRecallInput{Query: "blue notebook"})
+		if err == nil {
+			t.Fatal("over-count active-source header was accepted")
+		}
+		if len(rec.statements) != 0 {
+			t.Fatalf("over-count header reached database: %v", rec.statements)
+		}
+	})
+
+	t.Run("foreign conversation fails after ownership lookup and before recall", func(t *testing.T) {
+		foreign := `{"result":[{"identity_id":"foreign-identity","conversation_id":"conversation-active"}]}`
+		client, rec := newRecordingDB(t, foreign)
+		req := recallRequestWithActiveSource(t, testIdentity, "turn-current", memoryRecallActiveSource{
+			ConversationID: "conversation-active", TurnID: "turn-current",
+		})
+		_, _, err := memoryRecallHandler(singleTenant(t, client))(
+			context.Background(), req, MemoryRecallInput{Query: "blue notebook"})
+		if err == nil || !strings.Contains(err.Error(), "not owned") {
+			t.Fatalf("foreign conversation error = %v", err)
+		}
+		if len(rec.statements) != 1 || !strings.Contains(rec.statements[0], "FROM Conversation") {
+			t.Fatalf("foreign exclusion reached recall query: %v", rec.statements)
+		}
+	})
 }
 
 func TestMemoryRecallSuppressesActiveConversation(t *testing.T) {
@@ -287,6 +323,20 @@ func TestMemoryRecallActiveSourceIsNotModelInput(t *testing.T) {
 	}
 	if _, ok := any(MemoryRecallInput{}).(interface{ GetMeta() map[string]any }); ok {
 		t.Fatal("memory recall input unexpectedly exposes MCP metadata")
+	}
+
+	client, rec := newRecordingDB(t, `{"result":[]}`)
+	req := reqWithIdentity(testIdentity)
+	req.Params.SetMeta(map[string]any{
+		memoryRecallActiveSourcesHeader: "model-supplied-exclusion",
+	})
+	_, _, err = memoryRecallHandler(singleTenant(t, client))(
+		context.Background(), req, MemoryRecallInput{Query: "blue notebook"})
+	if err != nil {
+		t.Fatalf("model metadata changed recall behavior: %v", err)
+	}
+	if len(rec.statements) == 0 || strings.Contains(rec.statements[0], "FROM Conversation WHERE") {
+		t.Fatalf("model metadata reached exclusion ownership lookup: %v", rec.statements)
 	}
 }
 

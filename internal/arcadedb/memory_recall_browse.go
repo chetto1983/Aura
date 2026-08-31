@@ -24,7 +24,7 @@ const (
 
 const recentConversationAnchorsStatement = "SELECT identity_id, conversation_id, turn_seq, role, " +
 	"content, content_hash, occurred_at, source_ref FROM " + conversationTurnType +
-	" WHERE identity_id = :identity_id AND deleted_at IS NULL" +
+	" WHERE identity_id = :identity_id AND deleted_at IS NULL" + recallExclusionMarker +
 	" ORDER BY occurred_at DESC, conversation_id ASC, turn_seq DESC LIMIT :recent_limit"
 
 const recallConversationAfterStatement = "SELECT identity_id, conversation_id, turn_seq, role, " +
@@ -41,17 +41,23 @@ const recallConversationBeforeStatement = "SELECT identity_id, conversation_id, 
 
 func (c *Client) recallRecent(ctx context.Context, request RecallRequest) (RecallResult, error) {
 	pageSize := boundedLimit(request.Limit, recallBrowseDefaultPage, recallBrowseMaxPage)
-	rows, err := c.Query(ctx, recentConversationAnchorsStatement, map[string]any{
+	params := map[string]any{
 		"identity_id": request.IdentityID, "recent_limit": pageSize,
-	})
+	}
+	statement := applyRecallExclusions(recentConversationAnchorsStatement, params, request.ExcludeConversationIDs)
+	rows, err := c.Query(ctx, statement, params)
 	if err != nil {
 		return RecallResult{}, fmt.Errorf("arcadedb: recall recent conversations: %w", err)
 	}
 	evidence := make([]RecallEvidence, 0, pageSize)
 	seen := make(map[string]struct{}, len(rows))
+	excluded := recallExcludedConversationSet(request.ExcludeConversationIDs)
 	for _, row := range rows {
 		anchor, ok := conversationTurnHitFromRow(row, request.IdentityID)
 		if !ok || anchor.ConversationID == "" {
+			continue
+		}
+		if _, blocked := excluded[anchor.ConversationID]; blocked {
 			continue
 		}
 		if _, duplicate := seen[anchor.ConversationID]; duplicate {
@@ -88,6 +94,9 @@ func (c *Client) recallOpen(ctx context.Context, request RecallRequest) (RecallR
 	if err := cursor.validate(); err != nil {
 		return RecallResult{}, err
 	}
+	if recallConversationExcluded(request.ExcludeConversationIDs, cursor.ConversationID) {
+		return activeConversationExcludedRecallResult(), nil
+	}
 	return c.recallCursorPage(ctx, cursor)
 }
 
@@ -114,6 +123,9 @@ func (c *Client) recallScroll(ctx context.Context, request RecallRequest) (Recal
 	}
 	if request.Limit > 0 && boundedLimit(request.Limit, recallBrowseDefaultPage, recallBrowseMaxPage) != cursor.PageSize {
 		return RecallResult{}, fmt.Errorf("arcadedb: recall cursor page size mismatch")
+	}
+	if recallConversationExcluded(request.ExcludeConversationIDs, cursor.ConversationID) {
+		return activeConversationExcludedRecallResult(), nil
 	}
 	return c.recallCursorPage(ctx, cursor)
 }

@@ -47,6 +47,9 @@ type RecallRequest struct {
 	Cursor         string
 	Direction      RecallDirection
 	Limit          int
+	// ExcludeConversationIDs is host-derived negative scope. It can suppress
+	// conversation evidence but never choose IdentityID or add candidates.
+	ExcludeConversationIDs []string
 }
 
 // RecallEvidenceKind discriminates the typed evidence union.
@@ -127,9 +130,9 @@ const recallHybridFuseStatement = "SELECT @rid AS rid, score FROM (SELECT expand
 	"`vector.fuse`(" +
 	"`vector.neighbors`('" + conversationTurnType + "[embedding]', :vector, :candidates, " +
 	"{ filter: (SELECT @rid FROM " + conversationTurnType +
-	" WHERE identity_id = :identity_id AND deleted_at IS NULL).@rid, maxDistance: :max_distance }), " +
+	" WHERE identity_id = :identity_id AND deleted_at IS NULL" + recallExclusionMarker + ").@rid, maxDistance: :max_distance }), " +
 	"(SELECT @rid, $score FROM " + conversationTurnType +
-	" WHERE identity_id = :identity_id AND deleted_at IS NULL AND SEARCH_INDEX('" +
+	" WHERE identity_id = :identity_id AND deleted_at IS NULL" + recallExclusionMarker + " AND SEARCH_INDEX('" +
 	conversationTurnType + "[content]', :query) = true AND $score >= :min_lexical_score " +
 	"LIMIT :candidates), { fusion: 'RRF' }), { fusion: 'RRF' }" +
 	"))) ORDER BY score DESC, rid ASC LIMIT :candidates"
@@ -139,7 +142,7 @@ const recallLexicalFuseStatement = "SELECT @rid AS rid, score FROM (SELECT expan
 	" WHERE SEARCH_INDEX('" + factEdgeType + "[statement]', :query) = true AND " +
 	"$score >= :min_lexical_score AND " + asOfCondition + " LIMIT :candidates), " +
 	"(SELECT @rid, $score FROM " + conversationTurnType +
-	" WHERE identity_id = :identity_id AND deleted_at IS NULL AND SEARCH_INDEX('" +
+	" WHERE identity_id = :identity_id AND deleted_at IS NULL" + recallExclusionMarker + " AND SEARCH_INDEX('" +
 	conversationTurnType + "[content]', :query) = true AND $score >= :min_lexical_score " +
 	"LIMIT :candidates), { fusion: 'RRF' }" +
 	"))) ORDER BY score DESC, rid ASC LIMIT :candidates"
@@ -151,7 +154,7 @@ const hydrateRecallFactsStatement = "SELECT @rid, statement, predicate, valid_fr
 
 const hydrateRecallTurnsStatement = "SELECT @rid, identity_id, conversation_id, turn_seq, role, " +
 	"content, content_hash, occurred_at, source_ref FROM " + conversationTurnType +
-	" WHERE identity_id = :identity_id AND deleted_at IS NULL AND @rid IN :rids"
+	" WHERE identity_id = :identity_id AND deleted_at IS NULL" + recallExclusionMarker + " AND @rid IN :rids"
 
 const recallConversationWindowStatement = "SELECT identity_id, conversation_id, turn_seq, role, " +
 	"content, content_hash, occurred_at, source_ref FROM " + conversationTurnType +
@@ -167,29 +170,34 @@ func (c *Client) RecallMemory(ctx context.Context, request RecallRequest) (Recal
 	if request.Mode == "" {
 		request.Mode = RecallModeSemantic
 	}
+	exclusions, err := canonicalRecallExclusions(request.ExcludeConversationIDs)
+	if err != nil {
+		return RecallResult{}, err
+	}
+	request.ExcludeConversationIDs = exclusions
 	var (
-		result RecallResult
-		err    error
+		result    RecallResult
+		recallErr error
 	)
 	switch request.Mode {
 	case RecallModeSemantic:
-		result, err = c.recallSemantic(ctx, request)
+		result, recallErr = c.recallSemantic(ctx, request)
 	case RecallModeRecent:
-		result, err = c.recallRecent(ctx, request)
+		result, recallErr = c.recallRecent(ctx, request)
 	case RecallModeOpen:
-		result, err = c.recallOpen(ctx, request)
+		result, recallErr = c.recallOpen(ctx, request)
 	case RecallModeScroll:
-		result, err = c.recallScroll(ctx, request)
+		result, recallErr = c.recallScroll(ctx, request)
 	case RecallModeReasoning:
 		result = RecallResult{
 			Evidence: make([]RecallEvidence, 0), Abstained: true,
 			Reason: "reasoning_not_available",
 		}
 	default:
-		err = fmt.Errorf("arcadedb: unsupported memory recall mode %q", request.Mode)
+		recallErr = fmt.Errorf("arcadedb: unsupported memory recall mode %q", request.Mode)
 	}
-	if err != nil {
-		return RecallResult{}, err
+	if recallErr != nil {
+		return RecallResult{}, recallErr
 	}
 	result.Retrieval.BackendLatency = time.Since(started)
 	if result.Evidence == nil {
@@ -229,10 +237,12 @@ func (c *Client) recallSemantic(ctx context.Context, request RecallRequest) (Rec
 	} else {
 		params["vector"] = vector
 	}
+	statement = applyRecallExclusions(statement, params, request.ExcludeConversationIDs)
 	ranked, err := c.Query(ctx, statement, params)
 	if err != nil && path == retrievalPathHybrid {
 		path, reason = retrievalPathLexical, reasonFusionFailed
-		ranked, err = c.Query(ctx, recallLexicalFuseStatement, params)
+		fallback := applyRecallExclusions(recallLexicalFuseStatement, params, request.ExcludeConversationIDs)
+		ranked, err = c.Query(ctx, fallback, params)
 	}
 	if err != nil {
 		return RecallResult{}, fmt.Errorf("arcadedb: unified memory recall: %w", err)
@@ -325,7 +335,7 @@ func (c *Client) hydrateRecallRanking(
 		rids[index] = ranked[index].rid
 	}
 	facts, factErr := c.hydrateRecallFacts(ctx, rids, request.AsOf)
-	turns, turnErr := c.hydrateRecallTurns(ctx, request.IdentityID, rids)
+	turns, turnErr := c.hydrateRecallTurns(ctx, request.IdentityID, rids, request.ExcludeConversationIDs)
 	if factErr != nil && turnErr != nil {
 		return RecallResult{}, fmt.Errorf("arcadedb: hydrate recall facts: %v; turns: %w", factErr, turnErr)
 	}
@@ -336,6 +346,7 @@ func (c *Client) hydrateRecallRanking(
 	evidence := make([]RecallEvidence, 0, min(len(ranked), limit))
 	seenProse := make(map[string]struct{}, len(ranked))
 	seenConversations := make(map[string]struct{})
+	excludedConversations := recallExcludedConversationSet(request.ExcludeConversationIDs)
 	for index, item := range ranked {
 		if len(evidence) == limit {
 			break
@@ -354,6 +365,9 @@ func (c *Client) hydrateRecallRanking(
 		}
 		turn, ok := turns[item.rid]
 		if !ok {
+			continue
+		}
+		if _, excluded := excludedConversations[turn.ConversationID]; excluded {
 			continue
 		}
 		if _, duplicate := factProse[normalizedRecallProse(turn.Content)]; duplicate {
@@ -423,16 +437,23 @@ func (c *Client) hydrateRecallTurns(
 	ctx context.Context,
 	identityID string,
 	rids []string,
+	excludedConversationIDs []string,
 ) (map[string]ConversationTurnHit, error) {
-	rows, err := c.Query(ctx, hydrateRecallTurnsStatement, map[string]any{
+	params := map[string]any{
 		"identity_id": identityID, "rids": rids,
-	})
+	}
+	statement := applyRecallExclusions(hydrateRecallTurnsStatement, params, excludedConversationIDs)
+	rows, err := c.Query(ctx, statement, params)
 	if err != nil {
 		return nil, err
 	}
 	hits := make(map[string]ConversationTurnHit, len(rows))
+	excluded := recallExcludedConversationSet(excludedConversationIDs)
 	for _, row := range rows {
 		if hit, ok := conversationTurnHitFromRow(row, identityID); ok {
+			if _, blocked := excluded[hit.ConversationID]; blocked {
+				continue
+			}
 			hits[fmt.Sprintf("%v", row["@rid"])] = hit
 		}
 	}
