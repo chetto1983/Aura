@@ -3,9 +3,14 @@ from __future__ import annotations
 import json
 import pathlib
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
+
+# Keep both documented invocations working: direct script execution and
+# `python -m unittest scripts.agent_memory_eval_test` from the repository root.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import agent_memory_eval as evaluator
 import agent_memory_eval_metadata as metadata
@@ -116,6 +121,57 @@ class ManifestTest(unittest.TestCase):
         manifest = evaluator.default_manifest()
         manifest["scenarios"][0]["points"] = 3
         with self.assertRaisesRegex(ValueError, "points by dimension"):
+            evaluator.validate_manifest(manifest)
+
+
+class Phase49EvidenceContractTest(unittest.TestCase):
+    def test_manifest_declares_mixed_recall_and_reasoning_isolation(self) -> None:
+        contract = evaluator.load_manifest(None)["phase49_evidence"]
+        self.assertEqual(contract["schema_id"], "aura.phase49-memory-evidence/v1")
+        self.assertEqual(
+            [scenario["id"] for scenario in contract["scenario_definitions"]],
+            ["mixed_tier_recall", "reasoning_isolation"],
+        )
+        self.assertEqual(
+            contract["otel_attributes"],
+            {
+                "effective_path": "memory.recall.effective_path",
+                "path": "memory.recall.path",
+            },
+        )
+
+    def test_baseline_keeps_tier_contribution_separate_from_backend_path(self) -> None:
+        manifest = evaluator.load_manifest(None)
+        report = evaluator.score(manifest, passing_suites(manifest), "deterministic", "a" * 40)
+        baseline = report["phase49_evidence"]["observations"]["baseline"]
+        mixed = baseline["mixed_tier_recall"]
+        self.assertEqual(mixed["status"], "observed_partial")
+        self.assertEqual(mixed["retrieval"]["effective_path"], "facts")
+        self.assertEqual(mixed["retrieval"]["path"], "hybrid")
+        self.assertEqual(mixed["tier_counts"], {"facts": 1, "conversations": 0, "reasoning": 0})
+        self.assertEqual(mixed["tier_ranks"], {"facts": [1], "conversations": [], "reasoning": []})
+        self.assertEqual(mixed["otel"]["memory.recall.effective_path"], "facts")
+        self.assertEqual(mixed["otel"]["memory.recall.path"], "hybrid")
+
+    def test_unobserved_reasoning_and_final_evidence_never_claim_pass(self) -> None:
+        manifest = evaluator.load_manifest(None)
+        evidence = evaluator.score(manifest, passing_suites(manifest), "deterministic", "a" * 40)["phase49_evidence"]
+        self.assertEqual(evidence["observations"]["baseline"]["reasoning_isolation"]["status"], "not_observed")
+        for scenario in evidence["observations"]["final"].values():
+            self.assertFalse(scenario["executed"])
+            self.assertEqual(scenario["status"], "not_observed")
+            self.assertIsNone(scenario["retrieval"]["effective_path"])
+            self.assertIsNone(scenario["retrieval"]["path"])
+
+    def test_manifest_rejects_conflated_or_invented_phase49_paths(self) -> None:
+        manifest = evaluator.default_manifest()
+        manifest["phase49_evidence"]["observations"]["baseline"]["mixed_tier_recall"]["retrieval"]["path"] = "facts"
+        with self.assertRaisesRegex(ValueError, "backend path"):
+            evaluator.validate_manifest(manifest)
+        manifest = evaluator.default_manifest()
+        final = manifest["phase49_evidence"]["observations"]["final"]["mixed_tier_recall"]
+        final["status"] = "pass"
+        with self.assertRaisesRegex(ValueError, "unobserved"):
             evaluator.validate_manifest(manifest)
 
 

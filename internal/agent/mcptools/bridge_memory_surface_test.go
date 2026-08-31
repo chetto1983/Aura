@@ -13,19 +13,25 @@ import (
 )
 
 func TestMemorySurfacePolicy_AliasKeepsIsolationAndHiddenSurface(t *testing.T) {
-	// D-27 (bridge_deferral.go): this fixture exposes exactly 1 model-facing
-	// tool (memory_recall; the other 3 are hidden by bridgePolicy.modelFacing),
-	// which is <= maxAlwaysLoadedMCPTools, so on a fresh budget it now earns an
+	// D-27 (bridge_deferral.go): this fixture mirrors all 10 server operations
+	// and exposes exactly 3 model-facing tools. Only memory_recall is retrieval;
+	// memory_upsert_fact and memory_forget remain separately classified writes.
+	// The count is <= maxAlwaysLoadedMCPTools, so on a fresh budget it now earns an
 	// always-loaded slot instead of the pre-amendment #123 unconditional
 	// Deferred:true.
 	resetLoadedSlotBudgetForTest()
 	var capturedMeta map[string]any
 	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "fixture", Version: "0.0.1"}, nil)
-	// Raw path-specific reads remain available to the host and CLI, but the
-	// model receives one deterministic read contract.
-	for _, name := range []string{"memory_reembed", "memory_search", "memory_digest"} {
-		server.AddTool(mustTool(name, "fixture", nil, nil), trivialToolHandler)
+	// Raw path-specific reads and hygiene operations remain available to the
+	// host and CLI, but the model receives one deterministic retrieval contract.
+	for _, name := range []string{
+		"graph_schema", "memory_digest", "memory_entities", "memory_facts_about",
+		"memory_merge_entities", "memory_reembed", "memory_search",
+	} {
+		server.AddTool(mustTool(name, "fixture", nil, &sdkmcp.ToolAnnotations{ReadOnlyHint: true}), trivialToolHandler)
 	}
+	server.AddTool(mustTool("memory_upsert_fact", "Store a fact.", nil, nil), trivialToolHandler)
+	server.AddTool(mustTool("memory_forget", "Forget a fact.", nil, nil), trivialToolHandler)
 	recallSchema := map[string]any{"type": "object", "properties": map[string]any{
 		"query": map[string]any{"type": "string"},
 	}}
@@ -68,12 +74,37 @@ func TestMemorySurfacePolicy_AliasKeepsIsolationAndHiddenSurface(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bridgeFromAdvertisedWithPolicy: %v", err)
 	}
-	if len(bridged) != 1 {
-		t.Fatalf("memory alias mounted %d tools, want only the unified recall tool", len(bridged))
+	if len(bridged) != 3 {
+		t.Fatalf("memory alias mounted %d tools, want one retrieval plus two mutation tools", len(bridged))
 	}
-	recall := bridged[0]
+	byName := make(map[string]tools.Tool, len(bridged))
+	for _, tool := range bridged {
+		byName[tool.Spec().Name] = tool
+	}
+	recall := byName["mem__memory_recall"]
+	if recall == nil {
+		t.Fatal("unified memory_recall retrieval tool is absent")
+	}
 	if got := recall.Spec().Name; got != "mem__memory_recall" {
 		t.Fatalf("aliased model name = %q, want mem__memory_recall", got)
+	}
+	if recall.Spec().Mutating {
+		t.Fatal("memory_recall is retrieval and must not be classified as a mutation")
+	}
+	for _, name := range []string{"mem__memory_upsert_fact", "mem__memory_forget"} {
+		tool := byName[name]
+		if tool == nil || !tool.Spec().Mutating {
+			t.Fatalf("%s must remain a separately classified mutation, got %#v", name, tool)
+		}
+	}
+	readCount := 0
+	for _, tool := range bridged {
+		if !tool.Spec().Mutating {
+			readCount++
+		}
+	}
+	if readCount != 1 {
+		t.Fatalf("model-facing memory retrieval operations = %d, want exactly memory_recall", readCount)
 	}
 	if recall.Spec().Deferred {
 		t.Fatal("memory alias recall exposes only 1 model-facing tool (<= the 3-tool ceiling) and must earn an always-loaded slot on a fresh budget: Deferred must be false (D-27)")
