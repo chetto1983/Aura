@@ -37,6 +37,9 @@ export default tseslint.config(
       'import-x/no-unresolved': 'off',
       'import-x/named': 'off',
       'import-x/namespace': 'off',
+      // Also a resolution rule: its legacy node resolver crashes on exports-map-only
+      // packages (read-excel-file/universal), and tsc already validates default exports.
+      'import-x/default': 'off',
       'import-x/no-named-as-default': 'off',
       'import-x/no-named-as-default-member': 'off',
       'import-x/order': [

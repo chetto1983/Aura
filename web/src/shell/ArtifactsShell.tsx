@@ -11,7 +11,7 @@ import { ResizableHandle, ResizablePanel } from '@/components/ui/resizable';
 // desktop ResizablePanel, and the mobile right Drawer. The state/wiring seam is in
 // ./useArtifactsPanel; ArtifactsPanel itself is built in plan 06.
 
-// D-08: the panel (and its docx-preview/SheetJS renderer chunks) is a lazy chunk — it never lands
+// D-08: the panel (and its docx-preview/read-excel-file renderer chunks) is a lazy chunk — it never lands
 // in the main bundle, only when the panel first mounts (toggle open or auto-open).
 const ArtifactsPanel = lazy(() =>
   import('../chat/artifacts/ArtifactsPanel').then((mod) => ({ default: mod.ArtifactsPanel })),

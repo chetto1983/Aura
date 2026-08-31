@@ -10,16 +10,15 @@ import { SharePage } from './SharePage';
 // security assertions (null-origin iframe, SVG download-only, XSS-as-escaped-text,
 // the oracle-free 404/401) as the centrepiece, per the plan's own acceptance criteria.
 //
-// docx-preview/xlsx are MOCKED (mirrors renderers.test.tsx) purely to exercise every
-// previewKind branch in renderArtifactKind's switch without loading the real heavy
+// docx-preview/read-excel-file are MOCKED (mirrors renderers.test.tsx) purely to exercise
+// every previewKind branch in renderArtifactKind's switch without loading the real heavy
 // parsers — the security-critical kinds (html/svg/image) get full assertions above;
 // these two are presence-only, proving the dispatch wires up, not re-testing 37B.
 vi.mock('docx-preview', () => ({
   renderAsync: vi.fn(() => Promise.resolve({})),
 }));
-vi.mock('xlsx', () => ({
-  read: vi.fn(() => ({ SheetNames: ['Sheet1'], Sheets: { Sheet1: {} } })),
-  utils: { sheet_to_html: vi.fn(() => '<table></table>') },
+vi.mock('read-excel-file/universal', () => ({
+  default: vi.fn(() => Promise.resolve([{ sheet: 'Sheet1', data: [[1]] }])),
 }));
 
 const baseSnapshot: Snapshot = {
@@ -312,7 +311,7 @@ describe('SharePage — public tier (/s/:token)', () => {
     });
   });
 
-  it('renders an xlsx artifact through SheetJS in an inert-sandbox iframe', async () => {
+  it('renders an xlsx artifact through read-excel-file in an inert-sandbox iframe', async () => {
     stubFetch({
       snapshot: {
         ...baseSnapshot,

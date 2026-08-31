@@ -16,8 +16,7 @@ updates:
           - minor
           - patch
 
-  # Web UI npm dependencies (web/package-lock.json). The `xlsx` SheetJS CDN
-  # tarball is a URL dependency Dependabot cannot bump: it stays manual.
+  # Web UI npm dependencies (web/package-lock.json).
   - package-ecosystem: npm
     directory: "/web"
     schedule:

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { renderAsync } from 'docx-preview';
-import { read } from 'xlsx';
+import readXlsxFile from 'read-excel-file/universal';
 import '../../../i18n/i18n'; // side-effect: initialise i18next so preview t() keys resolve
 import ImagePreview from './ImagePreview';
 import PdfPreview from './PdfPreview';
@@ -11,18 +11,28 @@ import { AssetSourceContext, type AssetSource } from './assetSourceContext';
 import DocxPreview from './DocxPreview';
 import XlsxPreview from './XlsxPreview';
 
-// The six lazy per-MIME renderers (D-07/D-08/D-09). docx-preview and xlsx are the heavy
-// deps confined to their own chunks — here they are MOCKED (vi.mock, hoisted above the
+// The six lazy per-MIME renderers (D-07/D-08/D-09). docx-preview and read-excel-file are the
+// heavy deps confined to their own chunks — here they are MOCKED (vi.mock, hoisted above the
 // imports) so the suite asserts the wrapper calls them with the right args without loading
 // the real libraries (Pitfall 4, which would drag the 85% aggregate). The security-critical
 // surface is pinned directly: HtmlPreview's null-origin sandbox and XlsxPreview's empty
-// sandbox + escaped sheet name.
+// sandbox + escaped sheet name + escaped cell values (the escaping is OURS now — the library
+// returns raw values, unlike SheetJS's sheet_to_html).
 vi.mock('docx-preview', () => ({
   renderAsync: vi.fn(() => Promise.resolve({})),
 }));
-vi.mock('xlsx', () => ({
-  read: vi.fn(() => ({ SheetNames: ['Q1 <Ledger>'], Sheets: { 'Q1 <Ledger>': {} } })),
-  utils: { sheet_to_html: vi.fn(() => '<table><tr><td>42</td></tr></table>') },
+vi.mock('read-excel-file/universal', () => ({
+  default: vi.fn(() =>
+    Promise.resolve([
+      {
+        sheet: 'Q1 <Ledger>',
+        data: [
+          ['<img src=x onerror=alert(1)>', 42, null],
+          [new Date('2026-02-03T00:00:00.000Z'), new Date('2026-02-03T04:05:06.000Z'), true],
+        ],
+      },
+    ]),
+  ),
 }));
 
 interface FetchShape {
@@ -62,7 +72,7 @@ beforeEach(() => {
   URL.createObjectURL = vi.fn(() => 'blob:mock');
   URL.revokeObjectURL = vi.fn();
   vi.mocked(renderAsync).mockClear();
-  vi.mocked(read).mockClear();
+  vi.mocked(readXlsxFile).mockClear();
 });
 
 afterEach(() => {
@@ -262,7 +272,7 @@ describe('DocxPreview (D-08 / T-37B-12)', () => {
 });
 
 describe('XlsxPreview (D-08 / T-37B-09)', () => {
-  it('parses with SheetJS and renders an EMPTY-sandbox iframe with the escaped sheet name', async () => {
+  it('parses with read-excel-file and renders an EMPTY-sandbox iframe with everything escaped', async () => {
     stubFetch({ buffer: new ArrayBuffer(16) });
     const { container } = render(<XlsxPreview {...props} fileName="book.xlsx" />);
 
@@ -270,11 +280,19 @@ describe('XlsxPreview (D-08 / T-37B-09)', () => {
       expect(container.querySelector('iframe')).not.toBeNull();
     });
     const frame = iframeOf(container);
-    expect(vi.mocked(read)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(readXlsxFile)).toHaveBeenCalledTimes(1);
     expect(frame.getAttribute('sandbox')).toBe('');
     const srcdoc = frame.getAttribute('srcdoc') ?? '';
-    // Sheet NAME is escaped by us (< and > → entities); the cell table is included verbatim.
+    // Sheet NAME and cell VALUES are escaped by us — a hostile cell must never survive as
+    // markup in the srcDoc, only as entities.
     expect(srcdoc).toContain('Q1 &lt;Ledger&gt;');
+    expect(srcdoc).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(srcdoc).not.toContain('<img');
+    expect(srcdoc).toContain('<td>42</td>');
+    expect(srcdoc).toContain('<td></td>'); // null cell → empty
+    expect(srcdoc).toContain('<td>2026-02-03</td>'); // midnight-UTC date → date only
+    expect(srcdoc).toContain('<td>2026-02-03T04:05:06.000Z</td>'); // timed date → full ISO
+    expect(srcdoc).toContain('<td>true</td>');
     expect(srcdoc).toContain('<table>');
   });
 
@@ -284,10 +302,9 @@ describe('XlsxPreview (D-08 / T-37B-09)', () => {
     expect(screen.getByRole('status')).toBeTruthy();
   });
 
-  it('emits an empty table for a sheet name with no matching worksheet', async () => {
+  it('emits a section without a table for a sheet with zero rows', async () => {
     stubFetch({ buffer: new ArrayBuffer(16) });
-    // SheetNames lists a name absent from Sheets → the `sheet ? … : ''` false branch.
-    vi.mocked(read).mockReturnValueOnce({ SheetNames: ['Ghost'], Sheets: {} });
+    vi.mocked(readXlsxFile).mockResolvedValueOnce([{ sheet: 'Ghost', data: [] }]);
     const { container } = render(<XlsxPreview {...props} fileName="book.xlsx" />);
     await waitFor(() => {
       expect(container.querySelector('iframe')).not.toBeNull();
@@ -297,11 +314,9 @@ describe('XlsxPreview (D-08 / T-37B-09)', () => {
     expect(srcdoc).not.toContain('<table>');
   });
 
-  it('shows the error state when SheetJS parsing throws', async () => {
+  it('shows the error state when parsing rejects', async () => {
     stubFetch({ buffer: new ArrayBuffer(16) });
-    vi.mocked(read).mockImplementationOnce(() => {
-      throw new Error('corrupt workbook');
-    });
+    vi.mocked(readXlsxFile).mockRejectedValueOnce(new Error('corrupt workbook'));
     render(<XlsxPreview {...props} fileName="book.xlsx" />);
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeTruthy();
