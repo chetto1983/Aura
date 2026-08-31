@@ -18,6 +18,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -88,16 +89,30 @@ func (a *LlmAgent) gateCompletion(ic InvocationContext, answer string) (veto boo
 	// identifiers -- a correct DONE verdict on an unsendable reply.
 	if veto, feedback := a.gateReplyHygiene(answer); veto {
 		a.completionAttempts++
+		slog.Info("agent completion gate: answer vetoed",
+			"source", "reply_hygiene", "attempt", a.completionAttempts, "answer_runes", utf8.RuneCountInString(answer))
 		return true, feedback
 	}
 	done, reason, ok := a.runCompletionCritic(ic, answer)
-	if !ok || done {
-		return false, "" // fail-open, or the deliverable is verified
+	if !ok {
+		// Fail-open. Invisible until now, which matters: a verifier that is quietly
+		// broken looks exactly like a verifier that keeps approving.
+		slog.Warn("agent completion gate: critic unavailable, accepting the answer unchecked")
+		return false, ""
+	}
+	if done {
+		return false, "" // the deliverable is verified
 	}
 	a.completionAttempts++
 	if strings.TrimSpace(reason) == "" {
 		reason = "the requested deliverable is not present in the tool results"
 	}
+	// The gate used to log NOTHING — not a veto, not a reason, not the fail-open. An
+	// operator watching drafts appear and vanish could only say "it seems to always
+	// discard"; there was no number to check that against and no verdict to read.
+	slog.Info("agent completion gate: answer vetoed",
+		"source", "critic", "attempt", a.completionAttempts, "verdict", reason,
+		"answer_runes", utf8.RuneCountInString(answer))
 	if a.completionAttempts >= completionMaxAttempts {
 		return true, completionSecondVetoPrefix + reason + "\nState in one sentence which action did not run and why — " +
 			"do not claim completion. Then perform that action now, verify it, and only then call text_response."
