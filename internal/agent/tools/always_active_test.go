@@ -71,11 +71,27 @@ import (
 //
 // Both are promotion candidates once their descriptions are cut to the reference size. Matching
 // the set is not enough on its own: the bytes are the other half.
+//
+// 2026-08-31: shell_poll and shell_kill were PROMOTED, on read_tool_output's argument rather
+// than on a frequency one. A background shell_exec hands the model a result that names them
+// literally -- "read its final output with shell_poll (shell_id=%q). Stop it with shell_kill"
+// (shell_exec.go) -- and so does the exit notification. That is the same shape as L1's eviction
+// pointer: a runtime pointer that names a tool the manifest does not carry tells the model to
+// call something it cannot call. The two were deferred while read_tool_output was always-loaded
+// for exactly that reason, which was an inconsistency, not a budget decision. They are also the
+// two cheapest entries in the whole set -- 157 + 85 = 242 tokens measured on the live registry
+// (go test -tags measure ./cmd/aura -run TestMeasureToolWeight), against a 4,703-token default
+// manifest -- so the fix costs about 5%.
+//
+// The `all` sweep below also gained plugin_pack, skill_manage, shell_poll, shell_kill and
+// swarm_status. They were absent, so a tool outside the list could go non-deferred without this
+// budget test -- the one place the set is supposed to live -- ever seeing it.
 func TestOnlyTheWorkingSetIsAlwaysActive(t *testing.T) {
 	t.Parallel()
 	want := []string{
 		"ask_user", "document_open", "document_search", "patch", "read_file",
 		"read_tool_output", "search_files", "send_file", "shell_exec",
+		"shell_kill", "shell_poll",
 		"skill",
 		"text_response", "tool_search", "write_file",
 	}
@@ -83,10 +99,11 @@ func TestOnlyTheWorkingSetIsAlwaysActive(t *testing.T) {
 	// Every tool the daemon can register, constructed the cheap way (no wiring): Spec() is
 	// a pure function of the value, and Deferred never depends on collaborators.
 	all := []Tool{
-		&AskUser{}, &CurrentTime{}, &DocumentOpen{}, &DocumentSearch{}, &Patch{}, &SearchFiles{},
-		&ReadFile{}, &WriteFile{}, &ReadToolOutput{}, &SendFile{}, &ShellExec{},
-		&SkillTool{}, &SwarmSpawn{}, &TaskTool{}, &TextResponse{}, &TodoTool{}, &ToolSearch{},
-		&WebFetch{}, &WebSearch{},
+		&AskUser{}, &CurrentTime{}, &DocumentOpen{}, &DocumentSearch{}, &PackTool{}, &Patch{},
+		&SearchFiles{}, &ReadFile{}, &WriteFile{}, &ReadToolOutput{}, &SendFile{},
+		&ShellExec{}, &ShellPoll{}, &ShellKill{},
+		&SkillTool{}, &SkillManageTool{}, &SwarmSpawn{}, &SwarmStatus{}, &TaskTool{},
+		&TextResponse{}, &TodoTool{}, &ToolSearch{}, &WebFetch{}, &WebSearch{},
 	}
 
 	var got []string

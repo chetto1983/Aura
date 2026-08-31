@@ -148,7 +148,13 @@ func (p *ShellPoll) Spec() Spec {
   },
   "required": ["shell_id"]
 }`),
-		Deferred: true,
+		// Not deferred, for read_tool_output's reason: a background shell_exec RESULT
+		// names this tool by hand ("read its final output with shell_poll (shell_id=...)"),
+		// and so does the exit notification. A pointer the model is handed at runtime must
+		// be callable when it is read -- deferring it makes the runtime text instruct the
+		// model to call something absent from its manifest, which is the exact footgun
+		// read_tool_output is always-loaded to avoid.
+		Deferred: false,
 	}
 }
 
@@ -245,7 +251,9 @@ func (k *ShellKill) Spec() Spec {
   },
   "required": ["shell_id"]
 }`),
-		Deferred:       true,
+		// Not deferred, for the same reason as shell_poll above: shell_exec's own
+		// background result tells the model to "Stop it with shell_kill".
+		Deferred:       false,
 		Mutating:       true,
 		OperationScope: OperationScopeAgent, OperationNormalizer: OperationNormalizerCanonical,
 		ReplayPolicy: ReplayToolResult,
