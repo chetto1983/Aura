@@ -80,6 +80,11 @@ func (c *Client) EnsureMemorySchema(ctx context.Context) error {
 			return fmt.Errorf("arcadedb: ensure memory schema: %w", err)
 		}
 	}
+	for _, statement := range conversationSchemaStatements() {
+		if _, err := c.Command(ctx, statement, nil); err != nil {
+			return fmt.Errorf("arcadedb: ensure conversation memory schema: %w", err)
+		}
+	}
 	return nil
 }
 
