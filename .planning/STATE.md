@@ -4,14 +4,14 @@ milestone: v2.1.0
 current_phase: 49
 current_phase_name: Memory tiers
 status: planning
-stopped_at: Phase 51 complete, ready to plan Phase 49
-last_updated: "2026-08-30T16:49:01.672Z"
+stopped_at: Phase 49 context gathered
+last_updated: "2026-08-31T07:44:11.128Z"
 last_activity: 2026-08-30
 last_activity_desc: Phase 51 complete, transitioned to Phase 49
-state_head: f99a5cbcb716d800fae1f424bd680ab57c1f3bf7
+state_head: b119efeccd1b73fd4b8fcc9df5a3cf75a61fa11e
 progress:
   total_phases: 8
-  completed_phases: 4
+  completed_phases: 2
   total_plans: 48
   completed_plans: 48
 milestone_name: HERMES-CLAUDE_PARITY
@@ -292,12 +292,12 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-30T16:49:01Z
-Stopped at: Phase 51 complete, ready to plan Phase 49
+Last session: 2026-08-31T07:44:10.732Z
+Stopped at: Phase 49 context gathered
 The accepted fresh-image delivery envelope is reconciled in 51-VALIDATION.md at 6/6 and 9.9/10.
 The final image passed the complete repository Playwright suite (145 pass, 39 intentional skips,
 zero failures) and four hot-route cycles without a restart or an OpenRouter request.
 Crash-after-partial-side-effects remains an explicit residual risk and is not an exactly-once claim.
 
-Resume file: None
+Resume file: .planning/phases/49-memory-tiers/49-CONTEXT.md
 Next action: insert, discuss, specify, and plan the provider-native subscription phase through GSD.
