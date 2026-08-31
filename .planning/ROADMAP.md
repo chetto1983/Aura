@@ -487,15 +487,58 @@ already exhibited once.
   3. After a turn involving extended reasoning, the ArcadeDB graph shows the reasoning trace persisted with edges to the entities it touched, and a later turn's injected context does NOT include that reasoning content unless explicitly retrieved.
   4. A durable fact revealed mid-task (stated during a live shell/file task) is captured as a memory fact by the time the task completes — checking its recorded provenance shows it was captured directly, never sourced from a reasoning-trace summarizer.
 
-**Plans**: 6 plans
+**Plans**: 14 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 49-01-PLAN.md — Measure the live baseline, commit Amendment #181 independently, and freeze the unified retrieval contract.
-- [ ] 49-02-PLAN.md — Project PostgreSQL-authoritative conversation turns into an identity-isolated searchable ArcadeDB tier.
-- [ ] 49-03-PLAN.md — Fuse fact and conversation evidence behind one observable `memory_recall` surface.
-- [ ] 49-04-PLAN.md — Persist entity-linked reasoning graphs and enforce explicit-only retrieval.
-- [ ] 49-05-PLAN.md — Capture direct-evidence facts through an ordered queue with a terminal durability barrier.
-- [ ] 49-06-PLAN.md — Publish an atomic final-state multi-operation memory batch API.
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 49-02-PLAN.md — Build PostgreSQL-authoritative projection feeds, graph primitives, and replay/reconciliation semantics.
+- [ ] 49-06-PLAN.md — Build the pure final-state compiler and single-transaction memory batch engine.
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 49-07-PLAN.md — Wire conversation projection after PostgreSQL commits and reconcile crash gaps without an outbox.
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 49-03-PLAN.md — Build ArcadeDB-native mixed-tier fusion, bounded browse/cursors, and separate tier/backend retrieval telemetry.
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 49-08-PLAN.md — Carry host-only active context and revalidate exclusion on the production recall route.
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 49-04-PLAN.md — Register reasoning schema, wire explicit-only retrieval, and freeze exact 30-day/7-day retention.
+- [ ] 49-13-PLAN.md — Prove live mixed-tier recall, active-context exclusion, and query/entity/fallback backend-path versus tier-path OTel agreement.
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 49-12-PLAN.md — Build and persist authorized provider-visible reasoning traces after source-turn commit.
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [ ] 49-09-PLAN.md — Wire reasoning expiry/deletion lifecycle and prove explicit-only isolation live.
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [ ] 49-05-PLAN.md — Produce captures from exact structured production events and enforce the ordered terminal barrier.
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
+- [ ] 49-10-PLAN.md — Persist AcceptedCapture with idempotent temporal and principal-authority semantics.
+
+**Wave 11** *(blocked on Wave 10 completion)*
+
+- [ ] 49-14-PLAN.md — Compose the production capture queue and prove real-event terminal durability live.
+
+**Wave 12** *(blocked on Wave 11 completion)*
+
+- [ ] 49-11-PLAN.md — Publish/prove the batch API and run real Aura conversation, final ancestry, observability, coverage, goleak, mutation, and score gates.
 
 ### Phase 50: Context ladder legibility
 

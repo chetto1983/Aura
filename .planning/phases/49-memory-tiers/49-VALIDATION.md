@@ -1,115 +1,91 @@
 ---
 phase: 49
 slug: memory-tiers
-# status lifecycle: draft (seeded by plan-phase) → validated (set by validate-phase §6)
-# audit-milestone §5.5 distinguishes NOT-VALIDATED (draft) from PARTIAL (validated + nyquist_compliant: false) (#2117)
 status: draft
 nyquist_compliant: false
 wave_0_complete: false
 created: 2026-08-31
+revised: 2026-08-31
+plans: 14
+tasks: 32
 ---
 
 # Phase 49 — Validation Strategy
 
-> Per-phase validation contract for feedback sampling during execution.
-> Seeded from `49-RESEARCH.md` §Validation Architecture. Task rows are filled by the planner.
+## Test infrastructure and cadence
 
----
+| Property | Contract |
+|---|---|
+| Framework | Go `testing`, `go.uber.org/goleak`, `pgregory.net/rapid`; Python `unittest`; live ArcadeDB build tag |
+| Per-task gates | Named focused test, `go vet ./...`, `go build ./...`, touched-package unit, touched-package race |
+| Live gates | `-race -tags=arcadedb_integration -count=1`; missing dependencies/evidence must fail, never skip-green |
+| Final gates | no-skip authenticated running-Aura conversation plus Tempo/PostgreSQL/ArcadeDB inspection; `python scripts/agent_memory_eval.py --tier all`; WSL `make quality-full`; `scripts/coverage_docker.sh`; `make critical-mutation` |
+| Quality thresholds | Full tagged coverage ≥85% plus package policy; critical mutation ≥70%; the three named running-Aura scenarios emit exactly 1/3/2 terminal answers and every one of the six per-response scores is >9.8 |
 
-## Test Infrastructure
+After every task, run its exact `<verify><automated>` command. All 32 commands are fail-fast with `set -euo pipefail`; focused Go gates execute `go test -list` and assert a positive named-test count before the test run, while Python evaluator-unit gates capture native `unittest` output and assert a positive `Ran N tests` count. After each wave, run the affected live tier. Before verify-work, run Plan 49-11-T3 exactly. Every verify has an explicit non-zero failure direction and rejects zero tests, skips, or empty evidence where applicable.
 
-| Property | Value |
-|----------|-------|
-| **Framework** | Go `testing`; `go.uber.org/goleak v1.3.0`; `pgregory.net/rapid v1.3.0` |
-| **Config file** | Build-tagged package tests; evaluator in `scripts/agent_memory_eval.py` |
-| **Quick run command** | `go test ./internal/arcadedb ./internal/conversations ./internal/runner ./cmd/arcadedb-mcp` |
-| **Full suite command** | `python scripts/agent_memory_eval.py --tier all` followed by WSL `make quality-full` and `bash scripts/coverage_docker.sh` |
-| **Coverage gate** | Full tagged matrix ≥85% aggregate plus package-local policy; mutation spot-check ≥70% on critical files |
-| **Estimated runtime** | Package baseline is the per-task fast path; live evaluator and quality/coverage are wave and phase gates |
+## Per-task verification map
 
----
+| Task ID | Wave | Requirements | Secure behavior | Primary automated target | Status |
+|---|---:|---|---|---|---|
+| 49-01-T1 | 1 | MEM-06 | isolated Amendment #181 plus six-path ancestry/non-proofs | repository diff-tree/path logs + Go gates | pending |
+| 49-01-T2 | 1 | TOOL-05 | one retrieval surface; evaluator cannot skip empty evidence | `TestMemorySurfacePolicy_`, evaluator unit + Go gates | pending |
+| 49-02-T1 | 2 | MEM-01 | typed eligible projection and idempotent graph fragment | `Test(ProjectionTurnEligibility|ConversationSchemaStatements)` + Go gates | pending |
+| 49-02-T2 | 2 | MEM-01 | authoritative paging/edit/delete/rebuild contract | conversation projection live + Go gates | pending |
+| 49-06-T1 | 2 | HARN-05 | final-state validation and complete rollback | `TestMemoryBatch_(FinalStateTracer|RollbackFirstError|IdempotentReplay)` + Go gates | pending |
+| 49-06-T2 | 2 | HARN-05 | whole-decision conflict retry and no partial state | `TestMemoryBatch_(ConflictRetry|LateRollback|CrossIdentity|IdempotentReplay|NoPartialObserver)` + Go gates | pending |
+| 49-07-T1 | 3 | MEM-01 | EnsureMemorySchema registers complete conversation schema | `TestEnsureMemorySchemaRegistersConversationSchema` + Go gates | pending |
+| 49-07-T2 | 3 | MEM-01 | projection offered only after source commit | `Test(ConversationProjectionPostCommit|ConversationProjectionFailSoft|ChatBootMemoryProjection)` + Go gates | pending |
+| 49-07-T3 | 3 | MEM-01 | bounded crash replay converges without deleting authority | `Test(ConversationProjectionCrashRecovery|ConversationProjectionBootReconcile|ConversationProjectionPeriodicReconcile)` + Go gates | pending |
+| 49-03-T1 | 4 | MEM-02, TOOL-05 | native `vector.fuse`; tier effective path separate from query/entity/fallback backend path; response/OTel equality | `Test(MemoryRecallMixedTierTracer|MemoryRecallVectorFuse|MemoryRecallBackendPath|MemoryRecallAbstains)` + Go gates | pending |
+| 49-03-T2 | 4 | MEM-02 | unsigned/untrusted bounded cursor revalidates identity | `Test(MemoryRecallModeContract|RecallCursor|MemoryRecallWindow)` + Go gates | pending |
+| 49-08-T1 | 5 | MEM-02 | fresh host-only active-source carrier per call | `Test(SessionIDFromContext|RecallContextHeaders)` + Go gates | pending |
+| 49-08-T2 | 5 | MEM-02, TOOL-05 | server decodes only exclusion and revalidates ownership | `Test(RecallContextHeaders|MemoryRecallActiveSourceHeader|MemoryRecallSuppressesActiveConversation)` + Go gates | pending |
+| 49-04-T1 | 6 | MEM-03 | EnsureMemorySchema registers reasoning schema; amendment isolation plus ancestry only for already-committed protected paths, permitting untouched future paths | `Test(EnsureMemorySchemaRegistersReasoningSchema|ReasoningSchemaStatements)` + intermediate ancestry + Go gates | pending |
+| 49-04-T2 | 6 | MEM-03, CTX-05 | explicit-owner reasoning only; bounded/redacted fields | `Test(ReasoningRecallExplicitOnly|ReasoningToolMetadataBounded|ReasoningRecallIdentity)` + Go gates | pending |
+| 49-04-T3 | 6 | MEM-03 | exact success=30d, failed/cancelled=7d | `Test(ReasoningRetentionPolicy|ReasoningTerminalExpiry)` + Go gates | pending |
+| 49-13-T1 | 6 | MEM-02, TOOL-05 | live mixed recall excludes active/foreign sources; query/entity/fallback proves hybrid/graph/lexical separate from tier contribution | `TestAgentMemoryMCPLive_(MixedTierRecall|BackendPath)` + Go gates | pending |
+| 49-13-T2 | 6 | MEM-02, TOOL-05 | response and OTel separately agree on effective/backend paths and counts for query/entity/fallback | evaluator unit + `--tier mixed_tier_recall` + Go gates | pending |
+| 49-12-T1 | 7 | MEM-03 | authorized provider-visible post-commit trace; amendment isolation plus ancestry for already-committed protected paths only | `TestReasoningGraphTracer` + intermediate ancestry + Go gates | pending |
+| 49-12-T2 | 7 | MEM-03, CTX-05 | bounded tool metadata/TOUCHED; retry discard | `Test(ReasoningGraphRetryDiscard|ReasoningGraphToolMetadata)` + Go gates | pending |
+| 49-09-T1 | 8 | MEM-03 | production lifecycle applies exact 30d/7d TTL | `Test(ReasoningRetentionWorker|ReasoningRetentionBoot|ReasoningRetentionClose)` + Go gates | pending |
+| 49-09-T2 | 8 | MEM-03, MEM-06 | source deletion dominates TTL and deletes whole graph | live `DeletionPrecedence|ExpiryDeleteRace` + Go gates | pending |
+| 49-09-T3 | 8 | CTX-05 | graph-resident reasoning absent from automatic context | live `ExplicitIsolation|FailedCancelledRetention`, history test + Go gates | pending |
+| 49-05-T1 | 9 | AUTO-03, CTX-05 | exact upsert/write/patch AcceptedCapture producers | `Test(AcceptedCaptureProducer|MemoryUpsertAcceptedCapture|DurableArtifactAcceptedCapture)` + Go gates | pending |
+| 49-05-T2 | 9 | AUTO-03 | ordered watermark barrier; discard/stop safety | `Test(MemoryCaptureQueueOrder|MemoryCaptureTerminalBarrier|MemoryCaptureRetryDiscard|MemoryCaptureStop)` + Go gates | pending |
+| 49-10-T1 | 10 | AUTO-03, CTX-05 | idempotent direct provenance and source defense | `TestAcceptedCapture_(Tracer|Idempotent|Retry|SourceDefense)` + Go gates | pending |
+| 49-10-T2 | 10 | AUTO-03 | temporal contradictions and principal-only supersession | `TestAcceptedCapture_(Contradiction|WorkerAuthority|PrincipalAuthority|ProvenanceEnrichment)` + Go gates | pending |
+| 49-14-T1 | 11 | AUTO-03 | one bounded production queue and truthful close | `Test(MemoryCaptureBoot|MemoryCaptureClose|MemoryCaptureSinkFailure)` + Go gates | pending |
+| 49-14-T2 | 11 | AUTO-03, CTX-05 | real structured events durable before completion | live `TestMemoryCaptureLive_(ExplicitUserEvent|DurableArtifactEvent|TerminalBarrier)` + Go gates | pending |
+| 49-11-T1 | 12 | HARN-05 | bounded identity-free public batch/risk schema | `Test(MemoryBatchTool|MemoryBatchRisk|MemorySurfacePolicy_)` + Go gates | pending |
+| 49-11-T2 | 12 | HARN-05 | live rollback/concurrency/replay has no partial state | live `TestMemoryBatchLive_` and published batch route + Go gates | pending |
+| 49-11-T3 | 12 | all | final non-empty six-path ancestry; exact 1/3/2 terminal-answer counts across the three named authenticated Aura scenarios; six unique observed-to-scored response IDs; every per-response score >9.8; correlated Tempo/PG/ArcadeDB; coverage/mutation | exact Plan 49-11-T3 command and report assertion | pending |
 
-## Sampling Rate
+Task coverage: **32/32** tasks have an automated command, explicit `<fails_when>`, machine-checkable `<acceptance_criteria>`, and `<done>`.
 
-- **After every task commit:** Run the quick four-package baseline, plus `go vet ./...`, `go build ./...`, and `go test -race ./internal/<touched package>/` for each touched Go package.
-- **After every plan wave:** Run touched live integration tiers, `go test -race -tags=arcadedb_integration -count=1 ./internal/arcadedb/`, the published MCP live test, and the deterministic agent-memory evaluator.
-- **Before `$gsd-verify-work`:** Run `python scripts/agent_memory_eval.py --tier all`, WSL `make quality-full`, `bash scripts/coverage_docker.sh`, goleak, and mutation spot-checks on projection, recall isolation, capture sequencing/barrier, and batch final-state logic.
-- **Phase gate:** Drive the real past-ladder recall, explicit-only reasoning retrieval, mid-task shell/file capture, and atomic rollback/concurrency scenarios on the live stack; score the real E2E above 9.8.
-- **Max feedback latency:** Keep the daemon-free package baseline in the per-task loop; daemon-backed and full-matrix checks run at wave boundaries.
+## Requirement → evidence map
 
----
+| Requirement | Plans | Final evidence |
+|---|---|---|
+| MEM-01 | 02, 07, 11 | schema registration, post-commit projection, crash convergence, final all-tier gate |
+| MEM-02 | 03, 08, 13, 11 | native fusion, cursor bounds, host exclusion, live mixed recall |
+| MEM-03 | 04, 12, 09, 11 | schema registration, production trace builder, exact retention/lifecycle, final gate |
+| MEM-06 | 01, 04, 09, 11 | isolated amendment plus exact six protected-path ancestry |
+| TOOL-05 | 01, 03, 08, 13, 11 | one retrieval surface; tier `effective_path` distinct from actual graph/hybrid/lexical backend `path`; query/entity/fallback response/OTel equality; abstention and evaluator |
+| AUTO-03 | 05, 10, 14, 11 | exact producers, sink semantics, production barrier/live proof |
+| CTX-05 | 04, 05, 09, 10, 12, 14, 11 | zero automatic reasoning reads and no reasoning-derived capture |
+| HARN-05 | 06, 11 | final-state engine, public typed tool, live atomicity |
 
-## Per-Task Verification Map
+## Wave-0 and sign-off
 
-| Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
-|---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 49-01-T1 | 01 | 1 | MEM-06 | T-4901-01/02 | Isolated measured amendment ancestor with explicit non-proofs | repository | `bash -lc 'grep -qE "^## §.*\(Amendment #181, 2026-08-31\)" prd.md && grep -q "extends amendment #91" prd.md && grep -q "What this measurement does NOT prove" prd.md && grep -q "production semantic quality" prd.md'` | ⚠️ target tracked | ⬜ pending |
-| 49-01-T2 | 01 | 1 | TOOL-05 | T-4901-04 | Unified retrieval surface and no skip-green evaluator | unit/contract | `python -m unittest scripts.agent_memory_eval_test && go test ./internal/agent/mcptools -run '^TestMemorySurfacePolicy_' -count=1 -v` | ⚠️ cases pending | ⬜ pending |
-| 49-02-T1 | 02 | 2 | MEM-01 | T-4902-01/02/03 | Eligible projection is idempotent and identity-isolated | tracer/unit | `go test ./internal/conversations ./internal/arcadedb ./internal/runner -run 'Test(ProjectionTurnEligibility|ConversationProjectionTracer)' -count=1 -v` | ❌ Wave 0 | ⬜ pending |
-| 49-02-T2 | 02 | 2 | MEM-01 | T-4902-04 | Post-commit ordered projection is fail-soft | unit/goleak | `go test ./internal/runner ./cmd/aura -run 'Test(ConversationProjectionPostCommit|ConversationProjectionFailSoft|ChatBootMemoryProjection)' -count=1 -v` | ❌ Wave 0 | ⬜ pending |
-| 49-02-T3 | 02 | 2 | MEM-01 | T-4902-02/05 | Restart/edit/delete convergence from PostgreSQL | live/race | `go test -race -tags=arcadedb_integration -count=1 ./internal/arcadedb/ -run '^TestConversationProjectionLive_' -v` | ❌ Wave 0 | ⬜ pending |
-| 49-06-T1 | 06 | 2 | HARN-05 | T-4906-02/03 | Final-state batch commits once or rolls back | tracer/unit | `go test ./internal/arcadedb -run 'TestMemoryBatch_(FinalStateTracer|RollbackFirstError|IdempotentReplay)' -count=1 -v` | ❌ Wave 0 | ⬜ pending |
-| 49-06-T2 | 06 | 2 | HARN-05 | T-4906-01/04 | Identity-free API has correct risk/replay policy | unit/contract | `go test ./cmd/arcadedb-mcp ./internal/agent/mcptools -run 'Test(MemoryBatchTool|MemoryBatchRisk|MemorySurfacePolicy_)' -count=1 -v` | ❌ Wave 0 | ⬜ pending |
-| 49-06-T3 | 06 | 2 | HARN-05 | T-4906-02/03/05 | Concurrent retries expose no partial state | live/race | `go test -race -tags=arcadedb_integration -count=1 ./internal/arcadedb/ -run '^TestMemoryBatchLive_' -v` | ❌ Wave 0 | ⬜ pending |
-| 49-03-T1 | 03 | 3 | MEM-02, TOOL-05 | T-4903-03/05/06 | Deterministic mixed RRF and abstention | tracer/unit | `go test ./internal/arcadedb ./cmd/arcadedb-mcp -run 'Test(MemoryRecallMixedTierTracer|ReciprocalRankFuse|MemoryRecallAbstains)' -count=1 -v` | ❌ Wave 0 | ⬜ pending |
-| 49-03-T2 | 03 | 3 | MEM-02 | T-4903-01/02 | Host-derived active conversation is excluded | unit/contract | `go test ./internal/agent/tools ./internal/agent/mcptools ./cmd/arcadedb-mcp -run 'Test(SessionIDFromContext|RecallContextHeaders|MemoryRecallSuppressesActiveConversation)' -count=1 -v` | ❌ Wave 0 | ⬜ pending |
-| 49-03-T3 | 03 | 3 | MEM-02, TOOL-05 | T-4903-02/04/05 | Live mixed result and OTel path agree | live/race/E2E | `go test -race -tags=arcadedb_integration -count=1 -run '^TestAgentMemoryMCPLive_MixedTierRecall$' ./cmd/arcadedb-mcp/ -v` | ❌ Wave 0 | ⬜ pending |
-| 49-04-T1 | 04 | 4 | MEM-03 | T-4904-01/02/03 | Amendment-gated trace persists post-commit | tracer/repository | `bash -lc 'amend=$(git log --format=%H --grep="Amendment #181" -n 1); test -n "$amend" && git merge-base --is-ancestor "$amend" HEAD && go test ./internal/runner -run "^TestReasoningGraphTracer$" -count=1 -v'` | ❌ Wave 0 | ⬜ pending |
-| 49-04-T2 | 04 | 4 | MEM-03, CTX-05 | T-4904-01/04/06 | Explicit-only bounded reasoning; automatic paths untouched | unit/structural | `go test ./internal/arcadedb ./cmd/arcadedb-mcp ./internal/conversations -run 'Test(ReasoningRecallExplicitOnly|ReasoningToolMetadataBounded|HistoryReasoningFree)' -count=1 -v` | ⚠️ base test tracked | ⬜ pending |
-| 49-04-T3 | 04 | 4 | MEM-03, CTX-05 | T-4904-01/04 | Live explicit isolation and source deletion | live/race | `go test -race -tags=arcadedb_integration -count=1 ./internal/arcadedb/ -run '^TestReasoningGraphLive_' -v` | ❌ Wave 0 | ⬜ pending |
-| 49-05-T1 | 05 | 5 | AUTO-03, CTX-05 | T-4905-01/03/06 | Direct capture is durable before completion | tracer/unit | `go test ./internal/runner -run 'Test(MemoryCaptureTracer|MemoryCaptureRejectsIneligibleSources|MemoryCaptureTerminalBarrier)' -count=1 -v` | ❌ Wave 0 | ⬜ pending |
-| 49-05-T2 | 05 | 5 | AUTO-03 | T-4905-02/04/05 | Replay/contradiction converge; worker cannot supersede | unit/concurrency | `go test ./internal/arcadedb -run 'TestAcceptedCapture_(Idempotent|Contradiction|WorkerAuthority|Retry)' -count=1 -v` | ❌ Wave 0 | ⬜ pending |
-| 49-05-T3 | 05 | 5 | AUTO-03 | T-4905-01/03/06 | Live direct provenance and terminal barrier | live/race/E2E | `go test -race -tags=arcadedb_integration -count=1 ./internal/runner -run '^TestMemoryCaptureLive_MidTaskDurableBeforeCompletion$' -v` | ❌ Wave 0 | ⬜ pending |
-
-*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
-
-### Requirement → test map (from RESEARCH.md, pre-task)
-
-| Req ID | Behavior | Test Type | Automated Command / Target | File Exists? |
-|--------|----------|-----------|----------------------------|--------------|
-| MEM-01 | Eligible user/final-assistant turns project idempotently; spill/edit/delete/rebuild converge; PostgreSQL and ArcadeDB failure semantics remain explicit | unit + live integration | New focused tests under `internal/conversations`, `internal/arcadedb`, and `internal/runner`; quick package baseline | ❌ Wave 0 |
-| MEM-02 | Conversation and fact tiers are queried independently, fused stably, suppress active turns, and return bounded anchored windows/cursors | unit/property + live E2E | Extend MCP live suite and evaluator through published `memory_recall` | ❌ Wave 0 |
-| MEM-03 | Authorized reasoning trace/steps/tools/`TOUCHED` edges persist; ordinary paths cannot read reasoning | unit + live integration | New ArcadeDB, runner, MCP, and history-isolation tests | ❌ Wave 0 |
-| MEM-06 | Amendment extending #91 is a separate ancestor commit before reasoning-tier code | repository contract | Scripted `git log` ancestry and touched-path check | ❌ Wave 0 |
-| TOOL-05 | One model-facing question spans both tiers, reports host-selected path, and abstains on weak/empty evidence | unit + live MCP | Extend `tool_memory_test.go` and `TestAgentMemoryMCPLive*` | ⚠️ fact-only coverage exists |
-| AUTO-03 | Accepted captures remain ordered and are durable before task completion; provenance never names reasoning | unit/goleak/race + live shell/file E2E | New runner queue/terminal-barrier tests plus evaluator scenario | ❌ Wave 0 |
-| CTX-05 | Reasoning remains absent from history, compaction, proactive context, ordinary recall, and durable-fact capture | structural/unit + live negative | Keep `TestHistoryTypesAreStructurallyReasoningFree`; add graph-resident negative cases | ⚠️ pre-graph regression exists |
-| HARN-05 | Final-state validation, first-error semantics, unchanged rollback state, idempotent replay, and concurrent retry from committed state | rapid/property + race + live integration | New pure batch-planner tests and ArcadeDB live transaction tests | ❌ Wave 0 |
-
----
-
-## Wave 0 Requirements
-
-- [ ] Freeze the additive `memory_recall` mode/evidence/cursor schema, host-derived per-request active-conversation header route, and atomic batch-operation schema in tests.
-- [ ] Add an authoritative paged eligible-turn fixture covering spilled content, edit/delete, and replay.
-- [ ] Update `scripts/agent_memory_eval.py`: the current exact-latency `cli_identity_mcp_search` path exercises raw search, not the final one-read mixed recall contract.
-- [ ] Add daemon-free pure tests for projection decisions, trace segmentation/redaction, cursor codec, capture sequencing and terminal barrier, and the final-state batch compiler.
-- [ ] Add live authenticated tests for past-ladder mixed recall, explicit-only reasoning, mid-task shell/file capture, and atomic rollback/concurrency.
-
----
-
-## Manual-Only Verifications
-
-| Behavior | Requirement | Why Manual | Test Instructions |
-|----------|-------------|------------|-------------------|
-| Amendment #91 extension precedes all reasoning-tier implementation commits | MEM-06 | Commit ancestry and semantic amendment content must be reviewed together | Inspect `git log --reverse --format='%H %cs %s'` and path-specific logs for `prd.md` plus reasoning-tier files; quote hashes proving the amendment commit is earlier and independent |
-| Past-ladder live question is answered by one published `memory_recall` call and reports the retrieval path used | MEM-01, MEM-02, TOOL-05 | Requires a real conversation whose target turn has left the deterministic prompt ladder | Drive the scenario on the live stack; capture the MCP result and OTel span; verify evidence spans recent conversation and facts without duplicate active context |
-| Extended reasoning is graph-resident but absent from later injected context until explicitly requested | MEM-03, CTX-05 | Requires a real reasoning turn, graph inspection, and a later context build | Persist an extended-reasoning turn, query ArcadeDB for trace/step/tool/entity edges, inspect the next prompt/context, then explicitly retrieve reasoning and compare |
-| Durable fact revealed during a live shell/file task is committed before completion with direct provenance | AUTO-03 | Crosses model output, ordered capture queue, task completion barrier, graph write, and provenance | Drive the live task, wait for completion, query the recorded fact and provenance, and prove no reasoning-trace summarizer is the source |
-| Multi-operation memory batch is atomic under a failing member and concurrent retry | HARN-05 | Final proof requires the deployed ArcadeDB transaction path | Execute a mixed batch with an injected invalid operation, verify no intermediate state, then race a retry against a concurrent committed update and verify final-state recomputation |
-
----
-
-## Validation Sign-Off
-
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Daemon-free feedback stays in the per-task loop
-- [ ] Full tagged coverage is ≥85% with package-local policy green
-- [ ] Mutation spot-check is ≥70% on each critical Phase 49 file
-- [ ] Live E2E scenarios are scored above 9.8 with OTel/ArcadeDB/provenance evidence
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [ ] All named test files/cases absent at execution start are created RED before production changes.
+- [ ] Live fixtures fail on missing ArcadeDB/identity/embedding/OTel evidence; no skip-green path.
+- [ ] The real running-Aura gate drives authenticated `/agent/run` turns and correlates Tempo, RLS-scoped `aura.tool_invocations`, `aura.conversation_turns`, and ArcadeDB evidence; no MCP-only substitute is accepted.
+- [ ] `running_aura_conversation.scenarios` has exactly `beyond_active_context_recall` (1 answer), `provider_visible_reasoning_exclusion_explicit_recall` (3 answers), and `durable_shell_file_capture_later_recall` (2 answers); observed terminal IDs and scored `responses` IDs are globally unique and form an exact per-scenario bijection.
+- [ ] Evaluator unit fixtures prove a later response at most 9.8 fails even when a scenario aggregate remains high, and prove missing, duplicate, extra, or unscored response records fail.
+- [ ] Same-wave file overlap audit is zero and every plan has fewer than ten modified files.
+- [ ] Full tagged coverage is ≥85% with package-local policy green.
+- [ ] Critical mutation is ≥70% and every one of the six terminal Aura answers has its own score strictly >9.8; averages and aggregate-only scores are rejected.
+- [ ] Set `wave_0_complete: true`, `nyquist_compliant: true`, and `status: validated` only after evidence is recorded.
 
 **Approval:** pending

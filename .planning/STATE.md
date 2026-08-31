@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v2.1.0
 current_phase: 49
-current_phase_name: Memory tiers
-status: planning
+current_phase_name: memory-tiers
+status: executing
 stopped_at: Phase 49 context gathered
-last_updated: "2026-08-31T07:44:11.128Z"
+last_updated: "2026-08-31T16:23:31.418Z"
 last_activity: 2026-08-31
 last_activity_desc: Phase 49 context gathered, ready for planning
-state_head: b119efeccd1b73fd4b8fcc9df5a3cf75a61fa11e
+state_head: 3fabcb79dd76f96fc9c58926323a36705623c52d
 progress:
   total_phases: 8
   completed_phases: 4
-  total_plans: 48
+  total_plans: 62
   completed_plans: 48
 milestone_name: HERMES-CLAUDE_PARITY
 ---
@@ -28,9 +28,9 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 
 ## Current Position
 
-Phase: 49 — Memory tiers
+Phase: 49 (memory-tiers) — READY TO EXECUTE
 Phase 51 is complete: 14/14 plans, 5/5 success criteria, and 12/12 requirements verified.
-Status: Ready to plan
+Status: Ready to execute
 
 **The roadmap shrank on 2026-08-25 (operator decision).** Phases **47** (tool-surface ceremony
 strip), **48** (un-defer and merges) and **53** (summarization spike) are DELETED, not annotated —

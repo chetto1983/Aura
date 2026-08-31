@@ -401,28 +401,24 @@ Source pattern: whole-decision retry and no external effects inside the retry. [
 | # | Claim | Section | Risk if wrong |
 |---|-------|---------|---------------|
 | A1 | Exact future Go type names and new file/package boundaries in the code examples are illustrative only. [ASSUMED] | Code Examples | Planner could freeze an invented API instead of fitting the smallest current seam. |
-| A2 | A narrow in-process ordered projector plus source reconciliation is sufficient; a durable outbox is unnecessary if boot/periodic reconciliation meets measured recovery objectives. [ASSUMED] | Architecture Pattern 1 | Crash visibility/recovery SLO may require an atomic outbox after measurement. |
-| A3 | Initial reasoning retention should start near the reference's example of 90 days for useful traces and 30 days for failures, then be replaced by Aura's measurement. [ASSUMED] [CITED: https://neo4j.com/labs/agent-memory/how-to/reasoning-traces/] | Open Questions | Storage/privacy cost could be materially different for Aura. |
-| A4 | Existing trusted MCP/runtime metadata can carry bounded active-turn references without inventing a parallel protocol. [ASSUMED] | Architecture Pattern 2 | If no supported extension point exists, implementation requires the bespoke-protocol human checkpoint. |
+| A2 | **RESOLVED:** use a narrow ordered post-commit offer plus boot-one-shot and periodic bounded reconciliation; PostgreSQL paging/high-water state is authoritative and no transactional outbox is added. [VERIFIED: PATTERNS.md `runner_persist.go` and `DeleteReconciler.Start`/`Stop` analogs] | Architecture Pattern 1 | Contract is frozen in Plans 49-02/49-07 with crash-after-commit convergence tests. |
+| A3 | **RESOLVED:** successful reasoning traces retain for exactly 30 days; failed/cancelled traces retain for exactly 7 days; source/conversation/identity deletion always dominates TTL. [VERIFIED: planning resolution adopted by Plans 49-04/49-09] | Retention | Typed config, exact fake-clock tests, and live deletion/expiry race proof are mandatory. |
+| A4 | **RESOLVED:** use the supported per-request `mcp.SessionOptions.HeaderFunc` seam, deriving active conversation/source keys from the host tool-call context and composing them with existing actor headers. The server treats the bounded header only as an exclusion hint and revalidates ownership. [VERIFIED: internal/mcp/sdkclient.go; internal/agent/mcptools/bridge_actor.go] | Architecture Pattern 2 | Contract is frozen in Plans 49-08/49-13; no `_meta`, model argument, environment variable, or second client path. |
 
-## Open Questions
+## Resolved Planning Contracts
 
-1. **Which existing trusted runtime seam carries active-context source keys into `memory_recall`?**
-   - What we know: identity already arrives outside model-visible input; active-context suppression is locked. [VERIFIED: cmd/arcadedb-mcp/tool_browse.go:18-20; .planning/phases/49-memory-tiers/49-CONTEXT.md:23-32]
-   - Gap: current MCP recall receives identity but no active ladder references. [VERIFIED: cmd/arcadedb-mcp/tool_memory.go:243-307]
-   - Recommendation: inventory SDK request metadata and the bridge call envelope during Wave 0; extend an existing trusted metadata field if supported. If not, stop for the CLAUDE bespoke-protocol checkpoint before code.
+1. **Trusted active-context seam — resolved.**
+   - Derive current source keys from host tool-call context, encode a bounded canonical header per call through `mcp.SessionOptions.HeaderFunc`, and compose it with actor headers. The server revalidates actor/conversation ownership and uses it only for exclusion. No model-visible field, `_meta`, environment variable, bespoke protocol, or second client is permitted.
 
-2. **What are the exact public mode/operation/cursor contracts?**
-   - What we know: required behaviors and discriminator/path values are locked, but exact enum spellings and batch operation set are not. [VERIFIED: .planning/phases/49-memory-tiers/49-CONTEXT.md:28-32; .planning/phases/49-memory-tiers/49-CONTEXT.md:46-49]
-   - Recommendation: first test in each API slice freezes the smallest additive schema, backwards compatible with current `query`/`entity`; do not expose implementation RIDs as durable cursors.
+2. **Exact public mode/operation/cursor contracts — resolved.**
+   - `memory_recall` modes are `semantic`, `recent`, `open`, `scroll`, and explicit `reasoning`; omitted mode preserves current semantic behavior. Open/scroll use bounded versioned base64url canonical JSON containing bound identity/conversation, stable anchor, direction, and clamped page size. The cursor is unsigned and untrusted, contains no RID, and every use revalidates identity/direction/anchor/caps.
+   - `memory_batch` exposes exactly `upsert_fact`, `supersede_fact`, `merge_entities`, and `forget` with an identity-bound idempotency key; identity/actor/transaction controls are not model arguments.
 
-3. **What trace retention is justified?**
-   - What we know: shorter failed/cancelled retention is allowed, identity/conversation deletion must dominate. [VERIFIED: .planning/phases/49-memory-tiers/49-CONTEXT.md:51-56]
-   - Recommendation: measure actual trace byte/index growth, start with bounded defaults only after the amendment records the result, and make deletion propagation invariant.
+3. **Trace retention — resolved.**
+   - Successful traces: exactly 30 days. Failed/cancelled traces: exactly 7 days. Earlier source/conversation/identity/operator deletion is authoritative; no read refresh or independent graph retention authority exists. Exact typed defaults/overrides and deletion-vs-expiry races are tested in Plans 49-04/49-09.
 
-4. **Does projection dispatch need a transactional outbox?**
-   - What we know: projection is reconstructible and failure cannot invalidate the source turn. [VERIFIED: .planning/phases/49-memory-tiers/49-CONTEXT.md:18-26]
-   - Recommendation: prove boot/periodic convergence under crash-after-commit first; use an outbox only if measured repair latency or source paging cannot meet the operational target.
+4. **Projection dispatch/outbox — resolved.**
+   - Use post-commit asynchronous offer plus bounded boot and periodic reconciliation over authoritative PostgreSQL paging/high-water state. Do not add an outbox in this phase; crash-after-commit and repeated replay must converge idempotently while an ArcadeDB outage never invalidates the committed PostgreSQL turn.
 
 ## Environment Availability
 
