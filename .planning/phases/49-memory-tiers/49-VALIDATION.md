@@ -28,7 +28,7 @@ After every task, run its exact `<verify><automated>` command. All 32 commands a
 
 | Task ID | Wave | Requirements | Secure behavior | Primary automated target | Status |
 |---|---:|---|---|---|---|
-| 49-01-T1 | 1 | MEM-06 | isolated Amendment #181 plus six-path ancestry/non-proofs | repository diff-tree/path logs + Go gates | pending |
+| 49-01-T1 | 1 | MEM-06 | isolated Amendment #201 plus six-path ancestry/non-proofs | repository diff-tree/path logs + Go gates | pending |
 | 49-01-T2 | 1 | TOOL-05 | one retrieval surface; evaluator cannot skip empty evidence | `TestMemorySurfacePolicy_`, evaluator unit + Go gates | pending |
 | 49-02-T1 | 2 | MEM-01 | typed eligible projection and idempotent graph fragment | `Test(ProjectionTurnEligibility|ConversationSchemaStatements)` + Go gates | pending |
 | 49-02-T2 | 2 | MEM-01 | authoritative paging/edit/delete/rebuild contract | conversation projection live + Go gates | pending |
