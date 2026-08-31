@@ -41,9 +41,10 @@ func TestConversationProjectionIsIdempotentAndIdentityScoped(t *testing.T) {
 		IdentityID: "identity-a", ConversationID: "conversation-1",
 		Turns: []ConversationTurnProjection{{
 			IdentityID: "identity-a", ConversationID: "conversation-1", Seq: 1,
-			Role: "user", Content: "Remember the blue notebook", ContentHash: "hash-1",
-			OccurredAt: time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC),
-			SourceRef:  "postgres://conversation/conversation-1/turn/1",
+			Role: "user", Content: "Remember the blue notebook",
+			ContentHash: conversationContentHash("Remember the blue notebook"),
+			OccurredAt:  time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC),
+			SourceRef:   "postgres://conversation/conversation-1/turn/1",
 		}},
 	}
 	if err := client.ApplyConversationProjection(context.Background(), projection); err != nil {

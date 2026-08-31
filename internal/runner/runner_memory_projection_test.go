@@ -2,6 +2,12 @@ package runner
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -23,23 +29,38 @@ func (s tracerProjectionSource) ListProjectionTurns(
 		conversations.ProjectionCursor{ConversationID: "conversation-1", Seq: 1}, nil
 }
 
-type tracerProjectionSink struct {
-	projections []arcadedb.ConversationProjection
-}
-
-func (s *tracerProjectionSink) ApplyConversationProjection(_ context.Context, p arcadedb.ConversationProjection) error {
-	s.projections = append(s.projections, p)
-	return nil
-}
-
 func TestConversationProjectionTracer(t *testing.T) {
+	const content = "Remember the blue notebook"
+	sum := sha256.Sum256([]byte(content))
+	contentHash := hex.EncodeToString(sum[:])
 	source := tracerProjectionSource{turns: []conversations.ProjectionTurn{{
 		IdentityID: "identity-a", ConversationID: "conversation-1", Seq: 1,
-		Role: "user", Content: "Remember the blue notebook", ContentHash: "hash-1",
+		Role: "user", Content: content, ContentHash: contentHash,
 		OccurredAt: time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC),
 		SourceRef:  "postgres://conversation/conversation-1/turn/1",
 	}}}
-	sink := &tracerProjectionSink{}
+	var commandCount int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var payload struct {
+			Command string `json:"command"`
+		}
+		_ = json.Unmarshal(raw, &payload)
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v1/query/aura" {
+			_, _ = io.WriteString(w, `{"result":[{"identity_id":"identity-a","conversation_id":"conversation-1","turn_seq":1,"role":"user","content":"Remember the blue notebook","content_hash":"`+contentHash+`","occurred_at":"2026-08-31T12:00:00Z","source_ref":"postgres://conversation/conversation-1/turn/1"}]}`)
+			return
+		}
+		if payload.Command != "" {
+			commandCount++
+		}
+		_, _ = io.WriteString(w, `{"result":[]}`)
+	}))
+	t.Cleanup(server.Close)
+	sink, err := arcadedb.New(arcadedb.Config{BaseURL: server.URL, Database: "aura", User: "root"})
+	if err != nil {
+		t.Fatalf("arcadedb.New: %v", err)
+	}
 	projector := NewConversationProjector(source, sink, 16)
 
 	cursor, err := projector.ProjectPage(context.Background(), "identity-a", conversations.ProjectionCursor{})
@@ -49,11 +70,14 @@ func TestConversationProjectionTracer(t *testing.T) {
 	if cursor.ConversationID != "conversation-1" || cursor.Seq != 1 {
 		t.Fatalf("cursor = %+v", cursor)
 	}
-	if len(sink.projections) != 1 || len(sink.projections[0].Turns) != 1 {
-		t.Fatalf("projections = %+v", sink.projections)
+	if commandCount != 4 {
+		t.Fatalf("ArcadeDB commands = %d, want conversation upsert, turn upsert, HAS_TURN, NEXT_TURN", commandCount)
 	}
-	projected := sink.projections[0].Turns[0]
-	if projected.IdentityID != "identity-a" || projected.SourceRef == "" {
-		t.Fatalf("projected turn lost identity/provenance: %+v", projected)
+	result, err := sink.SearchConversationTurnsHybrid(context.Background(), "identity-a", "blue notebook", 5)
+	if err != nil {
+		t.Fatalf("SearchConversationTurnsHybrid: %v", err)
+	}
+	if len(result.Turns) != 1 || result.Turns[0].Content != content || result.Turns[0].SourceRef == "" {
+		t.Fatalf("search result lost content/provenance: %+v", result)
 	}
 }
