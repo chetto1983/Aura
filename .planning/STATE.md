@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v2.1.0
 current_phase: 49
 current_phase_name: Memory tiers
-current_plan: 3
+current_plan: 4
 status: executing
-stopped_at: Completed 49-07-PLAN.md; next incomplete plan remains 49-03
-last_updated: "2026-08-31T22:00:56.357Z"
+stopped_at: Completed 49-03-PLAN.md
+last_updated: "2026-08-31T23:05:47.275Z"
 last_activity: 2026-08-31
-last_activity_desc: Completed Phase 49 Plan 07
-state_head: 668ba30a0b8b5366de497a688eb92420c3f31b09
+last_activity_desc: Completed Phase 49 Plan 03
+state_head: 99e68753ac512a99c2dc0708f5384d9c23ebe05c
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 62
-  completed_plans: 52
+  completed_plans: 53
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -32,7 +32,7 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 Phase: 49 (Memory tiers) — EXECUTING
 Phase 51 is complete: 14/14 plans, 5/5 success criteria, and 12/12 requirements verified.
 Status: Ready to execute
-Current Plan: 3
+Current Plan: 4
 Total Plans in Phase: 14
 
 **The roadmap shrank on 2026-08-25 (operator decision).** Phases **47** (tool-surface ceremony
@@ -65,7 +65,7 @@ retaining byte caps, and `TestBridgedTool_Execute_MarksResultTrusted` pins MCP r
 The remaining unchecked MCP-02 item in REQUIREMENTS is its separate live unlisted-server proof;
 it is a roadmap acceptance obligation, not an unrecorded Calendar fork gap.
 
-Last activity: 2026-08-31 — Completed Phase 49 Plan 07
+Last activity: 2026-08-31 — Completed Phase 49 Plan 03
 
 Progress: [████████░░] 84% (52/62 milestone plans)
 
@@ -117,6 +117,7 @@ Progress: [████████░░] 84% (52/62 milestone plans)
 | Phase 49 P02 | 1h 24m | 2 tasks | 8 files |
 | Phase 49 P06 | 56min | 2 tasks | 9 files |
 | Phase 49 P07 | 1h 9m | 3 tasks | 12 files |
+| Phase 49 P03 | 51 min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -247,6 +248,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 49]: Post-commit projection offers the authenticated identity only after the source append returns; the projector pages PostgreSQL instead of guessing a sequence outside the transaction. — PostgreSQL remains the only conversation authority and reconciliation repairs any lost offer.
 - [Phase 49]: One chat-boot ConversationProjector instance is shared by Runner, deletion recovery, periodic reconciliation, and shutdown. — A single ordered process-lifetime worker preserves source order and provides one join owner.
 - [Phase 49]: Conversation projection reuses TenantClients and DeleteReconciler; no outbox or independent retention authority is introduced. — Existing tenant credentials enforce identity isolation and full source replay closes the crash window.
+- [Phase 49]: Nested ArcadeDB vector.fuse calls independently rank dense plus lexical fact and conversation sources before final rank-only RRF; no Go fusion helper or fixed tier quota exists.
+- [Phase 49]: Recall evidence contribution and executed backend path remain independent and populate the response and OTel from the same result.
+- [Phase 49]: Open and scroll cursors are versioned canonical base64url JSON treated as unsigned and untrusted, with every request field revalidated before access.
+- [Phase 49]: Reasoning remains a reserved explicit mode until Plan 49-04 connects its isolated graph contract.
 
 ### Pending Todos
 
@@ -311,8 +316,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-31T22:00:55.944Z
-Stopped at: Completed 49-07-PLAN.md; next incomplete plan remains 49-03
+Last session: 2026-08-31T23:05:46.896Z
+Stopped at: Completed 49-03-PLAN.md
 The accepted fresh-image delivery envelope is reconciled in 51-VALIDATION.md at 6/6 and 9.9/10.
 The final image passed the complete repository Playwright suite (145 pass, 39 intentional skips,
 zero failures) and four hot-route cycles without a restart or an OpenRouter request.

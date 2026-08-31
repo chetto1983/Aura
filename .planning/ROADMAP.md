@@ -487,7 +487,7 @@ already exhibited once.
   3. After a turn involving extended reasoning, the ArcadeDB graph shows the reasoning trace persisted with edges to the entities it touched, and a later turn's injected context does NOT include that reasoning content unless explicitly retrieved.
   4. A durable fact revealed mid-task (stated during a live shell/file task) is captured as a memory fact by the time the task completes — checking its recorded provenance shows it was captured directly, never sourced from a reasoning-trace summarizer.
 
-**Plans**: 4/14 plans executed
+**Plans**: 5/14 plans executed
 
 Plans:
 **Wave 1**
@@ -505,7 +505,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 49-03-PLAN.md — Build ArcadeDB-native mixed-tier fusion, bounded browse/cursors, and separate tier/backend retrieval telemetry.
+- [x] 49-03-PLAN.md — Build ArcadeDB-native mixed-tier fusion, bounded browse/cursors, and separate tier/backend retrieval telemetry.
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -916,7 +916,7 @@ replay; the skill is now permanent surface, not a compensating workaround awaiti
 | 45. Harness correctness | 9/9 | Complete    | 2026-08-15 |
 | 45.1. Native MCP client | 8/8 | Complete | 2026-08-17 |
 | 46. MCP trust and facade | 9/9 | Complete — 7 executed, 46-08 no-go, 46-09 operator-closed | 2026-08-25 |
-| 49. Memory tiers | 4/14 | In Progress|  |
+| 49. Memory tiers | 5/14 | In Progress|  |
 | 50. Context ladder legibility | 0/TBD | Not started | - |
 | 51. Durable delegation | 14/14 | Complete    | 2026-08-30 |
 | 52. Mid-turn steering | 8/8 | In Progress|  |
