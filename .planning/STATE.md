@@ -5,16 +5,16 @@ current_phase: 49
 current_phase_name: Memory tiers
 current_plan: 3
 status: executing
-stopped_at: Completed 49-06-PLAN.md; next incomplete plan remains 49-03
-last_updated: "2026-08-31T20:35:30.287Z"
+stopped_at: Completed 49-07-PLAN.md; next incomplete plan remains 49-03
+last_updated: "2026-08-31T22:00:56.357Z"
 last_activity: 2026-08-31
-last_activity_desc: Completed Phase 49 Plan 06
-state_head: a5d8df3c1e4b81096b73dae1cbdaec810de10c52
+last_activity_desc: Completed Phase 49 Plan 07
+state_head: 668ba30a0b8b5366de497a688eb92420c3f31b09
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 62
-  completed_plans: 51
+  completed_plans: 52
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -65,9 +65,9 @@ retaining byte caps, and `TestBridgedTool_Execute_MarksResultTrusted` pins MCP r
 The remaining unchecked MCP-02 item in REQUIREMENTS is its separate live unlisted-server proof;
 it is a roadmap acceptance obligation, not an unrecorded Calendar fork gap.
 
-Last activity: 2026-08-31 — Completed Phase 49 Plan 06
+Last activity: 2026-08-31 — Completed Phase 49 Plan 07
 
-Progress: [████████░░] 82% (51/62 milestone plans)
+Progress: [████████░░] 84% (52/62 milestone plans)
 
 ## Performance Metrics
 
@@ -116,6 +116,7 @@ Progress: [████████░░] 82% (51/62 milestone plans)
 | Phase 49 P01 | 1h 5m | 2 tasks | 11 files |
 | Phase 49 P02 | 1h 24m | 2 tasks | 8 files |
 | Phase 49 P06 | 56min | 2 tasks | 9 files |
+| Phase 49 P07 | 1h 9m | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -243,6 +244,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 49]: Phase 49 Plan 06 keeps authenticated identity and actor outside MemoryBatchRequest; the host passes MemoryBatchActor separately.
 - [Phase 49]: Phase 49 Plan 06 commits the identity-bound idempotency receipt in the same ArcadeDB transaction as the final graph diff.
 - [Phase 49]: Phase 49 Plan 06 retries the complete memory decision from fresh committed state and performs no embedding or telemetry side effect inside the retry loop.
+- [Phase 49]: Post-commit projection offers the authenticated identity only after the source append returns; the projector pages PostgreSQL instead of guessing a sequence outside the transaction. — PostgreSQL remains the only conversation authority and reconciliation repairs any lost offer.
+- [Phase 49]: One chat-boot ConversationProjector instance is shared by Runner, deletion recovery, periodic reconciliation, and shutdown. — A single ordered process-lifetime worker preserves source order and provides one join owner.
+- [Phase 49]: Conversation projection reuses TenantClients and DeleteReconciler; no outbox or independent retention authority is introduced. — Existing tenant credentials enforce identity isolation and full source replay closes the crash window.
 
 ### Pending Todos
 
@@ -307,8 +311,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-31T20:35:29.912Z
-Stopped at: Completed 49-06-PLAN.md; next incomplete plan remains 49-03
+Last session: 2026-08-31T22:00:55.944Z
+Stopped at: Completed 49-07-PLAN.md; next incomplete plan remains 49-03
 The accepted fresh-image delivery envelope is reconciled in 51-VALIDATION.md at 6/6 and 9.9/10.
 The final image passed the complete repository Playwright suite (145 pass, 39 intentional skips,
 zero failures) and four hot-route cycles without a restart or an OpenRouter request.

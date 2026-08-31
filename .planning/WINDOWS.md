@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 2
+open_count: 3
 waived_count: 0
 fixed_count: 0
-total_count: 2
-last_updated: 2026-08-31T19:29:22.115Z
+total_count: 3
+last_updated: 2026-08-31T22:02:02.530Z
 ---
 
 # Broken Windows Ledger
@@ -17,6 +17,7 @@ last_updated: 2026-08-31T19:29:22.115Z
 |----|-------|------|------|------|-------------|--------|--------|-------------|-------------|
 | 1 | 49 | deviation | internal/arcadedb/memory_conversation.go |  | Live ArcadeDB 26.8.1 rejected LIGHTWEIGHT UNIQUE IF NOT EXISTS edge DDL; replaced by regular edges with unique endpoint indexes | open |  | 2026-08-31T19:29:21.704Z |  |
 | 2 | 49 | deviation | cmd/aura/serve.go |  | Task 2 RED commit 80a141ac6 inherited three concurrent pre-staged cmd/aura paths; ownership transferred in b14f03382 and history was not rewritten while sessions were active | open |  | 2026-08-31T19:29:22.115Z |  |
+| 3 | 49 | deviation | cmd/aura/chat_memory_projection.go |  | Split composition and reconciliation coverage into focused files to satisfy the repository 600-line cap | open |  | 2026-08-31T22:02:02.530Z |  |
 
 ````json
 [
@@ -42,6 +43,18 @@ last_updated: 2026-08-31T19:29:22.115Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-08-31T19:29:22.115Z",
+    "resolved_at": null
+  },
+  {
+    "id": 3,
+    "kind": "deviation",
+    "phase": "49",
+    "file": "cmd/aura/chat_memory_projection.go",
+    "line": null,
+    "description": "Split composition and reconciliation coverage into focused files to satisfy the repository 600-line cap",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-31T22:02:02.530Z",
     "resolved_at": null
   }
 ]
