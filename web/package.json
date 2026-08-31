@@ -41,7 +41,7 @@
     "@svar-ui/filemanager-store": "^2.6.0",
     "@svar-ui/react-core": "^2.6.0",
     "@svar-ui/react-filemanager": "^2.6.0",
-    "@tanstack/react-query": "^5.101.0",
+    "@tanstack/react-query": "^5.102.8",
     "@tiptap/react": "^3.29.2",
     "@tiptap/starter-kit": "^3.29.2",
     "assistant-stream": "0.3.23",

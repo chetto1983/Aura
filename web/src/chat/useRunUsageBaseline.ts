@@ -29,10 +29,14 @@ async function publishRunSessionBaseline(
   onBaseline: RunSessionBaselineListener | undefined,
 ): Promise<boolean> {
   const queryKey = [CONVERSATION_KEY, conversationId] as const;
-  const load = queryClient.ensureQueryData({
+  // staleTime 'static' is the ensureQueryData contract under the unified
+  // queryClient.query API (its own deprecation notice): serve cached data
+  // when present, fetch only on a miss.
+  const load = queryClient.query({
     queryKey,
     queryFn: ({ signal: querySignal }) => fetchConversation(conversationId, querySignal),
     retry: false,
+    staleTime: 'static',
   });
   const outcome = await settleOrAbort(load, signal);
   if (outcome.kind === 'aborted' || outcome.kind === 'timed-out') {

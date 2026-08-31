@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { installMutationIdempotency } from './idempotency';
 
-const originalFetch = window.fetch;
+// bind: capturing the bare method trips typescript-eslint's unbound-method; the
+// bound copy restores identical behaviour (fetch is called through window anyway).
+const originalFetch = window.fetch.bind(window);
 
 afterEach(() => {
   window.fetch = originalFetch;
