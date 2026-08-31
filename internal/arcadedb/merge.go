@@ -58,19 +58,28 @@ type MergeResult struct {
 	Target  string `json:"target"`
 }
 
-// MergeEntities folds source into target and removes source. When target does
-// not exist yet this is a rename, which is the same operation with one name
-// that happens to be unused.
-func (c *Client) MergeEntities(ctx context.Context, source, target string) (MergeResult, error) {
+func normalizeMergeEntities(source, target string) (string, string, error) {
 	source = strings.TrimSpace(source)
 	target = strings.TrimSpace(target)
 	switch {
 	case source == "":
-		return MergeResult{}, fmt.Errorf("arcadedb: merge source must be non-empty")
+		return "", "", fmt.Errorf("arcadedb: merge source must be non-empty")
 	case target == "":
-		return MergeResult{}, fmt.Errorf("arcadedb: merge target must be non-empty")
+		return "", "", fmt.Errorf("arcadedb: merge target must be non-empty")
 	case source == target:
-		return MergeResult{}, fmt.Errorf("arcadedb: cannot merge %q into itself", source)
+		return "", "", fmt.Errorf("arcadedb: cannot merge %q into itself", source)
+	}
+	return source, target, nil
+}
+
+// MergeEntities folds source into target and removes source. When target does
+// not exist yet this is a rename, which is the same operation with one name
+// that happens to be unused.
+func (c *Client) MergeEntities(ctx context.Context, source, target string) (MergeResult, error) {
+	var err error
+	source, target, err = normalizeMergeEntities(source, target)
+	if err != nil {
+		return MergeResult{}, err
 	}
 
 	before, err := c.entityFactCount(ctx, source)

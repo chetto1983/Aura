@@ -26,9 +26,41 @@ type ForgetResult struct {
 	DryRun   bool `json:"dry_run"`
 }
 
+func normalizeForgetFilter(filter ForgetFilter) ForgetFilter {
+	filter.SourceRunID = strings.TrimSpace(filter.SourceRunID)
+	filter.Subject = strings.TrimSpace(filter.Subject)
+	filter.Predicate = strings.TrimSpace(filter.Predicate)
+	filter.Object = strings.TrimSpace(filter.Object)
+	filter.Entity = strings.TrimSpace(filter.Entity)
+	return filter
+}
+
+func (f ForgetFilter) matchesMemoryBatchFact(fact memoryBatchFact) bool {
+	if f.SourceRunID != "" {
+		matched := false
+		for _, source := range fact.Sources {
+			matched = matched || source.RunID == f.SourceRunID
+		}
+		if !matched {
+			return false
+		}
+	}
+	if f.Entity != "" && fact.Fact.Subject != f.Entity && fact.Fact.Object != f.Entity {
+		return false
+	}
+	if f.Subject != "" && fact.Fact.Subject != f.Subject {
+		return false
+	}
+	if f.Predicate != "" && fact.Fact.Predicate != f.Predicate {
+		return false
+	}
+	return f.Object == "" || fact.Fact.Object == f.Object
+}
+
 // Forget detaches source-scoped support and removes an edge only when no source
 // remains. Entity/subject filters without a source are explicitly destructive.
 func (c *Client) Forget(ctx context.Context, filter ForgetFilter) (ForgetResult, error) {
+	filter = normalizeForgetFilter(filter)
 	if err := filter.validate(c.memoryLimits()); err != nil {
 		return ForgetResult{}, err
 	}

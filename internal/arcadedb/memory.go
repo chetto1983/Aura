@@ -67,6 +67,11 @@ func (c *Client) EnsureMemorySchema(ctx context.Context) error {
 			return fmt.Errorf("arcadedb: ensure memory schema: %w", err)
 		}
 	}
+	for _, statement := range memoryBatchSchemaStatements() {
+		if _, err := c.Command(ctx, statement, nil); err != nil {
+			return fmt.Errorf("arcadedb: ensure memory batch schema: %w", err)
+		}
+	}
 	if err := c.migrateMemoryProvenance(ctx); err != nil {
 		return err
 	}

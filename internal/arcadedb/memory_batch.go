@@ -2,8 +2,13 @@ package arcadedb
 
 import (
 	"context"
-	"errors"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"hash/fnv"
+	"strings"
+	"sync"
 	"time"
 )
 
@@ -99,12 +104,115 @@ type CompiledMemoryBatch struct {
 	Operations []MemoryBatchOperation
 }
 
-var errMemoryBatchNotImplemented = errors.New("arcadedb: memory batch not implemented")
-
 // CompileMemoryBatch validates and normalizes the complete request before a
 // transaction is opened.
-func CompileMemoryBatch(MemoryBatchRequest, MemoryLimits) (CompiledMemoryBatch, error) {
-	return CompiledMemoryBatch{}, errMemoryBatchNotImplemented
+func CompileMemoryBatch(request MemoryBatchRequest, limits MemoryLimits) (CompiledMemoryBatch, error) {
+	limits = limits.normalized()
+	request.IdempotencyKey = strings.TrimSpace(request.IdempotencyKey)
+	if request.IdempotencyKey == "" {
+		return CompiledMemoryBatch{}, memoryBatchEnvelopeError(
+			"invalid_idempotency_key", fmt.Errorf("idempotency key must be non-empty"))
+	}
+	if err := validateRuneLimit(
+		"memory batch idempotency key", request.IdempotencyKey, limits.SourceRunIDRunes,
+	); err != nil {
+		return CompiledMemoryBatch{}, memoryBatchEnvelopeError("invalid_idempotency_key", err)
+	}
+	if len(request.Operations) == 0 {
+		return CompiledMemoryBatch{}, memoryBatchEnvelopeError(
+			"empty_batch", fmt.Errorf("operations must be non-empty"))
+	}
+	if len(request.Operations) > limits.MaintenanceBatch {
+		return CompiledMemoryBatch{}, memoryBatchEnvelopeError("batch_too_large", fmt.Errorf(
+			"operations exceeds %d items", limits.MaintenanceBatch))
+	}
+
+	normalized := make([]MemoryBatchOperation, len(request.Operations))
+	for index, operation := range request.Operations {
+		compiled, err := compileMemoryBatchOperation(operation, limits)
+		if err != nil {
+			return CompiledMemoryBatch{}, memoryBatchOperationError(index, "malformed_operation", err)
+		}
+		normalized[index] = compiled
+	}
+	canonical := MemoryBatchRequest{IdempotencyKey: request.IdempotencyKey, Operations: normalized}
+	encoded, err := json.Marshal(canonical)
+	if err != nil {
+		return CompiledMemoryBatch{}, memoryBatchEnvelopeError("malformed_request", err)
+	}
+	digest := sha256.Sum256(encoded)
+	return CompiledMemoryBatch{
+		RequestHash: hex.EncodeToString(digest[:]), Operations: normalized,
+	}, nil
+}
+
+func compileMemoryBatchOperation(
+	operation MemoryBatchOperation,
+	limits MemoryLimits,
+) (MemoryBatchOperation, error) {
+	payloads := 0
+	if operation.Fact != nil {
+		payloads++
+	}
+	if operation.Merge != nil {
+		payloads++
+	}
+	if operation.Forget != nil {
+		payloads++
+	}
+	if payloads != 1 {
+		return MemoryBatchOperation{}, fmt.Errorf("exactly one operation payload is required")
+	}
+
+	switch operation.Type {
+	case MemoryBatchUpsertFact, MemoryBatchSupersedeFact:
+		if operation.Fact == nil || operation.Merge != nil || operation.Forget != nil {
+			return MemoryBatchOperation{}, fmt.Errorf("%s requires only a fact payload", operation.Type)
+		}
+		fact := normalizeFact(*operation.Fact)
+		if operation.Type == MemoryBatchUpsertFact && (fact.Supersedes || fact.TargetFactKey != "") {
+			return MemoryBatchOperation{}, fmt.Errorf("upsert_fact cannot carry supersede controls")
+		}
+		fact.Supersedes = operation.Type == MemoryBatchSupersedeFact
+		if err := fact.validate(limits); err != nil {
+			return MemoryBatchOperation{}, err
+		}
+		return MemoryBatchOperation{Type: operation.Type, Fact: &fact}, nil
+	case MemoryBatchMergeEntities:
+		if operation.Merge == nil || operation.Fact != nil || operation.Forget != nil {
+			return MemoryBatchOperation{}, fmt.Errorf("merge_entities requires only a merge payload")
+		}
+		source, target, err := normalizeMergeEntities(operation.Merge.Source, operation.Merge.Target)
+		if err != nil {
+			return MemoryBatchOperation{}, err
+		}
+		if err := validateRuneLimit("merge source", source, limits.EntityRunes); err != nil {
+			return MemoryBatchOperation{}, err
+		}
+		if err := validateRuneLimit("merge target", target, limits.EntityRunes); err != nil {
+			return MemoryBatchOperation{}, err
+		}
+		return MemoryBatchOperation{
+			Type: operation.Type, Merge: &MemoryBatchMerge{Source: source, Target: target},
+		}, nil
+	case MemoryBatchForget:
+		if operation.Forget == nil || operation.Fact != nil || operation.Merge != nil {
+			return MemoryBatchOperation{}, fmt.Errorf("forget requires only a forget payload")
+		}
+		filter := normalizeForgetFilter(*operation.Forget)
+		if filter.DryRun {
+			return MemoryBatchOperation{}, fmt.Errorf("forget dry_run is not a mutation and is not valid in a batch")
+		}
+		if err := filter.validate(limits); err != nil {
+			return MemoryBatchOperation{}, err
+		}
+		if _, _, err := filter.where(); err != nil {
+			return MemoryBatchOperation{}, err
+		}
+		return MemoryBatchOperation{Type: operation.Type, Forget: &filter}, nil
+	default:
+		return MemoryBatchOperation{}, fmt.Errorf("unknown operation type %q", operation.Type)
+	}
 }
 
 type memoryBatchFact struct {
@@ -125,8 +233,10 @@ type memoryBatchState struct {
 }
 
 type memoryBatchReceipt struct {
-	RequestHash string
-	Result      MemoryBatchResult
+	IdentityID     string
+	IdempotencyKey string
+	RequestHash    string
+	Result         MemoryBatchResult
 }
 
 type memoryBatchTransaction interface {
@@ -154,20 +264,144 @@ func (c *Client) ApplyMemoryBatch(
 }
 
 func applyMemoryBatch(
-	context.Context,
-	MemoryBatchActor,
-	MemoryBatchRequest,
-	time.Time,
-	MemoryLimits,
-	memoryBatchBackend,
+	ctx context.Context,
+	actor MemoryBatchActor,
+	request MemoryBatchRequest,
+	now time.Time,
+	limits MemoryLimits,
+	backend memoryBatchBackend,
 ) (MemoryBatchResult, error) {
-	return MemoryBatchResult{}, errMemoryBatchNotImplemented
+	actor.IdentityID = strings.TrimSpace(actor.IdentityID)
+	if actor.IdentityID == "" {
+		return MemoryBatchResult{}, memoryBatchEnvelopeError(
+			"unauthenticated", fmt.Errorf("authenticated identity must be non-empty"))
+	}
+	if actor.WriterRole != WriterParent && actor.WriterRole != WriterWorker {
+		return MemoryBatchResult{}, memoryBatchEnvelopeError(
+			"unauthorized_actor", fmt.Errorf("writer role must be %q or %q", WriterParent, WriterWorker))
+	}
+	compiled, err := CompileMemoryBatch(request, limits)
+	if err != nil {
+		return MemoryBatchResult{}, err
+	}
+	if err := authorizeMemoryBatch(actor, compiled); err != nil {
+		return MemoryBatchResult{}, err
+	}
+
+	unlock := memoryBatchIdentityLocks.lock(actor.IdentityID)
+	defer unlock()
+	tx, err := backend.Begin(ctx, actor.IdentityID)
+	if err != nil {
+		return MemoryBatchResult{}, fmt.Errorf("arcadedb: begin memory batch: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			tx.Rollback(context.WithoutCancel(ctx))
+		}
+	}()
+
+	receiptKey := memoryBatchReceiptKey(actor.IdentityID, request.IdempotencyKey)
+	receipt, err := tx.LoadReceipt(ctx, receiptKey)
+	if err != nil {
+		return MemoryBatchResult{}, fmt.Errorf("arcadedb: read memory batch receipt: %w", err)
+	}
+	if receipt != nil {
+		if receipt.IdentityID != actor.IdentityID || receipt.RequestHash != compiled.RequestHash {
+			return MemoryBatchResult{}, memoryBatchEnvelopeError(
+				"idempotency_conflict", fmt.Errorf("idempotency key is already bound to a different request"))
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return MemoryBatchResult{}, fmt.Errorf("arcadedb: commit memory batch replay: %w", err)
+		}
+		committed = true
+		result := receipt.Result
+		result.Replayed = true
+		return result, nil
+	}
+
+	live, err := tx.LoadState(ctx)
+	if err != nil {
+		return MemoryBatchResult{}, fmt.Errorf("arcadedb: load memory batch state: %w", err)
+	}
+	working := cloneMemoryBatchState(live)
+	operationResults, err := applyCompiledMemoryBatch(working, compiled, now, limits)
+	if err != nil {
+		return MemoryBatchResult{}, err
+	}
+	if err := tx.Persist(ctx, live, working); err != nil {
+		return MemoryBatchResult{}, fmt.Errorf("arcadedb: persist memory batch: %w", err)
+	}
+	result := MemoryBatchResult{
+		RequestHash: compiled.RequestHash,
+		Applied:     len(compiled.Operations),
+		Operations:  operationResults,
+	}
+	if err := tx.SaveReceipt(ctx, receiptKey, memoryBatchReceipt{
+		IdentityID: actor.IdentityID, IdempotencyKey: strings.TrimSpace(request.IdempotencyKey),
+		RequestHash: compiled.RequestHash, Result: result,
+	}); err != nil {
+		return MemoryBatchResult{}, fmt.Errorf("arcadedb: save memory batch receipt: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return MemoryBatchResult{}, fmt.Errorf("arcadedb: commit memory batch: %w", err)
+	}
+	committed = true
+	return result, nil
 }
+
+func authorizeMemoryBatch(actor MemoryBatchActor, compiled CompiledMemoryBatch) error {
+	for index, operation := range compiled.Operations {
+		switch operation.Type {
+		case MemoryBatchUpsertFact, MemoryBatchSupersedeFact:
+			if operation.Fact.Source.WriterRole != actor.WriterRole {
+				return memoryBatchOperationError(index, "unauthorized_actor", fmt.Errorf(
+					"fact writer role %q does not match authenticated actor %q",
+					operation.Fact.Source.WriterRole, actor.WriterRole))
+			}
+			if operation.Type == MemoryBatchSupersedeFact && actor.WriterRole != WriterParent {
+				return memoryBatchOperationError(index, "unauthorized_actor", fmt.Errorf(
+					"worker may not supersede facts"))
+			}
+		case MemoryBatchMergeEntities, MemoryBatchForget:
+			if actor.WriterRole != WriterParent {
+				return memoryBatchOperationError(index, "unauthorized_actor", fmt.Errorf(
+					"worker may not %s", operation.Type))
+			}
+		}
+	}
+	return nil
+}
+
+func memoryBatchEnvelopeError(code string, err error) *MemoryBatchError {
+	return &MemoryBatchError{Index: -1, Code: code, Err: err}
+}
+
+func memoryBatchOperationError(index int, code string, err error) *MemoryBatchError {
+	return &MemoryBatchError{Index: index, Code: code, Err: err}
+}
+
+func memoryBatchReceiptKey(identityID, idempotencyKey string) string {
+	digest := sha256.Sum256([]byte(strings.TrimSpace(identityID) + "\x00" + strings.TrimSpace(idempotencyKey)))
+	return hex.EncodeToString(digest[:])
+}
+
+const memoryBatchLockStripes = 256
+
+type memoryBatchLocks struct {
+	stripes [memoryBatchLockStripes]sync.Mutex
+}
+
+func (locks *memoryBatchLocks) lock(identityID string) func() {
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(identityID))
+	lock := &locks.stripes[hash.Sum32()%memoryBatchLockStripes]
+	lock.Lock()
+	return lock.Unlock
+}
+
+var memoryBatchIdentityLocks memoryBatchLocks
 
 type clientMemoryBatchBackend struct {
 	client *Client
-}
-
-func (clientMemoryBatchBackend) Begin(context.Context, string) (memoryBatchTransaction, error) {
-	return nil, errMemoryBatchNotImplemented
 }

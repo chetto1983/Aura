@@ -165,6 +165,9 @@ func TestMemoryBatch_FinalStateTracer(t *testing.T) {
 	if result.Applied != 2 || result.Replayed {
 		t.Fatalf("result = %+v", result)
 	}
+	if backend.commits != 1 {
+		t.Fatalf("commits = %d, want one atomic commit", backend.commits)
+	}
 	final := backend.snapshot(identity)
 	if len(final.Facts) != 1 {
 		t.Fatalf("final facts = %+v, want one replacement", final.Facts)
