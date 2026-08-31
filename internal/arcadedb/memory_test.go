@@ -136,6 +136,83 @@ func TestSchemaIsIdempotentAndCarriesTheVectorIndex(t *testing.T) {
 	}
 }
 
+func TestEnsureMemorySchemaRegistersConversationSchema(t *testing.T) {
+	client, rec := recordingClient(t, `{"result":[]}`)
+	for attempt := range 2 {
+		if err := client.EnsureMemorySchema(context.Background()); err != nil {
+			t.Fatalf("EnsureMemorySchema attempt %d: %v", attempt+1, err)
+		}
+	}
+
+	want := []string{
+		"CREATE VERTEX TYPE Conversation IF NOT EXISTS",
+		"CREATE PROPERTY Conversation.identity_id IF NOT EXISTS STRING",
+		"CREATE PROPERTY Conversation.conversation_id IF NOT EXISTS STRING",
+		"CREATE PROPERTY Conversation.source_ref IF NOT EXISTS STRING",
+		"CREATE PROPERTY Conversation.projected_through_seq IF NOT EXISTS INTEGER",
+		"CREATE PROPERTY Conversation.projection_updated_at IF NOT EXISTS DATETIME",
+		"CREATE INDEX IF NOT EXISTS ON Conversation (identity_id, conversation_id) UNIQUE",
+		"CREATE VERTEX TYPE ConversationTurn IF NOT EXISTS",
+		"CREATE PROPERTY ConversationTurn.identity_id IF NOT EXISTS STRING",
+		"CREATE PROPERTY ConversationTurn.conversation_id IF NOT EXISTS STRING",
+		"CREATE PROPERTY ConversationTurn.turn_seq IF NOT EXISTS INTEGER",
+		"CREATE PROPERTY ConversationTurn.role IF NOT EXISTS STRING",
+		"CREATE PROPERTY ConversationTurn.content IF NOT EXISTS STRING",
+		"CREATE PROPERTY ConversationTurn.content_hash IF NOT EXISTS STRING",
+		"CREATE PROPERTY ConversationTurn.occurred_at IF NOT EXISTS DATETIME",
+		"CREATE PROPERTY ConversationTurn.source_ref IF NOT EXISTS STRING",
+		"CREATE PROPERTY ConversationTurn.deleted_at IF NOT EXISTS DATETIME",
+		"CREATE PROPERTY ConversationTurn.embedding IF NOT EXISTS ARRAY_OF_FLOATS",
+		"CREATE INDEX IF NOT EXISTS ON ConversationTurn (identity_id, conversation_id, turn_seq) UNIQUE",
+		"CREATE INDEX IF NOT EXISTS ON ConversationTurn (content) FULL_TEXT METADATA {analyzer:'org.apache.lucene.analysis.en.EnglishAnalyzer'}",
+		"CREATE INDEX IF NOT EXISTS ON ConversationTurn (embedding) LSM_VECTOR METADATA { \"dimensions\": 768, \"similarity\": \"COSINE\", \"quantization\": \"NONE\" }",
+		"CREATE EDGE TYPE HAS_TURN IF NOT EXISTS",
+		"CREATE INDEX IF NOT EXISTS ON HAS_TURN (`@out`, `@in`) UNIQUE",
+		"CREATE EDGE TYPE NEXT_TURN IF NOT EXISTS",
+		"CREATE INDEX IF NOT EXISTS ON NEXT_TURN (`@out`, `@in`) UNIQUE",
+	}
+	if got := conversationSchemaStatements(); len(got) != len(want) {
+		t.Fatalf("conversation schema fragment has %d statements, want %d", len(got), len(want))
+	}
+	for i, statement := range want {
+		if conversationSchemaStatements()[i] != statement {
+			t.Fatalf("conversation schema statement %d = %q, want %q", i, conversationSchemaStatements()[i], statement)
+		}
+		if count := countString(rec.statements, statement); count != 2 {
+			t.Fatalf("conversation schema statement %q emitted %d times, want once per initialization", statement, count)
+		}
+		if !strings.Contains(statement, "IF NOT EXISTS") {
+			t.Fatalf("conversation schema statement is not replay-safe: %s", statement)
+		}
+	}
+
+	lastVector := lastStringIndex(rec.statements, vectorSchemaStatements()[len(vectorSchemaStatements())-1])
+	firstConversation := lastStringIndex(rec.statements, want[0])
+	if firstConversation <= lastVector {
+		t.Fatalf("conversation schema must be registered after fact/vector schema: vector=%d conversation=%d", lastVector, firstConversation)
+	}
+}
+
+func countString(items []string, want string) int {
+	count := 0
+	for _, item := range items {
+		if item == want {
+			count++
+		}
+	}
+	return count
+}
+
+func lastStringIndex(items []string, want string) int {
+	index := -1
+	for i, item := range items {
+		if item == want {
+			index = i
+		}
+	}
+	return index
+}
+
 // `end` is reserved by ArcadeDB both as a bare identifier and as a bind
 // parameter name; the schema must never use it.
 func TestSchemaAvoidsReservedWords(t *testing.T) {
