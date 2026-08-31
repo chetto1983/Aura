@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 7
+open_count: 9
 waived_count: 0
 fixed_count: 0
-total_count: 7
-last_updated: 2026-08-31T23:06:50.014Z
+total_count: 9
+last_updated: 2026-08-31T23:48:20.997Z
 ---
 
 # Broken Windows Ledger
@@ -22,6 +22,8 @@ last_updated: 2026-08-31T23:06:50.014Z
 | 5 | 49 | deviation | internal/arcadedb/memory_recall_browse.go |  | Browse and cursor logic split from memory_recall.go to keep both production files under the 600-line cap | open |  | 2026-08-31T23:03:29.620Z |  |
 | 6 | 49 | deviation | docs/arcadedb-mcp-live-tools.json |  | Generated MCP manifest and legacy fact-only recall fixture updated for the additive unified schema and native fusion flow | open |  | 2026-08-31T23:03:30.022Z |  |
 | 7 | 49 | deviation | .planning/STATE.md |  | Sequential state handlers advanced Plan 49-03 but retained Plan 49-07 last-activity metadata; canonical and prose activity fields were synchronized manually | open |  | 2026-08-31T23:06:50.014Z |  |
+| 8 | 49 | deviation | internal/arcadedb/memory_recall_exclusion.go |  | Plan 49-08 added the internal recall exclusion field/helper so validated host headers become pre-ranking negative filters across semantic and browse modes. | open |  | 2026-08-31T23:45:38.183Z |  |
+| 9 | 49 | deviation | .planning/STATE.md |  | Plan 49-08 completed out of order; state handlers preserved current plan 4 but left Plan 49-03 prose activity/progress, so canonical and prose fields were synchronized without advancing. | open |  | 2026-08-31T23:48:20.997Z |  |
 
 ````json
 [
@@ -107,6 +109,30 @@ last_updated: 2026-08-31T23:06:50.014Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-08-31T23:06:50.014Z",
+    "resolved_at": null
+  },
+  {
+    "id": 8,
+    "kind": "deviation",
+    "phase": "49",
+    "file": "internal/arcadedb/memory_recall_exclusion.go",
+    "line": null,
+    "description": "Plan 49-08 added the internal recall exclusion field/helper so validated host headers become pre-ranking negative filters across semantic and browse modes.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-31T23:45:38.183Z",
+    "resolved_at": null
+  },
+  {
+    "id": 9,
+    "kind": "deviation",
+    "phase": "49",
+    "file": ".planning/STATE.md",
+    "line": null,
+    "description": "Plan 49-08 completed out of order; state handlers preserved current plan 4 but left Plan 49-03 prose activity/progress, so canonical and prose fields were synchronized without advancing.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-31T23:48:20.997Z",
     "resolved_at": null
   }
 ]
