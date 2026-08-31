@@ -1,0 +1,53 @@
+{
+  "contract": "1.0.0",
+  "flavor": "core",
+  "milestone": "v2.1.0",
+  "phases": [
+    {
+      "number": "45",
+      "name": "Harness correctness",
+      "status": "complete"
+    },
+    {
+      "number": "45.1",
+      "name": "Native MCP client",
+      "status": "complete"
+    },
+    {
+      "number": "46",
+      "name": "MCP trust and facade",
+      "status": "pending"
+    },
+    {
+      "number": "49",
+      "name": "Memory tiers",
+      "status": "pending"
+    },
+    {
+      "number": "50",
+      "name": "Context ladder legibility",
+      "status": "pending"
+    },
+    {
+      "number": "51",
+      "name": "Durable delegation",
+      "status": "complete"
+    },
+    {
+      "number": "52",
+      "name": "Mid-turn steering",
+      "status": "in_progress"
+    },
+    {
+      "number": "54",
+      "name": "Milestone exit",
+      "status": "pending"
+    }
+  ],
+  "next": {
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step",
+    "reason": "Phase 49 of 8 · executing"
+  },
+  "updated_at": "2026-08-31T16:23:31.471Z"
+}
