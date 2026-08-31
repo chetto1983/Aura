@@ -3,6 +3,7 @@ package arcadedb
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
 	"net/http"
 	"reflect"
@@ -174,7 +175,8 @@ func memoryBatchTestState(facts ...memoryBatchFact) memoryBatchState {
 	for i, fact := range facts {
 		state.Entities[fact.Fact.Subject] = fact.Fact.SubjectKind
 		state.Entities[fact.Fact.Object] = fact.Fact.ObjectKind
-		state.Facts[fact.RID+string(rune(i))] = fact
+		fact.RID = fmt.Sprintf("#1:%d", i)
+		state.Facts[fact.RID] = fact
 	}
 	return state
 }
