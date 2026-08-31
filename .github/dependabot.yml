@@ -16,6 +16,22 @@ updates:
           - minor
           - patch
 
+  # Web UI npm dependencies (web/package-lock.json). The `xlsx` SheetJS CDN
+  # tarball is a URL dependency Dependabot cannot bump: it stays manual.
+  - package-ecosystem: npm
+    directory: "/web"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      npm-minor-patch:
+        update-types:
+          - minor
+          - patch
+
   # GitHub Actions used by the CI / CodeQL / release workflows.
   - package-ecosystem: github-actions
     directory: "/"
