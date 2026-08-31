@@ -66,14 +66,18 @@ func TestBridge_TranslatesTools(t *testing.T) {
 	}
 }
 
-// TestBridge_MemoryNamespaceToolsAreDeferredByDefault fixtures the REAL memory
-// tool surface (cmd/arcadedb-mcp's 10 tool names), not a 2-tool stand-in: after
-// D-27, whether a mount stays deferred depends on its model-facing COUNT, and
-// only the real 4-model-facing-tool shape (memory_merge_entities, memory_forget,
-// memory_upsert_fact, memory_recall; the other 6 are memoryHiddenFromModel) can
-// prove memory legitimately stays deferred (4 > maxAlwaysLoadedMCPTools). A
-// 2-tool fixture would now qualify for a slot and assert the wrong thing.
-func TestBridge_MemoryNamespaceToolsAreDeferredByDefault(t *testing.T) {
+// TestBridge_MemoryNamespaceEarnsAlwaysLoadedSlot fixtures the REAL memory tool
+// surface (cmd/arcadedb-mcp's 10 tool names), not a 3-tool stand-in: after D-27
+// whether a mount stays deferred depends on its model-facing COUNT, so only the
+// real shape proves the real outcome. Seven names are in memoryHiddenFromModel
+// (bridge_policy.go), leaving memory_recall, memory_upsert_fact and
+// memory_forget -- exactly at maxAlwaysLoadedMCPTools, so on a fresh budget the
+// mount earns a slot and every bridged tool is Deferred:false.
+//
+// This test asserted the opposite until 2026-08-31, when memory_merge_entities
+// was hidden precisely to bring the count under the ceiling; the inversion IS
+// the change, so it is asserted here rather than deleted.
+func TestBridge_MemoryNamespaceEarnsAlwaysLoadedSlot(t *testing.T) {
 	resetLoadedSlotBudgetForTest()
 	srv, _ := newInMemoryMounted(t,
 		mustTool("memory_recall", "Recall memory.", nil, &sdkmcp.ToolAnnotations{ReadOnlyHint: true}),
@@ -91,14 +95,14 @@ func TestBridge_MemoryNamespaceToolsAreDeferredByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Bridge: %v", err)
 	}
-	// 10 advertised, 6 hidden by bridgePolicy.modelFacing (memoryHiddenFromModel):
-	// only the 4 model-facing tools bridge at all.
-	if len(got) != 4 {
-		t.Fatalf("want 4 model-facing memory tools bridged, got %d", len(got))
+	// 10 advertised, 7 hidden by bridgePolicy.modelFacing (memoryHiddenFromModel):
+	// only the 3 model-facing tools bridge at all.
+	if len(got) != 3 {
+		t.Fatalf("want 3 model-facing memory tools bridged, got %d", len(got))
 	}
 	for _, tool := range got {
-		if !tool.Spec().Deferred {
-			t.Fatalf("%s Deferred = false; memory's 4 model-facing tools exceed the 3-tool ceiling and must stay deferred (D-27)", tool.Spec().Name)
+		if tool.Spec().Deferred {
+			t.Fatalf("%s Deferred = true; memory's 3 model-facing tools are at the ceiling and must earn an always-loaded slot on a fresh budget (D-27)", tool.Spec().Name)
 		}
 	}
 }

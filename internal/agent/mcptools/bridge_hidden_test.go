@@ -18,11 +18,11 @@ func TestBridgeHidesNonModelFacingMemoryTools(t *testing.T) {
 
 	// The REAL surface of cmd/arcadedb-mcp.
 	all := []string{
-		// model-facing: one read plan plus three mutation intentions.
-		"memory_recall", "memory_upsert_fact", "memory_merge_entities", "memory_forget",
+		// model-facing: one read plan plus two mutation intentions.
+		"memory_recall", "memory_upsert_fact", "memory_forget",
 		// host-facing: active CLI/context/graph/readiness operations, absent from the model.
 		"memory_search", "memory_facts_about", "memory_entities", "memory_digest",
-		"graph_schema", "memory_reembed",
+		"graph_schema", "memory_reembed", "memory_merge_entities",
 	}
 	toolDefs := make([]*sdkmcp.Tool, 0, len(all))
 	for _, n := range all {
@@ -40,8 +40,7 @@ func TestBridgeHidesNonModelFacingMemoryTools(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"memory__memory_recall", "memory__memory_upsert_fact",
-		"memory__memory_merge_entities", "memory__memory_forget",
+		"memory__memory_recall", "memory__memory_upsert_fact", "memory__memory_forget",
 	} {
 		if _, ok := got[want]; !ok {
 			t.Errorf("%s must reach the model", want)
@@ -50,13 +49,14 @@ func TestBridgeHidesNonModelFacingMemoryTools(t *testing.T) {
 	for _, hidden := range []string{
 		"memory__memory_search", "memory__memory_facts_about", "memory__memory_entities",
 		"memory__memory_digest", "memory__graph_schema", "memory__memory_reembed",
+		"memory__memory_merge_entities",
 	} {
 		if _, ok := got[hidden]; ok {
 			t.Errorf("%s must NOT reach the model", hidden)
 		}
 	}
-	if len(got) != 4 {
-		t.Errorf("bridged %d memory tools, want 4", len(got))
+	if len(got) != 3 {
+		t.Errorf("bridged %d memory tools, want 3", len(got))
 	}
 }
 

@@ -36,13 +36,37 @@ func (p bridgePolicy) defaultDeferred() bool {
 	return !p.alwaysLoaded
 }
 
+// memoryHiddenFromModel is the memory surface the HOST keeps and the model does
+// not see. Every entry stays live on cmd/arcadedb-mcp and reachable out of band:
+// memory_digest and memory_search are called per turn by the runner's memory
+// context (serve_memory_context.go), and the rest answer to `aura memory`
+// (search/facts/entities/reembed/schema).
+//
+// memory_merge_entities joined them on 2026-08-31 for the D-27 slot arithmetic
+// (bridge_deferral.go), not because it is host-only. At 4 model-facing tools
+// memory was one over maxAlwaysLoadedMCPTools, so the ONE capability this
+// deployment exists for -- writing down what it learns -- cost a tool_search
+// round trip before the model could reach memory_upsert_fact, while calendar (1
+// tool) and whatsapp (3) held both always-loaded slots. Merging two entities is
+// hygiene an operator performs deliberately (`aura memory merge <duplicate>
+// <survivor>`, cmd/aura/memory.go), not something the model needs mid-turn;
+// spending the manifest slot on recall/upsert/forget instead buys the three
+// verbs that ARE the product.
+//
+// The cost is explicit and belongs here rather than in a commit message: mounts
+// run in BuiltInCatalog's alphabetical order (calendar, memory, whatsapp) and
+// there are only maxAlwaysLoadedMCPSlots of them, so memory taking slot 2 means
+// WHATSAPP now stays deferred. That is the trade -- remembering beats messaging
+// for an assistant whose thesis is memory -- and it is what to revisit first if
+// the ceiling or the slot count ever moves.
 var memoryHiddenFromModel = map[string]struct{}{
-	"graph_schema":       {},
-	"memory_digest":      {},
-	"memory_entities":    {},
-	"memory_facts_about": {},
-	"memory_reembed":     {},
-	"memory_search":      {},
+	"graph_schema":          {},
+	"memory_digest":         {},
+	"memory_entities":       {},
+	"memory_facts_about":    {},
+	"memory_merge_entities": {},
+	"memory_reembed":        {},
+	"memory_search":         {},
 }
 
 func (p bridgePolicy) modelFacing(tool string) bool {

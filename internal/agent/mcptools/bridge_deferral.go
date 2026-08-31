@@ -11,10 +11,18 @@
 // tool and WhatsApp's exposes 3 (1 curated multiplex tool plus the 2 view-bound
 // raw reads its fork deliberately keeps outside the merge, because their live
 // MCP Apps views break under CallReadOnlyTool's Mutating gate) — both qualify,
-// WhatsApp with zero headroom to spare. Memory exposes 4 model-facing tools
-// (10 advertised, 6 hidden by bridgePolicy.modelFacing) and therefore stays
-// deferred exactly as it does today; that leaves memory's own tiering to
-// Phase 48 rather than an implicit side effect of this arithmetic. N=1 was
+// WhatsApp with zero headroom to spare.
+//
+// Memory used to expose 4 model-facing tools (10 advertised, 6 hidden by
+// bridgePolicy.modelFacing) and therefore stayed deferred, which left the one
+// capability this deployment exists for behind a tool_search. On 2026-08-31
+// memory_merge_entities joined memoryHiddenFromModel -- operator hygiene, still
+// served by `aura memory merge` -- putting memory at 3 and inside the ceiling.
+// Because mounts are granted in alphabetical order against only 2 slots,
+// calendar and memory now hold them and WHATSAPP is the one that stays
+// deferred. That reordering is the deliberate outcome, not a side effect: read
+// the trade in memoryHiddenFromModel's comment before changing either
+// constant. N=1 was
 // rejected as brittle: a fork that split one verb into two tools would fall off
 // the cliff for no reason related to what the model actually carries. Both
 // numbers are Go constants, not env vars — no declaration ceremony is needed at
