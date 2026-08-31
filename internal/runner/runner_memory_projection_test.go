@@ -301,6 +301,8 @@ type postCommitProjectionSource struct {
 	turns            []conversations.ProjectionTurn
 	calls            int
 	committedAtOffer []int
+	err              error
+	limits           []int
 }
 
 func (s *postCommitProjectionSource) record(ctx context.Context, p conversations.AppendTurnParams) {
@@ -330,7 +332,11 @@ func (s *postCommitProjectionSource) ListProjectionTurns(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.calls++
+	s.limits = append(s.limits, limit)
 	s.committedAtOffer = append(s.committedAtOffer, len(s.turns))
+	if s.err != nil {
+		return nil, after, s.err
+	}
 	out := make([]conversations.ProjectionTurn, 0, limit)
 	next := after
 	for _, turn := range s.turns {
@@ -345,6 +351,20 @@ func (s *postCommitProjectionSource) ListProjectionTurns(
 		next = conversations.ProjectionCursor{ConversationID: turn.ConversationID, Seq: turn.Seq}
 	}
 	return out, next, nil
+}
+
+func (s *postCommitProjectionSource) replace(content string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sum := sha256.Sum256([]byte(content))
+	s.turns[0].Content = content
+	s.turns[0].ContentHash = hex.EncodeToString(sum[:])
+}
+
+func (s *postCommitProjectionSource) clear() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.turns = nil
 }
 
 type postCommitConversationStore struct {

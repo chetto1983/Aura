@@ -96,3 +96,10 @@ func newChatConversationProjector(
 	)
 	return runner.NewConversationProjector(source, tenantConversationProjectionSink{clients: clients}, 0)
 }
+
+func wireChatConversationReconciliation(
+	_ *runner.DeleteReconciler,
+	_ *runner.ConversationProjector,
+	_ runner.ConversationProjectionIdentities,
+) {
+}

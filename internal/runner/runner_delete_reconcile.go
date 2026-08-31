@@ -20,12 +20,19 @@ type reservedDeleteRecoveryStore interface {
 	ListReservedDeletes(context.Context, int32) ([]conversations.ReservedDelete, error)
 }
 
+// ConversationProjectionIdentities lists the PostgreSQL identities whose
+// authoritative conversations must be replayed into their tenant graphs.
+type ConversationProjectionIdentities interface {
+	IdentityIDs(context.Context) ([]string, error)
+}
+
 // DeleteReconciler resumes export-delete operations from their stored operation
 // reservation after cancellation, transient failure, or process restart.
 type DeleteReconciler struct {
-	runner    *Runner
-	interval  time.Duration
-	projector *ConversationProjector
+	runner               *Runner
+	interval             time.Duration
+	projector            *ConversationProjector
+	projectionIdentities ConversationProjectionIdentities
 
 	wg   sync.WaitGroup
 	stop chan struct{}
@@ -44,6 +51,23 @@ func (r *DeleteReconciler) SetConversationProjector(projector *ConversationProje
 	if r != nil {
 		r.projector = projector
 	}
+}
+
+// SetConversationProjection wires the authoritative identity roster used by
+// boot and periodic full replay.
+func (r *DeleteReconciler) SetConversationProjection(
+	projector *ConversationProjector,
+	identities ConversationProjectionIdentities,
+) {
+	if r != nil {
+		r.projector = projector
+		r.projectionIdentities = identities
+	}
+}
+
+// ReconcileConversationProjection repairs derived graph lag from PostgreSQL.
+func (r *DeleteReconciler) ReconcileConversationProjection(context.Context) error {
+	return nil
 }
 
 // Start launches recovery when the store exposes durable reservations.

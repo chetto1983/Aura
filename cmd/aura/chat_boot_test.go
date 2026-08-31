@@ -532,3 +532,24 @@ func TestChatBootMemoryProjection(t *testing.T) {
 	}
 	_ = projector.Close(context.Background())
 }
+
+type countingProjectionRoster struct{ calls int }
+
+func (r *countingProjectionRoster) IdentityIDs(context.Context) ([]string, error) {
+	r.calls++
+	return []string{"00000000-0000-0000-0000-000000000001"}, nil
+}
+
+func TestConversationProjectionBootReconcileWiring(t *testing.T) {
+	projector := runner.NewConversationProjector(emptyProjectionSource{}, emptyProjectionSink{}, 1)
+	t.Cleanup(func() { _ = projector.Close(context.Background()) })
+	reconciler := runner.NewDeleteReconciler(nil, time.Hour)
+	roster := &countingProjectionRoster{}
+	wireChatConversationReconciliation(reconciler, projector, roster)
+	if err := reconciler.ReconcileConversationProjection(context.Background()); err != nil {
+		t.Fatalf("reconcile projection: %v", err)
+	}
+	if roster.calls != 1 {
+		t.Fatalf("boot reconciliation roster calls = %d, want 1", roster.calls)
+	}
+}
