@@ -110,6 +110,15 @@ func sendingMiddleware(policy bridgePolicy, owner string) []sdkmcp.Middleware {
 	return []sdkmcp.Middleware{IdentityBindingMiddleware(owner)}
 }
 
+// configureIdentityScopedHeaders is the single production assignment point for
+// host-derived memory headers. The RED shape preserves the already-shipped actor
+// carrier while Task 2's failing test requires active recall composition too.
+func configureIdentityScopedHeaders(options *mcp.SessionOptions, policy bridgePolicy) {
+	if policy.identityScoped {
+		options.HeaderFunc = actorHeaderFunc
+	}
+}
+
 // mountManagedHTTPHost is the streamable-HTTP mirror of mountStdio: it opens the
 // raw session and lists tools via handshakeCtx (bounded exactly like mountStdio's
 // raw discovery call — same rationale, see bridgeFromAdvertised's doc comment),
@@ -124,9 +133,7 @@ func mountManagedHTTPHost(processCtx, handshakeCtx context.Context, reg *tools.R
 		// D-10 (Phase 51): only an identity-scoped mount (the memory/arcadedb-mcp
 		// surface today) needs the host-derived actor on the wire at all -- gated
 		// the same way sendingMiddleware already gates identity binding.
-		if policy.identityScoped {
-			o.HeaderFunc = actorHeaderFunc
-		}
+		configureIdentityScopedHeaders(&o, policy)
 		return mcp.OpenSDKSession(hctx, name, server, opts.Egress, o)
 	}
 	if policy.identityScoped {

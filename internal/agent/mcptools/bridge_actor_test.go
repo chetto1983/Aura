@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/mcp"
 )
 
 // TestActorFromContextDistinguishesParentAndWorker pins the D-10 signal:
@@ -135,5 +136,28 @@ func TestRecallContextHeaders(t *testing.T) {
 	}})
 	if err == nil {
 		t.Fatal("over-cap active source encoded successfully")
+	}
+}
+
+func TestRecallContextHeadersProductionMount(t *testing.T) {
+	options := mcp.SessionOptions{}
+	configureIdentityScopedHeaders(&options, bridgePolicy{identityScoped: true})
+	if options.HeaderFunc == nil {
+		t.Fatal("identity-scoped production mount has no HeaderFunc")
+	}
+	ctx := tools.WithRequestID(context.Background(), "turn-mount")
+	ctx = tools.WithToolCallContext(ctx, "conversation-mount", "call-mount", t.TempDir(), 2048)
+	headers := options.HeaderFunc(ctx)
+	if headers[actorRunIDHeader] != "turn-mount" || headers[actorRoleHeader] != actorRoleParent {
+		t.Fatalf("production actor headers = %v", headers)
+	}
+	if headers[recallContextHeader] == "" {
+		t.Fatalf("production active-source header is absent: %v", headers)
+	}
+
+	unscoped := mcp.SessionOptions{}
+	configureIdentityScopedHeaders(&unscoped, bridgePolicy{})
+	if unscoped.HeaderFunc != nil {
+		t.Fatal("non-identity-scoped mount received memory headers")
 	}
 }

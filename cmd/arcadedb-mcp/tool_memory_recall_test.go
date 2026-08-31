@@ -2,10 +2,15 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"net/http"
 	"slices"
+	"strings"
 	"testing"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -180,4 +185,143 @@ func TestMemoryRecallModeContract(t *testing.T) {
 	if !recallToolFound {
 		t.Fatal("memory_recall is not advertised")
 	}
+}
+
+func TestMemoryRecallActiveSourceHeader(t *testing.T) {
+	t.Run("identity is required before header decode", func(t *testing.T) {
+		client, rec := newRecordingDB(t)
+		req := reqWithIdentity("")
+		req.Extra.Header = http.Header{memoryRecallActiveSourcesHeader: {"%%%"}}
+		_, _, err := memoryRecallHandler(singleTenant(t, client))(
+			context.Background(), req, MemoryRecallInput{Query: "blue notebook"})
+		if !errors.Is(err, errMissingOAuthSubject) {
+			t.Fatalf("error = %v, want missing OAuth subject", err)
+		}
+		if len(rec.statements) != 0 {
+			t.Fatalf("unauthenticated header reached database: %v", rec.statements)
+		}
+	})
+
+	for _, tc := range []struct {
+		name   string
+		header http.Header
+	}{
+		{name: "malformed", header: http.Header{memoryRecallActiveSourcesHeader: {"%%%"}}},
+		{name: "over encoded cap", header: http.Header{memoryRecallActiveSourcesHeader: {strings.Repeat("a", 2049)}}},
+		{name: "ambiguous duplicate headers", header: http.Header{memoryRecallActiveSourcesHeader: {"one", "two"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, rec := newRecordingDB(t)
+			req := reqWithIdentity(testIdentity)
+			req.Extra.Header = tc.header
+			_, _, err := memoryRecallHandler(singleTenant(t, client))(
+				context.Background(), req, MemoryRecallInput{Query: "blue notebook"})
+			if err == nil {
+				t.Fatal("invalid active-source header was accepted")
+			}
+			if len(rec.statements) != 0 {
+				t.Fatalf("invalid header reached database: %v", rec.statements)
+			}
+		})
+	}
+
+	t.Run("turn id must match the host actor", func(t *testing.T) {
+		client, rec := newRecordingDB(t)
+		req := recallRequestWithActiveSource(t, testIdentity, "actor-turn", memoryRecallActiveSource{
+			ConversationID: "conversation-active", TurnID: "different-turn",
+		})
+		_, _, err := memoryRecallHandler(singleTenant(t, client))(
+			context.Background(), req, MemoryRecallInput{Query: "blue notebook"})
+		if err == nil {
+			t.Fatal("actor/source turn mismatch was accepted")
+		}
+		if len(rec.statements) != 0 {
+			t.Fatalf("actor mismatch reached database: %v", rec.statements)
+		}
+	})
+}
+
+func TestMemoryRecallSuppressesActiveConversation(t *testing.T) {
+	ownership := `{"result":[{"identity_id":"` + testIdentity + `","conversation_id":"conversation-active"}]}`
+	ranked := `{"result":[{"rid":"#20:1","score":0.04},{"rid":"#20:2","score":0.03}]}`
+	turns := `{"result":[` +
+		`{"@rid":"#20:1","identity_id":"` + testIdentity + `","conversation_id":"conversation-active","turn_seq":9,"role":"user","content":"active notebook","content_hash":"active","occurred_at":"2026-08-31T12:00:00Z","source_ref":"postgres://active/9"},` +
+		`{"@rid":"#20:2","identity_id":"` + testIdentity + `","conversation_id":"conversation-history","turn_seq":7,"role":"user","content":"historical notebook","content_hash":"history","occurred_at":"2026-08-30T12:00:00Z","source_ref":"postgres://history/7"}]}`
+	window := `{"result":[{"identity_id":"` + testIdentity + `","conversation_id":"conversation-history","turn_seq":7,"role":"user","content":"historical notebook","content_hash":"history","occurred_at":"2026-08-30T12:00:00Z","source_ref":"postgres://history/7"}]}`
+	client, rec := newRecordingDB(t, ownership, ranked, `{"result":[]}`, turns, window)
+	client.WithEmbedder(recallStubEmbedder{})
+	req := recallRequestWithActiveSource(t, testIdentity, "turn-current", memoryRecallActiveSource{
+		ConversationID: "conversation-active", TurnID: "turn-current",
+	})
+	_, output, err := memoryRecallHandler(singleTenant(t, client))(
+		context.Background(), req, MemoryRecallInput{Query: "blue notebook", Limit: 5})
+	if err != nil {
+		t.Fatalf("memory_recall: %v", err)
+	}
+	if len(output.Evidence) != 1 || output.Evidence[0].Conversation == nil ||
+		output.Evidence[0].Conversation.ConversationID != "conversation-history" {
+		t.Fatalf("evidence = %+v, want only bound historical conversation", output.Evidence)
+	}
+	for _, evidence := range output.Evidence {
+		if evidence.Conversation != nil && evidence.Conversation.ConversationID == "conversation-active" {
+			t.Fatalf("active conversation leaked: %+v", output.Evidence)
+		}
+	}
+	statement, params, ok := rec.find("vector.fuse")
+	if !ok || !strings.Contains(statement, "conversation_id NOT IN :excluded_conversation_ids") {
+		t.Fatalf("recall query lacks negative filter: %q", statement)
+	}
+	if got := params["excluded_conversation_ids"]; !slices.Equal(anyStringSlice(got), []string{"conversation-active"}) {
+		t.Fatalf("negative filter params = %#v", got)
+	}
+}
+
+func TestMemoryRecallActiveSourceIsNotModelInput(t *testing.T) {
+	raw, err := json.Marshal(MemoryRecallInput{Query: "blue notebook"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if strings.Contains(text, "active") || strings.Contains(text, "source") || strings.Contains(text, "turn_id") {
+		t.Fatalf("model input carries active-source state: %s", text)
+	}
+	if _, ok := any(MemoryRecallInput{}).(interface{ GetMeta() map[string]any }); ok {
+		t.Fatal("memory recall input unexpectedly exposes MCP metadata")
+	}
+}
+
+func recallRequestWithActiveSource(
+	t *testing.T,
+	identity string,
+	actorTurn string,
+	sources ...memoryRecallActiveSource,
+) *mcp.CallToolRequest {
+	t.Helper()
+	raw, err := json.Marshal(struct {
+		Version int                        `json:"version"`
+		Sources []memoryRecallActiveSource `json:"sources"`
+	}{Version: 1, Sources: sources})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := reqWithParentActor(identity, actorTurn)
+	req.Extra.Header.Set(memoryRecallActiveSourcesHeader, base64.RawURLEncoding.EncodeToString(raw))
+	return req
+}
+
+func anyStringSlice(value any) []string {
+	raw, ok := value.([]any)
+	if !ok {
+		if stringsValue, ok := value.([]string); ok {
+			return stringsValue
+		}
+		return nil
+	}
+	values := make([]string, 0, len(raw))
+	for _, item := range raw {
+		if text, ok := item.(string); ok {
+			values = append(values, text)
+		}
+	}
+	return values
 }

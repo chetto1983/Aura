@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -11,6 +12,13 @@ import (
 
 	"github.com/chetto1983/aura/internal/arcadedb"
 )
+
+const memoryRecallActiveSourcesHeader = "X-Aura-Active-Sources"
+
+type memoryRecallActiveSource struct {
+	ConversationID string `json:"conversation_id"`
+	TurnID         string `json:"turn_id"`
+}
 
 // MemoryRecallInput is the additive public contract for the single memory read.
 type MemoryRecallInput struct {
@@ -103,6 +111,11 @@ func memoryRecallHandler(tenants *tenants) mcp.ToolHandlerFor[MemoryRecallInput,
 		if err != nil {
 			return nil, MemoryRecallOutput{}, err
 		}
+		excludedConversations, err := memoryRecallActiveConversationIDs(ctx, req, identity, client)
+		if err != nil {
+			return nil, MemoryRecallOutput{}, err
+		}
+		_ = excludedConversations
 		asOf, err := parseOptionalTime(in.AsOf, "as_of")
 		if err != nil {
 			return nil, MemoryRecallOutput{}, err
@@ -119,6 +132,21 @@ func memoryRecallHandler(tenants *tenants) mcp.ToolHandlerFor[MemoryRecallInput,
 		recordMemoryRecallTelemetry(ctx, in.Mode, result)
 		return nil, memoryRecallOutput(result), nil
 	}
+}
+
+// memoryRecallActiveConversationIDs decodes and revalidates host-only recall
+// exclusions. The RED stub keeps absent-header behavior byte-identical while a
+// present header fails before the recall query until Task 2 GREEN.
+func memoryRecallActiveConversationIDs(
+	_ context.Context,
+	req *mcp.CallToolRequest,
+	_ string,
+	_ *arcadedb.Client,
+) ([]string, error) {
+	if req == nil || req.Extra == nil || strings.TrimSpace(req.Extra.Header.Get(memoryRecallActiveSourcesHeader)) == "" {
+		return nil, nil
+	}
+	return nil, fmt.Errorf("memory_recall: active-source header decode not implemented")
 }
 
 func memoryRecallOutput(result arcadedb.RecallResult) MemoryRecallOutput {
