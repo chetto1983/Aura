@@ -10884,3 +10884,128 @@ flusso completo, che funziona.
 > upload had already been extracted, the index held this document_id up front, so the
 > retest exercised the gate's immediate-hit path; the wait-then-proceed path is proven by
 > the unit suite and the cockpit +42s measurement, not by this live sample.
+
+## Section Memory has one retrieval surface with isolated conversation, fact, and reasoning evidence tiers (Amendment #201, 2026-08-31)
+
+> **Amendment #201 (2026-08-31 — measured on the live Phase 49 baseline before any
+> reasoning-tier implementation; extends Amendment #91).** Amendment #91 made bounded,
+> provider-exposed reasoning durable for display while keeping `llm.Message` structurally
+> reasoning-free, and explicitly left a graph-resident `ReasoningTrace` out of scope. This
+> amendment narrows that non-goal after measuring the deployed memory path: authorized
+> reasoning MAY receive a derived identity-scoped ArcadeDB projection, but only behind an
+> explicit `memory_recall` reasoning selector. It never becomes ordinary conversation
+> history, automatic memory context, compaction/summarization input, or fact evidence.
+>
+> **Measured baseline and provenance.** The source candidate was
+> `39c677d87a3f75919e21fe0fc36bb4a8b0a2d516` (2026-08-31T18:39:55+02:00). The running
+> `arcadedb-mcp` container was healthy on published revision
+> `3c1723cc5d3c4a23c9585c96b9c35d3d79416050`, image digest
+> `sha256:621438a7bb77983899c22f43c52714d08c25af1efcd9ad14fc3479e8893225a4`.
+> The authenticated production-transport probe compiled from the candidate and exercised
+> the real ArcadeDB/embedder services: ArcadeDB `26.8.1` build
+> `727aa4568cdface314ee15cd242f71d6299b2b0c`, MCP server `0.1.0`, and
+> EmbeddingGemma `embeddinggemma-300M-Q8_0.gguf` at exactly 768 dimensions. The top-level
+> Aura daemon was running but unhealthy during this measurement; the PostgreSQL,
+> ArcadeDB, embedder, and `arcadedb-mcp` services used by the probe were healthy. The
+> measurement therefore establishes the memory service path, not whole-daemon readiness.
+>
+> **Published tool visibility.** Authenticated MCP `tools/list` returned exactly ten server
+> operations: `graph_schema`, `memory_digest`, `memory_entities`, `memory_facts_about`,
+> `memory_forget`, `memory_merge_entities`, `memory_recall`, `memory_reembed`,
+> `memory_search`, and `memory_upsert_fact`. Host curation at the measured source exposes
+> exactly three of those to the model: `memory_recall`, `memory_upsert_fact`, and
+> `memory_forget`; the other seven remain live host/operator primitives. Of the three,
+> `memory_recall` is the ONE retrieval operation. Mutation is a separate classification:
+> `memory_upsert_fact` and `memory_forget` are not retrieval siblings, and hiding or
+> renaming them is not authorized by TOOL-05.
+>
+> **Recall-path measurement.** A synthetic, disposable identity wrote one attributable
+> fact and called the published `memory_recall` through an OAuth-subject MCP session with
+> the host-derived parent actor header. A semantic query returned that fact at rank 1,
+> `retrieval.path="hybrid"`, with no abstention. Across 25 sequential calls retaining the
+> cold sample, latency was p50 **39.358 ms**, p95 **85.395 ms**, max **122.599 ms**. Exact
+> entity recall returned the same fact at rank 1 through `retrieval.path="graph"` in one
+> **22.803 ms** observation. The unrelated weak query returned `facts:[]`,
+> `retrieval.path="hybrid"`, `abstained:true`, reason
+> `no_qualified_candidates`, in one **84.223 ms** observation. A separate 25-sample drive
+> against the running published container's legacy CLI/identity/`memory_search` path
+> measured p50 **70.698 ms**, p95 **97.878 ms**, max **176.682 ms**; that number is retained
+> only as a backend comparison and is NOT evidence that the CLI path is the final unified
+> retrieval contract.
+>
+> **Authoritative-turn and event baseline.** Aggregates from the live PostgreSQL source
+> contained 2 projection-eligible rows across 1 non-deleted conversation: 331 inline
+> content bytes total, 0 sidecar-backed rows (0% spill incidence), content bytes p50
+> 165.5 / p95 288.35 / max 302, and exactly 2 eligible turns in the conversation. The
+> latest active conversation had max sequence 6, no compaction, and 6 source rows after
+> the compaction boundary. That describes stored-source membership only; the actual
+> L1/L2 token-budget selection is runtime-dependent and was not reconstructed from these
+> aggregates. No provider-exposed reasoning row existed in this sample. Two terminal
+> tool events existed, both successful: args p95 35 bytes, preview/result p95 and max 555
+> bytes, with zero truncations and zero sidecars. Conversation semantic projection did
+> not exist yet, so no conversation candidate or pre-fusion conversation rank was
+> observable; the fact-only known-answer candidate ranked first. This absence is baseline
+> evidence, not a fabricated mixed-tier pass.
+>
+> **Ratified source and projection contract (D-02 through D-06).** PostgreSQL remains the
+> sole authority for conversation turns. Per-identity ArcadeDB conversation records are
+> derived, rebuildable projections. Only committed user messages and final assistant
+> answers are eligible; reasoning, tool calls, and raw tool results are excluded. A turn
+> commit succeeds independently of the asynchronous ordered/idempotent projector;
+> reconciliation repairs missed writes and propagates edits and deletions. Ordinary
+> recall suppresses turns still present in active context, using host-derived source keys,
+> while compacted-out and prior-conversation turns remain eligible.
+>
+> **Ratified retrieval contract (D-07 through D-10, TOOL-05).** `memory_recall` remains the
+> single model-facing read. Conversation and long-term-fact tiers are queried
+> independently and fused deterministically without a forced per-tier quota. Results are
+> typed evidence, not a second generated answer: facts stay atomic; conversation hits
+> hydrate bounded PostgreSQL-authoritative anchor windows with source IDs, sequence,
+> timestamp, rank, and provenance. The response reports tier contribution separately as
+> `retrieval.effective_path` (`facts`, `conversations`, `mixed`, or explicit `reasoning`)
+> and reports the backend that actually ran as `retrieval.path` (`graph`, `hybrid`, or
+> `lexical`). An empty or weak result abstains explicitly. Progressive semantic,
+> recent/open/scroll, and explicit-reasoning operations remain modes behind this one tool,
+> not sibling tools.
+>
+> **Ratified explicit reasoning contract (D-11 through D-14, CTX-05).** The derived graph
+> may contain only reasoning the provider explicitly exposes and Aura is already
+> authorized to display or persist; an exposed provider summary is stored as such. Aura
+> MUST NOT reconstruct hidden chain-of-thought and MUST NOT introduce a post-task
+> reasoning summarizer. The graph shape is one trace per answer, ordered bounded steps,
+> structured bounded/redacted tool-call records, the initiating turn link, and explicit
+> trusted-entity audit edges equivalent to `TOUCHED`. Ordinary recall, proactive memory,
+> compaction, summarization, and fact extraction have no reasoning selector. Reasoning
+> enters context only through an explicit reasoning mode. Tool records retain only
+> allowlisted arguments, status, duration, bounded redacted observation, and source
+> references — never secrets, blobs, or large raw results.
+>
+> **Ratified direct-evidence capture contract (D-15 through D-18, AUTO-03).** Automatic
+> fact capture accepts only durable attributable evidence: explicit user statements and
+> reliable observations from allowlisted tools, with confidence and direct provenance.
+> It rejects hypotheses, temporary instructions, secrets, generated assistant prose, and
+> every reasoning source. Accepted writes are serialized while the task runs and a bounded
+> terminal flush barrier proves them durable before completion is published. Duplicate
+> evidence enriches provenance; contradiction remains temporal evidence and only the
+> principal host may authorize supersession. Run and worker provenance stays host-derived.
+>
+> **Reasoning retention policy (policy, not measured capacity).** Successful traces retain
+> for exactly **30 days**; failed or cancelled traces retain for exactly **7 days**.
+> Source-turn, conversation, identity, or explicit operator deletion always dominates
+> those TTLs. Retrieval never refreshes retention and the graph owns no independent
+> retention authority. These values are selected product defaults; the zero-reasoning-row
+> live sample did not measure storage capacity or establish their sufficiency.
+>
+> ### What this measurement does NOT prove
+>
+> The disposable sample does NOT establish production semantic quality, retrieval quality
+> on a representative mixed corpus, or the sufficiency of candidate counts, thresholds,
+> anchor windows, or the 30-day/7-day retention policy. It does NOT prove the absence of
+> every future reasoning leak: that requires graph-resident negative tests across ordinary
+> recall, preload, history, compaction, summarization, and capture. It does NOT prove crash
+> recovery or deletion convergence for the not-yet-built derived projections. It does NOT
+> prove concurrent batch correctness, final-state validation, rollback, or whole-decision
+> retry behavior. It does NOT turn the observed zero reasoning rows, zero spills, one fact
+> rank, or one conversation into a capacity or distribution claim. Finally, it does NOT
+> prove whole-Aura readiness: the daemon health check was failing during the otherwise
+> healthy memory-service measurement.
