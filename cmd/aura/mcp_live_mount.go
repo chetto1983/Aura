@@ -88,6 +88,18 @@ func (m *liveMCPMount) StartReconnect(ctx context.Context, cfg *config.Config, p
 		for _, name := range names {
 			ownerCtx := mcpOwnerContext(ctx, cfg, pool, name, policies[name])
 			if identityctx.IdentityID(ownerCtx) == "" {
+				// SAY SO. This skip used to be a bare `continue`, and mcpOwnerContext's
+				// own ErrNoGrant branch is deliberately silent too, so a server that
+				// never mounted produced no line at all -- not "mounted", not "mount
+				// failed", nothing. On 2026-08-31 that cost a live afternoon: memory was
+				// absent from the registry, the daemon sat unhealthy on "required memory
+				// capability is not mounted", and the only evidence of WHY was in the
+				// conversation rows, where the agent had asked tool_search for
+				// memory_recall three times and been told it is not a registered tool.
+				// A capability silently missing from the manifest is the one failure the
+				// model cannot route around, so it costs one WARN.
+				slog.Warn("mcp oauth: no grant owner resolved — server NOT mounted, its tools are absent from the agent registry",
+					"server", redact.Line(name))
 				continue
 			}
 			m.Mount(ownerCtx, name, policies[name])
