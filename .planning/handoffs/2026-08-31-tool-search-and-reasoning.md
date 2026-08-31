@@ -21,6 +21,10 @@ NOT to ship. Everything below is measured; where it is not, it says so.
 | `50b3006ea` | the completion critic gate says when it vetoes |
 | `dd8a3186a` | amendment #202 plus three false doc statements corrected |
 | `dd3fe8652` | held-out measurement harness for the tool-search ranker |
+| `4b1266ef8` | this handoff |
+| `8fe5f9a76` | migration 0113: the last three blocking identity references cascade |
+| `d6ebf07a8` | live-schema contract test pinning that nothing blocks an identity delete |
+| `d117ab2d0` | three assertions Windows cannot represent, guarded |
 
 CI was green through `b40d333c4`. Later runs were left unchecked at the operator's
 instruction: a large parallel effort on memory batches was landing at the same time
@@ -43,12 +47,21 @@ denied with it. Now published to GHCR and pinned by the installer.
 
 ## Open, in priority order
 
-1. **ON DELETE RESTRICT on `aura.telegram_accounts` and `aura.telegram_setup_pending`.**
-   The deprovision saga deletes the identity row AFTER memory, bucket and dirs, so for
-   any identity that ever linked Telegram the delete fails with the data planes already
-   destroyed. Hit twice live this session; it is what forced manual SQL deletes and so
-   created two orphan memory tenants (since cleaned). Same class as the dormant
-   `audit_logs` landmine the code already documents, but this one is armed.
+1. ~~**ON DELETE RESTRICT on the Telegram tables.**~~ **CLOSED** by migration 0113
+   (`8fe5f9a76`). All 24 references to `aura.identities` were enumerated, not just the two
+   that had been hit: 19 were already CASCADE, and the three that were identity-OWNED
+   state (Telegram binding, its pending setup token, a benchmark run lease) now cascade
+   too. Verified live: an identity with both Telegram rows deletes and takes them with it.
+   `d6ebf07a8` pins it against the LIVE catalog, so a future migration adding a fourth
+   blocker fails the test rather than a production purge; verified as a test by
+   reintroducing the old rule and watching it go red.
+
+   Still open inside it: **`aura.audit_logs.actor_identity_id` remains RESTRICT.** It is
+   the fourth blocker and was deliberately excluded — an audit trail must outlive its
+   subject, so cascading would destroy the record of what someone did as a side effect of
+   deleting them. Dormant today (zero rows, no writer outside tests, measured), and arming
+   it safely is a retention decision: drop the FK, or anonymize the actor on purge.
+   **This one needs a call, not code.**
 
 2. **Two answers in the cockpit, not reproduced.** The completion critic was ruled out
    by measurement: zero vetoes across question, file-creation and web-search turns on
@@ -64,6 +77,42 @@ denied with it. Now published to GHCR and pinned by the installer.
 4. **Leftovers on disk.** The pinned llama.cpp GGUF (6.72 GB, SHA verified) sits in
    `/d/aura-models/` but was never installed; it was for a live llama.cpp reasoning
    check that turned out unnecessary. The MTP drafter it pairs with was never fetched.
+   Install it or delete it — it is not doing anything where it is.
+
+5. **Windows test suite.** CLOSED (`d117ab2d0`). Three assertions failed on Windows all
+   session and were repeatedly waved past as "pre-existing". They were two different
+   things: `stageBoxArtifact`'s 0600 check is a real privacy guarantee Windows cannot
+   express (os.Chmod there toggles only the read-only bit), guarded exactly as
+   `result_test.go` already guards the identical check three files away. The two
+   verification-classifier tests built a Windows path and fed it to a POSIX shell
+   tokenizer, which correctly ate the backslashes as escapes — measured, and the
+   classifier itself is fine on the raw path. Since shell_exec only ever runs inside the
+   Linux box, that path cannot occur. All three still run and PASS on Linux.
+
+## Coverage, measured 2026-09-01
+
+`scripts/coverage_docker.sh` against the disposable `aura_cov` database:
+
+    owned_internal 31231/36199 (86.3%) >= 85%   PASS
+
+The aggregate floor holds. The per-package policy fails on two `mode: target` packages
+that have REGRESSED below 85%:
+
+    internal/arcadedb       1755/2255  (77.83%)
+    internal/conversations  1548/1858  (83.32%)
+
+Attributed, not assumed: every commit touching those two packages since 2026-08-31 is the
+parallel phase-49 memory effort (`49-02`, `49-06`, `49-07`), which is mid-TDD by design
+and carries its own "add failing contract" commits. The only change from this session in
+either package is `56f341a9e`, which ADDED tests. The denominator also grew by roughly
+4,400 statements against the snapshot in CLAUDE.md, consistent with that effort.
+
+So the gate is red, and the red is not this session's to clear. Whoever lands phase 49
+owns bringing those two back to target.
+
+Note for anyone re-running it: the first attempt failed with `dial tcp 127.0.0.1:5433:
+connection refused` — the disposable Postgres had not finished starting. A second run,
+which waited, provisioned cleanly. Do not read that first failure as a code failure.
 
 ## Tool search: parked, with the numbers
 
