@@ -90,3 +90,9 @@ func actorHeaders(actor mcpActor) map[string]string {
 func actorHeaderFunc(ctx context.Context) map[string]string {
 	return actorHeaders(actorFromContext(ctx))
 }
+
+// memoryHeaderFunc composes the actor and active-recall headers for one request.
+// The RED stub deliberately omits actor composition until Task 1 GREEN.
+func memoryHeaderFunc(ctx context.Context) map[string]string {
+	return recallContextHeaderFunc(ctx)
+}

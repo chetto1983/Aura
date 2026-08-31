@@ -24,6 +24,16 @@ func ctxWithRunDir(sessionID, toolCallID, runDir string) context.Context {
 	return WithToolCallContext(context.Background(), sessionID, toolCallID, runDir, testCap)
 }
 
+func TestSessionIDFromContext(t *testing.T) {
+	if got := SessionIDFromContext(context.Background()); got != "" {
+		t.Fatalf("SessionIDFromContext(bare) = %q, want empty", got)
+	}
+	ctx := WithToolCallContext(context.Background(), "conversation-49", "call-1", t.TempDir(), testCap)
+	if got := SessionIDFromContext(ctx); got != "conversation-49" {
+		t.Fatalf("SessionIDFromContext = %q, want conversation-49", got)
+	}
+}
+
 // Test 1 (Req#6 large): a >cap output truncates the preview, spills the full
 // bytes to a sidecar, and the history content (preview+footer) stays ≤ ~2 KiB.
 func TestNewResult_LargeSpills(t *testing.T) {

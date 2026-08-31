@@ -2,6 +2,7 @@ package mcptools
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
@@ -87,5 +88,38 @@ func TestActorHeaderFuncCarriesRoleAndRunID(t *testing.T) {
 	}
 	if got["X-Aura-Actor-Role"] != "worker" {
 		t.Errorf("role header = %q, want worker", got["X-Aura-Actor-Role"])
+	}
+}
+
+func TestRecallContextHeaders(t *testing.T) {
+	ctx := tools.WithRequestID(context.Background(), "turn-a")
+	ctx = tools.WithToolCallContext(ctx, "conversation-a", "call-a", t.TempDir(), 2048)
+	ctx = tools.WithDelegatedDispatch(ctx)
+	headersA := memoryHeaderFunc(ctx)
+	if headersA[actorRunIDHeader] != "turn-a" || headersA[actorRoleHeader] != actorRoleWorker {
+		t.Fatalf("actor headers were not preserved: %v", headersA)
+	}
+	valueA := headersA[recallContextHeader]
+	if valueA == "" {
+		t.Fatal("active-source header is absent")
+	}
+
+	ctx = tools.WithRequestID(context.Background(), "turn-b")
+	ctx = tools.WithToolCallContext(ctx, "conversation-b", "call-b", t.TempDir(), 2048)
+	headersB := memoryHeaderFunc(ctx)
+	valueB := headersB[recallContextHeader]
+	if valueB == "" || valueB == valueA {
+		t.Fatalf("reused-session headers are stale: first=%q second=%q", valueA, valueB)
+	}
+
+	if got := memoryHeaderFunc(context.Background()); got != nil {
+		t.Fatalf("bare context headers = %v, want nil", got)
+	}
+
+	_, err := encodeRecallContextHeader([]recallSourceKey{{
+		ConversationID: strings.Repeat("c", 4096), TurnID: "turn-over-cap",
+	}})
+	if err == nil {
+		t.Fatal("over-cap active source encoded successfully")
 	}
 }

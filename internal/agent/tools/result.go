@@ -70,6 +70,16 @@ func RequestIDFromContext(ctx context.Context) string {
 	return v
 }
 
+// SessionIDFromContext returns the conversation/session id set by
+// WithToolCallContext, or "" when no tool-call context is present.
+//
+// RED stub for Plan 49-08: Task 1's failing contract is committed before the
+// implementation so the normal repository-wide vet hook still has a compiling
+// public symbol to inspect.
+func SessionIDFromContext(context.Context) string {
+	return ""
+}
+
 // delegatedDispatchCtxKey marks a dispatch whose events no Runner observes --
 // set ONLY by internal/swarm's runChild for a worker's own InvocationContext,
 // absent everywhere else (a parent turn always flows through a Runner).
