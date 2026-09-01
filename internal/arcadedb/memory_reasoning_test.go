@@ -134,6 +134,14 @@ func TestReasoningToolMetadataBounded(t *testing.T) {
 		}
 	})
 
+	t.Run("tool observation is optional", func(t *testing.T) {
+		trace := validReasoningTrace()
+		trace.Steps[0].ToolCalls[0].Observation = ""
+		if _, err := normalizeReasoningTrace(trace); err != nil {
+			t.Fatalf("normalizeReasoningTrace: %v", err)
+		}
+	})
+
 	t.Run("valid evidence is redacted and stored without unrestricted fields", func(t *testing.T) {
 		client, rec := recordingClient(t, `{"result":[]}`)
 		trace := validReasoningTrace()
