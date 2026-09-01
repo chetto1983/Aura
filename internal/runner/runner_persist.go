@@ -146,7 +146,11 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 		if err := r.persistAssistantAnswer(ctx, tr, ev); err != nil {
 			return err
 		}
-		return r.flushMemoryCaptures(ctx, tr.lastAcceptedCapture)
+		sequence := tr.lastAcceptedCapture
+		if r.memoryCaptures != nil {
+			sequence = r.memoryCaptures.AcceptedSequence()
+		}
+		return r.flushMemoryCaptures(ctx, sequence)
 	}
 	return nil
 }

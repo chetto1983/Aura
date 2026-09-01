@@ -269,6 +269,40 @@ func TestMemoryCaptureTerminalBarrier(t *testing.T) {
 		}
 	})
 
+	t.Run("resume drains pre-pause global watermark", func(t *testing.T) {
+		r, _, _ := newTestRunner(t, nil)
+		sink := &recordingCaptureSink{started: make(chan struct{}), release: make(chan struct{})}
+		defer func() {
+			select {
+			case <-sink.release:
+			default:
+				close(sink.release)
+			}
+		}()
+		r.memoryCaptures = NewMemoryCaptureQueue(sink, MemoryCaptureQueueConfig{Capacity: 1, WriteTimeout: time.Second})
+		if _, err := r.memoryCaptures.Accept(t.Context(), queueCapture("before-pause")); err != nil {
+			t.Fatalf("Accept pre-pause capture: %v", err)
+		}
+		<-sink.started
+		ctx := identityctx.WithIdentityID(t.Context(), "identity-a")
+		tr := &turnTracker{convID: newConvID(t), llmRuntime: r.llmSnapshot(ctx)}
+		terminal := &agent.Event{
+			RequestID: uuid.MustParse("01991f4c-7a00-7000-8000-000000000001"), Timestamp: time.Now().UTC(),
+			LLMResponse: &agent.LLMResponse{Content: "resumed", FinishReason: "stop"},
+		}
+		done := make(chan error, 1)
+		go func() { done <- r.persistEvent(ctx, tr, terminal) }()
+		select {
+		case err := <-done:
+			t.Fatalf("resumed terminal returned before pre-pause capture durability: %v", err)
+		case <-time.After(30 * time.Millisecond):
+		}
+		close(sink.release)
+		if err := <-done; err != nil {
+			t.Fatalf("resumed terminal after durability: %v", err)
+		}
+	})
+
 	t.Run("completion waits for durability", func(t *testing.T) {
 		sink := &recordingCaptureSink{started: make(chan struct{}), release: make(chan struct{})}
 		queue := NewMemoryCaptureQueue(sink, MemoryCaptureQueueConfig{Capacity: 1, WriteTimeout: time.Second})
