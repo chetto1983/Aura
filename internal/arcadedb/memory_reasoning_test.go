@@ -254,3 +254,96 @@ func findRecordedStatement(rec *recorder, fragment string) (string, map[string]a
 	}
 	return "", nil, false
 }
+
+func TestReasoningTerminalExpiry(t *testing.T) {
+	terminal := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	policy := ReasoningRetentionPolicy{
+		SuccessTTL: 30 * 24 * time.Hour,
+		FailedTTL:  7 * 24 * time.Hour,
+	}
+	for _, test := range []struct {
+		status ReasoningStatus
+		want   time.Duration
+	}{
+		{status: ReasoningStatusSucceeded, want: 30 * 24 * time.Hour},
+		{status: ReasoningStatusFailed, want: 7 * 24 * time.Hour},
+		{status: ReasoningStatusCancelled, want: 7 * 24 * time.Hour},
+	} {
+		t.Run(string(test.status), func(t *testing.T) {
+			trace := validReasoningTrace()
+			trace.Status, trace.TerminalAt = test.status, terminal
+			got, err := trace.SetTerminalExpiry(policy, time.Time{})
+			if err != nil {
+				t.Fatalf("SetTerminalExpiry: %v", err)
+			}
+			if got.ExpiresAt.Sub(terminal) != test.want {
+				t.Fatalf("expiry = %s, want terminal + %s", got.ExpiresAt, test.want)
+			}
+		})
+	}
+
+	t.Run("earlier source expiry always wins", func(t *testing.T) {
+		trace := validReasoningTrace()
+		trace.TerminalAt = terminal
+		trace.ExpiresAt = terminal.Add(4 * 24 * time.Hour)
+		sourceExpiry := terminal.Add(2 * 24 * time.Hour)
+		got, err := trace.SetTerminalExpiry(policy, sourceExpiry)
+		if err != nil {
+			t.Fatalf("SetTerminalExpiry: %v", err)
+		}
+		if !got.ExpiresAt.Equal(sourceExpiry) {
+			t.Fatalf("expiry = %s, want source cap %s", got.ExpiresAt, sourceExpiry)
+		}
+	})
+
+	t.Run("existing shorter expiry never refreshes", func(t *testing.T) {
+		trace := validReasoningTrace()
+		trace.TerminalAt = terminal
+		trace.ExpiresAt = terminal.Add(3 * 24 * time.Hour)
+		got, err := trace.SetTerminalExpiry(policy, terminal.Add(20*24*time.Hour))
+		if err != nil {
+			t.Fatalf("SetTerminalExpiry: %v", err)
+		}
+		if !got.ExpiresAt.Equal(trace.ExpiresAt) {
+			t.Fatalf("existing expiry refreshed from %s to %s", trace.ExpiresAt, got.ExpiresAt)
+		}
+	})
+
+	for _, test := range []struct {
+		name   string
+		policy ReasoningRetentionPolicy
+	}{
+		{name: "zero success", policy: ReasoningRetentionPolicy{FailedTTL: 7 * 24 * time.Hour}},
+		{name: "negative failed", policy: ReasoningRetentionPolicy{SuccessTTL: 30 * 24 * time.Hour, FailedTTL: -time.Hour}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			trace := validReasoningTrace()
+			trace.TerminalAt = terminal
+			if _, err := trace.SetTerminalExpiry(test.policy, time.Time{}); err == nil {
+				t.Fatal("invalid retention policy was accepted")
+			}
+		})
+	}
+
+	t.Run("read does not extend persisted expiry", func(t *testing.T) {
+		expiresAt := terminal.Add(3 * 24 * time.Hour)
+		traceRow := `{"result":[{"identity_id":"identity-a","trace_id":"trace-a",` +
+			`"source_ref":"postgres://aura/conversations/conversation-a/turns/7",` +
+			`"conversation_id":"conversation-a","turn_seq":7,"provider_summary":"Deployment check.",` +
+			`"status":"succeeded","created_at":"2026-09-01T00:00:00Z",` +
+			`"terminal_at":"` + terminal.Format(time.RFC3339) + `","expires_at":"` + expiresAt.Format(time.RFC3339) + `"}]}`
+		client, rec := recordingClient(t, traceRow)
+		got, err := client.SearchReasoningTraces(context.Background(), "identity-a", "deployment", 1)
+		if err != nil || len(got) != 1 {
+			t.Fatalf("SearchReasoningTraces: count=%d err=%v", len(got), err)
+		}
+		if !got[0].ExpiresAt.Equal(expiresAt) {
+			t.Fatalf("read expiry = %s, want %s", got[0].ExpiresAt, expiresAt)
+		}
+		for _, statement := range rec.statements {
+			if strings.HasPrefix(strings.TrimSpace(statement), "UPDATE") {
+				t.Fatalf("reasoning read refreshed expiry: %s", statement)
+			}
+		}
+	})
+}

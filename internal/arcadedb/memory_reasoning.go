@@ -137,6 +137,20 @@ type ReasoningTrace struct {
 	Steps           []ReasoningStep `json:"steps,omitempty"`
 }
 
+// ReasoningRetentionPolicy carries the two exact terminal retention classes.
+type ReasoningRetentionPolicy struct {
+	SuccessTTL time.Duration
+	FailedTTL  time.Duration
+}
+
+// SetTerminalExpiry applies a terminal class without extending an existing or source cap.
+func (trace ReasoningTrace) SetTerminalExpiry(
+	ReasoningRetentionPolicy,
+	time.Time,
+) (ReasoningTrace, error) {
+	return ReasoningTrace{}, fmt.Errorf("arcadedb: reasoning terminal expiry not implemented")
+}
+
 // UpsertReasoningTrace persists one complete identity-scoped trace graph.
 func (c *Client) UpsertReasoningTrace(ctx context.Context, trace ReasoningTrace) error {
 	trace, err := normalizeReasoningTrace(trace)

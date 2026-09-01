@@ -94,3 +94,47 @@ func TestRetentionConfigValidationBoundaries(t *testing.T) {
 		t.Fatalf("valid defaults: %v", err)
 	}
 }
+
+func TestReasoningRetentionPolicy(t *testing.T) {
+	cfg := loadRetentionConfig(ProfileDev)
+	if cfg.ReasoningSuccessTTL != 30*24*time.Hour {
+		t.Fatalf("reasoning success TTL = %s, want 30 days", cfg.ReasoningSuccessTTL)
+	}
+	if cfg.ReasoningFailedTTL != 7*24*time.Hour {
+		t.Fatalf("reasoning failed TTL = %s, want 7 days", cfg.ReasoningFailedTTL)
+	}
+	for _, test := range []struct {
+		status string
+		want   time.Duration
+	}{
+		{status: "succeeded", want: 30 * 24 * time.Hour},
+		{status: "failed", want: 7 * 24 * time.Hour},
+		{status: "cancelled", want: 7 * 24 * time.Hour},
+	} {
+		got, err := cfg.ReasoningTTL(test.status)
+		if err != nil || got != test.want {
+			t.Errorf("ReasoningTTL(%q) = %s, %v; want %s", test.status, got, err, test.want)
+		}
+	}
+	if _, err := cfg.ReasoningTTL("running"); err == nil {
+		t.Fatal("non-terminal reasoning status received a TTL")
+	}
+
+	for _, test := range []struct {
+		name string
+		edit func(*RetentionConfig)
+	}{
+		{name: "zero success", edit: func(c *RetentionConfig) { c.ReasoningSuccessTTL = 0 }},
+		{name: "negative success", edit: func(c *RetentionConfig) { c.ReasoningSuccessTTL = -time.Hour }},
+		{name: "zero failed", edit: func(c *RetentionConfig) { c.ReasoningFailedTTL = 0 }},
+		{name: "negative failed", edit: func(c *RetentionConfig) { c.ReasoningFailedTTL = -time.Hour }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			invalid := cfg
+			test.edit(&invalid)
+			if err := invalid.Validate(); err == nil {
+				t.Fatal("Validate() accepted invalid reasoning retention")
+			}
+		})
+	}
+}

@@ -18,12 +18,19 @@ type RetentionConfig struct {
 	TrustedDevelopmentFullTraceTTL time.Duration
 	MetadataTraceTTL               time.Duration
 	ConversationTTL                time.Duration
+	ReasoningSuccessTTL            time.Duration
+	ReasoningFailedTTL             time.Duration
 	BatchSize                      int
 	LeaseDuration                  time.Duration
 	MaxDuration                    time.Duration
 	DiskWarnPercent                int
 	DiskUrgentPercent              int
 	DiskStopOptionalPercent        int
+}
+
+// ReasoningTTL returns the terminal retention class for a persisted status.
+func (c RetentionConfig) ReasoningTTL(string) (time.Duration, error) {
+	return 0, fmt.Errorf("reasoning retention policy not implemented")
 }
 
 func loadRetentionConfig(_ RuntimeProfile) RetentionConfig {
