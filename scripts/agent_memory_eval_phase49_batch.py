@@ -86,4 +86,5 @@ def attach_batch_evidence(report: dict[str, Any], suites: dict[str, Any], tier: 
         if not evaluated["passed"]:
             report["passed"] = False
             report["verdict"] = "FAIL"
-    return report
+    from agent_memory_eval_running_aura import attach_running_aura_evidence
+    return attach_running_aura_evidence(report, tier)
