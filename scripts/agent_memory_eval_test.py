@@ -14,6 +14,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import agent_memory_eval as evaluator
 import agent_memory_eval_metadata as metadata
+from agent_memory_eval_running_aura_test import RunningAuraConversationEvaluatorTest
 
 
 MEMORY_RECALL_INPUT_PROPERTIES = [
