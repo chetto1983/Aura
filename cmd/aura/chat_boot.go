@@ -57,6 +57,7 @@ type chatEnv struct {
 	toolInvocations       *toolinvocations.Store // the append-only ledger the gateway reserves + the reconciler sweeps
 	deleteReconciler      *runner.DeleteReconciler
 	conversationProjector *runner.ConversationProjector
+	memoryCaptureQueue    *runner.MemoryCaptureQueue
 	assets                *assets.Service
 	// shareSvc is the WEBSHARE-02/03 share lifecycle (buildShareService, share_service_wiring.go,
 	// serve-only — nil under `aura chat`). Backs three composition-root seams at once: the HTTP
@@ -93,6 +94,13 @@ type chatEnv struct {
 func (e *chatEnv) close() {
 	if e.deleteReconciler != nil {
 		e.deleteReconciler.Stop()
+	}
+	if e.memoryCaptureQueue != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		if err := e.memoryCaptureQueue.Close(ctx); err != nil {
+			slog.Warn("memory capture shutdown incomplete", "error", err)
+		}
+		cancel()
 	}
 	if e.conversationProjector != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -475,6 +483,7 @@ func assembleChatEnv(
 	toolHandles.MemoryContext = memoryContext
 	conversationProjector := newChatConversationProjector(cfg, convStore)
 	reasoningMemory := newChatReasoningMemory(cfg)
+	memoryCaptureQueue := buildMemoryCaptureQueue(cfg)
 	deps := runner.Deps{
 		Conv:                  convStore,
 		Pause:                 pauseStore,
@@ -483,6 +492,7 @@ func assembleChatEnv(
 		CacheMetrics:          cacheStore,
 		ToolInvocations:       toolInvocationStore,
 		MemoryContext:         memoryContext,
+		MemoryCaptureQueue:    memoryCaptureQueue,
 		ConversationProjector: conversationProjector,
 		// Atomic cross-store HITL durability (D-03/D-05): the pool-owning committer spans
 		// a pause claim + its answer turn (and pause exposure) in ONE db.WithTx.
@@ -547,7 +557,7 @@ func assembleChatEnv(
 	}
 	deleteReconciler.Start(ctx)
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, llmRuntime: llmRuntime, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: deleteReconciler, conversationProjector: conversationProjector, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, elicitation: elicitation, steer: steerInbox}, nil
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, llmRuntime: llmRuntime, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: deleteReconciler, conversationProjector: conversationProjector, memoryCaptureQueue: memoryCaptureQueue, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, elicitation: elicitation, steer: steerInbox}, nil
 }
 
 // newSteerInbox builds the process-wide mid-turn steer/delegation-result store from

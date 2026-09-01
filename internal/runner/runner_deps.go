@@ -43,13 +43,9 @@ type Deps struct {
 	CacheMetrics    CacheMetricStore
 	ToolInvocations ToolInvocationStore
 	MemoryContext   MemoryContextProvider
-	// MemoryCaptureSink is the sole durable destination for direct-evidence
-	// captures. Nil keeps automatic capture disabled until production composition
-	// provides the identity-scoped graph sink.
-	MemoryCaptureSink MemoryCaptureSink
-	// MemoryCaptureQueue configures the bounded serial writer without adding an
-	// environment-variable authority at the runner layer.
-	MemoryCaptureQueue MemoryCaptureQueueConfig
+	// MemoryCaptureQueue is the one process-lifetime direct-evidence writer built
+	// and owned by the composition root. Nil keeps automatic capture disabled.
+	MemoryCaptureQueue *MemoryCaptureQueue
 	// MemoryCaptureFlushTimeout bounds the terminal durability barrier.
 	MemoryCaptureFlushTimeout time.Duration
 	// ConversationProjector receives post-commit eligible-turn offers. It is
@@ -205,6 +201,7 @@ func New(d Deps) *Runner {
 		cacheMetrics:              d.CacheMetrics,
 		toolInvocations:           d.ToolInvocations,
 		memoryContext:             d.MemoryContext,
+		memoryCaptures:            d.MemoryCaptureQueue,
 		memoryCaptureFlushTimeout: memoryCaptureFlushTimeout,
 		conversationProjector:     d.ConversationProjector,
 		reasoningGraphSink:        d.ReasoningGraphSink,
@@ -238,9 +235,6 @@ func New(d Deps) *Runner {
 		steer:                     d.Steer,
 		// stopDone starts nil: the first waitWorkers arms the wg-drain waiter, and each
 		// clean drain resets it to nil so a later Stop re-arms (WR-02).
-	}
-	if d.MemoryCaptureSink != nil {
-		r.memoryCaptures = NewMemoryCaptureQueue(d.MemoryCaptureSink, d.MemoryCaptureQueue)
 	}
 	// Default to the pool-less split committer when the composition root injected none
 	// (D-03): pool-owning callers pass a *PoolResumeCommitter for atomic cross-store

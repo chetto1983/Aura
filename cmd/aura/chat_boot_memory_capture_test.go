@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/config"
 )
 
 func TestMemoryCaptureBoot_ComposesExactlyOneQueueAndSink(t *testing.T) {
@@ -17,6 +19,7 @@ func TestMemoryCaptureBoot_ComposesExactlyOneQueueAndSink(t *testing.T) {
 	}
 	memory := string(memorySource)
 	boot := string(bootSource)
+	compactBoot := strings.Join(strings.Fields(boot), " ")
 
 	for _, contract := range []string{
 		"func buildMemoryCaptureQueue(",
@@ -36,8 +39,26 @@ func TestMemoryCaptureBoot_ComposesExactlyOneQueueAndSink(t *testing.T) {
 		"memoryCaptureQueue: memoryCaptureQueue",
 		"e.memoryCaptureQueue.Close(ctx)",
 	} {
-		if !strings.Contains(boot, contract) {
+		if !strings.Contains(compactBoot, contract) {
 			t.Errorf("chat_boot.go lacks capture ownership contract %q", contract)
 		}
+	}
+}
+
+func TestMemoryCaptureBoot_ConfiguredAndAbsentMemory(t *testing.T) {
+	withoutMemory := &config.Config{}
+	if queue := buildMemoryCaptureQueue(withoutMemory); queue != nil {
+		t.Fatal("absent memory configuration created a capture fallback")
+	}
+
+	t.Setenv("AURA_ARCADEDB_TENANT_SECRET", strings.Repeat("s", 32))
+	configured := &config.Config{}
+	configured.ArcadeDB.BaseURL = "http://127.0.0.1:2480"
+	queue := buildMemoryCaptureQueue(configured)
+	if queue == nil {
+		t.Fatal("configured identity-scoped memory did not create the capture queue")
+	}
+	if err := queue.Close(t.Context()); err != nil {
+		t.Fatalf("close idle configured queue: %v", err)
 	}
 }

@@ -16,6 +16,31 @@ type chatReasoningMemory struct {
 	deletion  runner.ReasoningDeletionStore
 }
 
+type tenantMemoryCaptureSink struct {
+	clients *arcadedb.TenantClients
+}
+
+func (s tenantMemoryCaptureSink) ApplyAcceptedCapture(
+	ctx context.Context,
+	capture arcadedb.AcceptedCapture,
+) error {
+	client, err := s.clients.For(ctx, capture.IdentityID)
+	if err != nil {
+		return err
+	}
+	return client.ApplyAcceptedCapture(ctx, capture)
+}
+
+func buildMemoryCaptureQueue(cfg *config.Config) *runner.MemoryCaptureQueue {
+	clients := newChatTenantClients(cfg)
+	if clients == nil {
+		return nil
+	}
+	return runner.NewMemoryCaptureQueue(
+		tenantMemoryCaptureSink{clients: clients}, runner.MemoryCaptureQueueConfig{},
+	)
+}
+
 type tenantReasoningMemory struct {
 	clients *arcadedb.TenantClients
 	policy  arcadedb.ReasoningRetentionPolicy
