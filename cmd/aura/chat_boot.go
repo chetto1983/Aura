@@ -534,6 +534,7 @@ func assembleChatEnv(
 	}
 	if reasoningMemory != nil {
 		deps.ReasoningGraphSink = reasoningMemory.sink
+		deps.ReasoningDeletion = reasoningMemory.deletion
 	}
 	run := runner.New(deps)
 	if err := run.ValidateCompactionConfig(); err != nil {

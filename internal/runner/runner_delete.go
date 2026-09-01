@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/google/uuid"
@@ -66,7 +67,8 @@ func (r *Runner) SetShareRevoker(sr ShareRevoker) { r.shareRevoker = sr }
 //  3. evict session tools   — SessionEvictor.Evict + the gateway approval ledger
 //  4. terminate bg jobs     — the plan-03 owner-scoped kill of this session's live shells
 //     4.5. revoke shares       — drop each live share's Garage bytes before the row cascades (D-15)
-//  5. delete persistence    — the owner-scoped DeleteConversationForIdentity (+ sidecar purge)
+//  5. delete reasoning      — remove the derived trace graph while its source still exists
+//  6. delete persistence    — the owner-scoped DeleteConversationForIdentity (+ sidecar purge)
 func (r *Runner) DeleteConversationLifecycle(ctx context.Context, identityID, convID string) (int64, error) {
 	return r.deleteConversationLifecycle(ctx, identityID, convID, 0)
 }
@@ -199,7 +201,18 @@ func (r *Runner) teardownConversation(ctx context.Context, owner, convID string,
 		}
 	}
 
-	// 5. Delete persistence, owner-scoped (rows-affected drives the surface's 403/404/204).
+	// 5. Delete the complete derived reasoning graph before its PostgreSQL source.
+	// This is fail-honest: preserving the still-authoritative source makes a retry safe,
+	// while deleting PostgreSQL after graph failure would strand sensitive derived data.
+	if r.reasoningDeletion != nil {
+		if _, err := r.reasoningDeletion.DeleteReasoningBySource(ctx, arcadedb.ReasoningDeleteSelector{
+			IdentityID: owner, ConversationID: convID,
+		}); err != nil {
+			return 0, fmt.Errorf("delete lifecycle: reasoning graph: %w", err)
+		}
+	}
+
+	// 6. Delete persistence, owner-scoped (rows-affected drives the surface's 403/404/204).
 	affected, err := finalize(ctx)
 	if err != nil {
 		return affected, err

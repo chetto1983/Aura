@@ -2,7 +2,6 @@ package arcadedb
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -35,8 +34,13 @@ func (c *Client) DeleteReasoningBySource(
 }
 
 // DeleteIdentityReasoning removes every reasoning trace for one identity.
-func (c *Client) DeleteIdentityReasoning(context.Context, string) (int, error) {
-	return 0, errors.New("arcadedb: identity reasoning deletion not implemented")
+func (c *Client) DeleteIdentityReasoning(ctx context.Context, identityID string) (int, error) {
+	identityID = strings.TrimSpace(identityID)
+	if identityID == "" {
+		return 0, fmt.Errorf("arcadedb: reasoning identity deletion requires an identity")
+	}
+	return c.deleteReasoningSelected(ctx, identityID, selectIdentityReasoningStatement,
+		map[string]any{"identity_id": identityID})
 }
 
 const selectExpiredReasoningStatement = "SELECT trace_id FROM " + reasoningTraceType +
@@ -48,6 +52,12 @@ const selectReasoningByConversationStatement = "SELECT trace_id FROM " + reasoni
 
 const selectReasoningBySourceStatement = "SELECT trace_id FROM " + reasoningTraceType +
 	" WHERE identity_id = :identity_id AND source_ref = :source_ref ORDER BY trace_id"
+
+const selectReasoningByTraceStatement = "SELECT trace_id FROM " + reasoningTraceType +
+	" WHERE identity_id = :identity_id AND trace_id = :trace_id LIMIT 1"
+
+const selectIdentityReasoningStatement = "SELECT trace_id FROM " + reasoningTraceType +
+	" WHERE identity_id = :identity_id ORDER BY trace_id"
 
 var deleteReasoningGraphStatements = []string{
 	"DELETE FROM TOUCHED WHERE outV().identity_id = :identity_id AND outV().trace_id = :trace_id",
@@ -106,7 +116,8 @@ func (c *Client) deleteReasoningBySource(
 		return 0, fmt.Errorf("arcadedb: reasoning deletion requires exactly one trace, conversation, or source")
 	}
 	if selector.TraceID != "" {
-		return c.deleteReasoningTraceIDs(ctx, selector.IdentityID, []string{selector.TraceID})
+		return c.deleteReasoningSelected(ctx, selector.IdentityID, selectReasoningByTraceStatement,
+			map[string]any{"identity_id": selector.IdentityID, "trace_id": selector.TraceID})
 	}
 	if selector.ConversationID != "" {
 		return c.deleteReasoningSelected(ctx, selector.IdentityID, selectReasoningByConversationStatement,
@@ -121,6 +132,34 @@ func (c *Client) deleteReasoningSelected(
 	identityID, statement string,
 	params map[string]any,
 ) (int, error) {
+	var lastErr error
+	for attempt := 0; attempt <= maxWriteConflictRetries; attempt++ {
+		deleted, err := c.deleteReasoningSelectedOnce(ctx, identityID, statement, params)
+		if err == nil {
+			return deleted, nil
+		}
+		lastErr = err
+		if !isTransientWriteConflict(err) || attempt == maxWriteConflictRetries {
+			return 0, err
+		}
+		timer := time.NewTimer(writeConflictBackoff(attempt + 1))
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return 0, fmt.Errorf("arcadedb: retry reasoning deletion: %w", ctx.Err())
+		case <-timer.C:
+		}
+	}
+	return 0, lastErr
+}
+
+func (c *Client) deleteReasoningSelectedOnce(
+	ctx context.Context,
+	identityID, statement string,
+	params map[string]any,
+) (int, error) {
 	session, err := c.beginTx(ctx)
 	if err != nil {
 		return 0, err
@@ -131,22 +170,6 @@ func (c *Client) deleteReasoningSelected(
 		return 0, fmt.Errorf("arcadedb: select reasoning deletion roots: %w", err)
 	}
 	traceIDs := uniqueReasoningTraceIDs(rows)
-	if err := c.deleteReasoningTraceIDsInTx(ctx, session, identityID, traceIDs); err != nil {
-		return 0, err
-	}
-	if err := c.commitTx(ctx, session); err != nil {
-		return 0, fmt.Errorf("arcadedb: commit reasoning deletion: %w", err)
-	}
-	return len(traceIDs), nil
-}
-
-func (c *Client) deleteReasoningTraceIDs(ctx context.Context, identityID string, traceIDs []string) (int, error) {
-	session, err := c.beginTx(ctx)
-	if err != nil {
-		return 0, err
-	}
-	defer c.rollbackTx(context.WithoutCancel(ctx), session)
-	traceIDs = uniqueStrings(traceIDs)
 	if err := c.deleteReasoningTraceIDsInTx(ctx, session, identityID, traceIDs); err != nil {
 		return 0, err
 	}

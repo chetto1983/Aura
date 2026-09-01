@@ -13,6 +13,7 @@ import (
 type chatReasoningMemory struct {
 	sink      runner.ReasoningGraphSink
 	retention runner.ReasoningRetentionStore
+	deletion  runner.ReasoningDeletionStore
 }
 
 type tenantReasoningMemory struct {
@@ -74,5 +75,5 @@ func newChatReasoningMemory(cfg *config.Config) *chatReasoningMemory {
 			FailedTTL:  cfg.Retention.ReasoningFailedTTL,
 		},
 	}
-	return &chatReasoningMemory{sink: store, retention: store}
+	return &chatReasoningMemory{sink: store, retention: store, deletion: store}
 }

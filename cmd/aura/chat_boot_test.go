@@ -561,10 +561,10 @@ func TestReasoningRetentionBoot(t *testing.T) {
 	cfg.Retention.ReasoningSuccessTTL = 21 * 24 * time.Hour
 	cfg.Retention.ReasoningFailedTTL = 5 * 24 * time.Hour
 	runtime := newChatReasoningMemory(cfg)
-	if runtime == nil || runtime.sink == nil || runtime.retention == nil {
+	if runtime == nil || runtime.sink == nil || runtime.retention == nil || runtime.deletion == nil {
 		t.Fatal("configured chat boot did not construct one shared reasoning sink/lifecycle")
 	}
-	if any(runtime.sink) != any(runtime.retention) {
+	if any(runtime.sink) != any(runtime.retention) || any(runtime.sink) != any(runtime.deletion) {
 		t.Fatal("chat boot constructed separate reasoning sink and lifecycle owners")
 	}
 	store, ok := runtime.sink.(*tenantReasoningMemory)
