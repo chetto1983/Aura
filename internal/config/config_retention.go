@@ -56,8 +56,8 @@ func loadRetentionConfig(_ RuntimeProfile) RetentionConfig {
 		TrustedDevelopmentFullTraceTTL: hours("AURA_RETENTION_DEV_TRACE_HOURS", 7*24),
 		MetadataTraceTTL:               hours("AURA_RETENTION_METADATA_TRACE_HOURS", 14*24),
 		ConversationTTL:                days("AURA_RETENTION_CONVERSATION_DAYS", 0),
-		ReasoningSuccessTTL:            defaultReasoningSuccessTTL,
-		ReasoningFailedTTL:             defaultReasoningFailedTTL,
+		ReasoningSuccessTTL:            days("AURA_RETENTION_REASONING_SUCCESS_DAYS", 30),
+		ReasoningFailedTTL:             days("AURA_RETENTION_REASONING_FAILED_DAYS", 7),
 		BatchSize:                      envutil.IntDefault("AURA_RETENTION_BATCH_SIZE", 100),
 		LeaseDuration:                  seconds("AURA_RETENTION_LEASE_SEC", 300),
 		MaxDuration:                    seconds("AURA_RETENTION_MAX_DURATION_SEC", 300),
@@ -106,6 +106,12 @@ func (c RetentionConfig) Validate() error {
 		return fmt.Errorf("reasoning success TTL must be positive")
 	case c.ReasoningFailedTTL <= 0:
 		return fmt.Errorf("reasoning failed TTL must be positive")
+	case c.ReasoningSuccessTTL > defaultReasoningSuccessTTL:
+		return fmt.Errorf("reasoning success TTL cannot exceed 30 days")
+	case c.ReasoningFailedTTL > defaultReasoningFailedTTL:
+		return fmt.Errorf("reasoning failed TTL cannot exceed 7 days")
+	case c.ReasoningFailedTTL > c.ReasoningSuccessTTL:
+		return fmt.Errorf("reasoning failed TTL cannot exceed reasoning success TTL")
 	case c.BatchSize <= 0:
 		return fmt.Errorf("batch size must be positive")
 	case c.LeaseDuration <= 0:

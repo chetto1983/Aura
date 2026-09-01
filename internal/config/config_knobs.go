@@ -139,6 +139,8 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_RETENTION_DEV_TRACE_HOURS", Kind: KindInt, Default: "168"},
 		{Name: "AURA_RETENTION_METADATA_TRACE_HOURS", Kind: KindInt, Default: "336"},
 		{Name: "AURA_RETENTION_CONVERSATION_DAYS", Kind: KindInt, Default: "0"},
+		{Name: "AURA_RETENTION_REASONING_SUCCESS_DAYS", Kind: KindInt, Default: "30"},
+		{Name: "AURA_RETENTION_REASONING_FAILED_DAYS", Kind: KindInt, Default: "7"},
 		{Name: "AURA_RETENTION_BATCH_SIZE", Kind: KindInt, Default: "100"},
 		{Name: "AURA_RETENTION_LEASE_SEC", Kind: KindInt, Default: "300"},
 		{Name: "AURA_RETENTION_MAX_DURATION_SEC", Kind: KindInt, Default: "300"},

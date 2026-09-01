@@ -58,7 +58,6 @@ func (r *DeleteReconciler) SetReasoningRetention(
 	identities ConversationProjectionIdentities,
 	batchSize int,
 ) {
-	// TDD RED: the implementation lands after the lifecycle contract fails.
 	if r != nil {
 		r.reasoningRetention = store
 		r.reasoningIdentities = identities
@@ -67,11 +66,24 @@ func (r *DeleteReconciler) SetReasoningRetention(
 }
 
 // ReconcileReasoningRetention expires one bounded page for every authoritative identity.
-func (r *DeleteReconciler) ReconcileReasoningRetention(context.Context, time.Time) error {
+func (r *DeleteReconciler) ReconcileReasoningRetention(ctx context.Context, now time.Time) error {
 	if r == nil || r.reasoningRetention == nil || r.reasoningIdentities == nil || r.reasoningBatch <= 0 {
 		return nil
 	}
-	return nil
+	identityIDs, err := r.reasoningIdentities.IdentityIDs(ctx)
+	if err != nil {
+		return fmt.Errorf("reasoning retention: list authoritative identities: %w", err)
+	}
+	clean, invalid := normalizeProjectionIdentities(identityIDs)
+	failures := append([]error(nil), invalid...)
+	for _, identityID := range clean {
+		if _, err := r.reasoningRetention.DeleteExpiredReasoning(
+			ctx, identityID, now.UTC(), r.reasoningBatch,
+		); err != nil {
+			failures = append(failures, fmt.Errorf("reasoning retention identity %s: %w", identityID, err))
+		}
+	}
+	return errors.Join(failures...)
 }
 
 // NewDeleteReconciler constructs the boot-one-shot and interval recovery worker.
@@ -109,13 +121,23 @@ func (r *DeleteReconciler) ReconcileConversationProjection(ctx context.Context) 
 	if err != nil {
 		return fmt.Errorf("conversation projection: list authoritative identities: %w", err)
 	}
+	clean, failures := normalizeProjectionIdentities(identityIDs)
+	for _, identityID := range clean {
+		if err := r.projector.Reconcile(ctx, identityID); err != nil {
+			failures = append(failures, fmt.Errorf("conversation projection identity %s: %w", identityID, err))
+		}
+	}
+	return errors.Join(failures...)
+}
+
+func normalizeProjectionIdentities(identityIDs []string) ([]string, []error) {
 	clean := make([]string, 0, len(identityIDs))
 	seen := make(map[string]struct{}, len(identityIDs))
 	var failures []error
 	for _, identityID := range identityIDs {
 		identityID = strings.TrimSpace(identityID)
 		if identityID == "" {
-			failures = append(failures, errors.New("conversation projection: authoritative identity is empty"))
+			failures = append(failures, errors.New("authoritative identity is empty"))
 			continue
 		}
 		if _, duplicate := seen[identityID]; duplicate {
@@ -125,12 +147,7 @@ func (r *DeleteReconciler) ReconcileConversationProjection(ctx context.Context) 
 		clean = append(clean, identityID)
 	}
 	sort.Strings(clean)
-	for _, identityID := range clean {
-		if err := r.projector.Reconcile(ctx, identityID); err != nil {
-			failures = append(failures, fmt.Errorf("conversation projection identity %s: %w", identityID, err))
-		}
-	}
-	return errors.Join(failures...)
+	return clean, failures
 }
 
 // Start launches one immediate recovery pass followed by periodic reconciliation.
@@ -143,7 +160,8 @@ func (r *DeleteReconciler) Start(ctx context.Context) {
 		_, hasDeleteRecovery = r.runner.Conv.(reservedDeleteRecoveryStore)
 	}
 	hasProjectionRecovery := r.projector != nil && r.projectionIdentities != nil
-	if !hasDeleteRecovery && !hasProjectionRecovery {
+	hasReasoningRetention := r.reasoningRetention != nil && r.reasoningIdentities != nil && r.reasoningBatch > 0
+	if !hasDeleteRecovery && !hasProjectionRecovery && !hasReasoningRetention {
 		return
 	}
 	r.startOnce.Do(func() {
@@ -213,6 +231,9 @@ func (r *DeleteReconciler) reconcile(parent context.Context) {
 	}
 	if err := r.ReconcileConversationProjection(ctx); err != nil {
 		slog.Warn("conversation projection reconciliation failed", "err", err)
+	}
+	if err := r.ReconcileReasoningRetention(ctx, time.Now().UTC()); err != nil {
+		slog.Warn("reasoning retention reconciliation failed", "err", err)
 	}
 }
 

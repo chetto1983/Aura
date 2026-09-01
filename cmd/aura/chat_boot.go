@@ -474,6 +474,7 @@ func assembleChatEnv(
 	}
 	toolHandles.MemoryContext = memoryContext
 	conversationProjector := newChatConversationProjector(cfg, convStore)
+	reasoningMemory := newChatReasoningMemory(cfg)
 	deps := runner.Deps{
 		Conv:                  convStore,
 		Pause:                 pauseStore,
@@ -531,14 +532,21 @@ func assembleChatEnv(
 		// plan 02) — avoids the classic Go nil-interface trap (D-06).
 		Steer: runner.SteerInboxOrNil(steerInbox),
 	}
+	if reasoningMemory != nil {
+		deps.ReasoningGraphSink = reasoningMemory.sink
+	}
 	run := runner.New(deps)
 	if err := run.ValidateCompactionConfig(); err != nil {
 		return nil, fmt.Errorf("chat boot: %w", err)
 	}
 	deleteReconciler := runner.NewDeleteReconciler(run, time.Minute)
+	roster := identityRoster{store: idStore}
 	wireChatConversationReconciliation(
-		deleteReconciler, conversationProjector, identityRoster{store: idStore},
+		deleteReconciler, conversationProjector, roster,
 	)
+	if reasoningMemory != nil {
+		deleteReconciler.SetReasoningRetention(reasoningMemory.retention, roster, cfg.Retention.BatchSize)
+	}
 	deleteReconciler.Start(ctx)
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
 	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, llmRuntime: llmRuntime, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: deleteReconciler, conversationProjector: conversationProjector, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, elicitation: elicitation, steer: steerInbox}, nil

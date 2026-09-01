@@ -567,4 +567,8 @@ func TestReasoningRetentionBoot(t *testing.T) {
 	if any(runtime.sink) != any(runtime.retention) {
 		t.Fatal("chat boot constructed separate reasoning sink and lifecycle owners")
 	}
+	store, ok := runtime.sink.(*tenantReasoningMemory)
+	if !ok || store.policy.SuccessTTL != 21*24*time.Hour || store.policy.FailedTTL != 5*24*time.Hour {
+		t.Fatalf("reasoning sink policy = %#v, want validated 21d/5d overrides", runtime.sink)
+	}
 }

@@ -70,7 +70,18 @@ func newChatConversationProjector(
 	cfg *config.Config,
 	source runner.ConversationProjectionSource,
 ) *runner.ConversationProjector {
-	if cfg == nil || source == nil || strings.TrimSpace(cfg.ArcadeDB.BaseURL) == "" {
+	if source == nil {
+		return nil
+	}
+	clients := newChatTenantClients(cfg)
+	if clients == nil {
+		return nil
+	}
+	return runner.NewConversationProjector(source, tenantConversationProjectionSink{clients: clients}, 0)
+}
+
+func newChatTenantClients(cfg *config.Config) *arcadedb.TenantClients {
+	if cfg == nil || strings.TrimSpace(cfg.ArcadeDB.BaseURL) == "" {
 		return nil
 	}
 	credentials, err := arcadedb.NewTenantCredentials()
@@ -94,7 +105,7 @@ func newChatConversationProjector(
 		arcadedb.Config{BaseURL: cfg.ArcadeDB.BaseURL}, admin,
 		arcadedb.NewSidecarEmbedder(embedURL, model, apiKey, 0), credentials,
 	)
-	return runner.NewConversationProjector(source, tenantConversationProjectionSink{clients: clients}, 0)
+	return clients
 }
 
 func wireChatConversationReconciliation(

@@ -189,6 +189,7 @@ func New(d Deps) *Runner {
 		toolInvocations:          d.ToolInvocations,
 		memoryContext:            d.MemoryContext,
 		conversationProjector:    d.ConversationProjector,
+		reasoningGraphSink:       d.ReasoningGraphSink,
 		runtime:                  runtime,
 		registry:                 d.Registry,
 		location:                 tools.LocationOrUTC(d.Timezone),
