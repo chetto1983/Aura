@@ -113,6 +113,27 @@ func expectedReasoningSchemaStatements() []string {
 }
 
 func TestReasoningToolMetadataBounded(t *testing.T) {
+	t.Run("provider formatting is canonicalized at the storage boundary", func(t *testing.T) {
+		trace := validReasoningTrace()
+		trace.ProviderSummary = "Inspect deployment\n\tcompare status\x00"
+		trace.Steps[0].ProviderSummary = "Inspect deployment\r\ncompare status"
+		trace.Steps[0].ToolCalls[0].Observation = "line one\nline two"
+
+		normalized, err := normalizeReasoningTrace(trace)
+		if err != nil {
+			t.Fatalf("normalizeReasoningTrace: %v", err)
+		}
+		if normalized.ProviderSummary != "Inspect deployment compare status" {
+			t.Fatalf("provider summary = %q", normalized.ProviderSummary)
+		}
+		if normalized.Steps[0].ProviderSummary != "Inspect deployment compare status" {
+			t.Fatalf("step summary = %q", normalized.Steps[0].ProviderSummary)
+		}
+		if normalized.Steps[0].ToolCalls[0].Observation != "line one line two" {
+			t.Fatalf("observation = %q", normalized.Steps[0].ToolCalls[0].Observation)
+		}
+	})
+
 	t.Run("valid evidence is redacted and stored without unrestricted fields", func(t *testing.T) {
 		client, rec := recordingClient(t, `{"result":[]}`)
 		trace := validReasoningTrace()
