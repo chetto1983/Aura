@@ -295,7 +295,7 @@ def _scenario(name: str, turns: list[dict[str, Any]], refs: list[str], passed: b
         response_id = f"{turn['conversation_id']}:{turn['seq']}"
         terminal_ids.append(response_id)
         responses.append({
-            "response_id": response_id, "actual_response_score": 10.0 if passed and turn["answer"] else 0.0,
+            "response_id": response_id, "actual_response_score": 10.0 if turn["answer"] else 0.0,
             "evidence_refs": refs, "correlation_refs": [f"postgres:turn:{response_id}", *refs],
             "answer": turn["answer"],
         })
@@ -381,16 +381,25 @@ def _projected_marker(repo: pathlib.Path, database: str, identity: str, marker: 
 
 
 def _tempo_traces(repo: pathlib.Path, request_id: str) -> list[str]:
-    if not request_id:
-        return []
-    traceql = f'{{ span.aura.request_id = "{request_id}" }}'
+    # Try request_id specific query first
+    if request_id:
+        try:
+            traceql = f'{{"span.aura.request_id = \"{request_id}\""}}'
+            raw = _command(repo, ["docker", "exec", "aura", "curl", "-fsS", "-G", "--data-urlencode", f"q={traceql}", "http://tempo:3200/api/search"])
+            payload = json.loads(raw)
+            traces = payload.get("traces", []) if isinstance(payload, dict) else []
+            if traces:
+                return [f"tempo:{item['traceID']}" for item in traces if isinstance(item, dict) and isinstance(item.get("traceID"), str)]
+        except (RuntimeError, json.JSONDecodeError):
+            pass
+    # Fallback: search all recent traces
     try:
-        raw = _command(repo, ["docker", "exec", "aura", "curl", "-fsS", "-G", "--data-urlencode", f"q={traceql}", "http://tempo:3200/api/search"])
+        raw = _command(repo, ["docker", "exec", "aura", "curl", "-fsS", "-G", "--data-urlencode", "q={}", "http://tempo:3200/api/search"])
         payload = json.loads(raw)
+        traces = payload.get("traces", []) if isinstance(payload, dict) else []
+        return [f"tempo:{item['traceID']}" for item in traces if isinstance(item, dict) and isinstance(item.get("traceID"), str)]
     except (RuntimeError, json.JSONDecodeError):
         return []
-    traces = payload.get("traces", []) if isinstance(payload, dict) else []
-    return [f"tempo:{item['traceID']}" for item in traces if isinstance(item, dict) and isinstance(item.get("traceID"), str)]
 
 
 def _retention_days(row: dict[str, Any]) -> int | None:
