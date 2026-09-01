@@ -28,6 +28,11 @@ type ConversationProjectionIdentities interface {
 	IdentityIDs(context.Context) ([]string, error)
 }
 
+// ReasoningRetentionStore is the bounded tenant-aware expiry seam.
+type ReasoningRetentionStore interface {
+	DeleteExpiredReasoning(context.Context, string, time.Time, int) (int, error)
+}
+
 // DeleteReconciler resumes export-delete operations from their stored operation
 // reservation after cancellation, transient failure, or process restart.
 type DeleteReconciler struct {
@@ -35,6 +40,9 @@ type DeleteReconciler struct {
 	interval             time.Duration
 	projector            *ConversationProjector
 	projectionIdentities ConversationProjectionIdentities
+	reasoningRetention   ReasoningRetentionStore
+	reasoningIdentities  ConversationProjectionIdentities
+	reasoningBatch       int
 
 	wg        sync.WaitGroup
 	stop      chan struct{}
@@ -42,6 +50,28 @@ type DeleteReconciler struct {
 	startOnce sync.Once
 	cancelMu  sync.Mutex
 	cancel    context.CancelFunc
+}
+
+// SetReasoningRetention wires the single boot-owned reasoning expiry lifecycle.
+func (r *DeleteReconciler) SetReasoningRetention(
+	store ReasoningRetentionStore,
+	identities ConversationProjectionIdentities,
+	batchSize int,
+) {
+	// TDD RED: the implementation lands after the lifecycle contract fails.
+	if r != nil {
+		r.reasoningRetention = store
+		r.reasoningIdentities = identities
+		r.reasoningBatch = batchSize
+	}
+}
+
+// ReconcileReasoningRetention expires one bounded page for every authoritative identity.
+func (r *DeleteReconciler) ReconcileReasoningRetention(context.Context, time.Time) error {
+	if r == nil || r.reasoningRetention == nil || r.reasoningIdentities == nil || r.reasoningBatch <= 0 {
+		return nil
+	}
+	return nil
 }
 
 // NewDeleteReconciler constructs the boot-one-shot and interval recovery worker.

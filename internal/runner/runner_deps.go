@@ -44,6 +44,8 @@ type Deps struct {
 	// ConversationProjector receives post-commit eligible-turn offers. It is
 	// fail-soft because PostgreSQL remains the conversation authority.
 	ConversationProjector *ConversationProjector
+	// ReasoningGraphSink receives one provider-authorized trace after its source turn commits.
+	ReasoningGraphSink ReasoningGraphSink
 	// ResumeCommitter is the cross-store HITL-durability seam (D-03/D-05). The
 	// composition root injects a pool-owning *PoolResumeCommitter so single/batch resume
 	// and pause exposure each commit in ONE db.WithTx; nil => New defaults to the

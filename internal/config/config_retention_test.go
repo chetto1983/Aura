@@ -17,14 +17,16 @@ func TestRetentionConfigContractIsRegistered(t *testing.T) {
 	}
 
 	want := map[string]string{
-		"AURA_RETENTION_TEMP_HOURS":           "24",
-		"AURA_RETENTION_PROD_TRACE_HOURS":     "24",
-		"AURA_RETENTION_DEV_TRACE_HOURS":      "168",
-		"AURA_RETENTION_METADATA_TRACE_HOURS": "336",
-		"AURA_RETENTION_CONVERSATION_DAYS":    "0",
-		"AURA_RETENTION_DISK_WARN_PERCENT":    "70",
-		"AURA_RETENTION_DISK_URGENT_PERCENT":  "80",
-		"AURA_RETENTION_DISK_STOP_PERCENT":    "85",
+		"AURA_RETENTION_TEMP_HOURS":             "24",
+		"AURA_RETENTION_PROD_TRACE_HOURS":       "24",
+		"AURA_RETENTION_DEV_TRACE_HOURS":        "168",
+		"AURA_RETENTION_METADATA_TRACE_HOURS":   "336",
+		"AURA_RETENTION_CONVERSATION_DAYS":      "0",
+		"AURA_RETENTION_REASONING_SUCCESS_DAYS": "30",
+		"AURA_RETENTION_REASONING_FAILED_DAYS":  "7",
+		"AURA_RETENTION_DISK_WARN_PERCENT":      "70",
+		"AURA_RETENTION_DISK_URGENT_PERCENT":    "80",
+		"AURA_RETENTION_DISK_STOP_PERCENT":      "85",
 	}
 	got := make(map[string]string)
 	for _, spec := range knobRegistry() {
@@ -44,6 +46,7 @@ func TestRetentionConfigDefaultsAndEnvironment(t *testing.T) {
 		"AURA_RETENTION_TEMP_HOURS", "AURA_RETENTION_PROD_TRACE_HOURS",
 		"AURA_RETENTION_DEV_TRACE_HOURS", "AURA_RETENTION_METADATA_TRACE_HOURS",
 		"AURA_RETENTION_CONVERSATION_DAYS", "AURA_RETENTION_BATCH_SIZE",
+		"AURA_RETENTION_REASONING_SUCCESS_DAYS", "AURA_RETENTION_REASONING_FAILED_DAYS",
 		"AURA_RETENTION_LEASE_SEC", "AURA_RETENTION_MAX_DURATION_SEC",
 		"AURA_RETENTION_DISK_WARN_PERCENT", "AURA_RETENTION_DISK_URGENT_PERCENT",
 		"AURA_RETENTION_DISK_STOP_PERCENT",
@@ -134,6 +137,38 @@ func TestReasoningRetentionPolicy(t *testing.T) {
 			test.edit(&invalid)
 			if err := invalid.Validate(); err == nil {
 				t.Fatal("Validate() accepted invalid reasoning retention")
+			}
+		})
+	}
+}
+
+func TestReasoningRetentionPolicyOverrides(t *testing.T) {
+	t.Setenv("AURA_RETENTION_REASONING_SUCCESS_DAYS", "21")
+	t.Setenv("AURA_RETENTION_REASONING_FAILED_DAYS", "5")
+	cfg := loadRetentionConfig(ProfileDev)
+	if cfg.ReasoningSuccessTTL != 21*24*time.Hour || cfg.ReasoningFailedTTL != 5*24*time.Hour {
+		t.Fatalf("reasoning override TTLs = %s/%s, want 21d/5d",
+			cfg.ReasoningSuccessTTL, cfg.ReasoningFailedTTL)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("valid shorter overrides: %v", err)
+	}
+
+	for _, test := range []struct {
+		name    string
+		success time.Duration
+		failed  time.Duration
+	}{
+		{name: "success widens class", success: 31 * 24 * time.Hour, failed: 7 * 24 * time.Hour},
+		{name: "failed widens class", success: 30 * 24 * time.Hour, failed: 8 * 24 * time.Hour},
+		{name: "failed outlives success", success: 5 * 24 * time.Hour, failed: 6 * 24 * time.Hour},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			invalid := cfg
+			invalid.ReasoningSuccessTTL = test.success
+			invalid.ReasoningFailedTTL = test.failed
+			if err := invalid.Validate(); err == nil {
+				t.Fatal("Validate() accepted a widening reasoning override")
 			}
 		})
 	}
