@@ -42,6 +42,13 @@ func normalizeReasoningTrace(trace ReasoningTrace) (ReasoningTrace, error) {
 		}
 		tools := make([]ReasoningToolCall, len(step.ToolCalls))
 		for toolIndex, tool := range step.ToolCalls {
+			if tool.Observation != "" {
+				tool.Observation, err = normalizeReasoningEvidence(
+					"observation", tool.Observation, reasoningObservationRunes)
+				if err != nil {
+					return ReasoningTrace{}, err
+				}
+			}
 			if err := validateReasoningTool(trace.SourceRef, tool); err != nil {
 				return ReasoningTrace{}, err
 			}
@@ -49,7 +56,6 @@ func normalizeReasoningTrace(trace ReasoningTrace) (ReasoningTrace, error) {
 				return ReasoningTrace{}, fmt.Errorf("arcadedb: duplicate reasoning call_id %q", tool.CallID)
 			}
 			callIDs[tool.CallID] = struct{}{}
-			tool.Observation = redact.String(strings.TrimSpace(tool.Observation))
 			tool.ArtifactRefs = append([]string(nil), tool.ArtifactRefs...)
 			tool.EntityRefs = append([]string(nil), tool.EntityRefs...)
 			tools[toolIndex] = tool
@@ -110,8 +116,10 @@ func validateReasoningTool(traceSource string, tool ReasoningToolCall) error {
 			return fmt.Errorf("arcadedb: reasoning argument_digest must be lowercase SHA-256 hex")
 		}
 	}
-	if err := validateReasoningEvidence("observation", tool.Observation, reasoningObservationRunes); err != nil {
-		return err
+	if tool.Observation != "" {
+		if err := validateReasoningEvidence("observation", tool.Observation, reasoningObservationRunes); err != nil {
+			return err
+		}
 	}
 	if tool.SourceRef != traceSource {
 		return fmt.Errorf("arcadedb: reasoning tool source_ref must match the trace source")
@@ -136,10 +144,22 @@ func validateReasoningTool(traceSource string, tool ReasoningToolCall) error {
 }
 
 func normalizeReasoningEvidence(name, value string, limit int) (string, error) {
-	if err := validateReasoningEvidence(name, value, limit); err != nil {
+	if err := validateRuneLimit("reasoning "+name, value, limit); err != nil {
 		return "", err
 	}
-	return redact.String(strings.TrimSpace(value)), nil
+	safe := redact.String(value)
+	safe = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, safe)
+	safe = strings.Join(strings.Fields(safe), " ")
+	safe = redact.String(safe)
+	if err := validateReasoningEvidence(name, safe, limit); err != nil {
+		return "", err
+	}
+	return safe, nil
 }
 
 func validateReasoningEvidence(name, value string, limit int) error {
