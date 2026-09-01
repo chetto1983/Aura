@@ -11,6 +11,7 @@ import (
 
 	officialmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/chetto1983/aura/internal/arcadedb"
 	auramcp "github.com/chetto1983/aura/internal/mcp"
 )
 
@@ -295,5 +296,106 @@ func TestAgentMemoryMCPLiveSupersedeRefusalThenFactKeyCloses(t *testing.T) {
 	}
 	if !objects["Cambridge"] || !objects["the Royal Society"] || objects["the Royal Mint"] {
 		t.Fatalf("final facts = %+v, want Cambridge untouched, the Royal Mint closed, the Royal Society new", final.Facts)
+	}
+}
+
+func TestAgentMemoryMCPLive_MixedTierRecall(t *testing.T) {
+	verifyAgentMemoryLiveNoLeaks(t)
+	sessions, identities, _ := newAgentMemoryLiveMCP(t, 2, "")
+	identityID, foreignIdentityID := identities[0], identities[1]
+	session := sessions[identityID]
+	ctx, cancel := context.WithTimeout(t.Context(), agentMemoryLiveTimeout)
+	defer cancel()
+
+	callAgentMemoryLiveJSON[MemoryUpsertFactOutput](t, ctx, session, "memory_upsert_fact", map[string]any{
+		"subject": "Lumen compass", "predicate": "stored_in", "object": "apricot observatory",
+		"statement": "The Lumen compass is stored in the apricot observatory.",
+		"source":    map[string]any{"memory_ids": []string{"mixed-tier-fact-source"}},
+	})
+	seedAgentMemoryLiveConversation(t, ctx, identityID, "conversation-active", "active",
+		"We are currently discussing the Lumen compass in the apricot observatory.")
+	seedAgentMemoryLiveConversation(t, ctx, identityID, "conversation-historical", "historical",
+		"We previously discussed the Lumen compass route through the apricot observatory.")
+	seedAgentMemoryLiveConversation(t, ctx, foreignIdentityID, "conversation-foreign", "foreign",
+		"A foreign identity discussed the Lumen compass in the apricot observatory.")
+
+	output := callAgentMemoryLiveJSON[MemoryRecallOutput](t, ctx, session, "memory_recall", map[string]any{
+		"query": "Lumen compass apricot observatory", "limit": 10,
+	})
+	if output.Retrieval.EffectivePath != "mixed" || output.Retrieval.Path != "hybrid" {
+		t.Fatalf("retrieval = %+v, want mixed contribution over hybrid backend", output.Retrieval)
+	}
+	factCount, conversationCount := 0, 0
+	historicalFound := false
+	for _, evidence := range output.Evidence {
+		switch evidence.Kind {
+		case "fact":
+			factCount++
+			if evidence.Fact == nil || len(evidence.Fact.Sources) == 0 ||
+				len(evidence.Fact.Sources[0].MemoryIDs) == 0 ||
+				evidence.Fact.Sources[0].MemoryIDs[0] != "mixed-tier-fact-source" {
+				t.Fatalf("fact provenance = %+v", evidence.Fact)
+			}
+		case "conversation":
+			conversationCount++
+			if evidence.Conversation == nil {
+				t.Fatal("conversation evidence has no typed payload")
+			}
+			conversationID := evidence.Conversation.ConversationID
+			if conversationID == "conversation-active" {
+				t.Fatalf("active conversation leaked into recall: %+v", evidence.Conversation)
+			}
+			if conversationID == "conversation-foreign" {
+				t.Fatalf("foreign conversation leaked into recall: %+v", evidence.Conversation)
+			}
+			if conversationID == "conversation-historical" {
+				historicalFound = true
+			}
+			for _, turn := range evidence.Conversation.Turns {
+				if !strings.HasPrefix(turn.SourceRef, "postgres://mixed-tier/") {
+					t.Fatalf("conversation provenance = %+v", turn)
+				}
+			}
+		}
+	}
+	if factCount != 1 || !historicalFound {
+		t.Fatalf("evidence = %+v, want the fact and eligible historical conversation", output.Evidence)
+	}
+	if output.Retrieval.FactCount != factCount || output.Retrieval.ConversationCount != conversationCount {
+		t.Fatalf("retrieval counts = %+v, evidence facts=%d conversations=%d",
+			output.Retrieval, factCount, conversationCount)
+	}
+}
+
+func seedAgentMemoryLiveConversation(
+	t *testing.T,
+	ctx context.Context,
+	identityID string,
+	conversationID string,
+	marker string,
+	content string,
+) {
+	t.Helper()
+	client := agentMemoryLiveTenantClient(t, ctx, identityID)
+	assistantContent := "Historical setup for " + marker + "."
+	if err := client.ApplyConversationProjection(ctx, arcadedb.ConversationProjection{
+		IdentityID: identityID, ConversationID: conversationID,
+		Turns: []arcadedb.ConversationTurnProjection{
+			{
+				IdentityID: identityID, ConversationID: conversationID, Seq: 1,
+				Role: "assistant", Content: assistantContent,
+				ContentHash: recallLiveContentHash(assistantContent),
+				OccurredAt:  time.Now().UTC().Add(-2 * time.Minute),
+				SourceRef:   "postgres://mixed-tier/" + marker + "/turn/1",
+			},
+			{
+				IdentityID: identityID, ConversationID: conversationID, Seq: 2,
+				Role: "user", Content: content, ContentHash: recallLiveContentHash(content),
+				OccurredAt: time.Now().UTC().Add(-time.Minute),
+				SourceRef:  "postgres://mixed-tier/" + marker + "/turn/2",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("ApplyConversationProjection(%s): %v", conversationID, err)
 	}
 }
