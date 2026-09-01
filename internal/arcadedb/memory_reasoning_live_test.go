@@ -3,12 +3,69 @@
 package arcadedb
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 )
+
+type reasoningReadCounter struct {
+	base  http.RoundTripper
+	mu    sync.Mutex
+	reads int
+}
+
+func (c *reasoningReadCounter) RoundTrip(request *http.Request) (*http.Response, error) {
+	if request.Body != nil {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			return nil, err
+		}
+		request.Body = io.NopCloser(bytes.NewReader(body))
+		var payload struct {
+			Command string `json:"command"`
+		}
+		if json.Unmarshal(body, &payload) == nil && strings.HasPrefix(strings.TrimSpace(payload.Command), "SELECT") {
+			for _, token := range []string{reasoningTraceType, reasoningStepType, reasoningToolCallType} {
+				if strings.Contains(payload.Command, token) {
+					c.mu.Lock()
+					c.reads++
+					c.mu.Unlock()
+					break
+				}
+			}
+		}
+	}
+	return c.base.RoundTrip(request)
+}
+
+func (c *reasoningReadCounter) reset() {
+	c.mu.Lock()
+	c.reads = 0
+	c.mu.Unlock()
+}
+
+func (c *reasoningReadCounter) count() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.reads
+}
+
+func observeReasoningReads(client *Client) *reasoningReadCounter {
+	base := client.http.Transport
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	counter := &reasoningReadCounter{base: base}
+	client.http.Transport = counter
+	return counter
+}
 
 func reasoningLiveClient(t *testing.T) *Client {
 	t.Helper()
@@ -149,4 +206,109 @@ func TestReasoningGraphLive_ExpiryDeleteRace(t *testing.T) {
 		}
 	}
 	assertLiveReasoningTraceAbsent(t, client, trace.IdentityID, trace.TraceID)
+}
+
+func TestReasoningGraphLive_ExplicitIsolation(t *testing.T) {
+	client := reasoningLiveClient(t)
+	now := time.Now().UTC()
+	trace := storeLiveReasoningTrace(t, client, "identity-owner", "trace-explicit", "conversation-explicit",
+		ReasoningStatusSucceeded, now)
+	projection := ConversationProjection{
+		IdentityID: trace.IdentityID, ConversationID: trace.ConversationID,
+		Turns: []ConversationTurnProjection{
+			{IdentityID: trace.IdentityID, ConversationID: trace.ConversationID, Seq: 1, Role: "user",
+				Content: "ordinary isolation proof", ContentHash: conversationContentHash("ordinary isolation proof"),
+				OccurredAt: now.Add(-3 * time.Minute), SourceRef: trace.SourceRef + "/user"},
+			{IdentityID: trace.IdentityID, ConversationID: trace.ConversationID, Seq: 2, Role: "assistant",
+				Content: "public answer", ContentHash: conversationContentHash("public answer"),
+				OccurredAt: now.Add(-2 * time.Minute), SourceRef: trace.SourceRef},
+			{IdentityID: trace.IdentityID, ConversationID: trace.ConversationID, Seq: 3, Role: "user",
+				Content: "follow up", ContentHash: conversationContentHash("follow up"),
+				OccurredAt: now.Add(-time.Minute), SourceRef: trace.SourceRef + "/follow"},
+		},
+	}
+	if err := client.ApplyConversationProjection(context.Background(), projection); err != nil {
+		t.Fatalf("ApplyConversationProjection: %v", err)
+	}
+	counter := observeReasoningReads(client)
+	counter.reset()
+
+	ordinary := []RecallRequest{
+		{IdentityID: trace.IdentityID, Mode: RecallModeSemantic, Query: "ordinary isolation proof", Limit: 2},
+		{IdentityID: trace.IdentityID, Mode: RecallModeRecent, Limit: 2},
+		{IdentityID: trace.IdentityID, Mode: RecallModeOpen, ConversationID: trace.ConversationID,
+			AnchorSeq: 1, Direction: RecallDirectionAfter, Limit: 2},
+	}
+	var cursor string
+	for index, request := range ordinary {
+		result, err := client.RecallMemory(context.Background(), request)
+		if err != nil {
+			t.Fatalf("ordinary recall %s: %v", request.Mode, err)
+		}
+		if result.Retrieval.ReasoningCount != 0 {
+			t.Fatalf("ordinary recall %s returned reasoning: %+v", request.Mode, result.Retrieval)
+		}
+		if index == len(ordinary)-1 {
+			cursor = result.NextCursor
+		}
+	}
+	decoded, err := decodeRecallCursor(cursor)
+	if err != nil {
+		t.Fatalf("decode open cursor: %v", err)
+	}
+	if _, err := client.RecallMemory(context.Background(), RecallRequest{
+		IdentityID: trace.IdentityID, Mode: RecallModeScroll, ConversationID: decoded.ConversationID,
+		AnchorSeq: decoded.AnchorSeq, Direction: decoded.Direction, Limit: decoded.PageSize, Cursor: cursor,
+	}); err != nil {
+		t.Fatalf("ordinary scroll recall: %v", err)
+	}
+	if reads := counter.count(); reads != 0 {
+		t.Fatalf("ordinary semantic/recent/open/scroll made %d reasoning reads", reads)
+	}
+
+	owner, err := client.SearchReasoningTraces(context.Background(), trace.IdentityID, "deployment", 1)
+	if err != nil || len(owner) != 1 || owner[0].TraceID != trace.TraceID {
+		t.Fatalf("explicit owner reasoning = %+v err=%v", owner, err)
+	}
+	if reads := counter.count(); reads == 0 {
+		t.Fatal("explicit reasoning action made zero reasoning reads")
+	}
+	foreign, err := client.SearchReasoningTraces(context.Background(), "identity-foreign", "deployment", 1)
+	if err != nil || len(foreign) != 0 {
+		t.Fatalf("foreign explicit reasoning = %+v err=%v", foreign, err)
+	}
+}
+
+func TestReasoningGraphLive_FailedCancelledRetention(t *testing.T) {
+	client := reasoningLiveClient(t)
+	terminal := time.Now().UTC()
+	failed := storeLiveReasoningTrace(t, client, "identity-terminal", "trace-failed", "conversation-failed",
+		ReasoningStatusFailed, terminal)
+	cancelled := storeLiveReasoningTrace(t, client, "identity-terminal", "trace-cancelled", "conversation-cancelled",
+		ReasoningStatusCancelled, terminal)
+	counter := observeReasoningReads(client)
+	counter.reset()
+	if _, err := client.RecallMemory(context.Background(), RecallRequest{
+		IdentityID: failed.IdentityID, Mode: RecallModeRecent, Limit: 2,
+	}); err != nil {
+		t.Fatalf("ordinary recall with terminal traces: %v", err)
+	}
+	if reads := counter.count(); reads != 0 {
+		t.Fatalf("terminal traces entered ordinary context through %d reasoning reads", reads)
+	}
+	if deleted, err := client.DeleteExpiredReasoning(context.Background(), failed.IdentityID,
+		terminal.Add(6*24*time.Hour), 10); err != nil || deleted != 0 {
+		t.Fatalf("terminal traces expired early: deleted=%d err=%v", deleted, err)
+	}
+	for _, trace := range []ReasoningTrace{failed, cancelled} {
+		if _, found, err := client.GetReasoningTrace(context.Background(), trace.IdentityID, trace.TraceID); err != nil || !found {
+			t.Fatalf("trace %s absent before 7d: found=%v err=%v", trace.TraceID, found, err)
+		}
+	}
+	if deleted, err := client.DeleteExpiredReasoning(context.Background(), failed.IdentityID,
+		terminal.Add(8*24*time.Hour), 10); err != nil || deleted != 2 {
+		t.Fatalf("terminal traces did not expire after 7d: deleted=%d err=%v", deleted, err)
+	}
+	assertLiveReasoningTraceAbsent(t, client, failed.IdentityID, failed.TraceID)
+	assertLiveReasoningTraceAbsent(t, client, cancelled.IdentityID, cancelled.TraceID)
 }

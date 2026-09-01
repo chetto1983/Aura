@@ -572,3 +572,27 @@ func TestReasoningRetentionBoot(t *testing.T) {
 		t.Fatalf("reasoning sink policy = %#v, want validated 21d/5d overrides", runtime.sink)
 	}
 }
+
+type isolatedMemoryContext struct{}
+
+func (isolatedMemoryContext) Context(context.Context, string) (string, error) { return "facts", nil }
+func (isolatedMemoryContext) Search(context.Context, string, string) (string, error) {
+	return "facts", nil
+}
+
+func TestChatBootReasoningIsolation(t *testing.T) {
+	store := &tenantReasoningMemory{}
+	runtime := &chatReasoningMemory{sink: store, retention: store, deletion: store}
+	automatic := isolatedMemoryContext{}
+	deps := runner.Deps{MemoryContext: automatic}
+	wireChatReasoningMemory(&deps, runtime)
+	if deps.ReasoningGraphSink != store || deps.ReasoningDeletion != store {
+		t.Fatal("explicit reasoning store was not wired to its dedicated dependencies")
+	}
+	if deps.MemoryContext != automatic {
+		t.Fatal("reasoning wiring replaced the ordinary digest/preload provider")
+	}
+	if _, leaked := any(store).(runner.MemoryContextProvider); leaked {
+		t.Fatal("reasoning store structurally satisfies an automatic context interface")
+	}
+}

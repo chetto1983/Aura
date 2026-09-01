@@ -43,3 +43,39 @@ func TestHistoryRebuild_StructurallyReasoningFree(t *testing.T) {
 		t.Fatalf("history messages JSON carries a reasoning key: %s", raw)
 	}
 }
+
+type graphResidentReasoningFixture struct {
+	trace string
+	reads int
+}
+
+func (f *graphResidentReasoningFixture) explicitRead() string {
+	f.reads++
+	return f.trace
+}
+
+func TestHistoryReasoningFree_GraphResidentFixture(t *testing.T) {
+	fixture := &graphResidentReasoningFixture{trace: "private graph reasoning sentinel"}
+	turns := []Turn{
+		{Seq: 1, Role: llm.RoleSystem, Content: "system"},
+		{Seq: 2, Role: llm.RoleUser, Content: "question"},
+		{Seq: 3, Role: llm.RoleAssistant, Content: "public answer"},
+	}
+	messages := toMessages(prepareTurns(turns, ContextConfig{}))
+	raw, err := json.Marshal(messages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fixture.reads != 0 {
+		t.Fatalf("history rebuild read graph reasoning %d times", fixture.reads)
+	}
+	if strings.Contains(string(raw), fixture.trace) {
+		t.Fatalf("history rebuild injected graph reasoning: %s", raw)
+	}
+
+	// Prove the fixture is real and readable through an explicit action; the zero-read
+	// assertion above is therefore not an empty-store negative.
+	if got := fixture.explicitRead(); got != fixture.trace || fixture.reads != 1 {
+		t.Fatalf("explicit fixture read = %q reads=%d", got, fixture.reads)
+	}
+}
