@@ -244,15 +244,7 @@ func (f Fact) validate(limits MemoryLimits) error {
 			return err
 		}
 	}
-	if len(f.Source.MemoryIDs) > limits.SourceMemoryIDs {
-		return fmt.Errorf("arcadedb: fact source memory_ids exceeds %d items", limits.SourceMemoryIDs)
-	}
-	for _, sourceID := range f.Source.MemoryIDs {
-		if err := validateRuneLimit("source_memory_id", sourceID, limits.SourceMemoryIDRunes); err != nil {
-			return err
-		}
-	}
-	return nil
+	return validateFactSource(f.Source, limits)
 }
 
 const upsertEntityStatement = "UPDATE Entity SET name = :name UPSERT " +

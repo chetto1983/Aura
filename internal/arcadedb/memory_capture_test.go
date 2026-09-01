@@ -2,6 +2,7 @@ package arcadedb
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"strings"
@@ -322,6 +323,18 @@ func TestAcceptedCapture_ProvenanceEnrichment(t *testing.T) {
 		if !found {
 			t.Fatalf("capture %s absent from %+v", capture.IdempotencyKey, captures)
 		}
+	}
+	encoded, err := json.Marshal(sourcesParam(fact.Sources))
+	if err != nil {
+		t.Fatalf("encode provenance: %v", err)
+	}
+	var wire any
+	if err := json.Unmarshal(encoded, &wire); err != nil {
+		t.Fatalf("decode provenance: %v", err)
+	}
+	roundTripped := factSources(wire)
+	if len(roundTripped) != 1 || len(roundTripped[0].Captures) != 2 {
+		t.Fatalf("wire provenance = %+v, want both accepted captures", roundTripped)
 	}
 }
 

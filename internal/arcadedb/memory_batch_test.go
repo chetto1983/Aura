@@ -144,7 +144,7 @@ func cloneMemoryBatchTestState(state memoryBatchState) memoryBatchState {
 	clone := memoryBatchState{Entities: map[string]string{}, Facts: map[string]memoryBatchFact{}}
 	maps.Copy(clone.Entities, state.Entities)
 	for key, fact := range state.Facts {
-		fact.Sources = append([]FactSource(nil), fact.Sources...)
+		fact.Sources = cloneFactSources(fact.Sources)
 		clone.Facts[key] = fact
 	}
 	return clone

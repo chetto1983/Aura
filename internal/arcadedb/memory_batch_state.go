@@ -3,7 +3,6 @@ package arcadedb
 import (
 	"fmt"
 	"maps"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -13,7 +12,7 @@ func cloneMemoryBatchState(state memoryBatchState) memoryBatchState {
 	clone := memoryBatchState{Entities: map[string]string{}, Facts: map[string]memoryBatchFact{}}
 	maps.Copy(clone.Entities, state.Entities)
 	for key, fact := range state.Facts {
-		fact.Sources = slices.Clone(fact.Sources)
+		fact.Sources = cloneFactSources(fact.Sources)
 		clone.Facts[key] = fact
 	}
 	return clone

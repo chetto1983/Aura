@@ -200,6 +200,7 @@ func normalizeFactSource(source FactSource) FactSource {
 	}
 	sort.Strings(ids)
 	source.MemoryIDs = ids
+	source.Captures = mergeFactCaptureSources(nil, source.Captures...)
 	return source
 }
 
@@ -255,6 +256,7 @@ func factSources(value any) []FactSource {
 			// rather than a guessed one -- Fact.validate's role check only
 			// gates NEW writes through UpsertFact, never a read-back.
 			WriterRole: WriterRole(rowString(entry, "writer_role")),
+			Captures:   factCaptureSources(entry["captures"]),
 		})
 		if source.RunID != "" {
 			sources = mergeFactSources(sources, source)
@@ -269,8 +271,9 @@ func factSources(value any) []FactSource {
 // practice: it is host-derived per call, not per source, so two additions
 // sharing a RunID always carry the same role).
 type factSourceBucket struct {
-	role WriterRole
-	ids  []string
+	role     WriterRole
+	ids      []string
+	captures []FactCaptureSource
 }
 
 func mergeFactSources(existing []FactSource, additions ...FactSource) []FactSource {
@@ -293,6 +296,7 @@ func mergeFactSources(existing []FactSource, additions ...FactSource) []FactSour
 				bucket.ids = append(bucket.ids, id)
 			}
 		}
+		bucket.captures = mergeFactCaptureSources(bucket.captures, source.Captures...)
 	}
 	runs := make([]string, 0, len(byRun))
 	for run := range byRun {
@@ -302,7 +306,10 @@ func mergeFactSources(existing []FactSource, additions ...FactSource) []FactSour
 	merged := make([]FactSource, 0, len(runs))
 	for _, run := range runs {
 		sort.Strings(byRun[run].ids)
-		merged = append(merged, FactSource{RunID: run, MemoryIDs: byRun[run].ids, WriterRole: byRun[run].role})
+		merged = append(merged, FactSource{
+			RunID: run, MemoryIDs: byRun[run].ids, WriterRole: byRun[run].role,
+			Captures: byRun[run].captures,
+		})
 	}
 	return merged
 }
@@ -313,6 +320,7 @@ func sourcesParam(sources []FactSource) []map[string]any {
 		out = append(out, map[string]any{
 			"run_id": source.RunID, "memory_ids": source.MemoryIDs,
 			"writer_role": string(source.WriterRole),
+			"captures":    factCaptureSourcesParam(source.Captures),
 		})
 	}
 	return out
@@ -344,7 +352,19 @@ func (c *Client) attachFactSource(
 }
 
 func sourceEqual(a, b FactSource) bool {
-	return a.RunID == b.RunID && slices.Equal(a.MemoryIDs, b.MemoryIDs)
+	a = normalizeFactSource(a)
+	b = normalizeFactSource(b)
+	return a.RunID == b.RunID && a.WriterRole == b.WriterRole &&
+		slices.Equal(a.MemoryIDs, b.MemoryIDs) &&
+		slices.EqualFunc(a.Captures, b.Captures, func(left, right FactCaptureSource) bool {
+			return left.IdempotencyKey == right.IdempotencyKey &&
+				left.SourceKind == right.SourceKind &&
+				slices.Equal(left.SourceRefs, right.SourceRefs) &&
+				left.ConversationID == right.ConversationID &&
+				left.ToolCallID == right.ToolCallID &&
+				left.ObservedAt.Equal(right.ObservedAt) &&
+				left.Confidence == right.Confidence
+		})
 }
 
 // attachFactSourceOnce is ONE read-then-write attempt, run inside an
