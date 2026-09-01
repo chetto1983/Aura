@@ -46,6 +46,8 @@ type Deps struct {
 	ConversationProjector *ConversationProjector
 	// ReasoningGraphSink receives one provider-authorized trace after its source turn commits.
 	ReasoningGraphSink ReasoningGraphSink
+	// ReasoningDeletion removes the complete derived graph during source deletion.
+	ReasoningDeletion ReasoningDeletionStore
 	// ResumeCommitter is the cross-store HITL-durability seam (D-03/D-05). The
 	// composition root injects a pool-owning *PoolResumeCommitter so single/batch resume
 	// and pause exposure each commit in ONE db.WithTx; nil => New defaults to the
@@ -190,6 +192,7 @@ func New(d Deps) *Runner {
 		memoryContext:            d.MemoryContext,
 		conversationProjector:    d.ConversationProjector,
 		reasoningGraphSink:       d.ReasoningGraphSink,
+		reasoningDeletion:        d.ReasoningDeletion,
 		runtime:                  runtime,
 		registry:                 d.Registry,
 		location:                 tools.LocationOrUTC(d.Timezone),

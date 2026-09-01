@@ -2,6 +2,7 @@ package arcadedb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -31,6 +32,11 @@ func (c *Client) DeleteReasoningBySource(
 	selector ReasoningDeleteSelector,
 ) (int, error) {
 	return c.deleteReasoningBySource(ctx, selector)
+}
+
+// DeleteIdentityReasoning removes every reasoning trace for one identity.
+func (c *Client) DeleteIdentityReasoning(context.Context, string) (int, error) {
+	return 0, errors.New("arcadedb: identity reasoning deletion not implemented")
 }
 
 const selectExpiredReasoningStatement = "SELECT trace_id FROM " + reasoningTraceType +

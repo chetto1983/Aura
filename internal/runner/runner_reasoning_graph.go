@@ -35,6 +35,11 @@ type ReasoningGraphSink interface {
 	UpsertReasoningTrace(context.Context, arcadedb.ReasoningTrace) error
 }
 
+// ReasoningDeletionStore removes derived traces before their authoritative source disappears.
+type ReasoningDeletionStore interface {
+	DeleteReasoningBySource(context.Context, arcadedb.ReasoningDeleteSelector) (int, error)
+}
+
 // ReasoningTraceBuilder accumulates one authorized provider-visible attempt.
 type ReasoningTraceBuilder struct {
 	runID     uuid.UUID
