@@ -194,3 +194,56 @@ func TestResolveDocumentScopeReturnsOnlyWhatTheIdentityHas(t *testing.T) {
 		t.Fatalf("scope = %#v, want only the document this identity has", scope)
 	}
 }
+
+func TestOptionalFloat(t *testing.T) {
+	tests := []struct {
+		name string
+		row  map[string]any
+		key  string
+		want float64
+	}{
+		{
+			name: "float64",
+			row:  map[string]any{"val": float64(3.14)},
+			key:  "val",
+			want: 3.14,
+		},
+		{
+			name: "int64",
+			row:  map[string]any{"val": int64(42)},
+			key:  "val",
+			want: 42,
+		},
+		{
+			name: "int",
+			row:  map[string]any{"val": int(7)},
+			key:  "val",
+			want: 7,
+		},
+		{
+			name: "string",
+			row:  map[string]any{"val": "hello"},
+			key:  "val",
+			want: 0,
+		},
+		{
+			name: "missing key",
+			row:  map[string]any{"other": 1.0},
+			key:  "val",
+			want: 0,
+		},
+		{
+			name: "nil value",
+			row:  map[string]any{"val": nil},
+			key:  "val",
+			want: 0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := optionalFloat(tt.row, tt.key); got != tt.want {
+				t.Errorf("optionalFloat(%v, %q) = %v, want %v", tt.row, tt.key, got, tt.want)
+			}
+		})
+	}
+}

@@ -400,3 +400,65 @@ func TestCredentialAcceptedFailsOnAnUnreachableServer(t *testing.T) {
 		t.Fatal("an unreachable server was read as a revoked credential")
 	}
 }
+
+func TestValidateBaseURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		wantErr bool
+	}{
+		{
+			name:    "valid http URL",
+			url:     "http://localhost:2480",
+			wantErr: false,
+		},
+		{
+			name:    "valid https URL",
+			url:     "https://localhost:2480",
+			wantErr: false,
+		},
+		{
+			name:    "valid http URL with trailing slash",
+			url:     "http://localhost:2480/",
+			wantErr: false,
+		},
+		{
+			name:    "empty URL",
+			url:     "",
+			wantErr: true,
+		},
+		{
+			name:    "whitespace only",
+			url:     "   ",
+			wantErr: true,
+		},
+		{
+			name:    "invalid scheme ftp",
+			url:     "ftp://localhost:2480",
+			wantErr: true,
+		},
+		{
+			name:    "invalid scheme ws",
+			url:     "ws://localhost:2480",
+			wantErr: true,
+		},
+		{
+			name:    "malformed URL",
+			url:     "http://[::1",
+			wantErr: true,
+		},
+		{
+			name:    "valid URL with path",
+			url:     "http://localhost:2480/db",
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateBaseURL(tt.url)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateBaseURL(%q) error = %v, wantErr %v", tt.url, err, tt.wantErr)
+			}
+		})
+	}
+}

@@ -466,3 +466,42 @@ func TestMemoryBatch_NativeDateTimeFormat(t *testing.T) {
 		t.Fatalf("parsed = %s, want %s", parsed, want)
 	}
 }
+
+func TestMemoryBatchError_Error(t *testing.T) {
+	err := &MemoryBatchError{Index: 0, Code: "test_code", Err: fmt.Errorf("test error")}
+	if err.Error() != "arcadedb: memory batch operation 0 (test_code): test error; live state unchanged" {
+		t.Errorf("Error() = %q, want expected string", err.Error())
+	}
+	// Test nil error
+	var nilErr *MemoryBatchError
+	if nilErr.Error() != "" {
+		t.Errorf("nil Error() = %q, want empty string", nilErr.Error())
+	}
+}
+
+func TestMemoryBatchError_Unwrap(t *testing.T) {
+	innerErr := fmt.Errorf("inner error")
+	err := &MemoryBatchError{Index: 1, Code: "code", Err: innerErr}
+	if err.Unwrap() != innerErr {
+		t.Errorf("Unwrap() = %v, want %v", err.Unwrap(), innerErr)
+	}
+	// Test nil error
+	var nilErr *MemoryBatchError
+	if nilErr.Unwrap() != nil {
+		t.Errorf("nil Unwrap() = %v, want nil", nilErr.Unwrap())
+	}
+}
+
+func TestMemoryBatchEnvelopeError(t *testing.T) {
+	innerErr := fmt.Errorf("envelope error")
+	err := memoryBatchEnvelopeError("env_code", innerErr)
+	if err.Index != -1 {
+		t.Errorf("Index = %d, want -1", err.Index)
+	}
+	if err.Code != "env_code" {
+		t.Errorf("Code = %q, want %q", err.Code, "env_code")
+	}
+	if err.Err != innerErr {
+		t.Errorf("Err = %v, want %v", err.Err, innerErr)
+	}
+}

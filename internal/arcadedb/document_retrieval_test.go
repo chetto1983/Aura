@@ -242,3 +242,92 @@ func fusedFixtureQuery(query string) FusedCandidateQuery {
 		Embedding:       []float64{1, 0, 0},
 	}
 }
+
+func TestFiniteFloat(t *testing.T) {
+	tests := []struct {
+		name  string
+		value any
+		want  float64
+		ok    bool
+	}{
+		{
+			name:  "normal float64",
+			value: float64(3.14),
+			want:  3.14,
+			ok:    true,
+		},
+		{
+			name:  "normal float32",
+			value: float32(2.71),
+			want:  float64(float32(2.71)), // Use the actual converted value
+			ok:    true,
+		},
+		{
+			name:  "normal int",
+			value: int(42),
+			want:  42,
+			ok:    true,
+		},
+		{
+			name:  "normal int64",
+			value: int64(100),
+			want:  100,
+			ok:    true,
+		},
+		{
+			name:  "NaN",
+			value: math.NaN(),
+			want:  math.NaN(),
+			ok:    false,
+		},
+		{
+			name:  "positive infinity",
+			value: math.Inf(1),
+			want:  math.Inf(1),
+			ok:    false,
+		},
+		{
+			name:  "negative infinity",
+			value: math.Inf(-1),
+			want:  math.Inf(-1),
+			ok:    false,
+		},
+		{
+			name:  "string",
+			value: "hello",
+			want:  0,
+			ok:    false,
+		},
+		{
+			name:  "nil",
+			value: nil,
+			want:  0,
+			ok:    false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := finiteFloat(tt.value)
+			if !ok {
+				if tt.ok {
+					t.Errorf("finiteFloat(%v) ok = false, want true", tt.value)
+				}
+				return
+			}
+			if !tt.ok {
+				t.Errorf("finiteFloat(%v) ok = true, want false", tt.value)
+				return
+			}
+			// Special handling for NaN - can't compare with ==
+			if math.IsNaN(tt.want) {
+				if !math.IsNaN(got) {
+					t.Errorf("finiteFloat(%v) got = %v, want NaN", tt.value, got)
+				}
+				return
+			}
+			if got != tt.want {
+				t.Errorf("finiteFloat(%v) got = %v, want %v", tt.value, got, tt.want)
+			}
+		})
+	}
+}
