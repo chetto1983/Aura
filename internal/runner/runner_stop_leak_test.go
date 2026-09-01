@@ -2,6 +2,8 @@ package runner
 
 import (
 	"context"
+	"errors"
+	"reflect"
 	"runtime"
 	"sync"
 	"testing"
@@ -10,6 +12,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
+	"go.uber.org/goleak"
 )
 
 // hangingTitleClient blocks in Stream until unblock is closed OR the caller ctx is
@@ -212,5 +215,71 @@ func TestStop_ReArmsWaiterForWorkerSpawnedAfterCleanDrain(t *testing.T) {
 	// re-armed waiter is genuinely waiting. Pre-fix this returned true immediately (the bug).
 	if r.waitWorkers(50 * time.Millisecond) {
 		t.Fatal("waitWorkers reported a clean drain while worker #2 was still blocked (WR-02 regression)")
+	}
+}
+
+func TestMemoryCaptureBoot_InjectsOnePrebuiltQueue(t *testing.T) {
+	queue := NewMemoryCaptureQueue(&recordingCaptureSink{}, MemoryCaptureQueueConfig{})
+	t.Cleanup(func() {
+		if err := queue.Close(t.Context()); err != nil {
+			t.Errorf("close capture queue: %v", err)
+		}
+	})
+
+	deps := Deps{}
+	field, ok := reflect.TypeFor[Deps]().FieldByName("MemoryCaptureQueue")
+	wantType := reflect.TypeFor[*MemoryCaptureQueue]()
+	if !ok || field.Type != wantType {
+		t.Fatalf("Deps.MemoryCaptureQueue type = %v, want %v so boot injects one process-lifetime queue", field.Type, wantType)
+	}
+	reflect.ValueOf(&deps).Elem().FieldByName("MemoryCaptureQueue").Set(reflect.ValueOf(queue))
+
+	r := New(deps)
+	if r.memoryCaptures != queue {
+		t.Fatalf("Runner queue = %p, want boot-owned queue %p", r.memoryCaptures, queue)
+	}
+}
+
+func TestMemoryCaptureClose_DrainsAndRepeatedCloseIsSafe(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+	sink := &recordingCaptureSink{}
+	queue := NewMemoryCaptureQueue(sink, MemoryCaptureQueueConfig{})
+	if _, err := queue.Accept(t.Context(), queueCapture("process-close")); err != nil {
+		t.Fatalf("accept capture: %v", err)
+	}
+	if err := queue.Close(t.Context()); err != nil {
+		t.Fatalf("first close: %v", err)
+	}
+	if err := queue.Close(t.Context()); err != nil {
+		t.Fatalf("repeated close: %v", err)
+	}
+	if got := sink.captures(); len(got) != 1 || got[0].Object != "process-close" {
+		t.Fatalf("durable captures = %+v, want one drained capture", got)
+	}
+	if _, err := queue.Accept(t.Context(), queueCapture("late")); !errors.Is(err, errMemoryCaptureClosed) {
+		t.Fatalf("accept after close = %v, want %v", err, errMemoryCaptureClosed)
+	}
+}
+
+func TestMemoryCaptureSinkFailure_IsBoundedAndCannotReportSuccess(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+	sinkErr := errors.New("capture sink exhausted")
+	queue := NewMemoryCaptureQueue(&recordingCaptureSink{err: sinkErr}, MemoryCaptureQueueConfig{
+		Capacity: 1, MaxAttempts: 1, WriteTimeout: 20 * time.Millisecond,
+	})
+	if _, err := queue.Accept(t.Context(), queueCapture("failure")); err != nil {
+		t.Fatalf("accept capture: %v", err)
+	}
+
+	r, _, _ := newTestRunner(t, nil)
+	r.memoryCaptures = queue
+	if err := r.Stop(t.Context(), "conversation-a"); !errors.Is(err, sinkErr) {
+		t.Fatalf("Runner.Stop error = %v, want sticky sink failure %v", err, sinkErr)
+	}
+	if err := queue.Close(t.Context()); !errors.Is(err, sinkErr) {
+		t.Fatalf("queue close error = %v, want sticky sink failure %v", err, sinkErr)
+	}
+	if err := queue.Close(t.Context()); !errors.Is(err, sinkErr) {
+		t.Fatalf("repeated queue close error = %v, want sticky sink failure %v", err, sinkErr)
 	}
 }
