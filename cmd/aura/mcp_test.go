@@ -399,6 +399,21 @@ func TestMCPDoctorAndToolsStartConfiguredServer(t *testing.T) {
 	if got := out.String(); !strings.Contains(got, "calculate") || !strings.Contains(got, "Evaluate a mathematical expression.") {
 		t.Fatalf("tools output missing calculator tool:\n%s", got)
 	}
+
+	out.Reset()
+	if err := runMCPCommand(context.Background(), nil, []string{"tools", "calculator", "--json"}, &out); err != nil {
+		t.Fatalf("mcp tools --json: %v", err)
+	}
+	var advertised []map[string]any
+	if err := json.Unmarshal(out.Bytes(), &advertised); err != nil {
+		t.Fatalf("decode tools JSON: %v\n%s", err, out.String())
+	}
+	if len(advertised) != 1 || advertised[0]["name"] != "calculate" {
+		t.Fatalf("tools JSON = %#v, want the live calculate tool", advertised)
+	}
+	if _, ok := advertised[0]["inputSchema"].(map[string]any); !ok {
+		t.Fatalf("tools JSON omitted the live input schema: %#v", advertised[0])
+	}
 }
 
 func TestMCPManagerMockE2EProfileRecipeBlockedAndTools(t *testing.T) {
