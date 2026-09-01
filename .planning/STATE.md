@@ -5,16 +5,16 @@ current_phase: 49
 current_phase_name: Memory tiers
 current_plan: 5
 status: executing
-stopped_at: Completed 49-12-PLAN.md
-last_updated: "2026-09-01T02:13:06.061Z"
+stopped_at: Completed 49-09-PLAN.md
+last_updated: "2026-09-01T03:24:49.818Z"
 last_activity: 2026-09-01
-last_activity_desc: Completed Phase 49 Plan 12
-state_head: 43cebe886785943a6ab774d66bfad78b0f39eec6
+last_activity_desc: Completed Phase 49 Plan 09
+state_head: 7cd444bf7b55489a20214e091e80afac7ef258a6
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 62
-  completed_plans: 57
+  completed_plans: 58
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -65,9 +65,9 @@ retaining byte caps, and `TestBridgedTool_Execute_MarksResultTrusted` pins MCP r
 The remaining unchecked MCP-02 item in REQUIREMENTS is its separate live unlisted-server proof;
 it is a roadmap acceptance obligation, not an unrecorded Calendar fork gap.
 
-Last activity: 2026-09-01 — Completed Phase 49 Plan 12
+Last activity: 2026-09-01 — Completed Phase 49 Plan 09
 
-Progress: [█████████░] 92% (57/62 milestone plans)
+Progress: [█████████░] 94% (58/62 milestone plans)
 
 ## Performance Metrics
 
@@ -122,6 +122,7 @@ Progress: [█████████░] 92% (57/62 milestone plans)
 | Phase 49 P04 | 33min | 3 tasks | 9 files |
 | Phase 49 P13 | 48min | 2 tasks | 8 files |
 | Phase 49 P12 | 31min | 2 tasks | 7 files |
+| Phase 49 P09 | 1h 1m | 3 tasks | 19 files |
 
 ## Accumulated Context
 
@@ -269,6 +270,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 49]: Plan 49-12 records only a six-tool allowlist; raw arguments become redacted SHA-256 digests and only send_file may contribute a bounded observation. — A closed persistence allowlist prevents raw shell, memory, blob, token, or sidecar payloads from becoming durable reasoning evidence.
 - [Phase 49]: Plan 49-12 treats memory-tool entity fields as candidates and retains them only after identity-scoped ArcadeDB confirms the entities exist. — Free-form reasoning and untrusted metadata cannot mint TOUCHED authority.
 - [Phase 49]: Plan 49-12 resets the complete reasoning builder on DiscardStreamed, including steps, tools, entity refs, timestamps, and deduplication state. — A retried model attempt repudiates every derived edge, not only its display text.
+- [Phase 49]: Phase 49 Plan 09: Reasoning retention overrides may shorten but never widen the 30-day successful and 7-day failed/cancelled maximum classes.
+- [Phase 49]: Phase 49 Plan 09: Conversation deletion removes reasoning before PostgreSQL; graph failure preserves the authoritative source for safe retry.
+- [Phase 49]: Phase 49 Plan 09: Expiry and explicit deletion retry the complete identity-scoped transaction after ArcadeDB 409/503 conflicts.
+- [Phase 49]: Phase 49 Plan 09: Reasoning boot wiring cannot replace the ordinary digest/preload MemoryContextProvider.
 
 ### Pending Todos
 
@@ -333,8 +338,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-01T02:13:05.718Z
-Stopped at: Completed 49-12-PLAN.md
+Last session: 2026-09-01T03:24:49.473Z
+Stopped at: Completed 49-09-PLAN.md
 The accepted fresh-image delivery envelope is reconciled in 51-VALIDATION.md at 6/6 and 9.9/10.
 The final image passed the complete repository Playwright suite (145 pass, 39 intentional skips,
 zero failures) and four hot-route cycles without a restart or an OpenRouter request.

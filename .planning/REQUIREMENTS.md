@@ -113,7 +113,7 @@
 - [ ] **CTX-02**: A `tool_search` result whose schemas were later re-loaded becomes evictable, so repeated lookups stop accumulating permanently
 - [ ] **CTX-03**: A pruned skill body leaves a marker, so the model can tell a skill's instructions are gone rather than believing it still holds them
 - [ ] **CTX-04**: The operator can see what is consuming the context window by category, not only how full it is
-- [ ] **CTX-05**: Reasoning traces never reach a summarizer or fact extraction, so scratch-work conclusions cannot be preserved as facts
+- [x] **CTX-05**: Reasoning traces never reach a summarizer or fact extraction, so scratch-work conclusions cannot be preserved as facts
 - [x] **CTX-06**: ~~A spike measures, on real exported conversations with known-correct answers, whether retrieval over indexed history recovers what the ladder drops — against summarization, and against both — and its result decides which ships.~~ **Satisfied by implementation, not by a spike (PRD amendment #137).** L3 LLM-driven compaction shipped 2026-08-12 (`prd.md:1190`) with an operator `/compact` command and an AG-UI endpoint. A spike decides whether to build a thing; this thing runs. What it does NOT settle: the retrieval arm was never measured against the summarization arm, so which is *better* is still unknown — only which one exists
 - [ ] **CTX-07**: When the context is over threshold and cannot be reduced, the reason is stated rather than the session simply failing or silently degrading
 - [ ] **CTX-08**: Tool output is bounded **per turn**, not only per result. After a round's results are collected, if their total exceeds the turn budget the largest are spilled to disk until it is under. Aura caps each result (`AURA_CONTEXT_PREVIEW_CAP_BYTES`) and has no aggregate: ten medium results in one parallel batch each clear the per-result cap and still overflow the turn — the exact shape of a swarm fan-out or a wide multi-tool round. Hermes calls this the third of three defenses and sets it at 200K chars
@@ -122,10 +122,10 @@
 
 - [ ] **MEM-01**: Past conversation is semantically searchable, with Postgres remaining the system of record for turns and ArcadeDB holding a derived per-identity projection
 - [ ] **MEM-02**: One retrieval call spans short-term conversation and long-term facts
-- [ ] **MEM-03**: Reasoning traces are persisted to the graph with edges to the entities they touched, and enter context only when explicitly retrieved
+- [x] **MEM-03**: Reasoning traces are persisted to the graph with edges to the entities they touched, and enter context only when explicitly retrieved
 - [x] **MEM-04**: One person is one entity — the operator's profile and preferences do not split across a name and an identity UUID
 - [x] **MEM-05**: Recording a multi-valued fact does not create a junk entity node per distinct value
-- [ ] **MEM-06**: The PRD amendment extending #91 (reasoning persisted to the graph, retrieved only on demand, never summarized or harvested) is committed **before** any reasoning-tier code
+- [x] **MEM-06**: The PRD amendment extending #91 (reasoning persisted to the graph, retrieved only on demand, never summarized or harvested) is committed **before** any reasoning-tier code
 
 ### Surface legibility
 
@@ -224,7 +224,7 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 | CTX-02 | Phase 50 | Pending |
 | CTX-03 | Phase 50 | Pending |
 | CTX-04 | Phase 50 | Pending |
-| CTX-05 | Phase 49 | Pending |
+| CTX-05 | Phase 49 | Complete |
 | CTX-06 | — (Phase 53 deleted) | Satisfied by implementation — L3 compaction, 2026-08-12 |
 | CTX-07 | Phase 50 | Pending |
 | CTX-08 | Phase 50 | Pending |
@@ -249,10 +249,10 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 | MCPC-05 | Phase 45.1 | Complete |
 | MEM-01 | Phase 49 | Pending |
 | MEM-02 | Phase 49 | Pending |
-| MEM-03 | Phase 49 | Pending |
+| MEM-03 | Phase 49 | Complete |
 | MEM-04 | Phase 45 | Complete |
 | MEM-05 | Phase 45 | Complete |
-| MEM-06 | Phase 49 | Pending |
+| MEM-06 | Phase 49 | Complete |
 | RESUME-01 | Phase 52 | Complete (closed 52-08 by live E2E: 400/403/expiry all exercised against the real resolve route; a 500-vs-400 bug found and fixed) |
 | STEER-01 | Phase 52 | Complete |
 | STEER-02 | Phase 52 | Complete (closed 52-08 by live A/B, identical round ceiling) |
