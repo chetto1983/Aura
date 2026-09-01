@@ -319,7 +319,11 @@ func acceptedCaptureFromEvent(ctx context.Context, conversationID string, ev *ag
 	base := AcceptedCapture{
 		IdentityID: identityID, ConversationID: conversationID, ToolCallID: ti.ToolCallID,
 		ObservedAt: ev.Timestamp.UTC(), Confidence: 1,
-		SourceRefs: []string{"conversation:" + conversationID, "tool_call:" + ti.ToolCallID},
+		SourceRefs: []string{
+			"conversation:" + conversationID,
+			"tool_call:" + ti.ToolCallID,
+			"user_turn:" + ev.RequestID.String(),
+		},
 	}
 	switch ti.ToolName {
 	case memoryUpsertFactModelName:

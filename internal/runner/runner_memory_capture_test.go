@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -101,6 +102,9 @@ func TestMemoryUpsertAcceptedCapture(t *testing.T) {
 	if got.IdempotencyKey == "" || got.Confidence <= 0 || !got.ObservedAt.Equal(ev.Timestamp) {
 		t.Fatalf("capture lacks stable identity/confidence/time: %+v", got)
 	}
+	if ref := "user_turn:" + ev.RequestID.String(); !slices.Contains(got.SourceRefs, ref) {
+		t.Fatalf("capture lacks host-bound user-turn ref %q: %+v", ref, got.SourceRefs)
+	}
 }
 
 func TestDurableArtifactAcceptedCapture(t *testing.T) {
@@ -130,6 +134,9 @@ func TestDurableArtifactAcceptedCapture(t *testing.T) {
 			}
 			if got.Statement != "" || got.IdempotencyKey == "" {
 				t.Fatalf("artifact capture copied prose or lacks idempotency: %+v", got)
+			}
+			if ref := "user_turn:" + ev.RequestID.String(); !slices.Contains(got.SourceRefs, ref) {
+				t.Fatalf("artifact capture lacks host-bound user-turn ref %q: %+v", ref, got.SourceRefs)
 			}
 		})
 	}

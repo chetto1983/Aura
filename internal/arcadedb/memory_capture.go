@@ -337,6 +337,7 @@ func validateCaptureSourceRefs(capture AcceptedCapture, limits MemoryLimits) err
 	required := map[string]bool{
 		"conversation:" + capture.ConversationID: false,
 		"tool_call:" + capture.ToolCallID:        false,
+		"user_turn:" + capture.ActorRunID:        false,
 	}
 	if capture.SourceKind == CaptureSourceDurableArtifact {
 		required["artifact:"+capture.ArtifactRef] = false

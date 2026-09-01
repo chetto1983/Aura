@@ -344,7 +344,14 @@ func nullableMemoryBatchTime(value time.Time) any {
 	if value.IsZero() {
 		return nil
 	}
-	return value.UTC().Format(time.RFC3339Nano)
+	// FACT.valid_from/valid_to are ArcadeDB DATETIME properties, whose documented
+	// precision is milliseconds while the database's default formatter is seconds.
+	// The established UpsertFact/read path uses second-precision RFC3339 on both
+	// sides. Keeping the batch path identical avoids a live as-of miss after the
+	// engine truncates a nanosecond input to DATETIME precision. Capture provenance
+	// retains the exact observed_at separately.
+	// https://docs.arcadedb.com/arcadedb/reference/managing-dates
+	return value.UTC().Format(time.RFC3339)
 }
 
 func nullableMemoryBatchString(value string) any {

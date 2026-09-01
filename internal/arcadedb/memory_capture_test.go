@@ -30,6 +30,7 @@ func acceptedExplicitCapture(key, runID, role, object string) AcceptedCapture {
 		SourceRefs: []string{
 			"conversation:" + conversationID,
 			"tool_call:" + toolCallID,
+			"user_turn:" + runID,
 		},
 		Subject:    "Davide",
 		Predicate:  "lives_in",
@@ -131,7 +132,9 @@ func TestAcceptedCapture_Idempotent(t *testing.T) {
 	first := acceptedExplicitCapture(acceptedCaptureKey("d"), "run-a", "parent", "Caraglio")
 	second := acceptedExplicitCapture(acceptedCaptureKey("e"), "run-b", "parent", "Caraglio")
 	second.ToolCallID = "tool-call-distinct"
-	second.SourceRefs = []string{"conversation:conversation-a", "tool_call:tool-call-distinct"}
+	second.SourceRefs = []string{
+		"conversation:conversation-a", "tool_call:tool-call-distinct", "user_turn:run-b",
+	}
 
 	for _, capture := range []AcceptedCapture{first, first, second} {
 		if err := applyCaptureForTest(t, backend, capture); err != nil {
@@ -293,7 +296,9 @@ func TestAcceptedCapture_ProvenanceEnrichment(t *testing.T) {
 	first := acceptedExplicitCapture(acceptedCaptureKey("6"), "run-parent", "parent", "Caraglio")
 	second := acceptedExplicitCapture(acceptedCaptureKey("7"), "run-parent", "parent", "Caraglio")
 	second.ToolCallID = "tool-call-second"
-	second.SourceRefs = []string{"conversation:conversation-a", "tool_call:tool-call-second", "memory:message-8"}
+	second.SourceRefs = []string{
+		"conversation:conversation-a", "tool_call:tool-call-second", "user_turn:run-parent", "memory:message-8",
+	}
 	for _, capture := range []AcceptedCapture{first, first, second} {
 		if err := applyCaptureForTest(t, backend, capture); err != nil {
 			t.Fatalf("ApplyAcceptedCapture(%s): %v", capture.IdempotencyKey, err)
@@ -335,6 +340,13 @@ func TestAcceptedCapture_ProvenanceEnrichment(t *testing.T) {
 	roundTripped := factSources(wire)
 	if len(roundTripped) != 1 || len(roundTripped[0].Captures) != 2 {
 		t.Fatalf("wire provenance = %+v, want both accepted captures", roundTripped)
+	}
+}
+
+func TestAcceptedCapture_RecallTimestampMatchesArcadeDBDatetimePrecision(t *testing.T) {
+	instant := time.Date(2026, 9, 1, 5, 36, 7, 123456789, time.UTC)
+	if got, want := nullableMemoryBatchTime(instant), "2026-09-01T05:36:07Z"; got != want {
+		t.Fatalf("batch DATETIME parameter = %v, want %s for immediate as-of recall", got, want)
 	}
 }
 
