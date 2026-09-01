@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v2.1.0
 current_phase: 49
 current_phase_name: Memory tiers
-current_plan: 4
+current_plan: 5
 status: executing
-stopped_at: Completed 49-08-PLAN.md
-last_updated: "2026-08-31T23:47:22.689Z"
-last_activity: 2026-08-31
-last_activity_desc: Completed Phase 49 Plan 08
-state_head: 263848a5d7076ec3ac39fc93f14fb70e3b5a8379
+stopped_at: Completed 49-04-PLAN.md
+last_updated: "2026-09-01T00:33:35.185Z"
+last_activity: 2026-09-01
+last_activity_desc: Completed Phase 49 Plan 04
+state_head: 37fe5bfb6ddc518734636946ad2f4a7bcb160ca8
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 62
-  completed_plans: 54
+  completed_plans: 55
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -32,7 +32,7 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 Phase: 49 (Memory tiers) — EXECUTING
 Phase 51 is complete: 14/14 plans, 5/5 success criteria, and 12/12 requirements verified.
 Status: Ready to execute
-Current Plan: 4
+Current Plan: 5
 Total Plans in Phase: 14
 
 **The roadmap shrank on 2026-08-25 (operator decision).** Phases **47** (tool-surface ceremony
@@ -65,9 +65,9 @@ retaining byte caps, and `TestBridgedTool_Execute_MarksResultTrusted` pins MCP r
 The remaining unchecked MCP-02 item in REQUIREMENTS is its separate live unlisted-server proof;
 it is a roadmap acceptance obligation, not an unrecorded Calendar fork gap.
 
-Last activity: 2026-08-31 — Completed Phase 49 Plan 08
+Last activity: 2026-09-01 — Completed Phase 49 Plan 04
 
-Progress: [█████████░] 87% (54/62 milestone plans)
+Progress: [█████████░] 89% (55/62 milestone plans)
 
 ## Performance Metrics
 
@@ -119,6 +119,7 @@ Progress: [█████████░] 87% (54/62 milestone plans)
 | Phase 49 P07 | 1h 9m | 3 tasks | 12 files |
 | Phase 49 P03 | 51 min | 2 tasks | 11 files |
 | Phase 49 P08 | 29min | 2 tasks | 11 files |
+| Phase 49 P04 | 33min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -256,6 +257,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 49]: Phase 49 Plan 08 carries active context as the host tool-call session ID plus per-turn request ID, and the server requires the turn ID to match the actor run header.
 - [Phase 49]: Phase 49 Plan 08 resolves OAuth identity before active-source decode and converts only identity-owned conversations into sorted negative filters.
 - [Phase 49]: Phase 49 Plan 08 keeps active-source state out of MemoryRecallInput and MCP _meta; only memory_recall consumes the host header.
+- [Phase 49]: Explicit mode=reasoning dispatches before ordinary RecallMemory; semantic/recent/open/scroll cannot query reasoning storage.
+- [Phase 49]: Reasoning persistence stores only provider-visible summaries, SHA-256 argument digests, redacted bounded observations, and validated references.
+- [Phase 49]: Reasoning terminal expiry is monotone: success caps at 30 days, failure/cancellation at 7 days, and source or existing expiry may only shorten it.
 
 ### Pending Todos
 
@@ -320,12 +324,12 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-31T23:47:22.316Z
-Stopped at: Completed 49-08-PLAN.md
+Last session: 2026-09-01T00:33:34.784Z
+Stopped at: Completed 49-04-PLAN.md
 The accepted fresh-image delivery envelope is reconciled in 51-VALIDATION.md at 6/6 and 9.9/10.
 The final image passed the complete repository Playwright suite (145 pass, 39 intentional skips,
 zero failures) and four hot-route cycles without a restart or an OpenRouter request.
 Crash-after-partial-side-effects remains an explicit residual risk and is not an exactly-once claim.
 
 Resume file: None
-Next action: plan Phase 49 from .planning/phases/49-memory-tiers/49-CONTEXT.md.
+Next action: execute Phase 49 Plan 05.
