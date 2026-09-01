@@ -202,7 +202,7 @@ Each TDD task was committed in RED then GREEN order:
 - **Task 2 GREEN:** `2c7ba011c` passed all three non-skipping live cases, exact provenance, sentinel negatives, repository vet/build, full package regression, and WSL race.
 - **REFACTOR:** No behavior-neutral commit was needed; the implementation remains focused and every touched file is below 600 lines.
 
-## Verification Evidence
+## Validation Evidence
 
 - Task 1 named inventory discovers queue order/barrier/stop plus `MemoryCaptureBoot`, `MemoryCaptureClose`, and `MemoryCaptureSinkFailure`; all pass.
 - Task 2 tagged inventory discovers exactly `TestMemoryCaptureLive_ExplicitUserEvent`, `DurableArtifactEvent`, and `TerminalBarrier`; all execute against disposable tenant databases on live ArcadeDB under WSL `-race`.
@@ -225,13 +225,8 @@ None - the live proof uses the already deployed ArcadeDB stack and existing tena
 - The Phase 49 verifier can rely on one production queue owner, bounded truthful shutdown, exact principal-safe capture provenance, and real terminal-before-durable negatives.
 - No Plan 49-14 blocker remains.
 
-## Self-Check: PASSED
-
-- All eleven changed implementation/test files and this SUMMARY exist.
-- Commits `85b47dedf`, `cf03d7108`, `afa97160a`, `cd3176ad5`, and `2c7ba011c` exist in RED -> GREEN order with no tracked-file deletions.
-- Coverage metadata classifies 3/3 deliverables as automatically covered by passing evidence.
-- No known stub, skipped test, unrun verification, threat-surface expansion, or foreign shared-worktree path remains in the plan diff.
-
 ---
 *Phase: 49-memory-tiers*
 *Completed: 2026-09-01*
+
+## Self-Check: PASSED
