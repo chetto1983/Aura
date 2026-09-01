@@ -76,6 +76,47 @@ def passing_suites(manifest: dict[str, object]) -> dict[str, object]:
     return suites
 
 
+def mixed_tier_case(
+    name: str,
+    effective_path: str,
+    backend_path: str,
+    facts: int,
+    conversations: int,
+) -> dict[str, object]:
+    counts = {"facts": facts, "conversations": conversations, "reasoning": 0}
+    return {
+        "name": name,
+        "response": {
+            "effective_path": effective_path,
+            "path": backend_path,
+            "tier_counts": counts,
+        },
+        "otel": {
+            "memory.recall.effective_path": effective_path,
+            "memory.recall.path": backend_path,
+            "memory.recall.fact_count": facts,
+            "memory.recall.conversation_count": conversations,
+            "memory.recall.reasoning_count": 0,
+        },
+        "returned_tier_counts": counts.copy(),
+        "active_source_count": 0,
+        "foreign_source_count": 0,
+    }
+
+
+def mixed_tier_fixture() -> dict[str, object]:
+    return {
+        "scenario": "mixed_tier_recall",
+        "scenarios": [
+            mixed_tier_case("mixed", "mixed", "hybrid", 1, 1),
+            mixed_tier_case("query", "facts", "hybrid", 1, 0),
+            mixed_tier_case("entity", "facts", "graph", 1, 0),
+            mixed_tier_case("forced_fallback", "facts", "lexical", 1, 0),
+        ],
+        "surface": {"retrieval_operations": ["memory_recall"]},
+    }
+
+
 class ManifestTest(unittest.TestCase):
     def test_default_manifest_is_exactly_one_hundred_points(self) -> None:
         manifest = evaluator.load_manifest(None)
@@ -183,6 +224,77 @@ class Phase49EvidenceContractTest(unittest.TestCase):
         final["status"] = "pass"
         with self.assertRaisesRegex(ValueError, "unobserved"):
             evaluator.validate_manifest(manifest)
+
+
+class MixedTierRecallEvaluatorTest(unittest.TestCase):
+    def evaluate(self, evidence: dict[str, object]) -> dict[str, object]:
+        self.assertTrue(
+            hasattr(evaluator.phase49, "evaluate_mixed_tier_recall"),
+            "mixed_tier_recall evaluator entrypoint is missing",
+        )
+        return evaluator.phase49.evaluate_mixed_tier_recall(evidence)
+
+    def test_complete_route_evidence_passes_and_reports_each_axis(self) -> None:
+        report = self.evaluate(mixed_tier_fixture())
+        self.assertTrue(report["passed"])
+        self.assertEqual(report["scenario"], "mixed_tier_recall")
+        self.assertEqual(report["tier_counts"], {"facts": 1, "conversations": 1, "reasoning": 0})
+        self.assertEqual(
+            report["backend_paths"],
+            {"query": "hybrid", "entity": "graph", "forced_fallback": "lexical"},
+        )
+
+    def test_zero_scenarios_and_missing_fact_or_conversation_fail(self) -> None:
+        empty = mixed_tier_fixture()
+        empty["scenarios"] = []
+        self.assertFalse(self.evaluate(empty)["passed"])
+        for tier in ("facts", "conversations"):
+            with self.subTest(tier=tier):
+                evidence = mixed_tier_fixture()
+                mixed = evidence["scenarios"][0]
+                mixed["response"]["tier_counts"][tier] = 0
+                mixed["returned_tier_counts"][tier] = 0
+                self.assertFalse(self.evaluate(evidence)["passed"])
+
+    def test_active_or_foreign_source_leakage_fails(self) -> None:
+        for field in ("active_source_count", "foreign_source_count"):
+            with self.subTest(field=field):
+                evidence = mixed_tier_fixture()
+                evidence["scenarios"][0][field] = 1
+                self.assertFalse(self.evaluate(evidence)["passed"])
+
+    def test_missing_swapped_or_conflated_route_axes_fail(self) -> None:
+        mutations = {
+            "missing response effective path": lambda case: case["response"].pop("effective_path"),
+            "missing OTel path": lambda case: case["otel"].pop("memory.recall.path"),
+            "swapped axes": lambda case: case["response"].update({"effective_path": "hybrid", "path": "mixed"}),
+            "conflated axes": lambda case: case["response"].update({"effective_path": case["response"]["path"]}),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                evidence = mixed_tier_fixture()
+                mutate(evidence["scenarios"][0])
+                self.assertFalse(self.evaluate(evidence)["passed"])
+
+    def test_wrong_backend_and_otel_disagreement_fail(self) -> None:
+        for case_name, wrong_path in (("query", "graph"), ("entity", "hybrid"), ("forced_fallback", "hybrid")):
+            with self.subTest(case=case_name):
+                evidence = mixed_tier_fixture()
+                case = next(item for item in evidence["scenarios"] if item["name"] == case_name)
+                case["response"]["path"] = wrong_path
+                case["otel"]["memory.recall.path"] = wrong_path
+                self.assertFalse(self.evaluate(evidence)["passed"])
+        evidence = mixed_tier_fixture()
+        evidence["scenarios"][1]["otel"]["memory.recall.path"] = "graph"
+        self.assertFalse(self.evaluate(evidence)["passed"])
+
+    def test_tier_count_disagreement_and_surface_drift_fail(self) -> None:
+        evidence = mixed_tier_fixture()
+        evidence["scenarios"][0]["otel"]["memory.recall.conversation_count"] = 0
+        self.assertFalse(self.evaluate(evidence)["passed"])
+        evidence = mixed_tier_fixture()
+        evidence["surface"]["retrieval_operations"].append("memory_search")
+        self.assertFalse(self.evaluate(evidence)["passed"])
 
 
 class GoTestParserTest(unittest.TestCase):
