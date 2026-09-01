@@ -48,14 +48,18 @@ def valid_evidence() -> dict[str, dict[str, object]]:
                 "cross_package_attribution": True,
                 "policy_schema_version": 1,
                 "target_percent": 85.0,
-                "packages_evaluated": 3,
+                "packages_evaluated": 4,
                 "packages_at_target": 1,
                 "packages_below_target": ["example/internal/debt"],
                 "delegated_packages": [
                     {
+                        "package": "github.com/chetto1983/aura/internal/arcadedb",
+                        "authority": "arcadedb_coverage",
+                    },
+                    {
                         "package": "github.com/chetto1983/aura/internal/sandbox/usersandbox",
                         "authority": "docker_coverage",
-                    }
+                    },
                 ],
                 "results": [
                     {
@@ -75,6 +79,15 @@ def valid_evidence() -> dict[str, dict[str, object]]:
                         "target_percent": 85.0,
                         "covered_statements": 90,
                         "total_statements": 100,
+                    },
+                    {
+                        "package": "github.com/chetto1983/aura/internal/arcadedb",
+                        "mode": "delegated",
+                        "passed": True,
+                        "target_percent": 85.0,
+                        "covered_statements": 5,
+                        "total_statements": 10,
+                        "authority": "arcadedb_coverage",
                     },
                     {
                         "package": "github.com/chetto1983/aura/internal/sandbox/usersandbox",

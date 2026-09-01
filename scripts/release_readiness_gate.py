@@ -78,7 +78,14 @@ def validate_coverage(report: dict[str, Any]) -> dict[str, Any]:
     results = package_coverage.get("results")
     require(isinstance(results, list) and results, "coverage: package results missing")
 
+    # Both delegations are pinned here, not merely allowed: a package may move its
+    # coverage authority only where a separate release-blocking report holds the same
+    # 85% floor -- usersandbox's native Docker report, and internal/arcadedb's live
+    # arcadedb_integration profile, which Agent Memory hard-gates as
+    # arcadedb_package_coverage and validate_agent_memory re-checks below (amendment
+    # #203). A third delegation appearing in the report fails this gate on sight.
     expected_delegated = {
+        "github.com/chetto1983/aura/internal/arcadedb": "arcadedb_coverage",
         "github.com/chetto1983/aura/internal/sandbox/usersandbox": "docker_coverage",
     }
     packages: set[str] = set()
