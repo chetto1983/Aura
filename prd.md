@@ -11076,3 +11076,47 @@ flusso completo, che funziona.
 > bare names cost, and the live evidence once read as such — an agent searching "memory"
 > and getting "no matching tools" — turned out to be the unmounted memory MCP, not a
 > description gap.
+
+> **Amendment #203 (2026-09-01 — measured on the master CI runs that went red after Phase
+> 49-11 landed: run 33504822432 job "Owned-surface coverage gate", run 33504822392 job
+> "Skills gate", run 33504822432 job "Agent Memory MRS").**
+>
+> **A scored gate that cannot execute where it is wired reports nothing, forever.** Phase
+> 49-11 attached the running-Aura conversation suite to `agent_memory_eval.py --tier all`,
+> which is exactly what the CI job runs. That suite signs into Authula, drives an
+> authenticated `/agent/run`, and scores the model's OWN answers above 9.8 against
+> correlated Tempo, Postgres and ArcadeDB evidence. GitHub CI has none of the three things
+> it needs: no enrolled operator (the job never exported `AURA_E2E_AUTHULA_EMAIL`, which is
+> where it died — `agent-memory-eval: FAIL: AURA_E2E_AUTHULA_EMAIL is required`), no Tempo
+> in the job's compose set, and — decisive — no model, which ci.yml already states in its
+> own words where it passes `OPENROUTER_API_KEY: ci-degraded-no-network`. The suite had been
+> validated once, by hand, on the operator's stack; 49-11-SUMMARY.md records its quality
+> gates as PENDING. Master stayed red from run 1710 to run 1722.
+>
+> The tier is now armed explicitly by `AURA_E2E_RUNNING_AURA=1` (`make
+> agent-memory-eval-running-aura`) and, unarmed, records `running_aura_conversation:
+> NOT_EVALUATED` with the reason in the report instead of failing. Armed and broken still
+> fails closed — the driver raises, it does not degrade. The consequence is stated rather
+> than hidden: the artifact release readiness consumes therefore carries NO running-Aura
+> evidence on a CI-produced report, and that evidence is an operator obligation until a
+> runner with a model and Tempo exists.
+>
+> **`internal/arcadedb` had two coverage authorities measuring different denominators.**
+> The db_integration package policy classified it `target` (≥85%) on 2026-09-01; measured
+> the same day, that tier reports 2471/3184 = 77.61%, and the identical figure comes out of
+> a bare `go test ./internal/arcadedb` — the tag adds nothing, because the uncovered mass is
+> HTTP round-trips against a live engine (`Begin`, `LoadState`, `Persist`, `SaveReceipt`,
+> `ApplyMemoryBatch`, the conversation and reasoning deletes: 344 statements in four files)
+> that only the `arcadedb_integration` suite executes. That suite already IS the package's
+> authority: `arcadedb_package_coverage` measures its profile at the same 85% floor, is a
+> hard gate in the manifest, and is re-checked by `validate_agent_memory` in release
+> readiness. The policy entry becomes `delegated` to `arcadedb_coverage`, mirroring
+> `usersandbox → docker_coverage`. The floor does not move; the duplicate measurement on a
+> denominator its tier cannot reach does.
+>
+> What this does NOT show: it does not prove the live tier currently reaches 85% — that
+> figure is re-established only once the Agent Memory job runs again, which the arming
+> change above is what restores. It does not measure `internal/conversations`, whose 83.85%
+> gap is a genuine test debt paid here in unit tests over pure helpers (+37 statements
+> measured locally against the same package), not a delegation. And it prices nothing about
+> how often the operator will actually run the armed tier.
