@@ -275,16 +275,15 @@ func (f liveCaptureFixture) runner(
 	})
 }
 
-func liveMemoryCall(f liveCaptureFixture, suffix string) (llm.ToolCall, string, string) {
+func liveMemoryCall(f liveCaptureFixture, suffix string) (llm.ToolCall, string) {
 	subject := "capture-live-operator-" + suffix
 	object := "capture-live-city-" + suffix
-	userTurnRef := "user-turn:" + f.conversationID + ":1"
 	args, _ := json.Marshal(liveMemoryUpsertInput{
 		Subject: subject, Predicate: "lives_in", Object: object,
 		Statement: subject + " lives in " + object + ".",
-		Source:    liveMemoryUpsertSource{MemoryIDs: []string{userTurnRef}},
+		Source:    liveMemoryUpsertSource{},
 	})
-	return agenttest.MakeToolCall("call-memory-"+suffix, memoryUpsertFactModelName, string(args)), subject, userTurnRef
+	return agenttest.MakeToolCall("call-memory-"+suffix, memoryUpsertFactModelName, string(args)), subject
 }
 
 func liveWriteCall(f liveCaptureFixture, suffix string) (llm.ToolCall, string) {
@@ -382,7 +381,7 @@ func assertNoCaptureSentinels(t *testing.T, client *arcadedb.Client) {
 
 func TestMemoryCaptureLive_ExplicitUserEvent(t *testing.T) {
 	fixture := newLiveCaptureFixture(t)
-	memoryCall, subject, userTurnRef := liveMemoryCall(fixture, "explicit")
+	memoryCall, subject := liveMemoryCall(fixture, "explicit")
 	client := agenttest.NewFakeClient(liveToolTurn(memoryCall), liveFinalTurn())
 	queue := NewMemoryCaptureQueue(fixture.client, MemoryCaptureQueueConfig{WriteTimeout: 30 * time.Second})
 	t.Cleanup(func() { _ = queue.Close(t.Context()) })
@@ -392,7 +391,11 @@ func TestMemoryCaptureLive_ExplicitUserEvent(t *testing.T) {
 	}
 	event := toolEndEvent(t, events, memoryUpsertFactModelName)
 	source, capture := captureSourceFor(t, fixture.client, subject, "lives_in", "capture-live-city-explicit", CaptureSourceExplicitFact)
-	wantRefs := []string{"conversation:" + fixture.conversationID, "memory:" + userTurnRef, "tool_call:call-memory-explicit"}
+	wantRefs := []string{
+		"conversation:" + fixture.conversationID,
+		"tool_call:call-memory-explicit",
+		"user_turn:" + event.RequestID.String(),
+	}
 	if source.RunID != event.RequestID.String() || source.WriterRole != arcadedb.WriterParent ||
 		capture.ConversationID != fixture.conversationID || capture.ToolCallID != "call-memory-explicit" ||
 		!slices.Equal(capture.SourceRefs, wantRefs) {
@@ -419,7 +422,12 @@ func TestMemoryCaptureLive_DurableArtifactEvent(t *testing.T) {
 		t.Fatalf("real write_file event produced no accepted sequence: %+v", event.Actions.ToolInvocation)
 	}
 	source, capture := captureSourceFor(t, fixture.client, path, "durable_artifact", "write", CaptureSourceDurableArtifact)
-	wantRefs := []string{"artifact:" + path, "conversation:" + fixture.conversationID, "tool_call:call-write-artifact"}
+	wantRefs := []string{
+		"artifact:" + path,
+		"conversation:" + fixture.conversationID,
+		"tool_call:call-write-artifact",
+		"user_turn:" + event.RequestID.String(),
+	}
 	if source.RunID != event.RequestID.String() || source.WriterRole != arcadedb.WriterParent ||
 		capture.ConversationID != fixture.conversationID || capture.ToolCallID != "call-write-artifact" ||
 		!slices.Equal(capture.SourceRefs, wantRefs) {
@@ -430,7 +438,7 @@ func TestMemoryCaptureLive_DurableArtifactEvent(t *testing.T) {
 
 func TestMemoryCaptureLive_TerminalBarrier(t *testing.T) {
 	fixture := newLiveCaptureFixture(t)
-	memoryCall, subject, _ := liveMemoryCall(fixture, "barrier")
+	memoryCall, subject := liveMemoryCall(fixture, "barrier")
 	writeCall, path := liveWriteCall(fixture, "barrier")
 	client := agenttest.NewFakeClient(liveToolTurn(memoryCall, writeCall), liveFinalTurn())
 	gate := &liveCaptureGateSink{
