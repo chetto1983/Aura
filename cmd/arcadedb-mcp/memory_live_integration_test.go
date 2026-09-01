@@ -5,11 +5,15 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	officialmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
 	auramcp "github.com/chetto1983/aura/internal/mcp"
@@ -301,29 +305,56 @@ func TestAgentMemoryMCPLiveSupersedeRefusalThenFactKeyCloses(t *testing.T) {
 
 func TestAgentMemoryMCPLive_MixedTierRecall(t *testing.T) {
 	verifyAgentMemoryLiveNoLeaks(t)
-	sessions, identities, _ := newAgentMemoryLiveMCP(t, 2, "")
+	recorder, receivingMiddleware := newAgentMemoryLiveSpanRecorder(t)
+	sessions, identities, _, _ := newAgentMemoryLiveMCPWithOptions(t, 2, "", agentMemoryLiveMCPOptions{
+		strictDependencies:  true,
+		headerFunc:          agentMemoryLiveRecallHeaders,
+		receivingMiddleware: receivingMiddleware,
+	})
 	identityID, foreignIdentityID := identities[0], identities[1]
 	session := sessions[identityID]
 	ctx, cancel := context.WithTimeout(t.Context(), agentMemoryLiveTimeout)
 	defer cancel()
 
 	callAgentMemoryLiveJSON[MemoryUpsertFactOutput](t, ctx, session, "memory_upsert_fact", map[string]any{
-		"subject": "Lumen compass", "predicate": "stored_in", "object": "apricot observatory",
-		"statement": "The Lumen compass is stored in the apricot observatory.",
+		"subject": "Aurora notebook", "predicate": "stored_in", "object": "Turin archive",
+		"statement": "The aurora notebook is stored in the Turin archive.",
 		"source":    map[string]any{"memory_ids": []string{"mixed-tier-fact-source"}},
 	})
 	seedAgentMemoryLiveConversation(t, ctx, identityID, "conversation-active", "active",
-		"We are currently discussing the Lumen compass in the apricot observatory.")
+		"We are currently discussing the aurora notebook route through Turin.")
 	seedAgentMemoryLiveConversation(t, ctx, identityID, "conversation-historical", "historical",
-		"We previously discussed the Lumen compass route through the apricot observatory.")
+		"We previously discussed the aurora notebook route through Turin.")
 	seedAgentMemoryLiveConversation(t, ctx, foreignIdentityID, "conversation-foreign", "foreign",
-		"A foreign identity discussed the Lumen compass in the apricot observatory.")
+		"A foreign identity discussed the aurora notebook route through Turin.")
+	seedClient := agentMemoryLiveTenantClient(t, ctx, identityID)
+	seeded, err := seedClient.SearchConversationTurnsHybrid(ctx, identityID, "aurora notebook Turin", 10)
+	if err != nil {
+		t.Fatalf("verify projected recall fixtures: %v", err)
+	}
+	seededConversations := make(map[string]bool, len(seeded.Turns))
+	for _, turn := range seeded.Turns {
+		seededConversations[turn.ConversationID] = true
+	}
+	if !seededConversations["conversation-active"] || !seededConversations["conversation-historical"] ||
+		seededConversations["conversation-foreign"] {
+		t.Fatalf("projected recall fixtures = %+v, want active and historical owner candidates only", seeded.Turns)
+	}
 
-	output := callAgentMemoryLiveJSON[MemoryRecallOutput](t, ctx, session, "memory_recall", map[string]any{
-		"query": "Lumen compass apricot observatory", "limit": 10,
+	activeHeader, err := encodeMemoryRecallActiveSources([]memoryRecallActiveSource{
+		{ConversationID: "conversation-active", TurnID: agentMemoryLiveParentRunID},
+	})
+	if err != nil {
+		t.Fatalf("encode active source: %v", err)
+	}
+	callCtx := context.WithValue(ctx, agentMemoryLiveRecallHeaderKey{}, activeHeader)
+	spanStart := len(recorder.Ended())
+	output := callAgentMemoryLiveJSON[MemoryRecallOutput](t, callCtx, session, "memory_recall", map[string]any{
+		"query": "aurora notebook Turin", "limit": 10,
 	})
 	if output.Retrieval.EffectivePath != "mixed" || output.Retrieval.Path != "hybrid" {
-		t.Fatalf("retrieval = %+v, want mixed contribution over hybrid backend", output.Retrieval)
+		t.Fatalf("retrieval = %+v, want mixed contribution over hybrid backend; evidence=%+v",
+			output.Retrieval, output.Evidence)
 	}
 	factCount, conversationCount := 0, 0
 	historicalFound := false
@@ -365,6 +396,152 @@ func TestAgentMemoryMCPLive_MixedTierRecall(t *testing.T) {
 		t.Fatalf("retrieval counts = %+v, evidence facts=%d conversations=%d",
 			output.Retrieval, factCount, conversationCount)
 	}
+	assertAgentMemoryLiveRecallSpan(t, agentMemoryLiveRecallSpan(t, recorder, spanStart), output.Retrieval)
+}
+
+func TestAgentMemoryMCPLive_BackendPath(t *testing.T) {
+	verifyAgentMemoryLiveNoLeaks(t)
+	recorder, receivingMiddleware := newAgentMemoryLiveSpanRecorder(t)
+	sessions, identities, _, tenantClients := newAgentMemoryLiveMCPWithOptions(
+		t, 1, "", agentMemoryLiveMCPOptions{
+			strictDependencies:  true,
+			receivingMiddleware: receivingMiddleware,
+		},
+	)
+	identityID := identities[0]
+	session := sessions[identityID]
+	ctx, cancel := context.WithTimeout(t.Context(), agentMemoryLiveTimeout)
+	defer cancel()
+	callAgentMemoryLiveJSON[MemoryUpsertFactOutput](t, ctx, session, "memory_upsert_fact", map[string]any{
+		"subject": "Lumen compass", "predicate": "stored_in", "object": "apricot observatory",
+		"statement": "The Lumen compass is stored in the apricot observatory.",
+		"source":    map[string]any{"memory_ids": []string{"backend-path-fact-source"}},
+	})
+
+	tests := []struct {
+		name      string
+		arguments map[string]any
+		wantPath  string
+		fallback  bool
+	}{
+		{name: "query", arguments: map[string]any{"query": "Lumen compass apricot observatory", "limit": 5}, wantPath: "hybrid"},
+		{name: "entity", arguments: map[string]any{"entity": "Lumen compass", "limit": 5}, wantPath: "graph"},
+		{name: "forced fallback", arguments: map[string]any{"query": "Lumen", "limit": 5}, wantPath: "lexical", fallback: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if test.fallback {
+				client, err := tenantClients.For(ctx, identityID)
+				if err != nil {
+					t.Fatalf("resolve server tenant client: %v", err)
+				}
+				client.WithEmbedder(agentMemoryLiveUnavailableEmbedder{})
+			}
+			spanStart := len(recorder.Ended())
+			output := callAgentMemoryLiveJSON[MemoryRecallOutput](
+				t, ctx, session, "memory_recall", test.arguments,
+			)
+			if output.Retrieval.Path != test.wantPath {
+				t.Fatalf("path = %q, want %q; retrieval=%+v", output.Retrieval.Path, test.wantPath, output.Retrieval)
+			}
+			if output.Retrieval.EffectivePath != "facts" || output.Retrieval.FactCount != 1 ||
+				output.Retrieval.ConversationCount != 0 {
+				t.Fatalf("tier contribution = %+v, want one fact and no conversations", output.Retrieval)
+			}
+			assertAgentMemoryLiveRecallSpan(t, agentMemoryLiveRecallSpan(t, recorder, spanStart), output.Retrieval)
+		})
+	}
+}
+
+type agentMemoryLiveRecallHeaderKey struct{}
+
+func agentMemoryLiveRecallHeaders(ctx context.Context) map[string]string {
+	headers := agentMemoryLiveActorHeaders(ctx)
+	if encoded, ok := ctx.Value(agentMemoryLiveRecallHeaderKey{}).(string); ok && encoded != "" {
+		headers[memoryRecallActiveSourcesHeader] = encoded
+	}
+	return headers
+}
+
+type agentMemoryLiveUnavailableEmbedder struct{}
+
+func (agentMemoryLiveUnavailableEmbedder) Embed(context.Context, []string) ([][]float64, error) {
+	return nil, errors.New("forced live embedding fallback")
+}
+
+func newAgentMemoryLiveSpanRecorder(
+	t *testing.T,
+) (*tracetest.SpanRecorder, officialmcp.Middleware) {
+	t.Helper()
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	t.Cleanup(func() {
+		if err := provider.Shutdown(context.Background()); err != nil {
+			t.Errorf("shutdown live trace provider: %v", err)
+		}
+	})
+	return recorder, func(next officialmcp.MethodHandler) officialmcp.MethodHandler {
+		return func(ctx context.Context, method string, request officialmcp.Request) (officialmcp.Result, error) {
+			ctx, span := provider.Tracer("agent-memory-live").Start(ctx, method)
+			defer span.End()
+			return next(ctx, method, request)
+		}
+	}
+}
+
+func agentMemoryLiveRecallSpan(
+	t *testing.T,
+	recorder *tracetest.SpanRecorder,
+	start int,
+) []attribute.KeyValue {
+	t.Helper()
+	spans := recorder.Ended()
+	for index := len(spans) - 1; index >= start; index-- {
+		attributes := spans[index].Attributes()
+		if agentMemoryLiveAttributeString(attributes, "memory.recall.path") != "" {
+			return attributes
+		}
+	}
+	t.Fatalf("no same-call span with memory.recall.path after span index %d (ended=%d)", start, len(spans))
+	return nil
+}
+
+func assertAgentMemoryLiveRecallSpan(
+	t *testing.T,
+	attributes []attribute.KeyValue,
+	retrieval MemoryRecallRetrievalMetadata,
+) {
+	t.Helper()
+	if got := agentMemoryLiveAttributeString(attributes, "memory.recall.effective_path"); got != retrieval.EffectivePath {
+		t.Fatalf("span effective_path = %q, response = %q", got, retrieval.EffectivePath)
+	}
+	if got := agentMemoryLiveAttributeString(attributes, "memory.recall.path"); got != retrieval.Path {
+		t.Fatalf("span path = %q, response = %q", got, retrieval.Path)
+	}
+	if got := agentMemoryLiveAttributeInt(attributes, "memory.recall.fact_count"); got != retrieval.FactCount {
+		t.Fatalf("span fact_count = %d, response = %d", got, retrieval.FactCount)
+	}
+	if got := agentMemoryLiveAttributeInt(attributes, "memory.recall.conversation_count"); got != retrieval.ConversationCount {
+		t.Fatalf("span conversation_count = %d, response = %d", got, retrieval.ConversationCount)
+	}
+}
+
+func agentMemoryLiveAttributeString(attributes []attribute.KeyValue, key string) string {
+	for _, item := range attributes {
+		if string(item.Key) == key {
+			return item.Value.AsString()
+		}
+	}
+	return ""
+}
+
+func agentMemoryLiveAttributeInt(attributes []attribute.KeyValue, key string) int {
+	for _, item := range attributes {
+		if string(item.Key) == key {
+			return int(item.Value.AsInt64())
+		}
+	}
+	return 0
 }
 
 func seedAgentMemoryLiveConversation(

@@ -304,10 +304,10 @@ func TestMemoryRecallSuppressesActiveConversation(t *testing.T) {
 		}
 	}
 	statement, params, ok := rec.find("vector.fuse")
-	if !ok || !strings.Contains(statement, "conversation_id NOT IN :excluded_conversation_ids") {
+	if !ok || !strings.Contains(statement, "conversation_id <> :excluded_conversation_id_0") {
 		t.Fatalf("recall query lacks negative filter: %q", statement)
 	}
-	if got := params["excluded_conversation_ids"]; !slices.Equal(anyStringSlice(got), []string{"conversation-active"}) {
+	if got := params["excluded_conversation_id_0"]; got != "conversation-active" {
 		t.Fatalf("negative filter params = %#v", got)
 	}
 }
@@ -357,21 +357,4 @@ func recallRequestWithActiveSource(
 	req := reqWithParentActor(identity, actorTurn)
 	req.Extra.Header.Set(memoryRecallActiveSourcesHeader, base64.RawURLEncoding.EncodeToString(raw))
 	return req
-}
-
-func anyStringSlice(value any) []string {
-	raw, ok := value.([]any)
-	if !ok {
-		if stringsValue, ok := value.([]string); ok {
-			return stringsValue
-		}
-		return nil
-	}
-	values := make([]string, 0, len(raw))
-	for _, item := range raw {
-		if text, ok := item.(string); ok {
-			values = append(values, text)
-		}
-	}
-	return values
 }

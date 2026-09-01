@@ -32,12 +32,14 @@ func canonicalRecallExclusions(values []string) ([]string, error) {
 }
 
 func applyRecallExclusions(statement string, params map[string]any, conversationIDs []string) string {
-	clause := ""
-	if len(conversationIDs) > 0 {
-		clause = " AND conversation_id NOT IN :excluded_conversation_ids"
-		params["excluded_conversation_ids"] = conversationIDs
+	var clause strings.Builder
+	for index, conversationID := range conversationIDs {
+		name := fmt.Sprintf("excluded_conversation_id_%d", index)
+		clause.WriteString(" AND conversation_id <> :")
+		clause.WriteString(name)
+		params[name] = conversationID
 	}
-	return strings.ReplaceAll(statement, recallExclusionMarker, clause)
+	return strings.ReplaceAll(statement, recallExclusionMarker, clause.String())
 }
 
 func recallExcludedConversationSet(conversationIDs []string) map[string]struct{} {

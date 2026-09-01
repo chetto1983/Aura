@@ -27,21 +27,42 @@ import (
 	auramcp "github.com/chetto1983/aura/internal/mcp"
 )
 
+type agentMemoryLiveMCPOptions struct {
+	strictDependencies  bool
+	headerFunc          func(context.Context) map[string]string
+	receivingMiddleware officialmcp.Middleware
+}
+
 func newAgentMemoryLiveMCP(
 	t *testing.T,
 	identityCount int,
 	operatorDisplayName string,
 ) (map[string]*officialmcp.ClientSession, []string, agentMemoryRuntimeEvidence) {
 	t.Helper()
+	sessions, identities, runtime, _ := newAgentMemoryLiveMCPWithOptions(
+		t, identityCount, operatorDisplayName, agentMemoryLiveMCPOptions{},
+	)
+	return sessions, identities, runtime
+}
+
+func newAgentMemoryLiveMCPWithOptions(
+	t *testing.T,
+	identityCount int,
+	operatorDisplayName string,
+	options agentMemoryLiveMCPOptions,
+) (map[string]*officialmcp.ClientSession, []string, agentMemoryRuntimeEvidence, *tenants) {
+	t.Helper()
 	adminPassword := os.Getenv("ARCADEDB_ADMIN_PASSWORD")
 	if strings.TrimSpace(adminPassword) == "" {
 		adminPassword = os.Getenv("ARCADEDB_PASSWORD")
 	}
 	if strings.TrimSpace(adminPassword) == "" {
-		agentMemoryLiveGap(t, "ARCADEDB_PASSWORD or ARCADEDB_ADMIN_PASSWORD is not set")
+		agentMemoryLiveDependencyGap(t, options.strictDependencies,
+			"ARCADEDB_PASSWORD or ARCADEDB_ADMIN_PASSWORD is not set")
 	}
 	if strings.TrimSpace(os.Getenv("AURA_ARCADEDB_TENANT_SECRET")) == "" {
-		agentMemoryLiveGap(t, "AURA_ARCADEDB_TENANT_SECRET is not set")
+		agentMemoryLiveDependencyGap(t, options.strictDependencies,
+			"AURA_ARCADEDB_TENANT_SECRET is not set")
 	}
 
 	base := arcadedb.Config{
@@ -59,7 +80,7 @@ func newAgentMemoryLiveMCP(
 	defer probeCancel()
 	arcadeDBVersion, err := admin.ServerVersion(probeCtx)
 	if err != nil {
-		agentMemoryLiveGap(t, "ArcadeDB is unreachable: %v", err)
+		agentMemoryLiveDependencyGap(t, options.strictDependencies, "ArcadeDB is unreachable: %v", err)
 	}
 	if err := admin.VerifySecureVersion(probeCtx); err != nil {
 		t.Fatalf("ArcadeDB isolation version check: %v", err)
@@ -73,11 +94,11 @@ func newAgentMemoryLiveMCP(
 	embedder := arcadedb.NewSidecarEmbedder(
 		embedURL, os.Getenv("AURA_EMBED_MODEL"), os.Getenv("AURA_EMBED_API_KEY"), 60*time.Second)
 	if embedder == nil {
-		agentMemoryLiveGap(t, "EmbeddingGemma endpoint is not configured")
+		agentMemoryLiveDependencyGap(t, options.strictDependencies, "EmbeddingGemma endpoint is not configured")
 	}
 	vectors, err := embedder.Embed(probeCtx, []string{"task: search result | query: integration health probe"})
 	if err != nil {
-		agentMemoryLiveGap(t, "EmbeddingGemma is unreachable: %v", err)
+		agentMemoryLiveDependencyGap(t, options.strictDependencies, "EmbeddingGemma is unreachable: %v", err)
 	}
 	if len(vectors) != 1 || len(vectors[0]) != 768 {
 		t.Fatalf("EmbeddingGemma returned shape %d x %d, want 1 x 768",
@@ -93,7 +114,11 @@ func newAgentMemoryLiveMCP(
 		cleanupAgentMemoryLiveTenants(t, admin, base, credentials, identities)
 	})
 
-	server := newServer(newTenants(base, admin, embedder, credentials), time.Now, operatorDisplayName)
+	tenantClients := newTenants(base, admin, embedder, credentials)
+	server := newServer(tenantClients, time.Now, operatorDisplayName)
+	if options.receivingMiddleware != nil {
+		server.AddReceivingMiddleware(options.receivingMiddleware)
+	}
 	authFixture := newArcadeAuthFixture(t)
 	httpServer := httptest.NewUnstartedServer(nil)
 	resource := "http://" + httpServer.Listener.Addr().String() + "/mcp/"
@@ -140,6 +165,10 @@ func newAgentMemoryLiveMCP(
 	// session carries a different OAuth subject and therefore resolves a different
 	// tenant database without model-visible identity arguments.
 	sessions := make(map[string]*officialmcp.ClientSession, len(identities))
+	headerFunc := options.headerFunc
+	if headerFunc == nil {
+		headerFunc = agentMemoryLiveActorHeaders
+	}
 	for _, identity := range identities {
 		managed := auramcp.ManagedServer{
 			Type: auramcp.ServerTypeStreamableHTTP,
@@ -156,7 +185,7 @@ func newAgentMemoryLiveMCP(
 		// derived actor" -- these sessions all represent an operator's own
 		// foreground turn, so a fixed PARENT actor is the correct shape.
 		session, openErr := auramcp.OpenSDKSession(t.Context(), "agent-memory-live", managed, auramcp.EgressPolicy{},
-			auramcp.SessionOptions{HeaderFunc: agentMemoryLiveActorHeaders})
+			auramcp.SessionOptions{HeaderFunc: headerFunc})
 		if openErr != nil {
 			t.Fatalf("initialize live MCP for %s: %v", identity, openErr)
 		}
@@ -174,7 +203,7 @@ func newAgentMemoryLiveMCP(
 		MCPServerVersion:   serverVersion,
 		EmbeddingModel:     agentMemoryLiveModelLabel(),
 		EmbeddingDimension: embeddingDimension,
-	}
+	}, tenantClients
 }
 
 // agentMemoryLiveParentRunID is the fixed actor run id every session this
@@ -350,6 +379,14 @@ func agentMemoryLiveGap(t *testing.T, format string, args ...any) {
 		t.Fatalf("arcadedb_integration cannot skip under CI: "+format, args...)
 	}
 	t.Skipf(format, args...)
+}
+
+func agentMemoryLiveDependencyGap(t *testing.T, strict bool, format string, args ...any) {
+	t.Helper()
+	if strict {
+		t.Fatalf("arcadedb_integration dependency unavailable: "+format, args...)
+	}
+	agentMemoryLiveGap(t, format, args...)
 }
 
 func agentMemoryLiveVectorWidth(vectors [][]float64) int {
