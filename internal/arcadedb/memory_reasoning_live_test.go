@@ -312,3 +312,113 @@ func TestReasoningGraphLive_FailedCancelledRetention(t *testing.T) {
 	assertLiveReasoningTraceAbsent(t, client, failed.IdentityID, failed.TraceID)
 	assertLiveReasoningTraceAbsent(t, client, cancelled.IdentityID, cancelled.TraceID)
 }
+
+type reasoningGrowthMetrics struct {
+	databaseBytes int64
+	recordBytes   int64
+	vertices      int64
+	edges         int64
+	indexEntries  int64
+}
+
+func readReasoningGrowthMetrics(t *testing.T, client *Client) reasoningGrowthMetrics {
+	t.Helper()
+	var metrics reasoningGrowthMetrics
+	rows, err := client.Query(context.Background(), "SELECT size FROM schema:database", nil)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("read schema database size: rows=%v err=%v", rows, err)
+	}
+	metrics.databaseBytes = rowInt(rows[0], "size")
+	for _, typeName := range []string{reasoningTraceType, reasoningStepType, reasoningToolCallType} {
+		rows, err = client.Query(context.Background(), "SELECT FROM "+typeName, nil)
+		if err != nil {
+			t.Fatalf("measure reasoning vertex %s: rows=%v err=%v", typeName, rows, err)
+		}
+		metrics.vertices += int64(len(rows))
+		for _, row := range rows {
+			encoded, marshalErr := json.Marshal(row)
+			if marshalErr != nil {
+				t.Fatalf("encode reasoning vertex %s: %v", typeName, marshalErr)
+			}
+			metrics.recordBytes += int64(len(encoded))
+		}
+	}
+	for _, typeName := range []string{"INITIATED_BY", "HAS_STEP", "NEXT", "INVOKED", "TOUCHED"} {
+		rows, err = client.Query(context.Background(), "SELECT FROM "+typeName, nil)
+		if err != nil {
+			t.Fatalf("measure reasoning edge %s: rows=%v err=%v", typeName, rows, err)
+		}
+		metrics.edges += int64(len(rows))
+		for _, row := range rows {
+			encoded, marshalErr := json.Marshal(row)
+			if marshalErr != nil {
+				t.Fatalf("encode reasoning edge %s: %v", typeName, marshalErr)
+			}
+			metrics.recordBytes += int64(len(encoded))
+		}
+	}
+	for _, indexName := range []string{
+		"ReasoningTrace[identity_id,trace_id]",
+		"ReasoningTrace[identity_id,source_ref]",
+		"ReasoningTrace[identity_id,status]",
+		"ReasoningTrace[expires_at]",
+		"ReasoningStep[identity_id,trace_id,step_index]",
+		"ReasoningToolCall[identity_id,trace_id,call_id]",
+	} {
+		rows, err = client.Query(context.Background(), "SELECT FROM INDEX:`"+indexName+"`", nil)
+		if err != nil {
+			t.Fatalf("measure reasoning index %s: %v", indexName, err)
+		}
+		metrics.indexEntries += int64(len(rows))
+	}
+	return metrics
+}
+
+func TestReasoningGraphLive_GrowthEvidence(t *testing.T) {
+	client := reasoningLiveClient(t)
+	ctx := context.Background()
+	before := readReasoningGrowthMetrics(t, client)
+	terminal := time.Now().UTC()
+	conversationID := "conversation-growth"
+	if err := client.ApplyConversationProjection(ctx, ConversationProjection{
+		IdentityID: "identity-growth", ConversationID: conversationID,
+		Turns: []ConversationTurnProjection{{
+			IdentityID: "identity-growth", ConversationID: conversationID, Seq: 7,
+			Role: "assistant", Content: "public growth answer",
+			ContentHash: conversationContentHash("public growth answer"), OccurredAt: terminal,
+			SourceRef: "postgres://aura/conversations/conversation-growth/turns/7",
+		}},
+	}); err != nil {
+		t.Fatalf("store growth source turn: %v", err)
+	}
+	if _, err := client.Command(ctx, upsertEntityStatement, map[string]any{"name": "deployment-a"}); err != nil {
+		t.Fatalf("store growth touched entity: %v", err)
+	}
+	trace := validReasoningTrace()
+	trace.IdentityID, trace.TraceID, trace.ConversationID = "identity-growth", "trace-growth", conversationID
+	trace.SourceRef = "postgres://aura/conversations/conversation-growth/turns/7"
+	trace.CreatedAt, trace.TerminalAt = terminal.Add(-time.Minute), terminal
+	trace.Steps[0].CreatedAt = trace.CreatedAt
+	trace.Steps[0].ToolCalls[0].SourceRef = trace.SourceRef
+	second := trace.Steps[0]
+	second.Index, second.ProviderSummary, second.CreatedAt = 2, "Verified the deployment result.", terminal
+	second.ToolCalls = append([]ReasoningToolCall(nil), second.ToolCalls...)
+	second.ToolCalls[0].CallID = "call-growth-2"
+	trace.Steps = append(trace.Steps, second)
+	if err := client.UpsertReasoningTrace(ctx, trace); err != nil {
+		t.Fatalf("store growth trace: %v", err)
+	}
+	after := readReasoningGrowthMetrics(t, client)
+	delta := reasoningGrowthMetrics{
+		databaseBytes: after.databaseBytes - before.databaseBytes,
+		recordBytes:   after.recordBytes - before.recordBytes,
+		vertices:      after.vertices - before.vertices,
+		edges:         after.edges - before.edges,
+		indexEntries:  after.indexEntries - before.indexEntries,
+	}
+	if delta.recordBytes <= 0 || delta.vertices != 5 || delta.edges != 8 || delta.indexEntries <= 0 {
+		t.Fatalf("unexpected reasoning growth delta: %+v", delta)
+	}
+	t.Logf("REASONING_GROWTH_EVIDENCE database_bytes=%d record_bytes=%d vertices=%d edges=%d index_entries=%d",
+		delta.databaseBytes, delta.recordBytes, delta.vertices, delta.edges, delta.indexEntries)
+}
