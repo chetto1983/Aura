@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -21,8 +22,15 @@ import (
 )
 
 func mcpTools(ctx context.Context, args []string, out io.Writer) error {
-	if len(args) != 1 {
-		return fmt.Errorf("usage: aura mcp tools <name>")
+	if len(args) < 1 || len(args) > 2 {
+		return fmt.Errorf("usage: aura mcp tools <name> [--json]")
+	}
+	jsonOutput := false
+	if len(args) == 2 {
+		if args[1] != "--json" {
+			return fmt.Errorf("usage: aura mcp tools <name> [--json]")
+		}
+		jsonOutput = true
 	}
 	name := args[0]
 	if server, ok, err := effectiveManagedMCPServer(name); err != nil {
@@ -33,7 +41,7 @@ func mcpTools(ctx context.Context, args []string, out io.Writer) error {
 			return err
 		}
 		defer func() { _ = session.Close() }()
-		return writeMCPTools(out, advertised)
+		return writeMCPTools(out, advertised, jsonOutput)
 	}
 	cfg, err := effectiveMCPServer(name)
 	if err != nil {
@@ -44,11 +52,14 @@ func mcpTools(ctx context.Context, args []string, out io.Writer) error {
 		return err
 	}
 	defer func() { _ = session.Close() }()
-	return writeMCPTools(out, advertised)
+	return writeMCPTools(out, advertised, jsonOutput)
 }
 
-func writeMCPTools(out io.Writer, advertised []*sdkmcp.Tool) error {
+func writeMCPTools(out io.Writer, advertised []*sdkmcp.Tool, jsonOutput bool) error {
 	sort.Slice(advertised, func(i, j int) bool { return advertised[i].Name < advertised[j].Name })
+	if jsonOutput {
+		return json.NewEncoder(out).Encode(advertised)
+	}
 	for _, t := range advertised {
 		if err := writef(out, "%s\tmounted\t%s\n",
 			t.Name,

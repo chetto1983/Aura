@@ -23,6 +23,20 @@ MIXED_TIER_CASES = {
     "entity": ("facts", "graph"),
     "forced_fallback": ("facts", "lexical"),
 }
+MEMORY_RECALL_INPUT_PROPERTIES = (
+    "mode",
+    "query",
+    "entity",
+    "predicate",
+    "conversation_id",
+    "anchor_seq",
+    "cursor",
+    "direction",
+    "trace_id",
+    "limit",
+    "as_of",
+)
+MEMORY_RECALL_MODES = ("semantic", "recent", "open", "scroll", "reasoning")
 
 
 def _empty_observation() -> dict[str, Any]:
@@ -200,6 +214,14 @@ def evaluate_mixed_tier_recall(evidence: Any) -> dict[str, Any]:
     operations = surface.get("retrieval_operations") if isinstance(surface, dict) else None
     if operations != ["memory_recall"]:
         failures.append(f"model-facing retrieval surface is {operations!r}, want ['memory_recall']")
+    properties = surface.get("memory_recall_input_properties") if isinstance(surface, dict) else None
+    if properties != list(MEMORY_RECALL_INPUT_PROPERTIES):
+        failures.append(
+            f"memory_recall input properties are {properties!r}, want {list(MEMORY_RECALL_INPUT_PROPERTIES)!r}"
+        )
+    modes = surface.get("memory_recall_mode_enum") if isinstance(surface, dict) else None
+    if modes != list(MEMORY_RECALL_MODES):
+        failures.append(f"memory_recall mode enum is {modes!r}, want {list(MEMORY_RECALL_MODES)!r}")
     mixed_response = by_name.get("mixed", {}).get("response", {})
     tier_counts = mixed_response.get("tier_counts", {}) if isinstance(mixed_response, dict) else {}
     backend_paths = {
@@ -215,7 +237,7 @@ def evaluate_mixed_tier_recall(evidence: Any) -> dict[str, Any]:
         "effective_path": mixed_response.get("effective_path") if isinstance(mixed_response, dict) else None,
         "tier_counts": tier_counts,
         "backend_paths": backend_paths,
-        "surface": operations,
+        "surface": surface,
         "failures": failures,
         "route_evidence": scenarios,
     }
@@ -298,11 +320,15 @@ def run_mixed_tier_recall(repo: pathlib.Path, timeout_seconds: int) -> dict[str,
         SURFACE_MARKER,
         timeout_seconds,
     )
+    mounted_surface = _observe_mounted_memory_surface(repo, timeout_seconds)
     cases: list[Any] = []
     for payload in route["markers"]:
         if isinstance(payload, dict) and payload.get("scenario") == "mixed_tier_recall" and isinstance(payload.get("cases"), list):
             cases.extend(payload["cases"])
     surface_payload = surface["markers"][0] if len(surface["markers"]) == 1 else {}
+    if mounted_surface["passed"]:
+        surface_payload = dict(surface_payload)
+        surface_payload.update(mounted_surface["surface"])
     report = evaluate_mixed_tier_recall({
         "scenario": "mixed_tier_recall",
         "scenarios": cases,
@@ -313,6 +339,8 @@ def run_mixed_tier_recall(repo: pathlib.Path, timeout_seconds: int) -> dict[str,
         suite_failures.append("live route suite failed, skipped, or did not emit exactly four evidence markers")
     if not surface["passed"] or len(surface["markers"]) != 1:
         suite_failures.append("unified-surface suite failed, skipped, or did not emit exactly one evidence marker")
+    if not mounted_surface["passed"]:
+        suite_failures.extend(mounted_surface["failures"])
     report["failures"].extend(route["marker_errors"] + surface["marker_errors"] + suite_failures)
     report["passed"] = not report["failures"]
     report["status"] = "PASS" if report["passed"] else "FAIL"
@@ -322,9 +350,89 @@ def run_mixed_tier_recall(repo: pathlib.Path, timeout_seconds: int) -> dict[str,
         "tier": "mixed_tier_recall",
         "verdict": "MIXED_TIER_RECALL_PASS" if report["passed"] else "MIXED_TIER_RECALL_FAIL",
         "scenarios": [{"id": "mixed_tier_recall", "status": report["status"], "detail": report["route_evidence"]}],
-        "suites": [route["summary"], surface["summary"]],
+        "suites": [route["summary"], surface["summary"], mounted_surface["summary"]],
     })
     return report
+
+
+def _observe_mounted_memory_surface(repo: pathlib.Path, timeout_seconds: int) -> dict[str, Any]:
+    started = time.monotonic()
+    failures: list[str] = []
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=repo, text=True, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, check=False, timeout=timeout_seconds,
+        )
+        version = subprocess.run(
+            ["docker", "exec", "aura", "aura", "version"], cwd=repo, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=timeout_seconds,
+        )
+        tools = subprocess.run(
+            ["docker", "exec", "aura", "aura", "mcp", "tools", "memory", "--json"],
+            cwd=repo, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            check=False, timeout=timeout_seconds,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {
+            "passed": False,
+            "surface": {},
+            "failures": [f"mounted memory schema observation did not execute: {exc}"],
+            "summary": {"executed": False, "error": str(exc)},
+        }
+
+    expected_commit = head.stdout.strip() if head.returncode == 0 else ""
+    observed_commit = ""
+    for line in version.stdout.splitlines():
+        if line.startswith("commit:"):
+            observed_commit = line.partition(":")[2].strip()
+            break
+    if not expected_commit or observed_commit != expected_commit:
+        failures.append(
+            f"running Aura commit is {observed_commit!r}, want current HEAD {expected_commit!r}"
+        )
+
+    advertised: Any = None
+    if tools.returncode == 0:
+        try:
+            advertised = json.loads(tools.stdout)
+        except json.JSONDecodeError as exc:
+            failures.append(f"mounted tools JSON is invalid: {exc}")
+    else:
+        failures.append(f"mounted tools command exited {tools.returncode}: {tools.stderr.strip()}")
+    recall = None
+    if isinstance(advertised, list):
+        recall = next(
+            (tool for tool in advertised if isinstance(tool, dict) and tool.get("name") == "memory_recall"),
+            None,
+        )
+    if not isinstance(recall, dict):
+        failures.append("mounted memory server did not advertise memory_recall")
+        schema: Any = {}
+    else:
+        schema = recall.get("inputSchema")
+    properties = schema.get("properties") if isinstance(schema, dict) else None
+    if not isinstance(properties, dict):
+        failures.append("mounted memory_recall did not advertise an object input schema")
+        properties = {}
+    mode = properties.get("mode")
+    modes = mode.get("enum") if isinstance(mode, dict) else None
+    surface = {
+        "memory_recall_input_properties": list(properties),
+        "memory_recall_mode_enum": modes if isinstance(modes, list) else [],
+        "observed_aura_commit": observed_commit,
+    }
+    return {
+        "passed": not failures,
+        "surface": surface,
+        "failures": failures,
+        "summary": {
+            "command": ["docker", "exec", "aura", "aura", "mcp", "tools", "memory", "--json"],
+            "return_code": tools.returncode,
+            "elapsed_ms": (time.monotonic() - started) * 1000,
+            "observed_aura_commit": observed_commit,
+            "expected_commit": expected_commit,
+        },
+    }
 
 
 def _run_go_json_suite(
