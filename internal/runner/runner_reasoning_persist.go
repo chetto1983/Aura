@@ -36,6 +36,7 @@ func (r *Runner) observeReasoning(tr *turnTracker, ev *agent.Event) {
 	if r.reasoningPersistMaxRunes <= 0 || !r.trackerLLMSnapshot(tr).Config.ShowReasoning {
 		return
 	}
+	r.observeReasoningGraph(tr, ev)
 	ts := ev.Timestamp
 	if ts.IsZero() {
 		ts = time.Now().UTC() // defensive: the agent always stamps, but never persist a zero time math

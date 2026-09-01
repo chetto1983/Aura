@@ -65,6 +65,7 @@ type Runner struct {
 	toolInvocations       ToolInvocationStore
 	memoryContext         MemoryContextProvider
 	conversationProjector *ConversationProjector
+	reasoningGraphSink    ReasoningGraphSink
 	resumeCommitter       ResumeCommitter // cross-store HITL-durability seam (D-03/D-05); split fallback when unset
 
 	runtime  *llm.Runtime

@@ -78,6 +78,7 @@ type turnTracker struct {
 	reasoningTruncated bool
 	reasoningFirst     time.Time // timestamp of the turn's first reasoning delta
 	reasoningLast      time.Time // timestamp of the turn's last reasoning delta
+	reasoningGraph     ReasoningTraceBuilder
 }
 
 func (t *turnTracker) nextToolInvocationSeq() int {
@@ -109,6 +110,7 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 	// deltas joined with their replay.
 	if ev.Actions.DiscardStreamed {
 		tr.resetReasoning()
+		tr.reasoningGraph.Reset()
 	}
 	if ev.Actions.AwaitingInput != nil {
 		return r.persistPause(ctx, tr, ev.Actions.AwaitingInput)
@@ -346,6 +348,7 @@ func (r *Runner) persistAssistantAnswer(ctx context.Context, tr *turnTracker, ev
 	if err := r.Conv.AppendAssistantTurnWithCacheMetric(ctx, turn, metric); err != nil {
 		return fmt.Errorf("persist assistant answer: %w", err)
 	}
+	r.commitSourceTurn(ctx, tr, ev)
 	r.offerConversationProjection(ctx)
 	tr.answered = true
 	return nil
