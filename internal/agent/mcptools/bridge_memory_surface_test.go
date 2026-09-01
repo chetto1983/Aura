@@ -14,9 +14,9 @@ import (
 )
 
 func TestMemorySurfacePolicy_AliasKeepsIsolationAndHiddenSurface(t *testing.T) {
-	// D-27 (bridge_deferral.go): this fixture mirrors all 10 server operations
+	// D-27 (bridge_deferral.go): this fixture mirrors all 11 server operations
 	// and exposes exactly 3 model-facing tools. Only memory_recall is retrieval;
-	// memory_upsert_fact and memory_forget remain separately classified writes.
+	// memory_upsert_fact and memory_batch remain separately classified writes.
 	// The count is <= maxAlwaysLoadedMCPTools, so on a fresh budget it now earns an
 	// always-loaded slot instead of the pre-amendment #123 unconditional
 	// Deferred:true.
@@ -27,12 +27,15 @@ func TestMemorySurfacePolicy_AliasKeepsIsolationAndHiddenSurface(t *testing.T) {
 	// host and CLI, but the model receives one deterministic retrieval contract.
 	for _, name := range []string{
 		"graph_schema", "memory_digest", "memory_entities", "memory_facts_about",
-		"memory_merge_entities", "memory_reembed", "memory_search",
+		"memory_forget", "memory_merge_entities", "memory_reembed", "memory_search",
 	} {
 		server.AddTool(mustTool(name, "fixture", nil, &sdkmcp.ToolAnnotations{ReadOnlyHint: true}), trivialToolHandler)
 	}
 	server.AddTool(mustTool("memory_upsert_fact", "Store a fact.", nil, nil), trivialToolHandler)
-	server.AddTool(mustTool("memory_forget", "Forget a fact.", nil, nil), trivialToolHandler)
+	destructive := true
+	server.AddTool(mustTool("memory_batch", "Apply memory changes atomically.", nil, &sdkmcp.ToolAnnotations{
+		ReadOnlyHint: false, DestructiveHint: &destructive, IdempotentHint: true,
+	}), trivialToolHandler)
 	recallSchema := map[string]any{"type": "object", "properties": map[string]any{
 		"query": map[string]any{"type": "string"},
 	}}
@@ -92,11 +95,15 @@ func TestMemorySurfacePolicy_AliasKeepsIsolationAndHiddenSurface(t *testing.T) {
 	if recall.Spec().Mutating {
 		t.Fatal("memory_recall is retrieval and must not be classified as a mutation")
 	}
-	for _, name := range []string{"mem__memory_upsert_fact", "mem__memory_forget"} {
+	for _, name := range []string{"mem__memory_upsert_fact", "mem__memory_batch"} {
 		tool := byName[name]
 		if tool == nil || !tool.Spec().Mutating {
 			t.Fatalf("%s must remain a separately classified mutation, got %#v", name, tool)
 		}
+	}
+	batch := byName["mem__memory_batch"]
+	if !batch.Spec().Destructive || batch.Spec().ReplayPolicy != tools.ReplayToolResult {
+		t.Fatalf("memory_batch risk/replay = destructive:%v replay:%q", batch.Spec().Destructive, batch.Spec().ReplayPolicy)
 	}
 	retrievalOperations := make([]string, 0, 1)
 	for _, tool := range bridged {
@@ -125,5 +132,18 @@ func TestMemorySurfacePolicy_AliasKeepsIsolationAndHiddenSurface(t *testing.T) {
 	}
 	if aura, ok := capturedMeta["aura"]; ok {
 		t.Fatalf("aliased OAuth tool received proprietary Aura metadata: %v", aura)
+	}
+}
+
+func TestMemoryBatchRisk(t *testing.T) {
+	destructive := true
+	mutating, gotDestructive := mcpToolRisk(
+		bridgePolicy{recipeSource: mcp.SourceRecipeMemory},
+		mustTool("memory_batch", "batch", nil, &sdkmcp.ToolAnnotations{
+			ReadOnlyHint: false, DestructiveHint: &destructive, IdempotentHint: true,
+		}),
+	)
+	if !mutating || !gotDestructive {
+		t.Fatalf("memory_batch risk = (%v, %v), want mutating and destructive", mutating, gotDestructive)
 	}
 }
