@@ -462,10 +462,12 @@ def _wait_until(check: Any, timeout_seconds: int, label: str) -> None:
 def _secret(repo: pathlib.Path, name: str) -> str:
     value = os.environ.get(name, "")
     if not value:
-        for line in (repo / ".env").read_text(encoding="utf-8").splitlines():
-            if line.startswith(name + "="):
-                value = line.split("=", 1)[1].strip().strip('"').strip("'")
-                break
+        env_file = repo / ".env"
+        if env_file.exists():
+            for line in env_file.read_text(encoding="utf-8").splitlines():
+                if line.startswith(name + "="):
+                    value = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    break
     if not value:
         raise RuntimeError(f"{name} is required")
     return value
