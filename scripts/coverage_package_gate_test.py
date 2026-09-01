@@ -172,6 +172,41 @@ class CoveragePackageGateTest(unittest.TestCase):
         self.assertIn("2 package(s) violate the policy", result.stderr)
         self.assertNotIn("example/internal/sandbox", result.stderr)
 
+    def test_arcadedb_delegates_to_its_live_authority(self) -> None:
+        # internal/arcadedb's HTTP round-trips against a live engine are executed by the
+        # arcadedb_integration suite, which the db_integration tier does not build. The
+        # 85% floor on the package is not relaxed by this delegation -- it is enforced on
+        # the profile that can reach that code, by the arcadedb_package_coverage hard gate
+        # in scripts/agent_memory_eval.py and again by release readiness.
+        policy = valid_policy()
+        policy["packages"]["example/internal/sandbox"]["authority"] = "arcadedb_coverage"  # type: ignore[index]
+        result = self.run_gate(
+            profile_rows(
+                ("example/internal/target", 10, 1),
+                ("example/internal/debt", 10, 1),
+                ("example/internal/sandbox", 10, 0),
+            ),
+            policy,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_shipped_policy_classifies_the_two_delegated_packages(self) -> None:
+        policy = json.loads(
+            (ROOT / "scripts" / "coverage_package_policy.json").read_text(encoding="utf-8")
+        )
+        delegated = {
+            package: rule["authority"]
+            for package, rule in policy["packages"].items()
+            if rule["mode"] == "delegated"
+        }
+        self.assertEqual(
+            delegated,
+            {
+                "github.com/chetto1983/aura/internal/arcadedb": "arcadedb_coverage",
+                "github.com/chetto1983/aura/internal/sandbox/usersandbox": "docker_coverage",
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

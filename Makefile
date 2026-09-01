@@ -6,7 +6,7 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help tools sqlc lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract llm-model-contract web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval critical-mutation observability-check observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up sandbox-images arcadedb-integration ingest-test restore-drill load-chaos
+.PHONY: help tools sqlc lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract llm-model-contract web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval agent-memory-eval-running-aura critical-mutation observability-check observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up sandbox-images arcadedb-integration ingest-test restore-drill load-chaos
 
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
@@ -180,6 +180,13 @@ agent-memory-eval-contract:
 agent-memory-eval:
 	PYTHONPATH=scripts python3 -m unittest scripts/agent_memory_eval_test.py
 	PYTHONPATH=scripts python3 scripts/agent_memory_eval.py --tier all
+
+# The running-Aura conversation scores the model's own answers over an authenticated
+# /agent/run, so it needs a provider key, Tempo and an enrolled operator that GitHub CI
+# does not have. Run this on the stack that does; `agent-memory-eval` above leaves the
+# tier NOT_EVALUATED rather than assuming it passed.
+agent-memory-eval-running-aura: export AURA_E2E_RUNNING_AURA = 1
+agent-memory-eval-running-aura: agent-memory-eval
 
 critical-mutation:
 	PYTHONPATH=scripts python3 -m unittest scripts/critical_mutation_gate_test.py

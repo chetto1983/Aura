@@ -9,7 +9,12 @@ from typing import Any
 
 
 PROFILE_POSITION = re.compile(r"^\d+\.\d+,\d+\.\d+$")
-ALLOWED_DELEGATED_AUTHORITIES = {"docker_coverage"}
+# A package delegates only where a SEPARATE, release-blocking report measures it against
+# the same 85% floor on a denominator this tier can actually execute. docker_coverage is
+# usersandbox's native daemon report; arcadedb_coverage is the arcadedb_live suite in
+# scripts/agent_memory_eval.py, whose arcadedb_package_coverage scenario is a hard gate and
+# is re-checked by release readiness. Delegation moves the authority, never the floor.
+ALLOWED_DELEGATED_AUTHORITIES = {"arcadedb_coverage", "docker_coverage"}
 
 
 class GateError(RuntimeError):

@@ -14,7 +14,7 @@
     "github.com/chetto1983/aura/internal/agui": {"mode": "target"},
     "github.com/chetto1983/aura/internal/approvalgrants": {"mode": "baseline", "covered_statements": 4, "total_statements": 57},
     "github.com/chetto1983/aura/internal/approvaltext": {"mode": "target"},
-    "github.com/chetto1983/aura/internal/arcadedb": {"mode": "target"},
+    "github.com/chetto1983/aura/internal/arcadedb": {"mode": "delegated", "authority": "arcadedb_coverage"},
     "github.com/chetto1983/aura/internal/askuser": {"mode": "target"},
     "github.com/chetto1983/aura/internal/assets": {"mode": "baseline", "covered_statements": 688, "total_statements": 858},
     "github.com/chetto1983/aura/internal/bm25": {"mode": "target"},

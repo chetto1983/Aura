@@ -17,6 +17,8 @@ import uuid
 from typing import Any
 
 
+ARM_ENV = "AURA_E2E_RUNNING_AURA"
+
 EXPECTED_COUNTS = {
     "beyond_active_context_recall": 1,
     "provider_visible_reasoning_exclusion_explicit_recall": 3,
@@ -215,8 +217,36 @@ def run_running_aura_conversation(repo: pathlib.Path, timeout_seconds: int) -> d
     })
 
 
+def running_aura_is_armed() -> bool:
+    return os.environ.get(ARM_ENV, "").strip().lower() in {"1", "true", "yes"}
+
+
+def not_evaluated_running_aura() -> dict[str, Any]:
+    return {
+        "executed": False,
+        "status": "NOT_EVALUATED",
+        "armed_by": ARM_ENV,
+        "reason": (
+            "the running-Aura conversation drives an authenticated /agent/run against a live "
+            "daemon and scores the model's own answers, so it needs a real LLM provider, Tempo "
+            f"and a seeded operator. Set {ARM_ENV}=1 where that stack exists; where it is unset "
+            "this evidence is absent from the report, never assumed to pass."
+        ),
+    }
+
+
 def attach_running_aura_evidence(report: dict[str, Any], tier: str, timeout_seconds: int = 900) -> dict[str, Any]:
     if tier != "all":
+        return report
+    # GitHub CI has no model key of its own (ci.yml says so where it passes the degraded
+    # placeholder), no Tempo and no enrolled operator, so this tier cannot execute there.
+    # Arming it is explicit rather than inferred from the environment: a probe that decides
+    # for itself whether the stack "looks live" is how a tier that silently stopped running
+    # goes on reporting green. Armed and broken still fails -- run_running_aura_conversation
+    # raises rather than degrading.
+    if not running_aura_is_armed():
+        report["running_aura_conversation"] = not_evaluated_running_aura()
+        report["hard_gates"]["running_aura_conversation"] = {"status": "NOT_EVALUATED"}
         return report
     evidence = run_running_aura_conversation(pathlib.Path(__file__).resolve().parents[1], timeout_seconds)
     report["running_aura_conversation"] = evidence

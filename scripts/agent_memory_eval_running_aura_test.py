@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import copy
+import os
 import unittest
+import unittest.mock
 
 import agent_memory_eval as evaluator
+import agent_memory_eval_running_aura as running_aura
 
 
 EXPECTED_COUNTS = {
@@ -139,3 +142,53 @@ class RunningAuraConversationEvaluatorTest(unittest.TestCase):
                 evidence = running_aura_fixture()
                 evidence["scenarios"][index]["proof"][field] = 0 if field == "touched_edges" else False
                 self.assertFalse(self.evaluate(evidence)["passed"])
+
+
+class RunningAuraArmingTest(unittest.TestCase):
+    def attach(self, armed: str | None) -> dict[str, object]:
+        module = running_aura
+        report: dict[str, object] = {"hard_gates": {}, "passed": True, "verdict": "PASS"}
+        with unittest.mock.patch.dict(
+            os.environ, {} if armed is None else {module.ARM_ENV: armed}, clear=False
+        ):
+            if armed is None:
+                os.environ.pop(module.ARM_ENV, None)
+            return module.attach_running_aura_evidence(report, "all")
+
+    def test_unarmed_records_not_evaluated_without_claiming_a_pass(self) -> None:
+        for armed in (None, "", "0", "false", "no"):
+            with self.subTest(armed=armed):
+                report = self.attach(armed)
+                self.assertEqual(report["running_aura_conversation"]["status"], "NOT_EVALUATED")
+                self.assertIs(report["running_aura_conversation"]["executed"], False)
+                self.assertNotIn("passed", report["running_aura_conversation"])
+                self.assertEqual(
+                    report["hard_gates"]["running_aura_conversation"]["status"], "NOT_EVALUATED"
+                )
+
+    def test_armed_runs_the_live_tier_and_never_degrades_on_failure(self) -> None:
+        module = running_aura
+        for armed in ("1", "true", "YES"):
+            with self.subTest(armed=armed):
+                with unittest.mock.patch.dict(os.environ, {module.ARM_ENV: armed}, clear=False):
+                    with unittest.mock.patch.object(
+                        module, "run_running_aura_conversation", side_effect=RuntimeError("stack is down")
+                    ):
+                        with self.assertRaises(RuntimeError):
+                            module.attach_running_aura_evidence(
+                                {"hard_gates": {}, "passed": True, "verdict": "PASS"}, "all"
+                            )
+
+    def test_armed_failure_fails_the_report(self) -> None:
+        module = running_aura
+        evidence = {"executed": True, "passed": False, "status": "FAIL", "failures": ["nope"]}
+        with unittest.mock.patch.dict(os.environ, {module.ARM_ENV: "1"}, clear=False):
+            with unittest.mock.patch.object(
+                module, "run_running_aura_conversation", return_value=evidence
+            ):
+                report = module.attach_running_aura_evidence(
+                    {"hard_gates": {}, "passed": True, "verdict": "PASS"}, "all"
+                )
+        self.assertIs(report["passed"], False)
+        self.assertEqual(report["verdict"], "FAIL")
+        self.assertEqual(report["hard_gates"]["running_aura_conversation"]["status"], "FAIL")
