@@ -48,6 +48,18 @@ type AcceptedCapture struct {
 	Sequence       uint64
 }
 
+// FactCaptureSource preserves one accepted direct-evidence envelope inside a
+// fact's existing provenance record.
+type FactCaptureSource struct {
+	IdempotencyKey string            `json:"idempotency_key"`
+	SourceKind     CaptureSourceKind `json:"source_kind"`
+	SourceRefs     []string          `json:"source_refs"`
+	ConversationID string            `json:"conversation_id"`
+	ToolCallID     string            `json:"tool_call_id"`
+	ObservedAt     time.Time         `json:"observed_at"`
+	Confidence     float64           `json:"confidence"`
+}
+
 // ApplyAcceptedCapture durably applies one accepted direct-evidence envelope.
 func (c *Client) ApplyAcceptedCapture(ctx context.Context, capture AcceptedCapture) error {
 	return applyAcceptedCapture(

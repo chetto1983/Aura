@@ -210,6 +210,140 @@ func TestAcceptedCapture_SourceDefense(t *testing.T) {
 	}
 }
 
+func TestAcceptedCapture_Contradiction(t *testing.T) {
+	historical := memoryBatchTestStoredFact("Davide", "lives_in", "Cuneo", "run-history")
+	historical.ValidTo = acceptedCaptureTime.Add(-24 * time.Hour)
+	historical.ExpiredAt = historical.ValidTo
+	historical.Fact.ValidTo = historical.ValidTo
+	historical.FactKey = ""
+	current := memoryBatchTestStoredFact("Davide", "lives_in", "Torino", "run-current")
+	backend := newMemoryBatchFakeBackend("identity-a", memoryBatchTestState(historical, current))
+	capture := acceptedExplicitCapture(acceptedCaptureKey("2"), "run-parent", "parent", "Caraglio")
+	capture.ValidFrom = acceptedCaptureTime.Add(-time.Hour)
+	capture.Supersedes = true
+
+	if err := applyCaptureForTest(t, backend, capture); err != nil {
+		t.Fatalf("ApplyAcceptedCapture: %v", err)
+	}
+	final := backend.snapshot(capture.IdentityID)
+	if len(final.Facts) != 3 || len(activeCaptureFacts(final)) != 1 {
+		t.Fatalf("facts = %+v, want two historical intervals plus one active replacement", final.Facts)
+	}
+	if got := captureFactByObject(t, final, "Cuneo"); !got.ValidTo.Equal(historical.ValidTo) {
+		t.Fatalf("older historical interval changed: %+v", got)
+	}
+	if got := captureFactByObject(t, final, "Torino"); !got.ValidTo.Equal(capture.ValidFrom) {
+		t.Fatalf("current interval closed at %v, want %v", got.ValidTo, capture.ValidFrom)
+	}
+	replacement := captureFactByObject(t, final, "Caraglio")
+	assertCaptureProvenance(t, replacement, capture)
+}
+
+func TestAcceptedCapture_WorkerAuthority(t *testing.T) {
+	old := memoryBatchTestStoredFact("Davide", "lives_in", "Torino", "run-parent")
+	backend := newMemoryBatchFakeBackend("identity-a", memoryBatchTestState(old))
+	workerEvidence := acceptedExplicitCapture(acceptedCaptureKey("3"), "run-worker", "worker", "Caraglio")
+	if err := applyCaptureForTest(t, backend, workerEvidence); err != nil {
+		t.Fatalf("worker evidence append: %v", err)
+	}
+	stateAfterEvidence := backend.snapshot(workerEvidence.IdentityID)
+	if len(activeCaptureFacts(stateAfterEvidence)) != 2 {
+		t.Fatalf("worker evidence replaced principal state: %+v", stateAfterEvidence.Facts)
+	}
+	assertCaptureProvenance(t, captureFactByObject(t, stateAfterEvidence, "Caraglio"), workerEvidence)
+
+	workerSupersede := acceptedExplicitCapture(acceptedCaptureKey("4"), "run-worker", "worker", "Alba")
+	workerSupersede.Supersedes = true
+	if err := applyCaptureForTest(t, backend, workerSupersede); err == nil {
+		t.Fatal("worker supersede succeeded")
+	}
+	if got := backend.snapshot(workerEvidence.IdentityID); len(activeCaptureFacts(got)) != 2 {
+		t.Fatalf("refused worker supersede mutated state: %+v", got.Facts)
+	}
+}
+
+func TestAcceptedCapture_PrincipalAuthority(t *testing.T) {
+	torino := memoryBatchTestStoredFact("Davide", "lives_in", "Torino", "run-torino")
+	bra := memoryBatchTestStoredFact("Davide", "lives_in", "Bra", "run-bra")
+	backend := newMemoryBatchFakeBackend("identity-a", memoryBatchTestState(torino, bra))
+	capture := acceptedExplicitCapture(acceptedCaptureKey("5"), "run-parent", "parent", "Caraglio")
+	capture.Supersedes = true
+	capture.TargetFactKey = torino.FactKey
+
+	if err := applyCaptureForTest(t, backend, capture); err != nil {
+		t.Fatalf("principal supersede: %v", err)
+	}
+	final := backend.snapshot(capture.IdentityID)
+	if got := captureFactByObject(t, final, "Torino"); memoryBatchFactActive(got, acceptedCaptureTime) {
+		t.Fatalf("targeted Torino interval remained active: %+v", got)
+	}
+	if got := captureFactByObject(t, final, "Bra"); !memoryBatchFactActive(got, acceptedCaptureTime) {
+		t.Fatalf("non-target Bra interval was closed: %+v", got)
+	}
+	replacement := captureFactByObject(t, final, "Caraglio")
+	if !memoryBatchFactActive(replacement, acceptedCaptureTime) {
+		t.Fatalf("replacement is not active: %+v", replacement)
+	}
+	assertCaptureProvenance(t, replacement, capture)
+}
+
+func TestAcceptedCapture_ProvenanceEnrichment(t *testing.T) {
+	backend := newMemoryBatchFakeBackend("identity-a", memoryBatchTestState())
+	first := acceptedExplicitCapture(acceptedCaptureKey("6"), "run-parent", "parent", "Caraglio")
+	second := acceptedExplicitCapture(acceptedCaptureKey("7"), "run-parent", "parent", "Caraglio")
+	second.ToolCallID = "tool-call-second"
+	second.SourceRefs = []string{"conversation:conversation-a", "tool_call:tool-call-second", "memory:message-8"}
+	for _, capture := range []AcceptedCapture{first, first, second} {
+		if err := applyCaptureForTest(t, backend, capture); err != nil {
+			t.Fatalf("ApplyAcceptedCapture(%s): %v", capture.IdempotencyKey, err)
+		}
+	}
+	fact := activeCaptureFacts(backend.snapshot(first.IdentityID))[0]
+	if len(fact.Sources) != 1 {
+		t.Fatalf("sources = %+v, want one host run with enriched capture evidence", fact.Sources)
+	}
+	captures := fact.Sources[0].Captures
+	if len(captures) != 2 {
+		t.Fatalf("capture provenance = %+v, want two distinct entries and no replay duplicate", captures)
+	}
+	for _, capture := range []AcceptedCapture{first, second} {
+		found := false
+		for _, stored := range captures {
+			if stored.IdempotencyKey == capture.IdempotencyKey {
+				found = true
+				if !slices.Equal(stored.SourceRefs, normalizeAcceptedCapture(capture).SourceRefs) ||
+					stored.SourceKind != capture.SourceKind || stored.ConversationID != capture.ConversationID ||
+					stored.ToolCallID != capture.ToolCallID || !stored.ObservedAt.Equal(capture.ObservedAt) ||
+					stored.Confidence != capture.Confidence {
+					t.Fatalf("stored provenance = %+v, want capture %+v", stored, capture)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("capture %s absent from %+v", capture.IdempotencyKey, captures)
+		}
+	}
+}
+
+func assertCaptureProvenance(t *testing.T, fact memoryBatchFact, capture AcceptedCapture) {
+	t.Helper()
+	for _, source := range fact.Sources {
+		if source.RunID != capture.ActorRunID || source.WriterRole != WriterRole(capture.ActorRole) {
+			continue
+		}
+		for _, stored := range source.Captures {
+			if stored.IdempotencyKey == capture.IdempotencyKey &&
+				stored.SourceKind == capture.SourceKind &&
+				stored.ConversationID == capture.ConversationID &&
+				stored.ToolCallID == capture.ToolCallID &&
+				stored.ObservedAt.Equal(capture.ObservedAt) && stored.Confidence == capture.Confidence {
+				return
+			}
+		}
+	}
+	t.Fatalf("capture provenance for %s absent from %+v", capture.IdempotencyKey, fact.Sources)
+}
+
 func countStrings(values []string, target string) int {
 	return len(slices.DeleteFunc(slices.Clone(values), func(value string) bool { return value != target }))
 }

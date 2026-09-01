@@ -113,9 +113,10 @@ const (
 
 // FactSource identifies one extraction run supporting a fact.
 type FactSource struct {
-	RunID      string     `json:"run_id"`
-	MemoryIDs  []string   `json:"memory_ids"`
-	WriterRole WriterRole `json:"writer_role,omitempty"`
+	RunID      string              `json:"run_id"`
+	MemoryIDs  []string            `json:"memory_ids"`
+	WriterRole WriterRole          `json:"writer_role,omitempty"`
+	Captures   []FactCaptureSource `json:"captures,omitempty"`
 }
 
 // Fact is one assertion about the world, as stored on an edge.
