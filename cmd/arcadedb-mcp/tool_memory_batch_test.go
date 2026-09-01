@@ -16,7 +16,7 @@ import (
 
 func TestMemoryBatchToolSchema(t *testing.T) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "batch-schema", Version: "1"}, nil)
-	addMemoryBatchTool(server, nil, testClock)
+	addMemoryBatchTool(server, nil, testClock, "")
 	session := inMemoryIdentityServer(t, server)
 	listed, err := session.ListTools(t.Context(), nil)
 	if err != nil {
@@ -70,7 +70,7 @@ func TestMemoryBatchToolSchema(t *testing.T) {
 
 func TestMemoryBatchToolRejectsSpoofedAndMalformedRequests(t *testing.T) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "batch-reject", Version: "1"}, nil)
-	addMemoryBatchTool(server, nil, testClock)
+	addMemoryBatchTool(server, nil, testClock, "")
 	session := inMemoryIdentityServer(t, server)
 	for name, arguments := range map[string]map[string]any{
 		"identity spoof": {
@@ -117,7 +117,7 @@ func TestMemoryBatchToolCallsEngineOnce(t *testing.T) {
 		}
 		return arcadedb.MemoryBatchResult{}, wantFirstError
 	}
-	_, _, err := memoryBatchHandler(singleTenant(t, nil), testClock, apply)(
+	_, _, err := memoryBatchHandler(singleTenant(t, nil), testClock, "", apply)(
 		t.Context(), reqWithParentActor(testIdentity, "batch-parent"), validMemoryBatchInput(),
 	)
 	if err != wantFirstError {
@@ -142,19 +142,19 @@ func TestMemoryBatchToolRejectsBeforeEngine(t *testing.T) {
 	}
 	input := validMemoryBatchInput()
 	input.Operations[0].Merge = &MemoryBatchMergeInput{Source: "a", Target: "b"}
-	_, _, malformedErr := memoryBatchHandler(singleTenant(t, nil), testClock, apply)(
+	_, _, malformedErr := memoryBatchHandler(singleTenant(t, nil), testClock, "", apply)(
 		t.Context(), reqWithParentActor(testIdentity, "batch-parent"), input,
 	)
 	if malformedErr == nil {
 		t.Fatal("malformed tagged union succeeded")
 	}
-	_, _, identityErr := memoryBatchHandler(singleTenant(t, nil), testClock, apply)(
+	_, _, identityErr := memoryBatchHandler(singleTenant(t, nil), testClock, "", apply)(
 		t.Context(), reqWithActor("", "batch-parent", string(arcadedb.WriterParent)), validMemoryBatchInput(),
 	)
 	if identityErr == nil {
 		t.Fatal("missing identity succeeded")
 	}
-	_, _, actorErr := memoryBatchHandler(singleTenant(t, nil), testClock, apply)(
+	_, _, actorErr := memoryBatchHandler(singleTenant(t, nil), testClock, "", apply)(
 		t.Context(), reqWithIdentity(testIdentity), validMemoryBatchInput(),
 	)
 	if actorErr == nil {

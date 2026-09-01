@@ -21,7 +21,7 @@ import (
 // isolation via parallelism.
 
 // TestDeferralCountModelFacing covers countModelFacing's four documented cases:
-// a plain count, the real memory tool surface (10 advertised, 6 hidden -> 4),
+// a plain count, the real memory tool surface (11 advertised, 8 hidden -> 3),
 // an empty listing, and exact-byte-string name comparison (no case folding).
 func TestDeferralCountModelFacing(t *testing.T) {
 	t.Run("plain count with nothing hidden", func(t *testing.T) {
@@ -35,15 +35,16 @@ func TestDeferralCountModelFacing(t *testing.T) {
 		}
 	})
 
-	t.Run("memory policy hides seven of the real ten tool names", func(t *testing.T) {
-		// The real cmd/arcadedb-mcp surface: 10 advertised, 7 in
+	t.Run("memory policy hides eight of the real eleven tool names", func(t *testing.T) {
+		// The real cmd/arcadedb-mcp surface: 11 advertised, 8 in
 		// memoryHiddenFromModel (bridge_policy.go), so 3 model-facing --
-		// recall, upsert, forget.
+		// recall, upsert, batch.
 		advertised := []*sdkmcp.Tool{
 			mustTool("memory_entities", "d", nil, nil),
 			mustTool("memory_digest", "d", nil, nil),
 			mustTool("memory_merge_entities", "d", nil, nil),
 			mustTool("memory_forget", "d", nil, nil),
+			mustTool("memory_batch", "d", nil, nil),
 			mustTool("graph_schema", "d", nil, nil),
 			mustTool("memory_upsert_fact", "d", nil, nil),
 			mustTool("memory_recall", "d", nil, nil),

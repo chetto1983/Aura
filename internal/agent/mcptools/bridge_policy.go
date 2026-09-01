@@ -51,7 +51,10 @@ func (p bridgePolicy) defaultDeferred() bool {
 // hygiene an operator performs deliberately (`aura memory merge <duplicate>
 // <survivor>`, cmd/aura/memory.go), not something the model needs mid-turn;
 // spending the manifest slot on recall/upsert/forget instead buys the three
-// verbs that ARE the product.
+// verbs that ARE the product. memory_forget joined the hidden set when the
+// atomic memory_batch surface shipped: batch subsumes destructive forgetting,
+// while the exact memory_upsert_fact name remains visible because production
+// direct-evidence capture recognizes that structured result.
 //
 // The cost is explicit and belongs here rather than in a commit message: mounts
 // run in BuiltInCatalog's alphabetical order (calendar, memory, whatsapp) and
@@ -64,6 +67,7 @@ var memoryHiddenFromModel = map[string]struct{}{
 	"memory_digest":         {},
 	"memory_entities":       {},
 	"memory_facts_about":    {},
+	"memory_forget":         {},
 	"memory_merge_entities": {},
 	"memory_reembed":        {},
 	"memory_search":         {},

@@ -67,11 +67,11 @@ func TestBridge_TranslatesTools(t *testing.T) {
 }
 
 // TestBridge_MemoryNamespaceEarnsAlwaysLoadedSlot fixtures the REAL memory tool
-// surface (cmd/arcadedb-mcp's 10 tool names), not a 3-tool stand-in: after D-27
+// surface (cmd/arcadedb-mcp's 11 tool names), not a 3-tool stand-in: after D-27
 // whether a mount stays deferred depends on its model-facing COUNT, so only the
 // real shape proves the real outcome. Seven names are in memoryHiddenFromModel
 // (bridge_policy.go), leaving memory_recall, memory_upsert_fact and
-// memory_forget -- exactly at maxAlwaysLoadedMCPTools, so on a fresh budget the
+// memory_batch -- exactly at maxAlwaysLoadedMCPTools, so on a fresh budget the
 // mount earns a slot and every bridged tool is Deferred:false.
 //
 // This test asserted the opposite until 2026-08-31, when memory_merge_entities
@@ -82,6 +82,7 @@ func TestBridge_MemoryNamespaceEarnsAlwaysLoadedSlot(t *testing.T) {
 	srv, _ := newInMemoryMounted(t,
 		mustTool("memory_recall", "Recall memory.", nil, &sdkmcp.ToolAnnotations{ReadOnlyHint: true}),
 		mustTool("memory_upsert_fact", "Store a durable fact.", nil, nil),
+		mustTool("memory_batch", "Apply memory changes atomically.", nil, nil),
 		mustTool("memory_merge_entities", "Merge two entities.", nil, nil),
 		mustTool("memory_forget", "Forget a fact.", nil, nil),
 		mustTool("graph_schema", "Describe the graph schema.", nil, &sdkmcp.ToolAnnotations{ReadOnlyHint: true}),
@@ -95,7 +96,7 @@ func TestBridge_MemoryNamespaceEarnsAlwaysLoadedSlot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Bridge: %v", err)
 	}
-	// 10 advertised, 7 hidden by bridgePolicy.modelFacing (memoryHiddenFromModel):
+	// 11 advertised, 8 hidden by bridgePolicy.modelFacing (memoryHiddenFromModel):
 	// only the 3 model-facing tools bridge at all.
 	if len(got) != 3 {
 		t.Fatalf("want 3 model-facing memory tools bridged, got %d", len(got))

@@ -181,6 +181,7 @@ func newServer(tenants *tenants, now clock, operatorDisplayName string) *mcp.Ser
 	}, nil)
 	addGraphSchemaTool(server, tenants)
 	addMemoryUpsertFactTool(server, tenants, now, operatorDisplayName)
+	addMemoryBatchTool(server, tenants, now, operatorDisplayName)
 	addMemoryRecallTool(server, tenants)
 	addMemoryFactsAboutTool(server, tenants)
 	addMemorySearchTool(server, tenants)

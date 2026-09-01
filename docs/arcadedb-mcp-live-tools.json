@@ -171,6 +171,256 @@
   },
   {
     "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false
+    },
+    "description": "Apply ordered fact upserts, precise supersessions, entity merges, and forgetting as one identity-scoped final-state transaction. Supply a stable idempotency key; any invalid operation leaves live memory unchanged.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "idempotency_key": {
+          "description": "stable key for replaying this exact identity-bound batch",
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "operations": {
+          "description": "ordered final-state memory mutations",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "fact": {
+                "additionalProperties": false,
+                "description": "payload for upsert_fact or supersede_fact",
+                "properties": {
+                  "object": {
+                    "description": "the related entity or scalar value",
+                    "maxLength": 512,
+                    "type": "string"
+                  },
+                  "object_kind": {
+                    "description": "optional object entity kind",
+                    "maxLength": 512,
+                    "type": "string"
+                  },
+                  "predicate": {
+                    "description": "the relation between subject and object",
+                    "maxLength": 100,
+                    "type": "string"
+                  },
+                  "source": {
+                    "additionalProperties": false,
+                    "description": "direct supporting memory ids; actor provenance is host-derived",
+                    "properties": {
+                      "memory_ids": {
+                        "description": "message or memory ids supporting this fact",
+                        "items": {
+                          "maxLength": 100,
+                          "type": "string"
+                        },
+                        "maxItems": 64,
+                        "type": [
+                          "null",
+                          "array"
+                        ]
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "statement": {
+                    "description": "the fact in natural language",
+                    "maxLength": 4096,
+                    "type": "string"
+                  },
+                  "subject": {
+                    "description": "the entity the fact is about",
+                    "maxLength": 512,
+                    "type": "string"
+                  },
+                  "subject_kind": {
+                    "description": "optional entity kind",
+                    "maxLength": 512,
+                    "type": "string"
+                  },
+                  "supersedes_fact_key": {
+                    "description": "exact fact key to close for supersede_fact",
+                    "maxLength": 100,
+                    "type": "string"
+                  },
+                  "valid_from": {
+                    "description": "RFC3339 instant when the fact became true",
+                    "type": "string"
+                  },
+                  "valid_to": {
+                    "description": "RFC3339 instant when the fact stopped being true",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "subject",
+                  "predicate",
+                  "object",
+                  "statement",
+                  "source"
+                ],
+                "type": [
+                  "null",
+                  "object"
+                ]
+              },
+              "forget": {
+                "additionalProperties": false,
+                "description": "payload for forget",
+                "properties": {
+                  "entity": {
+                    "description": "remove facts touching this entity",
+                    "maxLength": 512,
+                    "type": "string"
+                  },
+                  "keep_orphan_entities": {
+                    "description": "retain entities left without facts",
+                    "type": "boolean"
+                  },
+                  "object": {
+                    "description": "optional object filter",
+                    "maxLength": 512,
+                    "type": "string"
+                  },
+                  "predicate": {
+                    "description": "optional relation filter",
+                    "maxLength": 100,
+                    "type": "string"
+                  },
+                  "source_run_id": {
+                    "description": "detach evidence written by this existing source run",
+                    "maxLength": 100,
+                    "type": "string"
+                  },
+                  "subject": {
+                    "description": "remove facts with this subject",
+                    "maxLength": 512,
+                    "type": "string"
+                  }
+                },
+                "type": [
+                  "null",
+                  "object"
+                ]
+              },
+              "merge": {
+                "additionalProperties": false,
+                "description": "payload for merge_entities",
+                "properties": {
+                  "source": {
+                    "description": "entity name to fold away",
+                    "maxLength": 512,
+                    "type": "string"
+                  },
+                  "target": {
+                    "description": "surviving entity name",
+                    "maxLength": 512,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "source",
+                  "target"
+                ],
+                "type": [
+                  "null",
+                  "object"
+                ]
+              },
+              "type": {
+                "description": "upsert_fact, supersede_fact, merge_entities, or forget",
+                "enum": [
+                  "upsert_fact",
+                  "supersede_fact",
+                  "merge_entities",
+                  "forget"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          },
+          "maxItems": 100,
+          "minItems": 1,
+          "type": [
+            "null",
+            "array"
+          ]
+        }
+      },
+      "required": [
+        "idempotency_key",
+        "operations"
+      ],
+      "type": "object"
+    },
+    "name": "memory_batch",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "applied": {
+          "type": "integer"
+        },
+        "operations": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "dropped": {
+                "type": "integer"
+              },
+              "entities": {
+                "type": "integer"
+              },
+              "facts": {
+                "type": "integer"
+              },
+              "moved": {
+                "type": "integer"
+              },
+              "statement": {
+                "type": "string"
+              },
+              "superseded": {
+                "type": "integer"
+              },
+              "type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "replayed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "applied",
+        "replayed",
+        "operations"
+      ],
+      "type": "object"
+    },
+    "title": "Apply atomic memory changes"
+  },
+  {
+    "annotations": {
       "idempotentHint": false,
       "readOnlyHint": true
     },

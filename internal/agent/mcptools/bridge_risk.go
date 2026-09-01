@@ -139,6 +139,7 @@ var trustedRecipeActions = map[string]map[string]MCPActionClass{
 		"memory_facts_about":    MCPActionRead,
 		"memory_digest":         MCPActionRead,
 		"memory_upsert_fact":    MCPActionMutate,
+		"memory_batch":          MCPActionMutate,
 		"memory_merge_entities": MCPActionMutate,
 		"memory_reembed":        MCPActionMutate,
 		"memory_forget":         MCPActionMutate,
