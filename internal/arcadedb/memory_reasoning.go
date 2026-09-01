@@ -199,6 +199,10 @@ func (c *Client) UpsertReasoningTrace(ctx context.Context, trace ReasoningTrace)
 		return err
 	}
 	defer c.rollbackTx(context.WithoutCancel(ctx), session)
+	trace, err = c.resolveReasoningEntities(ctx, session, trace)
+	if err != nil {
+		return err
+	}
 
 	params := reasoningTraceParams(trace)
 	statement := upsertReasoningTraceStatement
@@ -251,6 +255,56 @@ func (c *Client) UpsertReasoningTrace(ctx context.Context, trace ReasoningTrace)
 		return fmt.Errorf("arcadedb: commit reasoning trace: %w", err)
 	}
 	return nil
+}
+
+const resolveReasoningEntitiesStatement = "SELECT name FROM Entity WHERE name IN :entity_names LIMIT 32"
+
+func (c *Client) resolveReasoningEntities(
+	ctx context.Context,
+	session string,
+	trace ReasoningTrace,
+) (ReasoningTrace, error) {
+	candidates := make(map[string]struct{})
+	for _, step := range trace.Steps {
+		for _, tool := range step.ToolCalls {
+			for _, ref := range tool.EntityRefs {
+				candidates[ref] = struct{}{}
+			}
+		}
+	}
+	if len(candidates) == 0 {
+		return trace, nil
+	}
+	entityNames := make([]string, 0, len(candidates))
+	for candidate := range candidates {
+		entityNames = append(entityNames, candidate)
+	}
+	sort.Strings(entityNames)
+	rows, err := c.queryInTx(ctx, session, resolveReasoningEntitiesStatement, map[string]any{
+		"entity_names": entityNames,
+	})
+	if err != nil {
+		return ReasoningTrace{}, fmt.Errorf("arcadedb: resolve reasoning entities: %w", err)
+	}
+	existing := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		if name := rowString(row, "name"); name != "" {
+			existing[name] = struct{}{}
+		}
+	}
+	for stepIndex := range trace.Steps {
+		for toolIndex := range trace.Steps[stepIndex].ToolCalls {
+			refs := trace.Steps[stepIndex].ToolCalls[toolIndex].EntityRefs
+			validated := refs[:0]
+			for _, ref := range refs {
+				if _, ok := existing[ref]; ok {
+					validated = append(validated, ref)
+				}
+			}
+			trace.Steps[stepIndex].ToolCalls[toolIndex].EntityRefs = validated
+		}
+	}
+	return trace, nil
 }
 
 // SearchReasoningTraces searches bounded trace summaries for one identity.

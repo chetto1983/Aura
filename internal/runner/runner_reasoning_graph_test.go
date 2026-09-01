@@ -235,15 +235,21 @@ func TestReasoningGraphToolMetadata(t *testing.T) {
 		`{"command":"cat /secret"}`, "ok", "raw private output", nil)
 	events := []*agent.Event{reasoningGraphEvent(runID, t0, "Prepare an operator artifact.")}
 	events = append(events, allowed...)
+	events = append(events, reasoningGraphEvent(runID, t0.Add(1500*time.Millisecond), "Record the artifact result."))
 	events = append(events, blob...)
 	events = append(events, disallowed...)
 	events = append(events, reasoningGraphFinalEvent(runID, t0.Add(4*time.Second), "done"))
 	persistReasoningGraphEvents(t, r, ctx, tr, events...)
 
-	if len(sink.traces) != 1 || len(sink.traces[0].Steps) != 1 {
+	if len(sink.traces) != 1 || len(sink.traces[0].Steps) != 2 {
 		t.Fatalf("trace/steps = %#v", sink.traces)
 	}
-	tools := sink.traces[0].Steps[0].ToolCalls
+	if sink.traces[0].Steps[0].ProviderSummary != "Prepare an operator artifact." ||
+		sink.traces[0].Steps[1].ProviderSummary != "Record the artifact result." {
+		t.Fatalf("stable tool-boundary segmentation = %#v", sink.traces[0].Steps)
+	}
+	tools := append([]arcadedb.ReasoningToolCall(nil), sink.traces[0].Steps[0].ToolCalls...)
+	tools = append(tools, sink.traces[0].Steps[1].ToolCalls...)
 	if len(tools) != 2 {
 		t.Fatalf("allowed tool calls = %#v, want two send_file calls only", tools)
 	}

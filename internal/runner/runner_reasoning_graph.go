@@ -2,7 +2,11 @@ package runner
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"log/slog"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -12,12 +16,18 @@ import (
 	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/redact"
+	"github.com/chetto1983/aura/internal/toolinvocations"
 	"github.com/google/uuid"
 )
 
 const (
-	reasoningGraphSummaryRunes = 4096
-	reasoningGraphWriteTimeout = 5 * time.Second
+	reasoningGraphSummaryRunes     = 4096
+	reasoningGraphObservationRunes = 1024
+	reasoningGraphReferenceRunes   = 256
+	reasoningGraphMaxSteps         = 64
+	reasoningGraphMaxToolsPerStep  = 32
+	reasoningGraphMaxReferences    = 32
+	reasoningGraphWriteTimeout     = 5 * time.Second
 )
 
 // ReasoningGraphSink is the narrow identity-scoped graph persistence boundary.
@@ -31,6 +41,30 @@ type ReasoningTraceBuilder struct {
 	summary   strings.Builder
 	runes     int
 	createdAt time.Time
+	steps     []reasoningStepBuilder
+	afterTool bool
+	seenCalls map[string]struct{}
+}
+
+type reasoningStepBuilder struct {
+	summary   strings.Builder
+	createdAt time.Time
+	tools     []arcadedb.ReasoningToolCall
+}
+
+type reasoningToolPolicy struct {
+	observation     bool
+	artifact        bool
+	entityArgFields []string
+}
+
+var reasoningToolPolicies = map[string]reasoningToolPolicy{
+	"memory_batch":       {},
+	"memory_forget":      {entityArgFields: []string{"entity"}},
+	"memory_recall":      {},
+	"memory_upsert_fact": {entityArgFields: []string{"subject", "object"}},
+	"send_file":          {observation: true, artifact: true},
+	"task":               {},
 }
 
 // Reset discards every event from a repudiated provider attempt.
@@ -39,6 +73,9 @@ func (b *ReasoningTraceBuilder) Reset() {
 	b.summary.Reset()
 	b.runes = 0
 	b.createdAt = time.Time{}
+	b.steps = nil
+	b.afterTool = false
+	b.seenCalls = nil
 }
 
 // ObserveReasoning accepts only the provider-visible reasoning event shape that
@@ -57,26 +94,82 @@ func (b *ReasoningTraceBuilder) ObserveReasoning(ev *agent.Event) {
 			b.createdAt = time.Now().UTC()
 		}
 	}
-	b.appendReasoning(ev.LLMResponse.Reasoning)
+	kept := b.appendReasoning(ev.LLMResponse.Reasoning)
+	if kept == "" {
+		return
+	}
+	if len(b.steps) == 0 || b.afterTool {
+		if len(b.steps) == reasoningGraphMaxSteps {
+			return
+		}
+		createdAt := ev.Timestamp.UTC()
+		if createdAt.IsZero() {
+			createdAt = b.createdAt
+		}
+		b.steps = append(b.steps, reasoningStepBuilder{createdAt: createdAt})
+		b.afterTool = false
+	}
+	step := &b.steps[len(b.steps)-1]
+	step.summary.WriteString(kept)
 }
 
 // ObserveToolInvocation joins one structured runtime tool event to the active trace.
-// The RED stub deliberately records nothing until the metadata policy lands in GREEN.
-func (*ReasoningTraceBuilder) ObserveToolInvocation(*agent.Event) {}
+func (b *ReasoningTraceBuilder) ObserveToolInvocation(ev *agent.Event) {
+	if ev == nil || ev.RequestID == uuid.Nil || b.runID == uuid.Nil || ev.RequestID != b.runID ||
+		ev.Actions.ToolInvocation == nil || ev.Actions.ToolInvocation.Event != agent.ToolInvocationEnd ||
+		len(b.steps) == 0 {
+		return
+	}
+	ti := ev.Actions.ToolInvocation
+	policy, allowed := reasoningToolPolicies[ti.ToolName]
+	status, ok := reasoningToolStatus(ti.Status)
+	if !allowed || !ok || strings.TrimSpace(ti.ToolCallID) == "" {
+		return
+	}
+	if b.seenCalls == nil {
+		b.seenCalls = make(map[string]struct{})
+	}
+	if _, duplicate := b.seenCalls[ti.ToolCallID]; duplicate {
+		return
+	}
+	step := &b.steps[len(b.steps)-1]
+	if len(step.tools) == reasoningGraphMaxToolsPerStep {
+		return
+	}
+	tool := arcadedb.ReasoningToolCall{
+		CallID: strings.TrimSpace(ti.ToolCallID), ToolName: ti.ToolName,
+		Status: status, DurationMillis: max(ti.DurationMS, 0),
+		ArgumentDigest: reasoningArgumentDigest(ti.Arguments),
+	}
+	if policy.observation {
+		tool.Observation = reasoningObservation(ti.ResultPreview)
+	}
+	if policy.artifact && status == "succeeded" {
+		tool.ArtifactRefs = reasoningArtifactRefs(ti.Meta)
+	}
+	if status == "succeeded" {
+		tool.EntityRefs = reasoningEntityRefs(ti.Arguments, policy.entityArgFields)
+	}
+	step.tools = append(step.tools, tool)
+	b.seenCalls[ti.ToolCallID] = struct{}{}
+	b.afterTool = true
+}
 
-func (b *ReasoningTraceBuilder) appendReasoning(delta string) {
+func (b *ReasoningTraceBuilder) appendReasoning(delta string) string {
 	remaining := reasoningGraphSummaryRunes - b.runes
 	if remaining <= 0 {
-		return
+		return ""
 	}
 	count := utf8.RuneCountInString(delta)
 	if count <= remaining {
 		b.summary.WriteString(delta)
 		b.runes += count
-		return
+		return delta
 	}
-	b.summary.WriteString(headRunes(delta, remaining))
+	kept := headRunes(delta, remaining)
+	b.summary.WriteString(kept)
 	b.runes += remaining
+	return kept
 }
 
 // CommitSourceTurn finalizes one successful trace against an already-committed
@@ -94,18 +187,120 @@ func (b *ReasoningTraceBuilder) CommitSourceTurn(
 	if terminalAt.IsZero() {
 		terminalAt = time.Now().UTC()
 	}
+	steps := make([]arcadedb.ReasoningStep, 0, len(b.steps))
+	sourceRef := reasoningSourceRef(conversationID, turnSeq)
+	for _, pending := range b.steps {
+		stepSummary := strings.TrimSpace(pending.summary.String())
+		if stepSummary == "" {
+			continue
+		}
+		tools := append([]arcadedb.ReasoningToolCall(nil), pending.tools...)
+		for index := range tools {
+			tools[index].SourceRef = sourceRef
+		}
+		steps = append(steps, arcadedb.ReasoningStep{
+			Index: len(steps) + 1, ProviderSummary: stepSummary,
+			CreatedAt: pending.createdAt, ToolCalls: tools,
+		})
+	}
+	if len(steps) == 0 {
+		return arcadedb.ReasoningTrace{}, false
+	}
 	trace := arcadedb.ReasoningTrace{
 		IdentityID: identityID, TraceID: b.runID.String(),
-		SourceRef:      reasoningSourceRef(conversationID, turnSeq),
+		SourceRef:      sourceRef,
 		ConversationID: conversationID, TurnSeq: turnSeq,
 		ProviderSummary: summary, Status: arcadedb.ReasoningStatusSucceeded,
 		CreatedAt: b.createdAt, TerminalAt: terminalAt.UTC(),
-		Steps: []arcadedb.ReasoningStep{{
-			Index: 1, ProviderSummary: summary, CreatedAt: b.createdAt,
-		}},
+		Steps: steps,
 	}
 	b.Reset()
 	return trace, true
+}
+
+func reasoningToolStatus(status string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "ok", "success", "succeeded":
+		return "succeeded", true
+	case "error", "failed":
+		return "failed", true
+	case "canceled", "cancelled":
+		return "cancelled", true
+	default:
+		return "", false
+	}
+}
+
+func reasoningArgumentDigest(arguments string) string {
+	if strings.TrimSpace(arguments) == "" {
+		return ""
+	}
+	safe := toolinvocations.RedactForLedger(arguments, toolinvocations.ArgsRawCapBytes)
+	digest := sha256.Sum256([]byte(safe))
+	return hex.EncodeToString(digest[:])
+}
+
+func reasoningObservation(observation string) string {
+	trimmed := strings.TrimSpace(observation)
+	lowered := strings.ToLower(trimmed)
+	if trimmed == "" || strings.HasPrefix(lowered, "data:") || strings.Contains(lowered, ";base64,") {
+		return ""
+	}
+	safe := strings.TrimSpace(toolinvocations.RedactForLedger(
+		trimmed, toolinvocations.ResultPreviewCapBytes))
+	return headRunes(safe, reasoningGraphObservationRunes)
+}
+
+func reasoningArtifactRefs(meta map[string]any) []string {
+	descriptor, ok := meta["artifact"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	assetID, _ := descriptor["asset_id"].(string)
+	assetID = strings.TrimSpace(assetID)
+	if !reasoningReferenceSegment(assetID) {
+		return nil
+	}
+	return []string{"artifact://assets/" + assetID}
+}
+
+func reasoningEntityRefs(arguments string, fields []string) []string {
+	if len(fields) == 0 || strings.TrimSpace(arguments) == "" {
+		return nil
+	}
+	var args map[string]any
+	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(fields))
+	for _, field := range fields {
+		value, _ := args[field].(string)
+		value = strings.TrimSpace(value)
+		if value == "" || utf8.RuneCountInString(value) > reasoningGraphReferenceRunes ||
+			strings.ContainsAny(value, "\r\n\x00") {
+			continue
+		}
+		seen[value] = struct{}{}
+	}
+	refs := make([]string, 0, min(len(seen), reasoningGraphMaxReferences))
+	for ref := range seen {
+		refs = append(refs, ref)
+	}
+	sort.Strings(refs)
+	return refs[:min(len(refs), reasoningGraphMaxReferences)]
+}
+
+func reasoningReferenceSegment(value string) bool {
+	if value == "" || utf8.RuneCountInString(value) > reasoningGraphReferenceRunes {
+		return false
+	}
+	for _, r := range value {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') &&
+			(r < '0' || r > '9') && r != '-' && r != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 func reasoningSourceRef(conversationID string, turnSeq int) string {
