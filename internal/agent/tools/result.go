@@ -26,6 +26,36 @@ type toolCallContext struct {
 	cap        int
 }
 
+const (
+	// MetaAcceptedFact is the structured, model-invisible evidence emitted only
+	// after memory_upsert_fact accepts a write.
+	MetaAcceptedFact = "accepted_fact"
+	// MetaDurableArtifact is the structured, model-invisible evidence emitted
+	// only after an allowlisted filesystem tool persists a real artifact.
+	MetaDurableArtifact = "durable_artifact"
+)
+
+// AcceptedFactEvidence is the closed structured projection of one successful
+// memory_upsert_fact call. It deliberately excludes unrestricted result text.
+type AcceptedFactEvidence struct {
+	Subject         string
+	Predicate       string
+	Object          string
+	Statement       string
+	SourceMemoryIDs []string
+	ActorRunID      string
+	ActorRole       string
+}
+
+// DurableArtifactEvidence identifies one successfully persisted filesystem
+// artifact without copying its contents or the tool's unrestricted preview.
+type DurableArtifactEvidence struct {
+	Path       string
+	Operation  string
+	ActorRunID string
+	ActorRole  string
+}
+
 // WithToolCallContext returns a ctx carrying the ids + run dir + preview cap the
 // spillover helper reads. The agent calls this before each Tool.Execute (D-25).
 func WithToolCallContext(ctx context.Context, sessionID, toolCallID, runDir string, previewCap int) context.Context {

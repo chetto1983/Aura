@@ -366,6 +366,56 @@ func TestPatchRoutedReadsBoxAppliesEditAndWritesBack(t *testing.T) {
 	}
 }
 
+func TestDurableArtifactAcceptedCapture(t *testing.T) {
+	t.Run("write_file", func(t *testing.T) {
+		var be *fakeBox
+		be = &fakeBox{respond: func(cmd string) usersandbox.ExecResult {
+			if strings.HasPrefix(cmd, "sha256sum ") {
+				sum := sha256.Sum256([]byte(be.written["/workspace/report.md"]))
+				return usersandbox.ExecResult{Stdout: []byte(hex.EncodeToString(sum[:]) + "  /workspace/report.md\n")}
+			}
+			return usersandbox.ExecResult{}
+		}}
+		res, err := (&WriteFile{Router: routerWith(be)}).Execute(boxCtx(t), json.RawMessage(
+			`{"path":"/workspace/report.md","content":"durable"}`))
+		if err != nil {
+			t.Fatalf("write_file: %v", err)
+		}
+		assertDurableArtifactEvidence(t, res, "/workspace/report.md", "write")
+	})
+
+	t.Run("patch", func(t *testing.T) {
+		var be *fakeBox
+		be = &fakeBox{respond: func(cmd string) usersandbox.ExecResult {
+			if strings.HasPrefix(cmd, "sha256sum ") {
+				sum := sha256.Sum256([]byte(be.written["/workspace/report.md"]))
+				return usersandbox.ExecResult{Stdout: []byte(hex.EncodeToString(sum[:]) + "  /workspace/report.md\n")}
+			}
+			return usersandbox.ExecResult{Stdout: []byte("before\n")}
+		}}
+		res, err := (&Patch{Router: routerWith(be)}).Execute(boxCtx(t), json.RawMessage(
+			`{"mode":"replace","path":"/workspace/report.md","old_string":"before","new_string":"after"}`))
+		if err != nil {
+			t.Fatalf("patch: %v", err)
+		}
+		assertDurableArtifactEvidence(t, res, "/workspace/report.md", "patch")
+	})
+}
+
+func assertDurableArtifactEvidence(t *testing.T, res ToolResult, path, operation string) {
+	t.Helper()
+	if res.Meta == nil {
+		t.Fatal("successful durable filesystem mutation has nil Meta")
+	}
+	evidence, ok := (*res.Meta)[MetaDurableArtifact].(DurableArtifactEvidence)
+	if !ok {
+		t.Fatalf("durable artifact evidence = %#v, want typed DurableArtifactEvidence", (*res.Meta)[MetaDurableArtifact])
+	}
+	if evidence.Path != path || evidence.Operation != operation || evidence.ActorRunID == "" || evidence.ActorRole == "" {
+		t.Fatalf("durable artifact evidence = %+v", evidence)
+	}
+}
+
 func TestPatchRoutedRefusesTheSkillsMount(t *testing.T) {
 	be := &fakeBox{}
 	_, err := (&Patch{Router: routerWith(be)}).Execute(boxCtx(t), json.RawMessage(
