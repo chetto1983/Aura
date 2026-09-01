@@ -6,6 +6,8 @@ import subprocess
 import time
 from typing import Any
 
+from agent_memory_eval_phase49_batch import BATCH_MARKER, attach_batch_evidence, evaluate_batch_atomicity, extract_batch_markers
+
 
 SCHEMA_ID = "aura.phase49-memory-evidence/v1"
 SCENARIOS = ("mixed_tier_recall", "reasoning_isolation")

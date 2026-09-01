@@ -365,6 +365,12 @@ class BatchAtomicityEvaluatorTest(unittest.TestCase):
     def test_complete_live_batch_evidence_passes(self) -> None:
         self.assertTrue(self.evaluate(batch_atomicity_fixture())["passed"])
 
+    def test_go_json_parser_extracts_batch_evidence(self) -> None:
+        payload = json.dumps(batch_atomicity_fixture())
+        output = json.dumps({"Action": "output", "Test": "TestAgentMemoryMCPLive_BatchAtomicity", "Output": evaluator.phase49.BATCH_MARKER + payload})
+        parsed = evaluator.parse_go_test_json(output)
+        self.assertEqual(parsed["batch_atomicity_markers"], [batch_atomicity_fixture()])
+
     def test_missing_execution_or_state_hash_fails(self) -> None:
         evidence = batch_atomicity_fixture()
         evidence["executed_count"] = 0

@@ -316,6 +316,7 @@ def parse_go_test_json(output: str) -> dict[str, Any]:
         "tests": tests,
         "latency_metrics": latency_metrics,
         "runtime_metadata": runtime_metadata,
+        "batch_atomicity_markers": phase49.extract_batch_markers(output),
         "skipped_tests": sorted(skipped),
         "package_failed": package_failed,
         "protocol_errors": protocol_errors,
@@ -585,6 +586,7 @@ def main() -> int:
         candidate = candidate_state(repo)
         suites = run_suites(manifest, args.tier, repo, args.timeout_seconds)
         report = score(manifest, suites, args.tier, candidate)
+        report = phase49.attach_batch_evidence(report, suites, args.tier)
         write_report(args.output, report)
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"agent-memory-eval: FAIL: {exc}", file=sys.stderr)
