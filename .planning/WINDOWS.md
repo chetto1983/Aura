@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 21
+open_count: 24
 waived_count: 0
-fixed_count: 1
-total_count: 22
-last_updated: 2026-09-01T04:12:07.678Z
+fixed_count: 2
+total_count: 26
+last_updated: 2026-09-01T05:56:47.302Z
 ---
 
 # Broken Windows Ledger
@@ -34,9 +34,13 @@ last_updated: 2026-09-01T04:12:07.678Z
 | 17 | 49 | stub | internal/runner/runner.go | 68 | ReasoningGraphSink is intentionally not injected at production boot in Plan 49-12; dependent Plan 49-09 owns the single boot sink and lifecycle composition. | open |  | 2026-09-01T02:10:48.333Z |  |
 | 18 | 49 | deviation | internal/runner/runner_reasoning_persist.go |  | Plan 49-12 extended the existing authorization seam and ArcadeDB storage-boundary tests outside the literal file list so graph capture cannot diverge from display authorization and TOUCHED cannot target absent entities. | open |  | 2026-09-01T02:10:48.735Z |  |
 | 19 | 49 | deviation | .planning/STATE.md |  | Plan 49-12 completed out of order; state.advance-plan moved the sequential pointer from still-incomplete Plan 49-05 to 49-06, so the pointer was restored to 49-05 while retaining the 57/62 completed count and Plan 49-12 activity/session metadata. | open |  | 2026-09-01T02:13:36.146Z |  |
-| 20 | 49 | stub | internal/runner/runner_deps.go | 46 | Production boot does not yet inject MemoryCaptureSink; Plan 49-14 owns graph composition and live mid-task proof. | open |  | 2026-09-01T04:08:58.607Z |  |
+| 20 | 49 | stub | internal/runner/runner_deps.go | 46 | Production boot does not yet inject MemoryCaptureSink; Plan 49-14 owns graph composition and live mid-task proof. | fixed |  | 2026-09-01T04:08:58.607Z | 2026-09-01T05:56:47.302Z |
 | 21 | 49 | deviation | internal/runner/runner_persist.go | 151 | Rule 1: terminal flush now snapshots the runner-global accepted watermark so resumed turns drain pre-pause captures. | open |  | 2026-09-01T04:08:59.003Z |  |
 | 22 | 49 | deviation | .planning/STATE.md |  | Plan 49-05 state handlers advanced to completed Plan 6 and left Plan 09 activity/progress prose; pointer and prose were synchronized to next incomplete Plan 10 and 59/62. | open |  | 2026-09-01T04:12:07.678Z |  |
+| 23 | 49 | deviation | internal/arcadedb/memory_batch_store.go |  | Plan 49-14 normalized batch DATETIME parameters so capture-created facts are immediately recallable. | open |  | 2026-09-01T05:56:21.236Z |  |
+| 24 | 49 | deviation | internal/runner/runner_memory_capture.go |  | Plan 49-14 added the required host-bound user_turn provenance reference. | open |  | 2026-09-01T05:56:21.636Z |  |
+| 25 | 49 | deviation | cmd/aura/chat_boot_memory_capture_test.go |  | Plan 49-14 added omitted daemon-free composition and precision regression coverage. | open |  | 2026-09-01T05:56:22.032Z |  |
+| 26 | 49 | deviation | .planning/STATE.md |  | Plan 49-14 restored the sequential pointer to incomplete Plan 49-11 after out-of-order close-out. | open |  | 2026-09-01T05:56:22.442Z |  |
 
 ````json
 [
@@ -275,10 +279,10 @@ last_updated: 2026-09-01T04:12:07.678Z
     "file": "internal/runner/runner_deps.go",
     "line": 46,
     "description": "Production boot does not yet inject MemoryCaptureSink; Plan 49-14 owns graph composition and live mid-task proof.",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-01T04:08:58.607Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-01T05:56:47.302Z"
   },
   {
     "id": 21,
@@ -302,6 +306,54 @@ last_updated: 2026-09-01T04:12:07.678Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-01T04:12:07.678Z",
+    "resolved_at": null
+  },
+  {
+    "id": 23,
+    "kind": "deviation",
+    "phase": "49",
+    "file": "internal/arcadedb/memory_batch_store.go",
+    "line": null,
+    "description": "Plan 49-14 normalized batch DATETIME parameters so capture-created facts are immediately recallable.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T05:56:21.236Z",
+    "resolved_at": null
+  },
+  {
+    "id": 24,
+    "kind": "deviation",
+    "phase": "49",
+    "file": "internal/runner/runner_memory_capture.go",
+    "line": null,
+    "description": "Plan 49-14 added the required host-bound user_turn provenance reference.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T05:56:21.636Z",
+    "resolved_at": null
+  },
+  {
+    "id": 25,
+    "kind": "deviation",
+    "phase": "49",
+    "file": "cmd/aura/chat_boot_memory_capture_test.go",
+    "line": null,
+    "description": "Plan 49-14 added omitted daemon-free composition and precision regression coverage.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T05:56:22.032Z",
+    "resolved_at": null
+  },
+  {
+    "id": 26,
+    "kind": "deviation",
+    "phase": "49",
+    "file": ".planning/STATE.md",
+    "line": null,
+    "description": "Plan 49-14 restored the sequential pointer to incomplete Plan 49-11 after out-of-order close-out.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T05:56:22.442Z",
     "resolved_at": null
   }
 ]

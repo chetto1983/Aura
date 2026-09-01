@@ -173,9 +173,17 @@ Each TDD task was committed in RED then GREEN order:
 - **Verification:** Normal file-size, vet, lint, unit, and WSL race gates pass with hooks enabled.
 - **Committed in:** `85b47dedf`, `cf03d7108`, `2c7ba011c`
 
+**4. [Rule 3 - Blocking state close-out] Restored the real next incomplete plan after out-of-order execution**
+- **Found during:** Plan metadata close-out
+- **Issue:** `state.advance-plan` moved the sequential pointer from incomplete Plan 49-11 to Plan 49-12 even though this execution completed out-of-order Plan 49-14; the activity/prose progress fields also remained on Plan 49-10.
+- **Fix:** Preserved the handler-written 61/62 count, metric, decisions, state head, and session metadata while restoring both plan pointers to 49-11 and synchronizing activity/progress to Plan 49-14.
+- **Files modified:** `.planning/STATE.md`
+- **Verification:** STATE reports current Plan 11, 61 completed milestone plans, Plan 49-14 activity/session metadata, and ROADMAP reports 13/14 Phase 49 plans.
+- **Committed in:** final tracking metadata commit
+
 ---
 
-**Total deviations:** 3 auto-fixed (1 Rule 1 live database bug, 2 Rule 2 correctness/project-evidence completions).
+**Total deviations:** 4 auto-fixed (1 Rule 1 live database bug, 2 Rule 2 correctness/project-evidence completions, 1 Rule 3 tracking correction).
 **Impact on plan:** All changes are required to prove or enforce the locked AUTO-03/CTX-05 contract. No package, migration, schema field, endpoint, auth path, environment variable, model-facing argument, or second memory authority was added.
 
 ## Issues Encountered

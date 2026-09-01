@@ -5,16 +5,16 @@ current_phase: 49
 current_phase_name: Memory tiers
 current_plan: 11
 status: executing
-stopped_at: Completed 49-10-PLAN.md
-last_updated: "2026-09-01T04:55:06.325Z"
+stopped_at: Completed 49-14-PLAN.md
+last_updated: "2026-09-01T05:55:36.063Z"
 last_activity: 2026-09-01
-last_activity_desc: Completed Phase 49 Plan 10
-state_head: e16d9811ffb1b4cc803f51a384e22dcf681390ad
+last_activity_desc: Completed Phase 49 Plan 14
+state_head: 2eac055c5c3eb6d94dc9b55d5a7a7e6deaa68098
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 62
-  completed_plans: 60
+  completed_plans: 61
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -65,9 +65,9 @@ retaining byte caps, and `TestBridgedTool_Execute_MarksResultTrusted` pins MCP r
 The remaining unchecked MCP-02 item in REQUIREMENTS is its separate live unlisted-server proof;
 it is a roadmap acceptance obligation, not an unrecorded Calendar fork gap.
 
-Last activity: 2026-09-01 — Completed Phase 49 Plan 10
+Last activity: 2026-09-01 — Completed Phase 49 Plan 14
 
-Progress: [██████████] 97% (60/62 milestone plans)
+Progress: [██████████] 98% (61/62 milestone plans)
 
 ## Performance Metrics
 
@@ -125,6 +125,7 @@ Progress: [██████████] 97% (60/62 milestone plans)
 | Phase 49 P09 | 1h 1m | 3 tasks | 19 files |
 | Phase 49 P05 | 35min | 2 tasks | 13 files |
 | Phase 49 P10 | 28min | 2 tasks | 11 files |
+| Phase 49 P14 | 47min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -283,6 +284,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 49]: AcceptedCapture is canonical in arcadedb and re-exported as a runner alias so the graph client satisfies MemoryCaptureSink without a conversion model.
 - [Phase 49]: Explicit temporal and supersession controls remain model-invisible structured success evidence while actor run and role stay host-derived.
 - [Phase 49]: Per-capture audit records live inside existing fact provenance; flat MemoryIDs remain populated for current readers.
+- [Phase 49]: Plan 49-14: Chat boot constructs the one MemoryCaptureQueue and injects that exact process-owned pointer into Runner.
+- [Phase 49]: Plan 49-14: The capture sink resolves an identity-scoped ArcadeDB client and delegates directly to ApplyAcceptedCapture.
+- [Phase 49]: Plan 49-14: Every capture requires a host-derived user_turn reference matching the actor run id.
+- [Phase 49]: Plan 49-14: Batch DATETIME parameters use recall-compatible second-precision RFC3339 while capture observed_at retains exact time.
 
 ### Pending Todos
 
@@ -347,8 +352,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-01T04:55:05.972Z
-Stopped at: Completed 49-10-PLAN.md
+Last session: 2026-09-01T05:55:35.710Z
+Stopped at: Completed 49-14-PLAN.md
 The accepted fresh-image delivery envelope is reconciled in 51-VALIDATION.md at 6/6 and 9.9/10.
 The final image passed the complete repository Playwright suite (145 pass, 39 intentional skips,
 zero failures) and four hot-route cycles without a restart or an OpenRouter request.
