@@ -9,6 +9,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -55,6 +56,7 @@ type MemoryRecallInput struct {
 	AnchorSeq      int    `json:"anchor_seq,omitempty" jsonschema:"stable turn sequence used by open and scroll"`
 	Cursor         string `json:"cursor,omitempty" jsonschema:"opaque cursor returned by an earlier open or scroll call"`
 	Direction      string `json:"direction,omitempty" jsonschema:"before or after the stable anchor"`
+	TraceID        string `json:"trace_id,omitempty" jsonschema:"exact reasoning trace id; used only by explicit reasoning mode"`
 	Limit          int    `json:"limit,omitempty" jsonschema:"bounded number of evidence records or conversation turns"`
 	AsOf           string `json:"as_of,omitempty" jsonschema:"RFC3339 instant; return facts valid then rather than now"`
 }
@@ -82,6 +84,42 @@ type MemoryRecallEvidence struct {
 	Score        float64                     `json:"score,omitempty"`
 	Fact         *MemorySearchHit            `json:"fact,omitempty"`
 	Conversation *MemoryConversationEvidence `json:"conversation,omitempty"`
+	Reasoning    *MemoryReasoningTrace       `json:"reasoning,omitempty"`
+}
+
+// MemoryReasoningToolCall is bounded redacted evidence for one invocation.
+type MemoryReasoningToolCall struct {
+	CallID         string   `json:"call_id"`
+	ToolName       string   `json:"tool_name"`
+	Status         string   `json:"status"`
+	DurationMillis int64    `json:"duration_ms,omitempty"`
+	ArgumentDigest string   `json:"argument_digest,omitempty"`
+	Observation    string   `json:"observation,omitempty"`
+	ArtifactRefs   []string `json:"artifact_refs,omitempty"`
+	EntityRefs     []string `json:"entity_refs,omitempty"`
+	SourceRef      string   `json:"source_ref"`
+}
+
+// MemoryReasoningStep is one ordered provider-visible part of a trace.
+type MemoryReasoningStep struct {
+	Index           int                       `json:"index"`
+	ProviderSummary string                    `json:"provider_summary"`
+	CreatedAt       string                    `json:"created_at"`
+	ToolCalls       []MemoryReasoningToolCall `json:"tool_calls,omitempty"`
+}
+
+// MemoryReasoningTrace is an explicit-only provider-visible reasoning graph.
+type MemoryReasoningTrace struct {
+	TraceID         string                `json:"trace_id"`
+	SourceRef       string                `json:"source_ref"`
+	ConversationID  string                `json:"conversation_id"`
+	TurnSeq         int                   `json:"turn_seq"`
+	ProviderSummary string                `json:"provider_summary"`
+	Status          string                `json:"status"`
+	CreatedAt       string                `json:"created_at"`
+	TerminalAt      string                `json:"terminal_at,omitempty"`
+	ExpiresAt       string                `json:"expires_at,omitempty"`
+	Steps           []MemoryReasoningStep `json:"steps,omitempty"`
 }
 
 // MemoryRecallRetrievalMetadata keeps evidence contribution distinct from backend execution.
@@ -120,8 +158,8 @@ func addMemoryRecallTool(server *mcp.Server, tenants *tenants) {
 		InputSchema: inputSchema,
 		Description: "The single deep-read operation for Aura memory. Semantic mode (the default) " +
 			"can return typed fact and historical-conversation evidence together. Recent, open, and " +
-			"scroll progressively browse bounded conversation windows; reasoning is reserved until " +
-			"the explicit reasoning contract ships. Weak evidence abstains explicitly.",
+			"scroll progressively browse bounded conversation windows; reasoning explicitly searches " +
+			"or opens provider-visible traces and is never included by other modes. Weak evidence abstains explicitly.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, memoryRecallHandler(tenants))
 }
@@ -135,6 +173,13 @@ func memoryRecallHandler(tenants *tenants) mcp.ToolHandlerFor[MemoryRecallInput,
 		identity, client, err := resolveCaller(ctx, tenants, req)
 		if err != nil {
 			return nil, MemoryRecallOutput{}, err
+		}
+		if arcadedb.RecallMode(in.Mode) == arcadedb.RecallModeReasoning {
+			output, err := memoryReasoningRecall(ctx, client, identity, in)
+			if err != nil {
+				return nil, MemoryRecallOutput{}, fmt.Errorf("memory_recall: %w", err)
+			}
+			return nil, output, nil
 		}
 		excludedConversations, err := memoryRecallActiveConversationIDs(ctx, req, identity, client)
 		if err != nil {
@@ -158,6 +203,95 @@ func memoryRecallHandler(tenants *tenants) mcp.ToolHandlerFor[MemoryRecallInput,
 		recordMemoryRecallTelemetry(ctx, in.Mode, result)
 		return nil, memoryRecallOutput(result), nil
 	}
+}
+
+func memoryReasoningRecall(
+	ctx context.Context,
+	client *arcadedb.Client,
+	identity string,
+	in MemoryRecallInput,
+) (MemoryRecallOutput, error) {
+	query, traceID := strings.TrimSpace(in.Query), strings.TrimSpace(in.TraceID)
+	if (query == "") == (traceID == "") {
+		return MemoryRecallOutput{}, fmt.Errorf("reasoning mode requires exactly one of query or trace_id")
+	}
+	if in.Entity != "" || in.Predicate != "" || in.ConversationID != "" || in.AnchorSeq != 0 ||
+		in.Cursor != "" || in.Direction != "" || in.AsOf != "" {
+		return MemoryRecallOutput{}, fmt.Errorf("reasoning mode rejects ordinary recall selectors")
+	}
+	var traces []arcadedb.ReasoningTrace
+	if traceID != "" {
+		trace, found, err := client.GetReasoningTrace(ctx, identity, traceID)
+		if err != nil {
+			return MemoryRecallOutput{}, err
+		}
+		if found {
+			traces = []arcadedb.ReasoningTrace{trace}
+		}
+	} else {
+		var err error
+		traces, err = client.SearchReasoningTraces(ctx, identity, query, in.Limit)
+		if err != nil {
+			return MemoryRecallOutput{}, err
+		}
+	}
+	output := MemoryRecallOutput{
+		Evidence: make([]MemoryRecallEvidence, 0, len(traces)), Facts: make([]MemorySearchHit, 0),
+		Abstained: len(traces) == 0,
+		Retrieval: MemoryRecallRetrievalMetadata{
+			EffectivePath: "reasoning", Path: "graph", ReasoningCount: len(traces),
+			Abstained: len(traces) == 0,
+		},
+	}
+	if output.Abstained {
+		output.Reason = "no_reasoning_evidence"
+		output.Retrieval.Reason = output.Reason
+	}
+	for index, trace := range traces {
+		converted := memoryReasoningTrace(trace)
+		output.Evidence = append(output.Evidence, MemoryRecallEvidence{
+			Kind: "reasoning", Rank: index + 1, Reasoning: &converted,
+		})
+	}
+	recordMemoryRecallTelemetry(ctx, in.Mode, arcadedb.RecallResult{
+		Abstained: output.Abstained, Reason: output.Reason,
+		Retrieval: arcadedb.RecallRetrieval{
+			EffectivePath: "reasoning", Path: "graph", ReasoningCount: len(traces),
+		},
+	})
+	return output, nil
+}
+
+func memoryReasoningTrace(trace arcadedb.ReasoningTrace) MemoryReasoningTrace {
+	output := MemoryReasoningTrace{
+		TraceID: trace.TraceID, SourceRef: trace.SourceRef, ConversationID: trace.ConversationID,
+		TurnSeq: trace.TurnSeq, ProviderSummary: trace.ProviderSummary, Status: string(trace.Status),
+		CreatedAt: trace.CreatedAt.UTC().Format(time.RFC3339Nano),
+		Steps:     make([]MemoryReasoningStep, 0, len(trace.Steps)),
+	}
+	if !trace.TerminalAt.IsZero() {
+		output.TerminalAt = trace.TerminalAt.UTC().Format(time.RFC3339Nano)
+	}
+	if !trace.ExpiresAt.IsZero() {
+		output.ExpiresAt = trace.ExpiresAt.UTC().Format(time.RFC3339Nano)
+	}
+	for _, step := range trace.Steps {
+		converted := MemoryReasoningStep{
+			Index: step.Index, ProviderSummary: step.ProviderSummary,
+			CreatedAt: step.CreatedAt.UTC().Format(time.RFC3339Nano),
+			ToolCalls: make([]MemoryReasoningToolCall, 0, len(step.ToolCalls)),
+		}
+		for _, tool := range step.ToolCalls {
+			converted.ToolCalls = append(converted.ToolCalls, MemoryReasoningToolCall{
+				CallID: tool.CallID, ToolName: tool.ToolName, Status: tool.Status,
+				DurationMillis: tool.DurationMillis, ArgumentDigest: tool.ArgumentDigest,
+				Observation: tool.Observation, ArtifactRefs: tool.ArtifactRefs,
+				EntityRefs: tool.EntityRefs, SourceRef: tool.SourceRef,
+			})
+		}
+		output.Steps = append(output.Steps, converted)
+	}
+	return output
 }
 
 // memoryRecallActiveConversationIDs decodes and revalidates host-only recall

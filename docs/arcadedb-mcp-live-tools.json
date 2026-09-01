@@ -557,7 +557,7 @@
       "idempotentHint": false,
       "readOnlyHint": true
     },
-    "description": "The single deep-read operation for Aura memory. Semantic mode (the default) can return typed fact and historical-conversation evidence together. Recent, open, and scroll progressively browse bounded conversation windows; reasoning is reserved until the explicit reasoning contract ships. Weak evidence abstains explicitly.",
+    "description": "The single deep-read operation for Aura memory. Semantic mode (the default) can return typed fact and historical-conversation evidence together. Recent, open, and scroll progressively browse bounded conversation windows; reasoning explicitly searches or opens provider-visible traces and is never included by other modes. Weak evidence abstains explicitly.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -610,6 +610,10 @@
         },
         "query": {
           "description": "what to recall in natural language; used by semantic mode",
+          "type": "string"
+        },
+        "trace_id": {
+          "description": "exact reasoning trace id; used only by explicit reasoning mode",
           "type": "string"
         }
       },
@@ -759,6 +763,134 @@
               },
               "rank": {
                 "type": "integer"
+              },
+              "reasoning": {
+                "additionalProperties": false,
+                "properties": {
+                  "conversation_id": {
+                    "type": "string"
+                  },
+                  "created_at": {
+                    "type": "string"
+                  },
+                  "expires_at": {
+                    "type": "string"
+                  },
+                  "provider_summary": {
+                    "type": "string"
+                  },
+                  "source_ref": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "steps": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "created_at": {
+                          "type": "string"
+                        },
+                        "index": {
+                          "type": "integer"
+                        },
+                        "provider_summary": {
+                          "type": "string"
+                        },
+                        "tool_calls": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "argument_digest": {
+                                "type": "string"
+                              },
+                              "artifact_refs": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": [
+                                  "null",
+                                  "array"
+                                ]
+                              },
+                              "call_id": {
+                                "type": "string"
+                              },
+                              "duration_ms": {
+                                "type": "integer"
+                              },
+                              "entity_refs": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": [
+                                  "null",
+                                  "array"
+                                ]
+                              },
+                              "observation": {
+                                "type": "string"
+                              },
+                              "source_ref": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "tool_name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "call_id",
+                              "tool_name",
+                              "status",
+                              "source_ref"
+                            ],
+                            "type": "object"
+                          },
+                          "type": [
+                            "null",
+                            "array"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "index",
+                        "provider_summary",
+                        "created_at"
+                      ],
+                      "type": "object"
+                    },
+                    "type": [
+                      "null",
+                      "array"
+                    ]
+                  },
+                  "terminal_at": {
+                    "type": "string"
+                  },
+                  "trace_id": {
+                    "type": "string"
+                  },
+                  "turn_seq": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "trace_id",
+                  "source_ref",
+                  "conversation_id",
+                  "turn_seq",
+                  "provider_summary",
+                  "status",
+                  "created_at"
+                ],
+                "type": [
+                  "null",
+                  "object"
+                ]
               },
               "score": {
                 "type": "number"
