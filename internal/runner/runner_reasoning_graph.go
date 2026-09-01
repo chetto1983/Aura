@@ -60,6 +60,10 @@ func (b *ReasoningTraceBuilder) ObserveReasoning(ev *agent.Event) {
 	b.appendReasoning(ev.LLMResponse.Reasoning)
 }
 
+// ObserveToolInvocation joins one structured runtime tool event to the active trace.
+// The RED stub deliberately records nothing until the metadata policy lands in GREEN.
+func (*ReasoningTraceBuilder) ObserveToolInvocation(*agent.Event) {}
+
 func (b *ReasoningTraceBuilder) appendReasoning(delta string) {
 	remaining := reasoningGraphSummaryRunes - b.runes
 	if remaining <= 0 {
@@ -113,6 +117,13 @@ func (r *Runner) observeReasoningGraph(tr *turnTracker, ev *agent.Event) {
 		return
 	}
 	tr.reasoningGraph.ObserveReasoning(ev)
+}
+
+func (r *Runner) observeReasoningTool(tr *turnTracker, ev *agent.Event) {
+	if r == nil || tr == nil || r.reasoningGraphSink == nil {
+		return
+	}
+	tr.reasoningGraph.ObserveToolInvocation(ev)
 }
 
 func (r *Runner) commitSourceTurn(ctx context.Context, tr *turnTracker, ev *agent.Event) {

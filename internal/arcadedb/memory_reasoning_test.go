@@ -197,6 +197,38 @@ func TestReasoningToolMetadataBounded(t *testing.T) {
 	}
 }
 
+func TestReasoningGraphTouchedEntities(t *testing.T) {
+	client, rec := recordingClient(t, `{"result":[{"name":"deployment-a"}]}`)
+	trace := validReasoningTrace()
+	trace.Steps[0].ToolCalls[0].EntityRefs = []string{"deployment-a", "missing-a"}
+	if err := client.UpsertReasoningTrace(context.Background(), trace); err != nil {
+		t.Fatalf("UpsertReasoningTrace: %v", err)
+	}
+
+	var stored []any
+	var touched []string
+	resolved := false
+	for index, statement := range rec.statements {
+		switch {
+		case strings.Contains(statement, "SELECT name FROM Entity"):
+			resolved = true
+		case strings.HasPrefix(statement, "UPDATE "+reasoningToolCallType):
+			stored, _ = rec.params[index]["entity_refs"].([]any)
+		case strings.HasPrefix(statement, "CREATE EDGE TOUCHED"):
+			touched = append(touched, rec.params[index]["entity_name"].(string))
+		}
+	}
+	if !resolved {
+		t.Fatal("entity candidates were not resolved against the graph")
+	}
+	if len(stored) != 1 || stored[0] != "deployment-a" {
+		t.Fatalf("stored entity refs = %#v, want only the existing entity", stored)
+	}
+	if len(touched) != 1 || touched[0] != "deployment-a" {
+		t.Fatalf("TOUCHED targets = %#v, want only the existing entity", touched)
+	}
+}
+
 func TestReasoningRecallIdentity(t *testing.T) {
 	t.Run("missing identity fails before database access", func(t *testing.T) {
 		client, rec := recordingClient(t, `{"result":[]}`)

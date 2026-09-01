@@ -119,6 +119,7 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 		return r.persistSteerTurn(ctx, tr, ev)
 	}
 	if ev.Actions.ToolInvocation != nil {
+		r.observeReasoningTool(tr, ev)
 		if err := r.persistToolTurnEvent(ctx, tr, ev.Actions.ToolInvocation, ev); err != nil {
 			return err
 		}
