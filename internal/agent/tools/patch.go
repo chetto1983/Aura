@@ -164,7 +164,12 @@ func (t *Patch) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, e
 	}
 
 	diff := unifiedDiff(boxPath, original, newContent)
-	return NewResult(ctx, diff)
+	result, err := NewResult(ctx, diff)
+	if err != nil {
+		return ToolResult{}, err
+	}
+	attachDurableArtifactEvidence(ctx, &result, boxPath, "patch")
+	return result, nil
 }
 
 // applyReplace implements mode="replace": an exact, unique-match replace when possible, falling

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -79,6 +80,25 @@ func newSidecarID(toolCallID string) string {
 func toolCallCtx(ctx context.Context) (toolCallContext, bool) {
 	v, ok := ctx.Value(toolCallContextKey{}).(toolCallContext)
 	return v, ok
+}
+
+func attachDurableArtifactEvidence(ctx context.Context, result *ToolResult, path, operation string) {
+	if result == nil || !strings.HasPrefix(filepath.ToSlash(path), "/workspace/") {
+		return
+	}
+	if result.Meta == nil {
+		result.Meta = &ToolResultMeta{}
+	}
+	role := "parent"
+	if IsDelegatedDispatch(ctx) {
+		role = "worker"
+	}
+	(*result.Meta)[MetaDurableArtifact] = DurableArtifactEvidence{
+		Path:       filepath.ToSlash(path),
+		Operation:  operation,
+		ActorRunID: RequestIDFromContext(ctx),
+		ActorRole:  role,
+	}
 }
 
 // requestIDCtxKey carries the per-turn request_id (UUIDv7) down to execTool so the

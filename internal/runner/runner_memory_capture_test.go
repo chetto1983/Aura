@@ -31,7 +31,7 @@ func TestMemoryUpsertAcceptedCapture(t *testing.T) {
 		Statement: "The operator lives in Torino.", SourceMemoryIDs: []string{"message-7"},
 		ActorRunID: "01991f4c-7a00-7000-8000-000000000001", ActorRole: "parent",
 	}
-	ev := captureEvent("memory__memory_upsert_fact", "success", "call-memory", map[string]any{
+	ev := captureEvent("memory__memory_upsert_fact", "ok", "call-memory", map[string]any{
 		tools.MetaAcceptedFact: evidence,
 	})
 
@@ -66,7 +66,7 @@ func TestDurableArtifactAcceptedCapture(t *testing.T) {
 				Path: "/workspace/report.md", Operation: tc.operation,
 				ActorRunID: "01991f4c-7a00-7000-8000-000000000001", ActorRole: "worker",
 			}
-			ev := captureEvent(tc.tool, "success", "call-"+tc.tool, map[string]any{
+			ev := captureEvent(tc.tool, "ok", "call-"+tc.tool, map[string]any{
 				tools.MetaDurableArtifact: evidence,
 			})
 			got, ok := acceptedCaptureFromEvent(ctx, "conversation-a", ev)
@@ -99,15 +99,15 @@ func TestAcceptedCaptureProducerRejectsExcludedSources(t *testing.T) {
 		"shell output":       captureEvent("shell_exec", "success", "c2", map[string]any{tools.MetaDurableArtifact: validArtifact}),
 		"read output":        captureEvent("read_file", "success", "c3", map[string]any{tools.MetaDurableArtifact: validArtifact}),
 		"document output":    captureEvent("document_search", "success", "c4", map[string]any{tools.MetaAcceptedFact: validFact}),
-		"temporary artifact": captureEvent("write_file", "success", "c5", map[string]any{"temporary_artifact": validArtifact}),
+		"temporary artifact": captureEvent("write_file", "ok", "c5", map[string]any{"temporary_artifact": validArtifact}),
 		"assistant prose":    {LLMResponse: &agent.LLMResponse{Content: "I infer a durable fact."}},
 		"reasoning":          {LLMResponse: &agent.LLMResponse{Reasoning: "scratch-work conclusion"}},
 		"discard":            {Actions: agent.Actions{DiscardStreamed: true}},
 	}
 	secretFact := validFact
-	secretFact.Object = "sk-proj-1234567890abcdefghijklmnopqrstuvwxyz"
+	secretFact.Object = "sk-or-1234567890abcdefghijklmnopqrstuvwxyz"
 	secretFact.Statement = "API key is " + secretFact.Object
-	cases["secret"] = captureEvent("memory__memory_upsert_fact", "success", "c6", map[string]any{tools.MetaAcceptedFact: secretFact})
+	cases["secret"] = captureEvent("memory__memory_upsert_fact", "ok", "c6", map[string]any{tools.MetaAcceptedFact: secretFact})
 
 	for name, ev := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -117,7 +117,7 @@ func TestAcceptedCaptureProducerRejectsExcludedSources(t *testing.T) {
 		})
 	}
 	if _, ok := acceptedCaptureFromEvent(context.Background(), "conversation-a",
-		captureEvent("write_file", "success", "c7", map[string]any{tools.MetaDurableArtifact: validArtifact})); ok {
+		captureEvent("write_file", "ok", "c7", map[string]any{tools.MetaDurableArtifact: validArtifact})); ok {
 		t.Fatal("missing authenticated identity emitted capture")
 	}
 	if strings.TrimSpace(validFact.Statement) == "" {

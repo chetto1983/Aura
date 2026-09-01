@@ -3,6 +3,7 @@ package mcptools
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
@@ -18,7 +19,7 @@ func TestMemoryUpsertAcceptedCapture(t *testing.T) {
 	}
 	payload := mcp.ToolPayload{Structured: json.RawMessage(`{"statement":"The operator lives in Torino.","superseded":0,"refused":false}`)}
 
-	evidence, ok := acceptedFactEvidence(ctx, "memory_upsert_fact", args, payload)
+	evidence, ok := acceptedFactEvidence(ctx, memoryUpsertFactModelName, args, payload)
 	if !ok {
 		t.Fatal("successful memory_upsert_fact structured result emitted no evidence")
 	}
@@ -27,14 +28,28 @@ func TestMemoryUpsertAcceptedCapture(t *testing.T) {
 		t.Fatalf("evidence = %+v", evidence)
 	}
 
+	tool := &bridgedTool{}
+	tool.storeSpec(tools.Spec{Name: memoryUpsertFactModelName})
+	callCtx := tools.WithToolCallContext(ctx, "conversation-a", "call-memory", t.TempDir(), 4096)
+	result, err := tool.newResult(callCtx, args, payload)
+	if err != nil {
+		t.Fatalf("newResult: %v", err)
+	}
+	if result.Meta == nil {
+		t.Fatal("production bridge result has nil Meta")
+	}
+	if got, typed := (*result.Meta)[tools.MetaAcceptedFact].(tools.AcceptedFactEvidence); !typed || !reflect.DeepEqual(got, evidence) {
+		t.Fatalf("production bridge evidence = %#v, want %+v", (*result.Meta)[tools.MetaAcceptedFact], evidence)
+	}
+
 	for _, tc := range []struct {
 		name    string
 		tool    string
 		payload mcp.ToolPayload
 	}{
 		{name: "different tool", tool: "memory_recall", payload: payload},
-		{name: "refused", tool: "memory_upsert_fact", payload: mcp.ToolPayload{Structured: json.RawMessage(`{"statement":"x","refused":true}`)}},
-		{name: "unstructured", tool: "memory_upsert_fact", payload: mcp.ToolPayload{Text: "looks successful"}},
+		{name: "refused", tool: memoryUpsertFactModelName, payload: mcp.ToolPayload{Structured: json.RawMessage(`{"statement":"x","refused":true}`)}},
+		{name: "unstructured", tool: memoryUpsertFactModelName, payload: mcp.ToolPayload{Text: "looks successful"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got, accepted := acceptedFactEvidence(ctx, tc.tool, args, tc.payload); accepted {

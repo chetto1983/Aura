@@ -49,7 +49,7 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 		observeErr = err
 		return tools.ToolResult{}, boundedMCPError(err)
 	}
-	return b.newResult(ctx, payload)
+	return b.newResult(ctx, args, payload)
 }
 
 // newResult wraps an MCP tool's output. A mounted MCP server is
@@ -61,7 +61,7 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 // Meta. The MODEL never sees it — Meta is not part of the preview threaded back
 // into history — so a server cannot use the view channel to say something extra
 // to the model; it reaches only the surfaces that render (bridge_views.go).
-func (b *bridgedTool) newResult(ctx context.Context, payload mcp.ToolPayload) (tools.ToolResult, error) {
+func (b *bridgedTool) newResult(ctx context.Context, args map[string]any, payload mcp.ToolPayload) (tools.ToolResult, error) {
 	res, err := tools.NewResult(ctx, payload.Text)
 	if err != nil {
 		return tools.ToolResult{}, err
@@ -75,6 +75,12 @@ func (b *bridgedTool) newResult(ctx context.Context, payload mcp.ToolPayload) (t
 			res.Meta = &tools.ToolResultMeta{}
 		}
 		(*res.Meta)[viewMetaKey] = descriptor
+	}
+	if evidence, ok := acceptedFactEvidence(ctx, b.Spec().Name, args, payload); ok {
+		if res.Meta == nil {
+			res.Meta = &tools.ToolResultMeta{}
+		}
+		(*res.Meta)[tools.MetaAcceptedFact] = evidence
 	}
 	return res, nil
 }

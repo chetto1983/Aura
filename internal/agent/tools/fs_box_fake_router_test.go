@@ -376,7 +376,8 @@ func TestDurableArtifactAcceptedCapture(t *testing.T) {
 			}
 			return usersandbox.ExecResult{}
 		}}
-		res, err := (&WriteFile{Router: routerWith(be)}).Execute(boxCtx(t), json.RawMessage(
+		ctx := WithRequestID(boxCtx(t), "run-parent")
+		res, err := (&WriteFile{Router: routerWith(be)}).Execute(ctx, json.RawMessage(
 			`{"path":"/workspace/report.md","content":"durable"}`))
 		if err != nil {
 			t.Fatalf("write_file: %v", err)
@@ -393,7 +394,8 @@ func TestDurableArtifactAcceptedCapture(t *testing.T) {
 			}
 			return usersandbox.ExecResult{Stdout: []byte("before\n")}
 		}}
-		res, err := (&Patch{Router: routerWith(be)}).Execute(boxCtx(t), json.RawMessage(
+		ctx := WithRequestID(boxCtx(t), "run-parent")
+		res, err := (&Patch{Router: routerWith(be)}).Execute(ctx, json.RawMessage(
 			`{"mode":"replace","path":"/workspace/report.md","old_string":"before","new_string":"after"}`))
 		if err != nil {
 			t.Fatalf("patch: %v", err)

@@ -107,8 +107,13 @@ func (t *WriteFile) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 		return ToolResult{}, fmt.Errorf("write_file: post-write verification failed for %s: on-disk content hash "+
 			"differs from the intended write. The write did not persist correctly — re-read the file and retry: %w", boxPath, verr)
 	}
-	return NewResult(ctx, fmt.Sprintf("wrote %d bytes to %s\nverified:%t — the on-disk content hash was confirmed; "+
+	result, err := NewResult(ctx, fmt.Sprintf("wrote %d bytes to %s\nverified:%t — the on-disk content hash was confirmed; "+
 		"do not re-read the file to check the write landed", len(a.Content), boxPath, verified))
+	if err != nil {
+		return ToolResult{}, err
+	}
+	attachDurableArtifactEvidence(ctx, &result, boxPath, "write")
+	return result, nil
 }
 
 // hasJSONKey reports whether raw's top-level object carries key, distinguishing an omitted field
