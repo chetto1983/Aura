@@ -76,7 +76,9 @@ func TestMemoryUpsertAcceptedCapture(t *testing.T) {
 	evidence := tools.AcceptedFactEvidence{
 		Subject: "operator", Predicate: "lives_in", Object: "Torino",
 		Statement: "The operator lives in Torino.", SourceMemoryIDs: []string{"message-7"},
-		ActorRunID: "01991f4c-7a00-7000-8000-000000000001", ActorRole: "parent",
+		ValidFrom: "2026-08-01T00:00:00Z", Supersedes: true,
+		SupersedesFactKey: strings.Repeat("b", 64),
+		ActorRunID:        "01991f4c-7a00-7000-8000-000000000001", ActorRole: "parent",
 	}
 	ev := captureEvent("memory__memory_upsert_fact", "ok", "call-memory", map[string]any{
 		tools.MetaAcceptedFact: evidence,
@@ -87,7 +89,9 @@ func TestMemoryUpsertAcceptedCapture(t *testing.T) {
 		t.Fatal("successful memory_upsert_fact evidence emitted no AcceptedCapture")
 	}
 	if got.SourceKind != CaptureSourceExplicitFact || got.Subject != evidence.Subject ||
-		got.Predicate != evidence.Predicate || got.Object != evidence.Object || got.Statement != evidence.Statement {
+		got.Predicate != evidence.Predicate || got.Object != evidence.Object || got.Statement != evidence.Statement ||
+		!got.Supersedes || got.TargetFactKey != evidence.SupersedesFactKey ||
+		got.ValidFrom.Format(time.RFC3339) != evidence.ValidFrom {
 		t.Fatalf("fact capture = %+v, want canonical evidence %+v", got, evidence)
 	}
 	if got.IdentityID != "identity-a" || got.ActorRunID != evidence.ActorRunID || got.ActorRole != "parent" ||

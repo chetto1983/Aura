@@ -12,6 +12,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/secret"
 	"github.com/chetto1983/aura/internal/toolinvocations"
@@ -27,37 +28,19 @@ const (
 	defaultMemoryCaptureRetryDelay   = 25 * time.Millisecond
 )
 
-// CaptureSourceKind is the closed set of direct evidence sources eligible for
-// automatic durable capture.
-type CaptureSourceKind string
+// CaptureSourceKind is the graph sink's closed direct-evidence enum.
+type CaptureSourceKind = arcadedb.CaptureSourceKind
 
 const (
 	// CaptureSourceExplicitFact identifies canonical memory_upsert_fact evidence.
-	CaptureSourceExplicitFact CaptureSourceKind = "explicit_fact"
+	CaptureSourceExplicitFact = arcadedb.CaptureSourceExplicitFact
 	// CaptureSourceDurableArtifact identifies an allowlisted persisted file.
-	CaptureSourceDurableArtifact CaptureSourceKind = "durable_artifact"
+	CaptureSourceDurableArtifact = arcadedb.CaptureSourceDurableArtifact
 )
 
-// AcceptedCapture is the runner-boundary value admitted to the durability
-// queue. Sequence is assigned by MemoryCaptureQueue, never by a producer.
-type AcceptedCapture struct {
-	IdempotencyKey string
-	IdentityID     string
-	ActorRunID     string
-	ActorRole      string
-	SourceKind     CaptureSourceKind
-	ConversationID string
-	ToolCallID     string
-	SourceRefs     []string
-	Subject        string
-	Predicate      string
-	Object         string
-	Statement      string
-	ArtifactRef    string
-	Confidence     float64
-	ObservedAt     time.Time
-	Sequence       uint64
-}
+// AcceptedCapture is the runner-boundary alias of the graph sink contract.
+// Sequence is assigned by MemoryCaptureQueue, never by a producer.
+type AcceptedCapture = arcadedb.AcceptedCapture
 
 // MemoryCaptureSink durably applies one accepted capture. Calls are serialized
 // by MemoryCaptureQueue.
@@ -355,6 +338,14 @@ func acceptedCaptureFromEvent(ctx context.Context, conversationID string, ev *ag
 		base.ActorRunID, base.ActorRole = evidence.ActorRunID, evidence.ActorRole
 		base.Subject, base.Predicate, base.Object, base.Statement =
 			evidence.Subject, evidence.Predicate, evidence.Object, evidence.Statement
+		validFrom, validFromOK := acceptedCaptureTime(evidence.ValidFrom)
+		validTo, validToOK := acceptedCaptureTime(evidence.ValidTo)
+		if !validFromOK || !validToOK {
+			return AcceptedCapture{}, false
+		}
+		base.ValidFrom, base.ValidTo = validFrom, validTo
+		base.Supersedes = evidence.Supersedes || strings.TrimSpace(evidence.SupersedesFactKey) != ""
+		base.TargetFactKey = strings.TrimSpace(evidence.SupersedesFactKey)
 	case "write_file", "patch":
 		evidence, ok := ti.Meta[tools.MetaDurableArtifact].(tools.DurableArtifactEvidence)
 		expectedOperation := "write"
@@ -398,7 +389,19 @@ func captureIdempotencyKey(capture AcceptedCapture) string {
 		capture.IdentityID, string(capture.SourceKind), capture.ActorRunID, capture.ActorRole,
 		capture.ConversationID, capture.ToolCallID, capture.Subject, capture.Predicate,
 		capture.Object, capture.Statement, capture.ArtifactRef,
+		capture.ValidFrom.UTC().Format(time.RFC3339Nano),
+		capture.ValidTo.UTC().Format(time.RFC3339Nano),
+		fmt.Sprint(capture.Supersedes), capture.TargetFactKey,
 	}
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 	return hex.EncodeToString(sum[:])
+}
+
+func acceptedCaptureTime(value string) (time.Time, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, true
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	return parsed.UTC(), err == nil
 }

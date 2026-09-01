@@ -39,13 +39,17 @@ const (
 // AcceptedFactEvidence is the closed structured projection of one successful
 // memory_upsert_fact call. It deliberately excludes unrestricted result text.
 type AcceptedFactEvidence struct {
-	Subject         string
-	Predicate       string
-	Object          string
-	Statement       string
-	SourceMemoryIDs []string
-	ActorRunID      string
-	ActorRole       string
+	Subject           string
+	Predicate         string
+	Object            string
+	Statement         string
+	ValidFrom         string
+	ValidTo           string
+	Supersedes        bool
+	SupersedesFactKey string
+	SourceMemoryIDs   []string
+	ActorRunID        string
+	ActorRole         string
 }
 
 // DurableArtifactEvidence identifies one successfully persisted filesystem

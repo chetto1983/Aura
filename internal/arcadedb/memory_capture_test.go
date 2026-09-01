@@ -148,12 +148,14 @@ func TestAcceptedCapture_Idempotent(t *testing.T) {
 	wantRefs := []string{
 		"capture:" + first.IdempotencyKey,
 		"capture:" + second.IdempotencyKey,
-		"conversation:conversation-a",
 		"tool_call:" + first.ToolCallID,
 		"tool_call:" + second.ToolCallID,
 	}
 	allRefs := []string{}
 	for _, source := range fact.Sources {
+		if count := countStrings(source.MemoryIDs, "conversation:conversation-a"); count != 1 {
+			t.Fatalf("source %+v carries the shared conversation ref %d times, want once", source, count)
+		}
 		allRefs = append(allRefs, source.MemoryIDs...)
 	}
 	for _, ref := range wantRefs {

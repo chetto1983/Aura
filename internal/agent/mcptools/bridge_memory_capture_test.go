@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
@@ -14,8 +15,10 @@ func TestMemoryUpsertAcceptedCapture(t *testing.T) {
 	ctx := tools.WithRequestID(context.Background(), "run-parent")
 	args := map[string]any{
 		"subject": "operator", "predicate": "lives_in", "object": "Torino",
-		"statement": "The operator lives in Torino.",
-		"source":    map[string]any{"memory_ids": []any{"message-7"}},
+		"statement":  "The operator lives in Torino.",
+		"valid_from": "2026-09-01T01:02:03Z", "supersedes": true,
+		"supersedes_fact_key": strings.Repeat("a", 64),
+		"source":              map[string]any{"memory_ids": []any{"message-7"}},
 	}
 	payload := mcp.ToolPayload{Structured: json.RawMessage(`{"statement":"The operator lives in Torino.","superseded":0,"refused":false}`)}
 
@@ -24,7 +27,9 @@ func TestMemoryUpsertAcceptedCapture(t *testing.T) {
 		t.Fatal("successful memory_upsert_fact structured result emitted no evidence")
 	}
 	if evidence.Subject != "operator" || evidence.Predicate != "lives_in" || evidence.Object != "Torino" ||
-		evidence.Statement != "The operator lives in Torino." || evidence.ActorRunID != "run-parent" || evidence.ActorRole != "parent" {
+		evidence.Statement != "The operator lives in Torino." || evidence.ActorRunID != "run-parent" || evidence.ActorRole != "parent" ||
+		evidence.ValidFrom != "2026-09-01T01:02:03Z" || !evidence.Supersedes ||
+		evidence.SupersedesFactKey != strings.Repeat("a", 64) {
 		t.Fatalf("evidence = %+v", evidence)
 	}
 

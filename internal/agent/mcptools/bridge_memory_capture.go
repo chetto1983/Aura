@@ -29,13 +29,18 @@ func acceptedFactEvidence(
 	}
 	actor := actorFromContext(ctx)
 	evidence := tools.AcceptedFactEvidence{
-		Subject:    stringArg(args, "subject"),
-		Predicate:  stringArg(args, "predicate"),
-		Object:     stringArg(args, "object"),
-		Statement:  strings.TrimSpace(outcome.Statement),
-		ActorRunID: actor.RunID,
-		ActorRole:  actor.Role,
+		Subject:           stringArg(args, "subject"),
+		Predicate:         stringArg(args, "predicate"),
+		Object:            stringArg(args, "object"),
+		Statement:         strings.TrimSpace(outcome.Statement),
+		ValidFrom:         stringArg(args, "valid_from"),
+		ValidTo:           stringArg(args, "valid_to"),
+		Supersedes:        boolArg(args, "supersedes"),
+		SupersedesFactKey: stringArg(args, "supersedes_fact_key"),
+		ActorRunID:        actor.RunID,
+		ActorRole:         actor.Role,
 	}
+	evidence.Supersedes = evidence.Supersedes || evidence.SupersedesFactKey != ""
 	if source, ok := args["source"].(map[string]any); ok {
 		evidence.SourceMemoryIDs = stringSliceArg(source["memory_ids"])
 	}
@@ -44,6 +49,11 @@ func acceptedFactEvidence(
 		return tools.AcceptedFactEvidence{}, false
 	}
 	return evidence, true
+}
+
+func boolArg(args map[string]any, key string) bool {
+	value, _ := args[key].(bool)
+	return value
 }
 
 func stringArg(args map[string]any, key string) string {
