@@ -137,6 +137,23 @@ def mixed_tier_fixture() -> dict[str, object]:
     }
 
 
+def batch_atomicity_fixture() -> dict[str, object]:
+    return {
+        "scenario": "batch_atomicity",
+        "executed_count": 5,
+        "before_hash": "before",
+        "committed_hash": "committed",
+        "rollback_hash": "committed",
+        "replay_hash": "committed",
+        "cross_identity_before_hash": "foreign",
+        "cross_identity_after_hash": "foreign",
+        "replayed": True,
+        "logical_effects": 1,
+        "first_error_code": "target_not_found",
+        "idempotency_conflict_observed": True,
+    }
+
+
 class ManifestTest(unittest.TestCase):
     def test_default_manifest_is_exactly_one_hundred_points(self) -> None:
         manifest = evaluator.load_manifest(None)
@@ -275,7 +292,6 @@ class MixedTierRecallEvaluatorTest(unittest.TestCase):
                 mixed["response"]["tier_counts"][tier] = 0
                 mixed["returned_tier_counts"][tier] = 0
                 self.assertFalse(self.evaluate(evidence)["passed"])
-
     def test_active_or_foreign_source_leakage_fails(self) -> None:
         for field in ("active_source_count", "foreign_source_count"):
             with self.subTest(field=field):
@@ -336,6 +352,36 @@ class MixedTierRecallEvaluatorTest(unittest.TestCase):
                 evidence = mixed_tier_fixture()
                 evidence["surface"].update(surface)
                 self.assertFalse(self.evaluate(evidence)["passed"])
+
+
+class BatchAtomicityEvaluatorTest(unittest.TestCase):
+    def evaluate(self, evidence: dict[str, object]) -> dict[str, object]:
+        self.assertTrue(
+            hasattr(evaluator.phase49, "evaluate_batch_atomicity"),
+            "batch_atomicity evaluator entrypoint is missing",
+        )
+        return evaluator.phase49.evaluate_batch_atomicity(evidence)
+
+    def test_complete_live_batch_evidence_passes(self) -> None:
+        self.assertTrue(self.evaluate(batch_atomicity_fixture())["passed"])
+
+    def test_missing_execution_or_state_hash_fails(self) -> None:
+        evidence = batch_atomicity_fixture()
+        evidence["executed_count"] = 0
+        self.assertFalse(self.evaluate(evidence)["passed"])
+        evidence = batch_atomicity_fixture()
+        evidence["committed_hash"] = ""
+        self.assertFalse(self.evaluate(evidence)["passed"])
+
+    def test_rollback_replay_cross_identity_and_duplicate_effect_fail(self) -> None:
+        for field in ("rollback_hash", "replay_hash", "cross_identity_after_hash"):
+            with self.subTest(field=field):
+                evidence = batch_atomicity_fixture()
+                evidence[field] = "changed"
+                self.assertFalse(self.evaluate(evidence)["passed"])
+        evidence = batch_atomicity_fixture()
+        evidence["logical_effects"] = 2
+        self.assertFalse(self.evaluate(evidence)["passed"])
 
 
 class GoTestParserTest(unittest.TestCase):
