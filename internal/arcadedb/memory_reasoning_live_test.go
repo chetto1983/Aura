@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -69,6 +70,12 @@ func observeReasoningReads(client *Client) *reasoningReadCounter {
 
 func reasoningLiveClient(t *testing.T) *Client {
 	t.Helper()
+	if strings.TrimSpace(os.Getenv("ARCADEDB_URL")) == "" {
+		t.Fatal("ARCADEDB_URL is required: reasoning lifecycle evidence must not skip green")
+	}
+	if strings.TrimSpace(os.Getenv("ARCADEDB_PASSWORD")) == "" {
+		t.Fatal("ARCADEDB_PASSWORD is required: reasoning lifecycle evidence must authenticate live")
+	}
 	client := disposableArcadeClient(t)
 	if err := client.EnsureMemorySchema(context.Background()); err != nil {
 		t.Fatalf("reasoning schema: %v", err)
