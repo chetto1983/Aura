@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 11
+open_count: 15
 waived_count: 0
 fixed_count: 1
-total_count: 12
-last_updated: 2026-09-01T00:34:17.388Z
+total_count: 16
+last_updated: 2026-09-01T01:31:03.436Z
 ---
 
 # Broken Windows Ledger
@@ -27,6 +27,10 @@ last_updated: 2026-09-01T00:34:17.388Z
 | 10 | 49 | deviation | internal/arcadedb/memory_reasoning_validate.go |  | Split reasoning validation and redaction from storage/search so both production files remain under the 600-line cap | open |  | 2026-09-01T00:33:13.852Z |  |
 | 11 | 49 | deviation | docs/arcadedb-mcp-live-tools.json |  | Regenerated the canonical MCP manifest for the additive explicit reasoning selector and result schema | open |  | 2026-09-01T00:33:14.263Z |  |
 | 12 | 49 | deviation | .planning/STATE.md |  | Plan 49-04 advanced sequentially to Plan 5, but update-progress left Plan 49-08 prose activity and 54/62 progress; canonical and prose fields were synchronized to 55/62 | open |  | 2026-09-01T00:34:17.388Z |  |
+| 13 | 49 | deviation | internal/arcadedb/memory_recall_exclusion.go |  | Live indexed collection NOT IN filtering dropped eligible historical recall evidence; replaced with bounded scalar exclusions. | open |  | 2026-09-01T01:31:02.219Z |  |
+| 14 | 49 | deviation | cmd/arcadedb-mcp/memory_live_integration_helpers_test.go |  | Shared live harness needed strict dependencies, per-call headers, tenant control, and MCP receiving middleware for complete proof. | open |  | 2026-09-01T01:31:02.607Z |  |
+| 15 | 49 | deviation | scripts/agent_memory_eval_phase49.py |  | Phase 49 evaluator split module and calculated markers were required to preserve the 600-line cap and honest route evidence. | open |  | 2026-09-01T01:31:03.002Z |  |
+| 16 | 49 | deviation | .planning/STATE.md |  | Out-of-order Plan 49-13 close required manual activity/progress synchronization while preserving current Plan 5. | open |  | 2026-09-01T01:31:03.436Z |  |
 
 ````json
 [
@@ -172,6 +176,54 @@ last_updated: 2026-09-01T00:34:17.388Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-01T00:34:17.388Z",
+    "resolved_at": null
+  },
+  {
+    "id": 13,
+    "kind": "deviation",
+    "phase": "49",
+    "file": "internal/arcadedb/memory_recall_exclusion.go",
+    "line": null,
+    "description": "Live indexed collection NOT IN filtering dropped eligible historical recall evidence; replaced with bounded scalar exclusions.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T01:31:02.219Z",
+    "resolved_at": null
+  },
+  {
+    "id": 14,
+    "kind": "deviation",
+    "phase": "49",
+    "file": "cmd/arcadedb-mcp/memory_live_integration_helpers_test.go",
+    "line": null,
+    "description": "Shared live harness needed strict dependencies, per-call headers, tenant control, and MCP receiving middleware for complete proof.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T01:31:02.607Z",
+    "resolved_at": null
+  },
+  {
+    "id": 15,
+    "kind": "deviation",
+    "phase": "49",
+    "file": "scripts/agent_memory_eval_phase49.py",
+    "line": null,
+    "description": "Phase 49 evaluator split module and calculated markers were required to preserve the 600-line cap and honest route evidence.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T01:31:03.002Z",
+    "resolved_at": null
+  },
+  {
+    "id": 16,
+    "kind": "deviation",
+    "phase": "49",
+    "file": ".planning/STATE.md",
+    "line": null,
+    "description": "Out-of-order Plan 49-13 close required manual activity/progress synchronization while preserving current Plan 5.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T01:31:03.436Z",
     "resolved_at": null
   }
 ]

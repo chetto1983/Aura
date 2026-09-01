@@ -5,16 +5,16 @@ current_phase: 49
 current_phase_name: Memory tiers
 current_plan: 5
 status: executing
-stopped_at: Completed 49-04-PLAN.md
-last_updated: "2026-09-01T00:33:35.185Z"
+stopped_at: Completed 49-13-PLAN.md
+last_updated: "2026-09-01T01:30:02.742Z"
 last_activity: 2026-09-01
-last_activity_desc: Completed Phase 49 Plan 04
-state_head: 37fe5bfb6ddc518734636946ad2f4a7bcb160ca8
+last_activity_desc: Completed Phase 49 Plan 13
+state_head: f6d43d96a670dd635679444783080b37de9cff49
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 62
-  completed_plans: 55
+  completed_plans: 56
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -65,9 +65,9 @@ retaining byte caps, and `TestBridgedTool_Execute_MarksResultTrusted` pins MCP r
 The remaining unchecked MCP-02 item in REQUIREMENTS is its separate live unlisted-server proof;
 it is a roadmap acceptance obligation, not an unrecorded Calendar fork gap.
 
-Last activity: 2026-09-01 — Completed Phase 49 Plan 04
+Last activity: 2026-09-01 — Completed Phase 49 Plan 13
 
-Progress: [█████████░] 89% (55/62 milestone plans)
+Progress: [█████████░] 90% (56/62 milestone plans)
 
 ## Performance Metrics
 
@@ -120,6 +120,7 @@ Progress: [█████████░] 89% (55/62 milestone plans)
 | Phase 49 P03 | 51 min | 2 tasks | 11 files |
 | Phase 49 P08 | 29min | 2 tasks | 11 files |
 | Phase 49 P04 | 33min | 3 tasks | 9 files |
+| Phase 49 P13 | 48min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -260,6 +261,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 49]: Explicit mode=reasoning dispatches before ordinary RecallMemory; semantic/recent/open/scroll cannot query reasoning storage.
 - [Phase 49]: Reasoning persistence stores only provider-visible summaries, SHA-256 argument digests, redacted bounded observations, and validated references.
 - [Phase 49]: Reasoning terminal expiry is monotone: success caps at 30 days, failure/cancellation at 7 days, and source or existing expiry may only shorten it.
+- [Phase 49]: Use MCP server receiving middleware for same-call memory recall telemetry.
+- [Phase 49]: Use bounded scalar active-conversation predicates after live ArcadeDB collection filtering dropped eligible history.
+- [Phase 49]: Extend the split Phase 49 evaluator module and keep agent_memory_eval.py under 600 lines.
 
 ### Pending Todos
 
@@ -324,8 +328,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-01T00:33:34.784Z
-Stopped at: Completed 49-04-PLAN.md
+Last session: 2026-09-01T01:30:02.364Z
+Stopped at: Completed 49-13-PLAN.md
 The accepted fresh-image delivery envelope is reconciled in 51-VALIDATION.md at 6/6 and 9.9/10.
 The final image passed the complete repository Playwright suite (145 pass, 39 intentional skips,
 zero failures) and four hot-route cycles without a restart or an OpenRouter request.
