@@ -532,10 +532,7 @@ func assembleChatEnv(
 		// plan 02) — avoids the classic Go nil-interface trap (D-06).
 		Steer: runner.SteerInboxOrNil(steerInbox),
 	}
-	if reasoningMemory != nil {
-		deps.ReasoningGraphSink = reasoningMemory.sink
-		deps.ReasoningDeletion = reasoningMemory.deletion
-	}
+	wireChatReasoningMemory(&deps, reasoningMemory)
 	run := runner.New(deps)
 	if err := run.ValidateCompactionConfig(); err != nil {
 		return nil, fmt.Errorf("chat boot: %w", err)

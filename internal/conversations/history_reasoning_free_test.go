@@ -72,6 +72,9 @@ func TestHistoryReasoningFree_GraphResidentFixture(t *testing.T) {
 	if strings.Contains(string(raw), fixture.trace) {
 		t.Fatalf("history rebuild injected graph reasoning: %s", raw)
 	}
+	if transcript := renderRoundsForSummary(messages); strings.Contains(transcript, fixture.trace) {
+		t.Fatalf("compaction transcript injected graph reasoning: %s", transcript)
+	}
 
 	// Prove the fixture is real and readable through an explicit action; the zero-read
 	// assertion above is therefore not an empty-store negative.

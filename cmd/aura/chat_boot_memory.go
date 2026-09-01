@@ -78,6 +78,10 @@ func newChatReasoningMemory(cfg *config.Config) *chatReasoningMemory {
 	return &chatReasoningMemory{sink: store, retention: store, deletion: store}
 }
 
-func wireChatReasoningMemory(*runner.Deps, *chatReasoningMemory) {
-	// TDD RED: the isolation-preserving production wiring lands with Task 3 GREEN.
+func wireChatReasoningMemory(deps *runner.Deps, memory *chatReasoningMemory) {
+	if deps == nil || memory == nil {
+		return
+	}
+	deps.ReasoningGraphSink = memory.sink
+	deps.ReasoningDeletion = memory.deletion
 }
