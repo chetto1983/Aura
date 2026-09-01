@@ -124,6 +124,9 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 		if err := r.persistToolTurnEvent(ctx, tr, ev.Actions.ToolInvocation, ev); err != nil {
 			return err
 		}
+		if err := r.acceptMemoryCapture(ctx, tr, ev); err != nil {
+			return err
+		}
 		// The ledger is operational observability (migration 0011 header), NOT a
 		// permission system: a transient insert failure (pg hiccup, pool exhaustion,
 		// mid-round cancel) must NOT abort the user-facing turn. Log and continue.
@@ -140,7 +143,10 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 		r.observeReasoning(tr, ev)
 	}
 	if ev.LLMResponse != nil && ev.LLMResponse.FinishReason != "" {
-		return r.persistAssistantAnswer(ctx, tr, ev)
+		if err := r.persistAssistantAnswer(ctx, tr, ev); err != nil {
+			return err
+		}
+		return r.flushMemoryCaptures(ctx, tr.lastAcceptedCapture)
 	}
 	return nil
 }

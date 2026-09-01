@@ -29,6 +29,8 @@ const defaultTitleTimeout = 30 * time.Second
 // cannot wedge shutdown forever.
 const defaultStopTimeout = 10 * time.Second
 
+const defaultMemoryCaptureFlushTimeout = 20 * time.Second
+
 // Deps are the Runner's constructor inputs: the three consumer-side Stores (narrow
 // interfaces, D-A2-02), the LLM client + tool registry the fresh per-round LlmAgent
 // is built from (D-A1-05/Pattern-4), the llm.Config (model + L2 context window
@@ -41,6 +43,15 @@ type Deps struct {
 	CacheMetrics    CacheMetricStore
 	ToolInvocations ToolInvocationStore
 	MemoryContext   MemoryContextProvider
+	// MemoryCaptureSink is the sole durable destination for direct-evidence
+	// captures. Nil keeps automatic capture disabled until production composition
+	// provides the identity-scoped graph sink.
+	MemoryCaptureSink MemoryCaptureSink
+	// MemoryCaptureQueue configures the bounded serial writer without adding an
+	// environment-variable authority at the runner layer.
+	MemoryCaptureQueue MemoryCaptureQueueConfig
+	// MemoryCaptureFlushTimeout bounds the terminal durability barrier.
+	MemoryCaptureFlushTimeout time.Duration
 	// ConversationProjector receives post-commit eligible-turn offers. It is
 	// fail-soft because PostgreSQL remains the conversation authority.
 	ConversationProjector *ConversationProjector
@@ -159,6 +170,10 @@ func New(d Deps) *Runner {
 	if stopTimeout <= 0 {
 		stopTimeout = defaultStopTimeout
 	}
+	memoryCaptureFlushTimeout := d.MemoryCaptureFlushTimeout
+	if memoryCaptureFlushTimeout <= 0 {
+		memoryCaptureFlushTimeout = defaultMemoryCaptureFlushTimeout
+	}
 	// The workspace announced to the model (#52/D-41) is where its shell starts:
 	// shell_exec with an empty WorkspaceRoot runs in the Aura process's cwd, so the
 	// hint mirrors exactly that (Claude-Code parity: the harness tells the model its
@@ -183,45 +198,49 @@ func New(d Deps) *Runner {
 	// boot health-check logs an unreachable sidecar but never fails boot, so an
 	// MCP-free `aura chat` is not coupled to embed availability (Open-Q #2).
 	r := &Runner{
-		Conv:                     d.Conv,
-		pause:                    d.Pause,
-		approvalExpiry:           d.ApprovalExpiry,
-		identity:                 d.Identity,
-		cacheMetrics:             d.CacheMetrics,
-		toolInvocations:          d.ToolInvocations,
-		memoryContext:            d.MemoryContext,
-		conversationProjector:    d.ConversationProjector,
-		reasoningGraphSink:       d.ReasoningGraphSink,
-		reasoningDeletion:        d.ReasoningDeletion,
-		runtime:                  runtime,
-		registry:                 d.Registry,
-		location:                 tools.LocationOrUTC(d.Timezone),
-		profiles:                 d.Profiles,
-		runDir:                   d.RunDir,
-		previewCap:               d.PreviewCap,
-		historyCap:               d.HistoryCap,
-		evictAfter:               d.EvictAfter,
-		compactionEnabled:        d.CompactionEnabled,
-		compactionModel:          d.CompactionModel,
-		memoryPreloadEnabled:     d.MemoryPreloadEnabled,
-		workspace:                workspace,
-		reasoningPersistMaxRunes: d.ReasoningPersistMaxRunes,
-		gatewayOwnsToolStarts:    d.Gateway.OwnsToolStartRows(),
-		titleTimeout:             titleTimeout,
-		stopTimeout:              stopTimeout,
-		resumeHook:               d.ResumeHook,
-		hookManager:              d.HookManager,
-		verificationStore:        d.VerificationStore,
-		verificationDetector:     d.VerificationDetector,
-		alwaysBlock:              d.AlwaysBlock,
-		classifier:               classifier,
-		breaker:                  d.Breaker,
-		gateway:                  d.Gateway,
-		shareRevoker:             d.ShareRevoker,
-		resumeCommitter:          d.ResumeCommitter,
-		steer:                    d.Steer,
+		Conv:                      d.Conv,
+		pause:                     d.Pause,
+		approvalExpiry:            d.ApprovalExpiry,
+		identity:                  d.Identity,
+		cacheMetrics:              d.CacheMetrics,
+		toolInvocations:           d.ToolInvocations,
+		memoryContext:             d.MemoryContext,
+		memoryCaptureFlushTimeout: memoryCaptureFlushTimeout,
+		conversationProjector:     d.ConversationProjector,
+		reasoningGraphSink:        d.ReasoningGraphSink,
+		reasoningDeletion:         d.ReasoningDeletion,
+		runtime:                   runtime,
+		registry:                  d.Registry,
+		location:                  tools.LocationOrUTC(d.Timezone),
+		profiles:                  d.Profiles,
+		runDir:                    d.RunDir,
+		previewCap:                d.PreviewCap,
+		historyCap:                d.HistoryCap,
+		evictAfter:                d.EvictAfter,
+		compactionEnabled:         d.CompactionEnabled,
+		compactionModel:           d.CompactionModel,
+		memoryPreloadEnabled:      d.MemoryPreloadEnabled,
+		workspace:                 workspace,
+		reasoningPersistMaxRunes:  d.ReasoningPersistMaxRunes,
+		gatewayOwnsToolStarts:     d.Gateway.OwnsToolStartRows(),
+		titleTimeout:              titleTimeout,
+		stopTimeout:               stopTimeout,
+		resumeHook:                d.ResumeHook,
+		hookManager:               d.HookManager,
+		verificationStore:         d.VerificationStore,
+		verificationDetector:      d.VerificationDetector,
+		alwaysBlock:               d.AlwaysBlock,
+		classifier:                classifier,
+		breaker:                   d.Breaker,
+		gateway:                   d.Gateway,
+		shareRevoker:              d.ShareRevoker,
+		resumeCommitter:           d.ResumeCommitter,
+		steer:                     d.Steer,
 		// stopDone starts nil: the first waitWorkers arms the wg-drain waiter, and each
 		// clean drain resets it to nil so a later Stop re-arms (WR-02).
+	}
+	if d.MemoryCaptureSink != nil {
+		r.memoryCaptures = NewMemoryCaptureQueue(d.MemoryCaptureSink, d.MemoryCaptureQueue)
 	}
 	// Default to the pool-less split committer when the composition root injected none
 	// (D-03): pool-owning callers pass a *PoolResumeCommitter for atomic cross-store

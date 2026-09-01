@@ -195,15 +195,51 @@ func TestMemoryCaptureQueueOrder(t *testing.T) {
 			t.Fatalf("capture %d = %+v, want sequence %d object %q", i, got[i], i+1, want)
 		}
 	}
+
+	t.Run("bounded backpressure", func(t *testing.T) {
+		sink := &recordingCaptureSink{started: make(chan struct{}), release: make(chan struct{})}
+		queue := NewMemoryCaptureQueue(sink, MemoryCaptureQueueConfig{Capacity: 1, WriteTimeout: time.Second})
+		if _, err := queue.Accept(t.Context(), queueCapture("first")); err != nil {
+			t.Fatalf("Accept first: %v", err)
+		}
+		<-sink.started
+		if _, err := queue.Accept(t.Context(), queueCapture("second")); err != nil {
+			t.Fatalf("Accept second: %v", err)
+		}
+		third := make(chan error, 1)
+		go func() {
+			_, err := queue.Accept(t.Context(), queueCapture("third"))
+			third <- err
+		}()
+		select {
+		case err := <-third:
+			t.Fatalf("third Accept bypassed full queue backpressure: %v", err)
+		case <-time.After(30 * time.Millisecond):
+		}
+		close(sink.release)
+		if err := <-third; err != nil {
+			t.Fatalf("third Accept after capacity freed: %v", err)
+		}
+		if err := queue.FlushThrough(t.Context(), queue.AcceptedSequence()); err != nil {
+			t.Fatalf("FlushThrough after backpressure: %v", err)
+		}
+	})
 }
 
 func TestMemoryCaptureTerminalBarrier(t *testing.T) {
 	t.Run("runner completion path", func(t *testing.T) {
 		r, _, _ := newTestRunner(t, nil)
 		sink := &recordingCaptureSink{started: make(chan struct{}), release: make(chan struct{})}
+		defer func() {
+			select {
+			case <-sink.release:
+			default:
+				close(sink.release)
+			}
+		}()
 		r.memoryCaptures = NewMemoryCaptureQueue(sink, MemoryCaptureQueueConfig{Capacity: 1, WriteTimeout: time.Second})
 		ctx := identityctx.WithIdentityID(t.Context(), "identity-a")
-		tr := &turnTracker{convID: "conversation-a", llmRuntime: r.llmSnapshot(ctx)}
+		tr := &turnTracker{convID: newConvID(t), llmRuntime: r.llmSnapshot(ctx)}
 		evidence := tools.DurableArtifactEvidence{
 			Path: "/workspace/report.md", Operation: "write",
 			ActorRunID: "01991f4c-7a00-7000-8000-000000000001", ActorRole: "parent",
@@ -286,26 +322,53 @@ func TestMemoryCaptureRetryDiscard(t *testing.T) {
 
 func TestMemoryCaptureStop(t *testing.T) {
 	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
-	sink := &recordingCaptureSink{started: make(chan struct{}), release: make(chan struct{})}
-	queue := NewMemoryCaptureQueue(sink, MemoryCaptureQueueConfig{WriteTimeout: time.Second})
-	if _, err := queue.Accept(t.Context(), queueCapture("stop")); err != nil {
-		t.Fatalf("Accept: %v", err)
-	}
-	select {
-	case <-sink.started:
-	case <-time.After(time.Second):
-		t.Fatal("sink did not start")
-	}
-	short, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
-	defer cancel()
-	if err := queue.Close(short); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("first Close error = %v, want deadline", err)
-	}
-	close(sink.release)
-	if err := queue.Close(t.Context()); err != nil {
-		t.Fatalf("second Close: %v", err)
-	}
-	if _, err := queue.Accept(t.Context(), queueCapture("late")); err == nil {
-		t.Fatal("Accept after Close succeeded")
-	}
+	t.Run("queue close", func(t *testing.T) {
+		sink := &recordingCaptureSink{started: make(chan struct{}), release: make(chan struct{})}
+		queue := NewMemoryCaptureQueue(sink, MemoryCaptureQueueConfig{WriteTimeout: time.Second})
+		if _, err := queue.Accept(t.Context(), queueCapture("stop")); err != nil {
+			t.Fatalf("Accept: %v", err)
+		}
+		select {
+		case <-sink.started:
+		case <-time.After(time.Second):
+			t.Fatal("sink did not start")
+		}
+		short, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+		defer cancel()
+		if err := queue.Close(short); !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("first Close error = %v, want deadline", err)
+		}
+		close(sink.release)
+		if err := queue.Close(t.Context()); err != nil {
+			t.Fatalf("second Close: %v", err)
+		}
+		if _, err := queue.Accept(t.Context(), queueCapture("late")); err == nil {
+			t.Fatal("Accept after Close succeeded")
+		}
+	})
+
+	t.Run("runner stop drains watermark", func(t *testing.T) {
+		r, _, _ := newTestRunner(t, nil)
+		sink := &recordingCaptureSink{started: make(chan struct{}), release: make(chan struct{})}
+		r.memoryCaptures = NewMemoryCaptureQueue(sink, MemoryCaptureQueueConfig{WriteTimeout: time.Second})
+		if _, err := r.memoryCaptures.Accept(t.Context(), queueCapture("runner-stop")); err != nil {
+			t.Fatalf("Accept: %v", err)
+		}
+		select {
+		case <-sink.started:
+		case <-time.After(time.Second):
+			t.Fatal("sink did not start")
+		}
+		done := make(chan error, 1)
+		go func() { done <- r.Stop(t.Context(), "conversation-a") }()
+		select {
+		case err := <-done:
+			t.Fatalf("Runner.Stop returned before capture drain: %v", err)
+		case <-time.After(30 * time.Millisecond):
+		}
+		close(sink.release)
+		if err := <-done; err != nil {
+			t.Fatalf("Runner.Stop after capture drain: %v", err)
+		}
+	})
 }

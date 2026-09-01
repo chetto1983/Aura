@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
@@ -16,7 +18,14 @@ import (
 	"github.com/google/uuid"
 )
 
-var errMemoryCaptureNotImplemented = errors.New("memory capture queue not implemented")
+var errMemoryCaptureClosed = errors.New("memory capture queue is closed")
+
+const (
+	defaultMemoryCaptureCapacity     = 64
+	defaultMemoryCaptureMaxAttempts  = 3
+	defaultMemoryCaptureWriteTimeout = 5 * time.Second
+	defaultMemoryCaptureRetryDelay   = 25 * time.Millisecond
+)
 
 // CaptureSourceKind is the closed set of direct evidence sources eligible for
 // automatic durable capture.
@@ -66,28 +75,251 @@ type MemoryCaptureQueueConfig struct {
 }
 
 // MemoryCaptureQueue is the single ordered durability queue owned by a Runner.
-type MemoryCaptureQueue struct{}
+// Its worker is lazy and exits whenever the queue drains, so an idle Runner does
+// not retain a goroutine.
+type MemoryCaptureQueue struct {
+	sink MemoryCaptureSink
+	cfg  MemoryCaptureQueueConfig
+
+	mu          sync.Mutex
+	pending     []AcceptedCapture
+	next        uint64
+	completed   uint64
+	failed      uint64
+	terminalErr error
+	working     bool
+	closed      bool
+	changed     chan struct{}
+}
 
 // NewMemoryCaptureQueue constructs one bounded ordered queue.
-func NewMemoryCaptureQueue(MemoryCaptureSink, MemoryCaptureQueueConfig) *MemoryCaptureQueue {
-	return &MemoryCaptureQueue{}
+func NewMemoryCaptureQueue(sink MemoryCaptureSink, cfg MemoryCaptureQueueConfig) *MemoryCaptureQueue {
+	if cfg.Capacity <= 0 {
+		cfg.Capacity = defaultMemoryCaptureCapacity
+	}
+	if cfg.MaxAttempts <= 0 {
+		cfg.MaxAttempts = defaultMemoryCaptureMaxAttempts
+	}
+	if cfg.WriteTimeout <= 0 {
+		cfg.WriteTimeout = defaultMemoryCaptureWriteTimeout
+	}
+	if cfg.RetryDelay < 0 {
+		cfg.RetryDelay = 0
+	} else if cfg.RetryDelay == 0 {
+		cfg.RetryDelay = defaultMemoryCaptureRetryDelay
+	}
+	return &MemoryCaptureQueue{sink: sink, cfg: cfg, changed: make(chan struct{})}
 }
 
 // Accept assigns a monotonic sequence and admits one capture with backpressure.
-func (*MemoryCaptureQueue) Accept(context.Context, AcceptedCapture) (uint64, error) {
-	return 0, errMemoryCaptureNotImplemented
+func (q *MemoryCaptureQueue) Accept(ctx context.Context, capture AcceptedCapture) (uint64, error) {
+	if q == nil || q.sink == nil {
+		return 0, errors.New("memory capture queue has no durable sink")
+	}
+	if err := validateAcceptedCapture(capture); err != nil {
+		return 0, err
+	}
+	for {
+		q.mu.Lock()
+		switch {
+		case q.closed:
+			q.mu.Unlock()
+			return 0, errMemoryCaptureClosed
+		case q.terminalErr != nil:
+			err := q.terminalErr
+			q.mu.Unlock()
+			return 0, err
+		case len(q.pending) < q.cfg.Capacity:
+			q.next++
+			capture.Sequence = q.next
+			capture.SourceRefs = append([]string(nil), capture.SourceRefs...)
+			q.pending = append(q.pending, capture)
+			if !q.working {
+				q.working = true
+				go q.run()
+			}
+			q.signalLocked()
+			sequence := capture.Sequence
+			q.mu.Unlock()
+			return sequence, nil
+		default:
+			changed := q.changed
+			q.mu.Unlock()
+			select {
+			case <-ctx.Done():
+				return 0, ctx.Err()
+			case <-changed:
+			}
+		}
+	}
 }
 
 // AcceptedSequence returns the highest sequence admitted so far.
-func (*MemoryCaptureQueue) AcceptedSequence() uint64 { return 0 }
+func (q *MemoryCaptureQueue) AcceptedSequence() uint64 {
+	if q == nil {
+		return 0
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.next
+}
 
 // FlushThrough waits until every capture through sequence is durable.
-func (*MemoryCaptureQueue) FlushThrough(context.Context, uint64) error {
-	return errMemoryCaptureNotImplemented
+func (q *MemoryCaptureQueue) FlushThrough(ctx context.Context, sequence uint64) error {
+	if q == nil || sequence == 0 {
+		return nil
+	}
+	for {
+		q.mu.Lock()
+		switch {
+		case sequence > q.next:
+			q.mu.Unlock()
+			return fmt.Errorf("memory capture sequence %d was not accepted (watermark %d)", sequence, q.next)
+		case q.terminalErr != nil && q.failed <= sequence:
+			err := q.terminalErr
+			q.mu.Unlock()
+			return err
+		case q.completed >= sequence:
+			q.mu.Unlock()
+			return nil
+		case q.closed && !q.working:
+			q.mu.Unlock()
+			return fmt.Errorf("memory capture queue closed before sequence %d became durable", sequence)
+		default:
+			changed := q.changed
+			q.mu.Unlock()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-changed:
+			}
+		}
+	}
 }
 
 // Close stops admission, drains accepted work, and joins the queue worker.
-func (*MemoryCaptureQueue) Close(context.Context) error { return errMemoryCaptureNotImplemented }
+func (q *MemoryCaptureQueue) Close(ctx context.Context) error {
+	if q == nil {
+		return nil
+	}
+	q.mu.Lock()
+	q.closed = true
+	q.signalLocked()
+	q.mu.Unlock()
+	for {
+		q.mu.Lock()
+		if !q.working {
+			err := q.terminalErr
+			q.mu.Unlock()
+			return err
+		}
+		changed := q.changed
+		q.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-changed:
+		}
+	}
+}
+
+func (q *MemoryCaptureQueue) run() {
+	for {
+		q.mu.Lock()
+		if len(q.pending) == 0 {
+			q.working = false
+			q.signalLocked()
+			q.mu.Unlock()
+			return
+		}
+		capture := q.pending[0]
+		q.pending[0] = AcceptedCapture{}
+		q.pending = q.pending[1:]
+		q.signalLocked()
+		q.mu.Unlock()
+
+		err := q.apply(capture)
+		q.mu.Lock()
+		if err != nil {
+			q.failed = capture.Sequence
+			q.terminalErr = fmt.Errorf("memory capture sequence %d: %w", capture.Sequence, err)
+			q.pending = nil
+			q.working = false
+			q.signalLocked()
+			q.mu.Unlock()
+			return
+		}
+		q.completed = capture.Sequence
+		q.signalLocked()
+		q.mu.Unlock()
+	}
+}
+
+func (q *MemoryCaptureQueue) apply(capture AcceptedCapture) error {
+	var lastErr error
+	for attempt := 1; attempt <= q.cfg.MaxAttempts; attempt++ {
+		writeCtx, cancel := context.WithTimeout(context.Background(), q.cfg.WriteTimeout)
+		err := q.sink.ApplyAcceptedCapture(writeCtx, capture)
+		cancel()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if attempt == q.cfg.MaxAttempts {
+			break
+		}
+		timer := time.NewTimer(q.cfg.RetryDelay)
+		<-timer.C
+	}
+	return lastErr
+}
+
+func (q *MemoryCaptureQueue) signalLocked() {
+	close(q.changed)
+	q.changed = make(chan struct{})
+}
+
+func validateAcceptedCapture(capture AcceptedCapture) error {
+	if capture.IdempotencyKey == "" || capture.IdentityID == "" || capture.ActorRunID == "" ||
+		(capture.ActorRole != "parent" && capture.ActorRole != "worker") || capture.SourceKind == "" ||
+		capture.ConversationID == "" || capture.ToolCallID == "" || capture.ObservedAt.IsZero() ||
+		capture.Confidence <= 0 || capture.Confidence > 1 {
+		return errors.New("memory capture is missing required direct provenance")
+	}
+	return nil
+}
+
+func (r *Runner) acceptMemoryCapture(ctx context.Context, tracker *turnTracker, ev *agent.Event) error {
+	if r == nil || r.memoryCaptures == nil || tracker == nil {
+		return nil
+	}
+	capture, ok := acceptedCaptureFromEvent(ctx, tracker.convID, ev)
+	if !ok {
+		return nil
+	}
+	sequence, err := r.memoryCaptures.Accept(ctx, capture)
+	if err != nil {
+		return fmt.Errorf("accept memory capture: %w", err)
+	}
+	tracker.lastAcceptedCapture = sequence
+	return nil
+}
+
+func (r *Runner) flushMemoryCaptures(ctx context.Context, sequence uint64) error {
+	if r == nil || r.memoryCaptures == nil || sequence == 0 {
+		return nil
+	}
+	timeout := r.memoryCaptureFlushTimeout
+	if timeout <= 0 {
+		timeout = defaultMemoryCaptureFlushTimeout
+	}
+	flushCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	if err := r.memoryCaptures.FlushThrough(flushCtx, sequence); err != nil {
+		return fmt.Errorf("memory capture durability barrier through %d: %w", sequence, err)
+	}
+	return nil
+}
 
 const memoryUpsertFactModelName = "memory__memory_upsert_fact"
 

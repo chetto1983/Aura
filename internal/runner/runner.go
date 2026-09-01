@@ -83,10 +83,11 @@ type Runner struct {
 	// compactionEnabled + compactionModel drive the L2.4 summarizer the context ladder
 	// receives via ContextConfig.Summarizer (compactionModel is pre-resolved to the main
 	// chat model when the knob is empty).
-	compactionEnabled    bool
-	compactionModel      string
-	memoryPreloadEnabled bool   // proactive per-message memory_search preload (AURA_MEMORY_PRELOAD_ENABLED)
-	workspace            string // the shell workspace path the per-turn tail hint announces (#52/D-41)
+	compactionEnabled         bool
+	compactionModel           string
+	memoryPreloadEnabled      bool // proactive per-message memory_search preload (AURA_MEMORY_PRELOAD_ENABLED)
+	memoryCaptureFlushTimeout time.Duration
+	workspace                 string // the shell workspace path the per-turn tail hint announces (#52/D-41)
 	// reasoningPersistMaxRunes bounds the per-turn display-only CoT accumulator
 	// (amendment #91); <=0 disables persistence (see Deps.ReasoningPersistMaxRunes).
 	reasoningPersistMaxRunes int

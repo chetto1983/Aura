@@ -342,24 +342,42 @@ func (r *Runner) resumeClaim(token string, pending askuser.Pending, resp Respons
 }
 
 // Stop terminates the conversation lifecycle (D-A1-06 / Req#11): it auto-resolves
-// every orphan pending (zero unresolved rows after) and joins the auto-title
-// WaitGroup with a bounded wait so a hung worker cannot wedge shutdown (goleak-clean,
-// D-A5-01). The wg.Wait() is the sync point tests hit so goleak sees no leak.
+// every orphan pending (zero unresolved rows after), drains every accepted
+// memory capture through the current watermark, and joins the auto-title WaitGroup
+// with bounded waits so a hung worker cannot wedge shutdown (goleak-clean, D-A5-01).
 func (r *Runner) Stop(ctx context.Context, convID string) error {
 	resolveErr := r.injectCancelledAnswers(ctx, convID)
 	if resolveErr == nil {
 		resolveErr = r.pause.AutoResolveForConversation(ctx, convID)
 	}
 	r.evictSessionToolState(convID)
+	var captureErr error
+	if r.memoryCaptures != nil {
+		captureErr = r.flushMemoryCaptures(ctx, r.memoryCaptures.AcceptedSequence())
+	}
 	if !r.waitWorkers(r.stopTimeout) {
 		// The drain timed out — surface it, but the auto-resolve already ran.
+		if resolveErr != nil && captureErr != nil {
+			return fmt.Errorf("stop %s: auto-resolve: %v; memory capture drain: %v; title workers did not drain in %s",
+				convID, resolveErr, captureErr, r.stopTimeout)
+		}
 		if resolveErr != nil {
 			return fmt.Errorf("stop %s: auto-resolve: %w (and title workers did not drain in %s)", convID, resolveErr, r.stopTimeout)
 		}
+		if captureErr != nil {
+			return fmt.Errorf("stop %s: memory capture drain: %w (and title workers did not drain in %s)",
+				convID, captureErr, r.stopTimeout)
+		}
 		return fmt.Errorf("stop %s: title workers did not drain within %s", convID, r.stopTimeout)
+	}
+	if resolveErr != nil && captureErr != nil {
+		return fmt.Errorf("stop %s: auto-resolve: %v; memory capture drain: %v", convID, resolveErr, captureErr)
 	}
 	if resolveErr != nil {
 		return fmt.Errorf("stop %s: auto-resolve: %w", convID, resolveErr)
+	}
+	if captureErr != nil {
+		return fmt.Errorf("stop %s: memory capture drain: %w", convID, captureErr)
 	}
 	return nil
 }
