@@ -1,6 +1,11 @@
 package arcadedb
 
-import "strconv"
+import (
+	"context"
+	"errors"
+	"strconv"
+	"time"
+)
 
 const (
 	reasoningTraceType    = "ReasoningTrace"
@@ -69,4 +74,79 @@ func reasoningSchemaStatements() []string {
 		"CREATE EDGE TYPE TOUCHED IF NOT EXISTS",
 		"CREATE INDEX IF NOT EXISTS ON TOUCHED (`@out`, `@in`) UNIQUE",
 	}
+}
+
+const (
+	reasoningSummaryRunes     = 4096
+	reasoningObservationRunes = 1024
+	reasoningDigestRunes      = 64
+	reasoningReferenceRunes   = 256
+	reasoningMaxSteps         = 64
+	reasoningMaxToolsPerStep  = 32
+	reasoningMaxReferences    = 32
+)
+
+// ReasoningStatus is the persisted lifecycle state of one trace.
+type ReasoningStatus string
+
+const (
+	// ReasoningStatusSucceeded identifies a successful terminal answer.
+	ReasoningStatusSucceeded ReasoningStatus = "succeeded"
+	// ReasoningStatusFailed identifies a terminal failed answer.
+	ReasoningStatusFailed ReasoningStatus = "failed"
+	// ReasoningStatusCancelled identifies a terminal cancelled answer.
+	ReasoningStatusCancelled ReasoningStatus = "cancelled"
+)
+
+// ReasoningToolCall is bounded, redacted evidence for one invoked tool.
+type ReasoningToolCall struct {
+	CallID         string   `json:"call_id"`
+	ToolName       string   `json:"tool_name"`
+	Status         string   `json:"status"`
+	DurationMillis int64    `json:"duration_ms,omitempty"`
+	ArgumentDigest string   `json:"argument_digest,omitempty"`
+	Observation    string   `json:"observation,omitempty"`
+	ArtifactRefs   []string `json:"artifact_refs,omitempty"`
+	EntityRefs     []string `json:"entity_refs,omitempty"`
+	SourceRef      string   `json:"source_ref"`
+}
+
+// ReasoningStep is one ordered provider-visible part of a trace.
+type ReasoningStep struct {
+	Index           int                 `json:"index"`
+	ProviderSummary string              `json:"provider_summary"`
+	CreatedAt       time.Time           `json:"created_at"`
+	ToolCalls       []ReasoningToolCall `json:"tool_calls,omitempty"`
+}
+
+// ReasoningTrace is one explicitly retrievable provider-visible reasoning graph.
+type ReasoningTrace struct {
+	IdentityID      string          `json:"identity_id"`
+	TraceID         string          `json:"trace_id"`
+	SourceRef       string          `json:"source_ref"`
+	ConversationID  string          `json:"conversation_id"`
+	TurnSeq         int             `json:"turn_seq"`
+	ProviderSummary string          `json:"provider_summary"`
+	Status          ReasoningStatus `json:"status"`
+	CreatedAt       time.Time       `json:"created_at"`
+	TerminalAt      time.Time       `json:"terminal_at,omitzero"`
+	ExpiresAt       time.Time       `json:"expires_at,omitzero"`
+	Steps           []ReasoningStep `json:"steps,omitempty"`
+}
+
+var errReasoningMemoryNotImplemented = errors.New("arcadedb: reasoning memory not implemented")
+
+// UpsertReasoningTrace persists one complete identity-scoped trace graph.
+func (c *Client) UpsertReasoningTrace(context.Context, ReasoningTrace) error {
+	return errReasoningMemoryNotImplemented
+}
+
+// SearchReasoningTraces searches bounded trace summaries for one identity.
+func (c *Client) SearchReasoningTraces(context.Context, string, string, int) ([]ReasoningTrace, error) {
+	return nil, errReasoningMemoryNotImplemented
+}
+
+// GetReasoningTrace retrieves one bounded ordered graph for its owning identity.
+func (c *Client) GetReasoningTrace(context.Context, string, string) (ReasoningTrace, bool, error) {
+	return ReasoningTrace{}, false, errReasoningMemoryNotImplemented
 }
