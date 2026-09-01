@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 15
+open_count: 18
 waived_count: 0
 fixed_count: 1
-total_count: 16
-last_updated: 2026-09-01T01:31:03.436Z
+total_count: 19
+last_updated: 2026-09-01T02:13:36.146Z
 ---
 
 # Broken Windows Ledger
@@ -31,6 +31,9 @@ last_updated: 2026-09-01T01:31:03.436Z
 | 14 | 49 | deviation | cmd/arcadedb-mcp/memory_live_integration_helpers_test.go |  | Shared live harness needed strict dependencies, per-call headers, tenant control, and MCP receiving middleware for complete proof. | open |  | 2026-09-01T01:31:02.607Z |  |
 | 15 | 49 | deviation | scripts/agent_memory_eval_phase49.py |  | Phase 49 evaluator split module and calculated markers were required to preserve the 600-line cap and honest route evidence. | open |  | 2026-09-01T01:31:03.002Z |  |
 | 16 | 49 | deviation | .planning/STATE.md |  | Out-of-order Plan 49-13 close required manual activity/progress synchronization while preserving current Plan 5. | open |  | 2026-09-01T01:31:03.436Z |  |
+| 17 | 49 | stub | internal/runner/runner.go | 68 | ReasoningGraphSink is intentionally not injected at production boot in Plan 49-12; dependent Plan 49-09 owns the single boot sink and lifecycle composition. | open |  | 2026-09-01T02:10:48.333Z |  |
+| 18 | 49 | deviation | internal/runner/runner_reasoning_persist.go |  | Plan 49-12 extended the existing authorization seam and ArcadeDB storage-boundary tests outside the literal file list so graph capture cannot diverge from display authorization and TOUCHED cannot target absent entities. | open |  | 2026-09-01T02:10:48.735Z |  |
+| 19 | 49 | deviation | .planning/STATE.md |  | Plan 49-12 completed out of order; state.advance-plan moved the sequential pointer from still-incomplete Plan 49-05 to 49-06, so the pointer was restored to 49-05 while retaining the 57/62 completed count and Plan 49-12 activity/session metadata. | open |  | 2026-09-01T02:13:36.146Z |  |
 
 ````json
 [
@@ -224,6 +227,42 @@ last_updated: 2026-09-01T01:31:03.436Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-01T01:31:03.436Z",
+    "resolved_at": null
+  },
+  {
+    "id": 17,
+    "kind": "stub",
+    "phase": "49",
+    "file": "internal/runner/runner.go",
+    "line": 68,
+    "description": "ReasoningGraphSink is intentionally not injected at production boot in Plan 49-12; dependent Plan 49-09 owns the single boot sink and lifecycle composition.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T02:10:48.333Z",
+    "resolved_at": null
+  },
+  {
+    "id": 18,
+    "kind": "deviation",
+    "phase": "49",
+    "file": "internal/runner/runner_reasoning_persist.go",
+    "line": null,
+    "description": "Plan 49-12 extended the existing authorization seam and ArcadeDB storage-boundary tests outside the literal file list so graph capture cannot diverge from display authorization and TOUCHED cannot target absent entities.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T02:10:48.735Z",
+    "resolved_at": null
+  },
+  {
+    "id": 19,
+    "kind": "deviation",
+    "phase": "49",
+    "file": ".planning/STATE.md",
+    "line": null,
+    "description": "Plan 49-12 completed out of order; state.advance-plan moved the sequential pointer from still-incomplete Plan 49-05 to 49-06, so the pointer was restored to 49-05 while retaining the 57/62 completed count and Plan 49-12 activity/session metadata.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T02:13:36.146Z",
     "resolved_at": null
   }
 ]

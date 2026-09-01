@@ -5,16 +5,16 @@ current_phase: 49
 current_phase_name: Memory tiers
 current_plan: 5
 status: executing
-stopped_at: Completed 49-13-PLAN.md
-last_updated: "2026-09-01T01:30:02.742Z"
+stopped_at: Completed 49-12-PLAN.md
+last_updated: "2026-09-01T02:13:06.061Z"
 last_activity: 2026-09-01
-last_activity_desc: Completed Phase 49 Plan 13
-state_head: f6d43d96a670dd635679444783080b37de9cff49
+last_activity_desc: Completed Phase 49 Plan 12
+state_head: 43cebe886785943a6ab774d66bfad78b0f39eec6
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 62
-  completed_plans: 56
+  completed_plans: 57
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -65,9 +65,9 @@ retaining byte caps, and `TestBridgedTool_Execute_MarksResultTrusted` pins MCP r
 The remaining unchecked MCP-02 item in REQUIREMENTS is its separate live unlisted-server proof;
 it is a roadmap acceptance obligation, not an unrecorded Calendar fork gap.
 
-Last activity: 2026-09-01 — Completed Phase 49 Plan 13
+Last activity: 2026-09-01 — Completed Phase 49 Plan 12
 
-Progress: [█████████░] 90% (56/62 milestone plans)
+Progress: [█████████░] 92% (57/62 milestone plans)
 
 ## Performance Metrics
 
@@ -121,6 +121,7 @@ Progress: [█████████░] 90% (56/62 milestone plans)
 | Phase 49 P08 | 29min | 2 tasks | 11 files |
 | Phase 49 P04 | 33min | 3 tasks | 9 files |
 | Phase 49 P13 | 48min | 2 tasks | 8 files |
+| Phase 49 P12 | 31min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -264,6 +265,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 49]: Use MCP server receiving middleware for same-call memory recall telemetry.
 - [Phase 49]: Use bounded scalar active-conversation predicates after live ArcadeDB collection filtering dropped eligible history.
 - [Phase 49]: Extend the split Phase 49 evaluator module and keep agent_memory_eval.py under 600 lines.
+- [Phase 49]: Plan 49-12 uses the host request UUID as trace ID and binds the graph source only after the exact PostgreSQL assistant-turn sequence commits. — The host IDs are authoritative and graph failure must remain unable to rewrite source truth.
+- [Phase 49]: Plan 49-12 records only a six-tool allowlist; raw arguments become redacted SHA-256 digests and only send_file may contribute a bounded observation. — A closed persistence allowlist prevents raw shell, memory, blob, token, or sidecar payloads from becoming durable reasoning evidence.
+- [Phase 49]: Plan 49-12 treats memory-tool entity fields as candidates and retains them only after identity-scoped ArcadeDB confirms the entities exist. — Free-form reasoning and untrusted metadata cannot mint TOUCHED authority.
+- [Phase 49]: Plan 49-12 resets the complete reasoning builder on DiscardStreamed, including steps, tools, entity refs, timestamps, and deduplication state. — A retried model attempt repudiates every derived edge, not only its display text.
 
 ### Pending Todos
 
@@ -328,8 +333,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-01T01:30:02.364Z
-Stopped at: Completed 49-13-PLAN.md
+Last session: 2026-09-01T02:13:05.718Z
+Stopped at: Completed 49-12-PLAN.md
 The accepted fresh-image delivery envelope is reconciled in 51-VALIDATION.md at 6/6 and 9.9/10.
 The final image passed the complete repository Playwright suite (145 pass, 39 intentional skips,
 zero failures) and four hot-route cycles without a restart or an OpenRouter request.
