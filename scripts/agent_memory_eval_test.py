@@ -16,6 +16,22 @@ import agent_memory_eval as evaluator
 import agent_memory_eval_metadata as metadata
 
 
+MEMORY_RECALL_INPUT_PROPERTIES = [
+    "mode",
+    "query",
+    "entity",
+    "predicate",
+    "conversation_id",
+    "anchor_seq",
+    "cursor",
+    "direction",
+    "trace_id",
+    "limit",
+    "as_of",
+]
+MEMORY_RECALL_MODES = ["semantic", "recent", "open", "scroll", "reasoning"]
+
+
 def event(action: str, test: str | None = None, elapsed: float | None = None) -> str:
     value: dict[str, object] = {"Action": action, "Package": "example.test"}
     if test is not None:
@@ -113,7 +129,11 @@ def mixed_tier_fixture() -> dict[str, object]:
             mixed_tier_case("entity", "facts", "graph", 1, 0),
             mixed_tier_case("forced_fallback", "facts", "lexical", 1, 0),
         ],
-        "surface": {"retrieval_operations": ["memory_recall"]},
+        "surface": {
+            "retrieval_operations": ["memory_recall"],
+            "memory_recall_input_properties": MEMORY_RECALL_INPUT_PROPERTIES.copy(),
+            "memory_recall_mode_enum": MEMORY_RECALL_MODES.copy(),
+        },
     }
 
 
@@ -295,6 +315,27 @@ class MixedTierRecallEvaluatorTest(unittest.TestCase):
         evidence = mixed_tier_fixture()
         evidence["surface"]["retrieval_operations"].append("memory_search")
         self.assertFalse(self.evaluate(evidence)["passed"])
+
+    def test_stale_memory_recall_schema_fails(self) -> None:
+        stale_surfaces = {
+            "missing mode property": {
+                "memory_recall_input_properties": MEMORY_RECALL_INPUT_PROPERTIES[1:],
+                "memory_recall_mode_enum": MEMORY_RECALL_MODES,
+            },
+            "missing recent mode": {
+                "memory_recall_input_properties": MEMORY_RECALL_INPUT_PROPERTIES,
+                "memory_recall_mode_enum": [mode for mode in MEMORY_RECALL_MODES if mode != "recent"],
+            },
+            "observed five-field legacy schema": {
+                "memory_recall_input_properties": ["query", "entity", "predicate", "limit", "as_of"],
+                "memory_recall_mode_enum": [],
+            },
+        }
+        for name, surface in stale_surfaces.items():
+            with self.subTest(name=name):
+                evidence = mixed_tier_fixture()
+                evidence["surface"].update(surface)
+                self.assertFalse(self.evaluate(evidence)["passed"])
 
 
 class GoTestParserTest(unittest.TestCase):
