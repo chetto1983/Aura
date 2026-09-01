@@ -3,6 +3,7 @@ package mcptools
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -97,15 +98,20 @@ func TestMemorySurfacePolicy_AliasKeepsIsolationAndHiddenSurface(t *testing.T) {
 			t.Fatalf("%s must remain a separately classified mutation, got %#v", name, tool)
 		}
 	}
-	readCount := 0
+	retrievalOperations := make([]string, 0, 1)
 	for _, tool := range bridged {
 		if !tool.Spec().Mutating {
-			readCount++
+			retrievalOperations = append(retrievalOperations, strings.TrimPrefix(tool.Spec().Name, "mem__"))
 		}
 	}
-	if readCount != 1 {
-		t.Fatalf("model-facing memory retrieval operations = %d, want exactly memory_recall", readCount)
+	if len(retrievalOperations) != 1 {
+		t.Fatalf("model-facing memory retrieval operations = %d, want exactly memory_recall", len(retrievalOperations))
 	}
+	surfaceEvidence, err := json.Marshal(map[string]any{"retrieval_operations": retrievalOperations})
+	if err != nil {
+		t.Fatalf("encode memory surface evidence: %v", err)
+	}
+	t.Logf("AURA_AGENT_MEMORY_SURFACE_JSON=%s", surfaceEvidence)
 	if recall.Spec().Deferred {
 		t.Fatal("memory alias recall exposes only 1 model-facing tool (<= the 3-tool ceiling) and must earn an always-loaded slot on a fresh budget: Deferred must be false (D-27)")
 	}

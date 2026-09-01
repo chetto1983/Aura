@@ -21,6 +21,7 @@ import (
 
 	"github.com/google/uuid"
 	officialmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/goleak"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
@@ -32,6 +33,8 @@ type agentMemoryLiveMCPOptions struct {
 	headerFunc          func(context.Context) map[string]string
 	receivingMiddleware officialmcp.Middleware
 }
+
+const agentMemoryLiveRouteMarker = "AURA_AGENT_MEMORY_MIXED_TIER_JSON="
 
 func newAgentMemoryLiveMCP(
 	t *testing.T,
@@ -402,4 +405,90 @@ func verifyAgentMemoryLiveNoLeaks(t *testing.T) {
 	t.Cleanup(func() {
 		goleak.VerifyNone(t, ignoreExisting)
 	})
+}
+
+func logAgentMemoryLiveRouteEvidence(t *testing.T, cases []map[string]any) {
+	t.Helper()
+	raw, err := json.Marshal(map[string]any{
+		"scenario": "mixed_tier_recall",
+		"cases":    cases,
+	})
+	if err != nil {
+		t.Fatalf("encode mixed-tier route evidence: %v", err)
+	}
+	t.Logf("%s%s", agentMemoryLiveRouteMarker, raw)
+}
+
+func agentMemoryLiveRouteCase(
+	name string,
+	output MemoryRecallOutput,
+	attributes []attribute.KeyValue,
+	activeSourceCount int,
+	foreignSourceCount int,
+) map[string]any {
+	returnedCounts := map[string]int{"facts": 0, "conversations": 0, "reasoning": 0}
+	for _, evidence := range output.Evidence {
+		switch evidence.Kind {
+		case "fact":
+			returnedCounts["facts"]++
+		case "conversation":
+			returnedCounts["conversations"]++
+		case "reasoning":
+			returnedCounts["reasoning"]++
+		}
+	}
+	return map[string]any{
+		"name": name,
+		"response": map[string]any{
+			"effective_path": output.Retrieval.EffectivePath,
+			"path":           output.Retrieval.Path,
+			"tier_counts": map[string]int{
+				"facts": output.Retrieval.FactCount, "conversations": output.Retrieval.ConversationCount,
+				"reasoning": output.Retrieval.ReasoningCount,
+			},
+		},
+		"otel": map[string]any{
+			"memory.recall.effective_path":     agentMemoryLiveAttributeString(attributes, "memory.recall.effective_path"),
+			"memory.recall.path":               agentMemoryLiveAttributeString(attributes, "memory.recall.path"),
+			"memory.recall.fact_count":         agentMemoryLiveAttributeInt(attributes, "memory.recall.fact_count"),
+			"memory.recall.conversation_count": agentMemoryLiveAttributeInt(attributes, "memory.recall.conversation_count"),
+			"memory.recall.reasoning_count":    agentMemoryLiveAttributeInt(attributes, "memory.recall.reasoning_count"),
+		},
+		"returned_tier_counts": returnedCounts,
+		"active_source_count":  activeSourceCount,
+		"foreign_source_count": foreignSourceCount,
+	}
+}
+
+func seedAgentMemoryLiveConversation(
+	t *testing.T,
+	ctx context.Context,
+	identityID string,
+	conversationID string,
+	marker string,
+	content string,
+) {
+	t.Helper()
+	client := agentMemoryLiveTenantClient(t, ctx, identityID)
+	assistantContent := "Historical setup for " + marker + "."
+	if err := client.ApplyConversationProjection(ctx, arcadedb.ConversationProjection{
+		IdentityID: identityID, ConversationID: conversationID,
+		Turns: []arcadedb.ConversationTurnProjection{
+			{
+				IdentityID: identityID, ConversationID: conversationID, Seq: 1,
+				Role: "assistant", Content: assistantContent,
+				ContentHash: recallLiveContentHash(assistantContent),
+				OccurredAt:  time.Now().UTC().Add(-2 * time.Minute),
+				SourceRef:   "postgres://mixed-tier/" + marker + "/turn/1",
+			},
+			{
+				IdentityID: identityID, ConversationID: conversationID, Seq: 2,
+				Role: "user", Content: content, ContentHash: recallLiveContentHash(content),
+				OccurredAt: time.Now().UTC().Add(-time.Minute),
+				SourceRef:  "postgres://mixed-tier/" + marker + "/turn/2",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("ApplyConversationProjection(%s): %v", conversationID, err)
+	}
 }

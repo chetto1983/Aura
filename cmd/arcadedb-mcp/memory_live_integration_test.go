@@ -15,7 +15,6 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	"github.com/chetto1983/aura/internal/arcadedb"
 	auramcp "github.com/chetto1983/aura/internal/mcp"
 )
 
@@ -396,7 +395,11 @@ func TestAgentMemoryMCPLive_MixedTierRecall(t *testing.T) {
 		t.Fatalf("retrieval counts = %+v, evidence facts=%d conversations=%d",
 			output.Retrieval, factCount, conversationCount)
 	}
-	assertAgentMemoryLiveRecallSpan(t, agentMemoryLiveRecallSpan(t, recorder, spanStart), output.Retrieval)
+	attributes := agentMemoryLiveRecallSpan(t, recorder, spanStart)
+	assertAgentMemoryLiveRecallSpan(t, attributes, output.Retrieval)
+	logAgentMemoryLiveRouteEvidence(t, []map[string]any{
+		agentMemoryLiveRouteCase("mixed", output, attributes, 0, 0),
+	})
 }
 
 func TestAgentMemoryMCPLive_BackendPath(t *testing.T) {
@@ -448,7 +451,11 @@ func TestAgentMemoryMCPLive_BackendPath(t *testing.T) {
 				output.Retrieval.ConversationCount != 0 {
 				t.Fatalf("tier contribution = %+v, want one fact and no conversations", output.Retrieval)
 			}
-			assertAgentMemoryLiveRecallSpan(t, agentMemoryLiveRecallSpan(t, recorder, spanStart), output.Retrieval)
+			attributes := agentMemoryLiveRecallSpan(t, recorder, spanStart)
+			assertAgentMemoryLiveRecallSpan(t, attributes, output.Retrieval)
+			logAgentMemoryLiveRouteEvidence(t, []map[string]any{
+				agentMemoryLiveRouteCase(strings.ReplaceAll(test.name, " ", "_"), output, attributes, 0, 0),
+			})
 		})
 	}
 }
@@ -542,37 +549,4 @@ func agentMemoryLiveAttributeInt(attributes []attribute.KeyValue, key string) in
 		}
 	}
 	return 0
-}
-
-func seedAgentMemoryLiveConversation(
-	t *testing.T,
-	ctx context.Context,
-	identityID string,
-	conversationID string,
-	marker string,
-	content string,
-) {
-	t.Helper()
-	client := agentMemoryLiveTenantClient(t, ctx, identityID)
-	assistantContent := "Historical setup for " + marker + "."
-	if err := client.ApplyConversationProjection(ctx, arcadedb.ConversationProjection{
-		IdentityID: identityID, ConversationID: conversationID,
-		Turns: []arcadedb.ConversationTurnProjection{
-			{
-				IdentityID: identityID, ConversationID: conversationID, Seq: 1,
-				Role: "assistant", Content: assistantContent,
-				ContentHash: recallLiveContentHash(assistantContent),
-				OccurredAt:  time.Now().UTC().Add(-2 * time.Minute),
-				SourceRef:   "postgres://mixed-tier/" + marker + "/turn/1",
-			},
-			{
-				IdentityID: identityID, ConversationID: conversationID, Seq: 2,
-				Role: "user", Content: content, ContentHash: recallLiveContentHash(content),
-				OccurredAt: time.Now().UTC().Add(-time.Minute),
-				SourceRef:  "postgres://mixed-tier/" + marker + "/turn/2",
-			},
-		},
-	}); err != nil {
-		t.Fatalf("ApplyConversationProjection(%s): %v", conversationID, err)
-	}
 }

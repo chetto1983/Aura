@@ -11,7 +11,6 @@ import sys
 import tempfile
 import time
 from typing import Any
-
 import agent_memory_eval_phase49 as phase49
 from agent_memory_eval_metadata import (
     RUNTIME_MARKER,
@@ -19,8 +18,6 @@ from agent_memory_eval_metadata import (
     manifest_sha256,
     parse_runtime_marker,
 )
-
-
 SCHEMA_ID = "aura.agent-memory-eval/v1"
 REVISION = 2
 TOTAL_POINTS = 100.0
@@ -36,8 +33,6 @@ DIMENSIONS = {
     "mcp_runtime_resilience": 15.0,
     "operability_coverage": 10.0,
 }
-
-
 def default_manifest() -> dict[str, Any]:
     aura_unit_filter = (
         "^(TestMemoryVerbMappingNegativeCases|"
@@ -564,7 +559,7 @@ def write_report(path: pathlib.Path, report: dict[str, Any]) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Aura Agent Memory reliability evaluator")
     parser.add_argument("--manifest", type=pathlib.Path)
-    parser.add_argument("--tier", choices=("deterministic", "live", "all"), default="all")
+    parser.add_argument("--tier", choices=("deterministic", "live", "all", "mixed_tier_recall"), default="all")
     parser.add_argument("--timeout-seconds", type=int, default=900)
     parser.add_argument(
         "--output",
@@ -581,6 +576,11 @@ def main() -> int:
         return 1
     repo = pathlib.Path(__file__).resolve().parents[1]
     try:
+        if args.tier == "mixed_tier_recall":
+            report = phase49.run_mixed_tier_recall(repo, args.timeout_seconds)
+            write_report(args.output, report)
+            print(phase49.format_mixed_tier_recall(report) + f"; report={args.output}")
+            return 0 if report["passed"] else 1
         manifest = load_manifest(args.manifest)
         candidate = candidate_state(repo)
         suites = run_suites(manifest, args.tier, repo, args.timeout_seconds)
