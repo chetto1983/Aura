@@ -143,17 +143,53 @@ type ReasoningRetentionPolicy struct {
 	FailedTTL  time.Duration
 }
 
+var defaultReasoningRetentionPolicy = ReasoningRetentionPolicy{
+	SuccessTTL: 30 * 24 * time.Hour,
+	FailedTTL:  7 * 24 * time.Hour,
+}
+
 // SetTerminalExpiry applies a terminal class without extending an existing or source cap.
 func (trace ReasoningTrace) SetTerminalExpiry(
-	ReasoningRetentionPolicy,
-	time.Time,
+	policy ReasoningRetentionPolicy,
+	sourceExpiry time.Time,
 ) (ReasoningTrace, error) {
-	return ReasoningTrace{}, fmt.Errorf("arcadedb: reasoning terminal expiry not implemented")
+	if policy.SuccessTTL <= 0 || policy.FailedTTL <= 0 {
+		return ReasoningTrace{}, fmt.Errorf("arcadedb: reasoning retention TTLs must be positive")
+	}
+	if trace.TerminalAt.IsZero() {
+		return ReasoningTrace{}, fmt.Errorf("arcadedb: reasoning terminal_at must be set before expiry")
+	}
+	var ttl time.Duration
+	switch trace.Status {
+	case ReasoningStatusSucceeded:
+		ttl = policy.SuccessTTL
+	case ReasoningStatusFailed, ReasoningStatusCancelled:
+		ttl = policy.FailedTTL
+	default:
+		return ReasoningTrace{}, fmt.Errorf("arcadedb: reasoning status %q is not terminal", trace.Status)
+	}
+	classCap := trace.TerminalAt.Add(ttl)
+	if !trace.ExpiresAt.IsZero() && trace.ExpiresAt.After(classCap) {
+		return ReasoningTrace{}, fmt.Errorf("arcadedb: reasoning expires_at exceeds its status retention class")
+	}
+	expiresAt := classCap
+	if !trace.ExpiresAt.IsZero() && trace.ExpiresAt.Before(expiresAt) {
+		expiresAt = trace.ExpiresAt
+	}
+	if !sourceExpiry.IsZero() && sourceExpiry.Before(expiresAt) {
+		expiresAt = sourceExpiry
+	}
+	trace.ExpiresAt = expiresAt
+	return trace, nil
 }
 
 // UpsertReasoningTrace persists one complete identity-scoped trace graph.
 func (c *Client) UpsertReasoningTrace(ctx context.Context, trace ReasoningTrace) error {
-	trace, err := normalizeReasoningTrace(trace)
+	trace, err := trace.SetTerminalExpiry(defaultReasoningRetentionPolicy, time.Time{})
+	if err != nil {
+		return err
+	}
+	trace, err = normalizeReasoningTrace(trace)
 	if err != nil {
 		return err
 	}

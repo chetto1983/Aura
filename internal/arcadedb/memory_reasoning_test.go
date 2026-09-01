@@ -309,6 +309,15 @@ func TestReasoningTerminalExpiry(t *testing.T) {
 		}
 	})
 
+	t.Run("existing expiry cannot widen the status class", func(t *testing.T) {
+		trace := validReasoningTrace()
+		trace.TerminalAt = terminal
+		trace.ExpiresAt = terminal.Add(31 * 24 * time.Hour)
+		if _, err := trace.SetTerminalExpiry(policy, time.Time{}); err == nil {
+			t.Fatal("expiry longer than the successful class was accepted")
+		}
+	})
+
 	for _, test := range []struct {
 		name   string
 		policy ReasoningRetentionPolicy

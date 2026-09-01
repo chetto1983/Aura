@@ -9,6 +9,11 @@ import (
 
 const retentionPolicyVersion = "retention-v1"
 
+const (
+	defaultReasoningSuccessTTL = 30 * 24 * time.Hour
+	defaultReasoningFailedTTL  = 7 * 24 * time.Hour
+)
+
 // RetentionConfig is the typed, versioned storage lifecycle policy loaded at boot.
 // ConversationTTL == 0 means unlimited; referenced artifacts follow that lifetime.
 type RetentionConfig struct {
@@ -29,8 +34,18 @@ type RetentionConfig struct {
 }
 
 // ReasoningTTL returns the terminal retention class for a persisted status.
-func (c RetentionConfig) ReasoningTTL(string) (time.Duration, error) {
-	return 0, fmt.Errorf("reasoning retention policy not implemented")
+func (c RetentionConfig) ReasoningTTL(status string) (time.Duration, error) {
+	if c.ReasoningSuccessTTL <= 0 || c.ReasoningFailedTTL <= 0 {
+		return 0, fmt.Errorf("reasoning retention TTLs must be positive")
+	}
+	switch status {
+	case "succeeded":
+		return c.ReasoningSuccessTTL, nil
+	case "failed", "cancelled":
+		return c.ReasoningFailedTTL, nil
+	default:
+		return 0, fmt.Errorf("reasoning status %q is not terminal", status)
+	}
 }
 
 func loadRetentionConfig(_ RuntimeProfile) RetentionConfig {
@@ -41,6 +56,8 @@ func loadRetentionConfig(_ RuntimeProfile) RetentionConfig {
 		TrustedDevelopmentFullTraceTTL: hours("AURA_RETENTION_DEV_TRACE_HOURS", 7*24),
 		MetadataTraceTTL:               hours("AURA_RETENTION_METADATA_TRACE_HOURS", 14*24),
 		ConversationTTL:                days("AURA_RETENTION_CONVERSATION_DAYS", 0),
+		ReasoningSuccessTTL:            defaultReasoningSuccessTTL,
+		ReasoningFailedTTL:             defaultReasoningFailedTTL,
 		BatchSize:                      envutil.IntDefault("AURA_RETENTION_BATCH_SIZE", 100),
 		LeaseDuration:                  seconds("AURA_RETENTION_LEASE_SEC", 300),
 		MaxDuration:                    seconds("AURA_RETENTION_MAX_DURATION_SEC", 300),
@@ -85,6 +102,10 @@ func (c RetentionConfig) Validate() error {
 		return fmt.Errorf("metadata trace TTL must be positive")
 	case c.ConversationTTL < 0:
 		return fmt.Errorf("conversation TTL cannot be negative")
+	case c.ReasoningSuccessTTL <= 0:
+		return fmt.Errorf("reasoning success TTL must be positive")
+	case c.ReasoningFailedTTL <= 0:
+		return fmt.Errorf("reasoning failed TTL must be positive")
 	case c.BatchSize <= 0:
 		return fmt.Errorf("batch size must be positive")
 	case c.LeaseDuration <= 0:
