@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"strings"
 	"time"
 
@@ -14,6 +15,8 @@ import (
 	"github.com/chetto1983/aura/internal/toolinvocations"
 	"github.com/google/uuid"
 )
+
+var errMemoryCaptureNotImplemented = errors.New("memory capture queue not implemented")
 
 // CaptureSourceKind is the closed set of direct evidence sources eligible for
 // automatic durable capture.
@@ -46,6 +49,45 @@ type AcceptedCapture struct {
 	ObservedAt     time.Time
 	Sequence       uint64
 }
+
+// MemoryCaptureSink durably applies one accepted capture. Calls are serialized
+// by MemoryCaptureQueue.
+type MemoryCaptureSink interface {
+	ApplyAcceptedCapture(ctx context.Context, capture AcceptedCapture) error
+}
+
+// MemoryCaptureQueueConfig bounds queue capacity, write attempts, and each sink
+// attempt. Zero values select safe defaults.
+type MemoryCaptureQueueConfig struct {
+	Capacity     int
+	MaxAttempts  int
+	WriteTimeout time.Duration
+	RetryDelay   time.Duration
+}
+
+// MemoryCaptureQueue is the single ordered durability queue owned by a Runner.
+type MemoryCaptureQueue struct{}
+
+// NewMemoryCaptureQueue constructs one bounded ordered queue.
+func NewMemoryCaptureQueue(MemoryCaptureSink, MemoryCaptureQueueConfig) *MemoryCaptureQueue {
+	return &MemoryCaptureQueue{}
+}
+
+// Accept assigns a monotonic sequence and admits one capture with backpressure.
+func (*MemoryCaptureQueue) Accept(context.Context, AcceptedCapture) (uint64, error) {
+	return 0, errMemoryCaptureNotImplemented
+}
+
+// AcceptedSequence returns the highest sequence admitted so far.
+func (*MemoryCaptureQueue) AcceptedSequence() uint64 { return 0 }
+
+// FlushThrough waits until every capture through sequence is durable.
+func (*MemoryCaptureQueue) FlushThrough(context.Context, uint64) error {
+	return errMemoryCaptureNotImplemented
+}
+
+// Close stops admission, drains accepted work, and joins the queue worker.
+func (*MemoryCaptureQueue) Close(context.Context) error { return errMemoryCaptureNotImplemented }
 
 const memoryUpsertFactModelName = "memory__memory_upsert_fact"
 

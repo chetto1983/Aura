@@ -73,12 +73,13 @@ type turnTracker struct {
 	// rune-bounded by Runner.reasoningPersistMaxRunes, persisted onto the final
 	// assistant answer turn. The observe/reset/read helpers live in
 	// runner_reasoning_persist.go.
-	reasoning          strings.Builder
-	reasoningRunes     int
-	reasoningTruncated bool
-	reasoningFirst     time.Time // timestamp of the turn's first reasoning delta
-	reasoningLast      time.Time // timestamp of the turn's last reasoning delta
-	reasoningGraph     ReasoningTraceBuilder
+	reasoning           strings.Builder
+	reasoningRunes      int
+	reasoningTruncated  bool
+	reasoningFirst      time.Time // timestamp of the turn's first reasoning delta
+	reasoningLast       time.Time // timestamp of the turn's last reasoning delta
+	reasoningGraph      ReasoningTraceBuilder
+	lastAcceptedCapture uint64
 }
 
 func (t *turnTracker) nextToolInvocationSeq() int {
