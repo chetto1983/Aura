@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v2.1.0
 current_phase: 49
 current_phase_name: Memory tiers
-current_plan: 5
+current_plan: 10
 status: executing
-stopped_at: Completed 49-09-PLAN.md
-last_updated: "2026-09-01T03:24:49.818Z"
+stopped_at: Completed 49-05-PLAN.md
+last_updated: "2026-09-01T04:11:31.946Z"
 last_activity: 2026-09-01
-last_activity_desc: Completed Phase 49 Plan 09
-state_head: 7cd444bf7b55489a20214e091e80afac7ef258a6
+last_activity_desc: Completed Phase 49 Plan 05
+state_head: 253da03364185ea5f3c7879450262c3e0ded8c9d
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 62
-  completed_plans: 58
+  completed_plans: 59
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -32,7 +32,7 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 Phase: 49 (Memory tiers) — EXECUTING
 Phase 51 is complete: 14/14 plans, 5/5 success criteria, and 12/12 requirements verified.
 Status: Ready to execute
-Current Plan: 5
+Current Plan: 10
 Total Plans in Phase: 14
 
 **The roadmap shrank on 2026-08-25 (operator decision).** Phases **47** (tool-surface ceremony
@@ -65,9 +65,9 @@ retaining byte caps, and `TestBridgedTool_Execute_MarksResultTrusted` pins MCP r
 The remaining unchecked MCP-02 item in REQUIREMENTS is its separate live unlisted-server proof;
 it is a roadmap acceptance obligation, not an unrecorded Calendar fork gap.
 
-Last activity: 2026-09-01 — Completed Phase 49 Plan 09
+Last activity: 2026-09-01 — Completed Phase 49 Plan 05
 
-Progress: [█████████░] 94% (58/62 milestone plans)
+Progress: [█████████░] 95% (59/62 milestone plans)
 
 ## Performance Metrics
 
@@ -123,6 +123,7 @@ Progress: [█████████░] 94% (58/62 milestone plans)
 | Phase 49 P13 | 48min | 2 tasks | 8 files |
 | Phase 49 P12 | 31min | 2 tasks | 7 files |
 | Phase 49 P09 | 1h 1m | 3 tasks | 19 files |
+| Phase 49 P05 | 35min | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -274,6 +275,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 49]: Phase 49 Plan 09: Conversation deletion removes reasoning before PostgreSQL; graph failure preserves the authoritative source for safe retry.
 - [Phase 49]: Phase 49 Plan 09: Expiry and explicit deletion retry the complete identity-scoped transaction after ArcadeDB 409/503 conflicts.
 - [Phase 49]: Phase 49 Plan 09: Reasoning boot wiring cannot replace the ordinary digest/preload MemoryContextProvider.
+- [Phase 49]: Only exact structured successes from memory__memory_upsert_fact, write_file, and patch can produce AcceptedCapture; model prose and reasoning are ineligible. — Direct typed evidence prevents model narration or unrestricted tool output from becoming durable authority.
+- [Phase 49]: The accepted-capture queue is bounded, serial, lazy, and terminal on exhausted sink failure. — Order and fail-honest durability matter more than background best-effort completion; lazy workers avoid idle goroutine retention.
+- [Phase 49]: Final answers and normal stop flush the runner-global accepted watermark. — A tracker-local watermark misses captures accepted before a pause when the resumed turn produces no new evidence.
 
 ### Pending Todos
 
@@ -338,12 +342,12 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-01T03:24:49.473Z
-Stopped at: Completed 49-09-PLAN.md
+Last session: 2026-09-01T04:11:31.595Z
+Stopped at: Completed 49-05-PLAN.md
 The accepted fresh-image delivery envelope is reconciled in 51-VALIDATION.md at 6/6 and 9.9/10.
 The final image passed the complete repository Playwright suite (145 pass, 39 intentional skips,
 zero failures) and four hot-route cycles without a restart or an OpenRouter request.
 Crash-after-partial-side-effects remains an explicit residual risk and is not an exactly-once claim.
 
 Resume file: None
-Next action: execute Phase 49 Plan 05.
+Next action: execute Phase 49 Plan 10.

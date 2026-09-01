@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 18
+open_count: 21
 waived_count: 0
 fixed_count: 1
-total_count: 19
-last_updated: 2026-09-01T02:13:36.146Z
+total_count: 22
+last_updated: 2026-09-01T04:12:07.678Z
 ---
 
 # Broken Windows Ledger
@@ -34,6 +34,9 @@ last_updated: 2026-09-01T02:13:36.146Z
 | 17 | 49 | stub | internal/runner/runner.go | 68 | ReasoningGraphSink is intentionally not injected at production boot in Plan 49-12; dependent Plan 49-09 owns the single boot sink and lifecycle composition. | open |  | 2026-09-01T02:10:48.333Z |  |
 | 18 | 49 | deviation | internal/runner/runner_reasoning_persist.go |  | Plan 49-12 extended the existing authorization seam and ArcadeDB storage-boundary tests outside the literal file list so graph capture cannot diverge from display authorization and TOUCHED cannot target absent entities. | open |  | 2026-09-01T02:10:48.735Z |  |
 | 19 | 49 | deviation | .planning/STATE.md |  | Plan 49-12 completed out of order; state.advance-plan moved the sequential pointer from still-incomplete Plan 49-05 to 49-06, so the pointer was restored to 49-05 while retaining the 57/62 completed count and Plan 49-12 activity/session metadata. | open |  | 2026-09-01T02:13:36.146Z |  |
+| 20 | 49 | stub | internal/runner/runner_deps.go | 46 | Production boot does not yet inject MemoryCaptureSink; Plan 49-14 owns graph composition and live mid-task proof. | open |  | 2026-09-01T04:08:58.607Z |  |
+| 21 | 49 | deviation | internal/runner/runner_persist.go | 151 | Rule 1: terminal flush now snapshots the runner-global accepted watermark so resumed turns drain pre-pause captures. | open |  | 2026-09-01T04:08:59.003Z |  |
+| 22 | 49 | deviation | .planning/STATE.md |  | Plan 49-05 state handlers advanced to completed Plan 6 and left Plan 09 activity/progress prose; pointer and prose were synchronized to next incomplete Plan 10 and 59/62. | open |  | 2026-09-01T04:12:07.678Z |  |
 
 ````json
 [
@@ -263,6 +266,42 @@ last_updated: 2026-09-01T02:13:36.146Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-01T02:13:36.146Z",
+    "resolved_at": null
+  },
+  {
+    "id": 20,
+    "kind": "stub",
+    "phase": "49",
+    "file": "internal/runner/runner_deps.go",
+    "line": 46,
+    "description": "Production boot does not yet inject MemoryCaptureSink; Plan 49-14 owns graph composition and live mid-task proof.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T04:08:58.607Z",
+    "resolved_at": null
+  },
+  {
+    "id": 21,
+    "kind": "deviation",
+    "phase": "49",
+    "file": "internal/runner/runner_persist.go",
+    "line": 151,
+    "description": "Rule 1: terminal flush now snapshots the runner-global accepted watermark so resumed turns drain pre-pause captures.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T04:08:59.003Z",
+    "resolved_at": null
+  },
+  {
+    "id": 22,
+    "kind": "deviation",
+    "phase": "49",
+    "file": ".planning/STATE.md",
+    "line": null,
+    "description": "Plan 49-05 state handlers advanced to completed Plan 6 and left Plan 09 activity/progress prose; pointer and prose were synchronized to next incomplete Plan 10 and 59/62.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T04:12:07.678Z",
     "resolved_at": null
   }
 ]
