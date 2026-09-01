@@ -448,3 +448,93 @@ func TestEvictedResultToolName(t *testing.T) {
 		})
 	}
 }
+
+func TestIsPlainUserTurn(t *testing.T) {
+	tests := []struct {
+		name string
+		turn Turn
+		want bool
+	}{
+		{
+			name: "plain user turn",
+			turn: Turn{Role: "user", Content: "hello"},
+			want: true,
+		},
+		{
+			name: "assistant turn",
+			turn: Turn{Role: "assistant", Content: "hello"},
+			want: false,
+		},
+		{
+			name: "system turn",
+			turn: Turn{Role: "system", Content: "hello"},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isPlainUserTurn(tt.turn); got != tt.want {
+				t.Errorf("isPlainUserTurn(%+v) = %v, want %v", tt.turn, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDropRepeatedUserTurns(t *testing.T) {
+	tests := []struct {
+		name  string
+		turns []Turn
+		want  []Turn
+	}{
+		{
+			name:  "empty",
+			turns: []Turn{},
+			want:  []Turn{},
+		},
+		{
+			name:  "single turn",
+			turns: []Turn{{Role: "user", Content: "hello"}},
+			want:  []Turn{{Role: "user", Content: "hello"}},
+		},
+		{
+			name: "no repeats",
+			turns: []Turn{
+				{Role: "user", Content: "hello"},
+				{Role: "assistant", Content: "reply"},
+				{Role: "user", Content: "world"},
+			},
+			want: []Turn{
+				{Role: "user", Content: "hello"},
+				{Role: "assistant", Content: "reply"},
+				{Role: "user", Content: "world"},
+			},
+		},
+		{
+			name: "consecutive user repeats",
+			turns: []Turn{
+				{Role: "user", Content: "hello"},
+				{Role: "user", Content: "hello"},
+			},
+			want: []Turn{
+				{Role: "user", Content: "hello"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := dropRepeatedUserTurns(tt.turns)
+			if len(got) != len(tt.want) {
+				t.Errorf("dropRepeatedUserTurns() returned %d turns, want %d", len(got), len(tt.want))
+				return
+			}
+			for i := range got {
+				if got[i].Content != tt.want[i].Content {
+					t.Errorf("turn[%d].Content = %q, want %q", i, got[i].Content, tt.want[i].Content)
+				}
+				if got[i].Role != tt.want[i].Role {
+					t.Errorf("turn[%d].Role = %q, want %q", i, got[i].Role, tt.want[i].Role)
+				}
+			}
+		})
+	}
+}
