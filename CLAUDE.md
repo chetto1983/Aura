@@ -67,9 +67,9 @@ Ogni slice attraversa 3 gate (formalizzati nel PRD §Slice Q&A discipline). Mapp
 
 ## GSD tooling (workflow ufficiale)
 
-Installazione: **una sola copia, in HOME** (`~/.claude/`, **1.11.0**, layout skills-based):
-72 skill `gsd-*` in `~/.claude/skills/`, tool in `~/.claude/gsd-core/bin/gsd-tools.cjs`,
-17 hook wired in `~/.claude/settings.json`, agents in `~/.claude/agents/`.
+Installazione: **una sola copia, in HOME** (`~/.claude/`, **1.12.0**, layout skills-based):
+71 skill `gsd-*` in `~/.claude/skills/`, tool in `~/.claude/gsd-core/bin/gsd-tools.cjs`,
+18 hook wired in `~/.claude/settings.json`, 35 agent `gsd-*` in `~/.claude/agents/`.
 
 La copia project-local 1.1.0 è stata **ritirata il 2026-08-25**: comandi rimossi, hook
 sganciati da `.claude/settings.json`. Non era una ridondanza innocua -- gli hook dei diversi
