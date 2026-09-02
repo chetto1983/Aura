@@ -122,3 +122,35 @@ func TestSandboxStarterIsAbsentWithoutARouter(t *testing.T) {
 		t.Fatal("no router means no leg, not a leg that panics")
 	}
 }
+
+// The remount is the one leg that does NOT finish inside the call: StartReconnect spawns a
+// goroutine and returns, so the context it is handed outlives provision. On this path that
+// context is the bootstrap REQUEST's, and the request ends the moment the wizard's response
+// is written -- roughly a second before the sidecars finish their handshake.
+//
+// Measured 2026-09-02 on a fresh Docker Desktop install: the grants landed at 08:25:26 and
+// all three mounts died at 08:25:27 with "context canceled", the 40-attempt retry never
+// running. The daemon then sat on {"ready":false,"reasons":["memory_unavailable"]} until it
+// was restarted by hand, which is the failure the remount was added to prevent.
+//
+// Values must survive -- Mount reads the identity and the OAuth handle off this context --
+// so the leg needs cancellation detached, not a fresh context.
+func TestBootstrapRemountOutlivesTheRequestThatTriggeredIt(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(identityctx.WithIdentityID(context.Background(), bootstrapTestIdentity))
+	var handed context.Context
+	res := bootstrapResources{remountMCP: func(c context.Context) { handed = c }}
+
+	res.provision(ctx, bootstrapTestIdentity)
+	cancel() // the wizard's HTTP handler returns
+
+	if handed == nil {
+		t.Fatal("remount leg never ran")
+	}
+	if err := handed.Err(); err != nil {
+		t.Fatalf("remount context died with the request: %v", err)
+	}
+	if got := identityctx.IdentityID(handed); got != bootstrapTestIdentity {
+		t.Errorf("remount context lost its identity: got %q, want %q", got, bootstrapTestIdentity)
+	}
+}

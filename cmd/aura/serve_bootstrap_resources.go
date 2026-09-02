@@ -107,7 +107,17 @@ func (r bootstrapResources) provision(ctx context.Context, identityID string) {
 	// stayed out of the agent registry for the next 39 minutes, through a live turn in
 	// which the agent asked tool_search for memory_recall three times and was told each
 	// time that it is not a registered tool.
+	//
+	// It gets the request's context with cancellation DETACHED, the same idiom the memory
+	// compensation above uses and for the same reason: StartReconnect spawns a goroutine
+	// and returns, so this leg is still shaking hands with three sidecars when the wizard's
+	// response is written and ctx is cancelled under it. Measured 2026-09-02 on a fresh
+	// install: grants at 08:25:26, all three mounts dead at 08:25:27 on "context canceled"
+	// with the 40-attempt retry never running, and the daemon stuck on
+	// {"ready":false,"reasons":["memory_unavailable"]} until it was restarted by hand.
+	// The VALUES have to survive -- Mount reads the identity and the OAuth handle off this
+	// context -- so it is WithoutCancel, not a fresh Background.
 	if r.remountMCP != nil {
-		r.remountMCP(ctx)
+		r.remountMCP(context.WithoutCancel(ctx))
 	}
 }
