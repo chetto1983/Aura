@@ -649,24 +649,41 @@ class FailedGateNamesTest(unittest.TestCase):
         report = {"hard_gates": {"suite_integrity": {"status": "PASS"}}}
         self.assertEqual(evaluator.failed_gate_names(report), [])
 
-    def test_names_failed_and_not_evaluated_gates_in_report_order(self) -> None:
+    def test_names_failed_gates_in_report_order(self) -> None:
         report = {
             "hard_gates": {
-                "suite_integrity": {"status": "PASS"},
-                "runtime_provenance": {"status": "FAIL"},
-                "isolation": {"status": "NOT_EVALUATED"},
+                "suite_integrity": {"status": "FAIL"},
+                "runtime_provenance": {"status": "PASS"},
+                "batch_atomicity": {"status": "FAIL"},
             }
         }
-        # NOT_EVALUATED is included because score() also refuses it: `passed` requires
-        # every gate to equal "PASS", so an unevaluated gate fails the run silently.
         self.assertEqual(
             evaluator.failed_gate_names(report),
-            ["runtime_provenance", "isolation"],
+            ["suite_integrity", "batch_atomicity"],
+        )
+
+    def test_a_deliberately_unarmed_gate_is_not_a_failure(self) -> None:
+        # running_aura_conversation is NOT_EVALUATED on every GitHub CI run by design --
+        # no model key, no Tempo, no enrolled operator -- and its unarmed branch returns
+        # without touching report["passed"]. Reporting it as failed would put a permanent
+        # false alarm in every summary.
+        report = {
+            "hard_gates": {
+                "suite_integrity": {"status": "FAIL"},
+                "running_aura_conversation": {"status": "NOT_EVALUATED"},
+            }
+        }
+        self.assertEqual(evaluator.failed_gate_names(report), ["suite_integrity"])
+        self.assertEqual(
+            evaluator.unevaluated_gate_names(report), ["running_aura_conversation"]
         )
 
     def test_survives_a_report_with_no_gates_or_a_malformed_one(self) -> None:
         self.assertEqual(evaluator.failed_gate_names({}), [])
         self.assertEqual(evaluator.failed_gate_names({"hard_gates": None}), [])
+        self.assertEqual(evaluator.unevaluated_gate_names({"hard_gates": None}), [])
+        # A gate that is not a dict cannot be read as passing, so it is surfaced rather
+        # than silently treated as green.
         self.assertEqual(evaluator.failed_gate_names({"hard_gates": {"broken": "PASS"}}), ["broken"])
 
 

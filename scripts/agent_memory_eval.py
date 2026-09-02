@@ -590,17 +590,33 @@ def write_report(path: pathlib.Path, report: dict[str, Any]) -> None:
 
 
 def failed_gate_names(report: dict[str, Any]) -> list[str]:
-    """Hard gates that did not PASS, in report order.
+    """Hard gates that actually FAILED, in report order.
 
     The verdict is `threshold_passed AND every hard gate`, so a perfect MRS can sit next
     to a FAIL and the summary line reads as though 100.00 had missed a 96.5 floor. It cost
-    a CI cycle to establish that the score was never the problem. NOT_EVALUATED counts as
-    not-passing here because that is exactly how score() treats it.
+    a CI cycle to establish that the score was never the problem.
+
+    NOT_EVALUATED is deliberately NOT counted. A gate can be unarmed on purpose --
+    running_aura_conversation is, on GitHub CI, which has no model key, no Tempo and no
+    enrolled operator -- and its unarmed branch returns without touching report["passed"].
+    Listing it as failed would put a permanent false alarm in every CI summary, which is
+    the same disease as the misleading score line, only pointing the other way.
     """
     return [
         name
         for name, gate in (report.get("hard_gates") or {}).items()
-        if not isinstance(gate, dict) or gate.get("status") != "PASS"
+        if not isinstance(gate, dict) or gate.get("status") == "FAIL"
+    ]
+
+
+def unevaluated_gate_names(report: dict[str, Any]) -> list[str]:
+    """Hard gates that did not run at all. Reported separately from failures: not
+    evaluated is not the same claim as failed, and a summary that conflates them teaches
+    the reader to ignore both."""
+    return [
+        name
+        for name, gate in (report.get("hard_gates") or {}).items()
+        if isinstance(gate, dict) and gate.get("status") == "NOT_EVALUATED"
     ]
 
 
@@ -640,7 +656,10 @@ def main() -> int:
         return 1
     score_text = "not MRS-eligible" if report["memory_reliability_score"] is None else f"MRS={report['memory_reliability_score']:.2f}"
     failed_gates = failed_gate_names(report)
+    unevaluated = unevaluated_gate_names(report)
     gate_text = f"; failed gates: {', '.join(failed_gates)}" if failed_gates else ""
+    if unevaluated:
+        gate_text += f"; not evaluated: {', '.join(unevaluated)}"
     print(f"agent-memory-eval: {report['verdict']}: {score_text}{gate_text}; report={args.output}")
     return 0 if report["passed"] else 1
 
