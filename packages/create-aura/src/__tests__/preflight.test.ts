@@ -30,4 +30,14 @@ describe('installer preflight', () => {
   it.each(['', 'lots', '-16777216', '16.5'])('rejects a malformed memory reading %s', (value) => {
     expect(() => assertSufficientMemory(value)).toThrow('invalidMemoryAvailability');
   });
+
+  // Deliberately absolute, not derived from MINIMUM_MEMORY_KB: the test above compares the
+  // constant against itself and would pass for ANY value of it, including one no real
+  // machine can reach. install.sh's floor was exactly 16 GiB, and MemTotal is installed RAM
+  // minus firmware and kernel reservations, so these are the readings that decide whether
+  // the floor admits the hardware this product targets.
+  it('accepts a real 16 GB machine and still refuses an 8 GB one', () => {
+    expect(assertSufficientMemory('16268000')).toBe(16268000); // ~15.51 GiB, a 16 GB box
+    expect(() => assertSufficientMemory('8120000')).toThrow('insufficientMemory:8120000');
+  });
 });

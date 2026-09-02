@@ -43,11 +43,14 @@ export function assertSufficientCpuCores(raw: string): number {
   return availableCpuCores;
 }
 
-// scripts/install.sh's hard_mem threshold is 16 GiB (16 * 1024 * 1024 KiB); its warn_mem
-// (32 GiB) is deliberately not mirrored here -- the installer only refuses on the hard
-// floor, and a wizard that blocks where install.sh would merely warn is worse than one
-// that says nothing.
-export const MINIMUM_MEMORY_KB = 16 * 1024 * 1024;
+// scripts/install.sh's hard_mem threshold, which is 15 GiB and not 16 for a reason worth
+// keeping: the number is compared against MemTotal, which is installed RAM minus firmware
+// and kernel reservations, so a 16 GB machine reports ~15.4-15.8 GiB and can never clear a
+// 16 GiB floor. This constant was 16 GiB and would have refused every 16 GB box the product
+// targets; do not "correct" it back. install.sh's warn_mem (32 GiB) is deliberately not
+// mirrored -- the installer only refuses on the hard floor, and a wizard that blocks where
+// install.sh would merely warn is worse than one that says nothing.
+export const MINIMUM_MEMORY_KB = 15 * 1024 * 1024;
 
 export function assertSufficientMemory(raw: string): number {
   const value = raw.trim();
