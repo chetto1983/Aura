@@ -115,6 +115,18 @@ grep -qx 'AURA_LLM_MODEL=any/model-the-operator-pulled:v1' .env || { echo "FAIL:
 # An empty config value must NOT clear what the operator already had.
 grep -qx 'OPENROUTER_API_KEY=sk-operator-choice' .env || { echo "FAIL: an empty config value cleared an operator's key" >&2; exit 1; }
 
+# The line above only proves the empty-value guard when read together with the three
+# assertions before it -- alone it would pass against a no-op, because the fixture seeds
+# that key. Applying a NON-empty value to the same field is the other half: together the
+# pair pins the guard to this field rather than to the order of the block.
+CFG_OPENROUTER_API_KEY="sk-from-config"
+apply_install_config
+grep -qx 'OPENROUTER_API_KEY=sk-from-config' .env \
+  || { echo "FAIL: a non-empty config value did not overwrite the operator's key" >&2; exit 1; }
+[ "$(grep -c '^OPENROUTER_API_KEY=' .env)" = 1 ] \
+  || { echo "FAIL: overwriting the key duplicated it instead of replacing it" >&2; exit 1; }
+CFG_OPENROUTER_API_KEY=""
+
 # apply_install_config must be idempotent -- install.sh's contract is that re-running it
 # preserves explicit settings, so a second apply replaces the key rather than duplicating it.
 apply_install_config
