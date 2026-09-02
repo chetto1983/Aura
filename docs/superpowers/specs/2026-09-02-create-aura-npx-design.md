@@ -1,270 +1,304 @@
-# create-aura — one-command install, verified payload, self-updating appliance
+# create-aura — one-command install, self-extracting payload, self-updating appliance
 
 **Date:** 2026-09-02
-**Status:** design approved, implementation not started
+**Status:** design approved after adversarial review; implementation not started
 **Reference implementation:** `D:/Wpt/wpt-iot/packages/create-wpt-iot` (working, in production)
+**Revision:** v2. v1 was reviewed adversarially and had a fatal flaw in its central
+mechanism plus four factual errors. Both are recorded below rather than quietly fixed.
 
 ## The problem
 
-Aura ships two install entry points that share one implementation — `curl | bash` and
+Aura ships two install entry points sharing one implementation — `curl | bash` and
 `npx github:chetto1983/Aura`, both landing in `scripts/install.sh`. Sharing the
-implementation is right and stays. What is wrong is everything around it.
+implementation is right and stays. What is around it is not.
 
-**The payload is unverified.** `download_file` is:
+**The payload is unpinned.** `install.sh` fetches 25 files from
+`https://raw.githubusercontent.com/chetto1983/Aura/${AURA_INSTALL_REF:-master}` while
+pulling images tagged `:edge`. Those are two channels that move independently, so the
+`compose.yaml` an operator installs need not match the image it pulls. This is exactly what
+Immich warns about: use the compose of the *release*, not of `main`, because main's may be
+incompatible with the release. It bites without an attacker, and it bites first.
 
-```bash
-curl -fsSL "${RAW_BASE}/${src}" -o "$dst"
-```
+**The payload is unverified.** `download_file` (`install.sh:205`) is a bare
+`curl -fsSL "${RAW_BASE}/${src}" -o "$dst"`. Twenty-five files arrive that way and the flow
+runs as root. There is no integrity check anywhere in the script — `grep -ci sha256
+scripts/install.sh` returns **0**.
 
-`RAW_REF` defaults to `master` — a *moving* ref. Twenty-five files are fetched this way,
-four are `chmod +x`'d and executed, and the whole flow runs as root. The single occurrence
-of `sha256` in `install.sh` is a comment. An operator running `sudo npx github:...`
-executes, as root, whatever raw.githubusercontent serves at that moment.
+**The verifier would arrive the same way.** `npx github:owner/repo` clones at a moving ref,
+so a manifest embedded in the veneer would be checked by code fetched without a check.
 
-**The verifier is fetched the same way.** `npx github:owner/repo` clones the repo at a
-moving ref, so even a manifest embedded in the veneer would be checked by code obtained
-without a check.
-
-**The model route is never offered.** Measured 2026-09-02: nothing forces an OpenRouter
-key — `compose.yaml` interpolates `${OPENROUTER_API_KEY:-}`, `install.sh` writes it empty
-when unset, `LoadServe` uses `llm.LoadAllowEmptyKey`, and `openai_compat/client.go:53`
-applies the key *only* when `ReasoningTarget` resolves to OpenRouter. Aura already
-supports a keyless local route end to end; `ReasoningTarget` already knows `ollama` and
-`llamacpp`, and `internal/llm/{ollama,llamacpp}_caps.go` already probe them. The gap is
-that the installer never *offers* or *wires* that route: the default provider is
-`openrouter`, so an Ollama user must know to set three env vars by hand. The only
-remaining hard gate on an empty key is `config.Load()`, used in exactly one place —
-`cmd/aura/pack_install.go:132`.
+**The model route is never offered.** Measured 2026-09-02: nothing forces an OpenRouter key
+— `compose.yaml:125,843` interpolate `${OPENROUTER_API_KEY:-}`, `install.sh` writes it
+empty when unset, `LoadServe` (`internal/config/config.go:342`) uses `llm.LoadAllowEmptyKey`,
+and `openai_compat/client.go:53` applies the key *only* when `ReasoningTarget` resolves to
+OpenRouter. `ReasoningTarget` (`internal/llm/reasoning_target.go:54`) already matches
+`ollama` and `llamacpp` explicitly, and `internal/llm/{ollama,llamacpp}_caps.go` already
+probe them. The gap is that the installer never offers or wires the route: the default
+provider is `openrouter`, so an Ollama operator must set three env vars by hand.
 
 **An installed appliance never gets a new payload.** `deploy/aura-image-update.sh` pulls
-images (aura, migrate, garage-bootstrap, plus every running MCP sidecar) every five
-minutes and is enabled automatically on `:edge` installs. It requires `compose.yaml` to
-exist and never touches it. wpt-iot's equivalent is narrower still — `docker compose pull
-backend frontend`. So a box installed in September never sees a service added in October.
+images (aura, aura-migrate, garage-bootstrap, then every *running* MCP sidecar) on a
+5-minute timer and is enabled automatically on `:edge` installs. It requires `compose.yaml`
+to exist (line 33) and never writes to it. wpt-iot's equivalent is narrower still —
+`docker compose pull backend frontend`. A box installed in September never sees a service
+added in October.
 
 ## Decisions
 
 | # | Decision | Rejected alternative |
 |---|---|---|
-| 1 | One **self-contained generated** installer artifact | 25 hashes in a manifest; a separately downloaded tarball |
+| 1 | The artifact is a **`makeself` self-extracting archive**, not a hand-rolled generator | hand-written `build-installer.mjs`; a manifest of 25 hashes; a separately downloaded tarball |
 | 2 | Published to **npm with provenance** | staying on `npx github:` (verifier itself unverified) |
-| 3 | Wizard offers **three model routes**: OpenRouter / Ollama / llama.cpp | cloud-only with an optional key; two-way auto-detect |
-| 4 | **One logic, one artifact**: `install.sh` stays the hand-written source and gains `--config`; `curl \| bash` moves to the generated artifact | two paths with only npx verified |
-| 5 | The **npm package carries the payload**; nothing is downloaded to install locally | wpt's download-and-verify from raw.githubusercontent |
-| 6 | npm publish is **automated** in the workflow that publishes the edge images | manual publish per payload change |
+| 3 | Wizard offers **two model routes**: OpenRouter and Ollama. llama.cpp stays **manual** | a third `llamacpp` route (see "Why llama.cpp is not in the wizard") |
+| 4 | **One logic, one artifact**: `install.sh` stays the hand-written source and learns `--config` and a payload-aware `download_file`; `curl \| bash` moves to the artifact | two paths with only npx verified |
+| 5 | The **npm package carries the payload**; nothing is downloaded to install | wpt's download-and-verify from raw.githubusercontent |
+| 6 | **No pinning anywhere — always latest.** The npm publish rides `publish-aura-edge.yml`, so payload and images ship from the same commit | a `channel` choice (edge vs vX.Y.Z) in the wizard; Immich's release-asset pinning |
 
-Decision 5 is the one place this design deliberately departs from the reference. wpt
-downloads and verifies because its veneer cannot carry its payload; ours can. Carrying it
-removes `raw.githubusercontent.com` from the trust path entirely, and with it four files
-that exist only to compensate for the download: `artifact.ts`, `installer-manifest.ts`,
-`stamp-installer.mjs`, `verify-installer-manifest.mjs`. Decision 6 removes the cost that
-would otherwise come with 5 — a package version pinning a payload version.
+Decision 5 is the one deliberate departure from the reference. wpt downloads and verifies
+because its veneer cannot carry its payload; ours can. Carrying it removes
+raw.githubusercontent from the install trust path and with it four files that exist only to
+compensate for the download: `artifact.ts`, `installer-manifest.ts`, `stamp-installer.mjs`,
+`verify-installer-manifest.mjs`.
 
-## Package layout
+Decision 6 is what makes 5 safe without pinning. `publish-aura-edge.yml` runs on **every
+master push** and tags both `:edge` and an immutable `master-<sha>`. Publishing the npm
+package from that same workflow means the payload an operator installs and the images it
+pulls come from one commit. Drift is closed by making the two travel together, not by
+freezing either.
 
-```
-packages/create-aura/
-  package.json          name: create-aura   bin: dist/bin.js
-                        files: ["dist", "scripts/install-appliance.sh"]
-                        publishConfig: { access: public, provenance: true }
-  src/
-    bin.ts              argv entry, delegates to cli.ts
-    cli.ts              orchestration, dependency-injected (wpt's shape)
-    prompts.ts          @inquirer/prompts — target, route, options
-    modelroute.ts       NEW: OpenRouter / Ollama / llama.cpp, probe + model listing
-    local.ts            preflight + install on this machine
-    remote.ts           SSH probe, staging, install on the appliance
-    config-file.ts      the 0600 config, base64 values
-    validation.ts       host / port / username / absolute path
-    process.ts          injectable command runner
-    i18n.ts, messages/{en,it}.ts
-  scripts/
-    build-installer.mjs   generates the artifact
-    install-appliance.sh  GENERATED, committed, CI-gated against staleness
-  src/__tests__/          vitest
-```
+## The artifact: makeself, not a bespoke generator
 
-The root `package.json` (today `create-aura-appliance`, `bin` → `scripts/create-aura.mjs`)
-loses its installer role; the veneer is superseded by this package.
-
-`web/` already brings node, vitest and stryker, so this is a second package, not a second
-ecosystem. The project's frontend quality gates (coverage ≥85%, mutation ≥70%) apply here
-too.
-
-**npm name:** `create-aura` must be verified free. Fallback: `create-aura-appliance`, the
-name the root package already holds.
-
-## The generated artifact
-
-The generator does not rewrite `install.sh`. It **redefines one function underneath it**:
+**v1 of this spec was wrong here, fatally.** It proposed emitting
 
 ```
-install-appliance.sh = #!/usr/bin/env bash
-                       AURA_PAYLOAD_B64='<tar.gz of the 25 files, base64>'
-                       <extract the blob into a tmpdir>
-                       download_file() { cp "$PAYLOAD_DIR/$1" "$2"; }
-                       <install.sh verbatim>
+AURA_PAYLOAD_B64='...'
+download_file() { cp "$PAYLOAD_DIR/$1" "$2"; }
+<install.sh verbatim>
 ```
 
-The 25 `download_file src dst` call sites are untouched; only what the function does
-changes. `install.sh` stays readable, single-sourced, and still works standalone from a
-repo checkout. The generator is ~20 lines.
+and claimed the generator "does not rewrite install.sh". Those two are incompatible:
+`install.sh:205` defines `download_file` itself, the first call site is `install.sh:624`,
+and in bash the last definition executed wins. The verbatim include would silently clobber
+the override and all 25 calls would run the original curl against the moving ref — the
+precise failure the design exists to remove. Found by adversarial review, verified by hand.
 
-Payload measured 2026-09-02: **160,603 bytes across 25 files**, of which `compose.yaml` is
-82,877. Gzipped and base64'd it is roughly 40 KB inside the script.
+`makeself` is the standard tool for this and removes the problem structurally:
 
-**Determinism is load-bearing.** Without `--sort=name`, a fixed `--mtime`, `--owner=0
---group=0 --numeric-owner` and `gzip -n`, two generations of identical input differ
-byte-for-byte, the freshness gate flaps, and within a fortnight someone disables it. With
-them the artifact is a pure function of its inputs, and the CI gate is one honest line:
-regenerate, then `git diff --exit-code` on the artifact. That gate is what closes the
-hazard a committed generated file introduces — someone edits `compose.yaml`, forgets to
-regenerate, and the installer ships a stale compose.
+- it produces a shell stub + compressed tar, one file, executable;
+- it **embeds checksums by default** (CRC + MD5; `--sha256` adds SHA256) and validates them
+  on extraction, so integrity self-validation is the tool's job, not ours;
+- `--base64` is built in;
+- the startup script runs **with its working directory set to the extracted files**.
 
-`curl | bash` points at the generated artifact on raw. That path remains unverifiable by
-construction, exactly as today; the difference is that it is now **one** file instead of
-26, so its hash can be checked by hand.
+That last property is the fix. `install.sh` starts life already sitting next to its 25
+files. The only change it needs is one function that prefers them:
+
+```bash
+download_file() {
+  if [ -n "${AURA_PAYLOAD_DIR:-}" ]; then cp "$AURA_PAYLOAD_DIR/$1" "$2"; return; fi
+  curl -fsSL "${RAW_BASE}/$1" -o "$2" || { ... }
+}
+```
+
+`install.sh` captures its startup directory into `AURA_PAYLOAD_DIR` before its own
+`cd "$INSTALL_DIR"`, and stays fully usable standalone from a repo checkout, where the
+variable is unset and the curl branch runs. Single source, no code generation, no clobber.
+
+Payload measured 2026-09-02: **160,603 bytes across 25 files**, `compose.yaml` alone
+**82,877**.
+
+**The staleness gate moves to the inputs.** v1 proposed regenerating the artifact in CI and
+running `git diff --exit-code` on it. makeself documents no reproducible-output guarantee,
+so that gate would flap. The gate instead hashes the 25 **input files** and compares against
+a committed manifest; the artifact is a build output, not a committed blob. This also
+sidesteps mode-bit and tar-implementation drift between a WSL-generated and a CI-generated
+archive.
+
+`curl | bash` points at the published artifact. That path still cannot verify its own
+origin — see "What this design does NOT do".
 
 ## Config contract and model route
 
-The wizard does **not** write `.env`. `install.sh` already owns it through
-`write_env_if_missing`, `ensure_env_default` and `set_env_value`, which are idempotent and
-preserve explicit operator choices. Duplicating that in TypeScript would be two
+The wizard does **not** write `.env`. `install.sh` owns it through `write_env_if_missing`
+(`:456`), `ensure_env_default` (`:322`) and `set_env_value` (`:308`), which are idempotent
+and preserve explicit operator choices. Duplicating that in TypeScript would be two
 implementations diverging at the first edge case. The wizard produces a config;
 `install.sh` applies it.
 
 ```
 format=1
 install_dir_base64=...
-channel_base64=...              edge | vX.Y.Z
 appliance=true|false
 gvisor=true|false
-llm_provider_base64=...         openrouter | ollama | llamacpp
+llm_provider_base64=...         openrouter | ollama
 llm_base_url_base64=...
 llm_model_base64=...
-openrouter_api_key_base64=...   empty on a local route
+openrouter_api_key_base64=...   empty on the Ollama route
 embed_image_base64=...          CUDA or CPU, from the GPU probe
 embed_ngl_base64=...            99 or 0
 ```
 
 Mode `0600` in a `0700` directory, base64 values, `--config` taking a validated **absolute
-path**, accepted once. Secrets never travel through argv, so they reach neither the
-process table nor shell history.
+path**, accepted once. Secrets never travel through argv, so they reach neither the process
+table nor shell history. There is no `channel` field: decision 6 removed it.
 
-The config is **persisted to `$INSTALL_DIR/install.conf` (0600)**. Today it would not
-survive the install; the auto-update and any manual re-run both need it.
+The config is **persisted to `$INSTALL_DIR/install.conf` (0600)**. It does not survive the
+install today, and both the auto-update and any manual re-run need it.
 
 **The endpoint is probed from the network that will use it.** Aura runs in a container; an
-Ollama on the host is not at `127.0.0.1` seen from inside. The wizard therefore does not
-merely ask for a URL — it runs a throwaway `docker run --rm` on the compose network,
-probes from there, and writes the URL **as the container sees it**. This is the trap the
-project has already paid for once ("Hyper-V port forwarding lies — probe via docker
-network, not 127.0.0.1"); without this step the wizard produces installs that look
-successful and cannot answer.
+Ollama on the host is not at `127.0.0.1` seen from inside. The wizard runs a throwaway
+`docker run --rm` on the compose network, probes from there, and writes the URL **as the
+container sees it**. The project has already paid for this once ("Hyper-V port forwarding
+lies — probe via docker network, not 127.0.0.1"); without it the wizard produces installs
+that look successful and cannot answer.
 
-Once the endpoint answers, the wizard **lists the models actually installed** (`/api/tags`
-on Ollama, `/v1/models` on llama.cpp) instead of asking the operator to type an id from
-memory — LibreChat expresses the same idea as `models.fetch: true`. A typo'd
-`AURA_LLM_MODEL` is indistinguishable from an absent model until the first turn fails.
+Once the endpoint answers, the wizard **lists the models actually installed** (`/api/tags`)
+rather than asking for an id from memory — LibreChat expresses the same idea as
+`models.fetch: true`. A typo'd `AURA_LLM_MODEL` is indistinguishable from an absent model
+until the first turn fails.
 
-Choosing `llamacpp` selects the existing `localllm` compose profile: no URL to ask, Aura
-starts the sidecar itself; the wizard writes provider, the internal base URL, and the
-model.
+### Why llama.cpp is not in the wizard
+
+`compose.yaml:1149-1258` defines `aura-llm` under `profiles: [localllm]`. It needs two GGUF
+files in the named volume `aura-llm` — a ~6.7 GB model plus an MTP drafter — and has a
+healthcheck. `scripts/fetch_llm_model.sh` exists but `install.sh` references it **zero**
+times (`grep -cE 'fetch_llm_model|aura-llm|localllm' scripts/install.sh` → 0); it is called
+only from the `Makefile` and its own test. A wizard that enabled the profile would leave the
+volume empty, the healthcheck would never pass, `docker compose up -d --wait
+--wait-timeout 300` (`install.sh:670`) would time out, and under `set -euo pipefail` the
+**whole install would abort**.
+
+Wiring it means an `ensure_llm_model` twin of `ensure_embed_model` (`install.sh:265`) that
+fetches ~6.7 GB to the appliance. That is real work with its own bandwidth story on a
+WiFi-only box, and it is deliberately deferred: llama.cpp stays a manual route the operator
+wires by editing `.env` and enabling the profile.
 
 ## Remote install
 
 Staging is taken from wpt unchanged, because it is already right: UUID-named files in
-`/tmp`, installer `700` and config `600`, `trap` on EXIT/HUP/INT/TERM, a runner that
-deletes itself, and a sweep of leftovers older than a day. The installer **travels over
-SSH from the copy inside the npm package** — the appliance downloads nothing to obtain it.
+`/tmp`, installer `700` and config `600`, `trap` on EXIT/HUP/INT/TERM, a runner that deletes
+itself, a sweep of leftovers older than a day. The installer **travels over SSH from the
+copy inside the npm package** — the appliance downloads nothing to obtain it.
 
-The probe is rewritten on Aura's numbers. Targets are clean Ubuntu Server, so wpt's
-assumptions (`apt-get`, `systemctl`, `sudo`, `curl`) hold and disk is a sanity check, not a
-computed floor.
+Targets are clean Ubuntu Server, so wpt's probe assumptions (`apt-get`, `systemctl`, `sudo`,
+`curl`) hold and disk is a sanity check, not a computed floor.
 
 Two additions wpt does not need:
 
 **GPU detection.** `.env` ships `llama.cpp:server-cuda` with `AURA_EMBED_NGL=99`. Measured
 2026-09-02: that image is **6.99 GB**. On a mini-PC with no NVIDIA it is 7 GB pulled for
-nothing and the sidecar cannot offload anyway. The probe looks for a GPU on the target and
-the config carries `AURA_EMBED_IMAGE` and `AURA_EMBED_NGL` accordingly.
+nothing and the sidecar cannot offload anyway. The probe looks for a GPU and the config
+carries `AURA_EMBED_IMAGE` and `AURA_EMBED_NGL` accordingly.
 
-**Different egress.** wpt probes ghcr.io, raw.githubusercontent.com and get.docker.com.
-`raw.githubusercontent.com` is no longer needed — the installer arrives over SSH.
-`huggingface.co` is, because `ensure_embed_model` fetches 333,590,944 bytes of GGUF from
-there. On a WiFi-only appliance that is the fetch that fails first, and it must surface in
-the probe rather than half way through an install.
+**Different egress.** `raw.githubusercontent.com` is no longer needed for the payload.
+`huggingface.co` is, because `ensure_embed_model` fetches 333,590,944 bytes of GGUF. On a
+WiFi-only appliance that is the fetch that fails first and it must surface in the probe.
+`ghcr.io` and `get.docker.com` remain, the latter because `install.sh:174-181` pipes it to
+`sh` as root when Docker is absent.
 
-The rest of the probe stays wpt's: Linux, required commands present, architecture in the
-allowlist, existing install detected.
+**Concurrency.** `deploy/aura-image-update.sh:26-30` uses `flock`; `install.sh` has no
+equivalent. Nothing today stops two installs, or an operator re-run racing the auto-update's
+re-run, from writing `.env`/`compose.yaml` and calling `docker compose up` concurrently.
+The installer takes a lock on `$INSTALL_DIR`.
 
-## Payload auto-update
+## Payload auto-update — a `deploy/` deliverable
 
-No second updater. `install.sh` is already idempotent and says so: *"Re-running preserves
+This is **not** part of the npm package. It lands in `deploy/aura-image-update.sh` (or a
+sibling unit) and is Bash/ops work with its own review. v1 described the mechanism but
+listed only TypeScript files, which is how a scope gap hides.
+
+No second updater: `install.sh` is already idempotent and says so — *"Re-running preserves
 secrets and explicit settings; known-safe deployment defaults may be migrated."* Updating
 the payload is re-running the newer artifact with the stored config.
 
 ```
 timer (5 min, unchanged)
-  └─ compare published artifact sha256 against the installed one
+  └─ compare the published artifact against the installed one
      ├─ same    → exit (the normal case, one HEAD)
      └─ differs ↓
+        take the flock
         back up compose.yaml + .env
         run the new artifact with --config $INSTALL_DIR/install.conf
-        docker compose config -q          ← the real gate
+        docker compose config -q          ← the gate
         up -d --wait
         health does not return → restore the backup, up -d, and say so loudly
 ```
 
-`docker compose config -q` resolves the tension this feature carries: it fails **before
-anything is applied** when a new compose requires a variable the installed `.env` lacks —
-which is precisely how that failure would otherwise appear at three in the morning on a
-machine in someone else's house. Migrating new env defaults is already
-`ensure_env_default`'s job, preserving explicit operator choices.
+`docker compose config -q` fails **before anything is applied** when a new compose needs a
+variable the installed `.env` lacks — which is how that failure would otherwise appear at
+three in the morning on a machine in someone else's house. Migrating new env defaults is
+already `ensure_env_default`'s job.
 
-The artifact the timer compares against is the one on raw at the installed channel's ref,
-the same file `curl | bash` fetches.
+## Deliverables
 
-**Be precise about what that hash buys.** Comparing the published artifact against the
-installed one detects that the payload *changed*; it does not establish where it came
-from. The appliance's update path trusts raw.githubusercontent exactly as `curl | bash`
-does, and this design does not fix that — npm's provenance covers the operator running
-`npx`, not a box pulling its own updates. What the comparison does earn is real but
-narrower: the timer does nothing at all in the normal case, so an unchanged upstream costs
-one HEAD and never re-runs a root install. Closing the authenticity half needs a signature
-the appliance can verify offline, and that is deliberately left for later rather than
-implied by a hash check.
+Four separable workstreams. They are listed in dependency order and should not be bundled
+into one plan; (b) gates the rest.
+
+- **(a) `packages/create-aura`** — the TypeScript package: `bin`, `cli`, `prompts`,
+  `modelroute`, `local`, `remote`, `config-file`, `validation`, `process`, i18n en/it,
+  vitest suites mirroring wpt's nine plus `modelroute`.
+- **(b) The artifact** — makeself packaging, `install.sh`'s payload-aware `download_file`
+  and `--config` intake, the input-hash staleness gate, the npm publish wired into
+  `publish-aura-edge.yml`. **Prove this before building (a) on it**: v1's mechanism looked
+  obviously correct and was not.
+- **(c) Payload auto-update** — `deploy/`, root, unattended, on customer boxes. Deserves its
+  own threat model.
+- **(d) `config.Load()`** — `cmd/aura/pack_install.go:132` does `cfg, err := config.Load();
+  if err != nil { return nil }`. The gate at `internal/llm/config.go:351` is unconditional
+  on provider, and the error is **swallowed**. So on any keyless local-route deployment —
+  precisely the audience decision 3 exists to serve — `packSkillInstaller` returns nil and
+  skill installation is silently and permanently disabled. v1 called this a narrow
+  out-of-scope wrinkle; it is a standing feature loss and it is now a work item.
 
 ## Testing
 
-- vitest per unit, mirroring wpt's nine suites: cli, prompts, local, remote, config-file,
-  validation, process, i18n, plus `modelroute` which is ours.
-- The command runner is injected, so local and remote installs are tested without a box.
-- A generator test asserts determinism: generate twice, compare bytes.
-- A round-trip test asserts the generated artifact's payload extracts to files identical to
-  the repo's 25.
-- CI: the staleness gate (regenerate + `git diff --exit-code`), the package's own tests,
-  and the coverage/mutation thresholds the frontend already meets.
+- vitest per unit; the command runner is injected, so local and remote installs are tested
+  without a box.
+- A round-trip test: the artifact's payload extracts to files byte-identical to the repo's 25.
+- The input-hash staleness gate in CI.
+- Coverage ≥85% and mutation ≥70%, matching the frontend gates `web/` already meets.
 
 ## What this design does NOT do
 
-- It does not change any Go code. The measurement above showed the keyless local route
-  already works end to end; the one remaining fail-fast (`config.Load()` in
-  `pack_install.go`) is out of scope and untouched.
 - It does not make `curl | bash` verifiable, and it does not make the appliance's own
-  auto-update verifiable either. Both fetch the artifact from raw and can detect change
-  but not origin. They only get smaller — one file instead of 26. npm provenance covers
-  the operator who runs `npx`, nobody else.
-- It does not prove the payload auto-update is safe on a live appliance. `docker compose
-  config -q` catches a missing variable; it does not catch a compose change that is valid
-  and still wrong for that box. The rollback exists because that residue is real.
-- It does not size the appliance disk requirement. Targets are clean Ubuntu Server, so the
-  question was set aside rather than answered; the 27.43 GB of images and 16.4 GB of
-  volumes measured on this dev host are an upper bound on a machine that has pulled
-  everything, not a floor for an appliance.
-- It does not address the first-run MCP remount defect fixed separately in `0be6d243e`;
-  an appliance installed before that fix reaches an edge image still needs one restart
-  after the wizard.
+  auto-update verifiable either. Both fetch the artifact and can detect **change, not
+  origin**. makeself's embedded checksums prove the archive is intact, not that it is ours.
+  npm provenance covers the operator who runs `npx` and nobody else. Closing that half needs
+  a signature the appliance can verify offline, and is deliberately left for later.
+- It does not remove every unverified root-executed fetch. `install.sh:174-181` pipes
+  get.docker.com to `sh` as root; `:554-559` pipes a gVisor GPG key to `gpg --dearmor` as
+  root under `--gvisor`; `:664-667` pulls the Aura image by moving tag with no digest pin.
+  None are in the 25-file payload and none are fixed by carrying it.
+- It does not defend against a **downgrade**. The auto-update triggers on "published differs
+  from installed", which is symmetric: it cannot tell a forward update from a channel
+  pointed at an older artifact, and `docker compose config -q` cannot catch an older `aura`
+  meeting a schema its migrations already moved forward.
+- It does not wire llama.cpp. See above; that route stays manual.
+- It does not size the appliance disk requirement. Targets are clean Ubuntu Server. The
+  27.43 GB of images and 16.4 GB of volumes measured on this dev host are an upper bound for
+  a machine that has pulled everything, not a floor for an appliance.
+- It does not address the first-run MCP remount defect fixed in `0be6d243e`; an appliance
+  installed before that fix reaches an edge image still needs one restart after the wizard.
+
+## Corrections to v1
+
+Recorded rather than silently fixed, because v1's two central claims were written as
+measured fact without being exercised end to end — the failure this project's PRD-first
+principle exists to prevent.
+
+1. **Fatal:** the `download_file` override was clobbered by install.sh's own definition.
+   Replaced by makeself plus a payload-aware `download_file` in install.sh itself.
+2. **Wrong fact:** "the single occurrence of `sha256` in install.sh is a comment" — there
+   are **zero** occurrences; the earlier grep matched `checksum`.
+3. **Overstated:** "four are chmod +x'd and executed". Two run during the install
+   (`fetch_embedding_model.sh`, `observability_sidecar_check.sh`); `aura-image-update.sh` is
+   staged for systemd; `garage_bootstrap.sh` is downloaded and never invoked — the live
+   entrypoint is a copy baked into the image.
+4. **Imprecise:** `config.Load()` has one *production* call site; there are seven including
+   tests.
+5. **Scope gap:** the payload auto-update had no deliverable in the package layout.
+6. **Understated:** `config.Load()`'s effect is a silent permanent feature loss, not a
+   narrow fail-fast.
 
 ## Open items
 
