@@ -589,6 +589,21 @@ def write_report(path: pathlib.Path, report: dict[str, Any]) -> None:
     path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
 
+def failed_gate_names(report: dict[str, Any]) -> list[str]:
+    """Hard gates that did not PASS, in report order.
+
+    The verdict is `threshold_passed AND every hard gate`, so a perfect MRS can sit next
+    to a FAIL and the summary line reads as though 100.00 had missed a 96.5 floor. It cost
+    a CI cycle to establish that the score was never the problem. NOT_EVALUATED counts as
+    not-passing here because that is exactly how score() treats it.
+    """
+    return [
+        name
+        for name, gate in (report.get("hard_gates") or {}).items()
+        if not isinstance(gate, dict) or gate.get("status") != "PASS"
+    ]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Aura Agent Memory reliability evaluator")
     parser.add_argument("--manifest", type=pathlib.Path)
@@ -624,7 +639,9 @@ def main() -> int:
         print(f"agent-memory-eval: FAIL: {exc}", file=sys.stderr)
         return 1
     score_text = "not MRS-eligible" if report["memory_reliability_score"] is None else f"MRS={report['memory_reliability_score']:.2f}"
-    print(f"agent-memory-eval: {report['verdict']}: {score_text}; report={args.output}")
+    failed_gates = failed_gate_names(report)
+    gate_text = f"; failed gates: {', '.join(failed_gates)}" if failed_gates else ""
+    print(f"agent-memory-eval: {report['verdict']}: {score_text}{gate_text}; report={args.output}")
     return 0 if report["passed"] else 1
 
 

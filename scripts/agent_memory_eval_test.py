@@ -637,5 +637,38 @@ class CandidateMetadataTest(unittest.TestCase):
             self.assertTrue(all(len(item["sha256"]) == 64 for item in state["dirty_files"]))
 
 
+class FailedGateNamesTest(unittest.TestCase):
+    """A perfect MRS beside a FAIL verdict must name the gate that actually failed.
+
+    CI reported `FAIL: MRS=100.00` against a floor of 96.5, which reads as a contradiction
+    and sent the reader to the threshold. The threshold was fine; a hard gate was not, and
+    the line never said which.
+    """
+
+    def test_reports_nothing_when_every_gate_passes(self) -> None:
+        report = {"hard_gates": {"suite_integrity": {"status": "PASS"}}}
+        self.assertEqual(evaluator.failed_gate_names(report), [])
+
+    def test_names_failed_and_not_evaluated_gates_in_report_order(self) -> None:
+        report = {
+            "hard_gates": {
+                "suite_integrity": {"status": "PASS"},
+                "runtime_provenance": {"status": "FAIL"},
+                "isolation": {"status": "NOT_EVALUATED"},
+            }
+        }
+        # NOT_EVALUATED is included because score() also refuses it: `passed` requires
+        # every gate to equal "PASS", so an unevaluated gate fails the run silently.
+        self.assertEqual(
+            evaluator.failed_gate_names(report),
+            ["runtime_provenance", "isolation"],
+        )
+
+    def test_survives_a_report_with_no_gates_or_a_malformed_one(self) -> None:
+        self.assertEqual(evaluator.failed_gate_names({}), [])
+        self.assertEqual(evaluator.failed_gate_names({"hard_gates": None}), [])
+        self.assertEqual(evaluator.failed_gate_names({"hard_gates": {"broken": "PASS"}}), ["broken"])
+
+
 if __name__ == "__main__":
     unittest.main()
