@@ -125,14 +125,16 @@ func packEnvPairs(env map[string]string) []string {
 // packSkillInstaller returns the skill half, or nil when there is no writer pool
 // — the CLI then installs the connectors alone and says so, rather than failing
 // the whole pack over a database the operator may not have running.
+//
+// It loads config via LoadDB, not Load: installing a skill never touches the LLM,
+// so requiring OPENROUTER_API_KEY here would silently disable pack skill install on
+// every keyless local-model deployment (skills.go:68 makes the same call for the
+// same reason).
 func packSkillInstaller(pool *pgxpool.Pool) func(context.Context, string) error {
 	if pool == nil {
 		return nil
 	}
-	cfg, err := config.Load()
-	if err != nil {
-		return nil
-	}
+	cfg := config.LoadDB()
 	installer := skills.NewInstaller(skills.InstallerConfig{
 		Writer:       newSkillWriter(cfg, pool),
 		Blocklist:    cfg.SkillInjectionBlocklist,
