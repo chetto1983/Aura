@@ -23,8 +23,8 @@ payload_rels="$(payload_files "$repo_root")" || exit 1
 compute() {
   while read -r rel; do
     if [ -z "$rel" ]; then continue; fi
-    if [ ! -f "$repo_root/$rel" ]; then
-      echo "FAIL: payload file is missing from disk: $rel" >&2
+    if [ ! -r "$repo_root/$rel" ]; then
+      echo "FAIL: payload file is missing or unreadable: $rel" >&2
       return 1
     fi
     printf '%s  %s\n' "$(sha256sum "$repo_root/$rel" | cut -d' ' -f1)" "$rel"
@@ -35,23 +35,36 @@ if [ "${1:-}" = "--write" ]; then
   # The payload SET comes from install.sh, so a modified install.sh can point at files that
   # do not exist in HEAD yet; it is checked alongside the files it names.
   #
-  # `git status --porcelain` rather than `git diff HEAD`: git diff never considers UNTRACKED
-  # paths, so a brand-new payload file added by a concurrent session read as clean and its
-  # uncommitted bytes were frozen into the manifest -- the exact failure this guard exists
-  # to stop, reached from the other direction.
+  # Tracked-ness first, cleanliness second. `git status --porcelain` reports neither
+  # ignored paths nor a file git has never heard of in some configurations, and chasing
+  # those states one at a time is how this guard has now been wrong twice. CI builds from a
+  # fresh clone, so the invariant that actually matters is that git HAS the file at all.
+  missing=""
   dirty=""
   while read -r rel; do
     if [ -z "$rel" ]; then continue; fi
-    if [ -n "$(git -C "$repo_root" status --porcelain -- "$rel")" ]; then dirty="$dirty $rel"; fi
+    if ! git -C "$repo_root" ls-files --error-unmatch -- "$rel" >/dev/null 2>&1; then
+      missing="$missing $rel"
+    elif [ -n "$(git -C "$repo_root" status --porcelain -- "$rel")" ]; then
+      dirty="$dirty $rel"
+    fi
   done <<< "scripts/install.sh
 $payload_rels"
+  if [ -n "$missing" ]; then
+    echo "FAIL: these payload files are not tracked by git, so a fresh clone cannot build the artifact:$missing" >&2
+    exit 1
+  fi
   if [ -n "$dirty" ]; then
-    echo "FAIL: refusing to freeze a manifest while payload files are modified or untracked:$dirty" >&2
+    echo "FAIL: refusing to freeze a manifest while payload files are modified:$dirty" >&2
     echo "      commit them first -- a manifest of uncommitted bytes fails in CI." >&2
     exit 1
   fi
 
-  compute > "$manifest"
+  # Compute into a variable before touching the manifest: `compute > "$manifest"` truncates
+  # the tracked file up front, so a mid-computation failure left it empty on disk with
+  # nothing said about it.
+  new_manifest="$(compute)" || exit 1
+  printf '%s\n' "$new_manifest" > "$manifest"
   echo "ok: wrote $(wc -l < "$manifest") payload hashes"
   exit 0
 fi
