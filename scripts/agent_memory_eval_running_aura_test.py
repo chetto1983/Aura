@@ -251,3 +251,78 @@ class RunningAuraArmingTest(unittest.TestCase):
         self.assertIs(report["passed"], False)
         self.assertEqual(report["verdict"], "FAIL")
         self.assertEqual(report["hard_gates"]["running_aura_conversation"]["status"], "FAIL")
+
+
+class ExplicitReasoningRecallTest(unittest.TestCase):
+    """The assertion that silently failed this scenario on every live run.
+
+    The old form required the trace_id to appear inside result_preview, which the
+    2 KiB ledger cap makes impossible for any trace that has steps. These cases pin
+    the replacement: it accepts a provably correct recall whose preview is truncated,
+    and still rejects every way the recall can actually be wrong.
+    """
+
+    SENTINEL = "The user wants to store a specific fact in long-term memory"
+    TRACE = "01a06181-e16c-7523-a705-cb7c1c97169c"
+
+    def _preview(self, sentinel: str | None = None) -> str:
+        # Shaped like the real column: alphabetical keys, provider_summary early,
+        # trace_id absent because the cap already cut it away.
+        return (
+            '{"abstained":false,"evidence":[{"kind":"reasoning","rank":1,"reasoning":'
+            '{"conversation_id":"01a06181-e155","created_at":"2026-09-02T09:44:57.614Z",'
+            f'"provider_summary":"{self.SENTINEL if sentinel is None else sentinel}",'
+            '"source_ref":"postgres://[REDACTED]","status":"succeeded","steps":[…[capped]'
+        )
+
+    def args(self, **over):
+        base = {"mode": "reasoning", "trace_id": self.TRACE}
+        base.update(over)
+        return base
+
+    def test_correct_recall_with_truncated_preview_passes(self):
+        self.assertIs(
+            running_aura.explicit_reasoning_recall_ok(
+                self.args(), self._preview(), self.TRACE, self.SENTINEL),
+            True,
+        )
+        self.assertNotIn(self.TRACE, self._preview(), "fixture must reproduce the truncation")
+
+    def test_wrong_trace_returned_fails(self):
+        self.assertIs(
+            running_aura.explicit_reasoning_recall_ok(
+                self.args(), self._preview("a different trace entirely"), self.TRACE, self.SENTINEL),
+            False,
+        )
+
+    def test_empty_result_fails(self):
+        self.assertIs(
+            running_aura.explicit_reasoning_recall_ok(
+                self.args(), '{"abstained":true,"evidence":[]}', self.TRACE, self.SENTINEL),
+            False,
+        )
+
+    def test_non_reasoning_evidence_fails(self):
+        preview = self._preview().replace('"kind":"reasoning"', '"kind":"fact"')
+        self.assertIs(
+            running_aura.explicit_reasoning_recall_ok(
+                self.args(), preview, self.TRACE, self.SENTINEL),
+            False,
+        )
+
+    def test_wrong_mode_or_trace_id_argument_fails(self):
+        for args in (self.args(mode="semantic"), self.args(trace_id="other"), {}):
+            with self.subTest(args=args):
+                self.assertIs(
+                    running_aura.explicit_reasoning_recall_ok(
+                        args, self._preview(), self.TRACE, self.SENTINEL),
+                    False,
+                )
+
+    def test_absent_sentinel_cannot_vacuously_pass(self):
+        # A missing ArcadeDB row must not make the proof trivially true.
+        self.assertIs(
+            running_aura.explicit_reasoning_recall_ok(
+                self.args(), self._preview(), self.TRACE, ""),
+            False,
+        )

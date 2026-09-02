@@ -158,7 +158,8 @@ def run_running_aura_conversation(repo: pathlib.Path, timeout_seconds: int) -> d
     explicit = _turn_evidence(repo, identity, reasoning_conversation, explicit_run, after_seq=exclusion["seq"])
     explicit_tool = _find_tool(explicit["tools"], "memory__memory_recall")
     explicit_args = _json_object(explicit_tool.get("args_raw", ""))
-    explicit_ok = explicit_args.get("mode") == "reasoning" and explicit_args.get("trace_id") == trace_id and trace_id in explicit_tool.get("result_preview", "")
+    explicit_ok = explicit_reasoning_recall_ok(
+        explicit_args, explicit_tool.get("result_preview", ""), trace_id, sentinel)
     reasoning_traces = _unique(_tempo_traces(repo, trace_id) + _tempo_traces(repo, explicit_tool.get("request_id", "")))
     evidence_counts["tempo"] += len(reasoning_traces)
     evidence_counts["tool_invocations"] += len(work["tools"]) + len(exclusion["tools"]) + len(explicit["tools"])
@@ -215,6 +216,34 @@ def run_running_aura_conversation(repo: pathlib.Path, timeout_seconds: int) -> d
         "candidate_commit": candidate, "running_commit": running,
         "scenarios": scenarios, "evidence": evidence_counts,
     })
+
+
+
+def explicit_reasoning_recall_ok(args: dict[str, Any], preview: str, trace_id: str, sentinel: str) -> bool:
+    """Explicit reasoning recall proved from ground truth rather than from a substring.
+
+    The obvious assertion -- `trace_id in preview` -- is not merely flaky, it is
+    IMPOSSIBLE to satisfy, and it silently failed this scenario on every run. The
+    durable result_preview column is capped at 2 KiB by RedactForLedger
+    (internal/toolinvocations/redact.go, ResultPreviewCapBytes) while the real recall
+    payload measured 4178 bytes, and the preview serializes its keys alphabetically,
+    so `trace_id` sorts AFTER the large `steps` array and is always past the cut.
+    Measured live 2026-09-02: the call was correct (mode=reasoning, exact trace_id,
+    effective_path=reasoning) and the scenario still scored 0.0.
+
+    What is asserted instead is that the tool handed back THE trace the graph holds:
+    `sentinel` is the head of provider_summary read from the ArcadeDB ReasoningTrace
+    row itself, so it exists nowhere else, and it must appear in what the model
+    received. This still fails loudly when it should -- an empty result, a wrong
+    trace, or a reasoning mode that stopped returning traces all break it -- and it
+    is the exact counterpart of the exclusion check, which requires that same
+    sentinel be ABSENT from ordinary context.
+    """
+    if args.get("mode") != "reasoning" or args.get("trace_id") != trace_id:
+        return False
+    if not sentinel or not preview:
+        return False
+    return sentinel in preview and '"kind":"reasoning"' in preview.replace(" ", "")
 
 
 def running_aura_is_armed() -> bool:
