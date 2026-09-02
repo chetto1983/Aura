@@ -4,10 +4,17 @@ name: Skills (CAP-07 / CAP-08)
 # the find-skills-aura always-block + Loader injection blocklist — post-#51/D-40 thin
 # shape, no model-facing catalog/installer) + CAP-08 (executable snippets v1) against the
 # live substrate and
-# gates regressions: the unit tier, the db_integration audit tier (SC#1/SC#2), the
-# FuzzSkillValidator smoke (SC#3), the by-path snippet-exec tier (SC#4, host python3), the
-# TTL sweep tier, go-mutesting on the two critical files (validator.go + writer.go, ≥70%),
-# and the owned-surface ≥85% coverage floor across the tag matrix (db_integration).
+# gates regressions.
+#
+# This job carries ONLY what ci.yml does not. Its unit tier and its owned-surface coverage
+# gate were both removed once measured against ci.yml: `unit-test` already races every
+# owned package (scripts/go_packages.sh includes internal/skills, internal/agent/tools and
+# internal/cron/...), `integration-test` already runs ./internal/cron/... under
+# db_integration, and knowledge-integration-test already runs the same coverage script on a
+# fuller stack. What remains here is genuinely unique: the FuzzSkillValidator smoke (SC#3),
+# the db_integration audit tier on internal/skills (SC#1/SC#2 + migration round-trip + TTL,
+# the one package ci.yml's integration-test omits), the by-path snippet-exec tier (SC#4,
+# host python3), and go-mutesting on the two critical files (validator.go + writer.go).
 # The paid LIVE xlsx North-Star E2E that used to back D-35 is gone with internal/eval
 # (2026-08-02): the harness it ran on was deleted, so there is no operator invocation
 # to point at any more.
@@ -98,19 +105,17 @@ jobs:
           make db-up
           go run ./cmd/aura db migrate
 
-      - name: Unit tier (race detector, LLM-free + DB-free)
-        # The two CI-runnable smokes (TestHaikuFlow + TestSnippetReuse) ride this tier
-        # alongside the package's unit tests + the skill tool + the cron handler units.
-        run: go test -race -count=1 ./internal/skills/ ./internal/agent/tools/ ./internal/cron/...
-
       - name: FuzzSkillValidator smoke (SC#3, 60s NFKC/Unicode mutations)
         run: go test -run '^$' -fuzz=FuzzSkillValidator -fuzztime=60s ./internal/skills/
 
       - name: db_integration tier (SC#1 audit INSERT + SC#2 immutability + migration round-trip + TTL)
-        # -p 1 is MANDATORY (same rule as scripts/coverage_gate.sh): internal/skills +
-        # internal/cron share ONE Postgres and each runs EnsureRoles+Migrate; parallel
-        # package binaries deadlock on pg_advisory_lock once >2 integration packages exist.
-        run: go test -tags db_integration -race -count=1 -p 1 ./internal/skills/ ./internal/cron/...
+        # internal/skills only. ci.yml's integration-test already runs ./internal/cron/...
+        # under this exact tag; internal/skills is the package it does NOT cover, which is
+        # why this tier still exists.
+        # -p 1 stays (same rule as scripts/coverage_gate.sh): packages here share ONE
+        # Postgres and each runs EnsureRoles+Migrate, so parallel package binaries deadlock
+        # on pg_advisory_lock. It is a no-op for a single package and a guard for the next.
+        run: go test -tags db_integration -race -count=1 -p 1 ./internal/skills/
 
       - name: SC#4 by-path snippet exec tier (host python3)
         # The full 7e runtime: save -> activate -> materialize into the host export dir ->
@@ -155,21 +160,14 @@ jobs:
             fi
           done
 
-      - name: Install poppler-utils (the PDF text extractor ingest uses)
-        # The gate measures internal/documents/filecard, whose PDF path shells out to
-        # pdftotext (baked into docker/aura/Dockerfile, absent from the runner image).
-        # Without it that path is uncovered AND its tests t.Fatal under $CI.
-        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends poppler-utils
-
-      - name: Coverage gate (owned surface ≥85% across the tag matrix, CLAUDE.md floor)
-        # The combined figure (CLAUDE.md): the coverage run carries the db_integration tag
-        # so the audit + by-path snippet-exec tiers fold into internal/skills coverage.
-        # A unit-only number below 85% must NOT satisfy this gate. NO-SKIP-AS-GREEN:
-        # the tagged tiers t.Fatal under $CI when env is unset, so a skipped tier fails.
-        env:
-          AURA_COVERAGE_TAGS: "db_integration"
-        run: bash scripts/coverage_gate.sh
-
+      # The owned-surface coverage gate used to run here too, with the same script and the
+      # same db_integration tag as ci.yml's knowledge-integration-test job -- but against a
+      # weaker stack (`make db-up`: Postgres only, no ArcadeDB, no embed sidecar) and
+      # publishing no artifact. So it was not a second opinion, it was the same measurement
+      # taken with less of the system up, ~20 minutes of it, on every push and every PR.
+      # ci.yml's run is the authority: it brings the full stack up and uploads the
+      # coverage-report.json that release readiness reads. The poppler-utils install that
+      # served this step went with it -- ci.yml installs its own.
       - name: Tear down
         if: always()
         run: docker compose down -v || true
