@@ -1,0 +1,3 @@
+# Build/test byproducts (local only); node_modules/ is already caught by the root .gitignore.
+dist/
+coverage/

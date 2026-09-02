@@ -20,7 +20,6 @@
   },
   "scripts": {
     "build": "node scripts/clean-dist.mjs && tsc",
-    "lint": "eslint src",
     "test": "vitest run",
     "test:watch": "vitest",
     "prepack": "npm run build"
@@ -31,6 +30,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^4.1.11",
     "typescript": "^5.8.0",
     "vitest": "^4.1.9"
   },

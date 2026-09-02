@@ -8,10 +8,6 @@ describe('installer i18n', () => {
     expect(Object.keys(italian).sort()).toEqual(Object.keys(en).sort());
   });
 
-  it('has identical key sets across locales', () => {
-    expect(Object.keys(en).sort()).toEqual(Object.keys(italian).sort());
-  });
-
   it.each([
     ['it-IT', 'it'],
     ['it_CH', 'it'],
