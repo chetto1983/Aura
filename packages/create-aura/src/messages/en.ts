@@ -27,6 +27,8 @@ export const en = {
   invalidPort: 'Enter a port between 1 and 65535.',
   invalidUsername: 'Enter a valid Linux username.',
   invalidInstallDir: 'Enter an absolute Linux path other than /.',
+  invalidBaseUrl: 'Enter a valid http or https URL.',
+  invalidModelId: 'Enter a valid model identifier.',
   missingCommand: 'Required command not found: {command}',
   preflightFailed: 'Preflight failed: {reason}',
   insufficientDiskSpace: 'Not enough free disk space on the installation target.',

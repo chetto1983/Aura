@@ -29,6 +29,8 @@ export const it: Record<keyof typeof en, string> = {
   invalidPort: 'Inserisci una porta compresa tra 1 e 65535.',
   invalidUsername: 'Inserisci un nome utente Linux valido.',
   invalidInstallDir: 'Inserisci un percorso Linux assoluto diverso da /.',
+  invalidBaseUrl: 'Inserisci un URL http o https valido.',
+  invalidModelId: 'Inserisci un identificativo di modello valido.',
   missingCommand: 'Comando richiesto non trovato: {command}',
   preflightFailed: 'Controlli preliminari non riusciti: {reason}',
   insufficientDiskSpace: 'Spazio libero su disco insufficiente sulla destinazione di installazione.',
