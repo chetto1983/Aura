@@ -17,8 +17,17 @@ pre-commit:
       # under Windows Git Bash, WSL, and CI Linux.
       run: bash scripts/gofmt-staged.sh {staged_files}
       stage_fixed: true
+    # Staged-file-driven, like gofmt above: the glob decides whether to run at all, and the
+    # script narrows the scan to the packages this commit touches. `go vet ./...` used to run
+    # here unconditionally, which meant a docs- or web-only commit paid for a whole-module
+    # vet, and — in a worktree shared with a second session — a commit could be blocked by
+    # THEIR in-progress file, which is how someone ends up reaching for `git stash` or
+    # --no-verify. Narrowing does not isolate a package from a broken DEPENDENCY (vet
+    # type-checks those too, and that failure is real), it removes the unrelated ones.
+    # CI keeps the full sweep: `go vet $(bash scripts/go_packages.sh)` plus the tagged tiers.
     vet:
-      run: go vet ./...
+      glob: "*.go"
+      run: bash scripts/vet-staged.sh {staged_files}
     # golangci-lint (dupl/gosec/govet/staticcheck/revive/…) runs here, not at pre-push, so a
     # lint regression surfaces at the commit that introduced it instead of after a range of
     # commits accumulates for a push (the caught issue is then one small diff, not a bisect).
