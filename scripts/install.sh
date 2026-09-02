@@ -603,6 +603,15 @@ host_for_summary() {
   fi
 }
 
+# Sourcing this script defines its functions and stops here; executing it falls through and
+# installs. The tests drive one function at a time, which is impossible while the file is
+# imperative top-to-bottom. Under `curl | bash` BASH_SOURCE[0] is unset, so it defaults to
+# $0 and the comparison is equal -- that path still installs, which is the whole point of
+# it. The :- is required because line 17 sets `-u`.
+if [ "${BASH_SOURCE[0]:-$0}" != "$0" ]; then
+  return 0
+fi
+
 preflight_hw
 install_docker
 provision_gvisor

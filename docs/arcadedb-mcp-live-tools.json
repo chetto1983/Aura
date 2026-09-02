@@ -807,7 +807,7 @@
       "idempotentHint": false,
       "readOnlyHint": true
     },
-    "description": "The single deep-read operation for Aura memory. Semantic mode (the default) can return typed fact and historical-conversation evidence together. Recent, open, and scroll progressively browse bounded conversation windows; reasoning explicitly searches or opens provider-visible traces and is never included by other modes. Weak evidence abstains explicitly.",
+    "description": "The single deep-read operation for Aura memory. Choose the mode from the question: use recent when it asks what happened before rather than about a topic -- what you two have discussed, what you remember of the user, anything that means look back; the default semantic mode matches wording and will miss those, answering that it recalls nothing. Use semantic with query for a specific topic, or entity for a name you already know. Use open and scroll with conversation_id to page through one conversation's turns. Reasoning explicitly searches or opens provider-visible traces and is never included by other modes. Weak evidence abstains explicitly.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
