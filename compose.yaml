@@ -643,16 +643,22 @@ services:
   # production boundaries remain here rather than behind a compatibility branch selected by
   # the installed ArcadeDB version.
   #
-  # PINNED BY COMMIT. 3c1723cc5d3c4a23c9585c96b9c35d3d79416050 publishes the generic
-  # OAuth resource server from this repository. A floating or local default is forbidden:
-  # production must run the same reviewed bytes as CI. Published index digest:
-  # sha256:621438a7bb77983899c22f43c52714d08c25af1efcd9ad14fc3479e8893225a4.
+  # SOURCE-BUILT and UNPINNED, like `aura` above. The commit+digest pin was removed
+  # 2026-09-02 by operator decision: this sidecar's code changes in the same commits as
+  # the rest of the repo, so a pin published from CI meant every fix to it waited a full
+  # publish round-trip before it could even be tried -- and the local `docker compose
+  # build` that unblocks a fix silently overwrote the pinned tag anyway, which is the
+  # failure the pin was meant to prevent. `latest` with `pull_policy: never` is a purely
+  # LOCAL tag: nothing is ever fetched, so the running bytes are whatever this checkout
+  # last built, and a rebuild is picked up without editing a digest. An appliance
+  # tracking the GHCR edge channel still sets the env pair below, exactly as
+  # AURA_IMAGE/AURA_PULL_POLICY govern the main image.
   arcadedb-mcp:
     build:
       context: .
       dockerfile: docker/arcadedb-mcp/Dockerfile
-    image: ${AURA_ARCADEDB_MCP_IMAGE:-ghcr.io/chetto1983/aura-arcadedb-mcp:3c1723cc5d3c4a23c9585c96b9c35d3d79416050@sha256:621438a7bb77983899c22f43c52714d08c25af1efcd9ad14fc3479e8893225a4}
-    pull_policy: ${AURA_ARCADEDB_MCP_PULL_POLICY:-missing}
+    image: ${AURA_ARCADEDB_MCP_IMAGE:-aura-arcadedb-mcp:latest}
+    pull_policy: ${AURA_ARCADEDB_MCP_PULL_POLICY:-never}
     container_name: aura-arcadedb-mcp
     restart: unless-stopped
     mem_limit: 512m
