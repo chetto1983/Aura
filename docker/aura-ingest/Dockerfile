@@ -12,7 +12,20 @@
 FROM golang:1.26-bookworm AS filecard
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download
+# proxy.golang.org drops a stream mid-fetch often enough to redden a whole CI run on a
+# build that has nothing wrong with it: measured 2026-09-01 on Actions run 33552817871,
+# `stream error: stream ID 323; INTERNAL_ERROR; received from peer` on one module .mod
+# file, which killed the Agent Memory job before a single test body ran. Three tries with
+# a widening pause: a transport blip is ridden out, a module that genuinely is not there
+# still stops the build on the third. Every branch is `if`-guarded because under `set -e`
+# a bare `[ ... ] && ...` whose test is false exits the shell with the test's status.
+RUN set -e; \
+    for attempt in 1 2 3; do \
+      if go mod download; then break; fi; \
+      if [ "$attempt" = 3 ]; then echo "go mod download failed after 3 attempts" >&2; exit 1; fi; \
+      echo "go mod download failed (attempt $attempt); retrying" >&2; \
+      sleep $((attempt * 5)); \
+    done
 COPY cmd/aura-filecard ./cmd/aura-filecard
 COPY cmd/aura-media-index ./cmd/aura-media-index
 COPY cmd/aura-ingest-supervisor ./cmd/aura-ingest-supervisor
