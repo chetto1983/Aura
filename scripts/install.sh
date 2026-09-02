@@ -153,7 +153,17 @@ preflight_hw() {
   mem_kib="$(ram_kib)"
   free_kib="$(disk_free_kib "$INSTALL_DIR")"
 
-  hard_mem=$((16 * 1024 * 1024))
+  # 15 GiB, not 16, and the difference is the whole point: ram_kib reports MemTotal, which
+  # is installed RAM MINUS firmware and kernel reservations (an integrated GPU takes its
+  # share too). A 16 GB machine therefore reports ~15.4-15.8 GiB and can NEVER reach a
+  # 16 GiB floor -- so the previous value refused every box it was written to admit, on
+  # every hardware, always. Do not "correct" this back to 16.
+  # What the floor is protecting is also smaller than it looks: `docker compose up -d` with
+  # no profile leaves aura-llm (the ~6.7 GB local GGUF), aura-ocr-vl and the observability
+  # trio switched off, and the whole default stack was measured at 7 GB with STT and TTS
+  # running (2026-09-02, operator's 16 GB mini PC). Whether the floor could go lower still
+  # is a separate question needing a measurement under ingestion load, not at rest.
+  hard_mem=$((15 * 1024 * 1024))
   warn_mem=$((32 * 1024 * 1024))
   hard_disk=$((20 * 1024 * 1024))
   warn_disk=$((50 * 1024 * 1024))
@@ -164,7 +174,7 @@ preflight_hw() {
     failed=1
   fi
   if [ "$mem_kib" -lt "$hard_mem" ]; then
-    echo "FAIL: Aura requires at least 16 GiB RAM; found $((mem_kib / 1024 / 1024)) GiB." >&2
+    echo "FAIL: Aura requires at least 15 GiB usable RAM; found $((mem_kib / 1024 / 1024)) GiB." >&2
     failed=1
   elif [ "$mem_kib" -lt "$warn_mem" ]; then
     echo "WARN: 32 GiB RAM is recommended; found $((mem_kib / 1024 / 1024)) GiB." >&2
