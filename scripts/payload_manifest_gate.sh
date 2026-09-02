@@ -23,11 +23,22 @@ payload_rels="$(payload_files "$repo_root")" || exit 1
 compute() {
   while read -r rel; do
     if [ -z "$rel" ]; then continue; fi
-    if [ ! -r "$repo_root/$rel" ]; then
-      echo "FAIL: payload file is missing or unreadable: $rel" >&2
+    # `-r` alone accepts a directory: sha256sum then fails with "Is a directory" inside a
+    # command substitution used as a printf argument, where `set -euo pipefail` cannot reach
+    # it, so a hashless line was reaching the manifest. Require a regular file first.
+    if [ ! -f "$repo_root/$rel" ] || [ ! -r "$repo_root/$rel" ]; then
+      echo "FAIL: payload entry is missing, unreadable, or not a regular file: $rel" >&2
       return 1
     fi
-    printf '%s  %s\n' "$(sha256sum "$repo_root/$rel" | cut -d' ' -f1)" "$rel"
+    # Assign before printing so ANY hashing failure -- not just the directory case above --
+    # is caught here instead of writing a blank hash for a line that still counts toward
+    # "wrote N payload hashes".
+    hash="$(sha256sum "$repo_root/$rel" | cut -d' ' -f1)"
+    if [ -z "$hash" ]; then
+      echo "FAIL: could not hash payload file: $rel" >&2
+      return 1
+    fi
+    printf '%s  %s\n' "$hash" "$rel"
   done < <(LC_ALL=C sort <<< "$payload_rels")
 }
 
@@ -45,9 +56,14 @@ if [ "${1:-}" = "--write" ]; then
     if [ -z "$rel" ]; then continue; fi
     if ! git -C "$repo_root" ls-files --error-unmatch -- "$rel" >/dev/null 2>&1; then
       missing="$missing $rel"
-    elif [ -n "$(git -C "$repo_root" status --porcelain -- "$rel")" ]; then
-      dirty="$dirty $rel"
+      continue
     fi
+    # Report git's own status line (` D compose.yaml`, `M compose.yaml`, ...) instead of
+    # collapsing every kind of difference from HEAD into "modified" -- a deleted tracked
+    # file was being described as edited, which names the wrong state to the operator.
+    status="$(git -C "$repo_root" status --porcelain -- "$rel")"
+    if [ -n "$status" ]; then dirty="$dirty
+  ${status}"; fi
   done <<< "scripts/install.sh
 $payload_rels"
   if [ -n "$missing" ]; then
@@ -55,7 +71,7 @@ $payload_rels"
     exit 1
   fi
   if [ -n "$dirty" ]; then
-    echo "FAIL: refusing to freeze a manifest while payload files are modified:$dirty" >&2
+    echo "FAIL: refusing to freeze a manifest while payload files differ from HEAD:$dirty" >&2
     echo "      commit them first -- a manifest of uncommitted bytes fails in CI." >&2
     exit 1
   fi
