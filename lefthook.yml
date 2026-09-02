@@ -64,6 +64,14 @@ pre-push:
       # No inner quotes, and no arguments: same hazard deadcode documents below. The cd,
       # the explicit --compile and the reasons for both live in the wrapper.
       run: bash scripts/tagged_tier_pre_push.sh
+    # The payload manifest pins the bytes the installer artifact ships. It is regenerated
+    # BY HAND (`make payload-manifest`) on purpose: auto-writing it would let a payload
+    # change slip through invisibly, and the whole point is that such a change shows up in
+    # a diff someone reads. What should NOT be manual is remembering — this gate also runs
+    # in CI (ci.yml), and finding out there means a red build after the push. Here it costs
+    # 27 file hashes and tells you while you can still fix it in one command.
+    payload-manifest:
+      run: bash scripts/payload_manifest_gate.sh
     deadcode:
       # No inner quotes: lefthook mangles double quotes nested in the single-quoted
       # `bash -c '…'` string, which failed the gate closed at ~0.2s without ever running it.
