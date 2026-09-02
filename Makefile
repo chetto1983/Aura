@@ -6,7 +6,7 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help tools sqlc lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract llm-model-contract web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval agent-memory-eval-running-aura critical-mutation observability-check observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up sandbox-images installer-artifact arcadedb-integration ingest-test restore-drill load-chaos
+.PHONY: help tools sqlc lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract llm-model-contract web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval agent-memory-eval-running-aura critical-mutation observability-check observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up sandbox-images installer-artifact payload-manifest arcadedb-integration ingest-test restore-drill load-chaos
 
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
@@ -39,6 +39,7 @@ help:
 	@echo "make agent-memory-eval — blocking MRS over the already-running live memory stack"
 	@echo "make sandbox-images — build the per-identity box + egress images the daemon needs"
 	@echo "make installer-artifact — pack install.sh + its 25 payload files into one makeself .run"
+	@echo "make payload-manifest — freeze scripts/payload_manifest.txt; run after touching a payload file"
 	@echo "make critical-mutation — >=70% per critical Go boundary + frontend, no averaging"
 	@echo "make observability-check — verify live Tempo/Prometheus readiness and Aura scrape"
 	@echo "make observability-evidence — fixtures + runtime smoke + live Aura endpoints"
@@ -278,6 +279,13 @@ sandbox-images:
 # apt-get install -y makeself).
 installer-artifact:
 	bash scripts/build_installer.sh dist/install-appliance.run
+
+# Refreshes the hash inventory that scripts/payload_manifest_gate.sh checks. Run this after
+# touching any of the 25 payload files and commit the result -- the gate fails closed
+# otherwise. Refuses if a payload file is dirty in git (freezing uncommitted bytes into the
+# manifest would make CI red for a reason nobody could explain later).
+payload-manifest:
+	bash scripts/payload_manifest_gate.sh --write
 
 # Compatibility name for operators' muscle memory. The MRS evaluator is the
 # single current memory gate and fails closed on missing, skipped, coverage or

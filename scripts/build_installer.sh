@@ -19,23 +19,21 @@ if ! command -v makeself >/dev/null 2>&1; then
   exit 1
 fi
 
+# shellcheck source=scripts/payload_files.sh
+source "$repo_root/scripts/payload_files.sh"
+
 staging="$(mktemp -d)"
 trap 'rm -rf "$staging"' EXIT
 
 # The payload list is derived from install.sh itself, so a file added there cannot be
-# forgotten here. The anchor tolerates leading whitespace because addendum H schedules a
-# split of install.sh, and an indented download_file call inside an if/function must still
-# be found -- a bare '^download_file ' would silently drop it and still exit 0.
+# forgotten here; see payload_files.sh for the $-literal guard and why this must be a
+# command substitution rather than `< <(payload_files ...)`.
+payload_rels="$(payload_files "$repo_root")" || exit 1
 while read -r rel; do
-  case "$rel" in
-    *'$'*)
-      echo "FAIL: download_file '$rel' is not a literal path; the payload list cannot be derived from it" >&2
-      exit 1
-      ;;
-  esac
+  if [ -z "$rel" ]; then continue; fi
   mkdir -p "$staging/$(dirname "$rel")"
   cp "$repo_root/$rel" "$staging/$rel"
-done < <(grep -E '^[[:space:]]*download_file ' "$repo_root/scripts/install.sh" | awk '{print $2}')
+done <<< "$payload_rels"
 
 cp "$repo_root/scripts/install.sh" "$staging/install.sh"
 

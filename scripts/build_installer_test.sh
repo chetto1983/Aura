@@ -3,6 +3,8 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/payload_files.sh
+source "$repo_root/scripts/payload_files.sh"
 # NO SKIP-AS-GREEN: a missing makeself in CI must redden the job, not pass it silently.
 # Locally it still skips, so a developer without the tool is not blocked.
 if ! command -v makeself >/dev/null 2>&1; then
@@ -36,12 +38,14 @@ fi
 # the failure this test exists to catch.
 extract="$fixture_root/extracted"
 "$artifact" --noexec --keep --target "$extract" >/dev/null
+payload_rels="$(payload_files "$repo_root")" || exit 1
 while read -r rel; do
+  if [ -z "$rel" ]; then continue; fi
   if ! cmp -s "$repo_root/$rel" "$extract/$rel"; then
     echo "FAIL: payload differs for $rel" >&2
     exit 1
   fi
-done < <(grep -E '^[[:space:]]*download_file ' "$repo_root/scripts/install.sh" | awk '{print $2}')
+done <<< "$payload_rels"
 
 # makeself's header parses argv for its own flags before exec'ing startup.sh, so an
 # installer flag only survives after '--'. Both directions are asserted: if a future
