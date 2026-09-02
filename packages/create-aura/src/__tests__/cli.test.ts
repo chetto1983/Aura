@@ -24,7 +24,7 @@ function createFakeRunner(
 function createPassingPreflightRunner(): FakeRunner {
   return createFakeRunner(async (command) => {
     if (command === 'uname') return { stdout: 'x86_64\n', stderr: '', exitCode: 0 };
-    if (command === 'nproc') return { stdout: '8\n', stderr: '', exitCode: 0 };
+    if (command === 'getconf') return { stdout: '8\n', stderr: '', exitCode: 0 };
     // 41943040 KiB (40 GiB) clears both the memory floor (16 GiB) and the disk floor
     // (20 GiB), so one generic answer satisfies whichever `sh -c` check asks.
     if (command === 'sh') return { stdout: '41943040\n', stderr: '', exitCode: 0 };
@@ -50,7 +50,7 @@ describe('create-aura CLI', () => {
     const write = vi.fn();
     const runner = createFakeRunner(async (command) => {
       if (command === 'uname') return { stdout: 'aarch64\n', stderr: '', exitCode: 0 };
-      if (command === 'nproc') return { stdout: '8\n', stderr: '', exitCode: 0 };
+      if (command === 'getconf') return { stdout: '8\n', stderr: '', exitCode: 0 };
       if (command === 'sh') return { stdout: '41943040\n', stderr: '', exitCode: 0 };
       throw new Error(`unexpected command ${command}`);
     });
@@ -230,7 +230,7 @@ describe('create-aura CLI', () => {
     const writeError = vi.fn();
     const runner = createFakeRunner(async (command, args) => {
       if (command === 'uname') return { stdout: 'x86_64\n', stderr: '', exitCode: 0 };
-      if (command === 'nproc') return { stdout: '8\n', stderr: '', exitCode: 0 };
+      if (command === 'getconf') return { stdout: '8\n', stderr: '', exitCode: 0 };
       if (command === 'sh' && args.some((arg) => arg.includes('MemTotal'))) {
         return { stdout: '41943040\n', stderr: '', exitCode: 0 };
       }
@@ -320,7 +320,7 @@ describe('create-aura CLI', () => {
     const collectSettingsMock = vi.fn(async () => validSettings);
     const runner = createFakeRunner(async (command) => {
       if (command === 'uname') return { stdout: 'x86_64\n', stderr: '', exitCode: 0 };
-      if (command === 'nproc') return { stdout: '2\n', stderr: '', exitCode: 0 };
+      if (command === 'getconf') return { stdout: '2\n', stderr: '', exitCode: 0 };
       if (command === 'sh') return { stdout: '41943040\n', stderr: '', exitCode: 0 };
       throw new Error(`unexpected command ${command}`);
     });
@@ -346,7 +346,7 @@ describe('create-aura CLI', () => {
     const collectSettingsMock = vi.fn(async () => validSettings);
     const runner = createFakeRunner(async (command, args) => {
       if (command === 'uname') return { stdout: 'x86_64\n', stderr: '', exitCode: 0 };
-      if (command === 'nproc') return { stdout: '8\n', stderr: '', exitCode: 0 };
+      if (command === 'getconf') return { stdout: '8\n', stderr: '', exitCode: 0 };
       if (command === 'sh' && args.some((arg) => arg.includes('MemTotal'))) {
         return { stdout: '1024\n', stderr: '', exitCode: 0 };
       }
@@ -413,5 +413,119 @@ describe('create-aura CLI', () => {
     expect(code).toBe(1);
     expect(writeError.mock.calls.flat().join('\n')).not.toContain('unsupportedArchitecture:riscv64');
     expect(writeError).toHaveBeenCalledWith(en.unsupportedArchitecture);
+  });
+
+  // F6 (review round 2): the F2 fix ran `nproc` and read /proc/meminfo directly -- both
+  // Linux-only, and install.sh:208 explicitly supports macOS via Docker Desktop. Before F2
+  // the function used only `uname -m` and `df -Pk`, both portable, so F2 made the wizard
+  // refuse a Mac install.sh accepts. Fix mirrors install.sh:118-135's own portable reads.
+  it('reads CPU cores with getconf, the one call install.sh itself prefers over branching on OS', async () => {
+    const runner = createPassingPreflightRunner();
+
+    const code = await runCli(['--mode', 'local'], {
+      locale: 'en',
+      runner,
+      collectTarget: vi.fn(async () => ({ mode: 'local' as const, installDir: '/opt/aura' })),
+      collectSettings: vi.fn(async () => validSettings),
+      createConfig: vi.fn(async () => ({ path: '/tmp/config', cleanup: vi.fn() })),
+      installLocal: vi.fn(async () => {}),
+      write: vi.fn(),
+    });
+
+    expect(code).toBe(0);
+    const getconfCall = runner.calls.find((call) => call.command === 'getconf');
+    expect(getconfCall?.args).toEqual(['_NPROCESSORS_ONLN']);
+    expect(runner.calls.some((call) => call.command === 'nproc')).toBe(false);
+  });
+
+  it('reads memory with a script that falls back to sysctl on macOS, not /proc/meminfo alone', async () => {
+    const runner = createPassingPreflightRunner();
+
+    await runCli(['--mode', 'local'], {
+      locale: 'en',
+      runner,
+      collectTarget: vi.fn(async () => ({ mode: 'local' as const, installDir: '/opt/aura' })),
+      collectSettings: vi.fn(async () => validSettings),
+      createConfig: vi.fn(async () => ({ path: '/tmp/config', cleanup: vi.fn() })),
+      installLocal: vi.fn(async () => {}),
+      write: vi.fn(),
+    });
+
+    const memoryCall = runner.calls.find(
+      (call) => call.command === 'sh' && call.args.some((arg) => arg.includes('MemTotal')),
+    );
+    const script = memoryCall?.args[1] ?? '';
+    // install.sh:126-135 mirrored verbatim: Linux reads /proc/meminfo, Darwin falls back to
+    // `sysctl -n hw.memsize` (bytes, converted to KiB), and an unknown platform echoes 0 --
+    // which then FAILS the floor rather than skipping the gate (install.sh's own property).
+    expect(script).toContain('/proc/meminfo');
+    expect(script).toContain('Darwin');
+    expect(script).toContain('sysctl -n hw.memsize');
+    expect(script).toContain('else echo 0');
+  });
+
+  it('accepts a macOS-shaped memory reading (sysctl bytes converted to KiB) that clears the floor', async () => {
+    const collectSettingsMock = vi.fn(async () => validSettings);
+    const runner = createFakeRunner(async (command, args) => {
+      if (command === 'uname') return { stdout: 'x86_64\n', stderr: '', exitCode: 0 };
+      if (command === 'getconf') return { stdout: '8\n', stderr: '', exitCode: 0 };
+      if (command === 'sh' && args.some((arg) => arg.includes('MemTotal'))) {
+        // As if install.sh's own Darwin branch had run: 32 GiB, expressed in KiB.
+        return { stdout: `${32 * 1024 * 1024}\n`, stderr: '', exitCode: 0 };
+      }
+      if (command === 'sh') return { stdout: '41943040\n', stderr: '', exitCode: 0 };
+      throw new Error(`unexpected command ${command}`);
+    });
+
+    const code = await runCli(['--mode', 'local'], {
+      locale: 'en',
+      runner,
+      collectTarget: vi.fn(async () => ({ mode: 'local' as const, installDir: '/opt/aura' })),
+      collectSettings: collectSettingsMock,
+      createConfig: vi.fn(async () => ({ path: '/tmp/config', cleanup: vi.fn() })),
+      installLocal: vi.fn(async () => {}),
+      write: vi.fn(),
+    });
+
+    expect(code).toBe(0);
+    expect(collectSettingsMock).toHaveBeenCalled();
+  });
+
+  // F7 (review round 2): `df -Pk /` measures the root filesystem, but install.sh:137-154
+  // probes the INSTALL DIRECTORY, walking up to the nearest existing parent because the
+  // directory does not exist yet on a first install. With the appliance default of
+  // /opt/aura on a server where /opt is its own volume, the old check reported a number
+  // about the wrong disk.
+  it("probes the install directory's disk space, walking up like install.sh, not the root filesystem", async () => {
+    const collectSettingsMock = vi.fn(async () => validSettings);
+    const runner = createFakeRunner(async (command, args) => {
+      if (command === 'uname') return { stdout: 'x86_64\n', stderr: '', exitCode: 0 };
+      if (command === 'getconf') return { stdout: '8\n', stderr: '', exitCode: 0 };
+      if (command === 'sh' && args.some((arg) => arg.includes('MemTotal'))) {
+        return { stdout: '41943040\n', stderr: '', exitCode: 0 };
+      }
+      if (command === 'sh') return { stdout: '41943040\n', stderr: '', exitCode: 0 };
+      throw new Error(`unexpected command ${command}`);
+    });
+
+    const code = await runCli(['--mode', 'local'], {
+      locale: 'en',
+      runner,
+      collectTarget: vi.fn(async () => ({ mode: 'local' as const, installDir: '/opt/aura' })),
+      collectSettings: collectSettingsMock,
+      createConfig: vi.fn(async () => ({ path: '/tmp/config', cleanup: vi.fn() })),
+      installLocal: vi.fn(async () => {}),
+      write: vi.fn(),
+    });
+
+    expect(code).toBe(0);
+    const diskCall = runner.calls.find(
+      (call) => call.command === 'sh' && call.args.some((arg) => arg.includes('df -Pk')),
+    );
+    expect(diskCall?.args[1]).toContain('dirname');
+    // The install dir travels as the script's $1, exactly like the reference's own
+    // positional-argument convention for a sh -c script (a throwaway $0 placeholder first).
+    expect(diskCall?.args.at(-1)).toBe('/opt/aura');
+    expect(diskCall?.args).not.toContain('/');
   });
 });

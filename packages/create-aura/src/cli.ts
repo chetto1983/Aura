@@ -128,6 +128,25 @@ function isPromptCancellation(error: unknown): boolean {
   return error instanceof Error && error.name === 'ExitPromptError';
 }
 
+// install.sh:126-135's ram_kib(): Linux reads /proc/meminfo's MemTotal (already KiB) directly;
+// Darwin has no /proc, so it converts `sysctl -n hw.memsize` (bytes) to KiB; any other
+// platform echoes 0, which then FAILS assertSufficientMemory's floor rather than skipping the
+// gate -- install.sh refuses a machine it cannot measure, and this must too (F6, review round
+// 2). Mirrored as one sh -c script, the same shape the disk check below already uses, so the
+// wizard and the installer read the same number on the same machine and cannot disagree.
+const RAM_KIB_SCRIPT = 'OS="$(uname -s)"; if [ "$OS" = "Linux" ] && [ -r /proc/meminfo ]; then '
+  + "awk '/MemTotal:/ {print $2}' /proc/meminfo; elif [ \"$OS\" = \"Darwin\" ]; then "
+  + 'bytes="$(sysctl -n hw.memsize 2>/dev/null || echo 0)"; echo $((bytes / 1024)); else echo 0; fi';
+
+// install.sh:137-144's disk_free_kib(): the install directory does not exist yet on a first
+// install, so it walks up to the nearest existing parent before measuring -- df on '/' when
+// the real target is a separately-mounted /opt (the appliance default install dir is
+// /opt/aura) reports free space on the wrong filesystem (F7, review round 2). $1 is the
+// install dir, passed positionally the same way the reference passes an argument to a sh -c
+// script: a throwaway program-name placeholder occupies $0, the real value is $1.
+const DISK_FREE_KIB_SCRIPT = 'probe="$1"; while [ ! -e "$probe" ] && [ "$probe" != "/" ]; do '
+  + 'probe="$(dirname "$probe")"; done; df -Pk "$probe" | awk \'NR==2 {print $4}\'';
+
 // Ported out of wpt-iot's preflightLocal ahead of local.ts existing (Task 6 ports the rest
 // of that file -- REQUIRED_COMMANDS/REQUIRED_HOSTS checks and the existing-install probe).
 // These four gates are the ones install.sh itself enforces as hard failures (its
@@ -139,18 +158,19 @@ function isPromptCancellation(error: unknown): boolean {
 // only: the runner always targets the CURRENT machine, which in local mode IS the install
 // target: these checks do not need SSH the way GPU/Ollama probing (R1) or a remote
 // existing-install check would.
-async function runLocalPreflight(runner: CommandRunner): Promise<void> {
+async function runLocalPreflight(runner: CommandRunner, installDir: string): Promise<void> {
   normalizeArchitecture((await runner.run('uname', ['-m'])).stdout);
-  assertSufficientCpuCores((await runner.run('nproc')).stdout);
-  // assertSufficientMemory is documented in KiB, matching install.sh's own comparison;
-  // /proc/meminfo's MemTotal is already reported in KiB, so no unit conversion is needed.
-  assertSufficientMemory((await runner.run('sh', [
-    '-c',
-    "awk '/MemTotal/ { print $2 }' /proc/meminfo",
-  ])).stdout);
+  // install.sh:118-124's cpu_count() branches on OS only because getconf might be absent;
+  // it ships on every Linux distribution and on macOS, so this one call already covers both
+  // platforms without branching -- `nproc` (F2's original fix) is Linux-only and made the
+  // wizard refuse a Mac install.sh itself accepts (F6, review round 2).
+  assertSufficientCpuCores((await runner.run('getconf', ['_NPROCESSORS_ONLN'])).stdout);
+  assertSufficientMemory((await runner.run('sh', ['-c', RAM_KIB_SCRIPT])).stdout);
   assertSufficientDiskSpace((await runner.run('sh', [
     '-c',
-    "df -Pk / | awk 'NR == 2 { print $4 }'",
+    DISK_FREE_KIB_SCRIPT,
+    'create-aura',
+    installDir,
   ])).stdout);
 }
 
@@ -215,7 +235,7 @@ export async function runCli(
         port: target.remote.port,
       }));
     } else {
-      await runLocalPreflight(runner);
+      await runLocalPreflight(runner, target.installDir);
       write(t('localTargetSummary'));
       probeRunner = runner;
     }
