@@ -41,6 +41,26 @@ while read -r rel; do
     echo "FAIL: payload differs for $rel" >&2
     exit 1
   fi
-done < <(grep '^download_file ' "$repo_root/scripts/install.sh" | awk '{print $2}')
+done < <(grep -E '^[[:space:]]*download_file ' "$repo_root/scripts/install.sh" | awk '{print $2}')
 
-echo "ok: the artifact self-checks and its payload round-trips"
+# makeself's header parses argv for its own flags before exec'ing startup.sh, so an
+# installer flag only survives after '--'. Both directions are asserted: if a future
+# makeself made the plain form work, the first assertion fails and this comment gets
+# revisited deliberately rather than by accident.
+plain_err="$fixture_root/plain.err"
+if "$artifact" --config /nonexistent/aura.conf >/dev/null 2>"$plain_err"; then
+  echo "FAIL: the plain flag form unexpectedly succeeded" >&2
+  exit 1
+fi
+grep -q 'Unrecognized flag' "$plain_err" \
+  || { echo "FAIL: the plain form failed for an unexpected reason: $(cat "$plain_err")" >&2; exit 1; }
+
+dashdash_err="$fixture_root/dashdash.err"
+if "$artifact" -- --config /nonexistent/aura.conf >/dev/null 2>"$dashdash_err"; then
+  echo "FAIL: a nonexistent config should have been refused by install.sh" >&2
+  exit 1
+fi
+grep -q 'config not found' "$dashdash_err" \
+  || { echo "FAIL: '--' did not carry the flag through to install.sh: $(cat "$dashdash_err")" >&2; exit 1; }
+
+echo "ok: the artifact self-checks, its payload round-trips, and '--' gates every installer flag"

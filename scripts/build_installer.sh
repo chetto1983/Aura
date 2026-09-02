@@ -23,14 +23,26 @@ staging="$(mktemp -d)"
 trap 'rm -rf "$staging"' EXIT
 
 # The payload list is derived from install.sh itself, so a file added there cannot be
-# forgotten here.
+# forgotten here. The anchor tolerates leading whitespace because addendum H schedules a
+# split of install.sh, and an indented download_file call inside an if/function must still
+# be found -- a bare '^download_file ' would silently drop it and still exit 0.
 while read -r rel; do
+  case "$rel" in
+    *'$'*)
+      echo "FAIL: download_file '$rel' is not a literal path; the payload list cannot be derived from it" >&2
+      exit 1
+      ;;
+  esac
   mkdir -p "$staging/$(dirname "$rel")"
   cp "$repo_root/$rel" "$staging/$rel"
-done < <(grep '^download_file ' "$repo_root/scripts/install.sh" | awk '{print $2}')
+done < <(grep -E '^[[:space:]]*download_file ' "$repo_root/scripts/install.sh" | awk '{print $2}')
 
 cp "$repo_root/scripts/install.sh" "$staging/install.sh"
 
+# makeself's own runtime header parses argv for ITS flags (--target, --keep, ...) before it
+# execs this script, and rejects anything it does not recognize -- so a plain
+# "./install-appliance.run --config X" dies as "Unrecognized flag" and install.sh never
+# runs. '--' is makeself's own escape hatch: everything after it is handed to us verbatim.
 cat > "$staging/startup.sh" <<'STARTUP'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -47,3 +59,4 @@ makeself --sha256 --gzip \
 
 chmod +x "$output"
 echo "ok: wrote $output"
+echo "  usage: $output -- --config /path/install.conf   ('--' is required)"

@@ -218,7 +218,7 @@ timer (5 min, unchanged)
      └─ differs ↓
         take the flock
         back up compose.yaml + .env
-        run the new artifact with --config $INSTALL_DIR/install.conf
+        run the new artifact with -- --config $INSTALL_DIR/install.conf
         docker compose config -q          ← the gate
         up -d --wait
         health does not return → restore the backup, up -d, and say so loudly
