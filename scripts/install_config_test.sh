@@ -37,11 +37,13 @@ parse_install_config "$conf"
 [ -z "$CFG_OPENROUTER_API_KEY" ] || { echo "FAIL: key should be empty, got $CFG_OPENROUTER_API_KEY" >&2; exit 1; }
 
 # The claim above the parser -- that base64 keeps a hostile value from breaking the
-# key=value format -- is only worth making if something proves it. Encoding neutralises
-# the embedded newline before the parser ever sees it, AND (length 2 mod 3, so the
-# encoded form ends in exactly one '=') the encoded form itself ends in the padding byte
-# that the old `IFS='=' read` split silently ate.
-hostile="$(printf 'weird/model:v1.2\nkey=value')"
+# key=value format -- is only worth making if something proves it. Encoding neutralises a
+# space, a shell metacharacter and an embedded '=' before the parser ever sees them, AND
+# (length 2 mod 3, so the encoded form ends in exactly one '=') the encoded form itself ends
+# in the padding byte that the old `IFS='=' read` split silently ate. A newline is no longer
+# part of this fixture: parse_install_config now refuses one (see the rejection test below),
+# so this round-trip case is scoped to the hostile properties that still must survive intact.
+hostile="$(printf 'weird model:v1.2;key=value')"
 {
   echo "format=1"
   echo "llm_model_base64=$(printf '%s' "$hostile" | base64 | tr -d '\n')"
@@ -136,3 +138,46 @@ apply_install_config
 cd "$repo_root"
 
 echo "ok: apply_install_config writes only what the config actually carries"
+
+# The newline moved out of the hostile round-trip fixture above belongs here instead: a
+# decoded value containing one must make parse_install_config exit non-zero, because
+# set_env_value writes one line per value and a newline in it becomes a second .env line --
+# env_value (first match) and docker compose (last wins) would then disagree about which
+# secret is live. Wrapped in a subshell: the validation exit would otherwise end this whole
+# test script.
+newline_hostile="$(printf 'weird/model:v1.2\nOPENROUTER_API_KEY=sk-attacker-injected')"
+{
+  echo "format=1"
+  echo "llm_model_base64=$(printf '%s' "$newline_hostile" | base64 | tr -d '\n')"
+} > "$fixture_root/newline.conf"
+newline_err="$fixture_root/newline.err"
+if ( CFG_LLM_MODEL=""; parse_install_config "$fixture_root/newline.conf" ) 2>"$newline_err"; then
+  echo "FAIL: a config value containing a line break was accepted" >&2
+  exit 1
+fi
+grep -q 'line break' "$newline_err" \
+  || { echo "FAIL: a line-break value was refused for the wrong reason: $(cat "$newline_err")" >&2; exit 1; }
+
+echo "ok: parse_install_config refuses a decoded value containing a line break"
+
+# set_env_value is not only reached through the parser above; a direct caller handing it a
+# multi-line value must get the same refusal, with its own diagnostic so the two guards are
+# distinguishable in a log, and .env must come out of the attempt with exactly one line for
+# the key -- not silently split into two.
+set_env_dir="$fixture_root/setenvtest"
+mkdir -p "$set_env_dir"
+cd "$set_env_dir"
+printf 'AURA_LLM_MODEL=original-value\n' > .env
+multiline_value="$(printf 'line-one\nline-two')"
+set_env_err="$fixture_root/set_env_value.err"
+if ( set_env_value AURA_LLM_MODEL "$multiline_value" ) 2>"$set_env_err"; then
+  echo "FAIL: set_env_value accepted a multi-line value" >&2
+  exit 1
+fi
+grep -q 'refusing to write' "$set_env_err" \
+  || { echo "FAIL: set_env_value refused for the wrong reason: $(cat "$set_env_err")" >&2; exit 1; }
+[ "$(grep -c '^AURA_LLM_MODEL=' .env)" = 1 ] \
+  || { echo "FAIL: a rejected multi-line value left .env without exactly one line for the key" >&2; exit 1; }
+cd "$repo_root"
+
+echo "ok: set_env_value refuses a multi-line value and leaves .env untouched"

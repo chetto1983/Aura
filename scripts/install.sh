@@ -286,6 +286,22 @@ parse_install_config() {
       *) echo "FAIL: unknown key '$key' in $path" >&2; exit 2 ;;
     esac
   done < "$path"
+
+  # base64 keeps a newline from breaking THIS file's key=value format, but .env has its own
+  # format and set_env_value writes one line per value. A newline here becomes a second
+  # .env line, and env_value (first match) and docker compose (last wins) then disagree
+  # about which secret is live -- the installer and the running appliance would use
+  # different ones. This must run in the main shell, not inside config_decode's command
+  # substitution above, because an exit there would only kill that subshell.
+  for value in "$CFG_INSTALL_DIR" "$CFG_LLM_PROVIDER" "$CFG_LLM_BASE_URL" "$CFG_LLM_MODEL" \
+               "$CFG_OPENROUTER_API_KEY" "$CFG_EMBED_IMAGE" "$CFG_EMBED_NGL"; do
+    case "$value" in
+      *$'\n'*|*$'\r'*)
+        echo "FAIL: a config value contains a line break, which would inject a second line into .env" >&2
+        exit 2
+        ;;
+    esac
+  done
 }
 
 config_decode() {
@@ -401,6 +417,14 @@ ensure_embed_model() {
 set_env_value() {
   key="$1"
   value="$2"
+  # parse_install_config is not the only caller: any future one that hands a multi-line
+  # value here would otherwise get two .env lines back with no complaint at all.
+  case "$value" in
+    *$'\n'*|*$'\r'*)
+      echo "FAIL: set_env_value $key: value contains a line break, refusing to write it to .env" >&2
+      exit 2
+      ;;
+  esac
   tmp="$(mktemp)"
   awk -F= -v k="$key" -v v="$value" '
     BEGIN { done = 0 }
