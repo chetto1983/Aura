@@ -23,6 +23,10 @@ const (
 	arcadeJWKSCacheTTL  = 5 * time.Minute
 	arcadeJWKSBodyLimit = 1 << 20
 	defaultOAuthScope   = "mcp:tools"
+	// oauthClientIDClaim is carried through into auth.TokenInfo.Extra because it
+	// is the only stable name an external MCP client has once the session id is
+	// gone, and hostDerivedActor writes it as fact provenance.
+	oauthClientIDClaim = "client_id"
 )
 
 type oauthResourceConfig struct {
@@ -133,9 +137,13 @@ func (v *arcadeTokenVerifier) Verify(ctx context.Context, raw string, _ *http.Re
 	if !ok {
 		return nil, fmt.Errorf("%w: bearer token has no expiration", auth.ErrInvalidToken)
 	}
-	return &auth.TokenInfo{
+	info := &auth.TokenInfo{
 		Scopes: strings.Fields(scope), Expiration: expiration, UserID: strings.TrimSpace(subject),
-	}, nil
+	}
+	if clientID, ok := stringClaim(token, oauthClientIDClaim); ok && strings.TrimSpace(clientID) != "" {
+		info.Extra = map[string]any{oauthClientIDClaim: strings.TrimSpace(clientID)}
+	}
+	return info, nil
 }
 
 func (v *arcadeTokenVerifier) parse(raw string, keys jwk.Set) (jwt.Token, error) {

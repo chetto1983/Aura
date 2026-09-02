@@ -11,25 +11,111 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/chetto1983/aura/internal/arcadedb"
 )
 
-// A request that reached memoryUpsertFactHandler without the actor headers
-// internal/agent/mcptools attaches on every identity-scoped mount is a
-// wiring bug, not a malformed call the model could retry its way out of --
-// so this is a real Go error, and nothing is written.
-func TestUpsertFactRequiresHostDerivedActor(t *testing.T) {
+// A request carrying NEITHER the bridge's actor headers NOR a verified OAuth
+// token has no host that could vouch for it, and is refused before a single
+// statement reaches the database. Which of the two gates speaks first is not
+// the point and is deliberately not asserted: the identity gate happens to
+// reject it earlier, and once a request IS authenticated it always has an
+// actor -- that is the whole content of this fix. The actor gate's own message
+// is pinned directly on hostDerivedActor below.
+func TestUpsertFactRefusesARequestNoHostVouchesFor(t *testing.T) {
+	client, rec := newRecordingDB(t)
+	_, _, err := memoryUpsertFactHandler(singleTenant(t, client), testClock, "")(
+		context.Background(), &mcp.CallToolRequest{
+			Params: &mcp.CallToolParamsRaw{}, Extra: &mcp.RequestExtra{},
+		}, validFactInput())
+	if err == nil {
+		t.Fatal("expected an error for a request no host vouches for")
+	}
+	if len(rec.statements) != 0 {
+		t.Fatalf("statements = %v, want nothing written before the caller is even resolved", rec.statements)
+	}
+}
+
+// An MCP client holding an Aura-issued OAuth token IS a host-derived actor: the
+// signature was verified against Aura's JWKS, so the model can no more choose
+// these values than it can choose a header it never sees. Before this, the
+// memory was readable but not writable by anything except Aura's own bridge --
+// measured 2026-09-02 against a live Claude Code mount.
+func TestUpsertFactDerivesActorFromTheOAuthToken(t *testing.T) {
 	client, rec := newRecordingDB(t)
 	_, _, err := memoryUpsertFactHandler(singleTenant(t, client), testClock, "")(
 		context.Background(), reqWithIdentity(testIdentity), validFactInput())
-	if err == nil {
-		t.Fatal("expected an error for a request with no host-derived actor")
+	if err != nil {
+		t.Fatalf("upsert with an OAuth-only actor: %v", err)
 	}
-	if !strings.Contains(err.Error(), "host-derived actor") {
-		t.Fatalf("err = %v, want it to name the missing host-derived actor", err)
+	if len(rec.statements) == 0 {
+		t.Fatal("statements = none, want the fact written for an OAuth-authenticated client")
 	}
-	if len(rec.statements) != 0 {
-		t.Fatalf("statements = %v, want nothing written before the actor is even resolved", rec.statements)
+}
+
+// The run id is the most specific server-side value on hand and the role is
+// always parent: an external client carries no delegated-dispatch context, and
+// WriterParent is exactly the "host-driven write with no worker context at all"
+// internal/arcadedb/memory.go already names.
+func TestOAuthClientRunIDPrefersTheMostSpecificServerValue(t *testing.T) {
+	withClientID := reqWithIdentity(testIdentity)
+	withClientID.Extra.TokenInfo.Extra = map[string]any{oauthClientIDClaim: "  claude-code  "}
+
+	blankClientID := reqWithIdentity(testIdentity)
+	blankClientID.Extra.TokenInfo.Extra = map[string]any{oauthClientIDClaim: "   "}
+
+	nonStringClientID := reqWithIdentity(testIdentity)
+	nonStringClientID.Extra.TokenInfo.Extra = map[string]any{oauthClientIDClaim: 42}
+
+	cases := []struct {
+		name string
+		req  *mcp.CallToolRequest
+		want string
+	}{
+		{name: "no token", req: &mcp.CallToolRequest{Extra: &mcp.RequestExtra{}}},
+		{name: "blank subject", req: reqWithIdentity("   ")},
+		{name: "subject only", req: reqWithIdentity(testIdentity), want: "mcp-subject:" + testIdentity},
+		{name: "client id wins over subject", req: withClientID, want: "mcp-client:claude-code"},
+		{name: "blank client id falls back", req: blankClientID, want: "mcp-subject:" + testIdentity},
+		{name: "non-string client id falls back", req: nonStringClientID, want: "mcp-subject:" + testIdentity},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := oauthClientRunID(tc.req); got != tc.want {
+				t.Fatalf("oauthClientRunID = %q, want %q", got, tc.want)
+			}
+			actor, err := hostDerivedActor(tc.req)
+			if tc.want == "" {
+				if err == nil {
+					t.Fatal("expected an error when no host can vouch for the write")
+				}
+				if !strings.Contains(err.Error(), "host-derived actor") {
+					t.Fatalf("err = %v, want it to name the missing host-derived actor", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("hostDerivedActor: %v", err)
+			}
+			if actor.Role != arcadedb.WriterParent {
+				t.Fatalf("role = %q, want %q for an external client", actor.Role, arcadedb.WriterParent)
+			}
+		})
+	}
+}
+
+// The bridge still wins when it speaks: only it can name a swarm worker, and an
+// OAuth fallback that overrode it would silently promote every worker to parent
+// and hand it D-11's supersede authority.
+func TestBridgeHeadersOutrankTheOAuthFallback(t *testing.T) {
+	req := reqWithActor(testIdentity, "worker-run-7", string(arcadedb.WriterWorker))
+	actor, err := hostDerivedActor(req)
+	if err != nil {
+		t.Fatalf("hostDerivedActor: %v", err)
+	}
+	if actor.RunID != "worker-run-7" || actor.Role != arcadedb.WriterWorker {
+		t.Fatalf("actor = %+v, want the bridge's own worker actor", actor)
 	}
 }
 

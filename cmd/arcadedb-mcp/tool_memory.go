@@ -55,30 +55,66 @@ const (
 	memoryActorRoleHeader  = "X-Aura-Actor-Role"
 )
 
-// hostDerivedActor reads the actor internal/agent/mcptools attached to this
-// connection (D-10) -- never a field the model can set. Its absence is a
-// wiring bug, not a malformed call the model could fix by retrying: every
-// identity-scoped mount attaches these headers via
-// mcp.SessionOptions.HeaderFunc (internal/agent/mcptools/mount.go), so a
-// missing header means this request did not arrive through that path at
-// all, and a real Go error (not a refused-with-reason FactWrite) is the
-// correct signal for that.
+// hostDerivedActor derives the writing actor from the CONNECTION, never from a
+// field the model can set (D-10). Two connections are legitimate hosts:
+//
+//   - Aura's in-process bridge, which attaches the two actor headers via
+//     mcp.SessionOptions.HeaderFunc (internal/agent/mcptools/mount.go) and is
+//     therefore the only caller that can name a swarm worker;
+//   - any MCP client bearing an Aura-issued OAuth token. Its actor IS the
+//     token: this server verified the signature against Aura's JWKS, so the
+//     subject and client_id are exactly as unforgeable by the model as a
+//     header it cannot see. Such a client carries no worker context, which is
+//     the "host-driven / CLI write with no worker context at all" that
+//     WriterParent already names (internal/arcadedb/memory.go).
+//
+// Without the second case the memory is READ-ONLY to every client that is not
+// Aura herself. Measured 2026-09-02: a Claude Code mount completed the OAuth
+// dance, listed the tools and recalled facts, then failed every
+// memory_upsert_fact and memory_batch with "missing host-derived actor run id"
+// -- the operator's own client could not write one fact to the operator's own
+// memory.
 func hostDerivedActor(req *mcp.CallToolRequest) (arcadedb.Actor, error) {
 	if req == nil || req.Extra == nil {
 		return arcadedb.Actor{}, fmt.Errorf("memory_upsert_fact: no request context to derive an actor from")
 	}
-	runID := strings.TrimSpace(req.Extra.Header.Get(memoryActorRunIDHeader))
-	if runID == "" {
-		return arcadedb.Actor{}, fmt.Errorf(
-			"memory_upsert_fact: missing host-derived actor run id (%s header)", memoryActorRunIDHeader)
+	if runID := strings.TrimSpace(req.Extra.Header.Get(memoryActorRunIDHeader)); runID != "" {
+		role := arcadedb.WriterRole(strings.TrimSpace(req.Extra.Header.Get(memoryActorRoleHeader)))
+		if role != arcadedb.WriterParent && role != arcadedb.WriterWorker {
+			return arcadedb.Actor{}, fmt.Errorf(
+				"memory_upsert_fact: missing or unknown host-derived actor role %q (%s header)",
+				role, memoryActorRoleHeader)
+		}
+		return arcadedb.Actor{RunID: runID, Role: role}, nil
 	}
-	role := arcadedb.WriterRole(strings.TrimSpace(req.Extra.Header.Get(memoryActorRoleHeader)))
-	if role != arcadedb.WriterParent && role != arcadedb.WriterWorker {
-		return arcadedb.Actor{}, fmt.Errorf(
-			"memory_upsert_fact: missing or unknown host-derived actor role %q (%s header)",
-			role, memoryActorRoleHeader)
+	if runID := oauthClientRunID(req); runID != "" {
+		return arcadedb.Actor{RunID: runID, Role: arcadedb.WriterParent}, nil
 	}
-	return arcadedb.Actor{RunID: runID, Role: role}, nil
+	return arcadedb.Actor{}, fmt.Errorf(
+		"memory_upsert_fact: missing host-derived actor run id (%s header) and no authenticated OAuth client to derive one from",
+		memoryActorRunIDHeader)
+}
+
+// oauthClientRunID names the run of an external MCP client, preferring the most
+// specific server-side value available: the transport's session id, coined by
+// this process; else the client_id claim, minted by Aura at registration; else
+// the subject. None of the three is assertable by the model, which is the whole
+// property D-10 protects -- provenance the writer cannot choose.
+func oauthClientRunID(req *mcp.CallToolRequest) string {
+	if req.Extra.TokenInfo == nil || strings.TrimSpace(req.Extra.TokenInfo.UserID) == "" {
+		return ""
+	}
+	if req.Session != nil {
+		if id := strings.TrimSpace(req.Session.ID()); id != "" {
+			return "mcp-session:" + id
+		}
+	}
+	if clientID, ok := req.Extra.TokenInfo.Extra[oauthClientIDClaim].(string); ok {
+		if trimmed := strings.TrimSpace(clientID); trimmed != "" {
+			return "mcp-client:" + trimmed
+		}
+	}
+	return "mcp-subject:" + strings.TrimSpace(req.Extra.TokenInfo.UserID)
 }
 
 // MemoryUpsertFactInput mirrors arcadedb.Fact minus the embedding, which the

@@ -154,8 +154,13 @@ func TestMemoryBatchToolRejectsBeforeEngine(t *testing.T) {
 	if identityErr == nil {
 		t.Fatal("missing identity succeeded")
 	}
+	// No bridge headers AND no verified token: nobody vouches for this write.
+	// An OAuth-authenticated client is a host in its own right and DOES reach
+	// the engine -- see TestUpsertFactDerivesActorFromTheOAuthToken.
 	_, _, actorErr := memoryBatchHandler(singleTenant(t, nil), testClock, "", apply)(
-		t.Context(), reqWithIdentity(testIdentity), validMemoryBatchInput(),
+		t.Context(), &mcp.CallToolRequest{
+			Params: &mcp.CallToolParamsRaw{}, Extra: &mcp.RequestExtra{},
+		}, validMemoryBatchInput(),
 	)
 	if actorErr == nil {
 		t.Fatal("missing host actor succeeded")
