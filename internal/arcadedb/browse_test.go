@@ -15,23 +15,65 @@ func TestListEntitiesMapsRowsAndBoundsTheQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListEntities: %v", err)
 	}
-	if len(got) != 2 || got[0] != (EntitySummary{Name: "Davide", Kind: "Person", Facts: 4}) {
+	if len(got.Entities) != 2 ||
+		got.Entities[0] != (EntitySummary{Name: "Davide", Kind: "Person", Facts: 4}) {
 		t.Fatalf("entities = %+v", got)
 	}
 	if !strings.Contains(rec.statements[0], "LIMIT 50") {
 		t.Fatalf("default bound missing: %s", rec.statements[0])
 	}
+	// Each call is listing + count, so the bound assertions step by two.
+	if !strings.Contains(rec.statements[1], "count(*)") {
+		t.Fatalf("total is not counted: %s", rec.statements[1])
+	}
 	if _, err := client.ListEntities(context.Background(), 7); err != nil {
 		t.Fatalf("ListEntities custom limit: %v", err)
 	}
-	if !strings.Contains(rec.statements[1], "LIMIT 7") {
-		t.Fatalf("custom bound missing: %s", rec.statements[1])
+	if !strings.Contains(rec.statements[2], "LIMIT 7") {
+		t.Fatalf("custom bound missing: %s", rec.statements[2])
 	}
 	if _, err := client.ListEntities(context.Background(), 1000); err != nil {
 		t.Fatalf("ListEntities capped limit: %v", err)
 	}
-	if !strings.Contains(rec.statements[2], "LIMIT 100") {
-		t.Fatalf("hard bound missing: %s", rec.statements[2])
+	if !strings.Contains(rec.statements[4], "LIMIT 100") {
+		t.Fatalf("hard bound missing: %s", rec.statements[4])
+	}
+}
+
+// A capped listing must say how much it is NOT showing. Measured 2026-09-02:
+// asking for 400 entities on a 201-entity memory returned 100 with no signal, so
+// the only honest reading of the reply was "this memory has 100 entities".
+func TestListEntitiesReportsTheTotalSoTruncationIsVisible(t *testing.T) {
+	client, _ := recordingClient(t,
+		`{"result":[{"name":"Davide","kind":"Person","degree":4}]}`,
+		`{"result":[{"total":201}]}`)
+	got, err := client.ListEntities(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("ListEntities: %v", err)
+	}
+	if got.Total != 201 {
+		t.Fatalf("total = %d, want 201", got.Total)
+	}
+	if len(got.Entities) != 1 {
+		t.Fatalf("entities = %+v, want the one requested", got.Entities)
+	}
+	if got.Total <= len(got.Entities) {
+		t.Fatal("a truncated listing must report a total larger than the page it returned")
+	}
+}
+
+// A count row missing its column must not report an empty memory while returning
+// a non-empty page — that is a worse lie than having no total at all.
+func TestListEntitiesFallsBackToThePageWhenTheCountIsAbsent(t *testing.T) {
+	client, _ := recordingClient(t,
+		`{"result":[{"name":"Davide","kind":"Person","degree":4}]}`,
+		`{"result":[{"unexpected":1}]}`)
+	got, err := client.ListEntities(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("ListEntities: %v", err)
+	}
+	if got.Total != 1 {
+		t.Fatalf("total = %d, want the returned page size", got.Total)
 	}
 }
 

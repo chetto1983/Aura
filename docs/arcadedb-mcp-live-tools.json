@@ -472,7 +472,7 @@
       "idempotentHint": false,
       "readOnlyHint": true
     },
-    "description": "List the entities the memory knows, the ones holding the most facts first. Use it to find the exact name memory_facts_about needs.",
+    "description": "List the entities the memory knows, the ones holding the most facts first. Use it to find the exact name memory_facts_about needs. Check `total`: the listing is capped, so a total larger than the returned list means you are seeing only part of the memory.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -511,10 +511,15 @@
             "null",
             "array"
           ]
+        },
+        "total": {
+          "description": "every entity in this memory; larger than the returned list means it was truncated",
+          "type": "integer"
         }
       },
       "required": [
-        "entities"
+        "entities",
+        "total"
       ],
       "type": "object"
     },

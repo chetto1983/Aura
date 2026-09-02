@@ -19,7 +19,6 @@ import (
 )
 
 const (
-	arcadeMCPPath       = "/mcp/"
 	arcadeJWKSCacheTTL  = 5 * time.Minute
 	arcadeJWKSBodyLimit = 1 << 20
 	defaultOAuthScope   = "mcp:tools"

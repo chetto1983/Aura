@@ -21,9 +21,11 @@ type MemoryEntitiesInput struct {
 	Limit int `json:"limit,omitempty" jsonschema:"how many entities to return; defaults to 50"`
 }
 
-// MemoryEntitiesOutput carries the names the memory knows.
+// MemoryEntitiesOutput carries the names the memory knows, and how many exist,
+// so a truncated page cannot be read as the whole memory.
 type MemoryEntitiesOutput struct {
 	Entities []arcadedb.EntitySummary `json:"entities"`
+	Total    int                      `json:"total" jsonschema:"every entity in this memory; larger than the returned list means it was truncated"`
 }
 
 func addMemoryEntitiesTool(server *mcp.Server, tenants *tenants) {
@@ -31,7 +33,9 @@ func addMemoryEntitiesTool(server *mcp.Server, tenants *tenants) {
 		Name:  "memory_entities",
 		Title: "List entities",
 		Description: "List the entities the memory knows, the ones holding the most facts " +
-			"first. Use it to find the exact name memory_facts_about needs.",
+			"first. Use it to find the exact name memory_facts_about needs. Check `total`: " +
+			"the listing is capped, so a total larger than the returned list means you are " +
+			"seeing only part of the memory.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(
 		ctx context.Context,
@@ -42,11 +46,11 @@ func addMemoryEntitiesTool(server *mcp.Server, tenants *tenants) {
 		if err != nil {
 			return nil, MemoryEntitiesOutput{}, err
 		}
-		entities, err := client.ListEntities(ctx, in.Limit)
+		listing, err := client.ListEntities(ctx, in.Limit)
 		if err != nil {
 			return nil, MemoryEntitiesOutput{}, fmt.Errorf("memory_entities: %w", err)
 		}
-		return nil, MemoryEntitiesOutput{Entities: entities}, nil
+		return nil, MemoryEntitiesOutput{Entities: listing.Entities, Total: listing.Total}, nil
 	})
 }
 

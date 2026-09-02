@@ -34,15 +34,37 @@ type EntitySummary struct {
 	Facts int    `json:"facts"`
 }
 
+// EntityListing is the entities the caller asked for, plus how many exist in
+// total — because the listing is capped and a caller cannot otherwise tell a
+// complete answer from a truncated one.
+//
+// Measured 2026-09-02: asking for 400 entities on a memory holding 201 returned
+// exactly 100 (the Results cap) with nothing to say so, so the honest reading of
+// the reply was "this memory has 100 entities" — a false conclusion about the
+// caller's own memory, drawn from a partial result presented as a whole. Digest
+// already refuses that shape with its Covered flag; this is the same signal on
+// the same surface.
+type EntityListing struct {
+	Entities []EntitySummary `json:"entities"`
+	// Total is every entity in this identity's memory, not just the returned
+	// page. Total > len(Entities) means the listing was truncated.
+	Total int `json:"total"`
+}
+
 // ListEntities returns the entities holding the most facts first, because an
 // entity with one stray fact is noise and an entity with twenty is a subject.
-func (c *Client) ListEntities(ctx context.Context, limit int) ([]EntitySummary, error) {
+//
+// The count is a second statement rather than a LIMIT+1 probe: +1 would say only
+// "there are more", and the useful answer to "am I seeing my whole memory" is the
+// number it is being compared against. Unlike Digest this is a browsing call, not
+// a per-turn one, so the extra indexed count is affordable.
+func (c *Client) ListEntities(ctx context.Context, limit int) (EntityListing, error) {
 	limit = boundedLimit(limit, defaultEntityLimit, c.memoryLimits().Results)
 	rows, err := c.Query(ctx,
 		"SELECT name, kind, bothE().size() AS degree FROM Entity"+
 			" ORDER BY degree DESC LIMIT "+strconv.Itoa(limit), nil)
 	if err != nil {
-		return nil, fmt.Errorf("arcadedb: list entities: %w", err)
+		return EntityListing{}, fmt.Errorf("arcadedb: list entities: %w", err)
 	}
 	out := make([]EntitySummary, 0, len(rows))
 	for _, row := range rows {
@@ -52,7 +74,20 @@ func (c *Client) ListEntities(ctx context.Context, limit int) ([]EntitySummary, 
 			Facts: int(rowInt(row, "degree")),
 		})
 	}
-	return out, nil
+	totals, err := c.Query(ctx, "SELECT count(*) AS total FROM Entity", nil)
+	if err != nil {
+		return EntityListing{}, fmt.Errorf("arcadedb: count entities: %w", err)
+	}
+	// Fall back to what was actually returned rather than to zero: a count row
+	// without the column would otherwise report a memory of zero entities while
+	// handing back a non-empty list, which is a worse lie than no total at all.
+	listing := EntityListing{Entities: out, Total: len(out)}
+	if len(totals) > 0 {
+		if _, ok := totals[0]["total"]; ok {
+			listing.Total = int(rowInt(totals[0], "total"))
+		}
+	}
+	return listing, nil
 }
 
 // DigestResult is the memory's index: a block of text meant to be held in
