@@ -1,21 +1,77 @@
 //go:build arcadedb_integration
 
-// The connectivity measurement, against a live memory.
+// The connectivity measurement, against a live ArcadeDB.
 //
-// This is the phase's report, not a smoke test: it measures the graph before
-// linking, links, measures again, and asserts the delta. A number asserted in
-// prose is a claim; this one is reproducible.
+// Every test here runs on a DISPOSABLE database carrying a seeded corpus, and that
+// is a correction. They used to run against whatever ARCADEDB_DATABASE named, which
+// made them pass richly on a developer's real memory and, on CI's empty one, either
+// skip or fail on a delta the corpus was too small to produce. A gate that only
+// holds where the data happens to be right is not a gate.
 //
-//	ARCADEDB_DATABASE=mem_<identity> go test -tags arcadedb_integration \
-//	  -run MemoryMentions -v ./internal/arcadedb/
+// The phase's headline numbers -- 30 of 107 facts linked, six bridges -- remain in
+// .planning/phases/49.1-memory-graph-connectivity/49.1-VALIDATION.md as a dated
+// measurement against the real corpus, reproducible with the command recorded there.
+// What lives HERE is the behaviour that must hold on any corpus.
 package arcadedb
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"testing"
 	"time"
 )
+
+// The seeded corpus. Sized so the hub cap BINDS in both directions: 32 facts put the
+// default 20% cap at 6 and a tightened 5% cap at 1, while the two hubs are mentioned
+// by 5 and 3 facts. Every hub therefore survives the default and neither survives the
+// tightening -- exactly the property TestMemoryMentionsSweepFollowsTheCapDownAndBack
+// asserts, and which no arbitrary memory can be relied on to exhibit.
+const (
+	seedFillerFacts = 22
+	seedHubOneFacts = 5
+	seedHubTwoFacts = 3
+)
+
+// mentionCorpusClient provisions a disposable database and fills it with that corpus.
+func mentionCorpusClient(t *testing.T) *Client {
+	t.Helper()
+	client := disposableArcadeClient(t)
+	ctx := context.Background()
+	if err := client.EnsureMemorySchema(ctx); err != nil {
+		t.Fatalf("EnsureMemorySchema: %v", err)
+	}
+	now := time.Now().UTC()
+	write := func(subject, object, statement string) {
+		t.Helper()
+		_, err := client.UpsertFact(ctx, Fact{
+			Subject: subject, Predicate: "seeded_for", Object: object, Statement: statement,
+			Source: FactSource{RunID: "mention-corpus", WriterRole: WriterParent}, ValidFrom: now,
+		}, now)
+		if err != nil {
+			t.Fatalf("seed %q: %v", subject, err)
+		}
+	}
+	// The anchors exist only to MINT the hub entities. A hub named in a fact that owns
+	// it is not a mention of it (namesIn excludes the fact's own endpoints), so an
+	// anchor contributes zero to the hub's count and the arithmetic above stays exact.
+	write("SeedAnchorOne", "SeedHubOne", "SeedAnchorOne introduces the first hub.")
+	write("SeedAnchorTwo", "SeedHubTwo", "SeedAnchorTwo introduces the second hub.")
+	for index := 1; index <= seedHubOneFacts; index++ {
+		write(fmt.Sprintf("SeedSubject%02d", index), fmt.Sprintf("SeedObject%02d", index),
+			fmt.Sprintf("SeedSubject%02d depends on SeedHubOne for scheduling.", index))
+	}
+	for index := seedHubOneFacts + 1; index <= seedHubOneFacts+seedHubTwoFacts; index++ {
+		write(fmt.Sprintf("SeedSubject%02d", index), fmt.Sprintf("SeedObject%02d", index),
+			fmt.Sprintf("SeedSubject%02d depends on SeedHubTwo for storage.", index))
+	}
+	last := seedHubOneFacts + seedHubTwoFacts + seedFillerFacts
+	for index := seedHubOneFacts + seedHubTwoFacts + 1; index <= last; index++ {
+		write(fmt.Sprintf("SeedSubject%02d", index), fmt.Sprintf("SeedObject%02d", index),
+			fmt.Sprintf("SeedSubject%02d stands alone and shares nothing.", index))
+	}
+	return client
+}
 
 // connectivity is the shape the phase reports: how much of the corpus is
 // reachable from anywhere else, and how big the neighbourhoods got.
@@ -90,7 +146,7 @@ func measureConnectivity(t *testing.T, client *Client) connectivity {
 
 // TestMemoryMentionsConnectivityReport is R5: the before/after table.
 func TestMemoryMentionsConnectivityReport(t *testing.T) {
-	client := documentClient(t)
+	client := mentionCorpusClient(t)
 	ctx := context.Background()
 	if err := client.EnsureMemorySchema(ctx); err != nil {
 		t.Fatalf("EnsureMemorySchema: %v", err)
@@ -114,8 +170,11 @@ func TestMemoryMentionsConnectivityReport(t *testing.T) {
 	t.Logf("       after | %8d/%3d | %10d | %18d | %7d",
 		after.Linked, after.Facts, after.MaxDeg, after.MedianOf, after.Bridges)
 
-	if after.Facts == 0 {
-		t.Skip("empty memory: the report is zeroes, which is not a failure")
+	// No skip on an empty corpus: the seed guarantees one, so zero facts here would
+	// mean the seeding itself silently failed -- which a skip would have hidden.
+	if after.Facts != seedHubOneFacts+seedHubTwoFacts+seedFillerFacts+2 {
+		t.Fatalf("corpus = %d facts, want the seeded %d",
+			after.Facts, seedHubOneFacts+seedHubTwoFacts+seedFillerFacts+2)
 	}
 	// The assertion is on the state after linking, not on the delta. The sweep is
 	// idempotent, so on every run but the first the correct delta is ZERO -- a
@@ -141,7 +200,7 @@ func TestMemoryMentionsConnectivityReport(t *testing.T) {
 // corpus must be a no-op, or the graph accumulates history instead of matching
 // the configuration.
 func TestMemoryMentionsSweepIsIdempotent(t *testing.T) {
-	client := documentClient(t)
+	client := mentionCorpusClient(t)
 	ctx := context.Background()
 	if err := client.EnsureMemorySchema(ctx); err != nil {
 		t.Fatalf("EnsureMemorySchema: %v", err)
@@ -167,7 +226,7 @@ func TestMemoryMentionsSweepIsIdempotent(t *testing.T) {
 // whole phase exists: at depth 1 an entity answers only with what is stated about
 // it directly.
 func TestMemoryMentionsSecondHopReachesWhatTheFirstCannot(t *testing.T) {
-	client := documentClient(t)
+	client := mentionCorpusClient(t)
 	ctx := context.Background()
 	if err := client.EnsureMemorySchema(ctx); err != nil {
 		t.Fatalf("EnsureMemorySchema: %v", err)
@@ -182,7 +241,7 @@ func TestMemoryMentionsSecondHopReachesWhatTheFirstCannot(t *testing.T) {
 		t.Fatalf("find a linked entity: %v", err)
 	}
 	if len(rows) == 0 {
-		t.Skip("no mention edges in this memory: nothing to widen")
+		t.Fatal("the seeded corpus produced no mention edges: the sweep linked nothing")
 	}
 	entity := rowString(rows[0], "source")
 
@@ -215,12 +274,18 @@ func TestMemoryMentionsSecondHopReachesWhatTheFirstCannot(t *testing.T) {
 // that reshuffles between two identical calls is not something a caller can
 // reason about, and it defeats prompt caching downstream.
 func TestMemoryMentionsSecondHopIsDeterministic(t *testing.T) {
-	client := documentClient(t)
+	client := mentionCorpusClient(t)
 	ctx := context.Background()
+	if _, err := client.LinkMentions(ctx); err != nil {
+		t.Fatalf("LinkMentions: %v", err)
+	}
 	rows, err := client.Query(ctx,
 		"SELECT outV().name AS source FROM "+mentionsEdgeType+" LIMIT 1", nil)
-	if err != nil || len(rows) == 0 {
-		t.Skip("no mention edges in this memory: nothing to order")
+	if err != nil {
+		t.Fatalf("find a linked entity: %v", err)
+	}
+	if len(rows) == 0 {
+		t.Fatal("the seeded corpus produced no mention edges: nothing to order")
 	}
 	entity := rowString(rows[0], "source")
 	first, err := client.FactsAbout(ctx, entity, "", 50, time.Time{}, FactsAboutNeighbourhood)
@@ -262,7 +327,7 @@ func countRows(t *testing.T, client *Client, typeName string) int {
 // It restores the default cap before returning, so the live memory it runs
 // against is left exactly as it was found.
 func TestMemoryMentionsSweepFollowsTheCapDownAndBack(t *testing.T) {
-	client := documentClient(t)
+	client := mentionCorpusClient(t)
 	ctx := context.Background()
 	if err := client.EnsureMemorySchema(ctx); err != nil {
 		t.Fatalf("EnsureMemorySchema: %v", err)

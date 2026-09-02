@@ -930,8 +930,13 @@ services:
   # The existing volume mount is retained so startup can perform the explicit one-shot
   # singleton-to-tenant migration before launching any tenant runtime.
   whatsapp:
-    image: ${AURA_WHATSAPP_MCP_IMAGE:-ghcr.io/chetto1983/whatsapp-mcp:sha-a463da5@sha256:006602da0893ada0eb80c812384032e262c1c7f0642866bf194041078e86130f}
-    pull_policy: ${AURA_WHATSAPP_MCP_PULL_POLICY:-missing}
+    # A MOVING tag, deliberately, and `always` so it actually moves. Both sidecars were
+    # pinned by digest and both went stale: their own publish workflow header records
+    # "the deployed pin went stale", and a digest only updates when a human remembers to
+    # paste a new one. `always` is safe HERE in a way it is not for the `aura` service --
+    # nothing builds these locally, so there is no local image for a pull to discard.
+    image: ${AURA_WHATSAPP_MCP_IMAGE:-ghcr.io/chetto1983/whatsapp-mcp:latest}
+    pull_policy: ${AURA_WHATSAPP_MCP_PULL_POLICY:-always}
     container_name: aura-whatsapp
     restart: unless-stopped
     depends_on:
@@ -941,6 +946,12 @@ services:
       WHATSAPP_BRIDGE_TOKEN: ${AURA_ACCESS_TOKEN:?AURA_ACCESS_TOKEN required in .env}
       MCP_OAUTH_ISSUER: http://127.0.0.1:9080
       MCP_OAUTH_JWKS_URL: http://aura:9080/oauth/jwks
+      # Additional authorization servers whose tokens are accepted, so an agent can mount
+      # this MCP with an account it already has. Same contract as arcadedb-mcp: comma-
+      # separated `issuer` or `issuer=jwks_url`, empty by default. A foreign subject is
+      # folded into a UUIDv5 over (issuer, subject) -- byte-identical across all three
+      # sidecars, so one person is one tenant wherever they mount.
+      MCP_OAUTH_TRUSTED_ISSUERS: ${AURA_WHATSAPP_MCP_TRUSTED_ISSUERS:-}
       MCP_OAUTH_RESOURCE: http://whatsapp:8080/mcp/
       WHATSAPP_MCP_PORT: "8080"
       WHATSAPP_GATEWAY_PORT: "8081"
@@ -1139,8 +1150,13 @@ services:
   # sha256:1d0e9c3f62aba446eb123ea39d5abb9d97e6be7784d2dac403ea1e1e5e4a6986.
   # Bump by reading the 40-hex tag the workflow minted for the target commit.
   aura-pim-mcp:
-    image: ${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:5909c808f75bb1c612256666dd0f1aacf6921dd4@sha256:1d0e9c3f62aba446eb123ea39d5abb9d97e6be7784d2dac403ea1e1e5e4a6986}
-    pull_policy: ${AURA_PIM_MCP_PULL_POLICY:-missing}
+    # A MOVING tag, deliberately, and `always` so it actually moves. Both sidecars were
+    # pinned by digest and both went stale: their own publish workflow header records
+    # "the deployed pin went stale", and a digest only updates when a human remembers to
+    # paste a new one. `always` is safe HERE in a way it is not for the `aura` service --
+    # nothing builds these locally, so there is no local image for a pull to discard.
+    image: ${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:latest}
+    pull_policy: ${AURA_PIM_MCP_PULL_POLICY:-always}
     container_name: aura-pim-mcp
     restart: unless-stopped
     depends_on:
@@ -1160,6 +1176,11 @@ services:
       ASPNETCORE_URLS: http://0.0.0.0:8080
       CALENDAR_MCP_OAuth__Issuer: http://127.0.0.1:9080
       CALENDAR_MCP_OAuth__MetadataAddress: http://aura:9080/.well-known/oauth-authorization-server
+      # The same widening as the other two sidecars, in this server's config vocabulary:
+      # comma-separated `issuer` or `issuer=metadata_address`, empty by default. Note the
+      # right-hand side here is a DISCOVERY document, not a JWKS -- .NET resolves the keys
+      # from it, which is the more spec-correct shape of the same knob.
+      CALENDAR_MCP_OAuth__TrustedIssuers: ${AURA_PIM_MCP_TRUSTED_ISSUERS:-}
       CALENDAR_MCP_OAuth__Resource: http://aura-pim-mcp:8080/
       # The external base the sidecar uses to build the Google OAuth redirect URI
       # (<base>/admin/auth/google/callback) — register that EXACT URI in the Google "Web

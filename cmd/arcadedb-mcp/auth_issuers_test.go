@@ -153,6 +153,16 @@ func TestForeignIdentitiesAreStableUUIDs(t *testing.T) {
 	if _, err := uuid.Parse(first); err != nil {
 		t.Fatalf("foreign identity %q is not a UUID: %v", first, err)
 	}
+	// Pinned against an independent RFC 4122 implementation over the same namespace and
+	// name. This also keeps the three memory-bearing MCPs byte-identical -- arcadedb-mcp,
+	// whatsapp-mcp and aura-pim-mcp derive the SAME identity for one person, so mounting a
+	// second one does not silently create a second account.
+	if foreignIdentityNamespace.String() != "7fdae2c4-8f46-59ec-8eaf-efba7f4a1dd5" {
+		t.Fatalf("namespace = %s, want the pinned value", foreignIdentityNamespace)
+	}
+	if first != "a0e112d3-507b-5b3a-aac4-b779786abce4" {
+		t.Fatalf("derived identity = %s, want the pinned RFC 4122 value", first)
+	}
 	// The separator must not be forgeable: (a, b) and (a+sep, b) are different people.
 	if config.tenantIdentity("https://foreign.example\n1043", "") != "" {
 		t.Fatal("an empty subject produced an identity")

@@ -98,7 +98,12 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"aura-home:/var/lib/aura",
 		"127.0.0.1:${AURA_SETUP_PORT:-9081}:9081",
 		"whatsapp:",
-		"ghcr.io/chetto1983/whatsapp-mcp:sha-a463da5@sha256:006602da0893ada0eb80c812384032e262c1c7f0642866bf194041078e86130f",
+		// A moving tag with `always`, not a digest. Both sidecar pins went stale because
+		// a digest only advances when a human pastes a new one; nothing builds these
+		// locally, so a pull has no local image to discard.
+		"${AURA_WHATSAPP_MCP_IMAGE:-ghcr.io/chetto1983/whatsapp-mcp:latest}",
+		"pull_policy: ${AURA_WHATSAPP_MCP_PULL_POLICY:-always}",
+		"MCP_OAUTH_TRUSTED_ISSUERS: ${AURA_WHATSAPP_MCP_TRUSTED_ISSUERS:-}",
 		"127.0.0.1:${AURA_WHATSAPP_MCP_PORT:-8092}:8080",
 		"127.0.0.1:${AURA_WHATSAPP_BRIDGE_PORT:-8094}:8081",
 		"aura-whatsapp-session:/app/whatsapp-bridge/store",
@@ -117,6 +122,9 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"image: ${AURA_GARAGE_IMAGE:-dxflrs/garage:v2.3.0}",
 		"GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?GARAGE_RPC_SECRET required in .env}",
 		"CALENDAR_MCP_OAuth__Resource: http://aura-pim-mcp:8080/",
+		"${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:latest}",
+		"pull_policy: ${AURA_PIM_MCP_PULL_POLICY:-always}",
+		"CALENDAR_MCP_OAuth__TrustedIssuers: ${AURA_PIM_MCP_TRUSTED_ISSUERS:-}",
 		"SEARXNG_SECRET: ${SEARXNG_SECRET:?SEARXNG_SECRET required in .env}",
 		"/etc/searxng/settings.template.yml",
 		"/etc/searxng/limiter.toml",
