@@ -323,12 +323,11 @@ def parse_go_test_json(output: str) -> dict[str, Any]:
     }
 
 
-def parse_coverage_profile(text: str) -> dict[str, Any]:
+def coverage_rows(text: str) -> list[tuple[str, str, int, int]]:
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     if not lines or not lines[0].startswith("mode: "):
         raise ValueError("coverage profile has no mode header")
-    covered = 0
-    total = 0
+    rows: list[tuple[str, str, int, int]] = []
     for line in lines[1:]:
         fields = line.rsplit(" ", 2)
         if len(fields) != 3:
@@ -340,6 +339,15 @@ def parse_coverage_profile(text: str) -> dict[str, Any]:
             raise ValueError(f"invalid coverage counts: {line}") from exc
         if statements < 0 or count < 0:
             raise ValueError(f"negative coverage counts: {line}")
+        name, _, block = fields[0].partition(":")
+        rows.append((name, block, statements, count))
+    return rows
+
+
+def parse_coverage_profile(text: str) -> dict[str, Any]:
+    covered = 0
+    total = 0
+    for _, _, statements, count in coverage_rows(text):
         total += statements
         if count > 0:
             covered += statements
@@ -350,6 +358,28 @@ def parse_coverage_profile(text: str) -> dict[str, Any]:
         "total_statements": total,
         "percent": covered * 100 / total,
     }
+
+
+def coverage_gaps(text: str) -> list[dict[str, Any]]:
+    # The gate needs only the ratio, but a package UNDER the floor then leaves nobody able
+    # to say where the shortfall is: the profile is written to a temp dir and discarded, so
+    # the report carried a number and no address. Measured 2026-09-02 on Actions run
+    # 33595671459 -- internal/arcadedb came back 2641/3184 = 82.95% against an 85% floor,
+    # and the 66 statements it needs could not be aimed at from the report alone. Worst
+    # file first, carrying the exact uncovered blocks so the next test is written at them
+    # rather than guessed from a different tier's profile.
+    files: dict[str, dict[str, Any]] = {}
+    for name, block, statements, count in coverage_rows(text):
+        entry = files.setdefault(
+            name,
+            {"file": name, "covered_statements": 0, "uncovered_statements": 0, "uncovered_blocks": []},
+        )
+        if count > 0:
+            entry["covered_statements"] += statements
+        else:
+            entry["uncovered_statements"] += statements
+            entry["uncovered_blocks"].append(block)
+    return sorted(files.values(), key=lambda item: (-item["uncovered_statements"], item["file"]))
 
 
 def run_suites(manifest: dict[str, Any], tier: str, repo: pathlib.Path, timeout_seconds: int) -> dict[str, Any]:
@@ -384,7 +414,9 @@ def run_suites(manifest: dict[str, Any], tier: str, repo: pathlib.Path, timeout_
                 }
                 if suite.get("coverage"):
                     try:
-                        result["coverage"] = parse_coverage_profile(coverage_path.read_text(encoding="utf-8"))
+                        profile = coverage_path.read_text(encoding="utf-8")
+                        result["coverage"] = parse_coverage_profile(profile)
+                        result["coverage_gaps"] = coverage_gaps(profile)
                     except (OSError, ValueError) as exc:
                         result["coverage_error"] = str(exc)
                 result["passed"] = completed.returncode == 0 and not parsed["package_failed"] and not parsed["protocol_errors"] and not parsed["skipped_tests"]
