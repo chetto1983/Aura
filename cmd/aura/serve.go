@@ -410,6 +410,13 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	if err := seedMemoryEmbedBackfillSweep(ctx, store); err != nil {
 		slog.Warn("aura serve: seed memory embed backfill sweep", "err", err)
 	}
+	// Seed the MENTIONS-edge rebuild (0114's kind CHECK admits it). A MENTIONS edge is only
+	// decidable against the whole corpus (the hub cap), so no single fact-write can evaluate
+	// one — without this sweep, facts written after the last run stay unreachable from their
+	// neighbours.
+	if err := seedMemoryMentionLinkSweep(ctx, store); err != nil {
+		slog.Warn("aura serve: seed memory mention link sweep", "err", err)
+	}
 	// Only Compose deployments that explicitly enable the observability profile seed
 	// this task. The handler probes private service-DNS endpoints directly; it never
 	// shells out to Docker or requires the Docker socket.

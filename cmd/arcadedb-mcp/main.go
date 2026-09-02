@@ -263,6 +263,7 @@ func memoryLimitsFromEnv() (arcadedb.MemoryLimits, error) {
 		{"AURA_MEMORY_DENSE_MAX_DISTANCE_RATIO", &limits.DenseMaxDistance},
 		{"AURA_MEMORY_MIN_RELEVANCE", &limits.MinRelevance},
 		{"AURA_MEMORY_LEXICAL_MIN_SCORE", &limits.LexicalMinScore},
+		{"AURA_MEMORY_MENTION_HUB_SHARE", &limits.MentionHubShare},
 	}
 	for _, item := range floats {
 		value, set, err := positiveFloatEnv(item.key)

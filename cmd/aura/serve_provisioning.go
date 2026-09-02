@@ -60,6 +60,15 @@ const memoryEmbedBackfillSweepMinutes = cron.MinScheduleEveryMinutes
 // become one notification every five minutes during an outage.
 const observabilityCheckSweepMinutes = cron.MinScheduleEveryMinutes
 
+// memoryMentionLinkSweepMinutes is the cadence of the seeded MENTIONS-edge rebuild. It
+// is deliberately looser than memoryEmbedBackfillSweepMinutes's floor: a fact that has
+// not yet been linked is still fully retrievable at depth 1 (the fact itself), because
+// only its second hop — the edge to a co-mentioned entity — is missing until the sweep
+// runs. That gap is tolerable at a coarser cadence than the one governing whether a
+// fact is findable AT ALL. 30 minutes bounds the staleness of the graph's second hop
+// without adding a corpus-wide scan every 5 minutes to every tenant.
+const memoryMentionLinkSweepMinutes = 30
+
 var (
 	_ agui.ObjectStoreProvisioner = (*objectStoreProvisionAdapter)(nil)
 	_ agui.FilesystemProvisioner  = filesystemProvisionAdapter{}
@@ -347,10 +356,11 @@ func buildDeprovisioner(chat *chatEnv) *agui.Deprovisioner {
 
 // seedEveryCronSweep idempotently seeds a fixed-interval system-seeded sweep: it scans the
 // active tasks for an existing entry of kind and only inserts one if absent. Shared by the
-// four `every` sweeps (identity_purge, sandbox_reap, memory_embed_backfill, observability_check)
-// for the same reason seedDailyCronSweep is shared by the daily ones — byte-identical copies modulo
-// four literals is what golangci-lint's dupl exists to catch (CLAUDE.md REUSABLE CODE). A
-// seed failure is non-fatal (logged by the caller); the daemon still runs.
+// five `every` sweeps (identity_purge, sandbox_reap, memory_embed_backfill, observability_check,
+// memory_mention_link) for the same reason seedDailyCronSweep is shared by the daily ones —
+// byte-identical copies modulo a few literals is what golangci-lint's dupl exists to catch
+// (CLAUDE.md REUSABLE CODE). A seed failure is non-fatal (logged by the caller); the daemon
+// still runs.
 func seedEveryCronSweep(ctx context.Context, store *cron.Store, kind cron.TaskKind, everyMinutes int, label string) error {
 	tasks, err := store.ListActiveTasks(ctx)
 	if err != nil {
@@ -409,6 +419,19 @@ func seedMemoryEmbedBackfillSweep(ctx context.Context, store *cron.Store) error 
 func seedObservabilityCheckSweep(ctx context.Context, store *cron.Store) error {
 	return seedEveryCronSweep(ctx, store, cron.KindObservabilityCheck,
 		observabilityCheckSweepMinutes, "observability scrape check")
+}
+
+// seedMemoryMentionLinkSweep idempotently seeds the MENTIONS-edge rebuild. The INSERT
+// succeeds against the 0114-widened scheduler_tasks.kind CHECK.
+//
+// This is the sweep that closes the other half of the hole memory_embed_backfill closes:
+// a MENTIONS edge is only decidable against the whole corpus (the hub cap excludes an
+// entity mentioned by more than a configured share of all facts), so no single fact-write
+// can evaluate it. Without this sweep, facts written after the last run stay unreachable
+// from their neighbours.
+func seedMemoryMentionLinkSweep(ctx context.Context, store *cron.Store) error {
+	return seedEveryCronSweep(ctx, store, cron.KindMemoryMentionLink,
+		memoryMentionLinkSweepMinutes, "memory mention link sweep")
 }
 
 // sandboxReapSweepMinutes derives the reap-sweep cadence (in minutes) from the idle-TTL seconds

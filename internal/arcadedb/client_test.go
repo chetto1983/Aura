@@ -111,6 +111,7 @@ func TestNewDefaultsMemoryLimits(t *testing.T) {
 		SourceMemoryIDs: 64, Results: 100, DigestFactsPerEntity: 20,
 		MaintenanceBatch: 100, DigestScan: 2000, HybridCandidates: 400,
 		DenseMaxDistance: 0.72, LexicalMinScore: 2, MinRelevance: 0.28,
+		MentionHubShare: 0.20,
 	}
 	if c.limits != want {
 		t.Fatalf("limits = %+v, want %+v", c.limits, want)
@@ -124,6 +125,7 @@ func TestNewHonoursMemoryLimitOverrides(t *testing.T) {
 		SourceMemoryIDs: 107, Results: 108, DigestFactsPerEntity: 109,
 		MaintenanceBatch: 110, DigestScan: 111, HybridCandidates: 112,
 		DenseMaxDistance: 0.25, LexicalMinScore: 3.5, MinRelevance: 0.4,
+		MentionHubShare: 0.35,
 	}
 	c, err := New(Config{
 		BaseURL: "http://host:2480", Database: "aura", User: "root", MemoryLimits: want,

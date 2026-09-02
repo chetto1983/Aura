@@ -337,6 +337,9 @@ type MemoryFactsAboutInput struct {
 	Predicate string `json:"predicate,omitempty" jsonschema:"narrow to one relation, e.g. works_for"`
 	Limit     int    `json:"limit,omitempty" jsonschema:"how many facts to return; defaults to 20"`
 	AsOf      string `json:"as_of,omitempty" jsonschema:"RFC3339 instant; the facts valid then rather than now"`
+	// Depth is a pointer so an absent field and an explicit 0 stay different: the
+	// first means "the default", the second is a value the tool refuses.
+	Depth *int `json:"depth,omitempty" jsonschema:"1 (default) for this entity's own facts; 2 to also include facts that share a mentioned entity with them"`
 }
 
 func addMemoryFactsAboutTool(server *mcp.Server, tenants *tenants) {
@@ -345,7 +348,9 @@ func addMemoryFactsAboutTool(server *mcp.Server, tenants *tenants) {
 		Title: "Facts about an entity",
 		Description: "Read an entity's facts by walking its edges. Exact and cheap: prefer " +
 			"this whenever the question names an entity, and fall back to memory_search only " +
-			"when it does not.",
+			"when it does not. Pass depth 2 to widen to the neighbourhood: facts that mention " +
+			"the same thing this entity's facts mention, which is how you find what a subject " +
+			"is connected to rather than only what is stated about it directly.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, memoryFactsAboutHandler(tenants))
 }
@@ -366,11 +371,15 @@ func memoryFactsAboutHandler(
 		if err != nil {
 			return nil, MemorySearchOutput{}, err
 		}
-		hits, err := client.FactsAbout(ctx, in.Entity, in.Predicate, in.Limit, asOf)
+		depth, err := factsAboutDepth(in.Depth)
+		if err != nil {
+			return nil, MemorySearchOutput{}, err
+		}
+		hits, err := client.FactsAbout(ctx, in.Entity, in.Predicate, in.Limit, asOf, depth)
 		if err != nil {
 			return nil, MemorySearchOutput{}, fmt.Errorf("memory_facts_about: %w", err)
 		}
-		retrieval := MemoryRetrievalMetadata{Path: "graph"}
+		retrieval := MemoryRetrievalMetadata{Path: factsAboutPath(depth)}
 		if len(hits) == 0 {
 			retrieval.Abstained = true
 			retrieval.Reason = "no_facts"
@@ -446,4 +455,26 @@ func canonicalSubject(subject, identityID, displayName string) string {
 		return displayName
 	}
 	return identityID
+}
+
+// factsAboutDepth refuses an out-of-range depth rather than clamping it. A
+// silently clamped 3 would answer a question the caller did not ask and give it
+// no way to notice.
+func factsAboutDepth(depth *int) (int, error) {
+	if depth == nil {
+		return 1, nil
+	}
+	if *depth != 1 && *depth != 2 {
+		return 0, fmt.Errorf(
+			"memory_facts_about: depth must be 1 (this entity's facts) or 2 "+
+				"(also facts sharing a mentioned entity), got %d", *depth)
+	}
+	return *depth, nil
+}
+
+func factsAboutPath(depth int) string {
+	if depth == 2 {
+		return "mentions"
+	}
+	return "graph"
 }

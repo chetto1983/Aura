@@ -45,7 +45,11 @@ type MemoryIdentities interface {
 	IdentityIDs(ctx context.Context) ([]string, error)
 }
 
-// TenantBackfill embeds the vector-less facts in EVERY identity's memory.
+// TenantBackfill walks every identity's memory database and runs a sweep against
+// each one. EmbedMissing and LinkMentions are two such sweeps: they share the
+// identical tenant walk (sweepTenants/sweepTenant below) — enumerate identities,
+// build a per-tenant *Client with that tenant's derived credential, skip a tenant
+// that has no memory yet — and differ only in the per-tenant work they run.
 //
 // Memory is one database per identity (tenant.go), so a sweep that held a single
 // client would only ever fix whichever tenant it happened to point at. It
@@ -76,33 +80,78 @@ func NewTenantBackfill(
 // exactly why this sweep catches stragglers a recency window would miss. The
 // argument stays for the cron sweep seam every other sweep shares.
 //
+// Embedding needs the sidecar, so this sweep additionally requires an embedder —
+// unlike LinkMentions below, which does not. See sweepTenants for the rest of the
+// tenant-walk contract (skip vs. fail, counts, logging).
+func (b *TenantBackfill) EmbedMissing(ctx context.Context, _ time.Time) (int, error) {
+	if b == nil || b.embedder == nil {
+		return 0, fmt.Errorf("arcadedb: memory embed backfill is not configured")
+	}
+	return b.sweepTenants(ctx, "embed backfill",
+		func(ctx context.Context, client *Client, _ string) (int, error) {
+			return embedMissingInBatches(ctx, client.WithEmbedder(b.embedder))
+		})
+}
+
+// LinkMentions sweeps every identity and returns how many MENTIONS edges changed
+// (created plus removed). It runs as a sweep, never a write hook, for the same
+// reason (*Client).LinkMentions does (memory_mentions_link.go): the hub cap is a
+// property of the WHOLE corpus, so no single write can decide an edge on its own.
+//
+// Unlike EmbedMissing, linking is pure text matching against facts already in
+// memory — it needs no sidecar, so its configuration guard does not require an
+// embedder.
+func (b *TenantBackfill) LinkMentions(ctx context.Context, _ time.Time) (int, error) {
+	return b.sweepTenants(ctx, "mention link",
+		func(ctx context.Context, client *Client, database string) (int, error) {
+			result, err := client.LinkMentions(ctx)
+			if err != nil {
+				return 0, err
+			}
+			if !result.Covered {
+				// A partial scan describes only a prefix of this tenant's memory, not
+				// the whole of it — see MentionLinkResult.Covered.
+				slog.Warn("memory mention link: corpus larger than one scan", "database", database)
+			}
+			return result.Created + result.Removed, nil
+		})
+}
+
+// sweepTenants is the tenant walk EmbedMissing and LinkMentions share. work does
+// one tenant's share of the sweep and returns how much it changed; sweep names
+// the caller only for the log lines, so the two sweeps stay distinguishable.
+//
 // A tenant with no memory yet is SKIPPED, not failed: databases are provisioned
 // lazily on first use, so a registered identity that has never stored a fact
 // legitimately has neither database nor credential. A tenant that fails for any
 // other reason is logged and the sweep continues to the next one — one broken
-// tenant must not stop the other tenants' vectors from being written. If NO
-// tenant could be swept and at least one failed hard, that error is returned, so
-// a misconfiguration (wrong tenant secret, unreachable server) is reported by the
-// scheduler instead of looking like an empty, healthy sweep.
-func (b *TenantBackfill) EmbedMissing(ctx context.Context, _ time.Time) (int, error) {
-	if b == nil || b.identities == nil || b.embedder == nil || b.credentials == nil {
-		return 0, fmt.Errorf("arcadedb: memory embed backfill is not configured")
+// tenant must not stop the other tenants' work. If NO tenant could be swept and
+// at least one failed hard, that error is returned, so a misconfiguration (wrong
+// tenant secret, unreachable server) is reported by the scheduler instead of
+// looking like an empty, healthy sweep.
+func (b *TenantBackfill) sweepTenants(
+	ctx context.Context,
+	sweep string,
+	work func(ctx context.Context, client *Client, database string) (int, error),
+) (int, error) {
+	if b == nil || b.identities == nil || b.credentials == nil {
+		return 0, fmt.Errorf("arcadedb: memory %s sweep is not configured", sweep)
 	}
 	identities, err := b.identities.IdentityIDs(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("arcadedb: list identities to backfill: %w", err)
+		return 0, fmt.Errorf("arcadedb: list identities for %s: %w", sweep, err)
 	}
-	embedded, swept, skipped := 0, 0, 0
+	total, swept, skipped := 0, 0, 0
 	var firstErr error
 	for _, identityID := range identities {
-		written, provisioned, err := b.embedTenant(ctx, identityID)
-		embedded += written
+		count, provisioned, err := b.sweepTenant(ctx, identityID, work)
+		total += count
 		switch {
 		case err != nil:
 			if firstErr == nil {
 				firstErr = err
 			}
-			slog.Warn("memory embed backfill: tenant failed (retried next sweep)", "error", err)
+			slog.Warn("memory "+sweep+": tenant failed (retried next sweep)", "error", err)
 		case !provisioned:
 			skipped++
 		default:
@@ -110,20 +159,24 @@ func (b *TenantBackfill) EmbedMissing(ctx context.Context, _ time.Time) (int, er
 		}
 	}
 	if swept == 0 && firstErr != nil {
-		return embedded, firstErr
+		return total, firstErr
 	}
-	slog.Info("memory embed backfill",
-		"embedded", embedded, "tenants", swept, "without_memory", skipped, "identities", len(identities))
-	return embedded, nil
+	slog.Info("memory "+sweep,
+		"count", total, "tenants", swept, "without_memory", skipped, "identities", len(identities))
+	return total, nil
 }
 
-// embedTenant embeds one identity's vector-less facts. The bool reports whether
-// the tenant HAS memory: false means it has never been provisioned, which is a
-// skip rather than an error.
-func (b *TenantBackfill) embedTenant(ctx context.Context, identityID string) (int, bool, error) {
+// sweepTenant runs work against one identity's memory database. The bool reports
+// whether the tenant HAS memory: false means it has never been provisioned, which
+// is a skip rather than an error.
+func (b *TenantBackfill) sweepTenant(
+	ctx context.Context,
+	identityID string,
+	work func(ctx context.Context, client *Client, database string) (int, error),
+) (int, bool, error) {
 	database, err := DatabaseFor(identityID)
 	if err != nil {
-		return 0, false, fmt.Errorf("memory embed backfill: %w", err)
+		return 0, false, fmt.Errorf("memory backfill: %w", err)
 	}
 	cfg := b.base
 	cfg.Database = database
@@ -131,7 +184,7 @@ func (b *TenantBackfill) embedTenant(ctx context.Context, identityID string) (in
 	cfg.Password = b.credentials.PasswordFor(database)
 	client, err := New(cfg)
 	if err != nil {
-		return 0, false, fmt.Errorf("memory embed backfill for %s: %w", database, err)
+		return 0, false, fmt.Errorf("memory backfill for %s: %w", database, err)
 	}
 	// The existence probe is a BIND, not a database read. A tenant's database and
 	// its server user are created together, so a refused credential is the exact,
@@ -141,16 +194,16 @@ func (b *TenantBackfill) embedTenant(ctx context.Context, identityID string) (in
 	// "unknown", and a server that is merely down must not read as "no memory".)
 	provisioned, err := client.CredentialAccepted(ctx)
 	if err != nil {
-		return 0, false, fmt.Errorf("memory embed backfill for %s: %w", database, err)
+		return 0, false, fmt.Errorf("memory backfill for %s: %w", database, err)
 	}
 	if !provisioned {
 		return 0, false, nil
 	}
-	written, err := embedMissingInBatches(ctx, client.WithEmbedder(b.embedder))
+	count, err := work(ctx, client, database)
 	if err != nil {
-		return written, true, fmt.Errorf("memory embed backfill for %s: %w", database, err)
+		return count, true, fmt.Errorf("memory backfill for %s: %w", database, err)
 	}
-	return written, true, nil
+	return count, true, nil
 }
 
 // embedMissingInBatches drains one database a batch at a time. A short round means

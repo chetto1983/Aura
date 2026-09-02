@@ -530,13 +530,20 @@
       "idempotentHint": false,
       "readOnlyHint": true
     },
-    "description": "Read an entity's facts by walking its edges. Exact and cheap: prefer this whenever the question names an entity, and fall back to memory_search only when it does not.",
+    "description": "Read an entity's facts by walking its edges. Exact and cheap: prefer this whenever the question names an entity, and fall back to memory_search only when it does not. Pass depth 2 to widen to the neighbourhood: facts that mention the same thing this entity's facts mention, which is how you find what a subject is connected to rather than only what is stated about it directly.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "as_of": {
           "description": "RFC3339 instant; the facts valid then rather than now",
           "type": "string"
+        },
+        "depth": {
+          "description": "1 (default) for this entity's own facts; 2 to also include facts that share a mentioned entity with them",
+          "type": [
+            "null",
+            "integer"
+          ]
         },
         "entity": {
           "description": "the entity to read the facts of, by exact name",

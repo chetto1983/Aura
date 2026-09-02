@@ -89,7 +89,7 @@ func TestAgentMemoryMCPLive_BatchAtomicity(t *testing.T) {
 	assertAgentMemoryBatchError(t, ctx, alpha, different, "idempotency_conflict")
 
 	betaBefore := agentMemoryBatchStateHash(t, ctx, betaClient, "PublishedBatch")
-	hits, err := alphaClient.FactsAbout(ctx, "PublishedBatch", "likes", 10, time.Time{})
+	hits, err := alphaClient.FactsAbout(ctx, "PublishedBatch", "likes", 10, time.Time{}, factsAboutDirect)
 	if err != nil || len(hits) != 1 || hits[0].FactKey == "" {
 		t.Fatalf("alpha fact = %+v, err=%v", hits, err)
 	}
@@ -151,7 +151,7 @@ func agentMemoryBatchStateHash(
 	subject string,
 ) string {
 	t.Helper()
-	hits, err := client.FactsAbout(ctx, subject, "", 100, time.Time{})
+	hits, err := client.FactsAbout(ctx, subject, "", 100, time.Time{}, factsAboutDirect)
 	if err != nil {
 		t.Fatalf("FactsAbout(%s): %v", subject, err)
 	}

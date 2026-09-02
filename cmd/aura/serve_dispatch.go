@@ -84,7 +84,12 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, own
 		// returns a bare nil when ArcadeDB or the embedding sidecar is unconfigured, which
 		// registers the disabled no-op sweep rather than a failing one.
 		cron.KindMemoryEmbedBackfill: handlers.NewMemoryEmbedBackfillHandler(buildMemoryEmbedBackfill(chat)),
-		cron.KindObservabilityCheck:  handlers.NewObservabilityCheckHandler(observabilityChecker),
+		// The scheduled caller for MENTIONS edges (serve_memory_backfill.go): it visits every
+		// identity's memory database and rebuilds that identity's edges. Unlike the embed
+		// sweep, linking needs no embedding sidecar — buildMemoryMentionLink returns a bare nil
+		// only when ArcadeDB itself or the tenant secret is unconfigured.
+		cron.KindMemoryMentionLink:  handlers.NewMemoryMentionLinkHandler(buildMemoryMentionLink(chat)),
+		cron.KindObservabilityCheck: handlers.NewObservabilityCheckHandler(observabilityChecker),
 	}
 	hmap := make(map[cron.TaskKind]cron.Handler, len(real))
 	for kind, h := range real {

@@ -56,6 +56,14 @@ type TaskKind string
 // equal handlers.KindMemoryEmbedBackfill ("memory_embed_backfill") — the cron store writes
 // the row, the dispatcher routes the same string to the handler
 // handlers.NewMemoryEmbedBackfillHandler builds.
+//
+// KindMemoryMentionLink is the per-tenant MENTIONS-edge rebuild — the 0114 migration
+// widened the scheduler_tasks.kind CHECK to admit it. Like memory_embed_backfill it is
+// system-seeded (seedMemoryMentionLinkSweep), never model-schedulable, and runs as a sweep
+// rather than a write hook because a MENTIONS edge is only decidable against the whole
+// corpus (the hub cap). Its literal MUST equal handlers.KindMemoryMentionLink
+// ("memory_mention_link") — the cron store writes the row, the dispatcher routes the same
+// string to the handler handlers.NewMemoryMentionLinkHandler builds.
 const (
 	KindReminder           TaskKind = "reminder"
 	KindAgentJob           TaskKind = "agent_job"
@@ -68,6 +76,7 @@ const (
 	KindObservabilityCheck TaskKind = "observability_check"
 
 	KindMemoryEmbedBackfill TaskKind = "memory_embed_backfill"
+	KindMemoryMentionLink   TaskKind = "memory_mention_link"
 )
 
 // Store wraps a pgx pool and the generated Queries — the identity-04-02 canonical

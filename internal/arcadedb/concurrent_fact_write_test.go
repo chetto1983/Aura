@@ -71,7 +71,7 @@ func TestConcurrentWorkerFactWriteSameContentMergesIntoOneFact(t *testing.T) {
 		}
 	}
 
-	hits, err := client.FactsAbout(context.Background(), subject, "learned_lesson", 20, time.Time{})
+	hits, err := client.FactsAbout(context.Background(), subject, "learned_lesson", 20, time.Time{}, factsAboutDirect)
 	if err != nil {
 		t.Fatalf("FactsAbout: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestConcurrentWorkerFactWriteDistinctActorsProduceDistinctFacts(t *testing.
 		}
 	}
 
-	hits, err := client.FactsAbout(context.Background(), subject, "learned_lesson", 20, time.Time{})
+	hits, err := client.FactsAbout(context.Background(), subject, "learned_lesson", 20, time.Time{}, factsAboutDirect)
 	if err != nil {
 		t.Fatalf("FactsAbout: %v", err)
 	}

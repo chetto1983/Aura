@@ -76,3 +76,35 @@ func buildMemoryEmbedBackfill(chat *chatEnv) handlers.MemoryEmbedder {
 	return arcadedb.NewTenantBackfill(
 		identityRoster{store: chat.identity}, arcadedb.Config{BaseURL: base}, credentials, embedder)
 }
+
+// buildMemoryMentionLink wires the per-tenant MENTIONS-edge rebuild, or returns nil when
+// the memory server or the tenant derivation secret is not configured. Nil yields the
+// disabled no-op sweep. Unlike buildMemoryEmbedBackfill, this builder does NOT require an
+// embedding sidecar — LinkMentions is pure text matching against facts already in memory
+// (memory_backfill.go), so mention linking stays enabled even when embedding is
+// unconfigured and retrieval is lexical-only.
+//
+// The return type is the INTERFACE and every failure returns a bare nil, for the same
+// reason buildMemoryEmbedBackfill does: a nil *arcadedb.TenantBackfill boxed in a non-nil
+// interface would never hit the handler's "disabled" branch.
+func buildMemoryMentionLink(chat *chatEnv) handlers.MemoryMentionLinker {
+	if chat == nil || chat.cfg == nil || chat.identity == nil {
+		return nil
+	}
+	base := strings.TrimSpace(chat.cfg.ArcadeDB.BaseURL)
+	if base == "" {
+		slog.Warn("aura serve: no ArcadeDB server configured — memory mention link disabled")
+		return nil
+	}
+	credentials, err := arcadedb.NewTenantCredentials()
+	if err != nil {
+		slog.Warn("aura serve: no ArcadeDB tenant secret — memory mention link disabled", "error", err)
+		return nil
+	}
+	// embedder is nil deliberately: LinkMentions never reads it (unlike EmbedMissing, which
+	// requires one). *arcadedb.TenantBackfill satisfies both the MemoryEmbedder and the
+	// MemoryMentionLinker seam, so this builder wires only the half of its capability that
+	// mention linking needs — a database and tenant credentials, no embedding sidecar.
+	return arcadedb.NewTenantBackfill(
+		identityRoster{store: chat.identity}, arcadedb.Config{BaseURL: base}, credentials, nil)
+}

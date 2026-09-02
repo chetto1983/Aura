@@ -251,7 +251,8 @@ func (c *Client) recallSemantic(ctx context.Context, request RecallRequest) (Rec
 }
 
 func (c *Client) recallEntity(ctx context.Context, request RecallRequest) (RecallResult, error) {
-	hits, err := c.FactsAbout(ctx, request.Entity, request.Predicate, request.Limit, request.AsOf)
+	hits, err := c.FactsAbout(ctx, request.Entity, request.Predicate, request.Limit, request.AsOf,
+		factsAboutDirect)
 	if err != nil {
 		return RecallResult{}, err
 	}

@@ -53,6 +53,7 @@ type MemoryLimits struct {
 	DenseMaxDistance     float64
 	LexicalMinScore      float64
 	MinRelevance         float64
+	MentionHubShare      float64
 }
 
 var defaultMemoryLimits = MemoryLimits{
@@ -72,6 +73,11 @@ var defaultMemoryLimits = MemoryLimits{
 	// Not established by that measure: conversation turns, other identities'
 	// corpora, or a memory much larger than 102 facts.
 	DenseMaxDistance: 0.72, LexicalMinScore: 2, MinRelevance: 0.28,
+	// 20% is the middle of a measured plateau, not a tuned value: on a live
+	// 107-fact memory every share between 10% and 50% produced the identical
+	// graph (31 linked facts, 6 bridges), 5% collapsed it to 4 and 100% turned
+	// it into a clique with a median of 57 neighbours. See hubCap.
+	MentionHubShare: 0.20,
 }
 
 func (limits MemoryLimits) normalized() MemoryLimits {
@@ -90,6 +96,7 @@ func (limits MemoryLimits) normalized() MemoryLimits {
 	limits.DenseMaxDistance = defaultFloatLimit(limits.DenseMaxDistance, defaultMemoryLimits.DenseMaxDistance)
 	limits.LexicalMinScore = defaultFloatLimit(limits.LexicalMinScore, defaultMemoryLimits.LexicalMinScore)
 	limits.MinRelevance = defaultFloatLimit(limits.MinRelevance, defaultMemoryLimits.MinRelevance)
+	limits.MentionHubShare = defaultFloatLimit(limits.MentionHubShare, defaultMemoryLimits.MentionHubShare)
 	return limits
 }
 
@@ -130,6 +137,7 @@ func (limits MemoryLimits) validate() error {
 	}{
 		{"dense max distance", limits.DenseMaxDistance},
 		{"lexical min score", limits.LexicalMinScore}, {"min relevance", limits.MinRelevance},
+		{"mention hub share", limits.MentionHubShare},
 	}
 	for _, limit := range floats {
 		if limit.value < 0 || math.IsNaN(limit.value) || math.IsInf(limit.value, 0) {

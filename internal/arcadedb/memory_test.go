@@ -454,7 +454,7 @@ func TestSearchFactsCapsQueryAndResults(t *testing.T) {
 
 func TestFactsAboutWalksTheEntitysEdges(t *testing.T) {
 	client, rec := recordingClient(t, oneFactRow)
-	hits, err := client.FactsAbout(context.Background(), "Davide", "", 0, time.Time{})
+	hits, err := client.FactsAbout(context.Background(), "Davide", "", 0, time.Time{}, factsAboutDirect)
 	if err != nil {
 		t.Fatalf("FactsAbout: %v", err)
 	}
@@ -479,7 +479,7 @@ func TestFactsAboutWalksTheEntitysEdges(t *testing.T) {
 // like SearchFacts does above, not via a second mapping.
 func TestFactsAboutCarriesFactKey(t *testing.T) {
 	client, rec := recordingClient(t, oneFactRowWithKey)
-	hits, err := client.FactsAbout(context.Background(), "Davide", "", 0, time.Time{})
+	hits, err := client.FactsAbout(context.Background(), "Davide", "", 0, time.Time{}, factsAboutDirect)
 	if err != nil {
 		t.Fatalf("FactsAbout: %v", err)
 	}
@@ -494,7 +494,7 @@ func TestFactsAboutCarriesFactKey(t *testing.T) {
 func TestFactsAboutNarrowsByPredicateAndInstant(t *testing.T) {
 	client, rec := recordingClient(t, oneFactRow)
 	asOf := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
-	if _, err := client.FactsAbout(context.Background(), "Davide", "works_for", 5, asOf); err != nil {
+	if _, err := client.FactsAbout(context.Background(), "Davide", "works_for", 5, asOf, factsAboutDirect); err != nil {
 		t.Fatalf("FactsAbout: %v", err)
 	}
 	statement := rec.statements[0]
@@ -514,7 +514,7 @@ func TestFactsAboutNarrowsByPredicateAndInstant(t *testing.T) {
 
 func TestFactsAboutRejectsAnEmptyEntity(t *testing.T) {
 	client, rec := recordingClient(t, `{"result":[]}`)
-	if _, err := client.FactsAbout(context.Background(), "  ", "", 5, time.Time{}); err == nil {
+	if _, err := client.FactsAbout(context.Background(), "  ", "", 5, time.Time{}, factsAboutDirect); err == nil {
 		t.Fatal("expected an error")
 	}
 	if len(rec.statements) != 0 {
@@ -524,16 +524,16 @@ func TestFactsAboutRejectsAnEmptyEntity(t *testing.T) {
 
 func TestFactsAboutCapsEntityPredicateAndResults(t *testing.T) {
 	client, rec := recordingClient(t, `{"result":[]}`)
-	if _, err := client.FactsAbout(context.Background(), strings.Repeat("界", 513), "", 1, now); err == nil {
+	if _, err := client.FactsAbout(context.Background(), strings.Repeat("界", 513), "", 1, now, factsAboutDirect); err == nil {
 		t.Fatal("oversized entity accepted")
 	}
-	if _, err := client.FactsAbout(context.Background(), "Davide", strings.Repeat("界", 101), 1, now); err == nil {
+	if _, err := client.FactsAbout(context.Background(), "Davide", strings.Repeat("界", 101), 1, now, factsAboutDirect); err == nil {
 		t.Fatal("oversized predicate accepted")
 	}
 	if len(rec.statements) != 0 {
 		t.Fatal("oversized traversal input reached ArcadeDB")
 	}
-	if _, err := client.FactsAbout(context.Background(), "Davide", "", 1000, now); err != nil {
+	if _, err := client.FactsAbout(context.Background(), "Davide", "", 1000, now, factsAboutDirect); err != nil {
 		t.Fatalf("FactsAbout: %v", err)
 	}
 	if !strings.Contains(rec.statements[0], "LIMIT 100") {

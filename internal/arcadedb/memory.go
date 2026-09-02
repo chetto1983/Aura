@@ -35,7 +35,7 @@ const factEdgeType = "FACT"
 // memorySchemaStatements bootstrap the memory model. Every statement is
 // idempotent so this runs on every boot.
 func memorySchemaStatements() []string {
-	return []string{
+	return append([]string{
 		"CREATE VERTEX TYPE Entity IF NOT EXISTS",
 		"CREATE PROPERTY Entity.name IF NOT EXISTS STRING",
 		"CREATE PROPERTY Entity.kind IF NOT EXISTS STRING",
@@ -57,7 +57,7 @@ func memorySchemaStatements() []string {
 		// Standard and 1 under English, with `lives`/`living` likewise.
 		"CREATE INDEX IF NOT EXISTS ON " + factEdgeType + " (statement) FULL_TEXT " +
 			"METADATA {analyzer:'org.apache.lucene.analysis.en.EnglishAnalyzer'}",
-	}
+	}, mentionSchemaStatements()...)
 }
 
 // EnsureMemorySchema creates the memory model if it is not already there.
@@ -425,67 +425,6 @@ func (c *Client) SearchFacts(
 		})
 	if err != nil {
 		return nil, fmt.Errorf("arcadedb: search facts: %w", err)
-	}
-	hits := make([]FactHit, 0, len(rows))
-	for _, row := range rows {
-		hits = append(hits, factHitFromRow(row))
-	}
-	return hits, nil
-}
-
-// factsAboutStatement reads an entity's facts by walking its edges. When the
-// question names the entity this is the whole answer: exact, nothing to rank
-// and nothing to tune. The full-text search above is for when it does not.
-//
-// BOTH directions, and that is the whole point. Matching only outV() was silent
-// and severe: measured on 1002 facts, "PETRELLI ENRICO" -- a salesperson named
-// as the object of eighteen facts -- returned NOTHING, while memory_entities
-// listed them with eighteen and graph_schema saw them. An entity that is always
-// spoken ABOUT rather than speaking is exactly the kind a memory is asked about,
-// and the hubs of any real graph sit on that side. memory_forget already walked
-// both directions, so the surface disagreed with itself as well.
-const factsAboutStatement = "SELECT statement, predicate, valid_from, valid_to, " +
-	"sources, fact_key, outV().name AS subject, outV().kind AS subject_kind, " +
-	"inV().name AS object, inV().kind AS object_kind " +
-	"FROM " + factEdgeType + " WHERE (outV().name = :entity OR inV().name = :entity)"
-
-const factsAboutPredicateFilter = " AND predicate = :predicate"
-
-// FactsAbout returns the facts whose subject is entity, valid at asOf.
-// predicate narrows to one relation when given. asOf defaults to now.
-func (c *Client) FactsAbout(
-	ctx context.Context,
-	entity string,
-	predicate string,
-	limit int,
-	asOf time.Time,
-) ([]FactHit, error) {
-	if strings.TrimSpace(entity) == "" {
-		return nil, fmt.Errorf("arcadedb: entity must be non-empty")
-	}
-	limits := c.memoryLimits()
-	if err := validateRuneLimit("entity", entity, limits.EntityRunes); err != nil {
-		return nil, err
-	}
-	if err := validateRuneLimit("predicate", predicate, limits.PredicateRunes); err != nil {
-		return nil, err
-	}
-	limit = boundedLimit(limit, 20, limits.Results)
-	if asOf.IsZero() {
-		asOf = time.Now()
-	}
-	statement := factsAboutStatement + asOfFilter
-	params := map[string]any{
-		"entity": entity,
-		"as_of":  asOf.UTC().Format(time.RFC3339),
-	}
-	if predicate = strings.TrimSpace(predicate); predicate != "" {
-		statement += factsAboutPredicateFilter
-		params["predicate"] = predicate
-	}
-	rows, err := c.Query(ctx, statement+" LIMIT "+strconv.Itoa(limit), params)
-	if err != nil {
-		return nil, fmt.Errorf("arcadedb: facts about %q: %w", entity, err)
 	}
 	hits := make([]FactHit, 0, len(rows))
 	for _, row := range rows {
