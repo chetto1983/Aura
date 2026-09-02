@@ -22,7 +22,9 @@ func TestDistributionSurfaceArtifactsMatchReleaseContract(t *testing.T) {
 		"set -euo pipefail",
 		"AURA_INSTALL_SKIP_HW",
 		"Aura requires at least 4 CPU cores",
-		"Aura requires at least 16 GiB RAM",
+		// 15, not 16: MemTotal excludes firmware/kernel reservations, so a 16 GB box
+		// reports ~15.4-15.8 GiB and the old floor refused every machine it admitted.
+		"Aura requires at least 15 GiB usable RAM",
 		"Aura requires at least 20 GiB free disk",
 		"50 GiB free disk is recommended",
 		"https://get.docker.com",
