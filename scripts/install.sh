@@ -732,10 +732,19 @@ fi
 cd "$INSTALL_DIR"
 download_file compose.yaml compose.yaml
 download_file caddy/Caddyfile caddy/Caddyfile
-# compose bind-mounts this FILE into the garage container; without it Docker
-# fabricates a directory at the mount source and garage crash-loops on
-# "IO error: Is a directory" (measured 2026-08-31, clean-host E2E kill #3).
+# The other value compose.yaml's ${AURA_CADDYFILE:-Caddyfile} mount can take
+# (AURA_CADDYFILE=Caddyfile.domain in .env) -- see the garage.toml/backup.json
+# comment below for what an unshipped bind-mount source does to the container.
+download_file caddy/Caddyfile.domain caddy/Caddyfile.domain
+# compose bind-mounts these FILEs into containers that have no `profiles:` key
+# and so always start; without either, Docker fabricates a directory at the
+# mount source instead. garage crash-loops on "IO error: Is a directory"
+# (measured 2026-08-31, clean-host E2E kill #3) -- loud. backup.json is quiet:
+# it enables ArcadeDB's AutoBackupSchedulerPlugin for every mem_<uuid> database,
+# so its absence just disables hourly memory backups while the healthcheck (which
+# never checks backup state) stays green.
 download_file docker/garage/garage.toml docker/garage/garage.toml
+download_file docker/arcadedb/backup.json docker/arcadedb/backup.json
 download_file deploy/aura.service deploy/aura.service
 download_file deploy/aura-image-update.sh deploy/aura-image-update.sh
 download_file deploy/aura-image-update.service deploy/aura-image-update.service

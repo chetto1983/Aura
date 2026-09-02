@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 #
-# The artifact ships a copy of 25 repo files. Nothing else notices when one of them changes
+# The artifact ships a copy of 27 repo files. Nothing else notices when one of them changes
 # and the artifact is not rebuilt, so an appliance would install last month's compose.yaml
 # against this month's images. This gate makes that impossible to do quietly.
 #
 # It watches the INPUTS, not the artifact: makeself makes no reproducible-output promise,
 # so diffing the built archive would flap and be switched off within a fortnight.
+#
+# That still only catches a payload file that CHANGED. Two files compose.yaml bind-mounts
+# (docker/arcadedb/backup.json, caddy/Caddyfile.domain) were simply never added to the
+# payload at all, and a diff against the manifest cannot notice an entry that was never
+# there to drift -- check_bind_mount_completeness reads compose.yaml itself, the one place
+# that names every host path a bind mount needs, to catch that instead.
 
 set -euo pipefail
 
@@ -41,6 +47,60 @@ compute() {
     printf '%s  %s\n' "$hash" "$rel"
   done < <(LC_ALL=C sort <<< "$payload_rels")
 }
+
+# compose.yaml's own bind-mount list is ground truth for what a FILE mount source must be;
+# install.sh's download_file calls are what's being checked against it, not the other way
+# round. Docker fabricates a directory when a bind-mount source is absent -- garage
+# crash-loops on that (install.sh's garage.toml/backup.json comment), ArcadeDB just boots
+# healthy with backups silently off -- so a missing entry here is worse than a changed one.
+check_bind_mount_completeness() {
+  # NOT '[^:]+' for the tail: a bare "stop at the first colon" truncates
+  # caddy/${AURA_CADDYFILE:-Caddyfile} at the ':' inside the compose default, before the
+  # host:container separator it was meant to find, and silently drops the '$' case this
+  # function exists to catch. Treating a whole ${...} group as one atom (colons and all)
+  # fixes that; only a colon OUTSIDE braces ends the host path.
+  mount_rels="$(grep -oE '^[[:space:]]+- \./(\$\{[^}]*\}|[^:])+' "$repo_root/compose.yaml" | sed 's|.*\./||' | sort -u)" || true
+  missing_mounts=""
+  while read -r rel; do
+    if [ -z "$rel" ]; then continue; fi
+    case "$rel" in
+      *'$'*)
+        # ${VAR:-default} is compose's own interpolation syntax, resolvable without running
+        # compose: substitute the default and keep checking THAT path. A bare ${VAR} (no
+        # default) is not resolvable at all -- there is no literal path to check -- so that
+        # case is a hard miss, not a skip.
+        resolved="$(printf '%s' "$rel" | sed -E 's/\$\{[A-Za-z_][A-Za-z0-9_]*:-([^}]*)\}/\1/')"
+        if [ "$resolved" = "$rel" ]; then
+          missing_mounts="$missing_mounts
+  $rel (compose variable with no :- default -- this gate cannot resolve it to a path at all)"
+          continue
+        fi
+        # Resolving to the default is NOT the fix: Caddyfile.domain was missed while
+        # Caddyfile (the default) shipped the whole time, because nothing ever asked what
+        # ELSE the variable could be. This gate cannot enumerate that in general either --
+        # doing so would mean hardcoding one env var's known values into a completeness
+        # check meant to survive the NEXT one -- so it says so loudly instead of guessing.
+        var_name="$(printf '%s' "$rel" | sed -E 's/.*\$\{([A-Za-z_][A-Za-z0-9_]*):-.*/\1/')"
+        echo "WARN: '$rel' is a compose variable; this gate only verifies its default ('$resolved') is shipped -- ship every other value \$$var_name can take by hand." >&2
+        rel="$resolved"
+        ;;
+    esac
+    # install.sh creates every directory mount with mkdir -p; only a FILE mount needs a
+    # payload entry, so a real directory on disk (not the mount's container-side target) is
+    # not a miss.
+    if [ -d "$repo_root/$rel" ]; then continue; fi
+    if ! grep -qxF "$rel" <<< "$payload_rels"; then
+      missing_mounts="$missing_mounts
+  $rel"
+    fi
+  done <<< "$mount_rels"
+  if [ -n "$missing_mounts" ]; then
+    echo "FAIL: compose.yaml bind-mounts these host paths as FILEs but install.sh does not ship them -- an appliance install gets a Docker-fabricated empty directory there instead:$missing_mounts" >&2
+    return 1
+  fi
+}
+
+check_bind_mount_completeness || exit 1
 
 if [ "${1:-}" = "--write" ]; then
   # The payload SET comes from install.sh, so a modified install.sh can point at files that
