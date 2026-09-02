@@ -31,13 +31,17 @@ parse_install_config "$conf"
 [ "$CFG_LLM_BASE_URL" = "http://host.docker.internal:11434/v1" ] || { echo "FAIL: base_url=$CFG_LLM_BASE_URL" >&2; exit 1; }
 [ "$CFG_LLM_MODEL" = "any/model-the-operator-pulled:v1" ] || { echo "FAIL: model=$CFG_LLM_MODEL" >&2; exit 1; }
 [ "$CFG_EMBED_NGL" = "0" ] || { echo "FAIL: ngl=$CFG_EMBED_NGL" >&2; exit 1; }
+[ "$CFG_GVISOR" = "false" ] || { echo "FAIL: gvisor=$CFG_GVISOR" >&2; exit 1; }
+[ "$CFG_EMBED_IMAGE" = "ghcr.io/ggml-org/llama.cpp:server" ] || { echo "FAIL: embed_image=$CFG_EMBED_IMAGE" >&2; exit 1; }
 # An empty secret must stay empty, not become the literal "base64 of nothing".
 [ -z "$CFG_OPENROUTER_API_KEY" ] || { echo "FAIL: key should be empty, got $CFG_OPENROUTER_API_KEY" >&2; exit 1; }
 
 # The claim above the parser -- that base64 keeps a hostile value from breaking the
-# key=value format -- is only worth making if something proves it. A newline would end
-# the record early and a bare '=' would be eaten by IFS.
-hostile="$(printf 'weird/model:v1\nkey=value')"
+# key=value format -- is only worth making if something proves it. Encoding neutralises
+# the embedded newline before the parser ever sees it, AND (length 2 mod 3, so the
+# encoded form ends in exactly one '=') the encoded form itself ends in the padding byte
+# that the old `IFS='=' read` split silently ate.
+hostile="$(printf 'weird/model:v1.2\nkey=value')"
 {
   echo "format=1"
   echo "llm_model_base64=$(printf '%s' "$hostile" | base64 | tr -d '\n')"
@@ -68,5 +72,26 @@ if ( parse_install_config "$future_conf" ) 2>"$future_err"; then
 fi
 grep -q 'unsupported config format' "$future_err" \
   || { echo "FAIL: an unsupported format was refused for the wrong reason: $(cat "$future_err")" >&2; exit 1; }
+
+# A missing path must fail with its own diagnostic, not be mistaken for the relative-path
+# or unsupported-format branch above.
+missing_err="$fixture_root/missing.err"
+if ( parse_install_config "$fixture_root/definitely-absent.conf" ) 2>"$missing_err"; then
+  echo "FAIL: a missing config file was accepted" >&2
+  exit 1
+fi
+grep -q 'config not found' "$missing_err" \
+  || { echo "FAIL: a missing config failed for the wrong reason: $(cat "$missing_err")" >&2; exit 1; }
+
+# format=1 is the forward-compatibility hook: a misspelled or corrupted key inside a KNOWN
+# format can only be a typo, so the parser must refuse it rather than drop it silently.
+printf 'format=1\nnot_a_real_key=x\n' > "$fixture_root/unknown.conf"
+unknown_err="$fixture_root/unknown.err"
+if ( parse_install_config "$fixture_root/unknown.conf" ) 2>"$unknown_err"; then
+  echo "FAIL: an unknown config key was accepted" >&2
+  exit 1
+fi
+grep -q "unknown key 'not_a_real_key'" "$unknown_err" \
+  || { echo "FAIL: unknown key refused for the wrong reason: $(cat "$unknown_err")" >&2; exit 1; }
 
 echo "ok: parse_install_config reads the v1 format and fails closed"

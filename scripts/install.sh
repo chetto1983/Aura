@@ -278,6 +278,12 @@ parse_install_config() {
       openrouter_api_key_base64) CFG_OPENROUTER_API_KEY="$(config_decode "$value")" ;;
       embed_image_base64) CFG_EMBED_IMAGE="$(config_decode "$value")" ;;
       embed_ngl_base64) CFG_EMBED_NGL="$(config_decode "$value")" ;;
+      # format=1 is what buys forward compatibility -- a future wizard bumps to
+      # format=2 and the check above already refuses that loudly -- so within
+      # format=1 a key naming nothing above can only be a typo or corruption.
+      format|'') ;;
+      '#'*) ;;
+      *) echo "FAIL: unknown key '$key' in $path" >&2; exit 2 ;;
     esac
   done < "$path"
 }
