@@ -39,6 +39,21 @@ fi
 extract="$fixture_root/extracted"
 "$artifact" --noexec --keep --target "$extract" >/dev/null
 payload_rels="$(payload_files "$repo_root")" || exit 1
+
+# The expected list is derived with the same expression as the builder, so an empty
+# derivation would make both sides empty and every per-file assertion below would pass
+# vacuously. The manifest's line count is the one expectation that does not come from
+# that expression. `|| true` on both: grep -c exits 1 on a zero count, which is exactly the
+# case this check exists to report -- without it, `set -e` would kill the script right here
+# with no FAIL message at all, the empty-payload case reporting nothing rather than reporting
+# itself.
+expected_count="$(grep -c . "$repo_root/scripts/payload_manifest.txt" || true)"
+derived_count="$(printf '%s\n' "$payload_rels" | grep -c . || true)"
+if [ "$derived_count" != "$expected_count" ]; then
+  echo "FAIL: derived $derived_count payload files but the manifest names $expected_count" >&2
+  exit 1
+fi
+
 while read -r rel; do
   if [ -z "$rel" ]; then continue; fi
   if ! cmp -s "$repo_root/$rel" "$extract/$rel"; then
