@@ -226,7 +226,7 @@ install_docker() {
 }
 
 # The artifact (scripts/build_installer.sh) unpacks the payload beside this script and
-# points AURA_PAYLOAD_DIR at it, so an appliance install fetches nothing: the 25 files it
+# points AURA_PAYLOAD_DIR at it, so an appliance install fetches nothing: the files it
 # used to pull from a MOVING git ref, as root, travel with the installer instead. Unset --
 # a repo checkout, or curl | bash -- keeps the network branch, so both entry points still
 # work from one implementation.

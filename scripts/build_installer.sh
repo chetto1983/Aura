@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 #
-# Packs install.sh plus the 25 files it installs into one self-extracting archive.
+# Packs install.sh plus the files it installs into one self-extracting archive. The
+# count is not written down here on purpose: it is derived from install.sh's own
+# download_file calls, and a number in a comment is the kind of thing that goes stale
+# the first time the payload grows (it did, from 25 to 27).
 #
 # makeself rather than a hand-rolled base64 blob: it embeds a payload checksum and
 # validates it on extraction, and -- the property that matters -- it runs the startup
