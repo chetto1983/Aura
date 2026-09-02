@@ -56,9 +56,18 @@ type MemoryBatchRequest struct {
 }
 
 // MemoryBatchOperationResult is the bounded outcome of one operation.
+//
+// FactKey, not the statement. Echoing each statement back made a batch cost its
+// own payload TWICE in the caller's context -- measured 2026-09-02 importing 102
+// facts of a few thousand characters each, where the echo was the single largest
+// line item of the whole import. It also bought nothing: the caller wrote those
+// statements and still holds them. The fact key is shorter AND strictly more
+// useful, because it is the exact value supersedes_fact_key wants when the caller
+// later corrects one of these facts (D-15/D-17) -- which previously required a
+// separate recall just to learn it.
 type MemoryBatchOperationResult struct {
 	Type       MemoryBatchOperationType `json:"type"`
-	Statement  string                   `json:"statement,omitempty"`
+	FactKey    string                   `json:"fact_key,omitempty"`
 	Superseded int                      `json:"superseded,omitempty"`
 	Moved      int                      `json:"moved,omitempty"`
 	Dropped    int                      `json:"dropped,omitempty"`

@@ -380,14 +380,14 @@
               "entities": {
                 "type": "integer"
               },
+              "fact_key": {
+                "type": "string"
+              },
               "facts": {
                 "type": "integer"
               },
               "moved": {
                 "type": "integer"
-              },
-              "statement": {
-                "type": "string"
               },
               "superseded": {
                 "type": "integer"

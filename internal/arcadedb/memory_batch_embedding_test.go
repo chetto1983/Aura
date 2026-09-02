@@ -1,8 +1,11 @@
 package arcadedb
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"testing"
+	"time"
 )
 
 // The vector belongs to the CREATE, not to a later sweep. These cover the seam that
@@ -101,5 +104,44 @@ func TestMemoryBatch_EmbedderDownStillWrites(t *testing.T) {
 		if fact.Embedding != nil {
 			t.Fatalf("Embedding = %#v, want nil so EmbedMissingFacts picks it up", fact.Embedding)
 		}
+	}
+}
+
+// A batch result names each written fact by its KEY, never by echoing the
+// statement back. The echo made a batch cost its own payload twice in the
+// caller's context -- measured 2026-09-02 on a 102-fact import, where it was the
+// largest single line item -- and bought nothing, since the caller wrote those
+// statements. The key is what supersedes_fact_key needs later, so the smaller
+// result is also the more useful one. Nothing asserted this shape before, so the
+// echo could have come back unnoticed.
+func TestMemoryBatchResultNamesFactsByKeyNotStatement(t *testing.T) {
+	identity := "11111111-1111-4111-8111-111111111111"
+	now := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
+	backend := newMemoryBatchFakeBackend(identity, memoryBatchTestState())
+	statement := "Davide lives in Torino."
+	request := MemoryBatchRequest{IdempotencyKey: "shape-1", Operations: []MemoryBatchOperation{
+		memoryBatchTestUpsert("Davide", "lives_in", "Torino", "run-1"),
+	}}
+	request.Operations[0].Fact.Statement = statement
+
+	result, err := applyMemoryBatch(
+		context.Background(), memoryBatchTestActor(identity), request, now,
+		defaultMemoryLimits, backend,
+	)
+	if err != nil {
+		t.Fatalf("ApplyMemoryBatch: %v", err)
+	}
+	if len(result.Operations) != 1 {
+		t.Fatalf("operations = %+v, want one", result.Operations)
+	}
+	if key := result.Operations[0].FactKey; key == "" {
+		t.Fatal("operation result carries no fact key -- supersedes_fact_key has nothing to use")
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if bytes.Contains(encoded, []byte(statement)) {
+		t.Fatalf("batch result echoes the statement back: %s", encoded)
 	}
 }

@@ -77,10 +77,10 @@ func applyMemoryBatchFact(
 		existing.Sources = mergeFactSources(existing.Sources, fact.Source)
 		existing.Fact.Source = existing.Sources[0]
 		state.Facts[existingKey] = existing
-		return MemoryBatchOperationResult{Type: operation.Type, Statement: fact.Statement}, nil
+		return MemoryBatchOperationResult{Type: operation.Type, FactKey: existing.FactKey}, nil
 	}
 
-	result := MemoryBatchOperationResult{Type: operation.Type, Statement: fact.Statement}
+	result := MemoryBatchOperationResult{Type: operation.Type}
 	if operation.Type == MemoryBatchSupersedeFact {
 		targets := resolveMemoryBatchSupersedeTargets(state, fact, identity, now)
 		switch len(targets) {
@@ -127,6 +127,7 @@ func applyMemoryBatchFact(
 	state.Facts[key] = stored
 	state.Entities[fact.Subject] = preferEntityKind(state.Entities[fact.Subject], fact.SubjectKind)
 	state.Entities[fact.Object] = preferEntityKind(state.Entities[fact.Object], fact.ObjectKind)
+	result.FactKey = stored.FactKey
 	return result, nil
 }
 
