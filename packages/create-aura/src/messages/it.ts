@@ -25,6 +25,7 @@ export const it: Record<keyof typeof en, string> = {
   installComplete: 'Aura si sta avviando.',
   cancelled: 'Installazione annullata prima di apportare modifiche.',
   unsupportedLocalPlatform: 'La modalità locale richiede Linux o macOS con Docker. Altrimenti usa la modalità remota.',
+  installerArtifactMissing: 'Il pacchetto di installazione integrato manca da questo pacchetto npm.',
   invalidHost: 'Inserisci un nome host o un indirizzo IP valido.',
   invalidPort: 'Inserisci una porta compresa tra 1 e 65535.',
   invalidUsername: 'Inserisci un nome utente Linux valido.',

@@ -4,12 +4,7 @@ import type { TemporaryFile } from './config-file.js';
 import { createTemporaryInstallConfig } from './config-file.js';
 import { createTranslator, detectLocale } from './i18n.js';
 import type { MessageKey } from './i18n.js';
-import {
-  assertSufficientCpuCores,
-  assertSufficientDiskSpace,
-  assertSufficientMemory,
-  normalizeArchitecture,
-} from './preflight.js';
+import { installLocal, preflightLocal, resolveInstallerArtifact } from './local.js';
 import { collectSettings, collectTarget, inquirerPrompt } from './prompts.js';
 import type { PromptPort, TargetSelection } from './prompts.js';
 import { ProcessRunner } from './process.js';
@@ -45,16 +40,21 @@ type RemoteInstaller = (
 export interface CliDependencies {
   locale?: string;
   version?: string;
+  // Local mode installs onto the machine running this CLI, so preflightLocal's platform gate
+  // (Linux or macOS) reads the REAL host by default. Tests targeting this repo's own dev
+  // machines (Windows) inject 'linux' to exercise a simulated local target instead.
+  platform?: NodeJS.Platform;
   prompt?: PromptPort;
   runner?: CommandRunner;
   collectTarget?: TargetCollector;
   collectSettings?: SettingsCollector;
   createConfig?: ConfigCreator;
-  // local.ts / remote.ts (Task 6) are not ported yet, and the artifact they would invoke
-  // does not exist until Task 7 packages it. Until then these have no real default: a run
-  // that reaches the install phase without one injected fails with a clear, named error
-  // instead of a TypeError -- see localInstallNotImplemented/remoteInstallNotImplemented
-  // below. Every functional test in this file injects a fake.
+  // installLocal defaults to local.ts's real installLocal, resolving the bundled artifact
+  // itself (see the localInstaller wiring below). installRemote has no such default yet --
+  // remote.ts is not ported until the second half of Task 6 -- so a run that reaches the
+  // remote install phase without one injected fails with a clear, named error
+  // (remoteInstallNotImplemented) instead of a TypeError. Every functional test in this file
+  // injects a fake for whichever path it exercises.
   installLocal?: LocalInstaller;
   installRemote?: RemoteInstaller;
   write?: Writer;
@@ -86,6 +86,10 @@ export const TRANSLATED_ERROR_CODES: Readonly<Record<string, MessageKey>> = {
   invalidMemoryAvailability: 'invalidMemoryAvailability',
   insufficientMemory: 'insufficientMemory',
   cleanupFailed: 'cleanupFailed',
+  // Task 6: local.ts's preflightLocal now throws these, and installLocal's real default
+  // (below) throws the artifact one when Task 7's bundled asset is absent.
+  unsupportedLocalPlatform: 'unsupportedLocalPlatform',
+  installerArtifactMissing: 'installerArtifactMissing',
 };
 
 function parseArguments(argv: readonly string[]): ParsedArguments {
@@ -128,52 +132,6 @@ function isPromptCancellation(error: unknown): boolean {
   return error instanceof Error && error.name === 'ExitPromptError';
 }
 
-// install.sh:126-135's ram_kib(): Linux reads /proc/meminfo's MemTotal (already KiB) directly;
-// Darwin has no /proc, so it converts `sysctl -n hw.memsize` (bytes) to KiB; any other
-// platform echoes 0, which then FAILS assertSufficientMemory's floor rather than skipping the
-// gate -- install.sh refuses a machine it cannot measure, and this must too (F6, review round
-// 2). Mirrored as one sh -c script, the same shape the disk check below already uses, so the
-// wizard and the installer read the same number on the same machine and cannot disagree.
-const RAM_KIB_SCRIPT = 'OS="$(uname -s)"; if [ "$OS" = "Linux" ] && [ -r /proc/meminfo ]; then '
-  + "awk '/MemTotal:/ {print $2}' /proc/meminfo; elif [ \"$OS\" = \"Darwin\" ]; then "
-  + 'bytes="$(sysctl -n hw.memsize 2>/dev/null || echo 0)"; echo $((bytes / 1024)); else echo 0; fi';
-
-// install.sh:137-144's disk_free_kib(): the install directory does not exist yet on a first
-// install, so it walks up to the nearest existing parent before measuring -- df on '/' when
-// the real target is a separately-mounted /opt (the appliance default install dir is
-// /opt/aura) reports free space on the wrong filesystem (F7, review round 2). $1 is the
-// install dir, passed positionally the same way the reference passes an argument to a sh -c
-// script: a throwaway program-name placeholder occupies $0, the real value is $1.
-const DISK_FREE_KIB_SCRIPT = 'probe="$1"; while [ ! -e "$probe" ] && [ "$probe" != "/" ]; do '
-  + 'probe="$(dirname "$probe")"; done; df -Pk "$probe" | awk \'NR==2 {print $4}\'';
-
-// Ported out of wpt-iot's preflightLocal ahead of local.ts existing (Task 6 ports the rest
-// of that file -- REQUIRED_COMMANDS/REQUIRED_HOSTS checks and the existing-install probe).
-// These four gates are the ones install.sh itself enforces as hard failures (its
-// architecture switch, and the cpu/mem/disk floors at scripts/install.sh:155-158), so
-// failing here fails on the wizard's own machine before a local install even starts, instead
-// of after the artifact has already run -- or, in remote mode, after it has crossed an scp
-// (F2, review round 1: assertSufficientCpuCores/assertSufficientMemory existed since Task 2
-// but had no caller anywhere, leaving two of the three hard gates unenforced). Local mode
-// only: the runner always targets the CURRENT machine, which in local mode IS the install
-// target: these checks do not need SSH the way GPU/Ollama probing (R1) or a remote
-// existing-install check would.
-async function runLocalPreflight(runner: CommandRunner, installDir: string): Promise<void> {
-  normalizeArchitecture((await runner.run('uname', ['-m'])).stdout);
-  // install.sh:118-124's cpu_count() branches on OS only because getconf might be absent;
-  // it ships on every Linux distribution and on macOS, so this one call already covers both
-  // platforms without branching -- `nproc` (F2's original fix) is Linux-only and made the
-  // wizard refuse a Mac install.sh itself accepts (F6, review round 2).
-  assertSufficientCpuCores((await runner.run('getconf', ['_NPROCESSORS_ONLN'])).stdout);
-  assertSufficientMemory((await runner.run('sh', ['-c', RAM_KIB_SCRIPT])).stdout);
-  assertSufficientDiskSpace((await runner.run('sh', [
-    '-c',
-    DISK_FREE_KIB_SCRIPT,
-    'create-aura',
-    installDir,
-  ])).stdout);
-}
-
 export async function runCli(
   argv: readonly string[],
   dependencies: CliDependencies = {},
@@ -211,6 +169,15 @@ export async function runCli(
   const targetCollector = dependencies.collectTarget ?? collectTarget;
   const settingsCollector = dependencies.collectSettings ?? collectSettings;
   const configCreator = dependencies.createConfig ?? createTemporaryInstallConfig;
+  // R5/R6: the real installer runs the bundled makeself artifact (Task 7 packages it beside
+  // this module); resolving it here, once, keeps local.ts/remote.ts's own exported
+  // installLocal/installRemote matching the reference's ported (runner, artifact, config,
+  // settings) shape while cli.ts's injected defaults keep the 4-/5-arg shape the rest of this
+  // file already declares.
+  const localInstaller: LocalInstaller = dependencies.installLocal ?? (async (installRunner, installConfig, installSettings) => {
+    const artifact = await resolveInstallerArtifact();
+    await installLocal(installRunner, artifact, installConfig, installSettings);
+  });
 
   let config: TemporaryFile | undefined;
   let operationError: unknown;
@@ -235,8 +202,13 @@ export async function runCli(
         port: target.remote.port,
       }));
     } else {
-      await runLocalPreflight(runner, target.installDir);
+      // R1 (carried Task 5 debt, closed): the hardware/command/host gate that used to live
+      // here as a small local-only runLocalPreflight now lives in local.ts's preflightLocal,
+      // merged with the REQUIRED_COMMANDS/REQUIRED_HOSTS/existing-install checks Task 6 ports
+      // from the reference -- one gate, not two copies of it.
+      const preflight = await preflightLocal(runner, target.installDir, dependencies.platform);
       write(t('localTargetSummary'));
+      if (preflight.existingInstall) write(t('existingInstall'));
       probeRunner = runner;
     }
 
@@ -254,8 +226,7 @@ export async function runCli(
       if (!dependencies.installRemote) throw new Error('remoteInstallNotImplemented');
       await dependencies.installRemote(runner, target.remote, config, settings);
     } else {
-      if (!dependencies.installLocal) throw new Error('localInstallNotImplemented');
-      await dependencies.installLocal(runner, config, settings);
+      await localInstaller(runner, config, settings);
     }
     installed = true;
   } catch (error) {

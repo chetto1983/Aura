@@ -23,6 +23,7 @@ export const en = {
   installComplete: 'Aura is starting.',
   cancelled: 'Installation cancelled before making changes.',
   unsupportedLocalPlatform: 'Local mode requires Linux or macOS with Docker. Use remote mode otherwise.',
+  installerArtifactMissing: 'The bundled installer artifact is missing from this package.',
   invalidHost: 'Enter a valid hostname or IP address.',
   invalidPort: 'Enter a port between 1 and 65535.',
   invalidUsername: 'Enter a valid Linux username.',
