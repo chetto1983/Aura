@@ -32,14 +32,19 @@ if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then AURA_EXECUTED=1; else AURA_EXECUTED=
 APPLIANCE=0
 GVISOR=0
 INSTALL_DIR="${AURA_INSTALL_DIR:-}"
+CONFIG_FILE=""
+CFG_INSTALL_DIR=""; CFG_APPLIANCE=""; CFG_GVISOR=""
+CFG_LLM_PROVIDER=""; CFG_LLM_BASE_URL=""; CFG_LLM_MODEL=""
+CFG_OPENROUTER_API_KEY=""; CFG_EMBED_IMAGE=""; CFG_EMBED_NGL=""
 
 usage() {
   cat <<'EOF'
-usage: install.sh [--appliance] [--gvisor] [--dir PATH]
+usage: install.sh [--appliance] [--gvisor] [--dir PATH] [--config PATH]
 
-  --appliance  install and enable the systemd aura.service unit
-  --gvisor     provision runsc and set AURA_RUNTIME=runsc in .env
-  --dir PATH   installation directory (default: /opt/aura on Linux)
+  --appliance    install and enable the systemd aura.service unit
+  --gvisor       provision runsc and set AURA_RUNTIME=runsc in .env
+  --dir PATH     installation directory (default: /opt/aura on Linux)
+  --config PATH  read answers from an absolute-path config file (see the spec)
 EOF
 }
 
@@ -51,6 +56,12 @@ if [ "$AURA_EXECUTED" = 1 ]; then
       --dir)
         [ "$#" -ge 2 ] || { echo "FAIL: --dir requires a path" >&2; exit 2; }
         INSTALL_DIR="$2"
+        shift
+        ;;
+      --config)
+        [ "$#" -ge 2 ] || { echo "FAIL: --config requires a file" >&2; exit 2; }
+        [ -z "$CONFIG_FILE" ] || { echo "FAIL: --config may only be supplied once" >&2; exit 2; }
+        CONFIG_FILE="$2"
         shift
         ;;
       -h|--help)
@@ -234,6 +245,46 @@ download_file() {
     echo "FAIL: could not fetch ${RAW_BASE}/${src}" >&2
     exit 1
   }
+}
+
+# The wizard hands its answers over in a file, never in argv: an API key on a command line
+# is readable in the process table and lands in shell history. Values are base64 so a
+# newline or a shell metacharacter in a model name cannot break the format.
+parse_install_config() {
+  path="$1"
+  case "$path" in
+    /*) ;;
+    *) echo "FAIL: --config requires an absolute path" >&2; exit 2 ;;
+  esac
+  [ -f "$path" ] || { echo "FAIL: config not found: $path" >&2; exit 2; }
+  head -n 1 "$path" | grep -qx 'format=1' || {
+    echo "FAIL: unsupported config format in $path" >&2
+    exit 2
+  }
+  # `IFS='=' read -r key value` looks equivalent but is not: bash drops a lone trailing
+  # delimiter when reassembling the overflow into $value, which silently eats exactly the
+  # single '=' padding byte base64 appends to any value whose length is 2 mod 3, and
+  # corrupts it. A front-anchored split on the FIRST '=' only can't lose bytes after it.
+  while IFS= read -r line || [ -n "$line" ]; do
+    key="${line%%=*}"
+    value="${line#*=}"
+    case "$key" in
+      install_dir_base64) CFG_INSTALL_DIR="$(config_decode "$value")" ;;
+      appliance) CFG_APPLIANCE="$value" ;;
+      gvisor) CFG_GVISOR="$value" ;;
+      llm_provider_base64) CFG_LLM_PROVIDER="$(config_decode "$value")" ;;
+      llm_base_url_base64) CFG_LLM_BASE_URL="$(config_decode "$value")" ;;
+      llm_model_base64) CFG_LLM_MODEL="$(config_decode "$value")" ;;
+      openrouter_api_key_base64) CFG_OPENROUTER_API_KEY="$(config_decode "$value")" ;;
+      embed_image_base64) CFG_EMBED_IMAGE="$(config_decode "$value")" ;;
+      embed_ngl_base64) CFG_EMBED_NGL="$(config_decode "$value")" ;;
+    esac
+  done < "$path"
+}
+
+config_decode() {
+  [ -n "$1" ] || { printf ''; return 0; }
+  printf '%s' "$1" | base64 -d
 }
 
 env_value() {
@@ -632,6 +683,12 @@ host_for_summary() {
 # imperative top-to-bottom.
 if [ "$AURA_EXECUTED" = 0 ]; then
   return 0
+fi
+
+# Parsed before any side effect (hardware checks, Docker, mkdir) so a bad --config fails
+# fast instead of after a preflight the operator has no reason to have run at all.
+if [ -n "$CONFIG_FILE" ]; then
+  parse_install_config "$CONFIG_FILE"
 fi
 
 preflight_hw
