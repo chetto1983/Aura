@@ -348,3 +348,35 @@ func TestReasoningGraphTouchedEntities(t *testing.T) {
 		t.Fatalf("entity refs = %#v, want only structured memory-tool entities", refs)
 	}
 }
+
+// The runtime names MCP-served memory tools with their server namespace
+// ("memory__memory_upsert_fact"), never the bare name. Keying the reasoning
+// policy on bare names silently drops every memory tool from the graph, so no
+// TOUCHED edge is ever written; measured live on 2026-09-02 with
+// ReasoningTrace=7 but TOUCHED=0. See internal/runner/runner_memory_capture.go,
+// which already pins the same model-facing name.
+func TestReasoningGraphTouchedEntitiesForNamespacedMemoryTool(t *testing.T) {
+	r, _ := newReasoningTestRunner(t, 65536, true)
+	order := []string{}
+	sink := &recordingReasoningGraphSink{order: &order}
+	r.reasoningGraphSink = sink
+	ctx := identityctx.WithIdentityID(t.Context(), uuid.NewString())
+	tr := &turnTracker{convID: newConvID(t), llmRuntime: r.llmSnapshot(ctx)}
+	runID := uuid.Must(uuid.NewV7())
+	t0 := time.Date(2026, 9, 1, 11, 0, 0, 0, time.UTC)
+
+	namespaced := reasoningGraphToolEvents(runID, t0.Add(time.Second), "call-memory", memoryUpsertFactModelName,
+		`{"subject":"Davide","predicate":"lives_in","object":"Caraglio"}`, "ok", "stored", nil)
+	events := []*agent.Event{reasoningGraphEvent(runID, t0, "Store the observed fact.")}
+	events = append(events, namespaced...)
+	events = append(events, reasoningGraphFinalEvent(runID, t0.Add(3*time.Second), "done"))
+	persistReasoningGraphEvents(t, r, ctx, tr, events...)
+
+	if len(sink.traces) != 1 || len(sink.traces[0].Steps) != 1 || len(sink.traces[0].Steps[0].ToolCalls) != 1 {
+		t.Fatalf("namespaced memory tool was dropped from the reasoning graph: %#v", sink.traces)
+	}
+	refs := sink.traces[0].Steps[0].ToolCalls[0].EntityRefs
+	if strings.Join(refs, ",") != "Caraglio,Davide" {
+		t.Fatalf("entity refs = %#v, want the structured memory-tool entities that TOUCHED is built from", refs)
+	}
+}

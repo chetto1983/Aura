@@ -72,6 +72,21 @@ var reasoningToolPolicies = map[string]reasoningToolPolicy{
 	"task":               {},
 }
 
+// MCP-served tools reach the runner namespaced ("memory__memory_upsert_fact")
+// while native tools do not, so a bare-name-only map silently drops every memory
+// tool from the reasoning graph and no TOUCHED edge is ever written. Resolve the
+// bare suffix after the namespace delimiter too, mirroring cmd/aura's resolver.
+func lookupReasoningToolPolicy(name string) (reasoningToolPolicy, bool) {
+	if policy, ok := reasoningToolPolicies[name]; ok {
+		return policy, true
+	}
+	if _, bare, namespaced := strings.Cut(name, "__"); namespaced {
+		policy, ok := reasoningToolPolicies[bare]
+		return policy, ok
+	}
+	return reasoningToolPolicy{}, false
+}
+
 // Reset discards every event from a repudiated provider attempt.
 func (b *ReasoningTraceBuilder) Reset() {
 	b.runID = uuid.Nil
@@ -126,7 +141,7 @@ func (b *ReasoningTraceBuilder) ObserveToolInvocation(ev *agent.Event) {
 		return
 	}
 	ti := ev.Actions.ToolInvocation
-	policy, allowed := reasoningToolPolicies[ti.ToolName]
+	policy, allowed := lookupReasoningToolPolicy(ti.ToolName)
 	status, ok := reasoningToolStatus(ti.Status)
 	if !allowed || !ok || strings.TrimSpace(ti.ToolCallID) == "" {
 		return
