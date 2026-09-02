@@ -23,28 +23,31 @@ payload_rels="$(payload_files "$repo_root")" || exit 1
 compute() {
   while read -r rel; do
     if [ -z "$rel" ]; then continue; fi
+    if [ ! -f "$repo_root/$rel" ]; then
+      echo "FAIL: payload file is missing from disk: $rel" >&2
+      return 1
+    fi
     printf '%s  %s\n' "$(sha256sum "$repo_root/$rel" | cut -d' ' -f1)" "$rel"
-  done < <(sort <<< "$payload_rels")
+  done < <(LC_ALL=C sort <<< "$payload_rels")
 }
 
 if [ "${1:-}" = "--write" ]; then
-  # compose.yaml (payload file #1) has sat modified in this worktree by a concurrent
-  # session; freezing those in-progress bytes into the manifest would make CI red for a
-  # reason nobody could explain once that session commits something different. Refuse
-  # instead of guessing which bytes are "real".
+  # The payload SET comes from install.sh, so a modified install.sh can point at files that
+  # do not exist in HEAD yet; it is checked alongside the files it names.
   #
-  # Compare against HEAD, not the index: bare `git diff` only sees unstaged-vs-index
-  # changes, so a file the other session has `git add`-ed reads as clean even though it is
-  # still uncommitted -- measured live in this worktree when compose.yaml got staged
-  # mid-session and a bare `git diff --quiet` let --write sail through and freeze it.
+  # `git status --porcelain` rather than `git diff HEAD`: git diff never considers UNTRACKED
+  # paths, so a brand-new payload file added by a concurrent session read as clean and its
+  # uncommitted bytes were frozen into the manifest -- the exact failure this guard exists
+  # to stop, reached from the other direction.
   dirty=""
   while read -r rel; do
     if [ -z "$rel" ]; then continue; fi
-    if ! git -C "$repo_root" diff --quiet HEAD -- "$rel"; then dirty="$dirty $rel"; fi
-  done <<< "$payload_rels"
+    if [ -n "$(git -C "$repo_root" status --porcelain -- "$rel")" ]; then dirty="$dirty $rel"; fi
+  done <<< "scripts/install.sh
+$payload_rels"
   if [ -n "$dirty" ]; then
-    echo "FAIL: refusing to freeze a manifest while payload files are modified:$dirty" >&2
-    echo "      commit or stash them first -- a manifest of uncommitted bytes fails in CI." >&2
+    echo "FAIL: refusing to freeze a manifest while payload files are modified or untracked:$dirty" >&2
+    echo "      commit them first -- a manifest of uncommitted bytes fails in CI." >&2
     exit 1
   fi
 
@@ -58,7 +61,12 @@ if [ ! -f "$manifest" ]; then
   exit 1
 fi
 
-if ! diff -u "$manifest" <(compute); then
+# Checked command substitution, not `<(compute)`: a process substitution runs compute in a
+# subshell whose exit status this script never sees, so its missing-file `return 1` would
+# be discarded and surface only as a blank hash in the diff -- the same trap payload_files.sh
+# documents for payload_files itself.
+current="$(compute)" || exit 1
+if ! diff -u "$manifest" <(printf '%s\n' "$current"); then
   echo "FAIL: the payload changed without its manifest. Run 'make payload-manifest' and commit." >&2
   exit 1
 fi
