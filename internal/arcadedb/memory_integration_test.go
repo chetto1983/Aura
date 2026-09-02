@@ -130,7 +130,7 @@ func TestMemoryProvenanceReplayAttachDetachLifecycle(t *testing.T) {
 	write(t, client, fact, time.Now().UTC())
 	write(t, client, fact, time.Now().UTC().Add(time.Second))
 
-	hits, err := client.FactsAbout(context.Background(), subject, "lives_in", 10, time.Time{}, factsAboutDirect)
+	hits, err := client.FactsAbout(context.Background(), subject, "lives_in", 10, time.Time{}, FactsAboutDirect)
 	if err != nil {
 		t.Fatalf("FactsAbout after replay: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestMemoryProvenanceReplayAttachDetachLifecycle(t *testing.T) {
 	secondRun := runID + "-second"
 	fact.Source = FactSource{RunID: secondRun, MemoryIDs: []string{"msg-2"}, WriterRole: WriterParent}
 	write(t, client, fact, time.Now().UTC().Add(2*time.Second))
-	hits, err = client.FactsAbout(context.Background(), subject, "lives_in", 10, time.Time{}, factsAboutDirect)
+	hits, err = client.FactsAbout(context.Background(), subject, "lives_in", 10, time.Time{}, FactsAboutDirect)
 	if err != nil {
 		t.Fatalf("FactsAbout after attach: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestMemoryProvenanceReplayAttachDetachLifecycle(t *testing.T) {
 	if forgot.Facts != 1 {
 		t.Fatalf("first detach = %+v", forgot)
 	}
-	hits, err = client.FactsAbout(context.Background(), subject, "lives_in", 10, time.Time{}, factsAboutDirect)
+	hits, err = client.FactsAbout(context.Background(), subject, "lives_in", 10, time.Time{}, FactsAboutDirect)
 	if err != nil {
 		t.Fatalf("FactsAbout after first detach: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestMemoryProvenanceReplayAttachDetachLifecycle(t *testing.T) {
 	if forgot.Facts != 1 {
 		t.Fatalf("final detach = %+v", forgot)
 	}
-	hits, err = client.FactsAbout(context.Background(), subject, "lives_in", 10, time.Time{}, factsAboutDirect)
+	hits, err = client.FactsAbout(context.Background(), subject, "lives_in", 10, time.Time{}, FactsAboutDirect)
 	if err != nil {
 		t.Fatalf("FactsAbout after final detach: %v", err)
 	}
@@ -232,7 +232,7 @@ func TestMemoryProvenanceMigratesLegacyStorageAndDropsRetiredProperties(t *testi
 	if !state.hasIndex(factKeyIndexName) {
 		t.Fatalf("fact identity index not recognized after replay: %+v", state.indexes)
 	}
-	hits, err := client.FactsAbout(ctx, subject, "lives_in", 10, time.Time{}, factsAboutDirect)
+	hits, err := client.FactsAbout(ctx, subject, "lives_in", 10, time.Time{}, FactsAboutDirect)
 	if err != nil {
 		t.Fatalf("FactsAbout migrated fact: %v", err)
 	}
@@ -284,7 +284,7 @@ func TestMemoryProvenanceRecurrencePreservesHistory(t *testing.T) {
 
 	assertObjectAt := func(at time.Time, object string) {
 		t.Helper()
-		hits, err := client.FactsAbout(context.Background(), subject, "lives_in", 10, at, factsAboutDirect)
+		hits, err := client.FactsAbout(context.Background(), subject, "lives_in", 10, at, FactsAboutDirect)
 		if err != nil {
 			t.Fatalf("FactsAbout(%s): %v", at, err)
 		}
@@ -520,7 +520,7 @@ func TestFactsAboutAnswersExactlyAndRespectsTime(t *testing.T) {
 		ValidFrom: now.AddDate(-6, 0, 0), ValidTo: now.AddDate(-3, 0, 0),
 	}, now)
 
-	all, err := client.FactsAbout(context.Background(), subject, "", 10, time.Time{}, factsAboutDirect)
+	all, err := client.FactsAbout(context.Background(), subject, "", 10, time.Time{}, FactsAboutDirect)
 	if err != nil {
 		t.Fatalf("FactsAbout: %v", err)
 	}
@@ -528,7 +528,7 @@ func TestFactsAboutAnswersExactlyAndRespectsTime(t *testing.T) {
 		t.Fatalf("present-tense traversal = %+v, want only the open fact", all)
 	}
 
-	narrowed, err := client.FactsAbout(context.Background(), subject, "works_for", 10, time.Time{}, factsAboutDirect)
+	narrowed, err := client.FactsAbout(context.Background(), subject, "works_for", 10, time.Time{}, FactsAboutDirect)
 	if err != nil {
 		t.Fatalf("FactsAbout(predicate): %v", err)
 	}
@@ -536,7 +536,7 @@ func TestFactsAboutAnswersExactlyAndRespectsTime(t *testing.T) {
 		t.Fatalf("narrowed = %+v", narrowed)
 	}
 
-	past, err := client.FactsAbout(context.Background(), subject, "lives_in", 10, now.AddDate(-5, 0, 0), factsAboutDirect)
+	past, err := client.FactsAbout(context.Background(), subject, "lives_in", 10, now.AddDate(-5, 0, 0), FactsAboutDirect)
 	if err != nil {
 		t.Fatalf("FactsAbout(as_of): %v", err)
 	}

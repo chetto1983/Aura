@@ -96,9 +96,13 @@ func (c *Client) FactsAbout(
 // endpoints to the same vertex. Reaching from the first fact's endpoints to the
 // second's therefore costs two hops: out to the shared entity, and back down.
 
+// Exported because FactsAbout's depth parameter is exported: callers outside this
+// package (internal/runner, cmd/arcadedb-mcp) otherwise have to write a bare 1 or 2,
+// and the validation error already spells the vocabulary out ("must be %d or %d")
+// while refusing to share the names for it.
 const (
-	factsAboutDirect        = 1
-	factsAboutNeighbourhood = 2
+	FactsAboutDirect        = 1
+	FactsAboutNeighbourhood = 2
 )
 
 // mentionNeighbourhood is the vertex set within two MENTIONS hops of :entity,
@@ -126,19 +130,19 @@ const factsNearOrdering = " ORDER BY created_at DESC, fact_key ASC"
 
 func factsAboutStatementForDepth(depth int) (string, error) {
 	switch depth {
-	case factsAboutDirect:
+	case FactsAboutDirect:
 		return factsAboutStatement, nil
-	case factsAboutNeighbourhood:
+	case FactsAboutNeighbourhood:
 		return factsNearStatement, nil
 	default:
 		return "", fmt.Errorf(
 			"arcadedb: facts depth must be %d or %d, got %d",
-			factsAboutDirect, factsAboutNeighbourhood, depth)
+			FactsAboutDirect, FactsAboutNeighbourhood, depth)
 	}
 }
 
 func factsAboutOrdering(depth int) string {
-	if depth == factsAboutNeighbourhood {
+	if depth == FactsAboutNeighbourhood {
 		return factsNearOrdering
 	}
 	return ""

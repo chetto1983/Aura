@@ -43,7 +43,7 @@ func TestFactKeyClosesOnlyTheNamedSibling(t *testing.T) {
 			Statement: subject + " learned: " + lesson,
 			Source:    FactSource{RunID: runID, WriterRole: WriterParent}, ValidFrom: learned,
 		}, now)
-		hits, err := client.FactsAbout(context.Background(), subject, "learned_lesson", 10, time.Time{}, factsAboutDirect)
+		hits, err := client.FactsAbout(context.Background(), subject, "learned_lesson", 10, time.Time{}, FactsAboutDirect)
 		if err != nil {
 			t.Fatalf("FactsAbout: %v", err)
 		}
@@ -71,7 +71,7 @@ func TestFactKeyClosesOnlyTheNamedSibling(t *testing.T) {
 		t.Fatalf("superseded = %d, want exactly 1", written.Superseded)
 	}
 
-	present, err := client.FactsAbout(context.Background(), subject, "learned_lesson", 10, time.Time{}, factsAboutDirect)
+	present, err := client.FactsAbout(context.Background(), subject, "learned_lesson", 10, time.Time{}, FactsAboutDirect)
 	if err != nil {
 		t.Fatalf("FactsAbout after close: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestFactKeyClosesOnlyTheNamedSibling(t *testing.T) {
 	}
 
 	// The closed fact stays queryable in the past -- closed, not deleted.
-	past, err := client.FactsAbout(context.Background(), subject, "learned_lesson", 10, wellInsideTheWindow, factsAboutDirect)
+	past, err := client.FactsAbout(context.Background(), subject, "learned_lesson", 10, wellInsideTheWindow, FactsAboutDirect)
 	if err != nil {
 		t.Fatalf("FactsAbout(as_of): %v", err)
 	}
@@ -136,7 +136,7 @@ func TestUpsertFactWithUnknownFactKeyRefusesAgainstALiveGraph(t *testing.T) {
 		t.Fatalf("superseded = %d, want 0", written.Superseded)
 	}
 
-	present, err := client.FactsAbout(context.Background(), subject, "lives_in", 10, time.Time{}, factsAboutDirect)
+	present, err := client.FactsAbout(context.Background(), subject, "lives_in", 10, time.Time{}, FactsAboutDirect)
 	if err != nil {
 		t.Fatalf("FactsAbout: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestSupersedeWithNoCandidatesRefusesAgainstALiveGraph(t *testing.T) {
 		t.Fatalf("superseded = %d, want 0", written.Superseded)
 	}
 
-	present, err := client.FactsAbout(context.Background(), subject, "learned_lesson", 10, time.Time{}, factsAboutDirect)
+	present, err := client.FactsAbout(context.Background(), subject, "learned_lesson", 10, time.Time{}, FactsAboutDirect)
 	if err != nil {
 		t.Fatalf("FactsAbout: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestSupersedeReplaysF2EightFactsRefused(t *testing.T) {
 		t.Fatalf("candidates = %d, want %d previews", len(written.Candidates), lessonCount)
 	}
 
-	lessons, err := client.FactsAbout(context.Background(), subject, "learned_lesson", 20, time.Time{}, factsAboutDirect)
+	lessons, err := client.FactsAbout(context.Background(), subject, "learned_lesson", 20, time.Time{}, FactsAboutDirect)
 	if err != nil {
 		t.Fatalf("FactsAbout(learned_lesson): %v", err)
 	}
@@ -244,7 +244,7 @@ func TestSupersedeReplaysF2EightFactsRefused(t *testing.T) {
 		}
 	}
 
-	livesIn, err := client.FactsAbout(context.Background(), subject, "lives_in", 10, time.Time{}, factsAboutDirect)
+	livesIn, err := client.FactsAbout(context.Background(), subject, "lives_in", 10, time.Time{}, FactsAboutDirect)
 	if err != nil {
 		t.Fatalf("FactsAbout(lives_in): %v", err)
 	}

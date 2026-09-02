@@ -324,7 +324,7 @@ func captureSourceFor(
 	kind CaptureSourceKind,
 ) (arcadedb.FactSource, arcadedb.FactCaptureSource) {
 	t.Helper()
-	hits, err := client.FactsAbout(t.Context(), subject, predicate, 20, time.Time{}, factsAboutDirect)
+	hits, err := client.FactsAbout(t.Context(), subject, predicate, 20, time.Time{}, arcadedb.FactsAboutDirect)
 	if err != nil {
 		t.Fatalf("immediate recall %s/%s: %v", subject, predicate, err)
 	}

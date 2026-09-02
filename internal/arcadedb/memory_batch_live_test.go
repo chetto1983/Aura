@@ -42,7 +42,7 @@ func TestMemoryBatchLive_AtomicRollbackAndReplay(t *testing.T) {
 	if !errors.As(err, &batchErr) || batchErr.Index != 1 || batchErr.Code != "target_not_found" {
 		t.Fatalf("invalid batch error = %v", err)
 	}
-	hits, err := client.FactsAbout(ctx, "BatchLiveDavide", "", 10, time.Time{}, factsAboutDirect)
+	hits, err := client.FactsAbout(ctx, "BatchLiveDavide", "", 10, time.Time{}, FactsAboutDirect)
 	if err != nil {
 		t.Fatalf("FactsAbout: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestMemoryBatchLive_ConcurrentBatchesConverge(t *testing.T) {
 			t.Fatalf("concurrent batch: %v", err)
 		}
 	}
-	hits, err := client.FactsAbout(ctx, "BatchConcurrentDavide", "likes", 10, time.Time{}, factsAboutDirect)
+	hits, err := client.FactsAbout(ctx, "BatchConcurrentDavide", "likes", 10, time.Time{}, FactsAboutDirect)
 	if err != nil {
 		t.Fatalf("FactsAbout: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestMemoryBatchLive_IndependentObserverSeesOnlyCommittedState(t *testing.T)
 		done <- err
 	}()
 	<-persisted
-	hits, err := client.FactsAbout(context.Background(), "BatchObserver", "likes", 10, time.Time{}, factsAboutDirect)
+	hits, err := client.FactsAbout(context.Background(), "BatchObserver", "likes", 10, time.Time{}, FactsAboutDirect)
 	if err != nil {
 		t.Fatalf("independent observer: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestMemoryBatchLive_IndependentObserverSeesOnlyCommittedState(t *testing.T)
 	if err := <-done; err != nil {
 		t.Fatalf("batch commit: %v", err)
 	}
-	hits, err = client.FactsAbout(context.Background(), "BatchObserver", "likes", 10, time.Time{}, factsAboutDirect)
+	hits, err = client.FactsAbout(context.Background(), "BatchObserver", "likes", 10, time.Time{}, FactsAboutDirect)
 	if err != nil || len(hits) != 1 {
 		t.Fatalf("committed state = %+v, err=%v", hits, err)
 	}
@@ -150,7 +150,7 @@ func TestMemoryBatchLive_AmbiguousCommitReplaysOneLogicalEffect(t *testing.T) {
 	if err != nil || !result.Replayed {
 		t.Fatalf("ambiguous replay = %+v, err=%v", result, err)
 	}
-	hits, err := client.FactsAbout(context.Background(), "BatchAmbiguous", "likes", 10, time.Time{}, factsAboutDirect)
+	hits, err := client.FactsAbout(context.Background(), "BatchAmbiguous", "likes", 10, time.Time{}, FactsAboutDirect)
 	if err != nil || len(hits) != 1 || len(hits[0].Sources) != 1 {
 		t.Fatalf("ambiguous logical effects = %+v, err=%v", hits, err)
 	}

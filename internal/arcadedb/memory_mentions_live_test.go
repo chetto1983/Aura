@@ -186,11 +186,11 @@ func TestMemoryMentionsSecondHopReachesWhatTheFirstCannot(t *testing.T) {
 	}
 	entity := rowString(rows[0], "source")
 
-	direct, err := client.FactsAbout(ctx, entity, "", 100, time.Time{}, factsAboutDirect)
+	direct, err := client.FactsAbout(ctx, entity, "", 100, time.Time{}, FactsAboutDirect)
 	if err != nil {
 		t.Fatalf("depth 1: %v", err)
 	}
-	wide, err := client.FactsAbout(ctx, entity, "", 100, time.Time{}, factsAboutNeighbourhood)
+	wide, err := client.FactsAbout(ctx, entity, "", 100, time.Time{}, FactsAboutNeighbourhood)
 	if err != nil {
 		t.Fatalf("depth 2: %v", err)
 	}
@@ -223,11 +223,11 @@ func TestMemoryMentionsSecondHopIsDeterministic(t *testing.T) {
 		t.Skip("no mention edges in this memory: nothing to order")
 	}
 	entity := rowString(rows[0], "source")
-	first, err := client.FactsAbout(ctx, entity, "", 50, time.Time{}, factsAboutNeighbourhood)
+	first, err := client.FactsAbout(ctx, entity, "", 50, time.Time{}, FactsAboutNeighbourhood)
 	if err != nil {
 		t.Fatalf("depth 2: %v", err)
 	}
-	second, err := client.FactsAbout(ctx, entity, "", 50, time.Time{}, factsAboutNeighbourhood)
+	second, err := client.FactsAbout(ctx, entity, "", 50, time.Time{}, FactsAboutNeighbourhood)
 	if err != nil {
 		t.Fatalf("depth 2 again: %v", err)
 	}

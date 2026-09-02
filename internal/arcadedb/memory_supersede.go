@@ -134,7 +134,7 @@ func (c *Client) candidatesForSupersede(
 	subject, predicate string,
 	asOf time.Time,
 ) ([]FactHit, error) {
-	hits, err := c.FactsAbout(ctx, subject, predicate, c.memoryLimits().Results, asOf, factsAboutDirect)
+	hits, err := c.FactsAbout(ctx, subject, predicate, c.memoryLimits().Results, asOf, FactsAboutDirect)
 	if err != nil {
 		return nil, fmt.Errorf("arcadedb: resolve supersede candidates: %w", err)
 	}
