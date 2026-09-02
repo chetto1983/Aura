@@ -95,3 +95,32 @@ grep -q "unknown key 'not_a_real_key'" "$unknown_err" \
   || { echo "FAIL: unknown key refused for the wrong reason: $(cat "$unknown_err")" >&2; exit 1; }
 
 echo "ok: parse_install_config reads the v1 format and fails closed"
+
+env_dir="$fixture_root/envtest"
+mkdir -p "$env_dir"
+cd "$env_dir"
+printf 'AURA_LLM_PROVIDER=openrouter\nOPENROUTER_API_KEY=sk-operator-choice\n' > .env
+
+CFG_LLM_PROVIDER="ollama"
+CFG_LLM_BASE_URL="http://host.docker.internal:11434/v1"
+CFG_LLM_MODEL="any/model-the-operator-pulled:v1"
+CFG_OPENROUTER_API_KEY=""
+CFG_EMBED_IMAGE=""
+CFG_EMBED_NGL=""
+apply_install_config
+
+grep -qx 'AURA_LLM_PROVIDER=ollama' .env || { echo "FAIL: provider not applied" >&2; exit 1; }
+grep -qx 'AURA_LLM_BASE_URL=http://host.docker.internal:11434/v1' .env || { echo "FAIL: base url not applied" >&2; exit 1; }
+grep -qx 'AURA_LLM_MODEL=any/model-the-operator-pulled:v1' .env || { echo "FAIL: model not applied" >&2; exit 1; }
+# An empty config value must NOT clear what the operator already had.
+grep -qx 'OPENROUTER_API_KEY=sk-operator-choice' .env || { echo "FAIL: an empty config value cleared an operator's key" >&2; exit 1; }
+
+# apply_install_config must be idempotent -- install.sh's contract is that re-running it
+# preserves explicit settings, so a second apply replaces the key rather than duplicating it.
+apply_install_config
+[ "$(grep -c '^AURA_LLM_PROVIDER=' .env)" = 1 ] \
+  || { echo "FAIL: a second apply duplicated the key instead of replacing it" >&2; exit 1; }
+
+cd "$repo_root"
+
+echo "ok: apply_install_config writes only what the config actually carries"

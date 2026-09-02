@@ -293,6 +293,18 @@ config_decode() {
   printf '%s' "$1" | base64 -d
 }
 
+# Only non-empty values are written. An absent key means "the wizard did not ask", not
+# "clear it": clearing is how a re-run would wipe a key the operator set by hand, and
+# install.sh's whole contract is that re-running preserves explicit settings.
+apply_install_config() {
+  if [ -n "$CFG_LLM_PROVIDER" ]; then set_env_value AURA_LLM_PROVIDER "$CFG_LLM_PROVIDER"; fi
+  if [ -n "$CFG_LLM_BASE_URL" ]; then set_env_value AURA_LLM_BASE_URL "$CFG_LLM_BASE_URL"; fi
+  if [ -n "$CFG_LLM_MODEL" ]; then set_env_value AURA_LLM_MODEL "$CFG_LLM_MODEL"; fi
+  if [ -n "$CFG_OPENROUTER_API_KEY" ]; then set_env_value OPENROUTER_API_KEY "$CFG_OPENROUTER_API_KEY"; fi
+  if [ -n "$CFG_EMBED_IMAGE" ]; then set_env_value AURA_EMBED_IMAGE "$CFG_EMBED_IMAGE"; fi
+  if [ -n "$CFG_EMBED_NGL" ]; then set_env_value AURA_EMBED_NGL "$CFG_EMBED_NGL"; fi
+}
+
 env_value() {
   key="$1"
   awk -F= -v k="$key" '$1 == k { sub(/^[^=]*=/, ""); print; exit }' .env
@@ -695,6 +707,9 @@ fi
 # fast instead of after a preflight the operator has no reason to have run at all.
 if [ -n "$CONFIG_FILE" ]; then
   parse_install_config "$CONFIG_FILE"
+  if [ -n "$CFG_INSTALL_DIR" ]; then INSTALL_DIR="$CFG_INSTALL_DIR"; fi
+  if [ "$CFG_APPLIANCE" = "true" ]; then APPLIANCE=1; fi
+  if [ "$CFG_GVISOR" = "true" ]; then APPLIANCE=1; GVISOR=1; fi
 fi
 
 preflight_hw
@@ -746,6 +761,7 @@ download_file observability/tempo/tempo.yml observability/tempo/tempo.yml
 chmod +x scripts/garage_bootstrap.sh scripts/fetch_embedding_model.sh scripts/observability_sidecar_check.sh deploy/aura-image-update.sh
 
 write_env_if_missing
+apply_install_config
 
 ensure_objectstore_public_endpoint
 
