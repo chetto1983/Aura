@@ -2,8 +2,14 @@ from __future__ import annotations
 
 import copy
 import os
+import pathlib
+import sys
 import unittest
 import unittest.mock
+
+# Keep both documented invocations working: direct script execution and
+# `python -m unittest scripts.agent_memory_eval_running_aura_test` from the repository root.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import agent_memory_eval as evaluator
 import agent_memory_eval_running_aura as running_aura
@@ -142,6 +148,59 @@ class RunningAuraConversationEvaluatorTest(unittest.TestCase):
                 evidence = running_aura_fixture()
                 evidence["scenarios"][index]["proof"][field] = 0 if field == "touched_edges" else False
                 self.assertFalse(self.evaluate(evidence)["passed"])
+
+
+class ScenarioScoringTest(unittest.TestCase):
+    """_scenario builds the scored records the >9.8 gate reads, so its score must
+    stay bound to the scenario's cross-store assertions and never to answer text alone."""
+
+    @staticmethod
+    def _turns(count: int) -> list[dict[str, object]]:
+        return [
+            {"conversation_id": "conv-1", "seq": index, "answer": f"answer {index}"}
+            for index in range(1, count + 1)
+        ]
+
+    def test_failed_assertions_score_zero_even_when_every_answer_is_present(self) -> None:
+        scenario = running_aura._scenario(
+            "durable_shell_file_capture_later_recall", self._turns(2), ["tempo:trace-1"],
+            False, {"accepted_capture": False},
+        )
+        self.assertEqual([r["actual_response_score"] for r in scenario["responses"]], [0.0, 0.0])
+
+    def test_passing_assertions_with_answers_score_ten(self) -> None:
+        scenario = running_aura._scenario(
+            "durable_shell_file_capture_later_recall", self._turns(2), ["tempo:trace-1"],
+            True, {"accepted_capture": True},
+        )
+        self.assertEqual([r["actual_response_score"] for r in scenario["responses"]], [10.0, 10.0])
+
+    def test_empty_answer_scores_zero_even_when_assertions_passed(self) -> None:
+        turns = self._turns(1)
+        turns[0]["answer"] = ""
+        scenario = running_aura._scenario(
+            "beyond_active_context_recall", turns, ["tempo:trace-1"], True, {},
+        )
+        self.assertEqual(scenario["responses"][0]["actual_response_score"], 0.0)
+
+    def test_failed_scenario_is_rejected_for_the_score_specifically(self) -> None:
+        """The decisive direction: assertions that did not hold must raise the
+        per-response score failure itself, not merely some unrelated failure."""
+        scenario = running_aura._scenario(
+            "beyond_active_context_recall", self._turns(1), ["tempo:trace-1"], False,
+            {"tempo_path_matches": True, "historical_conversation_evidence": True},
+        )
+        evidence = running_aura.evaluate_running_aura_conversation({
+            "executed": True, "fresh_image": True,
+            "candidate_commit": "abc", "running_commit": "abc",
+            "scenarios": [scenario],
+            "evidence": {"tempo": 1, "tool_invocations": 1, "conversation_turns": 1, "arcadedb": 1},
+        })
+        self.assertFalse(evidence["passed"])
+        self.assertTrue(
+            any("per-response score is not strictly above 9.8" in failure for failure in evidence["failures"]),
+            evidence["failures"],
+        )
 
 
 class RunningAuraArmingTest(unittest.TestCase):

@@ -325,7 +325,7 @@ def _scenario(name: str, turns: list[dict[str, Any]], refs: list[str], passed: b
         response_id = f"{turn['conversation_id']}:{turn['seq']}"
         terminal_ids.append(response_id)
         responses.append({
-            "response_id": response_id, "actual_response_score": 10.0 if turn["answer"] else 0.0,
+            "response_id": response_id, "actual_response_score": 10.0 if passed and turn["answer"] else 0.0,
             "evidence_refs": refs, "correlation_refs": [f"postgres:turn:{response_id}", *refs],
             "answer": turn["answer"],
         })
