@@ -358,3 +358,46 @@ func recallRequestWithActiveSource(
 	req.Extra.Header.Set(memoryRecallActiveSourcesHeader, base64.RawURLEncoding.EncodeToString(raw))
 	return req
 }
+
+// The description is the only place the model learns WHICH mode a question
+// needs. Measured live on 2026-09-02: asked "cosa vedi delle conversazioni
+// precedenti?", the agent called memory_recall with only a semantic query,
+// scored the seeded conversation at 0.016, and answered that it had no record
+// of previous conversations. Every sibling memory tool states a trigger
+// ("prefer this whenever the question names an entity"); this one must too, and
+// it must survive mcptools.frameMCPSummary's 768-byte cap uncut, because a
+// truncated tail is exactly where the guidance would be lost.
+func TestMemoryRecallDescriptionTeachesModeSelection(t *testing.T) {
+	server := mcp.NewServer(&mcp.Implementation{Name: "recall-description", Version: "1"}, nil)
+	addMemoryRecallTool(server, nil)
+	session := inMemoryIdentityServer(t, server)
+	listed, err := session.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	var tool *mcp.Tool
+	for _, candidate := range listed.Tools {
+		if candidate.Name == "memory_recall" {
+			tool = candidate
+			break
+		}
+	}
+	if tool == nil {
+		t.Fatal("memory_recall is not advertised")
+	}
+	if len(tool.Description) > 768 {
+		t.Fatalf("description is %d bytes, past the summary cap that would truncate the mode guidance", len(tool.Description))
+	}
+	if strings.Contains(tool.Description, "\n") {
+		t.Fatal("description must stay one line; frameMCPSummary keeps only the first")
+	}
+	lowered := strings.ToLower(tool.Description)
+	if !strings.Contains(lowered, "recent") {
+		t.Fatalf("description never names the recent mode: %q", tool.Description)
+	}
+	for _, trigger := range []string{"look back", "discussed"} {
+		if !strings.Contains(lowered, trigger) {
+			t.Fatalf("description gives no trigger for choosing recent over semantic (missing %q): %q", trigger, tool.Description)
+		}
+	}
+}
