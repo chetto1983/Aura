@@ -107,7 +107,23 @@ def run_running_aura_conversation(repo: pathlib.Path, timeout_seconds: int) -> d
     client.run(seed_conversation, f"Rispondi esattamente con questo codice e nient'altro: {seed_marker}", "high", timeout_seconds)
     _wait_until(lambda: _projected_marker(repo, database, identity, seed_marker), timeout_seconds, "history projection")
     recall_conversation = client.create_conversation(f"Phase 49 natural recall {token}")
-    recall_run = client.run(recall_conversation, "cosa vedi delle conversazioni precedenti?", "high", timeout_seconds)
+    # The opening question stays deliberately NATURAL: nothing in it names a tool or a
+    # mode, so the scenario keeps testing whether the agent reaches for
+    # memory_recall {"mode":"recent"} on its own -- the exact behaviour 9b616887 fixed,
+    # and the one a more prescriptive prompt would stop measuring.
+    #
+    # The citation clause is what was added, and only because the proof needs it.
+    # Measured 2026-09-02 across three runs: the recall itself was correct every time
+    # (mode=recent chosen unprompted, the seed marker present in the tool result), but
+    # on the third run the agent SUMMARISED the history instead of quoting the code,
+    # so `seed_marker in answer` failed on a stylistic choice while the capability
+    # under test held. Asking for the codes verbatim removes that coin flip without
+    # hinting at which tool or mode to use.
+    recall_run = client.run(
+        recall_conversation,
+        "cosa vedi delle conversazioni precedenti? Cita testualmente ogni codice che trovi.",
+        "high", timeout_seconds,
+    )
     recall = _turn_evidence(repo, identity, recall_conversation, recall_run, after_seq=0)
     recall_tool = _find_tool(recall["tools"], "memory__memory_recall")
     recall_result = _json_object(recall_tool.get("result_preview", ""))
