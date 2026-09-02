@@ -95,11 +95,21 @@ func (s *OAuthServer) validatedRedirect(raw string) (*url.URL, bool) {
 		parsed.Scheme == "" || parsed.Host == "" {
 		return nil, false
 	}
+	// Any loopback callback is accepted, on any port and any path. RFC 8252 §7.3 makes
+	// that the redirect for native and public clients precisely because they cannot
+	// pre-register a fixed one: an MCP client picks a free port at launch and invents
+	// its own path. Pinning two hardcoded paths meant Dynamic Client Registration
+	// existed but rejected every real client -- measured 2026-09-02, Claude Code's
+	// registration came back "invalid_redirect_uri: redirect URI is outside Aura's
+	// callbacks", so the mount could never be authorized at all.
+	//
+	// The exposure this adds is bounded to a process already running on the operator's
+	// own machine, and the code it could intercept is still useless without the PKCE
+	// verifier, which the authorization endpoint requires as S256.
+	if parsed.Scheme == "http" && isLoopbackHost(parsed.Hostname()) {
+		return parsed, true
+	}
 	switch parsed.Path {
-	case "/aura/mcp/oauth/callback":
-		if parsed.Scheme == "http" && isLoopbackHost(parsed.Hostname()) {
-			return parsed, true
-		}
 	case "/api/governance/mcp/authorization/callback":
 		if s.publicURL == "" {
 			if parsed.Scheme == "http" && isLoopbackHost(parsed.Hostname()) {
