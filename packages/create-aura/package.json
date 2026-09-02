@@ -13,6 +13,7 @@
   },
   "files": [
     "dist",
+    "install-appliance.run",
     "README.md"
   ],
   "engines": {
@@ -22,7 +23,8 @@
     "build": "node scripts/clean-dist.mjs && tsc",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepack": "npm run build"
+    "build:artifact": "node scripts/build-artifact.mjs",
+    "prepack": "npm run build && npm run build:artifact"
   },
   "dependencies": {
     "@inquirer/prompts": "^8.7.0",
