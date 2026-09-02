@@ -19,6 +19,12 @@ set -euo pipefail
 export MSYS_NO_PATHCONV=1
 export MSYS2_ARG_CONV_EXCL='*'
 
+# Sourced or executed, decided once because it is needed twice. The tests source this file
+# to reach its functions: the argument loop below must not eat the SOURCING script's
+# arguments, because a stray --help would call `exit 0` and a sourced exit is the CALLER's
+# exit -- the test process would end early and green, having asserted nothing.
+if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then AURA_EXECUTED=1; else AURA_EXECUTED=0; fi
+
 APPLIANCE=0
 GVISOR=0
 INSTALL_DIR="${AURA_INSTALL_DIR:-}"
@@ -33,27 +39,29 @@ usage: install.sh [--appliance] [--gvisor] [--dir PATH]
 EOF
 }
 
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --appliance) APPLIANCE=1 ;;
-    --gvisor) APPLIANCE=1; GVISOR=1 ;;
-    --dir)
-      [ "$#" -ge 2 ] || { echo "FAIL: --dir requires a path" >&2; exit 2; }
-      INSTALL_DIR="$2"
-      shift
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    *)
-      echo "FAIL: unknown argument: $1" >&2
-      usage >&2
-      exit 2
-      ;;
-  esac
-  shift
-done
+if [ "$AURA_EXECUTED" = 1 ]; then
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --appliance) APPLIANCE=1 ;;
+      --gvisor) APPLIANCE=1; GVISOR=1 ;;
+      --dir)
+        [ "$#" -ge 2 ] || { echo "FAIL: --dir requires a path" >&2; exit 2; }
+        INSTALL_DIR="$2"
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        echo "FAIL: unknown argument: $1" >&2
+        usage >&2
+        exit 2
+        ;;
+    esac
+    shift
+  done
+fi
 
 OS="$(uname -s)"
 if [ -z "$INSTALL_DIR" ]; then
@@ -605,10 +613,8 @@ host_for_summary() {
 
 # Sourcing this script defines its functions and stops here; executing it falls through and
 # installs. The tests drive one function at a time, which is impossible while the file is
-# imperative top-to-bottom. Under `curl | bash` BASH_SOURCE[0] is unset, so it defaults to
-# $0 and the comparison is equal -- that path still installs, which is the whole point of
-# it. The :- is required because line 17 sets `-u`.
-if [ "${BASH_SOURCE[0]:-$0}" != "$0" ]; then
+# imperative top-to-bottom.
+if [ "$AURA_EXECUTED" = 0 ]; then
   return 0
 fi
 
