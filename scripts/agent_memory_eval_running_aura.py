@@ -227,10 +227,16 @@ def run_running_aura_conversation(repo: pathlib.Path, timeout_seconds: int) -> d
         capture_ok and capture_recall_ok,
         {"tempo_path_matches": bool(capture_traces), "accepted_capture": capture_ok, "run_finished_before_recall": capture["finished"]},
     ))
+    # Every assertion above has already read what it needs, so the fixtures can go.
+    # This runs LAST on purpose: removing them earlier would delete the very evidence
+    # the scenarios are scored against.
+    fixtures_removed = _remove_scenario_fixtures(repo, database, token)
+
     return evaluate_running_aura_conversation({
         "executed": True, "fresh_image": candidate == running,
         "candidate_commit": candidate, "running_commit": running,
         "scenarios": scenarios, "evidence": evidence_counts,
+        "fixtures_removed": fixtures_removed,
     })
 
 
@@ -491,6 +497,64 @@ def _arcade_query(repo: pathlib.Path, database: str, statement: str, params: dic
     with urllib.request.urlopen(request, timeout=30) as response:
         result = json.load(response).get("result", [])
     return [item for item in result if isinstance(item, dict)]
+
+
+def _arcade_command(repo: pathlib.Path, database: str, statement: str, params: dict[str, Any]) -> None:
+    """Mutating counterpart of _arcade_query. /query is read-only and rejects a DELETE."""
+    password = _secret(repo, "ARCADEDB_PASSWORD")
+    auth = base64.b64encode(f"root:{password}".encode()).decode()
+    payload = json.dumps({"language": "sql", "command": statement, "params": params}).encode()
+    request = urllib.request.Request(
+        f"http://127.0.0.1:2480/api/v1/command/{database}", data=payload,
+        headers={"Authorization": f"Basic {auth}", "Content-Type": "application/json"}, method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=30):
+        return
+
+
+def _remove_scenario_fixtures(repo: pathlib.Path, database: str, token: str) -> dict[str, Any]:
+    """Delete the facts and entities this run invented, leaving the operator's memory as found.
+
+    The scenarios write into the operator's REAL memory tenant -- an explicit
+    `Phase49Entity<token>` fact and a durable_artifact fact for the file the agent
+    wrote -- and nothing used to remove them. Measured 2026-09-02 after six runs: the
+    tenant's memory_digest contained twelve entities, ALL of them fixtures, and no
+    real knowledge at all; the operator's own memory had been crowded out by test
+    scaffolding and had to be cleaned by hand.
+
+    Scoped by this run's token, so a concurrent run's fixtures are never touched, and
+    only entities left with no fact at all are removed. Best-effort by design: a
+    cleanup failure must not turn a passing gate red, so the outcome is reported as
+    evidence instead of raised.
+    """
+    subjects = [f"Phase49Entity{token}", f"/workspace/artifacts/phase49-{token}.txt"]
+    removed: dict[str, Any] = {"facts": 0, "entities": 0, "error": None}
+    try:
+        for subject in subjects:
+            facts = _arcade_query(
+                database=database, repo=repo, params={"name": subject},
+                statement="SELECT count(*) AS count FROM FACT WHERE outV().name = :name OR inV().name = :name",
+            )
+            removed["facts"] += int(facts[0].get("count", 0)) if facts else 0
+            _arcade_command(repo, database,
+                            "DELETE FROM FACT WHERE outV().name = :name OR inV().name = :name",
+                            {"name": subject})
+        # Endpoints such as "Confermato" are shared with other runs, so prune by
+        # emptiness rather than by name: an entity that still carries a fact stays.
+        for row in _arcade_query(repo, database, "SELECT name FROM Entity", {}):
+            name = str(row.get("name", ""))
+            if not name:
+                continue
+            live = _arcade_query(
+                database=database, repo=repo, params={"name": name},
+                statement="SELECT count(*) AS count FROM FACT WHERE outV().name = :name OR inV().name = :name",
+            )
+            if live and int(live[0].get("count", 0)) == 0:
+                _arcade_command(repo, database, "DELETE FROM Entity WHERE name = :name", {"name": name})
+                removed["entities"] += 1
+    except Exception as error:  # noqa: BLE001 - cleanup must never fail the gate
+        removed["error"] = str(error)
+    return removed
 
 
 def _wait_arcade(repo: pathlib.Path, database: str, statement: str, params: dict[str, Any], timeout_seconds: int) -> list[dict[str, Any]]:
