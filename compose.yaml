@@ -556,7 +556,21 @@ services:
   # Retrieval is full-text + graph, with an optional dense leg over the sidecar
   # embedder (LSM_VECTOR + vector.fuse); see internal/arcadedb/memory_vector.go.
   arcadedb:
-    image: arcadedata/arcadedb:26.8.1
+    # 26.9.1-SNAPSHOT, pinned BY DIGEST rather than by tag. 26.9.1 has no stable
+    # release yet (26.8.1 is the newest on Docker Hub and in GitHub releases), and
+    # both `latest` and the -SNAPSHOT tag are rebuilt nightly, so either would let
+    # the running engine change between two `up` runs with no commit to show for it.
+    #
+    # Why move off stable 26.8.1 at all: internal/arcadedb/document_retrieval.go
+    # passes `groupBy` to vector.fuse, and before 26.9.1 a grouped vector search read
+    # the HNSW graph ONLY — skipping the in-memory delta buffer that holds everything
+    # written since the last rebuild. Freshly ingested passages were therefore
+    # invisible to document search until a rebuild, "with no error, no warning and
+    # nothing in the statistics to say so" (arcadedb-docs, vector-embeddings.adoc
+    # §"Searching Vectors Not Yet in the Graph"). Ungrouped searches — which is what
+    # memory recall in memory_vector.go issues — always scored the delta buffer and
+    # were never affected.
+    image: arcadedata/arcadedb:26.9.1-SNAPSHOT@sha256:f6e9948e11a8a1e7bbcdcb5b2a2ae4aad6809d9f9ac935c005327054102e7efc
     container_name: aura-arcadedb
     restart: unless-stopped
     mem_limit: 3g
