@@ -34,9 +34,6 @@ out="$(bash "$helper" "$repo_root/scripts/install.sh" --help --appliance)"
 
 echo "ok: install.sh sources cleanly and defines its functions"
 
-fixture_root="$(mktemp -d)"
-trap 'rm -rf "$fixture_root"' EXIT
-
 mkdir -p "$fixture_root/payload/observability/tempo" "$fixture_root/out"
 printf 'compose from payload' > "$fixture_root/payload/compose.yaml"
 printf 'tempo from payload' > "$fixture_root/payload/observability/tempo/tempo.yml"
@@ -59,10 +56,16 @@ grep -q 'tempo from payload' "$fixture_root/out/observability/tempo/tempo.yml" \
 
 # Unset, it must still take the network branch -- this is the standalone checkout and the
 # curl | bash path, and an unreachable RAW_BASE must therefore FAIL.
+net_err="$fixture_root/net.err"
 if ( AURA_PAYLOAD_DIR="" RAW_BASE="http://127.0.0.1:1/unreachable" \
-     download_file compose.yaml "$fixture_root/out/net.yaml" ) 2>/dev/null; then
+     download_file compose.yaml "$fixture_root/out/net.yaml" ) 2>"$net_err"; then
   echo "FAIL: download_file did not fall back to the network when AURA_PAYLOAD_DIR is empty" >&2
   exit 1
 fi
+# Exit status alone would also be non-zero if an empty AURA_PAYLOAD_DIR were mistaken for
+# a set one and cp reached for "/compose.yaml". The curl diagnostic is what distinguishes
+# the two branches.
+grep -q 'could not fetch http://127.0.0.1:1/unreachable/compose.yaml' "$net_err" \
+  || { echo "FAIL: an empty AURA_PAYLOAD_DIR did not reach the curl branch: $(cat "$net_err")" >&2; exit 1; }
 
 echo "ok: download_file prefers the payload and still falls back to the network"
