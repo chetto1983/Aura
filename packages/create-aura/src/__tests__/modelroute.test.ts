@@ -5,6 +5,7 @@ import type { CommandRunner, ProcessResult } from '../process.js';
 import {
   CPU_EMBED_IMAGE,
   CUDA_EMBED_IMAGE,
+  embedTargetFor,
   probeGpu,
   probeOllama,
 } from '../modelroute.js';
@@ -26,6 +27,20 @@ function createFakeRunner(
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+// F4 (review round 1): probeGpu and prompts.ts's collectGpuChoice (the R1 yes/no fallback
+// for a runner-less remote probe) each independently encoded "cuda -> CUDA image + '99',
+// otherwise CPU image + '0'". A single exported mapping is the only way changing one cannot
+// silently leave the other disagreeing.
+describe('embedTargetFor', () => {
+  it('maps cuda to the CUDA image and ngl 99', () => {
+    expect(embedTargetFor(true)).toEqual({ embedImage: CUDA_EMBED_IMAGE, embedNgl: '99' });
+  });
+
+  it('maps no cuda to the CPU image and ngl 0', () => {
+    expect(embedTargetFor(false)).toEqual({ embedImage: CPU_EMBED_IMAGE, embedNgl: '0' });
+  });
 });
 
 describe('probeGpu', () => {

@@ -4,7 +4,12 @@ import type { TemporaryFile } from './config-file.js';
 import { createTemporaryInstallConfig } from './config-file.js';
 import { createTranslator, detectLocale } from './i18n.js';
 import type { MessageKey } from './i18n.js';
-import { assertSufficientDiskSpace, normalizeArchitecture } from './preflight.js';
+import {
+  assertSufficientCpuCores,
+  assertSufficientDiskSpace,
+  assertSufficientMemory,
+  normalizeArchitecture,
+} from './preflight.js';
 import { collectSettings, collectTarget, inquirerPrompt } from './prompts.js';
 import type { PromptPort, TargetSelection } from './prompts.js';
 import { ProcessRunner } from './process.js';
@@ -61,14 +66,25 @@ interface ParsedArguments {
   mode?: InstallMode;
 }
 
-const TRANSLATED_ERROR_CODES: Readonly<Record<string, MessageKey>> = {
+// Exported so cli.test.ts can assert, in one place, that every mapped code resolves to a
+// real message in both catalogues and that every preflight.ts error code is mapped (F3,
+// review round 1: six of these had neither a map entry nor a catalogue key, so
+// errorMessage() fell through to the raw thrown string and an operator on an unsupported
+// architecture read "unsupportedArchitecture:riscv64" literally).
+export const TRANSLATED_ERROR_CODES: Readonly<Record<string, MessageKey>> = {
   invalidHost: 'invalidHost',
   invalidPort: 'invalidPort',
   invalidUsername: 'invalidUsername',
   invalidInstallDir: 'invalidInstallDir',
   invalidBaseUrl: 'invalidBaseUrl',
   invalidModelId: 'invalidModelId',
+  unsupportedArchitecture: 'unsupportedArchitecture',
+  invalidDiskAvailability: 'invalidDiskAvailability',
   insufficientDiskSpace: 'insufficientDiskSpace',
+  invalidCpuCount: 'invalidCpuCount',
+  insufficientCpuCores: 'insufficientCpuCores',
+  invalidMemoryAvailability: 'invalidMemoryAvailability',
+  insufficientMemory: 'insufficientMemory',
   cleanupFailed: 'cleanupFailed',
 };
 
@@ -114,14 +130,24 @@ function isPromptCancellation(error: unknown): boolean {
 
 // Ported out of wpt-iot's preflightLocal ahead of local.ts existing (Task 6 ports the rest
 // of that file -- REQUIRED_COMMANDS/REQUIRED_HOSTS checks and the existing-install probe).
-// These two gates are the ones install.sh itself enforces as hard failures (its architecture
-// switch, and hard_disk at scripts/install.sh:157), so failing here fails on the wizard's
-// own machine before a local install even starts, instead of after the artifact has already
-// run. Local mode only: the runner always targets the CURRENT machine, which in local mode
-// IS the install target: an architecture/disk check does not need SSH the way GPU/Ollama
-// probing (R1) or a remote existing-install check would.
+// These four gates are the ones install.sh itself enforces as hard failures (its
+// architecture switch, and the cpu/mem/disk floors at scripts/install.sh:155-158), so
+// failing here fails on the wizard's own machine before a local install even starts, instead
+// of after the artifact has already run -- or, in remote mode, after it has crossed an scp
+// (F2, review round 1: assertSufficientCpuCores/assertSufficientMemory existed since Task 2
+// but had no caller anywhere, leaving two of the three hard gates unenforced). Local mode
+// only: the runner always targets the CURRENT machine, which in local mode IS the install
+// target: these checks do not need SSH the way GPU/Ollama probing (R1) or a remote
+// existing-install check would.
 async function runLocalPreflight(runner: CommandRunner): Promise<void> {
   normalizeArchitecture((await runner.run('uname', ['-m'])).stdout);
+  assertSufficientCpuCores((await runner.run('nproc')).stdout);
+  // assertSufficientMemory is documented in KiB, matching install.sh's own comparison;
+  // /proc/meminfo's MemTotal is already reported in KiB, so no unit conversion is needed.
+  assertSufficientMemory((await runner.run('sh', [
+    '-c',
+    "awk '/MemTotal/ { print $2 }' /proc/meminfo",
+  ])).stdout);
   assertSufficientDiskSpace((await runner.run('sh', [
     '-c',
     "df -Pk / | awk 'NR == 2 { print $4 }'",

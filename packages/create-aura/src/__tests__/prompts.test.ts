@@ -221,4 +221,74 @@ describe('collectSettings', () => {
     );
     expect(manualEntryCall?.message).not.toContain('Ollama is not running');
   });
+
+  // C1 (Critical, review round 1): the offered default was 'http://localhost:11434'. Both
+  // halves were wrong -- probeOllama's request runs INSIDE the throwaway alpine container,
+  // where 'localhost' means the container itself (modelroute.ts's own comment: "an Ollama on
+  // the host is not at 127.0.0.1 as seen from there"), so the default could never probe
+  // reachable; and internal/llm/config.go:21's defaultBaseURL carries /v1, which every other
+  // Ollama base URL in this repo also spells with (scripts/install_config_test.sh:19,
+  // internal/agui/settings_api_test.go:218, internal/channels/telegram/commands_spend_test.go:157)
+  // -- without it the installed Aura requests .../11434/chat/completions, which Ollama does
+  // not serve, and answers no turn.
+  it('offers the container-reachable, /v1-suffixed Ollama base URL as the default', async () => {
+    // Two `input` calls happen with no probeRunner (base url, then manual model entry, which
+    // has no `default` of its own) -- capture every call's default rather than assuming
+    // which one is first, and returning each call's own default (falling back to a plain
+    // model id when there is none) keeps both prompt.input calls valid instead of throwing.
+    const capturedDefaults: Array<string | undefined> = [];
+    const prompt = {
+      select: vi.fn().mockResolvedValueOnce('ollama'),
+      input: vi.fn(async (options: { default?: string }) => {
+        capturedDefaults.push(options.default);
+        return options.default ?? 'llama3:8b';
+      }),
+      password: vi.fn(),
+      confirm: vi.fn()
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(true),
+    };
+
+    await collectSettings(prompt, createTranslator('en'), '/opt/aura', undefined);
+
+    expect(capturedDefaults[0]).toBe('http://host.docker.internal:11434/v1');
+  });
+
+  // The assertion that would have caught C1 on its own: accept the default exactly as
+  // offered and prove the probe it feeds derives the real container-visible tags URL, not
+  // just that the string looks plausible in isolation.
+  it('probes the exact tags URL derived from the default Ollama base URL when the operator accepts it', async () => {
+    const runner = createFakeRunner(async (command) => {
+      if (command === 'nvidia-smi') {
+        throw new ProcessExecutionError('nvidia-smi', 127, '', 'not found');
+      }
+      if (command === 'docker') {
+        return {
+          stdout: JSON.stringify({ models: [{ name: 'llama3:8b' }] }),
+          stderr: '',
+          exitCode: 0,
+        };
+      }
+      throw new Error(`unexpected command ${command}`);
+    });
+    const prompt = {
+      select: vi.fn()
+        .mockResolvedValueOnce('ollama')
+        .mockResolvedValueOnce('llama3:8b'),
+      input: vi.fn(async (options: { default?: string }) => options.default ?? ''),
+      password: vi.fn(),
+      confirm: vi.fn()
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(true),
+    };
+
+    const settings = await collectSettings(prompt, createTranslator('en'), '/opt/aura', runner);
+
+    expect(settings?.llmBaseUrl).toBe('http://host.docker.internal:11434/v1');
+    const dockerCall = runner.calls.find((call) => call.command === 'docker');
+    expect(dockerCall?.args).toContain('http://host.docker.internal:11434/api/tags');
+  });
 });

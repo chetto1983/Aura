@@ -2,8 +2,7 @@ import { confirm, input, password, select } from '@inquirer/prompts';
 
 import type { Translator } from './i18n.js';
 import {
-  CPU_EMBED_IMAGE,
-  CUDA_EMBED_IMAGE,
+  embedTargetFor,
   probeGpu,
   probeOllama,
 } from './modelroute.js';
@@ -105,9 +104,7 @@ async function collectGpuChoice(prompt: PromptPort, t: Translator, probeRunner: 
   // nvidia-smi against the operator's own laptop and present that as the target's GPU --
   // it asks instead.
   const hasGpu = await prompt.confirm({ message: t('gpuQuestion'), default: false });
-  return hasGpu
-    ? { cuda: true, embedImage: CUDA_EMBED_IMAGE, embedNgl: '99' }
-    : { cuda: false, embedImage: CPU_EMBED_IMAGE, embedNgl: '0' };
+  return { cuda: hasGpu, ...embedTargetFor(hasGpu) };
 }
 
 async function collectOllamaModel(
@@ -170,7 +167,17 @@ export async function collectSettings(
   } else {
     llmBaseUrl = validateBaseUrl(await prompt.input({
       message: t('ollamaBaseUrl'),
-      default: 'http://localhost:11434',
+      // C1 (review round 1): 'localhost' here is wrong twice. probeOllama's request runs
+      // INSIDE the throwaway alpine container, where 'localhost' means the container itself,
+      // not the operator's host -- modelroute.ts's own comment warns about exactly this ("an
+      // Ollama on the host is not at 127.0.0.1 as seen from there"), so the wizard's own
+      // default could never probe reachable. And the /v1 suffix is load-bearing:
+      // internal/llm/config.go:21's defaultBaseURL carries it, and every other Ollama base
+      // URL in this repo is spelled with it (scripts/install_config_test.sh:19,
+      // internal/agui/settings_api_test.go:218,
+      // internal/channels/telegram/commands_spend_test.go:157) -- without it Aura requests
+      // .../11434/chat/completions, which Ollama does not serve.
+      default: 'http://host.docker.internal:11434/v1',
     }));
     llmModel = await collectOllamaModel(prompt, t, probeRunner, llmBaseUrl);
   }

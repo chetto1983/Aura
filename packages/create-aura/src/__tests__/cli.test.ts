@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { en } from '../messages/en.js';
+import { it as italian } from '../messages/it.js';
 import { ProcessExecutionError } from '../process.js';
 import type { CommandRunner, ProcessResult } from '../process.js';
-import { runCli } from '../cli.js';
+import { TRANSLATED_ERROR_CODES, runCli } from '../cli.js';
 
 type FakeRunner = CommandRunner & { calls: Array<{ command: string; args: readonly string[] }> };
 
@@ -22,6 +24,9 @@ function createFakeRunner(
 function createPassingPreflightRunner(): FakeRunner {
   return createFakeRunner(async (command) => {
     if (command === 'uname') return { stdout: 'x86_64\n', stderr: '', exitCode: 0 };
+    if (command === 'nproc') return { stdout: '8\n', stderr: '', exitCode: 0 };
+    // 41943040 KiB (40 GiB) clears both the memory floor (16 GiB) and the disk floor
+    // (20 GiB), so one generic answer satisfies whichever `sh -c` check asks.
     if (command === 'sh') return { stdout: '41943040\n', stderr: '', exitCode: 0 };
     throw new Error(`unexpected command ${command}`);
   });
@@ -45,6 +50,7 @@ describe('create-aura CLI', () => {
     const write = vi.fn();
     const runner = createFakeRunner(async (command) => {
       if (command === 'uname') return { stdout: 'aarch64\n', stderr: '', exitCode: 0 };
+      if (command === 'nproc') return { stdout: '8\n', stderr: '', exitCode: 0 };
       if (command === 'sh') return { stdout: '41943040\n', stderr: '', exitCode: 0 };
       throw new Error(`unexpected command ${command}`);
     });
@@ -214,13 +220,20 @@ describe('create-aura CLI', () => {
 
     expect(code).toBe(1);
     expect(collectSettingsMock).not.toHaveBeenCalled();
-    expect(writeError.mock.calls.flat().join('\n')).toContain('unsupportedArchitecture');
+    // F3 (review round 1): this used to assert the raw 'unsupportedArchitecture' code was
+    // shown -- that was the bug. See the dedicated F3 test below for the full assertion
+    // (translated message shown, raw code never shown).
+    expect(writeError).toHaveBeenCalledWith(en.unsupportedArchitecture);
   });
 
   it('fails local preflight with a translated message when disk space is insufficient', async () => {
     const writeError = vi.fn();
-    const runner = createFakeRunner(async (command) => {
+    const runner = createFakeRunner(async (command, args) => {
       if (command === 'uname') return { stdout: 'x86_64\n', stderr: '', exitCode: 0 };
+      if (command === 'nproc') return { stdout: '8\n', stderr: '', exitCode: 0 };
+      if (command === 'sh' && args.some((arg) => arg.includes('MemTotal'))) {
+        return { stdout: '41943040\n', stderr: '', exitCode: 0 };
+      }
       if (command === 'sh') return { stdout: '1024\n', stderr: '', exitCode: 0 };
       throw new Error(`unexpected command ${command}`);
     });
@@ -296,5 +309,109 @@ describe('create-aura CLI', () => {
     // The install itself succeeded -- "Aura is starting." must not print over a cleanup
     // failure the operator still needs to see.
     expect(write).not.toHaveBeenCalledWith('Aura is starting.');
+  });
+
+  // F2 (review round 1): install.sh refuses on THREE hard thresholds (cpu/ram/disk); the
+  // wizard wired only disk. assertSufficientCpuCores/assertSufficientMemory existed but had
+  // no caller anywhere outside their own unit test (dead code CLAUDE.md forbids). An
+  // under-provisioned local target must fail here, before the artifact is even written.
+  it("fails local preflight when the CPU core count is below install.sh's floor", async () => {
+    const writeError = vi.fn();
+    const collectSettingsMock = vi.fn(async () => validSettings);
+    const runner = createFakeRunner(async (command) => {
+      if (command === 'uname') return { stdout: 'x86_64\n', stderr: '', exitCode: 0 };
+      if (command === 'nproc') return { stdout: '2\n', stderr: '', exitCode: 0 };
+      if (command === 'sh') return { stdout: '41943040\n', stderr: '', exitCode: 0 };
+      throw new Error(`unexpected command ${command}`);
+    });
+
+    const code = await runCli(['--mode', 'local'], {
+      locale: 'en',
+      runner,
+      collectTarget: vi.fn(async () => ({ mode: 'local' as const, installDir: '/opt/aura' })),
+      collectSettings: collectSettingsMock,
+      createConfig: vi.fn(async () => ({ path: '/tmp/config', cleanup: vi.fn() })),
+      installLocal: vi.fn(async () => {}),
+      write: vi.fn(),
+      writeError,
+    });
+
+    expect(code).toBe(1);
+    expect(collectSettingsMock).not.toHaveBeenCalled();
+    expect(writeError).toHaveBeenCalledWith('Not enough CPU cores on the installation target.');
+  });
+
+  it("fails local preflight when memory is below install.sh's floor", async () => {
+    const writeError = vi.fn();
+    const collectSettingsMock = vi.fn(async () => validSettings);
+    const runner = createFakeRunner(async (command, args) => {
+      if (command === 'uname') return { stdout: 'x86_64\n', stderr: '', exitCode: 0 };
+      if (command === 'nproc') return { stdout: '8\n', stderr: '', exitCode: 0 };
+      if (command === 'sh' && args.some((arg) => arg.includes('MemTotal'))) {
+        return { stdout: '1024\n', stderr: '', exitCode: 0 };
+      }
+      if (command === 'sh') return { stdout: '41943040\n', stderr: '', exitCode: 0 };
+      throw new Error(`unexpected command ${command}`);
+    });
+
+    const code = await runCli(['--mode', 'local'], {
+      locale: 'en',
+      runner,
+      collectTarget: vi.fn(async () => ({ mode: 'local' as const, installDir: '/opt/aura' })),
+      collectSettings: collectSettingsMock,
+      createConfig: vi.fn(async () => ({ path: '/tmp/config', cleanup: vi.fn() })),
+      installLocal: vi.fn(async () => {}),
+      write: vi.fn(),
+      writeError,
+    });
+
+    expect(code).toBe(1);
+    expect(collectSettingsMock).not.toHaveBeenCalled();
+    expect(writeError).toHaveBeenCalledWith('Not enough memory on the installation target.');
+  });
+
+  // F3 (review round 1): six preflight.ts error codes had neither a TRANSLATED_ERROR_CODES
+  // entry nor a catalogue key, so an operator on an unsupported architecture read the raw
+  // string "unsupportedArchitecture:riscv64". i18n.test.ts's en/it parity check cannot catch
+  // this class of bug: a key missing from BOTH catalogues is still "identical key sets".
+  it('maps every preflight error code to a translated, non-empty message in both catalogues', () => {
+    const preflightCodes = [
+      'unsupportedArchitecture',
+      'invalidDiskAvailability',
+      'insufficientDiskSpace',
+      'invalidCpuCount',
+      'insufficientCpuCores',
+      'invalidMemoryAvailability',
+      'insufficientMemory',
+    ];
+
+    for (const code of preflightCodes) {
+      expect(TRANSLATED_ERROR_CODES).toHaveProperty(code);
+    }
+    for (const key of Object.values(TRANSLATED_ERROR_CODES)) {
+      expect(en[key]).toBeTruthy();
+      expect(italian[key]).toBeTruthy();
+    }
+  });
+
+  it('translates an unsupported-architecture failure instead of surfacing the raw code', async () => {
+    const writeError = vi.fn();
+    const runner = createFakeRunner(async (command) => {
+      if (command === 'uname') return { stdout: 'riscv64\n', stderr: '', exitCode: 0 };
+      throw new Error(`unexpected command ${command}`);
+    });
+
+    const code = await runCli(['--mode', 'local'], {
+      locale: 'en',
+      runner,
+      collectTarget: vi.fn(async () => ({ mode: 'local' as const, installDir: '/opt/aura' })),
+      collectSettings: vi.fn(),
+      write: vi.fn(),
+      writeError,
+    });
+
+    expect(code).toBe(1);
+    expect(writeError.mock.calls.flat().join('\n')).not.toContain('unsupportedArchitecture:riscv64');
+    expect(writeError).toHaveBeenCalledWith(en.unsupportedArchitecture);
   });
 });

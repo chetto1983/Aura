@@ -13,6 +13,21 @@ export interface GpuProbeResult {
   embedNgl: string;
 }
 
+export interface EmbedTarget {
+  embedImage: string;
+  embedNgl: string;
+}
+
+// F4 (review round 1): probeGpu below and prompts.ts's collectGpuChoice (the R1 yes/no
+// fallback asked when no runner can probe the actual install target) each independently
+// encoded "cuda -> CUDA image + '99', otherwise CPU image + '0'". A single exported mapping
+// is the only way changing one can no longer silently leave the other disagreeing.
+export function embedTargetFor(cuda: boolean): EmbedTarget {
+  return cuda
+    ? { embedImage: CUDA_EMBED_IMAGE, embedNgl: '99' }
+    : { embedImage: CPU_EMBED_IMAGE, embedNgl: '0' };
+}
+
 export interface OllamaProbeResult {
   reachable: boolean;
   models: string[];
@@ -31,9 +46,9 @@ export interface OllamaProbeResult {
 export async function probeGpu(runner: CommandRunner): Promise<GpuProbeResult> {
   try {
     await runner.run('nvidia-smi');
-    return { cuda: true, embedImage: CUDA_EMBED_IMAGE, embedNgl: '99' };
+    return { cuda: true, ...embedTargetFor(true) };
   } catch {
-    return { cuda: false, embedImage: CPU_EMBED_IMAGE, embedNgl: '0' };
+    return { cuda: false, ...embedTargetFor(false) };
   }
 }
 
