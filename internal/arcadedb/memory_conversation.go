@@ -215,7 +215,7 @@ const searchConversationTurnsStatement = "SELECT identity_id, conversation_id, t
 	" AND SEARCH_INDEX('" + conversationTurnType + "[content]', :query) = true" +
 	" AND $score >= :min_lexical_score"
 
-const fuseConversationTurnRIDsStatement = "SELECT @rid AS rid FROM (SELECT expand(`vector.fuse`(" +
+const fuseConversationTurnRIDsStatement = "SELECT @rid AS rid FROM (SELECT expand(" + rerankOpen + "`vector.fuse`(" +
 	"`vector.neighbors`('" + conversationTurnType + "[embedding]', :vector, :candidates," +
 	" { filter: (SELECT @rid FROM " + conversationTurnType +
 	" WHERE identity_id = :identity_id AND deleted_at IS NULL).@rid, maxDistance: :max_distance })," +
@@ -223,7 +223,7 @@ const fuseConversationTurnRIDsStatement = "SELECT @rid AS rid FROM (SELECT expan
 	" WHERE identity_id = :identity_id AND deleted_at IS NULL" +
 	" AND SEARCH_INDEX('" + conversationTurnType + "[content]', :query) = true" +
 	" AND $score >= :min_lexical_score LIMIT :candidates), { \"fusion\": \"RRF\" }" +
-	"))) LIMIT :candidates"
+	")" + rerankClose + "))" + relevanceFloor + " LIMIT :candidates"
 
 const hydrateConversationTurnsStatement = "SELECT @rid, identity_id, conversation_id, turn_seq, role," +
 	" content, content_hash, occurred_at, source_ref FROM " + conversationTurnType +
@@ -260,6 +260,7 @@ func (c *Client) SearchConversationTurnsHybrid(
 	params := map[string]any{
 		"identity_id": identityID, "query": escapeLucene(query), "vector": vectors[0],
 		"candidates": candidates, "max_distance": limits.DenseMaxDistance,
+		"min_relevance":     limits.MinRelevance,
 		"min_lexical_score": lexicalScoreFloor(query, limits.LexicalMinScore),
 	}
 	ranked, err := c.Query(ctx, fuseConversationTurnRIDsStatement, params)

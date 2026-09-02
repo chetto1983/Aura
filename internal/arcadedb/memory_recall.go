@@ -118,7 +118,7 @@ const (
 	effectivePathMixed = "mixed"
 )
 
-const recallHybridFuseStatement = "SELECT @rid AS rid, score FROM (SELECT expand(`vector.fuse`(" +
+const recallHybridFuseStatement = "SELECT @rid AS rid, score FROM (SELECT expand(" + rerankOpen + "`vector.fuse`(" +
 	"`vector.fuse`(" +
 	"`vector.neighbors`('" + factEdgeType + "[embedding]', :vector, :candidates, " +
 	"{ filter: (SELECT @rid FROM " + factEdgeType + " WHERE " + asOfCondition +
@@ -135,7 +135,7 @@ const recallHybridFuseStatement = "SELECT @rid AS rid, score FROM (SELECT expand
 	" WHERE identity_id = :identity_id AND deleted_at IS NULL" + recallExclusionMarker + " AND SEARCH_INDEX('" +
 	conversationTurnType + "[content]', :query) = true AND $score >= :min_lexical_score " +
 	"LIMIT :candidates), { fusion: 'RRF' }), { fusion: 'RRF' }" +
-	"))) ORDER BY score DESC, rid ASC LIMIT :candidates"
+	")" + rerankClose + "))" + relevanceFloor + " ORDER BY score DESC, rid ASC LIMIT :candidates"
 
 const recallLexicalFuseStatement = "SELECT @rid AS rid, score FROM (SELECT expand(`vector.fuse`(" +
 	"(SELECT @rid, $score FROM " + factEdgeType +
@@ -226,8 +226,8 @@ func (c *Client) recallSemantic(ctx context.Context, request RecallRequest) (Rec
 	params := map[string]any{
 		"identity_id": request.IdentityID,
 		"query":       escapeLucene(query), "candidates": candidates,
-		"as_of":             request.AsOf.UTC().Format(time.RFC3339),
-		"max_distance":      limits.DenseMaxDistance,
+		"as_of":        request.AsOf.UTC().Format(time.RFC3339),
+		"max_distance": limits.DenseMaxDistance, "min_relevance": limits.MinRelevance,
 		"min_lexical_score": lexicalScoreFloor(query, limits.LexicalMinScore),
 	}
 	path, reason, statement := retrievalPathHybrid, "", recallHybridFuseStatement

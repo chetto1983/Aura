@@ -125,6 +125,42 @@ func (c *Client) embedStatements(ctx context.Context, statements []string) map[s
 	return embedded
 }
 
+// rerankOpen/rerankClose wrap a fused ranking in ArcadeDB's native
+// `vector.rerank`, which re-scores the fused candidates against their
+// full-precision vectors and emits a real cosine `score` (the RRF pseudo-score
+// it replaces was 1/(60+rank), identical for every source's rank 1).
+//
+// This is the ORDERING half of retrieval; maxDistance above is the RECALL half.
+// RRF ranks only, so one incidental lexical hit at rank 1 ties with the correct
+// dense hit at rank 1 and wins the tie-break. Measured 2026-09-02 against a live
+// 102-fact memory, asking in English for a fact written in Italian: the lexical
+// leg returned exactly one row -- the wrong one, matched on stray English tokens
+// -- and RRF put it first, while the dense leg alone ranked the right fact first
+// and its next four all relevant. Wrapping the same fusion in vector.rerank
+// reproduced the dense-only order exactly, which is what keeps the lexical leg
+// useful for RECALL (it drags exact identifiers into the candidate set) without
+// letting it decide the ORDER.
+//
+// Two literals rather than a builder so the three fused statements stay const.
+const (
+	// embeddingProperty is the vector property name on BOTH FACT and
+	// ConversationTurn, which is why one rerank wrapper serves the mixed-type
+	// fusion in memory_recall.go as well as the single-type ones.
+	embeddingProperty = "embedding"
+	rerankOpen        = "`vector.rerank`((SELECT expand("
+	rerankClose       = ")), :vector, '" + embeddingProperty + "', :candidates)"
+	// relevanceFloor is the ONE abstention gate, and it sits AFTER the rerank on
+	// purpose: maxDistance bounds the dense leg only, so a lexical hit on an
+	// incidental word used to enter the result set with nothing left to reject it.
+	// Measured 2026-09-02 on a live 102-fact memory -- asking for a pizza-dough
+	// recipe matched the literal word "Ricetta:" inside an unrelated fact and came
+	// back as an answer. Reranked, that hit scores 0.2174, while the WORST true
+	// match across three answerable questions scores 0.3326 (the others 0.4859 and
+	// 0.4878) and two further unanswerable ones score 0.1674 and 0.0434. 0.28 is
+	// the midpoint of 0.2174..0.3326.
+	relevanceFloor = " WHERE score >= :min_relevance"
+)
+
 // fuseRIDsStatement is the documented hybrid shape, and the function names carry
 // backticks because the parser reads the dot as a path step otherwise.
 //
@@ -133,11 +169,10 @@ func (c *Client) embedStatements(ctx context.Context, statements []string) map[s
 // pairs with it, and `= true` on SEARCH_INDEX is the documented form rather than
 // a bare predicate. Both legs apply valid-time before their candidate limits;
 // vector.neighbors accepts the inline RID subquery as its documented filter.
-// The fusion returns the winning EDGES; the endpoint names it
-// cannot carry — outV()/inV() are not on a fused record — are added by hydrating
-// the rids in a second statement, which is one round trip for a set already
-// bounded by the limit.
-const fuseRIDsStatement = "SELECT @rid AS rid FROM (SELECT expand(`vector.fuse`(" +
+// The fusion returns the winning EDGES; the endpoint names it cannot carry —
+// outV()/inV() are not on a fused record — are added by hydrating the rids in a
+// second statement, which is one round trip for a set already bounded by the limit.
+const fuseRIDsStatement = "SELECT @rid AS rid FROM (SELECT expand(" + rerankOpen + "`vector.fuse`(" +
 	"`vector.neighbors`('" + factEdgeType + "[embedding]', :vector, :candidates, " +
 	"{ filter: (SELECT @rid FROM " + factEdgeType + " WHERE " + asOfCondition +
 	").@rid, maxDistance: :max_distance }), " +
@@ -146,7 +181,7 @@ const fuseRIDsStatement = "SELECT @rid AS rid FROM (SELECT expand(`vector.fuse`(
 	"$score >= :min_lexical_score AND " +
 	asOfCondition + " LIMIT :candidates), " +
 	"{ \"fusion\": \"RRF\" }" +
-	"))) LIMIT :candidates"
+	")" + rerankClose + "))" + relevanceFloor + " LIMIT :candidates"
 
 // hydrateFactsStatement rechecks validity after fusion, closing the race where a
 // fact is superseded between candidate ranking and hydration.
@@ -215,11 +250,11 @@ func (c *Client) SearchFactsHybrid(
 	// to promote.
 	candidates := min(max(limit*4, 20), limits.HybridCandidates)
 	ranked, err := c.Query(ctx, fuseRIDsStatement, map[string]any{
-		"query":             escapeLucene(query),
-		"vector":            vectors[0],
-		"candidates":        candidates,
-		"as_of":             asOf.UTC().Format(time.RFC3339),
-		"max_distance":      limits.DenseMaxDistance,
+		"query":        escapeLucene(query),
+		"vector":       vectors[0],
+		"candidates":   candidates,
+		"as_of":        asOf.UTC().Format(time.RFC3339),
+		"max_distance": limits.DenseMaxDistance, "min_relevance": limits.MinRelevance,
 		"min_lexical_score": lexicalScoreFloor(query, limits.LexicalMinScore),
 	})
 	if err != nil {

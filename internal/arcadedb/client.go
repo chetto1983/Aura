@@ -52,6 +52,7 @@ type MemoryLimits struct {
 	HybridCandidates     int
 	DenseMaxDistance     float64
 	LexicalMinScore      float64
+	MinRelevance         float64
 }
 
 var defaultMemoryLimits = MemoryLimits{
@@ -59,7 +60,18 @@ var defaultMemoryLimits = MemoryLimits{
 	PredicateRunes: 100, SourceRunIDRunes: 100, SourceMemoryIDRunes: 100,
 	SourceMemoryIDs: 64, Results: 100, DigestFactsPerEntity: 20,
 	MaintenanceBatch: 100, DigestScan: 2000, HybridCandidates: 400,
-	DenseMaxDistance: 0.55, LexicalMinScore: 2,
+	// 0.72 is the midpoint of a measured separation band, not a guess. On a live
+	// 102-fact memory (2026-09-02) the nearest neighbour for a question the memory
+	// COULD answer sat at 0.514 and 0.667; for one it could not ("ricetta della
+	// pizza napoletana", "chi ha vinto il mondiale 1982") at 0.777 and 0.890. The
+	// previous 0.55 fell INSIDE the true-match band, so it discarded correct facts
+	// while admitting nothing useful -- the dense leg came back empty and "hybrid"
+	// retrieval ran on its lexical leg alone. The bound stays because it is what
+	// lets retrieval ABSTAIN: vector.neighbors always returns k neighbours however
+	// far away, so without it nothing is ever "no qualified candidates".
+	// Not established by that measure: conversation turns, other identities'
+	// corpora, or a memory much larger than 102 facts.
+	DenseMaxDistance: 0.72, LexicalMinScore: 2, MinRelevance: 0.28,
 }
 
 func (limits MemoryLimits) normalized() MemoryLimits {
@@ -77,6 +89,7 @@ func (limits MemoryLimits) normalized() MemoryLimits {
 	limits.HybridCandidates = defaultLimit(limits.HybridCandidates, defaultMemoryLimits.HybridCandidates)
 	limits.DenseMaxDistance = defaultFloatLimit(limits.DenseMaxDistance, defaultMemoryLimits.DenseMaxDistance)
 	limits.LexicalMinScore = defaultFloatLimit(limits.LexicalMinScore, defaultMemoryLimits.LexicalMinScore)
+	limits.MinRelevance = defaultFloatLimit(limits.MinRelevance, defaultMemoryLimits.MinRelevance)
 	return limits
 }
 
@@ -116,7 +129,7 @@ func (limits MemoryLimits) validate() error {
 		value float64
 	}{
 		{"dense max distance", limits.DenseMaxDistance},
-		{"lexical min score", limits.LexicalMinScore},
+		{"lexical min score", limits.LexicalMinScore}, {"min relevance", limits.MinRelevance},
 	}
 	for _, limit := range floats {
 		if limit.value < 0 || math.IsNaN(limit.value) || math.IsInf(limit.value, 0) {

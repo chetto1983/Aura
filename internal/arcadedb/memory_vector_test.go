@@ -65,7 +65,7 @@ func TestSearchFactsHybridRestoresFusionOrder(t *testing.T) {
 	}
 	params := (*requests)[0].Payload["params"].(map[string]any)
 	if params["query"] != `cliente torino\?` || params["candidates"] != float64(20) ||
-		params["as_of"] == nil || params["max_distance"] != float64(0.55) ||
+		params["as_of"] == nil || params["max_distance"] != float64(0.72) ||
 		params["min_lexical_score"] != float64(2) {
 		t.Fatalf("fusion params = %v", params)
 	}
@@ -367,5 +367,40 @@ func TestEscapeLuceneEscapesOperators(t *testing.T) {
 		if !strings.Contains(got, escaped) {
 			t.Fatalf("escapeLucene(%q) = %q, missing %q", input, got, escaped)
 		}
+	}
+}
+
+// Every hybrid retrieval path must rerank its fused candidates. RRF ranks only,
+// so without this wrapper a single incidental lexical hit at rank 1 ties with the
+// correct dense hit at rank 1 and wins the tie-break -- measured 2026-09-02 on a
+// live 102-fact memory. The three statements are separate const literals, so a
+// future edit to one of them can silently drop the wrapper; this pins all three.
+func TestEveryHybridStatementReranksItsFusion(t *testing.T) {
+	for name, statement := range map[string]string{
+		"facts":         fuseRIDsStatement,
+		"conversations": fuseConversationTurnRIDsStatement,
+		"recall":        recallHybridFuseStatement,
+	} {
+		t.Run(name, func(t *testing.T) {
+			open := strings.Index(statement, rerankOpen)
+			fuse := strings.Index(statement, "`vector.fuse`(")
+			closeAt := strings.Index(statement, rerankClose)
+			if open < 0 || closeAt < 0 {
+				t.Fatalf("statement does not rerank its fusion: %s", statement)
+			}
+			if open >= fuse || fuse >= closeAt {
+				t.Fatalf("rerank does not wrap the fusion (open %d, fuse %d, close %d): %s",
+					open, fuse, closeAt, statement)
+			}
+			if !strings.Contains(statement, "'"+embeddingProperty+"'") {
+				t.Fatalf("rerank names no embedding property: %s", statement)
+			}
+			// The floor must come AFTER the rerank, or it filters RRF pseudo-scores
+			// (1/(60+rank), never above ~0.017) and rejects everything.
+			if floor := strings.Index(statement, relevanceFloor); floor < closeAt {
+				t.Fatalf("relevance floor missing or before the rerank (floor %d, close %d): %s",
+					floor, closeAt, statement)
+			}
+		})
 	}
 }

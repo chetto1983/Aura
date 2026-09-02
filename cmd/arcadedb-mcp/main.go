@@ -261,6 +261,7 @@ func memoryLimitsFromEnv() (arcadedb.MemoryLimits, error) {
 		target *float64
 	}{
 		{"AURA_MEMORY_DENSE_MAX_DISTANCE_RATIO", &limits.DenseMaxDistance},
+		{"AURA_MEMORY_MIN_RELEVANCE", &limits.MinRelevance},
 		{"AURA_MEMORY_LEXICAL_MIN_SCORE", &limits.LexicalMinScore},
 	}
 	for _, item := range floats {
