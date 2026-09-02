@@ -89,6 +89,17 @@ jobs:
           bash scripts/coverage_gate_test.sh
           bash scripts/docker_coverage_gate_test.sh
           bash scripts/restore_drill_name_test.sh
+          bash scripts/install_lib_test.sh
+          bash scripts/install_config_test.sh
+          bash scripts/payload_manifest_gate.sh
+
+      # makeself is not preinstalled on GitHub's ubuntu runners; build_installer_test.sh
+      # SKIPs with exit 0 when it's absent (right for a laptop, a falsely-green job here).
+      - name: Install makeself (the artifact packer)
+        run: sudo apt-get update && sudo apt-get install -y makeself
+
+      - name: Installer artifact self-check and payload round-trip
+        run: bash scripts/build_installer_test.sh
 
       - name: Definitive audit closure gate
         run: PYTHONPATH=scripts python3 scripts/audit_closure_gate.py
