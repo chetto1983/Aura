@@ -249,8 +249,26 @@ type memoryBatchTransaction interface {
 	Rollback(context.Context)
 }
 
+// memoryBatchCreatedStatements lists the statements this batch may write as NEW
+// facts. Merge and forget operations never create one, so they contribute nothing
+// to embed. A supersede still writes its replacement fact, so it counts.
+func memoryBatchCreatedStatements(compiled CompiledMemoryBatch) []string {
+	statements := make([]string, 0, len(compiled.Operations))
+	for _, operation := range compiled.Operations {
+		if operation.Fact == nil {
+			continue
+		}
+		statements = append(statements, operation.Fact.Statement)
+	}
+	return statements
+}
+
 type memoryBatchBackend interface {
 	Begin(context.Context, string) (memoryBatchTransaction, error)
+	// EmbedStatements vectorizes the statements the batch is about to create, in
+	// one call, before the transaction opens. Fail-soft: a missing key means that
+	// statement has no vector, never that the batch should fail.
+	EmbedStatements(context.Context, []string) map[string][]float64
 }
 
 // ApplyMemoryBatch applies a complete request through one identity-scoped
@@ -289,13 +307,18 @@ func applyMemoryBatch(
 		return MemoryBatchResult{}, err
 	}
 
+	// Embed BEFORE the identity lock and the transaction: the embedder is an HTTP
+	// sidecar, and one round trip serves every attempt because the vector depends
+	// only on the statement text, which conflict retries do not change.
+	embeddings := backend.EmbedStatements(ctx, memoryBatchCreatedStatements(compiled))
+
 	unlock := memoryBatchIdentityLocks.lock(actor.IdentityID)
 	defer unlock()
 	receiptKey := memoryBatchReceiptKey(actor.IdentityID, request.IdempotencyKey)
 	var lastErr error
 	for attempt := 0; attempt <= maxWriteConflictRetries; attempt++ {
 		result, retry, err := applyMemoryBatchAttempt(
-			ctx, actor, request, compiled, now, limits, receiptKey, backend,
+			ctx, actor, request, compiled, now, limits, receiptKey, backend, embeddings,
 		)
 		if !retry {
 			return result, err
@@ -321,6 +344,7 @@ func applyMemoryBatchAttempt(
 	limits MemoryLimits,
 	receiptKey string,
 	backend memoryBatchBackend,
+	embeddings map[string][]float64,
 ) (MemoryBatchResult, bool, error) {
 	tx, err := backend.Begin(ctx, actor.IdentityID)
 	if err != nil {
@@ -360,7 +384,7 @@ func applyMemoryBatchAttempt(
 		return MemoryBatchResult{}, retryMemoryBatchFailure(ctx, err, false), wrapped
 	}
 	working := cloneMemoryBatchState(live)
-	operationResults, err := applyCompiledMemoryBatch(working, compiled, now, limits)
+	operationResults, err := applyCompiledMemoryBatch(working, compiled, now, limits, embeddings)
 	if err != nil {
 		return MemoryBatchResult{}, false, err
 	}

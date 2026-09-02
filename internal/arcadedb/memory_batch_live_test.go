@@ -161,6 +161,13 @@ type memoryBatchLiveBackend struct {
 	wrap func(memoryBatchTransaction) memoryBatchTransaction
 }
 
+// EmbedStatements delegates to the real client so the live tier exercises the
+// actual sidecar embedder, not a stub: this wrapper only interposes on the
+// transaction.
+func (b memoryBatchLiveBackend) EmbedStatements(ctx context.Context, statements []string) map[string][]float64 {
+	return b.base.EmbedStatements(ctx, statements)
+}
+
 func (b memoryBatchLiveBackend) Begin(ctx context.Context, identity string) (memoryBatchTransaction, error) {
 	tx, err := b.base.Begin(ctx, identity)
 	if err != nil {

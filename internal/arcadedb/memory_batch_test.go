@@ -26,6 +26,8 @@ type memoryBatchFakeBackend struct {
 	beforeCommit          chan struct{}
 	allowCommit           chan struct{}
 	blockCommitOnce       sync.Once
+	embedCalls            int
+	embedderDown          bool
 }
 
 func newMemoryBatchFakeBackend(identity string, state memoryBatchState) *memoryBatchFakeBackend {

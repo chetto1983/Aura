@@ -23,10 +23,11 @@ func applyCompiledMemoryBatch(
 	compiled CompiledMemoryBatch,
 	now time.Time,
 	limits MemoryLimits,
+	embeddings map[string][]float64,
 ) ([]MemoryBatchOperationResult, error) {
 	results := make([]MemoryBatchOperationResult, 0, len(compiled.Operations))
 	for index, operation := range compiled.Operations {
-		result, err := applyMemoryBatchOperation(state, operation, index, now)
+		result, err := applyMemoryBatchOperation(state, operation, index, now, embeddings)
 		if err != nil {
 			return nil, err
 		}
@@ -44,10 +45,11 @@ func applyMemoryBatchOperation(
 	operation MemoryBatchOperation,
 	index int,
 	now time.Time,
+	embeddings map[string][]float64,
 ) (MemoryBatchOperationResult, error) {
 	switch operation.Type {
 	case MemoryBatchUpsertFact, MemoryBatchSupersedeFact:
-		return applyMemoryBatchFact(state, operation, index, now)
+		return applyMemoryBatchFact(state, operation, index, now, embeddings)
 	case MemoryBatchMergeEntities:
 		return applyMemoryBatchMerge(state, operation, index, now)
 	case MemoryBatchForget:
@@ -63,6 +65,7 @@ func applyMemoryBatchFact(
 	operation MemoryBatchOperation,
 	index int,
 	now time.Time,
+	embeddings map[string][]float64,
 ) (MemoryBatchOperationResult, error) {
 	fact := *operation.Fact
 	validFrom := fact.ValidFrom
@@ -105,6 +108,14 @@ func applyMemoryBatchFact(
 	stored := memoryBatchFact{
 		Fact: fact, Sources: []FactSource{fact.Source}, ValidFrom: validFrom,
 		ValidTo: fact.ValidTo, CreatedAt: now, FactKey: stringActiveFactKey(identity, fact.ValidTo, now),
+	}
+	// Attach the vector to the CREATE. Without it the fact reaches the graph with no
+	// embedding and stays invisible to the dense retrieval leg until the
+	// memory_embed_backfill sweep runs, which is minutes -- an eternity for a fact the
+	// user just asked Aura to remember. A missing key is the fail-soft case and leaves
+	// Embedding nil, exactly as before, for the sweep to pick up.
+	if vector, ok := embeddings[fact.Statement]; ok {
+		stored.Embedding = vector
 	}
 	key := fmt.Sprintf("new:%06d:%s", index, identity)
 	for suffix := 1; ; suffix++ {

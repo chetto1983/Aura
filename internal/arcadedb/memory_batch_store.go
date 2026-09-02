@@ -32,6 +32,13 @@ type clientMemoryBatchTx struct {
 	closed    bool
 }
 
+func (backend clientMemoryBatchBackend) EmbedStatements(
+	ctx context.Context,
+	statements []string,
+) map[string][]float64 {
+	return backend.client.embedStatements(ctx, statements)
+}
+
 func (backend clientMemoryBatchBackend) Begin(
 	ctx context.Context,
 	identity string,
