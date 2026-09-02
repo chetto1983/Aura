@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -25,20 +26,57 @@ const (
 )
 
 type oauthResourceConfig struct {
-	Issuer   string
-	JWKSURL  string
+	Issuer  string
+	JWKSURL string
+	// Resource is the CANONICAL resource identifier: the one advertised in the
+	// protected-resource metadata, which MCP clients also treat as the server's
+	// address. It must therefore be the URL the CLIENT can reach.
 	Resource string
-	Scope    string
+	// Audiences is every resource identifier a token may legitimately carry,
+	// canonical first. One server is reachable under two names: an MCP client on the
+	// host dials http://127.0.0.1:8096/mcp while `aura` inside the Compose network
+	// dials http://aura-arcadedb-mcp:8096/mcp/. Validating a single value breaks
+	// whichever client is not the one the operator picked.
+	//
+	// Both halves are load-bearing, measured 2026-09-02:
+	//   - advertising the CONTAINER name made Claude Code resolve it as the server
+	//     address and fail with ENOTFOUND before authentication could even start;
+	//   - advertising ONLY the loopback name would break the in-container agent,
+	//     because cmd/aura/mcp_first_party_grants.go pins the self-issued grant's
+	//     audience to the server's own dial URL (ResourceURL: server.URL), which in
+	//     Compose must stay aura-arcadedb-mcp:8096.
+	// Accepting both is what lets one server answer to both callers.
+	Audiences []string
+	Scope     string
 }
 
 func oauthResourceConfigFromEnv() oauthResourceConfig {
 	issuer := envOrDefault("MCP_OAUTH_ISSUER", "http://localhost:9080")
+	audiences := splitAudiences(envOrDefault("MCP_OAUTH_RESOURCE", "http://localhost:8096/mcp/"))
 	return oauthResourceConfig{
-		Issuer:   strings.TrimRight(issuer, "/"),
-		JWKSURL:  envOrDefault("MCP_OAUTH_JWKS_URL", strings.TrimRight(issuer, "/")+"/oauth/jwks"),
-		Resource: envOrDefault("MCP_OAUTH_RESOURCE", "http://localhost:8096/mcp/"),
-		Scope:    envOrDefault("MCP_OAUTH_SCOPE", defaultOAuthScope),
+		Issuer:    strings.TrimRight(issuer, "/"),
+		JWKSURL:   envOrDefault("MCP_OAUTH_JWKS_URL", strings.TrimRight(issuer, "/")+"/oauth/jwks"),
+		Resource:  audiences[0],
+		Audiences: audiences,
+		Scope:     envOrDefault("MCP_OAUTH_SCOPE", defaultOAuthScope),
 	}
+}
+
+// splitAudiences reads MCP_OAUTH_RESOURCE as a comma-separated list so one server
+// can answer to the several names it is reachable under. The FIRST entry is
+// canonical and the only one advertised; the rest are merely accepted. Always
+// returns at least one element, so callers need no emptiness check.
+func splitAudiences(raw string) []string {
+	audiences := make([]string, 0, 2)
+	for part := range strings.SplitSeq(raw, ",") {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			audiences = append(audiences, trimmed)
+		}
+	}
+	if len(audiences) == 0 {
+		return []string{"http://localhost:8096/mcp/"}
+	}
+	return audiences
 }
 
 func envOrDefault(name, fallback string) string {
@@ -101,14 +139,52 @@ func (v *arcadeTokenVerifier) Verify(ctx context.Context, raw string, _ *http.Re
 }
 
 func (v *arcadeTokenVerifier) parse(raw string, keys jwk.Set) (jwt.Token, error) {
-	return jwt.Parse([]byte(raw),
+	// Audience is checked separately: repeated jwt.WithAudience options are ANDed by
+	// the library, so a token would have to carry EVERY accepted name at once --
+	// the opposite of what a server with several names needs.
+	token, err := jwt.Parse([]byte(raw),
 		jwt.WithKeySet(keys, jws.WithInferAlgorithmFromKey(true)),
 		jwt.WithValidate(true),
 		jwt.WithIssuer(v.config.Issuer),
-		jwt.WithAudience(v.config.Resource),
 		jwt.WithRequiredClaim("scope"),
 		jwt.WithRequiredClaim("sub"),
 	)
+	if err != nil {
+		return nil, err
+	}
+	audience, _ := token.Audience()
+	accepted := v.config.acceptedAudiences()
+	if !audienceAccepted(audience, accepted) {
+		return nil, fmt.Errorf("%w: bearer token audience %v is not one of %v",
+			auth.ErrInvalidToken, audience, accepted)
+	}
+	return token, nil
+}
+
+// acceptedAudiences is the audience allow-list, falling back to the canonical
+// Resource when Audiences was never populated. A config built literally (tests, and
+// any future caller that sets only Resource) then keeps the single-audience
+// behaviour instead of silently accepting nothing.
+func (c oauthResourceConfig) acceptedAudiences() []string {
+	if len(c.Audiences) > 0 {
+		return c.Audiences
+	}
+	if strings.TrimSpace(c.Resource) == "" {
+		return nil
+	}
+	return []string{c.Resource}
+}
+
+// audienceAccepted reports whether the token names ANY accepted resource. A token
+// with no audience is rejected: a bearer bound to nothing is replayable against
+// every resource that trusts this issuer.
+func audienceAccepted(tokenAudience, accepted []string) bool {
+	for _, candidate := range tokenAudience {
+		if slices.Contains(accepted, candidate) {
+			return true
+		}
+	}
+	return false
 }
 
 func (v *arcadeTokenVerifier) keySet(ctx context.Context, force bool) (jwk.Set, error) {
