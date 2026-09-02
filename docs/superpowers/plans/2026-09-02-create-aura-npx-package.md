@@ -7,26 +7,35 @@
 **Goal:** `npx create-aura` interviews an operator, writes a config the installer already
 knows how to read, and runs the artifact — locally or over SSH onto a mini-PC.
 
-**Architecture:** A TypeScript CLI that produces a **config file**, never `.env`.
-`scripts/install.sh` owns `.env` through `write_env_if_missing` / `ensure_env_default` /
-`set_env_value`, which are idempotent; duplicating that in TypeScript would be two
-implementations diverging at the first edge case. The npm package **carries** the makeself
-artifact rather than downloading it, so raw.githubusercontent leaves the install trust path
-entirely. Every command that touches the outside world goes through an injected runner, so
-local and remote installs are tested without a box.
+**Architecture: this is a PORT, not a new program.**
+`D:/Wpt/wpt-iot/packages/create-wpt-iot` is a working installer wizard of exactly this
+shape — same two install modes, same base64 `format=1` config handed to a shell installer,
+same injected command runner, same en/it i18n. **Copy it. Change only what Aura's contract
+actually differs on.** The inventory below names, file by file, what is copied verbatim and
+what changes; anything not named as a change is a change you should not be making.
 
-**Tech Stack:** Node >=22.13, TypeScript (ESM), vitest, Stryker, `@clack/prompts`.
+Measured: the reference is ~2,030 lines including tests. Roughly 1,400 of those port with
+no edit or a rename. The genuinely new work is one module (`modelroute.ts`), one function
+body (`serializeInstallConfig`), one prompt flow (`collectSettings`), and the message
+catalogues.
+
+**Tech Stack:** Node >=22.13, TypeScript (ESM), vitest, Stryker, the reference's prompt
+library. Do not substitute a different prompt or process library "while we are here".
 
 **Spec:** `docs/superpowers/specs/2026-09-02-create-aura-npx-design.md`
 
-**Reference implementation:** `D:/Wpt/wpt-iot/packages/create-wpt-iot` — the same shape,
-working. Copy its structure; do **not** copy `artifact.ts`, `installer-manifest.ts`,
-`scripts/stamp-installer.mjs`, `scripts/verify-installer-manifest.mjs`. Those four exist
-only to download and verify a payload the veneer cannot carry. Ours carries it (spec
-decision 5), so they are dead weight here.
+---
 
 ## Global Constraints
 
+- **Port first, invent last.** For every file, read the reference's version before writing
+  anything. If you find yourself designing an abstraction the reference does not have, stop:
+  it either already solved it differently, or you are adding something nobody asked for.
+- **Four reference files are deliberately NOT ported:** `artifact.ts`,
+  `installer-manifest.ts`, `scripts/stamp-installer.mjs`,
+  `scripts/verify-installer-manifest.mjs`. They exist to download and verify a payload the
+  wpt veneer cannot carry. Ours carries it (spec decision 5), so they have nothing to do
+  here. Their tests go with them.
 - **The config contract is fixed by `scripts/install.sh` and is not negotiable.** Nine keys,
   first line exactly `format=1`, and an unknown key makes the installer `exit 2`:
 
@@ -43,483 +52,297 @@ decision 5), so they are dead weight here.
   embed_ngl_base64=<base64>
   ```
 
-  Read `parse_install_config` in `scripts/install.sh` before writing the emitter. If this
-  plan and that function ever disagree, **the function wins and this plan is wrong.**
-- **A decoded value may not contain a line break.** `install.sh` rejects it (`exit 2`),
-  because `set_env_value` would emit two `.env` lines and the installer (first match) and
-  docker compose (last wins) would then read different secrets. The wizard rejects it first,
-  while the operator is still typing.
-- **The artifact takes its flags after `--`.** makeself's header parses argv first, so
-  `./install-appliance.run --config X` dies with `Unrecognized flag`. Every command this
-  package generates uses `-- --config <absolute path>`.
-- **Mode 0600 in a 0700 directory, absolute path only.** Secrets never travel through argv:
-  they reach neither the process table nor shell history.
-- **No pinning, no `channel` field.** The npm publish rides `publish-aura-edge.yml`, so the
-  payload an operator installs and the images it pulls come from one commit (decision 6).
-- **Gates:** vitest coverage >=85% and Stryker mutation >=70%, matching what `web/` meets.
-- **Every external command goes through the injected runner.** No `execa` / `child_process`
-  call outside `process.ts`. That is what makes `local` and `remote` testable without a box.
+  Read `parse_install_config` in `scripts/install.sh` before writing the emitter. **If this
+  plan and that function disagree, the function wins and this plan is wrong.**
+- **The artifact takes its flags after `--`.** makeself's own header parses argv first, so
+  `artifact --config X` dies with `Unrecognized flag` and `install.sh` never runs. This is
+  the single behavioural difference from the reference's `installLocal` / `installRemote`.
+- **A decoded value may not contain a line break.** `install.sh` rejects it (`exit 2`)
+  because `set_env_value` would emit two `.env` lines, and the installer (first match) and
+  docker compose (last wins) would then read different secrets. Reject it in the wizard too,
+  while the operator can still fix it.
+- **No pinning, no `channel` field.** The npm publish rides `publish-aura-edge.yml`, so
+  payload and images come from one commit (decision 6).
+- **Gates:** vitest coverage >=85% and Stryker mutation >=70%, matching `web/`.
 - **i18n en + it, both complete.** A key in one catalogue and not the other is a defect.
 - Node >=22.13.0, ESM, npm (this repo pins `npm@12.0.0`; it does not use pnpm).
 
 ---
 
-## File Structure
+## Port inventory
 
-```
-packages/create-aura/
-  package.json          bin -> dist/bin.js; files includes dist + the artifact
-  tsconfig.json
-  vitest.config.ts      coverage thresholds 85
-  stryker.conf.json     mutation threshold 70
-  README.md
-  src/
-    bin.ts              entry; nothing but a call into cli
-    cli.ts              flag parsing, flow orchestration, exit codes
-    prompts.ts          the interview (@clack), en/it
-    validation.ts       install dir, booleans, URLs, model ids, secret shape
-    config-file.ts      emit the format=1 contract; 0600 in 0700
-    modelroute.ts       GPU probe, container-network endpoint probe, /api/tags listing
-    local.ts            run the artifact here
-    remote.ts           ship + run the artifact over SSH
-    process.ts          the injected runner; the ONLY place a subprocess is spawned
-    i18n.ts             loader
-    types.ts            shared shapes
-    messages/en.ts
-    messages/it.ts
-    __tests__/*.test.ts one per module
-```
+`R` = `D:/Wpt/wpt-iot/packages/create-wpt-iot`. Read each file before porting it.
 
-The split worth stating, because it is what keeps this honest: `config-file.ts` knows the
-contract, `validation.ts` knows what is acceptable, and neither knows how to run anything.
-`local.ts` and `remote.ts` know how to run things and nothing about the contract.
+| Target | From | Treatment |
+|---|---|---|
+| `src/i18n.ts` | `R/src/i18n.ts` (22) | **verbatim** |
+| `src/process.ts` | `R/src/process.ts` (192) | **verbatim** — `CommandRunner`, `ProcessRunner`, `redactText`, `StreamingRedactor`, `ProcessExecutionError` are all Aura-agnostic |
+| `src/bin.ts` | `R/src/bin.ts` (5) | verbatim but for the imported name |
+| `src/preflight.ts` | `R/src/preflight.ts` (26) | copy; change `MINIMUM_DISK_KB` and the architecture set for Aura |
+| `src/types.ts` | `R/src/types.ts` (27) | copy `InstallMode`, `RemoteTarget`, `InstallRequest`; replace `InstallSettings` and `PreflightResult` fields with Aura's |
+| `src/validation.ts` | `R/src/validation.ts` (71) | copy `ValidationError`, `validateHost`, `validatePort`, `validateUsername`, `validateInstallDir` **unchanged**; drop `validateDeviceSerial` / `validateAdminPassword` / `confirmAdminPassword`; add `validateBaseUrl`, `validateModelId`, `assertNoLineBreak` |
+| `src/config-file.ts` | `R/src/config-file.ts` (53) | copy the temp-file machinery **unchanged** (`mkdtemp` + `chmod 0700` + write `0600` + cleanup-on-throw); replace only the body of `serializeInstallConfig` |
+| `src/prompts.ts` | `R/src/prompts.ts` (131) | copy `SelectOptions`/`InputOptions`/`PasswordOptions`/`ConfirmOptions`/`PromptPort`/`inquirerPrompt`/`collectTarget` **unchanged**; rewrite `collectSettings` for Aura's questions |
+| `src/local.ts` | `R/src/local.ts` (63) | copy the shape; change `REQUIRED_COMMANDS` / `REQUIRED_HOSTS`, the existing-install probe, drop the serial probe, and **add `--` before `--config`** |
+| `src/remote.ts` | `R/src/remote.ts` (277) | copy `sshDestination`, `preflightRemote`, the scp plumbing and `WarningSink` **unchanged**; in `installRemote` add `--` before `--config` |
+| `src/cli.ts` | `R/src/cli.ts` (262) | copy `CliDependencies` and `runCli`'s structure; change the flow to Aura's questions and add the model-route step |
+| `src/modelroute.ts` | — | **new**, the only genuinely new module |
+| `src/messages/{en,it}.ts` | `R/src/messages/*` | copy the file shape and the keys that still apply (target, ssh, errors); write Aura's own |
+| `src/__tests__/*` | `R/src/__tests__/*` | port each alongside its module; drop `artifact.test.ts` |
+| `package.json`, `tsconfig.json`, `vitest.config.ts` | `R/*` | copy; remove the `stamp-installer` / `verify-installer-manifest` scripts |
 
----
+Two reference details worth calling out because they are already right and easy to lose:
 
-### Task 1: Package skeleton, i18n, and the first green test
+**`validateInstallDir` already does what Aura needs.** It rejects control characters,
+normalises with `posix.normalize` (which collapses `..`), and requires a leading `/` that is
+not bare `/`. That is exactly the hole measured in `install.sh` — a relative `install_dir`
+and `../../etc` are both accepted there, and under makeself a relative dir installs the
+appliance into the extraction directory that gets deleted on exit. Port it as-is; do not
+re-derive it.
 
-**Files:**
-- Create: `packages/create-aura/{package.json,tsconfig.json,vitest.config.ts}`,
-  `src/{bin.ts,types.ts,i18n.ts}`, `src/messages/{en.ts,it.ts}`
-- Test: `src/__tests__/i18n.test.ts`
-
-**Interfaces:**
-- Produces: `t(key: string, vars?: Record<string, string>): string`,
-  `setLocale(l: Locale): void`, `LOCALES`. Every later task calls `t`.
-
-- [ ] **Step 1: Mirror the reference, then strip it**
-
-Read `D:/Wpt/wpt-iot/packages/create-wpt-iot/{package.json,tsconfig.json}` and `src/i18n.ts`.
-Mirror them. Remove from `scripts`: `stamp-installer`, `verify-installer-manifest`,
-`verify:manifest`, `verify:manifest:remote`. `build` becomes
-`node scripts/clean-dist.mjs && tsc`.
-
-- [ ] **Step 2: Write the failing test**
-
-```ts
-import { describe, expect, it } from 'vitest'
-import { LOCALES, setLocale, t } from '../i18n.js'
-
-describe('i18n', () => {
-  it('resolves a key in both locales', () => {
-    setLocale('en'); expect(t('route.title')).toBeTruthy()
-    setLocale('it'); expect(t('route.title')).toBeTruthy()
-  })
-
-  // A key present in one catalogue and missing from the other ships a wizard that goes
-  // silent halfway through the interview, in one language only, and nothing else here
-  // would notice.
-  it('has identical key sets across locales', () => {
-    const keys = (l: 'en' | 'it') => Object.keys(LOCALES[l]).sort()
-    expect(keys('en')).toEqual(keys('it'))
-  })
-})
-```
-
-- [ ] **Step 3: Run it, watch it fail**
-
-Run: `cd packages/create-aura && npm install && npx vitest run`
-Expected: FAIL — `Cannot find module '../i18n.js'`.
-
-- [ ] **Step 4: Implement `i18n.ts` and both catalogues** with one key, `route.title`.
-
-- [ ] **Step 5: Run it, watch it pass.**
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add packages/create-aura
-git commit -m "feat(create-aura): package skeleton with a locale-parity test"
-```
+**`ProcessRunner` already redacts secrets from streamed output.** `installLocal` passes
+`{ redactions: [settings.adminPassword] }`. Ours passes the OpenRouter key the same way.
 
 ---
 
-### Task 2: `validation.ts`
+### Task 1: Port the scaffolding, `i18n`, `process`, `bin`
 
-**Files:**
-- Create: `src/validation.ts`
-- Test: `src/__tests__/validation.test.ts`
+**Files:** `package.json`, `tsconfig.json`, `vitest.config.ts`, `src/{bin,i18n,process}.ts`,
+`src/messages/{en,it}.ts`, `src/__tests__/{i18n,process}.test.ts`
 
-**Interfaces:**
-- Produces: `validateInstallDir`, `validateBaseUrl`, `validateModelId`, `validateApiKey`,
-  `noLineBreak`, `boolLiteral`. Validators return a message **key** or `null`.
-
-This task exists because the installer's own parser fails open on exactly these values.
-Measured: a relative `install_dir` and `../../etc` are both accepted, and
-`appliance=True|TRUE|1|yes` all silently mean **false**, because `install.sh:735` compares
-`= "true"` literally. Under the artifact a relative install dir is worse than wrong —
-makeself `cd`s into its extraction directory and `rm -rf`s it on exit, so the appliance
-installs into a directory that disappears seconds later.
-
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1:** Copy the four config files and the three sources from `R`, renaming
+  `create-wpt-iot` to `create-aura`. Remove the `stamp-installer` / `verify-installer-manifest`
+  / `verify:manifest*` scripts; `build` becomes `node scripts/clean-dist.mjs && tsc`.
+- [ ] **Step 2:** Port `R/src/__tests__/{i18n,process}.test.ts` unchanged but for names.
+- [ ] **Step 3:** Add ONE assertion the reference does not have, because it is the failure
+  this port is most likely to introduce — a key present in `en` and missing in `it`:
 
 ```ts
-import { describe, expect, it } from 'vitest'
-import { boolLiteral, validateInstallDir, validateModelId } from '../validation.js'
-
-describe('validateInstallDir', () => {
-  it('accepts an absolute path', () => expect(validateInstallDir('/opt/aura')).toBeNull())
-  it.each(['aura', './aura', ''])('rejects %j', (v) =>
-    expect(validateInstallDir(v)).toBe('validation.installDir.absolute'))
-  it('rejects a traversal segment even when absolute', () =>
-    expect(validateInstallDir('/opt/../etc')).toBe('validation.installDir.traversal'))
-})
-
-describe('boolLiteral', () => {
-  // install.sh compares = "true" literally, so the wizard must emit exactly that and
-  // never pass an operator's spelling through.
-  it('emits only the two literals', () => {
-    expect(boolLiteral(true)).toBe('true')
-    expect(boolLiteral(false)).toBe('false')
-  })
-})
-
-describe('validateModelId', () => {
-  it('accepts a plain id', () => expect(validateModelId('qwen3:8b')).toBeNull())
-  // A newline reaches set_env_value, which writes two .env lines; install.sh's reader
-  // takes the first and docker compose takes the last, so the installer and the running
-  // appliance would trust different values.
-  it('rejects an embedded line break', () =>
-    expect(validateModelId('a\nOPENROUTER_API_KEY=x')).toBe('validation.lineBreak'))
+it('has identical key sets across locales', () => {
+  expect(Object.keys(en).sort()).toEqual(Object.keys(it).sort())
 })
 ```
 
-- [ ] **Step 2: Run it, watch it fail.**
-- [ ] **Step 3: Implement**, adding every message key to BOTH catalogues.
-- [ ] **Step 4: Run it, watch it pass.**
-- [ ] **Step 5: Commit** — the message says what install.sh fails open on and why it matters.
+- [ ] **Step 4:** `npm install && npx vitest run` — green.
+- [ ] **Step 5:** Commit.
 
 ---
 
-### Task 3: `config-file.ts`
+### Task 2: Port `validation.ts` and `preflight.ts`
 
-**Files:**
-- Create: `src/config-file.ts`
-- Test: `src/__tests__/config-file.test.ts`
+**Files:** `src/validation.ts`, `src/preflight.ts`, `src/__tests__/validation.test.ts`
 
-**Interfaces:**
-- Consumes: `validation.ts`.
-- Produces: `writeInstallConfig(answers: Answers, dir: string): Promise<string>` returning
-  the absolute path it wrote, and `renderInstallConfig(answers: Answers): string`.
+**Interfaces:** Produces `ValidationError`, `validateHost`, `validatePort`,
+`validateUsername`, `validateInstallDir`, plus new `validateBaseUrl`, `validateModelId`,
+`assertNoLineBreak`.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1:** Copy `validation.ts`. Delete the three wpt-specific validators. Keep the
+  other five **byte-identical** — `validateInstallDir` in particular.
+- [ ] **Step 2:** Port `R/src/__tests__/validation.test.ts`, dropping the cases for the
+  deleted validators.
+- [ ] **Step 3:** Add the new validators and their tests:
 
 ```ts
-import { describe, expect, it } from 'vitest'
-import { renderInstallConfig } from '../config-file.js'
+// A newline reaches set_env_value, which writes two .env lines; install.sh's reader takes
+// the first and docker compose takes the last, so the installer and the running appliance
+// would trust different secrets. install.sh rejects it too — this layer can say so while
+// the operator is still typing.
+it('rejects a line break in a model id', () =>
+  expect(() => validateModelId('a\nOPENROUTER_API_KEY=x')).toThrow(ValidationError))
+```
 
-const answers = {
-  installDir: '/opt/aura', appliance: true, gvisor: false,
-  llmProvider: 'ollama' as const,
-  llmBaseUrl: 'http://host.docker.internal:11434/v1',
-  llmModel: 'any/model-the-operator-pulled:v1',
-  openrouterApiKey: '', embedImage: 'ghcr.io/ggml-org/llama.cpp:server', embedNgl: '0',
+- [ ] **Step 4:** Copy `preflight.ts`, adjusting `MINIMUM_DISK_KB` and the architecture set.
+- [ ] **Step 5:** Green, commit.
+
+---
+
+### Task 3: `config-file.ts` — the one function body that changes
+
+**Files:** `src/config-file.ts`, `src/types.ts`, `src/__tests__/config-file.test.ts`
+
+- [ ] **Step 1:** Copy `config-file.ts` whole. Keep `createTemporaryInstallConfig`
+  **unchanged** — the `mkdtemp` + `chmod 0700` + write `0600` + cleanup-on-throw sequence is
+  already right.
+- [ ] **Step 2:** Replace `InstallSettings` in `types.ts` with Aura's fields, and rewrite
+  only the array inside `serializeInstallConfig`:
+
+```ts
+export function serializeInstallConfig(s: InstallSettings): string {
+  return [
+    'format=1',
+    `install_dir_base64=${encode(s.installDir)}`,
+    // appliance and gvisor are the two install.sh reads RAW; base64-ing them would make
+    // its literal `= "true"` comparison false and silently produce a non-appliance install.
+    `appliance=${s.appliance ? 'true' : 'false'}`,
+    `gvisor=${s.gvisor ? 'true' : 'false'}`,
+    `llm_provider_base64=${encode(s.llmProvider)}`,
+    `llm_base_url_base64=${encode(s.llmBaseUrl)}`,
+    `llm_model_base64=${encode(s.llmModel)}`,
+    `openrouter_api_key_base64=${encode(s.openrouterApiKey ?? '')}`,
+    `embed_image_base64=${encode(s.embedImage)}`,
+    `embed_ngl_base64=${encode(s.embedNgl)}`,
+    '',
+  ].join('\n');
 }
-const d = (s: string) => Buffer.from(s, 'base64').toString('utf8')
-const lines = () => renderInstallConfig(answers).split('\n').filter(Boolean)
-const value = (k: string) => lines().find((l) => l.startsWith(k + '='))!.slice(k.length + 1)
+```
 
-describe('renderInstallConfig', () => {
-  it('puts format=1 on the first line', () => expect(lines()[0]).toBe('format=1'))
+- [ ] **Step 3:** Port the reference's test, then add the assertion its shorter key list did
+  not need — the exact set, because `install.sh` exits 2 on any key it does not name:
 
-  // install.sh's parser exits 2 on any key it does not name. This asserts the exact set,
-  // not merely that the ones we care about are present.
-  it('emits exactly the nine keys install.sh accepts', () => {
-    expect(lines().slice(1).map((l) => l.split('=')[0]).sort()).toEqual([
-      'appliance', 'embed_image_base64', 'embed_ngl_base64', 'gvisor',
-      'install_dir_base64', 'llm_base_url_base64', 'llm_model_base64',
-      'llm_provider_base64', 'openrouter_api_key_base64',
-    ])
-  })
-
-  // appliance and gvisor are the two the installer reads RAW. Base64-ing them would make
-  // `= "true"` false and silently produce a non-appliance install.
-  it('leaves appliance and gvisor unencoded', () => {
-    expect(value('appliance')).toBe('true')
-    expect(value('gvisor')).toBe('false')
-  })
-
-  it('round-trips every base64 value', () => {
-    expect(d(value('install_dir_base64'))).toBe('/opt/aura')
-    expect(d(value('llm_model_base64'))).toBe('any/model-the-operator-pulled:v1')
-  })
-
-  // An empty secret must be an empty value, not the base64 of an empty string plus padding.
-  it('emits an empty key as an empty value', () =>
-    expect(value('openrouter_api_key_base64')).toBe(''))
-
-  // GNU base64 wraps at 76 columns; a wrapped value would break the key=value format.
-  it('never wraps a long value', () => {
-    const long = renderInstallConfig({ ...answers, openrouterApiKey: 'sk-' + 'a'.repeat(400) })
-    expect(long.split('\n').every((l) => !l.startsWith(' '))).toBe(true)
-    expect(long.split('\n').filter((l) => l.startsWith('openrouter_api_key_base64=')).length).toBe(1)
-  })
+```ts
+it('emits exactly the nine keys install.sh accepts', () => {
+  const keys = serializeInstallConfig(settings).split('\n').filter(Boolean).slice(1)
+    .map((l) => l.split('=')[0]).sort()
+  expect(keys).toEqual([
+    'appliance', 'embed_image_base64', 'embed_ngl_base64', 'gvisor', 'install_dir_base64',
+    'llm_base_url_base64', 'llm_model_base64', 'llm_provider_base64',
+    'openrouter_api_key_base64',
+  ])
 })
 ```
 
-- [ ] **Step 2: Run it, watch it fail.**
-- [ ] **Step 3: Implement.** `writeInstallConfig` creates the directory `0700` and the file
-  `0600`, and returns an absolute path. Refuse a relative `dir` rather than resolving it.
-- [ ] **Step 4: Add a test that `writeInstallConfig` produces mode 0600 in a 0700 dir**
-  (skip the mode assertion on win32 with an explicit reason in the test name — do not skip
-  the rest).
-- [ ] **Step 5: Run, watch pass, commit.**
+Also assert an empty key stays an empty value (not the base64 of an empty string), and that
+`appliance`/`gvisor` are unencoded.
+
+- [ ] **Step 4:** Green, commit.
 
 ---
 
-### Task 4: `process.ts` — the injected runner
+### Task 4: `modelroute.ts` — the only new module
 
-**Files:**
-- Create: `src/process.ts`
-- Test: `src/__tests__/process.test.ts`
+**Files:** `src/modelroute.ts`, `src/__tests__/modelroute.test.ts`
 
-**Interfaces:**
-- Produces:
-  ```ts
-  export type RunResult = { code: number; stdout: string; stderr: string }
-  export type Runner = (cmd: string, args: string[], opts?: RunOpts) => Promise<RunResult>
-  export const realRunner: Runner
-  export function fakeRunner(script: Array<{ match: RegExp; result: Partial<RunResult> }>): Runner & { calls: Array<[string, string[]]> }
-  ```
-- Every later task takes a `Runner` as a parameter and defaults to `realRunner`.
+**Interfaces:** Consumes `CommandRunner`. Produces
+`probeGpu(runner): Promise<{ cuda: boolean; embedImage: string; embedNgl: string }>` and
+`probeOllama(runner, url): Promise<{ reachable: boolean; models: string[] }>`.
 
-Read `D:/Wpt/wpt-iot/packages/create-wpt-iot/src/process.ts` (192 lines) and mirror it. The
-one thing to preserve carefully: it never interpolates user input into a shell string.
-Arguments go through the argv array, so a model id containing a space or a `;` cannot become
-a second command.
+Two measured constraints, neither optional:
 
-- [ ] **Step 1: Write the failing test** — assert `fakeRunner` records calls in order, that
-  an unmatched command throws rather than silently returning success, and that `realRunner`
-  passes arguments as argv (spawn a `node -e` that prints `process.argv.slice(2)` and check a
-  value containing a space and a semicolon arrives as ONE argument).
-- [ ] **Step 2: Run, watch fail.**
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run, watch pass, commit.**
-
----
-
-### Task 5: `modelroute.ts`
-
-**Files:**
-- Create: `src/modelroute.ts`
-- Test: `src/__tests__/modelroute.test.ts`
-
-**Interfaces:**
-- Consumes: `Runner` from `process.ts`.
-- Produces: `probeGpu(run: Runner): Promise<{ cuda: boolean; embedImage: string; embedNgl: string }>`
-  and `probeOllama(run: Runner, url: string): Promise<{ reachable: boolean; models: string[] }>`.
-
-Two measured constraints drive this and neither is optional:
-
-**The endpoint must be probed from the network that will use it.** Aura runs in a container;
-an Ollama on the host is not at `127.0.0.1` as seen from inside. Probe with a throwaway
+**Probe the endpoint from the network that will use it.** Aura runs in a container; an
+Ollama on the host is not at `127.0.0.1` as seen from inside. Probe with a throwaway
 `docker run --rm` on the compose network and record the URL **as the container sees it**.
 This project has already paid for this once — "Hyper-V port forwarding lies: probe via docker
 network, not 127.0.0.1". Without it the wizard produces installs that look successful and
 cannot answer a single turn.
 
-**List the models actually installed rather than asking for an id from memory.** `/api/tags`
-returns them. A typo'd `AURA_LLM_MODEL` is indistinguishable from an absent model until the
-first turn fails, which is long after the operator has walked away.
+**List the models actually installed** (`/api/tags`) rather than asking for an id from
+memory. A typo'd model is indistinguishable from an absent one until the first turn fails,
+long after the operator has walked away.
 
-- [ ] **Step 1: Write the failing test** using `fakeRunner`:
-  - a GPU present (`nvidia-smi` exits 0) yields the CUDA image and `embedNgl: '99'`;
-    absent yields the CPU image and `'0'`
-  - `probeOllama` returns the model list from a `/api/tags` body
-  - **a host-only Ollama is reported unreachable**: the fake answers `127.0.0.1` from the
-    host and refuses from inside the container, and the probe must report what the
-    CONTAINER saw. Assert on the recorded call that `docker run` was used — a probe that
-    passes by querying the host is passing for the wrong reason.
-  - an unreachable endpoint returns `reachable: false` and does NOT throw
-- [ ] **Step 2: Run, watch fail.**
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run, watch pass, commit.**
+- [ ] **Step 1:** Write the failing test against a fake `CommandRunner`:
+  - `nvidia-smi` exiting 0 yields the CUDA image and `embedNgl: '99'`; absent yields the CPU
+    image and `'0'`
+  - `probeOllama` returns the ids from an `/api/tags` body
+  - **a host-only Ollama is reported unreachable** — the fake answers on the host and
+    refuses from inside the container, and the probe must report what the CONTAINER saw.
+    Assert on the recorded call that `docker run` was used: a probe that passes by querying
+    the host is passing for the wrong reason.
+  - an unreachable endpoint returns `reachable: false` and does not throw
+- [ ] **Step 2:** Watch it fail, implement, watch it pass, commit.
 
 ---
 
-### Task 6: `prompts.ts` and `cli.ts`
+### Task 5: Port `prompts.ts` and `cli.ts`
 
-**Files:**
-- Create: `src/prompts.ts`, `src/cli.ts`
-- Modify: `src/bin.ts` (call into `cli`)
-- Test: `src/__tests__/prompts.test.ts`, `src/__tests__/cli.test.ts`
+**Files:** `src/prompts.ts`, `src/cli.ts`, `src/__tests__/{prompts,cli}.test.ts`
 
-**Interfaces:**
-- Consumes: `validation`, `config-file`, `modelroute`, `process`, `i18n`.
-- Produces: `runCli(argv: string[], deps: Deps): Promise<number>` returning the exit code.
-  `Deps` carries `{ run: Runner; prompt: PromptFns; cwd: string }` so the whole flow is
-  driven in tests without a TTY.
-
-The interview, in order: locale, install target (local or remote), install dir, appliance,
-gVisor, model route (OpenRouter or Ollama — **not** llama.cpp, see the spec's "Why llama.cpp
-is not in the wizard"), then route-specific questions, then the GPU probe.
-
-- [ ] **Step 1: Write the failing `cli.test.ts`**, driving the whole flow with a scripted
-  prompt double and `fakeRunner`. Assert:
-  - the OpenRouter route asks for a key and the Ollama route does not
-  - **the Ollama route emits an empty `openrouter_api_key_base64`** rather than omitting the
-    key — the installer accepts it empty and rejects an unknown key set
-  - `--help` exits 0 and `--nonsense` exits 2
-  - a validation failure re-prompts rather than writing a config
-- [ ] **Step 2: Run, watch fail.**
-- [ ] **Step 3: Implement** `prompts.ts` then `cli.ts`, adding every string to both catalogues.
-- [ ] **Step 4: Run, watch pass, commit.**
+- [ ] **Step 1:** Copy `prompts.ts`. Keep the option interfaces, `PromptPort`,
+  `inquirerPrompt` and `collectTarget` **unchanged** — host/port/username is the same
+  question for us.
+- [ ] **Step 2:** Rewrite `collectSettings`: install dir, appliance, gVisor, model route
+  (OpenRouter or Ollama — **not** llama.cpp; see the spec's "Why llama.cpp is not in the
+  wizard"), then the route-specific questions, then the GPU probe.
+- [ ] **Step 3:** Copy `cli.ts`'s `CliDependencies` and `runCli` structure; change the flow
+  and add the model-route step.
+- [ ] **Step 4:** Port both tests, then add the two assertions Aura's contract needs:
+  - the OpenRouter route asks for a key, the Ollama route does not
+  - **the Ollama route still emits an empty `openrouter_api_key_base64`** rather than
+    omitting it — `install.sh` accepts an empty value and `exit 2`s on a missing key set
+- [ ] **Step 5:** Green, commit.
 
 ---
 
-### Task 7: `local.ts`
+### Task 6: Port `local.ts` and `remote.ts`
 
-**Files:**
-- Create: `src/local.ts`
-- Test: `src/__tests__/local.test.ts`
+**Files:** `src/local.ts`, `src/remote.ts`, `src/__tests__/{local,remote}.test.ts`
 
-**Interfaces:**
-- Consumes: `Runner`, the config path from `config-file`.
-- Produces: `installLocally(run: Runner, artifact: string, configPath: string): Promise<number>`.
-
-- [ ] **Step 1: Write the failing test.** The assertion that matters:
+- [ ] **Step 1:** Copy both. In `remote.ts` keep `sshDestination`, `preflightRemote`, the
+  scp plumbing and `WarningSink` unchanged.
+- [ ] **Step 2:** Change `local.ts`'s `REQUIRED_COMMANDS` / `REQUIRED_HOSTS` and its
+  existing-install probe for Aura; drop the serial probe.
+- [ ] **Step 3:** The one behavioural change, in BOTH files:
 
 ```ts
-// makeself's own header parses argv before it execs the embedded script, so
+// makeself's header parses argv before it execs the embedded script, so
 // `artifact --config X` dies with "Unrecognized flag" and install.sh never runs.
-// The separator is the whole contract of this function.
-it('passes installer flags after --', async () => {
-  const run = fakeRunner([{ match: /install-appliance/, result: { code: 0 } }])
-  await installLocally(run, '/tmp/install-appliance.run', '/tmp/install.conf')
-  expect(run.calls[0][1]).toEqual(['--', '--config', '/tmp/install.conf'])
-})
+await runner.run('sudo', ['bash', artifact.path, '--', '--config', config.path],
+  { redactions: [settings.openrouterApiKey] });
 ```
 
-Also assert a non-zero installer exit is propagated, not swallowed.
-
-- [ ] **Step 2: Run, watch fail.**
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run, watch pass, commit.**
-
----
-
-### Task 8: `remote.ts`
-
-**Files:**
-- Create: `src/remote.ts`
-- Test: `src/__tests__/remote.test.ts`
-
-**Interfaces:**
-- Consumes: `Runner`.
-- Produces: `installRemotely(run: Runner, target: RemoteTarget, artifact: string, configPath: string): Promise<number>`.
-
-This is the mini-PC path: a clean Ubuntu server, reached over SSH. Read
-`D:/Wpt/wpt-iot/packages/create-wpt-iot/src/remote.ts` (277 lines) and mirror its shape.
-
-- [ ] **Step 1: Write the failing test.** Assert, with `fakeRunner`:
-  - the artifact and the config are copied with `scp` before anything is executed
-  - **the config lands `0600` on the remote and is removed afterwards** — it carries the API
-    key, and leaving it in `/tmp` on a customer box is the kind of thing nobody notices
-  - the remote command uses `-- --config`, same as local
-  - a failed `scp` aborts before the install command runs, and its exit code propagates
-  - **no user value is interpolated into a remote shell string** — drive a host or path
-    containing a space and a `;` and assert it survives as one argument
-- [ ] **Step 2: Run, watch fail.**
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run, watch pass, commit.**
+- [ ] **Step 4:** Port both tests, then add:
+  - `expect(runner.calls[0][1]).toContain('--')` before `--config`, in both
+  - the remote config is `0600` and is **removed after the install** — it carries the API
+    key and leaving it in `/tmp` on a customer box is what nobody notices
+  - a failed `scp` aborts before the install runs, and its exit code propagates
+- [ ] **Step 5:** Green, commit.
 
 ---
 
-### Task 9: Carry the artifact, and publish from the same commit as the images
+### Task 7: Carry the artifact; publish from the same commit as the images
 
-**Files:**
-- Modify: `packages/create-aura/package.json` (`files`, a `prepack` that builds the artifact)
-- Create: `packages/create-aura/scripts/build-artifact.mjs`
-- Modify: `.github/workflows/publish-aura-edge.yml`, `.github/workflows/ci.yml`
-- Test: `packages/create-aura/src/__tests__/packaging.test.ts`
+**Files:** `package.json`, `scripts/build-artifact.mjs`,
+`.github/workflows/{publish-aura-edge,ci}.yml`, `src/__tests__/packaging.test.ts`
 
-**Interfaces:**
-- Consumes: `scripts/build_installer.sh` (which needs `makeself`).
-- Produces: an npm tarball containing `dist/` and the `.run` artifact.
-
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1:** Write the failing test:
 
 ```ts
 // Decision 5: the package CARRIES the payload, so nothing is fetched at install time.
-// A tarball without the artifact is a package that cannot install anything, and every
-// other test here would still pass.
+// A tarball without the artifact cannot install anything, and every other test here
+// would still pass.
 it('lists the artifact in package.json files', () => {
-  const pkg = JSON.parse(readFileSync(resolve(__dirname, '../../package.json'), 'utf8'))
   expect(pkg.files).toContain('install-appliance.run')
 })
 ```
 
-- [ ] **Step 2: Run, watch fail. Implement `build-artifact.mjs`**, which shells out to
-  `scripts/build_installer.sh` and writes `packages/create-aura/install-appliance.run`.
-  It must FAIL when `makeself` is absent — no skip-as-green.
-
-- [ ] **Step 3: Wire CI.** Add a `create-aura` job to `ci.yml` mirroring `web-test` and
-  `web-mutation`: `npm ci && npm run lint && npm run typecheck && npm run test` with
-  coverage >=85, and a mutation job at >=70. Install `makeself` in any job that builds the
-  artifact.
-
-- [ ] **Step 4: Wire the publish.** In `publish-aura-edge.yml`, after the images are pushed,
-  build the package and `npm publish --provenance --access public`. Publishing from that
-  workflow is what makes decision 6 true: the payload an operator installs and the images it
-  pulls come from one commit. Publishing from anywhere else silently re-opens the drift this
-  design exists to close.
-
-- [ ] **Step 5: Verify the tarball.** `npm pack --dry-run` must list `dist/**` and the
-  artifact, and must NOT list `src/**` or `__tests__`. Report the file list.
-
-- [ ] **Step 6: Commit.**
+- [ ] **Step 2:** `build-artifact.mjs` shells out to `scripts/build_installer.sh` and writes
+  `packages/create-aura/install-appliance.run`. It must FAIL when `makeself` is absent — no
+  skip-as-green.
+- [ ] **Step 3:** Add a `create-aura` job to `ci.yml` mirroring `web-test` and
+  `web-mutation` (coverage >=85, mutation >=70), installing `makeself` where the artifact is
+  built.
+- [ ] **Step 4:** In `publish-aura-edge.yml`, after the images push, build and
+  `npm publish --provenance --access public`. Publishing from that workflow is what makes
+  decision 6 true; publishing anywhere else silently re-opens the drift this design closes.
+- [ ] **Step 5:** `npm pack --dry-run` must list `dist/**` and the artifact and must NOT list
+  `src/**` or `__tests__`. Report the file list.
+- [ ] **Step 6:** Commit.
 
 ---
 
 ## Deferred, with reasons
 
 - **`install.conf` persistence** (`$INSTALL_DIR/install.conf`, 0600) is promised by the spec
-  and written by nothing. It belongs to `install.sh`, not this package, and workstream (c)
-  depends on it. It is its own task in `install.sh`'s next round, not here.
+  and written by nothing. It belongs to `install.sh`, and workstream (c) depends on it.
 - **The `*:edge` guard** (`install.sh:472`): `AURA_INSTALL_REF=vX.Y.Z` disarms the image pins
   and a source-less host then tries to `docker build`. The wizard cannot cause it (no
-  `channel` field, decision 6) but an operator's shell can. `install.sh` should refuse a
-  non-`:edge` tag under the artifact — again `install.sh`'s task, not this one.
-- **llama.cpp as a third route** — see the spec's "Why llama.cpp is not in the wizard".
-  Enabling the profile without a ~6.7 GB fetch makes `docker compose up -d --wait` time out
-  and, under `set -euo pipefail`, aborts the whole install.
+  `channel` field) but an operator's shell can. `install.sh`'s task, not this one.
+- **llama.cpp as a third route** — enabling the profile without a ~6.7 GB fetch makes
+  `docker compose up -d --wait` time out and, under `set -euo pipefail`, aborts the install.
 
 ## Self-Review
 
-**Spec coverage.** (a)'s deliverable list is `bin`, `cli`, `prompts`, `modelroute`, `local`,
-`remote`, `config-file`, `validation`, `process`, i18n en/it, and vitest suites — Tasks 1-8
-cover each, Task 9 covers the npm publish that the (b) plan deferred here for lack of a
-package to publish. `artifact.ts` and `installer-manifest.ts` are deliberately absent per
-decision 5, and this plan says so where a reader would otherwise think they were forgotten.
+**Spec coverage.** (a)'s deliverables — `bin`, `cli`, `prompts`, `modelroute`, `local`,
+`remote`, `config-file`, `validation`, `process`, i18n en/it, vitest suites — are covered by
+Tasks 1-6; Task 7 covers the npm publish the (b) plan deferred here for lack of a package to
+publish. `artifact.ts` and `installer-manifest.ts` are deliberately absent per decision 5,
+stated in the inventory so a reader does not think they were forgotten.
 
-**Placeholders.** None. Every step carries its code or its exact command.
+**Placeholders.** None. Every task names its source file and its delta.
 
-**Type consistency.** `Runner` is defined in Task 4 and consumed by Tasks 5, 7, 8 under that
-name. `Answers` is produced by Task 6 and consumed by Task 3's `renderInstallConfig`, so
-Task 3 must define the type it accepts and Task 6 must satisfy it — the implementer of Task 6
-reads Task 3's signature, not the other way round.
+**Type consistency.** `CommandRunner` comes from Task 1's ported `process.ts` and is consumed
+under that name by Tasks 4 and 6. `InstallSettings` is defined in Task 3 and consumed by
+Tasks 5 and 6, so Task 3's field names bind — later implementers read Task 3, not the reverse.
 
-**One risk this plan does not remove.** Every test here drives a fake runner. Nothing in it
-proves a real install works on a real box — that needs root, Docker and a clean host, and it
-is the same gap the (b) plan closed only partially. The first real mini-PC install is the
-acceptance test, and it should happen before this package is published, not after.
+**One risk this plan does not remove.** Every test drives a fake runner. Nothing here proves
+a real install works on a real box; that needs root, Docker and a clean host. The first real
+mini-PC install is the acceptance test, and it belongs before publication, not after.
