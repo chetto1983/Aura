@@ -23,6 +23,10 @@ export MSYS2_ARG_CONV_EXCL='*'
 # to reach its functions: the argument loop below must not eat the SOURCING script's
 # arguments, because a stray --help would call `exit 0` and a sourced exit is the CALLER's
 # exit -- the test process would end early and green, having asserted nothing.
+# The `:-$0` default is load-bearing, not decorative: under `set -u` (above) a bare
+# `${BASH_SOURCE[0]}` aborts in the curl | bash case, where that variable is unset. That
+# same unset-defaults-to-$0 behaviour is also why curl | bash still installs at all -- the
+# comparison holds, AURA_EXECUTED=1, and the script runs.
 if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then AURA_EXECUTED=1; else AURA_EXECUTED=0; fi
 
 APPLIANCE=0
@@ -210,10 +214,22 @@ install_docker() {
   }
 }
 
+# The artifact (scripts/build_installer.sh) unpacks the payload beside this script and
+# points AURA_PAYLOAD_DIR at it, so an appliance install fetches nothing: the 25 files it
+# used to pull from a MOVING git ref, as root, travel with the installer instead. Unset --
+# a repo checkout, or curl | bash -- keeps the network branch, so both entry points still
+# work from one implementation.
 download_file() {
   src="$1"
   dst="$2"
   mkdir -p "$(dirname "$dst")"
+  if [ -n "${AURA_PAYLOAD_DIR:-}" ]; then
+    cp "$AURA_PAYLOAD_DIR/$src" "$dst" || {
+      echo "FAIL: payload is missing ${src}" >&2
+      exit 1
+    }
+    return 0
+  fi
   curl -fsSL "${RAW_BASE}/${src}" -o "$dst" || {
     echo "FAIL: could not fetch ${RAW_BASE}/${src}" >&2
     exit 1
