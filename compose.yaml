@@ -694,7 +694,15 @@ services:
       # Measured 2026-09-02: advertising only the container name made a host client
       # fail with `getaddrinfo ENOTFOUND aura-arcadedb-mcp` before authentication could
       # start; advertising only the loopback name would reject the in-container agent.
-      MCP_OAUTH_RESOURCE: ${AURA_ARCADEDB_MCP_OAUTH_RESOURCE:-http://127.0.0.1:8096/mcp/,http://aura-arcadedb-mcp:8096/mcp/}
+      #
+      # The canonical entry carries NO trailing slash, deliberately. A client compares
+      # the advertised resource against the URL it dialed and refuses a mismatch:
+      # "Protected resource http://127.0.0.1:8096/mcp/ does not match expected
+      # http://127.0.0.1:8096/mcp (or origin)" is what one character cost, measured
+      # 2026-09-02. https://mcp.linear.app/mcp advertises itself the same way, without
+      # the slash. Both spellings stay ACCEPTED so tokens already minted for the
+      # slashed form keep validating.
+      MCP_OAUTH_RESOURCE: ${AURA_ARCADEDB_MCP_OAUTH_RESOURCE:-http://127.0.0.1:8096/mcp,http://127.0.0.1:8096/mcp/,http://aura-arcadedb-mcp:8096/mcp/,http://aura-arcadedb-mcp:8096/mcp}
       MCP_OAUTH_SCOPE: mcp:tools
       # The dense leg of memory retrieval. An empty value selects bounded lexical
       # retrieval. Per-call embedder failures use the same fallback and the MCP
