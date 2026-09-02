@@ -1,0 +1,42 @@
+{
+  "name": "create-aura",
+  "version": "0.1.0",
+  "description": "Interactive local and remote installer for the Aura appliance",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chetto1983/Aura.git",
+    "directory": "packages/create-aura"
+  },
+  "type": "module",
+  "bin": {
+    "create-aura": "dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "node scripts/clean-dist.mjs && tsc",
+    "lint": "eslint src",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^8.7.0",
+    "execa": "^10.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0",
+    "vitest": "^4.1.9"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}
