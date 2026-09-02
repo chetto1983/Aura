@@ -9,6 +9,7 @@ import { collectSettings, collectTarget, inquirerPrompt } from './prompts.js';
 import type { PromptPort, TargetSelection } from './prompts.js';
 import { ProcessRunner } from './process.js';
 import type { CommandRunner } from './process.js';
+import { createSshProbeRunner, installRemote, preflightRemote } from './remote.js';
 import type { InstallMode, InstallSettings, RemoteTarget } from './types.js';
 import { ValidationError } from './validation.js';
 
@@ -49,12 +50,10 @@ export interface CliDependencies {
   collectTarget?: TargetCollector;
   collectSettings?: SettingsCollector;
   createConfig?: ConfigCreator;
-  // installLocal defaults to local.ts's real installLocal, resolving the bundled artifact
-  // itself (see the localInstaller wiring below). installRemote has no such default yet --
-  // remote.ts is not ported until the second half of Task 6 -- so a run that reaches the
-  // remote install phase without one injected fails with a clear, named error
-  // (remoteInstallNotImplemented) instead of a TypeError. Every functional test in this file
-  // injects a fake for whichever path it exercises.
+  // installLocal/installRemote each default to local.ts's/remote.ts's real
+  // installLocal/installRemote, resolving the bundled artifact themselves (see the
+  // localInstaller/remoteInstaller wiring below). Every functional test in this file injects
+  // a fake for whichever path it exercises.
   installLocal?: LocalInstaller;
   installRemote?: RemoteInstaller;
   write?: Writer;
@@ -90,6 +89,9 @@ export const TRANSLATED_ERROR_CODES: Readonly<Record<string, MessageKey>> = {
   // (below) throws the artifact one when Task 7's bundled asset is absent.
   unsupportedLocalPlatform: 'unsupportedLocalPlatform',
   installerArtifactMissing: 'installerArtifactMissing',
+  // Task 6: remote.ts's preflightRemote now throws these two.
+  invalidRemotePreflightOutput: 'invalidRemotePreflightOutput',
+  unsupportedRemoteClientPlatform: 'unsupportedRemoteClientPlatform',
 };
 
 function parseArguments(argv: readonly string[]): ParsedArguments {
@@ -178,6 +180,14 @@ export async function runCli(
     const artifact = await resolveInstallerArtifact();
     await installLocal(installRunner, artifact, installConfig, installSettings);
   });
+  const remoteInstaller: RemoteInstaller = dependencies.installRemote ?? (async (installRunner, installTarget, installConfig, installSettings) => {
+    const artifact = await resolveInstallerArtifact();
+    // Matches the reference cli.ts's own default wiring: a best-effort cleanup failure is a
+    // warning, not a fatal error, and which of the two cleanup steps produced it does not
+    // change what the operator needs to do (re-run is safe either way) -- so one generic
+    // message covers both, exactly like cleanupWarning already does for the config file.
+    await installRemote(installRunner, installTarget, artifact, installConfig, installSettings, undefined, () => writeError(t('cleanupWarning')));
+  });
 
   let config: TemporaryFile | undefined;
   let operationError: unknown;
@@ -189,18 +199,22 @@ export async function runCli(
 
     // R1: the wizard runs on the operator's laptop, but in remote mode the install lands on
     // a different machine. local mode passes the real runner -- the probed machine IS the
-    // target. Remote mode passes undefined for now: probing the laptop and presenting the
-    // answer as if it were the target's is exactly the bug this seam exists to prevent.
-    // Task 6 supplies an SSH-wrapping runner so the remote path probes the target for real;
-    // nothing in collectSettings or here needs to change when it does.
+    // target. R2 (Task 6, closing this out): remote mode used to pass undefined here --
+    // probing the laptop and presenting the answer as if it were the target's would have been
+    // worse than not probing -- but now wraps the runner over SSH (createSshProbeRunner) so
+    // collectSettings's GPU/Ollama probes reach the real target. Nothing in collectSettings or
+    // modelroute.ts needed to change: the seam was built for exactly this swap.
     let probeRunner: CommandRunner | undefined;
     if (target.mode === 'remote') {
       if (!target.remote) throw new Error('invalidRemoteTarget');
+      const preflight = await preflightRemote(runner, target.remote, target.installDir, dependencies.platform);
       write(t('remoteTargetSummary', {
         user: target.remote.username,
         host: target.remote.host,
         port: target.remote.port,
       }));
+      if (preflight.existingInstall) write(t('existingInstall'));
+      probeRunner = createSshProbeRunner(runner, target.remote);
     } else {
       // R1 (carried Task 5 debt, closed): the hardware/command/host gate that used to live
       // here as a small local-only runLocalPreflight now lives in local.ts's preflightLocal,
@@ -223,8 +237,7 @@ export async function runCli(
     write(t('phaseInstall'));
     if (target.mode === 'remote') {
       if (!target.remote) throw new Error('invalidRemoteTarget');
-      if (!dependencies.installRemote) throw new Error('remoteInstallNotImplemented');
-      await dependencies.installRemote(runner, target.remote, config, settings);
+      await remoteInstaller(runner, target.remote, config, settings);
     } else {
       await localInstaller(runner, config, settings);
     }

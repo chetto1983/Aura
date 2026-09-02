@@ -34,12 +34,40 @@ export function createPassingPreflightRunner(): FakeRunner {
   });
 }
 
+// Covers preflightRemote's full call surface: the local ssh/scp presence checks (branching
+// on the operator's own platform: where.exe on win32, sh -c "command -v scp" on linux) and
+// the final ssh call that runs the base64-encoded REMOTE_PROBE script against the target and
+// returns its parsed output. Used by cli-level tests exercising remote mode end-to-end
+// without spawning a real ssh process.
+export function createPassingRemotePreflightRunner(): FakeRunner {
+  return createFakeRunner(async (command, args) => {
+    if (command === 'ssh' && args[0] === '-V') return { stdout: '', stderr: '', exitCode: 0 };
+    if (command === 'where.exe') return { stdout: '', stderr: '', exitCode: 0 };
+    if (command === 'sh') return { stdout: '', stderr: '', exitCode: 0 };
+    if (command === 'ssh') {
+      return {
+        stdout: [
+          'architecture=x86_64',
+          'existing_install=false',
+          'cpu_cores=8',
+          'memory_kib=41943040',
+          'disk_available_kb=41943040',
+          '',
+        ].join('\n'),
+        stderr: '',
+        exitCode: 0,
+      };
+    }
+    throw new Error(`unexpected command ${command}`);
+  });
+}
+
 export const validSettings = {
   installDir: '/opt/aura',
   appliance: true,
   gvisor: false,
   llmProvider: 'ollama',
-  llmBaseUrl: 'http://localhost:11434',
+  llmBaseUrl: 'http://host.docker.internal:11434/v1',
   llmModel: 'llama3:8b',
   embedImage: 'ghcr.io/ggml-org/llama.cpp:server',
   embedNgl: '0',

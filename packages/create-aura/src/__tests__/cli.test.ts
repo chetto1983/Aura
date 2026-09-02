@@ -2,7 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { en } from '../messages/en.js';
 import { runCli } from '../cli.js';
-import { createFakeRunner, createPassingPreflightRunner, validSettings } from './cli-test-support.js';
+import type { CommandRunner } from '../process.js';
+import {
+  createFakeRunner,
+  createPassingPreflightRunner,
+  createPassingRemotePreflightRunner,
+  validSettings,
+} from './cli-test-support.js';
 
 // Local-preflight-gate scenarios (architecture/cpu/memory/disk/platform/existingInstall,
 // plus the TRANSLATED_ERROR_CODES completeness checks) live in
@@ -46,11 +52,15 @@ describe('create-aura CLI', () => {
     expect(write).toHaveBeenCalledWith('Aura is starting.');
   });
 
-  it('passes undefined as the probe runner in remote mode instead of probing the laptop', async () => {
+  // Task 6 changed this contract and the change is the point: remote mode used to pass
+  // undefined so the laptop's own hardware could never be presented as the target's. It now
+  // passes an SSH-wrapped runner, which answers the same question honestly instead of not
+  // answering it -- collectSettings's probes reach the real machine. What must stay true is
+  // that the RAW local runner never reaches collectSettings.
+  it('probes the remote target over SSH rather than the laptop it runs on', async () => {
     const events: string[] = [];
-    const runner = createFakeRunner(async () => {
-      throw new Error('the local runner must never be called to probe in remote mode');
-    });
+    const runner = createPassingRemotePreflightRunner();
+    const writeError = vi.fn();
     const collectSettingsMock = vi.fn(async () => {
       events.push('settings');
       return validSettings;
@@ -69,14 +79,27 @@ describe('create-aura CLI', () => {
       createConfig: vi.fn(async () => ({ path: '/tmp/config', cleanup: vi.fn() })),
       installRemote: vi.fn(async () => { events.push('install'); }),
       write,
+      writeError,
+      platform: 'linux',
     });
 
+    expect(writeError).not.toHaveBeenCalled();
     expect(code).toBe(0);
     expect(events).toEqual(['settings', 'install']);
-    expect(collectSettingsMock).toHaveBeenCalledWith(
-      expect.anything(), expect.anything(), '/opt/aura', undefined,
-    );
     expect(write).toHaveBeenCalledWith('Target: ubuntu@192.168.1.40:22');
+
+    // The assertion R2 exists for. That SOME runner was handed over is not enough -- one
+    // that probes the laptop would satisfy that and be precisely the bug. Drive the runner
+    // collectSettings actually received and read the argv it produced on the underlying
+    // runner: `ssh` must be the command, carrying the destination and the probe after it.
+    const probeRunner = collectSettingsMock.mock.calls[0][3] as CommandRunner;
+    expect(probeRunner).toBeDefined();
+    expect(probeRunner).not.toBe(runner);
+    await probeRunner.run('docker', ['run', '--rm', 'alpine', 'true']);
+    const probeCall = runner.calls.at(-1);
+    expect(probeCall?.command).toBe('ssh');
+    expect(probeCall?.args.join(' ')).toContain('ubuntu@192.168.1.40');
+    expect(probeCall?.args.join(' ')).toContain('docker');
   });
 
   it('returns zero without creating a config when final confirmation is declined', async () => {
@@ -170,11 +193,18 @@ describe('create-aura CLI', () => {
     expect(writeError).toHaveBeenCalledWith(en.installerArtifactMissing);
   });
 
-  it('fails with a clear code when no installRemote is wired up yet (remote.ts lands later in Task 6)', async () => {
+  // The remote twin of the installLocal case above: injecting no installRemote now exercises
+  // remote.ts's REAL default, which resolves the bundled artifact first. Task 7 has not
+  // packaged install-appliance.run yet, so the honest failure is the missing artifact -- and
+  // it must be the translated message, not a raw code, because this is the error an operator
+  // hits if a published tarball ever ships without its payload.
+  it('reports the missing bundled artifact when the real remote installer runs', async () => {
     const writeError = vi.fn();
 
     const code = await runCli(['--mode', 'remote'], {
       locale: 'en',
+      runner: createPassingRemotePreflightRunner(),
+      platform: 'linux',
       collectTarget: vi.fn(async () => ({
         mode: 'remote' as const,
         installDir: '/opt/aura',
@@ -187,7 +217,7 @@ describe('create-aura CLI', () => {
     });
 
     expect(code).toBe(1);
-    expect(writeError.mock.calls.flat().join('\n')).toContain('remoteInstallNotImplemented');
+    expect(writeError).toHaveBeenCalledWith(en.installerArtifactMissing);
   });
 
   it('returns zero on a prompt cancellation before any file exists', async () => {
