@@ -72,7 +72,11 @@ export function validateBaseUrl(raw: string): string {
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     throw new ValidationError('invalidBaseUrl');
   }
-  return value;
+  // modelroute.ts's tagsUrlFor only strips a trailing /v1; a base URL that ends in a bare
+  // trailing slash (no /v1) would reach it unchanged and produce `${base}//api/tags`, a
+  // double slash. Stripping it once here means every downstream consumer sees a URL with
+  // no trailing slash, whether or not it happens to end in /v1.
+  return value.replace(/\/$/, '');
 }
 
 // Aura is agnostic about which model an operator runs: no vendor-specific naming shape is

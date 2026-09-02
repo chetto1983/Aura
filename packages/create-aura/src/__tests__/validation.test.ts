@@ -42,6 +42,17 @@ describe('installer validation', () => {
     },
   );
 
+  // modelroute.ts's tagsUrlFor only strips a trailing /v1, so a base URL ending in a bare
+  // slash reached it unchanged and produced `${base}//api/tags` -- a double slash Ollama's
+  // router does not resolve. Normalising the trailing slash off here, once, at entry, fixes
+  // every downstream consumer instead of just the one call site that happened to notice.
+  it.each([
+    ['http://10.0.0.5:11434/', 'http://10.0.0.5:11434'],
+    ['http://10.0.0.5:11434/v1/', 'http://10.0.0.5:11434/v1'],
+  ])('strips a trailing slash from base url %s', (value, expected) => {
+    expect(validateBaseUrl(value)).toBe(expected);
+  });
+
   it.each(['', 'not a url', 'ftp://10.0.0.5', 'javascript:alert(1)'])(
     'rejects base url %s',
     (value) => {

@@ -1,3 +1,11 @@
+export type InstallMode = 'local' | 'remote';
+
+export interface RemoteTarget {
+  host: string;
+  port: number;
+  username: string;
+}
+
 export interface InstallSettings {
   installDir: string;
   appliance: boolean;
