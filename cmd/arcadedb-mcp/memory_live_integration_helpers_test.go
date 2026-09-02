@@ -126,7 +126,8 @@ func newAgentMemoryLiveMCPWithOptions(
 	httpServer := httptest.NewUnstartedServer(nil)
 	resource := "http://" + httpServer.Listener.Addr().String() + "/mcp/"
 	oauthConfig := oauthResourceConfig{
-		Issuer: authFixture.issuer, JWKSURL: authFixture.server.URL, Resource: resource, Scope: defaultOAuthScope,
+		Issuers:  []trustedIssuer{{Issuer: authFixture.issuer, JWKSURL: authFixture.server.URL}},
+		Resource: resource, Scope: defaultOAuthScope,
 	}
 	verifier := newArcadeTokenVerifier(oauthConfig, authFixture.server.Client())
 	mux := http.NewServeMux()

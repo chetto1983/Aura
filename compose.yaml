@@ -689,8 +689,22 @@ services:
       # identity the sidecar was actually handed. Rotating this invalidates every
       # tenant credential, so it is a planned operation, not a restart.
       AURA_ARCADEDB_TENANT_SECRET: ${AURA_ARCADEDB_TENANT_SECRET:?AURA_ARCADEDB_TENANT_SECRET required in .env}
+      # The HOME authorization server: the one this deployment owns. Its subjects are
+      # Aura identity UUIDs and pass through to mem_<uuid> unchanged, so this value is
+      # not freely swappable — changing it renames every tenant.
       MCP_OAUTH_ISSUER: http://127.0.0.1:9080
       MCP_OAUTH_JWKS_URL: http://aura:9080/oauth/jwks
+      # Additional authorization servers whose tokens are accepted, so an agent can
+      # mount this MCP with an account it already has instead of first becoming an Aura
+      # user. Comma-separated `issuer` or `issuer=jwks_url`; without the pair, keys are
+      # read from <issuer>/oauth/jwks, which is Aura's convention and NOT Google's or
+      # Keycloak's — those need the explicit form.
+      #
+      # Empty by default: widening who may mint an identity here is an operator's
+      # decision, not a default. A foreign subject is folded into a UUIDv5 over
+      # (issuer, subject), because RFC 7519 §4.1.2 makes `sub` unique only within one
+      # issuer's namespace — see cmd/arcadedb-mcp/auth_issuers.go.
+      MCP_OAUTH_TRUSTED_ISSUERS: ${AURA_ARCADEDB_MCP_TRUSTED_ISSUERS:-}
       # Comma-separated: the FIRST is canonical and is what the protected-resource
       # metadata advertises, and MCP clients treat that value as the server's ADDRESS,
       # so it must be the URL a host client can actually reach. The second is merely

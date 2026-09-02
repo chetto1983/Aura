@@ -26,11 +26,19 @@ const (
 	// is the only stable name an external MCP client has once the session id is
 	// gone, and hostDerivedActor writes it as fact provenance.
 	oauthClientIDClaim = "client_id"
+	// oauthIssuerClaim and oauthSubjectClaim carry the pair the identity was derived
+	// from, so an audit can answer "which account is this" for a foreign subject whose
+	// derived UUID says nothing on its own.
+	oauthIssuerClaim  = "iss"
+	oauthSubjectClaim = "sub"
 )
 
 type oauthResourceConfig struct {
-	Issuer  string
-	JWKSURL string
+	// Issuers is every authorization server whose tokens are accepted, HOME FIRST.
+	// A list rather than a scalar because an MCP server is a resource server and the
+	// spec lets its authorization server be a separate entity -- see auth_issuers.go,
+	// which also owns the (issuer, subject) -> identity rule.
+	Issuers []trustedIssuer
 	// Resource is the CANONICAL resource identifier: the one advertised in the
 	// protected-resource metadata, which MCP clients also treat as the server's
 	// address. It must therefore be the URL the CLIENT can reach.
@@ -54,11 +62,13 @@ type oauthResourceConfig struct {
 }
 
 func oauthResourceConfigFromEnv() oauthResourceConfig {
-	issuer := envOrDefault("MCP_OAUTH_ISSUER", "http://localhost:9080")
+	home := newTrustedIssuer(
+		envOrDefault("MCP_OAUTH_ISSUER", "http://localhost:9080"),
+		os.Getenv("MCP_OAUTH_JWKS_URL"),
+	)
 	audiences := splitAudiences(envOrDefault("MCP_OAUTH_RESOURCE", "http://localhost:8096/mcp/"))
 	return oauthResourceConfig{
-		Issuer:    strings.TrimRight(issuer, "/"),
-		JWKSURL:   envOrDefault("MCP_OAUTH_JWKS_URL", strings.TrimRight(issuer, "/")+"/oauth/jwks"),
+		Issuers:   append([]trustedIssuer{home}, parseTrustedIssuers(os.Getenv("MCP_OAUTH_TRUSTED_ISSUERS"))...),
 		Resource:  audiences[0],
 		Audiences: audiences,
 		Scope:     envOrDefault("MCP_OAUTH_SCOPE", defaultOAuthScope),
@@ -94,8 +104,15 @@ type arcadeTokenVerifier struct {
 	client *http.Client
 	now    func() time.Time
 
-	mu        sync.Mutex
-	keys      jwk.Set
+	// One key set per trusted issuer. A single cache would serve whichever issuer
+	// asked last, so a token from the home issuer could be validated against a
+	// foreign issuer's keys -- and vice versa.
+	mu   sync.Mutex
+	keys map[string]cachedKeySet
+}
+
+type cachedKeySet struct {
+	set       jwk.Set
 	fetchedAt time.Time
 }
 
@@ -108,21 +125,25 @@ func newArcadeTokenVerifier(config oauthResourceConfig, client *http.Client) *ar
 			},
 		}
 	}
-	return &arcadeTokenVerifier{config: config, client: client, now: time.Now}
+	return &arcadeTokenVerifier{config: config, client: client, now: time.Now, keys: map[string]cachedKeySet{}}
 }
 
 func (v *arcadeTokenVerifier) Verify(ctx context.Context, raw string, _ *http.Request) (*auth.TokenInfo, error) {
-	keys, err := v.keySet(ctx, false)
+	issuer, err := v.trustedIssuerOf(raw)
 	if err != nil {
 		return nil, err
 	}
-	token, err := v.parse(raw, keys)
+	keys, err := v.keySet(ctx, issuer, false)
 	if err != nil {
-		keys, refreshErr := v.keySet(ctx, true)
+		return nil, err
+	}
+	token, err := v.parse(raw, issuer, keys)
+	if err != nil {
+		keys, refreshErr := v.keySet(ctx, issuer, true)
 		if refreshErr != nil {
 			return nil, refreshErr
 		}
-		token, err = v.parse(raw, keys)
+		token, err = v.parse(raw, issuer, keys)
 		if err != nil {
 			return nil, fmt.Errorf("%w: bearer token validation failed", auth.ErrInvalidToken)
 		}
@@ -137,22 +158,51 @@ func (v *arcadeTokenVerifier) Verify(ctx context.Context, raw string, _ *http.Re
 		return nil, fmt.Errorf("%w: bearer token has no expiration", auth.ErrInvalidToken)
 	}
 	info := &auth.TokenInfo{
-		Scopes: strings.Fields(scope), Expiration: expiration, UserID: strings.TrimSpace(subject),
+		Scopes:     strings.Fields(scope),
+		Expiration: expiration,
+		// The IDENTITY, not the raw subject. Which memory a caller reaches is a
+		// property of (issuer, subject) together, and resolving it here — where the
+		// trusted-issuer set lives — is what keeps every handler downstream reading
+		// one unambiguous field. The raw subject stays in Extra for provenance.
+		UserID: v.config.tenantIdentity(issuer.Issuer, subject),
+		Extra: map[string]any{
+			oauthIssuerClaim:  issuer.Issuer,
+			oauthSubjectClaim: strings.TrimSpace(subject),
+		},
 	}
 	if clientID, ok := stringClaim(token, oauthClientIDClaim); ok && strings.TrimSpace(clientID) != "" {
-		info.Extra = map[string]any{oauthClientIDClaim: strings.TrimSpace(clientID)}
+		info.Extra[oauthClientIDClaim] = strings.TrimSpace(clientID)
 	}
 	return info, nil
 }
 
-func (v *arcadeTokenVerifier) parse(raw string, keys jwk.Set) (jwt.Token, error) {
+// trustedIssuerOf reads the token's `iss` WITHOUT verifying it, purely to decide which
+// key set to verify it against — there is no way to pick a JWKS before knowing who
+// claims to have signed the token. Nothing is trusted on the strength of this read:
+// parse() below pins jwt.WithIssuer to the matched issuer, so a token naming one
+// issuer and signed by another fails there.
+func (v *arcadeTokenVerifier) trustedIssuerOf(raw string) (trustedIssuer, error) {
+	token, err := jwt.Parse([]byte(raw), jwt.WithVerify(false), jwt.WithValidate(false))
+	if err != nil {
+		return trustedIssuer{}, fmt.Errorf("%w: bearer token is not a JWT", auth.ErrInvalidToken)
+	}
+	claimed, _ := token.Issuer()
+	issuer, ok := v.config.issuerNamed(claimed)
+	if !ok {
+		return trustedIssuer{}, fmt.Errorf("%w: bearer token issuer %q is not one of %v",
+			auth.ErrInvalidToken, claimed, v.config.issuerNames())
+	}
+	return issuer, nil
+}
+
+func (v *arcadeTokenVerifier) parse(raw string, issuer trustedIssuer, keys jwk.Set) (jwt.Token, error) {
 	// Audience is checked separately: repeated jwt.WithAudience options are ANDed by
 	// the library, so a token would have to carry EVERY accepted name at once --
 	// the opposite of what a server with several names needs.
 	token, err := jwt.Parse([]byte(raw),
 		jwt.WithKeySet(keys, jws.WithInferAlgorithmFromKey(true)),
 		jwt.WithValidate(true),
-		jwt.WithIssuer(v.config.Issuer),
+		jwt.WithIssuer(issuer.Issuer),
 		jwt.WithRequiredClaim("scope"),
 		jwt.WithRequiredClaim("sub"),
 	)
@@ -194,13 +244,13 @@ func audienceAccepted(tokenAudience, accepted []string) bool {
 	return false
 }
 
-func (v *arcadeTokenVerifier) keySet(ctx context.Context, force bool) (jwk.Set, error) {
+func (v *arcadeTokenVerifier) keySet(ctx context.Context, issuer trustedIssuer, force bool) (jwk.Set, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	if !force && v.keys != nil && v.now().Sub(v.fetchedAt) < arcadeJWKSCacheTTL {
-		return v.keys, nil
+	if cached, ok := v.keys[issuer.Issuer]; ok && !force && v.now().Sub(cached.fetchedAt) < arcadeJWKSCacheTTL {
+		return cached.set, nil
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.config.JWKSURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, issuer.JWKSURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("MCP OAuth JWKS request: %w", err)
 	}
@@ -216,7 +266,10 @@ func (v *arcadeTokenVerifier) keySet(ctx context.Context, force bool) (jwk.Set, 
 	if err != nil {
 		return nil, fmt.Errorf("MCP OAuth JWKS decode: %w", err)
 	}
-	v.keys, v.fetchedAt = keys, v.now()
+	if v.keys == nil {
+		v.keys = map[string]cachedKeySet{}
+	}
+	v.keys[issuer.Issuer] = cachedKeySet{set: keys, fetchedAt: v.now()}
 	return keys, nil
 }
 
@@ -253,7 +306,7 @@ func protectedArcadeMCP(config oauthResourceConfig, verifier auth.TokenVerifier,
 func arcadeProtectedResourceMetadata(config oauthResourceConfig) http.Handler {
 	metadata := &oauthex.ProtectedResourceMetadata{
 		Resource:             config.Resource,
-		AuthorizationServers: []string{config.Issuer},
+		AuthorizationServers: config.issuerNames(),
 		ScopesSupported:      []string{config.Scope},
 	}
 	return auth.ProtectedResourceMetadataHandler(metadata)

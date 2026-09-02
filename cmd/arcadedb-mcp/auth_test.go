@@ -28,6 +28,14 @@ type arcadeAuthFixture struct {
 
 func newArcadeAuthFixture(t *testing.T) *arcadeAuthFixture {
 	t.Helper()
+	return newArcadeAuthFixtureFor(t, "https://issuer.example")
+}
+
+// newArcadeAuthFixtureFor builds an authorization server with its OWN signing key, so a
+// test can hold two issuers at once and check that neither one's keys validate the
+// other's tokens.
+func newArcadeAuthFixtureFor(t *testing.T, issuer string) *arcadeAuthFixture {
+	t.Helper()
 	_, privateRaw, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -50,7 +58,7 @@ func newArcadeAuthFixture(t *testing.T) *arcadeAuthFixture {
 	if err := set.AddKey(public); err != nil {
 		t.Fatal(err)
 	}
-	fixture := &arcadeAuthFixture{issuer: "https://issuer.example", private: private}
+	fixture := &arcadeAuthFixture{issuer: issuer, private: private}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fixture.calls.Add(1)
 		w.Header().Set("Content-Type", "application/json")
@@ -63,9 +71,16 @@ func newArcadeAuthFixture(t *testing.T) *arcadeAuthFixture {
 
 func (f *arcadeAuthFixture) token(t *testing.T, audience, identity, scope string, expires time.Time) string {
 	t.Helper()
+	return f.tokenIssuedAs(t, f.issuer, audience, identity, scope, expires)
+}
+
+// tokenIssuedAs signs with THIS fixture's key while claiming an arbitrary issuer, which
+// is how a test forges the one thing the unverified issuer peek must not buy.
+func (f *arcadeAuthFixture) tokenIssuedAs(t *testing.T, issuer, audience, identity, scope string, expires time.Time) string {
+	t.Helper()
 	token := jwt.New()
 	claims := map[string]any{
-		"iss": f.issuer, "aud": audience, "sub": identity,
+		"iss": issuer, "aud": audience, "sub": identity,
 		"scope": scope, "exp": expires,
 	}
 	for name, value := range claims {
@@ -84,7 +99,10 @@ func TestArcadeOAuthMiddlewareRequiresAudienceBoundBearer(t *testing.T) {
 	fixture := newArcadeAuthFixture(t)
 	const resource = "http://memory.example/mcp/"
 	const identity = "00000000-0000-0000-0000-000000000001"
-	config := oauthResourceConfig{Issuer: fixture.issuer, JWKSURL: fixture.server.URL, Resource: resource, Scope: defaultOAuthScope}
+	config := oauthResourceConfig{
+		Issuers:  []trustedIssuer{{Issuer: fixture.issuer, JWKSURL: fixture.server.URL}},
+		Resource: resource, Scope: defaultOAuthScope,
+	}
 	verifier := newArcadeTokenVerifier(config, fixture.server.Client())
 	valid := fixture.token(t, resource, identity, defaultOAuthScope, time.Now().Add(time.Hour))
 	wrongAudience := fixture.token(t, "http://foreign.example/mcp/", identity, defaultOAuthScope, time.Now().Add(time.Hour))
@@ -129,7 +147,8 @@ func TestArcadeOAuthMiddlewareRequiresAudienceBoundBearer(t *testing.T) {
 
 func TestArcadeProtectedResourceMetadataUsesConfiguredOAuthContract(t *testing.T) {
 	config := oauthResourceConfig{
-		Issuer: "https://issuer.example", Resource: "https://memory.example/mcp/", Scope: "memory:tools",
+		Issuers:  []trustedIssuer{{Issuer: "https://issuer.example"}},
+		Resource: "https://memory.example/mcp/", Scope: "memory:tools",
 	}
 	req := httptest.NewRequest(http.MethodGet, "http://memory.example/.well-known/oauth-protected-resource/mcp/", nil)
 	rec := httptest.NewRecorder()
@@ -144,7 +163,7 @@ func TestArcadeProtectedResourceMetadataUsesConfiguredOAuthContract(t *testing.T
 	if metadata.Resource != config.Resource {
 		t.Fatalf("resource = %q", metadata.Resource)
 	}
-	if len(metadata.AuthorizationServers) != 1 || metadata.AuthorizationServers[0] != config.Issuer {
+	if len(metadata.AuthorizationServers) != 1 || metadata.AuthorizationServers[0] != config.homeIssuer().Issuer {
 		t.Fatalf("authorization servers = %#v", metadata.AuthorizationServers)
 	}
 }
@@ -152,7 +171,10 @@ func TestArcadeProtectedResourceMetadataUsesConfiguredOAuthContract(t *testing.T
 func TestArcadeVerifierCachesJWKS(t *testing.T) {
 	fixture := newArcadeAuthFixture(t)
 	const resource = "http://memory.example/mcp/"
-	config := oauthResourceConfig{Issuer: fixture.issuer, JWKSURL: fixture.server.URL, Resource: resource, Scope: defaultOAuthScope}
+	config := oauthResourceConfig{
+		Issuers:  []trustedIssuer{{Issuer: fixture.issuer, JWKSURL: fixture.server.URL}},
+		Resource: resource, Scope: defaultOAuthScope,
+	}
 	verifier := newArcadeTokenVerifier(config, fixture.server.Client())
 	raw := fixture.token(t, resource, "tenant", defaultOAuthScope, time.Now().Add(time.Hour))
 	req := httptest.NewRequest(http.MethodPost, resource, nil)
@@ -173,7 +195,8 @@ func TestOAuthResourceConfigUsesGenericEnvironment(t *testing.T) {
 	t.Setenv("MCP_OAUTH_SCOPE", "memory:tools")
 
 	got := oauthResourceConfigFromEnv()
-	if got.Issuer != "https://issuer.example" || got.JWKSURL != "https://issuer.example/keys" ||
+	if got.homeIssuer().Issuer != "https://issuer.example" ||
+		got.homeIssuer().JWKSURL != "https://issuer.example/keys" ||
 		got.Resource != "https://memory.example/mcp/" || got.Scope != "memory:tools" {
 		t.Fatalf("OAuth config = %#v", got)
 	}
