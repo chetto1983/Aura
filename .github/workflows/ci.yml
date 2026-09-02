@@ -754,7 +754,17 @@ jobs:
       AURA_CI_LLAMA_CACHE_DIR: /tmp/aura-ci-cache/llama.cpp
       AURA_EMBED_IMAGE: ghcr.io/ggml-org/llama.cpp:server
       AURA_EMBED_NGL: "0"
-      AURA_ARCADEDB_MCP_IMAGE: ghcr.io/chetto1983/aura-arcadedb-mcp:3c1723cc5d3c4a23c9585c96b9c35d3d79416050@sha256:621438a7bb77983899c22f43c52714d08c25af1efcd9ad14fc3479e8893225a4
+      # AURA_ARCADEDB_MCP_IMAGE is deliberately NOT pinned here, unlike in web-e2e. This
+      # job reaches the sidecar through `docker compose up`, and compose.yaml's
+      # arcadedb-mcp service carries a `build:` stanza -- so compose builds it and then
+      # tries to tag the result with whatever `image:` resolves to. A tag+digest reference
+      # cannot be a build tag ("refusing to create a tag with a digest reference") and the
+      # job died there. web-e2e keeps its pin because it hands the reference to a raw
+      # `docker run`, which never builds and never tags.
+      # Unpinned is also the right thing on the merits: this gate exists to catch memory
+      # regressions, and a published image is by definition from an EARLIER commit -- the
+      # change under test would not be in it. Building from source measures the sidecar
+      # this push actually produces.
       # The latency gate includes the real CLI operator-identity lookup, so this
       # job also starts a disposable migrated Postgres instead of timing a shortcut.
       POSTGRES_PASSWORD: ci-test-password
@@ -811,7 +821,7 @@ jobs:
             exit 1
           fi
 
-      - name: Bring up EmbeddingGemma and the published ArcadeDB MCP
+      - name: Bring up EmbeddingGemma and the ArcadeDB MCP built from this commit
         run: |
           docker compose create aura-llama-embed
           cid="$(docker compose ps -aq aura-llama-embed | head -1)"
