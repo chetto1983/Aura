@@ -19,6 +19,7 @@ from agent_memory_eval_running_aura_test import (
     RunningAuraArmingTest,
     RunningAuraConversationEvaluatorTest,
     ScenarioScoringTest,
+    ToolEvidenceScopingTest,
 )
 
 

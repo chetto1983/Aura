@@ -326,3 +326,52 @@ class ExplicitReasoningRecallTest(unittest.TestCase):
                 self.args(), self._preview(), self.TRACE, ""),
             False,
         )
+
+
+class ToolEvidenceScopingTest(unittest.TestCase):
+    """The bug that made two of three scenarios unpassable.
+
+    aura.tool_invocations.seq counts tool calls WITHIN a run; aura.conversation_turns.seq
+    counts turns across the conversation. Filtering tools with `seq > after_seq` compared
+    the two, so every tool row vanished for any turn after the first (1 > 6 is false) and
+    the evidence was scored against an empty list. Only the first scenario survived,
+    because its after_seq is 0.
+    """
+
+    TURNS = [
+        {"seq": 4, "role": "assistant", "created_at": "2026-09-02T11:31:40.000000+00:00"},
+        {"seq": 6, "role": "assistant", "created_at": "2026-09-02T11:31:45.000000+00:00"},
+        {"seq": 10, "role": "assistant", "created_at": "2026-09-02T11:31:55.000000+00:00"},
+    ]
+    # Real shape: the later call still carries seq=1, because it is the first tool of ITS run.
+    EARLY = {"seq": 1, "tool_name": "memory__memory_upsert_fact", "ts": "2026-09-02T11:31:38.000000+00:00"}
+    LATE = {"seq": 1, "tool_name": "memory__memory_recall", "ts": "2026-09-02T11:31:49.000000+00:00"}
+
+    def test_later_tool_survives_despite_low_seq(self):
+        scoped = running_aura._tools_after([self.EARLY, self.LATE],
+                                           running_aura._turn_boundary(self.TURNS, 6))
+        self.assertEqual([r["tool_name"] for r in scoped], ["memory__memory_recall"])
+        # The old rule kept nothing at all, which is the defect.
+        self.assertEqual([r for r in (self.EARLY, self.LATE) if int(r["seq"]) > 6], [])
+
+    def test_zero_after_seq_keeps_every_row(self):
+        scoped = running_aura._tools_after([self.EARLY, self.LATE],
+                                           running_aura._turn_boundary(self.TURNS, 0))
+        self.assertEqual(len(scoped), 2)
+
+    def test_turn_without_tools_scopes_to_nothing(self):
+        # The exclusion proof depends on this: it must NOT inherit the previous turn's calls.
+        scoped = running_aura._tools_after([self.EARLY, self.LATE],
+                                           running_aura._turn_boundary(self.TURNS, 10))
+        self.assertEqual(scoped, [])
+
+    def test_missing_boundary_turn_raises_rather_than_degrading(self):
+        with self.assertRaises(RuntimeError):
+            running_aura._turn_boundary(self.TURNS, 99)
+
+    def test_unparseable_timestamps_raise(self):
+        with self.assertRaises(RuntimeError):
+            running_aura._tools_after([{"seq": 1, "tool_name": "x", "ts": "not-a-time"}],
+                                      running_aura._turn_boundary(self.TURNS, 6))
+        with self.assertRaises(RuntimeError):
+            running_aura._turn_boundary([{"seq": 6, "created_at": "nope"}], 6)

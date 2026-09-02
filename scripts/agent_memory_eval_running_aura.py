@@ -371,11 +371,60 @@ def _turn_evidence(repo: pathlib.Path, identity: str, conversation: str, run: di
     if not assistants:
         raise RuntimeError(f"conversation {conversation} has no terminal assistant turn after {after_seq}")
     assistant = assistants[-1]
-    tools = [row for row in _pg_rows(repo, identity, conversation, "tools") if int(row.get("seq", 0)) > after_seq]
+    tools = _tools_after(_pg_rows(repo, identity, conversation, "tools"), _turn_boundary(turns, after_seq))
     return {
         **run, "conversation_id": conversation, "seq": int(assistant["seq"]),
         "answer": str(assistant["content"]), "turns": turns, "tools": tools,
     }
+
+
+
+def _turn_boundary(turns: list[dict[str, Any]], after_seq: int) -> dt.datetime | None:
+    """The instant the PREVIOUS turn closed, used to scope this turn's tool calls.
+
+    Tool rows cannot be scoped by `seq`: aura.tool_invocations.seq counts the tool
+    calls WITHIN one run (1, 2, 3 ...) while aura.conversation_turns.seq counts turns
+    across the whole conversation. Comparing them silently dropped every tool row for
+    any turn after the first -- `1 > 6` is false -- so the second and third scenarios
+    scored their evidence against an EMPTY tool list and could never pass, while the
+    first scenario passed only because its after_seq is 0. Measured 2026-09-02: the
+    reasoning conversation's memory_recall row carries seq=1 against after_seq=6, and
+    the capture conversation's carries seq=1 against after_seq=7.
+
+    A turn that ran no tools legitimately yields nothing after its boundary, which is
+    what the exclusion proof needs; scoping by "the most recent run" instead would
+    hand it the PREVIOUS turn's tools and fail it wrongly.
+    """
+    if after_seq <= 0:
+        return None
+    for row in turns:
+        if int(row.get("seq", 0)) == after_seq:
+            instant = _instant(row.get("created_at"))
+            if instant is None:
+                raise RuntimeError(f"turn {after_seq} has an unparseable created_at {row.get('created_at')!r}")
+            return instant
+    raise RuntimeError(f"conversation has no turn with seq {after_seq} to scope tool evidence from")
+
+
+def _tools_after(tools: list[dict[str, Any]], boundary: dt.datetime | None) -> list[dict[str, Any]]:
+    """Tool rows recorded after the boundary; every row when there is none."""
+    if boundary is None:
+        return list(tools)
+    scoped = []
+    for row in tools:
+        instant = _instant(row.get("ts"))
+        if instant is None:
+            raise RuntimeError(f"tool row {row.get('tool_name')!r} has an unparseable ts {row.get('ts')!r}")
+        if instant > boundary:
+            scoped.append(row)
+    return scoped
+
+
+def _instant(raw: Any) -> dt.datetime | None:
+    try:
+        return dt.datetime.fromisoformat(str(raw))
+    except (TypeError, ValueError):
+        return None
 
 
 def _pg_rows(repo: pathlib.Path, identity: str, conversation: str, kind: str) -> list[dict[str, Any]]:
