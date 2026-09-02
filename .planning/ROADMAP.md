@@ -107,6 +107,7 @@ harness is built; `internal/eval/` stays deleted.
 - [x] **Phase 45.1: Native MCP client** - The official Go SDK replaces ~1,970 LOC of bespoke transport and reconnect; Aura's own policy layers survive on top (inserted 2026-08-16)
 - [x] **Phase 46: MCP trust and facade** - Ratify the trust posture that already shipped; curation moves into the forks, not into Aura — **closed 2026-08-25: 7 plans executed, 46-08 a recorded no-go (amendment #131), 46-09 closed by the operator**
 - [ ] **Phase 49: Memory tiers** - Short-term searchable retrieval and a PRD-amendment-gated reasoning tier — **scoped down: `memory_recall` and `internal/reasoningtrace` already exist**
+- [ ] **Phase 49.1: Memory graph connectivity** - Facts share entities, so multi-hop recall has something to traverse; measured 2026-09-02, 199 of 201 entities have degree 1 while 73 of 102 facts already name another fact's entity in their text (inserted 2026-09-02)
 - [ ] **Phase 50: Context ladder legibility** - Real token accounting, eviction, and per-category visibility — **re-hosted: the consumer is now the compaction trigger**
 - [x] **Phase 51: Durable delegation** - The approved swarm substrate gets built; workers get a real brief, real limits, and a turn that no longer blocks — design gate closed 2026-08-27 (PRD #154); 14 plans in 9 waves (completed 2026-08-30)
 - [ ] **Phase 52: Mid-turn steering** - The operator can type into a running turn and redirect it at the next round boundary — **8/8 plans executed, Gate 3 live E2E scored 9.0/10 (2026-08-26): SC#1-#4 and RESUME-01 fully live-proven (backend + browser), SC#5's Telegram leg not live-proven this session (structural: no scriptable Telegram session) — see `52-VALIDATION.md`. Does not close per CLAUDE.md's >9.8 bar; needs one human Telegram check.**
@@ -539,6 +540,56 @@ Plans:
 **Wave 12** *(blocked on Wave 11 completion)*
 
 - [ ] 49-11-PLAN.md — Publish/prove the batch API and run real Aura conversation, final ancestry, observability, coverage, goleak, mutation, and score gates.
+
+### Phase 49.1: Memory graph connectivity
+
+**Inserted 2026-09-02** by operator decision, during the Phase 49 retrieval work. The number is
+a decimal insertion in the sense ROADMAP's "Phase Numbering" already allows: this is not a
+widening of Phase 49's own scope (which is short-term retrieval plus the reasoning tier), it is
+the adjacent problem that surfaced while proving Phase 49's retrieval on live data.
+
+**Goal**: Facts in the memory graph share entities, so that a traversal of more than one hop
+returns something. Today the graph is a set of near-disjoint edges and the multi-hop query — which
+the engine already supports and which costs O(1) per hop — has nothing to walk.
+
+**Depends on**: Phase 49's retrieval fixes (commit `f4830e0b7`), which made the dense leg,
+the ordering and the abstention gate work; connectivity is the next constraint, not a
+competing one.
+
+**Measured evidence** (2026-09-02, live memory of 102 facts, one identity):
+
+- 201 entities, of which **199 have degree 1**; one has degree 2 (`Codex`) and one degree 3 (`Aura`).
+  Every fact carries a subject and object no other fact names, so the graph is a collection of
+  isolated edges rather than a network.
+- All four traversal forms work on this build — SQL `TRAVERSE ... WHILE $depth <= 2`,
+  `both('FACT').both('FACT')`, SQL `MATCH`, and Cypher `[:FACT*1..2]` — and
+  `concepts/multi-model` states traversal is O(1) per hop through index-free adjacency. The
+  QUERY is not the missing piece.
+- The connectivity exists LATENT in the prose: **73 of 102 facts** already name, inside their own
+  statement, an entity that is the subject or object of a different fact. 17 entities would act
+  as bridges; the potential maximum degree is 57.
+- `memory_facts_about` (`internal/arcadedb/memory.go`) is strictly one hop:
+  `WHERE outV().name = :entity OR inV().name = :entity`. No depth parameter exists on the tool
+  surface.
+
+**Two hazards the measure also exposes**, both of which the spec must address rather than inherit:
+
+1. `Aura` at potential degree 57 is a super-hub that discriminates nothing — a bridge every fact
+   shares is not a bridge. Inverse-frequency weighting or an explicit hub exclusion is required.
+2. The 73/102 figure comes from substring matching over subject names, some of which are generic
+   phrases (`il container`, `un gate`) rather than named things. The count is an upper bound; the
+   genuinely discriminating bridges are the proper nouns (`ArcadeDB`, `Claude Code`, `Neo4j`,
+   `Codex`, `ralph.sh`, `golangci-lint`).
+
+**Success Criteria** (what must be TRUE):
+
+  1. A recall question whose answer requires combining two facts that share no subject/object —
+     but where one names the other's entity in its text — returns both, and a single-hop query on
+     the same corpus returns only one.
+  2. The measured degree distribution of the live graph changes: the count of degree-1 entities
+     falls, and the change is shown as a before/after number, not asserted.
+  3. A super-hub entity does not dominate the traversal: a query that would reach a hub-linked
+     fact only through the hub is not answered by the hub's neighbourhood at large.
 
 ### Phase 50: Context ladder legibility
 
