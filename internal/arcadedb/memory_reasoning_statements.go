@@ -114,3 +114,20 @@ const getReasoningToolsStatement = "SELECT outV().step_index AS step_index," +
 	" inV().source_ref AS source_ref FROM INVOKED" +
 	" WHERE inV().identity_id = :identity_id AND inV().trace_id = :trace_id" +
 	" ORDER BY step_index, call_id LIMIT 2048"
+
+// The set forms of the two statements above. A search returns several traces and
+// each needs its body, so asking per trace would issue 2N round-trips to say what
+// two say; the projections are otherwise identical to their single-trace
+// siblings, which stay because a get by id binds one parameter and reads better.
+const listReasoningStepsStatement = "SELECT identity_id, trace_id, step_index, provider_summary, created_at" +
+	" FROM " + reasoningStepType + " WHERE identity_id = :identity_id AND trace_id IN :trace_ids" +
+	" ORDER BY trace_id, step_index LIMIT 1024"
+
+const listReasoningToolsStatement = "SELECT outV().step_index AS step_index," +
+	" inV().identity_id AS identity_id, inV().trace_id AS trace_id, inV().call_id AS call_id," +
+	" inV().tool_name AS tool_name, inV().status AS status, inV().duration_ms AS duration_ms," +
+	" inV().argument_digest AS argument_digest, inV().observation AS observation," +
+	" inV().artifact_refs AS artifact_refs, inV().entity_refs AS entity_refs," +
+	" inV().source_ref AS source_ref FROM INVOKED" +
+	" WHERE inV().identity_id = :identity_id AND inV().trace_id IN :trace_ids" +
+	" ORDER BY trace_id, step_index, call_id LIMIT 4096"

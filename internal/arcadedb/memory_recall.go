@@ -87,6 +87,7 @@ type RecallRetrieval struct {
 	FactCount              int
 	ConversationCount      int
 	ReasoningCount         int
+	EntityCount            int
 	BackendLatency         time.Duration
 }
 
@@ -102,7 +103,11 @@ type RecallCursor struct {
 
 // RecallResult is the storage-layer result consumed by the MCP adapter.
 type RecallResult struct {
-	Evidence   []RecallEvidence
+	Evidence []RecallEvidence
+	// Entities are the graph nodes the question reached through its evidence,
+	// each with its own facts (memory_recall_expand.go). Additive: never a
+	// substitute for Evidence, never counted against its budget.
+	Entities   []RecallEntityNode
 	Abstained  bool
 	Reason     string
 	NextCursor string
@@ -247,7 +252,13 @@ func (c *Client) recallSemantic(ctx context.Context, request RecallRequest) (Rec
 	if err != nil {
 		return RecallResult{}, fmt.Errorf("arcadedb: unified memory recall: %w", err)
 	}
-	return c.hydrateRecallRanking(ctx, request, ranked, limit, path, reason)
+	result, err := c.hydrateRecallRanking(ctx, request, ranked, limit, path, reason)
+	if err != nil {
+		return RecallResult{}, err
+	}
+	result.Entities = c.expandRecallEntities(ctx, request, result.Evidence)
+	result.Retrieval.EntityCount = len(result.Entities)
+	return result, nil
 }
 
 func (c *Client) recallEntity(ctx context.Context, request RecallRequest) (RecallResult, error) {

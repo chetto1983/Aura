@@ -135,18 +135,30 @@ type MemoryRecallRetrievalMetadata struct {
 	FactCount         int    `json:"fact_count"`
 	ConversationCount int    `json:"conversation_count"`
 	ReasoningCount    int    `json:"reasoning_count"`
+	EntityCount       int    `json:"entity_count"`
 	Abstained         bool   `json:"abstained"`
 	Reason            string `json:"reason,omitempty"`
 }
 
 // MemoryRecallOutput is additive: Facts preserves the shipped fact-only projection.
 type MemoryRecallOutput struct {
-	Evidence   []MemoryRecallEvidence        `json:"evidence"`
-	Facts      []MemorySearchHit             `json:"facts"`
+	Evidence []MemoryRecallEvidence `json:"evidence"`
+	Facts    []MemorySearchHit      `json:"facts"`
+	// Entities are the graph nodes this question reached, each with its own
+	// facts. They arrive BESIDE the ranked evidence, never instead of it.
+	Entities   []MemoryRecallEntity          `json:"entities,omitempty"`
 	Abstained  bool                          `json:"abstained"`
 	Reason     string                        `json:"reason,omitempty"`
 	NextCursor string                        `json:"next_cursor,omitempty"`
 	Retrieval  MemoryRecallRetrievalMetadata `json:"retrieval"`
+}
+
+// MemoryRecallEntity is one graph node the question reached by following its own
+// evidence, rather than by being named in the request.
+type MemoryRecallEntity struct {
+	Name  string            `json:"name"`
+	Kind  string            `json:"kind,omitempty"`
+	Facts []MemorySearchHit `json:"facts"`
 }
 
 func addMemoryRecallTool(server *mcp.Server, tenants *tenants) {
@@ -166,9 +178,10 @@ func addMemoryRecallTool(server *mcp.Server, tenants *tenants) {
 			"use recent when it asks what happened before rather than about a topic -- what you two have " +
 			"discussed, what you remember of the user, anything that means look back; the default semantic " +
 			"mode matches wording and will miss those, answering that it recalls nothing. Use semantic with " +
-			"query for a specific topic, or entity for a name you already know. Use open and scroll with " +
-			"conversation_id to page through one conversation's turns. Reasoning explicitly searches or opens " +
-			"provider-visible traces and is never included by other modes. Weak evidence abstains explicitly.",
+			"query for a topic, or entity for a name you know; a query also returns the `entities` it " +
+			"reached with their facts, so you get the connected view without knowing a name. Use open and " +
+			"scroll with conversation_id to page one conversation. Reasoning opens traces with their steps " +
+			"and tool calls; no other mode includes them. Weak evidence abstains explicitly.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, memoryRecallHandler(tenants))
 }
@@ -485,8 +498,14 @@ func memoryRecallOutput(result arcadedb.RecallResult) MemoryRecallOutput {
 			EffectivePath: result.Retrieval.EffectivePath, Path: result.Retrieval.Path,
 			FactCount: result.Retrieval.FactCount, ConversationCount: result.Retrieval.ConversationCount,
 			ReasoningCount: result.Retrieval.ReasoningCount,
+			EntityCount:    result.Retrieval.EntityCount,
 			Abstained:      result.Abstained, Reason: result.Reason,
 		},
+	}
+	for _, node := range result.Entities {
+		output.Entities = append(output.Entities, MemoryRecallEntity{
+			Name: node.Name, Kind: node.Kind, Facts: toHits(node.Facts),
+		})
 	}
 	for _, evidence := range result.Evidence {
 		item := MemoryRecallEvidence{

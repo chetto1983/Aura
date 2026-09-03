@@ -417,3 +417,43 @@ func TestReasoningTerminalExpiry(t *testing.T) {
 		}
 	})
 }
+
+// A trace found by SEARCH has to arrive as complete as one opened by id. It did
+// not: measured 2026-09-03 through the memory MCP, all five searched traces came
+// back with steps:[], so the audit could say Aura had reasoned about something
+// and never what it did about it.
+func TestSearchReasoningTracesCarriesStepsAndToolCalls(t *testing.T) {
+	traceRow := `{"result":[{"@rid":"#40:0","identity_id":"identity-a","trace_id":"trace-1",` +
+		`"source_ref":"postgres://aura/conversations/c1/turns/7","conversation_id":"c1","turn_seq":7,` +
+		`"provider_summary":"Store what the operator said.","status":"succeeded",` +
+		`"created_at":"2026-09-03T10:00:00Z"}]}`
+	stepRow := `{"result":[{"identity_id":"identity-a","trace_id":"trace-1","step_index":1,` +
+		`"provider_summary":"Store what the operator said.","created_at":"2026-09-03T10:00:00Z"}]}`
+	toolRow := `{"result":[{"step_index":1,"identity_id":"identity-a","trace_id":"trace-1",` +
+		`"call_id":"call-1","tool_name":"memory__memory_batch","status":"succeeded","duration_ms":250,` +
+		`"argument_digest":"","observation":"","artifact_refs":[],"entity_refs":["Aura"],` +
+		`"source_ref":"postgres://aura/conversations/c1/turns/7"}]}`
+	// lexical search (no embedder), then the two set-shaped body reads.
+	client, rec := recordingClient(t, traceRow, stepRow, toolRow)
+	traces, err := client.SearchReasoningTraces(t.Context(), "identity-a", "operator", 5)
+	if err != nil {
+		t.Fatalf("SearchReasoningTraces: %v", err)
+	}
+	if len(traces) != 1 {
+		t.Fatalf("traces = %#v", traces)
+	}
+	if len(traces[0].Steps) != 1 {
+		t.Fatalf("searched trace came back without its steps:\n%s", rec.joined())
+	}
+	tools := traces[0].Steps[0].ToolCalls
+	if len(tools) != 1 || tools[0].ToolName != "memory__memory_batch" {
+		t.Fatalf("searched trace came back without its tool calls: %#v", tools)
+	}
+	if strings.Join(tools[0].EntityRefs, ",") != "Aura" {
+		t.Fatalf("entity refs = %#v", tools[0].EntityRefs)
+	}
+	// One read per body, not one per trace: the set statements exist for that.
+	if got := strings.Count(rec.joined(), "trace_ids"); got != 2 {
+		t.Fatalf("body reads = %d, want one for steps and one for tools:\n%s", got, rec.joined())
+	}
+}

@@ -362,7 +362,11 @@ func (c *Client) SearchReasoningTraces(
 	sort.SliceStable(rows, func(i, j int) bool {
 		return order[fmt.Sprint(rows[i]["@rid"])] < order[fmt.Sprint(rows[j]["@rid"])]
 	})
-	return reasoningTracesFromRows(rows, identityID, limit)
+	traces, err := reasoningTracesFromRows(rows, identityID, limit)
+	if err != nil {
+		return nil, err
+	}
+	return c.hydrateReasoningBodies(ctx, identityID, traces)
 }
 
 // GetReasoningTrace retrieves one bounded ordered graph for its owning identity.
@@ -414,7 +418,12 @@ func (c *Client) searchReasoningLexical(ctx context.Context, params map[string]a
 	if err != nil {
 		return nil, fmt.Errorf("arcadedb: search reasoning traces: %w", err)
 	}
-	return reasoningTracesFromRows(rows, params["identity_id"].(string), params["limit"].(int))
+	identityID := params["identity_id"].(string)
+	traces, err := reasoningTracesFromRows(rows, identityID, params["limit"].(int))
+	if err != nil {
+		return nil, err
+	}
+	return c.hydrateReasoningBodies(ctx, identityID, traces)
 }
 
 func reasoningTracesFromRows(rows []map[string]any, identityID string, limit int) ([]ReasoningTrace, error) {

@@ -832,7 +832,7 @@
       "idempotentHint": false,
       "readOnlyHint": true
     },
-    "description": "The single deep-read operation for Aura memory. Choose the mode from the question: use recent when it asks what happened before rather than about a topic -- what you two have discussed, what you remember of the user, anything that means look back; the default semantic mode matches wording and will miss those, answering that it recalls nothing. Use semantic with query for a specific topic, or entity for a name you already know. Use open and scroll with conversation_id to page through one conversation's turns. Reasoning explicitly searches or opens provider-visible traces and is never included by other modes. Weak evidence abstains explicitly.",
+    "description": "The single deep-read operation for Aura memory. Choose the mode from the question: use recent when it asks what happened before rather than about a topic -- what you two have discussed, what you remember of the user, anything that means look back; the default semantic mode matches wording and will miss those, answering that it recalls nothing. Use semantic with query for a topic, or entity for a name you know; a query also returns the `entities` it reached with their facts, so you get the connected view without knowing a name. Use open and scroll with conversation_id to page one conversation. Reasoning opens traces with their steps and tool calls; no other mode includes them. Weak evidence abstains explicitly.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -900,6 +900,105 @@
       "properties": {
         "abstained": {
           "type": "boolean"
+        },
+        "entities": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "facts": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "fact_key": {
+                      "description": "identifies this fact for a later correction; pass it back as supersedes_fact_key",
+                      "type": "string"
+                    },
+                    "object": {
+                      "type": "string"
+                    },
+                    "object_kind": {
+                      "type": "string"
+                    },
+                    "predicate": {
+                      "type": "string"
+                    },
+                    "sources": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "memory_ids": {
+                            "description": "message or memory ids supporting this fact",
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": [
+                              "null",
+                              "array"
+                            ]
+                          },
+                          "run_id": {
+                            "description": "the extraction or operator run supporting this fact",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "run_id"
+                        ],
+                        "type": "object"
+                      },
+                      "type": [
+                        "null",
+                        "array"
+                      ]
+                    },
+                    "statement": {
+                      "type": "string"
+                    },
+                    "subject": {
+                      "type": "string"
+                    },
+                    "subject_kind": {
+                      "type": "string"
+                    },
+                    "valid_from": {
+                      "type": "string"
+                    },
+                    "valid_to": {
+                      "description": "absent while the fact still holds",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "statement",
+                    "predicate",
+                    "subject",
+                    "object",
+                    "sources"
+                  ],
+                  "type": "object"
+                },
+                "type": [
+                  "null",
+                  "array"
+                ]
+              },
+              "kind": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "facts"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
         },
         "evidence": {
           "items": {
@@ -1277,6 +1376,9 @@
             "effective_path": {
               "type": "string"
             },
+            "entity_count": {
+              "type": "integer"
+            },
             "fact_count": {
               "type": "integer"
             },
@@ -1296,6 +1398,7 @@
             "fact_count",
             "conversation_count",
             "reasoning_count",
+            "entity_count",
             "abstained"
           ],
           "type": "object"
