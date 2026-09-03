@@ -224,5 +224,14 @@ disproportionate, and it fires on the opening turns of every new conversation â€
 memory read of a session. The error also reads as a security violation, which is what made
 the agent apologise for laziness in a session where it had actually been blocked.
 
-Proposed, not applied: treat "not yet projected" as "nothing to exclude" rather than as a
-refusal. Left for the operator because the code is adjacent to an ownership boundary.
+**Fixed on the operator's instruction**, and the fix makes the boundary stronger rather
+than looser. Absence is now filtered out instead of refused: a conversation with no
+projected turns excludes nothing, so requiring it to resolve bought nothing and cost the
+first recall of every new conversation.
+
+The ownership check itself could never fire as written. It filtered `identity_id` inside
+the SQL, so a mis-tenanted row and a conversation that does not exist yet both came back as
+zero rows â€” indistinguishable, and the code called both a violation. The query now reads
+the row and Go compares, so a conversation that EXISTS and belongs to someone else is
+refused explicitly. In a per-identity database that cannot happen by construction, which is
+precisely why it is worth being able to report.
