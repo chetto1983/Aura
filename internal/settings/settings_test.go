@@ -254,3 +254,47 @@ func TestSecretRedactionPredicateUnaffected(t *testing.T) {
 		}
 	}
 }
+
+// The deployment case TestOverlayEnvFeedsRuntimeConfig cannot see: it clears the
+// environment first, so it proves the overlay works on a blank slate but never that a
+// persisted row BEATS a conflicting deployment value. That is the case that actually
+// ships -- a container whose .env already carries a model and an API key, plus rows the
+// operator saved from the cockpit. If the deployment value won, every cockpit save would
+// silently revert at the next restart.
+func TestOverlayEnvBeatsAConflictingDeploymentValue(t *testing.T) {
+	clearRuntimeConfigEnvForOverlayTest(t)
+	t.Setenv("AURA_LLM_MODEL", "deployment/model-from-dotenv")
+	t.Setenv("AURA_LLM_BASE_URL", "https://dotenv-llm.example/v1")
+	t.Setenv("OPENROUTER_API_KEY", "sk-from-dotenv")
+	t.Setenv("AURA_LOOP_MAX_STEPS", "25")
+
+	l := fakeLister{rows: []sqlc.AuraSettings{
+		{Key: "AURA_LLM_MODEL", Value: "settings/model-from-postgres"},
+		{Key: "OPENROUTER_API_KEY", Value: "sk-from-postgres"},
+		{Key: "AURA_LOOP_MAX_STEPS", Value: "60"},
+	}}
+	if err := OverlayEnv(t.Context(), l); err != nil {
+		t.Fatalf("OverlayEnv: %v", err)
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("config.Load after OverlayEnv: %v", err)
+	}
+
+	if got := cfg.LLM.Model; got != "settings/model-from-postgres" {
+		t.Errorf("LLM.Model = %q, want the persisted row to beat the deployment value", got)
+	}
+	if got := cfg.LLM.APIKey; got != "sk-from-postgres" {
+		t.Errorf("LLM.APIKey = %q, want the persisted row to beat the deployment key", got)
+	}
+	// The loop budget is consumed by the agent layer, not by llm.Config, so the
+	// contract to assert here is OverlayEnv's own: the row reached the process
+	// environment on top of the deployment value.
+	if got := os.Getenv("AURA_LOOP_MAX_STEPS"); got != "60" {
+		t.Errorf("AURA_LOOP_MAX_STEPS = %q, want the persisted row to beat the deployment value", got)
+	}
+	// A key with no row keeps the deployment value: the overlay adds, it does not blank.
+	if got := cfg.LLM.BaseURL; got != "https://dotenv-llm.example/v1" {
+		t.Errorf("LLM.BaseURL = %q, want the deployment value where no row exists", got)
+	}
+}
