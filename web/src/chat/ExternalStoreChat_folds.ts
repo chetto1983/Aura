@@ -149,20 +149,6 @@ export function replaceAssetInMessages(
   });
 }
 
-export function removeAssetFromMessages(
-  messages: readonly ThreadMessageLike[],
-  assetID: string,
-): ThreadMessageLike[] {
-  return messages.map((message) => {
-    const attachments = messageAttachments(message);
-    if (!attachments.some((item) => item.id === assetID)) return message;
-    return withMessageAttachments(
-      message,
-      attachments.filter((item) => item.id !== assetID),
-    );
-  });
-}
-
 /**
  * True when an assistant message carries at least one non-empty TEXT part — a
  * real answer. Messages whose parts are exclusively machinery (tool-call /

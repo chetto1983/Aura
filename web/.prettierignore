@@ -6,3 +6,10 @@ dist/
 coverage/
 playwright-report/
 test-results/
+
+# Vendored registry components: `npx shadcn add @assistant-ui/model-selector`
+# rewrites them verbatim on every update, so formatting them is churn we would
+# redo each time (they are excluded from eslint and knip for the same reason).
+src/components/model-selector.tsx
+src/components/ui/command.tsx
+src/components/ui/popover.tsx

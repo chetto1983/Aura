@@ -114,9 +114,16 @@ export function ModelPicker({ id, value, catalog, onChange }: ModelPickerProps) 
               </ModelSelectorGroup>
             ) : null}
             {groupByVendor(selectable).map((group) => (
-              <ModelSelectorGroup key={group.name} heading={group.name === '' ? undefined : group.name}>
+              <ModelSelectorGroup
+                key={group.name}
+                heading={group.name === '' ? undefined : group.name}
+              >
                 {group.models.map((model) => (
-                  <ModelSelectorItem key={model.id} model={model} className="font-mono text-[13px]" />
+                  <ModelSelectorItem
+                    key={model.id}
+                    model={model}
+                    className="font-mono text-[13px]"
+                  />
                 ))}
               </ModelSelectorGroup>
             ))}

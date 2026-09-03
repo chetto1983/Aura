@@ -31,6 +31,5 @@ export function useAssetActions(setMessages: Dispatch<SetStateAction<ThreadMessa
     [setMessages],
   );
 
-
   return { handleAssetRetry, handleAssetPromote };
 }
