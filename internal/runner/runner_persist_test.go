@@ -152,3 +152,28 @@ func TestAnyInt_JSONNumber(t *testing.T) {
 		t.Errorf("anyInt(string) = %d, want 0", got)
 	}
 }
+
+// The turn's usage carries two different numbers and the persisted row needs both: the
+// bill (prompt_tokens, summed over the round's calls because each is charged and each
+// re-sends the prefix) and the fill (context_tokens, the prompt of the FINAL call, which
+// is what the window actually held). Reconstructing only the bill made the stored fill 0
+// on every turn. Measured on a real tool round: 54,688 billed against ~23,000 held.
+func TestUsageFromStateDeltaCarriesTheFillBesideTheBill(t *testing.T) {
+	u := usageFromStateDelta(map[string]any{
+		"prompt_tokens":     54688,
+		"context_tokens":    23011,
+		"completion_tokens": 643,
+		"cache_hit_tokens":  0,
+	})
+	if u.PromptTokens != 54688 {
+		t.Errorf("PromptTokens = %d, want the bill", u.PromptTokens)
+	}
+	if u.ContextTokens != 23011 {
+		t.Errorf("ContextTokens = %d, want the fill", u.ContextTokens)
+	}
+	// A delta from an older daemon has no context_tokens; 0 is the honest answer, and the
+	// read falls back to input_tokens for those rows rather than reporting an empty window.
+	if got := usageFromStateDelta(map[string]any{"prompt_tokens": 100}); got.ContextTokens != 0 {
+		t.Errorf("ContextTokens = %d on a delta without one, want 0", got.ContextTokens)
+	}
+}

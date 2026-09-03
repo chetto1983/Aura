@@ -534,6 +534,13 @@ func usageFromStateDelta(d map[string]any) llm.Usage {
 		PromptTokens:     anyInt(d["prompt_tokens"]),
 		CompletionTokens: anyInt(d["completion_tokens"]),
 		CachedTokens:     anyInt(d["cache_hit_tokens"]),
+		// The FILL, alongside the bill. The event has carried it since the gauge started
+		// reading it live (llm_agent_events.go), and this reconstruction quietly left it
+		// out — so the column added to store it was written as 0 on every turn, and a
+		// reloaded conversation kept falling back to the summed prompt. The two are the
+		// same number on a single-call round, which is why the omission was invisible
+		// until a tool round made them differ.
+		ContextTokens: anyInt(d["context_tokens"]),
 	}
 	if c, ok := anyFloat(d["cost_usd"]); ok {
 		u.Cost = &c
