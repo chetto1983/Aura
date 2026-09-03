@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,6 +75,35 @@ func TestFindSkillsAuraExplainsAdministratorInstallBoundary(t *testing.T) {
 	}
 	if strings.Contains(got.Body, "skill action=install") {
 		t.Error("find-skills-aura still teaches the removed read-tool install syntax")
+	}
+}
+
+// TestEveryBuiltinLoads derives the expectation from the embedded tree instead of
+// naming skills, so a builtin added to embed/ cannot ship broken: memory-aura did
+// exactly that — its unquoted description carried a ": " that YAML reads as a
+// mapping, the loader skip-logged it at WARN, and the cockpit simply listed one
+// skill fewer. Every named test kept passing.
+func TestEveryBuiltinLoads(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := MaterializeBuiltins(dir); err != nil {
+		t.Fatalf("MaterializeBuiltins: %v", err)
+	}
+	embedded, err := fs.ReadDir(builtinFS, builtinRoot)
+	if err != nil {
+		t.Fatalf("read embedded builtin root: %v", err)
+	}
+	if len(embedded) == 0 {
+		t.Fatal("no builtin skills are embedded")
+	}
+	l := NewLoader(Config{Roots: []string{dir}, BodyCapBytes: defaultBodyCapBytes})
+	for _, e := range embedded {
+		if !e.IsDir() {
+			continue
+		}
+		if _, ok := l.Get(e.Name()); !ok {
+			t.Errorf("embedded builtin %q does not load; got %v", e.Name(), names(l.List()))
+		}
 	}
 }
 
