@@ -57,7 +57,7 @@ func memorySchemaStatements() []string {
 		// Standard and 1 under English, with `lives`/`living` likewise.
 		"CREATE INDEX IF NOT EXISTS ON " + factEdgeType + " (statement) FULL_TEXT " +
 			"METADATA {analyzer:'org.apache.lucene.analysis.en.EnglishAnalyzer'}",
-	}, mentionSchemaStatements()...)
+	}, append(poleSchemaStatements(), mentionSchemaStatements()...)...)
 }
 
 // EnsureMemorySchema creates the memory model if it is not already there.
@@ -123,9 +123,13 @@ type FactSource struct {
 type Fact struct {
 	Subject     string
 	SubjectKind string
+	// SubjectPole is the POLE+O class this endpoint should be created as, one of
+	// poleClasses. Empty derives it from the kind. See memory_pole.go.
+	SubjectPole string
 	Predicate   string
 	Object      string
 	ObjectKind  string
+	ObjectPole  string
 	Statement   string
 	ValidFrom   time.Time
 	ValidTo     time.Time
@@ -160,6 +164,25 @@ type FactWrite struct {
 	// each with the existing names closest to it. It is a REPLY, not a refusal: the write
 	// happened either way. See memory_vocabulary.go for the measurement that put it here.
 	Coined []CoinedEntity
+	// Classified reports the POLE+O class each endpoint was written as. Like Coined it is
+	// a reply rather than a refusal, and it is worth reading for two cases: a class that
+	// was requested but is not in the closed set, and an entity that already existed under
+	// a different class, which the unique name index makes first-write-wins.
+	Classified []EntityClass
+}
+
+// EntityClass is one endpoint's resolved POLE+O class.
+type EntityClass struct {
+	Name string
+	Pole string
+	Kind string
+	// RequestRefused is true when an explicit class was asked for and is not one of
+	// poleClasses; the entity went to Other instead.
+	RequestRefused bool
+	// HeldPole names the class the entity ALREADY had when it differs from the one this
+	// write asked for. The existing class wins, because a name is unique across the
+	// subtypes and re-minting it elsewhere would fail the index rather than move it.
+	HeldPole string
 }
 
 // proseObjectRuneBound is the ceiling MEM-05's prose guard enforces on the
@@ -254,9 +277,6 @@ func (f Fact) validate(limits MemoryLimits) error {
 const upsertEntityStatement = "UPDATE Entity SET name = :name UPSERT " +
 	"RETURN AFTER WHERE name = :name"
 
-const upsertTypedEntityStatement = "UPDATE Entity SET name = :name, kind = :kind UPSERT " +
-	"RETURN AFTER WHERE name = :name"
-
 const createFactStatement = "CREATE EDGE " + factEdgeType +
 	" FROM (SELECT FROM Entity WHERE name = :subject_name)" +
 	" TO (SELECT FROM Entity WHERE name = :object_name)" +
@@ -296,16 +316,36 @@ func (c *Client) UpsertFact(ctx context.Context, fact Fact, now time.Time) (Fact
 	if vocabularyErr != nil {
 		vocabulary = nil
 	}
-	for _, entity := range []struct{ name, kind string }{{fact.Subject, fact.SubjectKind}, {fact.Object, fact.ObjectKind}} {
-		statement := upsertEntityStatement
+	// Which class each endpoint ALREADY has, before anything is minted. A name is unique
+	// across the subtypes, so an entity that exists as one class cannot be re-created as
+	// another -- the write would hit the index rather than move the record. First class
+	// wins, and the reply says so.
+	heldClasses, err := c.entityClassScan(ctx, fact.Subject, fact.Object)
+	if err != nil {
+		return FactWrite{}, err
+	}
+	classified := make([]EntityClass, 0, 2)
+	for _, entity := range []struct{ name, kind, pole string }{
+		{fact.Subject, fact.SubjectKind, fact.SubjectPole},
+		{fact.Object, fact.ObjectKind, fact.ObjectPole},
+	} {
+		class, refused := poleClassFor(entity.pole, entity.kind)
+		record := EntityClass{Name: entity.name, Pole: class, Kind: entity.kind, RequestRefused: refused}
+		if existing, ok := heldClasses[entity.name]; ok && existing != "" {
+			if existing != class {
+				record.HeldPole = existing
+			}
+			class, record.Pole = existing, existing
+		}
 		params := map[string]any{"name": entity.name}
 		if entity.kind != "" {
-			statement = upsertTypedEntityStatement
 			params["kind"] = entity.kind
 		}
-		if _, err := c.upsertEntityWithRetry(ctx, statement, params); err != nil {
-			return FactWrite{}, fmt.Errorf("arcadedb: upsert entity %q: %w", entity.name, err)
+		if _, err := c.upsertEntityWithRetry(ctx,
+			upsertEntityInClass(class, entity.kind != ""), params); err != nil {
+			return FactWrite{}, fmt.Errorf("arcadedb: upsert entity %q as %s: %w", entity.name, class, err)
 		}
+		classified = append(classified, record)
 	}
 	factKey := factIdentity(fact)
 	// Serializes this whole attach-or-create-or-supersede sequence against
@@ -314,7 +354,7 @@ func (c *Client) UpsertFact(ctx context.Context, fact Fact, now time.Time) (Fact
 	// transactional write inside attachFactSource, is what actually closes
 	// D-09's concurrent-write race for the topology this package has.
 	defer c.facts.lock(factKey)()
-	written := FactWrite{Statement: fact.Statement}
+	written := FactWrite{Statement: fact.Statement, Classified: classified}
 	if vocabulary != nil {
 		written.Coined = coinedEntities(vocabulary, fact.Subject, fact.Object)
 	}

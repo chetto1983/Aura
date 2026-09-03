@@ -165,16 +165,27 @@ func (tx *clientMemoryBatchTx) Persist(
 		}
 	}
 
-	for _, name := range memoryBatchEntitiesToUpsert(before, after) {
+	// Same class rule as UpsertFact: an entity that already exists keeps its class, a new
+	// one is minted in the class its kind implies. The batch has no explicit class input,
+	// so the kind decides here and Other catches the rest.
+	toUpsert := memoryBatchEntitiesToUpsert(before, after)
+	heldClasses, err := tx.client.entityClassScan(ctx, toUpsert...)
+	if err != nil {
+		return err
+	}
+	for _, name := range toUpsert {
 		kind := after.Entities[name]
-		statement := upsertEntityStatement
+		class, _ := poleClassFor("", kind)
+		if existing := heldClasses[name]; existing != "" {
+			class = existing
+		}
 		params := map[string]any{"name": name}
 		if kind != "" {
-			statement = upsertTypedEntityStatement
 			params["kind"] = kind
 		}
-		if _, err := tx.client.commandInTx(ctx, tx.sessionID, statement, params); err != nil {
-			return fmt.Errorf("upsert entity %q: %w", name, err)
+		if _, err := tx.client.commandInTx(ctx, tx.sessionID,
+			upsertEntityInClass(class, kind != ""), params); err != nil {
+			return fmt.Errorf("upsert entity %q as %s: %w", name, class, err)
 		}
 	}
 

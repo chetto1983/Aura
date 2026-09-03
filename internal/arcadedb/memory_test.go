@@ -304,8 +304,8 @@ func TestUpsertFactCreatesEntitiesThenTheEdge(t *testing.T) {
 	if _, err := client.UpsertFact(context.Background(), validFact(), now); err != nil {
 		t.Fatalf("UpsertFact: %v", err)
 	}
-	if len(rec.statements) != 6 {
-		t.Fatalf("statements = %d, want vocabulary scan, two entity upserts, stale-key release, exact lookup, then edge:\n%s",
+	if len(rec.statements) != 7 {
+		t.Fatalf("statements = %d, want vocabulary scan, class scan, two entity upserts, stale-key release, exact lookup, then edge:\n%s",
 			len(rec.statements), rec.joined())
 	}
 	// The vocabulary is read BEFORE anything is minted, and the order is the whole point:
@@ -313,19 +313,32 @@ func TestUpsertFactCreatesEntitiesThenTheEdge(t *testing.T) {
 	if !strings.HasPrefix(rec.statements[0], "SELECT name FROM Entity") {
 		t.Fatalf("vocabulary not read before the write:\n%s", rec.joined())
 	}
-	if !strings.Contains(rec.statements[1], "UPSERT") || !strings.Contains(rec.statements[2], "UPSERT") {
-		t.Fatalf("entities not upserted after the scan:\n%s", rec.joined())
+	// The classes are read before minting for the same reason in a stronger form: a name is
+	// unique ACROSS the POLE subtypes, so minting one in the wrong class does not mis-type
+	// it, it fails the index. The class an entity already holds has to be known first.
+	if !strings.Contains(rec.statements[1], "@type AS pole") {
+		t.Fatalf("entity classes not read before the write:\n%s", rec.joined())
 	}
-	if !strings.Contains(rec.statements[3], "SET fact_key = NULL") {
-		t.Fatalf("expired fact key release missing: %s", rec.statements[3])
+	if !strings.Contains(rec.statements[2], "UPSERT") || !strings.Contains(rec.statements[3], "UPSERT") {
+		t.Fatalf("entities not upserted after the scans:\n%s", rec.joined())
 	}
-	if !strings.Contains(rec.statements[4], "WHERE fact_key = :fact_key") {
-		t.Fatalf("exact replay lookup missing: %s", rec.statements[4])
+	// Entities are minted into a POLE class, never the bare supertype: one written as
+	// Entity carries no class at all, which is the hole a closed set exists to close.
+	for _, at := range []int{2, 3} {
+		if strings.HasPrefix(rec.statements[at], "UPDATE Entity ") {
+			t.Fatalf("entity minted on the bare supertype, not a POLE class: %s", rec.statements[at])
+		}
 	}
-	if !strings.HasPrefix(rec.statements[5], "CREATE EDGE FACT") {
-		t.Fatalf("edge not created last: %s", rec.statements[5])
+	if !strings.Contains(rec.statements[4], "SET fact_key = NULL") {
+		t.Fatalf("expired fact key release missing: %s", rec.statements[4])
 	}
-	params := rec.params[5]
+	if !strings.Contains(rec.statements[5], "WHERE fact_key = :fact_key") {
+		t.Fatalf("exact replay lookup missing: %s", rec.statements[5])
+	}
+	if !strings.HasPrefix(rec.statements[6], "CREATE EDGE FACT") {
+		t.Fatalf("edge not created last: %s", rec.statements[6])
+	}
+	params := rec.params[6]
 	if params["valid_from"] != now.Format(time.RFC3339) {
 		t.Fatalf("valid_from = %v, want a default of now", params["valid_from"])
 	}
