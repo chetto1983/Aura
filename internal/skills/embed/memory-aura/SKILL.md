@@ -20,7 +20,12 @@ One verb writes: `memory_upsert_fact`, with `subject`, `predicate`, `object` and
 `statement` in natural language. The statement is what gets indexed and searched, so
 write it as a sentence someone would recognise, not as a triple restated.
 
-Every write also carries one `source` object with a `run_id` and optional `memory_ids`.
+Every write also carries one `source` object, and it takes `memory_ids` and nothing
+else — the run is stamped by the host rather than asserted by you, so `source: {}` is a
+complete and correct value when there are no message ids to cite. (`memory_forget` DOES
+take a `run_id`, and requires one. The asymmetry is deliberate: you can revoke a whole
+run you never had to name, because the host named it for you.)
+
 Use `subject_kind` and `object_kind` when the type is known. Replaying an exact fact is
 safe: the same source is idempotent and a different source is attached to the existing
 fact instead of creating another edge.
@@ -47,6 +52,31 @@ So the order is fixed, and it is one extra call for a whole session of writing:
    the reply carries `coined` with the closest existing names. If one of them was what you
    meant, `memory_merge_entities` folds the mistake onto it while the fact is one write old
    rather than one month old.
+
+**Kinds are a vocabulary too, and the same list carries them.** `memory_entities`
+returns a `kind` beside every name, so one read tells you both which names exist and which
+type labels are in use. Reach for one already in the list before inventing a label; a
+memory holding `Tool`, `Person` and `Environment` does not also want `Utility`, `Human`
+and `Machine`.
+
+### Founding one, when the list comes back empty
+
+On an empty or nearly-empty memory the loop above degenerates: there is nothing to reuse,
+and — this is the part worth knowing — **`coined` goes silent for every name, well-chosen
+or not.** It can only report neighbours the memory already holds, so on a founding write
+it has none to report. Silence there is not validation. It is the absence of an opinion.
+
+So the discipline has to come from you, and it is one question asked of the whole corpus
+before the first write rather than of each fact as it arrives: *which nouns does this
+material keep coming back to?* Found those, and let everything else live in the
+`statement`. Where a note's own phrasing is a description, name the thing the description
+is ABOUT — a note about being told to read the documentation first is a fact about
+`Operator` and `ArcadeDB`, not about `la lettura della documentazione`.
+
+Measured on this memory's own founding, 2026-09-03: twelve notes written that way produced
+**fifteen entities, all recognisable nouns**, and ten of the twelve facts landed in a
+single connected component. The previous 107-fact memory, written without the rule, had
+reached 211 entities and 29% connectivity.
 
 The cost of skipping this is not theoretical, and it is not small. Measured on a real
 memory of 108 facts on 2026-09-03: **211 distinct entities, of which 207 were used exactly
