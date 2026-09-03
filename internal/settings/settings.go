@@ -63,14 +63,23 @@ var AllowedKeys = map[string]KeyMeta{
 	// longer recreates the container to get them.
 	"AURA_LOOP_MAX_STEPS":         {Kind: KindInt, Label: "Max agent steps per turn"},
 	"AURA_LOOP_MAX_WALLCLOCK_SEC": {Kind: KindInt, Label: "Max wallclock per turn (seconds)"},
-	"OPENROUTER_API_KEY":          {Secret: true, Kind: KindString, Label: "OpenRouter API key"},
-	"AURA_EMBED_MODEL":            {Kind: KindString, Label: "Embedding cloud model"},
-	"AURA_EMBED_DIMENSIONS":       {Kind: KindInt, Label: "Embedding dimensions"},
-	"AURA_EMBED_BASE_URL":         {Kind: KindString, Label: "Embedding base URL"},
-	"AURA_TTS_MODEL":              {Kind: KindString, Label: "TTS cloud model"},
-	"AURA_STT_CLOUD_MODEL":        {Kind: KindString, Label: "STT cloud model"},
-	"AURA_VISION_CLOUD":           {Kind: KindBool, Label: "Vision uses cloud"},
-	"TELEGRAM_BOT_TOKEN":          {Secret: true, Kind: KindString, Label: "Telegram bot token"},
+	// The proactive per-message memory preload. Hot because it is the one knob that
+	// decides whether a turn ARRIVES with what the memory knows or has to go and ask:
+	// off, the prompt carries only the pointer ("you have N facts across M entities")
+	// and an agent that does not open memory answers from nothing. Its two bounds ride
+	// with it -- a preload the operator cannot size or time out is one they will turn
+	// off rather than tune.
+	"AURA_MEMORY_PRELOAD_ENABLED":    {Kind: KindBool, Label: "Preload memory into every turn"},
+	"AURA_MEMORY_PRELOAD_TOP_K":      {Kind: KindInt, Label: "Memory preload results"},
+	"AURA_MEMORY_PRELOAD_TIMEOUT_MS": {Kind: KindInt, Label: "Memory preload timeout (ms)"},
+	"OPENROUTER_API_KEY":             {Secret: true, Kind: KindString, Label: "OpenRouter API key"},
+	"AURA_EMBED_MODEL":               {Kind: KindString, Label: "Embedding cloud model"},
+	"AURA_EMBED_DIMENSIONS":          {Kind: KindInt, Label: "Embedding dimensions"},
+	"AURA_EMBED_BASE_URL":            {Kind: KindString, Label: "Embedding base URL"},
+	"AURA_TTS_MODEL":                 {Kind: KindString, Label: "TTS cloud model"},
+	"AURA_STT_CLOUD_MODEL":           {Kind: KindString, Label: "STT cloud model"},
+	"AURA_VISION_CLOUD":              {Kind: KindBool, Label: "Vision uses cloud"},
+	"TELEGRAM_BOT_TOKEN":             {Secret: true, Kind: KindString, Label: "Telegram bot token"},
 }
 
 // Allowed reports whether key may be set through the Settings layer.

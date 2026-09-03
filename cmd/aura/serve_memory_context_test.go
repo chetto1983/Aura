@@ -104,30 +104,84 @@ func TestMountedMemoryContextOmitsAnEmptyDigest(t *testing.T) {
 	}
 }
 
+// The preload reads through memory_recall, not memory_search: both rank the same
+// way, but only recall also returns the entities the question reached, which is
+// the difference between injecting what memory SAYS about the wording and
+// injecting the piece of graph the wording landed on.
 func TestMountedMemoryContextSearchPreloadsRelevantFacts(t *testing.T) {
-	client := &memoryReadinessClient{text: `{"facts":[{"statement":"Davide prefers Go"},{"statement":"lives in Caraglio"}],"retrieval":{"abstained":false}}`}
+	client := &memoryReadinessClient{text: `{"evidence":[` +
+		`{"kind":"fact","fact":{"statement":"Davide prefers Go"}},` +
+		`{"kind":"fact","fact":{"statement":"lives in Caraglio"}},` +
+		`{"kind":"conversation"}],"retrieval":{"abstained":false}}`}
 	provider := newMemoryContextProvider(client.mount(t, "identity-a"), 5, time.Second)
 
 	got, err := provider.Search(context.Background(), "identity-a", "what does the user prefer")
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
-	if client.name != "memory_search" {
-		t.Fatalf("tool = %q, want memory_search", client.name)
+	if client.name != "memory_recall" {
+		t.Fatalf("tool = %q, want memory_recall", client.name)
 	}
-	if client.args["query"] != "what does the user prefer" || client.args["limit"] != float64(5) {
+	if client.args["query"] != "what does the user prefer" || client.args["limit"] != float64(5) ||
+		client.args["mode"] != "semantic" {
 		t.Fatalf("args = %+v", client.args)
 	}
 	if aura, present := client.meta["aura"]; present {
-		t.Fatalf("memory search sent proprietary Aura metadata: %v", aura)
+		t.Fatalf("memory recall sent proprietary Aura metadata: %v", aura)
 	}
 	if !strings.Contains(got, "Davide prefers Go") || !strings.Contains(got, "lives in Caraglio") {
 		t.Fatalf("preload = %q", got)
 	}
 }
 
+// The nodes are the reason for the switch, so they have to reach the block -- and
+// as edges read outwards from the node, not as the sentences they were written as.
+func TestMountedMemoryContextSearchInjectsEntityOutlines(t *testing.T) {
+	client := &memoryReadinessClient{text: `{"evidence":[` +
+		`{"kind":"fact","fact":{"statement":"Il progetto Aura usa ArcadeDB come memoria."}}],` +
+		`"entities":[{"name":"ArcadeDB","kind":"System","facts":[` +
+		`{"subject":"Aura","predicate":"usa_memoria_a_lungo_termine","object":"ArcadeDB"},` +
+		`{"subject":"ArcadeDB","predicate":"non_supporta","object":"Ri-puntare-endpoint"}]}],` +
+		`"retrieval":{"abstained":false}}`}
+	got, err := newMemoryContextProvider(client.mount(t, "identity-a"), 5, time.Second).
+		Search(context.Background(), "identity-a", "memoria a lungo termine")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if !strings.Contains(got, "ArcadeDB (System):") {
+		t.Fatalf("preload carries no entity outline: %q", got)
+	}
+	if !strings.Contains(got, "non_supporta -> Ri-puntare-endpoint") {
+		t.Fatalf("outward edge missing: %q", got)
+	}
+	// The first fact names ArcadeDB as its OBJECT, so from this node the relation
+	// points the other way and must not be printed as though the node held it.
+	if !strings.Contains(got, "usa_memoria_a_lungo_termine (of) -> Aura") {
+		t.Fatalf("inbound edge printed unreversed: %q", got)
+	}
+}
+
+// A node with more edges than the outline budget is trimmed, not inlined whole:
+// the outline exists to show the node is worth opening, not to be the read.
+func TestMountedMemoryContextSearchBoundsEntityOutlines(t *testing.T) {
+	facts := make([]string, 0, 9)
+	for index := range 9 {
+		facts = append(facts, `{"subject":"N","predicate":"p`+string(rune('a'+index))+`","object":"o"}`)
+	}
+	client := &memoryReadinessClient{text: `{"evidence":[],"entities":[{"name":"N","facts":[` +
+		strings.Join(facts, ",") + `]}],"retrieval":{"abstained":false}}`}
+	got, err := newMemoryContextProvider(client.mount(t, "identity-a"), 5, time.Second).
+		Search(context.Background(), "identity-a", "q")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if edges := strings.Count(got, " -> "); edges != preloadEdgesPerEntity {
+		t.Fatalf("edges = %d, want %d: %q", edges, preloadEdgesPerEntity, got)
+	}
+}
+
 func TestMountedMemoryContextSearchAbstainsToEmpty(t *testing.T) {
-	client := &memoryReadinessClient{text: `{"facts":[{"statement":"x"}],"retrieval":{"abstained":true}}`}
+	client := &memoryReadinessClient{text: `{"evidence":[{"kind":"fact","fact":{"statement":"x"}}],"retrieval":{"abstained":true}}`}
 	got, err := newMemoryContextProvider(client.mount(t, "identity-a"), 5, time.Second).Search(context.Background(), "identity-a", "q")
 	if err != nil {
 		t.Fatalf("Search: %v", err)

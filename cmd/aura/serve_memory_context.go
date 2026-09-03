@@ -138,10 +138,24 @@ func memoryPointer(facts, entities int) string {
 		facts, entities)
 }
 
-// Search is the proactive per-message preload: a hybrid memory_search over the current
-// user text, returning the top-k facts as bullet lines. An explicit abstention or an
-// empty result yields "" (the caller then injects only the digest). Its own timeout
-// (preloadTimeout, falling back to the digest timeout) keeps it off the critical path.
+// Search is the proactive per-message preload: what the memory already knows about
+// the current user text, injected so the turn ARRIVES with it instead of having to
+// go and ask. Measured 2026-09-03 with it on, "cosa usa Aura per la memoria a lungo
+// termine" was answered in ONE llm call with tool_calls:0 -- the model said so
+// itself, "I have a <memory_recall> block in the context which contains a fact
+// about this" -- against the three round-trips (tool_search, recall, answer) the
+// same question costs when the block is absent.
+//
+// It reads through memory_recall rather than memory_search. Both rank the same
+// hybrid way, but recall also returns the ENTITIES the question reached and the
+// facts hanging off them (internal/arcadedb/memory_recall_expand.go), which is the
+// difference between injecting what the memory says about the wording and
+// injecting the piece of graph the wording landed on. memory_search returns a flat
+// statement list and nothing to expand from.
+//
+// An explicit abstention or an empty result yields "" (the caller then injects only
+// the pointer). Its own timeout (preloadTimeout, falling back to the digest one)
+// keeps it off the critical path.
 func (m *mountedMemoryContext) Search(ctx context.Context, identityID, query string) (string, error) {
 	client := m.mountedClient()
 	if client == nil {
@@ -158,36 +172,104 @@ func (m *mountedMemoryContext) Search(ctx context.Context, identityID, query str
 	// The identity-bound OAuth session, not a tool argument, selects the tenant.
 	callCtx, cancel := context.WithTimeout(identityctx.WithIdentityID(ctx, identityID), timeout)
 	defer cancel()
-	text, err := client.CallToolText(callCtx, "memory_search", map[string]any{
+	text, err := client.CallToolText(callCtx, "memory_recall", map[string]any{
+		"mode":  "semantic",
 		"query": query,
 		"limit": limit,
 	})
 	if err != nil {
-		return "", fmt.Errorf("memory search: %w", err)
+		return "", fmt.Errorf("memory recall: %w", err)
 	}
-	var out struct {
-		Facts []struct {
-			Statement string `json:"statement"`
-		} `json:"facts"`
-		Retrieval struct {
-			Abstained bool `json:"abstained"`
-		} `json:"retrieval"`
-	}
+	var out memoryPreloadResult
 	if err := json.Unmarshal([]byte(text), &out); err != nil {
-		return "", fmt.Errorf("decode memory search: %w", err)
+		return "", fmt.Errorf("decode memory recall: %w", err)
 	}
-	if out.Retrieval.Abstained || len(out.Facts) == 0 {
+	if out.Retrieval.Abstained {
 		return "", nil
 	}
+	return renderMemoryPreload(out), nil
+}
+
+// memoryPreloadResult is the slice of memory_recall's payload the preload injects.
+// Deliberately not the whole DTO: provenance, scores, validity windows and the
+// conversation windows are all real and all cost tokens in EVERY turn, while what
+// the model needs at this point is what is true and what it is connected to. The
+// tools return the rest when a turn actually opens memory.
+type memoryPreloadResult struct {
+	Evidence []struct {
+		Fact *struct {
+			Statement string `json:"statement"`
+		} `json:"fact,omitempty"`
+	} `json:"evidence"`
+	Entities []struct {
+		Name  string `json:"name"`
+		Kind  string `json:"kind,omitempty"`
+		Facts []struct {
+			Subject   string `json:"subject"`
+			Predicate string `json:"predicate"`
+			Object    string `json:"object"`
+		} `json:"facts"`
+	} `json:"entities,omitempty"`
+	Retrieval struct {
+		Abstained bool `json:"abstained"`
+	} `json:"retrieval"`
+}
+
+// preloadEdgesPerEntity bounds one node's outline. A seeded entity can carry many
+// facts and three of them would outweigh the ranked evidence they were seeded from;
+// the point of the outline is to show the model that the node is worth opening, not
+// to be the read.
+const preloadEdgesPerEntity = 4
+
+// renderMemoryPreload writes the block: the ranked statements, then a one-line
+// outline per entity the question reached.
+//
+// The outline is triples, not prose. A statement repeats the sentence a fact was
+// written as, which for a node's fourth edge is mostly words the model already has;
+// `predicate -> object` says the same connection in a fraction of the budget and
+// reads as the graph it is.
+func renderMemoryPreload(out memoryPreloadResult) string {
 	var b strings.Builder
-	for _, f := range out.Facts {
-		s := strings.TrimSpace(f.Statement)
-		if s == "" {
+	for _, item := range out.Evidence {
+		if item.Fact == nil {
 			continue
 		}
-		b.WriteString("- ")
-		b.WriteString(s)
-		b.WriteString("\n")
+		if statement := strings.TrimSpace(item.Fact.Statement); statement != "" {
+			b.WriteString("- " + statement + "\n")
+		}
 	}
-	return strings.TrimSpace(b.String()), nil
+	for _, node := range out.Entities {
+		name := strings.TrimSpace(node.Name)
+		if name == "" || len(node.Facts) == 0 {
+			continue
+		}
+		edges := make([]string, 0, preloadEdgesPerEntity)
+		for _, fact := range node.Facts {
+			if len(edges) == preloadEdgesPerEntity {
+				break
+			}
+			// Read the edge from this node outwards: a fact that names the node as
+			// its OBJECT points the other way, and printing it unreversed would
+			// claim the node holds a relation it is on the receiving end of.
+			predicate, other := fact.Predicate, fact.Object
+			if strings.TrimSpace(fact.Object) == name {
+				predicate, other = predicate+" (of)", fact.Subject
+			}
+			if predicate = strings.TrimSpace(predicate); predicate == "" {
+				continue
+			}
+			if other = strings.TrimSpace(other); other == "" {
+				continue
+			}
+			edges = append(edges, predicate+" -> "+other)
+		}
+		if len(edges) == 0 {
+			continue
+		}
+		if kind := strings.TrimSpace(node.Kind); kind != "" {
+			name += " (" + kind + ")"
+		}
+		b.WriteString(name + ": " + strings.Join(edges, "; ") + "\n")
+	}
+	return strings.TrimSpace(b.String())
 }

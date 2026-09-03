@@ -47,7 +47,7 @@ func (c *memoryReadinessClient) mount(t *testing.T, owner string) *mcptools.Moun
 		return &sdkmcp.CallToolResult{Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: c.text}}}, nil
 	}
 	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "fixture-memory", Version: "0.0.1"}, nil)
-	for _, name := range []string{"memory_search", "memory_digest"} {
+	for _, name := range []string{"memory_search", "memory_digest", "memory_recall"} {
 		server.AddTool(&sdkmcp.Tool{Name: name, Description: "fixture", InputSchema: map[string]any{"type": "object"}}, handler)
 	}
 
