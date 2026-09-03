@@ -31,12 +31,15 @@ pre-commit:
     # golangci-lint (dupl/gosec/govet/staticcheck/revive/…) runs here, not at pre-push, so a
     # lint regression surfaces at the commit that introduced it instead of after a range of
     # commits accumulates for a push (the caught issue is then one small diff, not a bisect).
-    # Gated on *.go so a docs/web-only commit skips it; it still lints WHOLE owned packages
-    # (staged-file-only linting misses cross-file findings), so the glob only decides whether
-    # to run, not what to scan.
+    # Staged-file-driven like gofmt and vet above: whole PACKAGES, because the cross-file
+    # analyses need them, but only the packages this commit touches. The full-module form
+    # ran here until 2026-09-03, when it refused a compose-only commit over a gofmt finding
+    # in cmd/arcadedb-mcp — a package that commit never touched, left dirty by a second
+    # session in the same worktree. That is exactly the trap vet-staged.sh was written for.
+    # CI keeps the full sweep.
     lint:
       glob: "*.go"
-      run: bash -c 'golangci-lint run $(bash scripts/go_packages.sh)'
+      run: bash scripts/lint-staged.sh {staged_files}
     # Staged-file-only ({staged_files}), unlike lint above: the 600-LOC cap is a
     # per-file property, so scanning the whole tree can only re-report violations
     # this commit did not introduce — while costing ~2min of `wc` spawns over ~2k
