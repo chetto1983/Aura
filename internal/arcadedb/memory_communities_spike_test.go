@@ -158,6 +158,21 @@ func TestMemoryCommunitiesSpike(t *testing.T) {
 
 	// The floor question, stated as the comparison it is: what a small corpus would get if
 	// the cap could not fall below a handful.
+	// Does graphify's hub exclusion recover the structure the default cap flattens?
+	// Same graph, same algorithm; the only change is which nodes get to vote on the
+	// partition. Percentile 0 is the control: it excludes nothing.
+	t.Log("--- graphify hub exclusion at share 0.20 (nodes are facts; hubs are essay statements) ---")
+	t.Log("percentile  hubs  communities  largest")
+	hubEdges, _ := desiredMentionEdges(entities, factRows, 0.20)
+	hubNodes, hubGraph := factGraph(hubEdges)
+	for _, percentile := range []float64{0, 99, 95, 90, 80} {
+		clusters, largest, hubs, err := excludeHubsAndPartition(ctx, hubNodes, hubGraph, percentile)
+		if err != nil {
+			t.Fatalf("leiden with %.0f%% hub exclusion: %v", percentile, err)
+		}
+		t.Logf("%10.0f  %4d  %11d  %7d", percentile, hubs, clusters, largest)
+	}
+
 	t.Log("--- with a floor of 3, i.e. cap = max(3, int(facts*share)) ---")
 	for _, share := range []float64{0.05, 0.20} {
 		floored := float64(max(3, hubCap(len(factRows), share))) / float64(max(len(factRows), 1))
@@ -165,4 +180,104 @@ func TestMemoryCommunitiesSpike(t *testing.T) {
 		nodes, _ := factGraph(edges)
 		t.Logf("share %.2f -> cap %d: %d edges over %d linked facts", share, stats.cap, len(edges), len(nodes))
 	}
+}
+
+// Graphify's answer to the same failure, ported to measure whether it transfers.
+//
+// graphify/cluster.py excludes high-degree nodes from the PARTITION and reattaches them
+// afterwards by majority vote over their neighbours' communities. Its comment names the
+// exact symptom measured here: "exclude hub nodes from partitioning so they don't pull
+// unrelated subsystems into the same community".
+//
+// The translation is not the obvious one. Their nodes are code entities, so their hubs are
+// high-degree entities — which is what hubCap already drops. Here the nodes are FACTS and
+// an edge is a shared entity, so the hub that flattens the partition is a fact that
+// MENTIONS many entities: one 300-word statement naming twenty names joins twenty
+// otherwise-unrelated facts into a clique. Excluding those from clustering and putting
+// them back afterwards is the real analogue.
+func excludeHubsAndPartition(
+	ctx context.Context, nodes []string, edges []leiden.Edge, percentile float64,
+) (clusters int, largest int, hubs int, err error) {
+	degree := make([]int, len(nodes))
+	neighbours := make([][]int, len(nodes))
+	for _, e := range edges {
+		degree[e.From]++
+		degree[e.To]++
+		neighbours[e.From] = append(neighbours[e.From], e.To)
+		neighbours[e.To] = append(neighbours[e.To], e.From)
+	}
+	// Threshold read off the FULL graph's degrees, before anything is removed — the
+	// ordering graphify is careful about, since a degree computed after removal is a
+	// different statistic.
+	sorted := append([]int(nil), degree...)
+	sort.Ints(sorted)
+	isHub := make([]bool, len(nodes))
+	if percentile > 0 && len(sorted) > 0 {
+		at := max(0, int(float64(len(sorted))*percentile/100)-1)
+		threshold := sorted[at]
+		for i, d := range degree {
+			if d > threshold {
+				isHub[i] = true
+				hubs++
+			}
+		}
+	}
+	kept := make([]int, 0, len(nodes))
+	remap := make(map[int]int, len(nodes))
+	for i := range nodes {
+		if !isHub[i] && degree[i] > 0 {
+			remap[i] = len(kept)
+			kept = append(kept, i)
+		}
+	}
+	if len(kept) == 0 {
+		return 0, 0, hubs, nil
+	}
+	sub := make([]leiden.Edge, 0, len(edges))
+	for _, e := range edges {
+		from, keptFrom := remap[e.From]
+		to, keptTo := remap[e.To]
+		if keptFrom && keptTo {
+			sub = append(sub, leiden.Edge{From: from, To: to, Weight: e.Weight})
+		}
+	}
+	result, err := leiden.Leiden(ctx, len(kept), sub, leiden.DefaultOptions())
+	if err != nil {
+		return 0, 0, hubs, err
+	}
+	community := make(map[int]int, len(nodes))
+	sizes := map[int]int{}
+	for at, cluster := range result.Partition {
+		community[kept[at]] = cluster
+		sizes[cluster]++
+	}
+	// Reattach every excluded hub to the community most of its neighbours are in, with
+	// graphify's deterministic tie-break: most votes first, then the lowest community id.
+	next := result.NumClusters
+	for i := range nodes {
+		if !isHub[i] {
+			continue
+		}
+		votes := map[int]int{}
+		for _, nb := range neighbours[i] {
+			if cluster, ok := community[nb]; ok {
+				votes[cluster]++
+			}
+		}
+		best, bestVotes := next, 0
+		for cluster, n := range votes {
+			if n > bestVotes || (n == bestVotes && cluster < best) {
+				best, bestVotes = cluster, n
+			}
+		}
+		if bestVotes == 0 {
+			next++
+		}
+		community[i] = best
+		sizes[best]++
+	}
+	for _, n := range sizes {
+		largest = max(largest, n)
+	}
+	return len(sizes), largest, hubs, nil
 }
