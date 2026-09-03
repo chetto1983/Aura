@@ -30,11 +30,37 @@ type conversationProjectionTombstoneSource interface {
 }
 
 // ConversationProjectionSink is the rebuildable derived graph boundary.
+//
+// ProjectedThroughSeq is a READ on that boundary, and it is here rather than in its own
+// interface because the same tenant resolution answers it: the context ladder needs to
+// know how far a conversation reached the graph before it tells the model a dropped span
+// is still readable there.
 type ConversationProjectionSink interface {
 	ApplyConversationProjection(context.Context, arcadedb.ConversationProjection) error
+	ProjectedThroughSeq(ctx context.Context, identityID, conversationID string) (int, error)
 	DeleteConversationProjection(context.Context, string, string) error
 	DeleteIdentityConversationProjections(context.Context, string) error
 	PruneConversationProjections(context.Context, string, []string) error
+}
+
+// ProjectedThroughSeq asks the sink how far this conversation reached the graph, for the
+// context ladder's offload pointer. It is fail-soft on purpose and answers 0 for a nil
+// projector, a missing identity, or any error: 0 means "claim nothing", so a projection
+// this call could not read costs a silent drop rather than a pointer at turns the graph
+// may not hold.
+func (p *ConversationProjector) ProjectedThroughSeq(
+	ctx context.Context,
+	identityID, conversationID string,
+) int {
+	if p == nil || p.sink == nil || strings.TrimSpace(identityID) == "" ||
+		strings.TrimSpace(conversationID) == "" {
+		return 0
+	}
+	through, err := p.sink.ProjectedThroughSeq(ctx, identityID, conversationID)
+	if err != nil {
+		return 0
+	}
+	return max(through, 0)
 }
 
 type conversationProjectionOffer struct {

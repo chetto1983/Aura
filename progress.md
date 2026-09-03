@@ -287,6 +287,26 @@ Verified on the rebuilt container:
 The skill and the pointer now say which four are present and that the rest need loading,
 so neither names a tool the agent cannot reach.
 
+## Context offload (L2.5 → memory)
+
+The audit's §5 is implemented. `docs/audit/2026-09-03-conversation-offload-and-lessons.md`
+carries the reasoning and the measurements; the shape is:
+
+- `(*arcadedb.Client).ProjectedThroughSeq` reads the watermark every projection had been
+  writing and nothing had ever read. Live-tested: it reports the highest projected seq (not
+  a count — turn sequences have gaps), 0 for an unprojected conversation, and 0 for another
+  identity's conversation of the same name.
+- It reaches the ladder through the projection boundary the runner already owned, so
+  `internal/conversations` still does not depend on `internal/arcadedb`.
+- `withOffloadPointer` injects one synthetic turn after an L2.5 drop, naming the dropped
+  span and the exact `memory_recall` call that reads it back — bounded by the watermark, so
+  a span the graph does not hold produces silence rather than a pointer to nothing.
+- Fail-soft throughout: nil projector, missing identity or any error yields 0, and 0 claims
+  nothing.
+
+What it does not do: remove the drop. The context still shrinks. What changes is that a gap
+is now legible as a gap, with the call that fills it.
+
 ## Next actions
 
 1. Commit as six atomic changes: merge · POLE classing · recall paging · re-embed and

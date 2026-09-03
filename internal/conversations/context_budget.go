@@ -30,6 +30,13 @@ type ContextConfig struct {
 	CompactionTriggerPercent int
 	MaxOutputTokens          int
 	ToolEvictAfterTurns      int
+	// ProjectedThroughSeq is how far this conversation has been copied into the memory
+	// graph, from the projection's own watermark. It bounds what an L2.5 drop may claim is
+	// recoverable: a turn above it lives in Postgres alone, so pointing the model at it
+	// would spend a recall and return nothing. Zero means unknown, which claims nothing —
+	// the honest failure of a watermark is to under-report.
+	ProjectedThroughSeq int
+
 	// HistoryHardCapTurns is the retained environment name for the number of rows in
 	// one keyset page. Paging continues to the exact durable watermark or root; separate
 	// fail-closed work limits bound aggregate rows and bytes without returning a partial

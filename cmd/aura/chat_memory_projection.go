@@ -32,6 +32,19 @@ func (s tenantConversationProjectionSink) ApplyConversationProjection(
 	return client.ApplyConversationProjection(ctx, projection)
 }
 
+// ProjectedThroughSeq lets the context ladder ask how far this conversation reached the
+// graph before it claims a dropped span is recoverable (internal/conversations/context_offload.go).
+func (s tenantConversationProjectionSink) ProjectedThroughSeq(
+	ctx context.Context,
+	identityID, conversationID string,
+) (int, error) {
+	client, err := s.client(ctx, identityID)
+	if err != nil {
+		return 0, err
+	}
+	return client.ProjectedThroughSeq(ctx, identityID, conversationID)
+}
+
 func (s tenantConversationProjectionSink) DeleteConversationProjection(
 	ctx context.Context,
 	identityID, conversationID string,

@@ -245,6 +245,10 @@ func applyContextLadder(
 	if err := emit.insertContextRotEvent(ctx, conversationID, action, pairsDropped, totalAfterL1, tokensAfter+tailTokens); err != nil {
 		return nil, err
 	}
+	// What was dropped is not necessarily gone: the projection copies prose into the
+	// memory graph, so a drop that stays under the watermark leaves a pointer instead of
+	// a silence. See context_offload.go for why the claim is bounded.
+	reduced = withOffloadPointer(conversationID, l1, reduced, cfg.ProjectedThroughSeq)
 	return injectTransientContext(repairManagedToolMessagePairs(toMessages(reduced)), tail), nil
 }
 

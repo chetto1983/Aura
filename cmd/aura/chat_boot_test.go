@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db"
@@ -498,21 +497,6 @@ func (emptyProjectionSource) ListProjectionTurns(
 	int,
 ) ([]conversations.ProjectionTurn, conversations.ProjectionCursor, error) {
 	return nil, conversations.ProjectionCursor{}, nil
-}
-
-type emptyProjectionSink struct{}
-
-func (emptyProjectionSink) ApplyConversationProjection(context.Context, arcadedb.ConversationProjection) error {
-	return nil
-}
-func (emptyProjectionSink) DeleteConversationProjection(context.Context, string, string) error {
-	return nil
-}
-func (emptyProjectionSink) DeleteIdentityConversationProjections(context.Context, string) error {
-	return nil
-}
-func (emptyProjectionSink) PruneConversationProjections(context.Context, string, []string) error {
-	return nil
 }
 
 func TestChatBootMemoryProjection(t *testing.T) {

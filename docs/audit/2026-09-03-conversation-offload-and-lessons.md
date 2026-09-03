@@ -130,9 +130,22 @@ The enabling fact is that the watermark already exists: the `Conversation` verte
 
 That is a small change with a real payoff: the thread stops being abandoned at the window
 edge, and the model regains what it dropped on demand rather than being told to start over.
-It is written here rather than implemented because it changes eviction semantics for every
-conversation, which is the operator's call, and because point 1 must land before point 2 —
-a pointer to a turn that was never projected is worse than the drop it replaces.
+
+**Implemented on the operator's go-ahead, in that order.** The watermark had been written
+by every projection and read by nothing; `(*arcadedb.Client).ProjectedThroughSeq` reads it
+now, live-tested, answering 0 for a conversation nobody projected. It reaches the ladder
+through the projection boundary the runner already owned (so `internal/conversations` still
+has no dependency on `internal/arcadedb`), is populated per turn, and is fail-soft
+everywhere: a nil projector, a missing identity or any error answers 0, and 0 claims
+nothing. After an L2.5 drop, `withOffloadPointer` injects one synthetic turn — the same
+shape the compaction summary and the always-block already use — naming the dropped span
+and the exact `memory_recall` call that reads it back, but only when the whole span sits at
+or below the watermark. A partial claim is not made: "turns 4-9 are in memory, 10-12 are
+gone" costs more to read than the recall it saves.
+
+The one thing this does NOT do is make the drop unnecessary. The context still shrinks; what
+changes is that the model can tell something was there and knows how to fetch it, instead of
+reading a gap as though nothing had been said.
 
 ## 6. The action half of a reasoning trace is essentially unwritten
 

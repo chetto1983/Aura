@@ -167,3 +167,8 @@ func TestConversationProjectionPeriodicReconcile(t *testing.T) {
 		t.Fatal("authoritative paging failure was not observable")
 	}
 }
+
+// ProjectedThroughSeq: this double projects nothing, so it claims nothing.
+func (s *reconciliationProjectionSink) ProjectedThroughSeq(context.Context, string, string) (int, error) {
+	return 0, nil
+}

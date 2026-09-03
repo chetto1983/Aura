@@ -243,6 +243,11 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 		}
 
 		cfg := r.contextConfig(ctx, r.loadMemoryContext(ctx, input.visibleUserMsg))
+		// How far this conversation reached the memory graph. It bounds what an L2.5
+		// drop may tell the model is still readable there — see
+		// internal/conversations/context_offload.go.
+		cfg.ProjectedThroughSeq = r.conversationProjector.ProjectedThroughSeq(
+			ctx, identityctx.IdentityID(ctx), convID)
 		history, err := r.loadTurnHistory(ctx, convID, cfg, input.branchLeaf)
 		if err != nil {
 			yield(nil, err)
