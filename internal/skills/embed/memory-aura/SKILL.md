@@ -28,6 +28,14 @@ fact instead of creating another edge.
 The subject and object entities are created for you. There is no separate "add entity"
 step, and looking for one is how the graph ends up with facts that connect to nothing.
 
+**Reuse the names the memory already knows.** A subject invented for one fact alone is an
+island: it can be recalled by its own name and by nothing else. Before writing, it costs
+one `memory_entities` or one `memory_digest` to see whether this thing already has a name
+here, and to spell it the same way. The cost of skipping that is measurable — a memory of
+107 facts imported one-note-at-a-time, each with a bespoke subject, held **209 entities**
+and not one fact shared a neighbour with another until a linking sweep was written to
+repair it after the fact. Facts are worth more connected than filed.
+
 Do **not** record the passing shape of a conversation — what you just did, which file you
 opened, that a command succeeded. If it would not matter in a month it does not belong
 here. Memory full of session debris is worse than empty memory: it dilutes retrieval, and
@@ -42,6 +50,19 @@ every wrong entry is something someone has to find and remove later.
   directions**, so it returns the facts where the entity is the object as well as the
   subject. That matters more than it sounds: the things a memory is asked about are
   usually spoken *about* rather than speaking.
+
+  Prefer it over search whenever a name is available, and not as a style preference:
+  a fact written minutes earlier did not appear in the top two of a `memory_search`
+  phrased in another language, while `memory_facts_about` on its exact subject returned
+  it first. Search ranks; this one *addresses*.
+
+  It takes a `depth`. At the default **1** it answers with what is stated about that
+  entity directly. At **2** it widens to the neighbourhood: facts that mention something
+  this entity's facts also mention. Reach for 2 when the question is about how a subject
+  *connects* to the rest — "what does X have to do with Y", "what else touches this" —
+  and stay at 1 when you want only what is asserted of it. The reply says which you got
+  in `retrieval.path`: `graph` for one hop, `mentions` for two, so a wide answer is never
+  mistakable for a lucky one.
 - `memory_digest` — the whole memory as a compact index, one line per entity. Read it
   ONCE and keep it rather than searching repeatedly. Check `covered`: when it is false
   the memory is larger than the index and search is still needed for the rest.
@@ -85,10 +106,35 @@ Nothing should remain, and there is nothing to keep addressable. It takes an `en
 support. A fact supported by another source remains. Run it with `dry_run: true` first
 and read what it would remove.
 
+Forgetting is the one operation with no undo, so it is also the one where a filter that
+matches nothing is the likeliest outcome. **If a forget reports that it matched no facts,
+the filter is wrong — sending it again unchanged cannot make it right.** Go and look:
+`memory_entities` for the exact spelling, or `memory_search` for the `fact_key` and the
+`run_id` a recall hit already carries. Provenance is usually the strongest handle there
+is; a whole import is one `run_id`, where the same removal by entity is dozens of calls.
+
+"Erase everything" is not one call and should not be attempted as one. Find the handles
+first — the distinct `run_id`s, or the entity list — then remove them one at a time,
+counting as you go.
+
 **The same thing was recorded under two names** → `memory_merge_entities`.
 Fold the duplicate onto the survivor; its facts move rather than dying with it. Prefer
 this over forgetting a duplicate — forgetting destroys the facts only the duplicate knew.
 If the target does not exist yet, this is a rename.
+
+## Say what the result says
+
+Every one of these tools answers with counts — how many facts it wrote, closed or removed —
+and those counts are the only thing you know. A reply that removed five facts is not a
+memory that is now empty, and reporting it as one is worse than reporting the failure,
+because nobody will look again.
+
+So: read the number, and let it be the claim. When the operator asked for something
+sweeping — everything about X gone, the whole import undone — the honest close is a second
+read that shows the state, not the write's own receipt. `memory_digest` returns `facts` and
+`entities` for exactly this; a `memory_facts_about` on the name you were asked to erase
+should come back empty. One extra call turns "I removed 5" into "nothing remains", or into
+"5 went, 103 are still there" — and the second sentence is the one worth saying.
 
 ## The correction trap
 
