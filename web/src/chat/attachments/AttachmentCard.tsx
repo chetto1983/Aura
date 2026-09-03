@@ -1,6 +1,8 @@
 import { RefreshCw, UploadCloud, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { RemoteImagePreview } from './AttachmentImage';
 import type { Asset } from './types';
+import { isReadyAsset } from './upload';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -14,15 +16,29 @@ interface AttachmentCardProps {
 
 export function AttachmentCard({ asset, onRetry, onPromote, onRemove }: AttachmentCardProps) {
   const { t } = useTranslation();
-  const detail = asset.error_message ?? asset.summary ?? statusText(asset.status, t);
+  const status = statusText(asset.status, t);
+  // The detail line EXPLAINS; it does not restate the badge. It used to fall back to the
+  // status word, so a refused asset with no server message printed "Refused" twice, once
+  // as a badge and once as its own explanation.
+  const detail = asset.error_message ?? asset.summary ?? '';
+  const showsImage = asset.modality === 'image' && isReadyAsset(asset);
   return (
-    <Card className="max-w-sm gap-2 bg-surface-2 px-3 py-2 text-sm">
+    <Card className="max-w-sm gap-2 overflow-hidden bg-surface-2 px-3 py-2 text-sm">
+      {showsImage ? (
+        <RemoteImagePreview
+          assetId={asset.id}
+          fileName={asset.file_name}
+          className="-mx-3 -mt-2 max-h-80 w-[calc(100%+1.5rem)] object-contain"
+        />
+      ) : null}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate font-medium">{asset.file_name}</p>
-          <Badge variant={statusVariant(asset.status)} className="mt-1 text-[0.75rem]">
-            {statusText(asset.status, t)}
-          </Badge>
+          {status !== '' ? (
+            <Badge variant={statusVariant(asset.status)} className="mt-1 text-[0.75rem]">
+              {status}
+            </Badge>
+          ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {onRetry !== undefined && asset.status === 'failed' ? (
@@ -84,15 +100,32 @@ function isPromotable(asset: Asset): boolean {
   return asset.status === 'searchable' || asset.status === 'complete';
 }
 
+// A status word only when there is one worth saying.
+//
+// This used to call everything except searchable/complete "processing" -- and upload.ts
+// records the measurement that those two states are never reached on this deployment
+// (2026-08-13: presigned 6 / processing 2 / accepted 2 / searchable 0), because the
+// statement that activates a version lost its callers. So an attachment the model had
+// already read and answered about sat under a permanent "Elaborazione" badge, seen live
+// 2026-09-03 on a screenshot the vision model described in full while the chip claimed it
+// was still being worked on.
+//
+// Readiness is now the same question the composer already answers with isReadyAsset --
+// the one that decides whether the turn may be sent at all -- so the badge cannot
+// disagree with the button. A ready attachment says nothing: the picture, or the
+// filename, is the whole message.
 function statusText(status: Asset['status'], t: ReturnType<typeof useTranslation>['t']): string {
   switch (status) {
     case 'failed':
       return t('chat.attachments.failed');
     case 'refused':
       return t('chat.attachments.refused');
+    case 'accepted':
+    case 'processing':
     case 'searchable':
+    case 'embedding':
     case 'complete':
-      return t('chat.attachments.ready');
+      return '';
     default:
       return t('chat.attachments.processing');
   }
@@ -103,9 +136,6 @@ function statusVariant(status: Asset['status']): 'secondary' | 'warning' | 'succ
     case 'failed':
     case 'refused':
       return 'danger';
-    case 'searchable':
-    case 'complete':
-      return 'success';
     default:
       return 'warning';
   }

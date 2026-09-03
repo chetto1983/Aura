@@ -50,15 +50,55 @@ describe('AttachmentChip', () => {
     expect(screen.getByText('Processing')).toBeTruthy();
   });
 
-  it('reads an uploaded-but-unsent attachment as ready', () => {
+  // Rewritten deliberately, not repaired: this asserted a "Ready" badge, and a permanent
+  // label on a finished upload is noise that teaches the reader to stop looking at the one
+  // state that matters. The contract is now that a usable attachment says nothing and just
+  // shows what it is.
+  it('says nothing once the attachment is usable', () => {
     render(
       <AttachmentChip
         attachment={attachment({ type: 'requires-action', reason: 'composer-send' })}
       />,
     );
 
-    const badge = screen.getByText('Ready');
-    expect(badge.getAttribute('data-slot')).toBe('badge');
+    expect(screen.queryByText('Ready')).toBeNull();
+    expect(screen.queryByText('Processing')).toBeNull();
+    expect(screen.getByText('note.pdf')).toBeTruthy();
+  });
+
+  // An image is shown, not named: the question a composer preview answers is "is that the
+  // right screenshot?", which a filename answers badly.
+  it('previews an image attachment instead of listing its name', () => {
+    const file = new File(['x'], 'shot.png', { type: 'image/png' });
+    render(
+      <AttachmentChip
+        attachment={{
+          id: 'asset-image',
+          type: 'image',
+          name: 'shot.png',
+          contentType: 'image/png',
+          file,
+          status: { type: 'requires-action', reason: 'composer-send' },
+        }}
+      />,
+    );
+
+    const image = screen.getByAltText('shot.png');
+    expect(image.tagName).toBe('IMG');
+    expect(image.getAttribute('src')).toContain('blob:');
+    expect(screen.queryByText('shot.png')).toBeNull();
+  });
+
+  // A non-image keeps the name-and-badge chip: there is nothing to look at.
+  it('keeps naming a document that has no preview', () => {
+    render(
+      <AttachmentChip
+        attachment={attachment({ type: 'running', reason: 'uploading', progress: 1 })}
+      />,
+    );
+
+    expect(screen.queryByAltText('note.pdf')).toBeNull();
+    expect(screen.getByText('note.pdf')).toBeTruthy();
   });
 
   it('reads a refused or failed upload as failed', () => {

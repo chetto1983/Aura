@@ -46,3 +46,46 @@ describe('AttachmentCard actions', () => {
     expect(screen.queryByRole('button', { name: 'Promote' })).toBeNull();
   });
 });
+
+// The live defect, 2026-09-03: a screenshot the vision model read and described in full
+// sat under a permanent "Elaborazione" badge. `processing` is where assets STOP on this
+// deployment -- upload.ts records that nothing ever reaches `searchable` -- so treating it
+// as unfinished meant the card could never stop claiming work was in progress.
+describe('AttachmentCard status honesty', () => {
+  const processing: Asset = {
+    id: 'asset-2',
+    status: 'processing',
+    modality: 'image',
+    file_name: 'screenshot.png',
+    mime_type: 'image/png',
+    declared_size_bytes: 12,
+    size_bytes: 12,
+  };
+
+  it('stops calling a usable attachment unfinished', () => {
+    render(<AttachmentCard asset={processing} />);
+
+    expect(screen.queryByText('Processing')).toBeNull();
+    expect(screen.getByText('screenshot.png')).toBeTruthy();
+  });
+
+  it('shows the image itself, addressed by asset id', () => {
+    render(<AttachmentCard asset={processing} />);
+
+    const image = screen.getByAltText('screenshot.png');
+    expect(image.getAttribute('src')).toBe('/api/assets/asset-2/download');
+  });
+
+  it('still reports a refusal, which is the case worth a badge', () => {
+    render(<AttachmentCard asset={{ ...processing, status: 'refused' }} />);
+
+    expect(screen.getByText('Refused')).toBeTruthy();
+    expect(screen.queryByAltText('screenshot.png')).toBeNull();
+  });
+
+  it('does not try to preview a document', () => {
+    render(<AttachmentCard asset={{ ...processing, modality: 'document' }} />);
+
+    expect(screen.queryByAltText('screenshot.png')).toBeNull();
+  });
+});

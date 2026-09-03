@@ -2,6 +2,7 @@ import { AttachmentPrimitive } from '@assistant-ui/react';
 import type { Attachment, AttachmentStatus } from '@assistant-ui/core';
 import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { LocalImagePreview } from './AttachmentImage';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
@@ -11,6 +12,12 @@ import { Button } from '@/components/ui/button';
 // object the send gate reads — instead of an upload item kept in component state beside it.
 // Removal goes through AttachmentPrimitive.Remove, which calls the adapter's remove(), so
 // the DELETE and the chip disappearing are one action rather than two that can disagree.
+//
+// An image shows itself. A filename plus a badge describes a picture the operator is
+// holding in their hand, and the one question a preview answers instantly -- "is that the
+// right screenshot?" -- a name answers badly. The status word stays only while it still
+// says something: once the file is attachable it is dropped, because a permanent label on
+// a finished upload is noise that trains the reader to ignore the one case that matters.
 
 export function AttachmentChip({
   attachment,
@@ -20,14 +27,40 @@ export function AttachmentChip({
   readonly disabled?: boolean;
 }) {
   const { t } = useTranslation();
-  const { name, status } = attachment;
+  const { name, status, file } = attachment;
+  const preview = attachment.type === 'image' && file !== undefined ? file : undefined;
+  const label = statusLabel(status, t);
 
   return (
-    <AttachmentPrimitive.Root className="inline-flex min-h-10 min-w-0 max-w-full items-center gap-2 rounded-md border border-border bg-surface-2 px-2 py-1 text-xs text-text">
-      <span className="min-w-0 truncate">{name}</span>
-      <Badge variant={statusVariant(status)} className="shrink-0 text-[0.75rem]">
-        {statusLabel(status, t)}
-      </Badge>
+    <AttachmentPrimitive.Root
+      className={
+        preview !== undefined
+          ? 'relative inline-flex size-20 shrink-0 overflow-hidden rounded-lg border border-border bg-surface-2'
+          : 'inline-flex min-h-10 min-w-0 max-w-full items-center gap-2 rounded-md border border-border bg-surface-2 px-2 py-1 text-xs text-text'
+      }
+    >
+      {preview !== undefined ? (
+        <>
+          <LocalImagePreview file={preview} className="size-full object-cover" />
+          {/* Only while the upload is still doing something: a caption over the picture
+              is the one place a status word cannot be ignored, and also the one place it
+              must not linger. */}
+          {label !== '' ? (
+            <span className="absolute inset-x-0 bottom-0 truncate bg-black/60 px-1.5 py-0.5 text-[0.75rem] text-white">
+              {label}
+            </span>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <span className="min-w-0 truncate">{name}</span>
+          {label !== '' ? (
+            <Badge variant={statusVariant(status)} className="shrink-0 text-[0.75rem]">
+              {label}
+            </Badge>
+          ) : null}
+        </>
+      )}
       <AttachmentPrimitive.Remove
         render={
           <Button
@@ -37,7 +70,11 @@ export function AttachmentChip({
             aria-label={t('chat.attachments.remove', { name })}
             data-required-touch-target
             disabled={disabled}
-            className="h-[44px] min-h-[44px] w-[44px] min-w-[44px] shrink-0 rounded-full text-text-muted hover:bg-surface-3 hover:text-text"
+            className={
+              preview !== undefined
+                ? 'absolute right-0 top-0 h-[44px] min-h-[44px] w-[44px] min-w-[44px] rounded-full text-white/90 hover:bg-black/40 hover:text-white'
+                : 'h-[44px] min-h-[44px] w-[44px] min-w-[44px] shrink-0 rounded-full text-text-muted hover:bg-surface-3 hover:text-text'
+            }
           >
             <X data-icon aria-hidden="true" className="size-3.5" />
           </Button>
@@ -74,6 +111,7 @@ function statusLabel(status: AttachmentStatus, t: ReturnType<typeof useTranslati
       return t('chat.attachments.failed');
     case 'requires-action':
     case 'complete':
-      return t('chat.attachments.ready');
+      // Nothing left to report: the file is attachable and the send button says the rest.
+      return '';
   }
 }
