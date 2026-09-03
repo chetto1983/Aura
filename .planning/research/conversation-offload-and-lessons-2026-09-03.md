@@ -3,6 +3,12 @@
 Date: 2026-09-03. Measured against the running stack (Postgres `aura`, ArcadeDB 26.9.1,
 identity `bb78065b`).
 
+This file is a findings document, which is why it lives here and not in `docs/audit/`:
+that directory holds current unresolved state only (PRD Amendment #106.5), and
+`scripts/audit_closure_gate.py` fails closed on anything tracked beside its register.
+Nothing here adds a row to that register — promoting a finding to one is the operator's
+call, and a two-part change (table plus `REQUIRED_CURRENT_IDS`).
+
 Two questions were asked: how lessons are handled, and whether the conversation record now
 in ArcadeDB could shrink the input context — "in theory infinite". The second question is
 the right one to have asked *now*, because the context ladder was designed when Postgres

@@ -289,7 +289,7 @@ so neither names a tool the agent cannot reach.
 
 ## Context offload (L2.5 → memory)
 
-The audit's §5 is implemented. `docs/audit/2026-09-03-conversation-offload-and-lessons.md`
+The audit's §5 is implemented. `.planning/research/conversation-offload-and-lessons-2026-09-03.md`
 carries the reasoning and the measurements; the shape is:
 
 - `(*arcadedb.Client).ProjectedThroughSeq` reads the watermark every projection had been
