@@ -952,7 +952,27 @@ services:
       # folded into a UUIDv5 over (issuer, subject) -- byte-identical across all three
       # sidecars, so one person is one tenant wherever they mount.
       MCP_OAUTH_TRUSTED_ISSUERS: ${AURA_WHATSAPP_MCP_TRUSTED_ISSUERS:-}
-      MCP_OAUTH_RESOURCE: http://whatsapp:8080/mcp/
+      # Comma-separated: the FIRST is canonical and is what the protected-resource
+      # metadata advertises, and MCP clients treat that value as the server's ADDRESS,
+      # so it must be a URL a host client can actually reach. The rest are merely
+      # ACCEPTED as token audiences, and the container spelling is required:
+      # cmd/aura/mcp_first_party_grants.go pins the self-issued in-container grant's
+      # audience to the server's own dial URL (ResourceURL: server.URL), seen in aura's
+      # log as `Post "http://whatsapp:8080/mcp/"`.
+      #
+      # Measured 2026-09-03: advertising ONLY the container name sent a host MCP client
+      # to a name that resolves nowhere outside this network, and it failed with
+      # `getaddrinfo ENOTFOUND whatsapp` before authentication could even start --
+      # the same defect arcadedb-mcp above had, and the same repair.
+      #
+      # The canonical entry carries NO trailing slash, per the spec's Canonical Server
+      # URI guidance (revision 2026-07-28): "implementations SHOULD consistently use the
+      # form without the trailing slash". Both spellings stay accepted so grants already
+      # minted for the slashed form keep validating.
+      #
+      # Requires whatsapp-mcp >= 6aaa87d, which reads this as a list; an older image
+      # would take the whole comma string as one resource identifier and match nothing.
+      MCP_OAUTH_RESOURCE: ${AURA_WHATSAPP_MCP_OAUTH_RESOURCE:-http://127.0.0.1:8092/mcp,http://127.0.0.1:8092/mcp/,http://whatsapp:8080/mcp/,http://whatsapp:8080/mcp}
       WHATSAPP_MCP_PORT: "8080"
       WHATSAPP_GATEWAY_PORT: "8081"
       WHATSAPP_API_URL: http://127.0.0.1:8081/api

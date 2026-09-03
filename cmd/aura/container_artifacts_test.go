@@ -108,7 +108,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"127.0.0.1:${AURA_WHATSAPP_BRIDGE_PORT:-8094}:8081",
 		"aura-whatsapp-session:/app/whatsapp-bridge/store",
 		"WHATSAPP_BRIDGE_TOKEN: ${AURA_ACCESS_TOKEN:?AURA_ACCESS_TOKEN required in .env}",
-		"MCP_OAUTH_RESOURCE: http://whatsapp:8080/mcp/",
+		"MCP_OAUTH_RESOURCE: ${AURA_WHATSAPP_MCP_OAUTH_RESOURCE:-http://127.0.0.1:8092/mcp,http://127.0.0.1:8092/mcp/,http://whatsapp:8080/mcp/,http://whatsapp:8080/mcp}",
 		"caddy:",
 		"0.0.0.0:${AURA_HTTPS_PORT:-443}:443",
 		"caddy-data:/data",
