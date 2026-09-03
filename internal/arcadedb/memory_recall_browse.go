@@ -74,7 +74,16 @@ func (c *Client) recallRecent(ctx context.Context, request RecallRequest) (Recal
 			Conversation: &windowCopy,
 		})
 	}
-	return recallConversationResult(evidence, len(rows), "no_recent_conversations"), nil
+	result := recallConversationResult(evidence, len(rows), "no_recent_conversations")
+	// recent orders by recency and nothing else, so a query it was handed changed
+	// nothing: measured 2026-09-03, mode=recent with query="ArcadeDB" and with no
+	// query at all returned byte-identical evidence. Say so in the metadata rather
+	// than accepting a parameter and discarding it -- a caller who believed it was
+	// filtering has no other way to learn that it was not.
+	if strings.TrimSpace(request.Query) != "" && result.Reason == "" {
+		result.Reason = reasonQueryIgnoredByRecent
+	}
+	return result, nil
 }
 
 func (c *Client) recallOpen(ctx context.Context, request RecallRequest) (RecallResult, error) {

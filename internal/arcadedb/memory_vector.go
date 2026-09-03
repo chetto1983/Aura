@@ -217,6 +217,7 @@ const (
 	reasonFusionResultInvalid   = "fusion_result_invalid"
 	reasonHydrationFailed       = "hydration_failed"
 	reasonNoQualifiedCandidates = "no_qualified_candidates"
+	reasonQueryIgnoredByRecent  = "query_ignored_by_recent_mode"
 )
 
 // SearchFactsHybrid runs both legs and fuses them with ArcadeDB's own reciprocal

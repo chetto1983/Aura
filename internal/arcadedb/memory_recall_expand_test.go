@@ -93,3 +93,37 @@ func TestRecallSemanticReturnsSeededEntityNodes(t *testing.T) {
 		t.Fatalf("expansion disturbed the ranked evidence: %#v", result.Evidence)
 	}
 }
+
+// recent orders by recency and nothing else. Measured 2026-09-03, mode=recent
+// with a query and with none returned byte-identical evidence -- so the
+// parameter was accepted and discarded, and a caller who believed it was
+// filtering had no way to learn otherwise.
+func TestRecallRecentSaysItIgnoredTheQuery(t *testing.T) {
+	anchors := `{"result":[{"identity_id":"identity-a","conversation_id":"c1","turn_seq":3,` +
+		`"role":"user","content":"ciao","content_hash":"h","occurred_at":"2026-09-03T10:00:00Z",` +
+		`"source_ref":"postgres://aura/conversations/c1/turns/3"}]}`
+	client, _ := recordingClient(t, anchors)
+	withQuery, err := client.RecallMemory(t.Context(), RecallRequest{
+		IdentityID: "identity-a", Mode: RecallModeRecent, Query: "ArcadeDB", Limit: 3,
+	})
+	if err != nil {
+		t.Fatalf("RecallMemory(recent, query): %v", err)
+	}
+	if withQuery.Reason != reasonQueryIgnoredByRecent {
+		t.Fatalf("reason = %q, want the mode to say the query did nothing", withQuery.Reason)
+	}
+
+	client2, _ := recordingClient(t, anchors)
+	without, err := client2.RecallMemory(t.Context(), RecallRequest{
+		IdentityID: "identity-a", Mode: RecallModeRecent, Limit: 3,
+	})
+	if err != nil {
+		t.Fatalf("RecallMemory(recent): %v", err)
+	}
+	if without.Reason != "" {
+		t.Fatalf("reason = %q, want none when no query was passed", without.Reason)
+	}
+	if len(withQuery.Evidence) != len(without.Evidence) {
+		t.Fatal("the query changed the evidence; this test's premise is wrong")
+	}
+}
