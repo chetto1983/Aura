@@ -66,16 +66,21 @@ func (b Budget) present() bool {
 		b.Today != "" || b.Sources != "" || b.DeferredTools != ""
 }
 
-// block renders the directional hint: the D-06 budget line (omitted when both
-// counts are zero), workspace/current-time lines when configured (#52/D-41), and
-// the D-05 numbered source list when a turn consulted web sources. The source
-// block mirrors <current_time>: an XML-tagged volatile line that rides the tail-
-// inject copy, never messages[0].
-func (b Budget) block() string {
+// Grounding renders the volatile FACTS the turn was handed, and nothing else:
+// where its workspace is, what time it is, what day it is, which sources it
+// consulted. The step counts and the deferred roster stay out — those are
+// instructions to the model, not facts about the world.
+//
+// It is split out because a SECOND reader needs exactly this subset. The completion
+// critic judges an answer against the evidence behind it and used to receive only
+// the tool results, so an answer grounded in one of these lines was structurally
+// unverifiable to it. Measured on the live deployment 2026-09-03: asked the time,
+// the agent read <current_time> and answered correctly; the critic, shown no tools
+// and no clock, replied "The current time was not verified via a tool call." and
+// vetoed. Six LLM calls and 59k prompt tokens to re-derive the same fourteen
+// characters.
+func (b Budget) Grounding() string {
 	var lines []string
-	if b.Used != 0 || b.Remaining != 0 {
-		lines = append(lines, fmt.Sprintf("<budget>used=%d remaining=%d</budget>", b.Used, b.Remaining))
-	}
 	if b.Workspace != "" {
 		lines = append(lines, fmt.Sprintf("<workspace>%s</workspace>", b.Workspace))
 	}
@@ -87,6 +92,21 @@ func (b Budget) block() string {
 	}
 	if b.Sources != "" {
 		lines = append(lines, fmt.Sprintf("<sources>\n%s\n</sources>", b.Sources))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// block renders the directional hint: the D-06 budget line (omitted when both
+// counts are zero), then the Grounding facts, then the deferred roster. The source
+// block mirrors <current_time>: an XML-tagged volatile line that rides the tail-
+// inject copy, never messages[0].
+func (b Budget) block() string {
+	var lines []string
+	if b.Used != 0 || b.Remaining != 0 {
+		lines = append(lines, fmt.Sprintf("<budget>used=%d remaining=%d</budget>", b.Used, b.Remaining))
+	}
+	if grounding := b.Grounding(); grounding != "" {
+		lines = append(lines, grounding)
 	}
 	// Last, so it is the nearest thing to the decision it governs. The three parts
 	// are the ones Claude Code's own deferred-tool reminder carries, in the same

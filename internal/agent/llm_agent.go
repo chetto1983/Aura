@@ -110,7 +110,9 @@ type LlmAgent struct {
 	// It sat next to a sideEffected bool documenting that the gate "only runs its
 	// critic on a side-effecting turn". D-20a/D-20b widened the gate to judge EVERY
 	// voluntary termination and left the flag behind, written by dispatch and read by
-	// nobody — a comment describing a condition the code no longer had.
+	// nobody. The gate is narrow again — criticWorthACall — but on the step budget,
+	// not on host state, so the flag stays gone: a turn that writes is guarded by the
+	// verify-on-stop ledger, which needs the path, not a boolean.
 	completionAttempts int
 
 	// ledger is the verification evidence the verify-on-stop gate reads

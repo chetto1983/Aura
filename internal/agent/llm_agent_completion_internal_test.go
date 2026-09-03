@@ -334,3 +334,53 @@ func TestSideEffectDigest_KeepsThisRunAfterRehydration(t *testing.T) {
 		t.Fatalf("digest still leaked the prior turn: %q", got)
 	}
 }
+
+// TestCompletionCriticUser_CarriesGrounding pins the fix for the 2026-09-03 07:14
+// veto: the critic must receive the same volatile facts the turn's own prompt
+// carried, or an answer drawn from them is unverifiable to it by construction.
+//
+// The live verdict was "The current time was not verified via a tool call." on an
+// answer the agent had read straight out of <current_time>. Six LLM calls followed.
+func TestCompletionCriticUser_CarriesGrounding(t *testing.T) {
+	a, _ := synthAgent("s")
+	a.workspace = "/workspace/alice"
+	budget, err := NewBudget(BudgetOptions{})
+	if err != nil {
+		t.Fatalf("NewBudget: %v", err)
+	}
+	ic := InvocationContext{Ctx: context.Background(), Budget: budget}
+	a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: "che ora è?"})
+
+	got := a.completionCriticUser(ic, "Sono le 09:14.")
+
+	for _, needle := range []string{
+		"<context_given_to_agent>", "<current_time>", "<today>", "<workspace>/workspace/alice</workspace>",
+		"<user_request>", "<tool_activity>", "<proposed_final_answer>",
+	} {
+		if !strings.Contains(got, needle) {
+			t.Errorf("critic context missing %q:\n%s", needle, got)
+		}
+	}
+	// Instructions to the model are not evidence about the world: a step budget or a
+	// roster of unloaded tools tells the critic nothing about whether the answer holds.
+	for _, forbidden := range []string{"<budget>", "<deferred_tools>"} {
+		if strings.Contains(got, forbidden) {
+			t.Errorf("critic context leaked model instructions %q:\n%s", forbidden, got)
+		}
+	}
+}
+
+// TestCompletionCriticUser_OmitsGroundingWhenThereIsNone keeps the empty case silent.
+// An empty <context_given_to_agent> would invite the critic to read the absence of
+// facts as evidence against the answer — the exact inference this section exists to
+// stop.
+func TestCompletionCriticUser_OmitsGroundingWhenThereIsNone(t *testing.T) {
+	a, _ := synthAgent("s")
+	got := a.completionCriticUser(InvocationContext{Ctx: context.Background()}, "fatto")
+	if strings.Contains(got, "context_given_to_agent") {
+		t.Fatalf("a Budget-less turn must ground on nothing, not on an empty block:\n%s", got)
+	}
+	if !strings.Contains(got, "<proposed_final_answer>") {
+		t.Fatalf("critic context lost its answer section:\n%s", got)
+	}
+}

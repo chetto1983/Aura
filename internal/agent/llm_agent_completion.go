@@ -27,14 +27,28 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 )
 
-// completionCriticSystem instructs the critic to grade by tool RESULTS, never by
-// the agent's prose. Load-bearing wording: "a script written but never executed
-// ... is NOT done" is the exact Borsa failure mode this gate exists to catch.
-const completionCriticSystem = "You are a strict completion auditor for an autonomous agent that works on a real machine. " +
-	"You are given the user's request, a log of the tool calls the agent made this turn with their results, and the agent's proposed final answer. " +
-	"Decide whether the concrete deliverable the user asked for actually EXISTS and is VERIFIED by the tool results — not merely promised, described, or left as a script for the user to run themselves. " +
-	"Judge ONLY by the tool results, never by the agent's claims. A script that was written but never executed, a file the agent says it created but no tool result confirms exists, or an answer that tells the user to run something themselves, is NOT done. " +
-	"If the user only asked a question and no artifact was requested, a well-supported answer IS done. " +
+// completionCriticSystem instructs the critic to grade by EVIDENCE, never by the
+// agent's prose. Load-bearing wording: "a script written but never executed ... is
+// NOT done" is the exact Borsa failure mode this gate exists to catch.
+//
+// The prompt classifies the REQUEST before it judges the answer, because strictness
+// belongs to what was asked, not to what the turn happened to dispatch. That split
+// is Hermes' completion contract in miniature: without a contract its judge uses
+// loose prose criteria, and only a declared verification criterion makes it demand
+// concrete evidence. A single always-strict criterion cannot tell "build me the
+// spreadsheet" (must be verified) from "che ora è?" (nothing to verify), and on
+// 2026-09-03 it did not: it vetoed a correct answer twice for want of a tool call.
+//
+// The second half of that fix is <context_given_to_agent>. Grading "ONLY by the tool
+// results" was not strictness, it was a blind spot — the clock, the date, the
+// workspace path and the consulted sources are evidence the agent was handed, and a
+// judge that cannot see them must call every answer drawn from them unverified.
+const completionCriticSystem = "You are a completion auditor for an autonomous agent that works on a real machine. " +
+	"You are given the user's request, the facts the agent's own prompt supplied it this turn (<context_given_to_agent>), a log of the tool calls it made this turn with their results (<tool_activity>), and its proposed final answer. " +
+	"FIRST classify the request. (A) It asks for an ARTIFACT or an ACTION on the machine: a file created or changed, a command run, a message sent, something installed. (B) It asks for INFORMATION: a question, an explanation, a value. " +
+	"For (A) judge STRICTLY and by tool results alone: the deliverable must EXIST and be VERIFIED by a tool result — not promised, described, or left as a script for the user to run themselves. A script that was written but never executed, a file the agent says it created but no tool result confirms exists, or an answer that tells the user to run something themselves, is NOT done. " +
+	"For (B) the answer is done when it is supported by <tool_activity> OR by <context_given_to_agent>. Both are evidence. NEVER demand a tool call for a fact the agent was already given: the current time, today's date, the workspace path and the listed sources are established, and an answer that restates one of them correctly IS done. " +
+	"Judge by that evidence, never by the agent's claims about work you cannot see. " +
 	"Reply with a single line: `DONE` if the deliverable is present and verified, or `NOT_DONE: <one short sentence naming what is missing and the next concrete action>`. Output nothing else."
 
 // completionVetoPrefix leads the feedback fed back to the model on the FIRST
@@ -93,6 +107,9 @@ func (a *LlmAgent) gateCompletion(ic InvocationContext, answer string) (veto boo
 			"source", "reply_hygiene", "attempt", a.completionAttempts, "answer_runes", utf8.RuneCountInString(answer))
 		return true, feedback
 	}
+	if !a.criticWorthACall(ic) {
+		return false, ""
+	}
 	done, reason, ok := a.runCompletionCritic(ic, answer)
 	if !ok {
 		// Fail-open. Invisible until now, which matters: a verifier that is quietly
@@ -133,7 +150,7 @@ func (a *LlmAgent) runCompletionCritic(ic InvocationContext, answer string) (don
 		Model: a.criticModel(),
 		Messages: []llm.Message{
 			{Role: llm.RoleSystem, Content: completionCriticSystem},
-			{Role: llm.RoleUser, Content: a.completionCriticUser(answer)},
+			{Role: llm.RoleUser, Content: a.completionCriticUser(ic, answer)},
 		},
 		Temperature: 0,
 		MaxTokens:   criticMaxTokens,
@@ -176,6 +193,52 @@ func (a *LlmAgent) runCompletionCritic(ic InvocationContext, answer string) (don
 	return parseCriticVerdict(b.String())
 }
 
+// criticWorthACall decides whether this termination is worth an LLM round trip.
+//
+// The gate used to judge EVERY voluntary termination, which meant every chat turn
+// bought a critic call. Measured on the live deployment 2026-09-03: "che ora è?"
+// cost six LLM calls and 59,266 prompt tokens, two of the calls being the critic —
+// one to veto a correct answer, one to bless the identical answer four calls later.
+// A verifier that charges every question for a verdict it almost always grants is
+// not a safeguard, it is a tax.
+//
+// ONE trigger survives: the run is terminating against its step budget. An agent
+// that stops with room left stopped because it judged itself finished, and that
+// judgement is cheap to trust and expensive to re-audit; an agent that stops with
+// nothing left may have run out rather than arrived, and THAT is the claim worth a
+// verdict. It is the extreme case, which is the only case this gate now buys.
+//
+// It is deliberately NOT armed by "the turn touched host state". That trigger fires
+// on every turn that writes a file or runs a command — most working turns — which
+// is a tax, not an exception. Edits are not left unguarded by dropping it: the
+// verify-on-stop gate (llm_agent_verification.go) owns them, on its own evidence
+// ledger and its own veto counter.
+//
+// Two things this no longer catches, both accepted on the operator's instruction
+// (2026-09-03) after the cost was measured — "che ora è?" spent six LLM calls and
+// 59,266 prompt tokens, two of them on a critic that vetoed a correct answer:
+//
+//   - HARN-06's shape, a cheap turn that states an intention and dispatches
+//     nothing, when it stops early. Reply hygiene still runs on it for free.
+//   - Work done ONLY through shell_exec, which leaves no path in the ledger, so
+//     neither gate sees it when the turn stops early.
+//
+// The shape mirrors Hermes, whose judge is strict only under an explicit completion
+// contract and loose otherwise, and its issue #54722, which proposes activating the
+// gate conservatively rather than on every termination.
+func (a *LlmAgent) criticWorthACall(ic InvocationContext) bool {
+	if ic.Budget == nil {
+		return false
+	}
+	return ic.Budget.Remaining() <= criticBudgetRemainingSteps
+}
+
+// criticBudgetRemainingSteps is how few steps must be left for a termination to
+// count as "against the wall". Absolute rather than a fraction of the budget: the
+// wall is the same distance away whether the branch started with eight steps or
+// eighty, and a fraction would keep charging large budgets for early answers.
+const criticBudgetRemainingSteps = 2
+
 // criticModel resolves the critic model: the explicit override, else the loop
 // model (the gate must never run without a model).
 func (a *LlmAgent) criticModel() string {
@@ -186,10 +249,30 @@ func (a *LlmAgent) criticModel() string {
 }
 
 // completionCriticUser renders the compact critic context: the user's active
-// request, the side-effect digest, and the proposed final answer.
-func (a *LlmAgent) completionCriticUser(answer string) string {
-	return fmt.Sprintf("<user_request>\n%s\n</user_request>\n\n<tool_activity>%s\n</tool_activity>\n\n<proposed_final_answer>\n%s\n</proposed_final_answer>",
-		lastUserRequest(a.history), a.sideEffectDigest(), answer)
+// request, the facts its prompt handed the agent, the side-effect digest, and the
+// proposed final answer.
+//
+// The grounding section is omitted entirely when there is nothing to ground —
+// an empty <context_given_to_agent> would invite the critic to read absence as
+// evidence of absence, which is the failure this section exists to end.
+func (a *LlmAgent) completionCriticUser(ic InvocationContext, answer string) string {
+	var grounding string
+	if block := a.criticGrounding(ic); block != "" {
+		grounding = fmt.Sprintf("<context_given_to_agent>\n%s\n</context_given_to_agent>\n\n", block)
+	}
+	return fmt.Sprintf("<user_request>\n%s\n</user_request>\n\n%s<tool_activity>%s\n</tool_activity>\n\n<proposed_final_answer>\n%s\n</proposed_final_answer>",
+		lastUserRequest(a.history), grounding, a.sideEffectDigest(), answer)
+}
+
+// criticGrounding renders the same volatile facts the turn's own prompt carried.
+// It reads the clock through ic.Budget so the critic and the model agree on "now";
+// a Budget-less InvocationContext (tests, standalone) grounds on nothing rather
+// than inventing a second clock the model never saw.
+func (a *LlmAgent) criticGrounding(ic InvocationContext) string {
+	if ic.Budget == nil {
+		return ""
+	}
+	return a.groundingBudget(ic.Budget.Now()).Grounding()
 }
 
 // sideEffectDigest builds a `- name(args) → result` line per tool call THIS RUN

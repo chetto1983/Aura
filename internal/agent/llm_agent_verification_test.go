@@ -284,7 +284,7 @@ func TestVerifyGate_RunsBeforeTheCompletionCritic(t *testing.T) {
 	)
 	a := newVerifyGateAgent(t, fc, ledger, true)
 
-	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{})))
+	evs, err := collect(a.Run(newCriticIC(t, 3)))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -463,7 +463,7 @@ func TestVerifyGate_TextResponse_RunsBeforeTheCompletionCritic(t *testing.T) {
 	)
 	a := newVerifyGateAgent(t, fc, ledger, true)
 
-	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{})))
+	evs, err := collect(a.Run(newCriticIC(t, 3)))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}

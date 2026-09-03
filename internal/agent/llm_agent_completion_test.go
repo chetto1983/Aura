@@ -38,6 +38,16 @@ func (mutatingFakeTool) Execute(ctx context.Context, raw json.RawMessage) (tools
 	return tools.NewResult(ctx, "wrote:"+string(raw))
 }
 
+// newCriticIC builds an InvocationContext whose budget is small enough that the
+// turn terminates against the wall — the one condition under which the completion
+// critic is now bought at all (criticWorthACall). Every test that means to exercise
+// the critic must set that condition explicitly, because a turn with steps to spare
+// no longer reaches it. steps leaves room for the retries a veto costs.
+func newCriticIC(t *testing.T, steps int) agent.InvocationContext {
+	t.Helper()
+	return newIC(t, agent.BudgetOptions{MaxSteps: &steps})
+}
+
 // newGateAgent builds an agent over a registry with text_response + a read-only
 // echo tool + the mutating fake tool, with the completion gate on/off as given.
 func newGateAgent(t *testing.T, fc *agenttest.FakeClient, gate bool) *agent.LlmAgent {
@@ -102,39 +112,73 @@ func TestCompletionGate_Off_AcceptsWithoutCritic(t *testing.T) {
 	}
 }
 
-// TestCompletionGate_ReadOnlyTurn_NowJudged: gate ON, the turn dispatched only a
-// read-only tool (no side effect at all) → the gate now REACHES the critic (D-20a
-// dropped the side-effect short-circuit entirely), because HARN-06's failure mode is
-// exactly a turn that states an intention and dispatches nothing mutating. The
-// critic's existing prompt already says a well-supported answer to a question IS
-// done, so a DONE verdict here is expected, not a false veto — widening the
-// trigger costs one extra critic call, not a wrong outcome.
-func TestCompletionGate_ReadOnlyTurn_NowJudged(t *testing.T) {
+// TestCompletionGate_CheapReadOnlyTurn_BuysNoCritic: gate ON, the turn dispatched
+// only a read-only tool and stops with most of its budget unspent → the critic is
+// NOT called at all.
+//
+// This reverses TestCompletionGate_ReadOnlyTurn_NowJudged, which pinned D-20a's
+// widening on the reasoning that it "costs one extra critic call, not a wrong
+// outcome". The live measurement contradicted both halves on 2026-09-03: "che ora
+// è?" cost six LLM calls and 59,266 prompt tokens, and the extra critic call spent
+// two of them vetoing a correct answer. The operator's call is that a question must
+// not buy a verdict.
+//
+// What that gives up is stated where the code decides it (criticWorthACall): a
+// cheap zero-dispatch turn is the HARN-06 shape, and it is no longer judged here.
+func TestCompletionGate_CheapReadOnlyTurn_BuysNoCritic(t *testing.T) {
 	fc := agenttest.NewFakeClient(
 		agenttest.ToolCallTurn(echoCall("c1")),
 		agenttest.ToolCallTurn(textResponseCall("c2", "here is the answer")),
-		agenttest.TextChunks("stop", "DONE"),
 	)
 	a := newGateAgent(t, fc, true)
 	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{})))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if fc.CallCount() != 3 {
-		t.Fatalf("CallCount = %d, want 3 (a read-only turn now reaches the critic)", fc.CallCount())
+	if fc.CallCount() != 2 {
+		t.Fatalf("CallCount = %d, want 2 (a cheap read-only turn must not buy a critic call)", fc.CallCount())
 	}
 	if got := finalContent(t, evs); got != "here is the answer" {
 		t.Errorf("final = %q, want the accepted answer", got)
 	}
-	critic := fc.Requests[2]
-	if critic.ToolChoice != "none" {
-		t.Errorf("critic request ToolChoice = %q, want \"none\" (read-only turn is still critic-judged)", critic.ToolChoice)
+}
+
+// TestCompletionGate_ReadOnlyTurnAtBudgetEnd_IsJudged is the other direction, and
+// the one that keeps the gate a gate: the same tool-free shape, run against a
+// budget small enough that the turn ends against the wall, DOES reach the critic.
+// An agent that stops with room left stopped because it believed it was done; one
+// that stops out of steps may be giving up, and that claim is worth a verdict.
+func TestCompletionGate_ReadOnlyTurnAtBudgetEnd_IsJudged(t *testing.T) {
+	fc := agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(echoCall("c1")),
+		agenttest.ToolCallTurn(textResponseCall("c2", "here is the answer")),
+		agenttest.TextChunks("stop", "DONE"),
+	)
+	a := newGateAgent(t, fc, true)
+	maxSteps := 2
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: &maxSteps})))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if fc.CallCount() != 3 {
+		t.Fatalf("CallCount = %d, want 3 (a turn ending against its budget is still judged)", fc.CallCount())
+	}
+	if got := finalContent(t, evs); got != "here is the answer" {
+		t.Errorf("final = %q, want the accepted answer", got)
+	}
+	if critic := fc.Requests[2]; critic.ToolChoice != "none" {
+		t.Errorf("critic request ToolChoice = %q, want \"none\"", critic.ToolChoice)
 	}
 }
 
-// TestCompletionGate_Done_AcceptsAfterCritic: gate ON, side effect, critic returns
-// DONE → one critic call is made and the termination is accepted. Also pins that
-// the critic request is tool-free (ToolChoice="none").
+// TestCompletionGate_Done_AcceptsAfterCritic: gate ON, the turn ends against its
+// step budget, critic returns DONE → one critic call is made and the termination is
+// accepted. Also pins that the critic request is tool-free (ToolChoice="none").
+//
+// The budget is explicit here because the side effect alone no longer summons the
+// critic: criticWorthACall reads the remaining steps, not host state. The mutating
+// call stays because it is what a turn worth auditing looks like, not because it is
+// what arms the gate.
 func TestCompletionGate_Done_AcceptsAfterCritic(t *testing.T) {
 	fc := agenttest.NewFakeClient(
 		agenttest.ToolCallTurn(mutatingCall("c1")),
@@ -142,7 +186,8 @@ func TestCompletionGate_Done_AcceptsAfterCritic(t *testing.T) {
 		agenttest.TextChunks("stop", "DONE"),
 	)
 	a := newGateAgent(t, fc, true)
-	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{})))
+	maxSteps := 2
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: &maxSteps})))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -175,7 +220,7 @@ func TestCompletionGate_NotDone_VetoesOnceThenAccepts(t *testing.T) {
 		agenttest.TextChunks("stop", "DONE"),
 	)
 	a := newGateAgent(t, fc, true)
-	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{})))
+	evs, err := collect(a.Run(newCriticIC(t, 2)))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -219,7 +264,7 @@ func TestCompletionGate_NotDone_VetoesTwiceThenAccepts(t *testing.T) {
 		agenttest.TextChunks("stop", "NOT_DONE: this third verdict must never be consumed"),
 	)
 	a := newGateAgent(t, fc, true)
-	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{})))
+	evs, err := collect(a.Run(newCriticIC(t, 4)))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -251,7 +296,7 @@ func TestCompletionGate_CriticError_FailsOpen(t *testing.T) {
 		agenttest.FakeTurn{Err: errors.New("critic transport boom")},
 	)
 	a := newGateAgent(t, fc, true)
-	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{})))
+	evs, err := collect(a.Run(newCriticIC(t, 2)))
 	if err != nil {
 		t.Fatalf("Run returned an error; the critic failure must be swallowed (fail-open): %v", err)
 	}
@@ -272,7 +317,7 @@ func TestCompletionGate_CriticTransientOpenRetries(t *testing.T) {
 	)
 	a := newGateAgent(t, fc, true)
 
-	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{})))
+	evs, err := collect(a.Run(newCriticIC(t, 2)))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -293,7 +338,7 @@ func TestCompletionGate_CriticRetryExhaustedFailsOpen(t *testing.T) {
 	)
 	a := newGateAgent(t, fc, true)
 
-	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{})))
+	evs, err := collect(a.Run(newCriticIC(t, 2)))
 	if err != nil {
 		t.Fatalf("critic retry exhaustion must still fail open, got error: %v", err)
 	}
@@ -319,7 +364,7 @@ func TestCompletionGate_ContentStop_Veto(t *testing.T) {
 		agenttest.TextChunks("stop", "DONE"),
 	)
 	a := newGateAgent(t, fc, true)
-	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{})))
+	evs, err := collect(a.Run(newCriticIC(t, 2)))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}

@@ -31,24 +31,32 @@ import (
 // rides here too, not in the system prompt, so date-sensitive turns are
 // deterministic without poisoning the cached prefix.
 func (a *LlmAgent) roundBudget(ic InvocationContext) prompt.Budget {
-	now := ic.Budget.Now()
+	budget := a.groundingBudget(ic.Budget.Now())
+	budget.Used = ic.Budget.BranchConsumed()
+	budget.Remaining = ic.Budget.Remaining()
+	// The roster of what is still unloaded, minus what this run already promoted —
+	// so it shrinks as the turn goes and never tells the model to load something it
+	// is already holding. It travels here rather than in tool_search's Description
+	// for the same reason as Sources: the cached prefix is the wrong distance from
+	// the decision.
+	budget.DeferredTools = a.registry.DeferredRoster(a.activated)
+	return budget
+}
+
+// groundingBudget carries only the FACTS the turn is handed — no step counts, no
+// deferred roster. Split out because the completion critic needs exactly this half
+// and must not be handed instructions meant for the model (llm_agent_completion.go).
+func (a *LlmAgent) groundingBudget(now time.Time) prompt.Budget {
+	loc := clockLocation(a.location, now)
 	return prompt.Budget{
-		Used:        ic.Budget.BranchConsumed(),
-		Remaining:   ic.Budget.Remaining(),
 		Workspace:   a.workspace,
-		CurrentTime: tools.FormatClock(now, clockLocation(a.location, now)),
-		Today:       now.In(clockLocation(a.location, now)).Format("2006-01-02"),
+		CurrentTime: tools.FormatClock(now, loc),
+		Today:       now.In(loc).Format("2006-01-02"),
 		// D-05: the volatile numbered source list rides the tail-inject copy
 		// (RenderSourceList is "" until a web tool consulted a source this turn,
 		// so a non-web turn keeps the byte-identical default). messages[0] stays
 		// untouched — the static citation convention lives in the system prompt.
 		Sources: a.sources.RenderSourceList(),
-		// The roster of what is still unloaded, minus what this run already
-		// promoted — so it shrinks as the turn goes and never tells the model to
-		// load something it is already holding. It travels here rather than in
-		// tool_search's Description for the same reason as Sources: the cached
-		// prefix is the wrong distance from the decision.
-		DeferredTools: a.registry.DeferredRoster(a.activated),
 	}
 }
 

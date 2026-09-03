@@ -3,6 +3,7 @@ package prompt
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/llm"
@@ -163,5 +164,57 @@ func TestBudgetBlockFormatting(t *testing.T) {
 				t.Fatalf("budget block = %q, want %q", last.Content, tc.want)
 			}
 		})
+	}
+}
+
+// TestBudgetGroundingIsFactsOnly pins the split between facts and instructions.
+// Grounding feeds the completion critic, which judges whether an answer is
+// supported; a step budget and a roster of unloaded tools support nothing, and a
+// critic shown them would be reading the model's orders as evidence about the world.
+func TestBudgetGroundingIsFactsOnly(t *testing.T) {
+	b := Budget{
+		Used: 3, Remaining: 7,
+		Workspace:     "/workspace/alice",
+		CurrentTime:   "Thursday, 2026-09-03T09:14:19+02:00 (Europe/Rome, CEST)",
+		Today:         "2026-09-03",
+		Sources:       "[1] Example — https://example.test",
+		DeferredTools: "web_search, shell_exec",
+	}
+
+	grounding := b.Grounding()
+	for _, needle := range []string{
+		"<workspace>/workspace/alice</workspace>",
+		"<current_time>Thursday, 2026-09-03T09:14:19+02:00 (Europe/Rome, CEST)</current_time>",
+		"<today>2026-09-03</today>",
+		"[1] Example — https://example.test",
+	} {
+		if !strings.Contains(grounding, needle) {
+			t.Errorf("Grounding missing %q:\n%s", needle, grounding)
+		}
+	}
+	for _, forbidden := range []string{"<budget>", "used=3", "remaining=7", "<deferred_tools>", "web_search"} {
+		if strings.Contains(grounding, forbidden) {
+			t.Errorf("Grounding leaked an instruction %q:\n%s", forbidden, grounding)
+		}
+	}
+
+	// The hint block still carries both halves, budget first and roster last.
+	block := b.block()
+	if !strings.Contains(block, grounding) {
+		t.Errorf("block() dropped the grounding lines:\n%s", block)
+	}
+	if !strings.HasPrefix(block, "<budget>used=3 remaining=7</budget>\n") {
+		t.Errorf("block() must still lead with the budget line:\n%s", block)
+	}
+	if !strings.Contains(block, "<deferred_tools>") {
+		t.Errorf("block() dropped the deferred roster:\n%s", block)
+	}
+}
+
+// TestBudgetGroundingEmpty keeps the omit case honest: no facts means no string,
+// so the caller can decide to emit no section at all.
+func TestBudgetGroundingEmpty(t *testing.T) {
+	if got := (Budget{Used: 1, Remaining: 2, DeferredTools: "x"}).Grounding(); got != "" {
+		t.Fatalf("Grounding on a fact-free budget = %q, want empty", got)
 	}
 }
