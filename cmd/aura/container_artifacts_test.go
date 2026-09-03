@@ -121,7 +121,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"garage:",
 		"image: ${AURA_GARAGE_IMAGE:-dxflrs/garage:v2.3.0}",
 		"GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?GARAGE_RPC_SECRET required in .env}",
-		"CALENDAR_MCP_OAuth__Resource: http://aura-pim-mcp:8080/",
+		"CALENDAR_MCP_OAuth__Resource: ${AURA_PIM_MCP_OAUTH_RESOURCE:-http://127.0.0.1:8093,http://127.0.0.1:8093/,http://aura-pim-mcp:8080/,http://aura-pim-mcp:8080}",
 		"${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:latest}",
 		"pull_policy: ${AURA_PIM_MCP_PULL_POLICY:-always}",
 		"CALENDAR_MCP_OAuth__TrustedIssuers: ${AURA_PIM_MCP_TRUSTED_ISSUERS:-}",

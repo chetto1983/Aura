@@ -1201,7 +1201,21 @@ services:
       # right-hand side here is a DISCOVERY document, not a JWKS -- .NET resolves the keys
       # from it, which is the more spec-correct shape of the same knob.
       CALENDAR_MCP_OAuth__TrustedIssuers: ${AURA_PIM_MCP_TRUSTED_ISSUERS:-}
-      CALENDAR_MCP_OAuth__Resource: http://aura-pim-mcp:8080/
+      # Comma-separated, canonical first, like the two sidecars above. Unlike them this
+      # server derives the resource it ADVERTISES from the request, so discovery already
+      # worked from the host -- which is what made the bug invisible: a token was issued
+      # and then refused on every request. Measured 2026-09-03, from the sidecar's own log:
+      #   MCP bearer authentication failed for issuers ["http://127.0.0.1:9080"] and
+      #   resource http://aura-pim-mcp:8080/: IDX10214: Audience validation failed
+      # The host client had discovered http://127.0.0.1:8093 and, as RFC 8707 and the spec
+      # require, asked for a token bound to it; validation compared it against the single
+      # container name. Naming only the loopback would instead lock out the daemon, whose
+      # self-issued grant is pinned to the URL it dials (ResourceURL: server.URL).
+      #
+      # Requires aura-pim-mcp >= 826e415, which splits this and validates with
+      # ValidAudiences; an older image would take the whole comma string as one audience
+      # and refuse everything.
+      CALENDAR_MCP_OAuth__Resource: ${AURA_PIM_MCP_OAUTH_RESOURCE:-http://127.0.0.1:8093,http://127.0.0.1:8093/,http://aura-pim-mcp:8080/,http://aura-pim-mcp:8080}
       # The external base the sidecar uses to build the Google OAuth redirect URI
       # (<base>/admin/auth/google/callback) — register that EXACT URI in the Google "Web
       # application" client. Default targets the loopback host-publish (works for a user on
