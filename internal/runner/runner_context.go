@@ -13,7 +13,10 @@ import (
 )
 
 const (
-	memoryContextHeader = "## Aura long-term memory (your own recalled facts)\n<memory_context>"
+	// Not "your recalled facts" any more: the block carries the memory's SHAPE and the way
+	// in, not its content. Naming it as though the facts were present is exactly what made
+	// the retrieval tools redundant.
+	memoryContextHeader = "## Aura long-term memory (your own memory — not loaded, read it with the tools)\n<memory_context>"
 	memoryContextFooter = "</memory_context>"
 	memoryRecallHeader  = "## Aura recalled for this message (your own knowledge)\n<memory_recall>"
 	memoryRecallFooter  = "</memory_recall>"

@@ -65,27 +65,50 @@ func (m *mountedMemoryContext) Context(ctx context.Context, identityID string) (
 	// The mounted OAuth pool selects the client session owned by this identity.
 	callCtx, cancel := context.WithTimeout(identityctx.WithIdentityID(ctx, identityID), memoryContextTimeout)
 	defer cancel()
+	// limit 1: the counts are the whole payload now. The digest's TEXT is deliberately
+	// discarded — see the pointer below for why — but memory_digest is still the call
+	// that produces the totals, and asking for fewer entities makes it cheaper.
 	text, err := client.CallToolText(callCtx, "memory_digest", map[string]any{
-		"limit":            50,
-		"facts_per_entity": 3,
+		"limit":            1,
+		"facts_per_entity": 1,
 	})
 	if err != nil {
 		return "", fmt.Errorf("memory digest: %w", err)
 	}
 	var digest struct {
-		Text     string `json:"text"`
-		Entities int    `json:"entities"`
-		Facts    int    `json:"facts"`
-		Covered  bool   `json:"covered"`
+		Entities int `json:"entities"`
+		Facts    int `json:"facts"`
 	}
 	if err := json.Unmarshal([]byte(text), &digest); err != nil {
 		return "", fmt.Errorf("decode memory digest: %w", err)
 	}
-	if strings.TrimSpace(digest.Text) == "" {
+	if digest.Facts == 0 {
 		return "", nil
 	}
-	return fmt.Sprintf("covered=%t entities=%d facts=%d\n%s",
-		digest.Covered, digest.Entities, digest.Facts, strings.TrimSpace(digest.Text)), nil
+	return memoryPointer(digest.Facts, digest.Entities), nil
+}
+
+// memoryPointer is what the turn carries instead of the memory itself.
+//
+// The block used to be the whole digest, one line per entity, injected before every user
+// message. That removed the NEED to recall: the agent had the answer in front of it and
+// paraphrased it, so the retrieval tools went uncalled — including the neighbourhood hop,
+// which exists only behind a tool call and was therefore unreachable. It also does not
+// scale: past the index's cap the agent is blind to the remainder while feeling informed,
+// which is the worse of the two failures.
+//
+// So the turn carries the SHAPE of the memory and the way in. The counts stay because
+// removing them entirely leaves no signal that a memory exists at all, and an agent that
+// does not know it has one has no reason to open it. They are two integers whatever the
+// corpus grows to.
+func memoryPointer(facts, entities int) string {
+	return fmt.Sprintf(
+		"You have %d facts across %d entities in long-term memory. The content is NOT in "+
+			"this context — read it when a question touches what you know: memory_facts_about "+
+			"for a name you have (depth 2 to widen to what it connects to), memory_recall with "+
+			"mode recent for what was said before, memory_search when you have neither. The "+
+			"memory-aura skill covers writing and correcting.",
+		facts, entities)
 }
 
 // Search is the proactive per-message preload: a hybrid memory_search over the current

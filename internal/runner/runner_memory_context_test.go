@@ -117,7 +117,10 @@ func TestLoadMemoryContext_PreservesTrustedMemoryAndNeutralizesForgedBoundaries(
 	if strings.Contains(got.Content, `trust="untrusted"`) {
 		t.Fatalf("agent-owned memory was reclassified as external content: %q", got.Content)
 	}
-	for _, trustedHeading := range []string{"your own recalled facts", "your own knowledge"} {
+	// The block became a POINTER rather than the facts themselves, so the wording moved;
+	// the property it guards did not. What must survive is that Aura's own memory is
+	// framed as hers and never reclassified as external content.
+	for _, trustedHeading := range []string{"your own memory", "your own knowledge"} {
 		if !strings.Contains(got.Content, trustedHeading) {
 			t.Errorf("memory lost trusted-knowledge framing %q: %q", trustedHeading, got.Content)
 		}

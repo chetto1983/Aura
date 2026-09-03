@@ -21,7 +21,9 @@ func TestMountedMemoryContextUsesTheAuthenticatedIdentityDigest(t *testing.T) {
 	}
 	// The fixture round-trips args through a real JSON-RPC wire (no hand-rolled
 	// mcptools double survives, per D-103), so JSON numbers decode as float64.
-	if client.args["limit"] != float64(50) || client.args["facts_per_entity"] != float64(3) {
+	// One entity, one fact: the counts are the whole payload now, so asking the server to
+	// render fifty entities would be work whose output is thrown away.
+	if client.args["limit"] != float64(1) || client.args["facts_per_entity"] != float64(1) {
 		t.Fatalf("args = %+v", client.args)
 	}
 	if aura, present := client.meta["aura"]; present {
@@ -30,8 +32,19 @@ func TestMountedMemoryContextUsesTheAuthenticatedIdentityDigest(t *testing.T) {
 	if _, present := client.args["user_identifier"]; present {
 		t.Error("identity leaked into wire arguments")
 	}
-	if got != "covered=true entities=2 facts=1\nDavide located_in Caraglio" {
-		t.Fatalf("context = %q", got)
+	// The POINTER, not the memory. Carrying the digest's text is what removed the need to
+	// recall: the agent paraphrased what was already in front of it and the retrieval tools
+	// went uncalled, the neighbourhood hop among them — it exists only behind a tool call.
+	if strings.Contains(got, "Davide located_in Caraglio") {
+		t.Fatalf("the digest's content leaked back into the turn: %q", got)
+	}
+	if !strings.Contains(got, "1 facts across 2 entities") {
+		t.Fatalf("context = %q, want the memory's shape", got)
+	}
+	for _, wayIn := range []string{"memory_facts_about", "memory_recall", "memory_search", "memory-aura"} {
+		if !strings.Contains(got, wayIn) {
+			t.Fatalf("the pointer does not name %s, so it points nowhere: %q", wayIn, got)
+		}
 	}
 }
 
@@ -48,8 +61,8 @@ func TestMountedMemoryContextCanAttachAfterDeferredMount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Context after attach: %v", err)
 	}
-	if !strings.Contains(got, "late memory") {
-		t.Fatalf("context = %q, want deferred memory", got)
+	if !strings.Contains(got, "1 facts across 1 entities") {
+		t.Fatalf("context = %q, want the pointer once the mount attaches", got)
 	}
 }
 

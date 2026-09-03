@@ -71,6 +71,43 @@ every wrong entry is something someone has to find and remove later.
 Both `memory_search` and `memory_facts_about` take `as_of`: pass an instant to ask what
 was true THEN instead of what is true now.
 
+## What happened, as opposed to what is true
+
+Facts are what the memory concluded. `memory_recall` reaches the record underneath — the
+turns that were actually exchanged, and the reasoning behind them. One tool, and the
+`mode` is the whole decision:
+
+- **`recent`** — when the question is about *before* rather than about a topic. "What were
+  we doing", "what do you remember about me", "where did we leave it". Reach for this the
+  moment a question looks backward, because the default mode will not find it: `semantic`
+  matches wording, and a question about the past rarely shares wording with the past. It
+  answers "I recall nothing" and sounds authoritative doing it.
+- **`semantic`** with `query` — a topic, when no name is at hand.
+- **`entity`** with a name you already know — the same addressing `memory_facts_about`
+  does, from inside this tool.
+- **`open`** then **`scroll`** with a `conversation_id` — page through one conversation's
+  turns in order. `open` puts you at an anchor, `scroll` moves with a `cursor` and a
+  `direction`. This is how you read a discussion rather than sample it.
+- **`reasoning`** — the provider-visible thinking traces. **No other mode returns them**,
+  by design: they are not evidence of what was decided, only of what was considered. Ask
+  for them when the question is *why* something was concluded, and say plainly that a
+  trace is a deliberation, not a commitment.
+
+Weak evidence makes it abstain explicitly rather than pad the answer. Take the abstention
+at face value — say the memory has nothing rather than reaching for the nearest thing it
+did return.
+
+## Two more, rarely
+
+- `memory_batch` — several writes as ONE transaction, with an idempotency key: ordered
+  upserts, precise supersessions, merges and forgets that must all land or none. Use it
+  when a correction spans more than one fact and a half-applied change would be worse
+  than no change. For a single write, `memory_upsert_fact` is plainer and plainer is
+  better.
+- `graph_schema` — the vertex and edge types with their properties and live counts. Read
+  it before writing a query by hand, so the names are the real ones rather than the ones
+  you expected.
+
 Every hit carries a `fact_key` naming that one fact. Keep it with the fact if you might
 correct it later — it is what `supersedes_fact_key` takes to close exactly that fact and
 no other. See "Correcting" below.
