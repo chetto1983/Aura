@@ -151,12 +151,18 @@ type Querier interface {
 	// an identity_id owner predicate. A miss is the caller's 404 (read hides existence).
 	// Routed through db.WithIdentityTx so the RLS owner policy backstops a forgotten filter.
 	GetConversationForIdentity(ctx context.Context, arg GetConversationForIdentityParams) (AuraConversations, error)
-	// The input_tokens of the most recent request-bearing turn = the CURRENT
-	// context-window fill (distinct from the cumulative total_input_tokens column,
-	// which sums every turn's input and so climbs far past the window on a long
-	// chat). The runtime footer's context gauge reads this so a reloaded
-	// conversation shows real fill, not the lifetime sum. COALESCE => 0 when the
-	// conversation has no request-bearing turn yet.
+	// The context-window FILL of the most recent request-bearing turn, for the runtime
+	// footer's gauge on a reloaded conversation (no live turn to read).
+	//
+	// context_tokens is the occupancy: the prompt of the round's FINAL call. input_tokens is
+	// the BILL: the sum of every call in the round, because the provider charges each one and
+	// each re-sends the prefix. They are the same number only on a single-call round, which
+	// is why serving the bill as the fill went unnoticed — until a tool-heavy round read
+	// 353,321 against a 256,000 window (migration 0115).
+	//
+	// Rows written before 0115 have context_tokens = 0, so they fall back to input_tokens:
+	// the upper bound the gauge has always shown, rather than a sudden zero. COALESCE => 0
+	// when the conversation has no request-bearing turn yet.
 	GetConversationLastInputTokens(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	GetConversationVersionForIdentity(ctx context.Context, arg GetConversationVersionForIdentityParams) (int64, error)
 	GetIdentityByID(ctx context.Context, id pgtype.UUID) (AuraIdentities, error)

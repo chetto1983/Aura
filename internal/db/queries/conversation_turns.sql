@@ -11,9 +11,9 @@
 INSERT INTO aura.conversation_turns (
     conversation_id, seq, role, content, content_sidecar_path,
     tool_call_id, tool_calls, input_tokens, output_tokens, cached_tokens,
-    reasoning, reasoning_duration_ms, parent_seq, delivery_key
+    reasoning, reasoning_duration_ms, context_tokens, parent_seq, delivery_key
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
     NULLIF($2::int - 1, 0), sqlc.narg(delivery_key)
 )
 ON CONFLICT (conversation_id, delivery_key) WHERE delivery_key IS NOT NULL

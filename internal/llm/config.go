@@ -12,6 +12,11 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// ErrMissingAPIKey is the clear, non-panic error surfaced when the API key is
+// empty after the full load-order chain (D-22, SPEC Req#5). Tests assert this
+// sentinel, so callers compare with errors.Is rather than the string.
+var ErrMissingAPIKey = errors.New("llm: API key is empty (set OPENROUTER_API_KEY in .env or the environment)")
+
 // Built-in defaults (D-22). The const block is the single source for the
 // load-order base tier; later tiers (.env, ~/.aura/llm.json, AURA_LLM_*)
 // override these. The model id uses the `:nitro` routing variant.
@@ -96,53 +101,6 @@ const (
 	// Config.OpenRouterMiddleOut). Default OFF.
 	envOpenRouterMiddleOut = "AURA_LLM_OPENROUTER_MIDDLE_OUT"
 )
-
-// ErrMissingAPIKey is the clear, non-panic error surfaced when the API key is
-// empty after the full load-order chain (D-22, SPEC Req#5). Tests assert this
-// sentinel, so callers compare with errors.Is rather than the string.
-var ErrMissingAPIKey = errors.New("llm: API key is empty (set OPENROUTER_API_KEY in .env or the environment)")
-
-const (
-	minOutputReservation = 20_000
-	promptHeadroomTokens = 13_000
-
-	// The two reserves above are absolute token counts sized for a large window, and on a
-	// small one they are the whole window: a 32,768-token window (AURA_LLM_CTX's default on
-	// the local llama.cpp lane, which is exactly what Aura is meant to run on) needs
-	// 20,000 + 13,000 = 33,000 and is refused at boot by 232 tokens. MEASURED 2026-08-16
-	// on the live deployment: `aura serve` crash-looped with "invalid prompt budget -232".
-	//
-	// So each reserve is now the SMALLER of its absolute size and a share of the window.
-	// The shares are set so the absolute value still wins on every window big enough to
-	// afford it: 30% of 100k is 30,000 and 20% is 20,000, both above the constants, so a
-	// 100k window and the 1M deployment reserve exactly what they reserved before. They
-	// bite only where the constants stop making sense -- at 32,768 they become 9,830 and
-	// 6,553, leaving 16,385 of prompt budget where the old arithmetic left -232.
-	outputReservePercent  = 30
-	promptHeadroomPercent = 20
-)
-
-// OutputReserve is the tokens held back for the model's answer: the configured cap, never
-// below the floor, and never more than a quarter of the window.
-func OutputReserve(contextWindow, maxOutputTokens int) int {
-	return max(maxOutputTokens, scaledReserve(contextWindow, minOutputReservation, outputReservePercent))
-}
-
-// PromptHeadroom is the slack left for what the token count cannot see (tool schemas, the
-// provider's own framing), capped the same way.
-func PromptHeadroom(contextWindow int) int {
-	return scaledReserve(contextWindow, promptHeadroomTokens, promptHeadroomPercent)
-}
-
-// scaledReserve is min(absolute, window*percent), floored at 1 so a degenerate window
-// still leaves a reserve rather than silently reserving nothing.
-func scaledReserve(contextWindow, absolute, percent int) int {
-	if contextWindow <= 0 {
-		return absolute
-	}
-	scaled := max(contextWindow*percent/100, 1)
-	return min(absolute, scaled)
-}
 
 // Config is the resolved LLM configuration (D-22). APIKey is a plain field set
 // only by Load and read only at request-build time; the struct has no String()

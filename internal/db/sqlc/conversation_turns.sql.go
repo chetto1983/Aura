@@ -112,10 +112,10 @@ const insertConversationTurn = `-- name: InsertConversationTurn :execrows
 INSERT INTO aura.conversation_turns (
     conversation_id, seq, role, content, content_sidecar_path,
     tool_call_id, tool_calls, input_tokens, output_tokens, cached_tokens,
-    reasoning, reasoning_duration_ms, parent_seq, delivery_key
+    reasoning, reasoning_duration_ms, context_tokens, parent_seq, delivery_key
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-    NULLIF($2::int - 1, 0), $13
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+    NULLIF($2::int - 1, 0), $14
 )
 ON CONFLICT (conversation_id, delivery_key) WHERE delivery_key IS NOT NULL
 DO NOTHING
@@ -134,6 +134,7 @@ type InsertConversationTurnParams struct {
 	CachedTokens        int32       `json:"cached_tokens"`
 	Reasoning           pgtype.Text `json:"reasoning"`
 	ReasoningDurationMs pgtype.Int8 `json:"reasoning_duration_ms"`
+	ContextTokens       int32       `json:"context_tokens"`
 	DeliveryKey         pgtype.Text `json:"delivery_key"`
 }
 
@@ -160,6 +161,7 @@ func (q *Queries) InsertConversationTurn(ctx context.Context, arg InsertConversa
 		arg.CachedTokens,
 		arg.Reasoning,
 		arg.ReasoningDurationMs,
+		arg.ContextTokens,
 		arg.DeliveryKey,
 	)
 	if err != nil {

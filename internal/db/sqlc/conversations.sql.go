@@ -290,20 +290,26 @@ func (q *Queries) GetConversationForIdentity(ctx context.Context, arg GetConvers
 
 const getConversationLastInputTokens = `-- name: GetConversationLastInputTokens :one
 SELECT COALESCE((
-    SELECT input_tokens
+    SELECT CASE WHEN context_tokens > 0 THEN context_tokens ELSE input_tokens END
     FROM aura.conversation_turns
-    WHERE conversation_id = $1 AND input_tokens > 0
+    WHERE conversation_id = $1 AND (context_tokens > 0 OR input_tokens > 0)
     ORDER BY seq DESC
     LIMIT 1
 ), 0)::int AS last_input_tokens
 `
 
-// The input_tokens of the most recent request-bearing turn = the CURRENT
-// context-window fill (distinct from the cumulative total_input_tokens column,
-// which sums every turn's input and so climbs far past the window on a long
-// chat). The runtime footer's context gauge reads this so a reloaded
-// conversation shows real fill, not the lifetime sum. COALESCE => 0 when the
-// conversation has no request-bearing turn yet.
+// The context-window FILL of the most recent request-bearing turn, for the runtime
+// footer's gauge on a reloaded conversation (no live turn to read).
+//
+// context_tokens is the occupancy: the prompt of the round's FINAL call. input_tokens is
+// the BILL: the sum of every call in the round, because the provider charges each one and
+// each re-sends the prefix. They are the same number only on a single-call round, which
+// is why serving the bill as the fill went unnoticed — until a tool-heavy round read
+// 353,321 against a 256,000 window (migration 0115).
+//
+// Rows written before 0115 have context_tokens = 0, so they fall back to input_tokens:
+// the upper bound the gauge has always shown, rather than a sudden zero. COALESCE => 0
+// when the conversation has no request-bearing turn yet.
 func (q *Queries) GetConversationLastInputTokens(ctx context.Context, conversationID pgtype.UUID) (int32, error) {
 	row := q.db.QueryRow(ctx, getConversationLastInputTokens, conversationID)
 	var last_input_tokens int32

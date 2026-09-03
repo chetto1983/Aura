@@ -190,6 +190,8 @@ type AuraConversationTurns struct {
 	ReasoningDurationMs pgtype.Int8 `json:"reasoning_duration_ms"`
 	// Amendment #190: optional job-level idempotency key for durable asynchronous delivery.
 	DeliveryKey pgtype.Text `json:"delivery_key"`
+	// Window occupancy of the round's final call (llm.Usage.ContextTokens). 0 = not recorded; input_tokens is the bill, not this.
+	ContextTokens int32 `json:"context_tokens"`
 }
 
 // Multi-thread persisted conversations (Slice 1.8). Aggregates token + USD totals per thread.

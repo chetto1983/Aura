@@ -357,17 +357,19 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A deliberate pin, moved deliberately: 0112 makes terminal report assets
-	// idempotent, 0113 gives the last three blocking identity references ON DELETE
-	// CASCADE so de-provisioning cannot fail at its final step with the memory
-	// database and bucket already erased, and 0114 admits memory_mention_link as a
-	// scheduler kind -- the sweep that rebuilds each identity's MENTIONS graph, which
-	// has to be periodic because the hub cap is a property of the whole corpus and no
-	// single fact-write can evaluate it. The test exists so a migration added without
-	// noticing breaks the build rather than deployment; bumping it is the intended
-	// acknowledgement, never an incidental red-to-green fix.
-	if head != 114 {
-		t.Fatalf("MigrationHead=%d, want embedded head 114", head)
+	// A deliberate pin, moved deliberately: 0113 gives the last three blocking identity
+	// references ON DELETE CASCADE so de-provisioning cannot fail at its final step with
+	// the memory database and bucket already erased, 0114 admits memory_mention_link as a
+	// scheduler kind -- the sweep that rebuilds each identity's MENTIONS graph, which has
+	// to be periodic because the hub cap is a property of the whole corpus and no single
+	// fact-write can evaluate it -- and 0115 persists context_tokens, the window
+	// occupancy of a round's final call, which was computed on every turn and thrown
+	// away while the gauge served input_tokens (the BILL, summed over the round's calls)
+	// in its place. The test exists so a migration added without noticing breaks the
+	// build rather than deployment; bumping it is the intended acknowledgement, never an
+	// incidental red-to-green fix.
+	if head != 115 {
+		t.Fatalf("MigrationHead=%d, want embedded head 115", head)
 	}
 }
 

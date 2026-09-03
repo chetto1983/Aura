@@ -161,9 +161,13 @@ type Conversation struct {
 	TotalInputTokens  int64
 	TotalOutputTokens int64
 	TotalCachedTokens int64
-	// LastInputTokens is the input_tokens of the most recent request-bearing turn —
-	// the CURRENT context-window fill, NOT the cumulative TotalInputTokens (which sums
-	// every turn and dwarfs the window on a long chat). The runtime footer's context
+	// LastInputTokens is the most recent request-bearing turn's context_tokens — the
+	// CURRENT context-window fill — NOT the cumulative TotalInputTokens (which sums every
+	// turn and dwarfs the window on a long chat), and no longer that turn's input_tokens
+	// either. input_tokens is the BILL, summed over the round's calls; serving it here
+	// made a reloaded conversation read 353,321 against a 256,000 window for a round that
+	// never occupied anything like it (migration 0115). Rows written before 0115 still
+	// fall back to input_tokens, the upper bound this field has always been. The runtime footer's context
 	// gauge reads it so a reloaded conversation shows real fill. Populated ONLY by
 	// GetForIdentity (the identity-scoped read behind GET /api/conversations/{id}); the
 	// unscoped Get leaves it 0 — no gauge consumer reads that path, and it keeps the hot

@@ -39,13 +39,19 @@ type AppendTurnParams struct {
 	Content        string
 	// DeliveryKey makes an asynchronous append idempotent within its conversation.
 	// Ordinary interactive turns leave it empty.
-	DeliveryKey  string
-	ToolCallID   string
-	ToolCalls    []byte
-	InputTokens  int
-	OutputTokens int
-	CachedTokens int
-	CostUSD      float64
+	DeliveryKey string
+	ToolCallID  string
+	ToolCalls   []byte
+	// InputTokens is the BILL: llm.Usage.PromptTokens, the sum of every call in the
+	// round, because the provider charges each one and each re-sends the prefix.
+	InputTokens int
+	// ContextTokens is the FILL: the prompt of the round's FINAL call, which is what
+	// actually occupied the window. The two are the same number only on a single-call
+	// round, which is how serving one as the other went unnoticed — see migration 0115.
+	ContextTokens int
+	OutputTokens  int
+	CachedTokens  int
+	CostUSD       float64
 	// Reasoning is the turn's accumulated chain-of-thought, persisted DISPLAY-ONLY
 	// on the final assistant answer turn (amendment #91 / fix-plan 1.12). "" maps to
 	// SQL NULL (mirrors ToolCallID/optionalText). It is bounded upstream by the
@@ -250,6 +256,7 @@ func (s *Store) appendTurnWrites(p AppendTurnParams) (sqlc.InsertConversationTur
 		ToolCallID:         optionalText(p.ToolCallID),
 		ToolCalls:          p.ToolCalls,
 		InputTokens:        int32(p.InputTokens),
+		ContextTokens:      int32(p.ContextTokens),
 		OutputTokens:       int32(p.OutputTokens),
 		CachedTokens:       int32(p.CachedTokens),
 		// Display-only CoT (amendment #91): rune-bounded upstream so it never spills;

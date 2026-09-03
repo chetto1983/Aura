@@ -298,8 +298,15 @@ func (c *Config) ResolveModelProfile(ctx context.Context) error {
 	if !candidate.ContextWindowConfigured {
 		candidate.ContextWindow = metadata.ContextWindow
 	}
-	if !candidate.MaxOutputTokensConfigured && metadata.MaxOutputTokens > 0 {
-		candidate.MaxOutputTokens = metadata.MaxOutputTokens
+	if !candidate.MaxOutputTokensConfigured {
+		// Recomputed at every model change, never inherited. A provider that publishes a
+		// cap sets it; one that does not gets a cap derived from ITS window, because the
+		// previous provider's number describes a model this one has nothing to do with.
+		if metadata.MaxOutputTokens > 0 {
+			candidate.MaxOutputTokens = metadata.MaxOutputTokens
+		} else {
+			candidate.MaxOutputTokens = DerivedMaxOutputTokens(candidate.ContextWindow)
+		}
 	}
 	switch strings.ToLower(strings.TrimSpace(c.Provider)) {
 	case "llamacpp":

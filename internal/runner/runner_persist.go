@@ -343,10 +343,14 @@ func (r *Runner) persistAssistantAnswer(ctx context.Context, tr *turnTracker, ev
 	}
 	reasoning, reasoningDurationMS := tr.persistedReasoning()
 	turn := conversations.AppendTurnParams{
-		ConversationID:      tr.convID,
-		Role:                llm.RoleAssistant,
-		Content:             ev.LLMResponse.Content,
+		ConversationID: tr.convID,
+		Role:           llm.RoleAssistant,
+		Content:        ev.LLMResponse.Content,
+		// The bill and the fill, both persisted: PromptTokens sums the round's calls
+		// (each one is charged and each re-sends the prefix) while ContextTokens is the
+		// prompt of the FINAL call — the only one of the two that describes the window.
 		InputTokens:         u.PromptTokens,
+		ContextTokens:       u.ContextTokens,
 		OutputTokens:        u.CompletionTokens,
 		CachedTokens:        u.CachedTokens,
 		CostUSD:             cost,
