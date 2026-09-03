@@ -54,7 +54,8 @@ func (c *Client) buildSDKRequest(ctx context.Context, req llm.Request) (openai.C
 			requestOpts = append(requestOpts, option.WithJSONSet("session_id", req.SessionID))
 		}
 	}
-	requestOpts = appendSamplingOptions(requestOpts, req.Sampling)
+	requestOpts = appendSamplingOptions(requestOpts, req.Sampling,
+		llm.ReasoningTarget(c.cfg.Provider, c.cfg.BaseURL))
 	requestOpts = appendReasoningOptions(requestOpts, c.cfg, req.Reasoning, req.MaxTokens, &params)
 	if llm.ReasoningTarget(c.cfg.Provider, c.cfg.BaseURL) == llm.ReasoningTargetOpenRouter && c.cfg.OpenRouterMiddleOut {
 		requestOpts = append(requestOpts, option.WithJSONSet("transforms", []string{"middle-out"}))
@@ -203,7 +204,7 @@ func toSDKTools(tools []llm.ToolDef) ([]openai.ChatCompletionToolUnionParam, err
 	return out, nil
 }
 
-func appendSamplingOptions(opts []option.RequestOption, sampling llm.Sampling) []option.RequestOption {
+func appendSamplingOptions(opts []option.RequestOption, sampling llm.Sampling, target llm.ReasoningTargetKind) []option.RequestOption {
 	if sampling.TopK != nil {
 		opts = append(opts, option.WithJSONSet("top_k", *sampling.TopK))
 	}
@@ -211,9 +212,31 @@ func appendSamplingOptions(opts []option.RequestOption, sampling llm.Sampling) [
 		opts = append(opts, option.WithJSONSet("min_p", *sampling.MinP))
 	}
 	if sampling.RepetitionPenalty != nil {
-		opts = append(opts, option.WithJSONSet("repetition_penalty", *sampling.RepetitionPenalty))
+		opts = append(opts, option.WithJSONSet(repetitionPenaltyField(target), *sampling.RepetitionPenalty))
 	}
 	return opts
+}
+
+// repetitionPenaltyField names the same knob the way each backend spells it.
+//
+// The field is not standard OpenAI, so there is no single name and a server that does not
+// recognise the one it is given ignores it in silence — no error, no warning, and a
+// setting the operator believes is in force. Measured on 26.9.1 against a live
+// llama-server by reading /slots back:
+//
+//	repetition_penalty: 3.0  ->  server reports repeat_penalty 1.0  (dropped)
+//	repeat_penalty:     3.0  ->  server reports repeat_penalty 3.0  (applied)
+//
+// llama.cpp documents `repeat_penalty` (tools/server/README.md); `repetition_penalty` is
+// vLLM's and HuggingFace's spelling, which OpenRouter also takes, so it stays the default
+// for everything else. Ollama is deliberately left on that default rather than guessed at:
+// its OpenAI bridge was not measured here, and a second wrong name would be the same bug
+// with more confidence.
+func repetitionPenaltyField(target llm.ReasoningTargetKind) string {
+	if target == llm.ReasoningTargetLlamaCpp {
+		return "repeat_penalty"
+	}
+	return "repetition_penalty"
 }
 
 func appendReasoningOptions(opts []option.RequestOption, cfg llm.Config, reasoning llm.ReasoningConfig, maxTokens int, params *openai.ChatCompletionNewParams) []option.RequestOption {

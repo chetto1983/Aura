@@ -200,3 +200,44 @@ func TestSDKRequestMiddleOutGate(t *testing.T) {
 		t.Fatalf("llama body = %#v", llama)
 	}
 }
+
+// The repetition penalty is not a standard OpenAI field, so each backend spells it
+// differently and one that does not recognise the name it is given ignores it in silence.
+// Measured on a live llama-server by reading /slots back: repetition_penalty 3.0 left
+// repeat_penalty at its 1.0 default, while repeat_penalty 3.0 was applied. A setting the
+// operator believes is in force and which never reaches the sampler is worse than one
+// that fails.
+func TestSDKRequestSpellsTheRepetitionPenaltyPerBackend(t *testing.T) {
+	penalty := 1.15
+	for _, tc := range []struct {
+		name     string
+		cfg      llm.Config
+		wantKey  string
+		otherKey string
+	}{
+		{
+			name:     "llamacpp takes repeat_penalty",
+			cfg:      llm.Config{Provider: "llamacpp", BaseURL: "http://127.0.0.1:8090/v1"},
+			wantKey:  "repeat_penalty",
+			otherKey: "repetition_penalty",
+		},
+		{
+			name:     "openrouter keeps repetition_penalty",
+			cfg:      llm.Config{Provider: "openrouter"},
+			wantKey:  "repetition_penalty",
+			otherKey: "repeat_penalty",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := captureSDKBody(t, tc.cfg, llm.Request{
+				Model: "m", Sampling: llm.Sampling{RepetitionPenalty: &penalty},
+			})
+			if body[tc.wantKey] != penalty {
+				t.Fatalf("%s = %#v, want %v", tc.wantKey, body[tc.wantKey], penalty)
+			}
+			if _, present := body[tc.otherKey]; present {
+				t.Fatalf("body also carries %s, which this backend ignores: %#v", tc.otherKey, body)
+			}
+		})
+	}
+}
