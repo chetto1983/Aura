@@ -158,6 +158,32 @@ func TestMemoryCommunitiesSpike(t *testing.T) {
 
 	// The floor question, stated as the comparison it is: what a small corpus would get if
 	// the cap could not fall below a handful.
+	// Resolution, before anything else. Neo4j GDS defaults gamma to 1.0 and states plainly
+	// that higher resolutions give more communities; graphify passes 1.0 too. go-leiden's
+	// DefaultOptions ships 0.05 — twenty times lower — so every number above was measured
+	// under a setting that asks for FEW LARGE communities by construction.
+	t.Log("--- resolution sweep at share 0.20 (go-leiden default is 0.05; GDS and graphify use 1.0) ---")
+	t.Log("resolution  communities  largest  quality")
+	resEdges, _ := desiredMentionEdges(entities, factRows, 0.20)
+	resNodes, resGraph := factGraph(resEdges)
+	for _, resolution := range []float64{0.05, 0.25, 0.5, 1.0, 2.0} {
+		options := leiden.DefaultOptions()
+		options.Resolution = resolution
+		result, err := leiden.Leiden(ctx, len(resNodes), resGraph, options)
+		if err != nil {
+			t.Fatalf("leiden at resolution %.2f: %v", resolution, err)
+		}
+		sizes := map[int]int{}
+		for _, cluster := range result.Partition {
+			sizes[cluster]++
+		}
+		largest := 0
+		for _, n := range sizes {
+			largest = max(largest, n)
+		}
+		t.Logf("%10.2f  %11d  %7d  %7.3f", resolution, result.NumClusters, largest, result.Quality)
+	}
+
 	// Does graphify's hub exclusion recover the structure the default cap flattens?
 	// Same graph, same algorithm; the only change is which nodes get to vote on the
 	// partition. Percentile 0 is the control: it excludes nothing.
