@@ -23,7 +23,7 @@ func TestToolSearchFindsTaskForSchedulingQueries(t *testing.T) {
 		"wake me up later", "wake up in 10 minutes", "run this again tomorrow morning",
 		"reminder", "periodic check", "recurring task", "timer",
 	} {
-		matches, _ := ts.match(q, 3)
+		matches, _, _ := ts.match(q, 3)
 		var names []string
 		for _, m := range matches {
 			names = append(names, m.Spec().Name)

@@ -159,7 +159,7 @@ func (ts *ToolSearch) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 		limit = *args.MaxResults
 	}
 
-	matches, unknown := ts.match(q, limit)
+	matches, unknown, byName := ts.match(q, limit)
 	if len(matches) == 0 {
 		if len(unknown) > 0 {
 			// NAMING error, not a capability gap: the tools the model asked for do
@@ -181,11 +181,43 @@ func (ts *ToolSearch) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 		b.WriteString(ts.unknownNameReport(unknown))
 		b.WriteString("\n")
 	}
+	// Naming a tool and describing a capability are different questions, so they get
+	// different answers for a match that needs no loading (D-03/D-05).
+	//
+	// select: asked for a SCHEMA by name — render it whether or not it is deferred,
+	// in request order, so the model reads back exactly what it asked for. Refusing
+	// it the schema because the tool happens to be in the manifest would push it to
+	// guess argument names, the one thing the lead-in promises never works.
+	//
+	// A ranked capability query asked WHAT EXISTS. An always-loaded match is answered
+	// with a pointer, not a re-render: its schema is already verbatim in the manifest,
+	// and duplicating it on every search that grazes one is pure token waste.
 	names := make([]string, 0, len(matches))
-	for _, t := range matches {
-		s := t.Spec()
-		names = append(names, s.Name)
-		b.WriteString(RenderSpec(s))
+	if byName {
+		for _, t := range matches {
+			spec := t.Spec()
+			b.WriteString(RenderSpec(spec))
+			if spec.Deferred {
+				names = append(names, spec.Name)
+			}
+		}
+	} else {
+		var deferred, loaded []Spec
+		for _, t := range matches {
+			if spec := t.Spec(); spec.Deferred {
+				deferred = append(deferred, spec)
+			} else {
+				loaded = append(loaded, spec)
+			}
+		}
+		if len(loaded) > 0 {
+			b.WriteString(alwaysLoadedReport(loaded))
+			b.WriteString("\n")
+		}
+		for _, spec := range deferred {
+			names = append(names, spec.Name)
+			b.WriteString(RenderSpec(spec))
+		}
 	}
 	// A select of many large deferred specs can exceed the preview cap; route
 	// through the shared spillover helper so big manifests page via the sidecar.
@@ -199,12 +231,31 @@ func (ts *ToolSearch) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 	// orientation or unknown-name paths, which return earlier having loaded nothing.
 	// This is the schema-load-before-call parity: a deferred tool becomes callable next
 	// turn only after tool_search has loaded its schema here.
+	// Only DEFERRED names are promoted. An always-loaded tool is already callable,
+	// and the grant is bounded (maxPromotedDeferredTools, LRU): spending a slot on a
+	// tool that is in the manifest anyway would evict one that is not.
+	if len(names) == 0 {
+		return res, nil
+	}
 	if res.Meta == nil {
 		m := ToolResultMeta{}
 		res.Meta = &m
 	}
 	(*res.Meta)[MetaActivatedTools] = names
 	return res, nil
+}
+
+// alwaysLoadedReport answers for tools that matched but need no loading. It states
+// the one thing the model has to do differently — call it, do not search again —
+// because the alternative reply it used to get here was noMatchOrientation, which
+// told it the capability did not exist and sent it off to install a skill.
+func alwaysLoadedReport(specs []Spec) string {
+	var b strings.Builder
+	b.WriteString("Already active in your manifest - call these directly, no loading needed:\n")
+	for _, s := range specs {
+		fmt.Fprintf(&b, "- %s: %s\n", s.Name, s.Summary)
+	}
+	return b.String()
 }
 
 // RenderSpec is the one rendering of a deferred tool's schema for the model. It
@@ -228,14 +279,16 @@ func RenderSpec(s Spec) string {
 // Layer 2 is the BM25 ranking over deferred tools, capped to limit. There is no
 // layer 3, and no error: discovery is in-process, so the only two outcomes are
 // tools and an empty result, and an empty result is a capability gap.
-func (ts *ToolSearch) match(q string, limit int) (matches []Tool, unknown []string) {
+func (ts *ToolSearch) match(q string, limit int) (matches []Tool, unknown []string, byName bool) {
 	if sel, ok := strings.CutPrefix(q, "select:"); ok {
-		return ts.resolveNames(strings.Split(sel, ","))
+		found, missing := ts.resolveNames(strings.Split(sel, ","))
+		return found, missing, true
 	}
 	if names, ok := ts.asNameList(q); ok {
-		return ts.resolveNames(names)
+		found, missing := ts.resolveNames(names)
+		return found, missing, true
 	}
-	return ts.rankFreeText(q, limit), nil
+	return ts.rankFreeText(q, limit), nil, false
 }
 
 // asNameList reports whether every token of a free-text query is a registered tool
@@ -357,9 +410,21 @@ func (ts *ToolSearch) rankFreeText(query string, limit int) []Tool {
 	return out
 }
 
-// ensureIndexLocked builds the deferred-tool index if it is missing. Specs are
+// ensureIndexLocked builds the retrieval index if it is missing. Specs are
 // sorted by Name so equal scores break deterministically: the same query returns
 // the same order for the lifetime of a registry.
+//
+// The corpus is the WHOLE registry, not just the deferred slice. Deferral is not a
+// fixed property of a tool: an MCP server under the D-27 ceiling earns an
+// always-loaded manifest slot at mount (bridge_deferral.go), so the same tool is
+// deferred in one deployment and loaded in the next. Indexing only the deferred set
+// tied findability to that slot arithmetic, and on 2026-08-31 memory took slot 2
+// (39c677d87) and fell out of this index: `tool_search("memory")` answered "no
+// matching tools" and sent the model off to install a skill for a capability sitting
+// in its own manifest. Discovery answers what EXISTS; whether the schema still needs
+// loading is a property of the answer, not a filter on the question.
+//
+// tool_search itself is the one exclusion: the model is already holding it.
 func (ts *ToolSearch) ensureIndexLocked() {
 	if ts.bm25 != nil {
 		return
@@ -372,7 +437,7 @@ func (ts *ToolSearch) ensureIndexLocked() {
 	ts.byName = make(map[string]Tool, len(all))
 	for _, tool := range all {
 		spec := tool.Spec()
-		if !spec.Deferred {
+		if spec.Name == toolSearchName {
 			continue
 		}
 		ts.specs = append(ts.specs, spec)

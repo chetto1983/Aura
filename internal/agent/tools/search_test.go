@@ -273,22 +273,37 @@ func TestMaxResults(t *testing.T) {
 	}
 }
 
-// TestDeferredOnlyFilter: a keyword query never surfaces a non-deferred tool
-// (D-03); a select: query DOES resolve a non-deferred tool by exact name (D-05).
-func TestDeferredOnlyFilter(t *testing.T) {
+// TestRankedSearchAnswersForNonDeferredTools: a keyword query surfaces a
+// non-deferred match as ALREADY ACTIVE rather than hiding it (D-03, inverted); a
+// select: query still resolves a non-deferred tool by exact name, with its full
+// schema (D-05, unchanged).
+//
+// D-03's original assertion — "a keyword query never surfaces a non-deferred tool"
+// — was correct while deferral was a property of the tool. It stopped being one
+// when D-27 made an MCP server's deferral depend on the always-loaded slot
+// arithmetic it wins at mount (bridge_deferral.go): on 2026-08-31 memory took a
+// slot (39c677d87), left the index, and `tool_search("memory")` began answering
+// that no such capability existed and that the model should install a skill for it,
+// with memory__memory_recall sitting in its own manifest. The inversion IS the
+// change, so the test is renamed and re-asserted rather than deleted.
+func TestRankedSearchAnswersForNonDeferredTools(t *testing.T) {
 	ts, ctx := newSearch(t,
 		bm25Tool{name: "deferred_search_target", summary: "shared keyword token apples"},
 		nonDeferredTool{name: "active_apples_tool"},
 	)
 
-	// Keyword "apples" matches both descriptions textually, but only the deferred
-	// one may be returned.
+	// Keyword "apples" matches both. The deferred one is LOADED (full spec); the
+	// non-deferred one is REPORTED as already callable, without re-rendering the
+	// schema the manifest already carries.
 	res, err := ts.Execute(ctx, []byte(`{"query":"apples"}`))
 	if err != nil {
 		t.Fatalf("Execute keyword: %v", err)
 	}
-	if strings.Contains(res.Preview, "active_apples_tool") {
-		t.Errorf("keyword search surfaced a non-deferred tool: %q", res.Preview)
+	if !strings.Contains(res.Preview, "active_apples_tool") {
+		t.Errorf("keyword search hid a mounted, already-callable tool: %q", res.Preview)
+	}
+	if strings.Contains(res.Preview, "## active_apples_tool") {
+		t.Errorf("keyword search re-rendered an always-loaded schema: %q", res.Preview)
 	}
 	if !strings.Contains(res.Preview, "deferred_search_target") {
 		t.Errorf("keyword search dropped the deferred match: %q", res.Preview)
@@ -440,7 +455,7 @@ func BenchmarkToolSearchRank(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
-		if matches, _ := ts.match("handling task family operations", defaultMaxResults); len(matches) == 0 {
+		if matches, _, _ := ts.match("handling task family operations", defaultMaxResults); len(matches) == 0 {
 			b.Fatal("match returned nothing")
 		}
 	}
