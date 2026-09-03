@@ -25,11 +25,19 @@ const (
 
 // MemoryBatchFactInput carries one bounded fact mutation without host authority fields.
 type MemoryBatchFactInput struct {
-	Subject           string                      `json:"subject" jsonschema:"the entity the fact is about"`
-	SubjectKind       string                      `json:"subject_kind,omitempty" jsonschema:"optional entity kind"`
+	Subject     string `json:"subject" jsonschema:"the entity the fact is about"`
+	SubjectKind string `json:"subject_kind,omitempty" jsonschema:"optional entity kind"`
+	// SubjectPole and ObjectPole are here because memory_upsert_fact has them and
+	// this is the same write. Their absence was not a smaller surface, it was a
+	// worse one: batch is the BULK path, the one an import agent uses to coin many
+	// entities at once, so the caller most likely to need the class was the only one
+	// unable to state it. Every entity it wrote fell to whatever poleByKind could
+	// derive, and to Other when it could derive nothing.
+	SubjectPole       string                      `json:"subject_pole,omitempty" jsonschema:"POLE class: Person, Object, Location, Event, Organisation or Other. Omit to derive it from subject_kind; anything outside the set lands in Other and is reported back"`
 	Predicate         string                      `json:"predicate" jsonschema:"the relation between subject and object"`
 	Object            string                      `json:"object" jsonschema:"the related entity or scalar value"`
 	ObjectKind        string                      `json:"object_kind,omitempty" jsonschema:"optional object entity kind"`
+	ObjectPole        string                      `json:"object_pole,omitempty" jsonschema:"POLE class: Person, Object, Location, Event, Organisation or Other. Omit to derive it from object_kind"`
 	Statement         string                      `json:"statement" jsonschema:"the fact in natural language"`
 	ValidFrom         string                      `json:"valid_from,omitempty" jsonschema:"RFC3339 instant when the fact became true"`
 	ValidTo           string                      `json:"valid_to,omitempty" jsonschema:"RFC3339 instant when the fact stopped being true"`
@@ -229,7 +237,9 @@ func toMemoryBatchFact(
 	}
 	return arcadedb.Fact{
 		Subject: canonicalSubject(in.Subject, identity, operatorDisplayName), SubjectKind: in.SubjectKind,
-		Predicate: in.Predicate, Object: in.Object, ObjectKind: in.ObjectKind, Statement: in.Statement,
+		SubjectPole: in.SubjectPole,
+		Predicate:   in.Predicate, Object: in.Object, ObjectKind: in.ObjectKind, ObjectPole: in.ObjectPole,
+		Statement: in.Statement,
 		ValidFrom: validFrom, ValidTo: validTo, TargetFactKey: strings.TrimSpace(in.SupersedesFactKey),
 		Source: arcadedb.FactSource{RunID: actor.RunID, WriterRole: actor.Role, MemoryIDs: in.Source.MemoryIDs},
 	}, nil
@@ -246,7 +256,13 @@ func boundMemoryBatchSchema(schema *jsonschema.Schema) {
 		string(arcadedb.MemoryBatchMergeEntities), string(arcadedb.MemoryBatchForget),
 	}
 	fact := operation.Properties["fact"]
-	for _, name := range []string{"subject", "subject_kind", "object", "object_kind"} {
+	// The pole fields take the same bound as the kind they refine. The bound is only
+	// there to stop unbounded input: the closed set is NOT an enum here on purpose,
+	// because a class outside it must land in Other and be reported back rather than
+	// be refused by the client before the server ever sees it.
+	for _, name := range []string{
+		"subject", "subject_kind", "subject_pole", "object", "object_kind", "object_pole",
+	} {
 		boundSchemaString(fact.Properties[name], 0, memoryBatchEntityMaxRunes)
 	}
 	boundSchemaString(fact.Properties["predicate"], 0, memoryBatchPredicateMaxRunes)

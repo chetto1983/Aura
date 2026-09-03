@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -293,17 +294,36 @@ func TestEmbedMissingAndReembedFactsWriteOnlyValidVectors(t *testing.T) {
 	if err != nil || written != 2 {
 		t.Fatalf("ReEmbedAllFacts written=%d err=%v", written, err)
 	}
-	// Four, not five: each call is one SELECT plus ONE batched sqlscript, where it
-	// used to be one UPDATE per fact. The count is asserted only to catch a stray
-	// extra round trip — that a batch is a single request is pinned properly by
-	// TestWriteVectorsSendsOneBoundScriptForTheWholeBatch, and index 2 below is
-	// still the second selection either way.
-	if len(*requests) != 4 {
-		t.Fatalf("requests = %d", len(*requests))
+	// Both calls select on the SAME predicate, and that is the point: a re-embed clears
+	// the vectors and then drains the gap, because "has no vector" is the only condition
+	// that shrinks as the work is done. Selecting the facts to re-embed directly could
+	// never finish -- it returned the same first batch on every call.
+	commands := make([]string, 0, len(*requests))
+	for _, request := range *requests {
+		commands = append(commands, request.Payload["command"].(string))
 	}
-	if !strings.Contains((*requests)[0].Payload["command"].(string), "embedding IS NULL") ||
-		!strings.Contains((*requests)[2].Payload["command"].(string), "statement IS NOT NULL") {
-		t.Fatalf("selection queries = %+v", *requests)
+	if !strings.Contains(commands[0], "embedding IS NULL") {
+		t.Fatalf("backfill selection = %q", commands[0])
+	}
+	cleared := slices.IndexFunc(commands, func(command string) bool {
+		return strings.Contains(command, "SET embedding = NULL")
+	})
+	if cleared < 0 {
+		t.Fatalf("re-embed never cleared the old vectors: %v", commands)
+	}
+	if !strings.Contains(commands[cleared+1], "embedding IS NULL") {
+		t.Fatalf("re-embed selected %q after clearing, want the missing-vector gap", commands[cleared+1])
+	}
+	for _, command := range commands {
+		if strings.Contains(command, "SELECT @rid AS rid") && strings.Contains(command, "statement IS NOT NULL") &&
+			!strings.Contains(command, "embedding IS NULL") {
+			t.Fatalf("re-embed still selects a set it does not shrink: %q", command)
+		}
+	}
+	// The last round asks the exhausted stub for more and gets nothing back. A short
+	// answer must be skipped, not indexed into: positional indexing panicked here.
+	if written, err := client.EmbedMissingFacts(context.Background(), 2); err != nil || written != 0 {
+		t.Fatalf("short embedder answer: written=%d err=%v", written, err)
 	}
 }
 
@@ -354,7 +374,15 @@ func TestEmbedFactsCapsMaintenanceBatch(t *testing.T) {
 	if _, err := client.ReEmbedAllFacts(context.Background(), 1000); err != nil {
 		t.Fatalf("ReEmbedAllFacts: %v", err)
 	}
-	statement := (*requests)[0].Payload["command"].(string)
+	// Find the selection rather than naming a request index: a re-embed now clears the
+	// vectors before it selects, and the cap being asserted is the SELECT's.
+	var statement string
+	for _, request := range *requests {
+		if command := request.Payload["command"].(string); strings.HasPrefix(command, "SELECT @rid AS rid") {
+			statement = command
+			break
+		}
+	}
 	if !strings.Contains(statement, "LIMIT 100") {
 		t.Fatalf("maintenance cap missing: %s", statement)
 	}
@@ -402,5 +430,21 @@ func TestEveryHybridStatementReranksItsFusion(t *testing.T) {
 					floor, closeAt, statement)
 			}
 		})
+	}
+}
+
+// A fact must arrive with the same identity whichever retrieval path found it. The
+// hybrid path's hydration dropped fact_key while the lexical path's statement kept it,
+// so whether a hit could be corrected with supersedes_fact_key depended on whether the
+// embedder happened to be up.
+func TestEveryFactProjectionCarriesTheFactKey(t *testing.T) {
+	for name, statement := range map[string]string{
+		"lexical":     searchFactsStatement,
+		"hybrid":      hydrateFactsStatement,
+		"facts about": factsAboutProjection,
+	} {
+		if !strings.Contains(statement, "fact_key") {
+			t.Errorf("%s projection returns facts with no identity: %s", name, statement)
+		}
 	}
 }

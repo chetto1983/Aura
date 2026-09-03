@@ -67,16 +67,20 @@ func TestBridge_TranslatesTools(t *testing.T) {
 }
 
 // TestBridge_MemoryNamespaceEarnsAlwaysLoadedSlot fixtures the REAL memory tool
-// surface (cmd/arcadedb-mcp's 11 tool names), not a 3-tool stand-in: after D-27
-// whether a mount stays deferred depends on its model-facing COUNT, so only the
-// real shape proves the real outcome. Seven names are in memoryHiddenFromModel
-// (bridge_policy.go), leaving memory_recall, memory_upsert_fact and
-// memory_batch -- exactly at maxAlwaysLoadedMCPTools, so on a fresh budget the
-// mount earns a slot and every bridged tool is Deferred:false.
+// surface (cmd/arcadedb-mcp's 11 tool names), not a stand-in: whether a mount earns
+// a slot depends on how many tools would ride in every manifest, so only the real
+// shape proves the real outcome.
 //
-// This test asserted the opposite until 2026-08-31, when memory_merge_entities
-// was hidden precisely to bring the count under the ceiling; the inversion IS
-// the change, so it is asserted here rather than deleted.
+// All eleven bridge now. The slot arithmetic weighs the four-tool manifest core
+// (memoryManifestCore, bridge_policy.go) rather than the whole surface, so memory is
+// AT maxAlwaysLoadedMCPTools and earns its slot on a fresh budget: the core comes out
+// Deferred:false and the other seven Deferred:true -- present, one tool_search away.
+//
+// This assertion has now inverted twice. Until 2026-08-31 memory was deferred; then
+// tools were HIDDEN to fit the ceiling, which made them unreachable rather than
+// deferred; on 2026-09-03 the hiding was removed on the operator's decision. The
+// distinction that survives is the one worth pinning: deferral chooses what rides in a
+// manifest, never what exists.
 func TestBridge_MemoryNamespaceEarnsAlwaysLoadedSlot(t *testing.T) {
 	resetLoadedSlotBudgetForTest()
 	srv, _ := newInMemoryMounted(t,
@@ -96,15 +100,29 @@ func TestBridge_MemoryNamespaceEarnsAlwaysLoadedSlot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Bridge: %v", err)
 	}
-	// 11 advertised, 8 hidden by bridgePolicy.modelFacing (memoryHiddenFromModel):
-	// only the 3 model-facing tools bridge at all.
-	if len(got) != 3 {
-		t.Fatalf("want 3 model-facing memory tools bridged, got %d", len(got))
+	if len(got) != 11 {
+		t.Fatalf("want all 11 memory tools bridged, got %d", len(got))
 	}
+	core := map[string]bool{
+		"memory__memory_recall": true, "memory__memory_upsert_fact": true,
+		"memory__memory_batch": true, "memory__memory_entities": true,
+	}
+	loaded := 0
 	for _, tool := range got {
+		name := tool.Spec().Name
 		if tool.Spec().Deferred {
-			t.Fatalf("%s Deferred = true; memory's 3 model-facing tools are at the ceiling and must earn an always-loaded slot on a fresh budget (D-27)", tool.Spec().Name)
+			if core[name] {
+				t.Errorf("%s is deferred; the core rides in every manifest", name)
+			}
+			continue
 		}
+		loaded++
+		if !core[name] {
+			t.Errorf("%s rides in every manifest but is not part of the core", name)
+		}
+	}
+	if loaded != len(core) {
+		t.Fatalf("always-loaded memory tools = %d, want %d", loaded, len(core))
 	}
 }
 

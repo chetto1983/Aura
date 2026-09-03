@@ -125,8 +125,21 @@ func (v *ArcadeGraphView) overview(
 		mergeStudioGraph(&raw, graph)
 		statements = append(statements, statement)
 	}
+	// The budget counts the vertices the CALLER ASKED FOR, not everything accumulated so
+	// far. The edge queries above run first and drag their endpoints in with them — turns,
+	// entities, whatever the relationship touched — and those are types the caller may not
+	// have selected at all. Counting them here let a label filter come back EMPTY: with
+	// every relationship type still selected and one small label chosen, the endpoints
+	// filled nodeCap before this loop ran, it broke immediately, the chosen type was never
+	// queried, and projectStudioGraph then discarded every accumulated vertex for having
+	// the wrong label. Measured 2026-09-03 in the cockpit: filtering to ReasoningToolCall
+	// returned 0 nodes and 0 connections while the database held 7 of them.
+	//
+	// With no label selected the set allows everything, so this is the previous count and
+	// the previous bound.
+	requested := stringSet(in.Labels)
 	for _, vertexType := range vertexTypes {
-		if len(raw.Vertices) >= nodeCap {
+		if countAllowedVertices(raw.Vertices, requested) >= nodeCap {
 			break
 		}
 		// Edge queries already return their endpoints. Read a full node-cap page

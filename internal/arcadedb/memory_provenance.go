@@ -334,12 +334,12 @@ func sourcesParam(sources []FactSource) []map[string]any {
 // it.
 func (c *Client) attachFactSource(
 	ctx context.Context,
-	factKey string,
+	selector factSelector,
 	source FactSource,
 	now time.Time,
 ) (bool, error) {
 	for attempt := 0; attempt <= maxWriteConflictRetries; attempt++ {
-		attached, conflict, err := c.attachFactSourceOnce(ctx, factKey, source, now)
+		attached, conflict, err := c.attachFactSourceOnce(ctx, selector, source, now)
 		if err != nil {
 			return false, err
 		}
@@ -348,7 +348,7 @@ func (c *Client) attachFactSource(
 		}
 		time.Sleep(writeConflictBackoff(attempt + 1))
 	}
-	return false, fmt.Errorf("arcadedb: attach fact source: too many concurrent writers for fact_key %q", factKey)
+	return false, fmt.Errorf("arcadedb: attach fact source: too many concurrent writers for %s", selector.label)
 }
 
 func sourceEqual(a, b FactSource) bool {
@@ -427,7 +427,7 @@ func sourceEqual(a, b FactSource) bool {
 // cannot provide.
 func (c *Client) attachFactSourceOnce(
 	ctx context.Context,
-	factKey string,
+	selector factSelector,
 	source FactSource,
 	now time.Time,
 ) (attached bool, conflict bool, err error) {
@@ -453,25 +453,26 @@ func (c *Client) attachFactSourceOnce(
 		return false, nil
 	}
 
-	params := map[string]any{"fact_key": factKey, "now": now.UTC().Format(time.RFC3339Nano)}
-	if _, err := c.commandInTx(ctx, sessionID,
-		"UPDATE "+factEdgeType+" SET fact_key = NULL WHERE fact_key = :fact_key AND "+
-			"(expired_at IS NOT NULL OR (valid_to IS NOT NULL AND valid_to <= :now))",
-		params); err != nil {
-		// Not observed live (in-transaction commands reported success even for
-		// transactions whose LATER commit failed -- ArcadeDB defers its
-		// conflict check to commit, not to each statement inside one), but
-		// treated the same as a commit-time conflict defensively rather than
-		// as fatal, matching this function's pre-transaction behavior.
-		if isTransientWriteConflict(err) {
-			return false, true, nil
+	params := selector.bind(now)
+	// Only the key-based selector has an identity to release: a key held by a row that
+	// has since expired must be freed before the still-valid row can be found under it.
+	// A historical selector matches on content and never held a key at all.
+	if selector.release != "" {
+		if _, err := c.commandInTx(ctx, sessionID, selector.release, params); err != nil {
+			// Not observed live (in-transaction commands reported success even for
+			// transactions whose LATER commit failed -- ArcadeDB defers its
+			// conflict check to commit, not to each statement inside one), but
+			// treated the same as a commit-time conflict defensively rather than
+			// as fatal, matching this function's pre-transaction behavior.
+			if isTransientWriteConflict(err) {
+				return false, true, nil
+			}
+			return false, false, fmt.Errorf("arcadedb: release expired fact identity: %w", err)
 		}
-		return false, false, fmt.Errorf("arcadedb: release expired fact identity: %w", err)
 	}
 	rows, err := c.queryInTx(ctx, sessionID,
 		"SELECT @rid AS rid, sources FROM "+factEdgeType+
-			" WHERE fact_key = :fact_key AND expired_at IS NULL AND "+
-			"(valid_to IS NULL OR valid_to > :now) LIMIT 1",
+			" WHERE "+selector.lookup+" LIMIT 1",
 		params)
 	if err != nil {
 		if isTransientWriteConflict(err) {

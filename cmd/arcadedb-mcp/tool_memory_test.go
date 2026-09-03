@@ -178,12 +178,14 @@ func TestSupersedingClosesTheWindowAndDoesNotDelete(t *testing.T) {
 	client, rec := newRecordingDB(t,
 		`{"result":[]}`,            // vocabulary scan (runs BEFORE anything is minted)
 		`{"result":[]}`,            // entity class scan (which POLE class each name already has)
-		`{"result":[]}`,            // entity upsert: subject
-		`{"result":[]}`,            // entity upsert: object
 		`{"result":[]}`,            // attachFactSource: release expired identity
 		`{"result":[]}`,            // attachFactSource: exact replay lookup
 		oneFactRow,                 // candidate resolution (D-16): exactly one still-valid match
 		`{"result":[{"count":1}]}`, // the exact-match close this test asserts on
+		// The endpoints are minted only PAST every refusal, so they come after the
+		// supersede has resolved -- a refused correction must coin nothing.
+		`{"result":[]}`, // entity upsert: subject
+		`{"result":[]}`, // entity upsert: object
 	)
 	in := validFactInput()
 	in.Supersedes = true
@@ -211,11 +213,13 @@ func TestUpsertFactClosesByFactKey(t *testing.T) {
 	client, rec := newRecordingDB(t,
 		`{"result":[]}`,            // vocabulary scan (runs BEFORE anything is minted)
 		`{"result":[]}`,            // entity class scan (which POLE class each name already has)
-		`{"result":[]}`,            // entity upsert: subject
-		`{"result":[]}`,            // entity upsert: object
 		`{"result":[]}`,            // attachFactSource: release expired identity
 		`{"result":[]}`,            // attachFactSource: exact replay lookup
 		`{"result":[{"count":1}]}`, // the exact-match close by fact_key
+		// The endpoints are minted only PAST every refusal, so they come after the
+		// supersede has resolved -- a refused correction must coin nothing.
+		`{"result":[]}`, // entity upsert: subject
+		`{"result":[]}`, // entity upsert: object
 	)
 	in := validFactInput()
 	in.SupersedesFactKey = "target-key-abc"
@@ -290,11 +294,10 @@ func TestUpsertFactRefusesOnAmbiguousSupersede(t *testing.T) {
 	client, rec := newRecordingDB(t,
 		`{"result":[]}`, // vocabulary scan (runs BEFORE anything is minted)
 		`{"result":[]}`, // entity class scan (which POLE class each name already has)
-		`{"result":[]}`, // entity upsert: subject
-		`{"result":[]}`, // entity upsert: object
 		`{"result":[]}`, // attachFactSource: release expired identity
 		`{"result":[]}`, // attachFactSource: exact replay lookup
-		twoFactRows,
+		twoFactRows,     // two candidates: the correction is refused here
+		// and no entity upsert follows, because a refused correction coins nothing.
 	)
 	in := validFactInput()
 	in.Supersedes = true
@@ -318,5 +321,44 @@ func TestUpsertFactRefusesOnAmbiguousSupersede(t *testing.T) {
 	}
 	if _, _, found := rec.find("CREATE EDGE"); found {
 		t.Fatal("an ambiguous refusal must create no fact")
+	}
+}
+
+// A refused correction must not coin its endpoints. It did: they were minted before the
+// supersede resolved, so `refused: true` still left the object behind as an entity with
+// no facts -- straight into memory_entities, which exists to be read BEFORE a name is
+// coined. Asserted here on the statements the tool actually issues, because the reply
+// looks identical either way.
+func TestRefusedSupersedeIssuesNoEntityUpsert(t *testing.T) {
+	const twoFactRows = `{"result":[
+{"statement":"Davide lives in Caraglio.","predicate":"lives_in","subject":"Davide",
+"object":"Caraglio","valid_from":"2026-01-01T00:00:00Z","fact_key":"key-a",
+"sources":[{"run_id":"run-1","memory_ids":["mem-1"]}]},
+{"statement":"Davide lives in Torino.","predicate":"lives_in","subject":"Davide",
+"object":"Torino","valid_from":"2026-02-01T00:00:00Z","fact_key":"key-b",
+"sources":[{"run_id":"run-2","memory_ids":["mem-2"]}]}]}`
+	client, rec := newRecordingDB(t,
+		`{"result":[]}`, // vocabulary scan
+		`{"result":[]}`, // entity class scan
+		`{"result":[]}`, // attachFactSource: release expired identity
+		`{"result":[]}`, // attachFactSource: exact replay lookup
+		twoFactRows,     // two candidates: the correction is refused
+	)
+	in := validFactInput()
+	in.Supersedes = true
+	out, err := upsert(t, client, in)
+	if err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if !out.Refused {
+		t.Fatalf("the correction was not refused, so this proves nothing: %+v", out)
+	}
+	for _, statement := range rec.statements {
+		if strings.Contains(statement, "UPSERT") {
+			t.Fatalf("a refused correction minted an entity: %s", statement)
+		}
+	}
+	if _, _, closed := rec.find("expired_at = :expired_at"); closed {
+		t.Fatal("a refused correction closed a fact")
 	}
 }

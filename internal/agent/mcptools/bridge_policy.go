@@ -32,51 +32,47 @@ func defaultBridgePolicy(namespace string) bridgePolicy {
 	return bridgePolicy{memorySurface: namespace == "memory"}
 }
 
-func (p bridgePolicy) defaultDeferred() bool {
-	return !p.alwaysLoaded
+// memoryManifestCore is the memory surface that rides in EVERY turn's manifest. The
+// other seven memory tools are still BRIDGED -- present, and reached with one
+// tool_search exactly like web_search -- because hiding is not deferral: a hidden tool
+// was skipped by bridgeToolsWithPolicy and could not be reached at all, which is how
+// the memory-aura skill came to instruct calls to tools that did not exist.
+//
+// These four are the ones with no substitute among the rest. `memory_recall` already
+// answers what memory_facts_about and memory_search answer (its `entity` parameter
+// takes the graph path, its `query` the hybrid one), `memory_batch` subsumes forget and
+// merge, and the runner injects the digest per turn. Nothing covers `memory_entities`:
+// listing the names already in use is what the skill requires before any write, because
+// reusing an existing name is the only thing that makes two facts meet, and a memory
+// measured at 108 facts had produced 211 entities, 207 of them used exactly once.
+var memoryManifestCore = map[string]struct{}{
+	"memory_recall":      {},
+	"memory_upsert_fact": {},
+	"memory_batch":       {},
+	"memory_entities":    {},
 }
 
-// memoryHiddenFromModel is the memory surface the HOST keeps and the model does
-// not see. Every entry stays live on cmd/arcadedb-mcp and reachable out of band:
-// memory_digest and memory_search are called per turn by the runner's memory
-// context (serve_memory_context.go), and the rest answer to `aura memory`
-// (search/facts/entities/reembed/schema).
-//
-// memory_merge_entities joined them on 2026-08-31 for the D-27 slot arithmetic
-// (bridge_deferral.go), not because it is host-only. At 4 model-facing tools
-// memory was one over maxAlwaysLoadedMCPTools, so the ONE capability this
-// deployment exists for -- writing down what it learns -- cost a tool_search
-// round trip before the model could reach memory_upsert_fact, while calendar (1
-// tool) and whatsapp (3) held both always-loaded slots. Merging two entities is
-// hygiene an operator performs deliberately (`aura memory merge <duplicate>
-// <survivor>`, cmd/aura/memory.go), not something the model needs mid-turn;
-// spending the manifest slot on recall/upsert/forget instead buys the three
-// verbs that ARE the product. memory_forget joined the hidden set when the
-// atomic memory_batch surface shipped: batch subsumes destructive forgetting,
-// while the exact memory_upsert_fact name remains visible because production
-// direct-evidence capture recognizes that structured result.
-//
-// The cost is explicit and belongs here rather than in a commit message: mounts
-// run in BuiltInCatalog's alphabetical order (calendar, memory, whatsapp) and
-// there are only maxAlwaysLoadedMCPSlots of them, so memory taking slot 2 means
-// WHATSAPP now stays deferred. That is the trade -- remembering beats messaging
-// for an assistant whose thesis is memory -- and it is what to revisit first if
-// the ceiling or the slot count ever moves.
-var memoryHiddenFromModel = map[string]struct{}{
-	"graph_schema":          {},
-	"memory_digest":         {},
-	"memory_entities":       {},
-	"memory_facts_about":    {},
-	"memory_forget":         {},
-	"memory_merge_entities": {},
-	"memory_reembed":        {},
-	"memory_search":         {},
-}
-
-func (p bridgePolicy) modelFacing(tool string) bool {
-	if !p.memorySurface {
+// deferredTool decides whether one tool stays out of the always-loaded manifest. A
+// mount that earned no slot defers everything; the memory mount defers everything
+// outside its core.
+func (p bridgePolicy) deferredTool(tool string) bool {
+	if !p.alwaysLoaded {
 		return true
 	}
-	_, hidden := memoryHiddenFromModel[tool]
-	return !hidden
+	if !p.memorySurface {
+		return false
+	}
+	_, core := memoryManifestCore[tool]
+	return !core
+}
+
+// manifestCount is what the slot arithmetic weighs: the tools that would ride in every
+// turn, not everything the server advertises. Counting all eleven would put memory over
+// the ceiling and defer the whole surface, which is the outcome this split exists to
+// avoid.
+func (p bridgePolicy) manifestCount(advertised int) int {
+	if p.memorySurface {
+		return len(memoryManifestCore)
+	}
+	return advertised
 }

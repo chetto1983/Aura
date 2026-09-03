@@ -143,7 +143,7 @@ func (tx *memoryBatchFakeTx) publishLocked() {
 func (tx *memoryBatchFakeTx) Rollback(context.Context) { tx.closed = true }
 
 func cloneMemoryBatchTestState(state memoryBatchState) memoryBatchState {
-	clone := memoryBatchState{Entities: map[string]string{}, Facts: map[string]memoryBatchFact{}}
+	clone := memoryBatchState{Entities: map[string]memoryBatchEntity{}, Facts: map[string]memoryBatchFact{}}
 	maps.Copy(clone.Entities, state.Entities)
 	for key, fact := range state.Facts {
 		fact.Sources = cloneFactSources(fact.Sources)
@@ -173,10 +173,10 @@ func memoryBatchTestStoredFact(subject, predicate, object, runID string) memoryB
 }
 
 func memoryBatchTestState(facts ...memoryBatchFact) memoryBatchState {
-	state := memoryBatchState{Entities: map[string]string{}, Facts: map[string]memoryBatchFact{}}
+	state := memoryBatchState{Entities: map[string]memoryBatchEntity{}, Facts: map[string]memoryBatchFact{}}
 	for i, fact := range facts {
-		state.Entities[fact.Fact.Subject] = fact.Fact.SubjectKind
-		state.Entities[fact.Fact.Object] = fact.Fact.ObjectKind
+		state.Entities[fact.Fact.Subject] = memoryBatchEntity{Kind: fact.Fact.SubjectKind}
+		state.Entities[fact.Fact.Object] = memoryBatchEntity{Kind: fact.Fact.ObjectKind}
 		fact.RID = fmt.Sprintf("#1:%d", i)
 		state.Facts[fact.RID] = fact
 	}

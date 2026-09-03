@@ -89,7 +89,7 @@ func (b *TenantBackfill) EmbedMissing(ctx context.Context, _ time.Time) (int, er
 	}
 	return b.sweepTenants(ctx, "embed backfill",
 		func(ctx context.Context, client *Client, _ string) (int, error) {
-			return embedMissingInBatches(ctx, client.WithEmbedder(b.embedder))
+			return embedMissingInBatches(ctx, client.WithEmbedder(b.embedder), backfillBatch)
 		})
 }
 
@@ -214,15 +214,17 @@ func (b *TenantBackfill) sweepTenant(
 // whose vector comes back the wrong width is left alone by EmbedMissingFacts, so it
 // is selected again on the next round forever. Stopping on zero turns that into a
 // bounded no-op instead of a spin.
-func embedMissingInBatches(ctx context.Context, client *Client) (int, error) {
+// batch is the caller's round size: the sweep passes backfillBatch, while ReEmbedAllFacts
+// passes whatever the operator asked for, because the drain is the same either way.
+func embedMissingInBatches(ctx context.Context, client *Client, batch int) (int, error) {
 	total := 0
 	for range backfillRoundsPerTenant {
-		written, err := client.EmbedMissingFacts(ctx, backfillBatch)
+		written, err := client.EmbedMissingFacts(ctx, batch)
 		total += written
 		if err != nil {
 			return total, err
 		}
-		if written < backfillBatch {
+		if written < batch {
 			return total, nil
 		}
 	}

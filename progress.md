@@ -1,524 +1,294 @@
 # Progress
 
-Last updated: 2026-08-30
+Last updated: 2026-09-03
 
 This file is the durable handoff for the current work. Update it after each
 meaningful implementation, verification, commit, or live-stack step so the work
 survives context compaction.
 
+The previous occupant of this file was the Phase 51 LLM-provider handoff. That
+phase closed and its record lives in git history at `bdb3f6975^`.
+
 ## Objective
 
-GSD Phase 51 and plan 51-08 are complete without spending OpenRouter credits. Aura
-now supports both the local llama.cpp model `gemma-4-12b` and the operator's Ollama
-bridge with `gemma4:31b-cloud`, expose measured context/cost provenance
-consistently, and switch LLM endpoints/models at runtime without restarting the
-Aura container.
-
-A separate follow-on GSD phase will add provider-native OpenAI and Anthropic
-routes, including subscription authentication. That work is deliberately not
-being folded into Phase 51.
+Bring the Aura memory MCP surface (`cmd/arcadedb-mcp`, `internal/arcadedb`) to
+industrial quality: every tool exercised end to end against the running stack, in
+every mode, with each defect reproduced before it is fixed and re-verified through
+the real MCP surface afterwards — not only through Go tests.
 
 ## Non-negotiable constraints
 
-- Use GSD artifacts and phase workflow for the work.
-- Do not run inference through OpenRouter. Use local `gemma-4-12b` or the
-  operator-authorized Ollama subscription model `gemma4:31b-cloud`.
-- Endpoint/model/profile changes must not restart or recreate Aura.
-- Never inspect, retain, write, or commit Telegram chat content, identifiers,
-  credentials, authorization data, or session material.
-- Never write raw provider credentials or credential-bearing URLs to logs,
-  settings, git, planning artifacts, or this file.
-- Never run the retired `scripts/quality_snapshot_gate.sh` (PRD amendment #177).
-- Never stage `.bg-shell/`, `.mcp.json`, or `.planning/milestone.lock`.
-- The repositories under `D:/tmp` are read-only implementation references.
+- A defect is only a defect once it is reproduced on the live stack. A Go test
+  against a fake server is not evidence; this whole task exists because
+  `MergeEntities` had only that.
+- Read the official manual before probing. It is cloned read-only at
+  `D:/tmp/arcadedb-docs` (`ArcadeData/arcadedb-docs`, sources under
+  `src/main/asciidoc/`). Three behaviours below were established by trial and were
+  already written there.
+- A probe measures ONE phrasing of a call, never the absence of a capability.
+- No secret values in tests, CI, docs, or this file. The new live tests read no
+  env of their own; they use the existing `arcadedb_integration` harness, so the
+  CI tier needs no new variables.
+- Never modify a test to make it pass unless the test itself encoded the defect —
+  where that happened it is called out by name below.
 
-## GSD state
+## What was measured
 
-- Completed command: `gsd-execute-phase 51`.
-- Phase 51 has 14 of 14 plans executed and is complete. The inline adversarial
-  verifier passed 5/5 success criteria and 12/12 requirements with no outstanding
-  human check.
-- Plan `.planning/phases/51-durable-delegation/51-08-PLAN.md` is complete.
-- The hot-route defect is fixed and verified through the authenticated Cockpit.
-- The official GSD executor reconciled plan 51-08 with Amendment #183's
-  already-recorded 9.9/10 acceptance and Amendment #177's retired ledger gate.
-- The GSD phase pointer is now Phase 49. The operator-requested next work is to
-  insert and plan a provider-native subscription phase before starting it.
+Every tool in the surface was exercised against the live stack: `graph_schema`,
+`memory_entities`, `memory_digest`, `memory_search`, `memory_facts_about`,
+`memory_recall` (semantic, recent, open, scroll, reasoning), `memory_upsert_fact`,
+`memory_batch` (upsert_fact, supersede_fact, merge_entities, forget),
+`memory_merge_entities`, `memory_forget`, `memory_reembed`.
 
-Current execution checklist:
+Eleven defects were found. Each was reproduced first, fixed, and re-verified
+through the MCP tools against a rebuilt container.
 
-1. PRD hot-route contract: complete.
-2. RED runtime tests: complete.
-3. Prepare and publish a complete model profile: complete and committed.
-4. Add the measured Ollama provider/profile and verify it live through Aura's
-   existing client: implemented; focused and live tests green.
-5. Align Settings batch update, cockpit, AG-UI, and Telegram runtime consumers:
-   implemented; committed.
-6. Race/build/frontend/live no-restart verification: complete.
-7. Resume and complete 51-08: complete.
-8. Fix Amendment #190 and follow-up review findings: complete. The focused
-   standard-depth re-review is clean with zero findings.
-9. Run the final full matrix and repeated live E2E on the final image: complete.
-10. Insert and plan provider-native subscription phase: pending.
+| # | Defect | Reproduction |
+|---|--------|--------------|
+| 1 | `memory_merge_entities` failed for every merge that could matter. `SET n = properties(f)` copies `sources`, declared `LIST OF MAP`, and openCypher rejects a map-valued property assignment. Every fact written through the MCP carries provenance, and an entity with no facts has nothing to merge. | `http 400: TypeError: InvalidPropertyType` |
+| 2 | `memory_batch` could not state an entity's POLE class. The tool input lacked the fields, and beneath it the batch's own state carried only the kind, so the store resolved every class with `poleClassFor("", kind)`. The bulk path — the one an import agent uses — was the only one unable to classify what it coined. | `Inspector` + explicit `Person` → `Other` |
+| 3 | `poleByKind` omitted the reference model's own refinements. The file's doc comment named `Vehicle`, `Phone` and `PostCode` as canonical while the map held none of them. | fresh `Vehicle` and `City` → `Other`, with `Object`/`Location` empty |
+| 4 | `memory_recall` `scroll` refused a cursor handed back on its own, though the tool documents the cursor as opaque. The caller had to repeat the conversation, anchor and direction the cursor already carried. | `recall cursor conversation mismatch` |
+| 5 | Conversation paging never terminated. The page statements are inclusive and the next cursor pointed AT the last turn returned, so every page repeated its predecessor's boundary turn and, at the end of a conversation, the cursor was a fixed point. | turn 10 → turn 10, byte-identical `next_cursor` |
+| 6 | Reaching the end of a conversation was reported as `conversation_anchor_not_found`, sending the caller to hunt a bug in an anchor that was fine. | — |
+| 7 | `memory_reembed` with `all` could not pass its first batch. It selected `WHERE statement IS NOT NULL LIMIT batch`, a set re-embedding does not shrink, so it returned the same rows forever — on the one operation whose entire purpose is that no vector is left in the old geometry. | two calls on a 55-fact memory: `30`, `30` |
+| 8 | `writeVectors` panicked when the embedder returned fewer vectors than texts, indexing positionally into the answer. A sidecar responding short crashed the process. | `index out of range [0] with length 0` |
+| 9 | `memory_search` returned facts without `fact_key` on the hybrid path while the lexical path returned it. Whether a hit could be corrected with `supersedes_fact_key` depended on whether the embedder happened to be up. | — |
+| 10 | A REFUSED supersede still coined its endpoints, against the function's own contract ("the new fact itself was not created"). The orphan landed in `memory_entities`, which exists to be read BEFORE a name is coined. | `RefusedProbe-Fantasma`, 0 facts |
+| 11 | The same already-closed fact written twice was stored twice. A historical fact carries no `fact_key` (the unique index reserves it for the currently-valid version), so the provenance attach, which looked a fact up by key, never matched. Replaying a historical import multiplied rows and split each fact's provenance across the copies. | two edges, `as_of` returning the fact twice |
 
-## Committed decisions
+## Root cause of #1
 
-- `ab2c576c5 docs(settings): define hot primary LLM route`
-  - PRD amendment #184 defines runtime endpoint/model switching.
-- `b11fa906b test(settings): expose missing hot LLM route`
-  - Adds the RED runtime behavior tests.
-- `7c8ce61ab docs(settings): define measured model profile`
-  - PRD amendment #185 records the measured local context and provider/profile
-    design contract.
-- `ea5dcfbef docs(settings): define measured Ollama cloud route`
-  - PRD amendment #186 records Ollama 0.33.2, the keyless OpenAI-compatible
-    bridge, `/api/show` discovery, subscription cost semantics, and live-test
-    boundary.
-- `f4cd74342 feat(llm): publish provider model profiles atomically`
-  - Adds immutable operation snapshots, provider metadata resolution, Ollama
-    pricing provenance, and runner/cron/swarm integration.
-- `7ab98b356 feat(settings): hot-reload complete LLM profiles`
-  - Adds prepare-before-persist batch Settings updates and hot AG-UI publication.
-- `e74da321d feat(telegram): follow the hot LLM cost profile`
-  - Makes `/cost` follow the active snapshot without retaining Telegram data.
-- `213e617f5 feat(web): switch primary LLM routes atomically`
-  - Adds the three provider presets, batch save, tests, and rebuilt embedded UI.
-- `37a344e9f test(llm): drain large SSE fixture requests`
-  - Stabilizes large loopback SSE fixtures on Windows.
-- `d6c60b408 test(settings): prove live primary route hot reload`
-  - Adds the opt-in authenticated Playwright witness for Ollama and llama.cpp.
-- `ce2935734 docs(llm): record measured Ollama reasoning profile`
-  - Records the direct reasoning and context contradiction before implementation.
-- `1f01dcdfd fix(llm): project Ollama reasoning effort`
-  - Maps Aura effort to Ollama's standard `reasoning_effort` field and exposes
-    the measured capability levels.
-- `ae9c59fe1 fix(settings): follow active model limits`
-  - Clears persisted model-limit overrides when the selected route changes.
-- `23356e179 fix(web): refresh hot model metadata`
-  - Invalidates active profile and reasoning metadata after a Settings save.
-- `3cbd008e5 test(e2e): cover Ollama reasoning and context`
-  - Extends the live Playwright witness through context, effort, reasoning, and
-    final-answer assertions.
-- `253c4b967 docs(llm): record inherited limit precedence failure`
-  - Records the first live correction after startup env values defeated DB cleanup.
-- `9adaf6e35 fix(settings): reset inherited startup limits`
-  - Propagates route reset intent through prepare and clears configured flags
-    before provider discovery.
-- `7cd32f581 docs(llm): record composer effort race`
-  - Records the intermittent immediate-select/send failure.
-- `0c59905d4 fix(web): submit the current reasoning effort`
-  - Makes the retained assistant-ui callback read a render-synchronized effort ref.
-- `7301dfead docs(agui): record terminal answer drop`
-  - Records the final-only `text_response` loss found by three live runs.
-- `c9e8b3664 fix(agui): stream terminal-only answers`
-  - Emits one text lifecycle for terminal-only answers without duplicating normal
-    streamed responses.
-- `6d651fc84 build(web): align embedded assets with lockfile`
-  - Regenerates the embedded distribution after `npm ci`; a second build is
-    byte-stable.
-- `58685403e`, `236bf4692`, `7aee86ba3` (`docs(51-08)`)
-  - Reconcile validation, delimit the superseded baseline, create the final plan
-    summary, and hand Phase 51 to its verifier.
-- `3c60158f2 docs(51): add code review report`
-  - Records the 143-file standard-depth Phase 51 review and its 11 findings.
-- `6f4f9fa1e docs(51): record delegation review gaps`
-  - PRD Amendment #190 classifies confirmed gaps, accepted at-least-once
-    boundaries, required regression coverage, and the final E2E completion gate.
-- `e9e6850da fix(51): WR-04 isolate worker state by conversation`
-  - Scopes and resets cockpit worker state when conversations change.
-- `f1159244d fix(51): CR-05 preserve framed tool history`
-  - Preserves model-facing trust framing when delegated workers resume.
-- `5e4401c1f fix(51): WR-01 make delegation fanout enqueue atomic`
-  - Creates a fan-out batch in one identity-scoped transaction.
-- `51b0691b7 fix(51): CR-06 isolate worker policy`
-  - Separates trusted worker policy from untrusted delegated goal data.
-- `adb14e99b fix(51): WR-02 freeze delegation runtime`
-  - Freezes one runtime snapshot for the whole delegated operation.
-- `e0752cc5c fix(51): WR-03 quarantine invalid resumes`
-  - Continues past poison answered rows and terminally quarantines them.
-- `46f7f2dec fix(51): make delegation recovery durable`
-  - Stages terminal reports before projection, retries delivery without rerunning
-    the model, deduplicates conversation/steer writes, persists fan-out outbox
-    claims atomically, and wires Postgres resume quarantine.
-- `cc6235f68 docs(51): refresh code review report`
-  - Records the 173-file standard-depth re-review and its two recovery blockers
-    plus one worker-pane restoration warning.
-- `8d8295601 fix(51): cap expired delegation recovery`
-  - Prevents an expired final attempt from rerunning the worker while preserving
-    delivery-only recovery beyond the attempt cap.
-- `580714e26 fix(51): make report archives idempotent`
-  - Keys agent assets by delivery identity, retries archive failures before
-    projection, and resumes success-before-checkpoint without duplicate reports.
-- `7b6a3fb44 fix(51): scope worker pane to conversation`
-  - Persists the originating conversation, waits for registry hydration, and
-    unions independently mounted swarm report cards with scoped cleanup.
-- `cb3708936 docs(51): add code review report`
-  - Records the clean focused re-review of attempt-cap recovery, idempotent
-    report archives, and conversation-scoped worker-pane hydration.
+`MergeEntities` had **no live test at all**. Its two unit tests asserted the Cypher
+this package emits against a fake server that answers `{"moved":1}` to any
+statement — precisely what `memory_integration_test.go`'s own header warns about.
+`merge_live_integration_test.go` now runs it for real.
 
-PRD amendment #185 records these decisions:
+## What the manual already said
 
-- The live llama.cpp `/v1/models` response identifies `gemma-4-12b` and reports
-  `meta.n_ctx=81920`. Aura had incorrectly advertised and budgeted 1,000,000.
-- Provider identity, API/protocol, authentication, and model profile are
-  separate concerns.
-- A hot profile includes client, provider, model, context window, maximum output,
-  prices/caps, and explicit override provenance.
-- Prepare the full profile before persistence, persist it as one batch, then
-  publish one immutable runtime snapshot.
-- Local inference has an explicit zero/included cost instead of unknown remote
-  pricing.
-- Explicit context/max-output settings override provider metadata.
-- Future provider-native support distinguishes OpenAI API-key Responses from
-  ChatGPT subscription OAuth/Codex Responses, and uses native Anthropic Messages
-  for Anthropic key/OAuth routes.
-- Cost status must distinguish actual, estimated, subscription-included,
-  local-included, and unknown.
+Consulted after the fact, and it should have been first:
 
-## Reference inventory
+- `reference/cypher/cypher-clauses.adoc` — "A property value must be a scalar or a
+  list of scalars. A map value … is rejected with a `TypeError` and no part of the
+  clause is written." Defect #1 was one page away.
+- `reference/managing-dates.adoc` — the datetime format is `yyyy-MM-dd HH:mm:ss`
+  **by default** and is changed with `ALTER DATABASE DATETIMEFORMAT`; `date()`
+  converts with an explicit format. This is why datetime **equality** needs
+  `date()` while the **range** operators coerce an RFC3339 string (which is why
+  `as_of` always worked).
+- `reference/sql/sql-methods.adoc` — `replace` is a string **method**
+  (`<value>.replace(a, b)`), not a function. A probe returned "Unknown function
+  name 'replace'" and that was written into a code comment as "SQL has no
+  replace()". The probe measured the wrong shape of call; the comment overreached
+  into absence and has been corrected.
 
-Inspected local sources:
+## Design decisions worth keeping
 
-- `D:/tmp/pi/packages/ai/src/providers`
-- `D:/tmp/hermes-agent`
-- `D:/tmp/LibreChat`
-- `D:/tmp/codex`
+- **The merge copies; it does not re-point.** SQL *can* move an edge's endpoint in
+  place (`UPDATE FACT SET @out = …`) and both vertices' adjacency follows —
+  strictly better, copying nothing. It only works on an **unindexed** edge type:
+  with a single index on `FACT` the engine fails with `IllegalStateException:
+  Cannot read original buffer`, and `FACT` carries three. Probed before writing,
+  so the regression never shipped. Each fact now moves as one `sqlscript` —
+  create then delete inside one transaction — because two round trips would leave
+  a duplicated fact behind whenever the second did not happen.
+- **The merge drops `embedding` deliberately.** The statement is rewritten, so the
+  old vector describes the old wording. `memory_embed_backfill` selects on
+  `embedding IS NULL` and recomputes it, which is the mechanism this codebase
+  already built for exactly this gap.
+- **`ReEmbedAllFacts` clears then drains** for the same reason: "has no vector" is
+  the only predicate that shrinks as the work is done.
+- **Minting moved past every refusal.** Classifying an endpoint is a pure decision;
+  creating the vertex is a write, and a write must not happen before the call
+  knows it will keep it.
+- **Omission is not a mismatch.** `scroll` now takes the cursor alone and still
+  refuses a request that *contradicts* it. The identity check stays unconditional:
+  identity is host-derived, so refusing another identity's cursor is a tenancy
+  boundary rather than a restatement.
 
-Relevant findings:
+## Verification
 
-- pi keys models by `(provider, id)` and keeps API type, auth, context, max
-  tokens, cost, caching tiers, and capabilities in the provider/model profile.
-- pi's custom Ollama pattern reuses `openai-completions` at an `/v1` base URL,
-  resolves keyless auth, and suppresses unsupported developer-role/reasoning
-  assumptions instead of creating a separate client.
-- pi distinguishes `openai` (`openai-responses`, API key) from
-  `openai-codex` (`openai-codex-responses`, ChatGPT Plus/Pro OAuth).
-- pi uses native `anthropic-messages` with API key or Claude Pro/Max OAuth.
-- Hermes uses typed provider profiles, route-keyed metadata/context caches, and
-  explicit price provenance.
-- LibreChat uses descriptor-driven custom endpoints, provider-specific reasoning
-  mappings, separate metadata/tokenomics, and identity-aware invalidation.
-- Aura's current Slice 13 contract is an OpenAI-compatible remote/local router;
-  provider-native subscriptions therefore need their own phase.
+Run from `D:/Repo/Aura`.
 
-## Live measurements
+- `go build ./...`, `go vet ./...`, `go test ./...` — whole module green.
+- Live tier, both packages green:
+  ```bash
+  ARCADEDB_URL=http://127.0.0.1:2480 ARCADEDB_PASSWORD=… \
+  ARCADEDB_DATABASE=aura_memory_it AURA_ARCADEDB_TENANT_SECRET=… \
+  go test -tags arcadedb_integration ./internal/arcadedb/ ./cmd/arcadedb-mcp/
+  ```
+  `ARCADEDB_DATABASE` must name a database carrying the memory schema;
+  `aura_memory_it` was created for this. Without it
+  `TestMemoryVectorDegradesWithoutAnEmbedder` fails on a pre-existing fixture
+  expectation, not on anything changed here.
+- Race, native, in WSL: `CGO_ENABLED=1 go test -race ./internal/arcadedb/ ./cmd/arcadedb-mcp/` — green.
+- `golangci-lint run ./internal/arcadedb/... ./cmd/arcadedb-mcp/...` — 0 issues.
+- Container rebuilt (`docker compose build arcadedb-mcp && docker compose up -d
+  arcadedb-mcp`) after each fix, and every fix re-verified through the MCP tools.
+- Every new test was watched FAIL against the unfixed code before being kept —
+  e.g. `re-embedded 3 of 7 facts`, `minted as "Other", want Person`,
+  `the same closed fact was stored 2 times`.
 
-Before this fix, the database route was:
+## Dogfooding
 
-- provider: `llamacpp`
-- base URL: `http://aura-llm:8084/v1`
-- model: `gemma-4-12b`
+The findings themselves were written into the live memory through the MCP, which
+is the most realistic end-to-end exercise available: eleven facts about the tools,
+the incidents, the ArcadeDB behaviours and the documentation location, all
+classified through the POLE path that was just fixed (`Tool`→Object,
+`Incident`→Event, `Milestone`→Event, `Officer`→Person, `Precinct`→Location).
+Retrieval was then checked against that real content: a natural-language question
+returned the right facts at ranks 1–2, each carrying its `fact_key`.
 
-The sidecar metadata endpoint reports context window 81920. No OpenRouter
-inference request or charge was incurred.
+All synthetic probe entities were removed with `memory_forget`; the project
+knowledge was kept.
 
-Ollama 0.33.2 live measurement:
+## Files
 
-- Aura's container reaches `http://host.docker.internal:11434` without restart.
-- `gemma4:31b-cloud` is not listed by `/api/tags` or `/v1/models`.
-- `POST /api/show` reports `gemma4.context_length=262144`, BF16, and completion,
-  thinking, tools, and vision capabilities.
-- Native `/api/chat` and non-streaming `/v1/chat/completions` returned their
-  requested sentinels.
-- Aura's `openai_compat.Client` passed real SSE completion, `/api/show` profile
-  resolution, and streamed tool-call assembly against the model.
-- The profile is `subscription-included` with no fabricated or inherited numeric
-  token price.
+Changed: `internal/arcadedb/{merge,memory,memory_pole,memory_batch,
+memory_batch_state,memory_batch_store,memory_recall_browse,memory_vector,
+memory_backfill,memory_provenance,write_retry}.go` and their tests;
+`cmd/arcadedb-mcp/tool_memory_batch.go` and tests;
+`docs/arcadedb-mcp-live-tools.json` (regenerated golden).
 
-Aura baseline before the software rollout:
+New: `internal/arcadedb/memory_fact_selector.go`,
+`internal/arcadedb/merge_live_integration_test.go`,
+`internal/arcadedb/memory_reembed_live_integration_test.go`,
+`internal/arcadedb/memory_historical_live_integration_test.go`.
 
-- container PID: `75817`
-- started at: `2026-08-30T01:22:21.123134167Z`
-- restart count: `0`
-- image: `sha256:699ce1260f16f7974f6d9885121ad8b109f22e5f867065a76d626c54f9ee95ca`
+Tests rewritten because they encoded the defect, each justified in place:
+`TestMemoryRecallLive_BrowseCursor` asserted the duplicate boundary turn;
+`TestMergeEntitiesMovesBothDirectionsAndDropsSelfLinks` and
+`TestUpsertFactCreatesEntitiesThenTheEdge` pinned statement positions rather than
+invariants; the vector and supersede tool tests pinned a request order that the
+deliberate reordering changed.
 
-The software rollout built image
-`sha256:9d6b3fef42ceecb008103e9acb1ff8852ca4889bb838a9df90f6a71aef881e93`
-from the committed implementation and recreated Aura once. The post-rollout
-no-restart baseline and final witness are identical:
+## Not claimed
 
-- container PID: `46356`
-- started at: `2026-08-30T09:17:19.214549326Z`
-- restart count: `0`
-- health: `healthy`
+- Pre-migration entities still report `pole: "Entity"`. They predate the classed
+  schema; nothing here reclassifies them.
+- The merge rewrites the **literal** entity name inside a statement. Merging two
+  entities whose names do not appear verbatim in their prose leaves those
+  statements describing the pre-merge world. Pre-existing, and correcting it would
+  mean rewriting an author's sentences.
+- `MENTIONS` being empty at boot is not a defect: the sweep is scheduled every 30
+  minutes and had not yet ticked. Forced, it linked 6 edges.
 
-Authenticated Cockpit Settings then moved the runtime through Ollama and back to
-llama.cpp. The Ollama witness proxy observed one keyless `/api/show` and two
-`/v1/chat/completions` requests, with zero Authorization headers. The local turn
-returned its requested sentinel. Playwright passed in 1.5 minutes without a
-container restart. A separate Cockpit session subsequently selected the direct
-Ollama route on port 11434; that operator choice was left intact.
+## The skill and the prompt that drive these tools
 
-The final software image is
-`sha256:ed60b940c495248e2747b7d57adfb4d8b23c7b30dbdd1a731599dff2d92e399b`.
-Its pre-drive and post-drive container witness is identical:
+`internal/skills/embed/memory-aura/SKILL.md` is what Aura reads before using this
+surface, so a tool fix that leaves the skill describing the old behaviour is half a
+fix. Every claim in it was re-checked against the live tools; two were wrong:
 
-- container PID: `19645`
-- started at: `2026-08-30T10:43:20.631079759Z`
-- restart count: `0`
-- health: `healthy`
+- It listed **`entity` as a `mode`** of `memory_recall`. It is a PARAMETER; the enum is
+  `semantic, recent, open, scroll, reasoning`, and `mode: entity` is rejected before the
+  call runs. Following the skill produced a failing call.
+- It said the cursor needs its `direction` repeated. It does not any more, and it never
+  said that paging terminates when `next_cursor` stops coming.
 
-One Playwright run and a separate `--repeat-each=3` run all passed. Every run
-changed profiles through Cockpit, observed Ollama context `262144`, selected
-`high`, asserted the actual `/agent/run` payload carried `aura.effort=high`,
-received non-empty reasoning frames and the requested final sentinel, exercised
-llama.cpp, and restored Ollama in `finally`. No OpenRouter request participated.
+Claims that were checked and held, so they stayed: `source: {}` is complete; exact
+replay attaches rather than duplicating; the prose guard rejects a sentence-shaped
+object (`fact object reads as prose`) but passes a tidy phrase like
+`11ms single query latency on RTX A2000`; a `memory_forget` matching nothing returns a
+plain `0` rather than an error — though the same forget inside a `memory_batch` ABORTS
+the batch, which the skill now says.
 
-A concurrent software rollout subsequently replaced the shared container with
-image `sha256:ff68727c255cb2b19d684be4bc6d7bb044459a4fa48328f2dc04bdec5bdac878`.
-Two independent `--repeat-each=3` drives then passed on that image. The final
-pre/post tuple is identical: PID `74261`, StartedAt
-`2026-08-30T11:05:53.971427258Z`, RestartCount `0`, same image, healthy. Logs
-from that baseline contain zero OpenRouter references. This supersedes the older
-tuple as the current no-restart witness.
+Added, because the tools have it and the skill did not: the POLE class model
+(six classes, `subject_pole`/`object_pole`, `kind` as the refinement, the class decided
+once at first write), `memory_reembed` (absent entirely), the batch's idempotency
+semantics, and a map of all eleven tools.
 
-## Current implementation
+Rewritten deepest: **conversations and reasoning traces**, which are the powerful half
+and were four lines. A trace opened by `trace_id` returns its ordered `steps` and, on
+the steps that made them, the `tool_calls` — `tool_name`, `status`, `duration_ms`, an
+`observation`, `artifact_refs`, and an `argument_digest` which is a hash, so the
+arguments themselves were never stored and cannot be reported. Traces carry `expires_at`
+and are gone after thirty days, where facts are not. A trace also carries
+`conversation_id` and `turn_seq`, and a turn carries the matching `source_ref`, so the
+two halves join: *why* from the trace, *what was said* from `open`/`scroll` on that
+conversation, *what was concluded* from the facts. That pivot is now the skill's centre.
+`turn_seq` is not contiguous (a real conversation runs 1, 2, 3, 6, 7, 10), which the
+skill now warns about.
 
-The implementation below is committed in the scoped changes listed above.
+**The skill was available and did not fire.** Read back from the live database after the
+rebuild (conversation `01a06705`, 11:27-11:30): asked "what do you know about me", Aura
+answered from the bare tools; asked "why don't you use the memory skill", it conceded the
+skill "was installed and present in my capability list from the start of the session" and
+that it "chose the shorter way instead of the correct one". Two turns earlier, asked how
+its reasoning trace works, it wrote an essay about thinking and acting — and asserted "it
+is not a tool I call, it is the way I think", which is false here.
 
-### Atomic LLM runtime
+That settles a design question rather than opening one. The first draft of this work added
+a third mention of the skill to the always-present system prompt; it was reverted on the
+argument that skills are advertised to the model by name and description, so the skill is
+reachable on its own. The measurement says the advertisement was not ENOUGH, not that the
+layering was wrong — and the fix belongs where the trigger lives. So the skill's
+description now names the situations it must fire in (someone asks what you know or
+remember, someone reveals something durable, a stored fact is wrong, a question is about an
+earlier conversation or an earlier line of reasoning) and says plainly that the tools will
+answer without it and that this is the trap. The system prompt stays untouched.
 
-- `internal/llm/runtime.go` publishes immutable `RuntimeSnapshot{Client, Config}`
-  values atomically and clones mutable maps before publication.
-- Runner, cron handlers, resident swarm workers, AG-UI, and Telegram snapshot the
-  runtime at the start of an operation.
-- In-flight operations retain their original client/profile while new operations
-  observe the replacement.
-- Boot captures the pre-settings fallback before applying database environment
-  overlays.
+The same read also proves it is a triggering gap and not a capability one: on 2026-09-01,
+pushed with "I have never seen you use it", Aura DID open `mode: reasoning` and used it
+well, showing the operator its own recorded struggle to guess the batch tool's keys. Same
+question two days later, no push, and it described the mechanism instead. Both failure
+modes are now named in the skill by what they look like from the outside.
 
-### Model metadata and pricing
+**One layer owns the doctrine.** The per-turn `<memory_context>` pointer
+(`cmd/aura/serve_memory_context.go`) used to restate `depth 2` semantics and advertise
+the skill as covering "writing and correcting" — which undersells it, so an agent with a
+question about a reasoning trace had no reason to load it. It now carries only what
+cannot live in a lazily-loaded skill: the memory's shape, the three-way read routing
+(whose failure needs no tool call — an agent that does not know `recent` exists answers
+"I recall nothing"), and an accurate name for the skill. A test pins that it does not
+restate `depth`, `cursor`, `supersede` or the class names.
 
-- `internal/llm/config.go` tracks whether context window and maximum output were
-  explicitly configured.
-- `internal/llm/pricing_source.go` fetches one provider model projection and can
-  read OpenRouter context/max-output/pricing plus llama.cpp `meta.n_ctx`.
-- `ResolveModelProfile` clones config maps, applies measured metadata only where
-  no explicit override exists, assigns explicit zero local pricing, validates,
-  and leaves the original config unchanged on failure.
-- Provider metadata requests scope credentials by provider: an OpenRouter key is
-  retained in the active configuration for a later cloud switch but is never sent
-  to a local llama.cpp metadata endpoint.
-- Boot profile resolution degrades to configured fallback without logging raw
-  base URLs.
-- Ollama model metadata uses bounded keyless `POST /api/show`; the configured
-  `/v1` URL is parsed structurally to derive the native endpoint.
-- Ollama local models receive explicit local-included zero cost; `*-cloud`
-  models receive subscription-included provenance and no numeric price.
-- Provider spend never sends a retained OpenRouter key to Ollama.
-- One-shot profile, pricing, and spend clients close idle connections after use.
+The system prompt was left alone. Naming the skill there too was drafted and reverted:
+skills are advertised to the model by name and description, so `memory-aura` is already
+reachable from its own frontmatter, and a third mention would have been coordination
+to maintain rather than doctrine to follow.
 
-### Settings prepare, persist, publish
+Both containers were rebuilt, and the rewritten skill is materialized inside the
+running `aura` container at `/var/lib/aura/skills/memory-aura/SKILL.md`.
 
-- `internal/settings/settings.go` has advisory-lock-protected `ReplaceMany` for
-  atomic writes and deletes in one transaction.
-- `PUT /api/settings/llm-profile` accepts only hot-profile keys.
-- A reloader prepares and validates the complete client/profile before database
-  mutation, persists all keys in one transaction, then executes one publication
-  closure.
-- Single-key PUT/DELETE uses the same prepare-before-persist behavior.
-- GET after DELETE reads the active runtime value instead of a stale process
-  environment overlay.
-- URL validation rejects userinfo, query, and fragment data and returns generic
-  errors.
-- Active non-profile configuration, including a database-overlaid API key, is
-  retained while a profile changes.
-- Route changes reset model limits even when the stale configured value came
-  from startup environment rather than a Settings row. An explicit limit in the
-  same mutation remains pinned.
+## The surface Aura actually holds
 
-### Runtime consumers
+The deepest finding came last, and it explains the behaviour above better than any
+discipline argument does. `memoryHiddenFromModel` did not DEFER eight of the eleven memory
+tools — `bridgeToolsWithPolicy` skipped them, so they were absent from the model's world
+and `tool_search` could not reach them either. The agent held exactly `memory_recall`,
+`memory_upsert_fact` and `memory_batch`.
 
-- AG-UI reads model context directly from the same atomic runtime snapshot used
-  for the client, preventing model/context mismatch.
-- Reasoning capabilities refresh with the published profile.
-- Ollama effort uses the same OpenAI-compatible endpoint: none/low/medium/high
-  map to `reasoning_effort`, while xhigh/max clamp to high. No OpenRouter or
-  llama.cpp-only extension is projected.
-- AG-UI emits terminal-only final content before StateDelta when no text chunks
-  preceded it; normal streamed answers remain non-duplicated.
-- Telegram `/cost` snapshots the current runtime for model, prices, and spend
-  backend. Tests use synthetic data only; no Telegram identifiers are retained.
+So the skill's central instruction — read `memory_entities` before any write — named a tool
+that did not exist for Aura, and the per-turn pointer routed to `memory_facts_about` and
+`memory_search`, both absent. Answering everything with `memory_recall` was not laziness;
+it was the only surface it had. Its apology for "choosing the shorter way" was an apology
+for a constraint.
 
-### Frontend
+On the operator's decision the hiding is gone. Deferral now chooses what rides in a
+manifest; it never chooses what exists:
 
-- The Settings API exposes `putLLMProfile`.
-- Model Settings saves dirty hot-profile fields in one batch request and saves
-  unrelated settings individually.
-- The default local URL is `http://aura-llm:8084/v1`.
-- The routing control now has atomic OpenRouter, llama.cpp, and Ollama presets;
-  Ollama selects `http://host.docker.internal:11434/v1` and
-  `gemma4:31b-cloud` in the same batch.
-- The embedded Web UI distribution was rebuilt after the source changes.
-- Capability queries and `/api/me` are invalidated after a hot profile save.
-- The external runtime's retained submit callback reads current effort from a
-  layout-synchronized ref, closing the select-high/send race.
-- Worker-pane persistence is conversation-scoped and is discarded on a route
-  mismatch instead of opening a child from another conversation.
-- Worker registrations are aggregated per mounted swarm report card; delayed
-  hydration no longer closes a valid restored pane.
+- **All 11 memory tools are bridged.**
+- **Four ride in every turn**: `memory_recall`, `memory_upsert_fact`, `memory_batch`,
+  `memory_entities` — the ones with no substitute. `memory_recall` already answers what
+  `memory_facts_about` and `memory_search` answer (its `entity` parameter takes the graph
+  path, its `query` the hybrid one), `memory_batch` subsumes forget and merge, and the
+  runner injects the digest; nothing at all covered "which names already exist".
+- **Seven are deferred**, one `tool_search` away, exactly like `web_search`.
 
-## Tests added or updated
+Mechanically this needed per-tool deferral (`bridgePolicy.deferredTool`) and a slot
+arithmetic that weighs the manifest core rather than the whole surface
+(`bridgePolicy.manifestCount`), with `maxAlwaysLoadedMCPTools` moved 3 → 4 to admit the
+fourth. The slot outcome is unchanged: calendar (1) and memory (4) hold the two slots.
+Verified on the rebuilt container:
 
-- Runtime map cloning and replacement behavior.
-- Runner, cron, and swarm operation-level snapshot behavior.
-- Local profile context 81920 and explicit zero price.
-- OpenRouter context/max-output/pricing projection and explicit override
-  precedence.
-- Failed profile resolution does not mutate source configuration.
-- Local profile metadata requests never receive a retained cloud bearer token.
-- Active database-overlaid API key survives a hot profile change.
-- Settings batch prepares, persists, and applies exactly once.
-- Settings GET after DELETE returns active fallback instead of stale env data.
-- AG-UI context follows runtime replacement.
-- Telegram cost output follows the current synthetic runtime profile.
-- Frontend batch endpoint and one-request Model Settings behavior.
-- Ollama `/api/show` projection, malformed/ambiguous context rejection, local vs
-  cloud cost provenance, credential isolation, Settings publication, and wire
-  compatibility.
-- Opt-in live Ollama tests for profile discovery, SSE completion, and streamed
-  tool calls through Aura's production client.
-- Opt-in authenticated Playwright route witness that publishes Ollama and
-  llama.cpp profiles, drives a real turn on each, asserts the request effort,
-  reasoning frames, active context and final answer, and restores Ollama in
-  `finally`.
-- The large SSE fixture drains the POST body before returning its 70 KB response,
-  preventing Windows from resetting and truncating the loopback connection.
-- AG-UI translator coverage for terminal-only content followed by StateDelta,
-  alongside the existing no-double-stream regression.
-- Expired-final-attempt recovery with a real disposable PostgreSQL database,
-  proving zero worker reruns and delivery-only dead-letter retry.
-- Stable report-asset source references across archive errors and
-  success-before-checkpoint retries, including reversible migration coverage.
-- Worker-pane route mismatch, delayed registry hydration, and multi-card union
-  cleanup: 29 focused Vitest tests pass across four files.
+    mcp always-loaded slot granted  namespace=memory model_facing=4 slots_remaining=0
+    mcp live mounted                server=memory tools=11
 
-## Verification status
-
-Green:
-
-- Focused Go tests for `internal/llm`, `internal/agui`,
-  `internal/channels/telegram`, `internal/settings`, `cmd/aura`, runner, cron, and
-  swarm.
-- `go vet ./...`
-- `go build ./cmd/aura`
-- `npm run typecheck`
-- `npm run build`
-- `npm run lint`
-- Full frontend test run after clean `npm ci`: 226 files, 1,905 tests passed.
-- Frontend coverage on final HEAD: 91.12% statements, 85.14% branches, 90.30%
-  functions, 93.10% lines.
-- Split Model Settings routing tests: 2 files, 25 tests passed.
-- The previously failing 70 KB SDK stream test passed 20 consecutive runs after
-  the fixture correction, and `internal/llm/openai_compat` passes in the full run.
-- WSL race matrix passed for `internal/llm/...`, `internal/agent/prompt`,
-  `internal/agui`, `internal/settings`, and `cmd/aura`; the broader earlier
-  runtime/cron/swarm/channel matrix also remains green.
-- Full Linux/WSL `go test -count=1 ./...` passed after all fixes.
-- `git diff --check`
-- Live `gemma4:31b-cloud` gate: profile discovery, streaming completion, and
-  streaming tool call all passed; goleak passed after closing idle metadata
-  connections.
-- Final `aura:local` image `sha256:858869f95e26b0c267d706fd7fbadb970ddd83bf5fa013c38fa4ecce258a0cab`
-  was built from and reports commit `215b8d039ed69c96515cdd10cc66158a727e5de7`.
-  The migration one-shot reported no pending migrations and the recreated Aura
-  container reached healthy with restart count zero.
-- The complete repository Playwright suite passed against that image: 145
-  passed, 39 intentional opt-in/project skips, zero failures across Chrome and
-  mobile Chrome. The mobile onboarding fix also passed five sequential repeats.
-- The live hot-route witness passed once and then three sequential repeats. Each
-  cycle published Ollama `gemma4:31b-cloud`, verified 262144 context and streamed
-  high-effort reasoning, switched to llama.cpp `gemma-4-12b`, completed a real
-  sentinel turn on both routes, and restored Ollama in `finally`.
-- Across all four live cycles the runtime tuple stayed exactly
-  `65a30445f962ae5f1886f26802c671ccfcea6d7ce440d9bc8df1cd778759a3a0|48689|2026-08-30T16:31:30.724438531Z|0|sha256:858869f95e26b0c267d706fd7fbadb970ddd83bf5fa013c38fa4ecce258a0cab`.
-  Post-deploy logs contain zero OpenRouter references and show both Ollama and
-  llama.cpp traffic.
-- `npm run build` passed twice after `npm ci` with 4,331 modules and zero
-  regenerated diff.
-- `TestProductionContainerArtifactsMatchFatImageContract` passed.
-- Amendment #190 focused gates on `46f7f2dec`: WSL unit tests and vet passed for
-  swarm/conversations/steer/documents/cmd; WSL `db_integration -race` passed for
-  swarm, conversations, and steer; the cmd/aura fan-out transaction test passed
-  against a migrated disposable database; file-size and pre-commit lint passed.
-- Follow-up recovery remediation: the real PostgreSQL expired-attempt test and
-  idempotent asset test passed against disposable databases; migration 0112
-  down/up reversibility passed; focused WSL assets/swarm/cmd tests passed.
-- Follow-up frontend remediation on `7b6a3fb44`: 29 focused Vitest tests,
-  full-project TypeScript typecheck, scoped ESLint, formatting, file-size,
-  duplication, and pre-commit vet all passed.
-- Focused standard-depth remediation review on `cb3708936`: 23 files reviewed,
-  zero critical, warning, or info findings. Two typed reviewer dispatches were
-  non-terminal and closed without output; the operator directed the same review
-  scope to be completed inline.
-- Canonical backend `make quality` passed after the migration-head repair:
-  deadcode, vet, file-size, model contracts, lint, the full race suite,
-  `govulncheck`, and build are green. The subsequent HEAD movement only refreshed
-  the committed Web dist from the already-tested source tree.
-- `make tagged-tier-compile` passed all 24 tiers across 40 tagged packages.
-- Canonical `make web-quality` passed: 228 files and 1,917 tests,
-  91.16% statements / 85.22% branches / 90.36% functions / 93.13% lines, and a
-  75.34% mutation score against the 70% floor. One test timed out only while this
-  gate competed with tagged compilation; the isolated case passed in 880 ms and
-  the sequential full rerun was green.
-- Disposable-Postgres coverage passed on exact candidate `c02a5835032da5096f2ed0ba265b5326217ccd02`
-  with the `db_integration` tier: 30,516 / 35,069 owned statements, 87.017%
-  against the 85% floor, and zero empty tiers. The disposable container was
-  removed on completion.
-- `sqlc generate` completed without tracked drift.
-
-Phase closure:
-
-- GSD verification passed at 5/5 success criteria with 12/12 requirements.
-- `phase.complete 51` updated ROADMAP, STATE, and REQUIREMENTS; the generated
-  SWARM-10/state counters were reconciled against the verified phase evidence.
-- The verification report records the at-least-once crash boundary and other
-  non-claims; no residual was silently promoted to an exactly-once guarantee.
-
-Known nonblocking portability note:
-
-- Native Windows `go test ./...` passes every changed package but still exits
-  non-zero on three unrelated portability assertions: two `internal/agent` tests
-  compare `%TEMP%` paths using POSIX separator assumptions, and one
-  `internal/agent/tools` test expects POSIX mode `0600` from Windows. These files
-  are outside the implementation diff. The authoritative Linux/WSL full suite is
-  green; do not widen this phase into unrelated Windows-only test maintenance.
-
-## Files and staging
-
-The implementation and rebuilt Web UI are committed. The remaining untracked
-local files are `.bg-shell/`, `.mcp.json`, and `.planning/milestone.lock`; they
-must remain outside git.
-
-For subsequent commits:
-
-- Keep the implementation and tests in scoped atomic commits.
-- Update the Phase 51 plan/summary/state only from measured verification.
-- Do not stage `.bg-shell/`, `.mcp.json`, or `.planning/milestone.lock`.
-- Do not stage or commit any messaging session or account material.
+The skill and the pointer now say which four are present and that the rest need loading,
+so neither names a tool the agent cannot reach.
 
 ## Next actions
 
-1. Insert, discuss, specify, and plan the provider-native subscription phase via
-   GSD, covering native OpenAI and Anthropic API/subscription authentication.
-
-## Resume commands
-
-Run from `D:/Repo/Aura`:
-
-```powershell
-go test ./internal/llm/openai_compat -run TestSDKStreamAccumulatesSplitToolCallAndUsage -count=1
-go test ./...
-npm run lint
-npm run typecheck
-npm test
-npm run build
-git diff --check
-git status --short
-```
-
-Race verification:
-
-```powershell
-wsl bash -lc 'cd /mnt/d/Repo/Aura && go test -race ./internal/llm ./internal/agui ./internal/runner ./internal/cron/handlers ./internal/swarm ./internal/channels/telegram ./cmd/aura'
-```
+1. Commit as six atomic changes: merge · POLE classing · recall paging · re-embed and
+   `fact_key` projection · refusal and historical dedupe · skill and pointer.
+2. Coverage gate and a mutation spot-check on the critical new file before closing.

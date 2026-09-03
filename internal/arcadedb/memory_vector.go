@@ -185,8 +185,15 @@ const fuseRIDsStatement = "SELECT @rid AS rid FROM (SELECT expand(" + rerankOpen
 
 // hydrateFactsStatement rechecks validity after fusion, closing the race where a
 // fact is superseded between candidate ranking and hydration.
+//
+// fact_key is in the projection because the lexical path's own statement has always
+// carried it, and a hit that arrives with an identity or without it depending on which
+// retrieval path happened to run is not a contract a caller can use. The identity is
+// what memory_upsert_fact's supersedes_fact_key asks for -- "the fact_key a prior recall
+// returned" -- so dropping it here meant a fact found while the embedder was UP could not
+// be corrected precisely, and the same fact found with the embedder down could.
 const hydrateFactsStatement = "SELECT @rid, statement, predicate, valid_from, valid_to, " +
-	"sources, outV().name AS subject, outV().kind AS subject_kind, " +
+	"sources, fact_key, outV().name AS subject, outV().kind AS subject_kind, " +
 	"inV().name AS object, inV().kind AS object_kind " +
 	"FROM " + factEdgeType + " WHERE @rid IN :rids AND " + asOfCondition
 
@@ -357,9 +364,35 @@ func (c *Client) EmbedMissingFacts(ctx context.Context, batch int) (int, error) 
 // written until then came from the backbone alone.
 //
 // Deliberately NOT idempotent-by-skipping: re-running it is the point.
+//
+// It CLEARS every vector and then drains the gap, rather than selecting the facts to
+// re-embed directly. The direct selection is what shipped, and it could not finish:
+// `WHERE statement IS NOT NULL LIMIT batch` describes a set that re-embedding does not
+// shrink, so every call returned the same first `batch` rows and everything past them
+// kept the old model's vector forever -- on the one operation whose entire purpose is
+// that no vector is left in the old geometry. Measured 2026-09-03 through the MCP
+// surface: two consecutive `all` calls on a 55-fact memory both reported 30.
+//
+// "Has no vector" is the only predicate that shrinks as the work is done, which is why
+// the embed backfill was built on it, and reusing it here means the two paths cannot
+// drift. The cost is a window where the cleared tail answers lexically only -- which the
+// hybrid search already treats as normal, the dense leg being an improvement and never a
+// dependency -- and anything this call's rounds do not reach is picked up by the
+// scheduled memory_embed_backfill sweep, because it selects on exactly that predicate.
 func (c *Client) ReEmbedAllFacts(ctx context.Context, batch int) (int, error) {
-	return c.embedFacts(ctx, batch, "statement IS NOT NULL")
+	if c == nil || c.embedder == nil {
+		return 0, fmt.Errorf("arcadedb: no embedder configured")
+	}
+	if _, err := c.Command(ctx, clearFactEmbeddingsStatement, nil); err != nil {
+		return 0, fmt.Errorf("arcadedb: clear fact vectors: %w", err)
+	}
+	return embedMissingInBatches(ctx, c, batch)
 }
+
+// clearFactEmbeddingsStatement drops the stored vectors. It is filtered on the property
+// being present so the write touches only the rows that have one.
+const clearFactEmbeddingsStatement = "UPDATE " + factEdgeType +
+	" SET embedding = NULL WHERE embedding IS NOT NULL"
 
 // embedFacts is the shared body. `where` decides which facts are in scope; everything
 // after it — batching, the document-side task prefix, the width check — is identical,
@@ -421,7 +454,14 @@ func (c *Client) writeVectors(ctx context.Context, rids []string, vectors [][]fl
 	params := make(map[string]any, len(rids)*2)
 	usable := make([]int, 0, len(rids))
 	for i, rid := range rids {
-		if len(vectors[i]) != vectorDimensions {
+		// A SHORT answer is skipped, not indexed into. The embedder is a sidecar over
+		// HTTP and nothing makes it return one vector per text: it used to be indexed
+		// positionally, so an answer with fewer vectors than statements panicked the
+		// process with an index out of range rather than embedding what it could. A
+		// missing vector is the same case as the wrong-width vector below -- unusable
+		// for this fact, harmless to the rest of the batch -- and the drain loop stops
+		// on a short round rather than spinning on it.
+		if i >= len(vectors) || len(vectors[i]) != vectorDimensions {
 			continue
 		}
 		usable = append(usable, i)

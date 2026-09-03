@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -232,4 +233,56 @@ func sortedSchemaKeys(value map[string]any) []string {
 	}
 	slices.Sort(keys)
 	return keys
+}
+
+// The batch write must be able to say everything the single write can say about an
+// entity's class. It could not: subject_pole and object_pole existed only on
+// memory_upsert_fact, so the BULK path -- the one an import agent uses to coin many
+// entities at once -- was the only one that could not state the class of what it coined.
+func TestMemoryBatchFactCarriesThePoleClassOntoTheWrite(t *testing.T) {
+	fact, err := toMemoryBatchFact(MemoryBatchFactInput{
+		Subject: "Marta", SubjectKind: "Officer", SubjectPole: "Person",
+		Predicate: "drives",
+		Object:    "Volvo", ObjectKind: "Vehicle", ObjectPole: "Object",
+		Statement: "Marta drives a Volvo.",
+		Source:    MemoryUpsertFactWriteSource{MemoryIDs: []string{"m1"}},
+	}, arcadedb.Actor{RunID: "run-1", Role: arcadedb.WriterParent}, "identity-1", "")
+	if err != nil {
+		t.Fatalf("toMemoryBatchFact: %v", err)
+	}
+	if fact.SubjectPole != "Person" || fact.ObjectPole != "Object" {
+		t.Fatalf("pole classes dropped: subject=%q object=%q", fact.SubjectPole, fact.ObjectPole)
+	}
+	if fact.SubjectKind != "Officer" || fact.ObjectKind != "Vehicle" {
+		t.Fatalf("kinds dropped: subject=%q object=%q", fact.SubjectKind, fact.ObjectKind)
+	}
+}
+
+// Parity is the invariant, not the two fields: whatever a caller can declare about an
+// entity on one write surface it must be able to declare on the other, or the surfaces
+// drift again the next time one of them grows a field.
+func TestMemoryBatchFactInputMatchesTheSingleWriteEntityFields(t *testing.T) {
+	entityField := func(name string) bool {
+		return strings.HasPrefix(name, "subject") || strings.HasPrefix(name, "object")
+	}
+	single := jsonFieldNames(t, MemoryUpsertFactInput{}, entityField)
+	batch := jsonFieldNames(t, MemoryBatchFactInput{}, entityField)
+	if !slices.Equal(single, batch) {
+		t.Fatalf("entity fields differ:\n  memory_upsert_fact: %v\n  memory_batch:       %v", single, batch)
+	}
+}
+
+// jsonFieldNames lists a struct's json names, keeping the ones select accepts.
+func jsonFieldNames(t *testing.T, value any, keep func(string) bool) []string {
+	t.Helper()
+	structType := reflect.TypeOf(value)
+	names := make([]string, 0, structType.NumField())
+	for field := range structType.Fields() {
+		name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+		if name != "" && keep(name) {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	return names
 }

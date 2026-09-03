@@ -11,45 +11,84 @@ import (
 // will hold the whole story. memory_forget does not help: it destroys one of
 // them along with the facts only it knows.
 //
-// This is Cypher rather than SQL. Neither language can change an edge's
-// endpoints, so a merge is always create-then-delete -- but Cypher does it in
-// one statement per direction with `SET n = properties(f)`, where SQL would
-// need the properties read into the client and written back one edge at a time.
-// Verified on 26.7.3: relationshipsCreated 1, relationshipsDeleted 1.
+// A merge rewrites each fact onto the survivor and deletes the original. Getting
+// there took two dead ends, and both are recorded because each looked correct.
+//
+// It used to copy in Cypher. One statement per direction did create-then-delete with
+// `SET n = properties(f)`, on the stated premise that "neither language can change
+// an edge's endpoints". Both halves of that were wrong, and the first half was
+// fatal: `properties(f)` carries `sources`, which EnsureMemorySchema declares
+// `LIST OF MAP`, and ArcadeDB's openCypher refuses a map-valued property
+// assignment. Measured 2026-09-03 on 26.9.1:
+//
+//	http 400: TypeError: InvalidPropertyType - Property values can not contain map values
+//
+// The manual states the rule outright (arcadedb-docs, reference/cypher/cypher-clauses.adoc):
+// "A property value must be a scalar or a list of scalars. A map value ... is rejected with
+// a TypeError and no part of the clause is written." One page would have prevented this.
+//
+// The refusal is about ASSIGNING a map, not about touching an edge that holds one:
+// probed on the same server, `SET f.statement = replace(...)` on an edge carrying
+// `sources` succeeds and leaves `sources` untouched. Only the copy was impossible.
+// Every fact written through the MCP surface carries provenance, and an entity with
+// no facts has nothing to merge, so this failed for every merge that could matter.
+// It shipped because MergeEntities had unit tests only, and those assert the
+// statement this package emits against a fake server that answers `{"moved":1}` to
+// anything -- see merge_live_integration_test.go, which now runs it for real.
+//
+// The second half was wrong too, but re-pointing is not the way out. SQL DOES
+// change an edge's endpoint in place -- `UPDATE FACT SET @out = (SELECT FROM Entity
+// WHERE name = :target)[0]` moves it and both vertices' adjacency follows, probed on
+// 26.9.1 -- and it would have been strictly better, copying nothing. It only works
+// on an UNINDEXED edge type. Probed on the same server, with everything else equal,
+// a single index on FACT is enough to make the same statement fail:
+//
+//	bare FACT                     -> {"count":1}
+//	+ FULL_TEXT index (statement) -> IllegalStateException: Cannot read original
+//	+ UNIQUE index (fact_key)     -> buffer for record #5:1
+//
+// The engine cannot reindex an edge whose endpoint moved, and FACT carries three
+// indexes. So the merge copies after all, and the copy is SQL, which stores a
+// `LIST OF MAP` without complaint -- it is the language the fact was written in.
+//
+// Each fact moves as ONE sqlscript: create the replacement, delete the original,
+// BEGIN/COMMIT around both. Create-then-delete over two round trips would leave a
+// duplicated fact behind whenever the second one did not happen.
+//
+// Two properties are deliberately NOT carried over. `fact_key` is left null and
+// rebuilt by reindexFacts once the originals are gone, so the unique key never
+// collides mid-merge -- and reindexFacts additionally folds a group that the merge
+// has just made identical, which is exactly what merging two names can produce.
+// `embedding` is left null because the statement is REWRITTEN: the old vector
+// describes the old wording, and carrying it would leave every merged fact answering
+// dense retrieval under a name the memory no longer knows. The memory_embed_backfill
+// sweep selects on `embedding IS NULL` and recomputes it within minutes, which is the
+// mechanism this codebase already built for exactly this gap.
 
-// mergeOutgoing re-points the facts the source asserts.
+// mergeScanOutgoing reads the facts the source asserts, with everything needed to
+// rewrite them onto the survivor.
 //
 // The WHERE excludes facts pointing at the target itself: after the merge those
-// would be an entity asserting something about itself, which is what the
-// duplicate WAS, not a fact worth keeping.
-// The statement is rewritten along with the endpoint. Leaving it alone was the
-// tempting choice -- never rewrite what a source said -- but it makes the merge
-// half-done: the fact would hang off "Marta Bellini" while still reading
-// "M. Bellini specialises in…", so the full-text index keeps answering under the
-// name that no longer exists, which is the exact problem the merge was called to
-// fix. Provenance is copied untouched and still points at what was originally
-// said. fact_key is cleared while both the old and replacement edges coexist;
-// it is rebuilt after the old edge has gone so the unique key never collides.
-const mergeOutgoing = `
-MATCH (s:Entity {name: $source})-[f:FACT]->(o:Entity)
-WHERE o.name <> $target
-MATCH (t:Entity {name: $target})
-CREATE (t)-[n:FACT]->(o)
-SET n = properties(f), n.statement = replace(f.statement, $source, $target), n.fact_key = null
-DELETE f
-RETURN count(n) AS moved
-`
+// would be an entity asserting something about itself, which is what the duplicate
+// WAS, not a fact worth keeping. They go with the source vertex.
+const mergeScanOutgoing = mergeScanProjection + " inV().name AS other FROM " + factEdgeType +
+	" WHERE outV().name = :source AND inV().name <> :target"
 
-// mergeIncoming re-points the facts asserted ABOUT the source.
-const mergeIncoming = `
-MATCH (s:Entity)-[f:FACT]->(o:Entity {name: $source})
-WHERE s.name <> $target
-MATCH (t:Entity {name: $target})
-CREATE (s)-[n:FACT]->(t)
-SET n = properties(f), n.statement = replace(f.statement, $source, $target), n.fact_key = null
-DELETE f
-RETURN count(n) AS moved
-`
+// mergeScanIncoming reads the facts asserted ABOUT the source.
+const mergeScanIncoming = mergeScanProjection + " outV().name AS other FROM " + factEdgeType +
+	" WHERE inV().name = :source AND outV().name <> :target"
+
+// mergeScanProjection is every property the replacement edge has to carry, plus the
+// @rid that identifies the original to delete. It omits `embedding` and `fact_key`
+// on purpose; see the note above.
+const mergeScanProjection = "SELECT @rid AS rid, statement, predicate, valid_from, " +
+	"valid_to, created_at, expired_at, sources,"
+
+// mergeMoveScript moves one fact. It reuses createFactStatement rather than restating
+// its SET clause, so a property added to a fact is carried by the merge without
+// anyone remembering to add it here twice.
+const mergeMoveScript = createFactStatement +
+	"; DELETE FROM " + factEdgeType + " WHERE @rid = :rid;"
 
 // MergeResult reports what the merge moved.
 type MergeResult struct {
@@ -100,13 +139,23 @@ func (c *Client) MergeEntities(ctx context.Context, source, target string) (Merg
 
 	params := map[string]any{"source": source, "target": target}
 	moved := 0
-	for _, statement := range []string{mergeOutgoing, mergeIncoming} {
-		rows, err := c.Write(ctx, statement, params)
+	for _, scan := range []struct {
+		statement       string
+		sourceIsSubject bool
+	}{
+		{mergeScanOutgoing, true},
+		{mergeScanIncoming, false},
+	} {
+		rows, err := c.Query(ctx, scan.statement, params)
 		if err != nil {
 			return MergeResult{}, fmt.Errorf("arcadedb: merge %q into %q: %w", source, target, err)
 		}
 		for _, row := range rows {
-			moved += int(rowInt(row, "moved"))
+			move := mergeMoveParams(row, source, target, scan.sourceIsSubject)
+			if _, err := c.Script(ctx, mergeMoveScript, move); err != nil {
+				return MergeResult{}, fmt.Errorf("arcadedb: merge %q into %q: %w", source, target, err)
+			}
+			moved++
 		}
 	}
 
@@ -121,6 +170,41 @@ func (c *Client) MergeEntities(ctx context.Context, source, target string) (Merg
 		return MergeResult{}, fmt.Errorf("arcadedb: rebuild fact identity after merge: %w", err)
 	}
 	return MergeResult{Moved: moved, Dropped: before - moved, Target: target}, nil
+}
+
+// mergeMoveParams turns one scanned fact into the replacement edge's bind
+// parameters. sourceIsSubject says which endpoint the survivor takes over; the
+// other endpoint is whatever the original pointed at, carried through as `other`.
+//
+// The statement is rewritten here, in Go. Not because the database cannot: `replace` is
+// not a FUNCTION on this server (probed on 26.9.1: "Unknown function name 'replace'") but
+// it IS a string method -- `<value>.replace(<to-find>, <to-replace>)`, arcadedb-docs,
+// reference/sql/sql-methods.adoc -- so the earlier note here claiming SQL had no replace
+// mistook the shape of the call for the absence of the capability. It stays in Go because
+// the original statement is already in hand from the scan, so a server-side rewrite would
+// buy nothing and be harder to test. Rewriting it at all was the un-obvious call -- never rewrite what a source said -- but leaving it
+// makes the merge half-done: the fact would hang off "Marta Bellini" while still
+// reading "M. Bellini specialises in…", so the full-text index keeps answering under
+// the name that no longer exists, which is the exact problem the merge was called to
+// fix. Provenance is carried untouched and still points at what was originally said.
+func mergeMoveParams(row map[string]any, source, target string, sourceIsSubject bool) map[string]any {
+	subject, object := target, rowString(row, "other")
+	if !sourceIsSubject {
+		subject, object = rowString(row, "other"), target
+	}
+	return map[string]any{
+		"subject_name": subject,
+		"object_name":  object,
+		"statement":    strings.ReplaceAll(rowString(row, "statement"), source, target),
+		"predicate":    rowString(row, "predicate"),
+		"valid_from":   row["valid_from"],
+		"valid_to":     row["valid_to"],
+		"created_at":   row["created_at"],
+		"expired_at":   row["expired_at"],
+		"sources":      row["sources"],
+		"fact_key":     nil,
+		"rid":          rowString(row, "rid"),
+	}
 }
 
 func (c *Client) entityFactCount(ctx context.Context, name string) (int, error) {

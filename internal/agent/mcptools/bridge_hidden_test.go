@@ -11,17 +11,28 @@ import (
 // (onboarding, recall, the `aura memory` CLI) calls it directly through
 // MountedServer.CallToolText, while the model's surface is built by this bridge.
 // Removing a tool server-side to slim the model's menu breaks the host instead —
-// that is what took onboarding down with "Unknown tool: memory_get_facts". The
-// tools stay on the server; the bridge decides what the model sees.
-func TestBridgeHidesNonModelFacingMemoryTools(t *testing.T) {
-	t.Parallel()
+// that is what took onboarding down with "Unknown tool: memory_get_facts".
+//
+// The bridge no longer decides what the model SEES, only what rides in every turn's
+// manifest. It used to skip eight of the eleven, and skipping is not deferral: those
+// tools were absent from the model's world and tool_search could not reach them, so the
+// memory-aura skill's instruction to read memory_entities before writing named a tool
+// that did not exist. Read back from the live database on 2026-09-03, the agent had
+// answered every memory question with memory_recall because that was one of the only
+// three it held.
+func TestBridgeMountsEveryMemoryToolAndDefersAllButTheCore(t *testing.T) {
+	// Not parallel, and the budget is reset: this asserts which tools ride in the
+	// manifest, which depends on the mount winning one of the global slots.
+	resetLoadedSlotBudgetForTest()
 
 	// The REAL surface of cmd/arcadedb-mcp.
 	all := []string{
-		// model-facing: one read plan plus two mutation intentions.
-		"memory_recall", "memory_upsert_fact", "memory_batch",
-		// host-facing: active CLI/context/graph/readiness operations, absent from the model.
-		"memory_search", "memory_facts_about", "memory_entities", "memory_digest",
+		// the manifest core: the four with no substitute among the rest.
+		"memory_recall", "memory_upsert_fact", "memory_batch", "memory_entities",
+		// deferred, not absent: recall answers what search and facts_about answer,
+		// batch subsumes forget and merge, the runner injects the digest, and the
+		// last three are operator maintenance.
+		"memory_search", "memory_facts_about", "memory_digest",
 		"graph_schema", "memory_reembed", "memory_merge_entities", "memory_forget",
 	}
 	toolDefs := make([]*sdkmcp.Tool, 0, len(all))
@@ -35,28 +46,33 @@ func TestBridgeHidesNonModelFacingMemoryTools(t *testing.T) {
 		t.Fatalf("Bridge: %v", err)
 	}
 	got := make(map[string]struct{}, len(bridged))
+	manifest := make(map[string]bool, 4)
 	for _, tool := range bridged {
 		got[tool.Spec().Name] = struct{}{}
+		if !tool.Spec().Deferred {
+			manifest[tool.Spec().Name] = true
+		}
 	}
 
+	if len(got) != len(all) {
+		t.Errorf("bridged %d memory tools, want all %d — a tool the model cannot see is "+
+			"worse than one it has to search for", len(got), len(all))
+	}
+	for _, name := range all {
+		if _, ok := got["memory__"+name]; !ok {
+			t.Errorf("memory__%s never reached the model", name)
+		}
+	}
+	if len(manifest) != 4 {
+		t.Errorf("always-loaded memory surface = %v, want exactly the four-tool core", manifest)
+	}
 	for _, want := range []string{
-		"memory__memory_recall", "memory__memory_upsert_fact", "memory__memory_batch",
+		"memory__memory_recall", "memory__memory_upsert_fact",
+		"memory__memory_batch", "memory__memory_entities",
 	} {
-		if _, ok := got[want]; !ok {
-			t.Errorf("%s must reach the model", want)
+		if !manifest[want] {
+			t.Errorf("%s must ride in every turn's manifest", want)
 		}
-	}
-	for _, hidden := range []string{
-		"memory__memory_search", "memory__memory_facts_about", "memory__memory_entities",
-		"memory__memory_digest", "memory__graph_schema", "memory__memory_reembed",
-		"memory__memory_merge_entities", "memory__memory_forget",
-	} {
-		if _, ok := got[hidden]; ok {
-			t.Errorf("%s must NOT reach the model", hidden)
-		}
-	}
-	if len(got) != 3 {
-		t.Errorf("bridged %d memory tools, want 3", len(got))
 	}
 }
 

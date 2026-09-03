@@ -3,6 +3,8 @@ package mcptools
 import (
 	"context"
 	"encoding/json"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -78,8 +80,10 @@ func TestMemorySurfacePolicy_AliasKeepsIsolationAndHiddenSurface(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bridgeFromAdvertisedWithPolicy: %v", err)
 	}
-	if len(bridged) != 3 {
-		t.Fatalf("memory alias mounted %d tools, want one retrieval plus two mutation tools", len(bridged))
+	// Every advertised tool mounts under the alias too: the memory surface controls
+	// which tools ride in a manifest, never which ones exist.
+	if len(bridged) != len(advertised) {
+		t.Fatalf("memory alias mounted %d of %d advertised tools", len(bridged), len(advertised))
 	}
 	byName := make(map[string]tools.Tool, len(bridged))
 	for _, tool := range bridged {
@@ -105,14 +109,20 @@ func TestMemorySurfacePolicy_AliasKeepsIsolationAndHiddenSurface(t *testing.T) {
 	if !batch.Spec().Destructive || batch.Spec().ReplayPolicy != tools.ReplayToolResult {
 		t.Fatalf("memory_batch risk/replay = destructive:%v replay:%q", batch.Spec().Destructive, batch.Spec().ReplayPolicy)
 	}
-	retrievalOperations := make([]string, 0, 1)
+	// Every read is mounted; the invariant worth keeping is which ones ride in EVERY
+	// turn's manifest. Two do: memory_recall, which is the whole deep-read surface, and
+	// memory_entities, the vocabulary listing a write has to consult first. The other
+	// reads are deferred behind one tool_search rather than absent.
+	retrievalOperations := make([]string, 0, 2)
 	for _, tool := range bridged {
-		if !tool.Spec().Mutating {
+		if !tool.Spec().Mutating && !tool.Spec().Deferred {
 			retrievalOperations = append(retrievalOperations, strings.TrimPrefix(tool.Spec().Name, "mem__"))
 		}
 	}
-	if len(retrievalOperations) != 1 {
-		t.Fatalf("model-facing memory retrieval operations = %d, want exactly memory_recall", len(retrievalOperations))
+	sort.Strings(retrievalOperations)
+	if !slices.Equal(retrievalOperations, []string{"memory_entities", "memory_recall"}) {
+		t.Fatalf("always-loaded memory retrieval operations = %v, want memory_entities and memory_recall",
+			retrievalOperations)
 	}
 	surfaceEvidence, err := json.Marshal(map[string]any{"retrieval_operations": retrievalOperations})
 	if err != nil {
@@ -120,7 +130,7 @@ func TestMemorySurfacePolicy_AliasKeepsIsolationAndHiddenSurface(t *testing.T) {
 	}
 	t.Logf("AURA_AGENT_MEMORY_SURFACE_JSON=%s", surfaceEvidence)
 	if recall.Spec().Deferred {
-		t.Fatal("memory alias recall exposes only 1 model-facing tool (<= the 3-tool ceiling) and must earn an always-loaded slot on a fresh budget: Deferred must be false (D-27)")
+		t.Fatal("memory_recall is in the four-tool manifest core and must not be deferred (D-27)")
 	}
 
 	callCtx := identityctx.WithIdentityID(context.Background(), "tenant-a")

@@ -59,24 +59,38 @@ const poleOther = "Other"
 var poleClasses = []string{"Person", "Object", "Location", "Event", "Organisation", poleOther}
 
 // poleByKind maps the concrete kinds this corpus actually used onto their class. It is
-// short on purpose: it covers what was measured in use on 2026-09-03, and anything else
-// falls to Other rather than being guessed at. A writer who knows better passes the class
-// explicitly.
+// short on purpose: it covers what was measured in use or named by the reference model,
+// and anything else falls to Other rather than being guessed at. A writer who knows
+// better passes the class explicitly.
+//
+// The entries marked REFERENCE come from the official POLE example's own node labels
+// (neo4j-graph-examples/pole: Person, Officer, Crime, Location, PostCode, Object). Four
+// of them were missing while the doc comment above cited them BY NAME as the model's
+// canonical refinements -- "Officer beside Person, Vehicle and Phone beside Object,
+// PostCode beside Location". Only `officer` was actually in the map, so the file's prose
+// and its map disagreed, and the disagreement was not free: measured live on 2026-09-03,
+// a fresh write of kind `Vehicle` and one of kind `City` both landed in Other on a
+// database whose Object and Location classes stayed empty.
 var poleByKind = map[string]string{
 	"person":       "Person",
-	"officer":      "Person",
+	"officer":      "Person", // REFERENCE
 	"organisation": "Organisation",
 	"organization": "Organisation",
 	"team":         "Organisation",
 	"company":      "Organisation",
-	"location":     "Location",
+	"location":     "Location", // REFERENCE
+	"postcode":     "Location", // REFERENCE
+	"city":         "Location", // measured in use 2026-09-03
 	"environment":  "Location",
 	"place":        "Location",
 	"event":        "Event",
+	"crime":        "Event", // REFERENCE -- the E the model is named for
 	"phase":        "Event",
 	"milestone":    "Event",
 	"incident":     "Event",
-	"object":       "Object",
+	"object":       "Object", // REFERENCE
+	"vehicle":      "Object", // REFERENCE
+	"phone":        "Object", // REFERENCE
 	"tool":         "Object",
 	"system":       "Object",
 	"project":      "Object",
@@ -187,4 +201,58 @@ func upsertEntityInClass(class string, typed bool) string {
 			"RETURN AFTER WHERE name = :name"
 	}
 	return "UPDATE " + class + " SET name = :name UPSERT RETURN AFTER WHERE name = :name"
+}
+
+// entityMint is one endpoint's pending vertex write, held back until the caller knows the
+// fact will actually be written. See UpsertFact for why the two are separated.
+type entityMint struct {
+	name      string
+	class     string
+	statement string
+	params    map[string]any
+}
+
+// classifyFactEndpoints decides both endpoints' classes and prepares their writes without
+// performing any. held carries the class each name ALREADY has, from entityClassScan: a
+// name is unique across the subtypes, so an entity that exists as one class cannot be
+// re-created as another -- the write would hit the index rather than move the record.
+// First class wins, and the reply says so.
+func classifyFactEndpoints(fact Fact, held map[string]string) ([]EntityClass, []entityMint) {
+	classified := make([]EntityClass, 0, 2)
+	mints := make([]entityMint, 0, 2)
+	for _, entity := range []struct{ name, kind, pole string }{
+		{fact.Subject, fact.SubjectKind, fact.SubjectPole},
+		{fact.Object, fact.ObjectKind, fact.ObjectPole},
+	} {
+		class, refused := poleClassFor(entity.pole, entity.kind)
+		record := EntityClass{Name: entity.name, Pole: class, Kind: entity.kind, RequestRefused: refused}
+		if existing, ok := held[entity.name]; ok && existing != "" {
+			if existing != class {
+				record.HeldPole = existing
+			}
+			class, record.Pole = existing, existing
+		}
+		params := map[string]any{"name": entity.name}
+		if entity.kind != "" {
+			params["kind"] = entity.kind
+		}
+		classified = append(classified, record)
+		mints = append(mints, entityMint{
+			name:      entity.name,
+			class:     class,
+			statement: upsertEntityInClass(class, entity.kind != ""),
+			params:    params,
+		})
+	}
+	return classified, mints
+}
+
+// mintEntities performs the writes classifyFactEndpoints prepared.
+func (c *Client) mintEntities(ctx context.Context, mints []entityMint) error {
+	for _, mint := range mints {
+		if _, err := c.upsertEntityWithRetry(ctx, mint.statement, mint.params); err != nil {
+			return fmt.Errorf("arcadedb: upsert entity %q as %s: %w", mint.name, mint.class, err)
+		}
+	}
+	return nil
 }

@@ -123,7 +123,7 @@ func (c *Client) createFactWithRetry(
 	ctx context.Context,
 	statement string,
 	params map[string]any,
-	factKey string,
+	selector factSelector,
 	source FactSource,
 	now time.Time,
 ) error {
@@ -133,7 +133,7 @@ func (c *Client) createFactWithRetry(
 		if err == nil {
 			return nil
 		}
-		if attached, attachErr := c.attachFactSource(ctx, factKey, source, now); attachErr == nil && attached {
+		if attached, attachErr := c.attachFactSource(ctx, selector, source, now); attachErr == nil && attached {
 			return nil
 		}
 		lastErr = err

@@ -46,6 +46,19 @@ func TestMountedMemoryContextUsesTheAuthenticatedIdentityDigest(t *testing.T) {
 			t.Fatalf("the pointer does not name %s, so it points nowhere: %q", wayIn, got)
 		}
 	}
+	// `recent` earns its place here because the failure it prevents needs no tool call:
+	// an agent that does not know the mode exists answers "I recall nothing" to a question
+	// about the past and never opens the skill that would have told it.
+	if !strings.Contains(got, "recent") {
+		t.Fatalf("the pointer omits the one mode a backward-looking question needs: %q", got)
+	}
+	// Everything WITH semantics belongs to memory-aura alone. This block is in every turn
+	// and the skill is loaded on demand, so a rule restated in both drifts in one of them.
+	for _, skillOwned := range []string{"depth", "cursor", "supersede", "Person", "Object"} {
+		if strings.Contains(got, skillOwned) {
+			t.Fatalf("the pointer restates %q, which the memory-aura skill owns: %q", skillOwned, got)
+		}
+	}
 }
 
 func TestMountedMemoryContextCanAttachAfterDeferredMount(t *testing.T) {

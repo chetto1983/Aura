@@ -9,7 +9,7 @@ import (
 )
 
 func cloneMemoryBatchState(state memoryBatchState) memoryBatchState {
-	clone := memoryBatchState{Entities: map[string]string{}, Facts: map[string]memoryBatchFact{}}
+	clone := memoryBatchState{Entities: map[string]memoryBatchEntity{}, Facts: map[string]memoryBatchFact{}}
 	maps.Copy(clone.Entities, state.Entities)
 	for key, fact := range state.Facts {
 		fact.Sources = cloneFactSources(fact.Sources)
@@ -125,8 +125,10 @@ func applyMemoryBatchFact(
 		key = fmt.Sprintf("new:%06d:%s:%d", index, identity, suffix)
 	}
 	state.Facts[key] = stored
-	state.Entities[fact.Subject] = preferEntityKind(state.Entities[fact.Subject], fact.SubjectKind)
-	state.Entities[fact.Object] = preferEntityKind(state.Entities[fact.Object], fact.ObjectKind)
+	state.Entities[fact.Subject] = preferEntity(state.Entities[fact.Subject],
+		memoryBatchEntity{Kind: fact.SubjectKind, Pole: fact.SubjectPole})
+	state.Entities[fact.Object] = preferEntity(state.Entities[fact.Object],
+		memoryBatchEntity{Kind: fact.ObjectKind, Pole: fact.ObjectPole})
 	result.FactKey = stored.FactKey
 	return result, nil
 }
@@ -178,12 +180,12 @@ func applyMemoryBatchMerge(
 ) (MemoryBatchOperationResult, error) {
 	source := operation.Merge.Source
 	target := operation.Merge.Target
-	sourceKind, exists := state.Entities[source]
+	sourceEntity, exists := state.Entities[source]
 	if !exists {
 		return MemoryBatchOperationResult{}, memoryBatchOperationError(
 			index, "target_not_found", fmt.Errorf("merge source %q does not exist", source))
 	}
-	state.Entities[target] = preferEntityKind(state.Entities[target], sourceKind)
+	state.Entities[target] = preferEntity(state.Entities[target], sourceEntity)
 	moved := 0
 	dropped := 0
 	for _, key := range sortedMemoryBatchFactKeys(state) {
@@ -200,11 +202,11 @@ func applyMemoryBatchMerge(
 		}
 		if fact.Fact.Subject == source {
 			fact.Fact.Subject = target
-			fact.Fact.SubjectKind = preferEntityKind(fact.Fact.SubjectKind, state.Entities[target])
+			fact.Fact.SubjectKind = preferEntityKind(fact.Fact.SubjectKind, state.Entities[target].Kind)
 		}
 		if fact.Fact.Object == source {
 			fact.Fact.Object = target
-			fact.Fact.ObjectKind = preferEntityKind(fact.Fact.ObjectKind, state.Entities[target])
+			fact.Fact.ObjectKind = preferEntityKind(fact.Fact.ObjectKind, state.Entities[target].Kind)
 		}
 		fact.Fact.Statement = strings.ReplaceAll(fact.Fact.Statement, source, target)
 		fact.Embedding = nil
@@ -368,4 +370,15 @@ func preferEntityKind(existing, candidate string) string {
 		return existing
 	}
 	return candidate
+}
+
+// preferEntity keeps what is already known about an entity and fills only the gaps, so a
+// later operation naming the same entity with less detail cannot erase the kind or the
+// class an earlier one gave it. The two fields settle independently: a batch may name the
+// kind in one operation and the class in another.
+func preferEntity(existing, candidate memoryBatchEntity) memoryBatchEntity {
+	return memoryBatchEntity{
+		Kind: preferEntityKind(existing.Kind, candidate.Kind),
+		Pole: preferEntityKind(existing.Pole, candidate.Pole),
+	}
 }

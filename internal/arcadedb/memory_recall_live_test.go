@@ -5,6 +5,7 @@ package arcadedb
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 )
@@ -99,20 +100,35 @@ func TestMemoryRecallLive_BrowseCursor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode cursor: %v", err)
 	}
-	if cursor.AnchorSeq != 3 || cursor.PageSize != 2 {
+	// Past the last turn returned, not at it. This asserted 3 -- the seq the page had
+	// just delivered -- which is how every page came to repeat its predecessor's last
+	// turn, and how paging off the end became a fixed point that never terminated.
+	if cursor.AnchorSeq != 4 || cursor.PageSize != 2 {
 		t.Fatalf("cursor = %+v", cursor)
 	}
 
+	// The cursor alone, the way the tool documents it: opaque, handed straight back.
 	scrolled, err := client.RecallMemory(ctx, RecallRequest{
-		IdentityID: identityID, Mode: RecallModeScroll,
-		ConversationID: conversationID, AnchorSeq: cursor.AnchorSeq,
-		Direction: cursor.Direction, Cursor: opened.NextCursor, Limit: cursor.PageSize,
+		IdentityID: identityID, Mode: RecallModeScroll, Cursor: opened.NextCursor,
 	})
 	if err != nil {
 		t.Fatalf("scroll: %v", err)
 	}
 	turns := scrolled.Evidence[0].Conversation.Turns
-	if len(turns) != 2 || turns[0].Seq != 3 || turns[1].Seq != 4 {
-		t.Fatalf("scrolled turns = %+v", turns)
+	if len(turns) != 1 || turns[0].Seq != 4 {
+		t.Fatalf("scrolled turns = %+v, want only the turn the first page did not deliver", turns)
+	}
+	if scrolled.NextCursor != "" {
+		t.Fatalf("the conversation ended, yet another page was offered: %q", scrolled.NextCursor)
+	}
+
+	// The whole point, stated once: paging delivers every turn exactly once and stops.
+	seen := []int{}
+	for _, turn := range opened.Evidence[0].Conversation.Turns {
+		seen = append(seen, turn.Seq)
+	}
+	seen = append(seen, turns[0].Seq)
+	if !slices.Equal(seen, []int{2, 3, 4}) {
+		t.Fatalf("paging delivered %v, want each turn from the anchor once", seen)
 	}
 }

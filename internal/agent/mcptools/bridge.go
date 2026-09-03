@@ -86,7 +86,7 @@ func (b *bridgedTool) refreshSpec(t *sdkmcp.Tool) {
 	// deploy add or remove a tool from the manifest mid-conversation,
 	// invalidating the KV-cache prefix the model is relying on. Drift is
 	// reported by warnIfDeferralWouldFlip on the reconnect path, never applied.
-	spec.Deferred = b.policy.defaultDeferred()
+	spec.Deferred = b.policy.deferredTool(b.name)
 	spec.Mutating, spec.Destructive = mcpToolRisk(b.policy, t)
 	applyMCPOperationMetadata(&spec)
 	if oldMutating != spec.Mutating {
@@ -166,13 +166,10 @@ func bridgeFromAdvertisedWithPolicy(namespace string, srv *MountedServer, advert
 // bridgedTool below receives its own enriched copy — that copy IS the freeze
 // refreshSpec later relies on never being recomputed.
 func bridgeToolsWithPolicy(namespace string, srv *MountedServer, advertised []*sdkmcp.Tool, callTimeout time.Duration, policy bridgePolicy) []tools.Tool {
-	policy.modelFacingCount = countModelFacing(policy, advertised)
+	policy.modelFacingCount = policy.manifestCount(len(advertised))
 	policy.alwaysLoaded = grantLoadedSlot(namespace, policy.modelFacingCount)
 	out := make([]tools.Tool, 0, len(advertised))
 	for _, t := range advertised {
-		if !policy.modelFacing(t.Name) {
-			continue
-		}
 		bt := &bridgedTool{srv: srv, name: t.Name, callTimeout: callTimeout, policy: policy, view: viewRefFor(policy, t)}
 		bt.storeSpec(specFromToolDefWithPolicy(namespace, t, policy))
 		out = append(out, bt)
@@ -189,7 +186,7 @@ func specFromToolDefWithPolicy(namespace string, t *sdkmcp.Tool, policy bridgePo
 		Summary:     summary,
 		Description: description,
 		Parameters:  params,
-		Deferred:    policy.defaultDeferred(),
+		Deferred:    policy.deferredTool(t.Name),
 		Mutating:    mutating,
 		Destructive: destructive,
 	}
