@@ -1,1 +1,0 @@
-async function e(e){let t=`HTTP ${String(e.status)}`;if(e.body===null)return t;let n=(await e.text().catch(()=>``)).trim();return n.length>0?n:t}async function t(t){if(!t.ok)throw Error(await e(t));return await t.json()}export{t as n,e as t};
