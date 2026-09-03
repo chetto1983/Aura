@@ -97,3 +97,49 @@ func TestConversationProjectionSearchFailsClosedAcrossIdentity(t *testing.T) {
 		t.Fatalf("foreign identity observed turn: %+v", foreign.Turns)
 	}
 }
+
+// Projection is the only place the reasoning->turn edge can be closed: the trace is
+// written synchronously at commit time, when the ConversationTurn vertex does not exist
+// yet, and ArcadeDB answers a CREATE EDGE with an empty TO side by doing nothing at all
+// and reporting success. Measured 2026-09-03 on the live graph: 89 traces, 0 INITIATED_BY.
+func TestConversationProjectionClosesReasoningInitiatorEdge(t *testing.T) {
+	client, rec := recordingClient(t, `{"result":[]}`)
+	projection := ConversationProjection{
+		IdentityID: "identity-a", ConversationID: "conversation-1",
+		Turns: []ConversationTurnProjection{{
+			IdentityID: "identity-a", ConversationID: "conversation-1", Seq: 18,
+			Role: "assistant", Content: "The blue notebook is on the shelf",
+			ContentHash: conversationContentHash("The blue notebook is on the shelf"),
+			OccurredAt:  time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC),
+			SourceRef:   "postgres://conversation/conversation-1/turn/18",
+		}},
+	}
+	if err := client.ApplyConversationProjection(context.Background(), projection); err != nil {
+		t.Fatalf("ApplyConversationProjection: %v", err)
+	}
+	var linking []int
+	for i, statement := range rec.statements {
+		if strings.Contains(statement, "CREATE EDGE INITIATED_BY") {
+			linking = append(linking, i)
+		}
+	}
+	if len(linking) != 1 {
+		t.Fatalf("expected exactly one INITIATED_BY link per projected turn, got %d:\n%s",
+			len(linking), rec.joined())
+	}
+	statement := rec.statements[linking[0]]
+	if !strings.Contains(statement, "IF NOT EXISTS") {
+		t.Errorf("reasoning initiator link is not replay-safe: %s", statement)
+	}
+	if !strings.Contains(statement, reasoningTraceType) || !strings.Contains(statement, conversationTurnType) {
+		t.Errorf("link does not join a trace to its turn: %s", statement)
+	}
+	params := rec.params[linking[0]]
+	for name, want := range map[string]any{
+		"identity_id": "identity-a", "conversation_id": "conversation-1", "turn_seq": float64(18),
+	} {
+		if got := params[name]; got != want {
+			t.Errorf("link bound %s = %v, want %v", name, got, want)
+		}
+	}
+}

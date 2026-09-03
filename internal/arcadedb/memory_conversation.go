@@ -175,6 +175,15 @@ func (c *Client) ApplyConversationProjection(ctx context.Context, projection Con
 		if _, err := c.Command(ctx, createNextTurnStatement, turnParams); err != nil {
 			return fmt.Errorf("arcadedb: order conversation turn %d: %w", turn.Seq, err)
 		}
+		// Close the reasoning link from this side. The trace for this turn was written
+		// before the vertex existed, so its own attempt created nothing; this is the half
+		// that makes the edge appear. A no-op for the turns no trace names, which is most
+		// of them, and it errors like its two siblings above rather than inventing a
+		// second failure policy inside one loop -- if ArcadeDB cannot serve this write it
+		// did not serve theirs either.
+		if _, err := c.Command(ctx, linkReasoningInitiatorFromTurnStatement, turnParams); err != nil {
+			return fmt.Errorf("arcadedb: link reasoning initiator for turn %d: %w", turn.Seq, err)
+		}
 	}
 	return nil
 }
