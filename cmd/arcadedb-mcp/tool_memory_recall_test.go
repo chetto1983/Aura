@@ -401,3 +401,37 @@ func TestMemoryRecallDescriptionTeachesModeSelection(t *testing.T) {
 		}
 	}
 }
+
+// A conversation the graph has not projected yet is not a violation.
+//
+// The active-source ids become one thing — the exclusion set that stops a turn recalling
+// itself — so an id with no projected turns excludes nothing. Requiring every id to
+// resolve made the FIRST recall of every new conversation fail: projection is
+// asynchronous, so seconds after a conversation opens its vertex does not exist. Measured
+// live on 2026-09-03, two turns in, and the message ("not owned by the authenticated
+// identity") reads as a security failure rather than as the race it was.
+func TestMemoryRecallUnprojectedActiveSourceIsNotARefusal(t *testing.T) {
+	// The Conversation lookup finds nothing; the recall itself then answers normally.
+	client, rec := newRecordingDB(t, `{"result":[]}`)
+	req := recallRequestWithActiveSource(t, testIdentity, "turn-current", memoryRecallActiveSource{
+		ConversationID: "conversation-brand-new", TurnID: "turn-current",
+	})
+	_, _, err := memoryRecallHandler(singleTenant(t, client))(
+		context.Background(), req, MemoryRecallInput{Query: "blue notebook"})
+	if err != nil {
+		t.Fatalf("an unprojected active source was refused: %v", err)
+	}
+	// It still ASKED — the check is a filter now, not a skipped step.
+	var asked bool
+	for _, statement := range rec.statements {
+		if strings.Contains(statement, "FROM Conversation") {
+			asked = true
+		}
+	}
+	if !asked {
+		t.Fatalf("ownership was never checked: %v", rec.statements)
+	}
+	// The other branch — a row that exists and belongs to someone else — is covered by
+	// TestMemoryRecallActiveSourceHeader's foreign-conversation subtest, which also proves
+	// the refusal lands before the recall query runs.
+}

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -43,8 +44,13 @@ type memoryRecallActiveEnvelope struct {
 	Sources []memoryRecallActiveSource `json:"sources"`
 }
 
+// memoryRecallActiveOwnershipStatement reads the conversations a caller wants excluded,
+// WITHOUT filtering on the identity — the comparison happens in Go so a row belonging to
+// someone else can be seen and refused. Filtering here instead made the check inert: a
+// mis-tenanted row and a conversation that does not exist yet both came back as zero rows,
+// indistinguishable, and the code treated both as a violation.
 const memoryRecallActiveOwnershipStatement = "SELECT identity_id, conversation_id FROM Conversation" +
-	" WHERE identity_id = :identity_id AND conversation_id IN :conversation_ids"
+	" WHERE conversation_id IN :conversation_ids"
 
 // MemoryRecallInput is the additive public contract for the single memory read.
 type MemoryRecallInput struct {
@@ -297,10 +303,23 @@ func memoryReasoningTrace(trace arcadedb.ReasoningTrace) MemoryReasoningTrace {
 	return output
 }
 
-// memoryRecallActiveConversationIDs decodes and revalidates host-only recall
-// exclusions after OAuth identity resolution. The turn id must equal the
-// separately carried host actor run id, and every conversation must exist under
-// the authenticated identity before it can become a negative filter.
+// memoryRecallActiveConversationIDs decodes and revalidates host-only recall exclusions
+// after OAuth identity resolution. The turn id must equal the separately carried host
+// actor run id.
+//
+// A conversation the graph does not hold yet is NOT a violation. These ids become one
+// thing only — ExcludeConversationIDs, so the turn being taken is not recalled into itself
+// — and excluding a conversation with no projected turns excludes nothing. Requiring every
+// id to resolve made the FIRST recall of every new conversation fail: the projection is
+// asynchronous, so seconds after a conversation begins its vertex does not exist, and the
+// caller got "not owned by the authenticated identity", which reads as a security failure
+// rather than as a race. Measured live on 2026-09-03, two turns after a conversation
+// opened.
+//
+// What IS refused is a row that exists and belongs to someone else. Memory is one database
+// per identity, so that cannot happen by construction — which is exactly why it is worth
+// reporting if it ever does, rather than being filtered out of the query before anyone can
+// see it.
 func memoryRecallActiveConversationIDs(
 	ctx context.Context,
 	req *mcp.CallToolRequest,
@@ -338,25 +357,24 @@ func memoryRecallActiveConversationIDs(
 	}
 	sort.Strings(conversationIDs)
 	rows, err := client.Query(ctx, memoryRecallActiveOwnershipStatement, map[string]any{
-		"identity_id": identity, "conversation_ids": conversationIDs,
+		"conversation_ids": conversationIDs,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("memory_recall: revalidate active-source ownership: %w", err)
 	}
-	owned := make(map[string]struct{}, len(rows))
+	owned := make([]string, 0, len(rows))
 	for _, row := range rows {
-		rowIdentity, _ := row["identity_id"].(string)
 		conversationID, _ := row["conversation_id"].(string)
-		if rowIdentity == identity {
-			if _, requested := conversationSet[conversationID]; requested {
-				owned[conversationID] = struct{}{}
-			}
+		if _, requested := conversationSet[conversationID]; !requested {
+			continue
 		}
+		if rowIdentity, _ := row["identity_id"].(string); rowIdentity != identity {
+			return nil, fmt.Errorf("memory_recall: active-source conversation is not owned by the authenticated identity")
+		}
+		owned = append(owned, conversationID)
 	}
-	if len(owned) != len(conversationIDs) {
-		return nil, fmt.Errorf("memory_recall: active-source conversation is not owned by the authenticated identity")
-	}
-	return conversationIDs, nil
+	sort.Strings(owned)
+	return slices.Compact(owned), nil
 }
 
 func decodeMemoryRecallActiveSources(encoded string) ([]memoryRecallActiveSource, error) {
