@@ -49,6 +49,7 @@ func NewLlmAgent(cfg LlmAgentConfig) *LlmAgent {
 		ledger:            cfg.Ledger,
 		ledgerConvID:      ledgerConvID,
 		history:           hist,
+		historyBase:       len(hist),
 		breaker:           resolveBreaker(cfg),
 		classifier:        resolveClassifier(cfg),
 		reasoningOverride: cfg.ReasoningOverride,

@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -254,5 +255,82 @@ func TestTruncateBytesKeepingTail(t *testing.T) {
 				t.Errorf("truncateBytesKeepingTail(%q, %d) = %q is not valid UTF-8 (split rune)", tc.s, tc.n, got)
 			}
 		})
+	}
+}
+
+// TestSideEffectDigest_ExcludesPriorTurnToolResults pins the digest to THIS run.
+//
+// Live incident 2026-09-03 05:57 (thread 01a063fb): asked "adesso che ora è?" the
+// agent answered 07:57 correctly and with no tool call at all, yet the critic
+// vetoed twice — "The proposed answer (07:57) contradicts the tool result
+// (21:17)" — because the digest walked the whole rehydrated history and handed it
+// a current_time result from the PREVIOUS evening as this turn's evidence. Three
+// loop calls plus two critic calls to re-derive the same 14 characters.
+//
+// The contract was never in doubt: the critic's own system prompt promises "the
+// tool calls the agent made this turn", so a stale result is not merely noise, it
+// is evidence the critic is told to trust.
+func TestSideEffectDigest_ExcludesPriorTurnToolResults(t *testing.T) {
+	stale := llm.ToolCall{ID: "yesterday", Type: "function"}
+	stale.Function.Name = "current_time"
+	stale.Function.Arguments = `{}`
+
+	a := NewLlmAgent(LlmAgentConfig{
+		Client:    &recordingClient{},
+		LLM:       llm.Config{Model: "m", Provider: "p", TotalTimeoutSec: 5},
+		Registry:  tools.NewRegistry(),
+		SessionID: "s",
+		UserTurns: []llm.Message{
+			{Role: llm.RoleUser, Content: "che ora è?"},
+			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{stale}},
+			{Role: llm.RoleTool, ToolCallID: "yesterday", Content: "Wednesday, 2026-09-02T21:17:01Z"},
+			{Role: llm.RoleAssistant, Content: "Sono le 23:17."},
+			{Role: llm.RoleUser, Content: "adesso che ora è?"},
+		},
+	})
+
+	got := a.sideEffectDigest()
+	if strings.Contains(got, "21:17") || strings.Contains(got, "current_time") {
+		t.Fatalf("digest leaked a prior turn's tool result into this turn's evidence: %q", got)
+	}
+	if got != "\n(no tool calls)" {
+		t.Fatalf("digest = %q, want the empty-evidence marker for a turn that dispatched nothing", got)
+	}
+}
+
+// TestSideEffectDigest_KeepsThisRunAfterRehydration is the other half: scoping the
+// digest must not blind the critic to the run it is actually judging.
+func TestSideEffectDigest_KeepsThisRunAfterRehydration(t *testing.T) {
+	stale := llm.ToolCall{ID: "yesterday", Type: "function"}
+	stale.Function.Name = "current_time"
+	stale.Function.Arguments = `{}`
+
+	a := NewLlmAgent(LlmAgentConfig{
+		Client:    &recordingClient{},
+		LLM:       llm.Config{Model: "m", Provider: "p", TotalTimeoutSec: 5},
+		Registry:  tools.NewRegistry(),
+		SessionID: "s",
+		UserTurns: []llm.Message{
+			{Role: llm.RoleUser, Content: "che ora è?"},
+			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{stale}},
+			{Role: llm.RoleTool, ToolCallID: "yesterday", Content: "Wednesday, 2026-09-02T21:17:01Z"},
+			{Role: llm.RoleAssistant, Content: "Sono le 23:17."},
+			{Role: llm.RoleUser, Content: "scrivi il report"},
+		},
+	})
+	fresh := llm.ToolCall{ID: "now", Type: "function"}
+	fresh.Function.Name = "fs_write"
+	fresh.Function.Arguments = `{"path":"/tmp/report.md"}`
+	a.history = append(a.history,
+		llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{fresh}},
+		llm.Message{Role: llm.RoleTool, ToolCallID: "now", Content: "wrote 42 bytes to /tmp/report.md"},
+	)
+
+	got := a.sideEffectDigest()
+	if !strings.Contains(got, "fs_write(") || !strings.Contains(got, "wrote 42 bytes") {
+		t.Fatalf("digest lost this run's own evidence: %q", got)
+	}
+	if strings.Contains(got, "21:17") {
+		t.Fatalf("digest still leaked the prior turn: %q", got)
 	}
 }

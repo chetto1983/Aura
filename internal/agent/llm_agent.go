@@ -83,6 +83,17 @@ type LlmAgent struct {
 
 	history []llm.Message
 
+	// historyBase is where THIS run begins in history: the length of the rehydrated
+	// transcript the constructor was seeded with. Everything before it belongs to
+	// earlier turns and is context, never evidence.
+	//
+	// The completion critic is told it is reading "the tool calls the agent made this
+	// turn", so an older turn's result is not noise to it -- it is testimony. Measured
+	// on the live deployment 2026-09-03: asked the time, the agent answered correctly
+	// with no tool call, and the critic vetoed twice against a current_time result from
+	// the previous evening (21:17 vs 07:57). Five LLM calls, one unchanged answer.
+	historyBase int
+
 	// recoveryAttempts is the per-run recovery gate (D-08): a COUNTER, never a
 	// one-shot boolean latch (CrewAI #1656 anti-pattern). The FIRST early-
 	// termination trip (budget or dedup) increments it 0→1, injects a single
@@ -92,13 +103,14 @@ type LlmAgent struct {
 	// per-run and never leaks between branches.
 	recoveryAttempts int
 
-	// sideEffected is set true once a Mutating tool (fs_write/shell_exec/etc.) has
-	// been dispatched this run; the completion gate (D-43) only runs its critic on
-	// a side-effecting turn — a pure read/chat turn skips it at zero extra cost.
-	// completionAttempts is the gate's dedicated veto counter (max 1), orthogonal
-	// to recoveryAttempts so a budget recovery does not consume the gate's one
-	// veto. Both are per-run (a fresh LlmAgent per turn resets them).
-	sideEffected       bool
+	// completionAttempts is the completion gate's dedicated veto counter (max
+	// completionMaxAttempts), orthogonal to recoveryAttempts so a budget recovery does
+	// not consume the gate's vetoes. Per-run: a fresh LlmAgent per turn resets it.
+	//
+	// It sat next to a sideEffected bool documenting that the gate "only runs its
+	// critic on a side-effecting turn". D-20a/D-20b widened the gate to judge EVERY
+	// voluntary termination and left the flag behind, written by dispatch and read by
+	// nobody — a comment describing a condition the code no longer had.
 	completionAttempts int
 
 	// ledger is the verification evidence the verify-on-stop gate reads

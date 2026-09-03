@@ -104,7 +104,7 @@ func TestCompletionGate_Off_AcceptsWithoutCritic(t *testing.T) {
 
 // TestCompletionGate_ReadOnlyTurn_NowJudged: gate ON, the turn dispatched only a
 // read-only tool (no side effect at all) → the gate now REACHES the critic (D-20a
-// drops the !a.sideEffected short-circuit), because HARN-06's failure mode is
+// dropped the side-effect short-circuit entirely), because HARN-06's failure mode is
 // exactly a turn that states an intention and dispatches nothing mutating. The
 // critic's existing prompt already says a well-supported answer to a question IS
 // done, so a DONE verdict here is expected, not a false veto — widening the

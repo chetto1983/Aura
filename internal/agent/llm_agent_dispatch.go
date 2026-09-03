@@ -123,7 +123,6 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 				run.EndedAt = time.Now().UTC()
 			}
 			if run.Mutating {
-				a.sideEffected = true // D-43: this turn touched host state; arm the completion gate.
 				// The verify-on-stop gate needs to know WHAT was edited, not just that
 				// something was. It rides the SAME condition deliberately: a call vetoed
 				// by a BeforeTool policy hook, refused as an unloaded deferred tool, or

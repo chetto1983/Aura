@@ -58,8 +58,8 @@ func (a *LlmAgent) gateVerification() (string, bool) {
 // the gate can never disagree with the ledger about which tools edit and where they
 // say so.
 //
-// Called only from the SERIAL result loop in dispatch (like sideEffected and
-// promoteFromMeta), so the slice needs no lock while a batch runs concurrently.
+// Called only from the SERIAL result loop in dispatch (like promoteFromMeta), so
+// the slice needs no lock while a batch runs concurrently.
 func (a *LlmAgent) recordEditedPath(call llm.ToolCall) {
 	path, ok := writeToolPath(call)
 	if !ok || slices.Contains(a.editedPaths, path) {

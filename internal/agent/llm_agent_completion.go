@@ -192,25 +192,33 @@ func (a *LlmAgent) completionCriticUser(answer string) string {
 		lastUserRequest(a.history), a.sideEffectDigest(), answer)
 }
 
-// sideEffectDigest builds a `- name(args) → result` line per tool call in this
-// run (the terminal tool excluded), preserving call order for the selected
+// sideEffectDigest builds a `- name(args) → result` line per tool call THIS RUN
+// dispatched (the terminal tool excluded), preserving call order for the selected
 // suffix and bounding each field + the whole digest. Reads are kept too: a
 // read-back after a write is the verification evidence the critic needs. When a
 // long setup phase would overflow the digest, the latest tool results win because
 // they carry the final creation/verification evidence.
+//
+// The scope starts at historyBase, never at 0. Earlier turns are context the model
+// already has; to the critic they would be evidence, because its system prompt
+// names this digest "the tool calls the agent made this turn" — see historyBase for
+// what an unscoped walk cost on the live deployment.
 func (a *LlmAgent) sideEffectDigest() string {
 	type toolCall struct{ name, args string }
 	calls := map[string]toolCall{}
-	order := make([]string, 0, len(a.history))
 	results := map[string]string{}
-	for i := range a.history {
-		for _, tc := range a.history[i].ToolCalls {
+	// A struct-literal agent (tests, standalone) leaves historyBase zero, which reads
+	// as "the whole transcript is this run" — true for exactly those callers.
+	run := a.history[min(a.historyBase, len(a.history)):]
+	order := make([]string, 0, len(run))
+	for i := range run {
+		for _, tc := range run[i].ToolCalls {
 			if _, seen := calls[tc.ID]; !seen {
 				order = append(order, tc.ID)
 			}
 			calls[tc.ID] = toolCall{tc.Function.Name, tc.Function.Arguments}
 		}
-		if m := a.history[i]; m.Role == llm.RoleTool && m.ToolCallID != "" {
+		if m := run[i]; m.Role == llm.RoleTool && m.ToolCallID != "" {
 			results[m.ToolCallID] = m.Content
 		}
 	}

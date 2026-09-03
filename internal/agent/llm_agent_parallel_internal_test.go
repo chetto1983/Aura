@@ -14,7 +14,7 @@ import (
 // mutatingPanicTool declares Spec.Mutating and panics AFTER simulating a host
 // side effect — the exact F-031 shape: a mutating tool that mutates state and
 // then crashes. The recovery path must still classify the run as Mutating so the
-// completion gate (a.sideEffected) arms.
+// post-mutation safeguards that hang off that bit still run.
 type mutatingPanicTool struct{}
 
 func (mutatingPanicTool) Spec() tools.Spec {
@@ -30,12 +30,11 @@ func (mutatingPanicTool) Execute(context.Context, json.RawMessage) (tools.ToolRe
 	panic("mutating tool boom after side effect")
 }
 
-// TestRunToolRecovering_MutatingPanicArmsCompletionGate pins F-031: a mutating
+// TestRunToolRecovering_MutatingPanicKeepsMutatingBit pins F-031: a mutating
 // tool that panics after its side effect must yield a recovered toolRunResult
-// with Mutating=true. Otherwise dispatch never sets a.sideEffected and the
-// completion gate skips its post-mutation safeguard for a turn that DID touch
-// host state.
-func TestRunToolRecovering_MutatingPanicArmsCompletionGate(t *testing.T) {
+// with Mutating=true. Otherwise dispatch skips the `if run.Mutating` branch and
+// the verify-on-stop gate loses its evidence for a turn that DID touch host state.
+func TestRunToolRecovering_MutatingPanicKeepsMutatingBit(t *testing.T) {
 	reg := tools.NewRegistry()
 	reg.Register(mutatingPanicTool{})
 	a := NewLlmAgent(LlmAgentConfig{
