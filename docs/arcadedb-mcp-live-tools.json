@@ -1635,6 +1635,35 @@
             "array"
           ]
         },
+        "coined": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "description": "the entity this write created for the first time",
+                "type": "string"
+              },
+              "near": {
+                "description": "existing entity names closest to it; empty means the memory holds nothing like it",
+                "items": {
+                  "type": "string"
+                },
+                "type": [
+                  "null",
+                  "array"
+                ]
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
         "reason": {
           "type": "string"
         },

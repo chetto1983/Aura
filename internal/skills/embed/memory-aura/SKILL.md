@@ -28,13 +28,47 @@ fact instead of creating another edge.
 The subject and object entities are created for you. There is no separate "add entity"
 step, and looking for one is how the graph ends up with facts that connect to nothing.
 
-**Reuse the names the memory already knows.** A subject invented for one fact alone is an
-island: it can be recalled by its own name and by nothing else. Before writing, it costs
-one `memory_entities` or one `memory_digest` to see whether this thing already has a name
-here, and to spell it the same way. The cost of skipping that is measurable — a memory of
-107 facts imported one-note-at-a-time, each with a bespoke subject, held **209 entities**
-and not one fact shared a neighbour with another until a linking sweep was written to
-repair it after the fact. Facts are worth more connected than filed.
+### Read the vocabulary before you write. Every time.
+
+The entity names in this memory are a **shared vocabulary**, not per-fact scratch space.
+They are the only thing that makes two facts meet: a subject invented for one fact alone
+can be recalled by its own name and by nothing else.
+
+So the order is fixed, and it is one extra call for a whole session of writing:
+
+1. **`memory_entities` first**, once, before the first write. Read the list and keep it.
+   It is short by design — if it is not, the discipline below has already been skipped.
+2. **Take every subject and object from that list** when anything on it is the thing you
+   mean. Same spelling, same case.
+3. **Coin a new name only when nothing on the list fits** — and then coin a NAME, not a
+   description. The test is simple: *would anyone ever ask about this by this name again?*
+   `ArcadeDB` yes. `la lentezza percepita di Aura sui turni banali` never.
+4. **Read what the write answers.** When it introduces a name the memory had never held,
+   the reply carries `coined` with the closest existing names. If one of them was what you
+   meant, `memory_merge_entities` folds the mistake onto it while the fact is one write old
+   rather than one month old.
+
+The cost of skipping this is not theoretical, and it is not small. Measured on a real
+memory of 108 facts on 2026-09-03: **211 distinct entities, of which 207 were used exactly
+once.** Only one name — `Aura` — was used by as many as three facts. The vocabulary the
+corpus actually had was hiding in the prose, where `MCP`, `Phase`, `Neo4j` and `ArcadeDB`
+each recur in eight to twenty statements; the structured endpoints beside them were
+freshly invented every single time. Nothing could connect, because nothing was ever named
+twice.
+
+A healthy memory's vocabulary grows far more slowly than its facts. If a hundred facts
+have produced a hundred names, the memory is a filing cabinet with one document per
+drawer.
+
+**The object becomes an entity too, and that is the easier half to get wrong.** It is not
+an inert value slot: `object` mints a vertex under the same unique name index the subject
+does. A guard rejects objects that read as sentences — over ~80 characters, or ending in
+`.`/`!`/`?` — but it judges SHAPE, not sense, so a tidy little phrase like
+`11ms single query latency on RTX A2000` sails straight through and becomes a permanent
+entity that one fact points at and nothing will ever name again. Ask of every object what
+you ask of a subject: *would anything else here ever refer to this by this name?* If not,
+it is a reading, and readings belong in the `statement` — the field that gets embedded and
+searched. Name the object for the thing, not for the measurement of it.
 
 Do **not** record the passing shape of a conversation — what you just did, which file you
 opened, that a command succeeded. If it would not matter in a month it does not belong
@@ -60,9 +94,18 @@ every wrong entry is something someone has to find and remove later.
   entity directly. At **2** it widens to the neighbourhood: facts that mention something
   this entity's facts also mention. Reach for 2 when the question is about how a subject
   *connects* to the rest — "what does X have to do with Y", "what else touches this" —
-  and stay at 1 when you want only what is asserted of it. The reply says which you got
-  in `retrieval.path`: `graph` for one hop, `mentions` for two, so a wide answer is never
-  mistakable for a lucky one.
+  and stay at 1 when you want only what is asserted of it.
+
+  `retrieval.path` tells you which QUERY ran — `graph` for one hop, `mentions` for two —
+  and nothing about whether it found anything. Reading `mentions` as "the widening
+  worked" is a mistake that has already been made: the only evidence is the count.
+  **If depth 2 returns the same facts as depth 1, the neighbourhood is empty.**
+
+  It is empty for a real reason worth knowing. The `MENTIONS` edges the second hop walks
+  are not written when a fact is written — a periodic sweep builds them by scanning
+  statements for the names of entities the memory already knows. Until that sweep has run
+  over your writes, depth 2 traverses a graph with no edges in it and answers exactly like
+  depth 1. A memory that was written minutes ago is the normal case for this.
 - `memory_digest` — the whole memory as a compact index, one line per entity. Read it
   ONCE and keep it rather than searching repeatedly. Check `covered`: when it is false
   the memory is larger than the index and search is still needed for the rest.

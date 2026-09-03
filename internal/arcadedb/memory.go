@@ -156,6 +156,10 @@ type FactWrite struct {
 	Refused    bool
 	Reason     string
 	Candidates []FactHit
+	// Coined names the endpoints this write introduced that the memory had never held,
+	// each with the existing names closest to it. It is a REPLY, not a refusal: the write
+	// happened either way. See memory_vocabulary.go for the measurement that put it here.
+	Coined []CoinedEntity
 }
 
 // proseObjectRuneBound is the ceiling MEM-05's prose guard enforces on the
@@ -286,6 +290,12 @@ func (c *Client) UpsertFact(ctx context.Context, fact Fact, now time.Time) (Fact
 	if validFrom.IsZero() {
 		validFrom = now
 	}
+	// Read the vocabulary BEFORE minting anything, or a new name would be in its own
+	// suggestion list. Fail-soft: a memory that cannot answer this still takes the write.
+	vocabulary, vocabularyErr := c.vocabularyScan(ctx)
+	if vocabularyErr != nil {
+		vocabulary = nil
+	}
 	for _, entity := range []struct{ name, kind string }{{fact.Subject, fact.SubjectKind}, {fact.Object, fact.ObjectKind}} {
 		statement := upsertEntityStatement
 		params := map[string]any{"name": entity.name}
@@ -305,6 +315,9 @@ func (c *Client) UpsertFact(ctx context.Context, fact Fact, now time.Time) (Fact
 	// D-09's concurrent-write race for the topology this package has.
 	defer c.facts.lock(factKey)()
 	written := FactWrite{Statement: fact.Statement}
+	if vocabulary != nil {
+		written.Coined = coinedEntities(vocabulary, fact.Subject, fact.Object)
+	}
 	if attached, err := c.attachFactSource(ctx, factKey, fact.Source, now); err != nil {
 		return FactWrite{}, err
 	} else if attached {

@@ -22,6 +22,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/joho/godotenv v1.5.1
+	github.com/k8nstantin/go-leiden v0.1.0
 	github.com/lestrrat-go/jwx/v3 v3.2.0
 	github.com/mattn/go-sqlite3 v1.14.50
 	github.com/mdp/qrterminal/v3 v3.2.1

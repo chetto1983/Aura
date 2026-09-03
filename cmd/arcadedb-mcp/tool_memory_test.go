@@ -176,6 +176,7 @@ func TestUpsertFactStoresProvenance(t *testing.T) {
 // oneFactRow's subject ("Davide") matches validFactInput() exactly.
 func TestSupersedingClosesTheWindowAndDoesNotDelete(t *testing.T) {
 	client, rec := newRecordingDB(t,
+		`{"result":[]}`,            // vocabulary scan (runs BEFORE anything is minted)
 		`{"result":[]}`,            // entity upsert: subject
 		`{"result":[]}`,            // entity upsert: object
 		`{"result":[]}`,            // attachFactSource: release expired identity
@@ -207,6 +208,7 @@ func TestSupersedingClosesTheWindowAndDoesNotDelete(t *testing.T) {
 // the legacy subject+predicate candidate resolution entirely.
 func TestUpsertFactClosesByFactKey(t *testing.T) {
 	client, rec := newRecordingDB(t,
+		`{"result":[]}`,            // vocabulary scan (runs BEFORE anything is minted)
 		`{"result":[]}`,            // entity upsert: subject
 		`{"result":[]}`,            // entity upsert: object
 		`{"result":[]}`,            // attachFactSource: release expired identity
@@ -244,6 +246,7 @@ func TestUpsertFactClosesByFactKey(t *testing.T) {
 // successful call, never an mcp.ToolCallError (D-17) -- and writes nothing.
 func TestUpsertFactRefusesOnFactKeyMiss(t *testing.T) {
 	client, rec := newRecordingDB(t,
+		`{"result":[]}`, // vocabulary scan (runs BEFORE anything is minted)
 		`{"result":[]}`, // entity upsert: subject
 		`{"result":[]}`, // entity upsert: object
 		`{"result":[]}`, // attachFactSource: release expired identity
@@ -282,10 +285,11 @@ func TestUpsertFactRefusesOnAmbiguousSupersede(t *testing.T) {
 "object":"Torino","object_kind":"Location","valid_from":"2026-02-01T00:00:00Z",
 "sources":[{"run_id":"run-2","memory_ids":["mem-2"]}],"fact_key":"key-b"}]}`
 	client, rec := newRecordingDB(t,
-		`{"result":[]}`,
-		`{"result":[]}`,
-		`{"result":[]}`,
-		`{"result":[]}`,
+		`{"result":[]}`, // vocabulary scan (runs BEFORE anything is minted)
+		`{"result":[]}`, // entity upsert: subject
+		`{"result":[]}`, // entity upsert: object
+		`{"result":[]}`, // attachFactSource: release expired identity
+		`{"result":[]}`, // attachFactSource: exact replay lookup
 		twoFactRows,
 	)
 	in := validFactInput()

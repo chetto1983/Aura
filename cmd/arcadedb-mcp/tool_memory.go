@@ -156,6 +156,19 @@ type MemoryUpsertFactOutput struct {
 	Refused    bool              `json:"refused"`
 	Reason     string            `json:"reason,omitempty"`
 	Candidates []MemorySearchHit `json:"candidates,omitempty"`
+	// Coined reports the endpoints this write introduced that the memory had never held,
+	// each with the closest names it already knows. The write HAPPENED -- this is a reply,
+	// not a refusal. It is here because a memory measured on 2026-09-03 held 211 entities
+	// for 107 facts, 181 of them one-off descriptive phrases, and 76 of the facts shared no
+	// entity with any other. Asking writers in prose to reuse names had already been tried
+	// and did not take; answering with the names at the moment of writing might.
+	Coined []MemoryCoinedEntity `json:"coined,omitempty"`
+}
+
+// MemoryCoinedEntity is one newly-minted entity and the vocabulary around it.
+type MemoryCoinedEntity struct {
+	Name string   `json:"name" jsonschema:"the entity this write created for the first time"`
+	Near []string `json:"near,omitempty" jsonschema:"existing entity names closest to it; empty means the memory holds nothing like it"`
 }
 
 func addMemoryUpsertFactTool(server *mcp.Server, tenants *tenants, now clock, operatorDisplayName string) {
@@ -234,8 +247,22 @@ func memoryUpsertFactHandler(
 			Refused:    written.Refused,
 			Reason:     written.Reason,
 			Candidates: toHits(written.Candidates),
+			Coined:     toCoined(written.Coined),
 		}, nil
 	}
+}
+
+// toCoined carries the vocabulary reply out to the model. Nil in, nil out: a memory that
+// could not be scanned says nothing rather than claiming every name is new.
+func toCoined(coined []arcadedb.CoinedEntity) []MemoryCoinedEntity {
+	if len(coined) == 0 {
+		return nil
+	}
+	out := make([]MemoryCoinedEntity, 0, len(coined))
+	for _, entity := range coined {
+		out = append(out, MemoryCoinedEntity{Name: entity.Name, Near: entity.Near})
+	}
+	return out
 }
 
 // MemorySearchInput asks a question of the fact graph. The calling identity

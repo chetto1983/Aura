@@ -304,23 +304,28 @@ func TestUpsertFactCreatesEntitiesThenTheEdge(t *testing.T) {
 	if _, err := client.UpsertFact(context.Background(), validFact(), now); err != nil {
 		t.Fatalf("UpsertFact: %v", err)
 	}
-	if len(rec.statements) != 5 {
-		t.Fatalf("statements = %d, want two entity upserts, stale-key release, exact lookup, then edge:\n%s",
+	if len(rec.statements) != 6 {
+		t.Fatalf("statements = %d, want vocabulary scan, two entity upserts, stale-key release, exact lookup, then edge:\n%s",
 			len(rec.statements), rec.joined())
 	}
-	if !strings.Contains(rec.statements[0], "UPSERT") || !strings.Contains(rec.statements[1], "UPSERT") {
-		t.Fatalf("entities not upserted first:\n%s", rec.joined())
+	// The vocabulary is read BEFORE anything is minted, and the order is the whole point:
+	// scanning afterwards would offer the writer the name it has just invented.
+	if !strings.HasPrefix(rec.statements[0], "SELECT name FROM Entity") {
+		t.Fatalf("vocabulary not read before the write:\n%s", rec.joined())
 	}
-	if !strings.Contains(rec.statements[2], "SET fact_key = NULL") {
-		t.Fatalf("expired fact key release missing: %s", rec.statements[2])
+	if !strings.Contains(rec.statements[1], "UPSERT") || !strings.Contains(rec.statements[2], "UPSERT") {
+		t.Fatalf("entities not upserted after the scan:\n%s", rec.joined())
 	}
-	if !strings.Contains(rec.statements[3], "WHERE fact_key = :fact_key") {
-		t.Fatalf("exact replay lookup missing: %s", rec.statements[3])
+	if !strings.Contains(rec.statements[3], "SET fact_key = NULL") {
+		t.Fatalf("expired fact key release missing: %s", rec.statements[3])
 	}
-	if !strings.HasPrefix(rec.statements[4], "CREATE EDGE FACT") {
-		t.Fatalf("edge not created last: %s", rec.statements[4])
+	if !strings.Contains(rec.statements[4], "WHERE fact_key = :fact_key") {
+		t.Fatalf("exact replay lookup missing: %s", rec.statements[4])
 	}
-	params := rec.params[4]
+	if !strings.HasPrefix(rec.statements[5], "CREATE EDGE FACT") {
+		t.Fatalf("edge not created last: %s", rec.statements[5])
+	}
+	params := rec.params[5]
 	if params["valid_from"] != now.Format(time.RFC3339) {
 		t.Fatalf("valid_from = %v, want a default of now", params["valid_from"])
 	}
