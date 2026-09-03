@@ -9,8 +9,8 @@ import (
 
 func TestListEntitiesMapsRowsAndBoundsTheQuery(t *testing.T) {
 	client, rec := recordingClient(t, `{"result":[
-		{"name":"Davide","kind":"Person","degree":4},
-		{"name":"Aura","kind":"Project","degree":2}]}`)
+		{"name":"Davide","kind":"Person","facts":4},
+		{"name":"Aura","kind":"Project","facts":2}]}`)
 	got, err := client.ListEntities(context.Background(), 0)
 	if err != nil {
 		t.Fatalf("ListEntities: %v", err)
@@ -43,9 +43,27 @@ func TestListEntitiesMapsRowsAndBoundsTheQuery(t *testing.T) {
 // A capped listing must say how much it is NOT showing. Measured 2026-09-02:
 // asking for 400 entities on a 201-entity memory returned 100 with no signal, so
 // the only honest reading of the reply was "this memory has 100 entities".
+// The count must weigh FACT edges alone. A bare bothE() also counts the MENTIONS
+// edges the sweep writes, and those outnumber facts: measured 2026-09-03, Neo4j
+// reported 22 facts against 6 real ones. A writer reads this number to decide
+// whether a name is already established, so an inflated one argues for reusing a
+// name that in truth holds nothing.
+func TestListEntitiesCountsFactEdgesNotEveryEdge(t *testing.T) {
+	client, rec := recordingClient(t, `{"result":[{"name":"Neo4j","kind":"Tool","facts":6}]}`)
+	if _, err := client.ListEntities(context.Background(), 0); err != nil {
+		t.Fatalf("ListEntities: %v", err)
+	}
+	if !strings.Contains(rec.statements[0], "bothE('"+factEdgeType+"')") {
+		t.Fatalf("listing counts every edge, not just facts: %s", rec.statements[0])
+	}
+	if strings.Contains(rec.statements[0], "bothE()") {
+		t.Fatalf("bare bothE() counts MENTIONS too: %s", rec.statements[0])
+	}
+}
+
 func TestListEntitiesReportsTheTotalSoTruncationIsVisible(t *testing.T) {
 	client, _ := recordingClient(t,
-		`{"result":[{"name":"Davide","kind":"Person","degree":4}]}`,
+		`{"result":[{"name":"Davide","kind":"Person","facts":4}]}`,
 		`{"result":[{"total":201}]}`)
 	got, err := client.ListEntities(context.Background(), 1)
 	if err != nil {
@@ -66,7 +84,7 @@ func TestListEntitiesReportsTheTotalSoTruncationIsVisible(t *testing.T) {
 // a non-empty page — that is a worse lie than having no total at all.
 func TestListEntitiesFallsBackToThePageWhenTheCountIsAbsent(t *testing.T) {
 	client, _ := recordingClient(t,
-		`{"result":[{"name":"Davide","kind":"Person","degree":4}]}`,
+		`{"result":[{"name":"Davide","kind":"Person","facts":4}]}`,
 		`{"result":[{"unexpected":1}]}`)
 	got, err := client.ListEntities(context.Background(), 1)
 	if err != nil {

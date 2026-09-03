@@ -54,6 +54,13 @@ type EntityListing struct {
 // ListEntities returns the entities holding the most facts first, because an
 // entity with one stray fact is noise and an entity with twenty is a subject.
 //
+// The count is edges of type FACT only, and the label is load-bearing. A bare
+// bothE() also counts MENTIONS, which the sweep writes by the hundred, so an
+// entity named in many statements reported a fact count it did not have.
+// Measured 2026-09-03 on a 68-fact memory: Neo4j read as 22 facts against 6
+// real edges. The reply is what a writer consults to decide whether a name is
+// already load-bearing, so inflating it teaches exactly the wrong lesson.
+//
 // The count is a second statement rather than a LIMIT+1 probe: +1 would say only
 // "there are more", and the useful answer to "am I seeing my whole memory" is the
 // number it is being compared against. Unlike Digest this is a browsing call, not
@@ -61,8 +68,8 @@ type EntityListing struct {
 func (c *Client) ListEntities(ctx context.Context, limit int) (EntityListing, error) {
 	limit = boundedLimit(limit, defaultEntityLimit, c.memoryLimits().Results)
 	rows, err := c.Query(ctx,
-		"SELECT name, kind, bothE().size() AS degree FROM Entity"+
-			" ORDER BY degree DESC LIMIT "+strconv.Itoa(limit), nil)
+		"SELECT name, kind, bothE('"+factEdgeType+"').size() AS facts FROM Entity"+
+			" ORDER BY facts DESC LIMIT "+strconv.Itoa(limit), nil)
 	if err != nil {
 		return EntityListing{}, fmt.Errorf("arcadedb: list entities: %w", err)
 	}
@@ -71,7 +78,7 @@ func (c *Client) ListEntities(ctx context.Context, limit int) (EntityListing, er
 		out = append(out, EntitySummary{
 			Name:  rowString(row, "name"),
 			Kind:  rowString(row, "kind"),
-			Facts: int(rowInt(row, "degree")),
+			Facts: int(rowInt(row, "facts")),
 		})
 	}
 	totals, err := c.Query(ctx, "SELECT count(*) AS total FROM Entity", nil)
