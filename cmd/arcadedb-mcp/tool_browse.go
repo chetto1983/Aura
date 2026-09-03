@@ -33,7 +33,10 @@ func addMemoryEntitiesTool(server *mcp.Server, tenants *tenants) {
 		Name:  "memory_entities",
 		Title: "List entities",
 		Description: "List the entities the memory knows, the ones holding the most facts " +
-			"first. Use it to find the exact name memory_facts_about needs. Check `total`: " +
+			"first. Use it to find the exact name memory_facts_about needs, and to read the " +
+			"vocabulary before coining a new name. Each entry carries its POLE class (" +
+			arcadedb.PoleClassList() + ") and the concrete kind refining it, so one read " +
+			"tells you both which names exist and how they are classified. Check `total`: " +
 			"the listing is capped, so a total larger than the returned list means you are " +
 			"seeing only part of the memory.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},

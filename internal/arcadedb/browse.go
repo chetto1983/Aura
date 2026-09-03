@@ -29,7 +29,10 @@ const (
 
 // EntitySummary is one name the memory knows, with how much hangs off it.
 type EntitySummary struct {
-	Name  string `json:"name"`
+	Name string `json:"name"`
+	// Pole is the POLE class the entity is stored as -- its vertex subtype. A bare
+	// "Entity" means the record predates the classed schema and was never assigned one.
+	Pole  string `json:"pole,omitempty"`
 	Kind  string `json:"kind,omitempty"`
 	Facts int    `json:"facts"`
 }
@@ -68,8 +71,8 @@ type EntityListing struct {
 func (c *Client) ListEntities(ctx context.Context, limit int) (EntityListing, error) {
 	limit = boundedLimit(limit, defaultEntityLimit, c.memoryLimits().Results)
 	rows, err := c.Query(ctx,
-		"SELECT name, kind, bothE('"+factEdgeType+"').size() AS facts FROM Entity"+
-			" ORDER BY facts DESC LIMIT "+strconv.Itoa(limit), nil)
+		"SELECT name, kind, @type AS pole, bothE('"+factEdgeType+"').size() AS facts"+
+			" FROM Entity ORDER BY facts DESC LIMIT "+strconv.Itoa(limit), nil)
 	if err != nil {
 		return EntityListing{}, fmt.Errorf("arcadedb: list entities: %w", err)
 	}
@@ -77,6 +80,7 @@ func (c *Client) ListEntities(ctx context.Context, limit int) (EntityListing, er
 	for _, row := range rows {
 		out = append(out, EntitySummary{
 			Name:  rowString(row, "name"),
+			Pole:  rowString(row, "pole"),
 			Kind:  rowString(row, "kind"),
 			Facts: int(rowInt(row, "facts")),
 		})

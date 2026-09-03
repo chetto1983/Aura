@@ -123,10 +123,12 @@ func oauthClientRunID(req *mcp.CallToolRequest) string {
 // so the model never emits or sees it.
 type MemoryUpsertFactInput struct {
 	Subject     string `json:"subject" jsonschema:"the entity the fact is about"`
-	SubjectKind string `json:"subject_kind,omitempty" jsonschema:"optional entity kind, e.g. Person or Organization"`
+	SubjectKind string `json:"subject_kind,omitempty" jsonschema:"optional concrete type refining the class, e.g. Officer or Vehicle"`
+	SubjectPole string `json:"subject_pole,omitempty" jsonschema:"POLE class: Person, Object, Location, Event, Organisation or Other. Omit to derive it from subject_kind; anything outside the set lands in Other and is reported back"`
 	Predicate   string `json:"predicate" jsonschema:"the relation, e.g. lives_in"`
 	Object      string `json:"object" jsonschema:"the entity or value the subject relates to"`
-	ObjectKind  string `json:"object_kind,omitempty" jsonschema:"optional entity kind, e.g. Location or Organization"`
+	ObjectKind  string `json:"object_kind,omitempty" jsonschema:"optional concrete type refining the class, e.g. PostCode or Phone"`
+	ObjectPole  string `json:"object_pole,omitempty" jsonschema:"POLE class: Person, Object, Location, Event, Organisation or Other. Omit to derive it from object_kind"`
 	Statement   string `json:"statement" jsonschema:"the fact in natural language; this is what gets embedded and searched"`
 	ValidFrom   string `json:"valid_from,omitempty" jsonschema:"RFC3339 instant when the fact became true; defaults to now"`
 	ValidTo     string `json:"valid_to,omitempty" jsonschema:"RFC3339 instant when the fact stopped being true; omit while it still holds"`
@@ -163,6 +165,22 @@ type MemoryUpsertFactOutput struct {
 	// entity with any other. Asking writers in prose to reuse names had already been tried
 	// and did not take; answering with the names at the moment of writing might.
 	Coined []MemoryCoinedEntity `json:"coined,omitempty"`
+	// Classified reports the POLE class each endpoint was written as. Read it for two
+	// cases: request_refused, meaning the class asked for is not one of the six and the
+	// entity went to Other; and held_pole, meaning the entity already existed under a
+	// different class, which wins because one name is unique across the subtypes.
+	Classified []MemoryEntityClass `json:"classified,omitempty"`
+}
+
+// MemoryEntityClass is one endpoint's resolved POLE class.
+type MemoryEntityClass struct {
+	Name string `json:"name"`
+	Pole string `json:"pole" jsonschema:"the class this entity is stored as"`
+	Kind string `json:"kind,omitempty" jsonschema:"the concrete type refining that class"`
+	// RequestRefused says the class asked for is not one of the six, so the entity was
+	// written as Other. The fact itself was still written.
+	RequestRefused bool   `json:"request_refused,omitempty"`
+	HeldPole       string `json:"held_pole,omitempty" jsonschema:"set when the entity already had a different class, which is the one it kept"`
 }
 
 // MemoryCoinedEntity is one newly-minted entity and the vocabulary around it.
@@ -221,9 +239,11 @@ func memoryUpsertFactHandler(
 		fact := arcadedb.Fact{
 			Subject:     subject,
 			SubjectKind: in.SubjectKind,
+			SubjectPole: in.SubjectPole,
 			Predicate:   in.Predicate,
 			Object:      in.Object,
 			ObjectKind:  in.ObjectKind,
+			ObjectPole:  in.ObjectPole,
 			Statement:   in.Statement,
 			ValidFrom:   validFrom,
 			ValidTo:     validTo,
@@ -248,6 +268,7 @@ func memoryUpsertFactHandler(
 			Reason:     written.Reason,
 			Candidates: toHits(written.Candidates),
 			Coined:     toCoined(written.Coined),
+			Classified: toClassified(written.Classified),
 		}, nil
 	}
 }
@@ -261,6 +282,27 @@ func toCoined(coined []arcadedb.CoinedEntity) []MemoryCoinedEntity {
 	out := make([]MemoryCoinedEntity, 0, len(coined))
 	for _, entity := range coined {
 		out = append(out, MemoryCoinedEntity{Name: entity.Name, Near: entity.Near})
+	}
+	return out
+}
+
+// toClassified carries the resolved POLE class out to the model. It is reported on every
+// write, not only on the surprising ones, because the class is what decides whether two
+// facts can ever meet: an entity in the wrong class is still addressable by name, but it
+// stops answering the questions its class is asked.
+func toClassified(classified []arcadedb.EntityClass) []MemoryEntityClass {
+	if len(classified) == 0 {
+		return nil
+	}
+	out := make([]MemoryEntityClass, 0, len(classified))
+	for _, entity := range classified {
+		out = append(out, MemoryEntityClass{
+			Name:           entity.Name,
+			Pole:           entity.Pole,
+			Kind:           entity.Kind,
+			RequestRefused: entity.RequestRefused,
+			HeldPole:       entity.HeldPole,
+		})
 	}
 	return out
 }

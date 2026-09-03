@@ -472,7 +472,7 @@
       "idempotentHint": false,
       "readOnlyHint": true
     },
-    "description": "List the entities the memory knows, the ones holding the most facts first. Use it to find the exact name memory_facts_about needs. Check `total`: the listing is capped, so a total larger than the returned list means you are seeing only part of the memory.",
+    "description": "List the entities the memory knows, the ones holding the most facts first. Use it to find the exact name memory_facts_about needs, and to read the vocabulary before coining a new name. Each entry carries its POLE class (Person, Object, Location, Event, Organisation, Other) and the concrete kind refining it, so one read tells you both which names exist and how they are classified. Check `total`: the listing is capped, so a total larger than the returned list means you are seeing only part of the memory.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -498,6 +498,9 @@
                 "type": "string"
               },
               "name": {
+                "type": "string"
+              },
+              "pole": {
                 "type": "string"
               }
             },
@@ -1492,7 +1495,11 @@
           "type": "string"
         },
         "object_kind": {
-          "description": "optional entity kind, e.g. Location or Organization",
+          "description": "optional concrete type refining the class, e.g. PostCode or Phone",
+          "type": "string"
+        },
+        "object_pole": {
+          "description": "POLE class: Person, Object, Location, Event, Organisation or Other. Omit to derive it from object_kind",
           "type": "string"
         },
         "predicate": {
@@ -1525,7 +1532,11 @@
           "type": "string"
         },
         "subject_kind": {
-          "description": "optional entity kind, e.g. Person or Organization",
+          "description": "optional concrete type refining the class, e.g. Officer or Vehicle",
+          "type": "string"
+        },
+        "subject_pole": {
+          "description": "POLE class: Person, Object, Location, Event, Organisation or Other. Omit to derive it from subject_kind; anything outside the set lands in Other and is reported back",
           "type": "string"
         },
         "supersedes": {
@@ -1627,6 +1638,40 @@
               "subject",
               "object",
               "sources"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "classified": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "held_pole": {
+                "description": "set when the entity already had a different class, which is the one it kept",
+                "type": "string"
+              },
+              "kind": {
+                "description": "the concrete type refining that class",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "pole": {
+                "description": "the class this entity is stored as",
+                "type": "string"
+              },
+              "request_refused": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "name",
+              "pole"
             ],
             "type": "object"
           },

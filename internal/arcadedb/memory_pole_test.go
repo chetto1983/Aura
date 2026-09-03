@@ -156,7 +156,7 @@ func TestEntityClassScanSkipsTheQueryWhenThereIsNothingToAsk(t *testing.T) {
 }
 
 func TestPoleClassListNamesEveryAllowedClass(t *testing.T) {
-	list := poleClassList()
+	list := PoleClassList()
 	for _, class := range poleClasses {
 		if !strings.Contains(list, class) {
 			t.Fatalf("%q is allowed but absent from the caller-facing list %q", class, list)

@@ -133,9 +133,10 @@ func poleClassFor(requested, kind string) (class string, refusedRequest bool) {
 	return poleOther, false
 }
 
-// poleClassList is the set as a caller-facing sentence, so a refusal names what IS allowed
-// rather than only what is not.
-func poleClassList() string {
+// PoleClassList is the set as a caller-facing sentence, so a tool description or a refusal
+// names what IS allowed rather than only what is not. Exported because the MCP surface has
+// to state the closed set, and restating it there by hand is how the two drift apart.
+func PoleClassList() string {
 	return strings.Join(poleClasses, ", ")
 }
 

@@ -177,6 +177,7 @@ func TestUpsertFactStoresProvenance(t *testing.T) {
 func TestSupersedingClosesTheWindowAndDoesNotDelete(t *testing.T) {
 	client, rec := newRecordingDB(t,
 		`{"result":[]}`,            // vocabulary scan (runs BEFORE anything is minted)
+		`{"result":[]}`,            // entity class scan (which POLE class each name already has)
 		`{"result":[]}`,            // entity upsert: subject
 		`{"result":[]}`,            // entity upsert: object
 		`{"result":[]}`,            // attachFactSource: release expired identity
@@ -209,6 +210,7 @@ func TestSupersedingClosesTheWindowAndDoesNotDelete(t *testing.T) {
 func TestUpsertFactClosesByFactKey(t *testing.T) {
 	client, rec := newRecordingDB(t,
 		`{"result":[]}`,            // vocabulary scan (runs BEFORE anything is minted)
+		`{"result":[]}`,            // entity class scan (which POLE class each name already has)
 		`{"result":[]}`,            // entity upsert: subject
 		`{"result":[]}`,            // entity upsert: object
 		`{"result":[]}`,            // attachFactSource: release expired identity
@@ -247,6 +249,7 @@ func TestUpsertFactClosesByFactKey(t *testing.T) {
 func TestUpsertFactRefusesOnFactKeyMiss(t *testing.T) {
 	client, rec := newRecordingDB(t,
 		`{"result":[]}`, // vocabulary scan (runs BEFORE anything is minted)
+		`{"result":[]}`, // entity class scan (which POLE class each name already has)
 		`{"result":[]}`, // entity upsert: subject
 		`{"result":[]}`, // entity upsert: object
 		`{"result":[]}`, // attachFactSource: release expired identity
@@ -286,6 +289,7 @@ func TestUpsertFactRefusesOnAmbiguousSupersede(t *testing.T) {
 "sources":[{"run_id":"run-2","memory_ids":["mem-2"]}],"fact_key":"key-b"}]}`
 	client, rec := newRecordingDB(t,
 		`{"result":[]}`, // vocabulary scan (runs BEFORE anything is minted)
+		`{"result":[]}`, // entity class scan (which POLE class each name already has)
 		`{"result":[]}`, // entity upsert: subject
 		`{"result":[]}`, // entity upsert: object
 		`{"result":[]}`, // attachFactSource: release expired identity
