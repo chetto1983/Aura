@@ -3,9 +3,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { REASONING_CAPABILITIES_QUERY_KEY } from '../chat/composer/useReasoningCapabilities';
 import {
   deleteSetting,
+  fetchLLMRoutes,
   fetchSettings,
   putLLMProfile,
   putSetting,
+  type LLMProviderRoute,
   type SettingItem,
 } from './settingsApi';
 import { ALL_SETTINGS, type SettingDef, type SettingsKey } from './modelSettingsDefs';
@@ -88,6 +90,8 @@ function errorMessage(err: unknown): string {
 export interface ModelSettingsState {
   readonly loaded: LoadedState | undefined;
   readonly loadStatus: LoadStatus;
+  /** What each provider was last saved with (aura.llm_provider_routes); empty on an older daemon. */
+  readonly routes: readonly LLMProviderRoute[];
   readonly saving: boolean;
   readonly resetting: string | undefined;
   readonly saved: boolean;
@@ -105,12 +109,24 @@ export interface ModelSettingsState {
 export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsState {
   const queryClient = useQueryClient();
   const [loaded, setLoaded] = useState<LoadedState | undefined>(undefined);
+  const [routes, setRoutes] = useState<readonly LLMProviderRoute[]>([]);
   const [loadStatus, setLoadStatus] = useState<LoadStatus>('loading');
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState<string | undefined>(undefined);
   const [saved, setSaved] = useState(false);
   // Separate from loadStatus on purpose — a save that fails is not a load that failed.
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
+
+  // The route memory is loaded beside the settings but never gates them: a daemon without
+  // it (or a failing read) leaves the panel on its built-in fallbacks rather than on the
+  // "couldn't load settings" alert.
+  const reloadRoutes = useCallback(async () => {
+    try {
+      setRoutes(await fetchLLMRoutes());
+    } catch {
+      setRoutes([]);
+    }
+  }, []);
 
   const reload = useCallback(async () => {
     setLoadStatus('loading');
@@ -121,7 +137,8 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
     } catch {
       setLoadStatus('error');
     }
-  }, []);
+    await reloadRoutes();
+  }, [reloadRoutes]);
 
   useEffect(() => {
     let cancelled = false;
@@ -134,6 +151,13 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
       .catch(() => {
         if (cancelled) return;
         setLoadStatus('error');
+      });
+    void fetchLLMRoutes()
+      .then((list) => {
+        if (!cancelled) setRoutes(list);
+      })
+      .catch(() => {
+        if (!cancelled) setRoutes([]);
       });
     return () => {
       cancelled = true;
@@ -187,6 +211,9 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
         }
         const settings = await fetchSettings();
         setLoaded(buildState(settings));
+        // The save just wrote this provider's route memory server-side; re-read it so a
+        // switch away and back in the same session restores what was actually saved.
+        await reloadRoutes();
         setSaved(true);
         await onComplete?.();
       } catch (err) {
@@ -199,7 +226,7 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
         setSaving(false);
       }
     },
-    [dirtyKeys, loaded, queryClient, saving],
+    [dirtyKeys, loaded, queryClient, reloadRoutes, saving],
   );
 
   const resetSetting = useCallback(
@@ -230,6 +257,7 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
   return {
     loaded,
     loadStatus,
+    routes,
     saving,
     resetting,
     saved,

@@ -145,7 +145,11 @@ type Server struct {
 	governanceWrite  GovernanceWriteProviders
 	mcpAuth          MCPAuthorizationProvider
 	settings         settingsStore
+	llmRoutes        llmRouteStore
 	llmRouteReloader llmRouteReloader
+	// modelCatalog overrides the outbound GET /models probe (settings_llm_models.go).
+	// Nil in production: the handler builds its own client.
+	modelCatalog     modelCatalogFetcher
 	settingsMu       sync.Mutex
 	audit            auditReader
 	idAdmin          identityAdmin

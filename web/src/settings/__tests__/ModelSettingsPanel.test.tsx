@@ -379,8 +379,8 @@ describe('ModelSettingsPanel', () => {
     renderPanel(<ModelSettingsPanel />);
     await screen.findByRole('heading', { name: 'Model routing' });
 
-    fireEvent.change(screen.getByLabelText('Primary model'), {
-      target: { value: 'qwen2.5-coder:14b' },
+    fireEvent.change(screen.getByLabelText('Primary base URL'), {
+      target: { value: 'http://aura-llm:8084/v1' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
 
@@ -388,7 +388,7 @@ describe('ModelSettingsPanel', () => {
     // A non-JSON body leaves only the status, which is still better than silence.
     expect(alert.textContent).toContain('500');
     expect(screen.queryByText(LOAD_ERROR_TEXT)).toBeNull();
-    expect(screen.getByDisplayValue('qwen2.5-coder:14b')).toBeTruthy();
+    expect(screen.getByDisplayValue('http://aura-llm:8084/v1')).toBeTruthy();
   });
 
   it('resets an overridden setting, shows a spinner, and ignores concurrent resets', async () => {
@@ -466,8 +466,8 @@ describe('ModelSettingsPanel', () => {
     renderPanel(<ModelSettingsPanel />);
     await screen.findByRole('heading', { name: 'Model routing' });
 
-    fireEvent.change(screen.getByLabelText('Primary model'), {
-      target: { value: 'local-model' },
+    fireEvent.change(screen.getByLabelText('Primary base URL'), {
+      target: { value: 'http://aura-llm:8084/v1' },
     });
     const saveButton = screen.getByRole('button', { name: 'Save runtime settings' });
     fireEvent.click(saveButton);

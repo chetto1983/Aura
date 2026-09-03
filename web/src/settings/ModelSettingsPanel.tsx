@@ -4,24 +4,31 @@ import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
 import { SettingsFields } from './SettingField';
 import { useModelSettings } from './modelSettingsState';
+import { useModelCatalog } from './useModelCatalog';
 import {
   ALL_MODEL_GROUPS,
-  CLOUD_PROVIDER,
-  LOCAL_BASE_URL,
-  LOCAL_MODEL,
-  LOCAL_PROVIDER,
   MODEL_SETTINGS_GROUPS,
-  OLLAMA_BASE_URL,
-  OLLAMA_MODEL,
-  OLLAMA_PROVIDER,
-  OPENROUTER_BASE_URL,
-  OPENROUTER_MODEL,
+  PROVIDER_OPTIONS,
   resolveProvider,
+  routeForProvider,
   type ModelSettingsGroup,
+  type ProviderChoice,
 } from './modelSettingsDefs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+
+// The icon is presentation, so it lives here rather than in the shared route definitions.
+const PROVIDER_ICONS: Record<ProviderChoice, typeof Cloud> = {
+  cloud: Cloud,
+  local: Cpu,
+  ollama: Server,
+};
+
+// providerIDOf turns the active button back into the provider id the catalogue probe takes.
+function providerIDOf(choice: ProviderChoice): string {
+  return PROVIDER_OPTIONS.find((option) => option.id === choice)?.provider ?? '';
+}
 
 interface ModelSettingsPanelProps {
   readonly className?: string;
@@ -44,17 +51,18 @@ export function ModelSettingsPanel({
   skipLabel,
 }: ModelSettingsPanelProps) {
   const { t } = useTranslation();
-  const active = useMemo(
+  const activeGroups = useMemo(
     () => MODEL_SETTINGS_GROUPS.filter((group) => groups.includes(group.id)),
     [groups],
   );
   const scope = useMemo(
-    () => active.flatMap((group) => [...group.fields, ...group.tracked]),
-    [active],
+    () => activeGroups.flatMap((group) => [...group.fields, ...group.tracked]),
+    [activeGroups],
   );
   const {
     loaded,
     loadStatus,
+    routes,
     saving,
     resetting,
     saved,
@@ -65,6 +73,14 @@ export function ModelSettingsPanel({
     save,
     resetSetting,
   } = useModelSettings(scope);
+  const formBaseURL = loaded?.values.AURA_LLM_BASE_URL ?? '';
+  // Which button reads as active, and which provider the catalogue is probed as. It comes
+  // from resolveProvider rather than the raw row so a deployment that never wrote
+  // AURA_LLM_PROVIDER still probes as the provider its base URL points at.
+  const provider = resolveProvider(loaded?.values.AURA_LLM_PROVIDER ?? '', formBaseURL);
+  // The catalogue follows the FORM route, not the saved one, so the model list is the list
+  // of the endpoint the operator is currently pointing at.
+  const catalog = useModelCatalog(providerIDOf(provider), formBaseURL);
 
   if (loadStatus === 'loading') {
     return (
@@ -91,10 +107,6 @@ export function ModelSettingsPanel({
     );
   }
 
-  const provider = resolveProvider(
-    loaded.values.AURA_LLM_PROVIDER ?? '',
-    loaded.values.AURA_LLM_BASE_URL ?? '',
-  );
   const saveButtonLabel =
     onComplete !== undefined && dirtyKeys.length === 0
       ? t('settings.actions.continue')
@@ -102,7 +114,7 @@ export function ModelSettingsPanel({
 
   return (
     <div className={cn('flex flex-col gap-7', className)}>
-      {active.map((group, index) => (
+      {activeGroups.map((group, index) => (
         <section
           key={group.id}
           aria-labelledby={group.labelId}
@@ -123,45 +135,33 @@ export function ModelSettingsPanel({
               role="group"
               aria-label={t('settings.provider.label')}
             >
-              <Button
-                type="button"
-                variant={provider === 'cloud' ? 'default' : 'outline'}
-                aria-pressed={provider === 'cloud'}
-                onClick={() => {
-                  setValue('AURA_LLM_BASE_URL', OPENROUTER_BASE_URL);
-                  setValue('AURA_LLM_MODEL', OPENROUTER_MODEL);
-                  setValue('AURA_LLM_PROVIDER', CLOUD_PROVIDER);
-                }}
-              >
-                <Cloud aria-hidden="true" />
-                {t('settings.provider.cloud')}
-              </Button>
-              <Button
-                type="button"
-                variant={provider === 'local' ? 'default' : 'outline'}
-                aria-pressed={provider === 'local'}
-                onClick={() => {
-                  setValue('AURA_LLM_BASE_URL', LOCAL_BASE_URL);
-                  setValue('AURA_LLM_MODEL', LOCAL_MODEL);
-                  setValue('AURA_LLM_PROVIDER', LOCAL_PROVIDER);
-                }}
-              >
-                <Cpu aria-hidden="true" />
-                {t('settings.provider.local')}
-              </Button>
-              <Button
-                type="button"
-                variant={provider === 'ollama' ? 'default' : 'outline'}
-                aria-pressed={provider === 'ollama'}
-                onClick={() => {
-                  setValue('AURA_LLM_BASE_URL', OLLAMA_BASE_URL);
-                  setValue('AURA_LLM_MODEL', OLLAMA_MODEL);
-                  setValue('AURA_LLM_PROVIDER', OLLAMA_PROVIDER);
-                }}
-              >
-                <Server aria-hidden="true" />
-                {t('settings.provider.ollama')}
-              </Button>
+              {PROVIDER_OPTIONS.map((option) => {
+                const Icon = PROVIDER_ICONS[option.id];
+                return (
+                  <Button
+                    key={option.id}
+                    type="button"
+                    variant={provider === option.id ? 'default' : 'outline'}
+                    aria-pressed={provider === option.id}
+                    onClick={() => {
+                      // The route comes from what this provider was last saved or booted
+                      // with; the compiled-in constant is only reached by a provider this
+                      // deployment has never configured.
+                      const route = routeForProvider(option, routes, {
+                        provider: loaded.initial.AURA_LLM_PROVIDER ?? '',
+                        baseURL: loaded.initial.AURA_LLM_BASE_URL ?? '',
+                        model: loaded.initial.AURA_LLM_MODEL ?? '',
+                      });
+                      setValue('AURA_LLM_BASE_URL', route.baseURL);
+                      setValue('AURA_LLM_MODEL', route.model);
+                      setValue('AURA_LLM_PROVIDER', option.provider);
+                    }}
+                  >
+                    <Icon aria-hidden="true" />
+                    {t(option.labelKey)}
+                  </Button>
+                );
+              })}
             </div>
           ) : null}
 
@@ -171,6 +171,8 @@ export function ModelSettingsPanel({
             resetting={resetting}
             onValueChange={setValue}
             onReset={(key) => void resetSetting(key)}
+            catalog={group.id === 'routing' ? catalog : undefined}
+            catalogKey="AURA_LLM_MODEL"
           />
         </section>
       ))}

@@ -5,6 +5,8 @@ import { Spinner } from '../components/Spinner';
 import type { SettingItem } from './settingsApi';
 import type { SettingDef, SettingsKey } from './modelSettingsDefs';
 import { settingRow, type LoadedState } from './modelSettingsState';
+import { ModelPicker } from './ModelPicker';
+import type { ModelCatalogState } from './useModelCatalog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +19,8 @@ function SettingsGrid({ children }: { readonly children: ReactNode }) {
 }
 
 export function SettingsFields({
+  catalog,
+  catalogKey,
   defs,
   loaded,
   onReset,
@@ -28,6 +32,9 @@ export function SettingsFields({
   readonly resetting: string | undefined;
   readonly onValueChange: (key: SettingsKey, value: string) => void;
   readonly onReset: (key: SettingsKey) => void;
+  /** The published models offered for `catalogKey`; absent leaves every field free text. */
+  readonly catalog?: ModelCatalogState | undefined;
+  readonly catalogKey?: SettingsKey | undefined;
 }) {
   return (
     <SettingsGrid>
@@ -37,6 +44,7 @@ export function SettingsFields({
           def={def}
           item={settingRow(loaded, def)}
           value={loaded.values[def.key] ?? ''}
+          catalog={def.key === catalogKey ? catalog : undefined}
           onChange={(value) => {
             onValueChange(def.key, value);
           }}
@@ -51,6 +59,7 @@ export function SettingsFields({
 }
 
 function SettingField({
+  catalog,
   def,
   item,
   onChange,
@@ -64,6 +73,7 @@ function SettingField({
   readonly onChange: (value: string) => void;
   readonly onReset: () => void;
   readonly resetting: boolean;
+  readonly catalog?: ModelCatalogState | undefined;
 }) {
   const { t } = useTranslation();
   const inputId = `setting-${def.key}`;
@@ -98,6 +108,8 @@ function SettingField({
           />
           {t('settings.fields.enabled')}
         </label>
+      ) : catalog !== undefined ? (
+        <ModelPicker id={inputId} value={value} catalog={catalog} onChange={onChange} />
       ) : def.secret ? (
         <SecretInput
           id={inputId}

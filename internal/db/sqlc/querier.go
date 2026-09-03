@@ -352,6 +352,7 @@ type Querier interface {
 	// credentials into memory to render a name and an expiry.
 	ListIdentityMCPOAuthServers(ctx context.Context, identityID pgtype.UUID) ([]ListIdentityMCPOAuthServersRow, error)
 	ListInFlightToolInvocationsBefore(ctx context.Context, startedAt pgtype.Timestamptz) ([]AuraToolInvocations, error)
+	ListLLMProviderRoutes(ctx context.Context) ([]AuraLlmProviderRoutes, error)
 	ListMCPServers(ctx context.Context) ([]AuraMcpServer, error)
 	// The cockpit scheduler board (GOV-03 write): active AND pending_approval tasks, so an
 	// operator can approve a gated task on-screen. Ordered by next fire (pending rows have a
@@ -589,6 +590,7 @@ type Querier interface {
 	// profile editor, and read on the turn path -- so the reads are narrow on purpose.
 	UpsertIdentityProfile(ctx context.Context, arg UpsertIdentityProfileParams) (AuraIdentityProfiles, error)
 	UpsertIdentityRecovery(ctx context.Context, arg UpsertIdentityRecoveryParams) error
+	UpsertLLMProviderRoute(ctx context.Context, arg UpsertLLMProviderRouteParams) (AuraLlmProviderRoutes, error)
 	UpsertMCPServer(ctx context.Context, arg UpsertMCPServerParams) (AuraMcpServer, error)
 	UpsertSetting(ctx context.Context, arg UpsertSettingParams) (AuraSettings, error)
 	// The setting half: an edit stales whatever evidence existed. last_event_id is kept so

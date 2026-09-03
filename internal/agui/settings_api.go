@@ -21,6 +21,7 @@ import (
 	"maps"
 	"net/http"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -96,6 +97,8 @@ func (s *Server) SetTelegramBotProbe(probe TelegramBotProbe) { s.telegramProbe =
 
 func (s *Server) registerSettingsRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/settings", s.handleListSettings)
+	mux.HandleFunc("GET /api/settings/llm-routes", s.handleListLLMRoutes)
+	mux.HandleFunc("GET /api/settings/llm-models", s.handleListLLMModels)
 	mux.HandleFunc("PUT /api/settings/llm-profile", s.handlePutLLMProfile)
 	mux.HandleFunc("POST /api/settings/telegram/check", s.handleCheckTelegramAvailability)
 	mux.HandleFunc("POST /api/settings/telegram/link", s.handleCreateSettingsTelegramLink)
@@ -259,6 +262,7 @@ func (s *Server) handlePutLLMProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	apply()
+	s.rememberProviderRoute(r.Context(), overrides, actor)
 	writeJSONStatus(w, http.StatusOK, map[string]any{
 		"updated": len(body.Settings), "restart_required": false,
 	})
@@ -357,6 +361,9 @@ func (s *Server) handlePutSetting(w http.ResponseWriter, r *http.Request) {
 	}
 	if applyRoute != nil {
 		applyRoute()
+	}
+	if slices.Contains(modelRouteKeys, key) {
+		s.rememberProviderRoute(r.Context(), routeOverrides, actor)
 	}
 	writeJSON(w, settingItemFromRow(meta, row))
 }

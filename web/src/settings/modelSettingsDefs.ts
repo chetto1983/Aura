@@ -1,4 +1,4 @@
-import type { SettingKind } from './settingsApi';
+import type { LLMProviderRoute, SettingKind } from './settingsApi';
 
 export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 export const OPENROUTER_MODEL = 'deepseek/deepseek-v4-flash:nitro';
@@ -155,13 +155,78 @@ function isOllamaBaseURL(value: string): boolean {
   }
 }
 
+export type ProviderChoice = 'cloud' | 'local' | 'ollama';
+
+/** One routing button: which provider it selects and the route to fall back on. */
+export interface ProviderOption {
+  readonly id: ProviderChoice;
+  readonly provider: string;
+  readonly labelKey: string;
+  /** Last-resort route, used ONLY for a provider that has never been saved or booted. */
+  readonly fallbackBaseURL: string;
+  readonly fallbackModel: string;
+}
+
+export const PROVIDER_OPTIONS: readonly ProviderOption[] = [
+  {
+    id: 'cloud',
+    provider: CLOUD_PROVIDER,
+    labelKey: 'settings.provider.cloud',
+    fallbackBaseURL: OPENROUTER_BASE_URL,
+    fallbackModel: OPENROUTER_MODEL,
+  },
+  {
+    id: 'local',
+    provider: LOCAL_PROVIDER,
+    labelKey: 'settings.provider.local',
+    fallbackBaseURL: LOCAL_BASE_URL,
+    fallbackModel: LOCAL_MODEL,
+  },
+  {
+    id: 'ollama',
+    provider: OLLAMA_PROVIDER,
+    labelKey: 'settings.provider.ollama',
+    fallbackBaseURL: OLLAMA_BASE_URL,
+    fallbackModel: OLLAMA_MODEL,
+  },
+];
+
+/** The route a provider button writes into the form. */
+export interface ResolvedRoute {
+  readonly baseURL: string;
+  readonly model: string;
+  /** Where it came from, so the panel can say whether the operator is seeing a real route. */
+  readonly source: 'stored' | 'loaded' | 'fallback';
+}
+
+// routeForProvider answers "what was this provider last pointed at". The stored row wins
+// because it is what that provider actually ran with; the route the panel LOADED is the
+// second source, so a daemon whose route comes from the environment and has never been
+// saved still restores its real endpoint; the compiled-in constant is the last resort and
+// only ever reached by a provider nobody has configured on this deployment.
+export function routeForProvider(
+  target: ProviderOption,
+  stored: readonly LLMProviderRoute[],
+  loaded: { readonly provider: string; readonly baseURL: string; readonly model: string },
+): ResolvedRoute {
+  const row = stored.find((route) => route.provider.trim().toLowerCase() === target.provider);
+  if (row !== undefined && row.base_url.trim() !== '' && row.model.trim() !== '') {
+    return { baseURL: row.base_url.trim(), model: row.model.trim(), source: 'stored' };
+  }
+  if (
+    resolveProvider(loaded.provider, loaded.baseURL) === target.id &&
+    loaded.baseURL.trim() !== '' &&
+    loaded.model.trim() !== ''
+  ) {
+    return { baseURL: loaded.baseURL.trim(), model: loaded.model.trim(), source: 'loaded' };
+  }
+  return { baseURL: target.fallbackBaseURL, model: target.fallbackModel, source: 'fallback' };
+}
+
 // resolveProvider decides which routing button reads as active. The stored provider is
 // authoritative because it is what the daemon actually boots with; the URL heuristic is
 // only the fallback for a deployment whose row was never written.
-export function resolveProvider(
-  storedProvider: string,
-  baseURL: string,
-): 'cloud' | 'local' | 'ollama' {
+export function resolveProvider(storedProvider: string, baseURL: string): ProviderChoice {
   const normalized = storedProvider.trim().toLowerCase();
   if (normalized === OLLAMA_PROVIDER) return 'ollama';
   if (normalized === LOCAL_PROVIDER) return 'local';

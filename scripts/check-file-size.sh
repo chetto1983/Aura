@@ -29,11 +29,18 @@ fi
 # Source files this cap governs, minus generated, vendored, and build-output
 # trees. (`*.d.ts` and `dist/` are generated; node_modules vendored.) Applied to
 # both modes so a caller-supplied list (staged files) honours the same exemptions.
+#
+# web/src/components/model-selector*.tsx are vendored the same way, just not under a
+# directory that says so: `npx shadcn add @assistant-ui/model-selector` writes them to
+# the aliased components dir, and re-running the installer overwrites them there.
+# Splitting one to fit the cap would be undone by the next update, and the cap exists
+# to stop OUR files from growing into god classes.
 select_targets() {
   grep -E '\.(go|ts|tsx)$' \
     | grep -v -E '^internal/db/sqlc/' \
     | grep -v -E '^third_party/' \
     | grep -v -E '^vendor/' \
+    | grep -v -E '^web/src/components/model-selector(.aui)?.tsx$' \
     | grep -v -E '(^|/)node_modules/' \
     | grep -v -E '(^|/)dist/' \
     | grep -v -E '\.d\.ts$' \

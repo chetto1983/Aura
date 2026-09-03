@@ -16,7 +16,11 @@ import (
 )
 
 func wireSettingsProviders(server *agui.Server, chat *chatEnv) {
-	server.SetSettingsStore(settings.NewStore(chat.pool))
+	store := settings.NewStore(chat.pool)
+	server.SetSettingsStore(store)
+	// Same store, second seam: aura.llm_provider_routes is a different table with a
+	// different meaning (the memory of each provider's route, not the active one).
+	server.SetLLMRouteStore(store)
 	server.SetTelegramBotProbe(telegramGetMeProbe)
 	server.SetLLMRuntime(chat.llmRuntime)
 	server.SetLLMRouteReloader(&primaryLLMRouteReloader{

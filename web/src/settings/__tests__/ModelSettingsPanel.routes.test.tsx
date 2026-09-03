@@ -90,9 +90,13 @@ describe('ModelSettingsPanel routes', () => {
     expect(screen.getAllByText('Configured').length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole('button', { name: 'Local' }));
-    fireEvent.change(screen.getByLabelText('Primary model'), {
+    // The model box is a picker over the endpoint's catalogue; an id the endpoint does not
+    // publish is still committable, which is the path this asserts.
+    fireEvent.click(screen.getByLabelText('Primary model'));
+    fireEvent.change(await screen.findByPlaceholderText('Search models...'), {
       target: { value: 'qwen2.5-coder:14b' },
     });
+    fireEvent.click(await screen.findByText(/Use "qwen2.5-coder:14b" as typed/));
     fireEvent.change(screen.getByLabelText('Primary base URL'), {
       target: { value: 'http://aura-vllm-chat:8000/v1' },
     });

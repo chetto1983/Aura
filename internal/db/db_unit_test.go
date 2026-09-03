@@ -365,14 +365,17 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// fact-write can evaluate it -- and 0115 persists context_tokens, the window
 	// occupancy of a round's final call, which was computed on every turn and thrown
 	// away while the gauge served input_tokens (the BILL, summed over the round's calls)
-	// in its place, and 0116 records what a turn was sent with -- a link nothing
+	// in its place, 0116 records what a turn was sent with -- a link nothing
 	// held, which left the web client zipping assets onto user turns by position and
-	// rendering an image sent with the third message against the first. The
+	// rendering an image sent with the third message against the first -- and 0117
+	// remembers the base URL and model each provider was last saved with, so the
+	// cockpit's Cloud/Local/Ollama buttons restore a route that ran instead of a
+	// constant compiled into the browser bundle. The
 	// test exists so a migration added without noticing breaks the build rather than
 	// deployment; bumping it is the intended acknowledgement, never an incidental
 	// red-to-green fix.
-	if head != 116 {
-		t.Fatalf("MigrationHead=%d, want embedded head 116", head)
+	if head != 117 {
+		t.Fatalf("MigrationHead=%d, want embedded head 117", head)
 	}
 }
 

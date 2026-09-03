@@ -22,6 +22,15 @@ export default tseslint.config(
       // Plain Node test-infra script (a local TLS terminator for the WebKit e2e
       // project); not part of any TS project, so exclude it from typed linting.
       'e2e/https-proxy.mjs',
+      // Vendored registry components, installed verbatim with `npx shadcn add`
+      // (@assistant-ui/model-selector and the cmdk/popover primitives it pulls in).
+      // They are upstream source, refreshed by re-running the installer: linting them
+      // to Aura's house style would mean re-fixing them on every update, and a local
+      // edit here is a change you lose without noticing.
+      'src/components/model-selector.tsx',
+      'src/components/model-selector.aui.tsx',
+      'src/components/ui/command.tsx',
+      'src/components/ui/popover.tsx',
     ],
   },
   js.configs.recommended,

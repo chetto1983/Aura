@@ -25,6 +25,24 @@ export interface SettingsList {
   readonly restart_keys?: readonly string[];
 }
 
+/** One provider's remembered route (aura.llm_provider_routes): what it was last saved with. */
+export interface LLMProviderRoute {
+  readonly provider: string;
+  readonly base_url: string;
+  readonly model: string;
+  readonly updated_at?: string;
+  readonly updated_by?: string;
+}
+
+/** One model the configured endpoint publishes. Rates are per 1M tokens and OpenRouter-only. */
+export interface LLMCatalogModel {
+  readonly id: string;
+  readonly context_window?: number;
+  readonly input_per_1m?: number;
+  readonly output_per_1m?: number;
+  readonly has_price: boolean;
+}
+
 export interface TelegramAvailability {
   readonly configured: boolean;
   readonly available: boolean;
@@ -73,6 +91,33 @@ export async function fetchSettings(): Promise<SettingsList> {
     credentials: 'same-origin',
   });
   return readJSON<SettingsList>(res);
+}
+
+// A daemon older than migration 0117 has no route memory and answers 404/503. That is not
+// an error worth showing: the panel simply falls back to its built-in defaults.
+export async function fetchLLMRoutes(): Promise<readonly LLMProviderRoute[]> {
+  const res = await fetch('/api/settings/llm-routes', {
+    headers: { Accept: 'application/json' },
+    credentials: 'same-origin',
+  });
+  if (!res.ok) return [];
+  const body = (await res.json()) as { readonly routes?: readonly LLMProviderRoute[] };
+  return body.routes ?? [];
+}
+
+// The probed route is the one in the FORM, not the saved one: the point is to see what an
+// endpoint serves before committing to it.
+export async function fetchLLMModels(
+  provider: string,
+  baseURL: string,
+): Promise<readonly LLMCatalogModel[]> {
+  const query = new URLSearchParams({ provider, base_url: baseURL });
+  const res = await fetch(`/api/settings/llm-models?${query.toString()}`, {
+    headers: { Accept: 'application/json' },
+    credentials: 'same-origin',
+  });
+  const body = await readJSON<{ readonly models?: readonly LLMCatalogModel[] }>(res);
+  return body.models ?? [];
 }
 
 export async function putSetting(key: string, value: string): Promise<SettingItem> {

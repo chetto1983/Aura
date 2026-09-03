@@ -26,7 +26,11 @@ function user(text: string, attachmentIds?: readonly string[]): ThreadMessageLik
 
 const assistant: ThreadMessageLike = { role: 'assistant', content: [{ type: 'text', text: 'ok' }] };
 
-function attachmentsOf(message: ThreadMessageLike): readonly Asset[] {
+// Indexing here rather than at every call site: an out-of-range turn is a broken test, and
+// saying so beats eleven non-null assertions that lie about what the array holds.
+function attachmentsOf(messages: readonly ThreadMessageLike[], index: number): readonly Asset[] {
+  const message = messages[index];
+  if (message === undefined) throw new Error(`no message at index ${String(index)}`);
   const custom = message.metadata?.custom as { attachments?: readonly Asset[] } | undefined;
   return custom?.attachments ?? [];
 }
@@ -40,9 +44,9 @@ describe('attachAssetsToUserMessages', () => {
 
     const folded = attachAssetsToUserMessages(messages, [asset('a1')]);
 
-    expect(attachmentsOf(folded[0]!)).toHaveLength(0);
-    expect(attachmentsOf(folded[2]!)).toHaveLength(0);
-    expect(attachmentsOf(folded[4]!).map((a) => a.id)).toEqual(['a1']);
+    expect(attachmentsOf(folded, 0)).toHaveLength(0);
+    expect(attachmentsOf(folded, 2)).toHaveLength(0);
+    expect(attachmentsOf(folded, 4).map((a) => a.id)).toEqual(['a1']);
   });
 
   it('keeps a declared turn ordered and whole when several files were sent at once', () => {
@@ -50,7 +54,7 @@ describe('attachAssetsToUserMessages', () => {
 
     const folded = attachAssetsToUserMessages(messages, [asset('a2'), asset('a1')]);
 
-    expect(attachmentsOf(folded[0]!).map((a) => a.id)).toEqual(['a1', 'a2']);
+    expect(attachmentsOf(folded, 0).map((a) => a.id)).toEqual(['a1', 'a2']);
   });
 
   // A turn saved before the column exists has nothing to declare, so the old rule is all
@@ -60,8 +64,8 @@ describe('attachAssetsToUserMessages', () => {
 
     const folded = attachAssetsToUserMessages(messages, [asset('a1'), asset('a2')]);
 
-    expect(attachmentsOf(folded[0]!).map((a) => a.id)).toEqual(['a1']);
-    expect(attachmentsOf(folded[2]!).map((a) => a.id)).toEqual(['a2']);
+    expect(attachmentsOf(folded, 0).map((a) => a.id)).toEqual(['a1']);
+    expect(attachmentsOf(folded, 2).map((a) => a.id)).toEqual(['a2']);
   });
 
   // A conversation continued across the deploy carries both kinds. The leftovers of the
@@ -71,8 +75,8 @@ describe('attachAssetsToUserMessages', () => {
 
     const folded = attachAssetsToUserMessages(messages, [asset('a1'), asset('a2')]);
 
-    expect(attachmentsOf(folded[0]!).map((a) => a.id)).toEqual(['a1']);
-    expect(attachmentsOf(folded[2]!).map((a) => a.id)).toEqual(['a2']);
+    expect(attachmentsOf(folded, 0).map((a) => a.id)).toEqual(['a1']);
+    expect(attachmentsOf(folded, 2).map((a) => a.id)).toEqual(['a2']);
   });
 
   // A declared id whose asset is gone renders nothing rather than a card for bytes that
@@ -82,7 +86,7 @@ describe('attachAssetsToUserMessages', () => {
 
     const folded = attachAssetsToUserMessages(messages, [asset('gone', { status: 'deleted' })]);
 
-    expect(attachmentsOf(folded[0]!)).toHaveLength(0);
+    expect(attachmentsOf(folded, 0)).toHaveLength(0);
   });
 
   // Documents are not a special case -- the ids are modality-blind on purpose, because a
@@ -93,7 +97,7 @@ describe('attachAssetsToUserMessages', () => {
 
     const folded = attachAssetsToUserMessages(messages, [pdf]);
 
-    expect(attachmentsOf(folded[0]!)).toHaveLength(0);
-    expect(attachmentsOf(folded[2]!).map((a) => a.id)).toEqual(['doc']);
+    expect(attachmentsOf(folded, 0)).toHaveLength(0);
+    expect(attachmentsOf(folded, 2).map((a) => a.id)).toEqual(['doc']);
   });
 });

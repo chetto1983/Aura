@@ -403,6 +403,15 @@ type AuraIngestionJobs struct {
 	LeaseGeneration    int64              `json:"lease_generation"`
 }
 
+// Last base URL + model saved for each primary-LLM provider, so the cockpit restores a real route when the operator switches provider instead of a hard-coded placeholder. Not read at boot: aura.settings owns the active route.
+type AuraLlmProviderRoutes struct {
+	Provider  string             `json:"provider"`
+	BaseUrl   string             `json:"base_url"`
+	Model     string             `json:"model"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	UpdatedBy pgtype.Text        `json:"updated_by"`
+}
+
 // Append-only MCP-config-mutation audit ledger (Phase 29, MCPW-02). aura_app has SELECT+INSERT only; UPDATE/DELETE raise via a row trigger and TRUNCATE via a statement trigger (Pitfall 3). One immutable row per MCP config mutation, written inside the mutation db.WithTx.
 type AuraMcpAudit struct {
 	ID              pgtype.UUID        `json:"id"`
