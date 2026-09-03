@@ -324,29 +324,10 @@ func (c *Client) UpsertFact(ctx context.Context, fact Fact, now time.Time) (Fact
 	if err != nil {
 		return FactWrite{}, err
 	}
-	classified := make([]EntityClass, 0, 2)
-	for _, entity := range []struct{ name, kind, pole string }{
-		{fact.Subject, fact.SubjectKind, fact.SubjectPole},
-		{fact.Object, fact.ObjectKind, fact.ObjectPole},
-	} {
-		class, refused := poleClassFor(entity.pole, entity.kind)
-		record := EntityClass{Name: entity.name, Pole: class, Kind: entity.kind, RequestRefused: refused}
-		if existing, ok := heldClasses[entity.name]; ok && existing != "" {
-			if existing != class {
-				record.HeldPole = existing
-			}
-			class, record.Pole = existing, existing
-		}
-		params := map[string]any{"name": entity.name}
-		if entity.kind != "" {
-			params["kind"] = entity.kind
-		}
-		if _, err := c.upsertEntityWithRetry(ctx,
-			upsertEntityInClass(class, entity.kind != ""), params); err != nil {
-			return FactWrite{}, fmt.Errorf("arcadedb: upsert entity %q as %s: %w", entity.name, class, err)
-		}
-		classified = append(classified, record)
-	}
+	// Classified NOW, minted LATER. Resolving the class is a pure decision over what the
+	// caller asked for and what the endpoints already are; creating the vertices is a
+	// write, and a write must not happen before this call knows it is going to keep it.
+	classified, mints := classifyFactEndpoints(fact, heldClasses)
 	factKey := factIdentity(fact)
 	// Serializes this whole attach-or-create-or-supersede sequence against
 	// any OTHER concurrent UpsertFact call for the SAME fact_key in this
@@ -358,9 +339,21 @@ func (c *Client) UpsertFact(ctx context.Context, fact Fact, now time.Time) (Fact
 	if vocabulary != nil {
 		written.Coined = coinedEntities(vocabulary, fact.Subject, fact.Object)
 	}
-	if attached, err := c.attachFactSource(ctx, factKey, fact.Source, now); err != nil {
+	// A fact written already-closed carries no key (activeFactKey), so it has to be
+	// found by its content instead -- otherwise every replay of a historical record
+	// creates another copy. See memory_fact_selector.go.
+	selector := activeFactSelector(factKey)
+	if activeFactKey(factKey, fact.ValidTo, now) == nil {
+		selector = historicalFactSelector(fact, validFrom, fact.ValidTo)
+	}
+	if attached, err := c.attachFactSource(ctx, selector, fact.Source, now); err != nil {
 		return FactWrite{}, err
 	} else if attached {
+		// The fact already existed, so its endpoints do too; minting refreshes the kind
+		// the caller supplied for them.
+		if err := c.mintEntities(ctx, mints); err != nil {
+			return FactWrite{}, err
+		}
 		return written, nil
 	}
 	if fact.Supersedes {
@@ -388,6 +381,17 @@ func (c *Client) UpsertFact(ctx context.Context, fact Fact, now time.Time) (Fact
 		}
 		written.Superseded = outcome.Closed
 	}
+	// Past every refusal, so the endpoints are minted for a fact that is about to exist.
+	// They used to be minted before the supersede was resolved, which made a REFUSED
+	// correction leave its endpoints behind: measured 2026-09-03 through the MCP surface,
+	// an ambiguous supersede answered `refused: true` and still coined its object as an
+	// entity with no facts. That contradicts this function's own contract -- "the new fact
+	// itself was not created" -- and the orphan lands in memory_entities, which exists to
+	// be read BEFORE coining a name, so a refused write taught the vocabulary a name
+	// nothing supports.
+	if err := c.mintEntities(ctx, mints); err != nil {
+		return FactWrite{}, err
+	}
 	params := map[string]any{
 		"subject_name": fact.Subject,
 		"object_name":  fact.Object,
@@ -408,7 +412,7 @@ func (c *Client) UpsertFact(ctx context.Context, fact Fact, now time.Time) (Fact
 		params["embedding"] = vector
 		statement += createFactEmbeddingClause
 	}
-	if err := c.createFactWithRetry(ctx, statement, params, factKey, fact.Source, now); err != nil {
+	if err := c.createFactWithRetry(ctx, statement, params, selector, fact.Source, now); err != nil {
 		return FactWrite{}, err
 	}
 	return written, nil

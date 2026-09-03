@@ -97,7 +97,7 @@ func (c *Client) recallOpen(ctx context.Context, request RecallRequest) (RecallR
 	if recallConversationExcluded(request.ExcludeConversationIDs, cursor.ConversationID) {
 		return activeConversationExcludedRecallResult(), nil
 	}
-	return c.recallCursorPage(ctx, cursor)
+	return c.recallCursorPage(ctx, cursor, recallPageOpened)
 }
 
 func (c *Client) recallScroll(ctx context.Context, request RecallRequest) (RecallResult, error) {
@@ -108,18 +108,33 @@ func (c *Client) recallScroll(ctx context.Context, request RecallRequest) (Recal
 	if strings.TrimSpace(request.IdentityID) != cursor.IdentityID {
 		return RecallResult{}, fmt.Errorf("arcadedb: recall cursor identity mismatch")
 	}
-	if strings.TrimSpace(request.ConversationID) != cursor.ConversationID {
+	// Omission is not a mismatch. The cursor already carries the conversation, the
+	// anchor, the direction and the page size, and the tool calls it opaque -- so
+	// `scroll` with nothing but the cursor is the natural call, and it used to fail
+	// with "conversation mismatch", an error that reads like corruption rather than
+	// like a missing argument. A caller that DOES supply one of these and contradicts
+	// the cursor is still refused: that is real confusion about what is being paged,
+	// not an omission.
+	//
+	// The identity check above stays unconditional and is the only one that guards
+	// anything: identity is host-derived, never caller-supplied, so refusing a cursor
+	// minted for another identity is a tenancy boundary rather than a restatement.
+	if id := strings.TrimSpace(request.ConversationID); id != "" && id != cursor.ConversationID {
 		return RecallResult{}, fmt.Errorf("arcadedb: recall cursor conversation mismatch")
 	}
-	if request.AnchorSeq != cursor.AnchorSeq {
+	if request.AnchorSeq != 0 && request.AnchorSeq != cursor.AnchorSeq {
 		return RecallResult{}, fmt.Errorf("arcadedb: recall cursor anchor mismatch")
 	}
-	direction, err := normalizeRecallDirection(request.Direction)
-	if err != nil {
-		return RecallResult{}, err
-	}
-	if direction != cursor.Direction {
-		return RecallResult{}, fmt.Errorf("arcadedb: recall cursor direction mismatch")
+	// Read the RAW direction: normalizeRecallDirection turns an omitted direction into
+	// `after`, which would silently contradict a `before` cursor.
+	if request.Direction != "" {
+		direction, err := normalizeRecallDirection(request.Direction)
+		if err != nil {
+			return RecallResult{}, err
+		}
+		if direction != cursor.Direction {
+			return RecallResult{}, fmt.Errorf("arcadedb: recall cursor direction mismatch")
+		}
 	}
 	if request.Limit > 0 && boundedLimit(request.Limit, recallBrowseDefaultPage, recallBrowseMaxPage) != cursor.PageSize {
 		return RecallResult{}, fmt.Errorf("arcadedb: recall cursor page size mismatch")
@@ -127,10 +142,25 @@ func (c *Client) recallScroll(ctx context.Context, request RecallRequest) (Recal
 	if recallConversationExcluded(request.ExcludeConversationIDs, cursor.ConversationID) {
 		return activeConversationExcludedRecallResult(), nil
 	}
-	return c.recallCursorPage(ctx, cursor)
+	return c.recallCursorPage(ctx, cursor, recallPageFollowed)
 }
 
-func (c *Client) recallCursorPage(ctx context.Context, cursor RecallCursor) (RecallResult, error) {
+// An empty page means two different things, and answering both with the same reason sends
+// the caller looking for a bug that is not there. Opening a conversation at an anchor that
+// holds no turn is a bad request; following a next_cursor to the end is the conversation
+// simply running out, with nothing wrong about the anchor or the conversation.
+type recallPageOrigin int
+
+const (
+	recallPageOpened recallPageOrigin = iota
+	recallPageFollowed
+)
+
+func (c *Client) recallCursorPage(
+	ctx context.Context,
+	cursor RecallCursor,
+	origin recallPageOrigin,
+) (RecallResult, error) {
 	statement := recallConversationAfterStatement
 	if cursor.Direction == RecallDirectionBefore {
 		statement = recallConversationBeforeStatement
@@ -157,21 +187,45 @@ func (c *Client) recallCursorPage(ctx context.Context, cursor RecallCursor) (Rec
 		slices.Reverse(turns)
 	}
 	if len(turns) == 0 {
+		reason := "conversation_anchor_not_found"
+		if origin == recallPageFollowed {
+			reason = "conversation_exhausted"
+		}
 		return RecallResult{
 			Evidence: make([]RecallEvidence, 0), Abstained: true,
-			Reason:    "conversation_anchor_not_found",
+			Reason:    reason,
 			Retrieval: RecallRetrieval{Path: retrievalPathGraph},
 		}, nil
 	}
-	next := cursor
-	if cursor.Direction == RecallDirectionBefore {
-		next.AnchorSeq = turns[0].Seq
-	} else {
-		next.AnchorSeq = turns[len(turns)-1].Seq
-	}
-	nextCursor, err := encodeRecallCursor(next)
-	if err != nil {
-		return RecallResult{}, err
+	// The next page starts PAST what this one returned, and there is no next page when
+	// this one was short.
+	//
+	// Both halves were missing and together they did not terminate. The page statements
+	// are inclusive (`turn_seq >= :anchor_seq`), which is right for `open` -- the anchor
+	// turn belongs in its own window -- but the next cursor was set to the last turn
+	// RETURNED, so every following page repeated the previous page's boundary turn. At
+	// the end of a conversation that made the cursor a fixed point: measured on a live
+	// conversation whose last turn is 10, `scroll` after turn 10 returned turn 10 again
+	// and a next_cursor byte-identical to the one passed in, so a client following
+	// next_cursor to exhaustion never stops.
+	nextCursor := ""
+	if len(turns) == cursor.PageSize {
+		next := cursor
+		if cursor.Direction == RecallDirectionBefore {
+			next.AnchorSeq = turns[0].Seq - 1
+		} else {
+			next.AnchorSeq = turns[len(turns)-1].Seq + 1
+		}
+		// Seq 0 is before the first turn, and the cursor's own validation rejects it.
+		// Reaching it means the conversation is exhausted, which is what an absent
+		// cursor says.
+		if next.AnchorSeq > 0 {
+			encoded, err := encodeRecallCursor(next)
+			if err != nil {
+				return RecallResult{}, err
+			}
+			nextCursor = encoded
+		}
 	}
 	window := RecallConversationWindow{
 		ConversationID: cursor.ConversationID, AnchorSeq: cursor.AnchorSeq, Turns: turns,

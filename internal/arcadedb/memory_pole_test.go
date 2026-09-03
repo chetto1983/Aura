@@ -31,6 +31,27 @@ func TestPoleClassForMapsEveryKindTheCorpusActuallyHeld(t *testing.T) {
 	}
 }
 
+// The kinds the file's own doc comment cites as the model's canonical refinements have
+// to BE in the map. Four of them were not, so the prose promised a classification the
+// code did not perform: measured live on 2026-09-03, a fresh `Vehicle` and a fresh `City`
+// both landed in Other while Object and Location stayed empty. The labels come from the
+// official example's nodes (neo4j-graph-examples/pole), so this table is a restatement of
+// the reference rather than of anyone's expectation.
+func TestPoleClassForMapsTheReferenceModelsOwnRefinements(t *testing.T) {
+	reference := map[string]string{
+		"Officer":  "Person",
+		"Vehicle":  "Object",
+		"Phone":    "Object",
+		"PostCode": "Location",
+		"Crime":    "Event",
+	}
+	for kind, want := range reference {
+		if got, refused := poleClassFor("", kind); got != want || refused {
+			t.Errorf("poleClassFor(\"\", %q) = %q refused=%v, want %q", kind, got, refused, want)
+		}
+	}
+}
+
 // The point of a closed set is that it cannot be widened by a writer. A class nobody
 // declared must land in Other AND be reported, or the caller learns nothing and the next
 // write repeats it.

@@ -2,6 +2,7 @@ package arcadedb
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -319,26 +320,50 @@ func TestUpsertFactCreatesEntitiesThenTheEdge(t *testing.T) {
 	if !strings.Contains(rec.statements[1], "@type AS pole") {
 		t.Fatalf("entity classes not read before the write:\n%s", rec.joined())
 	}
-	if !strings.Contains(rec.statements[2], "UPSERT") || !strings.Contains(rec.statements[3], "UPSERT") {
-		t.Fatalf("entities not upserted after the scans:\n%s", rec.joined())
+	// The two mints sit between the reads and the edge. They are found rather than
+	// indexed: minting moved LATER, past every point this call can still refuse, so that
+	// a refused correction leaves no orphan endpoint behind -- and an assertion naming a
+	// position has to be rewritten every time a step is added, while saying nothing about
+	// what actually has to be true.
+	mints := []int{}
+	for at, statement := range rec.statements {
+		if strings.Contains(statement, "UPSERT") {
+			mints = append(mints, at)
+		}
+	}
+	if len(mints) != 2 {
+		t.Fatalf("entities not upserted:\n%s", rec.joined())
 	}
 	// Entities are minted into a POLE class, never the bare supertype: one written as
 	// Entity carries no class at all, which is the hole a closed set exists to close.
-	for _, at := range []int{2, 3} {
+	for _, at := range mints {
 		if strings.HasPrefix(rec.statements[at], "UPDATE Entity ") {
 			t.Fatalf("entity minted on the bare supertype, not a POLE class: %s", rec.statements[at])
 		}
 	}
-	if !strings.Contains(rec.statements[4], "SET fact_key = NULL") {
-		t.Fatalf("expired fact key release missing: %s", rec.statements[4])
+	edge := len(rec.statements) - 1
+	if mints[1] >= edge {
+		t.Fatalf("endpoints not minted before the edge that needs them:\n%s", rec.joined())
 	}
-	if !strings.Contains(rec.statements[5], "WHERE fact_key = :fact_key") {
-		t.Fatalf("exact replay lookup missing: %s", rec.statements[5])
+	release := slices.IndexFunc(rec.statements, func(statement string) bool {
+		return strings.Contains(statement, "SET fact_key = NULL")
+	})
+	lookup := slices.IndexFunc(rec.statements, func(statement string) bool {
+		return strings.Contains(statement, "WHERE fact_key = :fact_key AND expired_at IS NULL")
+	})
+	if release < 0 || lookup < 0 {
+		t.Fatalf("stale-key release or exact replay lookup missing:\n%s", rec.joined())
 	}
-	if !strings.HasPrefix(rec.statements[6], "CREATE EDGE FACT") {
-		t.Fatalf("edge not created last: %s", rec.statements[6])
+	// Both run BEFORE the endpoints are minted: they decide whether this write becomes a
+	// provenance attach instead of a new fact, and that decision must not have coined
+	// anything yet.
+	if release > mints[0] || lookup > mints[0] {
+		t.Fatalf("replay decision made after minting the endpoints:\n%s", rec.joined())
 	}
-	params := rec.params[6]
+	if !strings.HasPrefix(rec.statements[edge], "CREATE EDGE FACT") {
+		t.Fatalf("edge not created last: %s", rec.statements[edge])
+	}
+	params := rec.params[edge]
 	if params["valid_from"] != now.Format(time.RFC3339) {
 		t.Fatalf("valid_from = %v, want a default of now", params["valid_from"])
 	}

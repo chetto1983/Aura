@@ -354,3 +354,58 @@ func TestArcadeGraphViewPropagatesGraphReadFailures(t *testing.T) {
 		t.Fatal("expected the graph read failure to surface")
 	}
 }
+
+// Filtering to one small label used to come back EMPTY.
+//
+// The overview queries edge types first, and those queries drag their endpoints in with
+// them. The vertex loop then spent its budget on those endpoints — types the caller never
+// selected — broke before it reached the chosen label, and projectStudioGraph discarded
+// everything it had for having the wrong label. Measured in the cockpit on 2026-09-03:
+// filtering to ReasoningToolCall showed 0 nodes and 0 connections against a database
+// holding 7 of them, with every relationship type still selected.
+func TestArcadeGraphViewFilteredLabelSurvivesEdgeEndpoints(t *testing.T) {
+	const nodeCap = 4
+	crowd := arcadedb.StudioGraph{
+		Edges: []arcadedb.StudioEdge{{RID: "#5:0", Type: "HAS_TURN", Out: "#1:0", In: "#1:1"}},
+		// The endpoints an edge query returns: a type the caller did NOT select, and
+		// enough of them to fill the budget on their own.
+		Vertices: []arcadedb.StudioVertex{
+			{RID: "#1:0", Type: "Conversation", Properties: map[string]any{"conversation_id": "c"}},
+			{RID: "#1:1", Type: "ConversationTurn", Properties: map[string]any{"content": "a"}},
+			{RID: "#1:2", Type: "ConversationTurn", Properties: map[string]any{"content": "b"}},
+			{RID: "#1:3", Type: "ConversationTurn", Properties: map[string]any{"content": "c"}},
+			{RID: "#1:4", Type: "ConversationTurn", Properties: map[string]any{"content": "d"}},
+		},
+	}
+	wanted := arcadedb.StudioGraph{
+		Vertices: []arcadedb.StudioVertex{
+			{RID: "#9:0", Type: "ReasoningToolCall", Properties: map[string]any{"tool_name": "send_file"}},
+		},
+	}
+	view := NewArcadeGraphView(&stubSchemaReader{
+		schema: arcadedb.Schema{
+			Vertices: []arcadedb.SchemaType{
+				{Name: "Conversation", Kind: "vertex"},
+				{Name: "ConversationTurn", Kind: "vertex"},
+				{Name: "ReasoningToolCall", Kind: "vertex"},
+			},
+			Edges: []arcadedb.SchemaType{{Name: "HAS_TURN", Kind: "edge"}},
+		},
+		graphs: map[string]arcadedb.StudioGraph{
+			"HAS_TURN":          crowd,
+			"ReasoningToolCall": wanted,
+		},
+	})
+
+	got, err := view.Query(context.Background(), GraphIntent{
+		Op: OpOverview, UserID: "id-1",
+		Labels:  []string{"ReasoningToolCall"},
+		NodeCap: nodeCap, EdgeCap: 4,
+	})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if len(got.Nodes) != 1 || got.Nodes[0].ID != "#9:0" {
+		t.Fatalf("nodes = %+v, want the one ReasoningToolCall the filter asked for", got.Nodes)
+	}
+}

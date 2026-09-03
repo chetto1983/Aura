@@ -205,3 +205,40 @@ func (tx *memoryBatchAmbiguousCommit) Commit(ctx context.Context) error {
 	}
 	return nil
 }
+
+// A batch must be able to mint an entity in the class the caller named. It could not:
+// the batch's own state carried the kind alone, so the store resolved every class with
+// `poleClassFor("", kind)` and an explicit class had nowhere to travel. Measured live on
+// 2026-09-03 through the MCP surface, an `Inspector` written with subject_pole `Person`
+// landed in Other -- and no unit test saw it, because the field WAS threaded correctly as
+// far as arcadedb.Fact. Only the class the server actually minted tells the truth, so
+// this test reads @type back off the vertex.
+func TestMemoryBatchLive_MintsTheEntityInTheClassTheCallerNamed(t *testing.T) {
+	client := disposableMemoryClient(t)
+	ctx := context.Background()
+	actor := MemoryBatchActor{IdentityID: "batch-live-pole", WriterRole: WriterParent}
+	at := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+
+	upsert := memoryBatchTestUpsert("BatchPoleInspector", "assigned_to", "BatchPoleRobbery", "pole-run")
+	// Inspector maps to nothing, so only the explicit class can put it in Person; Crime is
+	// in the map, so the object proves the kind path still decides when no class is given.
+	upsert.Fact.SubjectKind, upsert.Fact.SubjectPole = "Inspector", "Person"
+	upsert.Fact.ObjectKind = "Crime"
+
+	if _, err := client.ApplyMemoryBatch(ctx, actor,
+		MemoryBatchRequest{IdempotencyKey: "live-pole", Operations: []MemoryBatchOperation{upsert}},
+		at); err != nil {
+		t.Fatalf("ApplyMemoryBatch: %v", err)
+	}
+
+	classes, err := client.entityClassScan(ctx, "BatchPoleInspector", "BatchPoleRobbery")
+	if err != nil {
+		t.Fatalf("entityClassScan: %v", err)
+	}
+	if got := classes["BatchPoleInspector"]; got != "Person" {
+		t.Errorf("explicit class ignored: BatchPoleInspector minted as %q, want Person", got)
+	}
+	if got := classes["BatchPoleRobbery"]; got != "Event" {
+		t.Errorf("kind-derived class wrong: BatchPoleRobbery minted as %q, want Event", got)
+	}
+}

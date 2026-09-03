@@ -3,6 +3,8 @@ package mcptools
 import (
 	"bytes"
 	"log/slog"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -20,76 +22,80 @@ import (
 // order-independent against the rest of the package's tests without needing
 // isolation via parallelism.
 
-// TestDeferralCountModelFacing covers countModelFacing's four documented cases:
-// a plain count, the real memory tool surface (11 advertised, 8 hidden -> 3),
-// an empty listing, and exact-byte-string name comparison (no case folding).
-func TestDeferralCountModelFacing(t *testing.T) {
-	t.Run("plain count with nothing hidden", func(t *testing.T) {
-		advertised := []*sdkmcp.Tool{
-			mustTool("a", "a", nil, nil),
-			mustTool("b", "b", nil, nil),
-			mustTool("c", "c", nil, nil),
-		}
-		if got := countModelFacing(bridgePolicy{}, advertised); got != 3 {
-			t.Fatalf("countModelFacing = %d, want 3", got)
-		}
-	})
+// TestDeferralEveryAdvertisedToolIsBridged pins what replaced the memory hidden set.
+//
+// Memory used to hide eight of its eleven tools, and hiding was not deferral:
+// bridgeToolsWithPolicy skipped them, so they were absent from the model's world and
+// tool_search could not reach them. Read back from the live database on 2026-09-03, the
+// agent answered every memory question with memory_recall because recall, upsert and
+// batch were the only three it held, while the skill instructing it to read
+// memory_entities first named a tool that did not exist for it.
+//
+// The rule now is simply that every advertised tool is bridged. Deferral decides what
+// rides in each turn's manifest; it never decides what exists.
+func TestDeferralEveryAdvertisedToolIsBridged(t *testing.T) {
+	// The real cmd/arcadedb-mcp surface.
+	names := []string{
+		"memory_entities", "memory_digest", "memory_merge_entities", "memory_forget",
+		"memory_batch", "graph_schema", "memory_upsert_fact", "memory_recall",
+		"memory_search", "memory_facts_about", "memory_reembed",
+	}
+	advertised := make([]*sdkmcp.Tool, 0, len(names))
+	for _, name := range names {
+		advertised = append(advertised, mustTool(name, "d", nil, nil))
+	}
 
-	t.Run("memory policy hides eight of the real eleven tool names", func(t *testing.T) {
-		// The real cmd/arcadedb-mcp surface: 11 advertised, 8 in
-		// memoryHiddenFromModel (bridge_policy.go), so 3 model-facing --
-		// recall, upsert, batch.
-		advertised := []*sdkmcp.Tool{
-			mustTool("memory_entities", "d", nil, nil),
-			mustTool("memory_digest", "d", nil, nil),
-			mustTool("memory_merge_entities", "d", nil, nil),
-			mustTool("memory_forget", "d", nil, nil),
-			mustTool("memory_batch", "d", nil, nil),
-			mustTool("graph_schema", "d", nil, nil),
-			mustTool("memory_upsert_fact", "d", nil, nil),
-			mustTool("memory_recall", "d", nil, nil),
-			mustTool("memory_search", "d", nil, nil),
-			mustTool("memory_facts_about", "d", nil, nil),
-			mustTool("memory_reembed", "d", nil, nil),
+	resetLoadedSlotBudgetForTest()
+	bridged := bridgeToolsWithPolicy("memory", nil, advertised, time.Second, bridgePolicy{memorySurface: true})
+	if len(bridged) != len(names) {
+		t.Fatalf("bridged %d of %d memory tools — a tool the model cannot see is worse than one it must search for",
+			len(bridged), len(names))
+	}
+	got := make(map[string]bool, len(bridged))
+	for _, tool := range bridged {
+		got[tool.Spec().Name] = true
+	}
+	for _, name := range names {
+		if !got[namespacedName("memory", name)] {
+			t.Errorf("%s was not bridged", name)
 		}
-		if got := countModelFacing(bridgePolicy{memorySurface: true}, advertised); got != 3 {
-			t.Fatalf("countModelFacing (memory policy) = %d, want 3", got)
+	}
+	// Four ride every turn's manifest; the other seven are deferred -- present, and
+	// reached with one tool_search exactly like web_search.
+	manifest := []string{}
+	for _, tool := range bridged {
+		if !tool.Spec().Deferred {
+			manifest = append(manifest, tool.Spec().Name)
 		}
-	})
-
-	t.Run("empty advertised list", func(t *testing.T) {
-		if got := countModelFacing(bridgePolicy{}, nil); got != 0 {
-			t.Fatalf("countModelFacing(nil) = %d, want 0", got)
-		}
-	})
-
-	t.Run("exact byte comparison, no case folding", func(t *testing.T) {
-		advertised := []*sdkmcp.Tool{
-			mustTool("Send", "d", nil, nil),
-			mustTool("send", "d", nil, nil),
-		}
-		if got := countModelFacing(bridgePolicy{}, advertised); got != 2 {
-			t.Fatalf("countModelFacing(Send, send) = %d, want 2 (case-distinct)", got)
-		}
-	})
+	}
+	sort.Strings(manifest)
+	want := []string{
+		namespacedName("memory", "memory_batch"),
+		namespacedName("memory", "memory_entities"),
+		namespacedName("memory", "memory_recall"),
+		namespacedName("memory", "memory_upsert_fact"),
+	}
+	if !slices.Equal(manifest, want) {
+		t.Fatalf("always-loaded memory surface = %v, want %v", manifest, want)
+	}
 }
 
 // TestDeferralGrantLoadedSlot covers grantLoadedSlot's ceiling boundary, the
 // global 2-slot cap, and the "an over-ceiling or zero count never spends a slot"
 // invariant.
 func TestDeferralGrantLoadedSlot(t *testing.T) {
-	t.Run("ceiling boundary: 2 loaded, 3 loaded, 4 deferred", func(t *testing.T) {
+	t.Run("ceiling boundary: 3 loaded, 4 loaded, 5 deferred", func(t *testing.T) {
 		resetLoadedSlotBudgetForTest()
 		if !grantLoadedSlot("a", 2) {
 			t.Fatal("count 2 must earn a slot on a fresh budget")
 		}
 		resetLoadedSlotBudgetForTest()
-		if !grantLoadedSlot("b", 3) {
-			t.Fatal("count 3 (the ceiling itself) must earn a slot on a fresh budget")
+		if !grantLoadedSlot("b", 4) {
+			t.Fatal("count 4 (the ceiling itself) must earn a slot on a fresh budget")
 		}
 		resetLoadedSlotBudgetForTest()
-		if grantLoadedSlot("c", 4) {
-			t.Fatal("count 4 (one past the ceiling) must never earn a slot")
+		if grantLoadedSlot("c", 5) {
+			t.Fatal("count 5 (one past the ceiling) must never earn a slot")
 		}
 	})
 
@@ -111,11 +117,11 @@ func TestDeferralGrantLoadedSlot(t *testing.T) {
 
 	t.Run("an over-ceiling count is refused without spending the budget", func(t *testing.T) {
 		resetLoadedSlotBudgetForTest()
-		if grantLoadedSlot("big-1", 4) {
-			t.Fatal("count 4 must be refused")
+		if grantLoadedSlot("big-1", 5) {
+			t.Fatal("count 5 must be refused")
 		}
-		if grantLoadedSlot("big-2", 4) {
-			t.Fatal("count 4 must be refused")
+		if grantLoadedSlot("big-2", 5) {
+			t.Fatal("count 5 must be refused")
 		}
 		if !grantLoadedSlot("small", 1) {
 			t.Fatal("two refused over-ceiling grants must not have spent the budget")
@@ -137,11 +143,11 @@ func TestDeferralGrantLoadedSlot(t *testing.T) {
 // every existing caller's unconditional "deferred" behaviour, and that
 // alwaysLoaded:true is the only thing that flips it.
 func TestDeferralDefaultDeferredZeroValue(t *testing.T) {
-	if !(bridgePolicy{}).defaultDeferred() {
-		t.Fatal("zero-value bridgePolicy.defaultDeferred() must be true")
+	if !(bridgePolicy{}).deferredTool("anything") {
+		t.Fatal("zero-value bridgePolicy defers every tool")
 	}
-	if (bridgePolicy{alwaysLoaded: true}).defaultDeferred() {
-		t.Fatal("bridgePolicy{alwaysLoaded: true}.defaultDeferred() must be false")
+	if (bridgePolicy{alwaysLoaded: true}).deferredTool("anything") {
+		t.Fatal("a mount holding a slot must not defer a non-memory tool")
 	}
 }
 

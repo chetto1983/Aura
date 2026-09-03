@@ -154,3 +154,16 @@ func setAllows(set map[string]struct{}, value string) bool {
 	_, ok := set[value]
 	return ok
 }
+
+// countAllowedVertices counts the accumulated vertices a caller's label selection would
+// actually keep. It is the budget the overview spends: vertices the projection is about to
+// discard must not close the window on the ones it would have kept.
+func countAllowedVertices(vertices []arcadedb.StudioVertex, allowed map[string]struct{}) int {
+	n := 0
+	for _, vertex := range vertices {
+		if vertex.RID != "" && setAllows(allowed, vertex.Type) {
+			n++
+		}
+	}
+	return n
+}

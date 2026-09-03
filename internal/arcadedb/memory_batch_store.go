@@ -84,7 +84,7 @@ func (tx *clientMemoryBatchTx) LoadReceipt(
 }
 
 func (tx *clientMemoryBatchTx) LoadState(ctx context.Context) (memoryBatchState, error) {
-	state := memoryBatchState{Entities: map[string]string{}, Facts: map[string]memoryBatchFact{}}
+	state := memoryBatchState{Entities: map[string]memoryBatchEntity{}, Facts: map[string]memoryBatchFact{}}
 	entityRows, err := tx.client.queryInTx(ctx, tx.sessionID,
 		"SELECT name, kind FROM Entity", nil)
 	if err != nil {
@@ -93,7 +93,9 @@ func (tx *clientMemoryBatchTx) LoadState(ctx context.Context) (memoryBatchState,
 	for _, row := range entityRows {
 		name := rowString(row, "name")
 		if name != "" {
-			state.Entities[name] = rowString(row, "kind")
+			// No class is read back here: an entity that already exists keeps the class
+			// it was minted with, and entityClassScan below reports that authoritatively.
+			state.Entities[name] = memoryBatchEntity{Kind: rowString(row, "kind")}
 		}
 	}
 	factRows, err := tx.client.queryInTx(ctx, tx.sessionID,
@@ -166,16 +168,17 @@ func (tx *clientMemoryBatchTx) Persist(
 	}
 
 	// Same class rule as UpsertFact: an entity that already exists keeps its class, a new
-	// one is minted in the class its kind implies. The batch has no explicit class input,
-	// so the kind decides here and Other catches the rest.
+	// one is minted in the class the operation asked for, or failing that the one its kind
+	// implies, or failing that Other.
 	toUpsert := memoryBatchEntitiesToUpsert(before, after)
 	heldClasses, err := tx.client.entityClassScan(ctx, toUpsert...)
 	if err != nil {
 		return err
 	}
 	for _, name := range toUpsert {
-		kind := after.Entities[name]
-		class, _ := poleClassFor("", kind)
+		entity := after.Entities[name]
+		kind := entity.Kind
+		class, _ := poleClassFor(entity.Pole, kind)
 		if existing := heldClasses[name]; existing != "" {
 			class = existing
 		}
@@ -220,10 +223,10 @@ func (tx *clientMemoryBatchTx) Persist(
 }
 
 func memoryBatchEntitiesToUpsert(before, after memoryBatchState) []string {
-	needed := map[string]string{}
-	for name, kind := range after.Entities {
-		if oldKind, exists := before.Entities[name]; !exists || oldKind != kind {
-			needed[name] = kind
+	needed := map[string]memoryBatchEntity{}
+	for name, entity := range after.Entities {
+		if old, exists := before.Entities[name]; !exists || old != entity {
+			needed[name] = entity
 		}
 	}
 	for key, fact := range after.Facts {
@@ -330,7 +333,7 @@ func memoryBatchStoredFactsEqual(a, b memoryBatchFact) bool {
 	return reflect.DeepEqual(a, b)
 }
 
-func sortedMemoryBatchEntities(entities map[string]string) []string {
+func sortedMemoryBatchEntities(entities map[string]memoryBatchEntity) []string {
 	names := make([]string, 0, len(entities))
 	for name := range entities {
 		names = append(names, name)

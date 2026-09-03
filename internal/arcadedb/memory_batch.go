@@ -237,8 +237,23 @@ type memoryBatchFact struct {
 	Embedding any
 }
 
+// memoryBatchEntity is everything the batch knows about one entity before it is
+// written: the concrete kind, and the POLE class it should be minted in.
+//
+// It used to be the kind alone, and the class was resolved with a hardcoded empty
+// request -- `poleClassFor("", kind)` -- so a batch could not state a class even after
+// the tool surface grew subject_pole/object_pole. Measured live on 2026-09-03, an entity
+// of kind `Inspector` written through memory_batch with an explicit `subject_pole` of
+// `Person` landed in Other: the field reached arcadedb.Fact and had nowhere to go from
+// there. The class has to travel with the kind, because the two are decided together and
+// at the same moment -- when the entity is first minted.
+type memoryBatchEntity struct {
+	Kind string
+	Pole string
+}
+
 type memoryBatchState struct {
-	Entities map[string]string
+	Entities map[string]memoryBatchEntity
 	Facts    map[string]memoryBatchFact
 }
 

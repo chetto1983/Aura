@@ -23,27 +23,27 @@ func TestMemoryBatchSchemaStatements(t *testing.T) {
 func TestSortedMemoryBatchEntities(t *testing.T) {
 	tests := []struct {
 		name     string
-		entities map[string]string
+		entities map[string]memoryBatchEntity
 		want     []string
 	}{
 		{
 			name:     "empty",
-			entities: map[string]string{},
+			entities: map[string]memoryBatchEntity{},
 			want:     []string{},
 		},
 		{
 			name: "single",
-			entities: map[string]string{
-				"Person": "person",
+			entities: map[string]memoryBatchEntity{
+				"Person": {Kind: "person"},
 			},
 			want: []string{"Person"},
 		},
 		{
 			name: "multiple unsorted",
-			entities: map[string]string{
-				"Zebra": "animal",
-				"Apple": "fruit",
-				"Mango": "fruit",
+			entities: map[string]memoryBatchEntity{
+				"Zebra": {Kind: "animal"},
+				"Apple": {Kind: "fruit"},
+				"Mango": {Kind: "fruit"},
 			},
 			want: []string{"Apple", "Mango", "Zebra"},
 		},
@@ -287,11 +287,11 @@ func TestNullableMemoryBatchString(t *testing.T) {
 
 func TestMemoryBatchEntitiesToUpsert(t *testing.T) {
 	before := memoryBatchState{
-		Entities: map[string]string{"A": "person", "B": "place"},
+		Entities: map[string]memoryBatchEntity{"A": {Kind: "person"}, "B": {Kind: "place"}},
 		Facts:    map[string]memoryBatchFact{},
 	}
 	after := memoryBatchState{
-		Entities: map[string]string{"A": "person", "B": "place", "C": "thing"},
+		Entities: map[string]memoryBatchEntity{"A": {Kind: "person"}, "B": {Kind: "place"}, "C": {Kind: "thing"}},
 		Facts: map[string]memoryBatchFact{
 			"f1": {Fact: Fact{Subject: "D", Object: "E"}},
 		},

@@ -205,6 +205,11 @@
                     "maxLength": 512,
                     "type": "string"
                   },
+                  "object_pole": {
+                    "description": "POLE class: Person, Object, Location, Event, Organisation or Other. Omit to derive it from object_kind",
+                    "maxLength": 512,
+                    "type": "string"
+                  },
                   "predicate": {
                     "description": "the relation between subject and object",
                     "maxLength": 100,
@@ -241,6 +246,11 @@
                   },
                   "subject_kind": {
                     "description": "optional entity kind",
+                    "maxLength": 512,
+                    "type": "string"
+                  },
+                  "subject_pole": {
+                    "description": "POLE class: Person, Object, Location, Event, Organisation or Other. Omit to derive it from subject_kind; anything outside the set lands in Other and is reported back",
                     "maxLength": 512,
                     "type": "string"
                   },

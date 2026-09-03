@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -209,7 +210,10 @@ func TestMemoryRecallWindow(t *testing.T) {
 	})
 
 	t.Run("open returns a bounded cursor", func(t *testing.T) {
-		client, rec := recordingClient(t, recallWindowRows)
+		// A FULL page, because a short one now ends the paging and emits no cursor --
+		// which is the point of the two sub-tests below. The cursor's shape still has
+		// to be checked, and only a full page produces one.
+		client, rec := recordingClient(t, recallFullPageRows(20))
 		result, err := client.RecallMemory(context.Background(), RecallRequest{
 			IdentityID: "identity-a", Mode: RecallModeOpen,
 			ConversationID: "conversation-1", AnchorSeq: 7,
@@ -291,6 +295,104 @@ func encodeTestRecallCursor(t *testing.T, cursor RecallCursor) string {
 	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
+// recallFullPageRows builds a page of exactly count turns, numbered from 7 upward, so a
+// test can produce the "there may be more" case the cursor rule now depends on.
+func recallFullPageRows(count int) string {
+	rows := make([]string, 0, count)
+	for index := range count {
+		seq := 7 + index
+		rows = append(rows, fmt.Sprintf(
+			`{"identity_id":"identity-a","conversation_id":"conversation-1","turn_seq":%d,`+
+				`"role":"user","content":"turn %d","content_hash":"hash-%d",`+
+				`"occurred_at":"2026-08-31T12:00:00Z","source_ref":"postgres://c/1/turn/%d"}`,
+			seq, seq, seq, seq))
+	}
+	return `{"result":[` + strings.Join(rows, ",") + `]}`
+}
+
+// A short page means the conversation ran out, and a cursor pointing past the end is how
+// the paging failed to terminate before: measured live, `scroll` after the last turn of a
+// real conversation returned that turn again with a byte-identical next_cursor.
+func TestMemoryRecallPagingTerminatesAtTheEndOfAConversation(t *testing.T) {
+	client, _ := recordingClient(t, recallWindowRows)
+	result, err := client.RecallMemory(context.Background(), RecallRequest{
+		IdentityID: "identity-a", Mode: RecallModeOpen,
+		ConversationID: "conversation-1", AnchorSeq: 6,
+		Direction: RecallDirectionAfter, Limit: 20,
+	})
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if result.NextCursor != "" {
+		t.Fatalf("a short page still offered another page: %q", result.NextCursor)
+	}
+}
+
+// The next page must start PAST what this one returned, or every page repeats the
+// previous page's boundary turn.
+func TestMemoryRecallNextCursorStartsAfterTheLastReturnedTurn(t *testing.T) {
+	client, _ := recordingClient(t, recallFullPageRows(20))
+	result, err := client.RecallMemory(context.Background(), RecallRequest{
+		IdentityID: "identity-a", Mode: RecallModeOpen,
+		ConversationID: "conversation-1", AnchorSeq: 7,
+		Direction: RecallDirectionAfter, Limit: 20,
+	})
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if result.NextCursor == "" {
+		t.Fatal("a full page offered no next page")
+	}
+	// The fixture's last turn is 7+20-1 = 26, so the next page must begin at 27.
+	if got := decodeTestRecallCursor(t, result.NextCursor).AnchorSeq; got != 27 {
+		t.Fatalf("next anchor = %d, want 27 (past the last returned turn)", got)
+	}
+}
+
+// The cursor is documented as opaque, so handing it straight back must work. It used to
+// fail with "conversation mismatch" unless the caller also repeated the conversation, the
+// anchor and the direction the cursor already carried.
+func TestMemoryRecallScrollAcceptsTheCursorAlone(t *testing.T) {
+	client, _ := recordingClient(t, recallFullPageRows(20))
+	opened, err := client.RecallMemory(context.Background(), RecallRequest{
+		IdentityID: "identity-a", Mode: RecallModeOpen,
+		ConversationID: "conversation-1", AnchorSeq: 7,
+		Direction: RecallDirectionAfter, Limit: 20,
+	})
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if _, err = client.RecallMemory(context.Background(), RecallRequest{
+		IdentityID: "identity-a", Mode: RecallModeScroll, Cursor: opened.NextCursor,
+	}); err != nil {
+		t.Fatalf("scroll with the cursor alone: %v", err)
+	}
+}
+
+// Contradicting the cursor is still refused: that is confusion about what is being paged,
+// not the omission the rule above forgives.
+func TestMemoryRecallScrollRefusesACursorTheRequestContradicts(t *testing.T) {
+	client, _ := recordingClient(t, recallFullPageRows(20))
+	opened, err := client.RecallMemory(context.Background(), RecallRequest{
+		IdentityID: "identity-a", Mode: RecallModeOpen,
+		ConversationID: "conversation-1", AnchorSeq: 7,
+		Direction: RecallDirectionAfter, Limit: 20,
+	})
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	for name, request := range map[string]RecallRequest{
+		"another conversation": {ConversationID: "conversation-2"},
+		"another anchor":       {AnchorSeq: 3},
+		"another direction":    {Direction: RecallDirectionBefore},
+	} {
+		request.IdentityID, request.Mode, request.Cursor = "identity-a", RecallModeScroll, opened.NextCursor
+		if _, err := client.RecallMemory(context.Background(), request); err == nil {
+			t.Errorf("%s was accepted against the cursor", name)
+		}
+	}
+}
+
 func decodeTestRecallCursor(t *testing.T, encoded string) RecallCursor {
 	t.Helper()
 	raw, err := base64.RawURLEncoding.DecodeString(encoded)
@@ -307,4 +409,49 @@ func decodeTestRecallCursor(t *testing.T, encoded string) RecallCursor {
 func withRecallCursor(cursor RecallCursor, mutate func(*RecallCursor)) RecallCursor {
 	mutate(&cursor)
 	return cursor
+}
+
+// The two empty pages are not the same answer. Opening at an anchor that holds no turn is
+// a bad request; following a cursor off the end is the conversation running out, and
+// telling the caller its anchor was not found sends it hunting a bug that is not there.
+func TestMemoryRecallNamesAnExhaustedConversationApartFromABadAnchor(t *testing.T) {
+	const empty = `{"result":[]}`
+	opened, err := recallClientResult(t, empty, RecallRequest{
+		IdentityID: "identity-a", Mode: RecallModeOpen,
+		ConversationID: "conversation-1", AnchorSeq: 999, Direction: RecallDirectionAfter,
+	})
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if opened.Reason != "conversation_anchor_not_found" {
+		t.Errorf("open reason = %q, want conversation_anchor_not_found", opened.Reason)
+	}
+
+	client, _ := recordingClient(t, empty)
+	cursor, err := encodeRecallCursor(RecallCursor{
+		Version: recallCursorVersion, IdentityID: "identity-a",
+		ConversationID: "conversation-1", AnchorSeq: 999,
+		Direction: RecallDirectionAfter, PageSize: 3,
+	})
+	if err != nil {
+		t.Fatalf("encode cursor: %v", err)
+	}
+	scrolled, err := client.RecallMemory(context.Background(), RecallRequest{
+		IdentityID: "identity-a", Mode: RecallModeScroll, Cursor: cursor,
+	})
+	if err != nil {
+		t.Fatalf("scroll: %v", err)
+	}
+	if scrolled.Reason != "conversation_exhausted" {
+		t.Errorf("scroll reason = %q, want conversation_exhausted", scrolled.Reason)
+	}
+	if scrolled.NextCursor != "" {
+		t.Errorf("an exhausted conversation still offered another page: %q", scrolled.NextCursor)
+	}
+}
+
+func recallClientResult(t *testing.T, body string, request RecallRequest) (RecallResult, error) {
+	t.Helper()
+	client, _ := recordingClient(t, body)
+	return client.RecallMemory(context.Background(), request)
 }
