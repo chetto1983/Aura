@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -250,11 +251,21 @@ func TestReasoningGraphToolMetadata(t *testing.T) {
 	}
 	tools := append([]arcadedb.ReasoningToolCall(nil), sink.traces[0].Steps[0].ToolCalls...)
 	tools = append(tools, sink.traces[0].Steps[1].ToolCalls...)
-	if len(tools) != 2 {
-		t.Fatalf("allowed tool calls = %#v, want two send_file calls only", tools)
+	// Three, not two: since the 2026-09-03 directive every tool call earns a
+	// vertex. What an unlisted tool must still NOT contribute is its OUTPUT --
+	// checked below on call-raw, whose result preview is private.
+	if len(tools) != 3 {
+		t.Fatalf("recorded tool calls = %#v, want every call in invocation order", tools)
 	}
-	if tools[0].CallID != "call-safe" || tools[1].CallID != "call-blob" {
-		t.Fatalf("tool order = %q/%q", tools[0].CallID, tools[1].CallID)
+	if tools[0].CallID != "call-safe" || tools[1].CallID != "call-blob" || tools[2].CallID != "call-raw" {
+		t.Fatalf("tool order = %q/%q/%q", tools[0].CallID, tools[1].CallID, tools[2].CallID)
+	}
+	if tools[2].ToolName != "shell_exec" || tools[2].Status != "succeeded" ||
+		len(tools[2].ArgumentDigest) != 64 {
+		t.Fatalf("unlisted tool lost its audit identity: %#v", tools[2])
+	}
+	if tools[2].Observation != "" || len(tools[2].ArtifactRefs) != 0 || len(tools[2].EntityRefs) != 0 {
+		t.Fatalf("unlisted tool disclosed more than name/status/duration/digest: %#v", tools[2])
 	}
 	if tools[0].Status != "succeeded" || tools[0].DurationMillis != 250 {
 		t.Fatalf("tool status/duration = %q/%d", tools[0].Status, tools[0].DurationMillis)
@@ -340,12 +351,65 @@ func TestReasoningGraphTouchedEntities(t *testing.T) {
 	events = append(events, reasoningGraphFinalEvent(runID, t0.Add(3*time.Second), "done"))
 	persistReasoningGraphEvents(t, r, ctx, tr, events...)
 
-	if len(sink.traces) != 1 || len(sink.traces[0].Steps) != 1 || len(sink.traces[0].Steps[0].ToolCalls) != 1 {
+	if len(sink.traces) != 1 || len(sink.traces[0].Steps) != 1 || len(sink.traces[0].Steps[0].ToolCalls) != 2 {
 		t.Fatalf("trusted tool trace = %#v", sink.traces)
 	}
 	refs := sink.traces[0].Steps[0].ToolCalls[0].EntityRefs
 	if strings.Join(refs, ",") != "Caraglio,Davide" {
 		t.Fatalf("entity refs = %#v, want only structured memory-tool entities", refs)
+	}
+	// shell_exec is recorded now, but entity refs come from a tool's DECLARED
+	// argument fields, never from event metadata a tool can write freely: a tool
+	// with no entity policy contributes no TOUCHED edge however loudly its Meta
+	// claims one.
+	forged := sink.traces[0].Steps[0].ToolCalls[1]
+	if forged.ToolName != "shell_exec" || len(forged.EntityRefs) != 0 {
+		t.Fatalf("metadata-supplied entity refs reached the graph: %#v", forged)
+	}
+}
+
+// "It failed" without the reason is the one fact the next turn cannot act on, so
+// a failure carries its result preview whatever the tool -- through the same
+// redaction and rune cap a listed tool's observation goes through.
+func TestReasoningGraphFailureCarriesItsReason(t *testing.T) {
+	r, _ := newReasoningTestRunner(t, 65536, true)
+	order := []string{}
+	sink := &recordingReasoningGraphSink{order: &order}
+	r.reasoningGraphSink = sink
+	ctx := identityctx.WithIdentityID(t.Context(), uuid.NewString())
+	tr := &turnTracker{convID: newConvID(t), llmRuntime: r.llmSnapshot(ctx)}
+	runID := uuid.Must(uuid.NewV7())
+	t0 := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+
+	failed := reasoningGraphToolEvents(runID, t0.Add(time.Second), "call-bad", "shell_exec",
+		`{"command":"ls /nope"}`, "error",
+		"exit 2: ls: /nope: No such file or directory (token=sk-secret)", nil)
+	succeeded := reasoningGraphToolEvents(runID, t0.Add(2*time.Second), "call-ok", "shell_exec",
+		`{"command":"ls /tmp"}`, "ok", "total 0", nil)
+	events := []*agent.Event{reasoningGraphEvent(runID, t0, "List the directory.")}
+	events = append(events, failed...)
+	events = append(events, succeeded...)
+	events = append(events, reasoningGraphFinalEvent(runID, t0.Add(3*time.Second), "done"))
+	persistReasoningGraphEvents(t, r, ctx, tr, events...)
+
+	if len(sink.traces) != 1 {
+		t.Fatalf("traces = %#v", sink.traces)
+	}
+	var tools []arcadedb.ReasoningToolCall
+	for _, step := range sink.traces[0].Steps {
+		tools = append(tools, step.ToolCalls...)
+	}
+	if len(tools) != 2 || tools[0].Status != "failed" || tools[1].Status != "succeeded" {
+		t.Fatalf("tool statuses = %#v", tools)
+	}
+	if !strings.Contains(tools[0].Observation, "No such file or directory") {
+		t.Fatalf("failure lost its reason: %q", tools[0].Observation)
+	}
+	if strings.Contains(tools[0].Observation, "sk-secret") {
+		t.Fatalf("failure observation skipped redaction: %q", tools[0].Observation)
+	}
+	if tools[1].Observation != "" {
+		t.Fatalf("successful unlisted tool disclosed its output: %q", tools[1].Observation)
 	}
 }
 
@@ -378,5 +442,66 @@ func TestReasoningGraphTouchedEntitiesForNamespacedMemoryTool(t *testing.T) {
 	refs := sink.traces[0].Steps[0].ToolCalls[0].EntityRefs
 	if strings.Join(refs, ",") != "Caraglio,Davide" {
 		t.Fatalf("entity refs = %#v, want the structured memory-tool entities that TOUCHED is built from", refs)
+	}
+}
+
+// memory_batch is the tool the agent actually writes memory with -- one
+// transaction carrying many facts -- and its entities live under
+// operations[].fact, two levels below the top of the argument object. It was
+// already on the reasoning allowlist but declared no entity fields at all, so a
+// turn could write a dozen facts and contribute nothing to the audit graph:
+// measured 2026-09-03 on the live graph, 89 traces and 0 TOUCHED edges.
+func TestReasoningGraphTouchedEntitiesFromNestedBatch(t *testing.T) {
+	r, _ := newReasoningTestRunner(t, 65536, true)
+	order := []string{}
+	sink := &recordingReasoningGraphSink{order: &order}
+	r.reasoningGraphSink = sink
+	ctx := identityctx.WithIdentityID(t.Context(), uuid.NewString())
+	tr := &turnTracker{convID: newConvID(t), llmRuntime: r.llmSnapshot(ctx)}
+	runID := uuid.Must(uuid.NewV7())
+	t0 := time.Date(2026, 9, 3, 11, 0, 0, 0, time.UTC)
+
+	arguments := `{"idempotency_key":"k-1","operations":[` +
+		`{"fact":{"subject":"Davide","predicate":"lives_in","object":"Caraglio"}},` +
+		`{"fact":{"subject":"Davide","predicate":"works_on","object":"Aura"}},` +
+		`{"forget":{"entity":"Torino"}}]}`
+	batch := reasoningGraphToolEvents(runID, t0.Add(time.Second), "call-batch", "memory__memory_batch",
+		arguments, "ok", "applied", nil)
+	events := []*agent.Event{reasoningGraphEvent(runID, t0, "Store what the operator just said.")}
+	events = append(events, batch...)
+	events = append(events, reasoningGraphFinalEvent(runID, t0.Add(3*time.Second), "done"))
+	persistReasoningGraphEvents(t, r, ctx, tr, events...)
+
+	if len(sink.traces) != 1 || len(sink.traces[0].Steps) != 1 ||
+		len(sink.traces[0].Steps[0].ToolCalls) != 1 {
+		t.Fatalf("batch trace = %#v", sink.traces)
+	}
+	refs := sink.traces[0].Steps[0].ToolCalls[0].EntityRefs
+	if strings.Join(refs, ",") != "Aura,Caraglio,Davide,Torino" {
+		t.Fatalf("entity refs = %#v, want every subject/object/entity in the batch, deduped and sorted", refs)
+	}
+}
+
+// The walker looks for leaf NAMES, so it must not be fooled into recursing
+// forever or into hoarding refs from a deliberately deep or wide argument blob.
+func TestReasoningEntityRefsBoundsHostileArguments(t *testing.T) {
+	deep := `{"subject":"Top"}`
+	for range reasoningGraphMaxArgumentDepth + 4 {
+		deep = `{"nested":` + deep + `}`
+	}
+	if refs := reasoningEntityRefs(deep, []string{"subject"}); len(refs) != 0 {
+		t.Fatalf("refs past the depth bound = %#v", refs)
+	}
+
+	wide := make([]string, 0, reasoningGraphMaxReferences*2)
+	for i := range reasoningGraphMaxReferences * 2 {
+		wide = append(wide, `{"subject":"entity-`+strconv.Itoa(i)+`"}`)
+	}
+	refs := reasoningEntityRefs(`{"operations":[`+strings.Join(wide, ",")+`]}`, []string{"subject"})
+	if len(refs) > reasoningGraphMaxReferences {
+		t.Fatalf("refs = %d, want at most %d", len(refs), reasoningGraphMaxReferences)
+	}
+	if refs := reasoningEntityRefs(`{"subject":"a\nb"}`, []string{"subject"}); len(refs) != 0 {
+		t.Fatalf("newline-bearing ref accepted: %#v", refs)
 	}
 }

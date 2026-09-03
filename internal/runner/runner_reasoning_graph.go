@@ -27,6 +27,7 @@ const (
 	reasoningGraphMaxSteps         = 64
 	reasoningGraphMaxToolsPerStep  = 32
 	reasoningGraphMaxReferences    = 32
+	reasoningGraphMaxArgumentDepth = 8
 	reasoningGraphWriteTimeout     = 5 * time.Second
 )
 
@@ -63,8 +64,29 @@ type reasoningToolPolicy struct {
 	entityArgFields []string
 }
 
+// reasoningToolPolicies declares the EXTRA disclosures a named tool authorizes.
+// Absence from it is no longer a refusal to record: every tool call earns a
+// vertex carrying its name, status, duration and argument DIGEST, and a call
+// that did NOT succeed also carries its result preview -- which is the error the
+// next turn has to learn from. Operator directive 2026-09-03 ("you can store
+// every think so agent can learn from past error"), consistent with the
+// single-trusted-operator posture of PRD amendment #50.
+//
+// It replaces a six-name allowlist that left the audit describing what Aura
+// thought and almost nothing of what it did: measured the same day on the live
+// graph, 95 reasoning steps had produced 7 ReasoningToolCall vertices, six of
+// them send_file. A successful call's OUTPUT still stays out unless its tool
+// opts in -- a success teaches little and every result preview would balloon the
+// graph -- so the map below is now about what to add, not about who gets in.
+//
+// entityArgFields names the argument LEAF fields that carry an entity name. The
+// extractor walks the whole argument tree for them, because the tool that
+// actually writes memory is memory_batch, whose subjects and objects live under
+// operations[].fact. memory_batch was already listed here but declared NO entity
+// fields, so the one tool that creates entities contributed none: measured
+// 2026-09-03 on the live graph, 89 traces and 0 TOUCHED edges.
 var reasoningToolPolicies = map[string]reasoningToolPolicy{
-	"memory_batch":       {},
+	"memory_batch":       {entityArgFields: []string{"subject", "object", "entity", "source", "target"}},
 	"memory_forget":      {entityArgFields: []string{"entity"}},
 	"memory_recall":      {},
 	"memory_upsert_fact": {entityArgFields: []string{"subject", "object"}},
@@ -76,15 +98,14 @@ var reasoningToolPolicies = map[string]reasoningToolPolicy{
 // while native tools do not, so a bare-name-only map silently drops every memory
 // tool from the reasoning graph and no TOUCHED edge is ever written. Resolve the
 // bare suffix after the namespace delimiter too, mirroring cmd/aura's resolver.
-func lookupReasoningToolPolicy(name string) (reasoningToolPolicy, bool) {
+func lookupReasoningToolPolicy(name string) reasoningToolPolicy {
 	if policy, ok := reasoningToolPolicies[name]; ok {
-		return policy, true
+		return policy
 	}
 	if _, bare, namespaced := strings.Cut(name, "__"); namespaced {
-		policy, ok := reasoningToolPolicies[bare]
-		return policy, ok
+		return reasoningToolPolicies[bare]
 	}
-	return reasoningToolPolicy{}, false
+	return reasoningToolPolicy{}
 }
 
 // Reset discards every event from a repudiated provider attempt.
@@ -141,9 +162,9 @@ func (b *ReasoningTraceBuilder) ObserveToolInvocation(ev *agent.Event) {
 		return
 	}
 	ti := ev.Actions.ToolInvocation
-	policy, allowed := lookupReasoningToolPolicy(ti.ToolName)
+	policy := lookupReasoningToolPolicy(ti.ToolName)
 	status, ok := reasoningToolStatus(ti.Status)
-	if !allowed || !ok || strings.TrimSpace(ti.ToolCallID) == "" {
+	if !ok || strings.TrimSpace(ti.ToolName) == "" || strings.TrimSpace(ti.ToolCallID) == "" {
 		return
 	}
 	if b.seenCalls == nil {
@@ -161,7 +182,9 @@ func (b *ReasoningTraceBuilder) ObserveToolInvocation(ev *agent.Event) {
 		Status: status, DurationMillis: max(ti.DurationMS, 0),
 		ArgumentDigest: reasoningArgumentDigest(ti.Arguments),
 	}
-	if policy.observation {
+	// A failure is recorded for every tool, opted in or not: "it failed" without
+	// the reason is the one fact that cannot be acted on.
+	if policy.observation || status != "succeeded" {
 		tool.Observation = reasoningObservation(ti.ResultPreview)
 	}
 	if policy.artifact && status == "succeeded" {
@@ -288,26 +311,62 @@ func reasoningEntityRefs(arguments string, fields []string) []string {
 	if len(fields) == 0 || strings.TrimSpace(arguments) == "" {
 		return nil
 	}
-	var args map[string]any
+	var args any
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 		return nil
 	}
-	seen := make(map[string]struct{}, len(fields))
+	wanted := make(map[string]struct{}, len(fields))
 	for _, field := range fields {
-		value, _ := args[field].(string)
-		value = strings.TrimSpace(value)
-		if value == "" || utf8.RuneCountInString(value) > reasoningGraphReferenceRunes ||
-			strings.ContainsAny(value, "\r\n\x00") {
-			continue
-		}
-		seen[value] = struct{}{}
+		wanted[field] = struct{}{}
 	}
-	refs := make([]string, 0, min(len(seen), reasoningGraphMaxReferences))
+	seen := make(map[string]struct{}, len(fields))
+	collectReasoningEntityRefs(args, wanted, seen, 0)
+	refs := make([]string, 0, len(seen))
 	for ref := range seen {
 		refs = append(refs, ref)
 	}
 	sort.Strings(refs)
-	return refs[:min(len(refs), reasoningGraphMaxReferences)]
+	return refs
+}
+
+// collectReasoningEntityRefs gathers the wanted leaf fields wherever they sit in
+// the argument tree. A batch nests them two levels down (operations[].fact.subject)
+// while a single upsert states them at the top, so one walker serves both rather
+// than a shape-aware reader per tool.
+//
+// A wanted name matching something that is not an entity elsewhere in the tree is
+// harmless: every ref is checked against a real Entity vertex before it can become
+// a TOUCHED edge, so a stray value is dropped rather than inventing a node.
+func collectReasoningEntityRefs(node any, wanted, seen map[string]struct{}, depth int) {
+	if depth > reasoningGraphMaxArgumentDepth || len(seen) >= reasoningGraphMaxReferences {
+		return
+	}
+	switch value := node.(type) {
+	case map[string]any:
+		for name, child := range value {
+			if text, isText := child.(string); isText {
+				if _, want := wanted[name]; want {
+					addReasoningEntityRef(text, seen)
+				}
+				continue
+			}
+			collectReasoningEntityRefs(child, wanted, seen, depth+1)
+		}
+	case []any:
+		for _, child := range value {
+			collectReasoningEntityRefs(child, wanted, seen, depth+1)
+		}
+	}
+}
+
+func addReasoningEntityRef(value string, seen map[string]struct{}) {
+	value = strings.TrimSpace(value)
+	if value == "" || len(seen) >= reasoningGraphMaxReferences ||
+		utf8.RuneCountInString(value) > reasoningGraphReferenceRunes ||
+		strings.ContainsAny(value, "\r\n\x00") {
+		return
+	}
+	seen[value] = struct{}{}
 }
 
 func reasoningReferenceSegment(value string) bool {
