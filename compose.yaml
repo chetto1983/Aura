@@ -125,7 +125,11 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       AURA_LLM_BASE_URL: ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1}
       AURA_LLM_MODEL: ${AURA_LLM_MODEL:-deepseek/deepseek-v4-flash:nitro}
-      AURA_LLM_TEMPERATURE: ${AURA_LLM_TEMPERATURE:-0.7}
+      # No :-0.7 fallback. That default was the last place the pin survived: emptying it
+      # in .env changed nothing while compose put it back on every boot, and 0.7 then
+      # overrode the temperature the serving model publishes for itself. Unset means the
+      # model's own default wins (llm/sampling_defaults.go).
+      AURA_LLM_TEMPERATURE: ${AURA_LLM_TEMPERATURE:-}
       AURA_LLM_MAX_TOKENS: ${AURA_LLM_MAX_TOKENS:-4096}
       AURA_LLM_ADAPTIVE_REASONING: ${AURA_LLM_ADAPTIVE_REASONING:-true}
       AURA_SHOW_REASONING: ${AURA_SHOW_REASONING:-true}
@@ -1244,16 +1248,16 @@ services:
   #   AURA_LLM_BASE_URL=http://aura-llm:8084/v1
   #   AURA_LLM_MODEL=gemma-4-12b
   #   AURA_LLM_PROVIDER=llamacpp
-  #   AURA_LLM_TEMPERATURE=1.0   AURA_LLM_TOP_P=0.95   AURA_LLM_TOP_K=64
   # Host-side `go run ./cmd/aura` is unaffected unless you export the same.
   #
-  # That last line is not decoration, and it is the one thing here a reader will get
-  # wrong. llama.cpp honours a CLIENT-supplied sampling value over its own flag, and Aura
-  # always sends temperature (AURA_LLM_TEMPERATURE, default 0.7 — shared with the
-  # OpenRouter path, which is why it is not simply changed to 1.0 here). Leave it alone
-  # and this server answers at 0.7 whatever --temp says below. The other four card knobs
-  # default to UNSET in Aura (llm.Sampling pointers, omitted from the wire), so those DO
-  # fall through to the flags below unless the operator sets the env.
+  # Sampling needs nothing here any more. It used to: Aura sent temperature on every
+  # request from a built-in 0.7, llama.cpp honours a client value over its own flag, and
+  # so this server answered at 0.7 whatever --temp said below -- a pin nobody had chosen,
+  # overriding the temperature the model asks for in its own file. All six knobs now
+  # default to UNSET, and at every model change Aura reads what the backend publishes:
+  # GET /props here (which reports the GGUF's general.sampling.* already merged with the
+  # flags below -- 1.0 / 0.95 / 64 for Gemma), /api/show on Ollama, /models on OpenRouter.
+  # Set the env only to OVERRIDE a model that states its own preference.
   aura-llm:
     profiles: [localllm]
     image: ${AURA_LLM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}

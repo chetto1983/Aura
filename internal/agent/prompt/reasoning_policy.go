@@ -55,9 +55,15 @@ func (t ReasoningTier) Valid() bool {
 // manual selection from the composer DID reach Ollama (ApplyFixedReasoning), so the
 // automatic path was the only one restricted.
 //
-// What a model can actually honour is a separate question, answered separately by
-// llm.ReasoningCapabilitySource per backend (OpenRouter /models, Ollama /api/show
-// capabilities, llama.cpp /props). A tier this function sets is still bounded there.
+// What a model can actually honour is a separate question, and this function is now the
+// place it gets answered on the request path. It used to say the tier was "still bounded"
+// by llm.ReasoningCapabilitySource -- it was not. That source fed the cockpit only (the
+// effort dropdown, and validation of an EXPLICIT user choice); nothing between the
+// classifier and the wire ever consulted it. So a greeting on a reasoning-mandatory model
+// was classified "none", sent as effort "none", and refused with HTTP 400 by the provider
+// -- measured 2026-09-03 on z-ai/glm-5.3-flash and google/gemini-3.8-flash. cfg carries
+// the model's published set (resolved at every model change) and ClampReasoningEffort
+// substitutes the nearest accepted effort; a model that published nothing is left alone.
 func ApplyAdaptiveReasoning(req *llm.Request, provider string, cfg llm.Config, tier ReasoningTier) {
 	if !cfg.AdaptiveReasoning {
 		return
@@ -72,9 +78,14 @@ func ApplyAdaptiveReasoning(req *llm.Request, provider string, cfg llm.Config, t
 		return
 	}
 	req.Reasoning = tier.reasoning(cfg.ShowReasoning)
+	wanted := req.Reasoning.Effort
+	req.Reasoning.Effort = cfg.ClampReasoningEffort(wanted)
 	slog.Info("adaptive reasoning: tier applied",
 		"target", llm.ReasoningTarget(provider, cfg.BaseURL),
-		"tier", string(tier), "effort", string(req.Reasoning.Effort))
+		"tier", string(tier), "effort", string(req.Reasoning.Effort),
+		// Name the substitution when one happened: an effort that silently differs from
+		// the tier is the kind of thing that has to be readable in a log, not inferred.
+		"requested", string(wanted), "clamped", wanted != req.Reasoning.Effort)
 }
 
 // ApplyFixedReasoning forces a per-turn reasoning EFFORT chosen by the user (the web
@@ -91,7 +102,12 @@ func ApplyFixedReasoning(req *llm.Request, provider string, cfg llm.Config, effo
 	if effort == "" || !IsReasoningTarget(provider, cfg.BaseURL) {
 		return
 	}
-	req.Reasoning = llm.ReasoningConfig{Effort: effort, Exclude: new(!cfg.ShowReasoning)}
+	// An explicit choice is clamped too. The cockpit only offers efforts the model
+	// advertises, but a stale tab or a direct API call can still name one it does not,
+	// and the honest answer to that is the nearest accepted gear rather than a 400.
+	req.Reasoning = llm.ReasoningConfig{
+		Effort: cfg.ClampReasoningEffort(effort), Exclude: new(!cfg.ShowReasoning),
+	}
 }
 
 // IsOpenRouterReasoningTarget reports whether provider/baseURL is the OpenRouter

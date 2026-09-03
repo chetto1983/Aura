@@ -139,6 +139,16 @@ type Config struct {
 	// defaults. Live provider metadata may replace only an unconfigured value.
 	ContextWindowConfigured   bool
 	MaxOutputTokensConfigured bool
+	// SupportedReasoningEfforts / ReasoningMandatory carry the serving model's declared
+	// reasoning surface, resolved at every model change like the token limits. Nil means
+	// the provider stated nothing, and then no effort may be rewritten.
+	SupportedReasoningEfforts []ReasoningEffort
+	ReasoningMandatory        bool
+	// TemperatureConfigured marks a temperature the operator chose. Unset, the model's
+	// own published default wins at every model change (sampling_defaults.go) -- a
+	// built-in applied to every model is a pin, not a default, and it silently overrode
+	// what the serving model's card asked for.
+	TemperatureConfigured bool
 	// CompactionTriggerPercent is the share of ContextWindow the replayed history may
 	// occupy before L2.4 condenses it, even though nothing is over budget yet. 0 leaves
 	// compaction to the hard cap alone; 100 is the same thing by another route.
@@ -370,6 +380,7 @@ func overlayFile(cfg *Config, fc *fileConfig) {
 	}
 	if fc.Temperature != nil {
 		cfg.Temperature = *fc.Temperature
+		cfg.TemperatureConfigured = true
 	}
 	if fc.TopP != nil {
 		cfg.Sampling.TopP = fc.TopP
@@ -424,6 +435,7 @@ func applyEnvOverrides(cfg *Config) error {
 		return err
 	} else if ok {
 		cfg.Temperature = v
+		cfg.TemperatureConfigured = true
 	}
 	if v, ok, err := envInt(envMaxTokens); err != nil {
 		return err

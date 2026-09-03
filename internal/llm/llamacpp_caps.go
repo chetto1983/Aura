@@ -32,6 +32,13 @@ type llamaCppPropsResponse struct {
 	ChatTemplate     string          `json:"chat_template"`
 	ChatTemplateCaps map[string]any  `json:"chat_template_caps"`
 	Modalities       map[string]bool `json:"modalities"`
+	// The sampler the server will actually use: GGUF metadata (general.sampling.*),
+	// command-line flags and built-ins already merged by llama-server. Measured
+	// 2026-09-03 -- it reports Gemma's own temperature 1.0 / top_k 64, which are NOT
+	// llama.cpp's built-in 0.8 / 40, so this is the model's card and not the server's.
+	DefaultGenerationSettings struct {
+		Params map[string]float64 `json:"params"`
+	} `json:"default_generation_settings"`
 }
 
 // llamaCppReasoningCaps is the local-backend ReasoningCapabilitySource. It derives its

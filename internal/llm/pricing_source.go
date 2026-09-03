@@ -38,6 +38,14 @@ type ModelProfileMetadata struct {
 	MaxOutputTokens int
 	Price           Price
 	HasPrice        bool
+	// Sampling is what the backend says it will sample with when nobody overrides it
+	// (see sampling_defaults.go). Empty when the provider publishes none, which is the
+	// normal case for most OpenRouter models.
+	Sampling samplingDefaults
+	// SupportedReasoningEfforts / ReasoningMandatory are the model's declared reasoning
+	// surface. A nil set means the provider stated nothing and no clamp may be applied.
+	SupportedReasoningEfforts []ReasoningEffort
+	ReasoningMandatory        bool
 }
 
 // modelsWire is the GET /models projection. Only consumed fields are declared. The
@@ -59,6 +67,17 @@ type modelsWire struct {
 			Completion     string `json:"completion"`
 			InputCacheRead string `json:"input_cache_read"`
 		} `json:"pricing"`
+		// The model card's own sampling set. Present on 264 of 424 models (measured
+		// 2026-09-03); absent is normal and means the model states no preference.
+		DefaultParameters map[string]float64 `json:"default_parameters"`
+		// What the model will accept for reasoning. 298 of 424 models declare
+		// mandatory:true -- they REFUSE effort "none" with HTTP 400 "Reasoning is
+		// mandatory for this endpoint and cannot be disabled" (measured 2026-09-03
+		// against z-ai/glm-5.3-flash), which is what the adaptive tier kept sending.
+		Reasoning *struct {
+			SupportedEfforts []string `json:"supported_efforts"`
+			Mandatory        bool     `json:"mandatory"`
+		} `json:"reasoning"`
 	} `json:"data"`
 }
 
@@ -67,6 +86,8 @@ const maxOllamaShowResponseBytes = 1 << 20
 type ollamaShowWire struct {
 	ModelInfo    map[string]json.RawMessage `json:"model_info"`
 	Capabilities []string                   `json:"capabilities"`
+	// Modelfile PARAMETER text, not JSON -- see parseOllamaSamplingParameters.
+	Parameters string `json:"parameters"`
 }
 
 // fetchOllamaShow POSTs /api/show for one model — the single Ollama metadata call the
@@ -142,7 +163,10 @@ func FetchModelProfile(
 			if m.Meta.ContextWindow <= 0 {
 				return ModelProfileMetadata{}, fmt.Errorf("%w: %q has no positive meta.n_ctx", ErrModelProfileUnavailable, want)
 			}
-			return ModelProfileMetadata{ContextWindow: m.Meta.ContextWindow}, nil
+			return ModelProfileMetadata{
+				ContextWindow: m.Meta.ContextWindow,
+				Sampling:      llamaCppPublishedSampling(ctx, client, baseURL),
+			}, nil
 		case "openrouter":
 			if m.ContextLength <= 0 {
 				return ModelProfileMetadata{}, fmt.Errorf("%w: %q has no positive context_length", ErrModelProfileUnavailable, want)
@@ -162,7 +186,10 @@ func FetchModelProfile(
 				Price: Price{
 					InputPer1M: in, OutputPer1M: out, CacheReadPer1M: cache,
 				},
-				HasPrice: true,
+				HasPrice:                  true,
+				Sampling:                  samplingDefaultsFromNumbers(m.DefaultParameters),
+				SupportedReasoningEfforts: clampAdvertisedEfforts(reasoningEffortTokens(m.Reasoning)),
+				ReasoningMandatory:        m.Reasoning != nil && m.Reasoning.Mandatory,
 			}, nil
 		default:
 			return ModelProfileMetadata{}, fmt.Errorf("%w: unsupported provider %q", ErrModelProfileUnavailable, provider)
@@ -191,7 +218,10 @@ func fetchOllamaModelProfile(
 	if err := json.Unmarshal(contextValues[0], &contextWindow); err != nil || contextWindow <= 0 {
 		return ModelProfileMetadata{}, errors.New("/api/show context_length is not a positive integer")
 	}
-	return ModelProfileMetadata{ContextWindow: contextWindow}, nil
+	return ModelProfileMetadata{
+		ContextWindow: contextWindow,
+		Sampling:      parseOllamaSamplingParameters(wire.Parameters),
+	}, nil
 }
 
 func ollamaShowURL(baseURL string) (string, error) {
@@ -308,6 +338,13 @@ func (c *Config) ResolveModelProfile(ctx context.Context) error {
 			candidate.MaxOutputTokens = DerivedMaxOutputTokens(candidate.ContextWindow)
 		}
 	}
+	// Sampling follows the same rule as the limits above: recomputed at every model
+	// change, never inherited. The previous model's card describes a model this one has
+	// nothing to do with, so anything the operator did not pin is re-read from the
+	// backend now (sampling_defaults.go).
+	applyDiscoveredSampling(&candidate, metadata.Sampling)
+	candidate.SupportedReasoningEfforts = metadata.SupportedReasoningEfforts
+	candidate.ReasoningMandatory = metadata.ReasoningMandatory
 	switch strings.ToLower(strings.TrimSpace(c.Provider)) {
 	case "llamacpp":
 		candidate.Prices[c.Model] = Price{}
