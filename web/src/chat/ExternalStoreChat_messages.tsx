@@ -37,7 +37,6 @@ import { toolRun } from './toolGrouping';
 interface UserMessageProps {
   readonly onAssetRetry: (assetID: string) => void;
   readonly onAssetPromote: (assetID: string) => void;
-  readonly onAssetRemove: (assetID: string) => void;
 }
 
 const MESSAGE_ACTION_CLASS =
@@ -50,7 +49,7 @@ function messageAttachments(message: ThreadMessageLike): readonly Asset[] {
   return metadata?.attachments ?? [];
 }
 
-export function UserMessage({ onAssetRetry, onAssetPromote, onAssetRemove }: UserMessageProps) {
+export function UserMessage({ onAssetRetry, onAssetPromote }: UserMessageProps) {
   const { t } = useTranslation();
   const message = useAuiState((s) => s.message) as ThreadMessageLike;
   const attachments = messageAttachments(message);
@@ -99,7 +98,6 @@ export function UserMessage({ onAssetRetry, onAssetPromote, onAssetRemove }: Use
                 asset={asset}
                 onRetry={onAssetRetry}
                 onPromote={onAssetPromote}
-                onRemove={onAssetRemove}
               />
             ))}
           </div>

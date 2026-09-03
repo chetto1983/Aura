@@ -11,10 +11,11 @@
 INSERT INTO aura.conversation_turns (
     conversation_id, seq, role, content, content_sidecar_path,
     tool_call_id, tool_calls, input_tokens, output_tokens, cached_tokens,
-    reasoning, reasoning_duration_ms, context_tokens, parent_seq, delivery_key
+    reasoning, reasoning_duration_ms, context_tokens, parent_seq, delivery_key,
+    attachment_ids
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-    NULLIF($2::int - 1, 0), sqlc.narg(delivery_key)
+    NULLIF($2::int - 1, 0), sqlc.narg(delivery_key), sqlc.narg(attachment_ids)
 )
 ON CONFLICT (conversation_id, delivery_key) WHERE delivery_key IS NOT NULL
 DO NOTHING;
@@ -77,6 +78,28 @@ FROM aura.conversation_turns
 WHERE conversation_id = $1
   AND role = 'assistant'
   AND (tool_calls IS NULL OR tool_calls = '[]'::jsonb OR tool_calls = 'null'::jsonb)
+ORDER BY seq ASC;
+
+-- name: ListUserTurnAttachments :many
+-- Display-only read, deliberately separate from ListTurnsBySeq for the same reason
+-- ListAssistantTurnReasoning is: the llm.Message history rebuild must never select it.
+--
+-- `ordinal` is the turn's index AMONG USER TURNS, not its seq, because that is what the
+-- snapshot consumer can actually match on: the messages it merges into carry no seq, and
+-- user turns rebuild one-for-one and in order (repairToolMessagePairs touches only
+-- tool/assistant pairing). Computing it here rather than returning every user turn keeps
+-- the result sparse -- a long conversation with one attachment costs one row.
+SELECT seq, attachment_ids, ordinal
+FROM (
+    SELECT seq,
+           attachment_ids,
+           (row_number() OVER (ORDER BY seq ASC) - 1)::int AS ordinal
+    FROM aura.conversation_turns
+    WHERE conversation_id = $1
+      AND role = 'user'
+) AS user_turns
+WHERE attachment_ids IS NOT NULL
+  AND cardinality(attachment_ids) > 0
 ORDER BY seq ASC;
 
 -- name: ListSpilledSeqsForConversation :many

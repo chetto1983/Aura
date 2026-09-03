@@ -199,6 +199,9 @@ export interface SnapshotMessage {
    *  (no tool calls) — camelCase, omitempty on the Go side. */
   readonly reasoning?: unknown;
   readonly reasoningDurationMs?: unknown;
+  /** Migration 0116: the asset ids this USER turn was sent with. Absent on turns that
+   *  predate the column, which is the only case the positional fold still covers. */
+  readonly attachmentIds?: unknown;
 }
 
 export interface MessagesSnapshotFrame {

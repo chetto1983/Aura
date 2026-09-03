@@ -11,6 +11,17 @@ import (
 )
 
 type Querier interface {
+	// Claim an asset that was presigned before its conversation existed.
+	//
+	// The web composer presigns as soon as the file is chosen, and on a BRAND NEW chat there
+	// is no thread id yet, so the row is written with thread_id = ''. Nothing ever filled it
+	// in, and ListAssetsForThread filters on thread_id -- so the first attachment of a new
+	// conversation was invisible the moment the page reloaded (measured 2026-09-03: one such
+	// row, an image the model had already answered about).
+	//
+	// Only an UNCLAIMED asset is adopted. A row that already names a thread is left exactly as
+	// it is, so this can never move someone's attachment between conversations.
+	AdoptAssetIntoThread(ctx context.Context, arg AdoptAssetIntoThreadParams) (AuraAssets, error)
 	AggregateCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) (AggregateCacheMetricsSinceRow, error)
 	// Flip a pending_approval task to active (the cockpit approval, parity with the CLI
 	// `aura task approve`). Returns rows affected so the caller distinguishes a hit (1) from
@@ -385,6 +396,15 @@ type Querier interface {
 	// ListDueSteerRows (aura.steer_queue carries no RLS, migration 0103): a system-wide
 	// sweep, not a per-identity request -- each returned row carries its own identity_id.
 	ListUnnudgedDelegationResults(ctx context.Context, arg ListUnnudgedDelegationResultsParams) ([]AuraSteerQueue, error)
+	// Display-only read, deliberately separate from ListTurnsBySeq for the same reason
+	// ListAssistantTurnReasoning is: the llm.Message history rebuild must never select it.
+	//
+	// `ordinal` is the turn's index AMONG USER TURNS, not its seq, because that is what the
+	// snapshot consumer can actually match on: the messages it merges into carry no seq, and
+	// user turns rebuild one-for-one and in order (repairToolMessagePairs touches only
+	// tool/assistant pairing). Computing it here rather than returning every user turn keeps
+	// the result sparse -- a long conversation with one attachment costs one row.
+	ListUserTurnAttachments(ctx context.Context, conversationID pgtype.UUID) ([]ListUserTurnAttachmentsRow, error)
 	LockConversationForTurnAppend(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 	// This must run on transaction-bound Queries because autocommit releases the row lock when the statement returns.
 	LockOperationReceipt(ctx context.Context, arg LockOperationReceiptParams) (LockOperationReceiptRow, error)

@@ -1,7 +1,7 @@
 import { useCallback, type Dispatch, type SetStateAction } from 'react';
 import type { ThreadMessageLike } from '@assistant-ui/react';
-import { deleteAsset, promoteAsset, retryAsset } from './attachments/api';
-import { removeAssetFromMessages, replaceAssetInMessages } from './ExternalStoreChat_folds';
+import { promoteAsset, retryAsset } from './attachments/api';
+import { replaceAssetInMessages } from './ExternalStoreChat_folds';
 
 // ExternalStoreChat_assets — the attachment-chip action callbacks split out of
 // ExternalStoreChat.tsx (600-LOC cap, refactor-on-touch): each maps an asset
@@ -31,16 +31,6 @@ export function useAssetActions(setMessages: Dispatch<SetStateAction<ThreadMessa
     [setMessages],
   );
 
-  const handleAssetRemove = useCallback(
-    (assetID: string) => {
-      void deleteAsset(assetID)
-        .then(() => {
-          setMessages((prev) => removeAssetFromMessages(prev, assetID));
-        })
-        .catch(() => undefined);
-    },
-    [setMessages],
-  );
 
-  return { handleAssetRetry, handleAssetPromote, handleAssetRemove };
+  return { handleAssetRetry, handleAssetPromote };
 }

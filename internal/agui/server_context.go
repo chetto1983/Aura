@@ -2,6 +2,7 @@ package agui
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 
 	"github.com/chetto1983/aura/internal/assets"
@@ -36,8 +37,28 @@ func (s *Server) buildTurnUserMessage(ctx context.Context, r *http.Request, thre
 			if asset.ThreadID != "" && asset.ThreadID != threadID {
 				return ctx, userMsg, http.StatusNotFound, "attachment not found"
 			}
+			// The composer presigns as soon as a file is chosen, and on a brand new chat
+			// there is no thread id yet -- so the row was written with an empty one and
+			// nothing ever filled it in. ListAssetsForThread filters on thread_id, so
+			// that asset was invisible the moment the page reloaded. Claim it now, while
+			// we hold the proof that it belongs here. Best-effort: an adoption failure
+			// must not refuse a turn whose attachment is otherwise valid and already
+			// about to be projected into the model's content.
+			if asset.ThreadID == "" && threadID != "" {
+				if adopted, aErr := s.assets.AdoptIntoThread(ctx, identityID, asset.ID, threadID); aErr == nil {
+					asset = adopted
+				} else {
+					slog.Warn("agui: adopt attachment into thread",
+						"thread", threadID, "asset", asset.ID, "err", aErr)
+				}
+			}
 			attachments = append(attachments, asset)
 		}
+		// Every modality, not the media subset the content projection takes below: a PDF
+		// reaches the model as document scope rather than as an image part, but it was
+		// still sent with this turn, and the runner persists this list as the turn's own
+		// record of what came with it (migration 0116).
+		ctx = assets.WithTurnAttachments(ctx, attachmentIDs)
 	}
 	if s.assets == nil {
 		return ctx, userMsg, 0, ""

@@ -41,6 +41,10 @@ func (f *fakeConvStore) LoadHistory(_ context.Context, id string) ([]llm.Message
 	return f.history[id], nil
 }
 
+func (f *fakeConvStore) ListTurnAttachments(_ context.Context, id string) ([]conversations.TurnAttachments, error) {
+	return nil, nil
+}
+
 func (f *fakeConvStore) ListTurnReasoning(_ context.Context, id string) ([]conversations.TurnReasoning, error) {
 	if f.reasoningErr != nil {
 		return nil, f.reasoningErr

@@ -143,6 +143,16 @@ function reasoningPartFromSnapshot(message: SnapshotMessage): ReasoningPart[] {
   ];
 }
 
+/** The declared attachment ids of a user turn, or [] when the field is absent (a turn
+ *  older than migration 0116) or malformed. Never partially trusted: a non-string entry
+ *  drops rather than becoming a lookup that cannot match. */
+function attachmentIDsFromSnapshot(message: SnapshotMessage): string[] {
+  if (!Array.isArray(message.attachmentIds)) return [];
+  return message.attachmentIds.filter(
+    (id): id is string => typeof id === 'string' && id.length > 0,
+  );
+}
+
 function mergeToolResult(
   messages: ThreadMessageLike[],
   toolCallId: string,
@@ -201,9 +211,17 @@ export function snapshotToThreadMessages(snapshot: unknown): ThreadMessageLike[]
       continue;
     }
     if (role === 'user') {
+      // The turn's OWN record of what was sent with it (migration 0116). It rides
+      // metadata.custom because that is where the fold already looks for the resolved
+      // assets, and it is the ids that let that fold stop guessing by position.
+      const declared = attachmentIDsFromSnapshot(raw);
+      const custom =
+        declared.length > 0
+          ? { ...(metadata?.custom ?? {}), attachmentIds: declared }
+          : metadata?.custom;
       messages.push({
         ...(id !== undefined ? { id } : {}),
-        ...(metadata !== undefined ? { metadata } : {}),
+        ...(custom !== undefined ? { metadata: { ...metadata, custom } } : {}),
         role: 'user',
         content: [{ type: 'text', text }],
       });

@@ -12,6 +12,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/prompt"
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/identityctx"
@@ -355,10 +356,14 @@ func (r *Runner) scopeContextToConversation(ctx context.Context, convID string) 
 	return identityctx.WithIdentityID(ctx, conv.IdentityID), nil
 }
 
-// appendUserTurn persists the user message as the next turn.
+// appendUserTurn persists the user message as the next turn, together with whatever was
+// attached to it (migration 0116). The ids ride the context because the HTTP layer is
+// where they are known and validated, and this is where the turn that owns them is
+// written; a request that attached nothing carries none and the column stays NULL.
 func (r *Runner) appendUserTurn(ctx context.Context, convID, content string) error {
 	if err := r.Conv.AppendTurn(ctx, conversations.AppendTurnParams{
 		ConversationID: convID, Role: llm.RoleUser, Content: content,
+		AttachmentIDs: assets.TurnAttachments(ctx),
 	}); err != nil {
 		return err
 	}

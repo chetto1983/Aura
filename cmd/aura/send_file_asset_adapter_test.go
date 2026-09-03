@@ -56,6 +56,10 @@ func (r *recordingAssetStore) SetStatus(context.Context, string, string, assets.
 func (r *recordingAssetStore) SetResult(context.Context, string, string, assets.Result) (assets.Asset, error) {
 	return r.asset, nil
 }
+func (r *recordingAssetStore) AdoptIntoThread(context.Context, string, string, string) (assets.Asset, error) {
+	return assets.Asset{}, nil
+}
+
 func (r *recordingAssetStore) Promote(context.Context, string, string) (assets.Asset, error) {
 	return assets.Asset{}, nil
 }

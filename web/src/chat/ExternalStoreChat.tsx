@@ -392,7 +392,7 @@ export function ExternalStoreChat({
   }, [threadId, usageLifecycle, t]);
 
   // Attachment-chip actions live in ./ExternalStoreChat_assets (600-LOC split).
-  const { handleAssetRetry, handleAssetPromote, handleAssetRemove } = useAssetActions(setMessages);
+  const { handleAssetRetry, handleAssetPromote } = useAssetActions(setMessages);
 
   // The stream scaffolding the three non-primary streams share (re-run from a branch point,
   // HITL resume, live-run attach) lives in ./ExternalStoreChat_streams — 600-LOC split.
@@ -497,7 +497,6 @@ export function ExternalStoreChat({
                     <UserMessage
                       onAssetRetry={handleAssetRetry}
                       onAssetPromote={handleAssetPromote}
-                      onAssetRemove={handleAssetRemove}
                     />
                   ) : (
                     <AssistantMessage />

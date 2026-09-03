@@ -11,6 +11,7 @@ import (
 	"github.com/chetto1983/aura/internal/pgnumeric"
 	"github.com/chetto1983/aura/internal/secret"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // ErrSeqRequired is returned by AppendTurnTx when the caller does not supply a positive
@@ -51,6 +52,14 @@ type AppendTurnParams struct {
 	ContextTokens int
 	OutputTokens  int
 	CachedTokens  int
+	// AttachmentIDs are the assets this turn was sent with, in the order the client
+	// listed them. Every modality, not only the ones projected into the model's content:
+	// a PDF reaches the model through document scope rather than as an image part, but it
+	// was still attached to THIS turn and a reader that dropped it would lose the file
+	// from the conversation exactly as before migration 0116. Empty leaves the column
+	// NULL, which is how "sent with nothing" and "predates the column" stay the same
+	// answer for a reader that has no other way to tell them apart.
+	AttachmentIDs []string
 	CostUSD       float64
 	// Reasoning is the turn's accumulated chain-of-thought, persisted DISPLAY-ONLY
 	// on the final assistant answer turn (amendment #91 / fix-plan 1.12). "" maps to
@@ -264,6 +273,7 @@ func (s *Store) appendTurnWrites(p AppendTurnParams) (sqlc.InsertConversationTur
 		Reasoning:           optionalText(db.PostgresTextSafe(p.Reasoning)),
 		ReasoningDurationMs: optionalInt8(p.ReasoningDurationMS),
 		DeliveryKey:         optionalText(p.DeliveryKey),
+		AttachmentIds:       attachmentUUIDs(p.AttachmentIDs),
 	}
 	agg := sqlc.UpdateConversationAggregatesParams{
 		InputTokens:  int64(p.InputTokens),
@@ -306,4 +316,26 @@ func cleanupSidecarOnTxError(run func() error, spilledPath func() string) error 
 		}
 	}
 	return err
+}
+
+// attachmentUUIDs renders the id list for the column. An id that is not a UUID is dropped
+// rather than failing the append: the turn itself is the thing worth keeping, and a
+// malformed reference could only ever point at an asset that does not exist. nil for an
+// empty list, so the column stays NULL rather than becoming an empty array.
+func attachmentUUIDs(ids []string) []pgtype.UUID {
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make([]pgtype.UUID, 0, len(ids))
+	for _, id := range ids {
+		parsed, err := db.ParseUUID("attachment_id", id)
+		if err != nil {
+			continue
+		}
+		out = append(out, parsed)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

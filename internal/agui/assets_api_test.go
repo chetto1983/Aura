@@ -134,6 +134,10 @@ type fakeAssetService struct {
 	openAsset  assets.Asset
 	openErr    error
 
+	// adopted records every "<assetID>-><threadID>" claim, so a test can assert that an
+	// attachment presigned before its conversation existed gets bound to it.
+	adopted []string
+
 	listIdentityID string
 	listThreadID   string
 	getID          string
@@ -204,6 +208,13 @@ func (f *fakeAssetService) BuildTurnContext(_ context.Context, identityID, threa
 		})
 	}
 	return assets.WithContextBlocks(userText, catalog, assets.BuildAttachmentBlock(attachments))
+}
+
+func (f *fakeAssetService) AdoptIntoThread(_ context.Context, _, assetID, threadID string) (assets.Asset, error) {
+	f.adopted = append(f.adopted, assetID+"->"+threadID)
+	asset := f.getResp
+	asset.ThreadID = threadID
+	return asset, nil
 }
 
 func (f *fakeAssetService) Promote(context.Context, string, string) (assets.Asset, error) {

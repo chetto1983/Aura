@@ -162,6 +162,10 @@ func (f *steerE2EConvStore) DeleteForIdentity(context.Context, string, string) (
 func (f *steerE2EConvStore) ListContextRotEvents(context.Context, string) ([]conversations.RotEvent, error) {
 	return nil, nil
 }
+func (f *steerE2EConvStore) ListTurnAttachments(context.Context, string) ([]conversations.TurnAttachments, error) {
+	return nil, nil
+}
+
 func (f *steerE2EConvStore) ListTurnReasoning(context.Context, string) ([]conversations.TurnReasoning, error) {
 	return nil, nil
 }

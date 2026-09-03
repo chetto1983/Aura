@@ -1,4 +1,4 @@
-import { RefreshCw, UploadCloud, X } from 'lucide-react';
+import { RefreshCw, UploadCloud } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { RemoteImagePreview } from './AttachmentImage';
 import type { Asset } from './types';
@@ -11,10 +11,9 @@ interface AttachmentCardProps {
   readonly asset: Asset;
   readonly onRetry?: (id: string) => void;
   readonly onPromote?: (id: string) => void;
-  readonly onRemove?: (id: string) => void;
 }
 
-export function AttachmentCard({ asset, onRetry, onPromote, onRemove }: AttachmentCardProps) {
+export function AttachmentCard({ asset, onRetry, onPromote }: AttachmentCardProps) {
   const { t } = useTranslation();
   const status = statusText(asset.status, t);
   // The detail line EXPLAINS; it does not restate the badge. It used to fall back to the
@@ -71,21 +70,6 @@ export function AttachmentCard({ asset, onRetry, onPromote, onRemove }: Attachme
               {t('chat.attachments.promote')}
             </Button>
           ) : null}
-          {onRemove !== undefined && asset.status !== 'deleted' && asset.status !== 'canceled' ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label={t('chat.attachments.remove', { name: asset.file_name })}
-              data-required-touch-target
-              onClick={() => {
-                onRemove(asset.id);
-              }}
-              className="inline-flex h-[44px] min-h-[44px] w-[44px] min-w-[44px] items-center justify-center rounded-full text-text-muted hover:bg-surface-3 hover:text-text"
-            >
-              <X data-icon aria-hidden="true" className="size-3.5" />
-            </Button>
-          ) : null}
         </div>
       </div>
       {detail.length > 0 ? (
@@ -95,9 +79,11 @@ export function AttachmentCard({ asset, onRetry, onPromote, onRemove }: Attachme
   );
 }
 
+// Same stale assumption statusText carried: gating on searchable/complete meant this
+// button could never appear, because assets stop at `processing` on this deployment.
 function isPromotable(asset: Asset): boolean {
   if (asset.scope === 'library') return false;
-  return asset.status === 'searchable' || asset.status === 'complete';
+  return isReadyAsset(asset);
 }
 
 // A status word only when there is one worth saying.
@@ -126,6 +112,12 @@ function statusText(status: Asset['status'], t: ReturnType<typeof useTranslation
     case 'embedding':
     case 'complete':
       return '';
+    // A vanishing asset is not one being worked on. Saying "processing" while the bytes
+    // are being removed is how a deleted attachment read as a stuck upload.
+    case 'deleting':
+    case 'deleted':
+    case 'canceled':
+      return t('chat.attachments.failed');
     default:
       return t('chat.attachments.processing');
   }

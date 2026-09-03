@@ -18,16 +18,17 @@ const readyAsset: Asset = {
 describe('AttachmentCard actions', () => {
   it('shows promote and remove controls for ready assets', () => {
     const promote = vi.fn();
-    const remove = vi.fn();
 
-    render(<AttachmentCard asset={readyAsset} onPromote={promote} onRemove={remove} />);
+    render(<AttachmentCard asset={readyAsset} onPromote={promote} />);
 
     expect(screen.getByText('manual.pdf').closest('[data-slot="card"]')).not.toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Promote' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Remove manual.pdf' }));
 
     expect(promote).toHaveBeenCalledWith('asset-1');
-    expect(remove).toHaveBeenCalledWith('asset-1');
+    // Deliberately absent: an attachment cannot be un-sent, so a remove control here
+    // only deletes the bytes of a message that already happened, leaving a broken card
+    // behind it (seen live 2026-09-03 -- the X left status `deleting` and a 404 image).
+    expect(screen.queryByRole('button', { name: 'Remove manual.pdf' })).toBeNull();
   });
 
   it('shows retry only for failed assets', () => {

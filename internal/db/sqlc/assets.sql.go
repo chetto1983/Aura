@@ -11,6 +11,71 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const adoptAssetIntoThread = `-- name: AdoptAssetIntoThread :one
+UPDATE aura.assets
+SET thread_id = $3,
+    updated_at = now()
+WHERE id = $1
+  AND identity_id = $2
+  AND thread_id = ''
+  AND deleted_at IS NULL
+RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation
+`
+
+type AdoptAssetIntoThreadParams struct {
+	ID         pgtype.UUID `json:"id"`
+	IdentityID pgtype.UUID `json:"identity_id"`
+	ThreadID   string      `json:"thread_id"`
+}
+
+// Claim an asset that was presigned before its conversation existed.
+//
+// The web composer presigns as soon as the file is chosen, and on a BRAND NEW chat there
+// is no thread id yet, so the row is written with thread_id = ”. Nothing ever filled it
+// in, and ListAssetsForThread filters on thread_id -- so the first attachment of a new
+// conversation was invisible the moment the page reloaded (measured 2026-09-03: one such
+// row, an image the model had already answered about).
+//
+// Only an UNCLAIMED asset is adopted. A row that already names a thread is left exactly as
+// it is, so this can never move someone's attachment between conversations.
+func (q *Queries) AdoptAssetIntoThread(ctx context.Context, arg AdoptAssetIntoThreadParams) (AuraAssets, error) {
+	row := q.db.QueryRow(ctx, adoptAssetIntoThread, arg.ID, arg.IdentityID, arg.ThreadID)
+	var i AuraAssets
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.SourceKind,
+		&i.SourceRef,
+		&i.ThreadID,
+		&i.Scope,
+		&i.Modality,
+		&i.Status,
+		&i.FileName,
+		&i.MimeType,
+		&i.DeclaredSizeBytes,
+		&i.SizeBytes,
+		&i.ContentHash,
+		&i.ObjectBucket,
+		&i.ObjectKey,
+		&i.ObjectEtag,
+		&i.DocumentID,
+		&i.Summary,
+		&i.Metadata,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+		&i.CreatedAt,
+		&i.UploadedAt,
+		&i.AcceptedAt,
+		&i.ProcessedAt,
+		&i.SearchableAt,
+		&i.CompletedAt,
+		&i.DeletedAt,
+		&i.UpdatedAt,
+		&i.PipelineGeneration,
+	)
+	return i, err
+}
+
 const createAsset = `-- name: CreateAsset :one
 INSERT INTO aura.assets (
     identity_id, source_kind, source_ref, thread_id, scope, modality,

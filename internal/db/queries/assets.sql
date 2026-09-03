@@ -104,6 +104,26 @@ WHERE id = $1
   AND deleted_at IS NULL
 RETURNING *;
 
+-- name: AdoptAssetIntoThread :one
+-- Claim an asset that was presigned before its conversation existed.
+--
+-- The web composer presigns as soon as the file is chosen, and on a BRAND NEW chat there
+-- is no thread id yet, so the row is written with thread_id = ''. Nothing ever filled it
+-- in, and ListAssetsForThread filters on thread_id -- so the first attachment of a new
+-- conversation was invisible the moment the page reloaded (measured 2026-09-03: one such
+-- row, an image the model had already answered about).
+--
+-- Only an UNCLAIMED asset is adopted. A row that already names a thread is left exactly as
+-- it is, so this can never move someone's attachment between conversations.
+UPDATE aura.assets
+SET thread_id = $3,
+    updated_at = now()
+WHERE id = $1
+  AND identity_id = $2
+  AND thread_id = ''
+  AND deleted_at IS NULL
+RETURNING *;
+
 -- name: SoftDeleteAsset :one
 UPDATE aura.assets
 SET status = 'deleting',

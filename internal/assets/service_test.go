@@ -461,6 +461,16 @@ func (s *fakeAssetStore) SetResult(_ context.Context, id, identityID string, res
 	})
 }
 
+// Adoption is a no-op here: the fake has no unclaimed-thread notion, and every test
+// that exercises the real claim drives the store.
+func (s *fakeAssetStore) AdoptIntoThread(_ context.Context, id, identityID, threadID string) (Asset, error) {
+	return s.update(id, identityID, func(a *Asset) {
+		if a.ThreadID == "" {
+			a.ThreadID = threadID
+		}
+	})
+}
+
 func (s *fakeAssetStore) Promote(_ context.Context, id, identityID string) (Asset, error) {
 	return s.update(id, identityID, func(asset *Asset) {
 		asset.Scope = ScopeLibrary

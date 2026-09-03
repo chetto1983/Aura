@@ -20,6 +20,10 @@ type AssetService interface {
 	Promote(context.Context, string, string) (assets.Asset, error)
 	Delete(context.Context, string, string) (assets.Asset, error)
 	Retry(context.Context, string, string) (assets.Asset, error)
+	// AdoptIntoThread claims an asset presigned before its conversation existed (the
+	// first attachment of a brand new chat, written with an empty thread_id). Only an
+	// unclaimed row is touched, so it can never move an attachment between threads.
+	AdoptIntoThread(ctx context.Context, identityID, assetID, threadID string) (assets.Asset, error)
 	// BuildTurnContext composes the channel-agnostic per-turn context (this turn's
 	// attachments + the thread's knowledge catalog) onto the user text — the shared seam
 	// the Telegram channel also uses, so the composition is not duplicated per channel.

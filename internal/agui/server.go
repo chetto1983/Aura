@@ -14,12 +14,10 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/askuser"
-	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/mcp"
 	runtimereadiness "github.com/chetto1983/aura/internal/readiness"
 	"github.com/chetto1983/aura/internal/runner"
-	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -541,55 +539,6 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 // handleRun (POST /agent/run) lives in server_run.go together with its detached-path
 // twin (server_run_detach.go) — moved out on the fix-plan 1.3 Tier B touch to keep
 // this file (routing + config + seams) under the 600-LOC ceiling.
-
-// handleMessages resolves the thread (404) and returns the persisted history as a
-// MESSAGES_SNAPSHOT JSON body (one-shot read, NOT SSE — OQ2). Each persisted
-// llm.Message is projected to an events.Message.
-func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	ctx := r.Context()
-	// A malformed thread id (non-UUID) is definitionally not an existing thread —
-	// 404 before the store round-trip rather than a 500 from the id parse failure
-	// (T-12-11; the live smoke's `does-not-exist` chokepoint).
-	if _, err := uuid.Parse(id); err != nil {
-		http.Error(w, "thread not found", http.StatusNotFound)
-		return
-	}
-	// Owner-scoped thread resolution (MUSR-01 / D-06): a foreign/absent thread is 404 before
-	// the history read, so a MESSAGES_SNAPSHOT never leaks another identity's conversation.
-	if _, err := s.conv.GetForIdentity(ctx, id, scopedIdentityID(ctx)); err != nil {
-		if errors.Is(err, conversations.ErrConversationNotFound) {
-			http.Error(w, "thread not found", http.StatusNotFound)
-			return
-		}
-		http.Error(w, "thread lookup failed", http.StatusInternalServerError)
-		return
-	}
-	hist, err := s.conv.LoadHistory(scopedCtx(ctx), id)
-	if err != nil {
-		http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	// D-06: emit the display-aware MESSAGES_SNAPSHOT — each tool-result turn re-derives
-	// its DisplayPayload through the SAME normalizer the live stream uses, so a reopened
-	// thread renders typed displays identically to live. The envelope is byte-compatible
-	// with the SDK MESSAGES_SNAPSHOT plus the additive per-tool-call `display` key the
-	// cockpit replay reads.
-	snap := projectDisplaySnapshot(hist)
-	// Amendment #91 (fix-plan 1.12) display rehydration: merge the persisted per-turn
-	// CoT onto the assistant answer messages so the ReasoningDrawer survives reload.
-	// Fail-soft: reasoning is additive display data — a read failure degrades to a
-	// drawer-less snapshot (the NULL-column posture), never a 500 for the whole thread.
-	if reasonings, rerr := s.conv.ListTurnReasoning(scopedCtx(ctx), id); rerr != nil {
-		slog.Warn("agui: list turn reasoning (serving snapshot without it)", "thread", id, "err", rerr)
-	} else {
-		attachTurnReasoning(&snap, reasonings)
-	}
-	if err := json.NewEncoder(w).Encode(snap); err != nil {
-		slog.Warn("agui: encode messages snapshot", "err", err)
-	}
-}
 
 // The per-connection SSE pump (streamSSE / pumpSend / isLifecycleFrame / bufferCap) lives in
 // server_sse.go to keep this file — routing + the run/messages handlers + the 37E effort

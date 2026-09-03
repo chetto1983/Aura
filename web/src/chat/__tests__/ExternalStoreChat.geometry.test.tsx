@@ -294,7 +294,7 @@ describe('ExternalStoreChat message geometry', () => {
     expect(filename.classList.contains('[overflow-wrap:anywhere]')).toBe(true);
   });
 
-  it('sizes persisted attachment Retry, Promote, and Remove actions for touch', async () => {
+  it('sizes persisted attachment Retry and Promote actions for touch', async () => {
     const baseAsset = {
       modality: 'document',
       mime_type: 'application/pdf',
@@ -334,9 +334,13 @@ describe('ExternalStoreChat message geometry', () => {
     const actions = [
       screen.getByRole('button', { name: 'Retry' }),
       screen.getByRole('button', { name: 'Promote' }),
-      ...screen.getAllByRole('button', { name: /^Remove (?:broken|ready)\.pdf$/ }),
     ];
-    expect(actions).toHaveLength(4);
+    expect(actions).toHaveLength(2);
     actions.forEach(expectRequiredTouchTarget);
+    // Remove is deliberately gone from a persisted turn: the only thing it could do is
+    // delete the bytes of a message that already happened. Measured live 2026-09-03 --
+    // one click left the asset at status `deleting`, the image 404ing, and the card
+    // reporting the vanishing file as still being processed.
+    expect(screen.queryAllByRole('button', { name: /^Remove / })).toHaveLength(0);
   });
 });

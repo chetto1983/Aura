@@ -33,6 +33,10 @@ type ConversationStore interface {
 	// the persisted per-turn CoT + duration for the snapshot projection, kept
 	// separate from LoadHistory so llm.Message stays structurally reasoning-free.
 	ListTurnReasoning(ctx context.Context, conversationID string) ([]conversations.TurnReasoning, error)
+	// ListTurnAttachments is the migration-0116 DISPLAY-ONLY read: what each user turn
+	// was sent with. Like the reasoning read it stays off the history rebuild, so an
+	// attachment can never re-enter the model context as a list of ids.
+	ListTurnAttachments(ctx context.Context, conversationID string) ([]conversations.TurnAttachments, error)
 	List(ctx context.Context, includeArchived bool) ([]conversations.Conversation, error)
 	SearchConversationTurns(ctx context.Context, query string, limit int) ([]conversations.SearchResult, error)
 	UpdateStatus(ctx context.Context, conversationID, status string) error

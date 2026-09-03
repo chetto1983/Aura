@@ -29,6 +29,9 @@ type StoreBackend interface {
 	SetStatus(context.Context, string, string, Status, string, string) (Asset, error)
 	SetResult(context.Context, string, string, Result) (Asset, error)
 	Promote(context.Context, string, string) (Asset, error)
+	// AdoptIntoThread(ctx, id, identityID, threadID) claims an asset presigned before its
+	// conversation existed. Only an unclaimed row is touched.
+	AdoptIntoThread(context.Context, string, string, string) (Asset, error)
 	Delete(context.Context, string, string) (Asset, error)
 }
 
@@ -223,6 +226,14 @@ func (s *Service) Promote(ctx context.Context, identityID, assetID string) (Asse
 		return Asset{}, fmt.Errorf("asset service is not configured")
 	}
 	return s.Store.Promote(ctx, assetID, identityID)
+}
+
+// AdoptIntoThread claims an asset that was presigned before its conversation existed.
+func (s *Service) AdoptIntoThread(ctx context.Context, identityID, assetID, threadID string) (Asset, error) {
+	if s.Store == nil {
+		return Asset{}, fmt.Errorf("asset service is not configured")
+	}
+	return s.Store.AdoptIntoThread(ctx, assetID, identityID, threadID)
 }
 
 func (s *Service) Delete(ctx context.Context, identityID, assetID string) (Asset, error) {

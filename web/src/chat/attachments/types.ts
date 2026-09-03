@@ -10,7 +10,14 @@ export type AssetStatus =
   | 'failed'
   | 'refused'
   | 'deleted'
-  | 'canceled';
+  | 'canceled'
+  // Written by the retention sweeper (internal/retention/store.go), not by the upload
+  // pipeline -- which is why they were missing here: the union only listed what the
+  // upload path produces, so a swept asset fell through every switch to the default and
+  // a vanishing file reported itself as still processing.
+  | 'deleting'
+  | 'indexed'
+  | 'recovered';
 
 export type AssetModality = 'document' | 'image' | 'audio' | 'unknown';
 

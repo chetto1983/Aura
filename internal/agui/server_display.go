@@ -36,6 +36,10 @@ type displaySnapshotMessage struct {
 	ToolCalls           []displaySnapshotToolCall `json:"toolCalls,omitempty"`
 	Reasoning           string                    `json:"reasoning,omitempty"`
 	ReasoningDurationMs int64                     `json:"reasoningDurationMs,omitempty"`
+	// AttachmentIDs are the assets this user turn was sent with (migration 0116). Absent
+	// on every other role, and on user turns that predate the column — which is what
+	// lets the cockpit keep its old positional fold as the fallback for those alone.
+	AttachmentIDs []string `json:"attachmentIds,omitempty"`
 }
 
 // displaySnapshotToolCall mirrors types.ToolCall (id/type/function) plus the additive
@@ -226,4 +230,34 @@ func projectDisplayToolCalls(calls []llm.ToolCall, displays map[string]*display.
 		})
 	}
 	return out
+}
+
+// attachTurnAttachments merges each user turn's attachment ids onto the user messages of
+// the snapshot.
+//
+// Rows are sparse — only turns that carry attachments — so they are addressed by
+// UserOrdinal rather than by their position in the slice. That ordinal is an index among
+// USER turns, and user turns rebuild one-for-one and in order (repairToolMessagePairs
+// touches only tool/assistant pairing), so the k-th user message is the k-th user turn.
+//
+// This is the whole point of the column: before it, the cockpit could only zip a thread's
+// assets onto user turns by position, putting an image sent with the third message against
+// the first. Fail-soft in both directions — an ordinal past the end of the messages is
+// ignored, a message no row names keeps nothing.
+func attachTurnAttachments(snap *displaySnapshotEvent, rows []conversations.TurnAttachments) {
+	if len(rows) == 0 {
+		return
+	}
+	userMessages := make([]*displaySnapshotMessage, 0, len(snap.Messages))
+	for i := range snap.Messages {
+		if snap.Messages[i].Role == types.Role(llm.RoleUser) {
+			userMessages = append(userMessages, &snap.Messages[i])
+		}
+	}
+	for _, row := range rows {
+		if row.UserOrdinal < 0 || row.UserOrdinal >= len(userMessages) {
+			continue
+		}
+		userMessages[row.UserOrdinal].AttachmentIDs = row.IDs
+	}
 }

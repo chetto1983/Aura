@@ -1,0 +1,21 @@
+-- What a turn was sent with.
+--
+-- Nothing recorded it. The asset carried a thread_id, the turn carried nothing, so on
+-- reload the web client could only zip assets onto user turns BY POSITION -- the Nth asset
+-- onto the Nth user turn (ExternalStoreChat_folds.foldAssetsPositionally, whose own comment
+-- admits it is a heuristic because "an Asset carries no message key").
+--
+-- That is wrong the moment a conversation has a user turn before the attachment: measured
+-- 2026-09-03, an image sent with the third message rendered against the first, under the
+-- word "ciao".
+--
+-- The list lives on the TURN and not as a turn pointer on the asset, because that is the
+-- direction the fact actually has: a turn is sent WITH attachments, and the wire already
+-- says so (the run envelope carries attachment_ids beside the message). It also costs no
+-- caller a signature change -- the seq an asset would need to point at is allocated inside
+-- AppendTurn's transaction and returned to nobody.
+--
+-- NULL means "this turn predates the column", which is the only case the reader may fall
+-- back to positional folding for. An empty array would mean "sent with nothing", which is
+-- a different and stronger claim.
+ALTER TABLE aura.conversation_turns ADD COLUMN attachment_ids uuid[];

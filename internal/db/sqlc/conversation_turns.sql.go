@@ -112,30 +112,32 @@ const insertConversationTurn = `-- name: InsertConversationTurn :execrows
 INSERT INTO aura.conversation_turns (
     conversation_id, seq, role, content, content_sidecar_path,
     tool_call_id, tool_calls, input_tokens, output_tokens, cached_tokens,
-    reasoning, reasoning_duration_ms, context_tokens, parent_seq, delivery_key
+    reasoning, reasoning_duration_ms, context_tokens, parent_seq, delivery_key,
+    attachment_ids
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-    NULLIF($2::int - 1, 0), $14
+    NULLIF($2::int - 1, 0), $14, $15
 )
 ON CONFLICT (conversation_id, delivery_key) WHERE delivery_key IS NOT NULL
 DO NOTHING
 `
 
 type InsertConversationTurnParams struct {
-	ConversationID      pgtype.UUID `json:"conversation_id"`
-	Seq                 int32       `json:"seq"`
-	Role                string      `json:"role"`
-	Content             pgtype.Text `json:"content"`
-	ContentSidecarPath  pgtype.Text `json:"content_sidecar_path"`
-	ToolCallID          pgtype.Text `json:"tool_call_id"`
-	ToolCalls           []byte      `json:"tool_calls"`
-	InputTokens         int32       `json:"input_tokens"`
-	OutputTokens        int32       `json:"output_tokens"`
-	CachedTokens        int32       `json:"cached_tokens"`
-	Reasoning           pgtype.Text `json:"reasoning"`
-	ReasoningDurationMs pgtype.Int8 `json:"reasoning_duration_ms"`
-	ContextTokens       int32       `json:"context_tokens"`
-	DeliveryKey         pgtype.Text `json:"delivery_key"`
+	ConversationID      pgtype.UUID   `json:"conversation_id"`
+	Seq                 int32         `json:"seq"`
+	Role                string        `json:"role"`
+	Content             pgtype.Text   `json:"content"`
+	ContentSidecarPath  pgtype.Text   `json:"content_sidecar_path"`
+	ToolCallID          pgtype.Text   `json:"tool_call_id"`
+	ToolCalls           []byte        `json:"tool_calls"`
+	InputTokens         int32         `json:"input_tokens"`
+	OutputTokens        int32         `json:"output_tokens"`
+	CachedTokens        int32         `json:"cached_tokens"`
+	Reasoning           pgtype.Text   `json:"reasoning"`
+	ReasoningDurationMs pgtype.Int8   `json:"reasoning_duration_ms"`
+	ContextTokens       int32         `json:"context_tokens"`
+	DeliveryKey         pgtype.Text   `json:"delivery_key"`
+	AttachmentIds       []pgtype.UUID `json:"attachment_ids"`
 }
 
 // parent_seq maintains the canonical leaf->root chain the branch walk recurses on
@@ -163,6 +165,7 @@ func (q *Queries) InsertConversationTurn(ctx context.Context, arg InsertConversa
 		arg.ReasoningDurationMs,
 		arg.ContextTokens,
 		arg.DeliveryKey,
+		arg.AttachmentIds,
 	)
 	if err != nil {
 		return 0, err
@@ -617,6 +620,55 @@ func (q *Queries) ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID
 			&i.OutputTokens,
 			&i.CachedTokens,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserTurnAttachments = `-- name: ListUserTurnAttachments :many
+SELECT seq, attachment_ids, ordinal
+FROM (
+    SELECT seq,
+           attachment_ids,
+           (row_number() OVER (ORDER BY seq ASC) - 1)::int AS ordinal
+    FROM aura.conversation_turns
+    WHERE conversation_id = $1
+      AND role = 'user'
+) AS user_turns
+WHERE attachment_ids IS NOT NULL
+  AND cardinality(attachment_ids) > 0
+ORDER BY seq ASC
+`
+
+type ListUserTurnAttachmentsRow struct {
+	Seq           int32         `json:"seq"`
+	AttachmentIds []pgtype.UUID `json:"attachment_ids"`
+	Ordinal       int32         `json:"ordinal"`
+}
+
+// Display-only read, deliberately separate from ListTurnsBySeq for the same reason
+// ListAssistantTurnReasoning is: the llm.Message history rebuild must never select it.
+//
+// `ordinal` is the turn's index AMONG USER TURNS, not its seq, because that is what the
+// snapshot consumer can actually match on: the messages it merges into carry no seq, and
+// user turns rebuild one-for-one and in order (repairToolMessagePairs touches only
+// tool/assistant pairing). Computing it here rather than returning every user turn keeps
+// the result sparse -- a long conversation with one attachment costs one row.
+func (q *Queries) ListUserTurnAttachments(ctx context.Context, conversationID pgtype.UUID) ([]ListUserTurnAttachmentsRow, error) {
+	rows, err := q.db.Query(ctx, listUserTurnAttachments, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUserTurnAttachmentsRow{}
+	for rows.Next() {
+		var i ListUserTurnAttachmentsRow
+		if err := rows.Scan(&i.Seq, &i.AttachmentIds, &i.Ordinal); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

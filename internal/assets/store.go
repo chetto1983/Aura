@@ -181,6 +181,20 @@ func (s *Store) Promote(ctx context.Context, id, identityID string) (Asset, erro
 		})
 }
 
+// AdoptIntoThread claims an asset that was presigned before its conversation existed.
+// See AdoptAssetIntoThread: only a row with no thread yet is touched, so this can never
+// move an attachment between conversations.
+func (s *Store) AdoptIntoThread(ctx context.Context, id, identityID, threadID string) (Asset, error) {
+	return s.scopedTarget(ctx, id, identityID,
+		func(q *sqlc.Queries, pgID, pgIdentityID pgtype.UUID) (sqlc.AuraAssets, error) {
+			return q.AdoptAssetIntoThread(ctx, sqlc.AdoptAssetIntoThreadParams{
+				ID:         pgID,
+				IdentityID: pgIdentityID,
+				ThreadID:   threadID,
+			})
+		})
+}
+
 // Delete soft-deletes an asset.
 func (s *Store) Delete(ctx context.Context, id, identityID string) (Asset, error) {
 	return s.scopedTarget(ctx, id, identityID,
