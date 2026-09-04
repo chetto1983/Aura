@@ -17,7 +17,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -499,20 +498,18 @@ func newGatewayResumeHook(g *gateway.Gateway) runner.ResumeHook {
 }
 
 // skillLoaderRoots is the single source of truth for the loader scan roots
-// (amendment #51 / D-40 + #50): the persistent-install dir <export>/.agents/skills
-// FIRST, then the active SkillsDir LAST so an operator-authored skill WINS on a name
-// collision (scanRoot iterates roots in order, later root wins).
+// (amendment #51 / D-40 + #50). There is exactly one: the active SkillsDir, where every
+// write path lands — skill_manage install and the CLI both go through the Writer.
 //
-// The first root is a LEGACY landing zone and nothing writes it. It was where an
-// in-sandbox `cd /skills && npx skills add …` self-installed a skill back when /skills
-// was a read-write bind mount; D-10 replaced that with a docker-cp'd copy that
-// MaterializeIn clears at every create and resume, so nothing installed inside a box can
-// reach it, and no host path writes it either — skill_manage install goes through the
-// Writer, which lands in SkillsDir. It is still scanned because a deployment may already
-// hold skills there and dropping the root would unload them silently (amendment #207):
-// an `ls` on it decides whether it can go.
+// It used to scan <export>/.agents/skills first, the landing zone for an in-sandbox
+// `npx skills add` back when /skills was a read-write bind mount. D-10 replaced that mount
+// with a docker-cp'd copy MaterializeIn clears at every create and resume, and shell_exec
+// now routes a skills-install in the box to the host pipeline, so nothing could reach that
+// directory from either side. Measured absent on the running deployment (amendment #208),
+// it is no longer scanned; nothing recreates it, so a future landing zone is a deliberate
+// re-declaration rather than an inherited one.
 func skillLoaderRoots(cfg *config.Config) []string {
-	return []string{filepath.Join(cfg.SkillExportDir, ".agents", "skills"), cfg.SkillsDir}
+	return []string{cfg.SkillsDir}
 }
 
 // alwaysBlockProvider returns a per-turn renderer of the messages[1] always-block
