@@ -170,7 +170,7 @@ func (a *liveObjectStore) provisionCount() int {
 }
 
 // liveFilesystem satisfies FilesystemProvisioner over real temp-dir roots, each rooted
-// through the profile traversal guard (T-36-08-T). failProvision injects a mid-leg crash.
+// through the traversal guard (T-36-08-T). failProvision injects a mid-leg crash.
 type liveFilesystem struct {
 	root          string
 	failProvision bool
@@ -178,7 +178,7 @@ type liveFilesystem struct {
 
 func (a *liveFilesystem) subRoots(id string) (map[string]string, error) {
 	out := map[string]string{}
-	for _, sub := range []string{"mcp", "skills", "pyscripts", "agents"} {
+	for _, sub := range []string{"mcp", "skills", "pyscripts"} {
 		dir, err := idroot.RootIdentityDir(filepath.Join(a.root, sub), id)
 		if err != nil {
 			return nil, err
@@ -198,12 +198,6 @@ func (a *liveFilesystem) ProvisionIdentityDirs(_ context.Context, id string) err
 	}
 	for _, dir := range roots {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
-			return err
-		}
-	}
-	agentMD := filepath.Join(roots["agents"], "Agent.md")
-	if _, err := os.Stat(agentMD); os.IsNotExist(err) {
-		if err := os.WriteFile(agentMD, []byte{}, 0o600); err != nil {
 			return err
 		}
 	}

@@ -32,10 +32,10 @@ type ObjectStoreProvisioner interface {
 }
 
 // FilesystemProvisioner provisions and de-provisions the per-identity filesystem roots
-// (D-20/D-21): ~/.aura/mcp/{id}, $AURA_SKILLS_DIR/{id}, ~/.aura/pyscripts/{id}, and an
-// empty Agent.md. ProvisionIdentityDirs is idempotent (MkdirAll + write-if-absent);
-// DeprovisionIdentityDirs is RemoveAll (idempotent). The adapter roots every path through
-// the profile traversal guard so a crafted identity cannot escape its provisioning dir.
+// (D-20/D-21): ~/.aura/mcp/{id}, $AURA_SKILLS_DIR/{id}, ~/.aura/pyscripts/{id}.
+// ProvisionIdentityDirs is idempotent (MkdirAll); DeprovisionIdentityDirs is RemoveAll
+// (idempotent). The adapter roots every path through the traversal guard so a crafted
+// identity cannot escape its provisioning dir.
 type FilesystemProvisioner interface {
 	ProvisionIdentityDirs(ctx context.Context, identityID string) error
 	DeprovisionIdentityDirs(ctx context.Context, identityID string) error

@@ -3,14 +3,12 @@
 // — a filesystem root or an object-store bucket name — behind one charset/
 // traversal check, so path-traversal and bucket-name injection are rejected in
 // exactly one place. It imports only the standard library, so every per-identity
-// consumer (mcp, skills, objectstore, config, provisioning) can depend on it
-// without a cycle.
+// consumer (mcp, skills, objectstore, provisioning) can depend on it without a cycle.
 package idroot
 
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -20,14 +18,6 @@ var identityPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
 
 // ErrInvalidIdentity is returned when an identity is empty, malformed, or escapes its root.
 var ErrInvalidIdentity = errors.New("invalid profile identity")
-
-// DefaultRoot returns the default per-user Aura agents directory.
-func DefaultRoot() string {
-	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".aura", "agents")
-	}
-	return filepath.Join(os.TempDir(), "aura", "agents")
-}
 
 // RootIdentityDir joins root and identity behind the traversal-safe containment guard
 // (identityPattern charset + ".."/slash reject + filepath.Rel "escapes root" assertion)

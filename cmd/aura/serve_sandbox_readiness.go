@@ -23,7 +23,7 @@ import (
 // real Resolve proves the image pull, the egress sidecar and the cgroup caps. The argument was
 // right and the price was wrong: /readyz is this container's compose healthcheck and caddy,
 // prometheus and tempo all gate on `aura: service_healthy`, so the probe ran a full Resolve —
-// four volume ensures, a container resume, the whole skills/Agent.md/pyscripts tar
+// four volume ensures, a container resume, the whole skills tar
 // materialization and an egress launch — every thirty seconds against a two-second budget. Worse,
 // Resolve bumps lastUsed, so the phantom box could never be idle-reaped: one permanently running
 // container plus sidecar plus volume, per deployment, forever. CheckRuntime answers the same

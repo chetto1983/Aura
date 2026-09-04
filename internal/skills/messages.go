@@ -8,9 +8,7 @@ import (
 // alwaysBlockHeader is the ONE English header literal that leads the messages[1]
 // always-block (D-07). It is a frozen constant — never templated, never carrying a
 // per-turn value — so the rendered block is byte-stable across turns (the same
-// discipline as the manifest and messages[0]). The block is the Phase-14 Agent.md
-// seam: a future profile renders FIRST, the always-skills after; the ordering hook
-// is documented here and at the bootChat assembly.
+// discipline as the manifest and messages[0]).
 const alwaysBlockHeader = "Active skill instructions (always-on):\n\n"
 
 // RenderAlwaysBlock concatenates the bodies of the always:true skills into ONE

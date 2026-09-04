@@ -9,7 +9,6 @@
 //	aura db <sub>           — Postgres lifecycle (migrate|ping|status|reset)
 //	aura identity <sub>     — identity + capability_grants (list|get|grant|revoke)
 //	aura gateway grants     — durable "always approve" gateway grants (list|revoke)
-//	aura profile <sub>      — filesystem Agent.md profile (show|add-fact)
 //	aura paused-states <sub>— HITL pause escape hatch (list|purge --before <ISO> --confirm)
 //	aura chat <sub>         — multi-thread conversation REPL (list|new|resume|archive|unarchive|delete|rename|search)
 //	aura version            — print build metadata (version, commit, build date)

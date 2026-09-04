@@ -149,7 +149,6 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_RETENTION_DISK_STOP_PERCENT", Kind: KindInt, Default: "85"},
 		{Name: "AURA_VISION_CLOUD", Kind: KindBool, Default: "false"},
 		{Name: "AURA_EMBED_DIMENSIONS", Kind: KindInt, Default: "768"},
-		{Name: "AURA_PROFILE_CERTAINTY_N", Kind: KindInt, Default: "3"},
 		{Name: "AURA_TTS_MAX_CHARS", Kind: KindInt, Default: "4096"},
 
 		// The multi-identity provisioning switch. Catalogued so `aura config validate`

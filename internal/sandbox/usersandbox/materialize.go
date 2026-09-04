@@ -1,5 +1,5 @@
-// materialize.go is the docker-cp bridge (D-10): host source dirs (the identity's skills /
-// Agent.md / pyscripts) are tar-streamed INTO the box volume via CopyToContainer, and box
+// materialize.go is the docker-cp bridge (D-10): host source dirs (the skills root the
+// resolver supplies) are tar-streamed INTO the box volume via CopyToContainer, and box
 // /workspace artifacts are streamed OUT via CopyFromContainer. This replaces the removed ro
 // bind-mount (unrepresentable under SBX-02 — host binds have no vector), so skills land at
 // the SAME /skills/<name>/... root SnippetSandboxPath renders, by construction. Everything
@@ -329,7 +329,7 @@ func tarDir(hostDir, dest string) (io.Reader, error) {
 		if d.IsDir() {
 			return nil
 		}
-		f, err := os.Open(path) //nolint:gosec // G304: path is a materialize source under a fixed per-identity host root (skills/Agent.md/pyscripts), produced by the backend's WalkDir — not user input.
+		f, err := os.Open(path) //nolint:gosec // G304: path is a materialize source under a fixed host root the resolver supplies, produced by the backend's WalkDir — not user input.
 		if err != nil {
 			return err
 		}

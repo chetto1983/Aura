@@ -48,7 +48,7 @@ type mcpReconnect func(ctx context.Context)
 
 // newSandboxStarter adapts the router's own get-or-create seam. Route is idempotent and
 // already does everything a box needs — resolve-or-create, resume a suspended box,
-// materialize the identity's skills/Agent.md/pyscripts, attach the egress sidecar — so
+// materialize the resolver's sources, attach the egress sidecar — so
 // starting a box eagerly is the SAME call every tool call makes, with the identity bound
 // on the context rather than read off a request. A nil router yields no leg.
 func newSandboxStarter(router *usersandbox.SandboxRouter) sandboxStarter {
@@ -71,9 +71,11 @@ type bootstrapResources struct {
 	remountMCP  mcpReconnect
 }
 
-// provision runs the legs in dependency order and never fails the caller. Order matters
-// once: the box materializes the identity's skills, Agent.md and pyscripts from the
-// filesystem roots, so the roots must exist before it starts or it comes up empty.
+// provision runs the legs in dependency order and never fails the caller. The box leg comes
+// after the filesystem one because a box materializes host dirs at create; today's resolver
+// reads the deployment-global skills export dir rather than the per-identity roots, so that
+// order is defensive rather than load-bearing for it (amendment #206). The MCP remount is
+// last for a reason the code below states, and that one IS load-bearing.
 func (r bootstrapResources) provision(ctx context.Context, identityID string) {
 	if r.objectStore != nil {
 		if err := r.objectStore.ProvisionObjectStore(ctx, identityID); err != nil {
@@ -83,7 +85,7 @@ func (r bootstrapResources) provision(ctx context.Context, identityID string) {
 	}
 	if r.filesystem != nil {
 		if err := r.filesystem.ProvisionIdentityDirs(ctx, identityID); err != nil {
-			slog.Error("aura serve: bootstrap filesystem roots failed — this operator has no skills, Agent.md or pyscripts directory",
+			slog.Error("aura serve: bootstrap filesystem roots failed — this operator has no skills, mcp or pyscripts directory",
 				"err", err)
 		}
 	}

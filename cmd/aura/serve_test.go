@@ -164,7 +164,7 @@ func TestServeFlagsDisableTelegram(t *testing.T) {
 func TestBuildTelegramDepsUsesSharedAssetService(t *testing.T) {
 	assetSvc := &assets.Service{}
 	chat := &chatEnv{
-		cfg:    &config.Config{ProfileDir: t.TempDir()},
+		cfg:    &config.Config{},
 		assets: assetSvc,
 	}
 

@@ -2,7 +2,6 @@ package idroot
 
 import (
 	"errors"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -59,31 +58,5 @@ func TestContainedDirRejectsEscapeBehindValidate(t *testing.T) {
 	}
 	if _, err := containedDir(root, "safe"); err != nil {
 		t.Errorf("containedDir(safe) = %v, want nil", err)
-	}
-}
-
-func TestDefaultRootFallbackWithoutHome(t *testing.T) {
-	// No home dir resolvable -> tmp fallback. Not parallel: mutates env.
-	t.Setenv("HOME", "")
-	t.Setenv("USERPROFILE", "")
-	root := DefaultRoot()
-	if root == "" {
-		t.Fatal("DefaultRoot() empty without a home dir")
-	}
-	if !strings.Contains(filepath.ToSlash(root), "aura/agents") {
-		t.Fatalf("DefaultRoot() fallback = %q, want an aura/agents path", root)
-	}
-}
-
-func TestDefaultRootUnderHome(t *testing.T) {
-	t.Parallel()
-	root := DefaultRoot()
-	if !strings.HasSuffix(filepath.ToSlash(root), ".aura/agents") {
-		t.Fatalf("DefaultRoot() = %q, want a path ending in .aura/agents", root)
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		if want := filepath.Join(home, ".aura", "agents"); root != want {
-			t.Fatalf("DefaultRoot() = %q, want %q", root, want)
-		}
 	}
 }

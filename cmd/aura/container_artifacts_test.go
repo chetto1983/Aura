@@ -77,7 +77,6 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"MULTIMODAL_BASE_URL: http://aura-ocr-vl:8082/v1",
 		"STT_BASE_URL: http://aura-stt:9000/v1",
 		"TTS_BASE_URL: http://aura-tts:8880/v1",
-		"AURA_PROFILE_DIR: ${AURA_PROFILE_DIR:-/var/lib/aura/agents}",
 		"AURA_AGUI_BIND: 0.0.0.0:9080",
 		"AURA_SETUP_BIND: 0.0.0.0:9081",
 		"AURA_SETUP_TOKEN: ${AURA_ACCESS_TOKEN:?AURA_ACCESS_TOKEN required in .env}",

@@ -245,7 +245,7 @@ func pingSandboxDaemon(cli *client.Client) {
 const sandboxPingTimeout = 5 * time.Second
 
 // newSandboxBackend builds the production DockerBackend from cfg: the box image + cgroup caps, the
-// per-identity materialize sources (skills / Agent.md / pyscripts, so a routed shell_exec finds a
+// per-identity materialize sources (the skills root, so a routed shell_exec finds a
 // snippet the box materialized at /skills/<name>/... — D-10, plan 37-07), AND the always-on egress
 // sidecar (SBX-04, D-07) via WithEgress sourced from cfg.Sandbox.EgressImage. It is split from
 // buildSandboxRouter so the WithEgress wiring is regression-testable without a Docker daemon (the DockerBackend never
@@ -258,10 +258,11 @@ func newSandboxBackend(cli *client.Client, cfg *config.Config) *usersandbox.Dock
 		usersandbox.WithEgress(cfg.Sandbox.EgressImage))
 }
 
-// sandboxMaterializeSources resolves the per-identity host dirs docker-cp'd INTO the box at
-// resolve (D-10): the skills export dir (landing at /skills — the SnippetSandboxPath root the
-// routed shell_exec runs snippets from). Agent.md / pyscripts roots are per-identity and land with
-// their own dedicated wiring; the skills export dir is the one the snippet-exec E2E depends on.
+// sandboxMaterializeSources resolves the host dirs docker-cp'd INTO the box at resolve
+// (D-10): the skills export dir, landing at /skills — the SnippetSandboxPath root the routed
+// shell_exec runs snippets from. It is the ONLY source wired: the identity parameter is
+// deliberately unused because the export dir is deployment-global today (amendment #206), and
+// the per-identity skills root the provisioner creates has no consumer yet.
 func sandboxMaterializeSources(cfg *config.Config) usersandbox.SourceResolver {
 	exportDir := cfg.SkillExportDir
 	return func(string) []usersandbox.MaterializeSource {

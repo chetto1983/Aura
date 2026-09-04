@@ -18,7 +18,6 @@ import (
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/envutil"
-	"github.com/chetto1983/aura/internal/idroot"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/secret"
 	"github.com/joho/godotenv"
@@ -54,8 +53,7 @@ type Config struct {
 	// enables it together with the observability profile.
 	ObservabilityCheckEnabled bool // AURA_OBSERVABILITY_CHECK_ENABLED
 
-	// Phase 33 (Slice runtime-profiles) deployment posture. Distinct from the
-	// Agent.md per-identity ProfileDir below (RESEARCH Pitfall 1). Selects the
+	// Phase 33 (Slice runtime-profiles) deployment posture. Selects the
 	// config-validation strictness tier and composition-root runtime posture.
 	Profile RuntimeProfile // AURA_PROFILE — runtime deployment profile, default dev (D-01/D-03)
 
@@ -249,10 +247,6 @@ type Config struct {
 	TTSFormat            string // TTS_FORMAT — voice-note audio format (default opus)
 	MultimodalTimeoutSec int    // MULTIMODAL_TIMEOUT_SEC — per-request sidecar ceiling (default 120s; CPU OCR on a downscaled photo is well under, but vision needs more headroom than STT/TTS)
 	TTSMaxChars          int    // AURA_TTS_MAX_CHARS — soft input cap for POST /api/tts (default 4096, the OpenAI /audio/speech ceiling OpenRouter proxies; a longer input 400s)
-
-	// Phase 14 (Slice 10) Agent.md profile knobs.
-	ProfileDir        string // AURA_PROFILE_DIR — per-identity Agent.md root, default ~/.aura/agents
-	ProfileCertaintyN int    // AURA_PROFILE_CERTAINTY_N — observation threshold for auto-add, default 3
 
 	// Cockpit WhatsApp device-linking endpoint. This is the bridge management plane,
 	// separate from the OAuth-protected MCP resource server.
@@ -533,9 +527,6 @@ func loadBase() *Config {
 		TTSFormat:            envDefault("TTS_FORMAT", "opus"),
 		MultimodalTimeoutSec: envutil.IntDefault("MULTIMODAL_TIMEOUT_SEC", 120),
 		TTSMaxChars:          envutil.IntDefault("AURA_TTS_MAX_CHARS", 4096),
-
-		ProfileDir:        envDefault("AURA_PROFILE_DIR", idroot.DefaultRoot()),
-		ProfileCertaintyN: envutil.IntDefault("AURA_PROFILE_CERTAINTY_N", 3),
 
 		WhatsAppBridgeURL:   envDefault("AURA_WHATSAPP_BRIDGE_URL", "http://whatsapp:8081"),
 		WhatsAppBridgeToken: os.Getenv("AURA_WHATSAPP_BRIDGE_TOKEN"),

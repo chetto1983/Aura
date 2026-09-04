@@ -39,7 +39,6 @@ func provisioningConfiguredCfg(t *testing.T) *config.Config {
 		AuthulaSecret:       validProvisioningAuthulaSecret,
 		ObjectStoreBucket:   "aura-assets",
 		SkillsDir:           t.TempDir(),
-		ProfileDir:          t.TempDir(),
 	}
 }
 
@@ -65,7 +64,7 @@ func TestBuildProvisioningPortsWiredWhenConfigured(t *testing.T) {
 // interview-only path (each agui port nil-skips its leg).
 func TestBuildProvisioningPortsNilWhenUnconfigured(t *testing.T) {
 	// Pool present, but no Garage admin config → provisions nothing.
-	noGarage := &chatEnv{pool: newLazyPool(t), cfg: &config.Config{SkillsDir: t.TempDir(), ProfileDir: t.TempDir()}}
+	noGarage := &chatEnv{pool: newLazyPool(t), cfg: &config.Config{SkillsDir: t.TempDir()}}
 	if o, f, j := buildProvisioningPorts(noGarage); o != nil || f != nil || j != nil {
 		t.Fatalf("buildProvisioningPorts without Garage config: want all nil, got o=%v f=%v j=%v", o, f, j)
 	}
@@ -116,7 +115,6 @@ func TestBuildDispatchRegistersIdentityPurge(t *testing.T) {
 		cfg: &config.Config{
 			SkillsDir:         t.TempDir(),
 			SkillExportDir:    t.TempDir(),
-			ProfileDir:        t.TempDir(),
 			RunDir:            t.TempDir(),
 			ObjectStoreBucket: "aura-assets",
 		},
@@ -151,7 +149,6 @@ func TestBuildDispatchRegistersSandboxReap(t *testing.T) {
 		cfg: &config.Config{
 			SkillsDir:         t.TempDir(),
 			SkillExportDir:    t.TempDir(),
-			ProfileDir:        t.TempDir(),
 			RunDir:            t.TempDir(),
 			ObjectStoreBucket: "aura-assets",
 			// Profile is the zero value (non-strict) → buildSandboxRouter returns nil.

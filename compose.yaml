@@ -266,8 +266,6 @@ services:
       AURA_PIM_MCP_URL: http://aura-pim-mcp:8080
       # WhatsApp pairing is an internal management plane, separate from its MCP.
       AURA_WHATSAPP_BRIDGE_URL: http://whatsapp:8081
-      AURA_PROFILE_DIR: ${AURA_PROFILE_DIR:-/var/lib/aura/agents}
-      AURA_PROFILE_CERTAINTY_N: ${AURA_PROFILE_CERTAINTY_N:-3}
       # ↓↓ Phase 37 (SBX-05, ADR 0037) — per-identity full-capability sandbox ↓↓
       # The daemon spawns one box (aura-box-<identity>) per identity DIRECTLY over the Docker
       # Engine API (moby client, client.FromEnv reads DOCKER_HOST). This is a NO-OP under

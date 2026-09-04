@@ -83,33 +83,31 @@ var (
 // this file under the 600-LOC cap).
 
 // filesystemProvisionAdapter satisfies agui.FilesystemProvisioner over the REAL per-user
-// config bases (~/.aura/mcp, $AURA_SKILLS_DIR, ~/.aura/pyscripts, ~/.aura/agents), each
-// per-identity path rooted through the profile traversal guard so a crafted identity cannot
-// escape its provisioning dir. ProvisionIdentityDirs = MkdirAll(0o700) + write-if-absent
-// empty Agent.md; DeprovisionIdentityDirs = RemoveAll each root.
+// config bases (~/.aura/mcp, $AURA_SKILLS_DIR, ~/.aura/pyscripts), each per-identity path
+// rooted through the traversal guard so a crafted identity cannot escape its provisioning
+// dir. ProvisionIdentityDirs = MkdirAll(0o700); DeprovisionIdentityDirs = RemoveAll each
+// root. The ~/.aura/agents root and the empty Agent.md it seeded went with amendment #206:
+// the mechanism they served was retired by #87 and nothing had read them since.
 type filesystemProvisionAdapter struct {
-	roots map[string]string // sub ("mcp"|"skills"|"pyscripts"|"agents") -> base dir
+	roots map[string]string // sub ("mcp"|"skills"|"pyscripts") -> base dir
 }
 
 func newFilesystemProvisionAdapter(cfg *config.Config) filesystemProvisionAdapter {
 	return filesystemProvisionAdapter{roots: identityDirRoots(cfg)}
 }
 
-// identityDirRoots resolves the four per-identity storage bases from cfg + the skills
-// package conventions (NOT a temp dir): skills is $AURA_SKILLS_DIR, agents is
-// $AURA_PROFILE_DIR, and mcp/pyscripts are home-derived (mirroring internal/skills
-// defaultPyScriptsDir).
+// identityDirRoots resolves the three per-identity storage bases from cfg (NOT a temp dir):
+// skills is $AURA_SKILLS_DIR, and mcp/pyscripts are home-derived.
 func identityDirRoots(cfg *config.Config) map[string]string {
 	return map[string]string{
 		"mcp":       auraSubdir("mcp"),
 		"skills":    cfg.SkillsDir,
 		"pyscripts": auraSubdir("pyscripts"),
-		"agents":    cfg.ProfileDir,
 	}
 }
 
 // auraSubdir returns ~/.aura/<name> with a tmp fallback when the home dir is unavailable
-// (matches config.auraHomeDir + internal/skills.defaultPyScriptsDir semantics).
+// (matches config.auraHomeDir semantics).
 func auraSubdir(name string) string {
 	if home, err := os.UserHomeDir(); err == nil {
 		return filepath.Join(home, ".aura", name)
@@ -137,12 +135,6 @@ func (a filesystemProvisionAdapter) ProvisionIdentityDirs(_ context.Context, id 
 	for _, dir := range roots {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return fmt.Errorf("provision identity dir %q: %w", dir, err)
-		}
-	}
-	agentMD := filepath.Join(roots["agents"], "Agent.md")
-	if _, err := os.Stat(agentMD); os.IsNotExist(err) {
-		if err := os.WriteFile(agentMD, []byte{}, 0o600); err != nil {
-			return fmt.Errorf("write empty Agent.md: %w", err)
 		}
 	}
 	return nil

@@ -20,7 +20,7 @@ import (
 // workspace volume and the shared uv / npm / pip warm-cache volumes exist (VolumeCreate is
 // idempotent by name), then gets-or-creates the container named aura-box-<identityID>. An already-existing
 // Suspended box is transparently started (Resume, D-08) rather than re-created. After the box
-// is live it materializes the identity's skills / Agent.md / pyscripts into the workspace
+// is live it materializes the resolver's sources for the identity into the workspace
 // volume (D-10) at BOTH create and resume; a materialize failure fails Resolve closed.
 func (b *DockerBackend) Resolve(ctx context.Context, spec SandboxSpec) (BoxHandle, error) {
 	name := boxName(spec.IdentityID)
@@ -62,7 +62,7 @@ func (b *DockerBackend) Resolve(ctx context.Context, spec SandboxSpec) (BoxHandl
 		h = BoxHandle{ContainerID: id, IdentityID: spec.IdentityID}
 	}
 
-	// Materialize skills / Agent.md / pyscripts into the box (create + resume, D-10). This is
+	// Materialize the resolver's sources into the box (create + resume, D-10). This is
 	// the MaterializeIn call site; it fails Resolve closed so the box never runs a tool
 	// against a stale/missing skill set.
 	if err := b.materializeInputs(ctx, h); err != nil {
@@ -121,7 +121,7 @@ func (b *DockerBackend) Stop(ctx context.Context, h BoxHandle) error {
 	return nil
 }
 
-// materializeInputs copies the identity's skills / Agent.md / pyscripts into the box volume
+// materializeInputs copies the resolver's sources for the identity into the box volume
 // at create and resume (D-10) by delegating to the MaterializeIn tar-stream helper. With no
 // SourceResolver wired (or no sources for the identity) it is a no-op and Resolve still
 // succeeds; otherwise a materialize error propagates so Resolve fails closed.

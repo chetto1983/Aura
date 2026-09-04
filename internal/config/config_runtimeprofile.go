@@ -2,14 +2,6 @@
 // (refactor-on-touch, CLAUDE.md ≤600 LOC NO GOD CLASS): the typed RuntimeProfile
 // enum, its total ParseProfile, and the Strict() tier helper the per-profile
 // validation re-parse pass (config_knobs.go, plan 03) keys on.
-//
-// NOTE — naming collision avoidance (RESEARCH Pitfall 1): the unrelated Agent.md
-// per-identity profile already owns the `profile` package, its per-identity
-// directory + certainty Config fields and their env knobs (the directory-suffixed
-// and CERTAINTY_N variants of AURA_PROFILE), plus config_profile_test.go. The
-// runtime deployment profile here deliberately uses DISTINCT names —
-// RuntimeProfile, the bare AURA_PROFILE env (no directory suffix),
-// config_runtimeprofile*.go — and MUST NOT touch any of that Agent.md-profile surface.
 package config
 
 import "strings"

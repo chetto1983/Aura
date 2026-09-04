@@ -32,14 +32,14 @@ var keepAliveCmd = []string{"tail", "-f", "/dev/null"}
 // MaterializeSource maps a host source directory to the destination root inside the box it
 // is tar-streamed into (docker cp, the replacement for the removed ro bind-mount — D-10).
 // For skills the Dest is skills.inSandboxSkillsRoot ("/skills") so the in-box path equals
-// the one SnippetSandboxPath renders; Agent.md and pyscripts map to their own roots.
+// the one SnippetSandboxPath renders.
 type MaterializeSource struct {
 	HostDir string
 	Dest    string
 }
 
-// SourceResolver returns the per-identity materialization sources (the identity's skills /
-// Agent.md / pyscripts host dirs mapped to their in-box roots). It is injected via
+// SourceResolver returns the materialization sources for one identity (host dirs mapped to
+// their in-box roots; today the composition root supplies the skills root). It is injected via
 // WithMaterializeSources so the backend stays decoupled from config path resolution and the
 // docker_integration tests can seed their own fixtures. A nil resolver (or empty result)
 // means nothing is materialized — Resolve still succeeds.
@@ -64,7 +64,7 @@ type DockerBackend struct {
 type Option func(*DockerBackend)
 
 // WithMaterializeSources wires the per-identity source resolver Resolve consults to
-// materialize skills / Agent.md / pyscripts into the box at create and resume (D-10).
+// materialize the resolver's sources into the box at create and resume (D-10).
 func WithMaterializeSources(r SourceResolver) Option {
 	return func(b *DockerBackend) { b.sources = r }
 }
