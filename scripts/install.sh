@@ -153,17 +153,22 @@ preflight_hw() {
   mem_kib="$(ram_kib)"
   free_kib="$(disk_free_kib "$INSTALL_DIR")"
 
-  # 15 GiB, not 16, and the difference is the whole point: ram_kib reports MemTotal, which
-  # is installed RAM MINUS firmware and kernel reservations (an integrated GPU takes its
-  # share too). A 16 GB machine therefore reports ~15.4-15.8 GiB and can NEVER reach a
-  # 16 GiB floor -- so the previous value refused every box it was written to admit, on
-  # every hardware, always. Do not "correct" this back to 16.
+  # 14 GiB, and every step down was forced by a measurement, not by taste. ram_kib reports
+  # MemTotal, which is installed RAM MINUS firmware, kernel and integrated-GPU reservations,
+  # so a 16 GB box never reports 16 GiB: the original 16 GiB floor refused every machine it
+  # was written to admit, on every hardware, always. 15 GiB then refused the reference
+  # appliance itself -- a GEEKOM Mini Air12 with 16 GB reports MemTotal 15610852 KiB =
+  # 14.8877 GiB, which is 117788 KiB short (measured 2026-09-04). A floor that rejects the
+  # very box the footprint was measured on protects nothing.
+  # The headroom is real because the appliance runs NO local LLM: EmbeddingGemma-300M is
+  # the only model it loads, so the ~6.7 GB GGUF the floor was originally sized around is
+  # never resident. Do not raise this back without a box that actually fails at 14.
   # What the floor is protecting is also smaller than it looks: `docker compose up -d` with
   # no profile leaves aura-llm (the ~6.7 GB local GGUF), aura-ocr-vl and the observability
   # trio switched off, and the whole default stack was measured at 7 GB with STT and TTS
   # running (2026-09-02, operator's 16 GB mini PC). Whether the floor could go lower still
   # is a separate question needing a measurement under ingestion load, not at rest.
-  hard_mem=$((15 * 1024 * 1024))
+  hard_mem=$((14 * 1024 * 1024))
   warn_mem=$((32 * 1024 * 1024))
   hard_disk=$((20 * 1024 * 1024))
   warn_disk=$((50 * 1024 * 1024))
@@ -174,7 +179,7 @@ preflight_hw() {
     failed=1
   fi
   if [ "$mem_kib" -lt "$hard_mem" ]; then
-    echo "FAIL: Aura requires at least 15 GiB usable RAM; found $((mem_kib / 1024 / 1024)) GiB." >&2
+    echo "FAIL: Aura requires at least 14 GiB usable RAM; found $((mem_kib / 1024 / 1024)) GiB." >&2
     failed=1
   elif [ "$mem_kib" -lt "$warn_mem" ]; then
     echo "WARN: 32 GiB RAM is recommended; found $((mem_kib / 1024 / 1024)) GiB." >&2

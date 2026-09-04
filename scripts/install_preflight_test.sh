@@ -46,13 +46,20 @@ expect() {
 STUB_MEM_KIB=$((16268000))
 expect 0 "a real 16 GB machine (MemTotal 15.51 GiB) is accepted"
 
-STUB_MEM_KIB=$((15 * 1024 * 1024))
-expect 0 "exactly at the 15 GiB floor is accepted"
+# The second regression, same shape as the first. The reference appliance -- a GEEKOM Mini
+# Air12 with 16 GB -- reports 15610852 KiB, 117788 KiB UNDER the 15 GiB floor that replaced
+# the 16 GiB one (measured 2026-09-04). Two floors in a row refused the box the appliance
+# footprint was measured on.
+STUB_MEM_KIB=$((15610852))
+expect 0 "the reference GEEKOM Mini Air12 (MemTotal 14.89 GiB) is accepted"
 
-STUB_MEM_KIB=$((15 * 1024 * 1024 - 1))
+STUB_MEM_KIB=$((14 * 1024 * 1024))
+expect 0 "exactly at the 14 GiB floor is accepted"
+
+STUB_MEM_KIB=$((14 * 1024 * 1024 - 1))
 expect 1 "one KiB under the floor is refused"
 
-# The floor still has to separate: an 8 GB box reports nowhere near 15 GiB.
+# The floor still has to separate: an 8 GB box reports nowhere near 14 GiB.
 STUB_MEM_KIB=$((8120000))
 expect 1 "an 8 GB machine is refused"
 
