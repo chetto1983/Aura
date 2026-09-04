@@ -465,11 +465,16 @@
         },
         "text": {
           "type": "string"
+        },
+        "total": {
+          "description": "every entity in this memory; larger than entities means the index was truncated",
+          "type": "integer"
         }
       },
       "required": [
         "text",
         "entities",
+        "total",
         "facts",
         "covered"
       ],

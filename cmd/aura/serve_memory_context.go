@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -75,7 +74,11 @@ func (m *mountedMemoryContext) Context(ctx context.Context, identityID string) (
 	if err != nil {
 		return "", fmt.Errorf("memory digest: %w", err)
 	}
+	// `total`, not `entities`: the latter counts the index LINES, which the limit
+	// above sets to one. Read as the size of the memory it said "1 entity" in every
+	// turn -- an agent told it knows one thing has no reason to open memory_entities.
 	var digest struct {
+		Total    int `json:"total"`
 		Entities int `json:"entities"`
 		Facts    int `json:"facts"`
 	}
@@ -85,7 +88,17 @@ func (m *mountedMemoryContext) Context(ctx context.Context, identityID string) (
 	if digest.Facts == 0 {
 		return "", nil
 	}
-	return memoryPointer(digest.Facts, digest.Entities), nil
+	return memoryPointer(digest.Facts, digestEntityCount(digest.Total, digest.Entities)), nil
+}
+
+// digestEntityCount never reports fewer entities than the digest already showed.
+//
+// This binary and the memory MCP restart independently, so a running server can
+// predate `total` and omit it -- which decodes to zero, and zero is the one number
+// that tells the model its memory is empty. Caught doing exactly that on
+// 2026-09-04 by rebuilding one container and not the other.
+func digestEntityCount(total, shown int) int {
+	return max(total, shown)
 }
 
 // memoryPointer is what the turn carries instead of the memory itself.
@@ -140,11 +153,7 @@ func memoryPointer(facts, entities int) string {
 
 // Search is the proactive per-message preload: what the memory already knows about
 // the current user text, injected so the turn ARRIVES with it instead of having to
-// go and ask. Measured 2026-09-03 with it on, "cosa usa Aura per la memoria a lungo
-// termine" was answered in ONE llm call with tool_calls:0 -- the model said so
-// itself, "I have a <memory_recall> block in the context which contains a fact
-// about this" -- against the three round-trips (tool_search, recall, answer) the
-// same question costs when the block is absent.
+// go and ask.
 //
 // It reads through memory_recall rather than memory_search. Both rank the same
 // hybrid way, but recall also returns the ENTITIES the question reached and the
@@ -156,6 +165,12 @@ func memoryPointer(facts, entities int) string {
 // An explicit abstention or an empty result yields "" (the caller then injects only
 // the pointer). Its own timeout (preloadTimeout, falling back to the digest one)
 // keeps it off the critical path.
+//
+// Whether the block landed is read from the runner's per-turn log line, never from
+// the model. Asked on 2026-09-03 what it had been given, it answered that it had a
+// <memory_recall> block "which contains a fact about this"; the block had not been
+// built at all that turn. A model describing its own prompt is generating text
+// about the prompt, and it was taken for a measurement here for a full day.
 func (m *mountedMemoryContext) Search(ctx context.Context, identityID, query string) (string, error) {
 	client := m.mountedClient()
 	if client == nil {
@@ -188,88 +203,4 @@ func (m *mountedMemoryContext) Search(ctx context.Context, identityID, query str
 		return "", nil
 	}
 	return renderMemoryPreload(out), nil
-}
-
-// memoryPreloadResult is the slice of memory_recall's payload the preload injects.
-// Deliberately not the whole DTO: provenance, scores, validity windows and the
-// conversation windows are all real and all cost tokens in EVERY turn, while what
-// the model needs at this point is what is true and what it is connected to. The
-// tools return the rest when a turn actually opens memory.
-type memoryPreloadResult struct {
-	Evidence []struct {
-		Fact *struct {
-			Statement string `json:"statement"`
-		} `json:"fact,omitempty"`
-	} `json:"evidence"`
-	Entities []struct {
-		Name  string `json:"name"`
-		Kind  string `json:"kind,omitempty"`
-		Facts []struct {
-			Subject   string `json:"subject"`
-			Predicate string `json:"predicate"`
-			Object    string `json:"object"`
-		} `json:"facts"`
-	} `json:"entities,omitempty"`
-	Retrieval struct {
-		Abstained bool `json:"abstained"`
-	} `json:"retrieval"`
-}
-
-// preloadEdgesPerEntity bounds one node's outline. A seeded entity can carry many
-// facts and three of them would outweigh the ranked evidence they were seeded from;
-// the point of the outline is to show the model that the node is worth opening, not
-// to be the read.
-const preloadEdgesPerEntity = 4
-
-// renderMemoryPreload writes the block: the ranked statements, then a one-line
-// outline per entity the question reached.
-//
-// The outline is triples, not prose. A statement repeats the sentence a fact was
-// written as, which for a node's fourth edge is mostly words the model already has;
-// `predicate -> object` says the same connection in a fraction of the budget and
-// reads as the graph it is.
-func renderMemoryPreload(out memoryPreloadResult) string {
-	var b strings.Builder
-	for _, item := range out.Evidence {
-		if item.Fact == nil {
-			continue
-		}
-		if statement := strings.TrimSpace(item.Fact.Statement); statement != "" {
-			b.WriteString("- " + statement + "\n")
-		}
-	}
-	for _, node := range out.Entities {
-		name := strings.TrimSpace(node.Name)
-		if name == "" || len(node.Facts) == 0 {
-			continue
-		}
-		edges := make([]string, 0, preloadEdgesPerEntity)
-		for _, fact := range node.Facts {
-			if len(edges) == preloadEdgesPerEntity {
-				break
-			}
-			// Read the edge from this node outwards: a fact that names the node as
-			// its OBJECT points the other way, and printing it unreversed would
-			// claim the node holds a relation it is on the receiving end of.
-			predicate, other := fact.Predicate, fact.Object
-			if strings.TrimSpace(fact.Object) == name {
-				predicate, other = predicate+" (of)", fact.Subject
-			}
-			if predicate = strings.TrimSpace(predicate); predicate == "" {
-				continue
-			}
-			if other = strings.TrimSpace(other); other == "" {
-				continue
-			}
-			edges = append(edges, predicate+" -> "+other)
-		}
-		if len(edges) == 0 {
-			continue
-		}
-		if kind := strings.TrimSpace(node.Kind); kind != "" {
-			name += " (" + kind + ")"
-		}
-		b.WriteString(name + ": " + strings.Join(edges, "; ") + "\n")
-	}
-	return strings.TrimSpace(b.String())
 }

@@ -112,7 +112,11 @@ func TestDigestIndexesBothFactEndpointsDeterministically(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Digest: %v", err)
 	}
-	if got.Entities != 2 || got.Facts != 3 || got.Covered {
+	// Four names appear across the three facts and the caller asked for two lines,
+	// so Entities is the PAGE and Total is the memory. Conflating them is what let
+	// the turn pointer -- which asks for a one-entity index to stay cheap -- report
+	// the size of its own request as the size of the graph (measured 2026-09-04).
+	if got.Entities != 2 || got.Total != 4 || got.Facts != 3 || got.Covered {
 		t.Fatalf("digest metadata = %+v", got)
 	}
 	lines := strings.Split(got.Text, "\n")

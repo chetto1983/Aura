@@ -9,7 +9,11 @@ import (
 )
 
 func TestMountedMemoryContextUsesTheAuthenticatedIdentityDigest(t *testing.T) {
-	client := &memoryReadinessClient{text: `{"text":"Davide located_in Caraglio","entities":2,"facts":1,"covered":true}`}
+	// entities and total deliberately disagree: the pointer asks for a one-entity
+	// index (see the args assertion below), so `entities` is the size of the PAGE it
+	// asked for and only `total` is the size of the memory. Reading the former told
+	// the operator's agent it knew 1 entity when it knew 88 (measured 2026-09-04).
+	client := &memoryReadinessClient{text: `{"text":"Davide located_in Caraglio","entities":1,"total":88,"facts":67,"covered":false}`}
 	provider := newMemoryContextProvider(client.mount(t, "identity-a"), 5, time.Second)
 
 	got, err := provider.Context(context.Background(), "identity-a")
@@ -22,7 +26,8 @@ func TestMountedMemoryContextUsesTheAuthenticatedIdentityDigest(t *testing.T) {
 	// The fixture round-trips args through a real JSON-RPC wire (no hand-rolled
 	// mcptools double survives, per D-103), so JSON numbers decode as float64.
 	// One entity, one fact: the counts are the whole payload now, so asking the server to
-	// render fifty entities would be work whose output is thrown away.
+	// render fifty entities would be work whose output is thrown away -- which is
+	// exactly why the count of rendered entities cannot be the count reported.
 	if client.args["limit"] != float64(1) || client.args["facts_per_entity"] != float64(1) {
 		t.Fatalf("args = %+v", client.args)
 	}
@@ -38,8 +43,8 @@ func TestMountedMemoryContextUsesTheAuthenticatedIdentityDigest(t *testing.T) {
 	if strings.Contains(got, "Davide located_in Caraglio") {
 		t.Fatalf("the digest's content leaked back into the turn: %q", got)
 	}
-	if !strings.Contains(got, "1 facts across 2 entities") {
-		t.Fatalf("context = %q, want the memory's shape", got)
+	if !strings.Contains(got, "67 facts across 88 entities") {
+		t.Fatalf("context = %q, want the memory's shape and not the page's", got)
 	}
 	for _, wayIn := range []string{"memory_facts_about", "memory_recall", "memory_search", "memory-aura"} {
 		if !strings.Contains(got, wayIn) {
@@ -61,13 +66,28 @@ func TestMountedMemoryContextUsesTheAuthenticatedIdentityDigest(t *testing.T) {
 	}
 }
 
+// A memory MCP older than `total` omits it, and this binary restarts independently
+// of that one -- so the field decodes to zero and the pointer would announce an
+// empty memory to an agent whose index it just read one entity from.
+func TestMountedMemoryContextNeverShrinksTheMemoryItWasShown(t *testing.T) {
+	client := &memoryReadinessClient{text: `{"text":"Davide located_in Caraglio","entities":1,"facts":67,"covered":false}`}
+	got, err := newMemoryContextProvider(client.mount(t, "identity-a"), 5, time.Second).
+		Context(context.Background(), "identity-a")
+	if err != nil {
+		t.Fatalf("Context: %v", err)
+	}
+	if !strings.Contains(got, "67 facts across 1 entities") {
+		t.Fatalf("context = %q, want the count the index proved", got)
+	}
+}
+
 func TestMountedMemoryContextCanAttachAfterDeferredMount(t *testing.T) {
 	provider := newMemoryContextProvider(nil, 5, time.Second)
 	if _, err := provider.Context(context.Background(), "identity-a"); err == nil {
 		t.Fatal("context must fail before the deferred memory mount attaches")
 	}
 
-	client := &memoryReadinessClient{text: `{"text":"late memory","entities":1,"facts":1,"covered":true}`}
+	client := &memoryReadinessClient{text: `{"text":"late memory","entities":1,"total":1,"facts":1,"covered":true}`}
 	provider.setClient(client.mount(t, "identity-a"))
 
 	got, err := provider.Context(context.Background(), "identity-a")
@@ -94,7 +114,7 @@ func TestMountedMemoryContextRejectsBrokenResponses(t *testing.T) {
 }
 
 func TestMountedMemoryContextOmitsAnEmptyDigest(t *testing.T) {
-	client := &memoryReadinessClient{text: `{"text":"  ","entities":0,"facts":0,"covered":true}`}
+	client := &memoryReadinessClient{text: `{"text":"  ","entities":0,"total":0,"facts":0,"covered":true}`}
 	got, err := newMemoryContextProvider(client.mount(t, "identity-a"), 5, time.Second).Context(context.Background(), "identity-a")
 	if err != nil {
 		t.Fatalf("Context: %v", err)

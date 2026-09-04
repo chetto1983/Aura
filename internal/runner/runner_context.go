@@ -10,6 +10,7 @@ import (
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 const (
@@ -95,6 +96,16 @@ func (r *Runner) loadMemoryContext(ctx context.Context, userMsg *string) *conver
 	}
 	digest := r.memoryDigest(ctx, identityID)
 	recall := r.memoryRecall(ctx, identityID, userMsg)
+	// Both legs are fail-soft, which is right and which also means an absent block
+	// looks exactly like a memory that had nothing to say. Measured 2026-09-03: the
+	// preload produced no block on a question memory could answer, and the logs held
+	// nothing at all to distinguish "switched off" from "asked and abstained" -- the
+	// only reading available was to ask the model what it had been given, which is
+	// not a measurement. One line per turn settles it.
+	slog.Info("conversation memory context assembled",
+		"identity_id", redact.Line(identityID), "preload_enabled", r.memoryPreloadEnabled,
+		"has_user_message", userMsg != nil,
+		"digest_bytes", len(digest), "recall_bytes", len(recall))
 
 	var b strings.Builder
 	if digest != "" {

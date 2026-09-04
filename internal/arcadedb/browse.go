@@ -106,8 +106,14 @@ func (c *Client) ListEntities(ctx context.Context, limit int) (EntityListing, er
 type DigestResult struct {
 	Text     string `json:"text"`
 	Entities int    `json:"entities"`
-	Facts    int    `json:"facts"`
-	Covered  bool   `json:"covered" jsonschema:"false when the memory is larger than the digest and search is still needed"`
+	// Total is every entity the scan reached, not just the ones the index shows.
+	// Entities counts the LINES, which a caller passing a small limit sets itself:
+	// the turn pointer asks for one entity to keep the digest cheap and read the
+	// answer back as the size of the whole memory, telling the model in every turn
+	// that it knew one thing when it knew eighty-eight (measured 2026-09-04).
+	Total   int  `json:"total" jsonschema:"every entity in this memory; larger than entities means the index was truncated"`
+	Facts   int  `json:"facts"`
+	Covered bool `json:"covered" jsonschema:"false when the memory is larger than the digest and search is still needed"`
 }
 
 // Digest builds the whole index in ONE round trip and groups in memory. The
@@ -166,6 +172,7 @@ func (c *Client) Digest(ctx context.Context, entityLimit, factsPerEntity int) (D
 	return DigestResult{
 		Text:     strings.Join(lines, "\n"),
 		Entities: shown,
+		Total:    len(order),
 		Facts:    len(rows),
 		Covered:  shown == len(order) && len(rows) < limits.DigestScan,
 	}, nil
