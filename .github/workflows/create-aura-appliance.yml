@@ -1,0 +1,154 @@
+name: Verify and publish create-aura-appliance
+
+# What CI has to prove about this package is not that the TypeScript compiles. ci.yml
+# already runs the installer's shell suites and the makeself payload round-trip; what runs
+# nowhere else is the vitest suite, the TypeScript build, and a smoke test of the binary a
+# `npx` user actually gets. Nothing here duplicates ci.yml.
+#
+# Publishing is tag-driven, which departs from the spec's Decision 6 ("the npm publish rides
+# publish-aura-edge.yml"). It has to: that workflow runs on EVERY master push, and npm
+# refuses to republish an existing version, so the job would fail from the second push on.
+# Tagging keeps `latest` -- the version `npx create-aura-appliance` resolves -- meaningful,
+# and the payload/image coherence Decision 6 protects survives as long as the tag names a
+# master commit whose :edge images publish-aura-edge.yml has already built.
+#
+# `paths:` is deliberately absent from `push`. A tag push has no meaningful file diff for a
+# path filter to match, so a path-filtered tag trigger can silently never fire -- and a
+# publish job that never runs is indistinguishable from one with nothing to publish. That
+# is not hypothetical: the workflow this one is modelled on filters its tag trigger by
+# paths and has never published anything.
+
+on:
+  pull_request:
+    paths:
+      - 'packages/create-aura/**'
+      - 'scripts/install.sh'
+      - 'scripts/build_installer.sh'
+      - 'scripts/payload_files.sh'
+      - '.github/workflows/create-aura-appliance.yml'
+  push:
+    branches: [master]
+    tags: ['installer-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: create-aura-appliance-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  verify:
+    name: Verify (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        working-directory: packages/create-aura
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22.14.0
+          cache: npm
+          cache-dependency-path: packages/create-aura/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test package
+        run: npm test
+
+      # `npm run build` runs sync-preflight-floors --check first. The CPU/RAM/disk floors
+      # live in scripts/install.sh alone; this is where a stale TypeScript mirror of them
+      # fails, before it can ship a wizard that refuses hardware the installer accepts.
+      - name: Build package
+        run: npm run build
+
+      # makeself is not preinstalled on GitHub's runners and prepack needs it to pack the
+      # payload. Linux only: the artifact is a Linux self-extracting archive, and the
+      # Windows leg exists to prove the WIZARD runs on an operator's laptop.
+      - name: Install makeself (the artifact packer)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y makeself
+
+      - name: Build the carried installer artifact
+        if: runner.os == 'Linux'
+        run: npm run build:artifact
+
+      # --ignore-scripts skips prepack, so this packs what is on disk: on Windows that is
+      # the point, and on Linux the artifact built above is already in place. A tarball
+      # whose bin does not start is the first thing `npx` would show an operator.
+      - name: Pack and run the packed binary
+        shell: pwsh
+        run: |
+          $packDirectory = Join-Path $env:RUNNER_TEMP 'create-aura-appliance-pack'
+          New-Item -ItemType Directory -Force -Path $packDirectory | Out-Null
+          $packJson = npm pack --ignore-scripts --pack-destination $packDirectory --json
+          if ($LASTEXITCODE -ne 0) { throw 'npm pack failed' }
+          $packResult = $packJson | ConvertFrom-Json
+          if ($packResult.Count -ne 1) { throw 'npm pack did not produce exactly one tarball' }
+          $tarballPath = Join-Path $packDirectory $packResult[0].filename
+          npm exec --yes --package="$tarballPath" -- create-aura-appliance --help
+          if ($LASTEXITCODE -ne 0) { throw 'packed create-aura-appliance --help failed' }
+
+  publish:
+    name: Publish to npm
+    if: startsWith(github.ref, 'refs/tags/installer-v')
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # OIDC. This single line is what makes a provenance attestation possible: npm trades
+      # this token for one signed by Sigstore that binds the tarball to this workflow and
+      # this commit. Without it `--provenance` cannot attest anything.
+      id-token: write
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Node.js for trusted publishing
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22.14.0
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: packages/create-aura/package-lock.json
+
+      - name: Install makeself (prepack packs the payload)
+        run: sudo apt-get update && sudo apt-get install -y makeself
+
+      - name: Install dependencies
+        working-directory: packages/create-aura
+        run: npm ci
+
+      # The tag names the version. A tag that disagrees with the manifest publishes
+      # something nobody asked for, under a name that says otherwise.
+      - name: Verify the tag matches the package version
+        run: |
+          set -euo pipefail
+          tag_version="${GITHUB_REF_NAME#installer-v}"
+          package_version="$(node -p "require('./packages/create-aura/package.json').version")"
+          test "$tag_version" = "$package_version"
+
+      - name: Re-run the package checks on the tagged commit
+        working-directory: packages/create-aura
+        run: |
+          npm test
+          npm run build
+
+      # Trusted publishing needs a recent npm. An older one publishes WITHOUT provenance
+      # instead of failing, which is the quiet outcome this whole job exists to avoid.
+      - name: Install npm with trusted publishing support
+        run: npm install --global "npm@^11.15.0"
+
+      - name: Publish with provenance
+        working-directory: packages/create-aura
+        run: npm publish --access public --provenance
