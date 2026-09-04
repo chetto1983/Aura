@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   checkTelegramAvailability,
+  fetchLLMModels,
+  fetchLLMRoutes,
   createTelegramLink,
   deleteSetting,
   fetchSettings,
@@ -121,5 +123,90 @@ describe('settingsApi', () => {
       headers: { Accept: 'application/json' },
       credentials: 'same-origin',
     });
+  });
+
+  it('reads the per-provider route memory', async () => {
+    const routes = [
+      {
+        provider: 'llamacpp',
+        base_url: 'http://host.docker.internal:8084/v1',
+        model: 'gemma-4-12b',
+      },
+    ];
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(new Response(JSON.stringify({ routes }), { status: 200 })),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchLLMRoutes()).resolves.toEqual(routes);
+    expect(fetchMock).toHaveBeenCalledWith('/api/settings/llm-routes', {
+      headers: { Accept: 'application/json' },
+      credentials: 'same-origin',
+    });
+  });
+
+  it('treats a daemon without the route memory as having none, not as an error', async () => {
+    // A daemon older than migration 0117 answers 404/503 here. The panel then falls back
+    // to its built-in routes; it must not surface a load failure over a missing feature.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('nope', { status: 404 }))),
+    );
+    await expect(fetchLLMRoutes()).resolves.toEqual([]);
+  });
+
+  it('reads an empty route memory without inventing rows', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('{}', { status: 200 }))),
+    );
+    await expect(fetchLLMRoutes()).resolves.toEqual([]);
+  });
+
+  it('probes the route in the form for the models it publishes', async () => {
+    const models = [{ id: 'gemma-4-12b', context_window: 131072, has_price: false }];
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(new Response(JSON.stringify({ models }), { status: 200 })),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      fetchLLMModels('llamacpp', 'http://host.docker.internal:8084/v1'),
+    ).resolves.toEqual(models);
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/settings/llm-models?provider=llamacpp&base_url=http%3A%2F%2Fhost.docker.internal%3A8084%2Fv1',
+      { headers: { Accept: 'application/json' }, credentials: 'same-origin' },
+    );
+  });
+
+  it('carries the server reason when a probe is refused', async () => {
+    // "GET /models returned 401" is what tells the operator to fix the key rather than
+    // the host; collapsing it to a status code throws that away.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({ error: 'model catalog unavailable: GET /models returned 401' }),
+            {
+              status: 502,
+            },
+          ),
+        ),
+      ),
+    );
+    await expect(fetchLLMModels('openrouter', 'https://openrouter.ai/api/v1')).rejects.toThrow(
+      /401/,
+    );
+  });
+
+  it('reads a catalogue with no models as empty', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('{}', { status: 200 }))),
+    );
+    await expect(fetchLLMModels('ollama', 'http://host.docker.internal:11434/v1')).resolves.toEqual(
+      [],
+    );
   });
 });

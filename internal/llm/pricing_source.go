@@ -255,7 +255,12 @@ func fetchModels(ctx context.Context, client *http.Client, baseURL, apiKey strin
 		return modelsWire{}, fmt.Errorf("GET /models returned %d", resp.StatusCode)
 	}
 	var wire modelsWire
-	if err := json.NewDecoder(resp.Body).Decode(&wire); err != nil {
+	// Bounded like the reasoning-caps reader of the same endpoint (maxModelsResponseBytes,
+	// threat T-37E-05-UPSTREAM/AVAIL). It was unbounded here while the caller was always
+	// the configured route; the cockpit's catalogue probe now points this at whatever host
+	// an operator types, so a hostile or runaway upstream must not be able to stream the
+	// daemon out of memory.
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxModelsResponseBytes)).Decode(&wire); err != nil {
 		return modelsWire{}, fmt.Errorf("decode /models: %w", err)
 	}
 	return wire, nil

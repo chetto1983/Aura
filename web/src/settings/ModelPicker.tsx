@@ -80,10 +80,17 @@ export function ModelPicker({ id, value, catalog, onChange }: ModelPickerProps) 
   // The saved model may not be in the catalogue (an alias, or a route the endpoint no
   // longer serves). It still has to render as the current value rather than disappear.
   const known = options.some((option) => option.id === value);
+  // "not published" is a claim about the endpoint, and it is only true once the endpoint
+  // has answered: while the probe is in flight the catalogue is empty for every model,
+  // and saying so about the one that is actually running would be a lie on every load.
+  const unpublished = catalog.status === 'ready' ? t('settings.models.notPublished') : '';
   const selectable =
     known || value.trim() === ''
       ? options
-      : [{ id: value, name: value, description: t('settings.models.notPublished') }, ...options];
+      : [
+          { id: value, name: value, ...(unpublished === '' ? {} : { description: unpublished }) },
+          ...options,
+        ];
   const typed = query.trim();
   const custom = typed !== '' && !selectable.some((option) => option.id === typed);
 

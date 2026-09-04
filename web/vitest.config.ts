@@ -22,7 +22,20 @@ export default defineConfig({
       include: ['src/**/*.{ts,tsx}'],
       // main.tsx is the bootstrap entry (createRoot + render) — behaviourally proven by
       // the Playwright E2E against the served shell, not unit-testable in jsdom.
-      exclude: ['src/**/*.{test,spec}.{ts,tsx}', 'src/test/**', 'src/main.tsx'],
+      // The vendored registry components are upstream source: `npx shadcn add
+      // @assistant-ui/model-selector` rewrites them verbatim on every update, so testing
+      // them measures the registry, not us, and their untested bulk would drag a floor
+      // that exists to keep OUR code covered. Excluded here for the same reason eslint,
+      // knip, prettier and the LOC cap ignore them; ModelPicker, the code that USES them,
+      // stays in the denominator.
+      exclude: [
+        'src/**/*.{test,spec}.{ts,tsx}',
+        'src/test/**',
+        'src/main.tsx',
+        'src/components/model-selector.tsx',
+        'src/components/ui/command.tsx',
+        'src/components/ui/popover.tsx',
+      ],
       // Frontend quality gate: parity with the Go backend's ≥85% floor (the suite fails
       // below it, so coverage can't silently regress).
       thresholds: {
