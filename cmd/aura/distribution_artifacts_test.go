@@ -22,9 +22,12 @@ func TestDistributionSurfaceArtifactsMatchReleaseContract(t *testing.T) {
 		"set -euo pipefail",
 		"AURA_INSTALL_SKIP_HW",
 		"Aura requires at least 4 CPU cores",
-		// 15, not 16: MemTotal excludes firmware/kernel reservations, so a 16 GB box
-		// reports ~15.4-15.8 GiB and the old floor refused every machine it admitted.
-		"Aura requires at least 15 GiB usable RAM",
+		// 14, not 15 or 16: MemTotal excludes firmware/kernel reservations, so a 16 GB box
+		// never reports 16 GiB, and the reference appliance (GEEKOM Mini Air12) reports
+		// 15610852 KiB = 14.8877 GiB -- under 15 too. Both earlier floors refused the very
+		// box the footprint was measured on. Reasoning lives in scripts/install.sh; this
+		// line exists so lowering the floor again stays a deliberate two-file edit.
+		"Aura requires at least 14 GiB usable RAM",
 		"Aura requires at least 20 GiB free disk",
 		"50 GiB free disk is recommended",
 		"https://get.docker.com",

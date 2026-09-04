@@ -22,7 +22,7 @@ export function createFakeRunner(
 // Covers preflightLocal's full call surface: the three REQUIRED_COMMANDS existence checks
 // (sh), architecture (uname), cpu cores (getconf), memory and disk (sh, disambiguated by
 // script content), the existing-install probe (sh), and the three REQUIRED_HOSTS reachability
-// checks (curl). 41943040 KiB (40 GiB) clears both the memory floor (15 GiB) and the disk
+// checks (curl). 41943040 KiB (40 GiB) clears both the memory floor (14 GiB) and the disk
 // floor (20 GiB), so one generic answer satisfies whichever `sh -c` check asks.
 export function createPassingPreflightRunner(): FakeRunner {
   return createFakeRunner(async (command) => {
