@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 // llmRouteStore is the aura.llm_provider_routes seam (internal/settings.Store satisfies
@@ -87,7 +88,10 @@ func (s *Server) rememberProviderRoute(ctx context.Context, overrides map[string
 		return
 	}
 	if _, err := s.llmRoutes.UpsertRoute(ctx, provider, baseURL, model, actor); err != nil {
-		slog.Warn("agui: remember provider route", "provider", provider, "err", err)
+		// redact.Line, not the raw value: the provider reaches here from a request body,
+		// and a value carrying newlines would forge log records (CodeQL go/log-injection).
+		// It is the same treatment the composition root gives provider/model.
+		slog.Warn("agui: remember provider route", "provider", redact.Line(provider), "err", err)
 	}
 }
 
