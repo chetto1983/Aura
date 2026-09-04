@@ -3,6 +3,7 @@ package skills
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -335,6 +336,86 @@ func TestExecCommandEnvDisablesTelemetry(t *testing.T) {
 	}
 	if got := lastValue(env, "GIT_TERMINAL_PROMPT"); got != "0" {
 		t.Fatalf("GIT_TERMINAL_PROMPT = %q, want 0", got)
+	}
+}
+
+// fakeAddMulti returns a CommandRunner that stages SEVERAL skill dirs under
+// <dir>/.claude/skills/, exactly as `npx skills add <monorepo>` does when the source
+// ships many skills and the caller named none (measured 2026-09-04: one such source
+// staged 60). Every dir gets a valid SKILL.md, so each is individually installable —
+// the ambiguity is which one the caller meant, not whether any is well-formed.
+func fakeAddMulti(t *testing.T, names ...string) CommandRunner {
+	t.Helper()
+	return func(_ context.Context, dir, _ string, _ ...string) (string, error) {
+		for _, name := range names {
+			skillDir := filepath.Join(dir, ".claude", "skills", name)
+			if err := os.MkdirAll(skillDir, 0o750); err != nil {
+				return "", err
+			}
+			md := "---\nname: " + name + "\ndescription: a fake skill\ntype: instruction\n---\nbody"
+			if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(md), 0o600); err != nil {
+				return "", err
+			}
+		}
+		return "", nil
+	}
+}
+
+// TestInstallerRefusesAmbiguousMonorepoStage proves a source that ships several skills
+// is REFUSED, not silently resolved by directory order. os.ReadDir sorts, so the old
+// first-match-wins returned "alpha-skill" for every one of these sources — installing a
+// skill nobody asked for and recording its name in the append-only audit ledger as if it
+// had been requested. LibreChat states the rule this asserts (packages/api/src/skills/
+// sync/github.ts:1201): colliding candidates "have no non-arbitrary winner", so none of
+// them wins. The error must carry the names and the remedy, because it is the model's
+// only way to retry correctly (D-27 self-correction).
+func TestInstallerRefusesAmbiguousMonorepoStage(t *testing.T) {
+	t.Parallel()
+	inst := newTestInstaller(t, fakeAddMulti(t, "zeta-skill", "alpha-skill"))
+
+	_, err := inst.Install(t.Context(), "owner/monorepo", AuditActor{ActorID: "cli"})
+
+	if !errors.Is(err, ErrAmbiguousSource) {
+		t.Fatalf("Install from a multi-skill source = %v, want ErrAmbiguousSource", err)
+	}
+	for _, want := range []string{"alpha-skill", "zeta-skill"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q must name the staged skill %q so the caller can pick one", err, want)
+		}
+	}
+	if !strings.Contains(err.Error(), "@") {
+		t.Errorf("error %q must show the owner/repo@skill-name remedy", err)
+	}
+}
+
+// TestInstallerAmbiguityListingIsBoundedAndSorted proves the refusal stays readable and
+// deterministic when a source ships far more skills than fit an error message: the names
+// are sorted (never ReadDir order), capped, and the remainder is counted rather than
+// dropped, so the caller learns the source is large instead of silently seeing a subset.
+func TestInstallerAmbiguityListingIsBoundedAndSorted(t *testing.T) {
+	t.Parallel()
+	const overCap = 3
+	names := make([]string, 0, ambiguityListCap+overCap)
+	// Descending, so a listing that echoed staging order instead of sorting would show it.
+	for i := ambiguityListCap + overCap - 1; i >= 0; i-- {
+		names = append(names, fmt.Sprintf("skill-%02d", i))
+	}
+	inst := newTestInstaller(t, fakeAddMulti(t, names...))
+
+	_, err := inst.Install(t.Context(), "owner/monorepo", AuditActor{ActorID: "cli"})
+
+	if !errors.Is(err, ErrAmbiguousSource) {
+		t.Fatalf("Install = %v, want ErrAmbiguousSource", err)
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "skill-00") {
+		t.Errorf("error %q must start the listing at the sorted-first name", msg)
+	}
+	if strings.Contains(msg, fmt.Sprintf("skill-%02d", ambiguityListCap)) {
+		t.Errorf("error %q must not list past the cap of %d", msg, ambiguityListCap)
+	}
+	if want := fmt.Sprintf("%d more", overCap); !strings.Contains(msg, want) {
+		t.Errorf("error %q must count the %q it did not list", msg, want)
 	}
 }
 

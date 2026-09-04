@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -138,6 +139,11 @@ type CatalogResult struct {
 // previewCapBytes bounds the body preview the UI shows (a full body could be large;
 // the operator needs a glance, not the whole file). The full body is staged regardless.
 const previewCapBytes = 2048
+
+// ambiguityListCap bounds how many skill names the ambiguity refusal spells out. A
+// monorepo can ship dozens (measured 2026-09-04: 60), and the refusal is read by the
+// model inside its context window — the names past the cap are counted, not listed.
+const ambiguityListCap = 10
 
 // Install fetches a skill from source via `npx skills add <source> -y` (scripts
 // PERMITTED, container-isolated — no script-disabling flag), stages the fetched tree, parses
@@ -272,26 +278,59 @@ func installChecklist() []CheckItem {
 	}
 }
 
-// locateStagedSkill resolves the single skill directory `npx skills add` materialized
+// locateStagedSkill resolves the ONE skill directory `npx skills add` materialized
 // under work. The CLI installs into `<work>/.claude/skills/<name>/` (spike 004a); a
-// SKILL.md at that path is the staged tree. It returns an error when no skill dir with
-// a SKILL.md is found (a fetch that produced nothing installable).
+// SKILL.md at that path is a staged tree.
+//
+// A source that ships several skills stages ALL of them when the caller named none,
+// and that is refused rather than resolved. This used to return the first hit in
+// os.ReadDir order — which sorts — so a monorepo silently installed its
+// alphabetically-first skill and wrote THAT name into the append-only audit ledger as
+// if it had been requested (measured 2026-09-04: one catalogue source staged 60 skills,
+// and the catalogue hands the model exactly this bare `owner/repo` in its `source`
+// field, with the skill name in a separate one). Directory order is not consent.
+// LibreChat states the same rule for its mirror (packages/api/src/skills/sync/
+// github.ts:1201): colliding candidates "have no non-arbitrary winner".
+//
+// The remedy in the error is real and needs no code here: `npx skills add` accepts
+// `owner/repo@skill-name` and narrows to that one skill (measured), which is the syntax
+// the tool schema and the find-skills instructions already document.
 func locateStagedSkill(work string) (string, error) {
 	skillsRoot := filepath.Join(work, ".claude", "skills")
 	entries, err := os.ReadDir(skillsRoot)
 	if err != nil {
 		return "", fmt.Errorf("no staged skill found under %q: %w", skillsRoot, err)
 	}
+	var staged []string
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
 		}
-		dir := filepath.Join(skillsRoot, e.Name())
-		if _, statErr := os.Stat(filepath.Join(dir, "SKILL.md")); statErr == nil {
-			return dir, nil
+		if _, statErr := os.Stat(filepath.Join(skillsRoot, e.Name(), "SKILL.md")); statErr == nil {
+			staged = append(staged, e.Name())
 		}
 	}
-	return "", fmt.Errorf("no staged skill with a SKILL.md found under %q", skillsRoot)
+	switch len(staged) {
+	case 0:
+		return "", fmt.Errorf("no staged skill with a SKILL.md found under %q", skillsRoot)
+	case 1:
+		return filepath.Join(skillsRoot, staged[0]), nil
+	default:
+		return "", fmt.Errorf("%w: it ships %d (%s) — install one by name with source=<owner/repo>@<skill-name>",
+			ErrAmbiguousSource, len(staged), summarizeNames(staged))
+	}
+}
+
+// summarizeNames renders at most ambiguityListCap names, sorted so the listing is
+// deterministic, and counts the rest instead of dropping them silently.
+func summarizeNames(names []string) string {
+	sorted := append([]string(nil), names...)
+	sort.Strings(sorted)
+	if len(sorted) <= ambiguityListCap {
+		return strings.Join(sorted, ", ")
+	}
+	return fmt.Sprintf("%s, and %d more",
+		strings.Join(sorted[:ambiguityListCap], ", "), len(sorted)-ambiguityListCap)
 }
 
 // previewBody returns the leading previewCapBytes of body for the UI glance, marking a

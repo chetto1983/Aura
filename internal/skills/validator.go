@@ -31,6 +31,11 @@ var (
 	// ErrInvalidStructure is a description-too-long / body-too-large / bad-type
 	// structural rejection.
 	ErrInvalidStructure = errors.New("invalid skill structure")
+	// ErrAmbiguousSource is an install source that ships several skills without
+	// naming one. It is separate from ErrInvalidStructure because the artifact is
+	// fine and only the request is under-specified: the caller retries with a
+	// selector, it does not give up.
+	ErrAmbiguousSource = errors.New("install source ships several skills")
 )
 
 // SanitizeName is the SINGLE name chokepoint (D-30). It rejects any name that
