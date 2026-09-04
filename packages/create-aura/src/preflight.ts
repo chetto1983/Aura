@@ -1,8 +1,19 @@
+import {
+  MINIMUM_CPU_CORES,
+  MINIMUM_DISK_KB,
+  MINIMUM_MEMORY_KB,
+} from './preflight-floors.js';
+
+// The floors are deliberately NOT written here. scripts/install.sh owns them -- it has to,
+// since preflight_hw runs before any download and `curl | bash` ships that one file -- and
+// preflight-floors.ts is generated from it. This wizard has to refuse exactly what the
+// installer it drives refuses: greenlighting a transfer install.sh then aborts is the whole
+// failure mode these checks exist to prevent, and a hand-kept second copy of the numbers
+// drifted the first time a floor moved. install.sh's warn_mem/warn_disk are still not
+// mirrored, on purpose: blocking where the installer merely warns is worse than silence.
+export { MINIMUM_CPU_CORES, MINIMUM_DISK_KB, MINIMUM_MEMORY_KB };
+
 export type SupportedArchitecture = 'arm64' | 'amd64';
-// scripts/install.sh's hard_disk threshold is 20 GiB (20 * 1024 * 1024 KiB) -- the shell
-// installer aborts below it, so this check must fail at the same floor or the wizard would
-// let an operator start a transfer that install.sh then refuses anyway.
-export const MINIMUM_DISK_KB = 20 * 1024 * 1024;
 
 export function normalizeArchitecture(raw: string): SupportedArchitecture {
   const architecture = raw.trim().toLowerCase();
@@ -28,11 +39,6 @@ export function assertSufficientDiskSpace(raw: string): number {
   return availableDiskKb;
 }
 
-// scripts/install.sh's hard gate is `cpus < 4` -- the shell installer aborts below it, so
-// this check must fail at the same floor or the wizard would greenlight a transfer
-// install.sh then refuses anyway.
-export const MINIMUM_CPU_CORES = 4;
-
 export function assertSufficientCpuCores(raw: string): number {
   const value = raw.trim();
   if (!/^\d+$/.test(value)) throw new Error('invalidCpuCount');
@@ -42,15 +48,6 @@ export function assertSufficientCpuCores(raw: string): number {
   }
   return availableCpuCores;
 }
-
-// scripts/install.sh's hard_mem threshold, which is 15 GiB and not 16 for a reason worth
-// keeping: the number is compared against MemTotal, which is installed RAM minus firmware
-// and kernel reservations, so a 16 GB machine reports ~15.4-15.8 GiB and can never clear a
-// 16 GiB floor. This constant was 16 GiB and would have refused every 16 GB box the product
-// targets; do not "correct" it back. install.sh's warn_mem (32 GiB) is deliberately not
-// mirrored -- the installer only refuses on the hard floor, and a wizard that blocks where
-// install.sh would merely warn is worse than one that says nothing.
-export const MINIMUM_MEMORY_KB = 15 * 1024 * 1024;
 
 export function assertSufficientMemory(raw: string): number {
   const value = raw.trim();

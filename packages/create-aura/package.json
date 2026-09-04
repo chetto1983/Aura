@@ -20,11 +20,12 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "build": "node scripts/clean-dist.mjs && tsc",
+    "build": "node scripts/sync-preflight-floors.mjs --check && node scripts/clean-dist.mjs && tsc",
     "test": "vitest run",
     "test:watch": "vitest",
     "build:artifact": "node scripts/build-artifact.mjs",
-    "prepack": "npm run build && npm run build:artifact"
+    "prepack": "npm run build && npm run build:artifact",
+    "sync:floors": "node scripts/sync-preflight-floors.mjs"
   },
   "dependencies": {
     "@inquirer/prompts": "^8.7.0",

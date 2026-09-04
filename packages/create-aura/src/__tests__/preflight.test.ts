@@ -33,11 +33,14 @@ describe('installer preflight', () => {
 
   // Deliberately absolute, not derived from MINIMUM_MEMORY_KB: the test above compares the
   // constant against itself and would pass for ANY value of it, including one no real
-  // machine can reach. install.sh's floor was exactly 16 GiB, and MemTotal is installed RAM
-  // minus firmware and kernel reservations, so these are the readings that decide whether
-  // the floor admits the hardware this product targets.
-  it('accepts a real 16 GB machine and still refuses an 8 GB one', () => {
+  // machine can reach. MemTotal is installed RAM minus firmware, kernel and integrated-GPU
+  // reservations, so these are the readings that decide whether the floor admits the
+  // hardware this product targets -- and it has guessed wrong twice. The floor was 16 GiB,
+  // which no 16 GB box can reach, then 15 GiB, which the appliance this project actually
+  // runs on still could not reach.
+  it('accepts the real 16 GB boxes it targets and still refuses an 8 GB one', () => {
     expect(assertSufficientMemory('16268000')).toBe(16268000); // ~15.51 GiB, a 16 GB box
+    expect(assertSufficientMemory('15610852')).toBe(15610852); // 14.89 GiB, GEEKOM Mini Air12
     expect(() => assertSufficientMemory('8120000')).toThrow('insufficientMemory:8120000');
   });
 });
