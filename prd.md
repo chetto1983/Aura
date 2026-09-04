@@ -11122,3 +11122,137 @@ flusso completo, che funziona.
 > gap is a genuine test debt paid here in unit tests over pure helpers (+37 statements
 > measured locally against the same package), not a delegation. And it prices nothing about
 > how often the operator will actually run the armed tier.
+
+## Section The per-message memory preload injects the leg the ranking actually returns (Amendment #204, 2026-09-04)
+
+> **Amendment #204 (2026-09-04 — measured on the operator's live stack: `memory_recall`
+> semantic through the mounted MCP, the runner's per-turn log line, and two agent turns
+> whose Postgres rows are the record).**
+>
+> **A fail-soft leg that renders nothing is indistinguishable from a feature that is off.**
+> The per-message preload (`mountedMemoryContext.Search`) called `memory_recall` and
+> rendered only `evidence[].fact` and `entities[]`. Measured against the live graph, the
+> question *"cosa ti arriva dal contesto"* returns `abstained: false` with five records —
+> every one of them `kind: "conversation"`, `fact_count: 0`, `entity_count: 0`,
+> `effective_path: "conversations"`. The renderer therefore produced the empty string, and
+> because both legs of `loadMemoryContext` are fail-soft, the turn arrived with no
+> `<memory_recall>` block, no error and no warning. Retrieval success and retrieval failure
+> were byte-identical from outside the process.
+>
+> The exclusion was deliberate and is now reversed: the struct comment listed "the
+> conversation windows" among what costs tokens in every turn, which is true of a WINDOW and
+> was applied to the whole leg. Conversations now render beside facts **in rank order**,
+> bounded on three axes so the original cost concern still holds — the anchor turn only
+> (never the window), 240 runes, at most three, prefixed `- said [date role]` so a turn
+> cannot be read back as an asserted fact. Three is where the signal ended in the one
+> ranking measured (0.73, 0.52, 0.46, 0.40); one ranking is not a distribution, and that is
+> the number to move when a second one disagrees.
+>
+> **A count bounded by the caller's own limit is not a measurement of the graph.**
+> `DigestResult.Entities` counts the index LINES, and the turn pointer asks
+> `memory_digest` for `limit: 1` precisely to stay cheap — so it announced "67 facts across
+> 1 entities" for a memory holding 87, in every turn, to an agent whose only reason to open
+> `memory_entities` is believing there is something to list. `Total` (already computed for
+> `Covered`) now carries the graph's count, and the reader takes `max(total, entities)`:
+> this binary and the memory MCP restart independently, a server predating the field omits
+> it, and zero is the one number that says the memory is empty. That was not hypothetical —
+> it was produced by rebuilding one container and not the other during this same session.
+>
+> **Observability is the fix that makes the other two checkable.** `loadMemoryContext` now
+> emits one line per turn carrying `preload_enabled`, `has_user_message`, `digest_bytes` and
+> `recall_bytes`. Before it existed, the only available reading was to ask the model what it
+> had been given — and on 2026-09-03 the model answered that it had a `<memory_recall>`
+> block "which contains a fact about this" on a turn where no block had been built at all.
+> That self-report was taken for a measurement for a full day and is the reason this
+> paragraph exists.
+>
+> Measured after, on the live stack: `recall_bytes` 0 → 602 → 381 across turns that
+> previously rendered nothing; `digest_bytes` 634 → 635, the single character by which the
+> entity count went from one digit to two; and the answer to "come si chiama il mio cane?"
+> moved from a bare "Olaf" to "Olaf — me l'hai detto il 1° settembre, aggiornando il nome
+> precedente (Argo)", a date and a superseded name that live in no fact and reach the prompt
+> only through the conversation leg.
+>
+> What this does NOT show. It does not close the graph half of the retrieval: entity seeds
+> are still derived only from fact `subject`/`object`, so `entity_count` remains 0 on every
+> ranking that lands on conversations — the node expansion works when the question reaches
+> facts and not when it reaches discourse, and pulling names out of prose is NER, not a
+> field read. It measures one operator's memory (87 entities, 67 facts) and one language;
+> the three-conversation bound and the 240-rune cut are calibrated on that corpus alone. It
+> prices no token budget: the block grew by up to ~1.2 KB per turn and no measurement here
+> establishes what that costs at the context window's margin. And the coverage authority for
+> the two packages touched is unchanged and unmeasured here — `cmd/aura` is outside the
+> statement floor by the gate's own design and `internal/arcadedb` is delegated to
+> `arcadedb_coverage` (amendment #203); only `internal/runner` is in the denominator, where
+> the ten added statements measure 100% on `loadMemoryContext`.
+
+## Section Facts and conversations are ranked apart and composed by quota (Amendment #205, 2026-09-04)
+
+> **Amendment #205 (2026-09-04 — measured offline on the operator's live memory exported
+> whole: 67 facts, 394 conversation turns, 14 questions whose answer is a fact and 7 whose
+> answer is a turn, the turn-side gold sets derived from the corpus by keyword rather than
+> declared; then confirmed on the live stack through the memory MCP).**
+>
+> **One ranking over two record types was the wrong question, and this PRD had already said
+> so.** §Retrieval and API convergence records "existing Aura evidence where equal-weight
+> fusion reduced dense retrieval from 8/8 to 5/8 forbids assuming RRF is the winner"; the
+> memory recall path had been assuming exactly that. `recallHybridFuseStatement` fused four
+> legs — fact-dense, fact-lexical, turn-dense, turn-lexical — under nested equal-weight RRF
+> and wrapped the result in `vector.rerank`, which the engine source
+> (`SQLFunctionVectorRerank.java`) shows re-scores **every** candidate by cosine similarity
+> against the query vector. So the fusion chose who entered and one cosine number chose the
+> order, across two record types at once.
+>
+> Measured on four embedding models, each fed its own documented input format
+> (EmbeddingGemma's `task: search result | query:` / `title: none | text:`, Qwen3's
+> `Instruct:/Query:` with raw documents, the two Mistral models raw):
+>
+> | model | facts alone | one cosine pool | equal-weight RRF |
+> |---|---|---|---|
+> | EmbeddingGemma-300M (production) | MRR 0.964 | 0.643, worst rank 46 | 0.482, @1 **0.00** |
+> | qwen3-embedding:0.6b | 0.929 | 0.537, worst rank 58 | 0.464, @1 **0.00** |
+> | codestral-embed-2505 | 0.964 | 0.600, worst rank 17 | 0.482, @1 **0.00** |
+> | mistral-embed-2312 | 0.911 | 0.621, worst rank 73 | 0.455, @1 **0.00** |
+>
+> Every model is excellent on facts alone and every one loses half of it to the mixing, so
+> **the embedding model and its prefixes are not the cause and changing either buys
+> nothing** — the prefixes we ship already match EmbeddingGemma's card, and giving stored
+> facts a real title instead of `none` moved none of 126 measured ranks. The cause is that
+> two documents embedded in isolation share no scale: a turn is verbose prose in the
+> operator's own words, a fact is a terse third-person summary, and for a question the
+> operator phrased the turn wins on cosine whatever it says.
+>
+> **Re-weighting cannot fix it, because rank fusion is a switch and not a dial.** At fact
+> weight 1.0 the fact side scores MRR 0.482 and the turn side 0.810; at 1.1 the facts jump
+> to 0.964 and the turns collapse to 0.118. Both legs expose the same rank ladder, so any
+> weight above one places every fact above every turn wholesale. LINEAR and DBSF normalise
+> each source to a common span and behave identically. Raw cosine with a 1.25 multiplier is
+> the only continuous dial (facts 0.881, turns 0.833) and it is a constant tuned on 21
+> questions and one memory.
+>
+> **So the question is removed rather than answered.** Each record type is ranked by its own
+> statement against its own kind, and the caller's limit is split between them —
+> GraphRAG's shape (`mixed_context.py`: `text_unit_prop`, `community_prop`, each type
+> ranked within itself and truncated to its own share). Measured at the SAME five-slot
+> budget, "is the answer in the block": the shipped single pool scored facts 0.79 / turns
+> 1.00; quotas score **1.00 / 1.00**, and the optimum is a wide plateau — two to three of
+> each at five slots, two to six at eight — collapsing only when a kind falls below two
+> slots. There is therefore no tuned constant: the rule is "at least two of each".
+>
+> Two rankings, not one filtered list, because the candidate window is where a fact was
+> first lost: `candidates` bounds the fused pool, and a fact the mixing had pushed to rank
+> 46 never entered a pool of 20. Confirmed on the live graph after the change, on the query
+> that exposed the defect: `fact_count` 0 → 3, `entity_count` 0 → 3, `effective_path`
+> `conversations` → `mixed`, and the fact that answers it moved from absent to rank 1.
+>
+> **What this does NOT show.** 21 questions on one operator's memory in one language, with
+> the fact-side gold chosen by hand. It compares two compositions at equal budget, which is
+> what it was built for, and it is not a retrieval benchmark: for scale, the best system in
+> graphify's published LOCOMO table scores recall@10 0.497, so a 1.00 here measures that
+> these questions are easy, not that retrieval is solved. It does not price latency (two
+> rankings instead of one, each with its own candidate budget). It says nothing about
+> reasoning traces, which remain outside the quota. And it does not revisit the withdrawn
+> reranker sidecar (amendment #4619's paragraph, and Qwen3-Reranker-0.6B rejected because
+> the LLM does better without holding VRAM) — an LLM rerank remains the open alternative,
+> and `AURA_MEMORY_RERANK_ENABLED`, declared always-on by amendment #29, is still
+> **specified and never implemented**: it appears nowhere outside this document.
