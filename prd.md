@@ -6164,10 +6164,7 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_MCP_CALL_TIMEOUT_SEC` | `60` (seconds; `0` = bounded default) | cap | Amendment #100 / Amendment #124 | Per-call MCP tool-invocation deadline (`internal/agent/mcptools/timeout.go`); a negative value is rejected at mount before tool registration. |
 | `AURA_MCP_ELICITATION_TIMEOUT_SEC` | `300` (seconds) | cap | Phase 45.1 / Amendment #124 | Bounds Aura's decline-and-surface elicitation handling (`internal/agent/mcptools/elicitation.go`); `<=0` disables elicitation outright (the handler declines immediately rather than waiting forever). |
 | `AURA_MCP_MOUNT_RETRY_ATTEMPTS` | `6` | cap | Amendment #124 | Overrides the boot-time MCP mount retry attempt budget (`cmd/aura/main.go` `mcpMountRetryPolicy`); `1` disables retry. Backoff bounds are fixed constants (1s base / 5s cap), not separately configurable. |
-| `AURA_MCP_CONFIG` | unset -> `~/.aura/mcp/servers.json` | operative | Amendment #124 | Test/operator override of the managed MCP config file path (`internal/mcp/managed_config.go` `ManagedConfigPath`). |
 | `AURA_MCP_SANDBOX_ORIGIN` | unset, no default | operative | Amendment #124 | The second origin the cockpit frames MCP Apps views from (`internal/config/config.go`); required only when a mounted server ships a view. |
-| `AURA_MCP_SERVERS_JSON` | unset, empty | operative | Amendment #44 (D-21) / Amendment #124 | Legacy inline MCP server config, additive to the managed config; disabled under the `server_production` profile unless `AURA_MCP_LEGACY_ENV_COMPAT=1` is explicitly set. |
-| `AURA_MCP_LEGACY_ENV_COMPAT` | `false` | operative | Amendment #124 | Explicit escape hatch that re-permits `AURA_MCP_SERVERS_JSON` under the `server_production` profile; `internal/config/config_validate.go`. |
 | `AURA_MCP_NETWORK_ALLOW` | derived per server, no operator default | operative | Amendment #124 | Aura-injected (not operator-set) egress-allowlist value forwarded into a docker-runtime MCP server's own process env (`internal/mcp/manager/runtime.go`), derived from that server's managed-config `Runtime.Network` list. |
 | `AURA_MCP_WHATSAPP_BRIDGE_URL` | unset -> `mcpmanager.WhatsAppBridgeBaseURL()` | operative | Amendment #124 | Overrides the base URL the WhatsApp bridge doctor/status probe targets (`cmd/aura/mcp.go`). |
 | `AURA_MCP_SSRF_ENFORCE` | `false` | operative | Amendment #124 | Tightens a lenient egress profile to enforce SSRF checks (`internal/mcp/sdkclient.go`); ORed with strict-profile enforcement, so it can only tighten a lenient profile, never weaken a strict one. |
@@ -11290,3 +11287,60 @@ flusso completo, che funziona.
 > becomes inert rather than fatal — the knob registry is a validation catalogue, not an
 > unknown-variable detector. And it is a source measurement: no running stack was exercised
 > for this amendment beyond the reading itself.
+
+## Section The file-backed MCP registry leaves no trace behind (Amendment #207, 2026-09-04)
+
+> **Amendment #207 (2026-09-04 — measured by source inspection at `021d320`: every
+> `servers.json` reference and every legacy `AURA_MCP_*` knob enumerated across the tree, and
+> the per-identity provisioning roots re-read against the Postgres registry).**
+>
+> **The file is gone; its documentation is not.** `internal/mcpregistry` replaced the
+> root-owned `servers.json` with Postgres after the 2026-08-24 split-brain, and the
+> `AURA_MCP_SERVERS_JSON` env declaration source went with it. No read or write of that file
+> remains anywhere in the tree. Eight comments still describe it as the live mechanism, and
+> one of them founds a SECURITY decision on it: `manager/first_party.go` refuses to trust a
+> recipe `Source` alone because "servers.json is an operator-editable file". The conclusion
+> survives — the registry is mutable too — but the premise it cites does not, and a guard
+> whose stated reason is a file nobody has is a guard someone will one day check and remove.
+> `stdio_shape.go` and `sdkclient.go` carry the same shape: their persistence-denial argument
+> is correct, and the surface it names (a JSON file on the `/var/lib/aura` volume) is now the
+> Postgres registry, reachable with credentials this container's environment already holds.
+>
+> Three knobs — `AURA_MCP_CONFIG`, `AURA_MCP_SERVERS_JSON`, `AURA_MCP_LEGACY_ENV_COMPAT` —
+> are still catalogued **operative** in this document's env index, two of them citing
+> `internal/config/config_validate.go`. Measured: none of the three appears in any non-test
+> Go file.
+>
+> **Two of the three surviving per-identity roots are now decided.** Amendment #206 left
+> `~/.aura/mcp/{id}`, `~/.aura/pyscripts/{id}` and `$AURA_SKILLS_DIR/{id}` standing on the
+> grounds that per-identity skills might consume them. That reasoning does not survive this
+> measurement for the first two, and this amendment supersedes it for them: the MCP registry
+> is a Postgres table, so `~/.aura/mcp/{id}` cannot hold a configuration anything reads
+> without reintroducing the file just retired; and `~/.aura/pyscripts/{id}` has no reader at
+> all — snippets are stored through the skills Writer and materialized into the export dir,
+> and `internal/skills.defaultPyScriptsDir`, the convention its provisioning comment cites,
+> no longer exists. Both go, with `auraSubdir`, their only construction helper.
+> `$AURA_SKILLS_DIR/{id}` stays: it is the one whose consumer is a live design question.
+>
+> **Contract.** The eight comments are corrected to name the Postgres registry, preserving
+> every security argument and changing only the surface it names. The three phantom rows
+> leave the env index. The `mcp` and `pyscripts` provisioning roots and `auraSubdir` are
+> removed. The post-split comments on `SkillTool` are corrected: they still describe the
+> authoring, install and snippet-lifecycle actions as wired into the read tool's schema,
+> whose `action` enum now reads `list|info|use`.
+>
+> **What this does NOT prove, and what is deliberately NOT cut.** The first skills loader
+> root, `<export>/.agents/skills`, is justified by its own comment as the landing zone for an
+> in-sandbox `npx skills add` "through the rw mount". There is no rw mount: `translate.go`
+> builds the box HostConfig with `Binds: nil`, volumes only (D-10), and `MaterializeIn`
+> clears `/skills` at every create and resume, so nothing installed inside a box can reach it,
+> and no code writes it on the host either. It is NOT removed here: a deployment may already
+> hold skills in that directory and removing the root would unload them silently, which this
+> source reading cannot rule out — `ls /var/lib/aura/exported-skills/.agents/skills` on the
+> live stack decides it. Its comment is corrected to state the mechanism honestly. Two other
+> surfaces are left alone for reasons that are not staleness: the `docker` and
+> `docker_gateway` runtime kinds are refused whenever `AURA_IN_CONTAINER=1` — which the
+> appliance image always sets — so they are unreachable in every shipped deployment while
+> remaining a supported bare-metal path; and the MCP Apps `ui://` chain is wired end to end
+> from bridge to cockpit, so whether any mounted server declares such a resource is a runtime
+> question this reading cannot answer.
