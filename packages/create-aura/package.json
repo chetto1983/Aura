@@ -1,5 +1,5 @@
 {
-  "name": "create-aura",
+  "name": "create-aura-appliance",
   "version": "0.1.0",
   "description": "Interactive local and remote installer for the Aura appliance",
   "repository": {
@@ -9,7 +9,7 @@
   },
   "type": "module",
   "bin": {
-    "create-aura": "dist/bin.js"
+    "create-aura-appliance": "dist/bin.js"
   },
   "files": [
     "dist",

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 const pkg = JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
 ) as {
+  name: string;
   files: string[];
   scripts: Record<string, string>;
   bin: Record<string, string>;
@@ -28,7 +29,19 @@ describe('packaging', () => {
   });
 
   // The published bin must point into dist/, not src/: the tarball ships no TypeScript.
+  // The bin's NAME is read from the manifest instead of being written here: renaming the
+  // published package is a packaging decision, shipping TypeScript is a defect, and only
+  // the second one is what this assertion is for.
   it('points its bin at the compiled entry point', () => {
-    expect(pkg.bin['create-aura']).toBe('dist/bin.js');
+    const entries = Object.entries(pkg.bin);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.[1]).toBe('dist/bin.js');
+  });
+
+  // `npx <pkg>` runs the bin whose name matches the package; a bin named anything else
+  // makes the one command the README documents fail on a machine that has never installed
+  // it. The rename to create-aura-appliance is exactly when this could have broken.
+  it('names its bin after the package so npx resolves it', () => {
+    expect(Object.keys(pkg.bin)).toEqual([pkg.name]);
   });
 });
