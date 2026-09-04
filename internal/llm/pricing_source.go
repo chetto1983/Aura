@@ -146,13 +146,19 @@ func FetchModelProfile(
 	if provider == "ollama" {
 		metadata, err := fetchOllamaModelProfile(ctx, client, baseURL, want)
 		if err != nil {
-			return ModelProfileMetadata{}, fmt.Errorf("%w: POST /api/show failed", ErrModelProfileUnavailable)
+			return ModelProfileMetadata{}, fmt.Errorf("%w: %w: POST /api/show: %w",
+				ErrModelProfileUnavailable, ErrModelCatalogueUnreachable, err)
 		}
 		return metadata, nil
 	}
 	wire, err := fetchModels(ctx, client, baseURL, catalogueKey)
 	if err != nil {
-		return ModelProfileMetadata{}, fmt.Errorf("%w: GET /models failed", ErrModelProfileUnavailable)
+		// The cause travels. It used to be dropped for "GET /models failed", which reads
+		// the same whether the key was missing, DNS was not up yet, or the endpoint
+		// answered 500 -- and on 2026-09-04 that cost an afternoon distinguishing them by
+		// hand after the silence downstream had already killed live turns.
+		return ModelProfileMetadata{}, fmt.Errorf("%w: %w: GET /models: %w",
+			ErrModelProfileUnavailable, ErrModelCatalogueUnreachable, err)
 	}
 	for _, m := range wire.Data {
 		if m.ID != want {
@@ -320,7 +326,7 @@ func FetchModelPrice(ctx context.Context, client *http.Client, baseURL, apiKey, 
 func (c *Config) ResolveModelProfile(ctx context.Context) error {
 	client := &http.Client{Timeout: 10 * time.Second}
 	defer client.CloseIdleConnections()
-	metadata, err := FetchModelProfile(ctx, client, c.Provider, c.BaseURL, c.APIKey, c.Model)
+	metadata, err := fetchModelProfileWithRetry(ctx, client, c.Provider, c.BaseURL, c.APIKey, c.Model)
 	if err != nil {
 		return err
 	}

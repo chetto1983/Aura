@@ -63,13 +63,47 @@ func clampAdvertisedEfforts(tokens []string) []ReasoningEffort {
 	return out
 }
 
+// reasoningCanBeDisabled reports whether "none" is known to be ILLEGAL on this model.
+//
+// Only a published mandatory:true answers that. An unpublished surface keeps the rule the
+// rest of this file follows -- send what was chosen -- because guessing for a model that
+// told us nothing is the silent behaviour change the doc comment above refuses.
+//
+// The catalogue has carried ReasoningMandatory into the config since it was added, and
+// nothing read it. On 2026-09-04 z-ai/glm-5.3-flash killed every turn the classifier
+// called easy with HTTP 400 "Reasoning is mandatory for this endpoint and cannot be
+// disabled" -- a model that declares mandatory:true and publishes ["max","high","low"],
+// so both halves of the answer were already in the config and neither was consulted. The
+// transport failure that emptied them that day is bounded separately
+// (model_profile_retry.go); this is the half that was wrong even when the fetch worked.
+func (c Config) reasoningCanBeDisabled() bool {
+	return !c.ReasoningMandatory
+}
+
 // ClampReasoningEffort returns the nearest effort the serving model accepts.
 //
 // It returns want unchanged when the model published no set, or when want is already in
 // it. Otherwise it walks the ladder for the supported effort closest to want, preferring
 // the LOWER one on a tie: the substitution exists because the turn was classified as
 // cheap, so a tie should not resolve into more reasoning than the classifier asked for.
+//
+// "None" is the exception to leaving an unknown surface alone, and it earns it by being
+// the only value that DISABLES rather than sizes. The comment above counts 298 of
+// OpenRouter's 424 models as reasoning-mandatory, so an unverified "none" is a coin flip
+// that loses about seven times in ten, and losing costs the whole turn: HTTP 400, no
+// answer, the round recorded as failed. An unverified "low" costs a little reasoning on a
+// turn classified cheap. Those are not comparable stakes.
+//
+// Measured 2026-09-04: the catalogue fetch failed once at boot
+// ("model profile unavailable: GET /models failed"), so SupportedReasoningEfforts stayed
+// empty for the life of the process and every easy turn on z-ai/glm-5.3-flash died --
+// a model that DOES publish ["max","high","low"] and mandatory:true, and would have been
+// clamped correctly had we been able to read it. The gap was never the model's silence;
+// it was ours.
 func (c Config) ClampReasoningEffort(want ReasoningEffort) ReasoningEffort {
+	if want == ReasoningEffortNone && !c.reasoningCanBeDisabled() {
+		return ReasoningEffortLow
+	}
 	if want == "" || len(c.SupportedReasoningEfforts) == 0 ||
 		slices.Contains(c.SupportedReasoningEfforts, want) {
 		return want
