@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 // ReasoningTier is the small provider-neutral routing result the runtime applies
@@ -74,14 +75,14 @@ func ApplyAdaptiveReasoning(req *llm.Request, provider string, cfg llm.Config, t
 		// is exactly how it went unnoticed on Ollama that adaptive reasoning had never
 		// once been applied.
 		slog.Debug("adaptive reasoning: not applied",
-			"target", llm.ReasoningTarget(provider, cfg.BaseURL), "tier", string(tier))
+			"target", redact.Line(llm.ReasoningTarget(provider, cfg.BaseURL).String()), "tier", string(tier))
 		return
 	}
 	req.Reasoning = tier.reasoning(cfg.ShowReasoning)
 	wanted := req.Reasoning.Effort
 	req.Reasoning.Effort = cfg.ClampReasoningEffort(wanted)
 	slog.Info("adaptive reasoning: tier applied",
-		"target", llm.ReasoningTarget(provider, cfg.BaseURL),
+		"target", redact.Line(llm.ReasoningTarget(provider, cfg.BaseURL).String()),
 		"tier", string(tier), "effort", string(req.Reasoning.Effort),
 		// Name the substitution when one happened: an effort that silently differs from
 		// the tier is the kind of thing that has to be readable in a log, not inferred.

@@ -26,6 +26,7 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/obs"
 	"github.com/chetto1983/aura/internal/reasoningtrace"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 // truncationNotice is appended to a finish_reason="length" final answer (D-21).
@@ -411,7 +412,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			if err != nil {
 				endLLM(err)
 				recordLLMError(llmErrorKind("stream_open", err))
-				slog.Error("agent llm call error", "request_id", requestID, "thread_id", a.sessionID, "kind", llmErrorKind("stream_open", err), "err", err)
+				slog.Error("agent llm call error", "request_id", redact.Line(requestID), "thread_id", redact.Line(a.sessionID), "kind", llmErrorKind("stream_open", err), "err", err)
 				span.End()
 				cancel()
 				if errors.Is(err, llm.ErrBreakerOpen) {

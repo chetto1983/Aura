@@ -13,6 +13,7 @@ import (
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/objectstore/garageadmin"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 // objectStoreCredentialResolver is the store-side seam objectStoreProvisionAdapter needs:
@@ -132,12 +133,12 @@ func (a *objectStoreProvisionAdapter) configureCORS(ctx context.Context, bucket 
 	}
 	if err := a.grantAuraOwnership(ctx, bucket, bucketID); err != nil {
 		slog.Warn("objectstore: browser-upload CORS not configured; uploads from the cockpit will fail",
-			"bucket", bucket, "stage", "grant", "err", err)
+			"bucket", redact.Line(bucket), "stage", "grant", "err", err)
 		return
 	}
 	if err := a.ensureCORS(ctx, bucket); err != nil {
 		slog.Warn("objectstore: browser-upload CORS not configured; uploads from the cockpit will fail",
-			"bucket", bucket, "stage", "put-cors", "err", err)
+			"bucket", redact.Line(bucket), "stage", "put-cors", "err", err)
 	}
 }
 

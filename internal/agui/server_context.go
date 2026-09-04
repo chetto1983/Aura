@@ -7,6 +7,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 // buildTurnUserMessage prepends the per-turn context blocks to the user message: this
@@ -49,7 +50,7 @@ func (s *Server) buildTurnUserMessage(ctx context.Context, r *http.Request, thre
 					asset = adopted
 				} else {
 					slog.Warn("agui: adopt attachment into thread",
-						"thread", threadID, "asset", asset.ID, "err", aErr)
+						"thread", redact.Line(threadID), "asset", redact.Line(asset.ID), "err", aErr)
 				}
 			}
 			attachments = append(attachments, asset)
