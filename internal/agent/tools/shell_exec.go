@@ -37,6 +37,13 @@ type ShellExec struct {
 	// is no host arm behind it (D-09/GATE-01).
 	Router *usersandbox.SandboxRouter
 
+	// InstallHook answers a skills-install command from the HOST install pipeline instead of
+	// running it in the box, and is the ONLY thing shell_exec knows about skills — the source
+	// string goes in, rendered text comes out. The composition root wires it to the same
+	// Installer skill_manage uses; nil refuses the command rather than running it (see
+	// shell_exec_install.go for why an install must never execute in the box).
+	InstallHook func(ctx context.Context, source string) (string, error)
+
 	// mu guards cwd: the per-session PERSISTENT working directory (Claude-Code
 	// Bash-tool parity — a `cd` in one call carries into the next). Keyed by the
 	// tool-call session id from WithToolCallContext ("" for bare-ctx callers). The
@@ -136,6 +143,14 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 	// (live run 9, amendment #53 / D-42). Normalize once and use the same command
 	// for destructive matching, approval digesting, and execution.
 	commandForGate := strings.ReplaceAll(a.Command, "\r\n", "\n")
+
+	// A skills install is answered by the HOST pipeline and never reaches the box: run in the
+	// box it succeeds into a directory no loader reads (shell_exec_install.go). This precedes
+	// Route because the box is irrelevant to it — an install must not fail merely because the
+	// sandbox is down, and must not run merely because it is up.
+	if res, handled, err := s.maybeInstallResult(ctx, commandForGate); handled {
+		return res, err
+	}
 
 	// Every call runs in the caller's per-identity box. A box that cannot be resolved DENIES;
 	// there is no host arm left to fall back to (D-09/GATE-01).

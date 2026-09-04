@@ -337,6 +337,18 @@ func registerSkillTools(reg *tools.Registry, cfg *config.Config, writerPool *pgx
 	return manageTool
 }
 
+// skillInstallHook adapts the skill tool's install into the seam shell_exec takes, so a
+// `npx skills add` typed into the box is answered by the host pipeline instead of succeeding into
+// a container directory no loader reads. It returns nil when no writer is wired (no pool): the
+// shell then refuses the command with guidance rather than running it, which is the same
+// fail-closed answer every other box-boundary decision gives.
+func skillInstallHook(manage *tools.SkillManageTool) func(context.Context, string) (string, error) {
+	if manage == nil || manage.Skills == nil || manage.Skills.Writer == nil {
+		return nil
+	}
+	return manage.Skills.InstallSource
+}
+
 func newSkillTool(cfg *config.Config, writerPool *pgxpool.Pool) *tools.SkillTool {
 	if cfg == nil || cfg.SkillsDir == "" {
 		return &tools.SkillTool{}

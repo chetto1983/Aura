@@ -140,24 +140,39 @@ func (t *SkillTool) actionInstall(ctx context.Context, raw json.RawMessage) (Too
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return ToolResult{}, fmt.Errorf("skill install args: %w", err)
 	}
-	source := strings.TrimSpace(a.Source)
+	message, err := t.InstallSource(ctx, a.Source)
+	if err != nil {
+		return ToolResult{}, err
+	}
+	return NewResult(ctx, message)
+}
+
+// InstallSource is the whole install — fetch, validate, land, invalidate the loader cache, alert
+// the operator — behind one call, and the message a caller shows on success. It is exported
+// because shell_exec routes a `npx skills add` typed into the box through here rather than letting
+// it run there (shell_exec_install.go); both entry points MUST share this body, since the two
+// steps after the write are the ones easiest to forget and silent when missed — a stale loader
+// cache hides the new skill for a TTL, and a skipped alert loses the operator's only notice that
+// RISKY supply-chain input landed.
+func (t *SkillTool) InstallSource(ctx context.Context, rawSource string) (string, error) {
+	source := strings.TrimSpace(rawSource)
 	if source == "" {
-		return ToolResult{}, fmt.Errorf("skill install: source is required (owner/repo, a URL, or a path)")
+		return "", fmt.Errorf("skill install: source is required (owner/repo, a URL, or a path)")
 	}
 	if t.Writer == nil {
-		return ToolResult{}, fmt.Errorf("skill install: no writer is wired in this context")
+		return "", fmt.Errorf("skill install: no writer is wired in this context")
 	}
 
 	name, err := t.Writer.Install(ctx, source)
 	if err != nil {
-		return ToolResult{}, fmt.Errorf("skill install %q: %w", source, err)
+		return "", fmt.Errorf("skill install %q: %w", source, err)
 	}
 	t.invalidateLoader()
 	if t.Alerter != nil {
 		t.Alerter.AlertPendingSkill(ctx, name, "install", scoring.Risky)
 	}
-	return NewResult(ctx, fmt.Sprintf(
-		"Skill %q installed from %s and active now — use it on this turn with action=use.", name, source))
+	return fmt.Sprintf(
+		"Skill %q installed from %s and active now — use it on this turn with action=use.", name, source), nil
 }
 
 // writeAction is the shared create/update/delete flow: decode the args, require the

@@ -249,7 +249,15 @@ func buildBaseRegistryWithHandles(
 	// per-identity box, never on the host. Deferred so simple chat/web turns do not carry a giant
 	// shell schema in the hot manifest. No tool below is given the HOST workspace root: every one
 	// of them resolves against the box's own /workspace, which is where the agent's files live.
-	reg.Register(&tools.ShellExec{Background: handles.BackgroundShells, Approvals: handles.ShellApprovals, Router: sandboxRouter})
+	reg.Register(&tools.ShellExec{
+		Background: handles.BackgroundShells,
+		Approvals:  handles.ShellApprovals,
+		Router:     sandboxRouter,
+		// A `npx skills add` typed here is answered by the SAME installer skill_manage uses,
+		// on the host, instead of succeeding into a box directory nothing loads (measured
+		// 2026-08-31 and 2026-09-04 by driving the real agent).
+		InstallHook: skillInstallHook(handles.SkillManage),
+	})
 	// shell_poll / shell_kill mirror Claude Code's BashOutput / KillBash: read new
 	// output from, and terminate, a background shell_exec job. Deferred — the model
 	// tool_searches for them once it holds a background shell_id to follow. The pointers
