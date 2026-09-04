@@ -11347,3 +11347,40 @@ flusso completo, che funziona.
 > servers with UI are mounted and the views render. That is an operator observation of the
 > live stack, not a measurement taken here, and it is recorded as such — the chain is IN USE
 > and is not a removal candidate.
+
+## Section The legacy skills landing zone is measured absent (Amendment #208, 2026-09-04)
+
+> **Amendment #208 (2026-09-04 — measured on the RUNNING deployment, `aura` healthy on an image
+> stamped `67688b4310036dc5e30aef6759b220488dee32be`, not by source inspection).**
+>
+> **The `ls` amendment #207 asked for.** `<export>/.agents/skills` — the first of the two loader
+> scan roots — **does not exist**: `ls /var/lib/aura/exported-skills/.agents/skills` reports no such
+> file or directory, and `find /var/lib/aura -maxdepth 4 -name .agents` returns nothing at all. The
+> export root holds exactly the six materialized skills the Writer put there (`brainstorm`,
+> `finance-expert`, `tushare-finance`, `xlsx`, `yahoo-finance`, `yfinance-data`) and no agent-layout
+> tree. The condition #207 refused to cut on — "a deployment may already hold skills there" — is
+> measured false on this deployment, so the root goes and `skillLoaderRoots` returns `cfg.SkillsDir`
+> alone.
+>
+> Two mechanisms already made that directory unreachable, and this measurement is what confirms
+> neither was bypassed in practice: `MaterializeIn` clears `/skills` at every create and resume (the
+> `docker_integration` lifecycle test plants a rogue `/skills/.agents/skills/rogue` and proves it is
+> gone), and `shell_exec` now intercepts a skills-install command in the box and routes it to the
+> host install pipeline, so the box never writes the host library at all.
+>
+> **Live confirmation of the unread per-identity root.** `$AURA_SKILLS_DIR` contains, beside the
+> three builtins and the six installed skills, two directories named for identity UUIDs —
+> `2f08d8d3-d348-44b6-80f8-530ea2a33069` and `bb78065b-0fc2-4c02-b4b7-b9aeceed1511` — both **empty**.
+> That is amendments #206 and #207 measured from outside the source: the provisioning saga creates
+> them and nothing has ever written one. They are harmless today (no `SKILL.md`, so the loader skips
+> them) and are NOT removed here. Recorded because it is not obvious and will matter later: the
+> per-identity root convention places identity directories INSIDE the loader's own scan root, so
+> whoever wires per-identity skills inherits a namespace where a skill directory and an identity
+> directory are siblings distinguished only by whether they contain a `SKILL.md`.
+>
+> **What this does NOT prove.** It measures ONE deployment. Another host that populated that tree by
+> hand keeps its files on disk and silently stops loading them; the recovery is to move them into
+> `$AURA_SKILLS_DIR`, and no code path recreates the directory, so a future need must re-declare the
+> root deliberately rather than inherit it. It does not decide `$AURA_SKILLS_DIR/{id}`, whose
+> consumer remains an open design question. And it says nothing about whether the two empty identity
+> directories are the right shape for that consumer — only that they are empty.
