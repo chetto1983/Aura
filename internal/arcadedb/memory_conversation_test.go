@@ -2,6 +2,7 @@ package arcadedb
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -141,5 +142,55 @@ func TestConversationProjectionClosesReasoningInitiatorEdge(t *testing.T) {
 		if got := params[name]; got != want {
 			t.Errorf("link bound %s = %v, want %v", name, got, want)
 		}
+	}
+}
+
+// The projection must survive a database that has no reasoning schema, because the
+// INITIATED_BY link READS ReasoningTrace -- a type the conversation schema neither
+// creates nor owns. The first version of that line returned the error like the two
+// writes above it, on the reasoning that a backend which cannot serve one write did not
+// serve the others either. That is true for the two that write types this schema creates
+// and false for the one that reads someone else's: on a database provisioned with
+// conversations only, the statement raises and the whole projection was lost -- every
+// turn, for that identity, on every replay. Caught by the live tier on 2026-09-04, where
+// all three conversation-projection tests failed at their first Apply.
+func TestConversationProjectionSurvivesAnAbsentReasoningSchema(t *testing.T) {
+	client, requests := routedClient(t, func(request recordedRequest) testResponse {
+		statement, _ := request.Payload["command"].(string)
+		if strings.Contains(statement, "CREATE EDGE INITIATED_BY") {
+			return testResponse{
+				Status: http.StatusBadRequest,
+				Body:   `{"detail":"Type with name 'ReasoningTrace' was not found"}`,
+			}
+		}
+		return testResponse{Body: `{"result":[]}`}
+	})
+
+	projection := ConversationProjection{
+		IdentityID: "identity-a", ConversationID: "conversation-1",
+		Turns: []ConversationTurnProjection{{
+			IdentityID: "identity-a", ConversationID: "conversation-1", Seq: 1,
+			Role: "user", Content: "restartgapblue",
+			ContentHash: conversationContentHash("restartgapblue"),
+			OccurredAt:  time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC),
+			SourceRef:   "postgres://conversation/conversation-1/turn/1",
+		}},
+	}
+	if err := client.ApplyConversationProjection(context.Background(), projection); err != nil {
+		t.Fatalf("a missing reasoning schema lost the whole projection: %v", err)
+	}
+
+	// The turn itself still has to be written: surviving the decoration's failure is not
+	// the same as skipping the work the projection exists for.
+	var wroteTurn bool
+	for _, request := range *requests {
+		statement, _ := request.Payload["command"].(string)
+		if strings.Contains(statement, "UPDATE "+conversationTurnType) &&
+			strings.Contains(statement, "content_hash") {
+			wroteTurn = true
+		}
+	}
+	if !wroteTurn {
+		t.Fatal("projection returned success without writing its turn")
 	}
 }

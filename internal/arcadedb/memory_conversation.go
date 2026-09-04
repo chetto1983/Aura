@@ -5,10 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 const (
@@ -177,12 +180,26 @@ func (c *Client) ApplyConversationProjection(ctx context.Context, projection Con
 		}
 		// Close the reasoning link from this side. The trace for this turn was written
 		// before the vertex existed, so its own attempt created nothing; this is the half
-		// that makes the edge appear. A no-op for the turns no trace names, which is most
-		// of them, and it errors like its two siblings above rather than inventing a
-		// second failure policy inside one loop -- if ArcadeDB cannot serve this write it
-		// did not serve theirs either.
+		// that makes the edge appear, and it is a no-op for the turns no trace names,
+		// which is most of them.
+		//
+		// It does NOT share the failure policy of the two writes above, and the first
+		// version of this line did: "if ArcadeDB cannot serve this write it did not serve
+		// theirs either" was wrong, because those two write types this schema creates
+		// while this one READS ReasoningTrace, which belongs to a schema the projection
+		// neither owns nor may assume. On a database where reasoning was never
+		// provisioned the statement raises, and aborting here would lose the whole
+		// projection -- every turn, for that identity, forever -- to decorate it. Caught
+		// by the live tier the same day: three conversation-projection tests failed at
+		// their first Apply against a disposable database with only the conversation
+		// schema on it.
+		//
+		// Logged, never swallowed: a genuine backend failure has already surfaced through
+		// the two writes above, so what reaches here is the absence of something optional.
 		if _, err := c.Command(ctx, linkReasoningInitiatorFromTurnStatement, turnParams); err != nil {
-			return fmt.Errorf("arcadedb: link reasoning initiator for turn %d: %w", turn.Seq, err)
+			slog.Warn("conversation projection could not link its reasoning trace",
+				"conversation_id", redact.Line(projection.ConversationID),
+				"turn_seq", turn.Seq, "err", redact.Line(err.Error()))
 		}
 	}
 	return nil

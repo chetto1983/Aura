@@ -41,3 +41,36 @@ func TestLimitsInferAndValidate(t *testing.T) {
 		t.Fatal("Validate(unknown) succeeded, want unsupported modality error")
 	}
 }
+
+// The modality fallback exists for the files that arrive with a useless MIME type --
+// application/octet-stream from a browser upload, an empty string from a scheduled
+// delivery -- where the extension is the only signal left. Without it those become
+// ModalityUnknown and are refused, which is a rejection produced by the sender's
+// Content-Type header rather than by anything about the file.
+func TestInferModalityFallsBackToTheExtension(t *testing.T) {
+	for _, tc := range []struct {
+		name, fileName, mimeType string
+		want                     Modality
+	}{
+		{"image without a usable mime type", "photo.png", "application/octet-stream", ModalityImage},
+		{"audio without a usable mime type", "memo.mp3", "", ModalityAudio},
+		{"neither the mime type nor the extension says anything", "payload.bin", "", ModalityUnknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := InferModality(tc.fileName, tc.mimeType); got != tc.want {
+				t.Fatalf("InferModality(%q, %q) = %v, want %v", tc.fileName, tc.mimeType, got, tc.want)
+			}
+		})
+	}
+}
+
+// A negative size is refused before any per-modality rule runs, because each of those
+// compares against a maximum and a negative number passes all of them.
+func TestValidateRefusesANegativeSizeForEveryModality(t *testing.T) {
+	limits := Limits{MaxDocumentBytes: 100, MaxImageBytes: 10, MaxAudioBytes: 20}
+	for _, modality := range []Modality{ModalityDocument, ModalityImage, ModalityAudio, ModalityUnknown} {
+		if err := limits.Validate(modality, "note.pdf", -1); err == nil {
+			t.Fatalf("Validate(%v, -1) accepted a negative size", modality)
+		}
+	}
+}
