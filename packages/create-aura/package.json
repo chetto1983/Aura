@@ -1,6 +1,6 @@
 {
   "name": "create-aura-appliance",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Interactive local and remote installer for the Aura appliance",
   "repository": {
     "type": "git",
