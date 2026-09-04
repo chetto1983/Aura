@@ -23,8 +23,8 @@ import (
 // What it IS: three shapes no MCP server has, chosen for what the registry actually
 // gives an attacker. Arbitrary execution inside the aura container is already
 // reachable by design -- a skill install runs third-party npm lifecycle scripts as
-// root. What an entry in servers.json adds on top is PERSISTENCE: /var/lib/aura is
-// a volume and the container filesystem is not, so a planted launch declaration is
+// root. What a registry entry adds on top is PERSISTENCE: the registry is a Postgres
+// table and the container filesystem is not, so a planted launch declaration is
 // re-executed at every mount, on every restart, indefinitely. That is exactly the
 // June 2026 hermes-0day campaign, where planted "command: bash" entries re-appended
 // an attacker SSH key at each startup (hermes_cli/mcp_security.py). The defence

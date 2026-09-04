@@ -214,8 +214,9 @@ func openSDKHTTP(ctx context.Context, name string, server ManagedServer, egress 
 // interpreter, but a refusal of the two or three launch shapes no MCP server has. The
 // premise the D-106 acceptance rested on — that only the operator writes the registry
 // — was measured false: a skill install runs third-party npm lifecycle scripts as root
-// in this container, and /var/lib/aura/mcp/servers.json is writable from there. See
-// stdio_shape.go for why the answer is persistence-denial rather than validation.
+// in this container, and the registry is writable from there with the database
+// credentials this container's environment holds. See stdio_shape.go for why the answer
+// is persistence-denial rather than validation.
 func OpenSDKSessionForConfig(processCtx, handshakeCtx context.Context, name string, cfg ServerConfig, o SessionOptions) (cs *sdkmcp.ClientSession, err error) {
 	handshakeCtx, end := sdkStdioConnectBoundary.Start(handshakeCtx)
 	defer end.PanicSafe(&err)

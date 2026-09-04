@@ -2,10 +2,10 @@
 // (identity, server), with every credential encrypted at rest.
 //
 // It exists because a remote MCP server's token identifies a PERSON, not a deployment.
-// Aura's managed catalog is a single shared servers.json, so a token parked there would be
-// readable by every identity on the box; the token therefore lives in Postgres under the
-// two RLS layers migration 0100 installs, and the ciphertext is unreadable even to a
-// caller who reaches the row.
+// Aura's managed catalog is one deployment-wide registry, so a token parked beside a server
+// entry would be readable by every identity on the box; the token therefore lives in its own
+// table under the two RLS layers migration 0100 installs, and the ciphertext is unreadable
+// even to a caller who reaches the row.
 //
 // What this package does NOT do: OAuth. Discovery, dynamic client registration, PKCE,
 // issuer validation, the code exchange and the refresh all live in the MCP SDK's

@@ -8,18 +8,18 @@ import (
 )
 
 // SkillTool is the deferred skills verb the model discovers on demand (D-01/D-05).
-// A single manifest entry — name "skill" — fronts the whole skills grammar via an
-// `action` enum dispatched through an ActionRouter, mirroring the `task` tool
-// (the pre-rewrite N-tool god-class is the anti-pattern this replaces). The full
-// skill manifest rides in this tool's Description after tool_search exposes it;
-// the default manifest carries only the deferred summary.
+// A manifest entry — name "skill" — fronts the READ grammar via an `action` enum
+// dispatched through an ActionRouter, mirroring the `task` tool (the pre-rewrite
+// N-tool god-class is the anti-pattern this replaces). The full skill manifest rides
+// in this tool's Description after tool_search exposes it; the default manifest
+// carries only the deferred summary.
 //
-// This tool wires the READ actions list|info|use, the authoring actions
-// create|update|delete (each live on write — amendment #97), install (fetch a
-// third-party skill into the library), and the snippet-lifecycle actions
-// save_snippet|restore|archive (18-03): save_snippet stores a reusable snippet UNGATED
-// (D-02 — normal result, never a pause), restore un-archives a snippet, archive
-// de-materializes one (SAFE tier).
+// Its own router wires list|info|use. The authoring actions (create|update|delete),
+// install and the snippet lifecycle (save_snippet|restore|archive) are IMPLEMENTED as
+// methods here but dispatched by SkillManageTool, which is where they appear to the
+// model and where the governance.write check lives — see skill_manage.go for why the
+// grammar was split. save_snippet stores a reusable snippet UNGATED (D-02 — normal
+// result, never a pause), restore un-archives one, archive de-materializes one.
 //
 // install came back (amendment #51 / D-40 had removed it in favour of teaching the
 // model `npx skills find/add`): the CLI installs into the directory it is standing in,
@@ -108,10 +108,9 @@ type skillArgs struct {
 // object's only required field is `action`; per-action requirements are spelled out
 // in the field descriptions. There is intentionally NO root-level oneOf/anyOf/enum —
 // a root enum 400s OpenAI-compat providers (DeepSeek). The `action` property does
-// carry an enum (a property-level enum on a string is wire-safe), as does the
-// `language` property for save_snippet. The snippet-lifecycle actions
-// (save_snippet/restore/archive) are wired (18-03), and so is install — the model needs
-// a way to add a skill that ends with the skill actually loaded.
+// carry an enum (a property-level enum on a string is wire-safe). This is the READ
+// half's schema: list|info|use and their two arguments. Authoring, install and the
+// snippet lifecycle carry their own schema in skillManageParamsSchema below.
 //
 // HONESTY (AG-011 / AG-044 / amendment #97): the descriptions state the ACTUAL
 // single-operator trust boundary, not an approval ceremony nobody performs. Aura runs

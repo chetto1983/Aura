@@ -178,7 +178,7 @@ type liveFilesystem struct {
 
 func (a *liveFilesystem) subRoots(id string) (map[string]string, error) {
 	out := map[string]string{}
-	for _, sub := range []string{"mcp", "skills", "pyscripts"} {
+	for _, sub := range []string{"skills"} {
 		dir, err := idroot.RootIdentityDir(filepath.Join(a.root, sub), id)
 		if err != nil {
 			return nil, err
@@ -223,7 +223,7 @@ func (a *liveFilesystem) dirsExist(t *testing.T, id string) bool {
 	if err != nil {
 		t.Fatalf("subRoots: %v", err)
 	}
-	_, err = os.Stat(roots["mcp"])
+	_, err = os.Stat(roots["skills"])
 	return err == nil
 }
 

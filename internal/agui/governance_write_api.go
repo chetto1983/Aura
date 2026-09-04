@@ -59,9 +59,9 @@ func (s *Server) registerGovernanceWriteRoutes(mux *http.ServeMux) {
 }
 
 // handleMCPInstall serves POST /api/governance/mcp (MCPW-01): install a recipe or custom
-// stdio/HTTP server. A duplicate name → 409 (no second servers.json entry); success writes
-// the entry atomically + one install audit row, and the response previews the CLI-equiv +
-// the ManagedConfigPath() destination and re-probes for the live tool count.
+// stdio/HTTP server. A duplicate name → 409 (the registry keys on name); success writes the
+// entry atomically + one install audit row, and the response previews the CLI-equiv and
+// re-probes for the live tool count.
 func (s *Server) handleMCPInstall(w http.ResponseWriter, r *http.Request) {
 	actor, ok := s.beginMCPWrite(w, r)
 	if !ok {

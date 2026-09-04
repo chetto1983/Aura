@@ -13,8 +13,8 @@ import (
 // operator grants per pack has something to range over.
 //
 // The prefix is deliberate and reserved. Aura's own sources are bare words
-// ("manual", "custom", "env:AURA_MCP_SERVERS_JSON"), so `pack:` cannot collide
-// with one, and a human reading servers.json can see where a server came from
+// ("manual", "custom") or the `recipe:` catalog form, so `pack:` cannot collide
+// with one, and a human reading the registry can see where a server came from
 // without consulting anything else.
 func SourceMarker(ref Ref) string { return "pack:" + ref.String() }
 

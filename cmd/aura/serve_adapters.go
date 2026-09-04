@@ -500,9 +500,17 @@ func newGatewayResumeHook(g *gateway.Gateway) runner.ResumeHook {
 
 // skillLoaderRoots is the single source of truth for the loader scan roots
 // (amendment #51 / D-40 + #50): the persistent-install dir <export>/.agents/skills
-// FIRST (where an in-sandbox `cd /skills && npx skills add …` lands a self-installed
-// skill through the rw mount), then the active SkillsDir LAST so an operator-authored
-// skill WINS on a name collision (scanRoot iterates roots in order, later root wins).
+// FIRST, then the active SkillsDir LAST so an operator-authored skill WINS on a name
+// collision (scanRoot iterates roots in order, later root wins).
+//
+// The first root is a LEGACY landing zone and nothing writes it. It was where an
+// in-sandbox `cd /skills && npx skills add …` self-installed a skill back when /skills
+// was a read-write bind mount; D-10 replaced that with a docker-cp'd copy that
+// MaterializeIn clears at every create and resume, so nothing installed inside a box can
+// reach it, and no host path writes it either — skill_manage install goes through the
+// Writer, which lands in SkillsDir. It is still scanned because a deployment may already
+// hold skills there and dropping the root would unload them silently (amendment #207):
+// an `ls` on it decides whether it can go.
 func skillLoaderRoots(cfg *config.Config) []string {
 	return []string{filepath.Join(cfg.SkillExportDir, ".agents", "skills"), cfg.SkillsDir}
 }

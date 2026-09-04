@@ -11342,5 +11342,8 @@ flusso completo, che funziona.
 > `docker_gateway` runtime kinds are refused whenever `AURA_IN_CONTAINER=1` — which the
 > appliance image always sets — so they are unreachable in every shipped deployment while
 > remaining a supported bare-metal path; and the MCP Apps `ui://` chain is wired end to end
-> from bridge to cockpit, so whether any mounted server declares such a resource is a runtime
-> question this reading cannot answer.
+> from bridge to cockpit. Whether any mounted server declares such a resource was left open by
+> this reading and answered by the operator on the same day, from the running deployment:
+> servers with UI are mounted and the views render. That is an operator observation of the
+> live stack, not a measurement taken here, and it is recorded as such — the chain is IN USE
+> and is not a removal candidate.

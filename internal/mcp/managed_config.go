@@ -68,8 +68,8 @@ type ManagedServer struct {
 	URL     string   `json:"url,omitempty"`
 	// No omitempty on these two: encoding/json ignores it for struct values, so it
 	// never did anything. Dropping it is byte-identical on the wire; switching to
-	// omitzero would NOT be — a zero Trust/Runtime would stop being written to
-	// ~/.aura/mcp/servers.json, which is a format change, not a lint fix.
+	// omitzero would NOT be — a zero Trust/Runtime would stop being written to the
+	// registry's stored JSON, which is a format change, not a lint fix.
 	Trust   ManagedTrust   `json:"trust"`
 	Runtime ManagedRuntime `json:"runtime"`
 }

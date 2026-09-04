@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -83,36 +82,25 @@ var (
 // this file under the 600-LOC cap).
 
 // filesystemProvisionAdapter satisfies agui.FilesystemProvisioner over the REAL per-user
-// config bases (~/.aura/mcp, $AURA_SKILLS_DIR, ~/.aura/pyscripts), each per-identity path
-// rooted through the traversal guard so a crafted identity cannot escape its provisioning
-// dir. ProvisionIdentityDirs = MkdirAll(0o700); DeprovisionIdentityDirs = RemoveAll each
-// root. The ~/.aura/agents root and the empty Agent.md it seeded went with amendment #206:
-// the mechanism they served was retired by #87 and nothing had read them since.
+// config base ($AURA_SKILLS_DIR), the per-identity path rooted through the traversal guard
+// so a crafted identity cannot escape its provisioning dir. ProvisionIdentityDirs =
+// MkdirAll(0o700); DeprovisionIdentityDirs = RemoveAll each root.
+//
+// Three roots have left this map. ~/.aura/agents and the empty Agent.md it seeded went with
+// amendment #206 (#87 retired the mechanism); ~/.aura/mcp and ~/.aura/pyscripts went with
+// #207 — the MCP registry is a Postgres table, and pyscripts had no reader at all. The map
+// shape stays because the surviving root's consumer is still a live design question.
 type filesystemProvisionAdapter struct {
-	roots map[string]string // sub ("mcp"|"skills"|"pyscripts") -> base dir
+	roots map[string]string // sub ("skills") -> base dir
 }
 
 func newFilesystemProvisionAdapter(cfg *config.Config) filesystemProvisionAdapter {
 	return filesystemProvisionAdapter{roots: identityDirRoots(cfg)}
 }
 
-// identityDirRoots resolves the three per-identity storage bases from cfg (NOT a temp dir):
-// skills is $AURA_SKILLS_DIR, and mcp/pyscripts are home-derived.
+// identityDirRoots resolves the per-identity storage base from cfg (NOT a temp dir).
 func identityDirRoots(cfg *config.Config) map[string]string {
-	return map[string]string{
-		"mcp":       auraSubdir("mcp"),
-		"skills":    cfg.SkillsDir,
-		"pyscripts": auraSubdir("pyscripts"),
-	}
-}
-
-// auraSubdir returns ~/.aura/<name> with a tmp fallback when the home dir is unavailable
-// (matches config.auraHomeDir semantics).
-func auraSubdir(name string) string {
-	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".aura", name)
-	}
-	return filepath.Join(os.TempDir(), "aura", name)
+	return map[string]string{"skills": cfg.SkillsDir}
 }
 
 func (a filesystemProvisionAdapter) subRoots(id string) (map[string]string, error) {

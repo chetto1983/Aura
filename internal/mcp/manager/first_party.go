@@ -18,9 +18,10 @@ import (
 // It keys on the recipe SOURCE and the recipe URL together, and neither alone would do:
 //   - the name is not enough — `aura mcp install memory mymem` renames the server, which
 //     is exactly the case mcp.SourceRecipeMemory's own comment was written for;
-//   - the source is not enough — servers.json is an operator-editable file, so a
-//     hand-planted entry could borrow `recipe:calendar` and point at a host of its
-//     choosing. Pinning the URL to the catalog's means such an entry is NOT first-party.
+//   - the source is not enough — the registry is writable by anything holding this
+//     deployment's database credentials, so a planted entry could borrow
+//     `recipe:calendar` and point at a host of its choosing. Pinning the URL to the
+//     catalog's means such an entry is NOT first-party.
 //
 // `aura mcp add` cannot reach this at all: it hard-codes Source "manual".
 

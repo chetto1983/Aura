@@ -31,9 +31,9 @@ var governanceVisibleContainerRecipes = []string{"calendar", "whatsapp"}
 //
 // The config was once captured at boot, which was defensible while the board was read-only.
 // It stopped being defensible when MCPW-01 gave the cockpit an Install button: the write
-// lands in servers.json, the board kept rendering the boot snapshot, and the server the
+// landed in the registry, the board kept rendering the boot snapshot, and the server the
 // operator had just added was invisible until the daemon restarted — measured 2026-08-24
-// with a real Slack install, present on disk and absent from the list. Every CLI path
+// with a real Slack install, stored and absent from the list. Every CLI path
 // (mcp.go, mcp_profile.go, mcp_status.go) already re-loads per invocation; this is the
 // board joining them.
 type mcpBoardAdapter struct {
