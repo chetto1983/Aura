@@ -123,34 +123,42 @@ const (
 	effectivePathMixed = "mixed"
 )
 
-const recallHybridFuseStatement = "SELECT @rid AS rid, score FROM (SELECT expand(" + rerankOpen + "`vector.fuse`(" +
-	"`vector.fuse`(" +
+// The two rankings are separate STATEMENTS, not two legs of one fusion, because the
+// candidate window is the first place a fact was being lost: `candidates` bounds the
+// fused pool, and a fact the mixing had pushed to rank 46 never entered a pool of 20 at
+// all. Ranked against its own kind it is rank 1. See memory_recall_quota.go for the
+// measurement that produced this shape.
+const recallFactFuseStatement = "SELECT @rid AS rid, score FROM (SELECT expand(" + rerankOpen + "`vector.fuse`(" +
 	"`vector.neighbors`('" + factEdgeType + "[embedding]', :vector, :candidates, " +
 	"{ filter: (SELECT @rid FROM " + factEdgeType + " WHERE " + asOfCondition +
 	").@rid, maxDistance: :max_distance }), " +
 	"(SELECT @rid, $score FROM " + factEdgeType +
 	" WHERE SEARCH_INDEX('" + factEdgeType + "[statement]', :query) = true AND " +
 	"$score >= :min_lexical_score AND " + asOfCondition + " LIMIT :candidates), " +
-	"{ fusion: 'RRF' }), " +
-	"`vector.fuse`(" +
+	"{ fusion: 'RRF' }" +
+	")" + rerankClose + "))" + relevanceFloor + " ORDER BY score DESC, rid ASC LIMIT :candidates"
+
+const recallTurnFuseStatement = "SELECT @rid AS rid, score FROM (SELECT expand(" + rerankOpen + "`vector.fuse`(" +
 	"`vector.neighbors`('" + conversationTurnType + "[embedding]', :vector, :candidates, " +
 	"{ filter: (SELECT @rid FROM " + conversationTurnType +
 	" WHERE identity_id = :identity_id AND deleted_at IS NULL" + recallExclusionMarker + ").@rid, maxDistance: :max_distance }), " +
 	"(SELECT @rid, $score FROM " + conversationTurnType +
 	" WHERE identity_id = :identity_id AND deleted_at IS NULL" + recallExclusionMarker + " AND SEARCH_INDEX('" +
 	conversationTurnType + "[content]', :query) = true AND $score >= :min_lexical_score " +
-	"LIMIT :candidates), { fusion: 'RRF' }), { fusion: 'RRF' }" +
+	"LIMIT :candidates), { fusion: 'RRF' }" +
 	")" + rerankClose + "))" + relevanceFloor + " ORDER BY score DESC, rid ASC LIMIT :candidates"
 
-const recallLexicalFuseStatement = "SELECT @rid AS rid, score FROM (SELECT expand(`vector.fuse`(" +
-	"(SELECT @rid, $score FROM " + factEdgeType +
+// The lexical fallback splits the same way. Leaving it fused would keep the defect alive
+// on the degraded path, where it is harder to see and no less wrong.
+const recallFactLexicalStatement = "SELECT @rid AS rid, $score AS score FROM " + factEdgeType +
 	" WHERE SEARCH_INDEX('" + factEdgeType + "[statement]', :query) = true AND " +
-	"$score >= :min_lexical_score AND " + asOfCondition + " LIMIT :candidates), " +
-	"(SELECT @rid, $score FROM " + conversationTurnType +
-	" WHERE identity_id = :identity_id AND deleted_at IS NULL" + recallExclusionMarker + " AND SEARCH_INDEX('" +
-	conversationTurnType + "[content]', :query) = true AND $score >= :min_lexical_score " +
-	"LIMIT :candidates), { fusion: 'RRF' }" +
-	"))) ORDER BY score DESC, rid ASC LIMIT :candidates"
+	"$score >= :min_lexical_score AND " + asOfCondition +
+	" ORDER BY score DESC, rid ASC LIMIT :candidates"
+
+const recallTurnLexicalStatement = "SELECT @rid AS rid, $score AS score FROM " + conversationTurnType +
+	" WHERE identity_id = :identity_id AND deleted_at IS NULL" + recallExclusionMarker +
+	" AND SEARCH_INDEX('" + conversationTurnType + "[content]', :query) = true AND " +
+	"$score >= :min_lexical_score ORDER BY score DESC, rid ASC LIMIT :candidates"
 
 const hydrateRecallFactsStatement = "SELECT @rid, statement, predicate, valid_from, valid_to, " +
 	"sources, fact_key, outV().name AS subject, outV().kind AS subject_kind, " +
@@ -235,30 +243,51 @@ func (c *Client) recallSemantic(ctx context.Context, request RecallRequest) (Rec
 		"max_distance": limits.DenseMaxDistance, "min_relevance": limits.MinRelevance,
 		"min_lexical_score": lexicalScoreFloor(query, limits.LexicalMinScore),
 	}
-	path, reason, statement := retrievalPathHybrid, "", recallHybridFuseStatement
+	path, reason := retrievalPathHybrid, ""
+	factStatement, turnStatement := recallFactFuseStatement, recallTurnFuseStatement
 	vector, embeddingReason := c.recallQueryVector(ctx, query)
 	if vector == nil {
-		path, reason, statement = retrievalPathLexical, embeddingReason, recallLexicalFuseStatement
+		path, reason = retrievalPathLexical, embeddingReason
+		factStatement, turnStatement = recallFactLexicalStatement, recallTurnLexicalStatement
 	} else {
 		params["vector"] = vector
 	}
-	statement = applyRecallExclusions(statement, params, request.ExcludeConversationIDs)
-	ranked, err := c.Query(ctx, statement, params)
+	facts, turns, err := c.rankRecallKinds(ctx, factStatement, turnStatement, params, request.ExcludeConversationIDs)
 	if err != nil && path == retrievalPathHybrid {
 		path, reason = retrievalPathLexical, reasonFusionFailed
-		fallback := applyRecallExclusions(recallLexicalFuseStatement, params, request.ExcludeConversationIDs)
-		ranked, err = c.Query(ctx, fallback, params)
+		facts, turns, err = c.rankRecallKinds(
+			ctx, recallFactLexicalStatement, recallTurnLexicalStatement, params, request.ExcludeConversationIDs,
+		)
 	}
 	if err != nil {
 		return RecallResult{}, fmt.Errorf("arcadedb: unified memory recall: %w", err)
 	}
-	result, err := c.hydrateRecallRanking(ctx, request, ranked, limit, path, reason)
+	result, err := c.hydrateRecallRanking(ctx, request, mergeRecallRankings(facts, turns), limit, path, reason)
 	if err != nil {
 		return RecallResult{}, err
 	}
 	result.Entities = c.expandRecallEntities(ctx, request, result.Evidence)
 	result.Retrieval.EntityCount = len(result.Entities)
 	return result, nil
+}
+
+// rankRecallKinds runs the two per-kind rankings. Both are attempted even when the first
+// fails: a memory with no conversations yet, or a fact index still building, must still
+// answer from the half that works rather than reporting an empty memory. The error is
+// returned only when NEITHER side produced a ranking, which is the only case the caller
+// can do nothing about.
+func (c *Client) rankRecallKinds(
+	ctx context.Context,
+	factStatement, turnStatement string,
+	params map[string]any,
+	excluded []string,
+) ([]recallRankedRID, []recallRankedRID, error) {
+	factRows, factErr := c.Query(ctx, applyRecallExclusions(factStatement, params, excluded), params)
+	turnRows, turnErr := c.Query(ctx, applyRecallExclusions(turnStatement, params, excluded), params)
+	if factErr != nil && turnErr != nil {
+		return nil, nil, fmt.Errorf("rank facts: %v; rank turns: %w", factErr, turnErr)
+	}
+	return decodeRecallRanking(factRows), decodeRecallRanking(turnRows), nil
 }
 
 func (c *Client) recallEntity(ctx context.Context, request RecallRequest) (RecallResult, error) {
@@ -329,12 +358,11 @@ func decodeRecallRanking(rows []map[string]any) []recallRankedRID {
 func (c *Client) hydrateRecallRanking(
 	ctx context.Context,
 	request RecallRequest,
-	rows []map[string]any,
+	ranked []recallRankedRID,
 	limit int,
 	path string,
 	reason string,
 ) (RecallResult, error) {
-	ranked := decodeRecallRanking(rows)
 	if len(ranked) == 0 {
 		return RecallResult{
 			Evidence: make([]RecallEvidence, 0), Abstained: true,
@@ -355,17 +383,22 @@ func (c *Client) hydrateRecallRanking(
 	for _, fact := range facts {
 		factProse[normalizedRecallProse(fact.Statement)] = struct{}{}
 	}
+	quota := recallQuotaFor(limit)
+	var admitted recallAdmission
 	evidence := make([]RecallEvidence, 0, min(len(ranked), limit))
 	seenProse := make(map[string]struct{}, len(ranked))
 	seenConversations := make(map[string]struct{})
 	excludedConversations := recallExcludedConversationSet(request.ExcludeConversationIDs)
 	for index, item := range ranked {
-		if len(evidence) == limit {
+		if admitted.exhausted(quota) {
 			break
 		}
 		if fact, ok := facts[item.rid]; ok {
 			key := normalizedRecallProse(fact.Statement)
 			if _, duplicate := seenProse[key]; duplicate {
+				continue
+			}
+			if !admitted.admitFact(quota) {
 				continue
 			}
 			seenProse[key] = struct{}{}
@@ -388,6 +421,9 @@ func (c *Client) hydrateRecallRanking(
 		if _, duplicate := seenConversations[turn.ConversationID]; duplicate {
 			continue
 		}
+		if !admitted.canAdmitTurn(quota) {
+			continue
+		}
 		window, err := c.recallConversationWindow(ctx, turn, recallWindowRadius)
 		if err != nil {
 			continue
@@ -396,6 +432,7 @@ func (c *Client) hydrateRecallRanking(
 		if len(window.Turns) == 0 {
 			continue
 		}
+		admitted.bookTurn()
 		seenConversations[turn.ConversationID] = struct{}{}
 		windowCopy := window
 		evidence = append(evidence, RecallEvidence{

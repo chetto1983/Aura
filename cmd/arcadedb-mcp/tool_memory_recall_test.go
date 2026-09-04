@@ -19,7 +19,14 @@ import (
 	"github.com/chetto1983/aura/internal/arcadedb"
 )
 
-const recallRankedMixed = `{"result":[{"rid":"#10:1","score":0.04},{"rid":"#20:1","score":0.03}]}`
+// Facts and conversations are ranked by SEPARATE statements now (arcadedb
+// memory_recall_quota.go): one mixed cosine ranking cost half the fact recall on four
+// embedding models, so the recall path asks each kind for its own ordering and splits
+// the caller's budget between them. Every fixture below therefore answers two rankings
+// where it used to answer one.
+const recallRankedFacts = `{"result":[{"rid":"#10:1","score":0.04}]}`
+
+const recallRankedTurns = `{"result":[{"rid":"#20:1","score":0.03}]}`
 
 const recallFactHydration = `{"result":[{"@rid":"#10:1","statement":"Davide keeps the blue notebook.","predicate":"keeps","subject":"Davide","object":"blue notebook","valid_from":"2026-01-01T00:00:00Z","fact_key":"fact-blue","sources":[{"run_id":"run-1"}]}]}`
 
@@ -40,7 +47,8 @@ func (s recallStubEmbedder) Embed(context.Context, []string) ([][]float64, error
 
 func TestMemoryRecallMixedTierTracer(t *testing.T) {
 	client, _ := newRecordingDB(t,
-		recallRankedMixed, recallFactHydration, recallTurnHydration, recallTurnWindow,
+		recallRankedFacts, recallRankedTurns,
+		recallFactHydration, recallTurnHydration, recallTurnWindow,
 	)
 	_, output, err := memoryRecallHandler(singleTenant(t, client))(
 		context.Background(), reqWithIdentity(testIdentity), MemoryRecallInput{
@@ -284,7 +292,9 @@ func TestMemoryRecallSuppressesActiveConversation(t *testing.T) {
 		`{"@rid":"#20:1","identity_id":"` + testIdentity + `","conversation_id":"conversation-active","turn_seq":9,"role":"user","content":"active notebook","content_hash":"active","occurred_at":"2026-08-31T12:00:00Z","source_ref":"postgres://active/9"},` +
 		`{"@rid":"#20:2","identity_id":"` + testIdentity + `","conversation_id":"conversation-history","turn_seq":7,"role":"user","content":"historical notebook","content_hash":"history","occurred_at":"2026-08-30T12:00:00Z","source_ref":"postgres://history/7"}]}`
 	window := `{"result":[{"identity_id":"` + testIdentity + `","conversation_id":"conversation-history","turn_seq":7,"role":"user","content":"historical notebook","content_hash":"history","occurred_at":"2026-08-30T12:00:00Z","source_ref":"postgres://history/7"}]}`
-	client, rec := newRecordingDB(t, ownership, ranked, `{"result":[]}`, turns, window)
+	// ownership, the empty fact ranking, the conversation ranking, the empty fact
+	// hydration, the conversation hydration, then the window.
+	client, rec := newRecordingDB(t, ownership, `{"result":[]}`, ranked, `{"result":[]}`, turns, window)
 	client.WithEmbedder(recallStubEmbedder{})
 	req := recallRequestWithActiveSource(t, testIdentity, "turn-current", memoryRecallActiveSource{
 		ConversationID: "conversation-active", TurnID: "turn-current",
@@ -303,9 +313,17 @@ func TestMemoryRecallSuppressesActiveConversation(t *testing.T) {
 			t.Fatalf("active conversation leaked: %+v", output.Evidence)
 		}
 	}
-	statement, params, ok := rec.find("vector.fuse")
+	// The exclusion belongs to the CONVERSATION ranking specifically. Asking for the
+	// first `vector.fuse` used to find it by accident; since the rankings were split
+	// per record type that is the fact statement, which has no conversation_id to
+	// filter on and never did.
+	statement, params, ok := rec.find("ConversationTurn[embedding]")
 	if !ok || !strings.Contains(statement, "conversation_id <> :excluded_conversation_id_0") {
-		t.Fatalf("recall query lacks negative filter: %q", statement)
+		t.Fatalf("conversation ranking lacks negative filter: %q", statement)
+	}
+	if factRanking, _, found := rec.find("FACT[embedding]"); found &&
+		strings.Contains(factRanking, "excluded_conversation_id_0") {
+		t.Fatalf("fact ranking carries a conversation filter: %q", factRanking)
 	}
 	if got := params["excluded_conversation_id_0"]; got != "conversation-active" {
 		t.Fatalf("negative filter params = %#v", got)

@@ -401,13 +401,17 @@ func TestEscapeLuceneEscapesOperators(t *testing.T) {
 // Every hybrid retrieval path must rerank its fused candidates. RRF ranks only,
 // so without this wrapper a single incidental lexical hit at rank 1 ties with the
 // correct dense hit at rank 1 and wins the tie-break -- measured 2026-09-02 on a
-// live 102-fact memory. The three statements are separate const literals, so a
-// future edit to one of them can silently drop the wrapper; this pins all three.
+// live 102-fact memory. The statements are separate const literals, so a future edit
+// to one of them can silently drop the wrapper; this pins every one. Recall now brings
+// two of them: its single mixed ranking was split per record type on 2026-09-04, and a
+// split that left one half unreranked would reintroduce the defect on that half alone,
+// where it is harder to see.
 func TestEveryHybridStatementReranksItsFusion(t *testing.T) {
 	for name, statement := range map[string]string{
-		"facts":         fuseRIDsStatement,
-		"conversations": fuseConversationTurnRIDsStatement,
-		"recall":        recallHybridFuseStatement,
+		"facts":                fuseRIDsStatement,
+		"conversations":        fuseConversationTurnRIDsStatement,
+		"recall facts":         recallFactFuseStatement,
+		"recall conversations": recallTurnFuseStatement,
 	} {
 		t.Run(name, func(t *testing.T) {
 			open := strings.Index(statement, rerankOpen)

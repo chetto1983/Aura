@@ -64,8 +64,10 @@ func TestRecallSemanticReturnsSeededEntityNodes(t *testing.T) {
 		`"predicate":"usa_memoria_a_lungo_termine","subject":"Aura","subject_kind":"System",` +
 		`"object":"ArcadeDB","object_kind":"System","valid_from":"2026-09-01T00:00:00Z","sources":[]}]}`
 	empty := `{"result":[]}`
-	// ranking, facts, turns, then one FactsAbout per seed.
-	client, rec := recordingClient(t, ranking, factRow, empty, factRow, factRow)
+	// Two rankings now, one per record type, then the two hydrations, then one
+	// FactsAbout per seed: fact ranking, turn ranking (empty), fact hydration, turn
+	// hydration (empty), and a seed traversal each for Aura and ArcadeDB.
+	client, rec := recordingClient(t, ranking, empty, factRow, empty, factRow, factRow)
 	result, err := client.RecallMemory(t.Context(), RecallRequest{
 		IdentityID: "identity-a", Mode: RecallModeSemantic, Query: "memoria a lungo termine", Limit: 5,
 	})

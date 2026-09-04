@@ -49,19 +49,33 @@ func TestMemoryRecallVectorFuse(t *testing.T) {
 	if result.Retrieval.EffectivePath != "mixed" || result.Retrieval.Path != retrievalPathHybrid {
 		t.Fatalf("retrieval = %+v", result.Retrieval)
 	}
-	var fusion string
+	// Two rankings, one per record type, and NEITHER may name the other's type. The
+	// nested triple fusion this used to pin was the defect: it fused facts with turns
+	// and reranked the result by one cosine, which cost half the fact recall on four
+	// separate embedding models (see memory_recall_quota.go). A statement that mentions
+	// both types is that architecture returning.
+	var fusions []string
 	for _, request := range *requests {
 		statement, _ := request.Payload["command"].(string)
 		if strings.Contains(statement, "vector.fuse") {
-			fusion = statement
-			break
+			fusions = append(fusions, statement)
 		}
 	}
-	if strings.Count(fusion, "`vector.fuse`") < 3 || strings.Count(fusion, "fusion: 'RRF'") < 3 {
-		t.Fatalf("recall did not use nested native rank-only fusion: %s", fusion)
+	if len(fusions) != 2 {
+		t.Fatalf("recall ran %d fused rankings, want one per record type", len(fusions))
 	}
-	if !strings.Contains(fusion, "ORDER BY score DESC, rid ASC") {
-		t.Fatalf("fusion ties are not deterministic: %s", fusion)
+	for _, fusion := range fusions {
+		facts := strings.Contains(fusion, factEdgeType+"[")
+		turns := strings.Contains(fusion, conversationTurnType+"[")
+		if facts == turns {
+			t.Fatalf("a ranking mixes record types (or names neither): %s", fusion)
+		}
+		if strings.Count(fusion, "`vector.fuse`") != 1 || !strings.Contains(fusion, "fusion: 'RRF'") {
+			t.Fatalf("ranking is not one native rank-only fusion of its dense and lexical legs: %s", fusion)
+		}
+		if !strings.Contains(fusion, "ORDER BY score DESC, rid ASC") {
+			t.Fatalf("fusion ties are not deterministic: %s", fusion)
+		}
 	}
 }
 
@@ -117,8 +131,11 @@ func TestMemoryRecallAbstains(t *testing.T) {
 	if !result.Abstained || result.Reason != reasonNoQualifiedCandidates || len(result.Evidence) != 0 {
 		t.Fatalf("result = %+v", result)
 	}
-	if len(*requests) != 1 {
-		t.Fatalf("abstention made %d queries, want one ranked retrieval", len(*requests))
+	// Two, not one: facts and conversations are ranked separately now, and an
+	// abstention must still cost exactly the two rankings and nothing after them --
+	// no hydration, no conversation window for a candidate set that is empty.
+	if len(*requests) != 2 {
+		t.Fatalf("abstention made %d queries, want one ranked retrieval per record type", len(*requests))
 	}
 	if result.Retrieval.BackendLatency < 0 || result.Retrieval.BackendLatency > time.Minute {
 		t.Fatalf("backend latency = %s", result.Retrieval.BackendLatency)
