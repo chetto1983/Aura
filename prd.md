@@ -5997,17 +5997,6 @@ AURA_SETUP_BIND = 127.0.0.1:9081  (Slice 9a, sempre on)
   Setup wizard HTTP server (paste bot token + onboard QR). Default
   loopback. Override AURA_SETUP_BIND=0.0.0.0:9081 per setup remoto con
   QR scan da phone su LAN (no auth, headless container scenario).
-
-AURA_PROFILE_CERTAINTY_N = 3  (Slice 10, onboarding auto-update)
-  Numero di osservazioni consistent richieste per auto-add silenzioso
-  di un fatto a Agent.md. Sotto soglia (1-2 osservazioni) -> ask_user
-  approval gate via Risk-Based pipeline (sezione cross-cutting). Hybrid pattern:
-  fatti certi auto, incerti gate.
-
-AURA_PROFILE_DIR = ~/.aura/agents  (Slice 10, default)
-  Directory base per i profili per identity. Subdir <identity_id>/
-  contiene Agent.md + preferences.json + metadata.json + changelog.md.
-  Atomic write (temp + Rename) per evitare corruption su crash mid-update.
 ```
 
 ### Indice completo env vars (`AURA_*` + sidecar)
@@ -6127,8 +6116,6 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_TELEGRAM_CHAT_RATE_LIMIT_MS` | `1000` | cap | 9b | Chat queue hard rate (1/sec Telegram). |
 | `AURA_TELEGRAM_DOC_SYNC_MAX_BYTES` | `5242880` (5 MiB) | cap | 9c | Sync convert boundary. |
 | `AURA_TELEGRAM_DOC_ASYNC_MAX_BYTES` | `52428800` (50 MiB) | cap | 9c | Async convert hard cap. |
-| `AURA_PROFILE_CERTAINTY_N` | `3` | cap | 10 | Auto-add certainty threshold. |
-| `AURA_PROFILE_DIR` | `~/.aura/agents` | path | 10 | Per-identity profile dir. |
 | `AURA_EMBED_DIMENSIONS` | `768` | cap | 0.7 | Embedding vector dimensionality (amendment #18, Pitfall #7 P0). Sidecar `aura-llama-embed` boot-asserts `model.output_dim == this`. Neo4j `CREATE VECTOR INDEX` **hardcoda 768** (templating ritirato — amendment #24, incompatibile col checksum di migrate.go); il contratto è garantito a boot da `pingEmbed`. **NEVER change in-place** on a populated DB — see Slice 0.7 runbook. |
 | `AURA_ASSET_MAX_DOCUMENT_BYTES` | `104857600` (100 MiB) | cap | Amendment #114 | One document byte ceiling shared by Web, Telegram, CLI, `document_index`, Garage upload validation, and Docling. |
 | `AURA_ASSET_PROCESSING_CONCURRENCY` | `2` | cap | Amendment #114 | Actual bounded worker width for owner-scoped ingestion jobs; it is no longer interpreted as a serial claim batch size. |
@@ -11256,3 +11243,50 @@ flusso completo, che funziona.
 > `AURA_MEMORY_RERANK_ENABLED`, which amendment #29 declared always-on and which never
 > existed outside this document, is withdrawn with that amendment's item 3 rather than
 > left standing as a flag the code has never had.
+
+## Section The retired Agent.md leaves no provisioning behind (Amendment #206, 2026-09-04)
+
+> **Amendment #206 (2026-09-04 — measured by source inspection at `a116ec6`: every reference
+> to the Slice-10 profile knobs and to `idroot.DefaultRoot` enumerated across the tree, and
+> the per-identity provisioning adapter read end to end).**
+>
+> **A retired feature kept a live writer.** Amendment #87 deleted `internal/profile`, the
+> `messages[1]` injection, and the `Agent.md` mechanism itself. What survived it is the
+> provisioning half: `filesystemProvisionAdapter` still carries an `agents` root
+> (`cfg.ProfileDir`) among the four it creates per identity, and still performs a
+> write-if-absent of an EMPTY `Agent.md` inside it. That write runs on every onboarding saga
+> and, through `bootstrapResources.provision`, on every `aura serve` boot for the first
+> operator. Nothing reads the file, the directory, or the field: `cfg.ProfileDir` has exactly
+> one reader — the row naming the root — and `idroot.DefaultRoot()` has exactly one caller,
+> that field's default. `ProfileCertaintyN` / `AURA_PROFILE_CERTAINTY_N`, declared in the same
+> two-line "Slice 10 Agent.md profile knobs" block, has zero readers outside config plumbing:
+> the `updater.go` auto-add threshold it was catalogued for went with #87.
+>
+> **Two comments describe a wiring that does not exist.** `bootstrapResources.provision`
+> orders its legs on the claim that "the box materializes the identity's skills, Agent.md and
+> pyscripts from the filesystem roots, so the roots must exist before it starts or it comes up
+> empty", and `sandboxMaterializeSources` states that the "Agent.md / pyscripts roots are
+> per-identity and land with their own dedicated wiring". `WithMaterializeSources` has ONE
+> call site; the resolver it receives ignores its identity parameter and returns the single
+> deployment-global `cfg.SkillExportDir` at `/skills`. There is no Agent.md leg and no
+> pyscripts leg to order against.
+>
+> **Contract.** The `agents` root, the empty-`Agent.md` write, `Config.ProfileDir`,
+> `Config.ProfileCertaintyN`, `AURA_PROFILE_DIR`, `AURA_PROFILE_CERTAINTY_N` and
+> `idroot.DefaultRoot()` are removed — from the code, the knob registry, `compose.yaml`,
+> `.env.example`, and this document's env index. `idroot` keeps `RootIdentityDir` and
+> `ValidateIdentity`, the traversal guard the surviving roots use. The two comments above are
+> corrected to state what the composition root actually wires. The Slice-10 prose earlier in
+> this document keeps its `AURA_PROFILE_*` references: #87 already marked that section
+> historical, and rewriting history is not the same as removing a knob.
+>
+> **What this does NOT prove.** It does not show that the three surviving per-identity roots
+> are consumed — measured, they are not: the skills loader and the sandbox materializer read
+> the BASE directory and never the identity's subdirectory, the MCP catalog is one shared
+> `servers.json`, and `~/.aura/pyscripts/<id>` has no reader at all. They are left standing
+> deliberately, because per-identity skills would consume them; that decision is not taken
+> here and remains unmeasured. It performs no migration: `Agent.md` files and `agents/`
+> directories already on disk are untouched, and an operator `.env` line for a removed knob
+> becomes inert rather than fatal — the knob registry is a validation catalogue, not an
+> unknown-variable detector. And it is a source measurement: no running stack was exercised
+> for this amendment beyond the reading itself.
