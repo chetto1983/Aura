@@ -6079,6 +6079,7 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_COMPLETION_CRITIC_MODEL` | `=AURA_LLM_MODEL` | operative | 1 | Modello usato dalla critic call del completion gate (amendment #54, D-43). Vuoto → riusa il modello del loop. La call è `ToolChoice="none"`, bounded a ≤1 per turno, non spende budget step (come `finalize`). |
 | `AURA_BACKUP_DIR` | `~/.aura/backups/` | path | 6 | Destinazione dei dump di backup (`pg_dump`, `neo4j-admin database dump`) via `docker exec` (amendment #46, D-26; riconcilia `$AURA_BACKUP_DIR` del ROADMAP con il path PRD). Retention 14d/7d rolling. |
 | `AURA_SKILLS_DIR` | `~/.aura/skills` | path | 7 | Skills root (active/pending/archived dirs). Global FS; identity only in audit rows (amendment #48, D-34). |
+| `AURA_MCP_ENV_DIR` | `~/.aura/mcp-envs` (compose: `/var/lib/aura/mcp-envs`) | path | 13 | Root of the environments a stdio MCP server launches from (amendment #211). One subdirectory per registry name; installing materialises it and removing deletes it (#213 A6). On the durable `aura-home` volume and deliberately NOT under the three cache mounts — a named volume is seeded once and never refreshed, so a warm cache cannot stand in for it. Unset = every install passes through unprepared. |
 | `AURA_SKILL_BODY_CAP_BYTES` | `32768` (32 KiB) | cap | 7 | Write-time refuse cap for a SKILL.md body (D-34; also in Caps prose). |
 | `AURA_SKILL_INJECTION_BLOCKLIST` | (built-in list) | operative | 7 | Prompt-injection blocklist patterns (NFKC-normalize THEN match, write-boundary only — D-27/D-28). |
 | `AURA_SKILL_MANIFEST_CAP_BYTES` | `8192` | cap | 7 | Manifest-in-Description byte cap; past it the block ends "N more — search with skill action=list {query}" BM25 overflow (amendment #48, D-09/D-34). |
@@ -11561,8 +11562,9 @@ flusso completo, che funziona.
 ## Section What the closing audit of the stdio install found (Amendment #213, 2026-09-05)
 
 > **Amendment #213 (2026-09-05 — closing audit of the #211/#212 implementation, run against
-> the shipped commit `520ed0e7`).** Four findings were fixed on touch; the rest are recorded
-> as measured debt, not closed.
+> the shipped commit `520ed0e7`).** Ten findings, all closed — A1-A4 first, then A5-A10 on the
+> operator's instruction to close the rest rather than carry them. Each entry says what was
+> measured, not what was intended.
 >
 > **A1 (fixed, HIGH). The prepare step ran installers with Aura's whole environment.**
 > `runPrepareCommand` set no `Env`, so `uv pip install` and `npm install` — which execute the
@@ -11589,20 +11591,39 @@ flusso completo, che funziona.
 > **A4 (fixed). #212 overstated the disclosure.** It claimed the cockpit shows a passthrough.
 > It does not — corrected above.
 >
-> **Recorded, not fixed.** A5: a stdio install completes two handshakes, because
-> `prepareAndVerify` discards the tool count `InstallServer` then re-probes for. A6: removing a
-> server leaves its venv or `node_modules` tree on `aura-home` forever — `AURA_MCP_ENV_DIR` has
-> exactly one reader and no lifecycle. A7: `buildInstallServer` is at 0% coverage and was
-> edited; the web panel test asserts the "CLI equivalent" label exists but never its value.
-> A8: `AURA_MCP_ENV_DIR` is missing from §Indice completo env vars. A9: the inherited-env
-> collector dedupes case-insensitively and keeps the FIRST match, so a host carrying both
-> `https_proxy` and `HTTPS_PROXY` gets whichever `os.Environ` lists first. **A10**: the mount's
-> allow-list names `SSL_CERT_FILE` and `SSL_CERT_DIR`, and the secret predicate's "cert"
-> substring has always dropped them — so those two entries have never crossed to a mounted
-> server, and a stdio server behind a corporate CA cannot verify TLS. The installer is exempted
-> here (measured: without it `uv pip install` failed with "invalid peer certificate:
-> UnknownIssuer" before reaching PyPI); what a RUNNING server may read is left as a separate
-> decision, pinned by a test that fails when it is made.
+> **A5 (fixed). A stdio install completed two handshakes.** `prepareAndVerify` dialled the
+> server, completed initialize and counted `tools/list` — then discarded the count, and
+> `InstallServer` spawned the server a second time to recompute it for the panel. The
+> verification's own `ProbeResult` is returned now; `nil` means "a transport this does not
+> verify", which is the caller's signal to probe for itself.
+>
+> **A6 (fixed). Environments outlived the servers they belonged to.** `AURA_MCP_ENV_DIR` had
+> exactly one reader and no lifecycle, so a removed server left its venv or `node_modules` tree
+> on `aura-home` with nothing that would ever collect it. `Preparer.Remove` is called by both
+> remove paths. It is best-effort on the CLI — the registry row is already gone when it runs, so
+> a directory that resists deletion is reported, not raised.
+>
+> **A7 (fixed). `buildInstallServer` had no test, and was edited while it had none.** Its
+> CLI-equivalent preview is what an operator copies into a terminal, and it dropped the
+> arguments — which for a resolver launch carry the package itself. Both sides are asserted on
+> their VALUE now, not on the presence of a label.
+>
+> **A8 (fixed).** `AURA_MCP_ENV_DIR` is in §Indice completo env vars.
+>
+> **A9 (fixed). The inherited-env collector kept whichever spelling `os.Environ` listed
+> first.** A host commonly carries both `https_proxy` and `HTTPS_PROXY`, which made the value a
+> coin flip the moment the installer started reading proxy keys. The canonical spelling — the
+> one the allow-lists are written in — wins.
+>
+> **A10 (fixed). The mount's allow-list named two keys it could never pass.** `SSL_CERT_FILE`
+> and `SSL_CERT_DIR` have been in `mcpInheritedEnvKey` since it was written, and the secret
+> predicate's "cert" substring dropped both every time — two dead entries, and a stdio server
+> behind a corporate CA that could not verify TLS. Measured on the installer side first: without
+> the bundle, `uv pip install` failed with "invalid peer certificate: UnknownIssuer" before
+> reaching PyPI. A CA-bundle variable holds a PATH to a public trust store, never a private key,
+> so both paths are exempt from that substring. This restores the intent the allow-list already
+> declared; it does not widen it — `NODE_EXTRA_CA_CERTS` and the other installer-only bundles
+> stay out of the mount, asserted by test.
 >
 > **What the audit does NOT show.** No mutation score for `mcpenv`: `go-mutesting` is absent
 > from this host, and CI's mutation gate covers four fixed boundaries
