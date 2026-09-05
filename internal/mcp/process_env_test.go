@@ -97,11 +97,10 @@ func TestProcessEnvForMCPNarrowsAndLetsConfiguredEntriesWin(t *testing.T) {
 // "invalid peer certificate: UnknownIssuer". A CA-bundle variable holds a PATH to a public
 // trust store, so it is exempt from the secret predicate that matches the substring "cert".
 //
-// The second half pins audit A10 rather than fixing it: the mount's allow-list names
-// SSL_CERT_FILE and SSL_CERT_DIR, and that same substring has always dropped them, so they
-// have never actually crossed to a mounted server. This test fails the day that changes, which
-// is when someone has decided it deliberately.
-func TestCABundlePathsReachTheInstallerButNotTheMount(t *testing.T) {
+// Audit A10: the MOUNT's allow-list has named SSL_CERT_FILE and SSL_CERT_DIR since it was
+// written, and that substring silently dropped them — two dead entries, and a stdio server
+// behind a corporate CA that could not verify TLS. Both paths carry them now.
+func TestCABundlePathsReachTheInstallerAndTheMount(t *testing.T) {
 	t.Setenv("SSL_CERT_FILE", "/etc/ssl/corp-ca.pem")
 	t.Setenv("NODE_EXTRA_CA_CERTS", "/etc/ssl/corp-ca.pem")
 
@@ -110,7 +109,27 @@ func TestCABundlePathsReachTheInstallerButNotTheMount(t *testing.T) {
 			t.Fatalf("InstallerEnv dropped %s, so no install can reach an index behind a custom CA", key)
 		}
 	}
-	if slices.Contains(envKeys(processEnvForMCP(nil)), "SSL_CERT_FILE") {
-		t.Fatal("the mount now carries SSL_CERT_FILE — audit A10 was decided; update this test and the amendment")
+	if v, ok := envValue(t, processEnvForMCP(nil), "SSL_CERT_FILE"); !ok || v != "/etc/ssl/corp-ca.pem" {
+		t.Fatalf("the mount dropped SSL_CERT_FILE, which its own allow-list names; got %q ok=%v", v, ok)
+	}
+	// NODE_EXTRA_CA_CERTS is the installer's, not the mount's: the mount's list never named it.
+	if slices.Contains(envKeys(processEnvForMCP(nil)), "NODE_EXTRA_CA_CERTS") {
+		t.Fatal("the mount widened beyond the keys its allow-list declares")
+	}
+}
+
+// Audit A9: a host carrying both spellings of a proxy variable used to get whichever
+// os.Environ listed first. The canonical spelling — the one the allow-lists are written in —
+// wins, whichever order they arrive in.
+func TestDuplicateSpellingsResolveToTheCanonicalKey(t *testing.T) {
+	t.Setenv("https_proxy", "http://lower:3128")
+	t.Setenv("HTTPS_PROXY", "http://upper:3128")
+
+	env := InstallerEnv()
+	if v, ok := envValue(t, env, "HTTPS_PROXY"); !ok || v != "http://upper:3128" {
+		t.Fatalf("proxy = %q ok=%v, want the upper-case spelling to win", v, ok)
+	}
+	if n := len(slices.DeleteFunc(envKeys(env), func(k string) bool { return k != "HTTPS_PROXY" })); n != 1 {
+		t.Fatalf("HTTPS_PROXY appears %d times; a child must not see two values for one key", n)
 	}
 }

@@ -293,7 +293,7 @@ func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Write
 	// Amendment #211: an add is an install. Prepare the environment, rewrite the launch into
 	// it, and refuse to store a server that cannot complete a handshake — the declaration
 	// this used to write was only ever a promise that something would resolve at mount.
-	prepared, report, err := mcpInstallGuard(ctx, execPreparer(config.LoadDB()), name, server)
+	prepared, report, _, err := mcpInstallGuard(ctx, execPreparer(config.LoadDB()), name, server)
 	if err != nil {
 		return err
 	}
@@ -430,6 +430,14 @@ func mcpRemove(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Wr
 	delete(doc.MCPServers, name)
 	if err := mcpWriteManagedConfig(ctx, pool, doc, "remove", name, ""); err != nil {
 		return err
+	}
+	// The server is out of the registry; its prepared environment must go with it rather than
+	// sit on the durable volume forever (audit A6). The removal already succeeded, so a
+	// directory that resists deletion is reported, not raised.
+	if err := removePreparedEnv(config.LoadDB(), name); err != nil {
+		if werr := writef(out, "warning: %v\n", err); werr != nil {
+			return werr
+		}
 	}
 	return writef(out, "ok: removed %s\n", name)
 }

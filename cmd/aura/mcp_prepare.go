@@ -74,16 +74,21 @@ var mcpInstallGuard = prepareAndVerify
 // prepares the environment, rewrites the launch, and refuses to return unless the result
 // completes an MCP handshake. An HTTP server has nothing to prepare and keeps the existing
 // post-save probe, so this narrows to the class that was actually broken.
-func prepareAndVerify(ctx context.Context, p *mcpenv.Preparer, name string, server mcp.ManagedServer) (mcp.ManagedServer, mcpenv.Report, error) {
+//
+// The verification's own ProbeResult is returned, not discarded: it already dialled, completed
+// initialize and counted tools/list, and a caller that then probed again spawned the server a
+// second time to recompute a number this one had (audit A5). It is nil for the transports this
+// does not verify, which is the caller's signal to probe for itself.
+func prepareAndVerify(ctx context.Context, p *mcpenv.Preparer, name string, server mcp.ManagedServer) (mcp.ManagedServer, mcpenv.Report, *mcp.ProbeResult, error) {
 	if serverType, _, err := mcp.Classify(server); err != nil || serverType != mcp.ServerTypeStdio {
-		return server, mcpenv.Report{}, nil
+		return server, mcpenv.Report{}, nil, nil
 	}
 
 	prepareCtx, cancelPrepare := context.WithTimeout(ctx, installPrepareTimeout)
 	defer cancelPrepare()
 	prepared, report, err := p.Prepare(prepareCtx, name, mcpenv.Launch{Command: server.Command, Args: server.Args})
 	if err != nil {
-		return mcp.ManagedServer{}, mcpenv.Report{}, fmt.Errorf("prepare %q: %w", name, err)
+		return mcp.ManagedServer{}, mcpenv.Report{}, nil, fmt.Errorf("prepare %q: %w", name, err)
 	}
 	server.Command = prepared.Command
 	server.Args = prepared.Args
@@ -92,10 +97,18 @@ func prepareAndVerify(ctx context.Context, p *mcpenv.Preparer, name string, serv
 	defer cancel()
 	probe := mcp.ProbeServer(verifyCtx, name, server)
 	if !probe.OK {
-		return mcp.ManagedServer{}, mcpenv.Report{}, fmt.Errorf(
+		return mcp.ManagedServer{}, mcpenv.Report{}, nil, fmt.Errorf(
 			"verify %q: the server did not complete an MCP handshake, so it was not installed: %s", name, probe.Err)
 	}
-	return server, report, nil
+	return server, report, &probe, nil
+}
+
+// removePreparedEnv drops the environment an install materialised for name. It is best-effort
+// on purpose: the server is already out of the registry when this runs, and a directory that
+// could not be deleted must not turn a successful removal into a failure. Nothing else reads
+// AURA_MCP_ENV_DIR, so the alternative is an orphan nobody ever collects (audit A6).
+func removePreparedEnv(cfg *config.Config, name string) error {
+	return execPreparer(cfg).Remove(name)
 }
 
 // describePreparation is the one operator-facing line an install prints about its environment.

@@ -144,6 +144,40 @@ describe('McpInstallPanel (MCPW-01)', () => {
     expect(screen.getByText('aura mcp add mytool -- mytool-bin')).toBeTruthy();
   });
 
+  // Audit A7: the preview is what an operator copies into a terminal, and it used to drop the
+  // arguments — which for a resolver launch carry the package itself, so it named a command the
+  // CLI would not run. Blank rows stay out; the panel does not send them either.
+  it('carries the arguments into the CLI-equivalent, trimmed, blanks dropped', () => {
+    renderPanel({});
+    fireEvent.click(screen.getByRole('button', { name: 'Custom (stdio)', pressed: false }));
+    fireEvent.change(screen.getByLabelText('Server name'), { target: { value: 'calc' } });
+    fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'uvx' } });
+    fireEvent.change(screen.getByLabelText('Argument 1'), { target: { value: '  --from ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add argument' }));
+    fireEvent.change(screen.getByLabelText('Argument 2'), {
+      target: { value: 'git+https://example.test/calc.git' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add argument' }));
+    fireEvent.change(screen.getByLabelText('Argument 3'), { target: { value: 'calc' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add argument' })); // left blank
+
+    expect(
+      screen.getByText(
+        'aura mcp add calc -- uvx --from git+https://example.test/calc.git calc',
+      ),
+    ).toBeTruthy();
+  });
+
+  // The command field explains what a resolver launch becomes, and how to name an executable
+  // when it is not called like its package — the only way to install a git-hosted server.
+  it('explains the resolver forms next to the command field', () => {
+    renderPanel({});
+    fireEvent.click(screen.getByRole('button', { name: 'Custom (stdio)', pressed: false }));
+    const hint = screen.getByText(/uvx --from <spec> <executable>/);
+    // And the field points at it, so a screen reader announces the two together.
+    expect(screen.getByLabelText('Command').getAttribute('aria-describedby')).toBe(hint.id);
+  });
+
   it('disables Install + shows an aria-invalid error on a duplicate name, no request fires', () => {
     renderPanel({ existingNames: ['calendar'] });
     // Recipe default = calendar → collides with the existing name.

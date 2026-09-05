@@ -476,3 +476,48 @@ func TestPrepareRefusesAnEntrypointNameThatIsAPath(t *testing.T) {
 		}
 	}
 }
+
+// Audit A6: a server that leaves the registry must not leave its environment behind. Nothing
+// else reads the root, so an orphan is never noticed and never collected.
+func TestRemoveDeletesOnlyTheNamedEnvironment(t *testing.T) {
+	f := &fakeRun{
+		produce:  map[string][]string{"venv/bin": {"python", "pip", "srv"}},
+		declared: []string{"srv"},
+	}
+	p := newPreparer(t, f)
+	for _, name := range []string{"keep", "drop"} {
+		if _, _, err := p.Prepare(context.Background(), name, Launch{Command: "uvx", Args: []string{"srv"}}); err != nil {
+			t.Fatalf("Prepare(%s): %v", name, err)
+		}
+	}
+	if err := p.Remove("drop"); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(p.Root, "drop")); !os.IsNotExist(err) {
+		t.Fatalf("the removed server's environment survived: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(p.Root, "keep")); err != nil {
+		t.Fatalf("Remove took a neighbour's environment with it: %v", err)
+	}
+	// Removing what was never prepared is the normal case for a passthrough server, and for
+	// every row that predates #211 — it is not an error.
+	if err := p.Remove("never-prepared"); err != nil {
+		t.Fatalf("Remove of an absent environment: %v", err)
+	}
+}
+
+func TestRemoveRefusesANameThatEscapesTheRootAndIsNilSafe(t *testing.T) {
+	p := newPreparer(t, &fakeRun{})
+	for _, name := range []string{"../evil", "a/b", ""} {
+		if err := p.Remove(name); err == nil {
+			t.Fatalf("Remove(%q) = nil, want a refusal", name)
+		}
+	}
+	var nilP *Preparer
+	if err := nilP.Remove("svc"); err != nil {
+		t.Fatalf("nil preparer: %v", err)
+	}
+	if err := (&Preparer{}).Remove("svc"); err != nil {
+		t.Fatalf("unconfigured preparer: %v", err)
+	}
+}

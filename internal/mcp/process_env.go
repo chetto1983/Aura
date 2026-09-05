@@ -18,7 +18,9 @@ import (
 // a credential.
 
 func processEnvForMCP(configured []string) []string {
-	env, seen := inheritedEnv(mcpInheritedEnvKey, func(k, _ string) bool { return secret.IsSecretEnvKey(k) })
+	env, seen := inheritedEnv(mcpInheritedEnvKey, func(k, _ string) bool {
+		return !caBundleEnvKey(k) && secret.IsSecretEnvKey(k)
+	})
 	for _, kv := range configured {
 		k, _, ok := strings.Cut(kv, "=")
 		if !ok || strings.TrimSpace(k) == "" {
@@ -50,6 +52,12 @@ func inheritedEnv(allow func(string) bool, deny func(key, value string) bool) ([
 		}
 		upper := strings.ToUpper(k)
 		if _, dup := seen[upper]; dup {
+			// A host commonly carries both spellings of a proxy variable. Keeping whichever
+			// os.Environ happened to list first made the value a coin flip, so the canonical
+			// spelling — the one the allow-lists are written in — wins (audit A9).
+			if k == upper {
+				env = replaceEnv(env, k, kv)
+			}
 			continue
 		}
 		seen[upper] = struct{}{}
@@ -93,10 +101,10 @@ func installerInheritedEnvKey(key string) bool {
 // corporate CA cannot install anything. Measured 2026-09-05: with SSL_CERT_FILE withheld,
 // `uv pip install` failed with "invalid peer certificate: UnknownIssuer" before reaching PyPI.
 //
-// The same two keys sit in the MOUNT's allow-list and are dropped there by that same
-// substring, so they have never crossed to a mounted server — recorded as audit A10, not
-// changed here: what a running server may read is a separate decision from what an installer
-// needs to reach an index.
+// The MOUNT applies the same exemption (audit A10). Its allow-list has NAMED SSL_CERT_FILE and
+// SSL_CERT_DIR since it was written, and that same substring silently dropped them, so a stdio
+// server behind a corporate CA could never verify TLS and two entries in that list did
+// nothing. This restores the intent the list already declared; it does not widen it.
 func caBundleEnvKey(key string) bool {
 	switch strings.ToUpper(key) {
 	case "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE":

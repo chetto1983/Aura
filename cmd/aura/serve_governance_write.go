@@ -73,7 +73,7 @@ func (a mcpWriteAdapter) InstallServer(ctx context.Context, actor string, req ag
 	// The preparation report is not projected: the panel closes on success, so the only thing
 	// an operator needs from here is the REFUSAL, which travels as the 502's reason. The CLI,
 	// which stays open, prints it.
-	server, _, err = prepareAndVerify(ctx, a.prep, name, server)
+	server, _, verified, err := prepareAndVerify(ctx, a.prep, name, server)
 	if err != nil {
 		return agui.MCPWriteResult{}, err
 	}
@@ -87,7 +87,13 @@ func (a mcpWriteAdapter) InstallServer(ctx context.Context, actor string, req ag
 	}
 
 	a.live.Mount(ctx, name, server)
-	probe := a.probe(ctx, name, server)
+	// Verification already dialled this server and counted its tools. Probing again would
+	// spawn it a second time to recompute a number we hold (audit A5); only a transport
+	// prepareAndVerify does not verify still needs its own probe.
+	probe := verified
+	if probe == nil {
+		probe = a.probe(ctx, name, server)
+	}
 	return agui.MCPWriteResult{
 		Name:          name,
 		Server:        server,
@@ -234,6 +240,10 @@ func (a mcpWriteAdapter) RemoveServer(ctx context.Context, actor, name string) e
 	// The operator reported the mirror of this bug on 2026-08-24: Remove reported success
 	// and the row stayed on screen.
 	a.live.Unmount(name)
+	// And its prepared environment goes with it, for the same reason (audit A6).
+	if err := a.prep.Remove(name); err != nil {
+		return err
+	}
 	return nil
 }
 

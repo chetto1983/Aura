@@ -110,6 +110,25 @@ func (p *Preparer) Prepare(ctx context.Context, name string, in Launch) (Launch,
 		nil
 }
 
+// Remove deletes the environment prepared for name. A server that leaves the registry must not
+// leave a venv or a node_modules tree behind on the durable volume: nothing else reads
+// AURA_MCP_ENV_DIR, so an orphan is never noticed and never collected (audit A6). An
+// unconfigured preparer has nothing to remove, and an environment that was never prepared is
+// not an error — Remove is what a caller runs when it does not know either way.
+func (p *Preparer) Remove(name string) error {
+	if p == nil || strings.TrimSpace(p.Root) == "" {
+		return nil
+	}
+	dir, err := idroot.RootIdentityDir(p.Root, name)
+	if err != nil {
+		return fmt.Errorf("mcpenv: server name %q cannot name a directory: %w", name, err)
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("mcpenv: remove %s: %w", dir, err)
+	}
+	return nil
+}
+
 // install materialises req under dir and reports the bin directory plus the console scripts to
 // choose from. An explicit entrypoint IS the choice — the operator named it, so nothing is
 // discovered and nothing is guessed; resolveEntrypoint still requires it to exist on disk.
