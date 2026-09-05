@@ -11631,3 +11631,161 @@ flusso completo, che funziona.
 > this code. `golangci-lint`, `deadcode`, `dupl` and `staticcheck` were not run locally either
 > (the pinned linter is built against a Go older than the module target); CI ran the linter and
 > it is green.
+
+## Section Le skill appartengono a qualcuno (Amendment #214, 2026-09-05 — apertura slice)
+
+> **Amendment #214 (2026-09-05 — misurato sul codebase a `b61bc234` e su LibreChat a
+> `0003496`, clone shallow letto, non eseguito).** Apre la slice "skills per identità". È un
+> Gate-1 Definition of Ready: registra lo stato misurato, chiude le OQ con decisioni motivate,
+> e fissa acceptance machine-checkable. Nessuna riga di implementazione è ancora scritta.
+>
+> ### Stato misurato
+>
+> Nel package `internal/skills` l'identità esiste **solo nelle righe di audit**
+> (`writer.go:71-75`, `audit_store.go`). Il filesystem non la conosce:
+>
+> - **Una** root globale `AURA_SKILLS_DIR` e **un** export globale `AURA_SKILL_EXPORT_DIR`.
+> - `sandboxMaterializeSources` (`cmd/aura/serve_dispatch.go:262-274`) copia quell'export in
+>   **ogni** box. Il suo commento lo dichiara: *"the identity parameter is **deliberately
+>   unused** because the export dir is deployment-global today, and **the per-identity skills
+>   root the provisioner creates has no consumer yet**."*
+> - `filesystemProvisionAdapter` (`cmd/aura/serve_provisioning.go:93-104`) crea e distrugge
+>   `$AURA_SKILLS_DIR/<id>` a ogni onboarding. **Nessuno lo legge.**
+> - Quelle root per identità sono **directory figlie dirette di `SkillsDir`**, cioè fratelli
+>   delle skill stesse nel namespace che `Loader.scanRoot` scandisce. Oggi non esplode solo
+>   perché una dir senza `SKILL.md` viene saltata in silenzio. `archived/` ed `export/` sono
+>   nello stesso namespace.
+> - `alwaysBlockProvider` (`cmd/aura/serve_adapters.go`) ri-scandisce il filesystem a ogni
+>   turno per rendere il blocco `always:` in `messages[1]`.
+>
+> Conseguenza in multi-utente (abilitato dall'#150 sotto profilo strict): **ogni identità vede
+> le skill di tutte le altre**, e una skill scritta da una cambia cosa il modello di un'altra
+> può invocare.
+>
+> **Non è ergonomia.** Una skill è **istruzione eseguibile che il modello segue**. Che
+> l'identità A possa far caricare una propria skill nel contesto di B è un confine di
+> prompt-injection, non un problema di ordinamento. In single-operator non si vede perché c'è
+> una sola identità — ed è esattamente la ragione per cui è arrivato fin qui.
+>
+> ### Due seam esistono già
+>
+> `Loader.Config.Roots []string` scandisce in ordine con **later-root-wins**, e
+> `SourceResolver` è già `func(identityID string) []MaterializeSource`. Il meccanismo non va
+> inventato: va collegato.
+>
+> ### Cosa fa LibreChat (misurato a `0003496`)
+>
+> 1. **Le skill sono righe, non alberi di file.** `packages/data-schemas/src/schema/skill.ts`:
+>    `author` → User, `tenantId`, e l'indice unique `{name, author, tenantId}` — il nome è
+>    unico **per autore per tenant**, non globalmente. `alwaysApply` è una **colonna
+>    indicizzata** denormalizzata fuori dal frontmatter, con il commento che spiega perché:
+>    `listAlwaysApplySkills` in cima a ogni richiesta dev'essere una lookup su indice, non una
+>    scansione. `disableModelInvocation` e `userInvocable` sono due flag distinti.
+> 2. **La condivisione è una ACL generica.** `aclEntry.ts`: `principalType`
+>    (user|group|public|role) × `resourceType` (agent|promptGroup|mcpServer|**skill**|…) ×
+>    `permBits` bitmask, **una tabella per tutti i tipi**. Lettura in due query:
+>    `findAccessibleResources(principals, 'skill', VIEW) → distinct(resourceId)`, poi la query
+>    di dominio filtra su quegli id. Alla creazione: crea, poi `grantPermission(SKILL_OWNER)`,
+>    e **rollback della creazione se il grant fallisce**.
+> 3. **Overlay di deployment.** Una directory `skill/` su disco, caricata all'avvio,
+>    read-only per tutti, **non persistita**; riceve un author sintetico
+>    (`de9100000000000000000000`) così scorre nelle stesse forme, e
+>    `createDeploymentSkillMethods` **decora** i metodi DB fondendo registry in memoria e righe.
+> 4. **Sulla collisione di nome vince la skill di deployment**, non quella dell'utente
+>    (`filterDeploymentNameCollisions`).
+>
+> Aura ha già lo stesso pattern di overlay **per gli MCP**: la 0101 scrive che *"Recipes that
+> are merely DECLARED in code are not rows here: they are overlaid read-only at read time."*
+>
+> ### Decisioni
+>
+> **D-214-1 — Postgres possiede il CATALOGO e la ACL; il filesystem tiene i CORPI, sotto una
+> root per proprietario.** Questo **restringe la raccomandazione data a voce il 2026-09-05**
+> ("tenerle come righe chiavate su (nome, proprietario)"), e la ragione è il vincolo che
+> LibreChat non ha mai: le skill di Aura vengono **materializzate in un container** con
+> docker-cp a ogni create e resume. Corpi in tabella significherebbero un renderer
+> riga→albero a ogni resolve. Corpi-in-DB resta **aperto**, non chiuso: la ACL non ci
+> dipende, e la migrazione successiva sarebbe additiva.
+>
+> **D-214-2 — Overlay, non sostituzione.** Roots = `[deployment-global (read-only), owner]`.
+> L'operatore pubblica le skill di casa, ogni persona ne aggiunge e ne sovrascrive.
+>
+> **D-214-3 — Sulla collisione di nome vince la GLOBALE**, come LibreChat, **non** il
+> later-root-wins attuale del Loader. Una skill dell'operatore è policy di casa; una persona
+> che la ombreggia in silenzio è il modo in cui la policy smette di valere senza che nessuno
+> se ne accorga. Il cambio di semantica è sicuro **oggi** perché la root è esattamente una:
+> `skillLoaderRoots` ritorna `[]string{cfg.SkillsDir}`. Farlo dopo significherebbe cambiare un
+> comportamento su cui qualcuno si è già appoggiato.
+>
+> **D-214-4 — La ACL nasce generica.** Colonna `resource_type` anche se questa slice scrive
+> solo `'skill'`. Aura vorrà la stessa cosa per gli MCP per identità subito dopo (#209/#210), e
+> una seconda tabella bespoke è il modo in cui se ne ottengono due che divergono. Principal:
+> `identity` e `public`. **I gruppi NON si costruiscono qui** — l'enum li ammette, il codice no.
+>
+> **D-214-5 — Isolamento con RLS, come la 0100**, non con una `WHERE` che qualcuno dimentica:
+> `USING (… current_setting('app.current_identity', true) …)`. La 0100
+> (`identity_mcp_oauth`) è il precedente esatto e va copiata nella forma, non reinventata.
+>
+> Il contrasto con la 0101 è deliberato e va letto: **gli MCP non sono identity-scoped di
+> proposito** ("which servers a deployment has configured is not personal"). Le skill sì,
+> perché sono istruzioni che entrano in un contesto. Le due tabelle divergono per una ragione
+> scritta, non per distrazione.
+>
+> ### Acceptance machine-checkable
+>
+> 1. Due identità, una skill ciascuna con lo **stesso nome**: entrambe si installano, e
+>    `Loader` per A restituisce il corpo di A, per B quello di B.
+> 2. Una skill di A **non** compare in `listByAccess(B)` e **non** è materializzata nel box di
+>    B — asserito ispezionando `/skills` nel container di B, non solo l'API.
+> 3. Una skill globale `always:true` entra in `messages[1]` per **entrambe**; una skill
+>    personale `always:true` di A entra solo per A.
+> 4. Su collisione di nome globale/personale il corpo reso è quello **globale** (D-214-3).
+> 5. Un grant `public` rende la skill di A leggibile a B in lista e nel box; revocarlo la
+>    rimuove dal box **al resume successivo**, non al riavvio.
+> 6. Deprovisioning di A: righe cancellate a cascata, root filesystem rimossa, e nessuna
+>    riga ACL orfana (`SELECT` di controllo nel test di integrazione).
+> 7. `listAlwaysApply` è una query indicizzata: `EXPLAIN` non contiene `Seq Scan` sulla
+>    tabella catalogo.
+> 8. RLS: una connessione `aura_app` senza `app.current_identity` impostato **non legge
+>    niente** dalla tabella ACL.
+>
+> ### Migration
+>
+> Slot libero **misurato ora**: l'ultimo è `0117_llm_provider_routes`, quindi `0118`. Vale la
+> regola imperativa: **il numero si riassegna con `ls internal/db/migrations/ | tail -1`
+> all'atterraggio della PHASE**, non si copia da qui.
+>
+> ### File target (cap 600 LOC, refactor-on-touch)
+>
+> `internal/skills/loader.go` (roots per identità) · `internal/skills/writer.go` (root di
+> destinazione per chiamata) · un nuovo `internal/skillacl/` (store + query) ·
+> `cmd/aura/serve_dispatch.go` (`sandboxMaterializeSources` usa il suo parametro) ·
+> `cmd/aura/skills.go` (`skillLoaderRoots` prende l'identità) ·
+> `cmd/aura/serve_governance_write_skills.go` (board scoped). `cmd/aura/mcp.go` è già a 595
+> LOC: **non toccarlo senza splittarlo prima** (audit #213).
+>
+> ### Test plan
+>
+> Unit su loader/writer/acl con fixture reali; integration `db_integration` per RLS e cascata;
+> `docker_integration` per l'asserzione "il box di B non contiene la skill di A" — quella è
+> l'unica che dimostra il confine, e senza di essa la slice non chiude. Coverage: il nuovo
+> package entra in `scripts/coverage_package_policy.json` come `target` **nello stesso
+> commit** che lo crea (un package assente dall'inventario fa fallire il gate chiuso — audit
+> #213 A-nota).
+>
+> **Risk tier: alto.** Tocca cosa entra nel contesto del modello e cosa finisce dentro un
+> container per identità. Una regressione qui non rompe un test: fa leggere a una persona le
+> istruzioni di un'altra.
+>
+> ### Cosa questa misura NON dimostra
+>
+> Non ho eseguito LibreChat, né acceso lo stack di Aura per questa analisi: è lettura di
+> codice, di Dockerfile e di migration. Non dice niente su quanto costi materializzare N root
+> per identità a ogni resume (il costo di `MaterializeIn` non è misurato), né su cosa succeda
+> con centinaia di skill per identità. E non chiude i gruppi: "condivisa col team" resta senza
+> risposta finché Aura non ha un principal che non sia una persona sola.
+>
+> Nota di incoerenza ereditata, da non copiare: `aura.skill_audit.identity_id` è `text` con
+> default `'local'` (il **nome**), mentre `aura.identities.id` e la RLS della 0100 usano
+> `uuid`. La nuova tabella usa `uuid`; l'audit resta com'è finché qualcuno non decide di
+> allinearlo.
