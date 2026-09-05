@@ -138,6 +138,12 @@ type Config struct {
 	SkillBodyCapBytes     int    // AURA_SKILL_BODY_CAP_BYTES — per-skill body size cap at load (DoS guard, D-34)
 	SkillManifestCapBytes int    // AURA_SKILL_MANIFEST_CAP_BYTES — manifest-in-Description byte budget; overflow → BM25 list (D-09/D-34)
 	SkillExportDir        string // AURA_SKILL_EXPORT_DIR — activation→host export dir (the ro /skills mount source, D-17)
+	// SkillsIdentityDir is the base each identity's OWN skills live under (#214), one
+	// directory per identity. It is SEPARATE from SkillsDir on purpose: the provisioner used
+	// to create $AURA_SKILLS_DIR/<id>, which put every identity root inside the namespace the
+	// loader scans for skills. Empty disables per-identity skills — every identity then sees
+	// the deployment's own skills and nothing else, which is today's behaviour.
+	SkillsIdentityDir string // AURA_SKILLS_IDENTITY_DIR — per-identity skill root base
 	// MCPEnvDir roots the prepared environments stdio MCP servers launch from (#211). An
 	// install materialises the server here once and stores an absolute path into it, so a
 	// mount runs a binary instead of re-resolving a package with egress it may not have.
@@ -458,6 +464,7 @@ func loadBase() *Config {
 		SkillBodyCapBytes:     envutil.IntDefault("AURA_SKILL_BODY_CAP_BYTES", 32768),
 		SkillManifestCapBytes: envutil.IntDefault("AURA_SKILL_MANIFEST_CAP_BYTES", 8192),
 		SkillExportDir:        envDefault("AURA_SKILL_EXPORT_DIR", defaultSkillExportDir()),
+		SkillsIdentityDir:     envDefault("AURA_SKILLS_IDENTITY_DIR", defaultSkillsIdentityDir()),
 		MCPEnvDir:             envDefault("AURA_MCP_ENV_DIR", defaultMCPEnvDir()),
 		SkillSnippetTTLDays:   envutil.IntDefault("AURA_SKILL_SNIPPET_TTL_DAYS", 90),
 

@@ -91,6 +91,12 @@ services:
       AURA_RUN_DIR: /var/lib/aura/runs
       AURA_SKILLS_DIR: /var/lib/aura/skills
       AURA_SKILL_EXPORT_DIR: /var/lib/aura/exported-skills
+      # Per-identity skills (#214). A SIBLING of AURA_SKILLS_DIR, never a child: a base
+      # nested inside it would put every identity directory in the namespace the loader
+      # scans for skills. Pinned here because the code default falls under $HOME, which
+      # is NOT the durable aura-home volume — an unpinned base loses every personal
+      # skill when the container is recreated.
+      AURA_SKILLS_IDENTITY_DIR: /var/lib/aura/skills-identities
       # Amendment #211: stdio MCP servers are prepared into this root at install, so a mount
       # runs a path instead of re-resolving a package. On aura-home (durable) and deliberately
       # NOT under the three cache mounts, which are seeded once and never refreshed.

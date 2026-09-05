@@ -99,8 +99,18 @@ func newFilesystemProvisionAdapter(cfg *config.Config) filesystemProvisionAdapte
 }
 
 // identityDirRoots resolves the per-identity storage base from cfg (NOT a temp dir).
+//
+// The base is SkillsIdentityDir, not SkillsDir (#214). It used to be SkillsDir, which meant
+// every provisioned identity got a directory inside the namespace Loader.scanRoot walks
+// looking for skills — a sibling of the skills themselves. Nothing broke only because a
+// directory without a SKILL.md is skipped in silence; a skill whose name matched an identity
+// would have collided with it. An empty base provisions nothing, which is what a deployment
+// that has not turned per-identity skills on should do.
 func identityDirRoots(cfg *config.Config) map[string]string {
-	return map[string]string{"skills": cfg.SkillsDir}
+	if strings.TrimSpace(cfg.SkillsIdentityDir) == "" {
+		return map[string]string{}
+	}
+	return map[string]string{"skills": cfg.SkillsIdentityDir}
 }
 
 func (a filesystemProvisionAdapter) subRoots(id string) (map[string]string, error) {

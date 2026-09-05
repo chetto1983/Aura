@@ -51,6 +51,12 @@ func auraHomeDir() string {
 // defaultSkillsDir is the active skill root (AURA_SKILLS_DIR default): ~/.aura/skills.
 func defaultSkillsDir() string { return filepath.Join(auraHomeDir(), "skills") }
 
+// defaultSkillsIdentityDir is the AURA_SKILLS_IDENTITY_DIR code default:
+// ~/.aura/skills-identities. A SIBLING of the skills root, never a child of it — a base
+// nested inside $AURA_SKILLS_DIR would put every identity directory in the namespace the
+// loader scans for skills, where a skill named like an identity collides with it (#214).
+func defaultSkillsIdentityDir() string { return filepath.Join(auraHomeDir(), "skills-identities") }
+
 // defaultWorkspaceDir is the AURA_WORKSPACE_DIR code default: ~/.aura/workspace.
 // The in-container deployment default (/workspace, same fixed path the strict-profile
 // sandbox box mounts) is supplied by compose env, not code (Amendment #88 §2.1).
