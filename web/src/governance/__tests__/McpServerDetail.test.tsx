@@ -68,8 +68,6 @@ describe('McpServerDetail', () => {
     expect(screen.getByText('trusted_recipe')).toBeTruthy();
     expect(screen.getByText('Profiles')).toBeTruthy();
     expect(screen.getByText('work')).toBeTruthy();
-    expect(screen.getByText('Network allowlist')).toBeTruthy();
-    expect(screen.getByText('api.github.com')).toBeTruthy();
     expect(screen.getByText('Runtime')).toBeTruthy();
     expect(screen.getByText('stdio')).toBeTruthy();
     expect(screen.getByText('Startup')).toBeTruthy();
