@@ -11463,3 +11463,50 @@ flusso completo, che funziona.
 > claim the field was ever enforced for anything but the docker kinds — outside them
 > `AURA_MCP_NETWORK_ALLOW` was never set, so a `local` stdio server with a declared allowlist
 > has been unconstrained since long before #209.
+
+## Section Installing a stdio MCP server actually installs it (Amendment #211, 2026-09-05)
+
+> **Amendment #211 (2026-09-05 — measured on the install path after the operator's request to
+> fix stdio installation for every server, not just the retired calculator recipe).**
+>
+> **"Install" does not install.** `aura mcp add` and the cockpit's Custom (stdio) mode write a
+> launch DECLARATION into the registry — command, args, env, trust — and nothing else. Neither
+> fetches, builds, or resolves anything, so the command must already be runnable inside the aura
+> container. `aura mcp install` cannot cover the gap: it only accepts a catalog recipe, and every
+> recipe left is streamable-HTTP. At mount, `OpenSDKSessionForConfig` execs the stored command with
+> an env narrowed to PATH/HOME/TMP/locale/SSL plus the operator's explicit entries.
+>
+> The consequence is general, not specific to one server: a `uvx <pkg>` declaration re-resolves its
+> package at EVERY mount, and the daemon mounts at boot. That needs egress exactly when a boot may
+> not have it, and the warm cache that would make it survivable is not there — `docker/aura/Dockerfile`
+> records why in its own comment: compose mounts a named volume over `/root/.cache/uv`, a named volume
+> is seeded once and never refreshed, so a build-time warm-up is invisible to every later image. That
+> is the whole reason the calculator recipe was retired; the retirement removed the symptom and left
+> the mechanism for every other stdio server.
+>
+> **The failure is also misreported.** When the server dies during initialize the host surfaces
+> "recv: unexpected EOF" — a transport fault it is not. And the cockpit saves BEFORE it probes, then
+> renders the probe fail-soft, so a server that cannot start is stored and merely annotated.
+>
+> **Contract.** Installing a stdio server becomes three steps, shared by the CLI and the cockpit:
+> PREPARE a durable environment once, REWRITE the launch to absolute paths inside it, VERIFY by
+> actually starting it and completing an MCP handshake, and only then PERSIST. Verification reuses
+> `ProbeServer`, which already dials, handshakes and counts `tools/list` under a caller deadline —
+> no second implementation. A server that does not hand shake is not written to the registry.
+>
+> Environments live under `$AURA_MCP_ENV_DIR`, default `/var/lib/aura/mcp-envs`: the `aura-home`
+> volume, durable and NOT masked by the three cache mounts. Preparation is per ecosystem, keyed on
+> the declared command: `uvx <pkg>` becomes a `uv` venv with the package installed and the launch
+> rewritten to the console script the install produced; `npx <pkg>` becomes an `npm --prefix` tree
+> with the launch rewritten to the resolved `.bin` entry; anything else — a plain binary, an absolute
+> path — is passed through unprepared and still verified. After preparation a mount is offline and
+> deterministic: it runs a path, not a resolver.
+>
+> **What this does NOT do.** It does not move stdio execution into the per-identity sandbox: that
+> remains open behind the credential question #209 and #210 left standing, and this amendment is
+> deliberately its prerequisite rather than its replacement — the same prepare-then-launch shape is
+> what a box-side install would need. It does not retrofit rows already in the registry; an existing
+> declaration keeps resolving at mount until it is reinstalled. It does not make an unprepared
+> ecosystem impossible, only unprepared. And the entrypoint resolution is a measurement of what the
+> install produced, not a guess: when an install yields no single obvious executable the install
+> fails and says so rather than storing a command nobody verified.
