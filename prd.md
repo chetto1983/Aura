@@ -11384,3 +11384,54 @@ flusso completo, che funziona.
 > root deliberately rather than inherit it. It does not decide `$AURA_SKILLS_DIR/{id}`, whose
 > consumer remains an open design question. And it says nothing about whether the two empty identity
 > directories are the right shape for that consumer — only that they are empty.
+
+## Section The docker MCP runtime kinds are retired (Amendment #209, 2026-09-05)
+
+> **Amendment #209 (2026-09-05 — operator decision on the measurement recorded in #207:
+> "taglia, Aura gira su docker").**
+>
+> **The measurement, restated.** `RuntimeLaunchConfig` refuses both the `docker` and the
+> `docker_gateway` runtime kinds whenever `AURA_IN_CONTAINER=1`, and `docker/aura/Dockerfile`
+> sets that variable unconditionally. Every deployment Aura ships is containerized, so neither
+> kind has been reachable in any of them; the surviving path was a bare-metal dev host. The
+> operator's deployment is Docker, and the decision is to remove them rather than carry a
+> launch path no shipped configuration can take.
+>
+> **Contract.** The `RuntimeKindDocker` / `RuntimeKindDockerGateway` constants,
+> `dockerRuntimeConfig`, `dockerGatewayRuntimeConfig`, their two `RuntimeLaunchConfig` cases,
+> the `AURA_IN_CONTAINER` guards and `errDockerRuntimeInContainer`, their two
+> `validateManagedServers` cases and their two `normalizedRuntimeKind` cases are removed, with
+> their tests. `local` (stdio) and `streamable_http` remain the launchable kinds.
+>
+> A stored registry row may still carry `runtime.kind: "docker"`, and read paths deliberately
+> do not validate (one planted entry must not make the registry unreadable, per the
+> stdio-shape design). Such a row would otherwise fall through to the stdio branch and fail on
+> an empty `Command` with a message about a command, which is not what went wrong. The launch
+> path therefore rejects a retired kind by name, telling the operator to redeclare the server
+> as a compose sibling and mount it by URL — the same remedy `errDockerRuntimeInContainer`
+> gave.
+>
+> **The `ManagedRuntime` fields do NOT all go with the kinds, and the reason matters.**
+> `Image`, `CPUs`, `Memory` and `Profile` had no reader outside the removed builders and their
+> validation, so they go too — a stored row carrying them loses those keys on the next
+> read-modify-write, which is correct once nothing can act on them. `Command`, `Mounts` and
+> `Network` STAY: `stdio_shape.go` reads `Command` and `Mounts` when it assembles the argv it
+> scans for backdoor shapes, and that scanner covers operator data it does not control
+> regardless of which kind wrote it; `Network` is rendered by the governance board as
+> `networkAllowlist`.
+>
+> **A stale rationale is corrected with them.** The stdio-shape design records that the
+> interpreter is searched across the WHOLE argv rather than `argv[0]` *because* the docker
+> runtime resolved a containerized server into `docker run … <image> <command…>`, putting a
+> planted script many tokens deep. The whole-argv scan remains correct — an operator entry can
+> still be `bash -c '…'` with the payload in its arguments — but the reason as written names a
+> launch shape this deployment can no longer produce, so it is restated on the surviving
+> ground rather than left to be "fixed" by a later reader who checks it.
+>
+> **What this does NOT decide.** With the docker builder gone, `Runtime.Network` has no
+> enforcement path left: the `--network` flag and the `AURA_MCP_NETWORK_ALLOW` forward were
+> that enforcement, and both lived in `dockerRuntimeConfig`. The governance board still
+> displays the field, so an operator can now read an allowlist that constrains nothing. That is
+> a false-assurance surface, it is named here, and it is NOT resolved by this amendment —
+> removing the board field is an API and web change, and keeping it is a decision about what
+> the board is allowed to imply.
