@@ -162,9 +162,7 @@ describe('McpInstallPanel (MCPW-01)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add argument' })); // left blank
 
     expect(
-      screen.getByText(
-        'aura mcp add calc -- uvx --from git+https://example.test/calc.git calc',
-      ),
+      screen.getByText('aura mcp add calc -- uvx --from git+https://example.test/calc.git calc'),
     ).toBeTruthy();
   });
 
