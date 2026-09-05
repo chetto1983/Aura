@@ -163,7 +163,7 @@ func TestRenderContextBlock_AlwaysBlockComposed(t *testing.T) {
 		Client:          agenttest.NewFakeClient(agenttest.ToolCallTurn(textResponseCall("c1", "ok"))),
 		Registry:        reg,
 		LLM:             llm.Config{Model: "test-model", ContextWindow: 1000000, MaxOutputTokens: 32768},
-		AlwaysBlock:     func() string { return "always-on skill block" },
+		AlwaysBlock:     func(context.Context) string { return "always-on skill block" },
 		HistoryCap:      7,
 		TitleTimeout:    time.Second,
 		StopTimeout:     time.Second,

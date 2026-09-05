@@ -43,7 +43,7 @@ func TestScopedRootsDeriveBothPerIdentityPaths(t *testing.T) {
 	if r.Identity != filepath.Join("/srv/skills-identities", "alice") {
 		t.Fatalf("identity root = %q", r.Identity)
 	}
-	if r.Export != filepath.Join("/srv/skills-export", "alice") {
+	if r.Export != filepath.Join(r.Identity, ".export") {
 		t.Fatalf("export root = %q — an export shared by every identity puts every identity's skills in every box", r.Export)
 	}
 	if r.WritableRoot() != r.Identity {
@@ -102,9 +102,40 @@ func TestAnUnconfiguredIdentityBaseLeavesEveryoneOnTheGlobalRoot(t *testing.T) {
 	if r.Identity != "" || r.WritableRoot() != "/srv/skills" {
 		t.Fatalf("roots = %#v, want the global root alone", r)
 	}
-	// The export still scopes: the box boundary does not depend on the source layout.
-	if r.Export != filepath.Join("/srv/skills-export", "alice") {
-		t.Fatalf("export = %q, want it scoped even with no identity source root", r.Export)
+	// With no identity base there is no per-identity library to export, so the export stays
+	// the deployment's — the same single tree the pre-#214 box was filled from. Scoping it
+	// here would name a directory nothing ever writes into and leave the box holding only
+	// whatever the global source carried anyway.
+	if r.Export != "/srv/skills-export" {
+		t.Fatalf("export = %q, want the deployment export when per-identity skills are off", r.Export)
+	}
+}
+
+// TestIdentityExportIsNotReachableFromTheGlobalExport is the leak this layout exists to make
+// impossible, asserted as a path property rather than as a promise.
+//
+// MaterializeIn tars the DEPLOYMENT export into every box and tarDir walks the whole tree, so
+// an identity export nested under the global export would ride into every other identity's
+// box as /skills/<their-id>/<skill> — present, readable, and invisible to any check that
+// lists only the top level of /skills.
+func TestIdentityExportIsNotReachableFromTheGlobalExport(t *testing.T) {
+	l := layout()
+	alice, err := l.For("alice")
+	if err != nil {
+		t.Fatalf("For(alice): %v", err)
+	}
+	bob, err := l.For("bob")
+	if err != nil {
+		t.Fatalf("For(bob): %v", err)
+	}
+	for _, victim := range []Roots{alice, bob} {
+		rel, relErr := filepath.Rel(l.Export, victim.Export)
+		if relErr == nil && !strings.HasPrefix(rel, "..") {
+			t.Fatalf("identity export %q lives under the deployment export %q — every box would carry it", victim.Export, l.Export)
+		}
+	}
+	if rel, relErr := filepath.Rel(alice.Export, bob.Export); relErr == nil && !strings.HasPrefix(rel, "..") {
+		t.Fatalf("bob's export %q lives under alice's %q", bob.Export, alice.Export)
 	}
 }
 

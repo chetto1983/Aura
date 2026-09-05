@@ -23,6 +23,7 @@ import (
 	"github.com/chetto1983/aura/internal/obs"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/chetto1983/aura/internal/scoring"
+	"github.com/chetto1983/aura/internal/skills"
 )
 
 // nanoCPUsPerCPU converts a whole-CPU count (cfg.Sandbox.CPULimit) to moby's NanoCPUs cgroup
@@ -259,17 +260,45 @@ func newSandboxBackend(cli *client.Client, cfg *config.Config) *usersandbox.Dock
 }
 
 // sandboxMaterializeSources resolves the host dirs docker-cp'd INTO the box at resolve
-// (D-10): the skills export dir, landing at /skills — the SnippetSandboxPath root the routed
-// shell_exec runs snippets from. It is the ONLY source wired: the identity parameter is
-// deliberately unused because the export dir is deployment-global today (amendment #206), and
-// the per-identity skills root the provisioner creates has no consumer yet.
+// (D-10): the skill export trees, landing at /skills — the SnippetSandboxPath root the routed
+// shell_exec runs snippets from.
+//
+// There are TWO of them since amendment #214, and their order is the whole point. The
+// identity's own export comes first and the deployment's second, so that on a name collision
+// the operator's skill is the one the box ends up running — the same precedence
+// skills.Roots.LoaderRoots gives the model's context, because a box that runs a different
+// `deploy` than the one the model was briefed on is worse than either alone. Sources sharing
+// a Dest merge in order (MaterializeIn clears the dest once, before the first of them).
+//
+// The identity parameter is no longer ignored, and that comment had to go with the reason
+// for it: the export dir is per identity now, so B's box holds B's skills and the house's,
+// never A's.
 func sandboxMaterializeSources(cfg *config.Config) usersandbox.SourceResolver {
-	exportDir := cfg.SkillExportDir
-	return func(string) []usersandbox.MaterializeSource {
-		if strings.TrimSpace(exportDir) == "" {
-			return nil
+	layout := skillLayout(cfg)
+	return func(identityID string) []usersandbox.MaterializeSource {
+		roots, err := layout.For(identityID)
+		if err != nil {
+			// Fail to the house library rather than to nothing: a box with no /skills is a box
+			// where every stored snippet has silently stopped existing, and the model is told
+			// to run a path that is not there.
+			slog.Warn("sandbox materialize: identity cannot name an export root, using the deployment export",
+				"identity_id", identityID, "err", err)
+			roots = skills.Roots{Export: layout.Export}
 		}
-		return []usersandbox.MaterializeSource{{HostDir: exportDir, Dest: "/skills"}}
+		// An unscoped caller resolves both to the same directory; listing it twice would
+		// clear and re-copy one tree for nothing.
+		dirs := []string{roots.Export}
+		if layout.Export != roots.Export {
+			dirs = append(dirs, layout.Export)
+		}
+		out := make([]usersandbox.MaterializeSource, 0, len(dirs))
+		for _, dir := range dirs {
+			if strings.TrimSpace(dir) == "" {
+				continue
+			}
+			out = append(out, usersandbox.MaterializeSource{HostDir: dir, Dest: skills.InSandboxSkillsRoot})
+		}
+		return out
 	}
 }
 

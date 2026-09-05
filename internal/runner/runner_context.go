@@ -163,7 +163,7 @@ func (r *Runner) memoryRecall(ctx context.Context, identityID string, userMsg *s
 func (r *Runner) renderContextBlock(ctx context.Context) string {
 	var parts []string
 	if r.alwaysBlock != nil {
-		if block := strings.TrimSpace(r.alwaysBlock()); block != "" {
+		if block := strings.TrimSpace(r.alwaysBlock(ctx)); block != "" {
 			parts = append(parts, block)
 		}
 	}

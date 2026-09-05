@@ -109,10 +109,10 @@ type Runner struct {
 	// nil disables the gate for the same reason a nil store does — without detection
 	// nothing is ever a project, so the gate could only ever say nothing.
 	verificationDetector ProjectDetectorSource
-	alwaysBlock          func() string               // renders the messages[1] always-block per turn (D-07); nil → empty
-	classifier           *prompt.ReasoningClassifier // SHARED reasoning-tier classifier (anchors built once); nil → LLM router
-	gateway              *gateway.Gateway            // Phase-35 policy PEP injected into every per-turn agent; nil → Allow no-op
-	shareRevoker         ShareRevoker                // D-15 consumer-declared seam (runner_delete.go step 4.5); nil → step 4.5 is a silent skip
+	alwaysBlock          func(context.Context) string // renders the messages[1] always-block per turn for the turn's identity (D-07, #214); nil → empty
+	classifier           *prompt.ReasoningClassifier  // SHARED reasoning-tier classifier (anchors built once); nil → LLM router
+	gateway              *gateway.Gateway             // Phase-35 policy PEP injected into every per-turn agent; nil → Allow no-op
+	shareRevoker         ShareRevoker                 // D-15 consumer-declared seam (runner_delete.go step 4.5); nil → step 4.5 is a silent skip
 	// steer is the shared process-wide mid-turn steer inbox injected via
 	// Deps.Steer (amendment #132, AURA_AGUI_RUN_STEER); nil = the flag is off
 	// (D-12's explicit rollback). See runner_steer.go for the buildAgent

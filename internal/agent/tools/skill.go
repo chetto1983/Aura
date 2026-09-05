@@ -64,20 +64,25 @@ type SkillMeta struct {
 // registration (cmd/aura), keeping internal/agent/tools free of an internal/skills
 // import. ManifestDescription renders the turn-stable alphabetical manifest (D-06);
 // BM25Corpus + corpus-index→name mapping back the overflow `list` ranker (D-09).
+//
+// Every method takes the call's context because a skill has an OWNER since amendment #214:
+// the adapter reads identityctx off it and answers from that identity's roots — their own
+// skills overlaid on the deployment's. A context with no identity gets the deployment's
+// library alone, which is what every caller saw before.
 type skillLoader interface {
 	// List returns the loaded skills (name+description) in a stable order.
-	List() []SkillMeta
+	List(ctx context.Context) []SkillMeta
 	// Body returns the markdown body of the named skill, or ok=false if absent.
-	Body(name string) (string, bool)
+	Body(ctx context.Context, name string) (string, bool)
 	// ManifestDescription renders the byte-stable, alphabetical manifest block that
 	// becomes this tool's Description (with the BM25-overflow tail past the cap).
-	ManifestDescription() string
+	ManifestDescription(ctx context.Context) string
 	// Snippet resolves an ACTIVE snippet skill into its by-path invocation: the IN-BOX sandboxPath
 	// (skills.SnippetSandboxPath — /skills/<name>/<name>.<ext>, the SAME root MaterializeIn lands
 	// the snippet at, D-10), plus the docs instructions and the interpreter. There is one path
 	// because shell_exec has one place to run. ok=false when the named skill is absent or not a
 	// snippet (action=use then falls back to the instruction authority-frame path).
-	Snippet(name string) (instructions, sandboxPath, interpreter string, ok bool)
+	Snippet(ctx context.Context, name string) (instructions, sandboxPath, interpreter string, ok bool)
 }
 
 // skillLoaderInvalidator is optional so deterministic test/read-only loaders do

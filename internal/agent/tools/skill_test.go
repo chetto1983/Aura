@@ -23,16 +23,16 @@ type fakeSnippet struct {
 	interpreter  string
 }
 
-func (f *fakeSkillLoader) List() []SkillMeta { return f.skills }
+func (f *fakeSkillLoader) List(context.Context) []SkillMeta { return f.skills }
 
 func (f *fakeSkillLoader) Invalidate() { f.invalidations++ }
 
-func (f *fakeSkillLoader) Body(name string) (string, bool) {
+func (f *fakeSkillLoader) Body(_ context.Context, name string) (string, bool) {
 	b, ok := f.bodies[name]
 	return b, ok
 }
 
-func (f *fakeSkillLoader) ManifestDescription() string {
+func (f *fakeSkillLoader) ManifestDescription(context.Context) string {
 	var b strings.Builder
 	for _, s := range f.skills {
 		fmt.Fprintf(&b, "- %s: %s\n", s.Name, s.Description)
@@ -40,7 +40,7 @@ func (f *fakeSkillLoader) ManifestDescription() string {
 	return b.String()
 }
 
-func (f *fakeSkillLoader) Snippet(name string) (instructions, sandboxPath, interpreter string, ok bool) {
+func (f *fakeSkillLoader) Snippet(_ context.Context, name string) (instructions, sandboxPath, interpreter string, ok bool) {
 	s, ok := f.snippets[name]
 	if !ok {
 		return "", "", "", false

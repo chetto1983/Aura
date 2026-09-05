@@ -130,6 +130,9 @@ type Querier interface {
 	DeleteIdentityMCPOAuth(ctx context.Context, arg DeleteIdentityMCPOAuthParams) (int64, error)
 	DeleteMCPServer(ctx context.Context, name string) (int64, error)
 	DeleteSetting(ctx context.Context, key string) error
+	// execrows, not exec: a caller that reports "removed" without knowing whether a row existed
+	// cannot tell a real removal from a no-op on someone else's row that RLS filtered away.
+	DeleteSkillCatalog(ctx context.Context, arg DeleteSkillCatalogParams) (int64, error)
 	// Bound ledger growth per session+root, keeping the newest $4 events. The row the
 	// state points at survives because it is always among the newest.
 	DeleteSupersededVerificationEvents(ctx context.Context, arg DeleteSupersededVerificationEventsParams) error
@@ -214,6 +217,15 @@ type Querier interface {
 	GetVerificationState(ctx context.Context, arg GetVerificationStateParams) (GetVerificationStateRow, error)
 	GrantCapability(ctx context.Context, arg GrantCapabilityParams) error
 	GrantGatewayApproval(ctx context.Context, arg GrantGatewayApprovalParams) error
+	// The public grant carries no principal_id (the resource_acl_principal_shape CHECK), so it
+	// conflicts on the partial index keyed by resource alone.
+	GrantResourcePublic(ctx context.Context, arg GrantResourcePublicParams) error
+	// The generic resource ACL (migration 0118). granted_by is always the CALLING identity: the
+	// RLS policy uses the same predicate for visibility and for INSERT, so a grant attributed to
+	// somebody else is rejected by the database rather than by a check a caller can forget.
+	// Re-granting the same pair replaces the permission bits, which is what "share again with
+	// edit this time" means. created_at is left alone: it records when the share began.
+	GrantResourceToIdentity(ctx context.Context, arg GrantResourceToIdentityParams) error
 	HasCapability(ctx context.Context, arg HasCapabilityParams) (bool, error)
 	HasGatewayApprovalGrant(ctx context.Context, arg HasGatewayApprovalGrantParams) (bool, error)
 	HeartbeatBenchmarkSettingsOverride(ctx context.Context, arg HeartbeatBenchmarkSettingsOverrideParams) (int64, error)
@@ -263,6 +275,11 @@ type Querier interface {
 	//   an edit SETS it;
 	//   so "was this workspace edited after its last passing verification" is one column.
 	InsertVerificationEvent(ctx context.Context, arg InsertVerificationEventParams) (InsertVerificationEventRow, error)
+	// The grantee's half of the two-query read LibreChat runs (findAccessibleResources → the
+	// domain query filtered on those ids): which resources of this type may this identity see
+	// with AT LEAST these permission bits. The bitmask test is `& want = want`, so a view query
+	// also matches a row granted view+edit.
+	ListAccessibleResources(ctx context.Context, arg ListAccessibleResourcesParams) ([]pgtype.UUID, error)
 	ListActiveTasks(ctx context.Context) ([]AuraSchedulerTasks, error)
 	// Cross-thread pending list (APRV-01 / D-04): the same SELECT as
 	// ListPendingPausedStates with NO conversation_id filter, so the approval center
@@ -276,6 +293,10 @@ type Querier interface {
 	// Owner-scoped cross-thread pending list (Phase 36 MUSR-01 / APRV-01): ListAllPendingPausedStates
 	// restricted to one identity's pauses. Same total order (priority DESC, created_at ASC, token ASC).
 	ListAllPendingPausedStatesForIdentity(ctx context.Context, arg ListAllPendingPausedStatesForIdentityParams) ([]AuraPausedStates, error)
+	// The always-on block is rendered at the top of every turn, so this must be an index lookup
+	// (skill_catalog_always_apply_idx, partial on always_apply) and never a scan -- acceptance
+	// criterion 7 of amendment #214 asserts the plan carries no Seq Scan on this table.
+	ListAlwaysApplySkills(ctx context.Context, ownerIdentityID pgtype.UUID) ([]AuraSkillCatalog, error)
 	// 51-06b (Task 2): the resume observer's read -- which parked jobs may now resume. The
 	// join crosses into aura.paused_states (RLS-scoped to the SAME identity_id predicate
 	// below via db.WithIdentityTx's app.current_identity carrier) rather than living in
@@ -371,10 +392,18 @@ type Querier interface {
 	ListPendingPausedStates(ctx context.Context, conversationID pgtype.UUID) ([]AuraPausedStates, error)
 	ListRecentPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error)
 	ListReservedConversationDeletes(ctx context.Context, arg ListReservedConversationDeletesParams) ([]ListReservedConversationDeletesRow, error)
+	// Every grant standing on one resource, for the operator asking "who can read this?" before
+	// deciding whether to revoke. Ordered so a listing is stable across calls.
+	ListResourceGrants(ctx context.Context, arg ListResourceGrantsParams) ([]AuraResourceAcl, error)
 	ListRunsForTask(ctx context.Context, arg ListRunsForTaskParams) ([]AuraAgentJobRuns, error)
 	ListSettings(ctx context.Context) ([]AuraSettings, error)
 	ListSkillAudit(ctx context.Context, arg ListSkillAuditParams) ([]AuraSkillAudit, error)
 	ListSkillAuditByName(ctx context.Context, skillName string) ([]AuraSkillAudit, error)
+	// The shared-in half of a reader's view: the rows an ACL lookup already said they may see.
+	// It carries NO owner predicate on purpose -- these are by definition someone else's skills
+	// -- so the ids MUST come from aura.resource_acl and never from user input.
+	ListSkillCatalogByIDs(ctx context.Context, ids []pgtype.UUID) ([]AuraSkillCatalog, error)
+	ListSkillCatalogForOwner(ctx context.Context, ownerIdentityID pgtype.UUID) ([]AuraSkillCatalog, error)
 	// D-09 (LOOP-09): every seq whose content spilled to a <seq>.content sidecar
 	// (content_sidecar_path IS NOT NULL) in one conversation. The crash-orphan GC
 	// (orphan_scan.go) reconciles the live .content files against this referenced
@@ -521,6 +550,8 @@ type Querier interface {
 	RetryRetentionItem(ctx context.Context, arg RetryRetentionItemParams) (int64, error)
 	RevokeCapability(ctx context.Context, arg RevokeCapabilityParams) error
 	RevokeGatewayApprovalGrant(ctx context.Context, arg RevokeGatewayApprovalGrantParams) (int64, error)
+	RevokeResourceFromIdentity(ctx context.Context, arg RevokeResourceFromIdentityParams) (int64, error)
+	RevokeResourcePublic(ctx context.Context, arg RevokeResourcePublicParams) (int64, error)
 	// Advance an active task's next fire to now so the next tick claims it. Returns rows
 	// affected so the caller distinguishes a hit from a non-active (pending/cancelled) task.
 	RunTaskNowRow(ctx context.Context, id pgtype.UUID) (int64, error)
@@ -593,6 +624,13 @@ type Querier interface {
 	UpsertLLMProviderRoute(ctx context.Context, arg UpsertLLMProviderRouteParams) (AuraLlmProviderRoutes, error)
 	UpsertMCPServer(ctx context.Context, arg UpsertMCPServerParams) (AuraMcpServer, error)
 	UpsertSetting(ctx context.Context, arg UpsertSettingParams) (AuraSettings, error)
+	// The per-identity skill catalog (migration 0118). Every statement carries owner_identity_id
+	// in its predicate AND runs under the two RLS policies: the predicate is what makes the
+	// intent readable, the policy is what makes it true when a future caller forgets to write it.
+	// Landing a skill is idempotent per (owner, name): a rewrite of the same skill updates the
+	// row it already has. created_at is left alone on conflict -- it records when this identity
+	// first authored the skill, which an edit does not change.
+	UpsertSkillCatalog(ctx context.Context, arg UpsertSkillCatalogParams) (AuraSkillCatalog, error)
 	// The setting half: an edit stales whatever evidence existed. last_event_id is kept so
 	// the status read can still name the command that last passed, which is what makes the
 	// nudge say "last command X" instead of a bare "unverified".

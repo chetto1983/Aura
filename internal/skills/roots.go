@@ -2,6 +2,7 @@ package skills
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/idroot"
@@ -60,15 +61,25 @@ func (l Layout) For(identity string) (Roots, error) {
 	// The export is per identity for the same reason the source is: MaterializeIn copies an
 	// export tree into a box, so an export shared by every identity puts every identity's
 	// skills in every box no matter how correctly the loader is scoped.
-	if out.Export != "" {
-		dir, err := idroot.RootIdentityDir(out.Export, identity)
-		if err != nil {
-			return Roots{}, fmt.Errorf("skills: identity %q cannot name an export directory: %w", identity, err)
-		}
-		out.Export = dir
+	//
+	// It hangs off the identity's OWN root and never off the global export, and that is the
+	// whole point rather than a filing preference. MaterializeIn tars the deployment export
+	// into every box, and tarDir walks the tree: an identity export nested under the global
+	// export would therefore be carried into every OTHER identity's box as
+	// /skills/<their-id>/<skill>, one directory below the listing anybody would check.
+	// A sibling base cannot be reached by that walk at all.
+	if out.Identity != "" && out.Export != "" {
+		out.Export = filepath.Join(out.Identity, identityExportDirName)
 	}
 	return out, nil
 }
+
+// identityExportDirName is the identity's export tree, inside their own root beside
+// .staging. The leading dot is load-bearing: the skill-name grammar (SanitizeName) admits
+// only [a-z0-9-], so no skill can ever be written to this name and the collision is
+// unrepresentable rather than merely unlikely. The Loader skips it for the same reason it
+// skips archived/ — a directory with no SKILL.md is not a skill.
+const identityExportDirName = ".export"
 
 // LoaderRoots orders the roots for Loader.Config.Roots.
 //

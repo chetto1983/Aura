@@ -158,9 +158,13 @@ func buildGovernanceProviders(cfg *config.Config, pool *pgxpool.Pool, store agui
 
 	if pool != nil {
 		providers.Skills = skillsBoardAdapter{
-			loader:     skills.NewLoader(skills.Config{Roots: skillLoaderRoots(cfg), BodyCapBytes: cfg.SkillBodyCapBytes, Blocklist: cfg.SkillInjectionBlocklist}),
+			// Deliberately the DEPLOYMENT library and not a per-identity view: this board is
+			// the operator's inventory of what the house ships, and its provider interface
+			// carries no context to read an identity from. A person's own skills are theirs
+			// to see through their agent, not through the governance board.
+			loader:     skills.NewLoader(skills.Config{Roots: skillLoaderRoots(cfg, ""), BodyCapBytes: cfg.SkillBodyCapBytes, Blocklist: cfg.SkillInjectionBlocklist}),
 			audit:      skills.NewAuditStore(pool),
-			archiveDir: filepath.Join(cfg.SkillsDir, "archived"),
+			archiveDir: filepath.Join(cfg.SkillsDir, skills.StageArchived),
 		}
 	}
 

@@ -24,19 +24,28 @@ import (
 	"github.com/moby/moby/client"
 )
 
-// MaterializeIn makes each source's Dest root inside the box MIRROR its host dir: the stale
-// dest is cleared, then the host tree is tar-streamed in, landing under Dest (e.g. skills at
-// "/skills", so the in-box path equals the one SnippetSandboxPath renders). A missing host
-// dir is skipped (nothing to materialize); a symlink or non-regular file is rejected (no
-// symlink escape — sandbox-runtime guard). It is called from Resolve at BOTH create and
-// resume, and MUST fail Resolve closed on error.
+// MaterializeIn makes each Dest root inside the box MIRROR the host dirs mapped to it: the
+// stale dest is cleared, then each host tree is tar-streamed in, landing under Dest (e.g.
+// skills at "/skills", so the in-box path equals the one SnippetSandboxPath renders). A
+// missing host dir is skipped (nothing to materialize); a symlink or non-regular file is
+// rejected (no symlink escape — sandbox-runtime guard). It is called from Resolve at BOTH
+// create and resume, and MUST fail Resolve closed on error.
 //
 // The clear is what makes this a MIRROR rather than a merge, and it is load-bearing twice
 // over. A tar extract only ever adds: without it an archived or deleted skill stayed in the
 // box forever — the ledger said gone, the sandbox still ran it — and anything the model
 // wrote into /skills itself (an `npx skills add` lands a whole agent-layout tree there)
 // accumulated invisibly beside the real skills, indistinguishable from them at use time.
+//
+// A dest is cleared ONCE, before the first source that actually LANDS there, so several
+// sources can OVERLAY one root (amendment #214: an identity's own skills plus the
+// deployment's, both at /skills). Within one dest the sources merge in order and a later one
+// overwrites a name an earlier one wrote, which is why the composition root lists the
+// deployment's export last — the same later-wins precedence skills.Roots.LoaderRoots gives the
+// model's context. Clearing per source instead would leave the box holding only whichever
+// source came last.
 func MaterializeIn(ctx context.Context, cli *client.Client, h BoxHandle, srcs []MaterializeSource) error {
+	cleared := clearedDests{}
 	for _, s := range srcs {
 		if strings.TrimSpace(s.HostDir) == "" || strings.TrimSpace(s.Dest) == "" {
 			continue
@@ -55,8 +64,10 @@ func MaterializeIn(ctx context.Context, cli *client.Client, h BoxHandle, srcs []
 		if err != nil {
 			return fmt.Errorf("materialize tar %q: %w", s.HostDir, err)
 		}
-		if err := clearDest(ctx, cli, h, s.Dest); err != nil {
-			return fmt.Errorf("materialize clear %q: %w", s.Dest, err)
+		if cleared.take(s.Dest) {
+			if err := clearDest(ctx, cli, h, s.Dest); err != nil {
+				return fmt.Errorf("materialize clear %q: %w", s.Dest, err)
+			}
 		}
 		// Extract at "/" with dest-rooted entry names; the daemon MkdirAll's the parents, so
 		// a deep Dest (e.g. /root/.aura/agents) needs no pre-existing directory in the box.
@@ -68,6 +79,27 @@ func MaterializeIn(ctx context.Context, cli *client.Client, h BoxHandle, srcs []
 		}
 	}
 	return nil
+}
+
+// clearedDests records which box roots this materialization has already mirrored.
+type clearedDests map[string]bool
+
+// take reports whether dest still needs clearing, and records that it is about to be — so a
+// root shared by several sources is cleared exactly once, before the first source that really
+// lands there.
+//
+// "Really lands" is the whole subtlety, and it is why this is decided in the loop rather than
+// planned up front from the list: MaterializeIn skips a source whose host dir does not exist
+// (an identity who has written no skill of their own yet), and a plan that had already handed
+// that source the clear would leave the dest never cleared at all — an archived or deleted
+// skill would then survive in the box for the life of the session, which is the exact failure
+// the mirror exists to prevent.
+func (c clearedDests) take(dest string) bool {
+	if c[dest] {
+		return false
+	}
+	c[dest] = true
+	return true
 }
 
 // clearDest removes dest inside the box so the following extraction mirrors the host rather

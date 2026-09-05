@@ -1,6 +1,7 @@
 package skilladapters
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,7 +51,7 @@ func TestNewLoaderStoresFields(t *testing.T) {
 	t.Parallel()
 	live := skills.NewLoader(skills.Config{Roots: []string{t.TempDir()}})
 	a := NewLoader(live, 4096)
-	if a.loader != live {
+	if a.loaderFor(context.Background()) != live {
 		t.Error("NewLoader did not retain the live loader")
 	}
 	if a.manCap != 4096 {
@@ -65,7 +66,7 @@ func TestLoaderListProjectsToSkillMeta(t *testing.T) {
 		writeSkillFile(t, root, "beta", instructionMD("beta", "Beta skill.", "Do beta."))
 	})
 
-	got := a.List()
+	got := a.List(context.Background())
 	if len(got) != 2 {
 		t.Fatalf("List() len = %d, want 2; got %+v", len(got), got)
 	}
@@ -85,7 +86,7 @@ func TestLoaderListProjectsToSkillMeta(t *testing.T) {
 func TestLoaderListEmpty(t *testing.T) {
 	t.Parallel()
 	a := newLoaderAdapter(t, 0, nil)
-	got := a.List()
+	got := a.List(context.Background())
 	if len(got) != 0 {
 		t.Fatalf("List() over an empty root = %d entries, want 0", len(got))
 	}
@@ -97,7 +98,7 @@ func TestLoaderBodyFoundAndAbsent(t *testing.T) {
 		writeSkillFile(t, root, "present", instructionMD("present", "A present skill.", "The real body line."))
 	})
 
-	body, ok := a.Body("present")
+	body, ok := a.Body(context.Background(), "present")
 	if !ok {
 		t.Fatal("Body(present) ok = false, want true")
 	}
@@ -105,7 +106,7 @@ func TestLoaderBodyFoundAndAbsent(t *testing.T) {
 		t.Errorf("Body(present) = %q, want it to contain the markdown body", body)
 	}
 
-	missingBody, ok := a.Body("absent")
+	missingBody, ok := a.Body(context.Background(), "absent")
 	if ok {
 		t.Errorf("Body(absent) ok = true, want false")
 	}
@@ -121,7 +122,7 @@ func TestLoaderManifestDescriptionRendersAndRespectsCap(t *testing.T) {
 		writeSkillFile(t, root, "alpha", instructionMD("alpha", "Alpha does A.", "A body."))
 	})
 
-	man := a.ManifestDescription()
+	man := a.ManifestDescription(context.Background())
 	// Alphabetical, name+description block (the byte-stable manifest contract).
 	if !strings.Contains(man, "- alpha: Alpha does A.") {
 		t.Errorf("manifest missing alpha line; got:\n%s", man)
@@ -143,7 +144,7 @@ func TestLoaderManifestDescriptionTinyCapOverflows(t *testing.T) {
 		writeSkillFile(t, root, "alpha", instructionMD("alpha", "Alpha does A.", "A body."))
 		writeSkillFile(t, root, "beta", instructionMD("beta", "Beta does B.", "B body."))
 	})
-	man := a.ManifestDescription()
+	man := a.ManifestDescription(context.Background())
 	if !strings.Contains(man, "more — search with skill action=list") {
 		t.Errorf("tiny manCap should produce the overflow tail; got:\n%s", man)
 	}
@@ -157,7 +158,7 @@ func TestLoaderSnippetResolvesSandboxInvocation(t *testing.T) {
 		writeSkillFile(t, root, "fetcher", snippetMD("fetcher", "Fetch a URL.", "python", "Run the fetcher."))
 	})
 
-	instructions, sandboxPath, interpreter, ok := a.Snippet("fetcher")
+	instructions, sandboxPath, interpreter, ok := a.Snippet(context.Background(), "fetcher")
 	if !ok {
 		t.Fatal("Snippet(fetcher) ok = false, want true for an active python snippet")
 	}
@@ -180,7 +181,7 @@ func TestLoaderSnippetResolvesShellAndJS(t *testing.T) {
 		writeSkillFile(t, root, "builder", snippetMD("builder", "Build it.", "js", "Run the builder."))
 	})
 
-	_, shSandbox, shInterp, ok := a.Snippet("cleaner")
+	_, shSandbox, shInterp, ok := a.Snippet(context.Background(), "cleaner")
 	if !ok || shInterp != "sh" {
 		t.Fatalf("Snippet(cleaner) ok=%v interp=%q, want ok + sh", ok, shInterp)
 	}
@@ -188,7 +189,7 @@ func TestLoaderSnippetResolvesShellAndJS(t *testing.T) {
 		t.Errorf("shell sandbox path = %q", shSandbox)
 	}
 
-	_, jsSandbox, jsInterp, ok := a.Snippet("builder")
+	_, jsSandbox, jsInterp, ok := a.Snippet(context.Background(), "builder")
 	if !ok || jsInterp != "node" {
 		t.Fatalf("Snippet(builder) ok=%v interp=%q, want ok + node", ok, jsInterp)
 	}
@@ -200,7 +201,7 @@ func TestLoaderSnippetResolvesShellAndJS(t *testing.T) {
 func TestLoaderSnippetAbsentSkill(t *testing.T) {
 	t.Parallel()
 	a := newLoaderAdapter(t, 0, nil)
-	instructions, sandboxPath, interpreter, ok := a.Snippet("ghost")
+	instructions, sandboxPath, interpreter, ok := a.Snippet(context.Background(), "ghost")
 	if ok {
 		t.Error("Snippet(ghost) ok = true, want false for an absent skill")
 	}
@@ -216,7 +217,7 @@ func TestLoaderSnippetNonSnippetSkill(t *testing.T) {
 		// instruction authority-frame path).
 		writeSkillFile(t, root, "guide", instructionMD("guide", "A guide.", "Just instructions."))
 	})
-	_, _, _, ok := a.Snippet("guide")
+	_, _, _, ok := a.Snippet(context.Background(), "guide")
 	if ok {
 		t.Error("Snippet(guide) ok = true, want false for a non-snippet skill")
 	}
@@ -229,7 +230,7 @@ func TestLoaderSnippetInvalidLanguageFails(t *testing.T) {
 	a := newLoaderAdapter(t, 0, func(root string) {
 		writeSkillFile(t, root, "weird", snippetMD("weird", "Weird lang.", "ruby", "Run weird."))
 	})
-	instructions, sandboxPath, interpreter, ok := a.Snippet("weird")
+	instructions, sandboxPath, interpreter, ok := a.Snippet(context.Background(), "weird")
 	if ok {
 		t.Error("Snippet(weird) ok = true, want false for an unsupported language")
 	}

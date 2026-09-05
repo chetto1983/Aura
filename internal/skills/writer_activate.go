@@ -2,13 +2,16 @@ package skills
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-
-	"github.com/chetto1983/aura/internal/db"
-	"github.com/chetto1983/aura/internal/db/sqlc"
 )
+
+// ErrUnknownSkill reports a lifecycle verb aimed at a name the addressed root does not hold.
+// It is a sentinel because the caller has to tell it from a real failure: a cockpit or CLI
+// delete of a name that is not there is the operator's mistake to see, not an outage.
+var ErrUnknownSkill = errors.New("skills: no active skill by that name")
 
 // Archive de-materializes the skill (removes it from the export dir / mount, D-17)
 // and moves active/<name> → archived/<name>, recording an archive audit row. The
@@ -38,7 +41,10 @@ func (w *Writer) Archive(ctx context.Context, name string, src ApprovalSource, a
 	if src == ApprovalAuto {
 		action = AuditAutoArchive
 	}
-	if err := w.auditActivationLike(ctx, name, action, hash, src, actor); err != nil {
+	// The catalog row survives an archive on purpose: archiving changes a skill's
+	// lifecycle, not who owns it, so the owner keeps the row (and its shares) to restore
+	// into. Only delete collects them.
+	if err := w.auditActivationLike(ctx, name, action, hash, src, actor, nil); err != nil {
 		return fmt.Errorf("archive %q: audit: %w", name, err)
 	}
 	return nil
@@ -95,7 +101,7 @@ func (w *Writer) Restore(ctx context.Context, name string, src ApprovalSource, a
 	if err := w.SetUsageStatus(name, "active"); err != nil {
 		return fmt.Errorf("restore %q: usage status: %w", name, err)
 	}
-	if err := w.auditActivationLike(ctx, name, AuditActivate, hash, src, actor); err != nil {
+	if err := w.auditActivationLike(ctx, name, AuditActivate, hash, src, actor, nil); err != nil {
 		return fmt.Errorf("restore %q: audit: %w", name, err)
 	}
 	return nil
@@ -111,6 +117,16 @@ func (w *Writer) Delete(ctx context.Context, name string, actor AuditActor) (str
 	if err := SanitizeName(name, name); err != nil {
 		return "", fmt.Errorf("delete %q: %w", name, err)
 	}
+	// A delete of a skill this Writer's root does not hold is an ERROR, not a no-op that
+	// audits. os.RemoveAll succeeds on an absent path, so without this the ledger would gain
+	// a delete row for a skill still sitting in another root, still in every agent's context —
+	// and the caller would be told it was removed. The scoped Writer made that reachable:
+	// since #214 the root a delete addresses is the actor's, while the listing an operator
+	// clicked from may be the deployment's. Restore already fails this way (promoteDir on an
+	// absent source); delete was the one verb that did not.
+	if !w.ActiveExists(name) {
+		return "", fmt.Errorf("delete %q: %w", name, ErrUnknownSkill)
+	}
 	activeDir := filepath.Join(w.activeDir, name)
 	hash, _ := HashSkillDir(activeDir) // best-effort content_hash for the recovery path
 
@@ -121,28 +137,30 @@ func (w *Writer) Delete(ctx context.Context, name string, actor AuditActor) (str
 		return "", fmt.Errorf("delete %q: remove active: %w", name, err)
 	}
 
-	if err := w.auditActivationLike(ctx, name, AuditDelete, hash, ApprovalCLI, actor); err != nil {
+	// Delete is the one verb that also takes the ownership record with it, and with the
+	// record go every grant standing on it (the 0118 trigger) — a share must never outlive
+	// the thing it shared.
+	if err := w.auditActivationLike(ctx, name, AuditDelete, hash, ApprovalCLI, actor, w.catalogDeleteOp(name)); err != nil {
 		return "", fmt.Errorf("delete %q: audit: %w", name, err)
 	}
 	return StatusActive, nil
 }
 
 // auditActivationLike records a gate_taken=true audit row for activate/archive/
-// delete, applying the D-29 tuple shape implied by src.
-func (w *Writer) auditActivationLike(ctx context.Context, name string, action AuditAction, hash string, src ApprovalSource, actor AuditActor) error {
+// delete, applying the D-29 tuple shape implied by src. cat is the owner's catalog change
+// (amendment #214), committed in the same transaction; nil leaves the catalog alone.
+func (w *Writer) auditActivationLike(ctx context.Context, name string, action AuditAction, hash string, src ApprovalSource, actor AuditActor, cat catalogOp) error {
 	gateRecommended := src != ApprovalAuto
-	return db.WithTx(ctx, w.pool, func(q *sqlc.Queries) error {
-		return InsertAuditTx(ctx, q, AuditInsert{
-			ActorID:         actor.ActorID,
-			IdentityID:      actor.IdentityID,
-			SkillName:       name,
-			Action:          action,
-			ContentHash:     hash,
-			ApprovalSource:  src,
-			GateRecommended: gateRecommended,
-			GateTaken:       true,
-		})
-	})
+	return w.commitLedger(ctx, AuditInsert{
+		ActorID:         actor.ActorID,
+		IdentityID:      actor.IdentityID,
+		SkillName:       name,
+		Action:          action,
+		ContentHash:     hash,
+		ApprovalSource:  src,
+		GateRecommended: gateRecommended,
+		GateTaken:       true,
+	}, cat)
 }
 
 // SetAlways re-enables (or disables) the always:true flag on an ACTIVE skill (D-10):
@@ -174,7 +192,10 @@ func (w *Writer) SetAlways(ctx context.Context, name string, always bool, actor 
 		return fmt.Errorf("set always %q: materialize: %w", name, err)
 	}
 	hash := HashSkillFiles(map[string][]byte{"SKILL.md": skillFileBytes(fm, body)})
-	if err := w.auditActivationLike(ctx, name, AuditUpdate, hash, ApprovalCLI, actor); err != nil {
+	// always: is the column the always-on block is looked up by (migration 0118), so the
+	// row has to learn the new value here or the index would answer with the old one.
+	cat := w.catalogUpsertOp(name, fm.Description, always, hash)
+	if err := w.auditActivationLike(ctx, name, AuditUpdate, hash, ApprovalCLI, actor, cat); err != nil {
 		return fmt.Errorf("set always %q: audit: %w", name, err)
 	}
 	return nil

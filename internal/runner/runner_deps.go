@@ -103,7 +103,12 @@ type Deps struct {
 	// loader state (D-07). The composition root wires it over skills.RenderAlwaysBlock
 	// + the live loader; nil means no skills are wired (the block is empty). Rebuilt
 	// every turn so a skill add/remove changes messages[1] without busting messages[0].
-	AlwaysBlock func() string
+	//
+	// It takes the turn's context because the block is per IDENTITY since amendment #214:
+	// the composition root reads identityctx off it and renders that identity's own
+	// always-on skills beside the deployment's. A context with no identity renders the
+	// deployment's alone, which is the pre-#214 block byte for byte.
+	AlwaysBlock func(context.Context) string
 	ResumeHook  ResumeHook
 	// Embedder wires the local embedding-based reasoning-tier classifier into
 	// each per-turn agent (replaces the LLM router round-trip). nil => the agent

@@ -17,30 +17,59 @@ import (
 	"fmt"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/skills"
 )
 
 // modelActor labels every model-path write/save on the D-29 audit tuple so a
-// model-authored mutation is attributable (T-18-08-S).
-var modelActor = skills.AuditActor{ActorID: "model"}
+// model-authored mutation is attributable (T-18-08-S). Since amendment #214 it also carries
+// the OWNING identity, so the ledger answers "whose library changed" as well as "who typed
+// it" — and an unscoped turn records exactly the row it recorded before.
+func modelActor(ctx context.Context) skills.AuditActor {
+	return skills.AuditActor{ActorID: "model", IdentityID: identityctx.IdentityID(ctx)}
+}
+
+// LoaderResolver hands back the *skills.Loader that answers for one identity ("" = the
+// deployment library alone). It is the seam per-identity skills hang on (amendment #214):
+// the composition root owns the identity→roots decision (skills.Layout) and this package
+// stays a projection.
+type LoaderResolver func(identityID string) *skills.Loader
 
 // Loader bridges a live *skills.Loader onto the tools.skillLoader seam: it projects
 // skills.Skill into the tool-local SkillMeta, renders the manifest the tool's
 // Description shows, and resolves a snippet skill into its in-box by-path invocation.
+//
+// It resolves the loader PER CALL from the call's identity, because a skill belongs to
+// somebody: answering `use` from a loader fixed at boot would hand one person's instructions
+// to another person's model.
 type Loader struct {
-	loader *skills.Loader
-	manCap int
+	resolve    LoaderResolver
+	invalidate func()
+	manCap     int
 }
 
-// NewLoader builds the loader adapter. manCap is the manifest byte cap
+// NewLoader builds the loader adapter over ONE loader — the deployment-global wiring, and
+// every unscoped caller (the CLI, a pool-free manifest path). manCap is the manifest byte cap
 // (cfg.SkillManifestCapBytes).
 func NewLoader(loader *skills.Loader, manCap int) *Loader {
-	return &Loader{loader: loader, manCap: manCap}
+	return NewIdentityLoader(func(string) *skills.Loader { return loader }, loader.Invalidate, manCap)
+}
+
+// NewIdentityLoader builds the adapter that answers per identity. invalidate expires every
+// cached snapshot the resolver can hand out: a write must be visible to the next read in the
+// same turn, and the writer does not know which identities have a warm loader.
+func NewIdentityLoader(resolve LoaderResolver, invalidate func(), manCap int) *Loader {
+	return &Loader{resolve: resolve, invalidate: invalidate, manCap: manCap}
+}
+
+// loaderFor resolves the loader for the identity carried on ctx.
+func (a *Loader) loaderFor(ctx context.Context) *skills.Loader {
+	return a.resolve(identityctx.IdentityID(ctx))
 }
 
 // List projects the loaded skills into the tool-local SkillMeta shape.
-func (a *Loader) List() []tools.SkillMeta {
-	loaded := a.loader.List()
+func (a *Loader) List(ctx context.Context) []tools.SkillMeta {
+	loaded := a.loaderFor(ctx).List()
 	out := make([]tools.SkillMeta, 0, len(loaded))
 	for _, s := range loaded {
 		out = append(out, tools.SkillMeta{Name: s.Name, Description: s.Description})
@@ -49,8 +78,8 @@ func (a *Loader) List() []tools.SkillMeta {
 }
 
 // Body returns the named skill's markdown body.
-func (a *Loader) Body(name string) (string, bool) {
-	s, ok := a.loader.Get(name)
+func (a *Loader) Body(ctx context.Context, name string) (string, bool) {
+	s, ok := a.loaderFor(ctx).Get(name)
 	if !ok {
 		return "", false
 	}
@@ -58,15 +87,19 @@ func (a *Loader) Body(name string) (string, bool) {
 }
 
 // Invalidate makes a completed model-path write visible to the next read action
-// in the same turn.
+// in the same turn. It expires EVERY identity's snapshot, not just the writer's: a write can
+// change what a grantee sees, and one extra lazy re-scan is cheaper than a reader holding a
+// stale answer for a TTL.
 func (a *Loader) Invalidate() {
-	a.loader.Invalidate()
+	if a.invalidate != nil {
+		a.invalidate()
+	}
 }
 
 // ManifestDescription renders the turn-stable, alphabetical, cap-bounded manifest
 // the skill tool's Description shows (D-06/D-09).
-func (a *Loader) ManifestDescription() string {
-	return skills.RenderManifest(a.loader.List(), a.manCap)
+func (a *Loader) ManifestDescription(ctx context.Context) string {
+	return skills.RenderManifest(a.loaderFor(ctx).List(), a.manCap)
 }
 
 // Snippet resolves an active snippet skill into its IN-BOX by-path invocation
@@ -75,8 +108,8 @@ func (a *Loader) ManifestDescription() string {
 // path because shell_exec has one place to run: the host export-dir copy still EXISTS (it is the
 // materialize SOURCE), but nothing the model can call reaches it. ok=false for an absent or
 // non-snippet skill (action=use then falls back to the instruction authority-frame path).
-func (a *Loader) Snippet(name string) (instructions, sandboxPath, interpreter string, ok bool) {
-	s, found := a.loader.Get(name)
+func (a *Loader) Snippet(ctx context.Context, name string) (instructions, sandboxPath, interpreter string, ok bool) {
+	s, found := a.loaderFor(ctx).Get(name)
 	if !found || s.Type != skills.TypeSnippet {
 		return "", "", "", false
 	}
@@ -85,6 +118,22 @@ func (a *Loader) Snippet(name string) (instructions, sandboxPath, interpreter st
 		return "", "", "", false
 	}
 	return s.Body, sp, interp, true
+}
+
+// scopedWriter resolves the Writer that writes as the identity on ctx (amendment #214): a
+// model-authored skill lands in ITS OWNER'S root, not in a root shared with everybody. An
+// unscoped context resolves back to the deployment-global Writer.
+func (a *Writer) scopedWriter(ctx context.Context) (*skills.Writer, error) {
+	return a.w.For(identityctx.IdentityID(ctx))
+}
+
+// scopedInstaller is scopedWriter's twin for the install transport, so an installed skill
+// lands in the same root an authored one does.
+func (a *Writer) scopedInstaller(ctx context.Context) (*skills.Installer, error) {
+	if a.installer == nil {
+		return nil, nil
+	}
+	return a.installer.For(identityctx.IdentityID(ctx))
 }
 
 // Writer bridges a live *skills.Writer onto the tools.skillWriter seam the skill
@@ -108,7 +157,11 @@ func NewWriter(w *skills.Writer, installer *skills.Installer) *Writer {
 // actor "model". A blocklist/validation reject comes back as an error (the tool
 // surfaces it as a self-correct, NOT a pause).
 func (a *Writer) WriteMutation(ctx context.Context, action, name, description, body string, always bool) (string, error) {
-	return a.w.WriteMutationByName(ctx, action, name, description, body, always, modelActor)
+	w, err := a.scopedWriter(ctx)
+	if err != nil {
+		return "", err
+	}
+	return w.WriteMutationByName(ctx, action, name, description, body, always, modelActor(ctx))
 }
 
 // SaveSnippet maps the tool's UNGATED save_snippet call onto the live Writer.SaveSnippet
@@ -123,7 +176,11 @@ func (a *Writer) SaveSnippet(ctx context.Context, name, language, code, descript
 		NeedsNetwork:   needsNetwork,
 		NeedsWorkspace: needsWorkspace,
 	}
-	res, err := a.w.SaveSnippet(ctx, name, language, code, fm, modelActor)
+	w, err := a.scopedWriter(ctx)
+	if err != nil {
+		return "", err
+	}
+	res, err := w.SaveSnippet(ctx, name, language, code, fm, modelActor(ctx))
 	if err != nil {
 		return "", err
 	}
@@ -135,7 +192,11 @@ func (a *Writer) SaveSnippet(ctx context.Context, name, language, code, descript
 // the 0010 CHECK accepts — restore audits as activate/cli, no new migration). It returns
 // the active status string.
 func (a *Writer) Restore(ctx context.Context, name string) (string, error) {
-	if err := a.w.Restore(ctx, name, skills.ApprovalCLI, modelActor); err != nil {
+	w, err := a.scopedWriter(ctx)
+	if err != nil {
+		return "", err
+	}
+	if err := w.Restore(ctx, name, skills.ApprovalCLI, modelActor(ctx)); err != nil {
 		return "", err
 	}
 	return skills.StatusActive, nil
@@ -145,7 +206,11 @@ func (a *Writer) Restore(ctx context.Context, name string) (string, error) {
 // gate), labeling the actor "model" with the cli ApprovalSource (the manual operator-source
 // archive, distinct from the TTL sweep's auto source). It returns an "archived" status.
 func (a *Writer) ArchiveSnippet(ctx context.Context, name string) (string, error) {
-	if err := a.w.Archive(ctx, name, skills.ApprovalCLI, modelActor); err != nil {
+	w, err := a.scopedWriter(ctx)
+	if err != nil {
+		return "", err
+	}
+	if err := w.Archive(ctx, name, skills.ApprovalCLI, modelActor(ctx)); err != nil {
 		return "", err
 	}
 	return "archived", nil
@@ -159,10 +224,14 @@ func (a *Writer) ArchiveSnippet(ctx context.Context, name string) (string, error
 // point: the CLI would land the tree in its working directory, outside every loader
 // root, and the model would truthfully report an install of something Aura cannot load.
 func (a *Writer) Install(ctx context.Context, source string) (string, error) {
-	if a.installer == nil {
+	installer, err := a.scopedInstaller(ctx)
+	if err != nil {
+		return "", err
+	}
+	if installer == nil {
 		return "", fmt.Errorf("install %q: no installer is wired in this context", source)
 	}
-	info, err := a.installer.Install(ctx, source, modelActor)
+	info, err := installer.Install(ctx, source, modelActor(ctx))
 	if err != nil {
 		return "", err
 	}

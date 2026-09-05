@@ -28,9 +28,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const skillsUsage = "usage: aura skills {list|info <name>|create <name> --desc <d> --body <b> [--always]|" +
+const skillsUsage = "usage: aura skills {list [--identity <uuid>]|info <name> [--identity <uuid>]|" +
+	"create <name> --desc <d> --body <b> [--always]|" +
 	"update <name> --desc <d> --body <b> [--always]|delete <name>|" +
 	"always <name> {on|off}|snippet {save <name> --lang <l> --code <c> [--desc <d>] [--needs-network]|exec <name> [args...]}|" +
+	"share <name> --owner <uuid> --with {<uuid>|public}|unshare <name> --owner <uuid> --with {<uuid>|public}|" +
+	"shares <name> --owner <uuid>|" +
 	"audit [--skill <name>] [--since <RFC3339>]}"
 
 // skillsEnv bundles the booted skills-CLI dependencies: the config (for the skill
@@ -53,12 +56,18 @@ func (e *skillsEnv) close() {
 // agreement), and the export dir is SkillExportDir (the /skills mount source). It is
 // the SAME wiring the composition root uses so the CLI and the model path operate on
 // one set of dirs.
+//
+// It is the DEPLOYMENT-global Writer. Since amendment #214 it also carries the Layout, which
+// is what Writer.For derives the per-identity Writer from — so a caller that knows whose
+// write this is (the model turn, a cockpit actor) scopes it, and a caller that does not (this
+// CLI, standing in for the operator) writes the house library exactly as before.
 func newSkillWriter(cfg *config.Config, pool *pgxpool.Pool) *skills.Writer {
 	return skills.NewWriter(skills.WriterConfig{
 		Pool:         pool,
 		ActiveDir:    cfg.SkillsDir,
 		ExportDir:    cfg.SkillExportDir,
-		ArchiveDir:   filepath.Join(cfg.SkillsDir, "archived"),
+		ArchiveDir:   filepath.Join(cfg.SkillsDir, skills.StageArchived),
+		Layout:       skillLayout(cfg),
 		Blocklist:    cfg.SkillInjectionBlocklist,
 		BodyCapBytes: cfg.SkillBodyCapBytes,
 	})
@@ -95,6 +104,12 @@ func runSkills(args []string) {
 		skillsAlways(ctx, args[1:])
 	case "snippet":
 		skillsSnippet(ctx, args[1:])
+	case "share":
+		skillsShare(ctx, args[1:], true)
+	case "unshare":
+		skillsShare(ctx, args[1:], false)
+	case "shares":
+		skillsShares(ctx, args[1:])
 	case "audit":
 		skillsAudit(ctx, args[1:])
 	default:
@@ -110,12 +125,16 @@ const (
 )
 
 // skillsList prints the active skills the loader sees (name + description). It
-// scans the persistent-install root + the active SkillsDir and applies the load-time
-// blocklist, exactly like the model path (amendment #51 / D-40), so `aura skills list`
-// reflects what the model would see.
-func skillsList(_ context.Context, _ []string) {
+// scans the active SkillsDir and applies the load-time blocklist, exactly like the model
+// path (amendment #51 / D-40), so `aura skills list` reflects what the model would see.
+//
+// With --identity it scans that identity's roots instead — their own skills overlaid on the
+// deployment's, in the same precedence the agent gets (amendment #214) — which is how an
+// operator answers "what does this person's model actually see" without becoming them.
+func skillsList(_ context.Context, args []string) {
 	cfg := config.LoadDB()
-	loader := skills.NewLoader(skills.Config{Roots: skillLoaderRoots(cfg), BodyCapBytes: cfg.SkillBodyCapBytes, Blocklist: cfg.SkillInjectionBlocklist})
+	identity, _ := flagValue(args, "--identity")
+	loader := skills.NewLoader(skills.Config{Roots: skillLoaderRoots(cfg, identity), BodyCapBytes: cfg.SkillBodyCapBytes, Blocklist: cfg.SkillInjectionBlocklist})
 	loaded := loader.List()
 	if len(loaded) == 0 {
 		fmt.Println("ok: no skills")
@@ -132,11 +151,12 @@ func skillsList(_ context.Context, _ []string) {
 // skillsInfo prints a single skill's body for inspection.
 func skillsInfo(_ context.Context, args []string) {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: aura skills info <name>")
+		fmt.Fprintln(os.Stderr, "usage: aura skills info <name> [--identity <uuid>]")
 		os.Exit(1)
 	}
 	cfg := config.LoadDB()
-	loader := skills.NewLoader(skills.Config{Roots: skillLoaderRoots(cfg), BodyCapBytes: cfg.SkillBodyCapBytes, Blocklist: cfg.SkillInjectionBlocklist})
+	identity, _ := flagValue(args[1:], "--identity")
+	loader := skills.NewLoader(skills.Config{Roots: skillLoaderRoots(cfg, identity), BodyCapBytes: cfg.SkillBodyCapBytes, Blocklist: cfg.SkillInjectionBlocklist})
 	s, ok := loader.Get(args[0])
 	if !ok {
 		fmt.Fprintf(os.Stderr, "skill %q not found\n", args[0])

@@ -116,7 +116,7 @@ func TestWriteActiveRejectsInvalidNameAtFSBoundary(t *testing.T) {
 	w, root := newTestWriter(t)
 	fill := writeFilesInto(map[string][]byte{"SKILL.md": []byte("body")})
 	for _, bad := range []string{"../escape", "a/b", `a\b`, "Bad_Name", ""} {
-		if err := w.writeActive(t.Context(), bad, fill, AuditInsert{}); !errors.Is(err, ErrInvalidName) {
+		if err := w.writeActive(t.Context(), bad, fill, AuditInsert{}, nil); !errors.Is(err, ErrInvalidName) {
 			t.Errorf("writeActive(%q) = %v, want ErrInvalidName", bad, err)
 		}
 	}

@@ -46,9 +46,11 @@ var snippetMetaByLang = map[SnippetLanguage]snippetMeta{
 	LangJS:     {ext: "js", interpreter: "node"},
 }
 
-// inSandboxSkillsRoot is the in-container mount point of the ro /skills bind mount
-// (D-17, spike 005). action=use hands the model a path under this root.
-const inSandboxSkillsRoot = "/skills"
+// InSandboxSkillsRoot is the in-container mount point of the materialized /skills tree
+// (D-17, spike 005). action=use hands the model a path under this root, and the composition
+// root names the same constant as the docker-cp destination, so the path the model is given
+// and the path the files land at cannot drift apart.
+const InSandboxSkillsRoot = "/skills"
 
 // validSnippetLanguage normalizes + validates the language enum, returning the meta
 // and a structured error for anything outside {python,shell,js} (D-20). It tolerates
@@ -90,7 +92,7 @@ func SnippetSandboxPath(name string, lang SnippetLanguage) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return inSandboxSkillsRoot + "/" + name + "/" + file, nil
+	return InSandboxSkillsRoot + "/" + name + "/" + file, nil
 }
 
 // SnippetHostPath returns the export-dir target exportDir/<name>/<name>.<ext>. It mirrors
@@ -170,8 +172,10 @@ func (w *Writer) SaveSnippet(ctx context.Context, name, language, code string, f
 		"SKILL.md":            skillFileBytes(fm, docsBody),
 		name + "." + meta.ext: []byte(code),
 	}
-	audit := actorAudit(name, AuditCreate, HashSkillFiles(files), actor)
-	if werr := w.writeActive(ctx, name, writeFilesInto(files), audit); werr != nil {
+	hash := HashSkillFiles(files)
+	audit := actorAudit(name, AuditCreate, hash, actor)
+	cat := w.catalogUpsertOp(name, fm.Description, fm.Always, hash)
+	if werr := w.writeActive(ctx, name, writeFilesInto(files), audit, cat); werr != nil {
 		return SnippetSaveResult{}, fmt.Errorf("save snippet %q: %w", name, werr)
 	}
 

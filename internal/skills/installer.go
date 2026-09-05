@@ -75,6 +75,23 @@ type InstallerConfig struct {
 	WorkDir       string
 }
 
+// For returns the Installer that installs AS identity: the same transport and validation
+// config, with the write sink scoped to that identity's roots (amendment #214). An empty
+// identity — or a deployment with per-identity skills switched off — returns the receiver,
+// so an unscoped install still lands in the deployment library.
+func (i *Installer) For(identity string) (*Installer, error) {
+	writer, err := i.writer.For(identity)
+	if err != nil {
+		return nil, err
+	}
+	if writer == i.writer {
+		return i, nil
+	}
+	scoped := *i
+	scoped.writer = writer
+	return &scoped, nil
+}
+
 // NewInstaller builds an Installer from cfg, defaulting Run to the real npx runner.
 func NewInstaller(cfg InstallerConfig) *Installer {
 	run := cfg.Run

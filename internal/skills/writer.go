@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/chetto1983/aura/internal/db"
-	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/scoring"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -29,6 +27,15 @@ type Writer struct {
 	exportDir  string // AURA_SKILL_EXPORT_DIR — the /skills mount source (D-17)
 	archiveDir string // <root>/archived — de-materialized, retained skills
 
+	// layout is the deployment's three skill bases (amendment #214). It is what For
+	// derives a per-identity Writer from; a zero Layout leaves For a no-op and every write
+	// deployment-global, which is exactly the pre-#214 behaviour.
+	layout Layout
+	// owner is the identity this Writer writes AS: set by For, empty on the global Writer.
+	// It decides two things — which roots the files land in, and whether the write carries
+	// a catalog row (migration 0118).
+	owner string
+
 	blocklist    []string
 	bodyCapBytes int
 }
@@ -37,10 +44,13 @@ type Writer struct {
 // paths — ArchiveDir is NOT derived from ActiveDir here — so the loader's scan roots
 // and the writer's dirs stay in agreement.
 type WriterConfig struct {
-	Pool         *pgxpool.Pool
-	ActiveDir    string
-	ExportDir    string
-	ArchiveDir   string
+	Pool       *pgxpool.Pool
+	ActiveDir  string
+	ExportDir  string
+	ArchiveDir string
+	// Layout carries the per-identity bases For needs (amendment #214). Leaving it zero
+	// keeps this Writer deployment-global and For an identity-agnostic no-op.
+	Layout       Layout
 	Blocklist    []string
 	BodyCapBytes int
 }
@@ -52,6 +62,7 @@ func NewWriter(cfg WriterConfig) *Writer {
 		activeDir:    cfg.ActiveDir,
 		exportDir:    cfg.ExportDir,
 		archiveDir:   cfg.ArchiveDir,
+		layout:       cfg.Layout,
 		blocklist:    cfg.Blocklist,
 		bodyCapBytes: cfg.BodyCapBytes,
 	}
@@ -101,8 +112,10 @@ func (w *Writer) WriteMutation(ctx context.Context, action scoring.SkillAction, 
 	}
 
 	files := map[string][]byte{"SKILL.md": skillFileBytes(fm, body)}
-	audit := actorAudit(fm.Name, auditActionFor(action), HashSkillFiles(files), actor)
-	if err := w.writeActive(ctx, fm.Name, writeFilesInto(files), audit); err != nil {
+	hash := HashSkillFiles(files)
+	audit := actorAudit(fm.Name, auditActionFor(action), hash, actor)
+	cat := w.catalogUpsertOp(fm.Name, fm.Description, fm.Always, hash)
+	if err := w.writeActive(ctx, fm.Name, writeFilesInto(files), audit, cat); err != nil {
 		return "", fmt.Errorf("write mutation %q: %w", fm.Name, err)
 	}
 	return StatusActive, nil
@@ -120,7 +133,8 @@ func (w *Writer) WriteInstall(ctx context.Context, fm Frontmatter, stagedDir, ha
 		}
 		return nil
 	}
-	if err := w.writeActive(ctx, fm.Name, fill, actorAudit(fm.Name, AuditInstall, hash, actor)); err != nil {
+	cat := w.catalogUpsertOp(fm.Name, fm.Description, fm.Always, hash)
+	if err := w.writeActive(ctx, fm.Name, fill, actorAudit(fm.Name, AuditInstall, hash, actor), cat); err != nil {
 		return "", fmt.Errorf("install %q: %w", fm.Name, err)
 	}
 	return StatusActive, nil
@@ -155,8 +169,9 @@ func (w *Writer) WriteMutationCLI(ctx context.Context, action, name, description
 // where the reverse leaves a live, model-visible, unrecorded mutation.
 //
 // fill populates the staging dir: an explicit file map for create/update/snippet, a
-// symlink-stripped tree copy for install.
-func (w *Writer) writeActive(ctx context.Context, name string, fill func(dir string) error, audit AuditInsert) error {
+// symlink-stripped tree copy for install. cat is the owner's catalog change (amendment
+// #214), committed in the SAME transaction as the audit row and nil on the global Writer.
+func (w *Writer) writeActive(ctx context.Context, name string, fill func(dir string) error, audit AuditInsert, cat catalogOp) error {
 	// The name chokepoint (D-30) runs BEFORE the name is joined into a path that
 	// promoteDir and Materialize both turn into an os.RemoveAll.
 	if err := SanitizeName(name, name); err != nil {
@@ -183,9 +198,7 @@ func (w *Writer) writeActive(ctx context.Context, name string, fill func(dir str
 	if err := fill(tmp); err != nil {
 		return err
 	}
-	if err := db.WithTx(ctx, w.pool, func(q *sqlc.Queries) error {
-		return InsertAuditTx(ctx, q, audit)
-	}); err != nil {
+	if err := w.commitLedger(ctx, audit, cat); err != nil {
 		return fmt.Errorf("audit: %w", err)
 	}
 

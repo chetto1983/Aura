@@ -31,7 +31,7 @@ var keepAliveCmd = []string{"tail", "-f", "/dev/null"}
 
 // MaterializeSource maps a host source directory to the destination root inside the box it
 // is tar-streamed into (docker cp, the replacement for the removed ro bind-mount — D-10).
-// For skills the Dest is skills.inSandboxSkillsRoot ("/skills") so the in-box path equals
+// For skills the Dest is skills.InSandboxSkillsRoot ("/skills") so the in-box path equals
 // the one SnippetSandboxPath renders.
 type MaterializeSource struct {
 	HostDir string

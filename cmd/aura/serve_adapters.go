@@ -355,12 +355,12 @@ func newSkillTool(cfg *config.Config, writerPool *pgxpool.Pool) *tools.SkillTool
 	if err := skills.MaterializeBuiltins(cfg.SkillsDir); err != nil {
 		slog.Warn("skill tool: materialize builtins failed", "dir", cfg.SkillsDir, "err", err)
 	}
-	loader := skills.NewLoader(skills.Config{
-		Roots:        skillLoaderRoots(cfg),
-		BodyCapBytes: cfg.SkillBodyCapBytes,
-		Blocklist:    cfg.SkillInjectionBlocklist,
-	})
-	tool := &tools.SkillTool{Loader: skilladapters.NewLoader(loader, cfg.SkillManifestCapBytes)}
+	// One loader per identity, resolved on the call (amendment #214): the model reads its
+	// OWN library overlaid on the deployment's, and never another person's.
+	loaders := newIdentityLoaders(cfg)
+	tool := &tools.SkillTool{
+		Loader: skilladapters.NewIdentityLoader(loaders.forIdentity, loaders.invalidateAll, cfg.SkillManifestCapBytes),
+	}
 	if writerPool != nil {
 		w := newSkillWriter(cfg, writerPool)
 		// The model's install path is the SAME Installer the cockpit uses — one fetch +
@@ -496,70 +496,6 @@ func newGatewayResumeHook(g *gateway.Gateway) runner.ResumeHook {
 		return nil
 	}
 }
-
-// skillLoaderRoots is the single source of truth for the loader scan roots
-// (amendment #51 / D-40 + #50). There is exactly one: the active SkillsDir, where every
-// write path lands — skill_manage install and the CLI both go through the Writer.
-//
-// It used to scan <export>/.agents/skills first, the landing zone for an in-sandbox
-// `npx skills add` back when /skills was a read-write bind mount. D-10 replaced that mount
-// with a docker-cp'd copy MaterializeIn clears at every create and resume, and shell_exec
-// now routes a skills-install in the box to the host pipeline, so nothing could reach that
-// directory from either side. Measured absent on the running deployment (amendment #208),
-// it is no longer scanned; nothing recreates it, so a future landing zone is a deliberate
-// re-declaration rather than an inherited one.
-func skillLoaderRoots(cfg *config.Config) []string {
-	return []string{cfg.SkillsDir}
-}
-
-// alwaysBlockProvider returns a per-turn renderer of the messages[1] always-block
-// (D-07): it builds a loader over the active skills dir and renders the always:true
-// bodies via skills.RenderAlwaysBlock on each call, so a skill add/remove changes
-// messages[1] live (the loader's short TTL re-scans). A nil cfg / empty skills dir
-// yields a provider that always renders empty (no always-block turn). The loader is
-// goroutine-free (lazy TTL re-scan), so this provider adds no background goroutine.
-func alwaysBlockProvider(cfg *config.Config) func() string {
-	if cfg == nil || cfg.SkillsDir == "" {
-		return func() string { return "" }
-	}
-	loader := skills.NewLoader(skills.Config{
-		Roots:        skillLoaderRoots(cfg),
-		BodyCapBytes: cfg.SkillBodyCapBytes,
-		Blocklist:    cfg.SkillInjectionBlocklist,
-	})
-	// The catalogue renders through the SAME adapter the skill tool's action=list uses,
-	// so there is one manifest renderer (cap + BM25 overflow tail included), not two that
-	// can drift.
-	catalogue := skilladapters.NewLoader(loader, cfg.SkillManifestCapBytes)
-	return func() string {
-		var b strings.Builder
-		if block, present := skills.RenderAlwaysBlock(loader.List()); present {
-			b.WriteString(block)
-		}
-		// The catalogue of installed skills lives HERE, not in the skill tool's
-		// Description. Both are per-turn live state, but messages[1] is the seam built
-		// for that (rebuilt each turn, never touching messages[0]), whereas the tool
-		// Description sits inside the `tools` array — so every skill add/remove rewrote
-		// the tools payload and invalidated the provider's prefix cache. It also made
-		// `skill` the heaviest entry in the manifest at ~1773 tokens against ~400 for the
-		// constant text that replaced it. hermes-agent renders its index into the system
-		// prompt for the same reason; Claude Code keeps the listing beside the tool, not
-		// inside it.
-		if manifest := strings.TrimSpace(catalogue.ManifestDescription()); manifest != "" {
-			if b.Len() > 0 {
-				b.WriteString("\n\n")
-			}
-			b.WriteString(skillCatalogueHeader)
-			b.WriteString(manifest)
-		}
-		return b.String()
-	}
-}
-
-// skillCatalogueHeader is a frozen English literal (D-06): the block must stay
-// byte-stable between skill changes or it defeats the prefix cache it was moved here
-// to protect.
-const skillCatalogueHeader = "Installed skills (call the skill tool with action=use <name> to apply one):\n\n"
 
 // snippetSweeperAdapter bridges the live *skills.Writer onto the handlers.SnippetSweeper
 // seam the skill_ttl_sweep handler drives (D-16): it projects the Writer's SweepResult

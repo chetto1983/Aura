@@ -370,12 +370,15 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// rendering an image sent with the third message against the first -- and 0117
 	// remembers the base URL and model each provider was last saved with, so the
 	// cockpit's Cloud/Local/Ollama buttons restore a route that ran instead of a
-	// constant compiled into the browser bundle. The
+	// constant compiled into the browser bundle, and 0118 gives a skill an OWNER -- the
+	// per-identity catalog and the generic resource ACL, both behind the two RLS layers,
+	// because a skill is executable instruction the model follows and one identity's must
+	// not reach another's context (amendment #214). The
 	// test exists so a migration added without noticing breaks the build rather than
 	// deployment; bumping it is the intended acknowledgement, never an incidental
 	// red-to-green fix.
-	if head != 117 {
-		t.Fatalf("MigrationHead=%d, want embedded head 117", head)
+	if head != 118 {
+		t.Fatalf("MigrationHead=%d, want embedded head 118", head)
 	}
 }
 

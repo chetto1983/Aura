@@ -339,3 +339,42 @@ func TestDestTooBroadToClear(t *testing.T) {
 		}
 	}
 }
+
+// TestClearedDestsClearsEachRootOnce covers the overlay rule two sources sharing a dest depend
+// on (amendment #214: an identity's export and the deployment's, both at /skills). Only the
+// first source that LANDS on a dest clears it; a second clear would erase what the first just
+// landed, and no test that passes a single source can see that.
+func TestClearedDestsClearsEachRootOnce(t *testing.T) {
+	t.Parallel()
+
+	t.Run("two sources on one root clear once, in order", func(t *testing.T) {
+		t.Parallel()
+		cleared := clearedDests{}
+		if !cleared.take("/skills") {
+			t.Fatal("the first source on a root must clear it")
+		}
+		if cleared.take("/skills") {
+			t.Fatal("the second source must merge into the root, not wipe what the first landed")
+		}
+	})
+
+	t.Run("distinct roots each clear", func(t *testing.T) {
+		t.Parallel()
+		cleared := clearedDests{}
+		if !cleared.take("/skills") || !cleared.take("/root/.aura/agents") {
+			t.Fatal("separate roots are separate mirrors and each must be cleared")
+		}
+	})
+
+	t.Run("a root claims its clear only when a source reaches it", func(t *testing.T) {
+		t.Parallel()
+		// MaterializeIn skips a source whose host dir does not exist and never calls take
+		// for it, so the source that follows still clears. If a skipped source could claim
+		// the clear, a deleted skill would survive in the box for the whole session.
+		cleared := clearedDests{}
+		// (nothing taken for the skipped source)
+		if !cleared.take("/skills") {
+			t.Fatal("a root nothing has landed on yet must still be cleared")
+		}
+	})
+}

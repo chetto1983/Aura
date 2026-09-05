@@ -515,6 +515,17 @@ type AuraProvisioningSaga struct {
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 }
 
+// Generic resource ACL (migration 0118, amendment #214), shaped on LibreChat's aclEntry: principal_type x resource_type x perm_bits, one table for every shareable resource. This slice writes only resource_type='skill' and principal_type in (identity, public); 'group' is admitted by the enum and deliberately not built. resource_id carries no foreign key on purpose -- the two AFTER DELETE triggers keep it free of orphans without pinning the column to one table.
+type AuraResourceAcl struct {
+	ResourceType  string             `json:"resource_type"`
+	ResourceID    pgtype.UUID        `json:"resource_id"`
+	PrincipalType string             `json:"principal_type"`
+	PrincipalID   pgtype.UUID        `json:"principal_id"`
+	PermBits      int32              `json:"perm_bits"`
+	GrantedBy     pgtype.UUID        `json:"granted_by"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
 // Crash-resumable mark-remove-finalize items claimed by short renewable leases.
 type AuraRetentionOperationItems struct {
 	ID              pgtype.UUID        `json:"id"`
@@ -628,6 +639,18 @@ type AuraSkillAudit struct {
 	GateRecommended   bool        `json:"gate_recommended"`
 	GateTaken         bool        `json:"gate_taken"`
 	BlocklistOverride bool        `json:"blocklist_override"`
+}
+
+// The per-identity skill catalog (migration 0118, amendment #214). One row per skill an identity owns; the body lives on the filesystem under $AURA_SKILLS_IDENTITY_DIR/<identity>/<name>, because skills are docker-cp'd into a box at every resolve. The deployment's own skills ($AURA_SKILLS_DIR) are NOT rows: they are the read-only overlay every identity sees, and they WIN a name collision (D-214-3).
+type AuraSkillCatalog struct {
+	ID              pgtype.UUID        `json:"id"`
+	OwnerIdentityID pgtype.UUID        `json:"owner_identity_id"`
+	Name            string             `json:"name"`
+	Description     string             `json:"description"`
+	AlwaysApply     bool               `json:"always_apply"`
+	ContentHash     string             `json:"content_hash"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
 type AuraSteerQueue struct {

@@ -37,10 +37,10 @@ func (t *SkillTool) actionList(ctx context.Context, raw json.RawMessage) (ToolRe
 	}
 	query := strings.TrimSpace(a.Query)
 	if query == "" {
-		return NewResult(ctx, t.Loader.ManifestDescription()+listSkillTail)
+		return NewResult(ctx, t.Loader.ManifestDescription(ctx)+listSkillTail)
 	}
 
-	ranked := rankSkills(t.Loader.List(), query)
+	ranked := rankSkills(t.Loader.List(ctx), query)
 	if len(ranked) == 0 {
 		// A queried list miss is the capability-gap decision point. Discovery+install
 		// is NOT a tool action (amendment #51 / D-40): point the model at the always-on
@@ -81,7 +81,7 @@ func rankSkills(skills []SkillMeta, query string) []SkillMeta {
 // authority frame, so the model reads what a skill says without being instructed
 // to act on it.
 func (t *SkillTool) actionInfo(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
-	body, err := t.requireBody(raw, "info")
+	body, err := t.requireBody(ctx, raw, "info")
 	if err != nil {
 		return ToolResult{}, err
 	}
@@ -108,10 +108,10 @@ func (t *SkillTool) actionUse(ctx context.Context, raw json.RawMessage) (ToolRes
 	if name == "" {
 		return ToolResult{}, fmt.Errorf("skill use: name is required")
 	}
-	if instructions, sandboxPath, interpreter, ok := t.Loader.Snippet(name); ok {
+	if instructions, sandboxPath, interpreter, ok := t.Loader.Snippet(ctx, name); ok {
 		return NewResult(ctx, renderSnippetUse(instructions, sandboxPath, interpreter))
 	}
-	body, ok := t.Loader.Body(name)
+	body, ok := t.Loader.Body(ctx, name)
 	if !ok {
 		return ToolResult{}, fmt.Errorf("skill use: unknown skill %q", name)
 	}
@@ -138,7 +138,7 @@ func renderSnippetUse(instructions, runPath, interpreter string) string {
 
 // requireBody resolves the `name` arg and fetches the skill body, returning a
 // structured error when name is missing or the skill is unknown.
-func (t *SkillTool) requireBody(raw json.RawMessage, action string) (string, error) {
+func (t *SkillTool) requireBody(ctx context.Context, raw json.RawMessage, action string) (string, error) {
 	if t.Loader == nil {
 		return "", fmt.Errorf("skill %s: no skill loader configured", action)
 	}
@@ -150,7 +150,7 @@ func (t *SkillTool) requireBody(raw json.RawMessage, action string) (string, err
 	if name == "" {
 		return "", fmt.Errorf("skill %s: name is required", action)
 	}
-	body, ok := t.Loader.Body(name)
+	body, ok := t.Loader.Body(ctx, name)
 	if !ok {
 		return "", fmt.Errorf("skill %s: unknown skill %q", action, name)
 	}

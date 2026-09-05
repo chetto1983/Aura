@@ -38,12 +38,46 @@ import (
 // honest post-install destination in the response).
 // blocklist/bodyCapBytes are the SAME config values the Writer was built with, held here
 // so Validate can dry-run the write boundary without reaching back into config.
+//
+// Every write leg is scoped to the ACTOR (amendment #214). The provider seam already carried
+// an actor on each method because the ledger wanted it; what changes is that the actor now
+// also decides WHERE the write lands, so a cockpit install by one person no longer appears in
+// everybody else's agent. The fields below stay the deployment-global primitives — forActor
+// derives the scoped pair per call, and an unscoped actor gets exactly them.
 type skillsWriteAdapter struct {
 	installer    *skills.Installer
 	writer       *skills.Writer
 	activeDir    string
 	blocklist    []string
 	bodyCapBytes int
+}
+
+// scopedSkillWrite is one actor's write surface: their Writer, their Installer, and the root
+// their skills actually land in (which the install response quotes, so an operator is told
+// the truth about where the tree went).
+type scopedSkillWrite struct {
+	writer    *skills.Writer
+	installer *skills.Installer
+	activeDir string
+}
+
+// forActor resolves the write surface for one actor. An actor whose identity cannot name a
+// directory is an error, not a silent fallback to the shared root: writing somebody's skill
+// into the house library because their id looked odd is the failure this slice removes.
+func (a skillsWriteAdapter) forActor(actor string) (scopedSkillWrite, error) {
+	writer, err := a.writer.For(actor)
+	if err != nil {
+		return scopedSkillWrite{}, err
+	}
+	installer, err := a.installer.For(actor)
+	if err != nil {
+		return scopedSkillWrite{}, err
+	}
+	out := scopedSkillWrite{writer: writer, installer: installer, activeDir: a.activeDir}
+	if writer != a.writer {
+		out.activeDir = writer.ActiveDir()
+	}
+	return out, nil
 }
 
 // Install fetches the skill through the Task-1 Installer (npx skills add → validate → write),
@@ -55,8 +89,12 @@ func (a skillsWriteAdapter) Install(ctx context.Context, actor, source string) (
 	if source == "" {
 		return agui.SkillsInstallInfo{}, fmt.Errorf("%w: install source is empty", agui.ErrSkillInvalidInput)
 	}
+	scoped, err := a.forActor(actor)
+	if err != nil {
+		return agui.SkillsInstallInfo{}, err
+	}
 	auditActor := skills.AuditActor{ActorID: "operator", IdentityID: actor}
-	info, err := a.installer.Install(ctx, source, auditActor)
+	info, err := scoped.installer.Install(ctx, source, auditActor)
 	if err != nil {
 		// An invalid structure / blocklist hit / empty source from the Installer is a
 		// client-correctable input, surfaced as a safe 400.
@@ -71,7 +109,7 @@ func (a skillsWriteAdapter) Install(ctx context.Context, actor, source string) (
 		Source:      info.Source,
 		ContentHash: info.ContentHash,
 		Preview:     info.Preview,
-		Destination: filepath.Join(a.activeDir, info.Name),
+		Destination: filepath.Join(scoped.activeDir, info.Name),
 		RiskTier:    info.RiskTier,
 		Status:      "active",
 		Checklist:   toSkillsChecklist(info.Checklist),
@@ -82,6 +120,8 @@ func (a skillsWriteAdapter) Install(ctx context.Context, actor, source string) (
 // AURA_SKILLS_EXTERNAL_DISCOVERY=false opt-out disables the network fetch and returns a
 // disabled result with the toggle state explicit).
 func (a skillsWriteAdapter) Search(ctx context.Context, q string) (agui.SkillsCatalogResult, error) {
+	// Search reaches no root at all — it is a catalog query — so it stays on the shared
+	// installer rather than paying a per-actor resolution for a network fetch.
 	res, err := a.installer.Search(ctx, q)
 	if err != nil {
 		return agui.SkillsCatalogResult{}, err
@@ -97,15 +137,23 @@ func (a skillsWriteAdapter) Search(ctx context.Context, q string) (agui.SkillsCa
 // (→ 409) BEFORE Writer.Restore (which does an os.RemoveAll on active/{name}) when an active
 // skill of the same name exists; otherwise it restores + re-materializes + audits.
 func (a skillsWriteAdapter) Restore(ctx context.Context, actor, name string) error {
-	if a.writer.ActiveExists(name) {
+	scoped, err := a.forActor(actor)
+	if err != nil {
+		return err
+	}
+	if scoped.writer.ActiveExists(name) {
 		return fmt.Errorf("%w: %q", agui.ErrSkillActiveExists, name)
 	}
-	return a.writer.Restore(ctx, name, skills.ApprovalCLI, skills.AuditActor{ActorID: "operator", IdentityID: actor})
+	return scoped.writer.Restore(ctx, name, skills.ApprovalCLI, skills.AuditActor{ActorID: "operator", IdentityID: actor})
 }
 
 // Archive de-materializes + moves active/{name} → archived + audits (SKW-03).
 func (a skillsWriteAdapter) Archive(ctx context.Context, actor, name string) error {
-	return a.writer.Archive(ctx, name, skills.ApprovalCLI, skills.AuditActor{ActorID: "operator", IdentityID: actor})
+	scoped, err := a.forActor(actor)
+	if err != nil {
+		return err
+	}
+	return scoped.writer.Archive(ctx, name, skills.ApprovalCLI, skills.AuditActor{ActorID: "operator", IdentityID: actor})
 }
 
 // Mutate wraps Writer.WriteMutationByName for create/update (SKW-01). The actor is
@@ -116,7 +164,11 @@ func (a skillsWriteAdapter) Archive(ctx context.Context, actor, name string) err
 // mapping an invalid body or a blocklist hit rendered as a sanitized 502 — an operator
 // typo reported as a backend outage, with nothing they could act on.
 func (a skillsWriteAdapter) Mutate(ctx context.Context, actor, action, name, description, body string, always bool) (string, error) {
-	status, err := a.writer.WriteMutationByName(ctx, action, name, description, body, always,
+	scoped, err := a.forActor(actor)
+	if err != nil {
+		return "", err
+	}
+	status, err := scoped.writer.WriteMutationByName(ctx, action, name, description, body, always,
 		skills.AuditActor{ActorID: "operator", IdentityID: actor})
 	if err != nil {
 		if errors.Is(err, skills.ErrInvalidStructure) || errors.Is(err, skills.ErrBlocklisted) || errors.Is(err, skills.ErrInvalidName) {
@@ -157,8 +209,12 @@ func (a skillsWriteAdapter) Validate(name, description, body string, always bool
 // root, one audit row. Writer.Delete does the real work behind its SanitizeName
 // chokepoint; its status return is discarded because the route answers 204 with no body.
 func (a skillsWriteAdapter) Delete(ctx context.Context, actor, name string) error {
-	if _, err := a.writer.Delete(ctx, name, skills.AuditActor{ActorID: "operator", IdentityID: actor}); err != nil {
-		if errors.Is(err, skills.ErrInvalidName) {
+	scoped, err := a.forActor(actor)
+	if err != nil {
+		return err
+	}
+	if _, err := scoped.writer.Delete(ctx, name, skills.AuditActor{ActorID: "operator", IdentityID: actor}); err != nil {
+		if errors.Is(err, skills.ErrInvalidName) || errors.Is(err, skills.ErrUnknownSkill) {
 			return fmt.Errorf("%w: %v", agui.ErrSkillInvalidInput, err)
 		}
 		return err
