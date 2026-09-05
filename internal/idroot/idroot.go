@@ -42,10 +42,10 @@ func containedDir(root, identity string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve identity root: %w", err)
 	}
-	dir, err := filepath.Abs(filepath.Join(absRoot, identity))
-	if err != nil {
-		return "", fmt.Errorf("resolve identity dir: %w", err)
-	}
+	// Join, not Abs(Join(...)): absRoot is already absolute, so Join's result is too and
+	// Join already Cleans it. The Abs call this replaces could not fail and its error
+	// branch was unreachable by construction.
+	dir := filepath.Join(absRoot, identity)
 	rel, err := filepath.Rel(absRoot, dir)
 	if err != nil {
 		return "", fmt.Errorf("check identity containment: %w", err)
