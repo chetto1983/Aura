@@ -11435,3 +11435,31 @@ flusso completo, che funziona.
 > a false-assurance surface, it is named here, and it is NOT resolved by this amendment —
 > removing the board field is an API and web change, and keeping it is a decision about what
 > the board is allowed to imply.
+
+## Section The board stops showing an allowlist nothing enforces (Amendment #210, 2026-09-05)
+
+> **Amendment #210 (2026-09-05 — operator decision on the surface amendment #209 named and
+> deliberately left open: "togli networkAllowlist dalla board").**
+>
+> **What #209 left standing.** `Runtime.Network` was an operator-declared FQDN allowlist whose
+> only enforcement was `dockerRuntimeConfig`: it chose `--network bridge` over `--network none`
+> and forwarded the list into the container as `AURA_MCP_NETWORK_ALLOW`. #209 removed that
+> builder with the docker kinds. The field survived because the governance board rendered it as
+> `networkAllowlist`, so what remained was a row in the cockpit that reads like a network
+> restriction and restricts nothing — the worst of the three possible states, because an
+> operator who reads it is more exposed than one who never saw it.
+>
+> **Contract.** `networkAllowlist` leaves the `/api/governance/mcp` row and the cockpit's MCP
+> detail panel, with its two i18n strings. `ManagedRuntime.Network` goes with it: the board was
+> its last reader, measured, so keeping the field would only park the same claim one layer
+> down where the next reader would find it and assume it means something. A stored row carrying
+> `runtime.network` loses that key on its next read-modify-write, which is correct once nothing
+> reads or enforces it.
+>
+> **What this does NOT do.** It does not give MCP servers an egress policy — it removes a
+> display, not a control. Aura's enforced network boundary for what it launches is the
+> per-identity sandbox's egress floor (SBX-04), and a stdio MCP server started by the daemon is
+> not inside it; that gap is unchanged by this amendment and is not measured here. Nor does it
+> claim the field was ever enforced for anything but the docker kinds — outside them
+> `AURA_MCP_NETWORK_ALLOW` was never set, so a `local` stdio server with a declared allowlist
+> has been unconstrained since long before #209.
