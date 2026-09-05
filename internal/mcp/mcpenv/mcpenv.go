@@ -242,7 +242,7 @@ func plainDistribution(pkg string) bool {
 
 func splitLines(out string) []string {
 	var names []string
-	for _, l := range strings.Split(out, "\n") {
+	for l := range strings.SplitSeq(out, "\n") {
 		if l = strings.TrimSpace(l); l != "" {
 			names = append(names, l)
 		}

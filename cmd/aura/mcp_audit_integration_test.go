@@ -97,6 +97,7 @@ func TestMCPCLIAuditTrustAppendsOneRow(t *testing.T) {
 
 	pool := mcpAuditMigratedPool(t)
 	withMemoryMCPRegistry(t)
+	withoutMCPInstallGuard(t)
 	store := mcpmanager.NewMCPAuditStore(pool)
 
 	name := "audit-" + uuid.Must(uuid.NewV7()).String()
