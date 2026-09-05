@@ -6079,7 +6079,7 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_COMPLETION_CRITIC_MODEL` | `=AURA_LLM_MODEL` | operative | 1 | Modello usato dalla critic call del completion gate (amendment #54, D-43). Vuoto → riusa il modello del loop. La call è `ToolChoice="none"`, bounded a ≤1 per turno, non spende budget step (come `finalize`). |
 | `AURA_BACKUP_DIR` | `~/.aura/backups/` | path | 6 | Destinazione dei dump di backup (`pg_dump`, `neo4j-admin database dump`) via `docker exec` (amendment #46, D-26; riconcilia `$AURA_BACKUP_DIR` del ROADMAP con il path PRD). Retention 14d/7d rolling. |
 | `AURA_SKILLS_DIR` | `~/.aura/skills` | path | 7 | Skills root (active/pending/archived dirs). Global FS; identity only in audit rows (amendment #48, D-34). |
-| `AURA_SKILLS_IDENTITY_DIR` | `~/.aura/skills-identities` (compose: `/var/lib/aura/skills-identities`) | path | 7 | Base sotto cui vivono le skill PROPRIE di ogni identità, una directory per identità (amendment #214). **Fratello** di `AURA_SKILLS_DIR`, mai figlio: una base annidata dentro metterebbe ogni directory-identità nel namespace che il Loader scandisce cercando skill. Vuoto = skill per identità disattivate, ogni identità vede solo quelle del deployment (comportamento pre-#214). Il default cade sotto `$HOME`, che NON è il volume durevole: in container va pinnato. |
+| `AURA_SKILLS_IDENTITY_DIR` | `~/.aura/skills-identities` (compose: `/var/lib/aura/skills-identities`) | path | 7 | Base sotto cui vivono le skill PROPRIE di ogni identità, una directory per identità (amendment #214). **Fratello** di `AURA_SKILLS_DIR`, mai figlio: una base annidata dentro metterebbe ogni directory-identità nel namespace che il Loader scandisce cercando skill. Vuoto = skill per identità disattivate, ogni identità vede solo quelle del deployment (comportamento pre-#214). Sotto `<base>/<identity>/` vive anche l'**export** di quell'identità (`.export/`, misurato 2026-09-05 in audit): NON sotto `AURA_SKILL_EXPORT_DIR`, perché `MaterializeIn` tar-a l'export di deployment dentro **ogni** box e `tarDir` cammina l'albero — un export per identità annidato lì finirebbe nel box di tutti gli altri come `/skills/<altro-id>/<skill>`, una directory sotto il livello che chiunque ispezionerebbe. Il default cade sotto `$HOME`, che NON è il volume durevole: in container va pinnato. |
 | `AURA_MCP_ENV_DIR` | `~/.aura/mcp-envs` (compose: `/var/lib/aura/mcp-envs`) | path | 13 | Root of the environments a stdio MCP server launches from (amendment #211). One subdirectory per registry name; installing materialises it and removing deletes it (#213 A6). On the durable `aura-home` volume and deliberately NOT under the three cache mounts — a named volume is seeded once and never refreshed, so a warm cache cannot stand in for it. Unset = every install passes through unprepared. |
 | `AURA_SKILL_BODY_CAP_BYTES` | `32768` (32 KiB) | cap | 7 | Write-time refuse cap for a SKILL.md body (D-34; also in Caps prose). |
 | `AURA_SKILL_INJECTION_BLOCKLIST` | (built-in list) | operative | 7 | Prompt-injection blocklist patterns (NFKC-normalize THEN match, write-boundary only — D-27/D-28). |
@@ -11790,3 +11790,46 @@ flusso completo, che funziona.
 > default `'local'` (il **nome**), mentre `aura.identities.id` e la RLS della 0100 usano
 > `uuid`. La nuova tabella usa `uuid`; l'audit resta com'è finché qualcuno non decide di
 > allinearlo.
+
+## Section Scopare un path non è contenere un albero (Amendment #215, 2026-09-05)
+
+> **Amendment #215 (2026-09-05 — misurato in audit avversariale sull'implementazione di #214,
+> prima che toccasse `master`).** Registra un difetto **introdotto dal pezzo 1 di #214** e la
+> correzione. Supersede la frase del commit `55456b34` che affermava il contrario.
+>
+> **La misura.** `skills.Layout.For` derivava l'export di un'identità come
+> `$AURA_SKILL_EXPORT_DIR/<identity>` — un **figlio** dell'export di deployment. Il box di
+> un'identità riceve due sorgenti, `[export identità, export deployment]`, e
+> `usersandbox.tarDir` è un `filepath.WalkDir` sull'intero albero. Quindi la seconda sorgente
+> tar-ava **l'export di ogni altra identità** dentro ogni box: il container di B conteneva
+> `/skills/<A-uuid>/<skill-di-A>/SKILL.md`, leggibile dallo `shell_exec` instradato.
+>
+> Il criterio 2 di #214 — "una skill di A non è materializzata nel box di B" — era quindi
+> violato dall'implementazione che doveva soddisfarlo. Latente in `55456b34`, **attivato** dal
+> primo codice che scriveva davvero in `<export>/<id>`.
+>
+> **Il commit `55456b34` affermava l'opposto** ("l'export si scopa anche lui … altrimenti mette
+> le skill di tutti in ogni box"). Aveva scopato la **stringa del path**, non il **contenimento**:
+> due proprietà diverse, e solo la seconda è quella che conta quando qualcuno cammina l'albero.
+>
+> **Il test che doveva accorgersene non poteva.** Il `docker_integration` scritto per il
+> criterio 2 asseriva con `ls -1 /skills` — un listing di **primo livello** — mentre la skill
+> trapelata sta una directory più sotto. Sarebbe passato verde sulla fuga vera. Un test di
+> isolamento che guarda un livello solo non prova l'isolamento: prova il livello.
+>
+> **La correzione.** L'export di un'identità vive dentro la **sua** root, come
+> `<AURA_SKILLS_IDENTITY_DIR>/<id>/.export/`. Il punto iniziale è portante: la grammatica dei
+> nomi skill ammette solo `[a-z0-9-]`, quindi nessuna skill potrà mai chiamarsi così e la
+> collisione è **irrappresentabile**, non improbabile. Una base sorella non è raggiungibile da
+> quel walk in nessun modo. Il test ora asserisce con `filepath.Rel`, cioè come **proprietà di
+> contenimento**, non con una `strings.Contains` che la fuga annidata passa banalmente.
+>
+> **La lezione, generale.** In questo codebase "per identità" ha due significati che sembrano
+> uno: *il path porta l'identità* e *l'albero non contiene gli altri*. Ogni volta che qualcosa
+> cammina ricorsivamente — tar, walk, docker-cp, rsync — vale solo il secondo. Il primo è una
+> promessa, e una promessa non è un confine.
+>
+> **Cosa NON dimostra.** Il contenimento è provato come proprietà di path nel tier unit. Che
+> il daemon Docker atterri davvero quello che questo layout descrive è ciò che il tier
+> `docker_integration` deve dire per la prima volta: qui non c'è un daemon, e nessuno ha visto
+> quel test passare.
