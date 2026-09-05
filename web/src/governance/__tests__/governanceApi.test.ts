@@ -46,7 +46,6 @@ describe('governanceApi same-origin throwing fetch', () => {
           startupState: 'configured',
           authStatus: 'ok',
           profiles: ['work'],
-          networkAllowlist: ['api.github.com'],
           envKeys: [{ key: 'GITHUB_TOKEN', redacted: true }],
         },
       ],
@@ -64,7 +63,6 @@ describe('governanceApi same-origin throwing fetch', () => {
         startupState: 'configured',
         authStatus: 'ok',
         profiles: ['work'],
-        networkAllowlist: ['api.github.com'],
         envKeys: [{ key: 'GITHUB_TOKEN', redacted: true }],
       },
     ]);
@@ -92,7 +90,6 @@ describe('governanceApi same-origin throwing fetch', () => {
             startupState: 'unknown',
             authStatus: 'unsupported',
             profiles: null,
-            networkAllowlist: null,
             envKeys: null,
           },
           {
@@ -116,7 +113,6 @@ describe('governanceApi same-origin throwing fetch', () => {
         startupState: 'unknown',
         authStatus: 'unsupported',
         profiles: [],
-        networkAllowlist: [],
         envKeys: [],
       },
       {
@@ -128,7 +124,6 @@ describe('governanceApi same-origin throwing fetch', () => {
         startupState: 'unknown',
         authStatus: 'unsupported',
         profiles: [],
-        networkAllowlist: [],
         envKeys: [],
       },
     ]);

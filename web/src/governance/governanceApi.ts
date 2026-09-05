@@ -38,7 +38,6 @@ export interface McpServerRow {
   readonly startupState: string;
   readonly authStatus: string;
   readonly profiles: readonly string[];
-  readonly networkAllowlist: readonly string[];
   readonly envKeys: readonly McpEnvChip[];
   readonly lastError?: string;
 }
@@ -187,7 +186,6 @@ function normalizeMcpServerRow(row: McpServerRow): McpServerRow {
     startupState: stringValue(raw.startupState),
     authStatus: stringValue(raw.authStatus),
     profiles: stringList(raw.profiles),
-    networkAllowlist: stringList(raw.networkAllowlist),
     envKeys: envChipList(raw.envKeys),
   };
   return typeof raw.lastError === 'string'

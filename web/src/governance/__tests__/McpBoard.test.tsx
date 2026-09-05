@@ -40,7 +40,6 @@ const SERVERS: McpServerRow[] = [
     startupState: 'configured',
     authStatus: 'ok',
     profiles: ['work'],
-    networkAllowlist: ['api.github.com'],
     // The backend NEVER serializes the value — only the redacted KEY chip. The fixture proves
     // the board renders the key, never a value (the value below is local to the test only).
     envKeys: [{ key: 'GITHUB_TOKEN', redacted: true }],
@@ -54,7 +53,6 @@ const SERVERS: McpServerRow[] = [
     startupState: 'configured',
     authStatus: 'ok',
     profiles: [],
-    networkAllowlist: [],
     envKeys: [],
   },
 ];
@@ -268,7 +266,6 @@ describe('McpBoard (GOV-01)', () => {
         startupState: 'configured',
         authStatus: 'ok',
         profiles: [],
-        networkAllowlist: [],
         envKeys: [],
         lastError: 'spawn failed (sanitized)',
       },

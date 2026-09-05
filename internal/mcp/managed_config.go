@@ -85,17 +85,17 @@ type ManagedTrust struct {
 
 // ManagedRuntime describes how a stdio server is launched (local process, Docker
 // container, or Docker gateway) and the container isolation knobs that apply.
-// ManagedRuntime carries a server's launch declaration. Image, CPUs, Memory and
-// Profile left with the docker kinds they belonged to (amendment #209) — a stored row
-// carrying those keys loses them on its next read-modify-write, which is correct once
-// nothing can act on them. The three that stayed have readers that outlive the kinds:
-// stdio_shape.go assembles Command and Mounts into the argv it scans for backdoor
-// shapes, whatever wrote them, and the governance board renders Network.
+// ManagedRuntime carries a server's launch declaration. Image, CPUs, Memory and Profile
+// left with the docker kinds they belonged to (amendment #209), and Network followed when
+// the board stopped displaying it (#210) — its only enforcement had been the docker
+// builder, so what remained was a claim nothing backed. A stored row carrying any of those
+// keys loses them on its next read-modify-write, which is correct once nothing acts on
+// them. Command and Mounts stay because stdio_shape.go assembles them into the argv it
+// scans for backdoor shapes, whatever wrote them.
 type ManagedRuntime struct {
 	Kind    string   `json:"kind,omitempty"`
 	Command []string `json:"command,omitempty"`
 	Mounts  []string `json:"mounts,omitempty"`
-	Network []string `json:"network,omitempty"`
 }
 
 // PrepareForWrite normalizes doc and refuses it if any server is malformed or has a launch

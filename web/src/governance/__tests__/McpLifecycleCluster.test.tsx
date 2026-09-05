@@ -33,7 +33,6 @@ const SERVER: McpServerRow = {
   startupState: 'configured',
   authStatus: 'ok',
   profiles: [],
-  networkAllowlist: [],
   envKeys: [],
 };
 

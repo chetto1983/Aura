@@ -77,9 +77,6 @@ func secretMCPDoc() mcp.ManagedConfig {
 				Env:     []string{"PLAIN_SETTING=1"},
 				Source:  "recipe:alpha",
 				Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedLocal},
-				Runtime: mcp.ManagedRuntime{
-					Network: []string{"api.alpha.test"},
-				},
 			},
 		},
 	}
@@ -97,17 +94,13 @@ func TestGovernanceMCPNoSecretAndOrdering(t *testing.T) {
 	if strings.Contains(rec.Body.String(), "sk-supersecretvalue") {
 		t.Fatalf("MCP list leaked a raw env secret value: %s", rec.Body.String())
 	}
-	if strings.Contains(rec.Body.String(), `"networkAllowlist":null`) {
-		t.Fatalf("MCP list encoded an empty network allowlist as null: %s", rec.Body.String())
-	}
 	var resp struct {
 		Servers []struct {
-			Name             string   `json:"name"`
-			Source           string   `json:"source"`
-			RiskPolicy       string   `json:"riskPolicy"`
-			Profiles         []string `json:"profiles"`
-			NetworkAllowlist []string `json:"networkAllowlist"`
-			EnvKeys          []struct {
+			Name       string   `json:"name"`
+			Source     string   `json:"source"`
+			RiskPolicy string   `json:"riskPolicy"`
+			Profiles   []string `json:"profiles"`
+			EnvKeys    []struct {
 				Key      string `json:"key"`
 				Redacted bool   `json:"redacted"`
 			} `json:"envKeys"`
@@ -131,9 +124,6 @@ func TestGovernanceMCPNoSecretAndOrdering(t *testing.T) {
 	}
 	if len(resp.Servers[0].Profiles) != 1 || resp.Servers[0].Profiles[0] != "work" {
 		t.Fatalf("alpha profiles = %#v, want [work]", resp.Servers[0].Profiles)
-	}
-	if len(resp.Servers[0].NetworkAllowlist) != 1 || resp.Servers[0].NetworkAllowlist[0] != "api.alpha.test" {
-		t.Fatalf("alpha networkAllowlist = %#v, want [api.alpha.test]", resp.Servers[0].NetworkAllowlist)
 	}
 	// zeta's secret KEY is rendered as a redacted chip; its value is absent.
 	var sawSecretKey, secretFlagged bool

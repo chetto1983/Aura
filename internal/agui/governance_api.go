@@ -59,17 +59,16 @@ type mcpEnvChip struct {
 // the configured source/profile/risk-policy fields and redacted env-KEY chips. lastError is
 // RedactSecrets-cleaned before it reaches here.
 type mcpServerRow struct {
-	Name             string       `json:"name"`
-	Source           string       `json:"source"`
-	Trust            string       `json:"trust"`
-	RiskPolicy       string       `json:"riskPolicy"`
-	Runtime          string       `json:"runtime"`
-	StartupState     string       `json:"startupState"`
-	AuthStatus       string       `json:"authStatus"`
-	Profiles         []string     `json:"profiles"`
-	NetworkAllowlist []string     `json:"networkAllowlist"`
-	EnvKeys          []mcpEnvChip `json:"envKeys"`
-	LastError        string       `json:"lastError,omitempty"`
+	Name         string       `json:"name"`
+	Source       string       `json:"source"`
+	Trust        string       `json:"trust"`
+	RiskPolicy   string       `json:"riskPolicy"`
+	Runtime      string       `json:"runtime"`
+	StartupState string       `json:"startupState"`
+	AuthStatus   string       `json:"authStatus"`
+	Profiles     []string     `json:"profiles"`
+	EnvKeys      []mcpEnvChip `json:"envKeys"`
+	LastError    string       `json:"lastError,omitempty"`
 }
 
 // skillRow is one GOV-02 skills-governance row. It is the projection shared by the active
@@ -187,13 +186,8 @@ func (s *Server) handleMCPList(w http.ResponseWriter, _ *http.Request) {
 			StartupState: st.StartupState,
 			AuthStatus:   st.AuthStatus,
 			Profiles:     mcpProfiles(doc, st.Name),
-			// Pitfall 4 / T-32-02-AL: the []string{} literal (non-nil) is REQUIRED so an
-			// empty allowlist marshals "networkAllowlist":[] not null. Do NOT switch to a
-			// nil-based copy (e.g. append(server.Runtime.Network[:0:0], ...) on a nil input
-			// stays nil). Pinned by TestGovernanceMCPEmptyAllowlistIsArrayNotNull.
-			NetworkAllowlist: append([]string{}, server.Runtime.Network...),
-			EnvKeys:          envChips(server.Env),
-			LastError:        mcp.RedactSecrets(st.LastError),
+			EnvKeys:      envChips(server.Env),
+			LastError:    mcp.RedactSecrets(st.LastError),
 		})
 	}
 	writeJSON(w, map[string]any{"servers": rows})

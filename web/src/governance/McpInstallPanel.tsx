@@ -32,7 +32,6 @@ interface RecipeDescriptor {
 // BuiltInCatalog() recipes (catalog.go) — none currently declare RequiredEnv, but the guided
 // form renders any future RequiredEnv as labelled inputs (secret-typed vars are masked).
 const RECIPES: readonly RecipeDescriptor[] = [
-  { name: 'calculator', requiredEnv: [] },
   { name: 'calendar', requiredEnv: [] },
   { name: 'memory', requiredEnv: [] },
   { name: 'whatsapp', requiredEnv: [] },

@@ -69,10 +69,6 @@ export function McpServerDetail({ server, probe, probeLoading, onClose }: McpSer
           label={t('governance.mcp.detail.profiles')}
           value={server.profiles.length > 0 ? server.profiles.join(', ') : none}
         />
-        <Field
-          label={t('governance.mcp.detail.networkAllowlist')}
-          value={server.networkAllowlist.length > 0 ? server.networkAllowlist.join(', ') : none}
-        />
       </dl>
 
       {/* Lifecycle cluster — enable/disable + trust-approve + remove (inline, not a kebab). */}

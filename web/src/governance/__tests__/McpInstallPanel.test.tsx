@@ -41,7 +41,7 @@ function renderPanel(props: { existingNames?: readonly string[]; onClose?: () =>
 describe('McpInstallPanel (MCPW-01)', () => {
   beforeEach(() => {
     installMcpServer.mockReset();
-    installMcpServer.mockResolvedValue({ name: 'calculator', envKeys: [] });
+    installMcpServer.mockResolvedValue({ name: 'calendar', envKeys: [] });
   });
   afterEach(() => {
     vi.clearAllMocks();
@@ -130,7 +130,7 @@ describe('McpInstallPanel (MCPW-01)', () => {
     renderPanel({});
     // Recipe mode default → `aura mcp install <recipe>`.
     expect(screen.getByText('CLI equivalent')).toBeTruthy();
-    expect(screen.getByText(/aura mcp install calculator/)).toBeTruthy();
+    expect(screen.getByText(/aura mcp install calendar/)).toBeTruthy();
     expect(screen.getByText('Will write to:')).toBeTruthy();
     // The registry is a Postgres table now (migration 0101), not a file in a container.
     expect(screen.getByText('postgres: aura.mcp_server')).toBeTruthy();
@@ -145,8 +145,8 @@ describe('McpInstallPanel (MCPW-01)', () => {
   });
 
   it('disables Install + shows an aria-invalid error on a duplicate name, no request fires', () => {
-    renderPanel({ existingNames: ['calculator'] });
-    // Recipe default = calculator → collides with the existing name.
+    renderPanel({ existingNames: ['calendar'] });
+    // Recipe default = calendar → collides with the existing name.
     const install = screen.getByRole('button', { name: 'Install server' });
     expect(install.hasAttribute('disabled')).toBe(true);
 
@@ -161,7 +161,7 @@ describe('McpInstallPanel (MCPW-01)', () => {
   it('enables Install for a unique recipe name and fires the recipe install request', async () => {
     const onClose = vi.fn();
     renderPanel({ existingNames: ['memory'], onClose });
-    // Default recipe = calculator, not in existingNames → installable.
+    // Default recipe = calendar, not in existingNames → installable.
     const install = screen.getByRole('button', { name: 'Install server' });
     expect(install.hasAttribute('disabled')).toBe(false);
     fireEvent.click(install);
@@ -169,7 +169,7 @@ describe('McpInstallPanel (MCPW-01)', () => {
       expect(installMcpServer).toHaveBeenCalledTimes(1);
     });
     expect(installMcpServer).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'calculator', recipe: 'calculator' }),
+      expect.objectContaining({ name: 'calendar', recipe: 'calendar' }),
     );
     await waitFor(() => {
       expect(onClose).toHaveBeenCalled();
@@ -242,7 +242,7 @@ describe('McpInstallPanel (MCPW-01)', () => {
     expect(screen.getByRole('button', { name: 'Discard install' }).hasAttribute('disabled')).toBe(
       true,
     );
-    resolve({ name: 'calculator', envKeys: [] });
+    resolve({ name: 'calendar', envKeys: [] });
     await waitFor(() => {
       expect(onClose).toHaveBeenCalledTimes(1);
     });

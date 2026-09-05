@@ -40,7 +40,6 @@ const SERVER: McpServerRow = {
   startupState: 'configured',
   authStatus: 'ok',
   profiles: ['work'],
-  networkAllowlist: ['api.github.com'],
   envKeys: [
     { key: 'GITHUB_TOKEN', redacted: true },
     { key: 'GITHUB_ORG', redacted: false },
@@ -177,7 +176,6 @@ describe('McpServerDetail', () => {
       startupState: 'configured',
       authStatus: 'ok',
       profiles: [],
-      networkAllowlist: [],
       envKeys: [],
       lastError: 'spawn failed',
     };
