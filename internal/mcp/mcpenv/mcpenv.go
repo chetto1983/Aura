@@ -82,8 +82,8 @@ func (p *Preparer) Prepare(ctx context.Context, name string, in Launch) (Launch,
 	// that names its own entrypoint (`uvx --from <spec> <cmd>`) needs no lookup and is exempt.
 	if req.entrypoint == "" && !plainDistribution(req.pkg) {
 		return Launch{}, Report{}, fmt.Errorf(
-			"%w: %q is a path or URL, not a package name — name the executable it installs, as `%s --from %s <executable>`",
-			ErrEntrypoint, req.pkg, fromFlagFor(req.ecosystem), req.pkg)
+			"%w: %q is a path or URL, not a package name — name the executable it installs, as `%s`",
+			ErrEntrypoint, req.pkg, explicitSpecForm(req.ecosystem, req.pkg))
 	}
 	dir, err := idroot.RootIdentityDir(p.Root, name)
 	if err != nil {
@@ -267,11 +267,14 @@ var fromFlag = map[string]map[string]bool{
 	"node":   {"--package": true, "-p": true},
 }
 
-func fromFlagFor(ecosystem string) string {
+// explicitSpecForm writes the remedy in the resolver's OWN grammar. Composing it from a flag
+// name and a hardcoded `--from` produced `npx --package --from <spec> <exe>` — a command that
+// does not exist, told to every npm operator who pasted a path (audit A3, 2026-09-05).
+func explicitSpecForm(ecosystem, pkg string) string {
 	if ecosystem == "node" {
-		return "npx --package"
+		return "npx --package " + pkg + " <executable>"
 	}
-	return "uvx"
+	return "uvx --from " + pkg + " <executable>"
 }
 
 // resolverBooleans are the value-less flags a launch declaration commonly carries. Every OTHER
@@ -357,6 +360,14 @@ func resolveEntrypoint(binDir, pkg string, declared []string) (string, error) {
 			return "", fmt.Errorf("%w: %s declares %d console scripts (%s) and none is named %q — declare the entrypoint directly",
 				ErrEntrypoint, pkg, len(declared), strings.Join(declared, ", "), want)
 		}
+	}
+	// The chosen name came out of the installed package's own metadata, so it is as
+	// package-controlled as the code the install just ran. Measured 2026-09-05 (audit A2): a
+	// `"bin": {"../../../outside/evil": "./a.js"}` manifest yielded a stored command OUTSIDE
+	// the environment root, and that path outlives the environment it was supposed to live in.
+	// An entrypoint is one file in one directory; anything else is not a name, it is a route.
+	if chosen != filepath.Base(chosen) || chosen == "." || chosen == ".." {
+		return "", fmt.Errorf("%w: %s declares %q, which is a path rather than an executable name", ErrEntrypoint, pkg, chosen)
 	}
 	full := filepath.Join(binDir, chosen)
 	if _, err := os.Stat(full); err != nil {

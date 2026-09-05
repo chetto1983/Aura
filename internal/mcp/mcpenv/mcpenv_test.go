@@ -305,8 +305,8 @@ func TestPrepareRefusesAPathOrURLBeforeInstalling(t *testing.T) {
 		if !errors.Is(err, ErrEntrypoint) {
 			t.Fatalf("Prepare(%q) = %v, want ErrEntrypoint", pkg, err)
 		}
-		if !strings.Contains(err.Error(), "--from") {
-			t.Fatalf("err %q should tell the operator what to do instead", err)
+		if !strings.Contains(err.Error(), "uvx --from "+pkg+" <executable>") {
+			t.Fatalf("err %q should tell the operator the exact command to run instead", err)
 		}
 		if len(f.calls) != 0 {
 			t.Fatalf("Prepare(%q) ran %#v before refusing", pkg, f.calls)
@@ -420,5 +420,59 @@ func TestPrepareNodeMatchesAScopedPackageByItsUnscopedName(t *testing.T) {
 	}
 	if filepath.Base(out.Command) != "srv" {
 		t.Fatalf("command = %q, want the bin named like the unscoped package", out.Command)
+	}
+}
+
+// Audit A3: the remedy is composed per resolver. Asserting only that "--from" appears passed
+// for `npx --package --from <spec> <exe>`, a command that does not exist — so this asserts the
+// whole sentence, one per ecosystem.
+func TestRefusalNamesEachResolversOwnGrammar(t *testing.T) {
+	for _, c := range []struct{ command, want string }{
+		{"uvx", "uvx --from ./local <executable>"},
+		{"npx", "npx --package ./local <executable>"},
+	} {
+		f := &fakeRun{}
+		p := newPreparer(t, f)
+		_, _, err := p.Prepare(context.Background(), "svc", Launch{Command: c.command, Args: []string{"./local"}})
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Fatalf("%s: err = %v, want it to name %q", c.command, err, c.want)
+		}
+		if strings.Contains(err.Error(), "--package --from") {
+			t.Fatalf("%s: err %q names a flag combination no resolver accepts", c.command, err)
+		}
+	}
+}
+
+// Audit A2: the entrypoint name comes from the installed package's own metadata, so it is
+// package-controlled. A name carrying a path escapes the environment root, and the absolute
+// path that lands in the registry outlives the environment it was supposed to live in.
+func TestPrepareRefusesAnEntrypointNameThatIsAPath(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(root, "outside")
+	if err := os.MkdirAll(outside, 0o700); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "evil"), []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	for _, in := range []Launch{
+		{Command: "npx", Args: []string{"srv"}},
+		{Command: "uvx", Args: []string{"srv"}},
+	} {
+		f := &fakeRun{
+			produce:  map[string][]string{"node_modules/.bin": {"x"}, "venv/bin": {"python"}},
+			declared: []string{"../../../outside/evil"},
+			files: map[string]string{
+				"node_modules/srv/package.json": `{"name":"srv","bin":{"../../../outside/evil":"./a.js"}}`,
+			},
+		}
+		p := &Preparer{Root: root, Run: f.run}
+		out, _, err := p.Prepare(context.Background(), "svc", in)
+		if !errors.Is(err, ErrEntrypoint) {
+			t.Fatalf("%s: err = %v, want ErrEntrypoint", in.Command, err)
+		}
+		if out.Command != "" {
+			t.Fatalf("%s: stored %q, a command outside the environment root", in.Command, out.Command)
+		}
 	}
 }

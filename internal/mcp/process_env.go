@@ -18,20 +18,7 @@ import (
 // a credential.
 
 func processEnvForMCP(configured []string) []string {
-	env := make([]string, 0, len(configured)+8)
-	seen := map[string]struct{}{}
-	for _, kv := range os.Environ() {
-		k, _, ok := strings.Cut(kv, "=")
-		if !ok || !mcpInheritedEnvKey(k) || secret.IsSecretEnvKey(k) {
-			continue
-		}
-		upper := strings.ToUpper(k)
-		if _, dup := seen[upper]; dup {
-			continue
-		}
-		seen[upper] = struct{}{}
-		env = append(env, kv)
-	}
+	env, seen := inheritedEnv(mcpInheritedEnvKey, func(k, _ string) bool { return secret.IsSecretEnvKey(k) })
 	for _, kv := range configured {
 		k, _, ok := strings.Cut(kv, "=")
 		if !ok || strings.TrimSpace(k) == "" {
@@ -46,6 +33,77 @@ func processEnvForMCP(configured []string) []string {
 		seen[upper] = struct{}{}
 	}
 	return env
+}
+
+// inheritedEnv collects the keys allow reports, dropping every pair deny recognises, and
+// reports what it kept so a caller can merge its own entries over it. deny is a parameter
+// rather than a constant because the two callers need different strengths: the mount keeps
+// the key-only predicate it has always used, and the installer needs the value-aware one so a
+// credential inside an otherwise innocuous key does not cross.
+func inheritedEnv(allow func(string) bool, deny func(key, value string) bool) ([]string, map[string]struct{}) {
+	env := make([]string, 0, 16)
+	seen := map[string]struct{}{}
+	for _, kv := range os.Environ() {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok || !allow(k) || deny(k, v) {
+			continue
+		}
+		upper := strings.ToUpper(k)
+		if _, dup := seen[upper]; dup {
+			continue
+		}
+		seen[upper] = struct{}{}
+		env = append(env, kv)
+	}
+	return env, seen
+}
+
+// InstallerEnv is the environment a PACKAGE INSTALLER runs with — uv and npm, in the #211
+// prepare step. It exists for the same reason processEnvForMCP does, and it matters more:
+// `uv pip install` and `npm install` execute the package's OWN code (setup.py, npm lifecycle
+// scripts), so an installer inheriting Aura's environment hands every secret in it to
+// whatever the operator just chose to install. Measured 2026-09-05 (audit A1): it did — the
+// prepare runner set no Env at all, so POSTGRES_PASSWORD, AURA_AUTHULA_SECRET and the rest
+// crossed over while the MOUNT of the very same server was narrowed to fourteen keys.
+//
+// It is the mount's list plus the proxy keys, because a resolver has to reach an index and a
+// mounted server does not. A credential-bearing value is still withheld: IsSecretEnvVar reads
+// the VALUE, so `https://user:pw@proxy` does not cross even though HTTPS_PROXY looks
+// innocuous — an install behind such a proxy fails loudly rather than leaking quietly.
+func InstallerEnv() []string {
+	env, _ := inheritedEnv(installerInheritedEnvKey, func(k, v string) bool {
+		return !caBundleEnvKey(k) && secret.IsSecretEnvVar(k, v)
+	})
+	return env
+}
+
+func installerInheritedEnvKey(key string) bool {
+	switch strings.ToUpper(key) {
+	case "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY":
+		return true
+	default:
+		return caBundleEnvKey(key) || mcpInheritedEnvKey(key)
+	}
+}
+
+// caBundleEnvKey names the variables that point an installer at a CA bundle. They are exempt
+// from the secret predicate, which matches the substring "cert" and would otherwise drop every
+// one of them. That is not over-caution being relaxed: these hold a PATH to a public trust
+// store, never a private key, and without them a host behind a TLS-inspecting proxy or a
+// corporate CA cannot install anything. Measured 2026-09-05: with SSL_CERT_FILE withheld,
+// `uv pip install` failed with "invalid peer certificate: UnknownIssuer" before reaching PyPI.
+//
+// The same two keys sit in the MOUNT's allow-list and are dropped there by that same
+// substring, so they have never crossed to a mounted server — recorded as audit A10, not
+// changed here: what a running server may read is a separate decision from what an installer
+// needs to reach an index.
+func caBundleEnvKey(key string) bool {
+	switch strings.ToUpper(key) {
+	case "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE":
+		return true
+	default:
+		return false
+	}
 }
 
 func mcpInheritedEnvKey(key string) bool {

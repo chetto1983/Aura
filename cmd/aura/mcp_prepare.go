@@ -47,9 +47,15 @@ func execPreparer(cfg *config.Config) *mcpenv.Preparer {
 // runPrepareCommand runs one preparation step. The argv is built by mcpenv from a fixed verb
 // set (uv/npm) plus the package the operator named, never from a shell string, so there is no
 // interpretation step for an argument to escape through.
+//
+// The environment is mcp.InstallerEnv, not this process's: an installer runs the package's own
+// setup code, so inheriting Aura's environment would hand it every secret Aura holds. Audit
+// A1, 2026-09-05 — this used to set no Env at all, while the MOUNT of the same server was
+// already narrowed to fourteen keys.
 func runPrepareCommand(ctx context.Context, dir, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...) // #nosec G204 -- fixed verbs (uv/npm), operator-supplied package as a separate argv entry
 	cmd.Dir = dir
+	cmd.Env = mcp.InstallerEnv()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(out), fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, strings.TrimSpace(string(out)))
