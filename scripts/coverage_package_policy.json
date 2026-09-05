@@ -43,6 +43,7 @@
     "github.com/chetto1983/aura/internal/llm/openai_compat": {"mode": "target"},
     "github.com/chetto1983/aura/internal/mcp": {"mode": "target"},
     "github.com/chetto1983/aura/internal/mcp/manager": {"mode": "target"},
+    "github.com/chetto1983/aura/internal/mcp/mcpenv": {"mode": "target"},
     "github.com/chetto1983/aura/internal/mcpoauth": {"mode": "target"},
     "github.com/chetto1983/aura/internal/mcpregistry": {"mode": "target"},
     "github.com/chetto1983/aura/internal/multimodal": {"mode": "baseline", "covered_statements": 107, "total_statements": 127},

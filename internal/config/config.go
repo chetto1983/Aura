@@ -138,7 +138,11 @@ type Config struct {
 	SkillBodyCapBytes     int    // AURA_SKILL_BODY_CAP_BYTES — per-skill body size cap at load (DoS guard, D-34)
 	SkillManifestCapBytes int    // AURA_SKILL_MANIFEST_CAP_BYTES — manifest-in-Description byte budget; overflow → BM25 list (D-09/D-34)
 	SkillExportDir        string // AURA_SKILL_EXPORT_DIR — activation→host export dir (the ro /skills mount source, D-17)
-	SkillSnippetTTLDays   int    // AURA_SKILL_SNIPPET_TTL_DAYS — TTL sweep archives snippets unused this long (D-16/D-34)
+	// MCPEnvDir roots the prepared environments stdio MCP servers launch from (#211). An
+	// install materialises the server here once and stores an absolute path into it, so a
+	// mount runs a binary instead of re-resolving a package with egress it may not have.
+	MCPEnvDir           string // AURA_MCP_ENV_DIR — stdio MCP prepared-environment root
+	SkillSnippetTTLDays int    // AURA_SKILL_SNIPPET_TTL_DAYS — TTL sweep archives snippets unused this long (D-16/D-34)
 
 	// Write-boundary injection blocklist (D-27/D-34). The NFKC-normalize-then-
 	// match literal sequence list the skills validator enforces at write time
@@ -454,6 +458,7 @@ func loadBase() *Config {
 		SkillBodyCapBytes:     envutil.IntDefault("AURA_SKILL_BODY_CAP_BYTES", 32768),
 		SkillManifestCapBytes: envutil.IntDefault("AURA_SKILL_MANIFEST_CAP_BYTES", 8192),
 		SkillExportDir:        envDefault("AURA_SKILL_EXPORT_DIR", defaultSkillExportDir()),
+		MCPEnvDir:             envDefault("AURA_MCP_ENV_DIR", defaultMCPEnvDir()),
 		SkillSnippetTTLDays:   envutil.IntDefault("AURA_SKILL_SNIPPET_TTL_DAYS", 90),
 
 		SkillInjectionBlocklist: envSliceDefault("AURA_SKILL_INJECTION_BLOCKLIST", defaultSkillInjectionBlocklist()),

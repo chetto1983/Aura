@@ -59,3 +59,10 @@ func defaultWorkspaceDir() string { return filepath.Join(auraHomeDir(), "workspa
 // defaultSkillExportDir is the activation export dir (AURA_SKILL_EXPORT_DIR
 // default): ~/.aura/skills/export — the ro /skills mount source (D-17).
 func defaultSkillExportDir() string { return filepath.Join(defaultSkillsDir(), "export") }
+
+// defaultMCPEnvDir is the AURA_MCP_ENV_DIR code default: ~/.aura/mcp-envs, the root a stdio
+// MCP server's prepared environment is materialised under (amendment #211). The container
+// default (/var/lib/aura/mcp-envs, on the durable aura-home volume) comes from compose, not
+// from here — and it deliberately avoids the three cache mounts, since a named volume seeded
+// once is exactly what made a build-time warm-up invisible to every later image.
+func defaultMCPEnvDir() string { return filepath.Join(auraHomeDir(), "mcp-envs") }

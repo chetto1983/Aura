@@ -182,6 +182,8 @@ export const governanceEn = {
         nameLabel: 'Server name',
         recipeLabel: 'Recipe',
         commandLabel: 'Command',
+        commandHint:
+          'A resolver launch (uvx, npx) is installed once into its own environment and then run by path, so a mount never re-resolves it. If the executable is not named after the package — or the server lives in a git repository — name both: uvx --from <spec> <executable>.',
         argsLabel: 'Arguments',
         addArg: 'Add argument',
         argAria: 'Argument {{index}}',
@@ -189,6 +191,7 @@ export const governanceEn = {
         willWriteTo: 'Will write to:',
         duplicateName: 'A server named "{{name}}" already exists. Choose a different name.',
         failed: 'The install was refused and the server gave no reason. Check the runtime logs.',
+        preparing: 'Installing the package and verifying the handshake — this can take a minute.',
         submit: 'Install server',
         discard: 'Discard install',
       },
@@ -413,6 +416,8 @@ export const governanceIt = {
         nameLabel: 'Nome server',
         recipeLabel: 'Ricetta',
         commandLabel: 'Comando',
+        commandHint:
+          "Un avvio tramite resolver (uvx, npx) viene installato una volta sola nel proprio ambiente e poi eseguito per percorso, così nessun mount lo risolve di nuovo. Se l'eseguibile non ha il nome del pacchetto — o il server sta in un repository git — indicali entrambi: uvx --from <spec> <eseguibile>.",
         argsLabel: 'Argomenti',
         addArg: 'Aggiungi argomento',
         argAria: 'Argomento {{index}}',
@@ -420,6 +425,8 @@ export const governanceIt = {
         willWriteTo: 'Verrà scritto su:',
         duplicateName: 'Esiste già un server chiamato "{{name}}". Scegli un nome diverso.',
         failed: "L'installazione è stata rifiutata senza un motivo. Controlla i log del runtime.",
+        preparing:
+          "Installazione del pacchetto e verifica dell'handshake — può richiedere un minuto.",
         submit: 'Installa server',
         discard: 'Annulla installazione',
       },

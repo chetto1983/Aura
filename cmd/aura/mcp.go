@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -280,7 +281,7 @@ func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Write
 	if _, exists := doc.MCPServers[name]; exists {
 		return fmt.Errorf("MCP server %q already exists", name)
 	}
-	doc.MCPServers[name] = mcp.ManagedServer{
+	server := mcp.ManagedServer{
 		Command: command,
 		Args:    commandArgs,
 		Env:     env,
@@ -288,8 +289,21 @@ func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Write
 		Source:  "manual",
 		Trust:   mcp.ManagedTrust{Class: trustClass},
 	}
+
+	// Amendment #211: an add is an install. Prepare the environment, rewrite the launch into
+	// it, and refuse to store a server that cannot complete a handshake — the declaration
+	// this used to write was only ever a promise that something would resolve at mount.
+	prepared, report, err := mcpInstallGuard(ctx, execPreparer(config.LoadDB()), name, server)
+	if err != nil {
+		return err
+	}
+
+	doc.MCPServers[name] = prepared
 	ensureProfileMembership(&doc, doc.ActiveProfileName(), name)
 	if err := mcpWriteManagedConfig(ctx, pool, doc, "add", name, ""); err != nil {
+		return err
+	}
+	if err := writef(out, "%s\n", describePreparation(report)); err != nil {
 		return err
 	}
 	return writef(out, "ok: added %s\n", name)

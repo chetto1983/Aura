@@ -135,6 +135,7 @@ func TestMCPRecipesListsBuiltins(t *testing.T) {
 }
 
 func TestMCPAddListAndDisable(t *testing.T) {
+	withoutMCPInstallGuard(t)
 	withMemoryMCPRegistry(t)
 
 	var out bytes.Buffer
@@ -210,6 +211,7 @@ func TestMCPProfileCommands(t *testing.T) {
 // rewriting a test to match an intentional behavior change is permitted with
 // justification, unlike modifying a test just to force it green).
 func TestMCPTrustRecordsApproval(t *testing.T) {
+	withoutMCPInstallGuard(t)
 	withMemoryMCPRegistry(t)
 
 	var out bytes.Buffer
@@ -237,6 +239,7 @@ func TestMCPTrustRecordsApproval(t *testing.T) {
 // explicit empty/unknown class is likewise rejected via the shared
 // validateTrustClassReason single source of truth (D-13).
 func TestMCPTrustRequiresReason(t *testing.T) {
+	withoutMCPInstallGuard(t)
 	withMemoryMCPRegistry(t)
 	var out bytes.Buffer
 	if err := runMCPCommand(context.Background(), nil, []string{"add", "local", "--", "node", "server.js"}, &out); err != nil {
@@ -253,6 +256,7 @@ func TestMCPTrustRequiresReason(t *testing.T) {
 }
 
 func TestMCPStatusJSONShowsBlockedServer(t *testing.T) {
+	withoutMCPInstallGuard(t)
 	withMemoryMCPRegistry(t)
 	var out bytes.Buffer
 	if err := runMCPCommand(context.Background(), nil, []string{"add", "local", "--", "node", "server.js"}, &out); err != nil {
@@ -417,6 +421,7 @@ func TestMCPDoctorAndToolsStartConfiguredServer(t *testing.T) {
 }
 
 func TestMCPManagerMockE2EProfileRecipeBlockedAndTools(t *testing.T) {
+	withoutMCPInstallGuard(t)
 	withMemoryMCPRegistry(t)
 	var out bytes.Buffer
 	// Install a real recipe purely to inherit trusted_recipe — `mcp add` would land

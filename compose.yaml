@@ -91,6 +91,10 @@ services:
       AURA_RUN_DIR: /var/lib/aura/runs
       AURA_SKILLS_DIR: /var/lib/aura/skills
       AURA_SKILL_EXPORT_DIR: /var/lib/aura/exported-skills
+      # Amendment #211: stdio MCP servers are prepared into this root at install, so a mount
+      # runs a path instead of re-resolving a package. On aura-home (durable) and deliberately
+      # NOT under the three cache mounts, which are seeded once and never refreshed.
+      AURA_MCP_ENV_DIR: /var/lib/aura/mcp-envs
       # Amendment #88: the fixed local working root every host-direct tool (shell_exec,
       # fs_*, send_file) and the per-turn runner workspace hint resolve against — same
       # path the strict-profile sandbox box mounts, backed by the aura-workspace volume

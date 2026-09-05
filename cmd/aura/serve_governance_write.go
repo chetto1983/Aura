@@ -11,6 +11,7 @@ import (
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
+	"github.com/chetto1983/aura/internal/mcp/mcpenv"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -34,6 +35,10 @@ type mcpWriteAdapter struct {
 	// a remove stops being offered without a restart. Nil under `aura chat`, where there
 	// is no long-lived registry to keep in step.
 	live *liveMCPMount
+	// prep materialises a stdio server's environment at install (#211). Nil is a
+	// passthrough, which keeps a deployment with no configured root working exactly as
+	// before rather than failing every install.
+	prep *mcpenv.Preparer
 }
 
 // mcpRegistryDestination is what the install preview names as the place the server lands.
@@ -59,6 +64,16 @@ func (a mcpWriteAdapter) InstallServer(ctx context.Context, actor string, req ag
 	}
 
 	server, cliEquiv, err := buildInstallServer(req)
+	if err != nil {
+		return agui.MCPWriteResult{}, err
+	}
+	// Amendment #211: prepare and verify BEFORE the save. This handler used to save first and
+	// probe after, fail-soft, so a stdio server that could not start was stored and merely
+	// annotated — the operator read "installed" and got a row that would never mount.
+	// The preparation report is not projected: the panel closes on success, so the only thing
+	// an operator needs from here is the REFUSAL, which travels as the 502's reason. The CLI,
+	// which stays open, prints it.
+	server, _, err = prepareAndVerify(ctx, a.prep, name, server)
 	if err != nil {
 		return agui.MCPWriteResult{}, err
 	}
@@ -290,7 +305,9 @@ func buildInstallServer(req agui.MCPInstallRequest) (mcp.ManagedServer, string, 
 	}
 	cli := "aura mcp add " + req.Name
 	if command != "" {
-		cli += " -- " + command
+		// The arguments belong in the preview: without them it names a command the CLI would
+		// not run, and for a resolver launch they carry the package itself.
+		cli += " -- " + strings.Join(append([]string{command}, req.Args...), " ")
 	}
 	return server, cli, nil
 }
@@ -356,9 +373,9 @@ func mapManagerErr(err error) error {
 // buildMCPWriteProvider constructs the concrete MCP write provider best-effort: a nil pool
 // (no DB) leaves it nil → the routes answer 503. Never aborts boot (the
 // SetGovernanceProviders precedent).
-func buildMCPWriteProvider(pool *pgxpool.Pool, live *liveMCPMount) (agui.MCPWriteProvider, error) {
+func buildMCPWriteProvider(pool *pgxpool.Pool, live *liveMCPMount, prep *mcpenv.Preparer) (agui.MCPWriteProvider, error) {
 	if pool == nil {
 		return nil, nil
 	}
-	return mcpWriteAdapter{pool: pool, live: live}, nil
+	return mcpWriteAdapter{pool: pool, live: live, prep: prep}, nil
 }

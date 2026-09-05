@@ -234,7 +234,7 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	// it nil so the routes answer 503 — never aborts boot. Both write providers are wired in ONE
 	// SetGovernanceWriteProviders call so the bundle stays the single seam (no second setter).
 	var mcpWrite agui.MCPWriteProvider
-	if mw, werr := buildMCPWriteProvider(chat.pool, live); werr != nil {
+	if mw, werr := buildMCPWriteProvider(chat.pool, live, execPreparer(chat.cfg)); werr != nil {
 		slog.Warn("aura serve: governance mcp write unavailable", "err", werr)
 	} else {
 		mcpWrite = mw

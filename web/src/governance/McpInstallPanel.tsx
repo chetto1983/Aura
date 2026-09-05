@@ -91,7 +91,11 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
       ? `aura mcp install ${recipe}`
       : mode === 'remote'
         ? `aura mcp add ${effectiveName || '<name>'} --url ${url.trim() || '<url>'}`
-        : `aura mcp add ${effectiveName || '<name>'}${command.trim() !== '' ? ` -- ${command.trim()}` : ''}`;
+        : `aura mcp add ${effectiveName || '<name>'}${
+            command.trim() !== ''
+              ? ` -- ${[command.trim(), ...args.map((a) => a.trim()).filter((a) => a !== '')].join(' ')}`
+              : ''
+          }`;
 
   function buildRequest(): McpInstallRequest {
     if (mode === 'recipe') {
@@ -265,6 +269,9 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
         <Button type="button" variant="outline" disabled={mutation.isPending} onClick={onClose}>
           {t('governance.mcp.install.discard')}
         </Button>
+        {mutation.isPending ? (
+          <p className="text-[13px] text-text-muted">{t('governance.mcp.install.preparing')}</p>
+        ) : null}
       </div>
     </section>
   );
@@ -415,7 +422,11 @@ function CustomFields({
             onCommandChange(event.target.value);
           }}
           className="font-mono text-[13px]"
+          aria-describedby={`${commandId}-hint`}
         />
+        <p id={`${commandId}-hint`} className="text-[13px] text-text-muted">
+          {t('governance.mcp.install.commandHint')}
+        </p>
       </div>
       <div className="flex flex-col gap-1">
         <span className="text-[13px] font-semibold text-text">
