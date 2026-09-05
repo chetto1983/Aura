@@ -3,24 +3,31 @@ package manager
 import (
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
-// Runtime kinds select how a managed MCP server is launched: directly on the
-// host, in a per-server Docker container, or via the Docker MCP gateway.
-const (
-	RuntimeLocal         = mcp.RuntimeKindLocal
-	RuntimeDocker        = mcp.RuntimeKindDocker
-	RuntimeDockerGateway = mcp.RuntimeKindDockerGateway
-)
+// RuntimeLocal is the one kind a managed stdio MCP server can be launched with:
+// directly, as a child process. The `docker` and `docker_gateway` kinds were
+// retired by amendment #209 — RuntimeLaunchConfig refused both whenever
+// AURA_IN_CONTAINER=1, and the appliance image sets it unconditionally, so no
+// shipped deployment could ever take those paths.
+const RuntimeLocal = mcp.RuntimeKindLocal
 
 var (
-	errMCPServerBlocked         = errors.New("mcp server blocked")
-	errDockerRuntimeInContainer = errors.New("docker runtime unavailable inside the container - deploy as a compose sibling and mount via URL")
+	errMCPServerBlocked = errors.New("mcp server blocked")
+	// errRetiredRuntimeKind answers a registry row still declaring a retired kind.
+	// Read paths deliberately do not validate (one planted entry must not make the
+	// whole registry unreadable), so such a row reaches the launcher; without this it
+	// would fall through to the stdio branch and fail on an empty Command, reporting
+	// the wrong problem. The remedy is the one the container refusal used to give.
+	errRetiredRuntimeKind = errors.New("runtime kind retired (amendment #209) - deploy the server as a compose sibling and mount it via URL")
 )
+
+// retiredRuntimeKinds are the launch kinds amendment #209 removed. They are matched
+// by their on-disk strings, not by constants, precisely because the constants are gone.
+var retiredRuntimeKinds = map[string]struct{}{"docker": {}, "docker_gateway": {}}
 
 // RuntimeServers builds launchable ServerConfigs for the active profile's
 // runnable stdio servers, excluding streamable-HTTP servers; it returns nil
@@ -89,71 +96,14 @@ func RuntimeLaunchConfig(name string, server mcp.ManagedServer) (mcp.ServerConfi
 	if trust == mcp.TrustBlocked {
 		return mcp.ServerConfig{}, fmt.Errorf("%w: %q trust approval required", errMCPServerBlocked, name)
 	}
-	switch runtimeKind(server) {
-	case RuntimeDocker:
-		if os.Getenv("AURA_IN_CONTAINER") == "1" {
-			return mcp.ServerConfig{}, fmt.Errorf("%w (server %q)", errDockerRuntimeInContainer, name)
-		}
-		return dockerRuntimeConfig(server)
-	case RuntimeDockerGateway:
-		if os.Getenv("AURA_IN_CONTAINER") == "1" {
-			return mcp.ServerConfig{}, fmt.Errorf("%w (server %q)", errDockerRuntimeInContainer, name)
-		}
-		return dockerGatewayRuntimeConfig(name, server)
-	default:
-		if strings.TrimSpace(server.Command) == "" {
-			return mcp.ServerConfig{}, fmt.Errorf("MCP server %q command cannot be empty", name)
-		}
-		return mcp.ServerConfig{Command: server.Command, Args: server.Args, Env: server.Env}, nil
+	kind := runtimeKind(server)
+	if _, retired := retiredRuntimeKinds[strings.TrimSpace(kind)]; retired {
+		return mcp.ServerConfig{}, fmt.Errorf("%w: server %q declares %q", errRetiredRuntimeKind, name, kind)
 	}
-}
-
-func dockerRuntimeConfig(server mcp.ManagedServer) (mcp.ServerConfig, error) {
-	image := strings.TrimSpace(server.Runtime.Image)
-	if image == "" {
-		return mcp.ServerConfig{}, fmt.Errorf("docker runtime image cannot be empty")
+	if strings.TrimSpace(server.Command) == "" {
+		return mcp.ServerConfig{}, fmt.Errorf("MCP server %q command cannot be empty", name)
 	}
-	args := []string{"run", "-i", "--rm"}
-	if len(server.Runtime.Network) == 0 {
-		args = append(args, "--network", "none")
-	} else {
-		args = append(args, "--network", "bridge")
-	}
-	for _, mount := range server.Runtime.Mounts {
-		if strings.TrimSpace(mount) != "" {
-			args = append(args, "--mount", mount)
-		}
-	}
-	if server.Runtime.CPUs != "" {
-		args = append(args, "--cpus", server.Runtime.CPUs)
-	}
-	if server.Runtime.Memory != "" {
-		args = append(args, "--memory", server.Runtime.Memory)
-	}
-	env := append([]string(nil), server.Env...)
-	if len(server.Runtime.Network) > 0 {
-		env = append(env, "AURA_MCP_NETWORK_ALLOW="+strings.Join(server.Runtime.Network, ","))
-	}
-	// Derive the docker `-e KEY` forward flags from the FINAL env (incl. the network
-	// allowlist), not server.Env — otherwise AURA_MCP_NETWORK_ALLOW lands in the docker
-	// process env but is never forwarded into the container.
-	for _, entry := range env {
-		key, _, ok := strings.Cut(entry, "=")
-		if ok && key != "" {
-			args = append(args, "-e", key)
-		}
-	}
-	args = append(args, image)
-	args = append(args, server.Runtime.Command...)
-	return mcp.ServerConfig{Command: "docker", Args: args, Env: env}, nil
-}
-
-func dockerGatewayRuntimeConfig(name string, server mcp.ManagedServer) (mcp.ServerConfig, error) {
-	profile := strings.TrimSpace(server.Runtime.Profile)
-	if profile == "" {
-		return mcp.ServerConfig{}, fmt.Errorf("MCP server %q docker gateway profile cannot be empty", name)
-	}
-	return mcp.ServerConfig{Command: "docker", Args: []string{"mcp", "gateway", "run", "--profile", profile}, Env: server.Env}, nil
+	return mcp.ServerConfig{Command: server.Command, Args: server.Args, Env: server.Env}, nil
 }
 
 func runtimeKind(server mcp.ManagedServer) string {

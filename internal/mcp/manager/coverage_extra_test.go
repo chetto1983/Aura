@@ -75,11 +75,11 @@ func TestRuntimeErrorAndClassificationBranches(t *testing.T) {
 	if _, err := RuntimeLaunchConfig("local", mcp.ManagedServer{Command: " ", Trust: mcp.ManagedTrust{Class: mcp.TrustTrustedLocal}}); err == nil {
 		t.Fatal("empty local command accepted")
 	}
-	if _, err := RuntimeLaunchConfig("docker", mcp.ManagedServer{Trust: mcp.ManagedTrust{Class: mcp.TrustSandboxedLocal}, Runtime: mcp.ManagedRuntime{Kind: RuntimeDocker}}); err == nil {
-		t.Fatal("empty docker image accepted")
+	if _, err := RuntimeLaunchConfig("docker", mcp.ManagedServer{Trust: mcp.ManagedTrust{Class: mcp.TrustSandboxedLocal}, Runtime: mcp.ManagedRuntime{Kind: "docker"}}); err == nil {
+		t.Fatal("retired docker kind accepted")
 	}
-	if _, err := RuntimeLaunchConfig("gateway", mcp.ManagedServer{Trust: mcp.ManagedTrust{Class: mcp.TrustTrustedLocal}, Runtime: mcp.ManagedRuntime{Kind: RuntimeDockerGateway}}); err == nil {
-		t.Fatal("empty gateway profile accepted")
+	if _, err := RuntimeLaunchConfig("gateway", mcp.ManagedServer{Trust: mcp.ManagedTrust{Class: mcp.TrustTrustedLocal}, Runtime: mcp.ManagedRuntime{Kind: "docker_gateway"}}); err == nil {
+		t.Fatal("retired docker_gateway kind accepted")
 	}
 	_, err := RunnableManagedServers(mcp.ManagedConfig{
 		ActiveProfile: "default",

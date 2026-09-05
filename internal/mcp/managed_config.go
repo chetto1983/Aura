@@ -21,9 +21,9 @@ const (
 	TrustRemoteHTTP     = "remote_http"
 	TrustBlocked        = "blocked"
 
-	RuntimeKindLocal         = "local"
-	RuntimeKindDocker        = "docker"
-	RuntimeKindDockerGateway = "docker_gateway"
+	// RuntimeKindLocal is the only launch kind left: a stdio server started as a
+	// child process. `docker` and `docker_gateway` were retired by amendment #209.
+	RuntimeKindLocal = "local"
 )
 
 // SourceRecipeMemory marks the shared, admin-governed ArcadeDB memory MCP. The
@@ -85,15 +85,17 @@ type ManagedTrust struct {
 
 // ManagedRuntime describes how a stdio server is launched (local process, Docker
 // container, or Docker gateway) and the container isolation knobs that apply.
+// ManagedRuntime carries a server's launch declaration. Image, CPUs, Memory and
+// Profile left with the docker kinds they belonged to (amendment #209) — a stored row
+// carrying those keys loses them on its next read-modify-write, which is correct once
+// nothing can act on them. The three that stayed have readers that outlive the kinds:
+// stdio_shape.go assembles Command and Mounts into the argv it scans for backdoor
+// shapes, whatever wrote them, and the governance board renders Network.
 type ManagedRuntime struct {
 	Kind    string   `json:"kind,omitempty"`
-	Image   string   `json:"image,omitempty"`
 	Command []string `json:"command,omitempty"`
 	Mounts  []string `json:"mounts,omitempty"`
 	Network []string `json:"network,omitempty"`
-	CPUs    string   `json:"cpus,omitempty"`
-	Memory  string   `json:"memory,omitempty"`
-	Profile string   `json:"profile,omitempty"`
 }
 
 // PrepareForWrite normalizes doc and refuses it if any server is malformed or has a launch
@@ -243,14 +245,6 @@ func validateManagedServers(in map[string]ManagedServer) error {
 				if strings.TrimSpace(cfg.Command) == "" {
 					return fmt.Errorf("MCP managed config: server %q command cannot be empty", name)
 				}
-			case RuntimeKindDocker:
-				if strings.TrimSpace(cfg.Runtime.Image) == "" {
-					return fmt.Errorf("MCP managed config: server %q docker image cannot be empty", name)
-				}
-			case RuntimeKindDockerGateway:
-				if strings.TrimSpace(cfg.Runtime.Profile) == "" {
-					return fmt.Errorf("MCP managed config: server %q docker gateway profile cannot be empty", name)
-				}
 			default:
 				return fmt.Errorf("MCP managed config: server %q has unknown runtime kind %q", name, cfg.Runtime.Kind)
 			}
@@ -278,10 +272,6 @@ func normalizedRuntimeKind(cfg ManagedServer) string {
 		return RuntimeKindLocal
 	case RuntimeKindLocal:
 		return RuntimeKindLocal
-	case RuntimeKindDocker:
-		return RuntimeKindDocker
-	case RuntimeKindDockerGateway:
-		return RuntimeKindDockerGateway
 	default:
 		return strings.TrimSpace(cfg.Runtime.Kind)
 	}

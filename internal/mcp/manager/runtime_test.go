@@ -1,98 +1,13 @@
 package manager
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/mcp"
 )
-
-func TestDockerRuntimeNoDefaultMounts(t *testing.T) {
-	server := mcp.ManagedServer{
-		Trust:   mcp.ManagedTrust{Class: mcp.TrustSandboxedLocal},
-		Runtime: mcp.ManagedRuntime{Kind: RuntimeDocker, Image: "example/mcp:1", Command: []string{"server", "--stdio"}},
-	}
-	cfg, err := RuntimeLaunchConfig("third-party", server)
-	if err != nil {
-		t.Fatalf("RuntimeLaunchConfig: %v", err)
-	}
-	got := strings.Join(append([]string{cfg.Command}, cfg.Args...), " ")
-	for _, want := range []string{"docker run -i --rm", "--network none", "example/mcp:1", "server --stdio"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("docker command missing %q: %s", want, got)
-		}
-	}
-	if strings.Contains(got, "--mount") {
-		t.Fatalf("docker command should not mount host paths by default: %s", got)
-	}
-}
-
-func TestDockerRuntimeExplicitMountsAndLimits(t *testing.T) {
-	server := mcp.ManagedServer{
-		Env:   []string{"API_TOKEN=${API_TOKEN}"},
-		Trust: mcp.ManagedTrust{Class: mcp.TrustSandboxedLocal},
-		Runtime: mcp.ManagedRuntime{
-			Kind:    RuntimeDocker,
-			Image:   "example/mcp:1",
-			Command: []string{"server"},
-			Mounts:  []string{"type=bind,src=/safe,dst=/data,readonly"},
-			Network: []string{"api.example.com"},
-			CPUs:    "0.5",
-			Memory:  "256m",
-		},
-	}
-	cfg, err := RuntimeLaunchConfig("third-party", server)
-	if err != nil {
-		t.Fatalf("RuntimeLaunchConfig: %v", err)
-	}
-	got := strings.Join(append([]string{cfg.Command}, cfg.Args...), " ")
-	for _, want := range []string{"--mount type=bind,src=/safe,dst=/data,readonly", "--cpus 0.5", "--memory 256m", "--network bridge"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("docker command missing %q: %s", want, got)
-		}
-	}
-	if !reflect.DeepEqual(cfg.Env, []string{"API_TOKEN=${API_TOKEN}", "AURA_MCP_NETWORK_ALLOW=api.example.com"}) {
-		t.Fatalf("env = %#v", cfg.Env)
-	}
-}
-
-func TestDockerRuntimeKeepsWindowsMountsExplicit(t *testing.T) {
-	mount := `type=bind,src=C:\Users\Davide\.aura,dst=/data,readonly`
-	server := mcp.ManagedServer{
-		Trust: mcp.ManagedTrust{Class: mcp.TrustSandboxedLocal},
-		Runtime: mcp.ManagedRuntime{
-			Kind:   RuntimeDocker,
-			Image:  "example/mcp:1",
-			Mounts: []string{mount},
-		},
-	}
-	cfg, err := RuntimeLaunchConfig("windows-path", server)
-	if err != nil {
-		t.Fatalf("RuntimeLaunchConfig: %v", err)
-	}
-	for i, arg := range cfg.Args {
-		if arg == "--mount" && i+1 < len(cfg.Args) && cfg.Args[i+1] == mount {
-			return
-		}
-	}
-	t.Fatalf("docker args did not preserve explicit Windows mount: %#v", cfg.Args)
-}
-
-func TestGatewayRuntime(t *testing.T) {
-	server := mcp.ManagedServer{
-		Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedLocal},
-		Runtime: mcp.ManagedRuntime{Kind: RuntimeDockerGateway, Profile: "team"},
-	}
-	cfg, err := RuntimeLaunchConfig("gateway", server)
-	if err != nil {
-		t.Fatalf("RuntimeLaunchConfig: %v", err)
-	}
-	wantArgs := []string{"mcp", "gateway", "run", "--profile", "team"}
-	if cfg.Command != "docker" || !reflect.DeepEqual(cfg.Args, wantArgs) {
-		t.Fatalf("gateway config = %#v, want docker %#v", cfg, wantArgs)
-	}
-}
 
 func TestRuntimeLaunchConfigEmptyCommand(t *testing.T) {
 	_, err := RuntimeLaunchConfig("local", mcp.ManagedServer{
@@ -101,16 +16,6 @@ func TestRuntimeLaunchConfigEmptyCommand(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "command cannot be empty") {
 		t.Fatalf("want empty-command error, got %v", err)
-	}
-}
-
-func TestGatewayRuntimeEmptyProfile(t *testing.T) {
-	_, err := RuntimeLaunchConfig("gateway", mcp.ManagedServer{
-		Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedLocal},
-		Runtime: mcp.ManagedRuntime{Kind: RuntimeDockerGateway, Profile: "  "},
-	})
-	if err == nil || !strings.Contains(err.Error(), "gateway profile cannot be empty") {
-		t.Fatalf("want gateway-profile error, got %v", err)
 	}
 }
 
@@ -131,8 +36,23 @@ func TestRuntimeKindHelper(t *testing.T) {
 	if got := runtimeKind(mcp.ManagedServer{}); got != RuntimeLocal {
 		t.Fatalf("runtimeKind(zero) = %q, want %q", got, RuntimeLocal)
 	}
-	if got := runtimeKind(mcp.ManagedServer{Runtime: mcp.ManagedRuntime{Kind: RuntimeDocker}}); got != RuntimeDocker {
-		t.Fatalf("runtimeKind(docker) = %q, want %q", got, RuntimeDocker)
+	if got := runtimeKind(mcp.ManagedServer{Runtime: mcp.ManagedRuntime{Kind: "custom"}}); got != "custom" {
+		t.Fatalf("runtimeKind(custom) = %q, want custom", got)
+	}
+}
+
+// A registry row can still declare a kind amendment #209 retired — read paths do not
+// validate, by design — so the launcher must name it rather than fall through to the
+// stdio branch and complain about an empty command.
+func TestRuntimeLaunchConfigRejectsRetiredKinds(t *testing.T) {
+	for _, kind := range []string{"docker", "docker_gateway", "  docker  "} {
+		_, err := RuntimeLaunchConfig("legacy", mcp.ManagedServer{
+			Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedLocal},
+			Runtime: mcp.ManagedRuntime{Kind: kind},
+		})
+		if !errors.Is(err, errRetiredRuntimeKind) {
+			t.Fatalf("RuntimeLaunchConfig(kind=%q) = %v, want errRetiredRuntimeKind", kind, err)
+		}
 	}
 }
 

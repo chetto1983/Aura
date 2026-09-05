@@ -59,8 +59,8 @@ func TestRuntimeName(t *testing.T) {
 		server mcp.ManagedServer
 		want   string
 	}{
-		{name: "explicit kind", server: mcp.ManagedServer{Runtime: mcp.ManagedRuntime{Kind: "docker"}}, want: "docker"},
-		{name: "kind trimmed", server: mcp.ManagedServer{Runtime: mcp.ManagedRuntime{Kind: "  docker_gateway  "}}, want: "docker_gateway"},
+		{name: "explicit kind", server: mcp.ManagedServer{Runtime: mcp.ManagedRuntime{Kind: "custom"}}, want: "custom"},
+		{name: "kind trimmed", server: mcp.ManagedServer{Runtime: mcp.ManagedRuntime{Kind: "  custom  "}}, want: "custom"},
 		{name: "url http", server: mcp.ManagedServer{URL: "https://mcp.example.com"}, want: mcp.TrustRemoteHTTP},
 		{name: "type http", server: mcp.ManagedServer{Type: mcp.ServerTypeStreamableHTTP}, want: mcp.TrustRemoteHTTP},
 		{name: "default local", server: mcp.ManagedServer{Command: "node"}, want: "local"},

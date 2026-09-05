@@ -88,11 +88,12 @@ func isInlineScriptFlag(flag string) bool {
 // inlineShellScript returns the script this launch would hand to a shell, and whether
 // there is one at all.
 //
-// It scans the WHOLE argv rather than only argv[0], because here the wrapper is the
-// common case: Aura's own docker runtime resolves every containerised server to
-// "docker run ... <image> <command...>", so a script planted in runtime.command sits
-// many tokens deep. A basename-of-argv[0] check -- which is what hermes does -- would
-// see only "docker" and wave the whole thing through.
+// It scans the WHOLE argv rather than only argv[0], because a wrapper is ordinary: any
+// launcher, supervisor or `env`-style prefix puts the interpreter and its script several
+// tokens in. A basename-of-argv[0] check -- which is what hermes does -- would see only
+// the wrapper and wave the whole thing through. Until amendment #209 this reason was
+// written as the docker runtime specifically, which resolved a containerised server to
+// "docker run ... <image> <command...>"; that launch shape is gone and the scan is not.
 func inlineShellScript(command string, args []string) (string, bool) {
 	argv := append([]string{command}, args...)
 	for i := 0; i+1 < len(argv); i++ {
@@ -145,14 +146,14 @@ func checkStdioShape(name, command string, args, env []string) error {
 	return nil
 }
 
-// checkManagedServerShape is the save-time checkpoint. It flattens the runtime fields
-// as well, because a docker-runtime entry leaves Command empty and carries its payload
-// in runtime.command, runtime.mounts and runtime.image instead.
+// checkManagedServerShape is the save-time checkpoint. It flattens the runtime fields as
+// well: an entry may leave Command empty and carry its payload in runtime.command and
+// runtime.mounts instead, and the scanner covers operator data it does not control
+// whatever wrote it (the docker kinds that used to write it went with amendment #209).
 func checkManagedServerShape(name string, s ManagedServer) error {
 	// runtime.command stays contiguous so an interpreter+flag pair inside it is still
 	// adjacent; runtime.mounts joins because mounting the registry into a container is
-	// how a sandboxed server would rewrite it. runtime.image is deliberately absent --
-	// appended last it neighbours no flag, and an image reference cannot name a file.
+	// how a sandboxed server would rewrite it.
 	args := make([]string, 0, len(s.Args)+len(s.Runtime.Command)+len(s.Runtime.Mounts))
 	args = append(args, s.Args...)
 	args = append(args, s.Runtime.Command...)

@@ -39,25 +39,22 @@ func TestManagedConfigRoundTripFiltersDisabled(t *testing.T) {
 	}
 }
 
-func TestManagedConfigDockerRuntimeDoesNotRequireLocalCommand(t *testing.T) {
-	doc := ManagedConfig{MCPServers: map[string]ManagedServer{
-		"third-party": {
-			Source: "manual",
-			Trust:  ManagedTrust{Class: TrustSandboxedLocal},
-			Runtime: ManagedRuntime{
-				Kind:    RuntimeKindDocker,
-				Image:   "example/mcp:1",
-				Command: []string{"server", "--stdio"},
+// The docker kinds used to be the reason a stdio entry could carry no local Command.
+// Amendment #209 retired them, so the write path now refuses such an entry as an unknown
+// runtime kind rather than storing a row nothing can launch.
+func TestManagedConfigRefusesRetiredDockerRuntime(t *testing.T) {
+	for _, kind := range []string{"docker", "docker_gateway"} {
+		doc := ManagedConfig{MCPServers: map[string]ManagedServer{
+			"third-party": {
+				Source:  "manual",
+				Trust:   ManagedTrust{Class: TrustSandboxedLocal},
+				Runtime: ManagedRuntime{Kind: kind, Command: []string{"server", "--stdio"}},
 			},
-		},
-	}}
-
-	got := doc
-	if err := PrepareForWrite(&got); err != nil {
-		t.Fatalf("PrepareForWrite: %v", err)
-	}
-	if got.MCPServers["third-party"].Command != "" {
-		t.Fatalf("local command = %q, want empty for docker runtime", got.MCPServers["third-party"].Command)
+		}}
+		err := PrepareForWrite(&doc)
+		if err == nil || !strings.Contains(err.Error(), "unknown runtime kind") {
+			t.Fatalf("PrepareForWrite(kind=%q) = %v, want an unknown-runtime-kind refusal", kind, err)
+		}
 	}
 }
 
@@ -216,14 +213,14 @@ func TestValidateManagedServers(t *testing.T) {
 			"command cannot be empty",
 		},
 		{
-			"docker-no-image",
-			map[string]ManagedServer{"s": {Runtime: ManagedRuntime{Kind: RuntimeKindDocker}}},
-			"docker image cannot be empty",
+			"retired-docker-kind",
+			map[string]ManagedServer{"s": {Runtime: ManagedRuntime{Kind: "docker"}}},
+			"unknown runtime kind",
 		},
 		{
-			"docker-gateway-no-profile",
-			map[string]ManagedServer{"s": {Runtime: ManagedRuntime{Kind: RuntimeKindDockerGateway}}},
-			"docker gateway profile cannot be empty",
+			"retired-docker-gateway-kind",
+			map[string]ManagedServer{"s": {Runtime: ManagedRuntime{Kind: "docker_gateway"}}},
+			"unknown runtime kind",
 		},
 		{
 			"unknown-runtime-kind",
@@ -259,8 +256,6 @@ func TestValidateManagedServers(t *testing.T) {
 func TestValidateManagedServersAcceptsValid(t *testing.T) {
 	in := map[string]ManagedServer{
 		"local":   {Command: "uvx"},
-		"docker":  {Runtime: ManagedRuntime{Kind: RuntimeKindDocker, Image: "img:1"}},
-		"gateway": {Runtime: ManagedRuntime{Kind: RuntimeKindDockerGateway, Profile: "p"}},
 		"http":    {Type: ServerTypeStreamableHTTP, URL: "https://x.test"},
 		"trusted": {Command: "x", Trust: ManagedTrust{Class: TrustTrustedLocal}},
 	}
@@ -277,9 +272,11 @@ func TestNormalizedRuntimeKind(t *testing.T) {
 		{ManagedRuntime{}, RuntimeKindLocal},
 		{ManagedRuntime{Kind: "  "}, RuntimeKindLocal},
 		{ManagedRuntime{Kind: RuntimeKindLocal}, RuntimeKindLocal},
-		{ManagedRuntime{Kind: RuntimeKindDocker}, RuntimeKindDocker},
-		{ManagedRuntime{Kind: RuntimeKindDockerGateway}, RuntimeKindDockerGateway},
 		{ManagedRuntime{Kind: "  custom  "}, "custom"},
+		// A retired kind normalizes to itself and is refused downstream, rather than
+		// being silently folded into local (amendment #209).
+		{ManagedRuntime{Kind: "docker"}, "docker"},
+		{ManagedRuntime{Kind: "docker_gateway"}, "docker_gateway"},
 	}
 	for _, tc := range cases {
 		if got := normalizedRuntimeKind(ManagedServer{Runtime: tc.in}); got != tc.want {
