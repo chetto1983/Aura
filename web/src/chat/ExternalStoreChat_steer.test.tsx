@@ -146,12 +146,16 @@ describe('ExternalStoreChat — D-10 composer contract (component level)', () =>
 
     typeAndClickRedirect('a refused redirect');
 
+    // Both halves inside the same waitFor: the refusal text and the rollback are two effects,
+    // and waiting for only the first sampled the second at an arbitrary tick — CI run 1785 saw
+    // the optimistic message still on screen when the refusal had already rendered. This waits
+    // for the settled state instead, which is what the test always meant to assert.
     await waitFor(() => {
       expect(
         screen.getByText("That message couldn't be redirected — try a shorter one."),
       ).toBeTruthy();
+      expect(screen.queryByText('a refused redirect')).toBeNull();
     });
-    expect(screen.queryByText('a refused redirect')).toBeNull(); // the optimistic append was rolled back
   });
 
   it('rolls back the optimistic steer message on a 429 refusal and shows the refusal text', async () => {
@@ -175,8 +179,8 @@ describe('ExternalStoreChat — D-10 composer contract (component level)', () =>
       expect(
         screen.getByText('Aura already has a redirect queued. Wait a moment and try again.'),
       ).toBeTruthy();
+      expect(screen.queryByText('another refused redirect')).toBeNull();
     });
-    expect(screen.queryByText('another refused redirect')).toBeNull();
   });
 });
 
