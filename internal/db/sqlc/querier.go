@@ -220,9 +220,11 @@ type Querier interface {
 	// The public grant carries no principal_id (the resource_acl_principal_shape CHECK), so it
 	// conflicts on the partial index keyed by resource alone.
 	GrantResourcePublic(ctx context.Context, arg GrantResourcePublicParams) error
-	// The generic resource ACL (migration 0118). granted_by is always the CALLING identity: the
-	// RLS policy uses the same predicate for visibility and for INSERT, so a grant attributed to
-	// somebody else is rejected by the database rather than by a check a caller can forget.
+	// The generic resource ACL (migration 0118). granted_by is always the CALLING identity, and
+	// that is enforced one layer down: resource_acl_grant_what_you_own is a RESTRICTIVE write
+	// policy admitting only a grant attributed to the caller, on a resource the caller OWNS. So a
+	// grant forged in somebody else's name, or made over somebody else's skill, is refused by the
+	// database rather than by a check a caller can forget (D-214-5).
 	// Re-granting the same pair replaces the permission bits, which is what "share again with
 	// edit this time" means. created_at is left alone: it records when the share began.
 	GrantResourceToIdentity(ctx context.Context, arg GrantResourceToIdentityParams) error

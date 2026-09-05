@@ -111,9 +111,27 @@ func egressITEgressImage() string {
 // collide on the aura-box-<id>/aura-egress-<id> container+volume names.
 func egressITIdentity(t *testing.T) string {
 	t.Helper()
-	raw := "cmdaura-egress-" + strings.ReplaceAll(t.Name(), "/", "-") + "-" + time.Now().Format("150405.000000000")
-	return strings.NewReplacer(".", "", "_", "-").Replace(raw)
+	const prefix = "cmdaura-egress-"
+	stamp := strings.NewReplacer(".", "", "_", "-").Replace(time.Now().Format("150405.000000000"))
+	name := strings.NewReplacer("/", "-", ".", "", "_", "-").Replace(t.Name())
+	// idroot caps an identity at 64 characters, and a long enough test name walks straight
+	// past it — measured in CI run 1789, where a test called
+	// TestBoxHoldsOnlyItsOwnAndTheHouseSkills produced an id the layout refused. The stamp is
+	// what makes the id unique, so the NAME is the half that gets trimmed: it is only here so
+	// a stray container is recognisable in `docker ps`.
+	if room := maxIdentityLen - len(prefix) - len(stamp) - 1; len(name) > room {
+		name = name[:room]
+	}
+	id := prefix + name + "-" + stamp
+	if len(id) > maxIdentityLen {
+		t.Fatalf("egressITIdentity produced %d chars (%q); idroot admits at most %d", len(id), id, maxIdentityLen)
+	}
+	return id
 }
+
+// maxIdentityLen mirrors idroot's identityPattern bound. It is duplicated as a constant
+// rather than imported because idroot exports the validator, not the length.
+const maxIdentityLen = 64
 
 // egressITRawExec runs a command in a running container through the moby SDK and returns demuxed
 // stdout + the exit code (the primitive the wget reachability probe is built on).

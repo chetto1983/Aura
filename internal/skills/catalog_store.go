@@ -115,19 +115,9 @@ func (s *CatalogStore) ListOwned(ctx context.Context, ownerID string) ([]Catalog
 	if err != nil {
 		return nil, fmt.Errorf("skill catalog list: %w", err)
 	}
-	var out []CatalogRow
-	err = db.WithIdentityTx(ctx, s.pool, ownerID, func(q *sqlc.Queries) error {
-		rows, qerr := q.ListSkillCatalogForOwner(ctx, owner)
-		if qerr != nil {
-			return qerr
-		}
-		out = catalogRowsFrom(rows)
-		return nil
+	return s.listRows(ctx, ownerID, "skill catalog list", func(q *sqlc.Queries) ([]sqlc.AuraSkillCatalog, error) {
+		return q.ListSkillCatalogForOwner(ctx, owner)
 	})
-	if err != nil {
-		return nil, fmt.Errorf("skill catalog list: %w", err)
-	}
-	return out, nil
 }
 
 // ListAlwaysApply returns the identity's always-on skills through the partial index
@@ -145,19 +135,9 @@ func (s *CatalogStore) ListAlwaysApply(ctx context.Context, ownerID string) ([]C
 	if err != nil {
 		return nil, fmt.Errorf("skill catalog always-apply: %w", err)
 	}
-	var out []CatalogRow
-	err = db.WithIdentityTx(ctx, s.pool, ownerID, func(q *sqlc.Queries) error {
-		rows, qerr := q.ListAlwaysApplySkills(ctx, owner)
-		if qerr != nil {
-			return qerr
-		}
-		out = catalogRowsFrom(rows)
-		return nil
+	return s.listRows(ctx, ownerID, "skill catalog always-apply", func(q *sqlc.Queries) ([]sqlc.AuraSkillCatalog, error) {
+		return q.ListAlwaysApplySkills(ctx, owner)
 	})
-	if err != nil {
-		return nil, fmt.Errorf("skill catalog always-apply: %w", err)
-	}
-	return out, nil
 }
 
 // ListByIDs resolves catalog rows by id for the reader identity — the second half of the
@@ -184,17 +164,31 @@ func (s *CatalogStore) ListByIDs(ctx context.Context, readerID string, ids []str
 		}
 		parsed = append(parsed, u)
 	}
+	return s.listRows(ctx, readerID, "skill catalog by ids", func(q *sqlc.Queries) ([]sqlc.AuraSkillCatalog, error) {
+		return q.ListSkillCatalogByIDs(ctx, parsed)
+	})
+}
+
+// listRows runs one catalog SELECT under identity's RLS and projects the result. The three
+// List methods differed only in which query they called, and dupl was right that writing that
+// difference out three times is the same code three times (CI run 1789). Keeping the identity
+// and the message as parameters is what lets the three keep their own error prefixes, which
+// is the only part a caller can actually see.
+func (s *CatalogStore) listRows(
+	ctx context.Context,
+	identity, what string,
+	query func(*sqlc.Queries) ([]sqlc.AuraSkillCatalog, error),
+) ([]CatalogRow, error) {
 	var out []CatalogRow
-	err := db.WithIdentityTx(ctx, s.pool, readerID, func(q *sqlc.Queries) error {
-		rows, qerr := q.ListSkillCatalogByIDs(ctx, parsed)
+	if err := db.WithIdentityTx(ctx, s.pool, identity, func(q *sqlc.Queries) error {
+		rows, qerr := query(q)
 		if qerr != nil {
 			return qerr
 		}
 		out = catalogRowsFrom(rows)
 		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("skill catalog by ids: %w", err)
+	}); err != nil {
+		return nil, fmt.Errorf("%s: %w", what, err)
 	}
 	return out, nil
 }

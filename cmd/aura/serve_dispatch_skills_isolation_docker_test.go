@@ -55,7 +55,9 @@ func TestBoxHoldsOnlyItsOwnAndTheHouseSkills(t *testing.T) {
 	// Docker names the box and its volume after the identity, so the id has to be
 	// name-safe; egressITIdentity is the same generator the egress proof uses.
 	mine := egressITIdentity(t)
-	theirs := mine + "-other"
+	// Appending to a generated id is how the cap gets breached a second time: mine is already
+	// allowed to reach the limit, so the neighbour REPLACES the tail rather than extending it.
+	theirs := mine[:len(mine)-len("-other")] + "-other"
 
 	layout := skills.Layout{
 		Global:     filepath.Join(base, "skills"),
