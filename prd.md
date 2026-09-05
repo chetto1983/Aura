@@ -11541,9 +11541,11 @@ flusso completo, che funziona.
 > argument as the package. `uvx --with httpx <pkg>` would then install `httpx`. Only a small
 > set of value-less flags (`-y`, `--yes`, `--quiet`, `--offline`, `--no-cache`, `--native-tls`,
 > `--isolated`, `--refresh`) and the two `--from`/`--package` forms are understood; **any other
-> flag ends preparation and the declaration is launched as written**. Not preparing is a
-> disclosed outcome (`describePreparation` says so, the cockpit shows it); installing the wrong
-> package is not.
+> flag ends preparation and the declaration is launched as written**. Installing the wrong
+> package would not be visible at all; not preparing is at least stated — but only on the CLI,
+> which prints `describePreparation`. **The cockpit does not**: `InstallServer` discards the
+> report, because the panel closes on success. An operator installing from the board learns
+> that nothing was prepared only by reading the stored command afterwards.
 >
 > **Bounds.** Preparation now runs under `installPrepareTimeout` = 5 min — the git case takes
 > 16s, and the daemon's HTTP server sets no write timeout, so an unbounded resolver would hold
@@ -11555,3 +11557,56 @@ flusso completo, che funziona.
 > not the wait an operator sees on a first install. It says nothing about Windows (no `venv/bin`,
 > no `.bin` shim shape), and nothing about per-identity isolation: preparation is still
 > host-wide and shared, which #209/#210's credential question leaves open.
+
+## Section What the closing audit of the stdio install found (Amendment #213, 2026-09-05)
+
+> **Amendment #213 (2026-09-05 — closing audit of the #211/#212 implementation, run against
+> the shipped commit `520ed0e7`).** Four findings were fixed on touch; the rest are recorded
+> as measured debt, not closed.
+>
+> **A1 (fixed, HIGH). The prepare step ran installers with Aura's whole environment.**
+> `runPrepareCommand` set no `Env`, so `uv pip install` and `npm install` — which execute the
+> package's own setup code — inherited `POSTGRES_PASSWORD`, `AURA_AUTHULA_SECRET`,
+> `AURA_ARCADEDB_TENANT_SECRET`, `OPENROUTER_API_KEY` and the rest, while the MOUNT of that
+> same server was already narrowed to fourteen keys by `processEnvForMCP`. #211 shipped a path
+> that bypassed a policy this codebase had already written. Fixed by `mcp.InstallerEnv`, next
+> to the mount's list so the two are read together: the same allow-list plus the proxy keys a
+> resolver needs, filtered by the VALUE-aware secret predicate so a credential-bearing
+> `HTTPS_PROXY` is withheld and the install fails loudly instead of leaking quietly. The
+> mount's own predicate is deliberately unchanged.
+>
+> **A2 (fixed, MEDIUM). A package's declared entrypoint name escaped the environment root.**
+> Measured: a `"bin": {"../../../outside/evil": "./a.js"}` manifest produced a stored command
+> outside the root with a nil error. The name is as package-controlled as the code the install
+> just ran, so this is defence in depth rather than escalation — but the path outlives the
+> environment it was meant to live in. An entrypoint must now be one path element.
+>
+> **A3 (fixed, MEDIUM). The refusal told npm operators to run a command that does not exist.**
+> `npx ./local` answered "as `npx --package --from ./local <executable>`". The remedy was
+> composed from a flag name plus a hardcoded `--from`; it is written per resolver now. The test
+> that let it through asserted only that the string contained `--from`.
+>
+> **A4 (fixed). #212 overstated the disclosure.** It claimed the cockpit shows a passthrough.
+> It does not — corrected above.
+>
+> **Recorded, not fixed.** A5: a stdio install completes two handshakes, because
+> `prepareAndVerify` discards the tool count `InstallServer` then re-probes for. A6: removing a
+> server leaves its venv or `node_modules` tree on `aura-home` forever — `AURA_MCP_ENV_DIR` has
+> exactly one reader and no lifecycle. A7: `buildInstallServer` is at 0% coverage and was
+> edited; the web panel test asserts the "CLI equivalent" label exists but never its value.
+> A8: `AURA_MCP_ENV_DIR` is missing from §Indice completo env vars. A9: the inherited-env
+> collector dedupes case-insensitively and keeps the FIRST match, so a host carrying both
+> `https_proxy` and `HTTPS_PROXY` gets whichever `os.Environ` lists first. **A10**: the mount's
+> allow-list names `SSL_CERT_FILE` and `SSL_CERT_DIR`, and the secret predicate's "cert"
+> substring has always dropped them — so those two entries have never crossed to a mounted
+> server, and a stdio server behind a corporate CA cannot verify TLS. The installer is exempted
+> here (measured: without it `uv pip install` failed with "invalid peer certificate:
+> UnknownIssuer" before reaching PyPI); what a RUNNING server may read is left as a separate
+> decision, pinned by a test that fails when it is made.
+>
+> **What the audit does NOT show.** No mutation score for `mcpenv`: `go-mutesting` is absent
+> from this host, and CI's mutation gate covers four fixed boundaries
+> (`scripts/critical_mutation_gate.py`) that do not include it — its green says nothing about
+> this code. `golangci-lint`, `deadcode`, `dupl` and `staticcheck` were not run locally either
+> (the pinned linter is built against a Go older than the module target); CI ran the linter and
+> it is green.
