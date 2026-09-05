@@ -11510,3 +11510,48 @@ flusso completo, che funziona.
 > ecosystem impossible, only unprepared. And the entrypoint resolution is a measurement of what the
 > install produced, not a guess: when an install yields no single obvious executable the install
 > fails and says so rather than storing a command nobody verified.
+
+## Section What the live stdio install measured (Amendment #212, 2026-09-05)
+
+> **Amendment #212 (2026-09-05 — measured by running the #211 preparer against real
+> packages, with real `uv` 0.8.17 and real `npm`, on this host).** It records three things
+> #211 got wrong in the abstract, and supersedes its "the console script the install
+> produced" sentence.
+>
+> **1. A venv's `bin/` is not the answer.** `uv pip install mcp-server-time` left ~20
+> executables in `venv/bin` — `httpx`, `uvicorn`, `typer`, `jsonschema`, `pygmentize`, and the
+> rest of the dependency tree. Any rule that reads the directory has to choose among them.
+> The distribution's own `console_scripts` do not: `importlib.metadata.distribution(<name>)`
+> returns exactly `["mcp-server-time"]`. The node side has the same shape and the same fix —
+> the installed package's `bin` field, not `node_modules/.bin`. Measured end to end:
+> `uvx mcp-server-time --local-timezone=UTC` → absolute entrypoint → handshake, 2 tools;
+> `npx -y @modelcontextprotocol/server-everything stdio` → 6.8s, handshake, 13 tools.
+>
+> **2. A resolver accepts specs a metadata lookup cannot.** A path, a VCS URL, a wheel. Passed
+> as a package name the query failed with a bare `exit status 1`, naming neither cause nor
+> remedy. Those specs are refused BEFORE anything is installed — unless the declaration names
+> its own executable, which is the documented form and the only one that installs from git:
+> `uvx --from <spec> <executable>` (npm: `npx --package <spec> <executable>`). Measured:
+> `uvx --from git+https://github.com/chetto1983/calculator-mcp-server calculator-mcp-server`
+> clones, builds and installs in **16s**, then hand shakes with **23 tools**. The declared
+> executable is still required to exist on disk after the install — a typo fails the install,
+> it is not stored to fail at the first mount.
+>
+> **3. Skipping every flag is a silent wrong install.** #211's sketch took the first non-flag
+> argument as the package. `uvx --with httpx <pkg>` would then install `httpx`. Only a small
+> set of value-less flags (`-y`, `--yes`, `--quiet`, `--offline`, `--no-cache`, `--native-tls`,
+> `--isolated`, `--refresh`) and the two `--from`/`--package` forms are understood; **any other
+> flag ends preparation and the declaration is launched as written**. Not preparing is a
+> disclosed outcome (`describePreparation` says so, the cockpit shows it); installing the wrong
+> package is not.
+>
+> **Bounds.** Preparation now runs under `installPrepareTimeout` = 5 min — the git case takes
+> 16s, and the daemon's HTTP server sets no write timeout, so an unbounded resolver would hold
+> a cockpit request open indefinitely. Verification keeps its 30s: on a prepared environment
+> the handshake starts a local binary.
+>
+> **What this does NOT show.** Nothing here was measured inside the aura container or on a
+> cold `uv` cache — both runs reused this host's warm cache — so the numbers bound the work,
+> not the wait an operator sees on a first install. It says nothing about Windows (no `venv/bin`,
+> no `.bin` shim shape), and nothing about per-identity isolation: preparation is still
+> host-wide and shared, which #209/#210's credential question leaves open.
