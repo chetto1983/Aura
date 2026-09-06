@@ -120,30 +120,6 @@ type AuraCapabilityGrants struct {
 	GrantedAt  pgtype.Timestamptz `json:"granted_at"`
 }
 
-type AuraContentPartLinks struct {
-	PartID           pgtype.UUID        `json:"part_id"`
-	ReachabilityKind string             `json:"reachability_kind"`
-	ReachabilityID   string             `json:"reachability_id"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-}
-
-type AuraContentParts struct {
-	ID                   pgtype.UUID        `json:"id"`
-	StorageID            string             `json:"storage_id"`
-	TenantID             pgtype.UUID        `json:"tenant_id"`
-	OwnerID              pgtype.UUID        `json:"owner_id"`
-	MimeType             string             `json:"mime_type"`
-	DigestSha256         string             `json:"digest_sha256"`
-	ByteLength           int64              `json:"byte_length"`
-	EncryptionClass      string             `json:"encryption_class"`
-	RetentionClass       string             `json:"retention_class"`
-	ProviderRequirements []byte             `json:"provider_requirements"`
-	FallbackText         string             `json:"fallback_text"`
-	State                string             `json:"state"`
-	ExpiresAt            pgtype.Timestamptz `json:"expires_at"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-}
-
 // L2.5 hard-rolling-buffer audit (amendment #22). One row per pair-drop; never written when L1 alone suffices (SC-1).
 type AuraContextRotEvents struct {
 	Ts             pgtype.Timestamptz `json:"ts"`
