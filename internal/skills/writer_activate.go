@@ -25,6 +25,15 @@ func (w *Writer) Archive(ctx context.Context, name string, src ApprovalSource, a
 	if err := SanitizeName(name, name); err != nil {
 		return fmt.Errorf("archive %q: %w", name, err)
 	}
+	// A name this root does not hold is the caller's mistake, and it has a sentinel. Without
+	// this the verb fell through to promoteDir and answered with a raw os.Rename failure —
+	// two absolute host paths and "no such file or directory" — which tells an operator
+	// nothing, tells a model less, and puts the deployment's filesystem layout into an LLM
+	// context. Measured 2026-09-06 driving skill_manage live. Delete already guards this way;
+	// the cockpit route had to pattern-match fs.ErrNotExist to undo it.
+	if !w.ActiveExists(name) {
+		return fmt.Errorf("archive %q: %w", name, ErrUnknownSkill)
+	}
 	dstDir := filepath.Join(w.activeDir, name)
 	hash, _ := HashSkillDir(dstDir) // best-effort; a missing dir hashes empty
 
@@ -89,6 +98,11 @@ func (w *Writer) Restore(ctx context.Context, name string, src ApprovalSource, a
 	}
 	srcDir := filepath.Join(w.archiveDir, name)
 	dstDir := filepath.Join(w.activeDir, name)
+	// Same as Archive: an archived skill that is not there gets the sentinel, not a rename
+	// error naming two host paths.
+	if _, err := os.Stat(filepath.Join(srcDir, "SKILL.md")); err != nil {
+		return fmt.Errorf("restore %q: %w", name, ErrUnknownSkill)
+	}
 
 	hash, _ := HashSkillDir(srcDir) // best-effort; hash the archived tree before the move
 
@@ -122,8 +136,8 @@ func (w *Writer) Delete(ctx context.Context, name string, actor AuditActor) (str
 	// a delete row for a skill still sitting in another root, still in every agent's context —
 	// and the caller would be told it was removed. The scoped Writer made that reachable:
 	// since #214 the root a delete addresses is the actor's, while the listing an operator
-	// clicked from may be the deployment's. Restore already fails this way (promoteDir on an
-	// absent source); delete was the one verb that did not.
+	// clicked from may be the deployment's. Archive and Restore guard the same way — they
+	// used to fail on promoteDir instead, which reported an absent name as a rename error.
 	if !w.ActiveExists(name) {
 		return "", fmt.Errorf("delete %q: %w", name, ErrUnknownSkill)
 	}

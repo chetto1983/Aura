@@ -146,16 +146,41 @@ func TestWriteInstallPreAuditFailures(t *testing.T) {
 	}
 }
 
+// An unknown NAME is the caller's mistake, not a filesystem fault, and it must arrive as the
+// sentinel the package declares for it.
+//
+// This test previously asserted the opposite — that Archive and Restore surface promoteDir's
+// own "move to archived" / "promote archived->active" rename failure. That was the defect,
+// pinned: measured 2026-09-06 through skill_manage, archiving a name that does not exist
+// handed the model two absolute host paths and "no such file or directory". The assertions
+// are inverted here deliberately, not relaxed: the errors must now be errors.Is-checkable and
+// must NOT carry a host path.
+func TestLifecycleMethodsRejectAnUnknownNameWithTheSentinel(t *testing.T) {
+	w, root := newTestWriter(t)
+	actor := AuditActor{ActorID: "cli"}
+
+	for _, test := range []struct {
+		name string
+		call func() error
+	}{
+		{"archive", func() error { return w.Archive(t.Context(), "missing", ApprovalCLI, actor) }},
+		{"restore", func() error { return w.Restore(t.Context(), "missing", ApprovalCLI, actor) }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.call()
+			if !errors.Is(err, ErrUnknownSkill) {
+				t.Fatalf("%s of an absent skill = %v, want ErrUnknownSkill", test.name, err)
+			}
+			if strings.Contains(err.Error(), root) {
+				t.Fatalf("%s error leaks a host path: %v", test.name, err)
+			}
+		})
+	}
+}
+
 func TestLifecycleMethodsSurfacePreAuditFilesystemErrors(t *testing.T) {
 	w, _ := newTestWriter(t)
 	actor := AuditActor{ActorID: "cli"}
-
-	if err := w.Archive(t.Context(), "missing", ApprovalCLI, actor); err == nil || !strings.Contains(err.Error(), "move to archived") {
-		t.Fatalf("Archive missing active = %v, want move error", err)
-	}
-	if err := w.Restore(t.Context(), "missing", ApprovalCLI, actor); err == nil || !strings.Contains(err.Error(), "promote archived->active") {
-		t.Fatalf("Restore missing archive entry = %v, want promote error", err)
-	}
 
 	w.archiveDir = ""
 	if err := w.Restore(t.Context(), "missing", ApprovalCLI, actor); err == nil || !strings.Contains(err.Error(), "archive dir not configured") {
