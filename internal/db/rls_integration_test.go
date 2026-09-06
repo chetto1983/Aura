@@ -21,6 +21,7 @@ import (
 	"errors"
 	"github.com/chetto1983/aura/internal/dbtest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -192,6 +193,48 @@ func TestVerifyRLSEnforcedRejectsSuperuser(t *testing.T) {
 	t.Cleanup(admin.Close)
 	if err := VerifyRLSEnforced(ctx, admin); !errors.Is(err, ErrRLSBypass) {
 		t.Fatalf("VerifyRLSEnforced(superuser) = %v, want ErrRLSBypass", err)
+	}
+}
+
+// TestVerifyRLSEnforcedRejectsTheMigrationRole is the half that was missing until
+// 2026-09-06, and it is the one a real deployment is most likely to trip.
+//
+// aura_migrate carries NEITHER rolsuper NOR rolbypassrls — it is created with a bare
+// CREATE ROLE ... WITH LOGIN PASSWORD — so the original two-term check passed it. It
+// nonetheless bypasses every policy, because it OWNS the tables and migration 0087
+// deliberately uses ENABLE rather than FORCE. A daemon pointed at AURA_DB_MIGRATE_URL
+// therefore booted clean and served every tenant's rows to every tenant, with no symptom
+// anywhere. This test fails on the old code for the right reason: the role attributes it
+// asserts are genuinely both false.
+func TestVerifyRLSEnforcedRejectsTheMigrationRole(t *testing.T) {
+	ctx := context.Background()
+	rlsMigratedPool(t) // apply roles + migrations first; the ownership this asserts is their product
+
+	migrate, err := Open(ctx, &Config{URL: dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))})
+	if err != nil {
+		t.Fatalf("Open (migration role): %v", err)
+	}
+	t.Cleanup(migrate.Close)
+
+	// The premise, asserted rather than assumed: this role is refused for OWNERSHIP, not
+	// because it quietly carries one of the two attributes the old check already caught.
+	var isSuper, bypassRLS bool
+	if err := migrate.QueryRow(ctx,
+		"SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user").
+		Scan(&isSuper, &bypassRLS); err != nil {
+		t.Fatalf("read migration role attributes: %v", err)
+	}
+	if isSuper || bypassRLS {
+		t.Fatalf("test premise broken: migration role has rolsuper=%t rolbypassrls=%t, so this "+
+			"proves the old check, not the ownership one", isSuper, bypassRLS)
+	}
+
+	err = VerifyRLSEnforced(ctx, migrate)
+	if !errors.Is(err, ErrRLSBypass) {
+		t.Fatalf("VerifyRLSEnforced(migration role) = %v, want ErrRLSBypass", err)
+	}
+	if !strings.Contains(err.Error(), "OWNS") {
+		t.Fatalf("err = %v, want the message to name ownership as the reason", err)
 	}
 }
 

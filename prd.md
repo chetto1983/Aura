@@ -4588,7 +4588,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 >
 > **Retrieval and API convergence.** The one host retriever accepts natural-language `query`, `limit`, and optional owner-valid `document_ids`; unknown fields are rejected before execution. It combines PostgreSQL weighted document routing (title/tags/digest/card) with ArcadeDB passage full-text and dense candidates, collapses by document while retaining top passages, validates active generation/openability in PostgreSQL, and uses deterministic tie-breaking by score then document ID then passage ordinal. The checked-in calibration evaluates dense-only, lexical-only, a confidence-gated cascade, native rank-based RRF (`k=60`), and normalized weighted fusion against the exact same corpus. Eligible profiles must satisfy recall@1 ≥99%, citation locator accuracy 100%, exact-answer accuracy 100%, the 100k capacity gate, and non-inferiority on both Italian and English subsets; the winner is chosen lexicographically by exact-answer accuracy, recall@1, MRR, p95 latency, then implementation complexity. Only that immutable winner exists in the production query path; losing branches remain test-harness code. Existing Aura evidence where equal-weight fusion reduced dense retrieval from 8/8 to 5/8 forbids assuming RRF is the winner. Query embedding failure degrades explicitly to lexical passage + card FTS; ArcadeDB failure degrades to card FTS and requires `document_open` before a factual answer; neither is reported as an empty corpus. Empty queries return a bounded recent-ready listing only when explicitly requested by the UI/list operation, never through a malformed model tool call. The agent tool, CLI search, and `/api/documents?q=` share this retriever; the title-only ILIKE API path is removed. No reranker ships unless the checked-in corpus proves a statistically significant exact-answer/recall gain while preserving every hard gate, after which it replaces rather than shadows the selected production profile.
 >
-> **Tenant boundary and queue correctness.** Every tenant-bearing table, including `document_ingest_jobs` during its retirement, `storage_objects`, `ingestion_jobs`, `ingestion_events`, and `delete_jobs`, gains a typed owner/FK and fail-closed RLS. JSON payloads and object keys are never authoritative identity. Cross-tenant workers enumerate identity IDs with a narrowly owned store method, then claim and mutate under `db.WithIdentityTx`; no application connection gets `BYPASSRLS`. Job uniqueness is `(identity_id, job_type, idempotency_key)`. Claim includes queued work and expired `running` leases, increments a fencing generation, and uses `FOR UPDATE SKIP LOCKED`; heartbeats extend only the current generation and a stale worker cannot commit. Status transition plus event/outbox write is one transaction. Retryable errors use bounded exponential backoff with full jitter; policy/format/size/auth errors fail fast. Automatic retry first returns the asset/version to a processable non-visible state. Manual retry creates a new attempt generation for a terminal job with the same logical idempotency key, never a duplicate document/version.
+> **Tenant boundary and queue correctness.** *(Amended 2026-09-06 — the five tables this paragraph named are settled; see the amendment below for what replaced them.)* Every tenant-bearing table gains a typed owner/FK and fail-closed RLS. JSON payloads and object keys are never authoritative identity. Cross-tenant workers enumerate identity IDs with a narrowly owned store method, then claim and mutate under `db.WithIdentityTx`; no application connection gets `BYPASSRLS`. Job uniqueness is `(identity_id, job_type, idempotency_key)`. Claim includes queued work and expired `running` leases, increments a fencing generation, and uses `FOR UPDATE SKIP LOCKED`; heartbeats extend only the current generation and a stale worker cannot commit. Status transition plus event/outbox write is one transaction. Retryable errors use bounded exponential backoff with full jitter; policy/format/size/auth errors fail fast. Automatic retry first returns the asset/version to a processable non-visible state. Manual retry creates a new attempt generation for a terminal job with the same logical idempotency key, never a duplicate document/version.
 >
 > **Delete, privacy, and reconciliation.** Delete first locks the owner-scoped document, sets `deleting`, snapshots every raw/derived object and projection generation into an idempotent delete job, and immediately excludes the document from search/open. A worker tombstones/removes Arcade passages, removes the deterministic per-document sandbox directory, deletes every Garage object through the per-identity resolver, treats object-not-found as success, verifies absence with `HEAD`, and only then atomically marks ledger, asset, versions, document, job, and event deleted. A transient object/projection failure leaves the document `deleting` and retries; `dead_letter` is an operational/privacy alert, never success. Caller-selected open filenames are aliases inside the deterministic document directory and are therefore purged with it. Reconciliation scans live ledger↔object, active Postgres generation↔Arcade projection, expired job leases, dangling ready rows, and legacy pre-deleted assets. It reports unledgered objects before any repair and deletes only keys proven owned by the target identity/document.
 >
@@ -12318,3 +12318,74 @@ flusso completo, che funziona.
 > **Lo scoping è provato come proprietà di directory e di precedenza**, con fake al posto dei
 > due store dell'ACL. Che RLS regga davvero sotto il principal della board è ciò che il tier
 > `db_integration` dovrebbe dire, e qui non l'ha detto.
+
+## Section La guardia RLS contava due termini su tre (Amendment #222, 2026-09-06)
+
+> **Amendment #222 (2026-09-06 — misurato leggendo le migration e il sorgente Go, NON su uno
+> stack acceso; vedi "cosa questa misura non dimostra" in fondo).**
+>
+> `db.VerifyRLSEnforced` rifiuta di far partire il daemon quando il ruolo del pool ignora ogni
+> policy RLS. Verificava `rolsuper` e `rolbypassrls`. Ne mancava un terzo, e la migration 0087
+> lo aveva già scritto a parole due volte: «aura_migrate **OWNS** these tables and a table owner
+> bypasses RLS by default, which is exactly what golang-migrate needs to keep running DDL and
+> backfills», e poi la conclusione che `aura_app` è sicuro perché è «a **non-owner**,
+> non-superuser, non-BYPASSRLS role». Tre condizioni; la funzione ne controllava due.
+>
+> Il buco era raggiungibile, non teorico. `aura_migrate` è creato con un `CREATE ROLE ... WITH
+> LOGIN PASSWORD` nudo (`internal/db/migrate.go`), quindi non porta né `rolsuper` né
+> `rolbypassrls`: un `AURA_DB_URL` puntato su di lui — l'errore più probabile, perché è l'altro
+> DSN che il deployment ha già in mano — **passava il gate** e serviva le righe di ogni identità
+> a ogni identità, senza alcun sintomo. È esattamente il fallimento silenzioso che il commento
+> di quella funzione dichiara di voler impedire.
+>
+> Nessuna migration usa `FORCE ROW LEVEL SECURITY` (verificato su tutte): è una scelta
+> deliberata che 0087 motiva — FORCE romperebbe le migration — non una svista da correggere. Il
+> possesso significa quindi davvero bypass, e va controllato in Go perché SQL non può difendersi
+> da chi lo esegue.
+>
+> Il controllo **conta** invece di confrontare un nome: quale ruolo possiede le tabelle è una
+> proprietà del database, non di una costante che questo package può lasciare invecchiare. Un
+> deployment che migra con un altro ruolo è coperto gratis. Un conteggio a zero passa di
+> proposito — è un database le cui migration non sono ancora girate, dove non c'è nessuna policy
+> da bypassare, e `db.CheckMigrationHead` lo rifiuta già per la sua ragione: dare a un solo
+> guasto due messaggi diversi è peggio che darne uno.
+>
+> **Correzione a §Tenant boundary and queue correctness.** Quel paragrafo prometteva RLS
+> fail-closed su cinque tabelle nominate. Misurato oggi sul sorgente delle migration: tre non
+> esistono più — `document_ingest_jobs`, `storage_objects`, `delete_jobs`, droppate insieme ad
+> altre sette da `0098_retire_document_catalog` — e le altre due, `ingestion_jobs` e
+> `ingestion_events`, la RLS ce l'hanno già dal loop di `0093_document_pipeline_convergence`,
+> con la stessa coppia permissiva + floor RESTRICTIVE di 0087. La promessa è mantenuta o
+> superata su tutte e cinque; l'elenco è solo invecchiato. Il paragrafo perde l'elenco e tiene
+> la regola.
+>
+> **Il censimento che ha prodotto questo emendamento dice anche di NON estendere RLS.** Delle 14
+> tabelle vive che portano `identity_id` e non hanno RLS, zero sono convertibili così come sono.
+> Sette sono la famiglia dell'autenticazione, interrogate *prima* che un'identità esista
+> (`GetAccountByTelegramID` è la lettura che *produce* l'identità di un turno Telegram); tre sono
+> ledger append-only con `identity_id` **text** che contiene i letterali `local` e
+> `anonymousAuditPrincipal`, su cui una policy con `::uuid` solleva `22P02` invece di filtrare;
+> lo scheduler ha bisogno del due-set globale sotto `FOR UPDATE SKIP LOCKED` che è il suo
+> meccanismo di correttezza. La sezione «DELIBERATELY LEFT UNCOVERED» di 0087 lo aveva già
+> stabilito il 2026-08-02 e regge intatta. L'unica a un passo è `steer_queue`, dove la metà
+> per-riga è già scritta (`queue_sweep.go` apre già una identity-tx per riga) e mancano solo le
+> due query di lista.
+>
+> **Un vincolo scoperto e non ancora registrato altrove:** un `LEFT JOIN` attraverso un confine
+> RLS degrada a NULL, non a errore. `purgeableQuery` (`cmd/aura/serve_provisioning.go`) fa
+> `LEFT JOIN aura.identity_auth_links`; se quella tabella prendesse RLS, le righe esterne
+> tornerebbero comunque e solo `authula_user_id` diventerebbe NULL — il purge cancellerebbe
+> l'identità Aura e **non cancellerebbe mai l'utente Authula**, in silenzio. Oggi non è un baco
+> (quella tabella non ha RLS): è il vincolo da leggere prima che qualcuno gliela metta. È una
+> forma di fallimento distinta da "zero righe" e nell'albero si presenta solo lì.
+>
+> **Cosa questa misura NON dimostra.** Tutto quanto sopra è derivato dal sorgente delle migration
+> e dal codice Go, **non da un database acceso**: nessun Postgres era raggiungibile mentre il
+> censimento girava. Non è misurato quante righe portino ancora il letterale `local` in
+> `scheduler_tasks`, `pending_notifications` o `skill_audit` — numero che decide se allineare
+> quelle colonne a `uuid` sia un `UPDATE` da cinque righe o una migrazione vera; che il letterale
+> sia ancora vivo lo prova solo il fatto che `serve_auth.go` continua a migrarlo. Non è misurato
+> il costo per tick di un loop per identità, perché non c'è un N. E non è verificato su questo
+> deployment che `aura_app` non abbia davvero il bypass: lo asserisce `TestAuraAppLacksRLSBypass`,
+> che richiede un database vivo per girare — se in produzione `AURA_DB_URL` puntasse al superuser
+> `aura`, ogni policy citata qui, quelle esistenti comprese, sarebbe inerte.
