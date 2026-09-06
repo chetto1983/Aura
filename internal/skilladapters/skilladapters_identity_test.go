@@ -44,7 +44,7 @@ func identityAdapter(t *testing.T) (*Loader, map[string]string, *int) {
 	}
 	empty := skills.NewLoader(skills.Config{Roots: []string{t.TempDir()}})
 	invalidations := 0
-	adapter := NewIdentityLoader(func(identity string) *skills.Loader {
+	adapter := NewIdentityLoader(func(_ context.Context, identity string) *skills.Loader {
 		if l, ok := loaders[identity]; ok {
 			return l
 		}

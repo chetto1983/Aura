@@ -11,6 +11,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"net"
 	"os"
@@ -121,8 +122,8 @@ func TestSnippetExec_RoutedEndToEnd(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(calcDir, "calc.py"), []byte("print('SNIPPET-OK')\n"), 0o644); err != nil {
 		t.Fatalf("write snippet: %v", err)
 	}
-	sources := func(string) []usersandbox.MaterializeSource {
-		return []usersandbox.MaterializeSource{{HostDir: exportDir, Dest: "/skills"}}
+	sources := func(context.Context, string) ([]usersandbox.MaterializeSource, error) {
+		return []usersandbox.MaterializeSource{{HostDir: exportDir, Dest: "/skills"}}, nil
 	}
 	router := newDockerRouter(t, sources)
 

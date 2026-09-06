@@ -33,7 +33,12 @@ func modelActor(ctx context.Context) skills.AuditActor {
 // deployment library alone). It is the seam per-identity skills hang on (amendment #214):
 // the composition root owns the identity→roots decision (skills.Layout) and this package
 // stays a projection.
-type LoaderResolver func(identityID string) *skills.Loader
+//
+// It takes the call's ctx because resolving a reader's library is no longer a pure function
+// of their id: what somebody else has SHARED with them is a query (criterion 5), and a
+// resolver that had to run it on a background context could neither be cancelled with the
+// turn nor carry its deadline.
+type LoaderResolver func(ctx context.Context, identityID string) *skills.Loader
 
 // Loader bridges a live *skills.Loader onto the tools.skillLoader seam: it projects
 // skills.Skill into the tool-local SkillMeta, renders the manifest the tool's
@@ -52,7 +57,7 @@ type Loader struct {
 // every unscoped caller (the CLI, a pool-free manifest path). manCap is the manifest byte cap
 // (cfg.SkillManifestCapBytes).
 func NewLoader(loader *skills.Loader, manCap int) *Loader {
-	return NewIdentityLoader(func(string) *skills.Loader { return loader }, loader.Invalidate, manCap)
+	return NewIdentityLoader(func(context.Context, string) *skills.Loader { return loader }, loader.Invalidate, manCap)
 }
 
 // NewIdentityLoader builds the adapter that answers per identity. invalidate expires every
@@ -64,7 +69,7 @@ func NewIdentityLoader(resolve LoaderResolver, invalidate func(), manCap int) *L
 
 // loaderFor resolves the loader for the identity carried on ctx.
 func (a *Loader) loaderFor(ctx context.Context) *skills.Loader {
-	return a.resolve(identityctx.IdentityID(ctx))
+	return a.resolve(ctx, identityctx.IdentityID(ctx))
 }
 
 // List projects the loaded skills into the tool-local SkillMeta shape.

@@ -357,7 +357,7 @@ func newSkillTool(cfg *config.Config, writerPool *pgxpool.Pool) *tools.SkillTool
 	}
 	// One loader per identity, resolved on the call (amendment #214): the model reads its
 	// OWN library overlaid on the deployment's, and never another person's.
-	loaders := newIdentityLoaders(cfg)
+	loaders := newIdentityLoaders(cfg, newSharedSkillReader(cfg, writerPool))
 	tool := &tools.SkillTool{
 		Loader: skilladapters.NewIdentityLoader(loaders.forIdentity, loaders.invalidateAll, cfg.SkillManifestCapBytes),
 	}

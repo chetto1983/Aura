@@ -92,7 +92,7 @@ func TestBoxHoldsOnlyItsOwnAndTheHouseSkills(t *testing.T) {
 		},
 	}
 
-	router := buildSandboxRouter(cfg)
+	router := buildSandboxRouter(cfg, nil)
 	if router == nil {
 		t.Fatal("buildSandboxRouter returned nil — that would be a host-fallback door at the composition root")
 	}

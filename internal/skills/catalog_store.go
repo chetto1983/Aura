@@ -123,13 +123,19 @@ func (s *CatalogStore) ListOwned(ctx context.Context, ownerID string) ([]Catalog
 // ListAlwaysApply returns the identity's always-on skills through the partial index
 // skill_catalog_always_apply_idx (acceptance criterion 7).
 //
-// NOT WIRED YET, and saying so here rather than leaving the comment to imply otherwise. The
-// always-on block is still rendered from the FILESYSTEM loader (cmd/aura/skills_roots.go),
-// which already scopes per identity and already knows the always flag from the frontmatter;
-// the row exists so the block can one day include a skill somebody SHARED, whose body lives
-// under its owner's root and which no filesystem scan of the reader's roots can find. That
-// step is the same unresolved design as the rest of the shared-in read (see ListByIDs), so
-// this method has a test and an EXPLAIN proof and no production caller.
+// STILL NO PRODUCTION CALLER, and the reason it was expected to acquire one is now closed
+// rather than pending. The always-on block is rendered from the FILESYSTEM loader
+// (cmd/aura/skills_roots.go), which scopes per identity and reads the always flag from the
+// frontmatter; this method existed for the case that scan cannot see — a skill somebody
+// SHARED, whose body is under its owner's root. Criterion 5 landed and decided the opposite
+// (skills.Loader.scanSharedDir): a share is never always-on for the grantee, because
+// always-on means "prepend this to every turn" and one identity must not be able to say that
+// about another's turns, least of all with a public grant.
+//
+// What is left is an indexed read of a denormalised column nothing reads back. The honest
+// futures are two: render the always-block from this query instead of a per-turn filesystem
+// scan, or drop the method, the column and its index together. Neither is this slice's, and
+// keeping the choice visible here is better than a comment that implies a caller is coming.
 func (s *CatalogStore) ListAlwaysApply(ctx context.Context, ownerID string) ([]CatalogRow, error) {
 	owner, err := db.ParseUUID("owner identity", ownerID)
 	if err != nil {
@@ -145,13 +151,8 @@ func (s *CatalogStore) ListAlwaysApply(ctx context.Context, ownerID string) ([]C
 // see a row that is not theirs ONLY when a grant names them or the row is public, so an id
 // that was not really shared resolves to nothing rather than to somebody else's skill.
 //
-// NOT WIRED YET (amendment #214 acceptance criterion 5 is open). A row is not a skill: to
-// show a shared skill in a listing, or to put it in the grantee's box, something has to read
-// a BODY out of the OWNER's filesystem root — which neither the Loader (roots are the
-// reader's) nor usersandbox.SourceResolver (func(identityID) []MaterializeSource: no ctx,
-// no error, so it cannot query the ACL) can do today. Widening either seam is a design
-// decision, not an implementation detail, so this half is deliberately left unconnected
-// rather than half-connected.
+// A row is not a skill: SharedReader takes it from here to the one directory the body may be
+// read from, under the OWNER's export and never their root, one skill per grant.
 func (s *CatalogStore) ListByIDs(ctx context.Context, readerID string, ids []string) ([]CatalogRow, error) {
 	if len(ids) == 0 {
 		return nil, nil

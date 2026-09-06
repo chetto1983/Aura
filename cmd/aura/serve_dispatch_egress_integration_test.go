@@ -226,7 +226,7 @@ func TestBuildSandboxRouter_LaunchesEgressFloor(t *testing.T) {
 
 	// The production composition root builds its OWN docker client from DOCKER_HOST and never
 	// returns nil — a router that cannot reach a daemon denies rather than disappearing.
-	router := buildSandboxRouter(cfg)
+	router := buildSandboxRouter(cfg, nil)
 	if router == nil {
 		t.Fatal("buildSandboxRouter returned nil — that would be a host-fallback door at the composition root")
 	}

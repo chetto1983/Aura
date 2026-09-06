@@ -93,17 +93,17 @@ func TestSkillLoaderRootsFallsBackToTheHouseLibrary(t *testing.T) {
 // expired for everybody on a write.
 func TestIdentityLoadersAreCachedPerIdentity(t *testing.T) {
 	t.Parallel()
-	loaders := newIdentityLoaders(rootsConfig(t))
+	loaders := newIdentityLoaders(rootsConfig(t), nil)
 
-	alice := loaders.forIdentity(rootsAlice)
-	if again := loaders.forIdentity(rootsAlice); again != alice {
+	alice := loaders.forIdentity(context.Background(), rootsAlice)
+	if again := loaders.forIdentity(context.Background(), rootsAlice); again != alice {
 		t.Fatal("a second call built a second loader — the snapshot would be thrown away every turn")
 	}
-	if loaders.forIdentity(rootsBob) == alice {
+	if loaders.forIdentity(context.Background(), rootsBob) == alice {
 		t.Fatal("two identities share one loader — they would share one skill set")
 	}
 	// Whitespace is not an identity of its own.
-	if trimmed := loaders.forIdentity("  " + rootsAlice + "  "); trimmed != alice {
+	if trimmed := loaders.forIdentity(context.Background(), "  "+rootsAlice+"  "); trimmed != alice {
 		t.Fatal("a padded identity resolved to a different loader")
 	}
 	loaders.invalidateAll() // no panic, and every cached snapshot is expired
@@ -117,7 +117,7 @@ func TestAlwaysBlockIsRenderedPerIdentity(t *testing.T) {
 	seedSkill(t, cfg.SkillsDir, "house-rule", "HOUSE BODY", true)
 	seedSkill(t, filepath.Join(cfg.SkillsIdentityDir, rootsAlice), "alice-rule", "ALICE BODY", true)
 
-	provider := alwaysBlockProvider(cfg)
+	provider := alwaysBlockProvider(cfg, nil)
 	alice := provider(identityctx.WithIdentityID(context.Background(), rootsAlice))
 	bob := provider(identityctx.WithIdentityID(context.Background(), rootsBob))
 
@@ -140,17 +140,17 @@ func TestAlwaysBlockIsRenderedPerIdentity(t *testing.T) {
 // skills dir, renders no block at all rather than a header with nothing under it.
 func TestAlwaysBlockEmptyWithoutSkills(t *testing.T) {
 	t.Parallel()
-	if got := alwaysBlockProvider(nil)(context.Background()); got != "" {
+	if got := alwaysBlockProvider(nil, nil)(context.Background()); got != "" {
 		t.Errorf("nil config block = %q, want empty", got)
 	}
-	if got := alwaysBlockProvider(&config.Config{})(context.Background()); got != "" {
+	if got := alwaysBlockProvider(&config.Config{}, nil)(context.Background()); got != "" {
 		t.Errorf("empty skills dir block = %q, want empty", got)
 	}
 	// A configured library with nothing in it still renders the catalogue header with its
 	// "no skills" line — pre-existing behaviour (skills.RenderManifest), pinned here because
 	// the per-identity provider must not have changed it: the block is byte-stable and the
 	// model is told the library is empty rather than being told nothing at all.
-	if got := alwaysBlockProvider(rootsConfig(t))(context.Background()); !strings.HasPrefix(got, skillCatalogueHeader) {
+	if got := alwaysBlockProvider(rootsConfig(t), nil)(context.Background()); !strings.HasPrefix(got, skillCatalogueHeader) {
 		t.Errorf("empty library block = %q, want the catalogue header", got)
 	}
 }
@@ -175,9 +175,13 @@ func TestSkillLayoutMirrorsConfig(t *testing.T) {
 func TestSandboxMaterializeSourcesScopesTheBox(t *testing.T) {
 	t.Parallel()
 	cfg := rootsConfig(t)
-	resolve := sandboxMaterializeSources(cfg)
+	ctx := context.Background()
+	resolve := sandboxMaterializeSources(cfg, nil)
 
-	got := resolve(rootsBob)
+	got, err := resolve(ctx, rootsBob)
+	if err != nil {
+		t.Fatalf("resolve for bob: %v", err)
+	}
 	want := []usersandbox.MaterializeSource{
 		{HostDir: filepath.Join(cfg.SkillsIdentityDir, rootsBob, ".export"), Dest: "/skills"},
 		{HostDir: cfg.SkillExportDir, Dest: "/skills"},
@@ -203,20 +207,20 @@ func TestSandboxMaterializeSourcesScopesTheBox(t *testing.T) {
 
 	// An unscoped box gets the deployment export once — not twice, which would clear and
 	// re-copy the same tree for nothing.
-	if unscoped := resolve(""); len(unscoped) != 1 || unscoped[0].HostDir != cfg.SkillExportDir {
+	if unscoped, _ := resolve(ctx, ""); len(unscoped) != 1 || unscoped[0].HostDir != cfg.SkillExportDir {
 		t.Fatalf("unscoped sources = %+v, want the deployment export alone", unscoped)
 	}
 
 	// A crafted identity falls back to the house export rather than to no /skills at all,
 	// which would silently unmake every stored snippet in that box.
-	if bad := resolve("../escape"); len(bad) != 1 || bad[0].HostDir != cfg.SkillExportDir {
+	if bad, _ := resolve(ctx, "../escape"); len(bad) != 1 || bad[0].HostDir != cfg.SkillExportDir {
 		t.Fatalf("sources for a crafted identity = %+v, want the deployment export alone", bad)
 	}
 
 	// With no export configured there is nothing to materialize and no empty source is
 	// invented for MaterializeIn to reject.
-	none := sandboxMaterializeSources(&config.Config{})
-	if got := none(rootsBob); len(got) != 0 {
+	none := sandboxMaterializeSources(&config.Config{}, nil)
+	if got, _ := none(ctx, rootsBob); len(got) != 0 {
 		t.Fatalf("sources with no export dir = %+v, want none", got)
 	}
 }

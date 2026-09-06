@@ -206,7 +206,7 @@ func replayAudit(ctx context.Context, turns []fixtureTurn, errOut io.Writer) ([]
 		LLM:             llm.Config{Model: "cache-audit", ContextWindow: 1_000_000, MaxOutputTokens: 32768},
 		RunDir:          runDir,
 		HistoryCap:      auditCfg.HistoryHardCapTurns,
-		AlwaysBlock:     alwaysBlockProvider(auditCfg),
+		AlwaysBlock:     alwaysBlockProvider(auditCfg, nil),
 	})
 
 	convID := "00000000-0000-0000-0000-0000000000aa"

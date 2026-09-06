@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/moby/moby/client"
 
 	"github.com/chetto1983/aura/internal/channels"
@@ -208,7 +209,7 @@ func (a handlerAdapter) Run(ctx context.Context, job cron.Job) (string, error) {
 // sidecar. Because the config default is NON-EMPTY (aura-egress:latest, SC#4) the floor is
 // on-by-default, and box creation is fail-CLOSED when that image is unavailable (ensureImage
 // pull-fail -> Resolve error -> Route err -> the tool DENIES).
-func buildSandboxRouter(cfg *config.Config) *usersandbox.SandboxRouter {
+func buildSandboxRouter(cfg *config.Config, pool *pgxpool.Pool) *usersandbox.SandboxRouter {
 	if cfg == nil {
 		// No config means no box spec. A denying router is the only honest answer; nil would be
 		// read as "no containment needed".
@@ -225,7 +226,7 @@ func buildSandboxRouter(cfg *config.Config) *usersandbox.SandboxRouter {
 		return usersandbox.NewSandboxRouter(nil, cfg.Profile, cfg.Sandbox)
 	}
 	pingSandboxDaemon(cli)
-	return usersandbox.NewSandboxRouter(newSandboxBackend(cli, cfg), cfg.Profile, cfg.Sandbox)
+	return usersandbox.NewSandboxRouter(newSandboxBackend(cli, cfg, pool), cfg.Profile, cfg.Sandbox)
 }
 
 // pingSandboxDaemon names a dead daemon ONCE, at boot, where an operator is already reading logs.
@@ -253,9 +254,9 @@ const sandboxPingTimeout = 5 * time.Second
 // dials at construction, so a nil client is safe): a docker-free cmd/aura test asserts EgressImage()
 // echoes cfg.Sandbox.EgressImage. WithEgress("") is a guarded no-op, but the config default is
 // non-empty so under a strict profile the floor is always wired.
-func newSandboxBackend(cli *client.Client, cfg *config.Config) *usersandbox.DockerBackend {
+func newSandboxBackend(cli *client.Client, cfg *config.Config, pool *pgxpool.Pool) *usersandbox.DockerBackend {
 	return usersandbox.NewDockerBackend(cli, cfg.Sandbox.Image, limitsFrom(cfg.Sandbox),
-		usersandbox.WithMaterializeSources(sandboxMaterializeSources(cfg)),
+		usersandbox.WithMaterializeSources(sandboxMaterializeSources(cfg, newSharedSkillReader(cfg, pool))),
 		usersandbox.WithEgress(cfg.Sandbox.EgressImage))
 }
 
@@ -263,19 +264,20 @@ func newSandboxBackend(cli *client.Client, cfg *config.Config) *usersandbox.Dock
 // (D-10): the skill export trees, landing at /skills — the SnippetSandboxPath root the routed
 // shell_exec runs snippets from.
 //
-// There are TWO of them since amendment #214, and their order is the whole point. The
-// identity's own export comes first and the deployment's second, so that on a name collision
-// the operator's skill is the one the box ends up running — the same precedence
+// There are THREE kinds of them since amendment #214, and their order is the whole point.
+// The skills SHARED with this identity come first, their own export second, the deployment's
+// last, so that on a name collision the operator's skill is the one the box ends up running
+// and a person's own beats anything handed to them — the same precedence
 // skills.Roots.LoaderRoots gives the model's context, because a box that runs a different
 // `deploy` than the one the model was briefed on is worse than either alone. Sources sharing
-// a Dest merge in order (MaterializeIn clears the dest once, before the first of them).
+// a Dest merge in order, and MaterializeIn clears each dest once before any of them lands.
 //
 // The identity parameter is no longer ignored, and that comment had to go with the reason
 // for it: the export dir is per identity now, so B's box holds B's skills and the house's,
-// never A's.
-func sandboxMaterializeSources(cfg *config.Config) usersandbox.SourceResolver {
+// never A's — and, since criterion 5, exactly those of A's that A has actually shared.
+func sandboxMaterializeSources(cfg *config.Config, shared *skills.SharedReader) usersandbox.SourceResolver {
 	layout := skillLayout(cfg)
-	return func(identityID string) []usersandbox.MaterializeSource {
+	return func(ctx context.Context, identityID string) ([]usersandbox.MaterializeSource, error) {
 		roots, err := layout.For(identityID)
 		if err != nil {
 			// Fail to the house library rather than to nothing: a box with no /skills is a box
@@ -285,21 +287,51 @@ func sandboxMaterializeSources(cfg *config.Config) usersandbox.SourceResolver {
 				"identity_id", identityID, "err", err)
 			roots = skills.Roots{Export: layout.Export}
 		}
+		out := sharedSkillSources(ctx, shared, identityID)
 		// An unscoped caller resolves both to the same directory; listing it twice would
 		// clear and re-copy one tree for nothing.
 		dirs := []string{roots.Export}
 		if layout.Export != roots.Export {
 			dirs = append(dirs, layout.Export)
 		}
-		out := make([]usersandbox.MaterializeSource, 0, len(dirs))
 		for _, dir := range dirs {
 			if strings.TrimSpace(dir) == "" {
 				continue
 			}
 			out = append(out, usersandbox.MaterializeSource{HostDir: dir, Dest: skills.InSandboxSkillsRoot})
 		}
-		return out
+		return out, nil
 	}
+}
+
+// sharedSkillSources maps the grants standing right now onto one source per shared skill.
+//
+// ONE SOURCE PER SKILL, rooted at that skill's own directory and landing at /skills/<name>.
+// The obvious shape — the owner's export tree at /skills — is the mistake amendment #215
+// records in its general form: an export tree holds EVERY skill its owner has, and tarDir
+// walks whatever it is given, so handing B the tree because A shared one skill from it puts
+// all of A's skills in B's box. The unit of a grant is a skill, so the unit of the source is
+// the skill's directory, and there is then nothing beside it to carry.
+//
+// A lookup that fails degrades to no shared skills, loudly, rather than failing the resolve:
+// a box is how its owner reaches every one of their own tools, and taking it away because
+// somebody else's share could not be confirmed is a larger outage than the missing share. The
+// direction is also the safe one — the mirror then removes what it cannot re-justify.
+func sharedSkillSources(ctx context.Context, shared *skills.SharedReader, identityID string) []usersandbox.MaterializeSource {
+	entries, err := shared.For(ctx, identityID)
+	if err != nil {
+		slog.Error("sandbox materialize: could not resolve what is shared with this identity — filling the box from their own library only",
+			"identity_id", identityID, "err", err)
+		return nil
+	}
+	out := make([]usersandbox.MaterializeSource, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, usersandbox.MaterializeSource{
+			HostDir: e.Dir,
+			Dest:    skills.InSandboxSkillsRoot + "/" + e.Name,
+		})
+	}
+	return out
 }
 
 // limitsFrom maps the AURA_SANDBOX_* cgroup knobs (config) into usersandbox.Resources: the

@@ -25,7 +25,7 @@ func TestDockerBackend_EgressOptionAndGetter(t *testing.T) {
 	// WithEgress wires the ref through to the getter.
 	b := NewDockerBackend(nil, "box:img", Resources{},
 		WithEgress("aura-egress:latest"),
-		WithMaterializeSources(func(string) []MaterializeSource { return nil }))
+		WithMaterializeSources(func(context.Context, string) ([]MaterializeSource, error) { return nil, nil }))
 	if got := b.EgressImage(); got != "aura-egress:latest" {
 		t.Fatalf("EgressImage() = %q, want aura-egress:latest", got)
 	}

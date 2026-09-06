@@ -423,7 +423,7 @@ func assembleChatEnv(
 	// box-capable tools (routed below at registry construction, plan 37-07) AND the idle-suspend
 	// reaper (buildDispatch reads chat.sandboxRouter). Never nil: an unreachable Docker daemon
 	// yields a router that denies every call, which is the containment answer (GATE-01).
-	sandboxRouter := buildSandboxRouter(cfg)
+	sandboxRouter := buildSandboxRouter(cfg, pool)
 
 	// The live `task` tool persists against the open pool (10-05 deviation #3): both
 	// `aura chat` and `aura serve` get the scheduler verb wired to the real DB. sandboxRouter
@@ -519,7 +519,7 @@ func assembleChatEnv(
 		MemoryPreloadEnabled: cfg.MemoryPreloadEnabled,
 		// Amendment #91 (fix-plan 1.12): bounded display-only CoT persistence cap.
 		ReasoningPersistMaxRunes: cfg.ReasoningPersistMaxRunes,
-		AlwaysBlock:              alwaysBlockProvider(cfg),
+		AlwaysBlock:              alwaysBlockProvider(cfg, newSharedSkillReader(cfg, pool)),
 		// The gateway resume hook records an operator's accept of a relayed gateway_approval
 		// pause into the SAME gateway instance (gw) the runner's PEP reads (D-03 point 2).
 		ResumeHook:  chainResumeHooks(newShellResumeHook(toolHandles.ShellApprovals), newGatewayResumeHook(gw), newScheduledTaskResumeHook(taskStore)),

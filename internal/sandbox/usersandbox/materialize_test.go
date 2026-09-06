@@ -265,12 +265,15 @@ func TestMaterializeIn_ValidationBranches(t *testing.T) {
 	ctx := context.Background()
 	h := BoxHandle{ContainerID: "box", IdentityID: "id"}
 
-	t.Run("empty and missing sources are skipped (no client call)", func(t *testing.T) {
+	t.Run("an incomplete source names nothing and reaches no client", func(t *testing.T) {
 		t.Parallel()
+		// A source missing its host dir or its dest is not a source: it neither lands nor
+		// claims a clear, so a nil client is never dialed. A source whose host dir merely
+		// does NOT EXIST is a different case and is covered by TestDestsToMirror — it still
+		// names its dest, so it does reach the client to clear it.
 		srcs := []MaterializeSource{
 			{HostDir: "", Dest: "/skills"},
 			{HostDir: "/x", Dest: ""},
-			{HostDir: filepath.Join(t.TempDir(), "does-not-exist"), Dest: "/skills"},
 		}
 		if err := MaterializeIn(ctx, nil, h, srcs); err != nil {
 			t.Fatalf("MaterializeIn skip-branches: %v", err)
@@ -340,41 +343,103 @@ func TestDestTooBroadToClear(t *testing.T) {
 	}
 }
 
-// TestClearedDestsClearsEachRootOnce covers the overlay rule two sources sharing a dest depend
-// on (amendment #214: an identity's export and the deployment's, both at /skills). Only the
-// first source that LANDS on a dest clears it; a second clear would erase what the first just
-// landed, and no test that passes a single source can see that.
-func TestClearedDestsClearsEachRootOnce(t *testing.T) {
+// TestDestsToMirror covers the clear plan, which is the whole of what makes MaterializeIn a
+// MIRROR rather than an append (amendment #214: an identity's export, the deployment's, and a
+// shared skill's own directory, all at or under /skills).
+//
+// It replaces TestClearedDestsClearsEachRootOnce, whose third case pinned the OPPOSITE of the
+// rule below — that a source whose host dir does not exist claims no clear. That was the bug,
+// not the contract: a REVOKED share is exactly a source that stopped existing, and under the
+// old rule nothing then removed its body from the box (criterion 5's second half). The rule
+// the old case protected — one clear per dest, never a second that erases what the first
+// landed — is the first case here and is unchanged.
+func TestDestsToMirror(t *testing.T) {
 	t.Parallel()
 
-	t.Run("two sources on one root clear once, in order", func(t *testing.T) {
-		t.Parallel()
-		cleared := clearedDests{}
-		if !cleared.take("/skills") {
-			t.Fatal("the first source on a root must clear it")
-		}
-		if cleared.take("/skills") {
-			t.Fatal("the second source must merge into the root, not wipe what the first landed")
-		}
-	})
-
-	t.Run("distinct roots each clear", func(t *testing.T) {
-		t.Parallel()
-		cleared := clearedDests{}
-		if !cleared.take("/skills") || !cleared.take("/root/.aura/agents") {
-			t.Fatal("separate roots are separate mirrors and each must be cleared")
-		}
-	})
-
-	t.Run("a root claims its clear only when a source reaches it", func(t *testing.T) {
-		t.Parallel()
-		// MaterializeIn skips a source whose host dir does not exist and never calls take
-		// for it, so the source that follows still clears. If a skipped source could claim
-		// the clear, a deleted skill would survive in the box for the whole session.
-		cleared := clearedDests{}
-		// (nothing taken for the skipped source)
-		if !cleared.take("/skills") {
-			t.Fatal("a root nothing has landed on yet must still be cleared")
-		}
-	})
+	tests := []struct {
+		name string
+		srcs []MaterializeSource
+		want []string
+	}{
+		{
+			name: "two sources on one root clear it once",
+			srcs: []MaterializeSource{
+				{HostDir: "/a", Dest: "/skills"},
+				{HostDir: "/b", Dest: "/skills"},
+			},
+			want: []string{"/skills"},
+		},
+		{
+			name: "distinct roots are distinct mirrors",
+			srcs: []MaterializeSource{
+				{HostDir: "/a", Dest: "/skills"},
+				{HostDir: "/b", Dest: "/root/.aura/agents"},
+			},
+			want: []string{"/skills", "/root/.aura/agents"},
+		},
+		{
+			// A shared skill lands at /skills/<name>. Its ancestor's rm -rf already covers
+			// it, and clearing it AFTER /skills would erase what /skills' own sources landed.
+			name: "a nested dest is covered by its ancestor",
+			srcs: []MaterializeSource{
+				{HostDir: "/shared/deploy", Dest: "/skills/deploy"},
+				{HostDir: "/mine", Dest: "/skills"},
+			},
+			want: []string{"/skills"},
+		},
+		{
+			// The revoked-share case: the grant is gone, so the source's host dir is gone,
+			// and the dest MUST still be mirrored or the body outlives the grant.
+			name: "a vanished host dir still names its dest",
+			srcs: []MaterializeSource{{HostDir: "/gone", Dest: "/skills"}},
+			want: []string{"/skills"},
+		},
+		{
+			name: "an incomplete source names nothing",
+			srcs: []MaterializeSource{
+				{HostDir: "", Dest: "/skills"},
+				{HostDir: "/x", Dest: ""},
+			},
+			want: []string{},
+		},
+		{
+			// The nesting test is a PREFIX test, and a prefix test without the separator
+			// calls /skills the ancestor of /skills-archive. It is not: dropping it would
+			// leave a real dest unmirrored, which is the revoked-body failure again.
+			name: "a sibling that merely starts the same is not nested",
+			srcs: []MaterializeSource{
+				{HostDir: "/a", Dest: "/skills"},
+				{HostDir: "/b", Dest: "/skills-archive"},
+			},
+			want: []string{"/skills", "/skills-archive"},
+		},
+		{
+			// No ancestor in the plan means nobody else clears it, so it must clear itself.
+			name: "a nested dest with no ancestor is its own mirror",
+			srcs: []MaterializeSource{{HostDir: "/shared/deploy", Dest: "/skills/deploy"}},
+			want: []string{"/skills/deploy"},
+		},
+		{
+			name: "dests are normalised before they are compared",
+			srcs: []MaterializeSource{
+				{HostDir: "/a", Dest: "/skills/"},
+				{HostDir: "/b", Dest: "skills"},
+			},
+			want: []string{"/skills"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := destsToMirror(tc.srcs)
+			if len(got) != len(tc.want) {
+				t.Fatalf("destsToMirror = %v, want %v", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Fatalf("destsToMirror = %v, want %v", got, tc.want)
+				}
+			}
+		})
+	}
 }

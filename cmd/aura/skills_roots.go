@@ -2,12 +2,20 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"os"
+	"slices"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/skillacl"
 	"github.com/chetto1983/aura/internal/skilladapters"
 	"github.com/chetto1983/aura/internal/skills"
 )
@@ -73,41 +81,177 @@ func skillLoaderRoots(cfg *config.Config, identity string) []string {
 // roots on every message. Entries are never evicted — the key set is the identity set, which
 // is bounded by the deployment's people, not by traffic.
 type identityLoaders struct {
-	cfg  *config.Config
-	mu   sync.Mutex
-	byID map[string]*skills.Loader
+	cfg    *config.Config
+	shared *skills.SharedReader
+	mu     sync.Mutex
+	byID   map[string]*cachedLoader
+	// invalidated is when the last write expired every cached answer. A grant set resolved
+	// before that instant is stale however late it arrives, which is the only thing that
+	// makes invalidateAll's promise ("visible to the next read") true while a query for the
+	// same identity is already in flight.
+	invalidated time.Time
 }
 
-func newIdentityLoaders(cfg *config.Config) *identityLoaders {
-	return &identityLoaders{cfg: cfg, byID: map[string]*skills.Loader{}}
+// cachedLoader is one identity's loader plus the shared-skill set it was built for. The set
+// is remembered so a re-resolve that finds the same grants keeps the SAME loader — rebuilding
+// it would throw the snapshot away, which is the cost this cache exists to avoid.
+type cachedLoader struct {
+	loader   *skills.Loader
+	shared   []string
+	resolved time.Time
 }
 
-// invalidateAll expires every cached snapshot, so a completed write is visible to the next
-// read in the same turn — for every reader, not only the writer: a write can change what a
-// grantee sees, and the writer does not know who has a warm loader.
+// sharedRecheckTTL is how long a resolved grant set is trusted before the next read asks the
+// database again. It matches the Loader's own snapshot TTL on purpose: a share and a skill
+// edit become visible on the same cadence, so an operator who grants and then looks does not
+// have to know which of the two clocks they are waiting on. Grants are written by a different
+// process (`aura skills share`), so nothing but this expiry can notice one.
+const sharedRecheckTTL = time.Second
+
+func newIdentityLoaders(cfg *config.Config, shared *skills.SharedReader) *identityLoaders {
+	return &identityLoaders{cfg: cfg, shared: shared, byID: map[string]*cachedLoader{}}
+}
+
+// invalidateAll expires every cached snapshot AND every resolved grant set, so a completed
+// write is visible to the next read in the same turn — for every reader, not only the writer:
+// a write can change what a grantee sees (deleting a skill takes its grants with it), and the
+// writer does not know who has a warm loader.
 func (l *identityLoaders) invalidateAll() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	for _, loader := range l.byID {
-		loader.Invalidate()
+	l.invalidated = time.Now()
+	for _, entry := range l.byID {
+		entry.loader.Invalidate()
+		entry.resolved = time.Time{}
 	}
 }
 
 // forIdentity returns the loader scoped to identity ("" = the deployment library alone).
-func (l *identityLoaders) forIdentity(identity string) *skills.Loader {
+//
+// The grant lookup runs WITHOUT the mutex held. It is a database round-trip, and holding the
+// map lock across it would make one identity's slow query the whole deployment's stall.
+//
+// Two callers racing therefore pay a redundant query — and they do NOT necessarily read the
+// same grants: a revoke landing between the two reads gives the later one a smaller answer,
+// and whichever query returned last would otherwise win the map. So the moment each read
+// STARTED is carried into install, and an answer older than the one already stored is
+// dropped. Without that, a revoked share could be re-installed by an in-flight query and
+// stay readable for another whole TTL, repeatedly, under exactly the concurrency a busy
+// deployment has.
+func (l *identityLoaders) forIdentity(ctx context.Context, identity string) *skills.Loader {
 	identity = strings.TrimSpace(identity)
+	if loader, fresh := l.cached(identity); fresh {
+		return loader
+	}
+	asked := time.Now()
+	return l.install(identity, l.sharedDirs(ctx, identity), asked)
+}
+
+// cached returns the identity's loader and whether its grant set is still within the TTL.
+func (l *identityLoaders) cached(identity string) (*skills.Loader, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if loader, ok := l.byID[identity]; ok {
-		return loader
+	entry, ok := l.byID[identity]
+	if !ok {
+		return nil, false
+	}
+	return entry.loader, time.Since(entry.resolved) < sharedRecheckTTL
+}
+
+// install records a grant set resolved by a read that started at asked. An unchanged set only
+// refreshes the clock: the loader, and the snapshot inside it, survive. An answer that is
+// older than the stored one is discarded rather than installed — see forIdentity.
+func (l *identityLoaders) install(identity string, shared []string, asked time.Time) *skills.Loader {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if entry, ok := l.byID[identity]; ok {
+		// Older than what is already stored, or older than the write that expired it: drop
+		// it. The entry keeps its expired timestamp, so the next read resolves again at once
+		// rather than serving this answer for a whole TTL.
+		if entry.resolved.After(asked) || l.invalidated.After(asked) {
+			return entry.loader
+		}
+		if slices.Equal(entry.shared, shared) {
+			entry.resolved = time.Now()
+			return entry.loader
+		}
+	}
+	// The same staleness question on a cold cache, where there is no entry to fall back on:
+	// a loader must be returned, so the answer is USED but not CACHED — the zero clock makes
+	// the next read resolve again instead of serving it for a whole TTL.
+	resolved := time.Now()
+	if l.invalidated.After(asked) {
+		resolved = time.Time{}
 	}
 	loader := skills.NewLoader(skills.Config{
 		Roots:        skillLoaderRoots(l.cfg, identity),
+		SharedDirs:   shared,
 		BodyCapBytes: l.cfg.SkillBodyCapBytes,
 		Blocklist:    l.cfg.SkillInjectionBlocklist,
 	})
-	l.byID[identity] = loader
+	l.byID[identity] = &cachedLoader{loader: loader, shared: shared, resolved: resolved}
 	return loader
+}
+
+// sharedDirs resolves the skill directories other identities have shared with this reader.
+//
+// A lookup that FAILS degrades to none, loudly. That direction is the security-relevant one:
+// carrying the previous answer forward would keep a REVOKED skill readable for as long as the
+// database stayed unreachable, and a share is an addition to a library that works without it,
+// never a dependency of the turn.
+func (l *identityLoaders) sharedDirs(ctx context.Context, identity string) []string {
+	if l.shared == nil || identity == "" {
+		return nil
+	}
+	shared, err := l.shared.For(ctx, identity)
+	if err != nil {
+		slog.Error("skills: could not resolve what is shared with this identity — reading their own library only",
+			"identity_id", identity, "err", err)
+		return nil
+	}
+	return skills.SharedDirs(shared)
+}
+
+// cliSharedDirs answers "what is shared with this identity" for the operator's read-only CLI
+// paths, which are otherwise pool-free.
+//
+// It opens its own pool and closes it, and it is BEST EFFORT: a database that cannot be
+// reached costs the operator the shared rows and a line on stderr saying so, never the
+// command. `aura skills list` with no --identity keeps its exact pre-#214 behaviour — it does
+// not dial at all — because nothing is shared with nobody and a listing of the house library
+// must not acquire a database dependency it never had.
+func cliSharedDirs(ctx context.Context, cfg *config.Config, identity string) []string {
+	if cfg == nil || strings.TrimSpace(identity) == "" {
+		return nil
+	}
+	pool, err := db.Open(ctx, &cfg.DB)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "warn: cannot read what is shared with this identity, listing their own roots only:", err)
+		return nil
+	}
+	defer pool.Close()
+	shared, err := newSharedSkillReader(cfg, pool).For(ctx, identity)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "warn: cannot read what is shared with this identity, listing their own roots only:", err)
+		return nil
+	}
+	return skills.SharedDirs(shared)
+}
+
+// newSharedSkillReader builds the grants→bodies join the per-identity loaders and the box
+// resolver both read (amendment #214 criterion 5). It returns nil — "nothing is shared with
+// anybody" — for every composition that has no pool, which is the honest answer where there
+// is no ACL to consult.
+func newSharedSkillReader(cfg *config.Config, pool *pgxpool.Pool) *skills.SharedReader {
+	if cfg == nil || pool == nil {
+		return nil
+	}
+	acl, err := skillacl.NewStore(pool)
+	if err != nil {
+		slog.Error("skills: resource ACL unavailable — no shared skill will be readable", "err", err)
+		return nil
+	}
+	return skills.NewSharedReader(acl, skills.NewCatalogStore(pool), skillLayout(cfg))
 }
 
 // alwaysBlockProvider returns a per-turn renderer of the messages[1] always-block
@@ -120,18 +264,18 @@ func (l *identityLoaders) forIdentity(identity string) *skills.Loader {
 // instruction the model follows, so an always-on skill of one person must not be prepended to
 // another person's turn. A context with no identity renders the deployment's own always-on
 // skills exactly as before.
-func alwaysBlockProvider(cfg *config.Config) func(context.Context) string {
+func alwaysBlockProvider(cfg *config.Config, shared *skills.SharedReader) func(context.Context) string {
 	if cfg == nil || cfg.SkillsDir == "" {
 		return func(context.Context) string { return "" }
 	}
-	loaders := newIdentityLoaders(cfg)
+	loaders := newIdentityLoaders(cfg, shared)
 	// The catalogue renders through the SAME adapter the skill tool's action=list uses,
 	// so there is one manifest renderer (cap + BM25 overflow tail included), not two that
 	// can drift — and it resolves the identity off the same context this provider reads.
 	catalogue := skilladapters.NewIdentityLoader(loaders.forIdentity, loaders.invalidateAll, cfg.SkillManifestCapBytes)
 	return func(ctx context.Context) string {
 		var b strings.Builder
-		if block, present := skills.RenderAlwaysBlock(loaders.forIdentity(identityctx.IdentityID(ctx)).List()); present {
+		if block, present := skills.RenderAlwaysBlock(loaders.forIdentity(ctx, identityctx.IdentityID(ctx)).List()); present {
 			b.WriteString(block)
 		}
 		// The catalogue of installed skills lives HERE, not in the skill tool's

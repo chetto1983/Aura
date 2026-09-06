@@ -84,7 +84,7 @@ func openProductionToolPipeRuntime(ctx context.Context, cfg *config.Config) (too
 		cfg,
 		pool,
 		taskStore,
-		buildSandboxRouter(cfg),
+		buildSandboxRouter(cfg, pool),
 		nil,
 	)
 	if err != nil {

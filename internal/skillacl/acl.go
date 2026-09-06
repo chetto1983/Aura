@@ -173,11 +173,10 @@ func (s *Store) RevokePublic(ctx context.Context, granter string, rt ResourceTyp
 // truthful answer — nothing is shared with nobody — and the RLS floor would return the same
 // emptiness one layer down.
 //
-// NOT WIRED YET: the CLI writes grants, nothing yet reads them on a turn. Criterion 5 of
-// amendment #214 ("a public grant makes A's skill readable to B in the list and in the box")
-// needs a reader that can reach a BODY under somebody else's root, and neither skills.Loader
-// nor usersandbox.SourceResolver can do that without a widened seam — see
-// skills.CatalogStore.ListByIDs. This method is the half that is finished.
+// It is the first step of skills.SharedReader, which joins it to the catalog and the layout
+// to answer the question a turn actually asks — which BODIES may this reader load — and both
+// consumers of that answer (the reader's Loader and the sources their box is filled from) go
+// through it, so the listing and the box cannot disagree about what a grant means.
 func (s *Store) AccessibleResourceIDs(ctx context.Context, identityID string, rt ResourceType, perm Perm) ([]string, error) {
 	if !perm.Valid() {
 		return nil, fmt.Errorf("%w: %d", ErrInvalidPerm, perm)

@@ -124,17 +124,33 @@ const (
 	skillsActionUpdate = "update"
 )
 
+// cliSkillLoader builds the loader the operator's read-only commands scan through: the
+// identity's roots (or the deployment's alone when unscoped) plus whatever other identities
+// have shared with them. `list` and `info` must answer from the SAME set or the body `info`
+// prints could be one `list` never showed.
+func cliSkillLoader(ctx context.Context, cfg *config.Config, identity string) *skills.Loader {
+	return skills.NewLoader(skills.Config{
+		Roots:        skillLoaderRoots(cfg, identity),
+		SharedDirs:   cliSharedDirs(ctx, cfg, identity),
+		BodyCapBytes: cfg.SkillBodyCapBytes,
+		Blocklist:    cfg.SkillInjectionBlocklist,
+	})
+}
+
 // skillsList prints the active skills the loader sees (name + description). It
 // scans the active SkillsDir and applies the load-time blocklist, exactly like the model
 // path (amendment #51 / D-40), so `aura skills list` reflects what the model would see.
 //
 // With --identity it scans that identity's roots instead — their own skills overlaid on the
-// deployment's, in the same precedence the agent gets (amendment #214) — which is how an
-// operator answers "what does this person's model actually see" without becoming them.
-func skillsList(_ context.Context, args []string) {
+// deployment's, PLUS what other identities have shared with them, in the same precedence the
+// agent gets (amendment #214) — which is how an operator answers "what does this person's
+// model actually see" without becoming them. Leaving the shares out would make that sentence
+// false the day somebody ran `aura skills share`, and an audit view that shows less than the
+// context does is worse than no audit view.
+func skillsList(ctx context.Context, args []string) {
 	cfg := config.LoadDB()
 	identity, _ := flagValue(args, "--identity")
-	loader := skills.NewLoader(skills.Config{Roots: skillLoaderRoots(cfg, identity), BodyCapBytes: cfg.SkillBodyCapBytes, Blocklist: cfg.SkillInjectionBlocklist})
+	loader := cliSkillLoader(ctx, cfg, identity)
 	loaded := loader.List()
 	if len(loaded) == 0 {
 		fmt.Println("ok: no skills")
@@ -148,15 +164,16 @@ func skillsList(_ context.Context, args []string) {
 	_ = w.Flush()
 }
 
-// skillsInfo prints a single skill's body for inspection.
-func skillsInfo(_ context.Context, args []string) {
+// skillsInfo prints a single skill's body for inspection. With --identity it resolves through
+// the same set that identity's model reads, shared skills included.
+func skillsInfo(ctx context.Context, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "usage: aura skills info <name> [--identity <uuid>]")
 		os.Exit(1)
 	}
 	cfg := config.LoadDB()
 	identity, _ := flagValue(args[1:], "--identity")
-	loader := skills.NewLoader(skills.Config{Roots: skillLoaderRoots(cfg, identity), BodyCapBytes: cfg.SkillBodyCapBytes, Blocklist: cfg.SkillInjectionBlocklist})
+	loader := cliSkillLoader(ctx, cfg, identity)
 	s, ok := loader.Get(args[0])
 	if !ok {
 		fmt.Fprintf(os.Stderr, "skill %q not found\n", args[0])

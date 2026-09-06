@@ -24,7 +24,7 @@ func TestBuildSandboxRouterWiresEgress(t *testing.T) {
 		Profile: config.ProfileSingleUserHardened,
 		Sandbox: config.SandboxConfig{Image: "aura-sandbox:latest", EgressImage: pinnedEgress},
 	}
-	if got := newSandboxBackend(nil, strictCfg).EgressImage(); got != pinnedEgress {
+	if got := newSandboxBackend(nil, strictCfg, nil).EgressImage(); got != pinnedEgress {
 		t.Fatalf("newSandboxBackend must wire WithEgress(cfg.Sandbox.EgressImage): EgressImage()=%q, want %q", got, pinnedEgress)
 	}
 
@@ -41,7 +41,7 @@ func TestBuildSandboxRouterWiresEgress(t *testing.T) {
 	if loaded.Sandbox.EgressImage != "aura-egress:latest" {
 		t.Fatalf("default egress image must be non-empty aura-egress:latest (floor-on, SC#4), got %q", loaded.Sandbox.EgressImage)
 	}
-	if got := newSandboxBackend(nil, loaded).EgressImage(); got == "" {
+	if got := newSandboxBackend(nil, loaded, nil).EgressImage(); got == "" {
 		t.Fatal("default-loaded cfg must yield a non-empty EgressImage() — the SBX-04 floor is on-by-default (SC#4)")
 	}
 
@@ -53,13 +53,13 @@ func TestBuildSandboxRouterWiresEgress(t *testing.T) {
 		Profile: config.ProfileDev,
 		Sandbox: config.SandboxConfig{Image: "aura-sandbox:latest", EgressImage: "aura-egress:latest"},
 	}
-	if r := buildSandboxRouter(nonStrict); r == nil {
+	if r := buildSandboxRouter(nonStrict, nil); r == nil {
 		t.Fatal("buildSandboxRouter under a non-strict profile must still return a router — nil permits host execution")
 	}
 	// And a nil config denies rather than panicking or handing back nil.
-	nilCfgRouter := buildSandboxRouter(nil)
+	nilCfgRouter := buildSandboxRouter(nil, nil)
 	if nilCfgRouter == nil {
-		t.Fatal("buildSandboxRouter(nil) must return a denying router, not nil")
+		t.Fatal("buildSandboxRouter(nil, nil) must return a denying router, not nil")
 	}
 	if _, err := nilCfgRouter.Route(context.Background()); err == nil {
 		t.Fatal("a config-less router must DENY, not resolve a box")
@@ -76,7 +76,7 @@ func TestBuildSandboxRouterStrictClientErrorFailsClosed(t *testing.T) {
 		Sandbox: config.SandboxConfig{Image: "aura-sandbox:latest"},
 	}
 
-	router := buildSandboxRouter(cfg)
+	router := buildSandboxRouter(cfg, nil)
 	if router == nil {
 		t.Fatal("Docker client construction failure returned a nil router; that permits host fallback")
 	}

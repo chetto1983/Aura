@@ -124,12 +124,15 @@ func (b *DockerBackend) Stop(ctx context.Context, h BoxHandle) error {
 // materializeInputs copies the resolver's sources for the identity into the box volume
 // at create and resume (D-10) by delegating to the MaterializeIn tar-stream helper. With no
 // SourceResolver wired (or no sources for the identity) it is a no-op and Resolve still
-// succeeds; otherwise a materialize error propagates so Resolve fails closed.
+// succeeds; a resolver error and a materialize error both propagate so Resolve fails closed.
 func (b *DockerBackend) materializeInputs(ctx context.Context, h BoxHandle) error {
 	if b.sources == nil {
 		return nil
 	}
-	srcs := b.sources(h.IdentityID)
+	srcs, err := b.sources(ctx, h.IdentityID)
+	if err != nil {
+		return fmt.Errorf("materialize sources for %q: %w", h.IdentityID, err)
+	}
 	if len(srcs) == 0 {
 		return nil
 	}

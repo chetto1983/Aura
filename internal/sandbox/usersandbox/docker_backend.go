@@ -39,11 +39,16 @@ type MaterializeSource struct {
 }
 
 // SourceResolver returns the materialization sources for one identity (host dirs mapped to
-// their in-box roots; today the composition root supplies the skills root). It is injected via
-// WithMaterializeSources so the backend stays decoupled from config path resolution and the
-// docker_integration tests can seed their own fixtures. A nil resolver (or empty result)
+// their in-box roots; today the composition root supplies the skills trees). It is injected
+// via WithMaterializeSources so the backend stays decoupled from config path resolution and
+// the docker_integration tests can seed their own fixtures. A nil resolver (or empty result)
 // means nothing is materialized — Resolve still succeeds.
-type SourceResolver func(identityID string) []MaterializeSource
+//
+// It takes a ctx and may fail because the answer is no longer a pure function of the
+// identity: since amendment #214 criterion 5 what belongs in a box depends on which grants
+// stand right now, which is a query. An error fails Resolve CLOSED — a box filled from a
+// half-known answer is the one outcome this seam must not produce.
+type SourceResolver func(ctx context.Context, identityID string) ([]MaterializeSource, error)
 
 // DockerBackend implements Backend over the moby/moby/client Docker Engine API. It is the
 // per-identity box runtime every routed tool ultimately execs into.

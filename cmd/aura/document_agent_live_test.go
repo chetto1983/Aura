@@ -320,7 +320,7 @@ func TestDocumentCorpusAgentEval(t *testing.T) {
 	})
 
 	recorded := &recordingDocumentLibrary{inner: newDocumentLibrary(pool, cfg)}
-	sandboxRouter := buildSandboxRouter(cfg)
+	sandboxRouter := buildSandboxRouter(cfg, nil)
 	registry := tools.NewRegistry()
 	registry.Register(tools.TextResponse{})
 	registry.Register(&tools.ToolSearch{Registry: registry})

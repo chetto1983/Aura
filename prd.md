@@ -11865,3 +11865,185 @@ flusso completo, che funziona.
 > il daemon Docker atterri davvero quello che questo layout descrive è ciò che il tier
 > `docker_integration` deve dire per la prima volta: qui non c'è un daemon, e nessuno ha visto
 > quel test passare.
+
+## Section L'unità di un grant è una skill, non un albero (Amendment #217, 2026-09-06)
+
+> **Amendment #217 (2026-09-06 — misurato leggendo il codice a `eb864e19` e sui tier che qui
+> girano davvero: unit + race, su Go 1.26, senza Postgres e senza daemon Docker).** Chiude il
+> criterio 5 di #214 — l'ultimo aperto — e **corregge il disegno che era stato abbozzato per
+> chiuderlo**, perché quel disegno riapriva il criterio 2.
+>
+> ### Il disegno abbozzato non era sicuro, e la ragione è già scritta in #215
+>
+> L'istruzione di partenza era: risolvere i grant, arrivare agli owner, e aggiungere *gli
+> alberi di export degli owner* come sorgenti addizionali con `Dest: "/skills"`.
+>
+> **Misura (`internal/skills/materialize.go`): l'export di un'identità contiene una
+> sottodirectory PER OGNI sua skill attiva** (`Materialize(name, skillDir, exportDir)` scrive
+> `exportDir/<name>`). Quindi dare a B l'albero di export di A perché A ha condiviso **una**
+> skill mette nel box di B **tutte** le skill di A. È esattamente la lezione di #215 —
+> *scopare un path non è contenere un albero* — riapplicata a una sorgente nuova: `tarDir` è
+> un `filepath.WalkDir`, e cammina tutto ciò che gli si dà.
+>
+> **Correzione, e diventa la regola generale: l'unità di un grant è una skill, quindi l'unità
+> della sorgente è la directory di quella skill.** Non c'è filtro da ricordare, non c'è
+> allowlist da sbagliare: accanto alla sorgente non c'è nient'altro da portarsi dietro.
+> `skills.SharedReader.For` restituisce `{Name, OwnerID, Dir}` con `Dir =
+> <owner-root>/.export/<name>`, e i due consumatori la proiettano ciascuno a modo suo —
+> `Loader.Config.SharedDirs` per la lista, una `MaterializeSource{HostDir: dir, Dest:
+> /skills/<name>}` per il box. **Un solo join, due proiezioni**: lista e box non possono
+> divergere su cosa significhi un grant.
+>
+> ### Il corpo si legge dall'EXPORT dell'owner, mai dalla sua root
+>
+> L'export contiene esattamente le skill **attive** (`Materialize`/`Dematerialize` lo tengono
+> in lockstep). Quindi una skill archiviata smette di essere leggibile dai suoi grantee nello
+> stesso istante in cui smette di esserlo per il suo proprietario, senza una seconda regola
+> che lo dica.
+>
+> ### D-217-1 — Una skill condivisa NON è mai `always:true` per chi la riceve
+>
+> `always: true` significa "anteponi questo a ogni turno". È una dichiarazione che il
+> proprietario fa **sui propri turni**. Portarla attraverso un grant vorrebbe dire che una
+> singola `aura skills share <name> --with public` antepone il testo di una persona a **ogni
+> turno di chiunque** nel deployment: la injection che #214 esiste per chiudere, riaperta da
+> un verbo che suona innocuo. `Loader.scanSharedDir` azzera il flag (test:
+> `TestLoaderSharedSkillIsNeverAlwaysOn`).
+>
+> **Conseguenza da registrare, non da nascondere:** questo *chiude* — non rinvia — l'unico
+> consumatore futuro che il commento di `CatalogStore.ListAlwaysApply` dichiarava. Quel metodo
+> resta senza chiamante di produzione, e con lui la colonna `always_apply` e il suo indice
+> parziale (criterio 7). Le due strade oneste sono: renderizzare l'always-block da quella
+> query indicizzata invece che da una scansione filesystem per turno, oppure rimuovere metodo,
+> colonna e indice insieme. **Non è di questa slice** e il commento del metodo lo dice ora in
+> chiaro invece di lasciar credere che un chiamante stia arrivando.
+>
+> ### D-217-2 — Una condivisione perde ogni collisione di nome
+>
+> Una skill condivisa è la pretesa più debole su un nome: perde contro la skill propria del
+> lettore **e** contro quella di casa (D-214-3). Due meccanismi, entrambi necessari e per
+> ragioni diverse:
+>
+> 1. **Nel Loader**, per ordine: gli `SharedDirs` si fondono PRIMA delle root, e il merge è
+>    per nome su una map — quindi la precedenza è esatta e per-skill.
+> 2. **Nel `SharedReader`**, per filtro (`nameTaken`): una condivisione il cui nome è già
+>    preso viene **scartata del tutto**. Nel box il merge non è per nome ma **per file**: due
+>    tar sullo stesso dest si sovrappongono voce per voce, quindi una skill condivisa che
+>    collide non perderebbe pulitamente — atterrerebbe **dentro** la directory della skill con
+>    cui collide, e un file in più accanto al `SKILL.md` di qualcun altro è istruzione
+>    eseguibile che quella persona non ha scritto.
+> 3. **Fra due condivisioni** (`withoutContestedNames`) — **misurato in audit avversariale il
+>    2026-09-06, dopo che i due meccanismi sopra erano scritti**: il catalogo è unico su
+>    `(owner, name)` e NON su `name`, quindi alice e carol possono possedere ciascuna un
+>    `deploy` e condividerlo con bob. `nameTaken` non vede questa collisione — non c'è nessun
+>    `deploy` nelle root di bob — e il risultato erano **due** voci per un nome solo: il
+>    Loader ne teneva l'ultima in silenzio, e il box tar-ava **entrambi** gli alberi dentro
+>    l'unico `/skills/deploy`, lasciando gli script di una persona accanto al `SKILL.md`
+>    dell'altra. È lo stesso danno del punto 2, raggiungibile con due grant e nessuna
+>    manomissione: **un `--with public` su un nome comune basta.** La risposta è la stessa —
+>    una condivisione non compete mai per un nome — quindi il nome conteso viene tolto a
+>    **entrambe**. Sceglierne una per owner id sarebbe un lancio di moneta invisibile, e i
+>    file della perdente resterebbero comunque nel box. Test:
+>    `TestSharedReaderDropsANameTwoOwnersShare`.
+>
+> ### D-217-3 — `MaterializeIn` è un mirror TOTALE, e senza questo la revoca non è garantita
+>
+> **La misura, ed è il punto in cui "la revoca viene gratis" si è rivelato falso.** La regola
+> precedente era: il clear di un dest è reclamato dalla PRIMA sorgente che ci **atterra**
+> davvero (`clearedDests.take`, chiamata dopo lo `os.Stat`). Una sorgente il cui host dir non
+> esiste veniva saltata e non reclamava niente. Ma **una condivisione revocata è esattamente
+> una sorgente che smette di esistere**: se il lettore non ha ancora scritto nessuna skill
+> propria e il deployment non ha ancora un export su disco, al resume successivo *nessuna*
+> sorgente atterra, quindi `/skills` non viene pulito, quindi **il corpo revocato sopravvive
+> nel box**. Stretto, ma è precisamente il criterio 5.
+>
+> Ora: `destsToMirror` calcola i dest **dall'elenco**, ognuno pulito una volta sola, **prima**
+> di qualunque estrazione, indipendentemente dal fatto che una sorgente per quel dest esista.
+> Un dest su cui non atterra nessuno viene specchiato a **vuoto** — che è la risposta vera e
+> quella sicura. Un dest annidato (`/skills/<name>`) viene scartato dal piano: il `rm -rf`
+> dell'antenato lo copre già, e pulirlo *dopo* `/skills` cancellerebbe ciò che le sorgenti di
+> `/skills` hanno appena posato.
+>
+> Corollario dell'ordine: **ogni tar viene costruito prima del primo clear** (`tarSources`).
+> Il clear è distruttivo e la costruzione è il passo che può fallire su input ostile (un
+> symlink nell'albero), quindi costruire prima è ciò che impedisce a una sorgente rifiutata di
+> lasciare il box già svuotato.
+>
+> ### D-217-4 — `SourceResolver` prende un ctx e può fallire; la produzione DEGRADA
+>
+> `func(ctx, identityID) ([]MaterializeSource, error)` (2 call site non-test, contati:
+> `DockerBackend.materializeInputs` e `cmd/aura.sandboxMaterializeSources`). Un errore fa
+> fallire `Resolve` **chiuso**.
+>
+> Ma il resolver di produzione **non** lo usa per un ACL irraggiungibile: un box è il modo in
+> cui il suo proprietario raggiunge ogni suo strumento, e togliergli il box perché la
+> condivisione di *qualcun altro* non si è potuta confermare è un'interruzione più grande
+> della condivisione mancante. Degrada a "nessuna condivisione", con log — e la direzione è
+> anche quella sicura, perché il mirror rimuove poi ciò che non sa più giustificare. Stessa
+> politica sul lato lista (`identityLoaders.sharedDirs`): **mai** portare avanti la risposta
+> precedente, o un grant revocato resterebbe leggibile per tutto il tempo in cui il database
+> è irraggiungibile.
+>
+> ### D-217-5 — La cadenza della lista è il TTL del Loader (1s), non un evento
+>
+> I grant li scrive un **altro processo** (`aura skills share`), quindi niente in-process può
+> accorgersene: solo una scadenza. `identityLoaders` ricontrolla i grant di un'identità al
+> massimo una volta al secondo (`sharedRecheckTTL`, uguale allo snapshot TTL del Loader) e,
+> **se l'insieme non è cambiato, tiene lo stesso Loader** — ricostruirlo butterebbe via lo
+> snapshot che quella cache esiste per non buttare via. La query gira **senza il mutex**: è un
+> round-trip a Postgres, e tenerlo bloccato farebbe della query lenta di un'identità lo stallo
+> di tutto il deployment.
+>
+> **Correzione misurata in audit il 2026-09-06.** La prima stesura di questo paragrafo diceva
+> che due chiamanti in corsa "pagano una query ridondante e installano la stessa risposta". È
+> falso proprio nel caso che conta: se una **revoca** atterra fra le due letture, le due
+> risposte DIFFERISCONO, e sotto la regola "l'ultimo che finisce vince la map" la lettura più
+> vecchia poteva reinstallare la condivisione revocata **con un clock fresco**, tenendola
+> leggibile per un altro TTL intero, e di nuovo al giro dopo. Ora `install` riceve l'istante in
+> cui la sua lettura è **iniziata** e scarta una risposta più vecchia di quella già in map
+> **o** più vecchia della scrittura che l'ha invalidata (`invalidated`) — che è anche ciò che
+> rende vera la promessa di `invalidateAll` ("visibile alla lettura successiva") mentre una
+> query per la stessa identità è già in volo. L'entry conserva il suo timestamp scaduto, quindi
+> la lettura successiva ri-risolve subito invece di servire la risposta scartata. Su cache
+> fredda non c'è entry su cui ripiegare, quindi la risposta viene **usata** (un Loader va
+> restituito) ma non **cachata**: il suo clock nasce scaduto. Test:
+> `TestIdentityLoadersRefuseAStaleGrantAnswer` (deterministico: `install` prende l'istante come
+> argomento) e `TestIdentityLoadersAreSafeUnderConcurrentTurns` sotto `-race`.
+>
+> ### Cosa questa misura NON dimostra
+>
+> **Non c'è Postgres e non c'è un daemon Docker in questo ambiente.** I tier
+> `db_integration` e `docker_integration` sono stati **scritti e compilati** sotto i loro tag
+> (`go vet -tags "db_integration docker_integration arcadedb_integration" ./...` pulito) e
+> **nessuno li ha visti passare**:
+>
+> - `TestSharedReaderSeesAGrantAndLosesItOnRevoke` + `TestSharedReaderWillNotResolveAnUngrantedID`
+>   (`internal/skills`) — il grant vivo, la revoca, e la sonda del grant forgiato contro RLS.
+> - `TestSharedSkillEntersTheBoxAndLeavesOnRevoke` + `TestBoxIsMirroredWhenEveryHostSourceIsGone`
+>   (`cmd/aura`) — cosa il daemon **atterra davvero**, incluso l'angolo che D-217-3 esiste per
+>   chiudere.
+>
+> Finché quei due tier non girano, il criterio 5 è **dimostrato solo come proprietà di path e
+> di precedenza** nel tier unit — che è la stessa distanza che #215 registra fra "il path
+> porta l'identità" e "l'albero non contiene gli altri". Non è ancora la prova.
+>
+> Non è misurato nemmeno il **costo** di N sorgenti condivise a ogni resume, né il costo della
+> query per turno su un deployment con molte identità: entrambi sono per costruzione, non
+> osservati. Un costo però è **noto per lettura del codice e non misurato**: `tarSources`
+> tiene in memoria il tar di OGNI sorgente contemporaneamente, perché costruire prima di
+> pulire è ciò che compra la proprietà di D-217-3. Prima erano uno alla volta; ora il picco è
+> la somma degli alberi, e il numero di sorgenti cresce con i grant. Nessuno ha misurato quel
+> picco su un export reale, e lo spool su file temporaneo è la via d'uscita se un giorno lo
+> sarà.
+>
+> ### Cosa resta aperto (e #216 NON è superseduto)
+>
+> La board del cockpit resta la console **dell'operatore sulla libreria di casa**, esattamente
+> come #216 la lascia: nessun `ctx` è stato aggiunto a `SkillsBoardProvider`. La misura di
+> #216 ("5 call site non-test e 3 file di test") è **confermata al conteggio** — `ActiveSkills`
+> e `SkillBody` hanno 2 implementazioni e 4 chiamate non-test (`governance_api.go` ×2,
+> `composer_api.go`, `server_run.go`), e i file di test sono `governance_seam_test.go`,
+> `governance_api_skills_test.go`, `server_skill_run_test.go` — ma **sottostima il lavoro**:
+> `ArchivedSkills()` non porta ctx e la sua `archiveDir` è per identità, quindi scopare la
+> board lasciando l'archivio globale sarebbe di nuovo "una metà sola", la configurazione che
+> #216 dichiara peggiore di entrambe le scelte intere. Va fatto come slice sua.

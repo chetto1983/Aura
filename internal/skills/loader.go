@@ -42,7 +42,14 @@ type Skill struct {
 // disk via the sandbox CLI without passing the Writer, so the blocklist must
 // also run at load. An empty Blocklist makes the scan a no-op.
 type Config struct {
-	Roots        []string
+	Roots []string
+	// SharedDirs are individual skill DIRECTORIES another identity has shared with this
+	// reader (amendment #214 criterion 5), not roots: the unit of a grant is one skill, so
+	// the unit of the source is that skill's own directory and never the owner's tree
+	// (amendment #215). They are merged BEFORE every root, so the reader's own skills and
+	// the deployment's both win a name collision — the same precedence the roots already
+	// have among themselves, applied to the weakest claim of the three.
+	SharedDirs   []string
 	CacheTTL     time.Duration
 	BodyCapBytes int
 	Blocklist    []string
@@ -58,6 +65,7 @@ type Config struct {
 // (disk is operator-trusted), keeping every loader built without a blocklist green.
 type Loader struct {
 	roots     []string
+	shared    []string
 	ttl       time.Duration
 	bodyCap   int
 	blocklist []string
@@ -81,9 +89,11 @@ func NewLoader(cfg Config) *Loader {
 	}
 	roots := make([]string, len(cfg.Roots))
 	copy(roots, cfg.Roots)
+	shared := make([]string, len(cfg.SharedDirs))
+	copy(shared, cfg.SharedDirs)
 	blocklist := make([]string, len(cfg.Blocklist))
 	copy(blocklist, cfg.Blocklist)
-	return &Loader{roots: roots, ttl: ttl, bodyCap: cap, blocklist: blocklist}
+	return &Loader{roots: roots, shared: shared, ttl: ttl, bodyCap: cap, blocklist: blocklist}
 }
 
 // List returns the loaded skills in stable (name-sorted) order, re-scanning if the
@@ -136,15 +146,40 @@ func (l *Loader) refreshLocked() {
 	l.scanned = true
 }
 
-// scan walks each root in order and merges the structurally-valid skills, with
-// later roots overriding earlier ones on a name collision. Invalid skills are
+// scan merges the shared skill dirs FIRST and then each root in order, with later
+// entries overriding earlier ones on a name collision. Invalid skills are
 // skip-logged (slog.Warn — auditable, T-11-02-R1) and excluded, never fatal.
 func (l *Loader) scan() map[string]Skill {
 	out := make(map[string]Skill)
+	for _, dir := range l.shared {
+		l.scanSharedDir(dir, out)
+	}
 	for _, root := range l.roots {
 		l.scanRoot(root, out)
 	}
 	return out
+}
+
+// scanSharedDir loads ONE skill directory another identity shared with this reader. It is
+// not a root: nothing beside dir is looked at, so a share carries exactly the skill it names.
+//
+// The always flag is DROPPED, and that is the decision the flag itself cannot express: a
+// skill marked always:true is prepended to every one of its OWNER's turns because they
+// declared it their standing instruction. Sharing makes it available to somebody else; it
+// does not make it that person's standing instruction, and a public grant that did would
+// prepend one identity's text to every turn of every other identity in the deployment —
+// the exact boundary amendment #214 exists to draw, re-opened by a verb that sounds
+// harmless.
+func (l *Loader) scanSharedDir(dir string, out map[string]Skill) {
+	if strings.TrimSpace(dir) == "" {
+		return
+	}
+	skill, ok := l.loadSkillDir(dir, filepath.Base(dir))
+	if !ok {
+		return
+	}
+	skill.Always = false
+	out[skill.Name] = skill
 }
 
 // scanRoot reads the immediate child directories of root; each child that holds a

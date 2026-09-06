@@ -37,15 +37,61 @@ import (
 // wrote into /skills itself (an `npx skills add` lands a whole agent-layout tree there)
 // accumulated invisibly beside the real skills, indistinguishable from them at use time.
 //
-// A dest is cleared ONCE, before the first source that actually LANDS there, so several
-// sources can OVERLAY one root (amendment #214: an identity's own skills plus the
-// deployment's, both at /skills). Within one dest the sources merge in order and a later one
-// overwrites a name an earlier one wrote, which is why the composition root lists the
-// deployment's export last — the same later-wins precedence skills.Roots.LoaderRoots gives the
-// model's context. Clearing per source instead would leave the box holding only whichever
-// source came last.
+// EVERY dest the sources name is cleared ONCE, before ANY of them is extracted, so several
+// sources can OVERLAY one root (amendment #214: an identity's own skills, the deployment's,
+// and a skill somebody shared, all at or under /skills). Within one dest the sources merge in
+// order and a later one overwrites a name an earlier one wrote, which is why the composition
+// root lists the deployment's export last — the same later-wins precedence
+// skills.Roots.LoaderRoots gives the model's context.
+//
+// The clear happens whether or not the host dir behind a source still EXISTS, and that is
+// what makes this a mirror rather than a mirror-when-non-empty. The clear used to be claimed
+// by the first source that actually landed, so a resolver whose sources had all gone away
+// cleared nothing at all and the box kept serving them — which is precisely the state a
+// REVOKED share leaves behind (amendment #214 criterion 5: the grant is gone, so the source
+// is gone, so under the old rule nothing removed the body). A dest nobody lands on is
+// mirrored to EMPTY, which is the truthful answer and the safe one.
 func MaterializeIn(ctx context.Context, cli *client.Client, h BoxHandle, srcs []MaterializeSource) error {
-	cleared := clearedDests{}
+	// Every stream is built BEFORE the first clear. The clear is destructive and the build is
+	// the step that can fail on hostile input (a symlink in a tree), so building first is what
+	// keeps a rejected source from leaving the box with its skills already erased and Resolve
+	// failing on the way out.
+	streams, err := tarSources(srcs)
+	if err != nil {
+		return err
+	}
+	for _, dest := range destsToMirror(srcs) {
+		if err := clearDest(ctx, cli, h, dest); err != nil {
+			return fmt.Errorf("materialize clear %q: %w", dest, err)
+		}
+	}
+	for _, s := range streams {
+		// Extract at "/" with dest-rooted entry names; the daemon MkdirAll's the parents, so
+		// a deep Dest (e.g. /root/.aura/agents) needs no pre-existing directory in the box.
+		if _, err := cli.CopyToContainer(ctx, h.ContainerID, client.CopyToContainerOptions{
+			DestinationPath: "/",
+			Content:         s.stream,
+		}); err != nil {
+			return fmt.Errorf("materialize cp %q -> %q: %w", s.hostDir, s.dest, err)
+		}
+	}
+	return nil
+}
+
+// stagedSource is one source's tar, built and waiting for the extraction pass.
+type stagedSource struct {
+	hostDir string
+	dest    string
+	stream  io.Reader
+}
+
+// tarSources builds the tar of every source that still exists, in list order. A host dir that
+// is GONE is skipped rather than refused — that is an identity who has written no skill of
+// their own, or a share that has just been revoked, and neither is an error. A host path that
+// exists and is not a directory IS refused: it is a misconfiguration, and materializing the
+// deployment's skills from a regular file is not a state to continue from.
+func tarSources(srcs []MaterializeSource) ([]stagedSource, error) {
+	out := make([]stagedSource, 0, len(srcs))
 	for _, s := range srcs {
 		if strings.TrimSpace(s.HostDir) == "" || strings.TrimSpace(s.Dest) == "" {
 			continue
@@ -55,51 +101,64 @@ func MaterializeIn(ctx context.Context, cli *client.Client, h BoxHandle, srcs []
 			if os.IsNotExist(err) {
 				continue
 			}
-			return fmt.Errorf("materialize stat %q: %w", s.HostDir, err)
+			return nil, fmt.Errorf("materialize stat %q: %w", s.HostDir, err)
 		}
 		if !info.IsDir() {
-			return fmt.Errorf("materialize source %q is not a directory", s.HostDir)
+			return nil, fmt.Errorf("materialize source %q is not a directory", s.HostDir)
 		}
 		stream, err := tarDir(s.HostDir, s.Dest)
 		if err != nil {
-			return fmt.Errorf("materialize tar %q: %w", s.HostDir, err)
+			return nil, fmt.Errorf("materialize tar %q: %w", s.HostDir, err)
 		}
-		if cleared.take(s.Dest) {
-			if err := clearDest(ctx, cli, h, s.Dest); err != nil {
-				return fmt.Errorf("materialize clear %q: %w", s.Dest, err)
-			}
-		}
-		// Extract at "/" with dest-rooted entry names; the daemon MkdirAll's the parents, so
-		// a deep Dest (e.g. /root/.aura/agents) needs no pre-existing directory in the box.
-		if _, err := cli.CopyToContainer(ctx, h.ContainerID, client.CopyToContainerOptions{
-			DestinationPath: "/",
-			Content:         stream,
-		}); err != nil {
-			return fmt.Errorf("materialize cp %q -> %q: %w", s.HostDir, s.Dest, err)
-		}
+		out = append(out, stagedSource{hostDir: s.HostDir, dest: s.Dest, stream: stream})
 	}
-	return nil
+	return out, nil
 }
 
-// clearedDests records which box roots this materialization has already mirrored.
-type clearedDests map[string]bool
-
-// take reports whether dest still needs clearing, and records that it is about to be — so a
-// root shared by several sources is cleared exactly once, before the first source that really
-// lands there.
+// destsToMirror is the clear plan: the distinct dests the sources name, in first-mention
+// order, minus the ones an ancestor already covers.
 //
-// "Really lands" is the whole subtlety, and it is why this is decided in the loop rather than
-// planned up front from the list: MaterializeIn skips a source whose host dir does not exist
-// (an identity who has written no skill of their own yet), and a plan that had already handed
-// that source the clear would leave the dest never cleared at all — an archived or deleted
-// skill would then survive in the box for the life of the session, which is the exact failure
-// the mirror exists to prevent.
-func (c clearedDests) take(dest string) bool {
-	if c[dest] {
-		return false
+// Dropping a nested dest is not an optimization of the exec count, it is the correctness of
+// the plan: clearing /skills after /skills/<shared-name> would erase what the first clear had
+// just been asked to preserve, and clearing it before is what an ancestor's clear already
+// does. One `rm -rf` covers the subtree either way.
+//
+// A source missing a host dir or a dest names nothing to mirror: it is not a source, so it
+// cannot claim a clear. A source whose host dir has VANISHED still names its dest, and must —
+// that is the revoked-share case the mirror has to answer.
+func destsToMirror(srcs []MaterializeSource) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(srcs))
+	for _, s := range srcs {
+		if strings.TrimSpace(s.HostDir) == "" || strings.TrimSpace(s.Dest) == "" {
+			continue
+		}
+		clean := pathpkg.Clean("/" + strings.Trim(strings.TrimSpace(s.Dest), "/"))
+		if seen[clean] {
+			continue
+		}
+		seen[clean] = true
+		out = append(out, clean)
 	}
-	c[dest] = true
-	return true
+	return withoutNested(out)
+}
+
+// withoutNested drops every dest that lives under another dest in the same plan.
+func withoutNested(dests []string) []string {
+	out := make([]string, 0, len(dests))
+	for _, d := range dests {
+		nested := false
+		for _, other := range dests {
+			if other != d && strings.HasPrefix(d, strings.TrimSuffix(other, "/")+"/") {
+				nested = true
+				break
+			}
+		}
+		if !nested {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 // clearDest removes dest inside the box so the following extraction mirrors the host rather

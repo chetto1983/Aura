@@ -196,12 +196,12 @@ func TestResolve_MaterializesInputs(t *testing.T) {
 	pyRoot := t.TempDir()
 	writeFixture(t, filepath.Join(pyRoot, "hello.py"), "print('hi')\n")
 
-	sources := func(string) []MaterializeSource {
+	sources := func(context.Context, string) ([]MaterializeSource, error) {
 		return []MaterializeSource{
 			{HostDir: skillsRoot, Dest: "/skills"},
 			{HostDir: agentsRoot, Dest: "/root/.aura/agents"},
 			{HostDir: pyRoot, Dest: "/root/.aura/pyscripts"},
-		}
+		}, nil
 	}
 	backend := NewDockerBackend(cli, testBoxImage(), testLimits(), WithMaterializeSources(sources))
 
@@ -263,8 +263,8 @@ func TestResolve_MaterializeMirrorsHost(t *testing.T) {
 	writeFixture(t, filepath.Join(skillsRoot, "keeper", "keeper.py"), "print('keeper')\n")
 	writeFixture(t, filepath.Join(skillsRoot, "doomed", "doomed.py"), "print('doomed')\n")
 
-	sources := func(string) []MaterializeSource {
-		return []MaterializeSource{{HostDir: skillsRoot, Dest: "/skills"}}
+	sources := func(context.Context, string) ([]MaterializeSource, error) {
+		return []MaterializeSource{{HostDir: skillsRoot, Dest: "/skills"}}, nil
 	}
 	backend := NewDockerBackend(cli, testBoxImage(), testLimits(), WithMaterializeSources(sources))
 
