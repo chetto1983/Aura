@@ -428,7 +428,9 @@ services:
       AURA_GARAGE_CAPACITY: ${AURA_GARAGE_CAPACITY:-1G}
       GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?GARAGE_RPC_SECRET required in .env}
     volumes:
-      - ./docker/garage/garage.toml:/etc/garage.toml:ro
+      # Same AURA_GARAGE_CONFIG selector as the garage service below: the bootstrap reads the
+      # config it is bootstrapping, so the two must never disagree about which file that is.
+      - ${AURA_GARAGE_CONFIG:-./docker/garage/garage.toml}:/etc/garage.toml:ro
       - garage-data:/var/lib/garage
 
   # ↓↓ Phase 37 (SBX-05, ADR 0037) — narrowed Docker API access for the sandbox daemon ↓↓
@@ -556,7 +558,14 @@ services:
     ports:
       - "127.0.0.1:${AURA_GARAGE_PORT:-3900}:3900"
     volumes:
-      - ./docker/garage/garage.toml:/etc/garage.toml:ro
+      # AURA_GARAGE_CONFIG selects the config file; the default IS today's production one, so
+      # nothing changes unless an operator asks. It exists because garage.toml binds "[::]",
+      # which is right wherever IPv6 exists and impossible where it does not: on a kernel with
+      # ipv6.disable=1 every bind fails with "Address family not supported by protocol" and
+      # Garage does not degrade — it PANICS and restart-loops, leaving Aura able to report only
+      # "bootstrap object store failed". Point this at ./docker/garage/garage.ipv4.toml there.
+      # Measured 2026-09-06 on a host with no IPv6 stack: 36 restarts, exit 139.
+      - ${AURA_GARAGE_CONFIG:-./docker/garage/garage.toml}:/etc/garage.toml:ro
       - garage-data:/var/lib/garage
 
   # ↓↓ Slice 0.7 — OpenAI-compat embedding sidecar ↓↓

@@ -1,0 +1,32 @@
+# IPv4-only Garage config, for a host whose kernel has no IPv6 stack.
+#
+# Why it exists (measured 2026-09-06): garage.toml binds "[::]", which on Linux with the
+# default bindv6only=0 accepts IPv4 too and is the right choice wherever IPv6 exists. Where
+# it does NOT — a kernel booted with ipv6.disable=1, a hardened appliance host, or a
+# container runtime with no IPv6 — every bind fails with
+#
+#   IO error: Address family not supported by protocol (os error 97)
+#
+# and Garage does not degrade: it PANICS, the container restart-loops, and the only thing
+# Aura can report is "bootstrap object store failed — this operator has NO bucket". There
+# was no way out of that without editing the production config in place.
+#
+# Select it with AURA_GARAGE_CONFIG=./docker/garage/garage.ipv4.toml. Everything else is
+# byte-for-byte the posture of garage.toml — in particular the admin API stays on the
+# internal compose network and is still deliberately NOT host-published.
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+db_engine = "sqlite"
+
+replication_factor = 1
+rpc_bind_addr = "0.0.0.0:3901"
+rpc_public_addr = "garage:3901"
+
+[s3_api]
+s3_region = "garage"
+api_bind_addr = "0.0.0.0:3900"
+
+[admin]
+# Same admin posture as garage.toml: internal compose network only, bearer token injected
+# through GARAGE_ADMIN_TOKEN, no host publish.
+api_bind_addr = "0.0.0.0:3903"
