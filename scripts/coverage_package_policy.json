@@ -28,7 +28,7 @@
     "github.com/chetto1983/aura/internal/conversations": {"mode": "target"},
     "github.com/chetto1983/aura/internal/cron": {"mode": "target"},
     "github.com/chetto1983/aura/internal/cron/handlers": {"mode": "target"},
-    "github.com/chetto1983/aura/internal/db": {"mode": "baseline", "covered_statements": 263, "total_statements": 315},
+    "github.com/chetto1983/aura/internal/db": {"mode": "baseline", "covered_statements": 269, "total_statements": 322},
     "github.com/chetto1983/aura/internal/documents": {"mode": "baseline", "covered_statements": 668, "total_statements": 806},
     "github.com/chetto1983/aura/internal/documents/filecard": {"mode": "target"},
     "github.com/chetto1983/aura/internal/embeddings": {"mode": "target"},
