@@ -12071,6 +12071,54 @@ flusso completo, che funziona.
 > conteggio qui registrato era corretto e resta la misura di partenza; vedi #218 per quello
 > ri-verificato all'atterraggio.
 
+## Section Un guasto che non si racconta è un guasto che nessuno chiude (Amendment #220, 2026-09-06)
+
+> **Amendment #220 (2026-09-06 — misurato pilotando lo stack acceso: `aura serve` nativo,
+> sidecar memoria in container, ArcadeDB, Postgres 18.4).** Tre guasti diversi avevano la
+> stessa forma: il processo *sapeva* cosa era andato storto e non lo diceva, o lo diceva in
+> un modo che indicava la direzione sbagliata.
+>
+> **D-220-1 — il JWKS irraggiungibile era un 500 muto.** `arcadeTokenVerifier.keySet`
+> restituiva l'errore di fetch senza loggarlo e senza classificarlo, e il middleware lo
+> rendeva `Internal Server Error`. Con Aura **nativa**, il default `MCP_OAUTH_JWKS_URL`
+> punta a `http://aura:9080/oauth/jwks` — un nome di servizio compose che fuori da compose
+> non risolve — quindi *ogni* `initialize` falliva con log del sidecar **vuoto**. Ora la
+> causa è loggata a ERROR con issuer e URL. Deliberatamente **non** avvolta in
+> `auth.ErrInvalidToken`: dire al client che il token è invalido lo manderebbe a
+> ri-autenticarsi all'infinito contro un server che non può verificare nulla.
+>
+> **D-220-2 — la soppressione è parte del fix, non un extra.** Questo server è chiamato a
+> ogni turno dell'agente: loggare ogni fallimento avrebbe risposto a una singola
+> misconfigurazione con un'alluvione di log — la stessa forma del difetto D-220-3. La causa
+> si dice una volta per issuer e si ripete solo se **cambia** o dopo `jwksFailureRestateAfter`
+> (1 minuto), perché un'interruzione che dura un'ora deve restare visibile anche nell'ultimo
+> minuto di log, non solo nel primo.
+>
+> **D-220-3 — una causa, dieci righe, una volta al minuto.** Una sola credenziale ArcadeDB
+> mancante faceva fallire l'auth di tenant a ogni identità, e i due riconciliatori
+> (`ReconcileConversationProjection`, `ReconcileReasoningRetention`) rendevano tutto questo
+> come dieci errori uniti per ciclo: la stessa frase con un UUID diverso davanti. La causa
+> era detta dieci volte e capita zero, e il volume nascondeva l'unico dettaglio che contava
+> — che tutte e dieci **condividevano una causa**, quindi c'era una cosa sola da sistemare.
+> `collapseJoined` ora dice conteggio, causa condivisa e **una parte intera** come esempio;
+> quando le cause NON coincidono l'errore resta integrale, perché un riassunto che fonde
+> guasti diversi nasconde il secondo dietro il primo.
+>
+> **D-220-4 — l'admin API di Garage è compose-only per decisione, non per errore.** Un
+> `aura serve` nativo falliva il provisioning del bucket con
+> `lookup garage on 8.8.8.8:53: no such host`, che manda l'operatore a controllare il DNS.
+> Il DNS non c'entra: `compose.yaml` dice esplicitamente «there is deliberately NO 3903 host
+> publish». Il default **non** è stato cambiato — la postura di sicurezza si rispetta — è
+> stato aggiunto un `hint` che lo dichiara, e che **tace dentro un container**, dove lo
+> stesso messaggio significa davvero un problema di DNS.
+>
+> **Cosa queste misure NON dimostrano.** Nulla sul comportamento sotto compose, dove il
+> nome `aura` risolve e nessuno dei quattro percorsi si attiva. Nulla sulla correttezza
+> della verifica del token: è cambiato solo cosa viene *detto* quando le chiavi non si
+> possono scaricare. E `collapseJoined` è misurato sulla forma di errore prodotta da questi
+> due riconciliatori, non su un errore unito qualsiasi del codebase.
+
+
 ## Section Una chiave che non serve a niente blocca il locale (Amendment #219, 2026-09-06)
 
 > **Amendment #219 (2026-09-06 — misurato pilotando `aura shell` su uno stack vivo, non

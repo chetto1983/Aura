@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"log/slog"
+	"os"
+	"strings"
 
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/identityctx"
@@ -79,8 +81,12 @@ type bootstrapResources struct {
 func (r bootstrapResources) provision(ctx context.Context, identityID string) {
 	if r.objectStore != nil {
 		if err := r.objectStore.ProvisionObjectStore(ctx, identityID); err != nil {
+			attrs := []any{"err", err}
+			if hint := composeOnlyAdminAPIHint(err); hint != "" {
+				attrs = append(attrs, "hint", hint)
+			}
 			slog.Error("aura serve: bootstrap object store failed — this operator has NO bucket, so nothing can be ingested and the document library will stay empty",
-				"err", err)
+				attrs...)
 		}
 	}
 	if r.filesystem != nil {
@@ -122,4 +128,29 @@ func (r bootstrapResources) provision(ctx context.Context, identityID string) {
 	if r.remountMCP != nil {
 		r.remountMCP(context.WithoutCancel(ctx))
 	}
+}
+
+// composeOnlyAdminAPIHint names the one failure here that READS as a network fault and is
+// really a posture mismatch. Measured 2026-09-06: a NATIVE `aura serve` reports
+//
+//	lookup garage on 8.8.8.8:53: no such host
+//
+// which sends the operator to check DNS. Nothing is wrong with DNS. Garage's admin API
+// binds :3903 on the compose network and compose.yaml deliberately publishes NO host port
+// for it ("there is deliberately NO 3903 host publish"), so the name is unreachable from
+// outside compose by design. That is a decision to respect, not a default to change — but
+// it has to be said, because the error alone points the wrong way.
+//
+// The hint is withheld inside a container: there the same message means DNS really is the
+// problem, and a wrong explanation is worse than none.
+func composeOnlyAdminAPIHint(err error) string {
+	if err == nil || os.Getenv("AURA_IN_CONTAINER") == "1" {
+		return ""
+	}
+	if !strings.Contains(err.Error(), "no such host") {
+		return ""
+	}
+	return "aura is running natively; Garage's admin API is reachable on the compose network only " +
+		"(compose publishes no host port for :3903), so run aura inside compose or point " +
+		"AURA_GARAGE_ADMIN_ENDPOINT at an admin API this process can actually reach"
 }

@@ -230,10 +230,10 @@ func (r *DeleteReconciler) reconcile(parent context.Context) {
 		}
 	}
 	if err := r.ReconcileConversationProjection(ctx); err != nil {
-		slog.Warn("conversation projection reconciliation failed", "err", err)
+		slog.Warn("conversation projection reconciliation failed", "err", collapseJoined(err))
 	}
 	if err := r.ReconcileReasoningRetention(ctx, time.Now().UTC()); err != nil {
-		slog.Warn("reasoning retention reconciliation failed", "err", err)
+		slog.Warn("reasoning retention reconciliation failed", "err", collapseJoined(err))
 	}
 }
 

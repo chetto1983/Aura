@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"slices"
@@ -109,7 +110,22 @@ type arcadeTokenVerifier struct {
 	// foreign issuer's keys -- and vice versa.
 	mu   sync.Mutex
 	keys map[string]cachedKeySet
+	// lastJWKSFailure remembers what was last reported per issuer so an unreachable
+	// authorization server is stated once, not once per request. See logJWKSFailure.
+	lastJWKSFailure map[string]jwksFailure
 }
+
+// jwksFailure is the last reported JWKS problem for one issuer: what went wrong and when
+// it was said out loud.
+type jwksFailure struct {
+	reason string
+	at     time.Time
+}
+
+// jwksFailureRestateAfter is how long an UNCHANGED JWKS failure stays quiet before it is
+// restated. It exists because the obvious fix — log every failure — is how a single
+// misconfiguration becomes a log flood: this server is called on every agent turn.
+const jwksFailureRestateAfter = time.Minute
 
 type cachedKeySet struct {
 	set       jwk.Set
@@ -250,6 +266,33 @@ func (v *arcadeTokenVerifier) keySet(ctx context.Context, issuer trustedIssuer, 
 	if cached, ok := v.keys[issuer.Issuer]; ok && !force && v.now().Sub(cached.fetchedAt) < arcadeJWKSCacheTTL {
 		return cached.set, nil
 	}
+	keys, err := v.fetchKeySet(ctx, issuer)
+	if err != nil {
+		// A JWKS this server cannot reach is an OPERATIONAL failure, not a bad token, so it
+		// is deliberately NOT wrapped in auth.ErrInvalidToken: telling the client its token
+		// is invalid would send it to re-authenticate forever against a server that cannot
+		// verify anything. The middleware renders it as a 500 — correct, and until now
+		// completely silent.
+		//
+		// Measured 2026-09-06 on a live stack: with Aura running as a NATIVE process rather
+		// than inside compose, the default MCP_OAUTH_JWKS_URL (http://aura:9080/oauth/jwks,
+		// a compose service name) does not resolve, so every `initialize` answered
+		// "Internal Server Error" and the sidecar log stayed empty. The operator had no way
+		// to learn that a DNS name was the whole problem.
+		v.logJWKSFailure(issuer, err)
+		return nil, err
+	}
+	if v.keys == nil {
+		v.keys = map[string]cachedKeySet{}
+	}
+	v.keys[issuer.Issuer] = cachedKeySet{set: keys, fetchedAt: v.now()}
+	delete(v.lastJWKSFailure, issuer.Issuer)
+	return keys, nil
+}
+
+// fetchKeySet performs the JWKS round trip. Split from keySet so there is exactly one
+// place that decides an attempt failed, and therefore exactly one place that reports it.
+func (v *arcadeTokenVerifier) fetchKeySet(ctx context.Context, issuer trustedIssuer) (jwk.Set, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, issuer.JWKSURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("MCP OAuth JWKS request: %w", err)
@@ -266,11 +309,27 @@ func (v *arcadeTokenVerifier) keySet(ctx context.Context, issuer trustedIssuer, 
 	if err != nil {
 		return nil, fmt.Errorf("MCP OAuth JWKS decode: %w", err)
 	}
-	if v.keys == nil {
-		v.keys = map[string]cachedKeySet{}
-	}
-	v.keys[issuer.Issuer] = cachedKeySet{set: keys, fetchedAt: v.now()}
 	return keys, nil
+}
+
+// logJWKSFailure states the problem once per issuer and then keeps quiet until the reason
+// CHANGES or jwksFailureRestateAfter has passed. Callers hold v.mu.
+//
+// The restatement matters as much as the suppression: an outage that has lasted an hour
+// should still be visible in the last minute of logs, not only in the first.
+func (v *arcadeTokenVerifier) logJWKSFailure(issuer trustedIssuer, err error) {
+	reason := err.Error()
+	now := v.now()
+	if last, ok := v.lastJWKSFailure[issuer.Issuer]; ok &&
+		last.reason == reason && now.Sub(last.at) < jwksFailureRestateAfter {
+		return
+	}
+	if v.lastJWKSFailure == nil {
+		v.lastJWKSFailure = map[string]jwksFailure{}
+	}
+	v.lastJWKSFailure[issuer.Issuer] = jwksFailure{reason: reason, at: now}
+	slog.Error("MCP OAuth: the issuer's JWKS is unreachable, so every bearer token is refused",
+		"issuer", issuer.Issuer, "jwks_url", issuer.JWKSURL, "err", reason)
 }
 
 func stringClaim(token jwt.Token, name string) (string, bool) {
