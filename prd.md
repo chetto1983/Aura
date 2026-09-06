@@ -12401,3 +12401,54 @@ flusso completo, che funziona.
 > stesso possesso è esattamente ciò che il gate ora verifica al boot invece di assumerlo — se
 > lì `AURA_DB_URL` puntasse al superuser `aura` o al ruolo di migrazione, il daemon si rifiuta
 > di partire, che è il punto.
+
+## Section L'ingestione documenti misurata per la prima volta davvero (Amendment #223, 2026-09-06)
+
+> **Amendment #223 (2026-09-06 — misurato sullo stack acceso, con l'agente reale pilotato via
+> AG-UI, dal caricamento del file fino al byte letto dentro la box).**
+>
+> La pipeline documenti era l'unica parte del prodotto mai provata end-to-end. Adesso lo è, e
+> l'anello si chiude: `POST /api/filemanager/upload` → bucket Garage dell'identità →
+> passata live di CocoIndex (`aura-ingest-supervisor` → un figlio `python -m ingest.app` per
+> identità) → `IndexedDocument` + `Passage` in `mem_<uuid>` → `document_search` fuso lato Go →
+> `document_open` → `shell_exec` che rilegge il file **dentro** la sandbox.
+>
+> **Le misure.** Un markdown di 384 byte caricato via daemon compare in `[extract]` entro un
+> intervallo live (`AURA_INGEST_INTERVAL_SEC=20`) e atterra come `doc_698c54f2…` con
+> `passage_count=1`, `raw_sha256=57a6b2ec…`, `card` scritta da `aura-filecard` e
+> `file_name_words = "contratto-rossini.md contratto rossini md"` — cioè la colonna che rende
+> trovabile un nome-file tokenizzato è popolata, non nulla. `document_search` risponde
+> `profile: arcadedb-fused-card-v2`, `status: complete`, con **due gambe accese** sullo stesso
+> documento (`fused` rank 1, `card` rank 1 a 14.175487) e restituisce il passaggio che porta il
+> token piantato nel file. `document_open` materializza `/workspace/documents/document-93e9051d…/contratto-rossini.md`
+> e `sha256sum` **dentro la box** ridà `57a6b2ec…`: la parità fra il `search_document_id` coniato
+> in Python (`services/ingest/identity.py`) e quello atteso da Go (`internal/documents/ids.go`)
+> non è più un'asserzione dei test, è un file aperto.
+>
+> Corollario sul lavoro di oggi: `status: complete` con la gamba `card` accesa è la **prova in
+> negativo** del degradation logger aggiunto in `internal/documents/retrieval_degradation.go` —
+> su uno stack configurato bene non degrada, e quando degraderà lo dirà una volta al minuto
+> invece che una volta per query.
+>
+> **Un vincolo di ambiente registrato perché costerà tempo a chi lo ritrova:** qui il sidecar
+> NON gira nella sua immagine. `docker.io` risponde 429 all'immagine base e l'indice apt passa
+> dal proxy con 405, quindi `docker/aura-ingest/Dockerfile` non si costruisce in questo box. La
+> pipeline è stata accesa lo stesso perché non ha niente di specifico al container: i tre
+> binari Go (`aura-filecard`, `aura-media-index`, `aura-ingest-supervisor`) si compilano
+> nativamente, le tre dipendenze Python (`cocoindex[amazon_s3,postgres]==1.0.20`, `iscc-tika`,
+> `neo4j`) si installano in un venv, e il supervisore lancia `python -m ingest.app` da
+> `os.Environ()` con cwd `services/`. È una scorciatoia diagnostica utile, non un modo di
+> esercizio supportato.
+>
+> **Cosa questa misura NON dimostra — e l'elenco è lungo, il che è il punto.**
+> (1) Nessuna immagine è stata costruita: il `Dockerfile` resta non verificato qui, e con esso
+> LibreOffice e poppler, cioè le uniche vie d'ingresso per `.xls` legacy e per il testo dei PDF.
+> (2) È stato ingerito **solo testo/markdown**: nessun PDF, nessun XLSX, nessuna card di foglio
+> di calcolo, nessun percorso OCR o STT (`aura-ocr-vl` e `aura-stt` non erano nemmeno accesi).
+> (3) È stato esercitato **solo l'add**: la riconciliazione di CocoIndex su modify e delete, e
+> la memoizzazione che non deve attraversare le identità, restano non misurate in questa sessione.
+> (4) Una sola identità, un solo figlio: l'isolamento fra `/state/<identity>/coco.db` diversi non
+> è stato provato. (5) Il corpus è di **quattro documenti** e un passaggio a testa: il tetto dei
+> 2048 token del chunker non è stato nemmeno sfiorato, e sui punteggi di ranking questa misura
+> non autorizza nessuna affermazione. (6) Il Postgres sotto è quello del container su :5432, non
+> quello nativo dell'emendamento #222.
