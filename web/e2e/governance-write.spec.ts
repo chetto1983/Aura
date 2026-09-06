@@ -60,8 +60,12 @@ interface ServerState {
     authStatus: string;
     envKeys: { key: string; redacted: boolean }[];
   }[];
-  active: { name: string; description: string; type: string }[];
-  archived: { name: string; description: string; type: string }[];
+  // `owned` mirrors the server row (governanceApi.SkillRow): the board offers Archive and
+  // Delete only on a skill the caller may write to. These fixtures stand in for the
+  // operator's OWN library, so they declare true — a stub that omitted it would exercise
+  // the house-skill posture instead, which is a different test.
+  active: { name: string; description: string; type: string; owned: boolean }[];
+  archived: { name: string; description: string; type: string; owned: boolean }[];
   collideOnRestore: boolean;
 }
 
@@ -77,8 +81,12 @@ function freshState(): ServerState {
         envKeys: [{ key: 'GITHUB_TOKEN', redacted: true }],
       },
     ],
-    active: [{ name: 'golang-testing', description: 'Go test patterns', type: 'instruction' }],
-    archived: [{ name: 'retired-skill', description: 'an old skill', type: 'instruction' }],
+    active: [
+      { name: 'golang-testing', description: 'Go test patterns', type: 'instruction', owned: true },
+    ],
+    archived: [
+      { name: 'retired-skill', description: 'an old skill', type: 'instruction', owned: true },
+    ],
     collideOnRestore: false,
   };
 }
@@ -205,6 +213,7 @@ async function installGovernanceWriteRoutes(page: Page, state: ServerState) {
         name: 'demo-skill',
         description: `Installed from ${source}`,
         type: 'instruction',
+        owned: true,
       });
     }
     return route.fulfill(

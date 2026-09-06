@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 	"path/filepath"
-	"testing"
-
+	"slices"
 	"strings"
+	"testing"
 
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identityctx"
@@ -40,14 +40,7 @@ func boardNames(board skillsBoardAdapter, identity string) []string {
 }
 
 // has reports whether names contains name.
-func has(names []string, name string) bool {
-	for _, n := range names {
-		if n == name {
-			return true
-		}
-	}
-	return false
-}
+func has(names []string, name string) bool { return slices.Contains(names, name) }
 
 // TestSkillsBoardShowsTheCallerTheirOwnLibrary is the core of the scoping: alice sees her own
 // skill and the house's, bob sees his own and the house's, and neither sees the other's.
