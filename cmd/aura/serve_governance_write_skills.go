@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 
 	"github.com/chetto1983/aura/internal/agui"
@@ -34,27 +35,60 @@ import (
 
 // skillsWriteAdapter satisfies agui.SkillsWriteProvider over the live Phase-11 primitives.
 // installer fetches + validates + stages; writer is the lifecycle sink
-// (activate/restore/archive/create/update/delete); activeDir is the active-skill root (for an
-// honest post-install destination in the response).
+// (activate/restore/archive/create/update/delete); layout resolves the actor's own roots (for
+// the scoped writer and for an honest post-install destination in the response).
 // blocklist/bodyCapBytes are the SAME config values the Writer was built with, held here
 // so Validate can dry-run the write boundary without reaching back into config.
 //
-// Every write leg acts on the DEPLOYMENT library, whoever the actor is, because that is what
-// this console's own board reads (serve_governance.go). It was per-actor for one CI run and
-// run 1790 said out loud why not: a write that lands where the read cannot see it is worse
-// than either choice on its own. Personal skills are written by the agent (skill_manage,
-// identity-scoped through identityctx) and by `aura skills --identity` — the two paths that
-// know whose turn it is. Giving the cockpit a person means giving its board an identity
-// first; that is recorded as open (amendment #214), not half-built.
+// Every write leg acts on the ACTOR'S OWN library, and that is only sound because the board
+// beside it now reads the same one. It was per-actor once before and run 1790 said out loud
+// why not: the board read the deployment library, so an install vanished from the console
+// that had just made it — a write landing where the read cannot see it is worse than either
+// choice alone (amendment #216). The answer was never "write to the house library", it was
+// "give the board an identity", and that is what this slice does: skillsBoardAdapter resolves
+// its loader and its archive from the identity on the request, so the invariant #216 states —
+// a console's write lands where its read looks — holds with BOTH halves scoped (#218 A).
 //
-// The actor is still threaded through every method, because it is what the audit ledger
-// records: WHO did it is separate from WHERE it landed.
+// The actor is threaded through every method for a second, independent reason: it is what the
+// audit ledger records. WHO did it and WHERE it landed are now the same identity, but they
+// stay separate arguments because they answer different questions.
+//
+// A consequence to state rather than discover: the cockpit no longer edits the house library.
+// A skill the deployment publishes is house policy, and the console of one person is not
+// where policy is rewritten — `aura skills` with no --identity is (amendment #214, D-214-3).
 type skillsWriteAdapter struct {
 	installer    *skills.Installer
 	writer       *skills.Writer
-	activeDir    string
+	layout       skills.Layout
 	blocklist    []string
 	bodyCapBytes int
+	// invalidate expires every cached loader snapshot the BOARD reads, so a completed write
+	// is on the board of the person who made it when the call returns instead of up to a
+	// snapshot TTL later. Nil in a composition with no loaders (the CLI-shaped tests).
+	invalidate func()
+}
+
+// forActor resolves the Writer that writes AS the actor, into the actor's own root. An
+// unscoped actor, or a deployment with no per-identity base configured, resolves back to the
+// deployment-global Writer — which is exactly the pre-#214 behaviour.
+func (a skillsWriteAdapter) forActor(actor string) (*skills.Writer, error) {
+	return a.writer.For(actor)
+}
+
+// installerForActor is forActor's twin for the fetch transport, so an installed tree lands in
+// the same root an authored one does.
+func (a skillsWriteAdapter) installerForActor(actor string) (*skills.Installer, error) {
+	if a.installer == nil {
+		return nil, fmt.Errorf("%w: no installer is wired", agui.ErrSkillInvalidInput)
+	}
+	return a.installer.For(actor)
+}
+
+// done expires the shared loader snapshots after a write that changed the library.
+func (a skillsWriteAdapter) done() {
+	if a.invalidate != nil {
+		a.invalidate()
+	}
 }
 
 // Install fetches the skill through the Task-1 Installer (npx skills add → validate → write),
@@ -66,8 +100,12 @@ func (a skillsWriteAdapter) Install(ctx context.Context, actor, source string) (
 	if source == "" {
 		return agui.SkillsInstallInfo{}, fmt.Errorf("%w: install source is empty", agui.ErrSkillInvalidInput)
 	}
+	installer, err := a.installerForActor(actor)
+	if err != nil {
+		return agui.SkillsInstallInfo{}, err
+	}
 	auditActor := skills.AuditActor{ActorID: "operator", IdentityID: actor}
-	info, err := a.installer.Install(ctx, source, auditActor)
+	info, err := installer.Install(ctx, source, auditActor)
 	if err != nil {
 		// An invalid structure / blocklist hit / empty source from the Installer is a
 		// client-correctable input, surfaced as a safe 400.
@@ -77,12 +115,13 @@ func (a skillsWriteAdapter) Install(ctx context.Context, actor, source string) (
 		return agui.SkillsInstallInfo{}, err
 	}
 
+	a.done()
 	return agui.SkillsInstallInfo{
 		Name:        info.Name,
 		Source:      info.Source,
 		ContentHash: info.ContentHash,
 		Preview:     info.Preview,
-		Destination: filepath.Join(a.activeDir, info.Name),
+		Destination: filepath.Join(a.activeDir(actor), info.Name),
 		RiskTier:    info.RiskTier,
 		Status:      "active",
 		Checklist:   toSkillsChecklist(info.Checklist),
@@ -110,15 +149,51 @@ func (a skillsWriteAdapter) Search(ctx context.Context, q string) (agui.SkillsCa
 // (→ 409) BEFORE Writer.Restore (which does an os.RemoveAll on active/{name}) when an active
 // skill of the same name exists; otherwise it restores + re-materializes + audits.
 func (a skillsWriteAdapter) Restore(ctx context.Context, actor, name string) error {
-	if a.writer.ActiveExists(name) {
+	w, err := a.forActor(actor)
+	if err != nil {
+		return err
+	}
+	if w.ActiveExists(name) {
 		return fmt.Errorf("%w: %q", agui.ErrSkillActiveExists, name)
 	}
-	return a.writer.Restore(ctx, name, skills.ApprovalCLI, skills.AuditActor{ActorID: "operator", IdentityID: actor})
+	if err := w.Restore(ctx, name, skills.ApprovalCLI, skills.AuditActor{ActorID: "operator", IdentityID: actor}); err != nil {
+		return clientSkillError(err)
+	}
+	a.done()
+	return nil
 }
 
 // Archive de-materializes + moves active/{name} → archived + audits (SKW-03).
 func (a skillsWriteAdapter) Archive(ctx context.Context, actor, name string) error {
-	return a.writer.Archive(ctx, name, skills.ApprovalCLI, skills.AuditActor{ActorID: "operator", IdentityID: actor})
+	w, err := a.forActor(actor)
+	if err != nil {
+		return err
+	}
+	if err := w.Archive(ctx, name, skills.ApprovalCLI, skills.AuditActor{ActorID: "operator", IdentityID: actor}); err != nil {
+		return clientSkillError(err)
+	}
+	a.done()
+	return nil
+}
+
+// clientSkillError re-labels the lifecycle failures the CALLER can act on — a name this
+// actor's root does not hold, a name the grammar refuses — so the route answers 400 instead of
+// the sanitized 502 the default arm produces.
+//
+// It became load-bearing when the cockpit went back to writing into the ACTOR'S root (#218 A).
+// The board still lists the HOUSE library beside the actor's own (D-214-3), so "archive that
+// row" now reaches a name the actor's own root does not hold as a matter of course, and
+// Writer.Archive reports that as a failed rename rather than as ErrUnknownSkill. Handing an
+// operator a gateway error for something they typed is the exact miscategorisation Mutate's own
+// comment already refuses.
+//
+// It does NOT give the operator a way to manage the house library from the cockpit — nothing
+// here does, and that gap is #218's declared consequence, not this helper's to close.
+func clientSkillError(err error) error {
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, skills.ErrUnknownSkill) || errors.Is(err, skills.ErrInvalidName) {
+		return fmt.Errorf("%w: %v", agui.ErrSkillInvalidInput, err)
+	}
+	return err
 }
 
 // Mutate wraps Writer.WriteMutationByName for create/update (SKW-01). The actor is
@@ -129,7 +204,11 @@ func (a skillsWriteAdapter) Archive(ctx context.Context, actor, name string) err
 // mapping an invalid body or a blocklist hit rendered as a sanitized 502 — an operator
 // typo reported as a backend outage, with nothing they could act on.
 func (a skillsWriteAdapter) Mutate(ctx context.Context, actor, action, name, description, body string, always bool) (string, error) {
-	status, err := a.writer.WriteMutationByName(ctx, action, name, description, body, always,
+	w, err := a.forActor(actor)
+	if err != nil {
+		return "", err
+	}
+	status, err := w.WriteMutationByName(ctx, action, name, description, body, always,
 		skills.AuditActor{ActorID: "operator", IdentityID: actor})
 	if err != nil {
 		if errors.Is(err, skills.ErrInvalidStructure) || errors.Is(err, skills.ErrBlocklisted) || errors.Is(err, skills.ErrInvalidName) {
@@ -137,6 +216,7 @@ func (a skillsWriteAdapter) Mutate(ctx context.Context, actor, action, name, des
 		}
 		return "", err
 	}
+	a.done()
 	return status, nil
 }
 
@@ -170,12 +250,14 @@ func (a skillsWriteAdapter) Validate(name, description, body string, always bool
 // root, one audit row. Writer.Delete does the real work behind its SanitizeName
 // chokepoint; its status return is discarded because the route answers 204 with no body.
 func (a skillsWriteAdapter) Delete(ctx context.Context, actor, name string) error {
-	if _, err := a.writer.Delete(ctx, name, skills.AuditActor{ActorID: "operator", IdentityID: actor}); err != nil {
-		if errors.Is(err, skills.ErrInvalidName) || errors.Is(err, skills.ErrUnknownSkill) {
-			return fmt.Errorf("%w: %v", agui.ErrSkillInvalidInput, err)
-		}
+	w, err := a.forActor(actor)
+	if err != nil {
 		return err
 	}
+	if _, err := w.Delete(ctx, name, skills.AuditActor{ActorID: "operator", IdentityID: actor}); err != nil {
+		return clientSkillError(err)
+	}
+	a.done()
 	return nil
 }
 
@@ -192,7 +274,7 @@ func toSkillsChecklist(in []skills.CheckItem) []agui.SkillsCheckItem {
 // pool (no DB) or a missing skills dir leaves it nil → the routes answer 503. Never aborts
 // boot (the SetGovernanceProviders precedent). It reuses the SAME newSkillWriter wiring the
 // CLI + model path use, so the cockpit operates on one set of dirs.
-func buildSkillsWriteProvider(cfg *config.Config, pool *pgxpool.Pool) agui.SkillsWriteProvider {
+func buildSkillsWriteProvider(cfg *config.Config, pool *pgxpool.Pool, loaders *identityLoaders) agui.SkillsWriteProvider {
 	if cfg == nil || pool == nil || cfg.SkillsDir == "" {
 		return nil
 	}
@@ -205,11 +287,26 @@ func buildSkillsWriteProvider(cfg *config.Config, pool *pgxpool.Pool) agui.Skill
 		// hardened 64M noexec /tmp tmpfs — the run dir is the transient-artifact volume.
 		WorkDir: cfg.RunDir,
 	})
-	return skillsWriteAdapter{
+	adapter := skillsWriteAdapter{
 		installer:    installer,
 		writer:       writer,
-		activeDir:    cfg.SkillsDir,
+		layout:       skillLayout(cfg),
 		blocklist:    cfg.SkillInjectionBlocklist,
 		bodyCapBytes: cfg.SkillBodyCapBytes,
 	}
+	if loaders != nil {
+		adapter.invalidate = loaders.invalidateAll
+	}
+	return adapter
+}
+
+// activeDir is where this actor's write landed, quoted back in the install response so an
+// operator is told the truth about the destination rather than the deployment's own root. It
+// is resolved from the SAME layout skills.Writer.For uses, so the two cannot disagree.
+func (a skillsWriteAdapter) activeDir(actor string) string {
+	roots, err := a.layout.For(actor)
+	if err != nil {
+		return a.layout.Global
+	}
+	return roots.WritableRoot()
 }

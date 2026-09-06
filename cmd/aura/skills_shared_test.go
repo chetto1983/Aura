@@ -24,13 +24,19 @@ import (
 // answer, not that Postgres can answer; the live grant is the db_integration tier's sentence
 // and the box is the docker_integration tier's.
 
-// stubGrants hands back canned resource ids, or an error.
+// stubGrants hands back canned resource ids, or an error. byReader, when set, answers each
+// reader separately — which is what a test asserting that a grant reaches ONE person and not
+// another needs; with it nil every reader gets ids, the simpler shape most callers want.
 type stubGrants struct {
-	ids []string
-	err error
+	ids      []string
+	byReader map[string][]string
+	err      error
 }
 
-func (s stubGrants) AccessibleResourceIDs(context.Context, string, skillacl.ResourceType, skillacl.Perm) ([]string, error) {
+func (s stubGrants) AccessibleResourceIDs(_ context.Context, readerID string, _ skillacl.ResourceType, _ skillacl.Perm) ([]string, error) {
+	if s.byReader != nil {
+		return s.byReader[readerID], s.err
+	}
 	return s.ids, s.err
 }
 
@@ -44,13 +50,29 @@ func (s stubCatalog) ListByIDs(context.Context, string, []string) ([]skills.Cata
 	return s.rows, s.err
 }
 
-// sharedFor builds a SharedReader over cfg's layout that reports exactly these rows as shared.
+// sharedFor builds a SharedReader over cfg's layout that reports exactly these rows as shared
+// with EVERY reader.
 func sharedFor(cfg *config.Config, rows ...skills.CatalogRow) *skills.SharedReader {
+	return skills.NewSharedReader(stubGrants{ids: rowIDs(rows)}, stubCatalog{rows: rows}, skillLayout(cfg))
+}
+
+// sharedWith is sharedFor's scoped twin: only reader holds the grants, so a test can assert
+// that somebody else's board and somebody else's box see nothing.
+func sharedWith(cfg *config.Config, reader string, rows ...skills.CatalogRow) *skills.SharedReader {
+	return skills.NewSharedReader(
+		stubGrants{byReader: map[string][]string{reader: rowIDs(rows)}},
+		stubCatalog{rows: rows},
+		skillLayout(cfg),
+	)
+}
+
+// rowIDs projects catalog rows onto their ids.
+func rowIDs(rows []skills.CatalogRow) []string {
 	ids := make([]string, 0, len(rows))
 	for _, r := range rows {
 		ids = append(ids, r.ID)
 	}
-	return skills.NewSharedReader(stubGrants{ids: ids}, stubCatalog{rows: rows}, skillLayout(cfg))
+	return ids
 }
 
 // aliceExport resolves alice's export dir through the production layout.
@@ -85,6 +107,9 @@ func TestSandboxMaterializeSourcesCarriesOnlyTheSharedSkill(t *testing.T) {
 	want := usersandbox.MaterializeSource{
 		HostDir: filepath.Join(export, "alice-shared"),
 		Dest:    skills.InSandboxSkillsRoot + "/alice-shared",
+		// Somebody else's tree, so a fault in it costs bob this skill and not his box
+		// (amendment #217, D-217-4). The asymmetry itself is asserted in skills_roots_test.go.
+		SkipOnFault: true,
 	}
 	if got[0] != want {
 		t.Fatalf("shared source = %+v, want %+v", got[0], want)
@@ -215,6 +240,28 @@ func TestIdentityLoadersRefuseAStaleGrantAnswer(t *testing.T) {
 		got := loaders.install(rootsBob, []string{dir}, early)
 		if _, ok := got.Get("alice-shared"); ok {
 			t.Fatal("an in-flight read re-installed a revoked share — it would stay readable for another TTL")
+		}
+	})
+
+	// The MIRROR of the case above, and the one the first fix left open: the same two reads in
+	// the other landing order. Here the read that started EARLIER lands first, so the entry's
+	// clock is the moment IT was installed — a moment that is already later than when the newer
+	// read started. Comparing the incoming read's START against that INSTALL time therefore
+	// rejects the fresher answer, and the revoked share stays cached with a fresh clock for a
+	// whole TTL — the exact outcome the guard exists to prevent, reached by swapping two lines
+	// of timing. The watermark has to be start-vs-start.
+	t.Run("a newer read is not rejected because an older one landed first", func(t *testing.T) {
+		t.Parallel()
+		loaders := newIdentityLoaders(cfg, nil)
+		// Both reads STARTED before now; the grant-holding one started first and its query was
+		// the slow one, so it installs before the read that already saw the revoke arrives.
+		loaders.install(rootsBob, []string{dir}, time.Now().Add(-time.Hour))
+		got := loaders.install(rootsBob, nil, time.Now().Add(-time.Minute))
+		if _, ok := got.Get("alice-shared"); ok {
+			t.Fatal("the newer read's revoke was dropped in favour of the older answer — the revoked share stays readable for another TTL")
+		}
+		if _, fresh := loaders.cached(rootsBob); !fresh {
+			t.Fatal("the newer answer must be cached fresh, not left born-expired")
 		}
 	})
 

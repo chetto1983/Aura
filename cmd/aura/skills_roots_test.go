@@ -20,6 +20,7 @@ import (
 const (
 	rootsAlice = "99999999-9999-4999-8999-999999999999"
 	rootsBob   = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	rootsCarol = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 )
 
 // rootsConfig builds a config over a temp tree with all three skill bases set.
@@ -190,8 +191,8 @@ func TestSandboxMaterializeSourcesScopesTheBox(t *testing.T) {
 		t.Fatalf("sources for bob = %+v, want %+v", got, want)
 	}
 
-	// Not "does the path mention alice" — MaterializeIn TARS each source and tarDir walks the
-	// whole tree, so the question is whether alice's export sits anywhere UNDER a directory
+	// Not "does the path mention alice" — MaterializeIn TARS each source and writeTarDir walks
+	// the whole tree, so the question is whether alice's export sits anywhere UNDER a directory
 	// bob's box is filled from. A nested identity export passes the string check and still
 	// lands in bob's box one level down, which is how this leak survives review.
 	alice, err := skillLayout(cfg).For(rootsAlice)
@@ -222,5 +223,57 @@ func TestSandboxMaterializeSourcesScopesTheBox(t *testing.T) {
 	none := sandboxMaterializeSources(&config.Config{}, nil)
 	if got, _ := none(ctx, rootsBob); len(got) != 0 {
 		t.Fatalf("sources with no export dir = %+v, want none", got)
+	}
+}
+
+// TestSharedSkillSourcesAreIndividuallySkippable pins the ASYMMETRY the box's tar pass relies
+// on (amendment #217, D-217-4): a source that came from somebody else's tree is marked
+// skippable, and the reader's own export and the deployment's are not. Getting that backwards
+// in either direction is a one-field mistake with two opposite failure modes — a malformed
+// share denying a grantee their whole box, or a fault in your own library disappearing into a
+// log line — so it is asserted on the resolver's real output rather than on the flag alone.
+func TestSharedSkillSourcesAreIndividuallySkippable(t *testing.T) {
+	t.Parallel()
+	cfg := rootsConfig(t)
+	layout := skillLayout(cfg)
+	aliceRoots, err := layout.For(rootsAlice)
+	if err != nil {
+		t.Fatalf("layout for alice: %v", err)
+	}
+	seedSkill(t, aliceRoots.Export, "alice-share", "SHARED", false)
+
+	shared := sharedWith(cfg, rootsBob, skills.CatalogRow{ID: "row-1", OwnerID: rootsAlice, Name: "alice-share"})
+	got, err := sandboxMaterializeSources(cfg, shared)(context.Background(), rootsBob)
+	if err != nil {
+		t.Fatalf("resolve for bob: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("sources = %+v, want the share plus bob's export plus the deployment's", got)
+	}
+	if got[0].Dest != "/skills/alice-share" || !got[0].SkipOnFault {
+		t.Fatalf("the shared source %+v must be individually skippable", got[0])
+	}
+	for _, src := range got[1:] {
+		if src.SkipOnFault {
+			t.Fatalf("source %+v is the reader's own or the deployment's and must fail closed", src)
+		}
+	}
+}
+
+// TestSandboxBackendSpoolsIntoTheSweptRunDir pins WHERE the materialize tars are built, which
+// is a deployment fact and not a filing preference. Two ways to get it wrong look identical
+// from outside the process: the default (os.TempDir) is a 64 MiB tmpfs in this deployment — the
+// tars would stay in memory and the box would cap at 64 MiB of skills — and the run dir's ROOT
+// has no janitor, so a tar left by a SIGKILL between the spool and MaterializeIn's defer sits
+// on a durable volume forever. <run dir>/tmp is the half conversations.ScanOrphans already
+// sweeps at 24h.
+func TestSandboxBackendSpoolsIntoTheSweptRunDir(t *testing.T) {
+	t.Parallel()
+	cfg := rootsConfig(t)
+	cfg.RunDir = filepath.Join(t.TempDir(), "runs")
+
+	b := newSandboxBackend(nil, cfg, nil)
+	if got, want := b.SpoolDir(), filepath.Join(cfg.RunDir, "tmp"); got != want {
+		t.Fatalf("spool dir = %q, want the swept run-dir tmp subdir %q", got, want)
 	}
 }

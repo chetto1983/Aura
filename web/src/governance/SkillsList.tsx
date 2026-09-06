@@ -48,6 +48,8 @@ export function SkillsList({
   const archiveLabel = t('governance.skills.archive');
   const restoreLabel = t('governance.skills.restore');
   const deleteLabel = t('governance.skills.deleteSkill');
+  const readOnlyLabel = t('governance.skills.houseReadOnly');
+  const houseLabel = t('governance.skills.house');
 
   return (
     <div
@@ -58,6 +60,11 @@ export function SkillsList({
       {rows.map((skill) => {
         const isSelected = selected === skill.name;
         const isArchived = skill.stage === 'archived';
+        // `owned` is required on the wire, not optional: the Go row emits it without
+        // omitempty and TestBoardMarksOnlyTheCallersOwnSkillsAsActionable pins that, because
+        // an absent key would render here as an enabled button — the exact failure this
+        // gating exists to remove.
+        const ownedByCaller = skill.owned;
         const mutedTone = isSelected ? 'text-on-accent/80' : 'text-text-muted';
         const selectedBadgeClass = isSelected
           ? 'border-on-accent/30 bg-on-accent/15 text-on-accent'
@@ -103,6 +110,11 @@ export function SkillsList({
                       {t('governance.skills.filter.archived')}
                     </Badge>
                   ) : null}
+                  {!ownedByCaller ? (
+                    <Badge variant="secondary" className={selectedBadgeClass} title={readOnlyLabel}>
+                      {houseLabel}
+                    </Badge>
+                  ) : null}
                 </span>
                 {skill.description !== '' ? (
                   <span className={`line-clamp-1 w-full break-words text-[13px] ${mutedTone}`}>
@@ -114,9 +126,11 @@ export function SkillsList({
                 type="button"
                 variant="ghost"
                 size="icon"
-                aria-label={isArchived ? restoreLabel : archiveLabel}
-                title={isArchived ? restoreLabel : archiveLabel}
-                disabled={isArchived ? restorePending : archivePending}
+                aria-label={
+                  ownedByCaller ? (isArchived ? restoreLabel : archiveLabel) : readOnlyLabel
+                }
+                title={ownedByCaller ? (isArchived ? restoreLabel : archiveLabel) : readOnlyLabel}
+                disabled={!ownedByCaller || (isArchived ? restorePending : archivePending)}
                 onClick={() => {
                   if (isArchived) {
                     onRestore(skill.name);
@@ -144,8 +158,9 @@ export function SkillsList({
                 type="button"
                 variant="ghost"
                 size="icon"
-                aria-label={deleteLabel}
-                title={deleteLabel}
+                aria-label={ownedByCaller ? deleteLabel : readOnlyLabel}
+                title={ownedByCaller ? deleteLabel : readOnlyLabel}
+                disabled={!ownedByCaller}
                 onClick={() => {
                   onDelete(skill.name);
                 }}

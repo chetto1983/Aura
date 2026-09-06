@@ -15,10 +15,12 @@ import (
 	"go.uber.org/goleak"
 )
 
-// materialize_test.go is the daemon-free unit tier for the docker-cp bridge's PURE logic: the
-// tar builders (tarDir/tarSingleFile — the symlink-escape and path-traversal guards) and
-// MaterializeIn's validation branches, all reachable without a live daemon. The happy-path
-// CopyToContainer round-trip is the docker_integration tier's job (docker_backend_integration_test.go).
+// materialize_test.go is the daemon-free unit tier for the docker-cp bridge's mirror PLAN and
+// its single-file tar builder: tarSingleFile's path-traversal guard, pipeTarEntry's ordering,
+// MaterializeIn's validation branches, and the clear plan. The STAGING pass — the tree tar
+// builder, the spool and the shared-source skip — has its own file (materialize_stage_test.go).
+// The happy-path CopyToContainer round-trip is the docker_integration tier's job
+// (docker_backend_integration_test.go).
 
 // readTarNames drains a tar stream into a name->content map so a test can assert BOTH the
 // dest-rooted entry names and the file bodies survive the build.
@@ -208,62 +210,14 @@ func TestPipeTarEntry(t *testing.T) {
 	})
 }
 
-// TestTarDir covers the tree tar builder: dest-rooting, directory entries, and the symlink /
-// non-regular guards that close the materialize escape vector.
-func TestTarDir(t *testing.T) {
-	t.Parallel()
-
-	t.Run("nested tree is dest-rooted with dir + file entries", func(t *testing.T) {
-		t.Parallel()
-		root := t.TempDir()
-		if err := os.MkdirAll(filepath.Join(root, "calc"), 0o755); err != nil {
-			t.Fatalf("mkdir: %v", err)
-		}
-		if err := os.WriteFile(filepath.Join(root, "top.txt"), []byte("TOP"), 0o644); err != nil {
-			t.Fatalf("write top: %v", err)
-		}
-		if err := os.WriteFile(filepath.Join(root, "calc", "calc.py"), []byte("CALC"), 0o644); err != nil {
-			t.Fatalf("write calc: %v", err)
-		}
-
-		r, err := tarDir(root, "/skills")
-		if err != nil {
-			t.Fatalf("tarDir: %v", err)
-		}
-		names := readTarNames(t, r)
-		if names["skills/top.txt"] != "TOP" {
-			t.Fatalf("missing/incorrect skills/top.txt in %v", names)
-		}
-		if names["skills/calc/calc.py"] != "CALC" {
-			t.Fatalf("missing/incorrect skills/calc/calc.py in %v", names)
-		}
-		if _, ok := names["skills/calc/"]; !ok {
-			t.Fatalf("directory entry skills/calc/ not emitted: %v", names)
-		}
-	})
-
-	t.Run("symlink is rejected (escape guard)", func(t *testing.T) {
-		t.Parallel()
-		root := t.TempDir()
-		if err := os.WriteFile(filepath.Join(root, "real.txt"), []byte("x"), 0o644); err != nil {
-			t.Fatalf("write: %v", err)
-		}
-		if err := os.Symlink(filepath.Join(root, "real.txt"), filepath.Join(root, "link.txt")); err != nil {
-			t.Skipf("symlink unsupported on this host: %v", err) // Windows without privilege
-		}
-		if _, err := tarDir(root, "/skills"); err == nil || !strings.Contains(err.Error(), "symlink") {
-			t.Fatalf("tarDir with symlink: want symlink-guard error, got %v", err)
-		}
-	})
-}
-
 // TestMaterializeIn_ValidationBranches covers the pre-daemon validation legs (empty/missing/
-// non-dir source + a tarDir failure), all of which return BEFORE CopyToContainer — so a nil
+// non-dir source + a tar failure), all of which return BEFORE CopyToContainer — so a nil
 // client is safe. The happy-path cp is the docker_integration tier's job.
 func TestMaterializeIn_ValidationBranches(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	h := BoxHandle{ContainerID: "box", IdentityID: "id"}
+	spool := t.TempDir()
 
 	t.Run("an incomplete source names nothing and reaches no client", func(t *testing.T) {
 		t.Parallel()
@@ -275,7 +229,7 @@ func TestMaterializeIn_ValidationBranches(t *testing.T) {
 			{HostDir: "", Dest: "/skills"},
 			{HostDir: "/x", Dest: ""},
 		}
-		if err := MaterializeIn(ctx, nil, h, srcs); err != nil {
+		if err := MaterializeIn(ctx, nil, h, srcs, spool); err != nil {
 			t.Fatalf("MaterializeIn skip-branches: %v", err)
 		}
 	})
@@ -286,7 +240,7 @@ func TestMaterializeIn_ValidationBranches(t *testing.T) {
 		if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
 			t.Fatalf("write: %v", err)
 		}
-		if err := MaterializeIn(ctx, nil, h, []MaterializeSource{{HostDir: f, Dest: "/skills"}}); err == nil {
+		if err := MaterializeIn(ctx, nil, h, []MaterializeSource{{HostDir: f, Dest: "/skills"}}, spool); err == nil {
 			t.Fatal("MaterializeIn on a non-dir source: want error, got nil")
 		}
 	})
@@ -300,7 +254,7 @@ func TestMaterializeIn_ValidationBranches(t *testing.T) {
 		if err := os.Symlink(filepath.Join(root, "real.txt"), filepath.Join(root, "link.txt")); err != nil {
 			t.Skipf("symlink unsupported on this host: %v", err)
 		}
-		if err := MaterializeIn(ctx, nil, h, []MaterializeSource{{HostDir: root, Dest: "/skills"}}); err == nil {
+		if err := MaterializeIn(ctx, nil, h, []MaterializeSource{{HostDir: root, Dest: "/skills"}}, spool); err == nil {
 			t.Fatal("MaterializeIn with a symlink source: want tar error, got nil")
 		}
 	})
@@ -313,7 +267,7 @@ func TestMaterializeIn_ValidationBranches(t *testing.T) {
 		}
 		// A nil client is the assertion: the guard must reject the dest BEFORE the rm -rf
 		// exec is created, so reaching the daemon at all would panic here.
-		err := MaterializeIn(ctx, nil, h, []MaterializeSource{{HostDir: root, Dest: "/root"}})
+		err := MaterializeIn(ctx, nil, h, []MaterializeSource{{HostDir: root, Dest: "/root"}}, spool)
 		if err == nil || !strings.Contains(err.Error(), "too broad") {
 			t.Fatalf("MaterializeIn with dest=/root = %v, want a too-broad refusal", err)
 		}

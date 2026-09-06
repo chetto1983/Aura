@@ -43,11 +43,17 @@ vi.mock('../governanceApi', () => ({
 const { SkillsBoard } = await import('../SkillsBoard');
 
 const ACTIVE: SkillRow[] = [
-  { name: 'golang-testing', description: 'Go test patterns', type: 'instruction' },
-  { name: 'find-skills', description: 'discover skills', type: 'instruction', always: true },
+  { name: 'golang-testing', description: 'Go test patterns', type: 'instruction', owned: true },
+  {
+    name: 'find-skills',
+    description: 'discover skills',
+    type: 'instruction',
+    always: true,
+    owned: true,
+  },
 ];
 const ARCHIVED: SkillRow[] = [
-  { name: 'old-skill', description: 'retired', type: 'snippet', language: 'python' },
+  { name: 'old-skill', description: 'retired', type: 'snippet', language: 'python', owned: true },
 ];
 
 /** Route the mocked stage fetch to the right fixture. */
@@ -144,6 +150,48 @@ describe('SkillsBoard (GOV-02)', () => {
     expect(chips[0]?.getAttribute('aria-pressed')).toBe('true');
   });
 
+  // A house skill and a shared one are listed and runnable, but neither is this caller's to
+  // change: the verbs would land on a root their writer cannot address, and before this the
+  // board offered them anyway and rendered the refusal as a backend outage. The badge is
+  // what makes the reason readable without hovering a disabled icon.
+  it('offers the lifecycle verbs only on the skills the caller owns', async () => {
+    stageFixtures(
+      [
+        {
+          name: 'golang-testing',
+          description: 'Go test patterns',
+          type: 'instruction',
+          owned: true,
+        },
+        {
+          name: 'house-policy',
+          description: 'shipped by the deployment',
+          type: 'instruction',
+          owned: false,
+        },
+      ],
+      [],
+    );
+    renderBoard();
+    await waitFor(() => {
+      expect(screen.getByText('house-policy')).toBeTruthy();
+    });
+
+    const archives = screen.getAllByRole('button', { name: 'Archive skill' });
+    const deletes = screen.getAllByRole('button', { name: 'Delete skill' });
+    expect(archives).toHaveLength(1);
+    expect(deletes).toHaveLength(1);
+
+    const readOnly = screen.getAllByRole('button', {
+      name: /only its owner can archive or delete it/,
+    });
+    expect(readOnly).toHaveLength(2);
+    for (const button of readOnly) {
+      expect(button.hasAttribute('disabled')).toBe(true);
+    }
+    expect(screen.getByText('House')).toBeTruthy();
+  });
+
   it('refetches when the tab regains focus — the agent and the CLI change this list too', async () => {
     renderBoard();
     await waitFor(() => {
@@ -154,7 +202,15 @@ describe('SkillsBoard (GOV-02)', () => {
     // A skill installed by the agent mid-turn, or created from a terminal, must show up
     // when the operator comes back to the board — not only after a reload.
     stageFixtures(
-      [...ACTIVE, { name: 'hello-world', description: 'installed elsewhere', type: 'instruction' }],
+      [
+        ...ACTIVE,
+        {
+          name: 'hello-world',
+          description: 'installed elsewhere',
+          type: 'instruction',
+          owned: true,
+        },
+      ],
       ARCHIVED,
     );
     // Drive the library's own focus manager: a refetch fires on the TRANSITION back to

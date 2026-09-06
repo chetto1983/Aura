@@ -224,9 +224,17 @@ func TestServerRunAttachmentFromAnotherThread404(t *testing.T) {
 
 func serveRunWithPrincipal(t *testing.T, s *Server, body string) *httptest.ResponseRecorder {
 	t.Helper()
+	return serveRunAs(t, s, assetAPIIdentityID, body)
+}
+
+// serveRunAs posts a run carrying identity as the authenticated principal. The principal is
+// what the pinned-skill lookup resolves against since amendment #214, so a run test that
+// cares WHOSE skill is pinned names the identity here rather than taking the default.
+func serveRunAs(t *testing.T, s *Server, identity, body string) *httptest.ResponseRecorder {
+	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/agent/run", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req = withPrincipal(req, assetAPIIdentityID)
+	req = withPrincipal(req, identity)
 	rec := httptest.NewRecorder()
 	s.Mux().ServeHTTP(rec, req)
 	_, _ = io.Copy(io.Discard, rec.Result().Body)

@@ -8,6 +8,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 	"github.com/chetto1983/aura/internal/skills"
@@ -112,29 +113,73 @@ func addContainerRecipeRows(doc *mcp.ManagedConfig) {
 	}
 }
 
-// skillsBoardAdapter satisfies agui.SkillsBoardProvider over the active Loader, the
-// archived-stage reader, and the audit store. ActiveSkills lists the loaded active skills;
-// ArchivedSkills reads archived metadata (never a body, GOV-02 prohibition #1);
-// AuditLog reads the append-only ledger newest-first.
+// skillsBoardAdapter satisfies agui.SkillsBoardProvider over the per-identity loaders, the
+// archived-stage reader, and the audit store. ActiveSkills lists the caller's loaded active
+// skills; ArchivedSkills reads THAT CALLER'S archived metadata (never a body, GOV-02
+// prohibition #1); AuditLog reads the append-only ledger newest-first.
+//
+// Every read is resolved from the identity on the call's context, which is what makes the
+// cockpit a person's console rather than the deployment's (amendment #218, superseding #216). The board therefore shows a
+// caller their own skills overlaid on the house's (house wins a name collision — D-214-3)
+// plus what other identities have shared with them, and never another person's library.
+//
+// The archive is scoped by the SAME rule as the writer's, not by a rule of its own:
+// Roots.WritableRoot is exactly what skills.Writer.For lands archive/ under, so the stage
+// list the board shows is the stage list this caller's Restore and Archive act on. Anything
+// else would put the two halves of one button in different directories.
 type skillsBoardAdapter struct {
-	loader     *skills.Loader
-	audit      *skills.AuditStore
-	archiveDir string
+	loaders *identityLoaders
+	layout  skills.Layout
+	audit   *skills.AuditStore
 }
 
-func (a skillsBoardAdapter) ActiveSkills() []skills.Skill { return a.loader.List() }
+func (a skillsBoardAdapter) ActiveSkills(ctx context.Context) []skills.Skill {
+	return a.loaderFor(ctx).List()
+}
 
 // SkillBody resolves a skill body from the SAME loader snapshot ActiveSkills lists (37D /
 // WEBSKILL-02): one source of truth for the composer pinned-skill application. loader.Get
 // re-reads the cached snapshot List reads, so every listed name resolves (list ⊆ resolvable,
 // Pitfall 2); an unknown name → ("", false). The name is a snapshot KEY, never a path.
-func (a skillsBoardAdapter) SkillBody(name string) (string, bool) {
-	sk, ok := a.loader.Get(name)
+func (a skillsBoardAdapter) SkillBody(ctx context.Context, name string) (string, bool) {
+	sk, ok := a.loaderFor(ctx).Get(name)
 	return sk.Body, ok
 }
 
-func (a skillsBoardAdapter) ArchivedSkills() ([]skills.StageSkill, error) {
-	return skills.ListArchived(a.archiveDir)
+func (a skillsBoardAdapter) ArchivedSkills(ctx context.Context) ([]skills.StageSkill, error) {
+	return skills.ListArchived(a.archiveDir(identityctx.IdentityID(ctx)))
+}
+
+// WritableRoot answers with the SAME root archiveDir stages under and skills.Writer.For
+// lands in, resolved from the identity on the call. An identity that cannot name a root
+// falls back to the deployment root exactly as archiveDir and skillLoaderRoots do, so the
+// three never disagree about where this caller writes.
+func (a skillsBoardAdapter) WritableRoot(ctx context.Context) string {
+	roots, err := a.layout.For(identityctx.IdentityID(ctx))
+	if err != nil {
+		return a.layout.Global
+	}
+	return roots.WritableRoot()
+}
+
+// loaderFor resolves the caller's loader — their own root, the house's, and the skills
+// shared with them — from the identity on the context.
+func (a skillsBoardAdapter) loaderFor(ctx context.Context) *skills.Loader {
+	return a.loaders.forIdentity(ctx, identityctx.IdentityID(ctx))
+}
+
+// archiveDir is the stage root of the identity's WRITABLE root, so it names the same
+// directory skills.Writer.For(identity) archives into and restores from. An identity that
+// cannot name a root falls back to the deployment's archive, matching skillLoaderRoots'
+// answer to the same input rather than inventing a second one.
+func (a skillsBoardAdapter) archiveDir(identity string) string {
+	roots, err := a.layout.For(identity)
+	if err != nil {
+		slog.Warn("skills board: identity cannot name a root, listing the deployment archive",
+			"identity_id", identity, "err", err)
+		return filepath.Join(a.layout.Global, skills.StageArchived)
+	}
+	return filepath.Join(roots.WritableRoot(), skills.StageArchived)
 }
 
 func (a skillsBoardAdapter) AuditLog(ctx context.Context, filter skills.AuditFilter) ([]skills.AuditRow, error) {
@@ -148,7 +193,11 @@ func (a skillsBoardAdapter) AuditLog(ctx context.Context, filter skills.AuditFil
 // audit store over the shared pool; the scheduler board is the cron Store directly (it
 // already satisfies the interface). A nil pool leaves the pool-backed boards unset. None
 // of these aborts boot — a governance-board outage is not a daemon outage.
-func buildGovernanceProviders(cfg *config.Config, pool *pgxpool.Pool, store agui.SchedulerBoardProvider, live *liveMCPMount) agui.GovernanceProviders {
+//
+// loaders is the per-identity loader cache the daemon builds once and shares with the skills
+// WRITE provider. Sharing it is what keeps the console's read and its write on one set of
+// directories AND one snapshot clock.
+func buildGovernanceProviders(cfg *config.Config, pool *pgxpool.Pool, store agui.SchedulerBoardProvider, live *liveMCPMount, loaders *identityLoaders) agui.GovernanceProviders {
 	var providers agui.GovernanceProviders
 
 	// The board reads per request, so there is nothing to capture here — and nothing to
@@ -156,15 +205,16 @@ func buildGovernanceProviders(cfg *config.Config, pool *pgxpool.Pool, store agui
 	// board that answers empty and recovers, not a route that answers 503 until restart.
 	providers.MCP = mcpBoardAdapter{live: live}
 
-	if pool != nil {
+	// A nil loader cache leaves the board unset rather than nil-dereferencing on the first
+	// read: every board here is best-effort, and 503 is the shape a missing one already has.
+	if pool != nil && loaders != nil {
 		providers.Skills = skillsBoardAdapter{
-			// Deliberately the DEPLOYMENT library and not a per-identity view: this board is
-			// the operator's inventory of what the house ships, and its provider interface
-			// carries no context to read an identity from. A person's own skills are theirs
-			// to see through their agent, not through the governance board.
-			loader:     skills.NewLoader(skills.Config{Roots: skillLoaderRoots(cfg, ""), BodyCapBytes: cfg.SkillBodyCapBytes, Blocklist: cfg.SkillInjectionBlocklist}),
-			audit:      skills.NewAuditStore(pool),
-			archiveDir: filepath.Join(cfg.SkillsDir, skills.StageArchived),
+			// The SAME loaders the cockpit's write provider invalidates, so an install is on
+			// the board of the person who made it as soon as the call returns rather than
+			// after the snapshot TTL.
+			loaders: loaders,
+			layout:  skillLayout(cfg),
+			audit:   skills.NewAuditStore(pool),
 		}
 	}
 

@@ -36,6 +36,19 @@ var keepAliveCmd = []string{"tail", "-f", "/dev/null"}
 type MaterializeSource struct {
 	HostDir string
 	Dest    string
+	// SkipOnFault makes THIS source individually skippable: a host tree that cannot be
+	// staged (a symlink, a non-regular file, an unreadable entry) is dropped with a log line
+	// and the rest of the box is materialized anyway.
+	//
+	// It is set for a SHARED source and for nothing else, and the asymmetry is the whole
+	// point. A fault inside your OWN tree — or inside the deployment's — is a fault you must
+	// see, and failing Resolve closed is how you see it. A fault inside SOMEBODY ELSE'S tree
+	// must not cost you your box: a malformed skill one person shared would otherwise deny
+	// every grantee the box through which they reach all of their own tools, which is the
+	// opposite of the degrade-don't-deny policy the ACL already takes (amendment #217,
+	// D-217-4). Skipping is also the safe direction — the mirror then removes a body it can
+	// no longer justify instead of leaving it behind.
+	SkipOnFault bool
 }
 
 // SourceResolver returns the materialization sources for one identity (host dirs mapped to
@@ -62,6 +75,8 @@ type DockerBackend struct {
 	// composition root wires WithEgress under the strict profiles so every networked box
 	// gets the always-on tenancy floor (D-07).
 	egressImage string
+	// spoolDir is where MaterializeIn builds its per-source tars. Empty means os.TempDir().
+	spoolDir string
 }
 
 // Option configures a DockerBackend at construction (functional-options, mirroring the moby
@@ -82,6 +97,19 @@ func WithEgress(image string) Option {
 	return func(b *DockerBackend) { b.egressImage = image }
 }
 
+// WithSpoolDir names the directory the per-source tars are built in before they are streamed
+// to the daemon. Empty (the default) means os.TempDir().
+//
+// The composition root passes the run dir's tmp subdir, and that is not a filing preference:
+// this deployment mounts /tmp as a 64 MiB tmpfs (compose.yaml), so spooling there would be
+// both a hard size ceiling and no memory relief at all — a tmpfs IS memory, which is the exact
+// cost the spooling exists to remove. The run dir is the transient-artifact volume the skills
+// installer's work tree already uses for the same reason, and its tmp subdir is the half of it
+// that already has a 24h janitor for whatever a SIGKILL leaves behind.
+func WithSpoolDir(dir string) Option {
+	return func(b *DockerBackend) { b.spoolDir = dir }
+}
+
 // NewDockerBackend builds a DockerBackend over an existing moby client, the fat box image
 // ref (AURA_SANDBOX_IMAGE), and the cgroup caps (D-14). Materialization sources are opt-in
 // via WithMaterializeSources.
@@ -98,6 +126,13 @@ func NewDockerBackend(cli *client.Client, imageRef string, limits Resources, opt
 // without a daemon — a docker-free cmd/aura test asserts newSandboxBackend echoes
 // cfg.Sandbox.EgressImage here — without leaking any other backend state.
 func (b *DockerBackend) EgressImage() string { return b.egressImage }
+
+// SpoolDir returns the wired materialize spool dir (empty == os.TempDir()). Like EgressImage
+// it exists so the composition root's wiring is regression-testable without a daemon: WHERE
+// the tars are built is a deployment fact — /tmp here is a 64 MiB tmpfs, and the run dir's tmp
+// subdir is the one with a janitor — and a wiring that silently reverted to the default would
+// look identical from the outside until a tree outgrew the tmpfs.
+func (b *DockerBackend) SpoolDir() string { return b.spoolDir }
 
 // boxName is the deterministic container + workspace-volume name for an identity.
 func boxName(identityID string) string { return boxNamePrefix + identityID }

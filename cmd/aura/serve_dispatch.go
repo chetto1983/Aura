@@ -10,6 +10,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -257,6 +258,17 @@ const sandboxPingTimeout = 5 * time.Second
 func newSandboxBackend(cli *client.Client, cfg *config.Config, pool *pgxpool.Pool) *usersandbox.DockerBackend {
 	return usersandbox.NewDockerBackend(cli, cfg.Sandbox.Image, limitsFrom(cfg.Sandbox),
 		usersandbox.WithMaterializeSources(sandboxMaterializeSources(cfg, newSharedSkillReader(cfg, pool))),
+		// The run dir, not /tmp: this deployment mounts /tmp as a 64 MiB tmpfs (compose.yaml),
+		// where spooling the materialize tars would keep them in memory — the very cost the
+		// spool removes — and cap the whole box at 64 MiB of skills.
+		//
+		// The <run dir>/tmp SUBDIR rather than its root, because that subdir already has a
+		// janitor: conversations.ScanOrphans sweeps everything under it older than 24h, at boot
+		// and on AURA_RUN_DIR_SWEEP_INTERVAL_SEC. MaterializeIn defers its own cleanup, so a
+		// leak needs the process to die between spooling and the defer (SIGKILL, OOM) — rare,
+		// but the run dir is a durable volume and one leaked tar per resume has nothing else
+		// pointing at the cause.
+		usersandbox.WithSpoolDir(filepath.Join(cfg.RunDir, "tmp")),
 		usersandbox.WithEgress(cfg.Sandbox.EgressImage))
 }
 
@@ -317,6 +329,10 @@ func sandboxMaterializeSources(cfg *config.Config, shared *skills.SharedReader) 
 // a box is how its owner reaches every one of their own tools, and taking it away because
 // somebody else's share could not be confirmed is a larger outage than the missing share. The
 // direction is also the safe one — the mirror then removes what it cannot re-justify.
+//
+// The same rule now covers the source itself and not only the lookup: each shared source is
+// marked SkipOnFault, so a shared tree the tar pass refuses (a symlink, a device node) costs
+// the grantee that one skill instead of the whole box.
 func sharedSkillSources(ctx context.Context, shared *skills.SharedReader, identityID string) []usersandbox.MaterializeSource {
 	entries, err := shared.For(ctx, identityID)
 	if err != nil {
@@ -329,6 +345,12 @@ func sharedSkillSources(ctx context.Context, shared *skills.SharedReader, identi
 		out = append(out, usersandbox.MaterializeSource{
 			HostDir: e.Dir,
 			Dest:    skills.InSandboxSkillsRoot + "/" + e.Name,
+			// A malformed skill in SOMEBODY ELSE'S tree is skipped, not fatal. The reader's
+			// own sources and the deployment's below still fail closed: a fault in your own
+			// library is yours to see, and a fault in a library you were merely lent must not
+			// cost you the box you reach all of your own tools through (amendment #217,
+			// D-217-4 applied to the tar pass).
+			SkipOnFault: true,
 		})
 	}
 	return out

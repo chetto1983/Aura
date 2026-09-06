@@ -110,8 +110,9 @@ func TestComposerListSubsetOfResolvable(t *testing.T) {
 		{Name: "alpha", Body: "abody"},
 		{Name: "bravo", Body: "bbody"},
 	}}
-	for _, sk := range board.ActiveSkills() {
-		if _, ok := board.SkillBody(sk.Name); !ok {
+	ctx := t.Context()
+	for _, sk := range board.ActiveSkills(ctx) {
+		if _, ok := board.SkillBody(ctx, sk.Name); !ok {
 			t.Fatalf("listed skill %q not resolvable via SkillBody (Pitfall 2 divergence)", sk.Name)
 		}
 	}

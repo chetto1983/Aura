@@ -14,6 +14,9 @@ export const skillsEn = {
   archive: 'Archive skill',
   deleteSkill: 'Delete skill',
   restore: 'Restore skill',
+  house: 'House',
+  houseReadOnly:
+    'This skill belongs to the deployment or to whoever shared it. You can use it — only its owner can archive or delete it.',
   collidingRestore: 'An active skill named "{{name}}" already exists. Archive or rename it first.',
   searchLabel: 'Search skills',
   searchPlaceholder: 'Search skills…',
@@ -137,6 +140,9 @@ export const skillsIt = {
   archive: 'Archivia skill',
   deleteSkill: 'Elimina skill',
   restore: 'Ripristina skill',
+  house: 'Casa',
+  houseReadOnly:
+    "Questa skill è della casa o di chi te l'ha condivisa. Puoi usarla — solo chi la possiede può archiviarla o eliminarla.",
   collidingRestore:
     'Esiste già una skill attiva chiamata "{{name}}". Archiviala o rinominala prima.',
   searchLabel: 'Cerca skill',

@@ -86,6 +86,12 @@ type skillRow struct {
 	Always      bool   `json:"always,omitempty"`
 	Language    string `json:"language,omitempty"`
 	ContentHash string `json:"contentHash,omitempty"`
+	// Owned says the caller may write to this skill: it sits under the root
+	// skills.Writer.For(identity) addresses. A house skill and one shared with the caller
+	// are both listed and both false — they are theirs to READ and RUN, never to archive or
+	// delete (amendment #218). It carries NO omitempty on purpose: false is the value the
+	// cockpit must act on, and an absent key would render as an enabled button.
+	Owned bool `json:"owned"`
 }
 
 // skillAuditRow is the safe wire projection for one audit ledger row. It deliberately
@@ -276,11 +282,15 @@ func (s *Server) handleSkillsList(w http.ResponseWriter, r *http.Request) {
 	if stage == "" {
 		stage = stageActive
 	}
+	// scopedCtx, not r.Context(): the board answers for the authenticated principal's own
+	// library (amendment #214), falling back to the seeded `local` identity on the
+	// no-principal dev path exactly as every other owner-scoped read here does.
+	ctx := scopedCtx(r.Context())
 	switch stage {
 	case stageActive:
-		writeJSON(w, map[string]any{"skills": activeSkillRows(s.governance.Skills.ActiveSkills())})
+		writeJSON(w, map[string]any{"skills": activeSkillRows(s.governance.Skills.ActiveSkills(ctx), s.governance.Skills.WritableRoot(ctx))})
 	case skills.StageArchived:
-		staged, err := s.governance.Skills.ArchivedSkills()
+		staged, err := s.governance.Skills.ArchivedSkills(ctx)
 		if err != nil {
 			writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": sanitizeErr(err)})
 			return
@@ -307,7 +317,7 @@ func (s *Server) handleSkillBody(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
-	body, ok := s.governance.Skills.SkillBody(name)
+	body, ok := s.governance.Skills.SkillBody(scopedCtx(r.Context()), name)
 	if !ok {
 		http.Error(w, "skill not found", http.StatusNotFound)
 		return
@@ -322,7 +332,7 @@ const stageActive = "active"
 
 // activeSkillRows projects the loaded active skills onto the board row shape — the body is
 // NEVER carried (the manifest-visible metadata only). No action field: read-only board.
-func activeSkillRows(loaded []skills.Skill) []skillRow {
+func activeSkillRows(loaded []skills.Skill, writableRoot string) []skillRow {
 	rows := make([]skillRow, 0, len(loaded))
 	for _, sk := range loaded {
 		rows = append(rows, skillRow{
@@ -331,6 +341,7 @@ func activeSkillRows(loaded []skills.Skill) []skillRow {
 			Type:        sk.Type,
 			Always:      sk.Always,
 			Language:    sk.Language,
+			Owned:       skills.DirWithin(writableRoot, sk.Dir),
 		})
 	}
 	return rows
@@ -348,6 +359,11 @@ func stageSkillRows(staged []skills.StageSkill) []skillRow {
 			Type:        sk.Type,
 			Language:    sk.Language,
 			ContentHash: sk.ContentHash,
+			// The archive listing is read from the caller's OWN stage root
+			// (skillsBoardAdapter.archiveDir == Roots.WritableRoot()/archived), so every row
+			// that reaches here is by construction one this caller can restore. There is no
+			// house-archived row to confuse it with: the board never lists one.
+			Owned: true,
 		})
 	}
 	return rows

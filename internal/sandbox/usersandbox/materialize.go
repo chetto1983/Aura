@@ -4,6 +4,11 @@
 // bind-mount (unrepresentable under SBX-02 — host binds have no vector), so skills land at
 // the SAME /skills/<name>/... root SnippetSandboxPath renders, by construction. Everything
 // goes through the Go SDK tar stream, never a shelled `docker cp` (Pitfall 6 MSYS mangling).
+//
+// It owns the mirror PLAN — which dests are cleared, in what order, and what an `rm -rf` may
+// be handed — plus the single-file copy-in/out helpers. Turning a source into a tar, and
+// deciding what happens when one cannot be turned into anything, lives in
+// materialize_stage.go.
 
 package usersandbox
 
@@ -14,10 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
-	"os"
 	pathpkg "path"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -28,8 +30,12 @@ import (
 // stale dest is cleared, then each host tree is tar-streamed in, landing under Dest (e.g.
 // skills at "/skills", so the in-box path equals the one SnippetSandboxPath renders). A
 // missing host dir is skipped (nothing to materialize); a symlink or non-regular file is
-// rejected (no symlink escape — sandbox-runtime guard). It is called from Resolve at BOTH
-// create and resume, and MUST fail Resolve closed on error.
+// rejected (no symlink escape — sandbox-runtime guard) unless the source is a SHARED one,
+// which is skipped instead so one person's malformed skill cannot deny another their box
+// (MaterializeSource.SkipOnFault). It is called from Resolve at BOTH create and resume, and
+// MUST fail Resolve closed on error.
+//
+// spoolDir is where the per-source tars are built; empty means os.TempDir().
 //
 // The clear is what makes this a MIRROR rather than a merge, and it is load-bearing twice
 // over. A tar extract only ever adds: without it an archived or deleted skill stayed in the
@@ -51,68 +57,37 @@ import (
 // REVOKED share leaves behind (amendment #214 criterion 5: the grant is gone, so the source
 // is gone, so under the old rule nothing removed the body). A dest nobody lands on is
 // mirrored to EMPTY, which is the truthful answer and the safe one.
-func MaterializeIn(ctx context.Context, cli *client.Client, h BoxHandle, srcs []MaterializeSource) error {
+func MaterializeIn(ctx context.Context, cli *client.Client, h BoxHandle, srcs []MaterializeSource, spoolDir string) error {
 	// Every stream is built BEFORE the first clear. The clear is destructive and the build is
 	// the step that can fail on hostile input (a symlink in a tree), so building first is what
 	// keeps a rejected source from leaving the box with its skills already erased and Resolve
 	// failing on the way out.
-	streams, err := tarSources(srcs)
+	//
+	// Building first used to mean holding every source's tar in memory at once, so the peak
+	// was the SUM of the trees and grew with the grant count. The tars are spooled to files
+	// now: the ordering property is unchanged and the peak is one tar's worth of buffering,
+	// whatever the deployment's export and however many people have shared with this reader.
+	staged, err := tarSources(srcs, spoolDir)
 	if err != nil {
 		return err
 	}
+	defer staged.close()
 	for _, dest := range destsToMirror(srcs) {
 		if err := clearDest(ctx, cli, h, dest); err != nil {
 			return fmt.Errorf("materialize clear %q: %w", dest, err)
 		}
 	}
-	for _, s := range streams {
+	for _, s := range staged {
 		// Extract at "/" with dest-rooted entry names; the daemon MkdirAll's the parents, so
 		// a deep Dest (e.g. /root/.aura/agents) needs no pre-existing directory in the box.
 		if _, err := cli.CopyToContainer(ctx, h.ContainerID, client.CopyToContainerOptions{
 			DestinationPath: "/",
-			Content:         s.stream,
+			Content:         s.tar,
 		}); err != nil {
 			return fmt.Errorf("materialize cp %q -> %q: %w", s.hostDir, s.dest, err)
 		}
 	}
 	return nil
-}
-
-// stagedSource is one source's tar, built and waiting for the extraction pass.
-type stagedSource struct {
-	hostDir string
-	dest    string
-	stream  io.Reader
-}
-
-// tarSources builds the tar of every source that still exists, in list order. A host dir that
-// is GONE is skipped rather than refused — that is an identity who has written no skill of
-// their own, or a share that has just been revoked, and neither is an error. A host path that
-// exists and is not a directory IS refused: it is a misconfiguration, and materializing the
-// deployment's skills from a regular file is not a state to continue from.
-func tarSources(srcs []MaterializeSource) ([]stagedSource, error) {
-	out := make([]stagedSource, 0, len(srcs))
-	for _, s := range srcs {
-		if strings.TrimSpace(s.HostDir) == "" || strings.TrimSpace(s.Dest) == "" {
-			continue
-		}
-		info, err := os.Stat(s.HostDir)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, fmt.Errorf("materialize stat %q: %w", s.HostDir, err)
-		}
-		if !info.IsDir() {
-			return nil, fmt.Errorf("materialize source %q is not a directory", s.HostDir)
-		}
-		stream, err := tarDir(s.HostDir, s.Dest)
-		if err != nil {
-			return nil, fmt.Errorf("materialize tar %q: %w", s.HostDir, err)
-		}
-		out = append(out, stagedSource{hostDir: s.HostDir, dest: s.Dest, stream: stream})
-	}
-	return out, nil
 }
 
 // destsToMirror is the clear plan: the distinct dests the sources name, in first-mention
@@ -375,65 +350,4 @@ func writeTarEntry(w io.Writer, hdr *tar.Header, src io.Reader) error {
 		return fmt.Errorf("source delivered %d bytes, not the declared %d", n, hdr.Size)
 	}
 	return tw.Close()
-}
-
-// tarDir builds an in-memory tar of hostDir's tree with every entry rooted at dest (leading/
-// trailing slashes trimmed to a relative prefix). Symlinks and other non-regular files are
-// rejected rather than followed, closing the symlink-escape vector.
-func tarDir(hostDir, dest string) (io.Reader, error) {
-	destPrefix := strings.Trim(strings.TrimSpace(dest), "/")
-	root := filepath.Clean(hostDir)
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.Type()&fs.ModeSymlink != 0 {
-			return fmt.Errorf("refusing to materialize symlink %q (sandbox-runtime symlink guard)", path)
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		if rel == "." {
-			return nil // the root itself is not emitted; entries are rooted at destPrefix
-		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		if !d.IsDir() && !info.Mode().IsRegular() {
-			return fmt.Errorf("refusing to materialize non-regular file %q", path)
-		}
-		hdr, err := tar.FileInfoHeader(info, "")
-		if err != nil {
-			return err
-		}
-		hdr.Name = destPrefix + "/" + filepath.ToSlash(rel)
-		if d.IsDir() {
-			hdr.Name += "/"
-		}
-		if err := tw.WriteHeader(hdr); err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		f, err := os.Open(path) //nolint:gosec // G304: path is a materialize source under a fixed host root the resolver supplies, produced by the backend's WalkDir — not user input.
-		if err != nil {
-			return err
-		}
-		_, cerr := io.Copy(tw, f)
-		_ = f.Close()
-		return cerr
-	})
-	if err != nil {
-		_ = tw.Close()
-		return nil, err
-	}
-	if err := tw.Close(); err != nil {
-		return nil, err
-	}
-	return &buf, nil
 }

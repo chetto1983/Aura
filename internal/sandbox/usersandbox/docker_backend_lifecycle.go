@@ -136,7 +136,7 @@ func (b *DockerBackend) materializeInputs(ctx context.Context, h BoxHandle) erro
 	if len(srcs) == 0 {
 		return nil
 	}
-	return MaterializeIn(ctx, b.cli, h, srcs)
+	return MaterializeIn(ctx, b.cli, h, srcs, b.spoolDir)
 }
 
 // ensureVolume creates a named volume, idempotently: Docker's volume create returns the

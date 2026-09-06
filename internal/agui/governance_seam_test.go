@@ -23,16 +23,17 @@ func (fakeMCPBoard) Probe(context.Context, string, mcp.ManagedServer) mcp.ProbeR
 
 type fakeSkillsBoard struct{}
 
-func (fakeSkillsBoard) ActiveSkills() []skills.Skill { return nil }
-func (fakeSkillsBoard) SkillBody(string) (string, bool) {
+func (fakeSkillsBoard) ActiveSkills(context.Context) []skills.Skill { return nil }
+func (fakeSkillsBoard) SkillBody(context.Context, string) (string, bool) {
 	return "", false
 }
-func (fakeSkillsBoard) ArchivedSkills() ([]skills.StageSkill, error) {
+func (fakeSkillsBoard) ArchivedSkills(context.Context) ([]skills.StageSkill, error) {
 	return nil, nil
 }
 func (fakeSkillsBoard) AuditLog(context.Context, skills.AuditFilter) ([]skills.AuditRow, error) {
 	return nil, nil
 }
+func (fakeSkillsBoard) WritableRoot(context.Context) string { return "" }
 
 type fakeSchedulerBoard struct{}
 

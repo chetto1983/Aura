@@ -24,6 +24,7 @@ const FULL: SkillRow = {
   type: 'executable',
   language: 'go',
   contentHash: 'deadbeef',
+  owned: true,
 };
 
 function client() {
@@ -141,7 +142,7 @@ describe('SkillDetail', () => {
   });
 
   it('renders dashes for missing type / language / content-hash', async () => {
-    renderDetail({ skill: { name: 'sparse', description: '', type: '' } });
+    renderDetail({ skill: { name: 'sparse', description: '', type: '', owned: true } });
     // Type, language and content hash are all missing; State always resolves.
     await waitFor(() => {
       expect(screen.getAllByText('—')).toHaveLength(3);

@@ -7,8 +7,8 @@ import (
 )
 
 // composer_api.go carries the WEBSKILL-01 composer skill-picker read route. It is the lean
-// authenticated sibling of the GOV-02 governance skills board: the SAME global active-skills
-// snapshot (loader.List, via SkillsBoardProvider.ActiveSkills), projected with the SAME
+// authenticated sibling of the GOV-02 governance skills board: the SAME caller-scoped
+// active-skills snapshot (loader.List, via SkillsBoardProvider.ActiveSkills), projected with the SAME
 // activeSkillRows shape, but mounted behind PLAIN RequireAuth (D-03) instead of
 // governance.read — so any authenticated identity can populate the composer picker, while
 // only governance-graded identities read the board. One loader snapshot backs the picker,
@@ -93,17 +93,25 @@ func effortToUISymbol(e llm.ReasoningEffort) string {
 	}
 }
 
-// handleComposerSkills serves GET /api/composer/skills (WEBSKILL-01): the global
+// handleComposerSkills serves GET /api/composer/skills (WEBSKILL-01): the CALLER'S
 // active-skills snapshot projected onto the board row shape (name/description/type; the
 // body is NEVER carried), read from the SAME provider ActiveSkills the governance board and
 // the runtime `skill action=use` resolve against (D-04 — activeSkillRows reused verbatim,
 // one source of truth). Unlike handleSkillsList there is no stage switch: the picker is
 // active-only. A nil provider → 503 so the client degrades to an empty picker (D-09), never
 // a 500.
-func (s *Server) handleComposerSkills(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleComposerSkills(w http.ResponseWriter, r *http.Request) {
 	if s.governance.Skills == nil {
 		http.Error(w, "skills unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	writeJSON(w, map[string]any{"skills": activeSkillRows(s.governance.Skills.ActiveSkills())})
+	// The picker is scoped to the caller for the same reason the board is: a picker that
+	// offered a name the run pin cannot then resolve — or that hid a person's own skill —
+	// would be the divergence Pitfall 2 exists to forbid, just spread across two routes.
+	//
+	// The picker resolves ownership from the same scope even though it never offers a write
+	// verb: the row shape is shared with the board, and a row that says `owned:false`
+	// everywhere would be a wrong answer on the wire waiting for the first client to read it.
+	ctx := scopedCtx(r.Context())
+	writeJSON(w, map[string]any{"skills": activeSkillRows(s.governance.Skills.ActiveSkills(ctx), s.governance.Skills.WritableRoot(ctx))})
 }

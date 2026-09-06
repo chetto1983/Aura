@@ -148,3 +148,62 @@ func TestZeroLayoutYieldsNothingRatherThanAJoinOfEmptyStrings(t *testing.T) {
 		t.Fatalf("zero layout produced %#v", r)
 	}
 }
+
+// TestOwnsSeparatesTheCallersRootFromEverythingElse pins the rule the cockpit renders:
+// a person mounts the house's skills and everything shared with them, and may write to
+// neither. The cases that matter are the near-misses — a sibling root whose path SHARES A
+// PREFIX with the writable one, and the identity's own export subtree, which is inside the
+// root but is a materialization staging area rather than a skill the board lists.
+func TestOwnsSeparatesTheCallersRootFromEverythingElse(t *testing.T) {
+	r := Roots{Global: "/srv/skills", Identity: "/srv/identities/alice"}
+
+	owned := []string{
+		"/srv/identities/alice/mine",
+		"/srv/identities/alice",
+		"/srv/identities/alice/.export/mine",
+	}
+	for _, dir := range owned {
+		if !r.Owns(dir) {
+			t.Fatalf("Owns(%q) = false, want true", dir)
+		}
+	}
+
+	notOwned := []string{
+		"/srv/skills/house",                    // the house library
+		"/srv/identities/bob/.export/borrowed", // another identity's share
+		"/srv/identities/alice-2/theirs",       // a sibling whose path shares the prefix
+		"/srv/identities",                      // the parent
+		"",                                     // nothing
+	}
+	for _, dir := range notOwned {
+		if r.Owns(dir) {
+			t.Fatalf("Owns(%q) = true, want false", dir)
+		}
+	}
+}
+
+// TestOwnsFallsBackToTheGlobalRootWhenThereIsNoIdentity mirrors WritableRoot: an unscoped
+// caller (the CLI, or a deployment with no per-identity base) writes to the global root, so
+// the house library is exactly what they own. The single-operator deployment keeps today's
+// behaviour rather than losing every verb.
+func TestOwnsFallsBackToTheGlobalRootWhenThereIsNoIdentity(t *testing.T) {
+	r := Roots{Global: "/srv/skills"}
+	if !r.Owns("/srv/skills/house") {
+		t.Fatal("an unscoped caller must own the global root they write to")
+	}
+	if r.Owns("/srv/identities/alice/mine") {
+		t.Fatal("an unscoped caller must not own an identity's root")
+	}
+}
+
+// TestDirWithinRefusesAnEmptyRoot: an unresolvable root must read as "owns nothing", never
+// as "owns the filesystem". filepath.Rel("", "/x") answers a usable relative path, so the
+// guard has to be explicit rather than emergent.
+func TestDirWithinRefusesAnEmptyRoot(t *testing.T) {
+	if DirWithin("", "/anything") {
+		t.Fatal("an empty root must not contain anything")
+	}
+	if DirWithin("/srv", "") {
+		t.Fatal("an empty dir is not contained by anything")
+	}
+}

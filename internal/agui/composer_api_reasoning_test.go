@@ -126,3 +126,29 @@ func TestReasoningCapabilitiesEndpoint(t *testing.T) {
 		}
 	})
 }
+
+// TestEffortToUISymbolCoversEveryModelledLevel pins the projection table itself rather than
+// one route's rendering of it. The gap it closes is specific: "max" had no case exercised
+// anywhere, so a level silently dropped to "" would have shown up as a selector missing an
+// option and no test failing. The unmodelled default is asserted for the same reason — the
+// caller relies on "" meaning DROP, and a symbol invented here reaches the selector as an
+// option it cannot render.
+func TestEffortToUISymbolCoversEveryModelledLevel(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		effort llm.ReasoningEffort
+		want   string
+	}{
+		{llm.ReasoningEffortNone, "off"},
+		{llm.ReasoningEffortLow, "low"},
+		{llm.ReasoningEffortMedium, "mid"},
+		{llm.ReasoningEffortHigh, "high"},
+		{llm.ReasoningEffortXHigh, "extra"},
+		{llm.ReasoningEffortMax, "max"},
+		{llm.ReasoningEffort("minimal"), ""},
+	} {
+		if got := effortToUISymbol(tc.effort); got != tc.want {
+			t.Errorf("effortToUISymbol(%q) = %q, want %q", tc.effort, got, tc.want)
+		}
+	}
+}

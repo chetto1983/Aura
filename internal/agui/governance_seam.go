@@ -38,20 +38,39 @@ type MCPBoardProvider interface {
 }
 
 // SkillsBoardProvider is the read-only skills-governance surface (GOV-02): the active
-// snapshot (Loader.List), the per-stage pending/archived metadata (ListStage — never a
-// mounted body), and the append-only audit ledger (newest-first). The pending/archived
-// reader returns metadata only, so a pending body never enters context by construction.
+// snapshot (Loader.List), the per-stage archived metadata (ListStage — never a mounted
+// body), and the append-only audit ledger (newest-first). The archived reader returns
+// metadata only, so an unmounted body never enters context by construction.
 //
 // SkillBody resolves an active skill's body from the SAME loader snapshot ActiveSkills
 // lists (37D / WEBSKILL-02): one source of truth for the composer pinned-skill application
 // (handleRun Mechanism A). Because both delegate to one Loader.Get/List snapshot, every
 // name ActiveSkills returns is resolvable via SkillBody (list ⊆ resolvable — Pitfall 2). An
 // unknown name → ("", false), which handleRun treats as a no-op (never a path read).
+//
+// ALL THREE READS TAKE A CONTEXT, and the identity on it is what they answer for. A skill
+// is executable instruction, so "the active skills" has no deployment-wide answer once
+// skills belong to somebody (amendment #214): the board, the composer picker and the run
+// pin must each show the caller their own library overlaid on the house's, plus what has
+// been shared with them, and never another person's. Scoping only two of the three would
+// leave the archive global — the half-and-half configuration amendment #216 measured as
+// worse than either whole choice — so ArchivedSkills carries the context too even though
+// it reads a directory rather than a snapshot.
 type SkillsBoardProvider interface {
-	ActiveSkills() []skills.Skill
-	SkillBody(name string) (string, bool)
-	ArchivedSkills() ([]skills.StageSkill, error)
+	ActiveSkills(ctx context.Context) []skills.Skill
+	SkillBody(ctx context.Context, name string) (string, bool)
+	ArchivedSkills(ctx context.Context) ([]skills.StageSkill, error)
 	AuditLog(ctx context.Context, filter skills.AuditFilter) ([]skills.AuditRow, error)
+	// WritableRoot is the directory a write from this caller lands in — the same one
+	// skills.Writer.For(identity) addresses. The board needs it to answer a question the
+	// row list alone cannot: WHICH of the listed skills this person may act on. The house
+	// library and another identity's share are both listed and both unwritable, and before
+	// this the cockpit offered Archive/Delete on them anyway, so the verb reached a name
+	// the actor's root does not hold and the operator was told the backend had failed.
+	//
+	// It is used to compute one boolean per row and is NEVER serialized: a host path is
+	// not the cockpit's business, only the answer derived from it is.
+	WritableRoot(ctx context.Context) string
 }
 
 // SchedulerBoardProvider is the scheduler-governance surface (GOV-03): the manageable

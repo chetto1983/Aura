@@ -95,9 +95,17 @@ type identityLoaders struct {
 // cachedLoader is one identity's loader plus the shared-skill set it was built for. The set
 // is remembered so a re-resolve that finds the same grants keeps the SAME loader — rebuilding
 // it would throw the snapshot away, which is the cost this cache exists to avoid.
+//
+// The two clocks answer different questions and must not be collapsed into one. `resolved` is
+// when the answer was INSTALLED, and it is what the TTL counts from. `asked` is when the read
+// that produced the answer STARTED, and it is the staleness watermark: an answer is stale
+// relative to another by when the two reads BEGAN, never by when they happened to finish.
+// Comparing an incoming read's start against the stored INSTALL time conflates them, and it
+// rejects the fresher of two racing answers whenever the older read lands first — see install.
 type cachedLoader struct {
 	loader   *skills.Loader
 	shared   []string
+	asked    time.Time
 	resolved time.Time
 }
 
@@ -168,11 +176,18 @@ func (l *identityLoaders) install(identity string, shared []string, asked time.T
 		// Older than what is already stored, or older than the write that expired it: drop
 		// it. The entry keeps its expired timestamp, so the next read resolves again at once
 		// rather than serving this answer for a whole TTL.
-		if entry.resolved.After(asked) || l.invalidated.After(asked) {
+		//
+		// The comparison is start-against-START. Against the stored INSTALL time it would
+		// reject the fresher of two racing answers in one of the two landing orders: a read
+		// that began earlier, and whose query was the slow one, installs at a moment already
+		// later than when the newer read began, so the newer read's revoke would be discarded
+		// and the stale grant kept with a fresh clock — the very thing this guard exists to
+		// stop, reached by swapping which query finished first.
+		if entry.asked.After(asked) || l.invalidated.After(asked) {
 			return entry.loader
 		}
 		if slices.Equal(entry.shared, shared) {
-			entry.resolved = time.Now()
+			entry.asked, entry.resolved = asked, time.Now()
 			return entry.loader
 		}
 	}
@@ -189,7 +204,7 @@ func (l *identityLoaders) install(identity string, shared []string, asked time.T
 		BodyCapBytes: l.cfg.SkillBodyCapBytes,
 		Blocklist:    l.cfg.SkillInjectionBlocklist,
 	})
-	l.byID[identity] = &cachedLoader{loader: loader, shared: shared, resolved: resolved}
+	l.byID[identity] = &cachedLoader{loader: loader, shared: shared, asked: asked, resolved: resolved}
 	return loader
 }
 

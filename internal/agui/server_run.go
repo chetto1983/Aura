@@ -88,7 +88,7 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	// never a filesystem path; an unknown/absent name resolves ok=false → clean no-op (never
 	// inject client text, never a 5xx). Zero runner change, no new tool (T-37D-02/03).
 	if req.Aura.Skill != "" && s.governance.Skills != nil && modelUserMsg != nil {
-		if body, ok := s.governance.Skills.SkillBody(req.Aura.Skill); ok {
+		if body, ok := s.governance.Skills.SkillBody(scopedCtx(ctx), req.Aura.Skill); ok {
 			framed := tools.UseAuthorityFrame + body + "\n\n" + *modelUserMsg
 			modelUserMsg = &framed
 		}

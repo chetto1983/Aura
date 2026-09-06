@@ -118,7 +118,7 @@ export function SkillDetail({ skill, stage, onClose, onDelete, onEdit }: SkillDe
         {/* Editing loads the body into the editor, so it is offered only once the body is
             here — an "Edit" that opened on an empty document would quietly propose
             replacing the skill with nothing. */}
-        {isActive && body.isSuccess ? (
+        {isActive && body.isSuccess && skill.owned ? (
           <Button
             type="button"
             variant="outline"
@@ -135,9 +135,15 @@ export function SkillDetail({ skill, stage, onClose, onDelete, onEdit }: SkillDe
             {t('governance.skills.editor.edit')}
           </Button>
         ) : null}
+        {/* Edit and Delete are offered only on a skill this caller owns. A house skill and
+            one shared with them are readable here — that is the point of the pane — but
+            both verbs would land on a root skills.Writer.For(identity) cannot address, so
+            offering them would promise something the server has to refuse. */}
         <Button
           type="button"
           variant="ghost"
+          disabled={!skill.owned}
+          title={skill.owned ? undefined : t('governance.skills.houseReadOnly')}
           onClick={() => {
             onDelete(skill.name);
           }}

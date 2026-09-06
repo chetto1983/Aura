@@ -62,6 +62,12 @@ export interface SkillRow {
   readonly always?: boolean;
   readonly language?: string;
   readonly contentHash?: string;
+  /** Whether this caller may change the skill: it lives under the root their writes land
+   * in. A skill the deployment ships, or one another person shared with them, is listed
+   * and runnable but NOT theirs to archive or delete — the board must not offer a verb the
+   * server will refuse. Required, not optional, precisely because the dangerous default is
+   * "absent reads as allowed": the server sends it on every row, false included. */
+  readonly owned: boolean;
 }
 
 /** One append-only skills-audit ledger row (GET /api/governance/skills/audit).

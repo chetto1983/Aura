@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -198,5 +199,81 @@ func TestBoxIsMirroredWhenEveryHostSourceIsGone(t *testing.T) {
 		[]string{"/bin/sh", "-c", "grep -rl 'only shared body' /skills 2>/dev/null || true"})
 	if strings.TrimSpace(after) != "" {
 		t.Fatalf("with every host source gone the box kept the revoked body:\n%s", after)
+	}
+}
+
+// TestAMalformedShareDoesNotCostTheGranteeTheirBox is the daemon-side statement of the
+// degrade-don't-deny rule (amendment #217, D-217-4 carried into the tar pass): a share whose
+// tree the tar builder refuses — here a symlink, the sandbox-runtime escape guard — is skipped,
+// and everything else still lands. Before this the whole MaterializeIn failed, so one person's
+// malformed skill took away every grantee's box, and with it every tool they reach through it.
+//
+// The unit tier already asserts the skip and its asymmetry on tarSources; what only a daemon
+// can say is that the box the grantee is left with is a WORKING one.
+func TestAMalformedShareDoesNotCostTheGranteeTheirBox(t *testing.T) {
+	egressITDockerdOrGate(t)
+
+	base := t.TempDir()
+	boxImage := egressITBoxImage()
+	reader := egressITIdentity(t)
+	owner := reader[:len(reader)-len("-owner")] + "-owner"
+
+	cfg := &config.Config{
+		Profile:           config.ProfileSingleUserHardened,
+		SkillsDir:         filepath.Join(base, "skills"),
+		SkillsIdentityDir: filepath.Join(base, "skills-identities"),
+		SkillExportDir:    filepath.Join(base, "export"),
+		Sandbox: config.SandboxConfig{
+			Image:       boxImage,
+			CPULimit:    1,
+			MemoryLimit: 256 << 20,
+			PidsLimit:   128,
+		},
+	}
+	ownerRoots, err := skillLayout(cfg).For(owner)
+	if err != nil {
+		t.Fatalf("layout for the owner: %v", err)
+	}
+	writeExportedSkill(t, cfg.SkillExportDir, "house-skill", "house body")
+	writeExportedSkill(t, ownerRoots.Export, "good-share", "good body")
+	writeExportedSkill(t, ownerRoots.Export, "bad-share", "bad body")
+	// The fault: a symlink inside the shared tree, which writeTarDir refuses by design.
+	badDir := filepath.Join(ownerRoots.Export, "bad-share")
+	if err := os.Symlink(filepath.Join(badDir, "SKILL.md"), filepath.Join(badDir, "link.md")); err != nil {
+		t.Skipf("symlink unsupported on this host: %v", err)
+	}
+
+	rows := []skills.CatalogRow{
+		{ID: "bad-1", OwnerID: owner, Name: "bad-share"},
+		{ID: "good-1", OwnerID: owner, Name: "good-share"},
+	}
+	shared := skills.NewSharedReader(
+		stubGrants{ids: []string{"bad-1", "good-1"}}, stubCatalog{rows: rows}, skillLayout(cfg))
+
+	cli, err := client.New(client.FromEnv)
+	if err != nil {
+		t.Fatalf("docker client: %v", err)
+	}
+	t.Cleanup(func() { _ = cli.Close() })
+
+	ctx := context.Background()
+	spec := usersandbox.SandboxSpec{IdentityID: reader, Image: boxImage, Limits: limitsFrom(cfg.Sandbox)}
+	h, err := shareITBackend(t, cli, cfg, shared).Resolve(ctx, spec)
+	if err != nil {
+		t.Fatalf("a malformed SHARE must not fail Resolve — the grantee keeps their box: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = usersandbox.NewDockerBackend(cli, boxImage, limitsFrom(cfg.Sandbox)).Stop(context.Background(), h)
+	})
+
+	listing, code := egressITRawExec(t, cli, h.ContainerID, []string{"/bin/sh", "-c", "find /skills"})
+	if code != 0 {
+		t.Fatalf("find /skills exited %d: %s", code, listing)
+	}
+	if !strings.Contains(listing, "house-skill") || !strings.Contains(listing, "good-share") {
+		t.Fatalf("the malformed share took the rest of the box with it:\n%s", listing)
+	}
+	if strings.Contains(listing, "bad-share") {
+		t.Fatalf("the refused share landed anyway — the skip must drop it, not half-copy it:\n%s", listing)
 	}
 }

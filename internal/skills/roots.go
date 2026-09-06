@@ -112,3 +112,35 @@ func (r Roots) WritableRoot() string {
 	}
 	return r.Global
 }
+
+// DirWithin reports whether dir lies inside root. It is a LEXICAL containment check on
+// cleaned paths, deliberately: its one caller decides whether the cockpit offers a person
+// the Archive/Delete verbs on a row, and the verbs themselves are already fenced by
+// Writer.For(identity), which can only address that identity's own root. So this answers a
+// display question, and a symlink-resolving fence here would buy nothing the write path
+// does not already enforce — while an EvalSymlinks on every listed row would put a stat
+// storm on the board's hot path.
+//
+// Empty root answers false rather than "everything": an unresolvable root must not read as
+// ownership of the whole filesystem.
+func DirWithin(root, dir string) bool {
+	root = strings.TrimSpace(root)
+	dir = strings.TrimSpace(dir)
+	if root == "" || dir == "" {
+		return false
+	}
+	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(dir))
+	if err != nil {
+		return false
+	}
+	if rel == "." {
+		return true
+	}
+	return !filepath.IsAbs(rel) && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// Owns reports whether dir is a skill directory this identity may write to — the one under
+// their WritableRoot. A skill loaded from the house root, or from another identity's export
+// via a share, is NOT owned: the person reads and runs it, and the cockpit must not offer
+// them a verb that would land on a directory Writer.For cannot reach (amendment #218).
+func (r Roots) Owns(dir string) bool { return DirWithin(r.WritableRoot(), dir) }

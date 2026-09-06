@@ -11791,7 +11791,17 @@ flusso completo, che funziona.
 > `uuid`. La nuova tabella usa `uuid`; l'audit resta com'è finché qualcuno non decide di
 > allinearlo.
 
-## Section Il cockpit è la console di casa (Amendment #216, 2026-09-06)
+## Section Il cockpit è la console di casa (Amendment #216, 2026-09-06 — SUPERSEDUTO da #218)
+
+> **SUPERSEDUTO il 2026-09-06 dall'amendment #218.** La *misura* di #216 resta vera e va letta:
+> una console la cui scrittura atterra dove la sua lettura non guarda è peggio di entrambe le
+> scelte intere. La *decisione* che ne seguiva — "ogni scrittura del cockpit va nella libreria
+> di deployment, per qualunque attore" — non vale più: era esplicitamente uno stopgap in attesa
+> del lavoro che #216 stessa nomina ("dare una persona al cockpit vuol dire prima dare
+> un'identità alla sua board"). Quel lavoro è stato fatto, la board è per identità, e la
+> scrittura è tornata per-attore. **L'invariante è la stessa; sono scopate entrambe le metà
+> invece di nessuna.** Il paragrafo "Cosa resta aperto (e #216 NON è superseduto)" di #217 è
+> superseduto insieme a questo.
 
 > **Amendment #216 (2026-09-06 — misurato in CI run 1790, primo giro in cui i tier Postgres
 > di #214 sono arrivati in fondo).** Chiude una domanda che #214 aveva lasciato implicita e che
@@ -12010,6 +12020,22 @@ flusso completo, che funziona.
 > `TestIdentityLoadersRefuseAStaleGrantAnswer` (deterministico: `install` prende l'istante come
 > argomento) e `TestIdentityLoadersAreSafeUnderConcurrentTurns` sotto `-race`.
 >
+> **Seconda correzione, misurata in audit avversariale il 2026-09-06 (`b5496af9` + working
+> tree).** La correzione sopra confrontava l'istante di INIZIO della lettura in arrivo con
+> l'istante di INSTALLAZIONE di quella già in map (`entry.resolved`) — due orologi diversi. Il
+> confronto regge in UNO dei due ordini di atterraggio e si rovescia nell'altro: se la lettura
+> partita PRIMA è quella lenta, atterra in un istante già successivo all'inizio della lettura
+> più nuova, quindi `entry.resolved.After(asked)` è vero e **la risposta fresca — quella che
+> porta la revoca — viene scartata**, lasciando in cache il grant revocato con un clock nuovo
+> per un TTL intero, ripetibile sotto carico. È esattamente l'esito che la guardia esiste per
+> impedire, raggiunto scambiando quale query finisce per prima; interleaving concreto: R1 parte
+> a 0 ms con query da 50 ms, R2 parte a 45 ms con query da 20 ms, R1 atterra a 50 e R2 a 65 e
+> viene rifiutata. Ora `cachedLoader` porta **due** orologi — `asked` (inizio della lettura, il
+> watermark di staleness) e `resolved` (installazione, da cui conta il TTL) — e il confronto è
+> inizio-contro-inizio. Test: il sotto-caso
+> `a newer read is not rejected because an older one landed first`, che fallisce sul codice
+> precedente e passa su questo.
+>
 > ### Cosa questa misura NON dimostra
 >
 > **Non c'è Postgres e non c'è un daemon Docker in questo ambiente.** I tier
@@ -12036,14 +12062,134 @@ flusso completo, che funziona.
 > picco su un export reale, e lo spool su file temporaneo è la via d'uscita se un giorno lo
 > sarà.
 >
-> ### Cosa resta aperto (e #216 NON è superseduto)
+> ### Cosa resta aperto (SUPERSEDUTO dall'amendment #218)
 >
-> La board del cockpit resta la console **dell'operatore sulla libreria di casa**, esattamente
-> come #216 la lascia: nessun `ctx` è stato aggiunto a `SkillsBoardProvider`. La misura di
-> #216 ("5 call site non-test e 3 file di test") è **confermata al conteggio** — `ActiveSkills`
-> e `SkillBody` hanno 2 implementazioni e 4 chiamate non-test (`governance_api.go` ×2,
-> `composer_api.go`, `server_run.go`), e i file di test sono `governance_seam_test.go`,
-> `governance_api_skills_test.go`, `server_skill_run_test.go` — ma **sottostima il lavoro**:
-> `ArchivedSkills()` non porta ctx e la sua `archiveDir` è per identità, quindi scopare la
-> board lasciando l'archivio globale sarebbe di nuovo "una metà sola", la configurazione che
-> #216 dichiara peggiore di entrambe le scelte intere. Va fatto come slice sua.
+> **Questo paragrafo è superseduto il 2026-09-06.** Diceva che la board restava la console
+> dell'operatore sulla libreria di casa e che scoparla andava fatto "come slice sua". È stato
+> fatto: `SkillsBoardProvider` porta ora `ctx` su **tutti e tre** i read (`ActiveSkills`,
+> `SkillBody`, `ArchivedSkills`), e con essi il picker del composer e il pin della run. Il
+> conteggio qui registrato era corretto e resta la misura di partenza; vedi #218 per quello
+> ri-verificato all'atterraggio.
+
+## Section La board prende un'identità, e la scrittura torna dove la lettura guarda (Amendment #218, 2026-09-06)
+
+> **Amendment #218 (2026-09-06 — misurato leggendo il codice a `b5496af9` e sui tier che qui
+> girano davvero: unit + race, Go 1.26.6, **senza Postgres e senza daemon Docker**).** Chiude i
+> due debiti che #217 registra come misurati e **supersede la decisione di #216**, che nominava
+> da sé il proprio successore.
+>
+> ### A — La board del cockpit è per identità, e la scrittura è di nuovo per attore
+>
+> **Cosa era.** `agui.SkillsBoardProvider` non portava `ctx` su nessuno dei tre read, quindi la
+> board leggeva la libreria di **deployment** e basta. #216 aveva reso la scrittura del cockpit
+> globale **per farla combaciare con quella lettura** — la scelta giusta date le due metà
+> disponibili allora, e dichiarata stopgap nella stessa frase.
+>
+> **Cosa è ora.** `ActiveSkills(ctx)`, `SkillBody(ctx, name)` e `ArchivedSkills(ctx)` prendono
+> tutti il contesto, e la board risponde per il **principal autenticato**: la sua libreria, la
+> casa sopra su collisione di nome (D-214-3), più ciò che altri gli hanno condiviso — mai la
+> libreria di un altro. `skillsWriteAdapter` risolve di nuovo `Writer.For(actor)` /
+> `Installer.For(actor)`. **L'invariante di #216 vale con entrambe le metà scopate, non con
+> nessuna.**
+>
+> **Ri-verifica del conteggio di #216/#217.** Confermato: 1 implementazione non-test
+> (`skillsBoardAdapter`), 4 chiamate non-test (`governance_api.go` ×2, `composer_api.go`,
+> `server_run.go`), 3 file di test con dei fake. #217 aveva ragione anche sulla sottostima:
+> `ArchivedSkills` andava scopato con gli altri, e con esso `archiveDir`.
+>
+> **D-218-1 — L'archivio della board è l'archivio dello scrittore, non una seconda regola.**
+> `skillsBoardAdapter.archiveDir` risolve `Roots.WritableRoot() + /archived`, che è esattamente
+> ciò che `skills.Writer.For` imposta. Le due metà di un pulsante (elenca gli archiviati →
+> ripristina) non possono finire in directory diverse per costruzione, non per attenzione.
+>
+> **D-218-2 — Il picker del composer e il pin della run sono scopati insieme alla board.**
+> Erano l'ultimo pezzo di divergenza possibile: una board che mostra a una persona una skill
+> che poi non può né selezionare né pinnare è la stessa Pitfall 2 spalmata su due route.
+> Passano tutte per lo stesso `scopedCtx(r.Context())` che ogni altra lettura owner-scoped di
+> questo server usa (Phase 36, D-25): principal autenticato, fallback all'identità `local`
+> seminata sul percorso dev senza principal.
+>
+> **D-218-3 — Una sola cache di loader per il cockpit, condivisa fra lettura e scrittura.**
+> `serve_agui.go` costruisce un `identityLoaders` e lo passa a `buildGovernanceProviders` e a
+> `buildSkillsWriteProvider`; ogni leg di scrittura completata chiama `invalidateAll`. Senza
+> questo, "la board mostra ciò che il cockpit ha appena installato" sarebbe vero solo dopo il
+> TTL dello snapshot (1s), cioè una gara che un test verde non distingue da una promessa.
+>
+> **Conseguenza da dichiarare, non da scoprire: il cockpit non modifica più la libreria di
+> casa.** Una skill che il deployment pubblica è policy della casa, e la console di **una
+> persona** non è dove la policy si riscrive: quella strada è `aura skills` **senza**
+> `--identity`. È la lettura coerente di D-214-3 (la casa vince la collisione) sul lato
+> scrittura, ed è un cambio di comportamento operativo reale, non un dettaglio interno.
+>
+> **Un test che non dimostrava niente, corretto.** `TestSkillsInstallActivatesDirectly`
+> asseriva che dopo l'install non restasse nulla in `<root>/pending/`. Nessun writer crea
+> `pending/` da quando l'amendment #97 ha tolto il passo di approvazione: la `os.Stat` non
+> poteva che fallire, quindi l'asserzione passava sempre. Ora asserisce la directory che esiste
+> davvero (`.staging`, vuota dopo il rename) e, soprattutto, l'invariante: install **come**
+> un'identità, la board di **quella** persona lo elenca, quella di un'altra no.
+>
+> ### B — I due debiti che #217 registra come misurati
+>
+> **D-218-4 — I tar delle sorgenti si spoolano su file; l'ordine resta quello di D-217-3.**
+> `tarSources` costruiva ogni tar in un `bytes.Buffer` e li teneva tutti insieme, perché
+> costruire prima di pulire è ciò che compra la proprietà di D-217-3 (una sorgente rifiutata non
+> lascia il box già svuotato). Il picco era quindi la **somma** degli alberi e cresceva col
+> numero di grant. Ora ogni tar è un file temporaneo, riavvolto e streammato: **l'ordine è
+> identico**, il picco è il buffering di un tar solo. `stagedSources.close()` è `defer`-ito da
+> `MaterializeIn`, e `tarSources` chiude ciò che ha già spoolato prima di restituire un errore —
+> quindi i file spariscono sul percorso felice, sul fallimento del clear, sul fallimento della
+> `CopyToContainer` e sulla cancellazione del contesto.
+>
+> **Lo spool NON va in `/tmp`, e questa è una correzione all'istruzione ricevuta.** Il
+> `compose.yaml` monta `/tmp` del daemon come `tmpfs ... size=64m`: spoolare lì lascerebbe i tar
+> **in memoria** — esattamente il costo che lo spool esiste per togliere — con in più un tetto
+> duro di 64 MiB. La directory è quindi il **run dir** (`AURA_RUN_DIR`, `/var/lib/aura/runs`, un
+> volume vero): nessuna env var nuova, la stessa ragione per cui l'Installer ci mette già il
+> proprio work tree.
+>
+> **Corretto in audit avversariale il 2026-09-06: è `<run dir>/tmp`, non la radice del run dir**
+> (`usersandbox.WithSpoolDir(filepath.Join(cfg.RunDir, "tmp"))`). Il `defer` di `MaterializeIn`
+> copre ritorno, panic e cancellazione, ma NON un `SIGKILL`/OOM fra lo spool e il `defer`: in
+> quel caso il tar resta su un **volume durevole** e niente lo rimuove, un file per resume.
+> `conversations.ScanOrphans` spazza già tutto ciò che sta sotto `<run dir>/tmp` e ha più di 24h
+> (al boot e su `AURA_RUN_DIR_SWEEP_INTERVAL_SEC`), quindi la sottodirectory giusta è quella che
+> il custode esiste già per guardare. Un `os.Remove` su un file che lo sweep ha già tolto è un
+> errore ignorato, e il descriptor aperto tiene comunque il tar leggibile fino allo stream: lo
+> sweep non può interrompere una materializzazione in corso. Resta noto e NON corretto qui: il
+> work tree dell'Installer (`aura-skill-install-*`) sta ancora nella radice del run dir e quel
+> custode non lo vede — è codice che questa slice non tocca.
+>
+> **D-218-5 — Una sorgente CONDIVISA è saltabile singolarmente; la propria e quella del
+> deployment no.** `MaterializeSource.SkipOnFault`, impostato **solo** da `sharedSkillSources`.
+> Prima, un symlink o un file non-regolare in un albero condiviso faceva fallire l'intero
+> `MaterializeIn`, quindi la skill malformata di **una** persona toglieva il box a **ogni**
+> grantee — e il box è il modo in cui il suo proprietario raggiunge tutti i propri strumenti.
+> È la stessa politica degrade-don't-deny che D-217-4 ha scelto per l'ACL, portata sul passo
+> tar. **L'asimmetria è il punto e non va sfumata in "salta tutto":** un guasto nel tuo albero
+> devi vederlo, e fallire chiuso è come lo vedi. La direzione è anche quella sicura — il mirror
+> poi rimuove il corpo che non sa più giustificare.
+>
+> ### Cosa questa misura NON dimostra
+>
+> **Non c'è Postgres e non c'è un daemon Docker in questo ambiente.** `go build`, `go vet`,
+> `go vet -tags "db_integration docker_integration arcadedb_integration"`, `go test` e
+> `go test -race` sono puliti su tutto il modulo; `gofmt` e `check-file-size` verdi; `deadcode`
+> pulito. **`golangci-lint` non gira su questo host** (2.5.0, buildato con go1.25, contro un
+> modulo che targetta 1.26.6 — CI ne pinna 2.12.2): non è stato saltato in silenzio, non è
+> stato eseguito.
+>
+> **Nessuno ha visto passare** i tier taggati, che sono scritti e compilati:
+> `TestSkillsInstallActivatesDirectly` + `TestSkillsBoardArchiveIsScopedWithTheBoard`
+> (`db_integration`, `cmd/aura`) e `TestAMalformedShareDoesNotCostTheGranteeTheirBox`
+> (`docker_integration`, `cmd/aura`).
+>
+> **Il picco di memoria non è misurato, prima o dopo.** Ciò che il tier unit prova è la
+> *forma*: il tar staged è un **file** nella spool dir, riavvolto, e la dir resta vuota su ogni
+> percorso d'uscita. Che l'RSS di un resume reale sia sceso è un'affermazione su un deployment
+> acceso con un export vero, e nessuno l'ha fatta. Non è misurato nemmeno il costo I/O che lo
+> spool aggiunge rispetto alla memoria: su un run dir lento è un peggioramento di latenza che
+> nessuno ha osservato.
+>
+> **Lo scoping è provato come proprietà di directory e di precedenza**, con fake al posto dei
+> due store dell'ACL. Che RLS regga davvero sotto il principal della board è ciò che il tier
+> `db_integration` dovrebbe dire, e qui non l'ha detto.

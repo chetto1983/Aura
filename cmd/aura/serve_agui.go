@@ -199,7 +199,12 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	// constructed is left nil so its board answers 503, MUST NOT abort boot (the
 	// SetGraphView best-effort precedent). The reads inherit RequireAuth from the parent
 	// mux; no capability gate (read-only).
-	aguiServer.SetGovernanceProviders(buildGovernanceProviders(chat.cfg, chat.pool, store, live))
+	// ONE per-identity loader cache, shared by the board and by the skills write provider.
+	// Sharing it is the whole of amendment #216's invariant: the console reads and writes the
+	// same person's directories, and a completed write expires the snapshot the board is about
+	// to read instead of leaving it a TTL behind.
+	skillLoaders := newIdentityLoaders(chat.cfg, newSharedSkillReader(chat.cfg, chat.pool))
+	aguiServer.SetGovernanceProviders(buildGovernanceProviders(chat.cfg, chat.pool, store, live, skillLoaders))
 	wireSettingsProviders(aguiServer, chat)
 	// Wire the 37C web-voice providers (WEBVOICE-01/02/03, D-12/D-13): a DEDICATED mp3
 	// web TTSClient (Format="mp3", distinct from Telegram's opus client) + a cloud-only
@@ -239,7 +244,7 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	} else {
 		mcpWrite = mw
 	}
-	skillsWrite := buildSkillsWriteProvider(chat.cfg, chat.pool)
+	skillsWrite := buildSkillsWriteProvider(chat.cfg, chat.pool, skillLoaders)
 	if mcpWrite != nil || skillsWrite != nil {
 		aguiServer.SetGovernanceWriteProviders(agui.GovernanceWriteProviders{MCP: mcpWrite, Skills: skillsWrite})
 	}
