@@ -373,12 +373,16 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// constant compiled into the browser bundle, and 0118 gives a skill an OWNER -- the
 	// per-identity catalog and the generic resource ACL, both behind the two RLS layers,
 	// because a skill is executable instruction the model follows and one identity's must
-	// not reach another's context (amendment #214). The
+	// not reach another's context (amendment #214), and 0119 removes aura.content_parts
+	// and aura.content_part_links -- created by 0037 for a typed-multimodal plane that was
+	// never built, left standing by 0042 and then given four RLS policies by 0087, so
+	// three migrations of upkeep and every backup carried two tables that measured 0 rows
+	// and had no reader anywhere in the tree. The
 	// test exists so a migration added without noticing breaks the build rather than
 	// deployment; bumping it is the intended acknowledgement, never an incidental
 	// red-to-green fix.
-	if head != 118 {
-		t.Fatalf("MigrationHead=%d, want embedded head 118", head)
+	if head != 119 {
+		t.Fatalf("MigrationHead=%d, want embedded head 119", head)
 	}
 }
 
