@@ -195,7 +195,7 @@ func (s *cronTaskStore) ListScheduledTasks(ctx context.Context) ([]tools.Schedul
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, kind, schedule_kind, status, next_run_at, payload, notify_route
 		FROM aura.scheduler_tasks
-		WHERE identity_id = $1::uuid
+		WHERE identity_id = $1
 		  AND status IN ('active', 'pending_approval')
 		ORDER BY next_run_at ASC NULLS LAST, id ASC`, identityID)
 	if err != nil {
@@ -233,7 +233,7 @@ func (s *cronTaskStore) CancelScheduledTask(ctx context.Context, id string) erro
 		UPDATE aura.scheduler_tasks
 		SET status = 'cancelled', updated_at = now()
 		WHERE id = $1::uuid
-		  AND identity_id = $2::uuid
+		  AND identity_id = $2
 		  AND status IN ('active', 'pending_approval')`, id, identityID)
 	if err != nil {
 		return fmt.Errorf("cancel task %s: %w", id, err)
@@ -256,7 +256,7 @@ func (s *cronTaskStore) RunScheduledTaskNow(ctx context.Context, id string) erro
 		UPDATE aura.scheduler_tasks
 		SET next_run_at = now(), updated_at = now()
 		WHERE id = $1::uuid
-		  AND identity_id = $2::uuid
+		  AND identity_id = $2
 		  AND status = 'active'`, id, identityID)
 	if err != nil {
 		return fmt.Errorf("run_now task %s: %w", id, err)
@@ -286,7 +286,7 @@ func (s *cronTaskStore) ApproveScheduledTask(ctx context.Context, id string) err
 		UPDATE aura.scheduler_tasks
 		SET status = 'active', updated_at = now()
 		WHERE id = $1::uuid
-		  AND identity_id = $2::uuid
+		  AND identity_id = $2
 		  AND status = 'pending_approval'`, id, identityID)
 	if err != nil {
 		return fmt.Errorf("approve task %s: %w", id, err)
