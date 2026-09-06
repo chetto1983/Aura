@@ -3,6 +3,7 @@ package agui
 import (
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"path"
 	"strings"
@@ -157,6 +158,13 @@ func (s *Server) displayNames(
 	}
 	names, err := s.fileNames.NamesByKey(ctx, identityID, keys)
 	if err != nil {
+		// Falling back to key tails is the right answer for the operator — a listing they
+		// can still read beats an error page. Saying nothing about WHY is not: the same
+		// silence around this index made a broken document_search unexplainable for a whole
+		// session (2026-09-06). One line per failed page is bounded by the operator's own
+		// clicking, not by traffic.
+		slog.Warn("aura files: name lookup failed — this page falls back to key tails",
+			"keys", len(keys), "err", err)
 		return nil
 	}
 	return names

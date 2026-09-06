@@ -389,6 +389,8 @@ func (c *Client) hydrateRecallRanking(
 	seenProse := make(map[string]struct{}, len(ranked))
 	seenConversations := make(map[string]struct{})
 	excludedConversations := recallExcludedConversationSet(request.ExcludeConversationIDs)
+	var drops recallDrops
+	defer func() { drops.report(path) }()
 	for index, item := range ranked {
 		if admitted.exhausted(quota) {
 			break
@@ -426,6 +428,7 @@ func (c *Client) hydrateRecallRanking(
 		}
 		window, err := c.recallConversationWindow(ctx, turn, recallWindowRadius)
 		if err != nil {
+			drops.record(err)
 			continue
 		}
 		window.Turns = omitRecallFactProse(window.Turns, factProse)

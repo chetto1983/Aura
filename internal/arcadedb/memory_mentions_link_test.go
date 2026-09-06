@@ -412,6 +412,19 @@ func mentionScanRouter(edgeScan testResponse) func(recordedRequest) testResponse
 	}
 }
 
+// missingMentionsTypeBody is the VERBATIM payload ArcadeDB 26.9.1 returns for a query
+// against an edge type the database does not have. Captured live on 2026-09-06 from
+// POST /api/v1/query/<db> with `SELECT outV().name AS source FROM NOSUCHEDGE LIMIT 5`.
+//
+// It replaces an invented `{"detail":"class 'MENTIONS' was not found"}` — no exception
+// field, and a phrasing the server does not use. That fixture is why the loose
+// "was not found" substring match looked necessary: the test pinned the fallback against
+// a payload only the test produced. The real one carries the SchemaException class and
+// the "Type with name" phrasing, which is exactly what the narrow predicate needs.
+const missingMentionsTypeBody = `{"error":"Internal error",` +
+	`"exception":"com.arcadedb.exception.SchemaException",` +
+	`"detail":"Type with name 'MENTIONS' was not found"}`
+
 // B6: a memory whose schema predates MENTIONS reports the existing-edge scan
 // as empty rather than failing (isMissingTypeError), but any OTHER failure on
 // that same scan is still returned as an error, so the fallback cannot
@@ -419,7 +432,7 @@ func mentionScanRouter(edgeScan testResponse) func(recordedRequest) testResponse
 func TestLinkMentionsTreatsAMissingMentionsTypeAsEmptyButPropagatesOtherErrors(t *testing.T) {
 	t.Run("missing type falls back to empty", func(t *testing.T) {
 		client, requests := routedClient(t, mentionScanRouter(testResponse{
-			Status: http.StatusInternalServerError, Body: `{"detail":"class 'MENTIONS' was not found"}`,
+			Status: http.StatusInternalServerError, Body: missingMentionsTypeBody,
 		}))
 		withUncappedShare(client)
 
@@ -439,6 +452,21 @@ func TestLinkMentionsTreatsAMissingMentionsTypeAsEmptyButPropagatesOtherErrors(t
 		}
 		if !sawEdgeScan {
 			t.Fatal("test setup: the existing-edge scan was never issued")
+		}
+	})
+	// The substring "was not found" appears in errors this sweep must NOT swallow. Before
+	// 2026-09-06 the guard matched it anywhere in any error, so a missing record — or any
+	// wrapped failure from a layer below that happened to say it — read as an empty graph.
+	t.Run("another absent thing is not an empty graph", func(t *testing.T) {
+		client, _ := routedClient(t, mentionScanRouter(testResponse{
+			Status: http.StatusInternalServerError,
+			Body: `{"error":"Internal error","exception":"com.arcadedb.exception.RecordNotFoundException",` +
+				`"detail":"Record #12:99 was not found"}`,
+		}))
+		withUncappedShare(client)
+
+		if _, err := client.LinkMentions(context.Background()); err == nil {
+			t.Fatal("a missing RECORD must not be read as a missing MENTIONS type")
 		}
 	})
 	t.Run("a different failure is returned, not swallowed", func(t *testing.T) {

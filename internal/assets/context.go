@@ -4,6 +4,7 @@ package assets
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 )
 
@@ -69,6 +70,11 @@ func resolveIndexed(ctx context.Context, scope DocumentScopeResolver, identityID
 	}
 	found, err := scope.ResolveDocumentScope(ctx, identityID, ids)
 	if err != nil {
+		// Advertising nothing is the right answer; being unable to tell an empty index from
+		// a broken one is not. Without this line an operator sees an agent that has
+		// "forgotten" its documents and no reason anywhere for it.
+		slog.Warn("aura assets: knowledge catalog resolve failed — this turn advertises no retrievable document",
+			"documents", len(ids), "err", err)
 		return nil
 	}
 	indexed := make(map[string]bool, len(found))

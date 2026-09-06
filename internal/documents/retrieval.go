@@ -280,6 +280,11 @@ func (r *HostRetriever) passageLegNames(
 	}
 	names, err := r.ControlPlane.DocumentNames(ctx, identityID, missing)
 	if err != nil {
+		// The answer survives without names — the passages and their ids still rank — so
+		// this is not a degradation of the RESULT and does not get the status field. It is
+		// still a dependency failing, and it goes through the same rate-limited log as the
+		// leg degradations rather than vanishing.
+		r.degradations.warn("passage_names_unavailable", err.Error(), identityID)
 		return nil
 	}
 	return names

@@ -52,6 +52,8 @@ func (c *Client) recallRecent(ctx context.Context, request RecallRequest) (Recal
 	evidence := make([]RecallEvidence, 0, pageSize)
 	seen := make(map[string]struct{}, len(rows))
 	excluded := recallExcludedConversationSet(request.ExcludeConversationIDs)
+	var drops recallDrops
+	defer func() { drops.report("recent") }()
 	for _, row := range rows {
 		anchor, ok := conversationTurnHitFromRow(row, request.IdentityID)
 		if !ok || anchor.ConversationID == "" {
@@ -65,6 +67,7 @@ func (c *Client) recallRecent(ctx context.Context, request RecallRequest) (Recal
 		}
 		window, err := c.recallConversationWindow(ctx, anchor, recallWindowRadius)
 		if err != nil {
+			drops.record(err)
 			continue
 		}
 		seen[anchor.ConversationID] = struct{}{}

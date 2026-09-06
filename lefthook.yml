@@ -75,6 +75,14 @@ pre-push:
     # 27 file hashes and tells you while you can still fix it in one command.
     payload-manifest:
       run: bash scripts/payload_manifest_gate.sh
+    # Same shape, same reason as payload-manifest above: internal/db/sqlc/ is generated from
+    # the migrations and queries, and a migration that drops a table leaves a model behind
+    # without breaking a single compile. CI's sqlc-golden job finds it after the push;
+    # measured 2026-09-06, that meant master went red on a commit whose own tests passed.
+    # Self-guards on a missing sqlc binary — see the script.
+    sqlc-sync:
+      glob: "internal/db/**"
+      run: bash scripts/sqlc_sync_gate.sh
     deadcode:
       # No inner quotes: lefthook mangles double quotes nested in the single-quoted
       # `bash -c '…'` string, which failed the gate closed at ~0.2s without ever running it.

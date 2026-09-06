@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -246,6 +245,19 @@ func sortedMentionEdges(edges map[mentionEdge]struct{}) []mentionEdge {
 // MENTIONS read an empty edge set instead of failing. EnsureMemorySchema creates
 // the type, but a client that has not run it yet must still be able to report
 // zero rather than an error.
+//
+// It delegates to missingIngestType (document_cards.go) rather than matching the phrase
+// "was not found" anywhere in any error, which is what it did until 2026-09-06. That
+// substring appears in errors this sweep must NOT swallow — a record, a bucket, an index
+// that is not there — and it survives wrapping, so a failure from any layer below could
+// be read as an empty graph. The narrow form was already sitting in the same package with
+// its own test pinning that narrowness; this was its loose twin.
+//
+// Measured against ArcadeDB 26.9.1 before tightening, because the guard is only safe if
+// the real payload matches: a query against a missing EDGE type answers exactly as one
+// against a missing vertex type — HTTP 500, exception
+// "com.arcadedb.exception.SchemaException", detail "Type with name 'NOSUCHEDGE' was not
+// found". The narrow predicate matches that.
 func isMissingTypeError(err error) bool {
-	return err != nil && strings.Contains(strings.ToLower(err.Error()), "was not found")
+	return missingIngestType(err, mentionsEdgeType)
 }
