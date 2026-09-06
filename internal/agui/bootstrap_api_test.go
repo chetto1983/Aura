@@ -119,3 +119,39 @@ func TestBootstrapOperatorMapsUnexpectedServiceError(t *testing.T) {
 		t.Fatalf("service error leaked into response: %s", rec.Body.String())
 	}
 }
+
+// TestBootstrapOperatorNamesTheOffendingField: this endpoint is the very first request a
+// new deployment ever receives, and it used to answer "bootstrap invalid request" for any
+// of four fields. On a live stack that cost two blind retries before securityQuestion and
+// securityAnswer turned out to be the missing pair. Naming the field enumerates nothing —
+// the route only answers while Authula has no enrolled user.
+func TestBootstrapOperatorNamesTheOffendingField(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"no email", `{"email":"","password":"p","securityQuestion":"q","securityAnswer":"a"}`, "email is required"},
+		{"no password", `{"email":"e@x.test","password":"","securityQuestion":"q","securityAnswer":"a"}`, "password is required"},
+		{"no question", `{"email":"e@x.test","password":"p","securityQuestion":"","securityAnswer":"a"}`, "securityQuestion is required"},
+		{"no answer", `{"email":"e@x.test","password":"p","securityQuestion":"q","securityAnswer":""}`, "securityAnswer is required"},
+		{"email too long", `{"email":"` + strings.Repeat("a", onboardingEmailMaxLen+1) + `","password":"p","securityQuestion":"q","securityAnswer":"a"}`, "email is longer than"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := NewServer(nil, nil, ServerConfig{})
+			server.SetBootstrapService(&fakeBootstrapService{})
+
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/auth/bootstrap/operator", strings.NewReader(tc.body))
+			server.Mux().ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400", rec.Code)
+			}
+			if !strings.Contains(rec.Body.String(), tc.want) {
+				t.Fatalf("body %q does not name the field (%q)", rec.Body.String(), tc.want)
+			}
+		})
+	}
+}

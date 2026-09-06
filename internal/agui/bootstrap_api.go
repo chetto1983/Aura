@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 )
@@ -55,7 +56,12 @@ func (s *Server) handleBootstrapOperator(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := normalizeAndValidateBootstrapRequest(&req); err != nil {
-		http.Error(w, "bootstrap invalid request", http.StatusBadRequest)
+		// Name the field. This runs only while Authula has no enrolled user, so there is no
+		// account to enumerate and nothing to leak; withholding it just made the first
+		// person to ever touch this deployment guess which of four fields was wrong —
+		// measured 2026-09-06, where "bootstrap invalid request" cost two blind retries
+		// before securityQuestion/securityAnswer turned out to be the missing pair.
+		http.Error(w, "bootstrap invalid request: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 	resp, err := s.bootstrap.CreateFirstOperator(r.Context(), req)
@@ -79,17 +85,22 @@ func normalizeAndValidateBootstrapRequest(req *BootstrapCreateRequest) error {
 	req.Email = strings.TrimSpace(req.Email)
 	req.SecurityQuestion = strings.TrimSpace(req.SecurityQuestion)
 	req.SecurityAnswer = strings.TrimSpace(req.SecurityAnswer)
-	if req.Email == "" || len(req.Email) > onboardingEmailMaxLen {
-		return ErrBootstrapInvalid
-	}
-	if req.Password == "" || len(req.Password) > onboardingPasswordMaxLen {
-		return ErrBootstrapInvalid
-	}
-	if req.SecurityQuestion == "" || len(req.SecurityQuestion) > onboardingSecurityQuestionMaxLen {
-		return ErrBootstrapInvalid
-	}
-	if req.SecurityAnswer == "" || len(req.SecurityAnswer) > onboardingSecurityAnswerMaxLen {
-		return ErrBootstrapInvalid
+	for _, f := range []struct {
+		name  string
+		value string
+		max   int
+	}{
+		{"email", req.Email, onboardingEmailMaxLen},
+		{"password", req.Password, onboardingPasswordMaxLen},
+		{"securityQuestion", req.SecurityQuestion, onboardingSecurityQuestionMaxLen},
+		{"securityAnswer", req.SecurityAnswer, onboardingSecurityAnswerMaxLen},
+	} {
+		if f.value == "" {
+			return fmt.Errorf("%w: %s is required", ErrBootstrapInvalid, f.name)
+		}
+		if len(f.value) > f.max {
+			return fmt.Errorf("%w: %s is longer than %d bytes", ErrBootstrapInvalid, f.name, f.max)
+		}
 	}
 	return nil
 }

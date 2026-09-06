@@ -172,7 +172,14 @@ func buildArcadeMemoryLifecycle(cfg *config.Config) *arcadeMemoryPurgeAdapter {
 	}
 	server := cfg.ArcadeDB
 	if strings.TrimSpace(server.AdminUser) == "" || strings.TrimSpace(server.AdminPassword) == "" {
-		slog.Warn("aura serve: no ArcadeDB server credential — memory lifecycle disabled; tenant creation and de-provisioning are unavailable")
+		// Name the variables. They exist only inside compose's arcadedb-mcp service
+		// definition, so a NATIVE `aura serve` — the posture memoryRecipeURL explicitly
+		// supports — starts without them and disables memory silently. The cost is not the
+		// missing feature: every identity then fails tenant auth once a minute, and ArcadeDB
+		// eventually answers "Too many failed authentication attempts", so a missing setting
+		// surfaces as a spreading outage. Measured on a live stack 2026-09-06.
+		slog.Warn("aura serve: no ArcadeDB server credential — memory lifecycle disabled; tenant creation and de-provisioning are unavailable",
+			"set", "ARCADEDB_ADMIN_USER and ARCADEDB_ADMIN_PASSWORD")
 		return nil
 	}
 	base := arcadedb.Config{BaseURL: server.BaseURL, Database: server.Database}
