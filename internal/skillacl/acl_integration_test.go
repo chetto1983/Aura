@@ -28,6 +28,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/dbtest"
 )
 
 func aclEnvOrSkip(t *testing.T, key string) string {
@@ -40,6 +41,29 @@ func aclEnvOrSkip(t *testing.T, key string) string {
 		t.Skipf("skillacl integration requires %s", key)
 	}
 	return value
+}
+
+// aclVerifyPool connects as the role that OWNS aura.skill_catalog and aura.resource_acl
+// (aura_migrate), which is the only way to count what really survived a delete.
+//
+// The obvious choice — the app pool with no app.current_identity — is worse than useless
+// here, and CI run 1791 proved it: aura_app is exactly the role the restrictive floor
+// governs, so an unscoped SELECT sees NOTHING. Every "count == 0" assertion then passes
+// because the rows are hidden, not because they are gone, and the one assertion expecting a
+// row to SURVIVE fails no matter how correct the schema is. A table's owner is not subject to
+// its row security unless it is FORCEd, so this pool reads the table as it actually is.
+func aclVerifyPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	pool, err := db.Open(ctx, &db.Config{
+		URL: dbtest.MigrateURL(t, aclEnvOrSkip(t, "AURA_DB_MIGRATE_URL")),
+	})
+	if err != nil {
+		t.Fatalf("db.Open (owner): %v", err)
+	}
+	t.Cleanup(pool.Close)
+	return pool
 }
 
 func aclPool(t *testing.T) *pgxpool.Pool {
@@ -272,25 +296,27 @@ func TestACLDeprovisionLeavesNoOrphan(t *testing.T) {
 		t.Fatalf("deprovision alice: %v", err)
 	}
 
+	// Counted as the table OWNER, never on the app pool: aura_app is the role the restrictive
+	// floor governs, so an unscoped count there returns 0 for everything and every assertion
+	// below would pass by blindness rather than by cascade (CI run 1791).
+	verify := aclVerifyPool(t)
 	var rows int
-	if err := pool.QueryRow(ctx,
+	if err := verify.QueryRow(ctx,
 		`SELECT count(*) FROM aura.skill_catalog WHERE owner_identity_id = $1`, alice).Scan(&rows); err != nil {
 		t.Fatalf("count alice's catalog rows: %v", err)
 	}
 	if rows != 0 {
 		t.Fatalf("alice's catalog rows survived her deletion: %d", rows)
 	}
-	// Counted on the bare pool deliberately: RLS would hide a surviving row from a scoped
-	// query and turn an orphan into a green test.
-	if err := pool.QueryRow(ctx,
-		`SELECT count(*) FROM aura.resource_acl WHERE resource_id = $1 OR principal_id = $1`, alice).Scan(&rows); err != nil {
+	if err := verify.QueryRow(ctx,
+		`SELECT count(*) FROM aura.resource_acl WHERE resource_id = $1 OR principal_id = $1 OR granted_by = $1`, alice).Scan(&rows); err != nil {
 		t.Fatalf("count orphan grants: %v", err)
 	}
 	if rows != 0 {
 		t.Fatalf("%d ACL rows still mention the deleted identity", rows)
 	}
 	// Bob's own skill is untouched: the cascade is scoped to the identity that left.
-	if err := pool.QueryRow(ctx,
+	if err := verify.QueryRow(ctx,
 		`SELECT count(*) FROM aura.skill_catalog WHERE id = $1`, bobSkill).Scan(&rows); err != nil {
 		t.Fatalf("count bob's catalog row: %v", err)
 	}
@@ -379,7 +405,12 @@ func TestAlwaysApplyLookupUsesTheIndex(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed catalog rows: %v", err)
 	}
-	if _, err := pool.Exec(ctx, `ANALYZE aura.skill_catalog`); err != nil {
+	// ANALYZE as the OWNER. Postgres does not fail an ANALYZE a role may not run — it emits
+	// "skipping ... only table or database owner can analyze it" as a WARNING and moves on, so
+	// running it on the app pool returns nil while doing nothing, and the EXPLAIN below would
+	// then be read over default statistics. That is the difference between proving the index
+	// is chosen and proving nothing at all.
+	if _, err := aclVerifyPool(t).Exec(ctx, `ANALYZE aura.skill_catalog`); err != nil {
 		t.Fatalf("ANALYZE: %v", err)
 	}
 
