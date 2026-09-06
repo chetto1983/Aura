@@ -12071,6 +12071,36 @@ flusso completo, che funziona.
 > conteggio qui registrato era corretto e resta la misura di partenza; vedi #218 per quello
 > ri-verificato all'atterraggio.
 
+## Section Una chiave che non serve a niente blocca il locale (Amendment #219, 2026-09-06)
+
+> **Amendment #219 (2026-09-06 — misurato pilotando `aura shell` su uno stack vivo, non
+> leggendo il codice).** Con `AURA_LLM_PROVIDER=llamacpp` e `AURA_LLM_BASE_URL` su un server
+> locale, `aura shell` si rifiutava di partire con
+> `llm: API key is empty (set OPENROUTER_API_KEY in .env or the environment)` — nominando un
+> servizio che quel deployment non usa.
+>
+> **D-219-1 — il gate non guardava il provider.** `load()` applicava `ErrMissingAPIKey` a
+> qualunque configurazione. Ma solo il provider ospitato si autentica con quella chiave: un
+> llama.cpp self-hosted non prende credenziali, e il percorso di richiesta lo sapeva già —
+> `model_reasoning_caps.go:239` imposta l'header `Authorization` **solo** se la chiave non è
+> vuota. Quindi il blocco era all'avvio e non alla chiamata. Il gate ora è
+> provider-aware: chiave richiesta per `openrouter` e per un provider non impostato (il
+> default È quello ospitato), non richiesta altrove.
+>
+> **D-219-2 — proteggeva nulla, e puniva l'onestà.** Misurato: `OPENROUTER_API_KEY=this-key-is-never-sent-anywhere`
+> soddisfa il gate e la sessione parte e funziona, perché quella stringa non viene mai
+> spedita. Il workaround era quindi inventare una credenziale, e l'unico operatore che il
+> check fermava era quello che non ne aveva una e lo diceva. Un controllo che qualunque
+> stringa supera non è un controllo: è un attrito.
+>
+> **Cosa questa misura NON dimostra.** Non dice nulla sul comportamento con `openrouter` e
+> chiave assente — quel percorso resta invariato e i test lo fissano (`""`, `openrouter`,
+> `OpenRouter`). Non dice nulla sulla qualità delle risposte di un modello locale: il
+> provider è stato esercitato contro uno shim OpenAI-compatible, non contro llama.cpp con
+> pesi veri. E non tocca `LoadServe`, che già permetteva la chiave vuota perché il daemon
+> deve poter avviare il wizard di setup.
+
+
 ## Section La board prende un'identità, e la scrittura torna dove la lettura guarda (Amendment #218, 2026-09-06)
 
 > **Amendment #218 (2026-09-06 — misurato leggendo il codice a `b5496af9` e sui tier che qui

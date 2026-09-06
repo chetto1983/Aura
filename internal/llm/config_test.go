@@ -536,3 +536,40 @@ func TestConfigMalformedFileFailsLoud(t *testing.T) {
 		t.Fatal("Load: want a loud parse error on a corrupt llm.json, got nil")
 	}
 }
+
+// TestLocalProviderNeedsNoHostedKey is the measurement that produced the fix: with
+// AURA_LLM_PROVIDER=llamacpp and a local base URL, `aura shell` refused to start with
+// "set OPENROUTER_API_KEY", naming a service the deployment does not use. The gate also
+// protected nothing — any non-empty string passed it — so it only ever stopped the
+// operator honest enough to leave it unset.
+func TestLocalProviderNeedsNoHostedKey(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "")
+	t.Setenv("AURA_LLM_PROVIDER", "llamacpp")
+	t.Setenv("AURA_LLM_BASE_URL", "http://127.0.0.1:8081")
+	t.Setenv("AURA_LLM_MODEL", "local-model")
+	t.Setenv("HOME", t.TempDir())
+
+	cfg, err := llm.Load()
+	if err != nil {
+		t.Fatalf("a local provider must load with no hosted key: %v", err)
+	}
+	if cfg.APIKey != "" {
+		t.Fatalf("no key was set, got %q", cfg.APIKey)
+	}
+}
+
+// TestHostedProviderStillRequiresItsKey: the default provider IS the hosted one, so an
+// unset provider must keep failing fast rather than silently starting an agent that
+// cannot reach a model.
+func TestHostedProviderStillRequiresItsKey(t *testing.T) {
+	for _, provider := range []string{"", "openrouter", "OpenRouter"} {
+		t.Run("provider="+provider, func(t *testing.T) {
+			t.Setenv("OPENROUTER_API_KEY", "")
+			t.Setenv("AURA_LLM_PROVIDER", provider)
+			t.Setenv("HOME", t.TempDir())
+			if _, err := llm.Load(); !errors.Is(err, llm.ErrMissingAPIKey) {
+				t.Fatalf("want llm.ErrMissingAPIKey for provider %q, got %v", provider, err)
+			}
+		})
+	}
+}
