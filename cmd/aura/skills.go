@@ -187,7 +187,7 @@ func skillsInfo(ctx context.Context, args []string) {
 // (amendment #97). --always marks an always-on skill.
 func skillsWrite(ctx context.Context, args []string, action string) {
 	if len(args) < 1 {
-		fmt.Fprintf(os.Stderr, "usage: aura skills %s <name> --desc <d> --body <b> [--always]\n", action)
+		fmt.Fprintf(os.Stderr, "usage: aura skills %s <name> --desc <d> --body <b> [--always] [--identity <uuid>]\n", action)
 		os.Exit(1)
 	}
 	name := args[0]
@@ -199,10 +199,12 @@ func skillsWrite(ctx context.Context, args []string, action string) {
 		os.Exit(1)
 	}
 
+	identity, _ := flagValue(args[1:], "--identity")
+
 	env := bootSkills(ctx)
 	defer env.close()
 
-	status, err := env.w.WriteMutationCLI(ctx, action, name, desc, body, always)
+	status, err := writerFor(env.w, identity).WriteMutationCLI(ctx, action, name, desc, body, always)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -214,12 +216,13 @@ func skillsWrite(ctx context.Context, args []string, action string) {
 // /skills mount, removes the active dir, and records the cli audit row.
 func skillsDelete(ctx context.Context, args []string) {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: aura skills delete <name>")
+		fmt.Fprintln(os.Stderr, "usage: aura skills delete <name> [--identity <uuid>]")
 		os.Exit(1)
 	}
+	identity, _ := flagValue(args[1:], "--identity")
 	env := bootSkills(ctx)
 	defer env.close()
-	if _, err := env.w.Delete(ctx, args[0], skills.AuditActor{ActorID: "cli"}); err != nil {
+	if _, err := writerFor(env.w, identity).Delete(ctx, args[0], skills.AuditActor{ActorID: "cli"}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -231,14 +234,15 @@ func skillsDelete(ctx context.Context, args []string) {
 // installer stripped unconditionally.
 func skillsAlways(ctx context.Context, args []string) {
 	if len(args) < 2 || (args[1] != "on" && args[1] != "off") {
-		fmt.Fprintln(os.Stderr, "usage: aura skills always <name> {on|off}")
+		fmt.Fprintln(os.Stderr, "usage: aura skills always <name> {on|off} [--identity <uuid>]")
 		os.Exit(1)
 	}
 	name := args[0]
 	always := args[1] == "on"
+	identity, _ := flagValue(args[2:], "--identity")
 	env := bootSkills(ctx)
 	defer env.close()
-	if err := env.w.SetAlways(ctx, name, always, skills.AuditActor{ActorID: "cli"}); err != nil {
+	if err := writerFor(env.w, identity).SetAlways(ctx, name, always, skills.AuditActor{ActorID: "cli"}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -317,4 +321,24 @@ func shortHash(h string) string {
 // hasFlag reports whether a bare flag (e.g. --always) is present in args.
 func hasFlag(args []string, flag string) bool {
 	return slices.Contains(args, flag)
+}
+
+// writerFor scopes the CLI's writer to an identity, mirroring what the cockpit does for its
+// authenticated principal. Without it the write half of `aura skills` was deployment-global
+// ONLY: `list` and `info` took --identity, `create` and `update` did not, and `share` refuses
+// a skill the identity does not own — so no CLI path could ever produce a shareable skill and
+// `aura skills share|unshare|shares` were unreachable from the CLI. Measured 2026-09-06:
+//
+//	skills: identity 1111...1111 owns no skill "ricetta-carbonara"
+//	(only skills written by that identity can be shared)
+//
+// An empty --identity keeps the previous behaviour exactly, which is what Writer.For already
+// guarantees for an unscoped caller.
+func writerFor(w *skills.Writer, identity string) *skills.Writer {
+	scoped, err := w.For(identity)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	return scoped
 }

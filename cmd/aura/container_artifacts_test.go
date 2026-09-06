@@ -129,7 +129,13 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"/etc/searxng/limiter.toml",
 		"__AURA_SEARXNG_SECRET__",
 		"127.0.0.1:${AURA_GARAGE_PORT:-3900}:3900",
-		"./docker/garage/garage.toml:/etc/garage.toml:ro",
+		// Parameterised, exactly like AURA_ARCADEDB_MCP_IMAGE below: the DEFAULT is still
+		// docker/garage/garage.toml, so the shipped posture is unchanged, but a host with no
+		// IPv6 stack can select docker/garage/garage.ipv4.toml instead of editing the
+		// production config in place. The contract is therefore the env-override pattern with
+		// the production file as its fallback — asserting the bare literal would forbid the
+		// escape hatch rather than protect anything.
+		"${AURA_GARAGE_CONFIG:-./docker/garage/garage.toml}:/etc/garage.toml:ro",
 		"garage-data:",
 		"driver: nvidia",
 		"capabilities: [gpu]",
