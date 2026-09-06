@@ -6,7 +6,7 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help tools sqlc lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract llm-model-contract web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval agent-memory-eval-running-aura critical-mutation observability-check observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up sandbox-images installer-artifact payload-manifest arcadedb-integration ingest-test restore-drill load-chaos
+.PHONY: help tools sqlc memory-up-core lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract llm-model-contract web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval agent-memory-eval-running-aura critical-mutation observability-check observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up sandbox-images installer-artifact payload-manifest arcadedb-integration ingest-test restore-drill load-chaos
 
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
@@ -250,10 +250,28 @@ endef
 # ArcadeDB needs no migration job for the MEMORY schema — Entity/FACT are idempotent DDL applied at
 # connect — so this target only brings the services up healthy. A tagged tier that
 # wants the whole live stack asks for `db-migrate memory-up`.
-memory-up:
-	docker compose up -d arcadedb arcadedb-mcp aura-llama-embed
-	$(call wait_compose_healthy,arcadedb)
+memory-up: memory-up-core
+	docker compose up -d arcadedb-mcp
 	$(call wait_compose_healthy,arcadedb-mcp)
+	@echo "ok"
+
+# The graph substrate WITHOUT the MCP sidecar, and therefore without the daemon.
+#
+# arcadedb-mcp declares `depends_on: aura` (it mounts as that daemon's memory server), so
+# `compose up -d arcadedb-mcp` starts the WHOLE aura daemon — scheduler included — against
+# the same Postgres a tagged tier is writing to. That is a second writer nobody asked for:
+# the notification sweep has no backoff (`status='failed' AND attempts < $$1`), so the
+# daemon and a test can race for the same row. Measured 2026-09-06 on CI #1809, where the
+# coverage job — whose own name promises only "Postgres + ArcadeDB + embed sidecar" —
+# started the daemon at 16:56:59 and the gate at 16:57:05, and internal/cron's bounded-retry
+# test saw one delivery fewer than it performed sweeps. The same job was green on the
+# previous commit, which is what a race looks like.
+#
+# A tier that genuinely needs the memory MCP (arcadedb_integration) still asks for
+# `memory-up`. One that does not asks for this and gets no daemon.
+memory-up-core:
+	docker compose up -d arcadedb aura-llama-embed
+	$(call wait_compose_healthy,arcadedb)
 	$(call wait_compose_healthy,aura-llama-embed)
 	@echo "ok"
 

@@ -711,8 +711,13 @@ jobs:
         # pdftotext. Without it that path is uncovered AND its tests t.Fatal under $CI.
         run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends poppler-utils
 
+      # memory-up-core, NOT memory-up: the MCP sidecar declares `depends_on: aura`, so
+      # asking for it starts the whole daemon — scheduler included — against the same
+      # Postgres this job's tagged tier writes to. Measured on CI #1809. No db_integration
+      # test uses the memory MCP (the two that do are arcadedb_integration), so this job
+      # gets exactly the three services its own name promises.
       - name: Bring up stack + migrate (postgres + ArcadeDB + embed sidecar)
-        run: make db-migrate memory-up
+        run: make db-migrate memory-up-core
 
       - name: Coverage gate (owned surface >= 85%, CLAUDE.md floor)
         # Reuses the stack + composed DSNs already wired in this job. NO-SKIP-AS-GREEN:
