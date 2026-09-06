@@ -783,6 +783,14 @@ download_file caddy/Caddyfile.domain caddy/Caddyfile.domain
 # so its absence just disables hourly memory backups while the healthcheck (which
 # never checks backup state) stays green.
 download_file docker/garage/garage.toml docker/garage/garage.toml
+# The IPv4-only sibling ships too, and it has to: an appliance host is exactly where IPv6 is
+# most likely to be off (ipv6.disable=1 is a common hardening step), and there garage.toml's
+# "[::]" bind cannot work at all — Garage does not degrade, it panics and restart-loops. The
+# escape hatch is AURA_GARAGE_CONFIG, and an escape hatch pointing at a file the installer
+# never delivered is not an escape hatch. The payload manifest derives from these lines and
+# only ever covers a compose variable's DEFAULT, so shipping the alternative is manual by
+# construction — the gate says so about ${AURA_CADDYFILE} for the same reason.
+download_file docker/garage/garage.ipv4.toml docker/garage/garage.ipv4.toml
 download_file docker/arcadedb/backup.json docker/arcadedb/backup.json
 download_file deploy/aura.service deploy/aura.service
 download_file deploy/aura-image-update.sh deploy/aura-image-update.sh
