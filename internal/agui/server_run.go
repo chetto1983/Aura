@@ -116,7 +116,7 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(in.Resume) > 0 {
-		answers, err := s.validateResumeEntries(ctx, in.Resume)
+		answers, err := s.validateResumeEntries(ctx, in.ThreadID, in.Resume)
 		if err != nil {
 			http.Error(w, sanitizeErr(err), resumeErrorStatus(err))
 			return

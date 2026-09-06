@@ -43,7 +43,16 @@ func resumeAnswers(entries []types.ResumeEntry) (map[string]runner.ResponseInput
 	return out, nil
 }
 
-func (s *Server) validateResumeEntries(ctx context.Context, entries []types.ResumeEntry) (map[string]runner.ResponseInput, error) {
+func (s *Server) validateResumeEntries(
+	ctx context.Context, threadID string, entries []types.ResumeEntry,
+) (map[string]runner.ResponseInput, error) {
+	// The gateway publishes an interrupt's tool_call id and accepts its pause token; a
+	// client that echoes back what it was given is translated here rather than refused
+	// (server_resume_interrupt.go says why the translation cannot happen on the way out).
+	entries, err := s.resolveInterruptIDs(ctx, threadID, entries)
+	if err != nil {
+		return nil, err
+	}
 	answers, err := resumeAnswers(entries)
 	if err != nil {
 		return nil, err

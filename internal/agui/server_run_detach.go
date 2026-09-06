@@ -73,7 +73,7 @@ func (s *Server) handleRunDetached(w http.ResponseWriter, r *http.Request, ctx c
 	}
 
 	if len(in.Resume) > 0 {
-		answers, err := s.validateResumeEntries(ctx, in.Resume)
+		answers, err := s.validateResumeEntries(ctx, in.ThreadID, in.Resume)
 		if err != nil {
 			release()
 			http.Error(w, sanitizeErr(err), resumeErrorStatus(err))
