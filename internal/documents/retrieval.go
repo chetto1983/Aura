@@ -42,6 +42,11 @@ const (
 	RetrievalCardOnly    RetrievalStatus = "degraded_card_only"
 	DegradationEmbedding                 = "query_embedding_unavailable"
 	DegradationArcade                    = "arcadedb_unavailable"
+	// DegradationUnconfigured is the deployment that never wired a passage index — a
+	// different operator response from an index that is wired and refusing, which is
+	// why it stopped sharing DegradationArcade's name (measured 2026-09-06: the two
+	// were indistinguishable on the wire and neither was logged).
+	DegradationUnconfigured = "passage_index_unconfigured"
 )
 
 // RetrievalRequest is the query envelope. IdentityID is deliberately not decodable from JSON:
@@ -159,6 +164,10 @@ type HostRetriever struct {
 	PassageIndex PassageIndex
 	Embedder     embeddings.Embedder
 	Config       RetrievalConfig
+	// degradations rate-limits the WARN that names why a leg was lost (see
+	// retrieval_degradation.go). The zero value logs every distinct cause once per
+	// degradationRestateAfter, so a retriever built by any caller is already vocal.
+	degradations degradationLog
 }
 
 // Retrieve runs the document-card and fused-passage legs. A missing or failing passage index
@@ -195,7 +204,8 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 		Status: RetrievalComplete, Documents: []RetrievalDocument{},
 	}
 	if r.PassageIndex == nil {
-		response.Status, response.DegradationReason = RetrievalCardOnly, DegradationArcade
+		response.Status, response.DegradationReason = RetrievalCardOnly, DegradationUnconfigured
+		r.degradations.warn(DegradationUnconfigured, "no passage index is wired", request.IdentityID)
 		response.Documents = rankCardsOnly(cards, request.Limit, cfg.TopPassages)
 		return response, nil
 	}
@@ -206,6 +216,7 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 	vectors, embedErr := r.embedQuery(ctx, request.Query)
 	if embedErr != nil {
 		response.Status, response.DegradationReason = RetrievalCardOnly, DegradationEmbedding
+		r.degradations.warn(DegradationEmbedding, embedErr.Error(), request.IdentityID)
 		response.Documents = rankCardsOnly(cards, request.Limit, cfg.TopPassages)
 		return response, nil
 	}
@@ -219,6 +230,7 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 	})
 	if err != nil {
 		response.Status, response.DegradationReason = RetrievalCardOnly, DegradationArcade
+		r.degradations.warn(DegradationArcade, err.Error(), request.IdentityID)
 		response.Documents = rankCardsOnly(cards, request.Limit, cfg.TopPassages)
 		return response, nil
 	}

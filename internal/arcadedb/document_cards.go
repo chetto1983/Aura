@@ -13,28 +13,38 @@ import (
 // Its DDL lives in services/ingest/arcade.py, which mirrors document_schema.go.
 const IndexedDocumentType = "IndexedDocument"
 
-// missingIndexedDocumentType reports whether err is ArcadeDB refusing a query because this
-// tenant's database has no IndexedDocument type yet.
+// missingIngestType reports whether err is ArcadeDB refusing a query because this tenant's
+// database has no such type yet.
 //
-// That is not a fault, it is the empty library. The type's DDL belongs to services/ingest
-// (arcade.py ensure_schema, applied on every ingestion run), NOT to Aura's connect-time
-// schema -- which is why an identity that has never had a document ingested legitimately
-// has no such type, and why dropping the graph removes it until the next run.
+// That is not a fault, it is the empty library. The DDL for both ingestion types belongs to
+// services/ingest (arcade.py ensure_schema, applied on every ingestion run), NOT to Aura's
+// connect-time schema -- which is why an identity that has never had a document ingested
+// legitimately has neither type, and why dropping the graph removes them until the next run.
 //
 // Measured live on 2026-08-31, after the memory graph was emptied: document_search handed
 // the model `http 500: Type with name 'IndexedDocument' was not found`. It read that as a
 // broken tool rather than an empty shelf, went looking for another way in, and burned the
 // rest of the turn. An empty result is both the truth and the answer it can act on.
 //
+// Measured again on 2026-09-06 against a freshly bootstrapped operator: the card leg had
+// been taught this and the fused passage leg had not, so the SAME empty library came back
+// as `arcadedb_unavailable` -- an outage the engine was not having. The predicate takes the
+// type name for that reason: one empty-library rule, both legs.
+//
 // The match is deliberately narrow -- the typed ServerError, ArcadeDB's own SchemaException
 // class, AND the quoted type name -- so a real schema fault still surfaces as one.
-func missingIndexedDocumentType(err error) bool {
+func missingIngestType(err error, typeName string) bool {
 	var serverErr *ServerError
 	if !errors.As(err, &serverErr) {
 		return false
 	}
 	return strings.Contains(serverErr.Exception, "SchemaException") &&
-		strings.Contains(serverErr.Detail, "'"+IndexedDocumentType+"'")
+		strings.Contains(serverErr.Detail, "'"+typeName+"'")
+}
+
+// missingIndexedDocumentType is missingIngestType for the card leg's own type.
+func missingIndexedDocumentType(err error) bool {
+	return missingIngestType(err, IndexedDocumentType)
 }
 
 // DocumentCard is one document's own description, as the reconciler recorded it.

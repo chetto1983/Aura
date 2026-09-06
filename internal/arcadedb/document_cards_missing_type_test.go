@@ -13,6 +13,13 @@ const missingTypeBody = `{"error":"Error on transaction commit",` +
 	`"detail":"Type with name 'IndexedDocument' was not found",` +
 	`"exception":"com.arcadedb.exception.SchemaException"}`
 
+// missingPassageBody is the same payload for the type the FUSED leg reads. Captured live on
+// 2026-09-06 against a freshly bootstrapped operator whose tenant had never had a document
+// ingested — the state every new identity starts in.
+const missingPassageBody = `{"error":"Error on transaction commit",` +
+	`"detail":"Type with name 'Passage' was not found",` +
+	`"exception":"com.arcadedb.exception.SchemaException"}`
+
 func missingTypeIndex(t *testing.T) *DocumentIndex {
 	t.Helper()
 	index, _ := testDocumentIndex(t, func(recordedRequest) testResponse {
@@ -57,6 +64,22 @@ func TestDocumentReadsTreatAMissingTypeAsAnEmptyLibrary(t *testing.T) {
 		}
 		if len(names) != 0 {
 			t.Fatalf("names = %v, want empty", names)
+		}
+	})
+
+	// The fused passage leg is the one this rule reached last: until 2026-09-06 it turned the
+	// same empty library into `arcadedb_unavailable`, so a brand-new identity was told the
+	// engine was down on its very first document_search.
+	t.Run("fused passages", func(t *testing.T) {
+		index, _ := testDocumentIndex(t, func(recordedRequest) testResponse {
+			return testResponse{Status: 500, Body: missingPassageBody}
+		})
+		candidates, err := index.FusedCandidates(t.Context(), fusedFixtureQuery("anything"))
+		if err != nil {
+			t.Fatalf("FusedCandidates returned an error for an empty library: %v", err)
+		}
+		if len(candidates) != 0 {
+			t.Fatalf("candidates = %d, want 0", len(candidates))
 		}
 	})
 
@@ -108,5 +131,17 @@ func TestMissingIndexedDocumentTypeIsNarrow(t *testing.T) {
 				t.Fatalf("swallowed = %v, want %v (err = %v)", got, test.want, err)
 			}
 		})
+	}
+}
+
+// Each leg swallows only ITS OWN type. A fused read that fails because IndexedDocument is
+// missing is a genuine fault — the passage type it queried is there — and must stay one.
+func TestMissingTypeSwallowingIsPerLeg(t *testing.T) {
+	t.Parallel()
+	index, _ := testDocumentIndex(t, func(recordedRequest) testResponse {
+		return testResponse{Status: 500, Body: missingTypeBody}
+	})
+	if _, err := index.FusedCandidates(t.Context(), fusedFixtureQuery("anything")); err == nil {
+		t.Fatal("the fused leg must not swallow a missing IndexedDocument type")
 	}
 }

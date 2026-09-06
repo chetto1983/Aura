@@ -127,6 +127,9 @@ func (d *DocumentIndex) FusedCandidates(
 	params["fetch"] = fusedDenseNeighbours
 	rows, err := client.Query(ctx, fusedStatement(where, strategy, filter.Limit), params)
 	if err != nil {
+		if missingIngestType(err, documentPassageType) {
+			return nil, nil // nothing ingested yet — an empty library, not a failure
+		}
 		return nil, fmt.Errorf("arcadedb: fused document candidates: %w", err)
 	}
 	return d.decodeCandidates(rows, RetrievalLegFused, filter.Limit)
