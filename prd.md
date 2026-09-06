@@ -11791,6 +11791,38 @@ flusso completo, che funziona.
 > `uuid`. La nuova tabella usa `uuid`; l'audit resta com'è finché qualcuno non decide di
 > allinearlo.
 
+## Section Il cockpit è la console di casa (Amendment #216, 2026-09-06)
+
+> **Amendment #216 (2026-09-06 — misurato in CI run 1790, primo giro in cui i tier Postgres
+> di #214 sono arrivati in fondo).** Chiude una domanda che #214 aveva lasciato implicita e che
+> l'implementazione aveva risolto per conto suo, nel modo sbagliato.
+>
+> **La misura.** `skillsWriteAdapter` era diventato per-attore: un install dal cockpit atterrava
+> nella root dell'attore. La board che elenca le skill, però, legge la libreria di **deployment**
+> — `agui.SkillsBoardProvider` non porta un `context`, quindi non è scopabile senza allargare
+> quell'interfaccia. Risultato: un install dal cockpit **non compariva più sulla board**, e il
+> test preesistente `TestSkillsInstallActivatesDirectly` l'ha detto in chiaro — installa, poi non
+> trova la skill.
+>
+> Una console la cui **scrittura** atterra dove la sua **lettura** non guarda è peggio di
+> entrambe le scelte prese singolarmente.
+>
+> **La decisione.** Il cockpit è la console dell'**operatore** sulla libreria che il deployment
+> pubblica. Ogni sua scrittura va lì, per qualunque attore. L'attore resta filato attraverso ogni
+> metodo perché è ciò che il ledger di audit registra: **CHI** l'ha fatto è separato da **DOVE**
+> è atterrato.
+>
+> Le skill personali le scrivono le due strade che sanno di chi è il turno: l'**agente**
+> (`skill_manage`, identity-scoped via `identityctx`) e la **CLI** con `--identity`. Dare una
+> persona al cockpit vuol dire prima dare un'identità alla sua board — resta **aperto**, non
+> costruito a metà.
+>
+> **Cosa questa misura NON dimostra.** Non dice che la board non debba mai essere per identità:
+> dice che oggi non lo è, e che una metà sola è la configurazione peggiore. Il costo di farlo
+> davvero è misurato: `ctx` su `SkillsBoardProvider.ActiveSkills()`/`SkillBody(name)`, 5 call
+> site non-test e 3 file di test, più il picker del composer e il pin della run, che oggi non
+> sanno affatto risolvere una skill personale.
+
 ## Section Scopare un path non è contenere un albero (Amendment #215, 2026-09-05)
 
 > **Amendment #215 (2026-09-05 — misurato in audit avversariale sull'implementazione di #214,

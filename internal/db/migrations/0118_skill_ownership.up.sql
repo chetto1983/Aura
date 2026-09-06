@@ -79,7 +79,14 @@ CREATE TABLE aura.resource_acl (
     -- column instead of a boolean per verb, so a new verb is a constant rather than a
     -- migration.
     perm_bits      integer     NOT NULL CHECK (perm_bits > 0),
-    granted_by     uuid        REFERENCES aura.identities (id) ON DELETE SET NULL,
+    -- CASCADE, not SET NULL. The write policies admit a grant only when granted_by IS the
+    -- caller AND the caller owns the resource, so the granter is always the owner: a grant
+    -- cannot outlive its granter in any meaningful sense, because the skill it shares goes
+    -- with them. SET NULL was the first attempt and TestIdentityReferencesCascadeOrAre-
+    -- ExplicitlyExempt refused it (CI run 1790) — rightly, since it leaves a row alive whose
+    -- owner is gone, and de-provisioning deletes the identity LAST, after the memory database
+    -- and the bucket are already erased.
+    granted_by     uuid        REFERENCES aura.identities (id) ON DELETE CASCADE,
     created_at     timestamptz NOT NULL DEFAULT now(),
     -- A public grant is addressed to nobody in particular and an identity/group grant must
     -- name its principal. Without this a NULL principal_id on an 'identity' row would be a
