@@ -65,8 +65,11 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, own
 		cron.KindAgentJob:       handlers.AgentJobHandler{Deps: agentDeps},
 		cron.KindBackupPostgres: handlers.BackupHandler{Variant: handlers.BackupPostgres},
 		cron.KindSkillTTLSweep: handlers.SkillTTLSweepHandler{
-			Sweeper: &snippetSweeperAdapter{w: newSkillWriter(chat.cfg, chat.pool)},
-			TTL:     time.Duration(chat.cfg.SkillSnippetTTLDays) * 24 * time.Hour,
+			Sweeper: &snippetSweeperAdapter{
+				w:             newSkillWriter(chat.cfg, chat.pool),
+				identitiesDir: chat.cfg.SkillsIdentityDir,
+			},
+			TTL: time.Duration(chat.cfg.SkillSnippetTTLDays) * 24 * time.Hour,
 		},
 		// The D-27 grace-window purge sweep (VERIF-3/HI-01): the live *agui.Deprovisioner
 		// satisfies handlers.IdentityPurger via PurgeExpired. A nil-pool build yields a

@@ -12321,8 +12321,9 @@ flusso completo, che funziona.
 
 ## Section La guardia RLS contava due termini su tre (Amendment #222, 2026-09-06)
 
-> **Amendment #222 (2026-09-06 — misurato leggendo le migration e il sorgente Go, NON su uno
-> stack acceso; vedi "cosa questa misura non dimostra" in fondo).**
+> **Amendment #222 (2026-09-06 — derivato dalle migration e dal sorgente Go, poi CONFERMATO
+> su un Postgres 16 nativo appena migrato al head 0119; vedi "cosa questa misura non
+> dimostra" in fondo).**
 >
 > `db.VerifyRLSEnforced` rifiuta di far partire il daemon quando il ruolo del pool ignora ogni
 > policy RLS. Verificava `rolsuper` e `rolbypassrls`. Ne mancava un terzo, e la migration 0087
@@ -12379,13 +12380,24 @@ flusso completo, che funziona.
 > (quella tabella non ha RLS): è il vincolo da leggere prima che qualcuno gliela metta. È una
 > forma di fallimento distinta da "zero righe" e nell'albero si presenta solo lì.
 >
-> **Cosa questa misura NON dimostra.** Tutto quanto sopra è derivato dal sorgente delle migration
-> e dal codice Go, **non da un database acceso**: nessun Postgres era raggiungibile mentre il
-> censimento girava. Non è misurato quante righe portino ancora il letterale `local` in
-> `scheduler_tasks`, `pending_notifications` o `skill_audit` — numero che decide se allineare
-> quelle colonne a `uuid` sia un `UPDATE` da cinque righe o una migrazione vera; che il letterale
-> sia ancora vivo lo prova solo il fatto che `serve_auth.go` continua a migrarlo. Non è misurato
-> il costo per tick di un loop per identità, perché non c'è un N. E non è verificato su questo
-> deployment che `aura_app` non abbia davvero il bypass: lo asserisce `TestAuraAppLacksRLSBypass`,
-> che richiede un database vivo per girare — se in produzione `AURA_DB_URL` puntasse al superuser
-> `aura`, ogni policy citata qui, quelle esistenti comprese, sarebbe inerte.
+> **Confermato sul database vivo (Postgres 16 nativo, head 0119, 2026-09-06).** Le cifre
+> derivate dal sorgente reggono esattamente: **47 tabelle** in `aura.*`, **19 con RLS**, 28
+> senza. E la misura che chiude questo emendamento: **`aura_migrate` possiede tutte e 19 le
+> tabelle con RLS**, mentre `pg_roles` dà `rolsuper=false rolbypassrls=false` sia per
+> `aura_migrate` sia per `aura_app`. Cioè il ruolo di migrazione bypassa diciannove tabelle
+> senza portare nessuno dei due attributi che il gate controllava: il buco non è dedotto, è
+> osservato. `TestVerifyRLSEnforcedRejectsTheMigrationRole` gira su un database usa-e-getta e
+> fallisce sul codice pre-fix con `VerifyRLSEnforced(migration role) = <nil>`.
+>
+> **Cosa questa misura NON dimostra.** Il conteggio delle righe che portano ancora il letterale
+> `local` resta ignoto e NON è quello che si legge qui: su questo database appena migrato
+> `scheduler_tasks`, `pending_notifications` e `skill_audit` danno zero perché sono **vuote**,
+> non perché il letterale sia sparito. Quel numero si può prendere solo su un deployment
+> vissuto, ed è lui a decidere se allineare quelle colonne a `uuid` sia un `UPDATE` da cinque
+> righe o una migrazione vera; che il letterale sia ancora vivo lo prova solo il fatto che
+> `serve_auth.go` continua a migrarlo. Il costo per tick di un loop per identità resta senza
+> un N utile per la stessa ragione (qui le identità sono 2, entrambe seed). E la conferma qui
+> sopra vale per QUESTO deployment: che il Postgres di produzione abbia gli stessi ruoli e lo
+> stesso possesso è esattamente ciò che il gate ora verifica al boot invece di assumerlo — se
+> lì `AURA_DB_URL` puntasse al superuser `aura` o al ruolo di migrazione, il daemon si rifiuta
+> di partire, che è il punto.

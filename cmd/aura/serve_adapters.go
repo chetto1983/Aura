@@ -503,14 +503,23 @@ func newGatewayResumeHook(g *gateway.Gateway) runner.ResumeHook {
 // internal/skills SweepResult dependency.
 type snippetSweeperAdapter struct {
 	w *skills.Writer
+	// identitiesDir is the base the per-identity roots hang off (AURA_SKILLS_IDENTITY_DIR).
+	// Empty means a deployment with no per-identity skills, and the sweep stays exactly the
+	// house-library-only pass it was. See snippet_sweep_roots.go.
+	identitiesDir string
 }
 
 // SweepExpiredSnippets archives every snippet older than ttl via the Writer (each gets
 // the D-29 `auto` audit row) and returns the archived + kept names.
 func (a *snippetSweeperAdapter) SweepExpiredSnippets(ctx context.Context, ttl time.Duration, now time.Time, actorID string) (archived, kept []string, err error) {
-	res, serr := a.w.SweepExpiredSnippets(ctx, ttl, now, skills.AuditActor{ActorID: actorID})
+	actor := skills.AuditActor{ActorID: actorID}
+	res, serr := a.w.SweepExpiredSnippets(ctx, ttl, now, actor)
 	if serr != nil {
 		return nil, nil, serr
 	}
-	return res.Archived, res.Kept, nil
+	// The house library is one root among several since #214. A failure inside a single
+	// identity's root is logged and skipped rather than returned: the handler treats a sweep
+	// error as terminal, and one unreadable identity must not cancel everyone else's TTL.
+	idArchived, idKept := sweepIdentitySnippetRoots(ctx, a.w, a.identitiesDir, ttl, now, actor)
+	return append(res.Archived, idArchived...), append(res.Kept, idKept...), nil
 }
