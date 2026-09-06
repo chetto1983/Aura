@@ -240,6 +240,12 @@ func TestChat_EOFQuitsClean(t *testing.T) {
 // TestChat_MissingKey asserts the config precondition runChat checks before booting.
 func TestChat_MissingKey(t *testing.T) {
 	withTempHome(t)
+	// The hosted provider is what this assertion is about, and it stopped being implicit
+	// when the empty-key gate started reading AURA_LLM_PROVIDER (amendment #219): with a
+	// LOCAL provider inherited from the developer's shell no key is required and this
+	// fails on something else entirely. Empty means the default, which is the hosted one.
+	t.Setenv("AURA_LLM_PROVIDER", "")
+	t.Setenv("OPENROUTER_API_KEY", "")
 	_, err := config.Load()
 	if err == nil {
 		t.Fatal("config.Load should fail with no API key")

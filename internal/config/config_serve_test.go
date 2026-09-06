@@ -30,6 +30,11 @@ func TestLoadServe_AllowsEmptyLLMKey(t *testing.T) {
 		t.Fatal("LoadServe must still compose the DB tier")
 	}
 
+	// The hosted provider is what this assertion is about, and it stopped being implicit
+	// when the empty-key gate started reading AURA_LLM_PROVIDER (amendment #219): with a
+	// LOCAL provider inherited from the developer's shell no key is required and this
+	// fails on something else entirely. Empty means the default, which is the hosted one.
+	t.Setenv("AURA_LLM_PROVIDER", "")
 	if _, err := Load(); err == nil {
 		t.Fatal("Load() must still fail-fast with an empty OPENROUTER_API_KEY")
 	}

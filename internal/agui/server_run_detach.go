@@ -2,6 +2,7 @@ package agui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"iter"
@@ -140,6 +141,7 @@ func (s *Server) handleRunDetached(w http.ResponseWriter, r *http.Request, ctx c
 func (s *Server) runProducer(ctx context.Context, cancel context.CancelFunc, sess *RunSession, stream iter.Seq2[events.Event, error]) {
 	defer cancel() // releases the wallclock timer once the turn is done
 	defer sess.finish()
+	terminal := false
 	for ev, err := range stream {
 		if err != nil {
 			sess.append(ctx, redactEvent(events.NewRunErrorEvent(sanitizeErr(err))))
@@ -148,7 +150,45 @@ func (s *Server) runProducer(ctx context.Context, cancel context.CancelFunc, ses
 		if ev == nil {
 			continue
 		}
+		if isTerminalRunEvent(ev) {
+			terminal = true
+		}
 		sess.append(ctx, redactEvent(ev))
+	}
+	if terminal {
+		return
+	}
+	// A stream that ends with no terminal frame is what CANCELLING produces: the turn ctx
+	// unwinds the agent, the iterator simply stops, and nothing announces an ending. Measured
+	// twice on a live stack (2026-09-06): after POST /agent/runs/{id}/cancel returned 202 the
+	// subscriber saw TOOL_CALL_START, TOOL_CALL_ARGS, heartbeats — and then nothing, forever.
+	// The operator pressed stop, the agent DID stop, and the cockpit kept spinning because its
+	// state machine ends a run on RUN_FINISHED or RUN_ERROR and neither ever arrived.
+	//
+	// So the producer states the ending itself. RUN_ERROR rather than RUN_FINISHED: the turn
+	// did not complete, and a client that renders a cancelled run as finished would claim the
+	// work was done.
+	reason := "run cancelled"
+	if err := ctx.Err(); err != nil && !errors.Is(err, context.Canceled) {
+		reason = sanitizeErr(err)
+	}
+	// WithoutCancel is the other half of the fix, and without it the first half does nothing.
+	// append writes the ring and THEN fans out to live subscribers, and the fan aborts on a done
+	// ctx — which this ctx, by construction, always is here. The frame would reach a later
+	// resume and never the subscriber actually waiting for it, so the cockpit would still hang
+	// on the one path that matters. The announcement of an ending must outlive the cancellation
+	// that caused it.
+	sess.append(context.WithoutCancel(ctx), redactEvent(events.NewRunErrorEvent(reason)))
+}
+
+// isTerminalRunEvent reports whether ev is the frame a client ends a run on. Both types count:
+// a run that errored is as finished, to a subscriber, as one that succeeded.
+func isTerminalRunEvent(ev events.Event) bool {
+	switch ev.Type() {
+	case events.EventTypeRunFinished, events.EventTypeRunError:
+		return true
+	default:
+		return false
 	}
 }
 

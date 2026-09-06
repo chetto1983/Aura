@@ -12071,6 +12071,53 @@ flusso completo, che funziona.
 > conteggio qui registrato era corretto e resta la misura di partenza; vedi #218 per quello
 > ri-verificato all'atterraggio.
 
+## Section Premere stop e non uscirne (Amendment #221, 2026-09-06)
+
+> **Amendment #221 (2026-09-06 — riprodotto due volte su stack acceso, con l'agente pilotato
+> da un modello che rispondeva a mano).** Segnalato dall'operatore: «se faccio stop durante un
+> tool call non se ne esce fuori». È vero, e sono **due** difetti distinti che si sommano.
+>
+> **D-221-1 — il run non riceveva alcun frame terminale.** `POST /agent/runs/{id}/cancel`
+> rispondeva `202`, il turno agente finiva davvero (il server logga `agent turn end` nello
+> stesso istante), e il subscriber vedeva `TOOL_CALL_START`, `TOOL_CALL_ARGS`, heartbeat — e
+> poi più nulla. A quattro minuti dallo stop: **zero** `RUN_FINISHED` e **zero** `RUN_ERROR`.
+> Il cockpit chiude un run su uno di quei due frame, quindi il lavoro si fermava e
+> l'interfaccia restava a girare. Causa: annullare fa terminare l'iteratore dello stream
+> senza errore, e `runProducer` emetteva un terminale **solo** sul ramo d'errore.
+>
+> **D-221-2 — e l'annuncio non sarebbe comunque arrivato.** `RunSession.append` scrive il ring
+> e *poi* fa il fan-out ai subscriber vivi, e il fan si interrompe su un ctx `Done` — che qui è
+> sempre il caso. Il frame sarebbe finito nel ring per un eventuale resume e **mai** al client
+> che lo stava aspettando. Il terminale si appende quindi con `context.WithoutCancel`:
+> l'annuncio di una fine deve sopravvivere alla cancellazione che l'ha causata. Senza questa
+> metà, la prima non fa nulla — il test lo dimostra: falliva prima di aggiungerla.
+>
+> Il terminale è `RUN_ERROR`, non `RUN_FINISHED`: il turno non è stato completato, e un client
+> che rendesse un run annullato come concluso affermerebbe che il lavoro è stato fatto.
+>
+> **D-221-3 — una kill che fallisce non lo diceva a nessuno.** `killBoxProcessGroup` è
+> best-effort e ingoiava ogni errore. «Best-effort» riguarda il non far fallire il chiamante,
+> non il tacere: se quell'exec non parte, il job continua dentro la box senza che nessuno abbia
+> più un handle, e l'operatore — a cui è stato risposto «cancelling» — non ha modo di saperlo.
+> Ora un fallimento di create/attach è un WARN che nomina il container.
+>
+> **Errore mio, registrato perché è istruttivo.** Una prima diagnosi attribuiva tutto a un
+> figlio finito in un process group diverso, e la misura che la sosteneva era sbagliata: avevo
+> scambiato il **wrapper** per il job, perché l'argv del wrapper contiene l'intera stringa di
+> comando e un match su cmdline lo trova per primo. La tabella vera durante un cancel è
+> `wrapper pid=497 pgid=497` e `sleep pid=503 pgid=497` — **stesso gruppo**, quindi il segnale
+> al gruppo è il meccanismo giusto. La camminata sull'albero dei processi resta come rete di
+> sicurezza per un figlio che chiama `setsid`, ed è documentata come tale e non come la causa.
+>
+> **Cosa queste misure NON dimostrano.** Il fallback su D-221-1 non è stato osservato scattare
+> in E2E: nell'ultima corsa il frame terminale è arrivato dal ramo d'errore già esistente
+> (`persist tool result … context canceled`), perché lo stream a volte fallisce e a volte
+> finisce in silenzio. Il caso silenzioso è quello misurato due volte ed è fissato dal test
+> unitario, non da un E2E. Nulla è stato misurato su `shell_exec` in background
+> (`shell_poll`/`shell_kill`), né sul percorso non-detached (`AURA_AGUI_RUN_DETACH=false`),
+> dove `s.runs` è nil e la rotta di cancel risponde 404 per costruzione.
+
+
 ## Section Un guasto che non si racconta è un guasto che nessuno chiude (Amendment #220, 2026-09-06)
 
 > **Amendment #220 (2026-09-06 — misurato pilotando lo stack acceso: `aura serve` nativo,

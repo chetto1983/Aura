@@ -19,6 +19,14 @@ func isolateKeylessBootEnv(t *testing.T) {
 		"AURA_DB_URL",
 		"AURA_DB_MIGRATE_URL",
 		"AURA_DB_BOOTSTRAP_URL",
+		// The LLM pair is load-bearing HERE, and only became so when the empty-key gate
+		// started reading the provider (amendment #219): with AURA_LLM_PROVIDER inherited
+		// from the developer's shell as a local provider, no key is required and
+		// TestChatBootStillRequiresAPIKey fails on the DB error instead — which is exactly
+		// what happened on a machine that had exported it. Empty means the default provider,
+		// which is the hosted one, which is the case this file exists to pin.
+		"AURA_LLM_PROVIDER",
+		"OPENROUTER_API_KEY",
 	} {
 		t.Setenv(k, "")
 	}

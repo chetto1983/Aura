@@ -24,6 +24,12 @@ func TestMainShellBootsRealREPL(t *testing.T) {
 		"HOME="+home,
 		"USERPROFILE="+home,
 		"OPENROUTER_API_KEY=",
+		// The hosted provider is the case this asserts, and it stopped being implicit when
+		// the empty-key gate started reading AURA_LLM_PROVIDER (amendment #219): the child
+		// inherits os.Environ(), so a developer with a LOCAL provider exported would boot a
+		// working shell here and see this fail for the wrong reason. Empty is the default,
+		// which is hosted.
+		"AURA_LLM_PROVIDER=",
 		"AURA_LLM_MODEL=",
 		"AURA_LLM_BASE_URL=",
 		"AURA_LLM_TEMPERATURE=",

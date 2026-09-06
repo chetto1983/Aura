@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -175,22 +176,59 @@ func (s *ExecStreamHandle) sigterm() {
 // PID to pidFile before cmd runs -- the ONE PID-file kill mechanism this package uses, shared by
 // ExecStream's background jobs and Exec's synchronous cancel/timeout path (defect E, above). No
 // `exec` prefix: the command may be a compound line / builtin / pipeline, so it runs as a child of
-// this wrapper sh. $$ is the wrapper's PID; runc starts each exec as a session leader, so $$ is
-// also the process-group id killBoxProcessGroup signals to terminate the whole job tree.
+// this wrapper sh. $$ is the wrapper's PID and, runc starting each exec as a session leader, its
+// process-group id too.
+//
+// What that does NOT give you is the job: measured in a real box on 2026-09-06, the wrapper sat
+// at pid=106 pgid=106 while the command it ran sat at pid=149 pgid=149 — its OWN group. Signalling
+// the wrapper's group therefore killed the wrapper and left the work running. The PID recorded
+// here is consequently the ROOT OF A TREE, and killJobTreeCommand walks it; it is not a
+// process-group handle, and reading it as one is the mistake this comment used to make.
+//
 // The EXIT trap removes the file on a normal exit so a long-lived box does not accumulate
 // one file per shell_exec call; a wrapper killed by killBoxProcessGroup's TERM exits
 // without running it, which leaves a file naming a dead PID -- harmless, and
-// killProcessGroupCommand's `2>/dev/null` already tolerates it.
+// killJobTreeCommand's `2>/dev/null` already tolerates it.
 func wrapCommandWithPIDFile(pidFile, cmd string) string {
 	return "echo $$ > '" + pidFile + "'; trap 'rm -f " + pidFile + "' EXIT; " + cmd
 }
 
-// killProcessGroupCommand is the pure shell snippet killBoxProcessGroup runs in a separate,
-// short-lived box exec: read the PID wrapCommandWithPIDFile recorded and signal both the process
-// group (the negative PID) and the process itself, best-effort. A job that already exited leaves
-// no PID to signal, so the trailing `; true` keeps the kill exec's own exit clean either way.
-func killProcessGroupCommand(pidFile string) string {
-	return "P=$(cat '" + pidFile + "' 2>/dev/null); [ -n \"$P\" ] && { kill -TERM -\"$P\" 2>/dev/null; kill -TERM \"$P\" 2>/dev/null; }; true"
+// killJobTreeCommand is the pure shell snippet killBoxProcessGroup runs in a separate,
+// short-lived box exec: terminate the job wrapCommandWithPIDFile recorded, and everything it
+// started.
+//
+// The process GROUP is the primary mechanism and it is correct. Measured inside a real box on
+// 2026-09-06 during a live cancel:
+//
+//	wrapper shell   pid=497  pgid=497  sid=497
+//	sleep           pid=503  pgid=497  sid=497   <- the SAME group
+//
+// so `kill -TERM -497` is the right signal and reaches the work.
+//
+// The tree walk is belt-and-braces on top of it, for the case the group does not cover: a child
+// that calls setsid, or a job runner that puts its workers in groups of their own. It is NOT
+// there because the ordinary case was measured broken — it was not — and this comment says so
+// because an earlier draft of it claimed the opposite from a misread process table, where the
+// wrapper was mistaken for the job (the wrapper's argv contains the whole command string, so a
+// naive cmdline match finds it first).
+//
+// The tree is collected BEFORE anything is signalled. That order is load-bearing: a child
+// reparents the instant its parent dies, so a walk performed afterwards has already lost the
+// links it needs. /proc is read directly because the box image has no ps and no pkill.
+//
+// A job that already exited leaves no PID to signal, so the trailing `; true` keeps the kill
+// exec's own exit clean either way.
+func killJobTreeCommand(pidFile string) string {
+	return "P=$(cat '" + pidFile + "' 2>/dev/null); " +
+		"[ -n \"$P\" ] || exit 0; " +
+		"T=\"$P\"; F=\"$P\"; " +
+		"while [ -n \"$F\" ]; do N=\"\"; " +
+		"for d in /proc/[0-9]*; do c=${d#/proc/}; " +
+		"pp=$(awk '/^PPid:/{print $2; exit}' \"$d/status\" 2>/dev/null); " +
+		"for f in $F; do [ \"$pp\" = \"$f\" ] && { N=\"$N $c\"; T=\"$T $c\"; }; done; " +
+		"done; F=\"$N\"; done; " +
+		"for pid in $T; do kill -TERM \"$pid\" 2>/dev/null; done; " +
+		"kill -TERM -\"$P\" 2>/dev/null; true"
 }
 
 // killBoxProcessGroup signals the process group recorded in pidFile from a separate, short-lived
@@ -201,12 +239,21 @@ func killProcessGroupCommand(pidFile string) string {
 func killBoxProcessGroup(cli *client.Client, containerID, pidFile string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	ec, err := cli.ExecCreate(ctx, containerID, client.ExecCreateOptions{Cmd: []string{"/bin/sh", "-c", killProcessGroupCommand(pidFile)}})
+	ec, err := cli.ExecCreate(ctx, containerID, client.ExecCreateOptions{Cmd: []string{"/bin/sh", "-c", killJobTreeCommand(pidFile)}})
 	if err != nil {
+		// Best-effort is about not FAILING the caller, never about staying quiet. When this
+		// exec cannot even be created the job keeps running inside the box with nothing left
+		// holding a handle to it, and the operator — who pressed stop and was told
+		// "cancelling" — has no way to learn that it did not stop. Measured 2026-09-06: a
+		// cancelled turn left its `sleep` alive and every log was silent about it.
+		slog.Warn("box exec kill: could not start the terminate exec — the job may still be running in the box",
+			"container", containerID, "err", err)
 		return
 	}
 	att, err := cli.ExecAttach(ctx, ec.ID, client.ExecAttachOptions{})
 	if err != nil {
+		slog.Warn("box exec kill: could not attach the terminate exec — the job may still be running in the box",
+			"container", containerID, "err", err)
 		return
 	}
 	_, _ = io.Copy(io.Discard, att.Reader) // run the kill exec to completion

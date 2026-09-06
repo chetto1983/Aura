@@ -38,23 +38,36 @@ func TestWrapCommandWithPIDFile_RecordsPIDBeforeRunningCmd(t *testing.T) {
 	}
 }
 
-// TestKillProcessGroupCommand_SignalsBothGroupAndProcess pins the kill snippet
-// killBoxProcessGroup runs in a separate box exec: it must read the SAME pidFile
-// wrapCommandWithPIDFile wrote, signal the process GROUP (negative PID) and the process itself,
-// and never fail its own exit even when the PID file is gone (a job that already exited).
-func TestKillProcessGroupCommand_SignalsBothGroupAndProcess(t *testing.T) {
-	got := killProcessGroupCommand("/tmp/.aura-exec-deadbeef.pid")
+// TestKillJobTreeCommand_ReachesTheChildrenNotJustTheGroup pins the snippet killBoxProcessGroup
+// runs in a separate box exec. The properties are not cosmetic — each one is a measured failure:
+//
+//   - it must read the SAME pidFile wrapCommandWithPIDFile wrote;
+//   - it must walk /proc for DESCENDANTS, because the job's children get their own process group
+//     (measured: wrapper pid=106 pgid=106, its `sleep` pid=149 pgid=149) and the group signal
+//     alone killed the wrapper while the work ran on;
+//   - it must collect the tree BEFORE signalling, since a child reparents the moment its parent
+//     dies and a walk done afterwards has already lost the links;
+//   - it must still signal the group, which is free and catches the ordinary case;
+//   - it must never fail its own exit when the PID file is gone (a job that already exited).
+func TestKillJobTreeCommand_ReachesTheChildrenNotJustTheGroup(t *testing.T) {
+	got := killJobTreeCommand("/tmp/.aura-exec-deadbeef.pid")
 	for _, want := range []string{
 		"cat '/tmp/.aura-exec-deadbeef.pid'",
-		`kill -TERM -"$P"`, // the process group
-		`kill -TERM "$P"`,  // the process itself
+		"/proc/[0-9]*",      // the descendant walk
+		"PPid:",             // read from /proc/<pid>/status, not ps (absent in the box image)
+		`kill -TERM "$pid"`, // every collected descendant
+		`kill -TERM -"$P"`,  // and still the group
 	} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("killProcessGroupCommand = %q, want it to contain %q", got, want)
+			t.Fatalf("killJobTreeCommand = %q, want it to contain %q", got, want)
 		}
 	}
+	// Collection must precede the first signal, or the tree is already wrong when it is read.
+	if strings.Index(got, "PPid:") > strings.Index(got, "kill -TERM") {
+		t.Fatalf("killJobTreeCommand signals before it finishes walking the tree: %q", got)
+	}
 	if !strings.HasSuffix(strings.TrimSpace(got), "true") {
-		t.Fatalf("killProcessGroupCommand = %q, want it to end clean (`; true`) so a vanished PID file is not a kill-exec failure", got)
+		t.Fatalf("killJobTreeCommand = %q, want it to end clean (`; true`) so a vanished PID file is not a kill-exec failure", got)
 	}
 }
 
