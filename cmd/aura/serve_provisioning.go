@@ -266,7 +266,13 @@ func buildProvisioningPorts(chat *chatEnv) (agui.ObjectStoreProvisioner, agui.Fi
 	endpoint := strings.TrimSpace(cfg.GarageAdminEndpoint)
 	token := strings.TrimSpace(cfg.GarageAdminToken)
 	if endpoint == "" || token == "" {
-		return nil, nil, nil // pre-cutover / interview-only deploy provisions nothing
+		// Deliberate for a pre-cutover / interview-only deploy — but never silent. Measured
+		// 2026-09-06: with no admin token every identity was created without a bucket, and
+		// the only trace was the ingest sidecar failing on a row that had never been written.
+		// The bootstrap leg that would have said so is skipped too when this returns nil.
+		slog.Warn("aura serve: no Garage admin endpoint/token — per-identity provisioning is OFF: identities get no bucket, no filesystem roots, and nothing can be ingested",
+			"endpoint_set", endpoint != "", "token_set", token != "")
+		return nil, nil, nil
 	}
 	client, err := garageadmin.New(endpoint, token)
 	if err != nil {

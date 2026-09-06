@@ -271,3 +271,76 @@ func TestPendingDeliveryRejectsAnotherJobsKey(t *testing.T) {
 		t.Fatalf("pendingDeliveryFromJob = %v, want a job-key mismatch", err)
 	}
 }
+
+// A permanent delivery failure must end. Measured live 2026-09-06: two workers finished ok,
+// archiving their reports failed with an error no wait could fix, and the rows sat at
+// attempt_count 58 against max_attempts 3 — still `queued`, re-claimed every 15 seconds,
+// with swarm_status dutifully telling the model that finished workers were still queued.
+func TestPermanentDeliveryFailureIsAbandonedRatherThanRetriedForever(t *testing.T) {
+	store := &fakeDelegationStore{}
+	archiver := archiverFunc(func(context.Context, string, string, string, string, string) (string, error) {
+		return "", errors.New("resolve object store for identity: no rows in result set")
+	})
+	l := &DelegationClaimLoop{Store: store, Delivery: &DelegationDelivery{
+		Recorder: &fakeConversationRecorder{}, Steer: &fakeSteerPublisher{}, Archiver: archiver,
+	}}
+	payload := DelegationPayload{Goal: "g", ConversationID: "conv-7", ChildID: "w1", FanoutKey: "f-test"}
+	job := documents.IngestionJob{
+		ID: "j1", IdentityID: "identity-1", CreatedAt: time.Now(),
+		MaxAttempts: 3, AttemptCount: 3 + deliveryRetryAllowance,
+	}
+
+	if err := l.deliverSuccess(context.Background(), job, payload, ChildReport{ChildID: "w1", Status: StatusOK}); err != nil {
+		t.Fatalf("deliverSuccess = %v", err)
+	}
+	if retries := store.retriesSnapshot(); len(retries) != 0 {
+		t.Fatalf("retries = %+v, want none once the delivery allowance is spent", retries)
+	}
+	tr := store.transitionsSnapshot()
+	if len(tr) != 1 {
+		t.Fatalf("transitions = %+v, want exactly one terminal transition", tr)
+	}
+	// The worker succeeded; only its report could not be delivered. Recording it as failed
+	// would be a different — and false — fact.
+	if tr[0].Status != "succeeded" || tr[0].ErrorCode != "delivery_failed" {
+		t.Fatalf("transition = %+v, want succeeded with a delivery_failed reason", tr[0])
+	}
+	if !strings.Contains(tr[0].ErrorMessage, "could not be delivered") ||
+		!strings.Contains(tr[0].ErrorMessage, "no rows in result set") {
+		t.Fatalf("message = %q, want the abandonment and its cause", tr[0].ErrorMessage)
+	}
+}
+
+// One attempt below the allowance is still a retry: the ceiling must not shorten the
+// tolerance a transient outage was given.
+func TestDeliveryRetriesUpToTheAllowance(t *testing.T) {
+	store := &fakeDelegationStore{}
+	archiver := archiverFunc(func(context.Context, string, string, string, string, string) (string, error) {
+		return "", errors.New("garage unavailable")
+	})
+	l := &DelegationClaimLoop{Store: store, Delivery: &DelegationDelivery{
+		Recorder: &fakeConversationRecorder{}, Steer: &fakeSteerPublisher{}, Archiver: archiver,
+	}}
+	payload := DelegationPayload{Goal: "g", ConversationID: "conv-7", ChildID: "w1", FanoutKey: "f-test"}
+	job := documents.IngestionJob{
+		ID: "j1", IdentityID: "identity-1", CreatedAt: time.Now(),
+		MaxAttempts: 3, AttemptCount: 3 + deliveryRetryAllowance - 1,
+	}
+
+	if err := l.deliverSuccess(context.Background(), job, payload, ChildReport{ChildID: "w1", Status: StatusOK}); err != nil {
+		t.Fatalf("deliverSuccess = %v", err)
+	}
+	if len(store.retriesSnapshot()) != 1 || len(store.transitionsSnapshot()) != 0 {
+		t.Fatalf("retries = %d transitions = %d, want one retry and no terminal transition",
+			len(store.retriesSnapshot()), len(store.transitionsSnapshot()))
+	}
+}
+
+// A row that asked for no cap at all keeps the unbounded behavior it asked for.
+func TestUncappedJobKeepsRetryingDelivery(t *testing.T) {
+	l := &DelegationClaimLoop{}
+	uncapped := documents.IngestionJob{MaxAttempts: 0, AttemptCount: 500}
+	if l.deliveryAllowanceSpent(uncapped) {
+		t.Fatal("a job with no attempt cap must not be abandoned by the delivery ceiling")
+	}
+}
