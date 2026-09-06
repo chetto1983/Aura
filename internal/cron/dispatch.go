@@ -223,12 +223,22 @@ func scheduledOperationContext(ctx context.Context, task Task, claim *Claim) (co
 		return nil, errors.New("cron dispatch: nil claim")
 	}
 	identityID := task.IdentityID
-	// System scheduler rows may carry the "local" sentinel rather than a UUID. The
-	// effect still retains task.IdentityID for delivery,
-	// while registry ownership maps that non-tenant sentinel to the seeded local
-	// operator UUID. A valid durable tenant UUID is preserved exactly.
+	// System scheduler rows may carry the "local" sentinel rather than a UUID (the column
+	// is text with DEFAULT 'local', and the boot seeders create their sweeps with no
+	// identity at all). The effect still retains task.IdentityID for delivery, while
+	// registry ownership maps that non-tenant sentinel to a durable owner. A valid tenant
+	// UUID is preserved exactly.
+	//
+	// That owner is the SERVICE identity, not the local seed. This is the same defect
+	// idempotency_http.go already fixed for the public mutations, in the same registry:
+	// idempotency_operations.identity_id is FK'd to aura.identities ON DELETE CASCADE, and
+	// serve_auth.go DELETES the local seed the moment an operator enrolls. Every boot after
+	// that re-seeds the system sweeps with the sentinel again, so this fallback wrote a
+	// foreign key to a row that no longer existed and the dispatch failed — for the
+	// scheduler's own system tasks, on every tick, forever. The service identity survives
+	// (migration 0049 seeds it kind=service) and carries no user capabilities.
 	if _, err := uuid.Parse(identityID); err != nil {
-		identityID = identityctx.LocalOperatorIdentity
+		identityID = identityctx.CLIServiceIdentity
 	}
 	fingerprint, err := idempotency.FingerprintTyped(struct {
 		TaskID  string   `json:"task_id"`
