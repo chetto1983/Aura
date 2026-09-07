@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/documents"
+	"github.com/chetto1983/aura/internal/idempotency"
 )
 
 // DelegationEnqueueStore persists one complete swarm_spawn fan-out atomically.
@@ -80,11 +81,17 @@ func EnqueueDelegation(ctx context.Context, enq *DelegationEnqueuer, identityID 
 	}
 	// Computed ONCE, before the loop: every goal of this ONE swarm_spawn call
 	// shares the SAME fan-out key (delegationFanoutKey's own doc).
-	fanoutKey := delegationFanoutKey(identityID, brief.ConversationID, brief.ParentRunID, goals)
+	invocationKey := brief.ParentRunID
+	if operation, ok := idempotency.OperationFromContext(ctx); ok {
+		// The runtime key already binds ingress, model round and canonical goals/context.
+		// ParentRunID is only a legacy direct-caller fallback; the live adapter has none.
+		invocationKey = string(operation.Key.Scope) + ":" + operation.Key.Key
+	}
+	fanoutKey := delegationFanoutKey(identityID, brief.ConversationID, invocationKey, goals)
 	workers := make([]delegationQueuedWorker, 0, len(goals))
 	requests := make([]documents.CreateIngestionJobRequest, 0, len(goals))
 	for i, goal := range goals {
-		key := delegationIdempotencyKey(identityID, brief.ConversationID, brief.ParentRunID, i, goal)
+		key := delegationIdempotencyKey(identityID, brief.ConversationID, invocationKey, i, goal)
 		childID := delegationChildID(key, i)
 		payload := brief
 		payload.Goal = goal
@@ -116,13 +123,13 @@ func EnqueueDelegation(ctx context.Context, enq *DelegationEnqueuer, identityID 
 }
 
 // delegationIdempotencyKey is deterministic over its inputs: the same
-// (identity, conversation, parent run, goal index, goal text) always produces
+// (identity, conversation, invocation, goal index, goal text) always produces
 // the same key, and a different goal index always produces a different one
 // (the ON CONFLICT (identity_id, job_type, idempotency_key) unique key is what
 // makes a re-run of the same enqueue add no second row).
-func delegationIdempotencyKey(identityID, convID, parentRunID string, goalIndex int, goal string) string {
+func delegationIdempotencyKey(identityID, convID, invocationKey string, goalIndex int, goal string) string {
 	h := sha256.New()
-	for _, part := range []string{identityID, convID, parentRunID, strconv.Itoa(goalIndex), goal} {
+	for _, part := range []string{identityID, convID, invocationKey, strconv.Itoa(goalIndex), goal} {
 		h.Write([]byte(part))
 		h.Write([]byte{0})
 	}
@@ -151,7 +158,7 @@ func delegationChildID(idempotencyKey string, goalIndex int) string {
 // delegationFanoutKey is the ONE identity every goal of a SINGLE swarm_spawn
 // call shares -- computed ONCE, before EnqueueDelegation's per-goal loop,
 // over the same inputs delegationIdempotencyKey covers EXCEPT the per-goal
-// index: identity, conversation, parent run id, then every goal in order.
+// index: identity, conversation, invocation key, then every goal in order.
 // conversation_id alone cannot express this grouping: two swarm_spawn calls
 // in one conversation are two DIFFERENT fan-outs. A re-enqueue of the
 // identical call reproduces the same key, matching the per-goal ON CONFLICT
@@ -159,9 +166,9 @@ func delegationChildID(idempotencyKey string, goalIndex int) string {
 // carries no goal text, conversation id or identity in readable form
 // (T-51-64) -- a leaked row discloses nothing beyond "these rows belong
 // together".
-func delegationFanoutKey(identityID, convID, parentRunID string, goals []string) string {
+func delegationFanoutKey(identityID, convID, invocationKey string, goals []string) string {
 	h := sha256.New()
-	for _, part := range []string{identityID, convID, parentRunID} {
+	for _, part := range []string{identityID, convID, invocationKey} {
 		h.Write([]byte(part))
 		h.Write([]byte{0})
 	}
