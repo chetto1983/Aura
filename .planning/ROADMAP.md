@@ -1,0 +1,193 @@
+# Roadmap: Aura — v1.1.0 Production Launch — Multi-Tenant
+
+## Overview
+
+The release gate this repo already declares has never been run. Eight of its twelve reports
+have no artifact on disk; all eight make targets and all six evidence scripts exist and are
+self-tested. Authula's access control — twelve REST endpoints, role hierarchy, permissions,
+Bun-backed repositories — is already in `go.mod` and Aura uses none of it. Per-identity data
+scoping already works in SQL, in RLS, in a per-identity ArcadeDB database and a per-identity
+Garage bucket, and has never been put under two concurrent users, under attack, across a
+restart, or at the process and host level. The launch documentation was rewritten in a
+parallel session and has never been followed by anyone who did not write it.
+
+So this milestone is not a build. It is seven live runs against the stack, in the order that
+makes each one mean something, with the code fixes each one forces. Every phase closes on a
+real end-to-end run driven by the real agent — never on a unit suite. Unit tests, coverage
+and mutation are how a phase gets to its live run; they are never the evidence that it
+arrived.
+
+The order is forced by one hard constraint and one soft one. The hard one:
+`scripts/release_readiness_gate.py` accepts only reports bound to the exact
+`git rev-parse HEAD` and under 24 hours old, so the twelve reports cannot be accumulated —
+the last phase produces them together in one window and nothing may commit during it. The
+soft one: each drill is only meaningful once the state it operates on exists. Restoring an
+empty deployment proves nothing; measuring concurrency with one identity measures the wrong
+thing; probing a permission boundary before the permissions exist probes ownership instead.
+
+## Phases
+
+**Phase Numbering:**
+- Integer phases (1, 2, 3): Planned milestone work
+- Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
+
+Numbering starts at 1. The previous milestone's phase directories were deleted and its
+numbering (45–54) is not carried forward.
+
+- [ ] **Phase 1: Two Identities, Live and Separated** - Turn on the shipped multi-identity profile, provision a second identity through the documented path, and prove two concurrent turns share no data and no execution
+- [ ] **Phase 2: Permissions Decide What a User May Do** - Mount Authula's access control, register Aura's resources as permissions, and enforce them at the five privileged call sites
+- [ ] **Phase 3: The Boundary Under Attack** - A re-runnable adversarial suite plus a sandbox escape battery, every attempt refused and audited
+- [ ] **Phase 4: Load, Chaos and Truthful Degradation** - Produce load, chaos and observability evidence for the first time, with two identities active
+- [ ] **Phase 5: Restart, Rollback, Restore** - Prove isolation survives the operational lifecycle, producing the DR and rollback evidence in the same drill
+- [ ] **Phase 6: A Stranger Can Install and Operate It** - A clean-machine walkthrough driven only by the written docs, from clone to two working identities and back from a restore
+- [ ] **Phase 7: One SHA, Twelve Reports, One Window** - Freeze the candidate and produce all twelve reports together, then publish through the release workflows
+
+## Phase Details
+
+### Phase 1: Two Identities, Live and Separated
+**Goal**: The shipped deployment profile runs two identities at the same time, and neither can reach the other's data or the other's execution.
+**Depends on**: Nothing (first phase)
+**Requirements**: ISO-01, ISO-02, ISO-05, E2E-01, E2E-02
+**Success Criteria** (what must be TRUE):
+  1. `AURA_MUSR_ISOLATION` is on in the shipped deployment profile, and a second identity is provisioned from zero through the documented path — memory database, derived credential, object bucket, sandbox and skills root all land, with no manual SQL and no step outside the path. Today `internal/config/config.go:554` defaults it false and `internal/agui/onboarding_provision.go:128` refuses the provision outright.
+  2. Two identities hold real conversations at the same time against one running `aura serve`, each doing useful work — a document search, a memory write, a sandbox command — and the pair is scored ≥9.8.
+  3. Neither identity can read the other's documents, conversations, turns, approvals, memory facts or objects through any surface it can reach while both are live.
+  4. One identity's turn cannot observe or affect the other's: per-turn context, tool state and in-flight results are separated, not merely row-filtered, and the separation is demonstrated at the `runner`/`LlmAgent` level rather than asserted from a row count.
+**Closes on (live run)**: `cmd/aura/two_identity_e2e_test.go` (tag `musr_e2e`) promoted from harness to a run against a live `aura serve` with two provisioned identities, immediately followed by two authenticated concurrent `/agent/run` conversations through the AG-UI gateway — one per identity, each with real tool calls — scored against the CLAUDE.md ≥9.8 bar.
+**Plans**: TBD
+
+### Phase 2: Permissions Decide What a User May Do
+**Goal**: What a user may DO is decided by Authula's access control, not by who owns the row — and a refusal is auditable.
+**Depends on**: Phase 1 — a permission check needs a second principal to be meaningful. With one identity every check trivially passes, and RBAC-08 (administering other identities) has nothing to administer until provisioning works.
+**Requirements**: RBAC-01, RBAC-02, RBAC-03, RBAC-04, RBAC-05, RBAC-06, RBAC-07, RBAC-08, RBAC-09, RBAC-10, REL-06
+**Success Criteria** (what must be TRUE):
+  1. Authula's access control service is constructed and mounted in the composition root, its migration set applied, and all twelve `/access-control/*` endpoints answer on the running deployment. Nothing here builds a policy engine: `plugins/access-control/` in `github.com/Authula/authula@v1.43.0` already ships handlers, repositories, role hierarchy and its own migrations.
+  2. Aura's protected resources are registered as Authula permissions with the actions each supports, a default role set ships with the deployment, and a fresh install lands the operator in the administrative role with no manual SQL.
+  3. A live turn driven by the real agent as an identity that lacks the permission is refused at each of the five privileged call sites — mounting or installing an MCP server, authoring or installing a skill, running a shell in the sandbox, approving a destructive action, administering another identity — while the permitted identity succeeds at all five.
+  4. An unregistered resource or an unresolved principal denies rather than allows, and every denial is retrievable afterwards with who, what resource, what action and when.
+  5. `mutation-report.json` shows ≥70% killed separately for gateway, identity, profile, sandbox and frontend — the refusal branches this phase adds are provably killed, not merely covered.
+**Closes on (live run)**: a permission-matrix run against the live daemon — identity A administrative, identity B without the five permissions — where the real agent is asked, as each identity, to install an MCP server, write a skill, run a shell command, approve a destructive tool call and provision a third identity. Ten outcomes, five allowed and five refused, each denial then read back out of the audit trail by its own query.
+**Plans**: TBD
+
+### Phase 3: The Boundary Under Attack
+**Goal**: A deliberate attempt to cross the identity boundary fails, is visible afterwards, and the operator can re-run the whole attempt himself.
+**Depends on**: Phase 2 — an attack suite must probe the permission checks as well as ownership scoping. Run before RBAC exists, it proves only that a row filter works, and would have to be written twice.
+**Requirements**: ISO-03, ISO-04, ISO-07, E2E-03, REL-04
+**Success Criteria** (what must be TRUE):
+  1. Every boundary-crossing attempt is refused: guessed identifiers on every read endpoint, a shared link used outside its grant, and a tool handed another identity's identifier.
+  2. A prompt-injection turn that tries to make the agent read or write another identity's memory fails, and the attempt is visible in the audit trail rather than merely absent from the result.
+  3. From inside a live sandbox, the host is unreachable: no Docker socket, no host filesystem outside the identity's roots, and no Aura credential in the environment of a launched stdio MCP server. `internal/sandbox/usersandbox/translate.go` currently mounts `aura-uv-cache`, `aura-npm-cache` and `aura-pip-cache` read-write into *every* identity's box, with `CapDrop: []string{}` and no `no-new-privileges`; `internal/skills/installer.go:378` still hands `os.Environ()` to `npx skills add` while the sibling fix `secret.InstallerEnv` already exists at `internal/mcp/process_env.go:68`.
+  4. The suite is a scripted artifact an operator re-runs on demand, not a session transcript — it exits non-zero on the first attempt that succeeds.
+  5. `docker-coverage-report.json` passes at ≥85% merged statements for the owned sandbox surface under native `docker_integration` — the delegated authority for `internal/sandbox/usersandbox`, which this phase is the one to touch.
+**Closes on (live run)**: the adversarial suite executed end to end against the live two-identity stack — the HTTP/tool leg driven as identity B against identity A's real identifiers, and the sandbox leg executed as real commands inside a live box (reach the Docker socket, escape the workspace root, read the parent process environment, plant a wheel in the shared pip cache and try to make A's sandbox install it). Every leg refused; the run repeated after each fix until it is clean.
+**Plans**: TBD
+
+### Phase 4: Load, Chaos and Truthful Degradation
+**Goal**: The deployment holds its declared concurrency with two identities working, degrades honestly when a dependency dies, recovers — and an operator can see all three happen.
+**Depends on**: Phase 3 — concurrency measured before the boundary is enforced measures the wrong system, because a load run that passes by leaking across identities is worse than a failing one. Observability evidence also has to describe a deployment whose refusals already exist, or the dashboards and alerts get built against a shape that then changes.
+**Requirements**: REL-08, REL-09, REL-11, ISO-06
+**Success Criteria** (what must be TRUE):
+  1. `load-report.json` is produced for the first time and passes: the declared supported concurrency is met with at least two identities active, success ratio and p95 inside the declared budget.
+  2. `chaos-report.json` is produced for the first time and passes: the DB, MCP, Garage and process-kill scenarios all execute, the system degrades truthfully rather than lying about success, and it recovers.
+  3. A resource exhausted by one identity — loop budget, sandbox, tokens — does not deny service to the other; the second identity's turn still completes while the first is starved.
+  4. `observability-report.json` is produced for the first time and passes: negative fixtures, runtime smoke, live health and readiness, dashboards, alerts and runbooks.
+**Closes on (live run)**: `make load-chaos` and `make observability-evidence` against the live stack with two provisioned identities driving real turns, with `make observability-check` on the sidecars first. `scripts/production_load_chaos.py` (501 lines) and `scripts/observability_evidence.py` (261 lines) both exist and neither has ever emitted a report; the run is expected to break, and closing what it breaks is the work of the phase.
+**Plans**: TBD
+
+### Phase 5: Restart, Rollback, Restore
+**Goal**: Both identities survive the operational lifecycle intact and still separated — and the disaster-recovery and rollback evidence falls out of the same drill.
+**Depends on**: Phase 4 — a restore is only meaningful against a deployment carrying real two-identity state (memory graphs, buckets, sandboxes, grants, roles), which phases 1–3 create and phase 4 exercises. Process-kill recovery in chaos is the cheap failure; restoring from backup is the expensive one, and doing it second means the cheap one has already flushed out the recovery bugs.
+**Requirements**: ISO-08, ISO-09, ISO-10, REL-10, REL-12, E2E-04
+**Success Criteria** (what must be TRUE):
+  1. Isolation survives a service restart: derived ArcadeDB credentials and per-identity databases reattach to the right identity, never to another. `internal/arcadedb/tenant.go` derives the password by HMAC over `AURA_ARCADEDB_TENANT_SECRET`, so a misbinding here is silent, not loud.
+  2. `dr-report.json` is produced for the first time and passes: Postgres, sidecars, Garage and tenant-shaped ArcadeDB memory all restored and checksum-verified.
+  3. `rollback-report.json` is produced for the first time and passes: distinct image digests, the previous config boots, migrations stay compatible, and the candidate is restored healthy.
+  4. The full restart → rollback → restore cycle runs with two provisioned identities and both are intact and correctly separated afterwards — each resumes a real conversation and sees only its own history and its own memory.
+  5. Deprovisioning one identity removes its data from every plane — Postgres rows, ArcadeDB database and server user, Garage bucket, sandbox, skills root — and leaves the other identity untouched.
+**Closes on (live run)**: `make restore-drill` and `scripts/rollback_rehearsal.py` against the two-identity deployment, bracketed by real turns: a scored conversation as each identity before the drill, then daemon restart, image rollback to the previous digest, restore from backup, then the same two conversations again — asserting each identity recovers its own history and neither has acquired the other's. Deprovision closes the run.
+**Plans**: TBD
+
+### Phase 6: A Stranger Can Install and Operate It
+**Goal**: Someone who has never read this codebase installs, secures, upgrades, backs up, restores and troubleshoots Aura from the written documents alone.
+**Depends on**: Phase 5 — DOC-02 documents the roles phase 2 created, DOC-04's steps must be the ones the DR gate in phase 5 actually exercised, and DOC-03's rollback path is phase 5's rehearsal. Written earlier, these document intentions rather than measured behaviour, which is the failure this milestone exists to stop.
+**Requirements**: DOC-01, DOC-02, DOC-03, DOC-04, DOC-05, DOC-06, DOC-07, DOC-08
+**Success Criteria** (what must be TRUE):
+  1. A self-hoster gets from nothing to a running Aura on their own hardware following the install guide and the README quick start — prerequisites stated, every required secret explained — verified by doing it on a clean machine, not by reading it.
+  2. The same walkthrough turns on isolation, provisions a second identity, assigns roles, and the reader can tell from the document what each role may do.
+  3. Upgrading between two released versions succeeds by following the upgrade guide, including migrations, and the documented rollback path recovers a deliberately broken upgrade.
+  4. The backup and restore guide is executed by hand and produces the same result as the DR gate — the steps in the document are the steps the gate exercises, not a parallel description of them.
+  5. The troubleshooting guide covers the failures actually met during phases 1–5, each with symptom, confirmation and fix; every key an operator must set is documented and the rest are discoverable (338 `AURA_*` keys exist against roughly 60 documented); and every `amendment #N` citation in the repo resolves — `2079e2fa7` dropped all 198 numbered amendments while 344 files still cite one, including `internal/skills/writer.go` (#97), `internal/llm/config.go` (#54), `cmd/aura/skills_roots.go` (#214) and CLAUDE.md's own rules (#177, #203).
+**Closes on (live run)**: a clean-machine walkthrough — a fresh host with nothing but the repository and the docs, driven only by what is written: clone, install, first conversation, enable isolation, provision a second identity, assign roles, upgrade, break the upgrade and roll back, back up, restore, and hold a real conversation as each identity afterwards. Every deviation from the text is a documentation defect; the walkthrough restarts after each fix. The prior parallel session already rewrote README, `docs/ARCHITECTURE.md`, `docs/CAPABILITIES.md`, `docs/TECHNICAL_OVERVIEW.md` and added `docs/BACKUP-RESTORE.md`, so DOC-01..DOC-05 start partly advanced — this phase verifies and completes them, it does not start from a blank page.
+**Plans**: TBD
+
+### Phase 7: One SHA, Twelve Reports, One Window
+**Goal**: The candidate commit carries all twelve production-readiness reports, produced together, and the release workflows publish it.
+**Depends on**: Phase 6 — and this is the sequencing constraint that shapes the whole roadmap. `make release-readiness` accepts only reports bound to the exact `git rev-parse HEAD` and newer than 24 hours (`docs/release-readiness.md`), so every report an earlier phase produced is stale and SHA-mismatched the moment the next phase commits. Phases 2–5 prove each gate *can* pass and fix what it breaks; this phase produces them *together*, on a frozen tree, in one continuous window during which nothing may commit. It must be last because any commit after it invalidates the whole bundle.
+**Requirements**: REL-01, REL-02, REL-03, REL-05, REL-07, REL-13, REL-14, E2E-05
+**Success Criteria** (what must be TRUE):
+  1. `make evidence-contracts` passes on the candidate commit, so every report's shape is validated before its content is trusted.
+  2. `security-report.json` is produced for the first time and passes: exact-SHA CodeQL for Go and JS, govulncheck, workflow pinning and strict-profile tests.
+  3. `coverage-report.json` (≥85% statements on the owned surface with the `db_integration` tier, no empty or filtered tier), `agent-memory-eval-report.json` (all-tier MRS with ArcadeDB package coverage ≥85%) and `capability-eval.json` (every declared scenario executed and passed, zero skipped or missing) are all re-produced fresh on the candidate SHA — the copies on disk today are dated 2026-09-07, 2026-09-07 and 2026-08-24 and none of them survives this phase's freeze.
+  4. `make release-readiness` emits `release-readiness-report.json` accepting all twelve inputs, each bound to the exact candidate SHA and under 24 hours old, with the SHA-256 of every input recorded.
+  5. The `Production Readiness` GitHub workflow completes on the candidate branch, the tag-triggered `Release` workflow publishes against that exact commit, and every phase in this milestone has its own live end-to-end run recorded in its phase directory — no phase closed on unit evidence alone.
+**Closes on (live run)**: one continuous window on a frozen tree. `make evidence-contracts`, then all twelve reports produced against the live stack in sequence — security, coverage, docker-coverage, agent-memory, mutation, capability, load, chaos, DR, observability, rollback, audit-closure — then `make release-readiness`, then the `Production Readiness` workflow on the candidate branch and the tag-triggered `Release`. The window is the run: if it takes longer than 24 hours, the earliest reports expire and it starts again.
+**Plans**: TBD
+
+## Dependency Order
+
+```text
+1 Two identities live ──▶ 2 Permissions ──▶ 3 Attack ──▶ 4 Load/chaos/obs ──▶ 5 Lifecycle ──▶ 6 Docs ──▶ 7 Release window
+```
+
+Strictly sequential, and each edge earns its place:
+
+| Edge | Why it cannot be reversed or parallelised |
+|---|---|
+| 1 → 2 | A permission check with one principal always passes. RBAC-08 has nothing to administer until a second identity can be provisioned. |
+| 2 → 3 | The attack suite must probe permission refusals as well as ownership scoping. Written first, it tests half the boundary and gets rewritten. |
+| 3 → 4 | Load that passes by leaking across identities is worse than load that fails. The boundary must hold before concurrency means anything. |
+| 4 → 5 | Restore needs real two-identity state to restore. Process-kill recovery (chaos) flushes out the cheap recovery bugs before the expensive drill. |
+| 5 → 6 | DOC-04 must document the steps the DR gate exercised, DOC-03 the rollback that was rehearsed, DOC-02 the roles that exist. Documenting intentions is the failure mode this milestone exists to end. |
+| 6 → 7 | **Hard constraint.** The twelve reports must share one SHA and one 24-hour window. Any commit after the window invalidates the bundle, so the window must come after the last commit — which is phase 6's documentation fixes. |
+
+**Why the twelve reports are not one phase.** Eight have never been run and are expected to
+break. Producing them for the first time inside the 24-hour window would mean fixing code
+during the window, which resets the SHA and voids everything produced so far. So phases 2–5
+each execute the reports their own work touches — mutation with RBAC, docker-coverage with
+the sandbox, load/chaos/observability with concurrency, DR/rollback with the lifecycle — and
+close what they break. Phase 7 then re-runs everything on a frozen tree, where a failure is
+news rather than the expected case.
+
+## Notes
+
+**No UI phase.** No phase in this milestone delivers frontend work. Cockpit UI for role
+management is explicitly out of scope in REQUIREMENTS.md (the API is the contract for this
+milestone). `frontend` appears in REL-06 only as one of the five existing mutation scopes,
+and the web E2E suite runs as existing evidence. This is a deliberate finding, not an
+omission.
+
+**Gates binding every phase** (CLAUDE.md, not restated per phase): coverage floor 85% across
+the full tag matrix; mutation ≥70% on each phase's critical files; no non-test Go file over
+600 LOC (ten files are within 20 lines of it — split before editing, not after the gate
+fires); `go vet` / `build` / `test` / `-race` green per touched package; no skip-as-green in
+CI. Migration numbers are assigned at landing time via `ls internal/db/migrations/ | tail -1`,
+never deduced from a phase number.
+
+## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 1. Two Identities, Live and Separated | 0/TBD | Not started | - |
+| 2. Permissions Decide What a User May Do | 0/TBD | Not started | - |
+| 3. The Boundary Under Attack | 0/TBD | Not started | - |
+| 4. Load, Chaos and Truthful Degradation | 0/TBD | Not started | - |
+| 5. Restart, Rollback, Restore | 0/TBD | Not started | - |
+| 6. A Stranger Can Install and Operate It | 0/TBD | Not started | - |
+| 7. One SHA, Twelve Reports, One Window | 0/TBD | Not started | - |
+
+---
+*Roadmap created 2026-09-07 for milestone v1.1.0 Production Launch — Multi-Tenant.
+47 v1 requirements, 47 mapped, 0 orphaned.*

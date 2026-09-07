@@ -120,16 +120,75 @@ Deferred. Tracked, not in this roadmap.
 
 ## Traceability
 
-Filled during roadmap creation.
+Every v1 requirement maps to exactly one phase. Mapped during roadmap creation, 2026-09-07.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| — | — | Pending |
+| REL-01 | Phase 7 | Pending |
+| REL-02 | Phase 7 | Pending |
+| REL-03 | Phase 7 | Pending |
+| REL-04 | Phase 3 | Pending |
+| REL-05 | Phase 7 | Pending |
+| REL-06 | Phase 2 | Pending |
+| REL-07 | Phase 7 | Pending |
+| REL-08 | Phase 4 | Pending |
+| REL-09 | Phase 4 | Pending |
+| REL-10 | Phase 5 | Pending |
+| REL-11 | Phase 4 | Pending |
+| REL-12 | Phase 5 | Pending |
+| REL-13 | Phase 7 | Pending |
+| REL-14 | Phase 7 | Pending |
+| RBAC-01 | Phase 2 | Pending |
+| RBAC-02 | Phase 2 | Pending |
+| RBAC-03 | Phase 2 | Pending |
+| RBAC-04 | Phase 2 | Pending |
+| RBAC-05 | Phase 2 | Pending |
+| RBAC-06 | Phase 2 | Pending |
+| RBAC-07 | Phase 2 | Pending |
+| RBAC-08 | Phase 2 | Pending |
+| RBAC-09 | Phase 2 | Pending |
+| RBAC-10 | Phase 2 | Pending |
+| ISO-01 | Phase 1 | Pending |
+| ISO-02 | Phase 1 | Pending |
+| ISO-03 | Phase 3 | Pending |
+| ISO-04 | Phase 3 | Pending |
+| ISO-05 | Phase 1 | Pending |
+| ISO-06 | Phase 4 | Pending |
+| ISO-07 | Phase 3 | Pending |
+| ISO-08 | Phase 5 | Pending |
+| ISO-09 | Phase 5 | Pending |
+| ISO-10 | Phase 5 | Pending |
+| E2E-01 | Phase 1 | Pending |
+| E2E-02 | Phase 1 | Pending |
+| E2E-03 | Phase 3 | Pending |
+| E2E-04 | Phase 5 | Pending |
+| E2E-05 | Phase 7 | Pending |
+| DOC-01 | Phase 6 | Pending |
+| DOC-02 | Phase 6 | Pending |
+| DOC-03 | Phase 6 | Pending |
+| DOC-04 | Phase 6 | Pending |
+| DOC-05 | Phase 6 | Pending |
+| DOC-06 | Phase 6 | Pending |
+| DOC-07 | Phase 6 | Pending |
+| DOC-08 | Phase 6 | Pending |
+
+### By Phase
+
+| Phase | Name | Requirements | REQ-IDs |
+|-------|------|--------------|---------|
+| Phase 1 | Two Identities, Live and Separated | 5 | ISO-01, ISO-02, ISO-05, E2E-01, E2E-02 |
+| Phase 2 | Permissions Decide What a User May Do | 11 | REL-06, RBAC-01, RBAC-02, RBAC-03, RBAC-04, RBAC-05, RBAC-06, RBAC-07, RBAC-08, RBAC-09, RBAC-10 |
+| Phase 3 | The Boundary Under Attack | 5 | REL-04, ISO-03, ISO-04, ISO-07, E2E-03 |
+| Phase 4 | Load, Chaos and Truthful Degradation | 4 | REL-08, REL-09, REL-11, ISO-06 |
+| Phase 5 | Restart, Rollback, Restore | 6 | REL-10, REL-12, ISO-08, ISO-09, ISO-10, E2E-04 |
+| Phase 6 | A Stranger Can Install and Operate It | 8 | DOC-01, DOC-02, DOC-03, DOC-04, DOC-05, DOC-06, DOC-07, DOC-08 |
+| Phase 7 | One SHA, Twelve Reports, One Window | 8 | REL-01, REL-02, REL-03, REL-05, REL-07, REL-13, REL-14, E2E-05 |
 
 **Coverage:**
 - v1 requirements: 47 total
-- Mapped to phases: 0
-- Unmapped: 47 ⚠️
+- Mapped to phases: 47
+- Unmapped: 0 ✓
+- Duplicated across phases: 0 ✓
 
 ---
 *Requirements defined: 2026-09-07*
