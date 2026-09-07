@@ -236,6 +236,61 @@ func sagaService(t *testing.T, au *fakeAuthula, leg *fakeAuraLeg, tg *fakeTelegr
 	return svc, start.SessionToken
 }
 
+// fakeSandboxProvisioner is a SandboxProvisioner double for the Task 2 compensation tests
+// (onboarding_provision_sandbox_test.go), matching the shape of the other resource-leg
+// fakes above (provCalls/deprovCalls/live + an injectable provisionErr) so those tests
+// extend the existing fakes rather than declare a parallel set.
+type fakeSandboxProvisioner struct {
+	mu           sync.Mutex
+	provCalls    map[string]int
+	deprovCalls  map[string]int
+	live         map[string]bool
+	provisionErr error
+	destroyErr   error
+	// destroyCtxLive records whether the ctx DestroySandbox received had already been
+	// cancelled — proving compensation runs on context.WithoutCancel (Task 2 behavior 4).
+	destroyCtxLive []bool
+}
+
+func newFakeSandboxProvisioner() *fakeSandboxProvisioner {
+	return &fakeSandboxProvisioner{provCalls: map[string]int{}, deprovCalls: map[string]int{}, live: map[string]bool{}}
+}
+
+func (f *fakeSandboxProvisioner) ProvisionSandbox(_ context.Context, id string) error {
+	if f.provisionErr != nil {
+		return f.provisionErr
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.provCalls[id]++
+	f.live[id] = true
+	return nil
+}
+
+func (f *fakeSandboxProvisioner) DestroySandbox(ctx context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deprovCalls[id]++
+	f.destroyCtxLive = append(f.destroyCtxLive, ctx.Err() == nil)
+	if f.destroyErr != nil {
+		return f.destroyErr
+	}
+	delete(f.live, id)
+	return nil
+}
+
+func (f *fakeSandboxProvisioner) liveCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.live)
+}
+
+func (f *fakeSandboxProvisioner) destroyCalls(id string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.deprovCalls[id]
+}
+
 func assertNoWrites(t *testing.T, au *fakeAuthula, leg *fakeAuraLeg, tg *fakeTelegram) {
 	t.Helper()
 	if au.hashes != 0 {
