@@ -12692,3 +12692,22 @@ Postgres migration, environment variable, PPR policy or community-based fact
 promotion is authorized by this amendment. The existing memory evaluation must
 measure representative support, abstention and full-evidence token budgets before
 a retrieval-quality improvement is claimed.
+
+Follow-up measurements for this correction: the native 0..2-hop MENTIONS query
+with inline support eligibility excludes an orphan-linked neighborhood and keeps
+the directly attached fact at limit=1 where the previous timestamp/key ordering
+selected an indirect fact. Rebuilding mentions with the existing scanner over
+retained historical facts is required. `CREATE EDGE ... IF NOT EXISTS` was found
+to collapse distinct supporting facts on the same endpoints: its documented
+identity is only edge type plus endpoints. A native UNIQUE index on MENTIONS
+(`@out`,`@in`,fact_key), with ordinary CREATE EDGE, permits the two distinct
+supports and rejects a duplicate triple with HTTP 409. Use this index and verify
+the exact triple after a concurrent conflict; do not mask unrelated failures.
+
+An incomplete sweep was also measured deleting two of four existing links while
+reporting Covered=false. A partial entity/fact/edge inventory must perform no
+reconciliation writes. Keep historical supported mentions, apply time eligibility
+at read time, and make repeated complete sweeps idempotent. The cap applies to
+the retained corpus; this does not restore forgotten FACT or removed entities.
+These findings extend amendment #226 before the retention implementation and
+are reproduced in the temporal neighborhood and native mention identity tests.
