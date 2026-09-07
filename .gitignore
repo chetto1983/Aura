@@ -94,7 +94,6 @@ graphify-out/*
 internal/channels/telegram/testdata/*
 artifacts/*
 .playwright-mcp/*
-.planning/phases/32-quality-cleanup-dead-code-shared-helpers/uat-evidence/phase32-focustrap-dialog.png
 .tmp*
 .audit-build-*
 # transient conversation store written by cmd/aura tests
@@ -119,7 +118,6 @@ backups/
 # for the current dispatch so the guard hooks can read it; regenerated every run
 # and meaningless across machines.
 .gsd/
-.planning/phases/51-durable-delegation/live-check/out/
 tmp/*
 .bg-shell/*
 .mcp.json
