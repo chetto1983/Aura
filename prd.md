@@ -452,6 +452,14 @@ Continuation retains the exact model-facing trust-framed tool preview. Static wo
 policy and delegated goal/context stay at their correct authority levels. Bad resume/
 dead-letter rows cannot starve others. The substrate remains at-least-once across the
 disclosed external-side-effect/ledger crash window.
+The 2026-09-07 live SIGKILL/restart probe preserved a completed child's single
+attempt and report. Its unfinished sibling was reclaimed after the original 300s
+lease and completed on attempt 2; the conversation contained one durable report per
+child. This establishes recovery for the measured arithmetic tools, not exactly-once
+execution of an unfinished external action. A separate nested probe exposed a root
+model inventing child identifiers before the real reports arrived. Runtime correctness
+does not close that answer-quality gap; the existing budget-triggered completion critic
+is not a general validator of every background-delegation summary.
 
 Worker pause creation must persist the same host-authored decision policy as a
 normal runner pause in its atomic pause/park transaction. On 2026-09-07 a live child

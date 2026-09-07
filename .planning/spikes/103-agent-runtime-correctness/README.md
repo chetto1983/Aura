@@ -231,3 +231,44 @@ with nonexistent `w1-1` / `w1-2` identifiers before real reports arrived; and op
 a grandchild from the coordinator pane immediately closed the pane when its source
 card unmounted. The latter is a UI registration-lifetime defect, not a server denial:
 the native transcript endpoint already enforces conversation ownership before SSE.
+
+The pane correction `8b1757342` removes the mounted-card ownership gate while keeping
+the conversation-switch fence and the server's opaque ownership checks. Thirty-five
+worker/shell tests pass, including source-card unmount, restored child, server rejection
+and conversation change. Tests that had treated card registration as authorization were
+updated with this explicit justification. In the rebuilt image stamped `8b1757342`,
+Playwright MCP opened `w1-555e3ba8` from its parent, showed its actual command and
+`1024 2187`, and retained the same child and visible final answer after reload.
+
+## Live crash and restart
+
+R01 used conversation `01a07dcb-41f3-7ed8-9409-5ddc4b8ef8e1`. At 21:36:17 UTC,
+after the fast child had a committed report and the slow child's command had started,
+the test killed Aura with SIGKILL and started the same container. No other delegation
+was running or queued. The original 300s lease expired at 21:40:31.935 UTC and the
+daemon reclaimed the slow job at 21:40:32.642 UTC, without changing the database lease.
+
+- `w1-7c10833c`: one attempt, one successful shell execution, result 391.
+- `w2-198e91b7`: two attempts, two shell starts, one successful observed end after
+  recovery, result 551. Its command included a real 60-second sleep.
+- Both rows ended `succeeded`; SQL counted one conversation turn for each terminal
+  delivery key. The MCP browser showed both completed cards and one report per child.
+- The completed sibling was never rerun. The interrupted command can execute again:
+  the test confirms at-least-once recovery, not exactly-once external side effects.
+
+The final container is healthy at image
+`sha256:7208d3ceb58ed33777da849da0c6a66bc6678d9221ca71565d9f8b691d175af4`,
+stamped `8b1757342`. `docker compose up -d --no-deps aura` restored the ordinary
+configuration, removing the temporary nesting override. Go vet/build/race passed;
+the disposable full Go/DB coverage measurement is **34337/39724 = 86.4%**, with
+package-local policy passing. The extended mutation report records **3/3** viable
+mutants killed.
+
+## Remaining capability and quality limits
+
+Direct child steer/stop is absent: Aura registers parent-run cancel/steer and worker
+transcript/status reads, while workers have no scoped steering ingress. LibreChat's
+child controls are a reference capability, not an Aura test passed by proxy. The root
+model's premature fabricated summary in N01 is also unresolved. Its later authentic
+reports are correct, but they do not make the earlier claim true. No universal agent
+reliability score or completed parity with LibreChat is asserted.

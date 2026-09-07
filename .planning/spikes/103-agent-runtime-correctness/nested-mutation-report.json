@@ -1,0 +1,25 @@
+{
+  "mechanism": "native Go build overlays; tracked files are never mutated",
+  "results": [
+    {
+      "name": "nested_origin",
+      "file": "internal/agent/llm_agent_tool.go",
+      "test": "TestWorkerDispatchPreservesOriginConversation",
+      "status": "killed"
+    },
+    {
+      "name": "sibling_scope",
+      "file": "internal/swarm/worker_operation.go",
+      "test": "TestSynchronousWorkersSeparateInvocationsAndMutationRoots",
+      "status": "killed"
+    },
+    {
+      "name": "worker_ids",
+      "file": "internal/swarm/worker_operation.go",
+      "test": "TestSynchronousWorkersSeparateInvocationsAndMutationRoots",
+      "status": "killed"
+    }
+  ],
+  "killed": 3,
+  "total": 3
+}
