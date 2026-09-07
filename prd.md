@@ -442,6 +442,11 @@ assistant-ui's documented `ReadonlyThreadProvider` for its separate streamed mes
 it must expose streamed activity, retain conversation ownership on reload/switch, and
 leave parent composition untouched. Reference: assistant-ui `/docs/tools/multi-agent`
 and LibreChat's `SubagentCall`/`SubagentActivity`, pinned in spike 103.
+The extended nested probe found that selecting a grandchild unmounted its source card
+and immediately closed its pane. Mounted cards are not an ownership authority: the
+existing conversation-scoped transcript endpoint validates access before opening SSE.
+The pane must retain that server boundary and clear on conversation changes, while
+allowing restored or nested workers absent from the currently mounted cards.
 
 Continuation retains the exact model-facing trust-framed tool preview. Static worker
 policy and delegated goal/context stay at their correct authority levels. Bad resume/

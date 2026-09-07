@@ -218,3 +218,16 @@ The previous release CI completed with only the two obsolete swarm-table browser
 assertions failing. Commit `8b28a38e3` matches the requested inline-card UI; its Chrome
 and mobile Chrome cases passed locally. No live LibreChat runtime is installed: its
 recursive `buildSubagentConfigs` and isolated child inputs remain source references.
+
+N01 retest in conversation `01a07dc3-6d38-79a9-84cc-23e228c56e80`, image
+`3855812fe-nested` (production source committed as `cd8d59c52`), successfully executed
+three shell calls under the originating UUID: sibling `w2-9f67aa68` returned 1331;
+coordinator `w1-329a066a` spawned `w1-555e3ba8` and `w2-d96bb730`, which each ran the
+same exact command and returned `1024 2187` independently. New unit/race tests passed
+after reproducing both defects; three viable mutations were all killed.
+
+Two separate failures remained visible: the root model fabricated a premature summary
+with nonexistent `w1-1` / `w1-2` identifiers before real reports arrived; and opening
+a grandchild from the coordinator pane immediately closed the pane when its source
+card unmounted. The latter is a UI registration-lifetime defect, not a server denial:
+the native transcript endpoint already enforces conversation ownership before SSE.
