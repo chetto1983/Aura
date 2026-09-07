@@ -25,7 +25,7 @@ created: "2026-09-07"
 | **Config file** | none — the `//go:build` tag lines on each file are the config |
 | **Quick run command** | `go vet -tags 'db_integration garage_integration authula_integration musr_e2e arcadedb_integration' ./cmd/aura/` (compile-only floor, mirrors `ci.yml:465`) |
 | **Full suite command** | `make musr-e2e` (new target this phase — disposable Postgres + Garage + ArcadeDB bring-up, seed, tagged run, teardown) |
-| **Estimated runtime** | `TestTwoIdentityCrossDeny` measured at 2.98s on 2026-09-07; full `make musr-e2e` including bring-up not yet measured |
+| **Estimated runtime** | `TestTwoIdentityCrossDeny` measured at 2.98s on 2026-09-07 (six subtests, four tags, stack already up). Full `make musr-e2e` including bring-up: **not yet measured — plan `01-04` Task 2 records it.** A sub-second reading for either is a skip tell, not a speed-up. |
 
 ---
 
@@ -56,9 +56,37 @@ created: "2026-09-07"
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| _(filled by planner)_ | | | | | | | | | ⬜ pending |
+| 01-01-T1 | 01-01 | 1 | ISO-01, E2E-02 | T-01-01, T-01-02 | `EnsureBox` refuses a blank identity instead of falling back to seeded `local`; one CLI run lands all four E2E-02 resources through the unmodified saga | integration (4 tags) | `go test -race -count=1 -p 1 -tags 'db_integration garage_integration authula_integration musr_e2e' -run 'TestIdentityCreateProvisionsEveryPlane' ./cmd/aura/` | ❌ new | ⬜ pending |
+| 01-01-T2 | 01-01 | 1 | E2E-02 | T-01-04 | Compensation destroys the box FIRST, on a cancel-immune context, idempotently; a nil port skips both leg and compensation | unit (`-race`) | `go test -race -count=1 ./internal/agui/ ./internal/sandbox/usersandbox/` | ❌ new | ⬜ pending |
+| 01-01-T3 | 01-01 | 1 | E2E-02 | T-01-03 | Password and security answer never reach argv, stdout or a log; isolation-refusal, duplicate and backend failure stay distinguishable | unit | `go test -race -count=1 ./cmd/aura/ -run 'TestParseIdentityCreateFlags\|TestIdentityCreateErrors' -v` | ❌ new | ⬜ pending |
+| 01-02-T1 | 01-02 | 2 | ISO-01 | T-02-03, T-02-05 | Strict + isolation-on refuses an unreachable box image naming a command that works; non-strict and isolation-off are untouched; no secret is echoed | unit | `go test -race -count=1 ./cmd/aura/ ./internal/sandbox/usersandbox/ ./internal/config/ -run 'TestSandboxPreflight\|TestBootInfoLine\|TestEnsureImage\|TestGateMultiUserRequiresStrictProfile' -v` | ⚠️ partial — `TestGateMultiUserRequiresStrictProfile` exists (`internal/config/config_validate_test.go:233-247`), the rest new | ⬜ pending |
+| 01-02-T2 | 01-02 | 2 | ISO-01 | T-02-01, T-02-02 | The shipped default hardens rather than relaxes; the in-place upgrade path is provably untouched | config / shell | `bash -n scripts/install.sh && git diff --exit-code -- compose.yaml && bash scripts/build_installer_test.sh` | ❌ new | ⬜ pending |
+| 01-02-T3 | 01-02 | 2 | ISO-01 | T-02-01 | The exact key set a fresh install writes yields zero Fatal violations under `ProfileSingleUserHardened` | unit | `go test -race -count=1 ./cmd/aura/ -run 'TestInstallerFreshEnv' -v` | ❌ new | ⬜ pending |
+| 01-03-T1 | 01-03 | 2 | ISO-02 | T-03-01, T-03-04 | Memory cross-deny through the `identityctx` chain and through the server's own SecurityException, each with a positive control, holding while both identities read concurrently | integration (5 tags) | `go test -race -count=1 -p 1 -tags 'db_integration garage_integration authula_integration musr_e2e arcadedb_integration' -run 'TestTwoIdentityCrossDeny' -v ./cmd/aura/` | ⚠️ partial — file exists at 4 tags, the 5th tag and the three memory subtests are new | ⬜ pending |
+| 01-03-T2 | 01-03 | 2 | ISO-02 | T-03-02, T-03-06 | The MCP tenant selector honours the verified token's subject and not a caller-supplied header; no compose sidecar, so no daemon side effect | integration (`arcadedb_integration`) | `go test -race -count=1 -p 1 -tags 'arcadedb_integration' -run 'TestMemoryCrossDeny' -v ./cmd/arcadedb-mcp/` | ❌ new | ⬜ pending |
+| 01-03-T3 | 01-03 | 2 | ISO-02 | T-03-03 | `DatabaseFor` fails closed on empty and on UUID lookalikes; the mapping is total and injective; the derivation is byte-stable | unit (daemon-free) | `go test -race -count=1 ./internal/arcadedb/ -run 'TestDatabaseFor\|TestTenantUserFor\|TestPasswordFor' -v` | ❌ new | ⬜ pending |
+| 01-05-T1 | 01-05 | 2 | ISO-05 | T-05-01, T-05-04 | Two agents raced under two identities on the same tool with identical arguments neither replay nor cross; `Budget`, steer inbox and registry stay disjoint | unit (`-race` + goleak) | `go test -race -count=1 ./internal/agent/ -run TestTwoIdentityConcurrentRunsDoNotCross -v` | ❌ new | ⬜ pending |
+| 01-05-T2 | 01-05 | 2 | ISO-05 | T-05-02, T-05-03 | Sidecar paths disjoint and mutually unreachable; reservation keys do not merge in the ledger; `messages[0]` byte-identical with no identity value in it | unit (`-race`) | `go test -race -count=1 ./internal/agent/ ./internal/gateway/ -run 'TestTwoIdentityConcurrent\|TestReservationKeyCrossIdentity' -v` | ❌ new | ⬜ pending |
+| 01-05-T3 | 01-05 | 2 | ISO-05 | T-05-05 | Every assertion shown to go red when its property is deliberately broken; the reservation-key branches are killed, not merely covered | unit + mutation | `go test -race -count=1 ./internal/agent/... ./internal/gateway/ ./internal/steer/...` (mutation half is Manual-Only, below) | ❌ new | ⬜ pending |
+| 01-04-T1 | 01-04 | 3 | ISO-02a | T-04-01, T-04-02 | The exit-4 `aura`-name refusal survives the extraction; the release-blocking coverage gate produces the same result it did before | shell test + gate re-run | `bash scripts/lib/disposable_stack_test.sh && bash scripts/coverage_docker.sh` | ❌ new | ⬜ pending |
+| 01-04-T2 | 01-04 | 3 | ISO-02a | T-04-03, T-04-04 | One command from a clean checkout, no socat container, no hand-made database, and no `aura` daemon started as a compose side effect | integration / CI-shape | `make musr-e2e` | ❌ new | ⬜ pending |
+| 01-04-T3 | 01-04 | 3 | ISO-02a | T-04-03 | CI runs the identical target; the always-compile floor covers all five tags and both tiers; the job still exports the composed DSNs the skip-helpers fail on | CI-shape | `bash scripts/check_ci_go_packages.sh` plus the workflow YAML assertion in plan 01-04 Task 3 | ❌ new | ⬜ pending |
+| 01-06-T1 | 01-06 | 4 | E2E-01, E2E-02 | T-06-02, T-06-04, T-06-07 | Identity B's forced first login (password change + TOTP enrollment) driven end to end; each identity works only on data the run seeded; the deployment is left as found | live | `bash scripts/musr_live_run.sh` | ❌ new | ⬜ pending |
+| 01-06-T2 | 01-06 | 4 | E2E-01 | T-06-01, T-06-05 | A planted cross-read fails the run non-zero naming the assertion; an empty transcript or a non-overlapping timing fails rather than scoring low | live-assert + committed fixtures | `go run ./scripts/musr_live_run_assert.go --fixture clean` and `go run ./scripts/musr_live_run_assert.go --fixture leaking` (expected non-zero) | ❌ new | ⬜ pending |
+| 01-06-T3 | 01-06 | 4 | E2E-01 | T-06-03, T-06-05 | The machine-checkable half blocks and the rubric only records; `internal/agenteval/case.go`'s no-rubric-gates position stands unamended; no credential in any captured artifact | live + human-check | `go run ./scripts/musr_live_run_assert.go --transcripts .planning/phases/01-two-identities-live-and-separated/` and `git diff --exit-code -- internal/agenteval/case.go` | ❌ new | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
+
+**Sampling continuity:** no three consecutive tasks lack an automated verify — every one of the
+eighteen rows above carries a runnable command, and each command is paired in its PLAN.md with
+a stated failing direction naming the observable signal that constitutes failure (including,
+for every tag-gated command, the `[no test files]` / sub-second skip-as-green shape CLAUDE.md's
+NO SKIP-AS-GREEN rule forbids).
+
+**`human_verify_mode` is `end-of-phase`** in `.planning/config.json`, so no plan emits a
+`checkpoint:human-verify`. The one human judgement this phase needs — scoring the two live
+transcripts against the ≥9.8 rubric — is carried in plan `01-06` Task 3's
+`<verify><human-check>` block and is harvested into the phase UAT batch.
 
 ---
 
@@ -67,12 +95,31 @@ created: "2026-09-07"
 Existing infrastructure covers ISO-01's config-gate assertion (`internal/config/config_validate_test.go:233-247`)
 and ISO-02's five already-proven planes (`TestTwoIdentityCrossDeny`). Everything below is new:
 
+Reconciled against the actual six-plan decomposition. The seeded list was correct on every
+item; three additions and one correction follow from the task breakdown.
+
+- [ ] `aura identity create` CLI verb + the eager sandbox saga leg, exercised by a tagged
+      provisioning test — E2E-02, ISO-01 (plan `01-01`, tasks T1–T3). **Correction to the seed:**
+      the verb is not exercised "inside the seed step" — it is the tracer's own subject, and the
+      seed step (`scripts/authula_seed_e2e.go`) is unchanged.
 - [ ] Sandbox-image boot preflight test — ISO-01's second half; production code does not exist yet
-- [ ] `arcadedb_integration`-tagged memory cross-deny subtests inside the existing `TestTwoIdentityCrossDeny` tree — ISO-02
-- [ ] `make musr-e2e` target + its bring-up script — ISO-02a, the unattended/clean-checkout/CI leg
-- [ ] Concurrent-runner white-box test (`-race` + `goleak`, goroutines inside one `go test` process) — ISO-05
-- [ ] Live closing harness driving two concurrent authenticated `/agent/run` conversations — E2E-01
-- [ ] `aura identity create` CLI verb, exercised inside the seed step — E2E-02
+      (plan `01-02`, T1)
+- [ ] **Added:** installer fresh-`.env` contract test proving the shipped key set yields zero
+      Fatal violations under the strict profile — ISO-01 (plan `01-02`, T3)
+- [ ] `arcadedb_integration`-tagged memory cross-deny subtests inside the existing
+      `TestTwoIdentityCrossDeny` tree — ISO-02 (plan `01-03`, T1)
+- [ ] **Added:** MCP-boundary cross-deny in `cmd/arcadedb-mcp`, over the existing
+      `newAgentMemoryLiveMCPWithOptions` harness — ISO-02, D-11 item 3 (plan `01-03`, T2)
+- [ ] **Added:** daemon-free tenant edge battery (empty, malformed, adjacent, repeated) in
+      `internal/arcadedb` — ISO-02 (plan `01-03`, T3)
+- [ ] `make musr-e2e` target + its bring-up script + the extracted
+      `scripts/lib/disposable_stack.sh` — ISO-02a, the unattended/clean-checkout/CI leg
+      (plan `01-04`, T1–T3)
+- [ ] Concurrent-runner white-box test (`-race` + `goleak`, goroutines inside one `go test`
+      process) covering all four D-15 surfaces — ISO-05 (plan `01-05`, T1–T3)
+- [ ] Live closing harness driving two concurrent authenticated `/agent/run` conversations,
+      plus the blocking assert script and the recorded rubric — E2E-01, E2E-02
+      (plan `01-06`, T1–T3)
 
 ---
 
@@ -81,7 +128,8 @@ and ISO-02's five already-proven planes (`TestTwoIdentityCrossDeny`). Everything
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
 | Conversation quality of the two concurrent live identities, scored ≥9.8 | E2E-01 | The score is a judgement against a written rubric; the machine-checkable half of the same run (both conversations complete, tools fire, no cross-read) is what blocks | Run the closing harness against a live `aura serve` with two provisioned identities; score both transcripts against the phase rubric and record the evidence |
-| Mutation spot-check ≥70% killed on the phase's critical file(s) | CLAUDE.md gate | `go-mutesting` runs only under WSL and is not wired into CI | `GOFLAGS=-tags=db_integration go-mutesting ./internal/<critical>/` under WSL with the composed DSNs exported |
+| Mutation spot-check ≥70% killed on `internal/gateway` — the reservation-key machinery a prior replay defect lived in, and the surface this phase's ISO-05 evidence rests on | CLAUDE.md gate | `go-mutesting` runs only under WSL and is not wired into CI | `PATH="$HOME/.local/bin:$HOME/go/bin:$PATH" go-mutesting ./internal/gateway/` under WSL. `PASS` means killed, `FAIL` means survived; record killed/total and the ratio in the plan `01-05` SUMMARY. Result: _(pending, plan 01-05 T3)_ |
+| Each ISO-05 assertion shown to go red when its property is deliberately broken | ISO-05 | The break is a temporary source edit reverted afterwards; it cannot live in CI as a permanently-failing test | Per plan `01-05` T3: give both agents one `SessionID`, then one `*Budget`, then drain with the other run's conversation id, then inject an identity value into the system message — confirming a named assertion fails each time. Record the break-to-assertion mapping in the SUMMARY. Result: _(pending)_ |
 
 ---
 

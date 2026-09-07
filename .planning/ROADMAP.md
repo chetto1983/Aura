@@ -57,7 +57,15 @@ numbering (45–54) is not carried forward.
   3a. That gate runs unattended, from a clean checkout and in CI. On 2026-09-07 it took two undocumented manual steps: an ad-hoc socat container for Garage's admin API — now fixed by publishing :3903 on loopback (`a3536af5d`) — and a hand-created disposable database, because the test rightly refuses to migrate the live one. Neither step is written down anywhere a second person would find it.
   4. One identity's turn cannot observe or affect the other's: per-turn context, tool state and in-flight results are separated, not merely row-filtered, and the separation is demonstrated at the `runner`/`LlmAgent` level rather than asserted from a row count.
 **Closes on (live run)**: `cmd/aura/two_identity_e2e_test.go` (tag `musr_e2e`) promoted from harness to a run against a live `aura serve` with two provisioned identities, immediately followed by two authenticated concurrent `/agent/run` conversations through the AG-UI gateway — one per identity, each with real tool calls — scored against the CLAUDE.md ≥9.8 bar.
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — TRACER: a second identity provisioned end to end through `aura identity create`, with the eager sandbox saga leg, all four E2E-02 resources landing in one run (wave 1)
+- [ ] 01-02-PLAN.md — the shipped multi-identity profile in `.env.example` and the installer heredoc, the sandbox-image boot preflight, the installer image step, and the non-strict INFO line (wave 2)
+- [ ] 01-03-PLAN.md — the long-term-memory cross-deny plane on all three surfaces, the fifth build tag, and the tenant edge battery (wave 2)
+- [ ] 01-05-PLAN.md — the concurrent-runner white-box separation test under `-race` and goleak, proving all four shared execution surfaces disjoint (wave 2)
+- [ ] 01-04-PLAN.md — `make musr-e2e`, the extracted disposable-stack library, the CI job that calls the same target, and the runbook Acceptance section (wave 3)
+- [ ] 01-06-PLAN.md — the committed two-identity live-run harness, its blocking machine checks, and the recorded ≥9.8 rubric (wave 4)
 
 ### Phase 2: Permissions Decide What a User May Do
 **Goal**: What a user may DO is decided by an explicit capability grant, not by who owns the row and not by a wildcard — and a refusal is auditable and visible in the cockpit.
