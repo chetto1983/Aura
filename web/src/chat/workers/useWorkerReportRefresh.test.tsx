@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ThreadMessageLike } from '@assistant-ui/react';
+import type { SetStateAction } from 'react';
 import { fetchThreadMessages } from '../sseAdapter';
 import { preserveMessageIDs, useWorkerReportRefresh } from './useWorkerReportRefresh';
 
@@ -20,19 +21,25 @@ describe('worker report refresh', () => {
   });
   it('refreshes after report persistence, not merely model completion', async () => {
     reported = false;
-    const setMessages = vi.fn();
+    const setMessages = vi.fn<(value: SetStateAction<ThreadMessageLike[]>) => void>();
     const options = {
       threadId: 'conv',
       isRunning: false,
       historyRequestRef: { current: 1 },
       setMessages,
     };
-    const view = renderHook(() => useWorkerReportRefresh(options));
+    const view = renderHook(() => {
+      useWorkerReportRefresh(options);
+    });
     expect(fetchThreadMessages).not.toHaveBeenCalled();
     reported = true;
     view.rerender();
-    await waitFor(() => expect(setMessages).toHaveBeenCalledTimes(1));
-    expect(setMessages.mock.calls[0]?.[0]([])).toEqual(messages);
+    await waitFor(() => {
+      expect(setMessages).toHaveBeenCalledTimes(1);
+    });
+    const update = setMessages.mock.calls[0]?.[0];
+    if (typeof update !== 'function') throw new Error('expected a guarded snapshot update');
+    expect(update([])).toEqual(messages);
     view.rerender();
     expect(fetchThreadMessages).toHaveBeenCalledTimes(1);
   });
@@ -41,13 +48,22 @@ describe('worker report refresh', () => {
       threadId: 'conv',
       isRunning: true,
       historyRequestRef: { current: 1 },
-      setMessages: vi.fn(),
+      setMessages: vi.fn<(value: SetStateAction<ThreadMessageLike[]>) => void>(),
     };
-    const view = renderHook((props) => useWorkerReportRefresh(props), { initialProps: options });
+    const view = renderHook(
+      (props) => {
+        useWorkerReportRefresh(props);
+      },
+      { initialProps: options },
+    );
     expect(fetchThreadMessages).not.toHaveBeenCalled();
     view.rerender({ ...options, isRunning: false });
-    await waitFor(() => expect(options.setMessages).toHaveBeenCalledTimes(1));
-    expect(options.setMessages.mock.calls[0]?.[0]([])).toEqual(messages);
+    await waitFor(() => {
+      expect(options.setMessages).toHaveBeenCalledTimes(1);
+    });
+    const update = options.setMessages.mock.calls[0]?.[0];
+    if (typeof update !== 'function') throw new Error('expected a guarded snapshot update');
+    expect(update([])).toEqual(messages);
   });
   it('does not replace a newer send with a late snapshot', async () => {
     let resolve: ((value: ThreadMessageLike[]) => void) | undefined;
@@ -58,17 +74,18 @@ describe('worker report refresh', () => {
     );
     const generation = { current: 1 },
       setMessages = vi.fn();
-    renderHook(() =>
+    renderHook(() => {
       useWorkerReportRefresh({
         threadId: 'conv',
         isRunning: false,
         historyRequestRef: generation,
         setMessages,
-      }),
-    );
+      });
+    });
     generation.current += 1;
     await act(async () => {
       resolve?.(messages);
+      await Promise.resolve();
     });
     expect(setMessages).not.toHaveBeenCalled();
   });

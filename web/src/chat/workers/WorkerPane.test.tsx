@@ -166,7 +166,7 @@ describe('WorkerPane', () => {
               toolCallId: 'calc',
               toolName: 'shell_exec',
               args: { command: 'python3 -c "print(9*11)"' },
-              argsText: '{"command":"python3 -c \\\"print(9*11)\\\""}',
+              argsText: JSON.stringify({ command: 'python3 -c "print(9*11)"' }),
               result: '99',
             },
             { type: 'text', text: 'The result is 99.' },
@@ -175,7 +175,9 @@ describe('WorkerPane', () => {
         },
       ]);
     });
-    await waitFor(() => expect(screen.getByText('The result is 99.')).toBeTruthy());
+    await waitFor(() => {
+      expect(screen.getByText('The result is 99.')).toBeTruthy();
+    });
     expect(screen.getByText('Choose a number')).toBeTruthy();
   });
 
