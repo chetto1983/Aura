@@ -61,13 +61,13 @@ numbering (45–54) is not carried forward.
   4. One identity's turn cannot observe or affect the other's: per-turn context, tool state and in-flight results are separated, not merely row-filtered, and the separation is demonstrated at the `runner`/`LlmAgent` level rather than asserted from a row count.
 
 **Closes on (live run)**: `cmd/aura/two_identity_e2e_test.go` (tag `musr_e2e`) promoted from harness to a run against a live `aura serve` with two provisioned identities, immediately followed by two authenticated concurrent `/agent/run` conversations through the AG-UI gateway — one per identity, each with real tool calls — scored against the CLAUDE.md ≥9.8 bar.
-**Plans**: 7 plans
+**Plans**: 1/7 plans executed
 
 Plans:
 **Wave 1**
 
 - [ ] 01-01-PLAN.md — TRACER: a second identity provisioned end to end through `aura identity create`, with the eager sandbox saga leg, all four E2E-02 resources landing in one run (wave 1)
-- [ ] 01-07-PLAN.md — the Authula TOTP enrollment contract measured from the installed module before anything is built on it, and RESEARCH.md's open questions dispositioned (wave 1)
+- [x] 01-07-PLAN.md — the Authula TOTP enrollment contract measured from the installed module before anything is built on it, and RESEARCH.md's open questions dispositioned (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -232,7 +232,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Two Identities, Live and Separated | 0/TBD | Not started | - |
+| 1. Two Identities, Live and Separated | 1/7 | In Progress|  |
 | 2. Permissions Decide What a User May Do | 0/TBD | Not started | - |
 | 3. The Boundary Under Attack | 0/TBD | Not started | - |
 | 4. Load, Chaos and Truthful Degradation | 0/TBD | Not started | - |
