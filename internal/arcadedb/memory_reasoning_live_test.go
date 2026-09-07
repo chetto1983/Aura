@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -209,6 +210,10 @@ func TestReasoningGraphLive_ExpiryDeleteRace(t *testing.T) {
 	close(errs)
 	for err := range errs {
 		if err != nil {
+			var serverErr *ServerError
+			if errors.As(err, &serverErr) {
+				t.Logf("deletion error: status=%d exception=%q", serverErr.Status, serverErr.Exception)
+			}
 			t.Fatalf("expiry/delete race: %v", err)
 		}
 	}

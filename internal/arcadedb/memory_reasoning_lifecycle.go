@@ -2,7 +2,9 @@ package arcadedb
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 )
@@ -139,7 +141,7 @@ func (c *Client) deleteReasoningSelected(
 			return deleted, nil
 		}
 		lastErr = err
-		if !isTransientWriteConflict(err) || attempt == maxWriteConflictRetries {
+		if !retryReasoningDeletion(err) || attempt == maxWriteConflictRetries {
 			return 0, err
 		}
 		timer := time.NewTimer(writeConflictBackoff(attempt + 1))
@@ -153,6 +155,18 @@ func (c *Client) deleteReasoningSelected(
 		}
 	}
 	return 0, lastErr
+}
+
+func retryReasoningDeletion(err error) bool {
+	if isTransientWriteConflict(err) {
+		return true
+	}
+	// A peer may delete a vertex during a DELETE scan. Restart the rolled-back
+	// transaction and select roots again; replaying that same stale RID cannot work.
+	// Other missing resources remain errors, and persistent failures exhaust the cap.
+	var failure *ServerError
+	return errors.As(err, &failure) && failure.Status == http.StatusNotFound &&
+		failure.Exception == "com.arcadedb.exception.VertexNotFoundException"
 }
 
 func (c *Client) deleteReasoningSelectedOnce(
