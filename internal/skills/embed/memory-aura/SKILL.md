@@ -14,7 +14,7 @@ Every fact is **bitemporal**: it carries the window during which it was true. A 
 never overwritten. That single property is what makes the third case below — *it was
 true and no longer is* — the easy one rather than the impossible one.
 
-## The eleven tools, and which question each answers
+## Memory tools, and which question each answers
 
 | Tool | Reach for it when |
 |---|---|
@@ -28,20 +28,22 @@ true and no longer is* — the easy one rather than the impossible one.
 | `memory_merge_entities` | the same thing was recorded under two names |
 | `memory_forget` | it should never have been recorded |
 | `memory_reembed` | the embedder was down, or the model changed |
-| `graph_schema` | you are about to write a query by hand |
+| `graph_schema` | inspect the memory's actual types, indexes and record counts |
+| `graph_path` | connect two exact entities with a bounded path and its supporting facts |
+| `graph_diagnostics` | inspect stored connectivity and coreness; these are structural diagnostics |
 
 The first six answer *what is true*. `memory_recall` is the only one that reaches the
 record underneath — and it is the one most often left unused when it was the right
 answer.
 
-**Four ride in every turn; seven are one `tool_search` away.** `memory_recall`,
+**Four ride in every turn; the others are one `tool_search` away.** `memory_recall`,
 `memory_upsert_fact`, `memory_batch` and `memory_entities` are always in front of you.
 The rest exist and are reached by loading them first — the same way `web_search` is
 reached — so a call that names one without loading it will not find it. Prefer the four
 when they answer the question, and they usually do: `memory_recall` with `entity` is
 `memory_facts_about`, with `query` it is `memory_search`, and `memory_batch` carries
 `forget` and `merge_entities` as operations. Load the others when you actually want
-them — a dry-run `memory_forget`, a `graph_schema` before writing a query by hand.
+them — a dry-run `memory_forget`, a provenance-bearing `graph_path`, or graph diagnostics.
 
 ## Writing
 
@@ -186,10 +188,17 @@ every wrong entry is something someone has to find and remove later.
   *connects* to the rest — "what does X have to do with Y", "what else touches this" —
   and stay at 1 when you want only what is asserted of it.
 
+  Depth 2 preserves directly attached facts before neighborhood additions under
+  the result limit. Every traversed mention must have a supporting fact valid at
+  the same instant as the returned facts. Preserve the fact keys, sources and
+  validity windows when assembling an answer; use complete evidence within the
+  context budget and keep the allowance for conversation turns independent.
+
   `retrieval.path` tells you which QUERY ran — `graph` for one hop, `mentions` for two —
   and nothing about whether it found anything. Reading `mentions` as "the widening
   worked" is a mistake that has already been made: the only evidence is the count.
-  **If depth 2 returns the same facts as depth 1, the neighbourhood is empty.**
+  **Identical returned facts do not prove the neighbourhood is empty.** The result
+  limit, temporal eligibility or an incomplete linking sweep can hide additions.
 
   It is empty for a real reason worth knowing. The `MENTIONS` edges the second hop walks
   are not written when a fact is written — a periodic sweep builds them by scanning
@@ -205,10 +214,24 @@ every wrong entry is something someone has to find and remove later.
 Both `memory_search` and `memory_facts_about` take `as_of`: pass an instant to ask what
 was true THEN instead of what is true now.
 
-Every hit carries a `fact_key` naming that one fact, whichever of these found it. Keep it
-with the fact if you might correct it later — it is what `supersedes_fact_key` takes to
-close exactly that fact and no other. A fact whose window has already closed carries none:
-history is readable, not correctable, and correcting a closed fact is not a thing to want.
+For an explicit connection between two names, load `graph_path`. Its `as_of` takes
+an RFC3339 instant and returns admissible stored relationships with repeatable-read
+evidence. Without `as_of`, it describes topology across all validity windows; do not
+present that as current truth. It preserves original edge orientation even when
+traversed backwards. A MENTIONS edge is a pointer to its supporting fact, not an
+additional assertion or an independent confirmation. Removed facts/entities are
+not reconstructed. `graph_diagnostics` remains an all-validity topology view and
+rejects `as_of`.
+
+Coreness, degree, community membership and similarity are not confidence scores.
+Keep relevant supporting paths and connectors even if their core is low. No graph
+score authorizes promoting, merging or deleting a fact.
+
+An active fact's `fact_key` is what `supersedes_fact_key` takes to close exactly that
+fact. Closed facts may have no active correction key. Their database-local `rid`
+identifies the retained evidence record, and mention links retain that reference
+across supersession. A record ID is not a correction key. Inspect the validity
+window before choosing a correction operation.
 
 ## What happened, and what was thought: `memory_recall`
 

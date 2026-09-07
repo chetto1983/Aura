@@ -19,18 +19,17 @@ import (
 // spoken ABOUT rather than speaking is exactly the kind a memory is asked about,
 // and the hubs of any real graph sit on that side. memory_forget already walked
 // both directions, so the surface disagreed with itself as well.
-// factsAboutProjection is shared with the second hop so both depths return the
-// same columns; a caller must not be able to tell them apart by shape.
+// Both depths decode into FactHit; the direct SQL path retains its behavior.
 const factsAboutProjection = "SELECT statement, predicate, valid_from, valid_to, " +
 	"sources, fact_key, outV().name AS subject, outV().kind AS subject_kind, " +
-	"inV().name AS object, inV().kind AS object_kind"
+	"inV().name AS object, inV().kind AS object_kind, @rid AS rid"
 
 const factsAboutStatement = factsAboutProjection +
 	" FROM " + factEdgeType + " WHERE (outV().name = :entity OR inV().name = :entity)"
 
 const factsAboutPredicateFilter = " AND predicate = :predicate"
 
-// FactsAbout returns the facts whose subject is entity, valid at asOf.
+// FactsAbout returns facts touching entity, valid at asOf.
 // predicate narrows to one relation when given. asOf defaults to now. depth 1 is
 // the entity's own facts; depth 2 also reaches the ones sharing a mentioned
 // entity with them (memory_mentions_read.go).
@@ -56,20 +55,22 @@ func (c *Client) FactsAbout(
 	if asOf.IsZero() {
 		asOf = time.Now()
 	}
-	statement, err := factsAboutStatementForDepth(depth)
-	if err != nil {
-		return nil, err
+	predicate = strings.TrimSpace(predicate)
+	if depth == FactsAboutNeighbourhood {
+		return c.factsAboutNeighborhood(ctx, entity, predicate, limit, asOf)
 	}
-	statement += asOfFilter
+	if depth != FactsAboutDirect {
+		return nil, fmt.Errorf("arcadedb: facts depth must be %d or %d, got %d", FactsAboutDirect, FactsAboutNeighbourhood, depth)
+	}
+	statement := factsAboutStatement + asOfFilter
 	params := map[string]any{
 		"entity": entity,
 		"as_of":  asOf.UTC().Format(time.RFC3339),
 	}
-	if predicate = strings.TrimSpace(predicate); predicate != "" {
+	if predicate != "" {
 		statement += factsAboutPredicateFilter
 		params["predicate"] = predicate
 	}
-	statement += factsAboutOrdering(depth)
 	rows, err := c.Query(ctx, statement+" LIMIT "+strconv.Itoa(limit), params)
 	if err != nil {
 		return nil, fmt.Errorf("arcadedb: facts about %q: %w", entity, err)
@@ -81,21 +82,6 @@ func (c *Client) FactsAbout(
 	return hits, nil
 }
 
-// The second hop.
-//
-// depth 1 is the statement that shipped, unchanged. That is a constraint, not an
-// accident: memory_facts_about is the exact path taken whenever a question names
-// an entity, and a regression there would be worse than the absent second hop it
-// is being traded for. The depth-2 statement is a separate constant for the same
-// reason -- nothing composes them, so nothing can perturb the first by editing
-// the second.
-//
-// The neighbourhood is TWO MENTIONS hops, not one. A fact reaches a mentioned
-// entity through its own endpoints, so a fact that mentions `ArcadeDB` links its
-// subject and object to `ArcadeDB`; another fact mentioning `ArcadeDB` links ITS
-// endpoints to the same vertex. Reaching from the first fact's endpoints to the
-// second's therefore costs two hops: out to the shared entity, and back down.
-
 // Exported because FactsAbout's depth parameter is exported: callers outside this
 // package (internal/runner, cmd/arcadedb-mcp) otherwise have to write a bare 1 or 2,
 // and the validation error already spells the vocabulary out ("must be %d or %d")
@@ -104,46 +90,3 @@ const (
 	FactsAboutDirect        = 1
 	FactsAboutNeighbourhood = 2
 )
-
-// mentionNeighbourhood is the vertex set within two MENTIONS hops of :entity,
-// the entity itself included. ArcadeDB traverses through index-free adjacency, so
-// each hop is O(1) in the graph size and the cost is the neighbourhood's own
-// size -- which is what the hub cap exists to bound.
-//
-// Naming the traversal twice, once per endpoint, rather than binding it once with
-// LET: verified on 26.9.1 that this shape returns each fact EXACTLY ONCE without
-// DISTINCT, because the WHERE runs per FACT record however many reach-set vertices
-// it matches. The MATCH and Cypher forms of the same question both duplicate --
-// nine rows where four were due -- and would need a DISTINCT whose absence nothing
-// would have caught.
-const mentionNeighbourhood = "(SELECT FROM (TRAVERSE both('" + mentionsEdgeType +
-	"') FROM (SELECT FROM Entity WHERE name = :entity) WHILE $depth <= 2))"
-
-const factsNearStatement = factsAboutProjection + " FROM " + factEdgeType +
-	" WHERE (outV() IN " + mentionNeighbourhood + " OR inV() IN " + mentionNeighbourhood + ")"
-
-// factsNearOrdering is on the second hop only. The first hop has never ordered
-// its rows and adding one there would change what ships today; the second hop has
-// no such history, and a neighbourhood that reshuffles between two identical
-// calls is not something a caller can reason about.
-const factsNearOrdering = " ORDER BY created_at DESC, fact_key ASC"
-
-func factsAboutStatementForDepth(depth int) (string, error) {
-	switch depth {
-	case FactsAboutDirect:
-		return factsAboutStatement, nil
-	case FactsAboutNeighbourhood:
-		return factsNearStatement, nil
-	default:
-		return "", fmt.Errorf(
-			"arcadedb: facts depth must be %d or %d, got %d",
-			FactsAboutDirect, FactsAboutNeighbourhood, depth)
-	}
-}
-
-func factsAboutOrdering(depth int) string {
-	if depth == FactsAboutNeighbourhood {
-		return factsNearOrdering
-	}
-	return ""
-}

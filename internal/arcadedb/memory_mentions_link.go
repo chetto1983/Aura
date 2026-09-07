@@ -21,26 +21,27 @@ import (
 const (
 	mentionEntityScanStatement = "SELECT name FROM Entity LIMIT "
 
-	mentionFactScanStatement = "SELECT fact_key, statement, outV().name AS subject, " +
-		"inV().name AS object FROM " + factEdgeType + " WHERE " + asOfCondition +
+	mentionFactScanStatement = "SELECT @rid AS fact_rid, fact_key, statement, outV().name AS subject, " +
+		"inV().name AS object FROM " + factEdgeType +
 		" ORDER BY fact_key LIMIT "
 
 	mentionEdgeScanStatement = "SELECT outV().name AS source, inV().name AS target, " +
-		"fact_key FROM " + mentionsEdgeType + " LIMIT "
+		"fact_key, fact_rid FROM " + mentionsEdgeType + " LIMIT "
 
-	// IF NOT EXISTS is belt and braces over the diff below: verified on 26.9.1, a
-	// second CREATE of the same triple returns the SAME @rid and adds no row, so a
-	// sweep racing another writer cannot double an edge.
+	// IF NOT EXISTS compares only endpoints and loses a different fact's support.
+	// The native record LINK remains usable after the active correction key closes.
 	mentionCreateStatement = "CREATE EDGE " + mentionsEdgeType +
 		" FROM (SELECT FROM Entity WHERE name = :source)" +
 		" TO (SELECT FROM Entity WHERE name = :target)" +
-		" IF NOT EXISTS SET fact_key = :fact_key"
+		" SET fact_key = :fact_key, fact_rid = :fact_rid"
 
 	// DELETE FROM, not DELETE EDGE. The edge form does not parse: verified on
 	// 26.9.1, `DELETE EDGE MENTIONS WHERE ...` raises CommandSQLParsingException
 	// ("no viable alternative at input 'DELETE EDGE'").
 	mentionDeleteStatement = "DELETE FROM " + mentionsEdgeType +
-		" WHERE outV().name = :source AND inV().name = :target AND fact_key = :fact_key"
+		" WHERE outV().name = :source AND inV().name = :target AND " + mentionIdentityCondition
+
+	mentionIdentityCondition = "((fact_rid IS NOT NULL AND fact_rid = :fact_rid) OR (fact_rid IS NULL AND fact_key = :fact_key))"
 )
 
 // MentionLinkResult is what one sweep did, in numbers rather than assertions.
@@ -67,11 +68,11 @@ type mentionEdge struct {
 	Source  string
 	Target  string
 	FactKey string
+	FactRID string
 }
 
-// LinkMentions makes this identity's MENTIONS graph equal to what its current
-// facts and the configured hub cap imply, creating what is missing and removing
-// what no longer belongs.
+// LinkMentions derives links from retained facts across all validity windows.
+// Reads test supporting-fact validity; sweeps must not erase historical links.
 //
 // It never creates an Entity. A statement naming something the memory has never
 // heard of links to nothing -- the same discipline entity_refs already applies in
@@ -81,22 +82,18 @@ type mentionEdge struct {
 func (c *Client) LinkMentions(ctx context.Context) (MentionLinkResult, error) {
 	limits := c.memoryLimits()
 	scan := limits.DigestScan
-	asOf := time.Now().UTC().Format(time.RFC3339)
-
-	entityRows, err := c.Query(ctx, mentionEntityScanStatement+strconv.Itoa(scan), nil)
+	entityRows, err := c.Query(ctx, mentionEntityScanStatement+strconv.Itoa(scan+1), nil)
 	if err != nil {
 		return MentionLinkResult{}, fmt.Errorf("arcadedb: scan entities for mentions: %w", err)
 	}
 	// One row over the bound is the only honest way to tell a full corpus from a
 	// truncated one: a scan that returns exactly the bound is ambiguous.
-	factRows, err := c.Query(ctx, mentionFactScanStatement+strconv.Itoa(scan+1),
-		map[string]any{"as_of": asOf})
+	factRows, err := c.Query(ctx, mentionFactScanStatement+strconv.Itoa(scan+1), nil)
 	if err != nil {
 		return MentionLinkResult{}, fmt.Errorf("arcadedb: scan facts for mentions: %w", err)
 	}
-	covered := len(factRows) <= scan
-	if !covered {
-		factRows = factRows[:scan]
+	if len(factRows) > scan || len(entityRows) > scan {
+		return MentionLinkResult{Facts: min(len(factRows), scan), Entities: min(len(entityRows), scan), Covered: false}, nil
 	}
 
 	entities := make([]string, 0, len(entityRows))
@@ -107,7 +104,7 @@ func (c *Client) LinkMentions(ctx context.Context) (MentionLinkResult, error) {
 	}
 
 	result := MentionLinkResult{
-		Facts: len(factRows), Entities: len(entities), Covered: covered,
+		Facts: len(factRows), Entities: len(entities), Covered: true,
 	}
 	desired, stats := desiredMentionEdges(entities, factRows, limits.MentionHubShare)
 	result.Candidates, result.Bridges, result.Cap = stats.candidates, stats.bridges, stats.cap
@@ -169,7 +166,11 @@ func desiredMentionEdges(
 	bridges := map[string]struct{}{}
 	for index, row := range factRows {
 		factKey := rowString(row, "fact_key")
-		if factKey == "" {
+		factRID := rowString(row, "fact_rid")
+		if factRID != "" {
+			factKey = ""
+		}
+		if factKey == "" && factRID == "" {
 			continue
 		}
 		for _, name := range mentioned[index] {
@@ -180,7 +181,7 @@ func desiredMentionEdges(
 				if endpoint == "" {
 					continue
 				}
-				edges[mentionEdge{Source: endpoint, Target: name, FactKey: factKey}] = struct{}{}
+				edges[mentionEdge{Source: endpoint, Target: name, FactKey: factKey, FactRID: factRID}] = struct{}{}
 				bridges[name] = struct{}{}
 			}
 		}
@@ -193,32 +194,62 @@ func (c *Client) existingMentionEdges(
 	ctx context.Context,
 	scan int,
 ) (map[mentionEdge]struct{}, error) {
-	rows, err := c.Query(ctx, mentionEdgeScanStatement+strconv.Itoa(scan), nil)
+	rows, err := c.Query(ctx, mentionEdgeScanStatement+strconv.Itoa(scan+1), nil)
 	if err != nil {
 		if isMissingTypeError(err) {
 			return map[mentionEdge]struct{}{}, nil
 		}
 		return nil, fmt.Errorf("arcadedb: scan mention edges: %w", err)
 	}
+	if len(rows) > scan {
+		return nil, fmt.Errorf("arcadedb: mention edge inventory exceeds the scan bound; no reconciliation performed")
+	}
 	edges := make(map[mentionEdge]struct{}, len(rows))
 	for _, row := range rows {
+		factKey, factRID := rowString(row, "fact_key"), rowString(row, "fact_rid")
+		if factRID != "" {
+			factKey = ""
+		}
 		edges[mentionEdge{
 			Source:  rowString(row, "source"),
 			Target:  rowString(row, "target"),
-			FactKey: rowString(row, "fact_key"),
+			FactKey: factKey, FactRID: factRID,
 		}] = struct{}{}
 	}
 	return edges, nil
 }
 
 func (c *Client) commandMentionEdge(ctx context.Context, statement string, edge mentionEdge) error {
-	_, err := c.Command(ctx, statement, map[string]any{
+	params := map[string]any{
 		"source": edge.Source, "target": edge.Target, "fact_key": edge.FactKey,
-	})
-	if err != nil {
-		return fmt.Errorf("arcadedb: mention edge %s -> %s: %w", edge.Source, edge.Target, err)
 	}
-	return nil
+	if edge.FactRID != "" {
+		params["fact_rid"] = edge.FactRID
+		params["fact_key"] = nil
+	} else {
+		params["fact_rid"] = nil
+	}
+	for attempt := 0; ; attempt++ {
+		_, err := c.Command(ctx, statement, params)
+		if err == nil {
+			return nil
+		}
+		if statement != mentionCreateStatement || !isTransientWriteConflict(err) || attempt == maxWriteConflictRetries {
+			return fmt.Errorf("arcadedb: mention edge %s -> %s: %w", edge.Source, edge.Target, err)
+		}
+		rows, queryErr := c.Query(ctx, "SELECT fact_key,fact_rid FROM MENTIONS WHERE outV().name=:source AND inV().name=:target AND "+mentionIdentityCondition+" LIMIT 1", params)
+		if queryErr != nil {
+			return fmt.Errorf("arcadedb: verify concurrent mention: %w", queryErr)
+		}
+		if len(rows) == 1 && ((edge.FactRID != "" && rowString(rows[0], "fact_rid") == edge.FactRID) || (edge.FactRID == "" && rowString(rows[0], "fact_key") == edge.FactKey)) {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(writeConflictBackoff(attempt + 1)):
+		}
+	}
 }
 
 // sortedMentionEdges makes a sweep emit its statements in the same order every
@@ -235,6 +266,9 @@ func sortedMentionEdges(edges map[mentionEdge]struct{}) []mentionEdge {
 		}
 		if out[i].Target != out[j].Target {
 			return out[i].Target < out[j].Target
+		}
+		if out[i].FactRID != out[j].FactRID {
+			return out[i].FactRID < out[j].FactRID
 		}
 		return out[i].FactKey < out[j].FactKey
 	})

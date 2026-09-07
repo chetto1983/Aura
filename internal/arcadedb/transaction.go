@@ -3,7 +3,9 @@ package arcadedb
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 )
 
 // sessionHeader is ArcadeDB's own header name for scoping a request to an
@@ -21,11 +23,18 @@ const sessionHeader = "arcadedb-session-id"
 // commandInTx/queryInTx call meant to participate in it must pass the same
 // id, and the transaction must end with exactly one commitTx or rollbackTx.
 func (c *Client) beginTx(ctx context.Context) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.beginURL, nil)
+	return c.beginTxWithBody(ctx, nil)
+}
+
+func (c *Client) beginTxWithBody(ctx context.Context, body io.Reader) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.beginURL, body)
 	if err != nil {
 		return "", fmt.Errorf("arcadedb: build begin transaction request: %w", err)
 	}
 	req.Header.Set("Authorization", c.authHeader)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("arcadedb: begin transaction: %w", err)
@@ -39,6 +48,18 @@ func (c *Client) beginTx(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("arcadedb: begin transaction: server returned no %s header", sessionHeader)
 	}
 	return session, nil
+}
+
+// Native predicates and returned evidence must read the same record versions.
+// REPEATABLE_READ permits phantoms; this is not a serializable graph snapshot.
+// https://docs.arcadedb.com/arcadedb/reference/http-api/http
+func (c *Client) readRepeatable(ctx context.Context, query string, params map[string]any) ([]map[string]any, error) {
+	session, err := c.beginTxWithBody(ctx, strings.NewReader(`{"isolationLevel":"REPEATABLE_READ"}`))
+	if err != nil {
+		return nil, err
+	}
+	defer c.rollbackTx(context.WithoutCancel(ctx), session)
+	return c.executeSession(ctx, c.queryURL, session, "cypher", query, params)
 }
 
 // endTx posts to endpoint (commitURL or rollbackURL) for sessionID.

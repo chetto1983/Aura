@@ -47,16 +47,16 @@ func TestFactsAboutDepthOneEmitsTheStatementThatShipped(t *testing.T) {
 }
 
 func TestFactsAboutDepthTwoTraversesMentionsAndOrdersItsRows(t *testing.T) {
-	client, rec := newRecordingDB(t, oneFactRow)
+	client, rec := newRecordingDB(t, `{"result":[]}`, `{"result":[{"fact":{"fact_key":"observed","subject":"Davide","object":"Torino","predicate":"lives_in","statement":"Davide lives in Torino","valid_from":"2026-01-01T00:00","sources":[{"run_id":"observed","memory_ids":["source"]}]}}]}`)
 	out, err := factsAbout(t, client, MemoryFactsAboutInput{
 		Entity: "Davide", Depth: new(2),
 	})
 	if err != nil {
 		t.Fatalf("facts_about depth 2: %v", err)
 	}
-	statement := rec.statements[0]
+	statement := rec.statements[1]
 	for _, want := range []string{
-		"TRAVERSE both('MENTIONS')", "WHILE $depth <= 2", "ORDER BY created_at DESC",
+		"MENTIONS*0..2", "support.fact_key=m.fact_key", "ORDER BY CASE WHEN a=s OR b=s THEN 0 ELSE 1 END", "f.created_at DESC",
 	} {
 		if !strings.Contains(statement, want) {
 			t.Fatalf("depth 2 statement is missing %q: %s", want, statement)
@@ -64,8 +64,8 @@ func TestFactsAboutDepthTwoTraversesMentionsAndOrdersItsRows(t *testing.T) {
 	}
 	// The valid-time condition must survive the hop, or a superseded fact becomes
 	// reachable through a neighbour when it is unreachable directly.
-	if !strings.Contains(statement, "valid_to") || rec.params[0]["as_of"] == nil {
-		t.Fatalf("depth 2 dropped valid-time: %s params=%v", statement, rec.params[0])
+	if !strings.Contains(statement, "valid_to") || rec.params[1]["at"] == nil {
+		t.Fatalf("depth 2 dropped valid-time: %s params=%v", statement, rec.params[1])
 	}
 	if !strings.Contains(statement, "LIMIT") {
 		t.Fatalf("depth 2 is unbounded: %s", statement)
@@ -74,6 +74,9 @@ func TestFactsAboutDepthTwoTraversesMentionsAndOrdersItsRows(t *testing.T) {
 	// answer is indistinguishable from a lucky one.
 	if out.Retrieval.Path != "mentions" {
 		t.Fatalf("retrieval path = %q, want %q", out.Retrieval.Path, "mentions")
+	}
+	if len(out.Facts) != 1 || out.Facts[0].FactKey != "observed" {
+		t.Fatalf("evidence projection=%+v", out)
 	}
 }
 

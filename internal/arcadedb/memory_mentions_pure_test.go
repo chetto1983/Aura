@@ -232,7 +232,8 @@ func TestMentionSchemaStatementsAreIdempotentAndCreateTheEdgeType(t *testing.T) 
 	}
 	foundEdgeType := false
 	for _, stmt := range statements {
-		if !strings.Contains(stmt, "IF NOT EXISTS") {
+		idempotent := strings.Contains(stmt, "IF NOT EXISTS") || (strings.HasPrefix(stmt, "DROP INDEX ") && strings.HasSuffix(stmt, " IF EXISTS"))
+		if !idempotent {
 			t.Fatalf("statement not idempotent: %q", stmt)
 		}
 		if strings.Contains(stmt, "CREATE EDGE TYPE "+mentionsEdgeType) {

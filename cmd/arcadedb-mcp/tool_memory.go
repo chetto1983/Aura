@@ -317,6 +317,7 @@ type MemorySearchInput struct {
 
 // MemorySearchHit is one fact, with the provenance needed to check it.
 type MemorySearchHit struct {
+	RID         string             `json:"rid,omitempty" jsonschema:"database-local record identity for evidence; not a correction key"`
 	Statement   string             `json:"statement"`
 	Predicate   string             `json:"predicate"`
 	Subject     string             `json:"subject"`
@@ -465,6 +466,7 @@ func toHits(hits []arcadedb.FactHit) []MemorySearchHit {
 			sources = append(sources, MemoryFactSource{RunID: source.RunID, MemoryIDs: source.MemoryIDs})
 		}
 		out = append(out, MemorySearchHit{
+			RID:         hit.RID,
 			Statement:   hit.Statement,
 			Predicate:   hit.Predicate,
 			Subject:     hit.Subject,

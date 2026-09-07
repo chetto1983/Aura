@@ -11,13 +11,14 @@ func TestMemoryGraphRelationAllowlist(t *testing.T) {
 	}
 }
 
-func TestMemoryGraphRejectsUnboundedOrTemporalRequests(t *testing.T) {
+func TestMemoryGraphRejectsUnboundedOrInvalidTemporalRequests(t *testing.T) {
 	client, rec := recordingClient(t, `{"result":[]}`)
 	for _, request := range []MemoryGraphPathRequest{
 		{Source: "A", Target: "B", MaxDepth: 7},
 		{Source: "A", Target: "B", MaxDepth: -1},
 		{Source: "A", Target: "B", Direction: "OUT; DELETE"},
-		{Source: "A", Target: "B", MemoryGraphRequest: MemoryGraphRequest{AsOf: "2026-01-01T00:00:00Z"}},
+		{Source: "A", Target: "B", MemoryGraphRequest: MemoryGraphRequest{AsOf: "not-an-instant"}},
+		{Source: "A", Target: "B", MemoryGraphRequest: MemoryGraphRequest{AsOf: "0001-01-01T00:00:00Z"}},
 		{Source: "A", Target: "B", MemoryGraphRequest: MemoryGraphRequest{Relations: "HAS_TURN"}},
 		{Source: "A"},
 	} {

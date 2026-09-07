@@ -95,13 +95,13 @@ func measureConnectivity(t *testing.T, client *Client) connectivity {
 		t.Fatalf("count facts: %v", err)
 	}
 	edgeRows, err := client.Query(ctx,
-		"SELECT inV().name AS target, fact_key FROM "+mentionsEdgeType+" LIMIT 20000", nil)
+		"SELECT inV().name AS target, fact_rid FROM "+mentionsEdgeType+" LIMIT 20000", nil)
 	if err != nil {
 		t.Fatalf("read mention edges: %v", err)
 	}
 	byEntity := map[string]map[string]struct{}{}
 	for _, row := range edgeRows {
-		target, factKey := rowString(row, "target"), rowString(row, "fact_key")
+		target, factKey := rowString(row, "target"), rowString(row, "fact_rid")
 		if target == "" || factKey == "" {
 			continue
 		}

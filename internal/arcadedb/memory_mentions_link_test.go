@@ -371,11 +371,14 @@ func TestLinkMentionsTruncationIsVisible(t *testing.T) {
 		if result.Facts != 2 {
 			t.Fatalf("Facts = %d, want the bound 2, not the oversized row count 3", result.Facts)
 		}
-		if !strings.Contains(rec.statements[0], "LIMIT 2") {
-			t.Fatalf("entity scan = %q, want LIMIT 2", rec.statements[0])
+		if !strings.Contains(rec.statements[0], "LIMIT 3") {
+			t.Fatalf("entity scan = %q, want bound+1", rec.statements[0])
 		}
 		if !strings.Contains(rec.statements[1], "LIMIT 3") {
 			t.Fatalf("fact scan = %q, want LIMIT 3 (bound+1, so the extra row can be detected)", rec.statements[1])
+		}
+		if len(rec.statements) != 2 || result.Created != 0 || result.Removed != 0 {
+			t.Fatalf("partial scan reconciled links: %+v %v", result, rec.statements)
 		}
 	})
 	t.Run("at or under the bound is fully covered", func(t *testing.T) {
@@ -482,19 +485,18 @@ func TestLinkMentionsTreatsAMissingMentionsTypeAsEmptyButPropagatesOtherErrors(t
 	})
 }
 
-// B7: the fact scan must observe valid time -- both the SQL condition and the
-// as_of bind parameter.
-func TestLinkMentionsFactScanCarriesValidTimeCondition(t *testing.T) {
+// Historical support must survive the sweep; eligibility belongs to reads.
+func TestLinkMentionsScansRetainedHistory(t *testing.T) {
 	client, rec := recordingClient(t, mentionOneFactEntityBody, mentionOneFactFactBody, `{"result":[]}`)
 	withUncappedShare(client)
 
 	if _, err := client.LinkMentions(context.Background()); err != nil {
 		t.Fatalf("LinkMentions: %v", err)
 	}
-	if !strings.Contains(rec.statements[1], asOfCondition) {
-		t.Fatalf("fact scan = %q, want the validity condition %q", rec.statements[1], asOfCondition)
+	if strings.Contains(rec.statements[1], asOfCondition) {
+		t.Fatalf("fact scan would discard historical support: %q", rec.statements[1])
 	}
-	if asOf, _ := rec.params[1]["as_of"].(string); asOf == "" {
-		t.Fatalf("fact scan params = %v, want a non-empty as_of bind parameter", rec.params[1])
+	if rec.params[1]["as_of"] != nil {
+		t.Fatalf("historical sweep has an unexpected time filter: %v", rec.params[1])
 	}
 }

@@ -9,10 +9,10 @@ import (
 
 const graphTopologySemantics = "stored_topology_all_validity_windows"
 
-// MemoryGraphRequest selects topology, deliberately without a temporal projection.
+// MemoryGraphRequest selects relationships; paths also accept a validity instant.
 type MemoryGraphRequest struct {
 	Relations string `json:"relations,omitempty" jsonschema:"facts (default), mentions, or combined"`
-	AsOf      string `json:"as_of,omitempty" jsonschema:"not supported: topology includes all stored validity windows"`
+	AsOf      string `json:"as_of,omitempty" jsonschema:"RFC3339 validity instant for graph_path; graph_diagnostics does not support temporal projection"`
 }
 
 // MemoryGraphNode carries native structural metrics, not semantic importance.
@@ -47,19 +47,26 @@ func memoryGraphRelations(request MemoryGraphRequest) (string, error) {
 // Native procedures load every vertex before returning a bounded result. Cap
 // that input, not only the returned rows. The engine's own working-memory guard
 // remains authoritative if the database grows concurrently after this check.
-func (c *Client) memoryGraphNodes(ctx context.Context) ([]MemoryGraphNode, error) {
+func (c *Client) memoryGraphPreflight(ctx context.Context) error {
 	schema, err := c.Schema(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	remaining := int64(c.memoryLimits().GraphMaxRecords)
 	for _, group := range [][]SchemaType{schema.Vertices, schema.Edges, schema.Documents} {
 		for _, entry := range group {
 			if entry.Records < 0 || entry.Records > remaining {
-				return nil, fmt.Errorf("graph exceeds AURA_MEMORY_GRAPH_MAX_RECORDS budget")
+				return fmt.Errorf("graph exceeds AURA_MEMORY_GRAPH_MAX_RECORDS budget")
 			}
 			remaining -= entry.Records
 		}
+	}
+	return nil
+}
+
+func (c *Client) memoryGraphNodes(ctx context.Context) ([]MemoryGraphNode, error) {
+	if err := c.memoryGraphPreflight(ctx); err != nil {
+		return nil, err
 	}
 	rows, err := c.Query(ctx, "SELECT @rid AS rid, @type AS type, name, kind FROM Entity ORDER BY name LIMIT :cap",
 		map[string]any{"cap": int64(c.memoryLimits().GraphMaxRecords)})

@@ -23,7 +23,7 @@ func addMemoryGraphTools(server *mcp.Server, tenants *tenants) {
 	})
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "graph_path", Title: "Memory entity connection",
-		Description: "Find a native shortest path between two exact entity names, bounded to 1..6 hops. Only FACT and/or MENTIONS are followed. Returns original edge direction, fact sources and validity windows. Stored topology is not an as_of projection: a connection is not proof of current truth or causality. MENTIONS carries its supporting_fact or support_missing; a mention is not itself a fact.",
+		Description: "Find a native shortest path between two exact entity names, bounded to 1..6 hops. Only FACT and/or MENTIONS are followed. Optional as_of selects relationships whose facts are valid at that RFC3339 instant, with repeatable-read evidence; this covers stored relationships, not reconstruction of removed history. Without as_of returns topology across all validity windows. Returns original edge direction, fact sources and validity. A connection is not proof of causality; MENTIONS carries supporting_fact or support_missing and is not itself a fact.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input arcadedb.MemoryGraphPathRequest) (*mcp.CallToolResult, arcadedb.MemoryGraphPath, error) {
 		_, client, err := resolveCaller(ctx, tenants, req)

@@ -15,7 +15,8 @@ func TestAgentMemoryMCPLiveGraphDiagnosticsAndPath(t *testing.T) {
 	for _, edge := range [][2]string{{"GraphProbeA", "GraphProbeB"}, {"GraphProbeB", "GraphProbeC"}, {"GraphProbeC", "GraphProbeA"}, {"GraphProbeC", "GraphProbeD"}} {
 		callAgentMemoryLiveJSON[MemoryUpsertFactOutput](t, t.Context(), session, "memory_upsert_fact", map[string]any{
 			"subject": edge[0], "object": edge[1], "predicate": "links",
-			"statement": edge[0] + " links " + edge[1], "source": map[string]any{"memory_ids": []string{"graph-fixture"}},
+			"valid_from": "2026-01-01T00:00:00Z",
+			"statement":  edge[0] + " links " + edge[1], "source": map[string]any{"memory_ids": []string{"graph-fixture"}},
 		})
 	}
 	diagnostics := callAgentMemoryLiveJSON[arcadedb.MemoryGraphDiagnostics](t, t.Context(), session, "graph_diagnostics", map[string]any{"relations": "facts", "limit": 10})
@@ -27,5 +28,18 @@ func TestAgentMemoryMCPLiveGraphDiagnosticsAndPath(t *testing.T) {
 	})
 	if !path.Found || len(path.Edges) != 2 || path.Edges[0].Fact == nil || len(path.Edges[0].Fact.Sources) == 0 {
 		t.Fatalf("path = %+v", path)
+	}
+	callAgentMemoryLiveJSON[MemoryUpsertFactOutput](t, t.Context(), session, "memory_upsert_fact", map[string]any{
+		"subject": "GraphProbeA", "object": "GraphProbeD", "predicate": "expired_shortcut", "statement": "A previously connected directly to D",
+		"valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-06-01T00:00:00Z", "source": map[string]any{"memory_ids": []string{"historical-graph-fixture"}},
+	})
+	for _, tc := range []struct {
+		at    string
+		edges int
+	}{{"2026-02-01T00:00:00Z", 1}, {"2026-07-01T00:00:00Z", 2}} {
+		path := callAgentMemoryLiveJSON[arcadedb.MemoryGraphPath](t, t.Context(), session, "graph_path", map[string]any{"source": "GraphProbeA", "target": "GraphProbeD", "max_depth": 2, "as_of": tc.at})
+		if !path.Found || len(path.Edges) != tc.edges || path.AsOf != tc.at || path.Consistency != "repeatable_read" {
+			t.Fatalf("temporal path=%+v", path)
+		}
 	}
 }

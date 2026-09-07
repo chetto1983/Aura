@@ -9,7 +9,7 @@
       "additionalProperties": false,
       "properties": {
         "as_of": {
-          "description": "not supported: topology includes all stored validity windows",
+          "description": "RFC3339 validity instant for graph_path; graph_diagnostics does not support temporal projection",
           "type": "string"
         },
         "limit": {
@@ -134,12 +134,12 @@
       "idempotentHint": false,
       "readOnlyHint": true
     },
-    "description": "Find a native shortest path between two exact entity names, bounded to 1..6 hops. Only FACT and/or MENTIONS are followed. Returns original edge direction, fact sources and validity windows. Stored topology is not an as_of projection: a connection is not proof of current truth or causality. MENTIONS carries its supporting_fact or support_missing; a mention is not itself a fact.",
+    "description": "Find a native shortest path between two exact entity names, bounded to 1..6 hops. Only FACT and/or MENTIONS are followed. Optional as_of selects relationships whose facts are valid at that RFC3339 instant, with repeatable-read evidence; this covers stored relationships, not reconstruction of removed history. Without as_of returns topology across all validity windows. Returns original edge direction, fact sources and validity. A connection is not proof of causality; MENTIONS carries supporting_fact or support_missing and is not itself a fact.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "as_of": {
-          "description": "not supported: topology includes all stored validity windows",
+          "description": "RFC3339 validity instant for graph_path; graph_diagnostics does not support temporal projection",
           "type": "string"
         },
         "direction": {
@@ -173,6 +173,12 @@
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
+        "as_of": {
+          "type": "string"
+        },
+        "consistency": {
+          "type": "string"
+        },
         "direction": {
           "type": "string"
         },
@@ -193,6 +199,9 @@
                     "type": "string"
                   },
                   "predicate": {
+                    "type": "string"
+                  },
+                  "rid": {
                     "type": "string"
                   },
                   "sources": {
@@ -306,6 +315,9 @@
               "fact_key": {
                 "type": "string"
               },
+              "fact_rid": {
+                "type": "string"
+              },
               "from": {
                 "type": "string"
               },
@@ -328,6 +340,9 @@
                     "type": "string"
                   },
                   "predicate": {
+                    "type": "string"
+                  },
+                  "rid": {
                     "type": "string"
                   },
                   "sources": {
@@ -1099,6 +1114,10 @@
               "predicate": {
                 "type": "string"
               },
+              "rid": {
+                "description": "database-local record identity for evidence; not a correction key",
+                "type": "string"
+              },
               "sources": {
                 "items": {
                   "additionalProperties": false,
@@ -1424,6 +1443,10 @@
                     "predicate": {
                       "type": "string"
                     },
+                    "rid": {
+                      "description": "database-local record identity for evidence; not a correction key",
+                      "type": "string"
+                    },
                     "sources": {
                       "items": {
                         "additionalProperties": false,
@@ -1574,6 +1597,10 @@
                     "type": "string"
                   },
                   "predicate": {
+                    "type": "string"
+                  },
+                  "rid": {
+                    "description": "database-local record identity for evidence; not a correction key",
                     "type": "string"
                   },
                   "sources": {
@@ -1800,6 +1827,10 @@
               "predicate": {
                 "type": "string"
               },
+              "rid": {
+                "description": "database-local record identity for evidence; not a correction key",
+                "type": "string"
+              },
               "sources": {
                 "items": {
                   "additionalProperties": false,
@@ -2005,6 +2036,10 @@
               "predicate": {
                 "type": "string"
               },
+              "rid": {
+                "description": "database-local record identity for evidence; not a correction key",
+                "type": "string"
+              },
               "sources": {
                 "items": {
                   "additionalProperties": false,
@@ -2199,6 +2234,10 @@
                 "type": "string"
               },
               "predicate": {
+                "type": "string"
+              },
+              "rid": {
+                "description": "database-local record identity for evidence; not a correction key",
                 "type": "string"
               },
               "sources": {

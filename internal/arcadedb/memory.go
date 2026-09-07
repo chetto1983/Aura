@@ -420,6 +420,7 @@ func (c *Client) UpsertFact(ctx context.Context, fact Fact, now time.Time) (Fact
 
 // FactHit is one retrieved fact.
 type FactHit struct {
+	RID         string       `json:"rid,omitempty"`
 	Statement   string       `json:"statement"`
 	Predicate   string       `json:"predicate"`
 	Subject     string       `json:"subject"`
@@ -441,7 +442,7 @@ type FactHit struct {
 // `out.name` form, which yields NULL on an edge instead of failing.
 const searchFactsStatement = "SELECT statement, predicate, valid_from, valid_to, " +
 	"sources, fact_key, outV().name AS subject, outV().kind AS subject_kind, " +
-	"inV().name AS object, inV().kind AS object_kind " +
+	"inV().name AS object, inV().kind AS object_kind, @rid AS rid " +
 	"FROM " + factEdgeType + " WHERE SEARCH_INDEX('" + factEdgeType +
 	"[statement]', :query) = true AND $score >= :min_lexical_score"
 
@@ -518,7 +519,12 @@ func lexicalScoreFloor(query string, configured float64) float64 {
 }
 
 func factHitFromRow(row map[string]any) FactHit {
+	rid := rowString(row, "rid")
+	if rid == "" {
+		rid = rowString(row, "@rid")
+	}
 	return FactHit{
+		RID:         rid,
 		Statement:   rowString(row, "statement"),
 		Predicate:   rowString(row, "predicate"),
 		Subject:     rowString(row, "subject"),

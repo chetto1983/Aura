@@ -354,11 +354,14 @@ func parseMemoryBatchTime(value string) (time.Time, error) {
 	// even when Aura inserted an RFC3339 UTC value. Aura's memory timestamps
 	// are UTC, so restore the zone the wire representation omits.
 	// https://docs.arcadedb.com/arcadedb/reference/managing-dates
-	parsed, err := time.ParseInLocation("2006-01-02 15:04:05", value, time.UTC)
-	if err != nil {
-		return time.Time{}, err
+	// Cypher map projections serialize the same native DATETIME as local ISO,
+	// omitting seconds when zero; SQL row projections use the space form.
+	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02T15:04:05", "2006-01-02T15:04"} {
+		if parsed, err := time.ParseInLocation(layout, value, time.UTC); err == nil {
+			return parsed, nil
+		}
 	}
-	return parsed, nil
+	return time.Time{}, fmt.Errorf("invalid memory datetime %q", value)
 }
 
 func nullableMemoryBatchTime(value time.Time) any {

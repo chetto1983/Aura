@@ -17,7 +17,7 @@ import (
 //
 // A mention hangs off the fact's ENDPOINTS, not off the fact. A fact is an EDGE
 // in this model (memory.go) and an edge cannot be the endpoint of another edge,
-// so `MENTIONS` runs Entity -> Entity and carries the fact_key that caused it.
+// so `MENTIONS` runs Entity -> Entity and links to its supporting FACT record.
 //
 // Both endpoints, not just the subject. Measured on the same corpus: linking
 // from the subject alone gave a second hop to 35 entities, from both endpoints
@@ -31,6 +31,10 @@ func mentionSchemaStatements() []string {
 	return []string{
 		"CREATE EDGE TYPE " + mentionsEdgeType + " IF NOT EXISTS",
 		"CREATE PROPERTY " + mentionsEdgeType + ".fact_key IF NOT EXISTS STRING",
+		"CREATE PROPERTY " + mentionsEdgeType + ".fact_rid IF NOT EXISTS LINK",
+		"CREATE INDEX IF NOT EXISTS ON " + mentionsEdgeType + " (`@out`,`@in`,fact_rid) UNIQUE",
+		// The earlier key index conflicts when several closed supports have NULL keys.
+		"DROP INDEX `MENTIONS[@out,@in,fact_key]` IF EXISTS",
 	}
 }
 
