@@ -12656,3 +12656,39 @@ and rankers have not established real-query gain; no production tool surface cha
 > risoluzione preferisce la root del chiamante, ma il board non lo dice. (5) Misurato con **un
 > solo utente** che porta la capability `*`: che due tenant con `governance.write` non si
 > pestino i piedi sulla casa non è stato provato da nessuna misura.
+
+## Consistent temporal memory traversal (Amendment #226, 2026-09-07)
+
+Measured on the installed ArcadeDB 26.9.1-SNAPSHOT using disposable databases:
+inline Cypher relationship predicates compare native DATETIME against
+`localdatetime($at)` and find the live two-hop alternative behind an expired
+shortcut. An inline EXISTS subquery can check MENTIONS against its supporting
+FACT at the same instant. A single native query returns both the path and the
+original supporting facts, without a separately fetched eligibility-key list.
+
+The documented HTTP begin payload `isolationLevel=REPEATABLE_READ` was also
+measured: after priming the transaction with a fact and closing its validity from
+another request, the transaction still returned the original admissible edge and
+original validity, while a fresh query returned no path. This is repeatable record
+consistency, not SERIALIZABLE isolation: phantom records remain possible and no
+global frozen graph is promised. Evidence: `TestMemoryTemporalRepeatableReadProtocol`
+and spike 102 `consistent_read_test.go`.
+
+Implement `graph_path.as_of` as an RFC3339 valid-time request, normalized to UTC.
+Use the existing HTTP transaction/session implementation with REPEATABLE_READ,
+native inline eligibility and same-query evidence. Validate returned validity
+windows and supporting facts; malformed or inconsistent evidence fails closed.
+Keep original relationship orientation, source provenance, exact OAuth-scoped
+endpoints, native bounds, whole-record preflight and timeout. Without as_of the
+existing all-validity stored-topology behavior remains. Diagnostics continue to
+reject temporal projection because their algorithms lack an admissibility input.
+
+Temporal results describe admissible relationships currently stored in this
+identity, not a complete historical reconstruction of removed entities or links.
+Historical mention retention and support-aware neighborhood expansion are the
+next measured correction within the same authorized task. Selection must preserve
+direct facts before neighborhood additions. No new engine, custom traversal,
+Postgres migration, environment variable, PPR policy or community-based fact
+promotion is authorized by this amendment. The existing memory evaluation must
+measure representative support, abstention and full-evidence token budgets before
+a retrieval-quality improvement is claimed.
