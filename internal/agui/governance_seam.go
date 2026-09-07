@@ -71,6 +71,24 @@ type SkillsBoardProvider interface {
 	// It is used to compute one boolean per row and is NEVER serialized: a host path is
 	// not the cockpit's business, only the answer derived from it is.
 	WritableRoot(ctx context.Context) string
+	// WritableHouseRoot is the DEPLOYMENT root when this caller holds governance.write, and
+	// "" otherwise — the second writable root an operator has.
+	//
+	// It closes a hole #214 left open. That amendment scoped every cockpit write to the
+	// caller's own root and named `aura skills` with no --identity as the place house policy
+	// is edited instead; that CLI has no archive verb, so from 2026-09-06 a house skill was
+	// archivable from NO surface. Measured 2026-09-07 on the operator's own deployment, where
+	// every skill they had ever installed predates the per-identity roots, sits in the house
+	// root, and lost its buttons the moment the image was rebuilt.
+	//
+	// The capability is the boundary, not the path: governance.write already means "may change
+	// shared deployment configuration" (skill_manage.go says so in those words) and the write
+	// routes are mounted behind it. A tenant without it sees the house library exactly as #214
+	// left it — listed, runnable, not theirs to touch.
+	//
+	// Empty rather than a boolean beside the path, so a row is one containment check per root
+	// and an absent permission simply matches nothing.
+	WritableHouseRoot(ctx context.Context) string
 }
 
 // SchedulerBoardProvider is the scheduler-governance surface (GOV-03): the manageable

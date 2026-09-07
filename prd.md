@@ -12547,3 +12547,72 @@ then compare a short path with the existing direct/depth-2 memory reads.
 Documentation: official graph-algorithms category pages and
 reference/cypher/cypher-compatibility. Runtime behavior takes precedence over the
 upstream main branch. These probes do not measure a retrieval improvement.
+
+## Section La libreria di casa era diventata di nessuno (Amendment #225, 2026-09-07)
+
+> **Amendment #225 (2026-09-07 — misurato sul deployment dell'operatore, riprodotto su
+> Postgres vero e verificato da lui sul cockpit acceso).**
+>
+> #214/#218 hanno dato a ogni identità una root propria e hanno scopato ogni scrittura del
+> cockpit su quella del chiamante, indicando `aura skills` senza `--identity` come il posto
+> dove si modifica la policy di casa. **Quel CLI non ha mai avuto un verbo `archive`.** Dal
+> 2026-09-06 una skill di casa non era quindi archiviabile da **nessuna** superficie.
+>
+> Non è un difetto teorico: è lo stato del deployment dell'operatore. Misurato il 2026-09-07 —
+> tutte e 9 le skill stanno in `/var/lib/aura/skills`, la sua root identità
+> (`/var/lib/aura/skills-identities/<uuid>`) **non esiste** perché `RootIdentityDir` la nomina
+> soltanto e non la crea, e le due cartelle UUID dentro la root di casa sono residui di un
+> layout precedente. Le sue skill sono tutte anteriori alle root per identità: il cockpit gliele
+> mostrava con il badge "Casa" e i due verbi spenti.
+>
+> Provenienza, perché conta: i quattro commit (`55456b341` 09-05 21:58 → `54ea6c7c1` 09-06
+> 08:51) sono arrivati sulla sua macchina il 09-07, quando i container sono stati ricostruiti.
+> L'immagine che girava era del 09-04. **È una regressione consegnata da un aggiornamento**,
+> non una decisione di design che l'operatore aveva accettato — e chi scrive l'aveva prima
+> classificata come "di design da #214", sbagliando.
+>
+> **La correzione.** La capability è il confine, non la cartella: `governance.write` significa
+> già "può cambiare la configurazione condivisa del deployment" (lo dice `skill_manage.go` con
+> queste parole) e le route di scrittura del cockpit sono montate dietro di essa. Il board
+> riceve una **seconda root scrivibile** (`WritableHouseRoot`) quando il chiamante ha quella
+> capability, e i verbi risolvono la root che **contiene davvero** quel nome
+> (`rootHolding` + `ActiveExists`/`ArchivedExists`) invece della sola root dell'attore.
+> Un tenant senza capability vede la casa esattamente come #214 la lascia.
+>
+> Archivia, elenca e ripristina risolvono con **una regola sola**, e questo è il pezzo che era
+> sfuggito alla prima stesura: senza di esso una skill di casa archiviata finiva in
+> `<casa>/archived/` mentre il listing leggeva `<root del chiamante>/archived/` — sarebbe
+> sparita dal board e nessuno avrebbe potuto ripristinarla. Tre lati di un triangolo o nessuno
+> dei tre significa qualcosa.
+>
+> **I builtin sono l'eccezione, e non per permessi.** `find-skills-aura`, `memory-aura`,
+> `skill-creator` sono codice di prodotto: `MaterializeBuiltins` li riscrive al boot successivo
+> appena i byte su disco differiscono da quelli embedded. Archiviarli non fallisce — li rimuove
+> *fino al riavvio*, lasciando una riga di audit che descrive qualcosa che non è più vero. Il
+> board non offre più il verbo (`Owned` è `false` per un builtin, per chiunque) e
+> `Archive`/`Delete` lo rifiutano con un 400. La sorgente della verità è `BuiltinNames()`, che
+> legge l'albero embedded: aggiungere una cartella sotto `internal/skills/embed` è tutta la
+> registrazione, mentre una lista scritta a mano avrebbe reso archiviabile il quarto builtin
+> senza che nessuno se ne accorgesse.
+>
+> **Come è stato provato.** RED prima di ogni riga, incluso il RED su Postgres vero che
+> riproduce l'errore dell'operatore parola per parola — `archive "hs-01a07ad8": skills: no
+> active skill by that name` — poi GREEN. Un test pinna il **wiring** (entrambi i provider
+> devono ricevere lo store delle capability), perché è la metà che nessun test unitario vede e
+> quella che decide se il fix arriva al daemon. L'operatore ha poi verificato sul proprio
+> cockpit: badge "Casa" via dalle sue 6 skill, archivia e ripristina funzionanti, verbi spenti
+> sui tre builtin.
+>
+> **Cosa questa misura NON dimostra.** (1) Il modello di proprietà resta quello vecchio: la
+> **cartella** decide chi possiede una skill, mentre `aura.skill_catalog.owner_identity_id`
+> esiste, dice un'altra cosa, e su questo deployment contiene **una sola riga**
+> (`yahoo-finance` → l'operatore) che indica una skill che sta in casa. Le due nozioni sono già
+> in disaccordo e questo emendamento non le riconcilia: LibreChat 0.8.8 risolve lo stesso
+> problema con `skill.author` + ACL e `isAdmin`, ed è la direzione del design successivo.
+> (2) Le skill orfane restano orfane: nessuna migrazione le adotta. (3) La regola vale per il
+> **cockpit**: `aura skills delete` da CLI e `skill_manage` dell'agente non passano da
+> `refuseBuiltin` e possono ancora rimuovere un builtin fino al riavvio. (4) Una collisione di
+> nome fra l'archivio proprio e quello di casa mostra due righe omonime nel listing; la
+> risoluzione preferisce la root del chiamante, ma il board non lo dice. (5) Misurato con **un
+> solo utente** che porta la capability `*`: che due tenant con `governance.write` non si
+> pestino i piedi sulla casa non è stato provato da nessuna misura.

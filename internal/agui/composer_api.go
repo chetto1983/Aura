@@ -113,5 +113,5 @@ func (s *Server) handleComposerSkills(w http.ResponseWriter, r *http.Request) {
 	// verb: the row shape is shared with the board, and a row that says `owned:false`
 	// everywhere would be a wrong answer on the wire waiting for the first client to read it.
 	ctx := scopedCtx(r.Context())
-	writeJSON(w, map[string]any{"skills": activeSkillRows(s.governance.Skills.ActiveSkills(ctx), s.governance.Skills.WritableRoot(ctx))})
+	writeJSON(w, map[string]any{"skills": activeSkillRows(s.governance.Skills.ActiveSkills(ctx), s.governance.Skills.WritableRoot(ctx), s.governance.Skills.WritableHouseRoot(ctx))})
 }

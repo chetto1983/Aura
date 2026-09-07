@@ -290,6 +290,81 @@ func TestSkillsBoardArchiveIsScopedWithTheBoard(t *testing.T) {
 	}
 }
 
+// TestSkillsArchiveReachesTheHouseForAnOperator is the live proof of the 2026-09-07
+// regression: a skill sitting in the HOUSE root — which is where every skill installed before
+// the per-identity roots still lives — must be archivable by an operator holding
+// governance.write. Before this, Archive resolved to the actor's own root, found nothing, and
+// answered with a sentinel naming a library the operator was not looking at.
+func TestSkillsArchiveReachesTheHouseForAnOperator(t *testing.T) {
+	cfg := skillsBridgeConfig(t)
+	name := "hs-" + uuid.Must(uuid.NewV7()).String()[:8]
+	adapter, _, _, pool := buildSkillsInstall(t, cfg, name, "house fixture body")
+	ctx := t.Context()
+	operator := bridgeIdentity(t, pool)
+	adapter.capabilities = stubCapabilities{operator: true}
+
+	// The skill is house policy: it lives in the deployment root and in nobody's own root.
+	seedSkill(t, cfg.SkillsDir, name, "HOUSE BODY", false)
+
+	if err := adapter.Archive(ctx, operator, name); err != nil {
+		t.Fatalf("an operator must be able to archive house policy: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cfg.SkillsDir, name, "SKILL.md")); !os.IsNotExist(err) {
+		t.Fatalf("the house skill is still active after Archive (stat err = %v)", err)
+	}
+	if _, err := os.Stat(filepath.Join(cfg.SkillsDir, skills.StageArchived, name, "SKILL.md")); err != nil {
+		t.Fatalf("the house skill did not land in the deployment archive: %v", err)
+	}
+}
+
+// TestSkillsArchiveKeepsATenantOutOfTheHouse is the fence, proven live: without the capability
+// the same call must fail rather than reach the deployment's library.
+func TestSkillsArchiveKeepsATenantOutOfTheHouse(t *testing.T) {
+	cfg := skillsBridgeConfig(t)
+	name := "ht-" + uuid.Must(uuid.NewV7()).String()[:8]
+	adapter, _, _, pool := buildSkillsInstall(t, cfg, name, "house fixture body")
+	ctx := t.Context()
+	tenant := bridgeIdentity(t, pool)
+	adapter.capabilities = stubCapabilities{}
+
+	seedSkill(t, cfg.SkillsDir, name, "HOUSE BODY", false)
+
+	if err := adapter.Archive(ctx, tenant, name); err == nil {
+		t.Fatal("a tenant without governance.write must not archive house policy")
+	}
+	if _, err := os.Stat(filepath.Join(cfg.SkillsDir, name, "SKILL.md")); err != nil {
+		t.Fatalf("the refused archive must leave the house skill in place: %v", err)
+	}
+}
+
+// TestSkillsProvidersCarryACapabilitySource pins the WIRING, which is the half a unit test
+// cannot see and the half that decides whether any of this reaches the running daemon: both
+// the write provider and the board must be built with a capability source, or the house verbs
+// stay dead in production while every test above passes.
+func TestSkillsProvidersCarryACapabilitySource(t *testing.T) {
+	cfg := skillsBridgeConfig(t)
+	name := "wr-" + uuid.Must(uuid.NewV7()).String()[:8]
+	_, _, _, pool := buildSkillsInstall(t, cfg, name, "wiring fixture body")
+
+	provider := buildSkillsWriteProvider(cfg, pool, nil)
+	adapter, ok := provider.(skillsWriteAdapter)
+	if !ok {
+		t.Fatalf("write provider is %T, want skillsWriteAdapter", provider)
+	}
+	if adapter.capabilities == nil {
+		t.Fatal("the write provider was built without a capability source: the house verbs cannot work in production")
+	}
+
+	boards := buildGovernanceProviders(cfg, pool, nil, nil, newIdentityLoaders(cfg, nil))
+	board, ok := boards.Skills.(skillsBoardAdapter)
+	if !ok {
+		t.Fatalf("skills board is %T, want skillsBoardAdapter", boards.Skills)
+	}
+	if board.capabilities == nil {
+		t.Fatal("the skills board was built without a capability source: it can never mark a house row actionable")
+	}
+}
+
 // stagedHas reports whether the stage listing carries name.
 func stagedHas(staged []skills.StageSkill, name string) bool {
 	for _, sk := range staged {

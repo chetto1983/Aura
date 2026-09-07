@@ -73,6 +73,23 @@ func (w *Writer) ActiveExists(name string) bool {
 	return err == nil
 }
 
+// ArchivedExists reports whether this writer's archive holds a skill of that name (an
+// archived/<name>/SKILL.md on disk). It is the archive-side twin of ActiveExists and exists
+// for the same reason: once a caller can have two writable roots — their own and, with
+// governance.write, the house's — a verb has to be resolved against the root that actually
+// HOLDS the name, and Restore had no way to ask. A name the grammar refuses is treated as
+// "not present", exactly as ActiveExists treats it, so a bad name never reaches a path join.
+func (w *Writer) ArchivedExists(name string) bool {
+	if w.archiveDir == "" {
+		return false
+	}
+	if err := SanitizeName(name, name); err != nil {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(w.archiveDir, name, "SKILL.md"))
+	return err == nil
+}
+
 // Restore is the inverse of Archive (RESEARCH Pattern 1): it promotes
 // archived/<name> → active, re-materializes the snippet into the export dir (so the
 // loader + the D-01 host path see it again), flips the usage sidecar back to "active",

@@ -41,6 +41,9 @@ type scriptedSkillsBoard struct {
 	// is the honest answer for a fake that never placed a skill under a root.
 	writableRoot            string
 	perIdentityWritableRoot map[string]string
+	// writableHouseRoot is the SECOND writable root an operator has. Empty is a caller who
+	// does not hold governance.write, which is every caller unless a test says otherwise.
+	writableHouseRoot string
 }
 
 // activeFor is the fake's one scoping rule, applied by every read exactly as the real
@@ -78,6 +81,14 @@ func (b *scriptedSkillsBoard) WritableRoot(ctx context.Context) string {
 		return b.perIdentityWritableRoot[b.sawIdentity]
 	}
 	return b.writableRoot
+}
+
+// WritableHouseRoot is the deployment root when the caller holds governance.write. The fake
+// answers with whatever the test set, so a test can put a house skill in reach of an operator
+// and out of reach of a tenant without standing up a capability store.
+func (b *scriptedSkillsBoard) WritableHouseRoot(ctx context.Context) string {
+	b.sawIdentity = identityctx.IdentityID(ctx)
+	return b.writableHouseRoot
 }
 
 func (b *scriptedSkillsBoard) ArchivedSkills(ctx context.Context) ([]skills.StageSkill, error) {

@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"path/filepath"
 
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/skills"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -62,6 +64,9 @@ type skillsWriteAdapter struct {
 	layout       skills.Layout
 	blocklist    []string
 	bodyCapBytes int
+	// capabilities answers whether the actor may write the HOUSE library. Nil means "nobody
+	// does", which is the answer every caller got before this field existed.
+	capabilities capabilityChecker
 	// invalidate expires every cached loader snapshot the BOARD reads, so a completed write
 	// is on the board of the person who made it when the call returns instead of up to a
 	// snapshot TTL later. Nil in a composition with no loaders (the CLI-shaped tests).
@@ -73,6 +78,76 @@ type skillsWriteAdapter struct {
 // deployment-global Writer — which is exactly the pre-#214 behaviour.
 func (a skillsWriteAdapter) forActor(actor string) (*skills.Writer, error) {
 	return a.writer.For(actor)
+}
+
+// writerFor resolves the Writer a verb aimed at THIS NAME must use: the actor's own root when
+// it holds the name, and the HOUSE root when it does not and the actor holds governance.write.
+//
+// Resolving by name rather than by actor alone is what makes the board's `owned` flag honest.
+// The board lists the house library beside the caller's own, and #214 pointed every write at
+// the caller's root, so "archive that row" reached a name their root does not hold as a matter
+// of course; the operator was told their own library had no such skill about a row on screen.
+//
+// The fallback is deliberately narrow. It requires BOTH the capability and the house actually
+// holding the name, and it never widens to a third root, so a share stays unwritable and a
+// typo still fails in the caller's own library rather than silently addressing the
+// deployment's.
+func (a skillsWriteAdapter) writerFor(ctx context.Context, actor, name string) (*skills.Writer, error) {
+	return a.rootHolding(ctx, actor, name, (*skills.Writer).ActiveExists)
+}
+
+// archiveWriterFor is writerFor for the verbs that address the ARCHIVE rather than the active
+// root — Restore. Archive and Restore are two halves of one button, so resolving them by
+// different rules is how an operator sends a house skill to the house archive and then cannot
+// bring it back: the skill is not lost, but it is reachable from nowhere, which is worse than
+// the disabled button this whole change replaced.
+func (a skillsWriteAdapter) archiveWriterFor(ctx context.Context, actor, name string) (*skills.Writer, error) {
+	return a.rootHolding(ctx, actor, name, (*skills.Writer).ArchivedExists)
+}
+
+// rootHolding resolves the Writer whose root actually HOLDS this name, per the supplied
+// predicate: the actor's own root when it holds it, and the HOUSE root when it does not and the
+// actor holds governance.write.
+//
+// Resolving by name rather than by actor alone is what makes the board's `owned` flag honest.
+// The board lists the house library beside the caller's own, and #214 pointed every write at
+// the caller's root, so "archive that row" reached a name their root does not hold as a matter
+// of course; the operator was told their own library had no such skill about a row on screen.
+//
+// The fallback is deliberately narrow. It requires BOTH the capability and the house actually
+// holding the name, and it never widens to a third root, so a share stays unwritable and a typo
+// still fails in the caller's own library rather than silently addressing the deployment's.
+func (a skillsWriteAdapter) rootHolding(
+	ctx context.Context, actor, name string, holds func(*skills.Writer, string) bool,
+) (*skills.Writer, error) {
+	own, err := a.forActor(actor)
+	if err != nil {
+		return nil, err
+	}
+	if holds(own, name) || !holds(a.writer, name) {
+		return own, nil
+	}
+	if !a.mayWriteHouse(ctx, actor) {
+		return own, nil
+	}
+	return a.writer, nil
+}
+
+// mayWriteHouse answers whether this actor may address the deployment's own library. It fails
+// closed and says so once: a write that cannot prove the permission stays in the caller's own
+// root, where it fails with the sentinel that names their library rather than reaching into
+// the house's.
+func (a skillsWriteAdapter) mayWriteHouse(ctx context.Context, actor string) bool {
+	if a.capabilities == nil {
+		return false
+	}
+	allowed, err := a.capabilities.HasCapability(ctx, actor, governanceWriteCapability)
+	if err != nil {
+		slog.Warn("skills write: capability lookup failed, keeping the verb in the caller's root",
+			"identity_id", actor, "capability", governanceWriteCapability, "err", err)
+		return false
+	}
+	return allowed
 }
 
 // installerForActor is forActor's twin for the fetch transport, so an installed tree lands in
@@ -149,7 +224,7 @@ func (a skillsWriteAdapter) Search(ctx context.Context, q string) (agui.SkillsCa
 // (→ 409) BEFORE Writer.Restore (which does an os.RemoveAll on active/{name}) when an active
 // skill of the same name exists; otherwise it restores + re-materializes + audits.
 func (a skillsWriteAdapter) Restore(ctx context.Context, actor, name string) error {
-	w, err := a.forActor(actor)
+	w, err := a.archiveWriterFor(ctx, actor, name)
 	if err != nil {
 		return err
 	}
@@ -165,7 +240,10 @@ func (a skillsWriteAdapter) Restore(ctx context.Context, actor, name string) err
 
 // Archive de-materializes + moves active/{name} → archived + audits (SKW-03).
 func (a skillsWriteAdapter) Archive(ctx context.Context, actor, name string) error {
-	w, err := a.forActor(actor)
+	if err := refuseBuiltin("archive", name); err != nil {
+		return err
+	}
+	w, err := a.writerFor(ctx, actor, name)
 	if err != nil {
 		return err
 	}
@@ -174,6 +252,24 @@ func (a skillsWriteAdapter) Archive(ctx context.Context, actor, name string) err
 	}
 	a.done()
 	return nil
+}
+
+// refuseBuiltin rejects a lifecycle verb aimed at one of Aura's own skills, and it is what
+// keeps the board and the verb saying the same thing: the board stopped offering Archive and
+// Delete on a builtin, so performing one here would put back the split between what a console
+// shows and what its write does.
+//
+// The refusal is honest rather than protective. MaterializeBuiltins rewrites a builtin at the
+// next boot whenever the on-disk bytes differ from the embedded ones, so the verb does not fail
+// to remove the skill — it removes it until the next restart, which is a change that undoes
+// itself and an audit row that describes something no longer true. ErrSkillInvalidInput so the
+// route answers 400: this is a mistake to see, not an outage.
+func refuseBuiltin(verb, name string) error {
+	if !skills.IsBuiltin(name) {
+		return nil
+	}
+	return fmt.Errorf("%w: %q is one of Aura's own skills and the next boot restores it; %s is not available for it",
+		agui.ErrSkillInvalidInput, name, verb)
 }
 
 // clientSkillError re-labels the lifecycle failures the CALLER can act on — a name this
@@ -250,7 +346,10 @@ func (a skillsWriteAdapter) Validate(name, description, body string, always bool
 // root, one audit row. Writer.Delete does the real work behind its SanitizeName
 // chokepoint; its status return is discarded because the route answers 204 with no body.
 func (a skillsWriteAdapter) Delete(ctx context.Context, actor, name string) error {
-	w, err := a.forActor(actor)
+	if err := refuseBuiltin("delete", name); err != nil {
+		return err
+	}
+	w, err := a.writerFor(ctx, actor, name)
 	if err != nil {
 		return err
 	}
@@ -293,6 +392,9 @@ func buildSkillsWriteProvider(cfg *config.Config, pool *pgxpool.Pool, loaders *i
 		layout:       skillLayout(cfg),
 		blocklist:    cfg.SkillInjectionBlocklist,
 		bodyCapBytes: cfg.SkillBodyCapBytes,
+		// The same store agui.RequireCapability asks at the route mount, so what the board
+		// offers and what the verb reaches are one fact read twice, not two rules that drift.
+		capabilities: identity.New(pool),
 	}
 	if loaders != nil {
 		adapter.invalidate = loaders.invalidateAll

@@ -7,11 +7,16 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 )
 
-// builtinFS holds the skills Aura ships in-binary. Two builtins are embedded:
-// skill-creator (D-31, the spec-compliant authoring meta-skill) and find-skills-aura
-// (amendment #51 / D-40, the always:true self-extension skill). find-skills-aura now
+// builtinFS holds the skills Aura ships in-binary. Three builtins are embedded:
+// skill-creator (D-31, the spec-compliant authoring meta-skill), find-skills-aura
+// (amendment #51 / D-40, the always:true self-extension skill) and memory-aura.
+// BuiltinNames reads this tree, so the count in this sentence is prose and the set is code.
+//
+// find-skills-aura now
 // teaches DISCOVERY through the CLI (npx skills find only prints) and administrator-only
 // INSTALL through skill_manage action=install: it used to teach the CLI install too, which lands the tree
 // outside every loader root — the model followed the instruction, read "Installation
@@ -54,6 +59,37 @@ func MaterializeBuiltins(dir string) error {
 		}
 		return writeIfChanged(target, data)
 	})
+}
+
+// BuiltinNames is the sorted set of skills Aura ships in-binary, read from the embedded tree
+// rather than from a list somebody has to remember to update: adding a directory under
+// internal/skills/embed is the whole registration.
+func BuiltinNames() []string {
+	entries, err := builtinFS.ReadDir(builtinRoot)
+	if err != nil {
+		// Unreachable with a compiled-in embed.FS; an empty set is the safe answer because it
+		// only ever costs a builtin its protection, never protects something that is not one.
+		return nil
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// IsBuiltin reports whether this name is one of Aura's own skills.
+//
+// It is the answer every lifecycle surface needs: a builtin is product code, not house policy,
+// and MaterializeBuiltins rewrites it at the next boot whenever the on-disk bytes differ from
+// the embedded ones. Archiving or deleting one is therefore a change that undoes itself one
+// restart later — so the cockpit must not offer the verb and the write path must not perform
+// it. The match is exact: a name is Aura's own or it is somebody's.
+func IsBuiltin(name string) bool {
+	return slices.Contains(BuiltinNames(), name)
 }
 
 // writeIfChanged writes data to target only when target is absent or its content

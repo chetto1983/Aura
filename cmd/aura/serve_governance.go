@@ -8,6 +8,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
@@ -131,6 +132,40 @@ type skillsBoardAdapter struct {
 	loaders *identityLoaders
 	layout  skills.Layout
 	audit   *skills.AuditStore
+	// capabilities answers whether the caller may write the HOUSE library. Nil means "nobody
+	// does", which is the answer every caller got before this field existed.
+	capabilities capabilityChecker
+}
+
+// capabilityChecker is the one question the board asks the identity store. *identity.Store
+// satisfies it, and agui.RequireCapability asks that same store the same question at the
+// route mount, so the board's answer about the house verbs and the route's answer about the
+// house writes are the same fact read twice rather than two rules that can drift.
+type capabilityChecker interface {
+	HasCapability(ctx context.Context, identityID, capability string) (bool, error)
+}
+
+// WritableHouseRoot is the deployment root for a caller holding governance.write, and "" for
+// everyone else.
+//
+// It answers "" on a store error rather than opening the house library on a failed lookup: a
+// governance read that cannot PROVE the permission must not grant it, so an outage costs an
+// operator two greyed-out buttons instead of handing every caller the deployment's policy.
+func (a skillsBoardAdapter) WritableHouseRoot(ctx context.Context) string {
+	if a.capabilities == nil {
+		return ""
+	}
+	caller := identityctx.IdentityID(ctx)
+	allowed, err := a.capabilities.HasCapability(ctx, caller, governanceWriteCapability)
+	if err != nil {
+		slog.Warn("skills board: capability lookup failed, hiding the house verbs",
+			"identity_id", caller, "capability", governanceWriteCapability, "err", err)
+		return ""
+	}
+	if !allowed {
+		return ""
+	}
+	return a.layout.Global
 }
 
 func (a skillsBoardAdapter) ActiveSkills(ctx context.Context) []skills.Skill {
@@ -146,8 +181,33 @@ func (a skillsBoardAdapter) SkillBody(ctx context.Context, name string) (string,
 	return sk.Body, ok
 }
 
+// ArchivedSkills lists the caller's own archive, plus the HOUSE archive when they may write
+// it. The second half is not a convenience: Archive sends a house skill to the house archive,
+// so a listing that reads only the caller's own stage root would show an operator their policy
+// vanishing — present on disk, absent from the board, and with no Restore to bring it back.
+// The three sides of the triangle (archive, list, restore) resolve by one rule or none of them
+// mean anything.
 func (a skillsBoardAdapter) ArchivedSkills(ctx context.Context) ([]skills.StageSkill, error) {
-	return skills.ListArchived(a.archiveDir(identityctx.IdentityID(ctx)))
+	ownDir := a.archiveDir(identityctx.IdentityID(ctx))
+	own, err := skills.ListArchived(ownDir)
+	if err != nil {
+		return nil, err
+	}
+	house := a.WritableHouseRoot(ctx)
+	if house == "" {
+		return own, nil
+	}
+	houseDir := filepath.Join(house, skills.StageArchived)
+	if houseDir == ownDir {
+		// An unscoped caller already reads the house archive as their own; listing it twice
+		// would render every row a second time.
+		return own, nil
+	}
+	staged, err := skills.ListArchived(houseDir)
+	if err != nil {
+		return nil, err
+	}
+	return append(own, staged...), nil
 }
 
 // WritableRoot answers with the SAME root archiveDir stages under and skills.Writer.For
@@ -215,6 +275,9 @@ func buildGovernanceProviders(cfg *config.Config, pool *pgxpool.Pool, store agui
 			loaders: loaders,
 			layout:  skillLayout(cfg),
 			audit:   skills.NewAuditStore(pool),
+			// The same store the write provider and RequireCapability ask, so the board never
+			// offers a verb the write path would then refuse.
+			capabilities: identity.New(pool),
 		}
 	}
 

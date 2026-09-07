@@ -35,6 +35,10 @@ func (fakeSkillsBoard) AuditLog(context.Context, skills.AuditFilter) ([]skills.A
 }
 func (fakeSkillsBoard) WritableRoot(context.Context) string { return "" }
 
+// WritableHouseRoot: this fake never grants the house verbs, which is the answer for every
+// caller that does not hold governance.write.
+func (fakeSkillsBoard) WritableHouseRoot(context.Context) string { return "" }
+
 type fakeSchedulerBoard struct{}
 
 func (fakeSchedulerBoard) ListManageableTasks(context.Context) ([]cron.Task, error) { return nil, nil }

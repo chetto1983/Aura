@@ -288,7 +288,7 @@ func (s *Server) handleSkillsList(w http.ResponseWriter, r *http.Request) {
 	ctx := scopedCtx(r.Context())
 	switch stage {
 	case stageActive:
-		writeJSON(w, map[string]any{"skills": activeSkillRows(s.governance.Skills.ActiveSkills(ctx), s.governance.Skills.WritableRoot(ctx))})
+		writeJSON(w, map[string]any{"skills": activeSkillRows(s.governance.Skills.ActiveSkills(ctx), s.governance.Skills.WritableRoot(ctx), s.governance.Skills.WritableHouseRoot(ctx))})
 	case skills.StageArchived:
 		staged, err := s.governance.Skills.ArchivedSkills(ctx)
 		if err != nil {
@@ -332,7 +332,10 @@ const stageActive = "active"
 
 // activeSkillRows projects the loaded active skills onto the board row shape — the body is
 // NEVER carried (the manifest-visible metadata only). No action field: read-only board.
-func activeSkillRows(loaded []skills.Skill, writableRoot string) []skillRow {
+// houseRoot is the deployment root when this caller may write it and "" when they may not, so
+// an operator's board offers the verbs on house policy and a tenant's does not. DirWithin("")
+// is false by construction, which is why no boolean is threaded beside it.
+func activeSkillRows(loaded []skills.Skill, writableRoot, houseRoot string) []skillRow {
 	rows := make([]skillRow, 0, len(loaded))
 	for _, sk := range loaded {
 		rows = append(rows, skillRow{
@@ -341,7 +344,12 @@ func activeSkillRows(loaded []skills.Skill, writableRoot string) []skillRow {
 			Type:        sk.Type,
 			Always:      sk.Always,
 			Language:    sk.Language,
-			Owned:       skills.DirWithin(writableRoot, sk.Dir),
+			// A builtin is never owned, by anybody. It is product code rather than house
+			// policy — MaterializeBuiltins rewrites it at the next boot whenever the on-disk
+			// bytes differ — so Archive and Delete are changes that undo themselves one
+			// restart later, and a button that lies is worse than no button.
+			Owned: !skills.IsBuiltin(sk.Name) &&
+				(skills.DirWithin(writableRoot, sk.Dir) || skills.DirWithin(houseRoot, sk.Dir)),
 		})
 	}
 	return rows
