@@ -551,12 +551,20 @@ services:
     environment:
       GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?GARAGE_RPC_SECRET required in .env}
       # Admin API v2 bearer token (Phase 36 D-08). Supplied via env like GARAGE_RPC_SECRET
-      # so it is never committed to garage.toml. The [admin] block binds :3903 on the
-      # INTERNAL compose network only — there is deliberately NO 3903 host publish below
-      # (Pitfall 3: a host-reachable admin port is a privilege-escalation surface).
+      # so it is never committed to garage.toml.
       GARAGE_ADMIN_TOKEN: ${AURA_GARAGE_ADMIN_TOKEN:?AURA_GARAGE_ADMIN_TOKEN required in .env}
     ports:
       - "127.0.0.1:${AURA_GARAGE_PORT:-3900}:3900"
+      # Admin API v2 (:3903), loopback only. This publish REVERSES the original Phase 36
+      # decision, which left 3903 unpublished because "a host-reachable admin port is a
+      # privilege-escalation surface" (Pitfall 3) — the token behind it creates and deletes
+      # buckets and access keys, which is the plane per-identity object isolation rests on.
+      # Reversed 2026-09-07 on operator decision: the musr_e2e acceptance gate the MUSR
+      # rollout runbook names cannot reach the admin API without it, and running it through
+      # an ad-hoc socat forward is a step nobody repeats. The residual risk is real and
+      # unmitigated — any local process holding AURA_GARAGE_ADMIN_TOKEN now reaches the
+      # object plane of every identity. v1.1.0 ISO-07 (host boundary) owns re-examining it.
+      - "127.0.0.1:${AURA_GARAGE_ADMIN_PORT:-3903}:3903"
     volumes:
       # AURA_GARAGE_CONFIG selects the config file; the default IS today's production one, so
       # nothing changes unless an operator asks. It exists because garage.toml binds "[::]",
