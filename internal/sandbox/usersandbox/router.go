@@ -82,16 +82,11 @@ func (r *SandboxRouter) Route(ctx context.Context) (BoxHandle, error) {
 	if r == nil || r.backend == nil {
 		return BoxHandle{}, errBackendUnavailable
 	}
-	id := r.identityID(ctx)
-	h, err := r.backend.Resolve(ctx, r.specFor(id))
-	if err != nil {
-		return BoxHandle{}, err // fail-CLOSED (D-09/GATE-01) — the tool denies, never host
-	}
-	r.mu.Lock()
-	r.lastUsed[id] = r.clock()
-	r.handles[id] = h
-	r.mu.Unlock()
-	return h, nil
+	// The get-or-create body is shared with EnsureBox's explicit-identity seam
+	// (router_provision.go) — resolveAndTrack. Only identity resolution differs: Route
+	// derives it from context (with the seeded `local` fallback below); EnsureBox takes it
+	// as a parameter and refuses a blank one.
+	return r.resolveAndTrack(ctx, r.identityID(ctx))
 }
 
 // identityID resolves the caller principal: the authenticated identity from identityctx, or the
