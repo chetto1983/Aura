@@ -1,8 +1,9 @@
 # Native memory graph surface — 2026-09-07
 
 Status: implemented and deployed locally; mounted-MCP acceptance completed on
-2026-09-07 through the operator's authenticated Codex tools. Temporal traversal
-and a general retrieval-quality benchmark remain unmeasured.
+2026-09-07 through the operator's authenticated Codex tools. Native temporal
+traversal feasibility is now measured in spike 102; production temporal support
+and a general retrieval-quality benchmark remain open.
 
 ## Contract
 
@@ -137,6 +138,53 @@ independent. The path adds no unique supporting fact beyond depth 2 in this case
 
 These are single-identity, single-session observations, not a frozen snapshot,
 a general retrieval gain, an E2E quality score, or new coverage/mutation evidence.
-Next design question: native traversal over temporally admissible relationships,
-followed by a measured comparison of bounded expansion and query-conditioned graph
-ranking. Keep fact and conversation quotas independent throughout.
+
+## Temporal traversal follow-up — 2026-09-07
+
+[Spike 102](../.planning/spikes/102-temporal-memory-traversal/README.md) and its
+checked-in live race output now measure the next design question on disposable data.
+Native `shortestPath` with an inline eligible-fact-key predicate passes 15 path
+cases. An expired one-hop shortcut no longer hides a valid two-hop route; filtering
+the selected shortest path afterward does hide it. Future/unknown validity,
+unsupported mentions, disjoint windows, direction and depth bounds are exercised.
+
+Two limits were reproduced: deleting support between key collection and traversal
+leaves a stale keyset able to return that mention path; refreshing the keyset
+excludes it. The actual `LinkMentions` sweep removes expired mentions while their
+historical facts remain, so surviving mention topology cannot promise complete
+historical recall.
+
+Native PPR from an outgoing sink gives every other entity zero, and from a source
+can score future or unsupported connections. At equal 32/64-character statement
+budgets, bounded expansion and native PPR ordering retain 0/2 and 2/2 required
+supporting facts respectively: no gain in this synthetic comparison. Conversation
+quotas remain untouched. This is not a tokenizer or real-query benchmark.
+
+The operator's structural-analysis reference prompted an additional live check:
+Start/Middle/Target have core 2 in the stored FACT fixture, but core 1 after
+projecting only July-admissible FACT edges in the disposable database. Middle's
+triangle count falls from 1 to 0; Middle and Target become articulation points.
+A core >= 2 retention rule would lose the entire valid answer path. K-core and
+cut-vertex diagnostics should be interpreted together on the admissible graph,
+without treating structural scores as factual confidence.
+
+The next production slice is FACT-only temporal paths with a verified consistency
+contract. Historical mentions remain unsupported until retention/reconstruction is
+measured. Existing mounted tools still reject `as_of`; the spike changes no runtime
+contract and supplies no new package coverage or production E2E score.
+
+## Full graph-algorithm inventory and trials — 2026-09-07
+
+At the operator's request, [all 71 catalog entries](../.planning/spikes/102-temporal-memory-traversal/ALGORITHM-INVENTORY.md)
+were reviewed and 39 native procedures executed on a dedicated eight-node fixture.
+The strongest next candidates are Leiden for community organization, articulation
+points/biconnected components for preserving connectors, BFS for bounded expansion,
+and Steiner for connecting several requested entities. FastRP is an experimental
+structural embedding baseline; no text-embedding replacement is implied.
+
+Two independent metric counterexamples exclude adoption: conductance reports zero
+for a real one-edge community cut, and modularityScore reports 0.75 for a single
+community whose mathematical modularity is zero. K-shortest/random-walk responses
+also lack relationship provenance despite carrying ordered nodes. Complete native
+queries, outputs, selection rationale and limits are recorded in the spike.
+Successful procedure execution is distinguished from correctness and retrieval gain.

@@ -1,0 +1,226 @@
+=== RUN   TestCommunityMetricCounterexamples
+    algorithm_counterexamples_test.go:26: conductance counterexample: community=1 actual_cut=1 expected=1/7 native_cut=0 native_conductance=0
+    algorithm_counterexamples_test.go:26: conductance counterexample: community=2 actual_cut=1 expected=1/7 native_cut=0 native_conductance=0
+    algorithm_counterexamples_test.go:37: single-community modularity: mathematical_oracle=0 native=0.75
+--- PASS: TestCommunityMetricCounterexamples (0.04s)
+=== RUN   TestCommunityAndEmbeddingRepeatability
+=== RUN   TestCommunityAndEmbeddingRepeatability/louvain
+    algorithm_counterexamples_test.go:63: three identical fixed-input runs
+=== RUN   TestCommunityAndEmbeddingRepeatability/leiden
+    algorithm_counterexamples_test.go:63: three identical fixed-input runs
+=== RUN   TestCommunityAndEmbeddingRepeatability/labelpropagation
+    algorithm_counterexamples_test.go:63: three identical fixed-input runs
+=== RUN   TestCommunityAndEmbeddingRepeatability/fastrp
+    algorithm_counterexamples_test.go:63: three identical fixed-input runs
+    algorithm_counterexamples_test.go:85: cosine A/B=0.9701527749736624
+    algorithm_counterexamples_test.go:85: cosine A/D=0.7644183995515813
+    algorithm_counterexamples_test.go:85: cosine A/Isolated=0.1381321604672809
+=== RUN   TestCommunityAndEmbeddingRepeatability/graphsage
+    algorithm_counterexamples_test.go:63: three identical fixed-input runs
+    algorithm_counterexamples_test.go:85: cosine A/B=0.8840512966217866
+    algorithm_counterexamples_test.go:85: cosine A/D=0.9497900222021513
+    algorithm_counterexamples_test.go:85: cosine A/Isolated=0.728484822600046
+--- PASS: TestCommunityAndEmbeddingRepeatability (0.06s)
+    --- PASS: TestCommunityAndEmbeddingRepeatability/louvain (0.01s)
+    --- PASS: TestCommunityAndEmbeddingRepeatability/leiden (0.00s)
+    --- PASS: TestCommunityAndEmbeddingRepeatability/labelpropagation (0.01s)
+    --- PASS: TestCommunityAndEmbeddingRepeatability/fastrp (0.01s)
+    --- PASS: TestCommunityAndEmbeddingRepeatability/graphsage (0.01s)
+=== RUN   TestRelevantAlgorithmCatalog
+=== RUN   TestRelevantAlgorithmCatalog/graphSummary
+    algorithms_test.go:110: query=CALL algo.graphSummary('FACT','Entity') YIELD nodeCount,edgeCount,isolatedNodes RETURN nodeCount,edgeCount,isolatedNodes duration_ms=2.100 rows=[{"edgeCount":8,"isolatedNodes":2,"nodeCount":8}]
+=== RUN   TestRelevantAlgorithmCatalog/degree
+    algorithms_test.go:110: query=CALL algo.degree('FACT','BOTH') YIELD node,degree,inDegree,outDegree RETURN node,degree,inDegree,outDegree duration_ms=1.977 rows=[{"degree":2,"inDegree":1,"node":"A","outDegree":1},{"degree":2,"inDegree":1,"node":"B","outDegree":1},{"degree":3,"inDegree":1,"node":"C","outDegree":2},{"degree":3,"inDegree":2,"node":"D","outDegree":1},{"degree":2,"inDegree":1,"node":"E","outDegree":1},{"degree":3,"inDegree":1,"node":"F","outDegree":2},{"degree":1,"inDegree":1,"node":"Tail","outDegree":0},{"degree":0,"inDegree":0,"node":"Isolated","outDegree":0}]
+=== RUN   TestRelevantAlgorithmCatalog/wcc
+    algorithms_test.go:110: query=CALL algo.wcc('FACT') YIELD node,componentId RETURN node,componentId duration_ms=2.061 rows=[{"componentId":0,"node":"A"},{"componentId":0,"node":"B"},{"componentId":0,"node":"C"},{"componentId":0,"node":"D"},{"componentId":0,"node":"E"},{"componentId":0,"node":"F"},{"componentId":0,"node":"Tail"},{"componentId":1,"node":"Isolated"}]
+=== RUN   TestRelevantAlgorithmCatalog/scc
+    algorithms_test.go:110: query=CALL algo.scc('FACT') YIELD node,componentId RETURN node,componentId duration_ms=2.476 rows=[{"componentId":1,"node":"A"},{"componentId":1,"node":"B"},{"componentId":1,"node":"C"},{"componentId":2,"node":"D"},{"componentId":2,"node":"E"},{"componentId":2,"node":"F"},{"componentId":3,"node":"Tail"},{"componentId":0,"node":"Isolated"}]
+=== RUN   TestRelevantAlgorithmCatalog/kcore
+    algorithms_test.go:110: query=CALL algo.kcore('FACT') YIELD node,coreNumber RETURN node,coreNumber duration_ms=3.853 rows=[{"coreNumber":2,"node":"A"},{"coreNumber":2,"node":"B"},{"coreNumber":2,"node":"C"},{"coreNumber":2,"node":"D"},{"coreNumber":2,"node":"E"},{"coreNumber":2,"node":"F"},{"coreNumber":1,"node":"Tail"},{"coreNumber":0,"node":"Isolated"}]
+=== RUN   TestRelevantAlgorithmCatalog/triangleCount
+    algorithms_test.go:110: query=CALL algo.triangleCount('FACT') YIELD node,triangles,clusteringCoefficient RETURN node,triangles,clusteringCoefficient duration_ms=4.055 rows=[{"clusteringCoefficient":1,"node":"A","triangles":1},{"clusteringCoefficient":1,"node":"B","triangles":1},{"clusteringCoefficient":0.3333333333333333,"node":"C","triangles":1},{"clusteringCoefficient":0.3333333333333333,"node":"D","triangles":1},{"clusteringCoefficient":1,"node":"E","triangles":1},{"clusteringCoefficient":0.3333333333333333,"node":"F","triangles":1},{"clusteringCoefficient":0,"node":"Tail","triangles":0},{"clusteringCoefficient":0,"node":"Isolated","triangles":0}]
+=== RUN   TestRelevantAlgorithmCatalog/articulationPoints
+    algorithms_test.go:110: query=CALL algo.articulationPoints('FACT') YIELD node RETURN node duration_ms=2.063 rows=[{"node":"C"},{"node":"D"},{"node":"F"}]
+=== RUN   TestRelevantAlgorithmCatalog/bridges
+    algorithms_test.go:110: query=CALL algo.bridges('FACT') YIELD source,target RETURN source,target duration_ms=4.084 rows=[{"source":"F","target":"Tail"},{"source":"C","target":"D"}]
+=== RUN   TestRelevantAlgorithmCatalog/biconnectedComponents
+    algorithms_test.go:110: query=CALL algo.biconnectedComponents('FACT') YIELD node,componentId RETURN node,componentId duration_ms=3.089 rows=[{"componentId":3,"node":"A"},{"componentId":3,"node":"B"},{"componentId":2,"node":"C"},{"componentId":3,"node":"C"},{"componentId":1,"node":"D"},{"componentId":2,"node":"D"},{"componentId":1,"node":"E"},{"componentId":0,"node":"F"},{"componentId":1,"node":"F"},{"componentId":0,"node":"Tail"}]
+=== RUN   TestRelevantAlgorithmCatalog/kTruss
+    algorithms_test.go:110: query=CALL algo.kTruss('FACT',3) YIELD nodeId,trussNumber RETURN nodeId,trussNumber duration_ms=10.017 rows=[{"nodeId":"A","trussNumber":3},{"nodeId":"B","trussNumber":3},{"nodeId":"C","trussNumber":3},{"nodeId":"D","trussNumber":3},{"nodeId":"E","trussNumber":3},{"nodeId":"F","trussNumber":3},{"nodeId":"Tail","trussNumber":2},{"nodeId":"Isolated","trussNumber":0}]
+=== RUN   TestRelevantAlgorithmCatalog/localClusteringCoefficient
+    algorithms_test.go:110: query=CALL algo.localClusteringCoefficient('FACT') YIELD node,localClusteringCoefficient RETURN node,localClusteringCoefficient duration_ms=3.120 rows=[{"localClusteringCoefficient":1,"node":"A"},{"localClusteringCoefficient":1,"node":"B"},{"localClusteringCoefficient":0.3333333333333333,"node":"C"},{"localClusteringCoefficient":0.3333333333333333,"node":"D"},{"localClusteringCoefficient":1,"node":"E"},{"localClusteringCoefficient":0.3333333333333333,"node":"F"},{"localClusteringCoefficient":0,"node":"Tail"},{"localClusteringCoefficient":0,"node":"Isolated"}]
+=== RUN   TestRelevantAlgorithmCatalog/densestSubgraph
+    algorithms_test.go:110: query=CALL algo.densestSubgraph('FACT') YIELD node,inDenseSubgraph,density RETURN node,inDenseSubgraph,density duration_ms=1.948 rows=[{"density":1.1666666666666667,"inDenseSubgraph":true,"node":"A"},{"density":1.1666666666666667,"inDenseSubgraph":true,"node":"B"},{"density":1.1666666666666667,"inDenseSubgraph":true,"node":"C"},{"density":1.1666666666666667,"inDenseSubgraph":true,"node":"D"},{"density":1.1666666666666667,"inDenseSubgraph":true,"node":"E"},{"density":1.1666666666666667,"inDenseSubgraph":true,"node":"F"},{"density":1.1666666666666667,"inDenseSubgraph":false,"node":"Tail"},{"density":1.1666666666666667,"inDenseSubgraph":false,"node":"Isolated"}]
+=== RUN   TestRelevantAlgorithmCatalog/clique
+    algorithms_test.go:110: query=CALL algo.clique('FACT',3) YIELD clique,size RETURN clique,size duration_ms=4.840 rows=[{"clique":["A","B","C"],"size":3},{"clique":["D","E","F"],"size":3}]
+=== RUN   TestRelevantAlgorithmCatalog/pagerank
+    algorithms_test.go:110: query=CALL algo.pagerank({maxIterations:100,tolerance:0.000001}) YIELD node,score RETURN node,score duration_ms=2.751 rows=[{"node":"A","score":0.08859255263947885},{"node":"B","score":0.1096712210036894},{"node":"C","score":0.12758798843442662},{"node":"D","score":0.16684615770034075},{"node":"E","score":0.17618726977767254},{"node":"F","score":0.18412599851913078},{"node":"Tail","score":0.1126212084930615},{"node":"Isolated","score":0.034367603432199564}]
+=== RUN   TestRelevantAlgorithmCatalog/personalizedPageRank
+    algorithms_test.go:110: query=MATCH (a:Entity {name:'A'}) CALL algo.personalizedPageRank(a,'FACT',0.85,100,0.000001) YIELD nodeId,score RETURN nodeId,score duration_ms=8.084 rows=[{"nodeId":"A","score":0.25983967169054106},{"nodeId":"B","score":0.22086437153227306},{"nodeId":"C","score":0.1877339973949577},{"nodeId":"D","score":0.11514274279879351},{"nodeId":"E","score":0.09787209346358675},{"nodeId":"F","score":0.08319124206880886},{"nodeId":"Tail","score":0.035355881051039116},{"nodeId":"Isolated","score":0}]
+=== RUN   TestRelevantAlgorithmCatalog/betweenness
+    algorithms_test.go:110: query=CALL algo.betweenness({normalized:true}) YIELD node,score RETURN node,score duration_ms=2.345 rows=[{"node":"A","score":0.023809523809523808},{"node":"B","score":0.11904761904761904},{"node":"C","score":0.21428571428571427},{"node":"D","score":0.23809523809523808},{"node":"E","score":0.19047619047619047},{"node":"F","score":0.14285714285714285},{"node":"Tail","score":0},{"node":"Isolated","score":0}]
+=== RUN   TestRelevantAlgorithmCatalog/harmonic
+    algorithms_test.go:110: query=CALL algo.harmonic('FACT','BOTH',true) YIELD node,score RETURN node,score duration_ms=2.152 rows=[{"node":"A","score":0.48809523809523814},{"node":"B","score":0.48809523809523814},{"node":"C","score":0.619047619047619},{"node":"D","score":0.6428571428571429},{"node":"E","score":0.5238095238095238},{"node":"F","score":0.5952380952380952},{"node":"Tail","score":0.40476190476190477},{"node":"Isolated","score":0}]
+=== RUN   TestRelevantAlgorithmCatalog/closeness
+    algorithms_test.go:110: query=CALL algo.closeness('FACT','BOTH',true) YIELD node,score RETURN node,score duration_ms=2.191 rows=[{"node":"A","score":0.36734693877551017},{"node":"B","score":0.36734693877551017},{"node":"C","score":0.5142857142857142},{"node":"D","score":0.5714285714285714},{"node":"E","score":0.42857142857142855},{"node":"F","score":0.46753246753246747},{"node":"Tail","score":0.3214285714285714},{"node":"Isolated","score":0}]
+=== RUN   TestRelevantAlgorithmCatalog/hits
+    algorithms_test.go:110: query=CALL algo.hits('FACT',100,0.000001) YIELD node,hubScore,authorityScore RETURN node,hubScore,authorityScore duration_ms=2.739 rows=[{"authorityScore":0.4082482904638095,"hubScore":1.478384620904958e-7,"node":"A"},{"authorityScore":2.560637276535617e-7,"hubScore":1.478384620904958e-7,"node":"B"},{"authorityScore":2.560637276535617e-7,"hubScore":0.7071067811865167,"node":"C"},{"authorityScore":0.816496580927619,"hubScore":1.478384620904958e-7,"node":"D"},{"authorityScore":2.560637276535617e-7,"hubScore":1.478384620904958e-7,"node":"E"},{"authorityScore":2.560637276535617e-7,"hubScore":0.7071067811865167,"node":"F"},{"authorityScore":0.4082482904638095,"hubScore":0,"node":"Tail"},{"authorityScore":0,"hubScore":0,"node":"Isolated"}]
+=== RUN   TestRelevantAlgorithmCatalog/voteRank
+    algorithms_test.go:110: query=CALL algo.voteRank('FACT',3) YIELD nodeId,rank RETURN nodeId,rank duration_ms=2.635 rows=[{"nodeId":"D","rank":1},{"nodeId":"A","rank":2},{"nodeId":"Tail","rank":3}]
+=== RUN   TestRelevantAlgorithmCatalog/louvain
+    algorithms_test.go:110: query=CALL algo.louvain({maxIterations:20}) YIELD node,communityId,modularity RETURN node,communityId,modularity duration_ms=2.469 rows=[{"communityId":0,"modularity":0.1171875,"node":"A"},{"communityId":1,"modularity":0.1171875,"node":"B"},{"communityId":0,"modularity":0.1171875,"node":"C"},{"communityId":2,"modularity":0.1171875,"node":"D"},{"communityId":3,"modularity":0.1171875,"node":"E"},{"communityId":2,"modularity":0.1171875,"node":"F"},{"communityId":2,"modularity":0.1171875,"node":"Tail"},{"communityId":4,"modularity":0.1171875,"node":"Isolated"}]
+    algorithms_test.go:114: communities=map[0:[A C] 1:[B] 2:[D F Tail] 3:[E] 4:[Isolated]]
+=== RUN   TestRelevantAlgorithmCatalog/leiden
+    algorithms_test.go:110: query=CALL algo.leiden('FACT',20,1.0) YIELD nodeId,community RETURN nodeId,community duration_ms=2.272 rows=[{"community":0,"nodeId":"A"},{"community":0,"nodeId":"B"},{"community":0,"nodeId":"C"},{"community":1,"nodeId":"D"},{"community":1,"nodeId":"E"},{"community":1,"nodeId":"F"},{"community":1,"nodeId":"Tail"},{"community":2,"nodeId":"Isolated"}]
+    algorithms_test.go:114: communities=map[0:[A B C] 1:[D E F Tail] 2:[Isolated]]
+=== RUN   TestRelevantAlgorithmCatalog/labelpropagation
+    algorithms_test.go:110: query=CALL algo.labelpropagation({maxIterations:20,direction:'BOTH'}) YIELD node,communityId RETURN node,communityId duration_ms=2.082 rows=[{"communityId":0,"node":"A"},{"communityId":0,"node":"B"},{"communityId":0,"node":"C"},{"communityId":0,"node":"D"},{"communityId":0,"node":"E"},{"communityId":0,"node":"F"},{"communityId":0,"node":"Tail"},{"communityId":7,"node":"Isolated"}]
+    algorithms_test.go:114: communities=map[0:[A B C D E F Tail] 7:[Isolated]]
+=== RUN   TestRelevantAlgorithmCatalog/slpa
+    algorithms_test.go:110: query=CALL algo.slpa({iterations:20,threshold:0.1,seed:42}) YIELD node,communities RETURN node,communities duration_ms=2.350 rows=[{"communities":[0],"node":"A"},{"communities":[0],"node":"B"},{"communities":[0],"node":"C"},{"communities":[0,5],"node":"D"},{"communities":[0,3,5],"node":"E"},{"communities":[0,4,5],"node":"F"},{"communities":[0,4,5],"node":"Tail"},{"communities":[7],"node":"Isolated"}]
+=== RUN   TestRelevantAlgorithmCatalog/jaccard
+    algorithms_test.go:110: query=MATCH (a:Entity {name:'A'}) CALL algo.jaccard(a,'FACT','BOTH',0.01) YIELD node1,node2,similarity RETURN node1,node2,similarity duration_ms=2.164 rows=[{"node1":"A","node2":"B","similarity":0.3333333333333333},{"node1":"A","node2":"C","similarity":0.25},{"node1":"A","node2":"D","similarity":0.25}]
+=== RUN   TestRelevantAlgorithmCatalog/adamicAdar
+    algorithms_test.go:110: query=MATCH (a:Entity {name:'A'}) CALL algo.adamicAdar(a,'FACT','BOTH',0.01) YIELD node1,node2,score RETURN node1,node2,score duration_ms=2.070 rows=[{"node1":"A","node2":"C","score":1.4426950408889634},{"node1":"A","node2":"B","score":0.9102392266268373},{"node1":"A","node2":"D","score":0.9102392266268373}]
+=== RUN   TestRelevantAlgorithmCatalog/commonNeighbors
+    algorithms_test.go:110: query=MATCH (a:Entity {name:'A'}) CALL algo.commonNeighbors(a,'FACT','BOTH',1) YIELD node1,node2,commonNeighbors RETURN node1,node2,commonNeighbors duration_ms=2.632 rows=[{"commonNeighbors":1,"node1":"A","node2":"B"},{"commonNeighbors":1,"node1":"A","node2":"C"},{"commonNeighbors":1,"node1":"A","node2":"D"}]
+=== RUN   TestRelevantAlgorithmCatalog/resourceAllocation
+    algorithms_test.go:110: query=MATCH (a:Entity {name:'A'}) CALL algo.resourceAllocation(a,'FACT','BOTH',0.01) YIELD node1,node2,score RETURN node1,node2,score duration_ms=2.166 rows=[{"node1":"A","node2":"C","score":0.5},{"node1":"A","node2":"B","score":0.3333333333333333},{"node1":"A","node2":"D","score":0.3333333333333333}]
+=== RUN   TestRelevantAlgorithmCatalog/knn
+    algorithms_test.go:110: query=CALL algo.knn(2,'FACT','BOTH') YIELD node1,node2,similarity RETURN node1,node2,similarity duration_ms=2.122 rows=[{"node1":"A","node2":"B","similarity":0.3333333333333333},{"node1":"A","node2":"C","similarity":0.25},{"node1":"B","node2":"A","similarity":0.3333333333333333},{"node1":"B","node2":"C","similarity":0.25},{"node1":"C","node2":"A","similarity":0.25},{"node1":"C","node2":"B","similarity":0.25},{"node1":"D","node2":"Tail","similarity":0.3333333333333333},{"node1":"D","node2":"B","similarity":0.25},{"node1":"E","node2":"Tail","similarity":0.5},{"node1":"E","node2":"D","similarity":0.25},{"node1":"F","node2":"E","similarity":0.25},{"node1":"F","node2":"D","similarity":0.2},{"node1":"Tail","node2":"D","similarity":0.3333333333333333},{"node1":"Tail","node2":"E","similarity":0.5}]
+=== RUN   TestRelevantAlgorithmCatalog/bfs
+    algorithms_test.go:110: query=MATCH (a:Entity {name:'A'}) CALL algo.bfs(a,'FACT','BOTH',2) YIELD node,depth RETURN node,depth duration_ms=2.047 rows=[{"depth":1,"node":"B"},{"depth":1,"node":"C"},{"depth":2,"node":"D"}]
+=== RUN   TestRelevantAlgorithmCatalog/dijkstra
+    algorithms_test.go:110: query=MATCH (a:Entity {name:'A'}), (z:Entity {name:'Tail'}) CALL algo.dijkstra(a,z,'FACT','weight','BOTH') YIELD path,weight RETURN path,weight duration_ms=2.426 rows=[{"path":{"_type":"path","length":4,"nodes":["A","C","D","F","Tail"],"relationships":[{"@cat":"e","@in":"A","@out":"C","@rid":"#4:2","@type":"FACT","weight":1},{"@cat":"e","@in":"D","@out":"C","@rid":"#4:3","@type":"FACT","weight":1},{"@cat":"e","@in":"D","@out":"F","@rid":"#4:6","@type":"FACT","weight":1},{"@cat":"e","@in":"Tail","@out":"F","@rid":"#4:7","@type":"FACT","weight":1}]},"weight":4}]
+=== RUN   TestRelevantAlgorithmCatalog/kShortestPaths
+    algorithms_test.go:110: query=MATCH (a:Entity {name:'A'}), (z:Entity {name:'Tail'}) CALL algo.kShortestPaths(a,z,3,'FACT','weight') YIELD path,weight,rank RETURN path,weight,rank duration_ms=2.287 rows=[{"path":{"_type":"path","length":0,"nodes":["A","B","C","D","E","F","Tail"],"relationships":[]},"rank":1,"weight":6}]
+=== RUN   TestRelevantAlgorithmCatalog/steinerTree
+    algorithms_test.go:110: query=MATCH (a:Entity {name:'A'}), (b:Entity {name:'E'}), (z:Entity {name:'Tail'}) CALL algo.steinerTree([a,b,z],'FACT','weight') YIELD source,target,weight,totalWeight RETURN source,target,weight,totalWeight duration_ms=2.856 rows=[{"source":"A","target":"C","totalWeight":5,"weight":1},{"source":"C","target":"D","totalWeight":5,"weight":1},{"source":"D","target":"E","totalWeight":5,"weight":1},{"source":"E","target":"F","totalWeight":5,"weight":1},{"source":"F","target":"Tail","totalWeight":5,"weight":1}]
+=== RUN   TestRelevantAlgorithmCatalog/allsimplepaths
+    algorithms_test.go:110: query=MATCH (a:Entity {name:'A'}), (z:Entity {name:'Tail'}) CALL algo.allsimplepaths(a,z,'FACT',4) YIELD path RETURN path duration_ms=2.278 rows=[{"path":{"_type":"path","length":4,"nodes":["A","C","D","F","Tail"],"relationships":[{"@cat":"e","@in":"A","@out":"C","@rid":"#4:2","@type":"FACT","weight":1},{"@cat":"e","@in":"D","@out":"C","@rid":"#4:3","@type":"FACT","weight":1},{"@cat":"e","@in":"D","@out":"F","@rid":"#4:6","@type":"FACT","weight":1},{"@cat":"e","@in":"Tail","@out":"F","@rid":"#4:7","@type":"FACT","weight":1}]}}]
+=== RUN   TestRelevantAlgorithmCatalog/randomWalk
+    algorithms_test.go:110: query=MATCH (a:Entity {name:'A'}) CALL algo.randomWalk(a,4,'FACT','BOTH',42) YIELD path,steps RETURN path,steps duration_ms=2.029 rows=[{"path":{"_type":"path","length":0,"nodes":["A","C","D","E","F"],"relationships":[]},"steps":4}]
+=== RUN   TestRelevantAlgorithmCatalog/fastrp
+    algorithms_test.go:110: query=CALL algo.fastrp({dimensions:16,iterations:3,relTypes:'FACT',direction:'BOTH',seed:42}) YIELD node,embedding RETURN node,embedding duration_ms=2.370 rows=[{"embedding":[0.1637551605632296,0.11627535491707278,-0.12975105563562978,-0.05308403649164252,0.26639223760704733,-0.49905743652942897,-0.18952766725345715,0.237007472899614,-0.24633845085054162,-0.3590015477504085,-0.05308403649164252,-0.14204786160730032,-0.12975105563562978,0.49905743652942897,-0.18952766725345715,0.11627535491707278],"node":"A"},{"embedding":[0.09646093673453111,0.04905905137250529,0.005633276949630112,-0.05299691896557098,0.3330533360166994,-0.4992526634196014,-0.18628611171984819,0.233687997081874,-0.3169044192928189,-0.3564233067158158,-0.05299691896557098,-0.13888422635782233,0.005633276949630112,0.4992526634196014,-0.18628611171984819,0.04905905137250529],"node":"B"},{"embedding":[0.028069791408867645,0.008888316197624853,-0.19469115166515355,-0.0368109336301472,0.2674700303145703,-0.47263992926153225,-0.05814212301760788,0.10737959967862329,-0.4424204236764468,-0.41145864519618275,-0.0368109336301472,-0.0389606478063651,-0.22474715311492618,0.47263992926153225,-0.08819812446738051,-0.021167685252147787],"node":"C"},{"embedding":[0.18976588013418175,0.0005721653740077319,-0.07890775690531605,-0.1881842675886366,0.009700065403909604,-0.23545409353388627,-0.11826312806160301,0.35095181664287656,-0.3048030676869121,-0.7056091536906067,-0.1881842675886366,0.07093058669857102,-0.12240273072641561,0.23545409353388627,-0.16175810188270257,-0.042922808447091815],"node":"D"},{"embedding":[0.12183822375112006,-0.11387716171359934,-0.20959617113756807,-0.10783099305138408,-0.1374327751305848,-0.15419262691028435,0.006395805895438567,0.273608275819902,-0.3822965875707064,-0.6840925359128989,-0.10783099305138408,0.24211119136015796,-0.2538848673881893,0.15419262691028435,-0.03789289035518262,-0.15816585796422053],"node":"E"},{"embedding":[-0.0710114801825266,-0.02894076800148261,-0.19651514132384734,-0.21749747050365903,0.11738971270259005,-0.11083165623265874,0.09794616577044478,-0.005109763855423714,-0.4552160605082451,-0.6815624726490258,-0.21749747050365903,0.05587545358940074,-0.3314222554199124,0.11083165623265874,-0.03696094832562031,-0.16384788209754766],"node":"F"},{"embedding":[0.27565804689995593,-0.1015373256167531,-0.1015373256167531,-0.0974370484730027,-0.3082969748026465,-0.06889839771406256,-0.06889839771406256,0.44609377023077157,-0.1989743740897558,-0.6450681443205274,-0.0974370484730027,0.3082969748026465,-0.1015373256167531,0.06889839771406256,-0.06889839771406256,-0.1015373256167531],"node":"Tail"},{"embedding":[0,-0.3779644730092273,0,0.3779644730092273,0,-0.3779644730092273,0,0,0.3779644730092273,0.3779644730092273,0,-0.3779644730092273,0,0.3779644730092273,0,0],"node":"Isolated"}]
+=== RUN   TestRelevantAlgorithmCatalog/graphsage
+    algorithms_test.go:110: query=CALL algo.graphsage({embeddingDimension:16,layers:2,relTypes:'FACT',direction:'BOTH',seed:42}) YIELD node,embedding RETURN node,embedding duration_ms=2.978 rows=[{"embedding":[0.5487041426822576,0,0,0.18612611298298554,0.21054480207317905,0.4950577113131775,0.40145449104117903,0,0,0,0,0.10698710438281378,0.3148967623574522,0.20272735858827834,0,0.24899654799567195],"node":"A"},{"embedding":[0.5556623658525172,0,0,0.314305488537676,0.4174184898561618,0.2780453013251605,0.23265783131706272,0.09336531254448711,0,0,0,0.364126895797053,0.31121918560265033,0.19640252017308038,0,0.10018749456632692],"node":"B"},{"embedding":[0.5574359606612265,0,0.011087260815281094,0.16745504749324114,0.44202483071929555,0.32623419547071936,0.21597153682273798,0.1342329116798187,0,0,0,0.36402718102256626,0.3537146602283052,0.19233902238552,0,0],"node":"C"},{"embedding":[0.5751195072965938,0,0,0.22217430850999764,0.4220399264505202,0.38138515595005984,0.33154595148601074,0,0,0,0,0.22156418934054187,0.21183702483023523,0.2611532513490953,0,0.15560989217781315],"node":"D"},{"embedding":[0.5025828956792099,0,0.10524790717042228,0.227157463170662,0.4684921121941183,0.4713399145735648,0.24050471518404798,0,0,0,0,0.2838732521043554,0.26118773420075164,0.18494458606814607,0,0.04729217668484723],"node":"E"},{"embedding":[0.5258925753918474,0,0,0.3675284585083448,0.35557190441930786,0.3751405312172725,0.3413829026262511,0,0,0,0,0.2175608687428523,0.2585983942402167,0.2909019606495484,0,0.0763278188658653],"node":"F"},{"embedding":[0.4414363991365657,0,0,0.3883985753129314,0.4392542231893138,0.43073515934212947,0.1295844702774216,0.00870155759563233,0,0,0,0.367285647823587,0.3477474952841528,0.006459023392446175,0,0.05537836699147527],"node":"Tail"},{"embedding":[0.28768828802341306,0,0,0.5520639354828057,0.2863548850111871,0.45163831042003644,0,0.308722510716004,0,0,0,0.19493830905235618,0.3979048885712232,0.18667014532778498,0,0],"node":"Isolated"}]
+=== RUN   TestRelevantAlgorithmCatalog/modularityScore
+    algorithms_test.go:110: query=CALL algo.modularityScore('community','FACT') YIELD modularity,communities,edgeCount RETURN modularity,communities,edgeCount duration_ms=1.705 rows=[{"communities":3,"edgeCount":8,"modularity":0.75}]
+=== RUN   TestRelevantAlgorithmCatalog/conductance
+    algorithms_test.go:110: query=CALL algo.conductance('community','FACT') YIELD community,conductance,internalEdges,boundaryEdges,nodeCount RETURN community,conductance,internalEdges,boundaryEdges,nodeCount duration_ms=1.509 rows=[{"boundaryEdges":0,"community":1,"conductance":0,"internalEdges":3,"nodeCount":3},{"boundaryEdges":0,"community":2,"conductance":0,"internalEdges":4,"nodeCount":4},{"boundaryEdges":0,"community":3,"conductance":0,"internalEdges":0,"nodeCount":1}]
+--- PASS: TestRelevantAlgorithmCatalog (0.15s)
+    --- PASS: TestRelevantAlgorithmCatalog/graphSummary (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/degree (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/wcc (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/scc (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/kcore (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/triangleCount (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/articulationPoints (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/bridges (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/biconnectedComponents (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/kTruss (0.01s)
+    --- PASS: TestRelevantAlgorithmCatalog/localClusteringCoefficient (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/densestSubgraph (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/clique (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/pagerank (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/personalizedPageRank (0.01s)
+    --- PASS: TestRelevantAlgorithmCatalog/betweenness (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/harmonic (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/closeness (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/hits (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/voteRank (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/louvain (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/leiden (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/labelpropagation (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/slpa (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/jaccard (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/adamicAdar (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/commonNeighbors (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/resourceAllocation (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/knn (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/bfs (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/dijkstra (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/kShortestPaths (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/steinerTree (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/allsimplepaths (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/randomWalk (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/fastrp (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/graphsage (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/modularityScore (0.00s)
+    --- PASS: TestRelevantAlgorithmCatalog/conductance (0.00s)
+=== RUN   TestNativeTemporalPaths
+=== RUN   TestNativeTemporalPaths/longer_valid_route
+    probe_test.go:156: eligible=[gap2 live1 live2] path=[Start Middle Target] duration=2.70671ms
+=== RUN   TestNativeTemporalPaths/historical_shortcut
+    probe_test.go:156: eligible=[expired] path=[Start Target] duration=926.937µs
+=== RUN   TestNativeTemporalPaths/exclusive_end_inclusive_start
+    probe_test.go:156: eligible=[gap2 live1 live2] path=[Start Middle Target] duration=893.736µs
+=== RUN   TestNativeTemporalPaths/depth_prunes
+    probe_test.go:156: eligible=[gap2 live1 live2] path=[] duration=1.912678ms
+=== RUN   TestNativeTemporalPaths/future_excluded
+    probe_test.go:156: eligible=[gap2 live1 live2] path=[] duration=1.699269ms
+=== RUN   TestNativeTemporalPaths/future_at_start
+    probe_test.go:156: eligible=[future gap2 live1 live2] path=[Start Future] duration=1.152247ms
+=== RUN   TestNativeTemporalPaths/null_start_excluded
+    probe_test.go:156: eligible=[gap2 live1 live2] path=[] duration=1.076743ms
+=== RUN   TestNativeTemporalPaths/empty_eligible_set
+    probe_test.go:156: eligible=[] path=[] duration=789.832µs
+=== RUN   TestNativeTemporalPaths/missing_support_excluded
+    probe_test.go:156: eligible=[gap2 live1 live2] path=[] duration=801.733µs
+=== RUN   TestNativeTemporalPaths/mention_support_filtered
+    probe_test.go:156: eligible=[gap2 live1 live2] path=[Start Bridge Target] duration=1.951179ms
+=== RUN   TestNativeTemporalPaths/mixed_types
+    probe_test.go:156: eligible=[gap2 live1 live2] path=[Start Bridge] duration=955.838µs
+=== RUN   TestNativeTemporalPaths/reverse_traversal
+    probe_test.go:156: eligible=[gap2 live1 live2] path=[Target Middle Start] duration=2.242891ms
+=== RUN   TestNativeTemporalPaths/wrong_direction
+    probe_test.go:156: eligible=[gap2 live1 live2] path=[] duration=1.25375ms
+=== RUN   TestNativeTemporalPaths/both_directions
+    probe_test.go:156: eligible=[gap2 live1 live2] path=[Target Middle Start] duration=2.254691ms
+=== RUN   TestNativeTemporalPaths/missing_endpoint
+    probe_test.go:156: eligible=[gap2 live1 live2] path=[] duration=757.431µs
+=== NAME  TestNativeTemporalPaths
+    probe_test.go:168: post_filter_control rows=0 (valid two-hop route exists)
+--- PASS: TestNativeTemporalPaths (0.08s)
+    --- PASS: TestNativeTemporalPaths/longer_valid_route (0.00s)
+    --- PASS: TestNativeTemporalPaths/historical_shortcut (0.00s)
+    --- PASS: TestNativeTemporalPaths/exclusive_end_inclusive_start (0.00s)
+    --- PASS: TestNativeTemporalPaths/depth_prunes (0.00s)
+    --- PASS: TestNativeTemporalPaths/future_excluded (0.00s)
+    --- PASS: TestNativeTemporalPaths/future_at_start (0.00s)
+    --- PASS: TestNativeTemporalPaths/null_start_excluded (0.00s)
+    --- PASS: TestNativeTemporalPaths/empty_eligible_set (0.00s)
+    --- PASS: TestNativeTemporalPaths/missing_support_excluded (0.00s)
+    --- PASS: TestNativeTemporalPaths/mention_support_filtered (0.00s)
+    --- PASS: TestNativeTemporalPaths/mixed_types (0.00s)
+    --- PASS: TestNativeTemporalPaths/reverse_traversal (0.00s)
+    --- PASS: TestNativeTemporalPaths/wrong_direction (0.00s)
+    --- PASS: TestNativeTemporalPaths/both_directions (0.00s)
+    --- PASS: TestNativeTemporalPaths/missing_endpoint (0.00s)
+=== RUN   TestDisjointWindowsAndDeletedSupport
+    probe_test.go:187: disjoint windows at 2026-04-01T00:00:00Z: eligible=[gap1] no path
+    probe_test.go:187: disjoint windows at 2026-07-01T00:00:00Z: eligible=[gap2] no path
+    probe_test.go:200: support deleted between reads: stale keyset paths=1 refreshed keyset paths=0
+--- PASS: TestDisjointWindowsAndDeletedSupport (0.04s)
+=== RUN   TestNativeRankingScope
+    ranking_test.go:16: source=Start scores=map[Bridge:0.045170679262088856 Future:0.09034135852417771 Gap:0.045170679262088856 Middle:0.045170679262088856 Orphan:0.045170679262088856 Start:0.47827833835877037 Target:0.20552690680660765 Unknown:0.045170679262088856]
+    ranking_test.go:16: source=Target scores=map[Bridge:0 Future:0 Gap:0 Middle:0 Orphan:0 Start:0 Target:1 Unknown:0]
+--- PASS: TestNativeRankingScope (0.04s)
+=== RUN   TestMentionHistoryIsNotRetained
+    ranking_test.go:41: sweep={Facts:3 Entities:8 Candidates:8 Bridges:0 Cap:0 Created:0 Removed:5 Covered:true} expired mention count before=1 after=0 historical fact keys=[expired]
+--- PASS: TestMentionHistoryIsNotRetained (0.04s)
+=== RUN   TestBoundedExpansionComparedWithNativeRank
+    ranking_test.go:84: candidate=gap2 depth=1 endpoint_mean_ppr=0.5 statement=Gap links Target
+    ranking_test.go:84: candidate=live1 depth=2 endpoint_mean_ppr=0 statement=Start reaches Middle
+    ranking_test.go:84: candidate=live2 depth=1 endpoint_mean_ppr=0.5 statement=Middle reaches Target
+    ranking_test.go:115: method=bounded budget=32 used=16 selected=[gap2] relevant=0/2
+    ranking_test.go:115: method=bounded budget=64 used=59 selected=[gap2 live2 live1] relevant=2/2
+    ranking_test.go:115: method=native_ppr budget=32 used=16 selected=[gap2] relevant=0/2
+    ranking_test.go:115: method=native_ppr budget=64 used=59 selected=[gap2 live2 live1] relevant=2/2
+--- PASS: TestBoundedExpansionComparedWithNativeRank (0.05s)
+=== RUN   TestStructuralSignalsDependOnTemporalProjection
+    structural_test.go:54: relations=FACT core=map[Bridge:0 Future:1 Gap:2 Middle:2 Orphan:0 Start:2 Target:2 Unknown:1] articulation=map[Start:true] triangles=map[Bridge:0 Future:0 Gap:1 Middle:1 Orphan:0 Start:2 Target:2 Unknown:0]
+    structural_test.go:54: relations=VALID_FACT core=map[Bridge:0 Future:0 Gap:1 Middle:1 Orphan:0 Start:1 Target:1 Unknown:0] articulation=map[Middle:true Target:true] triangles=map[Bridge:0 Future:0 Gap:0 Middle:0 Orphan:0 Start:0 Target:0 Unknown:0]
+--- PASS: TestStructuralSignalsDependOnTemporalProjection (0.06s)
+PASS
+ok  	github.com/chetto1983/aura/.planning/spikes/102-temporal-memory-traversal	1.594s

@@ -135,10 +135,28 @@ armchair. Full decision record: `.planning/phases/51-durable-delegation/51-CONTE
   the steer queue moving to Postgres, the `memory_upsert_fact` schema change, and the pause
   fencing column.
 
+### temporal-memory-graph
+
+Continue the mounted graph acceptance with a native temporal traversal experiment
+and an equal-budget comparison of bounded expansion and personalized graph ranking.
+The operator extended the investigation to the full graph-algorithm catalog and
+live trials of the algorithms most relevant to memory; 71 entries are reviewed
+and 39 procedures exercised, with correctness limits recorded individually.
+Evidence starts in `docs/memory-graph-validation.md`; spike 102 uses only disposable
+databases and the existing ArcadeDB client.
+
+**Requirements:**
+
+- Validate relationship eligibility during traversal; preserve original evidence.
+- Distinguish stored topology, temporal admissibility and historical completeness.
+- Keep fact and conversation quotas independent; do not infer retrieval quality
+  from graph connectivity or coreness.
+
 ## Spikes
 
 | # | Idea | Name | Type | Validates | Verdict | Tags |
 |---|------|------|------|-----------|---------|------|
+| 102 | temporal-memory-graph | temporal-memory-traversal | comparison | Given expired, future, unsupported and live relationships, native traversal finds the shortest admissible path; compare bounded expansion and native PPR at equal budgets | **PARTIAL** - native inline filtering works; outer post-filter misses valid routes; mention history is removed; a stale keyset can admit deleted support; PPR shows no gain in the synthetic budget comparison | arcadedb, memory, temporal, retrieval |
 | 098 | durable-delegation | steer-carries-worker-result | standard | Given a worker completion pushed into the steer inbox with a worker-attributed marker, when the parent turn reaches its next round boundary, then it lands in history without breaking role alternation or touching `history[0..2]`, and reads as spoken by a worker rather than by the operator | **PARTIAL** - rail validated, envelope invalidated: the model detects operator-envelope vs worker-payload mismatch and discounts the report as injection (3/3 live runs) | steer, delivery, kv-cache, attribution |
 | 099 | durable-delegation | worker-duration-and-progress | standard | Given a real fan-out on the live stack, when workers run to completion, then measured durations show whether a 120s wall-clock ceiling is survivable, and whether per-worker progress is observable enough to drive hermes-style staleness | **validated** - healthy workers finish in 5.15-7.80s against a 120s cap (23x margin, answers verified against ground truth); the cap fired once in three runs and caught an upstream stall, while the 70s lost worker passed under it; staleness cannot come from `tool_invocations` (workers log `start`, never `end`) and belongs in `runChild`'s event loop. Also found and fixed a live deterministic defect: a swarm worker could dispatch NO agent-scoped tool (4/4 workers, 100% denied `operation fingerprint mismatch`; re-measured at 0 denials); corrected the child cap from 120s nominal to 240s effective | swarm, timeout, observability, defect |
 | 100 | durable-delegation | durable-substrate-shape | standard | Given the three failure modes D-01 names — a worker dying mid-flight, a daemon restart, and delivery failing eight times — measured against the lease queue Aura already owns, then the substrate choice is decided by evidence rather than preference | **validated** - GENERALIZE `aura.ingestion_jobs`, do NOT create a delegation table: its claim predicate already handles all three scenarios correctly (measured), `job_type` is already the discriminator, a restart needs no recovery path because the lease expiry IS one, and a SIGKILL mid-fan-out showed the delegation's full intent is ALREADY durable in the `swarm_spawn` reservation's args — what is missing is a row saying the work is owed | substrate, durability, lease, crash-recovery, inventory |

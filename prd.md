@@ -12561,6 +12561,33 @@ path support. This one case establishes neither general retrieval improvement no
 temporal admissibility. See `docs/memory-graph-validation.md` for measured details
 and limits; the historical integration coverage above was not rerun for this read-only acceptance.
 
+Temporal follow-up measured 2026-09-07 in `.planning/spikes/102-temporal-memory-traversal`:
+native inline relationship eligibility finds the longer valid route when an expired
+shortcut exists; post-filtering shortestPath does not. Fifteen path cases pass on
+disposable databases. A two-call eligible-key query is not a snapshot: deleting a
+supporting FACT between reads still permits its stale MENTIONS path. The real
+mention sweep removes expired links while historical FACT remains queryable, so
+historical mention completeness cannot be promised from surviving topology.
+Native PPR propagates OUT and scores invalid topology; the same bounded candidates
+under 32/64-character statement budgets retain 0/2 and 2/2 required facts with
+either ordering, providing no measured gain. Reuse native filtering for the next
+FACT-only temporal-path slice after resolving read consistency; retain explicit
+rejection of historical mentions pending a measured retention/reconstruction
+strategy. No production schema/behavior or broad retrieval-quality claim changes
+from this spike; full provenance/token budgets and a labeled query set remain open.
+The structural-analysis follow-up also measures why coreness cannot gate memory
+retention: the valid answer path drops from core 2 to core 1 when historical edges
+are excluded, while its Middle/Target vertices become articulation points. Preserve
+necessary evidence and connectors regardless of low core; structural diagnostics
+must describe the same temporal projection as the question they are used to answer.
+The operator-requested full graph-algorithm review covers 71 catalog entries and
+39 live procedure calls in the same spike. Leiden, articulation/biconnected analysis,
+BFS and Steiner merit further memory-specific evaluation. Do not adopt native
+conductance or modularityScore on this engine: the former loses a one-edge cut,
+the latter returns 0.75 for a single-community partition whose modularity is zero.
+Those are reproduced counterexamples, not speculative concerns. Structural embeddings
+and rankers have not established real-query gain; no production tool surface changes.
+
 ## Section La libreria di casa era diventata di nessuno (Amendment #225, 2026-09-07)
 
 > **Amendment #225 (2026-09-07 — misurato sul deployment dell'operatore, riprodotto su
