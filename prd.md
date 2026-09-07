@@ -12508,3 +12508,10 @@ counts were of prose only, not the deployed model's complete prompt. Identifier
 admission is conservative within the existing bounded candidate pool; it does
 not prove the corpus contains no answer when no candidate qualifies. MMR and
 PPR remain untested and outside this corrective change.
+
+Post-fix mounted-MCP replay: all six identifier-negative cases now abstain in
+both tools on each of three repetitions; all five fact-positive cases and the
+exact conversation marker remain recoverable. No fact_key repeats across ranked
+evidence and expansion. Direct/depth-2 counts stay 3/7; the before-valid_from/now
+case stays 0/1. Verification and limits are recorded in
+`docs/memory-retrieval-validation.md`; full ArcadeDB integration coverage is 86.4%.

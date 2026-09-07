@@ -312,11 +312,14 @@ func (c *Client) SearchFactsHybrid(
 	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].rank < ordered[j].rank })
 
 	hits := make([]FactHit, 0, min(len(ordered), limit))
+	identifiers := memoryQueryIdentifiers(query)
 	for _, item := range ordered {
 		if len(hits) == limit {
 			break
 		}
-		hits = append(hits, item.hit)
+		if memoryIdentifiersMatch(identifiers, item.hit.Statement, item.hit.Subject, item.hit.Object) {
+			hits = append(hits, item.hit)
+		}
 	}
 	result := FactSearchResult{Facts: hits, RetrievalPath: retrievalPathHybrid}
 	if len(hits) == 0 {

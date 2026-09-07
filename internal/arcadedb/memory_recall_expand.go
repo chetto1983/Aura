@@ -46,8 +46,8 @@ const (
 type RecallEntityNode struct {
 	Name string
 	Kind string
-	// Facts are this entity's own, direct edges -- not the ranked evidence it was
-	// seeded from, which the caller already holds.
+	// Facts contains only additional direct edges. The entity stays visible even
+	// when all its facts are already in ranked evidence or another node.
 	Facts []FactHit
 }
 
@@ -69,19 +69,40 @@ func (c *Client) expandRecallEntities(
 		return nil
 	}
 	nodes := make([]RecallEntityNode, 0, len(seeds))
+	seen := make(map[string]struct{})
+	for _, item := range evidence {
+		if item.Fact != nil {
+			seen[recallFactIdentity(*item.Fact)] = struct{}{}
+		}
+	}
 	for _, seed := range seeds {
 		facts, err := c.FactsAbout(ctx, seed, "", recallFactsPerEntity, request.AsOf, FactsAboutDirect)
 		if err != nil || len(facts) == 0 {
 			continue
 		}
-		nodes = append(nodes, RecallEntityNode{
-			Name: seed, Kind: recallEntityKind(seed, facts), Facts: facts,
-		})
+		node := RecallEntityNode{Name: seed, Kind: recallEntityKind(seed, facts), Facts: []FactHit{}}
+		for _, fact := range facts {
+			key := recallFactIdentity(fact)
+			if _, duplicate := seen[key]; duplicate {
+				continue
+			}
+			seen[key] = struct{}{}
+			node.Facts = append(node.Facts, fact)
+		}
+		nodes = append(nodes, node)
 	}
 	if len(nodes) == 0 {
 		return nil
 	}
 	return nodes
+}
+
+func recallFactIdentity(fact FactHit) string {
+	if fact.FactKey != "" {
+		return fact.FactKey
+	}
+	return strings.Join([]string{fact.Subject, fact.Predicate, fact.Object,
+		fact.ValidFrom, fact.ValidTo, fact.Statement}, "\x00")
 }
 
 // recallEntitySeeds picks the entity names the ranked facts lean on hardest.

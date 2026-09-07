@@ -82,8 +82,8 @@ func TestRecallSemanticReturnsSeededEntityNodes(t *testing.T) {
 	}
 	names := make([]string, 0, len(result.Entities))
 	for _, node := range result.Entities {
-		if len(node.Facts) == 0 {
-			t.Fatalf("node %q carries no facts", node.Name)
+		if len(node.Facts) != 0 {
+			t.Fatalf("node %q repeats the already-ranked fact", node.Name)
 		}
 		names = append(names, node.Name)
 	}

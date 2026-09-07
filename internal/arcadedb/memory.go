@@ -484,8 +484,12 @@ func (c *Client) SearchFacts(
 		return nil, fmt.Errorf("arcadedb: search facts: %w", err)
 	}
 	hits := make([]FactHit, 0, len(rows))
+	identifiers := memoryQueryIdentifiers(query)
 	for _, row := range rows {
-		hits = append(hits, factHitFromRow(row))
+		fact := factHitFromRow(row)
+		if memoryIdentifiersMatch(identifiers, fact.Statement, fact.Subject, fact.Object) {
+			hits = append(hits, fact)
+		}
 	}
 	return hits, nil
 }
