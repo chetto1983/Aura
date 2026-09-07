@@ -34,10 +34,14 @@ fi
 workflow="$repo_root/.github/workflows/ci.yml"
 helper_calls="$(grep -c 'bash scripts/fetch_embedding_model[.]sh' "$workflow" || true)"
 # Five since 2026-08-09: ingest-sidecar-test joined the four live embedding tiers.
-# The count is the point -- a new tier that fetches the model its own way is how the
+# SIX since 2026-09-07: ingest-reconcile-e2e, the job that runs the reconciliation E2E
+# (add/modify/delete + two-identity isolation), needs the same embedder the pipeline
+# embeds with. It reached this gate red on its first run, which is the gate working:
+# the count is the point -- a new tier that fetches the model its own way is how the
 # validated-artifact contract erodes -- so raising it is a deliberate act, not a fixup.
-if [ "$helper_calls" -ne 5 ]; then
-  echo "expected all five live embedding CI tiers to use the shared helper" >&2
+# Raise it only after checking the new tier calls THIS helper rather than curling a URL.
+if [ "$helper_calls" -ne 6 ]; then
+  echo "expected all six live embedding CI tiers to use the shared helper" >&2
   exit 1
 fi
 if grep -q 'qwen3-embedding-0[.]6b' "$workflow"; then
