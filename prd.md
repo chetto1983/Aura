@@ -12515,3 +12515,35 @@ exact conversation marker remain recoverable. No fact_key repeats across ranked
 evidence and expansion. Direct/depth-2 counts stay 3/7; the before-valid_from/now
 case stays 0/1. Verification and limits are recorded in
 `docs/memory-retrieval-validation.md`; full ArcadeDB integration coverage is 86.4%.
+
+## Native memory graph diagnostics and paths (Amendment #225, 2026-09-07)
+
+Measured on the installed ArcadeDB image with disposable databases: native WCC,
+degree(BOTH), and kcore execute through the read endpoint. A triangle plus a tail
+has core numbers 2/2/2/1. graphSummary('FACT','Entity') omits Object subtypes;
+explicit Entity,Object includes them. Its isolatedNodes counts zero OUT-degree,
+including a connected sink; report that as zero-out-degree, and count actual
+isolates from native degree(BOTH). SQL shortestPath failed parsing in three
+documented-form probes, including limit=-1; no further SQL workaround is planned.
+The documented Cypher shortestPath pattern with an explicit hop bound succeeded
+and returned ordered nodes and relationships including original direction.
+
+Deliver read-only graph_diagnostics and graph_path MCP tools, identity resolved
+from OAuth exactly like graph_schema. Only FACT, MENTIONS, or their union are
+allowed. Diagnostics combine native graphSummary/WCC/degree/kcore, projecting
+only Entity and its subtypes; path uses native Cypher shortestPath. No custom
+graph algorithm and no personal-memory fixtures. Preflight the whole database
+against AURA_MEMORY_GRAPH_MAX_RECORDS (default 10000); reject above the budget.
+Path depth defaults to 3 and is restricted to 1..6. Return topology semantics
+explicitly: all stored validity windows, not an as_of/current-truth projection.
+Unknown temporal requests must be refused; sources and windows accompany FACT
+path edges. Do not silently present filtered historical influence as current.
+
+Acceptance: native algorithms on disposable fixtures (subtypes, isolated vertex,
+triangle/tail, directed paths, hop bounds, missing endpoints, limits), MCP auth
+and schema tests, mounted MCP read verification after deployment, and existing
+memory regressions. First compare FACT and MENTIONS connectivity and core numbers;
+then compare a short path with the existing direct/depth-2 memory reads.
+Documentation: official graph-algorithms category pages and
+reference/cypher/cypher-compatibility. Runtime behavior takes precedence over the
+upstream main branch. These probes do not measure a retrieval improvement.
