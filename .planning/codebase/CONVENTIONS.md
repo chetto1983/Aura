@@ -1,141 +1,212 @@
 # Coding Conventions
 
-**Analysis Date:** 2026-08-25
+**Analysis Date:** 2026-09-07
+
+Measured at HEAD on 2026-09-07: 927 non-test Go files (~155.8k LOC excluding
+`internal/db/sqlc/`), 1,255 test files (~237.9k LOC), 79 packages under `internal/`,
+5 binaries under `cmd/` (`aura`, `arcadedb-mcp`, `aura-filecard`,
+`aura-ingest-supervisor`, `aura-media-index`), plus a React frontend in `web/`.
 
 ## Naming Patterns
 
 **Files:**
-- Use lowercase package directories and lowercase snake-style Go filenames: `internal/agent/llm_agent.go`, `internal/arcadedb/memory_backfill.go`, and `internal/db/tx_integration_test.go`.
-- Keep Go tests beside the implementation as `*_test.go`; name live tiers `*_integration_test.go`, `*_live_test.go`, or `*_e2e_test.go` and put the build constraint at the top of the file.
-- Name React component files in PascalCase (`web/src/shell/ShareShell.tsx`, `web/src/graph/GraphExplorer.tsx`) and hooks with a `use` prefix (`web/src/health/useRuntimeHealth.ts`).
-- Name TypeScript utilities and API modules in lower camelCase (`web/src/chat/toolGrouping.ts`, `web/src/settings/settingsApi.ts`). Co-locate focused tests as `name.test.ts[x]` or group a component area's tests under `__tests__/`.
-- Name Playwright files after the user surface with `.spec.ts`, such as `web/e2e/governance-write.spec.ts`.
-- Use snake_case for Python modules and `test_<subject>.py` for Python tests, as in `services/ingest/source.py` and `services/ingest/tests/test_source_file_name.py`.
-- Treat `internal/db/sqlc/` and `internal/webui/dist/` as generated output. Change their generators or source inputs instead of hand-editing generated files.
+- Snake-case, one concern per file, named `<subject>_<concern>.go`. The 600-LOC cap
+  (below) forces splitting rather than growth: `internal/arcadedb/memory.go`,
+  `memory_graph.go`, `memory_graph_path.go`, `memory_graph_temporal.go`,
+  `memory_mentions.go`, `memory_mentions_link.go`, `memory_mentions_read.go`.
+- Config composites split the same way: `internal/config/config.go`,
+  `config_embed.go`, `config_runtimeprofile.go`.
+- Tests carry the tier in the name, not only in the build tag:
+  `*_test.go` (unit), `*_integration_test.go`, `*_live_test.go`,
+  `*_property_test.go`, `*_pure_test.go`, `*_e2e_test.go`.
+  Examples: `internal/share/share_property_test.go`,
+  `internal/arcadedb/memory_mentions_pure_test.go`,
+  `internal/runner/live_e2e_test.go`.
 
 **Functions:**
-- Use PascalCase for exported Go functions and methods and lower camelCase for package-private helpers. Constructors use `New...`; contextual decorators use `With...` (`internal/agent/tools/result.go`).
-- Put `context.Context` first on I/O or cancellable Go APIs. Keep receiver names short and stable, and use action-oriented method names.
-- Use lower camelCase for TypeScript/Python functions and PascalCase for React components. Hooks must start with `use` so the hooks linter can reason about them.
-- Name tests after observable behavior, not implementation branches: `TestWithTx_RollbackOnError` in `internal/db/tx_integration_test.go` and `it('the still-running tool is never a member...')` in `web/src/chat/__tests__/toolGrouping.test.ts`.
-
-**Variables:**
-- Prefer short Go locals only when their role is obvious (`ctx`, `err`, `cfg`, `res`, `got`, `want`); use descriptive names across longer scopes.
-- Use `got`/`want` in Go assertions and name table rows with a `name` field. Keep sentinel values and externally meaningful limits as named constants.
-- Use `const` by default in TypeScript, `let` only for mutation, and declare public data shapes `readonly` where callers must not mutate them (`web/src/chat/toolGrouping.ts`).
-- Use uppercase snake case for module-level Python constants and immutable TypeScript protocol constants (`PROSE_FORMATS` in `services/ingest/tests/test_extract.py`, `TOOL_GROUP_MIN` in `web/src/chat/toolGrouping.ts`).
+- Standard Go: exported `CamelCase`, unexported `camelCase`. Exported symbols carry
+  doc comments (revive `exported` is on, with `disableStutteringCheck`).
+- The only blanket doc-comment exemption is `Spec`/`Execute` on the ~30 tool
+  implementations in `internal/agent/tools` (`.golangci.yml` exclusion rule) — the
+  contract is documented once on the interface in `internal/agent/tools/spec.go`.
 
 **Types:**
-- Use PascalCase for Go exported types and TypeScript interfaces/type aliases. Keep unexported implementation types lower camelCase.
-- Define small Go interfaces at the consuming boundary and use role names such as `Store`, `Reader`, `Resolver`, `Dispatcher`, or `Backend`. Tests provide hand-written `fake...`, `stub...`, `recording...`, or `capture...` implementations.
-- Use concrete structs for configuration and results; pass dependency interfaces only where substitution is required.
-- Model TypeScript domain variants with string-literal unions and explicit interfaces. Prefer `unknown` at untrusted boundaries, then narrow it before use (`GroupablePart` in `web/src/chat/toolGrouping.ts`).
+- Interfaces are small and named for the behaviour (`agent.Agent`).
+- Compile-time interface assertions are the convention for fakes and implementations:
+  `var _ agent.Agent = (*RecordingAgent)(nil)` in `internal/agent/agenttest/mocks.go`.
+
+**Packages:**
+- Lowercase, no underscores, single-word where possible: `internal/envutil`,
+  `internal/canonicaljson`, `internal/identityctx`, `internal/boundedbuffer`.
+- Leaf helper packages are extracted deliberately rather than duplicated
+  (`internal/envutil` folded `IntDefault`/`BoolDefault` that had been copied across
+  `internal/config`, `internal/channels`, `internal/channels/telegram`).
 
 ## Code Style
 
 **Formatting:**
-- Run `gofmt` on every Go edit. `.golangci.yml` enforces `gofmt`; `lefthook.yml` runs `scripts/gofmt-staged.sh` and stages the result.
-- Follow `.editorconfig`: UTF-8, LF, final newline, trimmed trailing whitespace, two-space indentation generally, tabs for Go and Makefiles.
-- Format `web/` with Prettier using single quotes, semicolons, trailing commas, a 100-column print width, and two-space indentation (`web/.prettierrc.json`).
-- Keep every authored `.go`, `.ts`, and `.tsx` file at or below 600 lines. `scripts/check-file-size.sh`, `Makefile`, and `lefthook.yml` enforce the cap.
-- Python has no repository-level formatter configuration. Match the existing four-space, type-hinted, PEP 8-style layout in `services/ingest/` and `scripts/`.
+- `gofmt`, enforced as a gate, not a suggestion. `formatters.enable: [gofmt]` in
+  `.golangci.yml`; the lefthook `pre-commit` hook runs `bash scripts/gofmt-staged.sh`
+  with `stage_fixed: true`.
+- Exempt from formatting/lint: `internal/db/sqlc` (generated), `internal/llm/client.go`
+  (pre-rewrite skeleton), `third_party`, `web/node_modules`, `.planning`.
 
-**Linting:**
-- Use golangci-lint v2.12.2 with the repository's `.golangci.yml`. Enabled checks are `errcheck`, `govet`, `ineffassign`, `staticcheck`, `unused`, `misspell`, `gosec`, `revive`, `dupl`, and `modernize`.
-- Do not add broad `//nolint` directives. Name the exact linter and explain a genuine false positive. Existing exclusions are narrow and documented in `.golangci.yml`.
-- Do not run Go gates as bare `./...` when `web/node_modules` is present. Use `$(bash scripts/go_packages.sh)` or the Make targets so Go examples inside frontend dependencies are excluded.
-- Run frontend static gates through `make web-lint`: ESLint with zero warnings, strict TypeScript checking, and Prettier verification.
-- `web/eslint.config.js` enables strict/stylistic type-aware rules, React Hooks, JSX accessibility, React Refresh, and import ordering. Test-only relaxations are scoped to test files.
-- Keep `web/` free of copy/paste and dead code with `web/.jscpd.json`, `web/knip.json`, `scripts/check-dup.sh`, and `scripts/check-deadcode-web.sh`.
+**Linting (`.golangci.yml`, `default: none` + explicit enable list):**
+`errcheck`, `govet`, `ineffassign`, `staticcheck`, `unused`, `misspell`, `gosec`
+(G115 excluded), `revive`, `dupl` (token threshold 100), `modernize`.
+Test files are exempt from `gosec`, `errcheck`, `dupl` (table tests are intentionally
+repetitive) and from staticcheck `SA5011`.
+
+**File size — VERIFIED, and the codebase holds it.**
+`bash scripts/check-file-size.sh` at HEAD: *all 2,851 tracked source files within the
+600-LOC cap.* The largest owned files sit exactly at or just under the line
+(`internal/askuser/store.go` 600, `internal/arcadedb/memory.go` 597,
+`internal/channels/registry_test.go` 600). The cap covers `.go`, `.ts`, `.tsx`
+including tests; exemptions are `internal/db/sqlc/`, `third_party/`, `vendor/`,
+`node_modules/`, `dist/`, `*.d.ts`, and the shadcn-vendored
+`web/src/components/model-selector*.tsx`.
+
+**Duplication:** Go via `dupl` (threshold 100) inside golangci-lint; TypeScript via
+`jscpd` at the same threshold (`web/.jscpd.json`, run by `scripts/check-dup.sh`).
+
+**Dead code:** `deadcode -test` over all packages (`scripts/deadcode_gate.sh`,
+`make deadcode`, lefthook pre-push); frontend parity via `knip`
+(`scripts/check-deadcode-web.sh`, `web/knip.json`).
 
 ## Import Organization
 
-**Order:**
-1. Go standard-library imports.
-2. A blank line, then Aura module imports (`github.com/chetto1983/aura/internal/...`).
-3. Third-party imports, grouped with the Aura imports when they belong to the same dependency layer; always let `gofmt` own indentation.
-4. TypeScript built-ins and external packages, then `@/` aliases, then parent/sibling imports. `import-x/order` enforces the category order without blank lines.
-5. Use `import type` or inline `type` imports for TypeScript type-only dependencies (`web/src/components/ui/button.tsx`).
+**Order** (gofmt-grouped, one blank line between groups):
+1. stdlib
+2. `github.com/chetto1983/aura/internal/...` — own packages
+3. third-party
 
-**Path Aliases:**
-- Go code imports through module path `github.com/chetto1983/aura/...`; do not create relative Go imports.
-- `web/tsconfig.json`, `web/vite.config.ts`, and `web/vitest.config.ts` define `@/*` as `web/src/*`. Use `@/` for cross-feature/shared imports and relative paths within a local feature.
-- Avoid new TypeScript barrel files. Import the concrete module directly unless an existing package boundary already exposes an intentional index such as `web/src/components/skeleton/index.ts`.
+Observed in `internal/config/config.go` and `internal/agui/server_integration_test.go`;
+own-module and third-party imports frequently share the second block sorted
+alphabetically, which is what gofmt preserves.
+
+**Module path:** `github.com/chetto1983/aura`. No path aliases; `internal/` enforces
+the boundary. Test-support packages import production packages one-way only —
+`agenttest` imports `internal/agent`, never the reverse (documented at
+`internal/agent/agenttest/mocks.go`).
+
+**Package selection for gates:** never `./...` literally — `bash scripts/go_packages.sh`
+produces the governed package list used by `make vet`, `lint`, `test`, `build`.
 
 ## Error Handling
 
-**Patterns:**
-- Check every returned Go error. Return immediately with added operation context using `fmt.Errorf("<operation>: %w", err)` so callers can inspect the chain.
-- Match sentinels and typed errors with `errors.Is`/`errors.As`; never branch on error strings when a typed contract exists. `internal/db/tx_integration_test.go` demonstrates sentinel matching and typed Postgres error inspection.
-- Keep Go error text lowercase and without trailing punctuation. Log an error or return it, not both, unless a boundary is explicitly converting an error into a degraded result.
-- Reserve `panic` for invariant violations and deliberate re-panic behavior. Expected runtime failures return errors or typed outcomes.
-- Degrade only where the contract explicitly permits it. `internal/agent/tools/result.go` retains a preview after a sidecar write failure but returns hard errors for malformed path identifiers.
-- Use `HttpError` from `web/src/api/json.ts` when callers need HTTP status/reason branching. At UI boundaries, narrow `unknown` with `instanceof Error`/`instanceof HttpError` and translate it into user-visible state.
-- Do not swallow TypeScript errors casually. An empty `catch` is acceptable only for documented optional capabilities or intentionally ignored non-JSON/DOM behavior.
-- In Python, let extraction/process errors fail loudly; subprocess calls use `check=True`, explicit timeouts, and postcondition checks (`services/ingest/extract.py`).
+**Wrapping is the norm:** 1,517 `fmt.Errorf(... %w ...)` sites across `internal/`;
+820 `errors.Is` / `errors.As` call sites. Errors are wrapped with a package-prefixed
+message (`"arcadedb: empty statement"`, `"agui: threadId must not be empty"`).
 
-Canonical Go shape:
+**Sentinels are exported when callers must branch on them:**
+`internal/agent/errors.go:10` `ErrBudgetExhausted`,
+`internal/agent/tools/spec.go:31` `ErrNoNonDeferredTool`,
+`internal/agui/bootstrap_api.go` `ErrBootstrapAlreadyConfigured` / `ErrBootstrapInvalid`,
+`internal/conversations/context.go:69` `ErrContextWindowExceeded`,
+`internal/assets/browser.go` `ErrBrowserUnconfigured` / `ErrReservedPrefix`.
 
-```go
-value, err := dependency.Load(ctx, id)
-if err != nil {
-	return Result{}, fmt.Errorf("load result: %w", err)
-}
-```
+**Errors never pass silently** — `errcheck` is enabled on production code. The one
+sanctioned silent path is explicitly documented and scoped:
+`internal/envutil/envutil.go` absorbs malformed optional env values to a fallback
+rather than failing boot, with the rationale in the package doc; required secrets
+fail loudly in their own `Validate`.
+
+**Fail-loud boot:** unparseable required config is surfaced through struct fields and
+`Validate` (e.g. `Config.RunDirErr` in `internal/config/config.go`) rather than being
+swallowed at load time.
 
 ## Logging
 
-**Framework:** Go standard-library `log/slog`; browser console only at explicit UI failure boundaries.
+**Framework:** `log/slog` (136 references under `internal/`). The stdlib `log` package
+is not used in `internal/` or `cmd/`.
 
-**Patterns:**
-- Use structured `slog.Debug`, `slog.Info`, `slog.Warn`, or `slog.Error` in services and background workers. Keep the message stable and put request IDs, thread IDs, task IDs, steps, and errors in keyed attributes (`internal/agent/llm_agent.go`, `internal/cron/scheduler.go`).
-- Use `fmt.Print*` only for intentional CLI/user output under `cmd/`, not operational service logging.
-- Never log secrets, full credentials, or raw sensitive payloads. Reuse redaction helpers such as `internal/secret` before persistence or display.
-- In React, prefer rendered error state or an error boundary. `console.warn`/`console.error` is limited to failures where the UI has already contained the error (`web/src/graph/ArcadeGraphCanvas.tsx`, `web/src/conversations/ConversationSidebar.tsx`).
+**Patterns:** structured key/value attributes; no `fmt.Println` debugging in production
+paths. Tracing knobs are `AURA_OTEL_*`; observability evidence has its own gates
+(`make observability-check`, `make observability-evidence`).
 
 ## Comments
 
-**When to Comment:**
-- Explain hidden constraints, measured behavior, security boundaries, compatibility traps, and why a non-obvious branch exists. `internal/canonicaljson/canonicaljson.go` and `web/vite.config.ts` are canonical examples.
-- Do not narrate identifiers or obvious control flow. Keep comments synchronized when behavior changes.
-- Cite the governing decision, live measurement, issue, or external API behavior when the reason would otherwise be lost.
-- Use file/package comments for load-bearing contracts and build/run instructions, especially integration tiers.
+**Rule:** no comments unless the *why* is non-obvious.
 
-**JSDoc/TSDoc:**
-- Document exported TypeScript contracts when callers need semantic detail beyond the type, as in `web/src/chat/toolGrouping.ts` and `web/src/api/json.ts`.
-- Go `revive` requires exported symbol comments. Interface implementations' repetitive `Spec`/`Execute` comments are narrowly excluded in `.golangci.yml`; do not generalize that exclusion.
-- Python modules and public transformation functions use docstrings when behavior or supported formats are non-obvious (`services/ingest/extract.py`).
+**Measured reality:** the codebase interprets this as "few trivial comments, but long,
+dated, evidence-bearing comments where behaviour is surprising." This is a genuine
+divergence in volume from a naive reading of the rule, and it is deliberate — the
+comments carry incident dates and measurements, not restatements of the code:
+- `internal/dbtest/live_target_guard.go` — ~20 lines explaining why a live database
+  named `aura` is refused, citing the 2026-08-13 and 2026-07-10 incidents.
+- `Makefile` `memory-up-core` — explains the daemon/scheduler race measured on CI #1809.
+- `lefthook.yml` — each hook records why it moved between pre-commit and pre-push.
+- `internal/config/config.go` `Timezone` — records the 2026-08-16 wrong-clock measurement.
 
-## Function Design
+There are essentially no "returns the X" restatement comments outside required doc
+comments on exported symbols.
 
-**Size:**
-- Keep functions focused and files at or below 600 lines. Split a touched oversized module by concern instead of adding another branch to it.
-- Prefer early returns and small pure helpers for parsing, validation, normalization, and transformation. Keep external I/O in thin boundary functions.
-- Extract reusable behavior rather than duplicating it. Go `dupl` and frontend jscpd enforce this on production code.
+**Doc comments:** every package has a package comment stating what it owns and, often,
+what it deliberately does not (`internal/envutil`, `internal/dbtest`,
+`internal/agent/agenttest`, `internal/config`).
 
-**Parameters:**
-- Pass `context.Context` first for cancellable Go operations.
-- Use a config/options struct when a constructor has several related settings. Use functional `With...` helpers only when they decorate an existing value or context.
-- Accept the smallest dependency interface the function consumes. Do not introduce wrappers around third-party APIs without first inventorying the installed dependency's public surface.
-- Use explicit TypeScript props interfaces with `readonly` fields. Destructure React props at the component boundary.
+## Function and Module Design
 
-**Return Values:**
-- Return `(value, error)` for Go fallible operations and preserve zero-value usability where practical.
-- Use typed result structs for multi-field outcomes. Do not encode status in ad-hoc strings when a type or sentinel can represent it.
-- Return `null` in TypeScript only when absence is an intentional part of the declared contract (`toolRun`); throw typed errors for failed requests.
+**Size:** subordinate to the 600-LOC file cap; functions are short and single-purpose,
+with concerns split into sibling files instead of long functions.
 
-## Module Design
+**Exports:** minimal surface; helpers unexported unless a sibling package needs them.
+No barrel files (not a Go idiom here); `internal/` is the visibility boundary.
 
-**Exports:**
-- Go packages expose only the symbols required by consumers. Constructors validate dependencies before returning a usable component.
-- Keep interfaces near consumers and implementations near their owned package. Test doubles remain in `_test.go` or shared test-support packages such as `internal/agent/agenttest` and `internal/dbtest`.
-- Prefer named TypeScript exports for components, hooks, types, and utilities. Default exports are reserved for route/lazy-load boundaries already structured that way, such as `web/src/governance/GovernanceWorkspace.tsx`.
-- Keep feature code together (`web/src/<feature>/`) and shared primitives under `web/src/components/ui/`, `web/src/lib/`, or `web/src/api/`.
+**Tools:** the deferred-tool pattern is a hard convention — one tool per file under
+`internal/agent/tools/<name>.go`, big tools flagged `Deferred: true` so they stay out
+of the LLM-visible manifest and are fetched via `tool_search`.
 
-**Barrel Files:**
-- Go does not use barrel files; the package is the public boundary.
-- TypeScript barrels are exceptional. Import concrete files to preserve traceability and bundle analysis, and extend an existing intentional barrel only when it is already the feature's public contract.
+## Environment Variables
+
+**Convention:** `AURA_<DOMAIN>_<UNIT>`. 338 distinct `AURA_*` names are referenced in
+Go source at HEAD.
+
+**Sanctioned exceptions** (upstream/third-party canonical names, read directly):
+`ARCADEDB_*` (URL, USER, PASSWORD, DATABASE, ADMIN_USER, ADMIN_PASSWORD,
+TIMEOUT_SECONDS), `POSTGRES_PASSWORD`, `PGHOST`, `PGPORT`, `TELEGRAM_BOT_TOKEN`,
+`TELEGRAM_API_BASE_URL`, `TELEGRAM_FILE_BASE_URL`, `OPENROUTER_API_KEY`,
+`MULTIMODAL_BASE_URL`, `MULTIMODAL_MODEL`, `STT_BASE_URL`, `STT_MODEL`, `TTS_BASE_URL`,
+`SEARXNG_URL`, `GARAGE_RPC_SECRET`, `COCOINDEX_DB`, `MCP_OAUTH_JWKS_URL`,
+`MCP_OAUTH_TRUSTED_ISSUERS`, `DOCKER_HOST`. Plus the CI/tooling primitives
+`CI`, `GITHUB_ACTIONS`, `UPDATE_GOLDEN`, `USER`, `EXPLICIT_PUBLIC`.
+
+**Reading env:** optional knobs go through `internal/envutil` (`IntDefault`,
+`BoolDefault`); root composition and DSN assembly live in `internal/config/config.go`
+(`.env` loaded via `godotenv`). Hard-coded env reads scattered through business logic
+are the anti-pattern the config root exists to prevent.
+
+## Gates (what actually runs)
+
+**Local, per commit (`lefthook.yml` `pre-commit`, staged-file scoped):**
+`gofmt` → `scripts/vet-staged.sh` → `scripts/lint-staged.sh` →
+`scripts/check-file-size.sh {staged_files}` → `scripts/check-dup.sh` (web only).
+
+**Local, per push (`pre-push`):**
+`go build $(scripts/go_packages.sh)`, `scripts/tagged_tier_pre_push.sh`,
+`scripts/payload_manifest_gate.sh`, `scripts/sqlc_sync_gate.sh` (on `internal/db/**`),
+`scripts/deadcode_pre_push.sh`, `scripts/check-deadcode-web.sh`,
+`scripts/web_quality_hook.sh` (on `web/**`).
+
+**Make targets (`Makefile`):**
+- `make quality` — no containers: `deadcode vet file-size embedding-model-contract
+  llm-model-contract lint test-race vuln`, then `go build`.
+- `make quality-full` — `quality` + `make coverage`.
+- `make web-quality` — `web-lint` (eslint `--max-warnings=0` + `tsc --noEmit` +
+  `prettier --check`) + `web-test` + `web-mutation`.
+- `make critical-mutation`, `make evidence-contracts`, `make release-readiness`,
+  `make observability-evidence` — release-blocking evidence gates.
+
+**CI (`.github/workflows/ci.yml`, 23 jobs):** `build-and-lint`, `unit-test`,
+`capability-eval`, `cache-invariant`, `vulncheck`, `observability-contract`,
+`integration-test`, `sqlc-golden`, `web-integration-test`,
+`knowledge-integration-test`, `arcadedb-integration-test`, `ingest-sidecar-test`,
+`reasoning-tier-test`, `multimodal-integration-test`, `telegram-integration-test`,
+`whatsapp-integration-test`, `calendar-integration-test`, `web-lint`, `web-test`,
+`web-mutation`, `race-db-integration-gates`, `sandbox-docker-integration`, plus the
+MUSR two-identity E2E job. Other workflows: `skills.yml`, `codeql.yml`,
+`production-readiness.yml`, `release.yml`, the publish/retire image workflows.
 
 ---
 
-*Convention analysis: 2026-08-25*
+*Convention analysis: 2026-09-07*

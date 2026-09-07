@@ -1,122 +1,120 @@
 # Technology Stack
 
-**Analysis Date:** 2026-08-25
+**Analysis Date:** 2026-09-07
 
 ## Languages
 
 **Primary:**
-- Go 1.26.6 - Application server, CLI, orchestration, MCP clients/servers, storage adapters, authentication, observability, and integration logic under `cmd/`, `internal/`, and `services/arcadedb-mcp/`; the module declaration and toolchain contract live in `go.mod`.
-- TypeScript 6.0.3 with React TSX - Embedded cockpit UI under `web/src/`; compiler settings are defined in `web/tsconfig.json` and the exact toolchain is locked in `web/package-lock.json`.
+- Go 1.26.6 — the whole backend: `cmd/aura` (daemon + CLI), `cmd/arcadedb-mcp`, `cmd/aura-filecard`, `cmd/aura-media-index`, `cmd/aura-ingest-supervisor`, and ~68 packages under `internal/`. Module path `github.com/chetto1983/aura` (`go.mod`). No `toolchain` directive — the `go` line is the floor and CI resolves via `go-version-file: go.mod`.
+- TypeScript ~6.0 / TSX — the cockpit SPA in `web/src`, built by Vite and embedded into the Go binary (`internal/webui/embed.go`, `//go:embed all:dist`).
 
 **Secondary:**
-- Python 3.12 - CocoIndex ingestion sidecar under `services/ingest/`, built from `docker/aura-ingest/Dockerfile`; model fine-tuning utilities under `finetune/` have a separate, optional dependency set in `finetune/requirements.txt`.
-- SQL - PostgreSQL migrations under `internal/db/migrations/` and sqlc queries under `internal/db/queries/`; ArcadeDB queries are issued from Go in files such as `internal/arcadedb/client.go`.
-- Shell, PowerShell, YAML, and Dockerfile syntax - Build, release, deployment, and operational automation in `scripts/`, `deploy/`, `.github/workflows/`, `docker-compose.yml`, and `docker/`.
+- SQL — 188 files (94 up/down pairs, latest `0119_drop_orphan_content_parts`) in `internal/db/migrations/`, plus hand-written queries in `internal/db/queries/` consumed by sqlc.
+- Python 3 — only inside the ingestion sidecar image (`docker/aura-ingest/Dockerfile`, `docker/aura-ingest/requirements.txt`). No Python in the repo's own source tree.
+- Shell — the gate/verification layer under `scripts/` (`coverage_gate.sh`, `coverage_docker.sh`, `go_packages.sh`, `check-file-size.sh`, `deadcode_gate.sh`, `install.sh`).
+- Node (ESM `.mjs`) — installer veneer `scripts/create-aura.mjs` (root `package.json` `bin: create-aura-appliance`) and `web/tokens/generate-theme.mjs`.
 
 ## Runtime
 
 **Environment:**
-- Go 1.26.6 - Required by `go.mod`; production binaries are compiled with `CGO_ENABLED=0` in `docker/aura/Dockerfile` and `.goreleaser.yaml`.
-- Node.js 24.16.0 - Cockpit build runtime, pinned by `.nvmrc`, `.node-version`, and the `engines.node` field in `web/package.json`.
-- Python 3.12 - Deployed ingestion runtime from `python:3.12-slim-bookworm` in `docker/aura-ingest/Dockerfile`.
-- Debian Bookworm - Main production runtime base in `docker/aura/Dockerfile`; the image also supplies document conversion, OCR, PostgreSQL client, Node.js, Python, `uv`, and Git tooling.
-- Alpine Linux - Build/runtime base for the ArcadeDB MCP service in `docker/arcadedb-mcp/Dockerfile` and the Go build stage in `docker/aura/Dockerfile`.
+- Go 1.26 (`go.mod`). Release binaries are `CGO_ENABLED=0` static builds for linux/darwin/windows × amd64/arm64 (`.goreleaser.yaml`). CGO is only needed for the `-race` test tier.
+- Node.js 24.16.0 pinned by `.nvmrc` and `.node-version`; `web/package.json` `engines` requires `>=24.16.0 <25` with npm `>=11 <13`.
+- Docker / Docker Compose — the appliance runtime (`compose.yaml`, `name: aura`); also a *runtime dependency* of the product itself (per-identity sandboxes are containers).
+- Optional gVisor isolation tier: `runtime: ${AURA_RUNTIME:-runc}` on the `aura` service.
 
 **Package Manager:**
-- Go modules - Dependencies are declared in `go.mod` and resolved by `go.sum`; both files are present.
-- npm 11-12 - `web/package.json` accepts npm `>=11 <13` and declares `npm@12.0.0` as the package manager; `web/package-lock.json` is a lockfile-v3 lockfile and must remain authoritative for exact frontend versions.
-- pip - Python dependencies are pinned for the ingestion image in `docker/aura-ingest/requirements.txt`; experimental fine-tuning constraints live separately in `finetune/requirements.txt`.
-- `uv` 0.11.32 - Installed in the main application and sandbox images by `docker/aura/Dockerfile` and `docker/aura-sandbox/Dockerfile` for Python tool execution.
+- Go modules; `go.sum` present; `modules-download-mode: readonly` enforced in `.golangci.yml`.
+- npm 12.0.0 declared via `packageManager` in `web/package.json`; `web/package-lock.json` committed.
 
 ## Frameworks
 
-**Core:**
-- Go standard-library HTTP stack - The application server and REST/SSE routes are assembled under `cmd/aura/` and `internal/agui/`; use the existing `net/http` handler and middleware patterns when adding endpoints.
-- React 19.2.7 and React DOM 19.2.7 - Cockpit component runtime in `web/src/`, with exact versions in `web/package-lock.json`.
-- Vite 8.0.16 - Cockpit build and development server configured in `web/vite.config.ts`; production output is written to `internal/webui/dist/` for embedding in the Go binary.
-- React Router 8.3.0 - Client-side routing used under `web/src/`; use route definitions and navigation patterns already present there.
-- TanStack Query 5.101.0 - Server-state fetching and mutation layer in `web/src/`; keep API state in query hooks rather than duplicating it in component-local caches.
-- Tailwind CSS 4.3.1 - Utility CSS pipeline wired through `web/vite.config.ts` and frontend styles under `web/src/`.
-- Assistant UI 0.15.14 - Chat and assistant surface in `web/src/`, backed by `@assistant-ui/core` 0.3.13 and `assistant-stream` 0.3.23 as locked in `web/package-lock.json`.
-- TipTap 3.29.2 - Rich-text editing used by cockpit components under `web/src/`.
-- Cytoscape 3.34.0 - Graph visualization dependency used by cockpit graph views under `web/src/`.
-- Svar UI 2.6.0 - Calendar/scheduling UI dependency used under `web/src/`.
-- CocoIndex 1.0.20 - Identity-scoped document ingestion and reconciliation in `services/ingest/app.py`, with S3 and PostgreSQL extras pinned in `docker/aura-ingest/requirements.txt`.
+**Core (Go):**
+- `net/http` stdlib with Go 1.22+ pattern routing (`mux.HandleFunc("GET /api/connect/pim/accounts", …)` in `internal/agui/connect_pim_api.go`) — no web framework.
+- `github.com/jackc/pgx/v5` v5.10.0 — Postgres driver/pool.
+- sqlc (CLI v1.31.1, config `sqlc.yaml`) — generates `internal/db/sqlc/` from `internal/db/migrations` + `internal/db/queries`, `sql_package: pgx/v5`, `emit_interface: true`.
+- `github.com/golang-migrate/migrate/v4` v4.19.1 — migration runner behind `aura db migrate` (`cmd/aura/db.go`).
+- `github.com/modelcontextprotocol/go-sdk` v1.7.0 — MCP client and server (`internal/mcp/`, `cmd/arcadedb-mcp/`).
+- `github.com/ag-ui-protocol/ag-ui/sdks/community/go` — AG-UI event protocol for the cockpit gateway (`internal/agui/`).
+- `github.com/openai/openai-go/v3` v3.54.0 — OpenAI-compatible wire client (`internal/llm/openai_compat/client.go`).
+- `gopkg.in/telebot.v4` v4.0.0-beta.10 — Telegram bot (`internal/channels/telegram/bot.go`).
+- `github.com/Authula/authula` v1.43.0 — embedded auth provider (`internal/webauth/authula.go`).
+- `github.com/moby/moby/client` v0.5.1 + `github.com/moby/moby/api` v1.55.0 — Docker Engine API for the sandbox backend (`internal/sandbox/usersandbox/docker_backend.go`).
+- `github.com/adhocore/gronx` v1.20.3 — cron expression evaluation (`internal/cron/`).
+- `github.com/lestrrat-go/jwx/v3` v3.2.0 — JWT/JWKS for MCP OAuth (`internal/mcpoauth/`, `internal/webauth/mcp_oauth_server.go`).
+- `github.com/aws/aws-sdk-go-v2/service/s3` v1.109.1 — S3 client against Garage (`internal/objectstore/s3.go`).
+
+**Core (frontend):**
+- React 19.2 + React DOM, `react-router` v8, `@tanstack/react-query` v5.
+- `@assistant-ui/react` v0.15 + `assistant-stream` — the chat surface.
+- Radix UI primitives + Tailwind CSS v4 (`@tailwindcss/vite`), `class-variance-authority`, `tailwind-merge`, `tw-animate-css`.
+- `shiki`/`@shikijs/*` syntax highlighting, `react-markdown` + `remark-gfm` + `rehype-sanitize`, `@tiptap/react` editor, `cytoscape` + `cytoscape-fcose` for the memory graph view, `@svar-ui/react-filemanager` for the file browser, `i18next`/`react-i18next`.
 
 **Testing:**
-- Go `testing` - Unit and integration tests live beside packages throughout `internal/`, `cmd/`, and `services/arcadedb-mcp/`; run them through targets in `Makefile`.
-- `go.uber.org/goleak` 1.3.0 - Goroutine leak assertions in Go tests, declared in `go.mod`.
-- `pgregory.net/rapid` 1.3.0 - Property-based Go tests, declared in `go.mod`.
-- Vitest 4.1.9 - Frontend unit/component runner configured by `web/vitest.config.ts` and scripts in `web/package.json`.
-- Testing Library 16.3.2 - React component testing utilities used by tests under `web/src/`.
-- Playwright 1.61.0 - Browser end-to-end tests under `web/e2e/`, configured by `web/playwright.config.ts`.
-- Stryker 9.6.1 - Frontend mutation testing configured in `web/stryker.config.json`, with the dedicated Vitest configuration in `web/vitest.stryker.config.ts`.
+- Go stdlib `testing` with build-tag tiers (`db_integration`, `docker_integration`, `arcadedb_integration`, `agent_eval`, live/e2e tiers). `make tagged-tier-compile` enumerates them.
+- `go.uber.org/goleak` v1.3.0 — goroutine-leak assertions in `main_test.go` files.
+- `pgregory.net/rapid` v1.3.0 — property-based tests (e.g. `internal/gateway/classify_property_test.go`).
+- `github.com/testcontainers/testcontainers-go` v0.42.0 (indirect, via Authula) — container fixtures.
+- `go-mutesting` (avito-tech fork) — mutation spot-checks, ≥70% killed per critical boundary (`make critical-mutation`).
+- Frontend: Vitest 4 + `@vitest/coverage-v8` (≥85% thresholds in `web/vitest.config.ts`), Playwright 1.62 (`web/playwright.config.ts`, `web/e2e/`), Stryker 10 mutation (`web/stryker.config.json`, break=70), `axe-core` for a11y.
 
 **Build/Dev:**
-- React Compiler - Babel-based React compilation is configured in `web/vite.config.ts`; keep the compiler plugin before the React plugin when changing Vite configuration.
-- TypeScript strict mode - `web/tsconfig.json` enables strict checking, `noUncheckedIndexedAccess`, and `exactOptionalPropertyTypes`; new frontend code must satisfy these contracts.
-- GoReleaser v2 - Cross-platform packaging, archives, checksums, SBOMs, GitHub Releases, and GHCR images are configured in `.goreleaser.yaml`.
-- sqlc v2 - Generates pgx/v5 database code from `internal/db/queries/` and `internal/db/migrations/` into `internal/db/sqlc/`, configured by `sqlc.yaml`.
-- golang-migrate 4.19.1 - Applies the migration chain under `internal/db/migrations/`; schema changes must use new paired up/down migrations.
-- golangci-lint 2.12.2, Staticcheck, govulncheck, deadcode, goimports, and dupl - Quality tools and versions are coordinated by `Makefile` and hook commands in `lefthook.yml`.
-- Docker Compose - Defines the appliance topology, profiles, health checks, networks, volumes, and service dependencies in `docker-compose.yml`.
+- Vite 8 + `@vitejs/plugin-react` + `babel-plugin-react-compiler` (`web/vite.config.ts`); `npm run build` = `node tokens/generate-theme.mjs && tsc -b && vite build`, output committed to `internal/webui/dist`.
+- GoReleaser v2 (`.goreleaser.yaml`) for tagged releases.
+- `Makefile` is the gate index (`make help` lists every target).
+- `lefthook.yml` — pre-commit (gofmt/vet/golangci-lint on staged packages) and pre-push hooks.
+- `golangci-lint` v2.12.2 pinned in `Makefile:tools` and CI.
 
 ## Key Dependencies
 
 **Critical:**
-- `github.com/Authula/authula` 1.40.0 - Embedded identity provider and authentication plugin system used from `internal/webauth/authula.go`.
-- `github.com/jackc/pgx/v5` 5.10.0 - PostgreSQL driver and pool used by the control plane, Authula, generated sqlc code, and persistence packages under `internal/`.
-- `github.com/golang-migrate/migrate/v4` 4.19.1 - PostgreSQL schema lifecycle used by startup and migration code under `internal/db/`.
-- `github.com/modelcontextprotocol/go-sdk` 1.7.0 - Generic MCP client/server transport, protocol, and OAuth support under `internal/mcp/` and `cmd/arcadedb-mcp/`.
-- `github.com/ag-ui-protocol/ag-ui/sdks/community/go` pseudo-version `e9e910b230b9` - AG-UI event and run protocol used by the assistant ingress under `internal/agui/`.
-- AWS SDK for Go v2 (`aws` 1.43.7, `config` 1.32.38, `credentials` 1.19.37, `service/s3` 1.107.3) - S3-compatible Garage storage and presigning in `internal/objectstore/s3.go`.
-- `gopkg.in/telebot.v4` 4.0.0-beta.10 - Telegram long-polling channel implementation under `internal/channels/telegram/`.
-- `codeberg.org/readeck/go-readability/v2` 2.1.2 and `github.com/JohannesKaufmann/html-to-markdown/v2` 2.5.2 - Web-page extraction and Markdown conversion in `internal/web/`.
-- `github.com/goccy/go-yaml` 1.19.2 - YAML parsing for configuration and tooling paths declared in `go.mod`.
+- `github.com/jackc/pgx/v5` — every control-plane read/write.
+- `github.com/modelcontextprotocol/go-sdk` — both the tool surface Aura consumes and the memory server she publishes.
+- `github.com/openai/openai-go/v3` — the single wire client for OpenRouter, llama.cpp, and Ollama alike.
+- `github.com/moby/moby/client` — no sandbox without it; `internal/sandbox/usersandbox` is the only backend.
+- `github.com/Authula/authula` — cockpit sessions, TOTP, operator identity.
 
 **Infrastructure:**
-- PostgreSQL 18.4 (`postgres:18.4-alpine3.24`) - Durable control-plane and Authula relational store declared in `docker-compose.yml`.
-- Garage 2.3.0 (`dxflrs/garage:v2.3.0`) - S3-compatible object store declared in `docker-compose.yml`; the same server binary is copied into the main image by `docker/aura/Dockerfile`.
-- ArcadeDB 26.8.1 (`arcadedata/arcadedb:26.8.1`) - Identity-scoped long-term graph/document memory declared in `compose.yaml` and accessed by `internal/arcadedb/`.
-- llama.cpp server (`ghcr.io/ggml-org/llama.cpp:server-cuda`) - Embedding runtime and optional local chat/OCR runtimes declared as separate services in `docker-compose.yml`.
-- faster-whisper server (`hwdsl2/whisper-server:latest`) - Local speech-to-text OpenAI-compatible endpoint declared in `docker-compose.yml`.
-- Kokoro FastAPI (`ghcr.io/remsky/kokoro-fastapi-cpu:latest`) - Local text-to-speech OpenAI-compatible endpoint declared in `docker-compose.yml`.
-- SearXNG (`searxng/searxng:2026.7.26-b060c780d`) - Local metasearch service declared in `docker-compose.yml` and called by `internal/web/searxng.go`.
-- Caddy 2 with the deSEC DNS module - HTTPS ingress built by `docker/caddy/Dockerfile` and configured by `Caddyfile`.
-- `ghcr.io/chetto1983/aura-pim-mcp:c497224cf8a0c8eeaea02210d5101b1e032661fb` - Mail, calendar, and contacts MCP sidecar pinned in `docker-compose.yml`.
-- `ghcr.io/chetto1983/whatsapp-mcp:sha-9911eb8` - WhatsApp MCP and management sidecar pinned in `docker-compose.yml`.
-- Prometheus 3.13.1, Tempo 2.9.4, and Grafana 12.3.9 - Optional observability profile declared with digest-pinned images in `docker-compose.yml` and configured under `observability/`.
+- OpenTelemetry v1.46.0 (`otel`, `sdk`, `sdk/metric`, OTLP gRPC trace exporter, stdout exporter, Prometheus exporter) — `internal/obs/init.go`, `tracer.go`, `meter.go`.
+- `github.com/prometheus/client_golang` v1.24.1 — `/metrics` on `AURA_METRICS_BIND`.
+- `github.com/pkoukk/tiktoken-go` v0.1.8 — token accounting for context budgets.
+- `github.com/goccy/go-yaml` v1.19.2 — skill frontmatter and config parsing.
+- `github.com/google/jsonschema-go` v0.4.3 — tool schemas.
+- `codeberg.org/readeck/go-readability/v2` + `github.com/JohannesKaufmann/html-to-markdown/v2` — web fetch text extraction (`internal/web/fetcher_text.go`).
+- `github.com/mdp/qrterminal/v3` + `rsc.io/qr` — WhatsApp pairing QR in the terminal.
+- `github.com/mattn/go-sqlite3` — local sidecar state.
+- `github.com/PaulSonOfLars/gotg_md2html` — Telegram MarkdownV2 rendering (`internal/channels/telegram/mdv2.go`).
+
+**Sidecar (Python, `docker/aura-ingest/requirements.txt`):**
+- `cocoindex[amazon_s3,postgres]==1.0.20`, `iscc-tika==0.6.0`, `neo4j==5.28.1`. Both extras are load-bearing (the file documents the exact import failures without them).
 
 ## Configuration
 
 **Environment:**
-- Application configuration is loaded from environment variables in `internal/config/config.go`; `godotenv.Load()` permits a repository-local `.env` file during development. A `.env` file is present and contains environment configuration; do not read or commit its values.
-- LLM configuration precedence is `built-in defaults < .env OPENROUTER_API_KEY < ~/.aura/llm.json < AURA_LLM_*`, implemented in `internal/llm/config.go`.
-- Compose deployment variables and required-value guards are declared in `docker-compose.yml`; keep secrets out of source-controlled configuration and inject them at runtime.
-- Embedding dimension, revision, and fingerprint form a compatibility contract in `internal/config/config_embed.go`; update storage/index compatibility deliberately when changing the embedding model.
-- Managed MCP server definitions and encrypted environment/header material are stored in PostgreSQL by `internal/mcpregistry/store.go`, using the schema introduced by `internal/db/migrations/0101_mcp_server_registry.up.sql`.
+- Convention `AURA_<DOMAIN>_<UNIT>`; **338 distinct `AURA_*` keys** are read from Go source across `internal/` and `cmd/`. Third-party names keep upstream spelling: `POSTGRES_*`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_API_BASE_URL`, `TELEGRAM_FILE_BASE_URL`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `MULTIMODAL_*`, `STT_*`, `TTS_*`, `SEARXNG_URL`, `ARCADEDB_*`, `LLAMA_ARG_*`, `ASPNETCORE_URLS`, `CALENDAR_MCP_*`, `DESEC_TOKEN`.
+- Loader: `internal/config/config.go` plus the split knob files (`config_embed.go`, `config_sandbox.go`, `config_retention.go`, `config_web.go`, `config_agui_run.go`, `config_routes.go`, …); primitives are read via `internal/envutil`. `github.com/joho/godotenv` loads `.env`.
+- `.env.example` (635 lines) is the committed catalog; `.env` exists locally and is never read by tooling other than Compose interpolation and the daemon.
+- Composed DSNs matter: `AURA_DB_URL` / `AURA_DB_MIGRATE_URL` / `AURA_DB_BOOTSTRAP_URL` are what tests read, while `config.Load` composes them from the `POSTGRES_*` primitives for the CLI.
 
 **Build:**
-- Go module and dependency configuration: `go.mod`, `go.sum`.
-- Frontend dependency and compiler configuration: `web/package.json`, `web/package-lock.json`, `web/tsconfig.json`, `web/vite.config.ts`, `web/vitest.config.ts`, and `web/playwright.config.ts`.
-- Database generation and migration configuration: `sqlc.yaml`, `internal/db/queries/`, and `internal/db/migrations/`.
-- Container and topology configuration: `docker-compose.yml`, `docker/aura/Dockerfile`, `docker/aura-ingest/Dockerfile`, `docker/arcadedb-mcp/Dockerfile`, `docker/aura-sandbox/Dockerfile`, `docker/aura-egress/Dockerfile`, and `docker/caddy/Dockerfile`.
-- Release and CI configuration: `.goreleaser.yaml`, `.github/workflows/`, `Makefile`, and `lefthook.yml`.
+- `go.mod` / `go.sum`, `sqlc.yaml`, `.golangci.yml`, `Makefile`, `lefthook.yml`, `.goreleaser.yaml`.
+- Frontend: `web/vite.config.ts`, `web/tsconfig.json`, `web/tsconfig.node.json`, `web/eslint.config.js`, `web/vitest.config.ts`, `web/playwright.config.ts`, `web/stryker.config.json`, `web/knip.json`, `web/components.json`.
+- Images: `docker/aura/`, `docker/arcadedb/`, `docker/arcadedb-mcp/`, `docker/aura-ingest/`, `docker/aura-sandbox/`, `docker/aura-egress/`, `docker/caddy/`, `docker/garage/`.
+- Host units: `deploy/aura.service`, `deploy/aura-scheduler.service`, `deploy/aura-image-update.{service,timer,sh}`.
 
 ## Platform Requirements
 
 **Development:**
-- Use WSL as the primary full-development environment according to `CLAUDE.md`; Go 1.26.6, Node 24.16.0, npm 11-12, Docker with Compose, and PostgreSQL tooling cover the standard build and verification paths.
-- Run Go and web gates through `Makefile` and `web/package.json`; generated cockpit assets under `internal/webui/dist/` must match the `web/` source before packaging.
-- Use Docker Compose profiles from `docker-compose.yml` only when their facilities are needed: `ingest`, `localllm`, `ocr`, `sandbox`, and `observability`.
-- Use the document/OCR tooling provisioned by `docker/aura/Dockerfile` or `docker/aura-sandbox/Dockerfile` when reproducing production document-processing behavior.
+- WSL is the primary environment (CLAUDE.md): `gcc` + GNU make, `CGO_ENABLED=1` for native `go test -race`, Go quality toolchain in `~/go/bin` (`make tools` installs golangci-lint v2.12.2, staticcheck, govulncheck, dupl, gotestsum, deadcode, goimports, go-mutesting, lefthook). `~/.local/bin:~/go/bin` must be prepended to PATH.
+- Docker daemon reachable (WSL dials the Windows stack via `127.0.0.1`).
+- NVIDIA GPU for the llama.cpp sidecars (`ghcr.io/ggml-org/llama.cpp:server-cuda`); the `localllm` and `ocr` Compose profiles are opt-in.
+- Gates: `make quality` (no containers) → deadcode, vet, file-size (600 LOC cap), embedding/LLM model contracts, lint, test-race, vuln, then `go build`. `make quality-full` adds `scripts/coverage_gate.sh` (owned-surface floor 85% plus the per-package policy in `scripts/coverage_package_policy.json`).
 
 **Production:**
-- Deploy as a self-hosted Docker Compose appliance defined by `docker-compose.yml`, with systemd lifecycle support in `deploy/aura.service` and optional native scheduler support in `deploy/aura-scheduler.service`.
-- Publish HTTPS through the custom Caddy image from `docker/caddy/Dockerfile`; public wildcard certificates use the deSEC DNS-01 module configured in `Caddyfile`.
-- Release binaries target Linux, macOS, and Windows on amd64/arm64, while the appliance image is published to GHCR through `.goreleaser.yaml` and `.github/workflows/release.yml`.
-- Persist application state in the named PostgreSQL, Garage, ArcadeDB, and Caddy volumes declared in `docker-compose.yml`; treat the application container filesystem as replaceable.
+- Single-host Docker Compose appliance (`compose.yaml`, project `aura`): 21 services — `aura`, `aura-migrate`, `garage-bootstrap`, `docker-socket-proxy`, `caddy`, `postgres`, `garage`, `arcadedb`, `arcadedb-mcp`, `aura-llama-embed`, `aura-ingest`, `whatsapp`, `searxng`, `aura-stt`, `aura-tts`, `aura-ocr-vl` (profile `ocr`), `aura-pim-mcp`, `aura-llm` (profile `localllm`), `prometheus`/`tempo`/`grafana` (profile `observability`).
+- Pinned images: `postgres:18.4-alpine3.24`, `arcadedata/arcadedb:26.9.1-SNAPSHOT` (digest-pinned; ≥26.4.2 enforced by `VerifySecureVersion` for CVE-2026-44221), `dxflrs/garage:v2.3.0`, `tecnativa/docker-socket-proxy:v0.5.0`, `searxng/searxng:2026.7.26`, `prom/prometheus:v3.13.1`, `grafana/tempo:2.9.4`, `grafana/grafana:12.3.9`.
+- Published images: `ghcr.io/chetto1983/aura:edge`, `ghcr.io/chetto1983/whatsapp-mcp:latest`, `ghcr.io/chetto1983/aura-pim-mcp:latest`.
+- CI: GitHub Actions — `ci.yml` (build-and-lint, unit-test, capability-eval, cache-invariant, vulncheck, observability-contract, integration-test, sqlc-golden, web-integration-test, knowledge-integration-test, arcadedb-integration-test, ingest-sidecar-test, reasoning-tier-test, multimodal-integration-test, telegram-integration-test, whatsapp-integration-test, calendar-integration-test, web-lint, web-test, web-mutation, race-db-integration-gates, sandbox-docker-integration), plus `codeql.yml`, `production-readiness.yml`, `skills.yml`, `release.yml`, `publish-aura-edge.yml`, `publish-arcadedb-mcp.yml`, `retire-aura-images.yml`, `create-aura-appliance.yml`, `claude.yml`.
 
 ---
 
-*Stack analysis: 2026-08-25*
+*Stack analysis: 2026-09-07*

@@ -1,362 +1,271 @@
 # Codebase Structure
 
-**Analysis Date:** 2026-08-25
+**Analysis Date:** 2026-09-07
 
 ## Directory Layout
 
-```text
-Aura/
-├── cmd/
-│   ├── aura/                 # Main CLI and long-lived daemon composition root
-│   ├── arcadedb-mcp/         # Streamable HTTP MCP server for graph memory
-│   └── aura-filecard/        # Document-card subprocess helper
-├── internal/                 # Private Go runtime, domains, adapters, and persistence
-│   ├── agent/                # Agent contract, LLM loop, prompts, tools, MCP bridge, workflows
-│   ├── agui/                 # AG-UI SSE bridge and cockpit REST API
-│   ├── runner/               # Durable per-conversation turn orchestration
-│   ├── gateway/              # Tool policy, approval, idempotency, reconciliation
-│   ├── cron/                 # Scheduler core plus kind-specific handlers
-│   ├── channels/telegram/    # Telegram transport, rendering, HITL, media
-│   ├── db/                   # pgx, migrations, SQL sources, generated sqlc
-│   ├── arcadedb/             # Graph memory and document-index client
-│   ├── sandbox/usersandbox/  # Per-identity sandbox port and Docker backend
-│   └── webui/dist/           # Committed generated Vite bundle embedded by Go
-├── web/                      # React 19 + TypeScript + Vite cockpit source/tooling
-│   ├── src/                  # Feature-grouped application source
-│   ├── e2e/                  # Playwright scenarios
-│   ├── tokens/               # Theme token generator/source
-│   └── public/               # Web public assets
-├── services/ingest/          # Python/CocoIndex object-store reconciliation sidecar
-├── docker/                   # Image build contexts for Aura and appliance sidecars
-├── caddy/                    # Reverse-proxy appliance configuration
-├── searxng/                  # Search-sidecar configuration
-├── observability/            # Prometheus, Tempo, Grafana, and runbooks
-├── deploy/                   # systemd unit files
-├── scripts/                  # Quality gates, smoke/E2E tests, drills, installers, evals
-├── docs/                     # Architecture, operations, audits, quality attestations
-├── finetune/                 # Function-calling dataset/export/training support
-├── spikes/                   # Committed empirical prototypes and findings
-├── public/                   # Release-facing public assets
-├── .github/workflows/        # CI/release pipelines
-├── .planning/                # Tracked GSD state, maps, phases, research, handoffs
-├── .claude/                  # Tracked project-local agent workflow/tooling bundle
-├── .agents/skills/           # Local untracked skill installation/indexes
-├── go.mod                    # Go module and toolchain contract
-├── Makefile                  # Build, test, quality, migration, and appliance targets
-├── sqlc.yaml                 # SQL source → generated Go configuration
-├── compose.yaml              # Full appliance topology
-└── CLAUDE.md                 # Canonical repository rules
 ```
+Aura/
+├── cmd/                # Binaries (680 files) — every executable entry point
+│   ├── aura/           # Main CLI + daemon (243 .go, 23,125 non-test LOC)
+│   ├── arcadedb-mcp/   # Memory MCP server (36 .go, 2,713 LOC)
+│   ├── aura-media-index/       # Media indexer helper (2 .go, 273 LOC)
+│   ├── aura-filecard/          # File card helper (1 .go, 64 LOC)
+│   └── aura-ingest-supervisor/ # Ingest supervisor helper (1 .go, 72 LOC)
+├── internal/           # All library code — 68 top-level packages, 5,044 files
+├── web/                # React + Vite cockpit (1,018 files, 560 .ts/.tsx in src/)
+├── internal/webui/dist # Committed Vite build, //go:embed'd into the binary
+├── scripts/            # Gates, evals, fixtures, installers (208 files)
+├── docs/               # Design notes, audits, quality snapshot (98 files)
+├── services/ingest/    # Python ingest sidecar (27 files)
+├── packages/create-aura/ # npx installer package (37 files)
+├── spikes/             # Throwaway experiments (38 files)
+├── finetune/           # Model fine-tuning assets (17 files)
+├── observability/      # Collector / dashboards config (16 files)
+├── docker/             # Dockerfiles + entrypoints (13 files)
+├── deploy/, caddy/, searxng/  # Deployment and sidecar service config
+├── artifacts/, backups/, dist/, public/  # Build and runtime output
+├── prd.md              # Architectural source of truth
+├── CLAUDE.md, AGENTS.md # Agent-facing project rules
+├── Makefile            # quality / quality-full / coverage gates
+├── compose.yaml        # ArcadeDB + sidecar stack
+└── sqlc.yaml           # sqlc codegen config
+```
+
+**Measured Go totals:** 67,703 non-test LOC across `cmd/` + `internal/`, and
+23,554 LOC of `_test.go` in the same tree.
 
 ## Directory Purposes
 
 **`cmd/aura/`:**
-- Purpose: Own executable-only command dispatch, dependency composition, cross-package adapters, HTTP route mounting, and daemon lifecycle.
-- Contains: Concern-split `*.go` files grouped by command (`chat_*.go`, `mcp_*.go`, `serve_*.go`, `document_*_wiring.go`).
-- Key files: `cmd/aura/main.go`, `cmd/aura/chat_boot.go`, `cmd/aura/serve.go`, `cmd/aura/serve_agui.go`, `cmd/aura/serve_webui.go`.
+- Purpose: the single production binary — CLI sub-commands and the daemon.
+- Contains: the composition roots. `serve.go` and ~45 `serve_*.go` siblings wire
+  the daemon; `chat_boot.go` is the shared sub-root; `chat*.go` is the REPL.
+- Key files: `main.go`, `serve.go` (`bootServe`), `chat_boot.go`
+  (`bootServeChatEnv`), `serve_channels.go`, `serve_webui.go`, `tools.go`.
 
 **`cmd/arcadedb-mcp/`:**
-- Purpose: Run Aura's model-facing graph-memory MCP server as a separate process.
-- Contains: Tenant resolution plus one `tool_*.go` file per MCP capability.
-- Key files: `cmd/arcadedb-mcp/main.go`, `cmd/arcadedb-mcp/tenant.go`, `cmd/arcadedb-mcp/tool_memory.go`.
+- Purpose: the MCP server the agent uses to reach its own memory.
+- Key files: `main.go`, `tool_memory.go`, `tool_memory_recall.go`,
+  `tool_memory_graph.go`, `tool_forget.go`, `auth.go`, `tenant.go`.
 
-**`cmd/aura-filecard/`:**
-- Purpose: Expose the reusable Go filecard implementation to the Python ingestion process.
-- Contains: One minimal flag-parsing entry point.
-- Key files: `cmd/aura-filecard/main.go`, implementation in `internal/documents/filecard/`.
+**`internal/agent/`** (351 files, 24,928 non-test LOC — the largest package):
+- Purpose: the agent runtime contract and the LLM tool-dispatch loop.
+- Subpackages: `tools/` (the model-callable surface), `mcptools/` (MCP → tool
+  bridge), `prompt/` (system-prompt builder, cache-stable), `workflow/`,
+  `display/`, `panicobs/`, `agenttest/` (test-only helpers, excluded from the
+  coverage denominator).
+- Key files: `agent.go`, `event.go`, `budget.go`, `llm_agent.go`,
+  `llm_agent_dispatch.go`, `llm_agent_round.go`, `tools/registry.go`,
+  `tools/spec.go`, `tools/manifest.go`.
 
-**`internal/agent/`:**
-- Purpose: Own the transport-neutral agent execution model.
-- Contains: `Agent`, `InvocationContext`, `Event`, `Budget`, concern-split `llm_agent_*.go`, hooks, tracing, verification, and display normalization.
-- Key files: `internal/agent/agent.go`, `internal/agent/event.go`, `internal/agent/budget.go`, `internal/agent/llm_agent.go`.
+**`internal/agui/`** (214 files, 17,185 LOC):
+- Purpose: the AG-UI HTTP + SSE gateway and the whole REST cockpit surface.
+- Key files: `server.go`, `server_sse.go`, `server_run.go`, `translator.go`,
+  `fanout.go`, `auth.go`, plus one `*_api.go` per REST domain (conversations,
+  governance, settings, share, assets, audit, voice, onboarding).
 
-**`internal/agent/tools/`:**
-- Purpose: Implement built-in tools and the dynamic/deferred registry.
-- Contains: One tool or tool concern per file, registry/spec/result helpers, shell/background execution, sandbox adapters, document/file/web/skill/scheduling tools.
-- Key files: `internal/agent/tools/spec.go`, `internal/agent/tools/registry.go`, `internal/agent/tools/search.go`, `internal/agent/tools/shell_exec.go`.
+**`internal/arcadedb/`** (126 files, 11,883 LOC):
+- Purpose: the bitemporal memory graph — schema, recall, vector search, provenance.
+- Key files: `memory.go` (schema + model doc), `memory_recall.go`,
+  `memory_vector.go`, `memory_graph_temporal.go`, `memory_supersede.go`,
+  `tenant.go`, `client.go`.
 
-**`internal/agent/mcptools/`:**
-- Purpose: Adapt advertised MCP tools into Aura's registry and supervise live mounts.
-- Contains: Mount/retry logic, bridge policies, risk/deferral, view hydration, and redial supervision.
-- Key files: `internal/agent/mcptools/mount.go`, `internal/agent/mcptools/bridge.go`, `internal/agent/mcptools/bridge_supervisor.go`.
+**`internal/db/`** (78 files, 11,957 LOC):
+- Purpose: Postgres access.
+- Contains: `migrations/` (golang-migrate pairs, currently through `0119`),
+  `queries/` (sqlc input), `sqlc/` (generated client — never hand-edited).
+- Key files: `db.go`, `migrate.go`, `tx.go`, `rls.go`.
+- **Next migration number is `ls internal/db/migrations/ | tail -1` + 1 — never
+  deduced from a document.**
 
-**`internal/agent/workflow/` and `internal/swarm/`:**
-- Purpose: Compose agents sequentially, in parallel, in loops, or as bounded ephemeral worker fan-out.
-- Contains: Workflow agent implementations and swarm runner/adapters.
-- Key files: `internal/agent/workflow/sequential.go`, `internal/agent/workflow/parallel.go`, `internal/agent/workflow/loop.go`, `internal/swarm/swarm.go`, `internal/swarm/runner_adapter.go`.
+**`internal/runner/`** (105 files, 5,688 LOC):
+- Purpose: per-turn orchestration and durability.
+- Key files: `runner.go`, `runner_deps.go`, `runner_persist.go`,
+  `runner_resume.go`, `runner_memory_capture.go`, `runner_history.go`.
 
-**`internal/runner/`:**
-- Purpose: Own durable interactive-turn orchestration around fresh `LlmAgent` instances.
-- Contains: Per-thread locks, turn assembly, model-context splitting, pause/resume, deletion, persistence, context management, stores/interfaces.
-- Key files: `internal/runner/runner.go`, `internal/runner/runner_session.go`, `internal/runner/runner_resume.go`, `internal/runner/runner_persist.go`.
+**`internal/channels/`** (85 files, 5,997 LOC):
+- Purpose: the daemon channel contract and its implementations. Telegram is the
+  only channel implemented today — there is no WhatsApp package.
+- Key files: `channel.go`, `registry.go`, `telegram/bot.go`,
+  `telegram/bot_dispatch.go`, `telegram/bot_dispatch_turn.go`,
+  `telegram/renderer.go`, `telegram/agui_subscriber.go`.
 
-**`internal/agui/`:**
-- Purpose: Serve the AG-UI protocol and the cockpit's authenticated REST API.
-- Contains: `Server`, route-specific `*_api.go` handlers, SSE translator/writer, auth middleware, detached run registry, consumer-declared service interfaces.
-- Key files: `internal/agui/server.go`, `internal/agui/server_run.go`, `internal/agui/translator.go`, `internal/agui/auth.go`.
+**`internal/mcp/`** (82 files, 5,524 LOC):
+- Purpose: MCP client transport, OAuth, SSRF/egress policy, tool result mapping.
+- Subpackages: `manager/` (server lifecycle), `mcpenv/`.
+- Key files: `sdkclient.go`, `oauth_flows.go`, `ssrf.go`, `egress_policy.go`.
 
-**`internal/webui/`:**
-- Purpose: Embed and serve the compiled browser application as a leaf Go package.
-- Contains: `embed.go` plus generated, committed `dist/` assets.
-- Key files: `internal/webui/embed.go`, `internal/webui/dist/index.html`.
+**`internal/conversations/`** (89 files, 5,717 LOC): durable conversation store,
+context budgeting, compaction, sidecars. Key: `store.go`, `compaction.go`,
+`context_budget.go`.
 
-**`web/src/`:**
-- Purpose: Implement the operator cockpit.
-- Contains: Feature directories (`chat`, `approvals`, `conversations`, `files`, `governance`, `graph`, `onboarding`, `settings`, `shell`) plus shared UI, theme, i18n, API, and tests.
-- Key files: `web/src/main.tsx`, `web/src/AppShell.tsx`, `web/src/chat/ExternalStoreChat.tsx`, `web/src/queryClient.ts`.
+**`internal/cron/`** (77 files, 4,066 LOC): the durable scheduler. Key:
+`scheduler.go`, `dispatch.go`, `store.go`, `claim.go`, `recover.go`.
 
-**`internal/gateway/`:**
-- Purpose: Centralize agent-tool policy enforcement and durable mutation reservation.
-- Contains: Risk classification, decisions, approvals/grants, reservations, scopes, guards, and crash reconciliation.
-- Key files: `internal/gateway/gateway.go`, `internal/gateway/decide.go`, `internal/gateway/reserve.go`, `internal/gateway/guard.go`.
+**`internal/llm/`** (58 files, 3,961 LOC): provider-neutral client, model
+catalog, pricing, capability probes. Key: `client.go`, `runtime.go`,
+`capabilities.go`, `model_catalog.go`.
 
-**`internal/sandbox/usersandbox/`:**
-- Purpose: Abstract one identity-scoped execution box and provide the Docker-backed implementation.
-- Contains: `Backend` port, router, sandbox spec, Docker lifecycle/exec/egress/materialization, path translation, and idle reaping.
-- Key files: `internal/sandbox/usersandbox/backend.go`, `internal/sandbox/usersandbox/router.go`, `internal/sandbox/usersandbox/docker_backend.go`.
+**`internal/skills/`** (58 files, 3,912 LOC): the self-extension system — catalog,
+install, validate, materialize, write. Ships built-in skills under
+`internal/skills/embed/`. Key: `loader.go`, `installer.go`, `writer.go`,
+`validator.go`, `catalog_store.go`.
 
-**`internal/cron/`:**
-- Purpose: Persist, claim, recover, schedule, dispatch, and notify recurring/one-shot work.
-- Contains: Core scheduler/store/dispatch types at package root; concrete task kinds under `internal/cron/handlers/`.
-- Key files: `internal/cron/scheduler.go`, `internal/cron/store.go`, `internal/cron/dispatch.go`, `internal/cron/handlers/agentjob.go`.
+**`internal/swarm/`** (47 files, 3,324 LOC): delegation and sub-agent spawn. Key:
+`swarm.go`, `delegation_run.go`, `delegation_queue.go`, `swarm_depth.go`.
 
-**`internal/channels/`:**
-- Purpose: Define fail-soft daemon channel lifecycle and delivery fan-out.
-- Contains: Channel/Deliverer interfaces and registry at root; Telegram implementation under `internal/channels/telegram/`.
-- Key files: `internal/channels/channel.go`, `internal/channels/registry.go`, `internal/channels/telegram/bot.go`.
+**`internal/sandbox/usersandbox/`** (31 files, 2,189 LOC): the per-user Docker
+sandbox. Key: `router.go`, `docker_backend.go`, `spec.go`, `egress.go`, `reap.go`.
 
-**`internal/db/`:**
-- Purpose: Own Postgres infrastructure and generated query plumbing.
-- Contains: Pool/migration/RLS/transaction logic, paired SQL migrations, handwritten query definitions, and generated sqlc bindings.
-- Key files: `internal/db/db.go`, `internal/db/migrate.go`, `internal/db/rls.go`, `internal/db/migrations/`, `internal/db/queries/`, `internal/db/sqlc/`.
+**Other notable packages:** `documents/` (5,201), `assets/` (2,851),
+`gateway/` (2,146), `config/` (2,113), `share/` (1,798), `web/` (1,717 — SearXNG
+search + fetch tools), `objectstore/` (1,692), `retention/` (1,662),
+`idempotency/` (1,430), `webauth/` (1,312), `obs/` (1,121). Small leaf helpers:
+`envutil/`, `idroot/`, `pgnumeric/`, `boundedbuffer/`, `reasoningfifo/`,
+`canonicaljson/`, `procgroup/`, `redact/`, `scoring/`, `bm25/`.
 
-**Domain packages under `internal/`:**
-- Purpose: Keep one product capability per package with its own store/service/types and narrow dependencies.
-- Contains: `internal/conversations/`, `internal/identity/`, `internal/assets/`, `internal/documents/`, `internal/skills/`, `internal/onboarding/`, `internal/settings/`, `internal/share/`, `internal/retention/`, and related small packages.
-- Key files: Constructor/store/service files inside each directory, such as `internal/conversations/store.go`, `internal/assets/service.go`, `internal/identity/store.go`.
-
-**External adapter packages under `internal/`:**
-- Purpose: Keep protocols and provider details out of domain/runtime code.
-- Contains: `internal/llm/`, `internal/mcp/`, `internal/arcadedb/`, `internal/objectstore/`, `internal/web/`, `internal/multimodal/`, `internal/embeddings/`.
-- Key files: `internal/llm/client.go`, `internal/mcp/sdkclient.go`, `internal/arcadedb/client.go`, `internal/objectstore/types.go`.
-
-**`services/ingest/`:**
-- Purpose: Reconcile identity-scoped object-store files into the ArcadeDB document index.
-- Contains: CocoIndex flow, extraction/conversion, chunking, identity/source mapping, ArcadeDB schema, and pytest coverage.
-- Key files: `services/ingest/app.py`, `services/ingest/arcade.py`, `services/ingest/extract.py`, `services/ingest/tests/`.
-
-**`docker/`, `caddy/`, `searxng/`, `observability/`, `deploy/`:**
-- Purpose: Package and operate the appliance around the binaries.
-- Contains: Docker build contexts, proxy/search configs, dashboards/scrape/trace configs/runbooks, and systemd units.
-- Key files: `docker/aura/Dockerfile`, `caddy/Caddyfile`, `searxng/settings.yml`, `observability/prometheus/prometheus.yml`, `deploy/aura.service`.
-
-**`scripts/`:**
-- Purpose: Provide executable evidence for quality, security, coverage, integration, release, restore, and performance requirements.
-- Contains: Shell, Python, Go, and PowerShell gates plus `scripts/eval/` and deterministic fixtures.
-- Key files: `scripts/coverage_gate.sh`, `scripts/agui_smoke.sh`, `scripts/quality_snapshot_gate.sh`, `scripts/restore_drill.sh`.
-
-**`docs/`:**
-- Purpose: Preserve product architecture, operator procedures, audit findings, and measured quality state.
-- Contains: Architecture/overview/capabilities, runbooks, audits, ADR-like reports, and `docs/aura-quality-snapshot.md`.
-- Key files: `docs/ARCHITECTURE.md`, `docs/TECHNICAL_OVERVIEW.md`, `docs/aura-quality-snapshot.md`, `docs/audit/`.
-
-**`.planning/`:**
-- Purpose: Store tracked GSD project state and generated codebase intelligence.
-- Contains: Project/roadmap/state/config, phases, handoffs, research, intel, and `.planning/codebase/`.
-- Key files: `.planning/STATE.md`, `.planning/ROADMAP.md`, `.planning/codebase/ARCHITECTURE.md`.
+**`web/`:**
+- Purpose: the React cockpit, built by Vite and committed into
+  `internal/webui/dist` for the single-binary embed.
+- Contains: `src/` (560 `.ts`/`.tsx` across `chat/`, `conversations/`,
+  `governance/`, `settings/`, `admin/`, `graph/`, `approvals/`, `onboarding/`,
+  `files/`, `audit/`, `health/`, `shell/`, `theme/`, `a11y/`, `i18n/`),
+  `e2e/` (Playwright), `tokens/`, `scripts/`.
+- Key files: `src/main.tsx`, `src/AppShell.tsx`, `src/routes/`, `vite.config.ts`,
+  `playwright.config.ts`, `stryker.config.json`.
 
 ## Key File Locations
 
 **Entry Points:**
-- `cmd/aura/main.go`: Top-level CLI dispatch.
-- `cmd/aura/serve.go`: Long-lived daemon lifecycle.
-- `cmd/arcadedb-mcp/main.go`: Memory MCP HTTP server.
-- `cmd/aura-filecard/main.go`: Filecard helper.
-- `services/ingest/app.py`: Python ingestion process.
-- `web/src/main.tsx`: Browser entry point.
+- `cmd/aura/main.go`: CLI dispatch for every sub-command.
+- `cmd/aura/serve.go`: `bootServe` — the daemon composition root.
+- `cmd/aura/chat_boot.go`: `bootServeChatEnv` — the shared sub-root.
+- `cmd/arcadedb-mcp/main.go`: the memory MCP server.
+- `web/src/main.tsx`: the web cockpit root.
 
 **Configuration:**
-- `internal/config/`: Typed environment configuration and profile validation.
-- `go.mod`, `go.sum`: Go module/toolchain/dependency lock.
-- `web/package.json`, `web/package-lock.json`: Frontend dependency and script contract.
-- `web/tsconfig.json`, `web/vite.config.ts`, `web/eslint.config.js`: Frontend compiler/build/lint configuration.
-- `sqlc.yaml`: SQL generation mapping.
-- `.golangci.yml`, `.editorconfig`, `lefthook.yml`: Repository style and local gates.
-- `compose.yaml`: Appliance topology; do not read secret-bearing runtime environment files.
+- `internal/config/`: `AURA_*` env loading and validation.
+- `compose.yaml`: ArcadeDB and sidecar stack.
+- `sqlc.yaml`, `Makefile`, `lefthook.yml`, `.golangci.yml`.
+- `scripts/coverage_package_policy.json`: per-package coverage contract.
 
 **Core Logic:**
-- `internal/runner/runner.go`: Durable turn lifecycle.
-- `internal/agent/llm_agent.go`: Model/tool loop.
-- `internal/agent/tools/spec.go`: Tool and registry contracts.
-- `internal/gateway/decide.go`: Tool policy decision point.
-- `internal/agui/server_run.go`: Web-to-runner request boundary.
-- `internal/cron/scheduler.go`: Scheduled execution lifecycle.
-- `internal/arcadedb/memory.go`: Long-term memory operations.
-- `internal/arcadedb/document_retrieval.go`: Hybrid document candidate retrieval.
-
-**Persistence:**
-- `internal/db/migrations/`: Paired Postgres migration source of truth.
-- `internal/db/queries/`: Handwritten sqlc SQL source.
-- `internal/db/sqlc/`: Generated Go bindings; regenerate instead of editing.
-- `internal/db/tx.go`, `internal/db/rls.go`: Transaction and tenant-scope infrastructure.
-- `internal/objectstore/types.go`: Blob-store port.
-- `internal/arcadedb/tenant_clients.go`: Per-identity graph-client resolution.
+- `internal/agent/llm_agent.go` + `llm_agent_*.go`: the agent loop.
+- `internal/agent/tools/`: every model-callable capability.
+- `internal/runner/runner.go`: turn orchestration.
+- `internal/arcadedb/memory*.go`: the memory model.
 
 **Testing:**
-- `internal/**/*_test.go`, `cmd/**/*_test.go`: Co-located Go unit/integration tests.
-- `web/src/**/*.test.ts(x)`, `web/src/**/__tests__/`: Co-located Vitest tests.
-- `web/e2e/`: Playwright browser tests.
-- `services/ingest/tests/`: Python ingestion tests.
-- `scripts/*smoke*`, `scripts/*gate*`, `scripts/*eval*`: Live/system validation and policy gates.
-
-**Canonical Guidance:**
-- `CLAUDE.md`: Binding repository rules.
-- `prd.md`: Measured product decisions and acceptance contracts.
-- `.agents/skills/spike-findings-Aura/SKILL.md`: Aura-specific spike index; confirm any historical finding against current code.
-- `.agents/skills/golang-project-layout/SKILL.md`: Local Go placement guidance (`cmd/` composition, `internal/` implementation, co-located tests).
+- Co-located `*_test.go` beside every implementation file.
+- `internal/dbtest/`, `internal/agent/agenttest/`: shared harnesses.
+- `web/e2e/`: Playwright specs.
+- `scripts/`: coverage, mutation, deadcode, dup, and smoke gates.
 
 ## Naming Conventions
 
 **Files:**
-- Go production files use lowercase snake case by concern: `serve_memory_readiness.go`, `llm_agent_retry.go`, `document_retrieval.go`.
-- Go tests are co-located and end `_test.go`; build-tag tiers often encode the tier in the file name, such as `*_integration_test.go` or Docker-specific files under `internal/sandbox/usersandbox/`.
-- React components and route/workspace files use PascalCase: `AppShell.tsx`, `ExternalStoreChat.tsx`, `GovernanceWorkspace.tsx`.
-- TypeScript hooks/utilities/API modules use camelCase: `useRunUsageOwner.ts`, `sseResume.ts`, `governanceApi.ts`.
-- Python modules/tests use snake case: `services/ingest/source.py`, `services/ingest/tests/test_extract.py`.
-- SQL migrations use four-digit numeric prefixes and paired `.up.sql`/`.down.sql` files in `internal/db/migrations/`.
-- sqlc queries group by domain noun in `internal/db/queries/`, generating a matching file in `internal/db/sqlc/`.
+- Concern-split: `<subject>_<concern>.go` — e.g. `llm_agent_dispatch.go`,
+  `memory_graph_temporal.go`, `serve_webui_routes.go`,
+  `bot_dispatch_callbacks.go`. This is a direct consequence of the 600-LOC ceiling.
+- Tests: `<file>_test.go` beside the source.
+- Tiered tests carry the tier in the name and a build tag:
+  `*_integration_test.go`, `*_db_integration_test.go`, `*_docker_test.go`,
+  `*_live_test.go`, `*_smoke_test.go`.
+- Migrations: `NNNN_snake_case_description.{up,down}.sql`.
+- Generated code lives only in `internal/db/sqlc/*.sql.go` and is never edited.
 
 **Directories:**
-- Go package directories are lowercase and match package names: `internal/toolinvocations/`, `internal/reasoningtrace/`, `internal/sandbox/usersandbox/`.
-- Domain subpackages are introduced only for a real boundary or concern, such as `internal/agent/tools/`, `internal/cron/handlers/`, and `internal/objectstore/garageadmin/`.
-- Frontend directories group by product feature (`web/src/chat/`, `web/src/governance/`) and use `components/`, `routes/`, `api/`, or `__tests__/` only where the feature benefits from the split.
+- Lowercase, single word, no underscores: `arcadedb`, `mcpregistry`,
+  `usersandbox`, `identityctx`.
+- Nested subpackages only where a real boundary exists
+  (`internal/agent/tools`, `internal/mcp/manager`, `internal/sandbox/usersandbox`).
 
-**Symbols:**
-- Go exported types/functions use PascalCase; unexported functions/variables use camelCase; constructors conventionally use `New` or a precise `New<Type>` in `internal/*`.
-- Consumer-facing interfaces name capability, not implementation: `Runner`, `Backend`, `Store`, `Deliverer`, `Handler` in `internal/agui/server.go`, `internal/sandbox/usersandbox/backend.go`, `internal/objectstore/types.go`, and `internal/cron/dispatch.go`.
-- React hooks start `use`; query keys are stable exported constants or domain tuples in feature modules under `web/src/`.
+**Go identifiers:** exported `PascalCase`, unexported `camelCase`; constructors
+are `New...`; consumer-side interfaces are narrow and declared in the consuming
+package (`runner.ConversationStore`, `tools.capabilityChecker`).
+
+## File Size Convention — current state
+
+The ≤600 LOC ceiling is enforced by `scripts/check-file-size.sh` (wired into
+`make quality` and lefthook pre-push).
+
+**It currently holds for every hand-written Go file.** The only files above 600
+LOC are sqlc-generated and exempt:
+
+| File | LOC |
+|------|-----|
+| `internal/db/sqlc/ingestion_jobs.sql.go` | 933 |
+| `internal/db/sqlc/assets.sql.go` | 907 |
+| `internal/db/sqlc/conversation_turns.sql.go` | 834 |
+| `internal/db/sqlc/conversations.sql.go` | 771 |
+| `internal/db/sqlc/models.go` | 727 |
+| `internal/db/sqlc/querier.go` | 645 |
+
+Zero hand-written violators. When a file approaches the ceiling, split it into a
+`<name>_<concern>.go` sibling in the same commit (refactor-on-touch).
 
 ## Where to Add New Code
 
-**New CLI Subcommand:**
-- Primary dispatch: add the verb in `cmd/aura/main.go`.
-- Implementation: create concern-split files such as `cmd/aura/<verb>.go` and `cmd/aura/<verb>_<concern>.go`.
-- Domain logic: place reusable behavior in `internal/<domain>/`; keep `cmd/aura/` to parsing, wiring, adapters, and exit-code translation.
-- Tests: co-locate `cmd/aura/<verb>_test.go` and add domain tests under `internal/<domain>/`.
+**New agent tool:**
+- Implementation: `internal/agent/tools/<name>.go`, with its `Spec` constant in
+  the same file. Set `Deferred: true` for anything with a long description or a
+  non-trivial schema; set `Mutating: true` if it can change host state.
+- Registration: the composition root in `cmd/aura/` (`tools.go` /
+  `serve_adapters.go`) — never a package-level init.
+- Tests: `internal/agent/tools/<name>_test.go`.
 
-**New Daemon Subsystem:**
-- Lifecycle/composition: wire into `cmd/aura/serve.go` or a focused `cmd/aura/serve_<subsystem>.go`.
-- Reusable service: implement under `internal/<subsystem>/` behind a narrow consumer-side interface.
-- Shutdown/readiness: add joined lifecycle logic beside `cmd/aura/serve_lifecycle.go`, `cmd/aura/serve_drain.go`, and `internal/readiness/`.
-- Tests: unit-test the internal service and composition adapter separately.
+**New channel:**
+- Implementation: `internal/channels/<name>/`, implementing
+  `channels.Channel` from `internal/channels/channel.go`.
+- Build the fanout per turn, inside the turn handler.
+- Wiring: `cmd/aura/serve_channels.go`.
 
-**New Agent Tool:**
-- Implementation/spec: add `internal/agent/tools/<name>.go`; split helpers as `<name>_<concern>.go` before 600 LOC.
-- Registration: update the shared registry construction in `cmd/aura/main.go` (`buildBaseRegistryWithHandles`) or the appropriate post-store wiring file.
-- Policy: set `Mutating`, `Destructive`, `Multiplexed`, and operation metadata in the tool `Spec`; add per-action classification to `internal/gateway/classify.go` when multiplexed.
-- Execution boundary: inject sandbox/store/service ports from `cmd/aura/`; do not import high-level domains solely to bypass a consumer seam.
-- Tests: `internal/agent/tools/<name>_test.go`, gateway classification tests, and live smoke coverage when external effects exist.
+**New HTTP endpoint (cockpit):**
+- Handler: `internal/agui/<domain>_api.go`.
+- Route registration: `cmd/aura/serve_webui_routes.go` or `serve_agui.go`.
+- Frontend: `web/src/<domain>/` plus a client in `web/src/api/`.
 
-**New MCP Integration:**
-- Generic transport/config: `internal/mcp/`.
-- Runtime bridge behavior: `internal/agent/mcptools/`.
-- Managed recipe/trust/audit: `internal/mcp/manager/` and `internal/mcpregistry/`.
-- Composition and live remount: focused `cmd/aura/mcp_*.go` or `cmd/aura/serve_governance*.go`.
-- Tests: co-locate protocol/unit tests and add live validation scripts under `scripts/` where the server must be exercised.
+**New memory capability:**
+- Query/traversal: `internal/arcadedb/memory_<concern>.go`.
+- LLM-facing tool: `cmd/arcadedb-mcp/tool_memory_<concern>.go`.
 
-**New AG-UI/Cockpit API:**
-- Consumer interface and handler: add a focused `internal/agui/<feature>_api.go`; register it from `internal/agui/server.go` or a feature registration helper.
-- Concrete adapter: wire in `cmd/aura/serve_<feature>.go` or `cmd/aura/serve_agui.go`.
-- Auth/capability mount: register the precise method/path pattern in `cmd/aura/serve_webui.go` or a focused route file such as `serve_webui_share.go`.
-- Frontend API/state: add under `web/src/<feature>/`; use `web/src/api/` only for truly cross-feature HTTP primitives.
-- Tests: handler tests in `internal/agui/`, component/query tests beside `web/src/<feature>/`, and route-level Playwright coverage in `web/e2e/`.
+**New database table or column:**
+- Migration: `internal/db/migrations/` — number from
+  `ls internal/db/migrations/ | tail -1`, both `.up.sql` and `.down.sql`.
+- Query: `internal/db/queries/<table>.sql`, then regenerate `internal/db/sqlc/`.
 
-**New React Surface or Component:**
-- Feature workspace: `web/src/<feature>/` with lazy mounting from `web/src/AppShell.tsx` when heavy.
-- Shared design-system primitive: `web/src/components/ui/`; do not duplicate an existing primitive.
-- App shell/navigation behavior: `web/src/shell/`.
-- Theme/tokens: `web/src/theme/`, `web/src/styles/`, and `web/tokens/`.
-- Tests: co-locate `*.test.tsx` or use the feature's `__tests__/`; rebuild into `internal/webui/dist/` only after source checks pass.
+**New scheduled job:**
+- Handler: `internal/cron/` + wiring in `cmd/aura/serve.go` (`buildDispatch`),
+  plus a `seed<Name>` idempotent seeder and a widened `kind` CHECK migration.
 
-**New Postgres-Backed Domain:**
-- Migration: next paired files in `internal/db/migrations/`, with the next number read from that directory immediately before creation.
-- Queries: `internal/db/queries/<domain>.sql`.
-- Generated bindings: regenerate `internal/db/sqlc/` via `sqlc.yaml`; never hand-edit it.
-- Store/service: `internal/<domain>/`, accepting `*pgxpool.Pool` or a narrow query/transaction port.
-- Composition: inject from `cmd/aura/`; transports depend on a consumer interface.
-- Tests: co-located unit tests plus `*_integration_test.go` under the owning package or `internal/db/` for migration/RLS contracts.
-
-**New ArcadeDB Memory or Document Capability:**
-- Client/domain logic: `internal/arcadedb/<capability>.go` with tenant resolution before every call.
-- Model-facing memory tool: `cmd/arcadedb-mcp/tool_<capability>.go`, registered in `cmd/arcadedb-mcp/main.go`.
-- Cockpit read adapter: narrow interface in `internal/agui/`, concrete wiring in `cmd/aura/serve_graph_schema.go` or a focused sibling.
-- Ingestion schema changes: keep `services/ingest/arcade.py` and `internal/arcadedb/document_schema.go` field-for-field compatible.
-- Tests: unit tests plus `arcadedb_integration`/live evidence where engine behavior matters.
-
-**New Scheduled Task Kind:**
-- Type/store scheduling contract: `internal/cron/` and a migration/query when persistence shape changes.
-- Handler implementation: `internal/cron/handlers/<kind>.go`.
-- Adapter/registration: `cmd/aura/serve_dispatch.go`.
-- Tests: handler unit tests, scheduler/dispatch tests, and a live scheduler smoke under `scripts/` for external side effects.
-
-**Utilities:**
-- Domain-specific helper: keep it in the owning `internal/<domain>/` package.
-- Cross-domain pure helper: add a small, narrowly named package directly under `internal/` only after proving two real consumers; existing examples include `internal/canonicaljson/`, `internal/envutil/`, and `internal/boundedbuffer/`.
-- Frontend shared helper: `web/src/lib/` only for genuinely cross-feature logic; otherwise keep it beside the feature.
+**Shared helpers:**
+- Small cross-cutting utilities get their own leaf package under `internal/`
+  (`envutil`, `canonicaljson`, `redact`); never a `utils` grab-bag.
 
 ## Special Directories
 
+**`internal/webui/dist`:**
+- Purpose: the committed Vite build embedded via `//go:embed all:dist`.
+- Generated: yes — `npm run build` in `web/`.
+- Committed: yes (required for the single-binary build).
+
 **`internal/db/sqlc/`:**
-- Purpose: Generated Go bindings for `internal/db/queries/`.
-- Generated: Yes, via `sqlc.yaml`.
-- Committed: Yes.
-- Rule: Never edit by hand; change SQL source and regenerate.
+- Purpose: sqlc-generated Postgres client.
+- Generated: yes. Committed: yes. Excluded from the coverage denominator.
 
-**`internal/webui/dist/`:**
-- Purpose: Production Vite assets embedded into the Aura Go binary.
-- Generated: Yes, by `web/vite.config.ts` and the `web/package.json` build script.
-- Committed: Yes.
-- Rule: Edit `web/src/`, then rebuild; `internal/webui/embed.go` assumes the tree exists.
-
-**`web/node_modules/`, `web/coverage/`, `web/test-results/`, `web/.stryker-tmp/`:**
-- Purpose: Local frontend dependencies and generated quality/test output.
-- Generated: Yes.
-- Committed: No.
-
-**`artifacts/`, `dist/`, `output/`, `graphify-out/`:**
-- Purpose: Local evaluation, release, and analysis outputs.
-- Generated: Yes.
-- Committed: No.
-- Rule: Do not place runtime source or planning truth here.
-
-**`runtime-workspace/`:**
-- Purpose: Local runtime workspace mount/staging location.
-- Generated: Runtime-managed.
-- Committed: No.
+**`internal/skills/embed/`:**
+- Purpose: built-in skills shipped inside the binary (e.g. `memory-aura/SKILL.md`).
+- Committed: yes.
 
 **`.planning/`:**
-- Purpose: GSD planning and codebase intelligence consumed by later workflows.
-- Generated: Mixed; command-managed Markdown/JSON with manual review.
-- Committed: Yes, except explicitly ignored temporary/graph output.
+- Purpose: GSD planning artifacts. Tracked in git except `.planning/tmp/` and
+  `.planning/graphs/*`.
 
-**`.agents/skills/`:**
-- Purpose: Local skill indexes and references available to agents.
-- Generated: Installed/copied by local tooling.
-- Committed: No.
-- Rule: Treat `CLAUDE.md` and current source as authoritative when a historical skill finding conflicts.
-
-**`.claude/`:**
-- Purpose: Project-local workflow, hook, command, and agent tooling.
-- Generated: Tool-managed.
-- Committed: Yes in substantial part.
-- Rule: Application code does not depend on it at runtime.
-
-**`.env` and related environment files:**
-- Purpose: Local secret-bearing runtime configuration.
-- Generated: Installer/operator-managed.
-- Committed: No for live values; `.env.example` documents names only.
-- Rule: Never read, quote, or commit live values.
+**`spikes/`, `finetune/`, `artifacts/`, `backups/`, `dist/`:**
+- Purpose: experiments, training assets, and build/runtime output. Not part of the
+  production dependency graph.
 
 ---
 
-*Structure analysis: 2026-08-25*
+*Structure analysis: 2026-09-07*

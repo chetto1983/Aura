@@ -1,263 +1,273 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-08-25
+**Analysis Date:** 2026-09-07
+
+Measured at HEAD: 1,255 `*_test.go` files, ~237.9k test LOC against ~155.8k non-test
+LOC (excluding `internal/db/sqlc/`). Tests are the larger half of the repository.
 
 ## Test Framework
 
-**Runner:**
-- Go 1.26.6 standard `testing` package is the primary runner. The repository contains 995 `*_test.go` files across 72 package directories.
-- `go.uber.org/goleak` 1.3.0 provides package-level and per-test goroutine leak detection; 52 Go test files invoke it.
-- `pgregory.net/rapid` 1.3.0 provides property-based tests; 21 Go test files use Rapid. Native Go fuzz targets cover additional parsers and validators.
-- Vitest 4.1.9 with jsdom, Testing Library React 16.3.2, and V8 coverage runs 208 frontend unit/component test files. Config: `web/vitest.config.ts`.
-- Playwright 1.61.0 runs 27 browser specs. Config: `web/playwright.config.ts`.
-- Python tests use pytest for `services/ingest/tests/` and `unittest`/`unittest.mock` for release/evidence gates under `scripts/`.
+**Runner:** Go stdlib `testing` — no assertion framework, no testify. Assertions are
+hand-written `if got != want { t.Fatalf(...) }`.
 
-**Assertion Library:**
-- Go tests use standard `testing` assertions (`t.Fatal`, `t.Fatalf`, `t.Error`, `t.Errorf`). `stretchr/testify` is only an indirect dependency and is not used by repository tests.
-- Frontend tests use Vitest `expect` plus semantic Testing Library queries.
-- Python tests use plain `assert` under pytest and `unittest.TestCase` assertions for script contracts.
+**Supporting libraries:**
+- `go.uber.org/goleak` — goroutine-leak detection (158 files reference it).
+- `pgregory.net/rapid` — property-based testing (~20 files).
+- `github.com/google/uuid`, `github.com/jackc/pgx/v5/pgxpool` in integration tiers.
+- Frontend: `vitest` + `@testing-library/react` + `jsdom`, `@playwright/test` (E2E),
+  `@stryker-mutator/core` (mutation), `axe-core` (a11y).
 
-**Run Commands:**
+**Run commands:**
 ```bash
-make test                         # Go unit tier, uncached (-count=1), owned packages
-make test-race                    # Go unit tier with race detector
-make tagged-tier-compile          # Discover and compile every custom build-tag tier
-make coverage-docker              # Disposable-DB owned-surface coverage gate (preferred locally)
-make quality                      # deadcode + vet + build + size + lint + race + vuln
-make quality-full                 # quality plus live db_integration coverage
-
-cd web && npm run test            # Vitest with V8 coverage and 85% thresholds
-cd web && npx vitest              # Frontend watch mode
-cd web && npm run test:e2e        # Playwright browser suite
-cd web && npm run mutation        # Stryker mutation campaign
-
-make evidence-contracts           # Python unittest + shell gate self-tests
-make ingest-test                  # pytest inside the deployed ingest image
+make test                    # go test -count=1 $(scripts/go_packages.sh)   — unit tier
+make test-race               # same, with -race
+make quality                 # deadcode vet file-size model-contracts lint test-race vuln + build
+make quality-full            # quality + coverage gate (needs the stack up)
+make coverage                # scripts/coverage_gate.sh   — owned-surface floor >=85%
+make coverage-docker         # same floor, DISPOSABLE databases only (safe locally)
+make tagged-tier-compile     # compile every discovered tagged tier
+make agent-memory-eval       # blocking MRS over the live memory stack
+make critical-mutation       # >=70% killed per critical boundary, no averaging
+make web-test                # vitest run --coverage (85% thresholds)
+make web-mutation            # stryker, break=70
 ```
 
-Use WSL or CI Linux for the complete Go race/integration/mutation toolchain. Do not run `scripts/coverage_gate.sh` against the live local `aura` database; its anti-footgun intentionally refuses that target. Use `make coverage-docker` or an explicit disposable database.
+## Build-Tag Tiers
 
-## Test File Organization
+Every non-unit test is behind a `//go:build` tag. Tag occurrences measured at HEAD:
 
-**Location:**
-- Go tests are co-located with production packages under `cmd/` and `internal/`. Keep black-box infrastructure fixtures in `testdata/` and shared test helpers in `internal/agent/agenttest/` or `internal/dbtest/`.
-- Go integration tests remain in the owning package and use a top-of-file `//go:build <tier>` constraint, such as `internal/db/tx_integration_test.go` and `internal/arcadedb/memory_integration_test.go`.
-- Frontend unit tests are either co-located (`web/src/api/json.test.ts`) or under feature-local `__tests__/` directories (`web/src/chat/__tests__/toolGrouping.test.ts`).
-- Browser tests live in `web/e2e/*.spec.ts`; screenshots are stored under `web/e2e/__screenshots__/` using Playwright's configured snapshot template.
-- Ingest tests live in `services/ingest/tests/test_*.py`; evidence-gate tests are `scripts/*_test.py`.
+| Tag | Files | What it needs |
+|---|---|---|
+| `db_integration` | 170 | Postgres + `AURA_DB_URL` / `AURA_DB_MIGRATE_URL` |
+| `arcadedb_integration` | 31 | live ArcadeDB + embed sidecar |
+| `docker_integration` | 13 | reachable dockerd (`internal/sandbox/usersandbox`) |
+| `web_integration` / `!web_integration` | 2 / 12 | live SearXNG; the negated form guards unit-only variants |
+| `live_e2e` | 8 | full stack + a real model |
+| `garage_integration` | 6 | Garage object store + Admin API |
+| `spike_casbin`, `spike_telegram`, `spike_multimodal`, `spike_agui` | 7/5/4/3 | spike harnesses, not product gates |
+| `whatsapp_integration`, `calendar_integration`, `telegram_integration`, `multimodal_integration`, `mcp_live_integration`, `authula_integration`, `webauth_integration`, `calculator_integration`, `musr_e2e`, `document_live_e2e`, `backup_live`, `serve_smoke`, `live_finalize`, `reasoning_live` | 1–3 each | the named live dependency |
+| `agent_eval`, `cot_eval`, `retrieval_eval`, `measure` | 1–4 | paid model turns; deliberately outside CI |
 
-**Naming:**
-- Go: `TestFunction_Behavior`, `TestType_Method`, `BenchmarkName`, and `FuzzName`. Named subtests use `t.Run`.
-- TypeScript: `describe('<unit>')` plus sentence-style `it('<observable behavior>')`; parameterized cases use `it.each`.
-- Python: `test_<behavior>` functions for pytest and `test_<behavior>` methods on `unittest.TestCase`.
+`make tagged-tier-compile` (`scripts/tagged_tier_compile.sh` +
+`scripts/tagged_tier_compile_test.sh`) discovers every tag in the tree and compiles it,
+so a tier can never rot silently behind a tag nobody runs. It also runs at pre-push.
 
-**Structure:**
-```text
-internal/<package>/
-├── feature.go
-├── feature_test.go                  # unit/property/fuzz tests
-├── feature_integration_test.go      # //go:build db_integration or another live tier
-└── testdata/                         # checked-in golden/protocol fixtures
+## No-Skip-As-Green
 
-web/src/<feature>/
-├── Feature.tsx
-├── Feature.test.tsx                 # focused co-located test, or
-└── __tests__/Feature.test.tsx       # feature suite
+The rule: an integration test whose env is missing **skips locally and `t.Fatal`s under
+`$CI`**. There is no shared helper — each package defines its own `envOrSkip` with the
+same body, ~30 of them, e.g.:
 
-web/e2e/<surface>.spec.ts            # browser/E2E contract
-services/ingest/tests/test_<area>.py  # container-side pytest
-```
+- `internal/agui/server_integration_test.go:44` `envOrSkip`
+- `internal/db/db_test.go:39`, `internal/identity/store_test.go:36`,
+  `internal/cron/store_test.go:33`, `internal/conversations/store_test.go:37`
+- prefixed variants where a package has several dependencies:
+  `assetEnvOrSkip`, `recoveryEnvOrSkip`, `oauthEnvOrSkip`, `registryEnvOrSkip`,
+  `objEnvOrSkip`, `pipelineEnvOrSkip`, `aclEnvOrSkip`, `liveEnvOrSkip`,
+  `sidecarEnvOrSkip`, `envOrSkipLive`
+- daemon gates: `internal/sandbox/usersandbox/dockertest_support.go:61`
+  `skipUnlessDockerd`, `internal/agent/tools/shell_exec_sandbox_docker_test.go:31`
+  `skipUnlessDockerdTools`, `egressFQDNImageOrSkip`, `skipUnlessEnforcingBridge`
 
-## Test Structure
-
-**Suite Organization:**
+Canonical body (`internal/agui/server_integration_test.go`):
 ```go
-func TestOperation(t *testing.T) {
-	tests := []struct {
-		name string
-		in   string
-		want string
-	}{
-		{name: "normal case", in: "input", want: "output"},
-		{name: "boundary", in: "", want: ""},
+func envOrSkip(t *testing.T, key string) string {
+	t.Helper()
+	v := os.Getenv(key)
+	if v == "" {
+		if os.Getenv("CI") != "" {
+			t.Fatalf("integration test requires %s, but it is unset under CI — "+
+				"a skipped integration test must not pass as green; wire it in ci.yml", key)
+		}
+		t.Skipf("integration test requires %s; set it and re-run (e.g. via .env + make db-up)", key)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got := Operation(tt.in)
-			if got != tt.want {
-				t.Fatalf("Operation(%q) = %q, want %q", tt.in, got, tt.want)
-			}
-		})
-	}
+	return v
 }
 ```
 
-This matches table-driven cases in `internal/canonicaljson/canonicaljson_test.go`. Add `t.Parallel()` only when the case does not share mutable state, process environment, ports, or a live database. The repository has 1,248 `t.Parallel()` calls, but live Postgres packages deliberately run serially with `-p 1`.
+**Tell:** a sub-second "integration" run is a skipped run. Verify execution, not `PASS`.
 
-**Patterns:**
-- Use Arrange/Act/Assert without ceremonial comments. Create state with `t.TempDir`, `t.Setenv`, and small helpers that call `t.Helper()`.
-- Register cleanup immediately with `t.Cleanup`; do not leave databases, goroutines, servers, files, or global redactor state behind.
-- Use `t.Context()` for new cancellable tests where the production API accepts a context; use explicit timeout contexts when the timeout itself is part of the contract.
-- Use `httptest.Server`, in-memory protocol transports, and hand-written fakes for unit tests. Assert the request and the observable response, not private fields.
-- Use `TestMain` plus `goleak.VerifyTestMain(m)` in packages owning background goroutines. See `internal/agent/main_test.go`.
-- Keep integration setup fail-loud in CI. `envOrSkip` in `internal/db/db_test.go` skips locally when prerequisites are absent but calls `t.Fatalf` when `$CI` is set.
-- For live shared Postgres tiers, use `-p 1` to avoid role/migration/global-table collisions (`scripts/coverage_gate.sh`).
-- Prefer exact boundary and mutation-killing assertions over line-only coverage. `TestNewResult_ExactlyCapNoSidecar` in `internal/agent/tools/result_test.go` documents the load-bearing comparison.
+## Test Environment and DSNs
 
-Frontend canonical shape:
+**`internal/dbtest`** (`live_target_guard.go`) is the shared safety guard, not a
+fixture library. `dbtest.MigrateURL(t, raw)` **fails** (never skips) when the DSN's
+database is named `aura` and `GITHUB_ACTIONS` is unset — in CI that name is a throwaway
+container, on a developer host it is the live deployment. It exists because a local
+`db_integration` run applied migration 0095 to the live database on 2026-08-13, and the
+2026-07-10 coverage incident destroyed the operator identity table.
+`scripts/coverage_gate.sh` and `scripts/coverage_docker.sh` enforce the same rule at the
+shell level (`AURA_COVERAGE_ALLOW_LIVE_AURA_DB=1` is the documented danger override).
 
-```typescript
-describe('Button', () => {
-  it('renders an accessible default action', () => {
-    render(<Button>Stage</Button>);
-    const button = screen.getByRole('button', { name: 'Stage' });
-    expect(button.className).toContain('bg-primary');
-  });
-});
-```
+**Env sources:** tests read the composed DSNs `AURA_DB_URL` / `AURA_DB_MIGRATE_URL`
+(not the `POSTGRES_*` primitives that `internal/config` composes for the CLI). `.env`
+carries the ArcadeDB and embed-sidecar vars. CI jobs export exactly the vars their tests
+read — that is what makes the `t.Fatal` branch above meaningful.
 
-Use semantic role/name queries before test IDs or CSS selectors. `web/src/components/ui/__tests__/button.test.tsx` is the local pattern.
+**Stack bring-up:** `make db-up`, `make db-migrate`, `make memory-up` (ArcadeDB + MCP +
+embed sidecar), `make memory-up-core` (graph substrate **without** the MCP sidecar, and
+therefore without the aura daemon — the MCP `depends_on: aura`, and the daemon's
+scheduler races tests for notification rows; measured on CI #1809, 2026-09-06).
+
+**Serial execution is mandatory for integration:** `-p 1` everywhere the tiers touch the
+one shared Postgres — concurrent packages collide on `CREATE ROLE` (`tuple concurrently
+updated`) and golang-migrate's advisory lock.
 
 ## Mocking
 
-**Framework:**
-- Go: hand-written interface fakes/stubs/recorders plus `httptest`; no mock-generation or testify mock framework is established.
-- TypeScript: Vitest `vi.fn`, `vi.spyOn`, `vi.mock`, and `vi.stubGlobal`; Testing Library for DOM interaction.
-- Playwright: `page.route`/`route.fulfill` for deterministic HTTP/SSE fixtures, with dedicated specs for live server paths.
-- Python: `unittest.mock` in evidence-gate tests and pytest `monkeypatch` where local substitution is needed.
+**Shared Agent fakes live in `internal/agent/agenttest`** (`mocks.go`, `fakeclient.go`),
+one source of truth, zero inline mock duplication. Import direction is one-way
+(`agenttest` → `agent`), and every mock carries a compile-time assertion:
 
-**Patterns:**
 ```go
-type recordingProcessor struct {
-	requests []Request
-	err      error
-}
-
-func (r *recordingProcessor) Process(_ context.Context, req Request) error {
-	r.requests = append(r.requests, req)
-	return r.err
-}
+var (
+	_ agent.Agent = (*InfiniteToolCallAgent)(nil)
+	_ agent.Agent = (*EmitNThenEscalate)(nil)
+	_ agent.Agent = (*RecordingAgent)(nil)
+	_ agent.Agent = (*CountingAgent)(nil)
+)
 ```
 
-Use the naming and ownership pattern found throughout `cmd/aura/*_test.go`, `internal/agui/*_test.go`, and `internal/documents/*_test.go`.
+Mocks encode invariants, not just behaviour: no mock calls `NewBudgetFromEnv`, because a
+forked budget would silently break the shared-counter guarantee that makes depth-3 fan-3
+bounded by `max_steps` rather than `max_steps³`.
 
-```typescript
-const fetchMock = vi.fn<typeof fetch>();
-vi.stubGlobal('fetch', fetchMock);
-fetchMock.mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 }));
-```
+**What to mock:** the LLM (`agenttest.FakeClient`), external HTTP via `httptest.Server`,
+and nothing else.
+**What NOT to mock:** Postgres, ArcadeDB, Docker, the embed sidecar. Those get a real
+instance behind a build tag. `internal/agent/agenttest` and `internal/dbtest` are
+excluded from the coverage denominator precisely because they are test-support, not
+owned runtime surface.
 
-**What to Mock:**
-- Mock the network, model, clock, filesystem, or persistence interface in unit tests when the behavior under test is the caller's decision logic.
-- Use recorders to assert call order, arguments, idempotency keys, and cancellation propagation.
-- In browser replay specs, mock stable surrounding APIs and feed the real captured AG-UI fixture from `internal/agui/testdata/golden-events.json` through the public UI path.
+## Fixtures and Golden Files
 
-**What NOT to Mock:**
-- Do not mock Postgres/ArcadeDB/Docker behavior in an integration tier whose purpose is to prove the real engine contract. Use disposable resources and real clients.
-- Do not replace the production reducer/rendering path with a test-only implementation; drive it through its public API.
-- Do not mock implementation details or private helper calls. Assert observable output, persisted state, protocol frames, audit rows, or UI semantics.
-- Do not let a missing live prerequisite become a green CI skip.
+- Package-local `testdata/` directories: `internal/agent/tools/testdata`,
+  `internal/agui/testdata`, `internal/channels/telegram/testdata`,
+  `internal/gateway/testdata`, `internal/llm/testdata`,
+  `internal/llm/openai_compat/testdata`, `internal/mcp/testdata`,
+  `internal/share/testdata`.
+- Cross-cutting fixtures in `scripts/fixtures/`: `cache_invariant/`,
+  `document_pipeline_e2e/`, `document_retrieval_eval/`, `chat_50_prompts.tsv`.
+- Golden-file refresh is opt-in via `UPDATE_GOLDEN`
+  (`internal/channels/telegram/tables_test.go`).
 
-## Fixtures and Factories
+## Goroutine Leaks, Race, Parallelism
 
-**Test Data:**
-```go
-func ctxWith(t *testing.T, sessionID, callID string) context.Context {
-	t.Helper()
-	return tools.WithToolCallContext(t.Context(), sessionID, callID, t.TempDir(), 2048)
-}
-```
+- **goleak:** 158 files; the standard form is a package-wide
+  `func TestMain(m *testing.M) { goleak.VerifyTestMain(m) }`
+  (`internal/cron/main_test.go`), with `goleak.VerifyNone` for narrower scopes.
+- **Race detector:** default posture, not an extra. `make test-race`, the CI
+  `unit-test` job (`go test -race -count=1 $(scripts/go_packages.sh)`), the
+  `db_integration` suite (`-race -p 1`), the `webauth_integration` provider-lifecycle
+  job, and the MUSR live E2E all run `-race`. WSL is the native-race environment
+  (`CGO_ENABLED=1`).
+- **`t.Parallel()`:** 1,420 call sites in `internal/` unit tests. Integration tiers stay
+  serial (`-p 1`).
 
-Use factory/helper functions for valid defaults, then override only the field under test. `internal/agent/tools/result_test.go` and `scripts/release_readiness_gate_test.py` demonstrate this pattern.
+## Property-Based Testing
 
-**Location:**
-- Package-specific static fixtures: `<package>/testdata/`, including golden output under `internal/channels/telegram/testdata/`.
-- Cross-backend AG-UI golden frames: `internal/agui/testdata/golden-events.json`, shared by Go and browser tests.
-- Real document corpus fixtures: `scripts/fixtures/document_pipeline_e2e/`, mounted into the ingest test container by `Makefile`.
-- Ephemeral filesystem state: always `t.TempDir()`/pytest `tmp_path`/`tempfile.TemporaryDirectory()`.
-- Golden updates require an explicit flag such as `UPDATE_GOLDEN=1` or `-update`; default test runs compare and fail.
+`pgregory.net/rapid`, applied where an invariant is stated rather than an example:
+`internal/agent/workflow/loop_property_test.go`,
+`internal/gateway/classify_property_test.go`,
+`internal/conversations/context_active_round_property_test.go`,
+`internal/mcp/manager/envedit_property_test.go`,
+`internal/share/share_property_test.go`, `internal/swarm/swarm_property_test.go`,
+plus property assertions inside `internal/canonicaljson`, `internal/agui`,
+`internal/scoring`, `internal/agent/tools`.
 
 ## Coverage
 
-**Requirements:**
-- Go owned-surface coverage must be at least 85% across the active tag matrix. `scripts/coverage_gate.sh` currently defaults to `db_integration`, runs `./internal/...` with `-p 1`, and computes one aggregate statement ratio.
-- The Go coverage filter excludes generated `internal/db/sqlc/`, test-support `internal/agent/agenttest/` and `internal/dbtest/`, and the designated skeleton `internal/llm/client.go`. `cmd/aura` CLI glue is outside the owned-surface statement floor and is covered behaviorally.
-- Frontend V8 coverage must meet 85% independently for statements, branches, functions, and lines (`web/vitest.config.ts`). Test files, test setup, and `web/src/main.tsx` are excluded.
-- Coverage is a gate, not completion proof. Race, live integration, E2E, mutation, security, and release-evidence gates still apply.
-- Do not cite `artifacts/production-readiness/coverage-report.json` as current unless its `candidate_commit` equals `git rev-parse HEAD`; evidence reports are candidate-bound by design.
+**Aggregate floor: 85%** of the owned surface, enforced by `scripts/coverage_gate.sh`
+(`make coverage`). How it actually works:
 
-**View Coverage:**
-```bash
-make coverage-docker
-go tool cover -func=cover_gate.out.filtered
-go tool cover -html=cover_gate.out.filtered
+1. Refuses to run `db_integration` against a database named `aura` outside CI (exit 5).
+2. Runs `go test -tags db_integration -p 1 -count=1 -covermode=atomic
+   -coverpkg=./internal/... ./internal/... ./cmd/aura/...` writing **native covdata**
+   (`-test.gocoverdir`), so cross-package attribution is truthful. `cmd/aura` tests
+   contribute *execution* but `cmd/aura` is not in the denominator.
+3. Merges with `go tool covdata textfmt` into `cover_gate.out`.
+4. Filters out `/internal/db/sqlc/`, `/internal/agent/agenttest/`, `/internal/dbtest/`,
+   `/internal/llm/client.go` — anchored at path-segment boundaries; a filter that
+   leaves zero rows fails the gate.
+5. `scripts/coverage_profile_gate.sh` enforces the aggregate `AURA_COVERAGE_MIN`
+   (default 85) and writes
+   `artifacts/production-readiness/coverage-report.json`.
+6. `scripts/coverage_package_gate.py` enforces the per-package policy.
 
-cd web && npm run test
-# HTML/text artifacts are written under web/coverage/
-```
+**Per-package policy (`scripts/coverage_package_policy.json`, schema_version 1,
+target_percent 85, 76 packages) at HEAD:**
+- **64 packages `mode: target`** — must stay ≥85%.
+- **10 packages `mode: baseline`** — pinned exact covered/total ratios that may not
+  regress and whose denominator may not drift silently:
+  `internal/approvalgrants` 4/57, `internal/procgroup` 3/4,
+  `internal/webauth` 187/360, `internal/objectstore` 329/476,
+  `internal/objectstore/garageadmin` 85/111, `internal/db` 269/322,
+  `internal/documents` 668/806, `internal/assets` 700/871,
+  `internal/multimodal` 107/127, `internal/tracesink` 47/56.
+- **2 packages `mode: delegated`** — measured by a separate release-blocking authority
+  at the same 85% floor, never averaged into this denominator:
+  `internal/sandbox/usersandbox` → `docker_coverage`
+  (`scripts/docker_coverage_gate.sh`: `go test -tags docker_integration -p 1
+  -covermode=atomic -coverpkg=./internal/sandbox/usersandbox/...,./internal/agent/tools/...`,
+  `MIN=85`), and `internal/arcadedb` → `arcadedb_coverage` (the live
+  `arcadedb_integration` profile, an Agent Memory hard gate re-checked by release
+  readiness).
+
+**Local safety:** run `bash scripts/coverage_docker.sh` (`make coverage-docker`) — it
+provisions and drops a disposable `aura_cov` database and refuses the live one.
+
+**Frontend coverage:** `web/vitest.config.ts` thresholds — statements/branches/
+functions/lines all 85.
 
 ## Mutation Testing
 
-**Requirements:**
-- Every critical boundary must kill at least 70% of scored mutants; scores are checked per scope, not averaged (`scripts/critical_mutation_gate.py`).
-- Current Go critical scopes are `internal/gateway/classify.go`, `internal/identityctx/operator.go`, `internal/config/config_runtimeprofile.go`, and `internal/sandbox/usersandbox/spec.go`.
-- Frontend mutation targets are explicitly enumerated in `web/stryker.config.json`; Stryker's break threshold is 70 and its report is written to `web/reports/mutation/mutation.json`.
-- `make critical-mutation` validates the gate parser and fresh evidence. `make web-mutation` runs the frontend campaign.
+- **Go:** `go-mutesting` (the avito-tech fork, the only one supporting go1.26).
+  `PASS` = killed, `FAIL` = survived; score = killed/total. Threshold **≥70% per
+  critical boundary, never averaged** — `scripts/critical_mutation_gate.py`
+  (`make critical-mutation`) pins four Go scopes:
+  `internal/gateway/classify.go`, `internal/identityctx/operator.go`,
+  `internal/config/config_runtimeprofile.go`,
+  `internal/sandbox/usersandbox/spec.go`.
+- **Frontend:** Stryker (`make web-mutation`, `break=70`), report consumed by the same
+  gate from `web/reports/mutation/mutation.json` with a 24h freshness check.
 
-## Test Types
+## Evidence and Behaviour Gates
 
-**Unit Tests:**
-- Go unit tests cover pure logic, error paths, HTTP handlers via `httptest`, protocol translation, filesystem guards, and dependency orchestration with hand-written fakes.
-- Rapid properties cover serialization, canonicalization, normalization, classification, and boundary invariants. Native fuzz targets exist in `internal/canonicaljson/`, `internal/agent/`, `internal/channels/telegram/`, `internal/obs/`, and `internal/skills/`.
-- Vitest/jsdom covers utilities, hooks, reducers, API adapters, components, accessibility semantics, and failure states.
-- Python unittest covers evidence parsers and release gates; pytest covers ingest transformations.
+Beyond code-level tests, release readiness is measured by self-tested Python/bash
+harnesses under `scripts/`, each with its own `*_test.py` / `*_test.sh` contract test
+run by `make evidence-contracts`:
+`audit_closure_gate`, `agent_memory_eval`, `capability_eval`,
+`critical_mutation_gate`, `observability_evidence`, `production_load_chaos`,
+`release_check_run_gate`, `release_readiness_gate`, `rollback_rehearsal`,
+`security_evidence`, plus `coverage_profile_gate`, `coverage_gate`,
+`docker_coverage_gate`, `restore_drill_name`.
+`make release-readiness` validates the twelve fresh reports against the current Git SHA.
 
-**Integration Tests:**
-- `db_integration`: live Postgres migrations, RLS, stores, orchestration, and audit behavior. It is the default coverage tag.
-- `arcadedb_integration`: live ArcadeDB schema/query/memory behavior. It is race-tested in its own CI job and does not currently feed the default coverage aggregate.
-- `docker_integration`: real sandbox lifecycle, execution, and egress; compiled and run separately from coverage.
-- Other explicit tiers include `garage_integration`, `web_integration`, `calendar_integration`, `whatsapp_integration`, `telegram_integration`, `multimodal_integration`, `integrations_integration`, and `webauth_integration`.
-- Run `make tagged-tier-compile` whenever a custom-tagged test is added so no tier silently rots at compile time.
-
-**E2E Tests:**
-- Playwright drives the served cockpit in desktop Chrome and mobile Chrome; mobile Safari is enabled when an HTTPS origin is supplied. CI forbids focused tests, retries once, and retains trace/screenshot/video on failure (`web/playwright.config.ts`).
-- Go `live_e2e`, `agent_eval`, `serve_smoke`, and shell smoke scripts exercise real model/channel/service behavior outside the unit tier.
-- The ingest suite runs inside the production-like `aura-ingest` image because host Python cannot prove image tools such as LibreOffice and iscc-tika (`Makefile` target `ingest-test`).
+**Behaviour tier (`make agent-eval`, tag `agent_eval`)** — real turns against a real
+model, deliberately **not** in CI because each case costs money. Requires
+`AURA_EVAL_IDENTITY` and the live stack. Run before shipping anything touching the
+prompt, the tool manifest, the registry, or memory retrieval. This is the tier that
+catches an answer that is wrong, loops, or reaches for the open internet — no other
+gate can see it.
 
 ## Common Patterns
 
-**Async Testing:**
+**Integration setup — env, guard, migrated pool:**
 ```go
-synctest.Test(t, func(t *testing.T) {
-	startWork()
-	synctest.Wait()
-	if got := state(); got != want {
-		t.Fatalf("state = %v, want %v", got, want)
-	}
-})
+raw := envOrSkip(t, "AURA_DB_MIGRATE_URL")
+dsn := dbtest.MigrateURL(t, raw)   // t.Fatal if this is the live database
+pool := migratedPool(t)            // per-package helper, e.g. internal/agui
 ```
 
-Use `testing/synctest` for deterministic timer/goroutine behavior where applicable (`internal/channels/telegram/status_pane_test.go`). Otherwise use bounded `select`/timeouts and fail with a diagnostic; never use unbounded sleeps as synchronization.
+**Table-driven tests** are the default shape (`dupl` is disabled on `_test.go` for
+exactly this reason), keyed by a `map[string]case` with `t.Run(name, ...)` — see
+`internal/dbtest/live_target_guard_test.go`.
 
-```typescript
-render(<AsyncView />);
-await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('ready'));
-```
-
-Use Testing Library's async queries/waits for DOM state and Playwright's locator auto-waiting for browser state.
-
-**Error Testing:**
-```go
-sentinel := errors.New("boom")
-err := WithTx(t.Context(), pool, func(*sqlc.Queries) error { return sentinel })
-if !errors.Is(err, sentinel) {
-	t.Fatalf("WithTx error = %v, want sentinel", err)
-}
-```
-
-For typed errors use `errors.As`; for Postgres assert SQLSTATE rather than unstable message text. For frontend APIs, reject with `HttpError` and assert the status/reason or the rendered user-facing state.
+**Daemon-gated code still needs daemon-free unit tests.** When adding
+container-gated runtime code, also test the pure logic without a daemon: spec/tar
+builders, path-traversal and symlink guards, nil/disabled early-return paths, and
+"not supported" structural-capability errors. Otherwise the delegated coverage
+authority carries a surface it cannot execute.
 
 ---
 
-*Testing analysis: 2026-08-25*
+*Testing analysis: 2026-09-07*

@@ -1,176 +1,165 @@
 # External Integrations
 
-**Analysis Date:** 2026-08-25
+**Analysis Date:** 2026-09-07
 
 ## APIs & External Services
 
-**LLM Providers:**
-- OpenRouter - Default hosted chat provider configured in `internal/llm/config.go`, using the OpenAI-compatible `/chat/completions` and `/models` APIs implemented by `internal/llm/openai_compat/client.go`.
-  - SDK/Client: Repository-owned streaming HTTP client in `internal/llm/openai_compat/client.go`.
-  - Auth: `OPENROUTER_API_KEY`; provider, model, endpoint, and generation controls use `AURA_LLM_*` variables parsed in `internal/llm/config.go`.
-- llama.cpp - Optional local chat provider and the standard local embedding/OCR protocol surface, exposed as OpenAI-compatible services by `aura-llm`, `aura-llama-embed`, and `aura-ocr-vl` in `docker-compose.yml`.
-  - SDK/Client: Repository-owned clients in `internal/llm/openai_compat/`, `internal/embeddings/client.go`, and `internal/multimodal/`.
-  - Auth: Local Compose endpoints do not require a provider API key; hosted-compatible endpoints may be configured with their own API key through the same clients.
+**LLM inference (OpenAI-compatible, one client for all three providers):**
+- OpenRouter — default provider (`internal/llm/config.go`: `defaultProvider = "openrouter"`, `defaultBaseURL = "https://openrouter.ai/api/v1"`).
+  - Client: `internal/llm/openai_compat/client.go` over `github.com/openai/openai-go/v3`
+  - Auth: `OPENROUTER_API_KEY` (plus `OPENROUTER_MANAGEMENT_KEY` for spend/limits)
+  - Knobs: `AURA_LLM_PROVIDER`, `AURA_LLM_BASE_URL`, `AURA_LLM_MODEL`, `AURA_LLM_OPENROUTER_MIDDLE_OUT`, sampling knobs default UNSET so backend-published values win
+- llama.cpp server — local chat model, opt-in Compose profile `localllm` (`compose.yaml` service `aura-llm`, image `ghcr.io/ggml-org/llama.cpp:server-cuda`, port 8084).
+  - Capability probe: `internal/llm/llamacpp_caps.go` (reads `GET /props`)
+  - Env: `AURA_LLM_MODEL_PATH`, `AURA_LLM_DRAFT_MODEL_PATH` (speculative decoding), `AURA_LLM_NGL`, `AURA_LLM_CTX`, `AURA_LLM_KV_QUANT`, `LLAMA_ARG_HOST`
+  - Contract gate: `make llm-model-contract`
+- Ollama — alternate local backend; capability probe `internal/llm/ollama_caps.go` (reads `/api/show`), live tier `internal/llm/openai_compat/ollama_live_e2e_test.go`.
+  - Env: `AURA_OLLAMA_BASE_URL`, `AURA_OLLAMA_MODEL`, `AURA_OLLAMA_LIVE`
+- Shared model metadata: `internal/llm/model_catalog.go`, `prices.go`, `pricing_source.go`, `capabilities.go`; spend accounting in `internal/llm/spend.go`; circuit breaker in `internal/llm/breaker.go`.
 
-**Embeddings:**
-- EmbeddingGemma through llama.cpp - Primary embedding endpoint is the `aura-llama-embed` service in `docker-compose.yml`; `internal/embeddings/client.go` sends OpenAI-compatible `/v1/embeddings` requests and enforces batching plus normalization behavior.
-  - SDK/Client: Custom Go client in `internal/embeddings/client.go`; CocoIndex ingestion uses the same endpoint from `services/ingest/app.py`.
-  - Contract: Dimension 768 plus model revision/fingerprint configuration in `internal/config/config_embed.go` and `docker-compose.yml`.
+**Embeddings (local, llama.cpp GGUF):**
+- Service `aura-llama-embed` (`compose.yaml`, same llama.cpp CUDA image), client `internal/embeddings/client.go`, task prefixes in `internal/embeddings/tasks.go`.
+- Env: `AURA_EMBED_BASE_URL`, `AURA_EMBED_MODEL`, `AURA_EMBED_MODEL_PATH`, `AURA_EMBED_DIMENSIONS`, `AURA_EMBED_REVISION`, `AURA_EMBED_FINGERPRINT`, `AURA_EMBED_API_KEY`, `AURA_EMBED_NGL`; memory-side overrides `AURA_MEMORY_EMBED_BASE_URL` / `AURA_MEMORY_EMBED_API_KEY`.
+- Model materialization is contract-gated: `make embedding-model-contract`.
 
-**Search & Web Retrieval:**
-- SearXNG - Local metasearch endpoint used by `internal/web/searxng.go`, with JSON search responses, retry handling, and a configurable base URL.
-  - SDK/Client: Custom Go HTTP client in `internal/web/searxng.go`.
-  - Auth: No per-request credential in the application client; the deployment requires `SEARXNG_SECRET` for the sidecar configuration in `docker-compose.yml`.
-- Public websites - Arbitrary page retrieval is implemented by `internal/web/fetcher.go`, with DNS pinning, SSRF protections, redirects/body limits, readability extraction, and HTML-to-Markdown conversion.
-  - SDK/Client: Go `net/http`, `go-readability`, and `html-to-markdown` as wired under `internal/web/`.
-  - Auth: None for public pages; do not weaken the network and URL validation in `internal/web/fetcher.go` when extending retrieval.
+**Multimodal sidecars:**
+- Vision / OCR — `internal/multimodal/vision.go`; Compose `aura-ocr-vl` (llama.cpp CUDA, profile `ocr`). Env `MULTIMODAL_BASE_URL`, `MULTIMODAL_MODEL`, `MULTIMODAL_TIMEOUT_SEC`, `AURA_VISION_CLOUD`, `AURA_OCR_VL_PORT`.
+- Speech-to-text — `internal/multimodal/stt.go`; Compose `aura-stt` (`hwdsl2/whisper-server`). Env `STT_BASE_URL`, `STT_MODEL`, `STT_LANGUAGE`, `STT_COMPUTE_TYPE`, `STT_DEVICE`, `AURA_STT_PORT`, `AURA_STT_CLOUD_MODEL`.
+- Text-to-speech — `internal/multimodal/tts.go`; Compose `aura-tts` (`ghcr.io/remsky/kokoro-fastapi-cpu`). Env `TTS_BASE_URL`, `TTS_VOICE`, `TTS_FORMAT`, `AURA_TTS_PORT`, `AURA_TTS_MODEL`, `AURA_TTS_MAX_CHARS`.
+- Reranking: `AURA_RERANK_BASE_URL`, `AURA_RERANK_MODEL`.
 
-**Speech, Vision & OCR:**
-- faster-whisper - Local speech-to-text endpoint supplied by `aura-stt` in `docker-compose.yml`; requests use the OpenAI-compatible multipart `/audio/transcriptions` contract from `internal/multimodal/`.
-  - SDK/Client: Custom multimodal HTTP clients under `internal/multimodal/`.
-  - Auth: Local service endpoint; hosted routing can use the configured LLM/provider key.
-- Kokoro FastAPI - Local text-to-speech endpoint supplied by `aura-tts` in `docker-compose.yml`; `internal/multimodal/` sends `/audio/speech` requests and consumes Opus audio.
-  - SDK/Client: Custom multimodal HTTP clients under `internal/multimodal/`.
-  - Auth: Local service endpoint; hosted routing can use the configured LLM/provider key.
-- GLM-OCR through llama.cpp - Optional vision/OCR service supplied by `aura-ocr-vl` under the `ocr` profile in `docker-compose.yml`, consumed by clients under `internal/multimodal/`.
-  - SDK/Client: Shared OpenAI-compatible multimodal client under `internal/multimodal/`.
-  - Auth: Local endpoint by default; cloud vision routing can use `OPENROUTER_API_KEY`.
+**Web search & fetch:**
+- SearXNG — self-hosted meta-search (`compose.yaml` service `searxng`, image `searxng/searxng:2026.7.26`). Client `internal/web/searxng.go`, env `SEARXNG_URL`, `AURA_WEB_SEARCH_TIMEOUT_SEC`.
+- Outbound page fetch — `internal/web/fetcher.go`, `fetcher_text.go`, `fetcher_image.go`, with SSRF guard `internal/web/ssrf.go`, DNS pinning `dnspin.go`, throttling `throttle.go`, cache `cache.go`. Env `AURA_WEB_FETCH_MAX_BODY_BYTES`, `AURA_WEB_FETCH_TIMEOUT_SEC`, `AURA_WEB_USER_AGENT`, `AURA_WEB_DNS_PIN_TTL_SEC`, `AURA_WEB_CACHE_PERSISTENT`.
 
-**Messaging & Personal Information:**
-- Telegram Bot API - Bidirectional channel implementation under `internal/channels/telegram/` handles text, photos, voice, and documents through long polling and outbound Bot API calls.
-  - SDK/Client: `gopkg.in/telebot.v4` configured by `internal/channels/telegram/config.go` and used by `internal/channels/telegram/bot.go`.
-  - Auth: `TELEGRAM_BOT_TOKEN`; optional API base URL settings support a local Telegram Bot API deployment.
-- Aura PIM MCP - Mail, calendar, and contacts integration is provided by the pinned `aura-pim-mcp` sidecar in `docker-compose.yml`; its curated model-facing catalog entry is `calendar` in `internal/mcp/manager/catalog.go`.
-  - SDK/Client: Streamable HTTP MCP through `internal/mcp/`, plus server-side management proxy routes in `internal/agui/connect_pim_api.go`.
-  - Auth: standard remote-MCP OAuth; Aura forwards the identity-scoped access token to both MCP and management routes, and the verified token `sub` selects the sidecar tenant. Upstream provider grants remain tenant-scoped behind that boundary.
-  - Providers: Google accounts use OAuth redirect, Microsoft/Outlook accounts use device code, and the sidecar also supports IMAP, ICS, and JSON account sources; the management flow is implemented in `internal/agui/connect_pim_api.go`.
-- WhatsApp MCP - Messaging and account management are supplied by the pinned `whatsapp-mcp` sidecar in `docker-compose.yml`; the curated tool entry is `whatsapp` in `internal/mcp/manager/catalog.go`.
-  - SDK/Client: Streamable HTTP MCP through `internal/mcp/`, with QR/status management routes under `internal/agui/` and proxy wiring in `cmd/aura/integrations_proxy.go`.
-  - Auth: Sidecar management credentials and session material remain server-side; browser clients consume Aura's authenticated management routes.
+**MCP servers (Aura is both client and server):**
+- Client runtime: `internal/mcp/` (`manager/runtime.go`, `manager/catalog.go`, `manager/config.go`, `probe.go`, `bounded_call.go`, `egress_policy.go`); per-server credentials in `internal/mcp/mcpenv/` under `AURA_MCP_ENV_DIR`. Registry persistence: `internal/mcpregistry/store.go`.
+- First-party recipes are recognised byte-for-byte by `internal/mcp/manager/first_party.go`; their URLs are computed in `internal/mcp/manager/catalog.go` and switch on `AURA_IN_CONTAINER`:
+  - Memory — `http://aura-arcadedb-mcp:8096/mcp/` in-container, `http://127.0.0.1:${AURA_ARCADEDB_MCP_PORT:-8096}/mcp/` otherwise
+  - WhatsApp — `http://whatsapp:8080/mcp/` / `http://127.0.0.1:${AURA_WHATSAPP_MCP_PORT:-8092}/mcp/`
+  - Calendar/PIM — `PIMSidecarBaseURL()` + `/`, i.e. `http://aura-pim-mcp:8080` / `http://127.0.0.1:${AURA_PIM_MCP_PORT:-8093}`
+- Server side: `cmd/arcadedb-mcp/` — the memory MCP Aura writes for herself (`main.go`, `auth.go`, `tenant.go`, `tool_memory.go`, `tool_memory_graph.go`, `tool_memory_recall.go`, `tool_memory_batch.go`, `tool_memory_maintenance.go`, `tool_forget.go`, `tool_browse.go`, `tool_graph_schema.go`). Env `AURA_ARCADEDB_MCP_HOST`, `AURA_ARCADEDB_MCP_PORT`, `AURA_ARCADEDB_MCP_BODY_MAX_BYTES`, `AURA_AGENT_MEMORY_MCP_PORT`, `AURA_AGENT_MEMORY_MCP_AUTH_SECRET`.
+- Timeouts/guards: `AURA_MCP_CALL_TIMEOUT_SEC`, `AURA_MCP_PROBE_TIMEOUT`, `AURA_MCP_MOUNT_TIMEOUT`, `AURA_MCP_MOUNT_RETRY_ATTEMPTS`, `AURA_MCP_SHUTDOWN_TIMEOUT`, `AURA_MCP_SSRF_ENFORCE`, `AURA_MCP_ELICITATION_TIMEOUT_SEC`, `AURA_MCP_SANDBOX_ORIGIN`.
 
-**Model Context Protocol:**
-- Managed MCP servers - Generic stdio and Streamable HTTP servers are managed through `internal/mcp/manager/`, using the official Go SDK and persistent registry records from `internal/mcpregistry/store.go`.
-  - SDK/Client: `github.com/modelcontextprotocol/go-sdk` 1.7.0 under `internal/mcp/`.
-  - Auth: Per-server OAuth, bearer-token, environment, and header configuration is stored encrypted in PostgreSQL; policy and SSRF checks are enforced under `internal/mcp/`.
-- ArcadeDB MCP - The built-in `memory` tool is served by `cmd/arcadedb-mcp/` on port 8096 and registered by `internal/mcp/manager/catalog.go`.
-  - SDK/Client: Official Go MCP SDK on both the server and application sides.
-  - Auth: Application-to-sidecar connection inside the appliance network; ArcadeDB credentials are supplied to the server process through deployment configuration.
+**Calendar / Email / Contacts (PIM):**
+- Sidecar `aura-pim-mcp` (`ghcr.io/chetto1983/aura-pim-mcp:latest`, a .NET `CalendarMcp.HttpServer`) exposes both an MCP endpoint and a token-gated `/admin` REST API.
+- Aura proxies the admin API for the cockpit "Connect account" flow: `internal/agui/connect_pim_api.go` — routes `GET|POST /api/connect/pim/accounts`, `DELETE /api/connect/pim/accounts/{id}`, `.../status`, `.../google/start`, `.../logout`, `.../auth/start`, `.../auth/status`, `.../auth/cancel`. Absent sidecar degrades to 503.
+- Providers reached through it: Microsoft 365 / Outlook.com (device-code flow, `pimDeviceStartTimeout = 35s`), Google Workspace (web OAuth redirect `<base>/admin/auth/google/callback`), IMAP+SMTP, iCalendar URL, JSON file.
+- Config: `AURA_PIM_MCP_URL` (default `http://aura-pim-mcp:8080`, `internal/config/config.go:550`), `AURA_PIM_MCP_PORT`, `AURA_PIM_EXTERNAL_BASE_URL`, `AURA_PIM_MCP_OAUTH_RESOURCE`, `AURA_PIM_MCP_TRUSTED_ISSUERS`, sidecar-side `CALENDAR_MCP_*`.
+- Live tier: `internal/mcp/calendar_integration_test.go`; CI job `calendar-integration-test` in `.github/workflows/ci.yml`.
 
-**Agent Protocol:**
-- AG-UI - Browser and client agent runs enter through the SSE-capable `POST /agent/run` path and detached run/resume routes under `internal/agui/`.
-  - SDK/Client: `github.com/ag-ui-protocol/ag-ui/sdks/community/go` in `go.mod`.
-  - Auth: Aura web sessions and request middleware under `internal/webauth/` and `internal/agui/` protect the browser-facing routes.
+**Messaging channels:**
+- Telegram — `internal/channels/telegram/` (`bot.go`, `bot_dispatch*.go`, `deliver.go`, `voice.go`, `tts.go`, `mdv2.go`, `status_pane.go`, `hitl.go`, `onboarding.go`) on `gopkg.in/telebot.v4`. Env `TELEGRAM_BOT_TOKEN`, `TELEGRAM_API_BASE_URL`, `TELEGRAM_FILE_BASE_URL`, `AURA_TELEGRAM_LOCAL_BOT_API`, `AURA_CHANNEL_TELEGRAM_ENABLED`, throttles `AURA_TELEGRAM_STATUS_THROTTLE_MS` / `AURA_TELEGRAM_CONTENT_THROTTLE_MS` / `AURA_TELEGRAM_CHAT_RATE_LIMIT_MS`.
+- WhatsApp — sidecar `whatsapp` (`ghcr.io/chetto1983/whatsapp-mcp:latest`) reached as an MCP server plus a bridge. Env `AURA_WHATSAPP_MCP_URL`, `AURA_WHATSAPP_MCP_PORT`, `AURA_WHATSAPP_BRIDGE_URL`, `AURA_WHATSAPP_BRIDGE_PORT`, `AURA_WHATSAPP_BRIDGE_TOKEN`, `AURA_WHATSAPP_GATEWAY_URL`, `AURA_WHATSAPP_STORE_ROOT`, `AURA_MCP_WHATSAPP_BRIDGE_URL`. Pairing QR via `qrterminal`.
+- Channel registry/dispatch: `internal/channels/registry.go`, `internal/channels/deliver.go`, enable flags `AURA_CHANNEL_<NAME>_ENABLED`.
+- Cockpit (AG-UI over SSE): `internal/agui/` + the embedded SPA. Bind `AURA_AGUI_BIND`, run controls `AURA_AGUI_RUN_*`, `AURA_AGUI_SSE_HEARTBEAT_SEC`, `AURA_AGUI_BUFFER_CAP`.
 
-**DNS & TLS:**
-- deSEC - Public wildcard certificate issuance uses the Caddy deSEC DNS provider compiled by `docker/caddy/Dockerfile` and configured in `Caddyfile`.
-  - SDK/Client: Caddy module `github.com/caddy-dns/desec`.
-  - Auth: `DESEC_TOKEN` for deployments using DNS-01 issuance.
+**Container runtime (Docker as a product dependency):**
+- Per-identity sandboxes: `internal/sandbox/usersandbox/` — `docker_backend.go`, `docker_backend_exec.go`, `docker_backend_lifecycle.go`, `materialize.go`, `egress.go`, `reap.go`, `router.go`, `spec.go` on `github.com/moby/moby/client`.
+- The daemon does not touch the raw socket: `compose.yaml` service `docker-socket-proxy` (`tecnativa/docker-socket-proxy:v0.5.0`, profile `sandbox`) mediates.
+- Egress control image built from `docker/aura-egress/`; box image from `docker/aura-sandbox/` (`make sandbox-images`, `make sandbox-image-contract`).
+- Env: `AURA_SANDBOX_IMAGE`, `AURA_SANDBOX_EGRESS_IMAGE`, `AURA_SANDBOX_EGRESS_ALLOWLIST`, `AURA_SANDBOX_CPU_LIMIT`, `AURA_SANDBOX_MEMORY_LIMIT`, `AURA_SANDBOX_PIDS_LIMIT`, `AURA_SANDBOX_IDLE_TTL_SEC`, `AURA_SANDBOX_AGENT_URL`, `AURA_SANDBOX_AGENT_TOKEN`, `AURA_SANDBOX_AGENT_TIMEOUT_SEC`, `AURA_EGRESS_ENFORCE`, `AURA_EGRESS_FLOOR_RULESET`.
+- CI job `sandbox-docker-integration`; local `make coverage-docker`.
 
 ## Data Storage
 
 **Databases:**
-- PostgreSQL 18.4 - Durable control plane for identities, configuration, runs, managed MCP registry records, OAuth grants, and other relational state under the `aura` schema; Authula uses its own `authula` schema.
-  - Connection: Role-separated `AURA_DB_URL`, `AURA_DB_MIGRATE_URL`, and `AURA_DB_BOOTSTRAP_URL` are loaded by code under `internal/config/` and injected in `docker-compose.yml`.
-  - Client: pgx/v5 pools and sqlc-generated queries under `internal/db/sqlc/`; migrations under `internal/db/migrations/` are applied with golang-migrate.
-  - Registry: Managed MCP definitions are stored in `aura.mcp_server` by `internal/mcpregistry/store.go`, with schema migration `internal/db/migrations/0101_mcp_server_registry.up.sql`.
-  - OAuth grants: Identity-scoped MCP OAuth grants are encrypted and stored by `internal/mcpoauth/store.go`, using the schema under `internal/db/migrations/0100_identity_mcp_oauth.up.sql`.
-- ArcadeDB 26.7.3 - Long-term memory and document-retrieval graph store, with one `mem_<uuid>` database per identity as provisioned and queried under `internal/arcadedb/`.
-  - Connection: HTTP API credentials and tenant authorization are supplied through deployment variables in `docker-compose.yml`; the application uses endpoints assembled in `internal/arcadedb/client.go`.
-  - Client: Custom HTTP client in `internal/arcadedb/client.go` for `/api/v1/query`, `/command`, and `/server`; CocoIndex writes through the Neo4j-compatible Bolt port from `services/ingest/app.py`.
-  - Version guard: `internal/arcadedb/` enforces the supported server baseline required by the application security contract.
+- **Postgres 18.4** (`compose.yaml` service `postgres`, image `postgres:18.4-alpine3.24`, port 5432) — control plane, documents, catalogue, schema `aura.*`.
+  - Connection: `AURA_DB_URL` (app role), `AURA_DB_MIGRATE_URL` (migrate role), `AURA_DB_BOOTSTRAP_URL`; composed by `internal/config/config.go` from `POSTGRES_HOST`/`POSTGRES_PORT`/`POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`/`POSTGRES_SSLMODE`. Roles named by `AURA_DB_APP_ROLE`, `AURA_DB_MIGRATE_ROLE`.
+  - Client: pgx/v5 pool + sqlc-generated `internal/db/sqlc/`; queries in `internal/db/queries/`.
+  - Migrations: `internal/db/migrations/` (latest `0119_drop_orphan_content_parts`), run by golang-migrate via `aura db migrate` (`cmd/aura/db.go`) and the `aura-migrate` Compose one-shot. **The next migration number is `ls internal/db/migrations/ | tail -1` + 1, never a number copied from a doc.**
+- **ArcadeDB 26.9.1-SNAPSHOT** (digest-pinned; `VerifySecureVersion` refuses < 26.4.2 for CVE-2026-44221) — long-term memory, **one database per identity**, tenant credential derived by HMAC over `AURA_ARCADEDB_TENANT_SECRET`.
+  - Client: `internal/arcadedb/` (`memory.go`, `memory_graph.go`, `memory_graph_temporal.go`, `memory_mentions*.go`, `transaction.go`, …). Bitemporal facts (`valid_from`/`valid_to` + supersede), native vector + full-text index.
+  - Env: `AURA_ARCADEDB_URL`, `AURA_ARCADEDB_DATABASE`, `AURA_ARCADEDB_ADMIN_USER`, `AURA_ARCADEDB_ADMIN_PASSWORD`, `AURA_ARCADEDB_TENANT_SECRET`, sidecar-side `ARCADEDB_PASSWORD`, `ARCADEDB_APP_USER`, `ARCADEDB_APP_PASSWORD`, `ARCADEDB_DATABASE`.
+  - Tiers: `make arcadedb-integration`, CI `arcadedb-integration-test`, `make agent-memory-eval`.
+- SQLite (`github.com/mattn/go-sqlite3`) — local/sidecar state only.
 
 **File Storage:**
-- Garage 2.3.0 S3 - Primary object store for uploaded and ingested files, declared by the `garage` service and persistent volumes in `docker-compose.yml`.
-  - Connection: `AURA_OBJECTSTORE_ACCESS_KEY`, `AURA_OBJECTSTORE_SECRET_KEY`, endpoint, region, and path-style configuration from `internal/config/` and `docker-compose.yml`.
-  - Client: AWS SDK for Go v2 adapter in `internal/objectstore/s3.go`, including presigned PUT, get, list, delete, and copy operations.
-  - Provisioning: Garage Admin API v2 client in `internal/objectstore/garageadmin/client.go` creates identity-scoped buckets and keys using `AURA_GARAGE_ADMIN_TOKEN`.
-- Filesystem and fake backends - Non-S3 storage implementations under `internal/objectstore/` support local development and tests; production appliance data belongs in Garage rather than the replaceable application container filesystem.
+- **Garage S3** (`dxflrs/garage:v2.3.0`, Compose services `garage` + `garage-bootstrap`) — the object store.
+  - Client: `internal/objectstore/s3.go`, `s3_seekable.go`, `identity_store.go`, `asset_placement.go`; admin API wrapper `internal/objectstore/garageadmin/`; filesystem fallback `internal/objectstore/filesystem.go`.
+  - Env: `AURA_OBJECTSTORE_BACKEND`, `AURA_OBJECTSTORE_ENDPOINT`, `AURA_OBJECTSTORE_PUBLIC_ENDPOINT`, `AURA_OBJECTSTORE_BUCKET`, `AURA_OBJECTSTORE_REGION`, `AURA_OBJECTSTORE_ACCESS_KEY`, `AURA_OBJECTSTORE_SECRET_KEY`, `AURA_OBJECTSTORE_PATH_STYLE`, `AURA_OBJECTSTORE_REPLICATION_FACTOR`, `AURA_GARAGE_ADMIN_ENDPOINT`, `AURA_GARAGE_ADMIN_TOKEN`, `AURA_GARAGE_KEY_NAME`, `AURA_GARAGE_ZONE`, `AURA_GARAGE_CAPACITY`.
+- Local filesystem artifacts: `$AURA_RUN_DIR` (tool sidecar results + spillover), `~/.aura/agents/<id>/`, `$AURA_SKILLS_DIR`, `$AURA_SKILLS_IDENTITY_DIR`, `$AURA_MCP_ENV_DIR`, `$AURA_WORKSPACE_DIR`, `$AURA_BACKUP_DIR`.
+
+**Ingestion pipeline:**
+- Sidecar `aura-ingest` (`docker/aura-ingest/Dockerfile`) — CocoIndex 1.0.20 reconciles the Garage bucket, `iscc-tika` extracts, LibreOffice normalises the rest, and Go binaries `cmd/aura-filecard` + `cmd/aura-media-index` describe. Supervised host-side by `cmd/aura-ingest-supervisor` / `internal/ingestsupervisor/`.
+- Env: `AURA_INGEST_S3_ENDPOINT`, `AURA_INGEST_S3_BUCKET`, `AURA_INGEST_S3_REGION`, `AURA_INGEST_S3_ACCESS_KEY_ID`, `AURA_INGEST_S3_SECRET_ACCESS_KEY`, `AURA_INGEST_S3_PREFIX`, `AURA_INGEST_STATE_ROOT`, `AURA_INGEST_IDENTITY_ID`, `AURA_INGEST_LIVE`, `AURA_INGEST_INTERVAL_SEC`, `AURA_INGEST_SUPERVISOR_INTERVAL`.
+- Gates: `make ingest-image`, `make ingest-test`, `make extractor-matrix`, `make ingest-reconcile`; CI job `ingest-sidecar-test`.
 
 **Caching:**
-- No external cache service is detected. Application caches are in-process or local-disk concerns under `internal/`, and Docker package-cache volumes in `docker-compose.yml` accelerate sandbox tooling; Redis is not a deployed runtime dependency.
-
-**Ingestion:**
-- CocoIndex sidecar - `services/ingest/app.py` reconciles an identity's Garage bucket, extracts content with `iscc-tika` and LibreOffice-compatible tooling, embeds through llama.cpp, and writes document/graph data to ArcadeDB.
-  - Connection: Garage S3, embedding, ArcadeDB HTTP, and ArcadeDB Bolt settings are injected by the `aura-ingest` service in `docker-compose.yml`.
-  - Client: CocoIndex S3 and Neo4j targets in `services/ingest/app.py`, with ArcadeDB schema operations in `services/ingest/arcade.py`.
+- No Redis/Memcached service. In-process caches only: `internal/agent` prompt/LLM caching (`cmd/aura/cache.go`, `cache_stats.go`, `internal/cachemetrics/`) and the web-fetch cache in `internal/web/cache.go`. `redis`/`nats`/`kafka` in `go.sum` are transitive Watermill deps of Authula, not wired here.
 
 ## Authentication & Identity
 
-**Auth Provider:**
-- Embedded Authula 1.40.0 - Aura runs an in-process identity provider configured by `internal/webauth/authula.go`; no external identity SaaS is required for core web authentication.
-  - Implementation: Email/password authentication with TOTP, session, CSRF, and rate-limit plugins, backed by the PostgreSQL `authula` schema and exposed through `/auth/*` handlers under `internal/webauth/`.
-  - Session security: Identity linking and session validation live in `internal/webauth/identity_link.go` and `internal/webauth/session_validate.go`; browser sessions use secure `__Host-` cookies where the deployment permits them.
-  - Secret: `AURA_AUTHULA_SECRET` protects Authula and encrypted integration material; `AURA_ACCESS_TOKEN` is required by appliance configuration in `docker-compose.yml`.
+**Cockpit / operator auth:**
+- **Authula** v1.43.0 embedded — `internal/webauth/authula.go`, `internal/webauth/session_validate.go`, `internal/webauth/identity_link.go`. Email + password + TOTP.
+- Env: `AURA_WEB_AUTH_PROVIDER`, `AURA_WEB_AUTH_SECRET`, `AURA_AUTHULA_DSN`, `AURA_AUTHULA_DATABASE_URL`, `AURA_AUTHULA_SECRET`, `AURA_AUTHULA_RATE_LIMIT_MAX`, `AURA_AUTHULA_OPERATOR_IDENTITY`, `AURA_AUTHULA_OPERATOR_EMAIL`, `AURA_AUTHULA_OPERATOR_PASSWORD`, `AURA_AUTHULA_OPERATOR_TOTP_SECRET`.
+- Cookie/session handling: `internal/agui/auth.go`, `auth_cookie.go`, `auth_validator_test.go`.
 
-**External Account Authorization:**
-- Google PIM authorization uses a browser OAuth callback terminating at the PIM sidecar's `/admin/auth/google/callback`; Aura initiates the flow through routes in `internal/agui/connect_pim_api.go`.
-- Microsoft/Outlook PIM authorization uses device-code start, status, and cancellation routes in `internal/agui/connect_pim_api.go`, so it does not require an inbound OAuth callback.
-- Generic MCP OAuth uses identity-scoped encrypted grants from `internal/mcpoauth/store.go`; CLI authorization returns through the ephemeral `/aura/mcp/oauth/callback`, while cockpit authorization returns through `/api/governance/mcp/authorization/callback` under the web server.
+**MCP OAuth (Aura is an authorization server for her own sidecars):**
+- `internal/webauth/mcp_oauth_server.go`, `mcp_oauth_first_party.go`, `mcp_oauth_handlers.go`, `mcp_live_token_issuer.go`, `mcp_token_plugin.go`; client side `internal/mcpoauth/` and `internal/mcp/oauth_*.go` (`oauth_flows.go`, `oauth_tokensource.go`, `oauth_contract.go`).
+- Discovery at `/.well-known/oauth-authorization-server` on port 9080; RFC 8707 resource-bound tokens (audiences configured per sidecar, see `CALENDAR_MCP_OAuth__Resource` in `compose.yaml`). JWT/JWKS via `lestrrat-go/jwx/v3`.
+
+**Other credential surfaces:**
+- Service/bootstrap tokens: `AURA_ACCESS_TOKEN`, `AURA_SERVICE_TOKEN`, `AURA_SETUP_TOKEN` (first-boot wizard, `internal/setup/`), `AURA_RECOVERY_QUESTION` / `AURA_RECOVERY_ANSWER` / `AURA_RECOVERY_PASSWORD`, break-glass path `internal/breakglass/`.
+- Secret storage/redaction: `internal/secret/`, `internal/redact/`; trace encryption `AURA_TRACE_ENCRYPT_KEY`.
+- Identity model: `internal/identity/`, `internal/identityctx/`, `internal/idroot/`; per-identity Postgres RLS (`internal/gateway/rls_seed_test.go`) and per-identity ArcadeDB databases.
+- Human-in-the-loop authorization: `internal/gateway/` (classify → reserve → approve → decide), `internal/approvalgrants/`, `internal/skillacl/`.
 
 ## Monitoring & Observability
 
-**Error Tracking:**
-- No hosted error-tracking service is detected. Failures are represented through structured logs, HTTP/protocol errors, metrics, and traces initialized by `internal/obs/init.go`.
-
-**Logs:**
-- Structured JSON `slog` is initialized with redaction in `internal/obs/init.go`; keep secrets and high-cardinality payloads out of log attributes.
-- Container logs flow to Docker and the host's normal logging facilities, while systemd deployments use units under `deploy/`; no external log-shipping backend is configured in the repository.
+**Tracing:**
+- OpenTelemetry SDK, OTLP/gRPC exporter to **Grafana Tempo** (`compose.yaml` service `tempo`, profile `observability`). Wiring: `internal/obs/init.go`, `tracer.go`, `boundary.go`. Env `AURA_OTEL_EXPORTER`, `AURA_OTEL_ENDPOINT`.
+- Reasoning traces: `internal/reasoningtrace/`, `internal/tracesink/`; `AURA_REASONING_TRACE`, `AURA_REASONING_TRACE_FILE`, `AURA_REASONING_TRACE_MAX_BYTES`.
 
 **Metrics:**
-- Application metrics use a private Prometheus registry and metrics server under `internal/obs/`, exported to optional Prometheus 3.13.1 configured by `docker-compose.yml` and `observability/prometheus/`.
+- Prometheus client + OTel Prometheus exporter (`internal/obs/meter.go`, `internal/obs/catalog.go`), scraped by **Prometheus v3.13.1** (`compose.yaml`, profile `observability`, config under `observability/`). Bind `AURA_METRICS_BIND`.
+- **Grafana 12.3.9** for dashboards. Sidecar health probe `internal/obs/sidecar_check.go`, `AURA_OBSERVABILITY_CHECK_ENABLED`; gates `make observability-check`, `make observability-evidence`, CI job `observability-contract`.
 
-**Tracing:**
-- OpenTelemetry 1.45.0 supports disabled, stdout, and OTLP-gRPC trace export modes in `internal/obs/init.go`; the optional observability profile sends traces to Tempo 2.9.4 and visualizes them in Grafana 12.3.9 using configuration under `observability/`.
+**Error tracking:**
+- No third-party error service. Structured `log/slog` (`lmittmann/tint` for terminal output) plus the OTel error handler `internal/obs/otel_error_handler.go`.
 
 ## CI/CD & Deployment
 
 **Hosting:**
-- Self-hosted Docker Compose appliance - The full service graph, profiles, persistent volumes, internal networks, health checks, and exposed ports are defined in `docker-compose.yml`.
-- systemd - `deploy/aura.service` manages the appliance lifecycle; `deploy/aura-scheduler.service` supports the optional native scheduler deployment.
-- Caddy - HTTPS reverse proxy and certificate automation are defined in `Caddyfile` and built by `docker/caddy/Dockerfile`.
-- GitHub Container Registry - Appliance images and pinned integration sidecars use `ghcr.io/chetto1983/*` references in `.goreleaser.yaml` and `docker-compose.yml`.
+- Self-hosted single-host appliance via Docker Compose (`compose.yaml`), fronted by **Caddy** (`compose.yaml` service `caddy`, image built from `docker/caddy/`) for TLS and public routing. `AURA_PUBLIC_HOST`, `AURA_VIEWS_HOST`, `AURA_HTTPS_PORT`, `AURA_CADDYFILE`, `AURA_WEB_PUBLIC_URL`, `AURA_WEB_TRUST_PROXY`.
+- DNS-01 certificate issuance uses deSEC: `DESEC_TOKEN`.
+- systemd units in `deploy/`: `aura.service`, `aura-scheduler.service`, `aura-image-update.{service,timer,sh}` (pulls `ghcr.io/chetto1983/aura:edge` when `AURA_PULL_POLICY=always`).
+- Installer: `scripts/install.sh` packed by `make installer-artifact`, npx veneer `scripts/create-aura.mjs` / `packages/create-aura`.
 
-**CI Pipeline:**
-- GitHub Actions - Build, lint, unit, integration, race, SQLC, service-integration, web, mutation, E2E, sandbox, and image-freshness jobs are defined in `.github/workflows/ci.yml`.
-- CodeQL and production checks - Security analysis and release readiness run through `.github/workflows/codeql.yml` and `.github/workflows/production-readiness.yml`.
-- Release automation - `.github/workflows/release.yml` invokes the GoReleaser v2 configuration in `.goreleaser.yaml` to publish GitHub Releases, GHCR images, checksums, and Syft SBOMs.
-- Image lifecycle and skill checks - `.github/workflows/retire-aura-images.yml` and `.github/workflows/skills.yml` maintain container and project-skill quality boundaries.
+**CI Pipeline (GitHub Actions, `.github/workflows/`):**
+- `ci.yml` — 22+ jobs including tiered integration suites (db, arcadedb, knowledge, ingest, multimodal, telegram, whatsapp, calendar, sandbox-docker, race-db) and the frontend gates.
+- `codeql.yml` (SAST), `production-readiness.yml`, `skills.yml`, `release.yml` (GoReleaser on `v*` tags), `publish-aura-edge.yml`, `publish-arcadedb-mcp.yml`, `retire-aura-images.yml`, `create-aura-appliance.yml`, `claude.yml`.
+- Registry: GitHub Container Registry (`ghcr.io/chetto1983/*`).
 
 ## Environment Configuration
 
-**Required env vars:**
-- Core database and application: `POSTGRES_PASSWORD`, `AURA_DB_URL`, `AURA_DB_MIGRATE_URL`, `AURA_DB_BOOTSTRAP_URL`, `AURA_ACCESS_TOKEN`, and `AURA_AUTHULA_SECRET`, consumed by `docker-compose.yml` and code under `internal/config/`.
-- ArcadeDB: `ARCADEDB_PASSWORD`, `ARCADEDB_APP_PASSWORD`, and `AURA_ARCADEDB_TENANT_SECRET`, consumed by `docker-compose.yml` and `internal/arcadedb/`.
-- Object storage: `GARAGE_RPC_SECRET`, `AURA_GARAGE_ADMIN_TOKEN`, `AURA_OBJECTSTORE_ACCESS_KEY`, and `AURA_OBJECTSTORE_SECRET_KEY`, consumed by `docker-compose.yml` and `internal/objectstore/`.
-- Embeddings: `AURA_EMBED_REVISION` and `AURA_EMBED_FINGERPRINT`, with dimension/model settings consumed by `docker-compose.yml` and `internal/config/config_embed.go`.
-- Integration sidecars: Calendar, WhatsApp, and Memory use persisted identity-scoped remote-MCP OAuth grants and add no sidecar-specific `.env` secret; `SEARXNG_SECRET` remains specific to SearXNG.
-- Conditional hosted/provider settings: `OPENROUTER_API_KEY`, `AURA_LLM_PROVIDER`, `AURA_LLM_MODEL`, and `AURA_LLM_BASE_URL`, consumed by `internal/llm/config.go`.
-- Conditional channels and public ingress: `TELEGRAM_BOT_TOKEN`, `DESEC_TOKEN`, and `AURA_WEB_PUBLIC_URL`, consumed by `internal/channels/telegram/`, `Caddyfile`, and MCP OAuth callback construction.
+**Required env vars (minimum viable stack):**
+- Postgres: `POSTGRES_PASSWORD` (+ `POSTGRES_USER`, `POSTGRES_DB`, `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_SSLMODE`); tests read the composed `AURA_DB_URL` / `AURA_DB_MIGRATE_URL`.
+- ArcadeDB: `ARCADEDB_PASSWORD`, `ARCADEDB_APP_USER`, `ARCADEDB_APP_PASSWORD`, `AURA_ARCADEDB_TENANT_SECRET`.
+- LLM: `OPENROUTER_API_KEY` (or a local `AURA_LLM_BASE_URL` + `AURA_LLM_PROVIDER=llamacpp`).
+- Embeddings: `AURA_EMBED_BASE_URL`, `AURA_EMBED_MODEL_PATH`, `AURA_EMBED_DIMENSIONS`.
+- Object store: `AURA_OBJECTSTORE_*` + `AURA_GARAGE_ADMIN_TOKEN`.
+- Cockpit auth: `AURA_WEB_AUTH_SECRET`, `AURA_AUTHULA_SECRET`, `AURA_ACCESS_TOKEN`.
+- Channels (optional): `TELEGRAM_BOT_TOKEN`, `AURA_WHATSAPP_BRIDGE_TOKEN`.
 
 **Secrets location:**
-- A repository-local `.env` file is present and contains environment configuration; its contents must never be read, quoted, or committed. Runtime loading is implemented in `internal/config/config.go` and deployment interpolation occurs in `docker-compose.yml`.
-- Optional user-level LLM configuration can live at `~/.aura/llm.json`, with precedence and parsing in `internal/llm/config.go`; treat any API key in that file as a secret.
-- Managed MCP server environment variables, headers, bearer tokens, and OAuth grants are encrypted at rest in PostgreSQL through `internal/mcpregistry/store.go` and `internal/mcpoauth/store.go`.
-- CI release and registry credentials are supplied through GitHub Actions secrets referenced by workflows under `.github/workflows/`; no credential values belong in the repository.
+- `.env` at the repo root (git-ignored; `.env.example` is the 635-line committed catalog). Compose interpolates it; the daemon loads it via `godotenv`.
+- Per-MCP-server credentials live as files under `$AURA_MCP_ENV_DIR` (`internal/mcp/mcpenv/`), never in the process environment of unrelated servers.
+- CI secrets are GitHub Actions secrets; integration jobs export the composed DSNs so `t.Skip` cannot fire under `$CI`.
 
 ## Webhooks & Callbacks
 
 **Incoming:**
-- No conventional event webhook endpoint is detected. Telegram receives updates by long polling in `internal/channels/telegram/bot.go` rather than through a public webhook.
-- Google PIM OAuth returns directly to the PIM sidecar at `/admin/auth/google/callback`, initiated by the management flow in `internal/agui/connect_pim_api.go`.
-- Generic MCP OAuth returns to the CLI loopback path `/aura/mcp/oauth/callback` or the cockpit path `/api/governance/mcp/authorization/callback`, with grant storage under `internal/mcpoauth/`.
-- AG-UI clients initiate agent work through `POST /agent/run` and consume SSE/detached-run routes implemented under `internal/agui/`; these are authenticated protocol endpoints, not third-party event webhooks.
+- Telegram — long-polling via telebot, not a webhook (`internal/channels/telegram/bot.go`). `TELEGRAM_API_BASE_URL` / `AURA_TELEGRAM_LOCAL_BOT_API` allow a local Bot API server.
+- OAuth callbacks — Google redirect `<AURA_PIM_EXTERNAL_BASE_URL>/admin/auth/google/callback` handled by the PIM sidecar; Aura's own MCP OAuth redirect handlers in `internal/webauth/mcp_oauth_handlers.go`.
+- AG-UI HTTP + SSE surface on `AURA_AGUI_BIND` (`internal/agui/`); first-boot setup server on `AURA_SETUP_BIND`.
+- Sandbox agent callback endpoint: `AURA_SANDBOX_AGENT_URL` + `AURA_SANDBOX_AGENT_TOKEN`.
 
 **Outgoing:**
-- OpenRouter and compatible LLM endpoints receive model, vision, embedding, speech, or capability requests from `internal/llm/`, `internal/embeddings/`, and `internal/multimodal/` when configured.
-- Telegram Bot API receives polling and message/file/voice operations from `internal/channels/telegram/`.
-- PIM and WhatsApp sidecars receive MCP traffic plus management requests from `internal/mcp/`, `internal/agui/connect_pim_api.go`, and `cmd/aura/integrations_proxy.go`; their upstream provider calls are owned by the sidecars.
-- Garage S3 and Admin APIs receive object and provisioning operations from `internal/objectstore/s3.go` and `internal/objectstore/garageadmin/client.go`.
-- ArcadeDB HTTP and Bolt endpoints receive memory queries and ingestion writes from `internal/arcadedb/`, `cmd/arcadedb-mcp/`, and `services/ingest/`.
-- SearXNG and public websites receive search/fetch requests from `internal/web/`, subject to SSRF and response-size controls in `internal/web/fetcher.go`.
-- OTLP-gRPC collectors receive trace exports from `internal/obs/init.go` when the tracing mode is enabled; the appliance profile routes them to Tempo using `docker-compose.yml`.
-- deSEC DNS receives certificate DNS-01 operations from the custom Caddy module configured by `docker/caddy/Dockerfile` and `Caddyfile`.
+- Scheduler notifications through the channel registry (`internal/channels/deliver.go`), addressed by `AURA_SCHEDULER_NOTIFY_RECIPIENT`, retried per `AURA_SCHEDULER_NOTIFY_RETRY_ATTEMPTS`, quiet hours `AURA_SCHEDULER_QUIET_HOURS`, timezone `AURA_SCHEDULER_TZ`.
+- Share links to the object store: `internal/share/`, `AURA_SHARE_PUBLIC_ENABLED`, `AURA_SHARE_MAX_EXPIRY_DAYS`, presigned URLs with `AURA_ASSET_PRESIGN_TTL_SEC`.
+- No generic outbound webhook registry.
 
 ---
 
-*Integration audit: 2026-08-25*
+*Integration audit: 2026-09-07*
