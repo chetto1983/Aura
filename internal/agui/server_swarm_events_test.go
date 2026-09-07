@@ -266,7 +266,7 @@ func TestSwarmWorkerEventsStopsOnIdleWithoutMarker(t *testing.T) {
 	}
 }
 
-func TestSwarmWorkerEventsRedactsReasoning(t *testing.T) {
+func TestSwarmWorkerEventsShowsReasoningToOwner(t *testing.T) {
 	reader := newFakeSwarmEventReader(map[string][]byte{"w1": {}})
 	reader.append("w1",
 		swarmEventLine(t, agent.Event{LLMResponse: &agent.LLMResponse{Reasoning: "private-chain-of-thought"}}),
@@ -280,8 +280,8 @@ func TestSwarmWorkerEventsRedactsReasoning(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	if strings.Contains(string(body), "private-chain-of-thought") || !strings.Contains(string(body), redactedReasoningDelta) {
-		t.Fatalf("reasoning privacy posture failed: %s", body)
+	if !strings.Contains(string(body), "private-chain-of-thought") || strings.Contains(string(body), redactedReasoningDelta) {
+		t.Fatalf("owning cockpit must receive worker reasoning: %s", body)
 	}
 }
 

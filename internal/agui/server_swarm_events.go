@@ -64,7 +64,7 @@ func (s *Server) handleSwarmWorkerEvents(w http.ResponseWriter, r *http.Request)
 		childID,
 		s.idgen,
 		s.swarmChildEventSequence(ctx, conv, childID, body, offset),
-		false,
+		true, // The owning cockpit sees worker reasoning, like the parent run.
 	)
 	s.streamSSE(ctx, w, stream)
 }
