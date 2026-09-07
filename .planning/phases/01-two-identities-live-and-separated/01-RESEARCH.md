@@ -630,6 +630,14 @@ in that reference file is `[ASSUMED: stale]` against this codebase.
 
 ## Open Questions
 
+> **Status (2026-09-07, at plan time):** Q1 and Q3 are editorial — their answers were already
+> fully determined by the plans that consume them, so each carries a disposition below, appended
+> before this phase's plans were finalised. Q2 is the one genuine unknown: nothing in this
+> repository has ever driven a freshly provisioned identity through first login, so it is
+> *measured* rather than dispositioned. Plan `01-07` Task 1 reads the installed plugin at wave 1
+> — ahead of every plan that consumes the answer — and Task 2 appends its verdict here and marks
+> this heading. Until then Q2 is open, and it says so.
+
 1. **Does any Success Criterion in this phase actually require a new Postgres migration?**
    - What we know: none of D-01 through D-18 describes a schema change; the fifth build tag
      (D-10) and the script extraction (D-12) are not schema work.
@@ -640,6 +648,15 @@ in that reference file is `[ASSUMED: stale]` against this codebase.
    - Recommendation: the planner should grep `aura.provisioning_saga`'s schema (migration that
      created it) before assuming a new migration is or is not needed, rather than defaulting to
      either answer.
+   - **RESOLVED (2026-09-07, at plan time — editorial; no measurement was owed):** No new
+     migration is planned, by disposition rather than by pre-empting the grep. None of D-01
+     through D-18 describes a schema change; `sagaStepSandbox` already exists and the `run.step`
+     journal records a generic `(saga_id, step)` pair, so the eager sandbox leg (D-09) persists
+     nothing new. This is enforced rather than believed: plan `01-01` Task 1 re-greps both facts
+     before the leg is written, and halts to `ls internal/db/migrations/ | tail -1` if the grep
+     contradicts them — the directory is the source of the next slot, never this document
+     (CLAUDE.md migration-numbering rule). A4's `0120` therefore stays a point-in-time reading,
+     not a number any plan hardcodes.
 
 2. **What exact TOTP enrollment wire contract does Authula's plugin expose, and can it be
    automated headlessly (no human scanning a QR code) for a CI-run closing harness?**
@@ -660,6 +677,14 @@ in that reference file is `[ASSUMED: stale]` against this codebase.
      assert cross-database denial (as opposed to testing one identity's database in isolation).
    - Recommendation: the planner/executor should grep those 34 files for a second identity/
      database construction before assuming D-11 item 2 is greenfield.
+   - **RESOLVED (2026-09-07, at plan time — editorial; no measurement was owed):** Neither
+     answer is asserted here; the question is handed to the grep that settles it inside the plan
+     that consumes it. Plan `01-03` carries an `<inventory_before_invention>` block whose four
+     greps over the `arcadedb_integration` files run before a line of D-11 item 2 is written and
+     decide how much of it is new. Whatever they find, anything already asserted is reused rather
+     than duplicated (CLAUDE.md REUSABLE CODE, INVENTORY BEFORE INVENTION), and the grep results
+     are recorded in that plan's SUMMARY so the answer becomes readable evidence rather than a
+     claim in this table.
 
 ## Environment Availability
 
