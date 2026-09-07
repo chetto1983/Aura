@@ -51,7 +51,7 @@ describe('WorkerPicker', () => {
       <WorkerPicker workers={workers} statuses={statuses} watchedChildId="w2" onSelect={vi.fn()} />,
     );
 
-    expect(screen.getByRole('tablist', { name: 'Workers' })).toBeTruthy();
+    expect(screen.getByRole('tablist', { name: 'Agents' })).toBeTruthy();
     const tabs = screen.getAllByRole('tab');
     expect(tabs).toHaveLength(3);
     expect(tabs[1]?.getAttribute('aria-selected')).toBe('true');

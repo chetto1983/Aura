@@ -77,6 +77,7 @@ export function WorkerPicker({ workers, statuses, watchedChildId, onSelect }: Wo
             }}
             type="button"
             role="tab"
+            aria-label={`${goal} · ${worker.child_id}`}
             aria-selected={active}
             tabIndex={index === focusIndex ? 0 : -1}
             title={goal}
@@ -96,7 +97,12 @@ export function WorkerPicker({ workers, statuses, watchedChildId, onSelect }: Wo
               aria-hidden="true"
               className={`size-2 shrink-0 rounded-sm ${statusDotClass(status)}`}
             />
-            <span className="max-w-48 truncate">{goal}</span>
+            <span className="flex min-w-0 flex-col gap-1">
+              <span className="max-w-48 truncate">{goal}</span>
+              <span aria-hidden="true" className="font-mono text-xs text-text-faint">
+                {worker.child_id}
+              </span>
+            </span>
           </button>
         );
       })}

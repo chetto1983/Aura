@@ -19,6 +19,7 @@ export interface WorkerStatus {
   readonly last_event_at: string;
   readonly events: number;
   readonly duration_sec: number;
+  readonly reported?: boolean;
 }
 
 export interface WorkerStatusStreamHandlers {
@@ -129,6 +130,7 @@ function decodeWorkerStatus(value: unknown): WorkerStatus | null {
     last_event_at: candidate.last_event_at,
     events: candidate.events,
     duration_sec: candidate.duration_sec,
+    ...(candidate.reported === true ? { reported: true } : {}),
   };
 }
 

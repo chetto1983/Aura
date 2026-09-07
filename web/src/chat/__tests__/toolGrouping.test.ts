@@ -79,6 +79,12 @@ describe('toolRun (§3.3)', () => {
 });
 
 describe('isGroupableToolPart', () => {
+  it('keeps child activity outside a group of completed parent tools', () => {
+    const spawn = tool('spawn', { display: { type: 'swarm_report' } });
+    const content = [tool('a'), tool('b'), spawn, tool('c'), tool('d')];
+    expect(isGroupableToolPart(spawn)).toBe(false);
+    for (const id of ['a', 'b', 'spawn', 'c', 'd']) expect(toolRun(content, id)).toBeNull();
+  });
   it('accepts settled tool parts, rejects running/inline/foreign parts', () => {
     expect(isGroupableToolPart(tool('a'))).toBe(true);
     expect(isGroupableToolPart(tool('a', { result: undefined }))).toBe(false);

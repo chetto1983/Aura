@@ -141,6 +141,7 @@ export function useConversation(conversationId: string) {
     queryKey: [CONVERSATION_KEY, conversationId],
     queryFn: ({ signal }) => fetchConversation(conversationId, signal),
     enabled: conversationId.length > 0,
+    refetchInterval: (query) => (query.state.data?.live_run_id ? 2000 : false),
     retry: false,
   });
 }

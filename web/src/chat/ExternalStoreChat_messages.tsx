@@ -25,7 +25,7 @@ import { MarkdownText } from './MarkdownText';
 import { ReasoningPill } from './ReasoningPill';
 import { ToolActivityCard } from './ToolActivityCard';
 import { ToolGroup, type ToolGroupMember } from './ToolGroup';
-import { toolRun } from './toolGrouping';
+import { INLINE_DISPLAY_TYPES, toolRun } from './toolGrouping';
 
 // ExternalStoreChat_messages — the presentational message-render components split
 // out of ExternalStoreChat.tsx (refactor-on-touch, CLAUDE.md 600-LOC cap). These
@@ -326,7 +326,7 @@ function AnswerSources() {
  * span timestamps (live) and the snapshot's durationMs decoration survive on
  * `s.part`; the message-level running status drives the streaming state.
  */
-function ReasoningPillPart({ text }: { readonly text: string }) {
+export function ReasoningPillPart({ text }: { readonly text: string }) {
   const part = useAuiState((s) => s.part) as {
     durationMs?: unknown;
     startedAt?: unknown;
@@ -348,8 +348,6 @@ function ReasoningPillPart({ text }: { readonly text: string }) {
 /** Display types that render INLINE with no disclosure row (compact-chat §3.5):
  *  system_event is safety-relevant one-line status; local_artifact is the small
  *  actionable download chip. Everything else lives behind the compact tool row. */
-const INLINE_DISPLAY_TYPES = new Set<string>(['system_event', 'local_artifact']);
-
 /**
  * The tools.Fallback render: the single seam where a tool turn becomes UI. It
  * reads the custom `display` payload off the stored message part (the sseAdapter
@@ -359,8 +357,8 @@ const INLINE_DISPLAY_TYPES = new Set<string>(['system_event', 'local_artifact'])
  *
  * Compact-chat (spec §3): every tool turn renders as the collapsed
  * ToolActivityCard row; the typed display (when attached) becomes the row's
- * EXPANDED body via the card's DisplayRouter dispatch. The two inline
- * exceptions (system_event / local_artifact) keep today's row-less markup.
+ * EXPANDED body via the card's DisplayRouter dispatch. Inline displays include
+ * worker activity: a completed spawn call does not mean its children finished.
  *
  * Citation click-through (D-04): when the payload carries a source registry, a
  * chip click opens the SHARED Source Explorer (the same sheet the answer-level

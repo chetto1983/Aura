@@ -1,4 +1,5 @@
 import { VoiceModeToggle } from '../chat/voice/VoiceModeToggle';
+import { WorkerActivityButton } from '../chat/workers/WorkerActivityButton';
 import { ArtifactsToggle } from './ArtifactsShell';
 import { ShareToggle } from './ShareShell';
 
@@ -18,6 +19,7 @@ export function ChatWorkspaceControls({
       data-chat-workspace-controls
       className="flex min-w-0 shrink-0 items-center justify-end gap-1 border-b border-border px-3 py-1.5"
     >
+      <WorkerActivityButton />
       <VoiceModeToggle />
       {/* 37F plan 14: hasInternalShare/hasPublicShare are hardcoded false — no share-list data
           hook exists yet. Plan 37F-15 (which mounts the actual ShareModal in AppShell.tsx) wires

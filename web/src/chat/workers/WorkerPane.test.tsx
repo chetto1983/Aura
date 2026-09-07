@@ -84,8 +84,8 @@ describe('WorkerPane', () => {
     const onClose = vi.fn();
     const view = render(<WorkerPane conversationId="conv-1" childId="child-1" onClose={onClose} />);
 
-    expect(screen.getByText('Connecting to worker…')).toBeTruthy();
-    const closeButton = screen.getByRole('button', { name: 'Close worker pane' });
+    expect(screen.getByText('Connecting to agent…')).toBeTruthy();
+    const closeButton = screen.getByRole('button', { name: 'Close agent activity' });
     expect(closeButton.className).toContain('min-h-[44px]');
     expect(closeButton.className).toContain('min-w-[44px]');
     expect(view.container.querySelector('form')).toBeNull();
@@ -103,8 +103,8 @@ describe('WorkerPane', () => {
       handlers?.onError();
     });
 
-    expect(screen.getByRole('alert').textContent).toContain('check the report artifact');
-    expect(screen.queryByText('Connecting to worker…')).toBeNull();
+    expect(screen.getByRole('alert').textContent).toContain('Check the report file');
+    expect(screen.queryByText('Connecting to agent…')).toBeNull();
   });
 
   it('renders the reduced read-only message once the first part arrives', () => {
@@ -122,8 +122,61 @@ describe('WorkerPane', () => {
     });
 
     expect(screen.getByText('Worker result')).toBeTruthy();
-    expect(screen.queryByText('Connecting to worker…')).toBeNull();
+    expect(screen.queryByText('Connecting to agent…')).toBeNull();
     expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  it('shows streamed reasoning activity before a worker has any answer or tool result', () => {
+    render(<WorkerPane conversationId="conv-1" childId="child-1" onClose={vi.fn()} />);
+    act(() => {
+      handlers?.onMessages([
+        {
+          id: 'child-1',
+          role: 'assistant',
+          content: [{ type: 'reasoning', text: 'Checking the inputs' }],
+          status: { type: 'running' },
+        },
+      ]);
+    });
+    expect(screen.getByRole('button', { name: 'Show reasoning' })).toBeTruthy();
+    expect(screen.queryByText('Connecting to agent…')).toBeNull();
+  });
+
+  it('updates existing message parts and appends the final answer after a paused attempt', async () => {
+    render(<WorkerPane conversationId="conv-1" childId="child-1" onClose={vi.fn()} />);
+    act(() => {
+      handlers?.onMessages([
+        {
+          id: 'child-1',
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Choose a number' }],
+          status: { type: 'running' },
+        },
+      ]);
+    });
+    act(() => {
+      handlers?.onMessages([
+        {
+          id: 'child-1',
+          role: 'assistant',
+          content: [
+            { type: 'text', text: 'Choose a number' },
+            {
+              type: 'tool-call',
+              toolCallId: 'calc',
+              toolName: 'shell_exec',
+              args: { command: 'python3 -c "print(9*11)"' },
+              argsText: '{"command":"python3 -c \\\"print(9*11)\\\""}',
+              result: '99',
+            },
+            { type: 'text', text: 'The result is 99.' },
+          ],
+          status: { type: 'complete', reason: 'stop' },
+        },
+      ]);
+    });
+    await waitFor(() => expect(screen.getByText('The result is 99.')).toBeTruthy());
+    expect(screen.getByText('Choose a number')).toBeTruthy();
   });
 
   it('does not request or display a persisted thread A child under thread B', async () => {
@@ -190,7 +243,7 @@ describe('WorkerPane', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Open child A' }));
-    expect(screen.getByText('child-a')).toBeTruthy();
+    expect(screen.getAllByText('child-a').length).toBeGreaterThan(0);
     expect(openWorkerStream).toHaveBeenCalledWith('thread-a', 'child-a', expect.any(Object));
 
     view.rerender(

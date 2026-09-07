@@ -33,10 +33,13 @@ const reports: readonly DisplayChildReport[] = [
 ];
 
 describe('SwarmReportTable (SWARM-01 / D-08)', () => {
-  it('renders worker, status, goal, duration, summary, and action columns', () => {
+  it('keeps every worker and watch action visible in a responsive list', () => {
     render(<SwarmReportTable payload={payload(reports)} />);
-    const headers = screen.getAllByRole('columnheader').map((h) => h.textContent);
-    expect(headers).toEqual(['#', 'Worker', 'Status', 'Goal', 'Duration', 'Summary', '']);
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(
+      within(screen.getByRole('list', { name: 'Agents' })).getAllByRole('listitem'),
+    ).toHaveLength(3);
+    expect(screen.getAllByRole('button', { name: 'Open activity' })).toHaveLength(3);
   });
 
   it('renders one row per ChildReport with goal index, worker id, status, summary', () => {
@@ -45,12 +48,12 @@ describe('SwarmReportTable (SWARM-01 / D-08)', () => {
     expect(screen.getByText('w2')).toBeTruthy();
     expect(screen.getByText('w3')).toBeTruthy();
     expect(screen.getByText('Found three sources.')).toBeTruthy();
-    // The goal index renders in the first cell of each row.
-    expect(screen.getByText('0')).toBeTruthy();
-    expect(screen.getByText('1')).toBeTruthy();
-    expect(screen.getByText('2')).toBeTruthy();
+    // Human labels count from one; the wire goal_index remains zero-based.
+    expect(screen.getAllByText('Agent 1').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Agent 2').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Agent 3').length).toBeGreaterThan(0);
     // Status labels come from the enum.
-    expect(screen.getByText('OK')).toBeTruthy();
+    expect(screen.getByText('Completed')).toBeTruthy();
     expect(screen.getByText('Failed')).toBeTruthy();
     expect(screen.getByText('Needs input')).toBeTruthy();
   });
@@ -152,12 +155,12 @@ describe('SwarmReportTable (SWARM-01 / D-08)', () => {
     expect(screen.queryByText('Options')).toBeNull();
   });
 
-  it('falls to "No summary reported." when a child has no summary', () => {
+  it('falls to "Open activity for details." when a child has no summary', () => {
     render(
       <SwarmReportTable payload={payload([{ goal_index: 0, child_id: 'w1', status: 'ok' }])} />,
     );
     // The collapsed row shows the placeholder; expanding shows it in the Summary field.
-    expect(screen.getAllByText('No summary reported.').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Open activity for details.').length).toBeGreaterThan(0);
   });
 
   it('the row toggle exposes aria-expanded reflecting open state', () => {
@@ -176,7 +179,7 @@ describe('SwarmReportTable (SWARM-01 / D-08)', () => {
       </WorkerWatchProvider>,
     );
 
-    const watch = screen.getAllByRole('button', { name: 'Watch worker' })[1];
+    const watch = screen.getAllByRole('button', { name: 'Open activity' })[1];
     if (watch === undefined) throw new Error('second worker watch control missing');
     expect(watch?.className).toContain('min-h-[44px]');
     fireEvent.click(watch);
@@ -192,7 +195,7 @@ describe('SwarmReportTable (SWARM-01 / D-08)', () => {
     ];
     render(<SwarmReportTable payload={payload(mixed)} />);
 
-    expect(screen.getAllByRole('button', { name: 'Watch worker' })).toHaveLength(4);
+    expect(screen.getAllByRole('button', { name: 'Open activity' })).toHaveLength(4);
     expect(screen.getAllByRole('button', { name: 'View report' })).toHaveLength(2);
     expect(screen.getByText('Stalled')).toBeTruthy();
     expect(document.querySelector('[data-worker-status-icon="Clock"]')).toBeTruthy();
@@ -200,7 +203,7 @@ describe('SwarmReportTable (SWARM-01 / D-08)', () => {
 
   it('shows the empty state when there are no workers', () => {
     render(<SwarmReportTable payload={payload([])} />);
-    expect(screen.getByText('No workers')).toBeTruthy();
+    expect(screen.getByText('No agents')).toBeTruthy();
     expect(screen.queryByRole('table')).toBeNull();
   });
 });

@@ -91,7 +91,7 @@ describe('DisplayRouter (DISP-02 / D-FALLBACK)', () => {
         tool_call_id: 't',
         swarm: [{ goal_index: 0, child_id: 'c', status: 'ok' }],
       },
-      'Workers',
+      'Agents',
     ],
     [
       {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { X } from 'lucide-react';
+import { ArrowDown, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   AssistantRuntimeProvider,
@@ -11,7 +11,8 @@ import {
   type ThreadMessage,
   type ThreadMessageLike,
 } from '@assistant-ui/react';
-import { ToolFallback } from '../ExternalStoreChat_messages';
+import { ReasoningPillPart, ToolFallback } from '../ExternalStoreChat_messages';
+import { statusLabelKey } from '../displays/swarmRow';
 import { MarkdownText } from '../MarkdownText';
 import { openWorkerStream } from './workerStream';
 import { WorkerPicker } from './WorkerPicker';
@@ -38,6 +39,7 @@ function WorkerMessage() {
       <div className="w-full min-w-0 space-y-2 overflow-x-auto">
         <MessagePrimitive.Parts
           components={{
+            Reasoning: ReasoningPillPart,
             Text: () => (
               <div className="w-full min-w-0 text-sm leading-relaxed text-text">
                 <MarkdownText constrainProse />
@@ -55,6 +57,7 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
   const { t } = useTranslation();
   const { workers, statuses, registryReady, ownsWorker, watchWorker } = useWatchWorker();
   const workerOwned = conversationId.length > 0 && ownsWorker(childId);
+  const lifecycleStatus = statuses.get(childId)?.status;
   const streamKey = `${conversationId}\u0000${childId}`;
   const [streamState, setStreamState] = useState<{
     readonly key: string;
@@ -79,7 +82,7 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
       },
     });
     return stream.close;
-  }, [childId, conversationId, streamKey, workerOwned]);
+  }, [childId, conversationId, streamKey, workerOwned, lifecycleStatus]);
 
   useEffect(() => {
     if (registryReady && !workerOwned) onClose();
@@ -113,6 +116,9 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
 
   if (!registryReady || !workerOwned) return null;
 
+  const selectedWorker = pickerWorkers.find((worker) => worker.child_id === childId);
+  const selectedStatus = statuses.get(childId)?.status ?? selectedWorker?.status ?? 'running';
+
   return (
     <section className="flex h-full min-h-0 flex-col px-3 pb-3 pt-3">
       <div className="mb-3 flex min-h-[44px] items-center justify-between gap-2 border-b border-border pb-3">
@@ -143,26 +149,38 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
         }}
       />
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {current.failed ? (
-          <p role="alert" className="px-1 py-4 text-sm text-danger">
-            {t('swarm.pane.error')}
-          </p>
-        ) : hasContent ? (
-          <AssistantRuntimeProvider runtime={scopeRuntime}>
-            <ReadonlyThreadProvider messages={readonlyMessages}>
-              <ThreadPrimitive.Root className="min-h-0">
-                <ThreadPrimitive.Viewport className="space-y-3 py-1">
-                  <ThreadPrimitive.Messages>{() => <WorkerMessage />}</ThreadPrimitive.Messages>
-                </ThreadPrimitive.Viewport>
-              </ThreadPrimitive.Root>
-            </ReadonlyThreadProvider>
-          </AssistantRuntimeProvider>
-        ) : (
-          <p role="status" className="px-1 py-4 text-sm text-text-muted">
-            {t('swarm.pane.connecting')}
-          </p>
-        )}
+      <div className="mb-3 space-y-2 border-b border-border pb-3">
+        <p className="break-words text-sm font-medium leading-relaxed text-text">
+          {selectedWorker?.goal ?? childId}
+        </p>
+        <p className="text-xs text-text-muted">{t(statusLabelKey(selectedStatus))}</p>
+      </div>
+
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <AssistantRuntimeProvider runtime={scopeRuntime}>
+          <ReadonlyThreadProvider messages={readonlyMessages}>
+            <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col">
+              <ThreadPrimitive.Viewport className="min-h-0 flex-1 space-y-3 overflow-y-auto py-1">
+                {current.failed ? (
+                  <p role="alert" className="px-1 py-4 text-sm text-danger">
+                    {t('swarm.pane.error')}
+                  </p>
+                ) : !hasContent ? (
+                  <p role="status" className="px-1 py-4 text-sm text-text-muted">
+                    {t('swarm.pane.connecting')}
+                  </p>
+                ) : null}
+                <ThreadPrimitive.Messages>{() => <WorkerMessage />}</ThreadPrimitive.Messages>
+              </ThreadPrimitive.Viewport>
+              <ThreadPrimitive.ScrollToBottom
+                aria-label={t('swarm.latestActivity')}
+                className="absolute bottom-3 right-3 grid size-11 place-items-center rounded-full border border-border bg-surface shadow-md disabled:hidden"
+              >
+                <ArrowDown className="size-4" aria-hidden="true" />
+              </ThreadPrimitive.ScrollToBottom>
+            </ThreadPrimitive.Root>
+          </ReadonlyThreadProvider>
+        </AssistantRuntimeProvider>
       </div>
     </section>
   );

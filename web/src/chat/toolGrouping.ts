@@ -21,7 +21,11 @@ export interface ToolRunInfo {
   readonly ids: readonly string[];
 }
 
-const INLINE_TYPES = new Set<unknown>(['system_event', 'local_artifact']);
+export const INLINE_DISPLAY_TYPES = new Set<unknown>([
+  'system_event',
+  'local_artifact',
+  'swarm_report',
+]);
 
 /** Settled tool part, not an inline-exception display — a group member candidate. */
 export function isGroupableToolPart(part: unknown): part is GroupablePart {
@@ -29,7 +33,7 @@ export function isGroupableToolPart(part: unknown): part is GroupablePart {
   const p = part as GroupablePart;
   if (p.type !== 'tool-call' || typeof p.toolCallId !== 'string') return false;
   if (typeof p.result !== 'string' && p.isError !== true) return false; // running
-  if (p.display !== undefined && INLINE_TYPES.has(p.display.type)) return false;
+  if (p.display !== undefined && INLINE_DISPLAY_TYPES.has(p.display.type)) return false;
   return true;
 }
 
