@@ -31,7 +31,7 @@ After every task, run its exact `<verify><automated>` command. All 32 commands a
 | 49-01-T1 | 1 | MEM-06 | isolated Amendment #201 plus six-path ancestry/non-proofs | repository diff-tree/path logs + Go gates | covered |
 | 49-01-T2 | 1 | TOOL-05 | one retrieval surface; evaluator cannot skip empty evidence | `TestMemorySurfacePolicy_`, evaluator unit + Go gates | covered |
 | 49-02-T1 | 2 | MEM-01 | typed eligible projection and idempotent graph fragment | `Test(ProjectionTurnEligibility|ConversationSchemaStatements)` + Go gates | covered |
-| 49-02-T2 | 2 | MEM-01 | authoritative paging/edit/delete/rebuild contract | conversation projection live + Go gates | unit+race only; live tier NOT run |
+| 49-02-T2 | 2 | MEM-01 | authoritative paging/edit/delete/rebuild contract | conversation projection live + Go gates | **covered (live 2026-09-07)** |
 | 49-06-T1 | 2 | HARN-05 | final-state validation and complete rollback | `TestMemoryBatch_(FinalStateTracer|RollbackFirstError|IdempotentReplay)` + Go gates | covered |
 | 49-06-T2 | 2 | HARN-05 | whole-decision conflict retry and no partial state | `TestMemoryBatch_(ConflictRetry|LateRollback|CrossIdentity|IdempotentReplay|NoPartialObserver)` + Go gates | covered |
 | 49-07-T1 | 3 | MEM-01 | EnsureMemorySchema registers complete conversation schema | `TestEnsureMemorySchemaRegistersConversationSchema` + Go gates | covered |
@@ -44,21 +44,21 @@ After every task, run its exact `<verify><automated>` command. All 32 commands a
 | 49-04-T1 | 6 | MEM-03 | EnsureMemorySchema registers reasoning schema; amendment isolation plus ancestry only for already-committed protected paths, permitting untouched future paths | `Test(EnsureMemorySchemaRegistersReasoningSchema|ReasoningSchemaStatements)` + intermediate ancestry + Go gates | covered |
 | 49-04-T2 | 6 | MEM-03, CTX-05 | explicit-owner reasoning only; bounded/redacted fields | `Test(ReasoningRecallExplicitOnly|ReasoningToolMetadataBounded|ReasoningRecallIdentity)` + Go gates | covered |
 | 49-04-T3 | 6 | MEM-03 | exact success=30d, failed/cancelled=7d | `Test(ReasoningRetentionPolicy|ReasoningTerminalExpiry)` + Go gates | covered |
-| 49-13-T1 | 6 | MEM-02, TOOL-05 | live mixed recall excludes active/foreign sources; query/entity/fallback proves hybrid/graph/lexical separate from tier contribution | `TestAgentMemoryMCPLive_(MixedTierRecall|BackendPath)` + Go gates | unit+race only; live tier NOT run |
+| 49-13-T1 | 6 | MEM-02, TOOL-05 | live mixed recall excludes active/foreign sources; query/entity/fallback proves hybrid/graph/lexical separate from tier contribution | `TestAgentMemoryMCPLive_(MixedTierRecall|BackendPath)` + Go gates | **covered (live 2026-09-07)** |
 | 49-13-T2 | 6 | MEM-02, TOOL-05 | response and OTel separately agree on effective/backend paths and counts for query/entity/fallback | evaluator unit + `--tier mixed_tier_recall` + Go gates | covered |
 | 49-12-T1 | 7 | MEM-03 | authorized provider-visible post-commit trace; amendment isolation plus ancestry for already-committed protected paths only | `TestReasoningGraphTracer` + intermediate ancestry + Go gates | covered (was false-green) |
 | 49-12-T2 | 7 | MEM-03, CTX-05 | bounded tool metadata/TOUCHED; retry discard | `Test(ReasoningGraphRetryDiscard|ReasoningGraphToolMetadata)` + Go gates | covered (was false-green) |
 | 49-09-T1 | 8 | MEM-03 | production lifecycle applies exact 30d/7d TTL | `Test(ReasoningRetentionWorker|ReasoningRetentionBoot|ReasoningRetentionClose)` + Go gates | covered |
-| 49-09-T2 | 8 | MEM-03, MEM-06 | source deletion dominates TTL and deletes whole graph | live `DeletionPrecedence|ExpiryDeleteRace` + Go gates | unit+race only; live tier NOT run |
-| 49-09-T3 | 8 | CTX-05 | graph-resident reasoning absent from automatic context | live `ExplicitIsolation|FailedCancelledRetention`, history test + Go gates | unit+race only; live tier NOT run |
+| 49-09-T2 | 8 | MEM-03, MEM-06 | source deletion dominates TTL and deletes whole graph | live `DeletionPrecedence|ExpiryDeleteRace` + Go gates | **covered (live 2026-09-07)** |
+| 49-09-T3 | 8 | CTX-05 | graph-resident reasoning absent from automatic context | live `ExplicitIsolation|FailedCancelledRetention`, history test + Go gates | **covered (live 2026-09-07)** |
 | 49-05-T1 | 9 | AUTO-03, CTX-05 | exact upsert/write/patch AcceptedCapture producers | `Test(AcceptedCaptureProducer|MemoryUpsertAcceptedCapture|DurableArtifactAcceptedCapture)` + Go gates | covered |
 | 49-05-T2 | 9 | AUTO-03 | ordered watermark barrier; discard/stop safety | `Test(MemoryCaptureQueueOrder|MemoryCaptureTerminalBarrier|MemoryCaptureRetryDiscard|MemoryCaptureStop)` + Go gates | covered |
 | 49-10-T1 | 10 | AUTO-03, CTX-05 | idempotent direct provenance and source defense | `TestAcceptedCapture_(Tracer|Idempotent|Retry|SourceDefense)` + Go gates | covered |
 | 49-10-T2 | 10 | AUTO-03 | temporal contradictions and principal-only supersession | `TestAcceptedCapture_(Contradiction|WorkerAuthority|PrincipalAuthority|ProvenanceEnrichment)` + Go gates | covered |
 | 49-14-T1 | 11 | AUTO-03 | one bounded production queue and truthful close | `Test(MemoryCaptureBoot|MemoryCaptureClose|MemoryCaptureSinkFailure)` + Go gates | covered |
-| 49-14-T2 | 11 | AUTO-03, CTX-05 | real structured events durable before completion | live `TestMemoryCaptureLive_(ExplicitUserEvent|DurableArtifactEvent|TerminalBarrier)` + Go gates | unit+race only; live tier NOT run |
+| 49-14-T2 | 11 | AUTO-03, CTX-05 | real structured events durable before completion | live `TestMemoryCaptureLive_(ExplicitUserEvent|DurableArtifactEvent|TerminalBarrier)` + Go gates | **covered (live 2026-09-07)** |
 | 49-11-T1 | 12 | HARN-05 | bounded identity-free public batch/risk schema | `Test(MemoryBatchTool|MemoryBatchRisk|MemorySurfacePolicy_)` + Go gates | covered |
-| 49-11-T2 | 12 | HARN-05 | live rollback/concurrency/replay has no partial state | live `TestMemoryBatchLive_` and published batch route + Go gates | unit+race only; live tier NOT run |
+| 49-11-T2 | 12 | HARN-05 | live rollback/concurrency/replay has no partial state | live `TestMemoryBatchLive_` and published batch route + Go gates | **covered (live 2026-09-07)** |
 | 49-11-T3 | 12 | all | final non-empty six-path ancestry; exact 1/3/2 terminal-answer counts across the three named authenticated Aura scenarios; six unique observed-to-scored response IDs; every per-response score >9.8; correlated Tempo/PG/ArcadeDB; coverage/mutation | exact Plan 49-11-T3 command and report assertion | **FAILING (live)** |
 
 Task coverage: **32/32** tasks have an automated command, explicit `<fails_when>`, machine-checkable `<acceptance_criteria>`, and `<done>`.
@@ -164,3 +164,99 @@ provider; the three scenarios are not a statistical sample, and the two remainin
 were reproduced across three consecutive runs but not isolated to a root cause.
 
 **Approval:** withheld — the phase's own acceptance gate does not pass.
+
+## Validation Audit 2026-09-07
+
+| Metric | Count |
+|---|---|
+| Gaps found | 7 |
+| Resolved | 6 |
+| Escalated | 1 |
+
+All seven gaps were **PARTIAL**, never MISSING: every named test already existed in the tree.
+The gap was execution, not coverage, so no test was generated — the six unexecuted live groups
+were run against the live stack and the seventh was escalated.
+
+### Gap 4's diagnosis was wrong, and the correction matters
+
+The 2026-09-02 audit recorded 49-11-T3's gate as unexecutable because
+`wsl.exe --cd /mnt/d/Repo/Aura` names "a path that does not exist on this host". **Measured
+today: the path exists.** `wsl.exe -d Ubuntu -- bash -lc 'ls -d /mnt/d/Repo/Aura'` resolves,
+and `/mnt/` carries `c`, `d`, `wsl`, `wslg`. What fails is the `--cd` **flag form** in that
+invocation, not the path it names. The working form is:
+
+```
+wsl.exe -d Ubuntu -- bash -lc 'cd /mnt/d/Repo/Aura && ...'
+```
+
+So the three gates recorded as unexecutable (`make quality-full`, `scripts/coverage_docker.sh`,
+`make critical-mutation`) are **executable** — they were never re-attempted with a working
+invocation. That reclassifies them from blocked to simply not run.
+
+### Live tier executed 2026-09-07 (WSL Ubuntu, go1.26.6, `-race -tags arcadedb_integration -count=1`, `CI=1`)
+
+`CI=1` is the no-skip-as-green guard: with it set, an absent `ARCADEDB_URL` calls `t.Fatal`
+rather than `t.Skip`. Every run below reports named `--- PASS` lines with real durations, so
+none is a skip counted as a pass.
+
+| Task | Requirements | Tests | Result |
+|---|---|---|---|
+| 49-02-T2 | MEM-01 | `TestConversationProjectionLive_` &mdash; RestartGapAndReplay, EditReplacesDerivedContent, DeleteConvergesAndIsIdentityScoped | 3/3 PASS, 1.187s |
+| 49-09-T2 | MEM-03, MEM-06 | `TestReasoningGraphLive_` &mdash; DeletionPrecedence, ExpiryDeleteRace | 2/2 PASS |
+| 49-09-T3 | CTX-05 | `TestReasoningGraphLive_` &mdash; ExplicitIsolation, FailedCancelledRetention | 2/2 PASS (group 2.366s) |
+| 49-11-T2 | HARN-05 | `TestMemoryBatchLive_` &mdash; 5 cases | 5/5 PASS, 1.925s |
+| 49-13-T1 | MEM-02, TOOL-05 | `TestAgentMemoryMCPLive_` &mdash; BatchAtomicity, MixedTierRecall, BackendPath | PASS, 3.536s |
+| 49-14-T2 | AUTO-03, CTX-05 | `TestMemoryCaptureLive_` &mdash; ExplicitUserEvent, DurableArtifactEvent, TerminalBarrier | 3/3 PASS, 2.903s |
+
+**TOOL-05's core claim is now measured, not asserted.** `TestAgentMemoryMCPLive_BackendPath`
+emitted three distinct backend legs under one tier, with the OTel attributes agreeing with the
+response separately rather than being copied from it:
+
+| Case | `path` (backend) | `effective_path` (tier) |
+|---|---|---|
+| query | `hybrid` | `facts` |
+| entity | `graph` | `facts` |
+| forced_fallback | `lexical` | `facts` |
+| mixed | `hybrid` | `mixed` |
+
+### ACC-01 evidence — the live MCP memory surface, not a test harness
+
+The Go tier above is still a test suite, which ACC-01 does not accept on its own. These probes
+drove the **mounted `aura-memory` MCP server** against the operator's real memory, read-only.
+
+- **TOOL-05 + MEM-02, one call:** a single `memory_recall` question returned
+  `{"path":"hybrid","effective_path":"mixed","fact_count":3,"entity_count":3,"conversation_count":2,"reasoning_count":0}`
+  — one question, the host chose, the host reported which, and the answer spanned short-term
+  conversation and long-term facts together.
+- **MEM-01:** the conversation turns it returned carry
+  `source_ref: postgres://aura/conversations/<id>/turns/<n>` — Postgres remains the system of
+  record and ArcadeDB holds the derived projection, visible at the model boundary.
+- **CTX-05 + MEM-03:** `reasoning_count: 0` on that automatic recall, and `mode=reasoning`
+  **refuses** without an explicit selector (`memory_recall: reasoning mode requires exactly one
+  of query or trace_id`). Reasoning enters context only when explicitly retrieved.
+- **Phase 49.1 R3 (second hop), closed live:** on entity `memory_recall`, `depth: 1` returned
+  **1 fact** with `retrieval.path: "graph"`; `depth: 2` returned **20 facts** with
+  `retrieval.path: "mentions"`, so a widened answer is distinguishable from a lucky one.
+  `depth: 3` was **refused model-readably** — *"depth must be 1 (this entity's facts) or 2
+  (also facts sharing a mentioned entity), got 3"* — not silently clamped.
+- **Phase 49.1 R5 (connectivity), second corpus:** `graph_diagnostics` over `MENTIONS` on the
+  mounted identity reports 93 nodes, 40 edges, 59 isolated (so 34 linked), max degree 8,
+  largest component 24. The hub cap holds on a corpus other than the one 49.1-VALIDATION
+  measured (which was 30/107 linked, max 12, on `mem_38d43554…`).
+
+### Still escalated — 49-11-T3
+
+`python scripts/agent_memory_eval.py --tier all` remains **FAIL at MRS=44.00**, unchanged. The
+operator scoped this session to the live tier, so the three heavy gates (`make quality-full`,
+`scripts/coverage_docker.sh`, `make critical-mutation`) and the three running-Aura scenarios
+were deliberately not run. They are now known-runnable rather than blocked.
+
+### What this audit does NOT show
+
+No coverage, package-policy, mutation or goleak figure was produced this session. The live
+tier ran on one host against one stack; the MCP probes were read-only and touched one
+identity, so they measure the surface's behaviour, not its behaviour under concurrent
+writers. Nothing here changes 49-11-T3's failing verdict, and `nyquist_compliant` stays
+`false` because of it.
+
+**Approval:** still withheld — the phase's own acceptance gate has not passed.
