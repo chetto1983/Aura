@@ -1,0 +1,74 @@
+{
+  "measured_at": "2026-09-07 11:15:59 UTC",
+  "route": "operator-mounted Codex aura-memory MCP with normal OAuth",
+  "passed": 11,
+  "total": 11,
+  "results": [
+    {
+      "name": "historical_fact_without_active_key",
+      "passed": true,
+      "found": true,
+      "as_of": "2026-09-07T08:45:00Z",
+      "consistency": "repeatable_read",
+      "edges": 1
+    },
+    {
+      "name": "exclusive_valid_to",
+      "passed": true,
+      "found": false,
+      "as_of": "2026-09-07T09:02:31Z",
+      "consistency": "repeatable_read",
+      "edges": 0
+    },
+    {
+      "name": "historical_mention_with_provenance",
+      "passed": true,
+      "found": true,
+      "as_of": "2026-09-04T00:00:00Z",
+      "consistency": "repeatable_read",
+      "edges": 1
+    },
+    {
+      "name": "bounded_current_connection",
+      "passed": true,
+      "found": true,
+      "as_of": "2026-09-07T09:51:27Z",
+      "consistency": "repeatable_read",
+      "edges": 1
+    },
+    {
+      "name": "missing_endpoint",
+      "passed": true,
+      "found": false,
+      "as_of": "2026-09-07T09:51:27Z",
+      "consistency": "repeatable_read",
+      "edges": 0
+    },
+    {
+      "name": "max_depth_rejected",
+      "passed": true
+    },
+    {
+      "name": "invalid_time_rejected",
+      "passed": true
+    },
+    {
+      "name": "zero_time_rejected",
+      "passed": true
+    },
+    {
+      "name": "topology_still_includes_history",
+      "passed": true,
+      "found": true,
+      "edges": 1
+    },
+    {
+      "name": "diagnostics_temporal_rejected",
+      "passed": true
+    },
+    {
+      "name": "native_record_link_index_migrated",
+      "passed": true
+    }
+  ]
+}

@@ -1,9 +1,62 @@
 # Native memory graph surface — 2026-09-07
 
-Status: implemented and deployed locally; mounted-MCP acceptance completed on
-2026-09-07 through the operator's authenticated Codex tools. Native temporal
-traversal feasibility is now measured in spike 102; production temporal support
-and a general retrieval-quality benchmark remain open.
+Status: implemented and deployed locally, including temporal paths, historical
+mention retention and support-aware expansion. Operator-mounted MCP acceptance
+and guided final-agent-answer checks completed on 2026-09-07. A broad independent
+answer-quality benchmark remains open; see the final validation below.
+
+## Final temporal and answer validation — 2026-09-07
+
+The final implementation preserves historical support using native
+`MENTIONS.fact_rid` LINK and UNIQUE (`@out`,`@in`,fact_rid). A closed FACT may lose
+its active correction key without losing its record identity. Schema setup drops
+the obsolete (`@out`,`@in`,fact_key) index, whose NULL-key collisions blocked
+different historical supports. The actual mounted schema confirms the migration.
+Complete sweeps scan retained history; incomplete inventories perform no
+reconciliation writes. Native depth-two expansion checks support validity at
+every mention hop and orders direct facts before expanded evidence.
+
+| Verification | Measured result |
+|---|---|
+| Operator-mounted OAuth MCP, deployed containers | 11/11 cases pass |
+| Six fixed-instant queries, direct evidence retained at limit=1 | 2/6 before, 6/6 after |
+| Complete JSON evidence within 512 tokens | 2/6 before, 6/6 after |
+| Complete JSON evidence within 1,024 or 2,048 tokens | 3/6 before, 6/6 after |
+| Final answers composed by this Codex agent | 18/18 guided cases, including two abstentions |
+| Full ArcadeDB integration suite with race | PASS, 86.7% statement coverage, no skips |
+| Full TestAgentMemoryMCPLive SDK suite with race | PASS |
+| Temporal evidence validation mutation spot-check | 26/27 unique mutations killed (96.3%) |
+
+The token comparison uses the same six entities and direct-fact sets at
+`2026-09-07T09:51:27Z`, including source metadata and complete facts. It uses Aura's
+vendored cl100k vocabulary as an estimate, with no conversation tokens borrowed.
+The surviving mutation removes a redundant parse-error branch: parse errors also
+return the zero time rejected by the next branch. The score is confined to
+`validateTemporalFact`, not the whole package.
+
+Reproducible artifacts and question-by-question answers live in
+[quick task 260907-fh3](../.planning/quick/260907-fh3-correct-temporal-memory-paths-historical/260907-fh3-SUMMARY.md),
+including criteria written before the answers, aggregate MCP results and the
+budget evaluator. Private captures were not versioned and were removed by a
+concurrent workspace cleanup; reproducing the budget run requires paired captures.
+These answers were guided and self-reviewed in a session that knows the project;
+18/18 is not a blind benchmark or proof of reliable answers on every domain.
+
+Both containers were rebuilt and are healthy. The accepted local build includes
+concurrent workspace changes and is stamped `c415bcfe2-memory-dirty2`, rather than
+claiming a clean-commit build:
+
+- Aura: `sha256:2afc809ddf385ec3f3c45725aa21c2d571c74ed06c3a97db5d55559807dda7a1`
+- MCP: `sha256:d48cf8e2f766e3921322eb7a2c1ff3524beb5f878517ba762cdc6d5f98a6970f`
+
+Ordinary `codex mcp login aura-memory` restored OAuth automatically after restart.
+No custom authentication implementation was needed. The final mention sweep
+logged 76 links across two tenants at `2026-09-07T10:56:47Z`.
+
+The temporal contract concerns valid-time relationships and entities still stored.
+REPEATABLE_READ permits phantoms; forgotten records cannot be reconstructed.
+Neither graph connectivity nor coreness proves a claim. No PPR improvement or
+community-based promotion was demonstrated or introduced.
 
 ## Contract
 
@@ -23,8 +76,10 @@ and a general retrieval-quality benchmark remain open.
   and existing client timeout still apply. The preflight is not a transactionally
   frozen snapshot; obvious count inconsistencies fail rather than return partial
   diagnostics.
-- Results describe **stored topology across all validity windows**. `as_of` is
-  explicitly rejected. A topological connection is neither entailment nor causality.
+- Without `as_of`, paths describe **stored topology across all validity windows**.
+  With `as_of`, native inline predicates select admissible relationships and their
+  supporting facts in REPEATABLE_READ. Diagnostics still reject `as_of`.
+  A topological connection is neither entailment nor causality.
   Coreness is structural and must not automatically promote, merge or erase facts.
   Multiple relationships can affect native degree/coreness; these are not counts
   of independent sources or confirmations.
@@ -54,7 +109,7 @@ Official references read before implementation:
 - [Cypher hop bounds](https://docs.arcadedb.com/arcadedb/reference/cypher/cypher-compatibility)
 - [Algorithm memory bounds](https://docs.arcadedb.com/arcadedb/reference/graph-algorithms/notes)
 
-## Verification completed
+## Initial verification (before temporal support)
 
 - Global go vet and go build; unit and race tests for internal/arcadedb,
   cmd/arcadedb-mcp and internal/agent/mcptools.

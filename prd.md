@@ -12724,3 +12724,16 @@ fact-key index probe established uniqueness mechanics but is insufficient for
 keyless history. Expose an optional database-local RID with retrieved evidence;
 it is provenance, not a new correction argument. No change to active-fact replay
 or supersession identity semantics is required.
+
+Final verification of #226 (2026-09-07): both local Aura/MCP containers rebuilt;
+the mounted OAuth MCP passed 11/11 cases including keyless historical support,
+exclusive validity boundaries and replacement of the obsolete fact-key index.
+At a fixed instant, six real entity queries preserve direct evidence at limit=1
+in 6/6 cases instead of 2/6. Counting complete JSON facts with provenance gives
+2/6 to 6/6 at 512 estimated tokens and 3/6 to 6/6 at 1,024/2,048. The direct-fact
+sets are unchanged. Full live ArcadeDB race coverage is 86.7%; the MCP SDK live
+race suite passes. A temporal-validator mutation spot-check kills 26/27 unique
+mutations (96.3%). The agent also formulated 18/18 evidence-grounded answers
+against prior criteria, including two abstentions. This is guided self-evaluation,
+not independent cross-domain quality measurement. Details, reproduction and build
+provenance: `docs/memory-graph-validation.md` and quick task `260907-fh3`.

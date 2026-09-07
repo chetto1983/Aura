@@ -1,0 +1,281 @@
+{
+  "budget_unit": "full compact JSON facts and retrieval metadata; complete fact prefix",
+  "capped_direct_after": 6,
+  "capped_direct_before": 2,
+  "codec": "cl100k_base (Aura vendored vocabulary; provider-tokenizer estimate)",
+  "conversation_tokens_borrowed": 0,
+  "queries": 6,
+  "rows": [
+    {
+      "after": {
+        "direct_facts": 1,
+        "facts": 1,
+        "tokens": 362
+      },
+      "before": {
+        "direct_facts": 0,
+        "facts": 1,
+        "tokens": 370
+      },
+      "budget": 512,
+      "direct_fact_set_unchanged": true,
+      "entity": "ArcadeDB"
+    },
+    {
+      "after": {
+        "direct_facts": 3,
+        "facts": 3,
+        "tokens": 964
+      },
+      "before": {
+        "direct_facts": 1,
+        "facts": 3,
+        "tokens": 1010
+      },
+      "budget": 1024,
+      "direct_fact_set_unchanged": true,
+      "entity": "ArcadeDB"
+    },
+    {
+      "after": {
+        "direct_facts": 5,
+        "facts": 6,
+        "tokens": 1778
+      },
+      "before": {
+        "direct_facts": 2,
+        "facts": 6,
+        "tokens": 1970
+      },
+      "budget": 2048,
+      "direct_fact_set_unchanged": true,
+      "entity": "ArcadeDB"
+    },
+    {
+      "after": {
+        "direct_facts": 1,
+        "facts": 1,
+        "tokens": 252
+      },
+      "before": {
+        "direct_facts": 0,
+        "facts": 1,
+        "tokens": 370
+      },
+      "budget": 512,
+      "direct_fact_set_unchanged": true,
+      "entity": "memory_merge_entities"
+    },
+    {
+      "after": {
+        "direct_facts": 1,
+        "facts": 3,
+        "tokens": 927
+      },
+      "before": {
+        "direct_facts": 0,
+        "facts": 3,
+        "tokens": 1010
+      },
+      "budget": 1024,
+      "direct_fact_set_unchanged": true,
+      "entity": "memory_merge_entities"
+    },
+    {
+      "after": {
+        "direct_facts": 1,
+        "facts": 6,
+        "tokens": 1931
+      },
+      "before": {
+        "direct_facts": 0,
+        "facts": 6,
+        "tokens": 1970
+      },
+      "budget": 2048,
+      "direct_fact_set_unchanged": true,
+      "entity": "memory_merge_entities"
+    },
+    {
+      "after": {
+        "direct_facts": 1,
+        "facts": 1,
+        "tokens": 226
+      },
+      "before": {
+        "direct_facts": 0,
+        "facts": 1,
+        "tokens": 370
+      },
+      "budget": 512,
+      "direct_fact_set_unchanged": true,
+      "entity": "memory_recall"
+    },
+    {
+      "after": {
+        "direct_facts": 1,
+        "facts": 3,
+        "tokens": 901
+      },
+      "before": {
+        "direct_facts": 0,
+        "facts": 3,
+        "tokens": 1010
+      },
+      "budget": 1024,
+      "direct_fact_set_unchanged": true,
+      "entity": "memory_recall"
+    },
+    {
+      "after": {
+        "direct_facts": 1,
+        "facts": 6,
+        "tokens": 1905
+      },
+      "before": {
+        "direct_facts": 0,
+        "facts": 6,
+        "tokens": 1970
+      },
+      "budget": 2048,
+      "direct_fact_set_unchanged": true,
+      "entity": "memory_recall"
+    },
+    {
+      "after": {
+        "direct_facts": 1,
+        "facts": 1,
+        "tokens": 379
+      },
+      "before": {
+        "direct_facts": 1,
+        "facts": 1,
+        "tokens": 370
+      },
+      "budget": 512,
+      "direct_fact_set_unchanged": true,
+      "entity": "Aura-Memory-MCP"
+    },
+    {
+      "after": {
+        "direct_facts": 2,
+        "facts": 2,
+        "tokens": 693
+      },
+      "before": {
+        "direct_facts": 2,
+        "facts": 3,
+        "tokens": 1010
+      },
+      "budget": 1024,
+      "direct_fact_set_unchanged": true,
+      "entity": "Aura-Memory-MCP"
+    },
+    {
+      "after": {
+        "direct_facts": 7,
+        "facts": 7,
+        "tokens": 1995
+      },
+      "before": {
+        "direct_facts": 4,
+        "facts": 6,
+        "tokens": 1970
+      },
+      "budget": 2048,
+      "direct_fact_set_unchanged": true,
+      "entity": "Aura-Memory-MCP"
+    },
+    {
+      "after": {
+        "direct_facts": 2,
+        "facts": 2,
+        "tokens": 491
+      },
+      "before": {
+        "direct_facts": 2,
+        "facts": 2,
+        "tokens": 473
+      },
+      "budget": 512,
+      "direct_fact_set_unchanged": true,
+      "entity": "Aura"
+    },
+    {
+      "after": {
+        "direct_facts": 3,
+        "facts": 3,
+        "tokens": 769
+      },
+      "before": {
+        "direct_facts": 3,
+        "facts": 4,
+        "tokens": 947
+      },
+      "budget": 1024,
+      "direct_fact_set_unchanged": true,
+      "entity": "Aura"
+    },
+    {
+      "after": {
+        "direct_facts": 6,
+        "facts": 8,
+        "tokens": 1920
+      },
+      "before": {
+        "direct_facts": 4,
+        "facts": 8,
+        "tokens": 1867
+      },
+      "budget": 2048,
+      "direct_fact_set_unchanged": true,
+      "entity": "Aura"
+    },
+    {
+      "after": {
+        "direct_facts": 2,
+        "facts": 2,
+        "tokens": 480
+      },
+      "before": {
+        "direct_facts": 0,
+        "facts": 1,
+        "tokens": 370
+      },
+      "budget": 512,
+      "direct_fact_set_unchanged": true,
+      "entity": "memory-aura"
+    },
+    {
+      "after": {
+        "direct_facts": 3,
+        "facts": 3,
+        "tokens": 705
+      },
+      "before": {
+        "direct_facts": 0,
+        "facts": 3,
+        "tokens": 1011
+      },
+      "budget": 1024,
+      "direct_fact_set_unchanged": true,
+      "entity": "memory-aura"
+    },
+    {
+      "after": {
+        "direct_facts": 3,
+        "facts": 7,
+        "tokens": 2040
+      },
+      "before": {
+        "direct_facts": 0,
+        "facts": 7,
+        "tokens": 2041
+      },
+      "budget": 2048,
+      "direct_fact_set_unchanged": true,
+      "entity": "memory-aura"
+    }
+  ],
+  "valid_at": "2026-09-07T09:51:27Z"
+}
