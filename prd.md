@@ -12711,3 +12711,16 @@ at read time, and make repeated complete sweeps idempotent. The cap applies to
 the retained corpus; this does not restore forgotten FACT or removed entities.
 These findings extend amendment #226 before the retention implementation and
 are reproduced in the temporal neighborhood and native mention identity tests.
+
+The real MCP write/read test then exposed a further identity constraint: an
+already-closed FACT may have NULL fact_key because that column is the active
+correction key. Do not repurpose it or collapse different historical windows.
+Measured native MENTIONS.fact_rid LINK plus elementId/record matching preserves
+historical support after the key becomes NULL, returns that record in the same
+query, and excludes a deleted target without dereferencing a dangling LINK.
+The implementation therefore uses UNIQUE (`@out`,`@in`,fact_rid) for new mentions,
+retaining fact_key lookup only to read/reconcile legacy links. The earlier
+fact-key index probe established uniqueness mechanics but is insufficient for
+keyless history. Expose an optional database-local RID with retrieved evidence;
+it is provenance, not a new correction argument. No change to active-fact replay
+or supersession identity semantics is required.
