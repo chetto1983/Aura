@@ -4,8 +4,10 @@
 
 The release gate this repo already declares has never been run. Eight of its twelve reports
 have no artifact on disk; all eight make targets and all six evidence scripts exist and are
-self-tested. Authula's access control — twelve REST endpoints, role hierarchy, permissions,
-Bun-backed repositories — is already in `go.mod` and Aura uses none of it. Per-identity data
+self-tested. Aura already has an authorization model — `aura.capability_grants`,
+`RequireCapability`, five capabilities enforced today and a cockpit admin panel that grants
+them — and it ships with a `*` wildcard on the bootstrap operator that would grant every new
+capability before anyone granted it. Per-identity data
 scoping already works in SQL, in RLS, in a per-identity ArcadeDB database and a per-identity
 Garage bucket, and has never been put under two concurrent users, under attack, across a
 restart, or at the process and host level. The launch documentation was rewritten in a
@@ -35,7 +37,7 @@ Numbering starts at 1. The previous milestone's phase directories were deleted a
 numbering (45–54) is not carried forward.
 
 - [ ] **Phase 1: Two Identities, Live and Separated** - Turn on the shipped multi-identity profile, provision a second identity through the documented path, and prove two concurrent turns share no data and no execution
-- [ ] **Phase 2: Permissions Decide What a User May Do** - Mount Authula's access control, register Aura's resources as permissions, and enforce them at the five privileged call sites
+- [ ] **Phase 2: Permissions Decide What a User May Do** - Retire the `*` wildcard, add the five missing capabilities, enforce them at their call sites, and let the cockpit create an identity as well as grant to it
 - [ ] **Phase 3: The Boundary Under Attack** - A re-runnable adversarial suite plus a sandbox escape battery, every attempt refused and audited
 - [ ] **Phase 4: Load, Chaos and Truthful Degradation** - Produce load, chaos and observability evidence for the first time, with two identities active
 - [ ] **Phase 5: Restart, Rollback, Restore** - Prove isolation survives the operational lifecycle, producing the DR and rollback evidence in the same drill
@@ -57,16 +59,17 @@ numbering (45–54) is not carried forward.
 **Plans**: TBD
 
 ### Phase 2: Permissions Decide What a User May Do
-**Goal**: What a user may DO is decided by Authula's access control, not by who owns the row — and a refusal is auditable.
+**Goal**: What a user may DO is decided by an explicit capability grant, not by who owns the row and not by a wildcard — and a refusal is auditable and visible in the cockpit.
 **Depends on**: Phase 1 — a permission check needs a second principal to be meaningful. With one identity every check trivially passes, and RBAC-08 (administering other identities) has nothing to administer until provisioning works.
-**Requirements**: RBAC-01, RBAC-02, RBAC-03, RBAC-04, RBAC-05, RBAC-06, RBAC-07, RBAC-08, RBAC-09, RBAC-10, REL-06
+**Requirements**: RBAC-01, RBAC-02, RBAC-03, RBAC-04, RBAC-05, RBAC-06, RBAC-07, RBAC-08, RBAC-09, RBAC-10, RBAC-11, REL-06
 **Success Criteria** (what must be TRUE):
-  1. Authula's access control service is constructed and mounted in the composition root, its migration set applied, and all twelve `/access-control/*` endpoints answer on the running deployment. Nothing here builds a policy engine: `plugins/access-control/` in `github.com/Authula/authula@v1.43.0` already ships handlers, repositories, role hierarchy and its own migrations.
-  2. Aura's protected resources are registered as Authula permissions with the actions each supports, a default role set ships with the deployment, and a fresh install lands the operator in the administrative role with no manual SQL.
-  3. A live turn driven by the real agent as an identity that lacks the permission is refused at each of the five privileged call sites — mounting or installing an MCP server, authoring or installing a skill, running a shell in the sandbox, approving a destructive action, administering another identity — while the permitted identity succeeds at all five.
-  4. An unregistered resource or an unresolved principal denies rather than allows, and every denial is retrievable afterwards with who, what resource, what action and when.
-  5. `mutation-report.json` shows ≥70% killed separately for gateway, identity, profile, sandbox and frontend — the refusal branches this phase adds are provably killed, not merely covered.
-**Closes on (live run)**: a permission-matrix run against the live daemon — identity A administrative, identity B without the five permissions — where the real agent is asked, as each identity, to install an MCP server, write a skill, run a shell command, approve a destructive tool call and provision a third identity. Ten outcomes, five allowed and five refused, each denial then read back out of the audit trail by its own query.
+  1. The `*` wildcard is retired. Bootstrap (`cmd/aura/serve_bootstrap.go:258`) mints the explicit administrative set instead of `*`, a migration rewrites existing wildcard rows into that set, and `HasCapability`'s SQL no longer expands `*`. Migration `0026` already made `local`'s grants explicit precisely so the admin contract would survive this narrowing; `0099` refused to store approval scopes in this table because the wildcard would have shipped its gate open. Until this lands, any capability added below is granted to the operator before anyone grants it.
+  2. Every capability Aura enforces is declared in one place with its meaning, and the five new ones are enforced with `RequireCapability` at their call sites: mounting or installing an MCP server, authoring or installing a skill, running a shell in the sandbox, approving a destructive action, administering another identity.
+  3. A live turn driven by the real agent as an identity that lacks the capability is refused at each of the five call sites, while the permitted identity succeeds at all five. An identity cannot grant itself a capability it does not hold.
+  4. An unknown capability, an unresolved principal or a store error denies rather than admits, and every denial is retrievable afterwards with who, which capability, which route and when.
+  5. The cockpit admin section creates an identity and grants its capabilities without leaving the UI — extending `web/src/admin/` (`adminApi.ts`, `AdminSection.tsx`, `useAdmin.ts`), which already lists the roster and calls `POST`/`DELETE /api/admin/identities/{id}/capabilities`. Creation is the leg that does not exist yet; granting does.
+  6. `mutation-report.json` shows ≥70% killed separately for gateway, identity, profile, sandbox and frontend — the refusal branches this phase adds are provably killed, not merely covered.
+**Closes on (live run)**: a permission-matrix run against the live daemon — identity A administrative, identity B without the five capabilities — where the real agent is asked, as each identity, to install an MCP server, write a skill, run a shell command, approve a destructive tool call and provision a third identity. Ten outcomes, five allowed and five refused, each denial then read back out of the audit trail by its own query, and the whole grant/revoke cycle driven once through the cockpit UI rather than by curl.
 **Plans**: TBD
 
 ### Phase 3: The Boundary Under Attack
@@ -160,11 +163,14 @@ news rather than the expected case.
 
 ## Notes
 
-**No UI phase.** No phase in this milestone delivers frontend work. Cockpit UI for role
-management is explicitly out of scope in REQUIREMENTS.md (the API is the contract for this
-milestone). `frontend` appears in REL-06 only as one of the five existing mutation scopes,
-and the web E2E suite runs as existing evidence. This is a deliberate finding, not an
-omission.
+**Frontend work is Phase 2's, not a phase of its own.** The cockpit already has an admin
+section (`web/src/admin/adminApi.ts`, `AdminSection.tsx`, `useAdmin.ts`) that lists the
+identity roster with each identity's grants and calls
+`POST`/`DELETE /api/admin/identities/{id}/capabilities`. Granting exists; creating an
+identity from the UI does not, and that gap is RBAC-11 inside Phase 2 — extending a surface
+that works rather than opening a second one. No other phase delivers frontend work, and no
+separate UI phase exists. `frontend` appears in REL-06 as one of the five existing mutation
+scopes, and the web E2E suite runs as existing evidence.
 
 **Gates binding every phase** (CLAUDE.md, not restated per phase): coverage floor 85% across
 the full tag matrix; mutation ≥70% on each phase's critical files; no non-test Go file over

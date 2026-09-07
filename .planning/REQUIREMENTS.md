@@ -34,21 +34,36 @@ they break — not writing them.
 
 ### Access Control (RBAC)
 
-Authula v1.43.0 is already a dependency and already exposes twelve `/access-control/*` endpoints,
-role hierarchy, permissions, user-role assignment and Bun-backed repositories. Aura currently uses
-none of it — it imports Authula only for jwt, totp, session, email-password, csrf and rate-limit.
-Nothing here builds a policy engine.
+Aura already has an authorization model and it is not Authula's. `aura.capability_grants`
+(migration `0004_identity`, RLS fail-closed since `0087`) stores `(identity_id, capability)`;
+`RequireCapability` (`internal/agui/auth.go:245`) is the HTTP gate; `governance.write`,
+`governance.read`, `identity.create`, `agent.run` and `share.public` are enforced today; and
+`web/src/admin/` already grants and revokes them through `/api/admin/identities/{id}/capabilities`.
+Authula stays what it already is here — authentication — and authorization stays Aura's. Adding a
+second permission system would be the exact fault that put `euroteltr/rbac` out of scope.
 
-- [ ] **RBAC-01**: Authula's access control service is constructed and mounted, and its twelve endpoints answer on the running deployment
-- [ ] **RBAC-02**: Aura's protected resources are registered as Authula permissions with the actions each supports
-- [ ] **RBAC-03**: A default role set ships with the deployment, and a fresh install lands the operator in the administrative role without manual SQL
-- [ ] **RBAC-04**: Installing or mounting an MCP server requires its permission, and is refused without it
-- [ ] **RBAC-05**: Authoring, updating or installing a skill requires its permission, and is refused without it
-- [ ] **RBAC-06**: Running a shell in the sandbox requires its permission, and is refused without it
-- [ ] **RBAC-07**: Approving a destructive action requires its permission — an identity cannot approve an action it lacks the right to take
-- [ ] **RBAC-08**: Administering other identities (provisioning, deprovisioning, role assignment) requires its permission
-- [ ] **RBAC-09**: A permission decision is refused by default — an unregistered resource or an unresolved principal denies rather than allows
-- [ ] **RBAC-10**: Every permission denial is auditable: who, what resource, what action, when
+One thing must be fixed before any new capability is added. `HasCapability` resolves
+`capability = '*' OR capability = $2`, and the bootstrap operator carries a seeded `*`
+(`0004_identity.up.sql:31`, `cmd/aura/serve_bootstrap.go:258`). A capability added under that
+wildcard is granted to the operator before anyone grants it — a gate that ships open. This is not a
+new discovery: migration `0099` refused to put approval scopes in this table for exactly that
+reason, and `0026` already made `local`'s grants explicit so the admin contract would "survive any
+future narrowing of the wildcard". The narrowing is this milestone's. The blast radius is small and
+measured: only the two bootstrap paths mint `*`, and every onboarding-provisioned identity is
+already refused it in two places (`onboarding_session.go:14` declares the no-escalation rule,
+`onboarding_provision.go:497` enforces it server-side).
+
+- [ ] **RBAC-01**: The `*` wildcard is retired. Bootstrap mints the explicit capability set instead, a migration replaces existing wildcard rows with that set, and `HasCapability` no longer expands `*`
+- [ ] **RBAC-02**: Every capability Aura enforces is declared in one place with its meaning, so a reviewer can read the authorization surface without grepping call sites
+- [ ] **RBAC-03**: A fresh install lands the first operator with the administrative capability set explicitly granted and auditable — no wildcard, no manual SQL
+- [ ] **RBAC-04**: Installing or mounting an MCP server requires its capability, and is refused without it
+- [ ] **RBAC-05**: Authoring, updating or installing a skill requires its capability, and is refused without it
+- [ ] **RBAC-06**: Running a shell in the sandbox requires its capability, and is refused without it
+- [ ] **RBAC-07**: Approving a destructive action requires its capability — an identity cannot approve an action it lacks the right to take
+- [ ] **RBAC-08**: Administering other identities (provisioning, deprovisioning, granting) requires its capability, and an identity cannot grant itself a capability it does not hold
+- [ ] **RBAC-09**: An authorization decision denies by default — an unknown capability, an unresolved principal or a store error refuses rather than admits
+- [ ] **RBAC-10**: Every denial is auditable: who, which capability, which route, when — and the admin surface can read them back
+- [ ] **RBAC-11**: The cockpit admin section creates an identity and grants its capabilities without leaving the UI, extending `web/src/admin/` rather than adding a surface beside it
 
 ### Isolation (ISO)
 
@@ -112,11 +127,11 @@ Deferred. Tracked, not in this roadmap.
 
 | Feature | Reason |
 |---------|--------|
-| `euroteltr/rbac` | Authula already ships a persisted access control with role hierarchy and twelve REST endpoints, already in `go.mod`. This library is in-memory on `sync.Map` with no persistence and its last commit is from 2019; adding it would put a second source of truth for permissions in the same process |
-| Casbin, OpenFGA, SpiceDB, Permify, Keto | Live and capable, but they replace Authula's access control rather than use it, and they are sized for distributed authorization — not a self-hosted appliance with a handful of identities |
+| `euroteltr/rbac` | In-memory on `sync.Map`, no persistence, last commit 2019 — and Aura already has a persisted authorization model (`aura.capability_grants` + `RequireCapability`) with a cockpit panel that grants against it. A second source of truth for permissions in one process is the fault, whichever library brings it |
+| Authula's own access control (twelve `/access-control/*` endpoints, role hierarchy) | Capable and already in `go.mod`, but Aura's authorization is `aura.capability_grants` + `RequireCapability` — enforced today on five capabilities, RLS fail-closed, with a cockpit panel. Authula stays the authentication layer it already is; adopting its roles too would mean two permission systems in one process, the same fault as any other second engine |
+| Casbin, OpenFGA, SpiceDB, Permify, Keto | Live and capable, but they replace a working, tested, enforced model rather than extend it, and they are sized for distributed authorization — not a self-hosted appliance with a handful of identities |
 | Carrying over v2.1.0's open requirements | Closed without inheritance by operator decision. A defect that is real will resurface through this milestone's end-to-end runs, with fresh evidence rather than an inherited ledger |
 | Hosted / SaaS offering | This milestone ships something others self-host. Running it as a service for third parties is a different threat model and a different operational commitment |
-| Cockpit UI for role management | The API is the contract for this milestone; the UI follows once roles have proven themselves |
 
 ## Traceability
 
@@ -148,6 +163,7 @@ Every v1 requirement maps to exactly one phase. Mapped during roadmap creation, 
 | RBAC-08 | Phase 2 | Pending |
 | RBAC-09 | Phase 2 | Pending |
 | RBAC-10 | Phase 2 | Pending |
+| RBAC-11 | Phase 2 | Pending |
 | ISO-01 | Phase 1 | Pending |
 | ISO-02 | Phase 1 | Pending |
 | ISO-03 | Phase 3 | Pending |
@@ -185,8 +201,8 @@ Every v1 requirement maps to exactly one phase. Mapped during roadmap creation, 
 | Phase 7 | One SHA, Twelve Reports, One Window | 8 | REL-01, REL-02, REL-03, REL-05, REL-07, REL-13, REL-14, E2E-05 |
 
 **Coverage:**
-- v1 requirements: 47 total
-- Mapped to phases: 47
+- v1 requirements: 48 total
+- Mapped to phases: 48
 - Unmapped: 0 ✓
 - Duplicated across phases: 0 ✓
 

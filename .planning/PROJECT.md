@@ -49,7 +49,7 @@ was told, makes the rest worthless.
 
 - [ ] A stranger to the codebase can install, upgrade, back up and recover Aura from written instructions
 - [ ] `make release-readiness` passes on the candidate commit — all twelve reports, same SHA, under 24h
-- [ ] Roles and permissions come from Authula's access control, and gate what a user may DO
+- [ ] Permissions gate what a user may DO, from one explicit capability model with no wildcard
 - [ ] Two identities working at the same time cannot reach each other's data, under active attempt
 - [ ] One identity's turn cannot touch another's execution — the loop is separated, not just the rows
 - [ ] No identity can cross from its sandbox to the host that serves the others
@@ -160,8 +160,9 @@ asserted by a checkbox.
 **Target features:**
 - Release gate green: all twelve `production-readiness` reports on the candidate SHA. Eight have
   never been produced — security, docker-coverage, load, chaos, DR, observability, rollback, bundle
-- RBAC wired from Authula's existing access control (twelve `/access-control/*` endpoints, roles
-  with hierarchy, permissions, user-role assignment) rather than a second policy engine
+- Permissions extend Aura's existing capability model (`aura.capability_grants`,
+  `RequireCapability`, cockpit admin panel) rather than adding a second engine beside it — and the
+  bootstrap `*` wildcard is retired first, because a new capability under it ships granted
 - Permissions, not just ownership: who installs an MCP server, authors a skill, runs a shell in the
   sandbox, approves a destructive action, administers other identities
 - Execution isolation: today one process serves every identity — one loop, one process memory
