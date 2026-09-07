@@ -194,7 +194,7 @@ func (a *LlmAgent) runTool(ctx context.Context, budget *Budget, call llm.ToolCal
 		a.registry,
 		a.client,
 		a.cfg,
-		a.sessionID,
+		a.ledgerConvID,
 		a.gateway,
 	)
 	if d := budget.NodeTimeout(); d > 0 {

@@ -74,15 +74,9 @@ type RunConfig struct {
 	// paused) swarm_spawn call -- zero regression.
 	ResumeTurns []llm.Message
 
-	// ChildID (51-11) is the background delegation path's stable, deterministic
-	// per-worker id (delegationChildID, delegation_queue.go), set by
-	// runWithHeartbeat from payload.ChildID. runChild prefers it over its own
-	// "w<idx+1>" fallback when non-empty; empty is the zero value, so every
-	// SYNCHRONOUS swarm_spawn caller (runWave, never sets this field) keeps
-	// today's flat "w1".."wN" derivation byte-for-byte. Without this, two
-	// concurrently claimed background jobs of one conversation would BOTH
-	// derive "w1" (runWithHeartbeat always calls runChild with a hardcoded
-	// index 0) and interleave into the SAME transcript file.
+	// ChildID is the durable job's stable worker identity. Synchronous workers
+	// derive their own identity from the trusted invoking operation; standalone
+	// callers without an operation retain the flat w1..wN fallback.
 	ChildID string
 }
 
@@ -245,14 +239,12 @@ func panicChildReport(idx int, recovered any) ChildReport {
 // (delegation_queue.go's runWithHeartbeat) is the one caller that needs it, to persist
 // DelegationResumeState when the worker pauses.
 func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, goal string) (ChildReport, []llm.Message) {
-	// ChildID (51-11): the background delegation path's stable, deterministic
-	// id takes precedence over the flat "w<idx+1>" every SYNCHRONOUS
-	// swarm_spawn wave still uses (rc.ChildID's own doc comment).
-	childID := rc.ChildID
-	if childID == "" {
-		childID = fmt.Sprintf("w%d", idx+1)
-	}
+	ctx, childID, err := workerOperationContext(ctx, rc, idx, goal)
 	report := ChildReport{GoalIndex: idx, ChildID: childID, Status: StatusOK}
+	if err != nil {
+		report.Status, report.Error = StatusFailed, err.Error()
+		return report, nil
+	}
 
 	registry, nestingClosed := workerRegistry(rc)
 	briefContext := rc.Context
