@@ -25,7 +25,10 @@ import (
 // The filter is the discriminator conversations.GenerateTitle itself guarantees: it
 // sets ToolChoice "none" and sends no Tools, so a title call can never be mistaken
 // for a round. This lived in the db_integration tier as agentRounds; it is here now
-// because the unit tier needs the same insight and one copy is enough.
+// because the unit tier needs the same insight and one copy is enough. There is no
+// agentRounds count wrapper on top: its only caller lives behind db_integration, so in
+// the default build it would be an unreachable symbol and the deadcode gate rejects it
+// (measured: CI run 34096748776). len(agentRequests(client)) says the same thing.
 func agentRequests(client *agenttest.FakeClient) []llm.Request {
 	var rounds []llm.Request
 	for _, req := range client.RecordedRequests() {
@@ -35,6 +38,3 @@ func agentRequests(client *agenttest.FakeClient) []llm.Request {
 	}
 	return rounds
 }
-
-// agentRounds counts what agentRequests returns.
-func agentRounds(client *agenttest.FakeClient) int { return len(agentRequests(client)) }
