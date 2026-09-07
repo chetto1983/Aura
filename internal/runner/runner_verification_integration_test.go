@@ -279,7 +279,7 @@ func TestVerifyOnStopFiresOnARealTurn(t *testing.T) {
 	// loaded machine: CI reported five calls on 2026-08-16 with all four rounds correct.
 	// A title call is distinguishable because it carries no tool manifest, which is also
 	// why filtering on Tools is a statement about the request rather than a guess.
-	if rounds := agentRounds(client); rounds != 4 {
+	if rounds := len(agentRequests(client)); rounds != 4 {
 		t.Fatalf("model ran %d agent rounds, want 4 — the gate did not send the turn back", rounds)
 	}
 
