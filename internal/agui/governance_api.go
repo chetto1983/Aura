@@ -2,6 +2,7 @@ package agui
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"slices"
 	"sort"
@@ -112,9 +113,17 @@ type skillAuditRow struct {
 	BlocklistOverride bool                  `json:"BlocklistOverride"`
 }
 
-// schedulerTaskRow is the safe wire projection for a scheduled task. It omits Payload,
-// IdentityID, and OriginConversationID, which can carry private prompt/context material
-// or cross-identity linkage not needed by the board.
+// schedulerTaskRow is the safe wire projection for a scheduled task. It omits IdentityID and
+// OriginConversationID, which are cross-identity linkage the board never renders.
+//
+// Payload is CARRIED, and it used to be stripped for the same "private prompt/context material"
+// reason. That was wrong about whose privacy it protected: the board is the operator's own
+// console, behind governance.read, showing the deployment's own schedule, and the payload is the
+// text they dictated. Withholding it made the surface useless for the one person it is for —
+// reported 2026-09-07: a reminder was unreadable until it fired on Telegram, and the edit dialog
+// offered an empty box that would silently keep the old text, so changing it meant retyping it
+// blind. json.RawMessage so the stored bytes reach the client unaltered and omitempty keeps the
+// key off a task that carries none (a backup takes no payload).
 type schedulerTaskRow struct {
 	ID           string            `json:"ID"`
 	Kind         cron.TaskKind     `json:"Kind"`
@@ -129,6 +138,7 @@ type schedulerTaskRow struct {
 	NotifyRoute  string            `json:"NotifyRoute"`
 	CreatedAt    time.Time         `json:"CreatedAt"`
 	UpdatedAt    time.Time         `json:"UpdatedAt"`
+	Payload      json.RawMessage   `json:"Payload,omitempty"`
 }
 
 // schedulerRunRow is the safe run-history projection. It omits PausedStateToken while
@@ -484,6 +494,17 @@ func skillAuditRows(rows []skills.AuditRow) []skillAuditRow {
 	return out
 }
 
+// schedulerPayload passes the stored payload through when it is valid JSON, and drops it
+// otherwise. Dropping rather than forwarding is deliberate: the field is typed
+// json.RawMessage, so malformed bytes would make the WHOLE response unencodable and cost the
+// board every row to save one.
+func schedulerPayload(raw []byte) json.RawMessage {
+	if len(raw) == 0 || !json.Valid(raw) {
+		return nil
+	}
+	return json.RawMessage(append([]byte(nil), raw...))
+}
+
 func schedulerTaskRows(tasks []cron.Task) []schedulerTaskRow {
 	out := make([]schedulerTaskRow, 0, len(tasks))
 	for _, task := range tasks {
@@ -501,6 +522,7 @@ func schedulerTaskRows(tasks []cron.Task) []schedulerTaskRow {
 			NotifyRoute:  task.NotifyRoute,
 			CreatedAt:    task.CreatedAt,
 			UpdatedAt:    task.UpdatedAt,
+			Payload:      schedulerPayload(task.Payload),
 		})
 	}
 	return out

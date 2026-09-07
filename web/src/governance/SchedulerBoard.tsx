@@ -7,6 +7,7 @@ import { BoardLayout } from './BoardLayout';
 import { BoardStateView, boardStatus } from './governanceView';
 import { TaskRunHistory } from './TaskRunHistory';
 import { SchedulerEditDialog } from './SchedulerEditDialog';
+import { payloadText } from './schedulerPayload';
 import {
   SCHEDULER_QUERY_KEY,
   useApproveTask,
@@ -149,6 +150,15 @@ export function SchedulerBoard() {
                     </span>
                   )}
                 </span>
+                {/* The sentence the operator dictated, on the row itself. Without it the list
+                    said only "reminder" and the text was unreadable until the task fired —
+                    reported 2026-09-07. Rendered only when the payload carries one, so a
+                    system task with an internal payload shows nothing rather than a blob. */}
+                {payloadText(task.Payload) !== '' && (
+                  <span className="line-clamp-1 w-full break-words text-[13px] text-text-muted">
+                    {payloadText(task.Payload)}
+                  </span>
+                )}
                 {/* One truncation context, schedule literal first: the cron/interval/one-shot
                     is the row's identity and always renders; the secondary next-fire ellipsizes
                     when the panel is narrow, so neither can collapse to a zero-width span. */}

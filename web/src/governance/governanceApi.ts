@@ -85,8 +85,10 @@ export interface AuditRow {
   readonly BlocklistOverride: boolean;
 }
 
-/** One scheduler task (GET /api/governance/scheduler). Prompt payloads and identity
- * linkage fields stay server-side. */
+/** One scheduler task (GET /api/governance/scheduler). Identity-linkage fields stay
+ * server-side; the payload does NOT — it is the sentence the operator dictated, and hiding it
+ * made the board unreadable until the task fired (2026-09-07). Absent on a kind that carries
+ * none, such as a backup. */
 export interface SchedulerTask {
   readonly ID: string;
   readonly Kind: string;
@@ -101,6 +103,7 @@ export interface SchedulerTask {
   readonly NotifyRoute: string;
   readonly CreatedAt: string;
   readonly UpdatedAt: string;
+  readonly Payload?: unknown;
 }
 
 /** One scheduler run-history row (GET /api/governance/scheduler/{id}/runs). */

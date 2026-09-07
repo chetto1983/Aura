@@ -1,5 +1,6 @@
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { payloadText } from './schedulerPayload';
 import { useEditTask } from './useSchedulerMutations';
 import type { SchedulerEditRequest, SchedulerTask } from './governanceApi';
 import {
@@ -49,7 +50,7 @@ export function SchedulerEditDialog({ task, open, onClose }: SchedulerEditDialog
   const [everyMinutes, setEveryMinutes] = useState(String(task.EveryMinutes || 5));
   const [at, setAt] = useState(task.RunAt.startsWith('0001') ? '' : task.RunAt);
   const [tz, setTz] = useState(task.TZ);
-  const [payload, setPayload] = useState('');
+  const [payload, setPayload] = useState(payloadText(task.Payload));
   const [notify, setNotify] = useState(task.NotifyRoute);
 
   function submit() {
