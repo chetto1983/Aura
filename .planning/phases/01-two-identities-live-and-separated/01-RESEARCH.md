@@ -630,13 +630,12 @@ in that reference file is `[ASSUMED: stale]` against this codebase.
 
 ## Open Questions
 
-> **Status (2026-09-07, at plan time):** Q1 and Q3 are editorial — their answers were already
-> fully determined by the plans that consume them, so each carries a disposition below, appended
-> before this phase's plans were finalised. Q2 is the one genuine unknown: nothing in this
-> repository has ever driven a freshly provisioned identity through first login, so it is
-> *measured* rather than dispositioned. Plan `01-07` Task 1 reads the installed plugin at wave 1
-> — ahead of every plan that consumes the answer — and Task 2 appends its verdict here and marks
-> this heading. Until then Q2 is open, and it says so.
+> **Status (2026-09-07, RESOLVED):** All three questions below now carry a disposition. Q1 and
+> Q3 were editorial — their answers were already fully determined by the plans that consume them,
+> so each carried a disposition appended at plan time, before this phase's plans were finalised.
+> Q2 was the one genuine unknown; plan `01-07` Task 1 measured it from the installed
+> `github.com/Authula/authula` module at wave 1 — ahead of every plan that consumes the answer —
+> and Task 2 appended its verdict below.
 
 1. **Does any Success Criterion in this phase actually require a new Postgres migration?**
    - What we know: none of D-01 through D-18 describes a schema change; the fifth build tag
@@ -667,6 +666,16 @@ in that reference file is `[ASSUMED: stale]` against this codebase.
    - Recommendation: read `github.com/Authula/authula/plugins/totp`'s exported API directly
      (it is a real dependency in `go.mod`, not vendored-and-modified) before the planner commits
      to D-16's harness login-step design.
+   - **RESOLVED (2026-09-07, measured — plan `01-07` Task 1, `github.com/Authula/authula v1.43.0`):**
+     "Enrollment IS headlessly automatable." `POST /totp/enable` (authenticated session) returns
+     a plaintext base32 TOTP secret inside a standard `otpauth://` URI; a caller that decodes
+     that `secret` and computes an RFC 6238 code (6 digits, 30-second period — the plugin
+     defaults Aura's wiring does not override) can complete enrollment via `POST /totp/verify`
+     with no human and no QR-image decoding step. Full evidence, cited symbols and the "what
+     this does not show" perimeter (source-read only, one pinned version, silent on whether
+     Aura's middleware exposes the route, and silent on whether first-login enforcement is
+     actually wired today — it is not) are in
+     [`01-AUTHULA-TOTP-CONTRACT.md`](./01-AUTHULA-TOTP-CONTRACT.md).
 
 3. **Is the `arcadedb_integration` build tag's existing test suite (34 files) already exercising
    enough of `internal/arcadedb`'s per-identity path that D-11 item 2's raw-credential
