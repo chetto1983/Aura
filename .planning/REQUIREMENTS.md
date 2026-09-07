@@ -1,0 +1,134 @@
+# Requirements: Aura — v1.1.0 Production Launch — Multi-Tenant
+
+**Defined:** 2026-09-07
+**Core Value:** When Aura says she did something, she did it — and she can find what she knew.
+
+Every requirement below is written so a machine or a live run can decide it. A requirement whose
+only evidence is a checkbox is not done, and this milestone inherits nothing from v2.1.0 to prove
+that rule matters: that milestone's own audit found 24 of 61 requirements marked complete with no
+verification artifact behind them.
+
+## v1 Requirements
+
+### Release Gate (REL)
+
+`docs/release-readiness.md` already defines the contract and `scripts/release_readiness_gate.py`
+already enforces it. Every make target and every evidence script exists. None of the eight missing
+reports has ever been produced, so the work is executing them against a live stack and closing what
+they break — not writing them.
+
+- [ ] **REL-01**: `make evidence-contracts` passes on the candidate commit, so every report's shape is validated before its content is trusted
+- [ ] **REL-02**: `security-report.json` is produced and passes — exact-SHA CodeQL for Go and JS, govulncheck, workflow pinning, strict-profile tests
+- [ ] **REL-03**: `coverage-report.json` passes at ≥85% statements on the owned surface with the `db_integration` tier, no empty or filtered tier
+- [ ] **REL-04**: `docker-coverage-report.json` passes at ≥85% merged statements for the owned sandbox surface under native `docker_integration`
+- [ ] **REL-05**: `agent-memory-eval-report.json` passes all-tier MRS with ArcadeDB package coverage ≥85%
+- [ ] **REL-06**: `mutation-report.json` shows ≥70% killed separately for gateway, identity, profile, sandbox and frontend
+- [ ] **REL-07**: `capability-eval.json` executes and passes every declared scenario, with zero skipped or missing
+- [ ] **REL-08**: `load-report.json` meets the declared supported concurrency with success ratio and p95 inside budget, measured with at least two identities active
+- [ ] **REL-09**: `chaos-report.json` executes the DB, MCP, Garage and process-kill scenarios, degrades truthfully and recovers
+- [ ] **REL-10**: `dr-report.json` restores Postgres, sidecars, Garage and tenant-shaped ArcadeDB memory, checksum-verified
+- [ ] **REL-11**: `observability-report.json` passes negative fixtures, runtime smoke, live health and readiness, dashboards, alerts and runbooks
+- [ ] **REL-12**: `rollback-report.json` proves distinct image digests, previous config boots, migrations stay compatible and the candidate is restored healthy
+- [ ] **REL-13**: `make release-readiness` emits `release-readiness-report.json` accepting all twelve inputs, each bound to the exact candidate SHA and under 24 hours old
+- [ ] **REL-14**: The `Production Readiness` GitHub workflow completes on the candidate branch and the tag-triggered `Release` workflow publishes against that exact commit
+
+### Access Control (RBAC)
+
+Authula v1.43.0 is already a dependency and already exposes twelve `/access-control/*` endpoints,
+role hierarchy, permissions, user-role assignment and Bun-backed repositories. Aura currently uses
+none of it — it imports Authula only for jwt, totp, session, email-password, csrf and rate-limit.
+Nothing here builds a policy engine.
+
+- [ ] **RBAC-01**: Authula's access control service is constructed and mounted, and its twelve endpoints answer on the running deployment
+- [ ] **RBAC-02**: Aura's protected resources are registered as Authula permissions with the actions each supports
+- [ ] **RBAC-03**: A default role set ships with the deployment, and a fresh install lands the operator in the administrative role without manual SQL
+- [ ] **RBAC-04**: Installing or mounting an MCP server requires its permission, and is refused without it
+- [ ] **RBAC-05**: Authoring, updating or installing a skill requires its permission, and is refused without it
+- [ ] **RBAC-06**: Running a shell in the sandbox requires its permission, and is refused without it
+- [ ] **RBAC-07**: Approving a destructive action requires its permission — an identity cannot approve an action it lacks the right to take
+- [ ] **RBAC-08**: Administering other identities (provisioning, deprovisioning, role assignment) requires its permission
+- [ ] **RBAC-09**: A permission decision is refused by default — an unregistered resource or an unresolved principal denies rather than allows
+- [ ] **RBAC-10**: Every permission denial is auditable: who, what resource, what action, when
+
+### Isolation (ISO)
+
+Each plane is already scoped per identity — documents filter in SQL, conversations carry RLS from
+migration 0032, memory is one ArcadeDB database and derived credential per identity, objects are a
+per-identity Garage bucket. What has never been established is that the boundary holds under two
+concurrent users, under attack, across a restart, and at the process and host level.
+
+- [ ] **ISO-01**: `AURA_MUSR_ISOLATION` is on in the shipped deployment profile, and provisioning a second identity succeeds through the documented path
+- [ ] **ISO-02**: Two identities working concurrently cannot read each other's documents, conversations, turns, approvals, memory facts or objects
+- [ ] **ISO-03**: A deliberate boundary-crossing attempt fails: guessed identifiers on every read endpoint, a shared link outside its grant, a tool given another identity's identifier
+- [ ] **ISO-04**: A prompt-injection attempt to make the agent read or write another identity's memory fails, and the attempt is visible in the audit trail
+- [ ] **ISO-05**: One identity's turn cannot observe or affect another's execution — context, tool state and in-flight results are separated, not merely row-filtered
+- [ ] **ISO-06**: A resource exhausted by one identity (loop budget, sandbox, tokens) does not deny service to another
+- [ ] **ISO-07**: No identity can reach the host from its sandbox: the Docker socket, the host filesystem outside its roots, and the environment of a launched stdio MCP server are all unreachable
+- [ ] **ISO-08**: Isolation survives a service restart — derived credentials and per-identity databases reattach to the right identity, never to another
+- [ ] **ISO-09**: Isolation survives an image rollback and a restore from backup, including tenant-shaped ArcadeDB memory
+- [ ] **ISO-10**: Deprovisioning an identity removes its data from every plane, and leaves the other identities intact
+
+### End-to-End Proof (E2E)
+
+The governing rule of this milestone: a phase closes on a real run against the live stack, driven by
+the real agent, integrated with the phases around it. CLAUDE.md sets the bar at >9.8 on a real
+scenario. Unit tests are how we get there, never the evidence that we arrived.
+
+- [ ] **E2E-01**: Two identities hold real conversations at the same time against one running stack, each doing useful work, and the run is scored ≥9.8
+- [ ] **E2E-02**: A second identity is onboarded from zero to a useful conversation — memory database, object bucket, sandbox, skills root — with no manual step outside the documented path
+- [ ] **E2E-03**: The adversarial scenario runs as a scripted suite an operator can re-run, not a one-off session, and every attempt is refused
+- [ ] **E2E-04**: The full restart / rollback / restore cycle runs with two provisioned identities and both are intact and correctly separated afterwards
+- [ ] **E2E-05**: Every phase in this milestone lands with its own live end-to-end run recorded, and no phase closes on unit evidence alone
+
+### Launch Documentation (DOC)
+
+Written for someone who has never read this codebase. The current `docs/` tree is development-facing
+— audits, recon notes, evaluations, design records — and there is one operational runbook.
+
+- [ ] **DOC-01**: An install guide takes a self-hoster from nothing to a running Aura on their own hardware, with prerequisites stated and every required secret explained
+- [ ] **DOC-02**: The multi-user setup is documented: turning on isolation, provisioning identities, assigning roles, and what each role may do
+- [ ] **DOC-03**: An upgrade guide covers moving between released versions, including migrations and the rollback path when an upgrade goes wrong
+- [ ] **DOC-04**: A backup and restore guide covers Postgres, ArcadeDB per-identity memory, and objects — and its steps are the ones the DR gate actually exercises
+- [ ] **DOC-05**: A troubleshooting guide covers the failures an operator will actually meet, each with the symptom, how to confirm it, and how to fix it
+- [ ] **DOC-06**: The environment catalog is complete and honest — 338 `AURA_*` keys exist in the code today against roughly 60 documented; every key an operator must set is documented, and the rest are discoverable
+- [ ] **DOC-07**: README's quick start is verified by following it on a clean machine, not by reading it
+
+## v2 Requirements
+
+Deferred. Tracked, not in this roadmap.
+
+### Access Control
+
+- **RBAC-11**: Per-resource ownership delegation (an identity granting another access to one document or conversation)
+- **RBAC-12**: Role assignment through the cockpit UI rather than the API
+
+### Isolation
+
+- **ISO-11**: One process per identity, or an equivalent hard runtime boundary, if execution separation proves insufficient in ISO-05
+- **ISO-12**: Per-identity resource quotas configurable by the operator
+
+## Out of Scope
+
+| Feature | Reason |
+|---------|--------|
+| `euroteltr/rbac` | Authula already ships a persisted access control with role hierarchy and twelve REST endpoints, already in `go.mod`. This library is in-memory on `sync.Map` with no persistence and its last commit is from 2019; adding it would put a second source of truth for permissions in the same process |
+| Casbin, OpenFGA, SpiceDB, Permify, Keto | Live and capable, but they replace Authula's access control rather than use it, and they are sized for distributed authorization — not a self-hosted appliance with a handful of identities |
+| Carrying over v2.1.0's open requirements | Closed without inheritance by operator decision. A defect that is real will resurface through this milestone's end-to-end runs, with fresh evidence rather than an inherited ledger |
+| Hosted / SaaS offering | This milestone ships something others self-host. Running it as a service for third parties is a different threat model and a different operational commitment |
+| Cockpit UI for role management | The API is the contract for this milestone; the UI follows once roles have proven themselves |
+
+## Traceability
+
+Filled during roadmap creation.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| — | — | Pending |
+
+**Coverage:**
+- v1 requirements: 46 total
+- Mapped to phases: 0
+- Unmapped: 46 ⚠️
+
+---
+*Requirements defined: 2026-09-07*
