@@ -24,8 +24,8 @@ const (
 
 // BackupVariant selects the database a BackupHandler dumps.
 //
-// Postgres is the only one. ArcadeDB is NOT backed up by anything: memory lives in
-// one database per identity (internal/arcadedb/tenant.go) and no handler dumps them.
+// This handler owns Postgres only. ArcadeDB's native scheduler backs up each
+// identity database using docker/arcadedb/backup.json and a separate backup volume.
 type BackupVariant string
 
 // BackupPostgres selects the Postgres pg_dump backup.

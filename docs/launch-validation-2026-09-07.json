@@ -1,0 +1,98 @@
+{
+  "verified_at": "2026-09-07",
+  "scope": "Backup inspection and recovery tests for launch documentation; not release approval",
+  "drill": {
+    "schema_version": 1,
+    "generated_at": "2026-09-07T12:00:02.638060+00:00",
+    "candidate_commit": "b39b25443e7494216f2fabb4ad534f56851e36fa",
+    "run_id": "launch-28f280b1704240e880ea1efd10416ac2",
+    "passed": true,
+    "planes_executed": 4,
+    "planes_required": 4,
+    "max_rpo_seconds": 1,
+    "total_rto_ms": 3570,
+    "planes": [
+      {
+        "plane": "postgres",
+        "rpo_seconds": 1,
+        "rto_ms": 1701,
+        "restored_items": 1,
+        "restored_bytes": 1032101,
+        "checksum_ok": true,
+        "cleanup_ok": true
+      },
+      {
+        "plane": "sidecars",
+        "rpo_seconds": 0,
+        "rto_ms": 1379,
+        "restored_items": 26,
+        "restored_bytes": 133055,
+        "checksum_ok": true,
+        "cleanup_ok": true
+      },
+      {
+        "plane": "garage",
+        "rpo_seconds": 0,
+        "rto_ms": 17,
+        "restored_items": 2,
+        "restored_bytes": 44,
+        "checksum_ok": true,
+        "cleanup_ok": true
+      },
+      {
+        "plane": "arcadedb",
+        "rpo_seconds": 1,
+        "rto_ms": 473,
+        "restored_items": 1,
+        "restored_bytes": 1666,
+        "checksum_ok": true,
+        "cleanup_ok": true
+      }
+    ]
+  },
+  "existing_memory_archive": {
+    "measured_at": "2026-09-07T12:02:25.563034+00:00",
+    "passed": true,
+    "source": "existing scheduled archive of an operator memory database",
+    "archive_basename": "operator-memory-backup-20260907-110330676.zip",
+    "archive_sha256": "871424d7d99ff4b734b4e2e3160ff3a0d525c6b27ed01e3c76fd92392957981f",
+    "archive_bytes": 2946724,
+    "archive_entries": 99,
+    "crc_ok": true,
+    "record_counts": {
+      "Entity": 93,
+      "FACT": 75,
+      "MENTIONS": 40
+    },
+    "historical_fact_records": 1,
+    "restored_into_disposable_database": true,
+    "cleanup_ok": true,
+    "live_database_unchanged": true,
+    "scope": "One real scheduled archive; record counts and closed-history presence, not every semantic answer or tenant"
+  },
+  "configuration": {
+    "arcadedb_frequency_minutes": 60,
+    "arcadedb_max_files": 60,
+    "arcadedb_tiered_retention": {
+      "hourly": 24,
+      "daily": 7,
+      "weekly": 4,
+      "monthly": 6
+    },
+    "postgres_cron": "0 1 * * *",
+    "postgres_seed_timezone": "Europe/Rome",
+    "postgres_retention_days": 14,
+    "backup_volume_separate_from_live_database": true,
+    "off_host_copy_included": false
+  },
+  "documentation": {
+    "source_revision": "fb07b4d35f192c4cf48b4fbe2cce80179d066563",
+    "prd_original_bytes": 1445484,
+    "prd_original_lines": 12739,
+    "prd_consolidated_bytes": 33644,
+    "prd_consolidated_lines": 554,
+    "layered_decision_log_removed": true,
+    "history_preserved_in_git": true,
+    "local_links_and_fences_checked": true
+  }
+}

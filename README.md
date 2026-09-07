@@ -6,8 +6,8 @@
 
 **A local-first, provider-neutral AI agent platform — in Go.**
 
-One binary. Your hardware. Your data. A capable agent with a full terminal,
-graph-backed memory, self-authored skills, and multi-channel access.
+An agent for ongoing work: tools, document retrieval, temporal memory, scheduled
+jobs, and a web cockpit on infrastructure you control.
 
 [![CI](https://github.com/chetto1983/Aura/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/chetto1983/Aura/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/chetto1983/Aura/actions/workflows/codeql.yml/badge.svg?branch=master)](https://github.com/chetto1983/Aura/actions/workflows/codeql.yml)
@@ -22,11 +22,12 @@ graph-backed memory, self-authored skills, and multi-channel access.
 
 ## What is Aura?
 
-Aura is a personal AI agent that runs on the user's own machine. A single Go binary
-hosts the agent runtime, a broad tool surface (host shell + filesystem, web, documents,
-scheduling, skills), multi-channel access (CLI, Telegram, AG-UI/SSE web), and a
-Postgres + ArcadeDB memory — talking to a swappable LLM (DeepSeek-V4 over OpenRouter by
-default) plus a few local CPU sidecars. It is built as a **product, not a prototype**.
+Aura is a self-hosted AI agent. Its Go binary hosts the runtime, tools, CLI,
+Telegram gateway, and embedded web cockpit. Docker Compose runs Postgres,
+ArcadeDB, Garage, embedding, ingestion, and selected integrations alongside it.
+The model is configurable; the default route uses OpenRouter. Local storage does
+not make cloud inference offline: the selected provider receives the context sent
+to that model. Local OpenAI-compatible endpoints are also supported.
 
 > **Strategic context:** Aura is designed to ship as a **DGX Spark + software bundle** for
 > SMBs that want a private, capable assistant on hardware they own.
@@ -44,13 +45,12 @@ default) plus a few local CPU sidecars. It is built as a **product, not a protot
 | | |
 |---|---|
 | **Language** | Go 1.26 |
-| **Size** | ~148k lines of non-test Go (`cmd` + `internal`, of which ~10k sqlc-generated) · 77 `internal` packages · ~41k lines of TypeScript in `web/` (measured 2026-08-30) |
-| **Tests** | ~210k lines of Go tests + ~46k of web tests — table-driven · property-based · fuzz · `-race` · `goleak` · mutation |
-| **Test coverage** | owned-surface aggregate **≥85%** (87.0% measured 2026-08-30) plus a fail-closed per-package policy, enforced in CI on every push |
+| **Tests** | Unit, property, race, leak, mutation, live integration, and browser tests |
+| **Test coverage** | Owned-surface aggregate **≥85%**, with package policies and separate live memory/sandbox coverage authorities |
 | **CI** | build/vet/lint · CodeQL · `-race` + goleak · db/ArcadeDB/embed integration · MUSR two-identity E2E · web lint/test/mutation/Playwright · critical mutation ≥70% killed |
 | **Persistence** | Postgres (sqlc, pgx) + ArcadeDB (graph memory, full-text + LSM vector index) + Garage (S3 object store) |
 | **Default LLM** | DeepSeek-V4 via OpenRouter — provider-neutral; the active profile (provider, model, budgets) is hot-reloaded from the cockpit settings, no restart |
-| **Status** | v1.0.1 tagged 2026-06-20 · v2.0.0 industrial hardening shipped · v2.1.0 (Hermes/Claude-Code parity) in progress, 3/8 phases closed · `v1.0.2-rc1` published on GHCR through the exact-SHA readiness gate (2026-08-30) |
+| **Distribution** | `edge` tracks master; `v1.0.2-rc1` is the latest tagged prerelease checked on 2026-09-07. See Releases for current availability |
 
 ## Key features
 
@@ -58,9 +58,10 @@ default) plus a few local CPU sidecars. It is built as a **product, not a protot
 - **Deferred-tool pattern + semantic `tool_search`** — dozens of tools (incl. dynamic MCP tools) stay discoverable at near-zero per-turn token cost.
 - **Adaptive reasoning router** — a local curated-seed embedding classifier picks reasoning effort in ~10 ms.
 - **Full host terminal + filesystem tools** — real operating power, with destructive-command approval gates and secret redaction.
-- **Graph-native memory** — bitemporal facts and entities live in an ArcadeDB graph (full-text + optional dense leg); conversations persist with a context-management ladder.
+- **Graph-native memory** — facts, sources and validity windows in ArcadeDB; temporal paths return supporting evidence. Postgres-authoritative conversations have a derived recall projection and managed context compaction.
+- **Document retrieval** — indexed passages with source hashes and citations, plus access to the original file for calculations and whole-file tasks.
 - **Self-extension** — the agent authors and runs its own skills, and mounts MCP servers (calculator, calendar, whatsapp, memory).
-- **Scheduler and self wake-ups** — one `task` tool (`at | every | cron`) for reminders and `agent_job` runs: the agent can schedule itself to wake up later and act; every agent_job is approval-gated on the channel it was scheduled from.
+- **Scheduler and self wake-ups** — one `task` tool (`at | every | cron`) for reminders and `agent_job` runs, with job policy, operator controls and outcomes delivered to the owning conversation.
 - **Per-identity sandbox** — a full-capability box per operator (gVisor `runsc` on native Linux), with deliverables handed back over the channel (`send_file`), never as a path.
 - **Multi-channel** — CLI REPL, Telegram (voice/photo/docs/HITL), and a web cockpit over AG-UI/SSE with mid-turn steering, approvals, and live settings.
 
@@ -72,7 +73,7 @@ Agent runtime      agent (LlmAgent, Budget, Events, hooks) · workflow (Seq/Par/
 Tools & MCP        agent/tools (registry, deferred, tool_search, fs/shell/web/skill) · mcp (+bridge, manager)
 Intelligence       llm (+openai_compat) · semindex (embed-index core) · reasoningtrace · scoring
 Capabilities       web · skills · cron · onboarding · documents
-Persistence        db (Postgres+sqlc) · arcadedb (graph memory) · conversations · identity · profile · secret
+Persistence        db (Postgres+sqlc) · arcadedb (memory + retrieval) · conversations · identity · objectstore · secret
 Observability      obs · panicobs · reasoningtrace · toolinvocations · cachemetrics
 ```
 
@@ -84,7 +85,7 @@ Observability      obs · panicobs · reasoningtrace · toolinvocations · cache
 | [docs/TECHNICAL_OVERVIEW.md](docs/TECHNICAL_OVERVIEW.md) | CTO / due-diligence overview — problem, differentiators, maturity |
 | [docs/CAPABILITIES.md](docs/CAPABILITIES.md) | Capability matrix — shipped / in-progress / roadmap |
 | [docs/release-readiness.md](docs/release-readiness.md) | How a release is cut — the twelve-report exact-SHA gate, rollback rule, operational checks |
-| [.planning/codebase/](.planning/codebase/) | Package-level inventory + conventions + concerns — generated, refresh with `/gsd-map-codebase` |
+| [docs/BACKUP-RESTORE.md](docs/BACKUP-RESTORE.md) | Backup schedules, recovery procedures, live validation and scope |
 | [CLAUDE.md](CLAUDE.md) · [prd.md](prd.md) | Engineering guidance · product requirements (source of truth) |
 
 ---
@@ -100,8 +101,7 @@ TLS/token access, and optional MCP siblings.
 > **Releases.** `ghcr.io/chetto1983/aura:<tag>` and the binary archives are published by
 > the `Release` workflow on a `v*` tag, and only after the exact-SHA *Production
 > Readiness* check passed for that commit ([docs/release-readiness.md](docs/release-readiness.md)).
-> Tags `v1.0.0`/`v1.0.1` exist, but every earlier appliance image was retired (PRD
-> amendment #106.4) and no GitHub Release is currently published — check the
+> Check the
 > [Releases page](https://github.com/chetto1983/Aura/releases) for the current tag
 > (`v1.0.2-rc1` is the latest) and use it as `vX.Y.Z` below. Independently of
 > releases, every master push publishes the moving `ghcr.io/chetto1983/aura:edge`
@@ -109,6 +109,21 @@ TLS/token access, and optional MCP siblings.
 > default install tracks.
 
 ### Linux or macOS
+
+The interactive installer supports local installation or a Linux target over SSH:
+
+```bash
+npx create-aura-appliance
+npx create-aura-appliance --mode remote
+```
+
+It requires Node.js **22.13 or newer** on the workstation. The target needs at least
+**4 CPU cores, 14 GiB usable RAM, and 20 GiB free disk**; documents, models and backup
+retention need additional capacity. The wizard detects NVIDIA on the target and
+selects CUDA or CPU embeddings. See the [installer guide](packages/create-aura/README.md)
+for supported targets and prerequisites. The npm installer carries its own payload.
+
+The source-hosted installer remains available:
 
 Install Docker, then run the installer. One command on a machine with Node 18+
 (`npx` fetches the repo and runs `scripts/install.sh`):
@@ -225,9 +240,15 @@ Compose network with `pg_dump` into `AURA_BACKUP_DIR`:
 ./backups/postgres-YYYYMMDDTHHMMSSZ.dump
 ```
 
-**Memory is NOT backed up.** Memory lives in one ArcadeDB database per identity
-(`internal/arcadedb/tenant.go`) and nothing dumps them. Snapshot the
-`aura-arcadedb` volume out of band until that gap is closed.
+**Memory is backed up automatically.** ArcadeDB loads
+[`docker/arcadedb/backup.json`](docker/arcadedb/backup.json) and backs up every
+database every 60 minutes, including newly-created identity databases. Archives
+live in the separate `aura-arcadedb-backups` volume. The configuration sets
+`maxFiles=60` and tiered hourly/daily/weekly/monthly retention of 24/7/4/6.
+
+The database and backup volumes are separate, but both are on the same host by
+default. Preserve off-host copies and the deployment configuration separately.
+Garage objects, workspaces, and other runtime files need their own backup policy.
 
 Run the restore drill against the current Compose stack:
 
@@ -238,9 +259,13 @@ set +a
 scripts/restore_drill.sh
 ```
 
-The drill has three planes — Postgres into a temporary database, the conversation
-sidecar archive, and Garage — each checksum-verified into a disposable target and
-cleaned up. There is no memory plane; see the gap above.
+The drill tests four planes: Postgres, conversation sidecars, Garage and an
+ArcadeDB database shaped like a tenant. It verifies restored checksums and cleans
+up its disposable resources. All four passed on 2026-09-07. A separate restore
+of an existing scheduled operator-memory archive recovered 93 entities, 75 facts
+and 40 mentions, including a historical fact. This is a dated recovery check,
+not a complete host-loss rehearsal or an RPO/RTO guarantee. See
+[Backup and restore](docs/BACKUP-RESTORE.md) for scope and evidence.
 
 Manual restore commands:
 
@@ -313,8 +338,8 @@ go run ./cmd/aura version
 go run ./cmd/aura agent dry-run --request-id auto
 ```
 
-To run the Compose appliance from source while no image is published on GHCR, build
-the image the release would have published and point `.env` at it (the image builds
+To run a local source build instead of a published image, build
+the image and point `.env` at it (the image builds
 `web/` in its own stage; the committed `internal/webui/dist` only feeds a host `go build`
 and is refreshed from that stage, never from a host `vite build`):
 
@@ -338,7 +363,7 @@ make quality-full
 | `make vuln` | `govulncheck` supply-chain scan |
 | `make test-race` | `go test -race ./...` |
 | `make coverage` | owned-surface coverage floor |
-| `make restore-drill` | three-plane restore drill (Postgres, sidecars, Garage) |
+| `make restore-drill` | four-plane restore drill (Postgres, sidecars, Garage, ArcadeDB) |
 
 ## Project Layout
 

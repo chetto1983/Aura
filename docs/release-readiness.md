@@ -1,6 +1,6 @@
 # Aura release-readiness checklist
 
-This is the release contract for Phase 41 and PRD Amendment #106.3. A checked source-control box
+This is the release evidence contract. A checked source-control box
 means the mechanism is implemented. Release approval additionally requires the named machine
 evidence from the exact candidate commit; a missing, skipped, stale, or blocked required artifact
 is a failed release.
@@ -51,6 +51,12 @@ rollback rehearsal, runs the twelve-report gate, and uploads the immutable bundl
 | audit | `audit-closure-report.json` | current-only register is empty; `release_ready:true`; zero `open` or `external_blocked` rows |
 
 ## Operational checks
+
+Backup procedures and their tested scope are maintained in
+[Backup and restore](BACKUP-RESTORE.md). The 2026-09-07 validation passed all four
+restore planes and independently restored an existing scheduled memory archive.
+That dated validation is not a substitute for the exact-candidate report required
+by this gate, and local backup volumes still require an off-host recovery policy.
 
 - [ ] Candidate image digest and source commit recorded.
 - [ ] Secrets/config validated under the intended strict profile.

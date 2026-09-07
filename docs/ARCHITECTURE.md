@@ -1,418 +1,153 @@
 # Aura — Architecture
 
-**Module:** `github.com/chetto1983/aura` · **Language:** Go 1.26 · **Updated:** 2026-08-02
+Updated 2026-09-07. Module: `github.com/chetto1983/aura`.
 
-Aura is a local-first, multi-user-capable AI agent platform written in Go. One static
-binary hosts the agent runtime, the tool surface, the policy enforcement point, the
-transport channels (CLI, web cockpit, Telegram), and the persistence adapters; heavy or
-untrusted work is pushed to sidecars, per-user containers, and MCP servers over
-well-defined seams. This document is the narrative map. For the generated package-level
-inventory see [`.planning/codebase/`](../.planning/codebase/) (regenerate with
-`/gsd-map-codebase`); for the product framing see
-[TECHNICAL_OVERVIEW.md](TECHNICAL_OVERVIEW.md) and [CAPABILITIES.md](CAPABILITIES.md).
+Aura is a Go application with an embedded web frontend and a Compose service stack.
+The composition root wires domain interfaces into the turn runtime. The same runtime
+serves CLI, Telegram and authenticated web requests.
 
-## 1. Design principles
-
-These recur throughout the code and explain most of the non-obvious decisions:
-
-- **Local-first, N isolated identities.** Aura runs on hardware the operator controls,
-  but a single deployment hosts multiple identities, isolated in depth: owner-scoped
-  Postgres RLS as a backstop under the application's own scoping, per-identity
-  object-store prefixes, and per-identity sandboxes. The seed `local` identity is now
-  just the default owner, not the only one.
-- **Posture is a config axis, not a constant.** `AURA_PROFILE` selects one of `dev`
-  (the default) | `local_trusted` | `single_user_hardened` | `server_production`. The
-  first two are lenient — filesystem and shell tools have full host access by design
-  there (amendment #50/D-15c), and isolation is reserved for explicitly untrusted
-  inputs. The latter two are `Strict()`: the same tools cross a policy decision and may
-  be routed into a per-user container. **No claim about Aura's blast radius is true
-  without naming the profile.**
-- **Provider-neutral core.** The agent loop targets an interface (`llm.Client`),
-  never a vendor SDK. The default provider is DeepSeek-V4 over OpenRouter, swapped
-  by config alone.
-- **KV-cache discipline.** `messages[0]` (the system prompt) is byte-stable across
-  turns and workers; volatile data (budget, time, workspace) is appended *after*
-  history so the cached prefix is never poisoned. This is load-bearing for cost.
-- **Deferred-tool pattern.** Large tool specs are hidden from the per-turn manifest
-  and discovered on demand via a semantic `tool_search`, so the tool surface scales
-  to dozens of tools (incl. dynamic MCP tools) at near-zero per-turn token cost.
-- **Bounded everything.** A shared `Budget` tree caps steps and wall-clock across an
-  entire agent tree; a two-phase dedup ring stops tool-call loops; outputs are
-  capped-and-spilled; background work is goroutine-leak-safe (goleak-tested).
-- **Every consequential act leaves a durable fact.** Tool dispatch reserves a row in an
-  append-only ledger *before* execution, so a crash mid-tool is reconcilable and a
-  replay is detectable rather than re-executed.
-- **Trust boundaries are explicit.** Anything the model didn't author — MCP results,
-  web pages, document text — is wrapped/framed as untrusted before it re-enters the
-  prompt (prompt-injection containment), and secrets are redacted at every egress.
-- **Static serving.** A reusable embedding-index substrate powers curated-seed
-  reasoning-tier routing and semantic tool discovery.
-
-## 2. Layered view
+## Main flow
 
 ```text
-┌──────────────────────────────────────────────────────────────────────────┐
-│ Transport & UX        cmd/aura (CLI) · agui (SSE bridge + cockpit REST)   │
-│                       webui (embedded React) · webauth (Authula) ·        │
-│                       identityctx · channels (+telegram) · setup ·        │
-│                       askuser · agentrender                               │
-├──────────────────────────────────────────────────────────────────────────┤
-│ Policy & posture      config (RuntimeProfile) · gateway (tool PEP) ·      │
-│                       scoring (risk tiers) · breakglass                   │
-├──────────────────────────────────────────────────────────────────────────┤
-│ Agent runtime         agent (LlmAgent loop, Budget tree, Event model,     │
-│                       hooks, trust, tracing, panicobs) · agent/workflow   │
-│                       (Seq/Par/Loop) · swarm (fan-out) · agent/prompt     │
-│                       (builder + reasoning) · agent/display               │
-├──────────────────────────────────────────────────────────────────────────┤
-│ Tools & MCP           agent/tools (registry, deferred pattern,            │
-│                       tool_search, fs/shell/web/skill/task/doc/swarm/     │
-│                       send_file …) · sandbox/usersandbox (per-user Docker │
-│                       routing) · agent/mcptools (bridge) · mcp (client) · │
-│                       mcp/manager (recipes, trust, audit)                 │
-├──────────────────────────────────────────────────────────────────────────┤
-│ Intelligence subst.   llm (+openai_compat) · semindex (embed-index core)  │
-│                       · reasoningtrace · multimodal                       │
-├──────────────────────────────────────────────────────────────────────────┤
-│ Capabilities          web · skills (+skilladapters) · cron (+handlers)    │
-│                       · onboarding · documents · assets · settings ·      │
-│                       eval · runner                                       │
-├──────────────────────────────────────────────────────────────────────────┤
-│ Persistence           db (+sqlc, Postgres) · arcadedb (per-identity       │
-│                       memory) · conversations (+cl100k) · objectstore     │
-│                       (+garageadmin) · identity · profile · secret        │
-├──────────────────────────────────────────────────────────────────────────┤
-│ Observability         obs · agent/panicobs · reasoningtrace ·             │
-│                       toolinvocations · cachemetrics · (OTel spans +      │
-│                       Prometheus/expvar)                                  │
-└──────────────────────────────────────────────────────────────────────────┘
-        Sidecars (out of process): embedding (EmbeddingGemma-300M, 768d, GPU via
-        llama.cpp — shared by the reasoning classifier and the memory dense leg),
-        markitdown extractor, OCR/STT/TTS, MCP recipe servers (calculator /
-        calendar / whatsapp / memory — memory being Aura's own
-        cmd/arcadedb-mcp), per-user Docker sandboxes, Postgres, ArcadeDB.
+CLI / Telegram / web
+        |
+        v
+Authentication and channel context
+        |
+        v
+Runner: history, context budget, pause/resume, persistence
+        |
+        v
+LlmAgent: model rounds, tool dispatch, terminal response
+        |
+        +--> Gateway: policy, approval, durable reservation
+        |         |
+        |         +--> tools / sandbox / skills / MCP / documents / web
+        |
+        +--> bounded delegation and scheduled work
+        |
+        v
+Events, persisted outcomes and delivery to the owning conversation
 ```
 
-This diagram is **not exhaustive**: `internal/` currently holds 68 packages, and the
-leaf utilities (`boundedbuffer`, `canonicaljson`, `envutil`, `pgnumeric`) plus the
-test-support packages (`agent/agenttest`) are deliberately omitted — they carry no
-architectural weight. Anything else absent here is a gap in this document, not a
-statement that the package doesn't matter. The authoritative package list is the tree
-itself (`go list ./internal/...`), mirrored into [`.planning/codebase/`](../.planning/codebase/)
-by `/gsd-map-codebase`; this document is the story, not the index.
+`internal/agent/agent.go` defines the open `Agent` interface. `Run` returns an
+`iter.Seq2[*Event, error]`; events carry runtime outcomes and transport correlation.
+`internal/runner` owns a turn's durable lifecycle. `cmd/aura/serve.go` and the chat
+composition root assemble its dependencies.
 
-## 3. The agent runtime
+## Runtime and context
 
-The cornerstone is `internal/agent`. Everything composes around one open interface:
+A turn rehydrates conversation state and builds a fresh agent. Context management
+reuses stored branch compaction, applies configured summarization when appropriate,
+and enforces a hard budget. Tool-call/result pairing must remain valid after paging,
+compaction and truncation. Provider-exposed reasoning is retained for its authorized
+uses but is structurally excluded from ordinary LLM history.
 
-```go
-type Agent interface {
-    Name() string
-    Description() string
-    Run(InvocationContext) iter.Seq2[*Event, error]
-    SubAgents() []Agent
-    FindAgent(name string) Agent
-}
-```
+The model-facing tool registry separates loaded definitions from a deferred roster.
+`tool_search` promotes matching definitions into the callable set. Large results have
+bounded previews and sidecar-backed continuation. Budgets and loop controls bound
+work rather than claiming that an agent can run indefinitely.
 
-- **`Event` / `Actions`** is the single signal type streamed out of every `Run`. Its
-  shape is forward-compatible with AG-UI and carries OTel trace identity. Crucially,
-  *termination and budget exhaustion travel as Events* (`Actions.Escalate` + a
-  `StateDelta` reason), never through the error slot — the error slot is reserved for
-  genuine infrastructure failures.
-- **`Budget`** bounds one run: a shared `*atomic.Int32` step counter plus a wall-clock
-  deadline, threaded down the whole agent tree. `Budget.Child(fanout)` forks a parallel
-  branch that shares the counter but gets its own dedup ring. A two-phase dedup ring
-  (`BeforeToolCall` / `AfterToolResult`) detects repeated tool calls and uses a changing
-  result preview as a progress veto, so a tool whose output actually changes is never
-  falsely throttled.
-- **`LlmAgent`** is the concrete loop: build the prompt (cache-safe), pick a reasoning
-  tier, open the model stream (with circuit-breaker + bounded retry), consume chunks,
-  dispatch tool calls (the terminal `text_response` ends the turn), append results,
-  and re-loop until a terminal condition. It owns its budget (`OwnsBudget()=true`), so
-  workflow parents observe it without double-charging.
+Primary model routing is managed by `internal/llm`. The OpenAI-compatible wire client
+uses the official OpenAI Go SDK. Provider-specific capability and reasoning settings
+are translated by that layer. Supported profile changes can be hot-applied; model
+credentials and limits are not frozen in this document.
 
-**Workflow agents** (`internal/agent/workflow`) compose `Agent`s into trees:
-`SequentialAgent`, `ParallelAgent` (errgroup fan-out, escalate cancels siblings,
-goroutine-leak-safe), and `LoopAgent` (re-run until max-iterations / escalate /
-budget / dedup / no-progress). These are the adk-go-derived primitives the onboarding
-interview, cron handlers, and swarm reuse.
+Terminal responses, tool outcomes, approval pauses, cancellation and transport loss
+have different states. Background outcomes remain attached to their originating
+conversation. An explicit delivery action is required to send them elsewhere.
 
-**Swarm** (`internal/swarm`) is an ephemeral per-call fan-out coordinator behind the
-`swarm_spawn` tool: it runs N goals as budget-bounded `LlmAgent` workers in
-concurrency-capped waves, isolates per-child failure (a failed worker becomes a
-`{failed}` report; siblings are never cancelled — D-02), and returns an ordered
-`[]ChildReport`. v1 is deliberately flat (workers cannot spawn workers). Worker framing
-rides in `messages[1]` (`swarm/brief.go`), never in `messages[0]` — that is how the
-KV-cache invariant survives fan-out (D-06).
+## Policy and identity
 
-### Turn lifecycle (one user message → one answer)
+The gateway classifies tool calls, applies the active policy, and records execution
+reservations. An indeterminate interrupted operation is not a successful retry and
+must not be silently replayed as a fresh side effect.
 
-```text
-user msg ─▶ Runner loads managed history (L1/L2/L2.5 context ladder)
-         ─▶ PromptBuilder.Build: messages[0] (stable) + history + volatile <budget> tail
-         ─▶ adaptiveReasoningTier: local Qwen3-Embedding classifier → none|low|high
-         ─▶ LlmAgent.Run loop:
-              Budget.ConsumeStep (gate) ─▶ stream open (breaker+retry)
-                 ─▶ consume chunks (text / reasoning / tool-call deltas)
-                 ─▶ dispatch tool calls:
-                      • BeforeTool hooks + dedup gate (serial, in order)
-                      • gateway.Decide (classify → profile policy)
-                          ─▶ Deny    → ErrDenied, tool never executes
-                          ─▶ Approve → approval-required result, action withheld
-                          ─▶ Allow   → Reserve in ledger (idempotency key)
-                      • execute runnable calls (concurrent, semaphore-bounded)
-                      • each result: cap→preview→sidecar, wrap-if-untrusted, append
-                 ─▶ terminal? text_response → completion-gate critic → final Event
-         ─▶ persist assistant turn (+ cache metric) atomically; emit Events to channel(s)
-```
+Identity is resolved by the host. Postgres operations carry owner scope and RLS;
+ArcadeDB uses one database and credential per identity. Garage bindings, conversations,
+OAuth grants, skills ownership and grants are also identity-aware. Administrative
+shared resources are distinct from an ordinary user's resources.
 
-## 4. Policy, posture & isolation
+`AURA_PROFILE` selects `dev`, `local_trusted`, `single_user_hardened`, or
+`server_production`. Strictness and sandbox routing depend on configuration and the
+host. The enforcing Docker/gVisor path requires native Linux. Do not equate Docker
+Desktop with that boundary or describe a default installation as universally hardened.
 
-Three packages decide *whether* a tool call happens and *where* it lands. They are the
-newest load-bearing layer and the one most often missing from older mental models.
+## Stores and authority
 
-**Runtime profiles** (`internal/config/config_runtimeprofile.go`) define the posture.
-`RuntimeProfile` is a string enum — `ProfileDev` | `ProfileLocalTrusted` |
-`ProfileSingleUserHardened` | `ProfileServerProduction` — read from `AURA_PROFILE`.
-`ParseProfile` is **total**: any unknown or empty value resolves to `ProfileDev`, never
-panics and never errors (D-03), which means a typo'd env var degrades to the *lenient*
-posture. `Strict()` is true for `single_user_hardened` and `server_production` and is
-the single predicate the rest of the codebase branches on.
+| Store | Authority and responsibility |
+|---|---|
+| Postgres | Conversations, identities, settings, scheduling, approvals, control metadata and audit records |
+| ArcadeDB | Memory facts and graph relationships; derived conversation, reasoning and document retrieval records |
+| Garage | Original objects and identity-bound file storage |
+| Aura/workspace volumes | Runtime files, tool-result sidecars, materialized working files and integration state |
 
-**The ToolGateway** (`internal/gateway`) is the Policy Enforcement Point interposed on
-every tool dispatch. `New(profile config.RuntimeProfile, store reservationStore)` binds
-a posture to an append-only ledger; the runner injects it into every per-turn agent, and
-a nil Gateway degrades to an Allow no-op. Its vocabulary is `Decision`, `Verdict`,
-`ReservationKey`, and `ErrDenied`. The split is deliberate (D-02d):
+Postgres schema migrations are numbered from the migration directory at landing time.
+The generated sqlc output must match its queries and migrations. ArcadeDB schemas are
+applied through idempotent initialization; the memory and ingestion writers each own
+their schema contracts.
 
-- `classify.go` — maps a call to a risk tier, delegating to `internal/scoring`.
-- `decide.go` — the PEP proper: the per-profile enforcement branch.
-- `approve.go` / `approvals.go` — responder-presence routing (is there a human to ask?).
-- `reserve.go` — the pre-execution reservation. `Reserve`'s rows-affected count is the
-  **GATE-04 idempotency key**: `rows==1` acquire, `rows==0` replay (fetch the prior end
-  fact via `GetEnd`), error → deny.
-- `reconcile.go` — closes orphaned starts left by a crash mid-tool.
+## Memory
 
-`gateway.Decide` is interposed at the **top** of `execTool`, before the retry loop
-(`llm_agent_retry.go`, GATE-01), so every non-`ask_user` dispatch crosses exactly one
-policy decision before `tool.Execute`. A Deny returns `*gateway.ErrDenied` and the tool
-never runs. An Approve returns an approval-required `ToolResult` as a **normal result**
-(no error, `Execute` not called, the mutating action withheld) — so the real tool call
-and args are still persisted and the model sees why it was stopped.
+`cmd/arcadedb-mcp` exposes the authenticated memory API using the official Go MCP SDK.
+The caller cannot supply another identity or an arbitrary database/query. The Go
+client in `internal/arcadedb` uses native database operations for retrieval and writes.
 
-**Per-user sandboxes** (`internal/sandbox/usersandbox`) are where strict profiles put
-the operator tool surface. `SandboxRouter` translates host tool calls (`shell_exec`,
-`fs_*`) into in-box execs against a per-identity Docker container: `spec.go` and
-`translate.go` build the container spec and rewrite paths, `materialize.go` stages files
-in, `egress.go` applies the network policy, `router_tools.go` exposes `Exec`,
-`ExecStream`, `WriteFile`, and `CopyArtifactOut` (streaming artifacts back out), and
-`reap.go` plus the `sandbox_reap` scheduler kind (migration `0034`) reclaim idle boxes.
+Facts carry subject, predicate, object, statement, provenance and validity windows.
+The active correction key and a historical database record identity serve different
+purposes. Native `MENTIONS.fact_rid` links preserve historical support after closure.
+Full mention sweeps scan retained history; incomplete inventories cannot reconcile.
 
-> **Coverage caveat — read this before trusting the sandbox.** The container-touching
-> runtime here is `//go:build docker_integration`. That tier *does* run in CI (job
-> `sandbox-docker-integration`, native-Linux dockerd — the only host where the egress DROP
-> assertions are meaningful), but the coverage gate runs the `db_integration` tag only, so
-> the tier contributes **zero** coverage: the DockerBackend lifecycle, exec, and egress
-> paths have behavioural signal and no coverage credit. Daemon-free unit tests for the pure
-> logic (spec/tar builders, path-traversal and symlink guards, nil/disabled early returns)
-> are the only part of this package the gate actually measures, and adding daemon-gated code
-> without them silently drops the owned-surface aggregate below its floor. Before the
-> `sandbox-docker-integration` job existed the tier never ran anywhere in the pipeline,
-> which is why the CAP_NET_ADMIN capability-assertion bug (WR-01) stayed latent.
+Temporal `graph_path` checks admissibility during native traversal and returns the
+supporting facts in the same query under REPEATABLE_READ. This provides repeatable
+record reads, permits phantoms, and does not restore erased history. Without `as_of`,
+paths describe stored topology. Graph diagnostics remain structural.
 
-## 5. Tools & MCP
+Facts and conversations are ranked separately and composed by quota. Conversation
+hits hydrate bounded Postgres-authoritative windows. Automatic memory context is
+bounded and reports its actual contribution. Reasoning requires explicit selection
+and cannot become ordinary recall or fact-capture evidence.
 
-`internal/agent/tools` is the largest surface. A `Registry` maps tool name → `Tool`;
-the agent renders an alphabetical manifest each turn (cache-stable). The **deferred-tool
-pattern** keeps that manifest small: tools with heavy specs set `Deferred=true` (13 specs
-today) and appear only as name + one-line summary until the model calls `tool_search`,
-which ranks them with a semantic embedding index (`semindex.Ranker`) plus a guarded BM25
-tiebreak. Every large tool result is capped to a preview and spilled to a
-per-conversation sidecar file, paged back via `read_tool_output`.
+See [Memory validation](memory-graph-validation.md) and the current
+[MCP schemas](arcadedb-mcp-live-tools.json) for the concrete contract.
 
-Built-in tools span the full operator surface: filesystem (`fs_read/write/edit/grep/glob`),
-the keystone `shell_exec` (full host terminal under lenient profiles, sandbox-routed under
-strict ones, with background jobs via `shell_poll`/`shell_kill`), web (`web_search` over
-SearXNG, `web_fetch` SSRF-hardened), the document library
-(`document_search`/`document_open`/`document_index`/`document_describe`), orchestration
-(`swarm_spawn`), self-extension (`skill`), scheduling (`task`), HITL (`ask_user`), working
-memory (`todo_write`), artifact delivery (`send_file`), and
-`text_response`/`current_time`/`read_tool_output`. Every one of them crosses the gateway
-(§4) before executing.
+## Documents
 
-**MCP** is the extension path for third-party capabilities. `internal/mcp` is a generic
-JSON-RPC client (stdio + Streamable-HTTP); `internal/agent/mcptools` bridges any MCP
-server's tools into the registry — namespaced `<server>__<tool>` so they can't shadow
-built-ins, trust-framed as untrusted data, schema-capped, and **deferred by default**
-(the `memory` server is the exception, kept visible). `internal/mcp/manager` owns the
-durable managed-server registry, trust classification, docker/local launch resolution,
-an audit store, and a curated recipe catalog: **calculator, calendar, whatsapp, memory**.
-The standalone `mail` recipe was retired once the forked calendar-mcp became the unified
-PIM sidecar — its send/search email tools subsume mail-mcp.
+`services/ingest` uses CocoIndex to reconcile identity-bound Garage sources into
+ArcadeDB document cards and passages. Text extraction, supported format conversion,
+token-bounded chunks and embeddings feed native indexing. The Go supervisor manages
+workers from provisioned identities and their existing object-store bindings.
 
-## 6. Intelligence substrate
+`internal/documents` reconciles retrieval with authorized source scope and returns
+citations, source hashes, locators and explicit degraded status. `document_open`
+provides the original bytes for computation. Conversation memory and document
+retrieval are distinct contracts even when stored in the same tenant database.
 
-- **`llm` + `llm/openai_compat`** — the provider-neutral streaming contract and a
-  hand-rolled OpenAI-compatible SSE client (no SDK: byte-level framing, tool-call delta
-  accumulation, idle watchdog, ctx-cancel teardown, bounded error capture). Default model
-  is `deepseek/deepseek-v4-flash:nitro` over OpenRouter; cost is read from the provider
-  when present and falls back to a price table (never a fabricated `$0`).
-- **`semindex`** — Aura's single reusable embedding-index core: a lock-free cosine/
-  centroid/margin math layer plus two wrappers, `Classifier` (centroid argmax + top-2
-  margin) and `Ranker` (top-K cosine). It powers **both** reasoning-tier routing and
-  `tool_search`. Brute-force over small immutable banks, no ANN.
-- **Adaptive reasoning router** (`agent/prompt` + `reasoning*`) — instead of a per-turn
-  LLM round-trip to decide reasoning effort (the original latency root cause), a local
-  Qwen3-Embedding classifier maps the turn to `none|low|high` with a single local
-  embed + cosine argmax; on abstention it falls back to the LLM "oracle" router. The design
-  target recorded in `reasoning_classifier.go` is ~10 ms CPU at 90% accuracy over a
-  60-prompt held-out set. Its curated seeds are the complete serving baseline.
-- **`multimodal`** — the sidecar clients for vision/STT/TTS.
-- **`scoring`** — pure Risk-Based governance: maps scheduler tasks, skill mutations, and
-  gateway classifications to a `Safe|Normal|Risky|Destructive` tier.
+## Extensions and transport
 
-## 7. Persistence
+The managed MCP registry is in Postgres. Connections use HTTP or stdio, with native
+SDK lifecycle and authorization handling. Stdio package preparation is separate
+from starting a long-lived connection. Mounted MCP results are trusted by the
+current product policy and retain size limits and tool authorization controls.
+Web/document content and delegated output retain their separate untrusted-content
+boundaries. Resource views can be rendered through the cockpit.
 
-Two stores. Postgres is the system of record, reached through thin per-domain adapters
-(`Store{q}`) over generated sqlc with SQLSTATE-classified errors and pgtype boundary
-conversion; ArcadeDB holds long-term memory. Agent operations reach it through MCP, while
-the authenticated cockpit graph uses a narrow, read-only HTTP query adapter.
+Skills are loaded from their ownership-aware roots. The shared library, user-owned
+skills, explicit grants, and builtin skills have different lifecycle rules. The
+retired `Agent.md` profile and file-backed `servers.json` registry are not runtime
+sources.
 
-- **Postgres** (`internal/db`, `internal/db/sqlc`) — pgxpool + golang-migrate, a
-  two-role split (`aura_app` runtime vs `aura_migrate` DDL), the `aura.*` schema, and a
-  `WithTx` atomic-write seam. The migration count is not restated here because it moves
-  every phase — `ls internal/db/migrations/ | tail -1` is the only source. Domains include:
-  conversations + turns (+ FTS + branches), identity + capabilities + audit + recovery +
-  soft-delete, Authula's schema, paused states (HITL), scheduler + agent-job runs, skill
-  audit, MCP audit, telegram accounts + setup tokens, tool-invocation ledger, cache
-  metrics, context-rot events, the document catalog (+ its weighted `tsvector`/GIN digest
-  index), assets + content parts, object-store bindings, and the saga journal. DSNs are
-  redacted in every error.
-- **Multi-user isolation** — migration `0032` enables owner-scoped **row-level security**
-  on identity-owned tables. `db.WithIdentityTx` sets the `app.current_identity` GUC for
-  the transaction; the policy is fail-closed-on-mismatch and permissive-on-unset
-  (D-06/D-07), so a scoped read sees only its owner's rows *even if the application
-  forgets its own `*ForIdentity` clause* — RLS is the backstop, not the primary control.
-  It is `ENABLE`, not `FORCE`, because `aura_migrate` owns the tables and must still
-  bypass for backfills, while `aura_app` is a non-owner, non-superuser, non-BYPASSRLS
-  role. Both halves of that assumption are asserted live (`TestAuraAppLacksRLSBypass`,
-  `TestRLSBackstop`).
-- **ArcadeDB** (`internal/arcadedb`) — long-term memory, and nothing else: no documents, no
-  conversation history. **One database per identity**, and the scoping is server-enforced
-  rather than query-enforced — each identity gets its own ArcadeDB user bound to its own
-  database, so naming the wrong one fails at the server instead of leaking. Facts are
-  **bitemporal**: a fact is never overwritten, its validity window is closed and a successor
-  supersedes it, so both "what is true now" and "what was true then" stay answerable.
-  Retrieval fuses two legs with ArcadeDB's own `vector.fuse` (reciprocal rank fusion, no
-  fusion arithmetic in Go): a Lucene full-text leg and a 768-d `LSM_VECTOR` (HNSW) dense leg
-  over EmbeddingGemma-300M, which exists because a question asked in Italian cannot reach a
-  fact written in English by lexical match alone. The LLM-facing interface is Aura's own
-  `cmd/arcadedb-mcp` sidecar over Streamable-HTTP (`memory_*` + `graph_schema`); the Go
-  package is the HTTP client behind it. The cockpit graph uses the same tenant credential
-  and database boundary, asks the read-only query endpoint for `serializer: "studio"`, and
-  compiles only capped overview or direct RID-neighbor intents — never arbitrary SQL,
-  writes, or server administration. There are no graph
-  migrations — `EnsureMemorySchema` is idempotent DDL run at connect, and it doubles as the
-  per-identity database's existence probe.
-- **`objectstore`** — the S3/filesystem blob seam with per-identity prefixes
-  (`identity_store.go`) and a Garage admin client for provisioning.
+`internal/agui` handles HTTP/SSE, run resumption and cockpit APIs. `internal/webui`
+embeds the frontend build. Telegram is a channel adapter using shared attachment,
+turn, cancellation and delivery behavior. The runtime remains independent of AG-UI.
 
-**Conversations** (`internal/conversations`) layers the context-management ladder on top
-of Postgres. The ladder is three deterministic tiers (Amendment #21; `context.go`, no LLM
-call). The dark Phase-42 durable L2.4 compaction engine was removed (Amendment #86); the
-anti-rot core is L4 extractive graph memory (ArcadeDB, recalled on demand through the
-`memory_*` MCP tools), not transcript compaction:
+## Operations and verification
 
-- **L1 microcompact** — rewrite old tool turns to `read_tool_output` pointers.
-- **L2 budget gate** — the hard token cap (`ContextWindow − max(MaxOutputTokens, 20000) − 13000`).
-- **L2.5 oldest-pair drop** — when L1 alone cannot bring the history under the L2 cap, drop
-  the oldest user/assistant pairs (protecting the system turn + the messages[1] always-block)
-  until it fits, writing one `context_rot_events` row.
+Logs, OpenTelemetry, metrics and readiness expose different aspects of runtime state.
+Backup mechanisms are owned by Aura for Postgres and by ArcadeDB for its databases.
+[Backup and restore](BACKUP-RESTORE.md) documents the four-plane drill and its limits.
 
-Each tier writes a context-rot event. Around the ladder sit an offline tiktoken estimator
-(`cl100k`), an atomic per-turn append (turn + aggregates + cache metric in one tx),
-branch-aware history (`store_branch.go`, migration `0017`), identity-scoped reads
-(`store_identity.go`), best-effort auto-titling, and boot/periodic sidecar GC.
-
-**Documents** (`internal/documents`) is a *catalog*, not a retrieval pipeline. Ingestion no
-longer reads the file: it writes one row per document (title, tags, content hash) and
-nothing else — no extraction, no chunking, no embedding, no passage store. What makes a
-file findable is its **digest**, written afterwards by `document_describe` once the agent
-has actually opened it, and ranked by a weighted Postgres `tsvector` (title A / tags B /
-digest C) behind a GIN index. `document_search` therefore answers "which file", and
-`document_open` materializes the real file into the workspace so the agent can compute on
-it with `shell_exec`. The two-stage passage pipeline this replaced scored 100% on exact
-lookups and **0% on every aggregate at every k**, because "how many customers in Torino" is
-a property of the whole document and lives in no passage. `internal/assets` handles the
-upload side —
-image/audio/document processors and content parts. **Identity / profile / secret** hold
-the identities + capability grants, the per-identity `Agent.md` profile (atomic writes),
-and the one shared secret-env denylist used at every redaction site.
-
-## 8. Transport & UX
-
-Three surfaces, in rough order of how much traffic they carry:
-
-- **The web cockpit** — `internal/webui` embeds the built Vite/React `dist/`, and
-  `internal/agui` serves it. `agui` is no longer just a translator: alongside the AG-UI
-  SSE bridge it is the cockpit's REST surface — conversations and branches, documents,
-  assets, approvals, governance (read + write, incl. skills), audit, graph, onboarding
-  and provisioning, connect (WhatsApp / PIM), password reset, and
-  deprovision. The event bridge itself is still a pure function over Aura's
-  `iter.Seq2[*Event, error]` stream (property/golden-testable), and the runtime still
-  never imports agui.
-- **Auth** — `internal/webauth` wraps **Authula** (`github.com/Authula/authula v1.15.0`)
-  as the identity provider: cookie sessions, capability-per-route, identity linking, and
-  session validation. `internal/identityctx` carries the resolved identity down to the
-  RLS boundary; `internal/breakglass` is the audited escape hatch.
-- **`channels` + `channels/telegram`** — a `Channel` interface + registry, with Telegram
-  as the mobile/remote channel: AG-UI-event renderer, HITL via inline keyboards /
-  force-reply, multimodal photo/voice/document handlers, a live status pane, and the
-  `/start <token>` onboarding match.
-- **`cmd/aura`** — the CLI (`chat`, `serve`, `mcp`, `skills`, `identity`, `doctor`, …),
-  with **`askuser`** as the CLI responder rendering `ask_user` pauses and **`setup`** as
-  the loopback setup wizard (HTTP + QR) for pairing a Telegram bot.
-
-## 9. Observability
-
-Every layer is instrumented: OTel spans (`agent.turn` → `llm.request` → `tool.execute`,
-crypto-random span ids, api-keys never stamped), dual Prometheus + expvar metrics
-(budget steps, tool dispatch, stream open/retry, turn outcomes, token/cost, panics),
-the bounded-cardinality `agent/panicobs` recovered-panic counters, the env-gated redacting
-`reasoningtrace`, the `toolinvocations` forensic ledger (secrets redacted at the
-persistence boundary), and `cachemetrics` behind `aura cache-stats`.
-
-The ledger is **append-only, with one deliberate exception**: a trigger rejects standalone
-`DELETE`/`UPDATE` and `TRUNCATE`, but migration `0016` permits the `ON DELETE CASCADE`
-teardown of a deleted parent conversation. 0011 had rejected *every* delete, which made
-`/clear` fail for any conversation that had ever called a tool — the two guarantees were
-mutually exclusive and anti-tampering won only for standalone mutation. The ledger's
-second role is as the gateway's reservation store (§4).
-
-## 10. Boundaries & invariants worth knowing
-
-- The agent runtime never imports `agui`, and `webui` depends on no other internal
-  package. Both are CI-enforced by `scripts/agui_boundary_check.sh`.
-- `tools` declares consumer-side interfaces (`swarmRunner`, `taskStore`, `skillLoader`)
-  so it never imports `swarm`/`cron`/`skills` — cycles are broken by ctx-injected seams.
-- `messages[0]` is byte-identical across every turn and every swarm worker: worker framing
-  rides in `messages[1]` (`swarm/brief.go`, D-06), and the property is test-asserted
-  (`TestBuildPrefixStable`, `TestCacheAuditSourceListMessages0Stable`,
-  `TestBudgetBlockByteStable`).
-- Mutating tools are never retried (at-most-once side effects); only non-mutating
-  transient failures retry, up to 3 total attempts with linear backoff
-  (`llm_agent_retry.go`). The Mutating bit is resolved *before* execution so a tool that
-  panics after a side effect is still classified correctly (F-031).
-  **Known gap:** `skill`, `task`, and `swarm_spawn` are not flagged `Mutating` despite
-  having side effects — a Phase-35 classification-hardening gap called out in
-  `llm_agent_dispatch.go`. Code that must be safe therefore treats the flag as
-  untrustworthy: a terminal `text_response` mixed with *any* runnable sibling is rejected
-  wholesale rather than filtered by classification.
-- Every tool dispatch crosses exactly one gateway decision before `tool.Execute`
-  (GATE-01), and an allowed call holds a ledger reservation before it runs (GATE-04).
-- Secrets are redacted at every egress: logs, errors, the tool ledger, MCP child env,
-  shell child env, MCP config export — all routed through the one `secret` denylist.
-- The owned-surface coverage floor is ≥85%, CI-enforced over the `db_integration` tag.
-  Code reachable only under other build tags (above all `docker_integration`) counts as
-  **uncovered** even when its tier runs — see the §4 caveat.
+Quality checks include unit/race, live integration, browser tests, mutation and
+separate coverage authorities. A tagged release requires the complete
+[release evidence bundle](release-readiness.md). The product contract is [prd.md](../prd.md);
+source versions and default settings live in manifests and [.env.example](../.env.example).

@@ -2,8 +2,9 @@
 
 Thanks for your interest. Aura is a self-hosted agent runtime built **PRD-first**:
 the [`prd.md`](prd.md) is the source of truth and [`CLAUDE.md`](CLAUDE.md) is the
-working contract. Read both before a non-trivial change — code that contradicts
-the PRD won't be merged without a PRD-amendment first.
+working contract. Read both before a non-trivial change. Measure an architectural
+change first, then update the relevant section of the consolidated PRD before
+implementing it. Keep the rationale and the limits of the measurement together.
 
 ## Prerequisites
 
@@ -32,13 +33,11 @@ make quality-full         # quality + coverage (owned surface >= 85%)
 ```
 
 The lefthook hooks run a fast subset automatically: **gofmt/vet/lint/file-size/
-jscpd on commit**, **quality-snapshot-freshness/build/deadcode/web gates on
-push**. (`golangci-lint` runs at commit, not push, so a lint regression surfaces
-at the commit that introduced it.) Note the pre-push **quality-snapshot
-freshness gate** — if a file you changed matches a CI-gate glob in
-`docs/aura-quality-snapshot.md`, that row's `Last measured` date must be
-re-attested or the push is rejected. Don't `--no-verify` to dodge a real
-failure — fix it.
+jscpd on commit**, **build/deadcode/tagged-tier compilation/payload and applicable
+web or sqlc gates on push**. `golangci-lint` runs at commit. The quality ledger is
+updated when a measurement changes; there is no prose-freshness gate. See
+[`lefthook.yml`](lefthook.yml) for the executable hook configuration.
+Do not bypass a failing check to publish an unverified change.
 
 Discipline that reviewers check (full list in `CLAUDE.md`):
 

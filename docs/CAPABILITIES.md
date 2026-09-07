@@ -1,153 +1,63 @@
-# Aura — Capabilities Matrix
+# Aura — Capabilities
 
-**Updated:** 2026-08-02 · Companion to [TECHNICAL_OVERVIEW.md](TECHNICAL_OVERVIEW.md),
-[ARCHITECTURE.md](ARCHITECTURE.md), [`.planning/codebase/`](../.planning/codebase/).
+Reviewed against the current source on 2026-09-07. **Implemented** means a production
+path exists, not that every configuration has been independently accepted for launch.
+Release evidence is governed by [Release readiness](release-readiness.md).
 
-Status legend: **✅ Shipped** (implemented, and covered by the CI-enforced ≥85%
-owned-surface coverage floor) · **🟡 In progress** (current milestone, not yet
-closed) · **🔭 Roadmap** (designed/planned, not built).
+## Agent and operator surfaces
 
-Milestones: **v0.0.0** substrate (Phases 0-21) shipped 2026-06-15 · **v1.0.0** web
-cockpit (Phases 22-30) shipped 2026-06-29 · **v2.0.0** industrial hardening
-(Phases 31-42) in progress.
+| Capability | Current behavior | Boundary |
+|---|---|---|
+| Conversations | Web, CLI and Telegram share the turn runtime and durable history | Channel-specific delivery and authentication still apply |
+| Streaming and steering | Stream results, interrupt/cancel, and submit steering to a live turn | Disconnecting a browser is distinct from stopping the run |
+| Context management | Reuse persisted compaction, compact when configured, and enforce a hard context budget | Compaction may call a model; fallback truncation is reported |
+| Tools | Files, terminal, web, documents, scheduling, skills and MCP tools | Tool policy, granted capabilities and sandbox routing determine execution |
+| Deferred discovery | Load large tool schemas through `tool_search` | A deferred tool remains discoverable; it is not a hidden/removed operation |
+| Delegation | Bounded foreground/background workers, status and durable outcomes | Results belong to their originating conversation; external delivery is explicit |
+| Scheduler | Reminders, agent jobs and maintenance; operator inspection and control | Job approval and notification behavior depend on the job and owning route |
+| Cockpit | Chat, documents, memory graph, scheduler, settings, approvals, integrations and skills | Administrative actions require the corresponding capabilities |
 
-> A ✅ here means the implementing code exists and was verified in this file's last
-> audit. A closed roadmap phase is **not** on its own sufficient — capabilities
-> deferred by design (see `.planning/STATE.md` → Deferred Items) stay 🔭 even when
-> their phase is checked off.
+## Knowledge and memory
 
-## Core agent
+| Capability | Current behavior | Evidence or implementation |
+|---|---|---|
+| Durable facts | Typed entities, sources, validity windows, replay, precise supersession and forgetting | `internal/arcadedb/memory*.go` |
+| Atomic memory batches | Ordered identity-scoped changes with replay receipts and final-state validation | `internal/arcadedb/memory_batch*.go` |
+| Retrieval | Semantic/lexical/graph operations; independent fact/conversation rankings and quotas | `internal/arcadedb/memory_recall*.go` |
+| Historical paths | Bounded native traversal with `as_of`, supporting facts and explicit consistency semantics | [Graph validation](memory-graph-validation.md) |
+| Graph diagnostics | Stored connectivity, components, degree and coreness | Structural statistics; diagnostics reject temporal projection |
+| Historical mention support | Native links preserve record identity after an active correction key closes | Complete sweeps retain history; incomplete inventories do not reconcile |
+| Conversation recall | Derived search records hydrate bounded authoritative Postgres turns | Edits/deletions propagate; active-context sources are excluded where applicable |
+| Explicit reasoning recall | Authorized provider-exposed traces are accessed through an explicit selector | Not ordinary recall, automatic context, or a source of memory facts |
+| Memory MCP | 13 operations in the current server schema, with OAuth-derived identity | [Live tool schema](arcadedb-mcp-live-tools.json) |
+| Document retrieval | Indexed passages, citation tokens, source hashes, locators and degradation status | [Document ingestion](document-ingestion.md) |
+| Whole-file work | `document_open` materializes the original for computation and conversion | Use for aggregates, conversions and insufficient passage evidence |
 
-| Capability | What it does | Status | Key packages |
-|---|---|---|---|
-| Streaming agent loop | Budget-gated tool-dispatch loop over a streaming LLM; terminal `text_response` ends a turn | ✅ | `agent` (`llm_agent`) |
-| Budget tree | Shared step + wall-clock cap across an entire agent tree; per-branch fair-share | ✅ | `agent` (`budget`) |
-| Tool-loop dedup | Two-phase dedup ring with result-change progress veto stops repeated calls | ✅ | `agent` (`budget_dedup`) |
-| Workflow agents | Sequential / Parallel / Loop composition (leak-safe, escalate-aware) | ✅ | `agent/workflow` |
-| Swarm fan-out | `swarm_spawn`: N goals as budget-bounded parallel workers, per-child failure isolation | ✅ | `swarm`, `agent/tools` |
-| Adaptive reasoning router | Local embedding classifier routes reasoning effort (`none/low/high`) off the hot path | ✅ | `agent/prompt` (`reasoning_policy`), `semindex` (`classifier`) |
-| HITL pause/resume | `ask_user` suspends a turn for clarification/approval/choice; FIFO ledger | ✅ | `agent`, `agent/tools` (`ask_user`), `askuser`, `db` |
-| Hooks | In-process + trust-gated out-of-process lifecycle hooks (before/after model & tool) | ✅ | `agent` (`hooks`, `hooks_command`) |
-| ToolGateway + policy engine | Central PEP: every tool call passes `Decide` → allow / deny / consent-bound approval | ✅ | `gateway` (`decide`, `classify`, `approvals`) |
-| Durable reservation ledger | Crash-safe tool reservation + idempotent replay; orphan reconciler never re-invokes | ✅ | `gateway` (`reserve`, `reconcile`), `toolinvocations` (`store_reserve`) |
-| Orchestrator (planner→executor) | Plan→fan-out→verify→synthesize multi-agent workflows | 🔭 | designed (`docs/superpowers/specs/`) |
+## Identity and extension
 
-## Tools
+| Capability | Current behavior |
+|---|---|
+| Authentication | Authula-backed web identity and sessions; identity-bound MCP OAuth |
+| Memory isolation | A database and credential per identity; server-enforced access |
+| Object isolation | Per-identity Garage bindings and protected credential resolution |
+| Skills | Owned/shared skills, grants, install, use, archive and restore; builtins have a protected lifecycle |
+| MCP | Managed registry in Postgres, HTTP and stdio connections, preparation and per-identity authorization |
+| MCP views | Mounted servers can expose UI resources rendered through the cockpit |
+| Recovery access | Audited operator recovery paths and controlled deprovisioning |
+| Sandbox | Per-identity execution boxes and deployment-dependent egress/isolation controls |
 
-| Capability | What it does | Status | Tool(s) |
-|---|---|---|---|
-| Deferred-tool discovery | Heavy tool specs hidden from the manifest; found via semantic search | ✅ | `tool_search` |
-| Host filesystem | Read / write / edit / grep / glob with walk-budget caps | ✅ | `fs_read/write/edit/grep/glob` |
-| Host shell | Full terminal; background jobs; destructive-command approval; secret redaction | ✅ | `shell_exec`, `shell_poll`, `shell_kill` |
-| Web | SearXNG search + SSRF-hardened fetch → readable markdown | ✅ | `web_search`, `web_fetch` |
-| Document library | Ranks the identity's uploads by *what each file is* (Postgres `tsvector` over title/tags/digest) and answers "which file"; the file itself is then materialized into the workspace and computed on with `shell_exec`. Returns documents, never passages. | ✅ | `document_search`, `document_open`, `document_index`, `document_describe` |
-| Scheduling | Schedule / list / cancel / run background tasks + reminders | ✅ | `task` |
-| Self-extension | Author / apply / manage skills + executable snippets | ✅ | `skill` |
-| Working memory | Session-scoped multi-step todo list | ✅ | `todo_write` |
-| Artifact delivery | Send a host file to the user as an attachment | ✅ | `send_file` |
-| Output paging | Page byte ranges out of a spilled-to-sidecar tool result | ✅ | `read_tool_output` |
-| Time | The only model-facing wall-clock read (keeps the prompt cache stable) | ✅ | `current_time` |
+## Operations
 
-## Knowledge & memory
+| Capability | Current behavior | Limit |
+|---|---|---|
+| Model configuration | Supported primary-route settings apply through the runtime/settings path | A model's advertised capabilities determine usable features |
+| Local services | Embeddings, ingestion and optional local model/media services | Hardware and Compose profiles matter; cloud routes remain external |
+| Observability | Structured logs, metrics, traces, health/readiness and operator boards | A healthy process alone does not prove every dependency or exporter works |
+| Postgres backup | Nightly dump, atomic completed-file promotion, 14-day retention | Include the resulting files in an off-host policy |
+| ArcadeDB backup | Native per-database automatic ZIP backups every 60 minutes | A separate volume is still on the same host by default |
+| Restore drill | Postgres, conversation sidecars, Garage and ArcadeDB | [Measured scope](BACKUP-RESTORE.md), not a complete host-loss rehearsal |
+| Release checks | Exact-commit evidence, coverage authorities, mutation, security, recovery and rollback | Missing required evidence does not become a pass because a score is high |
 
-| Capability | What it does | Status | Key packages |
-|---|---|---|---|
-| Conversation persistence | Multi-thread, Claude.ai-style; atomic per-turn append | ✅ | `conversations`, `db` |
-| Context-management ladder | L1 microcompact → L2 budget gate → L2.5 oldest-pair drop + rot events | ✅ | `conversations` (`context`) |
-| Document ingestion | Registers a catalog row (title, tags, content hash) per file. Ingestion does **not** read the file: no extraction, no chunking, no embedding. The digest that makes a file findable is written afterwards by `document_describe`, once the agent has actually opened it. | ✅ | `documents`, `assets` |
-| Document index | One catalog row + a weighted `tsvector` (title A / tags B / digest C) with a GIN index, in Postgres. There is no document graph and no passage store. | ✅ | `documents` (`catalog_store_digest`, `digest`), migrations `0080`–`0082` |
-| Memory store | ArcadeDB, **one database per identity**, server-enforced. Bitemporal facts (`valid_from`/`valid_to` + supersede) over an entity graph; retrieval fuses a Lucene full-text leg with a **768-d** HNSW dense leg (EmbeddingGemma-300M) using ArcadeDB's own `vector.fuse` RRF. | ✅ | `arcadedb`, `cmd/arcadedb-mcp` |
-| Agent-memory MCP | `memory_search` · `memory_facts_about` · `memory_entities` · `memory_digest` · `memory_upsert_fact` · `memory_merge_entities` · `memory_forget` · `graph_schema`, mounted default-on from Aura's own `arcadedb-mcp` sidecar | ✅ | `cmd/arcadedb-mcp`, `mcp/manager` (catalog), `agent/mcptools` |
-| User profile | Per-identity `Agent.md` (atomic writes), injected as a protected block | ✅ | `profile`, `onboarding` |
-| Memory graph explorer | Read-only cockpit over the authenticated identity's ArcadeDB memory. It uses ArcadeDB's Studio serializer to draw vertices and factual edges, exposes schema-driven filters, shows the producing SQL, and expands a selected RID's direct neighbors cumulatively. Reads are tenant-credentialed and capped at 75 nodes / 200 edges by default (200 hard maximum). | ✅ | `agui` (`graph_arcadedb`, `graph_api`), `arcadedb` (`studio_graph`), `web/src/graph` |
-
-## Identity, isolation & storage
-
-| Capability | What it does | Status | Key packages |
-|---|---|---|---|
-| Multi-user identity isolation | Per-identity RLS carrier + capability grants; owner-scoped conversations / approvals / documents | ✅ | `identity`, `identityctx`, `db` (`WithIdentityTx`) |
-| Authula auth | Embedded auth provider: sessions, capability-per-route, password reset, bootstrap | ✅ | `webauth`, `agui` (`auth`, `password_reset`) |
-| Break-glass recovery | Offline admin/operator recovery path (`aura identity recover`) | ✅ | `breakglass` |
-| Per-identity object store | Garage bucket-per-identity + encrypted credential resolver; fail-closed miss | ✅ | `objectstore` (`identity_store`, `garageadmin`) |
-| Per-user sandbox | Full-capability per-identity Docker box; egress floor, lifecycle, TTL reaper; strict-profile routing | ✅ | `sandbox/usersandbox`, `cron/handlers` (`sandbox_reap`) |
-| Per-identity skills root | Skills + pyscripts filesystem rooted per identity | ✅ | `skills` (`identity_root`) |
-| Identity de-provisioning | Scheduled purge of a de-provisioned identity's durable state | ✅ | `cron/handlers` (`identity_purge`) |
-| Conversation sharing / export | Export file + revocable intra-identity link + opt-in expiring public link | 🟡 | `share` (Phase 37F, in progress) |
-
-## LLM & provider
-
-| Capability | What it does | Status | Key packages |
-|---|---|---|---|
-| Provider-neutral client | Streaming `llm.Client` interface; no vendor SDK | ✅ | `llm` (`client`) |
-| OpenAI-compatible SSE | Hand-rolled streaming client (idle watchdog, tool-call accumulation) | ✅ | `llm/openai_compat` |
-| Default model | DeepSeek-V4 over OpenRouter; swap by config | ✅ | `llm` (`config`, `models`) |
-| Cost tracking | Provider cost preferred, price-table fallback; `aura cache-stats` | ✅ | `llm` (`prices`), `cachemetrics` |
-| Circuit breaker + retry | Bounded stream-open retry with Retry-After awareness | ✅ | `agent`, `llm` (`breaker`) |
-| KV-cache discipline | Byte-stable `messages[0]`; volatile data appended after history | ✅ | `agent/prompt` |
-| Multimodal | Vision + STT + TTS behind one capability-gated client | ✅ | `multimodal`, `llm` (`capabilities`) |
-| Local LLM fallback | vLLM + LMCache dual sidecar for offline operation | 🔭 | deferred (GPU-gated, Slice 13 — `LLM-V2-01`) |
-
-## Channels & transport
-
-| Capability | What it does | Status | Key packages |
-|---|---|---|---|
-| CLI agent REPL | `aura chat` / `aura shell` — primary interactive operator surface | ✅ | `cmd/aura`, `channels` |
-| Telegram | Renderer, HITL keyboards, status pane, artifacts | ✅ | `channels/telegram` |
-| Telegram multimodal | Voice (STT), photo (vision/OCR), document ingest | ✅ | `channels/telegram`, `multimodal` |
-| Telegram multi-user routing | Per-user turn scoping at the single `startTurn` choke point | ✅ | `channels/telegram` (`bot_dispatch_turn`), `identityctx` |
-| Setup wizard | Loopback HTTP + QR pairing for a Telegram bot | ✅ | `setup` |
-| AG-UI / SSE | Event-protocol transport (one-way Event → AG-UI bridge) | ✅ | `agui` |
-| Web cockpit | Embedded Vite/React + assistant-ui over AG-UI/SSE: chat, approval center, typed-display router, memory schema explorer, governance boards, settings, onboarding | ✅ | `webui` (`//go:embed all:dist`), `agui`, `web/` |
-| Connect integrations | Calendar/PIM + WhatsApp pairing from the cockpit | ✅ | `web/src/governance` (`CalendarConnect`, `WhatsAppConnect`) |
-
-## Self-extension (skills & MCP)
-
-| Capability | What it does | Status | Key packages |
-|---|---|---|---|
-| Instruction skills | Markdown SKILL.md, loaded on-demand by frontmatter description | ✅ | `skills` |
-| Executable snippets | Multi-language code snippets with pattern analysis + TTL archive | ✅ | `skills`, `cron/handlers` (`skill_ttl`) |
-| Skill governance | Validate / gate (risk tier) / audit skill mutations; web install + lifecycle | ✅ | `skills` (`installer`, `audit_store`), `scoring`, `agui` |
-| MCP client | Generic JSON-RPC client (stdio + Streamable-HTTP) | ✅ | `mcp` |
-| MCP tool bridge | Namespaced, trust-framed, deferred-by-default tool mounting; fail-soft boot + bounded retry | ✅ | `agent/mcptools` |
-| MCP governance | Managed config, trust classes, docker/local launch, recipe catalog | ✅ | `mcp/manager` (`config`, `runtime`, `catalog`) |
-| Recipe catalog | calculator · calendar (PIM: mail+calendar+contacts) · whatsapp · memory | ✅ | `mcp/manager` (`catalog`) |
-
-## Automation & operations
-
-| Capability | What it does | Status | Key packages |
-|---|---|---|---|
-| Scheduler | Cron tick loop + crash recovery; agent jobs, reminders, backups, sweeps | ✅ | `cron`, `cron/handlers` |
-| Runtime profiles | Typed deployment profile gates config + tool routing | ✅ | `config` (`config_runtimeprofile`) |
-| Config validation | KnobSpec registry + `aura config validate [--profile] [--json]` | ✅ | `config` (`config_knobs`), `cmd/aura` |
-| Onboarding | Interview (LoopAgent) → LLM-extracted facts → standard `Agent.md`; CLI + web | ✅ | `onboarding`, `agui` (`onboarding_session`) |
-| Settings | Allowlisted, typed runtime settings store behind the cockpit settings page | ✅ | `settings`, `web/src/settings` |
-| Risk-Based governance | Qualitative tier scoring for advisory gates | ✅ | `scoring` |
-| Full-stack health | `aura doctor` — four probes: Postgres ping, embedding sidecar (reports the returned dimension), `OPENROUTER_API_KEY` presence, and a live probe of every enabled runnable MCP server | ✅ | `cmd/aura` (`doctor`) |
-| Forensic ledgers | Append-only, un-deletable tool-invocation + skill + profile audit | ✅ | `toolinvocations`, `skills` (`audit_store`), `db` |
-| Eval harness | Live CoT / tool-use evaluation against the spec dimensions | ✅ | `eval` |
-
-## Observability
-
-| Capability | What it does | Status | Key packages |
-|---|---|---|---|
-| Distributed tracing | OTel spans `agent.turn → llm.request → tool.execute` | ✅ | `agent` (`tracing`), `obs` |
-| Metrics | Prometheus + expvar (budget, tools, streams, tokens, cost, panics) | ✅ | `agent` (`metrics`), `obs` |
-| Panic observability | Bounded-cardinality recovered-panic counters | ✅ | `agent/panicobs` |
-| Reasoning trace | Env-gated, redacting JSONL trace of the reasoning/wire path | ✅ | `reasoningtrace` |
-| Cache metrics | Per-turn cache hit-rate, windowed via `aura cache-stats` | ✅ | `cachemetrics` |
-
-## CLI surface (selected)
-
-`aura serve` · `aura shell` · `aura chat <sub>` · `aura doctor` · `aura tools`
-· `aura config {show|get|set|validate}`
-· `aura identity {list|get|grant|revoke|recover|recover-operator}`
-· `aura profile {show|add-fact}` · `aura paused-states {list|purge}`
-· `aura task {schedule|list|cancel|run_now|approve|runs|doctor}`
-· `aura skills {list|info|create|update|delete|always|snippet|audit}`
-· `aura mcp <sub>` · `aura memory <sub>` · `aura agent <sub>` · `aura swarm-demo`
-· `aura web {doctor|tool}` · `aura docs {ingest|search|status|list}`
-· `aura db {migrate|ping|status|reset}`
-· `aura objectstore <sub>` · `aura cache-stats --since=<dur>` · `aura version`
-
-`aura chat` subcommands: `list|new|resume|archive|unarchive|delete|rename|search`.
-Source of truth: the dispatch switch in `cmd/aura/main.go`.
+The 18 guided Codex answer cases in the memory report are a bounded self-evaluation.
+They do not replace the independent running-Aura answer suite or a public comparative
+benchmark. See [Memory validation](memory-graph-validation.md).
