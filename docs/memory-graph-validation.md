@@ -1,8 +1,8 @@
 # Native memory graph surface — 2026-09-07
 
-Status: implemented and deployed locally; direct calls to the two new tools from
-the operator's mounted Codex MCP session remain pending a tool-manifest reload.
-Do not describe this as completed mounted-MCP acceptance.
+Status: implemented and deployed locally; mounted-MCP acceptance completed on
+2026-09-07 through the operator's authenticated Codex tools. Temporal traversal
+and a general retrieval-quality benchmark remain unmeasured.
 
 ## Contract
 
@@ -78,23 +78,65 @@ Official references read before implementation:
 Deployed image ID:
 `sha256:07b5fe820f490d6289b1cd9b941a38bd76190b5a748934eb9817b0709a570496`.
 The mounted graph_schema and memory_recall reads succeed after normal OAuth login;
-the invented-project negative recall still abstains. The current Codex session's
-callable manifest does not yet contain graph_diagnostics or graph_path.
+the invented-project negative recall still abstains. At initial deployment the
+session manifest lacked the new tools; the acceptance session below exposes both.
 
-## Mounted acceptance still required
+## Mounted acceptance completed — 2026-09-07
 
-Reload the MCP tool manifest (start a fresh Codex session if necessary), discover
-the actual tool schemas, and execute these read-only requests:
+Discovered the actual mounted `graph_diagnostics`, `graph_path`, and
+`memory_facts_about` schemas and executed all four requested read-only cases.
+No memory fixtures or facts were written. The schemas expose no identity override.
 
-1. graph_diagnostics with relations=facts, then mentions, then combined, limit=10.
-   Compare component sizes, isolates, native degree and core histogram.
-2. graph_path from ArcadeDB to memory_merge_entities, relations=combined,
-   max_depth=4. Inspect original direction and supporting facts, not merely found.
-3. Missing endpoint and over-depth requests; explicit as_of must fail.
-4. Repeat memory_facts_about for ArcadeDB at depth=1 and depth=2; compare which
-   supporting facts the returned path contributes at a common context budget.
+All diagnostics used `limit=10`, returned 89 entities, 10 node details, and
+`truncated=true`. Component sizes and core-histogram counts each sum to 89.
 
-No real-memory graph metrics or retrieval gain are claimed before that acceptance.
+| Relations | Edges | Components | Largest component | Isolates | Zero OUT-degree | Core histogram (core: count) |
+|---|---:|---:|---:|---:|---:|---|
+| facts | 67 | 22 | 11 | 2 | 47 | 0: 2, 1: 87 |
+| mentions | 34 | 61 | 16 | 57 | 65 | 0: 57, 1: 16, 2: 16 |
+| combined | 101 | 9 | 59 | 2 | 36 | 0: 2, 1: 54, 2: 27, 3: 6 |
+
+FACT component sizes: 11,10,10,8,8,7,4,3,3,3, then ten 2s and two 1s.
+MENTIONS: 16,7,6,3, then 57 singletons. Combined: 59,10,7,4,3,2,2,1,1.
+ArcadeDB (Object subtype) has native BOTH degree 3/4/7 and core 1/2/2 for
+facts/mentions/combined respectively. Its IN/OUT degrees are 1/2, 4/0, 5/2.
+The combined largest component grows through mention connections; this does not
+measure independent confirmation or fact importance.
+
+`graph_path(ArcadeDB, memory_merge_entities, combined, max_depth=4)` returns
+`found=true` with ordered nodes `[ArcadeDB, memory_merge_entities]`. The one edge
+is MENTIONS, originally **memory_merge_entities -> ArcadeDB**, so the default
+BOTH traversal follows it backwards. Its resolved supporting fact is
+`89982b2a895105ca2d91b2646b26fe4533e69bcd69ead33cfb3418fb6f408a85`, describing
+the historical LIST OF MAP merge defect. It carries the predicate `aveva_difetto`,
+the incident object, source references `merge-defect` and `validazione-2026-09-03`,
+a source run ID, writer role `parent`, and `valid_from=2026-09-03 10:53:05`.
+No `valid_to` or `support_missing` is returned. This historical statement is not
+evidence that the deployed merge tool is currently broken.
+
+Negative cases pass: the invented endpoint
+`__aura_graph_validation_missing_20260907__` returns `found=false`, empty nodes
+and edges, and `reason=entity_not_found`; `max_depth=7` returns an MCP error
+`graph max_depth must be between 1 and 6`. Both graph tools reject explicit
+`as_of=2026-09-07T00:00:00Z` with
+`memory graph is stored topology, not an as_of projection`.
+
+Both `memory_facts_about` calls use entity ArcadeDB and `limit=20`. Depth 1
+returns 3 facts (`retrieval.path=graph`); depth 2 returns 7 (`path=mentions`),
+including all three direct facts. The path's supporting fact is absent at depth 1
+and present at depth 2. The other additions describe the documentation location,
+the documented map restriction, and the missing live tests behind the defect.
+
+For a common context ceiling of **2,048 Unicode characters**, concatenate complete
+statements in returned order with one newline between statements, stopping before
+the ceiling. Depth 1 uses 629 characters; depth 2 uses 1,610. Both fit, and only
+depth 2 includes the path support. This is a statement-only character budget,
+not a tokenizer measurement or the full provenance-bearing tool payload budget.
+No conversation retrieval was invoked; fact and conversation quotas remain
+independent. The path adds no unique supporting fact beyond depth 2 in this case.
+
+These are single-identity, single-session observations, not a frozen snapshot,
+a general retrieval gain, an E2E quality score, or new coverage/mutation evidence.
 Next design question: native traversal over temporally admissible relationships,
 followed by a measured comparison of bounded expansion and query-conditioned graph
 ranking. Keep fact and conversation quotas independent throughout.

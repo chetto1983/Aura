@@ -12551,9 +12551,15 @@ upstream main branch. These probes do not measure a retrieval improvement.
 Implementation verification: full ArcadeDB race/integration suite passes at
 86.6% statement coverage; official-SDK MCP graph tests pass on disposable
 identities. MENTIONS paths resolve their supporting facts or mark missing support.
-Direct use of graph_diagnostics/graph_path from the mounted Codex session is still
-pending a manifest reload. See `docs/memory-graph-validation.md`; do not substitute
-SDK fixture success for this last acceptance step or claim real-memory graph metrics.
+Mounted Codex acceptance completed on 2026-09-07: 89 entities, 67 FACT and 34
+MENTIONS edges; the combined graph has 9 components, largest 59. The ArcadeDB to
+memory_merge_entities path resolves one reverse-traversed mention and its source
+fact. Missing endpoints, excessive depth, and explicit temporal projection behave
+as contracted. At the same 2,048-character statement ceiling, depth 1 returns 3
+facts (629 characters), depth 2 returns 7 (1,610), and only depth 2 includes that
+path support. This one case establishes neither general retrieval improvement nor
+temporal admissibility. See `docs/memory-graph-validation.md` for measured details
+and limits; the historical integration coverage above was not rerun for this read-only acceptance.
 
 ## Section La libreria di casa era diventata di nessuno (Amendment #225, 2026-09-07)
 
