@@ -106,7 +106,7 @@ func TestLeftoverSteerAutoDeliversAsNextTurn(t *testing.T) {
 		t.Fatalf("notice text = %v, want the RAW leftover text", got)
 	}
 
-	reqs := client.RecordedRequests()
+	reqs := agentRequests(client)
 	if len(reqs) != 2 {
 		t.Fatalf("LLM calls = %d, want 2 (round 1 + the auto-delivered follow-on turn)", len(reqs))
 	}
@@ -356,7 +356,7 @@ func TestAutoDeliveryChainIsBounded(t *testing.T) {
 
 	// Both leftovers still reached the model: the first via the follow-on
 	// turn's own user message, the second via round 2's normal drain point.
-	reqs := client.RecordedRequests()
+	reqs := agentRequests(client)
 	if len(reqs) != 3 {
 		t.Fatalf("LLM calls = %d, want 3 (round 1 + auto-delivered round 2 + round 2's own continuation)", len(reqs))
 	}

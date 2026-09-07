@@ -217,19 +217,6 @@ func (s fakeShellTool) Execute(ctx context.Context, _ json.RawMessage) (tools.To
 // and tries to finish is SENT BACK, and is accepted once it has actually verified.
 // Everything else in this file tests a seam; this tests the behaviour, and it fails if
 // any link in the chain — hook, store, adapter, gate — is not wired.
-// agentRounds counts the requests that belong to the agent loop: the ones carrying the
-// turn's tool manifest. The auto-title call has none (conversations.GenerateTitle sets
-// ToolChoice "none" and no Tools), so it cannot be mistaken for a round.
-func agentRounds(client *agenttest.FakeClient) int {
-	rounds := 0
-	for _, req := range client.RecordedRequests() {
-		if len(req.Tools) > 0 {
-			rounds++
-		}
-	}
-	return rounds
-}
-
 func TestVerifyOnStopFiresOnARealTurn(t *testing.T) {
 	pool := migratedRunnerPool(t)
 	seedLocalIdentity(t, pool)
