@@ -413,15 +413,53 @@ Agent jobs use the common runtime and one model/budget snapshot. Claims and noti
 intent preserve their transaction boundary. Delivery retry does not rerun completed
 model/tool work. Multi-goal enqueue is atomic for the identity.
 
+Each fan-out and worker queue key belongs to the trusted `swarm_spawn` operation:
+retrying that operation preserves its identities; a new turn or model round, including
+changed shared context, creates new workers. On 2026-09-07 the live cockpit reproduced
+two accepted calls with identical goals but only two total queue rows: the enqueue
+path discarded the runtime operation and used an unset parent-run field. The scoped
+correction and validation are recorded in spike 103. This measurement establishes a
+repeat-delegation defect, not universal multi-agent reliability or restart recovery.
+
 Outcomes, transcripts, reports and status stay in the originating conversation.
 Cross-channel delivery is explicit. Status includes elapsed time; terminal reports and
 stalled/orphan states are distinct. The cockpit resets worker watches on conversation
 change and handles named terminal SSE events.
 
+The 2026-09-07 cockpit inspection found worker activity hidden behind the collapsed
+spawn tool and its 64rem report table. Worker cards must therefore remain visible
+inline, outside settled-tool grouping, with responsive goals, real lifecycle status,
+elapsed time and direct transcript access. The existing read-only worker pane uses
+assistant-ui's documented `ReadonlyThreadProvider` for its separate streamed messages;
+it must expose streamed activity, retain conversation ownership on reload/switch, and
+leave parent composition untouched. Reference: assistant-ui `/docs/tools/multi-agent`
+and LibreChat's `SubagentCall`/`SubagentActivity`, pinned in spike 103.
+
 Continuation retains the exact model-facing trust-framed tool preview. Static worker
 policy and delegated goal/context stay at their correct authority levels. Bad resume/
 dead-letter rows cannot starve others. The substrate remains at-least-once across the
 disclosed external-side-effect/ledger crash window.
+
+Worker pause creation must persist the same host-authored decision policy as a
+normal runner pause in its atomic pause/park transaction. On 2026-09-07 a live child
+asked for a number but every answer returned HTTP 403 (`approval decision not allowed`):
+the worker pause writer omitted `allowed_decisions`. Reuse the runner's policy builder;
+the resume path must continue rejecting absent or restricted policy, never infer an
+authorization from UI buttons. Spike 103 records the failing conversation and retest.
+
+The read-only worker stream renders pause questions as activity and continues replay
+through later attempts; the parent approval card owns answers. A bounded `reported`
+status flag follows the committed report write. The cockpit then refreshes history
+when its parent stream is idle, rejecting stale refreshes after a new send or route
+change. Model completion alone is insufficient evidence that the report is persisted.
+Worker completion steers retain the existing untrusted source envelope on parent
+wakeup and are not persisted again as operator-authored messages.
+
+The operator explicitly requested visible worker reasoning on 2026-09-07. The
+identity-scoped cockpit worker stream therefore uses the same reasoning projection
+as the parent cockpit stream; ownership checks still precede SSE headers. Aggregate
+worker status carries no reasoning text. This does not change other channels or
+the independent reasoning-retention policy.
 
 ## 16. Observability and operator experience
 

@@ -1,5 +1,12 @@
 # Spike Manifest
 
+## Current investigation
+
+Spike 103, `agent-runtime-correctness`: requested 2026-09-07, narrowed to multi-agent
+execution and live worker UI. Reference: LibreChat `f9f1b2fb` and assistant-ui's
+`/docs/tools/multi-agent`. Evidence and open checks:
+[103 README](103-agent-runtime-correctness/README.md). Status: in progress.
+
 ## Ideas
 
 ### durable-delegation

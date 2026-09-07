@@ -1,0 +1,55 @@
+{
+  "mechanism": "native Go build overlays; tracked files are never mutated",
+  "results": [
+    {
+      "name": "invocation",
+      "file": "internal/swarm/delegation_enqueue.go",
+      "test": "TestDelegationInvocationSeparatesFreshCallsAndPreservesRetry",
+      "status": "killed"
+    },
+    {
+      "name": "pause_fence",
+      "file": "internal/runner/runner_resume.go",
+      "test": "TestWorkerResumeClaimCarriesFenceAndOwner",
+      "status": "killed"
+    },
+    {
+      "name": "worker_history",
+      "file": "internal/runner/resume_committer.go",
+      "test": "TestSplitWorkerResumeDoesNotAppendParentToolResult",
+      "status": "killed"
+    },
+    {
+      "name": "worker_trust",
+      "file": "internal/runner/runner_steer.go",
+      "test": "TestLeftoverWorkerReportKeepsUntrustedSourceAndNoUserDuplicate",
+      "status": "killed"
+    },
+    {
+      "name": "report_marker",
+      "file": "internal/swarm/delegation_terminal.go",
+      "test": "TestReportMarkerFollowsDurableConversationWrite",
+      "status": "killed"
+    },
+    {
+      "name": "pause_replay",
+      "file": "internal/agui/server_swarm_events.go",
+      "test": "TestSwarmTranscriptReplayIncludesResumedAttempt",
+      "status": "killed"
+    },
+    {
+      "name": "reported_status",
+      "file": "internal/agui/server_swarm_events_status.go",
+      "test": "TestWorkerStatusReportsPersistenceWithoutTranscriptContent",
+      "status": "killed"
+    },
+    {
+      "name": "worker_origin",
+      "file": "internal/runner/runner_steer.go",
+      "test": "TestDrainedWorkerReportIsNotPersistedAsHumanSteering",
+      "status": "killed"
+    }
+  ],
+  "killed": 8,
+  "total": 8
+}
