@@ -3,7 +3,7 @@ spike: 103
 idea: agent-runtime-correctness
 name: agent-runtime-correctness
 type: comparison
-verdict: in-progress
+verdict: validated-scoped-flows
 related: [098, 099, 100, 101]
 tags: [agents, librechat, runtime, tools, cancellation, resume, delegation]
 ---
@@ -177,5 +177,20 @@ includes localized agent titles/actions/statuses and keeps its read-only provide
 mounted throughout streaming so late text and tool arguments remain visible.
 
 This checkpoint records the tested flows, not universal task success, arbitrary-depth
-agent teams, or a crash/restart guarantee. Final translated-container and mobile checks
-are recorded in the subsequent completion entry.
+agent teams, or a crash/restart guarantee.
+
+## Final cockpit checks
+
+The image stamped `9186b9ee8` includes the translated UI. In the mounted Playwright
+MCP, switching EN/IT changed the pane title between `Agent activity` and
+`Attività dell'agente`, with no raw translation key on screen. The resumed worker's
+final 99 and its tool arguments were visible. A controlled reload retained the selected
+worker and open pane. At 390×844, the mobile drawer measured 341px and the document
+had no horizontal overflow. Expanding reasoning displayed 399 characters of actual
+provider output and zero redaction placeholders. The accepted screenshot remains
+private at `.git/multiagent-04-mobile-final.png` because the cockpit includes operator
+navigation. The browser was restored to desktop size afterward.
+
+The post-localization checks passed after updating old copy assertions. Pre-push also
+found lint errors in the new test callbacks; commit `984c41703` adds proper callback
+types, async flushing and JSON encoding without changing production behavior.
