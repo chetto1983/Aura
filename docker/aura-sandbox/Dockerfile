@@ -107,6 +107,20 @@ RUN apt-get update \
 RUN npm install -g docx pptxgenjs && npm cache clean --force
 ENV NODE_PATH=/usr/lib/node_modules
 
+# The agent installs into this Python at RUNTIME, and shell_exec's own description tells it
+# exactly how: "Pick ONE interpreter per task and install into it: `python3 -m pip install
+# ...`". On Debian bookworm that command EXITS 1 with `error: externally-managed-environment`
+# (PEP 668) -- so the tool prompt was teaching a command the box could not run, and the model
+# had no way to learn otherwise except by burning a call on the failure. Measured 2026-09-07
+# on aura-sandbox:latest: rc=1, no network reached.
+#
+# The build below already passes --break-system-packages for exactly this reason; this makes
+# the same allowance true for the agent, which is the only user that matters at runtime. The
+# usual objection to it -- do not let pip fight the system package manager on a real machine
+# -- does not apply here: this container IS the isolation boundary, it is disposable, and
+# `python3 -m venv` remains available for anyone who wants one.
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
+
 # Python document/data stack, same set and same reason as docker/aura/Dockerfile.
 # markitdown[pptx] is quoted so /bin/sh does not glob the [].
 RUN pip install --no-cache-dir --break-system-packages \

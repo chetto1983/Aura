@@ -1883,7 +1883,9 @@ jobs:
   sandbox-docker-integration:
     name: Sandbox docker_integration tier (live dockerd, native-Linux egress)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 40, not 30: this job now also builds the box image (LibreOffice + Node 24 + the Python
+    # document stack) before the tier runs.
+    timeout-minutes: 40
     # Fix plan 2.6. Until this job existed the docker_integration tier had NEVER run in the
     # pipeline: every one of its tests compiles and then skips on a host without a reachable
     # daemon, so the per-identity box lifecycle, the SBX-04 egress floor and the routed host
@@ -1923,6 +1925,21 @@ jobs:
         # as a failure rather than being papered over by an env var. ensureImage ImageInspects
         # before pulling, so this locally-built image is used as-is and never fetched.
         run: docker build -f docker/aura-egress/Dockerfile -t aura-egress:latest .
+
+      - name: Build the per-identity box image
+        # Nothing in CI built this image before, so the box the agent actually gets was
+        # gated by nobody: it is produced only by publish-aura-edge.yml, which pushes it.
+        # Building it here puts the Dockerfile under a gate BEFORE the publish runs.
+        run: docker build -f docker/aura-sandbox/Dockerfile -t aura-sandbox:latest .
+
+      - name: Box image pip contract (PEP 668)
+        # shell_exec's description tells the model to run `python3 -m pip install ...`. On
+        # Debian bookworm that exits 1 with externally-managed-environment, so the prompt was
+        # teaching a command the image could not run and the model could only find out by
+        # spending a call on the failure. The image now carries PIP_BREAK_SYSTEM_PACKAGES=1
+        # and this proves it end to end, offline -- a network install would test the runner's
+        # egress instead of the image.
+        run: bash scripts/sandbox_image_contract_test.sh
 
       - name: Pre-pull the box images
         # DockerBackend.ensureImage would pull these on first use; doing it here makes a

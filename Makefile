@@ -6,7 +6,7 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help tools sqlc memory-up-core lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract llm-model-contract web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval agent-memory-eval-running-aura critical-mutation observability-check observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up sandbox-images installer-artifact payload-manifest arcadedb-integration ingest-image ingest-test extractor-matrix ingest-reconcile restore-drill load-chaos
+.PHONY: help tools sqlc memory-up-core lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract llm-model-contract web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval agent-memory-eval-running-aura critical-mutation observability-check observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up sandbox-images installer-artifact payload-manifest arcadedb-integration ingest-image ingest-test extractor-matrix ingest-reconcile sandbox-image-contract restore-drill load-chaos
 
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
@@ -50,6 +50,7 @@ help:
 	@echo "make db-reset      — DESTRUCTIVE: drop+recreate schema aura (dev only, requires AURA_RESET_YES=1)"
 	@echo "make memory-up     — docker compose up -d arcadedb arcadedb-mcp aura-llama-embed (waits healthy)"
 	@echo "make arcadedb-integration — run the arcadedb_integration tier live, as CI does"
+	@echo "make sandbox-image-contract — the box image honours python3 -m pip install (PEP 668)"
 	@echo "make extractor-matrix — every fixture format opens and the canary survives verbatim"
 	@echo "make ingest-reconcile — add/modify/delete reconciliation + two-identity isolation"
 	@echo "make restore-drill — three-plane DR drill with measured RPO/RTO"
@@ -293,6 +294,12 @@ sandbox-images:
 	docker build -f docker/aura-sandbox/Dockerfile -t $${AURA_SANDBOX_IMAGE:-aura-sandbox:latest} .
 	docker build -f docker/aura-egress/Dockerfile -t $${AURA_SANDBOX_EGRESS_IMAGE:-aura-egress:latest} .
 	@echo "ok"
+
+# The box image's runtime contract for pip. shell_exec's description tells the agent to run
+# `python3 -m pip install ...`; on Debian bookworm that is PEP 668 territory and the image
+# must carry PIP_BREAK_SYSTEM_PACKAGES for it to be true. Every assertion is offline.
+sandbox-image-contract: sandbox-images
+	bash scripts/sandbox_image_contract_test.sh
 
 # Packs install.sh and the 25 files it installs into one self-extracting archive, so an
 # appliance install fetches nothing from a moving git ref. Needs makeself (WSL/Linux only;
