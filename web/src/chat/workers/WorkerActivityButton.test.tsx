@@ -8,8 +8,6 @@ function controller(overrides: Partial<WorkerWatchController> = {}): WorkerWatch
   return {
     workers: [],
     statuses: new Map(),
-    registryReady: true,
-    ownsWorker: () => true,
     registerWorkers: () => () => undefined,
     watchWorker: vi.fn(),
     viewReport: vi.fn(),

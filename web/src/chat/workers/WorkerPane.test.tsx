@@ -181,7 +181,7 @@ describe('WorkerPane', () => {
     expect(screen.getByText('Choose a number')).toBeTruthy();
   });
 
-  it('does not request or display a persisted thread A child under thread B', async () => {
+  it('lets the scoped server reject an unavailable persisted child without rendering content', () => {
     const onClose = vi.fn();
     render(
       <WorkerWatchProvider conversationId="thread-b" onWatchWorker={vi.fn()} onViewReport={vi.fn()}>
@@ -190,14 +190,15 @@ describe('WorkerPane', () => {
       </WorkerWatchProvider>,
     );
 
-    expect(openWorkerStream).not.toHaveBeenCalled();
-    expect(screen.queryByText('child-a')).toBeNull();
-    await waitFor(() => {
-      expect(onClose).toHaveBeenCalledTimes(1);
+    expect(openWorkerStream).toHaveBeenCalledWith('thread-b', 'child-a', expect.any(Object));
+    act(() => {
+      handlers?.onError();
     });
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(screen.queryByText('Worker result')).toBeNull();
   });
 
-  it('waits for delayed registry hydration before restoring an owned worker', async () => {
+  it('restores a worker without depending on its source card being mounted', async () => {
     const onClose = vi.fn();
 
     function DelayedRegistry() {
@@ -226,7 +227,7 @@ describe('WorkerPane', () => {
       </WorkerWatchProvider>,
     );
 
-    expect(openWorkerStream).not.toHaveBeenCalled();
+    expect(openWorkerStream).toHaveBeenCalledWith('thread-a', 'child-a', expect.any(Object));
     expect(onClose).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Hydrate workers' }));
@@ -235,6 +236,30 @@ describe('WorkerPane', () => {
       expect(openWorkerStream).toHaveBeenCalledWith('thread-a', 'child-a', expect.any(Object));
     });
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('keeps a nested worker open after its parent transcript card unmounts', async () => {
+    const onClose = vi.fn();
+    const content = (registered: boolean) => (
+      <WorkerWatchProvider conversationId="thread-a" onWatchWorker={vi.fn()} onViewReport={vi.fn()}>
+        <WorkerRegistration registrationId="root-card" workers={threadBWorkers} />
+        {registered ? (
+          <WorkerRegistration registrationId="nested-card" workers={threadAWorkers} />
+        ) : null}
+        <WorkerPane conversationId="thread-a" childId="child-a" onClose={onClose} />
+      </WorkerWatchProvider>
+    );
+    const view = render(content(true));
+    view.rerender(content(false));
+    act(() => {
+      handlers?.onMessages([
+        { role: 'assistant', content: [{ type: 'text', text: 'Nested result' }] },
+      ]);
+    });
+    expect(onClose).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.getByText('Nested result')).toBeTruthy();
+    });
   });
 
   it('closes child A without requesting it under thread B when the conversation changes', async () => {

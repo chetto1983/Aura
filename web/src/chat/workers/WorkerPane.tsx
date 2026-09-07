@@ -55,8 +55,12 @@ function WorkerMessage() {
 
 export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps) {
   const { t } = useTranslation();
-  const { workers, statuses, registryReady, ownsWorker, watchWorker } = useWatchWorker();
-  const workerOwned = conversationId.length > 0 && ownsWorker(childId);
+  const { workers, statuses, watchWorker } = useWatchWorker();
+  const [openedConversationId] = useState(conversationId);
+  // The scoped endpoint validates ownership. A nested worker's source card can
+  // unmount when we open it, and restored workers need no mounted source card.
+  const workerSelected =
+    conversationId.length > 0 && childId.length > 0 && openedConversationId === conversationId;
   const lifecycleStatus = statuses.get(childId)?.status;
   const streamKey = `${conversationId}\u0000${childId}`;
   const [streamState, setStreamState] = useState<{
@@ -68,7 +72,7 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
     streamState.key === streamKey ? streamState : { key: streamKey, messages: [], failed: false };
 
   useEffect(() => {
-    if (!workerOwned) return;
+    if (!workerSelected) return;
     const stream = openWorkerStream(conversationId, childId, {
       onMessages: (messages) => {
         setStreamState({ key: streamKey, messages, failed: false });
@@ -82,11 +86,11 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
       },
     });
     return stream.close;
-  }, [childId, conversationId, streamKey, workerOwned, lifecycleStatus]);
+  }, [childId, conversationId, streamKey, workerSelected, lifecycleStatus]);
 
   useEffect(() => {
-    if (registryReady && !workerOwned) onClose();
-  }, [onClose, registryReady, workerOwned]);
+    if (!workerSelected) onClose();
+  }, [onClose, workerSelected]);
 
   const readonlyMessages = useMemo(
     () => current.messages.map((message) => toReadonlyMessage(message, childId)),
@@ -114,7 +118,7 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
     ];
   }, [childId, statuses, workers]);
 
-  if (!registryReady || !workerOwned) return null;
+  if (!workerSelected) return null;
 
   const selectedWorker = pickerWorkers.find((worker) => worker.child_id === childId);
   const selectedStatus = statuses.get(childId)?.status ?? selectedWorker?.status ?? 'running';

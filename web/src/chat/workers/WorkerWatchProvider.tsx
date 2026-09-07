@@ -28,7 +28,6 @@ export function WorkerWatchProvider({
   });
   const registrations =
     registry.conversationId === conversationId ? registry.registrations : EMPTY_REGISTRATIONS;
-  const registryReady = registrations.size > 0;
   const workers = useMemo(() => {
     if (registrations.size === 0) return EMPTY_WORKERS;
     const merged = new Map<string, DisplayChildReport>();
@@ -60,11 +59,6 @@ export function WorkerWatchProvider({
     [conversationId],
   );
 
-  const ownsWorker = useCallback(
-    (childId: string) => workers.some((worker) => worker.child_id === childId),
-    [workers],
-  );
-
   const watchWorker = useCallback(
     (childId: string, nextWorkers?: readonly DisplayChildReport[]) => {
       const selectable =
@@ -80,13 +74,11 @@ export function WorkerWatchProvider({
     () => ({
       workers,
       statuses,
-      registryReady,
-      ownsWorker,
       registerWorkers,
       watchWorker,
       viewReport: onViewReport,
     }),
-    [onViewReport, ownsWorker, registerWorkers, registryReady, statuses, watchWorker, workers],
+    [onViewReport, registerWorkers, statuses, watchWorker, workers],
   );
 
   return <WorkerWatchContext.Provider value={controller}>{children}</WorkerWatchContext.Provider>;

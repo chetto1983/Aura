@@ -5,8 +5,6 @@ import type { WorkerStatus } from './workerStream';
 export interface WorkerWatchController {
   readonly workers: readonly DisplayChildReport[];
   readonly statuses: ReadonlyMap<string, WorkerStatus>;
-  readonly registryReady: boolean;
-  readonly ownsWorker: (childId: string) => boolean;
   readonly registerWorkers: (
     registrationId: string,
     workers: readonly DisplayChildReport[],
@@ -18,8 +16,6 @@ export interface WorkerWatchController {
 const NOOP_CONTROLLER: WorkerWatchController = {
   workers: [],
   statuses: new Map(),
-  registryReady: true,
-  ownsWorker: () => true,
   registerWorkers: () => () => undefined,
   watchWorker: () => undefined,
   viewReport: () => undefined,
