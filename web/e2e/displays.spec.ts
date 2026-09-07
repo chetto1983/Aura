@@ -259,7 +259,7 @@ test.describe('Phase 26 — typed displays (desktop + mobile)', () => {
     await expect(page.getByText(/metadata host blocked/)).toHaveCount(0);
   });
 
-  test('swarm_report renders a worker table with row-expand and no mailbox theater', async ({
+  test('swarm_report keeps agent cards visible with details and no mailbox theater', async ({
     page,
   }) => {
     const display = {
@@ -277,24 +277,21 @@ test.describe('Phase 26 — typed displays (desktop + mobile)', () => {
       ],
     };
     await openWith(page, 'Workers done.', display, 'swarm_spawn');
-    await expandToolRow(page);
 
-    await expect(page.getByText('Workers').first()).toBeVisible({ timeout: 15000 });
-    await expect(page.getByRole('columnheader', { name: 'Worker' })).toBeVisible();
-    await expect(page.getByText('OK').first()).toBeVisible();
+    const swarmCard = page.getByRole('list', { name: 'Agents', exact: true });
+    await expect(swarmCard).toBeVisible({ timeout: 15000 });
+    await expect(swarmCard.getByRole('listitem')).toHaveCount(2);
+    await expect(swarmCard.getByRole('button', { name: 'Open activity' })).toHaveCount(2);
+    await expect(page.getByText('Completed').first()).toBeVisible();
     await expect(page.getByText('Failed').first()).toBeVisible();
 
     // Row-expand reveals summary + error in place.
-    await page.getByRole('button', { name: 'Toggle worker details' }).nth(1).click();
+    await page.getByRole('button', { name: 'Toggle agent details' }).nth(1).click();
     await expect(page.getByRole('definition').filter({ hasText: 'rate limited' })).toBeVisible();
 
     // D-08: no inter-agent chat / mailbox affordance INSIDE the swarm card. Scope the
     // assertion to the assistant answer message (the page-level "Ask Aura" composer is
     // a legitimate textbox and must NOT count against the swarm display).
-    const swarmCard = page
-      .locator('div.space-y-2')
-      .filter({ has: page.getByRole('columnheader', { name: 'Worker' }) })
-      .first();
     expect(await swarmCard.getByRole('textbox').count()).toBe(0);
     await expect(swarmCard.getByPlaceholder(/message|reply/i)).toHaveCount(0);
   });
