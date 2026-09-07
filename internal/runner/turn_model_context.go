@@ -22,7 +22,7 @@ func (r *Runner) TurnWithModelUserMessage(ctx context.Context, convID, visibleUs
 }
 
 func currentRoundModelHistory(history []llm.Message, visibleUserMsg, modelUserMsg *string) []llm.Message {
-	if visibleUserMsg == nil || modelUserMsg == nil || *visibleUserMsg == *modelUserMsg {
+	if modelUserMsg == nil || (visibleUserMsg != nil && *visibleUserMsg == *modelUserMsg) {
 		return history
 	}
 	out := append([]llm.Message(nil), history...)
@@ -30,7 +30,7 @@ func currentRoundModelHistory(history []llm.Message, visibleUserMsg, modelUserMs
 	// assigning through the value variable writes to the copy and the slice keeps the
 	// visible text. Must address out[i] to mutate.
 	for i := range slices.Backward(out) {
-		if out[i].Role == llm.RoleUser && out[i].Content == *visibleUserMsg {
+		if visibleUserMsg != nil && out[i].Role == llm.RoleUser && out[i].Content == *visibleUserMsg {
 			out[i].Content = *modelUserMsg
 			return out
 		}

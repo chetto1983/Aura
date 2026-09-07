@@ -67,7 +67,7 @@ func scrubSteerLookalikes(content string) string {
 	return steerLookalikeRe.ReplaceAllStringFunc(content, html.EscapeString)
 }
 
-// markSteer picks the envelope a queued message is delivered in, and names it
+// MarkSteer picks the envelope a queued message is delivered in, and names it
 // for the aura.steer echo frame. The envelope is chosen by AUTHOR, because an
 // envelope is an authorship claim and the model reads it as one.
 //
@@ -94,7 +94,7 @@ func scrubSteerLookalikes(content string) string {
 // in the tree pushes an operator source, and an unrecognised one keeps the
 // operator envelope byte-for-byte, so a new channel cannot fall into a runtime
 // branch by forgetting to name itself.
-func markSteer(m steer.Message) (marked, envelope string) {
+func MarkSteer(m steer.Message) (marked, envelope string) {
 	switch m.Source {
 	case steer.SourceWorker:
 		return "\n" + wrapUntrustedToolOutput(m.Source, m.Text), "worker_report"
@@ -131,7 +131,7 @@ func (a *LlmAgent) drainSteer(ic InvocationContext, spanID [8]byte, parentSpanID
 	}
 	delivered := make([]map[string]any, 0, len(msgs))
 	for _, m := range msgs {
-		marked, envelope := markSteer(m)
+		marked, envelope := MarkSteer(m)
 		delivery := "user_message_fallback"
 		if n := len(a.history); n > 0 && a.history[n-1].Role == llm.RoleTool {
 			a.history[n-1].Content += marked

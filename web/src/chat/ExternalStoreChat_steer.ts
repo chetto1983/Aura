@@ -84,6 +84,7 @@ export function useSteerSend({
     (frame: SteerFramePayload) => {
       if (frame.conversation_id !== threadId) return;
       for (const entry of frame.steers) {
+        if (entry.source === 'swarm') continue;
         if (seenIdsRef.current.has(entry.id)) continue;
         seenIdsRef.current.add(entry.id);
         if (entry.source === 'cockpit' && entry.text === pendingTextRef.current) {

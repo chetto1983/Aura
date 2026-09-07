@@ -79,6 +79,10 @@ func (r *Runner) persistSteerTurn(ctx context.Context, tr *turnTracker, ev *agen
 		return nil
 	}
 	for _, s := range steers {
+		if s["source"] == steer.SourceWorker {
+			// DelegationDelivery already persisted this report as an assistant turn.
+			continue
+		}
 		delivery, _ := s["delivery"].(string)
 		if !steerDeliveryForms[delivery] {
 			continue
@@ -168,8 +172,7 @@ func (r *Runner) deliverLeftoverSteer(ctx context.Context, convID string, inner 
 			if !yield(leftoverSteerNoticeEvent(noticeID, convID, msgs), nil) {
 				return
 			}
-			leftover := joinSteerLeftovers(msgs)
-			followInput := turnInput{visibleUserMsg: &leftover, modelUserMsg: &leftover}
+			followInput := leftoverTurnInput(msgs)
 			for ev, err := range r.turnLocked(ctx, convID, followInput) {
 				if !yield(ev, err) {
 					return
@@ -181,6 +184,27 @@ func (r *Runner) deliverLeftoverSteer(ctx context.Context, convID string, inner 
 			// attempted within THIS call.
 		}
 	}
+}
+
+func leftoverTurnInput(msgs []steer.Message) turnInput {
+	visible := make([]steer.Message, 0, len(msgs))
+	model := make([]string, 0, len(msgs))
+	for _, msg := range msgs {
+		if msg.Source == steer.SourceWorker {
+			marked, _ := agent.MarkSteer(msg)
+			model = append(model, marked)
+		} else {
+			visible = append(visible, msg)
+			model = append(model, msg.Text)
+		}
+	}
+	modelText := steerAutoDeliveryNotice + "\n\n" + strings.Join(model, "\n\n")
+	input := turnInput{modelUserMsg: &modelText}
+	if len(visible) > 0 {
+		text := joinSteerLeftovers(visible)
+		input.visibleUserMsg = &text
+	}
+	return input
 }
 
 // joinSteerLeftovers joins N leftover steers' RAW text, FIFO, into the SINGLE
