@@ -6,7 +6,7 @@
     {
       "number": "1",
       "name": "Two Identities, Live and Separated",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "2",
@@ -44,5 +44,5 @@
     "label": "Advance to the next step",
     "reason": "Phase 01 of 7 · 0% · executing"
   },
-  "updated_at": "2026-09-07T22:00:04.528Z"
+  "updated_at": "2026-09-07T22:42:00.556Z"
 }

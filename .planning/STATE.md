@@ -5,16 +5,16 @@ milestone_name: Production Launch — Multi-Tenant
 current_phase: 01
 current_phase_name: Two Identities, Live and Separated
 status: executing
-stopped_at: Completed 01-07-PLAN.md
-last_updated: "2026-09-07T22:00:24.123Z"
+stopped_at: Completed 01-01-PLAN.md
+last_updated: "2026-09-07T22:42:36.450Z"
 last_activity: 2026-09-07
 last_activity_desc: Phase 01 execution started
-state_head: 4ce9b11e52d0dc254cd6cad09f916aec9fbed15f
+state_head: 0f19f9ebadf28a7afecd064656358f42890b92f2
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 7
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-07)
 ## Current Position
 
 Phase: 01 (Two Identities, Live and Separated) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Ready to execute
 Last activity: 2026-09-07 — Phase 01 execution started
 
@@ -77,6 +77,7 @@ phases, not many thin ones.
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 01 P07 | 7 min | 2 tasks | 2 files |
+| Phase 01 P01 | 155min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -99,6 +100,7 @@ creation:
   API is the contract for this milestone.
 - [Phase 01]: TOTP enrollment is headlessly automatable: /totp/enable's otpauth:// URI carries the plaintext base32 secret as a query parameter, and /totp/verify checks a code against the same decrypted secret — Confirmed by reading enable_usecase.go, verify_totp_usecase.go and totp_service.go directly (github.com/Authula/authula v1.43.0), not inferred from the go doc summary alone
 - [Phase 01]: First-login TOTP enrollment enforcement is not wired today — EnforceFirstLogin only sets Authula user-metadata markers; the login-time redirect code is unbuilt — cmd/aura/serve_onboarding.go's own comment states this is 'wired at the cutover (plan 12)'; a repo-wide grep found no other reference, confirmed absent rather than assumed absent
+- [Phase 01]: [Phase 01 Plan 01] Local verification of a musr_e2e-tagged test used a disposable Postgres container, never the live aura database - internal/dbtest.MigrateURL (commit 0fa214648) fails closed on any db_integration DSN named aura outside CI, a pre-existing repo-wide safety net this plan honored rather than bypassed. — Confirmed by reading internal/dbtest/live_target_guard.go directly; the guard applies to all thirty existing db_integration call sites, so this is standing project behavior, not something introduced or worked around here.
 
 ### Pending Todos
 
@@ -145,8 +147,8 @@ rediscover them:
 
 ## Session Continuity
 
-Last session: 2026-09-07T22:00:24.092Z
-Stopped at: Completed 01-07-PLAN.md
+Last session: 2026-09-07T22:42:36.421Z
+Stopped at: Completed 01-01-PLAN.md
 Resume file: None
 
 Next: `/gsd-plan-phase 1`
