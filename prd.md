@@ -12468,3 +12468,43 @@ flusso completo, che funziona.
 > 2048 token del chunker non è stato nemmeno sfiorato, e sui punteggi di ranking questa misura
 > non autorizza nessuna affermazione. (6) Il Postgres sotto è quello del container su :5432, non
 > quello nativo dell'emendamento #222.
+
+## Memory retrieval identifiers and repeated context (Amendment #224, 2026-09-07)
+
+Measured through the mounted OAuth memory MCP: 12 questions, two read tools,
+three sequential passes (72 calls). All five fact-positive cases retained their
+gold fact. Search abstained on 2/6 negative cases; recall on 1/6. Asking about
+the invented project ZQX-947 returned Aura facts. An invented docking code
+returned unrelated PHASE49 conversations. Results repeated on all three passes.
+The merge-defect question added 363 reference-token units of entity context
+without adding a single distinct fact to the three already ranked.
+
+Corrective scope: require explicit technical identifiers (letter/digit codes
+or underscore names) in admitted semantic evidence, on hybrid and lexical
+paths, before consuming quotas or deriving entity seeds. Preserve per-kind
+ranking and temporal selectors. Entity expansion must not repeat a fact_key
+already present in ranked evidence or an earlier expanded node; keep entity
+names available even when their facts are already represented. No schema,
+embedding-model, threshold, or environment-variable changes are required.
+
+Inventory: ArcadeDB's official vector-search documentation describes similarity,
+not exact identity; full-text defaults to OR and supports required terms and
+phrases. SQL MATCHES is available but unindexed. Aura already has Unicode-aware
+word-boundary matching and bounded candidate hydration. Reuse that retrieval
+path and its text utilities; do not add another ranker or database adapter.
+Sources: https://docs.arcadedb.com/arcadedb/concepts/vector-search,
+https://docs.arcadedb.com/arcadedb/how-to/data-modeling/full-text-index,
+https://docs.arcadedb.com/arcadedb/reference/sql/sql-where.
+
+Acceptance: replay positive and negative questions through the mounted MCP
+after deploying the candidate; preserve the exact PHASE49 conversation hit,
+positive bilingual facts, direct/MENTIONS reads and as_of behavior; no repeated
+fact keys across evidence and entity expansion. Test lexical degradation and
+identifier boundaries in regression tests. No personal-memory fixtures.
+
+Limits: these measurements do not establish general entity understanding,
+answer entailment, production p95, or final-agent response quality. cl100k_base
+counts were of prose only, not the deployed model's complete prompt. Identifier
+admission is conservative within the existing bounded candidate pool; it does
+not prove the corpus contains no answer when no candidate qualifies. MMR and
+PPR remain untested and outside this corrective change.
