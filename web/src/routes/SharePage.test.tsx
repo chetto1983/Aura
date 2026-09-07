@@ -391,7 +391,7 @@ describe('SharePage — internal tier (/shared/:id)', () => {
     stubFetch({ dataStatus: 404 });
     const publicRender = renderShare('/s/unknown-tok');
     await waitFor(() => {
-      expect(publicRender.container.textContent).not.toBe('');
+      expect(publicRender.container.textContent).toContain('This link is unavailable.');
     });
     const publicBody = publicRender.container.innerHTML;
     publicRender.unmount();
@@ -399,7 +399,7 @@ describe('SharePage — internal tier (/shared/:id)', () => {
     stubFetch({ dataStatus: 401 });
     const internalRender = renderShare('/shared/foreign-id');
     await waitFor(() => {
-      expect(internalRender.container.textContent).not.toBe('');
+      expect(internalRender.container.textContent).toContain('This link is unavailable.');
     });
     const internalBody = internalRender.container.innerHTML;
 

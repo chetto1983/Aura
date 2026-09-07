@@ -45,8 +45,8 @@ vi.mock('../settings/SettingsWorkspace', () => ({
   ),
 }));
 
-vi.mock('../documents/DocumentsWorkspace', () => ({
-  default: () => <div>Document library</div>,
+vi.mock('../files/FilesWorkspace', () => ({
+  default: () => <section aria-label="Documents">Document library</section>,
 }));
 
 vi.mock('../graph/GraphExplorer', () => ({
