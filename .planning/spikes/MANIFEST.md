@@ -2,6 +2,11 @@
 
 ## Current investigation
 
+Spike 104, `agent-controls-and-grounded-results`: continues the full industrial
+multi-agent goal after spike 103. It covers direct child controls, lifecycle receipts,
+nested control visibility and evidence-backed final answers.
+[104 README](104-agent-controls-and-grounded-results/README.md). Status: in progress.
+
 Spike 103, `agent-runtime-correctness`: requested 2026-09-07, narrowed to multi-agent
 execution and live worker UI. Reference: LibreChat `f9f1b2fb` and assistant-ui's
 `/docs/tools/multi-agent`. Evidence and open checks:

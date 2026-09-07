@@ -1,0 +1,77 @@
+# Industrial multi-agent controls and grounded results
+
+Status: in progress. Goal: **MAKE AURA MULTIAGENT INDUSTRIAL FULLY VALIDATE E2E**.
+This continues spike 103; its passing runtime tests do not close the full goal.
+
+## Evidence and references
+
+- Spike 103 records real execution, pause/resume, repeated delegation, changed context,
+  failure isolation, parent steering, nested invocation identity, pane reload and SIGKILL
+  recovery. Commit `8b1c502ee` passed all 25 CI jobs and the separate workflows.
+- Live MCP baseline on 2026-09-08 in conversation
+  `01a07e05-4f05-7ba0-ab54-0b133ab83398`: both `w1-3e1331da` and `w2-4c9e8aae`
+  were actually running. The selected pane had zero inputs and only its close button.
+  No direct child steering or stop was available.
+- N01 in spike 103 returned a premature fabricated root summary before the authentic
+  reports arrived. Correct arithmetic and later reports do not make that claim true.
+- LibreChat clone `f9f1b2fb`, `packages/api/src/agents/control.ts`,
+  `background.ts`, `subagentTaskRouting.ts`, and
+  `client/src/components/Chat/Subagents/SubagentActivity.tsx`: owner/parent checks,
+  invocation fingerprints, separate accepted/applied/rejected receipts, terminal-state
+  refusals and explicit owner-unavailable outcomes. Its descriptions explicitly say
+  live controls do not survive executor-process restart; this is not a durability claim
+  to copy silently into Aura's durable job queue.
+- assistant-ui's documented `ReadonlyThreadProvider` remains the transcript runtime.
+  Reuse Aura's existing run steering/cancel client and native status stream rather than
+  create a second chat runtime or parallel wire protocol.
+
+## Existing substrate and implementation direction
+
+`agui.RunRegistry` already owns run identity, owner scoping, cancellation and terminal
+cleanup. Its discovery key currently assumes one parent run per conversation; children
+must get their own keys without replacing parent discovery. Both `/agent/runs/{runID}/steer`
+and `/cancel` already use the native HTTP operation registry and idempotency keys.
+
+`steer.PostgresStore` is the sole durable inbox. Add explicit worker/run targeting while
+preserving the existing parent Push/Drain contract. A worker correction must never be
+drained by its parent, sibling or later incarnation. Receipts must distinguish acceptance,
+actual application, rejection and unavailable owners. Cancellation must be a terminal
+`canceled` outcome, not a generic worker failure eligible for retry. Preserve the queue's
+lease fence and existing report-delivery checkpoint.
+
+The status stream already enumerates owned child transcripts. Extend its host-authored
+metadata so active nested children can be discovered, identified and controlled while
+their parent's synchronous tool call is still pending. Preserve parent/child attribution.
+
+The completion guard must use observed delegation state and reports. A stronger prompt
+alone is insufficient. It must still allow the parent to acknowledge a handoff and do
+independent work; it must not solve premature summaries by blocking all parent progress.
+
+Primary targets: `internal/agui/runregistry*`, `runsession*`, run control handlers and
+worker status streams; `internal/steer`; `internal/swarm`; `internal/agent` completion
+and worker context; `cmd/aura/serve_delegation*` and composition; existing SQL queries
+and the next migration slot measured at landing; `web/src/chat/workers` and EN/IT copy.
+Do not edit the concurrent phase 1 sandbox/provisioning work.
+
+## Required evidence before closing the goal
+
+| Requirement | Required proof | Current state |
+| --- | --- | --- |
+| All spike 103 regressions remain fixed | Native tests, live transcript/tool audit and CI | Prior checkpoint passed; revalidate changed surfaces |
+| Steer a live child | MCP correction during a real tool; final output follows it | Missing |
+| Sibling and parent isolation | Their inputs, executions and results stay unchanged | Missing for child controls |
+| FIFO and exact logical retry | Multiple corrections; one idempotency key never applies twice | Missing for child controls |
+| Control receipts | Accepted and applied are distinct, visible after reload | Missing |
+| Stop a live child | Prompt cancellation, terminal canceled report, no retry | Missing |
+| Stop lifecycle races | Completion, queued/paused work and accepted controls resolve honestly | Missing |
+| Nested control and visibility | Discover/control a live grandchild; preserve siblings and ancestry | Missing |
+| Ownership and input bounds | Real scoped API denies foreign/malformed/stale targets and oversized input | Missing for child controls |
+| Restart and control settlement | No silent application to a new incarnation; completed/canceled work is not retried as failure | Missing for controls |
+| Grounded final answers | Delayed unpredictable outputs match actual reports; no fabricated IDs or premature success | Failed baseline |
+| Failure and hostile report data | Honest partial results; report text cannot become operator authority | Prior trust framing passed; broaden final-answer proof |
+| Desktop/mobile and EN/IT | MCP controls, keyboard, reload and readable status on both layouts | Missing for new controls |
+| Quality gates | vet/build/test/race, disposable full coverage >=85%, mutation >=70%, all CI green | Required after implementation |
+| Delivery | Frequent atomic commits, push, healthy updated container and memory MCP evidence | Ongoing |
+
+Every row needs authoritative evidence. A passing subset or a model's self-reported
+success must not be used to mark the goal complete.

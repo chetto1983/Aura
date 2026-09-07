@@ -413,6 +413,16 @@ Agent jobs use the common runtime and one model/budget snapshot. Claims and noti
 intent preserve their transaction boundary. Delivery retry does not rerun completed
 model/tool work. Multi-goal enqueue is atomic for the identity.
 
+The live 2026-09-08 MCP inspection found no child controls while two real workers were
+running (spike 104). Operators must be able to steer and stop an individual worker,
+including a nested worker, without redirecting its parent or siblings. Controls belong
+to a particular execution, use the existing owner-scoped run and idempotency rails, and
+distinguish acceptance from application. Operator cancellation is a terminal outcome,
+not a retryable failure. Stale targets and interrupted owners must be reported honestly;
+a later incarnation must not silently consume a previous one's corrections. The worker
+transcript remains on assistant-ui's native read-only runtime, with localized controls
+and receipt state around it. Spike 104 carries the closing evidence matrix.
+
 Each fan-out and worker queue key belongs to the trusted `swarm_spawn` operation:
 retrying that operation preserves its identities; a new turn or model round, including
 changed shared context, creates new workers. On 2026-09-07 the live cockpit reproduced
