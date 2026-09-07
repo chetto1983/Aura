@@ -92,6 +92,7 @@ Written for someone who has never read this codebase. The current `docs/` tree i
 - [ ] **DOC-05**: A troubleshooting guide covers the failures an operator will actually meet, each with the symptom, how to confirm it, and how to fix it
 - [ ] **DOC-06**: The environment catalog is complete and honest — 338 `AURA_*` keys exist in the code today against roughly 60 documented; every key an operator must set is documented, and the rest are discoverable
 - [ ] **DOC-07**: README's quick start is verified by following it on a clean machine, not by reading it
+- [ ] **DOC-08**: Every `amendment #N` reference in the repo resolves. `2079e2fa7` consolidated `prd.md` from 12,739 lines to 554 and dropped all 198 numbered amendments; 344 files still cite one, including code comments that explain why the code is shaped as it is (`internal/skills/writer.go` #97, `internal/llm/config.go` #54, `cmd/aura/skills_roots.go` #214) and CLAUDE.md's own rules (#177, #203). Either an index maps each number to the commit that carries it, or the citations are rewritten — silence is not an option, because the reference reads as live
 
 ## v2 Requirements
 
@@ -126,9 +127,9 @@ Filled during roadmap creation.
 | — | — | Pending |
 
 **Coverage:**
-- v1 requirements: 46 total
+- v1 requirements: 47 total
 - Mapped to phases: 0
-- Unmapped: 46 ⚠️
+- Unmapped: 47 ⚠️
 
 ---
 *Requirements defined: 2026-09-07*
