@@ -138,10 +138,7 @@ export function AppShell() {
   // ShareModal via the conditional-mount idiom, gated on shareModalState.
   const { shareModalState, openShare, closeShare } = useSharePanel();
 
-  const { onArtifact: handleArtifact, onScheduler: handleScheduler } = useRunSignals(
-    activeThreadId,
-    openArtifacts,
-  );
+  const { onArtifact: handleArtifact } = useRunSignals(activeThreadId, openArtifacts);
 
   useEffect(() => {
     if (searchParams.get('onboarding') !== '1' || autoOpenedOnboarding.current) return;
@@ -387,7 +384,6 @@ export function AppShell() {
               onUsageBaseline={acceptUsageBaseline}
               allocateUsageRunId={allocateUsageRunId}
               onArtifact={handleArtifact}
-              onScheduler={handleScheduler}
               draftPrompt={composerDraftPrompt}
               onDraftPromptConsumed={consumeComposerDraft}
               onRequestDraftPrompt={requestComposerDraft}

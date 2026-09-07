@@ -1,12 +1,16 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useRef } from 'react';
-import { SCHEDULER_QUERY_KEY } from '../governance/useSchedulerMutations';
 
 /**
  * useRunSignals turns the named CUSTOM frames a run emits into the cache invalidations the
  * surfaces beside the conversation need. It is the one place that knows which frame touches
  * which query, so a new signal is a line here rather than another block in AppShell — which is
  * how AppShell reached its 600-LOC cap.
+ *
+ * An aura.scheduler signal lived here briefly and was removed once it was measured: the cockpit
+ * is one route whose surfaces are mutually exclusive, so the governance board is never mounted
+ * while a run streams to the same tab, and a run in one tab reaches no board in another. What
+ * carries a board left open in a second tab is SchedulerBoard's own refetchOnWindowFocus.
  *
  * Each handler is deliberately narrow: the frame carries the FACT that something changed, and
  * the surface refetches through its own authenticated route. Rendering payload from a chat
@@ -29,18 +33,5 @@ export function useRunSignals(activeThreadId: string, openArtifacts: () => void)
     openArtifacts();
   }, [activeThreadId, queryClient, openArtifacts]);
 
-  // A run that emits `aura.scheduler` changed the schedule, so the governance board must reread
-  // itself. It needs no threadId, unlike the artifact twin: a schedule belongs to the identity,
-  // not to the conversation that happened to create it.
-  //
-  // KNOWN LIMIT, measured 2026-09-07 rather than assumed: the cockpit is one route whose
-  // surfaces are mutually exclusive (AppShell renders chat OR governance), so the board is
-  // never mounted while a run streams to the same tab, and a run in one tab reaches no board in
-  // another. This invalidation therefore has no consumer anybody has named yet. The mechanism
-  // that does carry a second tab is SchedulerBoard's own refetchOnWindowFocus.
-  const onScheduler = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: SCHEDULER_QUERY_KEY });
-  }, [queryClient]);
-
-  return { onArtifact, onScheduler };
+  return { onArtifact };
 }

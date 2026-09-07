@@ -8,7 +8,6 @@ import {
   readSSEFrames,
   reduceFrame,
   SSE_REQUEST_HEADERS,
-  isSchedulerChange,
   steerNoticeValue,
   toThreadMessage,
   type AssistantTurnState,
@@ -56,10 +55,6 @@ export interface AttachRunOptions {
   /** Fires once per `aura.steer` frame — the reattach pump's half of the mid-turn redirect
    *  echo (amendment #132, STEER-03), mirroring StreamRunOptions.onSteer exactly. */
   readonly onSteer?: (notice: SteerNotice) => void;
-  /** Mirrors StreamRunOptions.onScheduler — the schedule-changed signal. A detached run is the
-   *  default posture (AURA_AGUI_RUN_DETACH), so a board that only learned from the live pump
-   *  would stay stale for exactly the runs most likely to schedule something. */
-  readonly onScheduler?: () => void;
   readonly newId?: () => string;
   readonly maxRetries?: number;
   readonly backoffBaseMs?: number;
@@ -79,7 +74,6 @@ interface EngineOptions {
   readonly onUpdate: (message: ThreadMessageLike, usage: TurnUsage | undefined) => void;
   readonly onArtifact?: ((assetId: string | undefined) => void) | undefined;
   readonly onSteer?: ((notice: SteerNotice) => void) | undefined;
-  readonly onScheduler?: (() => void) | undefined;
   readonly onRunId?: ((runId: string) => void) | undefined;
   readonly onSnapshotReplace?: ((messages: ThreadMessageLike[]) => void) | undefined;
   readonly onTerminal?: (() => void) | undefined;
@@ -111,7 +105,6 @@ function makeEngine(state: AssistantTurnState, opts: EngineOptions): ResumeEngin
     onUpdate: opts.onUpdate,
     onArtifact: opts.onArtifact,
     onSteer: opts.onSteer,
-    onScheduler: opts.onScheduler,
     onRunId: opts.onRunId,
     onSnapshotReplace: opts.onSnapshotReplace,
     onTerminal: opts.onTerminal,
@@ -179,7 +172,6 @@ async function pumpBody(
     if (artifact !== null) eng.onArtifact?.(artifact.asset_id);
     const steer = steerNoticeValue(frame);
     if (steer !== null) eng.onSteer?.(steer);
-    if (isSchedulerChange(frame)) eng.onScheduler?.();
     if ((frame.type === 'RUN_FINISHED' || frame.type === 'RUN_ERROR') && !eng.terminal) {
       eng.terminal = true;
       eng.onTerminal?.();

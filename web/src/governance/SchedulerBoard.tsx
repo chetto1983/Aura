@@ -77,10 +77,12 @@ export function SchedulerBoard() {
     queryKey: SCHEDULER_QUERY_KEY,
     queryFn: fetchSchedulerTasks,
     retry: false,
-    // The aura.scheduler frame covers a change made in the run THIS tab is watching. A task
-    // created from Telegram, from the CLI, or on another device emits nothing here, so a board
-    // left open would stay frozen forever. The app-wide default in queryClient.ts stays false:
-    // this widens one query, not the SPA's policy.
+    // A board left open in its own tab hears nothing: the cockpit is one route whose surfaces
+    // are mutually exclusive, so a run streams to the tab holding the conversation and never to
+    // this one. Without this the board would stay frozen on whatever it fetched when it mounted
+    // — measured 2026-09-07, a reminder created in chat was in Postgres, fired, delivered on
+    // Telegram, and the board beside it never learned. The app-wide default in queryClient.ts
+    // stays false: this widens ONE query, not the SPA's policy.
     refetchOnWindowFocus: true,
   });
 

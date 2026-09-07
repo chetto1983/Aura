@@ -144,20 +144,6 @@ export function steerNoticeValue(frame: AguiFrame): SteerNotice | null {
 }
 
 /**
- * Report whether this frame is the `aura.scheduler` signal: the run CHANGED the schedule, so a
- * governance board must reread itself. The twin of artifactDescriptorValue and
- * steerNoticeValue, and exported for the same reason — streamSSE here and the resilient pump in
- * ./sseResume both need it, and two spellings of one wire name is how one of them goes quiet.
- *
- * It narrows nothing out of the value: the frame carries the fact, and the board refetches
- * through its own authenticated route rather than rendering task rows delivered over a chat
- * stream.
- */
-export function isSchedulerChange(frame: AguiFrame): boolean {
-  return frame.type === 'CUSTOM' && frame.name === 'aura.scheduler';
-}
-
-/**
  * Apply one frame to the turn state, mutating in place. Returns the same state
  * for chaining/readability. Unknown / ignored frame types are no-ops.
  *
@@ -430,13 +416,6 @@ export interface StreamRunOptions {
   /** Fires once per `aura.steer` frame (amendment #132, STEER-03) — the mid-turn redirect
    *  echo, from the PUMP, never from reduceFrame. Drives the cockpit's SteerNotice. */
   readonly onSteer?: (notice: SteerNotice) => void;
-  /**
-   * Fires once per `aura.scheduler` frame: the run CHANGED the schedule, so a governance
-   * board must reread itself. It takes no argument on purpose — the frame carries the fact
-   * and the board refetches through its own authenticated route, because a chat frame
-   * carrying task rows would leak one surface's authorization into another's.
-   */
-  readonly onScheduler?: () => void;
   /** Mints the assistant message id; defaults to crypto.randomUUID. */
   readonly newId?: () => string;
 }
@@ -452,8 +431,6 @@ export interface StreamPostOptions {
   readonly onArtifact?: (assetId: string | undefined) => void;
   /** Mirrors StreamRunOptions.onSteer — the mid-turn redirect echo. */
   readonly onSteer?: (notice: SteerNotice) => void;
-  /** Mirrors StreamRunOptions.onScheduler — the schedule-changed signal. */
-  readonly onScheduler?: () => void;
   readonly newId?: () => string;
 }
 
@@ -467,7 +444,6 @@ interface StreamSSEOptions {
   readonly onUpdate: (message: ThreadMessageLike, usage: TurnUsage | undefined) => void;
   readonly onArtifact?: ((assetId: string | undefined) => void) | undefined;
   readonly onSteer?: ((notice: SteerNotice) => void) | undefined;
-  readonly onScheduler?: (() => void) | undefined;
   readonly newId?: (() => string) | undefined;
 }
 
@@ -495,9 +471,6 @@ async function streamSSE(opts: StreamSSEOptions): Promise<TurnUsage | undefined>
     if (artifact !== null) opts.onArtifact?.(artifact.asset_id);
     const steer = steerNoticeValue(frame);
     if (steer !== null) opts.onSteer?.(steer);
-    // The schedule-changed signal is a pure notification: no value is narrowed out of the
-    // frame because nothing downstream renders it — the board refetches on its own route.
-    if (isSchedulerChange(frame)) opts.onScheduler?.();
     opts.onUpdate(toThreadMessage(state), state.usage);
   }
   return state.usage;
@@ -515,7 +488,6 @@ export async function streamPost(opts: StreamPostOptions): Promise<TurnUsage | u
     onUpdate: opts.onUpdate,
     onArtifact: opts.onArtifact,
     onSteer: opts.onSteer,
-    onScheduler: opts.onScheduler,
     request: () => [
       opts.url,
       {
@@ -541,7 +513,6 @@ export async function streamRun(opts: StreamRunOptions): Promise<TurnUsage | und
     onUpdate: opts.onUpdate,
     onArtifact: opts.onArtifact,
     onSteer: opts.onSteer,
-    onScheduler: opts.onScheduler,
     request: (id) => [
       '/agent/run',
       {

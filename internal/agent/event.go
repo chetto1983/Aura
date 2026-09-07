@@ -94,18 +94,6 @@ type Actions struct {
 	// retry, so live token-by-token streaming on the common no-retry path is
 	// untouched (no buffering). Omitted on the wire unless set.
 	DiscardStreamed bool `json:"discard_streamed,omitempty"`
-	// SchedulerDelta says a run CHANGED THE SCHEDULE, so a surface showing the task
-	// list must reread it. Untyped map for the same reason ArtifactDelta is: it is a
-	// channel-agnostic wire payload, not a persisted type, and the board refetches from
-	// its own authenticated route rather than rendering whatever rides here.
-	//
-	// It exists because the cockpit had no way to learn: queryClient sets
-	// refetchOnWindowFocus:false for the whole SPA and the scheduler query is invalidated
-	// only by a cockpit approve/run/cancel, so a reminder created IN CHAT reached
-	// Postgres, fired, delivered on Telegram, and never appeared on the board beside the
-	// conversation that made it (measured 2026-09-07). Set only on the actions that
-	// MUTATE — a list or a read leaves it nil and the event stream is unchanged.
-	SchedulerDelta map[string]any `json:"scheduler_delta,omitempty"`
 	// SteerDelta echoes a mid-turn operator redirect drainSteer just delivered
 	// (52-02-PLAN.md). Untyped map, same rationale as ArtifactDelta/ViewDelta:
 	// the shape is a channel-agnostic wire payload for the aura.steer CUSTOM

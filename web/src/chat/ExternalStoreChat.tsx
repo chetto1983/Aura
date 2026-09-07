@@ -71,13 +71,6 @@ export interface ExternalStoreChatProps {
    * one-time Artefatti panel auto-open (D-11). Forwarded into streamRun/streamPost.
    */
   readonly onArtifact?: (assetId: string | undefined) => void;
-  /**
-   * Fires when a run emits `aura.scheduler`: it CHANGED the schedule, so AppShell invalidates
-   * the governance board's query. Without it the board is a snapshot taken at mount — a
-   * reminder created in chat reached Postgres, fired, delivered on Telegram, and never showed
-   * up on the board beside the conversation that created it (measured 2026-09-07).
-   */
-  readonly onScheduler?: () => void;
   readonly draftPrompt?: ComposerDraftPrompt | undefined;
   readonly onDraftPromptConsumed?: (nonce: number) => void;
   readonly onRequestDraftPrompt?: (text: string) => void;
@@ -91,7 +84,6 @@ export function ExternalStoreChat({
   onUsageBaseline,
   allocateUsageRunId,
   onArtifact,
-  onScheduler,
   draftPrompt,
   onDraftPromptConsumed,
   onRequestDraftPrompt = ignoreDraftPrompt,
@@ -234,7 +226,6 @@ export function ExternalStoreChat({
           },
           onSnapshotReplace: setMessages,
           ...(onArtifact !== undefined ? { onArtifact } : {}),
-          ...(onScheduler !== undefined ? { onScheduler } : {}),
           onSteer: steer.onFrame,
           onUpdate: (assistant, usage) => {
             usageLifecycle.update(usageRunId, usage);
@@ -278,7 +269,6 @@ export function ExternalStoreChat({
       onEnsureThread,
       usageLifecycle,
       onArtifact,
-      onScheduler,
       invalidateRuntimeReads,
       t,
       attachments,
@@ -420,7 +410,6 @@ export function ExternalStoreChat({
     prepareUsageBaseline,
     invalidateRuntimeReads,
     onArtifact,
-    onScheduler,
     streamErrorText: t('chat.error.stream'),
   });
 
@@ -440,7 +429,6 @@ export function ExternalStoreChat({
     foldAppendedStream,
     setMessages,
     onArtifact,
-    onScheduler,
     onSteer: steer.onFrame,
   });
 

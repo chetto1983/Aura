@@ -36,8 +36,6 @@ export interface StreamFoldDeps {
   ) => Promise<boolean>;
   readonly invalidateRuntimeReads: (id?: string) => void;
   readonly onArtifact?: ((assetId: string | undefined) => void) | undefined;
-  /** The schedule-changed signal; see ExternalStoreChatProps.onScheduler. */
-  readonly onScheduler?: (() => void) | undefined;
   /** The message shown in place of the assistant turn when the stream fails. */
   readonly streamErrorText: string;
 }
@@ -72,7 +70,6 @@ export function useStreamFolds(deps: StreamFoldDeps): StreamFolds {
     prepareUsageBaseline,
     invalidateRuntimeReads,
     onArtifact,
-    onScheduler,
     streamErrorText,
   } = deps;
 
@@ -119,7 +116,6 @@ export function useStreamFolds(deps: StreamFoldDeps): StreamFolds {
           body,
           signal: controller.signal,
           ...(onArtifact !== undefined ? { onArtifact } : {}),
-          ...(onScheduler !== undefined ? { onScheduler } : {}),
           onUpdate: (assistant, usage) => {
             usageLifecycle.update(usageRunId, usage);
             setMessages([...base, assistant]);
@@ -137,7 +133,6 @@ export function useStreamFolds(deps: StreamFoldDeps): StreamFolds {
       beginRun,
       endRun,
       onArtifact,
-      onScheduler,
       prepareUsageBaseline,
       setMessages,
       streamErrorText,
