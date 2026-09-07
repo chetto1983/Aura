@@ -133,6 +133,8 @@ var trustedRecipeActions = map[string]map[string]MCPActionClass{
 	// turn an explicit memory operation into a second confirmation loop.
 	mcp.SourceRecipeMemory: {
 		"graph_schema":          MCPActionRead,
+		"graph_diagnostics":     MCPActionRead,
+		"graph_path":            MCPActionRead,
 		"memory_recall":         MCPActionRead,
 		"memory_search":         MCPActionRead,
 		"memory_entities":       MCPActionRead,

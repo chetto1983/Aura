@@ -54,6 +54,7 @@ type MemoryLimits struct {
 	LexicalMinScore      float64
 	MinRelevance         float64
 	MentionHubShare      float64
+	GraphMaxRecords      int
 }
 
 var defaultMemoryLimits = MemoryLimits{
@@ -61,6 +62,7 @@ var defaultMemoryLimits = MemoryLimits{
 	PredicateRunes: 100, SourceRunIDRunes: 100, SourceMemoryIDRunes: 100,
 	SourceMemoryIDs: 64, Results: 100, DigestFactsPerEntity: 20,
 	MaintenanceBatch: 100, DigestScan: 2000, HybridCandidates: 400,
+	GraphMaxRecords: 10000,
 	// 0.72 is the midpoint of a measured separation band, not a guess. On a live
 	// 102-fact memory (2026-09-02) the nearest neighbour for a question the memory
 	// COULD answer sat at 0.514 and 0.667; for one it could not ("ricetta della
@@ -93,6 +95,7 @@ func (limits MemoryLimits) normalized() MemoryLimits {
 	limits.MaintenanceBatch = defaultLimit(limits.MaintenanceBatch, defaultMemoryLimits.MaintenanceBatch)
 	limits.DigestScan = defaultLimit(limits.DigestScan, defaultMemoryLimits.DigestScan)
 	limits.HybridCandidates = defaultLimit(limits.HybridCandidates, defaultMemoryLimits.HybridCandidates)
+	limits.GraphMaxRecords = defaultLimit(limits.GraphMaxRecords, defaultMemoryLimits.GraphMaxRecords)
 	limits.DenseMaxDistance = defaultFloatLimit(limits.DenseMaxDistance, defaultMemoryLimits.DenseMaxDistance)
 	limits.LexicalMinScore = defaultFloatLimit(limits.LexicalMinScore, defaultMemoryLimits.LexicalMinScore)
 	limits.MinRelevance = defaultFloatLimit(limits.MinRelevance, defaultMemoryLimits.MinRelevance)
@@ -125,6 +128,7 @@ func (limits MemoryLimits) validate() error {
 		{"source memory ids", limits.SourceMemoryIDs}, {"results", limits.Results},
 		{"digest facts per entity", limits.DigestFactsPerEntity}, {"maintenance batch", limits.MaintenanceBatch},
 		{"digest scan", limits.DigestScan}, {"hybrid candidates", limits.HybridCandidates},
+		{"graph records", limits.GraphMaxRecords},
 	}
 	for _, limit := range integers {
 		if limit.value < 0 {

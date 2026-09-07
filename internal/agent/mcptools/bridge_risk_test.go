@@ -122,6 +122,7 @@ func TestTrustedRecipeRiskPolicyIsGraduated(t *testing.T) {
 func TestMemoryRecipeCoversEveryServedTool(t *testing.T) {
 	t.Parallel()
 	served := []string{
+		"graph_diagnostics", "graph_path",
 		"graph_schema", "memory_batch", "memory_digest", "memory_entities", "memory_facts_about", "memory_forget",
 		"memory_merge_entities", "memory_recall", "memory_reembed", "memory_search", "memory_upsert_fact",
 	}
@@ -464,6 +465,8 @@ func TestMCPToolRiskRecipeTablesUnchanged(t *testing.T) {
 		},
 		mcp.SourceRecipeMemory: {
 			"graph_schema":          {false, false},
+			"graph_diagnostics":     {false, false},
+			"graph_path":            {false, false},
 			"memory_batch":          {true, false},
 			"memory_recall":         {false, false},
 			"memory_search":         {false, false},

@@ -4,6 +4,503 @@
       "idempotentHint": false,
       "readOnlyHint": true
     },
+    "description": "Read native graph summary, connected components, degree and k-core for memory entities. Choose facts, mentions or combined. Stored topology includes all validity windows; this is not current truth or personal importance. Node details are limited; totals cover the bounded graph.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "as_of": {
+          "description": "not supported: topology includes all stored validity windows",
+          "type": "string"
+        },
+        "limit": {
+          "description": "maximum node details returned, 1 to 100; default 20",
+          "type": "integer"
+        },
+        "relations": {
+          "description": "facts (default), mentions, or combined",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "graph_diagnostics",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "component_sizes": {
+          "items": {
+            "type": "integer"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "core_histogram": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "edge_count": {
+          "type": "integer"
+        },
+        "isolated_nodes": {
+          "type": "integer"
+        },
+        "node_count": {
+          "type": "integer"
+        },
+        "nodes": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "component": {
+                "type": "integer"
+              },
+              "core_number": {
+                "type": "integer"
+              },
+              "degree": {
+                "type": "integer"
+              },
+              "in_degree": {
+                "type": "integer"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "out_degree": {
+                "type": "integer"
+              },
+              "rid": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "rid",
+              "name",
+              "type",
+              "in_degree",
+              "out_degree",
+              "degree",
+              "core_number",
+              "component"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "relations": {
+          "type": "string"
+        },
+        "semantics": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "zero_out_degree": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "semantics",
+        "relations",
+        "node_count",
+        "edge_count",
+        "isolated_nodes",
+        "zero_out_degree",
+        "component_sizes",
+        "core_histogram",
+        "nodes",
+        "truncated"
+      ],
+      "type": "object"
+    },
+    "title": "Memory graph diagnostics"
+  },
+  {
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Find a native shortest path between two exact entity names, bounded to 1..6 hops. Only FACT and/or MENTIONS are followed. Returns original edge direction, fact sources and validity windows. Stored topology is not an as_of projection: a connection is not proof of current truth or causality. MENTIONS carries its supporting_fact or support_missing; a mention is not itself a fact.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "as_of": {
+          "description": "not supported: topology includes all stored validity windows",
+          "type": "string"
+        },
+        "direction": {
+          "description": "BOTH (default), OUT, or IN",
+          "type": "string"
+        },
+        "max_depth": {
+          "description": "maximum hops, 1 to 6; default 3",
+          "type": "integer"
+        },
+        "relations": {
+          "description": "facts (default), mentions, or combined",
+          "type": "string"
+        },
+        "source": {
+          "description": "exact starting entity name",
+          "type": "string"
+        },
+        "target": {
+          "description": "exact destination entity name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "target"
+      ],
+      "type": "object"
+    },
+    "name": "graph_path",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "type": "string"
+        },
+        "edges": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "fact": {
+                "additionalProperties": false,
+                "properties": {
+                  "fact_key": {
+                    "type": "string"
+                  },
+                  "object": {
+                    "type": "string"
+                  },
+                  "object_kind": {
+                    "type": "string"
+                  },
+                  "predicate": {
+                    "type": "string"
+                  },
+                  "sources": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "captures": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "confidence": {
+                                "type": "number"
+                              },
+                              "conversation_id": {
+                                "type": "string"
+                              },
+                              "idempotency_key": {
+                                "type": "string"
+                              },
+                              "observed_at": {
+                                "type": "string"
+                              },
+                              "source_kind": {
+                                "type": "string"
+                              },
+                              "source_refs": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": [
+                                  "null",
+                                  "array"
+                                ]
+                              },
+                              "tool_call_id": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "idempotency_key",
+                              "source_kind",
+                              "source_refs",
+                              "conversation_id",
+                              "tool_call_id",
+                              "observed_at",
+                              "confidence"
+                            ],
+                            "type": "object"
+                          },
+                          "type": [
+                            "null",
+                            "array"
+                          ]
+                        },
+                        "memory_ids": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": [
+                            "null",
+                            "array"
+                          ]
+                        },
+                        "run_id": {
+                          "type": "string"
+                        },
+                        "writer_role": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "run_id",
+                        "memory_ids"
+                      ],
+                      "type": "object"
+                    },
+                    "type": [
+                      "null",
+                      "array"
+                    ]
+                  },
+                  "statement": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "subject_kind": {
+                    "type": "string"
+                  },
+                  "valid_from": {
+                    "type": "string"
+                  },
+                  "valid_to": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "statement",
+                  "predicate",
+                  "subject",
+                  "object",
+                  "valid_from",
+                  "sources"
+                ],
+                "type": [
+                  "null",
+                  "object"
+                ]
+              },
+              "fact_key": {
+                "type": "string"
+              },
+              "from": {
+                "type": "string"
+              },
+              "rid": {
+                "type": "string"
+              },
+              "support_missing": {
+                "type": "boolean"
+              },
+              "supporting_fact": {
+                "additionalProperties": false,
+                "properties": {
+                  "fact_key": {
+                    "type": "string"
+                  },
+                  "object": {
+                    "type": "string"
+                  },
+                  "object_kind": {
+                    "type": "string"
+                  },
+                  "predicate": {
+                    "type": "string"
+                  },
+                  "sources": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "captures": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "confidence": {
+                                "type": "number"
+                              },
+                              "conversation_id": {
+                                "type": "string"
+                              },
+                              "idempotency_key": {
+                                "type": "string"
+                              },
+                              "observed_at": {
+                                "type": "string"
+                              },
+                              "source_kind": {
+                                "type": "string"
+                              },
+                              "source_refs": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": [
+                                  "null",
+                                  "array"
+                                ]
+                              },
+                              "tool_call_id": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "idempotency_key",
+                              "source_kind",
+                              "source_refs",
+                              "conversation_id",
+                              "tool_call_id",
+                              "observed_at",
+                              "confidence"
+                            ],
+                            "type": "object"
+                          },
+                          "type": [
+                            "null",
+                            "array"
+                          ]
+                        },
+                        "memory_ids": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": [
+                            "null",
+                            "array"
+                          ]
+                        },
+                        "run_id": {
+                          "type": "string"
+                        },
+                        "writer_role": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "run_id",
+                        "memory_ids"
+                      ],
+                      "type": "object"
+                    },
+                    "type": [
+                      "null",
+                      "array"
+                    ]
+                  },
+                  "statement": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "subject_kind": {
+                    "type": "string"
+                  },
+                  "valid_from": {
+                    "type": "string"
+                  },
+                  "valid_to": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "statement",
+                  "predicate",
+                  "subject",
+                  "object",
+                  "valid_from",
+                  "sources"
+                ],
+                "type": [
+                  "null",
+                  "object"
+                ]
+              },
+              "to": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "rid",
+              "type",
+              "from",
+              "to"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "found": {
+          "type": "boolean"
+        },
+        "max_depth": {
+          "type": "integer"
+        },
+        "nodes": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "relations": {
+          "type": "string"
+        },
+        "semantics": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "semantics",
+        "relations",
+        "direction",
+        "max_depth",
+        "found",
+        "nodes",
+        "edges"
+      ],
+      "type": "object"
+    },
+    "title": "Memory entity connection"
+  },
+  {
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true
+    },
     "description": "List the vertex, edge and document types in the graph with their properties, indexes and live record counts. Call this before writing a query so the type and property names are the real ones.",
     "inputSchema": {
       "additionalProperties": false,

@@ -180,6 +180,7 @@ func newServer(tenants *tenants, now clock, operatorDisplayName string) *mcp.Ser
 		Version: serverVersion,
 	}, nil)
 	addGraphSchemaTool(server, tenants)
+	addMemoryGraphTools(server, tenants)
 	addMemoryUpsertFactTool(server, tenants, now, operatorDisplayName)
 	addMemoryBatchTool(server, tenants, now, operatorDisplayName)
 	addMemoryRecallTool(server, tenants)
@@ -246,6 +247,7 @@ func memoryLimitsFromEnv() (arcadedb.MemoryLimits, error) {
 		{"AURA_MEMORY_STATEMENT_MAX_RUNES", &limits.StatementRunes},
 		{"AURA_MEMORY_DIGEST_SCAN_MAX_COUNT", &limits.DigestScan},
 		{"AURA_MEMORY_HYBRID_CANDIDATE_MAX_COUNT", &limits.HybridCandidates},
+		{"AURA_MEMORY_GRAPH_MAX_RECORDS", &limits.GraphMaxRecords},
 	}
 	for _, item := range integers {
 		value, set, err := positiveIntEnv(item.key)

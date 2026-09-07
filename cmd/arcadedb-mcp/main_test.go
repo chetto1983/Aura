@@ -20,6 +20,7 @@ func setEnv(t *testing.T, pairs map[string]string) {
 		"AURA_MEMORY_QUERY_MAX_RUNES", "AURA_MEMORY_ENTITY_MAX_RUNES",
 		"AURA_MEMORY_STATEMENT_MAX_RUNES", "AURA_MEMORY_DIGEST_SCAN_MAX_COUNT",
 		"AURA_MEMORY_HYBRID_CANDIDATE_MAX_COUNT", "AURA_MEMORY_DENSE_MAX_DISTANCE_RATIO",
+		"AURA_MEMORY_GRAPH_MAX_RECORDS",
 		"AURA_MEMORY_LEXICAL_MIN_SCORE", "AURA_ARCADEDB_MCP_BODY_MAX_BYTES",
 	} {
 		t.Setenv(key, "")
@@ -93,6 +94,7 @@ func TestConfigFromEnvParsesMemoryLimits(t *testing.T) {
 		"AURA_MEMORY_STATEMENT_MAX_RUNES":        "2048",
 		"AURA_MEMORY_DIGEST_SCAN_MAX_COUNT":      "900",
 		"AURA_MEMORY_HYBRID_CANDIDATE_MAX_COUNT": "80",
+		"AURA_MEMORY_GRAPH_MAX_RECORDS":          "500",
 		"AURA_MEMORY_DENSE_MAX_DISTANCE_RATIO":   "0.42",
 		"AURA_MEMORY_LEXICAL_MIN_SCORE":          "3.5",
 	})
@@ -101,12 +103,13 @@ func TestConfigFromEnvParsesMemoryLimits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("configFromEnv: %v", err)
 	}
-	want := []float64{1024, 256, 2048, 900, 80, 0.42, 3.5}
+	want := []float64{1024, 256, 2048, 900, 80, 0.42, 3.5, 500}
 	got := []float64{
 		float64(cfg.MemoryLimits.QueryRunes), float64(cfg.MemoryLimits.EntityRunes),
 		float64(cfg.MemoryLimits.StatementRunes), float64(cfg.MemoryLimits.DigestScan),
 		float64(cfg.MemoryLimits.HybridCandidates), cfg.MemoryLimits.DenseMaxDistance,
 		cfg.MemoryLimits.LexicalMinScore,
+		float64(cfg.MemoryLimits.GraphMaxRecords),
 	}
 	for i := range want {
 		if got[i] != want[i] {
@@ -132,6 +135,7 @@ func TestConfigFromEnvRejectsBadNumbers(t *testing.T) {
 		"statement negative":   {"AURA_MEMORY_STATEMENT_MAX_RUNES": "-1"},
 		"digest zero":          {"AURA_MEMORY_DIGEST_SCAN_MAX_COUNT": "0"},
 		"candidate negative":   {"AURA_MEMORY_HYBRID_CANDIDATE_MAX_COUNT": "-4"},
+		"graph budget zero":    {"AURA_MEMORY_GRAPH_MAX_RECORDS": "0"},
 		"distance nan":         {"AURA_MEMORY_DENSE_MAX_DISTANCE_RATIO": "NaN"},
 		"lexical infinity":     {"AURA_MEMORY_LEXICAL_MIN_SCORE": "+Inf"},
 	}

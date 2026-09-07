@@ -12548,6 +12548,13 @@ Documentation: official graph-algorithms category pages and
 reference/cypher/cypher-compatibility. Runtime behavior takes precedence over the
 upstream main branch. These probes do not measure a retrieval improvement.
 
+Implementation verification: full ArcadeDB race/integration suite passes at
+86.6% statement coverage; official-SDK MCP graph tests pass on disposable
+identities. MENTIONS paths resolve their supporting facts or mark missing support.
+Direct use of graph_diagnostics/graph_path from the mounted Codex session is still
+pending a manifest reload. See `docs/memory-graph-validation.md`; do not substitute
+SDK fixture success for this last acceptance step or claim real-memory graph metrics.
+
 ## Section La libreria di casa era diventata di nessuno (Amendment #225, 2026-09-07)
 
 > **Amendment #225 (2026-09-07 — misurato sul deployment dell'operatore, riprodotto su
