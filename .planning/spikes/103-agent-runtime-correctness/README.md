@@ -194,3 +194,27 @@ navigation. The browser was restored to desktop size afterward.
 The post-localization checks passed after updating old copy assertions. Pre-push also
 found lint errors in the new test callbacks; commit `984c41703` adds proper callback
 types, async flushing and JSON encoding without changing production behavior.
+
+## Extended validation: nested delegation
+
+N01 baseline, 2026-09-07 21:02 UTC, container `9186b9ee8`: the temporary depth cap
+of 3 allowed a coordinator to spawn two grandchildren. In conversation
+`01a07d70-a80c-7be0-b748-ecadc8bfcfea`, coordinator `w1-fe190d77` reported 1024 and
+2187; sibling `w2-e3c60696` really executed Python and returned 1331. The grandchildren
+were named flat `w1` / `w2`. Their transcripts were incorrectly under the coordinator's
+flat session directory, and their shell calls ended with `reservation failed` (four
+failed attempts in `w1.jsonl`). There were no successful grandchild shell ledger rows.
+**N01 failed despite correct arithmetic in the final answer.**
+
+The agent tool dispatcher passes `sessionID` to `WithSwarmContext`, losing the root
+`ledgerConvID` at the next depth. Synchronous children also retain flat IDs across
+invocations and share their parent's operation context. The correction must reuse the
+existing trusted operation and delegation-key primitives to preserve origin and isolate
+workers. Regression checks cover origin, sibling operation scopes, distinct fresh
+invocations and stable retries; the live retest must prove actual tool execution.
+The default depth configuration was restored after the baseline.
+
+The previous release CI completed with only the two obsolete swarm-table browser
+assertions failing. Commit `8b28a38e3` matches the requested inline-card UI; its Chrome
+and mobile Chrome cases passed locally. No live LibreChat runtime is installed: its
+recursive `buildSubagentConfigs` and isolated child inputs remain source references.

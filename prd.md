@@ -426,6 +426,14 @@ Cross-channel delivery is explicit. Status includes elapsed time; terminal repor
 stalled/orphan states are distinct. The cockpit resets worker watches on conversation
 change and handles named terminal SSE events.
 
+The 2026-09-07 nested-delegation probe (depth cap temporarily raised to 3) returned
+correct numbers while every grandchild command was denied with `reservation failed`.
+The nested adapter received the parent's flat worker session instead of the originating
+conversation UUID. Every depth must retain that UUID for the gateway and transcript
+ownership, with separate worker identities and mutation scopes for each invocation.
+Correct final arithmetic alone does not establish successful delegated execution;
+spike 103 records the tool-level failure and requires successful grandchild audit rows.
+
 The 2026-09-07 cockpit inspection found worker activity hidden behind the collapsed
 spawn tool and its 64rem report table. Worker cards must therefore remain visible
 inline, outside settled-tool grouping, with responsive goals, real lifecycle status,
