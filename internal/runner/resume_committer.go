@@ -61,6 +61,9 @@ func (p *PoolResumeCommitter) CommitResume(ctx context.Context, claim ResumeClai
 		if err := p.pause.MarkResumedFencedTx(ctx, q, claim.Token, claim.Answer, claim.ExpectActionID); err != nil {
 			return err
 		}
+		if claim.OwningWorkerID != "" {
+			return nil
+		}
 		return p.appendAnswerTx(ctx, q, claim.Turn)
 	})
 }
@@ -91,6 +94,9 @@ func (p *PoolResumeCommitter) CommitResumeBatch(ctx context.Context, claims []Re
 			return err
 		}
 		for _, c := range ordered {
+			if c.OwningWorkerID != "" {
+				continue
+			}
 			if err := p.appendAnswerTx(ctx, q, c.Turn); err != nil {
 				return err
 			}
@@ -184,6 +190,9 @@ func (s *splitResumeCommitter) CommitResume(ctx context.Context, claim ResumeCla
 	if err := s.pause.MarkResumed(ctx, claim.Token, claim.Answer); err != nil {
 		return err
 	}
+	if claim.OwningWorkerID != "" {
+		return nil
+	}
 	return s.conv.AppendTurn(ctx, claim.Turn)
 }
 
@@ -199,6 +208,9 @@ func (s *splitResumeCommitter) CommitResumeBatch(ctx context.Context, claims []R
 		return err
 	}
 	for _, c := range claims {
+		if c.OwningWorkerID != "" {
+			continue
+		}
 		if err := s.conv.AppendTurn(ctx, c.Turn); err != nil {
 			return err
 		}

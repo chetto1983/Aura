@@ -114,6 +114,9 @@ type ResumeClaim struct {
 	Answer         askuser.ResumeAnswer
 	Turn           conversations.AppendTurnParams
 	ExpectActionID string
+	// A durable worker owns its tool transcript; its answer must not be appended
+	// as an orphan tool result to the originating parent conversation.
+	OwningWorkerID string
 }
 
 // ResumeCommitter is the narrow cross-store HITL-durability seam the Runner consumes

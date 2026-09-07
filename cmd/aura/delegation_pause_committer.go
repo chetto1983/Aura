@@ -16,6 +16,7 @@ import (
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/documents"
+	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/swarm"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -49,7 +50,15 @@ func newDelegationPauseCommitter(pool *pgxpool.Pool, pause *askuser.Store, jobs 
 // and this call) rolls the whole tx back — the pause is NEVER left orphaned without its
 // parked row, matching swarm.PauseAndPark's own documented contract.
 func (c *delegationPauseCommitter) OpenPauseAndPark(ctx context.Context, pause askuser.InsertParams, park documents.ParkAwaitingInputRequest) (bool, error) {
-	err := db.WithIdentityTx(ctx, c.pool, park.IdentityID, func(q *sqlc.Queries) error {
+	// Worker pauses bypass Runner.flushPause, but the same resume route requires
+	// a persisted host-authored decision policy before accepting any answer.
+	resumeContext, err := runner.ResumeContextWithDecisionPolicy(pause.ResumeContext,
+		[]string{askuser.ActionAccept, askuser.ActionDecline, askuser.ActionCancel})
+	if err != nil {
+		return false, err
+	}
+	pause.ResumeContext = resumeContext
+	err = db.WithIdentityTx(ctx, c.pool, park.IdentityID, func(q *sqlc.Queries) error {
 		if err := c.pause.InsertTx(ctx, q, pause); err != nil {
 			return err
 		}

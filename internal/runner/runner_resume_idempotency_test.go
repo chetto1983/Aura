@@ -18,7 +18,7 @@ func TestSubmitAnswerPreservesOriginalOperationThroughAtomicResume(t *testing.T)
 	convID := newConvID(t)
 	mustCreate(t, r, convID)
 	const token = "resume-token"
-	resumeContext, err := resumeContextWithDecisionPolicy(json.RawMessage(`{"type":"test"}`), allResumeDecisions())
+	resumeContext, err := ResumeContextWithDecisionPolicy(json.RawMessage(`{"type":"test"}`), allResumeDecisions())
 	if err != nil {
 		t.Fatal(err)
 	}

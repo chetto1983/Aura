@@ -298,6 +298,9 @@ func (r *Runner) injectCancelledAnswers(ctx context.Context, conversationID stri
 		return err
 	}
 	for _, p := range pendings {
+		if p.OwningWorkerID != "" {
+			continue
+		}
 		if err := r.injectAnswer(ctx, p, ResponseInput{Action: askuser.ActionCancel, Content: cancelledContent}); err != nil {
 			return err
 		}
@@ -338,7 +341,8 @@ func (r *Runner) resumeClaim(token string, pending askuser.Pending, resp Respons
 	turn := r.answerTurn(pending, resp)
 	answer := toResumeAnswer(resp)
 	answer.Content = turn.Content
-	return ResumeClaim{Token: token, Answer: answer, Turn: turn}
+	return ResumeClaim{Token: token, Answer: answer, Turn: turn,
+		ExpectActionID: pending.PendingActionID, OwningWorkerID: pending.OwningWorkerID}
 }
 
 // Stop terminates the conversation lifecycle (D-A1-06 / Req#11): it auto-resolves

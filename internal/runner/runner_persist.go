@@ -416,7 +416,7 @@ func (r *Runner) persistPause(ctx context.Context, tr *turnTracker, ai *agent.Aw
 	if err != nil {
 		return err
 	}
-	resumeContext, err := resumeContextWithDecisionPolicy(ai.ResumeContext, allResumeDecisions())
+	resumeContext, err := ResumeContextWithDecisionPolicy(ai.ResumeContext, allResumeDecisions())
 	if err != nil {
 		return fmt.Errorf("persist pause decision policy: %w", err)
 	}

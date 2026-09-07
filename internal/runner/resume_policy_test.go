@@ -47,12 +47,12 @@ func TestValidatePendingResumeDecisionReportsInvalidPersistedPolicy(t *testing.T
 }
 
 func TestResumeContextWithDecisionPolicy(t *testing.T) {
-	raw, err := resumeContextWithDecisionPolicy(
+	raw, err := ResumeContextWithDecisionPolicy(
 		json.RawMessage(`{"type":"scheduled","nonce":"keep"}`),
 		[]string{askuser.ActionCancel, askuser.ActionDecline, askuser.ActionDecline},
 	)
 	if err != nil {
-		t.Fatalf("resumeContextWithDecisionPolicy: %v", err)
+		t.Fatalf("ResumeContextWithDecisionPolicy: %v", err)
 	}
 	var got struct {
 		Type             string   `json:"type"`
@@ -71,10 +71,10 @@ func TestResumeContextWithDecisionPolicy(t *testing.T) {
 }
 
 func TestResumeContextWithDecisionPolicyRejectsInvalidInput(t *testing.T) {
-	if _, err := resumeContextWithDecisionPolicy(json.RawMessage(`[]`), allResumeDecisions()); err == nil {
+	if _, err := ResumeContextWithDecisionPolicy(json.RawMessage(`[]`), allResumeDecisions()); err == nil {
 		t.Fatal("non-object resume_context must be rejected at mint")
 	}
-	if _, err := resumeContextWithDecisionPolicy(nil, []string{"approve"}); err == nil {
+	if _, err := ResumeContextWithDecisionPolicy(nil, []string{"approve"}); err == nil {
 		t.Fatal("unknown decision must be rejected at mint")
 	}
 }

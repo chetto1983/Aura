@@ -19,10 +19,10 @@ func allResumeDecisions() []string {
 	return []string{askuser.ActionAccept, askuser.ActionDecline, askuser.ActionCancel}
 }
 
-// resumeContextWithDecisionPolicy records the server-authored per-pause policy in the
+// ResumeContextWithDecisionPolicy records the server-authored per-pause policy in the
 // existing resume_context object. The canonical action order makes persisted JSON stable,
 // while preserving every caller-owned context field used by resume hooks.
-func resumeContextWithDecisionPolicy(raw json.RawMessage, allowed []string) (json.RawMessage, error) {
+func ResumeContextWithDecisionPolicy(raw json.RawMessage, allowed []string) (json.RawMessage, error) {
 	normalized, err := normalizeAllowedDecisions(allowed)
 	if err != nil {
 		return nil, err

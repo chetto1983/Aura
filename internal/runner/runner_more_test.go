@@ -121,7 +121,7 @@ func TestSubmitAnswer_RunsResumeHookForContext(t *testing.T) {
 	mustCreate(t, r, convID)
 
 	token := "pause-token"
-	resumeContext, err := resumeContextWithDecisionPolicy(
+	resumeContext, err := ResumeContextWithDecisionPolicy(
 		json.RawMessage(`{"type":"skill_approval","skill_name":"calc"}`),
 		allResumeDecisions(),
 	)

@@ -35,7 +35,7 @@ const approvalPauseKind = "approval"
 // pause token the caller pushes to the channel and the operator resolves. allowedDecisions
 // is mandatory server-authored policy; an empty set deliberately permits no decision.
 func (r *Runner) MintApprovalPause(ctx context.Context, convID, question string, resumeContext json.RawMessage, allowedDecisions []string) (string, error) {
-	resumeContext, err := resumeContextWithDecisionPolicy(resumeContext, allowedDecisions)
+	resumeContext, err := ResumeContextWithDecisionPolicy(resumeContext, allowedDecisions)
 	if err != nil {
 		return "", fmt.Errorf("mint approval pause: decision policy: %w", err)
 	}

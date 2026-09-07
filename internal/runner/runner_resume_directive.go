@@ -44,7 +44,7 @@ func classifyResolve(pending askuser.Pending, action string, remaining int) Reso
 	if remaining > 0 {
 		return ResolveDirective{Outcome: OutcomePending, Remaining: remaining}
 	}
-	if isScheduledTaskApproval(pending) {
+	if pending.OwningWorkerID != "" || isScheduledTaskApproval(pending) {
 		if action == askuser.ActionDecline {
 			return ResolveDirective{Outcome: OutcomeRejected}
 		}
