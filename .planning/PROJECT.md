@@ -45,18 +45,16 @@ was told, makes the rest worthless.
 
 ### Active
 
-<!-- Milestone v2.1.0 HERMES-CLAUDE_PARITY. See REQUIREMENTS.md for REQ-IDs. -->
+<!-- Milestone v1.1.0 Production Launch — Multi-Tenant. See REQUIREMENTS.md for REQ-IDs. -->
 
-- [ ] The harness never returns a result the tool did not produce this call
-- [ ] A memory correction closes exactly the fact it names
-- [ ] The model-facing tool surface fits in working memory (~26 tools, ceremony removed)
-- [ ] Every mounted MCP server is trusted; no description is wrapped as hostile data
-- [ ] Steps the host can take stop being the model's to remember — delivery, indexing, fact capture, host-known parameters
-- [ ] The tool-shape changes survive live persisted state — rehydrated history, paused approvals, scheduled jobs
-- [ ] Past conversation is semantically searchable, and one retrieval spans short-term and long-term memory
-- [ ] Reasoning is persisted to the graph and retrieved on demand — never summarized, never harvested into facts
-- [ ] The agent can see what it already has — loaded tools, injected memory, pruned skills
-- [ ] The nine compensating `learned_lesson` facts are retired, and do not come back
+- [ ] A stranger to the codebase can install, upgrade, back up and recover Aura from written instructions
+- [ ] `make release-readiness` passes on the candidate commit — all twelve reports, same SHA, under 24h
+- [ ] Roles and permissions come from Authula's access control, and gate what a user may DO
+- [ ] Two identities working at the same time cannot reach each other's data, under active attempt
+- [ ] One identity's turn cannot touch another's execution — the loop is separated, not just the rows
+- [ ] No identity can cross from its sandbox to the host that serves the others
+- [ ] Isolation survives restart, image rollback and restore from backup
+- [ ] A second identity can be onboarded from zero to a useful conversation
 
 ### Out of Scope
 
@@ -153,24 +151,33 @@ This document evolves at phase transitions and milestone boundaries.
 3. Audit Out of Scope — reasons still valid?
 4. Update Context with current state
 
-## Current Milestone: v2.1.0 HERMES-CLAUDE_PARITY
+## Current Milestone: v1.1.0 Production Launch — Multi-Tenant
 
-**Goal:** Bring the agent harness to parity with hermes-agent and Claude Code — a tool surface
-the model can hold in its head, a context ladder that compresses instead of forgetting, and a
-harness that never reports a result it did not produce.
+**Goal:** Ship a release a stranger to the codebase can install, run and operate with several
+genuinely isolated identities — proven by the executable gate this repo already declares, not
+asserted by a checkbox.
 
 **Target features:**
-- Harness correctness: no stale replay of a re-issued call; a memory correction closes exactly
-  the fact it names
-- Tool surface: un-defer the frequent set, strip ceremony parameters, merge overlapping tools,
-  flatten `task`/`memory_recall`/`skill`/`web_search` — ~56 model-facing tools down to ~26
-- MCP trust: drop the untrusted-server description wrapper
-- Context: evict superseded `tool_search` results, budget on real `prompt_tokens`, ghost-skill
-  markers, per-category breakdown, and an LLM summarization rung with hermes' anti-thrash,
-  cooldown and fallback machinery
-- Third-party facade: `calendar__*` + `whatsapp__*` (28 tools) behind a curated surface
+- Release gate green: all twelve `production-readiness` reports on the candidate SHA. Eight have
+  never been produced — security, docker-coverage, load, chaos, DR, observability, rollback, bundle
+- RBAC wired from Authula's existing access control (twelve `/access-control/*` endpoints, roles
+  with hierarchy, permissions, user-role assignment) rather than a second policy engine
+- Permissions, not just ownership: who installs an MCP server, authors a skill, runs a shell in the
+  sandbox, approves a destructive action, administers other identities
+- Execution isolation: today one process serves every identity — one loop, one process memory
+- Host boundary: sandbox, Docker socket, host filesystem, stdio MCP servers launching binaries
+- Isolation proven under two concurrent users, active boundary-crossing attempts, and restart /
+  rollback / restore
+- Launch documentation written for a self-hoster: install, upgrade, backup and restore, troubleshooting
+
+**Governing constraint:** every phase closes on a real end-to-end run against the live stack,
+integrated with the phases around it. Not unit tests, not ceremony. Few substantial phases, not
+many thin ones.
 
 ---
-*Last updated: 2026-08-05 at the start of milestone v2.1.0 HERMES-CLAUDE_PARITY (bootstrapped
-from prd.md, .planning/codebase/ and git history — the prior PROJECT.md was purged at v2.0.0
-close).*
+*Last updated: 2026-09-07 at the start of milestone v1.1.0 Production Launch — Multi-Tenant.
+Milestone v2.1.0 HERMES-CLAUDE_PARITY was closed without carry-over: its audit
+(`git show ac3e6b90a^:.planning/v2.1.0-MILESTONE-AUDIT.md`) recorded 22 of 61 requirements
+satisfied, 24 complete-by-assertion and 15 unsatisfied, and the operator chose to start clean
+rather than inherit that ledger. A defect that is real will resurface through this milestone's
+end-to-end runs, with fresh evidence.*
