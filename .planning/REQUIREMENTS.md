@@ -63,7 +63,7 @@ already refused it in two places (`onboarding_session.go:14` declares the no-esc
 - [ ] **RBAC-08**: Administering other identities (provisioning, deprovisioning, granting) requires its capability, and an identity cannot grant itself a capability it does not hold
 - [ ] **RBAC-09**: An authorization decision denies by default — an unknown capability, an unresolved principal or a store error refuses rather than admits
 - [ ] **RBAC-10**: Every denial is auditable: who, which capability, which route, when — and the admin surface can read them back
-- [ ] **RBAC-11**: The cockpit admin section creates an identity and grants its capabilities without leaving the UI, extending `web/src/admin/` rather than adding a surface beside it
+- [ ] **RBAC-11**: The cockpit's existing identity surface covers the new capabilities. Measured live 2026-09-07 under Settings → Identity and permissions: a four-step "Create identity" wizard (Credentials → Capabilities → …) plus per-grant Revoke already exist, so this is not a build — it is making the wizard's capability step offer the five capabilities RBAC-04..08 add, and showing denials from RBAC-10
 
 ### Isolation (ISO)
 
@@ -72,8 +72,9 @@ migration 0032, memory is one ArcadeDB database and derived credential per ident
 per-identity Garage bucket. What has never been established is that the boundary holds under two
 concurrent users, under attack, across a restart, and at the process and host level.
 
-- [ ] **ISO-01**: `AURA_MUSR_ISOLATION` is on in the shipped deployment profile, and provisioning a second identity succeeds through the documented path
-- [ ] **ISO-02**: Two identities working concurrently cannot read each other's documents, conversations, turns, approvals, memory facts or objects
+- [ ] **ISO-01**: `AURA_MUSR_ISOLATION` is on in the shipped deployment profile, and provisioning a second identity succeeds through the documented path. It defaults false in `internal/config/config_knobs.go:158` and `${AURA_MUSR_ISOLATION:-false}` in `compose.yaml:150`; it was switched on for this host on 2026-09-07 as a shell variable only, which does not survive the next `docker compose up` — shipping it on is the requirement, not flipping it once
+- [ ] **ISO-02**: Two identities working concurrently cannot read each other's documents, conversations, turns, approvals, memory facts or objects. `TestTwoIdentityCrossDeny` already proves five of these planes and passed against the live stack on 2026-09-07 (http read, store owner gate + RLS, approvals, documents, Garage) — so the work is the plane it does NOT cover, long-term memory, plus making the gate reproducible per ISO-02a
+- [ ] **ISO-02a**: The two-identity acceptance gate runs unattended — in CI and from a clean checkout — with no ad-hoc port forward and no hand-made database. Measured 2026-09-07: it needed a socat container for Garage's admin API (fixed in `a3536af5d`) and a manually created disposable database, because the test refuses to migrate the live one. A gate that takes two undocumented manual steps is a gate nobody runs
 - [ ] **ISO-03**: A deliberate boundary-crossing attempt fails: guessed identifiers on every read endpoint, a shared link outside its grant, a tool given another identity's identifier
 - [ ] **ISO-04**: A prompt-injection attempt to make the agent read or write another identity's memory fails, and the attempt is visible in the audit trail
 - [ ] **ISO-05**: One identity's turn cannot observe or affect another's execution — context, tool state and in-flight results are separated, not merely row-filtered
@@ -115,8 +116,8 @@ Deferred. Tracked, not in this roadmap.
 
 ### Access Control
 
-- **RBAC-11**: Per-resource ownership delegation (an identity granting another access to one document or conversation)
-- **RBAC-12**: Role assignment through the cockpit UI rather than the API
+- **RBAC-12**: Per-resource ownership delegation (an identity granting another access to one document or conversation)
+- **RBAC-13**: Grouping capabilities into named roles, once the flat capability set proves too granular to administer
 
 ### Isolation
 
@@ -166,6 +167,7 @@ Every v1 requirement maps to exactly one phase. Mapped during roadmap creation, 
 | RBAC-11 | Phase 2 | Pending |
 | ISO-01 | Phase 1 | Pending |
 | ISO-02 | Phase 1 | Pending |
+| ISO-02a | Phase 1 | Pending |
 | ISO-03 | Phase 3 | Pending |
 | ISO-04 | Phase 3 | Pending |
 | ISO-05 | Phase 1 | Pending |
@@ -192,7 +194,7 @@ Every v1 requirement maps to exactly one phase. Mapped during roadmap creation, 
 
 | Phase | Name | Requirements | REQ-IDs |
 |-------|------|--------------|---------|
-| Phase 1 | Two Identities, Live and Separated | 5 | ISO-01, ISO-02, ISO-05, E2E-01, E2E-02 |
+| Phase 1 | Two Identities, Live and Separated | 6 | ISO-01, ISO-02, ISO-02a, ISO-05, E2E-01, E2E-02 |
 | Phase 2 | Permissions Decide What a User May Do | 11 | REL-06, RBAC-01, RBAC-02, RBAC-03, RBAC-04, RBAC-05, RBAC-06, RBAC-07, RBAC-08, RBAC-09, RBAC-10 |
 | Phase 3 | The Boundary Under Attack | 5 | REL-04, ISO-03, ISO-04, ISO-07, E2E-03 |
 | Phase 4 | Load, Chaos and Truthful Degradation | 4 | REL-08, REL-09, REL-11, ISO-06 |
@@ -201,8 +203,8 @@ Every v1 requirement maps to exactly one phase. Mapped during roadmap creation, 
 | Phase 7 | One SHA, Twelve Reports, One Window | 8 | REL-01, REL-02, REL-03, REL-05, REL-07, REL-13, REL-14, E2E-05 |
 
 **Coverage:**
-- v1 requirements: 48 total
-- Mapped to phases: 48
+- v1 requirements: 49 total
+- Mapped to phases: 49
 - Unmapped: 0 ✓
 - Duplicated across phases: 0 ✓
 

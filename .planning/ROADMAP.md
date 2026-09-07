@@ -49,11 +49,12 @@ numbering (45–54) is not carried forward.
 ### Phase 1: Two Identities, Live and Separated
 **Goal**: The shipped deployment profile runs two identities at the same time, and neither can reach the other's data or the other's execution.
 **Depends on**: Nothing (first phase)
-**Requirements**: ISO-01, ISO-02, ISO-05, E2E-01, E2E-02
+**Requirements**: ISO-01, ISO-02, ISO-02a, ISO-05, E2E-01, E2E-02
 **Success Criteria** (what must be TRUE):
   1. `AURA_MUSR_ISOLATION` is on in the shipped deployment profile, and a second identity is provisioned from zero through the documented path — memory database, derived credential, object bucket, sandbox and skills root all land, with no manual SQL and no step outside the path. Today `internal/config/config.go:554` defaults it false and `internal/agui/onboarding_provision.go:128` refuses the provision outright.
   2. Two identities hold real conversations at the same time against one running `aura serve`, each doing useful work — a document search, a memory write, a sandbox command — and the pair is scored ≥9.8.
-  3. Neither identity can read the other's documents, conversations, turns, approvals, memory facts or objects through any surface it can reach while both are live.
+  3. Neither identity can read the other's documents, conversations, turns, approvals, memory facts or objects through any surface it can reach while both are live. Five of those planes are already proven: `TestTwoIdentityCrossDeny` passed against this live stack on 2026-09-07 — http read, store owner gate + RLS, MUSR-02, approvals, documents and Garage, in 2.98s. Long-term memory is the plane it does not cover.
+  3a. That gate runs unattended, from a clean checkout and in CI. On 2026-09-07 it took two undocumented manual steps: an ad-hoc socat container for Garage's admin API — now fixed by publishing :3903 on loopback (`a3536af5d`) — and a hand-created disposable database, because the test rightly refuses to migrate the live one. Neither step is written down anywhere a second person would find it.
   4. One identity's turn cannot observe or affect the other's: per-turn context, tool state and in-flight results are separated, not merely row-filtered, and the separation is demonstrated at the `runner`/`LlmAgent` level rather than asserted from a row count.
 **Closes on (live run)**: `cmd/aura/two_identity_e2e_test.go` (tag `musr_e2e`) promoted from harness to a run against a live `aura serve` with two provisioned identities, immediately followed by two authenticated concurrent `/agent/run` conversations through the AG-UI gateway — one per identity, each with real tool calls — scored against the CLAUDE.md ≥9.8 bar.
 **Plans**: TBD
@@ -166,9 +167,12 @@ news rather than the expected case.
 **Frontend work is Phase 2's, not a phase of its own.** The cockpit already has an admin
 section (`web/src/admin/adminApi.ts`, `AdminSection.tsx`, `useAdmin.ts`) that lists the
 identity roster with each identity's grants and calls
-`POST`/`DELETE /api/admin/identities/{id}/capabilities`. Granting exists; creating an
-identity from the UI does not, and that gap is RBAC-11 inside Phase 2 — extending a surface
-that works rather than opening a second one. No other phase delivers frontend work, and no
+`POST`/`DELETE /api/admin/identities/{id}/capabilities`. Measured live on 2026-09-07 under
+Settings → Identity and permissions: a four-step "Create identity" wizard
+(Credentials → Capabilities → …) and per-grant Revoke are already there, so creation exists
+too — an earlier draft of RBAC-11 claimed it did not. What remains is making the wizard's
+capability step offer the five capabilities RBAC-04..08 add, and surfacing RBAC-10's denials.
+That is Phase 2's work, extending a surface that works rather than opening a second one. No other phase delivers frontend work, and no
 separate UI phase exists. `frontend` appears in REL-06 as one of the five existing mutation
 scopes, and the web E2E suite runs as existing evidence.
 
