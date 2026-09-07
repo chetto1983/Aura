@@ -1,12 +1,48 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": null,
-  "phases": [],
+  "milestone": "v1.1.0 — Production Launch — Multi-Tenant",
+  "phases": [
+    {
+      "number": "1",
+      "name": "Two Identities, Live and Separated",
+      "status": "pending"
+    },
+    {
+      "number": "2",
+      "name": "Permissions Decide What a User May Do",
+      "status": "pending"
+    },
+    {
+      "number": "3",
+      "name": "The Boundary Under Attack",
+      "status": "pending"
+    },
+    {
+      "number": "4",
+      "name": "Load, Chaos and Truthful Degradation",
+      "status": "pending"
+    },
+    {
+      "number": "5",
+      "name": "Restart, Rollback, Restore",
+      "status": "pending"
+    },
+    {
+      "number": "6",
+      "name": "A Stranger Can Install and Operate It",
+      "status": "pending"
+    },
+    {
+      "number": "7",
+      "name": "One SHA, Twelve Reports, One Window",
+      "status": "pending"
+    }
+  ],
   "next": {
-    "command": "/gsd:discuss-phase",
-    "label": "Discuss the first phase",
-    "reason": "Project initialized — plan your first phase"
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step",
+    "reason": "Phase 01 of 7 · 0% · executing"
   },
-  "updated_at": "2026-09-07T12:39:10.206Z"
+  "updated_at": "2026-09-07T21:42:42.183Z"
 }
