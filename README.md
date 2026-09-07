@@ -29,8 +29,8 @@ The model is configurable; the default route uses OpenRouter. Local storage does
 not make cloud inference offline: the selected provider receives the context sent
 to that model. Local OpenAI-compatible endpoints are also supported.
 
-> **Strategic context:** Aura is designed to ship as a **DGX Spark + software bundle** for
-> SMBs that want a private, capable assistant on hardware they own.
+> **Deployment:** Aura can run on hardware the operator owns or manages. Select
+> capacity for the chosen model, workload, documents and backup retention.
 
 <div align="center">
 
@@ -54,13 +54,13 @@ to that model. Local OpenAI-compatible endpoints are also supported.
 
 ## Key features
 
-- **Streaming agent loop** with a shared *budget tree* (step + wall-clock caps) and a tool-loop *dedup ring* — bounded, predictable cost.
-- **Deferred-tool pattern + semantic `tool_search`** — dozens of tools (incl. dynamic MCP tools) stay discoverable at near-zero per-turn token cost.
-- **Adaptive reasoning router** — a local curated-seed embedding classifier picks reasoning effort in ~10 ms.
+- **Streaming agent loop** with shared step/time budgets and repeated-call controls to bound work.
+- **Deferred tools and `tool_search`** — discover tools and load their schemas when needed, including tools from mounted MCP servers.
+- **Adaptive reasoning router** — selects reasoning effort using the configured classifier and the active model's supported capabilities.
 - **Full host terminal + filesystem tools** — real operating power, with destructive-command approval gates and secret redaction.
 - **Graph-native memory** — facts, sources and validity windows in ArcadeDB; temporal paths return supporting evidence. Postgres-authoritative conversations have a derived recall projection and managed context compaction.
 - **Document retrieval** — indexed passages with source hashes and citations, plus access to the original file for calculations and whole-file tasks.
-- **Self-extension** — the agent authors and runs its own skills, and mounts MCP servers (calculator, calendar, whatsapp, memory).
+- **Self-extension** — author and run skills, use bundled memory/PIM/WhatsApp integrations, and connect additional MCP servers.
 - **Scheduler and self wake-ups** — one `task` tool (`at | every | cron`) for reminders and `agent_job` runs, with job policy, operator controls and outcomes delivered to the owning conversation.
 - **Per-identity sandbox** — a full-capability box per operator (gVisor `runsc` on native Linux), with deliverables handed back over the channel (`send_file`), never as a path.
 - **Multi-channel** — CLI REPL, Telegram (voice/photo/docs/HITL), and a web cockpit over AG-UI/SSE with mid-turn steering, approvals, and live settings.
