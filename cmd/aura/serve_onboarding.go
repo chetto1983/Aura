@@ -269,6 +269,9 @@ func buildOnboardingService(
 		deps.ObjectStore = objProv
 		deps.Filesystem = fsProv
 		deps.Journal = jrnl
+		// The eager per-identity sandbox box leg (D-09): a nil sandboxProvisionerFor(nil)
+		// (no router composed) nil-skips the leg exactly like ObjectStore/Filesystem above.
+		deps.Sandbox = sandboxProvisionerFor(chat.sandboxRouter)
 	}
 	if authulaProvider != nil {
 		if core := authulaProvider.CoreServices(); core != nil {

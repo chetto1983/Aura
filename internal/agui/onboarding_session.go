@@ -203,12 +203,13 @@ type onboardingService struct {
 	// Phase-36 resource legs + journaling (onboarding_provision_resources.go /
 	// saga_journal.go): the forward-recovery journal, the per-identity Garage bucket/key
 	// leg, the REQUIRED per-identity ArcadeDB tenant leg, and the optional per-identity
-	// filesystem-roots leg. Nil journal/object-store/filesystem disables that optional leg;
-	// nil memory makes Provision fail before writes.
+	// filesystem-roots and sandbox-box legs. Nil journal/object-store/filesystem/sandbox
+	// disables that optional leg; nil memory makes Provision fail before writes.
 	journal     SagaJournal
 	memory      MemoryProvisioner
 	objectStore ObjectStoreProvisioner
 	filesystem  FilesystemProvisioner
+	sandbox     SandboxProvisioner
 
 	// musrIsolation is the deployment's declaration that it is fit to host more than one
 	// identity (AURA_MUSR_ISOLATION). The saga ONLY ever creates ADDITIONAL, non-local
@@ -236,11 +237,13 @@ type OnboardingDeps struct {
 	BotUsernameResolver func(context.Context) string
 	Recovery            RecoverySetupWriter
 	// Phase-36 provisioning saga extensions: Memory is required for Provision; Journal,
-	// ObjectStore, and Filesystem remain optional for pre-cutover/seed-only compositions.
+	// ObjectStore, Filesystem, and Sandbox (D-09) remain optional for pre-cutover/seed-only
+	// compositions.
 	Journal     SagaJournal
 	Memory      MemoryProvisioner
 	ObjectStore ObjectStoreProvisioner
 	Filesystem  FilesystemProvisioner
+	Sandbox     SandboxProvisioner
 	// MUSRIsolation declares the deployment fit to host more than one identity
 	// (AURA_MUSR_ISOLATION). Provision REFUSES while it is false. The composition root
 	// wires it from config.MUSRIsolation.
@@ -271,6 +274,7 @@ func newOnboardingService(d OnboardingDeps) *onboardingService {
 		memory:          d.Memory,
 		objectStore:     d.ObjectStore,
 		filesystem:      d.Filesystem,
+		sandbox:         d.Sandbox,
 		musrIsolation:   d.MUSRIsolation,
 	}
 }

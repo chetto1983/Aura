@@ -74,6 +74,7 @@ var (
 	_ agui.SagaJournal            = sagaJournalAdapter{}
 	_ agui.IdentityDeactivator    = identityDeactivatorAdapter{}
 	_ agui.IdentityDeleter        = auraLegAdapter{}
+	_ agui.SandboxProvisioner     = sandboxProvisionAdapter{}
 )
 
 // objectStoreProvisionAdapter, its objectStoreCredentialResolver/objectStoreMinter seams, and
@@ -310,6 +311,32 @@ func sandboxPurgerFor(router *usersandbox.SandboxRouter) agui.SandboxPurger {
 		return nil
 	}
 	return sandboxPurgeAdapter{router: router}
+}
+
+// sandboxProvisionAdapter is the provisioning half of the box lifecycle (D-09), over the
+// SAME router the tools route through and the SAME router sandboxPurgeAdapter destroys
+// through. ProvisionSandbox calls EnsureBox (the explicit-identity get-or-create seam,
+// router_provision.go) rather than Route (which derives the caller identity from context)
+// because the saga always has a real identity id in hand. DestroySandbox is reused
+// verbatim from sandboxPurgeAdapter so one type satisfies both halves of
+// agui.SandboxProvisioner (embeds agui.SandboxPurger).
+type sandboxProvisionAdapter struct{ sandboxPurgeAdapter }
+
+func (a sandboxProvisionAdapter) ProvisionSandbox(ctx context.Context, identityID string) error {
+	_, err := a.router.EnsureBox(ctx, identityID)
+	return err
+}
+
+// sandboxProvisionerFor mirrors sandboxPurgerFor: a nil router yields a nil port (the leg
+// nil-skips, an unwired/pre-cutover deployment provisions nothing extra); a live-but-
+// backendless router (an unreachable Docker daemon) deliberately FAILS the step rather
+// than skipping it, for the same reason sandboxPurgerFor's comment gives — "we could not
+// check" and "there is no box" are different facts and only one is safe to journal done.
+func sandboxProvisionerFor(router *usersandbox.SandboxRouter) agui.SandboxProvisioner {
+	if router == nil {
+		return nil
+	}
+	return sandboxProvisionAdapter{sandboxPurgeAdapter{router: router}}
 }
 
 // buildDeprovisioner assembles the D-27 de-provisioning saga over the chat-reachable ports.

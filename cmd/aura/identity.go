@@ -28,17 +28,28 @@ import (
 	"github.com/chetto1983/aura/internal/identity"
 )
 
-const identityUsage = "usage: aura identity {list|get <name>|grant <name> <cap>|revoke <name> <cap>|recover <name>|recover-operator [--generate] [--no-recovery]}\n" +
+const identityUsage = "usage: aura identity {list|get <name>|grant <name> <cap>|revoke <name> <cap>|recover <name>|recover-operator [--generate] [--no-recovery]|create -email <email> -security-question <question> [-capability <cap>]... [-operator <uuid>]}\n" +
 	"  recover <name>   = mint a short-lived reset token to hand a user (recovery.go)\n" +
-	"  recover-operator = offline operator password reset + session-kill + recovery re-seed (recover_operator.go)"
+	"  recover-operator = offline operator password reset + session-kill + recovery re-seed (recover_operator.go)\n" +
+	"  create           = provision a second identity via the onboarding saga; requires a configured Telegram bot token (identity_create.go)"
 
 func runIdentity(args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, identityUsage)
 		os.Exit(1)
 	}
-	// Identity is a DB-only domain — use the LLM-free config load so `aura identity`
-	// does not require OPENROUTER_API_KEY.
+	ctx := context.Background()
+
+	// create needs the FULL boot path (Postgres + Authula + ArcadeDB + Garage + sandbox),
+	// not the DB-only pool every other verb below opens — it builds and closes its own
+	// environment inside identityCreate and returns before that pool is ever touched.
+	if args[0] == "create" {
+		identityCreate(ctx, args[1:])
+		return
+	}
+
+	// Identity is otherwise a DB-only domain — use the LLM-free config load so `aura
+	// identity` does not require OPENROUTER_API_KEY.
 	cfg := config.LoadDB()
 	var recoveryPepper []byte
 	if args[0] == "recover" {
@@ -49,7 +60,6 @@ func runIdentity(args []string) {
 			os.Exit(1)
 		}
 	}
-	ctx := context.Background()
 
 	pool, err := db.Open(ctx, &cfg.DB)
 	if err != nil {

@@ -41,17 +41,37 @@ type FilesystemProvisioner interface {
 	DeprovisionIdentityDirs(ctx context.Context, identityID string) error
 }
 
-// provisionResourceLegs runs the ArcadeDB + Garage + filesystem legs for the freshly-created
-// identity, journaled and idempotent. It returns a compensation that reverses all legs
-// (idempotent) for the caller to invoke if a LATER leg (Telegram / audit) fails. On its
-// OWN failure it compensates the partial work it did (so the caller only compensates the
-// earlier legs) and returns the error. Nil optional ports skip their leg; Provision's
-// preflight rejects a nil memory port before any cross-store write.
+// SandboxProvisioner eagerly creates one identity's per-identity sandbox box (D-09): the
+// container, its egress sidecar, and the workspace volume. It embeds the de-provisioning
+// port (SandboxPurger, deprovision.go) so the provisioning leg and the deprovision saga's
+// teardown leg share one destroy contract — a box EnsureBox created is torn down by the
+// same DestroySandbox the deprovision saga already calls. ProvisionSandbox is idempotent
+// (SandboxRouter.EnsureBox is a get-or-create seam), so a journaled re-run after a crash
+// converges instead of double-creating.
+type SandboxProvisioner interface {
+	SandboxPurger
+	ProvisionSandbox(ctx context.Context, identityID string) error
+}
+
+// provisionResourceLegs runs the ArcadeDB + Garage + filesystem + sandbox legs for the
+// freshly-created identity, journaled and idempotent. It returns a compensation that
+// reverses all legs (idempotent) for the caller to invoke if a LATER leg (Telegram /
+// audit) fails. On its OWN failure it compensates the partial work it did (so the caller
+// only compensates the earlier legs) and returns the error. Nil optional ports skip their
+// leg; Provision's preflight rejects a nil memory port before any cross-store write.
 func (s *onboardingService) provisionResourceLegs(ctx context.Context, run *sagaRun, identityID string) (compResources func(), err error) {
-	// Compensation reverses whatever this call provisioned, in reverse order, best-effort
+	// Compensation reverses whatever this call provisioned, in REVERSE order, best-effort
 	// on a cancel-immune context (the request ctx may already be cancelled on failure).
+	// Sandbox is FIRST here because it is provisioned LAST below (D-09): the box is the
+	// only LIVE COMPUTE this identity owns, and a container that can still write into the
+	// very filesystem roots the next block removes is how an orphan gets made.
 	compResources = func() {
 		cctx := context.WithoutCancel(ctx)
+		if s.sandbox != nil {
+			if derr := s.sandbox.DestroySandbox(cctx, identityID); derr != nil {
+				slog.Error("onboarding: COMP sandbox (destroy box) failed", "step", "compensate")
+			}
+		}
 		if s.filesystem != nil {
 			if derr := s.filesystem.DeprovisionIdentityDirs(cctx, identityID); derr != nil {
 				slog.Error("onboarding: COMP filesystem (remove identity dirs) failed", "step", "compensate")
@@ -99,6 +119,23 @@ func (s *onboardingService) provisionResourceLegs(ctx context.Context, run *saga
 			// Undo the filesystem roots + the object store already provisioned in this call.
 			compResources()
 			return compResources, provisionFail("filesystem provision", err)
+		}
+	}
+
+	// Sandbox is LAST (D-09): the box is eager, idempotent (SandboxRouter.EnsureBox is a
+	// get-or-create seam) and compensated symmetrically with SandboxPurger.DestroySandbox,
+	// which the deprovision saga already calls (deprovision.go). On its OWN failure it
+	// self-destroys only — mirroring the memory/objectStore legs above, not filesystem's
+	// full compResources() — and returns compResources so the CALLER compensates the
+	// earlier legs.
+	if s.sandbox != nil {
+		if err := run.step(ctx, sagaStepSandbox, func(ctx context.Context) error {
+			return s.sandbox.ProvisionSandbox(ctx, identityID)
+		}); err != nil {
+			if derr := s.sandbox.DestroySandbox(context.WithoutCancel(ctx), identityID); derr != nil {
+				slog.Error("onboarding: COMP sandbox after provision failure failed", "step", "compensate")
+			}
+			return compResources, provisionFail("sandbox provision", err)
 		}
 	}
 
