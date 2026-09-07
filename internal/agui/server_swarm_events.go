@@ -88,26 +88,32 @@ func (s *Server) swarmChildEventSequence(
 					slog.Warn("agui: skipping malformed swarm transcript line", "child", redact.Line(childID), "err", err)
 					continue
 				}
+				if pause := ev.Actions.AwaitingInput; pause != nil {
+					// This is a read-only activity view. The parent approval card owns
+					// input; an old interrupt must not stop replay of a resumed worker.
+					ev.LLMResponse = &agent.LLMResponse{Content: pause.Question}
+					ev.Actions.AwaitingInput = nil
+				}
 				if !yield(&ev, nil) {
 					return false, false
 				}
-				if _, ok := swarmTerminalStatus(&ev); ok {
-					return true, true
-				}
+				_, terminal = swarmTerminalStatus(&ev)
 			}
-			return false, true
+			return terminal, true
 		}
 
+		terminal := false
 		if len(body) > 0 {
-			terminal, keepGoing := emit(body)
-			if terminal || !keepGoing {
+			var keepGoing bool
+			terminal, keepGoing = emit(body)
+			if !keepGoing {
 				return
 			}
 		}
 
 		for {
 			wait := swarmTranscriptTailInterval
-			if s.swarmWorkerIdle > 0 {
+			if !terminal && s.swarmWorkerIdle > 0 {
 				remaining := s.swarmWorkerIdle - time.Since(lastGrowth)
 				if remaining <= 0 {
 					yield(swarmIdleTerminalEvent(childID), nil)
@@ -118,6 +124,11 @@ func (s *Server) swarmChildEventSequence(
 				}
 			}
 
+			// A pause/retry marker can be followed by another attempt in the file.
+			// Confirm EOF before ending replay, including at a paged-read boundary.
+			if terminal {
+				wait = 0
+			}
 			timer := time.NewTimer(wait)
 			select {
 			case <-ctx.Done():
@@ -135,11 +146,15 @@ func (s *Server) swarmChildEventSequence(
 			}
 			offset = nextOffset
 			if len(chunk) == 0 {
+				if terminal {
+					return
+				}
 				continue
 			}
 			lastGrowth = time.Now()
-			terminal, keepGoing := emit(chunk)
-			if terminal || !keepGoing {
+			var keepGoing bool
+			terminal, keepGoing = emit(chunk)
+			if !keepGoing {
 				return
 			}
 		}

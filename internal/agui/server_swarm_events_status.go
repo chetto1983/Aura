@@ -21,6 +21,7 @@ type swarmWorkerStatusPayload struct {
 	LastEventAt string `json:"last_event_at"`
 	Events      int    `json:"events"`
 	DurationSec int64  `json:"duration_sec"`
+	Reported    bool   `json:"reported,omitempty"`
 }
 
 type swarmWorkerStatusState struct {
@@ -30,6 +31,7 @@ type swarmWorkerStatusState struct {
 	lastEvent    *agent.Event
 	events       int
 	durationSec  int64
+	reported     bool
 	emitted      bool
 	lastPayload  swarmWorkerStatusPayload
 }
@@ -120,6 +122,9 @@ func (s *swarmWorkerStatusState) ingest(childID string, chunk []byte, observedAt
 		s.lastEventAt = at
 		s.lastEvent = &ev
 		s.events++
+		if recorded, _ := ev.Actions.StateDelta["swarm_report_recorded"].(bool); recorded {
+			s.reported = true
+		}
 		if duration, ok := swarmMarkerDuration(ev.Actions.StateDelta["swarm_child_duration_sec"]); ok {
 			s.durationSec = duration
 		} else if !s.firstEventAt.IsZero() && !s.lastEventAt.Before(s.firstEventAt) {
@@ -139,6 +144,7 @@ func (s *swarmWorkerStatusState) payload(childID string, now time.Time, idle tim
 		LastEventAt: lastEventAt,
 		Events:      s.events,
 		DurationSec: s.durationSec,
+		Reported:    s.reported,
 	}
 }
 

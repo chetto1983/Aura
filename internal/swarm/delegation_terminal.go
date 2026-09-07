@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/identityctx"
 )
@@ -120,6 +121,20 @@ func (l *DelegationClaimLoop) deliverPending(ctx context.Context, job documents.
 			err = fmt.Errorf("delegation report was not recorded to its origin conversation %s", payload.ConversationID)
 		}
 		return l.retryPendingDelivery(ctx, job, pending, err)
+	}
+	if l.Worker.Cfg.RunDir != "" && pending.Report.ChildID != "" {
+		// The model's terminal marker precedes report persistence. Notify viewers
+		// only after the report is committed, so they can refresh without a race.
+		if err := dumpTranscript(l.Worker.Cfg.RunDir, payload.ConversationID, pending.Report.ChildID, agent.Event{
+			Author: pending.Report.ChildID, Timestamp: time.Now().UTC(),
+			Actions: agent.Actions{StateDelta: map[string]any{
+				"swarm_child_status":       pending.Report.Status,
+				"swarm_child_duration_sec": pending.ElapsedSeconds,
+				"swarm_report_recorded":    true,
+			}},
+		}); err != nil {
+			return l.retryPendingDelivery(ctx, job, pending, err)
+		}
 	}
 	if _, err := l.Store.UpdateStatus(ctx, documents.TransitionIngestionJobRequest{
 		IdentityID: job.IdentityID, JobID: job.ID, WorkerID: l.workerID(),
