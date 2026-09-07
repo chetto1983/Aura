@@ -6,7 +6,7 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help tools sqlc memory-up-core lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract llm-model-contract web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval agent-memory-eval-running-aura critical-mutation observability-check observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up sandbox-images installer-artifact payload-manifest arcadedb-integration ingest-test restore-drill load-chaos
+.PHONY: help tools sqlc memory-up-core lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract llm-model-contract web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval agent-memory-eval-running-aura critical-mutation observability-check observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up sandbox-images installer-artifact payload-manifest arcadedb-integration ingest-image ingest-test extractor-matrix ingest-reconcile restore-drill load-chaos
 
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
@@ -50,6 +50,8 @@ help:
 	@echo "make db-reset      — DESTRUCTIVE: drop+recreate schema aura (dev only, requires AURA_RESET_YES=1)"
 	@echo "make memory-up     — docker compose up -d arcadedb arcadedb-mcp aura-llama-embed (waits healthy)"
 	@echo "make arcadedb-integration — run the arcadedb_integration tier live, as CI does"
+	@echo "make extractor-matrix — every fixture format opens and the canary survives verbatim"
+	@echo "make ingest-reconcile — add/modify/delete reconciliation + two-identity isolation"
 	@echo "make restore-drill — three-plane DR drill with measured RPO/RTO"
 	@echo "make load-chaos    — blocking Vegeta + Toxiproxy production gate"
 
@@ -319,8 +321,10 @@ arcadedb-integration: db-migrate memory-up
 # import and fails COLLECTION for the whole suite, which is a red that looks like a broken
 # product. pytest is installed at run time rather than baked in: a test dependency has no
 # business in the image that ships to production.
-ingest-test: memory-up
+ingest-image:
 	docker build -f docker/aura-ingest/Dockerfile -t aura-ingest:local .
+
+ingest-test: memory-up ingest-image
 	@# @-silenced: make echoes the recipe line and ARCADEDB_PASSWORD sits on it.
 	@docker run --rm --network aura_default --entrypoint sh \
 	  -v "$(CURDIR)/services/ingest:/app/ingest:ro" \
@@ -334,6 +338,19 @@ ingest-test: memory-up
 	  -e AURA_INGEST_S3_ACCESS_KEY_ID=test \
 	  -e AURA_INGEST_S3_SECRET_ACCESS_KEY=test \
 	  aura-ingest:local -c 'pip install --quiet pytest && cd /app && python -m pytest ingest/tests -q'
+
+# The extractor's format matrix: every fixture format opens, and the canary sentence
+# survives verbatim and un-reflowed. Needs the image and the fixtures, nothing else --
+# no stack, no network, no credentials.
+extractor-matrix: ingest-image
+	bash scripts/extractor_matrix_test.sh
+
+# The reconciliation half of the document release gate: add, rerun-unchanged, modify,
+# delete, the live second cycle and two-identity isolation. Stops before the phases that
+# need a real LLM key, which is what makes it runnable in CI. The operator's full gate is
+# the same script with no scope set.
+ingest-reconcile:
+	AURA_INGEST_E2E_SCOPE=reconcile bash scripts/ingest_reconcile_e2e.sh
 
 restore-drill: db-migrate memory-up
 	bash scripts/garage_bootstrap.sh

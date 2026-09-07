@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Production reconciliation gate: real Garage, CocoIndex, extractor, embedder and
-# per-identity ArcadeDB. Every resource is disposable. Run in WSL.
+# per-identity ArcadeDB. Every resource is disposable. Runs in WSL and in CI; see
+# AURA_INGEST_E2E_SCOPE below for which phases each one gets.
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
 
@@ -8,12 +9,28 @@ repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$repo_root"
 candidate_sha="$(git rev-parse HEAD)"
 
+# Which phases run. `full` is the operator's gate and stays the default: reconciliation
+# THEN the migration round-trip, the real-agent E2E and the scored 23-file retrieval eval.
+# `reconcile` stops before those three, and exists because they need a real LLM key that
+# CI does not have (ci.yml sets OPENROUTER_API_KEY=ci-degraded-no-network on purpose).
+# Fail closed on anything else: a typo here would silently shorten a release gate.
+scope="${AURA_INGEST_E2E_SCOPE:-full}"
+case "$scope" in
+  full|reconcile) ;;
+  *) echo "FAIL: AURA_INGEST_E2E_SCOPE must be 'full' or 'reconcile', got '$scope'" >&2; exit 2 ;;
+esac
+
 # The repository .env is CRLF because it is shared with Windows. Normalize only the
 # sourced stream; never rewrite the operator's file. Loading it before ingestion lets
 # aura-media-index overlay the same DB-backed model choice the cockpit uses.
-set -a
-source <(sed 's/\r$//' .env)
-set +a
+#
+# Absent is not an error: CI has no .env and passes the same values through the process
+# environment, which `set -a` below would have been overwritten by anyway.
+if [ -f .env ]; then
+  set -a
+  source <(sed 's/\r$//' .env)
+  set +a
+fi
 # Live release gates may use a zero-cost OpenAI-compatible model without changing
 # product defaults. These are test-process overrides only; ingestion itself still reads
 # the cockpit-owned aura.settings rows through AURA_DB_URL below.
@@ -470,6 +487,16 @@ text = " ".join(row["text"] for row in rows)
 assert os.environ["MARKER_B"] in text, "identity B marker did not reach its own database"
 print("ok: identity B marker exists only in its own per-identity projection")
 PY
+
+if [ "$scope" = reconcile ]; then
+  echo
+  echo "ok: reconciliation only -- add, rerun-unchanged, modify, delete, live second cycle"
+  echo "    and two-identity isolation all passed."
+  echo "NOT RUN in this scope: the migration round-trip, the real-agent document E2E and"
+  echo "    the scored 23-file retrieval eval. They need a real LLM key; run the script"
+  echo "    without AURA_INGEST_E2E_SCOPE to get them."
+  exit 0
+fi
 
 echo "== Latest migration round-trip and real-agent document E2E =="
 export AURA_PROFILE=dev

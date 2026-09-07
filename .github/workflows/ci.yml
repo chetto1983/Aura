@@ -939,9 +939,154 @@ jobs:
       - name: Run the ingestion sidecar suite
         run: make ingest-test
 
+      - name: Extractor format matrix (hard AND silent failures)
+        # The suite above proves the chunker and the passage contract; it does not open a
+        # single .pdf, .xls or .odt. This does, on the committed fixture set, and scores
+        # the failure that has no error message: a format that yields plausible text in
+        # which the canary sentence is reflowed or gone. It reuses the image make
+        # ingest-test just built, so it costs seconds and needs no service of its own.
+        run: bash scripts/extractor_matrix_test.sh
+
       - name: Tear down
         if: always()
         run: docker compose down
+
+  ingest-reconcile-e2e:
+    name: Ingestion reconciliation (add/modify/delete, live Garage + ArcadeDB)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Amendment #118 says CocoIndex's own target reconciliation gives Aura add, modify and
+    # delete "with zero code of ours". Until now NOTHING in CI tested that claim: the
+    # sidecar job runs the Python unit suite, and scripts/ingest_reconcile_e2e.sh -- which
+    # actually deletes an object and asserts its passages are gone -- was an operator-only
+    # script. A load-bearing claim no gate can falsify is a claim that decays silently.
+    #
+    # AURA_INGEST_E2E_SCOPE=reconcile stops the script before its migration round-trip,
+    # real-agent E2E and scored 23-file retrieval eval. That is not a convenience: those
+    # three need a real LLM key and this pipeline deliberately has none (see the
+    # OPENROUTER_API_KEY=ci-degraded-no-network comment on integration-test). The script
+    # prints exactly which phases it skipped, and rejects any other scope value, so a
+    # shortened run can never read as a full one. The operator's gate stays the default.
+    env:
+      CI: "true"
+      POSTGRES_USER: aura
+      POSTGRES_PASSWORD: ci-test-password
+      POSTGRES_DB: aura
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      AURA_EMBED_BASE_URL: http://127.0.0.1:8081
+      AURA_EMBED_DIMENSIONS: "768"
+      AURA_OBJECTSTORE_BACKEND: garage
+      AURA_OBJECTSTORE_ENDPOINT: http://127.0.0.1:3900
+      AURA_OBJECTSTORE_REGION: garage
+      AURA_OBJECTSTORE_BUCKET: aura-assets
+      AURA_OBJECTSTORE_PATH_STYLE: "true"
+      COMPOSE_FILE: compose.yaml:.github/compose.ci-cache.yaml
+      AURA_CI_LLAMA_CACHE_DIR: /tmp/aura-ci-cache/llama.cpp
+      AURA_EMBED_IMAGE: ghcr.io/ggml-org/llama.cpp:server
+      AURA_EMBED_NGL: "0"
+      AURA_INGEST_E2E_SCOPE: reconcile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cache the EmbeddingGemma model
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /tmp/aura-ci-cache/llama.cpp
+          key: llama-cpp-embeddinggemma-300m-768d-q8-${{ runner.os }}-bind-v1
+
+      - name: Prepare cached Docker bind dirs
+        run: |
+          mkdir -p "$AURA_CI_LLAMA_CACHE_DIR/llama.cpp" "$AURA_CI_LLAMA_CACHE_DIR/huggingface"
+          chmod -R a+rwX "$AURA_CI_LLAMA_CACHE_DIR"
+
+      - name: Materialize the validated EmbeddingGemma model
+        run: bash scripts/fetch_embedding_model.sh "$AURA_CI_LLAMA_CACHE_DIR/llama.cpp/embeddinggemma-300M-Q8_0.gguf"
+
+      - name: Bring up Postgres + ArcadeDB + embed sidecar, and migrate
+        run: |
+          if ! make db-migrate memory-up-core; then
+            docker compose logs --tail 160 postgres arcadedb aura-llama-embed || true
+            exit 1
+          fi
+
+      - name: Bring up Garage + assign layout
+        # Copied in shape from musr-e2e: a fresh single-node cluster has no layout, and
+        # without one `garage bucket create` fails -- which is the first thing the E2E does
+        # for each of its two disposable identities.
+        run: |
+          docker compose up -d garage
+
+          garage() { docker compose exec -T garage /garage "$@"; }
+
+          for i in $(seq 1 30); do
+            if garage status >/tmp/garage-status.txt 2>&1; then
+              cat /tmp/garage-status.txt
+              break
+            fi
+            cat /tmp/garage-status.txt || true
+            sleep 2
+          done
+
+          node_id="$(garage status | awk '/NO ROLE ASSIGNED|pending\.\.\./ { print $1; exit }')"
+          if [ -n "$node_id" ]; then
+            garage layout assign -z dc1 -c 1G "$node_id" >/dev/null
+            version="$(garage layout show | awk '/garage layout apply --version/ { print $NF; exit }')"
+            if [ -n "$version" ]; then
+              garage layout apply --version "$version" >/dev/null
+            fi
+          fi
+
+          if ! garage bucket info "$AURA_OBJECTSTORE_BUCKET" >/dev/null 2>&1; then
+            garage bucket create "$AURA_OBJECTSTORE_BUCKET" >/dev/null
+          fi
+          if ! garage key info "$AURA_OBJECTSTORE_ACCESS_KEY" >/dev/null 2>&1; then
+            garage key import --yes -n aura-ingest-ci \
+              "$AURA_OBJECTSTORE_ACCESS_KEY" \
+              "$AURA_OBJECTSTORE_SECRET_KEY" >/dev/null
+          fi
+          garage bucket allow --read --write --owner \
+            "$AURA_OBJECTSTORE_BUCKET" --key "$AURA_OBJECTSTORE_ACCESS_KEY" >/dev/null
+
+      - name: Build the ingestion sidecar image
+        # Explicit, so a build failure fails HERE rather than inside `compose up` where it
+        # reads as a startup problem. compose then finds aura-ingest:local already tagged
+        # (pull_policy: never) and starts it without rebuilding.
+        run: make ingest-image
+
+      - name: Start the ingestion sidecar
+        # The E2E reads AURA_DB_URL out of this container's environment -- that is how it
+        # gets the same cockpit-owned settings row the deployed pipeline reads -- so the
+        # container must be RUNNING, not merely built.
+        run: |
+          docker compose up -d aura-ingest
+          for i in $(seq 1 30); do
+            state="$(docker inspect -f '{{.State.Running}}' aura-ingest 2>/dev/null || echo false)"
+            [ "$state" = "true" ] && break
+            sleep 2
+          done
+          if [ "$(docker inspect -f '{{.State.Running}}' aura-ingest 2>/dev/null || echo false)" != "true" ]; then
+            echo "aura-ingest never reached running" >&2
+            docker compose logs --tail 120 aura-ingest || true
+            exit 1
+          fi
+
+      - name: Reconciliation E2E (add, rerun-unchanged, modify, delete, isolation)
+        run: make ingest-reconcile
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
 
   reasoning-tier-test:
     name: Reasoning tier accuracy (reasoning_live, real embedder)

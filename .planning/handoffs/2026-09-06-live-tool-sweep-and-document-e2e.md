@@ -56,6 +56,16 @@ la box** ridà `57a6b2ec…`: la parità fra il `search_document_id` coniato in 
 Corollario: `status: complete` con la gamba `card` accesa è la **prova in negativo** del
 degradation logger di `e57c54d7` — su uno stack configurato bene non degrada.
 
+> **CORREZIONE 2026-09-07 — questa diagnosi era sbagliata.** L'immagine **si costruisce**
+> in questo box. Misurato il giorno dopo: `docker pull` delle due immagini base riesce (il
+> 429 era rate limiting transitorio) e apt installa LibreOffice senza problemi; il 405
+> compare solo se si forza `HTTP_PROXY`, perché apt parla `http://` e il proxy dell'agente
+> rifiuta il plain HTTP. L'unico ostacolo vero è che il container non eredita la CA del
+> proxy, quindi `go mod download` e pip falliscono con `x509: certificate signed by unknown
+> authority` — si risolve come prescrive `/root/.ccr/README.md`. Con quello l'immagine è
+> stata costruita e i due E2E dell'ingestione girano davvero qui. Due errori transitori
+> generalizzati in un limite strutturale: il paragrafo sotto resta per memoria.
+
 **Come è stato acceso senza la sua immagine.** `docker.io` risponde 429 sull'immagine
 base e l'indice apt prende 405 dal proxy, quindi `docker/aura-ingest/Dockerfile` in
 questo box non si costruisce. La pipeline è stata accesa lo stesso perché non ha niente
@@ -108,13 +118,19 @@ registry.
 
 1. **Verificare la CI #1814** sul head `a924512f`. Se rossa, la diagnosi va fatta prima
    di qualunque altra cosa: master non è verde finché non lo dice una run.
-2. **I percorsi non provati dell'ingestione** elencati sopra — in particolare *modify* e
-   *delete* della riconciliazione, che sono esattamente ciò che l'emendamento #118 dice
-   di aver comprato da CocoIndex senza codice nostro. È un'affermazione ancora non
-   misurata su questo stack.
-3. **L'immagine `aura-ingest` non è costruibile in questo ambiente.** Chi ha un box con
-   accesso a `docker.io` e ad apt dovrebbe costruirla e ripetere l'E2E *dentro* il
-   container, che è l'unico modo per esercitare LibreOffice, poppler e il percorso PDF.
+2. ~~**I percorsi non provati dell'ingestione**~~ **CHIUSO il 2026-09-07.** *modify* e
+   *delete* della riconciliazione, e la matrice dei formati (PDF/XLSX/`.xls` legacy/ODF),
+   ora girano in CI: `extractor_matrix_test.sh` come step del job `ingest-sidecar-test`,
+   `ingest_reconcile_e2e.sh` come nuovo job `ingest-reconcile-e2e`. Entrambi provati
+   localmente prima del push. L'affermazione dell'emendamento #118 ha finalmente un gate
+   che può falsificarla.
+
+   Resta aperto dentro: le tre fasi in coda a `ingest_reconcile_e2e.sh` — round-trip di
+   migrazione, E2E con l'agente vero, eval di retrieval su 23 file — NON girano in CI,
+   perché richiedono una chiave LLM vera che questa pipeline non ha per scelta. Le copre
+   solo l'operatore, lanciando lo script senza `AURA_INGEST_E2E_SCOPE`.
+3. ~~**L'immagine `aura-ingest` non è costruibile in questo ambiente.**~~ **FALSO**, vedi
+   la correzione qui sopra: serviva solo la CA del proxy dentro il build.
 4. **Il letterale `local` ancora vivo nelle colonne text.** Il conteggio delle righe che
    lo portano resta ignoto: su un database appena migrato `scheduler_tasks`,
    `pending_notifications` e `skill_audit` danno zero perché sono **vuote**, non perché

@@ -12430,6 +12430,22 @@ flusso completo, che funziona.
 > su uno stack configurato bene non degrada, e quando degraderà lo dirà una volta al minuto
 > invece che una volta per query.
 >
+> **CORREZIONE (2026-09-07): il paragrafo qui sotto era sbagliato e la misura di oggi lo
+> smentisce.** `docker/aura-ingest/Dockerfile` **si costruisce** in questo ambiente: `docker
+> pull` di `python:3.12-slim-bookworm` e `golang:1.26-bookworm` riesce (il 429 di ieri era
+> rate limiting transitorio) e apt dentro il container installa LibreOffice senza problemi —
+> il 405 compare **solo** se si forza `HTTP_PROXY` sul build, perché apt parla `http://` con
+> deb.debian.org e il proxy dell'agente rifiuta il plain HTTP. L'unico ostacolo reale è uno:
+> il container non eredita la CA del proxy, quindi `go mod download` e pip muoiono con
+> `x509: certificate signed by unknown authority`. Si risolve come `/root/.ccr/README.md`
+> prescrive — CA nel build context, `--network host`, solo `HTTPS_PROXY` — e con quello
+> l'immagine è stata costruita (1,39 GB) e `scripts/extractor_matrix_test.sh` è passato su
+> tutti e 12 i formati fixture in 5,5 secondi, `.pdf`, `.xls`, `.odt` e `.ppt` compresi.
+> Due errori transitori erano stati generalizzati in un limite strutturale e scritti in un
+> emendamento: è esattamente ciò che il principio PRD-first vieta, ed è la ragione per cui
+> quel principio esiste. Il paragrafo originale resta sotto, non riscritto, perché un
+> registro che cancella i propri errori non è un registro.
+>
 > **Un vincolo di ambiente registrato perché costerà tempo a chi lo ritrova:** qui il sidecar
 > NON gira nella sua immagine. `docker.io` risponde 429 all'immagine base e l'indice apt passa
 > dal proxy con 405, quindi `docker/aura-ingest/Dockerfile` non si costruisce in questo box. La
