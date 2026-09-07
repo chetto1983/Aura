@@ -29,6 +29,18 @@ const DisplayEventName = "aura.display"
 // worker-status stream, the swarm chip, and the worker picker.
 const SwarmWorkerEventName = "aura.swarm.worker"
 
+// SchedulerEventName is the stable AG-UI CUSTOM-event name a run emits when it CHANGED the
+// schedule — a task created, cancelled or run now. A surface showing the task list keys on it
+// and rereads from its own authenticated route; the frame carries the fact, never the rows.
+//
+// It exists because the cockpit had no way to learn. queryClient.ts sets
+// refetchOnWindowFocus:false for the whole SPA and useSchedulerMutations invalidates only on a
+// cockpit approve/run/cancel, so a reminder created IN CHAT reached Postgres, fired, delivered
+// on Telegram, and never appeared on the board sitting beside the conversation that made it
+// (measured 2026-09-07 on the operator's deployment: the row was there at 07:31:16 and the
+// board was not).
+const SchedulerEventName = "aura.scheduler"
+
 // ViewEventName is the stable AG-UI CUSTOM-event name the MCP Apps branch emits:
 // a mounted server bound this tool to a `ui://` document, and here is the payload
 // that document renders (internal/agent/mcptools/bridge_views.go).
@@ -475,6 +487,14 @@ func emitToolResultCustom(yield func(events.Event, error) bool, ev *agent.Event)
 	// branch would be a path nothing can reach.
 	if len(ev.Actions.ViewDelta) > 0 {
 		if !yield(events.NewCustomEvent(ViewEventName, events.WithValue(ev.Actions.ViewDelta)), nil) {
+			return false
+		}
+	}
+	// The schedule-changed signal rides here for the same reason the MCP view does: the task
+	// tool answers inside a run, so its delta always arrives on a tool-END event and the
+	// standalone branch would be unreachable.
+	if len(ev.Actions.SchedulerDelta) > 0 {
+		if !yield(events.NewCustomEvent(SchedulerEventName, events.WithValue(ev.Actions.SchedulerDelta)), nil) {
 			return false
 		}
 	}

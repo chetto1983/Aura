@@ -38,6 +38,8 @@ export interface LiveRunAttachArgs {
   readonly foldAppendedStream: AppendedStreamFold;
   readonly setMessages: Dispatch<SetStateAction<ThreadMessageLike[]>>;
   readonly onArtifact?: ((assetId: string | undefined) => void) | undefined;
+  /** The schedule-changed signal; see ExternalStoreChatProps.onScheduler. */
+  readonly onScheduler?: (() => void) | undefined;
   /** D-10's reattach-pump half: fires on an aura.steer frame observed by a reloaded tab. */
   readonly onSteer?: ((notice: SteerNotice) => void) | undefined;
 }
@@ -51,6 +53,7 @@ export function useLiveRunAttach({
   foldAppendedStream,
   setMessages,
   onArtifact,
+  onScheduler,
   onSteer,
 }: LiveRunAttachArgs): void {
   const { t } = useTranslation();
@@ -73,6 +76,7 @@ export function useLiveRunAttach({
             terminal.observed = true;
           },
           ...(onArtifact !== undefined ? { onArtifact } : {}),
+          ...(onScheduler !== undefined ? { onScheduler } : {}),
           ...(onSteer !== undefined ? { onSteer } : {}),
           onUpdate,
         });
@@ -98,6 +102,7 @@ export function useLiveRunAttach({
       threadId,
       t,
       onArtifact,
+      onScheduler,
       onSteer,
       activeRunIdRef,
       setMessages,

@@ -76,6 +76,11 @@ export function SchedulerBoard() {
     queryKey: SCHEDULER_QUERY_KEY,
     queryFn: fetchSchedulerTasks,
     retry: false,
+    // The aura.scheduler frame covers a change made in the run THIS tab is watching. A task
+    // created from Telegram, from the CLI, or on another device emits nothing here, so a board
+    // left open would stay frozen forever. The app-wide default in queryClient.ts stays false:
+    // this widens one query, not the SPA's policy.
+    refetchOnWindowFocus: true,
   });
 
   const rows: readonly SchedulerTask[] = tasks.data ?? [];

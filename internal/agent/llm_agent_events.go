@@ -151,6 +151,13 @@ func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, parentS
 	if art, ok := metaMap(run.Result.Meta, "artifact"); ok {
 		ev.Actions.ArtifactDelta = art
 	}
+	// The schedule-changed twin: the task tool says on its Meta that this call CREATED,
+	// CANCELLED or RAN a scheduled task, and that fact becomes the aura.scheduler frame a
+	// governance board keys on to reread itself. Only the mutating actions stamp it — a
+	// list leaves the key absent and the event is byte-identical to before.
+	if sched, ok := metaMap(run.Result.Meta, "scheduler"); ok {
+		ev.Actions.SchedulerDelta = sched
+	}
 	// The MCP Apps twin of the artifact lift: a view-bound MCP tool result carries
 	// the server + document + structuredContent its view renders. The correlation
 	// ids are stamped HERE rather than by the bridge, because the bridge does not

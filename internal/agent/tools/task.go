@@ -170,7 +170,41 @@ func (t *TaskTool) Execute(ctx context.Context, raw json.RawMessage) (ToolResult
 	if t.Store == nil {
 		return ToolResult{}, fmt.Errorf("task %s: no task store is configured in this context", head.Action)
 	}
-	return t.actionRouter().Dispatch(ctx, head.Action, raw)
+	res, err := t.actionRouter().Dispatch(ctx, head.Action, raw)
+	if err != nil {
+		return res, err
+	}
+	return stampSchedulerChange(res, head.Action), nil
+}
+
+// schedulerMutatingActions are the verbs that change what a task board shows. A read is
+// deliberately absent: a frame that fires on every list stops meaning "something changed".
+var schedulerMutatingActions = map[string]bool{"schedule": true, "cancel": true, "run_now": true}
+
+// stampSchedulerChange marks a successful mutating action on the result Meta, which the agent
+// lifts onto Actions.SchedulerDelta and the AG-UI translator fans out as the aura.scheduler
+// CUSTOM frame a governance board keys on to reread itself.
+//
+// It is stamped HERE, at the one dispatch boundary, rather than in each action: a fourth
+// mutating verb added later would otherwise ship with a board that silently goes stale, which
+// is exactly the defect this closes. Measured 2026-09-07 — a reminder created in chat reached
+// Postgres, fired, delivered on Telegram, and never appeared on the board beside the
+// conversation that created it, because nothing told the cockpit anything had happened.
+//
+// The descriptor carries the FACT, never the rows: the board refetches through its own
+// authenticated route, so putting task data on a chat frame would leak one surface's
+// authorization into another's.
+func stampSchedulerChange(res ToolResult, action string) ToolResult {
+	if !schedulerMutatingActions[action] {
+		return res
+	}
+	meta := ToolResultMeta{}
+	if res.Meta != nil {
+		meta = *res.Meta
+	}
+	meta["scheduler"] = map[string]any{"action": action}
+	res.Meta = &meta
+	return res
 }
 
 func (t *TaskTool) actionRouter() *ActionRouter {

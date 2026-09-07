@@ -1,6 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { Menu, SquarePen } from 'lucide-react';
-import { useQueryClient } from '@tanstack/react-query';
 import { useDefaultLayout } from 'react-resizable-panels';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
@@ -30,6 +29,7 @@ import { useArtifactsPanel } from './shell/useArtifactsPanel';
 import { WorkerDrawer, WorkerResizablePanel } from './shell/WorkerPaneShell';
 import { useWorkerPane } from './shell/useWorkerPane';
 import { useLogoutSession } from './shell/useLogoutSession';
+import { useRunSignals } from './shell/useRunSignals';
 import { useSharePanel } from './shell/useSharePanel';
 import { ShareModal } from './chat/share/ShareModal';
 import { VoiceModeProvider } from './chat/voice/VoiceModeProvider';
@@ -138,20 +138,10 @@ export function AppShell() {
   // ShareModal via the conditional-mount idiom, gated on shareModalState.
   const { shareModalState, openShare, closeShare } = useSharePanel();
 
-  // D-11: a run that emits `aura.artifact` invalidates the identity-scoped assets query so the
-  // panel refetches the new asset (37A persists it before the event, so it is always there), and
-  // auto-opens the panel exactly once per thread. The Set is keyed by threadId: a thread the user
-  // already saw an artifact in never re-opens after a manual close, while a NEW thread re-arms —
-  // the "reset on thread change" contract without a separate reset effect.
-  const queryClient = useQueryClient();
-  const autoOpenedThreads = useRef<Set<string>>(new Set());
-  const handleArtifact = useCallback(() => {
-    if (activeThreadId.length === 0) return;
-    void queryClient.invalidateQueries({ queryKey: ['assets', activeThreadId] });
-    if (autoOpenedThreads.current.has(activeThreadId)) return;
-    autoOpenedThreads.current.add(activeThreadId);
-    openArtifacts();
-  }, [activeThreadId, queryClient, openArtifacts]);
+  const { onArtifact: handleArtifact, onScheduler: handleScheduler } = useRunSignals(
+    activeThreadId,
+    openArtifacts,
+  );
 
   useEffect(() => {
     if (searchParams.get('onboarding') !== '1' || autoOpenedOnboarding.current) return;
@@ -397,6 +387,7 @@ export function AppShell() {
               onUsageBaseline={acceptUsageBaseline}
               allocateUsageRunId={allocateUsageRunId}
               onArtifact={handleArtifact}
+              onScheduler={handleScheduler}
               draftPrompt={composerDraftPrompt}
               onDraftPromptConsumed={consumeComposerDraft}
               onRequestDraftPrompt={requestComposerDraft}
