@@ -86,7 +86,7 @@
     "@types/react-dom": "^19.2.5",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@vitejs/plugin-react": "^6.1.1",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "^5.0.0",
     "axe-core": "^4.13.0",
     "babel-plugin-react-compiler": "^1.0.0",
     "eslint": "^10.9.1",
