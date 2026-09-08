@@ -104,6 +104,18 @@ explicitly discarded on every surface before another answer begins. A terminal-o
 answer must be visible, and an already-streamed answer must not be duplicated.
 Completion and persistence agree about the accepted answer.
 
+On 2026-09-08 the operator retired the paid completion critic in favor of the
+LibreChat execution model. The inspected `@librechat/agents` 3.7.17 standard graph
+routes pending calls through `toolsCondition` and otherwise terminates; it does not
+add an LLM completion judge. Aura's previous critic ran only near the step limit,
+failed open and accepted a third attempt unchecked, and did not prevent the measured
+early multi-agent claims in spike104. Remove that model call, its prompt/parser,
+digest and model override. Preserve deterministic reply hygiene, verification and
+delivery checks, operation ownership and budget/status reporting. The existing
+`AURA_COMPLETION_GATE` switch now controls only the free final-reply checks;
+`AURA_COMPLETION_CRITIC_MODEL` is retired. Verify zero audit calls even at the step
+limit and exercise real multi-agent results through the running cockpit.
+
 Deliverables are sent through the channel's artifact mechanism; a path alone is not
 delivery. Partial outcomes identify unfinished work and the applicable limit.
 
