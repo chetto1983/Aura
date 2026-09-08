@@ -12,7 +12,7 @@ import {
   type ThreadMessageLike,
 } from '@assistant-ui/react';
 import { ReasoningPillPart, ToolFallback } from '../ExternalStoreChat_messages';
-import { statusLabelKey } from '../displays/swarmRow';
+import { isTerminalSwarmStatus, statusLabelKey } from '../displays/swarmRow';
 import { MarkdownText } from '../MarkdownText';
 import { openWorkerStream } from './workerStream';
 import { WorkerPicker } from './WorkerPicker';
@@ -251,7 +251,11 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
                 ) : !hasContent ? (
                   <p role="status" className="px-1 py-4 text-sm text-text-muted">
                     {t(
-                      lifecycleStatus === 'queued' ? 'swarm.pane.queued' : 'swarm.pane.connecting',
+                      lifecycleStatus === 'queued'
+                        ? 'swarm.pane.queued'
+                        : isTerminalSwarmStatus(selectedStatus)
+                          ? 'swarm.pane.noActivity'
+                          : 'swarm.pane.connecting',
                     )}
                   </p>
                 ) : null}

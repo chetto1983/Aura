@@ -40,6 +40,22 @@ beforeEach(() => {
 });
 
 describe('worker transcript lifetime', () => {
+  it.each(['ok', 'failed', 'dead_letter', 'canceled'] as const)(
+    'does not announce an ongoing connection for an empty %s transcript',
+    (terminal) => {
+      render(
+        content({
+          child_id: 'child',
+          status: terminal,
+          last_event_at: '',
+          duration_sec: 0,
+          events: 1,
+        }),
+      );
+      expect(screen.getByText('This agent ended without producing visible activity.')).toBeTruthy();
+      expect(screen.queryByText('Connecting to agent…')).toBeNull();
+    },
+  );
   it('waits for execution before requesting a queued transcript', () => {
     const view = render(
       content({

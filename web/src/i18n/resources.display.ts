@@ -197,6 +197,7 @@ export const displayEn = {
       close: 'Close agent activity',
       connecting: 'Connecting to agent…',
       queued: 'This agent is queued. Activity will appear when it starts.',
+      noActivity: 'This agent ended without producing visible activity.',
       error: "Couldn't load this agent's activity. Check the report file or try again.",
     },
     status: {
@@ -457,6 +458,7 @@ export const displayIt = {
       close: "Chiudi attività dell'agente",
       connecting: "Connessione all'agente…",
       queued: 'Questo agente è in coda. L’attività apparirà quando partirà.',
+      noActivity: 'Questo agente è terminato senza produrre attività visibile.',
       error: "Impossibile caricare l'attività dell'agente. Apri il file del report o riprova.",
     },
     status: {
