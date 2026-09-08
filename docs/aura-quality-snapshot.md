@@ -1,21 +1,23 @@
 # Aura Quality Snapshot (living doc)
 
 **Created:** 2026-05-29
-**Multi-agent web measurement:** 2026-09-08 — 2020 tests across 239 files passed;
-statements **8129/8921 = 91.12%**, branches **5683/6660 = 85.33%**,
-functions **2286/2525 = 90.53%**, lines **7404/7955 = 93.07%**.
+**Multi-agent web measurement:** 2026-09-08 — 2022 tests across 239 files passed;
+statements **8133/8925 = 91.12%**, branches **5690/6666 = 85.35%**,
+functions **2287/2526 = 90.53%**, lines **7406/7957 = 93.07%**.
 Native MCP probe 104Q3 confirmed durable pre-start cancellation and localized terminal
 pane reload on desktop/mobile. Three queued-cancellation SQL mutants were killed.
 The coordinator's unsupported launch/completion claims remain open; these passing
 controls and coverage measurements do not certify the full multi-agent goal.
 Evidence: `.planning/spikes/104-agent-controls-and-grounded-results/README.md` and
-`.git/controls104-full-ui-coverage.log` (local run).
+`.git/interrupted-tool-full-ui.log` (local run). Tool-status Stryker: **22/23 = 95.65%**;
+four native Go cancellation mutations killed. Intermittent live-stream closure in104T
+remains under investigation; cancellation state itself passed in retained104R and live104U.
 **Multi-agent Go measurement:** 2026-09-08 — the complete disposable native
 unit + `db_integration` matrix, including `cmd/aura` contributions, passed at
-**34,654/40,085 = 86.4513%** with its package policy. `internal/documents` reached
+**34,677/40,106 = 86.4634%** with its package policy. `internal/documents` reached
 **708/824 = 85.9223%** and now enforces the full 85% floor. Its previous
 683/824 result failed denominator review; invalid-target, delivery heartbeat and
-terminal counter tests closed that gap. Source: `.git/controls104-full-coverage2.log`
+terminal counter tests closed that gap. Source: `.git/interrupted-tool-full-coverage.log`
 and `artifacts/production-readiness/coverage-report.json` (local run).
 **Current update:** 2026-08-28 (Document oracle: the owned corpus is now 23 files; the disposable production lifecycle indexed 23/23 with zero missing and the real agent passed 11/11 exact cases, including the full-file XLSX aggregate and image-only Italian PDF. The free Gemma/Ollama route also passed a public 96-page digital-PDF witness in seven calls and the operator's private large-workbook aggregate. Ranking remains diagnostic.)
 **Prior update:** 2026-08-27 (Garage mention retrieval scope: the fresh disposable unit plus

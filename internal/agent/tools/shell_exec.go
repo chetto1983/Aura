@@ -65,6 +65,7 @@ type shellExecFooter struct {
 	Cwd        string `json:"cwd"`
 	DurationMS int64  `json:"duration_ms"`
 	TimedOut   bool   `json:"timed_out"`
+	Cancelled  bool   `json:"cancelled,omitempty"`
 }
 
 const defaultShellTimeout = 120 * time.Second

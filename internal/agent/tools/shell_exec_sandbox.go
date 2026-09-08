@@ -85,12 +85,16 @@ func (s *ShellExec) executeInBox(ctx context.Context, h usersandbox.BoxHandle, c
 		Cwd:        finalCwd,
 		DurationMS: time.Since(started).Milliseconds(),
 		TimedOut:   timedOut,
+		Cancelled:  cancelled,
 	})
 	out, err := NewResultReservingTail(ctx, body, footer)
 	if err != nil {
 		return ToolResult{}, err
 	}
 	meta := ToolResultMeta{"cwd": finalCwd, "timed_out": timedOut}
+	if cancelled {
+		meta["cancelled"] = true
+	}
 	if ecPtr != nil {
 		meta["exit_code"] = *ecPtr
 	}

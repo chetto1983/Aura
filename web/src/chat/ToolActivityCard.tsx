@@ -25,6 +25,7 @@ const DOT_CLASS: Record<ToolStatus, string> = {
   running: 'bg-warning aura-dot-pulse',
   done: 'bg-success',
   error: 'bg-danger',
+  canceled: 'bg-text-faint',
 };
 
 /** A nested subagent / child tool entry (swarm fan-out). One level of nesting only. */
@@ -69,10 +70,7 @@ export function ToolActivityCard({
   const bodyId = useId();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [expanded, setExpanded] = useState(false);
-  const status = toolStatus({
-    ...(result !== undefined ? { result } : {}),
-    ...(isError !== undefined ? { isError } : {}),
-  });
+  const status = toolStatus({ result, isError, display });
   const running = status === 'running';
   const elapsed = useElapsed(startedAt, finishedAt, running);
   const summary = summarizeArgs(toolName, argsText ?? '');
@@ -134,12 +132,13 @@ export function ToolActivityCard({
           {summary.length > 0 ? (
             <span className="min-w-0 truncate text-xs text-text-muted">{summary}</span>
           ) : null}
-          {/* The visible status WORD is dropped (dot + duration carry it); AT
-              still hears it. Error stays visible — never color-only (1.4.1). */}
+          {/* Non-success outcomes remain explicit, including for assistive technology. */}
           <span className="sr-only">{t(`chat.tool.status.${status}`)}</span>
-          {status === 'error' ? (
-            <span className="shrink-0 text-xs font-medium text-danger">
-              {t('chat.tool.status.error')}
+          {status === 'error' || status === 'canceled' ? (
+            <span
+              className={`shrink-0 text-xs font-medium ${status === 'error' ? 'text-danger' : 'text-text-muted'}`}
+            >
+              {t(`chat.tool.status.${status}`)}
             </span>
           ) : null}
         </span>

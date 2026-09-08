@@ -345,6 +345,9 @@ func TestShellExecReportsCancellation(t *testing.T) {
 	if got, ok := (*res.Meta)["timed_out"].(bool); !ok || got {
 		t.Fatalf("Meta[timed_out] = %#v, want false", (*res.Meta)["timed_out"])
 	}
+	if (*res.Meta)["cancelled"] != true || !strings.Contains(res.Preview, `"cancelled":true`) {
+		t.Fatalf("cancellation lost its structured outcome: meta=%v preview=%q", res.Meta, res.Preview)
+	}
 }
 
 // The box demuxes stdout and stderr into separate buffers, so the rendered body is stdout then

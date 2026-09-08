@@ -121,6 +121,9 @@ func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, parentS
 	startedAt := run.StartedAt.UTC()
 	endedAt := run.EndedAt.UTC()
 	status := "ok"
+	if run.Result.Meta != nil && (*run.Result.Meta)["cancelled"] == true {
+		status = "canceled"
+	}
 	if run.Err != "" {
 		status = "error"
 	}

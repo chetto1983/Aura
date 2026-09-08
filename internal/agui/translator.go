@@ -213,12 +213,12 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 			// above (D-PROTO). Slotted beside it; a Display Event carries no StateDelta,
 			// so the order only documents precedence. Additive: a nil Display falls
 			// through, leaving the existing stream unchanged.
-			if ev.Actions.Display != nil {
+			if payload := eventDisplay(ev); payload != nil {
 				if !closeRuns() {
 					return
 				}
 				textStreamed = false
-				if !yield(events.NewCustomEvent(DisplayEventName, events.WithValue(ev.Actions.Display)), nil) {
+				if !yield(events.NewCustomEvent(DisplayEventName, events.WithValue(payload)), nil) {
 					return
 				}
 				continue
@@ -464,8 +464,8 @@ func emitToolResultCustom(yield func(events.Event, error) bool, ev *agent.Event)
 			return false
 		}
 	}
-	if ev.Actions.Display != nil {
-		if !yield(events.NewCustomEvent(DisplayEventName, events.WithValue(ev.Actions.Display)), nil) {
+	if payload := eventDisplay(ev); payload != nil {
+		if !yield(events.NewCustomEvent(DisplayEventName, events.WithValue(payload)), nil) {
 			return false
 		}
 	}

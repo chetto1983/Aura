@@ -70,8 +70,9 @@ type Document struct {
 
 // Code is a sandbox/shell text body with its language tag for lazy highlighting.
 type Code struct {
-	Body string `json:"body"`
-	Lang string `json:"lang,omitempty"`
+	Body      string `json:"body"`
+	Lang      string `json:"lang,omitempty"`
+	Cancelled bool   `json:"cancelled,omitempty"`
 }
 
 // Artifact is a local file output chip (filename + size + path); it reuses the

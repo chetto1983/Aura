@@ -22,6 +22,26 @@ function trigger(): HTMLElement {
 }
 
 describe('ToolActivityCard — compact row (AC-6/AC-7/AC-11)', () => {
+  it('shows canceled commands explicitly instead of treating a returned result as completion', () => {
+    render(
+      <ToolActivityCard
+        toolName="shell_exec"
+        result="[command cancelled]"
+        display={{
+          type: 'code',
+          tool_call_id: 'cancel',
+          code: { body: '[command cancelled]', cancelled: true },
+        }}
+      />,
+    );
+    expect(
+      within(row())
+        .getAllByText('Canceled')
+        .some((node) => !node.classList.contains('sr-only')),
+    ).toBe(true);
+    expect(within(row()).queryByText('Done')).toBeNull();
+    expect(row().querySelector('.bg-success')).toBeNull();
+  });
   it('AC-6: a running tool renders a COLLAPSED row with pulsing dot and args summary', () => {
     render(<ToolActivityCard toolName="web_search" argsText='{"query":"meteo domani"}' />);
     expect(body().hidden).toBe(true); // the C2 auto-expand is gone
@@ -105,7 +125,19 @@ describe('ToolActivityCard — compact row (AC-6/AC-7/AC-11)', () => {
   it('toolStatus derives the status from result/isError', () => {
     expect(toolStatus({})).toBe('running');
     expect(toolStatus({ result: 'x' })).toBe('done');
+    expect(toolStatus({ result: '' })).toBe('done');
     expect(toolStatus({ result: 'x', isError: true })).toBe('error');
+    const code: DisplayPayload = {
+      type: 'code',
+      tool_call_id: 'cancel',
+      code: { body: '', cancelled: true },
+    };
+    expect(toolStatus({ display: code })).toBe('canceled');
+    expect(toolStatus({ display: code, isError: true })).toBe('error');
+    expect(toolStatus({ result: 'x', display: { ...code, type: 'web_result' } })).toBe('done');
+    expect(
+      toolStatus({ result: 'x', display: { ...code, code: { body: '', cancelled: false } } }),
+    ).toBe('done');
   });
 });
 

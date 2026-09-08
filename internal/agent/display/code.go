@@ -8,6 +8,7 @@ package display
 type CodeInput struct {
 	Body             string
 	Lang             string
+	Cancelled        bool
 	ArtifactFilename string
 	ArtifactSize     int64
 	ArtifactPath     string
@@ -33,6 +34,6 @@ func normalizeCode(toolCallID string, in CodeInput) (Payload, bool) {
 	return Payload{
 		Type:       KindCode,
 		ToolCallID: toolCallID,
-		Code:       &Code{Body: in.Body, Lang: in.Lang},
+		Code:       &Code{Body: in.Body, Lang: in.Lang, Cancelled: in.Cancelled},
 	}, true
 }

@@ -62,6 +62,7 @@ export const chatToolEn = {
     running: 'Running',
     done: 'Done',
     error: 'Error',
+    canceled: 'Canceled',
   },
 };
 
@@ -98,5 +99,6 @@ export const chatToolIt = {
     running: 'In corso',
     done: 'Completato',
     error: 'Errore',
+    canceled: 'Annullato',
   },
 };

@@ -57,6 +57,7 @@ export interface DisplayDocument {
 export interface DisplayCode {
   readonly body: string;
   readonly lang?: string;
+  readonly cancelled?: boolean;
 }
 
 /** A produced file (type=local_artifact). Mirrors display.Artifact. */

@@ -13,6 +13,36 @@ industrial-readiness claim is made.
 
 ## Evidence and references
 
+- Interrupted-command correction: `shell_exec` now records `cancelled` in its footer
+  and metadata, the tool invocation carries `canceled`, and the existing code display
+  conveys cancellation to the card and group indicator. The same normalizer recognizes
+  the validated foreground footer of retained 104R results; replay projects the corrected
+  display without rewriting the original audit event. The 104R pane now displays its
+  interrupted command as Annullato and its later successful command as Completato.
+  Current image: `dc90462efcc27f0ba63bcfc35bdbec694333924d8a7b029bf58b42aed6a24542`
+  (`8d1ec73a9-cancelledtool`). Native Go race suites passed; four Go overlay mutations
+  were killed. Stryker killed **22/23 = 95.65%** for `toolStatus.ts`, now included in
+  the regular mutation contract. Full Go/Postgres coverage passed at
+  **34,677/40,106 = 86.4634%**, including the package policy. Full UI passed
+  **2022 tests / 239 files**, statements **8133/8925 = 91.12%**, branches **5690/6666 = 85.35%**.
+- 104T, conversation `01a07f5d-aa8f-7d09-bab4-b1e9283d961c`: stopped the live
+  Python PID79680 for `w1-2c21fd958624f82363a57497b6ab03a6`, POST202, job canceled
+  at attempt1. Its retained tool event has `status:canceled`, metadata `cancelled:true`
+  and code display `cancelled:true`; sibling `w2-eec4e11bd117f3204ff6a4e12553d36e`
+  succeeded at attempt1 with2026. The live pane nevertheless stayed Running with a
+  stream error; CDP inspection found BOTH EventSources CLOSED. Fresh authenticated
+  SSE fetch returned the complete cancellation frames and RUN_FINISHED. No cause is
+  claimed and no speculative stream patch was made.
+- 104U instrumented repeat, conversation `01a07f71-f1f0-7d20-9783-72153c9df612`:
+  stopped live Python PID17455 for `w1-74adc0eaa2edb60039cb626560fad1c9`, POST202,
+  canceled at attempt1; sibling `w2-b645be32d955e1ac75eb046348cab15e` succeeded once
+  with3026. Native EventSource open/error/close tracing showed the child receive
+  RUN_FINISHED and close normally, while the global status stream remained open.
+  The live pane displayed both worker and command as Annullato. Observation did not
+  replace responses or alter the application handlers. The temporary observer was
+  removed and the page reloaded afterward. The intermittent 104T closure remains
+  a follow-up, not a passing stream-lifecycle proof.
+
 - 104R, conversation `01a07f35-3786-76e0-97ac-292e4635c742`: while R1
   `w1-09dc869e2a6ec074f571657db7314658` executed its 80-second command, a UI steer
   returned 202 with receipt `8900aef9-c80d-4acb-b5c7-360aa33819f6`, still accepted
@@ -142,7 +172,7 @@ Do not edit the concurrent phase 1 sandbox/provisioning work.
 | Nested control and visibility | Discover/control a live grandchild; preserve siblings and ancestry | Passed 104N direct controls and 104S coordinator subtree stop |
 | Ownership and input bounds | Real scoped API denies foreign/malformed/stale targets and oversized input | Missing for child controls |
 | Restart and control settlement | No silent application to a new incarnation; completed/canceled work is not retried as failure | Graceful restart passed 104R; hard-crash pending control case not yet measured |
-| Interrupted tool outcome | Canceled commands have an honest structured and visual status | Failed in 104R: cancellation text with status ok / Completed |
+| Interrupted tool outcome | Canceled commands have an honest structured and visual status | Corrected; retained104R and live104U passed; 104T stream closure still under investigation |
 | Grounded final answers | Delayed unpredictable outputs match actual reports; no fabricated IDs or premature success | Failed baseline |
 | Failure and hostile report data | Honest partial results; report text cannot become operator authority | Prior trust framing passed; broaden final-answer proof |
 | Desktop/mobile and EN/IT | MCP controls, keyboard, reload and readable status on both layouts | Reload, final text and EN/IT empty state passed; live Stop via keyboard passed 104S |

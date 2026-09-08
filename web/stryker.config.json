@@ -32,6 +32,7 @@
     "src/shell/ShareShell.tsx",
     "src/chat/durationFormat.ts",
     "src/chat/toolSummary.ts",
+    "src/chat/toolStatus.ts",
     "src/chat/toolGrouping.ts",
     "src/conversations/exportConversation.ts",
     "src/audit/auditPairing.ts"

@@ -17,6 +17,26 @@ function member(id: string, over: Partial<ToolGroupMember> = {}): ToolGroupMembe
 }
 
 describe('ToolGroup (AC-10)', () => {
+  it('does not give a group with a canceled command a success indicator', () => {
+    render(
+      <ToolGroup
+        members={[
+          member('a'),
+          member('b', {
+            display: {
+              type: 'code',
+              tool_call_id: 'b',
+              code: { body: '[command cancelled]', cancelled: true },
+            },
+          }),
+          member('c'),
+        ]}
+      />,
+    );
+    const header = screen.getByRole('button', { name: 'Grouped tool activity' });
+    expect(header.querySelector('.bg-success')).toBeNull();
+    expect(header.querySelector('.bg-text-faint')).not.toBeNull();
+  });
   it('renders ONE collapsed header with the member count and no individual rows', () => {
     render(<ToolGroup members={[member('a'), member('b'), member('c')]} />);
     const group = screen.getByTestId('tool-group');

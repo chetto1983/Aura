@@ -28,6 +28,8 @@ const mutationTests = [
   // Compact-chat + audit modules (2026-07-23): pure logic under mutation.
   // ReasoningPill.test rides along as the durationFormat consumer suite.
   'src/chat/__tests__/toolSummary.test.ts',
+  'src/chat/__tests__/ToolActivityCard.test.tsx',
+  'src/chat/__tests__/ToolGroup.test.tsx',
   'src/chat/__tests__/toolGrouping.test.ts',
   'src/chat/__tests__/durationFormat.test.ts',
   'src/chat/__tests__/ReasoningPill.test.tsx',

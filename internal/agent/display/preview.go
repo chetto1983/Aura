@@ -77,29 +77,49 @@ func decodeToolPreview(toolName, preview string) (any, bool) {
 		}
 		return *queued.Workers, true
 	case "shell_exec", "sandbox_exec":
-		// A code-producing tool's preview is plain combined output text, not JSON; wrap it
-		// as the code body. Lang is empty (shell output has no single language) and the
-		// structured "[aura_shell {…}]" footer is stripped — its exit code already shows on
-		// the tool card. (Local-file artifacts ride the separate aura.artifact seam.)
-		return CodeInput{Body: stripShellFooter(preview)}, true
+		return shellCodeInput(preview), true
 	default:
 		return nil, false
 	}
 }
 
-// stripShellFooter drops the trailing structured "[aura_shell {json}]" /
+// splitShellFooter extracts the trailing structured "[aura_shell {json}]" /
 // "[aura_shell_bg {json}]" footer that tools/shell_exec.go appendShellFooter adds to the
 // model preview, leaving the human-readable command output as the code body. The marker
 // is matched conservatively (own-line, preview ends with the footer's closing "]"); an
 // unrecognized shape returns the preview unchanged (graceful degradation).
-func stripShellFooter(preview string) string {
+func splitShellFooter(preview string) (body, footer string, foreground bool) {
 	if !strings.HasSuffix(preview, "]") {
-		return preview
+		return preview, "", false
 	}
+	last, selected := -1, ""
 	for _, marker := range []string{"\n[aura_shell ", "\n[aura_shell_bg "} {
-		if i := strings.LastIndex(preview, marker); i >= 0 {
-			return strings.TrimRight(preview[:i], "\n")
+		if i := strings.LastIndex(preview, marker); i > last {
+			last, selected = i, marker
 		}
 	}
-	return preview
+	if last < 0 {
+		return preview, "", false
+	}
+	return strings.TrimRight(preview[:last], "\n"), preview[last+len(selected) : len(preview)-1], selected == "\n[aura_shell "
+}
+
+func shellCodeInput(preview string) CodeInput {
+	body, raw, foreground := splitShellFooter(preview)
+	in := CodeInput{Body: body}
+	var footer struct {
+		Cancelled  bool    `json:"cancelled"`
+		TimedOut   *bool   `json:"timed_out"`
+		ExitCode   *int    `json:"exit_code"`
+		Cwd        *string `json:"cwd"`
+		DurationMS *int64  `json:"duration_ms"`
+	}
+	if !foreground || json.Unmarshal([]byte(raw), &footer) != nil {
+		return in
+	}
+	// Older retained results omitted cancelled. Their foreground footer had no
+	// exit code and the host appended this marker; ordinary output still has an exit code.
+	legacyCancelled := footer.ExitCode == nil && footer.TimedOut != nil && !*footer.TimedOut && footer.Cwd != nil && footer.DurationMS != nil && *footer.DurationMS >= 0 && strings.HasSuffix(body, "[command cancelled]")
+	in.Cancelled = footer.Cancelled || legacyCancelled
+	return in
 }

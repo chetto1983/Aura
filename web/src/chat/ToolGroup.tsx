@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import type { DisplayPayload } from './displays/types';
 import { formatElapsed } from './durationFormat';
 import { ToolActivityCard } from './ToolActivityCard';
+import { toolStatus } from './toolStatus';
 import { Button } from '@/components/ui/button';
 
 // ToolGroup (compact-chat spec §3.3): one 44px header for a run of ≥3
@@ -37,6 +38,7 @@ export function ToolGroup({ members, onOpenSource }: ToolGroupProps) {
   const [expanded, setExpanded] = useState(false);
 
   const anyError = members.some((m) => m.isError === true);
+  const anyCanceled = members.some((member) => toolStatus(member) === 'canceled');
   const startedAt = members[0]?.startedAt;
   const finishedAt = members[members.length - 1]?.finishedAt;
   const span =
@@ -63,7 +65,7 @@ export function ToolGroup({ members, onOpenSource }: ToolGroupProps) {
         <span className="flex min-w-0 items-center gap-2">
           <span
             aria-hidden="true"
-            className={`inline-block h-2 w-2 shrink-0 rounded-sm ${anyError ? 'bg-danger' : 'bg-success'}`}
+            className={`inline-block h-2 w-2 shrink-0 rounded-sm ${anyError ? 'bg-danger' : anyCanceled ? 'bg-text-faint' : 'bg-success'}`}
           />
           <span className="text-xs text-text">
             {t('chat.tool.group', { count: members.length })}
