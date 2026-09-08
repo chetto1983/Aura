@@ -370,6 +370,7 @@ export const ToolFallback: ToolCallMessagePartComponent = ({
   argsText,
   result,
   isError,
+  status,
 }) => {
   const { openSources } = useSourceExplorer();
   const part = useAuiState((s) => s.part) as {
@@ -446,6 +447,7 @@ export const ToolFallback: ToolCallMessagePartComponent = ({
     <ToolActivityCard
       toolName={toolName}
       argsText={argsText}
+      partStatus={status}
       {...(resultText !== undefined ? { result: resultText } : {})}
       {...(isError !== undefined ? { isError } : {})}
       {...(startedAt !== undefined ? { startedAt } : {})}

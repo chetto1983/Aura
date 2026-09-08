@@ -1,9 +1,14 @@
 # Aura Quality Snapshot (living doc)
 
 **Created:** 2026-05-29
-**Multi-agent web measurement:** 2026-09-08 — 2022 tests across 239 files passed;
-statements **8133/8925 = 91.12%**, branches **5690/6666 = 85.35%**,
-functions **2287/2526 = 90.53%**, lines **7406/7957 = 93.07%**.
+**Multi-agent web measurement:** 2026-09-08 — 2025 tests across 239 files passed;
+statements **8135/8927 = 91.12%**, branches **5702/6678 = 85.38%**,
+functions **2287/2526 = 90.53%**, lines **7408/7959 = 93.07%**.
+Native assistant-ui part status now stops a result-less terminal tool from spinning
+forever: MCP104X crash/reclaim shows Interrupted with no fabricated result/duration;
+normal live104Y still shows Running then Completed with7011. DesktopIT/mobileEN
+and reload passed. Targeted toolStatus Stryker **38/39 = 97.44%**;
+local reports `.git/interrupted-part-full-ui.log` and `.git/interrupted-part-stryker.log`.
 Native MCP probe 104Q3 confirmed durable pre-start cancellation and localized terminal
 pane reload on desktop/mobile. Three queued-cancellation SQL mutants were killed.
 The coordinator's unsupported launch/completion claims remain open; these passing

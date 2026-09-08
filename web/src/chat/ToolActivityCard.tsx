@@ -1,5 +1,6 @@
 import { useCallback, useId, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
+import type { ToolCallMessagePartStatus } from '@assistant-ui/react';
 import { useTranslation } from 'react-i18next';
 import { DisplayRouter } from './displays/DisplayRouter';
 import type { DisplayPayload } from './displays/types';
@@ -26,6 +27,7 @@ const DOT_CLASS: Record<ToolStatus, string> = {
   done: 'bg-success',
   error: 'bg-danger',
   canceled: 'bg-text-faint',
+  interrupted: 'bg-text-faint',
 };
 
 /** A nested subagent / child tool entry (swarm fan-out). One level of nesting only. */
@@ -43,6 +45,7 @@ export interface ToolActivityCardProps {
   /** Raw tool-result preview, when the call has completed. */
   readonly result?: string;
   readonly isError?: boolean;
+  readonly partStatus?: ToolCallMessagePartStatus;
   /** Epoch-ms when the tool call started (AG-UI TOOL_CALL_START). Optional. */
   readonly startedAt?: number;
   /** Epoch-ms when the tool call ended (AG-UI TOOL_CALL_END). Optional. */
@@ -60,6 +63,7 @@ export function ToolActivityCard({
   argsText,
   result,
   isError,
+  partStatus,
   startedAt,
   finishedAt,
   childActivity,
@@ -70,9 +74,13 @@ export function ToolActivityCard({
   const bodyId = useId();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [expanded, setExpanded] = useState(false);
-  const status = toolStatus({ result, isError, display });
+  const status = toolStatus({ result, isError, display, partStatus });
   const running = status === 'running';
-  const elapsed = useElapsed(startedAt, finishedAt, running);
+  const elapsed = useElapsed(
+    status === 'interrupted' && finishedAt === undefined ? undefined : startedAt,
+    finishedAt,
+    running,
+  );
   const summary = summarizeArgs(toolName, argsText ?? '');
   // Result meta appears only once settled (§3.1 — absent while running).
   const meta = running ? null : resultMeta(display, result);
@@ -134,7 +142,7 @@ export function ToolActivityCard({
           ) : null}
           {/* Non-success outcomes remain explicit, including for assistive technology. */}
           <span className="sr-only">{t(`chat.tool.status.${status}`)}</span>
-          {status === 'error' || status === 'canceled' ? (
+          {status === 'error' || status === 'canceled' || status === 'interrupted' ? (
             <span
               className={`shrink-0 text-xs font-medium ${status === 'error' ? 'text-danger' : 'text-text-muted'}`}
             >
@@ -172,6 +180,9 @@ export function ToolActivityCard({
         data-testid="tool-body"
         className="aura-part-reveal border-t border-border"
       >
+        {status === 'interrupted' ? (
+          <p className="px-3 pt-2 text-xs text-text-muted">{t('chat.tool.interruptedDetail')}</p>
+        ) : null}
         {display !== undefined ? (
           <div className="p-2">
             <DisplayRouter

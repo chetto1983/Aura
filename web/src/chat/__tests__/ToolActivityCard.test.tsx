@@ -22,6 +22,42 @@ function trigger(): HTMLElement {
 }
 
 describe('ToolActivityCard — compact row (AC-6/AC-7/AC-11)', () => {
+  it.each([{ type: 'complete' }, { type: 'incomplete', reason: 'error' }] as const)(
+    'shows a result-less $type native part as interrupted, without inventing a duration',
+    (partStatus) => {
+      render(
+        <ToolActivityCard
+          toolName="shell_exec"
+          argsText="{}"
+          startedAt={1000}
+          partStatus={partStatus}
+        />,
+      );
+      expect(
+        within(row())
+          .getAllByText('Interrupted')
+          .some((node) => !node.classList.contains('sr-only')),
+      ).toBe(true);
+      expect(row().querySelector('.aura-dot-pulse')).toBeNull();
+      expect(screen.queryByTestId('tool-elapsed')).toBeNull();
+      fireEvent.click(trigger());
+      expect(body().hasAttribute('hidden')).toBe(false);
+      expect(within(body()).getByText('No result was recorded for this execution.')).toBeTruthy();
+      expect(screen.queryByTestId('tool-copy')).toBeNull();
+    },
+  );
+
+  it('preserves real empty results and does not interrupt a part waiting for input', () => {
+    expect(toolStatus({ result: '', partStatus: { type: 'complete' } })).toBe('done');
+    expect(
+      toolStatus({ result: 'observed', partStatus: { type: 'incomplete', reason: 'error' } }),
+    ).toBe('done');
+    expect(toolStatus({ partStatus: { type: 'requires-action', reason: 'interrupt' } })).toBe(
+      'running',
+    );
+    expect(toolStatus({ partStatus: { type: 'running' } })).toBe('running');
+  });
+
   it('shows canceled commands explicitly instead of treating a returned result as completion', () => {
     render(
       <ToolActivityCard

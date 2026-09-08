@@ -1,6 +1,7 @@
 # Industrial multi-agent controls and grounded results
 
-Status: in progress. Goal: **MAKE AURA MULTIAGENT INDUSTRIAL FULLY VALIDATE E2E**.
+Status: in progress. Goal: **MAKE AURA MULTIAGENT INDUSTRIAL FULLY VALIDATE E2E
+and validate critic agent if not necessary delete look librechat**.
 This continues spike 103; its passing runtime tests do not close the full goal.
 
 Latest live checkpoint: child steering/FIFO/replay, real process stop and direct nested
@@ -13,6 +14,29 @@ industrial-readiness claim is made.
 
 ## Evidence and references
 
+-104X, conversation `01a07fe1-0757-7516-9cee-af46d25e8fb3`, child
+  `w1-9c520222b53268ab8d9b54881299e6e3`: UI steer202 at07:19:00.517967Z,
+  receipt `11ba041e-7968-451c-b75a-6e4bb175278e`, then real backend SIGKILL while
+  Python PID7326 slept80. Explicitly restarted Aura; native lease expiry at
+  07:22:54.45483Z allowed attempt2. New Python PID14451 ran the command, and the
+  job succeeded at07:24:19.078883Z with `{"value":6011}` and no old `nota`.
+  The old receipt stayed undrained; the API reports rejected/owner_unavailable.
+  Its database expired_at remained NULL with expires_at07:34:00.517909Z: this is
+  an honest unavailable-owner projection, not a stored worker_run_ended rejection.
+  This proves the missing crash/control combination, not exactly-once execution.
+- The104X pane then exposed an unresolved old tool spinning after overall success.
+  The renderer now consumes assistant-ui's native part status; a terminal part
+  without a result shows localized Interrupted and an explanatory note, with no
+  invented result or unknown duration. The retained104X pane passes on desktopIT
+  and mobileEN, including reload; drawer341px at390x844 without overflow.
+  Live104Y (`01a07ff7-5dfd-7a75-937f-31019238fe2d`, child
+  `w1-b641290ed45418d76a66ab623b4e1beb`) still showed a running pulse at26s and
+  completed its actual35-second command with7011. Full frontend: **2025 tests**,
+  **8135/8927 statements = 91.12%**, **5702/6678 branches = 85.38%**;
+  targeted toolStatus mutation **38/39 = 97.44%**. Healthy image:
+  `518d81de3fb5acb20c3fdc08ca030752d41773c898e0b1089cffb2cc08ed3064`
+  (`0a03cfe24-interruptedpart`). The image build is the frontend build authority;
+  no additional webbuild export/build is needed, as the user clarified.
 - Replay timing: MCP104W originally showed20s after opening mid-command, then0s
   after reload. The retained start/end timestamps are06:47:03.692734448Z and
   06:47:34.447222259Z; the native tool duration is30,754ms. `Translate` now uses
@@ -216,8 +240,8 @@ Do not edit the concurrent phase 1 sandbox/provisioning work.
 | Stop lifecycle races | Completion, queued/paused work and accepted controls resolve honestly | Paused 104F2 and queued 104Q3 passed; completion fence covered natively |
 | Nested control and visibility | Discover/control a live grandchild; preserve siblings and ancestry | Passed 104N direct controls and 104S coordinator subtree stop |
 | Ownership and input bounds | Real scoped API denies foreign/malformed/stale targets and oversized input | Passed real Authula-cookie TLS/Postgres regression: foreign404, malformed/oversize400, stale run404, stale queued attempt410; owner controls/replay remain valid |
-| Restart and control settlement | No silent application to a new incarnation; completed/canceled work is not retried as failure | Graceful restart passed 104R; hard-crash pending control case not yet measured |
-| Interrupted tool outcome | Canceled commands have an honest structured and visual status | Corrected; retained104R and live104U passed; 104T stream closure still under investigation |
+| Restart and control settlement | No silent application to a new incarnation; completed/canceled work is not retried as failure | Passed graceful104R and real SIGKILL104X; the lost owner's undrained receipt is reported rejected/owner_unavailable |
+| Interrupted tool outcome | Canceled commands have an honest structured and visual status | Passed retained104R and live104U/104W; PWA stream closure corrected and replay retains original execution duration |
 | Grounded final answers | Delayed unpredictable outputs match actual reports; no fabricated IDs or premature success | Failed baseline |
 | Failure and hostile report data | Honest partial results; report text cannot become operator authority | Prior trust framing passed; broaden final-answer proof |
 | Desktop/mobile and EN/IT | MCP controls, keyboard, reload and readable status on both layouts | Reload, final text and EN/IT empty state passed; live Stop via keyboard passed 104S |

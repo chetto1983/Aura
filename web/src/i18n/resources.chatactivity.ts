@@ -58,11 +58,13 @@ export const chatToolEn = {
     seconds: '{{value}} s',
     minutes: '{{minutes}} min {{seconds}} s',
   },
+  interruptedDetail: 'No result was recorded for this execution.',
   status: {
     running: 'Running',
     done: 'Done',
     error: 'Error',
     canceled: 'Canceled',
+    interrupted: 'Interrupted',
   },
 };
 
@@ -95,10 +97,12 @@ export const chatToolIt = {
     seconds: '{{value}} s',
     minutes: '{{minutes}} min {{seconds}} s',
   },
+  interruptedDetail: 'Non è stato registrato un risultato per questa esecuzione.',
   status: {
     running: 'In corso',
     done: 'Completato',
     error: 'Errore',
     canceled: 'Annullato',
+    interrupted: 'Interrotto',
   },
 };
