@@ -39,6 +39,9 @@ type runtimeTenantIngestionProcessor struct {
 	worker         runtimeIdentityProcessorFactory
 	width          int
 	workerIDPrefix string
+	retainWorkers  bool
+	workerMu       sync.Mutex
+	retained       map[runtimeWorkerKey]runtimeIngestionProcessor
 }
 
 type runtimeIngestionWorker struct {
@@ -155,6 +158,7 @@ func (p *runtimeTenantIngestionProcessor) ProcessOnce(ctx context.Context) (int,
 			active = append(active, candidate)
 		}
 	}
+	p.pruneRetainedWorkers(active)
 	if len(active) == 0 {
 		return 0, nil
 	}
@@ -179,7 +183,7 @@ func (p *runtimeTenantIngestionProcessor) ProcessOnce(ctx context.Context) (int,
 			count := 0
 			var errs []error
 			for identityID := range tasks {
-				processed, processErr := p.worker(identityID, workerID).ProcessOnce(ctx)
+				processed, processErr := p.processorFor(identityID, workerID).ProcessOnce(ctx)
 				count += processed
 				if processErr != nil {
 					errs = append(errs, fmt.Errorf("identity %s: %w", identityID, processErr))

@@ -248,6 +248,12 @@ func (l *DelegationClaimLoop) Wait() {
 	l.inFlight.Wait()
 }
 
+// Idle lets the tenant supervisor retire an inactive identity after its live work drains.
+func (l *DelegationClaimLoop) Idle() bool {
+	l.slotsOnce.Do(func() { l.slots = make(chan struct{}, l.batchSize()) })
+	return len(l.slots) == 0
+}
+
 // Run polls ProcessOnce until ctx is cancelled, then waits for the jobs in
 // flight. A pass error is logged and swallowed -- one bad pass never kills the
 // loop, mirroring internal/cron's own "log and continue" discipline.
