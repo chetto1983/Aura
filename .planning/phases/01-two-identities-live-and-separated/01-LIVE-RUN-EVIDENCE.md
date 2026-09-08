@@ -1,94 +1,151 @@
 # Phase 01 — Two-Identity Live Run Evidence
 
-**Status: BLOCKED — no scored run exists yet.** This file records what was measured while
-building the harness, and names exactly what is missing before a real run can be scored. It
-is written honestly per CLAUDE.md's PRD-first principle rather than fabricated to look
-complete: **`/gsd-execute-phase` must not report this plan, or this phase, as closed on the
-strength of this file.**
+**Status: SCORED RUN COMPLETE, machine-checkable half GREEN.** This file records a real run
+against the live stack. The rubric score rows are left empty by design — this project runs
+`human_verify_mode` at `end-of-phase`; the verifier harvests the scoring instruction from
+this plan's Task 3 `<verify><human-check>` block into the phase UAT batch, per D-16 ("read and
+score" is the operator's role, not this executor's).
 
-- **Commit the harness was built and dry-run-tested against:** `dfd46cc6b44aaa497e5245f43cfa806fa272c643`
+- **Commit the scored run was made on:** `94c38c1b3a009ea02514c7c307c970a39c67db19`
 - **Date:** 2026-09-08
-- **Host:** this repository's WSL environment, against the live Docker Desktop compose stack
-  already running on this host (`aura`, `aura-postgres`, `aura-arcadedb`, `aura-garage`, and
-  siblings — `docker compose ps` at the time of writing showed all core services healthy).
+- **Host:** WSL, against the live Docker Desktop compose stack already running on this host
+  (`aura`, `aura-postgres`, `aura-arcadedb`, `aura-garage`, and siblings — the compose `aura`
+  service was left untouched throughout; this run's `aura serve` was a separate process).
 
-## What was measured
+## The run
 
-- The harness (`scripts/musr_live_run.sh`) and the blocking assertion set
-  (`scripts/musr_live_run_assert.go`) are both written, committed, and internally verified:
-  - The assert script's five fixture pairs (`scripts/testdata/musr_live_run/{clean,
-    clean-swapped,leaking,empty,no-overlap}`) pass/fail exactly as designed — see commits
-    `6711f253f` (RED) and `69b0caf30` (GREEN) for the measured pass/fail transcript of each.
-  - The PTY-driven secret-prompt mechanism (`scripts/musr_live_run_ptyexpect.py`), which
-    `aura identity create`'s TTY-only password/security-answer prompts require, was verified
-    standalone against a fake interactive prompt (WSL): both secrets delivered correctly,
-    output captured, exit code propagated.
-  - The harness's precondition gate was run for real against this host's live `.env`: it
-    correctly refused **before building the binary**, naming every missing variable —
-    `scripts/musr_live_run.sh`'s own acceptance criterion for this behavior is satisfied by a
-    real measurement, not by reading the code.
-- **The precondition gate found real gaps in this host's current `.env`**, checked via a
-  throwaway presence-only diagnostic (reported SET/EMPTY, never a value; not committed):
-  `AURA_MUSR_ISOLATION`, `AURA_SANDBOX_IMAGE`, `TELEGRAM_BOT_TOKEN`, and
-  `OPENROUTER_API_KEY` are all unset or empty in the root `.env` at the time of this session,
-  even though the already-running `aura` compose container is healthy (its process
-  environment was populated at its own `docker compose up` time, which can diverge from the
-  current `.env` file's contents without a restart).
-  - `AURA_MUSR_ISOLATION` and `AURA_SANDBOX_IMAGE` are self-suppliable, non-secret overrides
-    for the harness's OWN separately-started `aura serve` process (it never touches the
-    compose service or the persisted `.env` file) — `AURA_MUSR_ISOLATION=true` and
-    `AURA_SANDBOX_IMAGE=ghcr.io/chetto1983/aura-sandbox:edge` (`.env.example`'s documented
-    default) would clear these two without modifying the operator's real deployment
-    configuration.
-  - `TELEGRAM_BOT_TOKEN` and `OPENROUTER_API_KEY` are real secrets this executor does not
-    have and will not fabricate. `aura identity create` genuinely requires a working
-    Telegram bot to mint identity B's deep link (D-08); the scored conversations genuinely
-    require a real model endpoint. Per this plan's own honesty contract — "if something
-    blocks the scored run outright, halt and report rather than substituting a weaker
-    proof" — this is exactly that: **halted, not worked around.**
+```
+==> preconditions OK
+==> identity B provisioned: 6d0ebdee-bf43-4f5b-abf6-469310d52a5a
+==> Telegram deep link (D-08, minted once): https://t.me/DavMar1983_Bot?start=e3be9af2-8042-4edf-9937-9563e94bdaa1
+==> identity A authenticated
+==> identity B first login OK (no forced redirect exists to wait for — measured; see header comment)
+==> identity B TOTP enrollment complete (the mandatory leg of D-15's first login)
+==> identity B: no headless password-change path exists in this build (measured — see header comment); not exercised, recorded honestly
+==> threads created: A=01a0812f-91bf-751c-a8c9-8ef090f68f2a B=01a0812f-9212-7c3b-aca3-33882e8c187a
+==> seed documents uploaded: A token=MUSR-A-3372d56a B token=MUSR-B-ac7bfb9d
+==> starting two concurrent /agent/run conversations (released together)
+musr_live_run[b]: terminal event = RUN_FINISHED
+musr_live_run[a]: terminal event = RUN_FINISHED
+==> conversation A exit=0 conversation B exit=0
+==> running the blocking assertion set
+musr_live_run_assert: OK — both identities completed, required tools fired, tokens separated, timings overlap (artifacts/musr-live-run)
+```
 
-## What is NOT recorded here (because it did not happen)
+- **Identity A** (bootstrap operator, dvdmarchetto@gmail.com): `bb78065b-0fc2-4c02-b4b7-b9aeceed1511`.
+- **Identity B** (provisioned by this run, via `aura identity create`): `6d0ebdee-bf43-4f5b-abf6-469310d52a5a`,
+  email `musr-live-run-b-1788873764@example.invalid`.
+- **Telegram deep link minted (D-08, the one real use of the bot):**
+  `https://t.me/DavMar1983_Bot?start=e3be9af2-8042-4edf-9937-9563e94bdaa1`.
+- **Run artifacts** (uncommitted by design — `artifacts/*` is gitignored; this file is where
+  their existence and content are attested): `artifacts/musr-live-run/transcript-a.jsonl`
+  (972 lines), `transcript-b.jsonl` (2655 lines), `timings.jsonl` (20 entries), `daemon.log`,
+  `identities.env`.
 
-- No `aura identity create` run against the live stack (no identity B UUID, no real Telegram
-  deep link minted).
-- No live Authula login for either identity.
-- No `POST /agent/run` conversation, for either identity — the machine-checkable assertion
-  set has never been run against real transcripts, only against the committed fixtures.
-- No measured timing overlap.
-- No rubric score. The score rows below are placeholders, not results.
+## Per-assertion verdict (the blocking half, D-18)
 
-## Rubric score rows (awaiting a real run — NOT scored)
+All six passed on `go run ./scripts/musr_live_run_assert.go --transcripts artifacts/musr-live-run`:
+
+| Assertion | Verdict |
+|---|---|
+| Completion (both transcripts end `RUN_FINISHED`) | PASS |
+| Authentication (both open `RUN_STARTED`) | PASS |
+| Required tools — identity A (`document_search`, `memory__memory_upsert_fact`, `shell_exec`) | PASS |
+| Required tools — identity B (same three) | PASS |
+| Expected token — each identity's answer carries her own `MUSR-<label>-<hex>` marker | PASS |
+| Cross-read — neither answer carries the other identity's token | PASS |
+| Timing overlap — at least one genuine `[start,end]` interval shared between A and B | PASS |
+
+Final answers, extracted from the transcripts:
+- **Identity A:** `MUSR-A-3372d56a` — tool sequence: `document_search`, `skill`, `tool_search`
+  (deferred-tool loading), `memory__memory_upsert_fact`, `shell_exec`.
+- **Identity B:** `Il codice trovato è MUSR-B-ac7bfb9d.` — tool sequence: `document_search`,
+  `skill`, `memory__memory_upsert_fact`, `shell_exec`, `memory__memory_upsert_fact`.
+
+## Measured timing overlap
+
+The sandbox task's shell command was widened to `sleep 3 && echo <code>` (costs no LLM/GPU
+time) precisely because the FIRST real run — otherwise fully passing — showed genuine
+interleaved progress but every individual tool call was sub-second, so no `[start,end]`
+window literally overlapped (recorded below, not hidden). The second run's `timings.jsonl`
+shows real overlap, e.g.:
+
+- Identity B's `shell_exec` (`call_4pal7347`): `2026-09-08T13:24:33.078Z` – `13:24:36.761Z`.
+- Identity A's `skill`/`tool_search` calls fall inside that window:
+  `13:24:36.036Z` – `13:24:36.087Z`.
+- Identity A's `memory__memory_upsert_fact`/`shell_exec` (`13:24:39.361Z` – `13:24:42.933Z`)
+  overlap identity B's second `memory__memory_upsert_fact`
+  (`13:24:41.968Z` – `13:24:42.001Z`), fully contained inside A's window.
+
+## First (non-scored) run — recorded honestly, not discarded
+
+Before the widened sandbox command, an earlier real run completed both conversations
+correctly (right tokens, required tools, no cross-read) and failed **only** the overlap
+assertion. Per this plan's honesty contract that result is recorded, not hidden: the
+machine-checkable half is pass/fail as a whole, and that run's assert-script exit was
+non-zero. It is not counted as the scored run.
+
+An even earlier attempt failed outright at `POST /agent/run` with `403 forbidden` for
+identity B — she had zero capabilities (a freshly provisioned identity has none by default;
+`agent.run`, the capability `POST /agent/run` itself requires, must be granted explicitly at
+create time). Fixed by passing `-capability agent.run` to `aura identity create`; recorded in
+the harness fix commit, not silently retried away.
+
+## Rubric score rows (awaiting the end-of-phase UAT batch — NOT scored here)
 
 | Dimension | Weight | Score | Reasoning |
 |---|---|---|---|
-| Task completion | 30% | — | Awaiting a real run. |
-| Answer correctness | 25% | — | Awaiting a real run. |
-| Tool-route sanity | 20% | — | Awaiting a real run. |
-| Isolation legibility | 15% | — | Awaiting a real run. |
-| Degradation honesty | 10% | — | Awaiting a real run. |
+| Task completion | 30% | — | Awaiting the operator's read of both transcripts (Task 3 `<verify><human-check>`). |
+| Answer correctness | 25% | — | Awaiting. |
+| Tool-route sanity | 20% | — | Awaiting. |
+| Isolation legibility | 15% | — | Awaiting. |
+| Degradation honesty | 10% | — | Awaiting. |
 
-## What this evidence file does NOT demonstrate (in addition to the blocked status above)
+Score only after confirming the assert-script exit above was 0 for the run being scored
+(it was, for the run this file records) — a failing machine check is a failed run whatever
+the prose reads like, per `docs/runbooks/two-identity-live-run.md`.
 
-- It does not demonstrate that the harness's untested sections (identity B provisioning
-  through TOTP enrollment, thread creation, document upload, the async ingest wait, and the
-  two concurrent conversations) work end to end — only that the mechanisms they depend on
-  (PTY-driven secret entry, the precondition gate, the assert script) work in isolation.
-- It does not demonstrate anything about the forced password-change leg of D-15's first
-  login — `scripts/musr_live_run.sh`'s header comment records, with citations, that no
-  headless plan-compliant path exists for it in this build.
-- It does not demonstrate anything about the real ingest latency
-  (`AURA_INGEST_SUPERVISOR_INTERVAL`/`AURA_INGEST_INTERVAL_SEC`) the harness's document-seed
-  wait is calibrated against — that wait is a measured accommodation of the compose config's
-  own documented cadence, not a value measured against a real ingest cycle on this host.
+## Accumulated test debris (disclosed, not hidden)
 
-## Next step
+Debugging this harness against the live stack required many iterations before the first
+clean pass; each dry run and failed real-run attempt provisioned its own identity B (`aura
+identity create` has no delete/deprovision verb — see `scripts/musr_live_run.sh`'s own
+comment on this). Twelve `musr-live-run-b-*@example.invalid` identities exist in
+`aura.identities` on this host as of this session, one of which (`6d0ebdee-...`) is the
+identity this evidence file scores; the other eleven are inert leftovers from earlier
+iterations while diagnosing (in order) the settings-store precondition gap, the
+`host.docker.internal` WSL routing gap, the ArcadeDB/Garage bare-process endpoint gap, the
+wrong default `-operator`, the cookie-jar merge bug, the session-renewal staleness bug, and
+the missing `agent.run` capability. None of them hold data beyond what their own aborted run
+seeded (their own marker document, at most). This is recorded here as a real, measured cost
+of building this harness against a live deployment rather than cleaned up silently — no CLI
+exists to remove them (see the harness's own comment on this), and this executor will not
+invent an undocumented one.
 
-Supply (or point this session at) a real `TELEGRAM_BOT_TOKEN` and `OPENROUTER_API_KEY` (or a
-local model endpoint), then re-run:
+## What this run does NOT demonstrate
 
-```sh
-wsl bash -lc 'cd /mnt/d/Repo/Aura && set -a; source <(awk "{ sub(/\r\$/, \"\"); print }" .env); set +a; bash scripts/musr_live_run.sh'
-```
+Per CLAUDE.md's PRD-first principle:
 
-and replace this file's content with the real measured evidence per
-`docs/runbooks/two-identity-live-run.md`.
+- It samples ONE collision shape — the same three tasks, issued at roughly the same moment,
+  widened by a fixed `sleep 3` in the sandbox command specifically to make the overlap
+  measurable. It says nothing about a three-way race, a different tool mix racing, or a
+  collision on a route this run's three tasks never exercise.
+- It runs ONE model (`gemma4:31b-cloud`, an Ollama-proxied cloud model, reached via
+  `host.docker.internal` through the WSL default-gateway remap this harness's `aura serve`
+  process uses) on ONE host. Nothing here generalizes to a different model, a different
+  host's timing characteristics, or a colder/hotter cache state.
+- It says nothing about behaviour under load, under attack, or across a restart — those are
+  Phases 3, 4, and 5 respectively.
+- Identity B's forced first login is measured to enrol TOTP for real (including a genuine
+  production wiring fix this run's own dry-running discovered and repaired — see
+  `internal/webauth/authula.go`'s commit). The forced PASSWORD CHANGE half of D-15's own
+  promise has no headless, plan-compliant path in this build (measured — see
+  `scripts/musr_live_run.sh`'s header comment for the three independent reasons: no mailer
+  plugin wired, Aura's own security-question reset requires a completed Telegram link this
+  harness will not fake, no admin plugin wired). This run does not exercise it and does not
+  claim to.
+- The 90-second document-ingest wait is a measured accommodation of the compose config's own
+  documented cadence (`AURA_INGEST_SUPERVISOR_INTERVAL`=15s + `AURA_INGEST_INTERVAL_SEC`=60s),
+  not a value independently measured against a real ingest cycle's actual latency on this
+  host — both real runs' `document_search` calls succeeded well inside that wait, which is
+  consistent with, but does not prove, a tighter bound.
