@@ -42,7 +42,15 @@ Aura already has an authorization model and it is not Authula's. `aura.capabilit
 Authula stays what it already is here — authentication — and authorization stays Aura's. Adding a
 second permission system would be the exact fault that put `euroteltr/rbac` out of scope.
 
-One thing must be fixed before any new capability is added. `HasCapability` resolves
+The model this milestone settles on is two roles, not a lattice. An admin adds and removes users;
+a user cannot. Everything else — mounting an MCP server, authoring a skill, running a shell in the
+sandbox, approving a destructive action — is available to every identity, because isolation already
+keeps each identity inside its own perimeter and a permission that everyone holds is not a
+permission. So exactly one capability is added, `identity.delete`, and the four that a finer-grained
+design would have added are deliberately not. What bounds a user is money, not permission: see
+Credits (CRED) below.
+
+One thing must be fixed first, and it is the reason the wildcard cannot survive. `HasCapability` resolves
 `capability = '*' OR capability = $2`, and the bootstrap operator carries a seeded `*`
 (`0004_identity.up.sql:31`, `cmd/aura/serve_bootstrap.go:258`). A capability added under that
 wildcard is granted to the operator before anyone grants it — a gate that ships open. This is not a
@@ -53,17 +61,44 @@ measured: only the two bootstrap paths mint `*`, and every onboarding-provisione
 already refused it in two places (`onboarding_session.go:14` declares the no-escalation rule,
 `onboarding_provision.go:497` enforces it server-side).
 
-- [ ] **RBAC-01**: The `*` wildcard is retired. Bootstrap mints the explicit capability set instead, a migration replaces existing wildcard rows with that set, and `HasCapability` no longer expands `*`
+- [ ] **RBAC-01**: The `*` wildcard is retired. Bootstrap mints the explicit administrative set instead, a migration rewrites existing wildcard rows into that set, and `HasCapability` no longer expands `*`
 - [ ] **RBAC-02**: Every capability Aura enforces is declared in one place with its meaning, so a reviewer can read the authorization surface without grepping call sites
-- [ ] **RBAC-03**: A fresh install lands the first operator with the administrative capability set explicitly granted and auditable — no wildcard, no manual SQL
-- [ ] **RBAC-04**: Installing or mounting an MCP server requires its capability, and is refused without it
-- [ ] **RBAC-05**: Authoring, updating or installing a skill requires its capability, and is refused without it
-- [ ] **RBAC-06**: Running a shell in the sandbox requires its capability, and is refused without it
-- [ ] **RBAC-07**: Approving a destructive action requires its capability — an identity cannot approve an action it lacks the right to take
-- [ ] **RBAC-08**: Administering other identities (provisioning, deprovisioning, granting) requires its capability, and an identity cannot grant itself a capability it does not hold
+- [ ] **RBAC-03**: There are exactly two administrative capabilities, `identity.create` and `identity.delete`. Every other capability Aura enforces is granted to each identity at provisioning, so a user may do everything except administer users
+- [ ] **RBAC-04**: Creating an identity requires `identity.create` and is refused without it
+- [ ] **RBAC-05**: Removing an identity requires `identity.delete` and is refused without it, and the removal runs the full reverse saga rather than only marking a row
+- [ ] **RBAC-06**: The administrative capabilities are not grantable through any API — grant and revoke refuse `identity.create` and `identity.delete` for every caller, so admin is bootstrap-only and privilege escalation has no path to take
+- [ ] **RBAC-07**: The last administrative identity cannot remove or deactivate itself, so the deployment cannot be locked out of its own user management
+- [ ] **RBAC-08**: A fresh install lands the first operator with both administrative capabilities explicitly granted and auditable — no wildcard, no manual SQL
 - [ ] **RBAC-09**: An authorization decision denies by default — an unknown capability, an unresolved principal or a store error refuses rather than admits
 - [ ] **RBAC-10**: Every denial is auditable: who, which capability, which route, when — and the admin surface can read them back
-- [ ] **RBAC-11**: The cockpit's existing identity surface covers the new capabilities. Measured live 2026-09-07 under Settings → Identity and permissions: a four-step "Create identity" wizard (Credentials → Capabilities → …) plus per-grant Revoke already exist, so this is not a build — it is making the wizard's capability step offer the five capabilities RBAC-04..08 add, and showing denials from RBAC-10
+- [ ] **RBAC-11**: The cockpit creates an identity and removes one without leaving the UI, extending the surface under Settings that already lists the roster and grants against it
+
+### Credits (CRED)
+
+A user may do anything a user does; what bounds them is money, not permission. The bound is not a
+ledger Aura keeps and hopes is right — it is a per-identity OpenRouter key with a provider-enforced
+cap, so the ceiling holds even when Aura's accounting is wrong.
+
+Measured live against the account on 2026-09-08. `POST /api/v1/keys` with a management key returns
+the raw key once plus its `hash`; a key created at `limit: 1.0` serves inference on the first call;
+a key at `limit: 0` is refused with HTTP 403 `Key limit exceeded`. Lowering a cap bites in 5s,
+raising one takes ~25s to unblock, and `DELETE` kills inference in ~5s. `cost` arrives in-band on
+every response, streaming included — the docs confirm `usage:{include:true}` is deprecated and
+inert — and four calls summed to `0.000016632` against four in-band `0.000004158`, exact. What the
+provider reports back is slower: `GET /key` still read `usage: 0` 30s after a spend and settled at
+40s, so the provider is the enforcement and the reconciliation, never the live balance. One
+`POST /api/v1/analytics/query` returns 38 metrics over 16 dimensions including `api_key_id`, so
+per-identity spend, tokens, cache hit rate and latency need no analytics of our own.
+
+- [ ] **CRED-01**: Each identity is minted its own OpenRouter key through the Provisioning API at provisioning, stored encrypted per identity and never returned to a browser
+- [ ] **CRED-02**: A new identity starts at a zero cap and cannot spend until an admin assigns it credit
+- [ ] **CRED-03**: The admin sets an identity's cap and its reset interval from the cockpit, and can change both afterwards
+- [ ] **CRED-04**: The cap is enforced by OpenRouter, not by Aura's accounting — an identity over its cap is refused at the provider even if Aura believes otherwise
+- [ ] **CRED-05**: A turn by an identity with no credit is refused cleanly before the model is called, rather than surfacing a raw provider 403 mid-turn
+- [ ] **CRED-06**: The cockpit shows each identity's cap, remaining credit and spend, and the figure it shows is Aura's own in-band ledger rather than the provider's delayed counter
+- [ ] **CRED-07**: An identity without its own key never falls back to the deployment key — the OpenRouter path is fail-closed
+- [ ] **CRED-08**: Removing an identity revokes its OpenRouter key, and the revocation is verified rather than assumed
+- [ ] **CRED-09**: A local backend is exempt and says so, rather than presenting a zero balance for a provider that bills nothing
 
 ### Isolation (ISO)
 
@@ -165,6 +200,15 @@ Every v1 requirement maps to exactly one phase. Mapped during roadmap creation, 
 | RBAC-09 | Phase 2 | Pending |
 | RBAC-10 | Phase 2 | Pending |
 | RBAC-11 | Phase 2 | Pending |
+| CRED-01 | Phase 2 | Pending |
+| CRED-02 | Phase 2 | Pending |
+| CRED-03 | Phase 2 | Pending |
+| CRED-04 | Phase 2 | Pending |
+| CRED-05 | Phase 2 | Pending |
+| CRED-06 | Phase 2 | Pending |
+| CRED-07 | Phase 2 | Pending |
+| CRED-08 | Phase 2 | Pending |
+| CRED-09 | Phase 2 | Pending |
 | ISO-01 | Phase 1 | Pending |
 | ISO-02 | Phase 1 | Complete |
 | ISO-02a | Phase 1 | Complete |
@@ -195,7 +239,7 @@ Every v1 requirement maps to exactly one phase. Mapped during roadmap creation, 
 | Phase | Name | Requirements | REQ-IDs |
 |-------|------|--------------|---------|
 | Phase 1 | Two Identities, Live and Separated | 6 | ISO-01, ISO-02, ISO-02a, ISO-05, E2E-01, E2E-02 |
-| Phase 2 | Permissions Decide What a User May Do | 11 | REL-06, RBAC-01, RBAC-02, RBAC-03, RBAC-04, RBAC-05, RBAC-06, RBAC-07, RBAC-08, RBAC-09, RBAC-10 |
+| Phase 2 | Two Roles and a Budget | 21 | REL-06, RBAC-01, RBAC-02, RBAC-03, RBAC-04, RBAC-05, RBAC-06, RBAC-07, RBAC-08, RBAC-09, RBAC-10, RBAC-11, CRED-01, CRED-02, CRED-03, CRED-04, CRED-05, CRED-06, CRED-07, CRED-08, CRED-09 |
 | Phase 3 | The Boundary Under Attack | 5 | REL-04, ISO-03, ISO-04, ISO-07, E2E-03 |
 | Phase 4 | Load, Chaos and Truthful Degradation | 4 | REL-08, REL-09, REL-11, ISO-06 |
 | Phase 5 | Restart, Rollback, Restore | 6 | REL-10, REL-12, ISO-08, ISO-09, ISO-10, E2E-04 |

@@ -38,7 +38,7 @@ Numbering starts at 1. The previous milestone's phase directories were deleted a
 numbering (45–54) is not carried forward.
 
 - [ ] **Phase 1: Two Identities, Live and Separated** - Turn on the shipped multi-identity profile, provision a second identity through the documented path, and prove two concurrent turns share no data and no execution
-- [ ] **Phase 2: Permissions Decide What a User May Do** - Retire the `*` wildcard, add the five missing capabilities, enforce them at their call sites, and let the cockpit create an identity as well as grant to it
+- [ ] **Phase 2: Two Roles and a Budget** - An admin adds and removes users and nobody else can, every user may do everything else, and what bounds a user is a per-identity OpenRouter cap the provider enforces
 - [ ] **Phase 3: The Boundary Under Attack** - A re-runnable adversarial suite plus a sandbox escape battery, every attempt refused and audited
 - [ ] **Phase 4: Load, Chaos and Truthful Degradation** - Produce load, chaos and observability evidence for the first time, with two identities active
 - [ ] **Phase 5: Restart, Rollback, Restore** - Prove isolation survives the operational lifecycle, producing the DR and rollback evidence in the same drill
@@ -83,21 +83,23 @@ Plans:
 
 - [x] 01-06-PLAN.md — the committed two-identity live-run harness, its blocking machine checks, and the recorded ≥9.8 rubric (wave 4)
 
-### Phase 2: Permissions Decide What a User May Do
+### Phase 2: Two Roles and a Budget
 
-**Goal**: What a user may DO is decided by an explicit capability grant, not by who owns the row and not by a wildcard — and a refusal is auditable and visible in the cockpit.
-**Depends on**: Phase 1 — a permission check needs a second principal to be meaningful. With one identity every check trivially passes, and RBAC-08 (administering other identities) has nothing to administer until provisioning works.
-**Requirements**: RBAC-01, RBAC-02, RBAC-03, RBAC-04, RBAC-05, RBAC-06, RBAC-07, RBAC-08, RBAC-09, RBAC-10, RBAC-11, REL-06
+**Goal**: An admin adds and removes users and nobody else can; every user may do everything else; and what bounds a user is money, enforced by OpenRouter rather than by Aura's own accounting.
+**Depends on**: Phase 1 — a permission check and a per-identity budget both need a second principal to be meaningful. With one identity every check trivially passes and there is nobody to bill.
+**Requirements**: RBAC-01, RBAC-02, RBAC-03, RBAC-04, RBAC-05, RBAC-06, RBAC-07, RBAC-08, RBAC-09, RBAC-10, RBAC-11, CRED-01, CRED-02, CRED-03, CRED-04, CRED-05, CRED-06, CRED-07, CRED-08, CRED-09, REL-06
 **Success Criteria** (what must be TRUE):
 
-  1. The `*` wildcard is retired. Bootstrap (`cmd/aura/serve_bootstrap.go:258`) mints the explicit administrative set instead of `*`, a migration rewrites existing wildcard rows into that set, and `HasCapability`'s SQL no longer expands `*`. Migration `0026` already made `local`'s grants explicit precisely so the admin contract would survive this narrowing; `0099` refused to store approval scopes in this table because the wildcard would have shipped its gate open. Until this lands, any capability added below is granted to the operator before anyone grants it.
-  2. Every capability Aura enforces is declared in one place with its meaning, and the five new ones are enforced with `RequireCapability` at their call sites: mounting or installing an MCP server, authoring or installing a skill, running a shell in the sandbox, approving a destructive action, administering another identity.
-  3. A live turn driven by the real agent as an identity that lacks the capability is refused at each of the five call sites, while the permitted identity succeeds at all five. An identity cannot grant itself a capability it does not hold.
-  4. An unknown capability, an unresolved principal or a store error denies rather than admits, and every denial is retrievable afterwards with who, which capability, which route and when.
-  5. The cockpit admin section creates an identity and grants its capabilities without leaving the UI — extending `web/src/admin/` (`adminApi.ts`, `AdminSection.tsx`, `useAdmin.ts`), which already lists the roster and calls `POST`/`DELETE /api/admin/identities/{id}/capabilities`. Creation is the leg that does not exist yet; granting does.
-  6. `mutation-report.json` shows ≥70% killed separately for gateway, identity, profile, sandbox and frontend — the refusal branches this phase adds are provably killed, not merely covered.
+  1. The `*` wildcard is retired. Bootstrap (`cmd/aura/serve_bootstrap.go:258`) mints the explicit set — `identity.create`, `identity.delete` and the four every user holds — a migration rewrites existing wildcard rows into it, and `HasCapability`'s SQL no longer expands `*`. Migration `0026` already made `local`'s grants explicit precisely so the admin contract would survive this narrowing; `0099` refused to store approval scopes in this table because the wildcard would have shipped its gate open.
+  2. Exactly two capabilities are administrative, and every capability Aura enforces is declared in one place with its meaning. Every other capability is granted to each identity at provisioning, so a user can mount an MCP server, author a skill, run a shell in the sandbox and approve a destructive action — only user management is refused. This is a deliberate narrowing of the milestone's original design, which would have added five capabilities and enforced each at its call site: isolation already keeps an identity inside its own perimeter, and a permission every identity holds is not a permission.
+  3. Admin is bootstrap-only and has no path to escalation. `POST` and `DELETE /api/admin/identities/{id}/capabilities` refuse `identity.create` and `identity.delete` for every caller, so the administrative capability never transits the API, and the last administrative identity cannot remove or deactivate itself.
+  4. The cockpit creates an identity and removes one without leaving the UI. Creation is the leg that does not exist; the reverse saga does — `internal/agui/deprovision.go` tears down every plane the provisioning saga built, is journaled and idempotent, and today is reachable only from `aura identity deactivate|purge` with no HTTP route at all.
+  5. Each identity is minted its own OpenRouter key through the Provisioning API at provisioning, at a zero cap, stored encrypted per identity on the pattern `internal/mcpoauth/store.go` already establishes (AES-256-GCM, KEK from `AURA_AUTHULA_SECRET`, RLS, `ON DELETE CASCADE`). The deployment key is never a fallback: an identity without its own key is refused rather than billed to the operator. The work this forces is real — `llm.Load()` resolves `OPENROUTER_API_KEY` once at boot and `chat.cfg.LLM` reaches the agent at construction (`internal/agent/llm_agent_construct.go:36`), so no per-identity credential resolution exists today.
+  6. An admin sets an identity's cap and reset interval from the cockpit and can change both. An identity at a zero cap is refused cleanly before the model is called, not by a raw provider 403 mid-turn; an identity with credit runs; and the cockpit shows cap, remaining and spend. The displayed figure comes from Aura's own in-band ledger — `cost` arrives on every OpenRouter response including streaming, `internal/agent/turn_usage.go` already sums it across a turn's calls and `aura.cache_metrics.cost_usd` already persists it — because the provider's own counter lags a spend by 30 to 40 seconds. Measured 2026-09-08: lowering a cap bites in 5s, raising one takes about 25s to unblock, and the cockpit must say so rather than look broken.
+  7. Removing an identity revokes its OpenRouter key, and the revocation is verified rather than assumed. What it cannot do is erase the provider's record: a deleted key's consumption still appears in OpenRouter's analytics, so identity deletion is complete on our planes and incomplete on theirs, and that is stated rather than discovered.
+  8. `mutation-report.json` shows ≥70% killed separately for gateway, identity, profile, sandbox and frontend — the refusal branches this phase adds are provably killed, not merely covered.
 
-**Closes on (live run)**: a permission-matrix run against the live daemon — identity A administrative, identity B without the five capabilities — where the real agent is asked, as each identity, to install an MCP server, write a skill, run a shell command, approve a destructive tool call and provision a third identity. Ten outcomes, five allowed and five refused, each denial then read back out of the audit trail by its own query, and the whole grant/revoke cycle driven once through the cockpit UI rather than by curl.
+**Closes on (live run)**: with the two identities Phase 1 left live — A administrative, B an ordinary user — the real agent is driven as each. B installs an MCP server, writes a skill, runs a shell command and approves a destructive tool call, and all four succeed. B attempts to create an identity and to remove one, and both are refused and readable afterwards out of the audit trail by their own query. A creates a third identity and removes it, both through the cockpit rather than by curl, and the reverse saga is observed to land on every plane. B is then set to a zero cap and its next turn is refused before the model is called; A gives B credit and B's next turn runs; B's spend appears in the cockpit against B and not against A. Scored ≥9.8.
 **Plans**: TBD
 
 ### Phase 3: The Boundary Under Attack
@@ -212,8 +214,11 @@ identity roster with each identity's grants and calls
 `POST`/`DELETE /api/admin/identities/{id}/capabilities`. Measured live on 2026-09-07 under
 Settings → Identity and permissions: a four-step "Create identity" wizard
 (Credentials → Capabilities → …) and per-grant Revoke are already there, so creation exists
-too — an earlier draft of RBAC-11 claimed it did not. What remains is making the wizard's
-capability step offer the five capabilities RBAC-04..08 add, and surfacing RBAC-10's denials.
+too — an earlier draft of RBAC-11 claimed it did not. What remains is smaller in one place and
+larger in another: the wizard's capability step loses its per-capability choices, because every
+identity now receives the same non-administrative set and the administrative pair is never
+grantable at all, while the section gains a removal action that runs the reverse saga and a credit
+panel showing each identity's cap, remaining and spend with the control to change the cap.
 That is Phase 2's work, extending a surface that works rather than opening a second one. No other phase delivers frontend work, and no
 separate UI phase exists. `frontend` appears in REL-06 as one of the five existing mutation
 scopes, and the web E2E suite runs as existing evidence.
