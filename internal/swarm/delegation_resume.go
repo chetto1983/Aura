@@ -233,6 +233,7 @@ func (o *DelegationResumeObserver) unparkOne(ctx context.Context, job documents.
 		return false, fmt.Errorf("%w: delegation resume observer job %s: decode answer: %v", errInvalidAnsweredDelegation, job.JobID, err)
 	}
 	payload.Resume.AnswerContent = answer.Content
+	payload.OperatorCancelled = payload.OperatorCancelled || answer.Action == askuser.ActionCancel
 	payloadMap, err := delegationPayloadMap(payload)
 	if err != nil {
 		return false, fmt.Errorf("%w: delegation resume observer job %s: encode payload: %v", errInvalidAnsweredDelegation, job.JobID, err)
