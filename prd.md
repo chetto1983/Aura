@@ -444,6 +444,26 @@ catch-up have explicit semantics.
 Agent jobs use the common runtime and one model/budget snapshot. Claims and notification
 intent preserve their transaction boundary. Delivery retry does not rerun completed
 model/tool work. Multi-goal enqueue is atomic for the identity.
+
+Mounted-MCP probe 104Y on 2026-09-08 executed three independent random-token commands
+through a coordinator and two grandchildren, with correct IDs and ancestry. The parent
+turn ended at13:16:47 UTC with an explicitly partial table; the coordinator report arrived
+at13:17:00 and remained visible without triggering the requested final synthesis. The
+existing end-of-turn steer drain does not handle results arriving after that boundary.
+Completed fan-outs must therefore wake their owning coordinator through the existing
+durable steer queue, conversation lock and normal agent runtime. Coalesce sibling reports,
+skip an already-consumed batch, and defer while the parent is busy. The cockpit must discover
+and attach to this ordinary run and retain the final synthesis after reload. Cancellation,
+ownership, bounded execution and untrusted report framing remain in force; no LLM critic
+or polling loop of model calls is added. LibreChat's `subagentCompletionWakeup.ts` registers
+idempotent continuation intent, checks parent readiness and claims a saved result before
+dispatch. Aura reuses its existing queues and run registry for those responsibilities.
+Probe104Z passed partial-result and hostile-instruction handling, but also exposed a
+200-character status excerpt described as an integral transcription. A bounded status
+preview is not a complete report and must disclose truncation. These probes do not prove
+universal prompt-injection resistance or recovery of an in-flight model call after crash.
+Evidence: `.planning/spikes/104-agent-controls-and-grounded-results/final-answer-e2e.md`.
+
 The 2026-09-08 five-worker live probe exceeded the configured concurrency of four:
 the tenant polling wrapper recreated the asynchronous delegation loop on each pass,
 discarding its occupied slots. Retain stateful delegation processors across polls and
