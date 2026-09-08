@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"sync"
 
 	authula "github.com/Authula/authula"
@@ -82,6 +83,30 @@ func (i *LiveMCPTokenIssuer) AccessToken(ctx context.Context, resource, subject 
 		return "", fmt.Errorf("webauth: issue live MCP access token: %w", err)
 	}
 	return pair.AccessToken, nil
+}
+
+// JWKSHandler serves the public Ed25519 keys AccessToken signs with, mirroring
+// OAuthServer.JWKSHandler (mcp_oauth_handlers.go) over the SAME cache service. A tagged
+// live tier that mints its own tokens (rather than running the full `aura` daemon, whose
+// `arcadedb-mcp` `depends_on` would start a second Postgres writer racing the tier's own
+// writes — see cmd/arcadedb-mcp/memory_cross_deny_live_integration_test.go) needs this to
+// let an in-process resource server verify those tokens through the ordinary JWKS-fetch
+// path every MCP resource server already uses, rather than trusting a hand-signed stand-in.
+func (i *LiveMCPTokenIssuer) JWKSHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if i == nil || i.tokens == nil || i.tokens.keys == nil {
+		http.Error(w, "jwks unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	keys, err := i.tokens.keys.GetJWKSWithFallback(r.Context())
+	if err != nil {
+		http.Error(w, "jwks unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	writeOAuthJSON(w, http.StatusOK, keys)
 }
 
 // Close releases every Authula resource owned by the tagged live-test issuer.
