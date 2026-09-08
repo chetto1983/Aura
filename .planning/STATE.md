@@ -5,15 +5,16 @@ milestone_name: Production Launch — Multi-Tenant
 current_phase: 01
 current_phase_name: Two Identities, Live and Separated
 status: executing
-stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-09-08T08:07:48.381Z"
-last_activity: "Plan 01-02 closed inline (executor lost to API failure): shipped two-identity default + serve boot preflight + EnsureImage seam. Delegated usersandbox coverage gate RED at 81.6% < 85% — release-blocking, carried to the phase gate."
-state_head: eec318fc685ce53b18f881ea09f4fb65e0fd9a12
+stopped_at: Completed 01-03-PLAN.md
+last_updated: "2026-09-08T09:07:24.899Z"
+last_activity: 2026-09-08
+last_activity_desc: Phase 01 execution started
+state_head: de8b79be6ec09d71f5bd744e55ec9ad6b6143f3f
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 7
-  completed_plans: 2
+  completed_plans: 4
   percent: 0
 ---
 
@@ -29,9 +30,9 @@ See: .planning/PROJECT.md (updated 2026-09-07)
 ## Current Position
 
 Phase: 01 (Two Identities, Live and Separated) — EXECUTING
-Plan: 3 of 7
+Plan: 2 of 7
 Status: Ready to execute
-Last activity: Plan 01-02 closed inline (executor lost to API failure): shipped two-identity default + serve boot preflight + EnsureImage seam. Delegated usersandbox coverage gate RED at 81.6% < 85% — release-blocking, carried to the phase gate.
+Last activity: 2026-09-08 — Phase 01 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -77,6 +78,7 @@ phases, not many thin ones.
 |------|----------|-------|-------|
 | Phase 01 P07 | 7 min | 2 tasks | 2 files |
 | Phase 01 P01 | 155min | 3 tasks | 14 files |
+| Phase 01 P03 | ~2h | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -100,6 +102,8 @@ creation:
 - [Phase 01]: TOTP enrollment is headlessly automatable: /totp/enable's otpauth:// URI carries the plaintext base32 secret as a query parameter, and /totp/verify checks a code against the same decrypted secret — Confirmed by reading enable_usecase.go, verify_totp_usecase.go and totp_service.go directly (github.com/Authula/authula v1.43.0), not inferred from the go doc summary alone
 - [Phase 01]: First-login TOTP enrollment enforcement is not wired today — EnforceFirstLogin only sets Authula user-metadata markers; the login-time redirect code is unbuilt — cmd/aura/serve_onboarding.go's own comment states this is 'wired at the cutover (plan 12)'; a repo-wide grep found no other reference, confirmed absent rather than assumed absent
 - [Phase 01]: [Phase 01 Plan 01] Local verification of a musr_e2e-tagged test used a disposable Postgres container, never the live aura database - internal/dbtest.MigrateURL (commit 0fa214648) fails closed on any db_integration DSN named aura outside CI, a pre-existing repo-wide safety net this plan honored rather than bypassed. — Confirmed by reading internal/dbtest/live_target_guard.go directly; the guard applies to all thirty existing db_integration call sites, so this is standing project behavior, not something introduced or worked around here.
+- [Phase 01]: [Phase 01 Plan 03] The memory plane's D-11 item 3 (a verified access token reaching arcadedb-mcp's tenant selector) needed a JWKS-serving seam on LiveMCPTokenIssuer that did not exist: no exported mechanism let a self-minted live-test Authula token be verified without the full aura daemon serving its JWKS route. Added LiveMCPTokenIssuer.JWKSHandler mirroring the existing production OAuthServer.JWKSHandler over the same cache service.
+- [Phase 01]: [Phase 01 Plan 03] musr-e2e's bring-up step called `make db-migrate memory-up`, not `memory-up-core`, before this plan -- pre-existing drift between the step's own comment (postgres+ArcadeDB+embed sidecar) and what it actually started (also arcadedb-mcp, and therefore the aura daemon, racing the tagged tier's own Postgres writes -- the measured CI #1809 shape). Fixed on touch to memory-up-core.
 
 ### Pending Todos
 
@@ -146,8 +150,8 @@ rediscover them:
 
 ## Session Continuity
 
-Last session: 2026-09-07T22:42:36.421Z
-Stopped at: Completed 01-01-PLAN.md
+Last session: 2026-09-08T09:07:24.856Z
+Stopped at: Completed 01-03-PLAN.md
 Resume file: None
 
 Next: `/gsd-plan-phase 1`

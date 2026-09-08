@@ -49,7 +49,7 @@ key-decisions:
   - "Task 2's cross-deny test writes A's probe fact through the DIRECT Go client (tenantClients.For), not through the memory_upsert_fact MCP tool — the surface under test is the READ boundary (memory_search's tenant selection), and going through the write tool would require wiring the host-derived-actor headers (X-Aura-Actor-Run-Id/-Role) for a concern this test does not exercise."
   - "The 'missing verified subject' subtest asserts a raw anonymous POST returns 401 at the HTTP layer (protectedArcadeMCP wraps the whole /mcp/ handler) rather than duplicating the existing unit-level TestMemoryToolRefusesMissingOAuthSubject, which already proves the handler-level refusal in isolation."
 
-requirements-completed: []  # ISO-02 is shared with 01-05 (no SUMMARY yet) — the shared-ID gate (#2388) defers marking it complete until every declaring plan finishes.
+requirements-completed: [ISO-02]  # ISO-02 is declared ONLY by this plan (verified: no sibling plan in this phase declares it) — the shared-ID gate is a no-op here, not deferring anything.
 
 coverage:
   - id: D1

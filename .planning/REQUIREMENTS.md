@@ -73,7 +73,7 @@ per-identity Garage bucket. What has never been established is that the boundary
 concurrent users, under attack, across a restart, and at the process and host level.
 
 - [ ] **ISO-01**: `AURA_MUSR_ISOLATION` is on in the shipped deployment profile, and provisioning a second identity succeeds through the documented path. It defaults false in `internal/config/config_knobs.go:158` and `${AURA_MUSR_ISOLATION:-false}` in `compose.yaml:150`; it was switched on for this host on 2026-09-07 as a shell variable only, which does not survive the next `docker compose up` — shipping it on is the requirement, not flipping it once. Flipping the compose default alone is NOT the fix: `gateMultiUserRequiresStrictProfile` (`internal/config/config_validate.go:114`) is Fatal when the flag is on under a non-strict `AURA_PROFILE`, and `compose.yaml` deliberately keeps `AURA_PROFILE` at `dev` so upgrades do not change behaviour — so the two defaults must move together, and a strict profile routes shell and file tools into the per-identity sandbox, which fails closed without a built or pullable `AURA_SANDBOX_IMAGE`. This requirement owns that whole chain, upgrade path included
-- [ ] **ISO-02**: Two identities working concurrently cannot read each other's documents, conversations, turns, approvals, memory facts or objects. `TestTwoIdentityCrossDeny` already proves five of these planes and passed against the live stack on 2026-09-07 (http read, store owner gate + RLS, approvals, documents, Garage) — so the work is the plane it does NOT cover, long-term memory, plus making the gate reproducible per ISO-02a
+- [x] **ISO-02**: Two identities working concurrently cannot read each other's documents, conversations, turns, approvals, memory facts or objects. `TestTwoIdentityCrossDeny` already proves five of these planes and passed against the live stack on 2026-09-07 (http read, store owner gate + RLS, approvals, documents, Garage) — so the work is the plane it does NOT cover, long-term memory, plus making the gate reproducible per ISO-02a
 - [ ] **ISO-02a**: The two-identity acceptance gate runs unattended — in CI and from a clean checkout — with no ad-hoc port forward and no hand-made database. Measured 2026-09-07: it needed a socat container for Garage's admin API (fixed in `a3536af5d`) and a manually created disposable database, because the test refuses to migrate the live one. A gate that takes two undocumented manual steps is a gate nobody runs
 - [ ] **ISO-03**: A deliberate boundary-crossing attempt fails: guessed identifiers on every read endpoint, a shared link outside its grant, a tool given another identity's identifier
 - [ ] **ISO-04**: A prompt-injection attempt to make the agent read or write another identity's memory fails, and the attempt is visible in the audit trail
@@ -166,7 +166,7 @@ Every v1 requirement maps to exactly one phase. Mapped during roadmap creation, 
 | RBAC-10 | Phase 2 | Pending |
 | RBAC-11 | Phase 2 | Pending |
 | ISO-01 | Phase 1 | Pending |
-| ISO-02 | Phase 1 | Pending |
+| ISO-02 | Phase 1 | Complete |
 | ISO-02a | Phase 1 | Pending |
 | ISO-03 | Phase 3 | Pending |
 | ISO-04 | Phase 3 | Pending |
@@ -203,6 +203,7 @@ Every v1 requirement maps to exactly one phase. Mapped during roadmap creation, 
 | Phase 7 | One SHA, Twelve Reports, One Window | 8 | REL-01, REL-02, REL-03, REL-05, REL-07, REL-13, REL-14, E2E-05 |
 
 **Coverage:**
+
 - v1 requirements: 49 total
 - Mapped to phases: 49
 - Unmapped: 0 ✓
