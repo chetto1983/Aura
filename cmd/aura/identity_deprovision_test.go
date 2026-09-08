@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/identity"
 )
 
@@ -16,17 +17,20 @@ import (
 
 func TestParseIdentityDeprovisionArgs(t *testing.T) {
 	t.Run("target plus --confirm is accepted", func(t *testing.T) {
-		got, err := parseIdentityDeprovisionArgs([]string{"b@example.invalid", "--confirm"})
+		got, resume, err := parseIdentityDeprovisionArgs([]string{"b@example.invalid", "--confirm"})
 		if err != nil {
 			t.Fatalf("err = %v, want nil", err)
 		}
 		if got != "b@example.invalid" {
 			t.Fatalf("target = %q, want b@example.invalid", got)
+		}
+		if resume {
+			t.Fatal("resumeResources = true without --resume-resources")
 		}
 	})
 
 	t.Run("--confirm may precede the target", func(t *testing.T) {
-		got, err := parseIdentityDeprovisionArgs([]string{"--confirm", "b@example.invalid"})
+		got, _, err := parseIdentityDeprovisionArgs([]string{"--confirm", "b@example.invalid"})
 		if err != nil {
 			t.Fatalf("err = %v, want nil", err)
 		}
@@ -35,8 +39,23 @@ func TestParseIdentityDeprovisionArgs(t *testing.T) {
 		}
 	})
 
+	t.Run("--resume-resources is recognised", func(t *testing.T) {
+		got, resume, err := parseIdentityDeprovisionArgs([]string{
+			"6d0ebdee-bf43-4f5b-abf6-469310d52a5a", "--confirm", "--resume-resources",
+		})
+		if err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		if got != "6d0ebdee-bf43-4f5b-abf6-469310d52a5a" {
+			t.Fatalf("target = %q, want the UUID", got)
+		}
+		if !resume {
+			t.Fatal("resumeResources = false, want true")
+		}
+	})
+
 	t.Run("missing --confirm is refused", func(t *testing.T) {
-		_, err := parseIdentityDeprovisionArgs([]string{"b@example.invalid"})
+		_, _, err := parseIdentityDeprovisionArgs([]string{"b@example.invalid"})
 		if err == nil {
 			t.Fatal("err = nil, want a refusal — confirmation is mandatory")
 		}
@@ -46,20 +65,20 @@ func TestParseIdentityDeprovisionArgs(t *testing.T) {
 	})
 
 	t.Run("missing target is refused", func(t *testing.T) {
-		if _, err := parseIdentityDeprovisionArgs([]string{"--confirm"}); err == nil {
+		if _, _, err := parseIdentityDeprovisionArgs([]string{"--confirm"}); err == nil {
 			t.Fatal("err = nil, want a refusal naming the missing target")
 		}
 	})
 
 	t.Run("a second target is refused", func(t *testing.T) {
-		_, err := parseIdentityDeprovisionArgs([]string{"a@example.invalid", "b@example.invalid", "--confirm"})
+		_, _, err := parseIdentityDeprovisionArgs([]string{"a@example.invalid", "b@example.invalid", "--confirm"})
 		if err == nil {
 			t.Fatal("err = nil, want a refusal — one target at a time")
 		}
 	})
 
 	t.Run("unknown flag is refused", func(t *testing.T) {
-		_, err := parseIdentityDeprovisionArgs([]string{"b@example.invalid", "--force", "--confirm"})
+		_, _, err := parseIdentityDeprovisionArgs([]string{"b@example.invalid", "--force", "--confirm"})
 		if err == nil {
 			t.Fatal("err = nil, want a refusal naming the unknown flag")
 		}
@@ -174,9 +193,15 @@ func TestGuardProtectedIdentity(t *testing.T) {
 // stubDeprovisioner satisfies identityDeprovisioner and records which saga entry ran, so a
 // verb can be proven to drive exactly one of them.
 type stubDeprovisioner struct {
-	deactivated string
-	purged      string
-	err         error
+	deactivated    string
+	purged         string
+	resourceTarget agui.DeprovisionTarget
+	err            error
+}
+
+func (s *stubDeprovisioner) Purge(_ context.Context, target agui.DeprovisionTarget) error {
+	s.resourceTarget = target
+	return s.err
 }
 
 func (s *stubDeprovisioner) Deactivate(_ context.Context, identityID string) error {
@@ -235,6 +260,65 @@ func TestRunIdentityDeprovision(t *testing.T) {
 			t.Fatal("the saga was driven by an unknown verb")
 		}
 	})
+}
+
+// TestGuardResumableOrphan pins the resource-plane resumption guard. MEASURED 2026-09-08:
+// a purge that fails after the identity_row step leaves resources behind that no CLI could
+// reach, because every other path resolves the target through aura.identities — the row
+// that is already gone. The saga itself has always accepted an id-only target for exactly
+// this; the guard is what keeps that entry from becoming a way around guardProtectedIdentity.
+func TestGuardResumableOrphan(t *testing.T) {
+	const orphan = "6d0ebdee-bf43-4f5b-abf6-469310d52a5a"
+
+	t.Run("an id with no identity row is resumable", func(t *testing.T) {
+		lookup := &fakeIdentityLookup{}
+		if err := guardResumableOrphan(context.Background(), lookup, orphan); err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+	})
+
+	t.Run("an id whose identity row still exists is refused", func(t *testing.T) {
+		live := identity.Identity{ID: orphan, Name: "b@example.invalid", Kind: "user"}
+		lookup := &fakeIdentityLookup{byID: map[string]identity.Identity{orphan: live}}
+		err := guardResumableOrphan(context.Background(), lookup, orphan)
+		if err == nil {
+			t.Fatal("err = nil, want a refusal — a live identity must go through the guarded purge")
+		}
+		if !strings.Contains(err.Error(), "--resume-resources") {
+			t.Fatalf("err = %q, want it to name the flag it is refusing", err)
+		}
+	})
+
+	t.Run("the seeded local operator is refused even with no row", func(t *testing.T) {
+		lookup := &fakeIdentityLookup{}
+		if err := guardResumableOrphan(context.Background(), lookup, localSeededIdentityID); !errors.Is(err, errProtectedIdentity) {
+			t.Fatalf("err = %v, want errProtectedIdentity", err)
+		}
+	})
+
+	t.Run("a non-UUID reference is refused", func(t *testing.T) {
+		lookup := &fakeIdentityLookup{}
+		if err := guardResumableOrphan(context.Background(), lookup, "b@example.invalid"); err == nil {
+			t.Fatal("err = nil, want a refusal — a name cannot identify a row that no longer exists")
+		}
+	})
+}
+
+func TestRunIdentityResourcePurge(t *testing.T) {
+	const orphan = "6d0ebdee-bf43-4f5b-abf6-469310d52a5a"
+	stub := &stubDeprovisioner{}
+	if err := runIdentityResourcePurge(context.Background(), stub, orphan); err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+	if stub.resourceTarget.IdentityID != orphan {
+		t.Fatalf("Purge target id = %q, want %q", stub.resourceTarget.IdentityID, orphan)
+	}
+	if stub.resourceTarget.IdentityName != "" || stub.resourceTarget.AuthulaUserID != "" {
+		t.Fatalf("Purge target = %+v, want id-only — the identity row and Authula user are already gone, and naming them would re-run steps that cannot succeed", stub.resourceTarget)
+	}
+	if stub.purged != "" || stub.deactivated != "" {
+		t.Fatal("a resource-plane purge drove PurgeOne or Deactivate, which resolve the missing row")
+	}
 }
 
 func TestIdentityUsageAdvertisesDeprovisionVerbs(t *testing.T) {

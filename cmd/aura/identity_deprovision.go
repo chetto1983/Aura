@@ -42,7 +42,10 @@ const identityDeprovisionUsage = "usage: aura identity {deactivate|purge} <name|
 	"               database, Garage bucket+key, filesystem roots, identity row, Authula\n" +
 	"               user). Irreversible, journaled, resumable — a re-run skips done steps.\n" +
 	"  --confirm is mandatory. Service identities, the seeded local operator, and any\n" +
-	"  identity holding the system-managed '*' capability are refused."
+	"  identity holding the system-managed '*' capability are refused.\n" +
+	"  purge <uuid> --confirm --resume-resources finishes a purge that already removed the\n" +
+	"  identity row, over the resource planes an id alone still identifies. Refused while\n" +
+	"  the row exists — that case belongs to the guarded purge above."
 
 // identityKindUser is the aura.identities.kind of a provisioned human identity — the only
 // kind either verb accepts. `aura-cli` and friends are kind=service: infrastructure
@@ -73,6 +76,7 @@ type identityLookup interface {
 type identityDeprovisioner interface {
 	Deactivate(ctx context.Context, identityID string) error
 	PurgeOne(ctx context.Context, identityID string) error
+	Purge(ctx context.Context, target agui.DeprovisionTarget) error
 }
 
 var _ identityDeprovisioner = (*agui.Deprovisioner)(nil)
@@ -81,28 +85,64 @@ var _ identityDeprovisioner = (*agui.Deprovisioner)(nil)
 // --confirm, mirroring the destructive-op guard `aura chat delete` and `aura paused-states
 // purge` already use. Order-independent, and one target at a time: a loop over identities
 // is the caller's business, so a typo cannot take a second one down with it.
-func parseIdentityDeprovisionArgs(args []string) (string, error) {
-	target := ""
+func parseIdentityDeprovisionArgs(args []string) (target string, resumeResources bool, err error) {
 	confirmed := false
 	for _, a := range args {
 		switch {
 		case a == "--confirm":
 			confirmed = true
+		case a == "--resume-resources":
+			resumeResources = true
 		case strings.HasPrefix(a, "-"):
-			return "", fmt.Errorf("unknown flag %q", a)
+			return "", false, fmt.Errorf("unknown flag %q", a)
 		case target != "":
-			return "", fmt.Errorf("unexpected second target %q — deprovision one identity at a time", a)
+			return "", false, fmt.Errorf("unexpected second target %q — deprovision one identity at a time", a)
 		default:
 			target = a
 		}
 	}
 	if target == "" {
-		return "", errors.New("missing target — pass the identity's name or UUID")
+		return "", false, errors.New("missing target — pass the identity's name or UUID")
 	}
 	if !confirmed {
-		return "", errors.New("refusing — pass --confirm to deprovision the identity")
+		return "", false, errors.New("refusing — pass --confirm to deprovision the identity")
 	}
-	return target, nil
+	return target, resumeResources, nil
+}
+
+// guardResumableOrphan gates the resource-plane resumption path. MEASURED 2026-09-08: a
+// purge that fails after the identity_row step leaves an ArcadeDB database, a Garage
+// bucket+key or a filesystem root behind that NO other CLI path can reach, because every
+// one of them resolves its target through aura.identities — the row that is already gone.
+// Deprovisioner.Purge has always accepted an id-only target for exactly this case.
+//
+// The guard is what keeps that entry from becoming a way past guardProtectedIdentity: a
+// reference must be a UUID (a name cannot identify a row that no longer exists), the
+// identity row must genuinely be absent, and the seeded operator is refused outright. A
+// live identity is sent back to the guarded verb rather than torn down here.
+func guardResumableOrphan(ctx context.Context, lookup identityLookup, ref string) error {
+	if _, err := uuid.Parse(ref); err != nil {
+		return fmt.Errorf("--resume-resources needs the identity's UUID, not %q: its row is gone, so there is no name left to resolve", ref)
+	}
+	if ref == localSeededIdentityID {
+		return fmt.Errorf("%w: %q is the seeded local operator", errProtectedIdentity, ref)
+	}
+	switch _, err := lookup.GetIdentityByID(ctx, ref); {
+	case err == nil:
+		return fmt.Errorf("identity %q still exists — drop --resume-resources and purge it through the guarded path", ref)
+	case errors.Is(err, identity.ErrIdentityNotFound):
+		return nil
+	default:
+		return err
+	}
+}
+
+// runIdentityResourcePurge re-runs the reverse saga over the planes an id alone identifies.
+// The target carries the id and NOTHING else on purpose: an empty IdentityName skips the
+// identity_row step and an empty AuthulaUserID skips the Authula one, which is correct,
+// because those two are precisely the steps that already succeeded.
+func runIdentityResourcePurge(ctx context.Context, dep identityDeprovisioner, identityID string) error {
+	return dep.Purge(ctx, agui.DeprovisionTarget{IdentityID: identityID})
 }
 
 // resolveDeprovisionTarget accepts either shape an operator has in hand: the UUID printed
@@ -193,48 +233,71 @@ func withAuthulaTeardown(deps agui.DeprovisionDeps, core *authulaservices.CoreSe
 // resolve + guard the target, assemble the saga with its Authula legs, run it. Every
 // failure prints one line to stderr and exits non-zero; success prints one `ok:` line.
 func identityDeprovision(ctx context.Context, verb deprovisionVerb, args []string) {
-	ref, err := parseIdentityDeprovisionArgs(args)
+	fail := func(err error) {
+		fmt.Fprintln(os.Stderr, "identity "+string(verb)+":", err)
+		os.Exit(1)
+	}
+	ref, resumeResources, err := parseIdentityDeprovisionArgs(args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "identity "+string(verb)+":", err)
 		fmt.Fprintln(os.Stderr, identityDeprovisionUsage)
 		os.Exit(1)
+	}
+	if resumeResources && verb != deprovisionVerbPurge {
+		fail(errors.New("--resume-resources applies to purge only"))
 	}
 
 	// The full boot path, for the same reason `aura identity create` takes it: teardown
 	// spans Postgres, ArcadeDB, Garage, the filesystem and the sandbox box.
 	chat, err := bootChatEnv(ctx)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "identity "+string(verb)+":", err)
-		os.Exit(1)
+		fail(err)
 	}
 	defer chat.close()
 
-	target, err := resolveDeprovisionTarget(ctx, chat.identity, ref)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "identity "+string(verb)+":", err)
-		os.Exit(1)
-	}
-	caps, err := chat.identity.ListCapabilities(ctx, target.ID)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "identity "+string(verb)+":", err)
-		os.Exit(1)
-	}
-	if err := guardProtectedIdentity(target, caps); err != nil {
-		fmt.Fprintln(os.Stderr, "identity "+string(verb)+":", err)
-		os.Exit(1)
+	var target identity.Identity
+	if resumeResources {
+		if err := guardResumableOrphan(ctx, chat.identity, ref); err != nil {
+			fail(err)
+		}
+		target = identity.Identity{ID: ref, Name: "(row already removed)"}
+	} else {
+		if target, err = resolveDeprovisionTarget(ctx, chat.identity, ref); err != nil {
+			fail(err)
+		}
+		caps, cerr := chat.identity.ListCapabilities(ctx, target.ID)
+		if cerr != nil {
+			fail(cerr)
+		}
+		if err := guardProtectedIdentity(target, caps); err != nil {
+			fail(err)
+		}
 	}
 
 	authulaProvider, _, err := buildAuthulaProvider(ctx, chat, localSeededIdentityID)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "identity "+string(verb)+":", err)
-		os.Exit(1)
+		fail(err)
 	}
 	defer func() { _ = authulaProvider.Close() }()
 
-	dep := agui.NewDeprovisioner(withAuthulaTeardown(deprovisionDeps(chat), authulaProvider.CoreServices()))
+	deps := deprovisionDeps(chat)
+	// Purge's own preflight only runs when the target names an identity row, so an id-only
+	// resumption would skip the check that keeps a nil memory purger from letting the
+	// ArcadeDB database survive unnoticed. Assert it here instead of inheriting the gap.
+	if resumeResources && deps.Memory == nil {
+		fail(errors.New("memory purger unavailable — set ARCADEDB_ADMIN_USER and ARCADEDB_ADMIN_PASSWORD before resuming a resource purge"))
+	}
+	dep := agui.NewDeprovisioner(withAuthulaTeardown(deps, authulaProvider.CoreServices()))
+
+	if resumeResources {
+		if err := runIdentityResourcePurge(ctx, dep, target.ID); err != nil {
+			fail(err)
+		}
+		fmt.Printf("ok: identity %s resource planes purged\n", target.ID)
+		return
+	}
 	if err := runIdentityDeprovision(ctx, dep, verb, target.ID); err != nil {
-		fmt.Fprintln(os.Stderr, "identity "+string(verb)+":", err)
-		os.Exit(1)
+		fail(err)
 	}
 	fmt.Printf("ok: identity %s (%s) %sd\n", target.Name, target.ID, verb)
 }
