@@ -6,12 +6,14 @@ import { useSurfaceRestore } from './useSurfaceRestore';
 import { useWorkerPane } from './useWorkerPane';
 
 const BASE_PANEL_IDS = ['chat-navigation', 'chat-workspace'] as const;
+let desktop = true;
 
 beforeEach(() => {
   localStorage.clear();
+  desktop = true;
   window.matchMedia = (query: string) =>
     ({
-      matches: true,
+      matches: desktop,
       media: query,
       onchange: null,
       addListener: () => undefined,
@@ -54,8 +56,7 @@ function useExclusiveRightRail(conversationId = 'thread-1') {
 
 describe('useWorkerPane', () => {
   it('restores the saved mobile drawer after conversation hydration and honors explicit close', async () => {
-    const match = window.matchMedia;
-    window.matchMedia = (query) => ({ ...match(query), matches: false });
+    desktop = false;
     localStorage.setItem(
       'aura.shell.worker-pane',
       JSON.stringify({ conversationId: 'thread-1', childId: 'nested-child', open: true }),
