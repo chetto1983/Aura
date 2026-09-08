@@ -9,6 +9,7 @@
     "npm": ">=11 <13"
   },
   "scripts": {
+    "postinstall": "patch-package --error-on-fail",
     "dev": "vite",
     "build": "node tokens/generate-theme.mjs && tsc -b && vite build",
     "preview": "vite preview",
@@ -22,6 +23,7 @@
     "test": "vitest run --coverage",
     "test:e2e": "playwright test",
     "mutation": "stryker run",
+    "mutation:contract": "node scripts/stryker-filter-contract.mjs",
     "contrast": "node scripts/contrast-check.mjs"
   },
   "dependencies": {
@@ -96,6 +98,7 @@
     "knip": "^6.34.0",
     "oxlint": "^1.82.0",
     "oxlint-tsgolint": "7.0.2001",
+    "patch-package": "8.0.1",
     "prettier": "^3.9.6",
     "tailwindcss": "^4.3.1",
     "typescript": "^7.0.2",

@@ -1474,7 +1474,7 @@ jobs:
       - name: Lint + format-check + typecheck (D-03 zero-warning gate)
         # `lint` carries --max-warnings=0 (package.json), the golangci-lint parity bar.
         if: steps.changes.outputs.web == 'true'
-        run: cd web && npm ci && npm run lint && npm run lint:contract && npm run format:check && npm run typecheck
+        run: cd web && npm ci && npm run lint && npm run lint:contract && npm run mutation:contract && npm run format:check && npm run typecheck
 
       - name: Duplication (jscpd) + dead code (knip) — Go dupl/deadcode parity
         # TS/TSX parity to the Go `dupl` (.golangci.yml) + `deadcode` gates. Deps from

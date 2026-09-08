@@ -9,6 +9,7 @@
 FROM node:24-bookworm-slim AS webbuild
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
+COPY web/patches ./patches
 RUN npm ci
 COPY web/ ./
 # The web TypeScript build includes src/__tests__; sseAdapter tests import the
