@@ -657,6 +657,17 @@ this contract from evidence and state its limits. Preserve operator data and con
 work throughout testing and editing.
 
 Keep source small and separated by concern; remove dead paths and duplication on touch.
+The 2026-09-08 dependency review measured failed npm installs for TypeScript7 with
+the existing typescript-eslint peer range, and for separately upgraded Vitest/coverage
+majors. The operator requested the updates after reviewing those failures. Move the
+compiler and lint pipeline together to TypeScript7.0.2, Oxlint1.82 and tsgolint7.0.2001;
+update Vitest and its coverage provider together. Preserve Node24 and matching types.
+The official Oxlint migrator transferred202 rules with type-aware/nursery support;
+retain import ordering and React Compiler config/gating through its native JS-plugin
+interface. Strict parsing covers the retired duplicate-argument and octal rules.
+This inventory proves rule mapping, not diagnostic equivalence or application behavior:
+verify the retained rules, complete functional/E2E gates and the ordinary Aura image build.
+Mutation execution belongs to CI under the operator's explicit instruction.
 Migration numbers come from the directory at landing time. Commit generated sqlc output
 with its defining queries. Current versions, artifacts, defaults and environment keys
 live in manifests, the configuration registry, Compose and `.env.example`.
