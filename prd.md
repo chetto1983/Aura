@@ -412,6 +412,11 @@ catch-up have explicit semantics.
 Agent jobs use the common runtime and one model/budget snapshot. Claims and notification
 intent preserve their transaction boundary. Delivery retry does not rerun completed
 model/tool work. Multi-goal enqueue is atomic for the identity.
+The 2026-09-08 five-worker live probe exceeded the configured concurrency of four:
+the tenant polling wrapper recreated the asynchronous delegation loop on each pass,
+discarding its occupied slots. Retain stateful delegation processors across polls and
+apply the configured swarm width to their claim capacity. Retire idle processors when
+their identity is no longer active; observation must not reset execution admission.
 
 The live 2026-09-08 MCP inspection found no child controls while two real workers were
 running (spike 104). Operators must be able to steer and stop an individual worker,

@@ -96,6 +96,13 @@ steer observation and is not counted as a successful live correction.
 
 ## Additional identity measurement
 
+Queue104Q, conversation `01a07ec7-283a-73b0-a204-a9596c412a4b`: AURA_SWARM_MAX_CONCURRENT
+was4, but five jobs entered running and the fifth command finished while four80-second
+commands remained active. `runtimeTenantIngestionProcessor` created a fresh asynchronous
+DelegationClaimLoop on every poll, losing the occupied-slot state. Retain these loops
+between polls and connect their capacity to the actual configuration before testing
+queued-worker visibility and cancellation.
+
 Stop104E, conversation `01a07ec0-572d-7717-8624-8e2962c62523`: the MCP stopped
 `w1-b493a281a46ae203127579c6ee0fef15` while its Python process was sleeping before a
 scratch-file write. The route returned202 in1886ms; docker top then showed no matching
