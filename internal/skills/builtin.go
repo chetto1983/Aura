@@ -11,10 +11,8 @@ import (
 	"sort"
 )
 
-// builtinFS holds the skills Aura ships in-binary. Three builtins are embedded:
-// skill-creator (D-31, the spec-compliant authoring meta-skill), find-skills-aura
-// (amendment #51 / D-40, the always:true self-extension skill) and memory-aura.
-// BuiltinNames reads this tree, so the count in this sentence is prose and the set is code.
+// builtinFS holds the skills Aura ships in-binary, including their bundled scripts
+// and assets. BuiltinNames reads this tree rather than maintaining a separate registry.
 //
 // find-skills-aura now
 // teaches DISCOVERY through the CLI (npx skills find only prints) and administrator-only

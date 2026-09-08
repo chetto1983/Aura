@@ -146,6 +146,18 @@ RUN pip install --no-cache-dir --break-system-packages \
 # Pre-create the dirs so a first exec before any mount still has a writable tree.
 RUN mkdir -p /workspace /root/.cache/uv /root/.npm /root/.cache/pip
 
+COPY internal/skills/embed/web-artifacts-builder/scripts/init-artifact.sh internal/skills/embed/web-artifacts-builder/scripts/shadcn-components.tar.gz /opt/aura-artifact-bootstrap/
+RUN npm install -g pnpm@12.3.4 \
+    && mkdir -p /opt/aura-artifacts \
+    && cd /opt/aura-artifacts \
+    && bash /opt/aura-artifact-bootstrap/init-artifact.sh template \
+    && cd template \
+    && pnpm add -D parcel@2.16.4 @parcel/config-default@2.16.4 parcel-resolver-tspaths@0.0.9 html-inline@1.2.0 \
+    && pnpm run build
+RUN ln -s /opt/aura-artifacts/template/node_modules/typescript/bin/tsc /usr/local/bin/tsc \
+    && ln -s /opt/aura-artifacts/template/node_modules/vite/bin/vite.js /usr/local/bin/vite
+COPY internal/skills/embed/web-artifacts-builder /opt/aura-skills/web-artifacts-builder
+
 WORKDIR /workspace
 
 # NO `USER` directive (root inside — D-12 parity). NO aura binary and NO privilege-dropping

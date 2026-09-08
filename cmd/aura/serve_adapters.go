@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -354,6 +355,13 @@ func newSkillTool(cfg *config.Config, writerPool *pgxpool.Pool) *tools.SkillTool
 	}
 	if err := skills.MaterializeBuiltins(cfg.SkillsDir); err != nil {
 		slog.Warn("skill tool: materialize builtins failed", "dir", cfg.SkillsDir, "err", err)
+	}
+	if cfg.SkillExportDir != "" {
+		for _, name := range skills.BuiltinNames() {
+			if err := skills.Materialize(name, filepath.Join(cfg.SkillsDir, name), cfg.SkillExportDir); err != nil {
+				slog.Warn("skill tool: export builtin resources failed", "skill", name, "err", err)
+			}
+		}
 	}
 	// One loader per identity, resolved on the call (amendment #214): the model reads its
 	// OWN library overlaid on the deployment's, and never another person's.

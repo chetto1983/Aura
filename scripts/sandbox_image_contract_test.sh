@@ -77,3 +77,5 @@ with sync_playwright() as p:
     browser.close()
 print("ok: sandbox Playwright launches Chromium, executes JavaScript and captures screenshots offline")
 PY
+
+bash "$(dirname "$0")/artifact_toolchain_smoke.sh"
