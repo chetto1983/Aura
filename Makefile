@@ -6,7 +6,7 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help tools sqlc memory-up-core lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract llm-model-contract web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval agent-memory-eval-running-aura critical-mutation observability-check observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up sandbox-images installer-artifact payload-manifest arcadedb-integration ingest-image ingest-test extractor-matrix ingest-reconcile sandbox-image-contract restore-drill load-chaos
+.PHONY: help tools sqlc memory-up-core lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract llm-model-contract web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval agent-memory-eval-running-aura critical-mutation observability-check observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up sandbox-images installer-artifact payload-manifest arcadedb-integration ingest-image ingest-test extractor-matrix ingest-reconcile sandbox-image-contract restore-drill load-chaos musr-e2e
 
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
@@ -49,6 +49,7 @@ help:
 	@echo "make db-status     — aura db status"
 	@echo "make db-reset      — DESTRUCTIVE: drop+recreate schema aura (dev only, requires AURA_RESET_YES=1)"
 	@echo "make memory-up     — docker compose up -d arcadedb arcadedb-mcp aura-llama-embed (waits healthy)"
+	@echo "make musr-e2e      — ISO-02a: one command for the two-identity acceptance gate — disposable Postgres + Garage + ArcadeDB + embed sidecar, seed, tagged run, teardown"
 	@echo "make arcadedb-integration — run the arcadedb_integration tier live, as CI does"
 	@echo "make sandbox-image-contract — the box image honours python3 -m pip install (PEP 668)"
 	@echo "make extractor-matrix — every fixture format opens and the canary survives verbatim"
@@ -96,6 +97,21 @@ coverage:
 # up (`make memory-up`) + creds in .env.
 coverage-docker:
 	bash scripts/coverage_docker.sh
+
+# ISO-02a: one command, from a clean checkout, that brings up everything the
+# two-identity acceptance gate needs — a disposable Postgres (never named `aura`,
+# scripts/lib/disposable_stack.sh's exit-4 guard refuses that), Garage with its Admin
+# API v2 on loopback, ArcadeDB and the embed sidecar — seeds Authula, runs both tagged
+# tiers (cmd/aura's five-tag cross-deny E2E + cmd/arcadedb-mcp's MCP-boundary memory
+# test), and tears down what IT started.
+#
+# Deliberately does NOT bring up arcadedb-mcp and never calls `make memory-up`: both
+# start the WHOLE aura daemon via `depends_on: aura` (compose.yaml:695-699), racing this
+# tier's own Postgres writes — the measured CI #1809 incident documented above
+# memory-up-core. The MCP-boundary test this target runs builds its own in-process MCP
+# server over the same tenant resolver precisely so it never needs the sidecar.
+musr-e2e:
+	bash scripts/musr_e2e.sh
 
 # The BEHAVIOUR gate: does she still answer the question? Every other gate in this
 # file measures the code — build, vet, lint, race, coverage, mutation — and none of
