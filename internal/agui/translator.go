@@ -3,6 +3,7 @@ package agui
 import (
 	"iter"
 	"sort"
+	"time"
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/types"
@@ -83,6 +84,15 @@ const artifactEventName = ArtifactEventName
 // REASONING_* lifecycle envelope is emitted either way — only the delta text differs.
 func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.Event, error], showReasoning bool) iter.Seq2[events.Event, error] {
 	return func(yield func(events.Event, error) bool) {
+		var eventTime time.Time
+		emit := yield
+		yield = func(frame events.Event, err error) bool {
+			// SDK constructors use now; replay must retain the original execution clock.
+			if frame != nil && !eventTime.IsZero() {
+				frame.SetTimestamp(eventTime.UnixMilli())
+			}
+			return emit(frame, err)
+		}
 		if !yield(events.NewRunStartedEvent(threadID, runID), nil) {
 			return
 		}
@@ -117,6 +127,7 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 			if ev == nil {
 				continue
 			}
+			eventTime = ev.Timestamp
 
 			// A repudiation (Actions.DiscardStreamed: a vetoed content-stop, a
 			// mid-stream retry) makes the prose this round streamed stale. Close the
