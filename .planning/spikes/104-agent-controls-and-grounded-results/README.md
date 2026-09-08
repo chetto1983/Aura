@@ -75,3 +75,15 @@ Do not edit the concurrent phase 1 sandbox/provisioning work.
 
 Every row needs authoritative evidence. A passing subset or a model's self-reported
 success must not be used to mark the goal complete.
+
+## Additional identity measurement
+
+The bounded hash probe found a collision after 102603 candidates. With identity
+`11111111-1111-1111-1111-111111111111`, conversation
+`22222222-2222-2222-2222-222222222222`, goal `independent task` and goal index 0,
+invocations `agent_tool:probe:62646` and `agent_tool:probe:102602` have different
+durable keys but both produce `w1-c4ea2263` under the 32-bit child-ID truncation.
+`TestDelegationWorkerIDsSeparateMeasuredShortHashCollision` reproduced the collision
+through the native Go functions. The new identifier retains 128 bits; re-enqueue must
+return the existing stored child ID when the job predates the change. This prevents
+new transcript/control collisions without renaming live or historical workers.

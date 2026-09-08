@@ -430,6 +430,12 @@ two accepted calls with identical goals but only two total queue rows: the enque
 path discarded the runtime operation and used an unset parent-run field. The scoped
 correction and validation are recorded in spike 103. This measurement establishes a
 repeat-delegation defect, not universal multi-agent reliability or restart recovery.
+On 2026-09-08 two distinct invocation keys (`agent_tool:probe:62646` and
+`agent_tool:probe:102602`, under the fixture identity/conversation in spike 104)
+produced the same short worker ID `w1-c4ea2263`. Worker identifiers must retain at
+least 128 bits of the invocation digest. Replayed durable jobs retain their stored
+identity, including legacy identifiers; an enqueue acknowledgement must use the row
+actually returned by the queue rather than recomputing an incompatible identifier.
 
 Outcomes, transcripts, reports and status stay in the originating conversation.
 Cross-channel delivery is explicit. Status includes elapsed time; terminal reports and
