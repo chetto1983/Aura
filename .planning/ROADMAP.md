@@ -100,7 +100,39 @@ Plans:
   8. `mutation-report.json` shows ≥70% killed separately for gateway, identity, profile, sandbox and frontend — the refusal branches this phase adds are provably killed, not merely covered.
 
 **Closes on (live run)**: with the two identities Phase 1 left live — A administrative, B an ordinary user — the real agent is driven as each. B installs an MCP server, writes a skill, runs a shell command and approves a destructive tool call, and all four succeed. B attempts to create an identity and to remove one, and both are refused and readable afterwards out of the audit trail by their own query. A creates a third identity and removes it, both through the cockpit rather than by curl, and the reverse saga is observed to land on every plane. B is then set to a zero cap and its next turn is refused before the model is called; A gives B credit and B's next turn runs; B's spend appears in the cockpit against B and not against A. Scored ≥9.8.
-**Plans**: TBD
+**Plans**: 10 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 02-01-PLAN.md — TRACER: the wildcard retired end to end and one identity's turn running on its own encrypted key, both halves on one path per layer (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 02-02-PLAN.md — the administrative pair made ungrantable through any API, the last-admin protection inside the saga, the uniform grant at provisioning, and the declaration-location CI check (wave 2)
+- [ ] 02-03-PLAN.md — the OpenRouter Provisioning-API client: mint at a real zero cap, patch, read, and a revoke that proves itself (wave 2)
+- [ ] 02-04-PLAN.md — the capability-denial ledger and its leg on the audit feed the cockpit already reads (wave 2)
+- [ ] 02-05-PLAN.md — the credit-exhausted refusal that fires before the network, and the deployment-key fallback closed at every agent-construction site (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 02-06-PLAN.md — the mint leg at provisioning with compensation, the verified revoke leg on removal, and the management credential beside the inference key (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 02-07-PLAN.md — the admin removal and credit routes, and the money columns widened so the in-band ledger can hold what a call actually costs (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 02-08-PLAN.md — the cockpit: identity roster, typed-confirmation removal, credit panel, three-phase wizard, refusal copy (wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 02-09-PLAN.md — the admin spend overview: three reconciliation calls server-side, one endpoint, a zero-dependency dashboard (wave 6)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 02-10-PLAN.md — the mutation gate pointed at this phase's refusal branches, and the scored live permission-and-credit matrix (wave 7)
 
 ### Phase 3: The Boundary Under Attack
 
