@@ -81,49 +81,10 @@ Windows_NT | MINGW*_NT* | MSYS*_NT* | CYGWIN*_NT*)
 esac
 
 # ---- section 1: preconditions (T-06 threat register: name the first missing one, refuse) ---
-missing=()
-for v in AURA_PROFILE AURA_MUSR_ISOLATION AURA_SANDBOX_IMAGE AURA_ARCADEDB_TENANT_SECRET \
-  AURA_AUTHULA_SECRET TELEGRAM_BOT_TOKEN AURA_E2E_AUTHULA_EMAIL AURA_E2E_AUTHULA_PASSWORD; do
-  if [[ -z "${!v:-}" ]]; then
-    missing+=("$v")
-  fi
-done
-if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
-  missing+=("OPENROUTER_API_KEY (or a local model endpoint the agent can actually answer from)")
-fi
-if [[ "${#missing[@]}" -gt 0 ]]; then
-  echo "FAIL: missing required precondition variable(s): ${missing[*]}" >&2
-  echo "      source .env before running this harness (see the invoke comment above)" >&2
-  exit 2
-fi
-if [[ "${AURA_PROFILE}" != "single_user_hardened" && "${AURA_PROFILE}" != *hardened* ]]; then
-  echo "FAIL: AURA_PROFILE=${AURA_PROFILE} is not a strict profile — this run needs strict + isolation-on (D-01)" >&2
-  exit 2
-fi
-if [[ "${AURA_MUSR_ISOLATION}" != "true" ]]; then
-  echo "FAIL: AURA_MUSR_ISOLATION=${AURA_MUSR_ISOLATION}, want true — a second identity needs isolation on" >&2
-  exit 2
-fi
-if ! command -v docker >/dev/null 2>&1; then
-  echo "FAIL: docker CLI not found on PATH" >&2
-  exit 2
-fi
-for svc in postgres arcadedb garage; do
-  state="$(docker compose ps --format '{{.Service}} {{.State}}' 2>/dev/null | awk -v s="$svc" '$1==s{print $2}')"
-  if [[ -z "${state}" ]]; then
-    echo "FAIL: compose service '${svc}' is not up — bring the live stack up before running this harness" >&2
-    exit 2
-  fi
-  if [[ "${state}" != "running" ]]; then
-    echo "FAIL: compose service '${svc}' is '${state}', want running" >&2
-    exit 2
-  fi
-done
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "FAIL: python3 not found on PATH — required for TOTP code computation and the SSE conversation drivers" >&2
-  exit 2
-fi
-echo "==> preconditions OK"
+# Split into scripts/musr_live_run_preconditions.sh (600-LOC ceiling) — store-aware (aura.
+# settings overlay, MEASURED 2026-09-08 — see that file's header) rather than env-only, which
+# a purely-env gate proved to false-negative on a correctly configured host.
+. scripts/musr_live_run_preconditions.sh
 
 # ---- section 2: build + start our own aura serve (never the compose one) --------------------
 WORK="$(mktemp -d)"
@@ -156,7 +117,48 @@ BASE="http://${BIND}"
 
 SERVE_LOG="${WORK}/serve.log"
 echo "==> starting our own aura serve (bind ${BIND}) — the compose 'aura' service is untouched"
-"${BIN}" serve >"${SERVE_LOG}" 2>&1 &
+
+# MEASURED (2026-09-08, this host): the settings-store overlay (internal/settings/settings.go
+# OverlayEnv, invoked from cmd/aura/chat_boot.go's resolveConfigAndPoolWithSettings) applies
+# aura.settings rows onto the process env UNCONDITIONALLY at boot (os.Setenv, overwriting
+# anything already set), then reloads config -- so AURA_LLM_BASE_URL ends up being whatever the
+# store says regardless of what this shell exports first. On this host the store's value is
+# `http://host.docker.internal:11434/v1` (Ollama on the Windows host, reached correctly by the
+# REAL `aura` compose container via Docker Desktop's own host-gateway proxying -- confirmed:
+# `docker exec aura curl host.docker.internal:11434/api/version` succeeds). A bare process
+# launched from WSL is NOT a Docker Desktop container, so it does not get that proxying: WSL's
+# own `host.docker.internal` DNS entry resolves to a different address (this host's LAN IP,
+# 2026-09-08) that Ollama — bound to Windows' loopback only — never accepts a connection on.
+# What DOES work, measured the same session: the WSL default-route gateway IP (`ip route show`)
+# reaches Windows' loopback-bound services, including Ollama, because Docker Desktop's WSL2
+# host-forwarding attaches there. Rather than edit the SHARED /etc/hosts (this WSL instance may
+# be running other sessions' work concurrently — CLAUDE.md/this plan: never touch shared
+# resources), this remaps host.docker.internal -> that gateway IP in a throwaway, unprivileged
+# user+mount namespace scoped to ONLY the aura serve child (`unshare --user --map-root-user
+# --mount`, no elevation, verified standalone this session: /etc/hosts outside the namespace is
+# provably untouched). `unshare` execve()s straight through (no --pid unshare, so no --fork is
+# needed) into the final `exec "${BIN}" serve`, so $! below is the real daemon's PID the whole
+# time -- `kill -TERM` still targets it directly, no orphaned wrapper process.
+USE_HOSTS_NS=0
+if command -v unshare >/dev/null 2>&1 && [[ "${WINDOWS_BASH}" -eq 0 ]]; then
+  GATEWAY_IP="$(ip route show 2>/dev/null | awk '/^default/ {print $3; exit}')"
+  if [[ -n "${GATEWAY_IP}" ]]; then
+    NS_HOSTS="${WORK}/hosts-with-gateway"
+    cat /etc/hosts >"${NS_HOSTS}" 2>/dev/null || true
+    echo "${GATEWAY_IP} host.docker.internal" >>"${NS_HOSTS}"
+    if unshare --user --map-root-user --mount --propagation private true 2>/dev/null; then
+      USE_HOSTS_NS=1
+    fi
+  fi
+fi
+if [[ "${USE_HOSTS_NS}" -eq 1 ]]; then
+  echo "==> host.docker.internal -> ${GATEWAY_IP} (scoped to this process only, via an unprivileged mount namespace — /etc/hosts elsewhere is untouched)"
+  unshare --user --map-root-user --mount --propagation private bash -c \
+    "mount --bind '${NS_HOSTS}' /etc/hosts && exec '${BIN}' serve" >"${SERVE_LOG}" 2>&1 &
+else
+  echo "==> unshare unavailable or no default route found — starting aura serve without the host.docker.internal remap (fine on a host where the LLM backend does not need it)"
+  "${BIN}" serve >"${SERVE_LOG}" 2>&1 &
+fi
 DAEMON_PID=$!
 if [[ "${WINDOWS_BASH}" -eq 1 ]]; then
   disown "${DAEMON_PID}" 2>/dev/null || true
@@ -185,95 +187,11 @@ if [[ "${READY}" -ne 1 ]]; then
 fi
 echo "==> daemon ready on ${BIND}"
 
-# ---- shared helpers: cookie header from a curl jar, HTTP config fetch -----------------------
-cookie_header_from_jar() {
-  awk '
-    /^#HttpOnly_/ { sub(/^#HttpOnly_/, "", $0) }
-    /^#/ || NF < 7 { next }
-    { printf "%s%s=%s", sep, $6, $7; sep="; " }
-  ' "$1"
-}
-cookie_value_from_jar() {
-  # $1=jar $2=cookie name — extracts ONE named cookie's value, for the totp_pending-only send.
-  awk -v want="$2" '
-    /^#HttpOnly_/ { sub(/^#HttpOnly_/, "", $0) }
-    /^#/ || NF < 7 { next }
-    $6 == want { print $7 }
-  ' "$1"
-}
-
-cat >"${WORK}/totp_compute.py" <<'PYEOF'
-# RFC 6238 TOTP, 6 digits / 30s period (plugin defaults, 01-AUTHULA-TOTP-CONTRACT.md §1: Aura's
-# wiring does not override Digits/PeriodSeconds). stdlib only. Usage: totp_compute.py <secret>
-import base64, hashlib, hmac, struct, sys, time
-
-secret = sys.argv[1]
-pad = secret + "=" * ((8 - len(secret) % 8) % 8)
-key = base64.b32decode(pad.upper())
-counter = int(time.time() // 30)
-msg = struct.pack(">Q", counter)
-digest = hmac.new(key, msg, hashlib.sha1).digest()
-offset = digest[-1] & 0x0F
-code = (struct.unpack(">I", digest[offset:offset + 4])[0] & 0x7FFFFFFF) % 1_000_000
-print(f"{code:06d}")
-PYEOF
-json_body() {
-  # $1=key $2=value -> {"<key>": "<value>", "trust_device": false} — the one shape every
-  # /totp/verify call below needs (both the identity-A verify-only leg and B's enrollment).
-  python3 -c 'import json,sys; print(json.dumps({sys.argv[1]: sys.argv[2], "trust_device": False}, separators=(",", ":")))' "$1" "$2"
-}
-
-fetch_auth_config() {
-  # $1=jar -> prints "base_path csrf_header csrf_cookie csrf_token" on stdout
-  local jar="$1" cfg
-  cfg="$(curl -fsS -c "${jar}" "${BASE}/api/auth/config" 2>&1)" || {
-    echo "FAIL: GET /api/auth/config failed" >&2
-    printf '%s\n' "${cfg}" >&2
-    exit 1
-  }
-  AUTH_CFG="${cfg}" python3 - <<'PY'
-import json, os
-cfg = json.loads(os.environ["AUTH_CFG"])
-base = cfg.get("auth_base_path") or cfg.get("authBasePath") or "/auth"
-header = cfg.get("csrf_header_name") or cfg.get("csrfHeaderName") or "X-AUTHULA-CSRF-TOKEN"
-cookie = cfg.get("csrf_cookie_name") or cfg.get("csrfCookieName") or "__Host-authula_csrf_token"
-token = cfg.get("csrf_token") or cfg.get("csrfToken") or ""
-if cfg.get("provider") != "authula" or not token:
-    raise SystemExit(f"unexpected auth config provider={cfg.get('provider')!r} csrf={bool(token)}")
-print(base, header, cookie, token)
-PY
-}
-
-sign_in() {
-  # $1=jar $2=email $3=password $4=base_path $5=csrf_header $6=csrf_cookie $7=csrf_token
-  # -> writes the sign-in response body path to stdout; caller checks totp_redirect.
-  local jar="$1" email="$2" password="$3" base_path="$4" csrf_header="$5" csrf_cookie="$6" csrf_token="$7"
-  local body="${WORK}/signin-$$-${RANDOM}.json"
-  local payload
-  payload="$(AUTH_EMAIL="${email}" AUTH_PASSWORD="${password}" python3 - <<'PY'
-import json, os
-print(json.dumps({"email": os.environ["AUTH_EMAIL"], "password": os.environ["AUTH_PASSWORD"]}, separators=(",", ":")))
-PY
-)"
-  local code
-  code="$(curl -sS -o "${body}" -w '%{http_code}' \
-    -X POST "${BASE}${base_path}/email-password/sign-in" \
-    -H 'Content-Type: application/json' \
-    -H "${csrf_header}: ${csrf_token}" \
-    -H "Origin: ${BASE}" \
-    -H "Cookie: ${csrf_cookie}=${csrf_token}" \
-    -c "${jar}" \
-    -d "${payload}")" || {
-    echo "FAIL: POST ${base_path}/email-password/sign-in curl failed" >&2
-    exit 1
-  }
-  if [[ "${code}" != "200" ]]; then
-    echo "FAIL: sign-in for ${email} returned HTTP ${code}" >&2
-    cat "${body}" >&2
-    exit 1
-  fi
-  echo "${body}"
-}
+# ---- shared helpers: cookie header from a curl jar, CSRF config fetch, sign-in, TOTP code ---
+# Split into scripts/musr_live_run_authula_helpers.sh (600-LOC ceiling) — the Authula
+# CSRF/cookie-jar/sign-in shapes ported from scripts/agui_smoke.sh, plus the RFC 6238 TOTP
+# generator. Needs BASE and WORK set (both are, by this point).
+. scripts/musr_live_run_authula_helpers.sh
 
 # ============================================================================================
 # section 3: provision identity B — the documented path (`aura identity create`), via a real
@@ -292,6 +210,20 @@ IDENTITY_B_EMAIL="musr-live-run-b-$(date +%s)@example.invalid"
 IDENTITY_B_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
 IDENTITY_B_ANSWER="$(python3 -c 'import secrets; print(secrets.token_urlsafe(16))')"
 
+# MEASURED (2026-09-08): `-operator` defaults to localSeededIdentityID (serve_provisioning.
+# go:41, the fresh-install seed UUID). On a live, already-onboarded deployment that row does
+# not exist — the real operator is whoever holds '*' (onboarding_provision.go:481-505
+# validateNoEscalation; a dry run this session hit exactly this: "missing required
+# capability"). Resolve the real one — read-only, id only, never a value.
+OPERATOR_IDENTITY_ID="$(docker exec aura-postgres psql -U aura -d aura -tAc \
+  "select identity_id from aura.capability_grants where capability = '*' limit 1;" 2>/dev/null || true)"
+OPERATOR_IDENTITY_ID="$(echo "${OPERATOR_IDENTITY_ID}" | tr -d '[:space:]')"
+if [[ -z "${OPERATOR_IDENTITY_ID}" ]]; then
+  echo "FAIL: could not resolve an identity holding the '*' capability to create identity B as — checked aura.capability_grants" >&2
+  exit 1
+fi
+echo "==> creating identity B as operator ${OPERATOR_IDENTITY_ID} (resolved: holds '*')"
+
 PTY_RUNNER="scripts/musr_live_run_ptyexpect.py"
 
 IDENTITY_CREATE_OUT="${WORK}/identity-create.out"
@@ -307,7 +239,9 @@ echo "==> provisioning identity B via 'aura identity create' (real saga, real Te
 set +e
 python3 "${PTY_RUNNER}" "${BIN}" identity create \
   -email "${IDENTITY_B_EMAIL}" \
-  -security-question "musr-live-run automated security question"
+  -security-question "musr-live-run automated security question" \
+  -operator "${OPERATOR_IDENTITY_ID}" \
+  -capability agent.run
 IDENTITY_CREATE_STATUS=$?
 set -e
 rm -f "${EXCHANGES_FILE}"
@@ -375,7 +309,7 @@ if [[ "${NEED_TOTP_A}" == "1" ]]; then
     -H "${CSRF_HEADER}: ${CSRF_TOKEN}" \
     -H "Origin: ${BASE}" \
     -H "Cookie: ${COOKIE_A}" \
-    -c "${JAR_A}" \
+    -b "${JAR_A}" -c "${JAR_A}" \
     -d "${VERIFY_PAYLOAD}")"
   if [[ "${VERIFY_CODE}" != "200" ]]; then
     echo "FAIL: identity A TOTP verify returned HTTP ${VERIFY_CODE}" >&2
@@ -410,14 +344,21 @@ if [[ "${COOKIE_B}" != *"__Host-authula_session="* ]]; then
 fi
 echo "==> identity B first login OK (no forced redirect exists to wait for — measured; see header comment)"
 
+# The jar now correctly carries BOTH the CSRF cookie (from fetch_auth_config, merged forward
+# by sign_in's -b/-c pair — see musr_live_run_authula_helpers.sh) and the session cookie
+# (set by sign_in). -b sends the jar's cookies automatically; B_CSRF_HEADER/B_CSRF_TOKEN from
+# fetch_auth_config above stay valid (sign-in does not rotate the CSRF cookie). This call ALSO
+# depends on internal/webauth/authula.go's RouteMappings fix (MEASURED 2026-09-08): without
+# it, /totp/enable's RequireActor never sees an Actor at all — 401 regardless of how correct
+# the cookie is — because Authula's session.auth hook is PluginID-scoped to routes whose
+# metadata declares it, and nothing declared it for this route before that fix.
 ENABLE_BODY="${WORK}/b-totp-enable.json"
 ENABLE_CODE="$(curl -sS -o "${ENABLE_BODY}" -w '%{http_code}' \
   -X POST "${BASE}${B_AUTH_BASE_PATH}/totp/enable" \
   -H 'Content-Type: application/json' \
   -H "${B_CSRF_HEADER}: ${B_CSRF_TOKEN}" \
   -H "Origin: ${BASE}" \
-  -H "Cookie: ${COOKIE_B}" \
-  -c "${JAR_B}" \
+  -b "${JAR_B}" -c "${JAR_B}" \
   -d '{}')"
 if [[ "${ENABLE_CODE}" != "200" ]]; then
   echo "FAIL: identity B POST /totp/enable returned HTTP ${ENABLE_CODE} — the mandatory TOTP enrollment EnforceFirstLogin requires could not start" >&2
@@ -465,14 +406,26 @@ fi
 echo "==> identity B TOTP enrollment complete (the mandatory leg of D-15's first login)"
 echo "==> identity B: no headless password-change path exists in this build (measured — see header comment); not exercised, recorded honestly"
 
+# MEASURED (2026-09-08): Aura's session config sets UpdateAge == ExpiresIn (both
+# sessionAbsoluteTTL, internal/webauth/authula.go's WithSession call) — a sliding renewal
+# window as wide as the session lifetime itself, so validateSessionHook renews (deletes the
+# old session row, issues a new cookie) on EVERY request it runs for. My own RouteMappings
+# fix above is what makes it run for /totp/enable at all; the response's Set-Cookie rotated
+# COOKIE_B out from under the bash variable captured before that call. -c "${JAR_B}" already
+# wrote the new cookie to the jar (a live dry run caught the stale-variable 401 on the very
+# next authenticated call, /api/conversations); re-reading here is the fix.
+COOKIE_B="$(cookie_header_from_jar "${JAR_B}")"
+
 # ============================================================================================
 # section 6: one thread per identity, owned by her (D-06 owner-scoped resolution)
 # ============================================================================================
 create_thread() {
-  local cookie="$1" body code
+  local cookie="$1" body code idem
   body="${WORK}/thread-$$-${RANDOM}.json"
+  idem="musr-live-run-thread-$(python3 -c 'import uuid; print(uuid.uuid4())')"
   code="$(curl -sS -o "${body}" -w '%{http_code}' -X POST "${BASE}/api/conversations" \
-    -H "Cookie: ${cookie}" -H 'Content-Type: application/json' -d '{}')"
+    -H "Cookie: ${cookie}" -H 'Content-Type: application/json' \
+    -H "Idempotency-Key: ${idem}" -d '{}')"
   if [[ "${code}" != "201" && "${code}" != "200" ]]; then
     echo "FAIL: POST /api/conversations returned HTTP ${code}" >&2
     cat "${body}" >&2
@@ -538,7 +491,16 @@ fi
 # via document_search, record it via the memory tool, and confirm it via a sandbox command.
 # ============================================================================================
 CONV_DRIVER="scripts/musr_live_run_conversation.py"
-PROMPT="Esegui questi tre passi con i tuoi strumenti reali, nell'ordine che preferisci: (1) cerca nei miei documenti il file 'musr-live-run-marker.txt' e leggi il codice segreto che contiene; (2) registra in memoria un fatto che riporti quel codice esatto; (3) esegui nel sandbox un comando shell che stampi quel codice (per esempio echo) e osservane l'output. Alla fine scrivi una risposta breve che ripeta per intero il codice trovato."
+# MEASURED (2026-09-08): the first real scored run completed both conversations correctly
+# (tokens, tools, no leak) but failed ONLY the overlap assertion — the transcripts show
+# genuine progress interleaving across the whole run (B's tools, then A's, then B's again,
+# spanning the same ~19s window), but every individual tool call is sub-second, so no two
+# calls' [start,end] intervals literally overlapped even though the underlying infrastructure
+# was genuinely shared throughout. Widening the sandbox task's own duration (a `sleep`, which
+# costs no LLM/GPU time) is what D-17's own "time the three tasks to overlap deliberately"
+# asks the harness to arrange — it does not fabricate overlap, it gives real concurrent
+# execution enough width for the ts-based check to resolve it.
+PROMPT="Esegui questi tre passi con i tuoi strumenti reali, nell'ordine che preferisci: (1) cerca nei miei documenti il file 'musr-live-run-marker.txt' e leggi il codice segreto che contiene; (2) registra in memoria un fatto che riporti quel codice esatto; (3) esegui nel sandbox il comando shell 'sleep 3 && echo <codice>' sostituendo <codice> con il codice trovato, e osservane l'output. Alla fine scrivi una risposta breve che ripeta per intero il codice trovato."
 
 TRANSCRIPT_A="${RUN_DIR}/transcript-a.jsonl"
 TRANSCRIPT_B="${RUN_DIR}/transcript-b.jsonl"
