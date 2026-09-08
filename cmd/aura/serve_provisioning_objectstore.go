@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -63,7 +64,22 @@ type objectStoreProvisionAdapter struct {
 	// own the bucket before Garage will accept the rule.
 	auraAccessKey string
 	corsDone      map[string]struct{}
+	// emptier removes a bucket's objects before it is dropped, over the SAME shared aura
+	// credentials ensureCORS uses. Optional for the same reason: nil in tests that are not
+	// about it, and in any wiring with no S3 endpoint to talk to.
+	emptier objectStoreEmptier
 }
+
+// objectStoreEmptier is the object-level half of the teardown, satisfied by
+// *objectstore.S3Store. It is a separate port from objectStoreMinter because the two speak
+// different protocols to different endpoints: the minter drives Garage's admin API, which
+// has no object-level call at all, and this drives S3.
+type objectStoreEmptier interface {
+	List(ctx context.Context, req objectstore.ListRequest) ([]objectstore.ObjectInfo, error)
+	Delete(ctx context.Context, ref objectstore.ObjectRef) error
+}
+
+var _ objectStoreEmptier = (*objectstore.S3Store)(nil)
 
 func newObjectStoreProvisionAdapter(client objectStoreMinter, store objectStoreCredentialResolver) *objectStoreProvisionAdapter {
 	return &objectStoreProvisionAdapter{
@@ -101,6 +117,35 @@ func browserUploadCORSFor(cfg *config.Config) func(context.Context, string) erro
 		}
 		return store.ConfigureBrowserUploadCORS(ctx, bucket)
 	}
+}
+
+// sharedObjectStoreEmptierFor builds the teardown's object-level client on AURA's own key —
+// the same credentials browserUploadCORSFor uses, and for the same reason: grantAuraOwnership
+// gives that key owner rights on every per-identity bucket, while the identity's own key is
+// deliberately not an owner and, on a resumed purge, no longer exists at all.
+//
+// Nil when there is no endpoint to talk to, which leaves a filesystem run exactly as it was.
+//
+// context.Background() is deliberate rather than a shortcut: NewS3 consumes its ctx only in
+// awsconfig.LoadDefaultConfig, which issues no request — every actual call carries the saga's
+// own ctx.
+func sharedObjectStoreEmptierFor(cfg *config.Config) objectStoreEmptier {
+	if strings.TrimSpace(cfg.ObjectStoreEndpoint) == "" {
+		return nil
+	}
+	store, err := objectstore.NewS3(context.Background(), objectstore.S3Config{
+		Endpoint:       cfg.ObjectStoreEndpoint,
+		PublicEndpoint: cfg.ObjectStorePublicEndpoint,
+		Region:         cfg.ObjectStoreRegion,
+		AccessKey:      cfg.ObjectStoreAccessKey,
+		SecretKey:      cfg.ObjectStoreSecretKey,
+		PathStyle:      cfg.ObjectStorePathStyle,
+	})
+	if err != nil {
+		slog.Warn("aura serve: object-store teardown client unavailable — a purge will leave a non-empty bucket for Garage to refuse", "err", err)
+		return nil
+	}
+	return store
 }
 
 // configureCORS gives an identity's own bucket the rule that lets a browser PUT to it.
@@ -240,11 +285,50 @@ func (a *objectStoreProvisionAdapter) DeprovisionObjectStore(ctx context.Context
 		return err
 	}
 	if bucketID != "" {
+		if err := a.emptyBucket(ctx, id); err != nil {
+			return err
+		}
 		if err := a.client.DeleteBucket(ctx, bucketID); err != nil {
 			return err
 		}
 	}
 	return a.store.Delete(ctx, id)
+}
+
+// emptyBucket removes every object in the identity's bucket, because Garage refuses to drop
+// a bucket that still holds one: DeleteBucket answers 409 BucketNotEmpty, measured
+// 2026-09-08 against the live admin API on four buckets each holding a single 154-byte seed
+// document. Emptying is an S3 operation — the admin API offers no object-level call at all —
+// so this composes objectstore.S3Store's existing List and Delete rather than reaching for
+// anything new.
+//
+// It runs through the SHARED aura credentials, which grantAuraOwnership has given owner
+// rights on every per-identity bucket, and NOT through the identity's own key: that key is
+// already deleted by this point, and on a resumed purge its credential row is gone too.
+// A nil emptier leaves the previous behaviour intact — the delete is still attempted and
+// Garage's own BucketNotEmpty is the loud failure — so a deployment with no S3 credentials
+// wired is no worse off than before.
+func (a *objectStoreProvisionAdapter) emptyBucket(ctx context.Context, id string) error {
+	if a.emptier == nil {
+		return nil
+	}
+	bucket, err := garageadmin.BucketForIdentity(id)
+	if err != nil {
+		return err
+	}
+	objects, err := a.emptier.List(ctx, objectstore.ListRequest{Bucket: bucket})
+	if err != nil {
+		return fmt.Errorf("list objects in %q: %w", bucket, err)
+	}
+	for _, obj := range objects {
+		// Addressed by the derived bucket rather than the listing's own Ref, so a
+		// surprising response can never point the delete at another identity's bucket.
+		ref := objectstore.ObjectRef{Bucket: bucket, Key: obj.Ref.Key}
+		if err := a.emptier.Delete(ctx, ref); err != nil {
+			return fmt.Errorf("delete object %q in %q: %w", ref.Key, bucket, err)
+		}
+	}
+	return nil
 }
 
 // deprovisionKey deletes the identity's scoped key, taking the access key id from the

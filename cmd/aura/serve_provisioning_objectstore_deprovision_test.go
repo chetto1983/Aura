@@ -160,6 +160,106 @@ func TestDeprovisionObjectStoreFailsOnAmbiguousKeyLookup(t *testing.T) {
 	}
 }
 
+// emptierStub stands in for the shared-credential S3 store. Garage refuses DeleteBucket on
+// a non-empty bucket (409 BucketNotEmpty, measured 2026-09-08 on the live admin API), so the
+// teardown has to remove the objects itself — emptying a bucket is an S3 operation the admin
+// API does not offer.
+type emptierStub struct {
+	objects  []objectstore.ObjectInfo
+	listErr  error
+	delErr   error
+	listedIn []string
+	deleted  []objectstore.ObjectRef
+}
+
+func (e *emptierStub) List(_ context.Context, req objectstore.ListRequest) ([]objectstore.ObjectInfo, error) {
+	e.listedIn = append(e.listedIn, req.Bucket)
+	if e.listErr != nil {
+		return nil, e.listErr
+	}
+	return e.objects, nil
+}
+
+func (e *emptierStub) Delete(_ context.Context, ref objectstore.ObjectRef) error {
+	e.deleted = append(e.deleted, ref)
+	return e.delErr
+}
+
+func TestDeprovisionObjectStoreEmptiesTheBucketBeforeDeletingIt(t *testing.T) {
+	bucket, err := garageadmin.BucketForIdentity(deprovisionTestID)
+	if err != nil {
+		t.Fatalf("BucketForIdentity: %v", err)
+	}
+	emptier := &emptierStub{objects: []objectstore.ObjectInfo{
+		{Ref: objectstore.ObjectRef{Bucket: bucket, Key: "docs/musr-live-run-marker.txt"}},
+		{Ref: objectstore.ObjectRef{Bucket: bucket, Key: "docs/second.bin"}},
+	}}
+	minter := &deprovisionMinter{aliasID: "bkt-1"}
+	adapter, _ := deprovisionFixture(t, minter)
+	adapter.emptier = emptier
+
+	if err := adapter.DeprovisionObjectStore(context.Background(), deprovisionTestID); err != nil {
+		t.Fatalf("DeprovisionObjectStore err = %v, want nil", err)
+	}
+	if len(emptier.deleted) != 2 {
+		t.Fatalf("deleted objects = %v, want both keys removed before the bucket delete", emptier.deleted)
+	}
+	for _, ref := range emptier.deleted {
+		if ref.Bucket != bucket {
+			t.Fatalf("deleted %+v, want bucket %q — never another identity's", ref, bucket)
+		}
+	}
+	if len(minter.deletedBucket) != 1 {
+		t.Fatalf("deleted buckets = %v, want the bucket removed after it was emptied", minter.deletedBucket)
+	}
+}
+
+func TestDeprovisionObjectStorePropagatesEmptyFailure(t *testing.T) {
+	boom := errors.New("s3: DeleteObject access denied")
+	emptier := &emptierStub{
+		objects: []objectstore.ObjectInfo{{Ref: objectstore.ObjectRef{Bucket: "b", Key: "k"}}},
+		delErr:  boom,
+	}
+	minter := &deprovisionMinter{aliasID: "bkt-1"}
+	adapter, _ := deprovisionFixture(t, minter)
+	adapter.emptier = emptier
+
+	if err := adapter.DeprovisionObjectStore(context.Background(), deprovisionTestID); !errors.Is(err, boom) {
+		t.Fatalf("DeprovisionObjectStore err = %v, want the object delete propagated", err)
+	}
+	if len(minter.deletedBucket) != 0 {
+		t.Fatalf("deleted buckets = %v, want none — a bucket whose objects survived must not be dropped", minter.deletedBucket)
+	}
+}
+
+func TestDeprovisionObjectStoreWithoutAnEmptierStillDeletesTheBucket(t *testing.T) {
+	// A deployment with no S3 credentials wired (the pre-cutover shape) keeps the previous
+	// behaviour: try the delete, and let Garage's own BucketNotEmpty be the loud failure.
+	minter := &deprovisionMinter{aliasID: "bkt-1"}
+	adapter, _ := deprovisionFixture(t, minter)
+
+	if err := adapter.DeprovisionObjectStore(context.Background(), deprovisionTestID); err != nil {
+		t.Fatalf("DeprovisionObjectStore err = %v, want nil", err)
+	}
+	if len(minter.deletedBucket) != 1 {
+		t.Fatalf("deleted buckets = %v, want the bucket delete still attempted", minter.deletedBucket)
+	}
+}
+
+func TestDeprovisionObjectStoreSkipsEmptyingAnAbsentBucket(t *testing.T) {
+	emptier := &emptierStub{}
+	minter := &deprovisionMinter{aliasErr: garageadmin.ErrBucketNotFound}
+	adapter, _ := deprovisionFixture(t, minter)
+	adapter.emptier = emptier
+
+	if err := adapter.DeprovisionObjectStore(context.Background(), deprovisionTestID); err != nil {
+		t.Fatalf("DeprovisionObjectStore err = %v, want nil", err)
+	}
+	if len(emptier.listedIn) != 0 {
+		t.Fatalf("listed %v, want no listing for a bucket that is already gone", emptier.listedIn)
+	}
+}
+
 func TestDeprovisionObjectStoreTreatsAbsentBucketAsDone(t *testing.T) {
 	minter := &deprovisionMinter{aliasErr: garageadmin.ErrBucketNotFound}
 	adapter, _ := deprovisionFixture(t, minter)
