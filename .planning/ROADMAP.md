@@ -77,7 +77,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 01-04-PLAN.md — `make musr-e2e`, the extracted disposable-stack library, the CI job that calls the same target, and the runbook Acceptance section (wave 3)
+- [x] 01-04-PLAN.md — `make musr-e2e`, the extracted disposable-stack library, the CI job that calls the same target, and the runbook Acceptance section (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 

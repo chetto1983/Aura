@@ -5,16 +5,16 @@ milestone_name: Production Launch — Multi-Tenant
 current_phase: 01
 current_phase_name: Two Identities, Live and Separated
 status: executing
-stopped_at: Completed 01-05-PLAN.md
-last_updated: "2026-09-08T10:19:13.357Z"
+stopped_at: Completed 01-04-PLAN.md
+last_updated: "2026-09-08T11:11:22.865Z"
 last_activity: 2026-09-08
 last_activity_desc: Phase 01 execution started
-state_head: 5d70236099c0d0f6ab2a68fa85faf4062466f509
+state_head: e226d9b14e87775ff4d8c9091a0bc7ed47bedfff
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 7
-  completed_plans: 5
+  completed_plans: 6
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-07)
 ## Current Position
 
 Phase: 01 (Two Identities, Live and Separated) — EXECUTING
-Plan: 3 of 7
+Plan: 4 of 7
 Status: Ready to execute
 Last activity: 2026-09-08 — Phase 01 execution started
 
@@ -80,6 +80,7 @@ phases, not many thin ones.
 | Phase 01 P01 | 155min | 3 tasks | 14 files |
 | Phase 01 P03 | ~2h | 3 tasks | 7 files |
 | Phase 01 P05 | 2h20min | 3 tasks | 3 files |
+| Phase 01-two-identities-live-and-separated P04 | ~55 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -106,6 +107,7 @@ creation:
 - [Phase 01]: [Phase 01 Plan 03] The memory plane's D-11 item 3 (a verified access token reaching arcadedb-mcp's tenant selector) needed a JWKS-serving seam on LiveMCPTokenIssuer that did not exist: no exported mechanism let a self-minted live-test Authula token be verified without the full aura daemon serving its JWKS route. Added LiveMCPTokenIssuer.JWKSHandler mirroring the existing production OAuthServer.JWKSHandler over the same cache service.
 - [Phase 01]: [Phase 01 Plan 03] musr-e2e's bring-up step called `make db-migrate memory-up`, not `memory-up-core`, before this plan -- pre-existing drift between the step's own comment (postgres+ArcadeDB+embed sidecar) and what it actually started (also arcadedb-mcp, and therefore the aura daemon, racing the tagged tier's own Postgres writes -- the measured CI #1809 shape). Fixed on touch to memory-up-core.
 - [Phase 01]: [Phase 01 Plan 05] Budget is per-turn by construction (runner.buildAgent's fresh agent.NewBudget), confirmed unchanged by the same-day 10:43 CEST paid-completion-critic removal refactor; the other three D-15 surfaces (sidecar path, gateway ReservationKey, steer inbox) are disjoint only by conversation-UUID uniqueness, proven by deliberately breaking each and watching the corresponding assertion go red.
+- [Phase 01-two-identities-live-and-separated]: [Phase 01 Plan 04] Kept ci.yml's compose postgres+ArcadeDB+embed bring-up step (adding garage) instead of removing it per a literal reading of the plan: production_load_chaos.py and restore_drill.sh run later in the same job, target the compose postgres service directly, and make musr-e2e never touches it (its own disposable Postgres is separate). — Measured by reading scripts/production_load_chaos_support.py and scripts/restore_drill.sh before editing ci.yml; removing the bring-up would have broken those two later steps.
 
 ### Pending Todos
 
@@ -153,8 +155,8 @@ rediscover them:
 
 ## Session Continuity
 
-Last session: 2026-09-08T10:19:13.321Z
-Stopped at: Completed 01-05-PLAN.md
+Last session: 2026-09-08T11:11:22.830Z
+Stopped at: Completed 01-04-PLAN.md
 Resume file: None
 
 Next: `/gsd-plan-phase 1`
