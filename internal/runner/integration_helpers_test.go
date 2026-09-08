@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
@@ -142,7 +143,7 @@ func newIntegrationRunnerWithResumeHook(
 		Identity:        newFakeIdentityStore(),
 		CacheMetrics:    newFakeCacheMetricStore(),
 		ToolInvocations: newFakeToolInvocationStore(),
-		Client:          client,
+		Client:          agenttest.TitleClient{Main: client, Title: agenttest.NewFakeClient(agenttest.TextChunks("stop", "Integration test"))},
 		Registry:        reg,
 		LLM:             llm.Config{Model: "test-model", ContextWindow: 1000000, MaxOutputTokens: 32768},
 		TitleTimeout:    2 * time.Second,

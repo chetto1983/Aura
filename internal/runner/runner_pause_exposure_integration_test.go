@@ -109,7 +109,7 @@ func TestFlushPause_FailureHidesPauseAndTurn_Integration(t *testing.T) {
 		Identity:        newFakeIdentityStore(),
 		CacheMetrics:    newFakeCacheMetricStore(),
 		ToolInvocations: newFakeToolInvocationStore(),
-		Client:          client,
+		Client:          agenttest.TitleClient{Main: client, Title: agenttest.NewFakeClient(agenttest.TextChunks("stop", "Pause test"))},
 		Registry:        reg,
 		LLM:             llm.Config{Model: "test-model", ContextWindow: 1000000, MaxOutputTokens: 32768},
 		TitleTimeout:    2 * time.Second,

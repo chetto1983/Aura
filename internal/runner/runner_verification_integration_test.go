@@ -243,7 +243,7 @@ func TestVerifyOnStopFiresOnARealTurn(t *testing.T) {
 		Identity:             newFakeIdentityStore(),
 		CacheMetrics:         newFakeCacheMetricStore(),
 		ToolInvocations:      newFakeToolInvocationStore(),
-		Client:               client,
+		Client:               agenttest.TitleClient{Main: client, Title: agenttest.NewFakeClient(agenttest.TextChunks("stop", "Verification test"))},
 		Registry:             reg,
 		LLM:                  llm.Config{Model: "test-model", ContextWindow: 1000000, MaxOutputTokens: 32768},
 		TitleTimeout:         2 * time.Second,
@@ -251,7 +251,7 @@ func TestVerifyOnStopFiresOnARealTurn(t *testing.T) {
 		VerificationStore:    agent.NewEvidenceStore(pool),
 		VerificationDetector: verifiableProjectDetector(),
 	})
-	// The auto-title worker fires past seq>=3; join it so goleak does not see it.
+	// Join the independently scheduled title worker before checking for leaks.
 	t.Cleanup(func() { r.waitWorkers(5 * time.Second) })
 
 	convID := newIntegrationConversation(t, pool, convStore)
@@ -274,11 +274,7 @@ func TestVerifyOnStopFiresOnARealTurn(t *testing.T) {
 	// Four model rounds, not two: the first termination was refused, the agent went
 	// and ran the suite, and only then was allowed to finish.
 	//
-	// Counted by ROUND, not by CallCount(). The auto-title worker shares this client and
-	// fires past seq>=3, so the process-wide count is a race the test would lose on a
-	// loaded machine: CI reported five calls on 2026-08-16 with all four rounds correct.
-	// A title call is distinguishable because it carries no tool manifest, which is also
-	// why filtering on Tools is a statement about the request rather than a guess.
+	// The title worker has its own script and cannot consume a verification round.
 	if rounds := len(agentRequests(client)); rounds != 4 {
 		t.Fatalf("model ran %d agent rounds, want 4 — the gate did not send the turn back", rounds)
 	}
