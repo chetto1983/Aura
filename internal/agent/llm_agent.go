@@ -84,17 +84,6 @@ type LlmAgent struct {
 
 	history []llm.Message
 
-	// historyBase is where THIS run begins in history: the length of the rehydrated
-	// transcript the constructor was seeded with. Everything before it belongs to
-	// earlier turns and is context, never evidence.
-	//
-	// The completion critic is told it is reading "the tool calls the agent made this
-	// turn", so an older turn's result is not noise to it -- it is testimony. Measured
-	// on the live deployment 2026-09-03: asked the time, the agent answered correctly
-	// with no tool call, and the critic vetoed twice against a current_time result from
-	// the previous evening (21:17 vs 07:57). Five LLM calls, one unchanged answer.
-	historyBase int
-
 	// recoveryAttempts is the per-run recovery gate (D-08): a COUNTER, never a
 	// one-shot boolean latch (CrewAI #1656 anti-pattern). The FIRST early-
 	// termination trip (budget or dedup) increments it 0→1, injects a single
@@ -104,16 +93,7 @@ type LlmAgent struct {
 	// per-run and never leaks between branches.
 	recoveryAttempts int
 
-	// completionAttempts is the completion gate's dedicated veto counter (max
-	// completionMaxAttempts), orthogonal to recoveryAttempts so a budget recovery does
-	// not consume the gate's vetoes. Per-run: a fresh LlmAgent per turn resets it.
-	//
-	// It sat next to a sideEffected bool documenting that the gate "only runs its
-	// critic on a side-effecting turn". D-20a/D-20b widened the gate to judge EVERY
-	// voluntary termination and left the flag behind, written by dispatch and read by
-	// nobody. The gate is narrow again — criticWorthACall — but on the step budget,
-	// not on host state, so the flag stays gone: a turn that writes is guarded by the
-	// verify-on-stop ledger, which needs the path, not a boolean.
+	// Bounds deterministic reply-hygiene corrections independently of budget recovery.
 	completionAttempts int
 
 	// ledger is the verification evidence the verify-on-stop gate reads
@@ -388,7 +368,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 					if hookResult.FinishReason == "" {
 						hookResult.FinishReason = "hook"
 					}
-					if veto, feedback := a.gateCompletion(ic, answer); veto {
+					if veto, feedback := a.gateCompletion(answer); veto {
 						a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: feedback})
 						continue
 					}
@@ -513,7 +493,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				// vetoed answer must not become durable history (finalize copies history
 				// forward on budget trips) NOR stay on the wire: the draft was streamed
 				// live, so it is repudiated first (#191).
-				if feedback, _, veto := a.gateVoluntaryStop(ic, answer); veto {
+				if feedback, _, veto := a.gateVoluntaryStop(answer); veto {
 					if !a.repudiateStreamed(ic, spanID, parentSpanID, yield) {
 						turnReason = "consumer_stopped"
 						return

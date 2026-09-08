@@ -43,9 +43,7 @@ func (a *LlmAgent) roundBudget(ic InvocationContext) prompt.Budget {
 	return budget
 }
 
-// groundingBudget carries only the FACTS the turn is handed — no step counts, no
-// deferred roster. Split out because the completion critic needs exactly this half
-// and must not be handed instructions meant for the model (llm_agent_completion.go).
+// Grounding uses the same clock as the run's budget and stays in the volatile tail.
 func (a *LlmAgent) groundingBudget(now time.Time) prompt.Budget {
 	loc := clockLocation(a.location, now)
 	return prompt.Budget{

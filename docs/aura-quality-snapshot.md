@@ -1,6 +1,13 @@
 # Aura Quality Snapshot (living doc)
 
 **Created:** 2026-05-29
+**Completion-check measurement:** 2026-09-08 — removed the LLM critic per operator
+instruction. The budget-end contract uses2task calls instead of3, preserving local
+reply hygiene, verification and delivery gates. Race/static checks and20/20 capability
+cases passed; two deterministic-gate mutations killed. Complete disposable Go matrix:
+**34,602/40,003 = 86.4985%**, package policy passed. Real no-critic resumed coordinator
+output matched both workers' unpredictable values and IDs; the initial synthesis had
+a provider timeout. Scope and evidence are in spike104 and `.git/remove-critic-full-coverage.log`.
 **Multi-agent web measurement:** 2026-09-08 — 2025 tests across 239 files passed;
 statements **8135/8927 = 91.12%**, branches **5702/6678 = 85.38%**,
 functions **2287/2526 = 90.53%**, lines **7408/7959 = 93.07%**.

@@ -23,7 +23,7 @@ import (
 //
 // It is Deferred (path/caption schema + an inline example, the deferred-tool rule)
 // and NON-Mutating (it reads a file and describes a delivery — no host state
-// changes), so it never arms the completion-gate critic.
+// changes); the channel owns the actual delivery.
 type SendFile struct {
 	// Router is the per-identity box routing seam and the only source of a deliverable file: the
 	// requested path is a BOX path under /workspace, CopyArtifactsOut-staged to a host-readable

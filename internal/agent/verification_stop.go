@@ -9,11 +9,8 @@
 // a passive verification ledger into a bounded follow-up when the model tries to
 // finish immediately after editing code without fresh evidence.
 //
-// It plugs into the seam llm_agent.go already has for exactly this shape: at the
-// no-tool-calls terminal, gateCompletion may veto, append a user-role nudge and
-// continue the loop. That gate fires only on a turn that mutated host state and
-// spends an LLM critic call to decide; this one is deterministic, costs no model
-// call, and reads evidence the turn already produced.
+// The terminal paths use this recorded evidence to decide whether to request
+// verification. The decision is deterministic and spends no model call.
 //
 // The ledger the snapshot reads (hermes `agent/verification_evidence.py`, 649
 // lines of SQLite) and the project detector it consults (`agent/coding_context.py`,

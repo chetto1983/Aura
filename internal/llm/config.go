@@ -54,10 +54,7 @@ const (
 	// the output reservation. 0 disables early compaction entirely.
 	defaultCompactionTriggerPercent = 50
 
-	// defaultCompletionGate is the production default for the completion critic
-	// gate (amendment #54 / D-43): ON. The zero-value Config (hand-built in unit
-	// tests) leaves it false, so the gate is OFF unless a test opts in — Load is
-	// the only path that turns it on.
+	// Enable free final-reply checks in production; hand-built test configs opt in.
 	defaultCompletionGate = true
 
 	// OpenRouter attribution headers (D-20): visibility in the OpenRouter
@@ -92,11 +89,8 @@ const (
 	envCompactionTrigger    = "AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT"
 	envMaxOutputTokens      = "AURA_MODEL_MAX_OUTPUT_TOKENS" //nolint:gosec // G101 false positive: env var NAME, not a credential
 
-	// Completion gate knobs (amendment #54 / D-43). AURA_COMPLETION_* domain
-	// (not AURA_LLM_*) but they ride in llm.Config because the agent reads cfg
-	// directly — no extra plumbing through runner.Deps / LlmAgentConfig.
-	envCompletionGate        = "AURA_COMPLETION_GATE"
-	envCompletionCriticModel = "AURA_COMPLETION_CRITIC_MODEL"
+	// The runtime snapshot carries the deterministic final-reply switch.
+	envCompletionGate = "AURA_COMPLETION_GATE"
 
 	// envOpenRouterMiddleOut arms the fix-plan 1.11 overflow belt (see
 	// Config.OpenRouterMiddleOut). Default OFF.
@@ -166,13 +160,8 @@ type Config struct {
 	Prices              map[string]Price
 	CostStatus          CostStatus
 
-	// CompletionGate enables the agent's completion critic gate (amendment #54 /
-	// D-43): a voluntary termination (text_response / content-stop) on a turn
-	// that mutated host state is verified by a critic call before it is accepted.
-	// Zero-value false (off) so hand-built test configs skip it; Load() defaults
-	// it on. CompletionCriticModel overrides the critic model; empty → Model.
-	CompletionGate        bool
-	CompletionCriticModel string
+	// CompletionGate enables deterministic reply hygiene without an LLM auditor.
+	CompletionGate bool
 
 	// OpenRouterMiddleOut is the opt-in overflow belt (fix-plan 1.11): when ON
 	// (AND the resolved reasoning target is OpenRouter) the wire layer sets
@@ -306,12 +295,8 @@ func load(allowEmptyKey bool) (*Config, error) {
 		return nil, err
 	}
 
-	// Completion gate (amendment #54 / D-43): default ON. A malformed bool falls
-	// back to the default (non-fatal, like the root config bool knobs) — a typo
-	// in an opt-out toggle must not block startup. Empty critic model → the loop
-	// model is reused at call time.
+	// A malformed opt-out bool retains the default, like the other config toggles.
 	cfg.CompletionGate = envBool(envCompletionGate, defaultCompletionGate)
-	cfg.CompletionCriticModel = os.Getenv(envCompletionCriticModel)
 	cfg.OpenRouterMiddleOut = envBool(envOpenRouterMiddleOut, false)
 
 	if err := cfg.Validate(); err != nil {

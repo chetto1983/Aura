@@ -60,16 +60,18 @@ func TestCompletionGateVetoKeepsSiblingToolCallsAnswered(t *testing.T) {
 	fc := agenttest.NewFakeClient(
 		agenttest.ToolCallTurn(mutatingCall("c1")),
 		agenttest.ToolCallTurn(
-			textResponseCall("c2", "I wrote the script, you run it"),
+			textResponseCall("c2", "Hmm, wait. I am drafting instead of answering."),
 			echoCall("c3"),
 		),
-		agenttest.TextChunks("stop", "NOT_DONE: the output was never produced"),
 		agenttest.ToolCallTurn(textResponseCall("c4", "file produced and verified")),
 	)
 	a := newGateAgent(t, fc, true)
 
 	if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{}))); err != nil {
 		t.Fatalf("Run: %v", err)
+	}
+	if fc.CallCount() != 3 {
+		t.Fatalf("calls=%d, want one hygiene correction without an auditor", fc.CallCount())
 	}
 	assertRequestsToolCallsAnswered(t, fc.Requests)
 }

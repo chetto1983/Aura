@@ -52,10 +52,8 @@ type Spec struct {
 	Parameters  json.RawMessage // JSON-schema for the tool arguments
 	Deferred    bool            // true → full spec hidden until tool_search loads it
 	// Mutating marks a tool that can change host state (write a file, run a
-	// command, mutate the sandbox). The agent's completion gate (amendment #54 /
-	// D-43) only runs its critic on a turn that dispatched at least one mutating
-	// tool — a pure read/chat turn skips the gate at zero extra cost. It is NOT
-	// LLM-visible (never wire-encoded); it is a runtime hint only. Conservative by
+	// command, mutate the sandbox). Policy, operation admission and verification
+	// consume this runtime-only hint; it is never wire-encoded. Conservative by
 	// design: shell_exec is Mutating even though `ls` does not mutate, because the
 	// agent cannot know statically whether a command writes.
 	Mutating bool

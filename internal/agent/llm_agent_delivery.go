@@ -21,8 +21,7 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 )
 
-// deliverOnStopNudgePrefix is the prefix isAgentNudge recognises, so the completion
-// critic never grades the turn against Aura's own injection.
+// Keep runtime nudges distinguishable from the actual user's request on resume.
 const deliverOnStopNudgePrefix = "[System: You wrote"
 
 // deliveryMaxAttempts bounds the gate to ONE nudge per run: the model either delivers
@@ -73,9 +72,7 @@ func sendFilePath(raw string) (string, bool) {
 }
 
 // gateDelivery returns the follow-up for a voluntary termination that wrote artifacts
-// this run and delivered none of them, and ok=false when there is nothing to say. Like
-// gateVerification it is deterministic and free, so the loop runs it BEFORE the
-// completion critic.
+// this run and delivered none of them, and ok=false when there is nothing to say.
 func (a *LlmAgent) gateDelivery() (string, bool) {
 	if a.deliveryAttempts >= deliveryMaxAttempts {
 		return "", false

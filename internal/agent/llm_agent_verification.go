@@ -15,22 +15,20 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 )
 
-// verificationMaxAttempts bounds the nudge per run, the way completionAttempts bounds
-// the critic gate. Two, the default hermes's build_verify_on_stop_nudge carries: the
+// verificationMaxAttempts bounds the nudge per run independently of reply hygiene.
+// Two, the default hermes's build_verify_on_stop_nudge carries: the
 // first nudge is what makes the agent run the verification at all, and the second is
 // what catches a run that failed and was then walked away from.
 const verificationMaxAttempts = 2
 
 // verifyOnStopNudgePrefix leads every nudge BuildVerifyOnStopNudge returns. The nudge
-// is injected as a USER-role message, so isAgentNudge matches on this prefix: without
-// it the completion critic reads Aura's own injection as the user's request and grades
-// the turn against the wrong thing.
+// is injected as a USER-role message, so isAgentNudge keeps it separate from the
+// actual user's request.
 const verifyOnStopNudgePrefix = "[System: You edited code in this turn"
 
 // gateVerification returns the follow-up for a voluntary termination that edited code
 // without fresh passing verification evidence, and ok=false when there is nothing to
-// say. It is deterministic and spends no model call, which is why the loop runs it
-// BEFORE the completion critic.
+// say. It reads the verification ledger without a model call.
 //
 // Fail-open by construction: no ledger (no pool, tests, standalone), the gate switched
 // off, or the attempt budget spent all return ok=false — a ledger outage can never

@@ -288,9 +288,8 @@ func (a LedgerAdapter) VerificationStatusFor(sessionID, cwd string) Verification
 
 // verificationReadContext bounds one ledger read (verificationReadTimeout). It is rooted
 // in context.Background() on purpose: the read happens AT a voluntary termination, where
-// a wallclock trip may already have made the turn ctx Done -- the same hazard the
-// completion critic severs its deadline for (llm_agent_completion.go). Detached is not
-// the same as unbounded, and this timeout is the whole difference between them.
+// a wallclock trip may already have made the turn ctx Done. The independent deadline
+// still bounds the read.
 func verificationReadContext() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), verificationReadTimeout)
 }

@@ -51,8 +51,6 @@ func (c *completionLeakClient) Stream(_ context.Context, req llm.Request) (<-cha
 		return chunksFor(agentToolCallChunk("c1", "fake_write", `{"v":"x"}`), llm.Chunk{FinishReason: "tool_calls"}), nil
 	case 2:
 		return chunksFor(llm.Chunk{Text: c.veto}, llm.Chunk{FinishReason: "stop"}), nil
-	case 3:
-		return chunksFor(llm.Chunk{Text: "NOT_DONE: the output was never produced"}, llm.Chunk{FinishReason: "stop"}), nil
 	default:
 		if requestContains(req, c.veto) {
 			return chunksFor(llm.Chunk{Text: "LEAK: " + c.veto}, llm.Chunk{FinishReason: "stop"}), nil
@@ -62,7 +60,7 @@ func (c *completionLeakClient) Stream(_ context.Context, req llm.Request) (<-cha
 }
 
 func TestContentStopVetoDoesNotPersistIntoFinalize(t *testing.T) {
-	const vetoed = "I wrote the script; you run it yourself"
+	const vetoed = "Hmm, wait. I am drafting instead of answering."
 	client := &completionLeakClient{veto: vetoed}
 	reg := tools.NewRegistry()
 	reg.Register(tools.TextResponse{})
@@ -110,10 +108,10 @@ func TestContentStopVetoDoesNotPersistIntoFinalize(t *testing.T) {
 			t.Fatalf("vetoed content-stop answer persisted as assistant history: %#v", a.history)
 		}
 	}
-	if client.calls != 4 {
-		t.Fatalf("client calls = %d, want mutating turn + content stop + critic + finalize", client.calls)
+	if client.calls != 3 {
+		t.Fatalf("client calls = %d, want mutating turn + vetoed draft + finalize", client.calls)
 	}
-	finalizeReq := client.request[3]
+	finalizeReq := client.request[2]
 	if requestContains(finalizeReq, vetoed) {
 		t.Fatalf("finalize request copied the vetoed answer forward: %#v", finalizeReq.Messages)
 	}

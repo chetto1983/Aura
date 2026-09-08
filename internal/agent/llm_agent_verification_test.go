@@ -63,7 +63,7 @@ func (l *stubLedger) VerificationStatusFor(_, cwd string) agent.VerificationStat
 }
 
 // newVerifyAgent builds an agent over text_response + echo + the fake write tool, with
-// the given ledger (nil = gate disabled) and the completion critic off.
+// the given ledger (nil = gate disabled) and reply hygiene off.
 func newVerifyAgent(t *testing.T, fc *agenttest.FakeClient, ledger agent.VerificationLedger) *agent.LlmAgent {
 	t.Helper()
 	return newVerifyGateAgent(t, fc, ledger, false)
@@ -268,53 +268,35 @@ func TestVerifyGate_EnvDisablesEntirely(t *testing.T) {
 	}
 }
 
-// TestVerifyGate_RunsBeforeTheCompletionCritic: the verification gate is deterministic
-// and free, the completion critic costs a model call, so a round the free gate sends
-// back must never have paid for the critic. With both gates armed the critic call
-// appears only in the round the verification gate accepted — index 3, after the nudged
-// round, not before it.
-func TestVerifyGate_RunsBeforeTheCompletionCritic(t *testing.T) {
+func TestVerifyGate_RejectsUnverifiedWithoutAuditCall(t *testing.T) {
 	dir, file := projectFile(t)
 	ledger := &stubLedger{dir: dir, statuses: []string{"unverified", "passed"}}
 	fc := agenttest.NewFakeClient(
 		agenttest.ToolCallTurn(writeCall("c1", file)),
 		agenttest.TextChunks("stop", "patched it, should be fine"),
 		agenttest.TextChunks("stop", "ran go test ./... — green"),
-		agenttest.TextChunks("stop", "DONE"),
 	)
 	a := newVerifyGateAgent(t, fc, ledger, true)
 
-	evs, err := collect(a.Run(newCriticIC(t, 3)))
+	evs, err := collect(a.Run(newTightBudgetIC(t, 3)))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	assertCriticRanOnlyAfterTheNudgedRound(t, fc)
+	assertOnlyTaskCalls(t, fc)
 	if final := finalContent(t, evs); final != "ran go test ./... — green" {
 		t.Errorf("final = %q, want the verified answer", final)
 	}
 }
 
-// assertCriticRanOnlyAfterTheNudgedRound pins the gate ordering on a script of
-// write → termination (nudged) → termination (accepted) → critic.
-//
-// Request[2] is the load-bearing index: it is the round that FOLLOWS the first
-// termination candidate, so it is the critic's slot if the paid gate ran first, and an
-// ordinary model round if the free gate did. Asserting on request[1] — the termination
-// candidate itself — can never fire in either ordering, and reads like a guard while
-// being none.
-func assertCriticRanOnlyAfterTheNudgedRound(t *testing.T, fc *agenttest.FakeClient) {
+func assertOnlyTaskCalls(t *testing.T, fc *agenttest.FakeClient) {
 	t.Helper()
-	if len(fc.Requests) < 4 {
-		t.Fatalf("requests = %d, want at least 4 to tell the two orderings apart", len(fc.Requests))
+	if fc.CallCount() != 3 {
+		t.Fatalf("calls=%d, want write, correction and verified answer only", fc.CallCount())
 	}
-	if fc.Requests[2].ToolChoice == "none" {
-		t.Error("the critic ran on the round the verification gate sent back: the free gate must run first")
-	}
-	if fc.Requests[3].ToolChoice != "none" {
-		t.Errorf("request[3].ToolChoice = %q, want the critic call on the accepted round", fc.Requests[3].ToolChoice)
-	}
-	if fc.CallCount() != 4 {
-		t.Errorf("CallCount = %d, want 4 (write + nudged round + accepted round + ONE critic call)", fc.CallCount())
+	for _, req := range fc.Requests {
+		if req.ToolChoice == "none" {
+			t.Fatal("deterministic verification issued an audit call")
+		}
 	}
 }
 
@@ -449,25 +431,21 @@ func TestVerifyGate_AttemptsAreSharedAcrossSeams(t *testing.T) {
 	}
 }
 
-// TestVerifyGate_TextResponse_RunsBeforeTheCompletionCritic mirrors the content-stop
-// ordering case on the terminal that actually fires in production: a round the free gate
-// sends back must never have paid for the critic.
-func TestVerifyGate_TextResponse_RunsBeforeTheCompletionCritic(t *testing.T) {
+func TestVerifyGate_TextResponseRejectsUnverifiedWithoutAuditCall(t *testing.T) {
 	dir, file := projectFile(t)
 	ledger := &stubLedger{dir: dir, statuses: []string{"unverified", "passed"}}
 	fc := agenttest.NewFakeClient(
 		agenttest.ToolCallTurn(writeCall("c1", file)),
 		agenttest.ToolCallTurn(textResponseCall("term-1", "patched it, should be fine")),
 		agenttest.ToolCallTurn(textResponseCall("term-2", "ran go test ./... — green")),
-		agenttest.TextChunks("stop", "DONE"),
 	)
 	a := newVerifyGateAgent(t, fc, ledger, true)
 
-	evs, err := collect(a.Run(newCriticIC(t, 3)))
+	evs, err := collect(a.Run(newTightBudgetIC(t, 3)))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	assertCriticRanOnlyAfterTheNudgedRound(t, fc)
+	assertOnlyTaskCalls(t, fc)
 	if final := finalContent(t, evs); final != "ran go test ./... — green" {
 		t.Errorf("final = %q, want the verified answer", final)
 	}

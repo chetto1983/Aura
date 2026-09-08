@@ -73,7 +73,7 @@ func newCtxCapturingAgent(t *testing.T, client *ctxCapturingClient) *agent.LlmAg
 
 // TestRun_RecoveryTurnSeversExpiredWallclockDeadline is the fix-plan 1.1 RED test
 // for the recovery turn specifically (llm_agent.go:251, ridden by skipBudgetGate —
-// NOT llm_agent_finalize.go/llm_agent_completion.go, which are fixed independently).
+// NOT forced finalization, which is tested independently).
 // It reproduces the production shape: ic.Ctx already Done (mirroring
 // budget.WithDeadline having fired) PLUS an injected Budget clock that trips
 // "wallclock" on the very first ConsumeStep (same technique as TestFinalizeWallclock).

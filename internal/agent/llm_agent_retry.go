@@ -42,8 +42,7 @@ const operationBookkeepingTimeout = 5 * time.Second
 // MarkOperationIndeterminate that follows fail too — the claim then sat in_progress until
 // its lease expired, and every identical retry in between was denied with "operation is in
 // progress". Measured on the live appliance: 17 acquisitions, 6 recorded outcomes, 11 claims
-// leaked. The same detach-then-rebound pattern is already used for the finalize/completion
-// LLM calls (llm_agent_completion.go, llm_agent_finalize.go).
+// leaked. The forced-finalization call uses the same independent bounded context.
 func bookkeepingCtx(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), operationBookkeepingTimeout)
 }

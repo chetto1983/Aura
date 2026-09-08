@@ -64,7 +64,7 @@ SCENARIOS = (
     Scenario("terminal.mutating_sibling_denied", "terminal_error_truth", "negative", "./internal/agent", "TestDispatch_TerminalRejectExclusivity"),
     Scenario("mutation.operation.stable", "idempotent_mutation", "positive", "./internal/agent", "TestExecToolDerivesStableChildFromHTTPMutation"),
     Scenario("mutation.domain_rejection.replayed", "idempotent_mutation", "negative", "./internal/agent", "TestExecToolReplaysDeterministicDomainRejectionAsError"),
-    Scenario("workflow.completion.accepts", "workflow_completion", "positive", "./internal/agent", "TestCompletionGate_Done_AcceptsAfterCritic"),
+    Scenario("workflow.completion.accepts", "workflow_completion", "positive", "./internal/agent", "TestCompletionGate_NoAuditCallAtBudgetEnd"),
     Scenario("workflow.retry_exhausted.truthful", "workflow_completion", "negative", "./internal/agent", "TestSynthesizeRetryExhaustedReturnsFinalError"),
 )
 

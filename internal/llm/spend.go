@@ -26,7 +26,7 @@ var ErrSpendSubscriptionIncluded = errors.New("provider spend is included in a s
 // Spend is what the provider itself says this API key has cost. It is measured, not
 // derived: the alternative is multiplying stored token counts by a rate table, which
 // misses every request that did not go through the turn-persistence path — vision,
-// rerank, embeddings, the completion critic — and silently under-reports.
+// rerank and embeddings — and silently under-reports.
 type Spend struct {
 	Total   float64 // this key, lifetime
 	Daily   float64 // this key, current UTC day

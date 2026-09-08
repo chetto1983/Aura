@@ -71,14 +71,7 @@ func (b Budget) present() bool {
 // consulted. The step counts and the deferred roster stay out — those are
 // instructions to the model, not facts about the world.
 //
-// It is split out because a SECOND reader needs exactly this subset. The completion
-// critic judges an answer against the evidence behind it and used to receive only
-// the tool results, so an answer grounded in one of these lines was structurally
-// unverifiable to it. Measured on the live deployment 2026-09-03: asked the time,
-// the agent read <current_time> and answered correctly; the critic, shown no tools
-// and no clock, replied "The current time was not verified via a tool call." and
-// vetoed. Six LLM calls and 59k prompt tokens to re-derive the same fourteen
-// characters.
+// These facts belong in the volatile tail, outside the reusable prompt prefix.
 func (b Budget) Grounding() string {
 	var lines []string
 	if b.Workspace != "" {

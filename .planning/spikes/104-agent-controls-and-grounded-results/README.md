@@ -14,6 +14,31 @@ industrial-readiness claim is made.
 
 ## Evidence and references
 
+- The operator explicitly requested removal of the LLM critic on2026-09-08.
+  Removed its request, prompt, parser, digest, history offset and model override;
+  `AURA_COMPLETION_GATE` retains only deterministic reply hygiene. Verification,
+  delivery, ownership and budget controls remain. The budget-end regression failed
+  before removal with3calls for a2-call task, then passed with2 on both terminal
+  paths. Hygiene veto/discard and verification tests still run without an auditor.
+  Race suites passed; vet/build/lint passed; capability evaluation20/20 without skips.
+  Complete disposable coverage **34,602/40,003 = 86.4985%**, package policy passed;
+  two local-gate mutations killed. The old critic-only tests were retired with the
+  feature, while shared request-history and retry regressions were retained.
+- Live no-critic conversation `01a08023-82d1-7675-8a97-42a6fd84f980`:
+  workers `w1-af28eb817f860caf7a3cd7214992b1d9` and
+  `w2-de453b17fc49d5710b98882454e59357` each executed one real `shell_exec` and
+  generated unpredictable32-hex values. The coordinator's follow-up answer matched
+  both child IDs and exact outputs `b9b2fb573dc8d8ac81fcaffe0950a768` and
+  `7ae0855a20ef382a455c5f500a302a1f`. Original parent synthesis encountered a
+  provider stream-open timeout after120s; it recorded an interrupted answer rather
+  than success. Thus this is a verified resumed synthesis, not an uninterrupted
+  first-turn success claim. Healthy image:
+  `3e27918a2fa63cf50e7bd03a5020cafdaa97ef0042efa29f6c3eb356ad08dc30`
+  (`4b3ff2be1-no-critic`). Logs `.git/remove-critic-{tests,static,capability,full-coverage}.log`.
+- Previous5081 CI failed only the two Calm Prism matrix cases: the ended fixture
+  deliberately leaves one tool without a result but expected Running. Its assertion
+  now verifies Interrupted and no Running label, matching104X. Desktop/mobile replay
+  passed2/2; no screenshot threshold or production behavior was weakened.
 -104X, conversation `01a07fe1-0757-7516-9cee-af46d25e8fb3`, child
   `w1-9c520222b53268ab8d9b54881299e6e3`: UI steer202 at07:19:00.517967Z,
   receipt `11ba041e-7968-451c-b75a-6e4bb175278e`, then real backend SIGKILL while
