@@ -427,6 +427,9 @@ must persist operator cancellation only while that exact attempt remains queued;
 a claim that wins the race invalidates the queued target. Pending terminal delivery
 is not executable work to cancel. Acceptance remains visible after reload, and the
 normal claim/delivery path records cancellation without constructing a model.
+The native status-stream regression on 2026-09-08 also found that a recorded
+`canceled` marker was projected as `failed`. The stream must preserve cancellation
+as its own terminal outcome, matching the durable job and report.
 
 The live 2026-09-08 MCP inspection found no child controls while two real workers were
 running (spike 104). Operators must be able to steer and stop an individual worker,
