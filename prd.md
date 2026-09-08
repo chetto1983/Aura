@@ -475,6 +475,9 @@ The 2026-09-08 child-steer probe delivered the correct final JSON over SSE and
 persisted it, but the pane lost it when terminal status removed the live run ID.
 Completion metadata must not restart an already open transcript replay. Reconnect
 for a new execution or scope, retaining the stream through its own terminal event.
+The nested mobile probe also retained the selected child but lost its drawer on reload.
+Restore the saved open intent once the owning conversation is known, including the mobile
+overlay; an explicit close or a different conversation must not reopen it.
 
 Continuation retains the exact model-facing trust-framed tool preview. Static worker
 policy and delegated goal/context stay at their correct authority levels. Bad resume/

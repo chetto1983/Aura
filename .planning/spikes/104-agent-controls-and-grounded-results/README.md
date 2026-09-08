@@ -96,6 +96,16 @@ steer observation and is not counted as a successful live correction.
 
 ## Additional identity measurement
 
+Nested104N, conversation `01a07ed6-a753-78ed-82f6-0c226a2924ff`, depth3 on image
+`c499bf6c7`: both grandchildren were discovered before the coordinator's spawn call
+returned. MCP steered `w1-8a482f3772687e55f67fc760ed1bdedc` to JSON and stopped
+`w2-70ca1cbacf412a3c60071d9d470725f4`; both routes returned202. The coordinator's
+authentic report contained `{"value":1024,"note":"nested104N"}` and a canceled
+second child. Its independent sibling finished1331. Parent navigation worked.
+At390x844 the drawer was341px with no horizontal overflow. The JSON rendered in
+the mobile pane, but reloading lost the open drawer; this restore defect remains
+to fix before the mobile row can pass.
+
 Queue104Q, conversation `01a07ec7-283a-73b0-a204-a9596c412a4b`: AURA_SWARM_MAX_CONCURRENT
 was4, but five jobs entered running and the fifth command finished while four80-second
 commands remained active. `runtimeTenantIngestionProcessor` created a fresh asynchronous
