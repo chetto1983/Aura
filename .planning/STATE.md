@@ -5,16 +5,16 @@ milestone_name: Production Launch — Multi-Tenant
 current_phase: 01
 current_phase_name: Two Identities, Live and Separated
 status: executing
-stopped_at: Completed 01-03-PLAN.md
-last_updated: "2026-09-08T09:07:24.899Z"
+stopped_at: Completed 01-05-PLAN.md
+last_updated: "2026-09-08T10:19:13.357Z"
 last_activity: 2026-09-08
 last_activity_desc: Phase 01 execution started
-state_head: de8b79be6ec09d71f5bd744e55ec9ad6b6143f3f
+state_head: 5d70236099c0d0f6ab2a68fa85faf4062466f509
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 7
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-07)
 ## Current Position
 
 Phase: 01 (Two Identities, Live and Separated) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Ready to execute
 Last activity: 2026-09-08 — Phase 01 execution started
 
@@ -79,6 +79,7 @@ phases, not many thin ones.
 | Phase 01 P07 | 7 min | 2 tasks | 2 files |
 | Phase 01 P01 | 155min | 3 tasks | 14 files |
 | Phase 01 P03 | ~2h | 3 tasks | 7 files |
+| Phase 01 P05 | 2h20min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -104,6 +105,7 @@ creation:
 - [Phase 01]: [Phase 01 Plan 01] Local verification of a musr_e2e-tagged test used a disposable Postgres container, never the live aura database - internal/dbtest.MigrateURL (commit 0fa214648) fails closed on any db_integration DSN named aura outside CI, a pre-existing repo-wide safety net this plan honored rather than bypassed. — Confirmed by reading internal/dbtest/live_target_guard.go directly; the guard applies to all thirty existing db_integration call sites, so this is standing project behavior, not something introduced or worked around here.
 - [Phase 01]: [Phase 01 Plan 03] The memory plane's D-11 item 3 (a verified access token reaching arcadedb-mcp's tenant selector) needed a JWKS-serving seam on LiveMCPTokenIssuer that did not exist: no exported mechanism let a self-minted live-test Authula token be verified without the full aura daemon serving its JWKS route. Added LiveMCPTokenIssuer.JWKSHandler mirroring the existing production OAuthServer.JWKSHandler over the same cache service.
 - [Phase 01]: [Phase 01 Plan 03] musr-e2e's bring-up step called `make db-migrate memory-up`, not `memory-up-core`, before this plan -- pre-existing drift between the step's own comment (postgres+ArcadeDB+embed sidecar) and what it actually started (also arcadedb-mcp, and therefore the aura daemon, racing the tagged tier's own Postgres writes -- the measured CI #1809 shape). Fixed on touch to memory-up-core.
+- [Phase 01]: [Phase 01 Plan 05] Budget is per-turn by construction (runner.buildAgent's fresh agent.NewBudget), confirmed unchanged by the same-day 10:43 CEST paid-completion-critic removal refactor; the other three D-15 surfaces (sidecar path, gateway ReservationKey, steer inbox) are disjoint only by conversation-UUID uniqueness, proven by deliberately breaking each and watching the corresponding assertion go red.
 
 ### Pending Todos
 
@@ -138,6 +140,7 @@ rediscover them:
 - **Standing.** Ten non-test Go files are within 20 lines of the 600-LOC ceiling and
   `internal/askuser/store.go` is exactly at it. Split before editing, not after the gate
   fires.
+- Mutation spot-check (go-mutesting ./internal/gateway/, floor 70% killed) not completed locally for plan 01-05 — too slow for one session and the operator directed it to CI; recorded in .planning/WINDOWS.md id 27 and 01-VALIDATION.md. No score exists yet for internal/gateway.
 
 ## Deferred Items
 
@@ -150,8 +153,8 @@ rediscover them:
 
 ## Session Continuity
 
-Last session: 2026-09-08T09:07:24.856Z
-Stopped at: Completed 01-03-PLAN.md
+Last session: 2026-09-08T10:19:13.321Z
+Stopped at: Completed 01-05-PLAN.md
 Resume file: None
 
 Next: `/gsd-plan-phase 1`

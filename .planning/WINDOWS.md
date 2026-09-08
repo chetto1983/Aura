@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 24
+open_count: 25
 waived_count: 0
 fixed_count: 2
-total_count: 26
-last_updated: 2026-09-01T05:56:47.302Z
+total_count: 27
+last_updated: 2026-09-08T10:10:14.789Z
 ---
 
 # Broken Windows Ledger
@@ -41,6 +41,7 @@ last_updated: 2026-09-01T05:56:47.302Z
 | 24 | 49 | deviation | internal/runner/runner_memory_capture.go |  | Plan 49-14 added the required host-bound user_turn provenance reference. | open |  | 2026-09-01T05:56:21.636Z |  |
 | 25 | 49 | deviation | cmd/aura/chat_boot_memory_capture_test.go |  | Plan 49-14 added omitted daemon-free composition and precision regression coverage. | open |  | 2026-09-01T05:56:22.032Z |  |
 | 26 | 49 | deviation | .planning/STATE.md |  | Plan 49-14 restored the sequential pointer to incomplete Plan 49-11 after out-of-order close-out. | open |  | 2026-09-01T05:56:22.442Z |  |
+| 27 | 01 | unrun-verify | internal/gateway/ |  | Mutation spot-check (go-mutesting ./internal/gateway/, floor 70% killed, CLAUDE.md gate) not completed locally in plan 01-05 T3: the run is too slow for one session (~91 mutations/600s on one of 11 files) and the operator explicitly stopped it mid-run, directing it to CI instead. Killed-ratio for internal/gateway is genuinely unmeasured until CI's own mutation job runs against it. | open |  | 2026-09-08T10:10:14.789Z |  |
 
 ````json
 [
@@ -354,6 +355,18 @@ last_updated: 2026-09-01T05:56:47.302Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-01T05:56:22.442Z",
+    "resolved_at": null
+  },
+  {
+    "id": 27,
+    "kind": "unrun-verify",
+    "phase": "01",
+    "file": "internal/gateway/",
+    "line": null,
+    "description": "Mutation spot-check (go-mutesting ./internal/gateway/, floor 70% killed, CLAUDE.md gate) not completed locally in plan 01-05 T3: the run is too slow for one session (~91 mutations/600s on one of 11 files) and the operator explicitly stopped it mid-run, directing it to CI instead. Killed-ratio for internal/gateway is genuinely unmeasured until CI's own mutation job runs against it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-08T10:10:14.789Z",
     "resolved_at": null
   }
 ]

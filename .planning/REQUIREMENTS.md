@@ -77,7 +77,7 @@ concurrent users, under attack, across a restart, and at the process and host le
 - [ ] **ISO-02a**: The two-identity acceptance gate runs unattended — in CI and from a clean checkout — with no ad-hoc port forward and no hand-made database. Measured 2026-09-07: it needed a socat container for Garage's admin API (fixed in `a3536af5d`) and a manually created disposable database, because the test refuses to migrate the live one. A gate that takes two undocumented manual steps is a gate nobody runs
 - [ ] **ISO-03**: A deliberate boundary-crossing attempt fails: guessed identifiers on every read endpoint, a shared link outside its grant, a tool given another identity's identifier
 - [ ] **ISO-04**: A prompt-injection attempt to make the agent read or write another identity's memory fails, and the attempt is visible in the audit trail
-- [ ] **ISO-05**: One identity's turn cannot observe or affect another's execution — context, tool state and in-flight results are separated, not merely row-filtered
+- [x] **ISO-05**: One identity's turn cannot observe or affect another's execution — context, tool state and in-flight results are separated, not merely row-filtered
 - [ ] **ISO-06**: A resource exhausted by one identity (loop budget, sandbox, tokens) does not deny service to another
 - [ ] **ISO-07**: No identity can reach the host from its sandbox: the Docker socket, the host filesystem outside its roots, and the environment of a launched stdio MCP server are all unreachable
 - [ ] **ISO-08**: Isolation survives a service restart — derived credentials and per-identity databases reattach to the right identity, never to another
@@ -170,7 +170,7 @@ Every v1 requirement maps to exactly one phase. Mapped during roadmap creation, 
 | ISO-02a | Phase 1 | Pending |
 | ISO-03 | Phase 3 | Pending |
 | ISO-04 | Phase 3 | Pending |
-| ISO-05 | Phase 1 | Pending |
+| ISO-05 | Phase 1 | Complete |
 | ISO-06 | Phase 4 | Pending |
 | ISO-07 | Phase 3 | Pending |
 | ISO-08 | Phase 5 | Pending |
