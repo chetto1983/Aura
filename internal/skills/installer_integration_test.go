@@ -34,8 +34,21 @@ func fakeAddIntegration(name, body string) CommandRunner {
 		if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(md), 0o600); err != nil {
 			return "", err
 		}
+		for path, content := range bundledInstallFixture {
+			if err := os.MkdirAll(filepath.Dir(filepath.Join(skillDir, path)), 0o750); err != nil {
+				return "", err
+			}
+			if err := os.WriteFile(filepath.Join(skillDir, path), []byte(content), 0o600); err != nil {
+				return "", err
+			}
+		}
 		return "Installed 1 skill → .claude/skills/" + name + "\n", nil
 	}
+}
+
+var bundledInstallFixture = map[string]string{
+	"scripts/check.py": "from pathlib import Path\nprint(Path(__file__).parent.parent.joinpath('assets/value.txt').read_text())\n",
+	"assets/value.txt": "bundled-resource-ok\n",
 }
 
 // TestInstallerAuditAppendOnly proves the Task-1 no-skip-as-green backstop: a real
@@ -93,6 +106,12 @@ func TestInstallerAuditAppendOnly(t *testing.T) {
 	for _, dir := range []string{"active", "export"} {
 		if _, serr := os.Stat(filepath.Join(root, dir, name, "SKILL.md")); serr != nil {
 			t.Errorf("installed skill missing from %s/: %v", dir, serr)
+		}
+		for path, want := range bundledInstallFixture {
+			got, err := os.ReadFile(filepath.Join(root, dir, name, path))
+			if err != nil || string(got) != want {
+				t.Errorf("installed resource %s/%s: got %q, err %v; want %q", dir, path, got, err, want)
+			}
 		}
 	}
 

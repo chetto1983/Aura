@@ -60,3 +60,27 @@ price. The screenshot is `.planning/tmp/bitcoin-artifact-preview.png`.
 This does not establish independent market-data accuracy. The conversation also
 exposed a missing `yf` executable in the separately installed Yahoo Finance skill,
 unnecessary data-retrieval retries and no agent-authored interaction assertions.
+
+## Installed skill resource check
+
+The operator additionally requested verification that installing any skill carries
+its scripts. A local fixture containing `SKILL.md`, `scripts/check.sh` and
+`assets/value.txt` was installed through the authenticated governance endpoint,
+using the real `npx skills add --copy` transport. Both resource files reached the
+identity's active and export trees. In conversation
+`01a0829e-9562-7f12-8af9-f59aa5858477`, Aura executed the script from `/skills` and
+read its bundled asset: `script-and-asset-ok`, exit code 0, with no stderr after
+correcting Windows line endings in the test fixture and reinstalling it. The
+temporary skill was archived through the same governance API afterward.
+
+This proves installation and reinstall preserve supplied nested resources and the
+next agent shell command refreshes its sandbox copy. It does not prove that an
+upstream package contains every script mentioned by its instructions. Yahoo
+Finance's installed source tree lacks `yf`. The original pinned repository URL
+returns 404; the public [package listing](https://playbooks.com/skills/openclaw/skills/yahoo-finance)
+also contains only `SKILL.md` and `_meta.json`, and the
+[public mirror](https://github.com/sundial-org/awesome-openclaw-skills/tree/main/skills/yahoo-finance)
+contains only instructions. This corroborates an incomplete package but does not
+reconstruct the unavailable original tree. The integration fixture now also checks
+exact script and asset bytes in both active and export trees; its db_integration
+package run passed in the disposable coverage database.
