@@ -340,7 +340,7 @@ export function Composer({
           dropzone is NESTED inside it, exactly as assistant-ui's own composer nests it. Merging
           the two by handing Root a `render` of the dropzone replaces the form element with a
           div, and the composer then looks perfect and sends nothing. */}
-      <ComposerPrimitive.Root className="relative mx-3 mb-3 flex flex-col sm:mx-4">
+      <ComposerPrimitive.Root className="relative mx-3 mb-3 flex shrink-0 flex-col sm:mx-4">
         <ComposerPrimitive.AttachmentDropzone
           data-testid="chat-composer"
           aria-disabled={approvalLocked}

@@ -353,9 +353,9 @@ export function AppShell() {
     <ArtifactWorkspace scopeKey={`${activeThreadId}:${surface}`} onExpand={closeArtifacts}>
       <section
         aria-label={t('shell.chatRegion')}
-        className="flex h-full min-h-0 min-w-0 flex-col bg-bg"
+        className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-bg"
       >
-        <div className="min-h-0 flex-1">
+        <div className="min-h-0 flex-1 overflow-hidden">
           <Suspense
             fallback={
               <div role="status" className="grid h-full place-items-center text-sm text-text-muted">
@@ -474,6 +474,7 @@ export function AppShell() {
                 id="chat-workspace"
                 minSize={CHAT_WORKSPACE_MIN_WIDTH}
                 className="h-full min-h-0"
+                style={{ overflow: 'hidden' }}
               >
                 <VoiceModeProvider>
                   <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">

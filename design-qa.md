@@ -29,18 +29,18 @@ also exercised desktop Chrome and Pixel 5 mobile Chrome with no page overflow.
 
 ## Verification
 
-- Full frontend suite: 244 files, 2,047 tests passing.
-- Coverage: statements 91.11%, branches 85.30%, functions 90.50%, lines 93.08%.
+- Full frontend suite: 244 files, 2,049 tests passing.
+- Coverage: statements 91.06%, branches 85.28%, functions 90.43%, lines 93.05%.
 - TypeScript/production build, type-aware lint, lint contract, formatting and
   dead-code checks passed; Go embedded-web test passed.
-- Real artifact E2E: 4 passed, covering inline/expanded/split/download/reload and
+- Real artifact E2E: 6 passed, covering composer anchoring, inline/expanded/split/download/reload and
   the existing sealed-render modal path on desktop and mobile.
 - The follow-up export/highlighting tests also passed on both viewports.
 - Original asset routes and opaque-origin sandbox retained. No live HTML is
   injected into the parent document. Highlighting only tokenizes source text.
 
-The browser logs the existing warning about `frame-ancestors` in a meta policy;
-the authoritative response-header policy is verified by the live render test.
+The ignored `frame-ancestors` meta directive was removed; it remains enforced in
+the authoritative response header and is covered by the render-policy tests.
 The temporary Vite proxy initially lacked authentication redirects; final E2E
 runs use the rebuilt Aura container on its normal port, with real authentication.
 
@@ -59,3 +59,31 @@ final result: passed
 The assistant-ui example owns its workbench UI in application code. Aura reuses
 its installed assistant-ui message rendering and existing artifact routes,
 React context selection, lazy renderers, Shiki and resizable-panel components.
+
+## Follow-up operational checks
+
+- The current weather artifact loaded seven live forecast cards inside Aura's
+  opaque-origin preview after enabling its specific API origin. Next day changed
+  the selection. Unconfigured origins remain blocked.
+- Composer geometry remained within 14px of the chat bottom during transcript
+  scrolling, multiline drafting and viewport changes on desktop and mobile.
+- Python Playwright 1.62.0 and matching Chromium are baked into the sandbox image.
+  The offline image test launches Chromium, executes JavaScript and captures PNG.
+- A real Aura run authored a counter, ran a Playwright check, corrected its test,
+  reran it successfully and only then called send_file. The run also exposed an
+  empty-message attachment bug: saved assets now use visible answer turns, and
+  live artifact events receive the actual execution's tool-call correlation ID.
+- The supplied anthropics/web-artifacts-builder skill was installed and is active
+  for the operator. Aura's instruction to validate before delivery takes precedence
+  over the upstream skill's optional-testing advice.
+- The first XLSX/DOCX pair reopened successfully, matched all seven rows, rendered
+  in Aura and downloaded. XLSX contained one chart. Content QA identified wrong
+  coordinates inherited from the original HTML; corrected versions were requested
+  using verified Caraglio geocoding (44.41725, 7.43281), a single forecast response
+  and a distinct actual UTC retrieval timestamp.
+
+Final Office verification: the corrected XLSX and DOCX contain the same seven
+unique dates and temperatures; XLSX retains its chart. A final comparison caught
+different per-file timestamps, so both files were synchronized from one new API
+response with the shared retrieval time `2026-09-08T18:25:51+00:00`, reopened and
+compared, then redelivered by Aura. Both formats render and download successfully.

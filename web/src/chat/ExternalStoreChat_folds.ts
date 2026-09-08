@@ -132,7 +132,12 @@ export function foldAgentOntoAssistant(
   messages: readonly ThreadMessageLike[],
   agentAssets: readonly Asset[],
 ): ThreadMessageLike[] {
-  return foldAssetsPositionally(messages, agentAssets, 'assistant');
+  const hasAnswers = messages.some(
+    (message) => message.role === 'assistant' && hasAnswerText(message),
+  );
+  return foldAssetsPositionally(messages, agentAssets, 'assistant', (message) =>
+    hasAnswers ? hasAnswerText(message) : message.content.length > 0,
+  );
 }
 
 export function replaceAssetInMessages(

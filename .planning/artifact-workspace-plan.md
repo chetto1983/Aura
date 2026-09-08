@@ -46,3 +46,25 @@ rendered document, download, focus return and persistence after reload.
 The broad regression run found a chat remount caused by keying the whole
 workspace to the thread. Fixed by resetting only selection, with a regression
 test proving draft DOM/runtime preservation. See `design-qa.md` for visual review.
+
+## User-reported follow-up corrections
+
+- Composer anchoring: bounded the shell/artifact/chat wrappers, disabled the
+  resizable panel's independent scroll, constrained transcript flex sizing and
+  kept the composer non-shrinking. Added browser geometry checks during scrolling,
+  multiline drafting and viewport changes.
+- Live weather error: the script executed but its fetch was denied by the offline
+  CSP. Added the operator-controlled `AURA_ARTIFACT_CONNECT_ORIGINS` configuration,
+  reusing MCP policy validation and cockpit-host exclusion. Configured the observed
+  `https://api.open-meteo.com` endpoint locally. No broader network grant.
+- Browser validation in the sandbox: verified existing installation by launching
+  Chromium and clicking a real JavaScript control; baked driver/browser/dependencies
+  into the sandbox image and added an offline executable image contract. Updated
+  the agent's delivery instructions to exercise browser/network behavior before
+  sending HTML. Verified the actual weather file in the running sandbox.
+- The real browser-validation run exposed a hidden attachment case with empty
+  assistant placeholders. Fixed visible-turn attribution on replay and stamped
+  artifact correlation from the trusted tool execution on live events.
+- Installed the operator's supplied web-artifacts-builder skill through Aura's
+  existing installer. Generated and tested XLSX/DOCX versions, then requested
+  correction of inherited coordinate/timestamp errors found during content QA.

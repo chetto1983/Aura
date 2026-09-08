@@ -487,8 +487,8 @@ export function ExternalStoreChat({
       {/* The shared read-only Source Explorer (D-13): one sheet, two entry points
           (the "Sources (N)" button + the citation click-through), one registry. */}
       <SourceExplorerProvider>
-        <ThreadPrimitive.Root className="flex h-full min-h-0 flex-col">
-          <ThreadPrimitive.Viewport className="flex-1 space-y-4 overflow-y-auto px-3 py-4 sm:px-4">
+        <ThreadPrimitive.Root className="flex h-full min-h-0 flex-col overflow-hidden">
+          <ThreadPrimitive.Viewport className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-3 py-4 sm:px-4">
             <AuiIf condition={(s) => s.thread.isEmpty}>
               <div className="grid h-full place-items-center py-8 text-center">
                 <div className="flex flex-col items-center gap-3 px-6">

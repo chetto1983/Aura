@@ -28,7 +28,7 @@ import (
 // with no scripts at all reaching the network: <meta http-equiv="refresh">, <base>,
 // and the <link rel=preload> family all fetch before a single line of JS runs, and an
 // artifact's markup is downstream of whatever the agent read while producing it. Those
-// four are removed here, and connect-src 'none' in the policy closes the scripted half.
+// four are removed here. Scripted connections are limited to operator-approved HTTPS origins.
 
 // preloadRel is the <link rel> family that fetches on parse. Each one is a request the
 // document makes before any script exists, so each one is an exfiltration channel in a
@@ -107,19 +107,14 @@ const artifactRuntimeShim = `
 
 // artifactRenderCSP is the policy an artifact document is served under.
 //
-// It is the MCP sealed-view floor, not a second policy invented here: an agent-written
-// HTML artifact and an MCP view are the same object under the same threat — untrusted
-// markup that must render as a document and reach nothing. mcp.ViewPolicy with no
-// declared domains yields exactly that floor (default-src 'none', inline script and
-// style only, data:/blob: for media, connect-src 'none', no base-uri, no form-action).
-// Deriving it keeps ONE definition of "sealed" in the tree; a change to the floor
-// reaches artifacts too, which is the intended coupling.
+// Reuse the MCP policy validator. Empty origins retain its offline floor; configured
+// HTTPS origins open only fetch/XHR, never remote scripts or access to the parent.
 //
 // frame-ancestors is appended because default-src does not cover it and a meta tag
 // cannot carry it: it only has meaning as a response header, which is precisely what
 // this document now has and a srcdoc never did.
-func artifactRenderCSP() string {
-	return mcp.ViewPolicy{}.ContentSecurityPolicy() + "; frame-ancestors 'self'"
+func artifactRenderCSP(connectOrigins ...string) string {
+	return mcp.ViewPolicy{ConnectDomains: connectOrigins}.ContentSecurityPolicy() + "; frame-ancestors 'self'"
 }
 
 // prepareArtifactHTML scrubs the no-script fetch vectors out of an artifact, retargets
@@ -130,7 +125,7 @@ func artifactRenderCSP() string {
 // markup filter learns eventually: `<meta http-equiv = "refresh">`, mixed case, and
 // missing quotes are all valid HTML and all defeat a pattern. The parser sees the same
 // tree the browser will.
-func prepareArtifactHTML(raw string) (string, error) {
+func prepareArtifactHTML(raw string, connectOrigins ...string) (string, error) {
 	doc, err := html.Parse(strings.NewReader(raw))
 	if err != nil {
 		return "", err
@@ -150,7 +145,9 @@ func prepareArtifactHTML(raw string) (string, error) {
 	if err := html.Render(&out, doc); err != nil {
 		return "", err
 	}
-	return mcp.ArmedHTML(out.String(), artifactRenderCSP()), nil
+	// frame-ancestors is header-only: including it in a meta produces a browser error.
+	policy := mcp.ViewPolicy{ConnectDomains: connectOrigins}.ContentSecurityPolicy()
+	return mcp.ArmedHTML(out.String(), policy), nil
 }
 
 // findHead returns the document's <head>, which html.Parse synthesises even for a fragment.

@@ -152,7 +152,8 @@ func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, parentS
 	// AG-UI translator's artifact branch keys off it. Purely additive — a run
 	// without the key leaves ArtifactDelta nil, so every existing event is unchanged.
 	if art, ok := metaMap(run.Result.Meta, "artifact"); ok {
-		ev.Actions.ArtifactDelta = art
+		ev.Actions.ArtifactDelta = maps.Clone(art)
+		ev.Actions.ArtifactDelta["tool_call_id"] = run.ToolCallID
 	}
 	// The MCP Apps twin of the artifact lift: a view-bound MCP tool result carries
 	// the server + document + structuredContent its view renders. The correlation

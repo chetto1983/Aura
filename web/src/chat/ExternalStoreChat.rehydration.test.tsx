@@ -54,6 +54,35 @@ function assistantTurn(id: string, text: string): ThreadMessageLike {
 }
 
 describe('foldAgentOntoAssistant (D-15 attribution)', () => {
+  it('keeps artifacts visible when parallel tool calls leave an empty assistant placeholder', () => {
+    const messages: ThreadMessageLike[] = [
+      userTurn('request', 'create and verify a page'),
+      { id: 'placeholder', role: 'assistant', content: [] },
+      {
+        id: 'reasoning',
+        role: 'assistant',
+        content: [{ type: 'reasoning', text: 'Checking the browser' }],
+      },
+      assistantTurn('answer', 'The validated file is ready'),
+    ];
+    const folded = foldAgentOntoAssistant(messages, [agentAsset()]);
+    expect(folded[1]?.metadata).toBeUndefined();
+    expect(folded[2]?.metadata).toBeUndefined();
+    expect(folded[3]?.metadata?.custom?.attachments).toEqual([agentAsset()]);
+  });
+  it('retains a delivered file when the run ends without an answer', () => {
+    const messages: ThreadMessageLike[] = [
+      { id: 'placeholder', role: 'assistant', content: [] },
+      {
+        id: 'work',
+        role: 'assistant',
+        content: [{ type: 'reasoning', text: 'Delivered the file' }],
+      },
+    ];
+    const folded = foldAgentOntoAssistant(messages, [agentAsset()]);
+    expect(folded[0]?.metadata).toBeUndefined();
+    expect(folded[1]?.metadata?.custom?.attachments).toEqual([agentAsset()]);
+  });
   it('attaches an agent asset to the assistant turn and NEVER to the user turn', () => {
     const messages = [userTurn('m1', 'make me a spreadsheet'), assistantTurn('m2', 'here it is')];
     const folded = foldAgentOntoAssistant(messages, [agentAsset()]);

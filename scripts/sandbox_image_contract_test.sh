@@ -59,3 +59,21 @@ echo "venv ok: python3 -m venv still builds a usable interpreter"
 '
 
 echo "ok: sandbox image pip contract"
+
+# Validate the browser itself offline, not just the import or executable path.
+docker run --rm --network none -i --entrypoint python3 "$img" - <<'PY'
+from playwright.sync_api import sync_playwright
+
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=True)
+    page = browser.new_page(viewport={"width": 390, "height": 844})
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.set_content('<button onclick="this.textContent=42">Run</button>')
+    page.get_by_role("button", name="Run", exact=True).click()
+    assert page.get_by_role("button", name="42", exact=True).count() == 1
+    assert not errors, errors
+    assert page.screenshot().startswith(b"\x89PNG")
+    browser.close()
+print("ok: sandbox Playwright launches Chromium, executes JavaScript and captures screenshots offline")
+PY

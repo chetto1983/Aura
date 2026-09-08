@@ -83,6 +83,20 @@ func TestToolResultEvent_NoArtifactLeavesNil(t *testing.T) {
 	}
 }
 
+func TestArtifactCorrelationComesFromExecution(t *testing.T) {
+	for _, supplied := range []string{"", "another-call"} {
+		a := newBareAgent(t, tools.NewRegistry())
+		descriptor := map[string]any{"filename": "report.html", "tool_call_id": supplied}
+		ev := a.toolResultEvent(internalPauseIC(t), [8]byte{}, nil, artifactRun(t, descriptor))
+		if ev.Actions.ArtifactDelta["tool_call_id"] != "call-sf" {
+			t.Fatalf("artifact lost execution correlation: %v", ev.Actions.ArtifactDelta)
+		}
+		if descriptor["tool_call_id"] != supplied {
+			t.Fatal("artifact projection mutated the tool's result metadata")
+		}
+	}
+}
+
 // TestMetaMap_WrongTypeIsAbsent pins the metaMap type guard: a key whose value is
 // NOT a map[string]any is treated as absent (ok=false), so a malformed Meta never
 // produces a bogus delta on any of the keys that ride it.

@@ -32,12 +32,57 @@ interface SealedProbe {
 test.describe('live artifact render lane', () => {
   test.skip(!live, 'set AURA_E2E_LIVE_ARTIFACT=1 with THREAD + FILE against a live stack');
 
+  test('composer stays anchored while messages scroll and the workspace resizes', async ({
+    page,
+  }) => {
+    await gotoAuthenticated(page, `/c/${threadID}`);
+    const input = page.getByRole('textbox', { name: 'Ask Aura', exact: true });
+    const chat = page.getByRole('region', { name: 'Chat', exact: true });
+    await expect(
+      page.getByRole('button', { name: 'Expand artifact', exact: true }).first(),
+    ).toBeVisible();
+    const gap = () =>
+      input.evaluate((element) => {
+        const form = element.closest('form');
+        const region = element.closest('section[aria-label="Chat"]');
+        if (!form || !region) throw new Error('Composer is outside chat');
+        return region.getBoundingClientRect().bottom - form.getBoundingClientRect().bottom;
+      });
+    const assertAnchored = async () => {
+      await expect.poll(gap).toBeGreaterThanOrEqual(0);
+      await expect.poll(gap).toBeLessThanOrEqual(14);
+    };
+    await assertAnchored();
+    const messages = chat.locator('.overflow-y-auto').first();
+    await messages.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await assertAnchored();
+    await messages.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await assertAnchored();
+    await input.fill('A multiline draft\nthat grows the composer\nwithout moving its bottom edge.');
+    await assertAnchored();
+    const width = page.viewportSize()?.width ?? 1280;
+    await page.setViewportSize({ width, height: 620 });
+    await assertAnchored();
+    await page.setViewportSize({ width, height: 950 });
+    await assertAnchored();
+    await page.mouse.move(10, 500);
+    await page.mouse.wheel(0, 1200);
+    await assertAnchored();
+    expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight)).toBe(
+      true,
+    );
+  });
+
   test('inline artifact expands, splits code and preview, downloads and returns to chat', async ({
     page,
   }, testInfo) => {
     test.setTimeout(90_000);
     await gotoAuthenticated(page, `/c/${threadID}`);
-    const viewer = page.getByRole('region', { name: `Artifact preview: ${fileName}` });
+    const viewer = page.getByRole('region', { name: `Artifact preview: ${fileName}` }).first();
     await expect(viewer).toBeVisible({ timeout: 20_000 });
     await expect(viewer.locator('iframe')).toHaveAttribute('sandbox', 'allow-scripts');
     await viewer.scrollIntoViewIfNeeded();
@@ -77,7 +122,9 @@ test.describe('live artifact render lane', () => {
     await viewer.getByRole('button', { name: 'Hide code', exact: true }).click();
     await expect(viewer.locator('pre')).toHaveCount(0);
     await viewer.getByRole('button', { name: 'Back to conversation' }).click();
-    await expect(page.getByRole('button', { name: 'Expand artifact', exact: true })).toBeFocused();
+    await expect(
+      page.getByRole('button', { name: 'Expand artifact', exact: true }).first(),
+    ).toBeFocused();
     await page.reload();
     await expect(viewer).toBeVisible({ timeout: 15_000 });
   });
@@ -98,11 +145,13 @@ test.describe('live artifact render lane', () => {
       await page.getByRole('button', { name: 'Toggle the artifacts panel' }).first().click();
       await expect(panel).toBeVisible({ timeout: 15_000 });
     }
-    await expect(panel.getByText(fileName, { exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(panel.getByText(fileName, { exact: true }).first()).toBeVisible({
+      timeout: 20_000,
+    });
     proofs += 1;
 
     // Open the preview. The row's own label opens the modal; the trailing control downloads.
-    await panel.getByText(fileName, { exact: true }).click();
+    await panel.getByText(fileName, { exact: true }).first().click();
     const dialog = page.getByRole('dialog');
     await dialog.waitFor({ state: 'visible', timeout: 15_000 });
     proofs += 1;
@@ -145,7 +194,8 @@ test.describe('live artifact render lane', () => {
     expect(sealed.nosniff).toBe('nosniff');
     expect(sealed.cacheControl).toContain('no-store');
     expect(sealed.csp).toContain("default-src 'none'");
-    expect(sealed.csp).toContain("connect-src 'none'");
+    expect(sealed.csp).toContain('connect-src ');
+    expect(sealed.csp).not.toMatch(/connect-src (?:\*|https:;|http:)/);
     expect(sealed.csp).toContain("base-uri 'none'");
     expect(sealed.csp).toContain("form-action 'none'");
     expect(sealed.csp).toContain("frame-ancestors 'self'");

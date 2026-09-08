@@ -121,6 +121,13 @@ ENV NODE_PATH=/usr/lib/node_modules
 # `python3 -m venv` remains available for anyone who wants one.
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
+# Match the Python driver and browser revision; preinstall both so validation needs no downloads.
+# https://playwright.dev/python/docs/docker#build-your-own-image
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers
+RUN python3 -m pip install --no-cache-dir playwright==1.62.0 \
+    && python3 -m playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
+
 # Python document/data stack, same set and same reason as docker/aura/Dockerfile.
 # markitdown[pptx] is quoted so /bin/sh does not glob the [].
 RUN pip install --no-cache-dir --break-system-packages \

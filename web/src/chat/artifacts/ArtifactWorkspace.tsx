@@ -53,8 +53,8 @@ export function ArtifactWorkspace({
         setActive(artifact);
       }}
     >
-      <div className="relative h-full min-h-0 min-w-0">
-        <div className="h-full min-h-0" hidden={active !== null}>
+      <div className="relative h-full min-h-0 min-w-0 overflow-hidden">
+        <div className="h-full min-h-0 overflow-hidden" hidden={active !== null}>
           {children}
         </div>
         {active && (

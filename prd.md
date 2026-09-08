@@ -376,6 +376,24 @@ the preview state. This is a viewing/export workflow; it does not establish dire
 editing, version history, React bundling or arbitrary external network access.
 Acceptance and verification details: `.planning/artifact-workspace-plan.md`.
 
+The chat composer remains anchored to the workspace bottom; only the transcript
+scrolls. HTML preview fetch/XHR may use operator-approved HTTPS origins from
+`AURA_ARTIFACT_CONNECT_ORIGINS` (comma-separated, empty means offline). The shared
+MCP CSP validator rejects malformed origins and removes the cockpit host across
+ports. Both document policy and response header enforce the same connect list;
+the header alone carries `frame-ancestors`. This does not enable remote scripts,
+forms, same-origin access or arbitrary network origins.
+
+The per-identity sandbox image includes Python Playwright 1.62.0, its matching
+Chromium and system dependencies. HTML delivery instructions require browser
+validation before `send_file`: console/page and HTTP/network errors, primary
+interactions and screenshots at desktop/mobile sizes under preview constraints.
+The image contract launches the actual browser without network, executes a button
+handler and captures a PNG. The active sandbox was also measured loading the real
+weather artifact's seven forecast cards and changing its selected day. Browser
+validation is an agent instruction and available capability, not an automatic
+server-side rejection gate for every file delivery.
+
 File operations enforce name, boundary, symlink and regular-file rules. Archive entry
 names are metadata and cannot choose a host path. Staging uses exclusive creation and
 private permissions. Lexical path containment alone does not contain a tree.

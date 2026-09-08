@@ -167,9 +167,10 @@ type Config struct {
 	// frame keeps a quiet connection's TCP path warm against an intermediary idle
 	// timeout; <=0 disables it (no ticker allocated, agui.heartbeatIntervalFromConfig).
 	// All non-fatal envDefault fallbacks.
-	AGUIBind            string // AURA_AGUI_BIND — cockpit HTTP bind (any address; non-loopback gated by GuardWebBind)
-	AGUIBufferCap       int    // AURA_AGUI_BUFFER_CAP — SSE/fanout subscriber buffer cap (default 64)
-	AGUISSEHeartbeatSec int    // AURA_AGUI_SSE_HEARTBEAT_SEC — idle SSE-comment heartbeat interval seconds; <=0 disables (fix-plan 1.3 Tier A, default 15)
+	AGUIBind               string   // AURA_AGUI_BIND — cockpit HTTP bind (any address; non-loopback gated by GuardWebBind)
+	AGUIBufferCap          int      // AURA_AGUI_BUFFER_CAP — SSE/fanout subscriber buffer cap (default 64)
+	AGUISSEHeartbeatSec    int      // AURA_AGUI_SSE_HEARTBEAT_SEC — idle SSE-comment heartbeat interval seconds; <=0 disables (fix-plan 1.3 Tier A, default 15)
+	ArtifactConnectOrigins []string // AURA_ARTIFACT_CONNECT_ORIGINS — operator-approved HTTPS API origins for HTML previews
 	// AGUIRun bundles the AURA_AGUI_RUN_* detached-run knobs (fix-plan 1.3 Tier B,
 	// amendment #90) — see config_agui_run.go.
 	AGUIRun AGUIRunConfig
@@ -474,12 +475,13 @@ func loadBase() *Config {
 		// config; WEB-02/D-06 lifted the hardcoded-loopback restriction so AURA_AGUI_BIND
 		// may now be any address, with GuardWebBind enforcing the non-loopback credential
 		// policy at boot (D-05).
-		AGUIBind:            envDefault("AURA_AGUI_BIND", "127.0.0.1:9080"),
-		AGUIBufferCap:       envutil.IntDefault("AURA_AGUI_BUFFER_CAP", 64),
-		AGUISSEHeartbeatSec: envutil.IntDefault("AURA_AGUI_SSE_HEARTBEAT_SEC", 15),
-		AGUIRun:             loadAGUIRunConfig(),
-		AGUISteer:           loadAGUISteerConfig(),
-		AskUser:             loadAskUserConfig(),
+		AGUIBind:               envDefault("AURA_AGUI_BIND", "127.0.0.1:9080"),
+		AGUIBufferCap:          envutil.IntDefault("AURA_AGUI_BUFFER_CAP", 64),
+		AGUISSEHeartbeatSec:    envutil.IntDefault("AURA_AGUI_SSE_HEARTBEAT_SEC", 15),
+		ArtifactConnectOrigins: envSliceDefault("AURA_ARTIFACT_CONNECT_ORIGINS", nil),
+		AGUIRun:                loadAGUIRunConfig(),
+		AGUISteer:              loadAGUISteerConfig(),
+		AskUser:                loadAskUserConfig(),
 
 		ObjectStoreBackend:        envDefault("AURA_OBJECTSTORE_BACKEND", "garage"),
 		ObjectStoreEndpoint:       envDefault("AURA_OBJECTSTORE_ENDPOINT", "http://127.0.0.1:3900"),
