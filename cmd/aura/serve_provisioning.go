@@ -344,8 +344,12 @@ func sandboxProvisionerFor(router *usersandbox.SandboxRouter) agui.SandboxProvis
 // Deactivator). The owned Postgres conversation plane and the ArcadeDB
 // memory plane are both mandatory: deprovision refuses identity deletion unless each adapter
 // acknowledges a verified purge.
-// AuthulaDelete/Sessions/Jobs remain separate lifecycle work because those providers are
-// assembled after this seam. The identity FK cascade still drops grants, auth links,
+// AuthulaDelete/Sessions/Jobs are left nil here because the Authula provider is assembled
+// after this seam — which means the cron grace-window sweep, this constructor's only
+// consumer, purges an identity WITHOUT removing its Authula user. `aura identity
+// {deactivate|purge}` adds those two legs on top of deprovisionDeps (identity_deprovision.go,
+// withAuthulaTeardown) and is currently the only path that leaves no Authula orphan.
+// The identity FK cascade still drops grants, auth links,
 // object-store ownership, and the whole document catalog (aura.documents.identity_id is
 // ON DELETE CASCADE, migration 0025) — which is why no document leg is wired here.
 //
@@ -354,8 +358,16 @@ func sandboxProvisionerFor(router *usersandbox.SandboxRouter) agui.SandboxProvis
 // writer added turns every de-provision into a failed identity_row step, AFTER the memory
 // database has already been dropped.
 func buildDeprovisioner(chat *chatEnv) *agui.Deprovisioner {
+	return agui.NewDeprovisioner(deprovisionDeps(chat))
+}
+
+// deprovisionDeps is buildDeprovisioner's port set, split out so `aura identity
+// {deactivate|purge}` can add the two Authula reverse legs this seam cannot reach
+// (identity_deprovision.go, withAuthulaTeardown) without assembling a second, divergent
+// copy of the same wiring.
+func deprovisionDeps(chat *chatEnv) agui.DeprovisionDeps {
 	if chat == nil || chat.pool == nil || chat.cfg == nil {
-		return agui.NewDeprovisioner(agui.DeprovisionDeps{})
+		return agui.DeprovisionDeps{}
 	}
 	objProv, fsProv, jrnl := buildProvisioningPorts(chat)
 	convStore := chat.conv
@@ -365,7 +377,7 @@ func buildDeprovisioner(chat *chatEnv) *agui.Deprovisioner {
 			TurnCapBytes: chat.cfg.ConversationTurnCapBytes,
 		})
 	}
-	return agui.NewDeprovisioner(agui.DeprovisionDeps{
+	return agui.DeprovisionDeps{
 		Journal:        jrnl,
 		Deactivator:    identityDeactivatorAdapter{pool: chat.pool},
 		Conversations:  conversationPurgeAdapter{store: convStore},
@@ -374,7 +386,7 @@ func buildDeprovisioner(chat *chatEnv) *agui.Deprovisioner {
 		Filesystem:     fsProv,
 		Sandbox:        sandboxPurgerFor(chat.sandboxRouter),
 		IdentityDelete: auraLegAdapter{pool: chat.pool},
-	})
+	}
 }
 
 // seedEveryCronSweep idempotently seeds a fixed-interval system-seeded sweep: it scans the

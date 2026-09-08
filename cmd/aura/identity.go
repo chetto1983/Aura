@@ -28,10 +28,12 @@ import (
 	"github.com/chetto1983/aura/internal/identity"
 )
 
-const identityUsage = "usage: aura identity {list|get <name>|grant <name> <cap>|revoke <name> <cap>|recover <name>|recover-operator [--generate] [--no-recovery]|create -email <email> -security-question <question> [-capability <cap>]... [-operator <uuid>]}\n" +
+const identityUsage = "usage: aura identity {list|get <name>|grant <name> <cap>|revoke <name> <cap>|recover <name>|recover-operator [--generate] [--no-recovery]|create -email <email> -security-question <question> [-capability <cap>]... [-operator <uuid>]|deactivate <name|uuid> --confirm|purge <name|uuid> --confirm}\n" +
 	"  recover <name>   = mint a short-lived reset token to hand a user (recovery.go)\n" +
 	"  recover-operator = offline operator password reset + session-kill + recovery re-seed (recover_operator.go)\n" +
-	"  create           = provision a second identity via the onboarding saga; requires a configured Telegram bot token (identity_create.go)"
+	"  create           = provision a second identity via the onboarding saga; requires a configured Telegram bot token (identity_create.go)\n" +
+	"  deactivate       = soft-delete: block login now, hand the identity to the grace-window purge sweep (identity_deprovision.go)\n" +
+	"  purge            = run the full reverse saga NOW; irreversible (identity_deprovision.go)"
 
 func runIdentity(args []string) {
 	if len(args) < 1 {
@@ -40,11 +42,16 @@ func runIdentity(args []string) {
 	}
 	ctx := context.Background()
 
-	// create needs the FULL boot path (Postgres + Authula + ArcadeDB + Garage + sandbox),
-	// not the DB-only pool every other verb below opens — it builds and closes its own
-	// environment inside identityCreate and returns before that pool is ever touched.
-	if args[0] == "create" {
+	// create and the two deprovision verbs need the FULL boot path (Postgres + Authula +
+	// ArcadeDB + Garage + sandbox), not the DB-only pool every other verb below opens —
+	// each builds and closes its own environment and returns before that pool is ever
+	// touched. Teardown spans exactly the planes provisioning built, so they share a boot.
+	switch args[0] {
+	case "create":
 		identityCreate(ctx, args[1:])
+		return
+	case string(deprovisionVerbDeactivate), string(deprovisionVerbPurge):
+		identityDeprovision(ctx, deprovisionVerb(args[0]), args[1:])
 		return
 	}
 
