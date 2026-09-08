@@ -7,7 +7,8 @@
 shows Errore/Error after reload on Italian desktop and English mobile, with the
 original unknown-result text retained. Tagged runner/race passed after fixture
 isolation in `7131d99fa`. Closing combined coverage and CI remain pending;
-two local desktop visual baselines differ by one pixel in the reasoning affordance.
+the two desktop baselines were regenerated after reviewing their one-pixel reasoning
+affordance shift, as requested by the operator. Both baseline-generation cases pass.
 No screenshot threshold was loosened. Mutation testing is delegated to CI by operator request.
 **Automatic-title measurement:** 2026-09-08 — `856ae8e52`; full frontend2030/2030,
 statements **8139/8931 = 91.13%**, branches **5702/6677 = 85.39%**, functions

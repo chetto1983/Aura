@@ -25,9 +25,10 @@ defect is corrected and retested on desktop/mobile. The closing coverage/CI matr
   Full frontend **2032/2032**, statements8139/8931=91.13%, branches5706/6681=85.40%.
   The complete tagged runner suite passed with race detection after `7131d99fa` separated
   title requests from the transactional test scripts. The full coverage rerun is pending.
-  Local chat/Calm Prism replay:23passed; two desktop PNG comparisons differ only by a
-  one-pixel vertical position of the reasoning label/chevron (190/195pixels). Baselines
-  and thresholds remain unchanged pending CI. Profile/capture-only cases are not counted
+  Local chat/Calm Prism replay:23passed initially; two desktop PNG comparisons differed
+  only by a one-pixel vertical position of the reasoning label/chevron (190/195pixels).
+  The operator requested baseline regeneration; both regenerated cases pass. Thresholds
+  are unchanged. Profile/capture-only cases are not counted
   as passing scenarios. Mutation tests now run in CI only, as the operator requested;
   the unfinished local replay-mutation run was stopped and has no passing score.
 
