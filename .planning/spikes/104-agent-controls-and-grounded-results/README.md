@@ -96,6 +96,19 @@ steer observation and is not counted as a successful live correction.
 
 ## Additional identity measurement
 
+Stop104E, conversation `01a07ec0-572d-7717-8624-8e2962c62523`: the MCP stopped
+`w1-b493a281a46ae203127579c6ee0fef15` while its Python process was sleeping before a
+scratch-file write. The route returned202 in1886ms; docker top then showed no matching
+process, the job was canceled at attempt1, and the marker file remained absent after
+the original90-second deadline. Sibling `w2-0892f02f14e467a52a599d6915b3a09f` finished
+once with391. This proves the actual process was stopped, not just the model loop.
+
+Pause104F, conversation `01a07ec3-9f07-71ca-b6cc-7664a31e6522`: canceling the parent
+approval card returned200, but `w1-998d9da988b814a07df7fdd027cd6956` was rebuilt at
+attempt2 and ended `succeeded` with a cancellation sentence. Its stored answer action
+was `cancel`. This fails cancellation semantics despite no arithmetic tool execution.
+The observer must preserve that action as terminal control intent.
+
 The bounded hash probe found a collision after 102603 candidates. With identity
 `11111111-1111-1111-1111-111111111111`, conversation
 `22222222-2222-2222-2222-222222222222`, goal `independent task` and goal index 0,

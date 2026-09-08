@@ -422,6 +422,9 @@ not a retryable failure. Stale targets and interrupted owners must be reported h
 a later incarnation must not silently consume a previous one's corrections. The worker
 transcript remains on assistant-ui's native read-only runtime, with localized controls
 and receipt state around it. Spike 104 carries the closing evidence matrix.
+The 2026-09-08 paused-worker probe accepted `cancel` but rebuilt the model and marked
+the job succeeded. The resume observer must carry the explicit cancellation into the
+existing terminal-delivery path, rather than interpret it as another model-facing answer.
 
 Each fan-out and worker queue key belongs to the trusted `swarm_spawn` operation:
 retrying that operation preserves its identities; a new turn or model round, including
