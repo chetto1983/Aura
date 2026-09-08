@@ -110,7 +110,7 @@ func EnqueueDelegation(ctx context.Context, enq *DelegationEnqueuer, identityID 
 			MaxAttempts:    defaultDelegationMaxAttempts,
 			Payload:        m,
 		})
-		workers = append(workers, delegationQueuedWorker{GoalIndex: i, ChildID: childID, Status: StatusRunning, Goal: goal})
+		workers = append(workers, delegationQueuedWorker{GoalIndex: i, ChildID: childID, Status: StatusQueued, Goal: goal})
 	}
 	stored, err := enq.Store.CreateBatch(ctx, requests)
 	if err != nil {

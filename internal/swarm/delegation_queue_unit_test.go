@@ -262,8 +262,8 @@ func TestEnqueueDelegationQueuedResultShape(t *testing.T) {
 			t.Fatalf("workers[%d].child_id = %q, want a non-empty, unique id", i, w.ChildID)
 		}
 		seen[w.ChildID] = true
-		if w.Status != StatusRunning {
-			t.Fatalf("workers[%d].status = %q, want %q", i, w.Status, StatusRunning)
+		if w.Status != StatusQueued {
+			t.Fatalf("workers[%d].status = %q, want %q", i, w.Status, StatusQueued)
 		}
 		if w.Goal != goals[i] {
 			t.Fatalf("workers[%d].goal = %q, want %q", i, w.Goal, goals[i])

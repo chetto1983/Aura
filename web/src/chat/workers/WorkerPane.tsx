@@ -63,7 +63,8 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
   const workerSelected =
     conversationId.length > 0 && childId.length > 0 && openedConversationId === conversationId;
   const workerStatus = statuses.get(childId);
-  const lifecycleStatus = workerStatus?.status;
+  const lifecycleStatus =
+    workerStatus?.status ?? workers.find((worker) => worker.child_id === childId)?.status;
   const executionId = workerStatus?.run_id;
   const streamKey = `${conversationId}\u0000${childId}`;
   const subscription = useRef<{
@@ -85,7 +86,7 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
       : { key: streamKey, messages: [], failed: false, revision: 0 };
 
   useEffect(() => {
-    if (!workerSelected) {
+    if (!workerSelected || lifecycleStatus === 'queued') {
       subscription.current?.close();
       subscription.current = null;
       return;
@@ -242,7 +243,9 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
                   </p>
                 ) : !hasContent ? (
                   <p role="status" className="px-1 py-4 text-sm text-text-muted">
-                    {t('swarm.pane.connecting')}
+                    {t(
+                      lifecycleStatus === 'queued' ? 'swarm.pane.queued' : 'swarm.pane.connecting',
+                    )}
                   </p>
                 ) : null}
                 <ThreadPrimitive.Messages>{() => <WorkerMessage />}</ThreadPrimitive.Messages>

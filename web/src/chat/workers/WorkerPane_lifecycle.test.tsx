@@ -40,6 +40,23 @@ beforeEach(() => {
 });
 
 describe('worker transcript lifetime', () => {
+  it('waits for execution before requesting a queued transcript', () => {
+    const view = render(
+      content({
+        child_id: 'child',
+        status: 'queued',
+        last_event_at: '',
+        duration_sec: 0,
+        events: 0,
+      }),
+    );
+    expect(streams).toHaveLength(0);
+    expect(
+      screen.getByText('This agent is queued. Activity will appear when it starts.'),
+    ).toBeTruthy();
+    view.rerender(content(status));
+    expect(streams).toHaveLength(1);
+  });
   it('keeps the live stream through completion metadata so its final answer remains visible', async () => {
     const view = render(content(status));
     const initial = streams[0];

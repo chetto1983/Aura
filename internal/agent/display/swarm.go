@@ -8,6 +8,7 @@ const (
 	StatusFailed         = "failed"
 	StatusNeedsUserInput = "needs_user_input"
 	StatusRunning        = "running"
+	StatusQueued         = "queued"
 	StatusStalled        = "stalled"
 	StatusDeadLetter     = "dead_letter"
 )

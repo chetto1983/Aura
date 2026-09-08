@@ -3,13 +3,21 @@
 // tableData.ts idiom). The .tsx keeps only rendering.
 
 export type SwarmStatus =
-  'ok' | 'failed' | 'needs_user_input' | 'running' | 'stalled' | 'dead_letter' | 'canceled';
+  | 'ok'
+  | 'failed'
+  | 'needs_user_input'
+  | 'running'
+  | 'stalled'
+  | 'dead_letter'
+  | 'canceled'
+  | 'queued';
 
 export const SWARM_DOT_CLASS: Record<SwarmStatus, string> = {
   ok: 'bg-success',
   failed: 'bg-danger',
   needs_user_input: 'bg-warning',
   running: 'bg-info',
+  queued: 'bg-text-faint',
   stalled: 'bg-warning',
   dead_letter: 'bg-danger',
   canceled: 'bg-text-faint',
@@ -20,6 +28,7 @@ export const SWARM_STATUS_KEY: Record<SwarmStatus, string> = {
   failed: 'swarm.status.failed',
   needs_user_input: 'swarm.status.needs_user_input',
   running: 'swarm.status.running',
+  queued: 'swarm.status.queued',
   stalled: 'swarm.status.stalled',
   dead_letter: 'swarm.status.dead_letter',
   canceled: 'swarm.status.canceled',
@@ -31,6 +40,7 @@ export function isSwarmStatus(value: string): value is SwarmStatus {
     value === 'failed' ||
     value === 'needs_user_input' ||
     value === 'running' ||
+    value === 'queued' ||
     value === 'stalled' ||
     value === 'dead_letter' ||
     value === 'canceled'
@@ -67,6 +77,7 @@ export function statusIconName(status: string): SwarmStatusIconName {
     case 'running':
       return 'LoaderCircle';
     case 'stalled':
+    case 'queued':
       return 'Clock';
     case 'dead_letter':
       return 'MailX';

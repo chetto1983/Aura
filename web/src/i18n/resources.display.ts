@@ -196,6 +196,7 @@ export const displayEn = {
       title: 'Agent activity',
       close: 'Close agent activity',
       connecting: 'Connecting to agent…',
+      queued: 'This agent is queued. Activity will appear when it starts.',
       error: "Couldn't load this agent's activity. Check the report file or try again.",
     },
     status: {
@@ -203,6 +204,7 @@ export const displayEn = {
       failed: 'Failed',
       needs_user_input: 'Needs input',
       running: 'Running',
+      queued: 'Queued',
       stalled: 'Stalled',
       dead_letter: 'Not delivered',
       canceled: 'Canceled',
@@ -454,6 +456,7 @@ export const displayIt = {
       title: "Attività dell'agente",
       close: "Chiudi attività dell'agente",
       connecting: "Connessione all'agente…",
+      queued: 'Questo agente è in coda. L’attività apparirà quando partirà.',
       error: "Impossibile caricare l'attività dell'agente. Apri il file del report o riprova.",
     },
     status: {
@@ -461,6 +464,7 @@ export const displayIt = {
       failed: 'Fallito',
       needs_user_input: 'Richiede input',
       running: 'In corso',
+      queued: 'In coda',
       stalled: 'Bloccato',
       dead_letter: 'Non consegnato',
       canceled: 'Annullato',
