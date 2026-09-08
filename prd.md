@@ -207,6 +207,18 @@ An SSE disconnect does not mean cancellation. Detachment, replay and Last-Event-
 resumption preserve ordering and identity. A terminal worker stream closing normally
 is completion rather than a reconnection error.
 
+The 2026-09-08 cockpit screenshot and mounted-MCP inspection showed a long conversation
+list with only individual actions and one archived-visibility checkbox; there was no
+selection mode. Add explicit multi-selection, select-all for the currently listed rows,
+and bulk archive/delete. Reuse the owner-scoped per-conversation endpoints and existing
+delete lifecycle. Confirm permanent deletion with the selected count; disable repeated
+submission while pending; preserve failed selections and report partial outcomes. Reset
+the active chat only after its deletion succeeds. EN/IT copy and desktop/mobile keyboard
+operation are required. Assistant-ui provides per-thread archive/delete primitives; the
+current Aura sidebar already owns its external-store conversation list. No new persistence
+system or bulk authorization endpoint is required. Verify only disposable fixture chats
+through the real MCP browser; the screenshot does not authorize deleting existing history.
+
 ## 8. Long-term memory: facts and provenance
 
 The production memory is Aura's Go MCP service over ArcadeDB. Other projects are

@@ -1,3 +1,4 @@
+import { conversationsEn, conversationsIt } from './resources.conversations';
 import { adminEn, adminIt } from './resources.admin';
 import { chatReasoningEn, chatReasoningIt, chatToolEn, chatToolIt } from './resources.chatactivity';
 import {
@@ -161,50 +162,7 @@ export const resources = {
       ...profileEn,
       ...adminEn,
       ...onboardingEn,
-      conversations: {
-        new: 'New chat',
-        newPending: 'Creating chat...',
-        heading: 'Conversations',
-        loading: 'Loading conversations...',
-        loadError: "Couldn't load conversations. Refresh the list.",
-        untitled: 'Untitled',
-        includeArchived: 'Show archived',
-        archivedTag: 'Archived',
-        renameLabel: 'Conversation title',
-        empty: {
-          heading: 'Start a run',
-          body: 'Ask Aura a question to begin. Your conversations show up here.',
-        },
-        recency: {
-          today: 'Today',
-          yesterday: 'Yesterday',
-          last7: 'Last 7 days',
-          older: 'Older',
-        },
-        actions: {
-          more: 'Conversation actions',
-          rename: 'Rename',
-          archive: 'Archive',
-          unarchive: 'Unarchive',
-          export: 'Export (Markdown)',
-          delete: 'Delete permanently',
-        },
-        delete: {
-          title: 'Delete conversation?',
-          body: 'This permanently deletes "{{title}}" and its messages. This can\'t be undone.',
-          confirm: 'Delete permanently',
-          cancel: 'Keep conversation',
-        },
-        search: {
-          label: 'Search conversations',
-          placeholder: 'Search conversations',
-          searching: 'Searching...',
-          empty: {
-            heading: 'No matches',
-            body: 'No conversations contain "{{query}}". Try a different term.',
-          },
-        },
-      },
+      ...conversationsEn,
       approval: {
         badge: {
           aria_one: '{{count}} approval waiting',
@@ -446,50 +404,7 @@ export const resources = {
       ...profileIt,
       ...adminIt,
       ...onboardingIt,
-      conversations: {
-        new: 'Nuova chat',
-        newPending: 'Creazione chat...',
-        heading: 'Conversazioni',
-        loading: 'Caricamento conversazioni...',
-        loadError: 'Impossibile caricare le conversazioni. Aggiorna la lista.',
-        untitled: 'Senza titolo',
-        includeArchived: 'Mostra archiviate',
-        archivedTag: 'Archiviata',
-        renameLabel: 'Titolo conversazione',
-        empty: {
-          heading: 'Avvia una esecuzione',
-          body: 'Fai una domanda ad Aura per iniziare. Le tue conversazioni appariranno qui.',
-        },
-        recency: {
-          today: 'Oggi',
-          yesterday: 'Ieri',
-          last7: 'Ultimi 7 giorni',
-          older: 'Meno recenti',
-        },
-        actions: {
-          more: 'Azioni conversazione',
-          rename: 'Rinomina',
-          archive: 'Archivia',
-          unarchive: 'Ripristina',
-          export: 'Esporta (Markdown)',
-          delete: 'Elimina definitivamente',
-        },
-        delete: {
-          title: 'Eliminare la conversazione?',
-          body: 'Questo elimina definitivamente "{{title}}" e i suoi messaggi. Non è reversibile.',
-          confirm: 'Elimina definitivamente',
-          cancel: 'Conserva la conversazione',
-        },
-        search: {
-          label: 'Cerca nelle conversazioni',
-          placeholder: 'Cerca nelle conversazioni',
-          searching: 'Ricerca in corso...',
-          empty: {
-            heading: 'Nessun risultato',
-            body: 'Nessuna conversazione contiene "{{query}}". Prova un altro termine.',
-          },
-        },
-      },
+      ...conversationsIt,
       approval: {
         badge: {
           aria_one: '{{count}} approvazione in attesa',

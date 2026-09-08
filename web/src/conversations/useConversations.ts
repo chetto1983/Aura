@@ -230,3 +230,40 @@ export function useDeleteConversation() {
     },
   });
 }
+
+export type BulkConversationAction = 'archive' | 'delete';
+
+export function useBulkConversationAction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      action,
+      ids,
+    }: {
+      action: BulkConversationAction;
+      ids: readonly string[];
+    }) => {
+      const succeeded: string[] = [],
+        failed: string[] = [];
+      // Use the same owner-scoped lifecycle as a single action, with bounded load.
+      for (const id of new Set(ids)) {
+        const path = `/api/conversations/${encodeURIComponent(id)}`;
+        try {
+          await mutate(
+            action === 'archive' ? `${path}/archive` : path,
+            action === 'archive' ? 'POST' : 'DELETE',
+          );
+          succeeded.push(id);
+        } catch {
+          failed.push(id);
+        }
+      }
+      return { action, succeeded, failed };
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: [CONVERSATIONS_KEY] });
+      void queryClient.invalidateQueries({ queryKey: [CONVERSATION_SEARCH_KEY] });
+    },
+    retry: false,
+  });
+}

@@ -75,6 +75,10 @@ export function AppShell() {
   const showConversationNavigation = surface === 'chat';
   const createConversation = useCreateConversation();
   const [selectedId, setSelectedId] = useState(routeId ?? '');
+  const selectedIdRef = useRef(selectedId);
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
   const [lastRouteId, setLastRouteId] = useState(routeId ?? '');
   const {
     usageState,
@@ -203,12 +207,12 @@ export function AppShell() {
   // fresh empty row, resurrecting the list the operator just emptied.
   const handleConversationDeleted = useCallback(
     (id: string) => {
-      if (id !== selectedId) return;
+      if (id !== selectedIdRef.current) return;
       setSelectedId('');
       resetUsage();
       void navigate('/', { replace: true });
     },
-    [selectedId, resetUsage, navigate],
+    [resetUsage, navigate],
   );
 
   const openCreateIdentity = useCallback(() => {
