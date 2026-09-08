@@ -53,6 +53,32 @@ function useExclusiveRightRail(conversationId = 'thread-1') {
 }
 
 describe('useWorkerPane', () => {
+  it('restores the saved mobile drawer after conversation hydration and honors explicit close', async () => {
+    const match = window.matchMedia;
+    window.matchMedia = (query) => ({ ...match(query), matches: false });
+    localStorage.setItem(
+      'aura.shell.worker-pane',
+      JSON.stringify({ conversationId: 'thread-1', childId: 'nested-child', open: true }),
+    );
+    const { result, rerender } = renderHook(
+      ({ conversationId }) => useExclusiveRightRail(conversationId),
+      { initialProps: { conversationId: '' } },
+    );
+    expect(result.current.worker.workerActive).toBe(false);
+    rerender({ conversationId: 'thread-1' });
+    await waitFor(() => {
+      expect(result.current.worker.workerActive).toBe(true);
+    });
+    expect(result.current.worker.watchedChildId).toBe('nested-child');
+    act(() => {
+      result.current.worker.closeWorker();
+    });
+    await waitFor(() => {
+      expect(result.current.worker.workerActive).toBe(false);
+    });
+    rerender({ conversationId: 'thread-1' });
+    expect(result.current.worker.workerActive).toBe(false);
+  });
   it('keeps the worker and Artifacts surfaces mutually exclusive', () => {
     const { result } = renderHook(() => useExclusiveRightRail());
 

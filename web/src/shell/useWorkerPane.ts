@@ -113,6 +113,15 @@ export function useWorkerPane(
     conversationId.length > 0 && storedPane.conversationId === conversationId;
   const watchedChildId = belongsToConversation ? storedPane.childId : '';
   const workerOpen = belongsToConversation && storedPane.open && watchedChildId.length > 0;
+  const restorePending = useRef(true);
+  useEffect(() => {
+    if (!restorePending.current || conversationId.length === 0) return;
+    restorePending.current = false;
+    if (workerOpen && !isDesktop) {
+      onBeforeOpen();
+      openOverlay();
+    }
+  }, [conversationId, isDesktop, onBeforeOpen, openOverlay, workerOpen]);
 
   useEffect(() => {
     try {
