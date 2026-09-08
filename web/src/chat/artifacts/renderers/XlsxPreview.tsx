@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useAssetContent } from './useAssetContent';
 import { PreviewError, PreviewLoading, type RendererProps } from './PreviewStatus';
 
+// Knip6 misclassifies this package without a root export as unused. Its explicit
+// dependency exception is backed by the real subpath import below and renderer tests.
 // .xlsx (D-07 / D-08 / T-37B-09): read-excel-file is DYNAMICALLY imported inside the effect,
 // so it lands ONLY in this lazy chunk. The /universal entry behaves identically in the
 // browser and in jsdom (no Web Worker spawn) and reads straight from the ArrayBuffer.

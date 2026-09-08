@@ -12,12 +12,13 @@
     "dev": "vite",
     "build": "node tokens/generate-theme.mjs && tsc -b && vite build",
     "preview": "vite preview",
-    "lint": "eslint . --max-warnings=0",
+    "lint": "oxlint --type-aware --max-warnings=0 .",
+    "lint:contract": "node scripts/lint-contract.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "dup": "npx --yes jscpd@4",
-    "deadcode": "npx --yes knip@5 --exclude types,nsTypes,enumMembers,classMembers,duplicates",
+    "deadcode": "knip --exclude types,nsTypes,enumMembers,duplicates",
     "test": "vitest run --coverage",
     "test:e2e": "playwright test",
     "mutation": "stryker run",
@@ -72,7 +73,6 @@
     "unist-util-visit": "^5.1.0"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.62.1",
     "@rolldown/plugin-babel": "^0.2.3",
     "@stryker-mutator/core": "^10.0.0",
@@ -86,34 +86,29 @@
     "@types/react-dom": "^19.2.7",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@vitejs/plugin-react": "^6.1.1",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "^5.0.0",
     "axe-core": "^4.13.0",
     "babel-plugin-react-compiler": "^1.0.0",
     "eslint": "^10.9.1",
-    "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-import-x": "^4.17.1",
-    "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.6",
-    "globals": "^17.12.0",
     "jsdom": "^30.0.1",
+    "knip": "^6.34.0",
+    "oxlint": "^1.82.0",
+    "oxlint-tsgolint": "7.0.2001",
     "prettier": "^3.9.6",
     "tailwindcss": "^4.3.1",
-    "typescript": "^6.0.3",
-    "typescript-eslint": "^8.69.0",
+    "typescript": "^7.0.2",
     "vite": "^8.2.2",
-    "vitest": "^4.1.9"
+    "vitest": "^5.0.0"
   },
   "overrides": {
-    "qs": "6.15.2",
+    "qs": "6.16.0",
     "minimatch@^3.1.2": {
       "brace-expansion": "1.1.18"
     },
     "minimatch@^10.2.0": {
       "brace-expansion": "5.0.9"
-    },
-    "eslint-plugin-jsx-a11y": {
-      "eslint": "$eslint"
     }
   },
   "allowScripts": {

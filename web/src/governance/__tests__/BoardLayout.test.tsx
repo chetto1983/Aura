@@ -3,6 +3,7 @@ import { useRef, useState } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../i18n/i18n';
 import { BoardLayout } from '../BoardLayout';
+import { mediaQueryList } from '../../test/mediaQuery';
 
 // BoardLayout test — the master/detail shell. The desktop path (matchMedia → no match) renders the
 // detail as a static column and shows the detail-empty copy when nothing is selected. The MOBILE
@@ -11,16 +12,7 @@ import { BoardLayout } from '../BoardLayout';
 // §A11y). matchMedia is overridden per-test to drive each viewport.
 
 function setViewport(isMobile: boolean) {
-  window.matchMedia = (query: string) => ({
-    matches: isMobile,
-    media: query,
-    onchange: null,
-    addListener: () => undefined,
-    removeListener: () => undefined,
-    addEventListener: () => undefined,
-    removeEventListener: () => undefined,
-    dispatchEvent: () => false,
-  });
+  window.matchMedia = (query: string) => mediaQueryList(query, isMobile);
 }
 
 // A small harness exercising the BoardLayout open/close contract with a real originating button

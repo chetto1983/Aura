@@ -100,8 +100,7 @@ export function ToolResultPanel({ argsText, result }: ToolResultPanelProps) {
       cancelled = true;
     };
   }, [prettyResult]);
-  const resultHtml =
-    highlighted !== null && highlighted.source === prettyResult ? highlighted.html : null;
+  const resultHtml = highlighted?.source === prettyResult ? highlighted.html : null;
 
   return (
     <div className="flex max-h-80 min-w-0 flex-col gap-2 overflow-y-auto px-3 py-2">

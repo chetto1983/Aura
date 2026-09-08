@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes, useNavigate } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import './i18n/i18n';
 import { AppShell } from './AppShell';
+import { mediaQueryList } from './test/mediaQuery';
 
 // AppShell 37B plan 07 — the Artefatti panel INTEGRATION into the chat shell:
 //  - a header doc toggle shows/hides the panel; open/closed state persists (D-03);
@@ -64,17 +65,7 @@ const SEED_2PANEL = JSON.stringify({ 'chat-navigation': 220, 'chat-workspace': 8
 const TOGGLE_LABEL = 'Toggle the artifacts panel';
 
 function setViewport(isDesktop: boolean): void {
-  window.matchMedia = (query: string) =>
-    ({
-      matches: isDesktop,
-      media: query,
-      onchange: null,
-      addListener: () => undefined,
-      removeListener: () => undefined,
-      addEventListener: () => undefined,
-      removeEventListener: () => undefined,
-      dispatchEvent: () => false,
-    }) as MediaQueryList;
+  window.matchMedia = (query: string) => mediaQueryList(query, isDesktop);
 }
 
 // A minimal in-router control so a test can drive a real thread change (routeId → activeThreadId)

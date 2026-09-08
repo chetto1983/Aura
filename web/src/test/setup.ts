@@ -1,5 +1,6 @@
 import { afterEach } from 'vitest';
 import { cleanup } from '@testing-library/react';
+import { mediaQueryList } from './mediaQuery';
 
 // jsdom does not implement ResizeObserver, which assistant-ui's ThreadPrimitive
 // viewport (useOnResizeContent) requires. Provide a no-op polyfill so chat
@@ -30,17 +31,7 @@ if (typeof Element !== 'undefined' && typeof Element.prototype.scrollIntoView !=
 // mobile-only bottom-sheet focus trap. Default to a desktop (no-match) media query so components
 // mount under jsdom; the real mobile bottom-sheet behaviour is proven by the Playwright e2e.
 if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
-  window.matchMedia = (query: string): MediaQueryList =>
-    ({
-      matches: false,
-      media: query,
-      onchange: null,
-      addListener: () => undefined,
-      removeListener: () => undefined,
-      addEventListener: () => undefined,
-      removeEventListener: () => undefined,
-      dispatchEvent: () => false,
-    }) as MediaQueryList;
+  window.matchMedia = (query: string) => mediaQueryList(query, false);
 }
 
 // jsdom implements no layout, so prosemirror-view's coordsAtPos — reached when tiptap

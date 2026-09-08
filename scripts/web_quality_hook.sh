@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # web_quality_hook.sh — fast frontend pre-push gate (lefthook).
 #
-# Mirrors the CI `web-lint` job (eslint --max-warnings=0 + tsc --noEmit + prettier
+# Mirrors the CI `web-lint` job (Oxlint --max-warnings=0 + tsc --noEmit + prettier
 # --check) so a broken frontend is caught at push time, not in CI. Run as a script
 # (not inline in lefthook.yml) so the npm resolution parses identically under
 # Windows Git Bash, WSL, and CI Linux — same rationale as scripts/gofmt-staged.sh.

@@ -11,10 +11,8 @@ export {
 } from './Skeleton';
 export {
   AppShellSkeleton,
-  LanguageSwitcherSkeleton,
   LoginPageSkeleton,
   NotFoundViewSkeleton,
   RouteSkeletonFallback,
   RuntimeHealthPanelSkeleton,
-  ThemeSwitcherSkeleton,
 } from './AppSkeletons';

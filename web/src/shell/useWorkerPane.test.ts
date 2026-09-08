@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { useEffect, useRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { mediaQueryList } from '../test/mediaQuery';
 import { useArtifactsPanel } from './useArtifactsPanel';
 import { useSurfaceRestore } from './useSurfaceRestore';
 import { useWorkerPane } from './useWorkerPane';
@@ -11,17 +12,7 @@ let desktop = true;
 beforeEach(() => {
   localStorage.clear();
   desktop = true;
-  window.matchMedia = (query: string) =>
-    ({
-      matches: desktop,
-      media: query,
-      onchange: null,
-      addListener: () => undefined,
-      removeListener: () => undefined,
-      addEventListener: () => undefined,
-      removeEventListener: () => undefined,
-      dispatchEvent: () => false,
-    }) as MediaQueryList;
+  window.matchMedia = (query: string) => mediaQueryList(query, desktop);
 });
 
 afterEach(() => {

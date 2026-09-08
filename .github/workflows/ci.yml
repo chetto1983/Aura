@@ -1441,13 +1441,13 @@ jobs:
   # guard early-exits each job green when no web file changed, so Go-only PRs do
   # not pay the npm install cost. The filter watches web/** + embedded dist +
   # this workflow file.
-  # The industrial set mirrors the Go gates: web-lint (eslint/tsc/prettier),
+  # The industrial set mirrors the Go gates: web-lint (Oxlint/tsc/prettier),
   # web-test (vitest + ≥85% coverage), web-mutation (Stryker ≥70% killed),
   # web-e2e (Playwright). The committed-dist freshness job was retired (PRD
   # amendment #193): the appliance image builds web/ itself in its webbuild stage.
 
   web-lint:
-    name: Web lint (eslint --max-warnings=0 + prettier + tsc)
+    name: Web lint (Oxlint --max-warnings=0 + prettier + tsc)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -1474,11 +1474,11 @@ jobs:
       - name: Lint + format-check + typecheck (D-03 zero-warning gate)
         # `lint` carries --max-warnings=0 (package.json), the golangci-lint parity bar.
         if: steps.changes.outputs.web == 'true'
-        run: cd web && npm ci && npm run lint && npm run format:check && npm run typecheck
+        run: cd web && npm ci && npm run lint && npm run lint:contract && npm run format:check && npm run typecheck
 
       - name: Duplication (jscpd) + dead code (knip) — Go dupl/deadcode parity
         # TS/TSX parity to the Go `dupl` (.golangci.yml) + `deadcode` gates. Deps from
-        # the npm ci above persist across steps; jscpd/knip self-fetch via pinned npx.
+        # the npm ci above persist across steps; Knip is locked and jscpd self-fetches.
         if: steps.changes.outputs.web == 'true'
         run: cd web && npm run dup && npm run deadcode
 

@@ -18,7 +18,7 @@ interface RuntimeHealthPanelSkeletonProps extends AnnouncedSkeletonProps {
   showTitle?: boolean;
 }
 
-export function LanguageSwitcherSkeleton() {
+function LanguageSwitcherSkeleton() {
   return (
     <div
       aria-hidden="true"
@@ -30,7 +30,7 @@ export function LanguageSwitcherSkeleton() {
   );
 }
 
-export function ThemeSwitcherSkeleton() {
+function ThemeSwitcherSkeleton() {
   return (
     <div
       aria-hidden="true"

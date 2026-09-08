@@ -11,7 +11,7 @@ import { SkillBodyEditor } from '../SkillBodyEditor';
 // offering only constructs markdown can carry.
 
 function renderEditor(value: string) {
-  const onChange = vi.fn();
+  const onChange = vi.fn<(value: string) => void>();
   render(<SkillBodyEditor value={value} onChange={onChange} label="Skill body" />);
   return onChange;
 }
@@ -42,13 +42,13 @@ describe('SkillBodyEditor', () => {
       expect(onChange).toHaveBeenCalled();
     });
     // The intermediate state is markdown too, not HTML.
-    const quoted = onChange.mock.calls.at(-1)?.[0] as string;
+    const quoted = onChange.mock.calls.at(-1)?.[0];
     expect(quoted).toContain('>');
     expect(quoted).not.toContain('<blockquote');
 
     fireEvent.click(quote);
     await waitFor(() => {
-      expect((onChange.mock.calls.at(-1)?.[0] as string).trim()).toBe(source);
+      expect(onChange.mock.calls.at(-1)?.[0]?.trim()).toBe(source);
     });
   });
 

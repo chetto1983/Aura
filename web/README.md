@@ -1,30 +1,46 @@
 # aura-web
 
-The Aura operator cockpit frontend. A Vite 8 + React 19 + TypeScript single package
+The Aura operator cockpit frontend. A Vite 8 + React 19 + TypeScript 7 single package
 whose production build is committed to `internal/webui/dist/` and embedded into the
 single Go binary via `//go:embed all:dist`. `aura serve` serves the embedded shell.
 
 ## Scripts
 
-| Script                 | What it does                                                                 |
-| ---------------------- | ---------------------------------------------------------------------------- |
-| `npm run dev`          | Vite dev server                                                              |
-| `npm run build`        | `generate-theme.mjs` → `tsc -b` → `vite build` into `../internal/webui/dist` |
-| `npm run lint`         | ESLint flat config, `--max-warnings=0` (zero-warning gate)                   |
-| `npm run format:check` | Prettier check                                                               |
-| `npm run typecheck`    | `tsc --noEmit`                                                               |
-| `npm run test`         | Vitest + RTL (jsdom)                                                         |
-| `npm run test:e2e`     | Playwright (boots `aura serve`)                                              |
+| Script                  | What it does                                                                     |
+| ----------------------- | -------------------------------------------------------------------------------- |
+| `npm run dev`           | Vite dev server                                                                  |
+| `npm run build`         | `generate-theme.mjs` → `tsc -b` → `vite build` into `../internal/webui/dist`     |
+| `npm run lint`          | Oxlint with type information, `--max-warnings=0`                                 |
+| `npm run lint:contract` | Eight positive/negative probes for typed rules, React, accessibility and imports |
+| `npm run format:check`  | Prettier check                                                                   |
+| `npm run typecheck`     | `tsc --noEmit`                                                                   |
+| `npm run deadcode`      | Knip 6 checks unused dependencies, files and exports                             |
+| `npm run test`          | Vitest + RTL (jsdom)                                                             |
+| `npm run test:e2e`      | Playwright (boots `aura serve`)                                                  |
 
 ## Build output
 
 `npm run build` writes to `../internal/webui/dist/` (NOT `web/dist/`). Go `//go:embed`
 is package-relative and cannot reach `../web/dist`, so the committed embed source is
 co-located with `internal/webui/embed.go`. Sourcemaps are disabled so the committed
-bytes stay byte-stable across rebuilds. Refresh the committed dist from the Docker
-`webbuild` stage (Linux Node 24), never from a host `vite build`: the appliance image
-builds `web/` itself, the committed dist only feeds a host `go build` embed (PRD
-amendment #193 retired the CI freshness gate).
+bytes stay byte-stable across rebuilds. The ordinary `docker compose build aura`
+builds the frontend once on Linux Node 24 and embeds it in the image. That build is
+the validation authority; a separate `webbuild` export is unnecessary. The tracked
+dist remains the input for host `go build` (PRD amendment #193 retired its freshness gate).
+
+## Lint policy
+
+`.oxlintrc.json` retains the migrated strict TypeScript checks, React and accessibility
+rules. Import ordering and React Compiler config/gating use the supported JavaScript
+plugin interface. The original React Compiler plugin also owns `set-state-in-effect`:
+the native rule flags the existing asynchronous graph load, while the original rule
+accepts it. No rule is removed to make that diagnostic disappear.
+CI runs the contract probes sequentially: they briefly create source fixtures and
+verify both rejected defects and accepted asynchronous effects before removing them.
+
+Knip keeps the intentional `assistant-stream` pin and the dynamically imported
+`read-excel-file/universal` dependency. Knip6 misclassifies the latter package without
+a root export; XLSX renderer tests and the production import cover its actual use.
 
 ## Design tokens
 

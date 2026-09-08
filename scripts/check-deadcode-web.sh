@@ -14,10 +14,9 @@
 # (deduped) transitive of @assistant-ui/react, exact-pinned in package.json to lock
 # the assistant-ui streaming runtime to the tested version — deliberate, not dead.
 #
-# knip is fetched via pinned `npx` (no devDependency / no package-lock churn — see
-# the CLAUDE.md npm cross-platform lock-drift note). knip needs the installed deps to
-# resolve imports, so this self-guards on a missing web/node_modules (CI is the hard
-# gate for Go-only contributors who have never run `npm ci`).
+# Knip6 is locked with the frontend dependencies and parses through Oxc instead
+# of the retired TypeScript JavaScript API. It needs installed dependencies to
+# resolve imports, so CI remains the hard gate when node_modules is absent locally.
 
 set -euo pipefail
 

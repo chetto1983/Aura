@@ -26,6 +26,17 @@ updates:
     commit-message:
       prefix: "build(deps)"
     groups:
+      vitest-toolchain:
+        patterns:
+          - vitest
+          - "@vitest/*"
+      stryker-toolchain:
+        patterns:
+          - "@stryker-mutator/*"
+      typescript-lint:
+        patterns:
+          - typescript
+          - oxlint-tsgolint
       npm-minor-patch:
         update-types:
           - minor
