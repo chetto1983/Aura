@@ -420,6 +420,13 @@ their identity is no longer active; observation must not reset execution admissi
 The corrected admission probe kept a fifth job queued at attempt0 while four ran.
 Its card still said Running and opened a nonexistent transcript. Queued workers must
 be labeled as queued, and their activity view must wait for an actual execution.
+The same probe exposed no pre-start stop control. The existing worker controls read
+must expose a queued cancellation target from the durable job, scoped to its owner,
+conversation, child, job ID and observed attempt count. The existing cancel endpoint
+must persist operator cancellation only while that exact attempt remains queued;
+a claim that wins the race invalidates the queued target. Pending terminal delivery
+is not executable work to cancel. Acceptance remains visible after reload, and the
+normal claim/delivery path records cancellation without constructing a model.
 
 The live 2026-09-08 MCP inspection found no child controls while two real workers were
 running (spike 104). Operators must be able to steer and stop an individual worker,
