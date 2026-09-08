@@ -1533,21 +1533,26 @@ jobs:
   web-mutation:
     name: Critical mutation testing (each boundary >= 70% killed)
     runs-on: ubuntu-latest
-    # 90, not 45, and the number is measured rather than padded. Run 34224734274 (the last
-    # green one, before the TypeScript 7 / Stryker 10 / Vitest 5 upgrade) spent 30m37s in
-    # Stryker and 1m15s in the four Go scopes: 32m19s inside a 45m budget. The upgrade broke
-    # the vitest-runner's per-test filter, which made Stryker FASTER and worthless — 1.32
-    # tests per mutant and a 4.27% score (run 34229531588). Restoring the filter
-    # (6a4a8880a) restored both the score and the cost: run 34251499133 was at 3084/3217
-    # mutants with ~605 survived — tracking the same ~75% the gate has always measured —
-    # when it hit the 45m wall at 45m21s and was killed with roughly five minutes of work
-    # left. So the gate was never failing on quality; the budget was sized for a run that
-    # was not doing its job.
+    # 90, not 45, because the spread between runs is what this job actually needs headroom
+    # for. The TypeScript 7 / Stryker 10 / Vitest 5 upgrade broke the vitest-runner's
+    # per-test filter, which made Stryker FASTER and worthless — 1.32 tests per mutant and a
+    # 4.27% score (run 34229531588). Restoring the filter (6a4a8880a) restored the real
+    # workload, and run 34251499133 then died on the 45m wall at 45m21s with about five
+    # minutes of mutants left. The gate was never failing on quality; the budget was sized
+    # for a run that was not doing its job.
     #
-    # Stryker dominates: the Go scopes cost about a minute of the total. If this needs
-    # raising again, measure where the time actually goes first — the same toolchain that
-    # broke the filter also made an identical mutant set ~60% more expensive, and that
-    # regression is worth understanding rather than absorbing into a bigger number.
+    # Runtime is NOT a regression — measured, after the first green run under this budget.
+    # Run 34258050192: Stryker 18m50s, 4.29 tests per mutant, 75.07%, whole job 20m09s.
+    # Run 34224734274, the last green one BEFORE the upgrade: 30m37s, 4.27 tests per mutant,
+    # 75.16%. Same work, same score, and the post-upgrade run is the faster of the two — the
+    # 45m timeout was a slow runner, not a slower toolchain. Stryker dominates either way;
+    # the four Go scopes cost about a minute.
+    #
+    # Do not try to buy the headroom back with concurrency or isolation. Both were measured
+    # on a two-file probe (160 mutants, 84.38% baseline in 3m21s): `isolate: false` ran
+    # 3m29s — no faster — and moved the score to 83.75; concurrency 8 on 8 cores ran 3m14s
+    # and turned 22 mutants into timeouts, inflating the score to 94.38. A timeout counts as
+    # a kill, so oversubscription buys a greener number rather than a better suite.
     timeout-minutes: 90
     # REL-02: this is deliberately unconditional. The five independently-scored
     # boundaries publish one fresh candidate-bound report; no strong scope can
