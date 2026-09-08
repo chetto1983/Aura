@@ -425,6 +425,14 @@ jobs:
       ARCADEDB_PASSWORD: ci-test-password
       ARCADEDB_APP_PASSWORD: ci-test-password
       AURA_ARCADEDB_TENANT_SECRET: "0000000000000000000000000000000000000000000000000000000000000d1"
+      # The arcadedb_integration memory plane (D-10/D-11) — read directly by the new
+      # two_identity_memory_harness_test.go through musrEnvOrSkip. ARCADEDB_ADMIN_USER's
+      # password is ARCADEDB_PASSWORD above (root's password, per compose.yaml's
+      # JAVA_OPTS -Darcadedb.server.rootPassword); no separate ARCADEDB_ADMIN_PASSWORD
+      # name is needed because the harness falls back to ARCADEDB_PASSWORD when it is unset.
+      ARCADEDB_URL: http://127.0.0.1:2480
+      ARCADEDB_DATABASE: aura_memory
+      ARCADEDB_ADMIN_USER: root
       # Garage S3 data plane (per-identity object put/get through the resolver).
       AURA_OBJECTSTORE_BACKEND: garage
       AURA_OBJECTSTORE_ENDPOINT: http://127.0.0.1:3900
@@ -460,9 +468,10 @@ jobs:
 
       - name: Compile the musr_e2e tier (always — no-skip-as-green floor)
         # The tagged E2E ALWAYS compiles here (the cheap always-green floor proving the
-        # 4-tag file never rots), even before the stack is up. It lost the graph tag
+        # 5-tag file never rots), even before the stack is up. It lost the graph tag
         # with the graph store: its documents cross-deny now reads the Postgres catalog.
-        run: go vet -tags 'db_integration garage_integration authula_integration musr_e2e' ./cmd/aura/
+        # D-10 (01-03): arcadedb_integration is the 5th tag — the memory plane.
+        run: go vet -tags 'db_integration garage_integration authula_integration musr_e2e arcadedb_integration' ./cmd/aura/
 
       - name: Restore llama.cpp embedding model cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -479,15 +488,25 @@ jobs:
         run: bash scripts/fetch_embedding_model.sh "$AURA_CI_LLAMA_CACHE_DIR/llama.cpp/embeddinggemma-300M-Q8_0.gguf"
 
       - name: Bring up stack + migrate (postgres + ArcadeDB + embed sidecar)
+        # memory-up-core, not memory-up: memory-up also brings up arcadedb-mcp, whose
+        # depends_on: aura starts the WHOLE aura daemon against this same Postgres —
+        # the measured CI #1809 race (Makefile:262-270). This step's own name has always
+        # promised only "postgres + ArcadeDB + embed sidecar"; memory-up-core is what
+        # actually matches that promise. Task 2's MCP cross-deny test runs in-process
+        # precisely so this job never needs arcadedb-mcp at all.
         run: |
-          if ! make db-migrate memory-up; then
+          if ! make db-migrate memory-up-core; then
             docker compose logs --tail 160 garage-bootstrap garage aura-migrate || true
             exit 1
           fi
 
-      - name: Bring up Garage (Admin API v2 on loopback) + assign layout
+      - name: Bring up Garage (Admin API v2 on loopback) + assign layout, confirm ArcadeDB
         run: |
-          docker compose up -d garage
+          # arcadedb is already up (memory-up-core, previous step); naming it again here
+          # is an idempotent no-op that keeps this the one line asserting D-10's memory
+          # plane has a reachable service — never arcadedb-mcp, whose depends_on: aura
+          # would start the daemon (see the previous step's comment).
+          docker compose up -d garage arcadedb
 
           garage() { docker compose exec -T garage /garage "$@"; }
 
@@ -537,11 +556,12 @@ jobs:
 
       - name: Two-identity cross-deny E2E (flag-on enforcement, full live stack)
         # THE D-29 / MUSR-01 acceptance gate. -p 1 serializes the shared Postgres writes;
-        # -race matches every other live tier. The four tags select the E2E file;
-        # -run pins the two acceptance tests (other cmd/aura tagged tests are filtered out).
+        # -race matches every other live tier. The five tags select the E2E file
+        # (D-10, 01-03: arcadedb_integration joined the memory plane); -run pins the two
+        # acceptance tests (other cmd/aura tagged tests are filtered out).
         run: |
           go test -race -count=1 -p 1 \
-            -tags 'db_integration garage_integration authula_integration musr_e2e' \
+            -tags 'db_integration garage_integration authula_integration musr_e2e arcadedb_integration' \
             -run 'TestTwoIdentityCrossDeny|TestProvisionLoginIsolatedRun' \
             ./cmd/aura/
 

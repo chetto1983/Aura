@@ -1,8 +1,9 @@
-//go:build db_integration && garage_integration && authula_integration && musr_e2e
+//go:build db_integration && garage_integration && authula_integration && musr_e2e && arcadedb_integration
 
 // Phase 36 D-29 / MUSR-01 two-identity cross-deny acceptance E2E — the phase keystone.
 // It runs against the FULL live stack (Postgres + RLS, Garage Admin API v2 + S3, embedded
-// Authula) and asserts that identity B is denied on EVERY plane while A keeps its data:
+// Authula, ArcadeDB) and asserts that identity B is denied on EVERY plane while A keeps
+// its data:
 //
 //	Postgres conversations — B gets 404 on an HTTP read of A's thread; the owner-scoped
 //	  store returns not-found (404 source) / rows==0 (403 source); the RLS kernel backstop
@@ -12,8 +13,19 @@
 //	Garage               — A's object is unreadable with B's scoped key; the per-identity
 //	  resolver selects B's creds for B and A's for A (request-time selection, not just provisioning).
 //	MUSR-02              — a B-created conversation is owned by B and runs.
+//	Long-term memory     — B's identityctx-resolved tenant client (resolved through
+//	  newChatTenantClients, the daemon's own resolver — not a stand-in), and B's raw
+//	  derived ArcadeDB credential aimed at A's database, are both denied; A keeps
+//	  reading its own facts while both identities read concurrently (D-10/D-11).
 //
 // The provision→login→isolated-run + break-glass happy path is TestProvisionLoginIsolatedRun.
+//
+// The MCP-boundary leg of the memory plane (D-11 item 3 — a verified access token
+// reaching arcadedb-mcp's tenant selector) is asserted separately, in-process, by
+// cmd/arcadedb-mcp/memory_cross_deny_live_integration_test.go — not here. See that
+// file's header for why (the deployed arcadedb-mcp sidecar's depends_on: aura would
+// start a second Postgres writer racing this file's own tests, the measured CI #1809
+// race).
 //
 // NO-SKIP-AS-GREEN: every env read goes through musrEnvOrSkip (t.Fatal under $CI). This is
 // the acceptance gate — it MUST be green on Linux CI (ci.yml musr-e2e job).
@@ -59,6 +71,7 @@ func TestTwoIdentityCrossDeny(t *testing.T) {
 
 	idA := musrProvisionIdentity(t, pool, "alice")
 	idB := musrProvisionIdentity(t, pool, "bob")
+	memoryPlane := musrNewMemoryPlaneFixture(t, idA, idB)
 
 	ctx := context.Background()
 
@@ -330,6 +343,17 @@ func TestTwoIdentityCrossDeny(t *testing.T) {
 		if credB.Bucket == credA.Bucket || credB.AccessKey == credA.AccessKey {
 			t.Fatal("resolver returned A's creds to B (request-time selection leaked)")
 		}
+	})
+
+	// ── Long-term memory plane: identityctx chain, raw derived credential, concurrency ─
+	t.Run("memory_cross_deny_identityctx", func(t *testing.T) {
+		musrMemoryCrossDenyIdentityCtx(t, memoryPlane, idA, idB)
+	})
+	t.Run("memory_cross_deny_derived_credential", func(t *testing.T) {
+		musrMemoryCrossDenyDerivedCredential(t, memoryPlane, idA, idB)
+	})
+	t.Run("memory_cross_deny_concurrent", func(t *testing.T) {
+		musrMemoryCrossDenyConcurrent(t, memoryPlane, idA, idB)
 	})
 }
 

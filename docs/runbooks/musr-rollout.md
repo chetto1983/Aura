@@ -74,9 +74,9 @@ second identity, not on serving one.
 
 ## Acceptance
 
-- `go test -tags 'db_integration garage_integration authula_integration musr_e2e' ./cmd/aura/`
+- `go test -tags 'db_integration garage_integration authula_integration musr_e2e arcadedb_integration' ./cmd/aura/`
   — the two-identity cross-deny live E2E, which proves identity B is denied on every
-  scoped plane while A keeps its data.
+  scoped plane (including long-term memory) while A keeps its data.
 - `go test ./internal/agui/ -run TestProvisionRefused` — the refusal itself, proven to
   leave zero rows behind.
 - `go test ./internal/agent/tools -run TestSkillManage` — ordinary identities cannot
