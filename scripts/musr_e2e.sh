@@ -236,6 +236,18 @@ export CI=true
 # --- 7. Seed the Authula operator (embedded provider, 0019 schema) -------------------
 go run ./scripts/authula_seed_e2e.go
 
+# Identity provisioning creates the sandbox eagerly. These local image names are
+# not public registry images, and images built in another CI job are not available
+# on this runner. Keep dedicated test tags; honor explicitly exported overrides.
+if [ -z "${AURA_SANDBOX_IMAGE:-}" ]; then
+  export AURA_SANDBOX_IMAGE=aura-sandbox:musr-e2e
+  docker build -f docker/aura-sandbox/Dockerfile -t "$AURA_SANDBOX_IMAGE" .
+fi
+if [ -z "${AURA_SANDBOX_EGRESS_IMAGE:-}" ]; then
+  export AURA_SANDBOX_EGRESS_IMAGE=aura-egress:musr-e2e
+  docker build -f docker/aura-egress/Dockerfile -t "$AURA_SANDBOX_EGRESS_IMAGE" .
+fi
+
 # --- 8. The tagged tiers: acceptance E2E, then the MCP-boundary memory test ----------
 echo "==> two-identity cross-deny E2E (5 tags, ./cmd/aura/)"
 go test -race -count=1 -p 1 \
