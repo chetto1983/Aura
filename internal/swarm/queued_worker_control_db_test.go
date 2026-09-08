@@ -50,6 +50,10 @@ func TestQueuedWorkerCancellationDeliversWithoutStartingModel(t *testing.T) {
 	if err != nil || len(claimed) != 1 {
 		t.Fatalf("claim: %+v %v", claimed, err)
 	}
+	heartbeat := documents.HeartbeatIngestionJobRequest{IdentityID: owner, JobID: job.ID, WorkerID: controlClaimOwner, LeaseGeneration: claimed[0].LeaseGeneration, LeaseDuration: time.Minute}
+	if _, err := store.Heartbeat(t.Context(), heartbeat); err != nil {
+		t.Fatalf("delivery lease heartbeat: %v", err)
+	}
 	if err := store.RequestQueuedWorkerCancellation(t.Context(), req); !errors.Is(err, documents.ErrIngestionJobLeaseLost) {
 		t.Fatalf("claimed target accepted: %v", err)
 	}
@@ -63,6 +67,15 @@ func TestQueuedWorkerCancellationDeliversWithoutStartingModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertCanceledJob(t, pool, job, 1)
+	if _, err := store.Heartbeat(t.Context(), heartbeat); !errors.Is(err, documents.ErrIngestionJobLeaseLost) {
+		t.Fatalf("heartbeat revived canceled work: %v", err)
+	}
+	for status, want := range map[string]int64{"queued": 0, "running": 0, "canceled": 1} {
+		count, err := store.CountByStatus(t.Context(), owner, status)
+		if err != nil || count != want {
+			t.Fatalf("%s count = %d, want %d: %v", status, count, want, err)
+		}
+	}
 	if len(recorder.appended) != 1 {
 		t.Fatalf("expected one cancellation report, got %d", len(recorder.appended))
 	}

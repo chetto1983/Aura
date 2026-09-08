@@ -37,7 +37,25 @@ industrial-readiness claim is made.
   and targeted ESLint passed; Go agui/documents/swarm race suites passed; the two
   disposable-Postgres queued-control tests passed with race detection. Native Go
   overlays killed all three SQL mutants (attempt fence, conversation scope,
-  pending-delivery protection). Full coverage and release CI are still pending.
+  pending-delivery protection). The complete native Go/Postgres matrix now passed:
+  **34,654/40,085 = 86.4513%**, including the package policy. `internal/documents`
+  is **708/824 = 85.9223%** and now enforces the full 85% target. Its earlier
+  683/824 result exposed a stale denominator; new invalid-target, delivery-lease
+  heartbeat and terminal counter tests raised coverage instead of lowering a gate.
+  Full frontend lint passed after the mobile test stub correction. Release CI remains pending.
+- 104S, conversation `01a07f23-7c8d-72ae-ba64-123588329a85`, temporarily using
+  the existing depth3 configuration: coordinator `w1-f84b088f001e8cef1a460474729ce79d`
+  spawned `w1-53d51046a61b59926b75c7215e07c459` and
+  `w2-0b193a610f9a379087ea262ccb8f1a48`. Docker showed their Python PIDs 80063
+  and 80144 executing the 80/85-second commands. Focusing the coordinator's Stop
+  button and pressing Enter through MCP returned 202 in 87ms. Both descendant
+  processes disappeared, both transcripts ended `canceled`, and the coordinator
+  job ended canceled at attempt1. Both marker files stayed absent after their
+  original deadlines. Independent sibling `w2-65c37720a7c30a949fbfe75974f2836f`
+  kept PID79801, completed its one 95-second shell call, and ended succeeded at
+  attempt1; its visible final text was `The output of the command is 1331.`.
+  This proves subtree stop, actual process isolation and a live keyboard control.
+  Normal depth2 configuration was restored afterward; no active test workers remain.
 
 - Spike 103 records real execution, pause/resume, repeated delegation, changed context,
   failure isolation, parent steering, nested invocation identity, pane reload and SIGKILL
@@ -98,13 +116,13 @@ Do not edit the concurrent phase 1 sandbox/provisioning work.
 | Control receipts | Accepted and applied are distinct, visible after reload | Passed 104D; queued acceptance reload passed 104Q3 |
 | Stop a live child | Prompt cancellation, terminal canceled report, no retry | Passed 104E, including actual process termination |
 | Stop lifecycle races | Completion, queued/paused work and accepted controls resolve honestly | Paused 104F2 and queued 104Q3 passed; completion fence covered natively |
-| Nested control and visibility | Discover/control a live grandchild; preserve siblings and ancestry | Direct grandchild controls passed 104N; coordinator subtree stop still required |
+| Nested control and visibility | Discover/control a live grandchild; preserve siblings and ancestry | Passed 104N direct controls and 104S coordinator subtree stop |
 | Ownership and input bounds | Real scoped API denies foreign/malformed/stale targets and oversized input | Missing for child controls |
 | Restart and control settlement | No silent application to a new incarnation; completed/canceled work is not retried as failure | Missing for controls |
 | Grounded final answers | Delayed unpredictable outputs match actual reports; no fabricated IDs or premature success | Failed baseline |
 | Failure and hostile report data | Honest partial results; report text cannot become operator authority | Prior trust framing passed; broaden final-answer proof |
-| Desktop/mobile and EN/IT | MCP controls, keyboard, reload and readable status on both layouts | Reload, final text and empty-state layout passed; live control keyboard walkthrough still required |
-| Quality gates | vet/build/test/race, disposable full coverage >=85%, mutation >=70%, all CI green | Required after implementation |
+| Desktop/mobile and EN/IT | MCP controls, keyboard, reload and readable status on both layouts | Reload, final text and EN/IT empty state passed; live Stop via keyboard passed 104S |
+| Quality gates | vet/build/test/race, disposable full coverage >=85%, mutation >=70%, all CI green | Local Go and frontend matrices passed; release CI still pending |
 | Delivery | Frequent atomic commits, push, healthy updated container and memory MCP evidence | Ongoing |
 
 Every row needs authoritative evidence. A passing subset or a model's self-reported

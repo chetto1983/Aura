@@ -10,6 +10,13 @@ The coordinator's unsupported launch/completion claims remain open; these passin
 controls and coverage measurements do not certify the full multi-agent goal.
 Evidence: `.planning/spikes/104-agent-controls-and-grounded-results/README.md` and
 `.git/controls104-full-ui-coverage.log` (local run).
+**Multi-agent Go measurement:** 2026-09-08 — the complete disposable native
+unit + `db_integration` matrix, including `cmd/aura` contributions, passed at
+**34,654/40,085 = 86.4513%** with its package policy. `internal/documents` reached
+**708/824 = 85.9223%** and now enforces the full 85% floor. Its previous
+683/824 result failed denominator review; invalid-target, delivery heartbeat and
+terminal counter tests closed that gap. Source: `.git/controls104-full-coverage2.log`
+and `artifacts/production-readiness/coverage-report.json` (local run).
 **Current update:** 2026-08-28 (Document oracle: the owned corpus is now 23 files; the disposable production lifecycle indexed 23/23 with zero missing and the real agent passed 11/11 exact cases, including the full-file XLSX aggregate and image-only Italian PDF. The free Gemma/Ollama route also passed a public 96-page digital-PDF witness in seven calls and the operator's private large-workbook aggregate. Ranking remains diagnostic.)
 **Prior update:** 2026-08-27 (Garage mention retrieval scope: the fresh disposable unit plus
 `db_integration` run is 27,848/32,024 = **86.9598%** and publishes 71 exact cross-package
