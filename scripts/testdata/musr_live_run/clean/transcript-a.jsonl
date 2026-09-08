@@ -1,0 +1,11 @@
+{"ts": 1000.00, "event": "RUN_STARTED", "data": {"threadId": "thread-a", "runId": "run-a"}}
+{"ts": 1000.10, "event": "TOOL_CALL_START", "data": {"toolCallId": "tc-a1", "toolCallName": "document_search"}}
+{"ts": 1000.20, "event": "TOOL_CALL_END", "data": {"toolCallId": "tc-a1"}}
+{"ts": 1000.30, "event": "TOOL_CALL_START", "data": {"toolCallId": "tc-a2", "toolCallName": "memory__memory_upsert_fact"}}
+{"ts": 1000.40, "event": "TOOL_CALL_END", "data": {"toolCallId": "tc-a2"}}
+{"ts": 1000.50, "event": "TOOL_CALL_START", "data": {"toolCallId": "tc-a3", "toolCallName": "shell_exec"}}
+{"ts": 1000.90, "event": "TOOL_CALL_END", "data": {"toolCallId": "tc-a3"}}
+{"ts": 1001.00, "event": "TEXT_MESSAGE_START", "data": {"messageId": "m-a"}}
+{"ts": 1001.10, "event": "TEXT_MESSAGE_CONTENT", "data": {"messageId": "m-a", "delta": "Ho trovato il marcatore MUSR-A-1a2b3c4d nel documento, l'ho registrato in memoria ed eseguito il comando in sandbox."}}
+{"ts": 1001.20, "event": "TEXT_MESSAGE_END", "data": {"messageId": "m-a"}}
+{"ts": 1001.30, "event": "RUN_FINISHED", "data": {"threadId": "thread-a", "runId": "run-a"}}

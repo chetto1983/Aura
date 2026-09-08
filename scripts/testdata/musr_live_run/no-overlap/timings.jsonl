@@ -1,0 +1,12 @@
+{"identity": "a", "tool": "document_search", "tool_call_id": "tc-a1", "phase": "start", "ts": 1000.10}
+{"identity": "a", "tool": "document_search", "tool_call_id": "tc-a1", "phase": "end", "ts": 1000.20}
+{"identity": "a", "tool": "memory__memory_upsert_fact", "tool_call_id": "tc-a2", "phase": "start", "ts": 1000.30}
+{"identity": "a", "tool": "memory__memory_upsert_fact", "tool_call_id": "tc-a2", "phase": "end", "ts": 1000.40}
+{"identity": "a", "tool": "shell_exec", "tool_call_id": "tc-a3", "phase": "start", "ts": 1000.50}
+{"identity": "a", "tool": "shell_exec", "tool_call_id": "tc-a3", "phase": "end", "ts": 1000.90}
+{"identity": "b", "tool": "document_search", "tool_call_id": "tc-b1", "phase": "start", "ts": 1001.60}
+{"identity": "b", "tool": "document_search", "tool_call_id": "tc-b1", "phase": "end", "ts": 1001.65}
+{"identity": "b", "tool": "memory__memory_upsert_fact", "tool_call_id": "tc-b2", "phase": "start", "ts": 1001.70}
+{"identity": "b", "tool": "memory__memory_upsert_fact", "tool_call_id": "tc-b2", "phase": "end", "ts": 1001.75}
+{"identity": "b", "tool": "shell_exec", "tool_call_id": "tc-b3", "phase": "start", "ts": 1001.80}
+{"identity": "b", "tool": "shell_exec", "tool_call_id": "tc-b3", "phase": "end", "ts": 1001.89}
