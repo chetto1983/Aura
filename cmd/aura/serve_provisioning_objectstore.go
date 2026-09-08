@@ -34,6 +34,7 @@ type objectStoreMinter interface {
 	CreateBucket(ctx context.Context, globalAlias string) (string, error)
 	BucketIDByAlias(ctx context.Context, globalAlias string) (string, error)
 	CreateKey(ctx context.Context, name string) (accessKeyID, secretAccessKey string, err error)
+	KeyIDByName(ctx context.Context, name string) (accessKeyID string, err error)
 	AllowBucketKey(ctx context.Context, bucketID, accessKeyID string, perms garageadmin.Permissions) error
 	DeleteBucket(ctx context.Context, bucketID string) error
 	DeleteKey(ctx context.Context, accessKeyID string) error
@@ -231,12 +232,7 @@ func (a *objectStoreProvisionAdapter) ProvisionObjectStore(ctx context.Context, 
 // purge process — a later one by days, by design — never has; garageadmin.Client has
 // published BucketIDByAlias the whole time, and the alias is derived from the identity id.
 func (a *objectStoreProvisionAdapter) DeprovisionObjectStore(ctx context.Context, id string) error {
-	ictx := identityctx.WithIdentityID(ctx, id)
-	if creds, err := a.store.Resolve(ictx); err == nil {
-		if err := a.client.DeleteKey(ctx, creds.AccessKey); err != nil {
-			return err
-		}
-	} else if !errors.Is(err, pgx.ErrNoRows) {
+	if err := a.deprovisionKey(ctx, id); err != nil {
 		return err
 	}
 	bucketID, err := a.deprovisionBucketID(ctx, id)
@@ -249,6 +245,34 @@ func (a *objectStoreProvisionAdapter) DeprovisionObjectStore(ctx context.Context
 		}
 	}
 	return a.store.Delete(ctx, id)
+}
+
+// deprovisionKey deletes the identity's scoped key, taking the access key id from the
+// credential row when it is still there and falling back to the name Garage knows it by
+// when it is not. The fallback is not hypothetical: it is the state a run whose key delete
+// silently failed left the live deployment in on 2026-09-08 — row gone, key live, and no
+// access key id recorded anywhere. An absent key on either route is a converged step.
+func (a *objectStoreProvisionAdapter) deprovisionKey(ctx context.Context, id string) error {
+	ictx := identityctx.WithIdentityID(ctx, id)
+	creds, err := a.store.Resolve(ictx)
+	if err == nil {
+		return a.client.DeleteKey(ctx, creds.AccessKey)
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	name, err := garageadmin.KeyNameForIdentity(id)
+	if err != nil {
+		return err
+	}
+	accessKey, err := a.client.KeyIDByName(ctx, name)
+	if errors.Is(err, garageadmin.ErrKeyNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return a.client.DeleteKey(ctx, accessKey)
 }
 
 // deprovisionBucketID resolves the bucket to delete, preferring the id this adapter

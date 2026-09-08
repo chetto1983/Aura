@@ -113,6 +113,15 @@ func (c *Client) post(ctx context.Context, path string, query url.Values, body a
 // non-2xx a teardown may treat as a converged step.
 var ErrBucketNotFound = errors.New("garageadmin: no bucket for global alias")
 
+// ErrKeyNotFound is KeyIDByName's 404, and carries the same meaning for the key plane.
+var ErrKeyNotFound = errors.New("garageadmin: no key for name")
+
+// KeyNameForIdentity maps an identity to the name CreateKey labels its scoped key with. It
+// is the SAME derivation as BucketForIdentity — Garage happens to accept the same string as
+// a bucket alias and a key label — and exists as its own function so the teardown that
+// looks a key up by name and the provisioning that creates it cannot drift apart.
+func KeyNameForIdentity(identity string) (string, error) { return BucketForIdentity(identity) }
+
 // statusErr builds an error from an unexpected status, including a bounded snippet
 // of the body for diagnostics (admin errors carry a small JSON code object).
 func statusErr(op string, status int, raw []byte) error {
@@ -190,6 +199,47 @@ func (c *Client) BucketIDByAlias(ctx context.Context, alias string) (string, err
 		return "", fmt.Errorf("garageadmin: decode GetBucketInfo: %w", err)
 	}
 	return info.ID, nil
+}
+
+// KeyIDByName resolves a key's access key id from the name CreateKey labelled it with.
+//
+// It is the key-plane twin of BucketIDByAlias and exists for the same reason: a teardown
+// resuming after the credential row was deleted has no access key id left to delete by, and
+// the name is derivable from the identity. Garage's search is a match, not a prefix scan —
+// an ambiguous or failed search answers non-2xx and stays an opaque error, because deleting
+// the wrong key would be worse than leaving this one.
+func (c *Client) KeyIDByName(ctx context.Context, name string) (string, error) {
+	target := c.endpoint + "/v2/GetKeyInfo?" + url.Values{"search": {name}}.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return "", fmt.Errorf("garageadmin: build GetKeyInfo: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("garageadmin: call GetKeyInfo: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxAdminBody))
+	if err != nil {
+		return "", fmt.Errorf("garageadmin: read GetKeyInfo: %w", err)
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return "", fmt.Errorf("garageadmin: key name %q: %w", name, ErrKeyNotFound)
+	}
+	if !is2xx(resp.StatusCode) {
+		return "", statusErr("GetKeyInfo", resp.StatusCode, raw)
+	}
+	var info struct {
+		AccessKeyID string `json:"accessKeyId"`
+	}
+	if err := json.Unmarshal(raw, &info); err != nil {
+		return "", fmt.Errorf("garageadmin: decode GetKeyInfo: %w", err)
+	}
+	if info.AccessKeyID == "" {
+		return "", fmt.Errorf("garageadmin: GetKeyInfo for %q carries no accessKeyId", name)
+	}
+	return info.AccessKeyID, nil
 }
 
 // CreateKey creates a scoped access key and returns its access + secret key. The

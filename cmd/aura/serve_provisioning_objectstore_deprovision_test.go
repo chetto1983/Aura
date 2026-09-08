@@ -25,10 +25,19 @@ import (
 type deprovisionMinter struct {
 	aliasID       string
 	aliasErr      error
+	keyIDByName   string
+	keyNameErr    error
 	deletedKeys   []string
 	deleteKeyErr  error
 	deletedBucket []string
 	deleteBktErr  error
+}
+
+func (d *deprovisionMinter) KeyIDByName(context.Context, string) (string, error) {
+	if d.keyNameErr != nil {
+		return "", d.keyNameErr
+	}
+	return d.keyIDByName, nil
 }
 
 func (d *deprovisionMinter) CreateBucket(context.Context, string) (string, error) {
@@ -106,6 +115,48 @@ func TestDeprovisionObjectStoreResolvesBucketByAliasInALaterProcess(t *testing.T
 	}
 	if _, ok := resolver.creds[deprovisionTestID]; ok {
 		t.Fatal("the credential row survived a successful teardown")
+	}
+}
+
+// TestDeprovisionObjectStoreFindsKeyByNameWhenTheRowIsGone covers the state the live
+// deployment was actually left in on 2026-09-08: the credential row had already been
+// deleted by a run whose key delete silently failed, so Resolve answers pgx.ErrNoRows and
+// there is no access key id anywhere in Postgres. The key name is derivable from the
+// identity — it is what CreateKey labelled it with — so the teardown can still converge.
+func TestDeprovisionObjectStoreFindsKeyByNameWhenTheRowIsGone(t *testing.T) {
+	minter := &deprovisionMinter{aliasID: "bkt-1", keyIDByName: "GK-orphan"}
+	adapter, resolver := deprovisionFixture(t, minter)
+	delete(resolver.creds, deprovisionTestID) // Resolve now answers pgx.ErrNoRows
+
+	if err := adapter.DeprovisionObjectStore(context.Background(), deprovisionTestID); err != nil {
+		t.Fatalf("DeprovisionObjectStore err = %v, want nil", err)
+	}
+	if len(minter.deletedKeys) != 1 || minter.deletedKeys[0] != "GK-orphan" {
+		t.Fatalf("deleted keys = %v, want [GK-orphan] resolved by name", minter.deletedKeys)
+	}
+}
+
+func TestDeprovisionObjectStoreTreatsAbsentKeyNameAsDone(t *testing.T) {
+	minter := &deprovisionMinter{aliasErr: garageadmin.ErrBucketNotFound, keyNameErr: garageadmin.ErrKeyNotFound}
+	adapter, resolver := deprovisionFixture(t, minter)
+	delete(resolver.creds, deprovisionTestID)
+
+	if err := adapter.DeprovisionObjectStore(context.Background(), deprovisionTestID); err != nil {
+		t.Fatalf("DeprovisionObjectStore err = %v, want nil — nothing left on either plane is a converged step", err)
+	}
+	if len(minter.deletedKeys) != 0 {
+		t.Fatalf("deleted keys = %v, want none", minter.deletedKeys)
+	}
+}
+
+func TestDeprovisionObjectStoreFailsOnAmbiguousKeyLookup(t *testing.T) {
+	boom := errors.New("garageadmin: GetKeyInfo returned status 400")
+	minter := &deprovisionMinter{aliasID: "bkt-1", keyNameErr: boom}
+	adapter, resolver := deprovisionFixture(t, minter)
+	delete(resolver.creds, deprovisionTestID)
+
+	if err := adapter.DeprovisionObjectStore(context.Background(), deprovisionTestID); !errors.Is(err, boom) {
+		t.Fatalf("DeprovisionObjectStore err = %v, want the ambiguous lookup propagated — deleting the wrong key is worse than leaving this one", err)
 	}
 }
 

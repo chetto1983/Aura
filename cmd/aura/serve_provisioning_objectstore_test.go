@@ -124,6 +124,13 @@ func (f *fakeMinter) AllowBucketKey(_ context.Context, _, accessKey string, perm
 func (f *fakeMinter) DeleteBucket(_ context.Context, _ string) error { return nil }
 func (f *fakeMinter) DeleteKey(_ context.Context, _ string) error    { return nil }
 
+// KeyIDByName answers only for the teardown path, which these provisioning tests never
+// take. The teardown's own coverage lives in deprovisionMinter
+// (serve_provisioning_objectstore_deprovision_test.go), which can fail this lookup.
+func (f *fakeMinter) KeyIDByName(_ context.Context, _ string) (string, error) {
+	return "", garageadmin.ErrKeyNotFound
+}
+
 // TestEnsureForIdentitySharedNoMint asserts the local/shared principal (D-11) resolves
 // straight through with zero minting — Resolve already has the row, so CreateKey must
 // never be called.
