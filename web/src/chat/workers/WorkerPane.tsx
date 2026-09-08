@@ -38,17 +38,24 @@ function WorkerMessage() {
   return (
     <MessagePrimitive.Root className="w-full min-w-0">
       <div className="w-full min-w-0 space-y-2 overflow-x-auto">
-        <MessagePrimitive.Parts
-          components={{
-            Reasoning: ReasoningPillPart,
-            Text: () => (
-              <div className="w-full min-w-0 text-sm leading-relaxed text-text">
-                <MarkdownText constrainProse />
-              </div>
-            ),
-            tools: { Fallback: ToolFallback },
+        <MessagePrimitive.Parts>
+          {({ part }) => {
+            switch (part.type) {
+              case 'reasoning':
+                return <ReasoningPillPart text={part.text} />;
+              case 'text':
+                return (
+                  <div className="w-full min-w-0 text-sm leading-relaxed text-text">
+                    <MarkdownText constrainProse />
+                  </div>
+                );
+              case 'tool-call':
+                return <ToolFallback {...part} />;
+              default:
+                return null;
+            }
           }}
-        />
+        </MessagePrimitive.Parts>
       </div>
     </MessagePrimitive.Root>
   );
