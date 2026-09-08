@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
 import { stubNoCompaction } from './support/compactionRoute';
+import { stubEmptyWorkerStatuses } from './support/workerStatusRoute';
 
 // voice.spec.ts is the Phase-37C terminal acceptance E2E (WEBVOICE-01..04): it drives the
 // web voice lane end-to-end against the REAL rebuilt cockpit bundle served by the live
@@ -84,6 +85,7 @@ function sseResponse(route: Route, body: string) {
 // installConversationRoutes mirrors artifacts.spec.ts: a clean empty thread so the chat
 // lane mounts deterministically (no real conversation/asset/approval fetch interferes).
 async function installConversationRoutes(page: Page) {
+  await stubEmptyWorkerStatuses(page, [CONV_ID]);
   // Match BOTH the list (/api/conversations) and the id (/api/conversations/{id}) — a glob
   // `*` does not cross `/`, so the id path would otherwise fall through to the live backend
   // and 404 (which trips the degrade test's no-console-errors guard). Deeper sub-paths

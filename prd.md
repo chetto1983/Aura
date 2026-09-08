@@ -446,6 +446,11 @@ and receipt state around it. Spike 104 carries the closing evidence matrix.
 The 104S live probe confirmed that stopping a coordinator also terminates its
 descendants' running processes and records their cancellation, while its independent
 sibling completes once. This scope must remain intact for keyboard and pointer controls.
+The 104R graceful-restart probe rejected an accepted, undrained correction as
+`worker_run_ended`; neither resumed worker applied it. Its interrupted shell results
+also exposed a remaining classification defect: `[command cancelled]` was marked
+`ok` and displayed as Completed. Command cancellation must carry an explicit
+structured outcome through the existing tool event and visual-status pipeline.
 The 2026-09-08 paused-worker probe accepted `cancel` but rebuilt the model and marked
 the job succeeded. The resume observer must carry the explicit cancellation into the
 existing terminal-delivery path, rather than interpret it as another model-facing answer.

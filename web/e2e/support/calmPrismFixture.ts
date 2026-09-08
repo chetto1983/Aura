@@ -1,5 +1,6 @@
 import { expect, type Page, type Route } from '@playwright/test';
 import { stubNoCompaction } from './compactionRoute';
+import { stubEmptyWorkerStatuses } from './workerStatusRoute';
 
 export const CONV_ID = '88888888-8888-8888-8888-888888888888';
 export const EMPTY_CONV_ID = '88888888-8888-8888-8888-888888888889';
@@ -220,6 +221,7 @@ export async function installCalmPrismFixture(
   includeApprovals = true,
 ) {
   const id = empty ? EMPTY_CONV_ID : CONV_ID;
+  await stubEmptyWorkerStatuses(page, [CONV_ID, EMPTY_CONV_ID]);
   let matrixReady = false;
   await page.clock.setFixedTime(new Date('2026-07-16T12:00:00Z'));
   await page.addInitScript(

@@ -6,6 +6,7 @@ import type { Conversation } from '../src/conversations/useConversations';
 import { gotoAuthenticated } from './auth';
 import { collectBrowserHealth } from './support/browserHealth';
 import { stubNoCompaction } from './support/compactionRoute';
+import { stubEmptyWorkerStatuses } from './support/workerStatusRoute';
 
 // chat.spec.ts is the phase-proving E2E (CHAT-01 / D-03 / APRV-02 / CHAT-04): it drives
 // the Core-Value loop end-to-end against the REAL served SPA + the REAL sseAdapter/runtime
@@ -206,6 +207,7 @@ function conversationListBody(title: string): string {
 }
 
 async function installAppShellRoutes(page: Page) {
+  await stubEmptyWorkerStatuses(page, [CONV_ID]);
   await page.route('**/api/me', (route) =>
     route.fulfill({
       status: 200,

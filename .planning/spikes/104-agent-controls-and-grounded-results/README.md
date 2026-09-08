@@ -13,6 +13,29 @@ industrial-readiness claim is made.
 
 ## Evidence and references
 
+- 104R, conversation `01a07f35-3786-76e0-97ac-292e4635c742`: while R1
+  `w1-09dc869e2a6ec074f571657db7314658` executed its 80-second command, a UI steer
+  returned 202 with receipt `8900aef9-c80d-4acb-b5c7-360aa33819f6`, still accepted
+  at `04:10:57.427 UTC` for run `run-01a07f35-a208-7ca3-a134-3536fc42ab6e`.
+  An actual `docker compose restart aura` stopped both current commands; jobs were
+  queued with `context canceled` then reclaimed at attempt2. The receipt was
+  durably rejected with `worker_run_ended`. R1 ended with `{"value":2401}` and R2
+  `w2-ddd946311300f3aa2a6de6886cc63d92` with `{"value":6561}`; neither adopted
+  the old correction's requested `nota` field. Both finished succeeded.
+  This proves pending control settlement through graceful restart, not SIGKILL
+  settlement (the crash/reclaim substrate was separately exercised in spike103).
+  It exposed another UI correctness gap: the interrupted shell result explicitly
+  says `[command cancelled]`, yet its structured tool invocation status is `ok`
+  and its tile says Completed. That classification remains to be corrected.
+- CI at `d522023a5` failed 21 Web E2E cases because three mocked conversation
+  fixtures omitted the now-unconditional worker discovery stream. Their synthetic
+  IDs reached the real server and returned 401/404. Add empty native SSE responses
+  only for those fixture IDs; preserve strict browser-health assertions and live
+  worker streams. Local replay then passed 31 cases; two Windows desktop screenshot
+  comparisons still differ by 190 pixels in the Reasoning label. Their identical
+  baselines passed the screenshot assertions on Linux CI; that run failed afterward
+  at browser health. No screenshot threshold or baseline is changed by this fix.
+
 - 104Q3, 2026-09-08, conversation `01a07f06-eab6-7d19-9134-6916a6180066`,
   image `58cda375926a32d28e3f90bb6e7a113d9c4d9a2b515f9bc4f7f2d12d4957bc39`
   (`f387ad6ca-queuedcancel`): four running jobs and fifth
@@ -118,7 +141,8 @@ Do not edit the concurrent phase 1 sandbox/provisioning work.
 | Stop lifecycle races | Completion, queued/paused work and accepted controls resolve honestly | Paused 104F2 and queued 104Q3 passed; completion fence covered natively |
 | Nested control and visibility | Discover/control a live grandchild; preserve siblings and ancestry | Passed 104N direct controls and 104S coordinator subtree stop |
 | Ownership and input bounds | Real scoped API denies foreign/malformed/stale targets and oversized input | Missing for child controls |
-| Restart and control settlement | No silent application to a new incarnation; completed/canceled work is not retried as failure | Missing for controls |
+| Restart and control settlement | No silent application to a new incarnation; completed/canceled work is not retried as failure | Graceful restart passed 104R; hard-crash pending control case not yet measured |
+| Interrupted tool outcome | Canceled commands have an honest structured and visual status | Failed in 104R: cancellation text with status ok / Completed |
 | Grounded final answers | Delayed unpredictable outputs match actual reports; no fabricated IDs or premature success | Failed baseline |
 | Failure and hostile report data | Honest partial results; report text cannot become operator authority | Prior trust framing passed; broaden final-answer proof |
 | Desktop/mobile and EN/IT | MCP controls, keyboard, reload and readable status on both layouts | Reload, final text and EN/IT empty state passed; live Stop via keyboard passed 104S |
