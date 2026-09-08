@@ -127,6 +127,15 @@ of the first request, language matching, conditional persistence that preserves
 manual titles, and a bounded title-read query that refreshes the sidebar. Title
 failure must not fail chat; retain a short first-message fallback in that case.
 
+The same live title validation exposed a replay defect on 2026-09-08:
+conversation `01a0807a-f5a6-73ed-a516-0f84b5e9e005` was stopped while its
+90-second Python command was running. On reload, the store's synthetic
+"previous result unknown after crash recovery" tool result appeared as Completed.
+Project that exact recovery marker as an error through the existing assistant-ui
+`isError` field, preserving the unknown-result text. Do not label an unknown result
+as a successful execution or infer cancellation from arbitrary tool output.
+This observation proves a replay presentation defect, not the process's final exit.
+
 Deliverables are sent through the channel's artifact mechanism; a path alone is not
 delivery. Partial outcomes identify unfinished work and the applicable limit.
 
