@@ -217,25 +217,61 @@ func (a *objectStoreProvisionAdapter) ProvisionObjectStore(ctx context.Context, 
 	return err
 }
 
+// DeprovisionObjectStore removes the identity's scoped key, then its bucket, then the row
+// that names them — in that order, so a failure anywhere leaves the row still pointing at
+// whatever survived and the resumable saga can finish the job on a re-run. Deleting the row
+// first would strand the key with nothing left to find it by.
+//
+// MEASURED 2026-09-08 on the live deployment, purging twelve identities: the previous shape
+// left all twelve keys AND all twelve buckets behind while journalling the step `done`. Two
+// independent causes, both closed here. DeleteKey's error was discarded, so an unreachable
+// admin API (AURA_GARAGE_ADMIN_ENDPOINT defaults to compose's internal http://garage:3903,
+// which does not resolve outside the compose network) read as a successful teardown. And the
+// bucket id was read only from the in-process map the PROVISIONING process filled, which a
+// purge process — a later one by days, by design — never has; garageadmin.Client has
+// published BucketIDByAlias the whole time, and the alias is derived from the identity id.
 func (a *objectStoreProvisionAdapter) DeprovisionObjectStore(ctx context.Context, id string) error {
 	ictx := identityctx.WithIdentityID(ctx, id)
 	if creds, err := a.store.Resolve(ictx); err == nil {
-		_ = a.client.DeleteKey(ctx, creds.AccessKey)
+		if err := a.client.DeleteKey(ctx, creds.AccessKey); err != nil {
+			return err
+		}
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return err
 	}
-	a.mu.Lock()
-	bucketID := a.bucketIDs[id]
-	a.mu.Unlock()
-	// bucketID is only remembered by the SAME adapter instance that provisioned it, so a
-	// purge running in a later process (the grace window is days) cannot delete the bucket
-	// this way — the key + DB row ARE removed (Resolve/store.Delete read the DB), leaving an
-	// inert, credential-less bucket. That residual bucket is recorded as a data-retention
-	// follow-up in 36-14-SUMMARY (fail-closed-secure: no key → unreachable).
+	bucketID, err := a.deprovisionBucketID(ctx, id)
+	if err != nil {
+		return err
+	}
 	if bucketID != "" {
 		if err := a.client.DeleteBucket(ctx, bucketID); err != nil {
 			return err
 		}
 	}
 	return a.store.Delete(ctx, id)
+}
+
+// deprovisionBucketID resolves the bucket to delete, preferring the id this adapter
+// instance minted and falling back to the alias derived from the identity. An empty return
+// with a nil error means there is nothing left to delete: an alias Garage does not know
+// (ErrBucketNotFound) is a converged step, unlike a lookup that could not be read at all.
+func (a *objectStoreProvisionAdapter) deprovisionBucketID(ctx context.Context, id string) (string, error) {
+	a.mu.Lock()
+	bucketID := a.bucketIDs[id]
+	a.mu.Unlock()
+	if bucketID != "" {
+		return bucketID, nil
+	}
+	bucket, err := garageadmin.BucketForIdentity(id)
+	if err != nil {
+		return "", err
+	}
+	bucketID, err = a.client.BucketIDByAlias(ctx, bucket)
+	if errors.Is(err, garageadmin.ErrBucketNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return bucketID, nil
 }

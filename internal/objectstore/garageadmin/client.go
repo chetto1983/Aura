@@ -108,6 +108,11 @@ func (c *Client) post(ctx context.Context, path string, query url.Values, body a
 	return resp.StatusCode, raw, nil
 }
 
+// ErrBucketNotFound is BucketIDByAlias's 404: the global alias names no bucket. It is a
+// sentinel and not a status check at the call site because "already gone" is the one
+// non-2xx a teardown may treat as a converged step.
+var ErrBucketNotFound = errors.New("garageadmin: no bucket for global alias")
+
 // statusErr builds an error from an unexpected status, including a bounded snippet
 // of the body for diagnostics (admin errors carry a small JSON code object).
 func statusErr(op string, status int, raw []byte) error {
@@ -169,6 +174,13 @@ func (c *Client) BucketIDByAlias(ctx context.Context, alias string) (string, err
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxAdminBody))
 	if err != nil {
 		return "", fmt.Errorf("garageadmin: read GetBucketInfo: %w", err)
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		// A teardown running in a later process than the one that provisioned the bucket
+		// has only the alias, and it must tell "already gone" (converged) from "the admin
+		// API said something else" (retry). Everything non-2xx that is NOT a 404 stays an
+		// opaque failure: we could not check is not there is nothing there.
+		return "", fmt.Errorf("garageadmin: bucket alias %q: %w", alias, ErrBucketNotFound)
 	}
 	if !is2xx(resp.StatusCode) {
 		return "", statusErr("GetBucketInfo", resp.StatusCode, raw)
