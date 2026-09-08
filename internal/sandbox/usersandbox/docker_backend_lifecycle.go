@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"slices"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 )
@@ -112,13 +113,36 @@ func (b *DockerBackend) Stop(ctx context.Context, h BoxHandle) error {
 	if err := b.teardownEgress(ctx, h.IdentityID); err != nil {
 		return fmt.Errorf("stop: remove egress sidecar: %w", err)
 	}
-	if _, err := b.cli.ContainerRemove(ctx, h.ContainerID, client.ContainerRemoveOptions{Force: true}); err != nil {
+	if _, err := b.cli.ContainerRemove(ctx, h.ContainerID, client.ContainerRemoveOptions{Force: true}); ignoreNotFound(err) != nil {
 		return fmt.Errorf("stop: remove box: %w", err)
 	}
-	if _, err := b.cli.VolumeRemove(ctx, boxName(h.IdentityID), client.VolumeRemoveOptions{Force: true}); err != nil {
+	if _, err := b.cli.VolumeRemove(ctx, boxName(h.IdentityID), client.VolumeRemoveOptions{Force: true}); ignoreNotFound(err) != nil {
 		return fmt.Errorf("stop: remove workspace volume: %w", err)
 	}
 	return nil
+}
+
+// ignoreNotFound collapses "that object is already gone" into success and leaves every other
+// failure exactly as it was.
+//
+// It is what makes Stop match the contract agui.SandboxPurger states it relies on
+// ("destroying an absent box converges"). It did not, and the gap was not theoretical:
+// measured 2026-09-08, purging five identities whose boxes had already been removed failed
+// on `stop: remove box: No such container`. The sandbox leg runs FIRST in the reverse saga
+// and a failed step is never journalled, so one absent container made every later plane —
+// memory, object store, dirs — permanently unreachable for that identity.
+//
+// The distinction is the same one sandboxPurgerFor's comment draws for a backendless router:
+// "we could not check" and "there is nothing there" are different facts, and only one of them
+// is safe to treat as done. A 404 from the daemon is the second; an unreachable daemon is the
+// first and still fails. cerrdefs.IsNotFound covers both shapes moby produces — the sentinel
+// an HTTP 404 maps to via errhttp.ToNative, and the NotFound() marker its unexported
+// objectNotFoundError carries.
+func ignoreNotFound(err error) error {
+	if err == nil || cerrdefs.IsNotFound(err) {
+		return nil
+	}
+	return err
 }
 
 // materializeInputs copies the resolver's sources for the identity into the box volume
