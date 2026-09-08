@@ -463,6 +463,10 @@ and immediately closed its pane. Mounted cards are not an ownership authority: t
 existing conversation-scoped transcript endpoint validates access before opening SSE.
 The pane must retain that server boundary and clear on conversation changes, while
 allowing restored or nested workers absent from the currently mounted cards.
+The 2026-09-08 child-steer probe delivered the correct final JSON over SSE and
+persisted it, but the pane lost it when terminal status removed the live run ID.
+Completion metadata must not restart an already open transcript replay. Reconnect
+for a new execution or scope, retaining the stream through its own terminal event.
 
 Continuation retains the exact model-facing trust-framed tool preview. Static worker
 policy and delegated goal/context stay at their correct authority levels. Bad resume/

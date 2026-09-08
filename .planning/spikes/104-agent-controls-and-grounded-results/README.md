@@ -76,6 +76,24 @@ Do not edit the concurrent phase 1 sandbox/provisioning work.
 Every row needs authoritative evidence. A passing subset or a model's self-reported
 success must not be used to mark the goal complete.
 
+## First live control proof
+
+Conversation `01a07eb5-7c05-7c5a-be86-8a29a6bc212f`, image
+`d720496a0-controls104`: `w1-5336b66b3d9da4053e3a28227ae3c5a7` ran a real90-second
+Python command. The MCP sent two corrections during that command; both returned202,
+and replaying the second request with its same key returned202 without a third row.
+SQL showed exactly two ordered corrections, both drained at01:52:38.599UTC, and the
+final durable report was `{"verificato":144,"nota":"second104D"}`. The sibling
+`w2-9258eefdaa83fa444734c9bd56308bc7` ran once and returned196 unchanged. The root
+only acknowledged the handoff before genuine reports arrived.
+
+The pane showed both applied receipts but omitted the final JSON until reload,
+although a direct browser fetch proved TEXT_MESSAGE_CONTENT carried it. The pane's
+effect reopened the transcript when terminal status removed run_id, regressing the
+native message-part tree through a partial replay. Fix subscription lifetime before
+counting live visibility as passed. The shorter104C probe finished before the attempted
+steer observation and is not counted as a successful live correction.
+
 ## Additional identity measurement
 
 The bounded hash probe found a collision after 102603 candidates. With identity
