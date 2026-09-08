@@ -60,6 +60,9 @@
 #                              exit 0 without spending a model turn — the gpu_budget dry-run
 #                              path: everything up to here is free to re-run while debugging.
 #   MUSR_DOC_INGEST_WAIT_SEC   override the async multi-tenant ingest wait (default 90).
+#   MUSR_KEEP_IDENTITY_B=1     skip the EXIT-trap deprovision and leave identity B in the
+#                              deployment — for inspecting a failed run's state before it is
+#                              torn down. Every run without it purges her, on failure too.
 set -euo pipefail
 if (set +H) 2>/dev/null; then
   set +H # disable history expansion for any '!'-containing password
@@ -90,15 +93,51 @@ esac
 WORK="$(mktemp -d)"
 BIN="${WORK}/aura"
 DAEMON_PID=""
+IDENTITY_B_ID=""
+
+# deprovision_identity_b tears down the identity this run provisioned, through the SAME
+# saga that built her (`aura identity purge`, cmd/aura/identity_deprovision.go) — the D-27
+# reverse legs in order: sandbox box, conversations, ArcadeDB database, Garage bucket+key,
+# filesystem roots, identity row, Authula user. Never a SQL DELETE: that cascades the
+# Postgres catalog and strands every plane outside it with no owner row left to find it by.
+#
+# It is called from the EXIT trap, so it runs on failure and on interrupt too — the twelve
+# identities this harness accumulated on 2026-09-08 are what a run that only cleaned up on
+# success leaves behind. It never fails the run: the exit status the harness reports is the
+# acceptance verdict, and a teardown problem is reported, not substituted for it.
+deprovision_identity_b() {
+  [[ -n "${IDENTITY_B_ID}" ]] || return 0
+  [[ -x "${BIN}" ]] || return 0
+  if [[ "${MUSR_KEEP_IDENTITY_B:-0}" == "1" ]]; then
+    echo "==> MUSR_KEEP_IDENTITY_B=1 — leaving identity B ${IDENTITY_B_ID} provisioned"
+    return 0
+  fi
+  echo "==> deprovisioning identity B ${IDENTITY_B_ID} (aura identity purge, the D-27 saga)"
+  if "${BIN}" identity purge "${IDENTITY_B_ID}" --confirm >"${RUN_DIR}/deprovision.log" 2>&1; then
+    echo "==> identity B deprovisioned"
+  else
+    echo "WARN: deprovisioning identity B failed — see ${RUN_DIR}/deprovision.log." >&2
+    echo "      The saga is resumable: re-run 'aura identity purge ${IDENTITY_B_ID} --confirm'," >&2
+    echo "      or '--confirm --resume-resources' if the identity row is already gone." >&2
+  fi
+}
+
 cleanup() {
+  # Captured FIRST: everything below must leave the acceptance verdict untouched, and the
+  # explicit exit at the end is what guarantees it rather than the last command's status.
+  local status=$?
   if [[ -n "${DAEMON_PID:-}" ]] && kill -0 "${DAEMON_PID}" 2>/dev/null; then
     kill -TERM "${DAEMON_PID}" 2>/dev/null || true
     wait "${DAEMON_PID}" 2>/dev/null || true
   fi
+  # After the daemon is down, so nothing is still writing to the planes being torn down, and
+  # before WORK is removed, because ${BIN} lives inside it.
+  deprovision_identity_b || true
   cp -f "${SERVE_LOG:-/dev/null}" "${RUN_DIR}/daemon.log" 2>/dev/null || true
   if [[ "${WINDOWS_BASH}" -eq 0 ]]; then
     rm -rf "${WORK}" 2>/dev/null || true
   fi
+  exit "${status}"
 }
 trap cleanup EXIT
 
@@ -199,12 +238,18 @@ echo "==> daemon ready on ${BIND}"
 # work headlessly without ever putting the password/security-answer on argv, in env, or in a
 # log (T-01-03 secret discipline — reused exactly, not relaxed).
 #
-# Identity B is NOT deprovisioned at the end of this run: `aura identity` has no delete/
-# deprovision verb (cmd/aura/identity.go's dispatcher is list/get/grant/revoke/recover/
-# recover-operator/create — `revoke` is capability revoke, not identity teardown), and this
-# harness will not invent an undocumented one. She is intentionally left provisioned as the
-# live proof E2E-02 asks for — a real second identity, not debris — and her own seed document
-# and memory fact are scoped to her own data, never the operator's.
+# Identity B IS deprovisioned at the end of this run, from the EXIT trap, through
+# `aura identity purge` — the documented reverse of the verb that created her. That verb did
+# not exist when this harness was written, and the cost of the gap is measured: twelve
+# musr-live-run-b-* identities accumulated in the live deployment on 2026-09-08, one per
+# debug iteration, each holding an ArcadeDB database, a Garage bucket+key, a sandbox box, an
+# Authula user and a filesystem root. "Left provisioned as live proof" is one identity's
+# worth of argument and twelve identities' worth of debris; the transcripts under
+# artifacts/musr-live-run/ and the COT dumps are the evidence, not the row.
+#
+# Pass MUSR_KEEP_IDENTITY_B=1 to keep her — for inspecting a failed run's state before it is
+# torn down. Her seed document and memory fact are scoped to her own data, never the
+# operator's, so nothing outside her own planes is touched either way.
 # ============================================================================================
 IDENTITY_B_EMAIL="musr-live-run-b-$(date +%s)@example.invalid"
 IDENTITY_B_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"

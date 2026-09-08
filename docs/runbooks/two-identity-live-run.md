@@ -34,7 +34,24 @@ Debug env vars (not part of the acceptance contract): `MUSR_SKIP_CONVERSATIONS=1
 after document upload and the ingest wait, printing readiness without spending a model
 turn — the gpu_budget dry-run path everything up to the scored conversations should be
 exercised through first. `MUSR_DOC_INGEST_WAIT_SEC` overrides the async ingest wait
-(default 90s).
+(default 90s). `MUSR_KEEP_IDENTITY_B=1` skips the teardown described below.
+
+## What it cleans up
+
+Every run deprovisions the identity B it provisioned, from its `EXIT` trap — so on a
+failure and on a Ctrl-C too, not only on the happy path. It runs `aura identity purge
+<uuid> --confirm`, the documented reverse of the `aura identity create` that made her: the
+D-27 saga tears down the sandbox box, the conversations, the ArcadeDB database, the Garage
+bucket and key, the filesystem roots, the identity row and the Authula user, in that order
+and journalled at every step. The run's own exit status is preserved across the teardown —
+the acceptance verdict is never replaced by a cleanup result — and a teardown failure is
+reported as a warning naming `artifacts/musr-live-run/deprovision.log`, with the re-run
+command to finish it (the saga is resumable and skips the steps already done).
+
+Set `MUSR_KEEP_IDENTITY_B=1` to keep her, which is what you want while inspecting a failed
+run's state before it is torn down. Remember to purge her afterwards: twelve
+`musr-live-run-b-*` identities accumulated in the live deployment on 2026-09-08, one per
+debug iteration, back when no verb existed to remove them.
 
 ## What it produces
 
@@ -48,6 +65,7 @@ artifacts, never committed):
 | `timings.jsonl` | Both identities' tool-call start/end entries, merged and sorted by `ts`: `{"identity": "a"|"b", "tool": "<name>", "tool_call_id": "<id>", "phase": "start"|"end", "ts": <float>}`. |
 | `daemon.log` | The harness's own `aura serve` process log (not the compose service's). |
 | `identities.env` | Identity B's UUID, email, and the one Telegram deep link this run mints. |
+| `deprovision.log` | The `aura identity purge` output from the `EXIT`-trap teardown. Written on every run that does not set `MUSR_KEEP_IDENTITY_B=1`. |
 
 `scripts/musr_live_run_assert.go --transcripts artifacts/musr-live-run` reads exactly this
 directory — the literal string `artifacts/musr-live-run` appears in both the harness and the
