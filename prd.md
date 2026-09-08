@@ -473,6 +473,14 @@ without a side effect; the owner retains access and idempotent replay. Sessions
 are minted by Authula's native service on an isolated database. This covers session
 validation/authorization, while credential/TOTP login and actual model execution
 remain separate test scopes.
+The 104X live SIGKILL probe recovered its worker after the native lease expired,
+completed attempt 2 with {"value":6011}, and left the old correction undrained;
+the control API reports it rejected as owner_unavailable. The finished pane still
+showed the first, result-less shell invocation as Running with a growing timer.
+The tool renderer must honor assistant-ui's native part status: a terminal part
+without a result has an interrupted/unknown outcome, not ongoing execution or a
+successful command. Do not manufacture output or an elapsed duration when the
+original completion was never recorded.
 The 2026-09-08 paused-worker probe accepted `cancel` but rebuilt the model and marked
 the job succeeded. The resume observer must carry the explicit cancellation into the
 existing terminal-delivery path, rather than interpret it as another model-facing answer.
