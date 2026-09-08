@@ -280,7 +280,7 @@ func TestEnqueueDelegationQueuedResultShape(t *testing.T) {
 	if err := json.Unmarshal(workersJSON, &reports); err != nil {
 		t.Fatalf("workers array did not round-trip into []ChildReport: %v", err)
 	}
-	if len(reports) != len(goals) || reports[0].Status != StatusRunning {
-		t.Fatalf("round-tripped reports = %+v, want %d entries carrying StatusRunning", reports, len(goals))
+	if len(reports) != len(goals) || reports[0].Status != StatusQueued {
+		t.Fatalf("round-tripped reports = %+v, want %d entries carrying StatusQueued", reports, len(goals))
 	}
 }
