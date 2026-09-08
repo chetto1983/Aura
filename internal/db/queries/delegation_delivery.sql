@@ -1,6 +1,7 @@
 -- name: StageDelegationDelivery :one
 UPDATE aura.ingestion_jobs
-SET payload = sqlc.arg(payload),
+-- Preserve control intent committed while the worker held its original snapshot.
+SET payload = payload || sqlc.arg(payload)::jsonb,
     updated_at = now()
 WHERE id = sqlc.arg(id)
   AND identity_id = sqlc.arg(identity_id)

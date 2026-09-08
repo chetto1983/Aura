@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/channels"
@@ -314,7 +315,7 @@ func newDelegationDelivery(chat *chatEnv, store *cron.Store, reg *channels.Regis
 // absent-operator channel nudge (plan 51-10, newDelegationDelivery). A nil
 // pool (no Postgres configured) yields a no-op set of workers, matching
 // newRuntimeAssetProcessingWorker's own degrade.
-func newRuntimeDelegationWorker(chat *chatEnv, delivery *swarm.DelegationDelivery) *runtimeProcessingWorkers {
+func newRuntimeDelegationWorker(chat *chatEnv, delivery *swarm.DelegationDelivery, controls *agui.RunRegistry) *runtimeProcessingWorkers {
 	if chat == nil || chat.pool == nil || chat.cfg == nil {
 		return &runtimeProcessingWorkers{}
 	}
@@ -328,6 +329,10 @@ func newRuntimeDelegationWorker(chat *chatEnv, delivery *swarm.DelegationDeliver
 		Cfg:            *chat.cfg,
 		ParentRegistry: chat.reg,
 		Gateway:        chat.gateway,
+		Steer:          chat.steer,
+	}
+	if controls != nil {
+		workerTemplate.Controls = controls
 	}
 	// pauseParker is 51-06b Task 1's one-transaction seam: a claimed job's
 	// AwaitingInput report opens its own attributed pause AND parks its row

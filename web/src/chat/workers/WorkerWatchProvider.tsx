@@ -28,7 +28,7 @@ export function WorkerWatchProvider({
   });
   const registrations =
     registry.conversationId === conversationId ? registry.registrations : EMPTY_REGISTRATIONS;
-  const workers = useMemo(() => {
+  const registeredWorkers = useMemo(() => {
     if (registrations.size === 0) return EMPTY_WORKERS;
     const merged = new Map<string, DisplayChildReport>();
     for (const reports of registrations.values()) {
@@ -36,7 +36,20 @@ export function WorkerWatchProvider({
     }
     return [...merged.values()];
   }, [registrations]);
-  const statuses = useWorkerStatuses(workers.length > 0 ? conversationId : '');
+  const statuses = useWorkerStatuses(conversationId);
+  const workers = useMemo(() => {
+    const merged = new Map(registeredWorkers.map((worker) => [worker.child_id, worker]));
+    for (const status of statuses.values()) {
+      if (merged.has(status.child_id)) continue;
+      merged.set(status.child_id, {
+        child_id: status.child_id,
+        goal_index: merged.size,
+        status: status.status,
+        ...(status.goal === undefined ? {} : { goal: status.goal }),
+      });
+    }
+    return [...merged.values()];
+  }, [registeredWorkers, statuses]);
   const registerWorkers = useCallback(
     (registrationId: string, nextWorkers: readonly DisplayChildReport[]) => {
       setRegistry((previous) => {

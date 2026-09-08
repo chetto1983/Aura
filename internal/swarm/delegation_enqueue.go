@@ -112,8 +112,22 @@ func EnqueueDelegation(ctx context.Context, enq *DelegationEnqueuer, identityID 
 		})
 		workers = append(workers, delegationQueuedWorker{GoalIndex: i, ChildID: childID, Status: StatusRunning, Goal: goal})
 	}
-	if _, err := enq.Store.CreateBatch(ctx, requests); err != nil {
+	stored, err := enq.Store.CreateBatch(ctx, requests)
+	if err != nil {
 		return "", fmt.Errorf("swarm: enqueue delegation batch: %w", err)
+	}
+	if len(stored) != len(workers) {
+		return "", fmt.Errorf("swarm: queue returned an incomplete worker batch")
+	}
+	for i, job := range stored {
+		childID, _ := job.Payload["child_id"].(string)
+		if childID == "" {
+			childID = job.ID
+		}
+		if err := validatePathSegment("child id", childID); err != nil {
+			return "", err
+		}
+		workers[i].ChildID = childID
 	}
 	b, err := json.Marshal(delegationQueuedResult{Queued: len(requests), Note: delegationEnqueueNote, Workers: workers})
 	if err != nil {
@@ -149,8 +163,8 @@ func delegationIdempotencyKey(identityID, convID, invocationKey string, goalInde
 // alphabet regardless of what the goal text itself contains.
 func delegationChildID(idempotencyKey string, goalIndex int) string {
 	digest := strings.TrimPrefix(idempotencyKey, "swarm_delegation:")
-	if len(digest) > 8 {
-		digest = digest[:8]
+	if len(digest) > 32 {
+		digest = digest[:32]
 	}
 	return fmt.Sprintf("w%d-%s", goalIndex+1, digest)
 }

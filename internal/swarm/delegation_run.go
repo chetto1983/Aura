@@ -165,6 +165,19 @@ func (l *DelegationClaimLoop) runWithHeartbeat(ctx context.Context, job document
 	// two concurrently claimed jobs of one conversation write to two DIFFERENT
 	// transcript files instead of interleaving into the same one.
 	rc.ChildID = payload.ChildID
+	if rc.Controls != nil {
+		cancelStore, ok := l.Store.(workerCancellationStore)
+		if !ok {
+			cancel()
+			<-heartbeatErr
+			return ChildReport{}, nil, fmt.Errorf("worker controls require durable cancellation support")
+		}
+		rc.RecordCancellation = func(controlCtx context.Context, childID string) error {
+			return cancelStore.RequestWorkerCancellation(controlCtx, documents.WorkerCancellationRequest{
+				IdentityID: job.IdentityID, JobID: job.ID, WorkerID: l.workerID(), LeaseGeneration: job.LeaseGeneration, ChildID: childID,
+			})
+		}
+	}
 	if payload.Resume != nil {
 		// 51-06b Task 2: the ENTIRE tool-permission story. Seeding UserTurns (via
 		// ResumeTurns, below runChild) with the persisted history re-derives the

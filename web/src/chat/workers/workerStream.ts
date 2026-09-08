@@ -20,6 +20,11 @@ export interface WorkerStatus {
   readonly events: number;
   readonly duration_sec: number;
   readonly reported?: boolean;
+  readonly goal?: string;
+  readonly parent_child_id?: string;
+  readonly run_id?: string;
+  readonly can_steer?: boolean;
+  readonly can_cancel?: boolean;
 }
 
 export interface WorkerStatusStreamHandlers {
@@ -131,6 +136,13 @@ function decodeWorkerStatus(value: unknown): WorkerStatus | null {
     events: candidate.events,
     duration_sec: candidate.duration_sec,
     ...(candidate.reported === true ? { reported: true } : {}),
+    ...(typeof candidate.goal === 'string' ? { goal: candidate.goal } : {}),
+    ...(typeof candidate.parent_child_id === 'string'
+      ? { parent_child_id: candidate.parent_child_id }
+      : {}),
+    ...(typeof candidate.run_id === 'string' ? { run_id: candidate.run_id } : {}),
+    ...(candidate.can_steer === true ? { can_steer: true } : {}),
+    ...(candidate.can_cancel === true ? { can_cancel: true } : {}),
   };
 }
 

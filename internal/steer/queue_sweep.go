@@ -103,6 +103,11 @@ func (s *Sweeper) expireOne(ctx context.Context, row sqlc.AuraSteerQueue) error 
 				})
 			},
 			func() error {
+				// Child corrections retain their receipt in the scoped inbox. Copying
+				// their text into parent history would cross the execution boundary.
+				if row.TargetWorkerID.Valid {
+					return nil
+				}
 				seq, err := allocateSweepTurnSeq(ctx, q, row.ConversationID)
 				if err != nil {
 					return fmt.Errorf("allocate trace turn seq: %w", err)

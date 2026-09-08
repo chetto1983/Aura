@@ -1,4 +1,5 @@
 import { errorDetail } from './http';
+import { runControlURL, type WorkerControlTarget } from './runControlTarget';
 
 // steerRun — the cockpit's client for POST /agent/runs/{runID}/steer (amendment #132,
 // D-01/D-02, contract read from internal/agui/server_run_steer.go as 52-04/52-05 left it,
@@ -32,7 +33,7 @@ export interface SteerSend {
    *  reuses the ONE Idempotency-Key minted when steerRun was invoked (a transport retry of
    *  the identical steer, never a fresh one). Resolves on 202; throws SteerRefusal on a
    *  classified refusal (400/429/410), or a plain Error carrying errorDetail(res) otherwise. */
-  readonly send: () => Promise<void>;
+  readonly send: (signal?: AbortSignal) => Promise<void>;
 }
 
 /**
@@ -40,14 +41,15 @@ export interface SteerSend {
  * a runId-scoped POST with no streaming reply — mints the Idempotency-Key ONCE here (not per
  * fetch), and classifies every response into the ratified refusal ladder.
  */
-export function steerRun(runId: string, text: string): SteerSend {
+export function steerRun(runId: string, text: string, target?: WorkerControlTarget): SteerSend {
   const idempotencyKey = crypto.randomUUID();
-  const send = async (): Promise<void> => {
-    const res = await fetch(`/agent/runs/${encodeURIComponent(runId)}/steer`, {
+  const send = async (signal?: AbortSignal): Promise<void> => {
+    const res = await fetch(runControlURL(runId, 'steer', target), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
       credentials: 'same-origin',
-      body: JSON.stringify({ text }),
+      body: JSON.stringify(target === undefined ? { text } : { run_id: runId, text }),
+      ...(signal === undefined ? {} : { signal }),
     });
     if (res.status === 202) return;
     if (res.status === 400) throw new SteerRefusal('invalid', await errorDetail(res));
@@ -58,7 +60,9 @@ export function steerRun(runId: string, text: string): SteerSend {
         res.headers.get('Retry-After') ?? undefined,
       );
     }
-    if (res.status === 410) throw new SteerRefusal('ended', await errorDetail(res));
+    if (res.status === 410 || (target !== undefined && res.status === 404)) {
+      throw new SteerRefusal('ended', await errorDetail(res));
+    }
     throw new Error(await errorDetail(res));
   };
   return { send };

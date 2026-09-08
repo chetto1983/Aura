@@ -3,6 +3,7 @@ package swarm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/steer"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
@@ -37,14 +39,18 @@ type runtimeSnapshotter interface {
 // guard rejects depth >= AURA_SWARM_MAX_DEPTH. ConvID keys the per-child SessionID
 // and the transcript directory.
 type RunConfig struct {
-	ParentBudget   *agent.Budget
-	ParentRegistry *tools.Registry
-	Client         llm.Client
-	LLM            llm.Config
-	Runtime        runtimeSnapshotter
-	Cfg            config.Config
-	ConvID         string
-	Depth          int
+	ParentBudget       *agent.Budget
+	ParentRegistry     *tools.Registry
+	Client             llm.Client
+	LLM                llm.Config
+	Runtime            runtimeSnapshotter
+	Cfg                config.Config
+	ConvID             string
+	Depth              int
+	Controls           agent.WorkerRuntime
+	Steer              *steer.PostgresStore
+	ParentChildID      string
+	RecordCancellation func(context.Context, string) error
 	// Context is the SWARM-01 goal/context split (plan 51-03), framed with the goal
 	// as untrusted RoleUser data. Shared across every goal in this call.
 	Context string
@@ -245,6 +251,22 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 		report.Status, report.Error = StatusFailed, err.Error()
 		return report, nil
 	}
+	workerCtx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	control, inbox, err := openWorkerControl(workerCtx, rc, childID, cancel)
+	if err != nil {
+		report.Status, report.Error = StatusFailed, err.Error()
+		return report, nil
+	}
+	finishControl := func() {
+		if control.Finish != nil {
+			if err := control.Finish(); err != nil {
+				slog.Warn("swarm.worker.control_settlement_failed", "child", childID, "error", err)
+			}
+		}
+	}
+	defer finishControl()
+	rc.ChildID = childID
 
 	registry, nestingClosed := workerRegistry(rc)
 	briefContext := rc.Context
@@ -280,6 +302,7 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 		LedgerConversationID: rc.ConvID,
 		Gateway:              rc.Gateway,
 		UserTurns:            userTurns,
+		Steer:                inbox,
 		// FailOpen (not the Register/NewHookManager default FailClosed): a recorder bug
 		// must degrade to "resume state incomplete", never abort a live worker turn --
 		// this hook is a best-effort observer, not a security gate.
@@ -293,11 +316,14 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 	// worker is constructed for EVERY caller (the synchronous wave above AND the
 	// background claim loop's runWithHeartbeat, delegation_run.go), so this is the
 	// ONE place the inactivity deadline lives -- never duplicated per caller.
-	workerCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	idleDur := time.Duration(rc.Cfg.SwarmChildIdleSec) * time.Second
-	staleness := newChildStaleness(cancel, idleDur)
+	staleness := newChildStaleness(func() { cancel(context.DeadlineExceeded) }, idleDur)
 	defer staleness.Stop()
+	_ = dumpTranscript(rc.Cfg.RunDir, rc.ConvID, childID, agent.Event{
+		RequestID: uuid.Must(uuid.NewV7()), Author: childID, Timestamp: started.UTC(), Actions: agent.Actions{StateDelta: map[string]any{
+			"swarm_child_id": childID, "swarm_child_status": StatusRunning, "swarm_child_goal": goal, "swarm_parent_child_id": rc.ParentChildID,
+		}},
+	})
 
 	ic := agent.InvocationContext{
 		// A worker's events are consumed by the loop below and dumped to a per-child
@@ -336,7 +362,11 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 		}
 	}
 
+	finishControl()
 	report = normalizeStaleReport(report, staleness.Stalled(), idleDur)
+	if errors.Is(context.Cause(workerCtx), agent.ErrWorkerStopped) {
+		report.Status, report.Error, report.Summary = StatusCanceled, "", "Stopped by the operator. Do not retry without a new operator request."
+	}
 
 	// Terminal marker (51-11): every transcript line up to here only echoes the
 	// worker's OWN stream -- nothing was ever written AFTER the loop to say how

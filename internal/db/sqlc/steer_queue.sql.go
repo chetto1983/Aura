@@ -34,6 +34,8 @@ WITH owner AS (
     FROM aura.steer_queue q, owner
     WHERE q.conversation_id = $1
       AND q.identity_id = owner.identity_id
+      AND ($2::uuid IS NULL OR owner.identity_id = $2::uuid)
+      AND q.target_run_id IS NOT DISTINCT FROM $3::text
       AND q.drained_at IS NULL
       AND q.expired_at IS NULL
       AND (q.expires_at IS NULL OR q.expires_at > now())
@@ -44,10 +46,16 @@ WITH owner AS (
     SET drained_at = now()
     FROM candidates c
     WHERE q.id = c.id
-    RETURNING q.id, q.identity_id, q.conversation_id, q.kind, q.source, q.body, q.created_at, q.expires_at, q.drained_at, q.expired_at, q.expiry_reason, q.nudged_at, q.fanout_key, q.delivery_key
+    RETURNING q.id, q.identity_id, q.conversation_id, q.kind, q.source, q.body, q.created_at, q.expires_at, q.drained_at, q.expired_at, q.expiry_reason, q.nudged_at, q.fanout_key, q.delivery_key, q.target_worker_id, q.target_run_id
 )
-SELECT id, identity_id, conversation_id, kind, source, body, created_at, expires_at, drained_at, expired_at, expiry_reason, nudged_at, fanout_key, delivery_key FROM drained ORDER BY created_at, id
+SELECT id, identity_id, conversation_id, kind, source, body, created_at, expires_at, drained_at, expired_at, expiry_reason, nudged_at, fanout_key, delivery_key, target_worker_id, target_run_id FROM drained ORDER BY created_at, id
 `
+
+type DrainSteerRowsParams struct {
+	ConversationID     string      `json:"conversation_id"`
+	ExpectedIdentityID pgtype.UUID `json:"expected_identity_id"`
+	TargetRunID        pgtype.Text `json:"target_run_id"`
+}
 
 type DrainSteerRowsRow struct {
 	ID             pgtype.UUID        `json:"id"`
@@ -64,6 +72,8 @@ type DrainSteerRowsRow struct {
 	NudgedAt       pgtype.Timestamptz `json:"nudged_at"`
 	FanoutKey      pgtype.Text        `json:"fanout_key"`
 	DeliveryKey    pgtype.Text        `json:"delivery_key"`
+	TargetWorkerID pgtype.Text        `json:"target_worker_id"`
+	TargetRunID    pgtype.Text        `json:"target_run_id"`
 }
 
 // The drain IS the claim (the same conditional-update-as-idempotency-key idiom as
@@ -74,8 +84,8 @@ type DrainSteerRowsRow struct {
 // identity_id = owner.identity_id is defense in depth (T-51-07): every row for a given
 // conv is written with that conv's TRUE owner by PushSteerRow, so this can only ever
 // exclude a row in the event of data that did not come through Push.
-func (q *Queries) DrainSteerRows(ctx context.Context, conversationID string) ([]DrainSteerRowsRow, error) {
-	rows, err := q.db.Query(ctx, drainSteerRows, conversationID)
+func (q *Queries) DrainSteerRows(ctx context.Context, arg DrainSteerRowsParams) ([]DrainSteerRowsRow, error) {
+	rows, err := q.db.Query(ctx, drainSteerRows, arg.ConversationID, arg.ExpectedIdentityID, arg.TargetRunID)
 	if err != nil {
 		return nil, err
 	}
@@ -98,6 +108,8 @@ func (q *Queries) DrainSteerRows(ctx context.Context, conversationID string) ([]
 			&i.NudgedAt,
 			&i.FanoutKey,
 			&i.DeliveryKey,
+			&i.TargetWorkerID,
+			&i.TargetRunID,
 		); err != nil {
 			return nil, err
 		}
@@ -110,7 +122,7 @@ func (q *Queries) DrainSteerRows(ctx context.Context, conversationID string) ([]
 }
 
 const listDueSteerRows = `-- name: ListDueSteerRows :many
-SELECT id, identity_id, conversation_id, kind, source, body, created_at, expires_at, drained_at, expired_at, expiry_reason, nudged_at, fanout_key, delivery_key FROM aura.steer_queue
+SELECT id, identity_id, conversation_id, kind, source, body, created_at, expires_at, drained_at, expired_at, expiry_reason, nudged_at, fanout_key, delivery_key, target_worker_id, target_run_id FROM aura.steer_queue
 WHERE drained_at IS NULL
   AND expired_at IS NULL
   AND expires_at IS NOT NULL
@@ -154,6 +166,8 @@ func (q *Queries) ListDueSteerRows(ctx context.Context, arg ListDueSteerRowsPara
 			&i.NudgedAt,
 			&i.FanoutKey,
 			&i.DeliveryKey,
+			&i.TargetWorkerID,
+			&i.TargetRunID,
 		); err != nil {
 			return nil, err
 		}
@@ -166,7 +180,7 @@ func (q *Queries) ListDueSteerRows(ctx context.Context, arg ListDueSteerRowsPara
 }
 
 const listUnnudgedDelegationResults = `-- name: ListUnnudgedDelegationResults :many
-SELECT id, identity_id, conversation_id, kind, source, body, created_at, expires_at, drained_at, expired_at, expiry_reason, nudged_at, fanout_key, delivery_key FROM aura.steer_queue
+SELECT id, identity_id, conversation_id, kind, source, body, created_at, expires_at, drained_at, expired_at, expiry_reason, nudged_at, fanout_key, delivery_key, target_worker_id, target_run_id FROM aura.steer_queue
 WHERE kind = 'delegation_result'
   AND fanout_key IS NOT NULL
   AND drained_at IS NULL
@@ -212,6 +226,8 @@ func (q *Queries) ListUnnudgedDelegationResults(ctx context.Context, arg ListUnn
 			&i.NudgedAt,
 			&i.FanoutKey,
 			&i.DeliveryKey,
+			&i.TargetWorkerID,
+			&i.TargetRunID,
 		); err != nil {
 			return nil, err
 		}
@@ -329,26 +345,32 @@ WITH owner AS (
       AND q.delivery_key = $7::text
 )
 INSERT INTO aura.steer_queue (
-    identity_id, conversation_id, kind, source, body, expires_at, fanout_key, delivery_key
+    identity_id, conversation_id, kind, source, body, expires_at, fanout_key, delivery_key,
+    target_worker_id, target_run_id
 )
 SELECT owner.identity_id, $1, $2, $3,
-       $4, $5, $6, $7
+       $4, $5, $6, $7,
+       $8, $9
 FROM owner, capacity
 WHERE owner.identity_id IS NOT NULL
-  AND (capacity.n < $8::int OR EXISTS (SELECT 1 FROM existing_delivery))
+  AND ($10::uuid IS NULL OR owner.identity_id = $10::uuid)
+  AND (capacity.n < $11::int OR EXISTS (SELECT 1 FROM existing_delivery))
 ON CONFLICT (identity_id, conversation_id, delivery_key) WHERE delivery_key IS NOT NULL
 DO UPDATE SET delivery_key = EXCLUDED.delivery_key
 `
 
 type PushSteerRowParams struct {
-	ConversationID string             `json:"conversation_id"`
-	Kind           string             `json:"kind"`
-	Source         string             `json:"source"`
-	Body           string             `json:"body"`
-	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
-	FanoutKey      pgtype.Text        `json:"fanout_key"`
-	DeliveryKey    pgtype.Text        `json:"delivery_key"`
-	MaxQueue       int32              `json:"max_queue"`
+	ConversationID     string             `json:"conversation_id"`
+	Kind               string             `json:"kind"`
+	Source             string             `json:"source"`
+	Body               string             `json:"body"`
+	ExpiresAt          pgtype.Timestamptz `json:"expires_at"`
+	FanoutKey          pgtype.Text        `json:"fanout_key"`
+	DeliveryKey        pgtype.Text        `json:"delivery_key"`
+	TargetWorkerID     pgtype.Text        `json:"target_worker_id"`
+	TargetRunID        pgtype.Text        `json:"target_run_id"`
+	ExpectedIdentityID pgtype.UUID        `json:"expected_identity_id"`
+	MaxQueue           int32              `json:"max_queue"`
 }
 
 // The D-06/D-07/D-08 durable steer/delegation-result queue. Push and Drain satisfy a
@@ -375,6 +397,9 @@ func (q *Queries) PushSteerRow(ctx context.Context, arg PushSteerRowParams) (int
 		arg.ExpiresAt,
 		arg.FanoutKey,
 		arg.DeliveryKey,
+		arg.TargetWorkerID,
+		arg.TargetRunID,
+		arg.ExpectedIdentityID,
 		arg.MaxQueue,
 	)
 	if err != nil {

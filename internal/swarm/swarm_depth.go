@@ -108,7 +108,7 @@ func workerRegistry(rc RunConfig) (*tools.Registry, bool) {
 		return out, true
 	}
 	out.Register(&tools.SwarmSpawn{
-		Runner: &RunnerAdapter{Cfg: rc.Cfg, Depth: rc.Depth + 1},
+		Runner: &RunnerAdapter{Cfg: rc.Cfg, Depth: rc.Depth + 1, Controls: rc.Controls, Steer: rc.Steer, ParentChildID: rc.ChildID, RecordCancellation: rc.RecordCancellation},
 		Caps: tools.SwarmCaps{
 			MaxGoals:      rc.Cfg.MaxSwarmGoals,
 			MaxConcurrent: rc.Cfg.MaxSwarmConcurrent,

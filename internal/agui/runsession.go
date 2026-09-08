@@ -50,9 +50,13 @@ type runSubscriber struct {
 // guarded by mu — append and subscribeFrom serialize on it, which is what makes
 // replay-then-live gapless and duplicate-free by construction.
 type RunSession struct {
-	RunID      string
-	ThreadID   string
-	IdentityID string // owner captured at start (scopedIdentityID) — resume gate, §3.2
+	RunID        string
+	ThreadID     string
+	IdentityID   string // owner captured at start (scopedIdentityID) — resume gate, §3.2
+	WorkerID     string // Empty for a primary conversation run.
+	steerEnabled bool
+	operatorStop func(context.Context) error
+	controlMu    sync.Mutex
 
 	mu         sync.Mutex
 	ring       []seqEvent // fixed-cap ring; the oldest entry is overwritten when full

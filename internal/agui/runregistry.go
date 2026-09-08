@@ -26,7 +26,8 @@ const (
 )
 
 // errRunRegistryFull refuses Start past the live-run cap BEFORE the thread lock is
-// taken (§2.4 DoS bound); RS-04 maps it to 503 + Retry-After.
+// taken (§2.4 DoS bound); RS-04 maps it to 503 + Retry-After. Worker admission
+// stays with the swarm queue and budget, as before workers acquired controls.
 var errRunRegistryFull = errors.New("agui: run registry at max live runs")
 
 // errRunRegistryClosed refuses Start after Close so a shutdown race can never leak
@@ -35,7 +36,7 @@ var errRunRegistryClosed = errors.New("agui: run registry closed")
 
 // threadKey composites (identity, thread) so two identities never share a
 // live-run discovery slot — the runner's composite-key rationale (D-23).
-type threadKey struct{ identity, thread string }
+type threadKey struct{ identity, thread, worker string }
 
 // runRegistryConfig bundles the resolved caps + linger + wallclock (§2.5).
 // maxWallclock is carried for RS-04's detachedRunContext bound; the registry
@@ -113,17 +114,20 @@ func newRunRegistry(cfg runRegistryConfig) *RunRegistry {
 // ctx handle, unlock the thread-lock release whose ownership transfers from the
 // handler defer to the session's terminal cleanup.
 type runParams struct {
-	runID      string
-	threadID   string
-	identityID string
-	cancel     context.CancelFunc
-	unlock     func()
+	runID        string
+	threadID     string
+	identityID   string
+	cancel       context.CancelFunc
+	unlock       func()
+	workerID     string
+	steerEnabled bool
+	operatorStop func(context.Context) error
 }
 
 // Start registers a new session, refusing past the live cap (errRunRegistryFull →
-// 503, RS-04) or after Close. len(byThread) IS the live count — byThread holds
-// exactly the non-terminal sessions, so a lingering terminal run never consumes a
-// live slot. The session's cleanup chains the byThread removal with the thread
+// 503, RS-04) or after Close. Primary entries in byThread count toward the parent
+// cap, so worker observation and lingering terminal runs consume no parent slot.
+// The session's cleanup chains the byThread removal with the thread
 // unlock, both fired exactly once at terminal (finish).
 func (r *RunRegistry) Start(p runParams) (*RunSession, error) {
 	r.mu.Lock()
@@ -131,10 +135,13 @@ func (r *RunRegistry) Start(p runParams) (*RunSession, error) {
 	if r.closed {
 		return nil, errRunRegistryClosed
 	}
-	if len(r.byThread) >= r.cfg.maxLive {
+	if p.workerID == "" && r.primaryCountLocked() >= r.cfg.maxLive {
 		return nil, errRunRegistryFull
 	}
-	key := threadKey{identity: p.identityID, thread: p.threadID}
+	key := threadKey{identity: p.identityID, thread: p.threadID, worker: p.workerID}
+	if p.workerID != "" && r.byThread[key] != nil {
+		return nil, errWorkerAlreadyRunning
+	}
 	var sess *RunSession
 	cleanup := func() {
 		r.mu.Lock()
@@ -146,8 +153,15 @@ func (r *RunRegistry) Start(p runParams) (*RunSession, error) {
 			p.unlock()
 		}
 	}
-	sess = newRunSession(p.runID, p.threadID, p.identityID, r.cfg.ringCap, r.cfg.subBuffer, cleanup)
+	ringCap := r.cfg.ringCap
+	if p.workerID != "" {
+		ringCap = 1
+	} // Worker transcripts have their own durable SSE surface.
+	sess = newRunSession(p.runID, p.threadID, p.identityID, ringCap, r.cfg.subBuffer, cleanup)
 	sess.cancel = p.cancel
+	sess.WorkerID = p.workerID
+	sess.steerEnabled = p.steerEnabled
+	sess.operatorStop = p.operatorStop
 	sess.now = r.now
 	r.byRun[p.runID] = sess
 	r.byThread[key] = sess
@@ -162,7 +176,19 @@ func (r *RunRegistry) Start(p runParams) (*RunSession, error) {
 func (r *RunRegistry) atCapacity() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.closed || len(r.byThread) >= r.cfg.maxLive
+	return r.closed || r.primaryCountLocked() >= r.cfg.maxLive
+}
+
+// Worker admission is already bounded by the swarm queue and budget. Observing
+// it must not take away a primary slot the operator needs to direct that work.
+func (r *RunRegistry) primaryCountLocked() int {
+	count := 0
+	for key := range r.byThread {
+		if key.worker == "" {
+			count++
+		}
+	}
+	return count
 }
 
 // Get resolves a session by run id — live or lingering-terminal (the resume route's

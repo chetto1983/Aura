@@ -2,6 +2,7 @@ package swarm
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -16,15 +17,17 @@ func (s *fakeDelegationStore) CreateBatch(_ context.Context, reqs []documents.Cr
 	for i, req := range reqs {
 		jobs[i] = documents.IngestionJob{
 			ID: req.IdempotencyKey, IdentityID: req.IdentityID, JobType: req.JobType,
+			Payload: req.Payload,
 		}
 	}
 	return jobs, nil
 }
 
 type recordingDelegationEnqueueStore struct {
-	calls    int
-	requests []documents.CreateIngestionJobRequest
-	err      error
+	calls          int
+	requests       []documents.CreateIngestionJobRequest
+	err            error
+	storedChildIDs []string
 }
 
 func (s *recordingDelegationEnqueueStore) CreateBatch(_ context.Context, reqs []documents.CreateIngestionJobRequest) ([]documents.IngestionJob, error) {
@@ -33,7 +36,30 @@ func (s *recordingDelegationEnqueueStore) CreateBatch(_ context.Context, reqs []
 	if s.err != nil {
 		return nil, s.err
 	}
-	return make([]documents.IngestionJob, len(reqs)), nil
+	jobs := make([]documents.IngestionJob, len(reqs))
+	for i, req := range reqs {
+		payload := req.Payload
+		if i < len(s.storedChildIDs) {
+			payload = map[string]any{"child_id": s.storedChildIDs[i]}
+		}
+		jobs[i] = documents.IngestionJob{ID: req.IdempotencyKey, IdentityID: req.IdentityID, JobType: req.JobType, Payload: payload}
+	}
+	return jobs, nil
+}
+
+func TestEnqueueAcknowledgesStoredLegacyWorkerIdentity(t *testing.T) {
+	store := &recordingDelegationEnqueueStore{storedChildIDs: []string{"w1-legacy"}}
+	result, err := EnqueueDelegation(context.Background(), &DelegationEnqueuer{Store: store}, "identity-1", []string{"same goal"}, DelegationPayload{ConversationID: "conv-1", ParentRunID: "same-operation"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var queued delegationQueuedResult
+	if err := json.Unmarshal([]byte(result), &queued); err != nil {
+		t.Fatal(err)
+	}
+	if len(queued.Workers) != 1 || queued.Workers[0].ChildID != "w1-legacy" {
+		t.Fatalf("acknowledgement points away from existing job: %+v", queued)
+	}
 }
 
 func TestEnqueueDelegationSubmitsOneCompleteBatch(t *testing.T) {

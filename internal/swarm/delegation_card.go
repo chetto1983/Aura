@@ -95,6 +95,8 @@ func cardGlyph(status string) string {
 		return "❌"
 	case StatusStalled:
 		return "⏱"
+	case StatusCanceled:
+		return "⏹"
 	case StatusDeadLetter:
 		return "⚠️"
 	default:
@@ -110,6 +112,8 @@ func fanoutLabel(status string) string {
 		return "completato"
 	case StatusStalled:
 		return "bloccato"
+	case StatusCanceled:
+		return "annullato"
 	case StatusDeadLetter:
 		return "non consegnato"
 	default: // StatusFailed and any forward-compat status render as a failure

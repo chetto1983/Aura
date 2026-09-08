@@ -561,7 +561,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// or nil chat.pool degrades every leg to a no-op rather than dereferencing —
 	// see newDelegationDelivery.
 	delegationDelivery := newDelegationDelivery(chat, store, reg)
-	delegationWorker := newRuntimeDelegationWorker(chat, delegationDelivery)
+	delegationWorker := newRuntimeDelegationWorker(chat, delegationDelivery, runRegistry)
 
 	// Crash-orphan reconciler (D-01d): closes a start∧¬end reservation left by a crash
 	// between reserve and Execute by APPENDING a terminal indeterminate `end` fact — it

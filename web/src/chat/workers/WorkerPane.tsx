@@ -17,6 +17,7 @@ import { MarkdownText } from '../MarkdownText';
 import { openWorkerStream } from './workerStream';
 import { WorkerPicker } from './WorkerPicker';
 import { useWatchWorker } from './workerWatchControls';
+import { WorkerControls } from './WorkerControls';
 
 export interface WorkerPaneProps {
   readonly conversationId: string;
@@ -61,7 +62,9 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
   // unmount when we open it, and restored workers need no mounted source card.
   const workerSelected =
     conversationId.length > 0 && childId.length > 0 && openedConversationId === conversationId;
-  const lifecycleStatus = statuses.get(childId)?.status;
+  const workerStatus = statuses.get(childId);
+  const lifecycleStatus = workerStatus?.status;
+  const executionId = workerStatus?.run_id;
   const streamKey = `${conversationId}\u0000${childId}`;
   const [streamState, setStreamState] = useState<{
     readonly key: string;
@@ -86,7 +89,7 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
       },
     });
     return stream.close;
-  }, [childId, conversationId, streamKey, workerSelected, lifecycleStatus]);
+  }, [childId, conversationId, streamKey, workerSelected, lifecycleStatus, executionId]);
 
   useEffect(() => {
     if (!workerSelected) onClose();
@@ -154,7 +157,21 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
       />
 
       <div className="mb-3 space-y-2 border-b border-border pb-3">
-        <p className="break-words text-sm font-medium leading-relaxed text-text">
+        {workerStatus?.parent_child_id ? (
+          <button
+            type="button"
+            onClick={() => {
+              watchWorker(workerStatus.parent_child_id ?? '');
+            }}
+            className="min-h-11 text-xs text-text-muted hover:text-text"
+          >
+            {t('swarm.controls.parent')}
+          </button>
+        ) : null}
+        <p
+          className="line-clamp-3 break-words text-sm font-medium leading-relaxed text-text"
+          title={selectedWorker?.goal ?? childId}
+        >
           {selectedWorker?.goal ?? childId}
         </p>
         <p className="text-xs text-text-muted">{t(statusLabelKey(selectedStatus))}</p>
@@ -186,6 +203,14 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
           </ReadonlyThreadProvider>
         </AssistantRuntimeProvider>
       </div>
+      {workerStatus !== undefined ? (
+        <WorkerControls
+          key={`${conversationId}:${childId}`}
+          conversationId={conversationId}
+          childId={childId}
+          status={workerStatus}
+        />
+      ) : null}
     </section>
   );
 }

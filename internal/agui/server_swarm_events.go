@@ -166,7 +166,15 @@ func swarmTerminalStatus(ev *agent.Event) (string, bool) {
 		return "", false
 	}
 	status, ok := ev.Actions.StateDelta["swarm_child_status"].(string)
-	return status, ok && status != ""
+	if !ok {
+		return "", false
+	}
+	switch status {
+	case "ok", "failed", "needs_user_input", "stalled", "dead_letter", "canceled":
+		return status, true
+	default:
+		return "", false
+	}
 }
 
 func swarmIdleTerminalEvent(childID string) *agent.Event {

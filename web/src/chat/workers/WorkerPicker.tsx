@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { DisplayChildReport } from '../displays/types';
 import { statusDotClass } from '../displays/swarmRow';
@@ -18,14 +18,19 @@ function selectedIndex(workers: readonly DisplayChildReport[], watchedChildId: s
 
 export function WorkerPicker({ workers, statuses, watchedChildId, onSelect }: WorkerPickerProps) {
   const { t } = useTranslation();
-  const [focusIndex, setFocusIndex] = useState(() => selectedIndex(workers, watchedChildId));
+  const [focusedChildId, setFocusedChildId] = useState(watchedChildId);
+  const focusIndex = selectedIndex(workers, focusedChildId);
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  const selectedRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    selectedRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [watchedChildId]);
 
   if (workers.length === 0) return null;
 
   const focusAt = (index: number) => {
     const normalized = (index + workers.length) % workers.length;
-    setFocusIndex(normalized);
+    setFocusedChildId(workers[normalized]?.child_id ?? watchedChildId);
     refs.current[normalized]?.focus();
   };
 
@@ -63,7 +68,7 @@ export function WorkerPicker({ workers, statuses, watchedChildId, onSelect }: Wo
     <div
       role="tablist"
       aria-label={t('swarm.picker.label')}
-      className="mb-3 flex shrink-0 flex-wrap gap-1 border-b border-border pb-2"
+      className="mb-3 flex shrink-0 gap-1 overflow-x-auto border-b border-border pb-2"
     >
       {workers.map((worker, index) => {
         const active = worker.child_id === watchedChildId;
@@ -74,6 +79,7 @@ export function WorkerPicker({ workers, statuses, watchedChildId, onSelect }: Wo
             key={worker.child_id}
             ref={(element) => {
               refs.current[index] = element;
+              if (active) selectedRef.current = element;
             }}
             type="button"
             role="tab"
@@ -83,7 +89,7 @@ export function WorkerPicker({ workers, statuses, watchedChildId, onSelect }: Wo
             title={goal}
             data-active={active}
             onFocus={() => {
-              setFocusIndex(index);
+              setFocusedChildId(worker.child_id);
             }}
             onClick={() => {
               onSelect(worker.child_id);
@@ -91,7 +97,7 @@ export function WorkerPicker({ workers, statuses, watchedChildId, onSelect }: Wo
             onKeyDown={(event) => {
               onKeyDown(event, index);
             }}
-            className="relative flex min-h-[44px] min-w-[44px] max-w-full items-center gap-2 border-b-2 border-transparent px-3 py-2 text-left text-[0.75rem] text-text-muted outline-none hover:text-text focus-visible:ring-2 focus-visible:ring-accent data-[active=true]:border-accent data-[active=true]:text-text"
+            className="relative flex min-h-[44px] min-w-[44px] max-w-56 shrink-0 items-center gap-2 border-b-2 border-transparent px-3 py-2 text-left text-[0.75rem] text-text-muted outline-none hover:text-text focus-visible:ring-2 focus-visible:ring-accent data-[active=true]:border-accent data-[active=true]:text-text"
           >
             <span
               aria-hidden="true"
@@ -99,7 +105,10 @@ export function WorkerPicker({ workers, statuses, watchedChildId, onSelect }: Wo
             />
             <span className="flex min-w-0 flex-col gap-1">
               <span className="max-w-48 truncate">{goal}</span>
-              <span aria-hidden="true" className="font-mono text-xs text-text-faint">
+              <span
+                aria-hidden="true"
+                className="max-w-48 truncate font-mono text-xs text-text-faint"
+              >
                 {worker.child_id}
               </span>
             </span>

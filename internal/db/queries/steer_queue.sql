@@ -34,12 +34,15 @@ WITH owner AS (
       AND q.delivery_key = sqlc.narg(delivery_key)::text
 )
 INSERT INTO aura.steer_queue (
-    identity_id, conversation_id, kind, source, body, expires_at, fanout_key, delivery_key
+    identity_id, conversation_id, kind, source, body, expires_at, fanout_key, delivery_key,
+    target_worker_id, target_run_id
 )
 SELECT owner.identity_id, sqlc.arg(conversation_id), sqlc.arg(kind), sqlc.arg(source),
-       sqlc.arg(body), sqlc.narg(expires_at), sqlc.narg(fanout_key), sqlc.narg(delivery_key)
+       sqlc.arg(body), sqlc.narg(expires_at), sqlc.narg(fanout_key), sqlc.narg(delivery_key),
+       sqlc.narg(target_worker_id), sqlc.narg(target_run_id)
 FROM owner, capacity
 WHERE owner.identity_id IS NOT NULL
+  AND (sqlc.narg(expected_identity_id)::uuid IS NULL OR owner.identity_id = sqlc.narg(expected_identity_id)::uuid)
   AND (capacity.n < sqlc.arg(max_queue)::int OR EXISTS (SELECT 1 FROM existing_delivery))
 ON CONFLICT (identity_id, conversation_id, delivery_key) WHERE delivery_key IS NOT NULL
 DO UPDATE SET delivery_key = EXCLUDED.delivery_key;
@@ -67,6 +70,8 @@ WITH owner AS (
     FROM aura.steer_queue q, owner
     WHERE q.conversation_id = sqlc.arg(conversation_id)
       AND q.identity_id = owner.identity_id
+      AND (sqlc.narg(expected_identity_id)::uuid IS NULL OR owner.identity_id = sqlc.narg(expected_identity_id)::uuid)
+      AND q.target_run_id IS NOT DISTINCT FROM sqlc.narg(target_run_id)::text
       AND q.drained_at IS NULL
       AND q.expired_at IS NULL
       AND (q.expires_at IS NULL OR q.expires_at > now())

@@ -39,7 +39,7 @@ func (s *Server) resolveRunSession(w http.ResponseWriter, r *http.Request) (*Run
 		return nil, false
 	}
 	sess, ok := s.runs.Get("run-" + rest)
-	if !ok || sess.IdentityID != scopedIdentityID(r.Context()) {
+	if !ok || sess.IdentityID != scopedIdentityID(r.Context()) || sess.WorkerID != "" {
 		http.Error(w, "run not found", http.StatusNotFound)
 		return nil, false
 	}

@@ -16,6 +16,7 @@ import {
   type TurnUsage,
 } from './sseAdapter';
 import { errorDetail } from './sseAdapter_frames';
+import { runControlURL, type WorkerControlTarget } from './runControlTarget';
 
 // sseResume — the fix-plan 1.3 Tier B (RS-07) resilience wrapper around the
 // /agent/run SSE stream. A sibling of sseAdapter (which owns the PURE reducer
@@ -410,10 +411,27 @@ export async function attachRun(opts: AttachRunOptions): Promise<TurnUsage | und
  * (the route is in the gateway's mutation inventory); the 202 response is
  * idempotent, also on an already-terminal run.
  */
-export async function cancelRun(runId: string): Promise<void> {
-  const res = await fetch(`/agent/runs/${encodeURIComponent(runId)}/cancel`, {
+export async function cancelRun(
+  runId: string,
+  options?: {
+    readonly target: WorkerControlTarget;
+    readonly signal?: AbortSignal;
+    readonly idempotencyKey: string;
+  },
+): Promise<void> {
+  const res = await fetch(runControlURL(runId, 'cancel', options?.target), {
     method: 'POST',
     credentials: 'same-origin',
+    ...(options === undefined
+      ? {}
+      : {
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': options.idempotencyKey,
+          },
+          body: JSON.stringify({ run_id: runId }),
+          signal: options.signal,
+        }),
   });
   if (!res.ok) throw new Error(await errorDetail(res));
 }

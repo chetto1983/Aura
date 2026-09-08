@@ -62,7 +62,7 @@ func pendingDeliveryFromJob(job documents.IngestionJob) (*delegationPendingDeliv
 	if pending.DeliveryKey != job.ID+":terminal" {
 		return nil, fmt.Errorf("delegation pending delivery key does not match job %s", job.ID)
 	}
-	if pending.TargetStatus != "succeeded" && pending.TargetStatus != "dead_letter" {
+	if pending.TargetStatus != "succeeded" && pending.TargetStatus != "dead_letter" && pending.TargetStatus != "canceled" {
 		return nil, fmt.Errorf("delegation pending delivery has invalid target %q", pending.TargetStatus)
 	}
 	return &pending, nil

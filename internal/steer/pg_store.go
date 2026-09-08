@@ -108,6 +108,10 @@ func (s *PostgresStore) PushDelegationResultIdempotent(conv, source, text, fanou
 // guarded INSERT and disambiguation probe. Its callers select the explicit row kind;
 // only PushDelegationResult can provide a fan-out key.
 func (s *PostgresStore) push(conv, source, text string, kind QueueKind, fanoutKey, deliveryKey string) error {
+	return s.pushScoped(context.Background(), conv, source, text, kind, fanoutKey, deliveryKey, workerScope{})
+}
+
+func (s *PostgresStore) pushScoped(ctx context.Context, conv, source, text string, kind QueueKind, fanoutKey, deliveryKey string, scope workerScope) error {
 	// The nil-receiver guard MUST run before any field access on s: a
 	// *PostgresStore boxed into an interface (telegram.Deps.Steer,
 	// agui's steerPusher) can be a non-nil interface wrapping a nil pointer
@@ -145,19 +149,24 @@ func (s *PostgresStore) push(conv, source, text string, kind QueueKind, fanoutKe
 		deliveryKeyArg = pgtype.Text{String: deliveryKey, Valid: true}
 	}
 
-	ctx := context.Background()
 	var affected int64
 	err := db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
+		if err := q.LockSteerConversation(ctx, conv); err != nil {
+			return err
+		}
 		var qErr error
 		affected, qErr = q.PushSteerRow(ctx, sqlc.PushSteerRowParams{
-			ConversationID: conv,
-			Kind:           string(kind),
-			Source:         source,
-			Body:           text,
-			ExpiresAt:      expiresAt,
-			MaxQueue:       int32(s.cfg.Max), //nolint:gosec // Config.Max is an operator-configured cap, always small.
-			FanoutKey:      fanoutKeyArg,
-			DeliveryKey:    deliveryKeyArg,
+			ConversationID:     conv,
+			Kind:               string(kind),
+			Source:             source,
+			Body:               text,
+			ExpiresAt:          expiresAt,
+			MaxQueue:           int32(s.cfg.Max), //nolint:gosec // Config.Max is an operator-configured cap, always small.
+			FanoutKey:          fanoutKeyArg,
+			DeliveryKey:        deliveryKeyArg,
+			TargetWorkerID:     scope.worker,
+			TargetRunID:        scope.run,
+			ExpectedIdentityID: scope.owner,
 		})
 		return qErr
 	})
@@ -212,6 +221,10 @@ func (s *PostgresStore) diagnosePushRefusal(ctx context.Context, conv string) er
 // deliverLeftoverSteer already treat an empty drain as "nothing to deliver", never as
 // fatal.
 func (s *PostgresStore) Drain(conv string) []Message {
+	return s.drain(context.Background(), conv, workerScope{})
+}
+
+func (s *PostgresStore) drain(ctx context.Context, conv string, scope workerScope) []Message {
 	if s == nil || s.pool == nil {
 		return nil
 	}
@@ -219,11 +232,12 @@ func (s *PostgresStore) Drain(conv string) []Message {
 		slog.Warn("steer: drain: conversation id is not a valid uuid", "conv", redact.Line(conv), "err", parseErr)
 		return nil
 	}
-	ctx := context.Background()
 	var rows []sqlc.DrainSteerRowsRow
 	err := db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
 		var qErr error
-		rows, qErr = q.DrainSteerRows(ctx, conv)
+		rows, qErr = q.DrainSteerRows(ctx, sqlc.DrainSteerRowsParams{
+			ConversationID: conv, ExpectedIdentityID: scope.owner, TargetRunID: scope.run,
+		})
 		return qErr
 	})
 	if err != nil {

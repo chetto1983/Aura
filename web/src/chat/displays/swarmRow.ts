@@ -3,7 +3,7 @@
 // tableData.ts idiom). The .tsx keeps only rendering.
 
 export type SwarmStatus =
-  'ok' | 'failed' | 'needs_user_input' | 'running' | 'stalled' | 'dead_letter';
+  'ok' | 'failed' | 'needs_user_input' | 'running' | 'stalled' | 'dead_letter' | 'canceled';
 
 export const SWARM_DOT_CLASS: Record<SwarmStatus, string> = {
   ok: 'bg-success',
@@ -12,6 +12,7 @@ export const SWARM_DOT_CLASS: Record<SwarmStatus, string> = {
   running: 'bg-info',
   stalled: 'bg-warning',
   dead_letter: 'bg-danger',
+  canceled: 'bg-text-faint',
 };
 
 export const SWARM_STATUS_KEY: Record<SwarmStatus, string> = {
@@ -21,6 +22,7 @@ export const SWARM_STATUS_KEY: Record<SwarmStatus, string> = {
   running: 'swarm.status.running',
   stalled: 'swarm.status.stalled',
   dead_letter: 'swarm.status.dead_letter',
+  canceled: 'swarm.status.canceled',
 };
 
 export function isSwarmStatus(value: string): value is SwarmStatus {
@@ -30,7 +32,8 @@ export function isSwarmStatus(value: string): value is SwarmStatus {
     value === 'needs_user_input' ||
     value === 'running' ||
     value === 'stalled' ||
-    value === 'dead_letter'
+    value === 'dead_letter' ||
+    value === 'canceled'
   );
 }
 
@@ -57,6 +60,7 @@ export function statusIconName(status: string): SwarmStatusIconName {
     case 'ok':
       return 'CircleCheck';
     case 'failed':
+    case 'canceled':
       return 'CircleX';
     case 'needs_user_input':
       return 'MessageCircleQuestion';
@@ -72,7 +76,9 @@ export function statusIconName(status: string): SwarmStatusIconName {
 }
 
 export function isTerminalSwarmStatus(status: string): boolean {
-  return status === 'ok' || status === 'failed' || status === 'dead_letter';
+  return (
+    status === 'ok' || status === 'failed' || status === 'dead_letter' || status === 'canceled'
+  );
 }
 
 /** A field is shown in the row-expand only when present AND non-empty. */

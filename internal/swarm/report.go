@@ -29,6 +29,7 @@ const (
 	StatusRunning        = "running"
 	StatusStalled        = "stalled"
 	StatusDeadLetter     = "dead_letter"
+	StatusCanceled       = "canceled"
 )
 
 // ChildReport is one worker's slot in the swarm result, ordered by goal index

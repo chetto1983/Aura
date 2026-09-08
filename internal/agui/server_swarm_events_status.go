@@ -16,24 +16,31 @@ import (
 )
 
 type swarmWorkerStatusPayload struct {
-	ChildID     string `json:"child_id"`
-	Status      string `json:"status"`
-	LastEventAt string `json:"last_event_at"`
-	Events      int    `json:"events"`
-	DurationSec int64  `json:"duration_sec"`
-	Reported    bool   `json:"reported,omitempty"`
+	ChildID       string `json:"child_id"`
+	Status        string `json:"status"`
+	LastEventAt   string `json:"last_event_at"`
+	Events        int    `json:"events"`
+	DurationSec   int64  `json:"duration_sec"`
+	Reported      bool   `json:"reported,omitempty"`
+	Goal          string `json:"goal,omitempty"`
+	ParentChildID string `json:"parent_child_id,omitempty"`
+	RunID         string `json:"run_id,omitempty"`
+	CanSteer      bool   `json:"can_steer,omitempty"`
+	CanCancel     bool   `json:"can_cancel,omitempty"`
 }
 
 type swarmWorkerStatusState struct {
-	offset       int64
-	firstEventAt time.Time
-	lastEventAt  time.Time
-	lastEvent    *agent.Event
-	events       int
-	durationSec  int64
-	reported     bool
-	emitted      bool
-	lastPayload  swarmWorkerStatusPayload
+	offset        int64
+	firstEventAt  time.Time
+	lastEventAt   time.Time
+	lastEvent     *agent.Event
+	events        int
+	durationSec   int64
+	reported      bool
+	goal          string
+	parentChildID string
+	emitted       bool
+	lastPayload   swarmWorkerStatusPayload
 }
 
 func (s *Server) handleSwarmWorkerStatuses(w http.ResponseWriter, r *http.Request, conv string) {
@@ -74,6 +81,12 @@ func (s *Server) swarmWorkerStatusSequence(ctx context.Context, conv string, ini
 				state.offset = nextOffset
 				state.ingest(childID, chunk, now)
 				payload := state.payload(childID, now, s.swarmWorkerIdle)
+				payload.Goal, payload.ParentChildID = state.goal, state.parentChildID
+				if session, ok := s.runs.LiveForWorker(scopedIdentityID(ctx), conv, childID); ok {
+					payload.RunID = session.RunID
+					payload.CanSteer = session.steerEnabled
+					payload.CanCancel = session.operatorStop != nil
+				}
 				if swarmWorkerStatusChanged(state.lastPayload, payload, state.emitted) {
 					if !yield(events.NewCustomEvent(SwarmWorkerEventName, events.WithValue(payload)), nil) {
 						return
@@ -121,6 +134,12 @@ func (s *swarmWorkerStatusState) ingest(childID string, chunk []byte, observedAt
 		}
 		s.lastEventAt = at
 		s.lastEvent = &ev
+		if goal, ok := ev.Actions.StateDelta["swarm_child_goal"].(string); ok {
+			s.goal = goal
+		}
+		if parent, ok := ev.Actions.StateDelta["swarm_parent_child_id"].(string); ok {
+			s.parentChildID = parent
+		}
 		s.events++
 		if recorded, _ := ev.Actions.StateDelta["swarm_report_recorded"].(bool); recorded {
 			s.reported = true

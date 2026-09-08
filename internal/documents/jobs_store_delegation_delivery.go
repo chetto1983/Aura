@@ -7,8 +7,8 @@ import (
 	"github.com/chetto1983/aura/internal/db/sqlc"
 )
 
-// StageDelegationDeliveryRequest replaces a claimed delegation payload after
-// worker execution, preserving the terminal report for delivery-only retries.
+// StageDelegationDeliveryRequest merges a claimed worker's delivery snapshot,
+// retaining concurrent control intent and the report for delivery-only retries.
 type StageDelegationDeliveryRequest struct {
 	IdentityID      string
 	JobID           string

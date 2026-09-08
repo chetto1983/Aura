@@ -109,7 +109,8 @@ describe('WorkerWatchProvider conversation scope', () => {
     await waitFor(() => {
       expect(FakeEventSource.instances[0]?.closed).toBe(true);
     });
-    expect(FakeEventSource.instances).toHaveLength(1);
+    expect(FakeEventSource.instances).toHaveLength(2);
+    expect(FakeEventSource.instances[1]?.url).toBe('/api/conversations/thread-b/swarm/events');
   });
 
   it('unions mounted swarm cards and removes only the card that unmounts', async () => {

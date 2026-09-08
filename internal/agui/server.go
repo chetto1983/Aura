@@ -509,6 +509,7 @@ func (s *Server) Mux() http.Handler {
 	// handler itself owner-scopes via s.conv.GetForIdentity before touching disk).
 	s.registerSwarmTranscriptRoutes(mux)
 	s.registerSwarmWorkerEventRoutes(mux)
+	s.registerWorkerControlRoutes(mux)
 	if s.operations == nil {
 		return mux
 	}

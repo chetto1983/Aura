@@ -8,6 +8,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/steer"
 )
 
 // RunnerAdapter is the concrete swarmRunner the swarm_spawn tool delegates to
@@ -20,8 +21,12 @@ import (
 // 09-02 engine, whose runChild derives each worker registry via
 // Without(parentRegistry, "swarm_spawn") (D-08/D-10 flat — no nested swarm).
 type RunnerAdapter struct {
-	Cfg   config.Config
-	Depth int
+	Cfg                config.Config
+	Depth              int
+	Controls           agent.WorkerRuntime
+	Steer              *steer.PostgresStore
+	ParentChildID      string
+	RecordCancellation func(context.Context, string) error
 	// Enqueuer is the SWARM-03/09 background-delegation seam (delegation_queue.go).
 	// nil (the zero value) means "no durable queue configured" -- Run then falls
 	// through to the synchronous waves byte-for-byte unchanged, so a boot with no
@@ -64,6 +69,7 @@ func (a *RunnerAdapter) Run(ctx context.Context, goals []string, context string)
 		Depth:          a.Depth,
 		Context:        context,
 		Gateway:        sc.Gateway, // relay the parent's PEP to each worker (Open Q1 full enforcement)
+		Controls:       a.Controls, Steer: a.Steer, ParentChildID: a.ParentChildID, RecordCancellation: a.RecordCancellation,
 		// SWARM-03/09: identityctx is the SAME ambient host-derived actor context
 		// every other identity-scoped tool reads (document_search.go, skill_manage.go,
 		// send_file_ingest.go) -- internal/runner sets it once per turn

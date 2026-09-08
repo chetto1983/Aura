@@ -60,6 +60,8 @@ var httpMutationRoutes = map[string]mutationRouteMeta{
 	// The cockpit mid-turn redirect (amendment #132 D-02, T-52-12): a replayed
 	// POST with the same Idempotency-Key must not enqueue a second steer.
 	"POST /agent/runs/{runID}/steer":                              httpMutationMeta("agent_run_steer"),
+	"POST /api/conversations/{conv}/swarm/{child}/steer":          httpMutationMeta("worker_steer"),
+	"POST /api/conversations/{conv}/swarm/{child}/cancel":         httpMutationMeta("worker_cancel"),
 	"POST /api/admin/identities/{id}/capabilities":                httpMutationMeta("capability_grant"),
 	"DELETE /api/admin/identities/{id}/capabilities/{capability}": httpMutationMeta("capability_revoke"),
 	"POST /api/approvals/{token}/resolve":                         httpMutationMeta("approval_resolve"),

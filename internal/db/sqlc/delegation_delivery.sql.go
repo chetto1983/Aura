@@ -13,7 +13,7 @@ import (
 
 const stageDelegationDelivery = `-- name: StageDelegationDelivery :one
 UPDATE aura.ingestion_jobs
-SET payload = $1,
+SET payload = payload || $1::jsonb,
     updated_at = now()
 WHERE id = $2
   AND identity_id = $3
@@ -33,6 +33,7 @@ type StageDelegationDeliveryParams struct {
 	LeaseGeneration int64       `json:"lease_generation"`
 }
 
+// Preserve control intent committed while the worker held its original snapshot.
 func (q *Queries) StageDelegationDelivery(ctx context.Context, arg StageDelegationDeliveryParams) (AuraIngestionJobs, error) {
 	row := q.db.QueryRow(ctx, stageDelegationDelivery,
 		arg.Payload,

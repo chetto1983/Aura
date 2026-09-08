@@ -144,12 +144,13 @@ type Querier interface {
 	// identity_id = owner.identity_id is defense in depth (T-51-07): every row for a given
 	// conv is written with that conv's TRUE owner by PushSteerRow, so this can only ever
 	// exclude a row in the event of data that did not come through Push.
-	DrainSteerRows(ctx context.Context, conversationID string) ([]DrainSteerRowsRow, error)
+	DrainSteerRows(ctx context.Context, arg DrainSteerRowsParams) ([]DrainSteerRowsRow, error)
 	// Claim correctness is held by the per-task pg_try_advisory_lock (claim.go), NOT a
 	// row lock here: this SELECT runs on the autocommit pool, so any FOR UPDATE SKIP
 	// LOCKED would release the instant the SELECT returns (inert, L5). The advisory lock
 	// is what makes each due task a singleton across concurrent workers.
 	DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTasks, error)
+	ExpireWorkerRunSteers(ctx context.Context, arg ExpireWorkerRunSteersParams) (int64, error)
 	FailRetentionItem(ctx context.Context, arg FailRetentionItemParams) (int64, error)
 	FinalizeRetentionItem(ctx context.Context, arg FinalizeRetentionItemParams) (int64, error)
 	FinalizeRetentionOperation(ctx context.Context, arg FinalizeRetentionOperationParams) (AuraRetentionOperations, error)
@@ -437,9 +438,14 @@ type Querier interface {
 	// tool/assistant pairing). Computing it here rather than returning every user turn keeps
 	// the result sparse -- a long conversation with one attachment costs one row.
 	ListUserTurnAttachments(ctx context.Context, conversationID pgtype.UUID) ([]ListUserTurnAttachmentsRow, error)
+	ListWorkerSteers(ctx context.Context, arg ListWorkerSteersParams) ([]AuraSteerQueue, error)
 	LockConversationForTurnAppend(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 	// This must run on transaction-bound Queries because autocommit releases the row lock when the statement returns.
 	LockOperationReceipt(ctx context.Context, arg LockOperationReceiptParams) (LockOperationReceiptRow, error)
+	// Acquire this in a separate statement before the guarded insert. A lock inside
+	// that insert would retain a snapshot taken before waiting and race the cap.
+	// https://www.postgresql.org/docs/18/functions-admin.html#FUNCTIONS-ADVISORY-LOCKS
+	LockSteerConversation(ctx context.Context, conversationID string) error
 	LookupRecoveryByEmail(ctx context.Context, email string) (LookupRecoveryByEmailRow, error)
 	// Stamp the throttle after a reminder ATTEMPT (delivered or not) so a pending approval
 	// re-nudges at most once per cadence and a failing channel cannot spam the tick.
@@ -535,6 +541,7 @@ type Querier interface {
 	// that impossible -- you could add a veto and never remove one. The onboarding seed keeps
 	// the merge; the editor owns the whole row.
 	ReplaceIdentityProfile(ctx context.Context, arg ReplaceIdentityProfileParams) (AuraIdentityProfiles, error)
+	RequestWorkerCancellation(ctx context.Context, arg RequestWorkerCancellationParams) (pgtype.UUID, error)
 	// Cross-process export-delete fence. This must commit before any runtime teardown.
 	// Reusing the same deterministic reservation is idempotent after a process retry.
 	ReserveConversationDeleteForIdentityIfVersion(ctx context.Context, arg ReserveConversationDeleteForIdentityIfVersionParams) (int64, error)
@@ -566,6 +573,7 @@ type Querier interface {
 	// uses when an edit/regenerate forks a new sibling branch off an existing parent turn.
 	SetTurnBranchPointers(ctx context.Context, arg SetTurnBranchPointersParams) error
 	SoftDeleteAsset(ctx context.Context, arg SoftDeleteAssetParams) (AuraAssets, error)
+	// Preserve control intent committed while the worker held its original snapshot.
 	StageDelegationDelivery(ctx context.Context, arg StageDelegationDeliveryParams) (AuraIngestionJobs, error)
 	SweepDueNotifications(ctx context.Context, arg SweepDueNotificationsParams) ([]SweepDueNotificationsRow, error)
 	TouchTelegramLastSeen(ctx context.Context, telegramUserID int64) error

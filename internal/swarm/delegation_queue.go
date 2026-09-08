@@ -72,7 +72,8 @@ type DelegationPayload struct {
 	// observer immediately before un-parking. Its presence, not a separate status flag,
 	// is what tells processJob to rebuild through runChild with ResumeTurns instead of
 	// a fresh brief.
-	Resume *DelegationResumeState `json:"resume,omitempty"`
+	Resume            *DelegationResumeState `json:"resume,omitempty"`
+	OperatorCancelled bool                   `json:"operator_cancelled,omitempty"`
 }
 
 // SteerPublisher is the narrow steer-push seam the claim loop needs to
@@ -287,8 +288,17 @@ func (l *DelegationClaimLoop) processJob(ctx context.Context, job documents.Inge
 	if err != nil {
 		return l.recordFailure(ctx, job, err)
 	}
+	if payload.ChildID == "" {
+		payload.ChildID = job.ID
+		if pending != nil {
+			payload.ChildID = pending.Report.ChildID
+		}
+	}
 	if pending != nil {
 		return l.deliverPending(ctx, job, payload, pending)
+	}
+	if payload.OperatorCancelled {
+		return l.deliverCanceled(ctx, job, payload)
 	}
 	// A delivery-only retry is intentionally claimable beyond max_attempts, but an
 	// expired worker lease is not a fresh execution budget. Claim increments the
@@ -325,6 +335,8 @@ func (l *DelegationClaimLoop) processJob(ctx context.Context, job documents.Inge
 		// 51-06b Task 1/2: the worker opens its OWN attributed, fenced pause and
 		// parks its row instead of failing -- the resumable path this phase closes.
 		return l.openPauseAndPark(ctx, job, payload, report, history)
+	case StatusCanceled:
+		return l.deliverCanceled(ctx, job, payload)
 	default:
 		msg := report.Error
 		if msg == "" {
