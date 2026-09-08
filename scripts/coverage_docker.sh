@@ -10,21 +10,15 @@
 # Prerequisite: the embed sidecar must be reachable (`make memory-up` starts it
 # alongside ArcadeDB) with creds in .env (or exported).
 # Mirrors `make coverage`, which also needs the stack.
+#
+# The disposable-Postgres bootstrap (read_secret, the `aura`-name guard, the bring-up/
+# teardown, and the composed-DSN export) lives in the extracted library under
+# scripts/lib/ (D-12) — scripts/musr_e2e.sh sources the SAME copy, so the anti-footgun
+# this script's own 2026-07-10 incident produced exists once, not twice.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
+source scripts/lib/disposable_stack.sh
 
-# Creds: honour an exported value first, else read .env (the running stack was booted
-# from it). cut -d= -f2- keeps '=' inside a value intact.
-read_secret() {
-  local key="$1" val="${!1:-}"
-  if [ -z "$val" ] && [ -f .env ]; then
-    val="$(grep -E "^${key}=" .env | head -1 | cut -d= -f2-)"
-  fi
-	# .env is commonly edited on Windows. A trailing CR is data to Bash and makes
-	# composed Postgres URLs fail net/url parsing, so normalize the line ending at
-	# this single credential boundary without altering any other value bytes.
-	printf '%s' "$val" | tr -d '\r'
-}
 PGPW="$(read_secret POSTGRES_PASSWORD)"
 if [ -z "$PGPW" ]; then
   echo "FATAL: POSTGRES_PASSWORD not found in env or .env" >&2
@@ -50,82 +44,21 @@ export AURA_AUTHULA_SECRET
 # authula schema) — this happened on 2026-07-10. CI provisions a fresh throwaway
 # `aura`, so the gate is only dangerous locally. We therefore ALWAYS run against a
 # disposable DB owned by aura_migrate (so migrations' CREATE SCHEMA succeeds by
-# ownership), and drop it on exit. Override the name with AURA_COVERAGE_DB.
+# ownership), and drop it on exit. Override the name with AURA_COVERAGE_DB. The
+# `aura`-name refusal itself lives in the sourced library's disposable_stack_guard_name,
+# called by disposable_stack_bring_up_auto below.
 COV_DB="${AURA_COVERAGE_DB:-aura_cov}"
-PG_CONTAINER="${AURA_PG_CONTAINER:-aura-postgres}"
-COV_POSTGRES=""
-PG_HOST_TARGET="127.0.0.1"
-PG_PORT_TARGET="5432"
-if [ "$COV_DB" = "aura" ]; then
-  echo "FATAL: AURA_COVERAGE_DB must not be 'aura' — the db_integration tier TRUNCATEs it (data loss). Pick a throwaway name." >&2
-  exit 4
-fi
-if [ -z "${GITHUB_ACTIONS:-}" ]; then
-  COV_POSTGRES="${AURA_COVERAGE_POSTGRES_CONTAINER:-aura-postgres-cov}"
-  PG_PORT_TARGET="${AURA_COVERAGE_POSTGRES_PORT:-5433}"
-  COV_POSTGRES_IMAGE="${AURA_COVERAGE_POSTGRES_IMAGE:-${POSTGRES_IMAGE:-postgres:18.4-alpine3.24}}"
-  docker rm -f "$COV_POSTGRES" >/dev/null 2>&1 || true
-  echo "==> provisioning disposable coverage Postgres '$COV_POSTGRES' on 127.0.0.1:${PG_PORT_TARGET}; removed on exit"
-  docker run -d --rm --name "$COV_POSTGRES" \
-    -p "127.0.0.1:${PG_PORT_TARGET}:5432" \
-    -e POSTGRES_USER=aura \
-    -e POSTGRES_PASSWORD="$PGPW" \
-    -e POSTGRES_DB=aura \
-    "$COV_POSTGRES_IMAGE" >/dev/null
-  PG_CONTAINER="$COV_POSTGRES"
-elif ! docker exec "$PG_CONTAINER" true >/dev/null 2>&1; then
-  echo "FATAL: postgres container '$PG_CONTAINER' not running — bring the stack up (make db-up) or set AURA_PG_CONTAINER." >&2
-  exit 3
-fi
-
-_cov_cleanup() {
-  if [ -n "$COV_POSTGRES" ]; then
-    docker rm -f "$COV_POSTGRES" >/dev/null 2>&1 || true
-  else
-    docker exec -i "$PG_CONTAINER" psql -U aura -d postgres -c "DROP DATABASE IF EXISTS \"$COV_DB\" WITH (FORCE)" >/dev/null 2>&1 || true
-  fi
-}
-trap _cov_cleanup EXIT
-
-if [ -n "$COV_POSTGRES" ]; then
-  echo -n "==> waiting for coverage postgres"
-  COV_POSTGRES_READY=""
-  for _ in $(seq 1 60); do
-    if docker exec "$COV_POSTGRES" pg_isready -h 127.0.0.1 -U aura -d aura >/dev/null 2>&1; then COV_POSTGRES_READY=1; break; fi
-    echo -n .; sleep 1
-  done
-  [ -n "$COV_POSTGRES_READY" ] || { echo " FATAL: coverage postgres '$COV_POSTGRES' not ready" >&2; exit 3; }
-  echo " ready"
-fi
-
-pg_admin() { docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U aura -d postgres "$@"; }
-ESC_PGPW="$(printf '%s' "$PGPW" | sed "s/'/''/g")"
-# Both fixed application roles are prerequisites of migration 0001. Provision
-# them before creating the disposable DB so the coverage bootstrap does not
-# depend on a later CLI side effect; reset existing passwords as well so local
-# and CI runs use the same deterministic credential.
-for role in aura_app aura_migrate; do
-  if pg_admin -tAc "SELECT 1 FROM pg_roles WHERE rolname='${role}'" | grep -q 1; then
-    pg_admin -c "ALTER ROLE ${role} WITH LOGIN PASSWORD '${ESC_PGPW}'"
-  else
-    pg_admin -c "CREATE ROLE ${role} WITH LOGIN PASSWORD '${ESC_PGPW}'"
-  fi
-done
-echo "==> provisioning disposable coverage DB '$COV_DB' (owner aura_migrate); dropped on exit"
-pg_admin -c "DROP DATABASE IF EXISTS \"$COV_DB\" WITH (FORCE)"
-pg_admin -c "CREATE DATABASE \"$COV_DB\" OWNER aura_migrate"
+disposable_stack_bring_up_auto "$COV_DB" "$PGPW" \
+  "${AURA_COVERAGE_POSTGRES_PORT:-5433}" \
+  "${AURA_COVERAGE_POSTGRES_IMAGE:-${POSTGRES_IMAGE:-postgres:18.4-alpine3.24}}" \
+  "${AURA_COVERAGE_POSTGRES_CONTAINER:-aura-postgres-cov}" \
+  "${AURA_PG_CONTAINER:-aura-postgres}"
+trap disposable_stack_teardown EXIT
 
 # Postgres env — ALL DB-pointing vars target the disposable DB, never live `aura`.
 # (EnsureRoles' hardcoded /aura bootstrap in the test helpers only does idempotent
 # role/schema-existence management there; every destructive op follows these URLs.)
-export POSTGRES_USER=aura POSTGRES_PASSWORD="$PGPW" POSTGRES_DB="$COV_DB"
-export POSTGRES_HOST="$PG_HOST_TARGET" POSTGRES_PORT="$PG_PORT_TARGET" POSTGRES_SSLMODE=disable
-# Legacy integration helpers read libpq's PGHOST/PGPORT directly when composing
-# their bootstrap DSN. Keep those variables aligned with the disposable service.
-export PGHOST="$PG_HOST_TARGET" PGPORT="$PG_PORT_TARGET"
-export AURA_DB_URL="postgres://aura_app:${PGPW}@${PG_HOST_TARGET}:${PG_PORT_TARGET}/${COV_DB}?sslmode=disable"
-export AURA_DB_MIGRATE_URL="postgres://aura_migrate:${PGPW}@${PG_HOST_TARGET}:${PG_PORT_TARGET}/${COV_DB}?sslmode=disable"
-export AURA_DB_BOOTSTRAP_URL="postgres://aura:${PGPW}@${PG_HOST_TARGET}:${PG_PORT_TARGET}/${COV_DB}?sslmode=disable"
+disposable_stack_export_env "$PGPW"
 
 # Embed sidecar. The width is the sidecar's native one (config.DefaultEmbedDimensions);
 # asking a 768d model for 1024 is an error, not a truncation.
@@ -139,8 +72,10 @@ export CI=true
 
 # The disposable Postgres boots empty; lay down the schema before the gate. Uses
 # config.LoadDB() (keyless, no OPENROUTER_API_KEY) and reads the DSNs exported above.
-# Skipped in CI, where the workflow migrates its own services.
-if [ -n "$COV_POSTGRES" ]; then
+# Skipped in CI, where the workflow migrates its own services. DISPOSABLE_STACK_CONTAINER
+# is non-empty only when this run owns its own container (the local branch) — matches the
+# original COV_POSTGRES semantics exactly.
+if [ -n "$DISPOSABLE_STACK_CONTAINER" ]; then
   echo "==> migrating the schema into the disposable coverage DB"
   go run ./cmd/aura db migrate
 fi
