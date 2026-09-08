@@ -42,6 +42,15 @@ Knip keeps the intentional `assistant-stream` pin and the dynamically imported
 `read-excel-file/universal` dependency. Knip6 misclassifies the latter package without
 a root export; XLSX renderer tests and the production import cover its actual use.
 
+Stryker10's tsconfig preprocessor still calls the removed TypeScript JavaScript API
+([upstream issue6111](https://github.com/stryker-mutator/stryker-js/issues/6111)).
+Both Stryker configurations set `tsconfigFile` to an empty string to leave the copied
+tsconfigs untouched. Every reference and include stays within this package, so sandbox
+path rewriting is unnecessary. Revisit this setting if a config starts extending or
+referencing files outside `web/`. Vitest still reads the copied tsconfigs; the separate
+TypeScript7 typecheck and the mutation targets, thresholds and sandbox remain active.
+Mutation testing runs in CI only, at the operator's request.
+
 ## Design tokens
 
 `tokens/tokens.json` is the single hand-authored source for the dark-operator palette
