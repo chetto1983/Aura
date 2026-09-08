@@ -116,6 +116,17 @@ delivery checks, operation ownership and budget/status reporting. The existing
 `AURA_COMPLETION_CRITIC_MODEL` is retired. Verify zero audit calls even at the step
 limit and exercise real multi-agent results through the running cockpit.
 
+The 2026-09-08 title inspection found a persisted title for conversation
+01a08023-82d1-7675-8a97-42a6fd84f980 while its sidebar still displayed Untitled.
+Aura also scheduled title generation only after a successfully drained turn and
+at least three stored messages, skipping errors and pauses. LibreChat's agent
+endpoint defaults to title generation from the first user message in parallel
+with the answer, and its client waits for the persisted title with bounded retries.
+Use that lifecycle in Aura: one bounded title worker per conversation, a snapshot
+of the first request, language matching, conditional persistence that preserves
+manual titles, and a bounded title-read query that refreshes the sidebar. Title
+failure must not fail chat; retain a short first-message fallback in that case.
+
 Deliverables are sent through the channel's artifact mechanism; a path alone is not
 delivery. Partial outcomes identify unfinished work and the applicable limit.
 
