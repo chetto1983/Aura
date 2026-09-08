@@ -90,8 +90,8 @@ The governing rule of this milestone: a phase closes on a real run against the l
 the real agent, integrated with the phases around it. CLAUDE.md sets the bar at >9.8 on a real
 scenario. Unit tests are how we get there, never the evidence that we arrived.
 
-- [ ] **E2E-01**: Two identities hold real conversations at the same time against one running stack, each doing useful work, and the run is scored ≥9.8
-- [ ] **E2E-02**: A second identity is onboarded from zero to a useful conversation — memory database, object bucket, sandbox, skills root — with no manual step outside the documented path
+- [x] **E2E-01**: Two identities hold real conversations at the same time against one running stack, each doing useful work, and the run is scored ≥9.8
+- [x] **E2E-02**: A second identity is onboarded from zero to a useful conversation — memory database, object bucket, sandbox, skills root — with no manual step outside the documented path
 - [ ] **E2E-03**: The adversarial scenario runs as a scripted suite an operator can re-run, not a one-off session, and every attempt is refused
 - [ ] **E2E-04**: The full restart / rollback / restore cycle runs with two provisioned identities and both are intact and correctly separated afterwards
 - [ ] **E2E-05**: Every phase in this milestone lands with its own live end-to-end run recorded, and no phase closes on unit evidence alone
@@ -176,8 +176,8 @@ Every v1 requirement maps to exactly one phase. Mapped during roadmap creation, 
 | ISO-08 | Phase 5 | Pending |
 | ISO-09 | Phase 5 | Pending |
 | ISO-10 | Phase 5 | Pending |
-| E2E-01 | Phase 1 | Pending |
-| E2E-02 | Phase 1 | Pending |
+| E2E-01 | Phase 1 | Complete |
+| E2E-02 | Phase 1 | Complete |
 | E2E-03 | Phase 3 | Pending |
 | E2E-04 | Phase 5 | Pending |
 | E2E-05 | Phase 7 | Pending |

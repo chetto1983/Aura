@@ -5,16 +5,16 @@ milestone_name: Production Launch — Multi-Tenant
 current_phase: 01
 current_phase_name: Two Identities, Live and Separated
 status: executing
-stopped_at: Completed 01-04-PLAN.md
-last_updated: "2026-09-08T11:11:22.865Z"
+stopped_at: Completed 01-06-PLAN.md — phase 01 all 7 plans have SUMMARY.md; machine-checkable half of DoD GREEN on a real run; rubric score awaiting end-of-phase UAT batch
+last_updated: "2026-09-08T13:40:07.467Z"
 last_activity: 2026-09-08
 last_activity_desc: Phase 01 execution started
-state_head: e226d9b14e87775ff4d8c9091a0bc7ed47bedfff
+state_head: c6b4de90e6c10bb8a515a21e2a4f23457158878d
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 7
-  completed_plans: 6
+  completed_plans: 7
   percent: 0
 ---
 
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-09-07)
 ## Current Position
 
 Phase: 01 (Two Identities, Live and Separated) — EXECUTING
-Plan: 4 of 7
-Status: Ready to execute
-Last activity: 2026-09-08 — Phase 01 execution started
+Plan: 7 of 7 (all plans have SUMMARY.md; 01-06's rubric score awaits the end-of-phase UAT batch)
+Status: Machine-checkable half of Definition of Done GREEN on a real live run; phase not yet formally closed
+Last activity: 2026-09-08 — 01-06 (two-identity live run) complete
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [░░░░░░░░░░] 0% (milestone phase-completion — phase 01 itself is not yet marked closed)
 
 ## Milestone Shape
 
@@ -81,6 +81,7 @@ phases, not many thin ones.
 | Phase 01 P03 | ~2h | 3 tasks | 7 files |
 | Phase 01 P05 | 2h20min | 3 tasks | 3 files |
 | Phase 01-two-identities-live-and-separated P04 | ~55 min | 3 tasks | 7 files |
+| Phase 01 P06 | ~4h | 3 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -108,6 +109,8 @@ creation:
 - [Phase 01]: [Phase 01 Plan 03] musr-e2e's bring-up step called `make db-migrate memory-up`, not `memory-up-core`, before this plan -- pre-existing drift between the step's own comment (postgres+ArcadeDB+embed sidecar) and what it actually started (also arcadedb-mcp, and therefore the aura daemon, racing the tagged tier's own Postgres writes -- the measured CI #1809 shape). Fixed on touch to memory-up-core.
 - [Phase 01]: [Phase 01 Plan 05] Budget is per-turn by construction (runner.buildAgent's fresh agent.NewBudget), confirmed unchanged by the same-day 10:43 CEST paid-completion-critic removal refactor; the other three D-15 surfaces (sidecar path, gateway ReservationKey, steer inbox) are disjoint only by conversation-UUID uniqueness, proven by deliberately breaking each and watching the corresponding assertion go red.
 - [Phase 01-two-identities-live-and-separated]: [Phase 01 Plan 04] Kept ci.yml's compose postgres+ArcadeDB+embed bring-up step (adding garage) instead of removing it per a literal reading of the plan: production_load_chaos.py and restore_drill.sh run later in the same job, target the compose postgres service directly, and make musr-e2e never touches it (its own disposable Postgres is separate). — Measured by reading scripts/production_load_chaos_support.py and scripts/restore_drill.sh before editing ci.yml; removing the bring-up would have broken those two later steps.
+- [Phase 01]: internal/webauth/authula.go was missing session.auth RouteMappings wiring for /totp/enable and siblings — a real production bug (broke cockpit TOTP self-service too), fixed with authulaconfig.WithRouteMappings, not just worked around in the harness
+- [Phase 01]: Forced password-change (D-15) has no headless, plan-compliant path in this build (no mailer plugin, no completed-Telegram-link path this run will fake, no admin plugin) — recorded as a limitation, not worked around or narrowed out of E2E-02
 
 ### Pending Todos
 
@@ -155,8 +158,8 @@ rediscover them:
 
 ## Session Continuity
 
-Last session: 2026-09-08T11:11:22.830Z
-Stopped at: Completed 01-04-PLAN.md
+Last session: 2026-09-08T13:40:07.435Z
+Stopped at: Completed 01-06-PLAN.md — phase 01 all 7 plans have SUMMARY.md; machine-checkable half of DoD GREEN on a real run; rubric score awaiting end-of-phase UAT batch
 Resume file: None
 
 Next: `/gsd-plan-phase 1`

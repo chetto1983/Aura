@@ -286,3 +286,10 @@ remains before the phase itself can close:
 ---
 *Phase: 01-two-identities-live-and-separated*
 *Completed: 2026-09-08*
+
+## Self-Check: PASSED
+
+All 11 created files verified present on disk with `[ -f ]`. All 8 task commit hashes
+(`6711f253f`, `69b0caf30`, `dfd46cc6b`, `76a73714e`, `7a6f86b0a`, `94c38c1b3`, `58d6dfa4b`,
+`c6b4de90e`) verified in `git log --oneline --all`. `bash -n scripts/musr_live_run.sh` and
+`go vet ./... && go build ./...` re-confirmed clean at write time.
