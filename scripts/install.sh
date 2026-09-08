@@ -537,6 +537,53 @@ ensure_edge_channel_env() {
   esac
 }
 
+# D-04: make the sandbox image available BEFORE `docker compose up` starts anything, so
+# the documented fresh-install path never reaches the boot preflight's refusal
+# (cmd/aura/serve_sandbox_preflight.go): a strict, isolation-on daemon whose box image is
+# neither present nor pullable now fails loud at boot instead of denying every tool call
+# silently at the operator's first shell_exec. Covers the pinned-version path
+# ensure_edge_channel_env misses: that function only sets AURA_SANDBOX_IMAGE inside its
+# `*:edge` branch, so a pinned install (AURA_INSTALL_REF=vX.Y.Z) never enters it and
+# reaches this step with only the value the write_env_if_missing heredoc wrote --
+# non-empty, because that heredoc now writes it unconditionally (D-01).
+ensure_sandbox_image() {
+  sandbox_image="$(env_value AURA_SANDBOX_IMAGE)"
+  if [ -z "$sandbox_image" ]; then
+    echo "FAIL: AURA_SANDBOX_IMAGE is unset -- cannot make the sandbox image available" >&2
+    exit 1
+  fi
+  egress_image="$(env_value AURA_SANDBOX_EGRESS_IMAGE)"
+  if [ -f docker/aura-sandbox/Dockerfile ]; then
+    # A repo build context is present (a local/dev install run from a checkout) -- build
+    # the same two images `make sandbox-images` builds, against the CONFIGURED refs so
+    # the deployed image matches what .env actually names.
+    docker build -f docker/aura-sandbox/Dockerfile -t "$sandbox_image" . || {
+      echo "FAIL: could not build the sandbox box image ($sandbox_image)" >&2
+      exit 1
+    }
+    if [ -n "$egress_image" ]; then
+      docker build -f docker/aura-egress/Dockerfile -t "$egress_image" . || {
+        echo "FAIL: could not build the sandbox egress image ($egress_image)" >&2
+        exit 1
+      }
+    fi
+    return 0
+  fi
+  # The documented path: an appliance never builds -- it pulls the published edge/pinned
+  # tags scripts/install.sh already resolved into .env (Makefile's own sandbox-images
+  # target comment: "An appliance never runs this -- it pulls the published edge tags").
+  docker pull "$sandbox_image" || {
+    echo "FAIL: could not pull the sandbox box image ($sandbox_image)" >&2
+    exit 1
+  }
+  if [ -n "$egress_image" ]; then
+    docker pull "$egress_image" || {
+      echo "FAIL: could not pull the sandbox egress image ($egress_image)" >&2
+      exit 1
+    }
+  fi
+}
+
 ensure_internal_env_secrets() {
   command -v openssl >/dev/null 2>&1 || {
     echo "FAIL: openssl is required to generate Aura internal secrets." >&2
@@ -620,6 +667,15 @@ POSTGRES_PORT=5432
 AURA_IMAGE=${aura_image}
 AURA_ACCESS_TOKEN=${access_token}
 AURA_AUTHULA_SECRET=${authula_secret}
+# D-01: the shipped posture is single_user_hardened with multi-identity provisioning
+# ON — these three move together (AURA_MUSR_ISOLATION requires a strict AURA_PROFILE,
+# and a strict profile's tool surface needs the sandbox image). Only a FRESH install
+# writes these; ensure_internal_env_secrets (the already-have-a-.env upgrade path)
+# never touches them (D-02), and compose.yaml's ${AURA_PROFILE:-dev} /
+# ${AURA_MUSR_ISOLATION:-false} fallbacks keep an in-place upgrade unchanged.
+AURA_PROFILE=single_user_hardened
+AURA_MUSR_ISOLATION=true
+AURA_SANDBOX_IMAGE=ghcr.io/chetto1983/aura-sandbox:edge
 AURA_HTTPS_PORT=443
 AURA_AGUI_PORT=9080
 AURA_SETUP_PORT=9081
@@ -832,6 +888,7 @@ if [ "${aura_image}" != "aura:local" ]; then
   docker pull "$aura_image"
 fi
 
+ensure_sandbox_image
 ensure_embed_model
 docker compose up -d --wait --wait-timeout 300
 scripts/observability_sidecar_check.sh
