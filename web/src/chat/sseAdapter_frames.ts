@@ -190,6 +190,7 @@ export interface SnapshotToolCall {
 }
 
 export interface SnapshotMessage {
+  readonly workerReport?: unknown;
   readonly id?: unknown;
   readonly role?: unknown;
   readonly content?: unknown;

@@ -74,6 +74,7 @@ type DelegationPayload struct {
 	// a fresh brief.
 	Resume            *DelegationResumeState `json:"resume,omitempty"`
 	OperatorCancelled bool                   `json:"operator_cancelled,omitempty"`
+	WakeParent        bool                   `json:"wake_parent,omitempty"`
 }
 
 // SteerPublisher is the narrow steer-push seam the claim loop needs to

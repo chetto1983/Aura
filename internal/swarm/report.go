@@ -43,16 +43,17 @@ const (
 // swarm_report display normalizer, is byte-unchanged for a synchronous swarm
 // that never sets them.
 type ChildReport struct {
-	GoalIndex  int      `json:"goal_index"`
-	ChildID    string   `json:"child_id"`
-	Status     string   `json:"status"`
-	Summary    string   `json:"summary,omitempty"`
-	Error      string   `json:"error,omitempty"`
-	Question   string   `json:"question,omitempty"`
-	Options    []string `json:"options,omitempty"`
-	ToolCallID string   `json:"tool_call_id,omitempty"`
-	Goal       string   `json:"goal,omitempty"`
-	Attempts   int      `json:"attempts,omitempty"`
+	GoalIndex        int      `json:"goal_index"`
+	ChildID          string   `json:"child_id"`
+	Status           string   `json:"status"`
+	Summary          string   `json:"summary,omitempty"`
+	SummaryTruncated bool     `json:"summary_truncated,omitempty"`
+	Error            string   `json:"error,omitempty"`
+	Question         string   `json:"question,omitempty"`
+	Options          []string `json:"options,omitempty"`
+	ToolCallID       string   `json:"tool_call_id,omitempty"`
+	Goal             string   `json:"goal,omitempty"`
+	Attempts         int      `json:"attempts,omitempty"`
 }
 
 // dumpTranscript appends ev (via Event.MarshalJSON, one JSON object per line) to
@@ -108,11 +109,14 @@ func marshalReports(reports []ChildReport) (string, error) {
 
 // boundedDeliveryReport keeps the steer rail a notification path rather than
 // a second report archive. The complete report is archived before this copy is
-// built; reuse the human-facing rune caps so JSON escaping cannot turn a long
-// model response into a queue-size failure.
+// built. The model gets a larger bounded summary than the UI card, and an
+// explicit signal to read the complete saved report if it still does not fit.
 func boundedDeliveryReport(report ChildReport) ChildReport {
 	report.Goal = capRunes(report.Goal, maxCardGoalRunes)
-	report.Summary = capRunes(report.Summary, maxCardSummaryRunes)
+	const maxModelReportRunes = 2048
+	summary := capRunes(report.Summary, maxModelReportRunes)
+	report.SummaryTruncated = summary != report.Summary
+	report.Summary = summary
 	report.Error = capRunes(report.Error, maxCardSummaryRunes)
 	report.Question = capRunes(report.Question, maxCardSummaryRunes)
 

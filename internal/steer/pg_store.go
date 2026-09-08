@@ -9,6 +9,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/redact"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -301,6 +302,35 @@ func (s *PostgresStore) ListUnnudgedDelegationResults(ctx context.Context, cutof
 	if err != nil {
 		return nil, fmt.Errorf("steer: list unnudged delegation results: %w", err)
 	}
+	return delegationResultRows(rows), nil
+}
+
+// ListPendingDelegationResults preserves ingestion-job RLS while finding ready fan-outs.
+func (s *PostgresStore) ListPendingDelegationResults(ctx context.Context, limit int) ([]UnnudgedDelegationResult, error) {
+	if s == nil || s.pool == nil {
+		return nil, fmt.Errorf("steer: list pending delegation results: store is not configured")
+	}
+	owner := identityctx.IdentityID(ctx)
+	ownerID, err := uuid.Parse(owner)
+	if err != nil {
+		return nil, fmt.Errorf("steer: pending results require an identity: %w", err)
+	}
+	var rows []sqlc.AuraSteerQueue
+	err = db.WithIdentityTx(ctx, s.pool, owner, func(q *sqlc.Queries) error {
+		var err error
+		rows, err = q.ListPendingDelegationResults(ctx, sqlc.ListPendingDelegationResultsParams{
+			IdentityID: pgtype.UUID{Bytes: ownerID, Valid: true},
+			RowLimit:   int32(limit), //nolint:gosec // bounded sweep batch.
+		})
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("steer: list pending delegation results: %w", err)
+	}
+	return delegationResultRows(rows), nil
+}
+
+func delegationResultRows(rows []sqlc.AuraSteerQueue) []UnnudgedDelegationResult {
 	out := make([]UnnudgedDelegationResult, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, UnnudgedDelegationResult{
@@ -311,7 +341,7 @@ func (s *PostgresStore) ListUnnudgedDelegationResults(ctx context.Context, cutof
 			FanoutKey:      r.FanoutKey.String,
 		})
 	}
-	return out, nil
+	return out
 }
 
 // MarkFanoutNudged claims every unclaimed row of one (identity, fanout_key) pair in ONE

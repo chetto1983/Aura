@@ -94,6 +94,9 @@ func (a swarmStatusAdapter) projectRow(ctx context.Context, conversationID strin
 		ChildID: row.ChildID, Goal: row.Goal, Status: row.Status,
 		Attempt: row.AttemptCount, MaxAttempts: row.MaxAttempts,
 	}
+	if swarmStatusTerminalJobStatuses[row.Status] {
+		status.Report = row.Report
+	}
 	end := time.Now().UTC()
 	if swarmStatusTerminalJobStatuses[row.Status] && !row.CompletedAt.IsZero() {
 		end = row.CompletedAt
@@ -118,10 +121,12 @@ func (a swarmStatusAdapter) projectRow(ctx context.Context, conversationID strin
 			return tools.SwarmWorkerStatus{}, fmt.Errorf("decode transcript event for child %q: %w", row.ChildID, err)
 		}
 		kind, detail := swarmStatusEventKindDetail(ev)
+		capped := tools.CapSwarmStatusDetail(detail)
 		events = append(events, tools.SwarmWorkerEvent{
-			At:     ev.Timestamp.UTC().Format(time.RFC3339Nano),
-			Kind:   kind,
-			Detail: tools.CapSwarmStatusDetail(detail),
+			At:        ev.Timestamp.UTC().Format(time.RFC3339Nano),
+			Kind:      kind,
+			Detail:    capped,
+			Truncated: capped != detail,
 		})
 	}
 	status.Tail = events

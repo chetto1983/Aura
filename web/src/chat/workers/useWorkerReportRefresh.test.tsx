@@ -6,8 +6,12 @@ import { fetchThreadMessages } from '../sseAdapter';
 import { preserveMessageIDs, useWorkerReportRefresh } from './useWorkerReportRefresh';
 
 let reported = true;
+let coordinator: { run_id: string; status: 'running' | 'finished' } | undefined;
 vi.mock('./workerWatchControls', () => ({
-  useWatchWorker: () => ({ statuses: new Map([['w1', { child_id: 'w1', reported }]]) }),
+  useWatchWorker: () => ({
+    statuses: new Map([['w1', { child_id: 'w1', reported }]]),
+    coordinator,
+  }),
 }));
 vi.mock('../sseAdapter', () => ({ fetchThreadMessages: vi.fn() }));
 const messages: ThreadMessageLike[] = [
@@ -17,7 +21,40 @@ const messages: ThreadMessageLike[] = [
 describe('worker report refresh', () => {
   beforeEach(() => {
     reported = true;
+    coordinator = undefined;
     vi.mocked(fetchThreadMessages).mockReset().mockResolvedValue(messages);
+  });
+  it('discovers a coordinator continuation and refreshes its completed synthesis once', async () => {
+    const onCoordinatorRun = vi.fn<(threadId: string) => void>();
+    const setMessages = vi.fn<(value: SetStateAction<ThreadMessageLike[]>) => void>();
+    const options = {
+      threadId: 'conv',
+      isRunning: false,
+      historyRequestRef: { current: 1 },
+      setMessages,
+      onCoordinatorRun,
+    };
+    const view = renderHook(() => {
+      useWorkerReportRefresh(options);
+    });
+    await waitFor(() => {
+      expect(setMessages).toHaveBeenCalledTimes(1);
+    });
+    coordinator = { run_id: 'continuation-1', status: 'running' };
+    view.rerender();
+    await waitFor(() => {
+      expect(onCoordinatorRun).toHaveBeenCalledWith('conv');
+    });
+    coordinator = { run_id: 'continuation-1', status: 'finished' };
+    view.rerender();
+    await waitFor(() => {
+      expect(onCoordinatorRun).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(setMessages).toHaveBeenCalledTimes(3);
+    });
+    view.rerender();
+    expect(onCoordinatorRun).toHaveBeenCalledTimes(2);
   });
   it('refreshes after report persistence, not merely model completion', async () => {
     reported = false;

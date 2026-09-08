@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/idempotency"
 )
@@ -31,7 +32,8 @@ type DelegationEnqueueStore interface {
 // job_type=swarm_delegation row per goal. A zero-value Store is a wiring bug
 // (real Go error), never a domain rejection.
 type DelegationEnqueuer struct {
-	Store DelegationEnqueueStore
+	Store      DelegationEnqueueStore
+	WakeParent bool
 }
 
 // delegationQueuedResult is EnqueueDelegation's typed return shape (51-11):
@@ -98,6 +100,7 @@ func EnqueueDelegation(ctx context.Context, enq *DelegationEnqueuer, identityID 
 		payload.ChildID = childID
 		payload.GoalIndex = i
 		payload.FanoutKey = fanoutKey
+		payload.WakeParent = enq.WakeParent
 		m, err := delegationPayloadMap(payload)
 		if err != nil {
 			return "", fmt.Errorf("swarm: delegation payload for goal %d: %w", i, err)
@@ -129,7 +132,11 @@ func EnqueueDelegation(ctx context.Context, enq *DelegationEnqueuer, identityID 
 		}
 		workers[i].ChildID = childID
 	}
-	b, err := json.Marshal(delegationQueuedResult{Queued: len(requests), Note: delegationEnqueueNote, Workers: workers})
+	note := delegationEnqueueNote
+	if enq.WakeParent {
+		note = tools.SwarmCompletionGuidance
+	}
+	b, err := json.Marshal(delegationQueuedResult{Queued: len(requests), Note: note, Workers: workers})
 	if err != nil {
 		return "", fmt.Errorf("swarm: delegation queued result: %w", err)
 	}

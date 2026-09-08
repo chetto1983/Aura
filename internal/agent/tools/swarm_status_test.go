@@ -58,6 +58,29 @@ func swarmStatusPayload(t *testing.T, result ToolResult) []SwarmWorkerStatus {
 	return payload
 }
 
+func TestSwarmStatusAutomaticDeliveryDoesNotInvitePolling(t *testing.T) {
+	tool := &SwarmStatus{WakeParent: true, Reader: &fakeSwarmStatusReader{statuses: []SwarmWorkerStatus{
+		{ChildID: "waiting", Status: "queued"}, {ChildID: "running", Status: "running"}, {ChildID: "done", Status: "succeeded"},
+	}}}
+	result, err := tool.Execute(swarmStatusTestContext(t), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statuses := swarmStatusPayload(t, result)
+	if statuses[0].Message != SwarmCompletionGuidance || statuses[1].Message != SwarmCompletionGuidance || statuses[2].Message != "" {
+		t.Fatalf("automatic completion guidance = %+v", statuses)
+	}
+	if !strings.Contains(tool.Spec().Summary, "do not poll") {
+		t.Fatal("discovery invites polling")
+	}
+	if !strings.HasPrefix((&SwarmSpawn{WakeParent: true}).Spec().Description, SwarmCompletionGuidance) {
+		t.Fatal("dispatch description does not advertise automatic continuation")
+	}
+	if strings.Contains((&SwarmSpawn{}).Spec().Description, "END THIS TURN") {
+		t.Fatal("synchronous workers inherited the background contract")
+	}
+}
+
 // TestSwarmStatusListsAllWorkersOfTheConversation: no child_id lists every
 // worker, and the reader is called with the conversation id resolved from the
 // tool-call context's session id.

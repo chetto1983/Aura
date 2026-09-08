@@ -128,6 +128,32 @@ WHERE kind = 'delegation_result'
 ORDER BY created_at, id
 LIMIT sqlc.arg(row_limit);
 
+-- name: ListPendingDelegationResults :many
+-- A phone notification does not consume the coordinator's saved input.
+SELECT s.* FROM aura.steer_queue s
+WHERE s.identity_id = sqlc.arg(identity_id)
+  AND kind = 'delegation_result'
+  AND fanout_key IS NOT NULL
+  AND drained_at IS NULL
+  AND expired_at IS NULL
+  AND (expires_at IS NULL OR expires_at > now())
+  AND EXISTS (
+    SELECT 1 FROM aura.ingestion_jobs registered
+    WHERE registered.identity_id = s.identity_id
+      AND registered.job_type = 'swarm_delegation'
+      AND registered.payload->>'fanout_key' = s.fanout_key
+      AND registered.payload->>'wake_parent' = 'true'
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM aura.ingestion_jobs j
+    WHERE j.identity_id = s.identity_id
+      AND j.job_type = 'swarm_delegation'
+      AND j.payload->>'fanout_key' = s.fanout_key
+      AND j.status IN ('queued', 'running', 'awaiting_input')
+  )
+ORDER BY created_at, id
+LIMIT sqlc.arg(row_limit);
+
 -- name: MarkFanoutNudged :many
 -- The conditional UPDATE is the claim-before-push idempotency key for one complete
 -- (identity, fanout_key) set. RETURNING tells the caller which rows THIS pass won: two

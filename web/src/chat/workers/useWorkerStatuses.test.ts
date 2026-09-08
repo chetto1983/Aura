@@ -67,8 +67,8 @@ describe('useWorkerStatuses', () => {
       }
     });
 
-    expect(view.result.current).toHaveLength(6);
-    expect(view.result.current.get('worker-4')?.duration_sec).toBe(4);
+    expect(view.result.current.statuses).toHaveLength(6);
+    expect(view.result.current.statuses.get('worker-4')?.duration_sec).toBe(4);
     view.unmount();
     expect(FakeEventSource.instances[0]?.closed).toBe(true);
   });
@@ -76,6 +76,6 @@ describe('useWorkerStatuses', () => {
   it('opens no connection without a conversation id', () => {
     const { result } = renderHook(() => useWorkerStatuses(''));
     expect(FakeEventSource.instances).toHaveLength(0);
-    expect(result.current.size).toBe(0);
+    expect(result.current.statuses.size).toBe(0);
   });
 });

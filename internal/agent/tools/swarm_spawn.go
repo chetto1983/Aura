@@ -68,8 +68,9 @@ const swarmSpawnDescription = "Run several independent subtasks in parallel as h
 // carries the live goal/concurrency/timeout/depth ceilings rendered into Spec()'s
 // schema (SWARM-02).
 type SwarmSpawn struct {
-	Runner swarmRunner
-	Caps   SwarmCaps
+	Runner     swarmRunner
+	Caps       SwarmCaps
+	WakeParent bool
 }
 
 // swarmSpawnArgs is the D-03/SWARM-01 schema: goals plus a Context string
@@ -83,6 +84,10 @@ type swarmSpawnArgs struct {
 
 func (e *SwarmSpawn) Spec() Spec {
 	params := renderSwarmSpawnParams(e.Caps)
+	description := swarmSpawnDescription
+	if e.WakeParent {
+		description = SwarmCompletionGuidance + " " + description
+	}
 	return Spec{
 		Name: "swarm_spawn",
 		// The Summary is ALL the model sees in the default manifest (deferred stub)
@@ -94,7 +99,7 @@ func (e *SwarmSpawn) Spec() Spec {
 		Summary: "Run 2 or more independent subtasks in parallel as worker agents and collect their reports. " +
 			"Whenever the user asks for multiple unrelated things in one request, call this instead of doing them one by one. " +
 			`Call shape: {"goals":["<complete brief for subtask 1>","<complete brief for subtask 2>"]}.`,
-		Description: swarmSpawnDescription,
+		Description: description,
 		Parameters:  params,
 		// The reference coding agent keeps its delegation tool always-active, and fanning work
 		// out IS decided while reading the request — but its description is a few lines, while

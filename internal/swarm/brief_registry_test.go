@@ -21,7 +21,7 @@ func (stubTool) Execute(context.Context, json.RawMessage) (tools.ToolResult, err
 
 func TestWorkerBriefUsesSystemPolicyAndUntrustedUserData(t *testing.T) {
 	const goal = "Summarize the unread mail from Andrea"
-	turns := workerBriefTurns(goal, "")
+	turns := workerBriefTurns(goal, "", "", "")
 	if len(turns) != 2 {
 		t.Fatalf("workerBriefTurns returned %d messages, want system policy + user data", len(turns))
 	}
@@ -46,7 +46,7 @@ func TestWorkerBriefUsesSystemPolicyAndUntrustedUserData(t *testing.T) {
 	if strings.Contains(turns[0].Content, goal) {
 		t.Fatal("dynamic goal leaked into the RoleSystem policy")
 	}
-	if workerBriefTurns("another goal", "")[0].Content != turns[0].Content {
+	if workerBriefTurns("another goal", "", "", "")[0].Content != turns[0].Content {
 		t.Fatal("worker RoleSystem policy is not static across goals")
 	}
 }

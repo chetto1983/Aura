@@ -281,7 +281,7 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 	// THIS run is always exactly what was passed to NewLlmAgent this time.
 	userTurns := rc.ResumeTurns
 	if len(userTurns) == 0 {
-		userTurns = workerBriefTurns(goal, briefContext)
+		userTurns = workerBriefTurns(goal, briefContext, childID, rc.ParentChildID)
 	}
 
 	rec := newHistoryRecorder()

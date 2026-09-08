@@ -63,6 +63,39 @@ func TestSwarmStatusProjectRowRejectsCorruptCompleteEvent(t *testing.T) {
 	}
 }
 
+func TestSwarmStatusProjectRowDisclosesIncompleteExcerpt(t *testing.T) {
+	const conversationID, childID = "conv-preview", "w-preview"
+	text := strings.Repeat("é", 201)
+	runDir := writeSwarmStatusTranscript(t, conversationID, childID, []agent.Event{
+		{Timestamp: time.Now(), LLMResponse: &agent.LLMResponse{Content: text}},
+	}, "")
+	status, err := (swarmStatusAdapter{runDir: runDir}).projectRow(t.Context(), conversationID,
+		documents.DelegationJobRow{ChildID: childID, Status: "succeeded", CreatedAt: time.Now()}, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(status.Tail) != 1 || !status.Tail[0].Truncated || len([]rune(status.Tail[0].Detail)) != 200 {
+		t.Fatalf("incomplete report not marked: %#v", status.Tail)
+	}
+}
+
+func TestSwarmStatusProjectSavedReportWithoutLocalTranscript(t *testing.T) {
+	report := json.RawMessage(`{"child_id":"w-real","summary":"complete answer"}`)
+	adapter := swarmStatusAdapter{runDir: t.TempDir()}
+	for _, state := range []string{"succeeded", "failed", "running", "awaiting_input"} {
+		status, err := adapter.projectRow(t.Context(), "conv-1", documents.DelegationJobRow{
+			ChildID: "w-real", Status: state, CreatedAt: time.Now(), Report: report,
+		}, 20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		terminal := state == "succeeded" || state == "failed"
+		if (len(status.Report) > 0) != terminal || (terminal && string(status.Report) != string(report)) {
+			t.Fatalf("%s: report=%s", state, status.Report)
+		}
+	}
+}
+
 func TestSwarmStatusEventKindDetail(t *testing.T) {
 	cases := []struct {
 		name       string

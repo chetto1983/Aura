@@ -118,7 +118,9 @@ type DelegationDelivery struct {
 	// Counter is the fan-out eligibility check (51-11 Task 3, delegation_fanout.go's
 	// nudgeFanout). nil-safe: a nil Counter degrades every fan-out to "eligible" --
 	// today's behaviour before this task, never a delivery block forever.
-	Counter FanoutJobCounter
+	Counter        FanoutJobCounter
+	PendingResults PendingDelegationResults
+	Resume         func(context.Context, string, string) (bool, error)
 	// NudgeAfter is AURA_SWARM_DELEGATION_NUDGE_SEC. <=0 disables the channel
 	// leg entirely (the shipped AURA_ASKUSER_PAUSE_TTL_SEC <=0-disables
 	// precedent): NudgeUndrained becomes a no-op, leaving record + steer only.

@@ -62,6 +62,26 @@ func TestEnqueueAcknowledgesStoredLegacyWorkerIdentity(t *testing.T) {
 	}
 }
 
+func TestEnqueueRegistersOnlyHostEnabledCoordinatorWake(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		store := &recordingDelegationEnqueueStore{}
+		_, err := EnqueueDelegation(context.Background(), &DelegationEnqueuer{Store: store, WakeParent: enabled},
+			"owner", []string{"first", "second"}, DelegationPayload{ConversationID: "conv", WakeParent: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(store.requests) != 2 {
+			t.Fatal("missing atomic fan-out")
+		}
+		for _, request := range store.requests {
+			wake, _ := request.Payload["wake_parent"].(bool)
+			if wake != enabled {
+				t.Fatalf("wake=%v host enabled=%v", wake, enabled)
+			}
+		}
+	}
+}
+
 func TestEnqueueDelegationSubmitsOneCompleteBatch(t *testing.T) {
 	store := &recordingDelegationEnqueueStore{}
 	goals := []string{"first goal", "second goal", "third goal"}

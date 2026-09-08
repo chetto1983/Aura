@@ -70,7 +70,35 @@ Its commands and values were verified, but it is not used as the closing contain
 transcript proof. The shorter run above has all three transcripts available through
 the mounted browser's native Aura endpoints.
 
-## References and scope
+## Late-wake retest: delivery passed, synthesis still incomplete
+
+Conversation `01a0817d-8ee3-7741-b6be-6121ea957541`, image
+`sha256:f128e625f30846cb50986fb059ea34744e55de60a438eb4cfd48137e25d88cc6`,
+binary stamp `coordinator-wake-polling-e1d463e4f`, temporary depth3.
+Initial run `run-642b8978-48c9-4bf7-bafe-b049a12e351d` ended at14:49:51.385 UTC
+with a launch acknowledgement and zero `swarm_status` calls. Without user input,
+the browser attached at14:51:01.044 to automatic continuation
+`run-a42bea85-6ac8-499c-a04e-369c0226e407`.
+
+The continuation received a clipped coordinator report. It repeatedly called status,
+invented a `read_tool_output` handle and searched for files to reconstruct missing text.
+Its final table remained incomplete. The independent worker substituted hostname
+`4de58734f4f4` for actual ID `w2-c0d7400f48ac088b2adb218c0055a76d`.
+This proves late wake and automatic UI attachment, but fails complete synthesis.
+The parent snapshot is preserved in `.git/e2e-wake-clipped-baseline.json`.
+
+The user's screenshot also showed raw delegation receipt messages in the main chat:
+English worker instructions, technical IDs and clipped report tables. These receipts
+must be hidden there using their host-owned delivery metadata, retaining them in
+the worker activity/report surface. Ordinary assistant answers are not classified
+by their text or checkmark characters.
+
+The follow-up implementation expands model notification summaries to2048runes,
+marks truncation, exposes complete durable reports through the existing status tool,
+and supplies host-issued worker and parent IDs in worker briefs. The real nested and
+hostile-report probes must be rerun before claiming those corrections verified.
+
+## Reference inventory
 
 LibreChat clone `f9f1b2fb9`: `packages/api/src/agents/subagentCompletionWakeup.ts`,
 `subagentDelivery.ts`, and `api/server/services/Endpoints/agents/subagentThreadStore.js`.

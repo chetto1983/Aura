@@ -187,6 +187,7 @@ export function snapshotToThreadMessages(snapshot: unknown): ThreadMessageLike[]
     const id = typeof raw.id === 'string' && raw.id.length > 0 ? raw.id : undefined;
     const metadata = metadataFromSnapshotId(id);
     const role = typeof raw.role === 'string' ? raw.role : '';
+    if (role === 'assistant' && raw.workerReport === true) continue;
     const text = visibleTextForSnapshotRole(role, textFromSnapshotContent(raw.content));
     if (role === 'system') continue;
     if (role === 'tool') {

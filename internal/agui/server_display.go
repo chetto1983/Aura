@@ -34,6 +34,7 @@ type displaySnapshotMessage struct {
 	Content             string                    `json:"content,omitempty"`
 	ToolCallID          string                    `json:"toolCallId,omitempty"`
 	IsError             bool                      `json:"isError,omitempty"`
+	WorkerReport        bool                      `json:"workerReport,omitempty"`
 	ToolCalls           []displaySnapshotToolCall `json:"toolCalls,omitempty"`
 	Reasoning           string                    `json:"reasoning,omitempty"`
 	ReasoningDurationMs int64                     `json:"reasoningDurationMs,omitempty"`
@@ -210,6 +211,7 @@ func attachTurnReasoning(snap *displaySnapshotEvent, rows []conversations.TurnRe
 		}
 		row := rows[next]
 		next++
+		m.WorkerReport = row.WorkerReport
 		if row.Reasoning == "" {
 			continue
 		}

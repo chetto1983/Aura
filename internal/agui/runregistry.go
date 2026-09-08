@@ -54,10 +54,11 @@ type runRegistryConfig struct {
 // joined by Close (goleak-clean); non-terminal sessions are never reaped — the
 // wallclock ctx makes them terminal, which starts their linger clock (§1.3).
 type RunRegistry struct {
-	mu       sync.Mutex
-	byRun    map[string]*RunSession
-	byThread map[threadKey]*RunSession
-	cfg      runRegistryConfig
+	mu             sync.Mutex
+	byRun          map[string]*RunSession
+	byThread       map[threadKey]*RunSession
+	latestByThread map[threadKey]*RunSession
+	cfg            runRegistryConfig
 	// now is the injectable clock stamped into each session's finishedAt and read
 	// by the eviction predicate; tests swap it before the first Start.
 	now func() time.Time
@@ -102,10 +103,11 @@ func newRunRegistry(cfg runRegistryConfig) *RunRegistry {
 		cfg.maxWallclock = defaultRunMaxWallclock
 	}
 	return &RunRegistry{
-		byRun:    make(map[string]*RunSession),
-		byThread: make(map[threadKey]*RunSession),
-		cfg:      cfg,
-		now:      time.Now,
+		byRun:          make(map[string]*RunSession),
+		byThread:       make(map[threadKey]*RunSession),
+		latestByThread: make(map[threadKey]*RunSession),
+		cfg:            cfg,
+		now:            time.Now,
 	}
 }
 
@@ -165,6 +167,9 @@ func (r *RunRegistry) Start(p runParams) (*RunSession, error) {
 	sess.now = r.now
 	r.byRun[p.runID] = sess
 	r.byThread[key] = sess
+	if p.workerID == "" {
+		r.latestByThread[key] = sess
+	}
 	r.startReaperLocked()
 	return sess, nil
 }
@@ -247,6 +252,10 @@ func (r *RunRegistry) evictExpired() {
 	for id, sess := range r.byRun {
 		if terminal, at := sess.terminalState(); terminal && now.Sub(at) > r.cfg.linger {
 			delete(r.byRun, id)
+			key := threadKey{identity: sess.IdentityID, thread: sess.ThreadID}
+			if r.latestByThread[key] == sess {
+				delete(r.latestByThread, key)
+			}
 		}
 	}
 }

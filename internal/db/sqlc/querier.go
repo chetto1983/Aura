@@ -392,6 +392,8 @@ type Querier interface {
 	// caller keeps paging until the exact durable watermark or the root is observed.
 	ListManagedTurnsPageBySeq(ctx context.Context, arg ListManagedTurnsPageBySeqParams) ([]ListManagedTurnsPageBySeqRow, error)
 	ListMcpAudit(ctx context.Context, arg ListMcpAuditParams) ([]AuraMcpAudit, error)
+	// A phone notification does not consume the coordinator's saved input.
+	ListPendingDelegationResults(ctx context.Context, arg ListPendingDelegationResultsParams) ([]AuraSteerQueue, error)
 	ListPendingPausedStates(ctx context.Context, conversationID pgtype.UUID) ([]AuraPausedStates, error)
 	ListRecentPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error)
 	ListReservedConversationDeletes(ctx context.Context, arg ListReservedConversationDeletesParams) ([]ListReservedConversationDeletesRow, error)

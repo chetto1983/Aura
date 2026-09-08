@@ -73,7 +73,7 @@ WHERE conversation_id = $1;
 -- filter) so the snapshot merge pairs positionally with the LoadHistory projection.
 -- The tool_calls filter mirrors turnToMessage's Go semantics: rows whose tool_calls
 -- decode to zero calls ('[]'/'null') count as answer-shaped there too.
-SELECT seq, reasoning, reasoning_duration_ms
+SELECT seq, reasoning, reasoning_duration_ms, delivery_key
 FROM aura.conversation_turns
 WHERE conversation_id = $1
   AND role = 'assistant'

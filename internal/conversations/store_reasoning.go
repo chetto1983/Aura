@@ -3,9 +3,11 @@ package conversations
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/google/uuid"
 )
 
 // TurnReasoning is the DISPLAY-ONLY projection of one answer-shaped assistant
@@ -15,9 +17,10 @@ import (
 // "" for a NULL column (pre-migration turns, redacted or disabled streams) — the
 // caller renders no drawer for those, the correct degrade.
 type TurnReasoning struct {
-	Seq        int
-	Reasoning  string
-	DurationMS int64
+	Seq          int
+	Reasoning    string
+	DurationMS   int64
+	WorkerReport bool
 }
 
 // ListTurnReasoning returns one row per answer-shaped assistant turn (role
@@ -45,10 +48,21 @@ func (s *Store) ListTurnReasoning(ctx context.Context, conversationID string) ([
 	out := make([]TurnReasoning, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, TurnReasoning{
-			Seq:        int(r.Seq),
-			Reasoning:  r.Reasoning.String,
-			DurationMS: r.ReasoningDurationMs.Int64,
+			Seq:          int(r.Seq),
+			Reasoning:    r.Reasoning.String,
+			DurationMS:   r.ReasoningDurationMs.Int64,
+			WorkerReport: isWorkerReportDeliveryKey(r.DeliveryKey.String),
 		})
 	}
 	return out, nil
+}
+
+// UUID:terminal is the host-owned delegation receipt key, never model text.
+func isWorkerReportDeliveryKey(key string) bool {
+	const suffix = ":terminal"
+	if len(key) != 36+len(suffix) || !strings.HasSuffix(key, suffix) {
+		return false
+	}
+	_, err := uuid.Parse(strings.TrimSuffix(key, suffix))
+	return err == nil
 }

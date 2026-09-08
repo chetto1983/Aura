@@ -36,7 +36,7 @@ export function WorkerWatchProvider({
     }
     return [...merged.values()];
   }, [registrations]);
-  const statuses = useWorkerStatuses(conversationId);
+  const { statuses, coordinator } = useWorkerStatuses(conversationId);
   const workers = useMemo(() => {
     const merged = new Map(registeredWorkers.map((worker) => [worker.child_id, worker]));
     for (const status of statuses.values()) {
@@ -87,11 +87,12 @@ export function WorkerWatchProvider({
     () => ({
       workers,
       statuses,
+      ...(coordinator === undefined ? {} : { coordinator }),
       registerWorkers,
       watchWorker,
       viewReport: onViewReport,
     }),
-    [onViewReport, registerWorkers, statuses, watchWorker, workers],
+    [onViewReport, registerWorkers, statuses, coordinator, watchWorker, workers],
   );
 
   return <WorkerWatchContext.Provider value={controller}>{children}</WorkerWatchContext.Provider>;

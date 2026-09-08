@@ -48,22 +48,34 @@ export function useWorkerReportRefresh({
   isRunning,
   historyRequestRef,
   setMessages,
+  onCoordinatorRun,
 }: {
   readonly threadId: string;
   readonly isRunning: boolean;
   readonly historyRequestRef: { readonly current: number };
   readonly setMessages: Dispatch<SetStateAction<ThreadMessageLike[]>>;
+  readonly onCoordinatorRun?: (threadId: string) => void;
 }) {
-  const { statuses } = useWatchWorker();
+  const { statuses, coordinator } = useWatchWorker();
   const reported = [...statuses.values()]
     .filter((worker) => worker.reported)
     .map((worker) => worker.child_id)
     .sort()
     .join(',');
   const applied = useRef('');
+  const coordinatorRevision =
+    coordinator === undefined ? '' : `${coordinator.run_id}:${coordinator.status}`;
   useEffect(() => {
-    if (threadId.length === 0 || reported.length === 0 || isRunning) return;
-    const key = `${threadId}:${reported}`;
+    if (coordinatorRevision.length > 0) onCoordinatorRun?.(threadId);
+  }, [threadId, coordinatorRevision, onCoordinatorRun]);
+  useEffect(() => {
+    if (
+      threadId.length === 0 ||
+      (reported.length === 0 && coordinatorRevision.length === 0) ||
+      isRunning
+    )
+      return;
+    const key = `${threadId}:${reported}:${coordinatorRevision}`;
     if (applied.current === key) return;
     const generation = historyRequestRef.current;
     const controller = new AbortController();
@@ -79,5 +91,5 @@ export function useWorkerReportRefresh({
     return () => {
       controller.abort();
     };
-  }, [threadId, reported, isRunning, historyRequestRef, setMessages]);
+  }, [threadId, reported, coordinatorRevision, isRunning, historyRequestRef, setMessages]);
 }

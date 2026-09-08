@@ -21,6 +21,7 @@ import (
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/steer"
 	"github.com/chetto1983/aura/internal/swarm"
@@ -99,11 +100,23 @@ func (a steerNudgeAdapter) ListUnnudgedDelegationResults(ctx context.Context, cu
 	if err != nil {
 		return nil, err
 	}
+	return projectDelegationResultRows(rows), nil
+}
+
+func (a steerNudgeAdapter) ListPendingDelegationResults(ctx context.Context, limit int) ([]swarm.UndrainedResult, error) {
+	rows, err := a.store.ListPendingDelegationResults(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	return projectDelegationResultRows(rows), nil
+}
+
+func projectDelegationResultRows(rows []steer.UnnudgedDelegationResult) []swarm.UndrainedResult {
 	out := make([]swarm.UndrainedResult, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, swarm.UndrainedResult{ID: r.ID, IdentityID: r.IdentityID, ConversationID: r.ConversationID, Body: r.Body, FanoutKey: r.FanoutKey})
 	}
-	return out, nil
+	return out
 }
 
 var _ swarm.SteerNudgeStore = steerNudgeAdapter{}
@@ -261,6 +274,15 @@ func (p *delegationNudgeProcessor) ProcessOnce(ctx context.Context) (int, error)
 	return p.delivery.NudgeUndrained(ctx, time.Now(), runtimeDelegationNudgeBatchSize)
 }
 
+type delegationWakeProcessor struct {
+	delivery   *swarm.DelegationDelivery
+	identityID string
+}
+
+func (p delegationWakeProcessor) ProcessOnce(ctx context.Context) (int, error) {
+	return p.delivery.WakeCompletedFanouts(identityctx.WithIdentityID(ctx, p.identityID), runtimeDelegationNudgeBatchSize)
+}
+
 // newDelegationDelivery builds the plan 51-10/51-11 delivery concern from the
 // live runtime: the SC#1 conversation record, the unchanged present-operator
 // steer push (D-04), the absent-operator channel nudge (D-02), (51-11) the
@@ -396,6 +418,13 @@ func newRuntimeDelegationWorker(chat *chatEnv, delivery *swarm.DelegationDeliver
 	return &runtimeProcessingWorkers{workers: []*runtimeIngestionWorker{
 		newRuntimeIngestionWorker(claimLoop, pollInterval),
 		newRuntimeIngestionWorker(resumeObserver, pollInterval),
+		newRuntimeIngestionWorker(&runtimeTenantIngestionProcessor{
+			identities: identity.New(chat.pool), width: 1,
+			workerIDPrefix: runtimeDelegationWorkerIDPrefix + "-coordinator",
+			worker: func(owner, _ string) runtimeIngestionProcessor {
+				return delegationWakeProcessor{delivery: delivery, identityID: owner}
+			},
+		}, pollInterval),
 		newRuntimeIngestionWorker(&delegationNudgeProcessor{delivery: delivery}, pollInterval),
 		newRuntimeIngestionWorker(pauseSweep, approvalExpiryInterval(pauseTTL)),
 	}}

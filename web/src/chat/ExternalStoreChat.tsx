@@ -131,7 +131,6 @@ export function ExternalStoreChat({
   const hydratedEffort = conversation?.ReasoningEffort;
   /** RS-07 §4.2: a set live_run_id means a detached run is in flight for this thread. */
   const liveRunId = conversation?.live_run_id;
-  useWorkerReportRefresh({ threadId, isRunning, historyRequestRef, setMessages });
   const steer = useSteerSend({ threadId, liveRunId, activeRunIdRef, isRunning, setMessages });
   const { effort, setEffort } = useReasoningEffort(
     threadId,
@@ -154,6 +153,13 @@ export function ExternalStoreChat({
     },
     [queryClient, threadId],
   );
+  useWorkerReportRefresh({
+    threadId,
+    isRunning,
+    historyRequestRef,
+    setMessages,
+    onCoordinatorRun: invalidateRuntimeReads,
+  });
 
   const onNew = useCallback(
     async (message: AppendMessage) => {

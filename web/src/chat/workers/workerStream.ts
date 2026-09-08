@@ -29,7 +29,13 @@ export interface WorkerStatus {
 
 export interface WorkerStatusStreamHandlers {
   readonly onStatus: (status: WorkerStatus) => void;
+  readonly onCoordinator?: (status: CoordinatorRunStatus) => void;
   readonly onError: () => void;
+}
+
+export interface CoordinatorRunStatus {
+  readonly run_id: string;
+  readonly status: 'running' | 'finished' | '';
 }
 
 const workerFrameEventNames = [
@@ -156,6 +162,20 @@ export function openWorkerStatusStream(
     if (!(event instanceof MessageEvent) || typeof event.data !== 'string') return;
     try {
       const frame = JSON.parse(event.data) as AguiFrame;
+      if (frame.type === 'CUSTOM' && frame.name === 'aura.swarm.coordinator') {
+        const value: unknown = frame.value;
+        if (
+          typeof value === 'object' &&
+          value !== null &&
+          'run_id' in value &&
+          typeof value.run_id === 'string' &&
+          'status' in value &&
+          (value.status === 'running' || value.status === 'finished' || value.status === '')
+        ) {
+          handlers.onCoordinator?.({ run_id: value.run_id, status: value.status });
+        }
+        return;
+      }
       if (frame.type !== 'CUSTOM' || frame.name !== 'aura.swarm.worker') return;
       const status = decodeWorkerStatus(frame.value);
       if (status !== null) handlers.onStatus(status);

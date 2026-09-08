@@ -464,6 +464,17 @@ preview is not a complete report and must disclose truncation. These probes do n
 universal prompt-injection resistance or recovery of an in-flight model call after crash.
 Evidence: `.planning/spikes/104-agent-controls-and-grounded-results/final-answer-e2e.md`.
 
+The late-wake retest on 2026-09-08 (conversation `01a0817d-8ee3-7741-b6be-6121ea957541`)
+resumed automatically after the initial turn ended, and the cockpit attached without user
+input. It also exposed report truncation that triggered repeated status/recovery calls and
+a worker substituting its hostname for its ID. Model notifications must retain a larger
+summary than UI cards, disclose truncation, and expose the complete saved report for retrieval.
+Worker briefs carry the exact host-issued worker and parent IDs. The raw internal report
+messages shown in that probe confused the user: the cockpit's main chat must hide host-marked
+delegation receipts while retaining coordinator answers and the activity/report view.
+These observations prove wake/attachment only; the complete nested synthesis remains to be
+retested after the report and identity fixes.
+
 The 2026-09-08 five-worker live probe exceeded the configured concurrency of four:
 the tenant polling wrapper recreated the asynchronous delegation loop on each pass,
 discarding its occupied slots. Retain stateful delegation processors across polls and

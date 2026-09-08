@@ -307,6 +307,7 @@ func buildBaseRegistryWithHandles(
 	// built-ins above keep reg.Validate() green. The adapter resolves the live parent
 	// budget/registry/client/llmCfg/convID off the tool-call ctx (agent.WithSwarmContext).
 	swarmAdapter := swarm.NewRunnerAdapter(*cfg)
+	automaticDelegation := cfg.AGUIRun.Detach && cfg.AGUISteer.Enabled && taskStorePool(ts) != nil
 	// SWARM-03/09: a top-level swarm_spawn call needs the durable delegation queue
 	// (aura.ingestion_jobs, job_type=swarm_delegation) to background instead of
 	// blocking the turn. Only wired when a real pool exists — the same nil-guard
@@ -314,9 +315,12 @@ func buildBaseRegistryWithHandles(
 	// keeps the synchronous path byte-for-byte unchanged (RunnerAdapter.Enqueuer stays
 	// nil, and swarm.Run's background branch is a strict no-op without it).
 	if pool := taskStorePool(ts); pool != nil {
-		swarmAdapter.Enqueuer = &swarm.DelegationEnqueuer{Store: documents.NewPostgresIngestionJobStore(pool)}
+		swarmAdapter.Enqueuer = &swarm.DelegationEnqueuer{
+			Store:      documents.NewPostgresIngestionJobStore(pool),
+			WakeParent: automaticDelegation,
+		}
 	}
-	reg.Register(&tools.SwarmSpawn{Runner: swarmAdapter, Caps: tools.SwarmCaps{
+	reg.Register(&tools.SwarmSpawn{Runner: swarmAdapter, WakeParent: automaticDelegation, Caps: tools.SwarmCaps{
 		MaxGoals:      cfg.MaxSwarmGoals,
 		MaxConcurrent: cfg.MaxSwarmConcurrent,
 		ChildIdleSec:  cfg.SwarmChildIdleSec,
@@ -334,7 +338,7 @@ func buildBaseRegistryWithHandles(
 			store:   documents.NewPostgresIngestionJobStore(pool),
 			runDir:  cfg.RunDir,
 			maxJobs: cfg.MaxSwarmGoals,
-		}})
+		}, WakeParent: automaticDelegation})
 	}
 	// D-10: fail closed at boot if no actionable tool exists (excluding tool_search).
 	// This is the shared composition root — buildRegistry and buildRegistryWithMCP

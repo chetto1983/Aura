@@ -478,6 +478,10 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// or nil chat.pool degrades every leg to a no-op rather than dereferencing —
 	// see newDelegationDelivery.
 	delegationDelivery := newDelegationDelivery(chat, store, reg)
+	if runRegistry != nil && chat.steer != nil {
+		delegationDelivery.PendingResults = steerNudgeAdapter{store: chat.steer}
+		delegationDelivery.Resume = aguiServer.ResumePendingSteer
+	}
 	delegationWorker := newRuntimeDelegationWorker(chat, delegationDelivery, runRegistry)
 
 	// Crash-orphan reconciler (D-01d): closes a start∧¬end reservation left by a crash

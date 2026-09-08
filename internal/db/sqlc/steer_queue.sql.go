@@ -179,6 +179,75 @@ func (q *Queries) ListDueSteerRows(ctx context.Context, arg ListDueSteerRowsPara
 	return items, nil
 }
 
+const listPendingDelegationResults = `-- name: ListPendingDelegationResults :many
+SELECT s.id, s.identity_id, s.conversation_id, s.kind, s.source, s.body, s.created_at, s.expires_at, s.drained_at, s.expired_at, s.expiry_reason, s.nudged_at, s.fanout_key, s.delivery_key, s.target_worker_id, s.target_run_id FROM aura.steer_queue s
+WHERE s.identity_id = $1
+  AND kind = 'delegation_result'
+  AND fanout_key IS NOT NULL
+  AND drained_at IS NULL
+  AND expired_at IS NULL
+  AND (expires_at IS NULL OR expires_at > now())
+  AND EXISTS (
+    SELECT 1 FROM aura.ingestion_jobs registered
+    WHERE registered.identity_id = s.identity_id
+      AND registered.job_type = 'swarm_delegation'
+      AND registered.payload->>'fanout_key' = s.fanout_key
+      AND registered.payload->>'wake_parent' = 'true'
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM aura.ingestion_jobs j
+    WHERE j.identity_id = s.identity_id
+      AND j.job_type = 'swarm_delegation'
+      AND j.payload->>'fanout_key' = s.fanout_key
+      AND j.status IN ('queued', 'running', 'awaiting_input')
+  )
+ORDER BY created_at, id
+LIMIT $2
+`
+
+type ListPendingDelegationResultsParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	RowLimit   int32       `json:"row_limit"`
+}
+
+// A phone notification does not consume the coordinator's saved input.
+func (q *Queries) ListPendingDelegationResults(ctx context.Context, arg ListPendingDelegationResultsParams) ([]AuraSteerQueue, error) {
+	rows, err := q.db.Query(ctx, listPendingDelegationResults, arg.IdentityID, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuraSteerQueue{}
+	for rows.Next() {
+		var i AuraSteerQueue
+		if err := rows.Scan(
+			&i.ID,
+			&i.IdentityID,
+			&i.ConversationID,
+			&i.Kind,
+			&i.Source,
+			&i.Body,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.DrainedAt,
+			&i.ExpiredAt,
+			&i.ExpiryReason,
+			&i.NudgedAt,
+			&i.FanoutKey,
+			&i.DeliveryKey,
+			&i.TargetWorkerID,
+			&i.TargetRunID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUnnudgedDelegationResults = `-- name: ListUnnudgedDelegationResults :many
 SELECT id, identity_id, conversation_id, kind, source, body, created_at, expires_at, drained_at, expired_at, expiry_reason, nudged_at, fanout_key, delivery_key, target_worker_id, target_run_id FROM aura.steer_queue
 WHERE kind = 'delegation_result'

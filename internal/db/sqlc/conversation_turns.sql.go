@@ -174,7 +174,7 @@ func (q *Queries) InsertConversationTurn(ctx context.Context, arg InsertConversa
 }
 
 const listAssistantTurnReasoning = `-- name: ListAssistantTurnReasoning :many
-SELECT seq, reasoning, reasoning_duration_ms
+SELECT seq, reasoning, reasoning_duration_ms, delivery_key
 FROM aura.conversation_turns
 WHERE conversation_id = $1
   AND role = 'assistant'
@@ -186,6 +186,7 @@ type ListAssistantTurnReasoningRow struct {
 	Seq                 int32       `json:"seq"`
 	Reasoning           pgtype.Text `json:"reasoning"`
 	ReasoningDurationMs pgtype.Int8 `json:"reasoning_duration_ms"`
+	DeliveryKey         pgtype.Text `json:"delivery_key"`
 }
 
 // Amendment #91 (fix-plan 1.12) display-only read: the reasoning columns for every
@@ -204,7 +205,12 @@ func (q *Queries) ListAssistantTurnReasoning(ctx context.Context, conversationID
 	items := []ListAssistantTurnReasoningRow{}
 	for rows.Next() {
 		var i ListAssistantTurnReasoningRow
-		if err := rows.Scan(&i.Seq, &i.Reasoning, &i.ReasoningDurationMs); err != nil {
+		if err := rows.Scan(
+			&i.Seq,
+			&i.Reasoning,
+			&i.ReasoningDurationMs,
+			&i.DeliveryKey,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

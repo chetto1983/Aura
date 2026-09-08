@@ -1,10 +1,11 @@
 import { createContext, useContext } from 'react';
 import type { DisplayChildReport } from '../displays/types';
-import type { WorkerStatus } from './workerStream';
+import type { CoordinatorRunStatus, WorkerStatus } from './workerStream';
 
 export interface WorkerWatchController {
   readonly workers: readonly DisplayChildReport[];
   readonly statuses: ReadonlyMap<string, WorkerStatus>;
+  readonly coordinator?: CoordinatorRunStatus;
   readonly registerWorkers: (
     registrationId: string,
     workers: readonly DisplayChildReport[],

@@ -25,17 +25,20 @@ const workerPolicy = workerOverlay + "\n\n" +
 	"State every fact you found; do not refer to context you cannot include here.\n\n" +
 	briefTools + "\nUse the tools available to you to gather what the goal needs. " +
 	"Call text_response with your final report when you are done. " +
-	"You may not spawn further workers.\n\n" +
+	"Delegate only when the assigned goal and available tools permit it. " +
+	"The host supplies your exact worker_id; use it as your agent ID, never infer an ID from hostnames or environment variables.\n\n" +
 	briefBoundaries + "\nStay strictly within this goal. Do not attempt sibling tasks, " +
 	"do not ask the user unless the goal genuinely cannot proceed without a decision.\n"
 
 type workerBriefInput struct {
-	Goal    string `json:"goal"`
-	Context string `json:"context,omitempty"`
+	Goal           string `json:"goal"`
+	Context        string `json:"context,omitempty"`
+	WorkerID       string `json:"worker_id,omitempty"`
+	ParentWorkerID string `json:"parent_worker_id,omitempty"`
 }
 
-func workerBriefTurns(goal, context string) []llm.Message {
-	raw, _ := json.Marshal(workerBriefInput{Goal: goal, Context: strings.TrimSpace(context)})
+func workerBriefTurns(goal, context, workerID, parentWorkerID string) []llm.Message {
+	raw, _ := json.Marshal(workerBriefInput{Goal: goal, Context: strings.TrimSpace(context), WorkerID: workerID, ParentWorkerID: parentWorkerID})
 	return []llm.Message{
 		{Role: llm.RoleSystem, Content: workerPolicy},
 		{Role: llm.RoleUser, Content: agent.FrameUntrustedPromptContent("swarm_delegation", string(raw))},

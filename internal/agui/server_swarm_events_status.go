@@ -64,7 +64,15 @@ func (s *Server) swarmWorkerStatusSequence(ctx context.Context, conv string, ini
 	return func(yield func(events.Event, error) bool) {
 		states := make(map[string]*swarmWorkerStatusState)
 		children := append([]string(nil), initialChildren...)
+		var lastCoordinator coordinatorRunStatus
 		for {
+			coordinator := s.runs.coordinatorStatus(scopedIdentityID(ctx), conv)
+			if coordinator != lastCoordinator {
+				if !yield(events.NewCustomEvent(swarmCoordinatorEventName, events.WithValue(coordinator)), nil) {
+					return
+				}
+				lastCoordinator = coordinator
+			}
 			sort.Strings(children)
 			now := time.Now().UTC()
 			for _, childID := range children {
