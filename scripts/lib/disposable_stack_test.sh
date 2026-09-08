@@ -71,6 +71,48 @@ assert_contains "AURA_DB_URL/MIGRATE_URL/BOOTSTRAP_URL carry the throwaway datab
 assert_contains "AURA_DB_URL/MIGRATE_URL/BOOTSTRAP_URL carry the requested host" "$export_out" "127.0.0.1"
 assert_contains "AURA_DB_URL/MIGRATE_URL/BOOTSTRAP_URL carry the requested port" "$export_out" "5555"
 
+# --- bring_up_local/bring_up_auto: the guard fires BEFORE any docker call -----------
+# Proves the ordering, not just the guard function in isolation: a caller passing "aura"
+# must never reach a `docker run`/`docker exec` — the refusal has to happen first, every
+# time, not just when disposable_stack_guard_name is called directly. A stub `docker` on
+# PATH that itself fails loudly if invoked makes "never touched docker" a checked fact.
+FAKE_BIN="$TMP/bin"
+mkdir -p "$FAKE_BIN"
+cat >"$FAKE_BIN/docker" <<'EOF'
+#!/usr/bin/env bash
+echo "UNEXPECTED: docker was invoked with: $*" >&2
+exit 99
+EOF
+chmod +x "$FAKE_BIN/docker"
+
+set +e
+PATH="$FAKE_BIN:$PATH" bash -c "source '$LIB_ABS'; disposable_stack_bring_up_local aura testpw aura-postgres-musr-test 5599" >"$TMP/bring_up_local.log" 2>&1
+bring_up_local_rc=$?
+set -e
+assert_eq "bring_up_local refuses the name 'aura' with exit 4" "4" "$bring_up_local_rc"
+if grep -q "UNEXPECTED: docker was invoked" "$TMP/bring_up_local.log"; then
+  ASSERTIONS=$((ASSERTIONS + 1))
+  echo "FAIL: bring_up_local called docker before the guard fired"
+  FAIL=1
+else
+  ASSERTIONS=$((ASSERTIONS + 1))
+  echo "PASS: bring_up_local never touches docker when the name is 'aura'"
+fi
+
+set +e
+PATH="$FAKE_BIN:$PATH" GITHUB_ACTIONS="" bash -c "source '$LIB_ABS'; disposable_stack_bring_up_auto aura testpw" >"$TMP/bring_up_auto.log" 2>&1
+bring_up_auto_rc=$?
+set -e
+assert_eq "bring_up_auto refuses the name 'aura' with exit 4" "4" "$bring_up_auto_rc"
+if grep -q "UNEXPECTED: docker was invoked" "$TMP/bring_up_auto.log"; then
+  ASSERTIONS=$((ASSERTIONS + 1))
+  echo "FAIL: bring_up_auto called docker before the guard fired"
+  FAIL=1
+else
+  ASSERTIONS=$((ASSERTIONS + 1))
+  echo "PASS: bring_up_auto never touches docker when the name is 'aura'"
+fi
+
 echo "==> $ASSERTIONS assertions checked"
 if [ "$FAIL" -ne 0 ]; then
   echo "FAIL: scripts/lib/disposable_stack_test.sh had failing assertions" >&2
