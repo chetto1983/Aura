@@ -96,6 +96,12 @@ steer observation and is not counted as a successful live correction.
 
 ## Additional identity measurement
 
+Queue104Q2 on image`c499bf6c7`, conversation`01a07edc-960d-7044-8ff9-532133817025`:
+four workers ran while `w5-341a2701ecce7c60810642b82e87dc2e` stayed queued at attempt0
+across later polls. Admission is corrected. The fifth card still said In corso and
+opened a nonexistent transcript; no stop button existed before execution. Queued
+visibility and pre-start cancellation remain separate work, not passing evidence.
+
 Nested104N, conversation `01a07ed6-a753-78ed-82f6-0c226a2924ff`, depth3 on image
 `c499bf6c7`: both grandchildren were discovered before the coordinator's spawn call
 returned. MCP steered `w1-8a482f3772687e55f67fc760ed1bdedc` to JSON and stopped

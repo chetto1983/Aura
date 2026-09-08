@@ -417,6 +417,9 @@ the tenant polling wrapper recreated the asynchronous delegation loop on each pa
 discarding its occupied slots. Retain stateful delegation processors across polls and
 apply the configured swarm width to their claim capacity. Retire idle processors when
 their identity is no longer active; observation must not reset execution admission.
+The corrected admission probe kept a fifth job queued at attempt0 while four ran.
+Its card still said Running and opened a nonexistent transcript. Queued workers must
+be labeled as queued, and their activity view must wait for an actual execution.
 
 The live 2026-09-08 MCP inspection found no child controls while two real workers were
 running (spike 104). Operators must be able to steer and stop an individual worker,
