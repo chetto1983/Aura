@@ -451,6 +451,16 @@ The 104R graceful-restart probe rejected an accepted, undrained correction as
 also exposed a remaining classification defect: `[command cancelled]` was marked
 `ok` and displayed as Completed. Command cancellation must carry an explicit
 structured outcome through the existing tool event and visual-status pipeline.
+The 2026-09-08 MCP 104U service-worker lifetime experiment opened two real,
+owner-scoped status streams: one through the PWA worker and one with native CDP
+bypass. Stopping that worker closed only the proxied stream (OPEN to CLOSED);
+the direct stream remained OPEN. The PWA must intercept only its explicit static
+precache assets and navigation fallback, leaving API/event requests on the browser's
+native network path. LibreChat's Vite PWA config similarly limits caching to static
+assets and locale chunks. Add a service-worker-enabled browser regression because
+the existing mocked Playwright suites block service workers. This proves a transport
+lifetime defect; it does not establish the cause of the separate intermittent
+conversation navigation or close the coordinator-grounding and cross-owner gaps.
 The 2026-09-08 paused-worker probe accepted `cancel` but rebuilt the model and marked
 the job succeeded. The resume observer must carry the explicit cancellation into the
 existing terminal-delivery path, rather than interpret it as another model-facing answer.
