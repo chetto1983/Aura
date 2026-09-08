@@ -18,7 +18,7 @@ func TestAutoTitle_DefensiveHistoryCopy_WR03(t *testing.T) {
 	client := agenttest.NewFakeClient(
 		agenttest.TextChunks("stop", "A Title From The Snapshot"),
 	)
-	r, conv, _ := newTestRunner(t, client)
+	r, conv, _ := newTestRunner(t, agenttest.TitleClient{Main: client, Title: client})
 	convID := newConvID(t)
 	ctx := context.Background()
 	mustCreate(t, r, convID)

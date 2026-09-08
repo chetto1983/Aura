@@ -18,18 +18,23 @@ var resumeBoundary = obs.NewGlobalBoundary("github.com/chetto1983/aura/internal/
 	Operation: "resume", Count: obs.RunnerResumeCallsID, Duration: obs.RunnerResumeDurationID,
 })
 
-// maybeAutoTitle fires the best-effort auto-title worker when the conversation has
-// reached seq>=3 and is still untitled (D-A5-01 / Req#9). The worker outlives the
-// turn ctx (WithoutCancel — the turn ctx dies when Turn returns) but is bounded by
-// titleTimeout and tracked by the Runner-owned WaitGroup so Stop joins it
-// (goleak-clean). Errors NEVER block chat: a failed title leaves the column NULL.
+// Title generation uses the first request without waiting for the answer. Its
+// independent bounded context also covers a failed or interrupted main turn.
 func (r *Runner) maybeAutoTitle(turnCtx context.Context, convID string, history []llm.Message) {
 	conv, err := r.Conv.Get(turnCtx, convID)
 	if err != nil || conv.TitleSet {
 		return // already titled (or unreadable) — nothing to do
 	}
-	n, err := r.Conv.CountTurns(turnCtx, convID)
-	if err != nil || n < autoTitleMinSeq {
+	fallback := conversations.FallbackTitle(history)
+	if fallback == "" {
+		return
+	}
+	if r.breaker != nil && r.breaker.Allow() != nil {
+		r.persistAutoTitle(turnCtx, convID, fallback)
+		return
+	}
+	key := newSessionKey(turnCtx, convID)
+	if _, loaded := r.titleFlights.LoadOrStore(key, struct{}{}); loaded {
 		return
 	}
 
@@ -40,24 +45,31 @@ func (r *Runner) maybeAutoTitle(turnCtx context.Context, convID string, history 
 	hist := append([]llm.Message(nil), history...)
 	runtime := r.llmSnapshot(turnCtx)
 	r.wg.Go(func() {
+		defer r.titleFlights.Delete(key)
 		ctx := context.WithoutCancel(turnCtx) // load-bearing: turnCtx cancels on Turn return
 		ctx, cancel := context.WithTimeout(ctx, r.titleTimeout)
 		defer cancel()
 		title, gerr := conversations.GenerateTitle(ctx, runtime.Client, runtime.Config.Model, hist)
-		if gerr != nil {
+		if gerr != nil || title == "" {
 			// Do not attach convID or gerr: both may contain user/provider-controlled text,
 			// which would let control characters forge adjacent text-handler log records.
 			slog.Warn("runner: auto-title generation failed")
-			return
+			title = fallback
 		}
-		if title == "" {
-			slog.Warn("runner: auto-title generation returned an empty title")
-			return
-		}
-		if err := r.Conv.SetTitleIfNull(ctx, convID, title); err != nil {
-			slog.Warn("runner: auto-title persistence failed")
-		}
+		r.persistAutoTitle(turnCtx, convID, title)
 	})
+}
+
+func (r *Runner) persistAutoTitle(turnCtx context.Context, convID, title string) {
+	if title == "" {
+		return
+	}
+	// A provider timeout must not cancel the fallback's persistence.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(turnCtx), 5*time.Second)
+	defer cancel()
+	if err := r.Conv.SetTitleIfNull(ctx, convID, title); err != nil {
+		slog.Warn("runner: auto-title persistence failed")
+	}
 }
 
 // declinedContent is the RoleTool body injected when the user declines a pause

@@ -88,7 +88,7 @@ func TestStop_HungWorkerDoesNotLeakWaiterGoroutines(t *testing.T) {
 	if _, err := conv.Create(ctx, conversations.CreateParams{ID: convID, IdentityID: "00000000-0000-0000-0000-000000000001"}); err != nil {
 		t.Fatalf("create conversation: %v", err)
 	}
-	for seq := 1; seq <= autoTitleMinSeq; seq++ {
+	for seq := 1; seq <= 3; seq++ {
 		if err := conv.AppendTurn(ctx, conversations.AppendTurnParams{
 			ConversationID: convID, Seq: seq, Role: llm.RoleUser, Content: "x",
 		}); err != nil {
@@ -179,7 +179,7 @@ func TestStop_ReArmsWaiterForWorkerSpawnedAfterCleanDrain(t *testing.T) {
 	if _, err := conv.Create(ctx, conversations.CreateParams{ID: convID, IdentityID: "00000000-0000-0000-0000-000000000001"}); err != nil {
 		t.Fatalf("create conversation: %v", err)
 	}
-	for seq := 1; seq <= autoTitleMinSeq; seq++ {
+	for seq := 1; seq <= 3; seq++ {
 		if err := conv.AppendTurn(ctx, conversations.AppendTurnParams{
 			ConversationID: convID, Seq: seq, Role: llm.RoleUser, Content: "x",
 		}); err != nil {
@@ -204,7 +204,12 @@ func TestStop_ReArmsWaiterForWorkerSpawnedAfterCleanDrain(t *testing.T) {
 	}
 
 	// Worker #2 spawned AFTER the clean drain, then blocks in the stream.
-	r.maybeAutoTitle(ctx, convID, history)
+	// Worker #1 now persists a fallback, so use another untitled conversation.
+	nextID := newConvID(t)
+	if _, err := conv.Create(ctx, conversations.CreateParams{ID: nextID, IdentityID: "00000000-0000-0000-0000-000000000001"}); err != nil {
+		t.Fatal(err)
+	}
+	r.maybeAutoTitle(ctx, nextID, history)
 	select {
 	case <-client.entered:
 	case <-time.After(5 * time.Second):

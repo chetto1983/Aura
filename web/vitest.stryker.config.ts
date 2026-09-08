@@ -35,6 +35,7 @@ const mutationTests = [
   'src/chat/__tests__/ReasoningPill.test.tsx',
   'src/audit/__tests__/auditPairing.test.ts',
   'src/conversations/__tests__/exportConversation.test.ts',
+  'src/conversations/__tests__/useConversationTitle.test.ts',
 ] as const;
 
 export default defineConfig({

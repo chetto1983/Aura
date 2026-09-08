@@ -185,16 +185,13 @@ export function AppShell() {
     void navigate(`/c/${encodeURIComponent(id)}`);
   }
 
-  const ensureThread = useCallback(
-    async (initialPrompt: string) => {
-      if (activeThreadId.length > 0) return activeThreadId;
-      const conv = await createConversation.mutateAsync(initialPrompt);
-      setSelectedId(conv.ID);
-      void navigate(`/c/${encodeURIComponent(conv.ID)}`);
-      return conv.ID;
-    },
-    [activeThreadId, createConversation, navigate],
-  );
+  const ensureThread = useCallback(async () => {
+    if (activeThreadId.length > 0) return activeThreadId;
+    const conv = await createConversation.mutateAsync();
+    setSelectedId(conv.ID);
+    void navigate(`/c/${encodeURIComponent(conv.ID)}`);
+    return conv.ID;
+  }, [activeThreadId, createConversation, navigate]);
 
   // Operator report: deleting the ACTIVE conversation left the main pane bound
   // to the dead threadId (messages + composer still live; the next send hit
@@ -222,7 +219,7 @@ export function AppShell() {
   const startNewConversation = useCallback(async () => {
     if (createConversation.isPending) return;
     try {
-      const conv = await createConversation.mutateAsync('');
+      const conv = await createConversation.mutateAsync();
       setSurface('chat');
       setSelectedId(conv.ID);
       resetUsage();

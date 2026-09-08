@@ -157,11 +157,28 @@ func TestSanitizeTitle(t *testing.T) {
 		"'single'":               "single",
 		"`backtick`":             "backtick",
 		strings.Repeat("a", 100): strings.Repeat("a", 80),
+		strings.Repeat("界", 100): strings.Repeat("界", 80),
 	}
 	for in, want := range cases {
 		if got := sanitizeTitle(in); got != want {
 			t.Errorf("sanitizeTitle(%q): got %q want %q", in, got, want)
 		}
+	}
+}
+
+func TestFallbackTitleUsesFirstMeaningfulUserMessage(t *testing.T) {
+	history := []llm.Message{
+		{Role: llm.RoleSystem, Content: "system instructions"},
+		{Role: llm.RoleUser, Content: "   "},
+		{Role: llm.RoleAssistant, Content: "an old response"},
+		{Role: llm.RoleUser, Content: "  Pianifica\n il   rilascio  "},
+		{Role: llm.RoleUser, Content: "later unrelated question"},
+	}
+	if title := FallbackTitle(history); title != "Pianifica il rilascio" {
+		t.Fatalf("title=%q", title)
+	}
+	if title := FallbackTitle(history[:3]); title != "" {
+		t.Fatalf("no meaningful user message: %q", title)
 	}
 }
 

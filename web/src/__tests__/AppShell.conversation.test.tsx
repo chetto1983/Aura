@@ -221,6 +221,9 @@ describe('AppShell conversation binding (CHAT-02 / 25-03 stub resolution)', () =
           if (url.includes('/rot-events')) {
             return Promise.resolve(new Response('[]', { status: 200 }));
           }
+          if (url === `/api/conversations/${created.ID}/title`) {
+            return Promise.resolve(new Response('{"error":"title not ready"}', { status: 404 }));
+          }
           if (/\/api\/conversations\/[^/?]+$/.test(url)) {
             return Promise.resolve(new Response(JSON.stringify(created), { status: 200 }));
           }
@@ -252,7 +255,7 @@ describe('AppShell conversation binding (CHAT-02 / 25-03 stub resolution)', () =
         expect(screen.getByText('Ciao.')).toBeTruthy();
       });
       expect(runBody?.threadId).toBe(created.ID);
-      expect(createBody?.title).toBe('ciao');
+      expect(createBody).toEqual({});
       expect(calls.indexOf('POST /api/conversations')).toBeLessThan(
         calls.indexOf('POST /agent/run'),
       );

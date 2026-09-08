@@ -9,6 +9,7 @@ import {
   type AppendMessage,
   type ThreadMessageLike,
 } from '@assistant-ui/react';
+import { useConversationTitle } from '../conversations/useConversationTitle';
 import {
   CONVERSATION_KEY,
   CONVERSATION_ROT_EVENTS_KEY,
@@ -123,6 +124,10 @@ export function ExternalStoreChat({
   const compaction = useThreadCompaction(threadId, messages);
   const reasoningCaps = useReasoningCapabilities();
   const conversation = useConversation(threadId).data;
+  useConversationTitle(
+    threadId,
+    conversation?.TitleSet === false && messages.some((message) => message.role === 'user'),
+  );
   const hydratedEffort = conversation?.ReasoningEffort;
   /** RS-07 §4.2: a set live_run_id means a detached run is in flight for this thread. */
   const liveRunId = conversation?.live_run_id;

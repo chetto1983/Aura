@@ -77,6 +77,9 @@ func newTestRunner(t *testing.T, client llm.Client) (*Runner, *fakeConvStore, *f
 // exercise model/price-table-dependent persistence (e.g. the CostUSD table fallback).
 func newTestRunnerCfg(t *testing.T, client llm.Client, cfg llm.Config) (*Runner, *fakeConvStore, *fakePauseStore) {
 	t.Helper()
+	if _, scripted := client.(*agenttest.FakeClient); scripted {
+		client = agenttest.TitleClient{Main: client, Title: agenttest.NewFakeClient(agenttest.TextChunks("stop", "Test conversation title"))}
+	}
 	conv := newFakeConvStore()
 	pause := newFakePauseStore()
 	id := newFakeIdentityStore()
@@ -474,16 +477,11 @@ func TestFastReplyFor_NormalizesItalianGreeting(t *testing.T) {
 	}
 }
 
-// TestAutoTitle_FiresAfterSeq3 asserts the auto-title worker sets the title after
-// the history reaches seq>=3, using the fake client to produce the title.
-func TestAutoTitle_FiresAfterSeq3(t *testing.T) {
-	client := agenttest.NewFakeClient(
-		// The chat turn: a terminal text_response (user + assistant = 2 turns; with
-		// the seeded system turn the conversation reaches seq>=3).
-		agenttest.ToolCallTurn(textResponseCall("call-1", "Sure, here you go.")),
-		// The auto-title call: streamed title text.
-		agenttest.TextChunks("stop", "Weather In Rome Question"),
-	)
+func TestAutoTitle_FirstTurnUsesGeneratedTitle(t *testing.T) {
+	client := agenttest.TitleClient{
+		Main:  agenttest.NewFakeClient(agenttest.ToolCallTurn(textResponseCall("call-1", "Sure, here you go."))),
+		Title: agenttest.NewFakeClient(agenttest.TextChunks("stop", "Weather In Rome Question")),
+	}
 	r, conv, _ := newTestRunner(t, client)
 	convID := newConvID(t)
 	ctx := context.Background()
@@ -502,26 +500,23 @@ func TestAutoTitle_FiresAfterSeq3(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !c.TitleSet || c.Title == "" {
+	if !c.TitleSet || c.Title != "Weather In Rome Question" {
 		t.Fatalf("expected auto-title to be set, got TitleSet=%v Title=%q", c.TitleSet, c.Title)
 	}
 }
 
-// TestAutoTitle_ErrorLeavesTitleNull asserts a title-generation error never blocks
-// chat and leaves the title NULL.
-func TestAutoTitle_ErrorLeavesTitleNull(t *testing.T) {
-	client := agenttest.NewFakeClient(
-		agenttest.ToolCallTurn(textResponseCall("call-1", "Done.")),
-		// The auto-title call fails (real infra failure path).
-		agenttest.FakeTurn{Err: errFake},
-	)
+func TestAutoTitle_ErrorUsesFirstMessageFallback(t *testing.T) {
+	client := agenttest.TitleClient{
+		Main:  agenttest.NewFakeClient(agenttest.ToolCallTurn(textResponseCall("call-1", "Done."))),
+		Title: agenttest.NewFakeClient(agenttest.FakeTurn{Err: errFake}),
+	}
 	r, conv, _ := newTestRunner(t, client)
 	convID := newConvID(t)
 	ctx := context.Background()
 	mustCreate(t, r, convID)
 	seedSystemTurn(t, r, convID)
 
-	if _, err := drain(r.Turn(ctx, convID, new("hi"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("Pianifica il rilascio"))); err != nil {
 		t.Fatalf("turn must not fail on a title error: %v", err)
 	}
 	if err := r.Stop(ctx, convID); err != nil {
@@ -531,8 +526,8 @@ func TestAutoTitle_ErrorLeavesTitleNull(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.TitleSet {
-		t.Fatalf("title must remain NULL on a generation error, got %q", c.Title)
+	if !c.TitleSet || c.Title != "Pianifica il rilascio" {
+		t.Fatalf("title must retain a first-message fallback, got %q", c.Title)
 	}
 }
 

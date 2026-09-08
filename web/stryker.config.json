@@ -35,6 +35,7 @@
     "src/chat/toolStatus.ts",
     "src/chat/toolGrouping.ts",
     "src/conversations/exportConversation.ts",
+    "src/conversations/useConversationTitle.ts",
     "src/audit/auditPairing.ts"
   ],
   "thresholds": { "high": 85, "low": 70, "break": 70 },

@@ -21,10 +21,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// autoTitleMinSeq is the turn count past which the auto-title worker fires (Req#9:
-// "after seq >= 3"). System(1) + first user(2) + first assistant(3).
-const autoTitleMinSeq = 3
-
 // localIdentityName is the pre-Authula seeded identity. It remains only as a
 // fallback for legacy databases that have no user identity yet.
 const localIdentityName = "local"
@@ -98,6 +94,7 @@ type Runner struct {
 	gatewayOwnsToolStarts bool
 
 	titleTimeout time.Duration
+	titleFlights sync.Map
 	stopTimeout  time.Duration
 	resumeHook   ResumeHook
 
@@ -229,6 +226,7 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 				return
 			}
 			if answer, ok := fastReplyFor(*input.visibleUserMsg); ok {
+				r.persistAutoTitle(ctx, convID, conversations.FallbackTitle([]llm.Message{{Role: llm.RoleUser, Content: *input.visibleUserMsg}}))
 				ev := fastReplyEvent(convID, requestID, answer)
 				tr := &turnTracker{convID: convID, llmRuntime: turnRuntime}
 				if err := r.persistEvent(ctx, tr, ev); err != nil {
@@ -260,10 +258,12 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 			ctx, convID, requestID, agentHistory,
 		)
 		if err != nil {
+			r.persistAutoTitle(ctx, convID, conversations.FallbackTitle(history))
 			yield(nil, err)
 			return
 		}
 		defer cancelAgent()
+		r.maybeAutoTitle(ctx, convID, history)
 		// Register the live turn's ctx-cancel under the (identity, session) key so a
 		// concurrent conversation-delete can abort THIS owner's in-flight turn (MUSR-05
 		// step 1 / D-23). ctx is owner-scoped here (scopeContextToConversation set it), so
@@ -334,11 +334,6 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 			return
 		}
 
-		// Post-round bookkeeping: fire the auto-title worker when the conversation has
-		// reached seq>=3 and is not titled yet. Skipped on a pause (no assistant turn).
-		if !tr.paused {
-			r.maybeAutoTitle(ctx, convID, history)
-		}
 	}
 }
 

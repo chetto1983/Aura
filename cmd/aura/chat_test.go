@@ -67,7 +67,7 @@ func testChatDeps(t *testing.T, in string, client *agenttest.FakeClient) (replDe
 		Identity:        newCmdIdentityFake(),
 		CacheMetrics:    newCmdCacheMetricFake(),
 		ToolInvocations: newCmdToolInvocationFake(),
-		Client:          client,
+		Client:          agenttest.TitleClient{Main: client, Title: agenttest.NewFakeClient(agenttest.TextChunks("stop", "Test conversation title"))},
 		Registry:        reg,
 		LLM:             cfg.LLM,
 		TitleTimeout:    time.Second,
@@ -111,12 +111,9 @@ func TestChat_TwoTurns(t *testing.T) {
 	if c := strings.Count(got, " tok ("); c != 2 {
 		t.Fatalf("want 2 cost footers, got %d:\n%s", c, got)
 	}
-	// 2 user turns + 1 best-effort auto-title call: after turn 2 CountTurns crosses
-	// autoTitleMinSeq (3), so the auto-title worker fires exactly once and is joined
-	// by chatLoop's Stop before this assertion. (Previously this read 2 only because
-	// the title worker never fired — the iterator was abandoned on the final Event.)
-	if fc.CallCount() != 3 {
-		t.Fatalf("FakeClient called %d times, want 3 (2 turns + 1 auto-title)", fc.CallCount())
+	// The asynchronous title has its own scripted client, so this counts task calls.
+	if fc.CallCount() != 2 {
+		t.Fatalf("task client called %d times, want 2", fc.CallCount())
 	}
 	// The second turn must see the first user message in the rehydrated history.
 	second := fc.Requests[1]
@@ -152,8 +149,7 @@ func TestChat_AskUserPauseResumesInline(t *testing.T) {
 	if !strings.Contains(got, "Rome it is.") {
 		t.Fatalf("resumed reply not rendered:\n%s", got)
 	}
-	// At least the pause turn + the resume turn (a 3rd best-effort auto-title call may
-	// also fire in the background after the conversation reaches seq>=3).
+	// The pause and resume are task calls; the title uses its separate test client.
 	if fc.CallCount() < 2 {
 		t.Fatalf("want at least 2 LLM calls (pause + resume), got %d", fc.CallCount())
 	}

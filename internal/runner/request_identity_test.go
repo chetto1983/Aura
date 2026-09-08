@@ -49,7 +49,7 @@ func TestTurnMintsRequestIdentityBeforeContextAssemblyAndReusesItEverywhere(t *t
 		agenttest.ToolCallTurn(agenttest.MakeToolCall("call-1", "request_identity_probe", `{}`)),
 		agenttest.TextChunks("stop", "done"),
 	)}
-	r, _, _ := newTestRunner(t, client)
+	r, _, _ := newTestRunner(t, agenttest.TitleClient{Main: client, Title: agenttest.NewFakeClient(agenttest.TextChunks("stop", "Request identity inspection"))})
 	probe := &requestIdentityTool{}
 	r.registry.Register(probe)
 	convID := newConvID(t)

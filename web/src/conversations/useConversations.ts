@@ -82,26 +82,10 @@ export function displayTitle(conv: Conversation, untitled: string): string {
   return conv.TitleSet && conv.Title.length > 0 ? conv.Title : untitled;
 }
 
-export function autoTitleFromPrompt(prompt: string): string {
-  const compact = prompt
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/["'`]+/g, '');
-  const stripped = compact.replace(/[.?!,:;]+$/u, '').trim();
-  if (stripped.length <= 80) return stripped;
-  const head = stripped.slice(0, 80).trimEnd();
-  const lastSpace = head.lastIndexOf(' ');
-  return `${(lastSpace >= 32 ? head.slice(0, lastSpace) : head).trimEnd()}...`;
-}
-
-export function createConversation(initialPrompt?: string): Promise<Conversation> {
-  const title =
-    initialPrompt === undefined || initialPrompt.trim().length === 0
-      ? ''
-      : autoTitleFromPrompt(initialPrompt);
-  // An empty title posts `{}` (the store leaves the row untitled) — a body the canonical
-  // postJSON always serialises, while the backend decoder treats it the same as no body.
-  return postJSON<Conversation>('/api/conversations', title.length > 0 ? { title } : {});
+export function createConversation(): Promise<Conversation> {
+  // The runner generates the title from the first persisted message. A client
+  // preview stored as a real title would prevent that conditional update.
+  return postJSON<Conversation>('/api/conversations', {});
 }
 
 // A 204 No Content POST/DELETE: no body to parse, a non-2xx is a thrown error the

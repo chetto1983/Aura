@@ -38,7 +38,7 @@ func TestAutoTitleFailureLogsExcludeDynamicValues(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, conv, _ := newTestRunner(t, tt.client)
+			r, conv, _ := newTestRunner(t, agenttest.TitleClient{Main: tt.client, Title: tt.client})
 			convID := newConvID(t)
 			mustCreate(t, r, convID)
 			seedSystemTurn(t, r, convID)

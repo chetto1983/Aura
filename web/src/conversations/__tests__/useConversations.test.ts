@@ -3,7 +3,6 @@ import { createElement, type ReactNode } from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
-  autoTitleFromPrompt,
   CONVERSATION_KEY,
   displayTitle,
   isArchived,
@@ -52,11 +51,6 @@ describe('useConversations pure helpers', () => {
   it('displayTitle falls back to the untitled label when unset', () => {
     expect(displayTitle(CONV, 'Untitled')).toBe('Run');
     expect(displayTitle({ ...CONV, Title: '', TitleSet: false }, 'Untitled')).toBe('Untitled');
-  });
-  it('autoTitleFromPrompt compacts first-message text for a conversation title', () => {
-    expect(autoTitleFromPrompt('  Deploy rollback plan?  ')).toBe('Deploy rollback plan');
-    expect(autoTitleFromPrompt('line one\nline two')).toBe('line one line two');
-    expect(autoTitleFromPrompt('x'.repeat(90))).toHaveLength(83);
   });
 });
 
@@ -174,7 +168,7 @@ describe('useConversations mutations', () => {
     expect(captured?.init?.body).toBe(JSON.stringify({ title: 'New' }));
   });
 
-  it('create POSTs an automatic title derived from the first prompt', async () => {
+  it('creates an untitled row so the server can generate a title from the first message', async () => {
     let captured: { url: string; init?: RequestInit } | undefined;
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       captured = { url: urlOf(input), ...(init ? { init } : {}) };
@@ -182,13 +176,13 @@ describe('useConversations mutations', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
     const { result } = renderHook(() => useCreateConversation(), { wrapper: wrapper() });
-    result.current.mutate('  Deploy rollback plan?  ');
+    result.current.mutate();
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true);
     });
     expect(captured?.url).toBe('/api/conversations');
     expect(captured?.init?.method).toBe('POST');
-    expect(captured?.init?.body).toBe(JSON.stringify({ title: 'Deploy rollback plan' }));
+    expect(captured?.init?.body).toBe('{}');
   });
 
   it('seeds the created conversation detail as the first-run usage baseline', async () => {
@@ -199,7 +193,7 @@ describe('useConversations mutations', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const { result } = renderHook(() => useCreateConversation(), { wrapper: wrapper(client) });
 
-    result.current.mutate('first prompt');
+    result.current.mutate();
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true);
     });

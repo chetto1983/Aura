@@ -9,9 +9,9 @@ import (
 )
 
 // titlePrompt is the system instruction for the best-effort auto-title call. It is
-// English-only (project rule) and asks for a short noun phrase with no quoting or
-// punctuation so the result drops straight into `aura chat list`.
+// written in English and asks for a short label in the user's language.
 const titlePrompt = "You generate a concise 4-6 word title summarizing a conversation. " +
+	"Use the language of the first user message. " +
 	"Reply with the title ONLY: no quotes, no trailing punctuation, no preamble."
 
 // titleMaxChars bounds the stored title defensively (a misbehaving model could
@@ -22,15 +22,15 @@ const titleMaxChars = 80
 // WithoutCancel/WithTimeout/WaitGroup auto-title worker (D-A5-01). It delegates to
 // the package-internal generateTitle body; the worker lifecycle (the goroutine, the
 // bounded ctx, the WaitGroup join) is the Runner's, not this package's. Errors are
-// returned for the caller to discard (a NULL title renders "(untitled ...)").
+// returned so the caller can persist a first-message fallback.
 func GenerateTitle(ctx context.Context, client llm.Client, model string, history []llm.Message) (string, error) {
 	return generateTitle(ctx, client, model, history)
 }
 
 // generateTitle is the best-effort auto-title worker BODY (D-A5-01). The Runner
 // owns the WaitGroup + WithoutCancel/WithTimeout wiring and invokes this; here we
-// only do the single LLM call and shape the result. Errors NEVER block chat — the
-// caller discards them, leaving the title NULL (rendered "(untitled ...)").
+// only do the single LLM call and shape the result. The runner handles fallback
+// and conditional persistence independently of the main answer.
 //
 // It targets the provider-neutral llm.Client.Stream and drains the channel (the
 // interface contract: consumers MUST drain or the impl leaks). The prompt is a
@@ -89,7 +89,7 @@ func renderHistoryForTitle(history []llm.Message) string {
 		}
 		content := m.Content
 		if len(content) > perTurnCap {
-			content = content[:perTurnCap]
+			content = content[:runeStart(content, perTurnCap)]
 		}
 		if content == "" {
 			continue
@@ -112,8 +112,20 @@ func sanitizeTitle(raw string) string {
 	t := strings.TrimSpace(raw)
 	t = strings.Trim(t, "\"'`")
 	t = strings.TrimSpace(t)
-	if len(t) > titleMaxChars {
-		t = strings.TrimSpace(t[:titleMaxChars])
+	if runes := []rune(t); len(runes) > titleMaxChars {
+		t = strings.TrimSpace(string(runes[:titleMaxChars]))
 	}
 	return t
+}
+
+// FallbackTitle names a conversation even when its title model is unavailable.
+func FallbackTitle(history []llm.Message) string {
+	for _, message := range history {
+		if message.Role == llm.RoleUser {
+			if title := sanitizeTitle(strings.Join(strings.Fields(message.Content), " ")); title != "" {
+				return title
+			}
+		}
+	}
+	return ""
 }
