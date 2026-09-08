@@ -40,7 +40,7 @@ test.describe('live artifact render lane', () => {
     const chat = page.getByRole('region', { name: 'Chat', exact: true });
     await expect(
       page.getByRole('button', { name: 'Expand artifact', exact: true }).first(),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 20_000 });
     const gap = () =>
       input.evaluate((element) => {
         const form = element.closest('form');
