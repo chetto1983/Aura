@@ -8,11 +8,54 @@ Latest live checkpoint: child steering/FIFO/replay, real process stop and direct
 controls have been exercised successfully. Paused cancellation was corrected and retested
 as canceled with one model invocation. Concurrency retention now keeps a fifth job queued.
 Queued cancellation now passes live probe 104Q3, including durable acceptance after
-reload and a terminal report without any model/tool invocation. Grounded coordinator
-answers and the full closing quality/CI matrix remain open. No complete
-industrial-readiness claim is made.
+reload and a terminal report without any model/tool invocation. The no-critic natural
+two-agent probe below now has an uninterrupted, grounded final answer. Automatic titles
+pass the live timing, manual-rename and interrupted-turn cases. The unknown-result replay
+defect is corrected and retested on desktop/mobile. The closing coverage/CI matrix remains open.
 
 ## Evidence and references
+
+- Recovery result display, `6b8b1fc17`, healthy image
+  `e9bad3f9cc249d88b5fa717e350c82878cb01bbd99f1d755f97fad328ec38747`:
+  the same retained conversation now displays Errore/Error on Italian desktop and English
+  mobile after reload, preserving the unknown-result text and the generated title.
+  Mobile390x844 has no horizontal overflow. The native assistant-ui `isError` flag carries
+  the exact store recovery marker; arbitrary output is not reclassified.
+  Go and two UI regressions failed before correction;30focused UI cases passed after it.
+  Full frontend **2032/2032**, statements8139/8931=91.13%, branches5706/6681=85.40%.
+  The complete tagged runner suite passed with race detection after `7131d99fa` separated
+  title requests from the transactional test scripts. The full coverage rerun is pending.
+  Local chat/Calm Prism replay:23passed; two desktop PNG comparisons differ only by a
+  one-pixel vertical position of the reasoning label/chevron (190/195pixels). Baselines
+  and thresholds remain unchanged pending CI. Profile/capture-only cases are not counted
+  as passing scenarios. Mutation tests now run in CI only, as the operator requested;
+  the unfinished local replay-mutation run was stopped and has no passing score.
+
+- Automatic titles, `856ae8e52`, image
+  `8673ff54ccd8e1a8541a8d305bbe1c509c0a62049fc4c8b16d9c118f89c15fc4`:
+  conversation `01a08077-9e09-7950-9534-adcb27c1aa18` received the Italian title
+  "Verifica esecuzione shell Aura" in the sidebar without reload while the real
+  Python command was still running (10:02:34 UTC). Its output was8123. A manual rename
+  survived another answered turn and reload. Conversation
+  `01a0807a-f5a6-73ed-a516-0f84b5e9e005` received its title before the90-second
+  command was stopped at10:06:46 UTC, and retained it after reload. That replay
+  exposed a separate defect: a synthetic unknown-result marker displayed Completed.
+  The PRD records the exact observation in `5d7023609`; it does not prove process exit.
+  Full frontend2030/2030, statements8139/8931=91.13%, branches5702/6677=85.39%.
+  Title Stryker31/34=91.18%; three Go overlay mutations killed (dedup, fallback, Unicode).
+  Isolated vet/build/lint and five touched-package race suites passed. Shared-root
+  validation was invalidated by another session mutating gateway source; the disposable
+  isolated coverage run is the closing authority, not that failed compilation.
+- Natural no-critic probe, conversation `01a08081-2adb-7920-9045-c20685343af3`,
+  started10:12:44 UTC. The user prompt requested two independent agents generating
+  `secrets.token_hex(16)` and an answer containing their actual IDs and values.
+  `w1-98d0f0436b563b16a6a0dccbcfdf8d60` executed one shell call and returned
+  `5f7704e1618fb01678916be8466ede2a`; `w2-4d46301bb693b72bb71f8822822ebabc`
+  executed one shell call and returned `b06d32bb5efa8fe24093ac857af9188f`.
+  Both durable transcripts have one start/end pair, status ok and exit_code0.
+  The coordinator's answer matched both pairs without a user follow-up or retry.
+  The automatic report-delivery continuation repeated the correct pairs. This is one
+  bounded natural task, not a claim of universal answer correctness.
 
 - The operator explicitly requested removal of the LLM critic on2026-09-08.
   Removed its request, prompt, parser, digest, history offset and model override;

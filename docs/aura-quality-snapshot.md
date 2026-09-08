@@ -1,6 +1,23 @@
 # Aura Quality Snapshot (living doc)
 
 **Created:** 2026-05-29
+**Recovered-tool replay measurement:** 2026-09-08 — `6b8b1fc17`; full frontend
+**2032 tests / 241 files**, statements **8139/8931 = 91.13%**, branches
+**5706/6681 = 85.40%**. MCP verified the formerly incorrect Completed card now
+shows Errore/Error after reload on Italian desktop and English mobile, with the
+original unknown-result text retained. Tagged runner/race passed after fixture
+isolation in `7131d99fa`. Closing combined coverage and CI remain pending;
+two local desktop visual baselines differ by one pixel in the reasoning affordance.
+No screenshot threshold was loosened. Mutation testing is delegated to CI by operator request.
+**Automatic-title measurement:** 2026-09-08 — `856ae8e52`; full frontend2030/2030,
+statements **8139/8931 = 91.13%**, branches **5702/6677 = 85.39%**, functions
+**2291/2530 = 90.55%**, lines **7412/7963 = 93.08%**. Title Stryker **31/34 = 91.18%**;
+three Go overlay mutations killed. MCP confirmed a generated Italian title while a
+real command ran, manual-title preservation after another turn/reload, and title
+persistence after interruption. A fresh natural two-agent task returned both exact
+unpredictable tool outputs and child IDs without a user retry. The interrupted-turn
+replay exposed an unknown-result card incorrectly labeled Completed; the correction
+is measured above. Details and IDs are in spike104.
 **Completion-check measurement:** 2026-09-08 — removed the LLM critic per operator
 instruction. The budget-end contract uses2task calls instead of3, preserving local
 reply hygiene, verification and delivery gates. Race/static checks and20/20 capability
