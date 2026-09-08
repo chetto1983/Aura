@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -66,30 +66,81 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
   const lifecycleStatus = workerStatus?.status;
   const executionId = workerStatus?.run_id;
   const streamKey = `${conversationId}\u0000${childId}`;
+  const subscription = useRef<{
+    key: string;
+    runId: string | undefined;
+    status: string | undefined;
+    revision: number;
+    close: () => void;
+  } | null>(null);
   const [streamState, setStreamState] = useState<{
     readonly key: string;
     readonly messages: readonly ThreadMessageLike[];
     readonly failed: boolean;
-  }>({ key: streamKey, messages: [], failed: false });
+    readonly revision: number;
+  }>({ key: streamKey, messages: [], failed: false, revision: 0 });
   const current =
-    streamState.key === streamKey ? streamState : { key: streamKey, messages: [], failed: false };
+    streamState.key === streamKey
+      ? streamState
+      : { key: streamKey, messages: [], failed: false, revision: 0 };
 
   useEffect(() => {
-    if (!workerSelected) return;
+    if (!workerSelected) {
+      subscription.current?.close();
+      subscription.current = null;
+      return;
+    }
+    const previous = subscription.current;
+    const newExecution =
+      executionId !== undefined && previous?.runId !== undefined && executionId !== previous.runId;
+    const legacyResume =
+      executionId === undefined &&
+      previous?.runId === undefined &&
+      previous?.status !== undefined &&
+      previous.status !== 'running' &&
+      lifecycleStatus === 'running';
+    if (previous?.key === streamKey && !newExecution && !legacyResume) {
+      if (executionId !== undefined) previous.runId = executionId;
+      previous.status = lifecycleStatus;
+      return;
+    }
+    previous?.close();
+    const revision = (previous?.revision ?? 0) + 1;
+    let active = true;
+    setStreamState({ key: streamKey, messages: [], failed: false, revision });
     const stream = openWorkerStream(conversationId, childId, {
       onMessages: (messages) => {
-        setStreamState({ key: streamKey, messages, failed: false });
+        if (active) setStreamState({ key: streamKey, messages, failed: false, revision });
       },
       onError: () => {
+        if (!active) return;
         setStreamState((previous) => ({
           key: streamKey,
           messages: previous.key === streamKey ? previous.messages : [],
           failed: true,
+          revision,
         }));
       },
     });
-    return stream.close;
+    subscription.current = {
+      key: streamKey,
+      runId: executionId,
+      status: lifecycleStatus,
+      revision,
+      close: () => {
+        active = false;
+        stream.close();
+      },
+    };
   }, [childId, conversationId, streamKey, workerSelected, lifecycleStatus, executionId]);
+
+  useEffect(
+    () => () => {
+      subscription.current?.close();
+      subscription.current = null;
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!workerSelected) onClose();
@@ -179,7 +230,10 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
 
       <div className="relative flex min-h-0 flex-1 flex-col">
         <AssistantRuntimeProvider runtime={scopeRuntime}>
-          <ReadonlyThreadProvider messages={readonlyMessages}>
+          <ReadonlyThreadProvider
+            key={`${streamKey}:${String(current.revision)}`}
+            messages={readonlyMessages}
+          >
             <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col">
               <ThreadPrimitive.Viewport className="min-h-0 flex-1 space-y-3 overflow-y-auto py-1">
                 {current.failed ? (
