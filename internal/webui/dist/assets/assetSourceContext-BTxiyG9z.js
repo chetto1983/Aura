@@ -1,0 +1,1 @@
+import{a as e}from"./rolldown-runtime-Dqfqb5bO.js";import{Nn as t}from"./assistant-rendering-DTQ3yqr2.js";var n=e(t(),1),r=(0,n.createContext)({assetUrl:e=>`/api/assets/${encodeURIComponent(e)}/download`,credentials:`same-origin`,renderUrl:e=>`/api/assets/${encodeURIComponent(e)}/render`});function i(){return(0,n.useContext)(r)}export{i as n,r as t};

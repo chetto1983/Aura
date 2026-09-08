@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Code2, Eye } from 'lucide-react';
+import { highlightCode } from '../../displays/shiki';
 import { useAssetContent } from './useAssetContent';
 import { useAssetSource } from './assetSourceContext';
 import { PreviewError, PreviewLoading, type RendererProps } from './PreviewStatus';
@@ -62,14 +63,44 @@ function SrcdocFrame({ assetId, title }: { readonly assetId: string; readonly ti
 /** The markup behind the page, React-escaped in a <pre> exactly like TextPreview — the bytes
  *  are shown, never parsed. Mounted ONLY while its tab is active, so opening an artifact does
  *  not fetch a large body a second time just to have it available. */
-function ArtifactSource({ assetId }: { readonly assetId: string }) {
+export function ArtifactSource({ assetId }: { readonly assetId: string }) {
   const { data, error } = useAssetContent(assetId, 'text');
+  const [highlighted, setHighlighted] = useState<{ source: string; html: string } | null>(null);
+  useEffect(() => {
+    if (data === undefined) return;
+    let cancelled = false;
+    void highlightCode(data, 'html', document.documentElement.dataset.theme !== 'light').then(
+      (html) => {
+        if (!cancelled && html !== null) setHighlighted({ source: data, html });
+      },
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [data]);
   if (error !== undefined) return <PreviewError detail={error} />;
   if (data === undefined) return <PreviewLoading />;
+  if (highlighted?.source === data)
+    return (
+      <div
+        className="h-full overflow-auto p-4 font-mono text-xs leading-relaxed [&_pre]:m-0 [&_pre]:!bg-transparent"
+        dangerouslySetInnerHTML={{ __html: highlighted.html }}
+      />
+    );
   return (
-    <pre className="h-full overflow-auto whitespace-pre-wrap break-words p-4 font-mono text-sm text-text">
+    <pre className="h-full overflow-auto p-4 font-mono text-xs leading-relaxed text-text">
       {data}
     </pre>
+  );
+}
+
+export function ArtifactFrame({ assetId, fileName }: Pick<RendererProps, 'assetId' | 'fileName'>) {
+  const { renderUrl } = useAssetSource();
+  return renderUrl === undefined ? (
+    <SrcdocFrame assetId={assetId} title={fileName} />
+  ) : (
+    <RenderedFrame src={renderUrl(assetId)} title={fileName} />
   );
 }
 
@@ -77,7 +108,6 @@ type ArtifactTab = 'rendered' | 'source';
 
 export default function HtmlPreview({ assetId, fileName }: RendererProps) {
   const { t } = useTranslation();
-  const { renderUrl } = useAssetSource();
   // Rendered first: the operator opened an artifact to look at it. Source is the affordance
   // for "what is this actually doing", not the landing state.
   const [tab, setTab] = useState<ArtifactTab>('rendered');
@@ -114,10 +144,8 @@ export default function HtmlPreview({ assetId, fileName }: RendererProps) {
       <div className="min-h-0 flex-1">
         {tab === 'source' ? (
           <ArtifactSource assetId={assetId} />
-        ) : renderUrl === undefined ? (
-          <SrcdocFrame assetId={assetId} title={fileName} />
         ) : (
-          <RenderedFrame src={renderUrl(assetId)} title={fileName} />
+          <ArtifactFrame assetId={assetId} fileName={fileName} />
         )}
       </div>
     </div>

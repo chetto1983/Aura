@@ -240,6 +240,15 @@ export const displayEn = {
   },
   artifacts: {
     title: 'Artifacts',
+    workspace: {
+      label: 'Artifact preview: {{name}}',
+      expand: 'Expand artifact',
+      close: 'Back to conversation',
+      showCode: 'Show code',
+      hideCode: 'Hide code',
+      resize: 'Resize code and preview',
+      copyError: 'Could not copy. Try again or download the file.',
+    },
     downloadAll: 'Download all',
     downloadAllProgress: 'Downloading {{done}} of {{total}}',
     empty: 'No artifacts in this conversation',
@@ -501,6 +510,15 @@ export const displayIt = {
   },
   artifacts: {
     title: 'Artefatti',
+    workspace: {
+      label: 'Anteprima artefatto: {{name}}',
+      expand: 'Espandi artefatto',
+      close: 'Torna alla conversazione',
+      showCode: 'Mostra codice',
+      hideCode: 'Nascondi codice',
+      resize: 'Ridimensiona codice e anteprima',
+      copyError: 'Copia non riuscita. Riprova o scarica il file.',
+    },
     downloadAll: 'Scarica tutto',
     downloadAllProgress: 'Scaricamento {{done}} di {{total}}',
     empty: 'Nessun artefatto in questa conversazione',

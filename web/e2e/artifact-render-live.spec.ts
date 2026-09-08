@@ -32,6 +32,56 @@ interface SealedProbe {
 test.describe('live artifact render lane', () => {
   test.skip(!live, 'set AURA_E2E_LIVE_ARTIFACT=1 with THREAD + FILE against a live stack');
 
+  test('inline artifact expands, splits code and preview, downloads and returns to chat', async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(90_000);
+    await gotoAuthenticated(page, `/c/${threadID}`);
+    const viewer = page.getByRole('region', { name: `Artifact preview: ${fileName}` });
+    await expect(viewer).toBeVisible({ timeout: 20_000 });
+    await expect(viewer.locator('iframe')).toHaveAttribute('sandbox', 'allow-scripts');
+    await viewer.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath('inline.png') });
+    await viewer.getByRole('button', { name: 'Expand artifact', exact: true }).click();
+    await expect(viewer.getByRole('button', { name: 'Back to conversation' })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('expanded.png') });
+    await viewer.getByRole('button', { name: 'Show code', exact: true }).click();
+    await expect(viewer.locator('pre')).toContainText('<', { timeout: 15_000 });
+    await expect(viewer.locator('pre.shiki')).toBeVisible({ timeout: 10_000 });
+    await expect(viewer.locator('iframe')).toBeVisible();
+    await expect(viewer.getByRole('separator')).toBeVisible();
+    const sourceBox = await viewer.locator('pre').boundingBox();
+    const frameBox = await viewer.locator('iframe').boundingBox();
+    expect(sourceBox).not.toBeNull();
+    expect(frameBox).not.toBeNull();
+    if (!sourceBox || !frameBox) throw new Error('Split preview did not lay out');
+    if ((page.viewportSize()?.width ?? 1280) < 640) {
+      expect(frameBox.y).toBeGreaterThan(sourceBox.y);
+    } else {
+      expect(frameBox.x).toBeGreaterThan(sourceBox.x);
+      await expect(
+        page.getByRole('complementary', { name: 'Navigation', exact: true }),
+      ).toBeVisible();
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({ path: testInfo.outputPath('split.png') });
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await viewer.getByRole('button', { name: 'Copy code', exact: true }).click();
+    await expect(viewer.getByRole('button', { name: 'Copied', exact: true })).toBeVisible();
+    const downloadPromise = page.waitForEvent('download');
+    await viewer.getByRole('link', { name: `Download ${fileName}`, exact: true }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toBe(fileName);
+    await viewer.getByRole('button', { name: 'Hide code', exact: true }).click();
+    await expect(viewer.locator('pre')).toHaveCount(0);
+    await viewer.getByRole('button', { name: 'Back to conversation' }).click();
+    await expect(page.getByRole('button', { name: 'Expand artifact', exact: true })).toBeFocused();
+    await page.reload();
+    await expect(viewer).toBeVisible({ timeout: 15_000 });
+  });
+
   test('the cockpit frames the sealed render route and the document runs', async ({
     page,
   }, testInfo) => {

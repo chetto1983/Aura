@@ -1,30 +1,61 @@
-# Design QA — identity memory graph
+# Artifact workspace design QA — 2026-09-08
 
-## Visual truth
+Target: the user's three ChatGPT screenshots (inline preview, expanded preview,
+source beside preview), with Aura's existing navigation, typography and themes.
+The weather dashboard is agent-generated demo content, not a weather product or
+a claim of pixel-identical reproduction of the supplied dashboard.
 
-- Reference: the ArcadeDB Studio graph screenshot supplied by the operator in this conversation (950 × 850). The relevant contract is the graph region: separated circular nodes, labels inside nodes, labelled directed edges, type colour, and a details surface. Aura intentionally retains its own cockpit shell and read-only controls.
-- Implementation capture: `D:/tmp/aura-memory-graph-final-chrome.png` (1280 × 720), authenticated as the requested operator and backed by the live identity graph.
-- Responsive evidence: the live Playwright graph scenario passed in both `chrome` and `mobile-chrome`; both loaded the same identity-wide graph and expanded a real RID cumulatively.
+## Evidence and findings
 
-## Comparison history
+1. Baseline: a delivered HTML file opened in a modal over chat. The live asset
+   rendered and ran, but did not provide the requested inline workflow.
+2. Inline: a 768px maximum-width card, 48px filename toolbar, code/preview/expand
+   controls, 480px scrollable preview and separate file/download card. The first
+   capture exposed an overly wide card; the width was corrected and recaptured.
+3. Expanded: keeps Aura navigation, displays the selected document, and returns
+   to the initiating control without discarding the chat runtime or draft.
+4. Split: source at left and live preview at right on desktop, independently
+   scrollable and resizable. At narrow widths the panes stack vertically.
+5. Interaction: showing/hiding source retains iframe state. The live demo's
+   Next day button changed its selected-day heading. Download and reload worked.
+6. Regression review caught an unnecessary chat remount on thread changes. The
+   workspace now clears only artifact selection; conversation/usage tests pass.
 
-1. The initial Sigma capture collapsed the identity graph into one overlapping blob. P0: failed.
-2. The first Cytoscape/fCoSE capture separated all 59 nodes but retained timid colour and artificially slow wheel zoom. P1: failed.
-3. The final capture uses the Studio renderer/layout family, compact labels inside every node, labelled arrowed edges, cyan `Entity` nodes, amber `FACT` edges, matching type swatches in the filters, and native Cytoscape wheel response. P0/P1/P2: cleared.
+Evidence: [desktop split](.planning/tmp/artifact-evidence/aura-artifact-split-final.png),
+[inline](.planning/tmp/artifact-evidence/aura-artifact-inline-final.png),
+[expanded](.planning/tmp/artifact-evidence/aura-artifact-expanded-final.png).
+Desktop reference comparison used a 1349×871 viewport. The real Playwright run
+also exercised desktop Chrome and Pixel 5 mobile Chrome with no page overflow.
 
-## Fidelity checks
+## Verification
 
-| Surface | Result |
-| --- | --- |
-| Node separation and readable topology | Passed — 59 distinct nodes; no aggregate blob |
-| Node names | Passed — centred, wrapped, contrast-adjusted, capped at 45 characters |
-| Relationship labels and direction | Passed — outlined autorotated captions and arrowheads |
-| Type colour | Passed — deterministic vertex/entity-kind and relationship-type palettes; text remains the primary encoding |
-| Inspector and expansion | Passed — existing accessible inspector retained; real RID expansion is cumulative |
-| Zoom and resize | Passed — native Cytoscape wheel response, no throttling override; ResizeObserver refits only after container changes |
-| Desktop/mobile behavior | Passed — live authenticated scenario green on both configured viewports |
-| Bundle impact | Passed — renderer remains lazy; core 435.41 kB and layout 122.56 kB, with no >500 kB warning |
+- Full frontend suite: 244 files, 2,047 tests passing.
+- Coverage: statements 91.11%, branches 85.30%, functions 90.50%, lines 93.08%.
+- TypeScript/production build, type-aware lint, lint contract, formatting and
+  dead-code checks passed; Go embedded-web test passed.
+- Real artifact E2E: 4 passed, covering inline/expanded/split/download/reload and
+  the existing sealed-render modal path on desktop and mobile.
+- The follow-up export/highlighting tests also passed on both viewports.
+- Original asset routes and opaque-origin sandbox retained. No live HTML is
+  injected into the parent document. Highlighting only tokenizes source text.
 
-## Final result
+The browser logs the existing warning about `frame-ancestors` in a meta policy;
+the authoritative response-header policy is verified by the live render test.
+The temporary Vite proxy initially lacked authentication redirects; final E2E
+runs use the rebuilt Aura container on its normal port, with real authentication.
 
-passed
+Limits: this implements viewing and export, not direct editing, version history,
+arbitrary React builds or unrestricted network access. Those controls are absent.
+
+final result: passed
+
+## References
+
+- [ChatGPT writing/code blocks](https://help.openai.com/en/articles/20001246)
+- [LibreChat artifacts](https://www.librechat.ai/docs/features/artifacts)
+- [assistant-ui example](https://www.assistant-ui.com/examples/artifacts)
+- [assistant-ui workbench source](https://github.com/assistant-ui/assistant-ui/blob/main/examples/with-artifacts/app/artifact-surface.tsx)
+
+The assistant-ui example owns its workbench UI in application code. Aura reuses
+its installed assistant-ui message rendering and existing artifact routes,
+React context selection, lazy renderers, Shiki and resizable-panel components.

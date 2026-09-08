@@ -362,6 +362,20 @@ Tools and artifact delivery resolve the persistent working root consistently. Sa
 materialization and original-object access cannot expose another identity's files.
 Container paths, host staging and user-facing attachments are distinct.
 
+Delivered HTML artifacts have an inline preview with filename, source/preview and
+expand controls. The expanded workspace retains conversation navigation, offers a
+resizable source/preview split (stacked on narrow screens), copies original source
+and downloads the delivered file. Closing returns to the originating chat without
+remounting its runtime. The same card is used for live deliveries and saved-message
+attachments. Rendering reuses the authenticated sealed document route and an
+opaque-origin iframe; source highlighting never executes artifact markup.
+
+Measured 2026-09-08 using an agent-generated weather demo: the accepted HTML asset
+renders inline and expanded, its button executes, and showing source preserves
+the preview state. This is a viewing/export workflow; it does not establish direct
+editing, version history, React bundling or arbitrary external network access.
+Acceptance and verification details: `.planning/artifact-workspace-plan.md`.
+
 File operations enforce name, boundary, symlink and regular-file rules. Archive entry
 names are metadata and cannot choose a host path. Staging uses exclusive creation and
 private permissions. Lexical path containment alone does not contain a tree.

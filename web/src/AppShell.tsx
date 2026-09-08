@@ -4,6 +4,7 @@ import { useDefaultLayout } from 'react-resizable-panels';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { RuntimeFooter } from './chat/RuntimeFooter';
+import { ArtifactWorkspace } from './chat/artifacts/ArtifactWorkspace';
 import { ConversationSidebar } from './conversations/ConversationSidebar';
 import { SearchPanel } from './conversations/SearchPanel';
 import { BottomDock } from './shell/BottomDock';
@@ -349,50 +350,52 @@ export function AppShell() {
   );
 
   const workspace = (
-    <section
-      aria-label={t('shell.chatRegion')}
-      className="flex h-full min-h-0 min-w-0 flex-col bg-bg"
-    >
-      <div className="min-h-0 flex-1">
-        <Suspense
-          fallback={
-            <div role="status" className="grid h-full place-items-center text-sm text-text-muted">
-              {surface === 'graph'
-                ? t('graph.loading')
-                : surface === 'governance'
-                  ? t('governance.loading')
-                  : surface === 'documents'
-                    ? t('files.loading')
-                    : surface === 'settings'
-                      ? t('settings.loading')
-                      : t('chat.loading')}
-            </div>
-          }
-        >
-          {surface === 'graph' ? (
-            <GraphExplorer />
-          ) : surface === 'governance' ? (
-            <GovernanceWorkspace />
-          ) : surface === 'documents' ? (
-            <FilesWorkspace mobileMenu={documentsMobileMenu} />
-          ) : surface === 'settings' ? (
-            <SettingsWorkspace onCreateIdentity={openCreateIdentity} />
-          ) : (
-            <ExternalStoreChat
-              threadId={activeThreadId}
-              onEnsureThread={ensureThread}
-              onUsage={acceptUsage}
-              onUsageBaseline={acceptUsageBaseline}
-              allocateUsageRunId={allocateUsageRunId}
-              onArtifact={handleArtifact}
-              draftPrompt={composerDraftPrompt}
-              onDraftPromptConsumed={consumeComposerDraft}
-              onRequestDraftPrompt={requestComposerDraft}
-            />
-          )}
-        </Suspense>
-      </div>
-    </section>
+    <ArtifactWorkspace scopeKey={`${activeThreadId}:${surface}`} onExpand={closeArtifacts}>
+      <section
+        aria-label={t('shell.chatRegion')}
+        className="flex h-full min-h-0 min-w-0 flex-col bg-bg"
+      >
+        <div className="min-h-0 flex-1">
+          <Suspense
+            fallback={
+              <div role="status" className="grid h-full place-items-center text-sm text-text-muted">
+                {surface === 'graph'
+                  ? t('graph.loading')
+                  : surface === 'governance'
+                    ? t('governance.loading')
+                    : surface === 'documents'
+                      ? t('files.loading')
+                      : surface === 'settings'
+                        ? t('settings.loading')
+                        : t('chat.loading')}
+              </div>
+            }
+          >
+            {surface === 'graph' ? (
+              <GraphExplorer />
+            ) : surface === 'governance' ? (
+              <GovernanceWorkspace />
+            ) : surface === 'documents' ? (
+              <FilesWorkspace mobileMenu={documentsMobileMenu} />
+            ) : surface === 'settings' ? (
+              <SettingsWorkspace onCreateIdentity={openCreateIdentity} />
+            ) : (
+              <ExternalStoreChat
+                threadId={activeThreadId}
+                onEnsureThread={ensureThread}
+                onUsage={acceptUsage}
+                onUsageBaseline={acceptUsageBaseline}
+                allocateUsageRunId={allocateUsageRunId}
+                onArtifact={handleArtifact}
+                draftPrompt={composerDraftPrompt}
+                onDraftPromptConsumed={consumeComposerDraft}
+                onRequestDraftPrompt={requestComposerDraft}
+              />
+            )}
+          </Suspense>
+        </div>
+      </section>
+    </ArtifactWorkspace>
   );
 
   return (
