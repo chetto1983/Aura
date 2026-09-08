@@ -1,7 +1,7 @@
 ---
 phase: "02"
 slug: "two-roles-and-a-budget"
-status: draft
+status: approved
 shadcn_initialized: true
 preset: "new-york / radix base / neutral base color / lucide icons (components.json, unchanged)"
 created: "2026-09-08"
@@ -375,32 +375,108 @@ render target — no new primitive, no parallel refusal mechanism, is introduced
 
 ## UI Considerations
 
-Applicable state considerations resolved: 17 covered, 6 backstop, 0 unresolved.
+Produced by the compiled state-coverage probe (`ui-consideration-probe.cjs`, the UI
+element/state adapter of `probe-core`) over the 8 surfaces described in this document,
+run 2026-09-08 after checker approval. The relevance filter classified each surface's
+element kinds and raised only the categories that apply to those kinds.
 
-| Category | Element(s) | Status | Resolution / Reason |
-|----------|------------|--------|---------------------|
-| empty | Credit panel | ✅ covered | CRED-09 local-backend state renders the `Empty` composition (§Copywriting Contract), never a `$0.00` |
-| empty | Roster | ✅ covered | Pre-existing `admin.identity.empty` guard in `AdminSection.tsx:57`, unchanged, reused |
-| loading | Roster, credit panel | ✅ covered | Pre-existing `AdminSection` `Spinner` + `role="status"` guard reused verbatim for both |
-| error | Roster fetch | ✅ covered | Pre-existing `Alert variant="destructive"` guard in `AdminSection.tsx:53-55`, reused |
-| error | Credit-cap save failure | ✅ covered | New copy in §Copywriting Contract, existing `Alert variant="destructive"` pattern |
-| error | Zero-credit turn refusal | ✅ covered | New copy, existing `MessagePrimitive.Error` render slot (§Surface Map) |
-| populated | Roster with mixed admin/member rows | ✅ covered | Role badge distinguishes every row; §Roster |
-| partial | Removal in flight (deactivate done, purge running) | ✅ covered | "Removing {{name}}…" `aria-busy` state, §Copywriting Contract — the saga is not instantaneous and the copy says so |
-| overflow | Long identity name/email in a roster row | ✅ covered | `break-all font-mono`, matching the pre-existing `ReviewStep.tsx`/`CapabilityAdminPanel.tsx` convention |
-| zero-one-many | Roster size (1 admin only / 1 admin + 1 member / many members) | ✅ covered | Admin's own row disabled-remove is unconditional per D-03 regardless of roster size; every other row behaves identically whether there are 1 or 20 |
-| long-text | Removal dialog body listing what is destroyed | ✅ covered | Fixed, translated copy — not user-generated, so no truncation concern |
-| **advisory (static, non-blocking)** | **Over-allocation banner** | ✅ covered (reclassified) | The state-coverage probe fell through on this element ("unclassified — review manually") because it is not a loading/error/empty/populated *state variant* of a control — it has no control at all. Its kind, made explicit here: a fixed-prose, non-dismissable notice banner (`role` is presentational text, not `alert` — it never interrupts, matching M-12's "advisory, not blocking"). Overflow/long-text behaviour: the copy is a single translated, non-user-generated string of fixed length (§Admin spend dashboard — Overview); it does not truncate, wrap unpredictably, or need a `line-clamp`, because nothing about its content varies with data — only its visibility (shown/hidden) varies. It carries no button, link or input, and disables nothing else on the page when shown. |
-| loading | Overview KPI row / Top Identities list | ✅ covered | Same `AdminSection` `Spinner` + `role="status"` guard as the roster (§Admin spend dashboard), not a new loading pattern |
-| error | Overview KPI row / Top Identities list fetch failure | ✅ covered | New copy in §Copywriting Contract; must not block the Roster/Credit panel below it, since they read from a different source (D-08) |
-| empty | Overview (no billed requests yet) | ✅ covered | New copy in §Copywriting Contract — absence, never five `$0.00` tiles rendered as if real |
-| zero-one-many | Top Identities by spend list (0 non-admin identities / fewer than 5 / exactly 5 / more than 5) | ✅ covered | Ranked, top 5 only; fewer than 5 identities renders that many rows, no placeholder rows; the sole-admin case renders exactly one row (itself) |
-| overflow | Cap amount typed with excessive precision (e.g. `5.123456`) | 🧪 backstop | Input `step="0.01"`; whether the server rejects or rounds a higher-precision value is unverified against the live Provisioning API — planner must confirm against `PATCH /api/v1/keys` behavior, not assume rounding |
-| zero-one-many | Over-allocation banner at exactly `Σ(cap) == total_credits` (boundary) | 🧪 backstop | Whether the boundary itself (equal, not greater) triggers the warning is a `>` vs `≥` decision the CONTEXT/RESEARCH docs don't pin down — held out for the planner/executor to decide and test explicitly, not guessed here |
-| partial | Typed-confirmation email match: case sensitivity / trailing whitespace | 🧪 backstop | Whether the match is exact-string or trimmed/case-insensitive is a genuine UX judgment call not settled by any upstream artifact — flagged rather than silently assumed either way |
-| overflow | KPI rate-metric aggregation (cache hit rate, blended $/1M) across the sparkline's day-granularity buckets | 🧪 backstop | Whether the tile's headline value is a sum, a re-derived ratio, or the last bucket's value is a data-layer decision this document does not make — `cache_hit_rate` and `blended_cost_per_million_tokens` are rates, and naively summing a rate across days is wrong; the planner must pick and document the method, not assume |
-| overflow | KPI delta when the prior period's value is zero (fresh account, new identity) | 🧪 backstop | A percent delta against a zero baseline is undefined (division by zero) — whether the tile shows no delta, "new," or `∞`/`—` is unresolved here and must be decided before the tile ships |
-| zero-one-many | Top Identities list where two or more identities tie on lifetime spend | 🧪 backstop | Sort tiebreak (creation order? identity id? provisioning order matching the Roster?) is unspecified — a stable, deterministic tiebreak must exist so the ranked order doesn't shuffle on every refresh, but which one is a planner decision |
+**58 applicable considerations: 38 resolved (explicit) · 9 resolved (backstop) · 11 dismissed with reason · 0 unresolved.**
+
+This section REPLACES the hand-written table of the pre-revision spec — it is the probe's
+report, not a prose restatement of it. Empty-state and error-state COPY lives in
+§Copywriting Contract; the rows below reference it rather than restating it.
+
+### Resolved — explicit
+
+The planner lifts each of these into a plan's `must_haves.truths` as a plain string.
+
+| Surface | Category | Truth |
+|---|---|---|
+| Roster | `empty` | Pre-existing `admin.identity.empty` = "No identities yet." guard in AdminSection.tsx:57, reused unchanged. |
+| Roster | `loading` | Pre-existing AdminSection Spinner + role="status" guard, reused verbatim. |
+| Roster | `error` | Pre-existing Alert variant="destructive" roster-fetch guard at AdminSection.tsx:53-55, reused. |
+| Roster | `populated` | role="list" of Card rows: mono name/email, read-only Admin/Member role badge, ' (you)' suffix on the signed-in admin's own row, destructive icon Button with aria-label. |
+| Roster | `partial` | Removal in flight (deactivate done, purge running) renders "Removing {{name}}..." with aria-busy and Spinner. |
+| Roster | `overflow` | Long identity name/email uses `break-all font-mono`, matching the ReviewStep.tsx / CapabilityAdminPanel.tsx convention. No truncation, no ellipsis. |
+| Roster | `zero-one-many` | The admin's own disabled-remove is unconditional per D-03 regardless of roster size; every other row behaves identically at 1 or 20 identities. |
+| Roster | `long-text` | Same `break-all font-mono` treatment as overflow; the row wraps rather than clipping. |
+| Removal confirmation dialog | `empty` | Initial state: the "Type {{email}} to confirm" input is empty and the "Remove permanently" confirm button is disabled until it matches. |
+| Removal confirmation dialog | `loading` | "Removing {{name}}..." with aria-busy and Spinner for the duration of the reverse saga across every plane. |
+| Removal confirmation dialog | `overflow` | The email in the field label and in the dialog body wraps with `break-all`, consistent with the roster row treatment. |
+| Removal confirmation dialog | `long-text` | Dialog body is fixed translated copy; only {{name}} and {{email}} vary and both are handled by break-all. No truncation. |
+| Credit panel (per identity) | `empty` | CRED-09 local-backend exemption replaces items 1-4 with the Empty/EmptyHeader/EmptyMedia/EmptyTitle composition - "No spending cap to show" - never a $0.00. |
+| Credit panel (per identity) | `loading` | AdminSection Spinner + role="status" guard; aria-busy on the in-flight cap mutation. |
+| Credit panel (per identity) | `error` | "Couldn't update the spending cap. Check the amount and try again." via the existing Alert variant="destructive" pattern. |
+| Credit panel (per identity) | `populated` | Cap Input + Save cap button, reset-interval NativeSelect (daily/weekly/monthly, default monthly), and the role="progressbar" three-tier fill bar with the "{{spend}} / {{cap}} - {{percent}}%" readout sourced from Aura's in-band ledger per D-08. |
+| Credit panel (per identity) | `long-text` | The two top-up latency advisories are fixed translated sentences ("Takes about 25 seconds to apply." / "Takes about 5 seconds to apply."); the numeric fields are mono and bounded by the input's min/step. |
+| Onboarding review step | `populated` | Two dl/dt/dd rows: "Access" (full tool access, only user management stays admin-only) and "Starting credit" ($0.00, cannot run a turn until credit is added), reusing ReviewStep.tsx's existing typography. |
+| Onboarding review step | `overflow` | Reuses ReviewStep.tsx's existing dl wrapping; the copy is fixed-length translated prose that wraps rather than clipping. |
+| Over-allocation advisory banner | `populated` | One fixed translated sentence in warning tone above the KPI row: "Assigned caps total more than this account's available OpenRouter credit. A lower-priority identity could be starved without warning - lower a cap or add credit to the account." Presentational text, not role="alert"; advisory per M-12, disables nothing. |
+| Over-allocation advisory banner | `overflow` | Wraps within its container. The wording never varies with data, so its longest form is known at author time; no truncation, no line-clamp. |
+| Over-allocation advisory banner | `long-text` | Non-user-generated, non-interpolated copy - the same wrapping as populated. Nothing about its content varies with data. |
+| Zero-credit turn refusal | `error` | This element IS the error state: role="alert", text-danger, "{{name}} has no remaining credit for this turn. Ask an administrator to add credit under Settings > Identities." Rendered into the existing empty error target, not a new component. |
+| Zero-credit turn refusal | `overflow` | A single sentence in the existing chat error slot; it wraps exactly like every other message in that column. |
+| Zero-credit turn refusal | `long-text` | Fixed translated copy with only {{name}} interpolated; wraps, no truncation. |
+| Overview KPI row | `empty` | "No spend yet - this account hasn't made a billed request." Never five $0.00 tiles rendered as if real - the same CRED-09 discipline extended from "backend doesn't bill" to "no data yet." |
+| Overview KPI row | `loading` | The same AdminSection Spinner + role="status" guard as the roster; not a new loading pattern. |
+| Overview KPI row | `error` | "Couldn't load the spend overview. Try refreshing." via the Alert variant="destructive" pattern, and it must not block or hide the Roster/Credit panel below, which read from a different source per D-08. |
+| Overview KPI row | `populated` | Five tiles - Total spend, Requests, Token volume, Cache hit rate, Blended $/1M - each with a 12px uppercase kicker label, a 22px font-mono compact value, a signed delta with "vs prev period", and a 12-point inline SVG polyline sparkline (border-strong de-emphasis, --color-info current period). No legend box, single series per tile. |
+| Overview KPI row | `zero-one-many` | The row is always exactly five tiles - it is a fixed metric set, not a variable collection. It wraps on narrow viewports using the app's existing responsive wrap behavior, adding no new breakpoint token. |
+| Overview KPI row | `long-text` | Values use auto-compact notation ($5.52, 3K, 52.1M, 51.5%, $0.11) so a large figure cannot overrun the tile; labels are fixed translated strings at the 12px kicker size. |
+| Top Identities by spend | `empty` | Shares the Overview empty state - "No spend yet - this account hasn't made a billed request." - rather than rendering five zero-spend rows. |
+| Top Identities by spend | `loading` | The same AdminSection Spinner + role="status" guard as the roster and the KPI row. |
+| Top Identities by spend | `error` | Shares the Overview fetch-error copy ("Couldn't load the spend overview. Try refreshing."); its failure must not hide the Roster or Credit panel below it. |
+| Top Identities by spend | `populated` | role="list" of up to five rows, ranked by lifetime spend: role Badge as the row marker, mono break-all name/email, the masked key label on a muted second line, right-aligned "Lifetime spend" in mono. Read-only - no remove, no cap edit - followed by a "See full roster below" caption anchoring to the Roster on the same page. |
+| Top Identities by spend | `partial` | An identity present in GET /api/v1/keys but with no usage figure yet renders its row with a zero lifetime spend rather than being omitted - the list is a ranking of the roster's identities, so omitting one would misrepresent the roster. |
+| Top Identities by spend | `overflow` | Name/email uses break-all font-mono like the roster; the masked key label is already truncated by OpenRouter's own sk-or-v1-7ff...972 form. |
+| Top Identities by spend | `long-text` | Same break-all treatment as the roster; the spend figure is mono and compact, so a long name cannot push it off the row. |
+
+### Resolved — backstop
+
+Each lifts as a structured item — `{ statement: <the check>, verification: backstop }` with a
+flat scalar `verification:` continuation key, never a nested object. At verify time a backstop
+truth the verifier cannot confirm with explicit evidence abstains to `human_needed`
+(`insufficient_spec`) rather than passing silently. These are the genuinely-unsettled points:
+this document states the question, and refuses to invent the answer.
+
+- statement: **Removal confirmation dialog · `error`** — What the dialog shows when the reverse saga fails PART WAY (some planes torn down, others not) is not settled by CONTEXT.md or RESEARCH.md. internal/agui/deprovision.go is journaled and idempotent, so a retry affordance is plausible, but the copy and the affordance must be decided and tested explicitly rather than assumed.
+  verification: backstop
+- statement: **Removal confirmation dialog · `partial`** — Typed-confirmation email match semantics - exact-string vs trimmed vs case-insensitive - is a genuine UX judgment call not settled by any upstream artifact. Held out rather than silently assumed either way.
+  verification: backstop
+- statement: **Credit panel (per identity) · `partial`** — A cap set on a brand-new identity with no ledger rows yet: whether the gauge renders 0% or an em-dash placeholder is not pinned down. Must be decided and tested, not assumed to be 0%.
+  verification: backstop
+- statement: **Credit panel (per identity) · `overflow`** — Cap typed with excessive precision (e.g. 5.123456): Input carries step="0.01", but whether the server rejects or rounds a higher-precision value is unverified against the live PATCH /api/v1/keys behavior.
+  verification: backstop
+- statement: **Onboarding review step · `long-text`** — Both sentences are long for a dl row and the app is translated; a longer locale could reflow the review step. No upstream artifact pins the i18n breadth, so the reflow must be checked rather than assumed.
+  verification: backstop
+- statement: **Over-allocation advisory banner · `zero-one-many`** — The boundary case where the sum of caps exactly equals total_credits minus total_usage: whether equality triggers the warning (> vs >=) is not pinned down by CONTEXT.md or RESEARCH.md and must be decided and tested explicitly.
+  verification: backstop
+- statement: **Overview KPI row · `partial`** — When the analytics query returns some metrics but not others (a partial window), whether a tile renders a placeholder or the whole row degrades is not specified. Must be decided rather than assumed.
+  verification: backstop
+- statement: **Overview KPI row · `overflow`** — Two distinct unresolved points: (a) rate-metric aggregation across day buckets - cache hit rate and blended $/1M are rates, and naively summing a rate across days is wrong, so the headline value's derivation (sum, re-derived ratio, or last bucket) must be picked and documented; (b) the delta when the prior period's value is zero, where a percent change is undefined - no delta, "new", or an em-dash must be chosen before the tile ships.
+  verification: backstop
+- statement: **Top Identities by spend · `zero-one-many`** — Row count is handled explicitly - fewer than five identities renders that many rows with no placeholder padding, and the sole-admin case renders exactly one row (itself). What is NOT settled is the sort tiebreak when two identities tie on lifetime spend: a stable, deterministic tiebreak must exist so the ranking does not shuffle on refresh, but which key (creation order, identity id, provisioning order) is a planner decision.
+  verification: backstop
+
+### Dismissed — with reason
+
+Not lifted. The relevance filter raised these because the prose classifier over-included an
+element kind (a block of fixed prose reading as a form, for instance). Each carries the reason
+it does not apply — silence is not a resolution, so the reason is the audit trail.
+
+| Surface | Category | Why it does not apply |
+|---|---|---|
+| Credit panel (per identity) | `zero-one-many` | The credit panel is per-identity singular by construction - it mounts against one roster row. There is no zero/one/many axis on a single identity's own cap; the multi-identity axis lives on the Top Identities list (E8) and the Roster (E1). |
+| Onboarding review step | `empty` | Both rows are fixed prose the wizard already knows from RBAC-03 and CRED-02 before the identity exists. There is no data that can be absent. |
+| Onboarding review step | `loading` | The review step performs no server round-trip - the spec states no interaction, no checkbox, no fetch. Nothing can be in flight. |
+| Onboarding review step | `error` | Nothing is fetched, so there is no load or submit that can fail. Creation errors belong to the wizard's own provision step, not this one. |
+| Onboarding review step | `partial` | Both rows are always rendered and their copy is static; a partially-populated render is not reachable. |
+| Onboarding review step | `zero-one-many` | Exactly two rows, always. It is not a variable-length collection. |
+| Over-allocation advisory banner | `empty` | Only the banner's visibility is conditional. When there is nothing to warn about it is not rendered at all - absence is the absence, not an empty state within it. |
+| Over-allocation advisory banner | `loading` | The trigger is derived from data already loaded for the KPI row and the roster (sum of caps vs GET /api/v1/credits). The banner issues no request of its own, so it has no in-flight state. |
+| Over-allocation advisory banner | `error` | It carries no control and performs no request, so it has no failure mode of its own. A failure to load the credits figure suppresses the banner and surfaces through the Overview fetch-error copy instead. |
+| Over-allocation advisory banner | `partial` | Fixed prose with no fields - there is nothing that can be partially present. |
+| Zero-credit turn refusal | `loading` | The refusal is rendered synchronously into the existing MessagePrimitive.Error slot after a pre-flight refusal that already resolved. It has no in-flight state of its own. |
 
 ---
 
@@ -433,18 +509,23 @@ No third-party registry is used by this phase. `components.json` lists `@assista
 
 ## Checker Sign-Off
 
-Prior approval (before this revision): 5 PASS / 2 FLAG (non-blocking) — Dimension 2 (Visuals,
-no focal point) and Dimension 4 (Typography, 5-size scale) flagged. Both addressed above
-(§Visual Focal Point; §Typography's Dimension 4 trade-off note). This revision also extends
-§Credit panel into §Admin spend dashboard — Overview and reclassifies the over-allocation
-banner's element kind (§UI Considerations). Re-check required before this reverts to approved.
+Verified by `gsd-ui-checker` on 2026-09-08, re-run after the revision that added
+§Admin spend dashboard — Overview, §Visual Focal Point and the §Typography Dimension 4
+trade-off note. The prior run's two non-blocking FLAGs (Dimension 2 — no declared focal
+point; Dimension 4 — the inherited 5-size scale) are both resolved; the checker verified
+the dashboard's data-source ledger against `02-OPENROUTER-API.md` field by field, confirmed
+`web/package.json` gained no charting dependency, and spot-checked the `path:line` citations.
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
-- [ ] Dimension 7 Inventory Provenance: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
+- [x] Dimension 7 Inventory Provenance: PASS
 
-**Approval:** pending re-check (revised 2026-09-08)
+**Approval:** approved 2026-09-08 — 7/7 dimensions, no BLOCK, no open FLAG.
+
+State coverage (§UI Considerations) was probed after approval, so the section reflects the
+final contract: 58 applicable considerations, 0 unresolved, 9 held out as `backstop` for the
+planner to decide and test rather than guessed here.
