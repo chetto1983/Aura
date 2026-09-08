@@ -7,6 +7,10 @@
 package agent_test
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -346,5 +350,201 @@ func testResultAttribution(t *testing.T) {
 	}
 	if strings.Contains(toolMsgB, runA.sessionID) {
 		t.Fatalf("run B's history carries run A's session id — a result crossed over: %q", toolMsgB)
+	}
+}
+
+// TestTwoIdentityConcurrentSidecarPathsAreDisjoint is Task 2's sidecar
+// surface: sidecarPath disjointness, cross-identity unreachability (with a
+// positive control), and path-escape refusal — all through the real
+// production tools.NewResult / tools.ReadToolOutput / tools.WithToolCallContext
+// surface, never the unexported sidecarPath/validateID helpers directly.
+func TestTwoIdentityConcurrentSidecarPathsAreDisjoint(t *testing.T) {
+	registry := tools.NewRegistry()
+	registry.Register(tools.TextResponse{})
+	registry.Register(tools.ReadToolOutput{})
+	recA := &bigOutputRecorder{}
+	recB := &bigOutputRecorder{}
+	const payloadA = "A-PAYLOAD-CONTENT-"
+	const payloadB = "B-PAYLOAD-CONTENT-"
+	registry.Register(&bigOutputTool{name: "big_output_a", payload: strings.Repeat(payloadA, 400), rec: recA})
+	registry.Register(&bigOutputTool{name: "big_output_b", payload: strings.Repeat(payloadB, 400), rec: recB})
+
+	gw := gateway.New(config.ProfileSingleUserHardened, nil)
+	steerInbox := steertest.New(steer.Config{})
+	runDir := t.TempDir()
+
+	turnA := []agenttest.FakeTurn{
+		agenttest.ToolCallTurn(agenttest.MakeToolCall("sA-1", "big_output_a", `{}`)),
+		agenttest.ToolCallTurn(textResponseCall("sA-2", "A done")),
+	}
+	turnB := []agenttest.FakeTurn{
+		agenttest.ToolCallTurn(agenttest.MakeToolCall("sB-1", "big_output_b", `{}`)),
+		agenttest.ToolCallTurn(textResponseCall("sB-2", "B done")),
+	}
+	runA, runB := newTwoIdentityHarness(t, registry, gw, steerInbox, runDir, turnA, turnB, 5, 5, harnessOptions{})
+	_, errA, _, errB := runBothConcurrently(t, runA, runB)
+	if errA != nil {
+		t.Fatalf("run A errored: %v", errA)
+	}
+	if errB != nil {
+		t.Fatalf("run B errored: %v", errB)
+	}
+
+	fullPathA, sessOfA := recA.snapshot()
+	fullPathB, sessOfB := recB.snapshot()
+
+	t.Run("paths_disjoint", func(t *testing.T) {
+		if fullPathA == "" || fullPathB == "" {
+			t.Fatalf("payload did not spill to a sidecar: A=%q B=%q (payload smaller than PreviewCap?)", fullPathA, fullPathB)
+		}
+		if fullPathA == fullPathB {
+			t.Fatalf("both runs' sidecar spilled to the SAME path: %s", fullPathA)
+		}
+		if sessOfA != runA.sessionID || sessOfB != runB.sessionID {
+			t.Fatalf("sidecar session attribution wrong: A recorded under %q (want %q), B under %q (want %q)", sessOfA, runA.sessionID, sessOfB, runB.sessionID)
+		}
+		const prefixSeg = "conversations"
+		slashA, slashB := filepath.ToSlash(fullPathA), filepath.ToSlash(fullPathB)
+		if !strings.Contains(slashA, prefixSeg) || !strings.Contains(slashB, prefixSeg) {
+			t.Fatalf("sidecar paths do not carry the fixed %q prefix segment: A=%s B=%s", prefixSeg, slashA, slashB)
+		}
+		if !strings.Contains(slashA, runA.sessionID) {
+			t.Fatalf("run A's sidecar path does not contain its own session id: %s", slashA)
+		}
+		if !strings.Contains(slashB, runB.sessionID) {
+			t.Fatalf("run B's sidecar path does not contain its own session id: %s", slashB)
+		}
+	})
+
+	t.Run("unreachable", func(t *testing.T) {
+		aSpillID := strings.TrimSuffix(filepath.Base(fullPathA), ".result")
+
+		// Positive control: A can read its own spill back in full.
+		selfCtx := tools.WithToolCallContext(context.Background(), runA.sessionID, "probe-self", runDir, 64)
+		selfArgs, _ := json.Marshal(map[string]any{"tool_call_id": aSpillID})
+		selfRes, err := (tools.ReadToolOutput{}).Execute(selfCtx, selfArgs)
+		if err != nil {
+			t.Fatalf("A reading its own sidecar failed (positive control): %v", err)
+		}
+		if !strings.Contains(selfRes.Preview, payloadA) {
+			t.Fatalf("A's own read did not return A's content, got: %.80q", selfRes.Preview)
+		}
+
+		// The actual assertion: B's tool surface, given A's spill id, cannot read
+		// A's content — the read is scoped by B's OWN session id, so B resolves a
+		// path under B's own session that does not exist.
+		crossCtx := tools.WithToolCallContext(context.Background(), runB.sessionID, "probe-cross", runDir, 64)
+		crossArgs, _ := json.Marshal(map[string]any{"tool_call_id": aSpillID})
+		_, err = (tools.ReadToolOutput{}).Execute(crossCtx, crossArgs)
+		if err == nil {
+			t.Fatal("B's tool surface successfully read A's sidecar content using A's spill id — cross-identity read succeeded")
+		}
+		if !strings.Contains(err.Error(), "no output for tool_call_id") {
+			t.Fatalf("unexpected error shape for a cross-identity read: %v", err)
+		}
+	})
+
+	t.Run("path_escape_refused", func(t *testing.T) {
+		for _, malicious := range []string{"../../etc/passwd", "..\\..\\windows", "a/b", "a\\b", ""} {
+			ctx := tools.WithToolCallContext(context.Background(), runA.sessionID, "probe-escape", runDir, 64)
+			args, _ := json.Marshal(map[string]any{"tool_call_id": malicious})
+			_, err := (tools.ReadToolOutput{}).Execute(ctx, args)
+			if err == nil {
+				t.Fatalf("crafted spill id %q was NOT refused before any filesystem join", malicious)
+			}
+		}
+	})
+}
+
+// TestTwoIdentityConcurrentStablePrefixIsByteIdentical is Task 2's KV-prefix
+// surface: messages[0] — the byte-stable system prompt — is byte-identical
+// between the two runs, and carries no identity or session value.
+func TestTwoIdentityConcurrentStablePrefixIsByteIdentical(t *testing.T) {
+	registry := tools.NewRegistry()
+	registry.Register(tools.TextResponse{})
+	gw := gateway.New(config.ProfileSingleUserHardened, nil)
+	steerInbox := steertest.New(steer.Config{})
+	runDir := t.TempDir()
+	turnA := []agenttest.FakeTurn{agenttest.TextChunks("stop", "A answer")}
+	turnB := []agenttest.FakeTurn{agenttest.TextChunks("stop", "B answer")}
+	runA, runB := newTwoIdentityHarness(t, registry, gw, steerInbox, runDir, turnA, turnB, 5, 5, harnessOptions{})
+
+	_, errA, _, errB := runBothConcurrently(t, runA, runB)
+	if errA != nil {
+		t.Fatalf("run A errored: %v", errA)
+	}
+	if errB != nil {
+		t.Fatalf("run B errored: %v", errB)
+	}
+
+	reqsA := runA.fc.RecordedRequests()
+	reqsB := runB.fc.RecordedRequests()
+	if len(reqsA) == 0 || len(reqsB) == 0 {
+		t.Fatal("no requests recorded for one of the two runs")
+	}
+	if len(reqsA[0].Messages) == 0 || len(reqsB[0].Messages) == 0 {
+		t.Fatal("first recorded request carries no messages")
+	}
+	msg0A, err := json.Marshal(reqsA[0].Messages[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg0B, err := json.Marshal(reqsB[0].Messages[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(msg0A, msg0B) {
+		t.Fatalf("messages[0] differs between the two identities' runs:\nA=%s\nB=%s", msg0A, msg0B)
+	}
+	for _, needle := range []string{identityA, identityB, runA.sessionID, runB.sessionID} {
+		if bytes.Contains(msg0A, []byte(needle)) {
+			t.Fatalf("messages[0] carries an identity-derived value %q: %s", needle, msg0A)
+		}
+	}
+}
+
+// TestTwoIdentityConcurrentHistoriesDoNotInterleave is Task 2's no-
+// interleaving assertion: after both runs complete, each run's OWN recorded
+// history contains only its own turns and its own tool results — never a
+// message from the other run's list.
+func TestTwoIdentityConcurrentHistoriesDoNotInterleave(t *testing.T) {
+	registry := tools.NewRegistry()
+	registry.Register(tools.TextResponse{})
+	registry.Register(&echoTool{})
+	gw := gateway.New(config.ProfileSingleUserHardened, nil)
+	steerInbox := steertest.New(steer.Config{})
+	runDir := t.TempDir()
+	turnA := []agenttest.FakeTurn{
+		agenttest.ToolCallTurn(agenttest.MakeToolCall("hA-1", "echo", `{"v":"only-in-A"}`)),
+		agenttest.ToolCallTurn(textResponseCall("hA-2", "A final")),
+	}
+	turnB := []agenttest.FakeTurn{
+		agenttest.ToolCallTurn(agenttest.MakeToolCall("hB-1", "echo", `{"v":"only-in-B"}`)),
+		agenttest.ToolCallTurn(textResponseCall("hB-2", "B final")),
+	}
+	runA, runB := newTwoIdentityHarness(t, registry, gw, steerInbox, runDir, turnA, turnB, 5, 5, harnessOptions{})
+	_, errA, _, errB := runBothConcurrently(t, runA, runB)
+	if errA != nil {
+		t.Fatalf("run A errored: %v", errA)
+	}
+	if errB != nil {
+		t.Fatalf("run B errored: %v", errB)
+	}
+
+	lastA := runA.fc.LastRequest()
+	lastB := runB.fc.LastRequest()
+	blobA, _ := json.Marshal(lastA.Messages)
+	blobB, _ := json.Marshal(lastB.Messages)
+	if bytes.Contains(blobA, []byte("only-in-B")) {
+		t.Fatalf("run A's own history contains run B's content: %s", blobA)
+	}
+	if bytes.Contains(blobB, []byte("only-in-A")) {
+		t.Fatalf("run B's own history contains run A's content: %s", blobB)
+	}
+	if bytes.Contains(blobA, []byte(runB.sessionID)) {
+		t.Fatalf("run A's history contains run B's session id: %s", blobA)
+	}
+	if bytes.Contains(blobB, []byte(runA.sessionID)) {
+		t.Fatalf("run B's history contains run A's session id: %s", blobB)
 	}
 }

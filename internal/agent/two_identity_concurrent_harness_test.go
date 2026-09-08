@@ -265,6 +265,59 @@ func (t *collisionTool) Execute(ctx context.Context, raw json.RawMessage) (tools
 	return tools.NewResult(ctx, fmt.Sprintf("executed-for-session:%s-seq:%d", call.sessionID, call.seq))
 }
 
+// bigOutputRecorder captures the ToolResult.FullPath and session id a
+// bigOutputTool call actually spilled to, so Task 2's sidecar assertions can
+// read the REAL production sidecarPath output without needing to call the
+// unexported sidecarPath/validateID helpers directly (they live in package
+// tools, not agent_test).
+type bigOutputRecorder struct {
+	mu        sync.Mutex
+	fullPath  string
+	sessionID string
+}
+
+func (r *bigOutputRecorder) record(ctx context.Context, res tools.ToolResult) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.fullPath = res.FullPath
+	r.sessionID = tools.SessionIDFromContext(ctx)
+}
+
+func (r *bigOutputRecorder) snapshot() (fullPath, sessionID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.fullPath, r.sessionID
+}
+
+// bigOutputTool returns content larger than the harness's PreviewCap (2048
+// bytes) so tools.NewResult spills it to the per-session sidecar
+// (internal/agent/tools/result.go), letting Task 2 assert on the REAL
+// sidecarPath output via the returned ToolResult.FullPath.
+type bigOutputTool struct {
+	name    string
+	payload string
+	rec     *bigOutputRecorder
+}
+
+func (t *bigOutputTool) Spec() tools.Spec {
+	return tools.Spec{
+		Name:        t.name,
+		Summary:     "Test-only large-output tool that forces sidecar spillover.",
+		Description: "Test-only tool for the ISO-05 concurrent-runner harness.",
+		Parameters:  json.RawMessage(`{"type":"object","properties":{}}`),
+		Deferred:    false,
+	}
+}
+
+func (t *bigOutputTool) Execute(ctx context.Context, _ json.RawMessage) (tools.ToolResult, error) {
+	res, err := tools.NewResult(ctx, t.payload)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+	t.rec.record(ctx, res)
+	return res, nil
+}
+
 // registryToolNames returns the SORTED tool names currently in r — a cheap,
 // exported-surface snapshot the "registry unmutated by concurrent runs"
 // assertion diffs before/after (tools.Registry.All is exported; the
