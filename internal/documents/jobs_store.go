@@ -313,15 +313,17 @@ func (s *PostgresIngestionJobStore) CountUnfinishedDelegationJobs(ctx context.Co
 
 // DelegationJobRow is the durable worker state exposed to swarm_status.
 type DelegationJobRow struct {
-	ID           string
-	Goal         string
-	ChildID      string
-	Status       string
-	AttemptCount int
-	MaxAttempts  int
-	CreatedAt    time.Time
-	CompletedAt  time.Time
-	ErrorMessage string
+	ID                string
+	Goal              string
+	ChildID           string
+	Status            string
+	AttemptCount      int
+	MaxAttempts       int
+	CreatedAt         time.Time
+	CompletedAt       time.Time
+	ErrorMessage      string
+	OperatorCancelled bool
+	PendingDelivery   bool
 }
 
 // ListDelegationJobs returns the newest workers for one identity and conversation.
@@ -386,7 +388,9 @@ func delegationJobRowFromSQL(r sqlc.ListDelegationJobsForConversationRow) (Deleg
 		ID: uuidString(r.ID), Goal: goal, ChildID: childID, Status: r.Status,
 		AttemptCount: int(r.AttemptCount), MaxAttempts: int(r.MaxAttempts),
 		CreatedAt: timeValue(r.CreatedAt), CompletedAt: timeValue(r.CompletedAt),
-		ErrorMessage: r.ErrorMessage,
+		ErrorMessage:      r.ErrorMessage,
+		OperatorCancelled: payload["operator_cancelled"] == true,
+		PendingDelivery:   payload["pending_delivery"] != nil,
 	}, nil
 }
 

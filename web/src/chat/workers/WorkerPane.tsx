@@ -267,12 +267,20 @@ export function WorkerPane({ conversationId, childId, onClose }: WorkerPaneProps
           </ReadonlyThreadProvider>
         </AssistantRuntimeProvider>
       </div>
-      {workerStatus !== undefined ? (
+      {workerStatus !== undefined || selectedStatus === 'queued' ? (
         <WorkerControls
           key={`${conversationId}:${childId}`}
           conversationId={conversationId}
           childId={childId}
-          status={workerStatus}
+          status={
+            workerStatus ?? {
+              child_id: childId,
+              status: 'queued',
+              events: 0,
+              duration_sec: 0,
+              last_event_at: '',
+            }
+          }
         />
       ) : null}
     </section>

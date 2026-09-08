@@ -11,6 +11,45 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const requestQueuedWorkerCancellation = `-- name: RequestQueuedWorkerCancellation :one
+UPDATE aura.ingestion_jobs
+SET payload = payload || '{"operator_cancelled":true}'::jsonb,
+    next_attempt_at = LEAST(next_attempt_at, now()),
+    updated_at = now()
+WHERE id = $1::uuid
+  AND identity_id = $2::uuid
+  AND job_type = 'swarm_delegation'
+  AND payload->>'conversation_id' = $3::text
+  AND COALESCE(NULLIF(payload->>'child_id', ''), id::text) = $4::text
+  AND status = 'queued'
+  AND attempt_count = $5::integer
+  AND attempt_count < max_attempts
+  AND NOT payload ? 'pending_delivery'
+  AND (locked_until IS NULL OR locked_until < now())
+RETURNING id
+`
+
+type RequestQueuedWorkerCancellationParams struct {
+	ID             pgtype.UUID `json:"id"`
+	IdentityID     pgtype.UUID `json:"identity_id"`
+	ConversationID string      `json:"conversation_id"`
+	ChildID        string      `json:"child_id"`
+	AttemptCount   int32       `json:"attempt_count"`
+}
+
+func (q *Queries) RequestQueuedWorkerCancellation(ctx context.Context, arg RequestQueuedWorkerCancellationParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, requestQueuedWorkerCancellation,
+		arg.ID,
+		arg.IdentityID,
+		arg.ConversationID,
+		arg.ChildID,
+		arg.AttemptCount,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const requestWorkerCancellation = `-- name: RequestWorkerCancellation :one
 UPDATE aura.ingestion_jobs
 SET payload = CASE

@@ -16,6 +16,7 @@ import (
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/approvalgrants"
 	"github.com/chetto1983/aura/internal/cron"
+	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/readiness"
 	"github.com/chetto1983/aura/internal/swarm"
@@ -110,6 +111,7 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	// optional like the graph/voice providers) — there is no "disabled" posture for
 	// this route the way there is for an unconfigured sidecar.
 	aguiServer.SetSwarmTranscripts(swarmTranscriptAdapter{runDir: chat.cfg.RunDir})
+	aguiServer.SetWorkerControlJobs(documents.NewPostgresIngestionJobStore(chat.pool))
 	aguiServer.SetSwarmWorkerIdle(time.Duration(chat.cfg.SwarmChildIdleSec) * time.Second)
 	aguiServer.SetAssetService(chat.assets)
 	aguiServer.SetOwnerExportDestination(ownerExports)

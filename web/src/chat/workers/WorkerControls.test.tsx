@@ -23,6 +23,7 @@ let receipts: WorkerReceipt[];
 let posts: { url: string; init: RequestInit }[];
 let post: () => Promise<Response>;
 let clients: QueryClient[];
+let queuedState: Record<string, unknown>;
 
 function postedBody(): unknown {
   const body = posts[0]?.init.body;
@@ -52,6 +53,7 @@ beforeEach(() => {
   receipts = [];
   posts = [];
   clients = [];
+  queuedState = {};
   post = () => Promise.resolve(new Response('{}', { status: 202 }));
   vi.stubGlobal(
     'fetch',
@@ -60,7 +62,9 @@ beforeEach(() => {
         posts.push({ url, init });
         return post();
       }
-      return Promise.resolve(new Response(JSON.stringify({ receipts }), { status: 200 }));
+      return Promise.resolve(
+        new Response(JSON.stringify({ receipts, ...queuedState }), { status: 200 }),
+      );
     }),
   );
 });
@@ -71,6 +75,63 @@ afterEach(() => {
 });
 
 describe('worker controls', () => {
+  it('stops queued work without a run ID and restores durable acceptance after remount', async () => {
+    const queued: WorkerStatus = {
+      child_id: childId,
+      status: 'queued',
+      events: 0,
+      duration_sec: 0,
+      last_event_at: '',
+    };
+    const target = { job_id: '44444444-4444-4444-4444-444444444444', attempt_count: 0 };
+    queuedState = { queued_target: target };
+    post = () => {
+      queuedState = { cancel_requested: true };
+      return Promise.resolve(new Response('{}', { status: 202 }));
+    };
+    const view = mount(queued);
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop agent' }));
+    await screen.findByText('Stop requested. Waiting for the agent to finish.');
+    expect(postedBody()).toEqual(target);
+    expect(posts[0]?.url).toBe(`/api/conversations/${conversationId}/swarm/${childId}/cancel`);
+    expect(screen.queryByRole('textbox')).toBeNull();
+    view.unmount();
+    mount(queued);
+    expect(
+      await screen.findByText('Stop requested. Waiting for the agent to finish.'),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Stop agent' })).toBeNull();
+    expect(posts).toHaveLength(1);
+  });
+
+  it('drops a queued retry when the worker starts and never redirects it to that run', async () => {
+    queuedState = {
+      queued_target: { job_id: '44444444-4444-4444-4444-444444444444', attempt_count: 0 },
+    };
+    post = () => Promise.reject(new TypeError('network cut'));
+    const view = mount({
+      child_id: childId,
+      status: 'queued',
+      events: 0,
+      duration_sec: 0,
+      last_event_at: '',
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop agent' }));
+    await screen.findByRole('button', { name: 'Retry delivery' });
+    view.update(running);
+    expect(screen.queryByRole('button', { name: 'Retry delivery' })).toBeNull();
+    expect(posts).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Stop agent' }));
+    await waitFor(() => {
+      expect(posts).toHaveLength(2);
+    });
+    const body = posts[1]?.init.body;
+    if (typeof body !== 'string') throw new Error('Expected JSON request');
+    expect(JSON.parse(body)).toEqual({ run_id: runId });
+    expect(new Headers(posts[0]?.init.headers).get('Idempotency-Key')).not.toBe(
+      new Headers(posts[1]?.init.headers).get('Idempotency-Key'),
+    );
+  });
   it('shows acceptance separately from application and addresses only the selected execution', async () => {
     post = () => {
       receipts = [

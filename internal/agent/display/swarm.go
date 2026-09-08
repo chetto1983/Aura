@@ -11,6 +11,7 @@ const (
 	StatusQueued         = "queued"
 	StatusStalled        = "stalled"
 	StatusDeadLetter     = "dead_letter"
+	StatusCanceled       = "canceled"
 )
 
 // normalizeSwarm maps a swarm_spawn result ([]ChildReport) to a swarm_report

@@ -340,6 +340,7 @@ func TestSwarmWorkerStatusVocabulary(t *testing.T) {
 		{name: "running marker", ev: agent.Event{Actions: agent.Actions{StateDelta: map[string]any{"swarm_child_status": "running"}}}, want: "running"},
 		{name: "stalled marker", ev: agent.Event{Actions: agent.Actions{StateDelta: map[string]any{"swarm_child_status": "stalled"}}}, want: "stalled"},
 		{name: "dead letter marker", ev: agent.Event{Actions: agent.Actions{StateDelta: map[string]any{"swarm_child_status": "dead_letter"}}}, want: "dead_letter"},
+		{name: "canceled marker", ev: agent.Event{Actions: agent.Actions{StateDelta: map[string]any{"swarm_child_status": "canceled"}}}, want: "canceled"},
 		{name: "awaiting input", ev: agent.Event{Actions: agent.Actions{AwaitingInput: &agent.AwaitingInput{Question: "continue?"}}}, want: "needs_user_input"},
 		{name: "fresh", ev: agent.Event{Timestamp: time.Now().UTC()}, idle: time.Second, want: "running"},
 		{name: "idle", ev: agent.Event{Timestamp: now.Add(-2 * time.Second)}, idle: time.Second, want: "stalled"},

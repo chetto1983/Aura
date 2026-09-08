@@ -16,7 +16,11 @@ import {
   type TurnUsage,
 } from './sseAdapter';
 import { errorDetail } from './sseAdapter_frames';
-import { runControlURL, type WorkerControlTarget } from './runControlTarget';
+import {
+  runControlURL,
+  type WorkerControlTarget,
+  type QueuedWorkerTarget,
+} from './runControlTarget';
 
 // sseResume — the fix-plan 1.3 Tier B (RS-07) resilience wrapper around the
 // /agent/run SSE stream. A sibling of sseAdapter (which owns the PURE reducer
@@ -417,6 +421,7 @@ export async function cancelRun(
     readonly target: WorkerControlTarget;
     readonly signal?: AbortSignal;
     readonly idempotencyKey: string;
+    readonly queuedTarget?: QueuedWorkerTarget;
   },
 ): Promise<void> {
   const res = await fetch(runControlURL(runId, 'cancel', options?.target), {
@@ -429,7 +434,7 @@ export async function cancelRun(
             'Content-Type': 'application/json',
             'Idempotency-Key': options.idempotencyKey,
           },
-          body: JSON.stringify({ run_id: runId }),
+          body: JSON.stringify(options.queuedTarget ?? { run_id: runId }),
           signal: options.signal,
         }),
   });

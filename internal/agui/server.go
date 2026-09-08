@@ -251,6 +251,7 @@ type Server struct {
 	// chat.cfg.RunDir); until then the transcript route hides itself (404),
 	// mirroring SetGraphView's best-effort posture.
 	swarmTranscripts swarmTranscriptReader
+	workerJobs       workerControlJobStore
 	swarmWorkerIdle  time.Duration
 }
 

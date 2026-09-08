@@ -1,4 +1,11 @@
 import { errorDetail } from '../http';
+import type { QueuedWorkerTarget } from '../runControlTarget';
+
+export interface WorkerControlState {
+  readonly receipts: readonly WorkerReceipt[];
+  readonly queued_target?: QueuedWorkerTarget;
+  readonly cancel_requested?: boolean;
+}
 
 export interface WorkerReceipt {
   readonly id: string;
@@ -17,7 +24,7 @@ export async function workerControlHistory(
   conversationId: string,
   childId: string,
   signal: AbortSignal,
-): Promise<readonly WorkerReceipt[]> {
+): Promise<WorkerControlState> {
   const res = await fetch(
     `/api/conversations/${encodeURIComponent(conversationId)}/swarm/${encodeURIComponent(childId)}/controls`,
     {
@@ -35,7 +42,7 @@ export async function workerControlHistory(
   ) {
     throw new Error('Invalid worker receipt response');
   }
-  return data.receipts.map((value: unknown) => {
+  const receipts = data.receipts.map((value: unknown) => {
     if (
       typeof value !== 'object' ||
       value === null ||
@@ -55,4 +62,27 @@ export async function workerControlHistory(
     }
     return value as WorkerReceipt;
   });
+  const queued = 'queued_target' in data ? data.queued_target : undefined;
+  if (
+    queued !== undefined &&
+    (typeof queued !== 'object' ||
+      queued === null ||
+      !('job_id' in queued) ||
+      typeof queued.job_id !== 'string' ||
+      queued.job_id === '' ||
+      !('attempt_count' in queued) ||
+      typeof queued.attempt_count !== 'number' ||
+      !Number.isInteger(queued.attempt_count) ||
+      queued.attempt_count < 0 ||
+      queued.attempt_count > 2147483647)
+  )
+    throw new Error('Invalid worker queued target');
+  const cancelling = 'cancel_requested' in data ? data.cancel_requested : undefined;
+  if (cancelling !== undefined && typeof cancelling !== 'boolean')
+    throw new Error('Invalid worker cancellation state');
+  return {
+    receipts,
+    ...(queued === undefined ? {} : { queued_target: queued as QueuedWorkerTarget }),
+    ...(cancelling === undefined ? {} : { cancel_requested: cancelling }),
+  };
 }

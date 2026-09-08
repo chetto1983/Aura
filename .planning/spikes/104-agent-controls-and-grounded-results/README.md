@@ -6,10 +6,34 @@ This continues spike 103; its passing runtime tests do not close the full goal.
 Latest live checkpoint: child steering/FIFO/replay, real process stop and direct nested
 controls have been exercised successfully. Paused cancellation was corrected and retested
 as canceled with one model invocation. Concurrency retention now keeps a fifth job queued.
-Queued cancellation and grounded coordinator answers remain open, along with the full
-closing quality/CI matrix. No complete industrial-readiness claim is made.
+Queued cancellation now passes live probe 104Q3, including durable acceptance after
+reload and a terminal report without any model/tool invocation. Grounded coordinator
+answers and the full closing quality/CI matrix remain open. No complete
+industrial-readiness claim is made.
 
 ## Evidence and references
+
+- 104Q3, 2026-09-08, conversation `01a07f06-eab6-7d19-9134-6916a6180066`,
+  image `58cda375926a32d28e3f90bb6e7a113d9c4d9a2b515f9bc4f7f2d12d4957bc39`
+  (`f387ad6ca-queuedcancel`): four running jobs and fifth
+  `w5-31eb9d42da4d0f5a9440acfc47776370` queued at attempt0. Its UI stop sent
+  `{job_id:"7266cf44-e8b7-4134-ba21-ba5d424d16ee",attempt_count:0}` and returned
+  202 in 1948ms. Reload kept `cancel_requested:true`, no remaining Stop button,
+  and the pending acceptance text. At `03:22:29.062 UTC` normal delivery recorded
+  `canceled`: the entire transcript was one terminal marker, no model/tool events.
+  `/workspace/scratch/aura-control104-Q3-must-not-exist.txt` remained absent.
+  This proves pre-start cancellation, not ordinary completion of the siblings:
+  the test's 150-second silent commands exceeded the configured 120-second idle
+  watchdog. All four retried once, then were explicitly stopped via UI (four 202s).
+  The queued worker's empty terminal pane still said Connecting; fix and retest.
+  The first coordinator turn only searched for swarm_spawn but claimed Avviati;
+  a corrective user turn was necessary to actually enqueue. This is another
+  grounded-answer failure, not a passing autonomous task-execution result.
+- Queued-control native verification: 56 worker UI tests passed, TypeScript build
+  and targeted ESLint passed; Go agui/documents/swarm race suites passed; the two
+  disposable-Postgres queued-control tests passed with race detection. Native Go
+  overlays killed all three SQL mutants (attempt fence, conversation scope,
+  pending-delivery protection). Full coverage and release CI are still pending.
 
 - Spike 103 records real execution, pause/resume, repeated delegation, changed context,
   failure isolation, parent steering, nested invocation identity, pane reload and SIGKILL

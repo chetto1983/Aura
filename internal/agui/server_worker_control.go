@@ -20,8 +20,10 @@ type workerSteerStore interface {
 }
 
 type workerControlRequest struct {
-	RunID string `json:"run_id"`
-	Text  string `json:"text,omitempty"`
+	RunID        string `json:"run_id"`
+	Text         string `json:"text,omitempty"`
+	JobID        string `json:"job_id,omitempty"`
+	AttemptCount *int   `json:"attempt_count,omitempty"`
 }
 
 func (s *Server) registerWorkerControlRoutes(mux *http.ServeMux) {
@@ -47,30 +49,42 @@ func (s *Server) ownsWorkerConversation(w http.ResponseWriter, r *http.Request) 
 	return true
 }
 
-func (s *Server) workerControlTarget(w http.ResponseWriter, r *http.Request) (*RunSession, workerControlRequest, bool) {
+func (s *Server) readWorkerControl(w http.ResponseWriter, r *http.Request) (workerControlRequest, bool) {
 	var req workerControlRequest
 	if !s.ownsWorkerConversation(w, r) {
-		return nil, req, false
-	}
-	if s.runs == nil {
-		workerControlNotFound(w)
-		return nil, req, false
+		return req, false
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxRunBodyBytes+1))
 	if err != nil || len(body) > maxRunBodyBytes || json.Unmarshal(body, &req) != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return nil, req, false
+		return req, false
+	}
+	return req, true
+}
+
+func (s *Server) workerControlTarget(w http.ResponseWriter, r *http.Request, req workerControlRequest) (*RunSession, bool) {
+	if req.JobID != "" || req.AttemptCount != nil {
+		http.Error(w, "invalid execution target", http.StatusBadRequest)
+		return nil, false
+	}
+	if s.runs == nil {
+		workerControlNotFound(w)
+		return nil, false
 	}
 	session, ok := s.runs.Get(req.RunID)
 	if !ok || session.IdentityID != scopedIdentityID(r.Context()) || session.ThreadID != r.PathValue("conv") || session.WorkerID != r.PathValue("child") {
 		workerControlNotFound(w)
-		return nil, req, false
+		return nil, false
 	}
-	return session, req, true
+	return session, true
 }
 
 func (s *Server) handleWorkerSteer(w http.ResponseWriter, r *http.Request) {
-	session, req, ok := s.workerControlTarget(w, r)
+	req, ok := s.readWorkerControl(w, r)
+	if !ok {
+		return
+	}
+	session, ok := s.workerControlTarget(w, r, req)
 	if !ok {
 		return
 	}
@@ -89,12 +103,20 @@ func (s *Server) handleWorkerSteer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleWorkerCancel(w http.ResponseWriter, r *http.Request) {
-	session, req, ok := s.workerControlTarget(w, r)
+	req, ok := s.readWorkerControl(w, r)
 	if !ok {
 		return
 	}
 	if req.Text != "" {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.JobID != "" {
+		s.cancelQueuedWorker(w, r, req)
+		return
+	}
+	session, ok := s.workerControlTarget(w, r, req)
+	if !ok {
 		return
 	}
 	if session.operatorStop == nil {
@@ -127,7 +149,12 @@ func (s *Server) handleWorkerControlHistory(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	conv, child, owner := r.PathValue("conv"), r.PathValue("child"), scopedIdentityID(r.Context())
-	if _, live := s.runs.LiveForWorker(owner, conv, child); !live {
+	job, found, err := s.workerControlJob(r)
+	if err != nil {
+		http.Error(w, "worker controls unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if _, live := s.runs.LiveForWorker(owner, conv, child); !live && !found {
 		if s.swarmTranscripts == nil {
 			workerControlNotFound(w)
 			return
@@ -158,5 +185,12 @@ func (s *Server) handleWorkerControlHistory(w http.ResponseWriter, r *http.Reque
 			receipts[i].Status, receipts[i].Reason = "rejected", "worker_run_ended"
 		}
 	}
-	writeJSONStatus(w, http.StatusOK, map[string]any{"receipts": receipts})
+	body := map[string]any{"receipts": receipts}
+	if found {
+		body["cancel_requested"] = job.OperatorCancelled && (job.Status == "queued" || job.Status == "running")
+		if job.Status == "queued" && !job.OperatorCancelled && !job.PendingDelivery && job.AttemptCount < job.MaxAttempts {
+			body["queued_target"] = queuedWorkerTarget{JobID: job.ID, AttemptCount: job.AttemptCount}
+		}
+	}
+	writeJSONStatus(w, http.StatusOK, body)
 }

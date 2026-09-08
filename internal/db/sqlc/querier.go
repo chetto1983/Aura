@@ -541,6 +541,7 @@ type Querier interface {
 	// that impossible -- you could add a veto and never remove one. The onboarding seed keeps
 	// the merge; the editor owns the whole row.
 	ReplaceIdentityProfile(ctx context.Context, arg ReplaceIdentityProfileParams) (AuraIdentityProfiles, error)
+	RequestQueuedWorkerCancellation(ctx context.Context, arg RequestQueuedWorkerCancellationParams) (pgtype.UUID, error)
 	RequestWorkerCancellation(ctx context.Context, arg RequestWorkerCancellationParams) (pgtype.UUID, error)
 	// Cross-process export-delete fence. This must commit before any runtime teardown.
 	// Reusing the same deterministic reservation is idempotent after a process retry.

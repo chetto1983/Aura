@@ -186,6 +186,7 @@ func deriveSwarmWorkerStatus(last *agent.Event, lastEventAt, now time.Time, idle
 func isSwarmWorkerStatus(status string) bool {
 	switch status {
 	case display.StatusOK,
+		display.StatusCanceled,
 		display.StatusFailed,
 		display.StatusNeedsUserInput,
 		display.StatusRunning,

@@ -11,3 +11,7 @@ export function runControlURL(
   if (target === undefined) return `/agent/runs/${encodeURIComponent(runId)}/${action}`;
   return `/api/conversations/${encodeURIComponent(target.conversationId)}/swarm/${encodeURIComponent(target.childId)}/${action}`;
 }
+export interface QueuedWorkerTarget {
+  readonly job_id: string;
+  readonly attempt_count: number;
+}

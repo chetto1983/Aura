@@ -34,28 +34,42 @@ export function WorkerControls({
   const active = useRef<AbortController | null>(null);
   const runId = status.run_id;
   const canSteer = status.can_steer === true && Boolean(runId);
-  const canCancel = status.can_cancel === true && Boolean(runId);
-  const visibleAttempt = attempt?.runId === runId ? attempt : null;
-  const busy = visibleAttempt?.phase === 'sending';
   const historyKey = workerControlKey(conversationId, childId);
   const history = useQuery({
     queryKey: historyKey,
     queryFn: ({ signal }) => workerControlHistory(conversationId, childId, signal),
     retry: false,
     refetchInterval: (query) =>
-      query.state.data?.some((r) => r.status === 'accepted') === true ? 1000 : false,
+      status.status === 'queued' ||
+      query.state.data?.cancel_requested === true ||
+      query.state.data?.receipts.some((r) => r.status === 'accepted') === true
+        ? 1000
+        : false,
   });
+  const queuedTarget =
+    runId === undefined && status.status === 'queued' ? history.data?.queued_target : undefined;
+  const targetKey =
+    runId ??
+    (queuedTarget === undefined
+      ? undefined
+      : `${queuedTarget.job_id}:${String(queuedTarget.attempt_count)}`);
+  const cancelRequested = history.data?.cancel_requested === true;
+  const canCancel =
+    !cancelRequested &&
+    ((status.can_cancel === true && Boolean(runId)) || queuedTarget !== undefined);
+  const visibleAttempt = attempt?.runId === targetKey ? attempt : null;
+  const busy = visibleAttempt?.phase === 'sending';
 
   useEffect(
     () => () => {
       active.current?.abort();
     },
-    [conversationId, childId, runId],
+    [conversationId, childId, targetKey],
   );
 
   const perform = (kind: 'steer' | 'cancel') => {
     if (
-      runId === undefined ||
+      targetKey === undefined ||
       busy ||
       (kind === 'steer' ? !canSteer || draft.value.trim() === '' : !canCancel)
     )
@@ -65,10 +79,11 @@ export function WorkerControls({
     const target = { conversationId, childId };
     const send =
       kind === 'steer'
-        ? steerRun(runId, snapshot.value, target).send
+        ? steerRun(runId ?? '', snapshot.value, target).send
         : (signal?: AbortSignal) =>
-            cancelRun(runId, {
+            cancelRun(runId ?? '', {
               target,
+              ...(queuedTarget === undefined ? {} : { queuedTarget }),
               ...(signal === undefined ? {} : { signal }),
               idempotencyKey: id,
             });
@@ -76,11 +91,11 @@ export function WorkerControls({
       active.current?.abort();
       const controller = new AbortController();
       active.current = controller;
-      setAttempt({ id, runId, kind, phase: 'sending' });
+      setAttempt({ id, runId: targetKey, kind, phase: 'sending' });
       try {
         await send(controller.signal);
         if (controller.signal.aborted) return;
-        setAttempt({ id, runId, kind, phase: 'accepted' });
+        setAttempt({ id, runId: targetKey, kind, phase: 'accepted' });
         if (kind === 'steer') {
           setDraft((current) =>
             current.revision === snapshot.revision
@@ -97,7 +112,7 @@ export function WorkerControls({
             : 'swarm.controls.failed';
         setAttempt({
           id,
-          runId,
+          runId: targetKey,
           kind,
           phase: 'failed',
           errorKey,
@@ -120,8 +135,9 @@ export function WorkerControls({
     void execute();
   };
 
-  const receipts = history.data ?? [];
-  if (!canSteer && !canCancel && receipts.length === 0 && !history.isError) return null;
+  const receipts = history.data?.receipts ?? [];
+  if (!canSteer && !canCancel && !cancelRequested && receipts.length === 0 && !history.isError)
+    return null;
 
   return (
     <div className="mt-3 shrink-0 space-y-2 border-t border-border pt-3">
@@ -174,7 +190,9 @@ export function WorkerControls({
               </Button>
             ) : null}
           </div>
-          <p className="text-xs text-text-faint">{t('swarm.controls.boundary')}</p>
+          {canSteer ? (
+            <p className="text-xs text-text-faint">{t('swarm.controls.boundary')}</p>
+          ) : null}
         </form>
       ) : null}
       {visibleAttempt?.phase === 'sending' ? (
@@ -182,7 +200,8 @@ export function WorkerControls({
           {t('swarm.controls.sending')}
         </p>
       ) : null}
-      {visibleAttempt?.phase === 'accepted' && visibleAttempt.kind === 'cancel' ? (
+      {cancelRequested ||
+      (visibleAttempt?.phase === 'accepted' && visibleAttempt.kind === 'cancel') ? (
         <p role="status" className="text-xs text-text-muted">
           {t('swarm.controls.stopping')}
         </p>

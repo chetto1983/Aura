@@ -25,9 +25,9 @@ describe('worker receipt boundary', () => {
     );
     vi.stubGlobal('fetch', fetcher);
     const controller = new AbortController();
-    expect(await workerControlHistory('conversation/one', 'child/two', controller.signal)).toEqual(
-      rows,
-    );
+    expect(await workerControlHistory('conversation/one', 'child/two', controller.signal)).toEqual({
+      receipts: rows,
+    });
     expect(fetcher).toHaveBeenCalledWith(
       '/api/conversations/conversation%2Fone/swarm/child%2Ftwo/controls',
       { credentials: 'same-origin', signal: controller.signal },
@@ -43,6 +43,10 @@ describe('worker receipt boundary', () => {
     { receipts: [{ ...receipt, status: ['accepted'] }] },
     { receipts: [{ ...receipt, status: 'invented' }] },
     { receipts: [{ ...receipt, run_id: 4 }] },
+    { receipts: [], queued_target: { job_id: 'job', attempt_count: -1 } },
+    { receipts: [], queued_target: { job_id: 'job', attempt_count: 1.5 } },
+    { receipts: [], queued_target: { job_id: 'job' } },
+    { receipts: [], cancel_requested: 'true' },
   ])(
     'refuses a malformed response instead of claiming there are no corrections: %j',
     async (body) => {
