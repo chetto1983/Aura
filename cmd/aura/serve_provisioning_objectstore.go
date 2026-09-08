@@ -285,7 +285,7 @@ func (a *objectStoreProvisionAdapter) DeprovisionObjectStore(ctx context.Context
 		return err
 	}
 	if bucketID != "" {
-		if err := a.emptyBucket(ctx, id); err != nil {
+		if err := a.emptyBucket(ctx, id, bucketID); err != nil {
 			return err
 		}
 		if err := a.client.DeleteBucket(ctx, bucketID); err != nil {
@@ -308,13 +308,24 @@ func (a *objectStoreProvisionAdapter) DeprovisionObjectStore(ctx context.Context
 // A nil emptier leaves the previous behaviour intact — the delete is still attempted and
 // Garage's own BucketNotEmpty is the loud failure — so a deployment with no S3 credentials
 // wired is no worse off than before.
-func (a *objectStoreProvisionAdapter) emptyBucket(ctx context.Context, id string) error {
+func (a *objectStoreProvisionAdapter) emptyBucket(ctx context.Context, id, bucketID string) error {
 	if a.emptier == nil {
 		return nil
 	}
 	bucket, err := garageadmin.BucketForIdentity(id)
 	if err != nil {
 		return err
+	}
+	// Re-assert the ownership provisioning grants, because a bucket that missed it is
+	// otherwise undeletable by anything. Measured 2026-09-08: three orphaned buckets carried
+	// ONE object each and ZERO authorized keys, so ListObjectsV2 answered 403 AccessDenied
+	// and no code path could empty them — and Garage will not drop a non-empty bucket. The
+	// grant is idempotent, it is the same one grantAuraOwnership makes, and it lands on a
+	// bucket that is about to be destroyed.
+	if a.auraAccessKey != "" {
+		if err := a.client.AllowBucketKey(ctx, bucketID, a.auraAccessKey, garageadmin.ReadWriteOwner); err != nil {
+			return fmt.Errorf("grant teardown access to %q: %w", bucket, err)
+		}
 	}
 	objects, err := a.emptier.List(ctx, objectstore.ListRequest{Bucket: bucket})
 	if err != nil {

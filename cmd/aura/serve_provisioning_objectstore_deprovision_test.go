@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/objectstore"
@@ -31,6 +32,8 @@ type deprovisionMinter struct {
 	deleteKeyErr  error
 	deletedBucket []string
 	deleteBktErr  error
+	grants        []string
+	grantErr      error
 }
 
 func (d *deprovisionMinter) KeyIDByName(context.Context, string) (string, error) {
@@ -48,8 +51,14 @@ func (d *deprovisionMinter) CreateKey(context.Context, string) (string, string, 
 	return "", "", errors.New("deprovisionMinter: CreateKey must not be called on teardown")
 }
 
-func (d *deprovisionMinter) AllowBucketKey(context.Context, string, string, garageadmin.Permissions) error {
-	return errors.New("deprovisionMinter: AllowBucketKey must not be called on teardown")
+// AllowBucketKey records the teardown's own re-grant. Measured 2026-09-08: three orphaned
+// buckets carried ZERO authorized keys, so listing them for emptying answered S3 403
+// AccessDenied and they could not be deleted by any code path at all. The teardown therefore
+// re-asserts the ownership grantAuraOwnership makes at provisioning time, on a bucket it is
+// about to destroy.
+func (d *deprovisionMinter) AllowBucketKey(_ context.Context, bucketID, accessKey string, perms garageadmin.Permissions) error {
+	d.grants = append(d.grants, fmt.Sprintf("%s:%s:owner=%t", bucketID, accessKey, perms.Owner))
+	return d.grantErr
 }
 
 func (d *deprovisionMinter) BucketIDByAlias(context.Context, string) (string, error) {
@@ -211,6 +220,64 @@ func TestDeprovisionObjectStoreEmptiesTheBucketBeforeDeletingIt(t *testing.T) {
 	}
 	if len(minter.deletedBucket) != 1 {
 		t.Fatalf("deleted buckets = %v, want the bucket removed after it was emptied", minter.deletedBucket)
+	}
+}
+
+// TestDeprovisionObjectStoreReGrantsOwnershipBeforeListing covers the state three orphaned
+// buckets were actually in on 2026-09-08: one object each, and zero authorized keys, so the
+// shared aura credentials answered S3 403 AccessDenied on ListObjectsV2 and the bucket could
+// not be emptied — or therefore deleted — by anything. Provisioning gives that key ownership
+// via grantAuraOwnership; a bucket that missed the grant is otherwise undeletable forever.
+func TestDeprovisionObjectStoreReGrantsOwnershipBeforeListing(t *testing.T) {
+	emptier := &emptierStub{}
+	minter := &deprovisionMinter{aliasID: "bkt-1"}
+	adapter, _ := deprovisionFixture(t, minter)
+	adapter.emptier = emptier
+	adapter.auraAccessKey = "GK-aura"
+
+	if err := adapter.DeprovisionObjectStore(context.Background(), deprovisionTestID); err != nil {
+		t.Fatalf("DeprovisionObjectStore err = %v, want nil", err)
+	}
+	want := "bkt-1:GK-aura:owner=true"
+	if len(minter.grants) != 1 || minter.grants[0] != want {
+		t.Fatalf("grants = %v, want [%s] — owner, because listing and deleting objects both need it", minter.grants, want)
+	}
+	if len(emptier.listedIn) != 1 {
+		t.Fatalf("listed = %v, want exactly one listing, after the grant", emptier.listedIn)
+	}
+}
+
+func TestDeprovisionObjectStoreSkipsTheReGrantWithoutAnAuraKey(t *testing.T) {
+	emptier := &emptierStub{}
+	minter := &deprovisionMinter{aliasID: "bkt-1"}
+	adapter, _ := deprovisionFixture(t, minter)
+	adapter.emptier = emptier
+	// auraAccessKey stays empty: a deployment that never configured one.
+
+	if err := adapter.DeprovisionObjectStore(context.Background(), deprovisionTestID); err != nil {
+		t.Fatalf("DeprovisionObjectStore err = %v, want nil", err)
+	}
+	if len(minter.grants) != 0 {
+		t.Fatalf("grants = %v, want none — there is no key to grant to", minter.grants)
+	}
+	if len(emptier.listedIn) != 1 {
+		t.Fatalf("listed = %v, want the listing still attempted", emptier.listedIn)
+	}
+}
+
+func TestDeprovisionObjectStorePropagatesReGrantFailure(t *testing.T) {
+	boom := errors.New("garageadmin: AllowBucketKey returned status 500")
+	emptier := &emptierStub{}
+	minter := &deprovisionMinter{aliasID: "bkt-1", grantErr: boom}
+	adapter, _ := deprovisionFixture(t, minter)
+	adapter.emptier = emptier
+	adapter.auraAccessKey = "GK-aura"
+
+	if err := adapter.DeprovisionObjectStore(context.Background(), deprovisionTestID); !errors.Is(err, boom) {
+		t.Fatalf("DeprovisionObjectStore err = %v, want the grant failure propagated", err)
+	}
+	if len(emptier.listedIn) != 0 {
+		t.Fatalf("listed = %v, want no listing after a failed grant", emptier.listedIn)
 	}
 }
 
