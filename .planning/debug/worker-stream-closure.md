@@ -1,5 +1,5 @@
 ---
-status: fixing
+status: resolved
 trigger: "anche la UI ha bisogno di una modernizzazione non posso vedere gli agenti lavorare"
 created: 2026-09-08
 updated: 2026-09-08
@@ -16,7 +16,7 @@ updated: 2026-09-08
 ## Current Focus
 
 - hypothesis: the custom service worker proxies every same-origin GET, including long-lived SSE; stopping or replacing that worker may close proxied streams.
-- next_action: restrict non-navigation interception to explicit precache assets and add a real service-worker-enabled browser regression.
+- next_action: transport correction complete; continue the separate coordinator-grounding and cross-owner validation work.
 - test: browser-only controlled lifetime experiment, no agent execution, no mocked HTTP responses, no application edits.
 - result: both connections started OPEN; stopping the active service worker changed only the mediated connection to CLOSED with an error. The direct connection stayed OPEN.
 
@@ -43,5 +43,8 @@ updated: 2026-09-08
 ## Resolution
 
 - root_cause: the catch-all same-origin GET handler binds API/SSE response lifetime to the PWA worker. CDP stopWorker reproduces the closure while a simultaneous bypassed connection survives.
-- fix: pending; use the existing precache inventory to leave non-asset requests untouched by respondWith.
-- verification: causal MCP A/B experiment passed; after-fix regression pending. Probe EventSources closed in finally, bypass restored false, CDP detached. No data or agent execution was mutated.
+- fix: c5c5053c5 restricts non-navigation interception to the existing precache inventory. No new transport, retry wrapper or cache framework.
+- verification: the new real-HTTP Playwright regression failed before the fix (fromServiceWorker true), then passed on desktop and mobile Chrome (2/2). Static asset responses still use the cache. SSE remains OPEN with zero errors for 16 seconds after stopWorker. MCP independently reproduced the passing result after verifying the new worker code was active; the initial probe during the old-to-new worker transition still exercised the old behavior. Probe EventSources closed in finally, CDP detached, no persistent bypass.
+- live_control: 104W in conversation 01a07fc2-fa60-7290-a0a5-eaf2fc4823eb, child w1-5f8a2cbedea2eb3c99ff4da3b56661c1. Python PID50190 was sleeping75 before stopWorker. Subsequent UI cancellation returned202 (network request9752); the process disappeared and both worker and command became Annullato live, with no remaining stop control. Reload retained the selected worker and terminal state on the same URL. The first waitForResponse predicate mistakenly used /workers/ instead of the actual /swarm/ route; the native network log confirms the response, not that timed-out predicate.
+- deployment: healthy image4500b18afce261da2289318fb29834297fb4776c402bdde3bd39dcf8118202e6, stamp9988af0b7-pwastream.
+- limits: this isolates the PWA response-lifetime failure. The earlier intermittent conversation navigation was not reproduced by explicit goto/reload or the104W reload; no causal fix is claimed for it.

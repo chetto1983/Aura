@@ -13,6 +13,26 @@ industrial-readiness claim is made.
 
 ## Evidence and references
 
+- PWA stream lifetime correction, `c5c5053c5`: a controlled MCP A/B experiment
+  stopped the active service worker while two real owner-scoped SSE connections
+  were open. Only the proxied connection closed. Non-navigation requests now use
+  the existing precache allowlist; API/SSE goes directly through the browser.
+  LibreChat's static/locale-only cache scope and MDN's native fetch-event behavior
+  were checked before implementation. The new service-worker-enabled Playwright
+  regression failed before the change and passed after it on desktop/mobile Chrome
+  (2/2), including 16 seconds after stopWorker, zero stream errors and retained
+  static-asset caching. MCP repeated the passing OPEN/zero-error result once the
+  new worker was verified active. Healthy deployed image:
+  `4500b18afce261da2289318fb29834297fb4776c402bdde3bd39dcf8118202e6`
+  (`9988af0b7-pwastream`). Build, TypeScript, lint and generated-dist checks passed.
+- Live 104W in conversation `01a07fc2-fa60-7290-a0a5-eaf2fc4823eb`: child
+  `w1-5f8a2cbedea2eb3c99ff4da3b56661c1` had a real sleeping Python PID50190.
+  Stopped the PWA worker, then canceled through the UI (POST202, network9752).
+  The process disappeared; both worker and command displayed Annullato live and
+  after reload, with no remaining stop button. The earlier104V in that conversation
+  returned actual random value `d0d735c96f52484487ba6d5c` and sibling4011; it finished
+  before stopWorker, so104V alone is not a live interruption proof.
+  Detailed before/after and transition limits: `.planning/debug/worker-stream-closure.md`.
 - Interrupted-command correction: `shell_exec` now records `cancelled` in its footer
   and metadata, the tool invocation carries `canceled`, and the existing code display
   conveys cancellation to the card and group indicator. The same normalizer recognizes

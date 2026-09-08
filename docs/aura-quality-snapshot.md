@@ -10,8 +10,12 @@ The coordinator's unsupported launch/completion claims remain open; these passin
 controls and coverage measurements do not certify the full multi-agent goal.
 Evidence: `.planning/spikes/104-agent-controls-and-grounded-results/README.md` and
 `.git/interrupted-tool-full-ui.log` (local run). Tool-status Stryker: **22/23 = 95.65%**;
-four native Go cancellation mutations killed. Intermittent live-stream closure in104T
-remains under investigation; cancellation state itself passed in retained104R and live104U.
+four native Go cancellation mutations killed. The104T stream investigation isolated
+PWA-mediated SSE closure with an actual MCP A/B stopWorker experiment. The static-only
+cache correction passed the new real-HTTP desktop/mobile Chrome regression (2/2,
+16 seconds after stopWorker with zero errors) and independent MCP104W: stopWorker
+during a live Python command, UI cancel202, process gone, terminal state visible live
+and after reload. `c5c5053c5`; `.planning/debug/worker-stream-closure.md` carries limits.
 **Multi-agent Go measurement:** 2026-09-08 — the complete disposable native
 unit + `db_integration` matrix, including `cmd/aura` contributions, passed at
 **34,677/40,106 = 86.4634%** with its package policy. `internal/documents` reached
