@@ -96,6 +96,7 @@ function auraPwaPlugin(): Plugin {
       const cacheName = `aura-precache-${revisionOf(JSON.stringify(entries))}`;
       const swSource = `const CACHE_NAME=${JSON.stringify(cacheName)};
 const PRECACHE=${JSON.stringify(entries)};
+const PRECACHE_PATHS=new Set(PRECACHE.map((entry)=>entry.url));
 self.addEventListener('install',(event)=>{
   event.waitUntil(caches.open(CACHE_NAME).then((cache)=>Promise.all(PRECACHE.map((entry)=>cache.add(entry.url).catch(()=>undefined)))).then(()=>self.skipWaiting()));
 });
@@ -111,6 +112,9 @@ self.addEventListener('fetch',(event)=>{
     event.respondWith(fetch(request).catch(()=>caches.match('/index.html')));
     return;
   }
+  // Leaving respondWith untouched keeps API/SSE lifetime independent of this worker.
+  // https://developer.mozilla.org/en-US/docs/Web/API/ServiceWorkerGlobalScope/fetch_event
+  if(!PRECACHE_PATHS.has(url.pathname)) return;
   event.respondWith(caches.match(request).then((cached)=>cached||fetch(request)));
 });
 `;

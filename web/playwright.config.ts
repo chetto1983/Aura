@@ -78,8 +78,8 @@ export default defineConfig({
   // serviceWorkers: 'block' — the embedded cockpit registers a PWA service worker
   // (internal/webui/dist/sw.js); leaving it active makes the SW intercept fetches so
   // page.route() never sees them (the golden-replay E2E mocks /agent/run + /api/* at the
-  // page-network layer). Blocking the SW keeps every request on the routable path; it does
-  // not change the app under test (the SW is an offline-cache optimisation, not behaviour).
+  // page-network layer). Keep those fixtures routable. pwa-stream-lifetime.spec.ts opts
+  // into serviceWorkers: 'allow' and real HTTP to cover production PWA/stream interaction.
   use: {
     baseURL: SERVE_ORIGIN,
     trace: 'on-first-retry',
