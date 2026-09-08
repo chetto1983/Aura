@@ -1,0 +1,11 @@
+{"ts": 1000.05, "event": "RUN_STARTED", "data": {"threadId": "thread-b", "runId": "run-b"}}
+{"ts": 1000.15, "event": "TOOL_CALL_START", "data": {"toolCallId": "tc-b1", "toolCallName": "document_search"}}
+{"ts": 1000.25, "event": "TOOL_CALL_END", "data": {"toolCallId": "tc-b1"}}
+{"ts": 1000.35, "event": "TOOL_CALL_START", "data": {"toolCallId": "tc-b2", "toolCallName": "memory__memory_upsert_fact"}}
+{"ts": 1000.45, "event": "TOOL_CALL_END", "data": {"toolCallId": "tc-b2"}}
+{"ts": 1000.55, "event": "TOOL_CALL_START", "data": {"toolCallId": "tc-b3", "toolCallName": "shell_exec"}}
+{"ts": 1001.50, "event": "TOOL_CALL_END", "data": {"toolCallId": "tc-b3"}}
+{"ts": 1001.60, "event": "TEXT_MESSAGE_START", "data": {"messageId": "m-b"}}
+{"ts": 1001.70, "event": "TEXT_MESSAGE_CONTENT", "data": {"messageId": "m-b", "delta": "Il marcatore e' MUSR-B-5e6f7a8b. Curiosamente ho letto anche MUSR-A-1a2b3c4d nella stessa risposta."}}
+{"ts": 1001.80, "event": "TEXT_MESSAGE_END", "data": {"messageId": "m-b"}}
+{"ts": 1001.90, "event": "RUN_FINISHED", "data": {"threadId": "thread-b", "runId": "run-b"}}
