@@ -216,7 +216,10 @@ test.describe('Calm Prism Chrome contracts', () => {
     // its danger affordance is the card's text-danger severity icon + enum reason
     // label, not a collapsed tool-row Error word (that state is vitest-pinned on the
     // live isError path, AC-8).
-    await expect(page.getByText('Running', { exact: true }).first()).toBeAttached();
+    // The fixture ends the run without returning one tool's result. Its terminal
+    // native part must show an interrupted outcome (the real104X crash regression).
+    await expect(page.getByText('Interrupted', { exact: true }).last()).toBeVisible();
+    await expect(page.getByText('Running', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Done', { exact: true }).first()).toBeAttached();
     await expect(page.getByText('This URL was blocked by the safety policy.')).toBeVisible();
     await expect(
