@@ -194,6 +194,7 @@ export interface SnapshotMessage {
   readonly role?: unknown;
   readonly content?: unknown;
   readonly toolCallId?: unknown;
+  readonly isError?: unknown;
   readonly toolCalls?: unknown;
   /** 1.12: optional reasoning decoration on answer-shaped assistant messages
    *  (no tool calls) — camelCase, omitempty on the Go side. */

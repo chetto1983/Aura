@@ -33,6 +33,7 @@
     "src/chat/durationFormat.ts",
     "src/chat/toolSummary.ts",
     "src/chat/toolStatus.ts",
+    "src/chat/sseAdapter_snapshot.ts",
     "src/chat/toolGrouping.ts",
     "src/conversations/exportConversation.ts",
     "src/conversations/useConversationTitle.ts",

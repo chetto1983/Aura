@@ -121,7 +121,7 @@ func TestRepairRecoversAMissingToolResult(t *testing.T) {
 
 func TestRecoveryToolResultContentNamesAnUnnamedTool(t *testing.T) {
 	t.Parallel()
-	got := recoveryToolResultContent(llm.ToolCall{})
+	got := RecoveryToolResultContent(llm.ToolCall{})
 	if !strings.Contains(got, `tool "unknown"`) {
 		t.Fatalf("recovery content = %q, want the unknown-tool placeholder", got)
 	}

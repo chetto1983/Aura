@@ -280,13 +280,15 @@ func appendRecoveredToolResultGroup(out []llm.Message, in []llm.Message, assista
 		out = append(out, llm.Message{
 			Role:       llm.RoleTool,
 			ToolCallID: call.ID,
-			Content:    recoveryToolResultContent(call),
+			Content:    RecoveryToolResultContent(call),
 		})
 	}
 	return out, i
 }
 
-func recoveryToolResultContent(call llm.ToolCall) string {
+// RecoveryToolResultContent is shared with display projection so an unknown
+// recovered result cannot be mistaken for a successful tool execution.
+func RecoveryToolResultContent(call llm.ToolCall) string {
 	name := strings.TrimSpace(call.Function.Name)
 	if name == "" {
 		name = "unknown"

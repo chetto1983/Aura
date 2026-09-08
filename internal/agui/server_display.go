@@ -33,6 +33,7 @@ type displaySnapshotMessage struct {
 	Role                types.Role                `json:"role"`
 	Content             string                    `json:"content,omitempty"`
 	ToolCallID          string                    `json:"toolCallId,omitempty"`
+	IsError             bool                      `json:"isError,omitempty"`
 	ToolCalls           []displaySnapshotToolCall `json:"toolCalls,omitempty"`
 	Reasoning           string                    `json:"reasoning,omitempty"`
 	ReasoningDurationMs int64                     `json:"reasoningDurationMs,omitempty"`
@@ -60,13 +61,21 @@ type displaySnapshotToolCall struct {
 // mirroring the live per-run registry, so source RefIDs/Index match the live run.
 func projectDisplaySnapshot(hist []llm.Message) displaySnapshotEvent {
 	displays := rederiveDisplays(hist)
+	recoveryResults := make(map[string]string)
+	for _, m := range hist {
+		for _, call := range m.ToolCalls {
+			recoveryResults[call.ID] = conversations.RecoveryToolResultContent(call)
+		}
+	}
 	msgs := make([]displaySnapshotMessage, 0, len(hist))
 	for i, m := range hist {
+		recovery, knownCall := recoveryResults[m.ToolCallID]
 		msgs = append(msgs, displaySnapshotMessage{
 			ID:         msgID(i),
 			Role:       types.Role(m.Role),
 			Content:    snapshotContent(m),
 			ToolCallID: m.ToolCallID,
+			IsError:    m.Role == llm.RoleTool && knownCall && m.Content == recovery,
 			ToolCalls:  projectDisplayToolCalls(m.ToolCalls, displays),
 		})
 	}

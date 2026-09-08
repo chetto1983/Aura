@@ -157,6 +157,7 @@ function mergeToolResult(
   messages: ThreadMessageLike[],
   toolCallId: string,
   result: string,
+  isError: boolean,
 ): boolean {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const candidate = messages[i];
@@ -168,7 +169,7 @@ function mergeToolResult(
     if (partIndex < 0) continue;
     const part = parts[partIndex];
     if (part?.type !== 'tool-call') continue;
-    parts[partIndex] = { ...part, result };
+    parts[partIndex] = { ...part, result, ...(isError ? { isError: true } : {}) };
     messages[i] = { ...candidate, content: parts };
     return true;
   }
@@ -190,7 +191,7 @@ export function snapshotToThreadMessages(snapshot: unknown): ThreadMessageLike[]
     if (role === 'system') continue;
     if (role === 'tool') {
       if (typeof raw.toolCallId === 'string' && raw.toolCallId.length > 0) {
-        if (!mergeToolResult(messages, raw.toolCallId, text)) {
+        if (!mergeToolResult(messages, raw.toolCallId, text, raw.isError === true)) {
           messages.push({
             ...(id !== undefined ? { id } : {}),
             ...(metadata !== undefined ? { metadata } : {}),
@@ -202,6 +203,7 @@ export function snapshotToThreadMessages(snapshot: unknown): ThreadMessageLike[]
                 toolName: '',
                 argsText: '',
                 result: text,
+                ...(raw.isError === true ? { isError: true } : {}),
               },
             ],
             status: { type: 'complete', reason: 'stop' },

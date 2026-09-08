@@ -36,6 +36,11 @@ const mutationTests = [
   'src/audit/__tests__/auditPairing.test.ts',
   'src/conversations/__tests__/exportConversation.test.ts',
   'src/conversations/__tests__/useConversationTitle.test.ts',
+  'src/chat/__tests__/snapshotToolOutcome.test.ts',
+  'src/chat/__tests__/sseAdapter_snapshot.test.ts',
+  'src/chat/__tests__/sseAdapter_network.test.ts',
+  'src/chat/ExternalStoreChat.reasoning.test.tsx',
+  'src/chat/displays/__tests__/snapshotToMessages.test.ts',
 ] as const;
 
 export default defineConfig({
