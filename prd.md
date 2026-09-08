@@ -394,6 +394,22 @@ weather artifact's seven forecast cards and changing its selected day. Browser
 validation is an agent instruction and available capability, not an automatic
 server-side rejection gate for every file delivery.
 
+`web-artifacts-builder` is a native, on-demand skill shipped in the binary,
+including scripts, component archive and license. Bootstrap exports native
+resources to the same `/skills/<name>/` path used by the sandbox; a catalog entry
+without executable resources is incomplete. The sandbox image carries a prepared
+React/TypeScript/Tailwind/shadcn/Vite/Parcel project and pnpm. Normal initialization
+copies this dependency tree and needs no registry access. The shipped calendar
+and panel components use tested compatible dependency versions.
+
+The native bundle command checks the full TypeScript/Vite project before Parcel,
+then runs Playwright smoke checks at desktop/mobile sizes on the candidate HTML.
+It publishes `bundle.html` only after success and removes an older bundle when a
+rebuild fails. Screenshot review, requested interaction assertions and source-data
+accuracy remain explicit author responsibilities. The offline image contract
+exercises initialization, complete build, bundling, browser rendering, calendar,
+resizable panels, a state-changing button and stale-output rejection.
+
 File operations enforce name, boundary, symlink and regular-file rules. Archive entry
 names are metadata and cannot choose a host path. Staging uses exclusive creation and
 private permissions. Lexical path containment alone does not contain a tree.
