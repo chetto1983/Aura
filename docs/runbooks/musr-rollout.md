@@ -61,8 +61,31 @@ substitute for owner predicates and it does not select a scoped query implementa
 AURA_MUSR_ISOLATION=true
 ```
 
-3. Restart `aura serve`, then provision the additional identity through onboarding.
-4. Grant the minimum capabilities it needs. Reserve `governance.read/write` for identities
+3. Ensure the per-identity sandbox image exists before starting the daemon. A strict
+   profile routes every shell and file tool through this image (`SandboxRouter.Route`
+   selects one box per identity), so it must exist before `aura serve` boots:
+   - **Repo checkout:** `make sandbox-images` builds the box + egress images.
+   - **Appliance:** `docker pull` the published edge tags `scripts/install.sh` pins.
+   - `scripts/install.sh` already does this step on a fresh install — only a hand-rolled
+     deployment (skipping the installer) needs to run it manually.
+
+   Under a strict, isolation-on profile, `aura serve` itself refuses to boot when the
+   configured image is neither present locally nor pullable, naming the image ref and the
+   fix: `config: AURA_SANDBOX_IMAGE "<image>" is neither present locally nor pullable (...)
+   — a strict, multi-identity deployment routes every shell/file tool through this image, so
+   the daemon refuses to boot into a silently non-functional tool surface. Fix one of: build
+   it from this repo with make sandbox-images; pull it explicitly with docker pull <image>;
+   or point AURA_SANDBOX_IMAGE at a registry ref this host can reach.` Recognize that
+   message as the sandbox-image gate, not an unrelated boot failure.
+4. Restart `aura serve`, then provision the additional identity through onboarding — either
+   the cockpit wizard, or headlessly with `aura identity create` (a thin CLI front over the
+   same `StartSession` + `Provision` pair the wizard calls, no parallel implementation). The
+   provisioning saga requires a working Telegram bot token
+   (`internal/agui/onboarding_provision.go`'s required-ports check): a second identity is a
+   person who talks to Aura, and Telegram is a shipped channel, so configure
+   `TELEGRAM_BOT_TOKEN` before provisioning a second identity, not after discovering the
+   saga refuses without it.
+5. Grant the minimum capabilities it needs. Reserve `governance.read/write` for identities
    that are intentionally trusted as deployment administrators.
 
 ## Reversibility
@@ -74,9 +97,12 @@ second identity, not on serving one.
 
 ## Acceptance
 
-- `go test -tags 'db_integration garage_integration authula_integration musr_e2e arcadedb_integration' ./cmd/aura/`
-  — the two-identity cross-deny live E2E, which proves identity B is denied on every
-  scoped plane (including long-term memory) while A keeps its data.
+- `make musr-e2e` — one command, from a clean checkout, that brings up a disposable
+  Postgres (never the live `aura` database), Garage with its Admin API v2 on loopback,
+  ArcadeDB and the embed sidecar, seeds Authula, runs the two-identity cross-deny live
+  E2E (identity B denied on every scoped plane, including long-term memory, while A
+  keeps its data) plus the MCP-boundary memory cross-deny test, and tears down what it
+  started. CI runs the identical target.
 - `go test ./internal/agui/ -run TestProvisionRefused` — the refusal itself, proven to
   leave zero rows behind.
 - `go test ./internal/agent/tools -run TestSkillManage` — ordinary identities cannot
