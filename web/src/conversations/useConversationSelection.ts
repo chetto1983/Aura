@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   useBulkConversationAction,
+  isArchived,
   type BulkConversationAction,
   type Conversation,
 } from './useConversations';
@@ -18,8 +19,15 @@ export function useConversationSelection(
   useEffect(() => {
     deletedCallback.current = onDeleted;
   }, [onDeleted]);
-  const ids = conversations
-    .filter((conversation) => selected.has(conversation.ID))
+  const selectedConversations = conversations.filter((conversation) =>
+    selected.has(conversation.ID),
+  );
+  const ids = selectedConversations.map((conversation) => conversation.ID);
+  const archivedIds = selectedConversations
+    .filter(isArchived)
+    .map((conversation) => conversation.ID);
+  const activeIds = selectedConversations
+    .filter((conversation) => !isArchived(conversation))
     .map((conversation) => conversation.ID);
 
   function reset() {
@@ -46,8 +54,10 @@ export function useConversationSelection(
     setDeleteTargets(null);
     try {
       const result = await mutation.mutateAsync({ action, ids: targets });
-      setSelected(new Set(result.failed));
-      setSelecting(result.failed.length > 0);
+      const succeeded = new Set(result.succeeded);
+      const remaining = new Set(ids.filter((id) => !succeeded.has(id)));
+      setSelected(remaining);
+      setSelecting(remaining.size > 0);
       if (action === 'delete') result.succeeded.forEach((id) => deletedCallback.current?.(id));
     } finally {
       busy.current = false;
@@ -57,6 +67,8 @@ export function useConversationSelection(
   return {
     selecting,
     ids,
+    archivedIds,
+    activeIds,
     selected,
     deleteTargets,
     pending: mutation.isPending,

@@ -1,4 +1,5 @@
-import { Archive, ListChecks, Trash2, X } from 'lucide-react';
+import { useId } from 'react';
+import { Archive, ListChecks, RotateCcw, Trash2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { displayTitle, type Conversation } from './useConversations';
 import type { useConversationSelection } from './useConversationSelection';
@@ -15,6 +16,7 @@ export function ConversationBulkActions({
   readonly total: number;
 }) {
   const { t } = useTranslation();
+  const selectAllId = useId();
   const count = selection.ids.length;
   const result = selection.result;
   return (
@@ -26,14 +28,14 @@ export function ConversationBulkActions({
         >
           <div className="flex items-center gap-1">
             <Checkbox
-              id="conversation-select-all"
+              id={selectAllId}
               checked={count > 0 && count === total ? true : count > 0 ? 'indeterminate' : false}
               disabled={selection.pending || total === 0}
               onCheckedChange={selection.toggleAll}
               aria-label={t('conversations.bulk.selectAll')}
               className="data-[state=indeterminate]:bg-primary"
             />
-            <Label htmlFor="conversation-select-all" className="flex-1 text-xs font-normal">
+            <Label htmlFor={selectAllId} className="flex-1 text-xs font-normal">
               {t('conversations.bulk.selected', { count })}
             </Label>
             <Button
@@ -50,14 +52,27 @@ export function ConversationBulkActions({
             <Button
               variant="ghost"
               size="sm"
-              disabled={selection.pending || count === 0}
+              disabled={selection.pending || selection.activeIds.length === 0}
               onClick={() => {
-                void selection.apply('archive');
+                void selection.apply('archive', selection.activeIds);
               }}
             >
               <Archive aria-hidden="true" />
               {t('conversations.actions.archive')}
             </Button>
+            {selection.archivedIds.length > 0 ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={selection.pending}
+                onClick={() => {
+                  void selection.apply('unarchive', selection.archivedIds);
+                }}
+              >
+                <RotateCcw aria-hidden="true" />
+                {t('conversations.actions.unarchive')}
+              </Button>
+            ) : null}
             <Button
               variant="ghost"
               size="sm"
@@ -94,7 +109,9 @@ export function ConversationBulkActions({
           {t(
             result.action === 'archive'
               ? 'conversations.bulk.archived'
-              : 'conversations.bulk.deleted',
+              : result.action === 'unarchive'
+                ? 'conversations.bulk.restored'
+                : 'conversations.bulk.deleted',
             { count: result.succeeded.length },
           )}
           {result.failed.length > 0
@@ -133,7 +150,7 @@ export function ConversationSelectionRow({
 }) {
   const { t } = useTranslation();
   const title = displayTitle(conversation, t('conversations.untitled'));
-  const id = `select-conversation-${conversation.ID}`;
+  const id = useId();
   return (
     <li className={`rounded-md ${checked ? 'bg-surface-2' : 'hover:bg-surface-2/70'}`}>
       <Label

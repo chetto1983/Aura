@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { AlertCircle, MessageSquareText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ConversationRow } from './ConversationRow';
@@ -50,6 +50,7 @@ export interface ConversationSidebarProps {
 
 export function ConversationSidebar({ activeId, onSelect, onDeleted }: ConversationSidebarProps) {
   const { t } = useTranslation();
+  const archiveFilterId = useId();
   const [includeArchived, setIncludeArchived] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Conversation | null>(null);
 
@@ -82,7 +83,7 @@ export function ConversationSidebar({ activeId, onSelect, onDeleted }: Conversat
         </h2>
         <div className="flex items-center gap-2">
           <Checkbox
-            id="conversation-include-archived"
+            id={archiveFilterId}
             checked={includeArchived}
             disabled={selection.pending}
             onCheckedChange={(checked) => {
@@ -91,7 +92,7 @@ export function ConversationSidebar({ activeId, onSelect, onDeleted }: Conversat
             }}
           />
           <Label
-            htmlFor="conversation-include-archived"
+            htmlFor={archiveFilterId}
             className="cursor-pointer text-[0.75rem] font-normal text-text-muted"
           >
             {t('conversations.includeArchived')}

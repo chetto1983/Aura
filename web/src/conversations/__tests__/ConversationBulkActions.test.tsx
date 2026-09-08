@@ -41,13 +41,15 @@ describe('bulk conversation actions', () => {
           );
         }
         const [, id = '', action = 'delete'] =
-          /conversations\/([^/]+)(?:\/(archive))?$/.exec(input) ?? [];
+          /conversations\/([^/]+)(?:\/(archive|unarchive))?$/.exec(input) ?? [];
         requests.push({ id, action });
         await hold;
         if (failures.has(id)) return new Response('denied', { status: 403 });
         rows =
-          action === 'archive'
-            ? rows.map((r) => (r.ID === id ? { ...r, Status: 'archived' } : r))
+          action !== 'delete'
+            ? rows.map((r) =>
+                r.ID === id ? { ...r, Status: action === 'archive' ? 'archived' : 'active' } : r,
+              )
             : rows.filter((r) => r.ID !== id);
         return new Response(null, { status: 204 });
       }),
@@ -102,6 +104,28 @@ describe('bulk conversation actions', () => {
     expect(requests).toEqual([]);
   });
 
+  it('restores archived rows in a mixed selection and keeps the other selections', async () => {
+    mount();
+    await screen.findByRole('button', { name: 'Select conversations' });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Show archived' }));
+    await screen.findByRole('button', { name: 'Hidden' });
+    await selectMode();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select all listed conversations' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Unarchive' }));
+    await screen.findByText('1 conversation restored.');
+    expect(requests).toEqual([{ id: 'Hidden', action: 'unarchive' }]);
+    expect(screen.getByText('2 selected')).toBeTruthy();
+    expect(rows.every((r) => r.Status === 'active')).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    await screen.findByText('2 conversations archived.');
+    expect(requests).toEqual([
+      { id: 'Hidden', action: 'unarchive' },
+      { id: 'First', action: 'archive' },
+      { id: 'Second', action: 'archive' },
+    ]);
+    expect(rows.find((r) => r.ID === 'Hidden')?.Status).toBe('active');
+  });
+
   it('requires one explicit confirmation and reports only successful deletions', async () => {
     const { onDeleted } = mount();
     await selectMode();
@@ -147,6 +171,38 @@ describe('bulk conversation actions', () => {
       expect(onDeleted.mock.calls).toEqual([['First'], ['Second']]);
     });
     expect(requests.map((r) => r.id)).toEqual(['First', 'Second', 'Second']);
+  });
+
+  it('keeps labels and selections independent when desktop and mobile sidebars coexist', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <div data-testid="desktop">
+          <ConversationSidebar activeId="" onSelect={() => undefined} />
+        </div>
+        <div data-testid="mobile">
+          <ConversationSidebar activeId="" onSelect={() => undefined} />
+        </div>
+      </QueryClientProvider>,
+    );
+    const buttons = await screen.findAllByRole('button', { name: 'Select conversations' });
+    buttons.forEach((button) => {
+      fireEvent.click(button);
+    });
+    const filters = screen.getAllByRole('checkbox', { name: 'Show archived' });
+    expect(filters).toHaveLength(2);
+    expect(filters[0]?.id).not.toBe(filters[1]?.id);
+    const desktop = within(screen.getByTestId('desktop'));
+    const mobile = within(screen.getByTestId('mobile'));
+    fireEvent.click(mobile.getByText('First'));
+    expect(
+      mobile.getByRole('checkbox', { name: 'Select First' }).getAttribute('aria-checked'),
+    ).toBe('true');
+    expect(
+      desktop.getByRole('checkbox', { name: 'Select First' }).getAttribute('aria-checked'),
+    ).toBe('false');
+    const all = screen.getAllByRole('checkbox', { name: 'Select all listed conversations' });
+    expect(all[0]?.id).not.toBe(all[1]?.id);
   });
 
   it('prevents duplicate submissions and selection changes during a batch', async () => {

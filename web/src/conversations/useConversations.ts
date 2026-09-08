@@ -231,7 +231,7 @@ export function useDeleteConversation() {
   });
 }
 
-export type BulkConversationAction = 'archive' | 'delete';
+export type BulkConversationAction = 'archive' | 'unarchive' | 'delete';
 
 export function useBulkConversationAction() {
   const queryClient = useQueryClient();
@@ -250,8 +250,8 @@ export function useBulkConversationAction() {
         const path = `/api/conversations/${encodeURIComponent(id)}`;
         try {
           await mutate(
-            action === 'archive' ? `${path}/archive` : path,
-            action === 'archive' ? 'POST' : 'DELETE',
+            action === 'delete' ? path : `${path}/${action}`,
+            action === 'delete' ? 'DELETE' : 'POST',
           );
           succeeded.push(id);
         } catch {
