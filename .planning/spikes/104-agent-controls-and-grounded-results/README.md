@@ -25,11 +25,15 @@ industrial-readiness claim is made.
   This proves pre-start cancellation, not ordinary completion of the siblings:
   the test's 150-second silent commands exceeded the configured 120-second idle
   watchdog. All four retried once, then were explicitly stopped via UI (four 202s).
-  The queued worker's empty terminal pane still said Connecting; fix and retest.
+  The queued worker's empty terminal pane still said Connecting. Commit `fd7919f04`
+  fixes that. The retest on image
+  `e4bcff495d85791331bebdc1b3561b98f45081f74dd57e9d20a0fd3db729b408`
+  (`fc16e8cad-emptyactivity`) passed Italian desktop reload and English mobile reload:
+  correct empty terminal copy, retained drawer 341px at viewport 390px, no overflow.
   The first coordinator turn only searched for swarm_spawn but claimed Avviati;
   a corrective user turn was necessary to actually enqueue. This is another
   grounded-answer failure, not a passing autonomous task-execution result.
-- Queued-control native verification: 56 worker UI tests passed, TypeScript build
+- Queued-control native verification: 60 worker UI tests passed, TypeScript build
   and targeted ESLint passed; Go agui/documents/swarm race suites passed; the two
   disposable-Postgres queued-control tests passed with race detection. Native Go
   overlays killed all three SQL mutants (attempt fence, conversation scope,
@@ -88,18 +92,18 @@ Do not edit the concurrent phase 1 sandbox/provisioning work.
 | Requirement | Required proof | Current state |
 | --- | --- | --- |
 | All spike 103 regressions remain fixed | Native tests, live transcript/tool audit and CI | Prior checkpoint passed; revalidate changed surfaces |
-| Steer a live child | MCP correction during a real tool; final output follows it | Missing |
-| Sibling and parent isolation | Their inputs, executions and results stay unchanged | Missing for child controls |
-| FIFO and exact logical retry | Multiple corrections; one idempotency key never applies twice | Missing for child controls |
-| Control receipts | Accepted and applied are distinct, visible after reload | Missing |
-| Stop a live child | Prompt cancellation, terminal canceled report, no retry | Missing |
-| Stop lifecycle races | Completion, queued/paused work and accepted controls resolve honestly | Missing |
-| Nested control and visibility | Discover/control a live grandchild; preserve siblings and ancestry | Missing |
+| Steer a live child | MCP correction during a real tool; final output follows it | Passed 104D and 104N |
+| Sibling and parent isolation | Their inputs, executions and results stay unchanged | Passed 104D, 104E, 104F2 and 104N; 104Q3 is not a regular sibling-completion proof |
+| FIFO and exact logical retry | Multiple corrections; one idempotency key never applies twice | Passed 104D |
+| Control receipts | Accepted and applied are distinct, visible after reload | Passed 104D; queued acceptance reload passed 104Q3 |
+| Stop a live child | Prompt cancellation, terminal canceled report, no retry | Passed 104E, including actual process termination |
+| Stop lifecycle races | Completion, queued/paused work and accepted controls resolve honestly | Paused 104F2 and queued 104Q3 passed; completion fence covered natively |
+| Nested control and visibility | Discover/control a live grandchild; preserve siblings and ancestry | Direct grandchild controls passed 104N; coordinator subtree stop still required |
 | Ownership and input bounds | Real scoped API denies foreign/malformed/stale targets and oversized input | Missing for child controls |
 | Restart and control settlement | No silent application to a new incarnation; completed/canceled work is not retried as failure | Missing for controls |
 | Grounded final answers | Delayed unpredictable outputs match actual reports; no fabricated IDs or premature success | Failed baseline |
 | Failure and hostile report data | Honest partial results; report text cannot become operator authority | Prior trust framing passed; broaden final-answer proof |
-| Desktop/mobile and EN/IT | MCP controls, keyboard, reload and readable status on both layouts | Missing for new controls |
+| Desktop/mobile and EN/IT | MCP controls, keyboard, reload and readable status on both layouts | Reload, final text and empty-state layout passed; live control keyboard walkthrough still required |
 | Quality gates | vet/build/test/race, disposable full coverage >=85%, mutation >=70%, all CI green | Required after implementation |
 | Delivery | Frequent atomic commits, push, healthy updated container and memory MCP evidence | Ongoing |
 

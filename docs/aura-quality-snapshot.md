@@ -1,6 +1,15 @@
 # Aura Quality Snapshot (living doc)
 
 **Created:** 2026-05-29
+**Multi-agent web measurement:** 2026-09-08 — 2020 tests across 239 files passed;
+statements **8129/8921 = 91.12%**, branches **5683/6660 = 85.33%**,
+functions **2286/2525 = 90.53%**, lines **7404/7955 = 93.07%**.
+Native MCP probe 104Q3 confirmed durable pre-start cancellation and localized terminal
+pane reload on desktop/mobile. Three queued-cancellation SQL mutants were killed.
+The coordinator's unsupported launch/completion claims remain open; these passing
+controls and coverage measurements do not certify the full multi-agent goal.
+Evidence: `.planning/spikes/104-agent-controls-and-grounded-results/README.md` and
+`.git/controls104-full-ui-coverage.log` (local run).
 **Current update:** 2026-08-28 (Document oracle: the owned corpus is now 23 files; the disposable production lifecycle indexed 23/23 with zero missing and the real agent passed 11/11 exact cases, including the full-file XLSX aggregate and image-only Italian PDF. The free Gemma/Ollama route also passed a public 96-page digital-PDF witness in seven calls and the operator's private large-workbook aggregate. Ranking remains diagnostic.)
 **Prior update:** 2026-08-27 (Garage mention retrieval scope: the fresh disposable unit plus
 `db_integration` run is 27,848/32,024 = **86.9598%** and publishes 71 exact cross-package
