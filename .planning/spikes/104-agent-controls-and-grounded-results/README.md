@@ -3,6 +3,12 @@
 Status: in progress. Goal: **MAKE AURA MULTIAGENT INDUSTRIAL FULLY VALIDATE E2E**.
 This continues spike 103; its passing runtime tests do not close the full goal.
 
+Latest live checkpoint: child steering/FIFO/replay, real process stop and direct nested
+controls have been exercised successfully. Paused cancellation was corrected and retested
+as canceled with one model invocation. Concurrency retention now keeps a fifth job queued.
+Queued cancellation and grounded coordinator answers remain open, along with the full
+closing quality/CI matrix. No complete industrial-readiness claim is made.
+
 ## Evidence and references
 
 - Spike 103 records real execution, pause/resume, repeated delegation, changed context,
@@ -95,6 +101,17 @@ counting live visibility as passed. The shorter104C probe finished before the at
 steer observation and is not counted as a successful live correction.
 
 ## Additional identity measurement
+
+Pause104F2 retest, conversation `01a07ee8-ff17-77f2-9965-fbca4a57f344`: the canceled
+child `w1-4a3b1082a4ba5f26fd2a9f08c537faa7` ended canceled with durable intent; its
+transcript contains one model invocation only. The second queue claim delivered the
+terminal report without constructing another model. The sibling returned169 once.
+
+After restoring the mobile open intent and using assistant-ui's native Parts render
+function, the nested JSON and341px drawer survived a real390x844 reload with no overflow.
+A later language-switch reload stalled in browser navigation (the app stayed healthy);
+that language-switch attempt is not counted as passed. The browser was returned to
+Italian and desktop after navigating through the login route; authenticated fetch200.
 
 Queue104Q2 on image`c499bf6c7`, conversation`01a07edc-960d-7044-8ff9-532133817025`:
 four workers ran while `w5-341a2701ecce7c60810642b82e87dc2e` stayed queued at attempt0
