@@ -472,8 +472,12 @@ summary than UI cards, disclose truncation, and expose the complete saved report
 Worker briefs carry the exact host-issued worker and parent IDs. The raw internal report
 messages shown in that probe confused the user: the cockpit's main chat must hide host-marked
 delegation receipts while retaining coordinator answers and the activity/report view.
-These observations prove wake/attachment only; the complete nested synthesis remains to be
-retested after the report and identity fixes.
+The1328ec796 closing probe reproduced late wake and returned all three actual tokens and
+host-issued executor/parent IDs without a status call. The partial/hostile probe retained
+exit17 and the full quoted report without executing its instructions. Reload preserves the
+answers and hides internal receipts. The short hostile probe made two status reads, so this
+does not establish zero polling for every model request. Shared scratch-file isolation is
+also outside that proof: the grandchildren used the same temporary filename.
 
 The 2026-09-08 five-worker live probe exceeded the configured concurrency of four:
 the tenant polling wrapper recreated the asynchronous delegation loop on each pass,

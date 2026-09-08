@@ -311,8 +311,8 @@ Do not edit the concurrent phase 1 sandbox/provisioning work.
 | Ownership and input bounds | Real scoped API denies foreign/malformed/stale targets and oversized input | Passed real Authula-cookie TLS/Postgres regression: foreign404, malformed/oversize400, stale run404, stale queued attempt410; owner controls/replay remain valid |
 | Restart and control settlement | No silent application to a new incarnation; completed/canceled work is not retried as failure | Passed graceful104R and real SIGKILL104X; the lost owner's undrained receipt is reported rejected/owner_unavailable |
 | Interrupted tool outcome | Canceled commands have an honest structured and visual status | Passed retained104R and live104U/104W; PWA stream closure corrected and replay retains original execution duration |
-| Grounded final answers | Delayed unpredictable outputs match actual reports; no fabricated IDs or premature success | Failed baseline |
-| Failure and hostile report data | Honest partial results; report text cannot become operator authority | Prior trust framing passed; broaden final-answer proof |
+| Grounded final answers | Delayed unpredictable outputs match actual reports; no fabricated IDs or premature success | Passed real late-wake probe1328ec796; see final-answer-e2e.md for values, ancestry and timing limits |
+| Failure and hostile report data | Honest partial results; report text cannot become operator authority | Passed real partial/hostile probe1328ec796, complete quoted content, exit17 retained and canary absent |
 | Desktop/mobile and EN/IT | MCP controls, keyboard, reload and readable status on both layouts | Reload, final text and EN/IT empty state passed; live Stop via keyboard passed 104S |
 | Quality gates | vet/build/test/race, disposable full coverage >=85%, mutation >=70%, all CI green | Local Go and frontend matrices passed; release CI still pending |
 | Delivery | Frequent atomic commits, push, healthy updated container and memory MCP evidence | Ongoing |

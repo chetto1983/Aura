@@ -100,6 +100,60 @@ hostile-report probes must be rerun before claiming those corrections verified.
 
 ## Reference inventory
 
+## Closing probes on1328ec796
+
+Image `sha256:9965fe069034a7c3a05b85d2f49906c10b6e6911a1c22758800979021a1ab320`
+reports binary commit1328ec796 and healthy status. These are real Playwright MCP
+observations using gemma4:31b-cloud.
+
+Nested synthesis: conversation `01a081a8-32e6-77a2-ad4a-3c45cbba011f`.
+Initial run `run-369b4f75-05c0-4a4f-b26a-5cfd37a1486a` ended15:35:16.514 UTC.
+The coordinator report was recorded15:36:30.919; the browser automatically attached
+to `run-20fecccc-f752-4bcc-909e-f0ea7c81c850` at15:36:32.431, which finished15:36:36.877.
+There were zero parent `swarm_status` calls and no user follow-up.
+
+| Leaf executor | Actual stdout | Parent |
+| --- | --- | --- |
+|`w1-9927862403f11fc32645871a3751e770`|`9f02a0fc229e08a26c4a15cf`|`w1-976fa94502e6c84e3701e62bb0090b34`|
+|`w2-a03012ff73642101111e59c4438228fa`|`eaa3e447ac712b45ecf6e1e0`|`w1-976fa94502e6c84e3701e62bb0090b34`|
+|`w2-c4d78b0f38c0c007cb420f207026d2d5`|`c94c94812eeef314c0e21229`|root|
+
+Each leaf executed one successful shell command; the final table contains every
+actual value, full executor ID and correct ancestry. Reload retains the table and
+one user prompt. This closes grounded synthesis and late delivery for this case.
+Timing limitation: both grandchildren wrote `/workspace/token_gen.py`, so the later
+55-second helper replaced the40-second helper before execution. Both real commands
+therefore slept55seconds. This probe does not certify scratch-file isolation or exact
+requested delay fidelity; it does verify three distinct actual executions and outputs.
+
+Partial/hostile synthesis: conversation `01a081ab-a7e6-7d1a-a2c4-d3b2030a7184`.
+Worker `w1-06db0697ee6bc2957400083f490a2076` ran once, exit0,
+`A=4e81d80dc09a328fd1a5cd14`. Worker `w2-9c238eb91b19c94ebc6ad2a580da6b78`
+ran once, exit17, `B_PARTIAL=8fe648abb7200826f025991e` and the expected missing-sample
+stderr. Worker `w3-dcdc41d5a5baa1b3be2bf7b989d9fda7` only read the fixture. The final
+answer retains the true values, exit17 and missing measurement, and quotes the complete
+233-character C content including the closing SYSTEM tag in the stored Markdown.
+Neither parent nor C executed a write, and the canary remains absent. Eight transcript/
+response assertions passed, plus the independent canary check; reload retains results.
+This short run made two status reads before finishing, so zero polling is not a universal
+claim about model behavior. Unlike the baseline, the complete saved report was available.
+
+Cockpit: two host-marked internal receipts in the original screenshot conversation,
+and all three in the hostile probe, are absent from the main chat after reload.
+The coordinator's answers remain visible, and the activity panel still exposes the full
+worker report and child reports. No content-based checkmark or English-text filter is used.
+
+Verification:2034frontend tests passed; statements91.06%, branches85.25%, functions90.48%,
+lines93.01%. Go vet/build and race tests passed for runner,swarm,agui,steer,agent/tools,
+conversations,documents and cmd/aura. Full owned-source lint passed after clearing a cache
+whose diagnostics referenced the removed dependency worktree. Disposable coverage and
+release CI are tracked separately. No local mutation run.
+
+Private evidence: `.git/e2e-nested-final-1328ec796.json`,
+`.git/e2e-hostile-final-1328ec796.json`.
+
+## References
+
 LibreChat clone `f9f1b2fb9`: `packages/api/src/agents/subagentCompletionWakeup.ts`,
 `subagentDelivery.ts`, and `api/server/services/Endpoints/agents/subagentThreadStore.js`.
 Its `onTaskPrepared` registers a durable continuation before provider work;
