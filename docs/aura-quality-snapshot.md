@@ -16,7 +16,14 @@ cache correction passed the new real-HTTP desktop/mobile Chrome regression (2/2,
 16 seconds after stopWorker with zero errors) and independent MCP104W: stopWorker
 during a live Python command, UI cancel202, process gone, terminal state visible live
 and after reload. `c5c5053c5`; `.planning/debug/worker-stream-closure.md` carries limits.
-**Multi-agent Go measurement:** 2026-09-08 — the complete disposable native
+**Multi-agent Go measurement:** 2026-09-08 — the replay-timestamp correction passed
+the complete disposable unit + `db_integration` matrix with `cmd/aura` contributions
+at **34,704/40,125 = 86.4897%**, including package policy. Two timestamp mutations
+were killed; real Authula-cookie cross-owner HTTP controls passed with race detection
+on a separate disposable database. MCP104W replay retains the actual31s command
+duration on Italian desktop and English mobile. Source:
+`.git/replay-timestamps-full-coverage.log`, `.git/authula-controls-e2e.log`.
+**Prior multi-agent Go measurement:** 2026-09-08 — the complete disposable native
 unit + `db_integration` matrix, including `cmd/aura` contributions, passed at
 **34,677/40,106 = 86.4634%** with its package policy. `internal/documents` reached
 **708/824 = 85.9223%** and now enforces the full 85% floor. Its previous

@@ -461,11 +461,18 @@ assets and locale chunks. Add a service-worker-enabled browser regression becaus
 the existing mocked Playwright suites block service workers. This proves a transport
 lifetime defect; it does not establish the cause of the separate intermittent
 conversation navigation or close the coordinator-grounding and cross-owner gaps.
-The same104W MCP probe displayed the canceled command's elapsed time as20seconds
-live but0seconds after reload. Retained agent events already carry their original
+The same 104W MCP probe displayed the canceled command's elapsed time as 20 seconds
+live but 0 seconds after reload. Retained agent events already carry their original
 timestamps; AG-UI replay must preserve those timestamps with the SDK's native
 Event.SetTimestamp instead of replacing execution time with replay time. This
 measurement concerns displayed elapsed time, not a repeated command execution.
+The native Authula-cookie TLS regression on 2026-09-08 verifies the same control
+ownership against real Postgres conversations, receipts, operation keys and queued
+jobs: a foreign session receives404 for history, steer and both cancel targets,
+without a side effect; the owner retains access and idempotent replay. Sessions
+are minted by Authula's native service on an isolated database. This covers session
+validation/authorization, while credential/TOTP login and actual model execution
+remain separate test scopes.
 The 2026-09-08 paused-worker probe accepted `cancel` but rebuilt the model and marked
 the job succeeded. The resume observer must carry the explicit cancellation into the
 existing terminal-delivery path, rather than interpret it as another model-facing answer.

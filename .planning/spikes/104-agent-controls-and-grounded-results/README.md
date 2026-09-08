@@ -13,6 +13,31 @@ industrial-readiness claim is made.
 
 ## Evidence and references
 
+- Replay timing: MCP104W originally showed20s after opening mid-command, then0s
+  after reload. The retained start/end timestamps are06:47:03.692734448Z and
+  06:47:34.447222259Z; the native tool duration is30,754ms. `Translate` now uses
+  AG-UI's existing Event.SetTimestamp for source-backed frames. MCP reload shows
+  the correctly rounded31s, desktop Italian and mobile English, same conversation
+  and selected worker. Mobile drawer341px at390x844, no horizontal overflow.
+  The Go regression failed before correction; AG-UI race tests and two targeted
+  timestamp mutations passed/killed respectively. Complete disposable Go coverage:
+  **34,704/40,125 = 86.4897%**, package policy passed. Local evidence:
+  `.git/replay-timestamps-full-coverage.log`, `.git/replaytime-mutant-{zero,lost}.log`.
+- Cross-owner controls now have a real HTTP/session boundary proof:
+  `TestWorkerControlsWithRealAuthulaCookies` passed with race detection against
+  disposable `aura-postgres-auth104:5435`, database `aura_cov_auth104`.
+  Two native Authula sessions/cookies, real identity links, Postgres conversations,
+  worker receipt store, idempotency registry and queued jobs drive a TLS server.
+  B gets404 for running history/steer/cancel and queued history/cancel, despite a
+  forged identity header. No receipt, cancellation flag or execution stop occurs.
+  An invalid cookie gets401; A can read, steer and cancel. Replayed A steer leaves
+  one receipt; replayed cancel invokes Stop once; queued cancellation persists.
+  The same real HTTP test rejects malformed JSON and oversized corrections with400,
+  an unknown run with404, and a stale queued attempt with410.
+  This tests real session validation and authorization, not credential/TOTP login
+  or an LLM invocation; real process stopping is covered separately by MCP104W/104E.
+  Evidence: `.git/authula-controls-e2e.log`. The disposable container/database is
+  removed by the existing harness; no live user account was changed.
 - PWA stream lifetime correction, `c5c5053c5`: a controlled MCP A/B experiment
   stopped the active service worker while two real owner-scoped SSE connections
   were open. Only the proxied connection closed. Non-navigation requests now use
@@ -190,7 +215,7 @@ Do not edit the concurrent phase 1 sandbox/provisioning work.
 | Stop a live child | Prompt cancellation, terminal canceled report, no retry | Passed 104E, including actual process termination |
 | Stop lifecycle races | Completion, queued/paused work and accepted controls resolve honestly | Paused 104F2 and queued 104Q3 passed; completion fence covered natively |
 | Nested control and visibility | Discover/control a live grandchild; preserve siblings and ancestry | Passed 104N direct controls and 104S coordinator subtree stop |
-| Ownership and input bounds | Real scoped API denies foreign/malformed/stale targets and oversized input | Missing for child controls |
+| Ownership and input bounds | Real scoped API denies foreign/malformed/stale targets and oversized input | Passed real Authula-cookie TLS/Postgres regression: foreign404, malformed/oversize400, stale run404, stale queued attempt410; owner controls/replay remain valid |
 | Restart and control settlement | No silent application to a new incarnation; completed/canceled work is not retried as failure | Graceful restart passed 104R; hard-crash pending control case not yet measured |
 | Interrupted tool outcome | Canceled commands have an honest structured and visual status | Corrected; retained104R and live104U passed; 104T stream closure still under investigation |
 | Grounded final answers | Delayed unpredictable outputs match actual reports; no fabricated IDs or premature success | Failed baseline |
