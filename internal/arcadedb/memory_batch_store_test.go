@@ -207,13 +207,13 @@ func TestParseMemoryBatchTime(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseMemoryBatchTime(tt.input)
+			got, err := parseArcadeDateTime(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseMemoryBatchTime() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("parseArcadeDateTime() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !got.Equal(tt.want) {
-				t.Errorf("parseMemoryBatchTime() = %v, want %v", got, tt.want)
+				t.Errorf("parseArcadeDateTime() = %v, want %v", got, tt.want)
 			}
 		})
 	}

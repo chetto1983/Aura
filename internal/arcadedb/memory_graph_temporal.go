@@ -98,11 +98,11 @@ func temporalPathSupport(row map[string]any, edges []MemoryGraphPathEdge, at tim
 }
 
 func validateTemporalFact(fact *FactHit, at time.Time) error {
-	from, err := parseMemoryBatchTime(fact.ValidFrom)
+	from, err := parseArcadeDateTime(fact.ValidFrom)
 	if err != nil || from.IsZero() || from.After(at) {
 		return fmt.Errorf("native temporal evidence has an inadmissible valid_from")
 	}
-	until, err := parseMemoryBatchTime(fact.ValidTo)
+	until, err := parseArcadeDateTime(fact.ValidTo)
 	if err != nil || (!until.IsZero() && !at.Before(until)) {
 		return fmt.Errorf("native temporal evidence has an inadmissible valid_to")
 	}

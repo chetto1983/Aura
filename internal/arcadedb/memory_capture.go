@@ -210,7 +210,7 @@ func factCaptureSources(value any) []FactCaptureSource {
 		if !ok {
 			continue
 		}
-		observedAt, _ := parseMemoryBatchTime(rowString(entry, "observed_at"))
+		observedAt, _ := parseArcadeDateTime(rowString(entry, "observed_at"))
 		captures = append(captures, FactCaptureSource{
 			IdempotencyKey: rowString(entry, "idempotency_key"),
 			SourceKind:     CaptureSourceKind(rowString(entry, "source_kind")),

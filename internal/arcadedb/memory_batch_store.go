@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
-	"strings"
 	"time"
 )
 
@@ -111,19 +110,19 @@ func (tx *clientMemoryBatchTx) LoadState(ctx context.Context) (memoryBatchState,
 		if rid == "" {
 			return memoryBatchState{}, fmt.Errorf("fact row has no RID")
 		}
-		validFrom, err := parseMemoryBatchTime(rowString(row, "valid_from"))
+		validFrom, err := parseArcadeDateTime(rowString(row, "valid_from"))
 		if err != nil {
 			return memoryBatchState{}, fmt.Errorf("fact %s valid_from: %w", rid, err)
 		}
-		validTo, err := parseMemoryBatchTime(rowString(row, "valid_to"))
+		validTo, err := parseArcadeDateTime(rowString(row, "valid_to"))
 		if err != nil {
 			return memoryBatchState{}, fmt.Errorf("fact %s valid_to: %w", rid, err)
 		}
-		createdAt, err := parseMemoryBatchTime(rowString(row, "created_at"))
+		createdAt, err := parseArcadeDateTime(rowString(row, "created_at"))
 		if err != nil {
 			return memoryBatchState{}, fmt.Errorf("fact %s created_at: %w", rid, err)
 		}
-		expiredAt, err := parseMemoryBatchTime(rowString(row, "expired_at"))
+		expiredAt, err := parseArcadeDateTime(rowString(row, "expired_at"))
 		if err != nil {
 			return memoryBatchState{}, fmt.Errorf("fact %s expired_at: %w", rid, err)
 		}
@@ -340,28 +339,6 @@ func sortedMemoryBatchEntities(entities map[string]memoryBatchEntity) []string {
 	}
 	sort.Strings(names)
 	return names
-}
-
-func parseMemoryBatchTime(value string) (time.Time, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return time.Time{}, nil
-	}
-	if parsed, err := time.Parse(time.RFC3339Nano, value); err == nil {
-		return parsed.UTC(), nil
-	}
-	// ArcadeDB renders DATETIME with its documented default without a zone,
-	// even when Aura inserted an RFC3339 UTC value. Aura's memory timestamps
-	// are UTC, so restore the zone the wire representation omits.
-	// https://docs.arcadedb.com/arcadedb/reference/managing-dates
-	// Cypher map projections serialize the same native DATETIME as local ISO,
-	// omitting seconds when zero; SQL row projections use the space form.
-	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02T15:04:05", "2006-01-02T15:04"} {
-		if parsed, err := time.ParseInLocation(layout, value, time.UTC); err == nil {
-			return parsed, nil
-		}
-	}
-	return time.Time{}, fmt.Errorf("invalid memory datetime %q", value)
 }
 
 func nullableMemoryBatchTime(value time.Time) any {

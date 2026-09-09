@@ -459,7 +459,7 @@ func TestMemoryBatch_NoPartialObserver(t *testing.T) {
 }
 
 func TestMemoryBatch_NativeDateTimeFormat(t *testing.T) {
-	parsed, err := parseMemoryBatchTime("2026-08-31 13:00:07")
+	parsed, err := parseArcadeDateTime("2026-08-31 13:00:07")
 	if err != nil {
 		t.Fatalf("parse native DATETIME: %v", err)
 	}
