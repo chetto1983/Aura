@@ -100,7 +100,7 @@ Plans:
   8. `mutation-report.json` shows ≥70% killed separately for gateway, identity, profile, sandbox and frontend — the refusal branches this phase adds are provably killed, not merely covered.
 
 **Closes on (live run)**: with the two identities Phase 1 left live — A administrative, B an ordinary user — the real agent is driven as each. B installs an MCP server, writes a skill, runs a shell command and approves a destructive tool call, and all four succeed. B attempts to create an identity and to remove one, and both are refused and readable afterwards out of the audit trail by their own query. A creates a third identity and removes it, both through the cockpit rather than by curl, and the reverse saga is observed to land on every plane. B is then set to a zero cap and its next turn is refused before the model is called; A gives B credit and B's next turn runs; B's spend appears in the cockpit against B and not against A. Scored ≥9.8.
-**Plans**: 2/10 plans executed
+**Plans**: 3/10 plans executed
 
 Plans:
 **Wave 1**
@@ -110,7 +110,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 02-02-PLAN.md — the administrative pair made ungrantable through any API, the last-admin protection inside the saga, the uniform grant at provisioning, and the declaration-location CI check (wave 2)
-- [ ] 02-03-PLAN.md — the OpenRouter Provisioning-API client: mint at a real zero cap, patch, read, and a revoke that proves itself (wave 2)
+- [x] 02-03-PLAN.md — the OpenRouter Provisioning-API client: mint at a real zero cap, patch, read, and a revoke that proves itself (wave 2)
 - [ ] 02-04-PLAN.md — the capability-denial ledger and its leg on the audit feed the cockpit already reads (wave 2)
 - [ ] 02-05-PLAN.md — the credit-exhausted refusal that fires before the network, and the deployment-key fallback closed at every agent-construction site (wave 2)
 
@@ -270,7 +270,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Two Identities, Live and Separated | 7/7 | In Progress|  |
-| 2. Permissions Decide What a User May Do | 2/10 | In Progress|  |
+| 2. Permissions Decide What a User May Do | 3/10 | In Progress|  |
 | 3. The Boundary Under Attack | 0/TBD | Not started | - |
 | 4. Load, Chaos and Truthful Degradation | 0/TBD | Not started | - |
 | 5. Restart, Rollback, Restore | 0/TBD | Not started | - |

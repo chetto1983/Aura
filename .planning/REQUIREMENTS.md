@@ -93,7 +93,7 @@ per-identity spend, tokens, cache hit rate and latency need no analytics of our 
 - [ ] **CRED-01**: Each identity is minted its own OpenRouter key through the Provisioning API at provisioning, stored encrypted per identity and never returned to a browser
 - [ ] **CRED-02**: A new identity starts at a zero cap and cannot spend until an admin assigns it credit
 - [ ] **CRED-03**: The admin sets an identity's cap and its reset interval from the cockpit, and can change both afterwards
-- [ ] **CRED-04**: The cap is enforced by OpenRouter, not by Aura's accounting — an identity over its cap is refused at the provider even if Aura believes otherwise
+- [x] **CRED-04**: The cap is enforced by OpenRouter, not by Aura's accounting — an identity over its cap is refused at the provider even if Aura believes otherwise
 - [ ] **CRED-05**: A turn by an identity with no credit is refused cleanly before the model is called, rather than surfacing a raw provider 403 mid-turn
 - [ ] **CRED-06**: The cockpit shows each identity's cap, remaining credit and spend, and the figure it shows is Aura's own in-band ledger rather than the provider's delayed counter
 - [ ] **CRED-07**: An identity without its own key never falls back to the deployment key — the OpenRouter path is fail-closed
@@ -203,7 +203,7 @@ Every v1 requirement maps to exactly one phase. Mapped during roadmap creation, 
 | CRED-01 | Phase 2 | Pending |
 | CRED-02 | Phase 2 | Pending |
 | CRED-03 | Phase 2 | Pending |
-| CRED-04 | Phase 2 | Pending |
+| CRED-04 | Phase 2 | Complete |
 | CRED-05 | Phase 2 | Pending |
 | CRED-06 | Phase 2 | Pending |
 | CRED-07 | Phase 2 | Pending |

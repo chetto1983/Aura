@@ -5,16 +5,16 @@ milestone_name: Production Launch — Multi-Tenant
 current_phase: 02
 current_phase_name: Two Roles and a Budget
 status: executing
-stopped_at: Completed 02-02-PLAN.md
-last_updated: "2026-09-09T12:02:10.760Z"
+stopped_at: Completed 02-03-PLAN.md
+last_updated: "2026-09-09T12:29:39.583Z"
 last_activity: 2026-09-09
 last_activity_desc: Phase 02 execution resumed (wave continue)
-state_head: 162245c251c9a17b7f2c027819e09f4acf02cc49
+state_head: 0de2451f6166b9a2d6234343b912b78e1a3b0402
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 17
-  completed_plans: 9
+  completed_plans: 10
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-07)
 ## Current Position
 
 Phase: 02 (Two Roles and a Budget) — EXECUTING
-Plan: 3 of 10
+Plan: 4 of 10
 Status: Ready to execute
 Last activity: 2026-09-09 — Phase 02 execution resumed (wave continue)
 
@@ -84,6 +84,7 @@ phases, not many thin ones.
 | Phase 01 P06 | ~4h | 3 tasks | 17 files |
 | Phase 02 P01 | 44min | 3 tasks | 29 files |
 | Phase 02 P02 | n/a (continuation) | 2 tasks | 16 files |
+| Phase 02 P03 | not measured | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -116,6 +117,8 @@ creation:
 - [Phase 02]: Retired the capability_grants wildcard (migration 0121) and added a per-identity encrypted OpenRouter key store (migration 0122), proven on one live acceptance test (TestTwoRolesTracer). — Checkpoint-approved both one-way migrations as written; RBAC-01/02/04/08/09 and CRED-01/07 requirements now have code + tests, though the four live db_integration/musr_e2e tests could not be executed in this sandboxed session (no .env access) and need operator confirmation.
 - [Phase 02]: TestNoEscalation rewritten (not left red): D-01/RBAC-03 retires the pre-Phase-2 subset-of-creator-grants contract it pinned; every no-write assertion kept, administrative-refusal + uniform-grant coverage added.
 - [Phase 02]: TDD RED->GREEN ordering not honored for Task 2 (predecessor crashed after implementation, before tests); every new refusal assertion independently verified by temporarily removing the guard and confirming the test failed, then restoring byte-identical.
+- [Phase 02]: openrouterprovision: USDCap decimal-safe money type (cents-based, fixed 2-decimal JSON, half-up rounding at admin input) replaces float64/%v for the OpenRouter spending cap
+- [Phase 02]: openrouterprovision: RevokeKey is DELETE+verifying-GET in one function (CRED-08) — a caller cannot skip the verification half; a DELETE that itself 404s still converges to success provided the follow-up GET also 404s
 
 ### Pending Todos
 
@@ -165,8 +168,8 @@ rediscover them:
 
 ## Session Continuity
 
-Last session: 2026-09-09T12:02:10.718Z
-Stopped at: Completed 02-02-PLAN.md
+Last session: 2026-09-09T12:29:39.519Z
+Stopped at: Completed 02-03-PLAN.md
 Resume file: None
 
 Next: `/gsd-plan-phase 1`
