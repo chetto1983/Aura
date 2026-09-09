@@ -1,0 +1,9 @@
+{
+  "command": "go test -run TestCanRemoveIdentity_RefusesLastAdminSelf -v ./internal/identity/",
+  "exitCode": 1,
+  "output": "not ok 1 - TestCanRemoveIdentity_RefusesLastAdminSelf\nok 2 - TestCanRemoveIdentity_RefusesLastAdminSelf/non-administrative_identity_removes_self\nnot ok 3 - TestCanRemoveIdentity_RefusesLastAdminSelf/admin_removes_self\nok 4 - TestCanRemoveIdentity_RefusesLastAdminSelf/admin_removes_another_identity\n# tests 4\n# pass 2\n# fail 2\n",
+  "targetTest": "TestCanRemoveIdentity_RefusesLastAdminSelf/admin_removes_self",
+  "targetFile": "internal/identity/capability_policy_test.go",
+  "expected": "CanRemoveIdentity(A, A, true) returns ErrLastAdministrator (D-03: admin cannot remove itself, unconditional)",
+  "actual": "CanRemoveIdentity(A, A, true) returns nil because canRemoveOrDeactivate is a RED scaffold missing the self-removal refusal branch"
+}
