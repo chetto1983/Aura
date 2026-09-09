@@ -78,9 +78,9 @@ func canRemoveOrDeactivate(callerIdentityID, subjectIdentityID string, subjectIs
 	if callerIdentityID == "" || subjectIdentityID == "" {
 		return ErrEmptyIdentityID
 	}
-	// RED scaffold (#3770): the self-removal refusal branch is intentionally missing here.
-	// TestCanRemoveIdentity_RefusesLastAdminSelf's "admin removes self" subtest fails on a
-	// real assertion (want ErrLastAdministrator, got nil) — not a build or discovery error.
+	if callerIdentityID == subjectIdentityID && subjectIsAdministrative {
+		return ErrLastAdministrator
+	}
 	return nil
 }
 
