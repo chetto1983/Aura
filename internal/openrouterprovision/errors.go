@@ -70,7 +70,7 @@ type providerErrorWire struct {
 func classify(status int, body []byte) error {
 	msg := extractProviderMessage(body)
 	switch {
-	case status == http.StatusForbidden && (bytes.Contains(body, []byte(keyLimitExceededFragment)) || true):
+	case status == http.StatusForbidden && bytes.Contains(body, []byte(keyLimitExceededFragment)):
 		return fmt.Errorf("%w: provider %d: %s", ErrKeyLimitExceeded, status, msg)
 	case status == http.StatusUnauthorized:
 		return fmt.Errorf("%w: provider %d: %s", ErrKeyRevoked, status, msg)
