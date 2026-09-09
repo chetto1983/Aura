@@ -58,10 +58,10 @@ func fakeClientFactory() llmClientFactory {
 func TestResolveBuildsIdentityScopedSnapshot(t *testing.T) {
 	t.Parallel()
 	loader := newFakeKeyLoader(map[string]identitykey.Record{
-		"identity-a": {Key: "key-for-a"},
-		"identity-b": {Key: "key-for-b"},
+		"identity-a": {Key: "key-for-a", LimitUSD: 5},
+		"identity-b": {Key: "key-for-b", LimitUSD: 5},
 	})
-	rs := NewIdentityLLMResolver(loader, nil, llm.Config{Provider: "openrouter"}, fakeClientFactory())
+	rs := NewIdentityLLMResolver(loader, nil, llm.Config{Provider: "openrouter"}, fakeClientFactory(), nil)
 
 	snapB, err := rs.SnapshotFor(context.Background(), "identity-b")
 	if err != nil {
@@ -92,7 +92,7 @@ func TestResolveRefusesWhenNoKey(t *testing.T) {
 	t.Parallel()
 	loader := newFakeKeyLoader(nil) // no identity has a stored key
 	processRuntime := llm.NewRuntime(&fakeIdentityScopedClient{label: "process-wide"}, llm.Config{Provider: "openrouter"})
-	rs := NewIdentityLLMResolver(loader, processRuntime, llm.Config{Provider: "openrouter"}, fakeClientFactory())
+	rs := NewIdentityLLMResolver(loader, processRuntime, llm.Config{Provider: "openrouter"}, fakeClientFactory(), nil)
 
 	snap, err := rs.SnapshotFor(context.Background(), "identity-nokey")
 	if err == nil {
@@ -117,7 +117,7 @@ func TestResolveLocalBackendExemption(t *testing.T) {
 	loader := newFakeKeyLoader(nil)
 	processClient := &fakeIdentityScopedClient{label: "process-wide-local"}
 	processRuntime := llm.NewRuntime(processClient, llm.Config{Provider: "openrouter", BaseURL: "http://localhost:8080"})
-	rs := NewIdentityLLMResolver(loader, processRuntime, llm.Config{Provider: "openrouter", BaseURL: "http://localhost:8080"}, fakeClientFactory())
+	rs := NewIdentityLLMResolver(loader, processRuntime, llm.Config{Provider: "openrouter", BaseURL: "http://localhost:8080"}, fakeClientFactory(), nil)
 
 	snap, err := rs.SnapshotFor(context.Background(), "identity-local")
 	if err != nil {
@@ -130,10 +130,10 @@ func TestResolveLocalBackendExemption(t *testing.T) {
 
 func TestResolveConcurrentIdentitiesDoNotCross(t *testing.T) {
 	loader := newFakeKeyLoader(map[string]identitykey.Record{
-		"identity-a": {Key: "key-for-a"},
-		"identity-b": {Key: "key-for-b"},
+		"identity-a": {Key: "key-for-a", LimitUSD: 5},
+		"identity-b": {Key: "key-for-b", LimitUSD: 5},
 	})
-	rs := NewIdentityLLMResolver(loader, nil, llm.Config{Provider: "openrouter"}, fakeClientFactory())
+	rs := NewIdentityLLMResolver(loader, nil, llm.Config{Provider: "openrouter"}, fakeClientFactory(), nil)
 
 	const n = 50
 	var wg sync.WaitGroup
@@ -167,5 +167,130 @@ func TestResolveConcurrentIdentitiesDoNotCross(t *testing.T) {
 	close(errs)
 	for err := range errs {
 		t.Error(err)
+	}
+}
+
+// fakeExhaustedClient is a stand-in for cmd/aura's creditExhaustedClient — a
+// distinct type a test can assert on BY IDENTITY (pointer equality), never by
+// merely checking "non-nil".
+type fakeExhaustedClient struct{}
+
+func (fakeExhaustedClient) Stream(context.Context, llm.Request) (<-chan llm.Chunk, error) {
+	return nil, errors.New("fake: credit exhausted")
+}
+
+var _ llm.Client = fakeExhaustedClient{}
+
+// TestResolverReturnsCreditExhaustedOnZeroCap: a stored key with a zero cap
+// returns a snapshot whose Client IS the injected exhausted sentinel — not a
+// real client built from the key, and not the process runtime's client.
+func TestResolverReturnsCreditExhaustedOnZeroCap(t *testing.T) {
+	t.Parallel()
+	loader := newFakeKeyLoader(map[string]identitykey.Record{
+		"identity-broke": {Key: "key-for-broke", LimitUSD: 0},
+	})
+	processClient := &fakeIdentityScopedClient{label: "process-wide"}
+	processRuntime := llm.NewRuntime(processClient, llm.Config{Provider: "openrouter"})
+	exhausted := fakeExhaustedClient{}
+	rs := NewIdentityLLMResolver(loader, processRuntime, llm.Config{Provider: "openrouter"}, fakeClientFactory(), exhausted)
+
+	snap, err := rs.SnapshotFor(context.Background(), "identity-broke")
+	if err != nil {
+		t.Fatalf("SnapshotFor (zero cap): %v", err)
+	}
+	if snap.Client != exhausted {
+		t.Fatalf("snapshot.Client = %v, want the injected exhausted sentinel", snap.Client)
+	}
+	if snap.Client == processClient {
+		t.Fatal("snapshot.Client must not be the process runtime's client")
+	}
+}
+
+// TestResolverReturnsRefusalOnNoKey mirrors TestResolveRefusesWhenNoKey's
+// identity-based assertions (nil client, specifically ErrNoIdentityLLMKey,
+// specifically not the process client) on a billing backend — the refusal
+// this resolver returns when an identity has no stored key at all.
+func TestResolverReturnsRefusalOnNoKey(t *testing.T) {
+	t.Parallel()
+	loader := newFakeKeyLoader(nil)
+	processClient := &fakeIdentityScopedClient{label: "process-wide"}
+	processRuntime := llm.NewRuntime(processClient, llm.Config{Provider: "openrouter"})
+	rs := NewIdentityLLMResolver(loader, processRuntime, llm.Config{Provider: "openrouter"}, fakeClientFactory(), fakeExhaustedClient{})
+
+	snap, err := rs.SnapshotFor(context.Background(), "identity-nokey")
+	if !errors.Is(err, ErrNoIdentityLLMKey) {
+		t.Fatalf("err = %v, want ErrNoIdentityLLMKey", err)
+	}
+	if snap.Client != nil {
+		t.Fatalf("snapshot.Client = %v, want nil", snap.Client)
+	}
+	if snap.Client == processClient {
+		t.Fatal("snapshot.Client must not be the process runtime's client")
+	}
+}
+
+// TestResolverExemptLocalReturnsProcessSnapshot: on a local backend the
+// resolver returns the process snapshot with a nil error — the exemption,
+// reached by a differently-named branch than the refusal above.
+func TestResolverExemptLocalReturnsProcessSnapshot(t *testing.T) {
+	t.Parallel()
+	loader := newFakeKeyLoader(nil)
+	processClient := &fakeIdentityScopedClient{label: "process-wide-local"}
+	localCfg := llm.Config{Provider: "openrouter", BaseURL: "http://localhost:8080"}
+	processRuntime := llm.NewRuntime(processClient, localCfg)
+	rs := NewIdentityLLMResolver(loader, processRuntime, localCfg, fakeClientFactory(), fakeExhaustedClient{})
+
+	snap, err := rs.SnapshotFor(context.Background(), "identity-local")
+	if err != nil {
+		t.Fatalf("SnapshotFor (exempt local): %v", err)
+	}
+	if snap.Client != processClient {
+		t.Fatalf("snapshot.Client = %v, want the process runtime's client", snap.Client)
+	}
+}
+
+// TestResolverCacheInvalidatedOnCapChange: a cap raised from zero after the
+// exhausted snapshot was cached is NOT served stale — Invalidate must be
+// called (mirroring how a cap-change route will call it) before the next
+// resolve picks up the new cap.
+func TestResolverCacheInvalidatedOnCapChange(t *testing.T) {
+	t.Parallel()
+	loader := newFakeKeyLoader(map[string]identitykey.Record{
+		"identity-topup": {Key: "key-for-topup", LimitUSD: 0},
+	})
+	exhausted := fakeExhaustedClient{}
+	rs := NewIdentityLLMResolver(loader, nil, llm.Config{Provider: "openrouter"}, fakeClientFactory(), exhausted)
+
+	before, err := rs.SnapshotFor(context.Background(), "identity-topup")
+	if err != nil {
+		t.Fatalf("SnapshotFor before top-up: %v", err)
+	}
+	if before.Client != exhausted {
+		t.Fatalf("before top-up: snapshot.Client = %v, want the exhausted sentinel", before.Client)
+	}
+
+	loader.mu.Lock()
+	loader.records["identity-topup"] = identitykey.Record{Key: "key-for-topup", LimitUSD: 5}
+	loader.mu.Unlock()
+
+	stale, err := rs.SnapshotFor(context.Background(), "identity-topup")
+	if err != nil {
+		t.Fatalf("SnapshotFor without invalidation: %v", err)
+	}
+	if stale.Client != exhausted {
+		t.Fatal("resolving without Invalidate served a fresh client instead of proving the cache is stale")
+	}
+
+	rs.Invalidate("identity-topup")
+
+	after, err := rs.SnapshotFor(context.Background(), "identity-topup")
+	if err != nil {
+		t.Fatalf("SnapshotFor after invalidation: %v", err)
+	}
+	if after.Client == exhausted {
+		t.Fatal("after Invalidate + top-up, snapshot.Client is still the exhausted sentinel")
+	}
+	if after.Config.APIKey != "key-for-topup" {
+		t.Fatalf("after top-up: snapshot.Config.APIKey = %q, want key-for-topup", after.Config.APIKey)
 	}
 }

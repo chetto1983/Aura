@@ -46,10 +46,11 @@ type llmClientFactory func(cfg llm.Config) llm.Client
 // client.go:43 already sets DisableKeepAlives, so N cached clients cost N transports,
 // not N connection pools.
 type IdentityLLMResolver struct {
-	loader    keyLoader
-	runtime   *llm.Runtime // process-wide fallback, used ONLY for the D-13 local exemption
-	base      llm.Config
-	newClient llmClientFactory
+	loader          keyLoader
+	runtime         *llm.Runtime // process-wide fallback, used ONLY for the D-13 local exemption
+	base            llm.Config
+	newClient       llmClientFactory
+	exhaustedClient llm.Client // CRED-05 sentinel, injected from cmd/aura (see below)
 
 	mu    sync.Mutex
 	cache map[string]llm.RuntimeSnapshot
@@ -57,34 +58,49 @@ type IdentityLLMResolver struct {
 
 // NewIdentityLLMResolver builds a resolver over loader (the encrypted key store),
 // runtime (the process-wide snapshot source, consulted ONLY for the D-13 local-backend
-// exemption — never as a fallback on the OpenRouter path), and base (the deployment's
-// LLM config template: provider, base URL, model and every non-credential field an
-// identity-scoped client still needs). A nil newClient defaults to openai_compat.New.
-func NewIdentityLLMResolver(loader keyLoader, runtime *llm.Runtime, base llm.Config, newClient llmClientFactory) *IdentityLLMResolver {
+// exemption — never as a fallback on the OpenRouter path), base (the deployment's LLM
+// config template: provider, base URL, model and every non-credential field an
+// identity-scoped client still needs), and exhaustedClient — the CRED-05 refusal
+// client a zero-credit identity's snapshot carries. exhaustedClient's concrete type
+// (cmd/aura's creditExhaustedClient) lives in the composition root, which
+// internal/runner cannot import; injecting the already-built value through this
+// constructor param is how the sentinel reaches here without a second copy of it
+// living in internal/ (two refusal payloads that must stay identical will not). A nil
+// exhaustedClient degrades a zero-credit identity to the same refusal shape as a
+// missing key (an error, no client) rather than panicking. A nil newClient defaults
+// to openai_compat.New.
+func NewIdentityLLMResolver(loader keyLoader, runtime *llm.Runtime, base llm.Config, newClient llmClientFactory, exhaustedClient llm.Client) *IdentityLLMResolver {
 	if newClient == nil {
 		newClient = func(cfg llm.Config) llm.Client { return openai_compat.New(cfg) }
 	}
 	return &IdentityLLMResolver{
-		loader:    loader,
-		runtime:   runtime,
-		base:      base,
-		newClient: newClient,
-		cache:     make(map[string]llm.RuntimeSnapshot),
+		loader:          loader,
+		runtime:         runtime,
+		base:            base,
+		newClient:       newClient,
+		exhaustedClient: exhaustedClient,
+		cache:           make(map[string]llm.RuntimeSnapshot),
 	}
 }
 
-// SnapshotFor resolves identityID's own RuntimeSnapshot.
+// SnapshotFor resolves identityID's own RuntimeSnapshot by running
+// identitykey.Decide over the stored record (or its absence) and this resolver's
+// backend classification, then mapping the four-valued decision onto a snapshot:
 //
-// On the OpenRouter path an identity with no stored key is refused: SnapshotFor
-// returns ErrNoIdentityLLMKey and a zero-value snapshot, never r.runtime.Snapshot()'s
-// process-wide client (CRED-07) — getting this backwards is invisible in a happy-path
-// test, which is why the test suite asserts on the returned client's IDENTITY, not
-// merely on the absence of an error.
+//   - DecisionAllow: the identity's own client, built from its stored key, cached.
+//   - DecisionRefuseNoKey: a refusal — ErrNoIdentityLLMKey and a nil-client
+//     zero-value snapshot, never rs.runtime.Snapshot()'s process-wide client
+//     (CRED-07). Not cached, so a key minted later is picked up on the next call
+//     with no separate invalidation needed.
+//   - DecisionRefuseNoCredit: a refusal carrying rs.exhaustedClient (CRED-05) —
+//     Stream on it refuses before any network call. Cached like Allow, so a cap
+//     raised later needs Invalidate to take effect (TestResolverCacheInvalidatedOnCapChange).
+//   - DecisionExemptLocal: the process runtime's own snapshot (D-13) — that
+//     deployment bills nothing, so there is no credential to own per identity.
 //
-// When the backend is a local one (allowsKeylessLocalLLMBaseURL's hosts, D-13) the
-// process snapshot IS the correct answer: that deployment bills nothing, so there is
-// no credential to own per identity. That is the exemption, reached by this
-// differently-named branch, never the same code path as the refusal above.
+// Getting DecisionRefuseNoKey and DecisionExemptLocal backwards is invisible in a
+// happy-path test, which is why the test suite asserts on the returned client's
+// IDENTITY, not merely on the absence of an error.
 func (rs *IdentityLLMResolver) SnapshotFor(ctx context.Context, identityID string) (llm.RuntimeSnapshot, error) {
 	if rs == nil || rs.loader == nil {
 		return llm.RuntimeSnapshot{}, errors.New("runner: nil identity LLM resolver")
@@ -99,35 +115,48 @@ func (rs *IdentityLLMResolver) SnapshotFor(ctx context.Context, identityID strin
 	}
 
 	scoped := identityctx.WithIdentityID(ctx, identityID)
-	rec, err := rs.loader.Load(scoped)
-	if err != nil {
-		if errors.Is(err, identitykey.ErrNoKey) {
-			return rs.noKeySnapshot(identityID)
-		}
-		return llm.RuntimeSnapshot{}, fmt.Errorf("runner: load identity llm key for %s: %w", identityID, err)
+	rec, loadErr := rs.loader.Load(scoped)
+	hasKey := loadErr == nil
+	if loadErr != nil && !errors.Is(loadErr, identitykey.ErrNoKey) {
+		return llm.RuntimeSnapshot{}, fmt.Errorf("runner: load identity llm key for %s: %w", identityID, loadErr)
 	}
 
-	cfg := rs.base
-	cfg.APIKey = rec.Key
-	snapshot := llm.RuntimeSnapshot{Client: rs.newClient(cfg), Config: cfg}
+	decision, decErr := identitykey.Decide(identitykey.DecisionInput{
+		IdentityID:   identityID,
+		HasKey:       hasKey,
+		LimitUSD:     rec.LimitUSD,
+		BackendBills: !allowsKeylessLocalLLMBaseURL(rs.base.BaseURL),
+	})
 
-	rs.mu.Lock()
-	rs.cache[identityID] = snapshot
-	rs.mu.Unlock()
-	return snapshot, nil
+	switch decision {
+	case identitykey.DecisionExemptLocal:
+		return rs.exemptionSnapshot(), nil
+	case identitykey.DecisionAllow:
+		cfg := rs.base
+		cfg.APIKey = rec.Key
+		snapshot := llm.RuntimeSnapshot{Client: rs.newClient(cfg), Config: cfg}
+		rs.cacheSnapshot(identityID, snapshot)
+		return snapshot, nil
+	case identitykey.DecisionRefuseNoCredit:
+		if rs.exhaustedClient == nil {
+			return llm.RuntimeSnapshot{}, fmt.Errorf("runner: %s: %w", identityID, decErr)
+		}
+		snapshot := llm.RuntimeSnapshot{Client: rs.exhaustedClient, Config: rs.base}
+		rs.cacheSnapshot(identityID, snapshot)
+		return snapshot, nil
+	default: // identitykey.DecisionRefuseNoKey
+		return llm.RuntimeSnapshot{}, fmt.Errorf("%w: %s", ErrNoIdentityLLMKey, identityID)
+	}
 }
 
-// noKeySnapshot is the D-13 local-backend exemption, split out under its own name so
-// the refusal and the exemption can never be mistaken for one another in the code:
-// this is the ONLY place the resolver reaches for rs.runtime.Snapshot().
-func (rs *IdentityLLMResolver) noKeySnapshot(identityID string) (llm.RuntimeSnapshot, error) {
-	if allowsKeylessLocalLLMBaseURL(rs.base.BaseURL) {
-		if rs.runtime == nil {
-			return llm.RuntimeSnapshot{}, nil
-		}
-		return rs.runtime.Snapshot(), nil
+// exemptionSnapshot is the D-13 local-backend exemption's ONLY caller of
+// rs.runtime.Snapshot() — split out under its own name so the refusal and the
+// exemption can never be mistaken for one another in the code.
+func (rs *IdentityLLMResolver) exemptionSnapshot() llm.RuntimeSnapshot {
+	if rs.runtime == nil {
+		return llm.RuntimeSnapshot{}
 	}
-	return llm.RuntimeSnapshot{}, fmt.Errorf("%w: %s", ErrNoIdentityLLMKey, identityID)
+	return rs.runtime.Snapshot()
 }
 
 func (rs *IdentityLLMResolver) cachedSnapshot(identityID string) (llm.RuntimeSnapshot, bool) {
@@ -135,6 +164,12 @@ func (rs *IdentityLLMResolver) cachedSnapshot(identityID string) (llm.RuntimeSna
 	defer rs.mu.Unlock()
 	snapshot, ok := rs.cache[identityID]
 	return snapshot, ok
+}
+
+func (rs *IdentityLLMResolver) cacheSnapshot(identityID string, snapshot llm.RuntimeSnapshot) {
+	rs.mu.Lock()
+	rs.cache[identityID] = snapshot
+	rs.mu.Unlock()
 }
 
 // Invalidate drops identityID's cached client, forcing the next SnapshotFor to rebuild
