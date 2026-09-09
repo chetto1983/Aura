@@ -1,14 +1,17 @@
 // config subcommand dispatcher for `aura config {show|get|set}`. Lives in package
 // main alongside cmd/aura/main.go's switch case "config", mirroring db.go:19-44.
 // show: print the effective llm.Config with APIKey shown as REDACTED (D-24/D-28 —
-// the real key value NEVER reaches stdout). get: read a dotted file-tier key
-// (llm.model, llm.base_url, ...) from the effective config. set: read-modify-write
+// the real key value NEVER reaches stdout). "Effective" here means all FIVE tiers the
+// daemon itself resolves, aura.settings included — see applySettingsOverlay for why the
+// database tier is not optional to a command that claims the word. get: read a dotted
+// key (llm.model, llm.base_url, ...) off that same resolution. set: read-modify-write
 // ~/.aura/llm.json (creating the dir+file if absent), persisting only file-tier
 // keys. Unknown key / bad usage -> stderr + os.Exit(1). The set path never persists
 // the API key (it normally comes from .env/the environment, not this file).
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -17,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/settings"
 )
 
 // redactedAPIKey is the constant rendered in place of the real key by `show`
@@ -54,10 +58,13 @@ func configUsage() {
 // operator may run `show` before setting one) and renders APIKey as REDACTED when
 // a key IS present (D-24/D-28).
 func configShow() {
-	cfg, err := loadLLMConfigTolerant()
+	cfg, note, err := loadLLMConfigAndOverlayNote()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "config load:", err)
 		os.Exit(1)
+	}
+	if note != "" {
+		fmt.Fprintf(os.Stderr, "warning: %s — the values below are the file and environment tiers, which a running daemon may be overriding\n", note)
 	}
 	apiKey := ""
 	if cfg.APIKey != "" {
@@ -74,7 +81,9 @@ func configShow() {
 	fmt.Printf("connect_timeout_sec: %d\n", cfg.ConnectTimeoutSec)
 }
 
-// configGet reads a single dotted key from the effective config.
+// configGet reads a single dotted key from the effective config, aura.settings included.
+// It does not print the overlay note: a `get` is consumed by scripts, so a warning on
+// stderr would be the wrong shape there — `show` is the command that explains itself.
 func configGet(args []string) {
 	if len(args) != 1 {
 		configUsage()
@@ -134,11 +143,71 @@ func configSet(args []string) {
 	fmt.Printf("ok: set %s = %s in %s\n", key, value, path)
 }
 
-// loadLLMConfigTolerant resolves the effective llm.Config but, unlike llm.Load,
-// does NOT fail on an empty API key — `aura config show/get` must work before a
-// key is ever configured. It re-runs the load and swallows only ErrMissingAPIKey;
-// any other (malformed-file / bad-env) error still surfaces.
+// settingsListerForCLI opens the keyless overlay pool and hands back a Lister over
+// aura.settings, a closer, and -- when it cannot -- the reason why. It is a var so a
+// test can drive both branches without a live Postgres, mirroring doctorLookupLLMKey's
+// own seam in doctor.go.
+var settingsListerForCLI = func(ctx context.Context) (settings.Lister, func(), string) {
+	pool, ok, err := openSettingsOverlayPool(ctx)
+	switch {
+	case err != nil:
+		return nil, nil, "aura.settings unreachable: " + err.Error()
+	case !ok:
+		return nil, nil, "no database configured, so aura.settings was not consulted"
+	}
+	return settings.NewStore(pool), pool.Close, ""
+}
+
+// applySettingsOverlay copies the allowlisted aura.settings rows onto the process
+// environment exactly as the daemon does at boot (chat_boot.go's resolveConfigAndPool),
+// so the CLI resolves the SAME configuration `aura serve` is running.
+//
+// Without it these commands report the compiled-in defaults as "effective" whenever the
+// deployment is configured from the cockpit -- which is the normal case, since
+// aura.settings is where those values are meant to live. Measured on 2026-09-09: an
+// operator running Ollama saw `provider: openrouter`, `model:
+// deepseek/deepseek-v4-flash:nitro` and the OpenRouter base URL, which are
+// internal/llm/config.go's three default constants verbatim, with no llm.json on disk
+// and the real backend recorded only in Postgres.
+//
+// Returns the reason it could not be applied, so the caller says so rather than passing
+// a lower tier off as the effective one. An unreachable database is NOT fatal: reading
+// the file and env tiers is still useful, and `config show` must keep working before the
+// database exists.
+func applySettingsOverlay(ctx context.Context) string {
+	lister, closeLister, why := settingsListerForCLI(ctx)
+	if lister == nil {
+		return why
+	}
+	defer closeLister()
+	if err := settings.OverlayEnv(ctx, lister); err != nil {
+		return "aura.settings could not be applied: " + err.Error()
+	}
+	return ""
+}
+
+// loadLLMConfigTolerant resolves the effective llm.Config across every tier the daemon
+// resolves — built-in default < .env < ~/.aura/llm.json < AURA_LLM_* < aura.settings —
+// but, unlike llm.Load, does NOT fail on an empty API key: `aura config show/get` must
+// work before a key is ever configured. Only ErrMissingAPIKey is swallowed; any other
+// (malformed-file / bad-env) error still surfaces, as does a note when the database tier
+// could not be read.
 func loadLLMConfigTolerant() (*llm.Config, error) {
+	cfg, _, err := loadLLMConfigAndOverlayNote()
+	return cfg, err
+}
+
+// loadLLMConfigAndOverlayNote is loadLLMConfigTolerant for the one caller that prints
+// the overlay note (`show`); the others discard it through the wrapper above.
+func loadLLMConfigAndOverlayNote() (*llm.Config, string, error) {
+	note := applySettingsOverlay(context.Background())
+	cfg, err := resolveLLMConfigTiers()
+	return cfg, note, err
+}
+
+// resolveLLMConfigTiers runs llm.Load's own tier chain, tolerating an empty API key so
+// `show` works before one is set.
+func resolveLLMConfigTiers() (*llm.Config, error) {
 	cfg, err := llm.Load()
 	if err == nil {
 		return cfg, nil

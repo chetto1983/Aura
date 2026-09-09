@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/settings"
 )
 
 // withTempHome points HOME (and USERPROFILE on Windows) at a temp dir so
@@ -164,5 +167,72 @@ func TestConfig_ShowNoKeyBlank(t *testing.T) {
 	}
 	if !strings.Contains(out, "model:") {
 		t.Fatalf("config show missing the model line:\n%s", out)
+	}
+}
+
+// fakeSettingsLister serves aura.settings rows without a database, so both branches of
+// the overlay are exercised against the REAL settings.OverlayEnv and the real llm.Load.
+type fakeSettingsLister struct{ rows []sqlc.AuraSettings }
+
+func (f *fakeSettingsLister) List(context.Context) ([]sqlc.AuraSettings, error) {
+	return f.rows, nil
+}
+
+// TestConfigShowResolvesTheDatabaseTier is the defect this seam closes. `aura config
+// show` documented itself as printing "the effective config" while resolving only the
+// built-in/.env/llm.json/AURA_LLM_* tiers -- never aura.settings, which is where a
+// cockpit-configured deployment actually keeps its provider and model, and which the
+// daemon applies at boot. Measured on 2026-09-09: an operator running Ollama was shown
+// internal/llm/config.go's three default constants verbatim.
+func TestConfigShowResolvesTheDatabaseTier(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "sk-test")
+	t.Setenv("AURA_LLM_MODEL", "")
+	t.Setenv("AURA_LLM_BASE_URL", "")
+
+	restore := settingsListerForCLI
+	t.Cleanup(func() { settingsListerForCLI = restore })
+	settingsListerForCLI = func(context.Context) (settings.Lister, func(), string) {
+		return &fakeSettingsLister{rows: []sqlc.AuraSettings{
+			{Key: "AURA_LLM_MODEL", Value: "qwen3:8b"},
+			{Key: "AURA_LLM_BASE_URL", Value: "http://127.0.0.1:11434/v1"},
+		}}, func() {}, ""
+	}
+
+	cfg, note, err := loadLLMConfigAndOverlayNote()
+	if err != nil {
+		t.Fatalf("loadLLMConfigAndOverlayNote: %v", err)
+	}
+	if note != "" {
+		t.Errorf("note = %q, want empty when the overlay applied", note)
+	}
+	if cfg.Model != "qwen3:8b" {
+		t.Errorf("model = %q, want the aura.settings row — the compiled-in default is what this test exists to stop being reported as effective", cfg.Model)
+	}
+	if cfg.BaseURL != "http://127.0.0.1:11434/v1" {
+		t.Errorf("base_url = %q, want the aura.settings row", cfg.BaseURL)
+	}
+}
+
+// TestConfigShowSaysWhenItCouldNotReachTheDatabase proves the degraded path is stated
+// rather than silent: reading the lower tiers is still useful, and `config show` must
+// keep working before the database exists -- but it must not pass them off as effective.
+func TestConfigShowSaysWhenItCouldNotReachTheDatabase(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "sk-test")
+
+	restore := settingsListerForCLI
+	t.Cleanup(func() { settingsListerForCLI = restore })
+	settingsListerForCLI = func(context.Context) (settings.Lister, func(), string) {
+		return nil, nil, "no database configured, so aura.settings was not consulted"
+	}
+
+	cfg, note, err := loadLLMConfigAndOverlayNote()
+	if err != nil {
+		t.Fatalf("loadLLMConfigAndOverlayNote: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("config is nil: an unreachable database must degrade, not fail")
+	}
+	if !strings.Contains(note, "aura.settings was not consulted") {
+		t.Errorf("note = %q, want it to say the database tier was skipped", note)
 	}
 }
