@@ -141,3 +141,34 @@ long document. Blindly applying the memory reranker loses useful exact-term evid
 on this sample. No document ranking policy, graph schema, quantization, relevance
 threshold or tuned fusion weights were changed by this ingestion fix. The wider
 multi-document retrieval oracle is required before promoting a ranking policy.
+
+## Deployed verification and open answer-quality limit
+
+The rebuilt ingestion image is
+`sha256:41e04a4b340574dcfc032e717596ff44b0e92deaeeaa1d12d1968a569c79566c`.
+The running sidecar was recreated and is healthy. Its image contract passes; all
+130 tests pass again on the rebuilt image (225.67 s under concurrent verification).
+Reusing the original truncated run's CocoIndex state with the new image re-extracts
+the unchanged manual and completes with zero missing sources. A fresh final pass
+also retains all 445 passages and 100% text coverage (51.71 s under concurrent build
+and coverage load, excluded from the controlled speed comparison).
+
+The required disposable Go coverage gate passes: 34,870/40,292 owned statements
+(86.54%), with all package-local policies passing. No Go production code was changed.
+
+Three guided cases were exercised through the real Runner and `document_search`,
+using a temporary overlay of the existing document-agent oracle and a disposable
+identity. The configured Ollama route was loaded through `settings.OverlayEnv`.
+The WSL attempt could not reach the Windows-only Ollama endpoint; the executed
+Windows run maps that endpoint to localhost without changing production settings.
+
+| Agent case | Result |
+|---|---|
+| PostgreSQL JDBC auto-commit | PASS: correct `conn.setAutoCommit(true)` |
+| Graph Analytical View lifecycle | FAIL: answer omits `NOT_BUILT` after five searches |
+| Redis default port | PASS: correct `6379` |
+
+This is **2/3, not a passing answer-quality gate**. The omitted state is in the
+complete source and indexed passages. The ingestion correction is verified, while
+end-to-end answer quality on long documents remains an explicit open limitation.
+Raw agent receipts remain in `artifacts/long-document-benchmark/agent-live-windows.log`.
