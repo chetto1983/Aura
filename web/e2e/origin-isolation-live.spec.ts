@@ -13,12 +13,25 @@ import { gotoAuthenticated } from './auth';
 //      that gives it an opaque origin even when opened as a top-level tab, which is what
 //      makes an operator connect-src wildcard safe.
 //
-// No-skip-as-green: every leg increments `proofs`, and the test fails below the expected
-// count, so a run that silently asserted nothing cannot report green.
+// Gated because the artifact legs need a stack that HAS an artifact:
+//   AURA_E2E_LIVE_ARTIFACT=1
+//   AURA_E2E_ARTIFACT_ASSET=<asset uuid of an accepted text/html asset this identity owns>
+//
+// No-skip-as-green: the gate is declared once, at describe level, so the suite either does
+// not run this file at all or runs every leg of it. There is deliberately NO branch inside
+// the test that lets a missing artifact pass quietly — an absent id fails the expect below.
+// An earlier draft of this file had exactly that branch, and it reported green while
+// asserting nothing about the policy it exists to protect.
+
+const live = process.env.AURA_E2E_LIVE_ARTIFACT === '1';
+const assetID = process.env.AURA_E2E_ARTIFACT_ASSET ?? '';
 
 test.describe('artifact origin isolation (live)', () => {
+  test.skip(!live, 'set AURA_E2E_LIVE_ARTIFACT=1 with AURA_E2E_ARTIFACT_ASSET against a live stack');
+
   test('the daemon serves the data proxy and the sandboxed artifact policy', async ({ page }) => {
     let proofs = 0;
+    expect(assetID, 'AURA_E2E_ARTIFACT_ASSET must name an artifact this identity owns').not.toBe('');
 
     await gotoAuthenticated(page, '/');
 
@@ -57,8 +70,7 @@ test.describe('artifact origin isolation (live)', () => {
     // 2. A sealed artifact document, loaded as a top-level tab, holds an opaque origin:
     // its own CSP is what proves it, and a live fetch under that CSP is what proves the
     // policy is usable rather than merely safe.
-    const assetID = process.env.AURA_E2E_ARTIFACT_ASSET;
-    if (assetID !== undefined && assetID !== '') {
+    {
       const rendered = await page.evaluate(async (id: string) => {
         const r = await fetch(`/api/assets/${id}/render`);
         return { status: r.status, csp: r.headers.get('content-security-policy') };
@@ -92,6 +104,6 @@ test.describe('artifact origin isolation (live)', () => {
       proofs += 1;
     }
 
-    expect(proofs, 'every leg must have asserted something').toBeGreaterThanOrEqual(2);
+    expect(proofs, 'every leg must have asserted something').toBe(4);
   });
 });
