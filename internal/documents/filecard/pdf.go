@@ -111,14 +111,21 @@ func describePDFText(req Request, card Card, pages int, exact bool) Card {
 // number the caveat would make look certain.
 func pdfReadCaveat(pages int, exact bool) string {
 	const described = "only their opening and their recurring terms are described here."
+	// The cap is on the DESCRIPTION, never on the index: passages are chunked from the whole
+	// extracted text, so a hit deep in the file is not beyond what was read. Saying "read at
+	// ingest" made that sentence a claim about the library. Measured 2026-09-09 with only
+	// the MCP tools, an agent read it as a coverage limit and reported distrusting passages
+	// it had correctly retrieved from character 681347 of a 785-page manual.
+	const wholeFile = " Search covers the whole file."
 	switch {
 	case exact && pages <= pdfTextPages:
-		return "Its pages were all read at ingest, and " + described
+		return "Its pages were all read, and " + described
 	case exact:
-		return fmt.Sprintf("Only the first %d of its %d pages were read at ingest, and %s",
-			pdfTextPages, pages, described)
+		return fmt.Sprintf("Only the first %d of its %d pages were read to build this "+
+			"description, and %s%s", pdfTextPages, pages, described, wholeFile)
 	default:
-		return fmt.Sprintf("At most the first %d pages were read at ingest, and %s", pdfTextPages, described)
+		return fmt.Sprintf("At most the first %d pages were read to build this description, "+
+			"and %s%s", pdfTextPages, described, wholeFile)
 	}
 }
 

@@ -63,7 +63,9 @@ func TestPDFTextLandsInTheCard(t *testing.T) {
 	if strings.Contains(rendered, "did not read this PDF's text") {
 		t.Errorf("a PDF whose text WAS read still claims it was not:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, "read at ingest") {
+	// This fixture is one page, so the coverage sentence is the uncapped one. The wording
+	// dropped "at ingest": the cap it reports bounds the description, not the index.
+	if !strings.Contains(rendered, "Its pages were all read") {
 		t.Errorf("the card does not say how much of the file it read:\n%s", rendered)
 	}
 }
@@ -251,8 +253,15 @@ func TestPDFReadCaveatStatesWhatWasLeftOut(t *testing.T) {
 		{"count is only a floor", 40, false, "At most the first 20 pages"},
 		{"no count at all", 0, false, "At most the first 20 pages"},
 	} {
-		if got := pdfReadCaveat(tc.pages, tc.exact); !strings.Contains(got, tc.want) {
+		got := pdfReadCaveat(tc.pages, tc.exact)
+		if !strings.Contains(got, tc.want) {
 			t.Errorf("%s: caveat = %q, want it to contain %q", tc.name, got, tc.want)
+		}
+		// A capped DESCRIPTION is not a capped index, and the caveat that omits the
+		// difference is read as one: it must say which of the two it bounds.
+		capped := !tc.exact || tc.pages > pdfTextPages
+		if capped != strings.Contains(got, "Search covers the whole file.") {
+			t.Errorf("%s: caveat = %q, want the index disclaimer only when capped", tc.name, got)
 		}
 	}
 }
