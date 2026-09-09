@@ -145,7 +145,7 @@ type mintRequestWire struct {
 	// account whose pool the operator pays for — the exact inverse of
 	// CRED-02. TestMintAtZeroCap asserts the marshalled bytes for this
 	// reason: a decoded struct cannot tell an omitted field from a zero one.
-	Limit      USDCap           `json:"limit,omitempty"`
+	Limit      USDCap           `json:"limit"`
 	LimitReset LimitReset       `json:"limit_reset"`
 	External   mintExternalWire `json:"external"`
 }

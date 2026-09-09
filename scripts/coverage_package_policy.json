@@ -52,6 +52,7 @@
     "github.com/chetto1983/aura/internal/objectstore/garageadmin": {"mode": "baseline", "covered_statements": 107, "total_statements": 137},
     "github.com/chetto1983/aura/internal/obs": {"mode": "target"},
     "github.com/chetto1983/aura/internal/onboarding": {"mode": "target"},
+    "github.com/chetto1983/aura/internal/openrouterprovision": {"mode": "target"},
     "github.com/chetto1983/aura/internal/packs": {"mode": "target"},
     "github.com/chetto1983/aura/internal/pgnumeric": {"mode": "target"},
     "github.com/chetto1983/aura/internal/procgroup": {"mode": "baseline", "covered_statements": 3, "total_statements": 4},
