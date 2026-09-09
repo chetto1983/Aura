@@ -2,30 +2,13 @@
 """Browser smoke check for the exact generated HTML, before it becomes deliverable."""
 import argparse
 import json
-import os
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from playwright.sync_api import sync_playwright
 
 
-def approved_origins():
-    origins = set()
-    for raw in os.environ.get('AURA_ARTIFACT_CONNECT_ORIGINS', '').split(','):
-        value = raw.strip()
-        if not value:
-            continue
-        parsed = urlsplit(value)
-        if (parsed.scheme != 'https' or not parsed.hostname or parsed.username
-                or parsed.password or parsed.path not in ('', '/')
-                or parsed.query or parsed.fragment or '*' in value):
-            raise ValueError('Expected an exact HTTPS API origin: ' + value)
-        origins.add('https://' + parsed.netloc)
-    return origins
-
-
 def verify(path, output):
-    allowed = approved_origins()
     output.mkdir(parents=True, exist_ok=True)
     results = []
     with sync_playwright() as playwright:
@@ -38,15 +21,26 @@ def verify(path, output):
                 errors = []
 
                 def route_request(route):
+                    # Mirrors the policy Aura actually serves the artifact under:
+                    # connect-src is open, every other directive is still the sealed floor.
+                    # Letting a fetch through here that the preview would block, or blocking
+                    # one it would allow, makes this check lie in the direction that costs most.
                     request = route.request
                     url = urlsplit(request.url)
                     if url.scheme not in ('http', 'https'):
-                        route.continue_()
-                    elif (request.resource_type in ('fetch', 'xhr')
-                          and url.scheme + '://' + url.netloc in allowed):
-                        route.continue_()
+                        route.continue_()          # data:/blob: — bundled, always fine
+                    elif request.resource_type in ('fetch', 'xhr'):
+                        if url.scheme == 'https':
+                            route.continue_()      # connect-src *
+                        else:
+                            errors.append(
+                                'Live data must use https; the preview is served over TLS and '
+                                'a plain-http fetch is blocked as mixed content: ' + request.url)
+                            route.abort()
                     else:
-                        errors.append('External resource is not bundled/approved: ' + request.url)
+                        # Scripts, styles, fonts and images are NOT opened by connect-src:
+                        # the sealed policy still admits only bundled/data: resources.
+                        errors.append('External resource is not bundled: ' + request.url)
                         route.abort()
 
                 page.route('**/*', route_request)

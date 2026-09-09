@@ -77,11 +77,24 @@ Read `artifact-validation/report.json` and inspect both screenshots. Write and r
 additional Playwright assertions for the actual task's controls, data loading and
 visible results. The smoke check alone does not prove every interaction.
 
-All JS, CSS, fonts and images must be bundled. API fetch/XHR may use exact HTTPS
-origins listed in `AURA_ARTIFACT_CONNECT_ORIGINS`, but only if the operator has
-actually granted those origins in Aura. Setting this variable for a test cannot
-grant network permission in the cockpit. Without a grant, fetch data during
-creation and embed a timestamped snapshot.
+All JS, CSS, fonts and images must be bundled — `connect-src` is open, every other
+directive is not. API fetch/XHR to any HTTPS origin is allowed: the preview runs on
+an opaque origin (CSP `sandbox`), so it reaches no Aura API and carries no session,
+and there is no origin allowlist to configure.
+
+Prefer a live fetch to an embedded snapshot. Two conditions still decide, and both
+must be checked BEFORE you build, not discovered afterwards:
+
+- **The API must send CORS headers.** Many do not, and the response is then discarded
+  by the browser even though the request succeeded. Verify it — `curl -sI -H 'Origin:
+  https://example.com' <url>` must show `access-control-allow-origin`. Measured on
+  2026-09-09: coinbase, coingecko, binance and open-meteo send it;
+  `query1.finance.yahoo.com` does not, so a Yahoo-backed artifact cannot self-update.
+- **The URL must be https.** The preview is served over TLS, so a plain-http fetch is
+  blocked as mixed content.
+
+When either fails, fetch during authoring and embed a snapshot — labelled with its
+retrieval time AND the reason it is not live, so the reader knows which they hold.
 
 For current facts, read the source/API; search snippets alone are not a current
 measurement. Preserve source, location, units and retrieval time. Never label

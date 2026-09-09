@@ -214,7 +214,8 @@ func TestArtifactRenderCSP_SealedFloor(t *testing.T) {
 	for _, want := range []string{
 		"default-src 'none'",
 		"script-src 'unsafe-inline'",
-		"connect-src 'none'",     // the scripted exfiltration half
+		"connect-src *",          // open by design: the sandbox below, not a list, denies Aura
+		"sandbox allow-scripts",  // opaque origin, so a call to Aura carries no cookie
 		"base-uri 'none'",        // a re-introduced <base> would still be inert
 		"form-action 'none'",     // a form cannot post the document out
 		"frame-ancestors 'self'", // only the cockpit may frame it
@@ -225,6 +226,11 @@ func TestArtifactRenderCSP_SealedFloor(t *testing.T) {
 	}
 	if strings.Contains(csp, "'unsafe-eval'") {
 		t.Fatalf("policy grants unsafe-eval, which no self-contained build needs: %s", csp)
+	}
+	// allow-same-origin would undo the sandbox: the document could reclaim Aura's origin
+	// and with it the operator's cookie, which is the whole reason connect-src may be open.
+	if strings.Contains(csp, "allow-same-origin") {
+		t.Fatalf("policy grants allow-same-origin: %s", csp)
 	}
 }
 

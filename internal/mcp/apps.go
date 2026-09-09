@@ -52,10 +52,17 @@ type ViewRef struct {
 // stronger statement the host can seal against. Distinguishing them is why these
 // are pointers to slices nowhere and instead carry Declared* flags.
 type ViewPolicy struct {
-	ConnectDomains  []string
-	ResourceDomains []string
-	FrameDomains    []string
-	BaseURIDomains  []string
+	ConnectDomains []string
+	// AllowConnectWildcard lets a sole "*" in ConnectDomains open connect-src to every
+	// origin. Only the artifact renderer sets it, and only because an artifact document
+	// is served with the CSP `sandbox` directive: its origin is opaque, so a call back to
+	// Aura is cross-origin and carries no cookie, and the wildcard widens reach to
+	// external APIs WITHOUT widening reach to Aura. An MCP view never sets it — its
+	// domains are declared by a mounted server, which must not be able to name "*".
+	AllowConnectWildcard bool
+	ResourceDomains      []string
+	FrameDomains         []string
+	BaseURIDomains       []string
 
 	// DeclaredCSP is true when the resource carried a `csp` object at all, so a
 	// host can tell "sealed" (declared, empty) from "unspecified" (absent).

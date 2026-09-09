@@ -27,11 +27,11 @@ const dataProxyConvID = "data-proxy"
 // It is mounted behind the Phase-24 RequireAuth whole-origin gate inherited by every
 // /api/ route, so it is never an open relay. Note what that gate implies about the
 // caller: a SEALED ARTIFACT CANNOT REACH THIS ROUTE. Artifact previews are served
-// from Aura's own origin, and ViewPolicy.WithoutHost (internal/mcp/appcsp.go) strips
-// Aura's host from their connect-src precisely so a preview cannot call this API
-// carrying the operator's cookies. This proxy therefore serves the cockpit, not the
-// sandbox; artifact previews still reach external APIs only through
-// AURA_ARTIFACT_CONNECT_ORIGINS, and only where that API sends CORS headers.
+// from Aura's own origin under a CSP `sandbox` directive, so they hold an OPAQUE origin:
+// a call to /api/fetch from inside one is cross-origin and carries no session, and is
+// refused like any other anonymous request. This proxy therefore serves the cockpit, not
+// the sandbox. A preview reaches external APIs directly — its connect-src is open — and
+// succeeds wherever that API sends CORS headers.
 func (s *Server) handleDataProxy(w http.ResponseWriter, r *http.Request) {
 	if s.data == nil {
 		http.Error(w, "data proxy not configured", http.StatusServiceUnavailable)

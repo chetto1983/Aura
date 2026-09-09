@@ -10,6 +10,7 @@ HTML at desktop/mobile sizes before publishing bundle.html. Failed builds remove
 the old bundle instead of leaving a stale deliverable.
 
 The browser smoke does not prove data accuracy or all interactions. The author
-must inspect screenshots and test the requested behavior. A connection allowed
-in this test does not grant permission in Aura: AURA_ARTIFACT_CONNECT_ORIGINS must
-match the operator's actual preview configuration.
+must inspect screenshots and test the requested behavior. The smoke check mirrors
+the policy Aura actually serves: https fetch/XHR passes (connect-src is open because
+the preview holds an opaque origin), plain-http fetch fails as mixed content, and
+every other external resource must be bundled.

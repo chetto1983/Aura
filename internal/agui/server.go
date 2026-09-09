@@ -41,13 +41,12 @@ var errUnsupportedUserMessageContent = errors.New("agui: last user message conte
 // backends (Postgres + memory) are reachable. An empty list reports ready (the
 // daemon was started without gated deps).
 type ServerConfig struct {
-	ArtifactConnectOrigins []string
-	BufferCap              int
-	SSEHeartbeatSec        int
-	HealthCheck            func(context.Context) error
-	HealthDetails          func() map[string]any
-	ReadinessProbes        []ReadinessProbe
-	ReadinessState         *runtimereadiness.Snapshot
+	BufferCap       int
+	SSEHeartbeatSec int
+	HealthCheck     func(context.Context) error
+	HealthDetails   func() map[string]any
+	ReadinessProbes []ReadinessProbe
+	ReadinessState  *runtimereadiness.Snapshot
 	// SharePublicEnabled is the WEBSHARE-02/03 org kill-switch (AURA_SHARE_PUBLIC_ENABLED,
 	// config.ShareConfig.PublicEnabled) re-checked INSIDE handleShareCreate (share_api.go,
 	// plan 37F-10) — the R-08 gate that survives loopback dev, where RequireCapability

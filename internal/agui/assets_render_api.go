@@ -5,8 +5,6 @@ import (
 	"mime"
 	"net/http"
 	"strings"
-
-	"github.com/chetto1983/aura/internal/mcp"
 )
 
 // assets_render_api.go serves an agent-delivered HTML artifact as a real document, so
@@ -80,8 +78,7 @@ func (s *Server) handleAssetRender(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	policy := mcp.ViewPolicy{ConnectDomains: s.cfg.ArtifactConnectOrigins}.WithoutHost(hostnameOf(r))
-	sealed, err := prepareArtifactHTML(string(raw), policy.ConnectDomains...)
+	sealed, err := prepareArtifactHTML(string(raw))
 	if err != nil {
 		http.Error(w, "artifact could not be prepared for rendering", http.StatusUnprocessableEntity)
 		return
@@ -90,7 +87,7 @@ func (s *Server) handleAssetRender(w http.ResponseWriter, r *http.Request) {
 	h := w.Header()
 	h.Set("Content-Type", "text/html; charset=utf-8")
 	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Content-Security-Policy", artifactRenderCSP(policy.ConnectDomains...))
+	h.Set("Content-Security-Policy", artifactRenderCSP())
 	// The sealed bytes are derived per request and must not be cached by a shared
 	// intermediary keyed on the URL alone — the URL is identity-scoped, the cache is not.
 	h.Set("Cache-Control", "no-store")

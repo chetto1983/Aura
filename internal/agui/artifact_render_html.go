@@ -110,11 +110,28 @@ const artifactRuntimeShim = `
 // Reuse the MCP policy validator. Empty origins retain its offline floor; configured
 // HTTPS origins open only fetch/XHR, never remote scripts or access to the parent.
 //
-// frame-ancestors is appended because default-src does not cover it and a meta tag
-// cannot carry it: it only has meaning as a response header, which is precisely what
-// this document now has and a srcdoc never did.
-func artifactRenderCSP(connectOrigins ...string) string {
-	return mcp.ViewPolicy{ConnectDomains: connectOrigins}.ContentSecurityPolicy() + "; frame-ancestors 'self'"
+// frame-ancestors and sandbox are appended because default-src does not cover them and
+// a meta tag cannot carry either: both have meaning only as a response header, which is
+// precisely what this document now has and a srcdoc never did.
+//
+// `sandbox allow-scripts` (never allow-same-origin, which would let the document drop its
+// own sandbox) is what makes the artifact's origin OPAQUE. Framed artifacts were already
+// opaque through the iframe's sandbox attribute; a top-level tab was not, and measured on
+// 2026-09-09 an unframed artifact reached /api/secret with the operator's cookie and got
+// HTTP 200. With the directive the same fetch is cross-origin and fails. That opacity is
+// also what makes an operator connect-src wildcard safe: reach widens to external APIs,
+// never to Aura.
+func artifactRenderCSP() string {
+	return artifactViewPolicy().ContentSecurityPolicy() + "; frame-ancestors 'self'; sandbox allow-scripts"
+}
+
+// artifactViewPolicy is the single policy every artifact is served under. connect-src is
+// open because the sandbox above already denies the only target that mattered: Aura's own
+// API, now unreachable because an opaque origin sends no cookie. An operator allowlist
+// therefore protected nothing an attacker could still reach, while blocking every
+// legitimate API — so it is gone, and with it the configuration it required.
+func artifactViewPolicy() mcp.ViewPolicy {
+	return mcp.ViewPolicy{ConnectDomains: []string{"*"}, AllowConnectWildcard: true}
 }
 
 // prepareArtifactHTML scrubs the no-script fetch vectors out of an artifact, retargets
@@ -125,7 +142,7 @@ func artifactRenderCSP(connectOrigins ...string) string {
 // markup filter learns eventually: `<meta http-equiv = "refresh">`, mixed case, and
 // missing quotes are all valid HTML and all defeat a pattern. The parser sees the same
 // tree the browser will.
-func prepareArtifactHTML(raw string, connectOrigins ...string) (string, error) {
+func prepareArtifactHTML(raw string) (string, error) {
 	doc, err := html.Parse(strings.NewReader(raw))
 	if err != nil {
 		return "", err
@@ -146,8 +163,7 @@ func prepareArtifactHTML(raw string, connectOrigins ...string) (string, error) {
 		return "", err
 	}
 	// frame-ancestors is header-only: including it in a meta produces a browser error.
-	policy := mcp.ViewPolicy{ConnectDomains: connectOrigins}.ContentSecurityPolicy()
-	return mcp.ArmedHTML(out.String(), policy), nil
+	return mcp.ArmedHTML(out.String(), artifactViewPolicy().ContentSecurityPolicy()), nil
 }
 
 // findHead returns the document's <head>, which html.Parse synthesises even for a fragment.

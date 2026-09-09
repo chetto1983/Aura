@@ -46,7 +46,7 @@ func (p ViewPolicy) ContentSecurityPolicy() string {
 		"img-src " + join("data: blob:", resources),
 		"font-src " + join("data:", resources),
 		"media-src " + join("data: blob:", resources),
-		"connect-src " + orNone(validOrigins(p.ConnectDomains)),
+		"connect-src " + p.connectSources(),
 		"frame-src " + orNone(validOrigins(p.FrameDomains)),
 		"base-uri " + orNone(validOrigins(p.BaseURIDomains)),
 		"form-action 'none'",
@@ -155,6 +155,16 @@ func validOrigins(domains []string) []string {
 		}
 	}
 	return out
+}
+
+// connectSources renders connect-src. A sole "*" opens it when the caller opted in;
+// every other shape falls through to the origin validator, so a wildcard mixed into a
+// curated list is dropped rather than silently widening it.
+func (p ViewPolicy) connectSources() string {
+	if p.AllowConnectWildcard && len(p.ConnectDomains) == 1 && strings.TrimSpace(p.ConnectDomains[0]) == "*" {
+		return "*"
+	}
+	return orNone(validOrigins(p.ConnectDomains))
 }
 
 func join(base string, extra []string) string {
