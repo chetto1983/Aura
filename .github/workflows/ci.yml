@@ -61,6 +61,9 @@ jobs:
       - name: CI go-packages lint
         run: bash scripts/check_ci_go_packages.sh
 
+      - name: Capability declaration gate (RBAC-02)
+        run: bash scripts/check_capability_declaration.sh
+
       - name: Workflow pin gate self-test
         run: bash scripts/workflow_pin_gate_test.sh
 

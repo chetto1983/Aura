@@ -6,7 +6,7 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help tools sqlc memory-up-core lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract llm-model-contract web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval agent-memory-eval-running-aura critical-mutation observability-check observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up sandbox-images installer-artifact payload-manifest arcadedb-integration ingest-image ingest-test extractor-matrix ingest-reconcile sandbox-image-contract restore-drill load-chaos musr-e2e
+.PHONY: help tools sqlc memory-up-core lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract llm-model-contract capability-declaration web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval agent-memory-eval-running-aura critical-mutation observability-check observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up sandbox-images installer-artifact payload-manifest arcadedb-integration ingest-image ingest-test extractor-matrix ingest-reconcile sandbox-image-contract restore-drill load-chaos musr-e2e
 
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
@@ -30,6 +30,7 @@ help:
 	@echo "make test-race     — go test -race ./... (unit tier with race detector)"
 	@echo "make tagged-tier-compile — compile every discovered Aura integration/live/eval tier"
 	@echo "make file-size     — enforce 600-LOC cap via scripts/check-file-size.sh"
+	@echo "make capability-declaration — RBAC-02: capability names declared only in internal/identity/capabilities.go"
 	@echo "make web-lint      — frontend static gate: eslint --max-warnings=0 + tsc + prettier --check"
 	@echo "make web-test      — vitest run --coverage (>=85% thresholds enforced in vitest.config.ts)"
 	@echo "make web-mutation  — Stryker mutation run (break=70: fails below 70% killed)"
@@ -130,9 +131,9 @@ agent-eval:
 	go test -tags agent_eval -count=1 -v -timeout 30m ./internal/agenteval/
 
 # Pre-push gate that needs NO containers — fast feedback before a push.
-quality: deadcode vet file-size embedding-model-contract llm-model-contract lint test-race vuln
+quality: deadcode vet file-size capability-declaration embedding-model-contract llm-model-contract lint test-race vuln
 	go build $(GO_PACKAGES)
-	@echo "ok: quality gate passed (deadcode vet build file-size embedding-model-contract llm-model-contract lint test-race vuln)"
+	@echo "ok: quality gate passed (deadcode vet build file-size capability-declaration embedding-model-contract llm-model-contract lint test-race vuln)"
 
 # Full gate including the container-backed coverage floor.
 quality-full: quality coverage
@@ -150,6 +151,11 @@ tagged-tier-compile:
 
 file-size:
 	bash scripts/check-file-size.sh
+
+# RBAC-02: every capability_grants name is declared exactly once, in
+# internal/identity/capabilities.go, and nowhere else.
+capability-declaration:
+	bash scripts/check_capability_declaration.sh
 
 embedding-model-contract:
 	bash scripts/fetch_embedding_model_test.sh
