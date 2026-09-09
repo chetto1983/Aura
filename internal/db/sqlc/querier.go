@@ -597,6 +597,20 @@ type Querier interface {
 	SoftDeleteAsset(ctx context.Context, arg SoftDeleteAssetParams) (AuraAssets, error)
 	// Preserve control intent committed while the worker held its original snapshot.
 	StageDelegationDelivery(ctx context.Context, arg StageDelegationDeliveryParams) (AuraIngestionJobs, error)
+	// Per-identity period spend (CRED-06): sums aura.cache_metrics.cost_usd, joined to
+	// aura.conversations for the identity scope none of the three queries above needs.
+	// Callers MUST run this through internal/db.WithIdentityTx(ctx, pool, identityID, ...)
+	// scoped to the SUBJECT identity of the read, never the caller -- migration 0032's
+	// conversations_owner_isolation RLS policy filters the join to app.current_identity,
+	// and an admin's OWN identity in that session var would silently lose every row
+	// belonging to the identity being inspected (mirrors internal/agui/audit_store.go's
+	// ListActivityForIdentity doc comment: "a read scoped to the caller while asking about
+	// the subject silently loses the joined rows"). Returns an exact decimal zero for an
+	// identity with no rows (coalesce), matching AggregateCacheMetricsSince's own
+	// convention -- never a null read as an error, and never rounded here: the caller
+	// (internal/agui/credit_ledger.go) reads this at full stored scale and rounds only at
+	// the display boundary.
+	SumIdentitySpendSince(ctx context.Context, arg SumIdentitySpendSinceParams) (interface{}, error)
 	SweepDueNotifications(ctx context.Context, arg SweepDueNotificationsParams) ([]SweepDueNotificationsRow, error)
 	TouchTelegramLastSeen(ctx context.Context, telegramUserID int64) error
 	TryStartOperation(ctx context.Context, arg TryStartOperationParams) (int64, error)

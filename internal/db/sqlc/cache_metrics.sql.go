@@ -101,3 +101,36 @@ func (q *Queries) ListCacheMetricsSince(ctx context.Context, since pgtype.Timest
 	}
 	return items, nil
 }
+
+const sumIdentitySpendSince = `-- name: SumIdentitySpendSince :one
+SELECT coalesce(sum(cm.cost_usd), 0) AS total_spend
+FROM aura.cache_metrics cm
+JOIN aura.conversations c ON c.id = cm.conversation_id
+WHERE c.identity_id = $1::uuid
+  AND cm.ts >= $2::timestamptz
+`
+
+type SumIdentitySpendSinceParams struct {
+	IdentityID pgtype.UUID        `json:"identity_id"`
+	Since      pgtype.Timestamptz `json:"since"`
+}
+
+// Per-identity period spend (CRED-06): sums aura.cache_metrics.cost_usd, joined to
+// aura.conversations for the identity scope none of the three queries above needs.
+// Callers MUST run this through internal/db.WithIdentityTx(ctx, pool, identityID, ...)
+// scoped to the SUBJECT identity of the read, never the caller -- migration 0032's
+// conversations_owner_isolation RLS policy filters the join to app.current_identity,
+// and an admin's OWN identity in that session var would silently lose every row
+// belonging to the identity being inspected (mirrors internal/agui/audit_store.go's
+// ListActivityForIdentity doc comment: "a read scoped to the caller while asking about
+// the subject silently loses the joined rows"). Returns an exact decimal zero for an
+// identity with no rows (coalesce), matching AggregateCacheMetricsSince's own
+// convention -- never a null read as an error, and never rounded here: the caller
+// (internal/agui/credit_ledger.go) reads this at full stored scale and rounds only at
+// the display boundary.
+func (q *Queries) SumIdentitySpendSince(ctx context.Context, arg SumIdentitySpendSinceParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, sumIdentitySpendSince, arg.IdentityID, arg.Since)
+	var total_spend interface{}
+	err := row.Scan(&total_spend)
+	return total_spend, err
+}

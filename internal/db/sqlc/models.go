@@ -110,7 +110,8 @@ type AuraCacheMetrics struct {
 	Ts             pgtype.Timestamptz `json:"ts"`
 	PromptTokens   int32              `json:"prompt_tokens"`
 	CachedTokens   int32              `json:"cached_tokens"`
-	CostUsd        pgtype.Numeric     `json:"cost_usd"`
+	// Per-turn cost at full provider precision (migration 0124, numeric(24,12), T-02-36). Widened from numeric(10,4): the pre-widening scale rounded any per-call cost under $0.0001 to zero, including the measured 0.000004158 (02-CONTEXT.md M-09).
+	CostUsd pgtype.Numeric `json:"cost_usd"`
 }
 
 // Append-only capability-refusal ledger (migration 0123, RBAC-09/RBAC-10). One row per RequireCapability refusal branch (internal/agui/auth.go): who (identity_id, text -- a documented sentinel for the no-principal case), which capability, which matched route pattern, when, and a closed-set cause. No request body, header, cookie, token, IP or user agent. Read back through GET /api/admin/audit's fifth UNION leg (internal/agui/audit_store.go).

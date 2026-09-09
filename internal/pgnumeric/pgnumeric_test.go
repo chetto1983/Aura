@@ -9,11 +9,13 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// TestNumericFromFloat_Characterization pins the numeric(10,4) encoding of the
-// canonical helper (QUAL-03). The expected Int+Exp values are the union of inputs the
-// two old copies (conversations.numericFromFloat / cachemetrics.numericFromFloat)
-// handled identically; only their out-of-range error STRING differed, so this asserts
-// the pgtype.Numeric value and err-presence, never the message (Pitfall 5).
+// TestNumericFromFloat_Characterization pins the numeric(24,12) encoding of the
+// canonical helper (QUAL-03, widened by phase 02 plan 07's T-02-36 checkpoint). Small,
+// exactly-float64-representable inputs assert an EXACT mantissa; the two boundary
+// cases assert only Valid/Exp plus a round-trip tolerance, because DefaultNumericMaxCost
+// itself is a repeating-binary-fraction literal whose OWN float64 representation is
+// already inexact at the 12th decimal — asserting a hardcoded mantissa there would pin
+// the Go compiler's literal rounding, not this function's behavior.
 func TestNumericFromFloat_Characterization(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -23,12 +25,13 @@ func TestNumericFromFloat_Characterization(t *testing.T) {
 		wantErr bool
 	}{
 		{"zero", 0, 0, -numericScale, false},
-		{"positive 1.2345", 1.2345, 12345, -numericScale, false},
-		{"negative 1.2345", -1.2345, -12345, -numericScale, false},
-		{"round half-away 0.12345", 0.12345, 1235, -numericScale, false},
-		{"max boundary", DefaultNumericMaxCost, 9999999999, -numericScale, false},
-		{"min boundary", -DefaultNumericMaxCost, -9999999999, -numericScale, false},
-		{"tiny rounds to zero", 0.00001, 0, -numericScale, false},
+		{"positive 1.2345", 1.2345, 1234500000000, -numericScale, false},
+		{"negative 1.2345", -1.2345, -1234500000000, -numericScale, false},
+		{"round half-away 0.12345", 0.12345, 123450000000, -numericScale, false},
+		// The M-09 measured per-call cost (02-CONTEXT.md): at the OLD scale-4 encoder
+		// this rounded to 0.0000. This is the assertion the whole widening exists for.
+		{"M-09 measured per-call cost 0.000004158", 0.000004158, 4158000, -numericScale, false},
+		{"tiny rounds to zero at scale 12", 0.0000000000004, 0, -numericScale, false},
 		{"over range", 1e9, 0, 0, true},
 		{"under range", -1e9, 0, 0, true},
 		{"NaN", math.NaN(), 0, 0, true},
@@ -57,6 +60,26 @@ func TestNumericFromFloat_Characterization(t *testing.T) {
 				t.Errorf("NumericFromFloat(%v) Exp = %d, want %d", tc.in, got.Exp, tc.wantExp)
 			}
 		})
+	}
+}
+
+// TestNumericFromFloat_BoundaryRoundTrips proves the two out-of-band-adjacent boundary
+// values (±DefaultNumericMaxCost) encode successfully at the new scale and round-trip
+// within the float64 precision the boundary CONSTANT itself already carries — a
+// tolerance-based assertion, not an exact mantissa, for the reason the characterization
+// test's doc comment states.
+func TestNumericFromFloat_BoundaryRoundTrips(t *testing.T) {
+	for _, f := range []float64{DefaultNumericMaxCost, -DefaultNumericMaxCost} {
+		got, err := NumericFromFloat(f)
+		if err != nil {
+			t.Fatalf("NumericFromFloat(%v): unexpected error %v", f, err)
+		}
+		if !got.Valid || got.Exp != -numericScale {
+			t.Fatalf("NumericFromFloat(%v) = %+v, want Valid Exp=%d", f, got, -numericScale)
+		}
+		if round := FloatFromNumeric(got); round < f-1e-6 || round > f+1e-6 {
+			t.Errorf("NumericFromFloat(%v) round-trip = %v, want within 1e-6", f, round)
+		}
 	}
 }
 
