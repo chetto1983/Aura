@@ -377,12 +377,35 @@ editing, version history, React bundling or arbitrary external network access.
 Acceptance and verification details: `.planning/artifact-workspace-plan.md`.
 
 The chat composer remains anchored to the workspace bottom; only the transcript
-scrolls. HTML preview fetch/XHR may use operator-approved HTTPS origins from
-`AURA_ARTIFACT_CONNECT_ORIGINS` (comma-separated, empty means offline). The shared
-MCP CSP validator rejects malformed origins and removes the cockpit host across
-ports. Both document policy and response header enforce the same connect list;
-the header alone carries `frame-ancestors`. This does not enable remote scripts,
-forms, same-origin access or arbitrary network origins.
+scrolls. HTML preview fetch/XHR may reach any HTTPS origin: `connect-src` is `*`,
+and there is no operator allowlist. `AURA_ARTIFACT_CONNECT_ORIGINS` was retired on
+2026-09-09 along with its config field and compose plumbing.
+
+What replaced it is the CSP `sandbox allow-scripts` directive (never
+`allow-same-origin`, which would let the document drop its own sandbox), carried by
+the response header because a meta policy ignores `sandbox`. The document therefore
+holds an opaque origin, so a call to Aura's own API is cross-origin and carries no
+session cookie. Measured against Chromium on 2026-09-09: a top-level artifact tab
+without the directive read `/api/secret`, received HTTP 200 with the operator's
+cookie, and shipped the body to an external origin by both fetch and an `<img>`
+beacon; with the directive the same fetch fails as cross-origin. Framed previews
+were already opaque through the iframe's own sandbox attribute — the unframed path
+was the gap, and it is what the allowlist had actually been standing in for.
+Verified end-to-end on a running stack: inside a real rendered artifact a live
+`api.coinbase.com` fetch succeeds while `/api/me` is refused.
+
+This does not enable remote scripts, forms, or same-origin access: only data
+connections are opened, and every other directive keeps the sealed floor. It does
+NOT prevent an artifact sending its OWN contents outward — that channel is open by
+design and is the accepted trade for artifacts that update themselves. It also does
+not make every API reachable in practice: the browser still discards a response
+whose origin sends no CORS headers, which is why `query1.finance.yahoo.com` (200,
+no `Access-Control-Allow-Origin`, measured 2026-09-09) cannot back a self-updating
+artifact while `api.coinbase.com`, `api.coingecko.com`, `api.binance.com` and
+`api.open-meteo.com` can. The shared MCP CSP validator still rejects malformed
+origins and removes the cockpit host across ports for MCP views, whose connect
+domains are declared by a mounted server rather than the operator; the wildcard is
+opt-in (`ViewPolicy.AllowConnectWildcard`) and only the artifact renderer sets it.
 
 The per-identity sandbox image includes Python Playwright 1.62.0, its matching
 Chromium and system dependencies. HTML delivery instructions require browser
