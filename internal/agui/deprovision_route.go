@@ -76,14 +76,11 @@ func (s *Server) handleRemoveIdentity(w http.ResponseWriter, r *http.Request) {
 	// Two simultaneous DELETEs for the same identity coalesce into ONE saga run
 	// (RBAC-05 concurrency probe): the loser never calls Deactivate/PurgeOne itself,
 	// it waits on and receives the SAME outcome the first caller's run produces.
-	// SEEDED RED DEFECT (removed in the GREEN commit): PurgeOne called BEFORE
-	// Deactivate, reversing D-06's sequence. TestRemoveIdentityRunsFullSaga fails
-	// for real on the ORDER assertion against this sequence.
 	_, err, _ := s.idRemovalGroup.Do(targetID, func() (any, error) {
-		if err := s.idRemover.PurgeOne(ctx, targetID); err != nil {
+		if err := s.idRemover.Deactivate(ctx, targetID); err != nil {
 			return removalOutcome{}, err
 		}
-		return removalOutcome{}, s.idRemover.Deactivate(ctx, targetID)
+		return removalOutcome{}, s.idRemover.PurgeOne(ctx, targetID)
 	})
 	if err != nil {
 		if errors.Is(err, identity.ErrLastAdministrator) {

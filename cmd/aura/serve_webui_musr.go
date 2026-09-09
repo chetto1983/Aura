@@ -31,12 +31,15 @@ package main
 //     surface that IS still admin-exclusive under D-01 (identity.delete is one of
 //     exactly two administrative capabilities), and copying the neighbouring
 //     governance.write mount would make removal available to every user in the
-//     deployment. See identityDeleteCapability's own comment (serve_webui_routes.go).
+//     deployment. Referenced directly as identity.CapIdentityDelete (not through a
+//     same-shaped local alias like identityCreateCapability) so the mount and the
+//     capability name it depends on are one grep away from each other.
 
 import (
 	"net/http"
 
 	"github.com/chetto1983/aura/internal/agui"
+	"github.com/chetto1983/aura/internal/identity"
 )
 
 const (
@@ -62,7 +65,7 @@ func registerMUSRRoutes(mux *http.ServeMux, aguiHandler http.Handler, auth agui.
 	mux.Handle(adminAuditRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(adminCreditGetRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(adminCreditSetRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
-	// The ONE route on this surface gated on identity.delete rather than
-	// governance.write — see the file header and identityDeleteCapability's comment.
-	mux.Handle(adminRemoveRoute, agui.RequireCapability(aguiHandler, auth, identityDeleteCapability))
+	// The ONE route on this surface gated on identity.CapIdentityDelete rather than
+	// governance.write — see the file header for why.
+	mux.Handle(adminRemoveRoute, agui.RequireCapability(aguiHandler, auth, identity.CapIdentityDelete))
 }

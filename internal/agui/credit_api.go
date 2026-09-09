@@ -265,25 +265,25 @@ func (s *Server) handleSetCredit(w http.ResponseWriter, r *http.Request) {
 		finalLimitReset = appliedReset
 	}
 
-	// SEEDED RED DEFECT (removed in the GREEN commit): PATCH called BEFORE the store
-	// write, reversing the plan's own instruction. TestAdminSetCreditProviderFailureAfterStoreWrite
-	// fails for real against this ordering: keys.saveCalls is 0 (Save has not run
-	// yet) when the provider fails, contradicting the test's premise.
-	if _, err := s.credit.provider.PatchCap(ctx, rec.Hash, patch); err != nil {
-		writeJSONStatus(w, http.StatusBadGateway, map[string]any{
-			"error":            "cap saved locally but the provider update failed; retry to sync the provider",
-			"store_applied":    true,
-			"provider_applied": false,
-		})
-		return
-	}
-
+	// ORDER: store first, then PATCH the provider (see file header). Neither field
+	// the caller did NOT ask to change is touched -- rec.Key/Hash/Label pass through
+	// unchanged, and finalLimitUSD/finalLimitReset default to the loaded record's own
+	// values when their body field was nil.
 	if err := s.credit.keys.Save(ctx, identitykey.Record{
 		Key: rec.Key, Hash: rec.Hash, Label: rec.Label,
 		LimitUSD: finalLimitUSD, LimitReset: finalLimitReset,
 	}); err != nil {
 		writeJSONStatus(w, http.StatusBadGateway, map[string]string{
 			"error": "store write failed; nothing changed",
+		})
+		return
+	}
+
+	if _, err := s.credit.provider.PatchCap(ctx, rec.Hash, patch); err != nil {
+		writeJSONStatus(w, http.StatusBadGateway, map[string]any{
+			"error":            "cap saved locally but the provider update failed; retry to sync the provider",
+			"store_applied":    true,
+			"provider_applied": false,
 		})
 		return
 	}
