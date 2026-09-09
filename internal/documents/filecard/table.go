@@ -236,9 +236,15 @@ type columnStats struct {
 	counts   map[string]int
 	capped   bool
 	numeric  int
-	hasNum   bool
-	minNum   float64
-	maxNum   float64
+	// padded counts values written with a leading zero on the integer part. Decimal
+	// notation never pads, so such a value is a fixed-width CODE and the column that
+	// holds it stores identifiers rather than quantities. Reading it as a number drops
+	// the zeros that make the code valid, and the card then states a type and a range
+	// that no cell in the file actually has.
+	padded int
+	hasNum bool
+	minNum float64
+	maxNum float64
 }
 
 func (c *columnStats) add(raw string) {
@@ -252,6 +258,12 @@ func (c *columnStats) add(raw string) {
 		c.counts[key]++
 	} else {
 		c.capped = true
+	}
+	if isZeroPadded(value) {
+		// Deliberately BEFORE parseNumber, so a padded value feeds neither the numeric
+		// share nor the extent: it is not a quantity and its magnitude is meaningless.
+		c.padded++
+		return
 	}
 	number, ok := parseNumber(value)
 	if !ok {
@@ -287,6 +299,12 @@ func (c *columnStats) kind() string {
 	switch {
 	case c.nonEmpty == 0:
 		return "empty"
+	// One padded value settles the column: padding is a property of how the column is
+	// written, not of the single cell, so the rest of it holds codes that merely happen
+	// not to need a zero. A share test would call such a column a number whenever the
+	// padded minority is small enough, which is exactly when the error is hardest to see.
+	case c.padded > 0:
+		return "text"
 	case c.numeric*10 >= c.nonEmpty*9:
 		return "number"
 	case c.numeric*10 <= c.nonEmpty:
@@ -356,6 +374,16 @@ func readsAsLabels(values []string) bool {
 // parseNumber accepts both decimal conventions. A spreadsheet cell arrives
 // canonicalised ("1234.56"), but a CSV written in Italy says "1.234,56", and
 // reading that as text would put every amount in the wrong column narration.
+// isZeroPadded reports whether value writes its integer part with a leading zero, as
+// 004040 or 03 do and as 0, 0.5 and -0.75 do not.
+func isZeroPadded(value string) bool {
+	digits := strings.TrimLeft(value, "+-")
+	if len(digits) < 2 || digits[0] != '0' {
+		return false
+	}
+	return digits[1] >= '0' && digits[1] <= '9'
+}
+
 func parseNumber(value string) (float64, bool) {
 	if number, err := strconv.ParseFloat(value, 64); err == nil {
 		return number, true

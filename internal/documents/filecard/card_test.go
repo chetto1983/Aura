@@ -351,3 +351,35 @@ func TestUnknownExtensionGetsAnHonestCard(t *testing.T) {
 		t.Errorf("unknown type oversells itself:\n%s", card.Render())
 	}
 }
+
+// A value written with a leading zero is a fixed-width code, not a quantity, whatever the
+// file is about. Typing such a column as a number makes the card state a range no cell in
+// the file has -- and an agent reading "number, from 1001" answers 4040 for a cell that
+// reads 004040, dropping the zeros that make the code valid.
+func TestZeroPaddedColumnsAreNotNumbers(t *testing.T) {
+	for name, tt := range map[string]struct {
+		values []string
+		want   string
+	}{
+		"all padded":       {[]string{"004040", "028001", "070027"}, "text"},
+		"one padded":       {[]string{"12023", "35031", "00010", "56021"}, "text"},
+		"plain integers":   {[]string{"1001", "119024", "20"}, "number"},
+		"zero and decimal": {[]string{"0", "0.5", "-0.75"}, "number"},
+		"words":            {[]string{"Torino", "Bergamo"}, "text"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			stats := &columnStats{header: "c", counts: map[string]int{}}
+			for _, value := range tt.values {
+				stats.add(value)
+			}
+			column := stats.column()
+			if column.Type != tt.want {
+				t.Fatalf("type = %q, want %q for %v", column.Type, tt.want, tt.values)
+			}
+			// The extent is what carried the wrong claim, so it must be gone with the type.
+			if column.Type != "number" && (column.Min != "" || column.Max != "") {
+				t.Fatalf("a non-numeric column kept a range: %s..%s", column.Min, column.Max)
+			}
+		})
+	}
+}
