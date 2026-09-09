@@ -250,6 +250,10 @@ type Querier interface {
 	// makes a re-run for an already-recorded turn a no-op rather than a PK violation or a
 	// duplicate, so a retry after a transient failure can never double-count the metric (WR-03).
 	InsertCacheMetric(ctx context.Context, arg InsertCacheMetricParams) error
+	// The only query this table needs: RequireCapability's three refusal branches write here,
+	// and the read side goes through audit_store.go's UNION leg (raw pgx, no sqlc query), not
+	// through a second generated method.
+	InsertCapabilityDenial(ctx context.Context, arg InsertCapabilityDenialParams) error
 	InsertContextRotEvent(ctx context.Context, arg InsertContextRotEventParams) error
 	// parent_seq maintains the canonical leaf->root chain the branch walk recurses on
 	// (ListManagedBranchPathPage joins `t.seq = p.parent_seq`). It is derived here rather

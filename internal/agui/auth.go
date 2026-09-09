@@ -18,6 +18,7 @@ package agui
 
 import (
 	"context"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -34,6 +35,15 @@ import (
 type identityChecker interface {
 	GetIdentityByID(ctx context.Context, id string) (Identity, error)
 	HasCapability(ctx context.Context, id, capability string) (bool, error)
+}
+
+// capabilityDenialRecorder is the consumer-side seam RequireCapability uses to persist a
+// refusal (RBAC-10, T-02-20). Declared here next to its only caller, matching this
+// package's own convention (deprovision.go's SessionTerminator, audit_api.go's
+// auditReader) — capability_denial_store.go's PgCapabilityDenialStore satisfies it
+// implicitly.
+type capabilityDenialRecorder interface {
+	RecordDenial(ctx context.Context, identityID, capability, route, cause string) error
 }
 
 // Identity is the minimal projection the auth boundary observes — it mirrors the
@@ -94,6 +104,11 @@ type AuthDeps struct {
 	// withPrincipal + RequireCapability contract — only the issuer/validator of the
 	// cookie changes, never the principalKey{} downstream.
 	SessionValidator func(r *http.Request) (identityID string, ok bool)
+	// DenialRecorder persists a capability refusal (RBAC-10): RequireCapability calls it
+	// on each of its three refusal branches before writing the 403. nil is a no-op — the
+	// gate must work before the composition root wires the store, matching
+	// SetAuditStore's 503-until-wired precedent.
+	DenialRecorder capabilityDenialRecorder
 }
 
 // ttl resolves the effective absolute session lifetime, defaulting a zero/negative
@@ -238,10 +253,13 @@ func (d AuthDeps) redirectToLogin(w http.ResponseWriter, r *http.Request) {
 // RequireCapability wraps a mutating-route handler with the capability_grants check
 // (D-04): it reads the principal RequireAuth stashed, asks the identity store
 // HasCapability(principal, capability), and 403s on a missing principal, a store error,
-// or a denied capability. This is the seam that exercises the dormant capability_grants
-// scaffolding on the ONLY mutating route (POST /agent/run); the seeded `local` identity
-// passes via its `*` wildcard. It invents NO governance write routes — those land in
-// Phase 28. Exported so the composition root (cmd/aura) interposes it on the parent mux.
+// or a denied capability. Phase 2 retired the `*` catch-all grant (RBAC-01); this gate is
+// now interposed on every mutating route across the parent mux (see
+// cmd/aura/serve_webui*.go for the full mount list), not just POST /agent/run. Each
+// refusal branch also records a denial (RBAC-10, T-02-20) through DenialRecorder before
+// writing the 403 — DenialRecorder is nil-safe (a no-op) so the gate still works before
+// the composition root wires the store, matching SetAuditStore's 503-until-wired
+// precedent. Exported so the composition root (cmd/aura) interposes it on the parent mux.
 func RequireCapability(next http.Handler, deps AuthDeps, capability string) http.Handler {
 	if !deps.SecretConfigured {
 		return next // loopback dev - auth disabled, pass-through with RequireAuth
@@ -249,16 +267,55 @@ func RequireCapability(next http.Handler, deps AuthDeps, capability string) http
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		identityID := principalFrom(r.Context())
 		if identityID == "" {
+			deps.recordDenial(r, NoPrincipalIdentityID, capability, DenialCauseNoPrincipal)
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		ok, err := deps.Identities.HasCapability(r.Context(), identityID, capability)
-		if err != nil || !ok {
+		if err != nil {
+			deps.recordDenial(r, identityID, capability, DenialCauseStoreError)
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		if !ok {
+			deps.recordDenial(r, identityID, capability, DenialCauseNotHeld)
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// capabilityDenialWriteTimeout bounds the denial-record write (T-02-21): the response is
+// already going out, so a slow or dead database must not hold the 403 open indefinitely.
+const capabilityDenialWriteTimeout = 3 * time.Second
+
+// recordDenial writes one capability-refusal row via DenialRecorder (RBAC-10). It never
+// lets the write's outcome change the refusal it documents (T-02-20): a nil recorder is a
+// no-op, and a write failure is logged at warn — the ONE deliberate "errors passing
+// silently" exception in this plan — while the 403 the caller is about to see stands
+// either way. The write runs on a context.WithoutCancel-derived, timeout-bounded context
+// (T-02-21): the request's own context is about to be cancelled as the response goes out,
+// and a fire-and-forget goroutine would lose the write on shutdown and lose ordering, so
+// this stays synchronous with a detached context instead.
+func (d AuthDeps) recordDenial(r *http.Request, identityID, capability, cause string) {
+	if d.DenialRecorder == nil {
+		return
+	}
+	route := denialRoute(r)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), capabilityDenialWriteTimeout)
+	defer cancel()
+	if err := d.DenialRecorder.RecordDenial(ctx, identityID, capability, route, cause); err != nil {
+		slog.Warn("aura: capability denial record failed", "identity", identityID, "capability", capability, "route", route, "cause", cause, "err", err)
+	}
+}
+
+// denialRoute records the request path a denial occurred on. It deliberately reads
+// r.URL.Path here as a placeholder — see the 02-04 Task 1 GREEN commit, which replaces
+// this with the matched route PATTERN (Go 1.22+ http.Request.Pattern) so a denial on
+// /api/admin/identities/{id}/capabilities reads as ONE route instead of one row per id.
+func denialRoute(r *http.Request) string {
+	return r.URL.Path
 }
 
 // principalKey is the unexported context key the authenticated identity id is stashed

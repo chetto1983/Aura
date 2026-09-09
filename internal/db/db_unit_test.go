@@ -359,9 +359,10 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	}
 	// The explicit pin forces review of every schema change. Migrations 0121 and
 	// 0122 (plan 02-01) retire the capability wildcard (RBAC-01) and add the
-	// per-identity encrypted OpenRouter key store (CRED-01).
-	if head != 122 {
-		t.Fatalf("MigrationHead=%d, want embedded head 122", head)
+	// per-identity encrypted OpenRouter key store (CRED-01). 0123 (plan 02-04)
+	// adds the capability-denial ledger (RBAC-09/RBAC-10).
+	if head != 123 {
+		t.Fatalf("MigrationHead=%d, want embedded head 123", head)
 	}
 }
 

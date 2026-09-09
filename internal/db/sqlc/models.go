@@ -113,6 +113,16 @@ type AuraCacheMetrics struct {
 	CostUsd        pgtype.Numeric     `json:"cost_usd"`
 }
 
+// Append-only capability-refusal ledger (migration 0123, RBAC-09/RBAC-10). One row per RequireCapability refusal branch (internal/agui/auth.go): who (identity_id, text -- a documented sentinel for the no-principal case), which capability, which matched route pattern, when, and a closed-set cause. No request body, header, cookie, token, IP or user agent. Read back through GET /api/admin/audit's fifth UNION leg (internal/agui/audit_store.go).
+type AuraCapabilityDenials struct {
+	ID         int64              `json:"id"`
+	IdentityID string             `json:"identity_id"`
+	Capability string             `json:"capability"`
+	Route      string             `json:"route"`
+	Cause      string             `json:"cause"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
 // Per-identity capability grants. The `*` wildcard is retired as of 0121 (RBAC-01) — HasCapability matches only the exact capability name.
 type AuraCapabilityGrants struct {
 	IdentityID pgtype.UUID        `json:"identity_id"`
