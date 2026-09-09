@@ -121,3 +121,86 @@ def test_an_outline_that_reaches_the_body_is_kept():
     entries = [(0, "Capitolo I"), (0, "Capitolo II"), (0, "Capitolo III")]
 
     assert len(outline.anchors_in(text, entries)) == 3
+
+
+def test_markdown_headings_become_the_outline(tmp_path):
+    """Markdown keeps its outline in the body, so the PDF branch found nothing at all:
+    measured 2026-09-09, prd.md and aura-quality-snapshot.md came back with a character
+    span and an empty heading_path while their passage text carried the heading line."""
+    source = tmp_path / "prd.md"
+    source.write_text(
+        "# Aura
+
+intro
+
+## 1. Scope
+
+lo scopo
+
+### 1.1 Limiti
+
+i limiti
+
+"
+        "## 2. Architettura
+
+i livelli
+",
+        encoding="utf-8",
+    )
+
+    entries = outline.titles_of(str(source))
+
+    assert entries == [
+        (1, "Aura"), (2, "1. Scope"), (3, "1.1 Limiti"), (2, "2. Architettura"),
+    ]
+    # The hashes are left behind because anchors_in searches the EXTRACTED text, where the
+    # line still reads "## 1. Scope": the bare title lands on the heading, hashes and all.
+    text = source.read_text(encoding="utf-8")
+    anchors = outline.anchors_in(text, entries)
+    assert [a.heading_path for a in anchors] == [
+        ("Aura",),
+        ("Aura", "1. Scope"),
+        ("Aura", "1. Scope", "1.1 Limiti"),
+        ("Aura", "2. Architettura"),
+    ]
+
+
+def test_the_parser_reads_what_a_pattern_of_ours_would_lose(tmp_path):
+    """Each of these is a case a hand-written ATX regex gets wrong or has to special-case:
+    a '#' inside a fence is a shell comment, closing hashes are not part of the title, and
+    a setext heading is underlined rather than prefixed."""
+    source = tmp_path / "guide.md"
+    source.write_text(
+        "# Guida
+
+```bash
+# non e' una sezione
+make quality
+```
+
+"
+        "## Davvero ##
+
+Sottotitolo
+===========
+
+| a | b |
+|---|---|
+",
+        encoding="utf-8",
+    )
+
+    assert outline.titles_of(str(source)) == [
+        (1, "Guida"), (2, "Davvero"), (1, "Sottotitolo"),
+    ]
+
+
+def test_a_format_neither_branch_reads_keeps_its_empty_outline(tmp_path):
+    """An unreadable outline must leave the document indexed exactly as it is today."""
+    source = tmp_path / "note.txt"
+    source.write_text("# non markdown
+", encoding="utf-8")
+
+    assert outline.titles_of(str(source)) == []
+    assert outline.titles_of(str(tmp_path / "assente.md")) == []

@@ -23,6 +23,7 @@ import pathlib
 import re
 
 _PDF_SUFFIX = ".pdf"
+_MARKDOWN_SUFFIXES = (".md", ".markdown")
 
 # A contents entry renders as the title, a run of dot leaders and a page number:
 # "1.1. ArcadeDB Documentation . . . . . . . . . 2". A body heading has none of that.
@@ -57,10 +58,14 @@ class Anchor:
 def titles_of(path: str) -> list[tuple[int, str]]:
     """The outline as (depth, title), or [] for anything without a readable one.
 
-    Never raises: a PDF with no outline, a damaged one, or a format that is not a PDF at
-    all must leave the document indexed exactly as it is today, not fail its ingest.
+    Never raises: a document with no outline, a damaged one, or a format neither branch
+    below reads must leave the document indexed exactly as it is today, not fail its
+    ingest.
     """
-    if pathlib.PurePath(path).suffix.lower() != _PDF_SUFFIX:
+    suffix = pathlib.PurePath(path).suffix.lower()
+    if suffix in _MARKDOWN_SUFFIXES:
+        return _markdown_titles(path)
+    if suffix != _PDF_SUFFIX:
         return []
     try:
         from pypdf import PdfReader
@@ -69,6 +74,44 @@ def titles_of(path: str) -> list[tuple[int, str]]:
     except Exception:  # noqa: BLE001 - no outline is a normal document, never an error
         return []
     return _walk(outline)
+
+
+def _markdown_titles(path: str) -> list[tuple[int, str]]:
+    """The headings of a Markdown file, as (depth, title), read by a CommonMark parser.
+
+    Markdown keeps its outline in the body rather than in a structure beside it, so the PDF
+    branch finds nothing at all here. Measured 2026-09-09 through the documents MCP server:
+    prd.md and aura-quality-snapshot.md returned passages whose locator carried a character
+    span and no heading_path, while the passage text plainly contained the line
+    "## 16. Observability and operator experience" -- the heading sat in the evidence and
+    was missing from the field meant to name it.
+
+    A parser and not a pattern, for reasons a pattern loses one at a time: a line opening
+    with '#' inside a fenced block is a shell comment, `## Title ##` closes with hashes that
+    are not part of the title, and a setext heading is underlined rather than prefixed.
+    Measured on this repo 2026-09-09 against a hand-written ATX regex: both find prd.md's
+    20 headings, both skip the fence, but the regex misses setext entirely and has to track
+    fence state itself. markdown-it-py is the CommonMark reference implementation for
+    Python, pure Python and dependency-light.
+
+    The title comes back as the parser's inline content, which is what the line still reads
+    in the EXTRACTED text anchors_in searches -- verified 20/20 on prd.md.
+    """
+    try:
+        text = pathlib.Path(path).read_text(encoding="utf-8", errors="replace")
+        from markdown_it import MarkdownIt
+
+        tokens = MarkdownIt("commonmark").parse(text)
+    except (OSError, ImportError):  # unreadable or unparseable: no headings, never a failed ingest
+        return []
+    found: list[tuple[int, str]] = []
+    for token, following in zip(tokens, tokens[1:]):
+        if token.type != "heading_open" or following.type != "inline":
+            continue
+        title = following.content.strip()
+        if title:
+            found.append((int(token.tag[1:]), title))
+    return found
 
 
 def _walk(items: object, depth: int = 0) -> list[tuple[int, str]]:

@@ -19,3 +19,13 @@ neo4j==5.28.1
 # entries into the extracted text while a regex tuned to its numbering finds 2 candidates in
 # the Italian Constitution. Pure Python, no models, no conversion step.
 pypdf==6.1.3
+# markdown-it-py reads a Markdown file's own headings, which is what fills heading_path for
+# the formats pypdf cannot open. Measured 2026-09-09 through the documents MCP server:
+# prd.md and aura-quality-snapshot.md returned passages carrying a character span and an
+# empty heading_path while their own text held the heading line. The CommonMark reference
+# implementation for Python and not a pattern of ours: a '#' inside a fenced block is a
+# shell comment, `## Title ##` closes with hashes that are not the title, and a setext
+# heading is underlined rather than prefixed -- a hand-written ATX regex measured on this
+# repo the same day matched prd.md's 20 headings and missed setext entirely. Pure Python,
+# one small dependency (mdurl), no models.
+markdown-it-py==4.2.0
