@@ -116,7 +116,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 02-06-PLAN.md — the mint leg at provisioning with compensation, the verified revoke leg on removal, and the management credential beside the inference key (wave 3)
+- [x] 02-06-PLAN.md — the mint leg at provisioning with compensation, the verified revoke leg on removal, and the management credential beside the inference key (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
