@@ -47,9 +47,9 @@ func (t *DocumentSearch) Spec() Spec {
 			"means this library does not hold the answer -- say so rather than answering from your own " +
 			"knowledge. " +
 			"Before calling an empty answer final, read indexing: it is how far the ingest has got, and " +
-			"status RUNNING means the library has not caught up yet, so a document added moments ago may " +
+			"status \"running\" means the library has not caught up yet, so a document added moments ago may " +
 			"simply not be there YET rather than be absent -- say that, and search again instead of " +
-			"concluding the file does not exist. status READY means the ingest has caught up, so an " +
+			"concluding the file does not exist. status \"ready\" means the ingest has caught up, so an " +
 			"empty answer really is an empty answer. " +
 			"Cite ONLY the citation_token and the locator's heading_path returned here. Never cite a section, " +
 			"chapter or page number you read inside the passage text: a passage starts wherever its chunk " +

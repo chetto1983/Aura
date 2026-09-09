@@ -11,10 +11,14 @@ import (
 const documentIngestStateType = "IngestStatus"
 
 // The two values CocoIndex's UpdateHandle.watch() reports. They are its vocabulary, not
-// ours: RUNNING while an update is in flight, READY once the root component has caught up.
+// ours: running while an update is in flight, ready once the root component has caught up.
+//
+// Lower case because that is what it emits. Measured 2026-09-09 against the live pipeline
+// after this shipped with the member NAMES: UpdateStatus.READY.value is "ready", so Ready()
+// compared "ready" against "READY" and reported a caught-up ingest as still running.
 const (
-	IngestRunning = "RUNNING"
-	IngestReady   = "READY"
+	IngestRunning = "running"
+	IngestReady   = "ready"
 )
 
 // IngestState is how far the reconciler has got for one identity.
@@ -32,8 +36,10 @@ type IngestState struct {
 	Errors     int64  `json:"errors"`
 }
 
-// Ready reports whether the reconciler has caught up.
-func (s IngestState) Ready() bool { return s.Status == IngestReady }
+// Ready reports whether the reconciler has caught up. Case-insensitive: the value is
+// another process's enum, and a caught-up ingest read as running is exactly the confusion
+// this field exists to remove.
+func (s IngestState) Ready() bool { return strings.EqualFold(s.Status, IngestReady) }
 
 // IngestState reads the identity's reconciler state, or nil when the sidecar has never
 // written one -- a library nothing has ever been ingested into, and a state this cannot
