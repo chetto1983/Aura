@@ -42,6 +42,19 @@ func TestEveryAgentConstructionResolvesFromTheTurnIdentity(t *testing.T) {
 		}
 	}
 
+	// The seventh construction site is the INTERACTIVE runner itself, and its
+	// regression shape is different from the six above: there is no `rc.Client` to
+	// read, only turnLocked quietly reverting to r.llmSnapshot — which falls through
+	// to the process-wide deployment snapshot. So this leg asserts the POSITIVE
+	// invariant instead of the absence of a pattern. buildAgent's own r.llmSnapshot
+	// call is legitimate and deliberately not forbidden here: turnLocked has already
+	// seeded the resolved snapshot onto ctx by then, and every reader below inherits
+	// that one decision rather than taking its own.
+	turnSeam := filepath.Join("internal", "runner", "runner.go")
+	if !regexp.MustCompile(`r\.turnLLMSnapshot\(ctx\)`).Match(readSourceForTest(t, repoRoot, turnSeam)) {
+		t.Errorf("%s no longer resolves the turn snapshot through turnLLMSnapshot — the interactive turn has fallen back to the process-wide deployment client (CRED-07/D-11)", turnSeam)
+	}
+
 	capturePattern := regexp.MustCompile(`Client:\s*chat\.client`)
 	compositionRootCaptureFiles := []string{
 		filepath.Join("cmd", "aura", "serve_delegation.go"),

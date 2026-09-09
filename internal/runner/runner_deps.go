@@ -63,8 +63,15 @@ type Deps struct {
 	Client          llm.Client
 	// Runtime is the hot primary-route source shared by interactive turns and the
 	// daemon's resident workers. nil preserves hand-built callers by wrapping Client/LLM.
-	Runtime  *llm.Runtime
-	Registry *tools.Registry
+	Runtime *llm.Runtime
+	// IdentityLLM resolves each turn's credential from the identity that owns the
+	// conversation, so an identity with no key is refused rather than billed to the
+	// deployment key and one with no credit is refused before the network (CRED-05/
+	// CRED-07, D-11). *IdentityLLMResolver satisfies it. nil is for deployments with no
+	// key store — the CLI REPL and unit tests — and nothing else: once it is injected,
+	// a turn can no longer reach the process-wide client.
+	IdentityLLM identityLLMSnapshotter
+	Registry    *tools.Registry
 	// Timezone is the DEPLOYMENT fallback zone; an identity's own profile wins. Empty means
 	// the process zone. See internal/agent/tools/clock.go for why UTC is not neutral.
 	Timezone string
@@ -212,6 +219,7 @@ func New(d Deps) *Runner {
 		reasoningGraphSink:        d.ReasoningGraphSink,
 		reasoningDeletion:         d.ReasoningDeletion,
 		runtime:                   runtime,
+		identityLLM:               d.IdentityLLM,
 		registry:                  d.Registry,
 		location:                  tools.LocationOrUTC(d.Timezone),
 		profiles:                  d.Profiles,

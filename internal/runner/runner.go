@@ -67,10 +67,14 @@ type Runner struct {
 	reasoningDeletion     ReasoningDeletionStore
 	resumeCommitter       ResumeCommitter // cross-store HITL-durability seam (D-03/D-05); split fallback when unset
 
-	runtime  *llm.Runtime
-	registry *tools.Registry
-	location *time.Location
-	profiles ProfileProvider
+	runtime *llm.Runtime
+	// identityLLM resolves the turn identity's OWN credential (CRED-05/CRED-07). nil =>
+	// the process-wide deployment snapshot, which is correct only where there is no key
+	// store to resolve against (the CLI REPL, unit tests) — see turnLLMSnapshot.
+	identityLLM identityLLMSnapshotter
+	registry    *tools.Registry
+	location    *time.Location
+	profiles    ProfileProvider
 	overheadFields
 	breaker    *llm.Breaker // SHARED process-lifetime LLM circuit breaker, injected into every per-turn agent (B-05)
 	runDir     string
@@ -210,7 +214,14 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 			return
 		}
 		ctx = scopedCtx
-		turnRuntime := r.llmSnapshot(ctx)
+		// One resolution for the whole turn, taken AFTER scopeContextToConversation has
+		// put the conversation owner on ctx — that owner is the identity being billed.
+		// Everything downstream reads it back off ctx via llmSnapshot.
+		turnRuntime, err := r.turnLLMSnapshot(ctx)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
 		ctx = withLLMRuntimeSnapshot(ctx, turnRuntime)
 		requestID, err := uuid.NewV7()
 		if err != nil {
