@@ -56,7 +56,6 @@ Processor endpoints:
 | Variable | Purpose |
 | --- | --- |
 | `MULTIMODAL_BASE_URL` and `MULTIMODAL_MODEL` | Local OCR/vision endpoint and model |
-| `AURA_VISION_CLOUD` | Set `true` to route image processing through cloud vision |
 | `STT_BASE_URL`, `STT_MODEL`, `STT_LANGUAGE` | Speech-to-text endpoint, model, and language hint |
 
 Telegram:

@@ -15,12 +15,12 @@ import (
 // row says, a boot-bound key persisted after boot is "restart" and is named in
 // restart_keys, and an untouched boot-bound key is "boot".
 func TestHandleListSettingsReportsPerItemApplicationState(t *testing.T) {
-	t.Setenv("AURA_VISION_CLOUD", "false")
+	t.Setenv("AURA_STT_CLOUD_MODEL", "whisper-boot")
 	t.Setenv("AURA_EMBED_DIMENSIONS", "768")
 	t.Setenv("AURA_LOOP_MAX_STEPS", "25")
 	s := &Server{
 		settings: &fakeSettingsStore{rows: []sqlc.AuraSettings{
-			{Key: "AURA_VISION_CLOUD", Value: "true"},
+			{Key: "AURA_STT_CLOUD_MODEL", Value: "whisper-persisted"},
 			{Key: "AURA_EMBED_DIMENSIONS", Value: "768"},
 			{Key: "AURA_LOOP_MAX_STEPS", Value: "60"},
 		}},
@@ -36,7 +36,7 @@ func TestHandleListSettingsReportsPerItemApplicationState(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]string{
-		"AURA_VISION_CLOUD":     appliedRestart,
+		"AURA_STT_CLOUD_MODEL":  appliedRestart,
 		"AURA_EMBED_DIMENSIONS": appliedBoot,
 		"AURA_LOOP_MAX_STEPS":   appliedLive,
 		"AURA_TTS_MODEL":        appliedBoot,
@@ -46,8 +46,8 @@ func TestHandleListSettingsReportsPerItemApplicationState(t *testing.T) {
 			t.Errorf("%s applied = %q, want %q", item.Key, item.Applied, state)
 		}
 	}
-	if !got.RestartRequired || !slices.Equal(got.RestartKeys, []string{"AURA_VISION_CLOUD"}) {
-		t.Fatalf("restart = %v keys %v, want true [AURA_VISION_CLOUD]", got.RestartRequired, got.RestartKeys)
+	if !got.RestartRequired || !slices.Equal(got.RestartKeys, []string{"AURA_STT_CLOUD_MODEL"}) {
+		t.Fatalf("restart = %v keys %v, want true [AURA_STT_CLOUD_MODEL]", got.RestartRequired, got.RestartKeys)
 	}
 }
 
@@ -88,7 +88,7 @@ func TestHandlePutLLMProfileAcceptsLoopBudgetTriggerAndKey(t *testing.T) {
 	}
 
 	rr = httptest.NewRecorder()
-	body = strings.NewReader(`{"settings":{"AURA_VISION_CLOUD":"true"}}`)
+	body = strings.NewReader(`{"settings":{"AURA_STT_CLOUD_MODEL":"whisper-hot"}}`)
 	s.handlePutLLMProfile(rr, withPrincipal(httptest.NewRequest(http.MethodPut, "/api/settings/llm-profile", body), "op-1"))
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("boot-bound key in the hot batch: status = %d, want 400", rr.Code)

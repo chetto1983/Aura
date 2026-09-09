@@ -13,6 +13,10 @@ _AUDIO_EXTENSIONS = frozenset({
 })
 _PDF_EXTENSION = ".pdf"
 
+# The bridge's own exit code for "no configured route accepts images" (see
+# cmd/aura-media-index exitNoVisionRoute). Distinct from any other failure on purpose.
+_EXIT_NO_VISION_ROUTE = 3
+
 CONFIG_FINGERPRINT = coco.ContextKey[str]("media_config_fingerprint", detect_change=True)
 _BINARY = "aura-media-index"
 
@@ -26,6 +30,16 @@ def kind(file_name: str) -> str | None:
     return None
 
 
+class NoVisionRoute(RuntimeError):
+    """No configured route can read an image, which is a fact about the configuration.
+
+    Separate from every other failure because the answers differ: this one degrades the
+    file to card-only, an unreachable endpoint keeps raising so the next cycle retries it.
+    Degrading on an outage would let CocoIndex memoize a blank answer and the image would
+    never be read again after the endpoint came back.
+    """
+
+
 def _run(args: list[str], timeout: float) -> str:
     try:
         done = subprocess.run(
@@ -35,6 +49,8 @@ def _run(args: list[str], timeout: float) -> str:
         raise RuntimeError(f"media indexer could not run: {exc}") from exc
     if done.returncode != 0:
         detail = done.stderr.decode("utf-8", "replace").strip()
+        if done.returncode == _EXIT_NO_VISION_ROUTE:
+            raise NoVisionRoute(detail or "no configured route accepts images")
         raise RuntimeError(
             f"media indexer exited {done.returncode}" + (f": {detail}" if detail else "")
         )
@@ -66,22 +82,27 @@ def derive_scanned_pdf(path: str, file_name: str) -> str:
 
 
 def index_text(path: str, file_name: str) -> str:
-    if extract.extractable(path):
-        text = extract.extract_text(path)
-        # LibreChat gives configured OCR precedence over its document parser; Hermes
-        # extracts text first and hands image-only pages to vision. Aura takes the narrow
-        # latter boundary: digital PDFs stay on the fast local parser, while a PDF whose
-        # complete text layer is blank uses the already-selected, DB-overlaid vision route.
-        if pathlib.PurePath(path).suffix.lower() == _PDF_EXTENSION and not text.strip():
-            return extract_scanned_pdf(path, file_name)
-        return text
-    return derive(path, file_name)
+    """Text for the index, degrading to "" when nothing in this deployment can read it.
 
+    Returning "" still indexes the file: it keeps its card, its name and its row, so it
+    stays findable and the operator can see it exists. Raising here would fail the whole
+    component and the file would have no row at all -- which is how two PNGs sat
+    unindexed through 470 retries while their OCR sidecar was deliberately switched off.
+    """
+    try:
+        if extract.extractable(path):
+            text = extract.extract_text(path)
+            # LibreChat gives configured OCR precedence over its document parser; Hermes
+            # extracts text first and hands image-only pages to vision. Aura takes the narrow
+            # latter boundary: digital PDFs stay on the fast local parser, while a PDF whose
+            # complete text layer is blank uses the already-selected, DB-overlaid vision route.
+            if pathlib.PurePath(path).suffix.lower() == _PDF_EXTENSION and not text.strip():
+                return extract_scanned_pdf(path, file_name)
+            return text
+        return derive(path, file_name)
+    except NoVisionRoute:
+        return ""
 
-@coco.fn(memo=True, version=1)
-def extract_text(path: str, file_name: str) -> str:
-    coco.use_context(CONFIG_FINGERPRINT)
-    return derive(path, file_name)
 
 
 @coco.fn(memo=True, version=1)

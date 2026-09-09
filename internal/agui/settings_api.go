@@ -443,7 +443,7 @@ func (s *Server) effectiveSettingValue(ctx context.Context, key string) (string,
 }
 
 // validateSettingValue rejects a value that does not parse for its Kind (an int
-// knob like AURA_EMBED_DIMENSIONS must be an int; a bool like AURA_VISION_CLOUD
+// knob like AURA_EMBED_DIMENSIONS must be an int; a bool like AURA_MEMORY_PRELOAD_ENABLED
 // must parse) so a bad value never reaches config.Load's silent default fallback.
 func validateSettingValue(kind settings.Kind, value string) error {
 	switch kind {

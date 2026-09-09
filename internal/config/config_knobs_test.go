@@ -163,7 +163,7 @@ func TestReparsePass(t *testing.T) {
 		{"int garbage / dev ⇒ Warn", ProfileDev, "AURA_AGUI_BUFFER_CAP", "notanumber", set, true, Warn},
 		{"int garbage / local_trusted ⇒ Warn", ProfileLocalTrusted, "AURA_AGUI_BUFFER_CAP", "notanumber", set, true, Warn},
 		{"bool garbage / production ⇒ Fatal", ProfileServerProduction, "AURA_CONTEXT_COMPACTION_ENABLED", "yesnt", set, true, Fatal},
-		{"bool garbage / dev ⇒ Warn", ProfileDev, "AURA_VISION_CLOUD", "maybe", set, true, Warn},
+		{"bool garbage / dev ⇒ Warn", ProfileDev, "AURA_MEMORY_PRELOAD_ENABLED", "maybe", set, true, Warn},
 		{"enum garbage / production ⇒ Fatal", ProfileServerProduction, "AURA_PROFILE", "bogus_tier", set, true, Fatal},
 		{"enum garbage / dev ⇒ Warn", ProfileDev, "AURA_PROFILE", "bogus_tier", set, true, Warn},
 		{"valid int ⇒ none", ProfileServerProduction, "AURA_AGUI_BUFFER_CAP", "128", set, false, Warn},

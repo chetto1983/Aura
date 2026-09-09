@@ -78,7 +78,6 @@ var AllowedKeys = map[string]KeyMeta{
 	"AURA_EMBED_BASE_URL":            {Kind: KindString, Label: "Embedding base URL"},
 	"AURA_TTS_MODEL":                 {Kind: KindString, Label: "TTS cloud model"},
 	"AURA_STT_CLOUD_MODEL":           {Kind: KindString, Label: "STT cloud model"},
-	"AURA_VISION_CLOUD":              {Kind: KindBool, Label: "Vision uses cloud"},
 	"TELEGRAM_BOT_TOKEN":             {Secret: true, Kind: KindString, Label: "Telegram bot token"},
 }
 

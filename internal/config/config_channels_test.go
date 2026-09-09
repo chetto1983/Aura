@@ -6,7 +6,7 @@ import "testing"
 // multimodal knobs (split out of config_test.go on the 13-04 touch to keep that
 // file under the 600-LOC cap). Defaults: AURA_SETUP_BIND on :9081 (a loopback
 // port DISTINCT from the AG-UI :9080, the separate-port requirement /
-// T-13-04-SetupExposure), AURA_VISION_CLOUD=false (local GLM-OCR),
+// T-13-04-SetupExposure), the multimodal sidecar route (local GLM-OCR),
 // AURA_SETUP_TOKEN empty (generated at boot, 13-07), and the sidecar URL/model
 // knobs (upstream naming) with their documented fallbacks. Overrides honored.
 func TestPhase13ConfigDefaultsAndOverrides(t *testing.T) {
@@ -23,9 +23,6 @@ func TestPhase13ConfigDefaultsAndOverrides(t *testing.T) {
 	if cfg.SetupToken != "" {
 		t.Errorf("SetupToken default = %q, want empty (generated at boot)", cfg.SetupToken)
 	}
-	if cfg.VisionCloud {
-		t.Error("VisionCloud default = true, want false (local GLM-OCR sidecar)")
-	}
 	if cfg.TTSVoice != "if_sara" {
 		t.Errorf("TTSVoice default = %q, want if_sara", cfg.TTSVoice)
 	}
@@ -40,7 +37,6 @@ func TestPhase13ConfigDefaultsAndOverrides(t *testing.T) {
 
 	t.Setenv("AURA_SETUP_BIND", "0.0.0.0:9099")
 	t.Setenv("AURA_SETUP_TOKEN", "tok-123")
-	t.Setenv("AURA_VISION_CLOUD", "true")
 	t.Setenv("MULTIMODAL_BASE_URL", "http://aura-ocr-vl:8082/v1")
 	t.Setenv("MULTIMODAL_MODEL", "glm-ocr")
 	t.Setenv("STT_BASE_URL", "http://aura-stt:9000/v1")
@@ -55,9 +51,6 @@ func TestPhase13ConfigDefaultsAndOverrides(t *testing.T) {
 	}
 	if cfg.SetupToken != "tok-123" {
 		t.Errorf("SetupToken override = %q", cfg.SetupToken)
-	}
-	if !cfg.VisionCloud {
-		t.Error("VisionCloud override = false, want true")
 	}
 	if cfg.MultimodalBaseURL != "http://aura-ocr-vl:8082/v1" {
 		t.Errorf("MultimodalBaseURL override = %q", cfg.MultimodalBaseURL)

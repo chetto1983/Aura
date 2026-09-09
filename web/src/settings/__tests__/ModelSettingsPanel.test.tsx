@@ -248,7 +248,7 @@ describe('ModelSettingsPanel', () => {
     expect(await screen.findByRole('heading', { name: 'Model routing' })).toBeTruthy();
   });
 
-  it('toggles the cloud provider, edits secret and boolean fields, then saves', async () => {
+  it('toggles the cloud provider, edits the secret field, then saves', async () => {
     const calls: { url: string; method: string; body: string | undefined }[] = [];
     vi.stubGlobal(
       'fetch',
@@ -270,13 +270,6 @@ describe('ModelSettingsPanel', () => {
     fireEvent.change(screen.getByLabelText('OpenRouter API key'), {
       target: { value: 'sk-or-newkey' },
     });
-    // Toggle the boolean field through both states (on -> off -> on) so the
-    // checkbox onChange covers both the 'true' and 'false' branches; the final
-    // odd click leaves it enabled for the save assertion below.
-    const visionCheckbox = screen.getByRole('checkbox');
-    fireEvent.click(visionCheckbox);
-    fireEvent.click(visionCheckbox);
-    fireEvent.click(visionCheckbox);
     fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
 
     expect(await screen.findByText('Runtime settings saved.')).toBeTruthy();
@@ -293,44 +286,6 @@ describe('ModelSettingsPanel', () => {
       ),
     ).toBe(true);
     expect(puts.some((call) => call.url === '/api/settings/OPENROUTER_API_KEY')).toBe(false);
-    expect(
-      puts.some(
-        (call) =>
-          call.url === '/api/settings/AURA_VISION_CLOUD' &&
-          call.body === JSON.stringify({ value: 'true' }),
-      ),
-    ).toBe(true);
-  });
-
-  it('renders a false boolean setting as inactive, not configured', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() =>
-        Promise.resolve(
-          jsonResponse(
-            settingsBody([
-              buildItem({
-                key: 'AURA_VISION_CLOUD',
-                kind: 'bool',
-                value: 'false',
-                has_value: true,
-              }),
-            ]),
-          ),
-        ),
-      ),
-    );
-
-    renderPanel(<ModelSettingsPanel />);
-    await screen.findByRole('heading', { name: 'Model routing' });
-
-    const checkbox = screen.getByRole('checkbox');
-    if (!(checkbox instanceof HTMLInputElement)) {
-      throw new Error('expected the vision cloud control to be a checkbox input');
-    }
-    expect(checkbox.checked).toBe(false);
-    expect(screen.getByText('Inactive')).toBeTruthy();
-    expect(screen.queryByText('Configured')).toBeNull();
   });
 
   it('invokes onComplete from Continue and Skip when nothing changed', async () => {

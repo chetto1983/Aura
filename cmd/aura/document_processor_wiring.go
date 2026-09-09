@@ -11,10 +11,16 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/multimodal"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/objectstore/garageadmin"
 	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+const (
+	visionCapabilityTimeout = 5 * time.Second
+	visionCapabilityTTL     = time.Minute
 )
 
 func buildAssetService(cfg *config.Config, pool *pgxpool.Pool, objectStore objectstore.Store) *assets.Service {
@@ -157,8 +163,14 @@ func newCachingPerIdentityStoreFactory(cfg *config.Config) assets.StoreFactory {
 	}
 }
 
+// visionConfigFrom resolves the image route once at boot, which is the lifetime the
+// primary-route settings already have: changing them is an appliedRestart key, so a
+// snapshot here cannot drift from what the running process is using.
 func visionConfigFrom(cfg *config.Config) multimodal.VisionConfig {
-	return multimodal.VisionConfigFrom(cfg)
+	ctx, cancel := context.WithTimeout(context.Background(), visionCapabilityTimeout)
+	defer cancel()
+	source := llm.NewContentCapabilitySource(cfg.LLM, visionCapabilityTTL)
+	return multimodal.VisionConfigFrom(cfg, multimodal.PrimaryAcceptsImages(ctx, source))
 }
 
 func sttConfigFrom(cfg *config.Config) multimodal.STTConfig {

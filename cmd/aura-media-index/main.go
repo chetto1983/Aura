@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/multimodal"
 	"github.com/chetto1983/aura/internal/settings"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -33,6 +35,15 @@ const (
 	mediaKindPDF   mediaKind = "pdf"
 
 	maxScannedPDFPages = 20
+
+	// Its own code, because the caller's response differs: ingest degrades a file to
+	// card-only on this and retries on any other failure. Collapsing the two would either
+	// cache a blank answer for a transient outage or retry a corpus forever for a
+	// configuration that can never read an image.
+	exitNoVisionRoute = 3
+
+	// One short-lived process asks once; the TTL only bounds the cached answer inside it.
+	visionCapabilityTTL = time.Minute
 )
 
 type mediaRuntime struct {
@@ -41,8 +52,10 @@ type mediaRuntime struct {
 	renderPDF func(context.Context, string, string) ([]string, error)
 }
 
-func newMediaRuntime(cfg *config.Config, client *http.Client) mediaRuntime {
-	visionCfg := multimodal.VisionConfigFrom(cfg)
+// primaryAcceptsImages is passed in, not probed here: the capability is resolved once at
+// the edge so construction stays pure and the route needs no network to be decided.
+func newMediaRuntime(cfg *config.Config, client *http.Client, primaryAcceptsImages bool) mediaRuntime {
+	visionCfg := multimodal.VisionConfigFrom(cfg, primaryAcceptsImages)
 	visionCfg.HTTPClient = client
 	sttCfg := multimodal.STTConfigFrom(cfg)
 	sttCfg.HTTPClient = client
@@ -186,9 +199,13 @@ type routeFingerprint struct {
 	STTLanguage string `json:"stt_language"`
 }
 
-func mediaConfigFingerprint(cfg *config.Config) string {
-	signature := routeFingerprint{Revision: 2}
-	if cfg.VisionCloud {
+// mediaConfigFingerprint records the route media was actually derived through, so
+// CocoIndex's CONFIG_FINGERPRINT invalidates a memo whose result came from an arm that
+// no longer applies. primaryAcceptsImages is the resolved capability, not a switch:
+// Revision 3 retires AURA_VISION_CLOUD and therefore re-derives existing media once.
+func mediaConfigFingerprint(cfg *config.Config, primaryAcceptsImages bool) string {
+	signature := routeFingerprint{Revision: 3}
+	if primaryAcceptsImages && cfg.LLM.BaseURL != "" {
 		signature.VisionMode = "primary"
 		signature.VisionBase = cfg.LLM.BaseURL
 		signature.VisionModel = cfg.LLM.Model
@@ -243,8 +260,13 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, err)
 		return 1
 	}
+	// One resolution per process, shared by the fingerprint and the derivation, so the
+	// two can never disagree about which arm this invocation would use.
+	acceptsImages := multimodal.PrimaryAcceptsImages(
+		ctx, llm.NewContentCapabilitySource(cfg.LLM, visionCapabilityTTL),
+	)
 	if *fingerprint {
-		if _, err = fmt.Fprintln(stdout, mediaConfigFingerprint(cfg)); err != nil {
+		if _, err = fmt.Fprintln(stdout, mediaConfigFingerprint(cfg, acceptsImages)); err != nil {
 			return 1
 		}
 		return 0
@@ -257,9 +279,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if fileName == "" {
 		fileName = filepath.Base(fs.Arg(0))
 	}
-	text, err := newMediaRuntime(cfg, nil).derive(ctx, mediaKind(*kind), fs.Arg(0), fileName)
+	text, err := newMediaRuntime(cfg, nil, acceptsImages).derive(ctx, mediaKind(*kind), fs.Arg(0), fileName)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, err)
+		if errors.Is(err, multimodal.ErrNoVisionRoute) {
+			return exitNoVisionRoute
+		}
 		return 1
 	}
 	if _, err = fmt.Fprint(stdout, text); err != nil {

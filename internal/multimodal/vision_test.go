@@ -60,7 +60,7 @@ func TestVisionLocalRouteNoAuth(t *testing.T) {
 	}
 }
 
-func TestVisionCloudRouteBearerAndModel(t *testing.T) {
+func TestVisionPrefersPrimaryModelWhenItAcceptsImages(t *testing.T) {
 	var gotAuth, gotModel string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
@@ -69,32 +69,81 @@ func TestVisionCloudRouteBearerAndModel(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	// The sidecar is configured too: the operator-selected model wins anyway, so a
+	// model that reports the image modality is used without anyone setting a switch.
 	c := NewVisionClient(VisionConfig{
-		VisionCloud:       true,
-		Model:             "qwen/qwen3.8-flash",
-		OpenRouterBaseURL: srv.URL,
-		OpenRouterAPIKey:  "shared-key",
-		HTTPClient:        srv.Client(),
+		PrimaryAcceptsImages: true,
+		Model:                "gemma4:31b-cloud",
+		PrimaryBaseURL:       srv.URL,
+		PrimaryAPIKey:        "shared-key",
+		LocalBaseURL:         "http://aura-ocr-vl:8082/v1",
+		LocalModel:           "glm-ocr",
+		HTTPClient:           srv.Client(),
 	})
 	if _, err := c.Describe(t.Context(), []byte("img"), "image/png", "x"); err != nil {
 		t.Fatalf("Describe: %v", err)
 	}
 	if gotAuth != "Bearer shared-key" {
-		t.Errorf("cloud Authorization = %q, want Bearer shared-key", gotAuth)
+		t.Errorf("Authorization = %q, want Bearer shared-key", gotAuth)
 	}
-	if gotModel != "qwen/qwen3.8-flash" {
-		t.Errorf("cloud vision model = %q, want the operator-selected primary model", gotModel)
+	if gotModel != "gemma4:31b-cloud" {
+		t.Errorf("vision model = %q, want the operator-selected primary model", gotModel)
 	}
 	if got := c.VisionModel(); got != gotModel {
 		t.Errorf("VisionModel() = %q, want wire model %q", got, gotModel)
 	}
 }
 
-func TestVisionEmptyBaseURL(t *testing.T) {
+func TestVisionFallsBackToSidecarWhenPrimaryRejectsImages(t *testing.T) {
+	var gotAuth, gotModel string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotModel = decodeVisionReq(t, r).Model
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"ok"}}]}`)
+	}))
+	defer srv.Close()
+
+	// z-ai/glm-5.3 advertises text only while its :flash sibling takes images, which is
+	// exactly why the route reads the model's card instead of a hand-set switch.
+	c := NewVisionClient(VisionConfig{
+		PrimaryAcceptsImages: false,
+		Model:                "z-ai/glm-5.3",
+		PrimaryBaseURL:       "https://openrouter.ai/api/v1",
+		PrimaryAPIKey:        "shared-key",
+		LocalBaseURL:         srv.URL,
+		LocalModel:           "glm-ocr",
+		HTTPClient:           srv.Client(),
+	})
+	if _, err := c.Describe(t.Context(), []byte("img"), "image/png", "x"); err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if gotAuth != "" {
+		t.Errorf("sidecar Authorization = %q, want none", gotAuth)
+	}
+	if gotModel != "glm-ocr" {
+		t.Errorf("vision model = %q, want the local sidecar model", gotModel)
+	}
+}
+
+func TestVisionReportsNoRouteWhenNeitherArmCanSeeImages(t *testing.T) {
+	// Structural absence, not a transient outage: the caller degrades on this instead
+	// of retrying, so it must be distinguishable from an unreachable endpoint.
+	c := NewVisionClient(VisionConfig{
+		PrimaryAcceptsImages: false,
+		Model:                "z-ai/glm-5.3",
+		PrimaryBaseURL:       "https://openrouter.ai/api/v1",
+		PrimaryAPIKey:        "shared-key",
+	})
+	_, err := c.Describe(t.Context(), []byte("img"), "image/png", "x")
+	if !errors.Is(err, ErrNoVisionRoute) {
+		t.Fatalf("err = %v, want ErrNoVisionRoute", err)
+	}
+}
+
+func TestVisionEmptyConfigHasNoRoute(t *testing.T) {
 	c := NewVisionClient(VisionConfig{})
-	if _, err := c.Describe(t.Context(), []byte("x"), "image/png", "p"); err == nil ||
-		!strings.Contains(err.Error(), "not configured") {
-		t.Fatalf("err = %v, want not-configured", err)
+	if _, err := c.Describe(t.Context(), []byte("x"), "image/png", "p"); !errors.Is(err, ErrNoVisionRoute) {
+		t.Fatalf("err = %v, want ErrNoVisionRoute", err)
 	}
 }
 

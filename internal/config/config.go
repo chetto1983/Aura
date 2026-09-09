@@ -239,11 +239,6 @@ type Config struct {
 	SetupBind  string // AURA_SETUP_BIND — loopback setup-wizard HTTP bind, distinct from :9080
 	SetupToken string // AURA_SETUP_TOKEN — setup-API gate; empty → generated at boot (13-07)
 
-	// VisionCloud routes image understanding: false (default) → local aura-ocr-vl
-	// sidecar; true → OpenRouter/minimax-m3 cloud (no GPU). One env branch, zero
-	// code dup (#60 / Pitfall 6).
-	VisionCloud bool // AURA_VISION_CLOUD — false=local GLM-OCR sidecar, true=cloud vision
-
 	// Multimodal sidecar URLs/models (upstream naming, CLAUDE.md third-party exception).
 	MultimodalBaseURL    string // MULTIMODAL_BASE_URL — aura-ocr-vl OpenAI-compat base
 	MultimodalModel      string // MULTIMODAL_MODEL — local vision model id
@@ -523,9 +518,8 @@ func loadBase() *Config {
 
 		// Phase 13 channels + setup + multimodal. Setup bind defaults to :9081 —
 		// a loopback port DISTINCT from the AG-UI :9080 (separate-port requirement).
-		SetupBind:   envDefault("AURA_SETUP_BIND", "127.0.0.1:9081"),
-		SetupToken:  os.Getenv("AURA_SETUP_TOKEN"),
-		VisionCloud: envutil.BoolDefault("AURA_VISION_CLOUD", false),
+		SetupBind:  envDefault("AURA_SETUP_BIND", "127.0.0.1:9081"),
+		SetupToken: os.Getenv("AURA_SETUP_TOKEN"),
 
 		MultimodalBaseURL:    os.Getenv("MULTIMODAL_BASE_URL"),
 		MultimodalModel:      os.Getenv("MULTIMODAL_MODEL"),

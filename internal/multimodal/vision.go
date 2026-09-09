@@ -5,25 +5,37 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 )
 
-// VisionConfig selects the image-analysis route. VisionCloud=false (default) uses
-// the local aura-ocr-vl sidecar (LocalBaseURL/LocalModel, no auth);
-// VisionCloud=true routes the operator-selected primary Model to its configured
-// endpoint. Both arms speak OpenAI /chat/completions, so
-// the base already carries any version segment and only "/chat/completions" is
-// appended (no /v1 doubling).
+// ErrNoVisionRoute reports that nothing in this configuration can read an image:
+// the operator-selected model does not accept the image modality and no local
+// sidecar is configured. It is deliberately distinct from an unreachable endpoint,
+// because the two want opposite handling — a caller degrades on this and retries on
+// that, and degrading on a transient outage would cache a blank answer.
+var ErrNoVisionRoute = errors.New("vision: no route accepts images")
+
+// VisionConfig selects the image-analysis route from what the models can actually
+// do, not from a switch. PrimaryAcceptsImages is the resolved answer of the model's
+// own card or capability probe (llm.ContentCapabilitySource): when it is true the
+// operator-selected Model reads the image at PrimaryBaseURL, otherwise the local
+// aura-ocr-vl sidecar (LocalBaseURL/LocalModel, no auth) does.
+//
+// It is resolved upstream, not here, so route() stays a pure config branch that
+// issues no I/O (Pitfall 6 / #60). Both arms speak OpenAI /chat/completions, so the
+// base already carries any version segment and only "/chat/completions" is appended
+// (no /v1 doubling).
 type VisionConfig struct {
-	VisionCloud       bool
-	Model             string
-	LocalBaseURL      string
-	LocalModel        string
-	OpenRouterBaseURL string
-	OpenRouterAPIKey  string
-	TimeoutSec        int
-	HTTPClient        *http.Client // optional; nil → a fresh shared client
+	PrimaryAcceptsImages bool
+	Model                string
+	LocalBaseURL         string
+	LocalModel           string
+	PrimaryBaseURL       string
+	PrimaryAPIKey        string
+	TimeoutSec           int
+	HTTPClient           *http.Client // optional; nil → a fresh shared client
 }
 
 // VisionClient POSTs an image + prompt to the chosen vision endpoint and returns
@@ -71,9 +83,9 @@ type visionChatResponse struct {
 // and prompt to the vision route, returning the description text. An empty base
 // URL is a configuration error; a non-2xx response is a *StatusError.
 func (c *VisionClient) Describe(ctx context.Context, imageBytes []byte, mimeType, prompt string) (string, error) {
-	baseURL, apiKey, model := c.route()
-	if baseURL == "" {
-		return "", fmt.Errorf("vision base URL is not configured")
+	baseURL, apiKey, model, ok := c.route()
+	if !ok {
+		return "", ErrNoVisionRoute
 	}
 	if mimeType == "" {
 		mimeType = "application/octet-stream"
@@ -123,14 +135,18 @@ func (c *VisionClient) Describe(ctx context.Context, imageBytes []byte, mimeType
 // VisionModel reports the model id the route would use, so callers can record it
 // in result metadata without issuing a request.
 func (c *VisionClient) VisionModel() string {
-	_, _, model := c.route()
+	_, _, model, _ := c.route()
 	return model
 }
 
-// route is the SINGLE config-only vision branch (Pitfall 6 / #60).
-func (c *VisionClient) route() (baseURL, apiKey, model string) {
-	if c.cfg.VisionCloud {
-		return c.cfg.OpenRouterBaseURL, c.cfg.OpenRouterAPIKey, c.cfg.Model
+// route is the SINGLE config-only vision branch (Pitfall 6 / #60). ok is false when
+// neither arm can see an image, which is ErrNoVisionRoute rather than a failed call.
+func (c *VisionClient) route() (baseURL, apiKey, model string, ok bool) {
+	if c.cfg.PrimaryAcceptsImages && c.cfg.PrimaryBaseURL != "" {
+		return c.cfg.PrimaryBaseURL, c.cfg.PrimaryAPIKey, c.cfg.Model, true
 	}
-	return c.cfg.LocalBaseURL, "", c.cfg.LocalModel
+	if c.cfg.LocalBaseURL != "" {
+		return c.cfg.LocalBaseURL, "", c.cfg.LocalModel, true
+	}
+	return "", "", "", false
 }

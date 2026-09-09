@@ -12,6 +12,7 @@ import (
 	assetspkg "github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/config"
 	llmpkg "github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/multimodal"
 	"github.com/chetto1983/aura/internal/objectstore"
 )
 
@@ -78,7 +79,6 @@ func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
 		AssetMaxAudioBytes:    789,
 		AssetPresignTTLSec:    42,
 		MultimodalTimeoutSec:  7,
-		VisionCloud:           true,
 		MultimodalBaseURL:     "http://vision-local.test/v1",
 		MultimodalModel:       "glm-ocr",
 		STTBaseURL:            "http://stt.test/v1",
@@ -126,12 +126,14 @@ func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
 	}
 	// The vision config is now opaque inside the shared multimodal client, so assert
 	// the cfg -> multimodal.VisionConfig projection directly (the wiring under test).
-	vcfg := visionConfigFrom(cfg)
-	if !vcfg.VisionCloud || vcfg.Model != "deepseek/deepseek-v4-flash" ||
+	// The capability is passed in rather than probed: visionConfigFrom resolves it from
+	// the live model card, which is not a thing a unit test should reach for.
+	vcfg := multimodal.VisionConfigFrom(cfg, true)
+	if !vcfg.PrimaryAcceptsImages || vcfg.Model != "deepseek/deepseek-v4-flash" ||
 		vcfg.LocalBaseURL != "http://vision-local.test/v1" ||
 		vcfg.LocalModel != "glm-ocr" ||
-		vcfg.OpenRouterBaseURL != "http://openrouter.test/api/v1" ||
-		vcfg.OpenRouterAPIKey != "test-key" ||
+		vcfg.PrimaryBaseURL != "http://openrouter.test/api/v1" ||
+		vcfg.PrimaryAPIKey != "test-key" ||
 		vcfg.TimeoutSec != 7 {
 		t.Fatalf("vision config = %+v, want projected vision config", vcfg)
 	}

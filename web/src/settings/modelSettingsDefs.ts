@@ -29,8 +29,7 @@ export type SettingsKey =
   | 'AURA_EMBED_BASE_URL'
   | 'AURA_EMBED_DIMENSIONS'
   | 'AURA_TTS_MODEL'
-  | 'AURA_STT_CLOUD_MODEL'
-  | 'AURA_VISION_CLOUD';
+  | 'AURA_STT_CLOUD_MODEL';
 
 export interface SettingDef {
   readonly key: SettingsKey;
@@ -129,7 +128,6 @@ export const BACKEND_SETTINGS: readonly SettingDef[] = [
   { key: 'AURA_EMBED_DIMENSIONS', kind: 'int', labelKey: 'settings.fields.embedDimensions' },
   { key: 'AURA_STT_CLOUD_MODEL', kind: 'string', labelKey: 'settings.fields.sttCloudModel' },
   { key: 'AURA_TTS_MODEL', kind: 'string', labelKey: 'settings.fields.ttsModel' },
-  { key: 'AURA_VISION_CLOUD', kind: 'bool', labelKey: 'settings.fields.visionCloud' },
 ];
 
 export const ALL_SETTINGS: readonly SettingDef[] = [

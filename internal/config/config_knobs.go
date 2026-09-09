@@ -148,7 +148,6 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_RETENTION_DISK_WARN_PERCENT", Kind: KindInt, Default: "70"},
 		{Name: "AURA_RETENTION_DISK_URGENT_PERCENT", Kind: KindInt, Default: "80"},
 		{Name: "AURA_RETENTION_DISK_STOP_PERCENT", Kind: KindInt, Default: "85"},
-		{Name: "AURA_VISION_CLOUD", Kind: KindBool, Default: "false"},
 		{Name: "AURA_EMBED_DIMENSIONS", Kind: KindInt, Default: "768"},
 		{Name: "AURA_TTS_MAX_CHARS", Kind: KindInt, Default: "4096"},
 

@@ -260,7 +260,6 @@ services:
       AURA_TELEGRAM_CONTENT_THROTTLE_MS: ${AURA_TELEGRAM_CONTENT_THROTTLE_MS:-500}
       AURA_TELEGRAM_CHAT_RATE_LIMIT_MS: ${AURA_TELEGRAM_CHAT_RATE_LIMIT_MS:-1000}
       AURA_REASONING_FIFO_RUNES: ${AURA_REASONING_FIFO_RUNES:-4096}
-      AURA_VISION_CLOUD: ${AURA_VISION_CLOUD:-false}
       MULTIMODAL_BASE_URL: http://aura-ocr-vl:8082/v1
       MULTIMODAL_MODEL: ${MULTIMODAL_MODEL:-glm-ocr}
       STT_BASE_URL: http://aura-stt:9000/v1
@@ -923,7 +922,6 @@ services:
       AURA_LLM_MODEL: ${AURA_LLM_MODEL:-deepseek/deepseek-v4-flash:nitro}
       AURA_LLM_BASE_URL: ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      AURA_VISION_CLOUD: ${AURA_VISION_CLOUD:-false}
       MULTIMODAL_BASE_URL: http://aura-ocr-vl:8082/v1
       MULTIMODAL_MODEL: ${MULTIMODAL_MODEL:-glm-ocr}
       STT_BASE_URL: http://aura-stt:9000/v1
@@ -1071,9 +1069,10 @@ services:
   # Three thin OpenAI-compat CPU sidecars. Aura talks to each over the
   # Docker network (the telegram voice/photo/tts/documents clients), never with Go
   # ML in-process. All loopback-published; operator-started (compose, not boot —
-  # T-13-09-SC accept). With AURA_VISION_CLOUD=true the operator simply does not
-  # start aura-ocr-vl (tier B, no-GPU → OpenRouter cloud vision). STT/TTS stay local
-  # in both tiers. Endpoints/ports per 13-RESEARCH.md §7.
+  # T-13-09-SC accept). aura-ocr-vl is only needed when the operator's own model does
+  # not read images: the image route follows the model's advertised modalities, so a
+  # vision-capable primary makes the sidecar redundant. STT/TTS stay local in both
+  # cases. Endpoints/ports per 13-RESEARCH.md §7.
 
   # aura-stt — faster-whisper STT via hwdsl2/whisper-server (spike 027 VALIDATED:
   # large-v3-turbo int8 on CPU; OGG/Opus decoded inline via PyAV — no ffmpeg shim).
@@ -1125,7 +1124,8 @@ services:
 
   # aura-ocr-vl — GLM-OCR Q8 on llama.cpp GPU vision. MULTIMODAL_BASE_URL=
   # http://aura-ocr-vl:8082/v1, POST /chat/completions with a base64 image_url.
-  # NOT started when AURA_VISION_CLOUD=true (the cloud-vision tier B).
+  # Only reached when the operator-selected model does NOT advertise the image
+  # modality; a vision-capable primary reads the image itself and this stays down.
   aura-ocr-vl:
     image: ${AURA_OCR_VL_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
     container_name: aura-ocr-vl
@@ -1136,7 +1136,9 @@ services:
       # below stays empty: every recreate re-downloaded it. Same trap aura-llm documents.
       HF_HOME: /root/.cache/llama.cpp
     # Offloaded by default to free ~2.35GB VRAM for the GPU embed sidecar. On-demand:
-    # `docker compose --profile ocr up -d aura-ocr-vl`. Vision paths fail-soft when absent.
+    # `docker compose --profile ocr up -d aura-ocr-vl`. When it is absent AND the primary
+    # model takes no images there is no vision route at all, which ingest degrades on
+    # (card-only) instead of failing the file forever.
     profiles: [ocr]
     restart: unless-stopped
     command:

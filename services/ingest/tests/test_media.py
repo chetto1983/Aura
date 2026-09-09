@@ -127,3 +127,32 @@ def test_index_text_keeps_text_pdf_on_local_parser(monkeypatch, tmp_path):
         lambda *_args, **_kwargs: pytest.fail("digital PDF must not spend a vision call"),
     )
     assert media.index_text(str(pdf), pdf.name) == "testo digitale"
+
+
+def _stub_indexer(tmp_path, exit_code, message):
+    stub = tmp_path / "stub-aura-media-index"
+    stub.write_text(f"#!/bin/sh\necho '{message}' >&2\nexit {exit_code}\n")
+    stub.chmod(0o755)
+    return str(stub)
+
+
+def test_index_text_degrades_when_nothing_can_see_the_image(monkeypatch, tmp_path):
+    # Exit 3 is the bridge saying no configured route accepts images at all. That is a
+    # property of the configuration, not a hiccup, so the file is indexed card-only
+    # rather than failing forever: one unreadable photo must not cost the whole corpus.
+    monkeypatch.setattr(media, "_BINARY", _stub_indexer(tmp_path, 3, "no route accepts images"))
+    image = tmp_path / "scan.png"
+    image.write_bytes(b"image-fixture")
+
+    assert media.index_text(str(image), image.name) == ""
+
+
+def test_index_text_still_raises_when_a_configured_route_fails(monkeypatch, tmp_path):
+    # An endpoint that is down must keep raising: returning "" here would let CocoIndex
+    # memoize a blank answer and the image would never be read again once it recovers.
+    monkeypatch.setattr(media, "_BINARY", _stub_indexer(tmp_path, 1, "dial tcp: connection refused"))
+    image = tmp_path / "scan.png"
+    image.write_bytes(b"image-fixture")
+
+    with pytest.raises(RuntimeError):
+        media.index_text(str(image), image.name)

@@ -39,14 +39,14 @@ function item(raw: RawItem) {
 
 const LIST = {
   restart_required: true,
-  restart_keys: ['AURA_VISION_CLOUD'],
+  restart_keys: ['AURA_STT_CLOUD_MODEL'],
   settings: [
     item({ key: 'AURA_LOOP_MAX_STEPS', kind: 'int', value: '25', applied: 'live' }),
     item({ key: 'AURA_LOOP_MAX_WALLCLOCK_SEC', kind: 'int', value: '300', applied: 'live' }),
     item({
-      key: 'AURA_VISION_CLOUD',
-      kind: 'bool',
-      value: 'true',
+      key: 'AURA_STT_CLOUD_MODEL',
+      kind: 'string',
+      value: 'whisper-persisted',
       overridden: true,
       applied: 'restart',
     }),
@@ -95,8 +95,8 @@ describe('ModelSettingsPanel — application state and turn budget', () => {
     expect(stepsField?.querySelector('[data-applied="live"]')?.textContent).toBe(
       'Applies immediately',
     );
-    const visionField = screen.getByLabelText('Vision uses cloud').closest('div.flex.min-h-32');
-    expect(visionField?.querySelector('[data-applied="restart"]')?.textContent).toBe(
+    const sttField = screen.getByLabelText('Speech-to-text cloud model').closest('div.flex.min-h-32');
+    expect(sttField?.querySelector('[data-applied="restart"]')?.textContent).toBe(
       'Saved — needs a restart',
     );
     const embedField = screen.getByLabelText('Embedding dimensions').closest('div.flex.min-h-32');
@@ -104,7 +104,7 @@ describe('ModelSettingsPanel — application state and turn budget', () => {
       'Applied at start-up',
     );
     expect(screen.getByRole('note').textContent).toContain(
-      'Restart Aura to apply: AURA_VISION_CLOUD',
+      'Restart Aura to apply: AURA_STT_CLOUD_MODEL',
     );
   });
 

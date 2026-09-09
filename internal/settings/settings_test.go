@@ -87,7 +87,6 @@ func TestOverlayEnvFeedsRuntimeConfig(t *testing.T) {
 		{Key: "AURA_EMBED_DIMENSIONS", Value: "444"},
 		{Key: "AURA_TTS_MODEL", Value: "settings-tts-model"},
 		{Key: "AURA_STT_CLOUD_MODEL", Value: "settings-stt-model"},
-		{Key: "AURA_VISION_CLOUD", Value: "true"},
 	}}
 	if err := OverlayEnv(t.Context(), l); err != nil {
 		t.Fatalf("OverlayEnv: %v", err)
@@ -130,9 +129,6 @@ func TestOverlayEnvFeedsRuntimeConfig(t *testing.T) {
 	}
 	if got := cfg.STTCloudModel; got != "settings-stt-model" {
 		t.Errorf("STTCloudModel = %q, want overlaid settings STT cloud model", got)
-	}
-	if !cfg.VisionCloud {
-		t.Error("VisionCloud = false, want true from overlaid settings")
 	}
 
 	embedBase, embedKey, embedModel := cfg.EmbedRoute()
@@ -182,7 +178,6 @@ func clearRuntimeConfigEnvForOverlayTest(t *testing.T) {
 		"AURA_EMBED_DIMENSIONS",
 		"AURA_TTS_MODEL",
 		"AURA_STT_CLOUD_MODEL",
-		"AURA_VISION_CLOUD",
 	} {
 		t.Setenv(key, "")
 	}

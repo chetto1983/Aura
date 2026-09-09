@@ -275,7 +275,6 @@ func TestDotEnvTemplateHygiene(t *testing.T) {
 		"SEARXNG_URL=",
 		"TELEGRAM_BOT_TOKEN=",
 		"AURA_TELEGRAM_STATUS_THROTTLE_MS=",
-		"AURA_VISION_CLOUD=",
 		"MULTIMODAL_BASE_URL=",
 		"STT_BASE_URL=",
 		"TTS_BASE_URL=",
