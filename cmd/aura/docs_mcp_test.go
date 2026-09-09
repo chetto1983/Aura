@@ -140,3 +140,45 @@ func TestDocsMCPManifestAndConfiguration(t *testing.T) {
 		}
 	}
 }
+
+// The same capability is described twice -- here and in internal/agent/tools -- over the
+// same production handlers, and the two had already drifted: measured 2026-09-09, this
+// server's document_search said only "Retrieve full passage evidence, citations and index
+// status", naming neither citation_token nor requires_open nor the neighbours parameter,
+// while the agent-side description said all three. An MCP client is the surface with NO
+// other instructions to fall back on, so it is the one that must not be the thin copy.
+func TestDocsMCPToolsCarryTheSharedContract(t *testing.T) {
+	session := docsMCPSession(t, fakeDocsFactory(&fakeDocsService{}))
+	listed, err := session.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("manifest: %v", err)
+	}
+	contracts := map[string]string{
+		"document_search": documents.SearchToolContract,
+		"document_open":   documents.OpenToolContract,
+	}
+	for _, tool := range listed.Tools {
+		contract, shared := contracts[tool.Name]
+		if !shared {
+			continue
+		}
+		if !strings.Contains(tool.Description, contract) {
+			t.Fatalf("%s no longer carries the shared contract: %q", tool.Name, tool.Description)
+		}
+		delete(contracts, tool.Name)
+	}
+	if len(contracts) != 0 {
+		t.Fatalf("tools missing from the manifest: %v", contracts)
+	}
+	// The parameter exists to reach the chunk a hit was cut off from, and a client that
+	// cannot see it in the schema cannot use it however well the prose explains it.
+	for _, tool := range listed.Tools {
+		if tool.Name != "document_search" {
+			continue
+		}
+		schema, _ := json.Marshal(tool.InputSchema)
+		if !bytes.Contains(schema, []byte("neighbours")) {
+			t.Fatalf("document_search does not offer neighbours: %s", schema)
+		}
+	}
+}

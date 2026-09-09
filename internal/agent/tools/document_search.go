@@ -35,18 +35,12 @@ func (t *DocumentSearch) Spec() Spec {
 	return Spec{
 		Name:    "document_search",
 		Summary: "Search the user's uploaded documents and return provenance-bearing passages and openable files.",
-		Description: "THE tool for questions about the user's uploaded documents (PDF, DOCX, XLSX, PPTX, CSV, " +
-			"HTML, MD, TXT, and more). It returns reconciled documents, bounded passages, citation tokens, " +
-			"source SHA-256, locators, retrieval evidence, and explicit degradation status. " +
-			"Cite only citation_token values returned here. " +
-			"When requires_open is true, or the " +
-			"question needs the whole file (for example how many, sum, average, maximum, grouping, or conversion), " +
-			"call document_open with document_id; it writes the real file into /workspace for shell_exec. Uploaded " +
-			"documents are not otherwise on the filesystem. Query is required and may name a topic, entity, fact, " +
-			"or filename. document_ids optionally scopes search to ids previously returned to this owner. When a passage " +
-			"stops mid-table or mid-definition, the rest of it is in the adjacent chunk, which no rephrasing of the " +
-			"query will rank: repeat the search with neighbours to pull the text either side of each hit. Files " +
-			"YOU created live under /workspace: read those with read_file/search_files instead. " +
+		// The shared half lives in documents.SearchToolContract so the MCP surface over the
+		// same handlers cannot drift from it; only the sentences about THIS runtime are here.
+		Description: documents.SearchToolContract +
+			" document_open writes the file into /workspace for shell_exec; uploaded documents are not " +
+			"otherwise on the filesystem. Files YOU created live under /workspace: read those with " +
+			"read_file/search_files instead. " +
 			"Example: {\"query\":\"customer code for WPT SRL\",\"document_ids\":[\"doc_9f2c\"]}.",
 		Parameters: json.RawMessage(`{
   "type": "object",

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -42,14 +43,14 @@ func newDocsMCPServer(operatorID string, factory docsServiceFactory) (*mcp.Serve
 		return nil, fmt.Errorf("documents MCP requires the operator identity and document service")
 	}
 	server := mcp.NewServer(&mcp.Implementation{Name: "aura-documents", Version: "1.0.0"}, &mcp.ServerOptions{
-		Instructions: "Use document_ingest to store a workspace file in the operator's library. " +
-			"Acceptance is not completed indexing: document_search reports indexed passages and degradation. " +
-			"Read the returned passages before answering; a filename match alone is not evidence. " +
-			"A passage cut mid-table or mid-definition continues in the next chunk, which no rephrasing " +
-			"will rank: re-run document_search with neighbours to pull the text either side of a hit. " +
-			"When a hit reports requires_open, or the question needs the whole file rather than a passage, " +
-			"call document_open and read the file it writes. " +
-			"These tools use Aura's production document handlers and a fixed operator identity.",
+		// What a RESULT means belongs to the tools, not here: a client shows these
+		// instructions once and a model reads a tool description every time it considers
+		// calling it. This says only what is true of the server itself.
+		Instructions: "This server exposes the operator's document library through Aura's own " +
+			"production handlers, under one fixed operator identity. Ingest with document_ingest, " +
+			"find with document_search, and read the file itself with document_open. Accepting an " +
+			"ingest is not the same as having indexed it: document_search is what reports the " +
+			"indexed passages and any degradation.",
 	})
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "document_ingest", Description: "Ingest a workspace file through Aura's production document pipeline.",
@@ -63,7 +64,7 @@ func newDocsMCPServer(operatorID string, factory docsServiceFactory) (*mcp.Serve
 		return docsMCPCall(ctx, operatorID, args, factory)
 	})
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "document_search", Description: "Retrieve full passage evidence, citations and index status from Aura's production retriever.",
+		Name: "document_search", Description: documents.SearchToolContract,
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: new(false), OpenWorldHint: new(false)},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input docsMCPSearchInput) (*mcp.CallToolResult, map[string]any, error) {
 		args := []string{"search", input.Query}
@@ -80,13 +81,9 @@ func newDocsMCPServer(operatorID string, factory docsServiceFactory) (*mcp.Serve
 	})
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "document_open",
-		Description: "Write the ORIGINAL file of an indexed document onto the workspace filesystem and return its " +
-			"path, so it can be read, converted or computed on directly. Use this INSTEAD of relying on " +
-			"document_search passages whenever a hit reports requires_open, or the answer is a property of the " +
-			"whole file rather than of one passage: any count, sum, average, maximum, grouping, sort or " +
-			"cross-column filter over a spreadsheet or table, any conversion, and any question whose retrieved " +
-			"passages do not actually contain the answer. document_search finds WHICH document; document_open " +
-			"hands over the file. Returns the path, name, size and the sha256 measured off the written bytes.",
+		Description: documents.OpenToolContract +
+			" The file is written onto the workspace filesystem this server can reach; read it from " +
+			"the path returned here.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: new(false), OpenWorldHint: new(false)},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input docsMCPOpenInput) (*mcp.CallToolResult, map[string]any, error) {
 		args := []string{"open"}

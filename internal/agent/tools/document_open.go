@@ -57,20 +57,13 @@ func (t *DocumentOpen) Spec() Spec {
 	return Spec{
 		Name:    "document_open",
 		Summary: "Download an indexed document to /workspace as a real file you can open, convert, or compute on.",
-		Description: "Get the ORIGINAL file of an indexed document written into /workspace/documents/, then work on " +
-			"it with shell_exec — LibreOffice (soffice --headless), python with openpyxl/pandas, PyMuPDF and " +
-			"pdftotext are all installed. Use this INSTEAD of document_search whenever the answer needs the whole " +
-			"file rather than a passage: any count, sum, average, maximum, grouping, sort, cross-column filter or " +
-			"'how many' over a spreadsheet or table, any conversion, and any question document_search answered with " +
-			"chunks that do not actually contain the answer. document_search finds WHICH document (use the " +
-			"document_id from its hits); document_open hands you the file itself. Spreadsheets especially: chunked " +
-			"text cannot answer aggregates at any relevance, the file answers them exactly. When a column holds " +
-			"codes rather than quantities — the card calls them code, and postcodes, ISTAT/Belfiore codes, VAT " +
-			"and tax numbers, SKUs and IBANs all are — load it as TEXT (pandas: dtype=str), or the leading " +
-			"zeros that make the value valid are silently dropped and the answer is wrong. Returns the workspace " +
-			"path, file name, size and sha256. Once you have looked inside, if the file name did not already say " +
-			"what it holds, record it with document_describe — that is what makes it findable next time. " +
-			"Example: {\"document_id\":\"doc_9f2c…\"}.",
+		// Shared half in documents.OpenToolContract; only this runtime's specifics are here.
+		Description: documents.OpenToolContract +
+			" The file lands in /workspace/documents/ and is worked on with shell_exec: LibreOffice " +
+			"(soffice --headless), python with openpyxl/pandas, PyMuPDF and pdftotext are all installed. " +
+			"Once you have looked inside, if the file name did not already say what it holds, record it " +
+			"with document_describe -- that is what makes it findable next time. " +
+			"Example: {\"document_id\":\"doc_9f2c\"}.",
 		Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
