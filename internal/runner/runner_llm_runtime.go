@@ -1,3 +1,11 @@
+// runner_llm_runtime.go is the per-turn LLM snapshot seam. A ctx snapshot — set via
+// withLLMRuntimeSnapshot — is now the PER-IDENTITY resolution (CRED-01/CRED-07,
+// runner_identity_llm.go's IdentityLLMResolver): a caller that wants an identity's own
+// OpenRouter credential resolves it there and wraps the context with
+// ScopeContextToIdentitySnapshot BEFORE calling into the turn. Absent a ctx snapshot,
+// llmSnapshot falls back to the runtime's own process-wide snapshot (the deployment
+// client) — unchanged behavior below this seam; the resolver was added ABOVE it,
+// never woven into this file's two call sites.
 package runner
 
 import (

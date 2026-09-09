@@ -39,11 +39,11 @@ import (
 )
 
 // keyDerivationInfo domain-separates this store's wrapping key from every other key
-// derived from the same AURA_AUTHULA_SECRET — in particular from
-// internal/mcpoauth's "aura-mcp-oauth-identity-key-v1". Reusing that string would mean
-// one leaked key unwraps both an identity's remote-MCP tokens AND its LLM credential,
-// which is the exact failure HKDF's info parameter exists to prevent.
-const keyDerivationInfo = "aura-mcp-oauth-identity-key-v1" // TDD RED scaffold — GREEN fixes this
+// derived from the same AURA_AUTHULA_SECRET — in particular from internal/mcpoauth's
+// own info string (see that package's keyDerivationInfo constant). Reusing it would
+// mean one leaked key unwraps both an identity's remote-MCP tokens AND its LLM
+// credential, which is the exact failure HKDF's info parameter exists to prevent.
+const keyDerivationInfo = "aura-identity-llm-key-v1"
 
 // ErrNoKey reports that this identity has no stored OpenRouter key. It is a normal
 // answer, not a failure: on the OpenRouter path it is what makes the caller refuse the
