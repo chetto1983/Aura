@@ -144,8 +144,15 @@ func (rs *IdentityLLMResolver) SnapshotFor(ctx context.Context, identityID strin
 		snapshot := llm.RuntimeSnapshot{Client: rs.exhaustedClient, Config: rs.base}
 		rs.cacheSnapshot(identityID, snapshot)
 		return snapshot, nil
-	default: // identitykey.DecisionRefuseNoKey
+	case identitykey.DecisionRefuseNoKey:
 		return llm.RuntimeSnapshot{}, fmt.Errorf("%w: %s", ErrNoIdentityLLMKey, identityID)
+	default:
+		// Deny by default (RBAC-09's discipline applied here): an unrecognized
+		// Decision value is a REFUSAL, never silently treated as Allow. This is
+		// reachable only if identitykey.Decide grows a fifth value without this
+		// switch being updated to match — the compiler will not catch that for
+		// us (Decision is an int, not an enum), so this branch is the guard.
+		return llm.RuntimeSnapshot{}, fmt.Errorf("runner: %s: unrecognized credit decision %d", identityID, decision)
 	}
 }
 
