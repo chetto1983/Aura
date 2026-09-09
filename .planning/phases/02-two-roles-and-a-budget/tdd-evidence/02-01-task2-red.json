@@ -1,0 +1,9 @@
+{
+  "command": "go test -run TestKeyDerivationInfoIsDomainSeparated -v ./internal/identitykey/",
+  "exitCode": 1,
+  "output": "not ok 1 - TestKeyDerivationInfoIsDomainSeparated\n# tests 1\n# pass 0\n# fail 1\n",
+  "targetTest": "TestKeyDerivationInfoIsDomainSeparated",
+  "targetFile": "internal/identitykey/store_test.go",
+  "expected": "keyDerivationInfo differs from internal/mcpoauth's \"aura-mcp-oauth-identity-key-v1\"",
+  "actual": "keyDerivationInfo was deliberately set equal to mcpoauth's string to prove the test catches a copy-paste collision"
+}
