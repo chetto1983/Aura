@@ -504,7 +504,20 @@ func (c *Client) writeVectors(ctx context.Context, rids []string, vectors [][]fl
 // rest as operators, so a question ending in `…impossible"?` was not a poor
 // query, it was a PARSE ERROR — and the benchmark that hit it counted the
 // resulting zero rows as a recall miss for weeks.
+// luceneBooleanKeywords are read as operators by Lucene's classic parser, and ONLY in
+// upper case. A backslash cannot disarm them the way it disarms punctuation, so the
+// standalone token is lower-cased instead: the analyzer folds case before matching, so
+// this changes what the parser does without changing what the query finds.
+var luceneBooleanKeywords = map[string]string{"AND": "and", "OR": "or", "NOT": "not"}
+
 func escapeLucene(query string) string {
+	fields := strings.Fields(query)
+	for i, field := range fields {
+		if lowered, ok := luceneBooleanKeywords[field]; ok {
+			fields[i] = lowered
+		}
+	}
+	query = strings.Join(fields, " ")
 	var b strings.Builder
 	b.Grow(len(query) + 8)
 	for _, r := range query {
