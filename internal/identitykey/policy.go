@@ -93,7 +93,7 @@ func Decide(in DecisionInput) (Decision, error) {
 	if !in.HasKey {
 		return DecisionRefuseNoKey, ErrNoKey
 	}
-	if in.LimitUSD < 0 {
+	if in.LimitUSD <= 0 {
 		return DecisionRefuseNoCredit, ErrNoCredit
 	}
 	return DecisionAllow, nil
