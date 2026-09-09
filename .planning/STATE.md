@@ -5,16 +5,16 @@ milestone_name: Production Launch — Multi-Tenant
 current_phase: 02
 current_phase_name: Two Roles and a Budget
 status: executing
-stopped_at: Completed 02-06-PLAN.md
-last_updated: "2026-09-09T20:05:00.000Z"
+stopped_at: Completed 02-07-PLAN.md
+last_updated: "2026-09-09T21:40:00.000Z"
 last_activity: 2026-09-09
-last_activity_desc: Plan 02-06 closed — an identity now actually holds a minted key; the dark-code chain is broken
+last_activity_desc: Plan 02-07 closed — money columns widened to numeric(24,12) and the writer that still rounded them fixed
 state_head: 0de2451f6166b9a2d6234343b912b78e1a3b0402
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 17
-  completed_plans: 13
+  completed_plans: 14
   percent: 0
 ---
 
@@ -30,9 +30,9 @@ See: .planning/PROJECT.md (updated 2026-09-07)
 ## Current Position
 
 Phase: 02 (Two Roles and a Budget) — EXECUTING
-Plan: 7 of 10
+Plan: 8 of 10
 Status: Ready to execute
-Last activity: 2026-09-09 — Plan 02-06 closed (provisioning credit leg + revoke leg)
+Last activity: 2026-09-09 — Plan 02-07 closed (admin credit routes + ledger precision)
 
 Progress: [░░░░░░░░░░] 0% (milestone phase-completion — phase 01 itself is not yet marked closed)
 
@@ -88,6 +88,7 @@ phases, not many thin ones.
 | Phase 02 P04 | not measured | 2 tasks | 16 files |
 | Phase 02 P05 | 30min + closure | 3 tasks | 13 files |
 | Phase 02 P06 | ~54min | 3 tasks | 12 files |
+| Phase 02 P07 | ~88min | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -124,6 +125,10 @@ creation:
 - [Phase 02]: openrouterprovision: RevokeKey is DELETE+verifying-GET in one function (CRED-08) — a caller cannot skip the verification half; a DELETE that itself 404s still converges to success provided the follow-up GET also 404s
 - [Phase 02]: [Plan 02-04] The capability-denial ledger was built, tested and green while `AuthDeps.DenialRecorder` was never assigned at the composition root — `NewPgCapabilityDenialStore` had zero callers outside tests, so every real denial took the nil no-op path and recorded nothing. No later plan owned the wiring; closed on touch in `c22e7719c`. Found by checking the plan's acceptance criteria, not its tests: all sixteen tests passed throughout.
 - [Phase 02]: [Plan 02-04] The recorder's nil check belongs at the composition root, not in the constructor: a `*PgCapabilityDenialStore` over a nil pool assigned to the interface field is a NON-nil interface value that slips past `RequireCapability`'s own nil guard and panics on every refusal instead of returning 403.
+- [Phase 02]: [Plan 02-07] Operator approved `numeric(24, 12)` for `cache_metrics.cost_usd` and `conversations.total_cost_usd` (migration 0124) — not the plan's recommended `(20, 10)`. One-way: the down direction rounds every sub-`0.0001` value to zero and says so in the file.
+- [Phase 02]: [Plan 02-07] The checkpoint's own premise "no code change needed for a wider column" was FALSE: `internal/pgnumeric.NumericFromFloat` hardcoded scale 4 (`f * 1e4`), so the widened column alone would still have written zero. A schema widening is not complete until the encoder that feeds it is checked too.
+- [Phase 02]: [Plan 02-07] The plan's "micro-dollars, exact by construction" redirect was wrong at this magnitude: `0.000004158 USD` is `4.158` micro-dollars, so integer micro-dollars would round with a 3.8% per-call error. Nano-dollars would have been needed.
+- [Phase 02]: [Plan 02-07] OPEN, not a defect but worth a decision: `GET .../credit` collapses spend to integer CENTS (`USDCap` is `int64` cents), so the figure a human reads stays `0.00` until roughly 2400 calls at the measured per-call cost accumulate. The storage is now exact and only the presentation rounds, so this is changeable without a migration — but the phase paid a one-way migration for precision its only reader discards. `PeriodSpend` feeds display ONLY; it does not feed CRED-05's refusal, which reads the stored cap.
 - [Phase 02]: [Plan 02-06] The dark-code chain this phase repeated four times is broken: `identitykey.Store.Save` and `internal/openrouterprovision.{MintKey,RevokeKey}` now have real production callers in `cmd/aura/serve_provisioning_openrouter.go`, reachable from `serve_onboarding.go:278` (mint) and `serve_provisioning.go:389` (revoke). Verified by following the boot chain, not by reading the executor's report.
 - [Phase 02]: [Plan 02-06] `Deps.IdentityLLM` is now SAFE to switch on — an identity provisioned through the saga holds a decryptable key. The one-line wiring in `assembleChatEnv` is still deliberately not done; it needs the typed-nil guard (`buildIdentityLLMResolver` returns a typed pointer, and a nil one assigned to an interface field is a NON-nil interface value).
 - [Phase 02]: [Plan 02-06] The executor reported a "spurious race" in a combined six-package `-race` run. Not reproduced: two clean runs, exit 0, zero DATA RACE, plus repo-wide vet/build/file-size clean. Treated as transient, not as a standing concern.
@@ -180,7 +185,7 @@ rediscover them:
 ## Session Continuity
 
 Last session: 2026-09-09T16:30:00.000Z
-Stopped at: Completed 02-06-PLAN.md.
+Stopped at: Completed 02-07-PLAN.md.
 Resume file: None
 
 Settled this session, each measured live on a disposable Postgres container under `-race`,
@@ -195,7 +200,7 @@ never compile-checked:
   whole of 02-04 was latent: green tests, nothing recorded in a running daemon.
 - `f01c7fb91` — `02-04-SUMMARY.md`. Tier `internal/agui`: 777 passed, 0 failed, **0 skipped**.
 
-Next: `/gsd-execute-phase 02` for plan 02-07 (admin controls: identity removal +
-credit caps — a CHECKPOINT plan, it will stop and ask). Also now unblocked, and a
-decision rather than a task: switching on `Deps.IdentityLLM` so the interactive turn
-refuses an identity with no key or no credit.
+Next: `/gsd-execute-phase 02` for plan 02-08 (cockpit: identity roster, capability
+panel, credit panel). Two decisions still open for the operator, neither a task:
+switching on `Deps.IdentityLLM`, and whether the credit read should show sub-cent
+spend.

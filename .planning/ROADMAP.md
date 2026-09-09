@@ -120,7 +120,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 02-07-PLAN.md — the admin removal and credit routes, and the money columns widened so the in-band ledger can hold what a call actually costs (wave 4)
+- [x] 02-07-PLAN.md — the admin removal and credit routes, and the money columns widened so the in-band ledger can hold what a call actually costs (wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
