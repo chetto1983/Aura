@@ -341,6 +341,13 @@ EmbeddingGemma contract is 768 dimensions with a 2,048-token input ceiling, incl
 prefixes and special tokens. Model artifact, dimension, input format and fingerprint
 agree across installation, ingestion, memory and CI.
 
+Long-document extraction must retain the configured Tika builder result and reject
+reported write-limit truncation. The 2026-09-09 ArcadeDB manual baseline indexed only
+23.203% of its non-whitespace text despite a successful reconciliation. Oversized
+passages should reuse the native recursive splitter before fixed-width fallback,
+preserving overlap and absolute locators. Timings must compare equal source coverage;
+see [the measured decision](docs/audit/2026-09-09-long-document-ingestion.md).
+
 Documents retain original hashes; passages retain normalized hashes, locators and
 citation tokens. Retrieval checks source scope and reports which legs ran. An absent
 embedder, unavailable index or missing passage configuration has explicit degraded
