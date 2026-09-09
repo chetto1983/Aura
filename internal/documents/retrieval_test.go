@@ -388,8 +388,13 @@ func retrievalCandidate(leg arcadedb.RetrievalLeg) arcadedb.PassageCandidate {
 // whatever the card index happened to match. Measured 2026-09-09 on the live corpus:
 // "ricetta della carbonara" returned three E2E worker reports at status "complete" with an
 // empty degradation reason, and the agent had nothing on the wire telling it to stop.
-func TestHostRetrieverAbstainsWhenNoPassageQualifies(t *testing.T) {
-	control := &fakeRetrievalControl{cards: []RetrievalCard{retrievalCard()}}
+//
+// NEITHER leg qualifies here, which is what abstention now means. The fixture used to hand
+// back a card while asserting abstention, and that is a state the engine cannot produce:
+// both legs are cut by the same RelevanceFloor, so a card that reaches this code has
+// already passed it. Asserting on the impossible state hid the case below.
+func TestHostRetrieverAbstainsWhenNeitherLegQualifies(t *testing.T) {
+	control := &fakeRetrievalControl{}
 	retriever := &HostRetriever{
 		ControlPlane: control,
 		PassageIndex: &fakePassageIndex{}, // the floor admitted nothing
@@ -404,13 +409,49 @@ func TestHostRetrieverAbstainsWhenNoPassageQualifies(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !response.Abstained {
-		t.Error("Abstained = false, want true when no passage qualified")
+		t.Error("Abstained = false, want true when nothing qualified")
 	}
 	if response.AbstentionReason != AbstainedNoQualifiedPassage {
 		t.Errorf("AbstentionReason = %q, want %q", response.AbstentionReason, AbstainedNoQualifiedPassage)
 	}
 	if len(response.Documents) != 0 {
-		t.Errorf("documents = %d, want 0: a card match alone is not evidence", len(response.Documents))
+		t.Errorf("documents = %d, want 0", len(response.Documents))
+	}
+}
+
+// A spreadsheet is routed to document_open on purpose and carries NO passage, so the old
+// "no passage, no answer" rule deleted the only document that could answer. Measured
+// 2026-09-09 on the live corpus: "elenco dei comuni italiani con CAP e codice ISTAT"
+// abstained outright while gi_comuni_cap.xlsx sat in the card leg, and the same question
+// with a place name in it did return the file only because unrelated weather documents
+// qualified and carried the cards along with them.
+func TestHostRetrieverAnswersFromCardsWhenNoPassageQualifies(t *testing.T) {
+	control := &fakeRetrievalControl{cards: []RetrievalCard{retrievalCard()}}
+	response, err := (&HostRetriever{
+		ControlPlane: control,
+		PassageIndex: &fakePassageIndex{},
+		Embedder:     &fakeRetrievalEmbedder{vector: []float64{0.1, 0.2}},
+		Config:       RetrievalConfig{CandidateLimit: 20},
+	}).Retrieve(t.Context(), RetrievalRequest{
+		IdentityID: retrievalIdentity, Query: "elenco comuni con CAP", Limit: 3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Abstained {
+		t.Fatal("abstained while a card had passed the same relevance floor")
+	}
+	if len(response.Documents) != 1 {
+		t.Fatalf("documents = %d, want the card", len(response.Documents))
+	}
+	// Nothing was retrieved that can be quoted, so the file has to be opened to answer.
+	if !response.Documents[0].RequiresOpen {
+		t.Error("a card-only answer must require opening the file")
+	}
+	// Both legs ran and one found something: that is not a degradation.
+	if response.Status != RetrievalComplete || response.DegradationReason != "" {
+		t.Errorf("status = %q, reason = %q, want an undegraded answer",
+			response.Status, response.DegradationReason)
 	}
 }
 

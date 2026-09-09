@@ -299,12 +299,30 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 		response.Documents = rankCardsOnly(cards, request.Limit, cfg.TopPassages)
 		return response, nil
 	}
-	// The card leg alone is not evidence -- the server's own tool instructions say so --
-	// and letting it answer by itself is exactly how "ricetta della carbonara" came back
-	// with three worker reports. Every leg ran and none of them qualified, so the honest
-	// answer is that this corpus has nothing, not the nearest thing the card index held.
+	// Abstain when NEITHER leg qualified, not when the passage leg alone came back empty.
+	//
+	// The rule used to be "no passage, no answer", written when a card was ranked by BM25
+	// and a passage by a cosine, so a card could not be weighed against anything and
+	// letting it answer by itself is how "ricetta della carbonara" came back with three
+	// worker reports. Both legs now score the same reranked cosine and BOTH are cut by the
+	// same RelevanceFloor, so a card that survived it is qualified evidence -- it says
+	// which FILE knows the answer, and requires_open says how to read it.
+	//
+	// Keeping the old rule silently deleted the only kind of document that can never have
+	// a passage: a spreadsheet is routed to document_open on purpose and carries none.
+	// Measured 2026-09-09 on the live corpus, "elenco dei comuni italiani con CAP e codice
+	// ISTAT" abstained outright while gi_comuni_cap.xlsx sat in the card leg -- and the
+	// same question asked with a place name in it did return the file, because unrelated
+	// weather documents happened to qualify and carried the cards along with them.
 	if len(fused) == 0 {
-		response.Abstained, response.AbstentionReason = true, AbstainedNoQualifiedPassage
+		if len(cards) == 0 {
+			response.Abstained, response.AbstentionReason = true, AbstainedNoQualifiedPassage
+			return response, nil
+		}
+		// No passage was retrieved, so nothing here can be quoted: every answer must be
+		// opened. That is rankCardsOnly's contract, and it is not a degradation -- both
+		// legs ran and one of them found something.
+		response.Documents = rankCardsOnly(cards, request.Limit, cfg.TopPassages)
 		return response, nil
 	}
 	response.Documents = rankDocuments(
