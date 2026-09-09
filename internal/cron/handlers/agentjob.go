@@ -134,10 +134,6 @@ func (h AgentJobHandler) Run(ctx context.Context, job Job) (string, error) {
 //     serve_dispatch.go captured at boot; that capture is gone, so this is now
 //     a real refusal instead.
 func (h AgentJobHandler) resolveLLM(ctx context.Context) (llm.Client, llm.Config, error) {
-	if h.Deps.Runtime != nil {
-		snapshot := h.Deps.Runtime.Snapshot()
-		return snapshot.Client, snapshot.Config, nil
-	}
 	if h.Deps.Resolver != nil {
 		if identityID := identityctx.IdentityID(ctx); identityID != "" {
 			snapshot, err := h.Deps.Resolver.SnapshotFor(ctx, identityID)
@@ -146,6 +142,10 @@ func (h AgentJobHandler) resolveLLM(ctx context.Context) (llm.Client, llm.Config
 			}
 			return snapshot.Client, snapshot.Config, nil
 		}
+	}
+	if h.Deps.Runtime != nil {
+		snapshot := h.Deps.Runtime.Snapshot()
+		return snapshot.Client, snapshot.Config, nil
 	}
 	if h.Deps.Client != nil {
 		return h.Deps.Client, h.Deps.LLM, nil
