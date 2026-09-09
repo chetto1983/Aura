@@ -99,3 +99,28 @@ def test_extractable_routes_by_family():
         assert extractable(name), name
     for name in ["photo.png", "photo.jpg", "clip.mp3", "clip.wav", "archive.zip", "noext"]:
         assert not extractable(name), name
+
+
+def test_long_document_keeps_the_tail_beyond_tika_default_limit(tmp_path):
+    path = tmp_path / "long-manual.txt"
+    text = "Database transactions preserve consistency and isolation.\n" * 12000
+    marker = "FINAL SECTION: Recovery completed successfully."
+    path.write_text(text + marker)
+
+    extracted = extract_text(str(path))
+
+    assert len(extracted) > 500_000
+    assert marker in extracted
+
+
+def test_tika_reported_truncation_is_a_failure(monkeypatch):
+    from types import SimpleNamespace
+    from ingest import extract
+
+    monkeypatch.setattr(extract, "_extractor", SimpleNamespace(
+        extract_file_to_string=lambda path: (
+            "incomplete text", {"X-TIKA:EXCEPTION:write_limit_reached": ["true"]},
+        ),
+    ))
+    with pytest.raises(RuntimeError, match="truncat"):
+        extract_text("long-manual.pdf")

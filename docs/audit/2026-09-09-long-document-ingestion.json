@@ -1,0 +1,355 @@
+{
+    "date":  "2026-09-09",
+    "baseline":  {
+                     "file":  "ArcadeDB-Manual.pdf",
+                     "bytes":  42790866,
+                     "sha256":  "42d8390351fbeeee7fde53490ae06eef87a127706e17d561ea079e93a0f2bbd7",
+                     "upload_seconds":  1.6491298239998287,
+                     "runs":  [
+                                  {
+                                      "label":  "initial",
+                                      "seconds":  49.58477497000058,
+                                      "stages":  {
+                                                     "app.py:_embed":  {
+                                                                           "calls":  141,
+                                                                           "seconds":  32.273386509000005
+                                                                       },
+                                                     "app.py:_embed_once":  {
+                                                                                "calls":  141,
+                                                                                "seconds":  32.267325563
+                                                                            },
+                                                     "app.py:_card":  {
+                                                                          "calls":  1,
+                                                                          "seconds":  0.256061447
+                                                                      },
+                                                     "chunk.py:chunk":  {
+                                                                            "calls":  1,
+                                                                            "seconds":  11.492972752
+                                                                        },
+                                                     "chunk.py:_windows":  {
+                                                                               "calls":  36,
+                                                                               "seconds":  9.637532971
+                                                                           },
+                                                     "extract.py:extract_text":  {
+                                                                                     "calls":  1,
+                                                                                     "seconds":  1.976474051
+                                                                                 }
+                                                 }
+                                  },
+                                  {
+                                      "label":  "unchanged",
+                                      "seconds":  0.06264920700050425,
+                                      "stages":  {
+
+                                                 }
+                                  }
+                              ],
+                     "passages":  141,
+                     "reference_chars":  1944898,
+                     "covered_nonspace_chars":  366671,
+                     "reference_nonspace_chars":  1580286,
+                     "text_coverage":  0.2320282531136769,
+                     "last_character":  500000,
+                     "identity":  "e8ca30dc-dfd3-4d12-9a41-1a9e1b99c5f8",
+                     "database":  "mem_e8ca30dc_dfd3_4d12_9a41_1a9e1b99c5f8",
+                     "offsets_hashes_dimensions_valid":  true
+                 },
+    "full_baseline":  {
+                          "file":  "ArcadeDB-Manual.pdf",
+                          "bytes":  42790866,
+                          "sha256":  "42d8390351fbeeee7fde53490ae06eef87a127706e17d561ea079e93a0f2bbd7",
+                          "upload_seconds":  0.5582796090002375,
+                          "runs":  [
+                                       {
+                                           "label":  "initial",
+                                           "seconds":  68.29656370599878,
+                                           "stages":  {
+                                                          "app.py:_embed_once":  {
+                                                                                     "calls":  443,
+                                                                                     "seconds":  34.091029744000004
+                                                                                 },
+                                                          "app.py:_embed":  {
+                                                                                "calls":  443,
+                                                                                "seconds":  34.109569906000004
+                                                                            },
+                                                          "app.py:_card":  {
+                                                                               "calls":  1,
+                                                                               "seconds":  0.107664407
+                                                                           },
+                                                          "chunk.py:_windows":  {
+                                                                                    "calls":  90,
+                                                                                    "seconds":  18.9085694
+                                                                                },
+                                                          "chunk.py:chunk":  {
+                                                                                 "calls":  1,
+                                                                                 "seconds":  22.780911271
+                                                                             },
+                                                          "extract.py:extract_text":  {
+                                                                                          "calls":  1,
+                                                                                          "seconds":  5.3354131780000005
+                                                                                      }
+                                                      }
+                                       },
+                                       {
+                                           "label":  "unchanged",
+                                           "seconds":  0.0481026790002943,
+                                           "stages":  {
+
+                                                      }
+                                       }
+                                   ],
+                          "passages":  443,
+                          "reference_chars":  1944898,
+                          "covered_nonspace_chars":  1580286,
+                          "reference_nonspace_chars":  1580286,
+                          "text_coverage":  1.0,
+                          "last_character":  1944893,
+                          "identity":  "e8ca30dc-dfd3-4d12-9a41-1a9e1b99c5f8",
+                          "database":  "mem_e8ca30dc_dfd3_4d12_9a41_1a9e1b99c5f8",
+                          "offsets_hashes_dimensions_valid":  true
+                      },
+    "optimized":  {
+                      "file":  "ArcadeDB-Manual.pdf",
+                      "bytes":  42790866,
+                      "sha256":  "42d8390351fbeeee7fde53490ae06eef87a127706e17d561ea079e93a0f2bbd7",
+                      "upload_seconds":  0.5075718440002674,
+                      "runs":  [
+                                   {
+                                       "label":  "initial",
+                                       "seconds":  48.36282458400092,
+                                       "stages":  {
+                                                      "app.py:_embed_once":  {
+                                                                                 "calls":  445,
+                                                                                 "seconds":  33.463676255
+                                                                             },
+                                                      "app.py:_embed":  {
+                                                                            "calls":  445,
+                                                                            "seconds":  33.483780719
+                                                                        },
+                                                      "app.py:_card":  {
+                                                                           "calls":  1,
+                                                                           "seconds":  0.09871389200000001
+                                                                       },
+                                                      "chunk.py:chunk":  {
+                                                                             "calls":  1,
+                                                                             "seconds":  3.853022107
+                                                                         },
+                                                      "extract.py:extract_text":  {
+                                                                                      "calls":  1,
+                                                                                      "seconds":  5.43744644
+                                                                                  }
+                                                  }
+                                   },
+                                   {
+                                       "label":  "unchanged",
+                                       "seconds":  0.043399472000601236,
+                                       "stages":  {
+
+                                                  }
+                                   }
+                               ],
+                      "passages":  445,
+                      "reference_chars":  1944898,
+                      "covered_nonspace_chars":  1580286,
+                      "reference_nonspace_chars":  1580286,
+                      "text_coverage":  1.0,
+                      "last_character":  1944893,
+                      "identity":  "e8ca30dc-dfd3-4d12-9a41-1a9e1b99c5f8",
+                      "database":  "mem_e8ca30dc_dfd3_4d12_9a41_1a9e1b99c5f8",
+                      "offsets_hashes_dimensions_valid":  true
+                  },
+    "compact_1024":  {
+                         "file":  "ArcadeDB-Manual.pdf",
+                         "bytes":  42790866,
+                         "sha256":  "42d8390351fbeeee7fde53490ae06eef87a127706e17d561ea079e93a0f2bbd7",
+                         "upload_seconds":  0.509287647999372,
+                         "runs":  [
+                                      {
+                                          "label":  "initial",
+                                          "seconds":  50.21763215500141,
+                                          "stages":  {
+                                                         "app.py:_embed_once":  {
+                                                                                    "calls":  891,
+                                                                                    "seconds":  31.914358075000003
+                                                                                },
+                                                         "app.py:_embed":  {
+                                                                               "calls":  891,
+                                                                               "seconds":  31.946513068
+                                                                           },
+                                                         "app.py:_card":  {
+                                                                              "calls":  1,
+                                                                              "seconds":  0.11745981500000001
+                                                                          },
+                                                         "chunk.py:chunk":  {
+                                                                                "calls":  1,
+                                                                                "seconds":  4.330854094
+                                                                            },
+                                                         "extract.py:extract_text":  {
+                                                                                         "calls":  1,
+                                                                                         "seconds":  5.236491077
+                                                                                     }
+                                                     }
+                                      },
+                                      {
+                                          "label":  "unchanged",
+                                          "seconds":  0.055086410999138025,
+                                          "stages":  {
+
+                                                     }
+                                      }
+                                  ],
+                         "passages":  891,
+                         "reference_chars":  1944898,
+                         "covered_nonspace_chars":  1580286,
+                         "reference_nonspace_chars":  1580286,
+                         "text_coverage":  1.0,
+                         "last_character":  1944893,
+                         "identity":  "e8ca30dc-dfd3-4d12-9a41-1a9e1b99c5f8",
+                         "database":  "mem_e8ca30dc_dfd3_4d12_9a41_1a9e1b99c5f8",
+                         "offsets_hashes_dimensions_valid":  true
+                     },
+    "token_bounds":  {
+                         "max_input_tokens":  2044,
+                         "overflows":  0,
+                         "measured_with_model_tokenizer":  true
+                     },
+    "retrieval":  [
+                      {
+                          "case":  "supply_chain",
+                          "question":  "In the supply-chain use case, how many tiers deep does Multi-Tier Supplier Discovery search?",
+                          "expected":  "suppliers up to 3 tiers deep",
+                          "baseline_contains_evidence":  true,
+                          "optimized_contains_evidence":  true,
+                          "production_fused_top1_contains_evidence":  true,
+                          "query_seconds":  0.04008331799923326
+                      },
+                      {
+                          "case":  "select_ilike",
+                          "question":  "Which Java Select API operator performs a case-insensitive pattern match?",
+                          "expected":  "ilike() Pattern match (case-insensitive)",
+                          "baseline_contains_evidence":  true,
+                          "optimized_contains_evidence":  true,
+                          "production_fused_top1_contains_evidence":  false,
+                          "query_seconds":  0.0370812589990237
+                      },
+                      {
+                          "case":  "jdbc",
+                          "question":  "What auto-commit setting is recommended for JDBC over the PostgreSQL protocol?",
+                          "expected":  "conn.setAutoCommit(true)",
+                          "baseline_contains_evidence":  false,
+                          "optimized_contains_evidence":  true,
+                          "production_fused_top1_contains_evidence":  true,
+                          "query_seconds":  0.054909401000259095
+                      },
+                      {
+                          "case":  "mcp_depth",
+                          "question":  "Nel server MCP di ArcadeDB qual è il limite massimo di maxDepth per l\u0027espansione del grafo?",
+                          "expected":  "maxDepth above 3 is rejected rather than clamped",
+                          "baseline_contains_evidence":  false,
+                          "optimized_contains_evidence":  true,
+                          "production_fused_top1_contains_evidence":  false,
+                          "query_seconds":  0.040365233000557055
+                      },
+                      {
+                          "case":  "beam_width",
+                          "question":  "What is the default beamWidth for an LSM_VECTOR index and what does it control?",
+                          "expected":  "beamWidth 100 Search depth during build",
+                          "baseline_contains_evidence":  false,
+                          "optimized_contains_evidence":  true,
+                          "production_fused_top1_contains_evidence":  false,
+                          "query_seconds":  0.041496693000226514
+                      },
+                      {
+                          "case":  "raft_commit",
+                          "question":  "In the Raft replicate-first commit-after three-phase commit, what happens if Phase 2 times out?",
+                          "expected":  "If Phase 2 times out or fails, Phase 3 never runs",
+                          "baseline_contains_evidence":  false,
+                          "optimized_contains_evidence":  true,
+                          "production_fused_top1_contains_evidence":  false,
+                          "query_seconds":  0.04436254400025064
+                      },
+                      {
+                          "case":  "redis_port",
+                          "question":  "Qual è la porta TCP predefinita del plugin Redis, impostazione redis.port?",
+                          "expected":  "Redis plugin. Default is 6379",
+                          "baseline_contains_evidence":  false,
+                          "optimized_contains_evidence":  true,
+                          "production_fused_top1_contains_evidence":  true,
+                          "query_seconds":  0.04448815000068862
+                      },
+                      {
+                          "case":  "gav_lifecycle",
+                          "question":  "What are the Graph Analytical View lifecycle status values returned by gav.getStatus()?",
+                          "expected":  "NOT_BUILT, BUILDING, READY, STALE",
+                          "baseline_contains_evidence":  false,
+                          "optimized_contains_evidence":  true,
+                          "production_fused_top1_contains_evidence":  true,
+                          "query_seconds":  0.050068845999703626
+                      },
+                      {
+                          "case":  "vector_null",
+                          "question":  "Can primitive array inputs to vectorHasNull contain NULL and what does the function return for them?",
+                          "expected":  "Primitive array inputs can never hold a NULL and therefore always return false",
+                          "baseline_contains_evidence":  false,
+                          "optimized_contains_evidence":  true,
+                          "production_fused_top1_contains_evidence":  true,
+                          "query_seconds":  0.05841128700012632
+                      },
+                      {
+                          "case":  "total_neighbors",
+                          "question":  "Che cosa calcola algo.totalNeighbors e cosa rappresenta il campo coefficient?",
+                          "expected":  "Size of the union of the two neighbourhood sets",
+                          "baseline_contains_evidence":  false,
+                          "optimized_contains_evidence":  true,
+                          "production_fused_top1_contains_evidence":  true,
+                          "query_seconds":  0.07093844900009572
+                      }
+                  ],
+    "mutations":  {
+                      "value":  [
+                                    {
+                                        "file":  "extract.py",
+                                        "mutation":  "_extractor = Extractor()",
+                                        "killed":  true
+                                    },
+                                    {
+                                        "file":  "extract.py",
+                                        "mutation":  "if False:",
+                                        "killed":  true
+                                    },
+                                    {
+                                        "file":  "chunk.py",
+                                        "mutation":  "line=base.line,",
+                                        "killed":  true
+                                    },
+                                    {
+                                        "file":  "chunk.py",
+                                        "mutation":  "column=base.column + rel.char_offset,",
+                                        "killed":  true
+                                    },
+                                    {
+                                        "file":  "chunk.py",
+                                        "mutation":  "out.extend(_window_split(piece, max_tokens))",
+                                        "killed":  true
+                                    }
+                                ],
+                      "Count":  5
+                  },
+    "native_retrieval":  [
+                             {
+                                 "case":  null,
+                                 "arm":  null,
+                                 "top1":  null,
+                                 "top3":  null,
+                                 "seconds":  null
+                             },
+                             {
+                                 "case":  null,
+                                 "arm":  null,
+                                 "top1":  null,
+                                 "top3":  null,
+                                 "seconds":  null
+                             }
+                         ],
+    "deployed_image":  "sha256:41e04a4b340574dcfc032e717596ff44b0e92deaeeaa1d12d1968a569c79566c"
+}

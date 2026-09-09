@@ -176,3 +176,28 @@ def test_window_split_verifies_its_own_output_on_locally_dense_text(monkeypatch)
     for prev, nxt in zip(out, out[1:]):
         assert prev.end == nxt.start, "window chunks must stay contiguous while shrinking"
     assert "".join(c.text for c in out) == body
+
+
+def test_dense_multiline_text_preserves_words_and_absolute_positions(monkeypatch):
+    monkeypatch.setattr("ingest.chunk.count_tokens", lambda text: len(text))
+    text = ("Indici vettoriali nella citt\u00e0 di Tokyo: \u6771\u4eac.\n" * 80)
+    pieces = chunk(text, max_tokens=64)
+    covered = set()
+    for piece in pieces:
+        assert len(piece.text) <= 64
+        assert text[piece.start:piece.end] == piece.text
+        assert piece.start == 0 or text[piece.start - 1].isspace()
+        assert piece.end == len(text) or text[piece.end].isspace()
+        for offset, position in ((piece.start, piece.start_pos), (piece.end, piece.end_pos)):
+            assert position.byte_offset == len(text[:offset].encode())
+            assert position.line == text[:offset].count("\n") + 1
+            assert position.column == offset - text.rfind("\n", 0, offset)
+        covered.update(range(piece.start, piece.end))
+    assert all(i in covered for i, char in enumerate(text) if not char.isspace())
+
+
+def test_dense_prose_keeps_overlap_when_words_fit_the_overlap_budget(monkeypatch):
+    monkeypatch.setattr("ingest.chunk.count_tokens", lambda text: len(text))
+    text = "alpha beta gamma delta epsilon zeta eta theta iota kappa " * 100
+    pieces = chunk(text, max_tokens=64)
+    assert any(b.start < a.end for a, b in zip(pieces, pieces[1:]))

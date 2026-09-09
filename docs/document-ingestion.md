@@ -1,6 +1,6 @@
 # Document ingestion and retrieval
 
-Updated 2026-09-07 from the production ingestion and retrieval paths.
+Updated 2026-09-09 from the production ingestion and retrieval paths.
 
 ## Data flow
 
@@ -31,10 +31,19 @@ its configured extraction/model capabilities. A file with no extractable text ca
 still have a searchable card and remain openable; that does not prove its contents
 were indexed.
 
+Tika's configured string limit is 50 million characters; a reported write-limit
+truncation fails extraction rather than publishing an incomplete index as successful.
+Its builder return value must be retained, or the default 500,000-character limit
+remains active. This was measured and corrected on a 1,133-page manual.
+
 `services/ingest/chunk.py` uses CocoIndex splitters and budgets input against the
 embedding model, including prefixes and special-token overhead. The current
 EmbeddingGemma model has a 2,048-token input ceiling and 768-dimensional embeddings.
 Source hashes, normalized passage hashes and locators are retained.
+Oversized passages are split again at native structural boundaries using their
+measured token density. Fixed-width windows remain the fallback for unbreakable text.
+On the ArcadeDB manual, complete ingestion improved from 68.3 to 48.4 seconds with
+100% extracted-text coverage; see [measurement and limits](audit/2026-09-09-long-document-ingestion.md).
 
 ArcadeDB stores document cards and passages in the identity's database. Postgres
 holds control-plane and authorization metadata; Garage remains the source of original

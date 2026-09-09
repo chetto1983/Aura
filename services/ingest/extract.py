@@ -34,11 +34,10 @@ _LEGACY = {
     ".rtf": "docx",
 }
 
-# extract_file_to_string truncates SILENTLY at its default max length -- no
-# exception, no marker, just a shorter string. Set the cap once, far above any
-# real document, on one reused instance rather than per call.
-_extractor = Extractor()
-_extractor.set_extract_string_max_length(50_000_000)
+# This is a builder returning a NEW extractor, not a mutating setter:
+# https://github.com/iscc/iscc-tika#python. Discarding it truncated the
+# 1,133-page ArcadeDB manual to 500,000 of its 1,944,898 characters.
+_extractor = Extractor().set_extract_string_max_length(50_000_000)
 
 
 # The formats the extractor is PROVEN on, from the measured matrix in this module's
@@ -103,8 +102,7 @@ def prepared(path: str):
 def extract_text(path: str) -> str:
     """Extract plain text from any office document, converting legacy formats first."""
     with prepared(path) as ready:
-        # extract_file_to_string returns (text, metadata); metadata is Tika's own
-        # provenance (Content-Type, page count, producer) -- a later task consumes
-        # it, this signature stays text-only.
-        text, _metadata = _extractor.extract_file_to_string(ready)
+        text, metadata = _extractor.extract_file_to_string(ready)
+        if "true" in metadata.get("X-TIKA:EXCEPTION:write_limit_reached", []):
+            raise RuntimeError(f"document text extraction truncated at its write limit: {path}")
         return text

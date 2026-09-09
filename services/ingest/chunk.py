@@ -144,13 +144,11 @@ def document_budget() -> int:
 
 
 def _shift(base: TextPosition, rel: TextPosition) -> TextPosition:
-    # `rel` is relative to a piece that (see _window_split) never crosses a
-    # source line, so line is constant and column advances 1:1 with char_offset.
     return TextPosition(
         byte_offset=base.byte_offset + rel.byte_offset,
         char_offset=base.char_offset + rel.char_offset,
-        line=base.line,
-        column=base.column + rel.char_offset,
+        line=base.line + rel.line - 1,
+        column=base.column + rel.column - 1 if rel.line == 1 else rel.column,
     )
 
 def _window_split(piece: CoreChunk, max_tokens: int) -> list[Chunk]:
@@ -160,9 +158,7 @@ def _window_split(piece: CoreChunk, max_tokens: int) -> list[Chunk]:
     # separator. (?s) so '.' matches newlines (or a run containing one goes
     # uncut); keep_separator='left' (the default DISCARDS matched windows ->
     # zero chunks); trim=False (or edge whitespace is eaten and offsets stop
-    # reconstructing the source). No newline exists inside `piece` (any would
-    # already have been a RecursiveSplitter boundary), which is what makes
-    # _shift's line/column arithmetic below valid.
+    # reconstructing the source).
     # The window is sized from THIS piece's measured chars-per-token, not from
     # CHARS_PER_TOKEN_FALLBACK. That constant is safe only where a character is
     # worth more than three tokens' worth of nothing -- i.e. Latin script. Han,
@@ -208,6 +204,30 @@ def _windows(piece: CoreChunk, max_chars: int) -> list[Chunk]:
                           start_pos=start_pos, end_pos=end_pos))
     return out
 
+def _bounded_split(piece: CoreChunk, max_tokens: int, overlap_ratio: float) -> list[Chunk]:
+    tokens = count_tokens(piece.text)
+    if tokens <= max_tokens:
+        return [Chunk(text=piece.text, start=piece.start.char_offset, end=piece.end.char_offset,
+                      start_pos=piece.start, end_pos=piece.end)]
+
+    # Dense tables/prose still have useful boundaries. On the ArcadeDB manual,
+    # retrying the native splitter avoids 20 s in fixed-width regex matching and
+    # preserves word boundaries and overlap that those windows discard.
+    budget_bytes = max(1, int(len(piece.text.encode()) * max_tokens / tokens * _WINDOW_SAFETY))
+    smaller = _splitter.split(
+        piece.text, chunk_size=budget_bytes, min_chunk_size=1,
+        chunk_overlap=round(budget_bytes * overlap_ratio),
+    )
+    if not smaller or any(len(child.text) >= len(piece.text) for child in smaller):
+        return _window_split(piece, max_tokens)
+    out: list[Chunk] = []
+    for child in smaller:
+        absolute = CoreChunk(text=child.text, start=_shift(piece.start, child.start),
+                             end=_shift(piece.start, child.end))
+        out.extend(_bounded_split(absolute, max_tokens, overlap_ratio))
+    return out
+
+
 def chunk(
     text: str, max_tokens: int = MODEL_MAX_TOKENS, overlap_ratio: float = DEFAULT_OVERLAP_RATIO
 ) -> list[Chunk]:
@@ -229,9 +249,5 @@ def chunk(
     overlap_bytes = round(budget_bytes * overlap_ratio)
     out: list[Chunk] = []
     for piece in _splitter.split(text, chunk_size=budget_bytes, chunk_overlap=overlap_bytes):
-        if count_tokens(piece.text) <= max_tokens:
-            out.append(Chunk(text=piece.text, start=piece.start.char_offset, end=piece.end.char_offset,
-                              start_pos=piece.start, end_pos=piece.end))
-        else:
-            out.extend(_window_split(piece, max_tokens))
+        out.extend(_bounded_split(piece, max_tokens, overlap_ratio))
     return out
