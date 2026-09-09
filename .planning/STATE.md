@@ -5,10 +5,10 @@ milestone_name: Production Launch — Multi-Tenant
 current_phase: 02
 current_phase_name: Two Roles and a Budget
 status: executing
-stopped_at: Completed 02-03-PLAN.md
-last_updated: "2026-09-09T12:29:39.583Z"
+stopped_at: 02-04 code landed (8e9ae1a43); 02-04-SUMMARY.md not written
+last_updated: "2026-09-09T15:10:00.000Z"
 last_activity: 2026-09-09
-last_activity_desc: Phase 02 execution resumed (wave continue)
+last_activity_desc: internal/db wildcard assertions corrected, whole db_integration tier green live
 state_head: 0de2451f6166b9a2d6234343b912b78e1a3b0402
 progress:
   total_phases: 7
@@ -31,8 +31,8 @@ See: .planning/PROJECT.md (updated 2026-09-07)
 
 Phase: 02 (Two Roles and a Budget) — EXECUTING
 Plan: 4 of 10
-Status: Ready to execute
-Last activity: 2026-09-09 — Phase 02 execution resumed (wave continue)
+Status: Code landed, SUMMARY pending
+Last activity: 2026-09-09 — internal/db wildcard assertions corrected, db_integration tier green live
 
 Progress: [░░░░░░░░░░] 0% (milestone phase-completion — phase 01 itself is not yet marked closed)
 
@@ -168,8 +168,13 @@ rediscover them:
 
 ## Session Continuity
 
-Last session: 2026-09-09T12:29:39.519Z
-Stopped at: Completed 02-03-PLAN.md
-Resume file: None
+Last session: 2026-09-09T15:10:00.000Z
+Stopped at: 02-04's code is landed (`8e9ae1a43`) but `02-04-SUMMARY.md` is not written.
+Resume file: `.planning/HANDOFF.json`
 
-Next: `/gsd-plan-phase 1`
+Settled this session (`c81dffdde`): the three obsolete `'*'` assertions migration 0121 left
+behind are corrected and `db_test.go` is split at the 600-LOC cap. Measured, not
+compile-checked — the whole `internal/db` `db_integration` tier under `-race` on a disposable
+Postgres container: 96 passed, 0 failed, **0 skipped**.
+
+Next: write `02-04-SUMMARY.md`, update ROADMAP.md, then `/gsd-execute-phase 02` for 02-05.
