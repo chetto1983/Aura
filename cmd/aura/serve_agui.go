@@ -126,7 +126,7 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	aguiServer.SetFileBrowser(fileBrowser)
 	// A nil namer is wired deliberately rather than guarded against: the setter accepts it
 	// and the listing degrades to key-derived names.
-	if namer := buildFileNamer(chat.cfg); namer != nil {
+	if namer := buildFileNamer(chat.pool); namer != nil {
 		aguiServer.SetFileNamer(namer)
 	}
 	aguiServer.SetFileOpener(fileObjects)

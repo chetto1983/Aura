@@ -51,9 +51,10 @@ const onboardingTokenTTL = time.Hour
 // identityCreateCapability is the capability_grants name the create mutation is gated on
 // (ONBD-01a / D-04, parity with agent.run). The route mount enforces it via
 // RequireCapability; the saga re-checks it (belt-and-suspenders) so the creator must hold
-// identity.create (or the '*' wildcard) to provision. The seeded `local` identity holds
-// '*' and so passes.
-const identityCreateCapability = "identity.create"
+// identity.create explicitly to provision (RBAC-01: the wildcard is retired as of
+// migration 0121, so a bare '*' row no longer satisfies this check). Alias of
+// internal/identity.CapIdentityCreate (RBAC-02) — never a re-declared literal.
+const identityCreateCapability = identity.CapIdentityCreate
 
 // AuthulaUser is the minimal projection of a created Authula user the saga needs (the id
 // for the link + compensation, the email echoed into the account). Declared consumer-side
@@ -494,7 +495,7 @@ func (s *onboardingService) validateNoEscalation(ctx context.Context, creator st
 	hasWildcard := false
 	for _, g := range grants {
 		creatorSet[g] = true
-		if g == wildcardCapability {
+		if g == identity.Wildcard {
 			hasWildcard = true
 		}
 	}

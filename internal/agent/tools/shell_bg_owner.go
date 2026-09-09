@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/identityctx"
 )
 
@@ -26,8 +27,9 @@ const localOwnerID = "00000000-0000-0000-0000-000000000001"
 
 // adminShellCapability grants cross-session poll/kill recovery (D-18). It reuses the
 // existing capability_grants seam — governance.write — per the RESEARCH OQ resolution
-// (no net-new settings.model.write); the seeded `local` admin holds it (0026).
-const adminShellCapability = "governance.write"
+// (no net-new settings.model.write). RBAC-02: alias of internal/identity.CapGovernanceWrite,
+// the single declaration point — never a re-declared literal.
+const adminShellCapability = identity.CapGovernanceWrite
 
 // capabilityChecker is the narrow consumer-side seam (D-A2-02 "accept interfaces")
 // used by tool-level administrator checks; *identity.Store satisfies it structurally.

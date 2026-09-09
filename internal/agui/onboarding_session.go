@@ -8,14 +8,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/onboarding"
 )
-
-// wildcardCapability is the system-managed match-all grant ('*', identity.Wildcard). The
-// D-06 capability picker NEVER offers it and the server NEVER lets it be requested (no-
-// escalation). Declared locally so this file does not import internal/identity just for the
-// constant string.
-const wildcardCapability = "*"
 
 // onboarding_session.go is the server-held onboarding session store (ONBD-01): the
 // identity-provisioning wizard spans several stateless POSTs (start → provision →
@@ -341,7 +336,7 @@ func (s OnboardingSeed) toAnswers() onboarding.Answers {
 func filterWildcard(grants []string) []string {
 	out := make([]string, 0, len(grants))
 	for _, g := range grants {
-		if g == wildcardCapability {
+		if g == identity.Wildcard {
 			continue
 		}
 		out = append(out, g)

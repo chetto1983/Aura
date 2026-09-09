@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/share"
 )
 
@@ -93,12 +94,11 @@ func toShareLinkResponse(link share.Link, token string) shareLinkResponse {
 // sharePublicCapabilityName is the D-02 capability_grants name for the public-share tier —
 // see cmd/aura/share_public_route_test.go's sharePublicCapability doc for the full identity.create-
 // sibling rationale (per-user, off-by-default, NOT governance.write's admin-only shape).
-// Duplicated here as a string literal, not imported, because internal/agui cannot import
-// cmd/aura (the composition-root package) — both packages must agree on this exact string.
-// Neither the tag audit nor go vet catch a drift between the two literals; grep both
-// `sharePublicCapability` (cmd/aura test) and `sharePublicCapabilityName` (here) before renaming
-// either.
-const sharePublicCapabilityName = "share.public"
+// RBAC-02: sourced from internal/identity.CapSharePublic, the single declaration point —
+// no longer a duplicated literal. grep both `sharePublicCapability` (cmd/aura test) and
+// `sharePublicCapabilityName` (here) before renaming either; both must keep resolving to
+// the same identity.CapSharePublic string.
+const sharePublicCapabilityName = identity.CapSharePublic
 
 // handleShareCreate mints a new share link for the authenticated caller's own conversation
 // (D-06 owner gate runs inside share.Service.Create, first, before any side effect).

@@ -19,5 +19,5 @@ SELECT EXISTS (
     SELECT 1
     FROM aura.capability_grants
     WHERE identity_id = $1
-      AND (capability = '*' OR capability = $2)
+      AND capability = $2
 ) AS has_capability;

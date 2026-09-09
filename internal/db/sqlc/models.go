@@ -113,7 +113,7 @@ type AuraCacheMetrics struct {
 	CostUsd        pgtype.Numeric     `json:"cost_usd"`
 }
 
-// Per-identity capability grants. Wildcard `*` is system-managed (seeded, never grant/revoke via CLI).
+// Per-identity capability grants. The `*` wildcard is retired as of 0121 (RBAC-01) — HasCapability matches only the exact capability name.
 type AuraCapabilityGrants struct {
 	IdentityID pgtype.UUID        `json:"identity_id"`
 	Capability string             `json:"capability"`

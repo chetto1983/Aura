@@ -134,9 +134,12 @@ func (s *Store) DeleteIdentity(ctx context.Context, name string) error {
 	return nil
 }
 
-// HasCapability reports whether the identity holds either the '*' wildcard or
-// the exact capability. The generated query does the wildcard-or-exact match in
-// SQL; only a real DB failure returns a non-nil error.
+// HasCapability reports whether the identity holds the exact capability. The
+// wildcard is retired as of migration 0121 (RBAC-01): the generated query no
+// longer expands '*', so a capability added later is granted to nobody until
+// someone grants it explicitly. Fails closed: a ParseUUID failure, a
+// withIdentity error and a query error all return (false, err) — never
+// (true, err) and never a silently-swallowed error read as a bare false.
 func (s *Store) HasCapability(ctx context.Context, identityID, capability string) (bool, error) {
 	id, err := db.ParseUUID("identity id", identityID)
 	if err != nil {

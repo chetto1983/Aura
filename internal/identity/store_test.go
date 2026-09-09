@@ -112,7 +112,11 @@ func countGrants(t *testing.T, pool *pgxpool.Pool, identityID, extra string, arg
 	return n
 }
 
-func TestSeed_LocalIdentityAndWildcard(t *testing.T) {
+// TestSeed_LocalIdentityExplicitCapabilities asserts the migrated (RBAC-01, 0121) state:
+// `local` holds no '*' row and holds exactly the six declared capabilities (identity.All()).
+// Pre-0121 this test asserted a single seeded '*' row instead; renamed and rewritten
+// because that assertion is now false — the wildcard is retired.
+func TestSeed_LocalIdentityExplicitCapabilities(t *testing.T) {
 	pool := migratedPool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -127,27 +131,43 @@ func TestSeed_LocalIdentityAndWildcard(t *testing.T) {
 		t.Errorf("seeded identity: want id=%s kind=system, got id=%s kind=%s", localID, got.ID, got.Kind)
 	}
 
-	// Exactly one (...001, '*') capability_grants row.
+	// No wildcard row survives 0121.
 	wildcardCount := countGrants(t, pool, localID, "AND capability = '*'")
-	if wildcardCount != 1 {
-		t.Errorf("seeded (...001, '*') grant: want exactly 1 row, got %d", wildcardCount)
+	if wildcardCount != 0 {
+		t.Errorf("seeded (...001, '*') grant: want 0 rows after 0121, got %d", wildcardCount)
+	}
+
+	// Exactly the declared six, no more, no fewer.
+	explicitCount := countGrants(t, pool, localID, "")
+	if explicitCount != len(All()) {
+		t.Errorf("local explicit grant count: want %d (All()), got %d", len(All()), explicitCount)
 	}
 }
 
-func TestHasCapability_WildcardGrantsEverything(t *testing.T) {
+func TestHasCapability_LocalExactMatchNoWildcard(t *testing.T) {
 	pool := migratedPool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	s := New(pool)
 
-	// Fresh boot: the '*' wildcard means HasCapability is true for ANY name.
-	for _, cap := range []string{"any_tool", "memory.read", "web.fetch"} {
+	// Post-0121, `local` holds the six declared names and nothing else — a name
+	// outside that set is refused, never admitted by a wildcard that no longer exists.
+	for _, cap := range All() {
 		ok, err := s.HasCapability(ctx, localID, cap)
 		if err != nil {
 			t.Fatalf("HasCapability(%q): %v", cap, err)
 		}
 		if !ok {
-			t.Errorf("HasCapability(local, %q): want true (wildcard), got false", cap)
+			t.Errorf("HasCapability(local, %q): want true (declared, explicitly granted), got false", cap)
+		}
+	}
+	for _, cap := range []string{"any_tool", "memory.read", "web.fetch"} {
+		ok, err := s.HasCapability(ctx, localID, cap)
+		if err != nil {
+			t.Fatalf("HasCapability(%q): %v", cap, err)
+		}
+		if ok {
+			t.Errorf("HasCapability(local, %q): want false (no wildcard expansion), got true", cap)
 		}
 	}
 }
@@ -242,10 +262,11 @@ func TestGrantRevoke_WildcardRejected(t *testing.T) {
 		t.Errorf("RevokeCapability('*'): want ErrWildcardManaged, got %v", err)
 	}
 
-	// The seeded wildcard row must still be present (rejection happened before DB).
+	// The rejection happens before any DB call, so it must not create a wildcard row —
+	// post-0121 `local` never holds one at all.
 	n := countGrants(t, pool, localID, "AND capability = '*'")
-	if n != 1 {
-		t.Errorf("seeded '*' grant: want still exactly 1 row after rejection, got %d", n)
+	if n != 0 {
+		t.Errorf("'*' grant: want 0 rows after rejected grant/revoke, got %d", n)
 	}
 }
 

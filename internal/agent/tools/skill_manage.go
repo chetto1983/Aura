@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/identityctx"
 )
 
-const skillManageCapability = "governance.write"
+// skillManageCapability aliases internal/identity.CapGovernanceWrite (RBAC-02) — the
+// single declaration point, never a re-declared literal.
+const skillManageCapability = identity.CapGovernanceWrite
 
 // SkillManageTool is the WRITE half of the skills grammar, split out of SkillTool.
 //

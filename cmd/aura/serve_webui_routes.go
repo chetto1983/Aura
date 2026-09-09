@@ -5,6 +5,8 @@
 // touch); the precedence/carve-out doctrine lives in serve_webui.go's header.
 package main
 
+import "github.com/chetto1983/aura/internal/identity"
+
 // authBasePath is the route prefix the embedded Authula provider serves its
 // credential flows under (its BasePath, spec §4 / config.WithBasePath). Mounted as a
 // subtree on the parent mux and marked public in RequireAuth (login/TOTP happen before
@@ -67,25 +69,23 @@ func fallbackExcludedPrefixes() []string {
 }
 
 // agentRunCapability is the capability_grants name the mutating POST /agent/run route
-// is gated on (D-04 / WEB-03). The seeded `local` identity holds the `*` wildcard so it
-// passes regardless of the exact name; the name only becomes load-bearing when real
-// grants arrive in Phase 28. It invents no governance write routes — those land later.
-const agentRunCapability = "agent.run"
+// is gated on (D-04 / WEB-03). RBAC-01/RBAC-02: the wildcard is retired as of migration
+// 0121 and internal/identity is the ONLY declaration point — this is an alias assigned
+// from that constant, never a re-declared literal.
+const agentRunCapability = identity.CapAgentRun
 
 // governanceReadCapability gates the Phase-28 governance board read surface. The boards
 // are read-only, but scheduler and audit rows can reveal cross-identity operational
 // metadata, so they require an explicit grant instead of authentication alone.
-const governanceReadCapability = "governance.read"
+const governanceReadCapability = identity.CapGovernanceRead
 
 // governanceWriteCapability gates every Phase-29 governance WRITE surface (MCP config
 // mutation + skill install). It is strictly stronger than governance.read: a write can
 // install a new MCP server or a RISKY supply-chain skill, so it requires its own grant.
-// The seeded `local` identity holds the `*` wildcard so it passes regardless of the exact
-// name (the name becomes load-bearing once real grants arrive). Plan 29-02 mounts the six
-// MCP write routes behind it (governanceMCP*Route); plan 29-03 adds the skill-install
-// mounts. The auth_test.go:494 `governance.write` 403 assertion and these mounts agree on
-// one string.
-const governanceWriteCapability = "governance.write"
+// Plan 29-02 mounts the six MCP write routes behind it (governanceMCP*Route); plan 29-03
+// adds the skill-install mounts. The auth_test.go:494 `governance.write` 403 assertion
+// and these mounts agree on one string, sourced from internal/identity (RBAC-02).
+const governanceWriteCapability = identity.CapGovernanceWrite
 
 // conversationsRoutePrefix is the CHAT-02 conversation-management subtree (Phase 25),
 // registered on the parent mux as a SPECIFIC subtree delegating to the AG-UI handler.
@@ -281,12 +281,12 @@ const (
 
 // identityCreateCapability is the capability_grants name the onboarding CREATE mutations
 // (start + provision) are gated on (ONBD-01a / D-04, parity with agentRunCapability). The
-// seeded `local` identity holds the '*' wildcard so it passes; the name becomes load-
-// bearing for provisioned identities (which never get '*' nor identity.create unless the
-// creator explicitly grants it AND holds it). It mirrors the agui-side const of the same
-// value (onboarding_provision.go) so the gate name is one truth across the mount + the
-// service re-check.
-const identityCreateCapability = "identity.create"
+// bootstrap operator holds it explicitly (RBAC-08, the wildcard retired as of 0121); a
+// provisioned identity holds it only if the creator explicitly grants it AND holds it
+// itself. It mirrors the agui-side const of the same value (onboarding_provision.go) so
+// the gate name is one truth across the mount + the service re-check, and both are
+// aliases of internal/identity.CapIdentityCreate (RBAC-02).
+const identityCreateCapability = identity.CapIdentityCreate
 
 // onboarding* are the Phase-28 ONBD-01/02 onboarding wizard routes. start + provision are
 // the CREATE mutations — interposed with RequireCapability(identity.create) exactly like

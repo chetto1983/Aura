@@ -247,17 +247,21 @@ func createAuraFirstOperatorTx(ctx context.Context, tx pgx.Tx, identityName, aut
 		}
 		return "", fmt.Errorf("create bootstrap identity: %w", err)
 	}
-	// The wildcard grant below lands in aura.capability_grants, fail-closed as of migration
+	// The explicit set below lands in aura.capability_grants, fail-closed as of migration
 	// 0087. The identity is minted one statement above, so the scoping has to happen inside
-	// this tx rather than around it.
+	// this tx rather than around it. RBAC-01/RBAC-08: the wildcard is retired as of 0121 —
+	// the bootstrap operator gets the declared set explicitly, not the '*' shortcut.
 	if err := db.SetTxIdentity(ctx, tx, newID.String()); err != nil {
 		return "", fmt.Errorf("scope bootstrap tx to new identity: %w", err)
 	}
-	if err := q.GrantCapability(ctx, sqlc.GrantCapabilityParams{
-		IdentityID: newPGID,
-		Capability: "*",
-	}); err != nil {
-		return "", fmt.Errorf("grant bootstrap wildcard: %w", err)
+	grantedCapabilities := identity.All()
+	for _, cap := range grantedCapabilities {
+		if err := q.GrantCapability(ctx, sqlc.GrantCapabilityParams{
+			IdentityID: newPGID,
+			Capability: cap,
+		}); err != nil {
+			return "", fmt.Errorf("grant bootstrap capability %q: %w", cap, err)
+		}
 	}
 	if _, err := tx.Exec(ctx, linkOperatorSQL, newID.String(), authulaUserID); err != nil {
 		if isUniqueViolation(err) {
@@ -277,7 +281,7 @@ func createAuraFirstOperatorTx(ctx context.Context, tx pgx.Tx, identityName, aut
 		ActorIdentityID:     "bootstrap",
 		NewIdentityID:       newID.String(),
 		NewIdentityName:     identityName,
-		GrantedCapabilities: []string{"*"},
+		GrantedCapabilities: grantedCapabilities,
 		AuthulaUserID:       authulaUserID,
 	}); err != nil {
 		return "", fmt.Errorf("write bootstrap audit: %w", err)

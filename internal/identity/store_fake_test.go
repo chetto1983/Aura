@@ -305,6 +305,67 @@ func TestHasCapability_FakeBadUUID(t *testing.T) {
 	}
 }
 
+// TestHasCapability_FailsClosed (RBAC-09): a store that returns an error yields
+// (false, err) — never (true, nil). Covers the query-error path directly; the
+// ParseUUID-failure and withIdentity-error paths are exercised by
+// TestHasCapability_FakeBadUUID and TestHasCapability_FakeScanError respectively.
+func TestHasCapability_FailsClosed(t *testing.T) {
+	t.Parallel()
+	sentinel := errors.New("store boom")
+	fake := &fakeDBTX{queryRowVal: &fakeRow{scanErr: sentinel}}
+	s := newFakeStore(fake)
+
+	ok, err := s.HasCapability(context.Background(), fixedUUID, "identity.delete")
+	if err == nil {
+		t.Fatal("HasCapability(store error): want non-nil error, got nil")
+	}
+	if !errors.Is(err, sentinel) {
+		t.Errorf("HasCapability(store error): want wrapped %v, got %v", sentinel, err)
+	}
+	if ok {
+		t.Error("HasCapability(store error): want false, got true — a store error must never admit")
+	}
+}
+
+// TestHasCapability_EmptyGrantSet (RBAC-01): an identity with zero grant rows is
+// refused with a plain false and a nil error — the empty grant set is a real
+// answer, not an error.
+func TestHasCapability_EmptyGrantSet(t *testing.T) {
+	t.Parallel()
+	fake := &fakeDBTX{queryRowVal: &fakeRow{values: []any{false}}}
+	s := newFakeStore(fake)
+
+	ok, err := s.HasCapability(context.Background(), fixedUUID, "agent.run")
+	if err != nil {
+		t.Fatalf("HasCapability(empty grant set): want nil error, got %v", err)
+	}
+	if ok {
+		t.Error("HasCapability(empty grant set): want false, got true")
+	}
+}
+
+// TestHasCapability_NoWildcardExpansion (RBAC-01): the Go-level HasCapability
+// plumbing must not perform any additional wildcard shortcut of its own — it
+// only ever forwards whatever the store answers. An identity whose only
+// underlying row is the literal '*' is, post-migration-0121, answered false by
+// the store (exact match only); this test locks the Go boundary contract that
+// nothing above the query re-introduces a wildcard admit.
+func TestHasCapability_NoWildcardExpansion(t *testing.T) {
+	t.Parallel()
+	fake := &fakeDBTX{queryRowVal: &fakeRow{values: []any{false}}}
+	s := newFakeStore(fake)
+
+	for _, cap := range []string{"identity.delete", "agent.run"} {
+		ok, err := s.HasCapability(context.Background(), fixedUUID, cap)
+		if err != nil {
+			t.Fatalf("HasCapability(%q): %v", cap, err)
+		}
+		if ok {
+			t.Errorf("HasCapability(%q): want false (no wildcard expansion), got true", cap)
+		}
+	}
+}
+
 func TestHasCapability_FakeScanError(t *testing.T) {
 	t.Parallel()
 	sentinel := errors.New("scan boom")
