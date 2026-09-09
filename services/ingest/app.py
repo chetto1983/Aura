@@ -27,7 +27,7 @@ import urllib.request
 import cocoindex as coco
 from cocoindex.connectors import amazon_s3, neo4j
 
-from ingest import arcade, chunk, extract, identity, media, source
+from ingest import arcade, chunk, extract, identity, media, outline, source
 
 ARCADE_HTTP = os.environ.get("ARCADE_HTTP", "http://aura-arcadedb:2480")
 ARCADE_BOLT = os.environ.get("ARCADE_BOLT", "bolt://aura-arcadedb:7687")
@@ -221,6 +221,9 @@ def _head_within_ceiling(text: str) -> str | None:
     """
     if chunk.count_tokens(chunk.EMBED_DOC_PREFIX + text, add_special=True) <= chunk.MODEL_MAX_TOKENS:
         return None
+    # No anchors here on purpose: this re-cuts ONE oversized chunk that already carries its
+    # heading, so a second stamping pass would have nothing to add and no document to
+    # position it against.
     pieces = chunk.chunk(text, max_tokens=chunk.document_budget())
     if not pieces or pieces[0].text == text:
         return None
@@ -319,12 +322,16 @@ async def process_file(
             # path; this is that choice made where the extension is already known.
             #
             text = media.index_text(ready, file_name)
+            # Read inside the block because `ready` is the converted file and stops
+            # existing after it. A document with no usable outline yields no anchors and
+            # every chunk keeps the empty heading_path it has today.
+            anchors = outline.anchors_in(text, outline.titles_of(ready))
             card = _card(ready, _card_name(file_name, ready))
     source_kind = "s3"
     search_document_id = identity.search_document_id(identity_id, source_kind, key)
     # document_budget(), not the bare ceiling: _embed sends EMBED_DOC_PREFIX + text, so a
     # chunk sized to the full ceiling overflows by the prefix and the request 500s.
-    pieces = chunk.chunk(text, max_tokens=chunk.document_budget())
+    pieces = chunk.chunk(text, max_tokens=chunk.document_budget(), anchors=anchors)
     raw_sha256 = hashlib.sha256(content).hexdigest()
     await coco.map(
         process_chunk, list(enumerate(pieces)),

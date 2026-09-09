@@ -28,11 +28,15 @@ import math
 import os
 import urllib.error
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+
+from collections.abc import Sequence
 
 from cocoindex.ops.text import RecursiveSplitter, SeparatorSplitter
 from cocoindex.resources.chunk import Chunk as CoreChunk
 from cocoindex.resources.chunk import TextPosition
+
+from ingest import outline
 
 logger = logging.getLogger(__name__)
 _EMBED_BASE_URL_ENV = "AURA_EMBED_BASE_URL"
@@ -229,7 +233,10 @@ def _bounded_split(piece: CoreChunk, max_tokens: int, overlap_ratio: float) -> l
 
 
 def chunk(
-    text: str, max_tokens: int = MODEL_MAX_TOKENS, overlap_ratio: float = DEFAULT_OVERLAP_RATIO
+    text: str,
+    max_tokens: int = MODEL_MAX_TOKENS,
+    overlap_ratio: float = DEFAULT_OVERLAP_RATIO,
+    anchors: "Sequence[outline.Anchor]" = (),
 ) -> list[Chunk]:
     """Split text so every chunk fits the embedding model's token ceiling.
 
@@ -250,4 +257,26 @@ def chunk(
     out: list[Chunk] = []
     for piece in _splitter.split(text, chunk_size=budget_bytes, chunk_overlap=overlap_bytes):
         out.extend(_bounded_split(piece, max_tokens, overlap_ratio))
-    return out
+    return _stamp_headings(out, anchors)
+
+
+def _stamp_headings(chunks: list[Chunk], anchors) -> list[Chunk]:
+    """Give each chunk the section it starts in, without moving a single boundary.
+
+    Stamping rather than cutting on the section boundaries is the whole point: every
+    char_start/char_end already issued as a citation keeps pointing at the same bytes, and
+    no document has to be re-ingested to gain its headings. Cutting is a separate change
+    with its own measurement.
+
+    Both sequences are ordered by offset, so one forward walk assigns them all.
+    """
+    if not anchors:
+        return chunks
+    stamped: list[Chunk] = []
+    index, current = 0, []
+    for piece in chunks:
+        while index < len(anchors) and anchors[index].offset <= piece.start:
+            current = list(anchors[index].heading_path)
+            index += 1
+        stamped.append(replace(piece, heading_path=current))
+    return stamped

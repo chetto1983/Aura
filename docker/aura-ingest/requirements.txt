@@ -14,3 +14,8 @@
 cocoindex[amazon_s3,postgres]==1.0.20
 iscc-tika==0.6.0
 neo4j==5.28.1
+# pypdf reads a PDF's own outline, which is what fills heading_path: the section a passage
+# belongs to. Measured 2026-09-09, the ArcadeDB manual's outline anchors 1,290 of 1,290
+# entries into the extracted text while a regex tuned to its numbering finds 2 candidates in
+# the Italian Constitution. Pure Python, no models, no conversion step.
+pypdf==6.1.3
