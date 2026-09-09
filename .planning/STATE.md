@@ -5,16 +5,16 @@ milestone_name: Production Launch — Multi-Tenant
 current_phase: 02
 current_phase_name: Two Roles and a Budget
 status: executing
-stopped_at: Phase 2 UI-SPEC approved
-last_updated: "2026-09-09T06:06:20.236Z"
+stopped_at: Completed 02-01-PLAN.md
+last_updated: "2026-09-09T10:58:25.655Z"
 last_activity: 2026-09-09
 last_activity_desc: Phase 02 execution resumed (wave continue)
-state_head: 57d09ac15fb72302b892675933908b50eb9d0794
+state_head: 7b7c95733d9f45e27e26015a61b00cbadb21302d
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 17
-  completed_plans: 7
+  completed_plans: 8
   percent: 0
 ---
 
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-09-07)
 ## Current Position
 
 Phase: 02 (Two Roles and a Budget) — EXECUTING
-Plan: 1 of 10
-Status: Executing Phase 02
+Plan: 2 of 10
+Status: Ready to execute
 Last activity: 2026-09-09 — Phase 02 execution resumed (wave continue)
 
 Progress: [░░░░░░░░░░] 0% (milestone phase-completion — phase 01 itself is not yet marked closed)
@@ -82,6 +82,7 @@ phases, not many thin ones.
 | Phase 01 P05 | 2h20min | 3 tasks | 3 files |
 | Phase 01-two-identities-live-and-separated P04 | ~55 min | 3 tasks | 7 files |
 | Phase 01 P06 | ~4h | 3 tasks | 17 files |
+| Phase 02 P01 | 44min | 3 tasks | 29 files |
 
 ## Accumulated Context
 
@@ -111,6 +112,7 @@ creation:
 - [Phase 01-two-identities-live-and-separated]: [Phase 01 Plan 04] Kept ci.yml's compose postgres+ArcadeDB+embed bring-up step (adding garage) instead of removing it per a literal reading of the plan: production_load_chaos.py and restore_drill.sh run later in the same job, target the compose postgres service directly, and make musr-e2e never touches it (its own disposable Postgres is separate). — Measured by reading scripts/production_load_chaos_support.py and scripts/restore_drill.sh before editing ci.yml; removing the bring-up would have broken those two later steps.
 - [Phase 01]: internal/webauth/authula.go was missing session.auth RouteMappings wiring for /totp/enable and siblings — a real production bug (broke cockpit TOTP self-service too), fixed with authulaconfig.WithRouteMappings, not just worked around in the harness
 - [Phase 01]: Forced password-change (D-15) has no headless, plan-compliant path in this build (no mailer plugin, no completed-Telegram-link path this run will fake, no admin plugin) — recorded as a limitation, not worked around or narrowed out of E2E-02
+- [Phase 02]: Retired the capability_grants wildcard (migration 0121) and added a per-identity encrypted OpenRouter key store (migration 0122), proven on one live acceptance test (TestTwoRolesTracer). — Checkpoint-approved both one-way migrations as written; RBAC-01/02/04/08/09 and CRED-01/07 requirements now have code + tests, though the four live db_integration/musr_e2e tests could not be executed in this sandboxed session (no .env access) and need operator confirmation.
 
 ### Pending Todos
 
@@ -146,6 +148,7 @@ rediscover them:
   `internal/askuser/store.go` is exactly at it. Split before editing, not after the gate
   fires.
 - Mutation spot-check (go-mutesting ./internal/gateway/, floor 70% killed) not completed locally for plan 01-05 — too slow for one session and the operator directed it to CI; recorded in .planning/WINDOWS.md id 27 and 01-VALIDATION.md. No score exists yet for internal/gateway.
+- Plan 02-01: four live-tier tests (TestMigrate0121_RetiresWildcard, TestBootstrapGrantsExplicitSet, TestIdentityLLMKeyRLSAndCascade, TestTwoRolesTracer) compile clean under their tags but were never executed — this session's secret-read guard blocks .env access. Run them (WSL) before treating RBAC-04/RBAC-08/CRED-01 as proven.
 
 ## Deferred Items
 
@@ -158,8 +161,8 @@ rediscover them:
 
 ## Session Continuity
 
-Last session: 2026-09-08T19:07:08.453Z
-Stopped at: Phase 2 UI-SPEC approved
-Resume file: D:/Repo/Aura/.planning/phases/02-two-roles-and-a-budget/02-UI-SPEC.md
+Last session: 2026-09-09T10:58:25.608Z
+Stopped at: Completed 02-01-PLAN.md
+Resume file: None
 
 Next: `/gsd-plan-phase 1`
