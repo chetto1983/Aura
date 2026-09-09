@@ -17,8 +17,13 @@ import (
 
 // TestMigration0026LocalAdminCapsRoundTrip proves migration 0026 seeds `local`'s
 // three EXPLICIT admin capabilities idempotently and that its down migration
-// removes exactly those three rows while leaving the system-managed `*` wildcard
-// (seeded by 0004) intact.
+// removes exactly those three rows while leaving the `*` wildcard row intact.
+//
+// The wildcard's lifetime is now bounded on BOTH sides of this straddle: 0004
+// seeds it, 0121 retires it. So at HEAD there is no `*` anywhere, and inside the
+// straddle there is one — not because 0026 preserved 0004's row, but because
+// stepping below 0121 runs its down migration, which synthesizes a `*` back for
+// every identity holding the full six-name explicit set.
 func TestMigration0026LocalAdminCapsRoundTrip(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -85,9 +90,11 @@ func TestMigration0026LocalAdminCapsRoundTrip(t *testing.T) {
 	const localID = "00000000-0000-0000-0000-000000000001"
 	explicit := []string{"governance.write", "identity.create", "agent.run"}
 
-	// After HEAD: local holds the seeded `*` plus the three explicit admin caps.
+	// After HEAD: no `*` survives — 0121 rewrote every wildcard row into the six explicit
+	// names and deleted it — and local still holds 0026's three, which are a subset of
+	// those six.
 	caps := localCapabilitySet0026(t, ctx, app, localID)
-	requireCap0026(t, caps, "*", true)
+	requireCap0026(t, caps, "*", false)
 	for _, c := range explicit {
 		requireCap0026(t, caps, c, true)
 	}
@@ -111,6 +118,8 @@ func TestMigration0026LocalAdminCapsRoundTrip(t *testing.T) {
 	}
 
 	// Step DOWN 0026 (26 -> 25): the three explicit caps are removed; `*` survives.
+	// It is present at all because the reversal above ran 0121's down, which traded
+	// local's six explicit names back for a single wildcard row.
 	if err := MigrateSteps(ctx, migrateURL, -1); err != nil {
 		t.Fatalf("MigrateSteps(-1) down 0026: %v", err)
 	}

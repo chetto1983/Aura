@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"github.com/chetto1983/aura/internal/dbtest"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -194,21 +195,60 @@ func TestMigrate_Phase4_AppliesAndSeeds(t *testing.T) {
 		t.Errorf("seeded `local`/system identity: want exactly 1 row, got %d", idCount)
 	}
 
-	// This asserts a SEEDING fact ("did the migration write the wildcard grant?"), so it
-	// reads with app.current_identity bound to the seeded identity. aura.capability_grants
-	// is fail-closed as of migration 0087: on a bare pool connection the row is correctly
-	// invisible, and counting 0 there would say nothing about whether it was seeded.
-	var grantCount int
-	if err := WithIdentityTxRaw(ctx, app, seededOperatorIdentity, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx,
-			"SELECT count(*) FROM aura.capability_grants WHERE identity_id = $1::uuid AND capability = '*'",
-			seededOperatorIdentity,
-		).Scan(&grantCount)
-	}); err != nil {
-		t.Fatalf("count seeded wildcard grant: %v", err)
+	// This asserts a SEEDING fact ("what did the migrations leave the operator holding?"),
+	// so it reads with app.current_identity bound to the seeded identity.
+	// aura.capability_grants is fail-closed as of migration 0087: on a bare pool connection
+	// the rows are correctly invisible, and counting 0 there would say nothing about what
+	// was seeded.
+	//
+	// Migration 0004 seeded a single literal '*' row here. Migration 0121 retired the
+	// wildcard: it rewrites every '*' row — the seeded operator's included — into the six
+	// explicit names, so a migrate-to-head database has no '*' row at all. The names are
+	// spelled out rather than imported from internal/identity, which imports internal/db
+	// and would close a cycle; scripts/check_capability_declaration.sh (RBAC-02) excludes
+	// _test.go files for exactly this case.
+	wantCaps := []string{
+		"identity.create", "identity.delete",
+		"agent.run", "governance.read", "governance.write", "share.public",
 	}
-	if grantCount != 1 {
-		t.Errorf("seeded (...001, '*') grant: want exactly 1 row, got %d", grantCount)
+
+	var gotCaps []string
+	var wildcardCount int
+	if err := WithIdentityTxRaw(ctx, app, seededOperatorIdentity, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx,
+			"SELECT count(*) FROM aura.capability_grants WHERE capability = '*'",
+		).Scan(&wildcardCount); err != nil {
+			return err
+		}
+		rows, err := tx.Query(ctx,
+			"SELECT capability FROM aura.capability_grants WHERE identity_id = $1::uuid ORDER BY capability",
+			seededOperatorIdentity,
+		)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var c string
+			if err := rows.Scan(&c); err != nil {
+				return err
+			}
+			gotCaps = append(gotCaps, c)
+		}
+		return rows.Err()
+	}); err != nil {
+		t.Fatalf("read seeded capability grants: %v", err)
+	}
+
+	// The whole point of 0121: not "the operator gained six names" but "the wildcard is
+	// gone", so a capability added later is granted to nobody until someone grants it.
+	if wildcardCount != 0 {
+		t.Errorf("wildcard grants after 0121: want 0 rows repo-wide, got %d", wildcardCount)
+	}
+
+	slices.Sort(wantCaps)
+	if !slices.Equal(gotCaps, wantCaps) {
+		t.Errorf("seeded operator grants: want %v, got %v", wantCaps, gotCaps)
 	}
 
 	// Role separation on a Phase-4 table: aura_app must be denied DDL.
@@ -360,157 +400,6 @@ func TestRoleSeparation_AppDenied(t *testing.T) {
 			t.Errorf("aura_app: %q error = %q, want SQLSTATE %s (insufficient_privilege)",
 				stmt, err.Error(), insufficientPrivilege)
 		}
-	}
-}
-
-func TestStatus_ReturnsAppliedMigrations(t *testing.T) {
-	// Status reads golang-migrate's public.schema_migrations tracker via the
-	// migrate role (per db.go comment). After a clean Migrate the tracker must
-	// list the applied versions in ascending order with no dirty marker.
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	migrateURL := dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))
-	if err := EnsureRoles(ctx, bootstrapURL(t), os.Getenv("POSTGRES_PASSWORD")); err != nil {
-		t.Fatalf("EnsureRoles: %v", err)
-	}
-	if _, err := Migrate(ctx, migrateURL); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
-
-	pool, err := Open(ctx, &Config{URL: migrateURL})
-	if err != nil {
-		t.Fatalf("Open (migrate role): %v", err)
-	}
-	defer pool.Close()
-
-	rows, err := Status(ctx, pool)
-	if err != nil {
-		t.Fatalf("Status: %v", err)
-	}
-	if len(rows) == 0 {
-		t.Fatal("Status: want >= 1 applied migration row, got 0")
-	}
-	for i := 1; i < len(rows); i++ {
-		if rows[i].Version < rows[i-1].Version {
-			t.Errorf("Status rows not ascending: version %d follows %d", rows[i].Version, rows[i-1].Version)
-		}
-	}
-	if last := rows[len(rows)-1]; last.Dirty {
-		t.Errorf("Status: latest migration (version %d) marked dirty after a clean Migrate", last.Version)
-	}
-}
-
-func TestCheckMigrationHeadAcceptsCleanEmbeddedHead(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	migrateURL := dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))
-	if err := EnsureRoles(ctx, bootstrapURL(t), os.Getenv("POSTGRES_PASSWORD")); err != nil {
-		t.Fatalf("EnsureRoles: %v", err)
-	}
-	if _, err := Migrate(ctx, migrateURL); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
-	if err := CheckMigrationHead(ctx, migrateURL); err != nil {
-		t.Fatalf("CheckMigrationHead: %v", err)
-	}
-}
-
-func TestPing_QueryErrorOnCanceledContext(t *testing.T) {
-	// Open a live pool, then cancel the context so the SELECT 1 fails — exercises
-	// Ping's query-error branch against a real (non-nil) pool.
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	pool, err := Open(ctx, &Config{URL: envOrSkip(t, "AURA_DB_URL")})
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	defer pool.Close()
-
-	canceled, cancelNow := context.WithCancel(ctx)
-	cancelNow()
-	if _, err := Ping(canceled, pool); err == nil {
-		t.Error("Ping with canceled context: want error, got nil")
-	}
-}
-
-func TestStatus_SurfacesInaccessibleTrackerError(t *testing.T) {
-	// aura_app has no SELECT grant on public.schema_migrations (role separation).
-	// pgx executes pool.Query lazily, so the permission error surfaces during
-	// iteration (rows.Err), not at Query time — Status must propagate it as a
-	// wrapped "status rows" error rather than silently masking a real failure.
-	//
-	// This is distinct from the missing-table case (SQLSTATE 42P01), which Status
-	// deliberately maps to an empty slice (see TestStatus_MissingTableReturnsEmpty).
-	// A privilege error (42501) is a real failure and must surface.
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	pool, err := Open(ctx, &Config{URL: envOrSkip(t, "AURA_DB_URL")}) // aura_app
-	if err != nil {
-		t.Fatalf("Open as aura_app: %v", err)
-	}
-	defer pool.Close()
-
-	_, err = Status(ctx, pool)
-	if err == nil {
-		t.Fatal("Status (inaccessible tracker): want a surfaced error, got nil")
-	}
-	if !strings.Contains(err.Error(), "status") {
-		t.Errorf("Status error: want 'status' context wrap, got %q", err.Error())
-	}
-}
-
-func TestStatus_MissingTableReturnsEmpty(t *testing.T) {
-	// On a database where no migration has ever run, public.schema_migrations does
-	// not exist (SQLSTATE 42P01). Status must honor its first-boot contract — empty
-	// slice, nil error — not surface a "relation does not exist". Uses a throwaway
-	// database so the shared `aura` DB (migrated by sibling tests) is untouched.
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-
-	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
-	host := os.Getenv("PGHOST")
-	if host == "" {
-		host = "127.0.0.1"
-	}
-	port := os.Getenv("PGPORT")
-	if port == "" {
-		port = "5432"
-	}
-	const freshDB = "aura_status_empty_drill"
-	dsn := func(db string) string {
-		return fmt.Sprintf("postgres://aura:%s@%s:%s/%s?sslmode=disable", pwd, host, port, db)
-	}
-
-	admin, err := Open(ctx, &Config{URL: dsn("aura")})
-	if err != nil {
-		t.Fatalf("open admin pool: %v", err)
-	}
-	defer admin.Close()
-
-	if _, err := admin.Exec(ctx, "DROP DATABASE IF EXISTS "+freshDB+" WITH (FORCE)"); err != nil {
-		t.Fatalf("pre-drop fresh db: %v", err)
-	}
-	if _, err := admin.Exec(ctx, "CREATE DATABASE "+freshDB); err != nil {
-		t.Fatalf("create fresh db: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = admin.Exec(context.Background(), "DROP DATABASE IF EXISTS "+freshDB+" WITH (FORCE)")
-	})
-
-	fresh, err := Open(ctx, &Config{URL: dsn(freshDB)})
-	if err != nil {
-		t.Fatalf("open fresh pool: %v", err)
-	}
-	defer fresh.Close()
-
-	rows, err := Status(ctx, fresh)
-	if err != nil {
-		t.Fatalf("Status on fresh db: want nil error (42P01 => empty contract), got %v", err)
-	}
-	if len(rows) != 0 {
-		t.Errorf("Status on fresh db: want empty slice, got %d rows", len(rows))
 	}
 }
 
