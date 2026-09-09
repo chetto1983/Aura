@@ -231,5 +231,8 @@ func RevokeKey(ctx context.Context, client *http.Client, baseURL, apiKey, hash s
 	if err != nil {
 		return fmt.Errorf("openrouterprovision: revoke key: read verify response: %w", err)
 	}
+	if getResp.StatusCode != http.StatusNotFound {
+		return fmt.Errorf("openrouterprovision: revoke key: verification failed: GET /keys/%s returned %d, want 404 — the key is still readable", hash, getResp.StatusCode)
+	}
 	return nil
 }
