@@ -398,3 +398,39 @@ func TestAdminCreditRoutesAreIdempotencyRegistered(t *testing.T) {
 		t.Errorf("credit route metadata incomplete: %+v", meta)
 	}
 }
+
+// TestAdminGetCreditReportsSubCentSpend is the reason migration 0124 widened the ledger
+// columns to numeric(24,12). The measured per-call cost is 0.000004158 USD (02-CONTEXT.md
+// M-09); four of them sum to 0.000016632. Routing that through openrouterprovision.USDCap
+// -- an int64 of CENTS, the type the provider's cap wire needs -- collapses it to zero, so
+// the operator reads "spent nothing" after every cheap call and the phase's one-way
+// migration buys precision the only reader discards.
+func TestAdminGetCreditReportsSubCentSpend(t *testing.T) {
+	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{
+		Key: "sk-or-v1-should-never-appear", Hash: "hash-abc", Label: "sk-or-v1-caa...61c",
+		LimitUSD: 5.00, LimitReset: "monthly",
+	}}
+	spend := &fakeCreditSpendReader{spend: map[string]float64{testLocalID: 0.000016632}}
+	s := newTestCreditServer(spend, keys, &fakeCreditProvider{}, &fakeCreditInvalidator{}, true)
+
+	rec := httptest.NewRecorder()
+	s.handleGetCredit(rec, creditRequest(http.MethodGet, "/api/admin/identities/"+testLocalID+"/credit", ""))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got := out["spend"]; got != 0.000016632 {
+		t.Errorf("spend = %v, want 0.000016632 — the ledger holds it exactly and the read must not round it to cents", got)
+	}
+	// Remaining is cap - spend at the precision it was computed at: no rounding rule to
+	// get wrong, and the three figures stay consistent with each other.
+	if got := out["remaining"]; got != 5.00-0.000016632 {
+		t.Errorf("remaining = %v, want %v (cap - spend, unrounded)", got, 5.00-0.000016632)
+	}
+	if got := out["percent_used"]; got != float64(0) {
+		t.Errorf("percent_used = %v, want 0", got)
+	}
+}

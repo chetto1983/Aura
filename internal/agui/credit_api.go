@@ -149,28 +149,30 @@ func (s *Server) handleGetCredit(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusInternalServerError, map[string]string{"error": "credit figures unavailable"})
 		return
 	}
-	spend, err := usdCapFromFloat(spendFloat)
-	if err != nil {
-		writeJSONStatus(w, http.StatusInternalServerError, map[string]string{"error": "credit figures unavailable"})
-		return
-	}
-	writeJSON(w, creditGetResponse(targetID, rec.LimitReset, cap, spend))
+	writeJSON(w, creditGetResponse(targetID, rec.LimitReset, cap, spendFloat))
 }
 
-// creditGetResponse builds the GET response map at the display boundary: cap and
-// spend arrive already rounded to the cent (usdCapFromFloat); remaining and
-// percent_used are derived here, in integer cents, so a spend exactly equal to the
-// cap reads as percent_used=100 and remaining=0 (CRED-06 boundary probe) and one
-// cent below reads under 100 -- integer division truncates rather than rounds, so a
-// value one cent short of the cap can never round UP to 100.
-func creditGetResponse(identityID, limitReset string, cap, spend openrouterprovision.USDCap) map[string]any {
-	capCents := int64(cap)
-	spendCents := int64(spend)
-	remainingCents := max(capCents-spendCents, 0)
+// creditGetResponse builds the GET response map. Cap and spend are DIFFERENT KINDS of
+// number and deliberately do not share a type. The cap is cap-space: an amount the admin
+// entered and the provider enforces, so openrouterprovision.USDCap -- an int64 of cents
+// with a fixed two-decimal wire form -- is exactly right for it. The spend is
+// ledger-space: a measured sum of aura.cache_metrics.cost_usd, which migration 0124
+// widened to numeric(24,12) precisely because the measured per-call cost is 0.000004158
+// (02-CONTEXT.md M-09). Passing that through a cents type collapses it to zero, so the
+// operator would read "spent nothing" after every cheap call -- wrong in the direction
+// that looks fine, and it would discard the precision that migration was paid for.
+//
+// Nothing is rounded here. `remaining` is `cap - spend` at the precision it was computed
+// at, so the three figures are consistent by construction rather than by a rounding rule
+// that has to be got right in both directions.
+func creditGetResponse(identityID, limitReset string, cap openrouterprovision.USDCap, spend float64) map[string]any {
+	capDollars := float64(cap) / 100
+	remaining := max(capDollars-spend, 0)
+	// Exhaustion is decided by comparison, not by the division: a float ratio at the
+	// boundary can land a hair under 100 and report an exhausted identity as 99%.
 	percent := 100
-	if capCents > 0 {
-		percent = min(int(spendCents*100/capCents), 100)
-		percent = max(percent, 0)
+	if spend < capDollars {
+		percent = max(min(int(spend*100/capDollars), 99), 0)
 	}
 	return map[string]any{
 		"identity_id":    identityID,
@@ -178,7 +180,7 @@ func creditGetResponse(identityID, limitReset string, cap, spend openrouterprovi
 		"cap":            cap,
 		"reset_interval": limitReset,
 		"spend":          spend,
-		"remaining":      openrouterprovision.USDCap(remainingCents),
+		"remaining":      remaining,
 		"percent_used":   percent,
 	}
 }
