@@ -5,16 +5,16 @@ milestone_name: Production Launch — Multi-Tenant
 current_phase: 02
 current_phase_name: Two Roles and a Budget
 status: executing
-stopped_at: 02-04 code landed (8e9ae1a43); 02-04-SUMMARY.md not written
-last_updated: "2026-09-09T15:10:00.000Z"
+stopped_at: Completed 02-04-PLAN.md
+last_updated: "2026-09-09T16:30:00.000Z"
 last_activity: 2026-09-09
-last_activity_desc: internal/db wildcard assertions corrected, whole db_integration tier green live
+last_activity_desc: Plan 02-04 closed — denial ledger wired at the composition root, agui tier green live
 state_head: 0de2451f6166b9a2d6234343b912b78e1a3b0402
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 17
-  completed_plans: 10
+  completed_plans: 11
   percent: 0
 ---
 
@@ -30,9 +30,9 @@ See: .planning/PROJECT.md (updated 2026-09-07)
 ## Current Position
 
 Phase: 02 (Two Roles and a Budget) — EXECUTING
-Plan: 4 of 10
-Status: Code landed, SUMMARY pending
-Last activity: 2026-09-09 — internal/db wildcard assertions corrected, db_integration tier green live
+Plan: 5 of 10
+Status: Ready to execute
+Last activity: 2026-09-09 — Plan 02-04 closed (capability denial audit trail)
 
 Progress: [░░░░░░░░░░] 0% (milestone phase-completion — phase 01 itself is not yet marked closed)
 
@@ -85,6 +85,7 @@ phases, not many thin ones.
 | Phase 02 P01 | 44min | 3 tasks | 29 files |
 | Phase 02 P02 | n/a (continuation) | 2 tasks | 16 files |
 | Phase 02 P03 | not measured | 3 tasks | 6 files |
+| Phase 02 P04 | not measured | 2 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -119,6 +120,9 @@ creation:
 - [Phase 02]: TDD RED->GREEN ordering not honored for Task 2 (predecessor crashed after implementation, before tests); every new refusal assertion independently verified by temporarily removing the guard and confirming the test failed, then restoring byte-identical.
 - [Phase 02]: openrouterprovision: USDCap decimal-safe money type (cents-based, fixed 2-decimal JSON, half-up rounding at admin input) replaces float64/%v for the OpenRouter spending cap
 - [Phase 02]: openrouterprovision: RevokeKey is DELETE+verifying-GET in one function (CRED-08) — a caller cannot skip the verification half; a DELETE that itself 404s still converges to success provided the follow-up GET also 404s
+- [Phase 02]: [Plan 02-04] The capability-denial ledger was built, tested and green while `AuthDeps.DenialRecorder` was never assigned at the composition root — `NewPgCapabilityDenialStore` had zero callers outside tests, so every real denial took the nil no-op path and recorded nothing. No later plan owned the wiring; closed on touch in `c22e7719c`. Found by checking the plan's acceptance criteria, not its tests: all sixteen tests passed throughout.
+- [Phase 02]: [Plan 02-04] The recorder's nil check belongs at the composition root, not in the constructor: a `*PgCapabilityDenialStore` over a nil pool assigned to the interface field is a NON-nil interface value that slips past `RequireCapability`'s own nil guard and panics on every refusal instead of returning 403.
+- [Phase 02]: [Plan 02-04] A compile-failure RED is structurally uncommittable in this repo — the pre-commit hook runs `go vet` and fails closed on a non-building package, and `--no-verify` is forbidden. Measured by attempting it. Task 1 used the deliberately-wrong-scaffold pattern 02-01/02-03 already established under the same gate.
 
 ### Pending Todos
 
@@ -168,13 +172,22 @@ rediscover them:
 
 ## Session Continuity
 
-Last session: 2026-09-09T15:10:00.000Z
-Stopped at: 02-04's code is landed (`8e9ae1a43`) but `02-04-SUMMARY.md` is not written.
-Resume file: `.planning/HANDOFF.json`
+Last session: 2026-09-09T16:30:00.000Z
+Stopped at: Completed 02-04-PLAN.md.
+Resume file: None
 
-Settled this session (`c81dffdde`): the three obsolete `'*'` assertions migration 0121 left
-behind are corrected and `db_test.go` is split at the 600-LOC cap. Measured, not
-compile-checked — the whole `internal/db` `db_integration` tier under `-race` on a disposable
-Postgres container: 96 passed, 0 failed, **0 skipped**.
+Settled this session, each measured live on a disposable Postgres container under `-race`,
+never compile-checked:
 
-Next: write `02-04-SUMMARY.md`, update ROADMAP.md, then `/gsd-execute-phase 02` for 02-05.
+- `c81dffdde` — `internal/db`'s obsolete `'*'` assertions corrected (only the HEAD one was
+  actually wrong; the two inside the ±1 straddle are correct because 0121's down migration
+  synthesizes a wildcard back) and `db_test.go` split at the 600-LOC cap. Tier: 96/0/0.
+- `7dea44374` — `TestProvisionSagaLive` bound to `len(identity.UserSet())` instead of the
+  literal 1 that 02-02's uniform grant set superseded.
+- `c22e7719c` — the capability-denial ledger wired at the composition root. Without it the
+  whole of 02-04 was latent: green tests, nothing recorded in a running daemon.
+- `f01c7fb91` — `02-04-SUMMARY.md`. Tier `internal/agui`: 777 passed, 0 failed, **0 skipped**.
+
+Next: `/gsd-execute-phase 02` for plan 02-05 (close the credential fallback —
+`swarm.go:290` and `cron/handlers/handler.go:126` spend the deployment key when
+`rc.Runtime` is nil).
