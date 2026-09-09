@@ -161,3 +161,65 @@ func TestRankDocumentsOmitsObjectFactsWithoutACard(t *testing.T) {
 		t.Fatalf("object facts invented for a document with no card: %+v", documents[0])
 	}
 }
+
+// Same text, different bytes. Measured 2026-09-09 on the live corpus: three
+// artifact-workspace-check.html of 6092, 6020 and 6037 bytes carried ONE identical
+// normalized_text_sha256 and came back at the same score, 0.59846956, spending three of the
+// caller's result slots on one text. No two documents in that corpus shared a raw_sha256 at
+// all, so the fusion's own groupBy had nothing to collapse.
+func TestRankDocumentsCollapsesCopiesWithIdenticalText(t *testing.T) {
+	const sameText = "6667dde664ad5c7d9f0f4a2b1e8c3d5a7b9e0f1c2d3e4f50617283940a5b6c7d"
+	score := 0.59846956
+	passages := make([]arcadedb.PassageCandidate, 0, 3)
+	for index, raw := range []string{"9187dfa3caa1", "f2c8d876af35", "b7b2ada4bf38"} {
+		passages = append(passages, arcadedb.PassageCandidate{
+			PassageID: raw + ":0", SearchDocumentID: "doc_" + raw, SourceKind: "s3",
+			SourceKey: "Documenti/artifact-workspace-check.html", RawSHA256: raw,
+			NormalizedSHA256: sameText, Ordinal: int64(index),
+			Text: "identical extracted text", Leg: arcadedb.RetrievalLegFused, FusedScore: &score,
+		})
+	}
+	// The card leg carries no normalized hash, so a card for a collapsed copy must resolve
+	// through the same alias or it opens a second, passage-less entry beside the first.
+	cards := []RetrievalCard{{
+		DocumentID: "doc_f2c8d876af35", Title: "artifact-workspace-check.html",
+		SourceKind: "s3", SourceKey: "Documenti/artifact-workspace-check.html",
+		OriginalSHA256: "f2c8d876af35", Rank: 0.59846956,
+	}}
+
+	documents := rankDocuments(cards, passages, nil, 8, 3, false)
+
+	if len(documents) != 1 {
+		keys := make([]string, 0, len(documents))
+		for _, doc := range documents {
+			keys = append(keys, doc.DocumentID)
+		}
+		t.Fatalf("one text was returned as %d documents: %v", len(documents), keys)
+	}
+	if documents[0].DocumentID != "doc_9187dfa3caa1" {
+		t.Fatalf("representative = %q, want the best-ranked copy", documents[0].DocumentID)
+	}
+	if documents[0].Title != "artifact-workspace-check.html" {
+		t.Fatalf("title = %q, want the card's name folded onto the survivor", documents[0].Title)
+	}
+}
+
+// Different text must never collapse, whatever the bytes do.
+func TestRankDocumentsKeepsDocumentsWithDifferentText(t *testing.T) {
+	score := 0.5
+	passages := []arcadedb.PassageCandidate{
+		{
+			PassageID: "a:0", SearchDocumentID: "doc_a", SourceKind: "s3", SourceKey: "a.md",
+			RawSHA256: "aaaa", NormalizedSHA256: "1111", Text: "primo",
+			Leg: arcadedb.RetrievalLegFused, FusedScore: &score,
+		},
+		{
+			PassageID: "b:0", SearchDocumentID: "doc_b", SourceKind: "s3", SourceKey: "b.md",
+			RawSHA256: "bbbb", NormalizedSHA256: "2222", Text: "secondo",
+			Leg: arcadedb.RetrievalLegFused, FusedScore: &score,
+		},
+	}
+	if documents := rankDocuments(nil, passages, nil, 8, 3, false); len(documents) != 2 {
+		t.Fatalf("documents = %d, want both", len(documents))
+	}
+}

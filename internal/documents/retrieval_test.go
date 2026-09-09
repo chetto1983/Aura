@@ -248,9 +248,11 @@ func TestHostRetrieverTitlesPassageOnlyHitsWithTheirRealName(t *testing.T) {
 	uncarded := retrievalCandidate(arcadedb.RetrievalLegFused)
 	uncarded.SearchDocumentID, uncarded.PassageID = "doc_bucket", "40000000-0000-0000-0000-000000000001"
 	uncarded.SourceKey = "chat/bc4c9304-7729-4b1e-9009-0882a03ea1a5.pdf"
-	// Its own bytes, because retrieval now collapses copies by content hash: leaving the
-	// helper's hash here would make two unrelated documents a SHA-256 collision.
+	// Its own bytes AND its own text, because retrieval collapses copies by content: with
+	// the helper's hashes left here the two would not be unrelated documents at all, they
+	// would be one file stored twice with byte-identical extracted text.
 	uncarded.RawSHA256 = "b17e0f5c9a2d43e8b6c1f0a7d5e3948266cbb01f9a7d2e4c8b3a5f6071829d4e"
+	uncarded.NormalizedSHA256 = "3f1c7d24a05be9836147f2c0d8a5b93e7104c62f8d0b5a97e3c1462f8d70b5a9"
 	control := &fakeRetrievalControl{
 		cards: []RetrievalCard{retrievalCard()},
 		names: map[string]string{"doc_bucket": "colm2025_conference.pdf"},

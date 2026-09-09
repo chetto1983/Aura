@@ -37,10 +37,23 @@ func rankDocuments(
 	// the twin of a deduplicated file walks back in as a second document. The first copy seen
 	// represents the file, and passages come first, so that is the best-evidenced one.
 	byContent := make(map[string]*rankedDocument, len(cards)+len(passages))
+	// Different bytes, same text. The fusion groups by raw_sha256, so it collapses a file
+	// stored twice byte for byte and nothing else -- and measured 2026-09-09 on the live
+	// corpus, no two documents shared a raw_sha256 at all while THREE
+	// artifact-workspace-check.html of 6092, 6020 and 6037 bytes carried one identical
+	// normalized_text_sha256 and came back at the same score, 0.59846956, spending three
+	// result slots on one text.
+	//
+	// The engine returns each file's BEST passage (groupSize 1), so two files whose best
+	// passage is textually identical offer identical evidence for this query and one of
+	// them can represent both. What that trades: a file whose only overlap with another is
+	// the passage that happened to match is hidden behind it, and is then reachable by a
+	// query that matches its own content instead.
+	sameText := textAliases(passages)
 	// Passages first and their order wins: a document the engine ranked is better
 	// evidenced than one only a card mentions, so cards start after the last passage.
 	for rank, passage := range passages {
-		doc := ensureRankedDocumentFromCandidate(byContent, passage, names)
+		doc := ensureRankedDocumentFromCandidate(byContent, sameText, passage, names)
 		doc.order = min(doc.order, rank)
 		doc.ordinal = min(doc.ordinal, passage.Ordinal)
 		if passage.FusedScore != nil && *passage.FusedScore > doc.document.Score {
@@ -49,7 +62,7 @@ func rankDocuments(
 		mergePassage(doc, passage, rank+1)
 	}
 	for rank, card := range cards {
-		doc := ensureRankedDocumentFromCard(byContent, card)
+		doc := ensureRankedDocumentFromCard(byContent, sameText, card)
 		// Not len(passages)+rank any more. That offset was a precedence rule standing in for
 		// a comparison the two legs could not make: BM25 here, a reranked cosine there. It
 		// meant no card could outrank any passage however well it matched, and measured
@@ -107,6 +120,36 @@ func contentKey(rawSHA256, documentID string) string {
 	return rawSHA256
 }
 
+// textAliases maps every content hash onto the one that represents its text. Passages are
+// walked in the engine's own order, so the FIRST copy of a text -- the best-ranked one --
+// is the representative, which is the same rule the byte-identical collapse already used.
+func textAliases(passages []arcadedb.PassageCandidate) map[string]string {
+	alias := make(map[string]string, len(passages))
+	representative := make(map[string]string, len(passages))
+	for _, passage := range passages {
+		if passage.NormalizedSHA256 == "" || passage.RawSHA256 == "" {
+			continue
+		}
+		first, seen := representative[passage.NormalizedSHA256]
+		if !seen {
+			representative[passage.NormalizedSHA256] = passage.RawSHA256
+			continue
+		}
+		alias[passage.RawSHA256] = first
+	}
+	return alias
+}
+
+// resolveAlias is applied to BOTH legs or neither: the card leg carries no normalized hash
+// of its own, so a card for a collapsed copy would open a second entry -- titled, scored and
+// passage-less -- beside the document its passages had already been folded into.
+func resolveAlias(sameText map[string]string, rawSHA256 string) string {
+	if canonical, ok := sameText[rawSHA256]; ok {
+		return canonical
+	}
+	return rawSHA256
+}
+
 func newRankedDocument(documentID string) *rankedDocument {
 	return &rankedDocument{
 		document: RetrievalDocument{
@@ -119,8 +162,10 @@ func newRankedDocument(documentID string) *rankedDocument {
 }
 
 // ensureRankedDocumentFromCard adds the document's searchable description and object identity.
-func ensureRankedDocumentFromCard(byContent map[string]*rankedDocument, card RetrievalCard) *rankedDocument {
-	key := contentKey(card.OriginalSHA256, card.DocumentID)
+func ensureRankedDocumentFromCard(
+	byContent map[string]*rankedDocument, sameText map[string]string, card RetrievalCard,
+) *rankedDocument {
+	key := contentKey(resolveAlias(sameText, card.OriginalSHA256), card.DocumentID)
 	doc := byContent[key]
 	if doc == nil {
 		doc = newRankedDocument(card.DocumentID)
@@ -155,10 +200,11 @@ func ensureRankedDocumentFromCard(byContent map[string]*rankedDocument, card Ret
 // is deliberately kept out of its key so it cannot leak through a presigned URL.
 func ensureRankedDocumentFromCandidate(
 	byContent map[string]*rankedDocument,
+	sameText map[string]string,
 	candidate arcadedb.PassageCandidate,
 	names map[string]string,
 ) *rankedDocument {
-	key := contentKey(candidate.RawSHA256, candidate.SearchDocumentID)
+	key := contentKey(resolveAlias(sameText, candidate.RawSHA256), candidate.SearchDocumentID)
 	doc := byContent[key]
 	if doc == nil {
 		doc = newRankedDocument(candidate.SearchDocumentID)
