@@ -305,10 +305,8 @@ async def process_file(
     #
     # The fallback is not a stopgap: a file the operator dropped into the bucket directly
     # has no metadata and its key IS its name.
-    file_name = (
-        await source.object_file_name(coco.use_context(S3), _S3_CONFIG, key)
-        or pathlib.PurePosixPath(key).name
-    )
+    facts = await source.object_facts(coco.use_context(S3), _S3_CONFIG, key)
+    file_name = facts.file_name or pathlib.PurePosixPath(key).name
     with tempfile.NamedTemporaryFile(suffix=pathlib.Path(key).suffix) as tmp:
         tmp.write(content)
         tmp.flush()
@@ -324,7 +322,7 @@ async def process_file(
             # examples do the same thing one level up, choosing the processor from the
             # path; this is that choice made where the extension is already known.
             #
-            text = media.index_text(ready, file_name)
+            text = media.index_text(ready, file_name, facts.content_type)
             # Read inside the block because `ready` is the converted file and stops
             # existing after it. A document with no usable outline yields no anchors and
             # every chunk keeps the empty heading_path it has today.
