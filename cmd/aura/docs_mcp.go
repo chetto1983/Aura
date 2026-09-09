@@ -26,6 +26,7 @@ type docsMCPSearchInput struct {
 	Query       string   `json:"query" jsonschema:"Question, exact identifier, topic or filename to search"`
 	DocumentIDs []string `json:"document_ids,omitempty" jsonschema:"Restrict retrieval to these returned document IDs"`
 	Limit       int      `json:"limit,omitempty" jsonschema:"Maximum documents to return; defaults to 8"`
+	Neighbours  int      `json:"neighbours,omitempty" jsonschema:"Also return this many passages either side of every hit, 0-3; use it when a hit is cut mid-table or mid-definition and the rest of it is in the adjacent chunk"`
 }
 
 func runDocsMCP(ctx context.Context, factory docsServiceFactory) error {
@@ -44,6 +45,8 @@ func newDocsMCPServer(operatorID string, factory docsServiceFactory) (*mcp.Serve
 		Instructions: "Use document_ingest to store a workspace file in the operator's library. " +
 			"Acceptance is not completed indexing: document_search reports indexed passages and degradation. " +
 			"Read the returned passages before answering; a filename match alone is not evidence. " +
+			"A passage cut mid-table or mid-definition continues in the next chunk, which no rephrasing " +
+			"will rank: re-run document_search with neighbours to pull the text either side of a hit. " +
 			"When a hit reports requires_open, or the question needs the whole file rather than a passage, " +
 			"call document_open and read the file it writes. " +
 			"These tools use Aura's production document handlers and a fixed operator identity.",
@@ -66,6 +69,9 @@ func newDocsMCPServer(operatorID string, factory docsServiceFactory) (*mcp.Serve
 		args := []string{"search", input.Query}
 		if input.Limit != 0 {
 			args = append(args, "--limit", strconv.Itoa(input.Limit))
+		}
+		if input.Neighbours != 0 {
+			args = append(args, "--neighbours", strconv.Itoa(input.Neighbours))
 		}
 		for _, id := range input.DocumentIDs {
 			args = append(args, "--document-id", id)

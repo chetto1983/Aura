@@ -28,6 +28,7 @@ type documentSearchArgs struct {
 	Query       string   `json:"query"`
 	Limit       int      `json:"limit"`
 	DocumentIDs []string `json:"document_ids"`
+	Neighbours  int      `json:"neighbours"`
 }
 
 func (t *DocumentSearch) Spec() Spec {
@@ -42,7 +43,9 @@ func (t *DocumentSearch) Spec() Spec {
 			"question needs the whole file (for example how many, sum, average, maximum, grouping, or conversion), " +
 			"call document_open with document_id; it writes the real file into /workspace for shell_exec. Uploaded " +
 			"documents are not otherwise on the filesystem. Query is required and may name a topic, entity, fact, " +
-			"or filename. document_ids optionally scopes search to ids previously returned to this owner. Files " +
+			"or filename. document_ids optionally scopes search to ids previously returned to this owner. When a passage " +
+			"stops mid-table or mid-definition, the rest of it is in the adjacent chunk, which no rephrasing of the " +
+			"query will rank: repeat the search with neighbours to pull the text either side of each hit. Files " +
 			"YOU created live under /workspace: read those with read_file/search_files instead. " +
 			"Example: {\"query\":\"customer code for WPT SRL\",\"document_ids\":[\"doc_9f2c\"]}.",
 		Parameters: json.RawMessage(`{
@@ -50,7 +53,8 @@ func (t *DocumentSearch) Spec() Spec {
   "properties": {
     "query": {"type": "string", "minLength": 1, "description": "Natural-language question, fact, topic, or filename."},
     "limit": {"type": "integer", "minimum": 1, "maximum": 50, "description": "Maximum documents to return. Default 8."},
-    "document_ids": {"type": "array", "maxItems": 100, "items": {"type": "string", "minLength": 1}, "description": "Optional owner-scoped document ids."}
+    "document_ids": {"type": "array", "maxItems": 100, "items": {"type": "string", "minLength": 1}, "description": "Optional owner-scoped document ids."},
+    "neighbours": {"type": "integer", "minimum": 0, "maximum": 3, "description": "Also return this many passages either side of every hit. Default 0."}
   },
   "required": ["query"]
 }`),
@@ -75,11 +79,16 @@ func (t *DocumentSearch) Execute(ctx context.Context, raw json.RawMessage) (Tool
 	if args.Limit < 0 {
 		return ToolResult{}, fmt.Errorf("document_search: limit must be positive")
 	}
+	if args.Neighbours < 0 || args.Neighbours > documents.MaxRetrievalNeighbours {
+		return ToolResult{}, fmt.Errorf(
+			"document_search: neighbours must be between 0 and %d", documents.MaxRetrievalNeighbours,
+		)
+	}
 
 	response, err := t.Library.Retrieve(ctx, documents.RetrievalRequest{
 		IdentityID: ownerFromContext(ctx), Query: args.Query,
 		Limit: effectiveDocumentLimit(args.Limit), DocumentIDs: args.DocumentIDs,
-		SourceScopes: documents.SourceScopesFromContext(ctx),
+		Neighbours: args.Neighbours, SourceScopes: documents.SourceScopesFromContext(ctx),
 	})
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("document_search: %w", err)

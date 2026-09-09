@@ -67,6 +67,16 @@ type fakePassageIndex struct {
 	fused      []arcadedb.PassageCandidate
 	fusedErr   error
 	fusedQuery arcadedb.FusedCandidateQuery
+	at         []arcadedb.PassageCandidate
+	atErr      error
+	atRefs     []arcadedb.PassageRef
+}
+
+func (f *fakePassageIndex) PassagesAt(
+	_ context.Context, _ string, refs []arcadedb.PassageRef,
+) ([]arcadedb.PassageCandidate, error) {
+	f.atRefs = append(f.atRefs, refs...)
+	return append([]arcadedb.PassageCandidate(nil), f.at...), f.atErr
 }
 
 func (f *fakePassageIndex) FusedCandidates(

@@ -336,6 +336,26 @@ func (d *DocumentIndex) decodeCandidate(
 	row map[string]any,
 	leg RetrievalLeg,
 ) (PassageCandidate, string, error) {
+	candidate, passageKey, err := d.decodePassageRow(row)
+	if err != nil {
+		return PassageCandidate{}, "", err
+	}
+	if leg != RetrievalLegFused {
+		return PassageCandidate{}, "", fmt.Errorf("unknown retrieval leg %q", leg)
+	}
+	candidate.Leg = leg
+	score, err := requiredNonNegativeFloat(row, "fused_score")
+	if err != nil {
+		return PassageCandidate{}, "", err
+	}
+	candidate.FusedScore = &score
+	return candidate, passageKey, nil
+}
+
+// decodePassageRow reads the passage itself, without the ranking a leg puts on it: the
+// neighbour reader returns passages that were never ranked at all, and duplicating this
+// validation there is how the two would drift apart.
+func (d *DocumentIndex) decodePassageRow(row map[string]any) (PassageCandidate, string, error) {
 	passageKey, err := requiredString(row, "passage_key")
 	if err != nil {
 		return PassageCandidate{}, "", err
@@ -360,7 +380,7 @@ func (d *DocumentIndex) decodeCandidate(
 		PassageID: passageKey, SearchDocumentID: *required[0].target,
 		SourceKind: *required[1].target, SourceKey: *required[2].target,
 		RawSHA256: *required[3].target, SchemaVersion: *required[4].target,
-		Text: *required[5].target, NormalizedSHA256: *required[6].target, Leg: leg,
+		Text: *required[5].target, NormalizedSHA256: *required[6].target,
 	}
 	if !validSHA256(candidate.RawSHA256) || !validSHA256(candidate.NormalizedSHA256) {
 		return PassageCandidate{}, "", fmt.Errorf("candidate carries an invalid SHA-256")
@@ -377,14 +397,6 @@ func (d *DocumentIndex) decodeCandidate(
 	if err := decodeCandidateLocator(row, &candidate); err != nil {
 		return PassageCandidate{}, "", err
 	}
-	if leg != RetrievalLegFused {
-		return PassageCandidate{}, "", fmt.Errorf("unknown retrieval leg %q", leg)
-	}
-	score, err := requiredNonNegativeFloat(row, "fused_score")
-	if err != nil {
-		return PassageCandidate{}, "", err
-	}
-	candidate.FusedScore = &score
 	return candidate, passageKey, nil
 }
 

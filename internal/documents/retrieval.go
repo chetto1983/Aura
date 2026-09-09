@@ -65,6 +65,12 @@ type RetrievalRequest struct {
 	Limit        int           `json:"limit,omitempty"`
 	DocumentIDs  []string      `json:"document_ids,omitempty"`
 	SourceScopes []SourceScope `json:"-"`
+	// Neighbours asks for the passages either side of every hit, by ordinal. A chunk
+	// boundary can cut a table or a definition in half, and the half that answers the
+	// question is then unreachable: the neighbour is by construction the passage that did
+	// NOT match, so no rephrasing of the query reaches it and the only escape is opening
+	// the whole file. Zero, the default, costs nothing.
+	Neighbours int `json:"neighbours,omitempty"`
 }
 
 // RetrievalResponse reports which production legs ran and what they returned.
@@ -136,6 +142,21 @@ type RetrievalPassage struct {
 	OriginalSHA256   string              `json:"original_sha256"`
 	NormalizedSHA256 string              `json:"normalized_text_sha256"`
 	Evidence         []RetrievalEvidence `json:"evidence"`
+	// The passages either side of this one in the same document, nearest first, present
+	// only when the caller asked for them. They were not ranked and carry no score: they
+	// are here because they are ADJACENT, which is a different claim from being relevant.
+	ContextBefore []PassageContext `json:"context_before,omitempty"`
+	ContextAfter  []PassageContext `json:"context_after,omitempty"`
+}
+
+// PassageContext is a neighbouring passage. It carries its own citation token because
+// quoting it under the token of the passage it neighbours would cite text that passage
+// does not contain.
+type PassageContext struct {
+	PassageID     string `json:"passage_id"`
+	Ordinal       int64  `json:"ordinal"`
+	Text          string `json:"text"`
+	CitationToken string `json:"citation_token"`
 }
 
 // RetrievalEvidence records which ranked production leg admitted the result.
@@ -169,10 +190,17 @@ type RetrievalControlPlane interface {
 	DocumentNames(context.Context, string, []string) (map[string]string, error)
 }
 
-// PassageIndex reads the fused lexical/vector passage ranking from the identity database.
+// PassageIndex reads the fused lexical/vector passage ranking from the identity database,
+// and the unranked passages a caller names by position.
 type PassageIndex interface {
 	FusedCandidates(context.Context, arcadedb.FusedCandidateQuery) ([]arcadedb.PassageCandidate, error)
+	PassagesAt(context.Context, string, []arcadedb.PassageRef) ([]arcadedb.PassageCandidate, error)
 }
+
+// MaxRetrievalNeighbours bounds the context a caller can pull around every hit. Each one is
+// a whole passage of text, so the ceiling is what keeps a limit of 20 from returning 20x7
+// passages to a model that asked for the two lines a table header sat on.
+const MaxRetrievalNeighbours = 3
 
 // RetrievalConfig bounds the cascade. Every non-positive field is replaced by a production
 // default during normalization, so the zero value is a working configuration rather than a
@@ -280,6 +308,7 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 		cards, fused, r.passageLegNames(ctx, request.IdentityID, cards, fused),
 		request.Limit, cfg.TopPassages, false,
 	)
+	r.attachNeighbours(ctx, request.IdentityID, response.Documents, request.Neighbours)
 	return response, nil
 }
 
@@ -367,6 +396,12 @@ func normalizeRetrievalRequest(request RetrievalRequest, cfg RetrievalConfig) (R
 	if request.Limit < 1 || request.Limit > cfg.MaxLimit {
 		return RetrievalRequest{}, cfg, fmt.Errorf(
 			"%w: limit must be between 1 and %d", ErrInvalidRetrievalRequest, cfg.MaxLimit,
+		)
+	}
+	if request.Neighbours < 0 || request.Neighbours > MaxRetrievalNeighbours {
+		return RetrievalRequest{}, cfg, fmt.Errorf(
+			"%w: neighbours must be between 0 and %d",
+			ErrInvalidRetrievalRequest, MaxRetrievalNeighbours,
 		)
 	}
 	if len(request.DocumentIDs) > cfg.MaxDocumentIDs {

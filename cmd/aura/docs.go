@@ -26,7 +26,7 @@ import (
 // whose only writer was the catalog ingest, so after that retirement they could only ever
 // print rows describing a pipeline that no longer runs. What replaced them as the answer to
 // "did my file land" is the bucket itself: `aura docs search`, or the file manager.
-const docsUsage = "usage: aura docs {ingest <path> [--source-id id] [--source-kind cli]|search <query> [--document-id id] [--limit 8]|open <document-id> [--file-name name]|mcp}"
+const docsUsage = "usage: aura docs {ingest <path> [--source-id id] [--source-kind cli]|search <query> [--document-id id] [--limit 8] [--neighbours 0]|open <document-id> [--file-name name]|mcp}"
 
 // docsCLIService is the surface `aura docs` drives. Search uses the same host
 // retriever as the agent tool and HTTP API, including passage evidence and degradation.
@@ -118,7 +118,7 @@ func docsIngest(ctx context.Context, args []string, out io.Writer, factory docsS
 // not bookkeeping: every control-plane query and ArcadeDB candidate filter is scoped
 // to it. runDocs resolves the operator once onto the context.
 func docsSearch(ctx context.Context, args []string, out io.Writer, factory docsServiceFactory) error {
-	query, documentIDs, limit, err := parseDocsSearchArgs(args)
+	parsed, err := parseDocsSearchArgs(args)
 	if err != nil {
 		return err
 	}
@@ -130,8 +130,8 @@ func docsSearch(ctx context.Context, args []string, out io.Writer, factory docsS
 
 	start := time.Now()
 	response, err := svc.Retrieve(ctx, documents.RetrievalRequest{
-		IdentityID: identityctx.IdentityID(ctx), Query: query,
-		Limit: limit, DocumentIDs: documentIDs,
+		IdentityID: identityctx.IdentityID(ctx), Query: parsed.Query,
+		Limit: parsed.Limit, DocumentIDs: parsed.DocumentIDs, Neighbours: parsed.Neighbours,
 	})
 	if err != nil {
 		return err
@@ -151,8 +151,18 @@ type docsSearchPayload struct {
 	RetrievalMS int64 `json:"retrieval_ms"`
 }
 
-func parseDocsSearchArgs(args []string) (query string, documentIDs []string, limit int, err error) {
-	limit = 8
+// docsSearchArgs is the parsed command line. It is a struct rather than a return list
+// because the list had already reached four values plus an error, at which point the call
+// site says nothing about which is which.
+type docsSearchArgs struct {
+	Query       string
+	DocumentIDs []string
+	Limit       int
+	Neighbours  int
+}
+
+func parseDocsSearchArgs(args []string) (docsSearchArgs, error) {
+	parsed := docsSearchArgs{Limit: 8}
 	var queryParts []string
 	remaining := args
 	for len(remaining) > 0 {
@@ -160,42 +170,52 @@ func parseDocsSearchArgs(args []string) (query string, documentIDs []string, lim
 		remaining = remaining[1:]
 		name, inlineValue, hasInlineValue := strings.Cut(arg, "=")
 		switch name {
-		case "--document-id", "--limit":
+		case "--document-id", "--limit", "--neighbours":
 			value := inlineValue
 			if !hasInlineValue {
 				if len(remaining) == 0 {
-					return "", nil, 0, fmt.Errorf("%s requires a value", name)
+					return docsSearchArgs{}, fmt.Errorf("%s requires a value", name)
 				}
 				value = remaining[0]
 				remaining = remaining[1:]
 				if strings.HasPrefix(value, "--") {
-					return "", nil, 0, fmt.Errorf("%s requires a value", name)
+					return docsSearchArgs{}, fmt.Errorf("%s requires a value", name)
 				}
 			}
 			if strings.TrimSpace(value) == "" {
-				return "", nil, 0, fmt.Errorf("%s requires a value", name)
+				return docsSearchArgs{}, fmt.Errorf("%s requires a value", name)
 			}
 			if name == "--document-id" {
-				documentIDs = append(documentIDs, value)
+				parsed.DocumentIDs = append(parsed.DocumentIDs, value)
 				continue
 			}
-			parsed, parseErr := strconv.ParseInt(value, 10, 32)
-			if parseErr != nil || parsed <= 0 {
-				return "", nil, 0, fmt.Errorf("--limit requires a positive integer, got %q", value)
+			number, parseErr := strconv.ParseInt(value, 10, 32)
+			if name == "--neighbours" {
+				if parseErr != nil || number < 0 || number > documents.MaxRetrievalNeighbours {
+					return docsSearchArgs{}, fmt.Errorf(
+						"--neighbours requires an integer between 0 and %d, got %q",
+						documents.MaxRetrievalNeighbours, value,
+					)
+				}
+				parsed.Neighbours = int(number)
+				continue
 			}
-			limit = int(parsed)
+			if parseErr != nil || number <= 0 {
+				return docsSearchArgs{}, fmt.Errorf("--limit requires a positive integer, got %q", value)
+			}
+			parsed.Limit = int(number)
 		default:
 			if strings.HasPrefix(name, "-") {
-				return "", nil, 0, fmt.Errorf("unknown flag %q", name)
+				return docsSearchArgs{}, fmt.Errorf("unknown flag %q", name)
 			}
 			queryParts = append(queryParts, arg)
 		}
 	}
-	query = strings.TrimSpace(strings.Join(queryParts, " "))
-	if query == "" {
-		return "", nil, 0, documents.ErrEmptyDocumentQuery
+	parsed.Query = strings.TrimSpace(strings.Join(queryParts, " "))
+	if parsed.Query == "" {
+		return docsSearchArgs{}, documents.ErrEmptyDocumentQuery
 	}
-	return query, documentIDs, limit, nil
+	return parsed, nil
 }
 
 // docsCLI joins the ingress with the shared document retriever the other host surfaces use.
