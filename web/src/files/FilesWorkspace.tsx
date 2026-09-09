@@ -9,9 +9,9 @@ import {
 import { Locale } from '@svar-ui/react-core';
 import { useTranslation } from 'react-i18next';
 import '@svar-ui/react-filemanager/all.css';
-import { useThemeMode } from '@/theme/useThemeMode';
 import { createFileManagerProvider, directURL, parseDates } from './filesApi';
 import { filesWords } from './filesLocale';
+import { useThemeMode } from '@/theme/useThemeMode';
 
 interface FilesWorkspaceProps {
   readonly mobileMenu?: ReactNode;

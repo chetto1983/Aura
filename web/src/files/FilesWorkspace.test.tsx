@@ -1,8 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import FilesWorkspace from './FilesWorkspace';
 import i18n from '@/i18n/i18n';
 import { setTheme } from '@/theme/applyTheme';
-import FilesWorkspace from './FilesWorkspace';
 
 // The provider is an HTTP client; the widget under test only needs it to answer the first
 // listing, so the stub is the four bus methods FilesWorkspace actually calls.
@@ -12,8 +12,8 @@ vi.mock('./filesApi', async () => {
     ...actual,
     createFileManagerProvider: () => ({
       loadFiles: () => Promise.resolve([{ id: 'chat', name: 'chat', type: 'folder', lazy: true }]),
-      on: () => {},
-      setNext: () => {},
+      on: () => undefined,
+      setNext: () => undefined,
       exec: () => Promise.resolve(),
     }),
   };
@@ -30,7 +30,9 @@ describe('FilesWorkspace', () => {
     const { container } = render(<FilesWorkspace />);
     // "Add New" is the widget's own word pack, not Aura's i18n resources: it proves the
     // Locale provider reached the component instead of being a no-op on a foreign context.
-    await waitFor(() => expect(container.textContent).toContain('Aggiungi'));
+    await waitFor(() => {
+      expect(container.textContent).toContain('Aggiungi');
+    });
     expect(container.textContent).not.toContain('Add New');
   });
 
@@ -58,14 +60,20 @@ describe('FilesWorkspace', () => {
   it('follows a theme switch made while it is mounted', async () => {
     setTheme('dark');
     const { container } = render(<FilesWorkspace />);
-    await waitFor(() => expect(themeClass(container)).toContain('wx-willow-dark-theme'));
+    await waitFor(() => {
+      expect(themeClass(container)).toContain('wx-willow-dark-theme');
+    });
     act(() => {
       setTheme('light');
     });
-    await waitFor(() => expect(themeClass(container)).toContain('wx-willow-theme'));
+    await waitFor(() => {
+      expect(themeClass(container)).toContain('wx-willow-theme');
+    });
     act(() => {
       setTheme('dark');
     });
-    await waitFor(() => expect(themeClass(container)).toContain('wx-willow-dark-theme'));
+    await waitFor(() => {
+      expect(themeClass(container)).toContain('wx-willow-dark-theme');
+    });
   });
 });

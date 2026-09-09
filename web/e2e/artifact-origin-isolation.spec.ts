@@ -1,6 +1,6 @@
-import { expect, test } from '@playwright/test';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { expect, test } from '@playwright/test';
 
 // artifact-origin-isolation.spec.ts pins the BROWSER BEHAVIOUR the artifact policy relies
 // on. Its Go counterpart (internal/agui/artifact_connect_test.go) pins that the daemon
@@ -50,7 +50,11 @@ let externalOrigin = '';
 let servedCSP = '';
 
 const listen = (s: Server) =>
-  new Promise<number>((resolve) => s.listen(0, '127.0.0.1', () => resolve((s.address() as AddressInfo).port)));
+  new Promise<number>((resolve) => {
+    s.listen(0, '127.0.0.1', () => {
+      resolve((s.address() as AddressInfo).port);
+    });
+  });
 
 test.beforeAll(async () => {
   external = createServer((_q, res) => {
@@ -68,8 +72,10 @@ test.beforeAll(async () => {
     res.writeHead(200, headers);
     res.end(HOSTILE.replace('window.__EXTERNAL__', JSON.stringify(externalOrigin)));
   });
-  externalOrigin = `http://127.0.0.1:${await listen(external)}`;
-  auraOrigin = `http://127.0.0.1:${await listen(aura)}`;
+  const externalPort: number = await listen(external);
+  const auraPort: number = await listen(aura);
+  externalOrigin = `http://127.0.0.1:${String(externalPort)}`;
+  auraOrigin = `http://127.0.0.1:${String(auraPort)}`;
 });
 
 test.afterAll(() => {
@@ -84,7 +90,13 @@ async function probe(page: import('@playwright/test').Page, csp: string): Promis
   const ctx = page.context();
   await ctx.clearCookies();
   await ctx.addCookies([
-    { name: 'aura_session', value: 'operator', url: `${auraOrigin}/`, httpOnly: true, sameSite: 'Strict' },
+    {
+      name: 'aura_session',
+      value: 'operator',
+      url: `${auraOrigin}/`,
+      httpOnly: true,
+      sameSite: 'Strict',
+    },
   ]);
   await page.goto(`${auraOrigin}/artifact`);
   await page.locator('#out').filter({ hasNotText: 'running' }).waitFor({ timeout: 8000 });
@@ -97,30 +109,45 @@ test.describe('artifact origin isolation (browser behaviour)', () => {
   // future config change turning that isolation off underneath the suite.
   test.describe.configure({ mode: 'serial' });
 
-  test('sandbox denies Aura while an open connect-src still reaches external APIs', async ({ page }) => {
+  test('sandbox denies Aura while an open connect-src still reaches external APIs', async ({
+    page,
+  }) => {
     const r = await probe(page, `sandbox allow-scripts; ${SEALED_FLOOR}; connect-src *`);
     expect(r.aura, 'an opaque origin sends no cookie, so Aura refuses').toBe('BLOCKED');
     expect(r.external, 'external data must stay reachable — that is the point').toBe('OK');
     expect(r.cookie, 'document.cookie is unreachable from an opaque origin').not.toBe('VISIBLE');
   });
 
-  test('WITHOUT sandbox the same document reads Aura with the operator cookie', async ({ page }) => {
+  test('WITHOUT sandbox the same document reads Aura with the operator cookie', async ({
+    page,
+  }) => {
     // The control. If this ever starts reporting BLOCKED, the first test has stopped
     // proving anything and the suite would go green over a policy that no longer protects.
     const r = await probe(page, `${SEALED_FLOOR}; connect-src *`);
-    expect(r.aura, 'without the sandbox directive a top-level artifact IS same-origin').toContain('READ:');
+    expect(r.aura, 'without the sandbox directive a top-level artifact IS same-origin').toContain(
+      'READ:',
+    );
     expect(r.external).toBe('OK');
   });
 
-  test('a closed connect-src blocks the legitimate API too — the cost the allowlist had', async ({ page }) => {
+  test('a closed connect-src blocks the legitimate API too — the cost the allowlist had', async ({
+    page,
+  }) => {
     const r = await probe(page, `sandbox allow-scripts; ${SEALED_FLOOR}; connect-src 'none'`);
     expect(r.aura).toBe('BLOCKED');
-    expect(r.external, "the old allowlist's real cost: legitimate data blocked as well").toBe('BLOCKED');
+    expect(r.external, "the old allowlist's real cost: legitimate data blocked as well").toBe(
+      'BLOCKED',
+    );
   });
 
   test('sandbox never grants allow-same-origin, which would undo it', async ({ page }) => {
-    const r = await probe(page, `sandbox allow-scripts allow-same-origin; ${SEALED_FLOOR}; connect-src *`);
+    const r = await probe(
+      page,
+      `sandbox allow-scripts allow-same-origin; ${SEALED_FLOOR}; connect-src *`,
+    );
     // Documents why the token is forbidden in artifactRenderCSP: it hands the origin back.
-    expect(r.aura, 'allow-same-origin restores the origin and with it the cookie').toContain('READ:');
+    expect(r.aura, 'allow-same-origin restores the origin and with it the cookie').toContain(
+      'READ:',
+    );
   });
 });

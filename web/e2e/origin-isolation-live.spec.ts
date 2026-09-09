@@ -27,11 +27,16 @@ const live = process.env.AURA_E2E_LIVE_ARTIFACT === '1';
 const assetID = process.env.AURA_E2E_ARTIFACT_ASSET ?? '';
 
 test.describe('artifact origin isolation (live)', () => {
-  test.skip(!live, 'set AURA_E2E_LIVE_ARTIFACT=1 with AURA_E2E_ARTIFACT_ASSET against a live stack');
+  test.skip(
+    !live,
+    'set AURA_E2E_LIVE_ARTIFACT=1 with AURA_E2E_ARTIFACT_ASSET against a live stack',
+  );
 
   test('the daemon serves the data proxy and the sandboxed artifact policy', async ({ page }) => {
     let proofs = 0;
-    expect(assetID, 'AURA_E2E_ARTIFACT_ASSET must name an artifact this identity owns').not.toBe('');
+    expect(assetID, 'AURA_E2E_ARTIFACT_ASSET must name an artifact this identity owns').not.toBe(
+      '',
+    );
 
     await gotoAuthenticated(page, '/');
 
@@ -55,10 +60,14 @@ test.describe('artifact origin isolation (live)', () => {
     const relayed = await call(
       '/api/fetch?url=' + encodeURIComponent('https://api.coinbase.com/v2/prices/BTC-USD/spot'),
     );
-    expect(relayed.status, `proxy should relay, got ${relayed.status}: ${relayed.body}`).toBe(200);
+    expect(
+      relayed.status,
+      `proxy should relay, got ${String(relayed.status)}: ${relayed.body}`,
+    ).toBe(200);
     expect(relayed.contentType ?? '').toContain('application/json');
     expect(relayed.cacheControl ?? '').toBe('no-store');
-    expect(JSON.parse(relayed.body).data?.amount, 'a real quote should come back').toBeTruthy();
+    const quote = JSON.parse(relayed.body) as { data?: { amount?: string } };
+    expect(quote.data?.amount, 'a real quote should come back').toBeTruthy();
     proofs += 1;
 
     // The allowlist is enforced server-side: HTML is data the proxy must never relay,
@@ -77,7 +86,9 @@ test.describe('artifact origin isolation (live)', () => {
       }, assetID);
       expect(rendered.status, 'the artifact must render').toBe(200);
       const csp = rendered.csp ?? '';
-      expect(csp, 'opaque origin comes from the sandbox directive').toContain('sandbox allow-scripts');
+      expect(csp, 'opaque origin comes from the sandbox directive').toContain(
+        'sandbox allow-scripts',
+      );
       expect(csp, 'allow-same-origin would let the document reclaim Aura’s origin').not.toContain(
         'allow-same-origin',
       );
@@ -86,17 +97,23 @@ test.describe('artifact origin isolation (live)', () => {
 
       // Now run INSIDE that document, under that exact policy.
       await page.goto(`/api/assets/${assetID}/render`);
+      // Explicit fields, not Record<string, string>: an index signature makes every read
+      // `string | undefined`, which the assertions below then cannot interpolate.
       const live = await page.evaluate(async () => {
-        const out: Record<string, string> = {};
+        const out: { external: string; aura: string } = { external: '', aura: '' };
         try {
           const r = await fetch('https://api.coinbase.com/v2/prices/BTC-USD/spot');
-          const j = await r.json();
-          out.external = 'OK:' + j.data.amount;
-        } catch (e) { out.external = 'BLOCKED:' + (e as Error).name; }
+          const j = (await r.json()) as { data?: { amount?: string } };
+          out.external = `OK:${j.data?.amount ?? ''}`;
+        } catch (e) {
+          out.external = `BLOCKED:${(e as Error).name}`;
+        }
         try {
           const r = await fetch('/api/me', { credentials: 'include' });
-          out.aura = 'REACHED:' + r.status;
-        } catch (e) { out.aura = 'BLOCKED:' + (e as Error).name; }
+          out.aura = `REACHED:${String(r.status)}`;
+        } catch (e) {
+          out.aura = `BLOCKED:${(e as Error).name}`;
+        }
         return out;
       });
       expect(live.external, `a live external fetch must work: ${live.external}`).toContain('OK:');

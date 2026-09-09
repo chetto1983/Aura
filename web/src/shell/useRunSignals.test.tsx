@@ -11,7 +11,7 @@ function wrapper(client: QueryClient) {
 }
 
 describe('useRunSignals', () => {
-  it('invalidates the assets of the thread that is active WHEN THE ARTIFACT LANDS', async () => {
+  it('invalidates the assets of the thread that is active WHEN THE ARTIFACT LANDS', () => {
     // The regression this pins, measured live on 2026-09-09: sending the first message
     // from the home creates the conversation TOGETHER with the run, so the pump starts
     // while activeThreadId is still "". The artifact frame then arrived, onArtifact ran
@@ -48,7 +48,9 @@ describe('useRunSignals', () => {
     const client = new QueryClient();
     const invalidate = vi.spyOn(client, 'invalidateQueries');
     const openArtifacts = vi.fn();
-    const { result } = renderHook(() => useRunSignals('', openArtifacts), { wrapper: wrapper(client) });
+    const { result } = renderHook(() => useRunSignals('', openArtifacts), {
+      wrapper: wrapper(client),
+    });
 
     act(() => {
       result.current.onArtifact();
