@@ -63,9 +63,15 @@ func (s *ShellExec) executeInBox(ctx context.Context, h usersandbox.BoxHandle, c
 
 	var ecPtr *int
 	status := ""
+	took := time.Since(started)
 	switch {
 	case timedOut:
-		status = "[command timed out]"
+		// Not a dead end: the cap is the one failure the model can avoid outright, so the
+		// marker names the parameter that avoids it. Without this the next attempt was the
+		// same command again — measured across every recorded turn, background was never used.
+		status = joinFooterSections("[command timed out]",
+			fmt.Sprintf("[the %s cap killed it and nothing was retained; to run it to completion %s]",
+				timeout, backgroundAdvice))
 	case cancelled:
 		status = "[command cancelled]"
 	default:
@@ -73,6 +79,11 @@ func (s *ShellExec) executeInBox(ctx context.Context, h usersandbox.BoxHandle, c
 		ecPtr = &ec
 		if ec != 0 {
 			status = fmt.Sprintf("[exit code %d]", ec)
+		}
+		// A command that succeeded but burned most of its cap is the LAST moment the advice
+		// is still cheap: next time the same job may cross the wall and lose everything.
+		if notice := slowRunNotice(took, timeout); notice != "" {
+			status = joinFooterSections(status, notice)
 		}
 	}
 	body = renderShellBody(body, status)
@@ -83,7 +94,7 @@ func (s *ShellExec) executeInBox(ctx context.Context, h usersandbox.BoxHandle, c
 	footer := renderShellFooter(ctx, body, stderr, status, shellExecFooter{
 		ExitCode:   ecPtr,
 		Cwd:        finalCwd,
-		DurationMS: time.Since(started).Milliseconds(),
+		DurationMS: took.Milliseconds(),
 		TimedOut:   timedOut,
 		Cancelled:  cancelled,
 	})

@@ -70,6 +70,32 @@ type shellExecFooter struct {
 
 const defaultShellTimeout = 120 * time.Second
 
+// slowRunShare is the fraction of its cap a command may burn before the result starts
+// telling the model about "background": true. A quarter is early enough that the advice
+// lands while the job still succeeds, rather than after the cap has already killed it.
+const slowRunShare = 0.25
+
+// backgroundAdvice is the one sentence both the slow-run notice and the timeout marker
+// end with. It names the parameter, what it returns, and who tells the model when the
+// job is done — the three things missing from a bare "[command timed out]".
+const backgroundAdvice = `set "background": true — it returns a shell_id immediately instead of blocking, Aura notifies this conversation when the job exits, and shell_poll then reads the retained output`
+
+// slowRunNotice returns the advice line for a command that finished but consumed a large
+// share of its cap, and "" for one that did not. A zero or negative cap yields nothing:
+// with no ceiling there is no share to exceed and no wall to warn about.
+//
+// It exists because the advice was reaching the model in the wrong place. Measured
+// 2026-09-09 over every recorded turn: 28 tool-call turns, zero uses of background,
+// while an artifact bundle spent 50.3s of a 120s cap — already 42% of the way to a
+// failure that would have discarded the whole build.
+func slowRunNotice(took, cap time.Duration) string {
+	if cap <= 0 || took < time.Duration(float64(cap)*slowRunShare) {
+		return ""
+	}
+	return fmt.Sprintf("[took %.1fs of the %.0fs cap — for a job this long %s]",
+		took.Seconds(), cap.Seconds(), backgroundAdvice)
+}
+
 func (s *ShellExec) Spec() Spec {
 	params := json.RawMessage(`{
   "type": "object",
