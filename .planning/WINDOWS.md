@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 25
+open_count: 27
 waived_count: 0
 fixed_count: 2
-total_count: 27
-last_updated: 2026-09-08T10:10:14.789Z
+total_count: 29
+last_updated: 2026-09-09T15:00:31.672Z
 ---
 
 # Broken Windows Ledger
@@ -42,6 +42,8 @@ last_updated: 2026-09-08T10:10:14.789Z
 | 25 | 49 | deviation | cmd/aura/chat_boot_memory_capture_test.go |  | Plan 49-14 added omitted daemon-free composition and precision regression coverage. | open |  | 2026-09-01T05:56:22.032Z |  |
 | 26 | 49 | deviation | .planning/STATE.md |  | Plan 49-14 restored the sequential pointer to incomplete Plan 49-11 after out-of-order close-out. | open |  | 2026-09-01T05:56:22.442Z |  |
 | 27 | 01 | unrun-verify | internal/gateway/ |  | Mutation spot-check (go-mutesting ./internal/gateway/, floor 70% killed, CLAUDE.md gate) not completed locally in plan 01-05 T3: the run is too slow for one session (~91 mutations/600s on one of 11 files) and the operator explicitly stopped it mid-run, directing it to CI instead. Killed-ratio for internal/gateway is genuinely unmeasured until CI's own mutation job runs against it. | open |  | 2026-09-08T10:10:14.789Z |  |
+| 28 | 02 | deviation | internal/runner/runner.go | 392 | Interactive runner (web + Telegram turns) still resolves the process-wide deployment client, not an identity's own — IdentityLLMResolver.ScopeContextToIdentitySnapshot has no production caller; a zero-cap identity's live turn still succeeds billed to the operator's key. Inherited from plan 02-01, unresolved by 02-05. | open |  | 2026-09-09T15:00:26.638Z |  |
+| 29 | 02 | deviation | internal/channels/telegram/bot_dispatch.go | 133 | Telegram's /cost Resolver wiring (commands.go, serve_channels.go) is correct and tested, but onText calls dispatchRich(daemonCtx, ...) with the raw un-scoped context rather than an identity-scoped one, so /cost still renders the process-wide Runtime figures for every Telegram user in production. | open |  | 2026-09-09T15:00:31.672Z |  |
 
 ````json
 [
@@ -367,6 +369,30 @@ last_updated: 2026-09-08T10:10:14.789Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-08T10:10:14.789Z",
+    "resolved_at": null
+  },
+  {
+    "id": 28,
+    "kind": "deviation",
+    "phase": "02",
+    "file": "internal/runner/runner.go",
+    "line": 392,
+    "description": "Interactive runner (web + Telegram turns) still resolves the process-wide deployment client, not an identity's own — IdentityLLMResolver.ScopeContextToIdentitySnapshot has no production caller; a zero-cap identity's live turn still succeeds billed to the operator's key. Inherited from plan 02-01, unresolved by 02-05.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T15:00:26.638Z",
+    "resolved_at": null
+  },
+  {
+    "id": 29,
+    "kind": "deviation",
+    "phase": "02",
+    "file": "internal/channels/telegram/bot_dispatch.go",
+    "line": 133,
+    "description": "Telegram's /cost Resolver wiring (commands.go, serve_channels.go) is correct and tested, but onText calls dispatchRich(daemonCtx, ...) with the raw un-scoped context rather than an identity-scoped one, so /cost still renders the process-wide Runtime figures for every Telegram user in production.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T15:00:31.672Z",
     "resolved_at": null
   }
 ]
