@@ -348,6 +348,14 @@ passages should reuse the native recursive splitter before fixed-width fallback,
 preserving overlap and absolute locators. Timings must compare equal source coverage;
 see [the measured decision](docs/document-ingestion-benchmark.md).
 
+For direct operator diagnostics, expose the existing `aura docs ingest` and
+`aura docs search` handlers through a stdio MCP (`aura docs mcp`), using the
+installed MCP SDK. On 2026-09-09 the CLI search returned complete passage evidence
+in 113 ms, while the configured memory MCP exposed neither document operation.
+The MCP fixes the operator identity at startup, preserves ingress path checks and
+returns complete retrieval JSON without an LLM synthesis step. MCP connectivity
+and client reload must be verified separately from CLI behavior.
+
 Documents retain original hashes; passages retain normalized hashes, locators and
 citation tokens. Retrieval checks source scope and reports which legs ran. An absent
 embedder, unavailable index or missing passage configuration has explicit degraded
