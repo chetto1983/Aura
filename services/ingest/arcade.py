@@ -226,6 +226,14 @@ def _document_ddl(dimensions: int) -> list[str]:
         f"CREATE PROPERTY {DOCUMENT_TYPE}.passage_count IF NOT EXISTS LONG",
         f"CREATE PROPERTY {DOCUMENT_TYPE}.card IF NOT EXISTS STRING",
         f"CREATE PROPERTY {DOCUMENT_TYPE}.indexed_at IF NOT EXISTS DATETIME",
+        # The card carries a vector for the same reason the passage does, and it is what
+        # lets the two be compared at all. The card leg ranks with BM25 while the passage
+        # leg ranks with a reranked cosine, so retrieval had no way to weigh one against
+        # the other and fell back to a precedence rule -- anything with a passage outranks
+        # anything without. Measured 2026-09-09, that rule made gi_comuni_cap.xlsx
+        # unreachable even by its exact filename, because a spreadsheet answered from its
+        # card alone can never beat a document that happens to have passages.
+        f"CREATE PROPERTY {DOCUMENT_TYPE}.embedding IF NOT EXISTS ARRAY_OF_FLOATS",
         f"CREATE INDEX IF NOT EXISTS ON {DOCUMENT_TYPE} (search_document_id) UNIQUE",
         # Same analyzer as Passage.text on purpose: the card leg and the passage leg must
         # tokenise a query identically or the two rank the same words differently.
@@ -239,6 +247,10 @@ def _document_ddl(dimensions: int) -> list[str]:
         # same text split on every non-alphanumeric run"), and the same fix.
         f"CREATE INDEX IF NOT EXISTS ON {DOCUMENT_TYPE} (file_name_words) FULL_TEXT METADATA "
         "{analyzer:'org.apache.lucene.analysis.standard.StandardAnalyzer'}",
+        # Same metadata as Passage.embedding: one similarity, one quantization, so the two
+        # scores mean the same thing when they meet.
+        f"CREATE INDEX IF NOT EXISTS ON {DOCUMENT_TYPE} (embedding) LSM_VECTOR METADATA "
+        f'{{ "dimensions": {dimensions}, "similarity": "COSINE", "quantization": "NONE" }}',
     ]
 
 

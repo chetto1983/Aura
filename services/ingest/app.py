@@ -85,6 +85,9 @@ class IndexedDocument:
     # What filecard measured about the file. Empty when it could not be described --
     # never an error, because a card is how a document is found, not whether it exists.
     card: str
+    # The card's own vector, so a document found by its description competes with one found
+    # by its text on the same scale instead of by a precedence rule.
+    embedding: list[float]
     indexed_at: datetime.datetime
 
 
@@ -351,6 +354,9 @@ async def process_file(
         size_bytes=len(content),
         passage_count=len(pieces),
         card=card,
+        # The card describes the file; embedding it is what makes "which file knows this?"
+        # answerable for a document that has no passages at all.
+        embedding=_embed(card) if card.strip() else [0.0] * EMBED_DIMENSIONS,
         indexed_at=datetime.datetime.now(datetime.timezone.utc),
     ))
 
