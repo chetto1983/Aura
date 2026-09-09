@@ -3,15 +3,23 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/google/uuid"
 )
+
+// errAgentJobNoCredential is the fail-closed case: neither a Resolver+identity, a
+// Runtime, nor an already-set Client is available (T-02-08b). A misconfigured
+// composition root used to fall through silently to a stale deployment client
+// captured at boot; this refuses the run instead.
+var errAgentJobNoCredential = errors.New("agent_job: no LLM credential source configured")
 
 // agentJobMaxDuration is the fallback wall-clock budget when AgentDeps.MaxDuration is
 // unset — mirrors the swarm worker's default inactivity deadline (AURA_SWARM_CHILD_IDLE_SEC=120).
@@ -67,14 +75,15 @@ func (h AgentJobHandler) Run(ctx context.Context, job Job) (string, error) {
 
 	runCtx, cancel := context.WithTimeout(ctx, h.Meta().MaxDuration)
 	defer cancel()
-	// One scheduled run retains one route even if the operator changes Settings while
-	// it is active. A later run snapshots the replacement.
-	deps := h.Deps
-	if deps.Runtime != nil {
-		runtime := deps.Runtime.Snapshot()
-		deps.Client, deps.LLM, deps.Runtime = runtime.Client, runtime.Config, nil
+	// The credential is resolved ONCE per run, before the retry loop, so every
+	// auto-reject re-Run within one job stays on the SAME client (mirrors the
+	// pre-CRED-07 "one scheduled run retains one route even if the operator
+	// changes Settings while it is active" behavior — a later run resolves fresh).
+	client, cfg, err := h.resolveLLM(runCtx)
+	if err != nil {
+		return "", fmt.Errorf("agent_job: resolve llm credential: %w", err)
 	}
-	budget, err := newJobBudget(job.StepBudget, deps.LLM)
+	budget, err := newJobBudget(job.StepBudget, cfg)
 	if err != nil {
 		return "", fmt.Errorf("agent_job: budget: %w", err)
 	}
@@ -83,7 +92,7 @@ func (h AgentJobHandler) Run(ctx context.Context, job Job) (string, error) {
 	var summary strings.Builder
 
 	for attempt := 0; attempt <= maxAutoRejects; attempt++ {
-		worker := newAgentWorker(deps, job.RunID, job.OriginConversationID, prior)
+		worker := newAgentWorker(h.Deps, client, cfg, job.RunID, job.OriginConversationID, prior)
 		content, pause, runErr := drain(runCtx, worker, budget)
 		if runErr != nil {
 			return summary.String(), fmt.Errorf("agent_job run: %w", runErr)
@@ -106,6 +115,42 @@ func (h AgentJobHandler) Run(ctx context.Context, job Job) (string, error) {
 	}
 	// Bounded out — the model kept asking; finalize with the marker trail (never block).
 	return summary.String(), nil
+}
+
+// resolveLLM picks the client+config this run's worker(s) use, in priority
+// order (T-02-08b/CRED-07):
+//
+//  1. h.Deps.Resolver, when non-nil: the job's OWNING identity's own
+//     credential, keyed on identityctx.IdentityID(ctx) — a scheduled run has no
+//     HTTP principal, so this reads the identity cron's scheduledOperationContext
+//     already bound to ctx from the task row, NOT a per-request principal
+//     (internal/cron/dispatch.go's scheduledOperationContext, called before Run).
+//     An empty identity (a system/no-identity task) falls through to Runtime.
+//  2. h.Deps.Runtime, when non-nil: a fresh process-wide snapshot.
+//  3. h.Deps.Client, when non-nil: an already-set client (the shape every
+//     pre-CRED-07 test in this package constructs directly).
+//  4. Neither of the above: errAgentJobNoCredential — the fail-closed case a
+//     nil Runtime used to skip past silently via the deployment client
+//     serve_dispatch.go captured at boot; that capture is gone, so this is now
+//     a real refusal instead.
+func (h AgentJobHandler) resolveLLM(ctx context.Context) (llm.Client, llm.Config, error) {
+	if h.Deps.Runtime != nil {
+		snapshot := h.Deps.Runtime.Snapshot()
+		return snapshot.Client, snapshot.Config, nil
+	}
+	if h.Deps.Resolver != nil {
+		if identityID := identityctx.IdentityID(ctx); identityID != "" {
+			snapshot, err := h.Deps.Resolver.SnapshotFor(ctx, identityID)
+			if err != nil {
+				return nil, llm.Config{}, err
+			}
+			return snapshot.Client, snapshot.Config, nil
+		}
+	}
+	if h.Deps.Client != nil {
+		return h.Deps.Client, h.Deps.LLM, nil
+	}
+	return nil, llm.Config{}, errAgentJobNoCredential
 }
 
 // drain runs one LlmAgent invocation to completion, returning the final assistant

@@ -39,11 +39,19 @@ type runtimeSnapshotter interface {
 // guard rejects depth >= AURA_SWARM_MAX_DEPTH. ConvID keys the per-child SessionID
 // and the transcript directory.
 type RunConfig struct {
-	ParentBudget       *agent.Budget
-	ParentRegistry     *tools.Registry
-	Client             llm.Client
-	LLM                llm.Config
-	Runtime            runtimeSnapshotter
+	ParentBudget   *agent.Budget
+	ParentRegistry *tools.Registry
+	Client         llm.Client
+	LLM            llm.Config
+	Runtime        runtimeSnapshotter
+	// Resolver, when non-nil, resolves IdentityID's OWN LLM credential
+	// (CRED-07/D-11, seam A extended to swarm workers): a worker runs on behalf
+	// of the parent turn's identity and must inherit that identity's snapshot,
+	// exactly as agent.Budget already shares one counter across the whole tree.
+	// resolveWorkerLLM (swarm_llm_resolve.go) is the single place this and
+	// Runtime/Client are read; see that file for the full priority and the
+	// fail-closed case (T-02-08b).
+	Resolver           identityLLMResolver
 	Cfg                config.Config
 	ConvID             string
 	Depth              int
@@ -285,10 +293,10 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 	}
 
 	rec := newHistoryRecorder()
-	client, cfg := rc.Client, rc.LLM
-	if rc.Runtime != nil {
-		runtime := rc.Runtime.Snapshot()
-		client, cfg = runtime.Client, runtime.Config
+	client, cfg, err := resolveWorkerLLM(ctx, rc)
+	if err != nil {
+		report.Status, report.Error = StatusFailed, err.Error()
+		return report, nil
 	}
 	worker := agent.NewLlmAgent(agent.LlmAgentConfig{
 		Client:     client,

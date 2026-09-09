@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
 	tele "gopkg.in/telebot.v4"
 )
@@ -69,16 +70,34 @@ const (
 	searchCallbackPrefix = "srch"
 )
 
+// identityLLMResolver is the consumer-side port onto
+// internal/runner.IdentityLLMResolver, the same shape internal/swarm and
+// internal/cron/handlers each declare their own copy of: resolve identityID's own
+// RuntimeSnapshot. Declared here rather than importing internal/runner (which
+// would pull the whole runner package into a channel adapter that only needs one
+// method) so *runner.IdentityLLMResolver satisfies it structurally.
+type identityLLMResolver interface {
+	SnapshotFor(ctx context.Context, identityID string) (llm.RuntimeSnapshot, error)
+}
+
 // commandDeps are the dispatcher inputs: the two reused backends plus the price
 // table + model that drive the /cost render (identical to the CLI cost footer).
 type commandDeps struct {
-	Search  searchBackend
-	Cost    costBackend
-	Spend   spendBackend
-	Clear   clearBackend
-	Prices  map[string]llm.Price
-	Model   string
+	Search searchBackend
+	Cost   costBackend
+	Spend  spendBackend
+	Clear  clearBackend
+	Prices map[string]llm.Price
+	Model  string
+	// Runtime is the process-wide fallback activeModelProfile reads when Resolver
+	// is unset, or when the linked chat's identity has none (CRED-07/D-11: an
+	// identity's own spend must not read the deployment-wide key's figures).
 	Runtime *llm.Runtime
+	// Resolver, when non-nil, resolves the LINKED identity's own LLM snapshot
+	// (CRED-07 extended to Telegram's price/spend display) — see
+	// activeModelProfile's doc comment for the resolution order and the
+	// production wiring gap this leaves open.
+	Resolver identityLLMResolver
 }
 
 // commands intercepts Telegram slash-commands. It also owns the per-chat
@@ -242,7 +261,7 @@ func (c *commands) clear(ctx context.Context, chatID int64) string {
 // measured traffic mix. When the provider figure is used, the token counts still ride
 // along — they explain the number rather than producing it.
 func (c *commands) cost(ctx context.Context) string {
-	prices, model, costStatus, spendBackend := c.activeModelProfile()
+	prices, model, costStatus, spendBackend := c.activeModelProfile(ctx)
 	if costStatus == llm.CostStatusSubscriptionIncluded {
 		return "Costo modello incluso nell'abbonamento Ollama; importo non disponibile dal provider."
 	}
@@ -279,7 +298,29 @@ func (c *commands) spendFromProvider(ctx context.Context, backend spendBackend) 
 		s.Daily, s.Weekly, s.Monthly, s.Total), nil
 }
 
-func (c *commands) activeModelProfile() (map[string]llm.Price, string, llm.CostStatus, spendBackend) {
+// activeModelProfile resolves the price table, model name, cost status and spend
+// backend a /cost render uses, in priority order (CRED-07/D-11 extended to this
+// channel's own spend display, T-02-08b):
+//
+//  1. c.deps.Resolver + the chat's linked identity (identityctx.IdentityID(ctx)):
+//     the identity's OWN key's figures, never the deployment-wide key's — an
+//     identity with its own cap must see ITS spend, not the shared credential's.
+//  2. c.deps.Runtime, when set: a fresh process-wide snapshot (today's
+//     behavior, unchanged when no Resolver is wired or the chat has no linked
+//     identity on ctx).
+//  3. Neither: the static Prices/Model this dispatcher was constructed with.
+//
+// *llm.Config satisfies spendBackend directly (see that interface's doc
+// comment), so branches 1 and 2 both return &cfg with no adapter.
+func (c *commands) activeModelProfile(ctx context.Context) (map[string]llm.Price, string, llm.CostStatus, spendBackend) {
+	if c.deps.Resolver != nil {
+		if identityID := identityctx.IdentityID(ctx); identityID != "" {
+			if snapshot, err := c.deps.Resolver.SnapshotFor(ctx, identityID); err == nil {
+				cfg := snapshot.Config
+				return cfg.Prices, cfg.Model, cfg.CostStatus, &cfg
+			}
+		}
+	}
 	if c.deps.Runtime == nil {
 		return c.deps.Prices, c.deps.Model, llm.CostStatusUnknown, c.deps.Spend
 	}

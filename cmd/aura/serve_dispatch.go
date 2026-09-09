@@ -152,9 +152,21 @@ func (r conversationRecorder) AppendAssistantTurn(ctx context.Context, conversat
 }
 
 func newCronAgentDeps(chat *chatEnv) handlers.AgentDeps {
-	return handlers.AgentDeps{
-		Client:     chat.client,
-		LLM:        chat.cfg.LLM,
+	// resolver is compared as its concrete *runner.IdentityLLMResolver type BEFORE
+	// it reaches the interface-typed AgentDeps.Resolver field: assigning a nil one
+	// of those directly would box it into a non-nil interface value (the same
+	// #2924-class trap 02-04's key-decisions already documented for a nil-pool
+	// store), which would make resolveLLM's `h.Deps.Resolver != nil` check wrongly
+	// treat a disabled resolver (no AURA_AUTHULA_SECRET) as configured.
+	resolver := buildIdentityLLMResolver(chat)
+	deps := handlers.AgentDeps{
+		// Client/LLM are deliberately NOT set here (T-02-08b/D-11): that boot-time
+		// capture is the deployment-key fallback CRED-07 forbids. Resolver resolves
+		// the scheduled job's OWNING identity (AgentJobHandler.resolveLLM, keyed on
+		// identityctx.IdentityID(ctx) — bound from the task row before Run is
+		// called, per cron's scheduledOperationContext); Runtime is the
+		// process-wide secondary for a system task with no owning identity or
+		// when no Resolver is wired.
 		Runtime:    chat.llmRuntime,
 		Registry:   chat.reg,
 		PreviewCap: chat.cfg.ToolPreviewCap,
@@ -166,6 +178,10 @@ func newCronAgentDeps(chat *chatEnv) handlers.AgentDeps {
 		// has no responder, so a mutating GateRecommended call degrades to deny-with-guidance.
 		Gateway: chat.gateway,
 	}
+	if resolver != nil {
+		deps.Resolver = resolver
+	}
+	return deps
 }
 
 // handlerAdapter bridges a handlers.Handler (the internal/cron/handlers impls, which

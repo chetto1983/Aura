@@ -160,6 +160,12 @@ func (l *DelegationClaimLoop) runWithHeartbeat(ctx context.Context, job document
 	rc.ConvID = payload.ConversationID
 	rc.Depth = payload.Depth
 	rc.Context = payload.Context
+	// IdentityID (CRED-07/T-02-08b): a claimed delegation job is headless -- there
+	// is no parent turn's ctx live on this goroutine to inherit a snapshot from --
+	// so resolveWorkerLLM's Resolver branch needs the job's OWNING identity
+	// explicitly. job.IdentityID is the durable queue row's own column, set at
+	// EnqueueDelegation time from the turn that spawned it.
+	rc.IdentityID = job.IdentityID
 	// ChildID (51-11): payload.ChildID is EnqueueDelegation's deterministic,
 	// stable per-goal id -- runChild prefers it over its own "w1" fallback, so
 	// two concurrently claimed jobs of one conversation write to two DIFFERENT
@@ -260,6 +266,15 @@ func delegationOperationContext(ctx context.Context, job documents.IngestionJob,
 	return operationCtx, nil
 }
 
+// snapshotDelegationRunConfig freezes rc.Runtime into rc.Client/rc.LLM once per
+// claimed job, ahead of resolveWorkerLLM's own priority order (Resolver+IdentityID,
+// then Runtime, then Client) — it does not touch rc.Resolver or rc.IdentityID, so
+// when the composition root has wired a Resolver, resolveWorkerLLM resolves the
+// job's OWN identity credential regardless of what this function did to Runtime/
+// Client. When no Resolver is wired, a nil rc.Runtime here now leaves rc.Client
+// exactly as l.Worker set it — which, since serve_delegation.go no longer captures
+// the deployment client into that template field (T-02-08b), is nil rather than a
+// silent boot-time default.
 func snapshotDelegationRunConfig(rc RunConfig) RunConfig {
 	if rc.Runtime == nil {
 		return rc

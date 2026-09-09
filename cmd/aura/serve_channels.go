@@ -77,7 +77,7 @@ func bootChannelsAndSetup(ctx context.Context, chat *chatEnv, override func(name
 }
 
 func buildTelegramDeps(chat *chatEnv, tgCfg telegram.Config) telegram.Deps {
-	return telegram.Deps{
+	deps := telegram.Deps{
 		Turn:               ensuringTurn(chat.run),
 		Token:              tgCfg.BotToken,
 		Store:              telegram.New(chat.pool),
@@ -99,6 +99,16 @@ func buildTelegramDeps(chat *chatEnv, tgCfg telegram.Config) telegram.Deps {
 		ShowReasoning:      chat.cfg.LLM.ShowReasoning,
 		ReasoningFIFORunes: tgCfg.ReasoningFIFORunes,
 	}
+	// Same nil-interface trap telegramSteerOrNil already guards Steer against
+	// (this file's own doc comment above): buildIdentityLLMResolver returns a
+	// concrete *runner.IdentityLLMResolver, and assigning a nil one directly into
+	// the interface-typed LLMResolver field would box it into a non-nil
+	// interface. Comparing the concrete pointer here keeps it a genuinely nil
+	// interface when AURA_AUTHULA_SECRET is unset.
+	if resolver := buildIdentityLLMResolver(chat); resolver != nil {
+		deps.LLMResolver = resolver
+	}
+	return deps
 }
 
 // telegramSteerOrNil converts a concrete *steer.PostgresStore into the narrower

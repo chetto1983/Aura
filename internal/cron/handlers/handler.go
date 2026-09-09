@@ -74,11 +74,29 @@ type Handler interface {
 	Run(ctx context.Context, job Job) (summary string, err error)
 }
 
+// identityLLMResolver is the consumer-side port onto
+// internal/runner.IdentityLLMResolver, mirroring internal/swarm's own port of the
+// same shape (swarm_llm_resolve.go): resolve identityID's own RuntimeSnapshot.
+// Declared here rather than importing internal/runner so this package's D-24
+// import-cycle discipline holds; *runner.IdentityLLMResolver satisfies it
+// structurally.
+type identityLLMResolver interface {
+	SnapshotFor(ctx context.Context, identityID string) (llm.RuntimeSnapshot, error)
+}
+
 // AgentDeps carries the shared runtime an agent_job needs to construct its ephemeral
 // LlmAgent (mirroring swarm.RunConfig): the LLM client + config, the PARENT tool
 // registry (the agent_job runs the registry minus swarm_spawn, D-13), and the
 // sidecar knobs. It is plain composition — no internal/cron types.
 type AgentDeps struct {
+	// Resolver, when non-nil, resolves the job's OWNING identity's own LLM
+	// credential (CRED-07/D-11): a scheduled run is headless and has no HTTP
+	// principal, so the identity comes from identityctx.IdentityID(ctx) — set by
+	// cron's scheduledOperationContext from the task row BEFORE Run is ever
+	// called, not from any per-request principal. AgentJobHandler.resolveLLM is
+	// the one place Resolver/Runtime/Client are read; see that method for the
+	// full priority and the fail-closed case (T-02-08b).
+	Resolver   identityLLMResolver
 	Client     llm.Client
 	LLM        llm.Config
 	Runtime    *llm.Runtime
@@ -110,8 +128,12 @@ func childRegistry(parent *tools.Registry) *tools.Registry {
 // swarm.runChild's NewLlmAgent construction VERBATIM except for the FLAT ephemeral
 // SessionID (amendment #23: agent_job:<runID>, no DB-backed history). prior carries
 // any resume turns (the ask_user auto-reject inject-and-continue, D-25); on the first
-// turn it is just the goal user turn.
-func newAgentWorker(deps AgentDeps, runID, ledgerConvID string, prior []llm.Message) *agent.LlmAgent {
+// turn it is just the goal user turn. client/cfg are ALREADY resolved by the caller's
+// resolveLLM (AgentJobHandler.resolveLLM, agentjob.go) — this function no longer
+// reads deps.Client/deps.LLM/deps.Runtime itself (T-02-08b: that two-step fallback
+// read is the boot-time-capture hole this plan closes), so a nil client here means
+// the caller's own resolution failed to fail closed, which is a bug at the call site.
+func newAgentWorker(deps AgentDeps, client llm.Client, cfg llm.Config, runID, ledgerConvID string, prior []llm.Message) *agent.LlmAgent {
 	// The workspace announced in the tail hint mirrors runner.New: shell_exec and
 	// the fs tools with an empty WorkspaceRoot resolve against the process cwd, so
 	// the hint must name exactly that when no explicit workspace is configured.
@@ -120,11 +142,6 @@ func newAgentWorker(deps AgentDeps, runID, ledgerConvID string, prior []llm.Mess
 		if wd, err := os.Getwd(); err == nil {
 			ws = filepath.ToSlash(wd)
 		}
-	}
-	client, cfg := deps.Client, deps.LLM
-	if deps.Runtime != nil {
-		runtime := deps.Runtime.Snapshot()
-		client, cfg = runtime.Client, runtime.Config
 	}
 	return agent.NewLlmAgent(agent.LlmAgentConfig{
 		Client:     client,

@@ -128,6 +128,13 @@ type Deps struct {
 	// Each command snapshots it once so a concurrent settings change cannot mix
 	// provider spend with another model's rates.
 	LLMRuntime *llm.Runtime
+	// LLMResolver, when non-nil, resolves the LINKED identity's own LLM snapshot
+	// for /cost (CRED-07/D-11): an identity's own spend must read from its own
+	// key, not the deployment-wide one LLMRuntime carries. Nil keeps today's
+	// LLMRuntime-only behavior. Wired by the composition root
+	// (serve_channels.go); see commands.go's activeModelProfile for the
+	// resolution order.
+	LLMResolver identityLLMResolver
 
 	// Resume is the HITL seam (hitl.go): the Runner's pause surface
 	// (PendingFor/SubmitAnswer — *runner.Runner satisfies it). Nil → HITL is inert
