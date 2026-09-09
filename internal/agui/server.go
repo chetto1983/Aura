@@ -141,6 +141,7 @@ type Server struct {
 	fileWrites       FileObjectWriter
 	fileOps          FileOperations
 	images           ImageFetcher
+	data             DataFetcher
 	graph            GraphView
 	governance       GovernanceProviders
 	governanceWrite  GovernanceWriteProviders
@@ -325,6 +326,12 @@ func (s *Server) SetShareService(service ShareService) { s.share = service }
 // the constructor so existing NewServer callers/tests stay unchanged (D-A2-02).
 func (s *Server) SetImageProxy(images ImageFetcher) { s.images = images }
 
+// SetDataProxy wires the SSRF-safe data fetcher the /api/fetch route delegates to.
+// Set by the daemon composition root after NewServer (the same *web.Client already
+// wired for web_search/web_fetch and the image proxy); until set, the route answers
+// 503. Kept off the constructor like every other seam (D-A2-02).
+func (s *Server) SetDataProxy(data DataFetcher) { s.data = data }
+
 // SetGraphView wires the read-only graph view the /api/graph/schema +
 // /api/graph/query routes delegate to. Set by the daemon composition root after
 // NewServer (NewArcadeGraphView over the per-identity memory database); until set, both
@@ -405,6 +412,9 @@ func (s *Server) Mux() http.Handler {
 	// thumbnails/favicons. Mounted under /api/ so it inherits the parent-mux
 	// RequireAuth whole-origin gate (cmd/aura/serve_webui.go); never an open relay.
 	mux.HandleFunc("GET /api/image-proxy", s.handleImageProxy)
+	// The general case of image-proxy: any allowlisted data content type, so a new
+	// source costs a URL rather than a new endpoint. Cockpit-only — see handleDataProxy.
+	mux.HandleFunc("GET /api/fetch", s.handleDataProxy)
 	// CHAT-02 conversation-management subtree (Phase 25). The parent-mux mount
 	// behind RequireAuth lives in cmd/aura/serve_webui.go; here the routes are
 	// colocated with their handlers so the agui Server.Mux answers them.

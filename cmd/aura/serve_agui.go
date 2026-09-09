@@ -148,7 +148,12 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	// GET /api/image-proxy route answers 503 and the cockpit's web_result thumbnails/
 	// favicons never load. It mounts behind the RequireAuth whole-origin gate (the
 	// parent mux below), so it is never an open relay.
-	aguiServer.SetImageProxy(web.NewClient(chat.cfg))
+	// One client serves both byte proxies: same hardened transport, same DNS-pin cache,
+	// two content allowlists. /api/fetch is the general case (json/xml/csv/text) and is
+	// cockpit-only — a sealed artifact cannot reach it, see handleDataProxy.
+	webClient := web.NewClient(chat.cfg)
+	aguiServer.SetImageProxy(webClient)
+	aguiServer.SetDataProxy(webClient)
 	// Wire the cockpit "Connect" WhatsApp device-linking bridge URL (AURA_WHATSAPP_BRIDGE_URL,
 	// default the sibling WhatsApp sidecar). The three /api/connect/whatsapp/* routes
 	// forward to its management REST; an empty value leaves them at 503 (graceful — a stack
