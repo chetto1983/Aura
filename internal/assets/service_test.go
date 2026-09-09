@@ -6,6 +6,8 @@ import (
 	"maps"
 	"strings"
 	"sync"
+
+	"github.com/jackc/pgx/v5/pgconn"
 	"testing"
 	"time"
 
@@ -349,14 +351,43 @@ type fakeAssetStore struct {
 	next    int
 	created []CreateRequest
 	assets  map[string]Asset
+	// duplicateKey makes the next Create fail the way aura.assets does when its
+	// (identity_id, object_key) UNIQUE index is already taken.
+	duplicateKey bool
+	// createErr fails Create with something that is NOT a duplicate key.
+	createErr error
 }
 
 func newFakeAssetStore() *fakeAssetStore {
 	return &fakeAssetStore{assets: make(map[string]Asset)}
 }
 
+func (s *fakeAssetStore) ByObjectKey(_ context.Context, identityID, objectKey string) (Asset, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, asset := range s.assets {
+		if asset.IdentityID == identityID && asset.ObjectKey == objectKey {
+			return asset, nil
+		}
+	}
+	return Asset{}, errors.New("no asset holds that object key")
+}
+
 func (s *fakeAssetStore) Create(_ context.Context, req CreateRequest) (Asset, error) {
 	s.mu.Lock()
+	if s.createErr != nil {
+		s.mu.Unlock()
+		return Asset{}, s.createErr
+	}
+	if s.duplicateKey {
+		s.duplicateKey = false
+		s.mu.Unlock()
+		return Asset{}, &pgconn.PgError{
+			Code:           "23505",
+			ConstraintName: "assets_identity_object_key_idx",
+			Message:        "duplicate key value violates unique constraint",
+		}
+	}
 	defer s.mu.Unlock()
 	if req.SourceKind == SourceAgent && req.SourceRef != "" {
 		for _, asset := range s.assets {

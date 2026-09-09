@@ -190,3 +190,59 @@ type failingPutStore struct {
 func (f *failingPutStore) Put(context.Context, objectstore.ObjectRef, io.Reader, objectstore.PutOptions) (objectstore.Attrs, error) {
 	return objectstore.Attrs{}, f.err
 }
+
+// Re-ingesting the same object REPLACES what is there, which is what document_ingest's
+// own description promises. It did not: measured 2026-09-09 through the documents MCP,
+// whose ingest is source_kind 'cli', a second ingest of the same path returned
+// "duplicate key value violates unique constraint assets_identity_object_key_idx".
+// CreateAsset's ON CONFLICT covers (identity_id, source_kind, source_ref) and only for
+// source_kind 'agent', while the object-key index binds every route -- and a library
+// ingest derives a STABLE object key, so the second insert lands on the first one's row.
+func TestReingestingTheSameObjectReturnsTheRowThatHoldsIt(t *testing.T) {
+	svc, store := newAssetServiceTestRig(t, Limits{
+		MaxDocumentBytes: 1000, MaxImageBytes: 1000, MaxAudioBytes: 1000,
+	})
+	ingest := func(body string) (Asset, error) {
+		return svc.IngestDocument(context.Background(), DocumentIngestRequest{
+			IdentityID: serviceIdentityID,
+			SourceKind: SourceCLI,
+			SourceRef:  "prova-heading-path",
+			FileName:   "report.pdf",
+			MIMEType:   "application/pdf",
+			SizeBytes:  int64(len(body)),
+			Reader:     strings.NewReader(body),
+		})
+	}
+	first, err := ingest("%PDF version one")
+	if err != nil {
+		t.Fatalf("first ingest: %v", err)
+	}
+
+	// What the database does on the second insert, which the fake store cannot know.
+	store.duplicateKey = true
+	second, err := ingest("%PDF version two")
+	if err != nil {
+		t.Fatalf("re-ingest failed instead of replacing: %v", err)
+	}
+	if second.ID != first.ID || second.ObjectKey != first.ObjectKey {
+		t.Fatalf("re-ingest produced a different row: %q/%q then %q/%q",
+			first.ID, first.ObjectKey, second.ID, second.ObjectKey)
+	}
+}
+
+// Only the duplicate object key is a re-ingest. Any other insert failure must arrive at
+// the caller as it was, or a broken database reads as a successful upload.
+func TestAnUnrelatedCreateFailureIsNotTreatedAsAReingest(t *testing.T) {
+	svc, store := newAssetServiceTestRig(t, Limits{
+		MaxDocumentBytes: 1000, MaxImageBytes: 1000, MaxAudioBytes: 1000,
+	})
+	store.createErr = errors.New("connection refused")
+	_, err := svc.IngestDocument(context.Background(), DocumentIngestRequest{
+		IdentityID: serviceIdentityID, SourceKind: SourceCLI, SourceRef: "whatever",
+		FileName: "report.pdf", MIMEType: "application/pdf",
+		SizeBytes: 4, Reader: strings.NewReader("body"),
+	})
+	if err == nil {
+		t.Fatal("an unrelated store failure was swallowed as a re-ingest")
+	}
+}

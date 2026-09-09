@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/objectstore"
 )
@@ -83,7 +84,10 @@ func (s *Service) ingestObject(ctx context.Context, in objectIngest) (Asset, err
 		Metadata:          in.metadata,
 	})
 	if err != nil {
-		return Asset{}, err
+		asset, err = s.reingestTarget(ctx, in.identityID, place.Key, err)
+		if err != nil {
+			return Asset{}, err
+		}
 	}
 	// A stable source_ref can return an existing row after a retry. Accepted is
 	// already complete; earlier states resume against the row's persisted object
@@ -153,4 +157,36 @@ func (s *Service) IngestAgentFile(ctx context.Context, req AgentIngestRequest) (
 		enforceLimits: false,
 		process:       false,
 	})
+}
+
+// reingestTarget turns a duplicate-object-key insert into the row that already holds the
+// key, so re-ingesting the same object REPLACES what is there instead of failing.
+//
+// CreateAsset's ON CONFLICT covers (identity_id, source_kind, source_ref) and only for
+// source_kind 'agent', but aura.assets also holds (identity_id, object_key) UNIQUE and
+// that one binds every route. Measured 2026-09-09 through the documents MCP, whose ingest
+// is source_kind 'cli': re-ingesting the same path returned
+// "duplicate key value violates unique constraint assets_identity_object_key_idx"
+// (SQLSTATE 23505), while document_ingest's own description promises the opposite --
+// "Re-ingesting the same path replaces what is there rather than adding a copy."
+//
+// The conflict target is not simply widened to the object key because the two indexes do
+// not cover the same ground: a thread-scoped asset takes a random id, so its object key
+// never collides, and moving the target there would silently drop the source_ref dedup
+// that route relies on.
+//
+// Any other failure is returned as it arrived: only the row that already occupies THIS
+// key is a re-ingest, and a lookup that cannot find it means the violation was not the
+// one assumed.
+func (s *Service) reingestTarget(
+	ctx context.Context, identityID, objectKey string, createErr error,
+) (Asset, error) {
+	if !db.IsUniqueViolation(createErr) {
+		return Asset{}, createErr
+	}
+	existing, err := s.Store.ByObjectKey(ctx, identityID, objectKey)
+	if err != nil {
+		return Asset{}, createErr
+	}
+	return existing, nil
 }

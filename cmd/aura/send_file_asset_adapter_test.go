@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -40,6 +41,9 @@ func (r *recordingAssetStore) MarkUploaded(context.Context, string, string, int6
 }
 func (r *recordingAssetStore) MarkAccepted(context.Context, string, string, int64, string, string) (assets.Asset, error) {
 	return r.asset, nil
+}
+func (r *recordingAssetStore) ByObjectKey(context.Context, string, string) (assets.Asset, error) {
+	return assets.Asset{}, errors.New("no asset holds that object key")
 }
 func (r *recordingAssetStore) GetForIdentity(context.Context, string, string) (assets.Asset, error) {
 	return assets.Asset{}, nil

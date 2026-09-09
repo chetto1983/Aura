@@ -17,6 +17,12 @@ RETURNING *;
 SELECT * FROM aura.assets
 WHERE id = $1;
 
+-- name: GetAssetByObjectKey :one
+SELECT * FROM aura.assets
+WHERE identity_id = $1
+  AND object_key = $2
+  AND deleted_at IS NULL;
+
 -- name: GetAssetForIdentity :one
 SELECT * FROM aura.assets
 WHERE id = $1

@@ -22,6 +22,9 @@ import (
 type StoreBackend interface {
 	Create(context.Context, CreateRequest) (Asset, error)
 	GetForIdentity(context.Context, string, string) (Asset, error)
+	// ByObjectKey(ctx, identityID, objectKey) finds the row already occupying an object
+	// key, which is what a duplicate-key insert means: the object is ingested already.
+	ByObjectKey(context.Context, string, string) (Asset, error)
 	ListForThread(context.Context, string, string) ([]Asset, error)
 	ListForLibrary(context.Context, string, int) ([]Asset, error)
 	MarkUploaded(context.Context, string, string, int64, string) (Asset, error)

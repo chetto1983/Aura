@@ -68,6 +68,24 @@ func (s *Store) Create(ctx context.Context, req CreateRequest) (Asset, error) {
 	})
 }
 
+// ByObjectKey returns the non-deleted asset occupying an object key, or the driver's
+// no-rows error when the key is free.
+//
+// The key is where the bytes live, and aura.assets holds it UNIQUE per identity, so this
+// answers "is this object already ingested" -- which is the question a re-ingest asks.
+func (s *Store) ByObjectKey(ctx context.Context, identityID, objectKey string) (Asset, error) {
+	pgIdentityID, err := pgUUID("identity_id", identityID)
+	if err != nil {
+		return Asset{}, err
+	}
+	return s.scopedRow(ctx, identityID, func(q *sqlc.Queries) (sqlc.AuraAssets, error) {
+		return q.GetAssetByObjectKey(ctx, sqlc.GetAssetByObjectKeyParams{
+			IdentityID: pgIdentityID,
+			ObjectKey:  objectKey,
+		})
+	})
+}
+
 // GetForIdentity returns a non-deleted asset by asset and identity id.
 func (s *Store) GetForIdentity(ctx context.Context, id, identityID string) (Asset, error) {
 	return s.scopedTarget(ctx, id, identityID,

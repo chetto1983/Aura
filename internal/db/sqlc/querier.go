@@ -163,6 +163,7 @@ type Querier interface {
 	FinalizeRetentionOperation(ctx context.Context, arg FinalizeRetentionOperationParams) (AuraRetentionOperations, error)
 	GetActivePasswordResetChallenge(ctx context.Context, identityID pgtype.UUID) (AuraPasswordResetChallenges, error)
 	GetAsset(ctx context.Context, id pgtype.UUID) (AuraAssets, error)
+	GetAssetByObjectKey(ctx context.Context, arg GetAssetByObjectKeyParams) (AuraAssets, error)
 	GetAssetForIdentity(ctx context.Context, arg GetAssetForIdentityParams) (AuraAssets, error)
 	GetConversation(ctx context.Context, id pgtype.UUID) (AuraConversations, error)
 	// The durable summary of this branch's earlier turns (migration 0096, HANDOFF 6.1).

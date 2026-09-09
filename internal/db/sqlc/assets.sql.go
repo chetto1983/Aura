@@ -247,6 +247,56 @@ func (q *Queries) GetAsset(ctx context.Context, id pgtype.UUID) (AuraAssets, err
 	return i, err
 }
 
+const getAssetByObjectKey = `-- name: GetAssetByObjectKey :one
+SELECT id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation FROM aura.assets
+WHERE identity_id = $1
+  AND object_key = $2
+  AND deleted_at IS NULL
+`
+
+type GetAssetByObjectKeyParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	ObjectKey  string      `json:"object_key"`
+}
+
+func (q *Queries) GetAssetByObjectKey(ctx context.Context, arg GetAssetByObjectKeyParams) (AuraAssets, error) {
+	row := q.db.QueryRow(ctx, getAssetByObjectKey, arg.IdentityID, arg.ObjectKey)
+	var i AuraAssets
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.SourceKind,
+		&i.SourceRef,
+		&i.ThreadID,
+		&i.Scope,
+		&i.Modality,
+		&i.Status,
+		&i.FileName,
+		&i.MimeType,
+		&i.DeclaredSizeBytes,
+		&i.SizeBytes,
+		&i.ContentHash,
+		&i.ObjectBucket,
+		&i.ObjectKey,
+		&i.ObjectEtag,
+		&i.DocumentID,
+		&i.Summary,
+		&i.Metadata,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+		&i.CreatedAt,
+		&i.UploadedAt,
+		&i.AcceptedAt,
+		&i.ProcessedAt,
+		&i.SearchableAt,
+		&i.CompletedAt,
+		&i.DeletedAt,
+		&i.UpdatedAt,
+		&i.PipelineGeneration,
+	)
+	return i, err
+}
+
 const getAssetForIdentity = `-- name: GetAssetForIdentity :one
 SELECT id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation FROM aura.assets
 WHERE id = $1
