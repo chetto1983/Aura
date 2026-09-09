@@ -37,10 +37,15 @@ import (
 //	3. Recovery setup: hash answer + upsert challenge; on failure → DeleteIdentity + COMP_B.
 //	4. Resource legs: provision the ArcadeDB tenant, then optional Garage/filesystem state;
 //	   on failure reverse resources + DeleteIdentity + COMP_B.
-//	5. Leg C (Telegram mint): InsertPending(new identity, +1h); on failure → reverse
-//	   resources + DeleteIdentity + COMP_B.
+//	4b. Credit leg (plan 02-06, CRED-01/CRED-02, optional): mint the identity's own
+//	    OpenRouter key at a zero cap and store it encrypted; on failure reverse resources +
+//	    DeleteIdentity + COMP_B. On a LATER leg's failure the mint is revoked in the exact
+//	    reverse of provisioning order — it was minted after the resources, so it is undone
+//	    before they are.
+//	5. Leg C (Telegram mint): InsertPending(new identity, +1h); on failure → revoke the
+//	   credit leg, reverse resources + DeleteIdentity + COMP_B.
 //	6. one immutable identity_audit row (a tiny final db.WithTx AFTER Leg C); on failure
-//	   DeletePending + reverse resources + DeleteIdentity + COMP_B.
+//	   DeletePending + revoke the credit leg + reverse resources + DeleteIdentity + COMP_B.
 //
 // Then (ONBD-02) the profile seed carried in the provision body is written for the NEW
 // identity id; a blank seed writes nothing. The Telegram CONSUME is async (the user scans later);
@@ -259,15 +264,53 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 		return OnboardingProvisionResponse{}, err
 	}
 
+	// ---- 3c. CREDIT LEG (OpenRouter key mint, CRED-01/CRED-02, optional): mints this
+	// identity's own OpenRouter key at a zero cap and stores it encrypted — the identity
+	// is refused every turn until an admin tops it up (D-13/CRED-05), never silently
+	// billed to the deployment-wide key. A nil credit port skips this plane exactly like
+	// the resource legs above (a deployment with no management credential provisions no
+	// key). On its OWN failure nothing was minted, so the caller only compensates the
+	// resource legs + Leg A + Leg B; on success it hands back compCredit, a closure a
+	// LATER leg's failure (Telegram/audit) must call — in the EXACT reverse of
+	// provisioning order, so the key (minted after the resources) is revoked BEFORE they
+	// are undone. ----
+	compCredit := func() {}
+	if s.credit != nil {
+		var minted MintedKey
+		if err := run.step(ctx, sagaStepOpenRouterKey, func(ctx context.Context) error {
+			var merr error
+			// The key is named after the identity id (not the email) so OpenRouter's
+			// api_key_id analytics dimension reads as identity rows without a join —
+			// the same identifier external.user carries on the mint request.
+			minted, merr = s.credit.MintKey(ctx, identityID, identityID)
+			return merr
+		}); err != nil {
+			compResources()
+			if derr := s.auraLeg.DeleteIdentity(context.WithoutCancel(ctx), identityName); derr != nil {
+				slog.Error("onboarding: COMP_A (delete identity) after credit-leg failure failed", "step", "compensate")
+			}
+			compB()
+			return OnboardingProvisionResponse{}, provisionFail("openrouter key mint", err)
+		}
+		hash := minted.Hash
+		compCredit = func() {
+			if derr := s.credit.RevokeKey(context.WithoutCancel(ctx), hash); derr != nil {
+				slog.Error("onboarding: COMP credit (revoke openrouter key) failed", "step", "compensate")
+			}
+		}
+	}
+
 	// ---- 4. LEG C (Telegram token mint) ----
 	onboardingToken := ""
 	if in.LinkTelegram {
 		onboardingToken = uuid.NewString()
 		if err := s.telegram.InsertPending(ctx, onboardingToken, identityID, time.Now().UTC().Add(onboardingTokenTTL)); err != nil {
-			// C failed → undo the resources + A (identity + grants + link cascade) then B.
+			// C failed → undo the credit leg + resources + A (identity + grants + link
+			// cascade) then B.
 			if derr := s.telegram.DeletePending(context.WithoutCancel(ctx), onboardingToken); derr != nil {
 				slog.Error("onboarding: COMP_C (delete telegram pending) after mint failure failed", "step", "compensate")
 			}
+			compCredit()
 			compResources()
 			if derr := s.auraLeg.DeleteIdentity(context.WithoutCancel(ctx), identityName); derr != nil {
 				slog.Error("onboarding: COMP_A (delete identity) failed", "step", "compensate")

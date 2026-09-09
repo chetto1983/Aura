@@ -54,6 +54,11 @@ const (
 	sagaStepSandbox       = "sandbox"
 	sagaStepIdentityRow   = "identity_row"
 	sagaStepAuthula       = "authula"
+	// sagaStepOpenRouterKey is the credit leg both sagas share (plan 02-06): forward,
+	// it mints and journals the identity's own OpenRouter key; reverse, it revokes and
+	// verifies that revocation. One constant, reused by both — the same convention
+	// every other step name here already follows.
+	sagaStepOpenRouterKey = "openrouter_key"
 )
 
 // sagaNamespace is the fixed UUIDv5 namespace deriving a deterministic saga_id from an

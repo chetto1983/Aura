@@ -205,6 +205,11 @@ type onboardingService struct {
 	objectStore ObjectStoreProvisioner
 	filesystem  FilesystemProvisioner
 	sandbox     SandboxProvisioner
+	// credit is the plan 02-06 OpenRouter key-mint leg (onboarding_provision_credit.go).
+	// Optional, same convention as objectStore/filesystem/sandbox above: a nil port
+	// skips the plane (a deployment with no management credential provisions no
+	// per-identity key) rather than failing the whole provision.
+	credit OpenRouterKeyMinter
 
 	// musrIsolation is the deployment's declaration that it is fit to host more than one
 	// identity (AURA_MUSR_ISOLATION). The saga ONLY ever creates ADDITIONAL, non-local
@@ -232,13 +237,14 @@ type OnboardingDeps struct {
 	BotUsernameResolver func(context.Context) string
 	Recovery            RecoverySetupWriter
 	// Phase-36 provisioning saga extensions: Memory is required for Provision; Journal,
-	// ObjectStore, Filesystem, and Sandbox (D-09) remain optional for pre-cutover/seed-only
-	// compositions.
+	// ObjectStore, Filesystem, Sandbox (D-09), and Credit (plan 02-06, CRED-02) remain
+	// optional for pre-cutover/seed-only compositions.
 	Journal     SagaJournal
 	Memory      MemoryProvisioner
 	ObjectStore ObjectStoreProvisioner
 	Filesystem  FilesystemProvisioner
 	Sandbox     SandboxProvisioner
+	Credit      OpenRouterKeyMinter
 	// MUSRIsolation declares the deployment fit to host more than one identity
 	// (AURA_MUSR_ISOLATION). Provision REFUSES while it is false. The composition root
 	// wires it from config.MUSRIsolation.
@@ -270,6 +276,7 @@ func newOnboardingService(d OnboardingDeps) *onboardingService {
 		objectStore:     d.ObjectStore,
 		filesystem:      d.Filesystem,
 		sandbox:         d.Sandbox,
+		credit:          d.Credit,
 		musrIsolation:   d.MUSRIsolation,
 	}
 }
