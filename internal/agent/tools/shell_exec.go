@@ -68,7 +68,19 @@ type shellExecFooter struct {
 	Cancelled  bool   `json:"cancelled,omitempty"`
 }
 
-const defaultShellTimeout = 120 * time.Second
+// defaultShellTimeout is how long a call without an explicit timeout_ms BLOCKS before its
+// job is handed back as a background shell. It is deliberately short.
+//
+// It was 120s, and at 120s it was a wall: reaching it KILLED the command and lost the work,
+// so the cap had to be generous enough that almost nothing hit it — which meant an operator
+// could sit two minutes in front of a spinner. Since promotion (shell_bg_promote.go) the cap
+// kills nothing; it only decides when to stop blocking. Three seconds keeps the ordinary
+// command inline — ls, git, grep are all well under a second — while a build stops holding
+// the turn hostage.
+//
+// A caller that genuinely wants to wait still can: an explicit timeout_ms overrides this,
+// up to AURA_SHELL_MAX_TIMEOUT_MS. Deployments tune it with AURA_SHELL_DEFAULT_TIMEOUT_MS.
+const defaultShellTimeout = 3 * time.Second
 
 // slowRunShare is the fraction of its cap a command may burn before the result starts
 // telling the model about "background": true. A quarter is early enough that the advice
@@ -102,9 +114,9 @@ func (s *ShellExec) Spec() Spec {
   "properties": {
     "command": {"type": "string", "description": "The shell command line to run, e.g. \"ls -la\", \"python3 script.py\", \"git status\". Runs through a POSIX shell inside your workspace container, so pipes, redirects, and && chains all work. For long scripts, create the file with fs_write first, then run it here."},
     "cwd": {"type": "string", "description": "Optional working directory override, as an absolute path inside your workspace container (e.g. \"/workspace/project\"). Your working directory PERSISTS between calls (a cd carries over) and starts at /workspace."},
-    "timeout_ms": {"type": "integer", "minimum": 0, "description": "Optional timeout in milliseconds. Omit for the default (120s)."},
+    "timeout_ms": {"type": "integer", "minimum": 0, "description": "Optional: how long to BLOCK waiting for this command, in milliseconds. Omit for the default (a few seconds). This is not a kill deadline — a command still running when it elapses is handed back as a background job, never killed. Raise it only when you want to sit and wait for the result inline."},
     "env": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Optional extra environment variables for this command only."},
-    "background": {"type": "boolean", "description": "Run the command in the background and return a shell_id immediately instead of blocking. Aura notifies the owning conversation automatically when the job exits; then use shell_poll once to read its retained final output. Stop a running job with shell_kill. Use for long jobs (builds, downloads, dev servers)."}
+    "background": {"type": "boolean", "description": "Return a shell_id IMMEDIATELY instead of blocking at all. You rarely need it: a command that outlives the blocking window is handed back as a background job on its own, so set this only when you already know the job is long (a build, a download, a dev server) and want to keep working without waiting even those first seconds. Either way Aura notifies this conversation when the job exits, shell_poll reads its output, and shell_kill stops it."}
   },
   "required": ["command"]
 }`)
@@ -117,7 +129,7 @@ func (s *ShellExec) Spec() Spec {
 			"Pipes, redirects, && chains, any installed interpreter (python, node), git, and filesystem work all just work. " +
 			"Your working directory persists between calls (a cd carries over) and starts at /workspace. " +
 			"Returns combined stdout and stderr plus a final [aura_shell {...}] JSON footer with exit_code, cwd, duration_ms, and timed_out; rely on that footer instead of spending separate pwd or exit-code calls. " +
-			"For a long-running job set \"background\": true — it returns immediately with a shell_id. Aura automatically notifies this conversation when the job exits; then call shell_poll once to read the retained final output. Stop a running job with shell_kill.\n\n" +
+			"You do NOT have to predict how long a command will take. One still running after a few seconds is handed back AUTOMATICALLY as a background job carrying a shell_id — it is never killed — and Aura notifies this conversation when it exits; shell_poll then reads its output and shell_kill stops it. Set \"background\": true up front when you already know the job is long and want the id straight away, or raise \"timeout_ms\" when you would rather block until it finishes.\n\n" +
 			// These four rules used to live in the system prompt, where they were read
 			// thousands of tokens before the decision they govern. They belong with the
 			// schema: the model reads them exactly when it is about to run a command.
