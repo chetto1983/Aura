@@ -70,6 +70,12 @@ type fakePassageIndex struct {
 	at         []arcadedb.PassageCandidate
 	atErr      error
 	atRefs     []arcadedb.PassageRef
+	state      *arcadedb.IngestState
+	stateErr   error
+}
+
+func (f *fakePassageIndex) IngestState(_ context.Context, _ string) (*arcadedb.IngestState, error) {
+	return f.state, f.stateErr
 }
 
 func (f *fakePassageIndex) PassagesAt(
@@ -477,5 +483,45 @@ func TestHostRetrieverDoesNotAbstainWhileDegradedToCards(t *testing.T) {
 	}
 	if len(response.Documents) == 0 {
 		t.Error("documents = 0, want the cards the degradation exists to serve")
+	}
+}
+
+// A caller that has just added a document must be able to tell "not indexed yet" from
+// "indexed and has nothing to say". Both were abstained:true and nothing else, because
+// CocoIndex's own RUNNING/READY stream had no consumer -- measured 2026-09-09, every
+// asset row sat at accepted or processing and none had ever reached searchable.
+func TestRetrievalReportsHowFarTheIngestHasGot(t *testing.T) {
+	index := &fakePassageIndex{state: &arcadedb.IngestState{
+		Status: arcadedb.IngestRunning, InProgress: 2, Finished: 9,
+	}}
+	response, err := neighbourRetriever(t, index).Retrieve(t.Context(), RetrievalRequest{
+		IdentityID: retrievalIdentity, Query: "qualunque",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Indexing == nil {
+		t.Fatal("the answer does not say whether the ingest had caught up")
+	}
+	if response.Indexing.Ready() || response.Indexing.InProgress != 2 {
+		t.Fatalf("ingest state is not the one the index reported: %+v", response.Indexing)
+	}
+}
+
+// An unreadable state must not cost the caller its passages: the field is omitempty, so
+// absent reads as unknown, which is what it is.
+func TestAnUnreadableIngestStateStillAnswers(t *testing.T) {
+	index := &fakePassageIndex{stateErr: errors.New("arcadedb unreachable")}
+	response, err := neighbourRetriever(t, index).Retrieve(t.Context(), RetrievalRequest{
+		IdentityID: retrievalIdentity, Query: "qualunque",
+	})
+	if err != nil {
+		t.Fatalf("a missing progress row lost the whole answer: %v", err)
+	}
+	if response.Indexing != nil {
+		t.Fatalf("an unreadable state was reported as a state: %+v", response.Indexing)
+	}
+	if len(response.Documents) == 0 {
+		t.Fatal("the passages were lost with the progress row")
 	}
 }

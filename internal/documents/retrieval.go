@@ -85,6 +85,12 @@ type RetrievalResponse struct {
 	Abstained        bool   `json:"abstained"`
 	AbstentionReason string `json:"abstention_reason,omitempty"`
 
+	// Indexing is how far the ingest reconciler has got, so a caller that has just added
+	// a document can tell "not indexed yet" from "indexed and has nothing to say" -- the
+	// two were indistinguishable, and abstained:true meant both. Absent when the sidecar
+	// has never written a state, which is a library nothing has been ingested into.
+	Indexing *arcadedb.IngestState `json:"indexing,omitempty"`
+
 	Documents []RetrievalDocument `json:"documents"`
 }
 
@@ -198,11 +204,32 @@ type RetrievalControlPlane interface {
 	DocumentNames(context.Context, string, []string) (map[string]string, error)
 }
 
+// ingestState reports the reconciler's progress, or nil when it cannot be read.
+//
+// A failure is silenced the way attachNeighbours silences its own: the passages are the
+// answer, and losing a whole retrieval because the progress row could not be read would be
+// a worse answer rather than a safer one. The field is omitempty, so absent reads as
+// "unknown", which is what it is.
+func (r *HostRetriever) ingestState(ctx context.Context, identityID string) *arcadedb.IngestState {
+	if r.PassageIndex == nil {
+		return nil
+	}
+	state, err := r.PassageIndex.IngestState(ctx, identityID)
+	if err != nil {
+		r.degradations.warn(DegradationUnconfigured, "ingest state unreadable: "+err.Error(), identityID)
+		return nil
+	}
+	return state
+}
+
 // PassageIndex reads the fused lexical/vector passage ranking from the identity database,
 // and the unranked passages a caller names by position.
 type PassageIndex interface {
 	FusedCandidates(context.Context, arcadedb.FusedCandidateQuery) ([]arcadedb.PassageCandidate, error)
 	PassagesAt(context.Context, string, []arcadedb.PassageRef) ([]arcadedb.PassageCandidate, error)
+	// IngestState answers "has the reconciler caught up", from the row the sidecar
+	// upserts beside the passages. nil means it has never written one.
+	IngestState(context.Context, string) (*arcadedb.IngestState, error)
 }
 
 // MaxRetrievalNeighbours bounds the context a caller can pull around every hit. Each one is
@@ -290,6 +317,7 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 		response.Documents = rankCardsOnly(cards, request.Limit, cfg.TopPassages)
 		return response, nil
 	}
+	response.Indexing = r.ingestState(ctx, request.IdentityID)
 	sourceKeys, sourcePrefixes := ArcadeSourceFilters(request.SourceScopes)
 	fused, err := r.PassageIndex.FusedCandidates(ctx, arcadedb.FusedCandidateQuery{
 		CandidateFilter: arcadedb.CandidateFilter{

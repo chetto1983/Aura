@@ -34,6 +34,11 @@ import urllib.request
 
 PASSAGE_TYPE = "Passage"
 DOCUMENT_TYPE = "IndexedDocument"
+# One row per identity saying whether the reconciler has caught up. It is written here,
+# beside the passages, because the reader is the retriever: a caller that has just added
+# a document asks "are its passages there yet", and an answer kept in another store could
+# disagree with the passages it is about. See record_status().
+INGEST_STATUS_TYPE = "IngestStatus"
 
 # These names were written by withdrawn projection/version/layout models. The current
 # plain-text reconciler cannot populate them, and keeping them would advertise a contract
@@ -167,9 +172,76 @@ def ensure_schema(
     base_url = base_url.rstrip("/")
     wait_until_ready(base_url, timeout_s=ready_timeout_s)
     _create_database(base_url, database, auth, timeout_s)
-    for statement in _document_ddl(dimensions):
+    for statement in _document_ddl(dimensions) + _status_ddl():
         _command(base_url, database, auth, statement, timeout_s)
     _drop_retired_schema(base_url, database, auth, timeout_s)
+
+
+def _status_ddl() -> list[str]:
+    """The readiness row's schema. One row per identity, keyed by it."""
+    t = INGEST_STATUS_TYPE
+    return [
+        f"CREATE DOCUMENT TYPE {t} IF NOT EXISTS",
+        f"CREATE PROPERTY {t}.identity_id IF NOT EXISTS STRING",
+        f"CREATE PROPERTY {t}.status IF NOT EXISTS STRING",
+        f"CREATE PROPERTY {t}.observed_at IF NOT EXISTS STRING",
+        f"CREATE PROPERTY {t}.in_progress IF NOT EXISTS LONG",
+        f"CREATE PROPERTY {t}.finished IF NOT EXISTS LONG",
+        f"CREATE PROPERTY {t}.errors IF NOT EXISTS LONG",
+        f"CREATE INDEX IF NOT EXISTS ON {t} (identity_id) UNIQUE",
+    ]
+
+
+def record_status(
+    base_url: str,
+    database: str,
+    auth: tuple[str, str],
+    identity_id: str,
+    status: str,
+    *,
+    observed_at: str,
+    in_progress: int = 0,
+    finished: int = 0,
+    errors: int = 0,
+    timeout_s: float = 10.0,
+) -> None:
+    """Write where the reconciler has got to, so a reader can tell finished from quiet.
+
+    CocoIndex already knows: UpdateHandle.watch() yields RUNNING while an update is in
+    flight and READY once the root component has caught up, with per-component counts
+    beside it. Nothing consumed that stream, so an ingest that had finished looked
+    identical to one that had never started -- measured 2026-09-09, every asset row in the
+    control plane sat at `accepted` or `processing` and not one had ever reached
+    `searchable`, because Go stopped writing the lifecycle states when this pipeline took
+    them over (internal/documents/catalog_status.go) and the signal was never reconnected.
+
+    UPSERT of one row per identity, not an append: the question a reader asks is "where is
+    it now", not "what has it ever been".
+    """
+    statement = (
+        f"UPDATE {INGEST_STATUS_TYPE} SET identity_id = :identity_id, status = :status, "
+        "observed_at = :observed_at, in_progress = :in_progress, finished = :finished, "
+        "errors = :errors UPSERT WHERE identity_id = :identity_id"
+    )
+    path = "/api/v1/command/" + urllib.parse.quote(database, safe="")
+    _post(
+        base_url.rstrip("/"),
+        path,
+        {
+            "language": "sql",
+            "command": statement,
+            "params": {
+                "identity_id": identity_id,
+                "status": status,
+                "observed_at": observed_at,
+                "in_progress": int(in_progress),
+                "finished": int(finished),
+                "errors": int(errors),
+            },
+        },
+        auth,
+        timeout_s,
+    )
 
 
 def _document_ddl(dimensions: int) -> list[str]:

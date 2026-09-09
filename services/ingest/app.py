@@ -11,6 +11,7 @@ so `reconcile` is always wrapped the same way and AURA_INGEST_LIVE only picks wh
 `update_blocking` returns after that one pass or keeps the interval loop running.
 """
 
+import asyncio
 import dataclasses
 import datetime
 import hashlib
@@ -477,8 +478,50 @@ def audit_cycle() -> None:
     _missing_previous_cycle = missing
 
 
+def _publish_status(snapshot: coco.UpdateSnapshot) -> None:
+    """Write one CocoIndex status snapshot where the retriever can read it.
+
+    Swallows its own failure on purpose: the passages are the product, and a status row
+    that could not be written is not a reason to stop writing them. It is reported on
+    stderr so a reader that never sees the row can tell a broken publisher from a
+    reconciler that has genuinely never caught up.
+    """
+    total = snapshot.stats.total
+    try:
+        arcade.record_status(
+            ARCADE_HTTP,
+            ARCADE_DB,
+            ("root", ARCADE_PASSWORD),
+            _S3_CONFIG.identity_id,
+            getattr(snapshot.status, "value", str(snapshot.status)),
+            observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            in_progress=getattr(total, "num_in_progress", 0),
+            finished=getattr(total, "num_finished", 0),
+            errors=getattr(total, "num_errors", 0),
+        )
+    except Exception as exc:  # noqa: BLE001 - see the docstring
+        print(f"ingest status not published: {exc}", file=sys.stderr, flush=True)
+
+
+async def _update_publishing_status() -> None:
+    """Run the update and publish every status it reports.
+
+    update_blocking() threw the handle away, and the handle is the only thing that says
+    whether the reconciler has caught up: watch() yields RUNNING while work is in flight
+    and READY once the root component is ready, with the counts beside it. Nothing
+    consumed it, so a caller that had just added a document could not tell "not indexed
+    yet" from "indexed and has nothing to say" -- and the control plane, which stopped
+    writing lifecycle states when this pipeline took them over, had nothing to write.
+
+    In live mode watch() keeps yielding after the first READY, so the row tracks each
+    later cycle too rather than freezing on the catch-up.
+    """
+    async for snapshot in app.update(live=_LIVE).watch():
+        _publish_status(snapshot)
+
+
 if __name__ == "__main__":
-    app.update_blocking(live=_LIVE)
+    asyncio.run(_update_publishing_status())
     # Live never returns, so there is no pass to audit and no exit code to carry one.
     if not _LIVE:
         sys.exit(1 if audit_pass() else 0)
