@@ -420,3 +420,27 @@ func TestTableCaveatsStaySilentWhenThereIsNothingToWarnAbout(t *testing.T) {
 		t.Fatalf("caveats = %v, want none", caveats)
 	}
 }
+
+// The card's outline used to be "the line starts with #", which cannot tell a heading from
+// a shell comment inside a fenced block. Measured 2026-09-09 on the live library: a test
+// document whose fenced bash block opened with a comment had exactly that comment listed
+// among its sections, so the card advertised a section the document does not have.
+func TestMarkdownCardOutlineIsParsedNotPatternMatched(t *testing.T) {
+	path := writeFile(t, "manuale.md", "# Manuale di prova\n\n"+
+		"Testo di apertura.\n\n"+
+		"## 1. Ricette ##\n\n"+
+		"La sezione uno.\n\n"+
+		"```bash\n# QUESTA RIGA NON DEVE DIVENTARE UN HEADING\nmake quality\n```\n\n"+
+		"Sezione con sottolineatura\n==========================\n\n"+
+		"Chiusura.\n")
+	rendered := build(t, path, "manuale.md").Render()
+
+	if strings.Contains(rendered, "QUESTA RIGA NON DEVE DIVENTARE UN HEADING") {
+		t.Errorf("a shell comment inside a fence was listed as a section:\n%s", rendered)
+	}
+	// The closing hashes of "## 1. Ricette ##" are not part of the title, and a setext
+	// heading is a heading even though no line of it starts with a hash.
+	if !strings.Contains(rendered, "Headings: Manuale di prova; 1. Ricette; Sezione con sottolineatura") {
+		t.Errorf("the outline is not the document's own:\n%s", rendered)
+	}
+}

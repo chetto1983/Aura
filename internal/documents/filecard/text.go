@@ -7,6 +7,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/text"
 	"golang.org/x/net/html"
 )
 
@@ -132,24 +135,27 @@ func buildPlainText(req Request, card Card) (Card, error) {
 	}
 	defer func() { _ = file.Close() }()
 
-	var headings, lines []string
-	scanner := bufio.NewScanner(io.LimitReader(file, maxPlainTextBytes))
+	source, err := io.ReadAll(io.LimitReader(file, maxPlainTextBytes))
+	if err != nil {
+		return card, fmt.Errorf("read text: %w", err)
+	}
+	headings := markdownHeadings(source)
+	var lines []string
+	scanner := bufio.NewScanner(strings.NewReader(string(source)))
 	scanner.Buffer(make([]byte, 0, 64<<10), 1<<20)
 	words := 0
 	for scanner.Scan() {
 		line := clean(scanner.Text())
-		if line == "" {
-			continue
-		}
-		if heading := markdownHeading(line); heading != "" && len(headings) < maxHeadings {
-			headings = append(headings, truncateRunes(heading, 90))
+		// A heading is already in the outline, and a line that merely looks like one is
+		// not prose either. The outline itself no longer believes the look of a line.
+		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 		if words < maxProseWords {
 			lines = append(lines, line)
 			words += len(strings.Fields(line))
 		}
-		if words >= maxProseWords && len(headings) >= maxHeadings {
+		if words >= maxProseWords {
 			break
 		}
 	}
@@ -168,11 +174,37 @@ func buildPlainText(req Request, card Card) (Card, error) {
 	return card, nil
 }
 
-func markdownHeading(line string) string {
-	if !strings.HasPrefix(line, "#") {
-		return ""
+// markdownHeadings is the document's outline, read by a CommonMark parser.
+//
+// It used to be "the line starts with #", which cannot tell a heading from a shell comment
+// inside a fenced block: measured 2026-09-09, a test document carrying
+// "# QUESTA RIGA NON DEVE DIVENTARE UN HEADING" between ```bash fences had exactly that
+// line listed in its card as a section. The parser also reads what the pattern could not --
+// setext headings, and the closing hashes of "## Titolo ##" that are not part of the title.
+//
+// goldmark is CommonMark-compliant and was already in the module graph. The heading's own
+// Lines() carry the title without its marker, which is what the card shows.
+func markdownHeadings(source []byte) []string {
+	var headings []string
+	document := goldmark.New().Parser().Parse(text.NewReader(source))
+	err := ast.Walk(document, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
+		heading, ok := node.(*ast.Heading)
+		if !entering || !ok || heading.Lines().Len() == 0 {
+			return ast.WalkContinue, nil
+		}
+		segment := heading.Lines().At(0)
+		if title := clean(string(segment.Value(source))); title != "" {
+			headings = append(headings, truncateRunes(title, 90))
+		}
+		if len(headings) >= maxHeadings {
+			return ast.WalkStop, nil
+		}
+		return ast.WalkContinue, nil
+	})
+	if err != nil {
+		return nil
 	}
-	return clean(strings.TrimLeft(line, "# "))
+	return headings
 }
 
 // Media cards stay compact because their derived text lives in separately embedded
