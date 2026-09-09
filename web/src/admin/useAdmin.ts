@@ -5,22 +5,31 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  GOVERNANCE_WRITE,
+  IDENTITY_CREATE,
   fetchAdminIdentities,
   fetchAudit,
+  fetchIdentityCredit,
   fetchMe,
   grantCapability,
   hasCapability,
+  removeIdentity,
   revokeCapability,
+  setIdentityCredit,
   type AdminIdentity,
+  type CreditSetPatch,
 } from './adminApi';
 
 const IDENTITIES_KEY = ['admin', 'identities'] as const;
 
 /**
- * useCapabilities reads the caller's own capabilities (GET /api/me) and derives isAdmin
- * (holds governance.write or the '*' wildcard). It fails CLOSED: while loading or on error,
- * isAdmin is false, so admin surfaces never flash to a user whose grants are unconfirmed.
+ * useCapabilities reads the caller's own capabilities (GET /api/me) and derives isAdmin from
+ * identity.create (D-02/RBAC-06's administrative pair — identity.create and identity.delete
+ * are always granted together at bootstrap, so checking either one is equivalent). Every
+ * identity holds governance.write as of D-01, so that capability no longer distinguishes an
+ * admin from a member — deriving isAdmin from it would show every user the admin surface the
+ * moment it lands (the regression this derivation exists to avoid). Fails CLOSED: while
+ * loading or on error, isAdmin is false, so admin surfaces never flash to a user whose grants
+ * are unconfirmed.
  */
 export function useCapabilities() {
   const query = useQuery({
@@ -34,7 +43,7 @@ export function useCapabilities() {
   return {
     capabilities,
     identityId: query.data?.identity_id ?? '',
-    isAdmin: hasCapability(capabilities, GOVERNANCE_WRITE),
+    isAdmin: hasCapability(capabilities, IDENTITY_CREATE),
     isLoading: query.isLoading,
     isError: query.isError,
     // contextWindow is undefined while loading/erroring/unwired (context_window <= 0) so
@@ -86,5 +95,43 @@ export function useAudit(identityId: string, limit: number, offset: number) {
     queryFn: () => fetchAudit(identityId, limit, offset),
     enabled: identityId !== '',
     retry: false,
+  });
+}
+
+const creditKey = (identityId: string) => ['admin', 'credit', identityId] as const;
+
+/** useIdentityCredit reads one identity's cap/reset/remaining/spend (CRED-03/CRED-06), or the
+ * CRED-09 exemption shape on a non-billing backend. Disabled until an identity id is known. */
+export function useIdentityCredit(identityId: string) {
+  return useQuery({
+    queryKey: creditKey(identityId),
+    queryFn: () => fetchIdentityCredit(identityId),
+    enabled: identityId !== '',
+    retry: false,
+  });
+}
+
+/** useSetIdentityCredit saves a cap/reset-interval change and refreshes both this identity's
+ * credit read and the roster (a cap change can affect what the roster's own summary shows). */
+export function useSetIdentityCredit() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { identityId: string; patch: CreditSetPatch }) =>
+      setIdentityCredit(vars.identityId, vars.patch),
+    onSuccess: (_result, vars) => {
+      void client.invalidateQueries({ queryKey: creditKey(vars.identityId) });
+      void client.invalidateQueries({ queryKey: IDENTITIES_KEY });
+    },
+  });
+}
+
+/** useRemoveIdentity runs the RBAC-05 removal saga and refreshes the roster on success. */
+export function useRemoveIdentity() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (identityId: string) => removeIdentity(identityId),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: IDENTITIES_KEY });
+    },
   });
 }

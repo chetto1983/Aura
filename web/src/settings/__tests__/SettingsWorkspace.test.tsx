@@ -66,7 +66,7 @@ describe('SettingsWorkspace', () => {
   });
 
   it('gives an admin a rail of every section and opens the profile pane first', async () => {
-    stubFetch(['*']);
+    stubFetch(['identity.create', 'identity.delete', 'agent.run', 'governance.read', 'governance.write', 'share.public']);
     renderWorkspace();
 
     const rail = await screen.findByRole('navigation', { name: 'Settings sections' });
@@ -83,7 +83,7 @@ describe('SettingsWorkspace', () => {
   });
 
   it('mounts only the selected pane, not every panel on the surface', async () => {
-    stubFetch(['*']);
+    stubFetch(['identity.create', 'identity.delete', 'agent.run', 'governance.read', 'governance.write', 'share.public']);
     renderWorkspace();
 
     await screen.findByRole('navigation', { name: 'Settings sections' });
@@ -98,7 +98,7 @@ describe('SettingsWorkspace', () => {
   });
 
   it('scopes a runtime pane to its own group', async () => {
-    stubFetch(['*']);
+    stubFetch(['identity.create', 'identity.delete', 'agent.run', 'governance.read', 'governance.write', 'share.public']);
     renderWorkspace();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Token and turn budget' }));
@@ -110,7 +110,7 @@ describe('SettingsWorkspace', () => {
 
   it('exposes identity creation and the grants control on one pane', async () => {
     const onCreateIdentity = vi.fn();
-    stubFetch(['*']);
+    stubFetch(['identity.create', 'identity.delete', 'agent.run', 'governance.read', 'governance.write', 'share.public']);
     renderWorkspace(onCreateIdentity);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Identities & access' }));
@@ -121,7 +121,7 @@ describe('SettingsWorkspace', () => {
   });
 
   it('remembers the pane across mounts', async () => {
-    stubFetch(['*']);
+    stubFetch(['identity.create', 'identity.delete', 'agent.run', 'governance.read', 'governance.write', 'share.public']);
     const first = renderWorkspace();
     fireEvent.click(await screen.findByRole('button', { name: 'Shared links' }));
     expect(screen.getByText('Shared links panel')).toBeTruthy();

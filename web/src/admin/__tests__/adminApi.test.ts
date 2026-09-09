@@ -1,11 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  IDENTITY_CREATE,
+  IDENTITY_DELETE,
   fetchAdminIdentities,
   fetchAudit,
+  fetchIdentityCredit,
   fetchMe,
   grantCapability,
   hasCapability,
+  removeIdentity,
   revokeCapability,
+  setIdentityCredit,
 } from '../adminApi';
 
 function urlOf(input: RequestInfo | URL): string {
@@ -15,14 +20,17 @@ function urlOf(input: RequestInfo | URL): string {
 }
 
 describe('adminApi hasCapability', () => {
-  it('grants everything on the wildcard', () => {
-    expect(hasCapability(['*'], 'governance.write')).toBe(true);
-    expect(hasCapability(['*'], 'anything.else')).toBe(true);
-  });
-  it('exact-matches otherwise', () => {
+  it('is a plain exact match — no wildcard branch', () => {
     expect(hasCapability(['governance.write'], 'governance.write')).toBe(true);
     expect(hasCapability(['agent.run'], 'governance.write')).toBe(false);
     expect(hasCapability([], 'governance.write')).toBe(false);
+    // A '*' entry (a value the server no longer emits, per D-01) grants nothing extra — the
+    // wildcard branch is gone, not merely unreachable.
+    expect(hasCapability(['*'], 'governance.write')).toBe(false);
+  });
+  it('exposes the administrative capability names matching the Go constants', () => {
+    expect(IDENTITY_CREATE).toBe('identity.create');
+    expect(IDENTITY_DELETE).toBe('identity.delete');
   });
 });
 
@@ -131,5 +139,104 @@ describe('adminApi fetchers', () => {
     expect(capturedUrl).toContain('identity=id-9');
     expect(capturedUrl).toContain('limit=25');
     expect(capturedUrl).toContain('offset=50');
+  });
+
+  it('fetchIdentityCredit reads the per-identity credit route', async () => {
+    let capturedUrl = '';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        capturedUrl = urlOf(input);
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              identity_id: 'id-1',
+              exempt: false,
+              cap: 5,
+              reset_interval: 'monthly',
+              spend: 0.000004158,
+              remaining: 4.999995842,
+              percent_used: 0,
+            }),
+            { status: 200 },
+          ),
+        );
+      }),
+    );
+    await expect(fetchIdentityCredit('id-1')).resolves.toMatchObject({
+      identity_id: 'id-1',
+      exempt: false,
+      spend: 0.000004158,
+    });
+    expect(capturedUrl).toBe('/api/admin/identities/id-1/credit');
+  });
+
+  it('setIdentityCredit POSTs the cap/reset-interval patch', async () => {
+    let seen: { url: string; method: string; body: string } | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        seen = {
+          url: urlOf(input),
+          method: init?.method ?? 'GET',
+          body: typeof init?.body === 'string' ? init.body : '',
+        };
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              identity_id: 'id-1',
+              cap: 5.13,
+              reset_interval: 'monthly',
+              store_applied: true,
+              provider_applied: true,
+            }),
+            { status: 200 },
+          ),
+        );
+      }),
+    );
+    const result = await setIdentityCredit('id-1', { cap: '5.126' });
+    expect(seen?.url).toBe('/api/admin/identities/id-1/credit');
+    expect(seen?.method).toBe('POST');
+    expect(JSON.parse(seen?.body ?? '{}')).toEqual({ cap: '5.126' });
+    expect(result.cap).toBe(5.13);
+  });
+
+  it('removeIdentity DELETEs the identity and surfaces the server reason on failure', async () => {
+    let seen: { url: string; method: string } | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        seen = { url: urlOf(input), method: init?.method ?? 'GET' };
+        return Promise.resolve(
+          new Response(JSON.stringify({ identity_id: 'id-1', status: 'removed' }), {
+            status: 200,
+          }),
+        );
+      }),
+    );
+    await expect(removeIdentity('id-1')).resolves.toEqual({
+      identity_id: 'id-1',
+      status: 'removed',
+    });
+    expect(seen?.url).toBe('/api/admin/identities/id-1');
+    expect(seen?.method).toBe('DELETE');
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              error: 'the last administrative identity cannot remove or deactivate itself',
+            }),
+            { status: 403 },
+          ),
+        ),
+      ),
+    );
+    await expect(removeIdentity('id-1')).rejects.toThrow(
+      'the last administrative identity cannot remove or deactivate itself',
+    );
   });
 });

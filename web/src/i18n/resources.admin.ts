@@ -8,6 +8,35 @@ export const adminEn = {
       heading: 'Admin access required',
       body: 'This page manages model settings, identities, and audit history. Your identity does not hold the governance capability, so it is hidden. Ask an administrator if you need access.',
     },
+    removal: {
+      title: 'Remove {{name}}?',
+      body: "This permanently deletes {{name}}'s conversations, memory, files and OpenRouter key. This can't be undone. OpenRouter keeps its own record of what this identity spent; removing it here does not erase that.",
+      confirmLabel: 'Type {{email}} to confirm',
+      confirm: 'Remove permanently',
+      cancel: 'Cancel',
+      inFlight: 'Removing {{name}}…',
+      partialFailure:
+        "Couldn't finish removing {{name}}. The removal is safe to retry — some data may already be gone.",
+    },
+    reviewStep: {
+      accessLabel: 'Access',
+      accessBody:
+        "Full access to Aura's tools — mounting MCP servers, authoring skills, running sandboxed commands and approving actions. Only user management stays admin-only.",
+      creditLabel: 'Starting credit',
+      creditBody: "$0.00 — this identity can't run a turn until you add credit after creating it.",
+    },
+    credit: {
+      saveCap: 'Save cap',
+      emptyHeading: 'No spending cap to show',
+      emptyBody:
+        "This deployment runs on a local model backend, which doesn't bill — there's no cap or spend to show.",
+      saveError: "Couldn't update the spending cap. Check the amount and try again.",
+      latencyUp: 'Takes about 25 seconds to apply.',
+      latencyDown: 'Takes about 5 seconds to apply.',
+      exhaustedRefusal:
+        '{{name}} has no remaining credit for this turn. Ask an administrator to add credit under Settings → Identities.',
+      turnErrorGeneric: 'Something went wrong with this turn. Try again.',
+    },
     identity: {
       label: 'Identity',
       loading: 'Loading identities...',
@@ -60,6 +89,36 @@ export const adminIt = {
     notAuthorized: {
       heading: 'Accesso amministratore richiesto',
       body: 'Questa pagina gestisce impostazioni del modello, identità e cronologia di audit. La tua identità non ha la capability di governance, quindi è nascosta. Chiedi a un amministratore se ti serve accesso.',
+    },
+    removal: {
+      title: 'Rimuovere {{name}}?',
+      body: "Questa azione elimina definitivamente le conversazioni, la memoria, i file e la chiave OpenRouter di {{name}}. Non si può annullare. OpenRouter mantiene un proprio registro di quanto speso da questa identità; rimuoverla qui non lo elimina.",
+      confirmLabel: 'Digita {{email}} per confermare',
+      confirm: 'Rimuovi definitivamente',
+      cancel: 'Annulla',
+      inFlight: 'Rimozione di {{name}}…',
+      partialFailure:
+        'Impossibile completare la rimozione di {{name}}. La rimozione è sicura da ripetere — alcuni dati potrebbero già essere spariti.',
+    },
+    reviewStep: {
+      accessLabel: 'Accesso',
+      accessBody:
+        "Accesso completo agli strumenti di Aura — montare server MCP, creare skill, eseguire comandi in sandbox e approvare azioni. Solo la gestione utenti resta riservata all'amministratore.",
+      creditLabel: 'Credito iniziale',
+      creditBody:
+        '$0.00 — questa identità non può eseguire un turno finché non aggiungi credito dopo la creazione.',
+    },
+    credit: {
+      saveCap: 'Salva limite',
+      emptyHeading: 'Nessun limite di spesa da mostrare',
+      emptyBody:
+        'Questa installazione usa un backend a modello locale, che non fattura — non c’è un limite o una spesa da mostrare.',
+      saveError: 'Impossibile aggiornare il limite di spesa. Controlla l’importo e riprova.',
+      latencyUp: 'Richiede circa 25 secondi per applicarsi.',
+      latencyDown: 'Richiede circa 5 secondi per applicarsi.',
+      exhaustedRefusal:
+        '{{name}} non ha credito residuo per questo turno. Chiedi a un amministratore di aggiungere credito in Impostazioni → Identità.',
+      turnErrorGeneric: 'Qualcosa è andato storto con questo turno. Riprova.',
     },
     identity: {
       label: 'Identità',
