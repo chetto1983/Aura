@@ -223,3 +223,41 @@ func TestRankDocumentsKeepsDocumentsWithDifferentText(t *testing.T) {
 		t.Fatalf("documents = %d, want both", len(documents))
 	}
 }
+
+// The case that was actually measured reached the caller through the CARD leg: three
+// artifact-workspace-check.html, no passages between them, one identical extracted text.
+// Aliasing from passages alone left it exactly as it was found.
+func TestRankDocumentsCollapsesCardOnlyCopiesWithIdenticalText(t *testing.T) {
+	const sameText = "6667dde664ad5c7d9f0f4a2b1e8c3d5a7b9e0f1c2d3e4f50617283940a5b6c7d"
+	cards := []RetrievalCard{
+		{
+			DocumentID: "doc_a7ecb07d", Title: "artifact-workspace-check.html", SourceKind: "s3",
+			SourceKey: "chat/81c725e9.html", OriginalSHA256: "f2c8d876af35",
+			NormalizedSHA256: sameText, Rank: 0.49939245, SizeBytes: 6020,
+		},
+		{
+			DocumentID: "doc_eec6dc2f", Title: "artifact-workspace-check.html", SourceKind: "s3",
+			SourceKey: "chat/7961ede6.html", OriginalSHA256: "b7b2ada4bf38",
+			NormalizedSHA256: sameText, Rank: 0.49939245, SizeBytes: 6092,
+		},
+		{
+			DocumentID: "doc_a8d81767", Title: "artifact-workspace-check.html", SourceKind: "s3",
+			SourceKey: "chat/0cd2f496.html", OriginalSHA256: "9187dfa3caa1",
+			NormalizedSHA256: "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
+			Rank:             0.48654276, SizeBytes: 4430,
+		},
+	}
+
+	documents := rankCardsOnly(cards, 8, 3)
+
+	if len(documents) != 2 {
+		t.Fatalf("documents = %d, want the two texts and not the three files", len(documents))
+	}
+	if documents[0].DocumentID != "doc_a7ecb07d" {
+		t.Fatalf("representative = %q, want the best-ranked copy", documents[0].DocumentID)
+	}
+	// The third file says something else and must survive on its own.
+	if documents[1].DocumentID != "doc_a8d81767" {
+		t.Fatalf("second = %q, want the document with different text", documents[1].DocumentID)
+	}
+}

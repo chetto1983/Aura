@@ -80,6 +80,12 @@ class IndexedDocument:
     # for "clienti" cannot find it.
     file_name_words: str
     raw_sha256: str
+    # The hash of the EXTRACTED TEXT, beside the hash of the bytes. Two files can differ
+    # byte for byte and still say exactly the same thing -- measured 2026-09-09, three
+    # artifact-workspace-check.html of 6092, 6020 and 6037 bytes carried one identical
+    # text -- and with only raw_sha256 recorded, retrieval had no way to tell that from
+    # two genuinely different documents, so each copy spent one of the caller's results.
+    normalized_text_sha256: str
     size_bytes: int
     passage_count: int
     # What filecard measured about the file. Empty when it could not be described --
@@ -349,6 +355,7 @@ async def process_file(
         file_name=file_name,
         file_name_words=_name_words(file_name),
         raw_sha256=raw_sha256,
+        normalized_text_sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(),
         size_bytes=len(content),
         passage_count=len(pieces),
         card=card,

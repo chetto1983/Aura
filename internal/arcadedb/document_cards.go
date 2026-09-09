@@ -61,6 +61,11 @@ type DocumentCard struct {
 	SourceKey        string
 	FileName         string
 	RawSHA256        string
+	// NormalizedSHA256 hashes the EXTRACTED TEXT, where RawSHA256 hashes the bytes. Two
+	// files can differ byte for byte and say exactly the same thing, and only this tells
+	// that apart from two genuinely different documents. Empty for a record written before
+	// services/ingest recorded it.
+	NormalizedSHA256 string
 	SizeBytes        int64
 	PassageCount     int64
 	Card             string
@@ -103,7 +108,7 @@ func documentCardStatement(where string, limit int) string {
 }
 
 const documentCardFields = "search_document_id, source_kind, source_key, file_name, " +
-	"raw_sha256, size_bytes, passage_count, card, indexed_at"
+	"raw_sha256, normalized_text_sha256, size_bytes, passage_count, card, indexed_at"
 
 // DocumentCards ranks documents by their own description, and is the leg that survives.
 //
@@ -386,6 +391,15 @@ func decodeDocumentCard(row map[string]any) (DocumentCard, error) {
 	// is still searchable by name, and can still be opened.
 	if card.Card, err = optionalString(row, "card"); err != nil {
 		return DocumentCard{}, err
+	}
+	// Optional for the same reason indexed_at is: it joined the schema after the first
+	// records were written. Validated when present, because a hash that is not one would
+	// silently alias two unrelated documents onto each other.
+	if card.NormalizedSHA256, err = optionalString(row, "normalized_text_sha256"); err != nil {
+		return DocumentCard{}, err
+	}
+	if card.NormalizedSHA256 != "" && !validSHA256(card.NormalizedSHA256) {
+		return DocumentCard{}, fmt.Errorf("document card carries an invalid text SHA-256")
 	}
 	if card.SizeBytes, err = requiredInt64(row, "size_bytes", false); err != nil {
 		return DocumentCard{}, err

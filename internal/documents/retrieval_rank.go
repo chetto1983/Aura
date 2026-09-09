@@ -49,7 +49,7 @@ func rankDocuments(
 	// them can represent both. What that trades: a file whose only overlap with another is
 	// the passage that happened to match is hidden behind it, and is then reachable by a
 	// query that matches its own content instead.
-	sameText := textAliases(passages)
+	sameText := textAliases(cards, passages)
 	// Passages first and their order wins: a document the engine ranked is better
 	// evidenced than one only a card mentions, so cards start after the last passage.
 	for rank, passage := range passages {
@@ -120,22 +120,38 @@ func contentKey(rawSHA256, documentID string) string {
 	return rawSHA256
 }
 
-// textAliases maps every content hash onto the one that represents its text. Passages are
-// walked in the engine's own order, so the FIRST copy of a text -- the best-ranked one --
-// is the representative, which is the same rule the byte-identical collapse already used.
-func textAliases(passages []arcadedb.PassageCandidate) map[string]string {
-	alias := make(map[string]string, len(passages))
-	representative := make(map[string]string, len(passages))
-	for _, passage := range passages {
-		if passage.NormalizedSHA256 == "" || passage.RawSHA256 == "" {
-			continue
+// textAliases maps every content hash onto the one that represents its text. Both legs feed
+// it: a copy whose passages did not rank is still named by its card, and the case that was
+// actually measured -- three artifact-workspace-check.html at one score -- reached the
+// caller through the card leg alone, with no passage to alias by.
+//
+// Passages are walked first and in the engine's own order, so the best-evidenced copy is the
+// representative, which is the rule the byte-identical collapse already used.
+//
+// A passage hash covers one chunk and a card hash the whole extracted text. They share one
+// map because identical text hashes identically whichever produced it, and a document whose
+// single chunk IS its whole text is the same document either way.
+func textAliases(cards []RetrievalCard, passages []arcadedb.PassageCandidate) map[string]string {
+	alias := make(map[string]string, len(cards)+len(passages))
+	representative := make(map[string]string, len(cards)+len(passages))
+	link := func(normalized, raw string) {
+		if normalized == "" || raw == "" {
+			return
 		}
-		first, seen := representative[passage.NormalizedSHA256]
+		first, seen := representative[normalized]
 		if !seen {
-			representative[passage.NormalizedSHA256] = passage.RawSHA256
-			continue
+			representative[normalized] = raw
+			return
 		}
-		alias[passage.RawSHA256] = first
+		if first != raw {
+			alias[raw] = first
+		}
+	}
+	for _, passage := range passages {
+		link(passage.NormalizedSHA256, passage.RawSHA256)
+	}
+	for _, card := range cards {
+		link(card.NormalizedSHA256, card.OriginalSHA256)
 	}
 	return alias
 }

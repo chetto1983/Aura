@@ -70,15 +70,16 @@ func (c *ArcadeRetrievalControlPlane) RouteDocumentCards(
 			DocumentID: card.SearchDocumentID,
 			// The file name IS the title. There is no catalog row to hold a nicer one, and
 			// a name is what a person uses to ask for a file.
-			Title:          card.FileName,
-			SourceKind:     card.SourceKind,
-			SourceKey:      card.SourceKey,
-			Card:           card.Card,
-			Rank:           card.Score,
-			OriginalSHA256: card.RawSHA256,
-			SizeBytes:      card.SizeBytes,
-			PassageCount:   card.PassageCount,
-			IndexedAt:      card.IndexedAt,
+			Title:            card.FileName,
+			SourceKind:       card.SourceKind,
+			SourceKey:        card.SourceKey,
+			Card:             card.Card,
+			Rank:             card.Score,
+			OriginalSHA256:   card.RawSHA256,
+			NormalizedSHA256: card.NormalizedSHA256,
+			SizeBytes:        card.SizeBytes,
+			PassageCount:     card.PassageCount,
+			IndexedAt:        card.IndexedAt,
 		})
 	}
 	return cards, nil

@@ -102,6 +102,7 @@ func TestDocumentCardsAcceptADocumentWithoutACard(t *testing.T) {
 func TestDocumentCardsRejectMalformedRows(t *testing.T) {
 	mutations := map[string]func(map[string]any){
 		"bad sha":       func(row map[string]any) { row["raw_sha256"] = "nope" },
+		"bad text sha":  func(row map[string]any) { row["normalized_text_sha256"] = "nope" },
 		"missing key":   func(row map[string]any) { delete(row, "source_key") },
 		"missing name":  func(row map[string]any) { delete(row, "file_name") },
 		"missing count": func(row map[string]any) { delete(row, "passage_count") },
@@ -270,8 +271,10 @@ func TestDocumentCardsCarryIndexedAt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DocumentCards: %v", err)
 	}
-	if !strings.Contains(statement, "indexed_at") {
-		t.Fatalf("the projection dropped indexed_at: %s", statement)
+	for _, field := range []string{"indexed_at", "normalized_text_sha256"} {
+		if !strings.Contains(statement, field) {
+			t.Fatalf("the projection dropped %s: %s", field, statement)
+		}
 	}
 	want := time.Date(2026, 9, 9, 17, 41, 12, 81_000_000, time.UTC)
 	if !cards[0].IndexedAt.Equal(want) {

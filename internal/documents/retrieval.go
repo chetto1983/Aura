@@ -176,9 +176,12 @@ type RetrievalCard struct {
 	Card           string
 	Rank           float64
 	OriginalSHA256 string
-	SizeBytes      int64
-	PassageCount   int64
-	IndexedAt      time.Time
+	// NormalizedSHA256 hashes the extracted text, so two copies stored in different
+	// containers collapse even when neither returned a passage.
+	NormalizedSHA256 string
+	SizeBytes        int64
+	PassageCount     int64
+	IndexedAt        time.Time
 }
 
 // RetrievalControlPlane bounds identity scope and routes IndexedDocument cards in ArcadeDB.

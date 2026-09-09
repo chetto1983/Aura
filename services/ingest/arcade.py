@@ -222,6 +222,9 @@ def _document_ddl(dimensions: int) -> list[str]:
         f"CREATE PROPERTY {DOCUMENT_TYPE}.file_name IF NOT EXISTS STRING",
         f"CREATE PROPERTY {DOCUMENT_TYPE}.file_name_words IF NOT EXISTS STRING",
         f"CREATE PROPERTY {DOCUMENT_TYPE}.raw_sha256 IF NOT EXISTS STRING",
+        # The extracted text's hash, so retrieval can tell one document stored twice in
+        # different containers from two documents that merely resemble each other.
+        f"CREATE PROPERTY {DOCUMENT_TYPE}.normalized_text_sha256 IF NOT EXISTS STRING",
         f"CREATE PROPERTY {DOCUMENT_TYPE}.size_bytes IF NOT EXISTS LONG",
         f"CREATE PROPERTY {DOCUMENT_TYPE}.passage_count IF NOT EXISTS LONG",
         f"CREATE PROPERTY {DOCUMENT_TYPE}.card IF NOT EXISTS STRING",
