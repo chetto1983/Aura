@@ -97,7 +97,7 @@ batches of sixteen 1.633 s. The existing embedding transport was retained.
   model fixed, and do not run competing benchmark loads during timing comparisons.
 
 Machine-readable measurements and the exact questions are in
-[the accompanying JSON](2026-09-09-long-document-ingestion.json).
+[the accompanying JSON](document-ingestion-benchmark.json).
 
 ## Reuse audit: memory and native ArcadeDB
 

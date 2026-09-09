@@ -43,7 +43,7 @@ Source hashes, normalized passage hashes and locators are retained.
 Oversized passages are split again at native structural boundaries using their
 measured token density. Fixed-width windows remain the fallback for unbreakable text.
 On the ArcadeDB manual, complete ingestion improved from 68.3 to 48.4 seconds with
-100% extracted-text coverage; see [measurement and limits](audit/2026-09-09-long-document-ingestion.md).
+100% extracted-text coverage; see [measurement and limits](document-ingestion-benchmark.md).
 
 ArcadeDB stores document cards and passages in the identity's database. Postgres
 holds control-plane and authorization metadata; Garage remains the source of original

@@ -346,7 +346,7 @@ reported write-limit truncation. The 2026-09-09 ArcadeDB manual baseline indexed
 23.203% of its non-whitespace text despite a successful reconciliation. Oversized
 passages should reuse the native recursive splitter before fixed-width fallback,
 preserving overlap and absolute locators. Timings must compare equal source coverage;
-see [the measured decision](docs/audit/2026-09-09-long-document-ingestion.md).
+see [the measured decision](docs/document-ingestion-benchmark.md).
 
 Documents retain original hashes; passages retain normalized hashes, locators and
 citation tokens. Retrieval checks source scope and reports which legs ran. An absent
