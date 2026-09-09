@@ -255,7 +255,7 @@ func TestTwoRolesTracer(t *testing.T) {
 			t.Fatal("admin identity unexpectedly has a stored OpenRouter key on a fresh database")
 		}
 
-		resolver := runner.NewIdentityLLMResolver(keyStore, nil, llm.Config{Provider: "openrouter", BaseURL: ""}, nil)
+		resolver := runner.NewIdentityLLMResolver(keyStore, nil, llm.Config{Provider: "openrouter", BaseURL: ""}, nil, nil)
 
 		snapMember, err := resolver.SnapshotFor(context.Background(), memberID)
 		if err != nil {
