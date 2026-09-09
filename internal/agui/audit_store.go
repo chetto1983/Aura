@@ -28,12 +28,13 @@ import (
 )
 
 // AuditEvent is one normalized row of the D-28 admin per-user activity feed: a single
-// event unioned from the three identity-keyed audit ledgers, projected to a common shape.
-// Target is the affected object (an MCP server_name / skill_name / tool_name); Detail is
-// the ledger-specific note (an mcp reason / skill actor_id / tool status). Both may carry
-// user-authored text, so the handler SanitizeStrings them before the wire (T-36-10-I).
+// event unioned from the four identity-keyed audit ledgers, projected to a common shape.
+// Target is the affected object (an MCP server_name / skill_name / tool_name / refused
+// capability name); Detail is the ledger-specific note (an mcp reason / skill actor_id /
+// tool status / refused route). Both may carry user-authored text, so the handler
+// SanitizeStrings them before the wire (T-36-10-I).
 type AuditEvent struct {
-	Source string `json:"source"` // "mcp" | "skill" | "tool" | "share"
+	Source string `json:"source"` // "mcp" | "skill" | "tool" | "share" | "capability"
 	Action string `json:"action"`
 	Target string `json:"target"`
 	Detail string `json:"detail,omitempty"`
@@ -56,11 +57,18 @@ type PgAuditStore struct {
 // NewPgAuditStore builds the admin audit read store over the shared pool.
 func NewPgAuditStore(pool *pgxpool.Pool) *PgAuditStore { return &PgAuditStore{pool: pool} }
 
-// auditActivityQuery unions the three identity-keyed ledgers into one newest-first feed
+// auditActivityQuery unions the four identity-keyed ledgers into one newest-first feed
 // for a single identity. $1 is the text[] set of audit keys (the identity UUID, plus the
 // literal 'local' when it is the seeded operator — skill_audit defaults identity_id to
-// 'local'); $2 is the identity UUID for the conversation-owner join; $3/$4 are LIMIT/
-// OFFSET. Column names come from the first SELECT (UNION ALL matches by position).
+// 'local', and aura.capability_denials' no-principal sentinel is the same textual shape);
+// $2 is the identity UUID for the conversation-owner join; $3/$4 are LIMIT/OFFSET. Column
+// names come from the first SELECT (UNION ALL matches by position) — a leg whose columns
+// are in the wrong order compiles, runs, and silently mislabels every row.
+//
+// The fifth leg ('capability', RBAC-10, 02-04 Task 2) projects a RequireCapability
+// refusal (aura.capability_denials, 02-04 Task 1): cause -> action, capability -> target,
+// route -> detail. It carries no correlation and no duration, matching the mcp/skill/share
+// legs' shape.
 const auditActivityQuery = `
 SELECT source, action, target, detail, correlation, duration_ms, created_at FROM (
     SELECT 'mcp'   AS source, action           AS action, server_name  AS target, COALESCE(reason, '')     AS detail, '' AS correlation, 0::bigint AS duration_ms, created_at AS created_at
@@ -79,8 +87,12 @@ SELECT source, action, target, detail, correlation, duration_ms, created_at FROM
     SELECT 'share' AS source, action, COALESCE(conversation_id::text, ''), COALESCE(tier, ''), '', 0::bigint, created_at
       FROM aura.share_audit
       WHERE identity_id = ANY($1::text[])
+    UNION ALL
+    SELECT 'capability' AS source, cause, capability, route, '', 0::bigint, created_at
+      FROM aura.capability_denials
+      WHERE identity_id = ANY($1::text[])
 ) feed
-ORDER BY created_at DESC
+ORDER BY created_at DESC, source, target
 LIMIT $3 OFFSET $4`
 
 // ListActivityForIdentity returns the identity's audit activity newest-first, paginated.
