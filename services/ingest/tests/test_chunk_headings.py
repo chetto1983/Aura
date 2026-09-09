@@ -67,3 +67,20 @@ def test_stamping_does_not_move_a_single_boundary():
     stamped = _stamped(text, entries, max_tokens=64)
 
     assert [(p.start, p.end) for p in plain] == [(p.start, p.end) for p in stamped]
+
+
+def test_a_document_whose_title_opens_it_stamps_the_first_chunk():
+    """The complement of the test above: front matter genuinely before the first heading
+    stays unstamped, but a document that OPENS with its title must not.
+
+    Measured 2026-09-09 end to end: an 856-byte Markdown file whose seven headings all
+    anchored correctly still reached ArcadeDB with an empty heading_path. The anchor
+    pointed at the title TEXT, and "# Titolo" puts that at byte 2 while the chunk starts
+    at 0, so `offset <= start` was false for the only chunk the document had.
+    """
+    text = "# Manuale\n\n" + "corpo del capitolo. " * 40
+    entries = [(1, "Manuale")]
+
+    pieces = _stamped(text, entries, max_tokens=64)
+
+    assert pieces[0].heading_path == ["Manuale"]

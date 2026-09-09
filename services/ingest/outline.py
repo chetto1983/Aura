@@ -176,7 +176,17 @@ def anchors_in(text: str, entries: list[tuple[int, str]]) -> list[Anchor]:
         while stack and stack[-1][0] >= depth:
             stack.pop()
         stack.append((depth, title))
-        anchors.append(Anchor(offset=offset, heading_path=tuple(t for _, t in stack)))
+        # The anchor is the start of the heading LINE, not of the title text inside it.
+        # A Markdown heading is written \"## Titolo\", so the title itself begins two
+        # characters in, and a chunk starting at byte 0 then sits BEFORE its own
+        # document title -- measured 2026-09-09 end to end, an 856-byte file whose seven
+        # headings all anchored correctly reached ArcadeDB with an empty heading_path,
+        # because 2 <= 0 is false. Snapping to the line start also leaves genuine front
+        # matter before the first heading unstamped, which is the existing contract.
+        anchors.append(Anchor(
+            offset=text.rfind(chr(10), 0, offset) + 1,
+            heading_path=tuple(t for _, t in stack),
+        ))
         cursor = offset + len(title)
     return anchors if _reaches_the_body(anchors, len(text)) else []
 
