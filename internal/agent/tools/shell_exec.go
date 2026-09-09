@@ -78,9 +78,14 @@ type shellExecFooter struct {
 // command inline — ls, git, grep are all well under a second — while a build stops holding
 // the turn hostage.
 //
+// Thirty seconds is the measured middle: the artifact bundles this agent actually runs land
+// at 4-15s and stay inline, while the 50s outlier — the one that was 42% of the way to
+// destroying its own work — is handed back instead of holding the turn.
+//
 // A caller that genuinely wants to wait still can: an explicit timeout_ms overrides this,
-// up to AURA_SHELL_MAX_TIMEOUT_MS. Deployments tune it with AURA_SHELL_DEFAULT_TIMEOUT_MS.
-const defaultShellTimeout = 3 * time.Second
+// up to AURA_SHELL_MAX_TIMEOUT_MS. There is deliberately no separate knob for this default —
+// one number in one place, changed by editing it.
+const defaultShellTimeout = 30 * time.Second
 
 // slowRunShare is the fraction of its cap a command may burn before the result starts
 // telling the model about "background": true. A quarter is early enough that the advice

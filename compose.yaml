@@ -210,10 +210,6 @@ services:
       AURA_SKILL_MANIFEST_CAP_BYTES: ${AURA_SKILL_MANIFEST_CAP_BYTES:-8192}
       AURA_SKILL_SNIPPET_TTL_DAYS: ${AURA_SKILL_SNIPPET_TTL_DAYS:-90}
       AURA_SKILL_INJECTION_BLOCKLIST: ${AURA_SKILL_INJECTION_BLOCKLIST:-}
-      # How long shell_exec BLOCKS before handing a still-running command back as a
-      # background job. Not a kill deadline — since promotion, reaching it destroys
-      # nothing. Empty falls back to the compiled default.
-      AURA_SHELL_DEFAULT_TIMEOUT_MS: ${AURA_SHELL_DEFAULT_TIMEOUT_MS:-}
       AURA_AGUI_BUFFER_CAP: ${AURA_AGUI_BUFFER_CAP:-64}
       # Fix-plan 1.3 Tier B (PRD Amendment #90): detached-run registry + SSE resume.
       # Default-ON since amendment #90.1 (live E2E 10/10, 2026-07-23); set =false to roll

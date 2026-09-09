@@ -10,9 +10,8 @@ import (
 )
 
 const (
-	envShellMaxTimeoutMs     = "AURA_SHELL_MAX_TIMEOUT_MS"
-	envShellDefaultTimeoutMs = "AURA_SHELL_DEFAULT_TIMEOUT_MS"
-	envShellOutputBufCap     = "AURA_SHELL_OUTPUT_BUF_CAP"
+	envShellMaxTimeoutMs = "AURA_SHELL_MAX_TIMEOUT_MS"
+	envShellOutputBufCap = "AURA_SHELL_OUTPUT_BUF_CAP"
 	// envShellDestructivePatterns overrides the on-by-default conservative
 	// ADVISORY destructive-command set (B-10): a comma-separated list of RE2
 	// patterns REPLACES the default; UNSET or EMPTY keeps the defaults (gate
@@ -25,26 +24,10 @@ const (
 	shellRedacted          = "[REDACTED]"
 )
 
-// shellDefaultTimeout resolves the implicit blocking cap: AURA_SHELL_DEFAULT_TIMEOUT_MS
-// when it parses to a positive number of milliseconds, else the compiled default. A
-// deployment can lengthen it (slow disks, heavy boxes) without a rebuild; a malformed value
-// falls back rather than disabling the cap.
-func shellDefaultTimeout() time.Duration {
-	v := strings.TrimSpace(os.Getenv(envShellDefaultTimeoutMs))
-	if v == "" {
-		return defaultShellTimeout
-	}
-	n, err := strconv.ParseInt(v, 10, 64)
-	if err != nil || n <= 0 {
-		return defaultShellTimeout
-	}
-	return time.Duration(n) * time.Millisecond
-}
-
 func effectiveShellTimeout(defaultTimeout time.Duration, requestedMs int64) time.Duration {
 	timeout := defaultTimeout
 	if timeout <= 0 {
-		timeout = shellDefaultTimeout()
+		timeout = defaultShellTimeout
 	}
 	if requestedMs > 0 {
 		timeout = time.Duration(requestedMs) * time.Millisecond
