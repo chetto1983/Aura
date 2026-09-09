@@ -3,10 +3,12 @@
 // "extract pure logic for direct unit tests so its branch/equality mutants are killable without the
 // DOM"). No React, no className strings here — only the wizard's decision logic + the step model.
 
-/** The linear wizard phases, in order. */
-export type Phase = 'credentials' | 'capabilities' | 'review' | 'complete';
+/** The linear wizard phases, in order. The capability phase is GONE, not skipped: RBAC-03
+ * grants every provisioned identity exactly identity.UserSet() whatever the request asks for,
+ * so there was no longer a question with answers behind it. */
+export type Phase = 'credentials' | 'review' | 'complete';
 
-export const PHASES: readonly Phase[] = ['credentials', 'capabilities', 'review', 'complete'];
+export const PHASES: readonly Phase[] = ['credentials', 'review', 'complete'];
 
 /** The mapped provision-error copy key, or undefined when there is no error. */
 export type ProvisionErrorKind = 'noCapability' | 'duplicate' | 'rolledBack';
@@ -38,7 +40,7 @@ export function phaseIndex(phase: Phase): number {
   return PHASES.indexOf(phase);
 }
 
-/** credentialsValid gates the credentials -> capabilities advance. */
+/** credentialsValid gates the credentials -> review advance. */
 export function credentialsValid(
   email: string,
   password: string,

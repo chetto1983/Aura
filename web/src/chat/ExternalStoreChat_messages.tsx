@@ -9,6 +9,7 @@ import {
   type ThreadMessageLike,
   type ToolCallMessagePartComponent,
 } from '@assistant-ui/react';
+import { useCapabilities } from '../admin/useAdmin';
 import { useVoiceMode } from './voice/voiceModeContext';
 import { AttachmentCard } from './attachments/AttachmentCard';
 import type { Asset } from './attachments/types';
@@ -126,9 +127,26 @@ export function UserMessage({ onAssetRetry, onAssetPromote }: UserMessageProps) 
   );
 }
 
+/** The machine-readable code cmd/aura/llm_client.go's creditExhaustedError marshals when a
+ * zero-credit identity is refused BEFORE the model is called (CRED-05). The sentinel rides the
+ * RUN_ERROR message, which sseAdapter_parts.toThreadMessage appends as a text part, so this is
+ * a substring test over the turn's own parts rather than a status field. */
+const CREDIT_EXHAUSTED_CODE = 'credit_exhausted';
+
+function isCreditExhausted(message: ThreadMessageLike): boolean {
+  if (typeof message.content === 'string') return message.content.includes(CREDIT_EXHAUSTED_CODE);
+  return message.content.some(
+    (part) =>
+      part.type === 'text' &&
+      typeof part.text === 'string' &&
+      part.text.includes(CREDIT_EXHAUSTED_CODE),
+  );
+}
+
 export function AssistantMessage() {
   const { t } = useTranslation();
   const message = useAuiState((s) => s.message) as ThreadMessageLike;
+  const { identityName } = useCapabilities();
   const attachments = messageAttachments(message);
   return (
     <MessagePrimitive.Root data-message-role="assistant" className="w-full min-w-0 space-y-2">
@@ -208,9 +226,16 @@ export function AssistantMessage() {
         </div>
       ) : null}
       <MessagePrimitive.Error>
+        {/* CRED-05's refusal lands here rather than as a new component: the slot already
+            renders on every errored turn and until now held nothing, so an identity out of
+            credit saw an empty red line. The copy carries NO balance figure — the only
+            numbers available at refusal time are a duplicate of the ledger, which drifts, and
+            the provider's counter, which lags 30-40s (M-07) and is therefore wrong at exactly
+            the moment a human reads it. */}
         <p role="alert" className="text-sm text-danger">
-          {/* The reducer already routes RUN_ERROR into an error text part; this
-              is the runtime-level fallback for a hard message error. */}
+          {isCreditExhausted(message) && identityName !== ''
+            ? t('admin.credit.exhaustedRefusal', { name: identityName })
+            : t('admin.credit.turnErrorGeneric')}
         </p>
       </MessagePrimitive.Error>
       {/* Assistant action bar: Copy + Reload (regenerate) + the answer-level

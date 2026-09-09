@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useState, type ReactElement } from 'react';
+import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
@@ -7,61 +7,15 @@ import { ExternalStoreChat } from '../ExternalStoreChat';
 import { CONVERSATION_KEY } from '../../conversations/useConversations';
 import type { Approval } from '../../approvals/useApprovals';
 import type { RunUsageEvent } from '../runUsage';
-
-// Build a single SSE wire body from raw AG-UI frame objects (the same shapes the
-// Go translator emits). Used to stub /agent/run for the streaming-path tests.
-function sseBody(frames: readonly Record<string, unknown>[]): string {
-  return frames.map((f) => `event: ${String(f.type)}\ndata: ${JSON.stringify(f)}\n\n`).join('');
-}
-
-function sseResponse(frames: readonly Record<string, unknown>[]): Response {
-  const enc = new TextEncoder();
-  const body = new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.enqueue(enc.encode(sseBody(frames)));
-      controller.close();
-    },
-  });
-  return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
-}
-
-function messagesSnapshotResponse(messages: readonly Record<string, unknown>[]): Response {
-  return new Response(JSON.stringify({ type: 'MESSAGES_SNAPSHOT', messages }), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-  });
-}
-
-function jsonResponse(value: unknown): Response {
-  return new Response(JSON.stringify(value), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-  });
-}
-
-function isHistoryURL(url: unknown): boolean {
-  return typeof url === 'string' && url.startsWith('/threads/');
-}
-
-function sendPrompt(text: string): void {
-  const input = screen.getByPlaceholderText('Ask Aura');
-  fireEvent.change(input, { target: { value: text } });
-  // Enter submits the composer (Shift+Enter would newline).
-  fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
-}
-
-function renderChat(ui: ReactElement) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
-}
-
-// renderChatWithClient exposes the QueryClient so a test can spy on the React
-// Query cache invalidation that fires once a turn finishes (AC-5).
-function renderChatWithClient(ui: ReactElement): { client: QueryClient } {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
-  return { client };
-}
+import {
+  isHistoryURL,
+  jsonResponse,
+  messagesSnapshotResponse,
+  renderChat,
+  renderChatWithClient,
+  sendPrompt,
+  sseResponse,
+} from './chatTestHarness';
 
 function usageEvents(spy: { mock: { calls: unknown[][] } }): RunUsageEvent[] {
   return spy.mock.calls.map((call) => call[0] as RunUsageEvent);
@@ -389,28 +343,6 @@ describe('ExternalStoreChat (CHAT-01)', () => {
           (call[0] as { queryKey: unknown[] }).queryKey[1] === 'conv-1',
       );
       expect(invalidatedConversation).toBe(true);
-    });
-  });
-
-  it('surfaces an incomplete turn when the stream errors', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((url: string) =>
-        Promise.resolve(
-          isHistoryURL(url)
-            ? messagesSnapshotResponse([])
-            : sseResponse([
-                { type: 'RUN_STARTED', threadId: 'conv-1', runId: 'run-1' },
-                { type: 'RUN_ERROR', message: 'upstream 5xx' },
-              ]),
-        ),
-      ),
-    );
-    renderChat(<ExternalStoreChat threadId="conv-1" />);
-    sendPrompt('boom');
-    // The reducer routes RUN_ERROR into an error text part rendered as markdown.
-    await waitFor(() => {
-      expect(screen.getByText('upstream 5xx')).toBeTruthy();
     });
   });
 

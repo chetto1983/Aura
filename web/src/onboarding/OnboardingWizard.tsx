@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useId, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CapabilityPicker } from './CapabilityPicker';
 import { CredentialStep } from './CredentialStep';
 import { OnboardingCenteredState, OnboardingDialog } from './OnboardingDialog';
 import { OnboardingStepper } from './OnboardingStepper';
@@ -29,13 +28,16 @@ import { Button } from '@/components/ui/button';
 
 // OnboardingWizard is the lazy default export the AppShell mounts as a FULL-SCREEN overlay (D-04 —
 // NOT a governance tab, NOT a MODES entry). It runs the linear flow over the Plan-05 endpoints:
-//   credentials (+ the Amendment-#95 seed form) → capabilities → review → create (/provision)
+//   credentials (+ the Amendment-#95 seed form) → review → create (/provision)
 //   → Telegram link (deep-link + QR + /telegram-status poll) + completion.
+// There is no capability step: RBAC-03 grants every provisioned identity exactly
+// identity.UserSet(), so the picker had no answers left to offer and was deleted rather than
+// hidden — the review step states the uniform grant in prose instead.
 // The seed rides along in the /provision body so the NEW identity's graph is seeded at creation;
 // the fields are optional, and an empty seed provisions an identity that gets its own first-run
 // form on first login.
 // It holds the sessionToken from /start and the accumulated inputs (email/password/recovery/
-// capabilities/seed), and reuses the GraphExplorer ViewStatus + error-auth contract: a /start that
+// seed), and reuses the GraphExplorer ViewStatus + error-auth contract: a /start that
 // REJECTS with HTTP 401 renders a VISIBLE auth-error (never a blank), any other failure the error
 // state with retry (T-28-06-04). Secrets never render: the password is write-only (CredentialStep)
 // and the bot token never enters the DOM (TelegramLinkStep renders only the deep-link + QR).
@@ -63,8 +65,6 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [securityQuestion, setSecurityQuestion] = useState('');
   const [securityAnswer, setSecurityAnswer] = useState('');
-  const [capabilityOptions, setCapabilityOptions] = useState<readonly string[]>([]);
-  const [selectedCaps, setSelectedCaps] = useState<ReadonlySet<string>>(new Set());
 
   const [seed, setSeed] = useState<OnboardingSeed>({});
 
@@ -88,7 +88,6 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
         const start: OnboardingStart = await startOnboarding();
         if (cancelled) return;
         setSessionToken(start.sessionToken);
-        setCapabilityOptions(start.capabilityOptions);
         setStartStatus('ready');
       } catch (err) {
         if (cancelled) return;
@@ -108,18 +107,6 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
     setBeginNonce((n) => n + 1);
   }, []);
 
-  const toggleCap = useCallback((name: string) => {
-    setSelectedCaps((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) {
-        next.delete(name);
-      } else {
-        next.add(name);
-      }
-      return next;
-    });
-  }, []);
-
   const create = useCallback(async () => {
     if (sessionToken === '') return;
     setProvisioning(true);
@@ -130,7 +117,6 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
         password,
         securityQuestion,
         securityAnswer,
-        capabilities: [...selectedCaps],
         linkTelegram: true,
         seed,
       });
@@ -149,7 +135,7 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
     } finally {
       setProvisioning(false);
     }
-  }, [sessionToken, email, password, securityQuestion, securityAnswer, selectedCaps, seed]);
+  }, [sessionToken, email, password, securityQuestion, securityAnswer, seed]);
 
   const canAdvanceCredentials =
     credentialsValid(email, password, confirmPassword, securityQuestion, securityAnswer) &&
@@ -217,7 +203,7 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
                 onBack={onClose}
                 backLabel={t('onboarding.cancel')}
                 onNext={() => {
-                  setPhase('capabilities');
+                  setPhase('review');
                 }}
                 nextLabel={t('onboarding.cta.continue')}
                 nextDisabled={!canAdvanceCredentials}
@@ -225,31 +211,9 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
             </>
           ) : null}
 
-          {phase === 'capabilities' ? (
-            <>
-              <CapabilityPicker
-                options={capabilityOptions}
-                selected={selectedCaps}
-                onToggle={toggleCap}
-              />
-              <OnboardingWizardNav
-                onBack={() => {
-                  setPhase('credentials');
-                }}
-                backLabel={t('onboarding.back')}
-                onNext={() => {
-                  setPhase('review');
-                }}
-                nextLabel={t('onboarding.cta.continue')}
-                nextDisabled={false}
-              />
-            </>
-          ) : null}
-
           {phase === 'review' ? (
             <ReviewStep
               email={email}
-              capabilities={[...selectedCaps]}
               provisioning={provisioning}
               error={provisionError}
               onCreate={() => {

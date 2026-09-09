@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { AdminSection } from '../admin/AdminSection';
 import { IDENTITY_CREATE, hasCapability, type AdminIdentity } from '../admin/adminApi';
 import { useAdminIdentities, useCapabilities, useRemoveIdentity } from '../admin/useAdmin';
 import { Spinner } from '../components/Spinner';
+import { CreditPanel } from './CreditPanel';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -44,6 +45,9 @@ export function IdentityRoster() {
   const removeMutation = useRemoveIdentity();
   const [pending, setPending] = useState<AdminIdentity | undefined>(undefined);
   const [confirmText, setConfirmText] = useState('');
+  // One row's credit at a time. CreditPanel's own read is disabled on an empty id, so a closed
+  // row costs no request -- a roster of twenty identities does not fan out twenty credit GETs.
+  const [openCredit, setOpenCredit] = useState('');
 
   const identities = identitiesQuery.data ?? [];
   // Only the true in-flight window replaces the row's action with the busy indicator. On
@@ -97,48 +101,80 @@ export function IdentityRoster() {
           const admin = isAdministrativeIdentity(identity);
           const isSelf = identity.id === selfId;
           const busy = removingId === identity.id;
+          const creditOpen = openCredit === identity.id;
           return (
             <div role="listitem" key={identity.id}>
-              <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex min-w-0 flex-col gap-1.5">
-                  <span className="break-all font-mono text-[15.5px] text-text">
-                    {identity.name}
-                    {isSelf ? ` (${t('admin.identity.you')})` : ''}
-                  </span>
-                  <Badge variant={admin ? 'info' : 'secondary'} className="w-fit">
-                    {admin ? t('admin.roster.adminBadge') : t('admin.roster.memberBadge')}
-                  </Badge>
-                </div>
-                {busy ? (
-                  <div
-                    role="status"
-                    aria-busy="true"
-                    className="flex items-center gap-2 text-[13px] text-text-muted"
-                  >
-                    <Spinner />
-                    {t('admin.removal.inFlight', { name: identity.name })}
+              <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 flex-col gap-1.5">
+                    <span className="break-all font-mono text-[15.5px] text-text">
+                      {identity.name}
+                      {isSelf ? ` (${t('admin.identity.you')})` : ''}
+                    </span>
+                    <Badge variant={admin ? 'info' : 'secondary'} className="w-fit">
+                      {admin ? t('admin.roster.adminBadge') : t('admin.roster.memberBadge')}
+                    </Badge>
                   </div>
-                ) : (
-                  <div className="flex flex-col items-start gap-1 sm:items-end">
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      size="icon"
-                      disabled={isSelf}
-                      aria-label={t('admin.roster.removeAriaLabel', { name: identity.name })}
-                      onClick={() => {
-                        openRemove(identity);
-                      }}
+                  {busy ? (
+                    <div
+                      role="status"
+                      aria-busy="true"
+                      className="flex items-center gap-2 text-[13px] text-text-muted"
                     >
-                      <Trash2 aria-hidden="true" />
-                    </Button>
-                    {isSelf ? (
-                      <p className="max-w-[16rem] text-[12px] text-text-muted sm:text-right">
-                        {t('admin.roster.cannotRemoveSelf')}
-                      </p>
-                    ) : null}
+                      <Spinner />
+                      {t('admin.removal.inFlight', { name: identity.name })}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-start gap-1 sm:items-end">
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="icon"
+                        disabled={isSelf}
+                        aria-label={t('admin.roster.removeAriaLabel', { name: identity.name })}
+                        onClick={() => {
+                          openRemove(identity);
+                        }}
+                      >
+                        <Trash2 aria-hidden="true" />
+                      </Button>
+                      {isSelf ? (
+                        <p className="max-w-[16rem] text-[12px] text-text-muted sm:text-right">
+                          {t('admin.roster.cannotRemoveSelf')}
+                        </p>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+                <div className="border-t border-border pt-3">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    aria-expanded={creditOpen}
+                    aria-controls={`credit-panel-${identity.id}`}
+                    // The identity is named in the ACCESSIBLE name only. Repeating it as visible
+                    // text would put the same email in the row twice, which reads as noise beside
+                    // the name two lines up and makes every getByText on it ambiguous.
+                    aria-label={t(
+                      creditOpen ? 'admin.credit.toggleHide' : 'admin.credit.toggleShow',
+                      { name: identity.name },
+                    )}
+                    onClick={() => {
+                      setOpenCredit(creditOpen ? '' : identity.id);
+                    }}
+                  >
+                    {creditOpen ? (
+                      <ChevronDown aria-hidden="true" />
+                    ) : (
+                      <ChevronRight aria-hidden="true" />
+                    )}
+                    {t('admin.credit.heading')}
+                  </Button>
+                  <div id={`credit-panel-${identity.id}`} hidden={!creditOpen} className="pt-3">
+                    {creditOpen ? <CreditPanel identityId={identity.id} /> : null}
                   </div>
-                )}
+                </div>
               </div>
             </div>
           );

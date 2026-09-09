@@ -64,6 +64,7 @@ type auditReader interface {
 // point at the composition root for what is structurally the identical capability read.
 type identityAdmin interface {
 	ListIdentities(ctx context.Context) ([]identity.Identity, error)
+	GetIdentityByID(ctx context.Context, identityID string) (identity.Identity, error)
 	ListCapabilities(ctx context.Context, identityID string) ([]string, error)
 	GrantCapability(ctx context.Context, identityID, capability string) error
 	RevokeCapability(ctx context.Context, identityID, capability string) error
@@ -89,18 +90,27 @@ func (s *Server) registerAuditRoutes(mux *http.ServeMux) {
 }
 
 // meDTO is the self-scoped principal payload the SPA reads post-auth to gate admin
-// surfaces: the caller's identity id + its capability names (the '*' wildcard is returned
-// verbatim; the SPA treats it as "has everything", mirroring HasCapability). ContextWindow is
-// the active model's total context window (tokens, llm.Config.ContextWindow via
-// SetContextWindow) — the cockpit footer gauge (RuntimeFooter) reads it instead of hardcoding
-// the DeepSeek-V4 1M default; 0 means unwired, and the frontend keeps its own fallback.
+// surfaces: the caller's identity id, its display name, and its capability names. The '*'
+// wildcard is no longer expanded anywhere (RBAC-01 retired it at migration 0121, and
+// web/src/admin/adminApi.ts's hasCapability dropped its wildcard branch with it), so what is
+// returned here is the literal grant set. ContextWindow is the active model's total context
+// window (tokens, llm.Config.ContextWindow via SetContextWindow) — the cockpit footer gauge
+// (RuntimeFooter) reads it instead of hardcoding the DeepSeek-V4 1M default; 0 means unwired,
+// and the frontend keeps its own fallback.
+//
+// Name is the identity's own name — an email for a human identity, the same value the admin
+// roster renders. CRED-05's turn refusal names the identity it refused, and the chat lane has
+// no other source for it: authentication is external, so the SPA never sees the login email,
+// and the profile document's display name is a different (optionally blank) field. It is
+// empty when the lookup fails, and the caller must not render a bare interpolation of it.
 type meDTO struct {
 	IdentityID    string   `json:"identity_id"`
+	Name          string   `json:"name"`
 	Capabilities  []string `json:"capabilities"`
 	ContextWindow int      `json:"context_window"`
 }
 
-// handleMe returns the authenticated caller's own capability set. In production RequireAuth
+// handleMe returns the authenticated caller's own name + capability set. In production RequireAuth
 // binds the principal; in loopback dev (no principal) it falls back to the seeded `local`
 // operator (D-25) so the dev cockpit shows the admin surfaces.
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
@@ -117,7 +127,14 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "capability store unavailable"})
 		return
 	}
-	writeJSON(w, meDTO{IdentityID: id, Capabilities: caps, ContextWindow: s.activeContextWindow()})
+	// The name is best-effort: a missing row must not take down the capability read this
+	// route exists for, because that read is what gates every admin surface in the cockpit.
+	// A caller that gets an empty name renders the copy that does not need one.
+	var name string
+	if idn, nameErr := s.idAdmin.GetIdentityByID(r.Context(), id); nameErr == nil {
+		name = idn.Name
+	}
+	writeJSON(w, meDTO{IdentityID: id, Name: name, Capabilities: caps, ContextWindow: s.activeContextWindow()})
 }
 
 // adminIdentityDTO is one row of the admin identity roster: the identity + its current

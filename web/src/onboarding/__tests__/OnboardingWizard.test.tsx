@@ -6,7 +6,7 @@ import '../../i18n/i18n'; // side-effect: initialise i18next so t() resolves key
 import type { OnboardingProvisionResponse, OnboardingStart } from '../onboardingApi';
 
 // OnboardingWizard test — the full-screen wizard shell + data layer. onboardingApi is mocked so the
-// suite can drive the linear flow (credentials + seed → capabilities → review → complete), the
+// suite can drive the linear flow (credentials + seed → review → complete), the
 // start loading/error/error-auth contract, the no-leak password invariant (the entered password
 // value is never re-rendered as visible text anywhere, T-28-06-01), and Amendment #95's
 // requirement that the typed seed reaches /provision byte-identical.
@@ -32,7 +32,6 @@ const OPERATOR_NAME = 'José-María';
 
 const START: OnboardingStart = {
   sessionToken: SESSION_TOKEN,
-  capabilityOptions: ['skills.read', 'scheduler.read'],
 };
 
 function client() {
@@ -75,10 +74,6 @@ function fillSeed() {
 
 async function advanceToReview() {
   await fillCredentials();
-  fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-  await waitFor(() => {
-    expect(screen.getByText('Capabilities for the new identity')).toBeTruthy();
-  });
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
   await waitFor(() => {
     expect(screen.getByText('Review and create')).toBeTruthy();
@@ -155,20 +150,14 @@ describe('OnboardingWizard', () => {
     fillSeed();
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
-    // Capabilities phase — the interview phase no longer exists between it and review.
-    await waitFor(() => {
-      expect(screen.getByText('Capabilities for the new identity')).toBeTruthy();
-    });
-    expect(screen.queryByLabelText('Your answer')).toBeNull();
-    fireEvent.click(screen.getByRole('checkbox', { name: /skills.read/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-
-    // Review phase.
+    // Credentials leads STRAIGHT to review: neither the interview phase nor the capability
+    // picker exists between them any more.
     await waitFor(() => {
       expect(screen.getByText('Review and create')).toBeTruthy();
     });
+    expect(screen.queryByLabelText('Your answer')).toBeNull();
+    expect(screen.queryByRole('checkbox')).toBeNull();
     expect(screen.getByText('new@example.com')).toBeTruthy();
-    expect(screen.getAllByText('skills.read').length).toBeGreaterThan(0);
 
     // The entered password value must NEVER appear as visible text anywhere (no-leak).
     expect(container.textContent).not.toContain(PASSWORD);
@@ -186,7 +175,6 @@ describe('OnboardingWizard', () => {
       password: PASSWORD,
       securityQuestion: 'First school?',
       securityAnswer: 'blue',
-      capabilities: ['skills.read'],
       linkTelegram: true,
       seed: {
         name: OPERATOR_NAME,
@@ -235,20 +223,19 @@ describe('OnboardingWizard', () => {
     expect(screen.getByRole('button', { name: 'Continue' }).hasAttribute('disabled')).toBe(false);
   });
 
-  it('navigates back from capabilities to credentials (Back) and keeps the seed', async () => {
+  // The capability step was the only surface with a Back control; with it gone the flow has a
+  // single forward hop before review, and Cancel (not Back) is what leaves the credentials step.
+  it('offers no Back control now that credentials leads straight to review', async () => {
     startOnboarding.mockResolvedValue(START);
     renderWizard();
     await fillCredentials();
     fillSeed();
+    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await waitFor(() => {
-      expect(screen.getByText('Capabilities for the new identity')).toBeTruthy();
+      expect(screen.getByText('Review and create')).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-    await waitFor(() => {
-      expect(screen.getByText('New operator credentials')).toBeTruthy();
-    });
-    expect(screen.getByLabelText<HTMLInputElement>('Name').value).toBe(OPERATOR_NAME);
+    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
   });
 
   it('always provisions with Telegram enabled because recovery depends on it', async () => {

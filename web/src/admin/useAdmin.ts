@@ -43,6 +43,7 @@ export function useCapabilities() {
   return {
     capabilities,
     identityId: query.data?.identity_id ?? '',
+    identityName: query.data?.name ?? '',
     isAdmin: hasCapability(capabilities, IDENTITY_CREATE),
     isLoading: query.isLoading,
     isError: query.isError,

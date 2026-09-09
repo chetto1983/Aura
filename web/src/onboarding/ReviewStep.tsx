@@ -1,34 +1,36 @@
 import { useTranslation } from 'react-i18next';
 import type { ProvisionErrorKind } from './onboardingWizardModel';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
 // ReviewStep (ONBD-01a / UI-SPEC) — the final summary before the cross-store saga. It shows the
-// new operator email + the chosen capabilities + the required Telegram-link posture, and a CONSTRUCTIVE
-// "Create identity" CTA (the reserved accent — NOT a danger-styled confirm: identity creation is a
-// constructive mutation, UI-SPEC §Destructive confirmation note). The CTA calls /provision via the
-// wizard. While the saga runs it shows "Creating identity…"; the three distinct failure paths
-// render distinct copy (T-28-06-04):
+// new operator email, what access the identity will have, what credit it starts with, and the
+// required Telegram-link posture, then a CONSTRUCTIVE "Create identity" CTA (the reserved accent
+// — NOT a danger-styled confirm: identity creation is a constructive mutation, UI-SPEC
+// §Destructive confirmation note). The CTA calls /provision via the wizard. While the saga runs
+// it shows "Creating identity…"; the three distinct failure paths render distinct copy
+// (T-28-06-04):
 //   - 403 → no-permission   - 409 → duplicate/empty email   - rolled-back (502/other) → nothing saved
-// The password is NEVER echoed here (no-leak, T-28-06-01) — only the email + capabilities + the
-// Telegram requirement. Capability names are backend-supplied → React-escaped mono text.
+// The password is NEVER echoed here (no-leak, T-28-06-01).
+//
+// The "Granted capabilities" badge list is gone with the picker that fed it: RBAC-03 grants every
+// provisioned identity exactly identity.UserSet(), so there was never a per-identity answer to
+// show. The two rows that replace it are FIXED prose the wizard already knows before the identity
+// exists — no interaction, no checkbox, no server round-trip.
+//
+// "Starting credit: $0.00" is the deliberate exception to CRED-09's never-render-a-zero-balance
+// rule. That rule is about a backend which does not bill; this is a stated starting CONDITION
+// with its consequence attached, and the sentence is what makes it one. The number alone would be
+// the misleading form, so the copy keeps both halves together.
 
 export interface ReviewStepProps {
   readonly email: string;
-  readonly capabilities: readonly string[];
   readonly provisioning: boolean;
   readonly error: ProvisionErrorKind | undefined;
   readonly onCreate: () => void;
 }
 
-export function ReviewStep({
-  email,
-  capabilities,
-  provisioning,
-  error,
-  onCreate,
-}: ReviewStepProps) {
+export function ReviewStep({ email, provisioning, error, onCreate }: ReviewStepProps) {
   const { t } = useTranslation();
 
   return (
@@ -48,22 +50,19 @@ export function ReviewStep({
 
         <div className="flex flex-col gap-1">
           <dt className="text-[13px] font-semibold uppercase tracking-wide text-text-muted">
-            {t('onboarding.review.capabilitiesLabel')}
+            {t('admin.reviewStep.accessLabel')}
           </dt>
-          <dd className="text-[15.5px] text-text">
-            {capabilities.length === 0 ? (
-              <span className="text-text-muted">{t('onboarding.review.noCapabilities')}</span>
-            ) : (
-              <ul className="flex flex-wrap gap-2">
-                {capabilities.map((c) => (
-                  <li key={c}>
-                    <Badge variant="secondary" className="font-mono text-[13px] text-text">
-                      {c}
-                    </Badge>
-                  </li>
-                ))}
-              </ul>
-            )}
+          <dd className="text-[15.5px] leading-relaxed text-text">
+            {t('admin.reviewStep.accessBody')}
+          </dd>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <dt className="text-[13px] font-semibold uppercase tracking-wide text-text-muted">
+            {t('admin.reviewStep.creditLabel')}
+          </dt>
+          <dd className="text-[15.5px] leading-relaxed text-text">
+            {t('admin.reviewStep.creditBody')}
           </dd>
         </div>
 

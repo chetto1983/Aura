@@ -3,6 +3,7 @@ package agui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -48,6 +49,18 @@ type fakeIdentityAdmin struct {
 
 func (f *fakeIdentityAdmin) ListIdentities(context.Context) ([]identity.Identity, error) {
 	return f.identities, f.listErr
+}
+
+// GetIdentityByID answers from the same roster slice ListIdentities serves, so a test that
+// seeds one identity gets a consistent name from both reads. An unknown id is a miss, which
+// is the case handleMe degrades on rather than failing the whole /api/me read.
+func (f *fakeIdentityAdmin) GetIdentityByID(_ context.Context, id string) (identity.Identity, error) {
+	for _, idn := range f.identities {
+		if idn.ID == id {
+			return idn, nil
+		}
+	}
+	return identity.Identity{}, errors.New("identity not found")
 }
 
 func (f *fakeIdentityAdmin) ListCapabilities(_ context.Context, id string) ([]string, error) {

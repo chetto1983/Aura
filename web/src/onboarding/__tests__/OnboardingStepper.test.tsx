@@ -6,19 +6,19 @@ import { OnboardingStepper } from '../OnboardingStepper';
 // OnboardingStepper test — asserts the per-step visual state (done/active/upcoming via data-state +
 // aria-current) and the mobile "Step N of M" progress text, so the stepper's state-branch +
 // index-math mutants are killable (the 28-03 mutation-hardening playbook: assert the rendered
-// aria/data-state, not just className). Four phases since Amendment #95 removed the interview.
+// aria/data-state, not just className). THREE phases: Amendment #95 removed the interview and
+// RBAC-03's uniform grant removed the capability picker.
 
 function steps() {
   return screen.getAllByRole('listitem');
 }
 
 describe('OnboardingStepper', () => {
-  it('marks the active step and classifies the others done/upcoming (phaseIndex=2)', () => {
-    render(<OnboardingStepper phaseIndex={2} />);
+  it('marks the active step and classifies the others done/upcoming (phaseIndex=1)', () => {
+    render(<OnboardingStepper phaseIndex={1} />);
     const items = steps();
-    expect(items).toHaveLength(4);
+    expect(items).toHaveLength(3);
     expect(items.map((li) => li.getAttribute('data-state'))).toEqual([
-      'done',
       'done',
       'active',
       'upcoming',
@@ -29,15 +29,14 @@ describe('OnboardingStepper', () => {
     expect(current[0]?.textContent).toBe('Review');
   });
 
-  it('never renders an Interview step', () => {
+  // The strip walks PHASES itself, so a phase removed from the model cannot survive here as a
+  // step the wizard is unable to reach — the exact drift that would have shipped had the
+  // stepper kept its own hand-written list.
+  it('renders neither an Interview nor a Capabilities step', () => {
     render(<OnboardingStepper phaseIndex={0} />);
     expect(screen.queryByText('Interview')).toBeNull();
-    expect(steps().map((li) => li.textContent)).toEqual([
-      'Credentials',
-      'Capabilities',
-      'Review',
-      'Telegram',
-    ]);
+    expect(screen.queryByText('Capabilities')).toBeNull();
+    expect(steps().map((li) => li.textContent)).toEqual(['Credentials', 'Review', 'Telegram']);
   });
 
   it('the first step is active at phaseIndex=0 (none done)', () => {
@@ -46,18 +45,12 @@ describe('OnboardingStepper', () => {
       'active',
       'upcoming',
       'upcoming',
-      'upcoming',
     ]);
   });
 
-  it('the last step is active at phaseIndex=3 (all prior done)', () => {
-    render(<OnboardingStepper phaseIndex={3} />);
-    expect(steps().map((li) => li.getAttribute('data-state'))).toEqual([
-      'done',
-      'done',
-      'done',
-      'active',
-    ]);
+  it('the last step is active at phaseIndex=2 (all prior done)', () => {
+    render(<OnboardingStepper phaseIndex={2} />);
+    expect(steps().map((li) => li.getAttribute('data-state'))).toEqual(['done', 'done', 'active']);
   });
 
   it('the active dot uses the accent tone, a done dot uses success, an upcoming dot surface-3', () => {
@@ -74,9 +67,9 @@ describe('OnboardingStepper', () => {
   });
 
   it('renders the mobile "Step N of M" progress with the active label', () => {
-    render(<OnboardingStepper phaseIndex={2} />);
-    // 1-based current = 3, total = 4; the active label is Review.
-    expect(screen.getByText(/Step 3 of 4/)).toBeTruthy();
+    render(<OnboardingStepper phaseIndex={1} />);
+    // 1-based current = 2, total = 3; the active label is Review.
+    expect(screen.getByText(/Step 2 of 3/)).toBeTruthy();
     // The active label appears (both the desktop strip + the mobile indicator render "Review").
     expect(screen.getAllByText('Review').length).toBeGreaterThan(0);
   });

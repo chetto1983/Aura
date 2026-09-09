@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { stepState, type Phase } from './onboardingWizardModel';
+import { PHASES, stepState, type Phase } from './onboardingWizardModel';
 
 // OnboardingStepper renders the linear desktop step strip + the compact mobile "Step N of M"
 // indicator. Extracted from OnboardingWizard so its per-step state logic is directly testable
@@ -7,19 +7,20 @@ import { stepState, type Phase } from './onboardingWizardModel';
 // className). Color is never the only encoding: the active step carries an accent dot AND a
 // data-state="active" / aria-current="step"; the mobile indicator is text.
 
-const STEP_KEYS: readonly Phase[] = ['credentials', 'capabilities', 'review', 'complete'];
-
+// The strip walks PHASES itself rather than a second hand-kept list — the two fell out of step
+// the moment the capability phase was removed from the model, and a stepper that renders a step
+// the wizard can never reach is worse than no stepper.
+//
 // The 'complete' phase's stepper label is the Telegram step (the final post-create surface).
 const STEP_LABEL_KEY: Record<Phase, string> = {
   credentials: 'onboarding.steps.credentials',
-  capabilities: 'onboarding.steps.capabilities',
   review: 'onboarding.steps.review',
   complete: 'onboarding.steps.telegram',
 };
 
 export function OnboardingStepper({ phaseIndex }: { readonly phaseIndex: number }) {
   const { t } = useTranslation();
-  const labels = STEP_KEYS.map((key) => ({ key, label: t(STEP_LABEL_KEY[key]) }));
+  const labels = PHASES.map((key) => ({ key, label: t(STEP_LABEL_KEY[key]) }));
   const activeLabel = labels[phaseIndex]?.label ?? '';
 
   return (

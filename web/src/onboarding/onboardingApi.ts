@@ -23,11 +23,11 @@ import { getJSON, postJSON } from '../api/json';
 export const ONBOARDING_START_PATH = '/api/onboarding/start';
 export const ONBOARDING_PROFILE_PATH = '/api/onboarding/profile';
 
-/** POST /start response: the opaque session token and the D-06 capability picker options (the
- * creator's grants, already '*'-excluded server-side). */
+/** POST /start response: the opaque session token. The wire also carries capabilityOptions (the
+ * creator's grants), left unread since the picker it fed was deleted with RBAC-03's uniform
+ * grant — a field the client does not consume has no business in the client's type. */
 export interface OnboardingStart {
   readonly sessionToken: string;
-  readonly capabilityOptions: readonly string[];
 }
 
 /** The typed first-run profile form (Amendment #95). ONE wire type serves both flows — the
@@ -43,15 +43,18 @@ export interface OnboardingSeed {
   readonly company?: string;
 }
 
-/** POST /{token}/provision body: the new login email + write-only initial password, the requested
- * capability subset (re-validated server-side), whether to mint a Telegram link, and the profile
- * seed written into the NEW identity's graph. */
+/** POST /{token}/provision body: the new login email + write-only initial password, whether to
+ * mint a Telegram link, and the profile seed written into the NEW identity's graph.
+ *
+ * There is no capability list. The server still ACCEPTS one (internal/agui/onboarding_api.go's
+ * OnboardingProvisionRequest keeps the field so a non-SPA caller naming an administrative
+ * capability is refused rather than silently narrowed), but it no longer SELECTS anything: RBAC-03
+ * grants exactly identity.UserSet() whatever the request asks for, so the cockpit stopped asking. */
 export interface OnboardingProvisionRequest {
   readonly email: string;
   readonly password: string;
   readonly securityQuestion: string;
   readonly securityAnswer: string;
-  readonly capabilities: readonly string[];
   readonly linkTelegram: boolean;
   readonly seed: OnboardingSeed;
 }
@@ -94,9 +97,9 @@ function telegramStatusPath(token: string): string {
   return `/api/onboarding/${encodeURIComponent(token)}/telegram-status`;
 }
 
-/** POST /api/onboarding/start — mint a server-held session and read the D-06 capability options.
- * A non-200 (incl. 401/403) throws so the wizard shows the auth/permission/error state, never a
- * blank. The capability gate (identity.create) yields a 403 here. */
+/** POST /api/onboarding/start — mint a server-held session for the wizard. A non-200 (incl.
+ * 401/403) throws so the wizard shows the auth/permission/error state, never a blank. The
+ * capability gate (identity.create) yields a 403 here. */
 export function startOnboarding(): Promise<OnboardingStart> {
   return postJSON<OnboardingStart>(ONBOARDING_START_PATH, {});
 }

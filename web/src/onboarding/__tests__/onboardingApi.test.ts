@@ -36,7 +36,6 @@ function provisionBody(seed = SEED) {
     password: 'pw',
     securityQuestion: 'First school?',
     securityAnswer: 'blue',
-    capabilities: [],
     linkTelegram: true,
     seed,
   };
@@ -48,7 +47,7 @@ afterEach(() => {
 
 describe('onboardingApi same-origin throwing fetch', () => {
   it('startOnboarding POSTs /api/onboarding/start with same-origin + Accept and returns the body', async () => {
-    const body = { sessionToken: 'tok', capabilityOptions: ['skills.read'] };
+    const body = { sessionToken: 'tok' };
     const fetchMock = okJSON(body);
     vi.stubGlobal('fetch', fetchMock);
 
@@ -96,7 +95,7 @@ describe('onboardingApi same-origin throwing fetch', () => {
     expect(JSON.parse(init.body as string)).toEqual({});
   });
 
-  it('provisionOnboarding POSTs the credentials + capabilities + seed to the {token}/provision path', async () => {
+  it('provisionOnboarding POSTs the credentials + seed to the {token}/provision path', async () => {
     const fetchMock = okJSON({ identityId: 'id-1', deepLink: 't.me/x', qrSvg: '<svg/>' });
     vi.stubGlobal('fetch', fetchMock);
 

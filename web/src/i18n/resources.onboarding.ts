@@ -17,7 +17,6 @@ export const onboardingEn = {
     authExpired: 'Your session expired. Sign in again to continue.',
     starting: 'Starting…',
     retry: 'Retry',
-    back: 'Back',
     progress: 'Step {{current}} of {{total}}',
     cta: {
       continue: 'Continue',
@@ -26,7 +25,6 @@ export const onboardingEn = {
     },
     steps: {
       credentials: 'Credentials',
-      capabilities: 'Capabilities',
       review: 'Review',
       telegram: 'Telegram',
     },
@@ -81,11 +79,6 @@ export const onboardingEn = {
       securityAnswerHint:
         'Used with Telegram to reset this password. The answer is never shown again.',
     },
-    capabilities: {
-      label: 'Capabilities for the new identity',
-      hint: "You can grant only capabilities you hold. Full-access (`*`) can't be granted.",
-      none: 'You hold no grantable capabilities. The new identity will be created with none.',
-    },
     telegram: {
       deepLinkCta: 'Open in Telegram',
       qrCaption: 'Or scan to link Telegram',
@@ -98,10 +91,8 @@ export const onboardingEn = {
     review: {
       heading: 'Review and create',
       emailLabel: 'Operator email',
-      capabilitiesLabel: 'Capabilities',
       telegramLabel: 'Telegram',
       telegramRequired: 'Required for password reset',
-      noCapabilities: 'None',
     },
     complete: {
       heading: 'Identity created',
@@ -179,7 +170,6 @@ export const onboardingIt = {
     authExpired: 'La tua sessione è scaduta. Accedi di nuovo per continuare.',
     starting: 'Avvio…',
     retry: 'Riprova',
-    back: 'Indietro',
     progress: 'Passaggio {{current}} di {{total}}',
     cta: {
       continue: 'Continua',
@@ -188,7 +178,6 @@ export const onboardingIt = {
     },
     steps: {
       credentials: 'Credenziali',
-      capabilities: 'Capacità',
       review: 'Riepilogo',
       telegram: 'Telegram',
     },
@@ -243,11 +232,6 @@ export const onboardingIt = {
       securityAnswerHint:
         'Usata con Telegram per resettare questa password. La risposta non viene piu mostrata.',
     },
-    capabilities: {
-      label: 'Capacità per la nuova identità',
-      hint: "Puoi concedere solo le capacità che possiedi. L'accesso completo (`*`) non è concedibile.",
-      none: 'Non possiedi capacità concedibili. La nuova identità verrà creata senza nessuna.',
-    },
     telegram: {
       deepLinkCta: 'Apri in Telegram',
       qrCaption: 'Oppure scansiona per collegare Telegram',
@@ -260,10 +244,8 @@ export const onboardingIt = {
     review: {
       heading: 'Rivedi e crea',
       emailLabel: 'Email operatore',
-      capabilitiesLabel: 'Capacità',
       telegramLabel: 'Telegram',
       telegramRequired: 'Richiesto per il reset password',
-      noCapabilities: 'Nessuna',
     },
     complete: {
       heading: 'Identità creata',

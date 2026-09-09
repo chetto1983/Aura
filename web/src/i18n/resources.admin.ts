@@ -15,7 +15,8 @@ export const adminEn = {
       adminBadge: 'Admin',
       memberBadge: 'Member',
       removeAriaLabel: 'Remove {{name}}',
-      cannotRemoveSelf: "The administrator account can't remove itself — use `aura identity` on the host.",
+      cannotRemoveSelf:
+        "The administrator account can't remove itself — use `aura identity` on the host.",
     },
     removal: {
       title: 'Remove {{name}}?',
@@ -35,6 +36,22 @@ export const adminEn = {
       creditBody: "$0.00 — this identity can't run a turn until you add credit after creating it.",
     },
     credit: {
+      heading: 'Credit',
+      toggleShow: 'Show credit for {{name}}',
+      toggleHide: 'Hide credit for {{name}}',
+      loading: 'Loading credit...',
+      loadError: "Couldn't load this identity's credit. Try again.",
+      capLabel: 'Spending cap',
+      resetLabel: 'Reset interval',
+      interval: {
+        daily: 'Daily',
+        weekly: 'Weekly',
+        monthly: 'Monthly',
+      },
+      spendLabel: 'Spend',
+      remainingLabel: 'Remaining',
+      gaugeValue: '{{spend}} / {{cap}} · {{percent}}%',
+      gaugeLabel: 'Spend against the cap; warns at {{near}}% and again at {{critical}}%',
       saveCap: 'Save cap',
       emptyHeading: 'No spending cap to show',
       emptyBody:
@@ -96,7 +113,7 @@ export const adminIt = {
     },
     removal: {
       title: 'Rimuovere {{name}}?',
-      body: "Questa azione elimina definitivamente le conversazioni, la memoria, i file e la chiave OpenRouter di {{name}}. Non si può annullare. OpenRouter mantiene un proprio registro di quanto speso da questa identità; rimuoverla qui non lo elimina.",
+      body: 'Questa azione elimina definitivamente le conversazioni, la memoria, i file e la chiave OpenRouter di {{name}}. Non si può annullare. OpenRouter mantiene un proprio registro di quanto speso da questa identità; rimuoverla qui non lo elimina.',
       confirmLabel: 'Digita {{email}} per confermare',
       confirm: 'Rimuovi definitivamente',
       cancel: 'Annulla',
@@ -113,6 +130,22 @@ export const adminIt = {
         '$0.00 — questa identità non può eseguire un turno finché non aggiungi credito dopo la creazione.',
     },
     credit: {
+      heading: 'Credito',
+      toggleShow: 'Mostra il credito di {{name}}',
+      toggleHide: 'Nascondi il credito di {{name}}',
+      loading: 'Caricamento credito...',
+      loadError: 'Impossibile caricare il credito di questa identità. Riprova.',
+      capLabel: 'Limite di spesa',
+      resetLabel: 'Intervallo di reset',
+      interval: {
+        daily: 'Giornaliero',
+        weekly: 'Settimanale',
+        monthly: 'Mensile',
+      },
+      spendLabel: 'Speso',
+      remainingLabel: 'Residuo',
+      gaugeValue: '{{spend}} / {{cap}} · {{percent}}%',
+      gaugeLabel: 'Spesa rispetto al limite; avvisa al {{near}}% e di nuovo al {{critical}}%',
       saveCap: 'Salva limite',
       emptyHeading: 'Nessun limite di spesa da mostrare',
       emptyBody:

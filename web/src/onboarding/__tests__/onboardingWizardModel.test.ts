@@ -60,12 +60,19 @@ describe('provisionErrorKind', () => {
 });
 
 describe('phaseIndex / PHASES', () => {
-  it('returns the 0-based position in the four-phase flow (the interview phase is gone)', () => {
-    expect(PHASES).toEqual(['credentials', 'capabilities', 'review', 'complete']);
+  it('returns the 0-based position in the three-phase flow (interview and capabilities gone)', () => {
+    expect(PHASES).toEqual(['credentials', 'review', 'complete']);
     expect(phaseIndex('credentials')).toBe(0);
-    expect(phaseIndex('capabilities')).toBe(1);
-    expect(phaseIndex('review')).toBe(2);
-    expect(phaseIndex('complete')).toBe(3);
+    expect(phaseIndex('review')).toBe(1);
+    expect(phaseIndex('complete')).toBe(2);
+  });
+
+  // RBAC-03 grants every provisioned identity exactly identity.UserSet(), so the capability
+  // phase had no answers left to offer. It is REMOVED from the model, not skipped at runtime —
+  // a phase the wizard can still name is a phase a future edit can route back to.
+  it('carries no capabilities phase at all', () => {
+    expect(PHASES).not.toContain('capabilities');
+    expect(PHASES).toHaveLength(3);
   });
 });
 

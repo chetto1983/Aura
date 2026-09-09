@@ -28,6 +28,11 @@ export const IDENTITY_DELETE = 'identity.delete';
  */
 export interface MeResponse {
   readonly identity_id: string;
+  /** The identity's own name (an email for a human identity) — the same value the roster
+   * renders. CRED-05's turn refusal names the identity it refused and has no other source:
+   * authentication is external, so the SPA never sees the login email. Empty when the server
+   * could not resolve it; a caller must not interpolate a blank into copy. */
+  readonly name?: string;
   readonly capabilities: readonly string[];
   readonly context_window?: number;
 }
