@@ -1,0 +1,107 @@
+{
+  "schema_id": "aura.document-retrieval-eval/v1",
+  "questions": [
+    {
+      "qid": "manual-fuse-options",
+      "query": "quali opzioni accetta vector.fuse",
+      "gold_docs": ["ArcadeDB-Manual.pdf"],
+      "category": "manual"
+    },
+    {
+      "qid": "manual-groupby",
+      "query": "cosa fanno groupBy e groupSize nella ricerca vettoriale",
+      "gold_docs": ["ArcadeDB-Manual.pdf"],
+      "category": "manual"
+    },
+    {
+      "qid": "manual-int8",
+      "query": "quando conviene la quantizzazione INT8 di un indice vettoriale",
+      "gold_docs": ["ArcadeDB-Manual.pdf"],
+      "category": "manual"
+    },
+    {
+      "qid": "manual-geospatial",
+      "query": "come si crea un indice geospaziale",
+      "gold_docs": ["ArcadeDB-Manual.pdf"],
+      "category": "manual"
+    },
+    {
+      "qid": "manual-fusion-strategies",
+      "query": "differenza fra RRF DBSF e LINEAR",
+      "gold_docs": ["ArcadeDB-Manual.pdf"],
+      "category": "manual"
+    },
+    {
+      "qid": "sheet-caraglio-codes",
+      "query": "CAP e codice ISTAT del comune di Caraglio",
+      "gold_docs": ["gi_comuni_cap.xlsx"],
+      "category": "spreadsheet"
+    },
+    {
+      "qid": "sheet-attribute",
+      "query": "elenco dei comuni italiani con CAP e codice ISTAT",
+      "gold_docs": ["gi_comuni_cap.xlsx"],
+      "category": "spreadsheet"
+    },
+    {
+      "qid": "sheet-aggregate",
+      "query": "quanti comuni ci sono nel database dei comuni",
+      "gold_docs": ["gi_comuni_cap.xlsx"],
+      "category": "spreadsheet"
+    },
+    {
+      "qid": "sheet-belfiore",
+      "query": "codice belfiore e sigla provincia dei comuni",
+      "gold_docs": ["gi_comuni_cap.xlsx"],
+      "category": "spreadsheet"
+    },
+    {
+      "qid": "exact-filename",
+      "query": "gi_comuni_cap.xlsx",
+      "gold_docs": ["gi_comuni_cap.xlsx"],
+      "category": "identifier"
+    },
+    {
+      "qid": "exact-worker-id",
+      "query": "w2-ee2226e3",
+      "gold_docs": ["w2-ee2226e3.md"],
+      "category": "identifier"
+    },
+    {
+      "qid": "weather-max-temp",
+      "query": "temperatura massima a Caraglio il 12 settembre",
+      "gold_docs": [
+        "meteo_caraglio_settimanale_verificato.docx",
+        "meteo_caraglio_settimanale.docx"
+      ],
+      "category": "weather"
+    },
+    {
+      "qid": "weather-weekly",
+      "query": "previsioni meteo settimanali per Caraglio",
+      "gold_docs": [
+        "meteo_caraglio_settimanale_verificato.docx",
+        "meteo_caraglio_settimanale.docx"
+      ],
+      "category": "weather"
+    },
+    {
+      "qid": "quality-ledger",
+      "query": "snapshot storico delle misure di qualita del progetto",
+      "gold_docs": ["aura-quality-snapshot.md"],
+      "category": "project"
+    },
+    {
+      "qid": "prd-mcp-deferral",
+      "query": "policy di deferral dei tool MCP e slot sempre caricati",
+      "gold_docs": ["prd.md"],
+      "category": "project"
+    },
+    {
+      "qid": "prd-artifact-csp",
+      "query": "direttiva sandbox allow-scripts e origine opaca degli artifact",
+      "gold_docs": ["prd.md"],
+      "category": "project"
+    }
+  ]
+}

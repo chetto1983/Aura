@@ -147,17 +147,20 @@ func TestFusionBenchmark(t *testing.T) {
 	}
 
 	for _, question := range pilot.Questions {
-		cards, err := index.DocumentCards(ctx, identity, question.Query, embedding, cfg.CandidateLimit)
+		// The query vector comes FIRST because both legs are scored against it: the card
+		// leg is reranked on the same cosine as the passage leg, which is what lets one be
+		// weighed against the other at all.
+		vectors, err := embedder.Embed(ctx, embeddings.RetrievalQueries([]string{question.Query}))
+		if err != nil || len(vectors) != 1 {
+			t.Fatalf("embed %q: %v", question.QID, err)
+		}
+		cards, err := index.DocumentCards(ctx, identity, question.Query, vectors[0], cfg.CandidateLimit)
 		if err != nil {
 			t.Fatalf("cards %q: %v", question.QID, err)
 		}
 		cardRanking := make([]string, 0, len(cards))
 		for _, card := range cards {
 			cardRanking = append(cardRanking, benchDocName(card.SourceKey))
-		}
-		vectors, err := embedder.Embed(ctx, embeddings.RetrievalQueries([]string{question.Query}))
-		if err != nil || len(vectors) != 1 {
-			t.Fatalf("embed %q: %v", question.QID, err)
 		}
 		filter := arcadedb.CandidateFilter{IdentityID: identity, Limit: cfg.CandidateLimit}
 

@@ -159,6 +159,15 @@ func (d *DocumentIndex) FusedCandidates(
 // grouping is "integrated into the index traversal proper", so the copies never enter the
 // candidate pool rather than being filtered out of it afterwards.
 //
+// MEASURED 2026-09-09 and NOT changed as a result: ordering by the fusion's own RRF score
+// instead of by the rerank -- scoring the cosine with `vector.cosineSimilarity` in the
+// projection so the floor and the reported number stayed identical -- produced the SAME
+// ranking for all 16 questions of docs/document-retrieval-order-pilot.json, recall@1 0.875
+// and MRR 0.912 either way. The hypothesis was that reranking discards the lexical leg's
+// evidence, which it does in principle; on this corpus the two legs agree closely enough
+// that it changes nothing. What that does NOT show: one corpus of 118 documents, one
+// embedder, and a lexical leg that rarely disagrees with the dense one at this scale.
+//
 // The scope predicate reaches BOTH sub-pipelines and, when the caller named documents,
 // restricts both to them. Measured 2026-08-08 to leave the
 // ranking bit-identical, so it costs nothing and its absence would have silently ignored
