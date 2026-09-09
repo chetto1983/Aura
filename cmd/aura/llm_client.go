@@ -22,7 +22,7 @@ const (
 	// under D-08 the only number available at refusal time is either the in-band
 	// ledger (a second copy that can drift) or the provider's own lagged counter
 	// (M-07: 30-40s stale, actively misleading at exactly this moment).
-	creditExhaustedCode = "credit_exhaust"
+	creditExhaustedCode = "credit_exhausted"
 	creditExhaustedHint = "Ask an administrator to add credit under Settings → Identities" // #nosec G101 -- UI copy, not credential material.
 )
 
