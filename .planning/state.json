@@ -11,7 +11,7 @@
     {
       "number": "2",
       "name": "Permissions Decide What a User May Do",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "3",
@@ -44,5 +44,5 @@
     "label": "Advance to the next step",
     "reason": "Phase 02 of 7 · 0% · executing"
   },
-  "updated_at": "2026-09-09T10:58:03.434Z"
+  "updated_at": "2026-09-09T12:01:44.687Z"
 }

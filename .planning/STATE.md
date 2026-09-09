@@ -5,16 +5,16 @@ milestone_name: Production Launch — Multi-Tenant
 current_phase: 02
 current_phase_name: Two Roles and a Budget
 status: executing
-stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-09-09T10:58:25.655Z"
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-09-09T12:02:10.760Z"
 last_activity: 2026-09-09
 last_activity_desc: Phase 02 execution resumed (wave continue)
-state_head: 7b7c95733d9f45e27e26015a61b00cbadb21302d
+state_head: 162245c251c9a17b7f2c027819e09f4acf02cc49
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 17
-  completed_plans: 8
+  completed_plans: 9
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-07)
 ## Current Position
 
 Phase: 02 (Two Roles and a Budget) — EXECUTING
-Plan: 2 of 10
+Plan: 3 of 10
 Status: Ready to execute
 Last activity: 2026-09-09 — Phase 02 execution resumed (wave continue)
 
@@ -83,6 +83,7 @@ phases, not many thin ones.
 | Phase 01-two-identities-live-and-separated P04 | ~55 min | 3 tasks | 7 files |
 | Phase 01 P06 | ~4h | 3 tasks | 17 files |
 | Phase 02 P01 | 44min | 3 tasks | 29 files |
+| Phase 02 P02 | n/a (continuation) | 2 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -113,6 +114,8 @@ creation:
 - [Phase 01]: internal/webauth/authula.go was missing session.auth RouteMappings wiring for /totp/enable and siblings — a real production bug (broke cockpit TOTP self-service too), fixed with authulaconfig.WithRouteMappings, not just worked around in the harness
 - [Phase 01]: Forced password-change (D-15) has no headless, plan-compliant path in this build (no mailer plugin, no completed-Telegram-link path this run will fake, no admin plugin) — recorded as a limitation, not worked around or narrowed out of E2E-02
 - [Phase 02]: Retired the capability_grants wildcard (migration 0121) and added a per-identity encrypted OpenRouter key store (migration 0122), proven on one live acceptance test (TestTwoRolesTracer). — Checkpoint-approved both one-way migrations as written; RBAC-01/02/04/08/09 and CRED-01/07 requirements now have code + tests, though the four live db_integration/musr_e2e tests could not be executed in this sandboxed session (no .env access) and need operator confirmation.
+- [Phase 02]: TestNoEscalation rewritten (not left red): D-01/RBAC-03 retires the pre-Phase-2 subset-of-creator-grants contract it pinned; every no-write assertion kept, administrative-refusal + uniform-grant coverage added.
+- [Phase 02]: TDD RED->GREEN ordering not honored for Task 2 (predecessor crashed after implementation, before tests); every new refusal assertion independently verified by temporarily removing the guard and confirming the test failed, then restoring byte-identical.
 
 ### Pending Todos
 
@@ -149,6 +152,7 @@ rediscover them:
   fires.
 - Mutation spot-check (go-mutesting ./internal/gateway/, floor 70% killed) not completed locally for plan 01-05 — too slow for one session and the operator directed it to CI; recorded in .planning/WINDOWS.md id 27 and 01-VALIDATION.md. No score exists yet for internal/gateway.
 - Plan 02-01: four live-tier tests (TestMigrate0121_RetiresWildcard, TestBootstrapGrantsExplicitSet, TestIdentityLLMKeyRLSAndCascade, TestTwoRolesTracer) compile clean under their tags but were never executed — this session's secret-read guard blocks .env access. Run them (WSL) before treating RBAC-04/RBAC-08/CRED-01 as proven.
+- 02-02: db_integration tests in onboarding_provision_grants_test.go (RBAC-03 uniform grant, admin refusal, grant-step idempotency) not run — no live Postgres access in this sandboxed session. Run: go test -tags db_integration -race -count=1 -p 1 ./internal/agui/ -run 'TestProvisionGrantsUniformCapabilitySet|TestProvisionRefusesAdministrativeRequest|TestProvisionGrantStepIsIdempotent' -v
 
 ## Deferred Items
 
@@ -161,8 +165,8 @@ rediscover them:
 
 ## Session Continuity
 
-Last session: 2026-09-09T10:58:25.608Z
-Stopped at: Completed 02-01-PLAN.md
+Last session: 2026-09-09T12:02:10.718Z
+Stopped at: Completed 02-02-PLAN.md
 Resume file: None
 
 Next: `/gsd-plan-phase 1`

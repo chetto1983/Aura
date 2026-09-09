@@ -62,12 +62,12 @@ already refused it in two places (`onboarding_session.go:14` declares the no-esc
 `onboarding_provision.go:497` enforces it server-side).
 
 - [x] **RBAC-01**: The `*` wildcard is retired. Bootstrap mints the explicit administrative set instead, a migration rewrites existing wildcard rows into that set, and `HasCapability` no longer expands `*`
-- [ ] **RBAC-02**: Every capability Aura enforces is declared in one place with its meaning, so a reviewer can read the authorization surface without grepping call sites
-- [ ] **RBAC-03**: There are exactly two administrative capabilities, `identity.create` and `identity.delete`. Every other capability Aura enforces is granted to each identity at provisioning, so a user may do everything except administer users
+- [x] **RBAC-02**: Every capability Aura enforces is declared in one place with its meaning, so a reviewer can read the authorization surface without grepping call sites
+- [x] **RBAC-03**: There are exactly two administrative capabilities, `identity.create` and `identity.delete`. Every other capability Aura enforces is granted to each identity at provisioning, so a user may do everything except administer users
 - [x] **RBAC-04**: Creating an identity requires `identity.create` and is refused without it
 - [ ] **RBAC-05**: Removing an identity requires `identity.delete` and is refused without it, and the removal runs the full reverse saga rather than only marking a row
-- [ ] **RBAC-06**: The administrative capabilities are not grantable through any API — grant and revoke refuse `identity.create` and `identity.delete` for every caller, so admin is bootstrap-only and privilege escalation has no path to take
-- [ ] **RBAC-07**: The last administrative identity cannot remove or deactivate itself, so the deployment cannot be locked out of its own user management
+- [x] **RBAC-06**: The administrative capabilities are not grantable through any API — grant and revoke refuse `identity.create` and `identity.delete` for every caller, so admin is bootstrap-only and privilege escalation has no path to take
+- [x] **RBAC-07**: The last administrative identity cannot remove or deactivate itself, so the deployment cannot be locked out of its own user management
 - [x] **RBAC-08**: A fresh install lands the first operator with both administrative capabilities explicitly granted and auditable — no wildcard, no manual SQL
 - [ ] **RBAC-09**: An authorization decision denies by default — an unknown capability, an unresolved principal or a store error refuses rather than admits
 - [ ] **RBAC-10**: Every denial is auditable: who, which capability, which route, when — and the admin surface can read them back
@@ -190,12 +190,12 @@ Every v1 requirement maps to exactly one phase. Mapped during roadmap creation, 
 | REL-13 | Phase 7 | Pending |
 | REL-14 | Phase 7 | Pending |
 | RBAC-01 | Phase 2 | Complete |
-| RBAC-02 | Phase 2 | Pending |
-| RBAC-03 | Phase 2 | Pending |
+| RBAC-02 | Phase 2 | Complete |
+| RBAC-03 | Phase 2 | Complete |
 | RBAC-04 | Phase 2 | Complete |
 | RBAC-05 | Phase 2 | Pending |
-| RBAC-06 | Phase 2 | Pending |
-| RBAC-07 | Phase 2 | Pending |
+| RBAC-06 | Phase 2 | Complete |
+| RBAC-07 | Phase 2 | Complete |
 | RBAC-08 | Phase 2 | Complete |
 | RBAC-09 | Phase 2 | Pending |
 | RBAC-10 | Phase 2 | Pending |
