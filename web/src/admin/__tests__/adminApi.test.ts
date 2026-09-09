@@ -6,10 +6,8 @@ import {
   fetchAudit,
   fetchIdentityCredit,
   fetchMe,
-  grantCapability,
   hasCapability,
   removeIdentity,
-  revokeCapability,
   setIdentityCredit,
 } from '../adminApi';
 
@@ -76,51 +74,6 @@ describe('adminApi fetchers', () => {
       vi.fn(() => Promise.resolve(new Response('{}', { status: 200 }))),
     );
     await expect(fetchAdminIdentities()).resolves.toEqual([]);
-  });
-
-  it('grantCapability POSTs the capability body', async () => {
-    let seen: { url: string; method: string; body: string } | undefined;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        seen = {
-          url: urlOf(input),
-          method: init?.method ?? 'GET',
-          body: typeof init?.body === 'string' ? init.body : '',
-        };
-        return Promise.resolve(
-          new Response(JSON.stringify({ identity_id: 'id-1', capabilities: ['x.y'] }), {
-            status: 200,
-          }),
-        );
-      }),
-    );
-    await grantCapability('id-1', 'x.y');
-    expect(seen?.url).toBe('/api/admin/identities/id-1/capabilities');
-    expect(seen?.method).toBe('POST');
-    expect(JSON.parse(seen?.body ?? '{}')).toEqual({ capability: 'x.y' });
-  });
-
-  it('revokeCapability DELETEs the path-encoded capability and throws on non-2xx', async () => {
-    let seen: { url: string; method: string } | undefined;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        seen = { url: urlOf(input), method: init?.method ?? 'GET' };
-        return Promise.resolve(
-          new Response(JSON.stringify({ identity_id: 'id-1', capabilities: [] }), { status: 200 }),
-        );
-      }),
-    );
-    await revokeCapability('id-1', 'governance.write');
-    expect(seen?.url).toBe('/api/admin/identities/id-1/capabilities/governance.write');
-    expect(seen?.method).toBe('DELETE');
-
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve(new Response('nope', { status: 403 }))),
-    );
-    await expect(revokeCapability('id-1', 'x')).rejects.toThrow('HTTP 403');
   });
 
   it('fetchAudit builds the identity/limit/offset query', async () => {

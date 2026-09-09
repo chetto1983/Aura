@@ -7,8 +7,8 @@ import SettingsWorkspace from '../SettingsWorkspace';
 // The sub-panels have their own dedicated tests + own network calls; mock the ones this suite
 // navigates to so it focuses on the SettingsWorkspace obligations: the capability gate, the
 // rail, and the rule that only the SELECTED pane mounts.
-vi.mock('../CapabilityAdminPanel', () => ({
-  CapabilityAdminPanel: () => <div>Capabilities panel</div>,
+vi.mock('../IdentityRoster', () => ({
+  IdentityRoster: () => <div>Roster panel</div>,
 }));
 vi.mock('../TelegramSettingsPanel', () => ({
   TelegramSettingsPanel: () => <div>Telegram panel</div>,
@@ -89,7 +89,7 @@ describe('SettingsWorkspace', () => {
     await screen.findByRole('navigation', { name: 'Settings sections' });
     // On the profile pane the admin panels must not be mounted — that unmounted state is the
     // whole point of the rail (the old single scroll fired all of their queries at once).
-    expect(screen.queryByText('Capabilities panel')).toBeNull();
+    expect(screen.queryByText('Roster panel')).toBeNull();
     expect(screen.queryByText('Telegram panel')).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Model routing' })).toBeNull();
 
@@ -108,13 +108,13 @@ describe('SettingsWorkspace', () => {
     expect(screen.queryByRole('heading', { name: 'Sidecar and cloud backends' })).toBeNull();
   });
 
-  it('exposes identity creation and the grants control on one pane', async () => {
+  it('exposes identity creation and the roster on one pane', async () => {
     const onCreateIdentity = vi.fn();
     stubFetch(['identity.create', 'identity.delete', 'agent.run', 'governance.read', 'governance.write', 'share.public']);
     renderWorkspace(onCreateIdentity);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Identities & access' }));
-    expect(screen.getByText('Capabilities panel')).toBeTruthy();
+    expect(screen.getByText('Roster panel')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Create identity' }));
     expect(onCreateIdentity).toHaveBeenCalledOnce();
@@ -139,7 +139,7 @@ describe('SettingsWorkspace', () => {
     // A one-item rail is a label, not a choice — a non-admin gets the profile pane bare.
     expect(screen.queryByRole('navigation', { name: 'Settings sections' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Model routing' })).toBeNull();
-    expect(screen.queryByText('Capabilities panel')).toBeNull();
+    expect(screen.queryByText('Roster panel')).toBeNull();
   });
 
   it('falls back to a visible pane when the remembered one is admin-only', async () => {

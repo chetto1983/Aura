@@ -14,11 +14,6 @@
 
 import { getJSON, httpErrorFrom, postJSON } from '../api/json';
 
-/** The capability that marks an "admin" identity for the ORIGINAL four /api/admin/* routes
- * (D-01/D-03) — kept for those routes' own gate, but no longer what useAdmin.ts's isAdmin
- * derives from (every identity holds it as of D-01). */
-export const GOVERNANCE_WRITE = 'governance.write';
-
 /** The two capabilities identity.Administrative() grants at bootstrap and nowhere else
  * (D-02/RBAC-06) — mint/remove an identity, set its credit. These are what useAdmin.ts's
  * isAdmin now derives from. */
@@ -64,11 +59,6 @@ export interface AuditPage {
   readonly offset: number;
 }
 
-export interface CapabilityMutationResult {
-  readonly identity_id: string;
-  readonly capabilities: readonly string[];
-}
-
 /**
  * hasCapability is an exact-match membership check — no wildcard branch. The backend stopped
  * expanding the '*' wildcard in plan 02-01 (D-01); a client that still expanded it here would
@@ -87,30 +77,6 @@ export function fetchMe(): Promise<MeResponse> {
 export async function fetchAdminIdentities(): Promise<readonly AdminIdentity[]> {
   const res = await getJSON<{ identities?: readonly AdminIdentity[] }>('/api/admin/identities');
   return res.identities ?? [];
-}
-
-export function grantCapability(
-  identityId: string,
-  capability: string,
-): Promise<CapabilityMutationResult> {
-  return postJSON<CapabilityMutationResult>(
-    `/api/admin/identities/${encodeURIComponent(identityId)}/capabilities`,
-    { capability },
-  );
-}
-
-export async function revokeCapability(
-  identityId: string,
-  capability: string,
-): Promise<CapabilityMutationResult> {
-  const res = await fetch(
-    `/api/admin/identities/${encodeURIComponent(identityId)}/capabilities/${encodeURIComponent(capability)}`,
-    { method: 'DELETE', headers: { Accept: 'application/json' }, credentials: 'same-origin' },
-  );
-  if (!res.ok) {
-    throw new Error(`HTTP ${String(res.status)}`);
-  }
-  return (await res.json()) as CapabilityMutationResult;
 }
 
 export function fetchAudit(identityId: string, limit: number, offset: number): Promise<AuditPage> {

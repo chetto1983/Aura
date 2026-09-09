@@ -91,13 +91,28 @@ describe('AppShell', () => {
       vi.fn((input: RequestInfo | URL) => {
         const url =
           typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-        // The signed-in operator is the seeded `local` admin ('*' wildcard), so the admin
-        // surfaces (Settings/Governance) stay in the nav (MUSR-01 / D-03).
+        // The signed-in operator is the seeded `local` admin, so the admin surfaces
+        // (Settings/Governance) stay in the nav (MUSR-01 / D-03). It used to hold the '*'
+        // wildcard; migration 0121 retired that repo-wide and plan 02-08 removed the client's
+        // wildcard branch, so a fixture still handing out '*' now confers NOTHING and reads as
+        // a non-admin. Spelled out as the six explicit names 0121 rewrote every wildcard row
+        // into — the operator's real grants, not a shorthand for them.
         if (url.includes('/api/me')) {
           return Promise.resolve(
-            new Response(JSON.stringify({ identity_id: 'local', capabilities: ['*'] }), {
-              status: 200,
-            }),
+            new Response(
+              JSON.stringify({
+                identity_id: 'local',
+                capabilities: [
+                  'identity.create',
+                  'identity.delete',
+                  'agent.run',
+                  'governance.read',
+                  'governance.write',
+                  'share.public',
+                ],
+              }),
+              { status: 200 },
+            ),
           );
         }
         // The conversation list / rot-events read as a JSON array; health as an object.

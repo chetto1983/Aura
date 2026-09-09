@@ -6,10 +6,8 @@ import {
   useAdminIdentities,
   useAudit,
   useCapabilities,
-  useGrantCapability,
   useIdentityCredit,
   useRemoveIdentity,
-  useRevokeCapability,
   useSetIdentityCredit,
 } from '../useAdmin';
 
@@ -148,32 +146,6 @@ describe('admin roster + mutations', () => {
     });
   });
 
-  it('useGrantCapability POSTs and useRevokeCapability DELETEs', async () => {
-    const methods: string[] = [];
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
-        methods.push(init?.method ?? 'GET');
-        return Promise.resolve(
-          new Response(JSON.stringify({ identity_id: 'a', capabilities: [] }), { status: 200 }),
-        );
-      }),
-    );
-    const w = wrapper();
-    const grant = renderHook(() => useGrantCapability(), { wrapper: w });
-    grant.result.current.mutate({ identityId: 'a', capability: 'x.y' });
-    await waitFor(() => {
-      expect(grant.result.current.isSuccess).toBe(true);
-    });
-    expect(methods).toContain('POST');
-
-    const revoke = renderHook(() => useRevokeCapability(), { wrapper: w });
-    revoke.result.current.mutate({ identityId: 'a', capability: 'x.y' });
-    await waitFor(() => {
-      expect(revoke.result.current.isSuccess).toBe(true);
-    });
-    expect(methods).toContain('DELETE');
-  });
 });
 
 describe('useAudit', () => {

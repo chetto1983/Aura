@@ -1,7 +1,9 @@
-// useAdmin.ts is the React Query data layer for the MUSR-01 admin surfaces. It mirrors
-// useConversations.ts: useQuery/useMutation over the thin adminApi REST adapter, retry:false
-// so a 403/failure surfaces immediately (a non-admin's /api/admin/* fetch is denied
-// server-side), and mutations invalidate the roster so a grant/revoke reflects at once.
+// useAdmin.ts is the React Query data layer for the MUSR-01 admin surfaces plus Phase 2's
+// identity-removal and per-identity credit surfaces. It mirrors useConversations.ts:
+// useQuery/useMutation over the thin adminApi REST adapter, retry:false so a 403/failure
+// surfaces immediately (a non-admin's /api/admin/* fetch is denied server-side), and
+// mutations invalidate the roster (and, for credit, the identity's own credit read) so a
+// change reflects at once.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -10,10 +12,8 @@ import {
   fetchAudit,
   fetchIdentityCredit,
   fetchMe,
-  grantCapability,
   hasCapability,
   removeIdentity,
-  revokeCapability,
   setIdentityCredit,
   type AdminIdentity,
   type CreditSetPatch,
@@ -61,30 +61,6 @@ export function useAdminIdentities() {
     queryKey: IDENTITIES_KEY,
     queryFn: fetchAdminIdentities,
     retry: false,
-  });
-}
-
-/** useGrantCapability grants a capability and refreshes the roster on success (D-26). */
-export function useGrantCapability() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (vars: { identityId: string; capability: string }) =>
-      grantCapability(vars.identityId, vars.capability),
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: IDENTITIES_KEY });
-    },
-  });
-}
-
-/** useRevokeCapability revokes a capability and refreshes the roster on success (D-26). */
-export function useRevokeCapability() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (vars: { identityId: string; capability: string }) =>
-      revokeCapability(vars.identityId, vars.capability),
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: IDENTITIES_KEY });
-    },
   });
 }
 

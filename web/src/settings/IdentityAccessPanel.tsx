@@ -1,6 +1,6 @@
 import { UserPlus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { CapabilityAdminPanel } from './CapabilityAdminPanel';
+import { IdentityRoster } from './IdentityRoster';
 import { StandingApprovalsPanel } from './StandingApprovalsPanel';
 import { Button } from '@/components/ui/button';
 
@@ -36,7 +36,7 @@ export function IdentityAccessPanel({ onCreateIdentity }: IdentityAccessPanelPro
         <StandingApprovalsPanel />
       </div>
       <div className="border-t border-border pt-6">
-        <CapabilityAdminPanel />
+        <IdentityRoster />
       </div>
     </div>
   );
