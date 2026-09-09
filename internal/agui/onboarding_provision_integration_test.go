@@ -33,6 +33,8 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/identity"
 )
 
 func TestProvisionSagaLive(t *testing.T) {
@@ -47,9 +49,14 @@ func TestProvisionSagaLive(t *testing.T) {
 			t.Fatalf("Provision: %v", err)
 		}
 		ids, grants, links, tokens, recovery, audit := env.auraOrphans(t, email)
-		if ids != 1 || grants != 1 || links != 1 || tokens != 1 || recovery != 1 || audit != 1 || au.liveUsers() != 1 {
-			t.Fatalf("happy path stores: identities=%d grants=%d links=%d tokens=%d recovery=%d audit=%d authula=%d",
-				ids, grants, links, tokens, recovery, audit, au.liveUsers())
+		// Grants is the one count that is not 1: a provisioned identity lands the whole
+		// uniform user set (RBAC-03), so the expectation is bound to identity.UserSet()
+		// rather than to the literal it held before that set existed. A row count pinned
+		// to a constant goes stale the next time the set changes; this one cannot.
+		wantGrants := len(identity.UserSet())
+		if ids != 1 || grants != wantGrants || links != 1 || tokens != 1 || recovery != 1 || audit != 1 || au.liveUsers() != 1 {
+			t.Fatalf("happy path stores: identities=%d grants=%d (want %d) links=%d tokens=%d recovery=%d audit=%d authula=%d",
+				ids, grants, wantGrants, links, tokens, recovery, audit, au.liveUsers())
 		}
 		if resp.DeepLink == "" || resp.QRSVG == "" {
 			t.Error("happy path must return deep-link + QR")
