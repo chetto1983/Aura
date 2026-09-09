@@ -16,6 +16,7 @@ package agui
 
 import (
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -105,4 +106,209 @@ func TestCapabilityDenialsRLSAndScope(t *testing.T) {
 	if len(crossRows) != 0 {
 		t.Fatalf("identity B's scope read identity A's denial: %v (RLS not enforced)", crossRows)
 	}
+}
+
+// --- 02-04 Task 2: the admin audit feed's fifth ('capability') UNION leg ---
+
+// seedIdentity inserts a fresh identity row and returns its uuid — the same shape
+// audit_store_integration_test.go's TestPgAuditStoreListActivityForIdentity uses.
+func seedIdentity(t *testing.T, pool *pgxpool.Pool, label string) string {
+	t.Helper()
+	id := uuid.Must(uuid.NewV7()).String()
+	if _, err := pool.Exec(ownerCtx(),
+		"INSERT INTO aura.identities (id, name, kind) VALUES ($1, $2, 'user')",
+		id, label+"-"+id); err != nil {
+		t.Fatalf("seed identity %s: %v", label, err)
+	}
+	return id
+}
+
+// TestAuditFeedIncludesCapabilityDenials proves the fifth UNION leg: after two denials
+// for identity B, ListActivityForIdentity(B) surfaces them with Source == "capability",
+// Action naming the cause and Target naming the capability — and the pre-existing mcp leg
+// still returns its own row, unchanged, in the same call.
+func TestAuditFeedIncludesCapabilityDenials(t *testing.T) {
+	pool := migratedPool(t)
+	ctx := ownerCtx()
+	idB := seedIdentity(t, pool, "audit-feed-capdenial")
+
+	if _, err := pool.Exec(ctx,
+		"INSERT INTO aura.mcp_audit (actor_identity_id, action, server_name, created_at) VALUES ($1,'install','srv-audit-feed',$2)",
+		idB, time.Now().UTC().Add(-5*time.Minute)); err != nil {
+		t.Fatalf("seed mcp_audit: %v", err)
+	}
+
+	denialStore := NewPgCapabilityDenialStore(pool)
+	if err := denialStore.RecordDenial(ctx, idB, "identity.create", "POST /api/onboarding/start", DenialCauseNotHeld); err != nil {
+		t.Fatalf("RecordDenial 1: %v", err)
+	}
+	if err := denialStore.RecordDenial(ctx, idB, "identity.delete", "DELETE /api/admin/identities/{id}", DenialCauseNotHeld); err != nil {
+		t.Fatalf("RecordDenial 2: %v", err)
+	}
+
+	auditStore := NewPgAuditStore(pool)
+	events, err := auditStore.ListActivityForIdentity(ctx, idB, 50, 0)
+	if err != nil {
+		t.Fatalf("ListActivityForIdentity: %v", err)
+	}
+
+	var capEvents, mcpEvents int
+	for _, e := range events {
+		switch e.Source {
+		case "capability":
+			capEvents++
+			if e.Action != DenialCauseNotHeld {
+				t.Fatalf("capability event Action = %q, want the cause %q", e.Action, DenialCauseNotHeld)
+			}
+			if e.Target != "identity.create" && e.Target != "identity.delete" {
+				t.Fatalf("capability event Target = %q, want a capability name", e.Target)
+			}
+		case "mcp":
+			mcpEvents++
+		}
+	}
+	if capEvents != 2 {
+		t.Fatalf("capability events = %d, want 2", capEvents)
+	}
+	if mcpEvents != 1 {
+		t.Fatalf("pre-existing mcp leg events = %d, want 1 (unchanged by the new leg)", mcpEvents)
+	}
+}
+
+// TestAuditFeedDenialsForOtherIdentityNotVisible proves cross-identity deny on the new
+// leg: identity A's feed contains none of B's denials.
+func TestAuditFeedDenialsForOtherIdentityNotVisible(t *testing.T) {
+	pool := migratedPool(t)
+	ctx := ownerCtx()
+	idA := seedIdentity(t, pool, "audit-feed-cross-a")
+	idB := seedIdentity(t, pool, "audit-feed-cross-b")
+
+	denialStore := NewPgCapabilityDenialStore(pool)
+	if err := denialStore.RecordDenial(ctx, idB, "governance.write", "POST /api/admin/identities", DenialCauseNotHeld); err != nil {
+		t.Fatalf("RecordDenial(B): %v", err)
+	}
+
+	auditStore := NewPgAuditStore(pool)
+	events, err := auditStore.ListActivityForIdentity(ctx, idA, 50, 0)
+	if err != nil {
+		t.Fatalf("ListActivityForIdentity(A): %v", err)
+	}
+	for _, e := range events {
+		if e.Source == "capability" {
+			t.Fatalf("identity A's feed leaked identity B's capability denial: %+v", e)
+		}
+	}
+}
+
+// TestAuditFeedEmptyDenialsIsEmptyList proves the RBAC-10 "empty" edge: an identity with
+// no denials (and no other activity) returns a zero-length slice and a nil error, the
+// same shape ListActivityForIdentity already returns for an identity with no activity.
+func TestAuditFeedEmptyDenialsIsEmptyList(t *testing.T) {
+	pool := migratedPool(t)
+	ctx := ownerCtx()
+	idEmpty := seedIdentity(t, pool, "audit-feed-empty")
+
+	auditStore := NewPgAuditStore(pool)
+	events, err := auditStore.ListActivityForIdentity(ctx, idEmpty, 50, 0)
+	if err != nil {
+		t.Fatalf("ListActivityForIdentity: %v", err)
+	}
+	if events == nil {
+		t.Fatal("events is nil, want a non-nil zero-length slice")
+	}
+	if len(events) != 0 {
+		t.Fatalf("events = %d, want 0 for an identity with no denials", len(events))
+	}
+}
+
+// TestAuditFeedDenialsAreDistinctRows proves the RBAC-10 "adjacency" edge: two denials
+// differing only in capability (identity.create vs identity.delete) read back as two
+// distinct rows — the feed does not collapse them.
+func TestAuditFeedDenialsAreDistinctRows(t *testing.T) {
+	pool := migratedPool(t)
+	ctx := ownerCtx()
+	id := seedIdentity(t, pool, "audit-feed-adjacency")
+
+	denialStore := NewPgCapabilityDenialStore(pool)
+	if err := denialStore.RecordDenial(ctx, id, "identity.create", "POST /api/onboarding/start", DenialCauseNotHeld); err != nil {
+		t.Fatalf("RecordDenial(create): %v", err)
+	}
+	if err := denialStore.RecordDenial(ctx, id, "identity.delete", "POST /api/onboarding/start", DenialCauseNotHeld); err != nil {
+		t.Fatalf("RecordDenial(delete): %v", err)
+	}
+
+	auditStore := NewPgAuditStore(pool)
+	events, err := auditStore.ListActivityForIdentity(ctx, id, 50, 0)
+	if err != nil {
+		t.Fatalf("ListActivityForIdentity: %v", err)
+	}
+	seen := map[string]bool{}
+	for _, e := range events {
+		if e.Source == "capability" {
+			seen[e.Target] = true
+		}
+	}
+	if !seen["identity.create"] || !seen["identity.delete"] {
+		t.Fatalf("expected two distinct capability rows (create+delete), got: %v", seen)
+	}
+	if len(seen) != 2 {
+		t.Fatalf("capability rows collapsed: %v", seen)
+	}
+}
+
+// TestAuditFeedOrderIsDeterministicAtEqualTimestamps proves the RBAC-10 "ordering" edge:
+// two rows written inside the same timestamp tick come back in a STABLE order across
+// repeated reads — a refresh must not shuffle the feed. Inserted directly (not through
+// RecordDenial, which always stamps now()) so both rows share one explicit created_at.
+func TestAuditFeedOrderIsDeterministicAtEqualTimestamps(t *testing.T) {
+	pool := migratedPool(t)
+	ctx := ownerCtx()
+	id := seedIdentity(t, pool, "audit-feed-order")
+	tie := time.Now().UTC().Truncate(time.Second)
+
+	for _, cap := range []string{"identity.create", "identity.delete"} {
+		seedAsOwner(t, pool, id,
+			"INSERT INTO aura.capability_denials (identity_id, capability, route, cause, created_at) VALUES ($1,$2,'POST /agent/run','not_held',$3)",
+			id, cap, tie)
+	}
+
+	auditStore := NewPgAuditStore(pool)
+	first, err := auditStore.ListActivityForIdentity(ctx, id, 50, 0)
+	if err != nil {
+		t.Fatalf("ListActivityForIdentity (first read): %v", err)
+	}
+	second, err := auditStore.ListActivityForIdentity(ctx, id, 50, 0)
+	if err != nil {
+		t.Fatalf("ListActivityForIdentity (second read): %v", err)
+	}
+	firstOrder := capabilityTargetsInOrder(first)
+	secondOrder := capabilityTargetsInOrder(second)
+	if len(firstOrder) != 2 {
+		t.Fatalf("first read capability rows = %v, want 2", firstOrder)
+	}
+	if !slicesEqual(firstOrder, secondOrder) {
+		t.Fatalf("order shuffled between reads: first=%v second=%v", firstOrder, secondOrder)
+	}
+}
+
+func capabilityTargetsInOrder(events []AuditEvent) []string {
+	var out []string
+	for _, e := range events {
+		if e.Source == "capability" {
+			out = append(out, e.Target)
+		}
+	}
+	return out
+}
+
+func slicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
