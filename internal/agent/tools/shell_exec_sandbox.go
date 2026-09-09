@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -22,19 +21,57 @@ import (
 // across calls via the cwd marker.
 func (s *ShellExec) executeInBox(ctx context.Context, h usersandbox.BoxHandle, command, cwdArg string, extraEnv map[string]string, timeoutMs int64) (ToolResult, error) {
 	timeout := effectiveShellTimeout(s.DefaultTimeout, timeoutMs)
-	runCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 	started := time.Now()
-
 	dir := s.boxWorkdir(ctx, cwdArg)
-	res, execErr := s.Router.Exec(runCtx, h, usersandbox.ExecRequest{
+	req := usersandbox.ExecRequest{
 		Command: wrapForCwdTracking(command),
 		Dir:     dir,
 		Env:     boxEnv(extraEnv),
-	})
+	}
 
-	timedOut := errors.Is(runCtx.Err(), context.DeadlineExceeded)
-	cancelled := errors.Is(runCtx.Err(), context.Canceled)
+	// The command runs on a context DETACHED from this call, so reaching the cap is a
+	// decision point rather than an execution: it can be promoted (kept alive, handed back
+	// as a background job) instead of killed. Without a registry to adopt it there is
+	// nowhere to hand it, so the cap kills as before — the pre-promotion behaviour.
+	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	outcome := make(chan boxOutcome, 1)
+	go func() {
+		r, err := s.Router.Exec(runCtx, h, req)
+		outcome <- boxOutcome{res: r, err: err}
+	}()
+
+	var (
+		res       usersandbox.ExecResult
+		execErr   error
+		timedOut  bool
+		cancelled bool
+		promoted  string
+	)
+	cap := time.NewTimer(timeout)
+	defer cap.Stop()
+	select {
+	case done := <-outcome:
+		cancel()
+		res, execErr = done.res, done.err
+	case <-ctx.Done():
+		// The TURN went away (the operator stopped it): the job goes with it.
+		cancel()
+		<-outcome
+		cancelled = true
+	case <-cap.C:
+		id, err := s.promoteAtCap(ctx, cancel, outcome)
+		if err != nil {
+			cancel()
+			<-outcome
+			timedOut = true
+			break
+		}
+		promoted = id
+	}
+
+	if promoted != "" {
+		return s.promotedResult(ctx, promoted, dir, timeout, time.Since(started))
+	}
 	// A non-timeout/non-cancel exec error is a box INFRA failure — deny (fail-CLOSED), never host —
 	// unless it is the caller's own cwd, which the daemon refuses to chdir into before the shell
 	// ever starts (AG-018).
