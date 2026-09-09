@@ -26,12 +26,14 @@ import (
 //
 // Order (RESEARCH §Hard Problem 1):
 //
-//	0. pre-validate (no writes): creator HasCapability(identity.create); requested caps ⊆
-//	   creator-grants AND no '*'; valid request shape + Authula GetByEmail==none.
+//	0. pre-validate (no writes, onboarding_provision_grants.go): creator
+//	   HasCapability(identity.create); a request naming identity.create/identity.delete is
+//	   refused (D-01/RBAC-03 — this is no longer a subset check, it never was here); valid
+//	   request shape + Authula GetByEmail==none.
 //	1. Leg B (Authula, fails cheapest on dup email): Hash → CreateUser → CreateAccount;
 //	   COMP_B = DeleteUser.
-//	2. Leg A (aura, one db.WithTx): INSERT identity + GrantCapability per cap + LinkOperator;
-//	   on failure → COMP_B.
+//	2. Leg A (aura, one db.WithTx): INSERT identity + GrantCapability per cap (always
+//	   identity.UserSet(), never the request's own list) + LinkOperator; on failure → COMP_B.
 //	3. Recovery setup: hash answer + upsert challenge; on failure → DeleteIdentity + COMP_B.
 //	4. Resource legs: provision the ArcadeDB tenant, then optional Garage/filesystem state;
 //	   on failure reverse resources + DeleteIdentity + COMP_B.
@@ -47,14 +49,6 @@ import (
 // onboardingTokenTTL is the Telegram onboarding-token lifetime (matches the setup wizard's
 // 1h TTL). An unscanned token expires and is GC'd; it never leaves a half-linked identity.
 const onboardingTokenTTL = time.Hour
-
-// identityCreateCapability is the capability_grants name the create mutation is gated on
-// (ONBD-01a / D-04, parity with agent.run). The route mount enforces it via
-// RequireCapability; the saga re-checks it (belt-and-suspenders) so the creator must hold
-// identity.create explicitly to provision (RBAC-01: the wildcard is retired as of
-// migration 0121, so a bare '*' row no longer satisfies this check). Alias of
-// internal/identity.CapIdentityCreate (RBAC-02) — never a re-declared literal.
-const identityCreateCapability = identity.CapIdentityCreate
 
 // AuthulaUser is the minimal projection of a created Authula user the saga needs (the id
 // for the link + compensation, the email echoed into the account). Declared consumer-side
@@ -169,7 +163,7 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 		)
 		return OnboardingProvisionResponse{}, errProvisioningUnavailable
 	}
-	if err := s.validateNoEscalation(ctx, creator, in.Capabilities); err != nil {
+	if err := s.validateProvisionCapabilities(ctx, creator, in.Capabilities); err != nil {
 		return OnboardingProvisionResponse{}, err
 	}
 	identityName := strings.TrimSpace(in.Email)
@@ -211,9 +205,13 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 	}
 
 	// ---- 2. LEG A (aura.* — ONE internally-atomic db.WithTx) ----
+	// D-01/RBAC-03: the request no longer selects the grants — every identity provisioned
+	// through this saga receives exactly identity.UserSet(), whatever in.Capabilities asked
+	// for. validateProvisionCapabilities above already refused an administrative name in the
+	// request; every other requested name is simply not used here.
 	identityID, err := s.auraLeg.CreateIdentityWithGrants(ctx, AuraLegParams{
 		IdentityName:    identityName,
-		Capabilities:    in.Capabilities,
+		Capabilities:    identity.UserSet(),
 		AuthulaUserID:   user.ID,
 		ActorIdentityID: creator,
 	})
@@ -281,9 +279,12 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 	run.done(ctx, sagaStepTelegram)
 
 	// ---- 5. AUDIT (a tiny final tx AFTER Leg C — RESEARCH L8: exactly one row, only on success) ----
+	// The audit row records what was actually granted (identity.UserSet()), never the
+	// request's own Capabilities field — a silently-narrowed grant must never be what the
+	// audit trail claims happened (T-02-15).
 	if err := s.auraLeg.WriteAuditRow(ctx, AuraLegParams{
 		IdentityName:    identityName,
-		Capabilities:    in.Capabilities,
+		Capabilities:    identity.UserSet(),
 		AuthulaUserID:   user.ID,
 		ActorIdentityID: creator,
 	}, identityID); err != nil {
@@ -476,42 +477,6 @@ func (s *onboardingService) mintTelegramLink(ctx context.Context, identityID str
 		slog.Warn("onboarding: qr render failed", "step", "qr")
 	}
 	return token, deepLink, qrSVG, nil
-}
-
-// validateNoEscalation is the server-side no-escalation re-validation (ONBD-01a / D-06,
-// belt-and-suspenders behind RequireCapability + the store's '*' rejection): the creator
-// must hold identity.create (or '*'), the requested set must contain NO '*', and every
-// requested cap must be one the creator holds (subset ⊆ creator-grants). A creator with
-// '*' may grant any NAMED cap (but never '*' itself).
-func (s *onboardingService) validateNoEscalation(ctx context.Context, creator string, requested []string) error {
-	if creator == "" {
-		return errOnboardingForbidden
-	}
-	grants, err := s.caps.ListCapabilities(ctx, creator)
-	if err != nil {
-		return provisionFail("list creator capabilities", err)
-	}
-	creatorSet := make(map[string]bool, len(grants))
-	hasWildcard := false
-	for _, g := range grants {
-		creatorSet[g] = true
-		if g == identity.Wildcard {
-			hasWildcard = true
-		}
-	}
-	// The creator must be authorized to create identities (route gate backstop).
-	if !hasWildcard && !creatorSet[identityCreateCapability] {
-		return errOnboardingForbidden
-	}
-	for _, c := range requested {
-		if err := identity.ValidateCapabilityName(c); err != nil {
-			return fmt.Errorf("%w: %v", ErrOnboardingEscalation, err)
-		}
-		if !hasWildcard && !creatorSet[c] {
-			return fmt.Errorf("%w: %q is not held by the creator", ErrOnboardingEscalation, c)
-		}
-	}
-	return nil
 }
 
 // persistProfile seeds the NEW identity's graph from the seed the creator filled in the

@@ -5,8 +5,11 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/identity"
 )
 
 func provReq(caps []string) OnboardingProvisionRequest {
@@ -221,35 +224,33 @@ func TestProvisionSagaCompensation(t *testing.T) {
 	})
 }
 
+// TestNoEscalation pinned the PRE-Phase-2 contract: the request's capability list was
+// validated as a subset of the creator's own grants, and '*'/undeclared/malformed names
+// were all rejected as escalation attempts. Phase 2 (D-01/RBAC-03) retires that contract on
+// purpose — 02-02-PLAN.md Task 2's own action text says so verbatim: "this is no longer a
+// subset check, it never was here". Under the new contract the request's capability list no
+// longer SELECTS anything: every provisioned identity receives exactly identity.UserSet(),
+// unconditionally, and the request is inspected ONLY to refuse an administrative name
+// (identity.create/identity.delete) rather than let it be silently narrowed. A non-
+// administrative name in the request — wildcard, undeclared, or malformed grammar — is
+// simply ignored now, so the five pre-Phase-2 subtests asserting a rejection for those
+// inputs assert something that is no longer true and would have to fail forever.
+//
+// CLAUDE.md forbids modifying a test to make it pass unless the test itself is broken; a
+// test pinning a contract this plan explicitly retires qualifies. This rewrite keeps every
+// one of the original's no-write assertions on every refusal branch, keeps the one subtest
+// whose contract is UNCHANGED (operator without identity.create is still forbidden), and
+// adds coverage for the behavior that replaced the retired subset check: an administrative
+// name is refused, and everything else is ignored in favor of the uniform grant.
 func TestNoEscalation(t *testing.T) {
-	t.Run("'*' request rejected, no write", func(t *testing.T) {
-		au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
-		svc, tok := sagaService(t, au, leg, tg, []string{"identity.create", "agent.run"})
-		_, err := svc.Provision(context.Background(), "creator-1", tok, provReq([]string{"*"}))
-		if !errors.Is(err, ErrOnboardingEscalation) {
-			t.Fatalf("'*' request err = %v, want escalation", err)
-		}
-		assertNoWrites(t, au, leg, tg)
-	})
-
-	t.Run("creator-lacked cap rejected, no write", func(t *testing.T) {
-		au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
-		svc, tok := sagaService(t, au, leg, tg, []string{"identity.create", "agent.run"})
-		_, err := svc.Provision(context.Background(), "creator-1", tok, provReq([]string{"graph.write"}))
-		if !errors.Is(err, ErrOnboardingEscalation) {
-			t.Fatalf("creator-lacked cap err = %v, want escalation", err)
-		}
-		assertNoWrites(t, au, leg, tg)
-	})
-
-	t.Run("invalid cap grammar rejected, no write", func(t *testing.T) {
-		for _, bad := range []string{"", "Agent.Run", "agent run", "-agent.run"} {
-			t.Run("cap="+bad, func(t *testing.T) {
+	t.Run("administrative capability in request refused, no write", func(t *testing.T) {
+		for _, admin := range identity.Administrative() {
+			t.Run(admin, func(t *testing.T) {
 				au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
-				svc, tok := sagaService(t, au, leg, tg, []string{"*"})
-				_, err := svc.Provision(context.Background(), "creator-1", tok, provReq([]string{bad}))
+				svc, tok := sagaService(t, au, leg, tg, []string{"identity.create", "agent.run"})
+				_, err := svc.Provision(context.Background(), "creator-1", tok, provReq([]string{admin}))
 				if !errors.Is(err, ErrOnboardingEscalation) {
-					t.Fatalf("invalid cap %q err = %v, want escalation", bad, err)
+					t.Fatalf("%s request err = %v, want escalation", admin, err)
 				}
 				assertNoWrites(t, au, leg, tg)
 			})
@@ -266,15 +267,37 @@ func TestNoEscalation(t *testing.T) {
 		assertNoWrites(t, au, leg, tg)
 	})
 
-	t.Run("creator with '*' may grant a named cap", func(t *testing.T) {
-		au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
-		svc, tok := sagaService(t, au, leg, tg, []string{"*"})
-		_, err := svc.Provision(context.Background(), "creator-1", tok, provReq([]string{"agent.run", "graph.read"}))
-		if err != nil {
-			t.Fatalf("wildcard creator granting named caps: %v", err)
-		}
-		if leg.liveIdentities() != 1 {
-			t.Fatalf("wildcard-creator provision did not create the identity")
+	// The wildcard, an undeclared name, and every malformed-grammar case from the retired
+	// subtests are all NON-administrative — under D-01/RBAC-03 the request no longer
+	// selects the grant, so none of these refuse. Table over what used to be five separate
+	// rejections; every case here now succeeds and grants exactly identity.UserSet().
+	t.Run("non-administrative request content is ignored; grant is always the uniform set", func(t *testing.T) {
+		for _, requested := range [][]string{
+			{"*"},
+			{"graph.write"},
+			{""},
+			{"Agent.Run"},
+			{"agent run"},
+			{"-agent.run"},
+			{"agent.run", "graph.read"}, // a mix of well-formed-but-irrelevant names
+			nil,                         // empty list truth: RBAC-03 "empty" — still lands the full set
+		} {
+			t.Run("requested="+strings.Join(requested, ","), func(t *testing.T) {
+				au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
+				svc, tok := sagaService(t, au, leg, tg, []string{"identity.create", "agent.run"})
+				_, err := svc.Provision(context.Background(), "creator-1", tok, provReq(requested))
+				if err != nil {
+					t.Fatalf("Provision(requested=%v) = %v, want nil — non-administrative content must not refuse", requested, err)
+				}
+				if leg.liveIdentities() != 1 {
+					t.Fatal("provision did not create the identity")
+				}
+				got := leg.lastGrantedCapabilities()
+				want := identity.UserSet()
+				if !slices.Equal(got, want) {
+					t.Fatalf("granted = %v, want exactly identity.UserSet() = %v regardless of the request", got, want)
+				}
+			})
 		}
 	})
 }

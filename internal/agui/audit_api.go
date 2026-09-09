@@ -17,6 +17,15 @@ package agui
 // security boundary (T-36-10-E). Capability names use the EXISTING governance.write (RESEARCH
 // OQ3: no net-new settings.model.write). Grant/revoke go through the SAME validated
 // identity.Store seam the CLI uses (D-26), and every capability mutation is audit-logged.
+//
+// Phase 2 gate asymmetry (D-01/D-02/RBAC-06): under D-01 every identity holds
+// governance.write, so the parent-mux gate above no longer distinguishes an admin from a
+// member on the capability grant/revoke routes — it stays wired for consistency with the
+// other three admin routes, but it is NOT what makes granting/revoking safe. The safety
+// boundary is identity.CanGrantThroughAPI/CanRevokeThroughAPI in mutateCapability below,
+// which refuse the two administrative names (identity.create, identity.delete) for EVERY
+// caller, including one who already holds them — admin is bootstrap-only and the
+// administrative capabilities never transit this API at all.
 
 import (
 	"context"
@@ -183,6 +192,14 @@ func (s *Server) mutateCapability(w http.ResponseWriter, r *http.Request, grant 
 		return
 	}
 
+	if policyErr := s.checkCapabilityAPIPolicy(capName, grant); policyErr != nil {
+		writeJSONStatus(w, http.StatusForbidden, map[string]string{
+			"error":      "capability not permitted",
+			"capability": capName,
+		})
+		return
+	}
+
 	var err error
 	action := "grant"
 	if grant {
@@ -210,6 +227,16 @@ func (s *Server) mutateCapability(w http.ResponseWriter, r *http.Request, grant 
 		return
 	}
 	writeJSON(w, map[string]any{"identity_id": targetID, "capabilities": caps})
+}
+
+// checkCapabilityAPIPolicy calls identity's single refusal predicate — never re-implements
+// the administrative-name comparison here (D-02): a mutant of the decision must be killable
+// in capability_policy.go alone, not maskable by a second copy at this handler.
+func (s *Server) checkCapabilityAPIPolicy(capability string, grant bool) error {
+	if grant {
+		return identity.CanGrantThroughAPI(capability)
+	}
+	return identity.CanRevokeThroughAPI(capability)
 }
 
 // resolveCapabilityArg reads the capability name for a grant (JSON body) or revoke (path

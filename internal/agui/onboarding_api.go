@@ -74,9 +74,16 @@ func (s OnboardingSeed) blank() bool {
 }
 
 // OnboardingProvisionRequest is the POST /{token}/provision body: the new login email +
-// the write-only initial password, the requested capability set (re-validated server-side
-// as a subset of the creator's grants with no '*'), whether to mint a Telegram link, and
-// the optional profile seed written into the NEW identity's graph.
+// the write-only initial password, whether to mint a Telegram link, and the optional
+// profile seed written into the NEW identity's graph.
+//
+// Capabilities (Phase 2, D-01/RBAC-03): the field still exists on the wire because the
+// cockpit wizard still sends it until plan 02-08 shortens the wizard and removes it here —
+// but it no longer SELECTS what gets granted. Every provisioned identity receives exactly
+// identity.UserSet(), whatever this field asks for; a value naming identity.create or
+// identity.delete is refused rather than silently narrowed
+// (onboarding_provision_grants.go's validateProvisionCapabilities). Everything else in it
+// is ignored.
 type OnboardingProvisionRequest struct {
 	Email            string         `json:"email"`
 	Password         string         `json:"password"`

@@ -97,6 +97,11 @@ type fakeAuraLeg struct {
 	audited         []string // identity ids with an audit row
 	pendingAtDelete bool
 	nextID          int
+	// grantedCapabilities is the p.Capabilities the saga ACTUALLY passed to
+	// CreateIdentityWithGrants — Task 2 (D-01/RBAC-03) proves the saga grants
+	// identity.UserSet() regardless of what the request asked for, so this has to be
+	// observed at the port, not inferred from the request.
+	grantedCapabilities []string
 }
 
 func (f *fakeAuraLeg) CreateIdentityWithGrants(_ context.Context, p AuraLegParams) (string, error) {
@@ -108,6 +113,7 @@ func (f *fakeAuraLeg) CreateIdentityWithGrants(_ context.Context, p AuraLegParam
 	f.nextID++
 	id := "identity-" + strconv.Itoa(f.nextID)
 	f.created = append(f.created, p.IdentityName)
+	f.grantedCapabilities = append([]string(nil), p.Capabilities...)
 	return id, nil
 }
 
@@ -138,6 +144,12 @@ func (f *fakeAuraLeg) liveIdentities() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return len(f.created) - len(f.deleted)
+}
+
+func (f *fakeAuraLeg) lastGrantedCapabilities() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.grantedCapabilities...)
 }
 
 func (f *fakeAuraLeg) auditCount() int {

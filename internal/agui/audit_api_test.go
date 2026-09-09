@@ -259,6 +259,13 @@ func TestGrantCapabilityCallsStoreAndReturnsCaps(t *testing.T) {
 	}
 }
 
+// TestGrantCapabilityRejectsInvalidName pre-Phase-2 expected 400: the malformed name
+// reached the store, which rejected it. Phase 2's identity.CanGrantThroughAPI guard now
+// runs first (02-02-PLAN.md Task 2a: "map every sentinel to 403") and refuses a
+// grammar-invalid name before the store is ever called, so the response is 403 and the
+// store's grantErr below is never consulted — kept as a fixture in case the guard and the
+// store's own validateGrantInput ever diverge. See audit_api_branches_test.go's
+// wildcard-managed subtest for the identical retirement reasoning.
 func TestGrantCapabilityRejectsInvalidName(t *testing.T) {
 	admin := &fakeIdentityAdmin{caps: map[string][]string{}, grantErr: identity.ErrInvalidCapability}
 	s := &Server{idAdmin: admin}
@@ -267,8 +274,11 @@ func TestGrantCapabilityRejectsInvalidName(t *testing.T) {
 	req.SetPathValue("id", testLocalID)
 	rec := httptest.NewRecorder()
 	s.handleGrantCapability(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", rec.Code)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 (refused pre-store by the policy guard)", rec.Code)
+	}
+	if len(admin.granted) != 0 {
+		t.Fatalf("granted = %v, want none — the store must never be reached for an invalid name", admin.granted)
 	}
 }
 

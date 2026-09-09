@@ -14,6 +14,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
+	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/idroot"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/objectstore/garageadmin"
@@ -205,15 +206,23 @@ func (a identityDeactivatorAdapter) MarkDeactivated(ctx context.Context, identit
 
 // purgeableQuery selects deactivated identities past their grace window, LEFT JOINing the
 // Authula link (an identity may have no link). i.id is cast to text so a string scan is
-// portable without registering a uuid codec.
+// portable without registering a uuid codec. is_administrative (Phase 2, D-03/RBAC-07) is an
+// EXISTS over capability_grants against the $2 parameter array — never a capability name
+// literal here, so this file cannot become a second declaration point RBAC-02's check flags
+// (internal/identity/capabilities.go stays the only place identity.create/identity.delete are
+// spelled out; this query receives them as bind values from identity.Administrative()).
 const purgeableQuery = `
-	SELECT i.id::text, i.name, l.authula_user_id
+	SELECT i.id::text, i.name, l.authula_user_id,
+	       EXISTS (
+	           SELECT 1 FROM aura.capability_grants g
+	           WHERE g.identity_id = i.id AND g.capability = ANY($2::text[])
+	       ) AS is_administrative
 	FROM aura.identities i
 	LEFT JOIN aura.identity_auth_links l ON l.identity_id = i.id
 	WHERE i.deactivated_at IS NOT NULL AND i.purge_after IS NOT NULL AND i.purge_after <= $1`
 
 func (a identityDeactivatorAdapter) ListPurgeable(ctx context.Context, now time.Time) ([]agui.DeprovisionTarget, error) {
-	rows, err := a.pool.Query(ctx, purgeableQuery, now)
+	rows, err := a.pool.Query(ctx, purgeableQuery, now, identity.Administrative())
 	if err != nil {
 		return nil, fmt.Errorf("list purgeable identities: %w", err)
 	}
@@ -222,10 +231,11 @@ func (a identityDeactivatorAdapter) ListPurgeable(ctx context.Context, now time.
 	for rows.Next() {
 		var id, name string
 		var authula *string
-		if err := rows.Scan(&id, &name, &authula); err != nil {
+		var isAdministrative bool
+		if err := rows.Scan(&id, &name, &authula, &isAdministrative); err != nil {
 			return nil, fmt.Errorf("scan purgeable identity: %w", err)
 		}
-		t := agui.DeprovisionTarget{IdentityID: id, IdentityName: name}
+		t := agui.DeprovisionTarget{IdentityID: id, IdentityName: name, IsAdministrative: isAdministrative}
 		if authula != nil {
 			t.AuthulaUserID = *authula
 		}
@@ -236,7 +246,11 @@ func (a identityDeactivatorAdapter) ListPurgeable(ctx context.Context, now time.
 
 // resolveTargetQuery is the same projection keyed on a single identity id.
 const resolveTargetQuery = `
-	SELECT i.id::text, i.name, l.authula_user_id
+	SELECT i.id::text, i.name, l.authula_user_id,
+	       EXISTS (
+	           SELECT 1 FROM aura.capability_grants g
+	           WHERE g.identity_id = i.id AND g.capability = ANY($2::text[])
+	       ) AS is_administrative
 	FROM aura.identities i
 	LEFT JOIN aura.identity_auth_links l ON l.identity_id = i.id
 	WHERE i.id = $1::uuid`
@@ -244,10 +258,11 @@ const resolveTargetQuery = `
 func (a identityDeactivatorAdapter) ResolveTarget(ctx context.Context, identityID string) (agui.DeprovisionTarget, error) {
 	var id, name string
 	var authula *string
-	if err := a.pool.QueryRow(ctx, resolveTargetQuery, identityID).Scan(&id, &name, &authula); err != nil {
+	var isAdministrative bool
+	if err := a.pool.QueryRow(ctx, resolveTargetQuery, identityID, identity.Administrative()).Scan(&id, &name, &authula, &isAdministrative); err != nil {
 		return agui.DeprovisionTarget{}, fmt.Errorf("resolve deprovision target %q: %w", identityID, err)
 	}
-	t := agui.DeprovisionTarget{IdentityID: id, IdentityName: name}
+	t := agui.DeprovisionTarget{IdentityID: id, IdentityName: name, IsAdministrative: isAdministrative}
 	if authula != nil {
 		t.AuthulaUserID = *authula
 	}

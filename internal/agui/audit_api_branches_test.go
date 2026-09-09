@@ -49,15 +49,28 @@ func TestMutateCapabilityGuards(t *testing.T) {
 		}
 	})
 
-	t.Run("wildcard-managed rejection is 400", func(t *testing.T) {
+	// Phase 2 (D-02, RBAC-06, 02-02-PLAN.md Task 2a): identity.CanGrantThroughAPI now runs
+	// BEFORE the store is ever called, and its capabilityAPIPolicy folds ValidateCapabilityName
+	// (which is where ErrWildcardManaged comes from) into the same 403 "capability not
+	// permitted" response every other refusal gets — the plan's own action text says to
+	// "map every sentinel to 403". Pre-Phase-2 this case reached the store, which rejected
+	// the wildcard with a 400; the fake's grantErr below is now UNREACHED for this
+	// capability, kept only so a future divergence between the guard and the store's own
+	// validateGrantInput would still be caught by this fixture's shape. CLAUDE.md sanctions
+	// rewriting a test pinning a retired contract rather than leaving it red; this is that
+	// case, not the TestNoEscalation one, but the same rule.
+	t.Run("wildcard-managed grant is refused by the guard before the store, 403", func(t *testing.T) {
 		admin := &fakeIdentityAdmin{caps: map[string][]string{}, grantErr: identity.ErrWildcardManaged}
 		s := &Server{idAdmin: admin}
 		req := withPrincipal(httptest.NewRequest(http.MethodPost, "/api/admin/identities/"+testLocalID+"/capabilities", strings.NewReader(`{"capability":"*"}`)), testLocalID)
 		req.SetPathValue("id", testLocalID)
 		rec := httptest.NewRecorder()
 		s.handleGrantCapability(rec, req)
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("status = %d, want 400 for a wildcard-managed grant", rec.Code)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("status = %d, want 403 for a wildcard-managed grant (refused pre-store by the policy guard)", rec.Code)
+		}
+		if len(admin.granted) != 0 {
+			t.Fatalf("granted = %v, want none — the store must never be reached for a wildcard grant", admin.granted)
 		}
 	})
 

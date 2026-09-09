@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+
+	"github.com/chetto1983/aura/internal/identity"
 )
 
 // deprovision.go is the symmetric de-provisioning saga (Phase 36 D-27), the reverse of the
@@ -22,6 +24,15 @@ import (
 // package stays free of the concrete stores; the composition root wires the adapters and
 // unit tests inject fakes. A nil port skips its plane (an unwired plane is a no-op) — used
 // by the pre-cutover path and the unit tests.
+//
+// Phase 2 (D-03/RBAC-07): Deactivate and Purge/PurgeOne each call
+// identity.CanDeactivateIdentity/CanRemoveIdentity before any journal write or mutating port
+// call, so the last-administrator-cannot-remove-itself refusal lives in the saga ONCE and
+// covers the CLI (aura identity deactivate|purge) and the HTTP route (plan 02-07) with one
+// check rather than two. The caller identity comes from the context principal
+// (principalFrom); the grace-window cron sweep and the CLI run headless with no principal on
+// the context, so deprovisionCaller substitutes a sentinel that can never equal a real
+// identity id — the caller is not the subject by construction, and the sweep is unaffected.
 
 // defaultDeprovisionGrace is the soft-delete retention window (D-27): after Deactivate the
 // identity's data is retained this long before Purge may hard-delete it. Overridable via
@@ -36,6 +47,30 @@ type DeprovisionTarget struct {
 	IdentityID    string
 	IdentityName  string
 	AuthulaUserID string
+	// IsAdministrative reports whether this identity holds an administrative capability
+	// (identity.create or identity.delete) at resolution time — the input
+	// CanDeactivateIdentity/CanRemoveIdentity need to refuse an administrative identity's
+	// self-removal (D-03, RBAC-07). Populated by IdentityDeactivator.ResolveTarget/
+	// ListPurgeable; zero value (false) for a target built without a live lookup.
+	IsAdministrative bool
+}
+
+// headlessDeprovisionCaller stands in for the caller identity when there is no principal on
+// the context — the grace-window cron sweep and the CLI both run headless. It is not an
+// identity: it exists only so CanDeactivateIdentity/CanRemoveIdentity's non-empty-id
+// deny-by-default check (RBAC-09) does not conflate "no principal" with "empty id", while
+// guaranteeing "caller equals subject" can never be true for a headless call (real identity
+// ids are UUIDs, this is not one) — the predicate returns nil and the sweep/CLI converge
+// exactly as they did before this phase.
+const headlessDeprovisionCaller = "system:headless-deprovision"
+
+// deprovisionCaller resolves the acting identity for the authorization check: the
+// authenticated context principal when one is set, else the headless sentinel.
+func deprovisionCaller(ctx context.Context) string {
+	if id := principalFrom(ctx); id != "" {
+		return id
+	}
+	return headlessDeprovisionCaller
 }
 
 // IdentityDeactivator owns the aura.identities soft-delete columns (0029): MarkDeactivated
@@ -143,6 +178,9 @@ func (d *Deprovisioner) Deactivate(ctx context.Context, identityID string) error
 	if err != nil {
 		return err
 	}
+	if err := identity.CanDeactivateIdentity(deprovisionCaller(ctx), identityID, target.IsAdministrative); err != nil {
+		return err
+	}
 	run := newSagaRun(ctx, d.deps.Journal, sagaKindDeprovision, identityID)
 	purgeAfter := time.Now().UTC().Add(d.graceWindow())
 	return run.step(ctx, sagaStepDeactivate, func(ctx context.Context) error {
@@ -172,6 +210,9 @@ func (d *Deprovisioner) Deactivate(ctx context.Context, identityID string) error
 // (kind=deprovision), idempotent, and resumable — a re-run skips the steps the journal
 // marks done and re-runs the rest until the identity is fully removed with no orphans.
 func (d *Deprovisioner) Purge(ctx context.Context, target DeprovisionTarget) error {
+	if err := identity.CanRemoveIdentity(deprovisionCaller(ctx), target.IdentityID, target.IsAdministrative); err != nil {
+		return err
+	}
 	if d.deps.IdentityDelete != nil && target.IdentityName != "" {
 		switch {
 		case d.deps.Conversations == nil:
