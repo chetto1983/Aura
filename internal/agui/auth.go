@@ -310,12 +310,19 @@ func (d AuthDeps) recordDenial(r *http.Request, identityID, capability, cause st
 	}
 }
 
-// denialRoute records the request path a denial occurred on. It deliberately reads
-// r.URL.Path here as a placeholder — see the 02-04 Task 1 GREEN commit, which replaces
-// this with the matched route PATTERN (Go 1.22+ http.Request.Pattern) so a denial on
-// /api/admin/identities/{id}/capabilities reads as ONE route instead of one row per id.
+// denialRoute records the MATCHED route pattern (Go 1.22+ http.Request.Pattern), never
+// the raw request path (T-02-23): RequireCapability is always wrapped by
+// mux.Handle(pattern, ...), so the mux has already stamped r.Pattern by the time this
+// gate runs, and a denial on /api/admin/identities/{id}/capabilities reads as ONE route
+// in the feed instead of one row per identity id. The bounded r.Method fallback only
+// fires when RequireCapability is invoked directly off a mux (this package's own unit
+// tests that call it without going through http.ServeMux) — never in production, where
+// every mount goes through mux.Handle.
 func denialRoute(r *http.Request) string {
-	return r.URL.Path
+	if r.Pattern != "" {
+		return r.Pattern
+	}
+	return r.Method
 }
 
 // principalKey is the unexported context key the authenticated identity id is stashed
