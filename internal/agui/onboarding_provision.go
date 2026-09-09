@@ -336,6 +336,7 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 		if derr := s.telegram.DeletePending(context.WithoutCancel(ctx), onboardingToken); derr != nil {
 			slog.Error("onboarding: COMP_C (delete telegram pending) after audit failure failed", "step", "compensate")
 		}
+		compCredit()
 		compResources()
 		if derr := s.auraLeg.DeleteIdentity(context.WithoutCancel(ctx), identityName); derr != nil {
 			slog.Error("onboarding: COMP_A (delete identity) after audit failure failed", "step", "compensate")
