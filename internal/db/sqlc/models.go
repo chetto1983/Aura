@@ -184,16 +184,17 @@ type AuraConversationTurns struct {
 
 // Multi-thread persisted conversations (Slice 1.8). Aggregates token + USD totals per thread.
 type AuraConversations struct {
-	ID                   pgtype.UUID        `json:"id"`
-	Title                pgtype.Text        `json:"title"`
-	IdentityID           pgtype.UUID        `json:"identity_id"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	LastActiveAt         pgtype.Timestamptz `json:"last_active_at"`
-	Status               string             `json:"status"`
-	Model                string             `json:"model"`
-	TotalInputTokens     int64              `json:"total_input_tokens"`
-	TotalOutputTokens    int64              `json:"total_output_tokens"`
-	TotalCachedTokens    int64              `json:"total_cached_tokens"`
+	ID                pgtype.UUID        `json:"id"`
+	Title             pgtype.Text        `json:"title"`
+	IdentityID        pgtype.UUID        `json:"identity_id"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	LastActiveAt      pgtype.Timestamptz `json:"last_active_at"`
+	Status            string             `json:"status"`
+	Model             string             `json:"model"`
+	TotalInputTokens  int64              `json:"total_input_tokens"`
+	TotalOutputTokens int64              `json:"total_output_tokens"`
+	TotalCachedTokens int64              `json:"total_cached_tokens"`
+	// Running per-conversation cost total at full provider precision (migration 0124, numeric(24,12), T-02-36). Widened from numeric(10,4) for the same reason as aura.cache_metrics.cost_usd -- see that column comment.
 	TotalCostUsd         pgtype.Numeric     `json:"total_cost_usd"`
 	Metadata             []byte             `json:"metadata"`
 	SnapshotVersion      int64              `json:"snapshot_version"`
