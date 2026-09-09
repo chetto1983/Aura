@@ -1,8 +1,7 @@
-import { useSyncExternalStore } from 'react';
 import { makePrismAsyncLightSyntaxHighlighter } from '@assistant-ui/react-syntax-highlighter';
 import type { SyntaxHighlighterProps } from '@assistant-ui/react-markdown';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { getTheme } from '@/theme/applyTheme';
+import { useThemeMode } from '@/theme/useThemeMode';
 
 // codeHighlighter — the SyntaxHighlighter slot MarkdownTextPrimitive has always exposed and
 // Aura never filled, which is why every fenced block rendered as plain grey text (operator,
@@ -30,28 +29,10 @@ const LightHighlighter = makePrismAsyncLightSyntaxHighlighter({
 });
 
 // The style objects are baked into the component at construction, so the theme cannot be a
-// prop — it has to pick a different component. `data-theme` on <html> is the single source
-// of truth (theme/applyTheme.ts writes it), and a MutationObserver on that one attribute is
-// what makes the switch immediate instead of "correct after the next reload".
-function subscribeToTheme(onChange: () => void): () => void {
-  const observer = new MutationObserver(onChange);
-  observer.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ['data-theme'],
-  });
-  return () => {
-    observer.disconnect();
-  };
-}
-
-function readTheme(): string {
-  return document.documentElement.getAttribute('data-theme') ?? getTheme();
-}
-
+// prop -- it has to pick a different component. useThemeMode is what keeps that choice live
+// across a theme switch.
 export function CodeHighlighter(props: SyntaxHighlighterProps) {
-  // getTheme() is the server-snapshot fallback: it reads localStorage rather than the DOM,
-  // so a render before applyTheme() has stamped the attribute still picks the right one.
-  const theme = useSyncExternalStore(subscribeToTheme, readTheme, getTheme);
+  const theme = useThemeMode();
   const Highlighter = theme === 'light' ? LightHighlighter : DarkHighlighter;
   return <Highlighter {...props} />;
 }

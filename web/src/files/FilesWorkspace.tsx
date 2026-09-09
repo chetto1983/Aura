@@ -9,6 +9,7 @@ import {
 import { Locale } from '@svar-ui/react-core';
 import { useTranslation } from 'react-i18next';
 import '@svar-ui/react-filemanager/all.css';
+import { useThemeMode } from '@/theme/useThemeMode';
 import { createFileManagerProvider, directURL, parseDates } from './filesApi';
 import { filesWords } from './filesLocale';
 
@@ -105,8 +106,9 @@ export default function FilesWorkspace({ mobileMenu }: FilesWorkspaceProps) {
     [provider, t],
   );
 
-  const Theme =
-    document.documentElement.getAttribute('data-theme') === 'light' ? Willow : WillowDark;
+  // Subscribed, not read once: the switch mutates <html data-theme> without touching React
+  // state, so a plain read would leave the widget in the theme it was mounted with.
+  const Theme = useThemeMode() === 'light' ? Willow : WillowDark;
 
   return (
     <section aria-label={t('files.title')} className="flex h-full min-h-0 min-w-0 flex-col bg-bg">
