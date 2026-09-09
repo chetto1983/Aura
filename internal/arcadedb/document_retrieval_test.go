@@ -180,7 +180,7 @@ func TestFusedCandidatesSendTheMeasuredQueryAndKeepEngineOrder(t *testing.T) {
 	for _, want := range []string{
 		"`vector.fuse`(", "`vector.neighbors`('Passage[embedding]', :embedding, :fetch,", "1 = 1",
 		"SEARCH_INDEX('Passage[text]', :query)", "fusion: 'RRF'",
-		"groupBy: 'search_document_id'", "groupSize: 1",
+		"groupBy: 'raw_sha256'", "groupSize: 1",
 	} {
 		if !strings.Contains(statement, want) {
 			t.Fatalf("statement lost %q: %s", want, statement)

@@ -152,6 +152,13 @@ func (d *DocumentIndex) FusedCandidates(
 // questions scored exactly 0.016393442, while a correct filename lookup found by ONE leg
 // scored that identical 0.016393442 and reranked to 0.7651. Thresholding the fused rank
 // would therefore have rejected a perfect match and kept a nonsense one. See RelevanceFloor.
+// The group key is the CONTENT hash, not the document id. One file uploaded and also
+// attached to a chat is two S3 objects and therefore two IndexedDocument rows -- correctly,
+// since CocoIndex reconciles a row and its passages together -- but it is one file to
+// whoever asked, and grouping by id spent two of their result slots on it. Manual §6.4.19:
+// grouping is "integrated into the index traversal proper", so the copies never enter the
+// candidate pool rather than being filtered out of it afterwards.
+//
 // The scope predicate reaches BOTH sub-pipelines and, when the caller named documents,
 // restricts both to them. Measured 2026-08-08 to leave the
 // ranking bit-identical, so it costs nothing and its absence would have silently ignored
@@ -164,7 +171,7 @@ func fusedStatement(where string, strategy FusionStrategy, limit int) string {
 		"maxDistance: :max_distance })," +
 		"(SELECT @rid, $score FROM " + documentPassageType +
 		" WHERE SEARCH_INDEX('" + documentPassageType + "[text]', :query) = true AND " + where + ")," +
-		"{ fusion: '" + string(strategy) + "', groupBy: 'search_document_id', groupSize: " +
+		"{ fusion: '" + string(strategy) + "', groupBy: 'raw_sha256', groupSize: " +
 		strconv.Itoa(fusedGroupSize) + " }" +
 		"))), :embedding, '" + documentEmbeddingProperty + "', :candidates)" +
 		")) WHERE score >= :min_relevance LIMIT " + strconv.Itoa(limit)

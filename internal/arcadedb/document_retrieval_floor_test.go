@@ -42,3 +42,15 @@ func TestDocumentConfigDefaultsTheRelevanceFloor(t *testing.T) {
 		t.Fatalf("relevance floor = %v, want %v", cfg.RelevanceFloor, defaultDocumentRelevanceFloor)
 	}
 }
+
+// Grouping by the object id spends the candidate budget twice on one file: the same bytes
+// under two source keys are two IndexedDocument rows by design, and the fusion cannot tell
+// them apart by id. The manual's §6.4.19 is explicit that this belongs in the traversal --
+// "deduped at the index level rather than over-fetched and post-partitioned in the
+// application" -- so the group key is the content hash, not the document id.
+func TestFusedStatementGroupsByContentHash(t *testing.T) {
+	statement := fusedStatement("identity_id = :identity_id", FusionRRF, 20)
+	if !strings.Contains(statement, "groupBy: 'raw_sha256'") {
+		t.Fatalf("fusion groups copies of one file as separate documents:\n%s", statement)
+	}
+}

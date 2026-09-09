@@ -32,12 +32,15 @@ func rankDocuments(
 	topPassages int,
 	forceOpen bool,
 ) []RetrievalDocument {
-	// Cards and passages share the reconciler-derived search_document_id.
-	byDocumentID := make(map[string]*rankedDocument, len(cards)+len(passages))
+	// Keyed by CONTENT, not by document id: the fusion already groups its own candidates by
+	// raw_sha256, but the card leg is a separate Postgres query that cannot, so without this
+	// the twin of a deduplicated file walks back in as a second document. The first copy seen
+	// represents the file, and passages come first, so that is the best-evidenced one.
+	byContent := make(map[string]*rankedDocument, len(cards)+len(passages))
 	// Passages first and their order wins: a document the engine ranked is better
 	// evidenced than one only a card mentions, so cards start after the last passage.
 	for rank, passage := range passages {
-		doc := ensureRankedDocumentFromCandidate(byDocumentID, passage, names)
+		doc := ensureRankedDocumentFromCandidate(byContent, passage, names)
 		doc.order = min(doc.order, rank)
 		doc.ordinal = min(doc.ordinal, passage.Ordinal)
 		if passage.FusedScore != nil && *passage.FusedScore > doc.document.Score {
@@ -46,15 +49,15 @@ func rankDocuments(
 		mergePassage(doc, passage, rank+1)
 	}
 	for rank, card := range cards {
-		doc := ensureRankedDocumentFromCard(byDocumentID, card)
+		doc := ensureRankedDocumentFromCard(byContent, card)
 		doc.order = min(doc.order, len(passages)+rank)
 		doc.document.Evidence = appendEvidence(doc.document.Evidence, RetrievalEvidence{
 			Leg: "card", Rank: rank + 1, Score: new(card.Rank),
 		})
 	}
 
-	ranked := make([]*rankedDocument, 0, len(byDocumentID))
-	for _, doc := range byDocumentID {
+	ranked := make([]*rankedDocument, 0, len(byContent))
+	for _, doc := range byContent {
 		doc.document.RequiresOpen = forceOpen || len(doc.passages) == 0
 		doc.document.Passages = sortedPassages(doc.passages, topPassages)
 		ranked = append(ranked, doc)
@@ -78,6 +81,16 @@ func rankDocuments(
 	return out
 }
 
+// contentKey collapses byte-identical copies onto one entry. It falls back to the document
+// id when the hash is absent: keying every hashless row under "" would merge unrelated
+// documents into one, which is a far worse answer than the duplicate it would prevent.
+func contentKey(rawSHA256, documentID string) string {
+	if rawSHA256 == "" {
+		return documentID
+	}
+	return rawSHA256
+}
+
 func newRankedDocument(documentID string) *rankedDocument {
 	return &rankedDocument{
 		document: RetrievalDocument{
@@ -90,12 +103,16 @@ func newRankedDocument(documentID string) *rankedDocument {
 }
 
 // ensureRankedDocumentFromCard adds the document's searchable description and object identity.
-func ensureRankedDocumentFromCard(byDocumentID map[string]*rankedDocument, card RetrievalCard) *rankedDocument {
-	doc := byDocumentID[card.DocumentID]
+func ensureRankedDocumentFromCard(byContent map[string]*rankedDocument, card RetrievalCard) *rankedDocument {
+	key := contentKey(card.OriginalSHA256, card.DocumentID)
+	doc := byContent[key]
 	if doc == nil {
 		doc = newRankedDocument(card.DocumentID)
-		byDocumentID[card.DocumentID] = doc
+		byContent[key] = doc
 	}
+	// The card wins the title unconditionally: it is the only leg that carries the file's
+	// real name, and the passage leg's fallback is a key's base name -- a uuid for every
+	// chat attachment.
 	doc.document.Title = card.Title
 	doc.document.Card = card.Card
 	if doc.document.SourceKey == "" {
@@ -116,16 +133,19 @@ func ensureRankedDocumentFromCard(byDocumentID map[string]*rankedDocument, card 
 // an object dropped straight into the bucket, and a uuid for a chat attachment, whose name
 // is deliberately kept out of its key so it cannot leak through a presigned URL.
 func ensureRankedDocumentFromCandidate(
-	byDocumentID map[string]*rankedDocument,
+	byContent map[string]*rankedDocument,
 	candidate arcadedb.PassageCandidate,
 	names map[string]string,
 ) *rankedDocument {
-	doc := byDocumentID[candidate.SearchDocumentID]
+	key := contentKey(candidate.RawSHA256, candidate.SearchDocumentID)
+	doc := byContent[key]
 	if doc == nil {
 		doc = newRankedDocument(candidate.SearchDocumentID)
-		byDocumentID[candidate.SearchDocumentID] = doc
+		byContent[key] = doc
 	}
-	doc.document.SourceKind, doc.document.SourceKey = candidate.SourceKind, candidate.SourceKey
+	if doc.document.SourceKey == "" {
+		doc.document.SourceKind, doc.document.SourceKey = candidate.SourceKind, candidate.SourceKey
+	}
 	if doc.document.Title == "" {
 		if name := names[candidate.SearchDocumentID]; name != "" {
 			doc.document.Title = name
