@@ -64,7 +64,10 @@ func (t *DocumentOpen) Spec() Spec {
 			"'how many' over a spreadsheet or table, any conversion, and any question document_search answered with " +
 			"chunks that do not actually contain the answer. document_search finds WHICH document (use the " +
 			"document_id from its hits); document_open hands you the file itself. Spreadsheets especially: chunked " +
-			"text cannot answer aggregates at any relevance, the file answers them exactly. Returns the workspace " +
+			"text cannot answer aggregates at any relevance, the file answers them exactly. When a column holds " +
+			"codes rather than quantities — the card calls them code, and postcodes, ISTAT/Belfiore codes, VAT " +
+			"and tax numbers, SKUs and IBANs all are — load it as TEXT (pandas: dtype=str), or the leading " +
+			"zeros that make the value valid are silently dropped and the answer is wrong. Returns the workspace " +
 			"path, file name, size and sha256. Once you have looked inside, if the file name did not already say " +
 			"what it holds, record it with document_describe — that is what makes it findable next time. " +
 			"Example: {\"document_id\":\"doc_9f2c…\"}.",
