@@ -349,3 +349,55 @@ func retrievalCandidate(leg arcadedb.RetrievalLeg) arcadedb.PassageCandidate {
 		CharacterSpan:    &arcadedb.CharacterSpan{Start: 10, End: 25}, Leg: leg,
 	}
 }
+
+// A query the corpus cannot answer must come back empty and say so, not hand the agent
+// whatever the card index happened to match. Measured 2026-09-09 on the live corpus:
+// "ricetta della carbonara" returned three E2E worker reports at status "complete" with an
+// empty degradation reason, and the agent had nothing on the wire telling it to stop.
+func TestHostRetrieverAbstainsWhenNoPassageQualifies(t *testing.T) {
+	control := &fakeRetrievalControl{cards: []RetrievalCard{retrievalCard()}}
+	retriever := &HostRetriever{
+		ControlPlane: control,
+		PassageIndex: &fakePassageIndex{}, // the floor admitted nothing
+		Embedder:     &fakeRetrievalEmbedder{vector: []float64{0.1, 0.2}},
+		Config:       RetrievalConfig{CandidateLimit: 20},
+	}
+
+	response, err := retriever.Retrieve(t.Context(), RetrievalRequest{
+		IdentityID: retrievalIdentity, Query: "ricetta della carbonara", Limit: 3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !response.Abstained {
+		t.Error("Abstained = false, want true when no passage qualified")
+	}
+	if response.AbstentionReason != AbstainedNoQualifiedPassage {
+		t.Errorf("AbstentionReason = %q, want %q", response.AbstentionReason, AbstainedNoQualifiedPassage)
+	}
+	if len(response.Documents) != 0 {
+		t.Errorf("documents = %d, want 0: a card match alone is not evidence", len(response.Documents))
+	}
+}
+
+// The card-only DEGRADATIONS are not abstentions: the passage leg never ran, so the cards
+// are the best honest answer rather than a claim that the corpus has nothing.
+func TestHostRetrieverDoesNotAbstainWhileDegradedToCards(t *testing.T) {
+	retriever := &HostRetriever{
+		ControlPlane: &fakeRetrievalControl{cards: []RetrievalCard{retrievalCard()}},
+		Config:       RetrievalConfig{CandidateLimit: 20},
+	}
+
+	response, err := retriever.Retrieve(t.Context(), RetrievalRequest{
+		IdentityID: retrievalIdentity, Query: "clienti", Limit: 3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Abstained {
+		t.Error("Abstained = true while card-only degraded, want false")
+	}
+	if len(response.Documents) == 0 {
+		t.Error("documents = 0, want the cards the degradation exists to serve")
+	}
+}

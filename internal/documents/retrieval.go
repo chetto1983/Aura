@@ -47,6 +47,12 @@ const (
 	// why it stopped sharing DegradationArcade's name (measured 2026-09-06: the two
 	// were indistinguishable on the wire and neither was logged).
 	DegradationUnconfigured = "passage_index_unconfigured"
+
+	// AbstainedNoQualifiedPassage is the healthy cascade reporting that the corpus has
+	// nothing to say. It is NOT a degradation: every leg ran, and the dense floor let
+	// nothing through, which is the only way a vector index can ever answer "no" --
+	// vector.neighbors returns its k nearest however far away they are.
+	AbstainedNoQualifiedPassage = "no_qualified_passage"
 )
 
 // RetrievalRequest is the query envelope. IdentityID is deliberately not decodable from JSON:
@@ -62,11 +68,17 @@ type RetrievalRequest struct {
 
 // RetrievalResponse reports which production legs ran and what they returned.
 type RetrievalResponse struct {
-	Query             string              `json:"query"`
-	Profile           string              `json:"profile"`
-	Status            RetrievalStatus     `json:"status"`
-	DegradationReason string              `json:"degradation_reason,omitempty"`
-	Documents         []RetrievalDocument `json:"documents"`
+	Query             string          `json:"query"`
+	Profile           string          `json:"profile"`
+	Status            RetrievalStatus `json:"status"`
+	DegradationReason string          `json:"degradation_reason,omitempty"`
+	// Abstained says the corpus could not answer, so the caller must not treat the empty
+	// document list as a retrieval failure -- and must not answer from its own knowledge
+	// as though the library had agreed. It mirrors memory_search's own contract.
+	Abstained        bool   `json:"abstained"`
+	AbstentionReason string `json:"abstention_reason,omitempty"`
+
+	Documents []RetrievalDocument `json:"documents"`
 }
 
 // RetrievalDocument is one document's share of the answer. RequiresOpen is set when the document
@@ -232,6 +244,14 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 		response.Status, response.DegradationReason = RetrievalCardOnly, DegradationArcade
 		r.degradations.warn(DegradationArcade, err.Error(), request.IdentityID)
 		response.Documents = rankCardsOnly(cards, request.Limit, cfg.TopPassages)
+		return response, nil
+	}
+	// The card leg alone is not evidence -- the server's own tool instructions say so --
+	// and letting it answer by itself is exactly how "ricetta della carbonara" came back
+	// with three worker reports. Every leg ran and none of them qualified, so the honest
+	// answer is that this corpus has nothing, not the nearest thing the card index held.
+	if len(fused) == 0 {
+		response.Abstained, response.AbstentionReason = true, AbstainedNoQualifiedPassage
 		return response, nil
 	}
 	response.Documents = rankDocuments(

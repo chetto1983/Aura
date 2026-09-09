@@ -125,6 +125,7 @@ func (d *DocumentIndex) FusedCandidates(
 	params["embedding"] = append([]float64(nil), request.Embedding...)
 	params["query"] = escapeLucene(query)
 	params["fetch"] = fusedDenseNeighbours
+	params["max_distance"] = d.config.DenseMaxDistance
 	rows, err := client.Query(ctx, fusedStatement(where, strategy, filter.Limit), params)
 	if err != nil {
 		if missingIngestType(err, documentPassageType) {
@@ -146,7 +147,8 @@ func fusedStatement(where string, strategy FusionStrategy, limit int) string {
 	return "SELECT " + passageCandidateFields + ", score AS fused_score FROM (" +
 		"SELECT expand(`vector.fuse`(" +
 		"`vector.neighbors`('" + documentPassageType + "[embedding]', :embedding, :fetch, " +
-		"{ filter: (SELECT @rid FROM " + documentPassageType + " WHERE " + where + ").@rid })," +
+		"{ filter: (SELECT @rid FROM " + documentPassageType + " WHERE " + where + ").@rid, " +
+		"maxDistance: :max_distance })," +
 		"(SELECT @rid, $score FROM " + documentPassageType +
 		" WHERE SEARCH_INDEX('" + documentPassageType + "[text]', :query) = true AND " + where + ")," +
 		"{ fusion: '" + string(strategy) + "', groupBy: 'search_document_id', groupSize: " +

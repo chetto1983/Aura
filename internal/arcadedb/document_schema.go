@@ -18,6 +18,8 @@ const (
 	defaultRetrievalCandidateCap = 200
 	defaultDocumentFilterCap     = 100
 	defaultDocumentQueryRunes    = 2_048
+	// See DenseMaxDistance for the measurement this number comes from.
+	defaultDocumentDenseMaxDistance = 0.72
 )
 
 // CharacterSpan locates a passage in the extracted text.
@@ -32,6 +34,20 @@ type DocumentIndexConfig struct {
 	MaxRetrievalCandidates int
 	MaxDocumentFilters     int
 	MaxQueryRunes          int
+	// DenseMaxDistance bounds the dense leg so retrieval can abstain at all: vector.neighbors
+	// returns its k nearest however far away they are, so with no bound every query — including
+	// one the corpus cannot answer — comes back with candidates.
+	//
+	// 0.72 is the midpoint of a measured band, not a guess. On the live 1079-passage corpus
+	// (2026-09-09, EmbeddingGemma 768d) the nearest neighbour for five answerable questions sat
+	// at 0.247, 0.400, 0.420, 0.651 and 0.712; for five the corpus does not hold ("ricetta della
+	// carbonara", "chi ha vinto il mondiale 1982", potatura, traghetti, vitamina B12) at 0.706,
+	// 0.731, 0.794, 0.798 and 0.799. It keeps all five true matches and drops four of the five
+	// others. The margin is thin — 0.7124 against 0.7063 — so this is a knob with its
+	// measurement written beside it, not a clean separation: "orari dei traghetti per la
+	// Sardegna" is still admitted. The manual's own remedy for that overlap is a third,
+	// sparse leg (vector.sparseNeighbors), which this fusion does not yet have.
+	DenseMaxDistance float64
 }
 
 func (cfg DocumentIndexConfig) normalized() (DocumentIndexConfig, error) {
@@ -41,6 +57,7 @@ func (cfg DocumentIndexConfig) normalized() (DocumentIndexConfig, error) {
 	cfg.MaxRetrievalCandidates = defaultLimit(cfg.MaxRetrievalCandidates, defaultRetrievalCandidateCap)
 	cfg.MaxDocumentFilters = defaultLimit(cfg.MaxDocumentFilters, defaultDocumentFilterCap)
 	cfg.MaxQueryRunes = defaultLimit(cfg.MaxQueryRunes, defaultDocumentQueryRunes)
+	cfg.DenseMaxDistance = defaultFloatLimit(cfg.DenseMaxDistance, defaultDocumentDenseMaxDistance)
 	limits := []struct {
 		name  string
 		value int
