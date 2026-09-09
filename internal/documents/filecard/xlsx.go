@@ -66,6 +66,7 @@ func buildXLSX(req Request, card Card) (Card, error) {
 				"Sheet %q was sampled: the first %d rows were read out of %d.",
 				sheet.name, built.RowsScanned, built.Rows))
 		}
+		card.Caveats = append(card.Caveats, tableCaveats(built)...)
 		card.Sheets = append(card.Sheets, built)
 	}
 	if len(card.Sheets) == 1 && len(card.Sheets[0].Columns) > 0 {

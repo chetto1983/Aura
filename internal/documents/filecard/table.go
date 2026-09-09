@@ -1,6 +1,7 @@
 package filecard
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -84,7 +85,7 @@ func (t *tableBuilder) done(declaredTotal int64) Sheet {
 			rows = max(declaredTotal-int64(t.rowsSkipped), 0)
 		}
 	}
-	sheet := Sheet{Name: t.name, Rows: rows, RowsScanned: t.rowsScanned}
+	sheet := Sheet{Name: t.name, Rows: rows, RowsScanned: t.rowsScanned, HeaderRow: t.headerRow}
 	for _, col := range t.columns {
 		sheet.Columns = append(sheet.Columns, col.column())
 	}
@@ -303,8 +304,14 @@ func (c *columnStats) kind() string {
 	// written, not of the single cell, so the rest of it holds codes that merely happen
 	// not to need a zero. A share test would call such a column a number whenever the
 	// padded minority is small enough, which is exactly when the error is hardest to see.
+	//
+	// "code" and not "text" because the reader has to DO something different with it.
+	// Measured 2026-09-09 against the live agent: told the column was text, it still ran
+	// pandas.read_excel with inferred dtypes and answered ISTAT 4040 for a cell reading
+	// 004040. A name it cannot read as prose is the first half of saying so; codeColumns
+	// below is the second.
 	case c.padded > 0:
-		return "text"
+		return "code"
 	case c.numeric*10 >= c.nonEmpty*9:
 		return "number"
 	case c.numeric*10 <= c.nonEmpty:
@@ -408,4 +415,38 @@ func truncateRunes(value string, limit int) string {
 	}
 	runes := []rune(value)
 	return strings.TrimSpace(string(runes[:limit])) + "…"
+}
+
+// codeColumns names the columns whose values are fixed-width codes, in sheet order.
+func codeColumns(sheet Sheet) []string {
+	var names []string
+	for _, column := range sheet.Columns {
+		if column.Type == "code" && column.Header != "" {
+			names = append(names, column.Header)
+		}
+	}
+	return names
+}
+
+// tableCaveats states what a reader has to do differently with this sheet, as opposed to
+// what it contains. Both come from what the scan already measured, and both were watched
+// costing a live agent an answer on 2026-09-09: it converted a code column with pandas'
+// inferred dtypes and lost the leading zeros, and it took three tries to find the header
+// under a one-line banner.
+func tableCaveats(sheet Sheet) []string {
+	var caveats []string
+	if names := codeColumns(sheet); len(names) > 0 {
+		caveats = append(caveats, fmt.Sprintf(
+			"Read %s as text: they hold fixed-width codes, and any numeric conversion "+
+				"drops the leading zeros that make them valid.", strings.Join(names, ", ")))
+	}
+	if sheet.HeaderRow > 1 {
+		above := "the line above them is a banner"
+		if sheet.HeaderRow > 2 {
+			above = fmt.Sprintf("the %d lines above them are a banner", sheet.HeaderRow-1)
+		}
+		caveats = append(caveats, fmt.Sprintf(
+			"The column names are on row %d; %s, not data.", sheet.HeaderRow, above))
+	}
+	return caveats
 }

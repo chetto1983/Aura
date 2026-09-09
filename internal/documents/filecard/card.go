@@ -83,8 +83,11 @@ type Sheet struct {
 	// reports the real size. Negative means unknown.
 	Rows        int64
 	RowsScanned int
-	Columns     []Column
-	Samples     []SampleRow
+	// HeaderRow is the 1-based row the column names were found on, so a reader knows how
+	// many lines to skip. Zero means the sheet had no header row to find.
+	HeaderRow int64
+	Columns   []Column
+	Samples   []SampleRow
 }
 
 // Column is one column's narration: what kind of values it holds, how many

@@ -65,6 +65,7 @@ func buildCSV(req Request, card Card) (Card, error) {
 		return card, nil
 	}
 	sheet := table.done(0)
+	card.Caveats = append(card.Caveats, tableCaveats(sheet)...)
 	card.Sheets = append(card.Sheets, sheet)
 	card.Facts = append(card.Facts, fmt.Sprintf("%d rows x %d columns", sheet.Rows, len(sheet.Columns)))
 	if capped {

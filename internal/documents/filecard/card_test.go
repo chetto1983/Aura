@@ -361,8 +361,8 @@ func TestZeroPaddedColumnsAreNotNumbers(t *testing.T) {
 		values []string
 		want   string
 	}{
-		"all padded":       {[]string{"004040", "028001", "070027"}, "text"},
-		"one padded":       {[]string{"12023", "35031", "00010", "56021"}, "text"},
+		"all padded":       {[]string{"004040", "028001", "070027"}, "code"},
+		"one padded":       {[]string{"12023", "35031", "00010", "56021"}, "code"},
 		"plain integers":   {[]string{"1001", "119024", "20"}, "number"},
 		"zero and decimal": {[]string{"0", "0.5", "-0.75"}, "number"},
 		"words":            {[]string{"Torino", "Bergamo"}, "text"},
@@ -381,5 +381,42 @@ func TestZeroPaddedColumnsAreNotNumbers(t *testing.T) {
 				t.Fatalf("a non-numeric column kept a range: %s..%s", column.Min, column.Max)
 			}
 		})
+	}
+}
+
+// The card must say what a reader has to DO differently, not only what the sheet holds.
+// Measured 2026-09-09 against the live agent: told codice_istat was text it still ran
+// pandas.read_excel with inferred dtypes and answered ISTAT 4040 for a cell reading 004040,
+// and it took three shell calls to find the header under a one-line banner.
+func TestTableCaveatsTellTheReaderWhatToDo(t *testing.T) {
+	sheet := Sheet{
+		Name: "gi_comuni_cap", HeaderRow: 2,
+		Columns: []Column{
+			{Header: "codice_istat", Type: "code"},
+			{Header: "denominazione_ita", Type: "text"},
+			{Header: "cap", Type: "code"},
+			{Header: "lat", Type: "number"},
+		},
+	}
+	caveats := strings.Join(tableCaveats(sheet), " ")
+	for _, want := range []string{"codice_istat, cap", "as text", "leading zeros", "row 2", "banner"} {
+		if !strings.Contains(caveats, want) {
+			t.Fatalf("caveats missing %q: %s", want, caveats)
+		}
+	}
+	// A column that is not a code must not be dragged into the instruction.
+	if strings.Contains(caveats, "denominazione_ita") || strings.Contains(caveats, "lat") {
+		t.Fatalf("a non-code column was named: %s", caveats)
+	}
+}
+
+// A sheet whose header is the first row and which holds no codes needs neither sentence.
+func TestTableCaveatsStaySilentWhenThereIsNothingToWarnAbout(t *testing.T) {
+	sheet := Sheet{
+		Name: "plain", HeaderRow: 1,
+		Columns: []Column{{Header: "nome", Type: "text"}, {Header: "totale", Type: "number"}},
+	}
+	if caveats := tableCaveats(sheet); len(caveats) != 0 {
+		t.Fatalf("caveats = %v, want none", caveats)
 	}
 }
