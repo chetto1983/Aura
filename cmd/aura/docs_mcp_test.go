@@ -2,20 +2,49 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/assets"
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func docsMCPSession(t *testing.T, factory docsServiceFactory) *mcp.ClientSession {
+// docsMCPRegistry stands in for the production registry with the SAME native tool types
+// the agent runs, over the test double's seams. Registering anything else here would be
+// testing a different server than the one that ships.
+func docsMCPRegistry(svc *fakeDocsService) *tools.Registry {
+	registry := tools.NewRegistry()
+	registry.Register(&tools.DocumentSearch{Library: svc})
+	// No router: an open therefore denies with sandbox_unavailable, which is what the agent
+	// gets when its box is unreachable. Where the file lands is exercised in the tool's own
+	// package, against a real box.
+	registry.Register(&tools.DocumentOpen{Documents: svc})
+	// The paging tool is production's too: a document result over the preview cap is
+	// truncated with a footer naming its sidecar, and without this the footer points at
+	// nothing a client of this server can call.
+	registry.Register(&tools.ReadToolOutput{})
+	return registry
+}
+
+// docsMCPConfig carries the production preview cap on purpose: a result that would be cut
+// short for the model must be cut short here too, or the server measures a bigger answer
+// than the agent ever sees.
+func docsMCPConfig(t *testing.T) *config.Config {
 	t.Helper()
-	server, err := newDocsMCPServer("operator-1", factory)
+	return &config.Config{RunDir: t.TempDir(), ToolPreviewCap: 30000}
+}
+
+func docsMCPSession(t *testing.T, svc *fakeDocsService) *mcp.ClientSession {
+	t.Helper()
+	server, err := newDocsMCPServer("operator-1", docsMCPRegistry(svc), docsMCPConfig(t), fakeDocsFactory(svc))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +71,7 @@ func TestDocsMCPFullEvidenceAndFixedIdentity(t *testing.T) {
 			{Text: text, CitationToken: "document:doc-1@hash#chars=0-22029"},
 		}}},
 	}}
-	session := docsMCPSession(t, fakeDocsFactory(svc))
+	session := docsMCPSession(t, svc)
 	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{
 		Name: "document_search", Arguments: map[string]any{
 			"query": "gav.getStatus", "document_ids": []string{"doc-1"}, "limit": 3,
@@ -66,7 +95,7 @@ func TestDocsMCPFullEvidenceAndFixedIdentity(t *testing.T) {
 
 func TestDocsMCPIngestUsesExistingHandler(t *testing.T) {
 	svc := &fakeDocsService{ingestAsset: assets.Asset{ID: "asset-1", Status: assets.StatusAccepted, FileName: "manual.pdf"}}
-	session := docsMCPSession(t, fakeDocsFactory(svc))
+	session := docsMCPSession(t, svc)
 	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{
 		Name: "document_ingest", Arguments: map[string]any{"path": "manual.pdf", "source_id": "stable-source"},
 	})
@@ -84,10 +113,7 @@ func TestDocsMCPIngestUsesExistingHandler(t *testing.T) {
 }
 
 func TestDocsMCPRejectsInvalidSearchAndPropagatesFailure(t *testing.T) {
-	factory := func(context.Context) (docsCLIService, func(), error) {
-		return nil, nil, errors.New("database unavailable")
-	}
-	session := docsMCPSession(t, factory)
+	session := docsMCPSession(t, &fakeDocsService{retrieveErr: errors.New("database unavailable")})
 	for _, args := range []map[string]any{
 		{"query": ""}, {"query": "GAV", "limit": -1}, {"query": "GAV"},
 		{"query": "GAV", "identity_id": "another-user"},
@@ -100,17 +126,29 @@ func TestDocsMCPRejectsInvalidSearchAndPropagatesFailure(t *testing.T) {
 }
 
 func TestDocsMCPManifestAndConfiguration(t *testing.T) {
-	factory := fakeDocsFactory(&fakeDocsService{})
-	if _, err := newDocsMCPServer("", factory); err == nil {
-		t.Fatal("missing operator accepted")
-	}
-	if _, err := newDocsMCPServer("operator-1", nil); err == nil {
-		t.Fatal("missing service accepted")
+	svc := &fakeDocsService{}
+	factory := fakeDocsFactory(svc)
+	registry, cfg := docsMCPRegistry(svc), docsMCPConfig(t)
+	for _, missing := range []string{"operator", "registry", "configuration", "service"} {
+		operator, reg, conf, fac := "operator-1", registry, cfg, factory
+		switch missing {
+		case "operator":
+			operator = ""
+		case "registry":
+			reg = nil
+		case "configuration":
+			conf = nil
+		case "service":
+			fac = nil
+		}
+		if _, err := newDocsMCPServer(operator, reg, conf, fac); err == nil {
+			t.Fatalf("server built without the %s", missing)
+		}
 	}
 	if err := runDocsCommand(t.Context(), []string{"mcp", "extra"}, &bytes.Buffer{}, factory); err == nil {
 		t.Fatal("extra MCP arguments accepted")
 	}
-	session := docsMCPSession(t, factory)
+	session := docsMCPSession(t, svc)
 	listed, err := session.ListTools(t.Context(), nil)
 	if err != nil {
 		t.Fatalf("manifest: %v", err)
@@ -121,18 +159,24 @@ func TestDocsMCPManifestAndConfiguration(t *testing.T) {
 	for _, tool := range listed.Tools {
 		manifest[tool.Name] = true
 	}
-	for _, want := range []string{"document_ingest", "document_search", "document_open"} {
+	for _, want := range []string{"document_ingest", "document_search", "document_open", "read_tool_output"} {
 		if !manifest[want] {
 			t.Fatalf("manifest is missing %s: %v", want, manifest)
 		}
 	}
-	if len(listed.Tools) != len(manifest) || len(manifest) != 3 {
+	if len(listed.Tools) != len(manifest) || len(manifest) != 4 {
 		t.Fatalf("unexpected manifest: %v", manifest)
 	}
+	// The effect hints of a native tool are ITS OWN descriptors, read off the same Spec the
+	// policy gateway reads: a client is told what the runtime believes, not a second opinion
+	// formed here. document_ingest has no native twin, so its hint is the one written here.
 	for _, tool := range listed.Tools {
-		wantReadOnly := tool.Name == "document_search"
+		wantReadOnly := false
+		if native, ok := docsMCPRegistry(svc).Get(tool.Name); ok {
+			wantReadOnly = !native.Spec().Mutating
+		}
 		if tool.Annotations == nil || tool.Annotations.ReadOnlyHint != wantReadOnly {
-			t.Fatalf("wrong effect annotation: %#v", tool)
+			t.Fatalf("effect annotation is not the tool's own: %#v", tool)
 		}
 		schema, _ := json.Marshal(tool.InputSchema)
 		if bytes.Contains(schema, []byte("identity_id")) {
@@ -141,44 +185,128 @@ func TestDocsMCPManifestAndConfiguration(t *testing.T) {
 	}
 }
 
-// The same capability is described twice -- here and in internal/agent/tools -- over the
-// same production handlers, and the two had already drifted: measured 2026-09-09, this
-// server's document_search said only "Retrieve full passage evidence, citations and index
-// status", naming neither citation_token nor requires_open nor the neighbours parameter,
-// while the agent-side description said all three. An MCP client is the surface with NO
-// other instructions to fall back on, so it is the one that must not be the thin copy.
-func TestDocsMCPToolsCarryTheSharedContract(t *testing.T) {
-	session := docsMCPSession(t, fakeDocsFactory(&fakeDocsService{}))
+// TestDocsMCPPagesASpilledResult walks the path the agent walks when a document result is
+// larger than the preview cap: the first call comes back cut on a rune boundary with a
+// footer naming its sidecar, and read_tool_output returns the bytes the cut removed.
+// Measured 2026-09-09 against the live library, which is why the cap is kept rather than
+// lifted for this transport: document_search with neighbours:2 over the default limit
+// produced 54,936 bytes, the client received 30,000 of them ending mid-JSON, and the
+// footer named a tool the server did not publish.
+func TestDocsMCPPagesASpilledResult(t *testing.T) {
+	tail := "TAIL_MARKER_REACHABLE_ONLY_BY_PAGING"
+	svc := &fakeDocsService{response: documents.RetrievalResponse{
+		Status: documents.RetrievalComplete,
+		Documents: []documents.RetrievalDocument{{DocumentID: "doc-1", Passages: []documents.RetrievalPassage{
+			{Text: strings.Repeat("Passage body. ", 4000) + tail, CitationToken: "document:doc-1@hash#chars=0-56000"},
+		}}},
+	}}
+	session := docsMCPSession(t, svc)
+	first, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: "document_search", Arguments: map[string]any{"query": "tail"},
+	})
+	if err != nil || first.IsError {
+		t.Fatalf("search: %v, %#v", err, first)
+	}
+	preview := docsMCPText(t, first)
+	if !strings.Contains(preview, "[output truncated") {
+		t.Fatalf("the preview cap did not apply: %d bytes back", len(preview))
+	}
+	if strings.Contains(preview, tail) {
+		t.Fatal("the tail survived the cut, so this no longer exercises paging")
+	}
+	spillID, offset := docsMCPSpillPointer(t, preview)
+
+	rest, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: "read_tool_output", Arguments: map[string]any{"tool_call_id": spillID, "offset": offset},
+	})
+	if err != nil || rest.IsError {
+		t.Fatalf("read_tool_output: %v, %#v", err, rest)
+	}
+	if !strings.Contains(docsMCPText(t, rest), tail) {
+		t.Fatal("paging back did not return the bytes the cap removed")
+	}
+}
+
+func docsMCPText(t *testing.T, result *mcp.CallToolResult) string {
+	t.Helper()
+	var joined strings.Builder
+	for _, content := range result.Content {
+		text, ok := content.(*mcp.TextContent)
+		if !ok {
+			t.Fatalf("non-text content %T", content)
+		}
+		joined.WriteString(text.Text)
+	}
+	return joined.String()
+}
+
+// docsMCPSpillPointer reads the sidecar id and next offset out of the truncation footer,
+// which is the only place a client learns them -- exactly as the model is told to.
+var docsMCPFooter = regexp.MustCompile(`read_tool_output\(tool_call_id="([^"]+)", offset=(\d+)`)
+
+func docsMCPSpillPointer(t *testing.T, preview string) (string, int) {
+	t.Helper()
+	found := docsMCPFooter.FindStringSubmatch(preview)
+	if found == nil {
+		t.Fatalf("no read_tool_output pointer in the footer: %q", preview[max(0, len(preview)-200):])
+	}
+	offset, err := strconv.Atoi(found[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return found[1], offset
+}
+
+// This server exists to evaluate the document tools, so a client of it must be handed the
+// SAME text the agent runtime hands the model -- otherwise an evaluation measures a
+// paraphrase. The two had drifted: measured 2026-09-09 by asking a blind agent to
+// transcribe what it was given, this server's document_search said only "Retrieve full
+// passage evidence, citations and index status", naming neither citation_token nor
+// requires_open nor the neighbours parameter, all of which the agent-side description
+// explained.
+func TestDocsMCPToolsAreDerivedFromTheNativeSpecs(t *testing.T) {
+	session := docsMCPSession(t, &fakeDocsService{})
 	listed, err := session.ListTools(t.Context(), nil)
 	if err != nil {
 		t.Fatalf("manifest: %v", err)
 	}
-	contracts := map[string]string{
-		"document_search": documents.SearchToolContract,
-		"document_open":   documents.OpenToolContract,
+	native := map[string]tools.Spec{
+		"document_search": (&tools.DocumentSearch{}).Spec(),
+		"document_open":   (&tools.DocumentOpen{}).Spec(),
 	}
 	for _, tool := range listed.Tools {
-		contract, shared := contracts[tool.Name]
-		if !shared {
+		spec, derived := native[tool.Name]
+		if !derived {
 			continue
 		}
-		if !strings.Contains(tool.Description, contract) {
-			t.Fatalf("%s no longer carries the shared contract: %q", tool.Name, tool.Description)
+		if tool.Description != spec.Description {
+			t.Fatalf("%s was restated instead of derived: mcp=%q native=%q",
+				tool.Name, tool.Description, spec.Description)
 		}
-		delete(contracts, tool.Name)
-	}
-	if len(contracts) != 0 {
-		t.Fatalf("tools missing from the manifest: %v", contracts)
-	}
-	// The parameter exists to reach the chunk a hit was cut off from, and a client that
-	// cannot see it in the schema cannot use it however well the prose explains it.
-	for _, tool := range listed.Tools {
-		if tool.Name != "document_search" {
-			continue
+		// And the parameters with it. A parameter the schema does not offer cannot be used
+		// however well the prose explains it: the hand-written struct this replaced handed a
+		// client query, limit and document_ids and nothing else, while the prose told it to
+		// pass neighbours.
+		if got, want := jsonValue(t, tool.InputSchema), jsonValue(t, spec.Parameters); !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s parameters were reshaped instead of derived: mcp=%v native=%v",
+				tool.Name, got, want)
 		}
-		schema, _ := json.Marshal(tool.InputSchema)
-		if !bytes.Contains(schema, []byte("neighbours")) {
-			t.Fatalf("document_search does not offer neighbours: %s", schema)
-		}
+		delete(native, tool.Name)
 	}
+	if len(native) != 0 {
+		t.Fatalf("tools missing from the manifest: %v", native)
+	}
+}
+
+func jsonValue(t *testing.T, v any) any {
+	t.Helper()
+	raw, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	return decoded
 }

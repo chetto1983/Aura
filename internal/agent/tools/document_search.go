@@ -35,12 +35,33 @@ func (t *DocumentSearch) Spec() Spec {
 	return Spec{
 		Name:    "document_search",
 		Summary: "Search the user's uploaded documents and return provenance-bearing passages and openable files.",
-		// The shared half lives in documents.SearchToolContract so the MCP surface over the
-		// same handlers cannot drift from it; only the sentences about THIS runtime are here.
-		Description: documents.SearchToolContract +
-			" document_open writes the file into /workspace for shell_exec; uploaded documents are not " +
-			"otherwise on the filesystem. Files YOU created live under /workspace: read those with " +
-			"read_file/search_files instead. " +
+		// This text is the ONE description of the capability: cmd/aura's MCP server exposes
+		// the same handlers for evaluation and takes its description from this Spec, so what
+		// is measured there is what the agent is actually told here.
+		Description: "THE tool for questions about the operator's uploaded documents (PDF, DOCX, XLSX, PPTX, " +
+			"CSV, HTML, MD, TXT and more). It returns reconciled documents with bounded passages; each passage " +
+			"carries a citation_token, the source SHA-256 and a locator holding the document's OWN heading_path " +
+			"and character span, each document carries per-leg retrieval evidence with its size, passage count " +
+			"and index time, and the answer carries an explicit degradation or abstention status. " +
+			"Read the passages before answering: a filename match alone is not evidence, and abstained:true " +
+			"means this library does not hold the answer -- say so rather than answering from your own " +
+			"knowledge. " +
+			"Cite ONLY the citation_token and the locator's heading_path returned here. Never cite a section, " +
+			"chapter or page number you read inside the passage text: a passage starts wherever its chunk " +
+			"starts, so the numbering visible in it is usually not its own. heading_path names the " +
+			"section the passage STARTS in, and a long passage runs on past it: it places the passage, " +
+			"not every line inside it, so quote the text you are relying on rather than telling a reader " +
+			"that section holds it. " +
+			"When a passage stops mid-table or mid-definition, the rest of it is in the ADJACENT chunk, which " +
+			"no rephrasing of the query will ever rank -- repeat the search with neighbours to pull the " +
+			"passages either side of every hit, each with its own citation_token and locator. " +
+			"When a hit reports requires_open, or the question is about the whole file rather than one passage " +
+			"-- any count, sum, average, maximum, grouping, sort, cross-column filter or 'how many' over a " +
+			"spreadsheet or table, and any conversion -- call document_open with that document_id; it writes " +
+			"the real file into /workspace, and uploaded documents are not otherwise on the filesystem. " +
+			"query is required and may be a question, a topic, an entity, an exact identifier or a filename; " +
+			"document_ids optionally narrows the search to ids already returned to this operator. " +
+			"Files YOU created live under /workspace: read those with read_file/search_files instead. " +
 			"Example: {\"query\":\"customer code for WPT SRL\",\"document_ids\":[\"doc_9f2c\"]}.",
 		Parameters: json.RawMessage(`{
   "type": "object",

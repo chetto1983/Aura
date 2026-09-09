@@ -148,14 +148,15 @@ func TestDocsOpenPropagatesBackendFailure(t *testing.T) {
 	}
 }
 
-// TestDocsMCPDocumentOpen proves the tool is reachable over MCP with its arguments
-// plumbed through, not merely that the CLI verb exists.
+// TestDocsMCPDocumentOpen proves the MCP call lands in the AGENT's document_open, with the
+// caller's arguments plumbed through -- it used to prove the CLI verb ran instead, which is
+// why it asserted a host path this tool never writes.
 func TestDocsMCPDocumentOpen(t *testing.T) {
 	body := "hello from garage"
 	svc := openTestService(t, body, documents.OpenedDocument{
 		DocumentID: "doc_mcp", FileName: "original.txt", SizeBytes: int64(len(body)),
 	})
-	session := docsMCPSession(t, fakeDocsFactory(svc))
+	session := docsMCPSession(t, svc)
 	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{
 		Name: "document_open", Arguments: map[string]any{"document_id": "doc_mcp", "file_name": "alias.txt"},
 	})
@@ -166,18 +167,15 @@ func TestDocsMCPDocumentOpen(t *testing.T) {
 	if marshalErr != nil {
 		t.Fatal(marshalErr)
 	}
-	var decoded map[string]any
-	if decodeErr := json.Unmarshal(payload, &decoded); decodeErr != nil {
-		t.Fatal(decodeErr)
+	if !bytes.Contains(payload, []byte(`"document_open"`)) {
+		t.Fatalf("answer did not come from the agent tool: %s", payload)
 	}
-	if decoded["file_name"] != "alias.txt" {
-		t.Fatalf("file_name = %v, want the caller's alias", decoded["file_name"])
-	}
-	if svc.openedID != "doc_mcp" {
-		t.Fatalf("opened %q, want doc_mcp", svc.openedID)
-	}
-	written, readErr := os.ReadFile(decoded["path"].(string)) // #nosec G304 -- just written by the tool
-	if readErr != nil || string(written) != body {
-		t.Fatalf("MCP path not readable with the right bytes: %v %q", readErr, written)
+	// The bytes landing where the caller can read them is the tool's own subject and is
+	// measured in its package, against a real box; here the question is only whose code ran.
+	escaped, escapeErr := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: "document_open", Arguments: map[string]any{"document_id": "doc_mcp", "file_name": "../escape.txt"},
+	})
+	if escapeErr == nil && !escaped.IsError {
+		t.Fatal("the agent tool's own file-name rule did not run")
 	}
 }

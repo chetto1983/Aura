@@ -195,6 +195,7 @@ type fakeDocsService struct {
 	ingestAsset      assets.Asset
 	ingestReq        assets.DocumentIngestRequest
 	response         documents.RetrievalResponse
+	retrieveErr      error
 	retrievalRequest documents.RetrievalRequest
 	root             string
 	openBody         io.ReadCloser
@@ -227,6 +228,9 @@ func (f *fakeDocsService) Retrieve(
 	request documents.RetrievalRequest,
 ) (documents.RetrievalResponse, error) {
 	f.retrievalRequest = request
+	if f.retrieveErr != nil {
+		return documents.RetrievalResponse{}, f.retrieveErr
+	}
 	response := f.response
 	response.Query = request.Query
 	return response, nil
