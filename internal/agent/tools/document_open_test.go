@@ -77,8 +77,8 @@ func TestOpenedDocumentsDestinationIsUnderTheBoxWorkspace(t *testing.T) {
 
 func TestDocumentOpen_WritesOriginalIntoTheBox(t *testing.T) {
 	backend := openedDoc("row,row,row", documents.OpenedDocument{
-		DocumentID: "doc_9f2c", FileName: "Clienti.xlsx",
-		MIMEType: "application/vnd.ms-excel", SHA256: "abc123",
+		DocumentID: "doc_9f2c", FileName: "Clienti.xlsx", SHA256: "abc123",
+		MIMEType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 	})
 	be := &fakeBox{}
 	tool := &DocumentOpen{Documents: backend, Router: routerWith(be)}

@@ -112,8 +112,22 @@ func TestDocsMCPManifestAndConfiguration(t *testing.T) {
 	}
 	session := docsMCPSession(t, factory)
 	listed, err := session.ListTools(t.Context(), nil)
-	if err != nil || len(listed.Tools) != 2 {
-		t.Fatalf("manifest: %v, %#v", err, listed)
+	if err != nil {
+		t.Fatalf("manifest: %v", err)
+	}
+	// Asserted by name, not by count: a manifest is a contract about WHICH tools an
+	// operator's client can reach, and a bare number says nothing about a swap.
+	manifest := map[string]bool{}
+	for _, tool := range listed.Tools {
+		manifest[tool.Name] = true
+	}
+	for _, want := range []string{"document_ingest", "document_search", "document_open"} {
+		if !manifest[want] {
+			t.Fatalf("manifest is missing %s: %v", want, manifest)
+		}
+	}
+	if len(listed.Tools) != len(manifest) || len(manifest) != 3 {
+		t.Fatalf("unexpected manifest: %v", manifest)
 	}
 	for _, tool := range listed.Tools {
 		wantReadOnly := tool.Name == "document_search"

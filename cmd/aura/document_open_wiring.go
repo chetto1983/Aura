@@ -83,16 +83,18 @@ func (o identityObjectOpener) resolve(
 	return store, bucket, nil
 }
 
+// OpenObject is ReadObject narrowed to what the document opener needs: the bytes and the
+// media type the store recorded. It delegates rather than repeating the resolve and the
+// GET, so the two cannot come to disagree about which bucket a key belongs to.
 func (o identityObjectOpener) OpenObject(
 	ctx context.Context,
 	identityID, key string,
-) (io.ReadCloser, error) {
-	store, bucket, err := o.resolve(ctx, identityID, key)
+) (io.ReadCloser, string, error) {
+	body, attrs, err := o.ReadObject(ctx, identityID, key)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	body, _, err := store.Get(ctx, objectstore.ObjectRef{Bucket: bucket, Key: key})
-	return body, err
+	return body, attrs.MIMEType, nil
 }
 
 // ReadObject is OpenObject plus what the store knows about the bytes, which the file

@@ -26,13 +26,20 @@ import (
 // whose only writer was the catalog ingest, so after that retirement they could only ever
 // print rows describing a pipeline that no longer runs. What replaced them as the answer to
 // "did my file land" is the bucket itself: `aura docs search`, or the file manager.
-const docsUsage = "usage: aura docs {ingest <path> [--source-id id] [--source-kind cli]|search <query> [--document-id id] [--limit 8]|mcp}"
+const docsUsage = "usage: aura docs {ingest <path> [--source-id id] [--source-kind cli]|search <query> [--document-id id] [--limit 8]|open <document-id> [--file-name name]|mcp}"
 
 // docsCLIService is the surface `aura docs` drives. Search uses the same host
 // retriever as the agent tool and HTTP API, including passage evidence and degradation.
 type docsCLIService interface {
 	IngestDocumentPath(ctx context.Context, req assets.DocumentIngestRequest, path string) (assets.Asset, error)
 	Retrieve(ctx context.Context, request documents.RetrievalRequest) (documents.RetrievalResponse, error)
+	// OpenDocument streams the original bytes behind an indexed document. The seam is at
+	// the bytes, not at the file: where the copy lands is the host caller's decision and
+	// belongs beside it, not inside a service a fake would have to reimplement.
+	OpenDocument(ctx context.Context, identityID, documentID string) (io.ReadCloser, documents.OpenedDocument, error)
+	// WorkspaceRoot is the host directory materialized copies land in -- the same root
+	// ingest reads from, so a document that comes out can be put back in.
+	WorkspaceRoot() string
 }
 
 type docsServiceFactory func(context.Context) (docsCLIService, func(), error)
@@ -62,6 +69,8 @@ func runDocsCommand(ctx context.Context, args []string, out io.Writer, factory d
 		return docsIngest(ctx, args[1:], out, factory)
 	case "search":
 		return docsSearch(ctx, args[1:], out, factory)
+	case "open":
+		return docsOpen(ctx, args[1:], out, factory)
 	default:
 		return fmt.Errorf("unknown docs command %q\n%s", args[0], docsUsage)
 	}
@@ -188,6 +197,8 @@ func parseDocsSearchArgs(args []string) (query string, documentIDs []string, lim
 type docsCLI struct {
 	library  *documentLibrary
 	ingestor *runtimeDocumentIngestor
+	opener   *runtimeDocumentOpener
+	root     string
 }
 
 func (c docsCLI) IngestDocumentPath(
@@ -208,6 +219,18 @@ func (c docsCLI) Retrieve(
 	return c.library.Retrieve(ctx, request)
 }
 
+func (c docsCLI) OpenDocument(
+	ctx context.Context,
+	identityID, documentID string,
+) (io.ReadCloser, documents.OpenedDocument, error) {
+	if c.opener == nil {
+		return nil, documents.OpenedDocument{}, fmt.Errorf("document opener is not configured")
+	}
+	return c.opener.OpenDocument(ctx, identityID, documentID)
+}
+
+func (c docsCLI) WorkspaceRoot() string { return c.root }
+
 func newDocsService(ctx context.Context) (docsCLIService, func(), error) {
 	cfg := config.LoadDB()
 	pool, err := db.Open(ctx, &cfg.DB)
@@ -217,6 +240,8 @@ func newDocsService(ctx context.Context) (docsCLIService, func(), error) {
 	svc := docsCLI{
 		library:  newDocumentLibrary(pool, cfg),
 		ingestor: newRuntimeDocumentIngestor(cfg, pool),
+		opener:   newRuntimeDocumentOpener(cfg, pool),
+		root:     cfg.WorkspaceDir,
 	}
 	return svc, pool.Close, nil
 }

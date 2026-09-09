@@ -10,17 +10,23 @@ import (
 	"github.com/chetto1983/aura/internal/arcadedb"
 )
 
-// DocumentObjectOpener streams one object of one identity's bucket.
+// DocumentObjectOpener streams one object of one identity's bucket, together with the
+// content type the store recorded for it.
 //
 // It takes a KEY, not an asset id, and that is the whole change: the reconciler records
 // where the bytes live, so nothing has to walk a catalog to find out. The implementation
 // MUST resolve the owner's own store before reading -- this service relies on that as its
 // second gate, not as a courtesy.
 //
+// The content type comes back because the STORE is the only place that holds it: the
+// document card carries a name, a size and a digest, but no media type, so a caller that
+// wanted one had nothing to read but the file extension. Empty means the store has none,
+// which is an answer; a field nobody ever filled was not.
+//
 // An interface rather than a direct dependency because internal/assets imports this
 // package, so importing it back would be a cycle.
 type DocumentObjectOpener interface {
-	OpenObject(ctx context.Context, identityID, key string) (io.ReadCloser, error)
+	OpenObject(ctx context.Context, identityID, key string) (io.ReadCloser, string, error)
 }
 
 // DocumentRecordLookup resolves the id a retrieval hit carries to the record describing
@@ -83,7 +89,7 @@ func (s *OpenService) OpenDocument(
 	if err != nil {
 		return nil, OpenedDocument{}, err
 	}
-	body, err := s.Objects.OpenObject(ctx, identityID, record.SourceKey)
+	body, mimeType, err := s.Objects.OpenObject(ctx, identityID, record.SourceKey)
 	if err != nil {
 		return nil, OpenedDocument{}, fmt.Errorf("open document %s: %w", documentID, err)
 	}
@@ -91,6 +97,7 @@ func (s *OpenService) OpenDocument(
 		DocumentID: record.SearchDocumentID,
 		FileName:   documentFileName(record),
 		SourceKey:  record.SourceKey,
+		MIMEType:   mimeType,
 		SizeBytes:  record.SizeBytes,
 		SHA256:     record.RawSHA256,
 	}, nil

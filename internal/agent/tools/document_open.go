@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -44,14 +43,10 @@ type DocumentOpen struct {
 	Router    *usersandbox.SandboxRouter
 }
 
-// openedDocumentsDir is the fixed subdirectory materialized copies land in, and
-// openedDocumentsBoxDir is where that sits inside the box. The destination is
-// never caller-chosen: a working copy of a user document is not something the
-// agent should be able to scatter across the workspace.
-const (
-	openedDocumentsDir    = "documents"
-	openedDocumentsBoxDir = boxWorkspaceRoot + "/" + openedDocumentsDir
-)
+// openedDocumentsBoxDir is where the shared documents subdirectory sits inside the
+// box. The destination is never caller-chosen: a working copy of a user document is
+// not something the agent should be able to scatter across the workspace.
+const openedDocumentsBoxDir = boxWorkspaceRoot + "/" + documents.StagedDirName
 
 type documentOpenArgs struct {
 	DocumentID string `json:"document_id"`
@@ -186,44 +181,30 @@ func (t *DocumentOpen) write(
 
 // StagedDocumentDirectory derives the single sandbox directory for a logical
 // catalog id. It is exported so delete removes exactly the parent that open uses.
+// The layout rule itself lives in internal/documents, shared with `aura docs open`,
+// so the box copy and the host copy cannot land in differently shaped places.
 func StagedDocumentDirectory(documentID string) (string, error) {
-	documentID = strings.TrimSpace(documentID)
-	if documentID == "" {
-		return "", fmt.Errorf("staged document directory: document id is empty")
+	rel, err := documents.StagedRelativeDirectory(documentID)
+	if err != nil {
+		return "", err
 	}
-	sum := sha256.Sum256([]byte(documentID))
-	return pathpkg.Join(openedDocumentsBoxDir, fmt.Sprintf("document-%x", sum[:12])), nil
+	return pathpkg.Join(boxWorkspaceRoot, rel), nil
 }
 
 // StagedDocumentPath validates a bare alias and places it below the logical
 // document directory.
 func StagedDocumentPath(documentID, fileName string) (string, error) {
-	name := strings.TrimSpace(fileName)
-	if err := validateOpenFileName(name); err != nil {
-		return "", err
-	}
-	if name == "" {
-		return "", fmt.Errorf("staged document path: file name is empty")
-	}
-	dir, err := StagedDocumentDirectory(documentID)
+	rel, err := documents.StagedRelativePath(documentID, fileName)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("document_open: %w", err)
 	}
-	return pathpkg.Join(dir, name), nil
+	return pathpkg.Join(boxWorkspaceRoot, rel), nil
 }
 
 func validateOpenFileName(name string) error {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return nil
-	}
-	if strings.ContainsAny(name, `/\`) {
-		return fmt.Errorf(
-			"document_open: file_name %q must be a bare file name, not a path; "+
-				"the file is always written into %s", name, openedDocumentsBoxDir)
-	}
-	if name == "." || name == ".." || strings.HasPrefix(name, ".") {
-		return fmt.Errorf("document_open: file_name %q is not a usable file name", name)
+	if err := documents.ValidateStagedFileName(name); err != nil {
+		return fmt.Errorf("document_open: %w; the file is always written into %s",
+			err, openedDocumentsBoxDir)
 	}
 	return nil
 }

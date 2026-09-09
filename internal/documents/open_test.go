@@ -39,17 +39,18 @@ type fakeObjectOpener struct {
 	identity string
 	key      string
 	body     string
+	mimeType string
 	err      error
 }
 
 func (f *fakeObjectOpener) OpenObject(
 	_ context.Context, identityID, key string,
-) (io.ReadCloser, error) {
+) (io.ReadCloser, string, error) {
 	f.identity, f.key = identityID, key
 	if f.err != nil {
-		return nil, f.err
+		return nil, "", f.err
 	}
-	return io.NopCloser(strings.NewReader(f.body)), nil
+	return io.NopCloser(strings.NewReader(f.body)), f.mimeType, nil
 }
 
 func openFixture() (*OpenService, *fakeRecordLookup, *fakeObjectOpener) {
@@ -61,7 +62,7 @@ func openFixture() (*OpenService, *fakeRecordLookup, *fakeObjectOpener) {
 		RawSHA256:        strings.Repeat("b", 64),
 		SizeBytes:        22083,
 	}}
-	opener := &fakeObjectOpener{body: "%PDF real bytes"}
+	opener := &fakeObjectOpener{body: "%PDF real bytes", mimeType: "application/pdf"}
 	return &OpenService{Index: lookup, Objects: opener}, lookup, opener
 }
 
@@ -90,6 +91,21 @@ func TestOpenDocumentResolvesTheSourceKeyInOneHop(t *testing.T) {
 // The identity must reach BOTH the lookup and the read. The lookup picks the tenant
 // database and the read resolves the owner's own credential, so an identity that stopped
 // at one of them would leave the other reading somebody else's store.
+// TestOpenDocumentCarriesTheStoresMediaType: the card holds a name, a size and a digest
+// but no media type, so the STORE is the only place a caller can learn one. Dropping it
+// here left every caller with nothing to tell a spreadsheet from a PDF but the extension.
+func TestOpenDocumentCarriesTheStoresMediaType(t *testing.T) {
+	service, lookup, _ := openFixture()
+	body, meta, err := service.OpenDocument(t.Context(), retrievalIdentity, lookup.record.SearchDocumentID)
+	if err != nil {
+		t.Fatalf("OpenDocument: %v", err)
+	}
+	defer func() { _ = body.Close() }()
+	if meta.MIMEType != "application/pdf" {
+		t.Fatalf("MIMEType = %q, want the type the store reported", meta.MIMEType)
+	}
+}
+
 func TestOpenDocumentPassesTheIdentityToBothGates(t *testing.T) {
 	service, lookup, opener := openFixture()
 	body, _, err := service.OpenDocument(t.Context(), retrievalIdentity, lookup.record.SearchDocumentID)

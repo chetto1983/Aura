@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -195,7 +196,26 @@ type fakeDocsService struct {
 	ingestReq        assets.DocumentIngestRequest
 	response         documents.RetrievalResponse
 	retrievalRequest documents.RetrievalRequest
+	root             string
+	openBody         io.ReadCloser
+	openMeta         documents.OpenedDocument
+	openErr          error
+	openedIdentity   string
+	openedID         string
 }
+
+func (f *fakeDocsService) OpenDocument(
+	_ context.Context,
+	identityID, documentID string,
+) (io.ReadCloser, documents.OpenedDocument, error) {
+	f.openedIdentity, f.openedID = identityID, documentID
+	if f.openErr != nil {
+		return nil, documents.OpenedDocument{}, f.openErr
+	}
+	return f.openBody, f.openMeta, nil
+}
+
+func (f *fakeDocsService) WorkspaceRoot() string { return f.root }
 
 func (f *fakeDocsService) IngestDocumentPath(_ context.Context, req assets.DocumentIngestRequest, _ string) (assets.Asset, error) {
 	f.ingestReq = req

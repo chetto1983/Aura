@@ -17,6 +17,11 @@ type docsMCPIngestInput struct {
 	SourceID string `json:"source_id,omitempty" jsonschema:"Optional stable source identifier"`
 }
 
+type docsMCPOpenInput struct {
+	DocumentID string `json:"document_id" jsonschema:"Document id from a document_search hit (doc_...)"`
+	FileName   string `json:"file_name,omitempty" jsonschema:"Optional bare name for the written copy; defaults to the original file name"`
+}
+
 type docsMCPSearchInput struct {
 	Query       string   `json:"query" jsonschema:"Question, exact identifier, topic or filename to search"`
 	DocumentIDs []string `json:"document_ids,omitempty" jsonschema:"Restrict retrieval to these returned document IDs"`
@@ -39,7 +44,9 @@ func newDocsMCPServer(operatorID string, factory docsServiceFactory) (*mcp.Serve
 		Instructions: "Use document_ingest to store a workspace file in the operator's library. " +
 			"Acceptance is not completed indexing: document_search reports indexed passages and degradation. " +
 			"Read the returned passages before answering; a filename match alone is not evidence. " +
-			"Both tools use Aura's production document handlers and a fixed operator identity.",
+			"When a hit reports requires_open, or the question needs the whole file rather than a passage, " +
+			"call document_open and read the file it writes. " +
+			"These tools use Aura's production document handlers and a fixed operator identity.",
 	})
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "document_ingest", Description: "Ingest a workspace file through Aura's production document pipeline.",
@@ -63,6 +70,24 @@ func newDocsMCPServer(operatorID string, factory docsServiceFactory) (*mcp.Serve
 		for _, id := range input.DocumentIDs {
 			args = append(args, "--document-id", id)
 		}
+		return docsMCPCall(ctx, operatorID, args, factory)
+	})
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "document_open",
+		Description: "Write the ORIGINAL file of an indexed document onto the workspace filesystem and return its " +
+			"path, so it can be read, converted or computed on directly. Use this INSTEAD of relying on " +
+			"document_search passages whenever a hit reports requires_open, or the answer is a property of the " +
+			"whole file rather than of one passage: any count, sum, average, maximum, grouping, sort or " +
+			"cross-column filter over a spreadsheet or table, any conversion, and any question whose retrieved " +
+			"passages do not actually contain the answer. document_search finds WHICH document; document_open " +
+			"hands over the file. Returns the path, name, size and the sha256 measured off the written bytes.",
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: new(false), OpenWorldHint: new(false)},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, input docsMCPOpenInput) (*mcp.CallToolResult, map[string]any, error) {
+		args := []string{"open"}
+		if input.FileName != "" {
+			args = append(args, "--file-name", input.FileName)
+		}
+		args = append(args, "--", input.DocumentID)
 		return docsMCPCall(ctx, operatorID, args, factory)
 	})
 	return server, nil
