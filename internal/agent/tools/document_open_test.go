@@ -119,8 +119,8 @@ func TestDocumentOpen_WritesOriginalIntoTheBox(t *testing.T) {
 	if backend.identityID == "" {
 		t.Fatal("expected the owning identity (ownerFromContext) to reach the backend")
 	}
-	if result.Provenance == nil || result.Provenance.Source != "document_open" {
-		t.Fatalf("provenance = %#v, want an untrusted document_open source", result.Provenance)
+	if result.Provenance == nil || result.Provenance.Source != "document_open" || result.Provenance.Trust != TrustTrusted {
+		t.Fatalf("provenance = %#v, want the operator's document_open source", result.Provenance)
 	}
 }
 

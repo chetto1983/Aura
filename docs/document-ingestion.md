@@ -83,3 +83,28 @@ Native ArcadeDB backups preserve indexed records, but do not replace a Garage ba
 See [Backup and restore](BACKUP-RESTORE.md). Current extension allowlists and limits
 are defined in `internal/documents/extensions.go`, `services/ingest/extract.py`,
 `services/ingest/media.py`, and [.env.example](../.env.example).
+
+## Direct MCP access
+
+`aura docs mcp` exposes `document_ingest` and `document_search` over stdio using
+the official MCP SDK. They call the same handlers as `aura docs ingest` and
+`aura docs search`, with the operator identity resolved at startup. Tool inputs
+cannot select another identity. Ingestion paths must be inside Aura's configured
+workspace. An accepted upload remains separate from completed indexing.
+
+Search returns full retrieval JSON, including passages, citations, source hashes,
+locators and degradation status. No model generates or summarizes its response.
+This makes it possible to check whether evidence is present before asking a model
+to formulate an answer.
+
+For an external MCP client, launch `aura docs mcp` inside the configured Aura
+environment. A container-backed diagnostic binary can live in the persistent
+workspace, for example:
+
+```text
+docker exec -i aura /workspace/.aura/bin/aura-documents-mcp docs mcp
+```
+
+Use stdio without a TTY; stdout carries MCP messages. Refresh the client's MCP
+configuration after registration. Successful server calls and the tools appearing
+in an already-running client session are separate checks.

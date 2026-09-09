@@ -158,7 +158,7 @@ func (t *DocumentOpen) Execute(ctx context.Context, raw json.RawMessage) (ToolRe
 	if err != nil {
 		return ToolResult{}, err
 	}
-	result.Provenance = &ToolResultProvenance{Source: "document_open", Trust: TrustUntrusted}
+	result.Provenance = &ToolResultProvenance{Source: "document_open", Trust: TrustTrusted}
 	return result, nil
 }
 

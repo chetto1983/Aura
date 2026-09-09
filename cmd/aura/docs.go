@@ -26,7 +26,7 @@ import (
 // whose only writer was the catalog ingest, so after that retirement they could only ever
 // print rows describing a pipeline that no longer runs. What replaced them as the answer to
 // "did my file land" is the bucket itself: `aura docs search`, or the file manager.
-const docsUsage = "usage: aura docs {ingest <path> [--source-id id] [--source-kind cli]|search <query> [--document-id id] [--limit 8]}"
+const docsUsage = "usage: aura docs {ingest <path> [--source-id id] [--source-kind cli]|search <query> [--document-id id] [--limit 8]|mcp}"
 
 // docsCLIService is the surface `aura docs` drives. Search uses the same host
 // retriever as the agent tool and HTTP API, including passage evidence and degradation.
@@ -53,6 +53,11 @@ func runDocsCommand(ctx context.Context, args []string, out io.Writer, factory d
 		return fmt.Errorf("%s", docsUsage)
 	}
 	switch args[0] {
+	case "mcp":
+		if len(args) != 1 {
+			return fmt.Errorf("usage: aura docs mcp")
+		}
+		return runDocsMCP(ctx, factory)
 	case "ingest":
 		return docsIngest(ctx, args[1:], out, factory)
 	case "search":

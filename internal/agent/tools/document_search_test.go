@@ -73,7 +73,7 @@ func TestDocumentSearchReturnsProvenanceBearingPassages(t *testing.T) {
 		t.Fatal("the owning identity did not reach the library")
 	}
 	if result.Provenance == nil || result.Provenance.Source != "document_search" ||
-		result.Provenance.Trust != TrustUntrusted {
+		result.Provenance.Trust != TrustTrusted {
 		t.Fatalf("provenance = %#v", result.Provenance)
 	}
 }

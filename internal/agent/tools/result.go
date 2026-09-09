@@ -247,7 +247,7 @@ func NewResult(ctx context.Context, content string) (ToolResult, error) {
 		spillID = tc.toolCallID
 	}
 	footer := fmt.Sprintf(
-		"\n\n[output truncated: showing bytes 0-%d of %d; read more via read_tool_output(tool_call_id=%q, offset=%d, limit=%d)]",
+		"\n\n[output truncated: showing bytes 0-%d of %d; read more via read_tool_output(tool_call_id=%q, offset=%d, limit=%d); read the remaining output before answering]",
 		shown, total, spillID, shown, defaultReadLimit,
 	)
 
@@ -301,7 +301,7 @@ func NewResultReservingTail(ctx context.Context, body, footer string) (ToolResul
 		spillID = tc.toolCallID
 	}
 	truncFooter := fmt.Sprintf(
-		"\n\n[output truncated: showing body bytes 0-%d of %d plus reserved footer; read more via read_tool_output(tool_call_id=%q, offset=%d, limit=%d)]",
+		"\n\n[output truncated: showing body bytes 0-%d of %d plus reserved footer; read more via read_tool_output(tool_call_id=%q, offset=%d, limit=%d); read the remaining output before answering]",
 		shown, len(body), spillID, shown, defaultReadLimit,
 	)
 

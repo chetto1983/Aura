@@ -356,6 +356,11 @@ The MCP fixes the operator identity at startup, preserves ingress path checks an
 returns complete retrieval JSON without an LLM synthesis step. MCP connectivity
 and client reload must be verified separately from CLI behavior.
 
+Operator-selected document search/open results retain their source provenance
+without an `untrusted` envelope. For every tool, the agent must check truncation
+and read the remaining output through `read_tool_output` before answering; the
+shared truncation footers carry the same instruction and continuation coordinates.
+
 Documents retain original hashes; passages retain normalized hashes, locators and
 citation tokens. Retrieval checks source scope and reports which legs ran. An absent
 embedder, unavailable index or missing passage configuration has explicit degraded
