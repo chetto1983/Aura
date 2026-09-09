@@ -286,6 +286,21 @@ async def process_chunk(
     ))
 
 
+def _text_fingerprint(text: str) -> str:
+    """The extracted text's hash, and EMPTY when there is no text.
+
+    Hashing nothing is not evidence that two files say the same thing, and every file
+    routed away from text extraction has none: a spreadsheet is answered from its card and
+    the file itself, so media.index_text returns "" for all of them. Hashed anyway, all of
+    them carry sha256("") = e3b0c442... -- measured 2026-09-09 on the live corpus, four
+    unrelated .xlsx did -- and retrieval, which collapses documents that share this hash,
+    would have shown one spreadsheet in place of every other.
+    """
+    if not text:
+        return ""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 @coco.fn(memo=True)
 async def process_file(
     file: amazon_s3.S3File, identity_id: str, table: neo4j.TableTarget[Passage],
@@ -355,7 +370,7 @@ async def process_file(
         file_name=file_name,
         file_name_words=_name_words(file_name),
         raw_sha256=raw_sha256,
-        normalized_text_sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        normalized_text_sha256=_text_fingerprint(text),
         size_bytes=len(content),
         passage_count=len(pieces),
         card=card,
