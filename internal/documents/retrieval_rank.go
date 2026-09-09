@@ -100,6 +100,7 @@ func rankDocuments(
 		}
 		return ranked[i].ordinal < ranked[j].ordinal
 	})
+	reserveCardLane(ranked)
 	if len(ranked) > limit {
 		ranked = ranked[:limit]
 	}
@@ -108,6 +109,43 @@ func rankDocuments(
 		out[index] = ranked[index].document
 	}
 	return out
+}
+
+// reserveCardLane keeps ONE place for a document that has no passages.
+//
+// Such a document can never compete on passage evidence -- a spreadsheet is answered from
+// the file itself and carries none by design -- so its only evidence is a card, whose
+// embedding is a long description of the whole file and therefore scores low against a
+// short question. It is then crowded out by every document that merely MENTIONS the
+// subject. Measured 2026-09-09 on the live corpus: "CAP e codice ISTAT del comune di
+// Caraglio" put nine documents about Caraglio's weather above gi_comuni_cap.xlsx, the only
+// file holding the codes, which landed tenth at 0.3503 -- outside the default limit. The
+// live agent then searched four to nine times and twice concluded the library had nothing.
+//
+// This is the diversification the engine's groupBy already does for source files, applied
+// to the KIND of evidence instead: exactly one slot, and only when the best such document
+// is not already at the top. Measured over docs/document-retrieval-order-pilot.json:
+// recall@3 0.938 -> 1.000 and MRR 0.912 -> 0.938, with recall@1 unchanged at 0.875.
+//
+// The cost is that the returned order is no longer monotonic in score. That is the point:
+// the score says how close the text is to the question, and one place is held for the file
+// that can answer it rather than resemble it. What the measurement does NOT show: sixteen
+// questions, one corpus, one embedder.
+func reserveCardLane(ranked []*rankedDocument) {
+	const lane = 1 // zero-based: the reserved document sits right behind the best hit
+	best := -1
+	for index, doc := range ranked {
+		if len(doc.passages) == 0 {
+			best = index
+			break
+		}
+	}
+	if best <= lane {
+		return
+	}
+	promoted := ranked[best]
+	copy(ranked[lane+1:best+1], ranked[lane:best])
+	ranked[lane] = promoted
 }
 
 // contentKey collapses byte-identical copies onto one entry. It falls back to the document

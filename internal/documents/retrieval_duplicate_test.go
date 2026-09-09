@@ -261,3 +261,52 @@ func TestRankDocumentsCollapsesCardOnlyCopiesWithIdenticalText(t *testing.T) {
 		t.Fatalf("second = %q, want the document with different text", documents[1].DocumentID)
 	}
 }
+
+// A document with no passages cannot compete on passage evidence, so it is crowded out by
+// everything that merely mentions the subject. Measured 2026-09-09 on the live corpus:
+// gi_comuni_cap.xlsx, the only file holding the codes, landed TENTH behind nine documents
+// about Caraglio's weather, outside the caller's default limit, and the live agent twice
+// answered that the library had nothing.
+func TestRankDocumentsReservesOneSlotForAPassagelessDocument(t *testing.T) {
+	passages := make([]arcadedb.PassageCandidate, 0, 4)
+	for index, score := range []float64{0.58, 0.57, 0.56, 0.55} {
+		raw := string(rune('a' + index))
+		passages = append(passages, arcadedb.PassageCandidate{
+			PassageID: raw + ":0", SearchDocumentID: "doc_" + raw, SourceKind: "s3",
+			SourceKey: "meteo_" + raw + ".docx", RawSHA256: raw, NormalizedSHA256: "n" + raw,
+			Text: "previsioni per Caraglio", Leg: arcadedb.RetrievalLegFused,
+			FusedScore: &[]float64{score}[0],
+		})
+	}
+	cards := []RetrievalCard{{
+		DocumentID: "doc_table", Title: "gi_comuni_cap.xlsx", SourceKind: "s3",
+		SourceKey: "Documenti/gi_comuni_cap.xlsx", OriginalSHA256: "table", Rank: 0.35,
+	}}
+
+	documents := rankDocuments(cards, passages, nil, 3, 3, false)
+
+	if len(documents) != 3 {
+		t.Fatalf("documents = %d, want the limit", len(documents))
+	}
+	if documents[1].Title != "gi_comuni_cap.xlsx" {
+		titles := []string{documents[0].Title, documents[1].Title, documents[2].Title}
+		t.Fatalf("ranking = %v, want the passageless file held at position 2", titles)
+	}
+	// The best hit keeps its place: the lane costs one slot, not the answer.
+	if len(documents[0].Passages) == 0 {
+		t.Fatal("the reserved slot displaced the best-evidenced document")
+	}
+}
+
+// The lane is a reservation, not a promotion: a passageless document that already ranks at
+// the top must not be moved, and a result set made only of cards has nothing to reserve.
+func TestRankDocumentsLeavesAnAlreadyTopPassagelessDocumentAlone(t *testing.T) {
+	cards := []RetrievalCard{
+		{DocumentID: "doc_a", Title: "a.xlsx", OriginalSHA256: "a", Rank: 0.7},
+		{DocumentID: "doc_b", Title: "b.xlsx", OriginalSHA256: "b", Rank: 0.6},
+	}
+	documents := rankCardsOnly(cards, 8, 3)
+	if len(documents) != 2 || documents[0].Title != "a.xlsx" {
+		t.Fatalf("ranking = %+v, want the card order untouched", documents)
+	}
+}

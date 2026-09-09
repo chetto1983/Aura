@@ -63,7 +63,10 @@ func TestProductionRetrievalRecall(t *testing.T) {
 	}
 
 	cfg := normalizedRetrievalConfig(RetrievalConfig{})
-	runs := []benchRun{{Arm: "production", Production: true, Ranking: map[string][]string{}}}
+	runs := []benchRun{
+		{Arm: "production", Production: true, Ranking: map[string][]string{}},
+		{Arm: "reserve-one-card-lane", Ranking: map[string][]string{}},
+	}
 
 	for _, question := range pilot.Questions {
 		vectors, err := embedder.Embed(ctx, embeddings.RetrievalQueries([]string{question.Query}))
@@ -109,8 +112,12 @@ func TestProductionRetrievalRecall(t *testing.T) {
 				}
 				names = resolved
 			}
-			for _, doc := range rankDocuments(cards, fused, names, cfg.CandidateLimit, cfg.TopPassages, false) {
+			ranked := rankDocuments(cards, fused, names, cfg.CandidateLimit, cfg.TopPassages, false)
+			for _, doc := range ranked {
 				runs[0].Ranking[question.QID] = append(runs[0].Ranking[question.QID], doc.Title)
+			}
+			for _, doc := range reserveOneCardLane(ranked) {
+				runs[1].Ranking[question.QID] = append(runs[1].Ranking[question.QID], doc.Title)
 			}
 		}
 	}
@@ -139,4 +146,30 @@ func firstFew(ranking []string) []string {
 		return ranking[:3]
 	}
 	return ranking
+}
+
+// reserveOneCardLane is the rule under measurement: a document with NO passages cannot
+// compete on passage evidence, only on its card, so it is not allowed to be crowded out of
+// the answer entirely by passage-bearing documents. Exactly ONE slot is reserved, and only
+// when the best such document is not already near the top -- the same diversification the
+// engine's groupBy does for source files, applied to the KIND of evidence instead.
+//
+// It is here and not in retrieval_rank.go because it is a hypothesis, not a decision.
+func reserveOneCardLane(ranked []RetrievalDocument) []RetrievalDocument {
+	const lane = 1 // the position the reserved document takes, zero-based
+	best := -1
+	for index, doc := range ranked {
+		if len(doc.Passages) == 0 {
+			best = index
+			break
+		}
+	}
+	if best <= lane {
+		return ranked
+	}
+	promoted := make([]RetrievalDocument, 0, len(ranked))
+	promoted = append(promoted, ranked[:lane]...)
+	promoted = append(promoted, ranked[best])
+	promoted = append(promoted, ranked[lane:best]...)
+	return append(promoted, ranked[best+1:]...)
 }
