@@ -81,7 +81,21 @@ func buildAuthDeps(ctx context.Context, chat *chatEnv) (agui.AuthDeps, *webauth.
 			return id, true
 		},
 	}
-	return deps, provider, nil
+	return withDenialRecorder(deps, chat.pool), provider, nil
+}
+
+// withDenialRecorder wires the capability-denial ledger (RBAC-09/RBAC-10) into the auth
+// bundle. RequireCapability guards a nil recorder, but that guard only holds while the
+// FIELD is nil: assigning a store built over a nil pool would store a non-nil interface
+// value whose every write panics, turning a 403 into a crashed request. So the pool is
+// checked here, at the one place that knows whether there is one, rather than inside a
+// constructor that cannot express "no recorder" through a typed pointer.
+func withDenialRecorder(deps agui.AuthDeps, pool *pgxpool.Pool) agui.AuthDeps {
+	if pool == nil {
+		return deps
+	}
+	deps.DenialRecorder = agui.NewPgCapabilityDenialStore(pool)
+	return deps
 }
 
 func authulaProvisioningConfigured(cfg *config.Config) bool {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/identity"
@@ -294,5 +295,27 @@ func TestEnsureAuthulaUserLinkedFallsBackWhenNoUserIdentityExists(t *testing.T) 
 	}
 	if len(linker.links) != 1 || linker.links[0].identityID != "local-id" {
 		t.Fatalf("links = %+v, want local fallback", linker.links)
+	}
+}
+
+// TestWithDenialRecorderWiresTheLedger proves the composition root actually hands
+// RequireCapability a place to write refusals (RBAC-09/RBAC-10). Without this the
+// ledger, its migration and its audit-feed leg all exist while every real denial takes
+// the nil-recorder no-op path and records nothing.
+func TestWithDenialRecorderWiresTheLedger(t *testing.T) {
+	pool := &pgxpool.Pool{}
+	got := withDenialRecorder(agui.AuthDeps{}, pool)
+	if got.DenialRecorder == nil {
+		t.Fatal("DenialRecorder is nil with a live pool: capability denials would never be recorded")
+	}
+}
+
+// TestWithDenialRecorderLeavesItNilWithoutAPool guards the typed-nil trap: a store built
+// over a nil pool is a NON-nil interface value, so RequireCapability's own nil check
+// would pass it through and every refusal would panic instead of returning 403.
+func TestWithDenialRecorderLeavesItNilWithoutAPool(t *testing.T) {
+	got := withDenialRecorder(agui.AuthDeps{}, nil)
+	if got.DenialRecorder != nil {
+		t.Fatal("DenialRecorder is non-nil without a pool: every denial write would hit a nil pool")
 	}
 }
