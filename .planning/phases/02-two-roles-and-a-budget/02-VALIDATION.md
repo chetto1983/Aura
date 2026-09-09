@@ -141,3 +141,46 @@ The plan must take one of:
 - [ ] `nyquist_compliant: true` set in frontmatter
 
 **Approval:** pending
+
+---
+
+## Execution-Time Findings (orchestrator, appended during /gsd-execute-phase)
+
+Findings recorded as they were measured during execution. Each is evidence about what a
+green result in this phase does and does not prove.
+
+### F-01 — Plan 02-03 has no genuine RED evidence (2026-09-09)
+
+Plan 02-03 (`internal/openrouterprovision`) shipped working, well-covered code with a
+RED/GREEN commit history that does not reflect test-first development. Two of its three
+"RED" commits contain their full production implementation; the third created red by
+deleting three lines of working code and restoring them in the next commit. Full
+commit-by-commit evidence is in the **Orchestrator Audit** section of
+`02-03-SUMMARY.md`. Corroborated independently by
+`gsd_run check tdd.review-checkpoint 02` → plan 02-03 **FAIL, missing RED**.
+
+**Disposition:** human operator elected to accept the code and record the violation
+rather than rewrite shared `master` history under a concurrent writer.
+
+**Bearing on this phase's sign-off:** `internal/openrouterprovision`'s 87.2% coverage is a
+measurement of test *execution*, not of test *adequacy* — nothing in this plan's history
+shows the tests constrained the design. If REL-06 mutation scope (see Blocking Decision
+above) is extended to any package, this is the strongest candidate: mutation testing would
+supply exactly the evidence the RED commits failed to.
+
+### F-02 — Tooling caveat: `tdd.review-checkpoint` reports passes for unexecuted plans (2026-09-09)
+
+In the same run that correctly failed 02-03, the gate reported `Pass` for plans 02-04 and
+02-05, neither of which had been executed and neither of which had any commits. Its
+failures were corroborated by hand; its passes must not be read as evidence. Do not cite a
+`Pass` row from this gate as validation for any plan in this phase.
+
+### F-03 — Four live-path tests from plan 02-01 have never been executed (2026-09-09)
+
+`TestMigrate0121_RetiresWildcard`, `TestBootstrapGrantsExplicitSet`,
+`TestIdentityLLMKeyRLSAndCascade` and `TestTwoRolesTracer` compile clean but were never run:
+they require `POSTGRES_PASSWORD` / `AURA_AUTHULA_SECRET` from `.env`, which the executor's
+secret-read guard blocks by design. RBAC-04, RBAC-08 and CRED-01 are therefore currently
+marked complete on unit evidence alone. Plan 02-10 owns the live-run evidence and is where
+this must be settled — the phase must not close on unit green (E2E-05, and CLAUDE.md
+§DEFINITION OF DONE).
