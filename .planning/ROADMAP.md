@@ -112,7 +112,7 @@ Plans:
 - [x] 02-02-PLAN.md — the administrative pair made ungrantable through any API, the last-admin protection inside the saga, the uniform grant at provisioning, and the declaration-location CI check (wave 2)
 - [x] 02-03-PLAN.md — the OpenRouter Provisioning-API client: mint at a real zero cap, patch, read, and a revoke that proves itself (wave 2)
 - [x] 02-04-PLAN.md — the capability-denial ledger and its leg on the audit feed the cockpit already reads (wave 2)
-- [ ] 02-05-PLAN.md — the credit-exhausted refusal that fires before the network, and the deployment-key fallback closed at every agent-construction site (wave 2)
+- [x] 02-05-PLAN.md — the credit-exhausted refusal that fires before the network, and the deployment-key fallback closed at every agent-construction site (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 

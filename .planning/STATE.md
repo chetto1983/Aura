@@ -5,16 +5,16 @@ milestone_name: Production Launch — Multi-Tenant
 current_phase: 02
 current_phase_name: Two Roles and a Budget
 status: executing
-stopped_at: Completed 02-04-PLAN.md
-last_updated: "2026-09-09T16:30:00.000Z"
+stopped_at: Completed 02-05-PLAN.md
+last_updated: "2026-09-09T18:15:00.000Z"
 last_activity: 2026-09-09
-last_activity_desc: Plan 02-04 closed — denial ledger wired at the composition root, agui tier green live
+last_activity_desc: Plan 02-05 closed — deployment-key fallback shut at all seven agent-construction sites
 state_head: 0de2451f6166b9a2d6234343b912b78e1a3b0402
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 17
-  completed_plans: 11
+  completed_plans: 12
   percent: 0
 ---
 
@@ -30,9 +30,9 @@ See: .planning/PROJECT.md (updated 2026-09-07)
 ## Current Position
 
 Phase: 02 (Two Roles and a Budget) — EXECUTING
-Plan: 5 of 10
+Plan: 6 of 10
 Status: Ready to execute
-Last activity: 2026-09-09 — Plan 02-04 closed (capability denial audit trail)
+Last activity: 2026-09-09 — Plan 02-05 closed (credit refusal + fallback closure)
 
 Progress: [░░░░░░░░░░] 0% (milestone phase-completion — phase 01 itself is not yet marked closed)
 
@@ -86,6 +86,7 @@ phases, not many thin ones.
 | Phase 02 P02 | n/a (continuation) | 2 tasks | 16 files |
 | Phase 02 P03 | not measured | 3 tasks | 6 files |
 | Phase 02 P04 | not measured | 2 tasks | 16 files |
+| Phase 02 P05 | 30min + closure | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -122,6 +123,8 @@ creation:
 - [Phase 02]: openrouterprovision: RevokeKey is DELETE+verifying-GET in one function (CRED-08) — a caller cannot skip the verification half; a DELETE that itself 404s still converges to success provided the follow-up GET also 404s
 - [Phase 02]: [Plan 02-04] The capability-denial ledger was built, tested and green while `AuthDeps.DenialRecorder` was never assigned at the composition root — `NewPgCapabilityDenialStore` had zero callers outside tests, so every real denial took the nil no-op path and recorded nothing. No later plan owned the wiring; closed on touch in `c22e7719c`. Found by checking the plan's acceptance criteria, not its tests: all sixteen tests passed throughout.
 - [Phase 02]: [Plan 02-04] The recorder's nil check belongs at the composition root, not in the constructor: a `*PgCapabilityDenialStore` over a nil pool assigned to the interface field is a NON-nil interface value that slips past `RequireCapability`'s own nil guard and panics on every refusal instead of returning 403.
+- [Phase 02]: [Plan 02-05] CRED-05 cannot be switched on before plan 02-06: `identitykey.Store.Save` and `internal/openrouterprovision` both have ZERO production callers, so no identity holds a key and a fail-closed interactive runner would refuse every turn including the operator's. The seam is committed but inert (`da24cbf82`, `Deps.IdentityLLM` nil everywhere) — an ordering constraint neither plan states.
+- [Phase 02]: [Plan 02-05] The interactive turn's one correct seam is `turnLocked`, not the HTTP layer: it resolves ONE snapshot after `scopeContextToConversation` has put the conversation owner on ctx and seeds it via `withLLMRuntimeSnapshot`, so `buildAgent`, the title worker and the tracker all inherit that decision. No other call site needs changing.
 - [Phase 02]: [Plan 02-04] A compile-failure RED is structurally uncommittable in this repo — the pre-commit hook runs `go vet` and fails closed on a non-building package, and `--no-verify` is forbidden. Measured by attempting it. Task 1 used the deliberately-wrong-scaffold pattern 02-01/02-03 already established under the same gate.
 
 ### Pending Todos
@@ -173,7 +176,7 @@ rediscover them:
 ## Session Continuity
 
 Last session: 2026-09-09T16:30:00.000Z
-Stopped at: Completed 02-04-PLAN.md.
+Stopped at: Completed 02-05-PLAN.md.
 Resume file: None
 
 Settled this session, each measured live on a disposable Postgres container under `-race`,
@@ -188,6 +191,6 @@ never compile-checked:
   whole of 02-04 was latent: green tests, nothing recorded in a running daemon.
 - `f01c7fb91` — `02-04-SUMMARY.md`. Tier `internal/agui`: 777 passed, 0 failed, **0 skipped**.
 
-Next: `/gsd-execute-phase 02` for plan 02-05 (close the credential fallback —
-`swarm.go:290` and `cron/handlers/handler.go:126` spend the deployment key when
-`rc.Runtime` is nil).
+Next: `/gsd-execute-phase 02` for plan 02-06 (provisioning saga credential leg +
+revocation leg) — it is also the precondition for switching on 02-05's inert
+interactive-turn seam.
