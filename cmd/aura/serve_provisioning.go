@@ -386,6 +386,7 @@ func deprovisionDeps(chat *chatEnv) agui.DeprovisionDeps {
 		return agui.DeprovisionDeps{}
 	}
 	objProv, fsProv, jrnl := buildProvisioningPorts(chat)
+	revoker := openRouterKeyRevokerFor(chat)
 	convStore := chat.conv
 	if convStore == nil {
 		convStore = conversations.New(chat.pool, conversations.Config{
@@ -401,6 +402,7 @@ func deprovisionDeps(chat *chatEnv) agui.DeprovisionDeps {
 		ObjectStore:    objProv,
 		Filesystem:     fsProv,
 		Sandbox:        sandboxPurgerFor(chat.sandboxRouter),
+		OpenRouterKey:  revoker,
 		IdentityDelete: auraLegAdapter{pool: chat.pool},
 	}
 }

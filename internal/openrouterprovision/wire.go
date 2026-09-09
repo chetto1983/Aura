@@ -23,6 +23,14 @@ import (
 	"strings"
 )
 
+// DefaultBaseURL is the Provisioning-API base every verb in this package targets
+// (02-OPENROUTER-API.md: "Base URL https://openrouter.ai/api/v1"). It is independent
+// of the deployment's own primary-LLM base URL (internal/llm.Config.BaseURL, which may
+// point at a local llamacpp/Ollama backend, D-13): minting and revoking a per-identity
+// key always talks to OpenRouter itself, regardless of which backend the deployment
+// serves completions from.
+const DefaultBaseURL = "https://openrouter.ai/api/v1"
+
 // USDCap is a spending cap carried as an exact integer number of cents, end
 // to end. A float64 field can drift after arithmetic and encoding/json's
 // default float formatting is not a contract; this type is decimal-safe

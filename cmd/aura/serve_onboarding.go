@@ -272,6 +272,10 @@ func buildOnboardingService(
 		// The eager per-identity sandbox box leg (D-09): a nil sandboxProvisionerFor(nil)
 		// (no router composed) nil-skips the leg exactly like ObjectStore/Filesystem above.
 		deps.Sandbox = sandboxProvisionerFor(chat.sandboxRouter)
+		// The credit leg (plan 02-06, CRED-01/CRED-02): mints this identity's own
+		// OpenRouter key. Nil when the management credential is absent (D-13) — the
+		// same nil-skip convention every other optional resource leg above follows.
+		deps.Credit = openRouterKeyMinterFor(chat)
 	}
 	if authulaProvider != nil {
 		if core := authulaProvider.CoreServices(); core != nil {

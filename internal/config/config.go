@@ -279,6 +279,13 @@ type Config struct {
 	GarageAdminEndpoint string // AURA_GARAGE_ADMIN_ENDPOINT — internal Garage Admin API v2 base, default http://garage:3903
 	GarageAdminToken    string // AURA_GARAGE_ADMIN_TOKEN — bearer token for the internal admin API (Pitfall 3)
 
+	// Phase 2 (plan 06) OpenRouter management credential (C-02/D-12): mints/revokes
+	// per-identity keys and reads analytics/credits, but CANNOT call the completion
+	// endpoints (M-01) — has no upstream-canonical name, so it takes the AURA_ form.
+	// Empty is NOT boot-fatal — the mint/revoke legs degrade to a nil port, mirroring
+	// GarageAdminToken above.
+	OpenRouterManagementKey string // AURA_OPENROUTER_MANAGEMENT_KEY — mints/revokes per-identity keys; cannot spend credit
+
 	// Phase 37 per-identity full-capability sandbox operator surface (SBX foundation). The
 	// AURA_SANDBOX_* box knobs (idle-TTL, cgroup caps, egress allowlist, image ref) 37-05/37-06
 	// read into usersandbox.specFor / buildEgressSidecar. Defined + cataloged + parse-tested
@@ -551,6 +558,9 @@ func loadBase() *Config {
 		// in-compose garage:3903; the token is read raw (empty is non-fatal here).
 		GarageAdminEndpoint: envDefault("AURA_GARAGE_ADMIN_ENDPOINT", "http://garage:3903"),
 		GarageAdminToken:    os.Getenv("AURA_GARAGE_ADMIN_TOKEN"),
+		// Phase 2 (plan 06) OpenRouter management credential (C-02/D-12); read raw,
+		// empty is non-fatal, mirroring GarageAdminToken.
+		OpenRouterManagementKey: os.Getenv("AURA_OPENROUTER_MANAGEMENT_KEY"),
 
 		// Phase 37 per-identity sandbox operator surface (SBX foundation). See config_sandbox.go.
 		Sandbox: loadSandboxConfig(),

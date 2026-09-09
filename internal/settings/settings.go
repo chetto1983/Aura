@@ -73,6 +73,10 @@ var AllowedKeys = map[string]KeyMeta{
 	"AURA_MEMORY_PRELOAD_TOP_K":      {Kind: KindInt, Label: "Memory preload results"},
 	"AURA_MEMORY_PRELOAD_TIMEOUT_MS": {Kind: KindInt, Label: "Memory preload timeout (ms)"},
 	"OPENROUTER_API_KEY":             {Secret: true, Kind: KindString, Label: "OpenRouter API key"},
+	// The management credential (C-02/D-12, plan 02-06): mints/revokes per-identity
+	// keys and reads analytics/credits, but cannot call completion endpoints (M-01) —
+	// a different credential from the inference key above, stored the same way.
+	"AURA_OPENROUTER_MANAGEMENT_KEY": {Secret: true, Kind: KindString, Label: "OpenRouter management key (mint/revoke, not inference)"},
 	"AURA_EMBED_MODEL":               {Kind: KindString, Label: "Embedding cloud model"},
 	"AURA_EMBED_DIMENSIONS":          {Kind: KindInt, Label: "Embedding dimensions"},
 	"AURA_EMBED_BASE_URL":            {Kind: KindString, Label: "Embedding base URL"},

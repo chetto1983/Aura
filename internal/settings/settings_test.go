@@ -42,6 +42,19 @@ func TestAllowed(t *testing.T) {
 	}
 }
 
+// TestOpenRouterManagementKeyAllowlistedAndSecret proves the plan 02-06 management
+// credential is allowlisted and redacted like every other secret setting — distinct
+// from OPENROUTER_API_KEY, which TestAllowed already covers.
+func TestOpenRouterManagementKeyAllowlistedAndSecret(t *testing.T) {
+	m, ok := Allowed("AURA_OPENROUTER_MANAGEMENT_KEY")
+	if !ok || !m.Secret {
+		t.Fatalf("AURA_OPENROUTER_MANAGEMENT_KEY should be allowed + secret, got ok=%v meta=%+v", ok, m)
+	}
+	if m.Kind != KindString {
+		t.Fatalf("AURA_OPENROUTER_MANAGEMENT_KEY kind = %v, want KindString", m.Kind)
+	}
+}
+
 func TestOverlayEnvAppliesAllowlistOnly(t *testing.T) {
 	// A unique allowlisted key value + a clearly non-allowlisted key. Cleanup
 	// restores the environment so other tests are unaffected.
@@ -79,6 +92,7 @@ func TestOverlayEnvFeedsRuntimeConfig(t *testing.T) {
 		{Key: "AURA_LLM_MODEL", Value: "settings/primary-model"},
 		{Key: "AURA_LLM_BASE_URL", Value: "https://settings-llm.example/v1"},
 		{Key: "OPENROUTER_API_KEY", Value: "sk-settings-overlay"},
+		{Key: "AURA_OPENROUTER_MANAGEMENT_KEY", Value: "sk-or-mgmt-settings-overlay"},
 		{Key: "AURA_LLM_MAX_TOKENS", Value: "1111"},
 		{Key: "AURA_MODEL_CONTEXT_WINDOW", Value: "64000"},
 		{Key: "AURA_MODEL_MAX_OUTPUT_TOKENS", Value: "4096"},
@@ -105,6 +119,9 @@ func TestOverlayEnvFeedsRuntimeConfig(t *testing.T) {
 	}
 	if got := cfg.LLM.APIKey; got != "sk-settings-overlay" {
 		t.Errorf("LLM.APIKey = %q, want overlaid settings API key", got)
+	}
+	if got := cfg.OpenRouterManagementKey; got != "sk-or-mgmt-settings-overlay" {
+		t.Errorf("OpenRouterManagementKey = %q, want overlaid settings management key", got)
 	}
 	if got := cfg.LLM.MaxTokens; got != 1111 {
 		t.Errorf("LLM.MaxTokens = %d, want 1111", got)
@@ -160,6 +177,7 @@ func clearRuntimeConfigEnvForOverlayTest(t *testing.T) {
 
 	for _, key := range []string{
 		"OPENROUTER_API_KEY",
+		"AURA_OPENROUTER_MANAGEMENT_KEY",
 		"AURA_LLM_PROVIDER",
 		"AURA_LLM_MODEL",
 		"AURA_LLM_BASE_URL",
