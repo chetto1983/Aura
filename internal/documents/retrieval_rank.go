@@ -48,17 +48,8 @@ func rankDocuments(
 		}
 		mergePassage(doc, passage, rank+1)
 	}
-	// Once the passage legs have answered, a card may only NAME what they found. A card is a
-	// filename-and-description match -- the tool's own instructions say that alone is not
-	// evidence -- so introducing a document nothing evidenced puts an unrelated file in front
-	// of the agent at score zero. With no passages at all the cards are the answer, which is
-	// what rankCardsOnly asks for, and evidenced is false there.
-	evidenced := len(passages) > 0
 	for rank, card := range cards {
-		doc := lookupRankedDocumentForCard(byContent, card, evidenced)
-		if doc == nil {
-			continue
-		}
+		doc := ensureRankedDocumentFromCard(byContent, card)
 		doc.order = min(doc.order, len(passages)+rank)
 		doc.document.Evidence = appendEvidence(doc.document.Evidence, RetrievalEvidence{
 			Leg: "card", Rank: rank + 1, Score: new(card.Rank),
@@ -111,20 +102,11 @@ func newRankedDocument(documentID string) *rankedDocument {
 	}
 }
 
-// lookupRankedDocumentForCard adds the document's searchable description and object identity.
-// It returns nil when the card would introduce a document no passage supports and passages
-// exist -- the caller skips it rather than answering with an unevidenced file.
-func lookupRankedDocumentForCard(
-	byContent map[string]*rankedDocument,
-	card RetrievalCard,
-	evidenced bool,
-) *rankedDocument {
+// ensureRankedDocumentFromCard adds the document's searchable description and object identity.
+func ensureRankedDocumentFromCard(byContent map[string]*rankedDocument, card RetrievalCard) *rankedDocument {
 	key := contentKey(card.OriginalSHA256, card.DocumentID)
 	doc := byContent[key]
 	if doc == nil {
-		if evidenced {
-			return nil
-		}
 		doc = newRankedDocument(card.DocumentID)
 		byContent[key] = doc
 	}

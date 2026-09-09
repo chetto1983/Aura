@@ -299,8 +299,10 @@ async def process_file(
     #
     # The fallback is not a stopgap: a file the operator dropped into the bucket directly
     # has no metadata and its key IS its name.
-    facts = await source.object_facts(coco.use_context(S3), _S3_CONFIG, key)
-    file_name = facts.file_name or pathlib.PurePosixPath(key).name
+    file_name = (
+        await source.object_file_name(coco.use_context(S3), _S3_CONFIG, key)
+        or pathlib.PurePosixPath(key).name
+    )
     with tempfile.NamedTemporaryFile(suffix=pathlib.Path(key).suffix) as tmp:
         tmp.write(content)
         tmp.flush()
@@ -316,7 +318,7 @@ async def process_file(
             # examples do the same thing one level up, choosing the processor from the
             # path; this is that choice made where the extension is already known.
             #
-            text = media.index_text(ready, file_name, facts.content_type)
+            text = media.index_text(ready, file_name)
             card = _card(ready, _card_name(file_name, ready))
     source_kind = "s3"
     search_document_id = identity.search_document_id(identity_id, source_kind, key)
