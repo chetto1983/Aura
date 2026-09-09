@@ -71,3 +71,36 @@ func TestRankDocumentsPrefersTheCardTitleOverTheKeyFallback(t *testing.T) {
 		t.Fatalf("title = %q, want the card's name", documents[0].Title)
 	}
 }
+
+// A card is a filename-and-description match, and the tool's own instructions say a filename
+// match alone is not evidence. It earns its place when the passage legs found nothing -- that
+// is what rankCardsOnly is for -- but once they have answered, a card must not add a document
+// with no passage behind it. Measured 2026-09-09 through the MCP: asking how to back up an
+// ArcadeDB database returned the manual at 0.5659 and the PRD at 0.3828, then a worker report
+// about ask_user at score 0, carried in by the card leg alone.
+func TestCardsDoNotAddPassagelessDocumentsToAnEvidencedAnswer(t *testing.T) {
+	score := 0.57
+	passages := []arcadedb.PassageCandidate{{
+		PassageID: "doc_manual:233", SearchDocumentID: "doc_manual", SourceKind: "s3",
+		SourceKey: "Documenti/ArcadeDB-Manual.pdf", RawSHA256: "42d8390351fb",
+		NormalizedSHA256: "37e2bcd6", Text: "take a regular full ArcadeDB backup",
+		Ordinal: 233, Leg: arcadedb.RetrievalLegFused, FusedScore: &score,
+	}}
+	cards := []RetrievalCard{
+		{DocumentID: "doc_manual", Title: "ArcadeDB-Manual.pdf", OriginalSHA256: "42d8390351fb", Rank: 10.9},
+		{DocumentID: "doc_worker", Title: "w1-f843d485.md", OriginalSHA256: "d560d529ba54", Rank: 8.3},
+	}
+
+	documents := rankDocuments(cards, passages, nil, 8, 3, false)
+
+	if len(documents) != 1 || documents[0].DocumentID != "doc_manual" {
+		ids := make([]string, 0, len(documents))
+		for _, d := range documents {
+			ids = append(ids, d.DocumentID)
+		}
+		t.Fatalf("evidenced answer carried card-only documents: %v", ids)
+	}
+	if documents[0].Title != "ArcadeDB-Manual.pdf" {
+		t.Fatalf("the card must still name the document it ranked, got %q", documents[0].Title)
+	}
+}
