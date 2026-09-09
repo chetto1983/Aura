@@ -95,7 +95,9 @@ describe('ModelSettingsPanel — application state and turn budget', () => {
     expect(stepsField?.querySelector('[data-applied="live"]')?.textContent).toBe(
       'Applies immediately',
     );
-    const sttField = screen.getByLabelText('Speech-to-text cloud model').closest('div.flex.min-h-32');
+    const sttField = screen
+      .getByLabelText('Speech-to-text cloud model')
+      .closest('div.flex.min-h-32');
     expect(sttField?.querySelector('[data-applied="restart"]')?.textContent).toBe(
       'Saved — needs a restart',
     );

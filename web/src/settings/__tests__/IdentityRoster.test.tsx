@@ -9,8 +9,18 @@ import { IdentityRoster } from '../IdentityRoster';
 // grants everything at provisioning, RBAC-06 refuses the admin pair through the API), so this
 // suite proves the roster/removal contract only, not a grants surface.
 
-const ADMIN = { id: 'id-admin', name: 'admin@aura.local', kind: 'user', capabilities: ['identity.create', 'identity.delete', 'agent.run'] };
-const ALICE = { id: 'id-alice', name: 'alice@example.com', kind: 'user', capabilities: ['agent.run', 'governance.read', 'governance.write', 'share.public'] };
+const ADMIN = {
+  id: 'id-admin',
+  name: 'admin@aura.local',
+  kind: 'user',
+  capabilities: ['identity.create', 'identity.delete', 'agent.run'],
+};
+const ALICE = {
+  id: 'id-alice',
+  name: 'alice@example.com',
+  kind: 'user',
+  capabilities: ['agent.run', 'governance.read', 'governance.write', 'share.public'],
+};
 
 function urlOf(input: RequestInfo | URL): string {
   if (typeof input === 'string') return input;

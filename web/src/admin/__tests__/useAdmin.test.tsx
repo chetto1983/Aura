@@ -35,7 +35,10 @@ describe('useCapabilities', () => {
       vi.fn(() =>
         Promise.resolve(
           new Response(
-            JSON.stringify({ identity_id: 'local', capabilities: ['identity.create', 'identity.delete'] }),
+            JSON.stringify({
+              identity_id: 'local',
+              capabilities: ['identity.create', 'identity.delete'],
+            }),
             { status: 200 },
           ),
         ),
@@ -94,7 +97,11 @@ describe('useCapabilities', () => {
       vi.fn(() =>
         Promise.resolve(
           new Response(
-            JSON.stringify({ identity_id: 'local', capabilities: ['identity.create'], context_window: 131_072 }),
+            JSON.stringify({
+              identity_id: 'local',
+              capabilities: ['identity.create'],
+              context_window: 131_072,
+            }),
             { status: 200 },
           ),
         ),
@@ -111,9 +118,12 @@ describe('useCapabilities', () => {
       'fetch',
       vi.fn(() =>
         Promise.resolve(
-          new Response(JSON.stringify({ identity_id: 'local', capabilities: ['identity.create'] }), {
-            status: 200,
-          }),
+          new Response(
+            JSON.stringify({ identity_id: 'local', capabilities: ['identity.create'] }),
+            {
+              status: 200,
+            },
+          ),
         ),
       ),
     );
@@ -145,7 +155,6 @@ describe('admin roster + mutations', () => {
       expect(result.current.data).toHaveLength(1);
     });
   });
-
 });
 
 describe('useAudit', () => {
