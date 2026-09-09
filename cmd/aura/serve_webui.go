@@ -133,6 +133,7 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	// relay) — no capability gate. Method+path-specific so it wins longest-pattern
 	// precedence over the "/" embed catch-all.
 	mux.Handle(imageProxyRoute, aguiHandler)
+	mux.Handle(dataProxyRoute, aguiHandler)
 	// The Phase-27 GRAPH-01 graph-explorer routes delegate to the AG-UI handler (routes
 	// on Server.Mux). Read-only, so they inherit RequireAuth from the whole-mux wrap below
 	// with NO RequireCapability (contrast the mutating POST /agent/run + branch re-runs).

@@ -142,6 +142,25 @@ func TestServeWebui(t *testing.T) {
 		}
 	})
 
+	// The byte proxies live on Server.Mux, but "/api/" is an EXCLUSION prefix that is never
+	// itself mounted — so a proxy registered only there answers 404 through the real daemon
+	// while its handler unit test passes against Server.Mux directly. That is exactly how
+	// GET /api/fetch shipped broken on 2026-09-09 and was caught only by a live probe.
+	t.Run("byte proxies reach the AG-UI handler through the parent mux", func(t *testing.T) {
+		for _, route := range []string{"/api/image-proxy", "/api/fetch"} {
+			aguiHits = nil
+			resp, err := http.Get(srv.URL + route + "?url=https%3A%2F%2Fapi.example.test%2Fx")
+			if err != nil {
+				t.Fatalf("GET %s: %v", route, err)
+			}
+			raw, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			if len(aguiHits) != 1 || aguiHits[0] != route {
+				t.Fatalf("GET %s did not route to the AG-UI handler: hits=%v body=%s", route, aguiHits, raw)
+			}
+		}
+	})
+
 	t.Run("GET /api/conversations* -> AG-UI handler (CHAT-02 mount)", func(t *testing.T) {
 		for _, route := range []string{"/api/conversations", "/api/conversations/abc"} {
 			aguiHits = nil

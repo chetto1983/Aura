@@ -139,6 +139,17 @@ const (
 // wrap with no capability gate.
 const imageProxyRoute = "GET /api/image-proxy"
 
+// dataProxyRoute is the general case of imageProxyRoute: the same SSRF-safe relay with a
+// data content-type allowlist, so a cockpit data source costs a URL rather than a new
+// endpoint. Same posture — a SPECIFIC method+path sibling under the "/api/" exclusion
+// carve-out, NEVER a bare "/api/", delegating to the AG-UI handler and inheriting
+// RequireAuth from the whole-mux wrap with no capability gate.
+//
+// Registering it here is not optional bookkeeping: "/api/" is an EXCLUSION prefix and is
+// never itself mounted, so a route present only on Server.Mux answers 404 through the
+// real daemon while its handler unit test passes. Measured 2026-09-09 on the live stack.
+const dataProxyRoute = "GET /api/fetch"
+
 // graphSchemaRoute / graphQueryRoute are the Phase-27 GRAPH-01 read-only graph-explorer
 // routes (the schema overview + the structured-intent query). Like imageProxyRoute they
 // are SPECIFIC method+path siblings under the "/api/" exclusion carve-out — NEVER a bare
