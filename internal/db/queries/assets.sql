@@ -163,3 +163,16 @@ INSERT INTO aura.asset_events (
 ) VALUES (
     $1, $2, $3, $4, $5, $6
 );
+
+-- name: AssetNamesByObjectKey :many
+-- The file manager lists bucket KEYS, which deliberately carry no name (a chat attachment
+-- is chat/<assetID>.<ext> so the name cannot leak through a presigned URL or an access log).
+-- The name it needs is on the same row as the key, so the listing resolves it here rather
+-- than deriving a search id and asking the document index — which failed whole-listing once
+-- a page held more keys than that index accepts filters.
+-- A key with no row simply has no entry, and the caller keeps the key tail it already shows.
+SELECT object_key, file_name FROM aura.assets
+WHERE identity_id = $1
+  AND object_key = ANY(sqlc.arg(object_keys)::text[])
+  AND file_name <> ''
+  AND deleted_at IS NULL;

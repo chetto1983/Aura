@@ -76,6 +76,50 @@ func (q *Queries) AdoptAssetIntoThread(ctx context.Context, arg AdoptAssetIntoTh
 	return i, err
 }
 
+const assetNamesByObjectKey = `-- name: AssetNamesByObjectKey :many
+SELECT object_key, file_name FROM aura.assets
+WHERE identity_id = $1
+  AND object_key = ANY($2::text[])
+  AND file_name <> ''
+  AND deleted_at IS NULL
+`
+
+type AssetNamesByObjectKeyParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	ObjectKeys []string    `json:"object_keys"`
+}
+
+type AssetNamesByObjectKeyRow struct {
+	ObjectKey string `json:"object_key"`
+	FileName  string `json:"file_name"`
+}
+
+// The file manager lists bucket KEYS, which deliberately carry no name (a chat attachment
+// is chat/<assetID>.<ext> so the name cannot leak through a presigned URL or an access log).
+// The name it needs is on the same row as the key, so the listing resolves it here rather
+// than deriving a search id and asking the document index — which failed whole-listing once
+// a page held more keys than that index accepts filters.
+// A key with no row simply has no entry, and the caller keeps the key tail it already shows.
+func (q *Queries) AssetNamesByObjectKey(ctx context.Context, arg AssetNamesByObjectKeyParams) ([]AssetNamesByObjectKeyRow, error) {
+	rows, err := q.db.Query(ctx, assetNamesByObjectKey, arg.IdentityID, arg.ObjectKeys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AssetNamesByObjectKeyRow{}
+	for rows.Next() {
+		var i AssetNamesByObjectKeyRow
+		if err := rows.Scan(&i.ObjectKey, &i.FileName); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createAsset = `-- name: CreateAsset :one
 INSERT INTO aura.assets (
     identity_id, source_kind, source_ref, thread_id, scope, modality,

@@ -27,6 +27,13 @@ type Querier interface {
 	// `aura task approve`). Returns rows affected so the caller distinguishes a hit (1) from
 	// a task that is not awaiting approval (0).
 	ApproveTaskRow(ctx context.Context, id pgtype.UUID) (int64, error)
+	// The file manager lists bucket KEYS, which deliberately carry no name (a chat attachment
+	// is chat/<assetID>.<ext> so the name cannot leak through a presigned URL or an access log).
+	// The name it needs is on the same row as the key, so the listing resolves it here rather
+	// than deriving a search id and asking the document index — which failed whole-listing once
+	// a page held more keys than that index accepts filters.
+	// A key with no row simply has no entry, and the caller keeps the key tail it already shows.
+	AssetNamesByObjectKey(ctx context.Context, arg AssetNamesByObjectKeyParams) ([]AssetNamesByObjectKeyRow, error)
 	// First apply only: commit the freshly rebuilt plan authorization before any
 	// item can be claimed. A crash after this transition resumes persisted items
 	// without re-authorizing against a possibly changed global candidate set.
@@ -182,6 +189,7 @@ type Querier interface {
 	GetConversationVersionForIdentity(ctx context.Context, arg GetConversationVersionForIdentityParams) (int64, error)
 	GetIdentityByID(ctx context.Context, id pgtype.UUID) (AuraIdentities, error)
 	GetIdentityByName(ctx context.Context, name string) (AuraIdentities, error)
+	GetIdentityLLMKey(ctx context.Context, identityID pgtype.UUID) (AuraIdentityLlmKey, error)
 	// Per-identity OAuth grants for remote MCP servers (migration 0100). Every statement is
 	// scoped by identity_id in the WHERE clause AND by the two RLS policies underneath: the
 	// predicate here is what makes the intent readable, the policy is what makes it true even
@@ -371,6 +379,13 @@ type Querier interface {
 	ListGatewayApprovalGrants(ctx context.Context, identityID pgtype.UUID) ([]AuraGatewayApprovalGrants, error)
 	ListIdentities(ctx context.Context) ([]AuraIdentities, error)
 	ListIdentityAudit(ctx context.Context, arg ListIdentityAuditParams) ([]AuraIdentityAudit, error)
+	// Deliberately selects NO ciphertext (mirrors internal/db/sqlc/identity_mcp_oauth.sql.go's
+	// ListIdentityMCPOAuthServers): the admin roster needs the cap and the hash, never the key.
+	// RLS-scoped like every other query here (0087 fail-closed floor); the identity_id
+	// parameter is redundant with app.current_identity today (the table's PK means at most
+	// one row per identity) but keeps this query's shape identical to its ListIdentityMCPOAuthServers
+	// precedent for when a later plan adds an admin-bypass role.
+	ListIdentityLLMKeys(ctx context.Context, identityID pgtype.UUID) ([]ListIdentityLLMKeysRow, error)
 	// The names an identity has authorized, for `aura mcp login --status` and the cockpit's
 	// connector list. Deliberately selects NO ciphertext: a listing must not pull three
 	// credentials into memory to render a name and an expiry.
@@ -625,6 +640,7 @@ type Querier interface {
 	// they were summarized. Zero rows back means "someone else already went further", which
 	// the caller treats as success and re-reads.
 	UpsertConversationCompaction(ctx context.Context, arg UpsertConversationCompactionParams) (AuraConversationCompactions, error)
+	UpsertIdentityLLMKey(ctx context.Context, arg UpsertIdentityLLMKeyParams) error
 	// A refresh rewrites the same row, so this is an UPDATE-on-conflict rather than the
 	// delete-then-insert aura.identity_object_store uses for key rotation. created_at is
 	// deliberately left alone on conflict: it records when the identity first authorized this
