@@ -98,6 +98,7 @@ func contextRun(
 			PassageID: found.PassageID, Ordinal: found.Ordinal, Text: found.Text,
 			CitationToken: "document:" + found.SearchDocumentID + "@" +
 				shortHash(found.RawSHA256) + "#" + locator,
+			Locator: passageLocator(found),
 		})
 	}
 	return run

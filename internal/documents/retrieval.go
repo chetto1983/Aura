@@ -151,12 +151,17 @@ type RetrievalPassage struct {
 
 // PassageContext is a neighbouring passage. It carries its own citation token because
 // quoting it under the token of the passage it neighbours would cite text that passage
-// does not contain.
+// does not contain -- and its own Locator for the same reason. document_search tells its
+// caller to cite the citation_token AND the locator's heading_path, so a neighbour that
+// carried only the token asked for a citation half of which it had not been given;
+// measured 2026-09-09, the answer to a question about a table split across chunks lives
+// in the neighbour, which is exactly when the missing half is the one needed.
 type PassageContext struct {
-	PassageID     string `json:"passage_id"`
-	Ordinal       int64  `json:"ordinal"`
-	Text          string `json:"text"`
-	CitationToken string `json:"citation_token"`
+	PassageID     string         `json:"passage_id"`
+	Ordinal       int64          `json:"ordinal"`
+	Text          string         `json:"text"`
+	CitationToken string         `json:"citation_token"`
+	Locator       PassageLocator `json:"locator"`
 }
 
 // RetrievalEvidence records which ranked production leg admitted the result.

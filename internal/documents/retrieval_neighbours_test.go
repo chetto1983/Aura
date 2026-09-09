@@ -20,6 +20,7 @@ func neighbourAt(ordinal int64, text string) arcadedb.PassageCandidate {
 	candidate.PassageID = "doc_9f2c:" + strconv.FormatInt(ordinal, 10)
 	candidate.Ordinal, candidate.Text, candidate.FusedScore = ordinal, text, nil
 	candidate.CharacterSpan = &arcadedb.CharacterSpan{Start: ordinal * 100, End: ordinal*100 + 80}
+	candidate.HeadingPath = []string{"Documentation", "6.4. Vector"}
 	return candidate
 }
 
@@ -60,6 +61,17 @@ func TestNeighboursSurroundTheHitAndCarryTheirOwnCitation(t *testing.T) {
 	}
 	if passage.ContextBefore[0].CitationToken == "" {
 		t.Fatal("a neighbour arrived with no citation of its own")
+	}
+	// document_search orders its caller to cite the citation_token AND the locator's
+	// heading_path. A neighbour that carried only the token was being asked for a citation
+	// it had been handed half of -- and the neighbour is precisely where the answer is when
+	// a table is split, so the missing half is the one needed.
+	before := passage.ContextBefore[0]
+	if len(before.Locator.HeadingPath) == 0 {
+		t.Fatal("a neighbour arrived with no heading_path to cite")
+	}
+	if before.Locator.CharStart == nil || *before.Locator.CharStart != 4100 {
+		t.Fatalf("a neighbour's character span is not its own: %+v", before.Locator)
 	}
 }
 
