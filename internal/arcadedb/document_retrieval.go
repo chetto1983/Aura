@@ -76,9 +76,11 @@ type PassageCandidate struct {
 	HeadingPath      []string
 	CharacterSpan    *CharacterSpan
 	Leg              RetrievalLeg
-	// FusedScore is the engine's combined score, higher-is-better. Under RRF it reads
-	// back as a sum of 1/(60+rank) over the sources that matched, which makes a bad
-	// ranking diagnosable by arithmetic instead of by guessing.
+	// FusedScore is the reranked cosine of the passage against the query, higher-is-better,
+	// and it is bounded below by RelevanceFloor because a passage under the floor never
+	// leaves the engine. It used to be the fusion's reciprocal-rank sum, 1/(60+rank) per
+	// matching source; that number described WHICH legs agreed, never how relevant the
+	// passage was, so an operator reading it learned nothing about the answer's quality.
 	FusedScore *float64
 }
 
@@ -126,6 +128,10 @@ func (d *DocumentIndex) FusedCandidates(
 	params["query"] = escapeLucene(query)
 	params["fetch"] = fusedDenseNeighbours
 	params["max_distance"] = d.config.DenseMaxDistance
+	params["min_relevance"] = d.config.RelevanceFloor
+	// Over-fetch the rerank: the relevance floor runs after it, so scoring only `limit`
+	// candidates would let a rejected one cost a slot a qualifying passage could have filled.
+	params["candidates"] = min(max(filter.Limit*4, 20), d.config.MaxRetrievalCandidates)
 	rows, err := client.Query(ctx, fusedStatement(where, strategy, filter.Limit), params)
 	if err != nil {
 		if missingIngestType(err, documentPassageType) {
@@ -137,15 +143,22 @@ func (d *DocumentIndex) FusedCandidates(
 }
 
 // fusedStatement is the measured query, parameter for parameter. No outer ORDER BY:
-// `vector.fuse` returns descending by fused score, asserted by the engine's own
-// SQLFunctionVectorFuseTest.
+// `vector.rerank` returns descending by its own score -- measured 2026-09-09 on the live
+// corpus, 0.7530/0.7314/0.7291/0.7216/0.7183/0.7063 in that order.
+//
+// The rerank is not a refinement of the ranking, it is what makes the score MEAN anything.
+// `vector.fuse` emits reciprocal-rank scores, 1/(60+rank), so every source's rank 1 gets the
+// same number whether it is right or wrong: measured the same day, all five out-of-corpus
+// questions scored exactly 0.016393442, while a correct filename lookup found by ONE leg
+// scored that identical 0.016393442 and reranked to 0.7651. Thresholding the fused rank
+// would therefore have rejected a perfect match and kept a nonsense one. See RelevanceFloor.
 // The scope predicate reaches BOTH sub-pipelines and, when the caller named documents,
 // restricts both to them. Measured 2026-08-08 to leave the
 // ranking bit-identical, so it costs nothing and its absence would have silently ignored
 // a caller's document filter.
 func fusedStatement(where string, strategy FusionStrategy, limit int) string {
 	return "SELECT " + passageCandidateFields + ", score AS fused_score FROM (" +
-		"SELECT expand(`vector.fuse`(" +
+		"SELECT expand(`vector.rerank`((SELECT expand(`vector.fuse`(" +
 		"`vector.neighbors`('" + documentPassageType + "[embedding]', :embedding, :fetch, " +
 		"{ filter: (SELECT @rid FROM " + documentPassageType + " WHERE " + where + ").@rid, " +
 		"maxDistance: :max_distance })," +
@@ -153,7 +166,8 @@ func fusedStatement(where string, strategy FusionStrategy, limit int) string {
 		" WHERE SEARCH_INDEX('" + documentPassageType + "[text]', :query) = true AND " + where + ")," +
 		"{ fusion: '" + string(strategy) + "', groupBy: 'search_document_id', groupSize: " +
 		strconv.Itoa(fusedGroupSize) + " }" +
-		"))) LIMIT " + strconv.Itoa(limit)
+		"))), :embedding, '" + documentEmbeddingProperty + "', :candidates)" +
+		")) WHERE score >= :min_relevance LIMIT " + strconv.Itoa(limit)
 }
 
 func (d *DocumentIndex) normalizeCandidateFilter(filter CandidateFilter) (CandidateFilter, error) {

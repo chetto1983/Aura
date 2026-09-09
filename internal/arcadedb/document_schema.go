@@ -12,7 +12,9 @@ import (
 )
 
 const (
-	documentPassageType        = "Passage"
+	documentPassageType = "Passage"
+	// documentEmbeddingProperty is the vector property `vector.rerank` re-scores against.
+	documentEmbeddingProperty  = "embedding"
 	maxDocumentIdentifierRunes = 512
 
 	defaultRetrievalCandidateCap = 200
@@ -20,6 +22,8 @@ const (
 	defaultDocumentQueryRunes    = 2_048
 	// See DenseMaxDistance for the measurement this number comes from.
 	defaultDocumentDenseMaxDistance = 0.72
+	// See RelevanceFloor for the measurement this number comes from.
+	defaultDocumentRelevanceFloor = 0.32
 )
 
 // CharacterSpan locates a passage in the extracted text.
@@ -45,9 +49,35 @@ type DocumentIndexConfig struct {
 	// 0.731, 0.794, 0.798 and 0.799. It keeps all five true matches and drops four of the five
 	// others. The margin is thin — 0.7124 against 0.7063 — so this is a knob with its
 	// measurement written beside it, not a clean separation: "orari dei traghetti per la
-	// Sardegna" is still admitted. The manual's own remedy for that overlap is a third,
-	// sparse leg (vector.sparseNeighbors), which this fusion does not yet have.
+	// Sardegna" is still admitted, which is what RelevanceFloor below finally rejects.
 	DenseMaxDistance float64
+
+	// RelevanceFloor is the abstention gate, and it sits AFTER the rerank on purpose.
+	// DenseMaxDistance bounds the dense leg only; a lexical hit on an incidental word still
+	// entered the result set with nothing left to reject it, because `vector.fuse` scores by
+	// reciprocal rank -- 1/(60+rank), identical for every source's rank 1 -- and a rank
+	// carries no relevance. Measured 2026-09-09 on the live 1079-passage corpus: all five
+	// out-of-corpus questions scored exactly 0.016393442, to the digit. No threshold on that
+	// number can separate anything. `vector.rerank` re-scores the fused candidates against
+	// their full-precision vectors and emits a real cosine, which can be thresholded.
+	//
+	// 0.32 is the midpoint of 0.2990..0.3445, measured the same day on the same corpus.
+	// Worst true match: "w2-ee2226e3", a bare worker identifier, at 0.3445. Best false
+	// match: "orari dei traghetti per la Sardegna" at 0.2990 -- the one DenseMaxDistance
+	// admitted. The rest sat far from the edge: answerable 0.4508..0.7530, out-of-corpus
+	// 0.1737..0.2171 ("ricetta della carbonara" 0.1803).
+	//
+	// The identifier group is why the floor is 0.32 and not the 0.3749 the prose questions
+	// alone suggested: an exact identifier is a short query against long prose, so its cosine
+	// runs low even when the match is exact and correct. Memory solves the same tension with
+	// a query-shape exemption (lexicalScoreFloor returns 0 for a one-token query); here the
+	// measured band does not need one, and a floor chosen without those five queries would
+	// have rejected a correct lookup.
+	//
+	// What the measurement does NOT support: a claim beyond 15 queries, one corpus, one
+	// embedder, one day, and top-1 only. The band is 0.0455 wide. That memory measured 0.28
+	// on a different corpus is a second, independent measurement, not a shared constant.
+	RelevanceFloor float64
 }
 
 func (cfg DocumentIndexConfig) normalized() (DocumentIndexConfig, error) {
@@ -58,6 +88,7 @@ func (cfg DocumentIndexConfig) normalized() (DocumentIndexConfig, error) {
 	cfg.MaxDocumentFilters = defaultLimit(cfg.MaxDocumentFilters, defaultDocumentFilterCap)
 	cfg.MaxQueryRunes = defaultLimit(cfg.MaxQueryRunes, defaultDocumentQueryRunes)
 	cfg.DenseMaxDistance = defaultFloatLimit(cfg.DenseMaxDistance, defaultDocumentDenseMaxDistance)
+	cfg.RelevanceFloor = defaultFloatLimit(cfg.RelevanceFloor, defaultDocumentRelevanceFloor)
 	limits := []struct {
 		name  string
 		value int

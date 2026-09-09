@@ -17,3 +17,28 @@ func TestFusedStatementBoundsTheDenseLegByDistance(t *testing.T) {
 		t.Fatalf("fused statement has no dense distance bound, so it can never abstain:\n%s", statement)
 	}
 }
+
+// The dense bound above is the RECALL half and it cannot abstain on its own: it bounds one
+// leg, so a lexical hit on an incidental word still enters with nothing left to reject it.
+// `vector.fuse` emits an RRF pseudo-score of 1/(60+rank), identical for every source's rank
+// 1 -- measured 2026-09-09, all five out-of-corpus questions scored exactly 0.016393442 --
+// so no threshold on it carries information. `vector.rerank` replaces it with a real cosine.
+func TestFusedStatementReranksBeforeScoring(t *testing.T) {
+	statement := fusedStatement("identity_id = :identity_id", FusionRRF, 20)
+	if !strings.Contains(statement, "`vector.rerank`") {
+		t.Fatalf("fused statement scores by RRF rank, which cannot separate relevance:\n%s", statement)
+	}
+	if !strings.Contains(statement, "score >= :min_relevance") {
+		t.Fatalf("fused statement has no relevance floor, so it can never abstain:\n%s", statement)
+	}
+}
+
+func TestDocumentConfigDefaultsTheRelevanceFloor(t *testing.T) {
+	cfg, err := DocumentIndexConfig{Dimensions: 768}.normalized()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RelevanceFloor != defaultDocumentRelevanceFloor {
+		t.Fatalf("relevance floor = %v, want %v", cfg.RelevanceFloor, defaultDocumentRelevanceFloor)
+	}
+}
