@@ -156,3 +156,35 @@ def test_index_text_still_raises_when_a_configured_route_fails(monkeypatch, tmp_
 
     with pytest.raises(RuntimeError):
         media.index_text(str(image), image.name)
+
+
+def test_index_text_leaves_spreadsheets_to_document_open(monkeypatch, tmp_path):
+    """A spreadsheet is queried, not read: the answer to "the CAP of Caraglio" is a lookup
+    on a key, and an aggregate over a table cannot come from a few passages -- the product
+    contract says so and document_open exists for it.
+
+    Chunking one anyway is actively harmful. Measured 2026-09-09 on eight Italian reference
+    tables: 3.4M characters became 981 passages, more than the whole live corpus, and the
+    Caraglio row landed in a 2,114-character chunk beside fourteen unrelated municipalities
+    from Calabria to Piemonte, reduced to a single vector whose meaning is their average.
+
+    Returning "" is the module's existing way to say this: the card, the name and the row
+    survive, so the file stays findable, and with no passage behind it retrieval reports
+    requires_open.
+    """
+    book = tmp_path / "gi_comuni_cap.xlsx"
+    book.write_bytes(b"PK\x03\x04 not a real workbook")
+
+    def fail(*_args, **_kwargs):
+        raise AssertionError("a spreadsheet must not reach the text extractor")
+
+    monkeypatch.setattr(media.extract, "extract_text", fail)
+
+    sheet = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    # Garage answers the content type on the HEAD the sweep already makes, so it decides
+    # even when the name lies -- and when the store served none, the suffix still does.
+    assert media.index_text(str(book), "gi_comuni_cap.xlsx", sheet) == ""
+    assert media.index_text(str(book), "gi_comuni_cap.xlsx", sheet + "; charset=UTF-8") == ""
+    assert media.index_text(str(book.with_suffix(".bin")), "misnamed.bin", sheet) == ""
+    assert media.index_text(str(book), "gi_comuni_cap.xlsx", None) == ""
+    assert media.index_text(str(book), "gi_comuni_cap.xlsx", "application/octet-stream") == ""

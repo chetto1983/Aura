@@ -144,8 +144,21 @@ def decode_file_name(encoded: str | None) -> str | None:
     return decoded
 
 
-async def object_file_name(client: object, config: S3Config, key: str) -> str | None:
-    """HEAD one object and return the filename it carries, or None.
+@dataclasses.dataclass(frozen=True, slots=True)
+class ObjectFacts:
+    """What a HEAD on a stored object tells us about it.
+
+    Returned together rather than by two functions because they come from ONE request and a
+    caller that needs both must not pay for two: the name decides what a person sees, the
+    content type decides how the file is read.
+    """
+
+    file_name: str | None = None
+    content_type: str | None = None
+
+
+async def object_facts(client: object, config: S3Config, key: str) -> ObjectFacts:
+    """HEAD one object and return the filename and content type it carries.
 
     The connector cannot answer this: `amazon_s3.__all__` is
     ('S3File','S3FilePath','S3Walker','get_object','list_objects','read') and S3File exposes
@@ -159,9 +172,12 @@ async def object_file_name(client: object, config: S3Config, key: str) -> str | 
     """
     try:
         head = await client.head_object(Bucket=config.bucket, Key=key)  # type: ignore[attr-defined]
-    except Exception:  # noqa: BLE001 - any failure here means "no name", never "no document"
-        return None
-    return decode_file_name((head.get("Metadata") or {}).get(FILE_NAME_METADATA_KEY))
+    except Exception:  # noqa: BLE001 - any failure here means "no facts", never "no document"
+        return ObjectFacts()
+    return ObjectFacts(
+        file_name=decode_file_name((head.get("Metadata") or {}).get(FILE_NAME_METADATA_KEY)),
+        content_type=(head.get("ContentType") or "").split(";")[0].strip().lower() or None,
+    )
 
 
 def expected_keys(config: S3Config) -> set[str]:
