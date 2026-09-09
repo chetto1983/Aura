@@ -48,6 +48,7 @@ func (c *ArcadeRetrievalControlPlane) DocumentNames(
 func (c *ArcadeRetrievalControlPlane) RouteDocumentCards(
 	ctx context.Context,
 	identityID, query string,
+	embedding []float64,
 	documentIDs []string,
 	sourceScopes []SourceScope,
 	limit int,
@@ -59,7 +60,7 @@ func (c *ArcadeRetrievalControlPlane) RouteDocumentCards(
 	found, err := c.Index.DocumentCardsScoped(ctx, arcadedb.CandidateFilter{
 		IdentityID: identityID, Limit: limit, DocumentIDs: documentIDs,
 		SourceKeys: sourceKeys, SourcePrefixes: sourcePrefixes,
-	}, query)
+	}, query, embedding)
 	if err != nil {
 		return nil, err
 	}

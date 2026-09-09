@@ -143,7 +143,7 @@ type RetrievalCard struct {
 type RetrievalControlPlane interface {
 	ResolveDocumentScope(context.Context, string, []string) ([]string, error)
 	RouteDocumentCards(
-		context.Context, string, string, []string, []SourceScope, int,
+		context.Context, string, string, []float64, []string, []SourceScope, int,
 	) ([]RetrievalCard, error)
 	DocumentNames(context.Context, string, []string) (map[string]string, error)
 }
@@ -205,30 +205,31 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 	if len(request.DocumentIDs) > 0 && len(scope) == 0 {
 		return RetrievalResponse{}, fmt.Errorf("%w: no named document is visible", ErrInvalidDocumentScope)
 	}
-	cards, err := r.ControlPlane.RouteDocumentCards(
-		ctx, request.IdentityID, request.Query, scope, request.SourceScopes, cfg.CandidateLimit,
-	)
-	if err != nil {
-		return RetrievalResponse{}, fmt.Errorf("documents: route document cards: %w", err)
-	}
 	response := RetrievalResponse{
 		Query: request.Query, Profile: ProductionRetrievalProfile,
 		Status: RetrievalComplete, Documents: []RetrievalDocument{},
 	}
-	if r.PassageIndex == nil {
-		response.Status, response.DegradationReason = RetrievalCardOnly, DegradationUnconfigured
-		r.degradations.warn(DegradationUnconfigured, "no passage index is wired", request.IdentityID)
-		response.Documents = rankCardsOnly(cards, request.Limit, cfg.TopPassages)
-		return response, nil
-	}
-	// The embedding comes before the index read because there is one read: the engine
-	// needs both the vector and the terms to fuse them. Without an embedding there is
-	// nothing to fuse, so the answer degrades to the cards rather than to a second,
-	// hand-reconciled ranking.
+	// The embedding now comes before BOTH legs, because both are scored against it: the
+	// card leg ranks a description by the same reranked cosine the passage leg ranks text
+	// by, which is what lets one be weighed against the other at all. Without a vector
+	// there is no comparable score for either, so this degrades with no documents rather
+	// than answering from an unranked card list.
 	vectors, embedErr := r.embedQuery(ctx, request.Query)
 	if embedErr != nil {
 		response.Status, response.DegradationReason = RetrievalCardOnly, DegradationEmbedding
 		r.degradations.warn(DegradationEmbedding, embedErr.Error(), request.IdentityID)
+		return response, nil
+	}
+	cards, err := r.ControlPlane.RouteDocumentCards(
+		ctx, request.IdentityID, request.Query, vectors, scope, request.SourceScopes,
+		cfg.CandidateLimit,
+	)
+	if err != nil {
+		return RetrievalResponse{}, fmt.Errorf("documents: route document cards: %w", err)
+	}
+	if r.PassageIndex == nil {
+		response.Status, response.DegradationReason = RetrievalCardOnly, DegradationUnconfigured
+		r.degradations.warn(DegradationUnconfigured, "no passage index is wired", request.IdentityID)
 		response.Documents = rankCardsOnly(cards, request.Limit, cfg.TopPassages)
 		return response, nil
 	}

@@ -147,7 +147,7 @@ func TestFusionBenchmark(t *testing.T) {
 	}
 
 	for _, question := range pilot.Questions {
-		cards, err := index.DocumentCards(ctx, identity, question.Query, cfg.CandidateLimit)
+		cards, err := index.DocumentCards(ctx, identity, question.Query, embedding, cfg.CandidateLimit)
 		if err != nil {
 			t.Fatalf("cards %q: %v", question.QID, err)
 		}

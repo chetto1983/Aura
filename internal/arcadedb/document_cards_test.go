@@ -5,6 +5,10 @@ import (
 	"testing"
 )
 
+// The card leg is scored against a query vector like the passage leg; three floats because
+// testDocumentConfig declares three dimensions.
+func documentCardVector() []float64 { return []float64{0.1, 0.2, 0.3} }
+
 func documentCardFixture(id, fileName, card string) map[string]any {
 	return map[string]any{
 		"search_document_id": id, "source_kind": "s3",
@@ -36,7 +40,7 @@ func TestDocumentCardsAnswerAnUnscopedQuery(t *testing.T) {
 		})}
 	})
 
-	cards, err := index.DocumentCards(t.Context(), documentTestIdentity, "Torino", 3)
+	cards, err := index.DocumentCards(t.Context(), documentTestIdentity, "Torino", documentCardVector(), 3)
 	if err != nil {
 		t.Fatalf("DocumentCards: %v", err)
 	}
@@ -65,7 +69,7 @@ func TestDocumentCardsApplyTheSameDocumentAndSourceScope(t *testing.T) {
 		IdentityID: documentTestIdentity, Limit: 3,
 		DocumentIDs: []string{"doc_" + strings.Repeat("a", 32)},
 		SourceKeys:  []string{"manual.pdf"}, SourcePrefixes: []string{"finance/"},
-	}, "Torino")
+	}, "Torino", documentCardVector())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +92,7 @@ func TestDocumentCardsAcceptADocumentWithoutACard(t *testing.T) {
 		row := documentCardFixture("doc_"+strings.Repeat("b", 32), "rotto.zip", "")
 		return testResponse{Body: resultBody([]any{row})}
 	})
-	cards, err := index.DocumentCards(t.Context(), documentTestIdentity, "rotto", 3)
+	cards, err := index.DocumentCards(t.Context(), documentTestIdentity, "rotto", documentCardVector(), 3)
 	if err != nil || len(cards) != 1 || cards[0].Card != "" {
 		t.Fatalf("cards = %+v, err = %v", cards, err)
 	}
@@ -109,7 +113,7 @@ func TestDocumentCardsRejectMalformedRows(t *testing.T) {
 				mutate(row)
 				return testResponse{Body: resultBody([]any{row})}
 			})
-			if _, err := index.DocumentCards(t.Context(), documentTestIdentity, "x", 3); err == nil {
+			if _, err := index.DocumentCards(t.Context(), documentTestIdentity, "x", documentCardVector(), 3); err == nil {
 				t.Fatal("malformed card accepted")
 			}
 		})
@@ -124,7 +128,7 @@ func TestDocumentCardsRejectDuplicates(t *testing.T) {
 		row := documentCardFixture("doc_"+strings.Repeat("d", 32), "due.xlsx", "spreadsheet")
 		return testResponse{Body: resultBody([]any{row, row})}
 	})
-	if _, err := index.DocumentCards(t.Context(), documentTestIdentity, "due", 3); err == nil {
+	if _, err := index.DocumentCards(t.Context(), documentTestIdentity, "due", documentCardVector(), 3); err == nil {
 		t.Fatal("duplicate card accepted")
 	}
 }
@@ -132,19 +136,19 @@ func TestDocumentCardsRejectDuplicates(t *testing.T) {
 func TestDocumentCardsValidateTheRequestBeforeIO(t *testing.T) {
 	for name, run := range map[string]func(*DocumentIndex) error{
 		"empty query": func(i *DocumentIndex) error {
-			_, err := i.DocumentCards(t.Context(), documentTestIdentity, "  ", 3)
+			_, err := i.DocumentCards(t.Context(), documentTestIdentity, "  ", documentCardVector(), 3)
 			return err
 		},
 		"long query": func(i *DocumentIndex) error {
-			_, err := i.DocumentCards(t.Context(), documentTestIdentity, strings.Repeat("x", 41), 3)
+			_, err := i.DocumentCards(t.Context(), documentTestIdentity, strings.Repeat("x", 41), documentCardVector(), 3)
 			return err
 		},
 		"limit above cap": func(i *DocumentIndex) error {
-			_, err := i.DocumentCards(t.Context(), documentTestIdentity, "x", 5000)
+			_, err := i.DocumentCards(t.Context(), documentTestIdentity, "x", documentCardVector(), 5000)
 			return err
 		},
 		"empty identity": func(i *DocumentIndex) error {
-			_, err := i.DocumentCards(t.Context(), "", "x", 5)
+			_, err := i.DocumentCards(t.Context(), "", "x", documentCardVector(), 5)
 			return err
 		},
 	} {

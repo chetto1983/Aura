@@ -71,3 +71,31 @@ func TestRankDocumentsPrefersTheCardTitleOverTheKeyFallback(t *testing.T) {
 		t.Fatalf("title = %q, want the card's name", documents[0].Title)
 	}
 }
+
+// Ordering by leg made a document without passages unreachable: rankDocuments gave a
+// passage hit order=rank and a card hit order=len(passages)+rank, so no card could ever
+// outrank any passage however well it matched. Measured 2026-09-09 on the live corpus,
+// gi_comuni_cap.xlsx was absent from its own filename search. Both legs now score a
+// reranked cosine, so the score decides.
+func TestABetterCardOutranksAWeakerPassage(t *testing.T) {
+	weak := 0.34
+	passages := []arcadedb.PassageCandidate{{
+		PassageID: "doc_prose:1", SearchDocumentID: "doc_prose", SourceKind: "s3",
+		SourceKey: "chat/prosa.md", RawSHA256: "aaaa", NormalizedSHA256: "bbbb",
+		Text: "una prosa vagamente attinente", Leg: arcadedb.RetrievalLegFused, FusedScore: &weak,
+	}}
+	cards := []RetrievalCard{{
+		DocumentID: "doc_table", Title: "gi_comuni_cap.xlsx", SourceKind: "s3",
+		SourceKey: "Documenti/gi_comuni_cap.xlsx", OriginalSHA256: "cccc", Rank: 0.71,
+	}}
+
+	documents := rankDocuments(cards, passages, nil, 8, 3, false)
+
+	if len(documents) != 2 {
+		t.Fatalf("documents = %d, want both", len(documents))
+	}
+	if documents[0].DocumentID != "doc_table" {
+		t.Fatalf("order = %s then %s, want the better-scoring card first",
+			documents[0].DocumentID, documents[1].DocumentID)
+	}
+}

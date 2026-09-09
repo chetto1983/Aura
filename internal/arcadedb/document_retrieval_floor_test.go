@@ -54,3 +54,19 @@ func TestFusedStatementGroupsByContentHash(t *testing.T) {
 		t.Fatalf("fusion groups copies of one file as separate documents:\n%s", statement)
 	}
 }
+
+// The card leg ranked with BM25 while the passage leg ranked with a reranked cosine, so the
+// two could not be compared and rankDocuments fell back to a precedence rule. Measured
+// 2026-09-09: gi_comuni_cap.xlsx, whose card names every one of its seventeen columns, did
+// not come back even when searched by its exact filename, because it has no passages.
+// Memory already solved the shape of this — recall runs one reranked query per type and
+// merges on the score — so the card leg gets the same wrapper, not a new mechanism.
+func TestCardStatementScoresOnTheSameScaleAsPassages(t *testing.T) {
+	statement := documentCardStatement("identity_id = :identity_id", 20)
+	for _, want := range []string{"`vector.rerank`", "score >= :min_relevance", "card_score"} {
+		if !strings.Contains(statement, want) {
+			t.Fatalf("card statement is missing %q, so its score cannot meet a passage's:\n%s",
+				want, statement)
+		}
+	}
+}

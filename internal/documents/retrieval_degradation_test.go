@@ -40,7 +40,12 @@ func TestDegradationNamesItsCauseInTheLog(t *testing.T) {
 // responses, so they must not share a name on the wire.
 func TestUnconfiguredPassageIndexIsNotAnOutage(t *testing.T) {
 	control := &fakeRetrievalControl{cards: []RetrievalCard{retrievalCard()}}
-	response, err := (&HostRetriever{ControlPlane: control}).Retrieve(
+	// An embedder even here: the card leg is scored against the query vector too, so a
+	// retriever without one cannot reach this degradation at all.
+	response, err := (&HostRetriever{
+		ControlPlane: control,
+		Embedder:     &fakeRetrievalEmbedder{vector: []float64{0.1, 0.2}},
+	}).Retrieve(
 		context.Background(), RetrievalRequest{IdentityID: retrievalIdentity, Query: "codice cliente"},
 	)
 	if err != nil {

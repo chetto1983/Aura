@@ -68,6 +68,34 @@ type DocumentCard struct {
 
 // documentCardFields is every property the reader consumes, in the order decodeCard reads
 // them. file_name_words is deliberately absent: it exists only to be indexed.
+// documentCardStatement scores a card the way a passage is scored, and that is the whole
+// point: the two legs used to speak different languages -- BM25 here, a reranked cosine
+// there -- so nothing could weigh one against the other and rankDocuments fell back to a
+// precedence rule that made a document without passages unreachable. Measured 2026-09-09:
+// gi_comuni_cap.xlsx, whose card names all seventeen of its columns, was absent from a
+// search for its own filename.
+//
+// The shape is the one memory's recall already uses for two types at once: one reranked
+// query per type, each returning a comparable score, merged on that score afterwards.
+//
+// AND binds more tightly than OR, so the two SEARCH_INDEX legs are parenthesized before the
+// scope is applied; otherwise a card-text match could bypass every source filter.
+func documentCardStatement(where string, limit int) string {
+	lexical := "(SELECT @rid, $score FROM " + IndexedDocumentType +
+		" WHERE (SEARCH_INDEX('" + IndexedDocumentType + "[card]', :query) = true" +
+		" OR SEARCH_INDEX('" + IndexedDocumentType + "[file_name_words]', :query) = true)" +
+		" AND " + where + ")"
+	return "SELECT " + documentCardFields + ", score AS card_score FROM (" +
+		"SELECT expand(`vector.rerank`((SELECT expand(`vector.fuse`(" +
+		"`vector.neighbors`('" + IndexedDocumentType + "[embedding]', :embedding, :fetch, " +
+		"{ filter: (SELECT @rid FROM " + IndexedDocumentType + " WHERE " + where + ").@rid, " +
+		"maxDistance: :max_distance })," + lexical + "," +
+		"{ fusion: 'RRF' }" +
+		"))), :embedding, '" + documentEmbeddingProperty + "', :candidates)" +
+		")) WHERE score >= :min_relevance ORDER BY card_score DESC, search_document_id ASC" +
+		" LIMIT " + strconv.Itoa(limit)
+}
+
 const documentCardFields = "search_document_id, source_kind, source_key, file_name, " +
 	"raw_sha256, size_bytes, passage_count, card"
 
@@ -83,19 +111,21 @@ func (d *DocumentIndex) DocumentCards(
 	ctx context.Context,
 	identityID string,
 	query string,
+	embedding []float64,
 	limit int,
 ) ([]DocumentCard, error) {
 	return d.DocumentCardsScoped(ctx, CandidateFilter{
 		IdentityID: identityID, Limit: limit,
-	}, query)
+	}, query, embedding)
 }
 
-// DocumentCardsScoped is the degraded-capable card leg constrained by the same document
-// ids and Garage source coordinates as the fused passage leg.
+// DocumentCardsScoped is the card leg, constrained by the same document ids and Garage
+// source coordinates as the fused passage leg and scored on the same reranked cosine.
 func (d *DocumentIndex) DocumentCardsScoped(
 	ctx context.Context,
 	filter CandidateFilter,
 	query string,
+	embedding []float64,
 ) ([]DocumentCard, error) {
 	filter, err := d.normalizeCandidateFilter(filter)
 	if err != nil {
@@ -112,16 +142,17 @@ func (d *DocumentIndex) DocumentCardsScoped(
 	if err != nil {
 		return nil, err
 	}
+	if err := validateDenseVector(embedding, d.config.Dimensions); err != nil {
+		return nil, err
+	}
 	where, params := candidateWhere(filter)
 	params["query"] = escapeLucene(query)
-	// AND binds more tightly than OR, so parenthesize the two SEARCH_INDEX legs before
-	// applying the scope; otherwise a card-text match could bypass every source filter.
-	statement := "SELECT " + documentCardFields + ", $score AS card_score FROM " +
-		IndexedDocumentType + " WHERE (SEARCH_INDEX('" + IndexedDocumentType +
-		"[card]', :query) = true OR SEARCH_INDEX('" + IndexedDocumentType +
-		"[file_name_words]', :query) = true) AND " + where +
-		" ORDER BY card_score DESC, search_document_id ASC LIMIT " + strconv.Itoa(filter.Limit)
-	rows, err := client.Query(ctx, statement, params)
+	params["embedding"] = append([]float64(nil), embedding...)
+	params["fetch"] = fusedDenseNeighbours
+	params["max_distance"] = d.config.DenseMaxDistance
+	params["min_relevance"] = d.config.RelevanceFloor
+	params["candidates"] = min(max(filter.Limit*4, 20), d.config.MaxRetrievalCandidates)
+	rows, err := client.Query(ctx, documentCardStatement(where, filter.Limit), params)
 	if err != nil {
 		if missingIndexedDocumentType(err) {
 			return nil, nil // nothing ingested yet — an empty library, not a failure

@@ -21,6 +21,7 @@ type fakeRetrievalControl struct {
 	scopeRequest      []string
 	scope             []string
 	cardDocumentScope []string
+	cardEmbedding     []float64
 	cardSourceScope   []SourceScope
 	cards             []RetrievalCard
 	names             map[string]string
@@ -50,8 +51,10 @@ func (f *fakeRetrievalControl) ResolveDocumentScope(
 }
 
 func (f *fakeRetrievalControl) RouteDocumentCards(
-	_ context.Context, _ string, _ string, documentIDs []string, sourceScopes []SourceScope, _ int,
+	_ context.Context, _ string, _ string, embedding []float64,
+	documentIDs []string, sourceScopes []SourceScope, _ int,
 ) ([]RetrievalCard, error) {
+	f.cardEmbedding = append([]float64(nil), embedding...)
 	f.cardDocumentScope = append([]string(nil), documentIDs...)
 	f.cardSourceScope = append([]SourceScope(nil), sourceScopes...)
 	if f.err != nil {
@@ -90,7 +93,9 @@ func (f *fakeRetrievalEmbedder) Embed(_ context.Context, inputs []string) ([][]f
 func TestHostRetrieverReturnsCitationEvidence(t *testing.T) {
 	// One fused candidate, not one per leg: the engine returns a single ranking.
 	fused := retrievalCandidate(arcadedb.RetrievalLegFused)
-	fused.FusedScore = new(0.031)
+	// A cosine, like the card's rank below: both legs are reranked now, so the document's
+	// score is the best evidence for it and the two can actually be compared.
+	fused.FusedScore = new(0.62)
 	control := &fakeRetrievalControl{
 		scope: []string{retrievalDocument}, cards: []RetrievalCard{retrievalCard()},
 	}
@@ -114,7 +119,7 @@ func TestHostRetrieverReturnsCitationEvidence(t *testing.T) {
 	}
 	doc := response.Documents[0]
 	if doc.RequiresOpen || doc.OriginalSHA256 != strings.Repeat("a", 64) ||
-		len(doc.Passages) != 1 || len(doc.Passages[0].Evidence) != 1 || doc.Score != 0.031 {
+		len(doc.Passages) != 1 || len(doc.Passages[0].Evidence) != 1 || doc.Score != 0.62 {
 		t.Fatalf("document = %#v", doc)
 	}
 	passage := doc.Passages[0]
@@ -313,8 +318,22 @@ func TestHostRetrieverDegradationIsExplicit(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if response.Status != RetrievalCardOnly || response.DegradationReason != test.reason ||
-				len(response.Documents) != 1 || !response.Documents[0].RequiresOpen {
+			if response.Status != RetrievalCardOnly || response.DegradationReason != test.reason {
+				t.Fatalf("response = %#v", response)
+			}
+			// An embedder outage now costs BOTH legs, not one. The card leg is ranked
+			// against the query vector like the passage leg is -- that is what lets the two
+			// be compared at all -- so with no vector there is no honest card ranking to
+			// serve either, and answering from an unranked list would be a guess wearing a
+			// degradation label. Every other degradation still serves its cards.
+			if test.reason == DegradationEmbedding {
+				if len(response.Documents) != 0 {
+					t.Fatalf("documents = %d, want none: an unscored card is not an answer",
+						len(response.Documents))
+				}
+				return
+			}
+			if len(response.Documents) != 1 || !response.Documents[0].RequiresOpen {
 				t.Fatalf("response = %#v", response)
 			}
 		})
@@ -337,7 +356,7 @@ func retrievalCard() RetrievalCard {
 	return RetrievalCard{
 		DocumentID: "doc_9f2c", Title: "Clienti.xlsx",
 		SourceKind: "s3", SourceKey: "contabilita/Clienti.xlsx",
-		Card: "Tabella clienti", Rank: 0.7,
+		Card: "Tabella clienti", Rank: 0.41,
 		OriginalSHA256: strings.Repeat("a", 64),
 	}
 }
@@ -388,7 +407,10 @@ func TestHostRetrieverAbstainsWhenNoPassageQualifies(t *testing.T) {
 func TestHostRetrieverDoesNotAbstainWhileDegradedToCards(t *testing.T) {
 	retriever := &HostRetriever{
 		ControlPlane: &fakeRetrievalControl{cards: []RetrievalCard{retrievalCard()}},
-		Config:       RetrievalConfig{CandidateLimit: 20},
+		// The passage leg is what is missing here, not the embedder: the cards are ranked
+		// against the query vector, so a degradation that keeps them has to keep it too.
+		Embedder: &fakeRetrievalEmbedder{vector: []float64{0.1, 0.2}},
+		Config:   RetrievalConfig{CandidateLimit: 20},
 	}
 
 	response, err := retriever.Retrieve(t.Context(), RetrievalRequest{

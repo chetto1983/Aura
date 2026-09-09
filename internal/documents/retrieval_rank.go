@@ -50,7 +50,17 @@ func rankDocuments(
 	}
 	for rank, card := range cards {
 		doc := ensureRankedDocumentFromCard(byContent, card)
-		doc.order = min(doc.order, len(passages)+rank)
+		// Not len(passages)+rank any more. That offset was a precedence rule standing in for
+		// a comparison the two legs could not make: BM25 here, a reranked cosine there. It
+		// meant no card could outrank any passage however well it matched, and measured
+		// 2026-09-09 that made gi_comuni_cap.xlsx — whose card names all seventeen of its
+		// columns — absent from a search for its own filename, because a spreadsheet has no
+		// passages. Both legs now score the same reranked cosine, so the score decides and
+		// this is only the tie-break.
+		doc.order = min(doc.order, rank)
+		if card.Rank > doc.document.Score {
+			doc.document.Score = card.Rank
+		}
 		doc.document.Evidence = appendEvidence(doc.document.Evidence, RetrievalEvidence{
 			Leg: "card", Rank: rank + 1, Score: new(card.Rank),
 		})
@@ -63,6 +73,12 @@ func rankDocuments(
 		ranked = append(ranked, doc)
 	}
 	sort.Slice(ranked, func(i, j int) bool {
+		// The score first, because both legs finally speak it. order stays as the tie-break:
+		// the engine already put each leg in its own order and a tie re-derived in Go could
+		// only disagree with it.
+		if ranked[i].document.Score != ranked[j].document.Score {
+			return ranked[i].document.Score > ranked[j].document.Score
+		}
 		if ranked[i].order != ranked[j].order {
 			return ranked[i].order < ranked[j].order
 		}
