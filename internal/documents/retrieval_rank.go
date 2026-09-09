@@ -137,6 +137,11 @@ func ensureRankedDocumentFromCard(byContent map[string]*rankedDocument, card Ret
 	if doc.document.OriginalSHA256 == "" {
 		doc.document.OriginalSHA256 = card.OriginalSHA256
 	}
+	doc.document.SizeBytes = &card.SizeBytes
+	doc.document.PassageCount = &card.PassageCount
+	if !card.IndexedAt.IsZero() {
+		doc.document.IndexedAt = &card.IndexedAt
+	}
 	return doc
 }
 

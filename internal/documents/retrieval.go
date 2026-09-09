@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
@@ -93,10 +94,27 @@ type RetrievalDocument struct {
 	SourceKind string `json:"source_kind,omitempty"`
 	SourceKey  string `json:"source_key,omitempty"`
 	// OriginalSHA256 pins citations to the object bytes they quote.
-	OriginalSHA256 string              `json:"original_sha256"`
-	RequiresOpen   bool                `json:"requires_open"`
-	Evidence       []RetrievalEvidence `json:"evidence"`
-	Passages       []RetrievalPassage  `json:"passages"`
+	OriginalSHA256 string `json:"original_sha256"`
+	// What the reconciler recorded about the OBJECT, as opposed to about the answer.
+	// Present only when the card leg ranked this document: one found by its passages alone
+	// has no card row behind it, and reporting passage_count 0 for a document that plainly
+	// has passages would be worse than reporting nothing.
+	//
+	// SizeBytes and IndexedAt are what tell two documents with the SAME file name apart,
+	// which this corpus holds: measured 2026-09-09, two meteo_caraglio_settimanale_verificato.docx
+	// of 9028 and 7712 bytes disagreeing on the forecast, arriving with identical titles and
+	// scores 0.014 apart. Retrieval ranks topical similarity and cannot know which is true;
+	// what it CAN do is stop hiding the fields that let the reader decide.
+	//
+	// PassageCount is how many passages the whole document has, against the few Passages
+	// carries, so "the answer may be elsewhere in this file" is visible rather than guessed.
+	SizeBytes    *int64     `json:"size_bytes,omitempty"`
+	PassageCount *int64     `json:"passage_count,omitempty"`
+	IndexedAt    *time.Time `json:"indexed_at,omitempty"`
+
+	RequiresOpen bool                `json:"requires_open"`
+	Evidence     []RetrievalEvidence `json:"evidence"`
+	Passages     []RetrievalPassage  `json:"passages"`
 }
 
 // PassageLocator anchors a passage in the plain text produced by the current extractor.
@@ -137,6 +155,9 @@ type RetrievalCard struct {
 	Card           string
 	Rank           float64
 	OriginalSHA256 string
+	SizeBytes      int64
+	PassageCount   int64
+	IndexedAt      time.Time
 }
 
 // RetrievalControlPlane bounds identity scope and routes IndexedDocument cards in ArcadeDB.

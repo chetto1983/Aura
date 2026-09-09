@@ -3,6 +3,7 @@ package arcadedb
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // The card leg is scored against a query vector like the passage leg; three floats because
@@ -249,5 +250,47 @@ func TestOptionalFloat(t *testing.T) {
 				t.Errorf("optionalFloat(%v, %q) = %v, want %v", tt.row, tt.key, got, tt.want)
 			}
 		})
+	}
+}
+
+// The reconciler stamps indexed_at on every record and the projection used to leave it
+// there, so two documents with the SAME file name reached the caller with nothing to order
+// them by. ArcadeDB renders DATETIME without a zone, which is the form this decodes.
+func TestDocumentCardsCarryIndexedAt(t *testing.T) {
+	var statement string
+	index, _ := testDocumentIndex(t, func(request recordedRequest) testResponse {
+		statement, _ = request.Payload["command"].(string)
+		row := documentCardFixture("doc_"+strings.Repeat("e", 32),
+			"meteo_caraglio_settimanale_verificato.docx", "weekly forecast")
+		row["indexed_at"] = "2026-09-09 17:41:12.081"
+		return testResponse{Body: resultBody([]any{row})}
+	})
+
+	cards, err := index.DocumentCards(t.Context(), documentTestIdentity, "meteo", documentCardVector(), 3)
+	if err != nil {
+		t.Fatalf("DocumentCards: %v", err)
+	}
+	if !strings.Contains(statement, "indexed_at") {
+		t.Fatalf("the projection dropped indexed_at: %s", statement)
+	}
+	want := time.Date(2026, 9, 9, 17, 41, 12, 81_000_000, time.UTC)
+	if !cards[0].IndexedAt.Equal(want) {
+		t.Fatalf("indexed_at = %s, want %s", cards[0].IndexedAt, want)
+	}
+}
+
+// indexed_at joined the schema after the first records were written, so a database
+// reconciled before it existed must still answer rather than fail every card in it.
+func TestDocumentCardsAcceptARecordWithoutIndexedAt(t *testing.T) {
+	index, _ := testDocumentIndex(t, func(recordedRequest) testResponse {
+		return testResponse{Body: resultBody([]any{documentCardFixture(
+			"doc_"+strings.Repeat("f", 32), "vecchio.pdf", "PDF")})}
+	})
+	cards, err := index.DocumentCards(t.Context(), documentTestIdentity, "vecchio", documentCardVector(), 3)
+	if err != nil {
+		t.Fatalf("a record predating indexed_at was refused: %v", err)
+	}
+	if !cards[0].IndexedAt.IsZero() {
+		t.Fatalf("indexed_at = %s, want the zero time", cards[0].IndexedAt)
 	}
 }

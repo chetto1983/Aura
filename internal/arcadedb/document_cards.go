@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -64,6 +65,11 @@ type DocumentCard struct {
 	PassageCount     int64
 	Card             string
 	Score            float64
+	// IndexedAt is when the reconciler last wrote this record. It is the only ordering a
+	// caller can apply to two documents that carry the SAME file name, which the corpus
+	// does hold: measured 2026-09-09, two meteo_caraglio_settimanale_verificato.docx of
+	// 9028 and 7712 bytes, disagreeing on the forecast they contain.
+	IndexedAt time.Time
 }
 
 // documentCardFields is every property the reader consumes, in the order decodeCard reads
@@ -97,7 +103,7 @@ func documentCardStatement(where string, limit int) string {
 }
 
 const documentCardFields = "search_document_id, source_kind, source_key, file_name, " +
-	"raw_sha256, size_bytes, passage_count, card"
+	"raw_sha256, size_bytes, passage_count, card, indexed_at"
 
 // DocumentCards ranks documents by their own description, and is the leg that survives.
 //
@@ -386,6 +392,16 @@ func decodeDocumentCard(row map[string]any) (DocumentCard, error) {
 	}
 	if card.PassageCount, err = requiredInt64(row, "passage_count", false); err != nil {
 		return DocumentCard{}, err
+	}
+	// Optional, unlike the rest: indexed_at joined the schema after the first records were
+	// written, so a database reconciled before it existed still answers rather than failing
+	// every card in it.
+	indexedAt, err := optionalString(row, "indexed_at")
+	if err != nil {
+		return DocumentCard{}, err
+	}
+	if card.IndexedAt, err = parseArcadeDateTime(indexedAt); err != nil {
+		return DocumentCard{}, fmt.Errorf("document card indexed_at: %w", err)
 	}
 	card.Score = optionalFloat(row, "card_score")
 	return card, nil

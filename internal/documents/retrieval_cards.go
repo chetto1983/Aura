@@ -76,6 +76,9 @@ func (c *ArcadeRetrievalControlPlane) RouteDocumentCards(
 			Card:           card.Card,
 			Rank:           card.Score,
 			OriginalSHA256: card.RawSHA256,
+			SizeBytes:      card.SizeBytes,
+			PassageCount:   card.PassageCount,
+			IndexedAt:      card.IndexedAt,
 		})
 	}
 	return cards, nil

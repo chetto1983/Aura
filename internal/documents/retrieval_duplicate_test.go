@@ -2,6 +2,7 @@ package documents
 
 import (
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
 )
@@ -97,5 +98,66 @@ func TestABetterCardOutranksAWeakerPassage(t *testing.T) {
 	if documents[0].DocumentID != "doc_table" {
 		t.Fatalf("order = %s then %s, want the better-scoring card first",
 			documents[0].DocumentID, documents[1].DocumentID)
+	}
+}
+
+// Copies that are NOT byte-identical must not collapse -- and then the reader needs some way
+// to tell them apart. Measured 2026-09-09 on the live corpus: two
+// meteo_caraglio_settimanale_verificato.docx, 9028 and 7712 bytes, different raw_sha256,
+// disagreeing on the forecast they contain, arriving with the SAME title and scores 0.014
+// apart. Retrieval ranks topical similarity and cannot know which one is true; what it must
+// not do is hide the object facts that let the caller decide, which the reconciler already
+// records and the response used to drop on the floor.
+func TestRankDocumentsCarriesTheObjectFactsThatSeparateSameNamedCopies(t *testing.T) {
+	indexed := time.Date(2026, 9, 9, 17, 41, 12, 0, time.UTC)
+	older := indexed.Add(-4 * time.Second)
+	cards := []RetrievalCard{
+		{
+			DocumentID: "doc_big", Title: "meteo_caraglio_settimanale_verificato.docx",
+			SourceKind: "s3", SourceKey: "Documenti/meteo_a.docx", OriginalSHA256: "b174d89c",
+			Rank: 0.816, SizeBytes: 9028, PassageCount: 1, IndexedAt: indexed,
+		},
+		{
+			DocumentID: "doc_small", Title: "meteo_caraglio_settimanale_verificato.docx",
+			SourceKind: "s3", SourceKey: "Documenti/meteo_b.docx", OriginalSHA256: "f4f2913a",
+			Rank: 0.814, SizeBytes: 7712, PassageCount: 1, IndexedAt: older,
+		},
+	}
+
+	documents := rankDocuments(cards, nil, nil, 8, 3, false)
+
+	if len(documents) != 2 {
+		t.Fatalf("documents = %d, want both copies", len(documents))
+	}
+	for _, doc := range documents {
+		if doc.SizeBytes == nil || doc.PassageCount == nil || doc.IndexedAt == nil {
+			t.Fatalf("%s reached the caller without its object facts: %+v", doc.DocumentID, doc)
+		}
+	}
+	if *documents[0].SizeBytes == *documents[1].SizeBytes ||
+		documents[0].IndexedAt.Equal(*documents[1].IndexedAt) {
+		t.Fatal("two same-named copies are indistinguishable in the response")
+	}
+}
+
+// A document the card leg did not rank has no record behind it, so its object facts are
+// ABSENT rather than zero: reporting passage_count 0 for a document that plainly carries
+// passages would be a stated wrong answer, which is worse than a missing one.
+func TestRankDocumentsOmitsObjectFactsWithoutACard(t *testing.T) {
+	score := 0.61
+	passages := []arcadedb.PassageCandidate{{
+		PassageID: "doc_only:3", SearchDocumentID: "doc_only", SourceKind: "s3",
+		SourceKey: "Documenti/senza_card.md", RawSHA256: "dddd", NormalizedSHA256: "eeee",
+		Text: "un passaggio senza card", Leg: arcadedb.RetrievalLegFused, FusedScore: &score,
+	}}
+
+	documents := rankDocuments(nil, passages, nil, 8, 3, false)
+
+	if len(documents) != 1 {
+		t.Fatalf("documents = %d, want one", len(documents))
+	}
+	if documents[0].SizeBytes != nil || documents[0].PassageCount != nil ||
+		documents[0].IndexedAt != nil {
+		t.Fatalf("object facts invented for a document with no card: %+v", documents[0])
 	}
 }
