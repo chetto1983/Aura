@@ -14,11 +14,13 @@ import (
 // IMMEDIATE (block login by killing the Authula sessions, terminate the identity's
 // background jobs, stamp deactivated_at + a grace-window purge_after) and retains the data
 // for a grace window; Purge runs AFTER the grace window and tears down every plane the
-// provisioning saga built, in reverse order. Every step is journaled on
+// provisioning saga built, in reverse order — the sandbox box, the OpenRouter key (plan
+// 02-06, CRED-08), conversations, memory, the Garage bucket/key, the per-identity dirs, then
+// the aura identity row and the Authula user. Every step is journaled on
 // aura.provisioning_saga with kind='deprovision' (migration 0028) and is idempotent
 // (Delete/Deny by-id 404=success, RemoveAll, FK-cascade delete), so an interrupted purge
 // re-runs and converges to a fully-removed identity with NO orphaned Authula user, Garage
-// bucket, :User graph edge, or per-identity directory (T-36-08-I).
+// bucket, :User graph edge, per-identity directory, or live OpenRouter key (T-36-08-I).
 //
 // Like the provisioning saga, every teardown is a narrow consumer-side port so the agui
 // package stays free of the concrete stores; the composition root wires the adapters and
@@ -95,6 +97,18 @@ type JobTerminator interface {
 	TerminateJobs(ctx context.Context, identityID string) error
 }
 
+// OpenRouterKeyRevoker revokes one identity's OpenRouter key (plan 02-06, CRED-08). It
+// takes the identity id rather than the key hash, so the composition-root adapter owns
+// the identitykey.Store lookup and this package stays free of that concrete store, as
+// this file's own header requires. Idempotent: an identity with no stored key, or one
+// already revoked, converges to success rather than failing — the adapter distinguishes
+// "no key row" (nothing to do) from "revoke failed" (a real error), and RevokeKey's own
+// DELETE-then-verifying-GET pair (internal/openrouterprovision, CRED-08) is what proves
+// the second case rather than assuming it.
+type OpenRouterKeyRevoker interface {
+	RevokeKey(ctx context.Context, identityID string) error
+}
+
 // ConversationPurger deletes the identity's conversations + turns (owner-scoped). Idempotent.
 type ConversationPurger interface {
 	PurgeConversations(ctx context.Context, identityID string) error
@@ -146,6 +160,7 @@ type DeprovisionDeps struct {
 	ObjectStore    ObjectStoreProvisioner
 	Filesystem     FilesystemProvisioner
 	Sandbox        SandboxPurger
+	OpenRouterKey  OpenRouterKeyRevoker
 	IdentityDelete IdentityDeleter
 	AuthulaDelete  AuthulaUserDeleter
 	GraceWindow    time.Duration
@@ -226,7 +241,28 @@ func (d *Deprovisioner) Purge(ctx context.Context, target DeprovisionTarget) err
 	}
 	run := newSagaRun(ctx, d.deps.Journal, sagaKindDeprovision, target.IdentityID)
 
-	// FIRST, ahead of every data plane. The box is the only LIVE COMPUTE this identity
+	// VERY FIRST — reverse of the provisioning order (plan 02-06): the OpenRouter key
+	// is minted LAST of every eager forward leg (after every resource plane), so it is
+	// revoked FIRST here, ahead of even the sandbox teardown below. Revoking is a
+	// provider-side network call independent of every local plane, so there is no
+	// ordering hazard in doing it before the sandbox/data/resource legs the way there
+	// would be for, say, filesystem vs. sandbox.
+	//
+	// What this step CANNOT do, and must not be read as claiming: the provider keeps
+	// the deleted key's consumption in its own analytics
+	// (.planning/phases/02-two-roles-and-a-budget/02-OPENROUTER-API.md, "Not measured —
+	// do not assume"). Revoking stops future spend and access; it does not erase the
+	// identity's past usage from OpenRouter's own records. The user-facing statement of
+	// that limit belongs in the removal dialog's copy (plan 02-08), not here.
+	if d.deps.OpenRouterKey != nil {
+		if err := run.step(ctx, sagaStepOpenRouterKey, func(ctx context.Context) error {
+			return d.deps.OpenRouterKey.RevokeKey(ctx, target.IdentityName)
+		}); err != nil {
+			return err
+		}
+	}
+
+	// NEXT, ahead of every data plane. The box is the only LIVE COMPUTE this identity
 	// owns: it holds a shell that can still write to the workspace volume, and through the
 	// materialized mounts to the very filesystem roots the dirs step removes below. Erasing
 	// a plane while something can still write to it is how an orphan is made.
