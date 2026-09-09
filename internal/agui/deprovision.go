@@ -256,7 +256,7 @@ func (d *Deprovisioner) Purge(ctx context.Context, target DeprovisionTarget) err
 	// that limit belongs in the removal dialog's copy (plan 02-08), not here.
 	if d.deps.OpenRouterKey != nil {
 		if err := run.step(ctx, sagaStepOpenRouterKey, func(ctx context.Context) error {
-			return d.deps.OpenRouterKey.RevokeKey(ctx, target.IdentityName)
+			return d.deps.OpenRouterKey.RevokeKey(ctx, target.IdentityID)
 		}); err != nil {
 			return err
 		}
