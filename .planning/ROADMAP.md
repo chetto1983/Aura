@@ -124,7 +124,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 02-08-PLAN.md — the cockpit: identity roster, typed-confirmation removal, credit panel, three-phase wizard, refusal copy (wave 5)
+- [x] 02-08-PLAN.md — the cockpit: identity roster, typed-confirmation removal, credit panel, three-phase wizard, refusal copy (wave 5)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
