@@ -1,0 +1,9 @@
+{
+  "command": "go test -run TestDeclaredCapabilities -v ./internal/identity/",
+  "exitCode": 1,
+  "output": "not ok 1 - TestDeclaredCapabilities\nnot ok 2 - TestDeclaredCapabilities_ReturnsFreshCopy\nnot ok 3 - TestIsAdministrative_ExactMatch\nnot ok 4 - TestIsAdministrative_ExactMatch/exact_identity.create\nok 5 - TestIsAdministrative_ExactMatch/empty_rejected\nok 6 - TestIsAdministrative_ExactMatch/user_capability_rejected\nok 7 - TestIsAdministrative_ExactMatch/prefix-extended_suffix_rejected\nok 8 - TestIsAdministrative_ExactMatch/case-folded_rejected\nok 9 - TestIsAdministrative_ExactMatch/wildcard_rejected\nok 10 - TestIsAdministrative_ExactMatch/dotted_suffix_rejected\nnot ok 11 - TestIsAdministrative_ExactMatch/exact_identity.delete\n# tests 11\n# pass 6\n# fail 5\n",
+  "targetTest": "TestDeclaredCapabilities",
+  "targetFile": "internal/identity/capabilities_test.go",
+  "expected": "Administrative() returns exactly [identity.create identity.delete]",
+  "actual": "Administrative() returns [] (nil) because capabilities.go is a RED scaffold"
+}
