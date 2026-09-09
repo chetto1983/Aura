@@ -357,10 +357,11 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The explicit pin forces review of every schema change. Migration 0120
-	// isolates worker corrections by owner, child and execution.
-	if head != 120 {
-		t.Fatalf("MigrationHead=%d, want embedded head 120", head)
+	// The explicit pin forces review of every schema change. Migrations 0121 and
+	// 0122 (plan 02-01) retire the capability wildcard (RBAC-01) and add the
+	// per-identity encrypted OpenRouter key store (CRED-01).
+	if head != 122 {
+		t.Fatalf("MigrationHead=%d, want embedded head 122", head)
 	}
 }
 
