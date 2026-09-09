@@ -72,7 +72,12 @@ key-decisions:
 patterns-established:
   - "A resolver priority is a named function returning (client, cfg, error), never an inline two-line read-then-override at the call site — this is what makes resolveWorkerLLM/resolveLLM independently testable and greppable, and what let the invariant test assert the OLD pattern's absence by exact literal rather than by re-deriving 'correctness'."
 
-requirements-completed: [CRED-05, CRED-07, CRED-09]
+# CRED-05 is deliberately NOT listed: the refusal sentinel and the policy behind it are
+# built and proven, but the interactive turn — web chat and Telegram, the path a human
+# actually uses — cannot reach them until plan 02-06 mints per-identity keys. A
+# requirement is complete when the behaviour it names holds in a running deployment, not
+# when its parts exist. See "Known gaps" below.
+requirements-completed: [CRED-07, CRED-09]
 
 coverage:
   - id: D1
@@ -177,8 +182,23 @@ coverage:
         status: pass
     human_judgment: true
     rationale: "commands.go's own logic and its composition-root wiring (serve_channels.go) are both proven, but internal/channels/telegram/bot_dispatch.go's onText still calls t.cmds.dispatchRich(daemonCtx, ...) with the raw, un-scoped daemon context rather than an identity-scoped one — a pre-existing gap this plan's file list (commands.go, not bot_dispatch.go) does not close. In production today, /cost still falls through to the process-wide Runtime for every Telegram user. See 'Known Gaps' below; a human must decide whether closing bot_dispatch.go's wiring belongs to a later plan in this phase or is out of scope."
+  - id: D8
+    description: "The interactive turn (web chat, Telegram) resolves its credential from the identity that owns the conversation rather than from the process-wide deployment client"
+    requirement: CRED-05
+    verification:
+      - kind: unit
+        ref: "internal/runner/runner_llm_runtime_test.go#TestTurnLLMSnapshotResolvesFromTheTurnIdentity"
+        status: pass
+      - kind: unit
+        ref: "internal/runner/runner_llm_runtime_test.go#TestTurnLLMSnapshotRefusesAnIdentitylessTurn"
+        status: pass
+      - kind: unit
+        ref: "internal/runner/agent_construction_invariant_test.go#TestEveryAgentConstructionResolvesFromTheTurnIdentity"
+        status: pass
+    human_judgment: true
+    rationale: "The seam exists and is proven (commit da24cbf82), but it is deliberately INERT: Deps.IdentityLLM is nil at every composition root, so a real turn still runs on the deployment client exactly as before. It cannot be switched on yet — identitykey.Store.Save and internal/openrouterprovision both have zero production callers, so no identity holds a key and wiring it now would refuse every turn including the operator's. Plan 02-06 mints the keys; the human decides whether the final one-line wiring lands there or in 02-10."
 
-duration: 30min
+duration: 30min (executor) + closure pass by the orchestrator
 completed: 2026-09-09
 status: complete
 ---
@@ -274,7 +294,11 @@ None — no external service configuration required. `buildIdentityLLMResolver` 
 ## Next Phase Readiness
 
 - **Ready:** the credit-refusal sentinel and the fallback-closure pattern are real, tested and wired for every path this plan's file list named — both swarm sites, both cron sites, and Telegram's spend display's own logic. `identitykey.Decide` is the single pure file plan `02-10`'s `credit_policy` `GO_SCOPES` extension will target for mutation testing.
-- **Blocker for `/gsd-verify-work`'s closing live run:** the interactive runner (the actual turn path, web AND Telegram) is NOT wired to seam A — a zero-cap identity's live chat turn today still succeeds against the process-wide deployment key. This is inherited from plan 02-01, not introduced here, but it means CRED-05's "refused before the model is called" and CRED-07's "no fallback to the deployment key" are proven at the unit/component level for this plan's files and NOT yet true end-to-end for a real turn. Whoever plans the wiring into `runner.turnLocked` (or the HTTP/AG-UI layer immediately above it) should read this SUMMARY's Issues Encountered section first — the seam (`ScopeContextToIdentitySnapshot`) already exists and needs exactly one caller.
+- **Interactive-turn seam: built, proven, deliberately inert (`da24cbf82`, orchestrator closure pass).** The executor correctly reported that the seventh agent-construction site — the interactive runner, the path a human actually uses — still reached the process-wide deployment client, and that `ScopeContextToIdentitySnapshot` had zero production callers. `turnLocked` now resolves once through `turnLLMSnapshot`, after `scopeContextToConversation` has put the conversation owner on ctx, and seeds it so `buildAgent`, the title worker and the tracker inherit that single decision. The invariant test gained the seventh site as a positive assertion, because the regression shape here is `turnLocked` reverting to `llmSnapshot` rather than an `rc.Client` read.
+
+  **It is switched off on purpose, and this is an ordering constraint the plan does not state.** `Deps.IdentityLLM` is nil at every composition root, so behaviour is byte-identical to before. It cannot be switched on yet: `identitykey.Store.Save` and `internal/openrouterprovision` both have **zero production callers**, so no identity holds a key today and a fail-closed runner would refuse every turn — the operator's included. The credential leg that mints them is plan **02-06**. Turning the seam on is then one line in `assembleChatEnv`, guarding the typed-nil trap (`buildIdentityLLMResolver` returns a typed pointer; a nil one assigned to an interface field is a NON-nil interface value — the same trap this plan caught at three other call sites).
+
+- **Therefore CRED-05 is not claimed complete.** It is removed from `requirements-completed` and carried as `D8` with `human_judgment: true`. The parts exist and are proven; the behaviour the requirement names does not yet hold in a running deployment.
 - **Also open:** `bot_dispatch.go`'s `dispatchRich` call needs an identity-scoped ctx for `/cost`'s Resolver wiring to take effect in production; the embedding/multimodal/asset/voice clients remain outside any per-identity resolution; a mid-turn 403's UX (raw provider error vs. the CRED-05 friendly copy) is unaddressed by design.
 - Migration numbers and coverage policy: this plan touched no migrations and no new packages requiring `scripts/coverage_package_policy.json` registration (`internal/identitykey` was already registered by plan 02-01).
 
