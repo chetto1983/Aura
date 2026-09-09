@@ -106,8 +106,7 @@ func (s *Service) Presign(ctx context.Context, req PresignRequest) (PresignRespo
 	if err != nil {
 		return PresignResponse{}, err
 	}
-	assetID := newAssetID()
-	place := objectstore.PlaceAsset(assetID, name)
+	place := objectstore.PlaceAsset(objectAssetID(scope, req.IdentityID, "", name), name)
 	key := place.Key
 	asset, err := s.Store.Create(ctx, CreateRequest{
 		IdentityID:        req.IdentityID,
