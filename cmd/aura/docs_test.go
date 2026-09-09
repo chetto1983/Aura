@@ -231,3 +231,33 @@ func (f *fakeDocsService) Retrieve(
 	response.Query = request.Query
 	return response, nil
 }
+
+// An abstention is the retriever saying the corpus has nothing, and it is the one answer the
+// caller must not mistake for an empty failure. The CLI hand-builds its JSON, so the field
+// reaches the agent tool (which marshals the response whole) while `aura docs search` -- and
+// the documents MCP that passes its JSON through verbatim -- dropped it silently.
+func TestDocsSearchReportsAbstention(t *testing.T) {
+	svc := &fakeDocsService{
+		response: documents.RetrievalResponse{
+			Profile:          documents.ProductionRetrievalProfile,
+			Status:           documents.RetrievalComplete,
+			Abstained:        true,
+			AbstentionReason: documents.AbstainedNoQualifiedPassage,
+			Documents:        []documents.RetrievalDocument{},
+		},
+	}
+	var out bytes.Buffer
+	if err := runDocsCommand(t.Context(), []string{"search", "carbonara"}, &out, fakeDocsFactory(svc)); err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Abstained        bool   `json:"abstained"`
+		AbstentionReason string `json:"abstention_reason"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if !decoded.Abstained || decoded.AbstentionReason != documents.AbstainedNoQualifiedPassage {
+		t.Fatalf("decoded = %#v, raw = %s", decoded, out.String())
+	}
+}

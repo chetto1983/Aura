@@ -136,14 +136,19 @@ func docsSearch(ctx context.Context, args []string, out io.Writer, factory docsS
 	if err != nil {
 		return err
 	}
-	return writeJSON(out, map[string]any{
-		"query":              response.Query,
-		"profile":            response.Profile,
-		"status":             response.Status,
-		"degradation_reason": response.DegradationReason,
-		"documents":          response.Documents,
-		"retrieval_ms":       time.Since(start).Milliseconds(),
+	return writeJSON(out, docsSearchPayload{
+		RetrievalResponse: response,
+		RetrievalMS:       time.Since(start).Milliseconds(),
 	})
+}
+
+// The retrieval response is embedded rather than copied field by field: a hand-built map
+// silently drops whatever the retriever learns to say next, and it already had -- abstention
+// reached the agent tool, which marshals the response whole, but never the CLI or the
+// documents MCP that passes this JSON through verbatim.
+type docsSearchPayload struct {
+	documents.RetrievalResponse
+	RetrievalMS int64 `json:"retrieval_ms"`
 }
 
 func parseDocsSearchArgs(args []string) (query string, documentIDs []string, limit int, err error) {
