@@ -233,6 +233,48 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	aguiServer.SetAuditStore(agui.NewPgAuditStore(chat.pool))
 	aguiServer.SetIdentityAdmin(chat.identity)
 	aguiServer.SetContextWindow(chat.cfg.LLM.ContextWindow)
+	// Wire Phase 2 plan 07's credit-cap read/write (CRED-03/CRED-06/CRED-09) and
+	// identity removal (RBAC-05). Both stay 503 until wired, matching the
+	// SetAuditStore/SetIdentityAdmin precedent immediately above.
+	//
+	// SetIdentityRemover reuses the SAME *agui.Deprovisioner the CLI and the cron
+	// grace-window sweep already run (buildDeprovisioner, serve_provisioning.go) —
+	// one saga instance, not a second copy of its wiring — and buildDeprovisioner
+	// never returns nil, so no #2924-class typed-nil guard is needed here.
+	aguiServer.SetIdentityRemover(buildDeprovisioner(chat))
+	// backendBills classifies the deployment's PRIMARY LLM backend (D-13) — a
+	// SEPARATE question from whether the OpenRouter MANAGEMENT credential (below) is
+	// configured, so CRED-09's exemption must be wireable even when the management
+	// credential is entirely absent (a local-backend deployment has no reason to set
+	// it).
+	creditBackendBills := !allowsKeylessLLMBaseURL(chat.cfg.LLM.BaseURL)
+	// creditResolver may be nil (no AURA_AUTHULA_SECRET, or a broken one); routed
+	// through agui.NewCreditInvalidator so the nil check happens on the CONCRETE
+	// pointer, never producing a non-nil interface wrapping a nil one (the SAME
+	// #2924-class trap buildIdentityLLMResolver's own callers already guard against).
+	creditResolver := buildIdentityLLMResolver(chat)
+	if orCfg, ok := resolveOpenRouterKeyConfig(chat); ok {
+		aguiServer.SetCreditAPI(
+			agui.NewPgSpendReader(chat.pool),
+			orCfg.store,
+			openRouterKeyPatchAdapter{orCfg},
+			agui.NewCreditInvalidator(creditResolver),
+			creditBackendBills,
+		)
+	} else if !creditBackendBills {
+		// Local backend: CRED-09's exemption path (credit_api.go) returns before
+		// either keys or provider is ever dereferenced, so wiring both nil here is
+		// safe. A billing backend with NO management credential is deliberately left
+		// UNWIRED (503) instead — resolveOpenRouterKeyConfig already logged why, and
+		// exposing a provider port that would panic on first use is worse than 503.
+		aguiServer.SetCreditAPI(
+			agui.NewPgSpendReader(chat.pool),
+			nil,
+			nil,
+			agui.NewCreditInvalidator(creditResolver),
+			creditBackendBills,
+		)
+	}
 	// Wire the Phase-29 MCP WRITE provider (MCPW-01/02/03): install/env-edit/trust/enable/
 	// disable/remove, each atomic with its mcp_audit row (WriteConfigWithAudit) and re-probed
 	// for the live tool count. Built best-effort over the shared pool + the managed-config

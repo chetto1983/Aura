@@ -19,6 +19,7 @@ import (
 	runtimereadiness "github.com/chetto1983/aura/internal/readiness"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"golang.org/x/sync/singleflight"
 )
 
 // maxRunBodyBytes caps the POST /agent/run request body (Tampering/DoS guard,
@@ -150,10 +151,21 @@ type Server struct {
 	llmRouteReloader llmRouteReloader
 	// modelCatalog overrides the outbound GET /models probe (settings_llm_models.go).
 	// Nil in production: the handler builds its own client.
-	modelCatalog     modelCatalogFetcher
-	settingsMu       sync.Mutex
-	audit            auditReader
-	idAdmin          identityAdmin
+	modelCatalog modelCatalogFetcher
+	settingsMu   sync.Mutex
+	audit        auditReader
+	idAdmin      identityAdmin
+	// credit bundles the CRED-03/CRED-06/CRED-09 credit-cap read/write dependencies
+	// (credit_api.go) in one field rather than four, wired by SetCreditAPI; nil until
+	// wired, matching audit's own 503-until-wired precedent.
+	credit *creditPorts
+	// idRemover/idRemovalGroup back the RBAC-05 identity-removal route
+	// (deprovision_route.go), wired by SetIdentityRemover; idRemovalGroup coalesces
+	// two concurrent removals of the SAME identity into one saga run (singleflight,
+	// already used elsewhere in this repo: internal/mcp/oauth_tokensource.go,
+	// internal/skills/catalog_search.go).
+	idRemover        identityRemover
+	idRemovalGroup   singleflight.Group
 	telegramProbe    TelegramBotProbe
 	onboarding       OnboardingService
 	onboardingStatus OnboardingStatusSource
@@ -484,6 +496,14 @@ func (s *Server) Mux() http.Handler {
 	// their handlers; the parent-mux mount (RequireAuth on /api/me, RequireCapability(
 	// governance.write) on the admin routes) lives in cmd/aura/serve_webui_musr.go.
 	s.registerAuditRoutes(mux)
+	// Phase 2 plan 07 (RBAC-05/CRED-03/CRED-06/CRED-09): the credit-cap read/write +
+	// identity-removal admin routes. Colocated with their handlers
+	// (credit_api.go/deprovision_route.go); the parent-mux mount (RequireCapability
+	// (governance.write) on the credit routes, RequireCapability(identity.delete) on
+	// the removal route -- a DIFFERENT capability, per the checkpoint that gate
+	// asymmetry exists to avoid) lives in cmd/aura/serve_webui_musr.go.
+	s.registerCreditRoutes(mux)
+	s.registerIdentityRemovalRoutes(mux)
 	// ONBD-01/02 onboarding routes: POST /api/onboarding/start + /{token}/provision (the
 	// identity-provisioning saga) and GET /api/onboarding/status + POST /api/onboarding/
 	// profile + GET /{token}/telegram-status (self-scoped). Colocated with their handlers;

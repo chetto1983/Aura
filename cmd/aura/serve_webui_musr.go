@@ -16,6 +16,22 @@ package main
 // GET /api/settings/telegram/link is deliberately NOT touched here — it stays a self-scoped
 // USER action (D-02), gated only by the governance.write it already carries in
 // serve_webui.go for the write-class Telegram recovery, never re-gated as an admin route.
+//
+// Phase 2 plan 07 (RBAC-05/CRED-03/CRED-06) adds two more admin routes here:
+//
+//   - GET/POST /api/admin/identities/{id}/credit — the credit-cap read/write
+//     (credit_api.go). Gated on governance.write, the SAME gate the four routes above
+//     already use "for consistency" per audit_api.go's own header comment — under D-01
+//     that gate no longer distinguishes an admin from a member, but this route was
+//     never meant to be admin-exclusive in the D-01 sense; it just needs a caller who
+//     is authenticated and passes the existing admin-surface gate, exactly like the
+//     capability grant/revoke routes it sits beside.
+//   - DELETE /api/admin/identities/{id} — identity removal (deprovision_route.go).
+//     Gated on identity.delete, NOT governance.write — this is the ONE route on this
+//     surface that IS still admin-exclusive under D-01 (identity.delete is one of
+//     exactly two administrative capabilities), and copying the neighbouring
+//     governance.write mount would make removal available to every user in the
+//     deployment. See identityDeleteCapability's own comment (serve_webui_routes.go).
 
 import (
 	"net/http"
@@ -29,6 +45,9 @@ const (
 	adminGrantRoute      = "POST /api/admin/identities/{id}/capabilities"
 	adminRevokeRoute     = "DELETE /api/admin/identities/{id}/capabilities/{capability}"
 	adminAuditRoute      = "GET /api/admin/audit"
+	adminCreditGetRoute  = "GET /api/admin/identities/{id}/credit"  // #nosec G101 -- a route pattern, not a credential.
+	adminCreditSetRoute  = "POST /api/admin/identities/{id}/credit" // #nosec G101 -- a route pattern, not a credential.
+	adminRemoveRoute     = "DELETE /api/admin/identities/{id}"
 )
 
 // registerMUSRRoutes mounts the admin/user-distinction routes on the parent mux. Each
@@ -41,4 +60,9 @@ func registerMUSRRoutes(mux *http.ServeMux, aguiHandler http.Handler, auth agui.
 	mux.Handle(adminGrantRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(adminRevokeRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(adminAuditRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(adminCreditGetRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(adminCreditSetRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	// The ONE route on this surface gated on identity.delete rather than
+	// governance.write — see the file header and identityDeleteCapability's comment.
+	mux.Handle(adminRemoveRoute, agui.RequireCapability(aguiHandler, auth, identityDeleteCapability))
 }

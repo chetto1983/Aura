@@ -288,6 +288,16 @@ const (
 // aliases of internal/identity.CapIdentityCreate (RBAC-02).
 const identityCreateCapability = identity.CapIdentityCreate
 
+// identityDeleteCapability gates DELETE /api/admin/identities/{id} (RBAC-05, plan
+// 02-07). Deliberately NOT governanceWriteCapability, the gate the four neighbouring
+// /api/admin/* routes share (audit_api.go's own header comment states plainly that
+// under D-01 every identity holds governance.write, so that gate no longer
+// distinguishes an admin from a member) — copying it here would make identity
+// removal available to every user in the deployment. It mirrors the agui-side
+// identity.CapIdentityDelete constant, the same aliasing identityCreateCapability
+// above already establishes for identity.create.
+const identityDeleteCapability = identity.CapIdentityDelete
+
 // onboarding* are the Phase-28 ONBD-01/02 onboarding wizard routes. start + provision are
 // the CREATE mutations — interposed with RequireCapability(identity.create) exactly like
 // POST /agent/run (the method+path-specific pattern wins Go 1.22 longest-pattern precedence

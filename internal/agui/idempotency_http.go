@@ -64,8 +64,13 @@ var httpMutationRoutes = map[string]mutationRouteMeta{
 	"POST /api/conversations/{conv}/swarm/{child}/cancel":         httpMutationMeta("worker_cancel"),
 	"POST /api/admin/identities/{id}/capabilities":                httpMutationMeta("capability_grant"),
 	"DELETE /api/admin/identities/{id}/capabilities/{capability}": httpMutationMeta("capability_revoke"),
-	"POST /api/approvals/{token}/resolve":                         httpMutationMeta("approval_resolve"),
-	"POST /api/approvals/grants/revoke":                           httpMutationMeta("approval_grant_revoke"),
+	// Phase 2 plan 07 (RBAC-05/CRED-03, 02-RESEARCH.md Q5's explicit callout): both
+	// new mutating admin routes registered here so a replayed cap change or a
+	// replayed identity removal cannot enqueue a second mutation.
+	"POST /api/admin/identities/{id}/credit": httpMutationMeta("identity_credit_set"),
+	"DELETE /api/admin/identities/{id}":      httpMutationMeta("identity_remove"),
+	"POST /api/approvals/{token}/resolve":    httpMutationMeta("approval_resolve"),
+	"POST /api/approvals/grants/revoke":      httpMutationMeta("approval_grant_revoke"),
 	// Starting an authorization is replay-SAFE by construction — a second start returns
 	// the flow already in progress rather than opening a second one — but it is
 	// inventoried anyway: the rule here is that every unsafe method carries a key, and

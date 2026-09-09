@@ -89,6 +89,17 @@ func (a openRouterKeyMintAdapter) RevokeKey(ctx context.Context, hash string) er
 	return openrouterprovision.RevokeKey(ctx, a.client, a.baseURL, a.managementKey, hash)
 }
 
+// openRouterKeyPatchAdapter satisfies agui/credit_api.go's unexported creditProvider
+// port (plan 02-07, CRED-03): it PATCHes an identity's cap/reset-interval, taking the
+// plaintext hash the caller already loaded via identitykey.Store (this adapter does
+// not do its own store lookup, unlike the revoke adapter below, because credit_api.go
+// already has the record in hand from its own creditKeyStore.Load call).
+type openRouterKeyPatchAdapter struct{ openRouterKeyConfig }
+
+func (a openRouterKeyPatchAdapter) PatchCap(ctx context.Context, hash string, patch openrouterprovision.KeyPatch) (openrouterprovision.KeyRecord, error) {
+	return openrouterprovision.PatchKey(ctx, a.client, a.baseURL, a.managementKey, hash, patch)
+}
+
 // openRouterKeyRevokeAdapter satisfies agui.OpenRouterKeyRevoker (deprovision.go's
 // reverse-saga port). It owns the identitykey.Store lookup — the port takes an identity
 // id rather than a hash so deprovision.go stays free of the concrete store, per that
