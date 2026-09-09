@@ -28,13 +28,35 @@ VERY IMPORTANT: To avoid what is often referred to as "AI slop", avoid using exc
 
 ## Quick Start
 
-### Step 1: Initialize Project
+### Step 1: Look Before You Initialize
 
-Run the initialization script to create a new React project:
+**First list what is already in the workspace.** A project you built before is worth more
+than a fresh one: its dependencies are installed, so editing and rebuilding it is faster
+than starting over, and it does not add another copy of the toolchain to the disk.
+
+```bash
+ls -d /workspace/*/ 2>/dev/null | head -30
+```
+
+Reuse an existing project when it was built for the same thing you are being asked for
+now — a revision of a chart you already made, a second version of the same page, a fix to
+something the operator just received. Change `src/App.tsx` and rebuild; skip Step 1
+entirely.
+
+Initialize a NEW project only when nothing there fits, and give it a name that says what
+it is, so the next look is useful:
+
 ```bash
 bash /skills/web-artifacts-builder/scripts/init-artifact.sh <project-name>
 cd <project-name>
 ```
+
+Why this rule exists, measured on a live box on 2026-09-09: eleven artifact projects had
+accumulated in one workspace — `ciao-artifact`, `ciao2-final`, `ciao2-v3` were three takes
+at the SAME request, and four more were variations on one bitcoin chart. Each carries its
+own `node_modules` at 326-424 MB, for **1.7 GB** total, and each one re-ran an install and
+a full build that an existing project would have skipped. Nothing was reused because
+nothing ever looked.
 
 This creates a fully configured project with:
 - ✅ React + TypeScript (via Vite)
