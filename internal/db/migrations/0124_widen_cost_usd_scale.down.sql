@@ -10,3 +10,6 @@
 -- precision loss is intended.
 ALTER TABLE aura.cache_metrics
     ALTER COLUMN cost_usd TYPE numeric(10, 4);
+
+ALTER TABLE aura.conversations
+    ALTER COLUMN total_cost_usd TYPE numeric(10, 4);

@@ -360,9 +360,13 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// The explicit pin forces review of every schema change. Migrations 0121 and
 	// 0122 (plan 02-01) retire the capability wildcard (RBAC-01) and add the
 	// per-identity encrypted OpenRouter key store (CRED-01). 0123 (plan 02-04)
-	// adds the capability-denial ledger (RBAC-09/RBAC-10).
-	if head != 123 {
-		t.Fatalf("MigrationHead=%d, want embedded head 123", head)
+	// adds the capability-denial ledger (RBAC-09/RBAC-10). 0124 (plan 02-07,
+	// T-02-36 checkpoint) widens aura.cache_metrics.cost_usd and
+	// aura.conversations.total_cost_usd from numeric(10,4) to numeric(24,12) so a
+	// per-call cost as small as the measured 0.000004158 (02-CONTEXT.md M-09)
+	// survives instead of rounding to zero.
+	if head != 124 {
+		t.Fatalf("MigrationHead=%d, want embedded head 124", head)
 	}
 }
 
