@@ -1,9 +1,11 @@
 package agui
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -349,6 +351,61 @@ func TestSpendOverviewProviderFailureIsIsolated(t *testing.T) {
 	s.handleGetCredit(creditRec, creditRequest(http.MethodGet, "/api/admin/identities/"+testLocalID+"/credit", ""))
 	if creditRec.Code != http.StatusOK {
 		t.Fatalf("credit status = %d, want 200 (must be unaffected by the overview's own failure): %s", creditRec.Code, creditRec.Body.String())
+	}
+}
+
+// A reconciliation failure still answers the generic 502, and now leaves its cause in the
+// log. Measured 2026-09-10: a decode error behind this 502 stayed invisible because the
+// handler answered without logging anything.
+func TestSpendOverviewLogsTheReconciliationFailure(t *testing.T) {
+	cause := errors.New("openrouterprovision: analytics query: decode response: metric request_count: not a number")
+	for name, recon := range map[string]*fakeSpendReconciliation{
+		"kpi windows": {tilesErr: cause},
+		"list keys":   {tiles: spendFiveTiles(), keysErr: cause},
+		"get credits": {tiles: spendFiveTiles(), creditsErr: cause},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var logs bytes.Buffer
+			prev := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+			t.Cleanup(func() { slog.SetDefault(prev) })
+			s := newTestSpendServer(recon, &fakeSpendCapReader{caps: map[string]float64{}}, []identity.Identity{{ID: testLocalID, Name: "local"}})
+
+			rec := httptest.NewRecorder()
+			s.handleSpendOverview(rec, spendRequest())
+
+			if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "couldn't load the spend overview") {
+				t.Fatalf("status = %d body = %s, want the generic 502", rec.Code, rec.Body.String())
+			}
+			if strings.Contains(rec.Body.String(), "request_count") {
+				t.Fatalf("body leaks the internal cause: %s", rec.Body.String())
+			}
+			if !strings.Contains(logs.String(), "metric request_count: not a number") {
+				t.Fatalf("log = %q, want the reconciliation cause", logs.String())
+			}
+		})
+	}
+}
+
+// TestKPIWindowsAreWholeUTCDaysThatShareNone pins the windows to UTC midnight. The provider
+// widens a time_range to every UTC day it touches, so windows cut at the current time of day
+// both counted the boundary day in full (measured 2026-09-10: 2026-08-29's $2.51 appeared in
+// the current AND the prior window). Expected bounds are hand-computed.
+func TestKPIWindowsAreWholeUTCDaysThatShareNone(t *testing.T) {
+	cest := time.FixedZone("CEST", 2*60*60)
+	for name, tc := range map[string]struct {
+		now  time.Time
+		want [4]string // current start, current end, prior start, prior end
+	}{
+		"mid-morning":             {time.Date(2026, 9, 10, 11, 42, 7, 0, cest), [4]string{"2026-08-30T00:00:00Z", "2026-09-10T09:42:07Z", "2026-08-18T00:00:00Z", "2026-08-30T00:00:00Z"}},
+		"local date ahead of UTC": {time.Date(2026, 9, 10, 1, 0, 0, 0, cest), [4]string{"2026-08-29T00:00:00Z", "2026-09-09T23:00:00Z", "2026-08-17T00:00:00Z", "2026-08-29T00:00:00Z"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			current, prior := kpiWindows(tc.now)
+			if got := [4]string{current.Start, current.End, prior.Start, prior.End}; got != tc.want {
+				t.Fatalf("windows = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

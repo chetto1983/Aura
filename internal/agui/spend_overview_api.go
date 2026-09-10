@@ -22,6 +22,7 @@ package agui
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"sort"
 	"time"
@@ -32,10 +33,11 @@ import (
 	"github.com/chetto1983/aura/internal/openrouterprovision"
 )
 
-// kpiWindowDays is the trailing window each of the Overview's five KPI tiles covers, and
-// the length of each tile's sparkline (02-UI-SPEC.md §KPI row: "a 12-point inline SVG
-// polyline"). The prior window is the SAME length, immediately preceding it, so the two
-// calls KPIWindows makes are of equal length per 02-UI-SPEC.md's own data-source ledger.
+// kpiWindowDays is the number of whole UTC days each of the Overview's five KPI tiles
+// covers, and the most points its sparkline can have (02-UI-SPEC.md §KPI row: "a 12-point
+// inline SVG polyline"): a day with no OpenRouter traffic has no bucket, so no point. The
+// prior window is the SAME number of days, immediately preceding it, so the two calls
+// KPIWindows makes are of equal length per 02-UI-SPEC.md's own data-source ledger.
 const kpiWindowDays = 12
 
 // spendReconciliation is the three OpenRouter reconciliation calls (COVERAGE.md INTEGRATE,
@@ -150,17 +152,17 @@ func (s *Server) handleSpendOverview(w http.ResponseWriter, r *http.Request) {
 		// Isolated by construction: this is the ONLY call this handler makes for the KPI
 		// row, and its failure never touches the credit or roster endpoints — those are
 		// separate handlers reading a different source (D-08).
-		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "couldn't load the spend overview"})
+		failSpendReconciliation(w, err)
 		return
 	}
 	keys, err := s.spendOverview.reconciliation.ListKeys(ctx)
 	if err != nil {
-		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "couldn't load the spend overview"})
+		failSpendReconciliation(w, err)
 		return
 	}
 	credits, err := s.spendOverview.reconciliation.GetCredits(ctx)
 	if err != nil {
-		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "couldn't load the spend overview"})
+		failSpendReconciliation(w, err)
 		return
 	}
 
@@ -200,12 +202,25 @@ func (s *Server) sumIdentityCaps(ctx context.Context, identities []identity.Iden
 	return sum, nil
 }
 
-// kpiWindows derives the current and prior 12-day windows from now, as two DISTINCT,
-// equal-length, back-to-back ranges (02-UI-SPEC.md: "a second analytics/query call over
-// the prior window of equal length").
+// failSpendReconciliation answers a provider-side failure with the generic 502 and keeps the
+// cause in the log only: the body must not carry provider internals, and without the log a
+// decode error behind this 502 was invisible (measured 2026-09-10).
+func failSpendReconciliation(w http.ResponseWriter, err error) {
+	slog.Error("aura admin: spend overview reconciliation failed", "err", err)
+	writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "couldn't load the spend overview"})
+}
+
+// kpiWindows derives the current and prior windows as kpiWindowDays whole UTC days each,
+// back to back (02-UI-SPEC.md: "a second analytics/query call over the prior window of equal
+// length"); the current one runs to now, so its last day is today so far. Whole days because
+// the provider widens a time_range to every UTC day it touches: measured 2026-09-10,
+// 12:00-13:00Z on 2026-08-29 returned that day's full 677 requests, while an end at exactly
+// midnight leaves the next day out. A boundary at the current time of day therefore landed
+// the same day, in full, in both windows.
 func kpiWindows(now time.Time) (current, prior openrouterprovision.TimeRange) {
 	end := now.UTC()
-	start := end.AddDate(0, 0, -kpiWindowDays)
+	today := time.Date(end.Year(), end.Month(), end.Day(), 0, 0, 0, 0, time.UTC)
+	start := today.AddDate(0, 0, -(kpiWindowDays - 1))
 	priorStart := start.AddDate(0, 0, -kpiWindowDays)
 	return openrouterprovision.NewTimeRange(start, end), openrouterprovision.NewTimeRange(priorStart, start)
 }
