@@ -1,55 +1,8 @@
 import type { CommandRunner } from './process.js';
 
-// compose.yaml:752 / :781 default AURA_EMBED_IMAGE and AURA_EMBED_NGL to this pair when a
-// GPU is present; .github/workflows/ci.yml:754-755 pins the CPU pair used when it is not.
-// embedNgl is a string, not a number: it reaches .env as text and serializeInstallConfig
-// (config-file.ts) base64s it as text.
-export const CUDA_EMBED_IMAGE = 'ghcr.io/ggml-org/llama.cpp:server-cuda';
-export const CPU_EMBED_IMAGE = 'ghcr.io/ggml-org/llama.cpp:server';
-
-export interface GpuProbeResult {
-  cuda: boolean;
-  embedImage: string;
-  embedNgl: string;
-}
-
-export interface EmbedTarget {
-  embedImage: string;
-  embedNgl: string;
-}
-
-// F4 (review round 1): probeGpu below and prompts.ts's collectGpuChoice (the R1 yes/no
-// fallback asked when no runner can probe the actual install target) each independently
-// encoded "cuda -> CUDA image + '99', otherwise CPU image + '0'". A single exported mapping
-// is the only way changing one can no longer silently leave the other disagreeing.
-export function embedTargetFor(cuda: boolean): EmbedTarget {
-  return cuda
-    ? { embedImage: CUDA_EMBED_IMAGE, embedNgl: '99' }
-    : { embedImage: CPU_EMBED_IMAGE, embedNgl: '0' };
-}
-
 export interface OllamaProbeResult {
   reachable: boolean;
   models: string[];
-}
-
-// compose.yaml:801-817 reserves `driver: nvidia` unconditionally for every install, so
-// whether the NVIDIA *container* toolkit is present decides whether `docker compose up`
-// succeeds at all -- this wizard's image choice cannot influence that either way. Choosing
-// between the two llama.cpp images only decides whether a working GPU gets *used*;
-// compose.yaml:807-809 documents what happens when it is not: the CUDA image starts anyway
-// and silently falls back to CPU ("no usable GPU found" is a warning, not an error). So
-// guessing wrong here costs speed, not a failed install, and one host nvidia-smi call is the
-// right size for that stake. CommandRunner.run rejects rather than returning a non-zero
-// exitCode (process.ts's ProcessRunner.execute), so an absent binary reaches this function as
-// a rejected promise, never as a result to branch on.
-export async function probeGpu(runner: CommandRunner): Promise<GpuProbeResult> {
-  try {
-    await runner.run('nvidia-smi');
-    return { cuda: true, ...embedTargetFor(true) };
-  } catch {
-    return { cuda: false, ...embedTargetFor(false) };
-  }
 }
 
 interface OllamaTagsResponse {
@@ -69,7 +22,7 @@ function tagsUrlFor(baseUrl: string): string {
 // on every fresh host. This mirrors the working host-reachability probe at
 // scripts/ingest_media_e2e.sh:27-28 instead: default bridge network plus --add-host
 // host.docker.internal:host-gateway, which is load-bearing on Linux where that name does not
-// resolve without it. alpine is the probe image because scripts/install.sh:393 already runs
+// resolve without it. alpine is the probe image because scripts/install.sh's ensure_embed_model already runs
 // `docker run --rm --volumes-from ... alpine`, so this installer already requires a host able
 // to pull it -- a second image would only add a failure mode.
 export async function probeOllama(runner: CommandRunner, url: string): Promise<OllamaProbeResult> {

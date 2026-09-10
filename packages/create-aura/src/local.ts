@@ -16,15 +16,15 @@ import type { InstallSettings, PreflightResult } from './types.js';
 //   sudo    -- installLocal below always runs the artifact as `sudo bash ...`; if the sudo
 //              binary itself is missing, that top-level command fails outright, and this
 //              check catches it before a secret-bearing config file is even written.
-//   curl    -- install.sh's ensure_embed_model (scripts/install.sh:371-395) sends an
-//              unconditional HEAD request to size the embedding model on EVERY run, model
-//              already present or not; curl is never optional.
-//   openssl -- write_env_if_missing and ensure_internal_env_secrets (scripts/install.sh:465,
-//              536) each call `command -v openssl` themselves and exit 1 if it is absent, on
-//              a fresh install AND on every re-run.
+//   curl    -- install.sh's ensure_embed_model sends an unconditional HEAD request to size
+//              the embedding model on EVERY run, model already present or not; curl is
+//              never optional.
+//   openssl -- install.sh's write_env_if_missing and ensure_internal_env_secrets each call
+//              `command -v openssl` themselves and exit 1 if it is absent, on a fresh
+//              install AND on every re-run.
 // apt-get and systemctl are dropped: apt-get would refuse the macOS target install.sh:216-226
 // explicitly supports via Docker Desktop, and systemctl only gates --appliance
-// (scripts/install.sh:691-719), a choice collectSettings makes AFTER this preflight runs --
+// (install.sh's install_systemd_unit), a choice collectSettings makes AFTER this preflight runs --
 // gating on it here would refuse a machine a non-appliance install would have accepted.
 // docker itself is deliberately NOT required: install_docker (scripts/install.sh:198-236)
 // self-installs it via curl+sudo on Linux when absent, so requiring it up front would refuse
@@ -34,7 +34,7 @@ const REQUIRED_COMMANDS = ['sudo', 'curl', 'openssl'] as const;
 // R3 (Task 6 controller ruling): raw.githubusercontent.com comes OUT -- the npm package
 // carries the payload (spec decision 5), so install.sh's download_file reads
 // AURA_PAYLOAD_DIR and never touches RAW_BASE; requiring that host would re-assert a trust
-// path this design deliberately removed. huggingface.co goes IN: install.sh:357 fetches
+// path this design deliberately removed. huggingface.co goes IN: install.sh fetches
 // embeddinggemma-300M-Q8_0.gguf from there, the one pinned artifact in the whole product,
 // and ensure_embed_model's HEAD probe against it is unconditional (see curl, above).
 const REQUIRED_HOSTS = [
@@ -92,7 +92,7 @@ export async function preflightLocal(
   ])).stdout);
 
   // install.sh writes compose.yaml (not docker-compose.yml) directly under INSTALL_DIR
-  // (scripts/install.sh:767); that is Aura's own re-run marker, not the reference's.
+  // (its `download_file compose.yaml`); that is Aura's own re-run marker, not the reference's.
   const existingInstall = (await runner.run('sh', [
     '-c',
     'if test -f "$1/compose.yaml"; then printf "true\\n"; else printf "false\\n"; fi',

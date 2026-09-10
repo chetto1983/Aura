@@ -89,3 +89,114 @@ mkdir -p "$fixture_root/edge"
 )
 
 echo "ok: an :edge install pulls every repo-built compose image"
+
+# The embed backend is decided on the target, the only machine whose answer is true.
+declare -F detect_embed_backend >/dev/null || { echo "FAIL: detect_embed_backend undefined after source" >&2; exit 1; }
+declare -F ensure_embed_backend_env >/dev/null || { echo "FAIL: ensure_embed_backend_env undefined after source" >&2; exit 1; }
+
+make_stubs() {
+  dir="$1"
+  shift
+  mkdir -p "$dir"
+  for tool in "$@"; do
+    printf '#!/bin/sh\nexit 0\n' > "$dir/$tool"
+    chmod +x "$dir/$tool"
+  done
+}
+make_stubs "$fixture_root/bin-hook" nvidia-smi nvidia-container-runtime-hook
+make_stubs "$fixture_root/bin-cdi" nvidia-smi nvidia-cdi-hook
+make_stubs "$fixture_root/bin-smi" nvidia-smi
+mkdir -p "$fixture_root/bin-none" "$fixture_root/dri-none" "$fixture_root/dri-render"
+: > "$fixture_root/dri-render/renderD128"
+
+expect_backend() {
+  want="$1"
+  bin="$2"
+  dri="$3"
+  got="$(PATH="$bin:/usr/bin:/bin" detect_embed_backend "$dri")"
+  [ "$got" = "$want" ] \
+    || { echo "FAIL: detect_embed_backend with $(basename "$bin") and $(basename "$dri") gave '$got', want '$want'" >&2; exit 1; }
+}
+# A GPU nvidia-smi sees but Docker cannot drive is NOT CUDA: without a hook Docker has no
+# `nvidia` device driver and the reservation kills `up`.
+expect_backend cuda "$fixture_root/bin-hook" "$fixture_root/dri-none"
+expect_backend cuda "$fixture_root/bin-cdi" "$fixture_root/dri-render"
+expect_backend vulkan "$fixture_root/bin-smi" "$fixture_root/dri-render"
+expect_backend vulkan "$fixture_root/bin-none" "$fixture_root/dri-render"
+expect_backend cpu "$fixture_root/bin-smi" "$fixture_root/dri-none"
+expect_backend cpu "$fixture_root/bin-none" "$fixture_root/dri-none"
+
+echo "ok: detect_embed_backend picks CUDA only when Docker can drive it, then Vulkan, then CPU"
+
+expect_posture() {
+  backend="$1"
+  mkdir -p "$fixture_root/posture-$backend"
+  (
+    cd "$fixture_root/posture-$backend"
+    printf 'AURA_EMBED_BACKEND=%s\nAURA_EMBED_IMAGE=stale\nAURA_EMBED_NGL=stale\n' "$backend" > .env
+    ensure_embed_backend_env "$fixture_root/dri-render"
+    shift
+    for pair in "$@"; do
+      [ "$(grep -c "^${pair%%=*}=" .env)" = 1 ] && grep -qx "$pair" .env \
+        || { echo "FAIL: backend $backend should leave exactly $pair in .env, got: $(grep "^${pair%%=*}=" .env)" >&2; exit 1; }
+    done
+  )
+}
+# An explicit backend wins over what the host would detect: dri-render is present in every
+# case below, and only the vulkan one may end up on the Vulkan overlay.
+expect_posture cuda COMPOSE_FILE=compose.yaml \
+  AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda AURA_EMBED_NGL=99
+expect_posture vulkan COMPOSE_FILE=compose.yaml:compose.vulkan.yaml \
+  AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server-vulkan AURA_EMBED_NGL=99
+expect_posture cpu COMPOSE_FILE=compose.yaml:compose.cpu.yaml \
+  AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server AURA_EMBED_NGL=0
+
+# The upgrade an existing CPU install takes: the 0.1.x wizard wrote the CPU pair and no
+# backend, and the host has a render node the old probe never looked for.
+mkdir -p "$fixture_root/posture-upgrade"
+(
+  cd "$fixture_root/posture-upgrade"
+  printf 'AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server\nAURA_EMBED_NGL=0\n' > .env
+  PATH="$fixture_root/bin-none:/usr/bin:/bin" ensure_embed_backend_env "$fixture_root/dri-render"
+  for pair in AURA_EMBED_BACKEND=vulkan COMPOSE_FILE=compose.yaml:compose.vulkan.yaml \
+      AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server-vulkan AURA_EMBED_NGL=99; do
+    grep -qx "$pair" .env || { echo "FAIL: upgrading a CPU install on a Vulkan host did not write $pair" >&2; exit 1; }
+  done
+)
+
+mkdir -p "$fixture_root/posture-invalid"
+(
+  cd "$fixture_root/posture-invalid"
+  printf 'AURA_EMBED_BACKEND=metal\n' > .env
+  if ( ensure_embed_backend_env "$fixture_root/dri-none" ) 2>"$fixture_root/posture-invalid.err"; then
+    echo "FAIL: an unknown AURA_EMBED_BACKEND was accepted" >&2
+    exit 1
+  fi
+  grep -q "AURA_EMBED_BACKEND" "$fixture_root/posture-invalid.err" \
+    || { echo "FAIL: an unknown backend was refused for the wrong reason: $(cat "$fixture_root/posture-invalid.err")" >&2; exit 1; }
+)
+
+echo "ok: ensure_embed_backend_env derives the overlay, image and offload from one backend"
+
+# COMPOSE_FILE is only worth selecting if the overlay really clears what it claims to: the
+# merged config is the proof, not the overlay's text.
+if docker compose version >/dev/null 2>&1; then
+  nvidia_reservations() {
+    (cd "$repo_root" && docker compose "$@" config --no-interpolate 2>/dev/null) | grep -c 'driver: nvidia' || true
+  }
+  base_reservations="$(nvidia_reservations -f compose.yaml)"
+  [ "$base_reservations" -gt 0 ] || { echo "FAIL: compose.yaml config shows no NVIDIA reservation to clear" >&2; exit 1; }
+  for posture in cpu vulkan; do
+    got="$(nvidia_reservations -f compose.yaml -f "compose.$posture.yaml")"
+    [ "$got" = "$((base_reservations - 1))" ] \
+      || { echo "FAIL: compose.$posture.yaml leaves $got NVIDIA reservations, want $((base_reservations - 1))" >&2; exit 1; }
+  done
+  (cd "$repo_root" && docker compose -f compose.yaml -f compose.vulkan.yaml config --no-interpolate 2>/dev/null) \
+    | grep -q '/dev/dri' || { echo "FAIL: compose.vulkan.yaml does not hand /dev/dri to the embed sidecar" >&2; exit 1; }
+  echo "ok: the CPU and Vulkan overlays each drop exactly the embed sidecar's NVIDIA reservation"
+elif [ -n "${CI:-}" ]; then
+  echo "FAIL: docker compose is required under CI to check the embed overlays" >&2
+  exit 1
+else
+  echo "skip: docker compose unavailable; the embed overlay merge is checked in CI"
+fi

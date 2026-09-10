@@ -35,7 +35,7 @@ INSTALL_DIR="${AURA_INSTALL_DIR:-}"
 CONFIG_FILE=""
 CFG_INSTALL_DIR=""; CFG_APPLIANCE=""; CFG_GVISOR=""
 CFG_LLM_PROVIDER=""; CFG_LLM_BASE_URL=""; CFG_LLM_MODEL=""
-CFG_OPENROUTER_API_KEY=""; CFG_EMBED_IMAGE=""; CFG_EMBED_NGL=""
+CFG_OPENROUTER_API_KEY=""
 
 usage() {
   cat <<'EOF'
@@ -291,8 +291,6 @@ parse_install_config() {
       llm_base_url_base64) CFG_LLM_BASE_URL="$(config_decode "$value")" ;;
       llm_model_base64) CFG_LLM_MODEL="$(config_decode "$value")" ;;
       openrouter_api_key_base64) CFG_OPENROUTER_API_KEY="$(config_decode "$value")" ;;
-      embed_image_base64) CFG_EMBED_IMAGE="$(config_decode "$value")" ;;
-      embed_ngl_base64) CFG_EMBED_NGL="$(config_decode "$value")" ;;
       # format=1 is what buys forward compatibility -- a future wizard bumps to
       # format=2 and the check above already refuses that loudly -- so within
       # format=1 a key naming nothing above can only be a typo or corruption.
@@ -309,7 +307,7 @@ parse_install_config() {
   # different ones. This must run in the main shell, not inside config_decode's command
   # substitution above, because an exit there would only kill that subshell.
   for value in "$CFG_INSTALL_DIR" "$CFG_LLM_PROVIDER" "$CFG_LLM_BASE_URL" "$CFG_LLM_MODEL" \
-               "$CFG_OPENROUTER_API_KEY" "$CFG_EMBED_IMAGE" "$CFG_EMBED_NGL"; do
+               "$CFG_OPENROUTER_API_KEY"; do
     case "$value" in
       *$'\n'*|*$'\r'*)
         echo "FAIL: a config value contains a line break, which would inject a second line into .env" >&2
@@ -332,8 +330,6 @@ apply_install_config() {
   if [ -n "$CFG_LLM_BASE_URL" ]; then set_env_value AURA_LLM_BASE_URL "$CFG_LLM_BASE_URL"; fi
   if [ -n "$CFG_LLM_MODEL" ]; then set_env_value AURA_LLM_MODEL "$CFG_LLM_MODEL"; fi
   if [ -n "$CFG_OPENROUTER_API_KEY" ]; then set_env_value OPENROUTER_API_KEY "$CFG_OPENROUTER_API_KEY"; fi
-  if [ -n "$CFG_EMBED_IMAGE" ]; then set_env_value AURA_EMBED_IMAGE "$CFG_EMBED_IMAGE"; fi
-  if [ -n "$CFG_EMBED_NGL" ]; then set_env_value AURA_EMBED_NGL "$CFG_EMBED_NGL"; fi
 }
 
 env_value() {
@@ -541,6 +537,62 @@ ensure_edge_channel_env() {
   esac
 }
 
+# Decided here, on the target, the only machine whose answer is true. Docker registers its
+# `nvidia` device driver only when nvidia-container-runtime-hook or nvidia-cdi-hook is on
+# its PATH (moby daemon/devices_nvidia_linux.go), and without it compose.yaml's
+# reservation kills `up` ("could not select device driver nvidia", measured 2026-09-10 on
+# a mini PC) -- so a GPU nvidia-smi sees is CUDA only if a hook is there too. A render
+# node is Intel or AMD, integrated included, which the Vulkan image drives. Metal cannot
+# reach a Docker container on macOS, so a Mac lands on the CPU.
+detect_embed_backend() {
+  dri_dir="${1:-/dev/dri}"
+  if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1 &&
+    { command -v nvidia-container-runtime-hook >/dev/null 2>&1 || command -v nvidia-cdi-hook >/dev/null 2>&1; }; then
+    echo cuda
+    return
+  fi
+  for node in "$dri_dir"/renderD*; do
+    if [ -e "$node" ]; then
+      echo vulkan
+      return
+    fi
+  done
+  echo cpu
+}
+
+# One knob: AURA_EMBED_BACKEND is detected once and is the operator's to change after that.
+# The overlay, image and offload are derived from it on every run so they can never
+# disagree -- a Vulkan overlay left with the CPU image would never touch the GPU it was
+# chosen for. docker compose reads COMPOSE_FILE from .env, so the installer, systemd and
+# the update timer all resolve the same files.
+ensure_embed_backend_env() {
+  if [ -z "$(env_value AURA_EMBED_BACKEND)" ]; then
+    set_env_value AURA_EMBED_BACKEND "$(detect_embed_backend "$@")"
+  fi
+  backend="$(env_value AURA_EMBED_BACKEND)"
+  case "$backend" in
+    cuda)
+      set_env_value COMPOSE_FILE compose.yaml
+      set_env_value AURA_EMBED_IMAGE ghcr.io/ggml-org/llama.cpp:server-cuda
+      set_env_value AURA_EMBED_NGL 99
+      ;;
+    vulkan)
+      set_env_value COMPOSE_FILE compose.yaml:compose.vulkan.yaml
+      set_env_value AURA_EMBED_IMAGE ghcr.io/ggml-org/llama.cpp:server-vulkan
+      set_env_value AURA_EMBED_NGL 99
+      ;;
+    cpu)
+      set_env_value COMPOSE_FILE compose.yaml:compose.cpu.yaml
+      set_env_value AURA_EMBED_IMAGE ghcr.io/ggml-org/llama.cpp:server
+      set_env_value AURA_EMBED_NGL 0
+      ;;
+    *)
+      echo "FAIL: AURA_EMBED_BACKEND must be cuda, vulkan or cpu, got '$backend'." >&2
+      exit 2
+      ;;
+  esac
+}
+
 # D-04: make the sandbox image available BEFORE `docker compose up` starts anything, so
 # the documented fresh-install path never reaches the boot preflight's refusal
 # (cmd/aura/serve_sandbox_preflight.go): a strict, isolation-on daemon whose box image is
@@ -692,14 +744,12 @@ AURA_OTEL_EXPORTER=otlp
 AURA_OTEL_ENDPOINT=tempo:4317
 AURA_OBSERVABILITY_CHECK_ENABLED=true
 
-AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda
 AURA_EMBED_MODEL_PATH=/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf
 # Where the installer fetches that file from when it is missing or differs from upstream.
 # ggml-org's build and NOT unsloth's: unsloth's Q8_0 omits the two sentence-transformers
 # dense projections, which makes llama.cpp return backbone-only vectors at the correct
 # width with no error at all. The installer refuses a model without them.
 AURA_EMBED_MODEL_URL=https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/main/embeddinggemma-300M-Q8_0.gguf
-AURA_EMBED_NGL=99
 AURA_EMBED_DIMENSIONS=768
 
 AURA_OBJECTSTORE_ACCESS_KEY=${objectstore_access_key}
@@ -830,6 +880,8 @@ fi
 
 cd "$INSTALL_DIR"
 download_file compose.yaml compose.yaml
+download_file compose.cpu.yaml compose.cpu.yaml
+download_file compose.vulkan.yaml compose.vulkan.yaml
 download_file caddy/Caddyfile caddy/Caddyfile
 # The other value compose.yaml's ${AURA_CADDYFILE:-Caddyfile} mount can take
 # (AURA_CADDYFILE=Caddyfile.domain in .env) -- see the garage.toml/backup.json
@@ -878,6 +930,7 @@ chmod +x scripts/garage_bootstrap.sh scripts/fetch_embedding_model.sh scripts/ob
 
 write_env_if_missing
 apply_install_config
+ensure_embed_backend_env
 
 ensure_objectstore_public_endpoint
 

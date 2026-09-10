@@ -202,7 +202,7 @@ export async function runCli(
     // target. R2 (Task 6, closing this out): remote mode used to pass undefined here --
     // probing the laptop and presenting the answer as if it were the target's would have been
     // worse than not probing -- but now wraps the runner over SSH (createSshProbeRunner) so
-    // collectSettings's GPU/Ollama probes reach the real target. Nothing in collectSettings or
+    // collectSettings's Ollama probe reaches the real target. Nothing in collectSettings or
     // modelroute.ts needed to change: the seam was built for exactly this swap.
     let probeRunner: CommandRunner | undefined;
     if (target.mode === 'remote') {

@@ -850,7 +850,9 @@ services:
     # compose.gpu.yaml, and the day someone ran `docker compose up -d` without it the
     # CUDA image started anyway and silently fell back to CPU — "no usable GPU found" is
     # a warning, not an error, so nothing failed and embeddings just got ~8x slower.
-    # CI removes it through its committed cache overlay; the shipped runtime stays GPU-first.
+    # CI removes it through its committed cache overlay, and a host without an NVIDIA
+    # driver Docker can use removes it through compose.cpu.yaml or compose.vulkan.yaml,
+    # which scripts/install.sh selects via COMPOSE_FILE. The default stays GPU-first.
     deploy:
       resources:
         reservations:

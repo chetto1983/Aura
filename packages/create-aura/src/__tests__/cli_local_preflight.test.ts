@@ -344,7 +344,7 @@ describe('create-aura CLI local preflight', () => {
   });
 
   // Task 6: local.ts's own re-run marker (compose.yaml, not the reference's
-  // docker-compose.yml -- scripts/install.sh:767) now surfaces as a message, mirroring the
+  // docker-compose.yml -- install.sh's `download_file compose.yaml`) now surfaces as a message, mirroring the
   // reference cli.ts's `if (preflight.existingInstall) write(t('existingInstall'))`.
   it('writes the existingInstall message when preflightLocal finds a prior install in place', async () => {
     const write = vi.fn();

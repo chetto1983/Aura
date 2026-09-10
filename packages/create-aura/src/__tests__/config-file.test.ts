@@ -18,8 +18,6 @@ const settings: InstallSettings = {
   llmBaseUrl: 'https://openrouter.ai/api/v1',
   llmModel: 'deepseek/deepseek-v4',
   openrouterApiKey: 'sk-or-v1-correct-horse-battery-staple',
-  embedImage: 'ghcr.io/aura/embed-gemma:latest',
-  embedNgl: '999',
 };
 
 const roots: string[] = [];
@@ -38,8 +36,6 @@ describe('serializeInstallConfig', () => {
     expect(serialized).toContain(`llm_base_url_base64=${Buffer.from(settings.llmBaseUrl).toString('base64')}\n`);
     expect(serialized).toContain(`llm_model_base64=${Buffer.from(settings.llmModel).toString('base64')}\n`);
     expect(serialized).toContain(`openrouter_api_key_base64=${Buffer.from(settings.openrouterApiKey ?? '').toString('base64')}\n`);
-    expect(serialized).toContain(`embed_image_base64=${Buffer.from(settings.embedImage).toString('base64')}\n`);
-    expect(serialized).toContain(`embed_ngl_base64=${Buffer.from(settings.embedNgl).toString('base64')}\n`);
     expect(serialized).not.toContain(settings.installDir);
     expect(serialized).not.toContain(settings.openrouterApiKey);
   });
@@ -66,15 +62,20 @@ describe('serializeInstallConfig', () => {
 
   // install.sh's parse_install_config exits 2 on any key it does not name (scripts/
   // install.sh:271-287), so a test that only checks "install_dir is present" would pass
-  // just as happily with a tenth key riding along that breaks the real installer.
-  it('emits exactly the nine keys install.sh accepts', () => {
+  // just as happily with an eighth key riding along that breaks the real installer.
+  it('emits exactly the seven keys install.sh accepts', () => {
     const keys = serializeInstallConfig(settings).split('\n').filter(Boolean).slice(1)
       .map((l) => l.split('=')[0]).sort();
     expect(keys).toEqual([
-      'appliance', 'embed_image_base64', 'embed_ngl_base64', 'gvisor', 'install_dir_base64',
-      'llm_base_url_base64', 'llm_model_base64', 'llm_provider_base64',
-      'openrouter_api_key_base64',
+      'appliance', 'gvisor', 'install_dir_base64', 'llm_base_url_base64', 'llm_model_base64',
+      'llm_provider_base64', 'openrouter_api_key_base64',
     ]);
+  });
+
+  // install.sh detects the embed backend (CUDA, Vulkan or CPU) on the target, so the wizard
+  // has no embed setting left to hand it.
+  it('emits no embed_ key', () => {
+    expect(serializeInstallConfig(settings)).not.toMatch(/^embed_/m);
   });
 
   // GNU `base64` wraps output at 76 columns; a wrapped value would insert an extra line
@@ -87,9 +88,9 @@ describe('serializeInstallConfig', () => {
     const lines = serialized.split('\n');
 
     expect(Buffer.from(longSecret, 'utf8').toString('base64').length).toBeGreaterThan(76);
-    // format=1 + 9 keys + the trailing '' from the join's final element = 11, regardless of
+    // format=1 + 7 keys + the trailing '' from the join's final element = 9, regardless of
     // any single value's length -- a wrapped value would insert an extra line and break this.
-    expect(lines).toHaveLength(11);
+    expect(lines).toHaveLength(9);
     expect(lines.filter((line) => line.startsWith('openrouter_api_key_base64=')).length).toBe(1);
   });
 

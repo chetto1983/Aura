@@ -1,0 +1,10 @@
+# Vulkan posture for the embedding sidecar: Intel and AMD GPUs, integrated ones included,
+# through the /dev/dri render nodes llama.cpp's server-vulkan image drives. Selected through
+# COMPOSE_FILE by scripts/install.sh (ensure_embed_backend_env) on a host with a render node
+# and no NVIDIA driver Docker can use. Measured 2026-09-10 on the mini PC: server-vulkan
+# with /dev/dri lists "Vulkan0: Intel(R) Graphics (ADL-N)".
+services:
+  aura-llama-embed:
+    deploy: !reset null
+    devices:
+      - /dev/dri:/dev/dri

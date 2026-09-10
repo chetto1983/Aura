@@ -69,6 +69,4 @@ export const validSettings = {
   llmProvider: 'ollama',
   llmBaseUrl: 'http://host.docker.internal:11434/v1',
   llmModel: 'llama3:8b',
-  embedImage: 'ghcr.io/ggml-org/llama.cpp:server',
-  embedNgl: '0',
 };

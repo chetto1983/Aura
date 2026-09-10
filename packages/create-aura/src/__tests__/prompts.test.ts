@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { serializeInstallConfig } from '../config-file.js';
 import { createTranslator } from '../i18n.js';
-import { CPU_EMBED_IMAGE, CUDA_EMBED_IMAGE } from '../modelroute.js';
 import { collectSettings, collectTarget } from '../prompts.js';
 import type { InstallSettings } from '../types.js';
 import { ProcessExecutionError } from '../process.js';
@@ -62,9 +61,9 @@ describe('collectTarget', () => {
 
 describe('collectSettings', () => {
   // Task 5 Step 4 assertion #1: the OpenRouter route asks for a key, the Ollama route does
-  // not. With no probeRunner (remote-mode fallback, or no probe available yet), both routes
-  // fall back to typed input for base url/model and a yes/no GPU question.
-  it('asks for an OpenRouter API key on the OpenRouter route and applies the GPU answer', async () => {
+  // not. With no probeRunner passed in, both routes
+  // fall back to typed input for base url/model.
+  it('asks for an OpenRouter API key on the OpenRouter route', async () => {
     const prompt = {
       select: vi.fn().mockResolvedValueOnce('openrouter'),
       input: vi.fn()
@@ -74,7 +73,6 @@ describe('collectSettings', () => {
       confirm: vi.fn()
         .mockResolvedValueOnce(true) // appliance
         .mockResolvedValueOnce(false) // gvisor
-        .mockResolvedValueOnce(true) // has GPU? (no probeRunner -> yes/no fallback, R1)
         .mockResolvedValueOnce(true), // confirmInstall
     };
 
@@ -89,8 +87,6 @@ describe('collectSettings', () => {
       llmBaseUrl: 'https://openrouter.ai/api/v1',
       llmModel: 'deepseek/deepseek-v4',
       openrouterApiKey: 'sk-or-v1-correct-horse-battery-staple',
-      embedImage: CUDA_EMBED_IMAGE,
-      embedNgl: '99',
     });
   });
 
@@ -107,7 +103,6 @@ describe('collectSettings', () => {
       confirm: vi.fn()
         .mockResolvedValueOnce(true) // appliance
         .mockResolvedValueOnce(false) // gvisor
-        .mockResolvedValueOnce(false) // has GPU? -> no
         .mockResolvedValueOnce(true), // confirmInstall
     };
 
@@ -119,8 +114,6 @@ describe('collectSettings', () => {
       llmProvider: 'ollama',
       llmBaseUrl: 'http://localhost:11434',
       llmModel: 'llama3:8b',
-      embedImage: CPU_EMBED_IMAGE,
-      embedNgl: '0',
     });
 
     const serialized = serializeInstallConfig(settings as InstallSettings);
@@ -137,7 +130,6 @@ describe('collectSettings', () => {
       confirm: vi.fn()
         .mockResolvedValueOnce(true)
         .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(false)
         .mockResolvedValueOnce(false), // confirmInstall declined
     };
 
@@ -146,12 +138,12 @@ describe('collectSettings', () => {
     ).resolves.toBeNull();
   });
 
-  // R1: in local mode cli.ts passes the real process runner, so both probes run for real
-  // instead of asking the operator anything -- this is the seam Task 6's SSH-wrapping
-  // runner plugs into for remote mode without collectSettings ever knowing what an SSH is.
-  it('uses the injected runner to probe the GPU and list Ollama models when one is provided', async () => {
+  // R1: in local mode cli.ts passes the real process runner, so the Ollama probe runs for
+  // real instead of making the operator type a model id -- this is the seam Task 6's
+  // SSH-wrapping runner plugs into for remote mode without collectSettings ever knowing what
+  // an SSH is.
+  it('uses the injected runner to list Ollama models when one is provided', async () => {
     const runner = createFakeRunner(async (command) => {
-      if (command === 'nvidia-smi') return { stdout: '', stderr: '', exitCode: 0 };
       if (command === 'docker') {
         return {
           stdout: JSON.stringify({ models: [{ name: 'llama3:8b' }, { name: 'mistral:latest' }] }),
@@ -175,15 +167,32 @@ describe('collectSettings', () => {
 
     const settings = await collectSettings(prompt, createTranslator('en'), '/opt/aura', runner);
 
-    expect(settings).toMatchObject({
-      llmModel: 'mistral:latest',
-      embedImage: CUDA_EMBED_IMAGE,
-      embedNgl: '99',
-    });
-    // The GPU yes/no fallback question must NOT be asked once a runner can probe for real.
+    expect(settings).toMatchObject({ llmModel: 'mistral:latest' });
     expect(prompt.confirm).toHaveBeenCalledTimes(3);
-    expect(runner.calls.some((call) => call.command === 'nvidia-smi')).toBe(true);
     expect(runner.calls.some((call) => call.command === 'docker')).toBe(true);
+  });
+
+  // install.sh detects the embed backend (CUDA, Vulkan or CPU) on the target itself, so the
+  // wizard no longer probes for a GPU. The OpenRouter route needs no probe at all, which makes
+  // any runner call here a hardware probe that crept back in.
+  it('never runs nvidia-smi through the probe runner', async () => {
+    const runner = createFakeRunner(async () => ({ stdout: '', stderr: '', exitCode: 0 }));
+    const prompt = {
+      select: vi.fn().mockResolvedValueOnce('openrouter'),
+      input: vi.fn()
+        .mockResolvedValueOnce('https://openrouter.ai/api/v1')
+        .mockResolvedValueOnce('deepseek/deepseek-v4'),
+      password: vi.fn().mockResolvedValueOnce('sk-or-v1-correct-horse-battery-staple'),
+      confirm: vi.fn()
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(true),
+    };
+
+    await collectSettings(prompt, createTranslator('en'), '/opt/aura', runner);
+
+    expect(runner.calls.map((call) => call.command)).not.toContain('nvidia-smi');
+    expect(runner.calls).toEqual([]);
   });
 
   // R2 (Task 4 review, landed here): a probe failure must not be reported as "Ollama is not
@@ -192,9 +201,6 @@ describe('collectSettings', () => {
   // the operator to debug a box that may be fine.
   it('falls back to manual model entry with a neutral message when the probe cannot reach the endpoint', async () => {
     const runner = createFakeRunner(async (command) => {
-      if (command === 'nvidia-smi') {
-        throw new ProcessExecutionError('nvidia-smi', 127, '', 'not found');
-      }
       if (command === 'docker') {
         throw new ProcessExecutionError('docker', 1, '', "wget: can't connect to remote host");
       }
@@ -247,7 +253,6 @@ describe('collectSettings', () => {
       confirm: vi.fn()
         .mockResolvedValueOnce(true)
         .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(false)
         .mockResolvedValueOnce(true),
     };
 
@@ -261,9 +266,6 @@ describe('collectSettings', () => {
   // just that the string looks plausible in isolation.
   it('probes the exact tags URL derived from the default Ollama base URL when the operator accepts it', async () => {
     const runner = createFakeRunner(async (command) => {
-      if (command === 'nvidia-smi') {
-        throw new ProcessExecutionError('nvidia-smi', 127, '', 'not found');
-      }
       if (command === 'docker') {
         return {
           stdout: JSON.stringify({ models: [{ name: 'llama3:8b' }] }),

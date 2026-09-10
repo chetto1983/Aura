@@ -16,7 +16,7 @@ export interface TemporaryInstallConfig extends TemporaryFile {
 }
 
 // install.sh's parse_install_config decodes every *_base64 value and only then re-checks
-// it for a line break (scripts/install.sh:296-304), because a newline that survived would
+// it for a line break (parse_install_config in scripts/install.sh), because a newline that survived would
 // make set_env_value write a second .env line -- install.sh's own reader takes the first
 // occurrence, docker compose takes the last, so the installer and the running appliance
 // would end up trusting different values. Asserting here catches the same fault on the
@@ -38,8 +38,6 @@ export function serializeInstallConfig(settings: InstallSettings): string {
     `llm_base_url_base64=${encode(settings.llmBaseUrl)}`,
     `llm_model_base64=${encode(settings.llmModel)}`,
     `openrouter_api_key_base64=${encode(settings.openrouterApiKey ?? '')}`,
-    `embed_image_base64=${encode(settings.embedImage)}`,
-    `embed_ngl_base64=${encode(settings.embedNgl)}`,
     '',
   ].join('\n');
 }

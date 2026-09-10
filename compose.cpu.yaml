@@ -1,0 +1,9 @@
+# CPU posture for the embedding sidecar, selected through COMPOSE_FILE by
+# scripts/install.sh (ensure_embed_backend_env) on a host with no GPU the sidecar can use.
+# compose.yaml reserves an NVIDIA GPU for aura-llama-embed, and Docker refuses to start a
+# container whose device request no driver can satisfy ("could not select device driver
+# nvidia", measured 2026-09-10 on a mini PC), so the reservation has to go, not just the
+# offload. The image and -ngl come from .env, written by the same installer function.
+services:
+  aura-llama-embed:
+    deploy: !reset null

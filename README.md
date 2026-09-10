@@ -119,8 +119,9 @@ npx create-aura-appliance --mode remote
 
 It requires Node.js **22.13 or newer** on the workstation. The target needs at least
 **4 CPU cores, 14 GiB usable RAM, and 20 GiB free disk**; documents, models and backup
-retention need additional capacity. The wizard detects NVIDIA on the target and
-selects CUDA or CPU embeddings. See the [installer guide](packages/create-aura/README.md)
+retention need additional capacity. The installer detects the embedding backend on the
+target: CUDA for an NVIDIA GPU Docker can drive, otherwise Vulkan for an Intel or AMD GPU
+exposing `/dev/dri`, otherwise CPU. See the [installer guide](packages/create-aura/README.md)
 for supported targets and prerequisites. The npm installer carries its own payload.
 
 The source-hosted installer remains available:
@@ -188,8 +189,12 @@ docker run --rm --gpus all nvidia/cuda:12.8.0-base-ubuntu24.04 nvidia-smi
 docker compose up -d
 ```
 
-Aura's local embedding sidecar requires Docker GPU passthrough. Fix
-Docker/NVIDIA before starting Aura if the `nvidia-smi` container check fails.
+This `.env` targets an NVIDIA GPU: the embedding sidecar reserves one, so fix
+Docker/NVIDIA before starting Aura if the `nvidia-smi` container check fails. Without
+an NVIDIA GPU, run embeddings on the CPU instead: set
+`AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server`, `AURA_EMBED_NGL=0` and
+`COMPOSE_FILE=compose.yaml;compose.cpu.yaml` (`;` is Compose's path separator on
+Windows), which drops the GPU reservation.
 
 Set `OPENROUTER_API_KEY` before production use. For local development images,
 replace `AURA_IMAGE` with `aura:local` after building the image.

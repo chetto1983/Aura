@@ -1,11 +1,7 @@
 import { confirm, input, password, select } from '@inquirer/prompts';
 
 import type { Translator } from './i18n.js';
-import {
-  embedTargetFor,
-  probeGpu,
-  probeOllama,
-} from './modelroute.js';
+import { probeOllama } from './modelroute.js';
 import type { CommandRunner } from './process.js';
 import type { InstallMode, InstallSettings, RemoteTarget } from './types.js';
 import {
@@ -90,23 +86,6 @@ export async function collectTarget(
   return remote ? { mode, installDir, remote } : { mode, installDir };
 }
 
-interface GpuChoice {
-  cuda: boolean;
-  embedImage: string;
-  embedNgl: string;
-}
-
-async function collectGpuChoice(prompt: PromptPort, t: Translator, probeRunner: CommandRunner | undefined): Promise<GpuChoice> {
-  if (probeRunner) return probeGpu(probeRunner);
-
-  // R1 (Task 5 controller ruling): with no runner able to probe the actual install target
-  // (remote mode, until Task 6 supplies an SSH-wrapping one), the wizard must not run
-  // nvidia-smi against the operator's own laptop and present that as the target's GPU --
-  // it asks instead.
-  const hasGpu = await prompt.confirm({ message: t('gpuQuestion'), default: false });
-  return { cuda: hasGpu, ...embedTargetFor(hasGpu) };
-}
-
 async function collectOllamaModel(
   prompt: PromptPort,
   t: Translator,
@@ -126,7 +105,7 @@ async function collectOllamaModel(
   // the endpoint refused, docker is absent or its daemon is down, the alpine probe image
   // could not be pulled, or the reply was not JSON. The message must not assert the
   // endpoint is at fault, or the operator debugs a box that was fine. A probe that WAS
-  // reachable but listed no models yet (or no probe was attempted at all, e.g. remote mode)
+  // reachable but listed no models yet (or no probe was attempted at all, when no runner was passed in)
   // gets the plain manual-entry prompt instead.
   const message = probe && !probe.reachable ? t('ollamaModelUnreachable') : t('ollamaModelManualEntry');
   return validateModelId(await prompt.input({ message }));
@@ -182,8 +161,6 @@ export async function collectSettings(
     llmModel = await collectOllamaModel(prompt, t, probeRunner, llmBaseUrl);
   }
 
-  const gpu = await collectGpuChoice(prompt, t, probeRunner);
-
   const confirmed = await prompt.confirm({ message: t('confirmInstall'), default: true });
   if (!confirmed) return null;
 
@@ -196,9 +173,7 @@ export async function collectSettings(
     llmModel,
     // R5: the empty OpenRouter key is emitted, never omitted -- install.sh's
     // parse_install_config accepts an empty openrouter_api_key_base64 and exit 2s on a
-    // MISSING key set, so the Ollama route must still produce all nine keys.
+    // MISSING key set, so the Ollama route must still produce all seven keys.
     ...(openrouterApiKey === undefined ? {} : { openrouterApiKey }),
-    embedImage: gpu.embedImage,
-    embedNgl: gpu.embedNgl,
   };
 }

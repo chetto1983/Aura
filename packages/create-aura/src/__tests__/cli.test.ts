@@ -53,10 +53,10 @@ describe('create-aura CLI', () => {
   });
 
   // Task 6 changed this contract and the change is the point: remote mode used to pass
-  // undefined so the laptop's own hardware could never be presented as the target's. It now
+  // undefined so the laptop's own Ollama could never be presented as the target's. It now
   // passes an SSH-wrapped runner, which answers the same question honestly instead of not
-  // answering it -- collectSettings's probes reach the real machine. What must stay true is
-  // that the RAW local runner never reaches collectSettings.
+  // answering it -- collectSettings's Ollama probe reaches the real machine. What must stay
+  // true is that the RAW local runner never reaches collectSettings.
   it('probes the remote target over SSH rather than the laptop it runs on', async () => {
     const events: string[] = [];
     const runner = createPassingRemotePreflightRunner();

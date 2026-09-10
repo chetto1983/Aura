@@ -24,8 +24,6 @@ const settings = {
   llmBaseUrl: 'https://openrouter.ai/api/v1',
   llmModel: 'vendor/model',
   openrouterApiKey: 'correct horse battery',
-  embedImage: 'ghcr.io/ggml-org/llama.cpp:server',
-  embedNgl: '0',
 };
 
 afterEach(async () => {
@@ -88,7 +86,7 @@ describe('remote installer', () => {
     const probeScript = Buffer.from(encodedProbe, 'base64').toString('utf8');
     // R4: sudo/curl/openssl, not the reference's apt-get/systemctl/sudo/curl -- see local.ts.
     expect(probeScript).toContain('for REQUIRED_COMMAND in sudo curl openssl');
-    // Aura's own re-run marker (scripts/install.sh:767), not the reference's docker-compose.yml.
+    // Aura's own re-run marker (install.sh's `download_file compose.yaml`), not the reference's docker-compose.yml.
     expect(probeScript).toContain('compose.yaml');
     // R2: install.sh's actual hard gate is cpu+mem+disk, not disk alone.
     expect(probeScript).toContain('_NPROCESSORS_ONLN');
@@ -233,7 +231,7 @@ describe('remote installer', () => {
       target,
       { path: '/tmp/installer', cleanup: vi.fn() },
       { path: '/tmp/config', cleanup: vi.fn() },
-      { installDir: '/opt/aura', appliance: true, gvisor: false, llmProvider: 'ollama', llmBaseUrl: 'http://x', llmModel: 'm', embedImage: 'i', embedNgl: '0' },
+      { installDir: '/opt/aura', appliance: true, gvisor: false, llmProvider: 'ollama', llmBaseUrl: 'http://x', llmModel: 'm' },
       '../../unsafe',
     )).rejects.toThrow('invalidRemoteId');
     expect(runner.run).not.toHaveBeenCalled();
@@ -317,15 +315,15 @@ describe('createSshProbeRunner', () => {
     expect(remoteCommand.indexOf('run')).toBeGreaterThan(remoteCommand.indexOf('docker'));
   });
 
-  it('wraps a zero-argument probe command (nvidia-smi) the same way', async () => {
+  it('wraps a zero-argument probe command the same way', async () => {
     const runner = { run: vi.fn().mockResolvedValue(success) };
     const sshRunner = createSshProbeRunner(runner, target);
 
-    await sshRunner.run('nvidia-smi');
+    await sshRunner.run('uname');
 
     expect(runner.run.mock.calls[0]?.[0]).toBe('ssh');
     const args = runner.run.mock.calls[0]?.[1] as string[];
-    expect(args.slice(3).join(' ')).toContain('nvidia-smi');
+    expect(args.slice(3).join(' ')).toContain('uname');
   });
 
   it('shell-quotes each argument so an operator-typed value cannot break out of the remote command', async () => {
@@ -342,7 +340,7 @@ describe('createSshProbeRunner', () => {
     const runner = { run: vi.fn().mockResolvedValue(success) };
     const sshRunner = createSshProbeRunner(runner, target);
 
-    await sshRunner.run('nvidia-smi', [], { redactions: ['secret'] });
+    await sshRunner.run('uname', [], { redactions: ['secret'] });
 
     expect(runner.run.mock.calls[0]?.[2]).toEqual({ redactions: ['secret'] });
   });

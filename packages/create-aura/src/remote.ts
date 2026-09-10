@@ -22,7 +22,7 @@ const REMOTE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9
 // See local.ts for the per-command justification (sudo/curl/openssl unconditional; apt-get,
 // systemctl, and docker itself deliberately excluded).
 // R3: the same REQUIRED_HOSTS -- ghcr.io and get.docker.com kept, raw.githubusercontent.com
-// removed (the npm package carries the payload), huggingface.co added (install.sh:357's
+// removed (the npm package carries the payload), huggingface.co added (install.sh's
 // unconditional embedding-model probe).
 // R2 (this file's own gap, closed): the reference's own REMOTE_PROBE measured disk alone.
 // install.sh's actual hard gate is cpu+mem+disk together (scripts/install.sh:172-187), so
@@ -320,8 +320,8 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
-// R2 (Task 6 controller ruling): collectSettings's GPU/Ollama probes (modelroute.ts) take a
-// plain CommandRunner and know nothing about SSH -- Task 5's own ruling forbids teaching them
+// R2 (Task 6 controller ruling): collectSettings's Ollama probe (modelroute.ts) takes a
+// plain CommandRunner and knows nothing about SSH -- Task 5's own ruling forbids teaching it
 // ("Nothing inside collectSettings or modelroute.ts may learn what an SSH is"). This wraps one
 // so its run(command, args) executes ON THE REMOTE TARGET via sshDestination instead of on the
 // machine running the wizard. Each argument is single-quoted because ssh joins the trailing

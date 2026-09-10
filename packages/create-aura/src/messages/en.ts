@@ -56,5 +56,4 @@ export const en = {
   ollamaModelSelect: 'Choose an installed Ollama model',
   ollamaModelManualEntry: 'Enter the Ollama model id to use',
   ollamaModelUnreachable: 'Could not reach that Ollama endpoint from here. Enter the model id you want to use',
-  gpuQuestion: 'Does the target machine have an NVIDIA GPU you want to use for embeddings?',
 } as const;

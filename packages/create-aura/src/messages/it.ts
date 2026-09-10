@@ -58,5 +58,4 @@ export const it: Record<keyof typeof en, string> = {
   ollamaModelSelect: 'Scegli un modello Ollama installato',
   ollamaModelManualEntry: 'Inserisci l’identificativo del modello Ollama da usare',
   ollamaModelUnreachable: 'Non è stato possibile raggiungere quell’endpoint Ollama da qui. Inserisci l’identificativo del modello che vuoi usare',
-  gpuQuestion: 'La macchina di destinazione dispone di una GPU NVIDIA da usare per gli embedding?',
 };

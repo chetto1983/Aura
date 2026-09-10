@@ -15,10 +15,11 @@ runs the appliance installer. The installer is **carried inside this package** a
 self-extracting archive: nothing is fetched from a source host at install time, so the
 payload you run is the payload npm delivered.
 
-It probes the machine that will actually run Aura, not the one you are typing on — over SSH
-in remote mode. That is what decides the embedding runtime: with an NVIDIA GPU it selects
-the CUDA llama.cpp image and offloads every layer, without one it selects the CPU image and
-sets `AURA_EMBED_NGL=0`. You are not asked.
+The embedding backend is detected by the installer itself, running on the machine that will
+actually run Aura rather than the one you are typing on. An NVIDIA GPU that Docker can drive
+selects CUDA; otherwise a GPU exposing `/dev/dri` render nodes (Intel or AMD, integrated
+included) selects Vulkan; otherwise embeddings run on the CPU. Apple's Metal is not reachable
+from a Docker container on macOS, so a Mac runs embeddings on the CPU. You are not asked.
 
 Installs made from this package track the `edge` channel: the appliance images carry the
 moving `:edge` tag, Docker is set to always re-pull them, and a systemd timer applies new

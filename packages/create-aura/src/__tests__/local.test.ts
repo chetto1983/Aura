@@ -49,7 +49,7 @@ describe('local installer', () => {
       );
     }
     // Aura's own install.sh writes compose.yaml directly under the install dir
-    // (scripts/install.sh:767); the reference's docker-compose.yml is the wrong marker here.
+    // (its `download_file compose.yaml`); the reference's docker-compose.yml is the wrong marker here.
     expect(runner.run).toHaveBeenCalledWith(
       'sh',
       ['-c', expect.stringContaining('test -f "$1/compose.yaml"'), 'create-aura', '/opt/aura'],
@@ -214,8 +214,6 @@ describe('local installer', () => {
         llmBaseUrl: 'https://openrouter.ai/api/v1',
         llmModel: 'vendor/model',
         openrouterApiKey: apiKey,
-        embedImage: 'ghcr.io/ggml-org/llama.cpp:server',
-        embedNgl: '0',
       },
     );
 

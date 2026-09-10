@@ -19,8 +19,6 @@ conf="$fixture_root/install.conf"
   echo "llm_base_url_base64=$(printf 'http://host.docker.internal:11434/v1' | base64 | tr -d '\n')"
   echo "llm_model_base64=$(printf 'any/model-the-operator-pulled:v1' | base64 | tr -d '\n')"
   echo "openrouter_api_key_base64="
-  echo "embed_image_base64=$(printf 'ghcr.io/ggml-org/llama.cpp:server' | base64 | tr -d '\n')"
-  echo "embed_ngl_base64=$(printf '0' | base64 | tr -d '\n')"
 } > "$conf"
 
 parse_install_config "$conf"
@@ -30,9 +28,7 @@ parse_install_config "$conf"
 [ "$CFG_LLM_PROVIDER" = "ollama" ] || { echo "FAIL: provider=$CFG_LLM_PROVIDER" >&2; exit 1; }
 [ "$CFG_LLM_BASE_URL" = "http://host.docker.internal:11434/v1" ] || { echo "FAIL: base_url=$CFG_LLM_BASE_URL" >&2; exit 1; }
 [ "$CFG_LLM_MODEL" = "any/model-the-operator-pulled:v1" ] || { echo "FAIL: model=$CFG_LLM_MODEL" >&2; exit 1; }
-[ "$CFG_EMBED_NGL" = "0" ] || { echo "FAIL: ngl=$CFG_EMBED_NGL" >&2; exit 1; }
 [ "$CFG_GVISOR" = "false" ] || { echo "FAIL: gvisor=$CFG_GVISOR" >&2; exit 1; }
-[ "$CFG_EMBED_IMAGE" = "ghcr.io/ggml-org/llama.cpp:server" ] || { echo "FAIL: embed_image=$CFG_EMBED_IMAGE" >&2; exit 1; }
 # An empty secret must stay empty, not become the literal "base64 of nothing".
 [ -z "$CFG_OPENROUTER_API_KEY" ] || { echo "FAIL: key should be empty, got $CFG_OPENROUTER_API_KEY" >&2; exit 1; }
 
@@ -96,6 +92,19 @@ fi
 grep -q "unknown key 'not_a_real_key'" "$unknown_err" \
   || { echo "FAIL: unknown key refused for the wrong reason: $(cat "$unknown_err")" >&2; exit 1; }
 
+# The embed backend is detected on the target by ensure_embed_backend_env. A config key
+# choosing it would be a second authority able to disagree with that detection, so the
+# keys the 0.1.x wizard sent are now refused like any other unknown key.
+for embed_key in embed_image_base64 embed_ngl_base64; do
+  printf 'format=1\n%s=%s\n' "$embed_key" "$(printf 'x' | base64 | tr -d '\n')" > "$fixture_root/$embed_key.conf"
+  if ( parse_install_config "$fixture_root/$embed_key.conf" ) 2>"$fixture_root/$embed_key.err"; then
+    echo "FAIL: a config choosing the embed backend ($embed_key) was accepted" >&2
+    exit 1
+  fi
+  grep -q "unknown key '$embed_key'" "$fixture_root/$embed_key.err" \
+    || { echo "FAIL: $embed_key was refused for the wrong reason: $(cat "$fixture_root/$embed_key.err")" >&2; exit 1; }
+done
+
 echo "ok: parse_install_config reads the v1 format and fails closed"
 
 env_dir="$fixture_root/envtest"
@@ -107,8 +116,6 @@ CFG_LLM_PROVIDER="ollama"
 CFG_LLM_BASE_URL="http://host.docker.internal:11434/v1"
 CFG_LLM_MODEL="any/model-the-operator-pulled:v1"
 CFG_OPENROUTER_API_KEY=""
-CFG_EMBED_IMAGE=""
-CFG_EMBED_NGL=""
 apply_install_config
 
 grep -qx 'AURA_LLM_PROVIDER=ollama' .env || { echo "FAIL: provider not applied" >&2; exit 1; }

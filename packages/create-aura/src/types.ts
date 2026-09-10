@@ -24,6 +24,4 @@ export interface InstallSettings {
   llmBaseUrl: string;
   llmModel: string;
   openrouterApiKey?: string;
-  embedImage: string;
-  embedNgl: string;
 }

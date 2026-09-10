@@ -2,13 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ProcessExecutionError } from '../process.js';
 import type { CommandRunner, ProcessResult } from '../process.js';
-import {
-  CPU_EMBED_IMAGE,
-  CUDA_EMBED_IMAGE,
-  embedTargetFor,
-  probeGpu,
-  probeOllama,
-} from '../modelroute.js';
+import { probeOllama } from '../modelroute.js';
 
 type FakeRunner = CommandRunner & { calls: Array<{ command: string; args: readonly string[] }> };
 
@@ -27,48 +21,6 @@ function createFakeRunner(
 
 afterEach(() => {
   vi.unstubAllGlobals();
-});
-
-// F4 (review round 1): probeGpu and prompts.ts's collectGpuChoice (the R1 yes/no fallback
-// for a runner-less remote probe) each independently encoded "cuda -> CUDA image + '99',
-// otherwise CPU image + '0'". A single exported mapping is the only way changing one cannot
-// silently leave the other disagreeing.
-describe('embedTargetFor', () => {
-  it('maps cuda to the CUDA image and ngl 99', () => {
-    expect(embedTargetFor(true)).toEqual({ embedImage: CUDA_EMBED_IMAGE, embedNgl: '99' });
-  });
-
-  it('maps no cuda to the CPU image and ngl 0', () => {
-    expect(embedTargetFor(false)).toEqual({ embedImage: CPU_EMBED_IMAGE, embedNgl: '0' });
-  });
-});
-
-describe('probeGpu', () => {
-  it('returns the CUDA image pair when nvidia-smi exits 0', async () => {
-    const runner = createFakeRunner(async () => ({ stdout: '', stderr: '', exitCode: 0 }));
-
-    await expect(probeGpu(runner)).resolves.toEqual({
-      cuda: true,
-      embedImage: CUDA_EMBED_IMAGE,
-      embedNgl: '99',
-    });
-    expect(runner.calls).toEqual([{ command: 'nvidia-smi', args: [] }]);
-  });
-
-  // CommandRunner.run rejects rather than returning a non-zero exitCode (process.ts's
-  // ProcessRunner.execute), so an absent nvidia-smi reaches probeGpu as a rejected promise,
-  // never as a result to branch on.
-  it('returns the CPU image pair and does not throw when nvidia-smi is absent', async () => {
-    const runner = createFakeRunner(async () => {
-      throw new ProcessExecutionError('nvidia-smi', 127, '', 'command not found');
-    });
-
-    await expect(probeGpu(runner)).resolves.toEqual({
-      cuda: false,
-      embedImage: CPU_EMBED_IMAGE,
-      embedNgl: '0',
-    });
-  });
 });
 
 describe('probeOllama', () => {
