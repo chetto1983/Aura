@@ -181,18 +181,29 @@ echo "ok: ensure_embed_backend_env derives the overlay, image and offload from o
 # COMPOSE_FILE is only worth selecting if the overlay really clears what it claims to: the
 # merged config is the proof, not the overlay's text.
 if docker compose version >/dev/null 2>&1; then
-  nvidia_reservations() {
-    (cd "$repo_root" && docker compose "$@" config --no-interpolate 2>/dev/null) | grep -c 'driver: nvidia' || true
+  compose_out="$fixture_root/compose.out"
+  compose_config() {
+    if ! (cd "$repo_root" && docker compose "$@" config --no-interpolate) >"$compose_out" 2>"$compose_out.err"; then
+      echo "FAIL: docker compose $* config failed (compose $(docker compose version --short 2>/dev/null)): $(cat "$compose_out.err")" >&2
+      exit 1
+    fi
   }
-  base_reservations="$(nvidia_reservations -f compose.yaml)"
-  [ "$base_reservations" -gt 0 ] || { echo "FAIL: compose.yaml config shows no NVIDIA reservation to clear" >&2; exit 1; }
+  nvidia_reservations() { grep -c 'driver: nvidia' "$compose_out" || true; }
+  compose_config -f compose.yaml
+  base_reservations="$(nvidia_reservations)"
+  if [ "$base_reservations" -eq 0 ]; then
+    echo "FAIL: compose.yaml config shows no NVIDIA reservation to clear (compose $(docker compose version --short 2>/dev/null)); embed service as merged:" >&2
+    sed -n '/^  aura-llama-embed:/,/^  [a-z]/p' "$compose_out" | grep -n -A6 'deploy:' >&2 || true
+    exit 1
+  fi
   for posture in cpu vulkan; do
-    got="$(nvidia_reservations -f compose.yaml -f "compose.$posture.yaml")"
+    compose_config -f compose.yaml -f "compose.$posture.yaml"
+    got="$(nvidia_reservations)"
     [ "$got" = "$((base_reservations - 1))" ] \
       || { echo "FAIL: compose.$posture.yaml leaves $got NVIDIA reservations, want $((base_reservations - 1))" >&2; exit 1; }
   done
-  (cd "$repo_root" && docker compose -f compose.yaml -f compose.vulkan.yaml config --no-interpolate 2>/dev/null) \
-    | grep -q '/dev/dri' || { echo "FAIL: compose.vulkan.yaml does not hand /dev/dri to the embed sidecar" >&2; exit 1; }
+  compose_config -f compose.yaml -f compose.vulkan.yaml
+  grep -q '/dev/dri' "$compose_out" || { echo "FAIL: compose.vulkan.yaml does not hand /dev/dri to the embed sidecar" >&2; exit 1; }
   echo "ok: the CPU and Vulkan overlays each drop exactly the embed sidecar's NVIDIA reservation"
 elif [ -n "${CI:-}" ]; then
   echo "FAIL: docker compose is required under CI to check the embed overlays" >&2
