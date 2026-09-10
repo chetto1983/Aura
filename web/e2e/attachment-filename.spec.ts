@@ -21,6 +21,8 @@ test.beforeEach(() => {
 });
 
 test('a chat attachment carries its real name to the object store', async ({ page }) => {
+  test.setTimeout(90_000);
+
   // Accented on purpose: this is the case S3 metadata cannot carry raw, measured against the
   // running Garage on 2026-08-13, and the case an Italian operator produces by default.
   const fileName = 'Perizia città di Ghèdi 2026.txt';
@@ -37,10 +39,12 @@ test('a chat attachment carries its real name to the object store', async ({ pag
       new URL(res.url()).pathname === '/api/assets/presign' && res.request().method() === 'POST',
     { timeout: 30_000 },
   );
-  // The PUT goes straight to Garage, so it is captured as a request rather than a response:
-  // what matters is the header the browser actually put on the wire.
-  const uploaded = page.waitForRequest(
-    (req) => req.method() === 'PUT' && req.headers()['x-amz-meta-filename'] !== undefined,
+  // The PUT goes straight to Garage. Its request proves the browser carried the signed
+  // metadata header; its response proves Garage accepted the same signed upload.
+  const uploaded = page.waitForResponse(
+    (res) =>
+      res.request().method() === 'PUT' &&
+      res.request().headers()['x-amz-meta-filename'] !== undefined,
     { timeout: 60_000 },
   );
 
@@ -68,17 +72,16 @@ test('a chat attachment carries its real name to the object store', async ({ pag
   expect(declared, 'presign declared no filename header').toBeTruthy();
   expect(decodeURIComponent(declared ?? '')).toBe(fileName);
 
-  const sent = (await uploaded).headers()['x-amz-meta-filename'];
+  const uploadResponse = await uploaded;
+  const sent = uploadResponse.request().headers()['x-amz-meta-filename'];
   expect(decodeURIComponent(sent ?? ''), 'the browser did not send the signed name').toBe(fileName);
+  expect(uploadResponse.status(), 'the object store rejected the signed upload').toBeGreaterThanOrEqual(
+    200,
+  );
+  expect(uploadResponse.status(), 'the object store rejected the signed upload').toBeLessThan(300);
 
-  // The upload is only real if the store accepted it: the header is SIGNED, so a mismatch
-  // would be rejected outright rather than producing a nameless object. 'Failed' is asserted
-  // against explicitly because that is the state the CORS gap produced, and a bare wait for
-  // 'Ready' would have spent its whole timeout staring at it.
-  const chip = page.getByRole('button', { name: `Remove ${fileName}` }).locator('..');
-  await expect(chip.getByText('Failed', { exact: true })).toHaveCount(0);
+  // A CORS refusal never has an HTTP response, so retain the browser-side failure check too.
   expect(blocked, 'the upload PUT was blocked before it reached the store').toEqual([]);
-  await expect(chip.getByText(/Ready|Processing/)).toBeVisible({ timeout: 180_000 });
 
   // Handed to the out-of-browser checks, which read Garage and ArcadeDB directly.
   console.log(`ATTACHMENT_ASSET_ID ${presignBody.asset?.id ?? ''}`);

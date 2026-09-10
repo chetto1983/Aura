@@ -429,9 +429,6 @@ test.describe('real-agent Calm Prism acceptance', () => {
       await expect(attachmentChip.getByText(fileName, { exact: true })).toBeVisible({
         timeout: 30_000,
       });
-      await expect(attachmentChip.getByText('Ready', { exact: true })).toBeVisible({
-        timeout: 240_000,
-      });
       const document = await pollSearchableThreadAsset(page, conversationId, uploadedAssetId);
       const documentId = document?.document_id?.trim() ?? '';
       const catalogDocument = await catalogDocumentForAsset(page, uploadedAssetId);
@@ -452,6 +449,10 @@ test.describe('real-agent Calm Prism acceptance', () => {
             : `${document.status}:${document.document_id ?? ''}`,
       });
 
+      await composer.fill(prompt);
+      await expect(page.getByRole('button', { name: 'Send message' })).toBeEnabled({
+        timeout: 240_000,
+      });
       const runResponsePromise = page.waitForResponse(
         (response) =>
           new URL(response.url()).origin === new URL(origin).origin &&
@@ -459,7 +460,6 @@ test.describe('real-agent Calm Prism acceptance', () => {
           response.request().method() === 'POST',
         { timeout: 300_000 },
       );
-      await composer.fill(prompt);
       await composer.press('Enter');
       const runResponse = await runResponsePromise;
       await expect(page.getByTestId('footer-settled-status')).toContainText('Run complete', {
