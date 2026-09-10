@@ -270,7 +270,7 @@ func topIdentitiesFrom(identities []identity.Identity, keys []openrouterprovisio
 func buildOverAllocation(sumCaps float64, credits openrouterprovision.Credits) spendOverAllocationDTO {
 	available := credits.TotalCredits - credits.TotalUsage
 	return spendOverAllocationDTO{
-		Triggered: sumCaps >= available,
+		Triggered: sumCaps > available,
 		SumCaps:   sumCaps,
 		Available: available,
 	}
