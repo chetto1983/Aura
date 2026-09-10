@@ -24,16 +24,25 @@ func (c *countingRoundTripper) RoundTrip(*http.Request) (*http.Response, error) 
 	return nil, context.Canceled
 }
 
+// installCountingTransport swaps the process-global http.DefaultTransport for a
+// counter until the test ends. Callers must NOT call t.Parallel(): a parallel
+// test swapping a global races every other parallel test that reaches the
+// network through it (CI run 34450676656, race + leak DB tier).
+func installCountingTransport(t *testing.T) *countingRoundTripper {
+	t.Helper()
+	rt := &countingRoundTripper{}
+	prev := http.DefaultTransport
+	http.DefaultTransport = rt
+	t.Cleanup(func() { http.DefaultTransport = prev })
+	return rt
+}
+
 // TestLLMNotConfiguredClientStillWorks pins the pre-existing sentinel's
 // payload — this file did not exist before this plan (02-VALIDATION.md's
 // Wave 0 gap), so llmNotConfiguredClient's behavior had no test asserting it
 // directly anywhere in cmd/aura.
 func TestLLMNotConfiguredClientStillWorks(t *testing.T) {
-	t.Parallel()
-	rt := &countingRoundTripper{}
-	prev := http.DefaultTransport
-	http.DefaultTransport = rt
-	t.Cleanup(func() { http.DefaultTransport = prev })
+	rt := installCountingTransport(t)
 
 	ch, err := llmNotConfiguredClient{}.Stream(context.Background(), llm.Request{})
 	if ch != nil {
@@ -65,11 +74,7 @@ func TestLLMNotConfiguredClientStillWorks(t *testing.T) {
 // model is called" as an OBSERVATION (a transport call counter reading
 // zero), not as a claim about where in the code the refusal happens.
 func TestCreditExhaustedClientStreamRefusesWithoutNetwork(t *testing.T) {
-	t.Parallel()
-	rt := &countingRoundTripper{}
-	prev := http.DefaultTransport
-	http.DefaultTransport = rt
-	t.Cleanup(func() { http.DefaultTransport = prev })
+	rt := installCountingTransport(t)
 
 	ch, err := creditExhaustedClient{}.Stream(context.Background(), llm.Request{Model: "some/model"})
 	if ch != nil {
