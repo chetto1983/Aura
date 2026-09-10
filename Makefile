@@ -60,6 +60,8 @@ help:
 
 # Bootstrap the quality toolchain into $GOPATH/bin. golangci-lint is pinned to the
 # CI version (.github/workflows/ci.yml) for local/CI parity; the rest track latest.
+# lefthook builds with GOEXPERIMENT=nojsonv2: its go-json-experiment dependency does not
+# compile against the encoding/json/v2 that Go 1.27 turns on.
 tools:
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
 	go install honnef.co/go/tools/cmd/staticcheck@latest
@@ -69,7 +71,7 @@ tools:
 	go install golang.org/x/tools/cmd/deadcode@latest
 	go install golang.org/x/tools/cmd/goimports@latest
 	go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@latest
-	go install github.com/evilmartians/lefthook@latest
+	GOEXPERIMENT=nojsonv2 go install github.com/evilmartians/lefthook@latest
 	@echo "now run: lefthook install   (wires the git pre-commit/pre-push hooks)"
 
 sqlc:
