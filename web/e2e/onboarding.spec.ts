@@ -3,9 +3,10 @@ import { gotoAuthenticated } from './auth';
 
 // onboarding.spec.ts - Phase 28 Plan 06 E2E. It proves the full-screen onboarding wizard is a
 // shell overlay, not a governance tab, and drives the happy path against mocked routes:
-// credentials + seed form -> capability picker -> review -> provision -> Telegram deep-link + QR
-// -> linked poll. The same test runs on chromium and mobile-chrome. Amendment #95 removed the
-// interview phase, so the stepper is four phases and the seed rides in the /provision body.
+// credentials + seed form -> review -> provision -> Telegram deep-link + QR -> linked poll. The
+// same test runs on chromium and mobile-chrome. Amendment #95 removed the interview phase and
+// RBAC-03's uniform grant removed the capability picker (2e040d4fb), so the stepper is three
+// phases and the seed rides in the /provision body with no capability list.
 
 const CONV_ID = '99999999-9999-9999-9999-999999999999';
 const SESSION_TOKEN = 'sess-e2e-28-06';
@@ -174,7 +175,7 @@ test.describe('Phase 28 Plan 06 - Onboarding wizard (desktop + mobile)', () => {
       expect(Math.round(box.height)).toBeGreaterThanOrEqual(viewport.height - 2);
     }
     if (testInfo.project.name.includes('mobile')) {
-      await expect(page.getByText(/Step 1 of 4/)).toBeVisible();
+      await expect(page.getByText(/Step 1 of 3/)).toBeVisible();
     }
 
     await dialog.getByRole('textbox', { name: 'Operator email' }).fill('new@example.com');
@@ -201,14 +202,12 @@ test.describe('Phase 28 Plan 06 - Onboarding wizard (desktop + mobile)', () => {
     await dialog.getByRole('textbox', { name: 'Organisation' }).fill('PmSync');
     await page.getByRole('button', { name: 'Continue' }).click();
 
-    await expect(page.getByText('Capabilities for the new identity')).toBeVisible();
-    await expect(page.getByRole('checkbox', { name: '*' })).toHaveCount(0);
-    await page.getByRole('checkbox', { name: /skills\.read/ }).check();
-    await page.getByRole('button', { name: 'Continue' }).click();
-
+    // Credentials leads straight to review: every provisioned identity gets the same grant, so
+    // there is no capability step, nothing to tick, and the review states the grant in prose.
     await expect(page.getByText('Review and create')).toBeVisible();
+    await expect(dialog.getByRole('checkbox')).toHaveCount(0);
     await expect(page.getByText('new@example.com')).toBeVisible();
-    await expect(page.getByText('skills.read')).toBeVisible();
+    await expect(dialog.getByText(/Only user management stays admin-only\./)).toBeVisible();
     await expect(page.getByText(PASSWORD)).toHaveCount(0);
 
     await dialog.getByRole('button', { name: 'Create identity' }).click();
@@ -232,7 +231,6 @@ test.describe('Phase 28 Plan 06 - Onboarding wizard (desktop + mobile)', () => {
         password: PASSWORD,
         securityQuestion: SECURITY_QUESTION,
         securityAnswer: SECURITY_ANSWER,
-        capabilities: ['skills.read'],
         linkTelegram: true,
         seed: {
           name: OPERATOR_NAME,
