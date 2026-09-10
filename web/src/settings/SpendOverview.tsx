@@ -22,9 +22,11 @@ import { Badge } from '@/components/ui/badge';
 // <polyline> elements; the current-period trace uses --color-info (the app's accent
 // reservation is closed at exactly two items this phase, and a sparkline is not a third).
 //
-// Scope fence: no tab bar, no `Trends`/`Explore`/`Guardrails` chrome. Those three OpenRouter
-// tabs are explicitly out of scope this phase (02-UI-SPEC.md's own Scope fence) — rendering
-// them inert would be exactly the "asilo nido" CLAUDE.md forbids.
+// Scope fence: no tab bar, and no chrome for OpenRouter's three other dashboard tabs
+// (named in 02-UI-SPEC.md's own Scope fence, deliberately not repeated here — this file's
+// own verify command greps for those names to prove none of them is rendered, even inert).
+// They are explicitly out of scope this phase; rendering them inert would be exactly the
+// "asilo nido" CLAUDE.md forbids.
 
 /** The five KPI metrics, in the order the UI-SPEC's KPI row specifies. */
 const KPI_METRIC_ORDER = [
