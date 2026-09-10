@@ -181,7 +181,7 @@ func TestTelegramDelegationMessage(t *testing.T) {
 			{GoalIndex: 0, Status: StatusOK, Goal: "first"},
 		}
 		msg := TelegramDelegationMessage(reports)
-		firstLine := strings.SplitN(msg, "\n", 2)[0]
+		firstLine, _, _ := strings.Cut(msg, "\n")
 		if !strings.Contains(firstLine, "first") {
 			t.Fatalf("fanout message not ordered by goal index, first line = %q", firstLine)
 		}

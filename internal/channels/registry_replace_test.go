@@ -51,8 +51,8 @@ func registered(reg *Registry, name string) Channel {
 
 func TestRegistryReplaceStopsStartedInstanceAndStartsNew(t *testing.T) {
 	ctx := context.Background()
-	old := &fakeDeliverer{fakeChannel: fakeChannel{name: "telegram"}, delivered: true}
-	next := &fakeDeliverer{fakeChannel: fakeChannel{name: "telegram"}, delivered: true}
+	old := &fakeDeliverer{name: "telegram", delivered: true}
+	next := &fakeDeliverer{name: "telegram", delivered: true}
 	reg := NewRegistry()
 	reg.Register(old)
 	if err := reg.StartAll(ctx); err != nil {
@@ -144,8 +144,8 @@ func TestRegistryReplaceDisabledChannelIsRegisteredButNotStarted(t *testing.T) {
 func TestRegistryReplaceStartFailureLeavesItRegisteredNotStarted(t *testing.T) {
 	ctx := context.Background()
 	boom := errors.New("construct bot: Unauthorized (401)")
-	old := &fakeDeliverer{fakeChannel: fakeChannel{name: "telegram"}, delivered: true}
-	next := &fakeDeliverer{fakeChannel: fakeChannel{name: "telegram", startErr: boom}, delivered: true}
+	old := &fakeDeliverer{name: "telegram", delivered: true}
+	next := &fakeDeliverer{name: "telegram", startErr: boom, delivered: true}
 	reg := NewRegistry()
 	reg.Register(old)
 	if err := reg.StartAll(ctx); err != nil {
@@ -232,8 +232,8 @@ func TestRegistryReplaceConcurrentWithDeliveryNeverOverlapsInstances(t *testing.
 	instances := make([]*swapChannel, 8)
 	for i := range instances {
 		instances[i] = &swapChannel{
-			fakeDeliverer: fakeDeliverer{fakeChannel: fakeChannel{name: "telegram"}, delivered: true},
-			gauge:         gauge,
+			name: "telegram", delivered: true,
+			gauge: gauge,
 		}
 	}
 

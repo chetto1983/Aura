@@ -144,8 +144,7 @@ func TestExecToolGatewayNoApprovalRequiredPaths(t *testing.T) {
 		a := &LlmAgent{gateway: gateway.New(config.ProfileSingleUserHardened, &fakeReserveStore{}), ledgerConvID: "c"}
 		spy := &spyMutatingTool{name: "skill_manage"}
 		_, err := a.execTool(context.Background(), spy, true, args) // no WithResponder
-		var denied *gateway.ErrDenied
-		if !errors.As(err, &denied) {
+		if _, ok := errors.AsType[*gateway.ErrDenied](err); !ok {
 			t.Fatalf("err = %v, want *gateway.ErrDenied (fail-closed deny)", err)
 		}
 		if spy.count != 0 {

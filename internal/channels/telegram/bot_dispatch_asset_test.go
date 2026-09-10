@@ -34,7 +34,7 @@ func TestOnVoiceRoutesThroughAssetIngressWhenConfigured(t *testing.T) {
 	assetIngress.bot = bot
 	msg := chatMsg(11)
 	msg.Voice = &tele.Voice{
-		File: tele.File{FileID: "voice-file", FileSize: int64(len(ogg))},
+		FileID: "voice-file", FileSize: int64(len(ogg)),
 		MIME: "audio/ogg",
 	}
 	if err := tg.onVoice(context.Background())(msgContext(bot, msg)); err != nil {
@@ -81,7 +81,7 @@ func TestAttachmentFileOpenFailureSendsFailCopy(t *testing.T) {
 
 	bot := &failingFileBot{dispatchBot: &dispatchBot{}}
 	msg := chatMsg(41)
-	msg.Document = &tele.Document{File: tele.File{FileID: "doc"}, FileName: "doc.pdf"}
+	msg.Document = &tele.Document{FileID: "doc", FileName: "doc.pdf"}
 	if err := tg.onDocument(context.Background())(msgContext(bot, msg)); err != nil {
 		t.Fatalf("onDocument: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestAttachmentFromUnlinkedAccountAsksForActivation(t *testing.T) {
 
 	bot := &dispatchBot{ogg: []byte("%PDF")}
 	msg := chatMsg(42)
-	msg.Document = &tele.Document{File: tele.File{FileID: "doc"}, FileName: "doc.pdf"}
+	msg.Document = &tele.Document{FileID: "doc", FileName: "doc.pdf"}
 	if err := tg.onDocument(context.Background())(msgContext(bot, msg)); err != nil {
 		t.Fatalf("onDocument: %v", err)
 	}

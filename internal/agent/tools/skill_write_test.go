@@ -157,8 +157,7 @@ func TestActionCreateActivates(t *testing.T) {
 	})
 	res, err := tool.Execute(ctx, json.RawMessage(raw))
 
-	var pause *ErrAwaitingUserInput
-	if errors.As(err, &pause) {
+	if _, ok := errors.AsType[*ErrAwaitingUserInput](err); ok {
 		t.Fatalf("create (ungated): must NOT pause, got %v", err)
 	}
 	if err != nil {
@@ -229,8 +228,7 @@ func TestActionCreateBlocklistedIsToolError(t *testing.T) {
 	if err == nil {
 		t.Fatal("create with blocklisted body: want a tool error, got nil")
 	}
-	var pause *ErrAwaitingUserInput
-	if errors.As(err, &pause) {
+	if _, ok := errors.AsType[*ErrAwaitingUserInput](err); ok {
 		t.Fatal("create with blocklisted body: must be a tool error, NOT a pause")
 	}
 	if !strings.Contains(err.Error(), "blocklisted") {
@@ -316,8 +314,7 @@ func TestSnippetSaveAction(t *testing.T) {
 	res, err := tool.Execute(ctx, json.RawMessage(raw))
 
 	// CRITICAL D-02: the result is NORMAL — the error is NOT the pause sentinel.
-	var pause *ErrAwaitingUserInput
-	if errors.As(err, &pause) {
+	if _, ok := errors.AsType[*ErrAwaitingUserInput](err); ok {
 		t.Fatal("save_snippet must NEVER return *ErrAwaitingUserInput (only ask_user may pause); it returned the pause sentinel")
 	}
 	if err != nil {
@@ -357,8 +354,7 @@ func TestSnippetSaveActionRequiresFields(t *testing.T) {
 			if err == nil {
 				t.Fatalf("%s: want a tool error, got nil", tc.name)
 			}
-			var pause *ErrAwaitingUserInput
-			if errors.As(err, &pause) {
+			if _, ok := errors.AsType[*ErrAwaitingUserInput](err); ok {
 				t.Fatalf("%s: must be a tool error, NOT a pause", tc.name)
 			}
 			if w.saveCalls != 0 {
@@ -378,8 +374,7 @@ func TestActionRestore(t *testing.T) {
 	raw, _ := json.Marshal(map[string]any{"action": "restore", "name": "xlsx-build"})
 	res, err := tool.Execute(ctx, json.RawMessage(raw))
 
-	var pause *ErrAwaitingUserInput
-	if errors.As(err, &pause) {
+	if _, ok := errors.AsType[*ErrAwaitingUserInput](err); ok {
 		t.Fatal("restore must return a normal result, NOT a pause")
 	}
 	if err != nil {
@@ -403,8 +398,7 @@ func TestActionArchive(t *testing.T) {
 	raw, _ := json.Marshal(map[string]any{"action": "archive", "name": "xlsx-build"})
 	res, err := tool.Execute(ctx, json.RawMessage(raw))
 
-	var pause *ErrAwaitingUserInput
-	if errors.As(err, &pause) {
+	if _, ok := errors.AsType[*ErrAwaitingUserInput](err); ok {
 		t.Fatal("archive must return a normal result (SAFE tier, no gate), NOT a pause")
 	}
 	if err != nil {
@@ -431,8 +425,7 @@ func TestActionArchiveRejectsInvalidName(t *testing.T) {
 			if err == nil {
 				t.Fatalf("archive %q: want a tool error, got nil", name)
 			}
-			var pause *ErrAwaitingUserInput
-			if errors.As(err, &pause) {
+			if _, ok := errors.AsType[*ErrAwaitingUserInput](err); ok {
 				t.Fatalf("archive %q: must be a tool error, NOT a pause", name)
 			}
 			if w.archiveCalls != 0 {
@@ -566,8 +559,7 @@ func TestLifecycleWriterErrorSurfacesWithContext(t *testing.T) {
 			if err == nil {
 				t.Fatalf("%s with a failing writer: want a tool error, got nil (res=%q)", tc.action, res.Preview)
 			}
-			var pause *ErrAwaitingUserInput
-			if errors.As(err, &pause) {
+			if _, ok := errors.AsType[*ErrAwaitingUserInput](err); ok {
 				t.Fatalf("%s: a writer failure is a tool error, NOT a pause", tc.action)
 			}
 			if !strings.Contains(err.Error(), "writer exploded") {

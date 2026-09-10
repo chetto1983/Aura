@@ -65,9 +65,8 @@ func TestNewHTTPError_RetryAfter(t *testing.T) {
 	}
 
 	// errors.As shape so Plan-04 callers can detect it.
-	var target *HTTPError
 	var wrapped error = herr
-	if !errors.As(wrapped, &target) {
+	if _, ok := errors.AsType[*HTTPError](wrapped); !ok {
 		t.Error("errors.As(*HTTPError) failed — caller cannot classify the wire error")
 	}
 }

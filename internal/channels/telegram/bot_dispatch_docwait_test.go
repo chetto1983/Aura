@@ -14,7 +14,7 @@ import (
 func docwaitMsg(chatID int64, pdf []byte) *tele.Message {
 	msg := chatMsg(chatID)
 	msg.Document = &tele.Document{
-		File:     tele.File{FileID: "doc-file", FileSize: int64(len(pdf))},
+		FileID: "doc-file", FileSize: int64(len(pdf)),
 		FileName: "manual.pdf",
 		MIME:     "application/pdf",
 	}

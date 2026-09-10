@@ -64,7 +64,7 @@ func TestProvisionSandboxLaterLegFailureReversesInStrictOrder(t *testing.T) {
 	svc.memory = orderedMemory{log: log}
 	svc.objectStore = orderedObjectStore{log: log}
 	svc.filesystem = orderedFS{log: log}
-	svc.sandbox = orderedSandboxProvisioner{orderedSandbox: orderedSandbox{log: log}}
+	svc.sandbox = orderedSandboxProvisioner{log: log}
 	svc.journal = newFakeJournal()
 
 	if _, err := svc.Provision(context.Background(), "creator-1", tok, provReq(nil)); err == nil {

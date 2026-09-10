@@ -414,8 +414,7 @@ func isCantParseEntities(err error) bool {
 	if err == nil {
 		return false
 	}
-	var te *tele.Error
-	if errors.As(err, &te) {
+	if te, ok := errors.AsType[*tele.Error](err); ok {
 		return te.Code == 400 && strings.Contains(strings.ToLower(te.Description), canParseEntitiesMarker)
 	}
 	return strings.Contains(strings.ToLower(err.Error()), canParseEntitiesMarker)

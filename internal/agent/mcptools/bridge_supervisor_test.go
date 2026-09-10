@@ -128,8 +128,7 @@ func TestMountedServer_CallToolText_ToolErrorIsTyped(t *testing.T) {
 	srv.Attach(session)
 
 	_, callErr := srv.CallToolText(ctx, "fail", nil)
-	var toolCallErr *mcp.ToolCallError
-	if !errors.As(callErr, &toolCallErr) {
+	if _, ok := errors.AsType[*mcp.ToolCallError](callErr); !ok {
 		t.Fatalf("CallToolText error = %v, want *mcp.ToolCallError", callErr)
 	}
 }

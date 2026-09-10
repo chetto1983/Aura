@@ -103,8 +103,7 @@ func (a *LlmAgent) detectPause(ctx context.Context, call llm.ToolCall) (*tools.E
 		return nil, false
 	}
 	_, err := tool.Execute(ctx, json.RawMessage(call.Function.Arguments))
-	var pause *tools.ErrAwaitingUserInput
-	if errors.As(err, &pause) {
+	if pause, ok := errors.AsType[*tools.ErrAwaitingUserInput](err); ok {
 		_, end := pauseBoundary.Start(ctx)
 		end.End(nil)
 		return pause, true

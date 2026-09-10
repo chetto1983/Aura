@@ -335,8 +335,8 @@ func TestRegistryDeliverApproval(t *testing.T) {
 	errSend := errors.New("send failed")
 
 	t.Run("first-delivers-wins in sorted order carries the token", func(t *testing.T) {
-		a := &fakeApprovalDeliverer{fakeChannel: fakeChannel{name: "a"}, delivered: true}
-		b := &fakeApprovalDeliverer{fakeChannel: fakeChannel{name: "b"}, delivered: true}
+		a := &fakeApprovalDeliverer{name: "a", delivered: true}
+		b := &fakeApprovalDeliverer{name: "b", delivered: true}
 		reg := NewRegistry()
 		reg.Register(b)
 		reg.Register(a)
@@ -356,7 +356,7 @@ func TestRegistryDeliverApproval(t *testing.T) {
 	})
 
 	t.Run("no owner returns (false,nil) so the caller falls back to the pull surface", func(t *testing.T) {
-		a := &fakeApprovalDeliverer{fakeChannel: fakeChannel{name: "a"}} // delivered=false
+		a := &fakeApprovalDeliverer{name: "a"} // delivered=false
 		reg := NewRegistry()
 		reg.Register(a)
 		if err := reg.StartAll(context.Background()); err != nil {
@@ -369,8 +369,8 @@ func TestRegistryDeliverApproval(t *testing.T) {
 	})
 
 	t.Run("owns-but-fails stops the fan-out (no sibling double-delivery)", func(t *testing.T) {
-		a := &fakeApprovalDeliverer{fakeChannel: fakeChannel{name: "a"}, deliverErr: errSend}
-		b := &fakeApprovalDeliverer{fakeChannel: fakeChannel{name: "b"}, delivered: true}
+		a := &fakeApprovalDeliverer{name: "a", deliverErr: errSend}
+		b := &fakeApprovalDeliverer{name: "b", delivered: true}
 		reg := NewRegistry()
 		reg.Register(a)
 		reg.Register(b)
@@ -388,7 +388,7 @@ func TestRegistryDeliverApproval(t *testing.T) {
 
 	t.Run("channel without ApprovalDeliverer is skipped", func(t *testing.T) {
 		plain := &fakeChannel{name: "a-plain"} // Channel but NOT ApprovalDeliverer
-		appr := &fakeApprovalDeliverer{fakeChannel: fakeChannel{name: "b-appr"}, delivered: true}
+		appr := &fakeApprovalDeliverer{name: "b-appr", delivered: true}
 		reg := NewRegistry()
 		reg.Register(plain)
 		reg.Register(appr)
@@ -408,8 +408,8 @@ func TestRegistryDeliverToIdentity(t *testing.T) {
 	t.Run("first-delivers-wins in sorted order", func(t *testing.T) {
 		// Insertion order (b, a) differs from sort order (a, b): "a" is tried first
 		// and delivers, so "b" must never be asked. Proves SORT order, not insertion.
-		a := &fakeDeliverer{fakeChannel: fakeChannel{name: "a"}, delivered: true}
-		b := &fakeDeliverer{fakeChannel: fakeChannel{name: "b"}, delivered: true}
+		a := &fakeDeliverer{name: "a", delivered: true}
+		b := &fakeDeliverer{name: "b", delivered: true}
 		reg := NewRegistry()
 		reg.Register(b)
 		reg.Register(a)
@@ -433,8 +433,8 @@ func TestRegistryDeliverToIdentity(t *testing.T) {
 	})
 
 	t.Run("not-my-user fall-through returns false,nil", func(t *testing.T) {
-		a := &fakeDeliverer{fakeChannel: fakeChannel{name: "a"}}
-		b := &fakeDeliverer{fakeChannel: fakeChannel{name: "b"}}
+		a := &fakeDeliverer{name: "a"}
+		b := &fakeDeliverer{name: "b"}
 		reg := NewRegistry()
 		reg.Register(a)
 		reg.Register(b)
@@ -456,8 +456,8 @@ func TestRegistryDeliverToIdentity(t *testing.T) {
 
 	t.Run("owns-but-fails stops without sibling attempt", func(t *testing.T) {
 		// Sorted-first "a" owns-but-fails → fan-out stops; the sibling "b" is never asked.
-		a := &fakeDeliverer{fakeChannel: fakeChannel{name: "a"}, deliverErr: errSend}
-		b := &fakeDeliverer{fakeChannel: fakeChannel{name: "b"}, delivered: true}
+		a := &fakeDeliverer{name: "a", deliverErr: errSend}
+		b := &fakeDeliverer{name: "b", delivered: true}
 		reg := NewRegistry()
 		reg.Register(a)
 		reg.Register(b)
@@ -479,8 +479,8 @@ func TestRegistryDeliverToIdentity(t *testing.T) {
 
 	t.Run("not-started channel never asked", func(t *testing.T) {
 		// "a" is registered + started; "b" is registered but disabled (never started).
-		a := &fakeDeliverer{fakeChannel: fakeChannel{name: "a"}}
-		b := &fakeDeliverer{fakeChannel: fakeChannel{name: "b"}}
+		a := &fakeDeliverer{name: "a"}
+		b := &fakeDeliverer{name: "b"}
 		reg := NewRegistry()
 		reg.Register(a)
 		reg.Register(b)
@@ -501,7 +501,7 @@ func TestRegistryDeliverToIdentity(t *testing.T) {
 		// A plain fakeChannel (Channel but NOT Deliverer) is started alongside a
 		// fakeDeliverer: the non-Deliverer is skipped (no panic), the Deliverer answers.
 		plain := &fakeChannel{name: "a-plain"}
-		deliv := &fakeDeliverer{fakeChannel: fakeChannel{name: "b-deliv"}, delivered: true}
+		deliv := &fakeDeliverer{name: "b-deliv", delivered: true}
 		reg := NewRegistry()
 		reg.Register(plain)
 		reg.Register(deliv)
@@ -526,8 +526,8 @@ func TestRegistryDeliverToConversation(t *testing.T) {
 	errSend := errors.New("send failed")
 
 	t.Run("passes exact identity and conversation in sorted order", func(t *testing.T) {
-		a := &fakeConversationDeliverer{fakeChannel: fakeChannel{name: "a"}, delivered: true}
-		b := &fakeConversationDeliverer{fakeChannel: fakeChannel{name: "b"}, delivered: true}
+		a := &fakeConversationDeliverer{name: "a", delivered: true}
+		b := &fakeConversationDeliverer{name: "b", delivered: true}
 		reg := NewRegistry()
 		reg.Register(b)
 		reg.Register(a)
@@ -547,7 +547,7 @@ func TestRegistryDeliverToConversation(t *testing.T) {
 	})
 
 	t.Run("never falls back to identity-only deliverer", func(t *testing.T) {
-		identityOnly := &fakeDeliverer{fakeChannel: fakeChannel{name: "identity"}, delivered: true}
+		identityOnly := &fakeDeliverer{name: "identity", delivered: true}
 		reg := NewRegistry()
 		reg.Register(identityOnly)
 		if err := reg.StartAll(context.Background()); err != nil {
@@ -563,8 +563,8 @@ func TestRegistryDeliverToConversation(t *testing.T) {
 	})
 
 	t.Run("owns-but-failed stops siblings", func(t *testing.T) {
-		a := &fakeConversationDeliverer{fakeChannel: fakeChannel{name: "a"}, deliverErr: errSend}
-		b := &fakeConversationDeliverer{fakeChannel: fakeChannel{name: "b"}, delivered: true}
+		a := &fakeConversationDeliverer{name: "a", deliverErr: errSend}
+		b := &fakeConversationDeliverer{name: "b", delivered: true}
 		reg := NewRegistry()
 		reg.Register(a)
 		reg.Register(b)
@@ -581,7 +581,7 @@ func TestRegistryDeliverToConversation(t *testing.T) {
 	})
 
 	t.Run("empty route fails closed", func(t *testing.T) {
-		d := &fakeConversationDeliverer{fakeChannel: fakeChannel{name: "a"}, delivered: true}
+		d := &fakeConversationDeliverer{name: "a", delivered: true}
 		reg := NewRegistry()
 		reg.Register(d)
 		if err := reg.StartAll(context.Background()); err != nil {

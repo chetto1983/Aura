@@ -125,8 +125,7 @@ func pdfUnreadReason(err error) string {
 	if err == nil {
 		return "It holds no text a machine can read, so it is probably a scan."
 	}
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
+	if exit, ok := errors.AsType[*exec.ExitError](err); ok {
 		return pdfExitReason(exit.ExitCode())
 	}
 	if errors.Is(err, exec.ErrNotFound) {

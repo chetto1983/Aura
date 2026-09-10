@@ -153,8 +153,7 @@ func runSnippetProcess(ctx context.Context, use skills.SnippetUse, extra []strin
 	if runCtx.Err() != nil {
 		return stdout, stderr, 0, runCtx.Err()
 	}
-	var ee *exec.ExitError
-	if errors.As(runErr, &ee) {
+	if ee, ok := errors.AsType[*exec.ExitError](runErr); ok {
 		return stdout, stderr, ee.ExitCode(), nil
 	}
 	return stdout, stderr, 0, runErr

@@ -54,10 +54,8 @@ func toHostConfig(s SandboxSpec) *container.HostConfig {
 			{Type: mount.TypeVolume, Source: npmCacheVolume, Target: npmCacheTarget},
 			{Type: mount.TypeVolume, Source: pipCacheVolume, Target: pipCacheTarget},
 		},
-		Resources: container.Resources{
-			NanoCPUs:  s.Limits.NanoCPUs,
-			Memory:    s.Limits.MemoryBytes,
-			PidsLimit: &pids,
-		},
+		NanoCPUs:  s.Limits.NanoCPUs,
+		Memory:    s.Limits.MemoryBytes,
+		PidsLimit: &pids,
 	}
 }

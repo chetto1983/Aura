@@ -88,12 +88,10 @@ func retryableStreamOpenError(err error) bool {
 	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
-	var httpErr *openai_compat.HTTPError
-	if errors.As(err, &httpErr) {
+	if httpErr, ok := errors.AsType[*openai_compat.HTTPError](err); ok {
 		return httpErr.StatusCode == 429 || httpErr.StatusCode >= 500
 	}
-	var urlErr *url.Error
-	if errors.As(err, &urlErr) {
+	if urlErr, ok := errors.AsType[*url.Error](err); ok {
 		if urlErr.Timeout() {
 			return true
 		}

@@ -406,8 +406,7 @@ func executeCLIChild(ctx context.Context, args []string, stdout, stderr io.Write
 	command.Stdout = stdout
 	command.Stderr = stderr
 	if err := command.Run(); err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			return exitErr.ExitCode()
 		}
 		_, _ = fmt.Fprintln(stderr, "execute command:", err)

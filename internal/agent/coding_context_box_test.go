@@ -349,8 +349,7 @@ func TestBoxProbeCommandRunsInARealShell(t *testing.T) {
 	if err != nil {
 		// The probe's last command is a `[ -f ]` on a file that is usually absent, so a
 		// nonzero status is normal; only a failure to run at all is fatal here.
-		var exitErr *exec.ExitError
-		if !errors.As(err, &exitErr) {
+		if _, ok := errors.AsType[*exec.ExitError](err); !ok {
 			t.Fatalf("run probe: %v", err)
 		}
 	}

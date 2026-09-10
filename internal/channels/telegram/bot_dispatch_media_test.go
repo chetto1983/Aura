@@ -41,7 +41,7 @@ func TestOnPhotoRoutesThroughAssetIngress(t *testing.T) {
 	bot := &dispatchBot{ogg: image}
 	assetIngress.bot = bot
 	msg := chatMsg(21)
-	msg.Photo = &tele.Photo{File: tele.File{FileID: "photo-file", FileSize: int64(len(image))}}
+	msg.Photo = &tele.Photo{FileID: "photo-file", FileSize: int64(len(image))}
 	msg.Caption = "cosa c'e qui?"
 	if err := tg.onPhoto(context.Background())(msgContext(bot, msg)); err != nil {
 		t.Fatalf("onPhoto: %v", err)
@@ -97,7 +97,7 @@ func TestOnDocumentRoutesThroughAssetIngress(t *testing.T) {
 	assetIngress.bot = bot
 	msg := chatMsg(31)
 	msg.Document = &tele.Document{
-		File:     tele.File{FileID: "doc-file", FileSize: int64(len(pdf))},
+		FileID: "doc-file", FileSize: int64(len(pdf)),
 		FileName: "manual.pdf",
 		MIME:     "application/pdf",
 	}
@@ -137,7 +137,7 @@ func TestOnPhotoAssetIngressErrorSendsFailCopyAndDoesNotTurn(t *testing.T) {
 	bot := &dispatchBot{ogg: []byte("jpeg")}
 	assetIngress.bot = bot
 	msg := chatMsg(22)
-	msg.Photo = &tele.Photo{File: tele.File{FileID: "photo-file", FileSize: 4}}
+	msg.Photo = &tele.Photo{FileID: "photo-file", FileSize: 4}
 	if err := tg.onPhoto(context.Background())(msgContext(bot, msg)); err != nil {
 		t.Fatalf("onPhoto: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestOnVoiceIngressFailureReactsAndDoesNotTurn(t *testing.T) {
 	bot := &dispatchBot{ogg: []byte("OggS")}
 	assetIngress.bot = bot
 	msg := chatMsg(13)
-	msg.Voice = &tele.Voice{File: tele.File{FileID: "voice-file", FileSize: 4}}
+	msg.Voice = &tele.Voice{FileID: "voice-file", FileSize: 4}
 	if err := tg.onVoice(context.Background())(msgContext(bot, msg)); err != nil {
 		t.Fatalf("onVoice: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestOnDocumentTooLargeSendsTheSizeCopy(t *testing.T) {
 	bot := &dispatchBot{ogg: []byte("%PDF")}
 	assetIngress.bot = bot
 	msg := chatMsg(33)
-	msg.Document = &tele.Document{File: tele.File{FileID: "huge"}, FileName: "huge.pdf"}
+	msg.Document = &tele.Document{FileID: "huge", FileName: "huge.pdf"}
 	if err := tg.onDocument(context.Background())(msgContext(bot, msg)); err != nil {
 		t.Fatalf("onDocument: %v", err)
 	}
@@ -242,7 +242,7 @@ func TestAttachmentWithoutAssetServiceFailsLoudly(t *testing.T) {
 
 	bot := &dispatchBot{ogg: []byte("%PDF")}
 	msg := chatMsg(34)
-	msg.Document = &tele.Document{File: tele.File{FileID: "doc"}, FileName: "doc.pdf"}
+	msg.Document = &tele.Document{FileID: "doc", FileName: "doc.pdf"}
 	if err := tg.onDocument(context.Background())(msgContext(bot, msg)); err != nil {
 		t.Fatalf("onDocument: %v", err)
 	}

@@ -176,16 +176,14 @@ func (f *Flows) Start(ctx context.Context, owner, name string, server ManagedSer
 		return existing, nil
 	}
 	flow := &liveFlow{
-		Flow: Flow{
-			ID:          newFlowID(),
-			ServerName:  name,
-			Status:      FlowStarting,
-			RedirectURI: redirectURI,
-			ExpiresAt:   f.now().Add(flowTTL),
-		},
-		owner: owner,
-		codes: make(chan *auth.AuthorizationResult, 1),
-		ready: make(chan struct{}),
+		ID:          newFlowID(),
+		ServerName:  name,
+		Status:      FlowStarting,
+		RedirectURI: redirectURI,
+		ExpiresAt:   f.now().Add(flowTTL),
+		owner:       owner,
+		codes:       make(chan *auth.AuthorizationResult, 1),
+		ready:       make(chan struct{}),
 	}
 	// Detached from the request — this authorization outlives the request that asked for
 	// it by design — but cancellable, so expiry and shutdown can end it.

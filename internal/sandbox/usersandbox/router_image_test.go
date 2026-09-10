@@ -170,14 +170,14 @@ type fakeImageEnsureBackend struct {
 func (f *fakeImageEnsureBackend) EnsureImage(context.Context) error { return f.ensureImageErr }
 
 func TestEnsureImageResolvesCapabilityOnAnyBackend(t *testing.T) {
-	be := &fakeImageEnsureBackend{fakeBackend: fakeBackend{t: t}}
+	be := &fakeImageEnsureBackend{t: t}
 	r := NewSandboxRouter(be, config.ProfileSingleUserHardened, unitSandboxConfig())
 	if err := r.EnsureImage(context.Background()); err != nil {
 		t.Fatalf("EnsureImage err = %v, want nil", err)
 	}
 
 	sentinel := errors.New("boom")
-	beErr := &fakeImageEnsureBackend{fakeBackend: fakeBackend{t: t}, ensureImageErr: sentinel}
+	beErr := &fakeImageEnsureBackend{t: t, ensureImageErr: sentinel}
 	rErr := NewSandboxRouter(beErr, config.ProfileSingleUserHardened, unitSandboxConfig())
 	if err := rErr.EnsureImage(context.Background()); !errors.Is(err, sentinel) {
 		t.Fatalf("EnsureImage err = %v, want %v", err, sentinel)

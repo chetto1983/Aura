@@ -135,12 +135,10 @@ func (e *internalError) Error() string {
 // model-visible code/reason without ever touching the sensitive fields. The bool
 // is false when no web error is in the chain.
 func AsWebError(err error) (*WebError, bool) {
-	var we *WebError
-	if errors.As(err, &we) {
+	if we, ok := errors.AsType[*WebError](err); ok {
 		return we, true
 	}
-	var ie *internalError
-	if errors.As(err, &ie) {
+	if ie, ok := errors.AsType[*internalError](err); ok {
 		return sanitize(ie), true
 	}
 	return nil, false

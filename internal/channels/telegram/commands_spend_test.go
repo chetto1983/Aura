@@ -39,7 +39,7 @@ func (c *countingCost) TodayUsage(ctx context.Context) (int, int, *float64, erro
 // billed number exists would replace a measurement with a guess.
 func TestCostPrefersTheProviderBilledFigure(t *testing.T) {
 	t.Parallel()
-	est := &countingCost{fakeCost: fakeCost{prompt: 1_000_000, completion: 1_000_000}}
+	est := &countingCost{prompt: 1_000_000, completion: 1_000_000}
 	sp := &fakeSpend{spend: llm.Spend{Daily: 0.0206, Weekly: 0.0361, Monthly: 0.7442, Total: 2.7434}}
 
 	cmds := newTestCommands(commandDeps{
@@ -72,7 +72,7 @@ func TestCostPrefersTheProviderBilledFigure(t *testing.T) {
 // a rate table rather than measured.
 func TestCostFallsBackToTheEstimateAndLabelsIt(t *testing.T) {
 	t.Parallel()
-	est := &countingCost{fakeCost: fakeCost{prompt: 1_000_000, completion: 1_000_000}}
+	est := &countingCost{prompt: 1_000_000, completion: 1_000_000}
 	sp := &fakeSpend{err: llm.ErrSpendNotApplicable}
 
 	cmds := newTestCommands(commandDeps{
@@ -96,7 +96,7 @@ func TestCostFallsBackToTheEstimateAndLabelsIt(t *testing.T) {
 // A nil backend is the pre-wiring state and must degrade to the estimate, never panic.
 func TestCostWithoutASpendBackendUsesTheEstimate(t *testing.T) {
 	t.Parallel()
-	est := &countingCost{fakeCost: fakeCost{prompt: 1000, completion: 1000}}
+	est := &countingCost{prompt: 1000, completion: 1000}
 	cmds := newTestCommands(commandDeps{
 		Search: &fakeSearch{}, Cost: est, Spend: nil,
 		Prices: map[string]llm.Price{"m": {InputPer1M: 0.14, OutputPer1M: 0.28}}, Model: "m",
@@ -114,7 +114,7 @@ func TestCostWithoutASpendBackendUsesTheEstimate(t *testing.T) {
 // into a wrong-looking zero — it degrades to the estimate exactly like the local case.
 func TestCostDegradesOnProviderError(t *testing.T) {
 	t.Parallel()
-	est := &countingCost{fakeCost: fakeCost{prompt: 1000, completion: 1000}}
+	est := &countingCost{prompt: 1000, completion: 1000}
 	sp := &fakeSpend{err: errors.New("boom")}
 	cmds := newTestCommands(commandDeps{
 		Search: &fakeSearch{}, Cost: est, Spend: sp,
@@ -131,7 +131,7 @@ func TestCostDegradesOnProviderError(t *testing.T) {
 }
 
 func TestCostReadsTheHotRuntimeProfileInsteadOfBootPrices(t *testing.T) {
-	est := &countingCost{fakeCost: fakeCost{prompt: 1_000_000, completion: 1_000_000}}
+	est := &countingCost{prompt: 1_000_000, completion: 1_000_000}
 	runtime := llm.NewRuntime(nil, llm.Config{
 		Provider: "llamacpp",
 		BaseURL:  "http://aura-llm:8084/v1",
@@ -152,7 +152,7 @@ func TestCostReadsTheHotRuntimeProfileInsteadOfBootPrices(t *testing.T) {
 }
 
 func TestCostLabelsOllamaCloudAsSubscriptionIncluded(t *testing.T) {
-	est := &countingCost{fakeCost: fakeCost{prompt: 1_000_000, completion: 1_000_000}}
+	est := &countingCost{prompt: 1_000_000, completion: 1_000_000}
 	runtime := llm.NewRuntime(nil, llm.Config{
 		Provider: "ollama", BaseURL: "http://host.docker.internal:11434/v1",
 		Model: "gemma4:31b-cloud", CostStatus: llm.CostStatusSubscriptionIncluded,

@@ -320,10 +320,8 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 	response.Indexing = r.ingestState(ctx, request.IdentityID)
 	sourceKeys, sourcePrefixes := ArcadeSourceFilters(request.SourceScopes)
 	fused, err := r.PassageIndex.FusedCandidates(ctx, arcadedb.FusedCandidateQuery{
-		CandidateFilter: arcadedb.CandidateFilter{
-			IdentityID: request.IdentityID, Limit: cfg.CandidateLimit, DocumentIDs: scope,
-			SourceKeys: sourceKeys, SourcePrefixes: sourcePrefixes,
-		},
+		IdentityID: request.IdentityID, Limit: cfg.CandidateLimit, DocumentIDs: scope,
+		SourceKeys: sourceKeys, SourcePrefixes: sourcePrefixes,
 		Query: request.Query, Embedding: vectors, Strategy: cfg.FusionStrategy,
 	})
 	if err != nil {

@@ -519,7 +519,7 @@ func TestSwarmTranscript(t *testing.T) {
 			t.Errorf("transcript w%d is empty", i)
 		}
 		var ev agent.Event
-		first := strings.SplitN(strings.TrimRight(string(raw), "\n"), "\n", 2)[0]
+		first, _, _ := strings.Cut(strings.TrimRight(string(raw), "\n"), "\n")
 		if err := json.Unmarshal([]byte(first), &ev); err != nil {
 			t.Errorf("transcript w%d first line not a valid Event: %v", i, err)
 		}

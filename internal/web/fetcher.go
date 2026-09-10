@@ -230,8 +230,7 @@ func isRedirect(code int) bool {
 // the hardened dialContext rejected the target — never retried) or a retryable
 // network failure (one retry within the deadline, D-42).
 func classifyTransportErr(err error) error {
-	var ie *internalError
-	if errors.As(err, &ie) {
+	if ie, ok := errors.AsType[*internalError](err); ok {
 		return ie // SSRF/blocked — non-retryable, sanitized by the caller
 	}
 	// A peer-side stream reset is DETERMINISTIC, not transient: the same request

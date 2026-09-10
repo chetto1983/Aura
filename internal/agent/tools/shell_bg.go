@@ -143,8 +143,7 @@ func (s *bgShell) finish(waitErr error) {
 		// A box streamed exec reports its exit via ExecInspect (boxWait wraps it), so a
 		// *bgBoxExit is the normal termination; anything else is an infra failure with no
 		// exit code to report.
-		var boxExit *bgBoxExit
-		if errors.As(waitErr, &boxExit) {
+		if boxExit, ok := errors.AsType[*bgBoxExit](waitErr); ok {
 			s.exitCode = &boxExit.code
 		}
 	}

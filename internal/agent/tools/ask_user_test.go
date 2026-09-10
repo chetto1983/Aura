@@ -131,8 +131,7 @@ func TestAskUser_Execute_Rejects(t *testing.T) {
 			if err == nil {
 				t.Fatalf("want a rejection error, got nil")
 			}
-			var pause *ErrAwaitingUserInput
-			if errors.As(err, &pause) {
+			if _, ok := errors.AsType[*ErrAwaitingUserInput](err); ok {
 				t.Fatalf("a rejected call must NOT return the pause sentinel, got %v", err)
 			}
 			if res != (ToolResult{}) {

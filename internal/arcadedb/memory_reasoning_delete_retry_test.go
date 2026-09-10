@@ -35,7 +35,7 @@ func TestReasoningDeletionRetriesMissingRecordFromFreshSelection(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				mu.Lock()
 				defer mu.Unlock()
-				operation := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/"), "/")[0]
+				operation, _, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/api/v1/"), "/")
 				events = append(events, operation)
 				switch operation {
 				case "begin":

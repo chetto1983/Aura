@@ -327,8 +327,7 @@ func cappedBodyHandler(maxBytes int64, next http.Handler) http.Handler {
 			err = closeErr
 		}
 		if err != nil {
-			var tooLarge *http.MaxBytesError
-			if errors.As(err, &tooLarge) {
+			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
 				return
 			}

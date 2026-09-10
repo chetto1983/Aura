@@ -7,10 +7,10 @@ import (
 )
 
 func TestRegistryConversationDeliverySkipsOtherCapabilitiesAndReleasesSnapshot(t *testing.T) {
-	identityOnly := &fakeDeliverer{fakeChannel: fakeChannel{name: "a-identity"}, delivered: true}
+	identityOnly := &fakeDeliverer{name: "a-identity", delivered: true}
 	target := &fakeConversationDeliverer{
-		fakeChannel: fakeChannel{name: "b-conversation"},
-		delivered:   true,
+		name:      "b-conversation",
+		delivered: true,
 	}
 	reg := NewRegistry()
 	reg.Register(identityOnly)

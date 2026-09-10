@@ -103,8 +103,7 @@ func TestDecodeToolCallError_WhatsAppDictModelTranslation(t *testing.T) {
 // decisions depend on this still matching post-swap.
 func TestDecodeToolCallError_MatchesToolCallErrorType(t *testing.T) {
 	err := error(DecodeToolCallError("memory", "memory_upsert_fact", "boom"))
-	var toolCallErr *ToolCallError
-	if !errors.As(err, &toolCallErr) {
+	if _, ok := errors.AsType[*ToolCallError](err); !ok {
 		t.Fatal("errors.As(err, &toolCallErr) must match *mcp.ToolCallError")
 	}
 }
