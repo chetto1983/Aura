@@ -39,6 +39,10 @@ var ErrKeyNotFound = errors.New("openrouterprovision: key not found")
 // request goes out, rather than as a provider 400.
 var ErrInvalidLimitReset = errors.New("openrouterprovision: invalid limit_reset")
 
+// ErrConflictingLimitPatch marks a KeyPatch that both sets and clears the limit. It is
+// refused locally, before any request goes out.
+var ErrConflictingLimitPatch = errors.New("openrouterprovision: a patch cannot both set and clear the limit")
+
 // ErrKeyNotApplicable is internal/llm's ErrSpendNotApplicable, re-exported
 // under this package's name. D-13/CRED-09: a local llama.cpp/Ollama backend
 // bills nothing and has no OpenRouter account behind it, and that

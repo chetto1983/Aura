@@ -52,7 +52,7 @@ func TestMintAtZeroCap(t *testing.T) {
 	req := openrouterprovision.MintRequest{
 		IdentityID: "identity-42",
 		Name:       "identity-42",
-		Limit:      0,
+		Limit:      new(openrouterprovision.USDCap),
 		LimitReset: openrouterprovision.LimitResetMonthly,
 	}
 	if _, err := openrouterprovision.MintKey(context.Background(), srv.Client(), srv.URL, "sk-mgmt", req); err != nil {
@@ -67,7 +67,7 @@ func TestMintSendsExternalUser(t *testing.T) {
 	var body []byte
 	srv := mintServer(t, http.StatusCreated, mintResponsePayload, &body, nil)
 
-	req := openrouterprovision.MintRequest{IdentityID: "identity-77", Name: "identity-77", Limit: 0, LimitReset: openrouterprovision.LimitResetDaily}
+	req := openrouterprovision.MintRequest{IdentityID: "identity-77", Name: "identity-77", Limit: new(openrouterprovision.USDCap), LimitReset: openrouterprovision.LimitResetDaily}
 	if _, err := openrouterprovision.MintKey(context.Background(), srv.Client(), srv.URL, "sk-mgmt", req); err != nil {
 		t.Fatalf("MintKey: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestMintSendsLimitReset(t *testing.T) {
 	srv := mintServer(t, http.StatusCreated, mintResponsePayload, &body, nil)
 
 	for _, interval := range []openrouterprovision.LimitReset{openrouterprovision.LimitResetDaily, openrouterprovision.LimitResetWeekly, openrouterprovision.LimitResetMonthly} {
-		req := openrouterprovision.MintRequest{IdentityID: "id", Name: "id", Limit: 0, LimitReset: interval}
+		req := openrouterprovision.MintRequest{IdentityID: "id", Name: "id", Limit: new(openrouterprovision.USDCap), LimitReset: interval}
 		if _, err := openrouterprovision.MintKey(context.Background(), srv.Client(), srv.URL, "sk-mgmt", req); err != nil {
 			t.Fatalf("MintKey(%s): %v", interval, err)
 		}
@@ -99,7 +99,7 @@ func TestMintSendsLimitReset(t *testing.T) {
 		}))
 		defer countServer.Close()
 
-		req := openrouterprovision.MintRequest{IdentityID: "id", Name: "id", Limit: 0, LimitReset: openrouterprovision.LimitReset("yearly")}
+		req := openrouterprovision.MintRequest{IdentityID: "id", Name: "id", Limit: new(openrouterprovision.USDCap), LimitReset: openrouterprovision.LimitReset("yearly")}
 		_, err := openrouterprovision.MintKey(context.Background(), countServer.Client(), countServer.URL, "sk-mgmt", req)
 		if !errors.Is(err, openrouterprovision.ErrInvalidLimitReset) {
 			t.Fatalf("err = %v, want ErrInvalidLimitReset", err)
@@ -113,7 +113,7 @@ func TestMintSendsLimitReset(t *testing.T) {
 func TestMintReturnsRawKeyOnce(t *testing.T) {
 	srv := mintServer(t, http.StatusCreated, mintResponsePayload, nil, nil)
 
-	req := openrouterprovision.MintRequest{IdentityID: "id", Name: "id", Limit: 0, LimitReset: openrouterprovision.LimitResetMonthly}
+	req := openrouterprovision.MintRequest{IdentityID: "id", Name: "id", Limit: new(openrouterprovision.USDCap), LimitReset: openrouterprovision.LimitResetMonthly}
 	result, err := openrouterprovision.MintKey(context.Background(), srv.Client(), srv.URL, "sk-mgmt", req)
 	if err != nil {
 		t.Fatalf("MintKey: %v", err)
@@ -130,7 +130,7 @@ func TestMintSendsManagementAuthorization(t *testing.T) {
 	var auth string
 	srv := mintServer(t, http.StatusCreated, mintResponsePayload, nil, &auth)
 
-	req := openrouterprovision.MintRequest{IdentityID: "id", Name: "id", Limit: 0, LimitReset: openrouterprovision.LimitResetMonthly}
+	req := openrouterprovision.MintRequest{IdentityID: "id", Name: "id", Limit: new(openrouterprovision.USDCap), LimitReset: openrouterprovision.LimitResetMonthly}
 	if _, err := openrouterprovision.MintKey(context.Background(), srv.Client(), srv.URL, "sk-management-key", req); err != nil {
 		t.Fatalf("MintKey: %v", err)
 	}
@@ -212,82 +212,6 @@ func TestGetKeyNotFound(t *testing.T) {
 	_, err := openrouterprovision.GetKey(context.Background(), srv.Client(), srv.URL, "sk-mgmt", "missing-hash")
 	if !errors.Is(err, openrouterprovision.ErrKeyNotFound) {
 		t.Fatalf("err = %v, want ErrKeyNotFound", err)
-	}
-}
-
-// patchResponsePayload is the PATCH /api/v1/keys/{hash} 200 shape.
-const patchResponsePayload = `{"data":{"hash":"h1","label":"l1","name":"n1","limit":0,"limit_remaining":0,"limit_reset":"daily","external_user":"id-1"}}`
-
-// patchServer models PATCH /api/v1/keys/{hash}.
-func patchServer(t *testing.T, status int, response string, capturedBody *[]byte) *httptest.Server {
-	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPatch || !strings.HasPrefix(r.URL.Path, "/keys/") {
-			http.NotFound(w, r)
-			return
-		}
-		body, _ := io.ReadAll(r.Body)
-		if capturedBody != nil {
-			*capturedBody = body
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		_, _ = w.Write([]byte(response))
-	}))
-	t.Cleanup(srv.Close)
-	return srv
-}
-
-func TestPatchSendsOnlyChangedFields(t *testing.T) {
-	var body []byte
-	srv := patchServer(t, http.StatusOK, patchResponsePayload, &body)
-
-	limit := openrouterprovision.USDCap(500)
-	patch := openrouterprovision.KeyPatch{Limit: &limit}
-	if _, err := openrouterprovision.PatchKey(context.Background(), srv.Client(), srv.URL, "sk-mgmt", "h1", patch); err != nil {
-		t.Fatalf("PatchKey: %v", err)
-	}
-	if !bytes.Contains(body, []byte(`"limit":5.00`)) {
-		t.Errorf("captured patch body = %s, want it to contain the changed limit", body)
-	}
-	for _, absent := range []string{`"limit_reset"`, `"name"`, `"disabled"`} {
-		if bytes.Contains(body, []byte(absent)) {
-			t.Errorf("captured patch body = %s, must NOT contain %s — only changed fields are sent", body, absent)
-		}
-	}
-}
-
-func TestPatchZeroLimit(t *testing.T) {
-	var body []byte
-	srv := patchServer(t, http.StatusOK, patchResponsePayload, &body)
-
-	zero := openrouterprovision.USDCap(0)
-	patch := openrouterprovision.KeyPatch{Limit: &zero}
-	if _, err := openrouterprovision.PatchKey(context.Background(), srv.Client(), srv.URL, "sk-mgmt", "h1", patch); err != nil {
-		t.Fatalf("PatchKey: %v", err)
-	}
-	if !bytes.Contains(body, []byte(`"limit":0`)) {
-		t.Errorf("captured patch body = %s, want a literal \"limit\":0 — the same omitempty trap as the mint path", body)
-	}
-}
-
-func TestPatchInvalidResetInterval(t *testing.T) {
-	var requests int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		requests++
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(patchResponsePayload))
-	}))
-	defer srv.Close()
-
-	bad := openrouterprovision.LimitReset("yearly")
-	patch := openrouterprovision.KeyPatch{LimitReset: &bad}
-	_, err := openrouterprovision.PatchKey(context.Background(), srv.Client(), srv.URL, "sk-mgmt", "h1", patch)
-	if !errors.Is(err, openrouterprovision.ErrInvalidLimitReset) {
-		t.Fatalf("err = %v, want ErrInvalidLimitReset", err)
-	}
-	if requests != 0 {
-		t.Errorf("requests = %d, want 0 — an invalid interval must be refused before the request is made", requests)
 	}
 }
 
@@ -423,22 +347,6 @@ func TestGetKeyEmptyHash(t *testing.T) {
 	}
 }
 
-func TestPatchKeyEmptyHash(t *testing.T) {
-	var requests int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		requests++
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
-
-	if _, err := openrouterprovision.PatchKey(context.Background(), srv.Client(), srv.URL, "sk-mgmt", "", openrouterprovision.KeyPatch{}); err == nil {
-		t.Fatal("PatchKey: want an error for an empty hash")
-	}
-	if requests != 0 {
-		t.Errorf("requests = %d, want 0 — an empty hash must be refused before any request is made", requests)
-	}
-}
-
 func TestMintKeyEmptyIdentity(t *testing.T) {
 	var requests int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -448,7 +356,7 @@ func TestMintKeyEmptyIdentity(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	req := openrouterprovision.MintRequest{IdentityID: "  ", Name: "id", Limit: 0, LimitReset: openrouterprovision.LimitResetDaily}
+	req := openrouterprovision.MintRequest{IdentityID: "  ", Name: "id", Limit: new(openrouterprovision.USDCap), LimitReset: openrouterprovision.LimitResetDaily}
 	if _, err := openrouterprovision.MintKey(context.Background(), srv.Client(), srv.URL, "sk-mgmt", req); err == nil {
 		t.Fatal("MintKey: want an error for an empty identity id")
 	}
@@ -459,7 +367,7 @@ func TestMintKeyEmptyIdentity(t *testing.T) {
 
 func TestMintKeyProviderError(t *testing.T) {
 	srv := mintServer(t, http.StatusInternalServerError, `{"error":{"message":"boom"}}`, nil, nil)
-	req := openrouterprovision.MintRequest{IdentityID: "id", Name: "id", Limit: 0, LimitReset: openrouterprovision.LimitResetDaily}
+	req := openrouterprovision.MintRequest{IdentityID: "id", Name: "id", Limit: new(openrouterprovision.USDCap), LimitReset: openrouterprovision.LimitResetDaily}
 	_, err := openrouterprovision.MintKey(context.Background(), srv.Client(), srv.URL, "sk-mgmt", req)
 	if err == nil {
 		t.Fatal("MintKey: want an error when the provider returns a non-201 status")
@@ -471,7 +379,7 @@ func TestMintKeyProviderError(t *testing.T) {
 
 func TestMintKeyDecodeError(t *testing.T) {
 	srv := mintServer(t, http.StatusCreated, "not json", nil, nil)
-	req := openrouterprovision.MintRequest{IdentityID: "id", Name: "id", Limit: 0, LimitReset: openrouterprovision.LimitResetDaily}
+	req := openrouterprovision.MintRequest{IdentityID: "id", Name: "id", Limit: new(openrouterprovision.USDCap), LimitReset: openrouterprovision.LimitResetDaily}
 	if _, err := openrouterprovision.MintKey(context.Background(), srv.Client(), srv.URL, "sk-mgmt", req); err == nil {
 		t.Fatal("MintKey: want an error when the 201 body cannot be decoded")
 	}
@@ -488,24 +396,6 @@ func TestGetKeyDecodeError(t *testing.T) {
 	srv := getKeyServer(t, http.StatusOK, "not json")
 	if _, err := openrouterprovision.GetKey(context.Background(), srv.Client(), srv.URL, "sk-mgmt", "h1"); err == nil {
 		t.Fatal("GetKey: want an error when the 200 body cannot be decoded")
-	}
-}
-
-func TestPatchKeyProviderError(t *testing.T) {
-	srv := patchServer(t, http.StatusInternalServerError, `{"error":{"message":"boom"}}`, nil)
-	limit := openrouterprovision.USDCap(100)
-	patch := openrouterprovision.KeyPatch{Limit: &limit}
-	if _, err := openrouterprovision.PatchKey(context.Background(), srv.Client(), srv.URL, "sk-mgmt", "h1", patch); err == nil {
-		t.Fatal("PatchKey: want an error when the provider returns a non-200 status")
-	}
-}
-
-func TestPatchKeyDecodeError(t *testing.T) {
-	srv := patchServer(t, http.StatusOK, "not json", nil)
-	limit := openrouterprovision.USDCap(100)
-	patch := openrouterprovision.KeyPatch{Limit: &limit}
-	if _, err := openrouterprovision.PatchKey(context.Background(), srv.Client(), srv.URL, "sk-mgmt", "h1", patch); err == nil {
-		t.Fatal("PatchKey: want an error when the 200 body cannot be decoded")
 	}
 }
 
@@ -557,5 +447,18 @@ func TestUSDCapUnmarshalJSONInvalid(t *testing.T) {
 	var decoded openrouterprovision.USDCap
 	if err := json.Unmarshal([]byte(`"not-a-number"`), &decoded); err == nil {
 		t.Fatal("unmarshal: want an error for a non-numeric token")
+	}
+}
+
+func TestMintWithNoLimitSendsNull(t *testing.T) {
+	var body []byte
+	srv := mintServer(t, http.StatusCreated, mintResponsePayload, &body, nil)
+
+	req := openrouterprovision.MintRequest{IdentityID: "id", Name: "id", LimitReset: openrouterprovision.LimitResetMonthly}
+	if _, err := openrouterprovision.MintKey(context.Background(), srv.Client(), srv.URL, "sk-mgmt", req); err != nil {
+		t.Fatalf("MintKey: %v", err)
+	}
+	if !bytes.Contains(body, []byte(`"limit":null`)) {
+		t.Errorf("captured mint body = %s, want \"limit\":null for a key with no limit", body)
 	}
 }

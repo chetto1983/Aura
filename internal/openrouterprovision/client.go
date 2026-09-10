@@ -129,10 +129,14 @@ func PatchKey(ctx context.Context, client *http.Client, baseURL, apiKey, hash st
 		return KeyRecord{}, fmt.Errorf("%w: %q", ErrInvalidLimitReset, *patch.LimitReset)
 	}
 
-	// KeyPatch and patchRequestWire share identical fields in identical
-	// order — a straight conversion (staticcheck S1016) rather than a
-	// field-by-field literal.
-	wireReq := patchRequestWire(patch)
+	limit, err := patch.wireLimit()
+	if err != nil {
+		return KeyRecord{}, err
+	}
+	wireReq := patchRequestWire{
+		Limit: limit, LimitReset: patch.LimitReset, Disabled: patch.Disabled,
+		Name: patch.Name, IncludeBYOKInLimit: patch.IncludeBYOKInLimit,
+	}
 	payload, err := json.Marshal(wireReq)
 	if err != nil {
 		return KeyRecord{}, fmt.Errorf("openrouterprovision: patch key: encode request: %w", err)

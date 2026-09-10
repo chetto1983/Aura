@@ -17,6 +17,7 @@
 package openrouterprovision
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
@@ -135,9 +136,9 @@ type MintRequest struct {
 	IdentityID string
 	// Name surfaces as api_key_id in OpenRouter's analytics dimensions.
 	Name string
-	// Limit is the spending cap. Zero is the product's default state (D-09)
-	// and is a real, meaningful value here — never treat it as "unset".
-	Limit USDCap
+	// Limit is the spending cap. nil mints a key with no limit, sent as "limit": null (the
+	// admin's own key); a pointer to zero is a member's default state (D-09).
+	Limit *USDCap
 	// LimitReset must be one of LimitResetDaily/Weekly/Monthly; MintKey
 	// refuses any other value before sending the request.
 	LimitReset LimitReset
@@ -146,14 +147,10 @@ type MintRequest struct {
 // mintRequestWire is the POST /api/v1/keys body.
 type mintRequestWire struct {
 	Name string `json:"name"`
-	// Limit deliberately carries NO omitempty. A zero cap is the product's
-	// default state (D-09); omitempty drops a zero-valued field (USDCap's
-	// underlying kind is int64, and encoding/json's isEmptyValue treats a
-	// zero integer as empty), which would mint an UNCAPPED key against an
-	// account whose pool the operator pays for — the exact inverse of
-	// CRED-02. TestMintAtZeroCap asserts the marshalled bytes for this
-	// reason: a decoded struct cannot tell an omitted field from a zero one.
-	Limit      USDCap           `json:"limit"`
+	// Limit deliberately carries NO omitempty. nil marshals as "limit": null, a key with no
+	// limit, and a zero cap as "limit": 0.00. The old value field under omitempty dropped a
+	// real zero and minted an uncapped key (TestMintAtZeroCap pins the bytes).
+	Limit      *USDCap          `json:"limit"`
 	LimitReset LimitReset       `json:"limit_reset"`
 	External   mintExternalWire `json:"external"`
 }
@@ -260,26 +257,40 @@ type MintResult struct {
 // "set to exactly this", so patching a cap to zero (the admin action that
 // cuts an identity off, M-05) is a real, sent zero rather than an omission.
 type KeyPatch struct {
-	Limit              *USDCap
+	Limit *USDCap
+	// ClearLimit removes the cap, sent as "limit": null, so the key has no limit. It cannot
+	// be combined with Limit.
+	ClearLimit         bool
 	LimitReset         *LimitReset
 	Disabled           *bool
 	Name               *string
 	IncludeBYOKInLimit *bool
 }
 
-// patchRequestWire is the PATCH /api/v1/keys/{hash} body — "every field
-// optional; send only what changes" (02-OPENROUTER-API.md). omitempty here
-// is SAFE, unlike mintRequestWire.Limit's: encoding/json's isEmptyValue
-// only checks IsNil() for a pointer kind, never the pointee's value, so a
-// nil *USDCap is correctly omitted ("not set") while a non-nil pointer to
-// zero is still sent in full ("set to exactly zero") — the omitempty trap
-// that bites a plain USDCap field cannot happen on a pointer field.
+// patchRequestWire is the PATCH /api/v1/keys/{hash} body: "every field optional; send only
+// what changes" (02-OPENROUTER-API.md). Limit is raw JSON because a PATCH has three things to
+// say about it: leave it alone (omitted), set it, or clear it with an explicit null, which a
+// *USDCap under omitempty cannot send.
 type patchRequestWire struct {
-	Limit              *USDCap     `json:"limit,omitempty"`
-	LimitReset         *LimitReset `json:"limit_reset,omitempty"`
-	Disabled           *bool       `json:"disabled,omitempty"`
-	Name               *string     `json:"name,omitempty"`
-	IncludeBYOKInLimit *bool       `json:"include_byok_in_limit,omitempty"`
+	Limit              json.RawMessage `json:"limit,omitempty"`
+	LimitReset         *LimitReset     `json:"limit_reset,omitempty"`
+	Disabled           *bool           `json:"disabled,omitempty"`
+	Name               *string         `json:"name,omitempty"`
+	IncludeBYOKInLimit *bool           `json:"include_byok_in_limit,omitempty"`
+}
+
+// wireLimit encodes the patch's limit for patchRequestWire.
+func (p KeyPatch) wireLimit() (json.RawMessage, error) {
+	switch {
+	case p.ClearLimit && p.Limit != nil:
+		return nil, ErrConflictingLimitPatch
+	case p.ClearLimit:
+		return json.RawMessage("null"), nil
+	case p.Limit != nil:
+		return json.Marshal(*p.Limit)
+	default:
+		return nil, nil
+	}
 }
 
 // deleteResponseWire is the DELETE /api/v1/keys/{hash} body.

@@ -55,7 +55,7 @@ func (a openRouterKeyMintAdapter) MintKey(ctx context.Context, identityID, keyNa
 	result, err := openrouterprovision.MintKey(ctx, a.client, a.baseURL, a.managementKey, openrouterprovision.MintRequest{
 		IdentityID: identityID,
 		Name:       keyName,
-		Limit:      0,
+		Limit:      new(openrouterprovision.USDCap),
 		LimitReset: openrouterprovision.LimitResetMonthly,
 	})
 	if err != nil {
