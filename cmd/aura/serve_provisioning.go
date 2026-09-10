@@ -403,6 +403,7 @@ func deprovisionDeps(chat *chatEnv) agui.DeprovisionDeps {
 		Filesystem:     fsProv,
 		Sandbox:        sandboxPurgerFor(chat.sandboxRouter),
 		OpenRouterKey:  revoker,
+		KeyDisabler:    openRouterKeyDisablerFor(chat),
 		IdentityDelete: auraLegAdapter{pool: chat.pool},
 	}
 }

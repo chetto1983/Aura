@@ -69,3 +69,13 @@ func TestMintingAdapterWithoutAManagementKey(t *testing.T) {
 		t.Fatalf("Mint error = %v, want ErrManagementKeyUnset", err)
 	}
 }
+
+func TestDisablerIsWiredWithThePool(t *testing.T) {
+	chat := &chatEnv{pool: newLazyPool(t), cfg: &config.Config{AuthulaSecret: validProvisioningAuthulaSecret}}
+	if openRouterKeyDisablerFor(chat) == nil {
+		t.Fatal("openRouterKeyDisablerFor: want a port whenever the pool and AURA_AUTHULA_SECRET exist")
+	}
+	if openRouterKeyDisablerFor(nil) != nil {
+		t.Fatal("openRouterKeyDisablerFor(nil): want nil")
+	}
+}

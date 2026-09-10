@@ -24,8 +24,9 @@ import (
 // serve_provisioning_objectstore.go's own refactor-on-touch precedent).
 
 var (
-	_ agui.OpenRouterMinting    = openRouterMintingAdapter{}
-	_ agui.OpenRouterKeyRevoker = openRouterKeyRevokeAdapter{}
+	_ agui.OpenRouterMinting     = openRouterMintingAdapter{}
+	_ agui.OpenRouterKeyRevoker  = openRouterKeyRevokeAdapter{}
+	_ agui.OpenRouterKeyDisabler = openRouterKeyDisableAdapter{}
 )
 
 // openRouterKeyConfig is the dial info every adapter below shares: the HTTP client, the
@@ -138,6 +139,37 @@ func (a openRouterKeyRevokeAdapter) RevokeKey(ctx context.Context, identityID st
 		return err
 	}
 	return openrouterprovision.RevokeKey(ctx, a.client, a.baseURL, managementKey, rec.Hash)
+}
+
+// openRouterKeyDisableAdapter satisfies agui.OpenRouterKeyDisabler: it looks the identity's
+// key up and PATCHes it disabled. No stored key means nothing to disable.
+type openRouterKeyDisableAdapter struct{ openRouterKeyConfig }
+
+func (a openRouterKeyDisableAdapter) DisableKey(ctx context.Context, identityID string) error {
+	rec, err := a.store.Load(identityctx.WithIdentityID(ctx, identityID))
+	if errors.Is(err, identitykey.ErrNoKey) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("openrouter key disabler: load key for %s: %w", identityID, err)
+	}
+	managementKey, err := a.key(ctx)
+	if err != nil {
+		return err
+	}
+	disabled := true
+	_, err = openrouterprovision.PatchKey(ctx, a.client, a.baseURL, managementKey, rec.Hash, openrouterprovision.KeyPatch{Disabled: &disabled})
+	return err
+}
+
+// openRouterKeyDisablerFor builds the deactivation port; nil under the same conditions as the
+// revoker.
+func openRouterKeyDisablerFor(chat *chatEnv) agui.OpenRouterKeyDisabler {
+	cfg, ok := resolveOpenRouterKeyConfig(chat)
+	if !ok {
+		return nil
+	}
+	return openRouterKeyDisableAdapter{cfg}
 }
 
 // openRouterSpendAdapter satisfies agui/spend_overview_api.go's unexported

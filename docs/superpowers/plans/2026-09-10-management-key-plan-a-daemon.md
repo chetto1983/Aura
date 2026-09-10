@@ -3372,7 +3372,7 @@ Expected: PASS, including `TestEveryRegisteredUnsafeHTTPRouteIsClassified`; both
 **Interfaces:**
 - Produces: `agui.OpenRouterKeyDisabler{ DisableKey(ctx, identityID string) error }`; `DeprovisionDeps.KeyDisabler`; `openRouterKeyDisablerFor(*chatEnv) agui.OpenRouterKeyDisabler`.
 
-- [ ] **Step 1: Write the failing tests.** Append to `deprovision_test.go`:
+- [x] **Step 1: Write the failing tests.** Append to `deprovision_test.go`:
 
 ```go
 type fakeKeyDisabler struct{ disabled []string }
@@ -3413,12 +3413,12 @@ func TestDisablerIsWiredWithThePool(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests and watch them fail**
+- [x] **Step 2: Run the tests and watch them fail**
 
 Run: `go test ./internal/agui/ -run Deactivate && go test ./cmd/aura/ -run Disabler`
 Expected: build failure (`KeyDisabler`, `openRouterKeyDisablerFor` undefined).
 
-- [ ] **Step 3: Implement.** In `deprovision.go`, next to `OpenRouterKeyRevoker`:
+- [x] **Step 3: Implement.** In `deprovision.go`, next to `OpenRouterKeyRevoker`:
 
 ```go
 // OpenRouterKeyDisabler switches off a deactivated identity's OpenRouter key at the provider,
@@ -3476,12 +3476,12 @@ func openRouterKeyDisablerFor(chat *chatEnv) agui.OpenRouterKeyDisabler {
 
 In `serve_provisioning.go`'s `deprovisionDeps`, add `KeyDisabler: openRouterKeyDisablerFor(chat),` after `OpenRouterKey: revoker,`.
 
-- [ ] **Step 4: Run the tests and watch them pass**
+- [x] **Step 4: Run the tests and watch them pass**
 
 Run: `go test ./internal/agui/ ./cmd/aura/ && go build ./...`
 Expected: PASS.
 
-- [ ] **Step 5: Race, lint, commit** (`feat(agui): disable a deactivated identity's OpenRouter key`). Body: a deactivated identity's key stayed live through the grace window; there is no reactivation path, so nothing re-enables it.
+- [x] **Step 5: Race, lint, commit** (`feat(agui): disable a deactivated identity's OpenRouter key`). Body: a deactivated identity's key stayed live through the grace window; there is no reactivation path, so nothing re-enables it.
 
 ---
 

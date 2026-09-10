@@ -109,6 +109,13 @@ type OpenRouterKeyRevoker interface {
 	RevokeKey(ctx context.Context, identityID string) error
 }
 
+// OpenRouterKeyDisabler switches off a deactivated identity's OpenRouter key at the provider,
+// so it cannot spend through the grace window before the purge revokes it. An identity with no
+// key is a success.
+type OpenRouterKeyDisabler interface {
+	DisableKey(ctx context.Context, identityID string) error
+}
+
 // ConversationPurger deletes the identity's conversations + turns (owner-scoped). Idempotent.
 type ConversationPurger interface {
 	PurgeConversations(ctx context.Context, identityID string) error
@@ -161,6 +168,7 @@ type DeprovisionDeps struct {
 	Filesystem     FilesystemProvisioner
 	Sandbox        SandboxPurger
 	OpenRouterKey  OpenRouterKeyRevoker
+	KeyDisabler    OpenRouterKeyDisabler
 	IdentityDelete IdentityDeleter
 	AuthulaDelete  AuthulaUserDeleter
 	GraceWindow    time.Duration
@@ -185,8 +193,9 @@ func (d *Deprovisioner) graceWindow() time.Duration {
 }
 
 // Deactivate is the IMMEDIATE soft-delete step (D-27): it stamps deactivated_at + a
-// grace-window purge_after, kills the Authula sessions (blocking login), and terminates the
-// identity's background jobs. Journaled (kind=deprovision, step=deactivate) and idempotent.
+// grace-window purge_after, kills the Authula sessions (blocking login), terminates the
+// identity's background jobs and disables its OpenRouter key. Journaled (kind=deprovision,
+// step=deactivate) and idempotent.
 // It resolves the target (for the Authula user id) from the identity id.
 func (d *Deprovisioner) Deactivate(ctx context.Context, identityID string) error {
 	target, err := d.resolve(ctx, identityID)
@@ -211,6 +220,11 @@ func (d *Deprovisioner) Deactivate(ctx context.Context, identityID string) error
 		}
 		if d.deps.Jobs != nil {
 			if err := d.deps.Jobs.TerminateJobs(ctx, identityID); err != nil {
+				return err
+			}
+		}
+		if d.deps.KeyDisabler != nil {
+			if err := d.deps.KeyDisabler.DisableKey(ctx, identityID); err != nil {
 				return err
 			}
 		}
