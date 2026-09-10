@@ -55,9 +55,9 @@
 
 **Files:** none in the repo. The result goes to aura-memory, or into the Task 2 commit body if the MCP is down.
 
-- [ ] **Step 1: Ask the operator for the management key** in one line (never search `.env` or the containers for it). Save it to the session scratchpad as `$SCRATCH/mkey`, outside the repo.
+- [x] **Step 1: Ask the operator for the management key** in one line (never search `.env` or the containers for it). Save it to the session scratchpad as `$SCRATCH/mkey`, outside the repo.
 
-- [ ] **Step 2: Mint a throwaway key with no limit**
+- [x] **Step 2: Mint a throwaway key with no limit**
 
 ```bash
 curl -sS -X POST https://openrouter.ai/api/v1/keys \
@@ -68,7 +68,7 @@ python -c "import json;d=json.load(open('$SCRATCH/mint.json'))['data'];print(d['
 
 Expected: `201`, then the hash followed by `None`.
 
-- [ ] **Step 3: Put a cap on, then take it off**
+- [x] **Step 3: Put a cap on, then take it off**
 
 ```bash
 HASH=$(python -c "import json;print(json.load(open('$SCRATCH/mint.json'))['data']['hash'])")
@@ -81,7 +81,7 @@ done
 
 Expected: `5`, then `None`.
 
-- [ ] **Step 4: Delete the probe key**
+- [x] **Step 4: Delete the probe key**
 
 ```bash
 curl -sS -X DELETE "https://openrouter.ai/api/v1/keys/$HASH" -H "Authorization: Bearer $(cat "$SCRATCH/mkey")" -w "%{http_code}\n"
@@ -90,7 +90,7 @@ rm -f "$SCRATCH/mint.json"
 
 Keep `$SCRATCH/mkey` for Task 13, then delete it.
 
-- [ ] **Step 5: Record or stop.** Record the three measured answers (`memory_upsert_fact`, subject `OpenRouter Provisioning API`, predicate `accepts_null_limit`). If the provider refused `null` in either call, STOP: "no limit" needs a different representation. Bring the response body to the operator.
+- [x] **Step 5: Record or stop.** Record the three measured answers (`memory_upsert_fact`, subject `OpenRouter Provisioning API`, predicate `accepts_null_limit`). If the provider refused `null` in either call, STOP: "no limit" needs a different representation. Bring the response body to the operator.
 
 ---
 
@@ -106,7 +106,7 @@ Keep `$SCRATCH/mkey` for Task 13, then delete it.
 **Interfaces:**
 - Produces: `MintRequest.Limit *USDCap` (nil = no limit, sent as `"limit": null`); `KeyPatch.ClearLimit bool` (sends `"limit": null`); `ErrConflictingLimitPatch`.
 
-- [ ] **Step 1: Write the failing tests.** Append to `client_test.go`:
+- [x] **Step 1: Write the failing tests.** Append to `client_test.go`:
 
 ```go
 func TestMintWithNoLimitSendsNull(t *testing.T) {
@@ -157,12 +157,12 @@ func TestPatchRefusesSettingAndClearingTheLimit(t *testing.T) {
 
 In the same file, every `MintRequest` literal that sets `Limit: 0` (lines 55, 70, 84, 102, 116, 133, 451, 462, 474) becomes `Limit: new(openrouterprovision.USDCap)`. A pointer to zero still marshals as `0.00`, so `TestMintAtZeroCap` keeps asserting a literal `"limit":0`.
 
-- [ ] **Step 2: Run the tests and watch them fail**
+- [x] **Step 2: Run the tests and watch them fail**
 
 Run: `go test ./internal/openrouterprovision/`
 Expected: build failure (`ClearLimit` undefined, `Limit` type mismatch).
 
-- [ ] **Step 3: Implement.** In `errors.go`:
+- [x] **Step 3: Implement.** In `errors.go`:
 
 ```go
 // ErrConflictingLimitPatch marks a KeyPatch that both sets and clears the limit. It is
@@ -240,12 +240,12 @@ Add `"encoding/json"` to `wire.go`'s imports. In `client.go`'s `PatchKey`, repla
 
 In `cmd/aura/serve_provisioning_openrouter.go`, the mint adapter's `Limit: 0,` becomes `Limit: new(openrouterprovision.USDCap),`.
 
-- [ ] **Step 4: Run the tests and watch them pass**
+- [x] **Step 4: Run the tests and watch them pass**
 
 Run: `go test ./internal/openrouterprovision/ && go build ./...`
 Expected: PASS.
 
-- [ ] **Step 5: Race, lint, commit** (`feat(openrouterprovision): send an explicit null limit for keys with no cap`). Body: the admin's key and the services key mint with no limit, a PATCH must be able to clear a cap, and `patchRequestWire`'s omitempty could not send null; include the Task 1 measurement if aura-memory was down.
+- [x] **Step 5: Race, lint, commit** (`feat(openrouterprovision): send an explicit null limit for keys with no cap`). Body: the admin's key and the services key mint with no limit, a PATCH must be able to clear a cap, and `patchRequestWire`'s omitempty could not send null; include the Task 1 measurement if aura-memory was down.
 
 ---
 
