@@ -3589,7 +3589,7 @@ Expected: PASS.
 
 Plan D reinstalls this PC. This E2E runs on the current stack first, so Plan A is proven before anything is wiped. The first-run wizard does not exist yet (Plan B), so the admin works through the existing Settings page and the browser console.
 
-- [ ] **Step 1: Quality gates** (WSL, stack up):
+- [x] **Step 1: Quality gates** (WSL, stack up):
 
 ```bash
 MSYS_NO_PATHCONV=1 wsl.exe -- bash -lc 'cd /mnt/d/Repo/Aura && export PATH="$HOME/.local/bin:$HOME/go/bin:/usr/local/go/bin:$PATH" && make quality'
@@ -3607,7 +3607,7 @@ Expected: the aggregate floor of 85% and every package policy pass. If a touched
 
 - [ ] **Step 3: Mutation spot-check** (≥70% killed per critical file). Run `go-mutesting` in WSL on `internal/identitykey/policy.go` (the `credit_policy` scope of `scripts/critical_mutation_gate.py`) and on `internal/agui/openrouter_keys.go`. Record the killed/total counts for the final report.
 
-- [ ] **Step 4: Rebuild and restart `aura`**
+- [x] **Step 4: Rebuild and restart `aura`**
 
 ```bash
 docker compose build aura && docker compose up -d --no-deps aura
@@ -3638,9 +3638,9 @@ curl -sS https://openrouter.ai/api/v1/keys -H "Authorization: Bearer $(cat "$SCR
 
 Expected: one row named after the admin's identity id, with `external_user` equal to that id and `limit` `None`; one row `aura-services` with `limit` `10`.
 
-- [ ] **Step 8: Check the credit API.** In the console, with `id` set to the `identity_id` that `GET /api/me` returns: `await fetch('/api/admin/identities/' + id + '/credit').then(r => r.json())` returns 200 with `unlimited: true`. The panel's rendering of "no limit" is Plan B's job.
+- [x] **Step 8: Check the credit API.** In the console, with `id` set to the `identity_id` that `GET /api/me` returns: `await fetch('/api/admin/identities/' + id + '/credit').then(r => r.json())` returns 200 with `unlimited: true`. The panel's rendering of "no limit" is Plan B's job.
 
-- [ ] **Step 9: One chat turn, billed to the admin.** Send one message in the web chat as the admin. Wait about 60 seconds, then:
+- [x] **Step 9: One chat turn, billed to the admin.** Send one message in the web chat as the admin. Wait about 60 seconds, then:
 
 ```bash
 curl -sS -X POST https://openrouter.ai/api/v1/analytics/query -H "Authorization: Bearer $(cat "$SCRATCH/mkey")" -H "Content-Type: application/json" \
@@ -3649,7 +3649,7 @@ curl -sS -X POST https://openrouter.ai/api/v1/analytics/query -H "Authorization:
 
 Expected: a row whose `api_key_id` is the admin's key name (the identity id) with at least one request. Analytics lag 30-40 seconds (M-07); retry once before concluding anything.
 
-- [ ] **Step 10: Record and clean up.** Upsert the measured facts to aura-memory (or put them in the push summary if the MCP is down), each with what it does NOT prove: the wizard, the installer, the reinstall and the `.env` changes are Plans B-D. Delete `$SCRATCH/mkey`.
+- [x] **Step 10: Record and clean up.** Upsert the measured facts to aura-memory (or put them in the push summary if the MCP is down), each with what it does NOT prove: the wizard, the installer, the reinstall and the `.env` changes are Plans B-D. Delete `$SCRATCH/mkey`.
 
 - [ ] **Step 11: Push and watch CI**
 
