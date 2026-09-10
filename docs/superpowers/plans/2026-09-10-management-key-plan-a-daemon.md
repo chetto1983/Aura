@@ -659,7 +659,7 @@ Expected: PASS.
 **Interfaces:**
 - Produces: `llm.IsKeylessLocalBaseURL(raw string) bool`; `llm.RuntimeSnapshot.Version uint64` (grows by one on every `Replace`); `(*agui.Server).SetCreditAPI(spend, keys, provider, invalidate, backendBills func() bool)`.
 
-- [ ] **Step 1: Write the failing tests.** `internal/llm/keyless_test.go`:
+- [x] **Step 1: Write the failing tests.** `internal/llm/keyless_test.go`:
 
 ```go
 package llm
@@ -773,12 +773,12 @@ func TestResolverRefusalCarriesNoServicesKey(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests and watch them fail**
+- [x] **Step 2: Run the tests and watch them fail**
 
 Run: `go test ./internal/llm/ ./internal/runner/`
 Expected: build failure (`IsKeylessLocalBaseURL`, `Version` undefined); once those exist, `TestResolverFollowsTheRuntimeModel` fails on `model-one` against `boot-model`.
 
-- [ ] **Step 3: Implement.** `internal/llm/keyless.go` — the body is `cmd/aura/llm_client.go`'s `allowsKeylessLLMBaseURL`, which `internal/runner` could only copy because it cannot import `cmd/aura`:
+- [x] **Step 3: Implement.** `internal/llm/keyless.go` — the body is `cmd/aura/llm_client.go`'s `allowsKeylessLLMBaseURL`, which `internal/runner` could only copy because it cannot import `cmd/aura`:
 
 ```go
 package llm
@@ -944,12 +944,12 @@ In `cmd/aura/serve_agui.go`, replace line 251 with
 
 and change `} else if !creditBackendBills {` to `} else if !creditBackendBills() {` (add the `internal/llm` import if the file lacks it).
 
-- [ ] **Step 4: Run the tests and watch them pass**
+- [x] **Step 4: Run the tests and watch them pass**
 
 Run: `go test ./internal/llm/ ./internal/runner/ ./internal/agui/ ./cmd/aura/ && go build ./...`
 Expected: PASS.
 
-- [ ] **Step 5: Race, lint, commit** (`fix(runner): resolve identity clients on the live route, not the boot config`). Body: the resolver was built from the boot config and cached clients forever, so a route or model chosen in the wizard never reached identity turns; the two copies of the keyless classifier become one.
+- [x] **Step 5: Race, lint, commit** (`fix(runner): resolve identity clients on the live route, not the boot config`). Body: the resolver was built from the boot config and cached clients forever, so a route or model chosen in the wizard never reached identity turns; the two copies of the keyless classifier become one.
 
 ---
 

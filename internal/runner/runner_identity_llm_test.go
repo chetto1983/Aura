@@ -301,3 +301,68 @@ func TestResolverCacheInvalidatedOnCapChange(t *testing.T) {
 		t.Fatalf("after top-up: snapshot.Config.APIKey = %q, want key-for-topup", after.Config.APIKey)
 	}
 }
+
+func TestResolverFollowsTheRuntimeModel(t *testing.T) {
+	t.Parallel()
+	loader := newFakeKeyLoader(map[string]identitykey.Record{"identity-a": {Key: "key-for-a", LimitUSD: capUSD(5)}})
+	cloud := llm.Config{Provider: "openrouter", BaseURL: "https://openrouter.ai/api/v1", Model: "model-one", APIKey: "services-key"}
+	runtime := llm.NewRuntime(&fakeIdentityScopedClient{label: "services"}, cloud)
+	rs := NewIdentityLLMResolver(loader, runtime, llm.Config{Provider: "openrouter", Model: "boot-model"}, fakeClientFactory(), nil)
+
+	first, err := rs.SnapshotFor(context.Background(), "identity-a")
+	if err != nil {
+		t.Fatalf("SnapshotFor: %v", err)
+	}
+	if first.Config.Model != "model-one" || first.Config.APIKey != "key-for-a" {
+		t.Fatalf("snapshot = model %q key %q, want the live model-one with the identity's key", first.Config.Model, first.Config.APIKey)
+	}
+
+	cloud.Model = "model-two"
+	runtime.Replace(&fakeIdentityScopedClient{label: "services"}, cloud)
+	second, err := rs.SnapshotFor(context.Background(), "identity-a")
+	if err != nil {
+		t.Fatalf("SnapshotFor after Replace: %v", err)
+	}
+	if second.Config.Model != "model-two" || second.Config.APIKey != "key-for-a" {
+		t.Fatalf("after a model change: model %q key %q, want model-two with the identity's key", second.Config.Model, second.Config.APIKey)
+	}
+	if second.Client == first.Client {
+		t.Fatal("a model change served the client cached for the old model")
+	}
+}
+
+func TestResolverExemptsOnceTheRouteTurnsLocal(t *testing.T) {
+	t.Parallel()
+	loader := newFakeKeyLoader(nil)
+	cloud := llm.Config{Provider: "openrouter", BaseURL: "https://openrouter.ai/api/v1", Model: "m"}
+	runtime := llm.NewRuntime(&fakeIdentityScopedClient{label: "cloud"}, cloud)
+	rs := NewIdentityLLMResolver(loader, runtime, cloud, fakeClientFactory(), nil)
+
+	if _, err := rs.SnapshotFor(context.Background(), "identity-nokey"); !errors.Is(err, ErrNoIdentityLLMKey) {
+		t.Fatalf("cloud route with no key: err = %v, want ErrNoIdentityLLMKey", err)
+	}
+	local := &fakeIdentityScopedClient{label: "local"}
+	runtime.Replace(local, llm.Config{Provider: "ollama", BaseURL: "http://host.docker.internal:11434/v1", Model: "gemma"})
+	snap, err := rs.SnapshotFor(context.Background(), "identity-nokey")
+	if err != nil {
+		t.Fatalf("local route: %v", err)
+	}
+	if snap.Client != local {
+		t.Fatal("after the switch to a local route the resolver did not serve the process runtime's client")
+	}
+}
+
+func TestResolverRefusalCarriesNoServicesKey(t *testing.T) {
+	t.Parallel()
+	loader := newFakeKeyLoader(map[string]identitykey.Record{"identity-broke": {Key: "key-broke", LimitUSD: capUSD(0)}})
+	runtime := llm.NewRuntime(nil, llm.Config{Provider: "openrouter", BaseURL: "https://openrouter.ai/api/v1", Model: "m", APIKey: "services-key"})
+	rs := NewIdentityLLMResolver(loader, runtime, llm.Config{}, fakeClientFactory(), fakeExhaustedClient{})
+
+	snap, err := rs.SnapshotFor(context.Background(), "identity-broke")
+	if err != nil {
+		t.Fatalf("SnapshotFor: %v", err)
+	}
+	if snap.Config.APIKey != "" {
+		t.Fatal("a refusal snapshot carries the services key (CRED-07)")
+	}
+}

@@ -343,7 +343,7 @@ func TestSpendOverviewProviderFailureIsIsolated(t *testing.T) {
 	// Also wire the credit API on the SAME server with working fakes, proving its own
 	// route is unaffected by the Overview's failure.
 	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: capUSD(5), LimitReset: "monthly"}}
-	s.SetCreditAPI(&fakeCreditSpendReader{spend: map[string]float64{testLocalID: 1}}, keys, &fakeCreditProvider{}, &fakeCreditInvalidator{}, true)
+	s.SetCreditAPI(&fakeCreditSpendReader{spend: map[string]float64{testLocalID: 1}}, keys, &fakeCreditProvider{}, &fakeCreditInvalidator{}, func() bool { return true })
 
 	overviewRec := httptest.NewRecorder()
 	s.handleSpendOverview(overviewRec, spendRequest())

@@ -18,6 +18,7 @@ import (
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/readiness"
 	"github.com/chetto1983/aura/internal/swarm"
@@ -243,12 +244,13 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	// one saga instance, not a second copy of its wiring — and buildDeprovisioner
 	// never returns nil, so no #2924-class typed-nil guard is needed here.
 	aguiServer.SetIdentityRemover(buildDeprovisioner(chat))
-	// backendBills classifies the deployment's PRIMARY LLM backend (D-13) — a
-	// SEPARATE question from whether the OpenRouter MANAGEMENT credential (below) is
-	// configured, so CRED-09's exemption must be wireable even when the management
-	// credential is entirely absent (a local-backend deployment has no reason to set
-	// it).
-	creditBackendBills := !allowsKeylessLLMBaseURL(chat.cfg.LLM.BaseURL)
+	// backendBills classifies the deployment's PRIMARY LLM backend (D-13) on the live
+	// route, asked per request because the operator can switch route while the daemon
+	// runs — a SEPARATE question from whether the OpenRouter MANAGEMENT credential
+	// (below) is configured, so CRED-09's exemption must be wireable even when the
+	// management credential is entirely absent (a local-backend deployment has no
+	// reason to set it).
+	creditBackendBills := func() bool { return !llm.IsKeylessLocalBaseURL(chat.llmRuntime.Snapshot().Config.BaseURL) }
 	// creditResolver may be nil (no AURA_AUTHULA_SECRET, or a broken one); routed
 	// through agui.NewCreditInvalidator so the nil check happens on the CONCRETE
 	// pointer, never producing a non-nil interface wrapping a nil one (the SAME
@@ -262,7 +264,7 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 			agui.NewCreditInvalidator(creditResolver),
 			creditBackendBills,
 		)
-	} else if !creditBackendBills {
+	} else if !creditBackendBills() {
 		// Local backend: CRED-09's exemption path (credit_api.go) returns before
 		// either keys or provider is ever dereferenced, so wiring both nil here is
 		// safe. A billing backend with NO management credential is deliberately left

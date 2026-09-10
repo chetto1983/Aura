@@ -5,15 +5,18 @@ import (
 	"sync/atomic"
 )
 
-// RuntimeSnapshot is one immutable client/config pair used for a complete LLM run.
+// RuntimeSnapshot is one immutable client/config pair used for a complete LLM run. Version
+// grows by one on every Replace, so a cache built from a snapshot can tell it is stale.
 type RuntimeSnapshot struct {
-	Client Client
-	Config Config
+	Client  Client
+	Config  Config
+	Version uint64
 }
 
 // Runtime owns the primary LLM client and model profile selected by the operator.
 type Runtime struct {
 	current atomic.Pointer[RuntimeSnapshot]
+	version atomic.Uint64
 }
 
 // NewRuntime publishes the boot-time primary LLM client and model profile.
@@ -43,5 +46,5 @@ func (r *Runtime) Replace(client Client, cfg Config) {
 	}
 	cfg.Headers = maps.Clone(cfg.Headers)
 	cfg.Prices = maps.Clone(cfg.Prices)
-	r.current.Store(&RuntimeSnapshot{Client: client, Config: cfg})
+	r.current.Store(&RuntimeSnapshot{Client: client, Config: cfg, Version: r.version.Add(1)})
 }

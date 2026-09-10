@@ -11,8 +11,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
-	"net/url"
 	"strings"
 	"sync"
 
@@ -46,21 +44,32 @@ type llmClientFactory func(cfg llm.Config) llm.Client
 // client.go:43 already sets DisableKeepAlives, so N cached clients cost N transports,
 // not N connection pools.
 type IdentityLLMResolver struct {
-	loader          keyLoader
-	runtime         *llm.Runtime // process-wide fallback, used ONLY for the D-13 local exemption
+	loader keyLoader
+	// runtime is the live route: every identity-scoped client is built on its config with
+	// only the API key swapped, and its client serves the D-13 exemption. It is never a
+	// fallback credential on the OpenRouter path.
+	runtime *llm.Runtime
+	// base is the route used when no runtime is wired (tests, headless callers).
 	base            llm.Config
 	newClient       llmClientFactory
 	exhaustedClient llm.Client // CRED-05 sentinel, injected from cmd/aura (see below)
 
 	mu    sync.Mutex
-	cache map[string]llm.RuntimeSnapshot
+	cache map[string]cachedSnapshot
+}
+
+// cachedSnapshot is one identity's resolved snapshot and the runtime version it was built
+// on; a newer runtime (the operator switched route or model) makes it stale.
+type cachedSnapshot struct {
+	snapshot llm.RuntimeSnapshot
+	version  uint64
 }
 
 // NewIdentityLLMResolver builds a resolver over loader (the encrypted key store),
-// runtime (the process-wide snapshot source, consulted ONLY for the D-13 local-backend
-// exemption — never as a fallback on the OpenRouter path), base (the deployment's LLM
-// config template: provider, base URL, model and every non-credential field an
-// identity-scoped client still needs), and exhaustedClient — the CRED-05 refusal
+// runtime (the live route: every identity-scoped client is built on its config with only
+// the API key swapped, and its client serves the D-13 local-backend exemption — never a
+// fallback credential on the OpenRouter path), base (the route used when no runtime is
+// wired: tests, headless callers), and exhaustedClient — the CRED-05 refusal
 // client a zero-credit identity's snapshot carries. exhaustedClient's concrete type
 // (cmd/aura's creditExhaustedClient) lives in the composition root, which
 // internal/runner cannot import; injecting the already-built value through this
@@ -79,7 +88,7 @@ func NewIdentityLLMResolver(loader keyLoader, runtime *llm.Runtime, base llm.Con
 		base:            base,
 		newClient:       newClient,
 		exhaustedClient: exhaustedClient,
-		cache:           make(map[string]llm.RuntimeSnapshot),
+		cache:           make(map[string]cachedSnapshot),
 	}
 }
 
@@ -98,6 +107,9 @@ func NewIdentityLLMResolver(loader keyLoader, runtime *llm.Runtime, base llm.Con
 //   - DecisionExemptLocal: the process runtime's own snapshot (D-13) — that
 //     deployment bills nothing, so there is no credential to own per identity.
 //
+// A cached client is reused only while the runtime version it was built on is still
+// current.
+//
 // Getting DecisionRefuseNoKey and DecisionExemptLocal backwards is invisible in a
 // happy-path test, which is why the test suite asserts on the returned client's
 // IDENTITY, not merely on the absence of an error.
@@ -110,7 +122,8 @@ func (rs *IdentityLLMResolver) SnapshotFor(ctx context.Context, identityID strin
 		return llm.RuntimeSnapshot{}, errors.New("runner: empty identity id")
 	}
 
-	if cached, ok := rs.cachedSnapshot(identityID); ok {
+	base, version := rs.liveBase()
+	if cached, ok := rs.cachedSnapshot(identityID, version); ok {
 		return cached, nil
 	}
 
@@ -125,40 +138,52 @@ func (rs *IdentityLLMResolver) SnapshotFor(ctx context.Context, identityID strin
 		IdentityID:   identityID,
 		HasKey:       hasKey,
 		LimitUSD:     rec.LimitUSD,
-		BackendBills: !allowsKeylessLocalLLMBaseURL(rs.base.BaseURL),
+		BackendBills: !llm.IsKeylessLocalBaseURL(base.BaseURL),
 	})
 
+	// A refusal keeps the route but never the services key the runtime holds (CRED-07).
+	refusal := base
+	refusal.APIKey = ""
 	switch decision {
 	case identitykey.DecisionExemptLocal:
 		return rs.exemptionSnapshot(), nil
 	case identitykey.DecisionAllow:
-		cfg := rs.base
+		cfg := base
 		cfg.APIKey = rec.Key
 		snapshot := llm.RuntimeSnapshot{Client: rs.newClient(cfg), Config: cfg}
-		rs.cacheSnapshot(identityID, snapshot)
+		rs.cacheSnapshot(identityID, snapshot, version)
 		return snapshot, nil
 	case identitykey.DecisionRefuseNoCredit:
 		if rs.exhaustedClient == nil {
 			return llm.RuntimeSnapshot{}, fmt.Errorf("runner: %s: %w", identityID, decErr)
 		}
-		snapshot := llm.RuntimeSnapshot{Client: rs.exhaustedClient, Config: rs.base}
-		rs.cacheSnapshot(identityID, snapshot)
+		snapshot := llm.RuntimeSnapshot{Client: rs.exhaustedClient, Config: refusal}
+		rs.cacheSnapshot(identityID, snapshot, version)
 		return snapshot, nil
 	case identitykey.DecisionRefuseNoKey:
 		return llm.RuntimeSnapshot{}, fmt.Errorf("%w: %s", ErrNoIdentityLLMKey, identityID)
 	default:
-		// Deny by default (RBAC-09's discipline applied here): an unrecognized
-		// Decision value is a REFUSAL, never silently treated as Allow. This is
-		// reachable only if identitykey.Decide grows a fifth value without this
-		// switch being updated to match — the compiler will not catch that for
-		// us (Decision is an int, not an enum), so this branch is the guard.
+		// Deny by default (RBAC-09's discipline): an unrecognized Decision is a REFUSAL, never
+		// treated as Allow. Decision is an int, not an enum, so the compiler would not catch a
+		// fifth value added to identitykey.Decide without this switch.
 		return llm.RuntimeSnapshot{}, fmt.Errorf("runner: %s: unrecognized credit decision %d", identityID, decision)
 	}
 }
 
+// liveBase is the route every identity-scoped client is built on: the runtime the Settings
+// API republishes when the operator switches route or model, and the boot config only when no
+// runtime is wired.
+func (rs *IdentityLLMResolver) liveBase() (llm.Config, uint64) {
+	if rs.runtime == nil {
+		return rs.base, 0
+	}
+	snap := rs.runtime.Snapshot()
+	return snap.Config, snap.Version
+}
+
 // exemptionSnapshot is the D-13 local-backend exemption's ONLY caller of
-// rs.runtime.Snapshot() — split out under its own name so the refusal and the
-// exemption can never be mistaken for one another in the code.
+// rs.runtime.Snapshot() for a client — split out under its own name so the refusal and
+// the exemption can never be mistaken for one another in the code.
 func (rs *IdentityLLMResolver) exemptionSnapshot() llm.RuntimeSnapshot {
 	if rs.runtime == nil {
 		return llm.RuntimeSnapshot{}
@@ -166,16 +191,19 @@ func (rs *IdentityLLMResolver) exemptionSnapshot() llm.RuntimeSnapshot {
 	return rs.runtime.Snapshot()
 }
 
-func (rs *IdentityLLMResolver) cachedSnapshot(identityID string) (llm.RuntimeSnapshot, bool) {
+func (rs *IdentityLLMResolver) cachedSnapshot(identityID string, version uint64) (llm.RuntimeSnapshot, bool) {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
-	snapshot, ok := rs.cache[identityID]
-	return snapshot, ok
+	entry, ok := rs.cache[identityID]
+	if !ok || entry.version != version {
+		return llm.RuntimeSnapshot{}, false
+	}
+	return entry.snapshot, true
 }
 
-func (rs *IdentityLLMResolver) cacheSnapshot(identityID string, snapshot llm.RuntimeSnapshot) {
+func (rs *IdentityLLMResolver) cacheSnapshot(identityID string, snapshot llm.RuntimeSnapshot, version uint64) {
 	rs.mu.Lock()
-	rs.cache[identityID] = snapshot
+	rs.cache[identityID] = cachedSnapshot{snapshot: snapshot, version: version}
 	rs.mu.Unlock()
 }
 
@@ -196,28 +224,4 @@ func (rs *IdentityLLMResolver) ScopeContextToIdentitySnapshot(ctx context.Contex
 		return ctx, err
 	}
 	return withLLMRuntimeSnapshot(ctx, snapshot), nil
-}
-
-// allowsKeylessLocalLLMBaseURL classifies baseURL as a local, non-billing backend
-// (D-13) — vLLM/llama.cpp/Ollama running on the box or the LAN. It mirrors
-// cmd/aura/llm_client.go's allowsKeylessLLMBaseURL verbatim: internal/runner cannot
-// import cmd/aura (the composition root; the import would cycle back through
-// cmd/aura -> internal/runner), so the host classification is duplicated here by
-// necessity, the same layering constraint that duplicates identityCreateCapability
-// between cmd/aura and internal/agui. Keep both host lists in sync on change.
-func allowsKeylessLocalLLMBaseURL(raw string) bool {
-	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || u.Host == "" {
-		return false
-	}
-	host := strings.ToLower(u.Hostname())
-	if host == "localhost" || host == "host.docker.internal" || strings.HasSuffix(host, ".local") {
-		return true
-	}
-	switch host {
-	case "ollama", "vllm", "llama", "llama-cpp", "aura-llm", "aura-vllm-chat", "aura-llama-chat", "aura-llama":
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast())
 }

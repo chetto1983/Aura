@@ -67,9 +67,8 @@ type DecisionInput struct {
 	// or a real sub-cent balance rounds into a refusal.
 	LimitUSD *float64
 	// BackendBills reports whether the deployment's configured LLM backend is
-	// one that charges at all. The caller derives this from the SAME host
-	// classification cmd/aura/llm_client.go's allowsKeylessLLMBaseURL already
-	// uses, never a second list.
+	// one that charges at all. The caller derives this from
+	// llm.IsKeylessLocalBaseURL, the one host classification, never a second list.
 	BackendBills bool
 }
 

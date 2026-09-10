@@ -119,7 +119,7 @@ func newTestCreditServer(spend *fakeCreditSpendReader, keys *fakeCreditKeyStore,
 	if spend != nil {
 		sp = spend
 	}
-	s.SetCreditAPI(sp, ks, prov, inv, backendBills)
+	s.SetCreditAPI(sp, ks, prov, inv, func() bool { return backendBills })
 	return s
 }
 

@@ -86,15 +86,16 @@ type creditPorts struct {
 	keys         creditKeyStore
 	provider     creditProvider
 	invalidate   creditCacheInvalidator
-	backendBills bool
+	backendBills func() bool
 }
 
 // SetCreditAPI wires the credit routes. backendBills is the deployment-wide
 // classification (D-13): false means the configured LLM backend does not charge at
 // all (a local llama.cpp/Ollama server), which makes CRED-09's exemption uniform
-// across every identity rather than a per-identity decision. Until called, both
-// routes answer 503.
-func (s *Server) SetCreditAPI(spend creditSpendReader, keys creditKeyStore, provider creditProvider, invalidate creditCacheInvalidator, backendBills bool) {
+// across every identity rather than a per-identity decision. backendBills is asked on
+// every request, because the operator can switch route while the daemon runs. Until
+// called, both routes answer 503.
+func (s *Server) SetCreditAPI(spend creditSpendReader, keys creditKeyStore, provider creditProvider, invalidate creditCacheInvalidator, backendBills func() bool) {
 	s.credit = &creditPorts{spend: spend, keys: keys, provider: provider, invalidate: invalidate, backendBills: backendBills}
 }
 
@@ -113,7 +114,7 @@ func (s *Server) handleGetCredit(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "invalid identity id"})
 		return
 	}
-	if !s.credit.backendBills {
+	if !s.credit.backendBills() {
 		// CRED-09: a deployment-wide choice, uniform across every identity -- never a
 		// fabricated $0.00 for a backend that bills nothing.
 		writeJSON(w, map[string]any{"identity_id": targetID, "exempt": true})
@@ -219,7 +220,7 @@ func (s *Server) handleSetCredit(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "invalid identity id"})
 		return
 	}
-	if !s.credit.backendBills {
+	if !s.credit.backendBills() {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "this deployment's backend does not bill; there is no cap to set"})
 		return
 	}
