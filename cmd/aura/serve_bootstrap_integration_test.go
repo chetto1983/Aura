@@ -115,7 +115,22 @@ func TestBootstrapGrantsExplicitSet(t *testing.T) {
 	})
 
 	// Exactly the six declared rows, none of them '*'.
-	rows, err := pool.Query(ctx,
+	//
+	// Read inside a tx scoped to the new identity, because aura.capability_grants is
+	// RLS-protected (migration 0087, USING identity_id = app.current_identity). A plain
+	// pool.Query carries no setting, so the policy matches nothing and the rows the
+	// bootstrap just wrote are invisible: measured 2026-09-10 as aura_app against the live
+	// database, 0 rows unscoped and 6 scoped, for the same identity. That is the policy
+	// working, and reading it as evidence about the WRITE is what this test used to do.
+	readTx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin read tx: %v", err)
+	}
+	defer func() { _ = readTx.Rollback(ctx) }()
+	if err := db.SetTxIdentity(ctx, readTx, newID); err != nil {
+		t.Fatalf("scope read tx: %v", err)
+	}
+	rows, err := readTx.Query(ctx,
 		"SELECT capability FROM aura.capability_grants WHERE identity_id = $1::uuid ORDER BY capability", newID)
 	if err != nil {
 		t.Fatalf("list grants: %v", err)
