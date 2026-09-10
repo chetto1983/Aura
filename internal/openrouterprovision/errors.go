@@ -43,6 +43,10 @@ var ErrInvalidLimitReset = errors.New("openrouterprovision: invalid limit_reset"
 // refused locally, before any request goes out.
 var ErrConflictingLimitPatch = errors.New("openrouterprovision: a patch cannot both set and clear the limit")
 
+// ErrManagementKeyUnset reports a provisioning call made before an admin set the management
+// key. The ports are wired at boot either way and decide at call time.
+var ErrManagementKeyUnset = errors.New("openrouterprovision: management key not set")
+
 // ErrKeyNotApplicable is internal/llm's ErrSpendNotApplicable, re-exported
 // under this package's name. D-13/CRED-09: a local llama.cpp/Ollama backend
 // bills nothing and has no OpenRouter account behind it, and that

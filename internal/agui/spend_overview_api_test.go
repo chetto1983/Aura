@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -103,6 +104,17 @@ func newTestSpendServer(recon *fakeSpendReconciliation, caps *fakeSpendCapReader
 
 func spendRequest() *http.Request {
 	return httptest.NewRequest(http.MethodGet, "/api/admin/spend/overview", nil)
+}
+
+func TestSpendOverviewAnswers503WithoutAManagementKey(t *testing.T) {
+	recon := &fakeSpendReconciliation{tilesErr: fmt.Errorf("kpi windows: %w", openrouterprovision.ErrManagementKeyUnset)}
+	s := newTestSpendServer(recon, &fakeSpendCapReader{caps: map[string]float64{}}, []identity.Identity{{ID: testLocalID, Name: "local"}})
+
+	rec := httptest.NewRecorder()
+	s.handleSpendOverview(rec, spendRequest())
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "management key not set") {
+		t.Fatalf("status = %d body = %s, want 503 \"management key not set\"", rec.Code, rec.Body.String())
+	}
 }
 
 // TestSpendOverviewReturnsFiveKPIs proves the response carries five named metrics, each

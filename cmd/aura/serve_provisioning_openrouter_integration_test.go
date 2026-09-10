@@ -143,7 +143,10 @@ func TestOpenRouterKeyAdaptersRoundTripLive(t *testing.T) {
 		t.Fatalf("identitykey.NewStore: %v", err)
 	}
 	srv := fakeOpenRouterProvisioningServer(t)
-	cfg := openRouterKeyConfig{client: srv.Client(), baseURL: srv.URL, managementKey: "test-management-key", store: store}
+	cfg := openRouterKeyConfig{
+		client: srv.Client(), baseURL: srv.URL, store: store,
+		managementKey: func(context.Context) (string, error) { return "test-management-key", nil },
+	}
 	mint := openRouterKeyMintAdapter{cfg}
 	revoke := openRouterKeyRevokeAdapter{cfg}
 

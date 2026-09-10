@@ -12,6 +12,7 @@ import (
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/identitykey"
 	"github.com/chetto1983/aura/internal/openrouterprovision"
+	"github.com/chetto1983/aura/internal/settings"
 )
 
 // serve_provisioning_openrouter.go wires the plan 02-06 credit leg's two saga ports
@@ -26,15 +27,30 @@ var (
 	_ agui.OpenRouterKeyRevoker = openRouterKeyRevokeAdapter{}
 )
 
-// openRouterKeyConfig is the shared dial info both adapters below need: the HTTP client,
-// the Provisioning-API base URL (always OpenRouter's own, independent of the
-// deployment's primary-LLM base URL — D-13's local-backend exemption never applies to
-// this call), the management credential, and the encrypted per-identity key store.
+// openRouterKeyConfig is the dial info every adapter below shares: the HTTP client, the
+// Provisioning-API base URL (always OpenRouter's own, whatever the primary route — D-13's
+// local exemption never applies to this call), the management key, and the encrypted
+// per-identity key store.
 type openRouterKeyConfig struct {
-	client        *http.Client
-	baseURL       string
-	managementKey string
+	client  *http.Client
+	baseURL string
+	// managementKey reads the credential on every call: an admin sets it in the wizard long
+	// after boot, and a key captured at boot is why the first admin never got one.
+	managementKey func(context.Context) (string, error)
 	store         *identitykey.Store
+}
+
+// key returns the management key, or ErrManagementKeyUnset while no admin has set one.
+func (c openRouterKeyConfig) key(ctx context.Context) (string, error) {
+	key, err := c.managementKey(ctx)
+	if err != nil {
+		return "", err
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return "", openrouterprovision.ErrManagementKeyUnset
+	}
+	return key, nil
 }
 
 // openRouterKeyMintAdapter satisfies agui.OpenRouterKeyMinter (onboarding_provision_credit.go).
@@ -50,9 +66,18 @@ type openRouterKeyMintAdapter struct{ openRouterKeyConfig }
 // MintKey mints identityID's own OpenRouter key at a zero cap (CRED-02) named after the
 // identity id (keyName), persists it encrypted via identitykey.Store.Save, and returns
 // only the hash/label — the raw key returned by the provider goes out of scope at the
-// end of this call and never crosses back through the agui port (T-02-06c).
+// end of this call and never crosses back through the agui port (T-02-06c). An unset
+// management key is "nothing to mint yet": the saga still provisions the identity, and its
+// key is minted once an admin sets the management key.
 func (a openRouterKeyMintAdapter) MintKey(ctx context.Context, identityID, keyName string) (agui.MintedKey, error) {
-	result, err := openrouterprovision.MintKey(ctx, a.client, a.baseURL, a.managementKey, openrouterprovision.MintRequest{
+	managementKey, err := a.key(ctx)
+	if errors.Is(err, openrouterprovision.ErrManagementKeyUnset) {
+		return agui.MintedKey{}, nil
+	}
+	if err != nil {
+		return agui.MintedKey{}, err
+	}
+	result, err := openrouterprovision.MintKey(ctx, a.client, a.baseURL, managementKey, openrouterprovision.MintRequest{
 		IdentityID: identityID,
 		Name:       keyName,
 		Limit:      new(openrouterprovision.USDCap),
@@ -74,7 +99,7 @@ func (a openRouterKeyMintAdapter) MintKey(ctx context.Context, identityID, keyNa
 	}); err != nil {
 		// The key exists at the provider but Aura never recorded it — revoke rather than
 		// leave an orphan the operator pays for and cannot see (T-02-31).
-		if rerr := openrouterprovision.RevokeKey(context.WithoutCancel(ctx), a.client, a.baseURL, a.managementKey, result.Record.Hash); rerr != nil {
+		if rerr := openrouterprovision.RevokeKey(context.WithoutCancel(ctx), a.client, a.baseURL, managementKey, result.Record.Hash); rerr != nil {
 			slog.Error("openrouter key minter: revoke after a failed persist also failed — an orphan key may exist at the provider", "step", "compensate")
 		}
 		return agui.MintedKey{}, fmt.Errorf("openrouter key minter: persist: %w", err)
@@ -84,9 +109,17 @@ func (a openRouterKeyMintAdapter) MintKey(ctx context.Context, identityID, keyNa
 
 // RevokeKey is the forward saga's own compensation (onboarding_provision.go's
 // compCredit) — see the type doc for why this is hash-keyed and lives on a separate
-// type from openRouterKeyRevokeAdapter's identity-keyed RevokeKey below.
+// type from openRouterKeyRevokeAdapter's identity-keyed RevokeKey below. An empty hash is a
+// mint that never happened (no management key yet), so there is nothing to revoke.
 func (a openRouterKeyMintAdapter) RevokeKey(ctx context.Context, hash string) error {
-	return openrouterprovision.RevokeKey(ctx, a.client, a.baseURL, a.managementKey, hash)
+	if hash == "" {
+		return nil
+	}
+	managementKey, err := a.key(ctx)
+	if err != nil {
+		return err
+	}
+	return openrouterprovision.RevokeKey(ctx, a.client, a.baseURL, managementKey, hash)
 }
 
 // openRouterKeyPatchAdapter satisfies agui/credit_api.go's unexported creditProvider
@@ -97,7 +130,11 @@ func (a openRouterKeyMintAdapter) RevokeKey(ctx context.Context, hash string) er
 type openRouterKeyPatchAdapter struct{ openRouterKeyConfig }
 
 func (a openRouterKeyPatchAdapter) PatchCap(ctx context.Context, hash string, patch openrouterprovision.KeyPatch) (openrouterprovision.KeyRecord, error) {
-	return openrouterprovision.PatchKey(ctx, a.client, a.baseURL, a.managementKey, hash, patch)
+	managementKey, err := a.key(ctx)
+	if err != nil {
+		return openrouterprovision.KeyRecord{}, err
+	}
+	return openrouterprovision.PatchKey(ctx, a.client, a.baseURL, managementKey, hash, patch)
 }
 
 // openRouterKeyRevokeAdapter satisfies agui.OpenRouterKeyRevoker (deprovision.go's
@@ -110,7 +147,8 @@ type openRouterKeyRevokeAdapter struct{ openRouterKeyConfig }
 // RevokeKey revokes identityID's OpenRouter key. A missing key row is success (nothing
 // to revoke — an identity provisioned before this phase, or on a local backend, has
 // none); a load error that is NOT "no key" is a real failure, distinguished from the
-// skip case rather than collapsed into it.
+// skip case rather than collapsed into it. The row is read before the management key, so an
+// identity with no key is removed even while no management key is set.
 func (a openRouterKeyRevokeAdapter) RevokeKey(ctx context.Context, identityID string) error {
 	scoped := identityctx.WithIdentityID(ctx, identityID)
 	rec, err := a.store.Load(scoped)
@@ -120,7 +158,11 @@ func (a openRouterKeyRevokeAdapter) RevokeKey(ctx context.Context, identityID st
 		}
 		return fmt.Errorf("openrouter key revoker: load key for %s: %w", identityID, err)
 	}
-	return openrouterprovision.RevokeKey(ctx, a.client, a.baseURL, a.managementKey, rec.Hash)
+	managementKey, err := a.key(ctx)
+	if err != nil {
+		return err
+	}
+	return openrouterprovision.RevokeKey(ctx, a.client, a.baseURL, managementKey, rec.Hash)
 }
 
 // openRouterSpendAdapter satisfies agui/spend_overview_api.go's unexported
@@ -132,19 +174,31 @@ func (a openRouterKeyRevokeAdapter) RevokeKey(ctx context.Context, identityID st
 type openRouterSpendAdapter struct{ openRouterKeyConfig }
 
 func (a openRouterSpendAdapter) ListKeys(ctx context.Context) ([]openrouterprovision.KeyRecord, error) {
-	return openrouterprovision.ListKeys(ctx, a.client, a.baseURL, a.managementKey)
+	managementKey, err := a.key(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return openrouterprovision.ListKeys(ctx, a.client, a.baseURL, managementKey)
 }
 
 func (a openRouterSpendAdapter) GetCredits(ctx context.Context) (openrouterprovision.Credits, error) {
-	return openrouterprovision.GetCredits(ctx, a.client, a.baseURL, a.managementKey)
+	managementKey, err := a.key(ctx)
+	if err != nil {
+		return openrouterprovision.Credits{}, err
+	}
+	return openrouterprovision.GetCredits(ctx, a.client, a.baseURL, managementKey)
 }
 
 func (a openRouterSpendAdapter) KPIWindows(ctx context.Context, current, prior openrouterprovision.TimeRange) ([]openrouterprovision.KPITile, error) {
-	return openrouterprovision.KPIWindows(ctx, a.client, a.baseURL, a.managementKey, current, prior)
+	managementKey, err := a.key(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return openrouterprovision.KPIWindows(ctx, a.client, a.baseURL, managementKey, current, prior)
 }
 
-// openRouterKeyMinterFor builds the forward-saga port. Nil when the management
-// credential is absent or the store cannot be built — see resolveOpenRouterKeyConfig.
+// openRouterKeyMinterFor builds the forward-saga port. Nil only when the stores cannot be
+// built — see resolveOpenRouterKeyConfig.
 func openRouterKeyMinterFor(chat *chatEnv) agui.OpenRouterKeyMinter {
 	cfg, ok := resolveOpenRouterKeyConfig(chat)
 	if !ok {
@@ -164,35 +218,37 @@ func openRouterKeyRevokerFor(chat *chatEnv) agui.OpenRouterKeyRevoker {
 	return openRouterKeyRevokeAdapter{cfg}
 }
 
-// resolveOpenRouterKeyConfig is the single gate both constructors above share: nil
-// (ok=false) when the management credential is absent (D-13: a deployment with none —
-// including a local-backend-only deployment — degrades rather than boots fatal; an INFO
-// line names what is degraded) or when the identitykey.Store cannot be built (a
-// malformed AURA_AUTHULA_SECRET, logged and degraded rather than a boot panic,
-// mirroring buildIdentityLLMResolver's own nil-guard in serve_delegation.go).
-//
-// A present-but-broken credential does NOT nil-skip here: ok is still true and the
-// adapters built from it will fail loudly at call time, because a nil-port skip on a
-// broken (not absent) credential is exactly the silently-under-provisioning hazard
-// 02-RESEARCH.md Q5 names.
+// resolveOpenRouterKeyConfig builds the dial info every OpenRouter adapter shares. The
+// management key is read from aura.settings on each call, falling back to the value the
+// daemon booted with, so the ports are wired as soon as the pool and AURA_AUTHULA_SECRET
+// exist, and a missing key surfaces as ErrManagementKeyUnset at call time. ok is false only
+// when a store cannot be built (a malformed AURA_AUTHULA_SECRET, logged rather than a boot
+// panic, as buildIdentityLLMResolver does).
 func resolveOpenRouterKeyConfig(chat *chatEnv) (openRouterKeyConfig, bool) {
 	if chat == nil || chat.pool == nil || chat.cfg == nil {
 		return openRouterKeyConfig{}, false
 	}
-	key := strings.TrimSpace(chat.cfg.OpenRouterManagementKey)
-	if key == "" {
-		slog.Info("aura serve: no OpenRouter management credential (AURA_OPENROUTER_MANAGEMENT_KEY) — no per-identity OpenRouter keys will be minted or revoked")
-		return openRouterKeyConfig{}, false
-	}
-	store, err := identitykey.NewStore(chat.pool, chat.cfg.AuthulaSecret)
+	keys, err := identitykey.NewStore(chat.pool, chat.cfg.AuthulaSecret)
 	if err != nil {
 		slog.Warn("aura serve: identitykey store unavailable — openrouter key mint/revoke disabled", "err", err)
 		return openRouterKeyConfig{}, false
 	}
+	secrets, err := settings.NewStore(chat.pool, chat.cfg.AuthulaSecret)
+	if err != nil {
+		slog.Warn("aura serve: settings store unavailable — openrouter key mint/revoke disabled", "err", err)
+		return openRouterKeyConfig{}, false
+	}
+	bootKey := chat.cfg.OpenRouterManagementKey
 	return openRouterKeyConfig{
-		client:        http.DefaultClient,
-		baseURL:       openrouterprovision.DefaultBaseURL,
-		managementKey: key,
-		store:         store,
+		client:  http.DefaultClient,
+		baseURL: openrouterprovision.DefaultBaseURL,
+		store:   keys,
+		managementKey: func(ctx context.Context) (string, error) {
+			stored, err := secrets.Secret(ctx, "AURA_OPENROUTER_MANAGEMENT_KEY")
+			if err != nil || stored != "" {
+				return stored, err
+			}
+			return bootKey, nil
+		},
 	}, true
 }

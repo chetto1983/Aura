@@ -209,8 +209,13 @@ func (s *Server) sumIdentityCaps(ctx context.Context, identities []identity.Iden
 
 // failSpendReconciliation answers a provider-side failure with the generic 502 and keeps the
 // cause in the log only: the body must not carry provider internals, and without the log a
-// decode error behind this 502 was invisible (measured 2026-09-10).
+// decode error behind this 502 was invisible (measured 2026-09-10). A management key no admin
+// has set yet is not a provider failure: that is a 503 the Overview can name.
 func failSpendReconciliation(w http.ResponseWriter, err error) {
+	if errors.Is(err, openrouterprovision.ErrManagementKeyUnset) {
+		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "management key not set"})
+		return
+	}
 	slog.Error("aura admin: spend overview reconciliation failed", "err", err)
 	writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "couldn't load the spend overview"})
 }

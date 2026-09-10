@@ -1842,7 +1842,7 @@ Expected: PASS.
 - Consumes: `(*settings.Store).Secret` (Task 5), `cfg.OpenRouterManagementKey` filled at boot (Task 6).
 - Produces: `openrouterprovision.ErrManagementKeyUnset`; `openRouterKeyConfig.managementKey func(context.Context) (string, error)` and `(openRouterKeyConfig).key(ctx) (string, error)`.
 
-- [ ] **Step 1: Write the failing tests.** In `serve_provisioning_openrouter_test.go`, delete `TestProvisionerForNilWhenCredentialAbsent` and `TestOpenRouterManagementKeyAbsentLogsDegradedBoot` (they pin the boot-time capture this task removes) and add:
+- [x] **Step 1: Write the failing tests.** In `serve_provisioning_openrouter_test.go`, delete `TestProvisionerForNilWhenCredentialAbsent` and `TestOpenRouterManagementKeyAbsentLogsDegradedBoot` (they pin the boot-time capture this task removes) and add:
 
 ```go
 // TestOpenRouterPortsAreWiredBeforeTheManagementKeyExists proves the ports no longer hang on a
@@ -1900,12 +1900,12 @@ func TestSpendOverviewAnswers503WithoutAManagementKey(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests and watch them fail**
+- [x] **Step 2: Run the tests and watch them fail**
 
 Run: `go test ./cmd/aura/ -run 'OpenRouter|Mint' && go test ./internal/agui/ -run SpendOverview`
 Expected: build failure (`managementKey` is a string, `ErrManagementKeyUnset` undefined).
 
-- [ ] **Step 3: Implement.** In `errors.go`:
+- [x] **Step 3: Implement.** In `errors.go`:
 
 ```go
 // ErrManagementKeyUnset reports a provisioning call made before an admin set the management
@@ -2023,12 +2023,12 @@ func failSpendReconciliation(w http.ResponseWriter, err error) {
 
 In `serve_agui.go`, rewrite the comments above the two `resolveOpenRouterKeyConfig` calls: the ports are wired whenever the stores build, and each call reads the management key, answering "management key not set" until an admin sets it.
 
-- [ ] **Step 4: Run the tests and watch them pass**
+- [x] **Step 4: Run the tests and watch them pass**
 
 Run: `go test ./cmd/aura/ ./internal/agui/ ./internal/openrouterprovision/ && go build ./...`, then with the stack up `go test -tags db_integration -race -run OpenRouter ./cmd/aura/`
 Expected: PASS.
 
-- [ ] **Step 5: Race, lint, commit** (`fix(openrouter): read the management key at call time`). Body: the key was captured at boot, so an admin who set it in the wizard got no key until a restart, and the first admin never got one at all. Name the two deleted tests and why.
+- [x] **Step 5: Race, lint, commit** (`fix(openrouter): read the management key at call time`). Body: the key was captured at boot, so an admin who set it in the wizard got no key until a restart, and the first admin never got one at all. Name the two deleted tests and why.
 
 ---
 

@@ -1,18 +1,18 @@
 package main
 
 import (
-	"bytes"
-	"log/slog"
-	"strings"
+	"context"
+	"errors"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/openrouterprovision"
 )
 
 // serve_provisioning_openrouter_test.go proves the plan 02-06 composition-root wiring:
-// both saga ports are non-nil in a real boot (management credential + pool present),
-// both nil when the credential is absent, and a boot without the credential logs one
-// INFO line naming what is degraded rather than failing closed.
+// both saga ports are wired whenever the pool and AURA_AUTHULA_SECRET are present, whether
+// or not a management key is set yet, and the key is read at call time.
 
 // openRouterManagementConfiguredCfg is a config with the pool-independent fields
 // openRouterKeyMinterFor/openRouterKeyRevokerFor need: the management credential and a
@@ -42,49 +42,32 @@ func TestRevokerForBuildsNonNilRevokerWhenConfigured(t *testing.T) {
 	}
 }
 
-// TestProvisionerForNilWhenCredentialAbsent proves both constructors degrade to nil —
-// never a boot-fatal error — when the management credential is unset, matching D-13's
-// local-backend-deployment case.
-func TestProvisionerForNilWhenCredentialAbsent(t *testing.T) {
-	cfg := &config.Config{AuthulaSecret: validProvisioningAuthulaSecret} // no OpenRouterManagementKey
-	chat := &chatEnv{pool: newLazyPool(t), cfg: cfg}
-	if minter := openRouterKeyMinterFor(chat); minter != nil {
-		t.Fatal("openRouterKeyMinterFor: want nil when the management credential is absent")
+// TestOpenRouterPortsAreWiredBeforeTheManagementKeyExists proves the ports no longer hang on a
+// key captured at boot: they exist whenever the pool and AURA_AUTHULA_SECRET do.
+func TestOpenRouterPortsAreWiredBeforeTheManagementKeyExists(t *testing.T) {
+	chat := &chatEnv{pool: newLazyPool(t), cfg: &config.Config{AuthulaSecret: validProvisioningAuthulaSecret}}
+	if openRouterKeyMinterFor(chat) == nil || openRouterKeyRevokerFor(chat) == nil {
+		t.Fatal("ports are nil without a management key; they must be wired and decide at call time")
 	}
-	if revoker := openRouterKeyRevokerFor(chat); revoker != nil {
-		t.Fatal("openRouterKeyRevokerFor: want nil when the management credential is absent")
-	}
-	// Nil chat / nil pool degrade the same way.
-	if minter := openRouterKeyMinterFor(nil); minter != nil {
-		t.Fatal("openRouterKeyMinterFor(nil): want nil")
-	}
-	if revoker := openRouterKeyRevokerFor(&chatEnv{cfg: openRouterManagementConfiguredCfg()}); revoker != nil {
-		t.Fatal("openRouterKeyRevokerFor with a nil pool: want nil")
+	if openRouterKeyMinterFor(nil) != nil || openRouterKeyRevokerFor(&chatEnv{cfg: chat.cfg}) != nil {
+		t.Fatal("a nil chat or a nil pool must still yield nil ports")
 	}
 }
 
-// TestOpenRouterManagementKeyAbsentLogsDegradedBoot proves a boot with the management
-// credential absent logs one INFO line naming what is degraded and does not panic —
-// asserted on the log line itself, not merely on the absence of a crash.
-func TestOpenRouterManagementKeyAbsentLogsDegradedBoot(t *testing.T) {
-	var buf bytes.Buffer
-	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})))
-	t.Cleanup(func() { slog.SetDefault(prev) })
+func TestOpenRouterKeyConfigRefusesABlankManagementKey(t *testing.T) {
+	cfg := openRouterKeyConfig{managementKey: func(context.Context) (string, error) { return "  ", nil }}
+	if _, err := cfg.key(context.Background()); !errors.Is(err, openrouterprovision.ErrManagementKeyUnset) {
+		t.Fatalf("key() error = %v, want ErrManagementKeyUnset", err)
+	}
+}
 
-	chat := &chatEnv{pool: newLazyPool(t), cfg: &config.Config{AuthulaSecret: validProvisioningAuthulaSecret}}
-	if minter := openRouterKeyMinterFor(chat); minter != nil {
-		t.Fatal("openRouterKeyMinterFor: want nil when the management credential is absent")
+func TestMintSkipsWhileTheManagementKeyIsUnset(t *testing.T) {
+	cfg := openRouterKeyConfig{managementKey: func(context.Context) (string, error) { return "", nil }}
+	minted, err := openRouterKeyMintAdapter{cfg}.MintKey(context.Background(), "id", "id")
+	if err != nil || minted != (agui.MintedKey{}) {
+		t.Fatalf("MintKey without a management key = %+v, %v; want an empty key and no error", minted, err)
 	}
-
-	out := buf.String()
-	if !strings.Contains(out, "level=INFO") {
-		t.Fatalf("boot without the management credential did not log at INFO level:\n%s", out)
-	}
-	if !strings.Contains(out, "AURA_OPENROUTER_MANAGEMENT_KEY") {
-		t.Fatalf("boot log did not name the missing credential:\n%s", out)
-	}
-	if !strings.Contains(out, "no per-identity OpenRouter keys will be minted or revoked") {
-		t.Fatalf("boot log did not name what is degraded:\n%s", out)
+	if err := (openRouterKeyMintAdapter{cfg}).RevokeKey(context.Background(), ""); err != nil {
+		t.Fatalf("RevokeKey(\"\") = %v, want nil: nothing was minted", err)
 	}
 }

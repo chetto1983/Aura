@@ -256,6 +256,8 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	// pointer, never producing a non-nil interface wrapping a nil one (the SAME
 	// #2924-class trap buildIdentityLLMResolver's own callers already guard against).
 	creditResolver := buildIdentityLLMResolver(chat)
+	// The OpenRouter ports are wired whenever the stores build; each call reads the
+	// management key and answers "management key not set" until an admin sets it.
 	if orCfg, ok := resolveOpenRouterKeyConfig(chat); ok {
 		aguiServer.SetCreditAPI(
 			agui.NewPgSpendReader(chat.pool),
@@ -267,9 +269,10 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	} else if !creditBackendBills() {
 		// Local backend: CRED-09's exemption path (credit_api.go) returns before
 		// either keys or provider is ever dereferenced, so wiring both nil here is
-		// safe. A billing backend with NO management credential is deliberately left
-		// UNWIRED (503) instead — resolveOpenRouterKeyConfig already logged why, and
-		// exposing a provider port that would panic on first use is worse than 503.
+		// safe. A billing backend whose stores cannot be built (a malformed
+		// AURA_AUTHULA_SECRET) is deliberately left UNWIRED (503) instead —
+		// resolveOpenRouterKeyConfig already logged why, and exposing a provider port
+		// that would panic on first use is worse than 503.
 		aguiServer.SetCreditAPI(
 			agui.NewPgSpendReader(chat.pool),
 			nil,
@@ -281,10 +284,9 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	// Wire Phase 2 plan 09's account-wide reconciliation surface (RBAC-11/CRED-06):
 	// GET /api/admin/spend/overview reads the SAME management credential the credit
 	// routes above use (ListKeys/GetCredits/KPIWindows all require it, independent of
-	// which backend serves completions) — reconciliation has nothing to reconcile
-	// without it, so unlike the credit routes there is no local-backend exemption path
-	// here: an absent management credential leaves this route unwired (503), same as a
-	// billing backend with no management credential above.
+	// which backend serves completions). It is wired whenever the stores build and
+	// answers 503 "management key not set" until an admin sets one
+	// (failSpendReconciliation).
 	if orCfg, ok := resolveOpenRouterKeyConfig(chat); ok {
 		aguiServer.SetSpendOverview(openRouterSpendAdapter{orCfg}, orCfg.store, nil)
 	}
