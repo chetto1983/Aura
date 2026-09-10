@@ -61,6 +61,30 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+describe('CreditPanel — a key with no limit', () => {
+  // The server answers an administrator's own key with unlimited: true and a null cap, remaining
+  // and percent_used. Calling toFixed on that null crashed the whole Settings workspace.
+  it('renders no limit and the spend, with no gauge and no cap form', async () => {
+    stubFetch({
+      credit: {
+        identity_id: ID,
+        exempt: false,
+        unlimited: true,
+        cap: null,
+        reset_interval: 'monthly',
+        spend: 2.5,
+        remaining: null,
+        percent_used: null,
+      },
+    });
+    renderPanel();
+    expect(await screen.findByText('No limit')).toBeTruthy();
+    expect(screen.getByText('Spend: $2.50')).toBeTruthy();
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    expect(screen.queryByLabelText('Spending cap')).toBeNull();
+  });
+});
+
 describe('CreditPanel — the billing surface', () => {
   it('renders cap, reset interval and the spend gauge from the ledger response', async () => {
     stubFetch({ credit: BILLING });

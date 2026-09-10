@@ -135,6 +135,23 @@ export function CreditPanel({ identityId }: CreditPanelProps) {
     );
   }
 
+  // An administrator's own key has no spending limit, and the reconciler clears any cap put on
+  // it, so there is no cap to edit and no gauge to fill: the panel says so and shows the spend.
+  if (credit.unlimited === true) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <span className="text-xs font-semibold uppercase tracking-wide text-text-faint">
+          {t('admin.credit.capLabel')}
+        </span>
+        <p className="text-sm text-text">{t('admin.credit.noLimit')}</p>
+        <p className="text-[13px] text-text-muted">{t('admin.credit.noLimitBody')}</p>
+        <p className="font-mono text-[12px] text-text-muted">
+          {t('admin.credit.spendLabel')}: {formatUsd(credit.spend)}
+        </p>
+      </div>
+    );
+  }
+
   const previousCap = credit.cap;
   const capValue = capEdit ?? credit.cap.toFixed(2);
   const resetValue = resetEdit ?? asResetInterval(credit.reset_interval);
@@ -150,6 +167,8 @@ export function CreditPanel({ identityId }: CreditPanelProps) {
       { identityId, patch: { cap: capValue, reset_interval: resetValue } },
       {
         onSuccess: (result) => {
+          // Only a clear_cap answers without a cap, and this form always sends a cap.
+          if (result.cap === null) return;
           // Both the field and the advisory read the APPLIED cap, not the typed one: 5.126 and
           // 5.13 are the same change, and the admin must be shown the figure the store and the
           // provider actually hold rather than the one they happened to type.

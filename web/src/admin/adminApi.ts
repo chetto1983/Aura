@@ -112,6 +112,7 @@ export interface CreditExempt {
 export interface CreditRecord {
   readonly identity_id: string;
   readonly exempt: false;
+  readonly unlimited?: false;
   readonly cap: number;
   readonly reset_interval: string;
   readonly spend: number;
@@ -119,7 +120,21 @@ export interface CreditRecord {
   readonly percent_used: number;
 }
 
-export type CreditResponse = CreditExempt | CreditRecord;
+/** A key with no spending limit (an administrator's own): no cap, so no remaining and no
+ * percentage either — the server sends null for all three rather than a zero that would read
+ * as exhausted. */
+export interface CreditUnlimited {
+  readonly identity_id: string;
+  readonly exempt: false;
+  readonly unlimited: true;
+  readonly cap: null;
+  readonly reset_interval: string;
+  readonly spend: number;
+  readonly remaining: null;
+  readonly percent_used: null;
+}
+
+export type CreditResponse = CreditExempt | CreditRecord | CreditUnlimited;
 
 /** POST /api/admin/identities/{id}/credit body — either field may be omitted to leave it
  * unchanged (server-side nil-means-unchanged convention, credit_api.go's creditSetRequest). */
@@ -133,7 +148,9 @@ export interface CreditSetPatch {
  * show 5.126 when the provider and the store both hold 5.13. */
 export interface CreditSetResult {
   readonly identity_id: string;
-  readonly cap: number;
+  /** null only when the request cleared the cap (clear_cap), which leaves the key unlimited. */
+  readonly cap: number | null;
+  readonly unlimited: boolean;
   readonly reset_interval: string;
   readonly store_applied: boolean;
   readonly provider_applied: boolean;
