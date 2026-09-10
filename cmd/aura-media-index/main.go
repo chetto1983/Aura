@@ -239,7 +239,11 @@ func loadEffectiveConfig(ctx context.Context) (*config.Config, error) {
 			return nil, fmt.Errorf("settings database: %w", err)
 		}
 		defer pool.Close()
-		if err = settings.OverlayEnv(ctx, settings.NewStore(pool)); err != nil {
+		store, err := settings.NewStore(pool, os.Getenv("AURA_AUTHULA_SECRET"))
+		if err != nil {
+			return nil, fmt.Errorf("settings store: %w", err)
+		}
+		if err = settings.OverlayEnv(ctx, store); err != nil {
 			return nil, fmt.Errorf("settings overlay: %w", err)
 		}
 	}

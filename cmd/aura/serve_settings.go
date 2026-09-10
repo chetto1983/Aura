@@ -16,11 +16,15 @@ import (
 )
 
 func wireSettingsProviders(server *agui.Server, chat *chatEnv) {
-	store := settings.NewStore(chat.pool)
-	server.SetSettingsStore(store)
-	// Same store, second seam: aura.llm_provider_routes is a different table with a
-	// different meaning (the memory of each provider's route, not the active one).
-	server.SetLLMRouteStore(store)
+	store, err := settings.NewStore(chat.pool, chat.cfg.AuthulaSecret)
+	if err != nil {
+		slog.Error("settings store unavailable; the Settings routes answer 503", "err", err)
+	} else {
+		server.SetSettingsStore(store)
+		// Same store, second seam: aura.llm_provider_routes is a different table with a
+		// different meaning (the memory of each provider's route, not the active one).
+		server.SetLLMRouteStore(store)
+	}
 	server.SetTelegramBotProbe(telegramGetMeProbe)
 	server.SetLLMRuntime(chat.llmRuntime)
 	server.SetLLMRouteReloader(&primaryLLMRouteReloader{

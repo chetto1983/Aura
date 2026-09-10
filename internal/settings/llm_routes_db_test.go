@@ -48,7 +48,7 @@ func routeOf(t *testing.T, s *Store, provider string) (baseURL, model, by string
 func TestUpsertRouteRemembersAndReplacesPerProvider(t *testing.T) {
 	ctx := context.Background()
 	pool := migratedPool(t)
-	s := NewStore(pool)
+	s := mustStore(t, pool)
 	cleanupRoutes(t, pool, testCloudProvider, testLocalProvider)
 
 	if _, err := s.UpsertRoute(ctx, testLocalProvider, "  http://host.docker.internal:8084/v1  ", " gemma-4-12b ", "operator"); err != nil {
@@ -98,7 +98,7 @@ func TestUpsertRouteRemembersAndReplacesPerProvider(t *testing.T) {
 func TestUpsertRouteRefusesAnIncompleteRoute(t *testing.T) {
 	ctx := context.Background()
 	pool := migratedPool(t)
-	s := NewStore(pool)
+	s := mustStore(t, pool)
 	cleanupRoutes(t, pool, testLocalProvider)
 
 	for _, tc := range []struct {

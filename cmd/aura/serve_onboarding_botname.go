@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -22,8 +23,9 @@ const botUsernameResolverTTL = 30 * time.Second
 // over the boot env, mirroring settings_api.effectiveSettingValue) and getMe's it, caching the
 // result per token for botUsernameResolverTTL. An empty or invalid token yields "" so
 // provisioning stays unavailable rather than minting a dead deep-link. pool may be nil (no DB
-// / interview-only) → the resolver falls back to the boot env token only.
-func newBotUsernameResolver(pool *pgxpool.Pool) func(context.Context) string {
+// / interview-only) → the resolver falls back to the boot env token only. authulaSecret keys
+// the encrypted settings rows; a malformed one also leaves the env token only.
+func newBotUsernameResolver(pool *pgxpool.Pool, authulaSecret string) func(context.Context) string {
 	var (
 		mu         sync.Mutex
 		cachedTok  string
@@ -32,7 +34,12 @@ func newBotUsernameResolver(pool *pgxpool.Pool) func(context.Context) string {
 	)
 	var store *settings.Store
 	if pool != nil {
-		store = settings.NewStore(pool)
+		built, err := settings.NewStore(pool, authulaSecret)
+		if err != nil {
+			slog.Warn("onboarding: settings store unavailable; the bot name comes from the environment token only", "err", err)
+		} else {
+			store = built
+		}
 	}
 	effectiveToken := func(ctx context.Context) string {
 		if store != nil {

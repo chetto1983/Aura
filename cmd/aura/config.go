@@ -155,7 +155,12 @@ var settingsListerForCLI = func(ctx context.Context) (settings.Lister, func(), s
 	case !ok:
 		return nil, nil, "no database configured, so aura.settings was not consulted"
 	}
-	return settings.NewStore(pool), pool.Close, ""
+	store, err := settings.NewStore(pool, os.Getenv("AURA_AUTHULA_SECRET"))
+	if err != nil {
+		pool.Close()
+		return nil, nil, "aura.settings unreadable: " + err.Error()
+	}
+	return store, pool.Close, ""
 }
 
 // applySettingsOverlay copies the allowlisted aura.settings rows onto the process

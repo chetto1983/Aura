@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -96,7 +97,7 @@ func valueOf(rows []sqlc.AuraSettings, key string) (string, bool) {
 
 func TestStoreUpsertListReplaceDelete(t *testing.T) {
 	ctx := context.Background()
-	s := NewStore(migratedPool(t))
+	s := mustStore(t, migratedPool(t))
 	cleanupKeys(t, s, stepsKey, wallKey, secretKey)
 
 	row, err := s.Upsert(ctx, stepsKey, "7", "tester")
@@ -161,7 +162,7 @@ func TestStoreUpsertListReplaceDelete(t *testing.T) {
 // Every write goes through the advisory-locked transaction; a context that is already
 // done must fail closed at Begin, never write.
 func TestStoreWritesFailClosedOnDoneContext(t *testing.T) {
-	s := NewStore(migratedPool(t))
+	s := mustStore(t, migratedPool(t))
 	cleanupKeys(t, s, stepsKey)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -181,5 +182,64 @@ func TestStoreWritesFailClosedOnDoneContext(t *testing.T) {
 	}
 	if _, ok := valueOf(rows, stepsKey); ok {
 		t.Fatal("a failed write left a row behind")
+	}
+}
+
+func mustStore(t *testing.T, pool *pgxpool.Pool) *Store {
+	t.Helper()
+	store, err := NewStore(pool, envOrSkip(t, "AURA_AUTHULA_SECRET"))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	return store
+}
+
+// TestSecretRowsAreStoredEncrypted proves the table holds ciphertext while every reader of
+// the store gets the plaintext back.
+func TestSecretRowsAreStoredEncrypted(t *testing.T) {
+	pool := migratedPool(t)
+	store := mustStore(t, pool)
+	ctx := context.Background()
+	t.Cleanup(func() { _ = store.Delete(context.Background(), "TELEGRAM_BOT_TOKEN") })
+
+	if _, err := store.Upsert(ctx, "TELEGRAM_BOT_TOKEN", "123:plain-token", "test"); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	var stored string
+	if err := pool.QueryRow(ctx, `SELECT value FROM aura.settings WHERE key = 'TELEGRAM_BOT_TOKEN'`).Scan(&stored); err != nil {
+		t.Fatalf("read the raw row: %v", err)
+	}
+	if !strings.HasPrefix(stored, "enc:v1:") || strings.Contains(stored, "plain-token") {
+		t.Fatalf("stored value = %q, want ciphertext", stored)
+	}
+	if got, err := store.Secret(ctx, "TELEGRAM_BOT_TOKEN"); err != nil || got != "123:plain-token" {
+		t.Fatalf("Secret = %q, %v; want the plaintext", got, err)
+	}
+}
+
+// TestBootEncryptsPlaintextSecretRows proves an install from before encryption converges, and
+// that a second pass finds nothing left to do.
+func TestBootEncryptsPlaintextSecretRows(t *testing.T) {
+	pool := migratedPool(t)
+	store := mustStore(t, pool)
+	ctx := context.Background()
+	t.Cleanup(func() { _ = store.Delete(context.Background(), "TELEGRAM_BOT_TOKEN") })
+
+	if _, err := pool.Exec(ctx, `INSERT INTO aura.settings (key, value, is_secret) VALUES ('TELEGRAM_BOT_TOKEN', '123:legacy', true)
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`); err != nil {
+		t.Fatalf("seed a plaintext row: %v", err)
+	}
+	if n, err := store.EncryptPlaintextSecrets(ctx); err != nil || n != 1 {
+		t.Fatalf("EncryptPlaintextSecrets = %d, %v; want 1 row", n, err)
+	}
+	var stored string
+	if err := pool.QueryRow(ctx, `SELECT value FROM aura.settings WHERE key = 'TELEGRAM_BOT_TOKEN'`).Scan(&stored); err != nil {
+		t.Fatalf("read the raw row: %v", err)
+	}
+	if !strings.HasPrefix(stored, "enc:v1:") {
+		t.Fatalf("stored value = %q, want ciphertext after the boot pass", stored)
+	}
+	if again, err := store.EncryptPlaintextSecrets(ctx); err != nil || again != 0 {
+		t.Fatalf("second pass = %d, %v; want 0", again, err)
 	}
 }

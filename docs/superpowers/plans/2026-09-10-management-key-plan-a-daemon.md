@@ -967,7 +967,7 @@ This task changes only the storage: `OverlayEnv` still copies the decrypted secr
 **Interfaces:**
 - Produces: `settings.NewStore(pool *pgxpool.Pool, authulaSecretHex string) (*settings.Store, error)`; `(*settings.Store).Secret(ctx context.Context, key string) (string, error)`; `(*settings.Store).EncryptPlaintextSecrets(ctx context.Context) (int, error)`; `settings.ErrSecretsUnavailable`; `newBotUsernameResolver(pool *pgxpool.Pool, authulaSecret string)`.
 
-- [ ] **Step 1: Write the failing unit tests.** `internal/settings/secrets_test.go`:
+- [x] **Step 1: Write the failing unit tests.** `internal/settings/secrets_test.go`:
 
 ```go
 package settings
@@ -1059,12 +1059,12 @@ func TestOpenSecretRejectsDamagedValues(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests and watch them fail**
+- [x] **Step 2: Run the tests and watch them fail**
 
 Run: `go test ./internal/settings/`
 Expected: build failure (`newSecretAEAD` undefined).
 
-- [ ] **Step 3: Implement the cipher.** `internal/settings/secrets.go`:
+- [x] **Step 3: Implement the cipher.** `internal/settings/secrets.go`:
 
 ```go
 package settings
@@ -1169,7 +1169,7 @@ func openSecret(aead cipher.AEAD, stored string) (string, error) {
 }
 ```
 
-- [ ] **Step 4: Implement the store.** In `settings.go`, add `"crypto/cipher"`, `"log/slog"` and `"strings"` to the imports and replace `Store`, `NewStore` and `List` with:
+- [x] **Step 4: Implement the store.** In `settings.go`, add `"crypto/cipher"`, `"log/slog"` and `"strings"` to the imports and replace `Store`, `NewStore` and `List` with:
 
 ```go
 // Store is the aura.settings CRUD over a pgx pool. Secret rows are encrypted on the way in
@@ -1280,7 +1280,7 @@ pass `Value: stored` to `UpsertSetting`, and after the transaction set `row.Valu
 
 Update the package doc's second sentence: "Secret rows are AES-GCM ciphertext (secrets.go); the Store decrypts them for its callers."
 
-- [ ] **Step 5: Update every constructor call.**
+- [x] **Step 5: Update every constructor call.**
 
 `cmd/aura/chat_boot_settings.go` (new; the moved functions keep their doc comments) replaces the overlay closure in `resolveConfigAndPool` with `overlay: overlayStoreSettings,` and adds:
 
@@ -1357,7 +1357,7 @@ func wireSettingsProviders(server *agui.Server, chat *chatEnv) {
 		}
 ```
 
-- [ ] **Step 6: Write the integration tests.** In `store_db_test.go`, the two `NewStore(migratedPool(t))` calls (lines 99 and 164) become `mustStore(t, migratedPool(t))`, and add:
+- [x] **Step 6: Write the integration tests.** In `store_db_test.go`, the two `NewStore(migratedPool(t))` calls (lines 99 and 164) become `mustStore(t, migratedPool(t))`, and add:
 
 ```go
 func mustStore(t *testing.T, pool *pgxpool.Pool) *Store {
@@ -1421,12 +1421,12 @@ func TestBootEncryptsPlaintextSecretRows(t *testing.T) {
 ```
 
 
-- [ ] **Step 7: Run the tests and watch them pass**
+- [x] **Step 7: Run the tests and watch them pass**
 
 Run: `go test ./internal/settings/ ./cmd/aura/ ./cmd/aura-media-index/ && go build ./... && wc -l cmd/aura/chat_boot.go cmd/aura/chat_boot_settings.go`, then with the stack up `go test -tags db_integration -race ./internal/settings/`
 Expected: PASS; `chat_boot.go` under 600 lines.
 
-- [ ] **Step 8: Race, lint, commit** (`feat(settings): encrypt secret rows at rest behind an enc:v1: prefix`). Body: `aura.settings` held the OpenRouter keys and the Telegram token in plaintext; the key is derived from `AURA_AUTHULA_SECRET` under its own info string, so no new secret is needed; `chat_boot.go` loses its settings functions to stay under the cap.
+- [x] **Step 8: Race, lint, commit** (`feat(settings): encrypt secret rows at rest behind an enc:v1: prefix`). Body: `aura.settings` held the OpenRouter keys and the Telegram token in plaintext; the key is derived from `AURA_AUTHULA_SECRET` under its own info string, so no new secret is needed; `chat_boot.go` loses its settings functions to stay under the cap.
 
 ---
 

@@ -1,7 +1,8 @@
 // Package settings is the cockpit-editable runtime override layer for Aura's
 // model-backend knobs — the "Settings" page where the operator swaps any backend
 // local↔cloud (embed/STT/TTS/vision), sets the single OpenRouter key, and picks
-// the embed dimension. Rows live in aura.settings (migration 0024). At
+// the embed dimension. Rows live in aura.settings (migration 0024); secret rows are
+// AES-GCM ciphertext (secrets.go), which the Store decrypts for its callers. At
 // daemon boot OverlayEnv applies them onto the process environment BEFORE
 // config.Load, so the existing env readers pick them up with NO per-field mapping;
 // DB values WIN over pre-set env (the operator's UI choice is authoritative).
@@ -15,8 +16,11 @@ package settings
 
 import (
 	"context"
+	"crypto/cipher"
+	"log/slog"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -97,39 +101,125 @@ type Lister interface {
 	List(ctx context.Context) ([]sqlc.AuraSettings, error)
 }
 
-// Store is the aura.settings CRUD over a pgx pool.
+// Store is the aura.settings CRUD over a pgx pool. Secret rows are encrypted on the way in
+// and decrypted on the way out, so every caller sees plaintext and the table never holds it.
 type Store struct {
 	pool *pgxpool.Pool
 	q    *sqlc.Queries
+	aead cipher.AEAD // nil when built without AURA_AUTHULA_SECRET: secret rows unavailable
 }
 
-// NewStore builds a settings store over the pool.
-func NewStore(pool *pgxpool.Pool) *Store {
-	return &Store{pool: pool, q: sqlc.New(pool)}
+// NewStore builds a settings store over the pool. authulaSecretHex keys the secret rows (see
+// secrets.go): empty leaves them unavailable, malformed fails.
+func NewStore(pool *pgxpool.Pool, authulaSecretHex string) (*Store, error) {
+	aead, err := newSecretAEAD(authulaSecretHex)
+	if err != nil {
+		return nil, err
+	}
+	return &Store{pool: pool, q: sqlc.New(pool), aead: aead}, nil
 }
 
-// List returns all settings rows ordered by key.
+// List returns all settings rows ordered by key, secret values decrypted. A secret this store
+// cannot open reads as empty and is logged, rather than failing the whole list: the Settings
+// page and the overlay still work, and Secret reports the error to the reader who needs it.
 func (s *Store) List(ctx context.Context) ([]sqlc.AuraSettings, error) {
-	return s.q.ListSettings(ctx)
+	rows, err := s.q.ListSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		if !AllowedKeys[rows[i].Key].Secret {
+			continue
+		}
+		plain, err := openSecret(s.aead, rows[i].Value)
+		if err != nil {
+			slog.Warn("settings: secret row unreadable", "key", rows[i].Key, "err", err)
+			plain = ""
+		}
+		rows[i].Value = plain
+	}
+	return rows, nil
+}
+
+// Secret returns the decrypted value of one secret row, "" when the row is absent.
+func (s *Store) Secret(ctx context.Context, key string) (string, error) {
+	rows, err := s.q.ListSettings(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, row := range rows {
+		if row.Key == key {
+			return openSecret(s.aead, row.Value)
+		}
+	}
+	return "", nil
+}
+
+// storedValue encrypts a secret key's value; every other key is stored as given.
+func (s *Store) storedValue(key, value string) (string, error) {
+	if !AllowedKeys[key].Secret {
+		return value, nil
+	}
+	return sealSecret(s.aead, value)
+}
+
+// EncryptPlaintextSecrets rewrites every secret row still stored in the clear, so an install
+// upgraded from before encryption converges at boot. It returns how many rows it rewrote.
+func (s *Store) EncryptPlaintextSecrets(ctx context.Context) (int, error) {
+	if s.aead == nil {
+		return 0, nil
+	}
+	rewritten := 0
+	err := s.withWriteLock(ctx, func(q *sqlc.Queries) error {
+		rows, err := q.ListSettings(ctx)
+		if err != nil {
+			return err
+		}
+		for _, row := range rows {
+			if !AllowedKeys[row.Key].Secret || row.Value == "" || strings.HasPrefix(row.Value, secretPrefix) {
+				continue
+			}
+			sealed, err := sealSecret(s.aead, row.Value)
+			if err != nil {
+				return err
+			}
+			if _, err := q.UpsertSetting(ctx, sqlc.UpsertSettingParams{
+				Key: row.Key, Value: sealed, IsSecret: true, UpdatedBy: row.UpdatedBy,
+			}); err != nil {
+				return err
+			}
+			rewritten++
+		}
+		return nil
+	})
+	return rewritten, err
 }
 
 // Upsert writes (or replaces) an allowlisted key. The is_secret flag is taken from
 // the allowlist, not the caller, so a value is consistently redacted by the API.
 func (s *Store) Upsert(ctx context.Context, key, value, by string) (sqlc.AuraSettings, error) {
 	meta := AllowedKeys[key]
+	stored, err := s.storedValue(key, value)
+	if err != nil {
+		return sqlc.AuraSettings{}, err
+	}
 	var updatedBy pgtype.Text
 	if by != "" {
 		updatedBy = pgtype.Text{String: by, Valid: true}
 	}
 	var row sqlc.AuraSettings
-	err := s.withWriteLock(ctx, func(q *sqlc.Queries) error {
+	err = s.withWriteLock(ctx, func(q *sqlc.Queries) error {
 		var err error
 		row, err = q.UpsertSetting(ctx, sqlc.UpsertSettingParams{
-			Key: key, Value: value, IsSecret: meta.Secret, UpdatedBy: updatedBy,
+			Key: key, Value: stored, IsSecret: meta.Secret, UpdatedBy: updatedBy,
 		})
 		return err
 	})
-	return row, err
+	if err != nil {
+		return row, err
+	}
+	row.Value = value
+	return row, nil
 }
 
 // ReplaceMany writes one model-profile mutation under one advisory-locked transaction.
@@ -154,16 +244,21 @@ func (s *Store) ReplaceMany(
 		}
 		for _, key := range keys {
 			meta := AllowedKeys[key]
+			stored, err := s.storedValue(key, values[key])
+			if err != nil {
+				return err
+			}
 			var updatedBy pgtype.Text
 			if by != "" {
 				updatedBy = pgtype.Text{String: by, Valid: true}
 			}
 			row, err := q.UpsertSetting(ctx, sqlc.UpsertSettingParams{
-				Key: key, Value: values[key], IsSecret: meta.Secret, UpdatedBy: updatedBy,
+				Key: key, Value: stored, IsSecret: meta.Secret, UpdatedBy: updatedBy,
 			})
 			if err != nil {
 				return err
 			}
+			row.Value = values[key]
 			rows = append(rows, row)
 		}
 		return nil

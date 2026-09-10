@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
@@ -32,7 +31,6 @@ import (
 	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
-	"github.com/chetto1983/aura/internal/settings"
 	"github.com/chetto1983/aura/internal/share"
 	"github.com/chetto1983/aura/internal/steer"
 	"github.com/chetto1983/aura/internal/toolinvocations"
@@ -215,11 +213,6 @@ type migrationHeadChecker func(context.Context, string) error
 // migrationHeadChecker is: the real one needs a live Postgres to answer.
 type rlsEnforcementChecker func(context.Context, *pgxpool.Pool) error
 
-type bootSettingsOps struct {
-	openKeyless func(context.Context) (*pgxpool.Pool, bool, error)
-	overlay     func(context.Context, *pgxpool.Pool) error
-}
-
 type chatEnvAssembler func(
 	context.Context,
 	*config.Config,
@@ -247,84 +240,6 @@ func assembleChatEnvAtMigrationHead(
 		return nil, err
 	}
 	return assemble(ctx, cfg, pool)
-}
-
-// resolveConfigAndPool loads the config and opens the DB pool, handing BOTH to
-// migration gate and assembleChatEnv. It owns the pool across every post-open
-// failure: if the settings overlay or the config reload fails it closes the pool
-// before returning. On success it returns the OPEN pool and the caller takes over
-// its lifecycle. Returning the pool from here also fixes a latent shadow bug: the
-// previous inline form declared the overlay pool with `:=` inside the keyless branch,
-// shadowing the outer var, so an overlay-success boot proceeded on a nil pool.
-func resolveConfigAndPool(ctx context.Context, loadConfig func() (*config.Config, error), open dbOpener) (*config.Config, *pgxpool.Pool, error) {
-	return resolveConfigAndPoolWithSettings(
-		ctx,
-		loadConfig,
-		open,
-		bootSettingsOps{
-			openKeyless: openSettingsOverlayPool,
-			overlay: func(ctx context.Context, pool *pgxpool.Pool) error {
-				return settings.OverlayEnv(ctx, settings.NewStore(pool))
-			},
-		},
-	)
-}
-
-func resolveConfigAndPoolWithSettings(
-	ctx context.Context,
-	loadConfig func() (*config.Config, error),
-	open dbOpener,
-	settingsOps bootSettingsOps,
-) (*config.Config, *pgxpool.Pool, error) {
-	cfg, err := loadConfig()
-	if err != nil {
-		if !errors.Is(err, llm.ErrMissingAPIKey) && !isMissingAPIKey(err) {
-			return nil, nil, err
-		}
-		// Keyless first load: the required infra secrets may live in the DB settings
-		// overlay. openSettingsOverlayPool returns a nil pool whenever !ok/err, so a
-		// failed overlay path never leaks a live pool.
-		pool, ok, overlayErr := settingsOps.openKeyless(ctx)
-		if overlayErr != nil || !ok {
-			return nil, nil, err
-		}
-		overlayBootSettings(ctx, pool, settingsOps)
-		cfg, err = loadConfig()
-		if err != nil {
-			pool.Close()
-			return nil, nil, err
-		}
-		return cfg, pool, nil
-	}
-	// Fail fast on an empty required infra secret (O-04) BEFORE opening any connection,
-	// so a misconfigured deploy errors at boot with a named cause instead of a late DB
-	// auth failure or a silently degraded graph. This pre-open Validate is the
-	// load-bearing half of the intentional double-Validate: it must run before open()
-	// (assembleChatEnv re-checks the RELOADED config after the overlay).
-	if err := cfg.Validate(); err != nil {
-		return nil, nil, err
-	}
-	pool, err := open(ctx, &cfg.DB)
-	if err != nil {
-		return nil, nil, fmt.Errorf("db open: %w", err)
-	}
-	overlayBootSettings(ctx, pool, settingsOps)
-	cfg, err = loadConfig()
-	if err != nil {
-		pool.Close()
-		return nil, nil, err
-	}
-	return cfg, pool, nil
-}
-
-func overlayBootSettings(
-	ctx context.Context,
-	pool *pgxpool.Pool,
-	settingsOps bootSettingsOps,
-) {
-	if err := settingsOps.overlay(ctx, pool); err != nil {
-		fmt.Fprintln(os.Stderr, "warn: settings overlay:", err)
-	}
 }
 
 // releaseBootResources is the boot close-on-error path (QUAL-04b): it drains any MCP
@@ -575,16 +490,4 @@ func newSteerInbox(pool *pgxpool.Pool, cfg *config.Config) *steer.PostgresStore 
 		SteerTTL:            time.Duration(cfg.SteerQueueTTLSec) * time.Second,
 		DelegationResultTTL: time.Duration(cfg.DelegationResultTTLSec) * time.Second,
 	})
-}
-
-func openSettingsOverlayPool(ctx context.Context) (*pgxpool.Pool, bool, error) {
-	dbCfg := config.LoadDB()
-	if strings.TrimSpace(dbCfg.DB.URL) == "" {
-		return nil, false, nil
-	}
-	pool, err := db.Open(ctx, &dbCfg.DB)
-	if err != nil {
-		return nil, false, err
-	}
-	return pool, true, nil
 }

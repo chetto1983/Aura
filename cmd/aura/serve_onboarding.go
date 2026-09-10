@@ -285,7 +285,7 @@ func buildOnboardingService(
 	deps.BotUsername = resolveBotUsername(ctx, telegram.LoadConfig().BotToken)
 	// Live resolver (ONBD Telegram step): a token saved mid-session via Settings yields a
 	// working deep-link without a daemon restart. Falls back to deps.BotUsername when empty.
-	deps.BotUsernameResolver = newBotUsernameResolver(chat.pool)
+	deps.BotUsernameResolver = newBotUsernameResolver(chat.pool, chat.cfg.AuthulaSecret)
 	// The saga refuses to provision a 2nd identity unless the operator has declared this
 	// deployment fit to host one. A boot WARN used to sit here telling operators to run
 	// `aura documents backfill` — a command that has never existed — about a
