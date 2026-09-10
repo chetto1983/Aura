@@ -9,7 +9,7 @@
 # banner, column types, value distributions -- and that logic is 2,592 lines of Go with
 # real edge cases in it. A Python port would be a second implementation to keep in step,
 # which is the duplication this rewrite exists to remove.
-FROM golang:1.26-bookworm AS filecard
+FROM golang:1.27-bookworm AS filecard
 WORKDIR /src
 COPY go.mod go.sum ./
 # proxy.golang.org drops a stream mid-fetch often enough to redden a whole CI run on a

@@ -18,7 +18,7 @@ neo4j==5.28.1
 # belongs to. Measured 2026-09-09, the ArcadeDB manual's outline anchors 1,290 of 1,290
 # entries into the extracted text while a regex tuned to its numbering finds 2 candidates in
 # the Italian Constitution. Pure Python, no models, no conversion step.
-pypdf==6.1.3
+pypdf==6.18.0
 # markdown-it-py reads a Markdown file's own headings, which is what fills heading_path for
 # the formats pypdf cannot open. Measured 2026-09-09 through the documents MCP server:
 # prd.md and aura-quality-snapshot.md returned passages carrying a character span and an

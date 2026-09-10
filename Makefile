@@ -61,7 +61,7 @@ help:
 # Bootstrap the quality toolchain into $GOPATH/bin. golangci-lint is pinned to the
 # CI version (.github/workflows/ci.yml) for local/CI parity; the rest track latest.
 tools:
-	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
 	go install honnef.co/go/tools/cmd/staticcheck@latest
 	go install golang.org/x/vuln/cmd/govulncheck@latest
 	go install github.com/mibk/dupl@latest

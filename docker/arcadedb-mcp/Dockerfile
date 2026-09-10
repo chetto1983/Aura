@@ -2,7 +2,7 @@
 # Build context is the repo root: the server shares internal/arcadedb with Aura,
 # so it builds from the same module rather than vendoring a second copy.
 #
-FROM golang:1.26-alpine AS build
+FROM golang:1.27-alpine AS build
 
 WORKDIR /src
 COPY go.mod go.sum ./

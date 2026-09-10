@@ -205,7 +205,7 @@ if ! docker run --rm --network "$network" --add-host host.docker.internal:host-g
   -e AURA_ARCADEDB_TENANT_SECRET="$tenant_secret" \
   -e AURA_EMBED_BASE_URL=http://aura-llama-embed:8081 -e AURA_EMBED_DIMENSIONS=768 \
   -e AURA_DOCUMENT_E2E_MEDIA_IDENTITY="$identity_id" \
-  -v "$repo_root:/src" -w /src golang:1.26-bookworm \
+  -v "$repo_root:/src" -w /src golang:1.27-bookworm \
   go test -count=1 -tags document_live_e2e -run '^TestMediaDocumentProductionAgentE2E$' \
     -timeout 6m -v ./cmd/aura >"$scratch/agent.log" 2>&1; then
   tail -n 200 "$scratch/agent.log" >&2

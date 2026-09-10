@@ -25,6 +25,11 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "build(deps)"
+    ignore:
+      # The types track the Node runtime the images ship (NodeSource 24, docker/aura/Dockerfile);
+      # a major here would type APIs the runtime does not have.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       vitest-toolchain:
         patterns:
