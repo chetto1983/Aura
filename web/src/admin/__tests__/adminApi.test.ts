@@ -6,6 +6,7 @@ import {
   fetchAudit,
   fetchIdentityCredit,
   fetchMe,
+  fetchSpendOverview,
   hasCapability,
   removeIdentity,
   setIdentityCredit,
@@ -191,5 +192,37 @@ describe('adminApi fetchers', () => {
     await expect(removeIdentity('id-1')).rejects.toThrow(
       'the last administrative identity cannot remove or deactivate itself',
     );
+  });
+
+  it('fetchSpendOverview reads the account-wide reconciliation route', async () => {
+    let capturedUrl = '';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        capturedUrl = urlOf(input);
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              kpis: [{ metric: 'total_usage', value: 5.52, delta_percent: 12.5, series: [1, 2] }],
+              top_identities: [
+                {
+                  identity_id: 'id-1',
+                  name: 'alice@example.com',
+                  masked_label: 'sk-or-v1-caa...61c',
+                  lifetime_spend: 5.52,
+                },
+              ],
+              over_allocation: { triggered: false, sum_caps: 10, available: 20 },
+            }),
+            { status: 200 },
+          ),
+        );
+      }),
+    );
+    const result = await fetchSpendOverview();
+    expect(capturedUrl).toBe('/api/admin/spend/overview');
+    expect(result.kpis).toHaveLength(1);
+    expect(result.top_identities[0]?.name).toBe('alice@example.com');
+    expect(result.over_allocation.triggered).toBe(false);
   });
 });

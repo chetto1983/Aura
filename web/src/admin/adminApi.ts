@@ -179,3 +179,44 @@ export async function removeIdentity(identityId: string): Promise<RemoveIdentity
   }
   return (await res.json()) as RemoveIdentityResult;
 }
+
+/**
+ * GET /api/admin/spend/overview response (RBAC-11/CRED-06, plan 02-09,
+ * internal/agui/spend_overview_api.go). Reconciliation tier (D-08): sourced from
+ * OpenRouter's own key roster + analytics, periodically refreshed, and NEVER the number
+ * CRED-05's refusal or CRED-06's Credit panel reads — those stay on Aura's in-band ledger,
+ * and the two will legitimately disagree during the provider's measured lag (M-07).
+ */
+export interface SpendOverviewKPI {
+  readonly metric: string;
+  readonly value: number;
+  /** null = no delta — the decided backstop for an undefined percent change against a
+   * zero prior-period value (openrouterprovision.DeltaPercent). Never a fabricated number. */
+  readonly delta_percent: number | null;
+  readonly series: readonly number[];
+}
+
+/** One Top-Identities-by-spend row. masked_label is OpenRouter's own masked form
+ * (e.g. "sk-or-v1-caa...61c"); never a key, a hash, or a management credential. */
+export interface SpendOverviewIdentity {
+  readonly identity_id: string;
+  readonly name: string;
+  readonly masked_label: string;
+  readonly lifetime_spend: number;
+}
+
+export interface SpendOverviewOverAllocation {
+  readonly triggered: boolean;
+  readonly sum_caps: number;
+  readonly available: number;
+}
+
+export interface SpendOverviewResponse {
+  readonly kpis: readonly SpendOverviewKPI[];
+  readonly top_identities: readonly SpendOverviewIdentity[];
+  readonly over_allocation: SpendOverviewOverAllocation;
+}
+
+export function fetchSpendOverview(): Promise<SpendOverviewResponse> {
+  return getJSON<SpendOverviewResponse>('/api/admin/spend/overview');
+}

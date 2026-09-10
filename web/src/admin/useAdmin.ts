@@ -12,6 +12,7 @@ import {
   fetchAudit,
   fetchIdentityCredit,
   fetchMe,
+  fetchSpendOverview,
   hasCapability,
   removeIdentity,
   setIdentityCredit,
@@ -110,5 +111,16 @@ export function useRemoveIdentity() {
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: IDENTITIES_KEY });
     },
+  });
+}
+
+/** useSpendOverview reads the account-wide reconciliation surface (RBAC-11/CRED-06,
+ * plan 02-09): the five KPI tiles, the Top-Identities-by-spend ranked list, and the
+ * over-allocation advisory — all from one call. */
+export function useSpendOverview() {
+  return useQuery({
+    queryKey: ['admin', 'spend-overview'],
+    queryFn: fetchSpendOverview,
+    retry: false,
   });
 }

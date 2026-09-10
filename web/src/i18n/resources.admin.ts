@@ -92,6 +92,27 @@ export const adminEn = {
         running: 'running',
       },
     },
+    overview: {
+      heading: 'Spend overview',
+      loading: 'Loading spend overview...',
+      loadError: "Couldn't load the spend overview. Try refreshing.",
+      empty: "No spend yet — this account hasn't made a billed request.",
+      overAllocation:
+        "Assigned caps total more than this account's available OpenRouter credit. A lower-priority identity could be starved without warning — lower a cap or add credit to the account.",
+      vsPrevPeriod: 'vs prev period',
+      kpi: {
+        totalSpend: 'Total spend',
+        requests: 'Requests',
+        tokenVolume: 'Token volume',
+        cacheHitRate: 'Cache hit rate',
+        blendedCost: 'Blended $/1M',
+      },
+      topIdentities: {
+        heading: 'Top identities by spend',
+        lifetimeSpend: 'Lifetime spend',
+        seeFullRoster: 'See full roster below',
+      },
+    },
   },
 } as const;
 
@@ -184,6 +205,27 @@ export const adminIt = {
         ok: 'ok',
         error: 'errore',
         running: 'in corso',
+      },
+    },
+    overview: {
+      heading: 'Panoramica della spesa',
+      loading: 'Caricamento della panoramica della spesa...',
+      loadError: 'Impossibile caricare la panoramica della spesa. Prova ad aggiornare.',
+      empty: 'Ancora nessuna spesa — questo account non ha ancora effettuato una richiesta fatturata.',
+      overAllocation:
+        "I limiti assegnati superano nel totale il credito OpenRouter disponibile per questo account. Un'identità a priorità più bassa potrebbe restare senza credito senza preavviso — riduci un limite o aggiungi credito all'account.",
+      vsPrevPeriod: 'rispetto al periodo precedente',
+      kpi: {
+        totalSpend: 'Spesa totale',
+        requests: 'Richieste',
+        tokenVolume: 'Volume token',
+        cacheHitRate: 'Tasso di cache hit',
+        blendedCost: '$/1M combinato',
+      },
+      topIdentities: {
+        heading: 'Prime identità per spesa',
+        lifetimeSpend: 'Spesa complessiva',
+        seeFullRoster: 'Vedi il registro completo qui sotto',
       },
     },
   },
