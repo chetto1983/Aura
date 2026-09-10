@@ -275,6 +275,16 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 			creditBackendBills,
 		)
 	}
+	// Wire Phase 2 plan 09's account-wide reconciliation surface (RBAC-11/CRED-06):
+	// GET /api/admin/spend/overview reads the SAME management credential the credit
+	// routes above use (ListKeys/GetCredits/KPIWindows all require it, independent of
+	// which backend serves completions) — reconciliation has nothing to reconcile
+	// without it, so unlike the credit routes there is no local-backend exemption path
+	// here: an absent management credential leaves this route unwired (503), same as a
+	// billing backend with no management credential above.
+	if orCfg, ok := resolveOpenRouterKeyConfig(chat); ok {
+		aguiServer.SetSpendOverview(openRouterSpendAdapter{orCfg}, orCfg.store, nil)
+	}
 	// Wire the Phase-29 MCP WRITE provider (MCPW-01/02/03): install/env-edit/trust/enable/
 	// disable/remove, each atomic with its mcp_audit row (WriteConfigWithAudit) and re-probed
 	// for the live tool count. Built best-effort over the shared pool + the managed-config

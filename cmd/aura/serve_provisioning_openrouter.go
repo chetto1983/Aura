@@ -123,6 +123,26 @@ func (a openRouterKeyRevokeAdapter) RevokeKey(ctx context.Context, identityID st
 	return openrouterprovision.RevokeKey(ctx, a.client, a.baseURL, a.managementKey, rec.Hash)
 }
 
+// openRouterSpendAdapter satisfies agui/spend_overview_api.go's unexported
+// spendReconciliation port (plan 02-09, RBAC-11/CRED-06): the three reconciliation calls
+// (ListKeys, GetCredits, KPIWindows) over the SAME management credential + base URL the
+// mint/revoke/patch adapters above already share. *identitykey.Store already satisfies
+// the sibling spendCapReader port (Load) with no adapter of its own, exactly like
+// credit_api.go's creditKeyStore reuses it directly.
+type openRouterSpendAdapter struct{ openRouterKeyConfig }
+
+func (a openRouterSpendAdapter) ListKeys(ctx context.Context) ([]openrouterprovision.KeyRecord, error) {
+	return openrouterprovision.ListKeys(ctx, a.client, a.baseURL, a.managementKey)
+}
+
+func (a openRouterSpendAdapter) GetCredits(ctx context.Context) (openrouterprovision.Credits, error) {
+	return openrouterprovision.GetCredits(ctx, a.client, a.baseURL, a.managementKey)
+}
+
+func (a openRouterSpendAdapter) KPIWindows(ctx context.Context, current, prior openrouterprovision.TimeRange) ([]openrouterprovision.KPITile, error) {
+	return openrouterprovision.KPIWindows(ctx, a.client, a.baseURL, a.managementKey, current, prior)
+}
+
 // openRouterKeyMinterFor builds the forward-saga port. Nil when the management
 // credential is absent or the store cannot be built — see resolveOpenRouterKeyConfig.
 func openRouterKeyMinterFor(chat *chatEnv) agui.OpenRouterKeyMinter {

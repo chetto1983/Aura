@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -88,18 +89,16 @@ func (f *fakeIdentityAdmin) RevokeCapability(_ context.Context, id, cap string) 
 }
 
 // HasCapability answers the 37F-13/WEBSHARE-04 share.public mint-time gate the same way
-// *identity.Store does: the '*' wildcard or an exact match in the in-memory grant map.
+// *identity.Store does: an exact match in the in-memory grant map, and nothing else. It
+// used to treat '*' as match-all, which the Store stopped doing when migration 0121
+// retired the wildcard -- its query is `capability = $2` -- so a fake still honouring it
+// would let a test pass on an authorization production refuses.
 func (f *fakeIdentityAdmin) HasCapability(_ context.Context, id, cap string) (bool, error) {
-	for _, c := range f.caps[id] {
-		if c == "*" || c == cap {
-			return true, nil
-		}
-	}
-	return false, nil
+	return slices.Contains(f.caps[id], cap), nil
 }
 
 func TestHandleMeReturnsCallerCapabilities(t *testing.T) {
-	admin := &fakeIdentityAdmin{caps: map[string][]string{testLocalID: {"*", "governance.write"}}}
+	admin := &fakeIdentityAdmin{caps: map[string][]string{testLocalID: {"agent.run", "governance.write"}}}
 	s := &Server{idAdmin: admin}
 	req := withPrincipal(httptest.NewRequest(http.MethodGet, "/api/me", nil), testLocalID)
 	rec := httptest.NewRecorder()
@@ -114,8 +113,9 @@ func TestHandleMeReturnsCallerCapabilities(t *testing.T) {
 	if out.IdentityID != testLocalID {
 		t.Fatalf("identity_id = %q, want %q", out.IdentityID, testLocalID)
 	}
-	if len(out.Capabilities) != 2 || out.Capabilities[0] != "*" {
-		t.Fatalf("capabilities = %v, want [* governance.write]", out.Capabilities)
+	// handleMe returns the store's list verbatim, so the wire carries exactly the grants.
+	if len(out.Capabilities) != 2 || out.Capabilities[0] != "agent.run" || out.Capabilities[1] != "governance.write" {
+		t.Fatalf("capabilities = %v, want [agent.run governance.write]", out.Capabilities)
 	}
 }
 
@@ -123,7 +123,7 @@ func TestHandleMeReturnsCallerCapabilities(t *testing.T) {
 // must carry the LIVE llm.Config.ContextWindow (e.g. a 128K local model), not leave the
 // frontend to fall back to the DeepSeek-V4 1M default (footerMetrics.DEFAULT_CONTEXT_WINDOW).
 func TestHandleMeReturnsConfiguredContextWindow(t *testing.T) {
-	admin := &fakeIdentityAdmin{caps: map[string][]string{testLocalID: {"*"}}}
+	admin := &fakeIdentityAdmin{caps: map[string][]string{testLocalID: {"agent.run"}}}
 	s := &Server{idAdmin: admin, contextWindow: 131072}
 	req := withPrincipal(httptest.NewRequest(http.MethodGet, "/api/me", nil), testLocalID)
 	rec := httptest.NewRecorder()
@@ -169,7 +169,7 @@ func TestActiveContextWindowReadsHotRuntimeSnapshot(t *testing.T) {
 }
 
 func TestHandleMeFallsBackToLocalWithoutPrincipal(t *testing.T) {
-	admin := &fakeIdentityAdmin{caps: map[string][]string{testLocalID: {"*"}}}
+	admin := &fakeIdentityAdmin{caps: map[string][]string{testLocalID: {"agent.run"}}}
 	s := &Server{idAdmin: admin}
 	// No withPrincipal — the loopback-dev path (RequireAuth pass-through) must resolve local.
 	rec := httptest.NewRecorder()
@@ -325,7 +325,7 @@ func TestRevokeCapabilityCallsStore(t *testing.T) {
 func TestHandleAdminIdentitiesSanitizesNames(t *testing.T) {
 	admin := &fakeIdentityAdmin{
 		identities: []identity.Identity{{ID: testLocalID, Name: "token=sk-leak", Kind: "user"}},
-		caps:       map[string][]string{testLocalID: {"*"}},
+		caps:       map[string][]string{testLocalID: {"agent.run"}},
 	}
 	s := &Server{idAdmin: admin}
 	rec := httptest.NewRecorder()

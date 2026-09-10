@@ -34,6 +34,20 @@ package main
 //     deployment. Referenced directly as identity.CapIdentityDelete (not through a
 //     same-shaped local alias like identityCreateCapability) so the mount and the
 //     capability name it depends on are one grep away from each other.
+//
+// Phase 2 plan 09 (RBAC-11/CRED-06) adds a third:
+//
+//   - GET /api/admin/spend/overview — the account-wide reconciliation surface
+//     (spend_overview_api.go): five KPI tiles, Top-Identities-by-spend, the
+//     over-allocation advisory. Gated on governance.write, the SAME gate the credit
+//     routes above use — this is a read, and credit management (unlike identity
+//     removal) was never one of D-01's two administrative capabilities. Under D-01
+//     that gate no longer distinguishes an admin from a member, so this route's real
+//     protection is that it exposes account-wide reconciliation data any identity in
+//     the deployment could already see reflected in its own roster row and credit
+//     panel — nothing here is new information an identity couldn't already infer,
+//     just aggregated. Following the credit routes' own precedent rather than
+//     inventing a stricter gate for a read.
 
 import (
 	"net/http"
@@ -43,14 +57,15 @@ import (
 )
 
 const (
-	meRoute              = "GET /api/me"
-	adminIdentitiesRoute = "GET /api/admin/identities"
-	adminGrantRoute      = "POST /api/admin/identities/{id}/capabilities"
-	adminRevokeRoute     = "DELETE /api/admin/identities/{id}/capabilities/{capability}"
-	adminAuditRoute      = "GET /api/admin/audit"
-	adminCreditGetRoute  = "GET /api/admin/identities/{id}/credit"  // #nosec G101 -- a route pattern, not a credential.
-	adminCreditSetRoute  = "POST /api/admin/identities/{id}/credit" // #nosec G101 -- a route pattern, not a credential.
-	adminRemoveRoute     = "DELETE /api/admin/identities/{id}"
+	meRoute                 = "GET /api/me"
+	adminIdentitiesRoute    = "GET /api/admin/identities"
+	adminGrantRoute         = "POST /api/admin/identities/{id}/capabilities"
+	adminRevokeRoute        = "DELETE /api/admin/identities/{id}/capabilities/{capability}"
+	adminAuditRoute         = "GET /api/admin/audit"
+	adminCreditGetRoute     = "GET /api/admin/identities/{id}/credit"  // #nosec G101 -- a route pattern, not a credential.
+	adminCreditSetRoute     = "POST /api/admin/identities/{id}/credit" // #nosec G101 -- a route pattern, not a credential.
+	adminRemoveRoute        = "DELETE /api/admin/identities/{id}"
+	adminSpendOverviewRoute = "GET /api/admin/spend/overview"
 )
 
 // registerMUSRRoutes mounts the admin/user-distinction routes on the parent mux. Each
@@ -68,4 +83,5 @@ func registerMUSRRoutes(mux *http.ServeMux, aguiHandler http.Handler, auth agui.
 	// The ONE route on this surface gated on identity.CapIdentityDelete rather than
 	// governance.write — see the file header for why.
 	mux.Handle(adminRemoveRoute, agui.RequireCapability(aguiHandler, auth, identity.CapIdentityDelete))
+	mux.Handle(adminSpendOverviewRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 }

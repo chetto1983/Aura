@@ -164,8 +164,12 @@ type Server struct {
 	// two concurrent removals of the SAME identity into one saga run (singleflight,
 	// already used elsewhere in this repo: internal/mcp/oauth_tokensource.go,
 	// internal/skills/catalog_search.go).
-	idRemover        identityRemover
-	idRemovalGroup   singleflight.Group
+	idRemover      identityRemover
+	idRemovalGroup singleflight.Group
+	// spendOverview bundles plan 02-09's account-wide reconciliation ports
+	// (spend_overview_api.go), wired by SetSpendOverview; nil until wired, matching the
+	// credit/audit 503-until-wired precedent.
+	spendOverview    *spendOverviewPorts
 	telegramProbe    TelegramBotProbe
 	onboarding       OnboardingService
 	onboardingStatus OnboardingStatusSource
@@ -504,6 +508,11 @@ func (s *Server) Mux() http.Handler {
 	// asymmetry exists to avoid) lives in cmd/aura/serve_webui_musr.go.
 	s.registerCreditRoutes(mux)
 	s.registerIdentityRemovalRoutes(mux)
+	// Phase 2 plan 09 (RBAC-11/CRED-06): GET /api/admin/spend/overview, the account-wide
+	// reconciliation surface (five KPI tiles, Top-Identities-by-spend, the over-allocation
+	// advisory). A read, deliberately NOT in httpMutationRoutes (idempotency_http.go); the
+	// parent-mux mount lives in cmd/aura/serve_webui_musr.go.
+	s.registerSpendOverviewRoutes(mux)
 	// ONBD-01/02 onboarding routes: POST /api/onboarding/start + /{token}/provision (the
 	// identity-provisioning saga) and GET /api/onboarding/status + POST /api/onboarding/
 	// profile + GET /{token}/telegram-status (self-scoped). Colocated with their handlers;
