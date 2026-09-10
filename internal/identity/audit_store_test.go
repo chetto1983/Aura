@@ -127,22 +127,34 @@ func TestIdentityAuditImmutable_SentinelOnTxPath(t *testing.T) {
 	}
 }
 
-// TestListCapabilities covers the D-06 picker source: the seeded local identity
-// carries '*' (returned verbatim — filtering is the handler's job); an identity with
-// an exact grant lists it; an identity with no grants yields an empty slice; an
-// invalid UUID is a wrapped error.
+// TestListCapabilities covers the D-06 picker source: the seeded local identity lists
+// exactly the declared set and never the retired '*'; an identity with an exact grant
+// lists it; an identity with no grants yields an empty slice; an invalid UUID is a
+// wrapped error.
 func TestListCapabilities(t *testing.T) {
 	pool := migratedPool(t)
 	ctx := context.Background()
 	s := New(pool)
 
-	// Seeded local identity holds '*' — ListCapabilities returns it unfiltered.
+	// Migration 0121 retired the wildcard: every identity holding '*' -- the local one
+	// seeded by 0004 included -- was granted the six declared capabilities explicitly,
+	// then every '*' row was deleted. 0026's three explicit local grants are a subset, so
+	// nothing else remains. This asserted '*' until CI failed it on 2026-09-10 with the
+	// six names in hand.
 	localCaps, err := s.ListCapabilities(ctx, localID)
 	if err != nil {
 		t.Fatalf("ListCapabilities(local): %v", err)
 	}
-	if !contains(localCaps, "*") {
-		t.Errorf("ListCapabilities(local): want '*' present (unfiltered), got %v", localCaps)
+	if contains(localCaps, Wildcard) {
+		t.Errorf("ListCapabilities(local): the retired '*' is still granted: %v", localCaps)
+	}
+	if len(localCaps) != len(All()) {
+		t.Errorf("ListCapabilities(local) = %v, want exactly the declared set %v", localCaps, All())
+	}
+	for _, want := range All() {
+		if !contains(localCaps, want) {
+			t.Errorf("ListCapabilities(local): missing declared capability %q in %v", want, localCaps)
+		}
 	}
 
 	// A throwaway identity with two exact grants lists exactly those, name-ordered.
