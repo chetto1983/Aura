@@ -10,20 +10,40 @@ from ingest import media
 
 @pytest.fixture
 def vision_server():
+    """An Ollama-shaped primary that both answers the capability probe and completes.
+
+    Two endpoints, because the route now needs both. Since the vision switch was retired
+    the bridge asks the model whether it reads images (POST /api/show), and a source that
+    cannot answer is not read as permission -- so a server that only completes resolves to
+    the LOCAL arm, and the primary is never called at all. Both tests below used to point
+    at a completions-only endpoint and got exactly that: an empty answer, and a fingerprint
+    that no longer moved with AURA_LLM_MODEL because the model was not in the resolved arm.
+
+    Ollama is the shape used because its probe is a plain POST the stdlib can serve;
+    llm.ollamaShowURL also requires the base to end in /v1 and puts /api/show at the root,
+    which is why the yielded base carries the suffix.
+    """
     received = {}
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):
             length = int(self.headers["Content-Length"])
-            received.update(json.loads(self.rfile.read(length)))
-            body = json.dumps({
-                "choices": [{"message": {"content": "customer-reconciliation Expired"}}],
-            }).encode()
+            payload = json.loads(self.rfile.read(length))
+            if self.path.rstrip("/") == "/api/show":
+                # "vision" is the only capability that names an INPUT modality; the others
+                # describe generation features (llm.ollamaModalities).
+                body = json.dumps({"capabilities": ["completion", "tools", "vision"]})
+            else:
+                received.update(payload)
+                body = json.dumps({
+                    "choices": [{"message": {"content": "customer-reconciliation Expired"}}],
+                })
+            encoded = body.encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Content-Length", str(len(encoded)))
             self.end_headers()
-            self.wfile.write(body)
+            self.wfile.write(encoded)
 
         def log_message(self, *_args):
             pass
@@ -32,7 +52,7 @@ def vision_server():
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        yield f"http://127.0.0.1:{server.server_port}", received
+        yield f"http://127.0.0.1:{server.server_port}/v1", received
     finally:
         server.shutdown()
         thread.join()
@@ -55,11 +75,18 @@ def test_media_kind_routes_only_supported_families(name, want):
     assert media.kind(name) == want
 
 
-def test_media_fingerprint_tracks_existing_model_settings_not_secret(monkeypatch, tmp_path):
+def test_media_fingerprint_tracks_existing_model_settings_not_secret(
+    monkeypatch, tmp_path, vision_server,
+):
+    """The fingerprint records the RESOLVED arm, so the model only belongs in it when the
+    primary is the arm that reads images. That is why this needs a probe-able backend and
+    not just a base URL: with an endpoint the bridge cannot ask, the vision arm resolves
+    local and the primary model is correctly absent from the signature."""
+    base_url, _ = vision_server
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("AURA_DB_URL", "")
-    monkeypatch.setenv("AURA_VISION_CLOUD", "true")
-    monkeypatch.setenv("AURA_LLM_BASE_URL", "http://models.example/v1")
+    monkeypatch.setenv("AURA_LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("AURA_LLM_BASE_URL", base_url)
     monkeypatch.setenv("AURA_LLM_MODEL", "gemma4:31b-cloud")
     monkeypatch.setenv("AURA_STT_CLOUD_MODEL", "vendor/stt-one")
     monkeypatch.setenv("OPENROUTER_API_KEY", "secret-one")
@@ -85,7 +112,9 @@ def test_index_text_routes_image_through_packaged_bridge(
     base_url, received = vision_server
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("AURA_DB_URL", "")
-    monkeypatch.setenv("AURA_VISION_CLOUD", "true")
+    # The primary reads the image because it SAYS it can, not because a switch said so:
+    # AURA_VISION_CLOUD was retired and the route asks POST /api/show instead.
+    monkeypatch.setenv("AURA_LLM_PROVIDER", "ollama")
     monkeypatch.setenv("AURA_LLM_BASE_URL", base_url)
     monkeypatch.setenv("AURA_LLM_MODEL", "gemma4:31b-cloud")
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
