@@ -159,6 +159,9 @@ type Server struct {
 	// (credit_api.go) in one field rather than four, wired by SetCreditAPI; nil until
 	// wired, matching audit's own 503-until-wired precedent.
 	credit *creditPorts
+	// keyMinter mints the deployment's OpenRouter keys; nil until SetOpenRouterKeys
+	// (openrouter_reconcile.go).
+	keyMinter *IdentityKeyMinter
 	// idRemover/idRemovalGroup back the RBAC-05 identity-removal route
 	// (deprovision_route.go), wired by SetIdentityRemover; idRemovalGroup coalesces
 	// two concurrent removals of the SAME identity into one saga run (singleflight,
@@ -515,6 +518,9 @@ func (s *Server) Mux() http.Handler {
 	// advisory). A read, deliberately NOT in httpMutationRoutes (idempotency_http.go); the
 	// parent-mux mount lives in cmd/aura/serve_webui_musr.go.
 	s.registerSpendOverviewRoutes(mux)
+	// POST /api/admin/openrouter/reconcile mints the keys the deployment is missing; the
+	// parent-mux mount (identity.create) lives in cmd/aura/serve_webui_musr.go.
+	s.registerOpenRouterKeysRoutes(mux)
 	// ONBD-01/02 onboarding routes: POST /api/onboarding/start + /{token}/provision (the
 	// identity-provisioning saga) and GET /api/onboarding/status + POST /api/onboarding/
 	// profile + GET /{token}/telegram-status (self-scoped). Colocated with their handlers;

@@ -27,9 +27,9 @@ package main
 //     is authenticated and passes the existing admin-surface gate, exactly like the
 //     capability grant/revoke routes it sits beside.
 //   - DELETE /api/admin/identities/{id} — identity removal (deprovision_route.go).
-//     Gated on identity.delete, NOT governance.write — this is the ONE route on this
-//     surface that IS still admin-exclusive under D-01 (identity.delete is one of
-//     exactly two administrative capabilities), and copying the neighbouring
+//     Gated on identity.delete, NOT governance.write — with the OpenRouter reconcile
+//     below, one of the two routes on this surface that ARE still admin-exclusive under
+//     D-01 (identity.delete is one of exactly two administrative capabilities), and copying the neighbouring
 //     governance.write mount would make removal available to every user in the
 //     deployment. Referenced directly as identity.CapIdentityDelete (not through a
 //     same-shaped local alias like identityCreateCapability) so the mount and the
@@ -54,6 +54,12 @@ package main
 //   - POST /api/admin/restart — ends the daemon as SIGTERM does, so the container's
 //     restart policy brings it back (restart_api.go). Gated on governance.write, the
 //     gate of the settings writes whose boot-bound rows it exists to apply.
+//
+// And the OpenRouter reconcile:
+//
+//   - POST /api/admin/openrouter/reconcile — mints the keys the deployment is missing and
+//     aligns each key's limit with its owner's role (openrouter_reconcile.go). Gated on
+//     identity.create: minting spends the deployment's money.
 
 import (
 	"net/http"
@@ -63,16 +69,17 @@ import (
 )
 
 const (
-	meRoute                 = "GET /api/me"
-	adminIdentitiesRoute    = "GET /api/admin/identities"
-	adminGrantRoute         = "POST /api/admin/identities/{id}/capabilities"
-	adminRevokeRoute        = "DELETE /api/admin/identities/{id}/capabilities/{capability}"
-	adminAuditRoute         = "GET /api/admin/audit"
-	adminCreditGetRoute     = "GET /api/admin/identities/{id}/credit"  // #nosec G101 -- a route pattern, not a credential.
-	adminCreditSetRoute     = "POST /api/admin/identities/{id}/credit" // #nosec G101 -- a route pattern, not a credential.
-	adminRemoveRoute        = "DELETE /api/admin/identities/{id}"
-	adminSpendOverviewRoute = "GET /api/admin/spend/overview"
-	adminRestartRoute       = "POST /api/admin/restart"
+	meRoute                       = "GET /api/me"
+	adminIdentitiesRoute          = "GET /api/admin/identities"
+	adminGrantRoute               = "POST /api/admin/identities/{id}/capabilities"
+	adminRevokeRoute              = "DELETE /api/admin/identities/{id}/capabilities/{capability}"
+	adminAuditRoute               = "GET /api/admin/audit"
+	adminCreditGetRoute           = "GET /api/admin/identities/{id}/credit"  // #nosec G101 -- a route pattern, not a credential.
+	adminCreditSetRoute           = "POST /api/admin/identities/{id}/credit" // #nosec G101 -- a route pattern, not a credential.
+	adminRemoveRoute              = "DELETE /api/admin/identities/{id}"
+	adminSpendOverviewRoute       = "GET /api/admin/spend/overview"
+	adminRestartRoute             = "POST /api/admin/restart"
+	adminOpenRouterReconcileRoute = "POST /api/admin/openrouter/reconcile"
 )
 
 // registerMUSRRoutes mounts the admin/user-distinction routes on the parent mux. Each
@@ -90,6 +97,9 @@ func registerMUSRRoutes(mux *http.ServeMux, aguiHandler http.Handler, auth agui.
 	// The ONE route on this surface gated on identity.CapIdentityDelete rather than
 	// governance.write — see the file header for why.
 	mux.Handle(adminRemoveRoute, agui.RequireCapability(aguiHandler, auth, identity.CapIdentityDelete))
+	// Minting keys spends the deployment's money, so like the remove route it takes an
+	// administrative capability: identity.create.
+	mux.Handle(adminOpenRouterReconcileRoute, agui.RequireCapability(aguiHandler, auth, identity.CapIdentityCreate))
 	mux.Handle(adminSpendOverviewRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(adminRestartRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 }

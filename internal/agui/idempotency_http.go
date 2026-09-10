@@ -68,6 +68,7 @@ var httpMutationRoutes = map[string]mutationRouteMeta{
 	// new mutating admin routes registered here so a replayed cap change or a
 	// replayed identity removal cannot enqueue a second mutation.
 	"POST /api/admin/identities/{id}/credit": httpMutationMeta("identity_credit_set"),
+	"POST /api/admin/openrouter/reconcile":   httpMutationMeta("openrouter_reconcile"),
 	"DELETE /api/admin/identities/{id}":      httpMutationMeta("identity_remove"),
 	"POST /api/approvals/{token}/resolve":    httpMutationMeta("approval_resolve"),
 	"POST /api/approvals/grants/revoke":      httpMutationMeta("approval_grant_revoke"),

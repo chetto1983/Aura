@@ -75,6 +75,15 @@ func (a openRouterMintingAdapter) Mint(ctx context.Context, req openrouterprovis
 	return openrouterprovision.MintKey(ctx, a.client, a.baseURL, managementKey, req)
 }
 
+func (a openRouterMintingAdapter) Patch(ctx context.Context, hash string, patch openrouterprovision.KeyPatch) error {
+	managementKey, err := a.key(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = openrouterprovision.PatchKey(ctx, a.client, a.baseURL, managementKey, hash, patch)
+	return err
+}
+
 func (a openRouterMintingAdapter) Revoke(ctx context.Context, hash string) error {
 	managementKey, err := a.key(ctx)
 	if err != nil {

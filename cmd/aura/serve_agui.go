@@ -288,6 +288,7 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	// (failSpendReconciliation).
 	if orCfg, ok := resolveOpenRouterKeyConfig(chat); ok {
 		aguiServer.SetSpendOverview(openRouterSpendAdapter{orCfg}, orCfg.store, nil)
+		aguiServer.SetOpenRouterKeys(agui.NewIdentityKeyMinter(openRouterMintingAdapter{orCfg}, orCfg.store, chat.identity, liveRouteBills(chat)))
 	}
 	// Wire the Phase-29 MCP WRITE provider (MCPW-01/02/03): install/env-edit/trust/enable/
 	// disable/remove, each atomic with its mcp_audit row (WriteConfigWithAudit) and re-probed

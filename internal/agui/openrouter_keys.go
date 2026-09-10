@@ -1,8 +1,9 @@
+package agui
+
 // openrouter_keys.go mints a person's own OpenRouter key. The provisioning saga (as its credit
 // port) and the reconciler (openrouter_reconcile.go) both go through IdentityKeyMinter, so the
 // rules live in one place: nothing on a local route or before a management key exists, no
 // limit for an admin, a zero cap for everyone else, and never two live keys for one identity.
-package agui
 
 import (
 	"context"
@@ -20,6 +21,7 @@ import (
 type OpenRouterMinting interface {
 	ManagementKeySet(ctx context.Context) (bool, error)
 	Mint(ctx context.Context, req openrouterprovision.MintRequest) (openrouterprovision.MintResult, error)
+	Patch(ctx context.Context, hash string, patch openrouterprovision.KeyPatch) error
 	Revoke(ctx context.Context, hash string) error
 }
 
@@ -28,6 +30,7 @@ type OpenRouterMinting interface {
 type identityKeyStore interface {
 	Load(ctx context.Context) (identitykey.Record, error)
 	InsertIfAbsent(ctx context.Context, r identitykey.Record) (bool, error)
+	Save(ctx context.Context, r identitykey.Record) error
 }
 
 // capabilityChecker answers whether an identity is an admin.
@@ -135,6 +138,39 @@ func (m *IdentityKeyMinter) ensure(ctx context.Context, identityID, keyName stri
 		return MintedKey{Hash: winner.Hash, Label: winner.Label}, false, nil
 	}
 	return MintedKey{Hash: res.Record.Hash, Label: res.Record.Label}, true, nil
+}
+
+// alignLimit keeps a key's limit in step with its owner's role: an admin's key has no limit,
+// and an identity that is no longer an admin goes back to a zero cap (CRED-02). The role
+// changes only through `aura identity grant|revoke` on the host — the admin API refuses
+// administrative capabilities — so the reconciler converges it rather than a handler. The
+// provider is patched first because it is what enforces the limit; a store write that then
+// fails is corrected by the next run.
+func (m *IdentityKeyMinter) alignLimit(ctx context.Context, identityID string) (bool, error) {
+	scoped := identityctx.WithIdentityID(ctx, identityID)
+	rec, err := m.keys.Load(scoped)
+	if err != nil {
+		return false, err
+	}
+	admin, err := m.caps.HasCapability(ctx, identityID, identity.CapIdentityCreate)
+	if err != nil {
+		return false, err
+	}
+	var patch openrouterprovision.KeyPatch
+	switch {
+	case admin && rec.LimitUSD != nil:
+		patch.ClearLimit = true
+		rec.LimitUSD = nil
+	case !admin && rec.LimitUSD == nil:
+		patch.Limit = new(openrouterprovision.USDCap)
+		rec.LimitUSD = new(float64)
+	default:
+		return false, nil
+	}
+	if err := m.minting.Patch(ctx, rec.Hash, patch); err != nil {
+		return false, err
+	}
+	return true, m.keys.Save(scoped, rec)
 }
 
 // revokeUnrecorded revokes a key Aura minted but did not record, so it does not stay live and

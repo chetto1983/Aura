@@ -27,8 +27,19 @@ type fakeMinting struct {
 	keySet  bool
 	failFor map[string]error
 	minted  []openrouterprovision.MintRequest
+	patched map[string]openrouterprovision.KeyPatch
 	revoked []string
 	next    int
+}
+
+func (f *fakeMinting) Patch(_ context.Context, hash string, patch openrouterprovision.KeyPatch) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.patched == nil {
+		f.patched = map[string]openrouterprovision.KeyPatch{}
+	}
+	f.patched[hash] = patch
+	return nil
 }
 
 func (f *fakeMinting) ManagementKeySet(context.Context) (bool, error) { return f.keySet, nil }
@@ -72,6 +83,13 @@ func (f *fakeIdentityKeys) Load(ctx context.Context) (identitykey.Record, error)
 		return identitykey.Record{}, identitykey.ErrNoKey
 	}
 	return rec, nil
+}
+
+func (f *fakeIdentityKeys) Save(ctx context.Context, r identitykey.Record) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.records[identityctx.IdentityID(ctx)] = r
+	return nil
 }
 
 func (f *fakeIdentityKeys) InsertIfAbsent(ctx context.Context, r identitykey.Record) (bool, error) {

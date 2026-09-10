@@ -364,6 +364,14 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// in place, and inside the container the web console can restart the daemon.
 	aguiServer.SetTelegramActivator(telegramSwap.Activate, telegramSwap.Runs)
 	wireRestartTrigger(aguiServer, requestShutdown)
+	// Mint whatever keys the deployment is missing: an admin bootstrapped before the management
+	// key existed, a route switched while the daemon was down. Off the boot path, because the
+	// provider is a network call and a failure only leaves the Credit panel's no-key state.
+	go func() {
+		if res, err := aguiServer.EnsureOpenRouterKeys(ctx); err != nil {
+			slog.Warn("openrouter reconcile at boot", "err", err, "identities_minted", len(res.IdentitiesMinted))
+		}
+	}()
 	// The embedded operator SPA (internal/webui) mounts additively at "/" on the
 	// SAME loopback server: newServeHandler is a parent mux that keeps the AG-UI
 	// routes authoritative and falls everything else through to the static shell

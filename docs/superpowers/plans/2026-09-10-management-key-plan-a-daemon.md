@@ -2833,7 +2833,7 @@ Expected: PASS; `settings_api.go` under 600 lines.
 - Consumes: `IdentityKeyMinter` and its fakes (Task 8), `authorizeSettingWrite` (Task 9), `llmProfileOverrides` and `settingsMu` (`settings_api.go`).
 - Produces: `(*Server).SetOpenRouterKeys(*IdentityKeyMinter)`; `(*Server).EnsureOpenRouterKeys(ctx) (OpenRouterKeysResult, error)`; `OpenRouterKeysResult`; `ErrServicesCapUnset`; `POST /api/admin/openrouter/reconcile` (mounted behind `identity.CapIdentityCreate`); the `openrouter_keys` field in PUT `/api/settings/{key}` and PUT `/api/settings/llm-profile` responses.
 
-- [ ] **Step 1: Write the failing tests.** Add to the fakes in `openrouter_keys_test.go`: the field `patched map[string]openrouterprovision.KeyPatch` on `fakeMinting`, and
+- [x] **Step 1: Write the failing tests.** Add to the fakes in `openrouter_keys_test.go`: the field `patched map[string]openrouterprovision.KeyPatch` on `fakeMinting`, and
 
 ```go
 func (f *fakeMinting) Patch(_ context.Context, hash string, patch openrouterprovision.KeyPatch) error {
@@ -3043,12 +3043,12 @@ func TestReconcileEndpointReportsTheResult(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests and watch them fail**
+- [x] **Step 2: Run the tests and watch them fail**
 
 Run: `go test ./internal/agui/ -run 'Reconcile|SavingTheManagementKey'`
 Expected: build failure (`EnsureOpenRouterKeys`, `alignLimit` undefined).
 
-- [ ] **Step 3: Extend the minter.** In `openrouter_keys.go`, add `Patch(ctx context.Context, hash string, patch openrouterprovision.KeyPatch) error` to `OpenRouterMinting`, add `Save(ctx context.Context, r identitykey.Record) error` to `identityKeyStore`, and add:
+- [x] **Step 3: Extend the minter.** In `openrouter_keys.go`, add `Patch(ctx context.Context, hash string, patch openrouterprovision.KeyPatch) error` to `OpenRouterMinting`, add `Save(ctx context.Context, r identitykey.Record) error` to `identityKeyStore`, and add:
 
 ```go
 // alignLimit keeps a key's limit in step with its owner's role: an admin's key has no limit,
@@ -3098,7 +3098,7 @@ func (a openRouterMintingAdapter) Patch(ctx context.Context, hash string, patch 
 }
 ```
 
-- [ ] **Step 4: Implement the reconciler.** `internal/agui/openrouter_reconcile.go`:
+- [x] **Step 4: Implement the reconciler.** `internal/agui/openrouter_reconcile.go`:
 
 ```go
 package agui
@@ -3327,7 +3327,7 @@ type settingPutDTO struct {
 
 In `server.go`, add the field `keyMinter *IdentityKeyMinter // nil until SetOpenRouterKeys (openrouter_reconcile.go)` next to `credit`, and call `s.registerOpenRouterKeysRoutes(mux)` right after `s.registerSpendOverviewRoutes(mux)`. In `idempotency_http.go`, next to the credit entry: `"POST /api/admin/openrouter/reconcile": httpMutationMeta("openrouter_reconcile"),`.
 
-- [ ] **Step 5: Wire it.** In `cmd/aura/serve_agui.go`, inside the `resolveOpenRouterKeyConfig` block that sets the spend overview:
+- [x] **Step 5: Wire it.** In `cmd/aura/serve_agui.go`, inside the `resolveOpenRouterKeyConfig` block that sets the spend overview:
 
 ```go
 		aguiServer.SetOpenRouterKeys(agui.NewIdentityKeyMinter(openRouterMintingAdapter{orCfg}, orCfg.store, chat.identity, liveRouteBills(chat)))
@@ -3353,12 +3353,12 @@ In `cmd/aura/serve_webui_musr.go`, add `adminOpenRouterReconcileRoute = "POST /a
 	mux.Handle(adminOpenRouterReconcileRoute, agui.RequireCapability(aguiHandler, auth, identity.CapIdentityCreate))
 ```
 
-- [ ] **Step 6: Run the tests and watch them pass**
+- [x] **Step 6: Run the tests and watch them pass**
 
 Run: `go test ./internal/agui/ ./cmd/aura/ && go build ./... && wc -l internal/agui/settings_api.go internal/agui/openrouter_reconcile.go`
 Expected: PASS, including `TestEveryRegisteredUnsafeHTTPRouteIsClassified`; both files under 600 lines.
 
-- [ ] **Step 7: Race, lint, commit** (`feat(agui): reconcile the deployment's OpenRouter keys`). Body: one idempotent run mints the services key and every missing identity key and aligns limits with roles. It runs at boot, on the settings writes that can make minting possible, and from the admin endpoint the wizard calls; the admin API cannot change `identity.create`, so a role change made on the host is picked up here.
+- [x] **Step 7: Race, lint, commit** (`feat(agui): reconcile the deployment's OpenRouter keys`). Body: one idempotent run mints the services key and every missing identity key and aligns limits with roles. It runs at boot, on the settings writes that can make minting possible, and from the admin endpoint the wizard calls; the admin API cannot change `identity.create`, so a role change made on the host is picked up here.
 
 ---
 

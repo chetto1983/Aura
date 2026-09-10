@@ -213,6 +213,13 @@ type putLLMProfileBody struct {
 	Settings map[string]string `json:"settings"`
 }
 
+// settingPutDTO is a PUT's answer: the row, plus what the reconciler did when the write could
+// make minting possible (the management key, the services cap, the route).
+type settingPutDTO struct {
+	settingItemDTO
+	OpenRouterKeys *OpenRouterKeysResult `json:"openrouter_keys,omitempty"`
+}
+
 // handlePutLLMProfile prepares one complete model profile, persists every edited
 // row in one transaction, then publishes the already-prepared snapshot. The cockpit
 // uses this route for cloud/local changes so no mixed provider/base/model state can
@@ -275,9 +282,11 @@ func (s *Server) handlePutLLMProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	apply()
 	s.rememberProviderRoute(r.Context(), overrides, actor)
-	writeJSONStatus(w, http.StatusOK, map[string]any{
-		"updated": len(body.Settings), "restart_required": false,
-	})
+	resp := map[string]any{"updated": len(body.Settings), "restart_required": false}
+	if keys := s.reconcileAfterSettingsWrite(r.Context(), slices.Collect(maps.Keys(body.Settings))...); keys != nil {
+		resp["openrouter_keys"] = keys
+	}
+	writeJSONStatus(w, http.StatusOK, resp)
 }
 
 var modelRouteKeys = []string{"AURA_LLM_PROVIDER", "AURA_LLM_BASE_URL", "AURA_LLM_MODEL"}
@@ -385,7 +394,7 @@ func (s *Server) handlePutSetting(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, telegramTokenPutDTO{settingItemDTO: item, telegramActivation: s.activateTelegram(r.Context(), body.Value)})
 		return
 	}
-	writeJSON(w, item)
+	writeJSON(w, settingPutDTO{settingItemDTO: item, OpenRouterKeys: s.reconcileAfterSettingsWrite(r.Context(), key)})
 }
 
 func (s *Server) handleDeleteSetting(w http.ResponseWriter, r *http.Request) {
