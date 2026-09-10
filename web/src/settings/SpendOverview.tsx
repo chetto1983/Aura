@@ -61,7 +61,10 @@ const PERCENT_METRICS = new Set(['cache_hit_rate']);
  */
 function deltaClassName(metric: string, delta: number): string {
   if (delta === 0) return 'text-text-muted';
-  return delta > 0 ? 'text-success' : 'text-danger';
+  const up = delta > 0;
+  if (metric === 'cache_hit_rate') return up ? 'text-success' : 'text-warning';
+  if (metric === 'blended_cost_per_million_tokens') return up ? 'text-warning' : 'text-success';
+  return 'text-text-muted';
 }
 
 /** formatKPIValue is auto-compact: a large figure never overruns the tile ($5.52, 3K,
