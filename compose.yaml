@@ -133,6 +133,9 @@ services:
       # 2026-08-13 (see the prometheus service for the measurement).
       AURA_METRICS_BIND: ${AURA_METRICS_BIND:-0.0.0.0:9464}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      # Mints/revokes each identity's own key and feeds the spend overview. A row saved in
+      # Settings (aura.settings) wins at boot, as for the inference key above.
+      AURA_OPENROUTER_MANAGEMENT_KEY: ${AURA_OPENROUTER_MANAGEMENT_KEY:-}
       AURA_LLM_BASE_URL: ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1}
       AURA_LLM_MODEL: ${AURA_LLM_MODEL:-deepseek/deepseek-v4-flash:nitro}
       # No :-0.7 fallback. That default was the last place the pin survived: emptying it

@@ -43,6 +43,9 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"aura:",
 		"dockerfile: docker/aura/Dockerfile",
 		"OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}",
+		// .env only interpolates compose.yaml: a key with no line here never reaches the
+		// daemon. Measured 2026-09-10: set in .env, unset in the container, spend 503.
+		"AURA_OPENROUTER_MANAGEMENT_KEY: ${AURA_OPENROUTER_MANAGEMENT_KEY:-}",
 		"AURA_LLM_BASE_URL: ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1}",
 		"AURA_LLM_STREAM_IDLE_TIMEOUT_SEC: ${AURA_LLM_STREAM_IDLE_TIMEOUT_SEC:-60}",
 		"AURA_CONTEXT_PREVIEW_CAP_BYTES: ${AURA_CONTEXT_PREVIEW_CAP_BYTES:-30000}",
