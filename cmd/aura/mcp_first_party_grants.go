@@ -133,11 +133,9 @@ func (k *firstPartyGrantKeeper) EnsureNow(ctx context.Context) error {
 	}
 	var joined error
 	for _, row := range rows {
-		// Same filter as reconcileArcadeMemoryTenants, and for the same reason: a
-		// `service` identity such as aura-cli has no memory tenant, no cockpit and no
-		// sidecar data of its own, so a credential minted for it would be a live token
-		// nothing ever uses.
-		if row.Kind != "user" || row.Deactivated {
+		// A credential minted for anyone but an active human would be a live token nothing
+		// ever uses.
+		if !isActiveHuman(row) {
 			continue
 		}
 		joined = errors.Join(joined, k.ensureIdentity(ctx, row.ID, servers))

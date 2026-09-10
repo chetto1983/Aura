@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/agent/mcptools"
@@ -21,7 +22,7 @@ import (
 // neither reads nor writes anything a person owns.
 const memoryReadinessOwner = "00000000-0000-0000-0000-0000000000ff"
 
-func memoryReadinessProbe(chat *chatEnv) (agui.ReadinessProbe, bool) {
+func memoryReadinessProbe(chat *chatEnv, identities memoryIdentityLister) (agui.ReadinessProbe, bool) {
 	_, policies, err := mcpRuntimeSet()
 	if err != nil {
 		return agui.ReadinessProbe{}, false
@@ -51,11 +52,34 @@ func memoryReadinessProbe(chat *chatEnv) (agui.ReadinessProbe, bool) {
 				}
 			}
 			if client == nil {
-				return errors.New("required memory capability is not mounted")
+				return missingMemoryMount(ctx, identities)
 			}
 			return checkMemoryReadiness(ctx, client, owner)
 		},
 	}, true
+}
+
+// missingMemoryMount decides what an absent memory mount means. The shipped memory
+// sidecar mounts only under a grant a human identity owns (a05c92cfe), and a fresh
+// install has none until the operator finishes /setup, which caddy serves only once this
+// daemon is healthy. Failing here made that a deadlock: `compose up --wait` never saw
+// aura healthy, caddy never started and /setup stayed unreachable (measured 2026-09-10
+// on a fresh npx install). With no active human there is nobody for memory to serve, so
+// the absence is the setup-pending state; the setup wizard remounts memory once the first
+// identity exists. A nil lister cannot tell the two apart and stays strict.
+func missingMemoryMount(ctx context.Context, identities memoryIdentityLister) error {
+	notMounted := errors.New("required memory capability is not mounted")
+	if identities == nil {
+		return notMounted
+	}
+	rows, err := identities.ListIdentities(ctx)
+	if err != nil {
+		return fmt.Errorf("memory readiness: list identities: %w", err)
+	}
+	if slices.ContainsFunc(rows, isActiveHuman) {
+		return notMounted
+	}
+	return nil
 }
 
 func checkMemoryReadiness(ctx context.Context, client *mcptools.MountedServer, owner string) error {

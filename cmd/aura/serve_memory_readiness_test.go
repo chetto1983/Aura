@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/mcptools"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/readiness"
 )
@@ -75,6 +77,23 @@ func (c *memoryReadinessClient) mount(t *testing.T, owner string) *mcptools.Moun
 	return mounted
 }
 
+type readinessIdentityLister struct {
+	rows []identity.Identity
+	err  error
+}
+
+func (l readinessIdentityLister) ListIdentities(context.Context) ([]identity.Identity, error) {
+	return l.rows, l.err
+}
+
+func seedMemoryRecipe(t *testing.T) {
+	t.Helper()
+	withMemoryMCPRegistry(t)
+	seedMCPRegistry(t, mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
+		"alias": {Command: "memory-bin", Source: mcp.SourceRecipeMemory},
+	}})
+}
+
 // The readiness search uses a synthetic owner whose isolated ArcadeDB database
 // cannot expose or disturb a person's memory.
 func TestMemoryReadinessCheckRunsAnIsolatedFunctionalSearch(t *testing.T) {
@@ -118,12 +137,9 @@ func TestMemoryReadinessCheckRejectsSemanticAndTransportFailure(t *testing.T) {
 }
 
 func TestMemoryReadinessProbeFailsWhenRequiredMountIsMissing(t *testing.T) {
-	withMemoryMCPRegistry(t)
-	seedMCPRegistry(t, mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
-		"alias": {Command: "memory-bin", Source: mcp.SourceRecipeMemory},
-	}})
+	seedMemoryRecipe(t)
 	chat := &chatEnv{cfg: config.LoadDB()}
-	probe, required := memoryReadinessProbe(chat)
+	probe, required := memoryReadinessProbe(chat, nil)
 	if !required || probe.Code != readiness.CodeMemoryUnavailable {
 		t.Fatalf("probe required/code = %v/%q", required, probe.Code)
 	}
@@ -132,11 +148,49 @@ func TestMemoryReadinessProbeFailsWhenRequiredMountIsMissing(t *testing.T) {
 	}
 }
 
+// A fresh install has no human identity until the operator finishes /setup, and the
+// memory sidecar mounts only under a grant a human owns. Failing readiness on that
+// absence kept caddy -- and so /setup -- from ever starting (measured 2026-09-10 on a
+// fresh npx install). System, service and deactivated rows are not people to serve.
+func TestMemoryReadinessProbeIsReadyBeforeTheFirstHumanIdentity(t *testing.T) {
+	seedMemoryRecipe(t)
+	chat := &chatEnv{cfg: config.LoadDB()}
+	identities := readinessIdentityLister{rows: []identity.Identity{
+		{ID: "system-1", Name: "local", Kind: "system"},
+		{ID: "service-1", Name: "aura-cli", Kind: "service"},
+		{ID: "former-1", Name: "former", Kind: "user", Deactivated: true},
+	}}
+	probe, required := memoryReadinessProbe(chat, identities)
+	if !required {
+		t.Fatal("memory readiness probe is not required")
+	}
+	if err := probe.Check(context.Background()); err != nil {
+		t.Fatalf("a box awaiting its first identity reported memory unready: %v", err)
+	}
+}
+
+func TestMemoryReadinessProbeFailsWhenAnActiveUserHasNoMount(t *testing.T) {
+	seedMemoryRecipe(t)
+	chat := &chatEnv{cfg: config.LoadDB()}
+	identities := readinessIdentityLister{rows: []identity.Identity{{ID: "user-1", Name: "operator", Kind: "user"}}}
+	probe, _ := memoryReadinessProbe(chat, identities)
+	err := probe.Check(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "not mounted") {
+		t.Fatalf("an active user with no memory mount = %v, want the not-mounted refusal", err)
+	}
+}
+
+func TestMemoryReadinessProbeFailsClosedWhenIdentitiesCannotBeListed(t *testing.T) {
+	seedMemoryRecipe(t)
+	chat := &chatEnv{cfg: config.LoadDB()}
+	probe, _ := memoryReadinessProbe(chat, readinessIdentityLister{err: errors.New("injected: no database")})
+	if err := probe.Check(context.Background()); err == nil {
+		t.Fatal("an unreadable identity list reported memory ready")
+	}
+}
+
 func TestMemoryReadinessProbeUsesTheAuthorizedLiveMountOwner(t *testing.T) {
-	withMemoryMCPRegistry(t)
-	seedMCPRegistry(t, mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
-		"alias": {Command: "memory-bin", Source: mcp.SourceRecipeMemory},
-	}})
+	seedMemoryRecipe(t)
 	const owner = "authorized-memory-owner"
 	client := (&memoryReadinessClient{text: `{"facts":[]}`}).mount(t, owner)
 	chat := &chatEnv{
@@ -147,7 +201,7 @@ func TestMemoryReadinessProbeUsesTheAuthorizedLiveMountOwner(t *testing.T) {
 		},
 	}
 
-	probe, required := memoryReadinessProbe(chat)
+	probe, required := memoryReadinessProbe(chat, nil)
 	if !required {
 		t.Fatal("memory readiness probe is not required")
 	}

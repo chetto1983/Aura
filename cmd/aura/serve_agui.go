@@ -17,6 +17,7 @@ import (
 	"github.com/chetto1983/aura/internal/approvalgrants"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/documents"
+	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/readiness"
 	"github.com/chetto1983/aura/internal/swarm"
@@ -325,7 +326,11 @@ func serveReadinessProbes(chat *chatEnv) []agui.ReadinessProbe {
 			Check: func(ctx context.Context) error { return chat.pool.Ping(ctx) },
 		})
 	}
-	if probe, required := memoryReadinessProbe(chat); required {
+	var identities memoryIdentityLister
+	if chat.pool != nil {
+		identities = identity.New(chat.pool)
+	}
+	if probe, required := memoryReadinessProbe(chat, identities); required {
 		probes = append(probes, probe)
 	}
 	if probe, required := sandboxReadinessProbe(chat); required {
