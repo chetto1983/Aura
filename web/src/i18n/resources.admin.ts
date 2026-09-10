@@ -211,7 +211,8 @@ export const adminIt = {
       heading: 'Panoramica della spesa',
       loading: 'Caricamento della panoramica della spesa...',
       loadError: 'Impossibile caricare la panoramica della spesa. Prova ad aggiornare.',
-      empty: 'Ancora nessuna spesa — questo account non ha ancora effettuato una richiesta fatturata.',
+      empty:
+        'Ancora nessuna spesa — questo account non ha ancora effettuato una richiesta fatturata.',
       overAllocation:
         "I limiti assegnati superano nel totale il credito OpenRouter disponibile per questo account. Un'identità a priorità più bassa potrebbe restare senza credito senza preavviso — riduci un limite o aggiungi credito all'account.",
       vsPrevPeriod: 'rispetto al periodo precedente',

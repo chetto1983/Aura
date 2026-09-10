@@ -94,9 +94,12 @@ function stubFetch(opts: {
       );
     }
     return Promise.resolve(
-      new Response(JSON.stringify({ identities: opts.identities ?? [ADMIN_IDENTITY, MEMBER_IDENTITY] }), {
-        status: 200,
-      }),
+      new Response(
+        JSON.stringify({ identities: opts.identities ?? [ADMIN_IDENTITY, MEMBER_IDENTITY] }),
+        {
+          status: 200,
+        },
+      ),
     );
   });
   vi.stubGlobal('fetch', spy);
@@ -137,9 +140,9 @@ describe('SpendOverview — populated', () => {
     await screen.findByText('$5.52');
     // Three deltas share this exact text (total_usage, request_count and tokens_total all
     // have delta 20 in the fixture) — assert at least one muted instance exists.
-    const mutedDeltas = screen.getAllByText(/vs prev period/).filter((el) =>
-      el.className.includes('text-text-muted'),
-    );
+    const mutedDeltas = screen
+      .getAllByText(/vs prev period/)
+      .filter((el) => el.className.includes('text-text-muted'));
     expect(mutedDeltas.length).toBeGreaterThan(0);
 
     const successDeltas = screen
@@ -174,7 +177,11 @@ describe('SpendOverview — populated', () => {
   });
 
   it('renders the over-allocation banner when the server says so, and nothing when it does not', async () => {
-    stubFetch({ overview: overviewPayload({ overAllocation: { triggered: true, sum_caps: 25, available: 20 } }) });
+    stubFetch({
+      overview: overviewPayload({
+        overAllocation: { triggered: true, sum_caps: 25, available: 20 },
+      }),
+    });
     renderOverview();
     expect(
       await screen.findByText(/Assigned caps total more than this account's available/),
@@ -182,7 +189,11 @@ describe('SpendOverview — populated', () => {
   });
 
   it('does not render the over-allocation banner when not triggered', async () => {
-    stubFetch({ overview: overviewPayload({ overAllocation: { triggered: false, sum_caps: 5, available: 20 } }) });
+    stubFetch({
+      overview: overviewPayload({
+        overAllocation: { triggered: false, sum_caps: 5, available: 20 },
+      }),
+    });
     renderOverview();
     await screen.findByText('$5.52');
     expect(screen.queryByText(/Assigned caps total more than/)).toBeNull();

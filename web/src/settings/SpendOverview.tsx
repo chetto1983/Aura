@@ -226,7 +226,8 @@ export function SpendOverview() {
         <div role="list" className="flex flex-col gap-2">
           {data.top_identities.map((row) => {
             const roster = rosterByID.get(row.identity_id);
-            const admin = roster !== undefined && hasCapability(roster.capabilities, IDENTITY_CREATE);
+            const admin =
+              roster !== undefined && hasCapability(roster.capabilities, IDENTITY_CREATE);
             return (
               <div
                 role="listitem"
