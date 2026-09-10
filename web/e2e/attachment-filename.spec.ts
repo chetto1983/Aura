@@ -75,9 +75,10 @@ test('a chat attachment carries its real name to the object store', async ({ pag
   const uploadResponse = await uploaded;
   const sent = uploadResponse.request().headers()['x-amz-meta-filename'];
   expect(decodeURIComponent(sent ?? ''), 'the browser did not send the signed name').toBe(fileName);
-  expect(uploadResponse.status(), 'the object store rejected the signed upload').toBeGreaterThanOrEqual(
-    200,
-  );
+  expect(
+    uploadResponse.status(),
+    'the object store rejected the signed upload',
+  ).toBeGreaterThanOrEqual(200);
   expect(uploadResponse.status(), 'the object store rejected the signed upload').toBeLessThan(300);
 
   // A CORS refusal never has an HTTP response, so retain the browser-side failure check too.
