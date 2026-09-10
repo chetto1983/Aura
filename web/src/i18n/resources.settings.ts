@@ -104,6 +104,8 @@ export const settingsEn = {
         'Total tokens the model can hold; the budget ladder and the footer gauge use it.',
       maxOutputTokens:
         'Tokens reserved for the answer when budgeting the prompt — the reservation, not the cap.',
+      openRouterManagementKey:
+        "Creates each person's own OpenRouter key and reads the account's spend. It can't run models.",
       loopMaxSteps:
         'LLM calls or tool rounds one turn may spend before Aura wraps up (default 25).',
       loopMaxWallclock:
@@ -118,6 +120,7 @@ export const settingsEn = {
       primaryBaseUrl: 'Primary base URL',
       primaryProvider: 'Primary provider',
       openRouterKey: 'OpenRouter API key',
+      openRouterManagementKey: 'OpenRouter management key',
       maxTokens: 'Max response tokens',
       contextWindow: 'Context window tokens',
       maxOutputTokens: 'Reserved output tokens',
@@ -254,6 +257,8 @@ export const settingsIt = {
         'Token totali che il modello può tenere; la scala dei budget e l’indicatore nel footer lo usano.',
       maxOutputTokens:
         'Token riservati alla risposta quando si calcola il budget del prompt — la riserva, non il tetto.',
+      openRouterManagementKey:
+        "Crea la chiave OpenRouter di ogni persona e legge la spesa dell'account. Non può usare i modelli.",
       loopMaxSteps:
         'Chiamate LLM o giri di strumenti che un turno può spendere prima che Aura concluda (default 25).',
       loopMaxWallclock:
@@ -268,6 +273,7 @@ export const settingsIt = {
       primaryBaseUrl: 'URL base primario',
       primaryProvider: 'Provider primario',
       openRouterKey: 'Chiave API OpenRouter',
+      openRouterManagementKey: 'Chiave di gestione OpenRouter',
       maxTokens: 'Token massimi risposta',
       contextWindow: 'Token finestra contesto',
       maxOutputTokens: 'Token output riservati',

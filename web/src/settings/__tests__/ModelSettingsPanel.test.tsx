@@ -5,6 +5,7 @@ import type { ReactElement } from 'react';
 import '../../i18n/i18n';
 import { ModelSettingsPanel } from '../ModelSettingsPanel';
 import { REASONING_CAPABILITIES_QUERY_KEY } from '../../chat/composer/useReasoningCapabilities';
+import type { ModelSettingsGroup } from '../modelSettingsDefs';
 
 const SETTINGS_BODY = {
   restart_required: true,
@@ -287,6 +288,48 @@ describe('ModelSettingsPanel', () => {
     ).toBe(true);
     expect(puts.some((call) => call.url === '/api/settings/OPENROUTER_API_KEY')).toBe(false);
   });
+
+  // The wizard mounts the panel with no `groups` prop at all, so its case passes none.
+  it.each<[string, { readonly groups?: readonly ModelSettingsGroup[] }]>([
+    ['the Settings routing pane', { groups: ['routing'] }],
+    ['the first-run wizard', {}],
+  ])(
+    'shows the OpenRouter management key in %s and saves it as its own boot-bound row',
+    async (_view, props) => {
+      const calls: { url: string; method: string; body: string | undefined }[] = [];
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+          const url = urlOf(input);
+          const method = init?.method ?? 'GET';
+          calls.push({ url, method, body: typeof init?.body === 'string' ? init.body : undefined });
+          if (method === 'PUT') {
+            return Promise.resolve(jsonResponse({ ok: true }));
+          }
+          return Promise.resolve(jsonResponse(SETTINGS_BODY));
+        }),
+      );
+
+      renderPanel(<ModelSettingsPanel {...props} onComplete={vi.fn()} />);
+      await screen.findByRole('heading', { name: 'Model routing' });
+
+      fireEvent.change(screen.getByLabelText('OpenRouter management key'), {
+        target: { value: 'sk-or-v1-mgmt' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
+
+      expect(await screen.findByText('Runtime settings saved.')).toBeTruthy();
+      // The daemon reads it once at boot to wire key minting and the spend overview, so it
+      // is not a hot profile row: it gets its own PUT and the restart banner applies it.
+      expect(calls.filter((call) => call.method === 'PUT')).toEqual([
+        {
+          url: '/api/settings/AURA_OPENROUTER_MANAGEMENT_KEY',
+          method: 'PUT',
+          body: JSON.stringify({ value: 'sk-or-v1-mgmt' }),
+        },
+      ]);
+    },
+  );
 
   it('invokes onComplete from Continue and Skip when nothing changed', async () => {
     const onComplete = vi.fn();

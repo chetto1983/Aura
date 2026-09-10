@@ -19,6 +19,7 @@ export type SettingsKey =
   | 'AURA_LLM_BASE_URL'
   | 'AURA_LLM_PROVIDER'
   | 'OPENROUTER_API_KEY'
+  | 'AURA_OPENROUTER_MANAGEMENT_KEY'
   | 'AURA_LLM_MAX_TOKENS'
   | 'AURA_MODEL_CONTEXT_WINDOW'
   | 'AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT'
@@ -61,6 +62,16 @@ export const PRIMARY_SETTINGS: readonly SettingDef[] = [
     secret: true,
     labelKey: 'settings.fields.openRouterKey',
     placeholder: 'sk-or-...',
+  },
+  // A second OpenRouter credential: it mints each identity's own key and reads the account's
+  // spend, and cannot call a model. The daemon wires those at boot, so this row is not hot.
+  {
+    key: 'AURA_OPENROUTER_MANAGEMENT_KEY',
+    kind: 'string',
+    secret: true,
+    labelKey: 'settings.fields.openRouterManagementKey',
+    placeholder: 'sk-or-v1-...',
+    helpKey: 'settings.help.openRouterManagementKey',
   },
 ];
 
