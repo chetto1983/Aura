@@ -333,18 +333,30 @@ import os
 from ingest.arcade import _post
 from ingest.identity import search_document_id
 
+def query(command):
+    return _post("http://aura-arcadedb:2480", f"/api/v1/query/{os.environ['ARCADE_DB']}",
+                 {"language": "sql", "command": command},
+                 ("root", os.environ["ARCADEDB_PASSWORD"]), 30.0)["result"]
+
 doc_id = search_document_id(os.environ["IDENTITY_ID"], "s3", "order.xls")
-rows = _post("http://aura-arcadedb:2480", f"/api/v1/query/{os.environ['ARCADE_DB']}",
-             {"language": "sql", "command": f"SELECT text FROM Passage WHERE search_document_id = '{doc_id}'"},
-             ("root", os.environ["ARCADEDB_PASSWORD"]), 30.0)["result"]
-text = " ".join(r["text"] for r in rows)
-# GROUND_TRUTH.txt: "CODE: A9A26924 appears exactly once, with Quantita 11" -- this table
-# has no plain-text sentence, so recovering these tokens requires the real .xls -> .xlsx
-# LibreOffice normalisation followed by real iscc-tika extraction. MarkItDown fails
-# outright on .xls (FINDINGS.md), so this could not pass on the withdrawn extractor.
-for token in ("A9A26924", "Descrizione", "Quantita"):
-    assert token in text, f"{token!r} not found in extracted .xls text: {text!r}"
-print("ok: .xls normalised by LibreOffice and extracted by iscc-tika, matching GROUND_TRUTH.txt")
+passages = query(f"SELECT text FROM Passage WHERE search_document_id = '{doc_id}'")
+# A spreadsheet is queried, not read: index_text routes it to document_open and returns ""
+# on purpose, so it carries NO passages. This used to assert the opposite -- that the
+# sheet's tokens appeared in Passage text -- and became false the moment the routing
+# landed. The .xls -> .xlsx LibreOffice normalisation it was really proving still has its
+# own gate in scripts/extractor_matrix_test.sh, which asserts the same three tokens
+# against the extractor directly, where the routing cannot hide them.
+assert not passages, f"a spreadsheet was chunked into {len(passages)} passage(s); it must route to document_open"
+
+# Still indexed, though: the card, the name and the row are what keep it findable, and the
+# card IS built from the LibreOffice-converted file -- so a normalisation that silently
+# stopped working would empty it.
+cards = query(f"SELECT card, file_name FROM IndexedDocument WHERE search_document_id = '{doc_id}'")
+assert len(cards) == 1, f"expected exactly one IndexedDocument row for order.xls, got {len(cards)}"
+card = cards[0].get("card") or ""
+for token in ("Descrizione", "Quantita"):
+    assert token in card, f"{token!r} not found in the spreadsheet's card: {card!r}"
+print("ok: .xls carries no passages and keeps a card naming its columns")
 PY
 
 echo "== Wiring probe 1: rerun unchanged -> zero re-extractions =="
