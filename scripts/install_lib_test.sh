@@ -182,8 +182,18 @@ echo "ok: ensure_embed_backend_env derives the overlay, image and offload from o
 # merged config is the proof, not the overlay's text.
 if docker compose version >/dev/null 2>&1; then
   compose_out="$fixture_root/compose.out"
+  # Interpolated, not --no-interpolate: Compose 2.38.2 (the CI runner's) refuses the literal
+  # `./caddy/${AURA_CADDYFILE:-Caddyfile}:/etc/caddy/Caddyfile:ro` bind as "too many colons",
+  # so the merge proof needs real values. Placeholders stand in for compose.yaml's required
+  # secrets, and --env-file keeps a developer's real .env out of it.
+  compose_env="$fixture_root/compose-config.env"
+  grep -oE '\$\{[A-Z0-9_]+:\?' "$repo_root/compose.yaml" | sed -e 's/^\${//' -e 's/:?$//' | sort -u \
+    | sed 's/$/=placeholder/' > "$compose_env"
+  # Git Bash would hand a native docker.exe the MSYS path, which Windows cannot open.
+  compose_env_arg="$compose_env"
+  if command -v cygpath >/dev/null 2>&1; then compose_env_arg="$(cygpath -m "$compose_env")"; fi
   compose_config() {
-    if ! (cd "$repo_root" && docker compose "$@" config --no-interpolate) >"$compose_out" 2>"$compose_out.err"; then
+    if ! (cd "$repo_root" && docker compose --env-file "$compose_env_arg" "$@" config) >"$compose_out" 2>"$compose_out.err"; then
       echo "FAIL: docker compose $* config failed (compose $(docker compose version --short 2>/dev/null)): $(cat "$compose_out.err")" >&2
       exit 1
     fi
