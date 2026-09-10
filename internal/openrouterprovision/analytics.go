@@ -279,14 +279,15 @@ func AggregateRateMetricAcrossBuckets(rows []AnalyticsRow, metric string) (float
 		}
 		return cost / tokens * 1_000_000, nil
 	case "cache_hit_rate":
-		if len(rows) == 0 {
+		var weighted, weight float64
+		for _, r := range rows {
+			weighted += r["cache_hit_rate"] * r["request_count"]
+			weight += r["request_count"]
+		}
+		if weight == 0 {
 			return 0, nil
 		}
-		var sum float64
-		for _, r := range rows {
-			sum += r["cache_hit_rate"]
-		}
-		return sum / float64(len(rows)), nil
+		return weighted / weight, nil
 	default:
 		return 0, fmt.Errorf("%w: %q", ErrUnsupportedRateMetric, metric)
 	}
