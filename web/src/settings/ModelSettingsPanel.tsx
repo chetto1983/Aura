@@ -167,7 +167,7 @@ export function ModelSettingsPanel({
           ) : null}
 
           <SettingsFields
-            defs={group.fields}
+            defs={group.fields.filter((def) => def.cloudOnly !== true || provider === 'cloud')}
             loaded={loaded}
             resetting={resetting}
             onValueChange={setValue}

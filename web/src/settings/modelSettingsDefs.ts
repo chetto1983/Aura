@@ -41,6 +41,9 @@ export interface SettingDef {
   /** One line under the input saying what the number governs, for knobs whose label
    *  alone reads ambiguously (two output caps side by side, a step vs. a token). */
   readonly helpKey?: string;
+  /** An OpenRouter credential: rendered only while Cloud is the route. Hidden is not
+   *  dropped, so a key typed under Cloud still saves after a switch to another route. */
+  readonly cloudOnly?: boolean;
 }
 
 export const PRIMARY_SETTINGS: readonly SettingDef[] = [
@@ -60,6 +63,7 @@ export const PRIMARY_SETTINGS: readonly SettingDef[] = [
     key: 'OPENROUTER_API_KEY',
     kind: 'string',
     secret: true,
+    cloudOnly: true,
     labelKey: 'settings.fields.openRouterKey',
     placeholder: 'sk-or-...',
   },
@@ -69,6 +73,7 @@ export const PRIMARY_SETTINGS: readonly SettingDef[] = [
     key: 'AURA_OPENROUTER_MANAGEMENT_KEY',
     kind: 'string',
     secret: true,
+    cloudOnly: true,
     labelKey: 'settings.fields.openRouterManagementKey',
     placeholder: 'sk-or-v1-...',
     helpKey: 'settings.help.openRouterManagementKey',
