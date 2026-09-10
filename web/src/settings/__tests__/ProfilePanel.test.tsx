@@ -108,6 +108,41 @@ describe('ProfilePanel', () => {
     expect(firstPut(put).expertise).toEqual(['Go', 'ArcadeDB']);
   });
 
+  it.each([
+    {
+      field: 'expertise',
+      stored: 'Go, Postgres',
+      typed: 'Go, Postgres, ArcadeDB',
+      want: ['Go', 'Postgres', 'ArcadeDB'],
+    },
+    {
+      field: 'vetoes',
+      stored: 'non scrivere email al mio posto',
+      typed: 'non scrivere email al mio posto, niente spam',
+      want: ['non scrivere email al mio posto', 'niente spam'],
+    },
+  ] as const)(
+    'keeps a typed comma in $field so a second entry can follow',
+    async ({ field, stored, typed, want }) => {
+      const put = stubProfileFetch(storedProfile());
+      render(<ProfilePanel />);
+
+      const input = await screen.findByDisplayValue(stored);
+      // One change event per keystroke: the moment the comma lands the list has an empty
+      // tail, and re-rendering the parsed list on that keystroke deleted the comma before
+      // the next entry could follow (measured 2026-09-10 on the appliance's settings page).
+      fireEvent.change(input, { target: { value: `${stored},` } });
+      expect((input as HTMLInputElement).value).toBe(`${stored},`);
+      fireEvent.change(input, { target: { value: typed } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save profile' }));
+
+      await waitFor(() => {
+        expect(put).toHaveBeenCalledTimes(1);
+      });
+      expect(firstPut(put)[field]).toEqual(want);
+    },
+  );
+
   it('offers a retry when the profile cannot be loaded', async () => {
     stubProfileFetch({ status: 502 });
     render(<ProfilePanel />);

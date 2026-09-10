@@ -65,20 +65,45 @@ const LIST_FIELDS: readonly ListField[] = [
   'people',
 ];
 
+type ListDrafts = Record<ListField, string>;
+
+// What the operator is typing in each list, verbatim. Rendering the parsed list back on every
+// keystroke deleted a comma the moment it was typed -- the empty entry after it is exactly
+// what parseList drops -- so a second entry could never follow (measured 2026-09-10).
+function listDrafts(profile: ProfileDoc): ListDrafts {
+  return {
+    expertise: formatList(profile.expertise),
+    stack: formatList(profile.stack),
+    projects: formatList(profile.projects),
+    goals: formatList(profile.goals),
+    interests: formatList(profile.interests),
+    people: formatList(profile.people),
+    vetoes: formatList(profile.vetoes),
+  };
+}
+
 export function ProfilePanel() {
   const { t } = useTranslation();
   const headingId = useId();
   const timezoneListId = useId();
   const [profile, setProfile] = useState<ProfileDoc>(emptyProfile);
+  const [drafts, setDrafts] = useState<ListDrafts>(() => listDrafts(emptyProfile()));
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | undefined>();
 
+  // A profile that arrives from the server replaces both what is stored and what the list
+  // fields show: after a load or a save the typed text has no more authority than the server.
+  function adopt(loaded: ProfileDoc) {
+    setProfile(loaded);
+    setDrafts(listDrafts(loaded));
+  }
+
   async function reload() {
     setStatus('loading');
     try {
-      setProfile(await fetchProfile());
+      adopt(await fetchProfile());
       setStatus('ready');
     } catch {
       setStatus('error');
@@ -91,6 +116,7 @@ export function ProfilePanel() {
       .then((loaded) => {
         if (cancelled) return;
         setProfile(loaded);
+        setDrafts(listDrafts(loaded));
         setStatus('ready');
       })
       .catch(() => {
@@ -109,6 +135,7 @@ export function ProfilePanel() {
   }
 
   function setList(field: ListField, raw: string) {
+    setDrafts((current) => ({ ...current, [field]: raw }));
     update({ [field]: parseList(raw) });
   }
 
@@ -118,7 +145,7 @@ export function ProfilePanel() {
     try {
       // The server's normalized answer wins: it trims and drops blanks, so echoing it back
       // into the form shows what was actually stored rather than what was typed.
-      setProfile(await saveProfile(profile));
+      adopt(await saveProfile(profile));
       setSaved(true);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : String(err));
@@ -186,7 +213,7 @@ export function ProfilePanel() {
           <ProfileListField
             key={field}
             field={field}
-            value={formatList(profile[field])}
+            value={drafts[field]}
             onChange={(next) => {
               setList(field, next);
             }}
@@ -206,7 +233,7 @@ export function ProfilePanel() {
       <ProfileTextArea
         label={t('profile.fields.vetoes')}
         hint={t('profile.hints.vetoes')}
-        value={formatList(profile.vetoes)}
+        value={drafts.vetoes}
         onChange={(next) => {
           setList('vetoes', next);
         }}
