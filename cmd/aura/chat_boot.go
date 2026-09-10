@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
@@ -163,7 +164,8 @@ func bootChatNamed(ctx context.Context, label string) *chatEnv {
 }
 
 // bootChatEnv is the error-returning composition root for `aura chat` (D-15). It
-// uses fail-fast config.Load; serve shares the lower helper through bootServeChatEnv.
+// fails fast on a missing LLM key once aura.settings is applied; serve shares the lower
+// helper through bootServeChatEnv.
 // It loads config, opens the pool, verifies migration compatibility, constructs the
 // Stores, runs the boot orphan scan (Req#12) BEFORE serving, initializes the
 // tiktoken encoder once, mounts MCP, and constructs the Runner. It NEVER calls
@@ -171,22 +173,28 @@ func bootChatNamed(ctx context.Context, label string) *chatEnv {
 // resources cleanly (Pitfall 6: an os.Exit in the shared boot would skip a daemon's
 // graceful shutdown).
 func bootChatEnv(ctx context.Context) (*chatEnv, error) {
-	return bootChatEnvWithConfig(ctx, config.Load)
+	return bootChatEnvWithConfig(ctx, config.LoadServe, true)
 }
 
 // bootServeChatEnv shares the chat composition root with serve's keyless LLM
 // config loader. Runtime LLM calls still fail closed if no key is configured.
 func bootServeChatEnv(ctx context.Context) (*chatEnv, error) {
-	return bootChatEnvWithConfig(deferOAuthMountsUntilListener(ctx), config.LoadServe)
+	return bootChatEnvWithConfig(deferOAuthMountsUntilListener(ctx), config.LoadServe, false)
 }
 
-func bootChatEnvWithConfig(ctx context.Context, loadConfig func() (*config.Config, error)) (*chatEnv, error) {
+func bootChatEnvWithConfig(ctx context.Context, loadConfig func() (*config.Config, error), requireLLMKey bool) (*chatEnv, error) {
 	// Capture the pre-settings route once. DELETE on a hot route must restore this
 	// deployment fallback, not the DB value OverlayEnv copies into process env below.
 	baseline, baselineErr := loadConfig()
 	cfg, pool, err := resolveConfigAndPool(ctx, loadConfig, db.Open)
 	if err != nil {
 		return nil, err
+	}
+	// The key may live only in aura.settings, which config loading cannot see, so the CLI's
+	// fail-fast runs here, after the stored secrets are applied.
+	if requireLLMKey && missingLLMKey(cfg) {
+		releaseBootResources(pool, nil)
+		return nil, llm.ErrMissingAPIKey
 	}
 	env, err := assembleChatEnvAtMigrationHead(
 		ctx, cfg, pool, db.CheckMigrationHead, db.VerifyRLSEnforced, assembleChatEnv,
@@ -199,6 +207,12 @@ func bootChatEnvWithConfig(ctx context.Context, loadConfig func() (*config.Confi
 		env.llmFallback = baseline.LLM
 	}
 	return env, nil
+}
+
+// missingLLMKey is the CLI's fail-fast: a hosted provider with no key in the environment or in
+// aura.settings.
+func missingLLMKey(cfg *config.Config) bool {
+	return strings.TrimSpace(cfg.LLM.APIKey) == "" && llm.RequiresAPIKey(cfg.LLM.Provider)
 }
 
 // dbOpener opens a pgx pool from a DB config; it matches db.Open. resolveConfigAndPool

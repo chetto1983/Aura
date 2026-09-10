@@ -368,67 +368,46 @@ func TestBootFailFastBeforeDBOpen(t *testing.T) {
 	}
 }
 
+// TestResolveConfigAndPoolOverlaysSettingsBeforeTheReload proves the boot order: the
+// non-secret rows reach the environment before the reload, and the stored secrets reach the
+// reloaded config after it.
 func TestResolveConfigAndPoolOverlaysSettingsBeforeTheReload(t *testing.T) {
-	tests := []struct {
-		name      string
-		firstErr  error
-		openEvent string
-	}{
-		{name: "normal load", openEvent: "open"},
-		{name: "keyless first load", firstErr: llm.ErrMissingAPIKey, openEvent: "open-keyless"},
+	pool := unreachablePool(t)
+	cfg := validBootConfig()
+	var order []string
+	loads := 0
+	loadConfig := func() (*config.Config, error) {
+		loads++
+		order = append(order, fmt.Sprintf("load-%d", loads))
+		return cfg, nil
+	}
+	open := func(context.Context, *db.Config) (*pgxpool.Pool, error) {
+		order = append(order, "open")
+		return pool, nil
+	}
+	ops := bootSettingsOps{
+		overlay: func(context.Context, *pgxpool.Pool) error {
+			order = append(order, "overlay")
+			return nil
+		},
+		secrets: func(context.Context, *pgxpool.Pool, *config.Config) error {
+			order = append(order, "secrets")
+			return nil
+		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			pool := unreachablePool(t)
-			cfg := validBootConfig()
-			var order []string
-			loads := 0
-			loadConfig := func() (*config.Config, error) {
-				loads++
-				order = append(order, fmt.Sprintf("load-%d", loads))
-				if loads == 1 && tt.firstErr != nil {
-					return nil, tt.firstErr
-				}
-				return cfg, nil
-			}
-			open := func(context.Context, *db.Config) (*pgxpool.Pool, error) {
-				order = append(order, "open")
-				if tt.openEvent != "open" {
-					t.Fatal("normal opener called on keyless path")
-				}
-				return pool, nil
-			}
-			ops := bootSettingsOps{
-				openKeyless: func(context.Context) (*pgxpool.Pool, bool, error) {
-					order = append(order, "open-keyless")
-					if tt.openEvent != "open-keyless" {
-						t.Fatal("keyless opener called on normal path")
-					}
-					return pool, true, nil
-				},
-				overlay: func(context.Context, *pgxpool.Pool) error {
-					order = append(order, "overlay")
-					return nil
-				},
-			}
-
-			gotCfg, gotPool, err := resolveConfigAndPoolWithSettings(
-				context.Background(), loadConfig, open, ops,
-			)
-			if err != nil {
-				t.Fatalf("resolveConfigAndPoolWithSettings: %v", err)
-			}
-			if gotCfg != cfg || gotPool != pool {
-				t.Fatalf("resolved cfg/pool = %p/%p, want %p/%p", gotCfg, gotPool, cfg, pool)
-			}
-			wantOrder := []string{"load-1", tt.openEvent, "overlay", "load-2"}
-			if !reflect.DeepEqual(order, wantOrder) {
-				t.Fatalf("boot order = %v, want %v", order, wantOrder)
-			}
-			pool.Close()
-		})
+	gotCfg, gotPool, err := resolveConfigAndPoolWithSettings(context.Background(), loadConfig, open, ops)
+	if err != nil {
+		t.Fatalf("resolveConfigAndPoolWithSettings: %v", err)
 	}
+	if gotCfg != cfg || gotPool != pool {
+		t.Fatalf("resolved cfg/pool = %p/%p, want %p/%p", gotCfg, gotPool, cfg, pool)
+	}
+	wantOrder := []string{"load-1", "open", "overlay", "load-2", "secrets"}
+	if !reflect.DeepEqual(order, wantOrder) {
+		t.Fatalf("boot order = %v, want %v", order, wantOrder)
+	}
+	pool.Close()
 }
 
 // TestNewSteerInboxWiresConfigCaps closes the D-11-shaped drift 52-04 exists

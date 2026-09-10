@@ -5,38 +5,36 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
-	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/settings"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type bootSettingsOps struct {
-	openKeyless func(context.Context) (*pgxpool.Pool, bool, error)
-	overlay     func(context.Context, *pgxpool.Pool) error
+	overlay func(context.Context, *pgxpool.Pool) error
+	// secrets hands the loaded config the credentials aura.settings holds; nil in tests that
+	// do not exercise it.
+	secrets func(context.Context, *pgxpool.Pool, *config.Config) error
 }
 
 // resolveConfigAndPool loads the config and opens the DB pool, handing BOTH to
 // migration gate and assembleChatEnv. It owns the pool across every post-open
 // failure: if the settings overlay or the config reload fails it closes the pool
 // before returning. On success it returns the OPEN pool and the caller takes over
-// its lifecycle. Returning the pool from here also fixes a latent shadow bug: the
-// previous inline form declared the overlay pool with `:=` inside the keyless branch,
-// shadowing the outer var, so an overlay-success boot proceeded on a nil pool.
+// its lifecycle.
 func resolveConfigAndPool(ctx context.Context, loadConfig func() (*config.Config, error), open dbOpener) (*config.Config, *pgxpool.Pool, error) {
 	return resolveConfigAndPoolWithSettings(
 		ctx,
 		loadConfig,
 		open,
 		bootSettingsOps{
-			openKeyless: openSettingsOverlayPool,
-			overlay:     overlayStoreSettings,
+			overlay: overlayStoreSettings,
+			secrets: applyStoreSecrets,
 		},
 	)
 }
@@ -62,23 +60,7 @@ func resolveConfigAndPoolWithSettings(
 ) (*config.Config, *pgxpool.Pool, error) {
 	cfg, err := loadConfig()
 	if err != nil {
-		if !errors.Is(err, llm.ErrMissingAPIKey) && !isMissingAPIKey(err) {
-			return nil, nil, err
-		}
-		// Keyless first load: the required infra secrets may live in the DB settings
-		// overlay. openSettingsOverlayPool returns a nil pool whenever !ok/err, so a
-		// failed overlay path never leaks a live pool.
-		pool, ok, overlayErr := settingsOps.openKeyless(ctx)
-		if overlayErr != nil || !ok {
-			return nil, nil, err
-		}
-		overlayBootSettings(ctx, pool, settingsOps)
-		cfg, err = loadConfig()
-		if err != nil {
-			pool.Close()
-			return nil, nil, err
-		}
-		return cfg, pool, nil
+		return nil, nil, err
 	}
 	// Fail fast on an empty required infra secret (O-04) BEFORE opening any connection,
 	// so a misconfigured deploy errors at boot with a named cause instead of a late DB
@@ -98,6 +80,7 @@ func resolveConfigAndPoolWithSettings(
 		pool.Close()
 		return nil, nil, err
 	}
+	applyBootSecrets(ctx, pool, cfg, settingsOps)
 	return cfg, pool, nil
 }
 
@@ -111,6 +94,52 @@ func overlayBootSettings(
 	}
 }
 
+func applyBootSecrets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, settingsOps bootSettingsOps) {
+	if settingsOps.secrets == nil {
+		return
+	}
+	if err := settingsOps.secrets(ctx, pool, cfg); err != nil {
+		fmt.Fprintln(os.Stderr, "warn: settings secrets:", err)
+	}
+}
+
+// secretReader is settings.Store.Secret, narrowed so applySecretSettings is testable.
+type secretReader interface {
+	Secret(ctx context.Context, key string) (string, error)
+}
+
+func applyStoreSecrets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) error {
+	store, err := settings.NewStore(pool, cfg.AuthulaSecret)
+	if err != nil {
+		return err
+	}
+	return applySecretSettings(ctx, store, cfg)
+}
+
+// applySecretSettings puts the credentials aura.settings holds into the loaded config. They
+// never pass through the environment (settings.OverlayEnv skips them), so this is how the
+// daemon's LLM client, and every backend that reuses its key, and the management key see them.
+// A stored row wins over the environment.
+func applySecretSettings(ctx context.Context, secrets secretReader, cfg *config.Config) error {
+	llmKey, err := secrets.Secret(ctx, "OPENROUTER_API_KEY")
+	if err != nil {
+		return err
+	}
+	if llmKey != "" {
+		cfg.LLM.APIKey = llmKey
+	}
+	managementKey, err := secrets.Secret(ctx, "AURA_OPENROUTER_MANAGEMENT_KEY")
+	if err != nil {
+		return err
+	}
+	if managementKey != "" {
+		cfg.OpenRouterManagementKey = managementKey
+	}
+	return nil
+}
+
+// openSettingsOverlayPool opens a pool from the DB settings alone, for the CLI commands that
+// read aura.settings without booting the daemon (settingsListerForCLI).
 func openSettingsOverlayPool(ctx context.Context) (*pgxpool.Pool, bool, error) {
 	dbCfg := config.LoadDB()
 	if strings.TrimSpace(dbCfg.DB.URL) == "" {

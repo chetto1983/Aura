@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -19,12 +20,9 @@ func isolateKeylessBootEnv(t *testing.T) {
 		"AURA_DB_URL",
 		"AURA_DB_MIGRATE_URL",
 		"AURA_DB_BOOTSTRAP_URL",
-		// The LLM pair is load-bearing HERE, and only became so when the empty-key gate
-		// started reading the provider (amendment #219): with AURA_LLM_PROVIDER inherited
-		// from the developer's shell as a local provider, no key is required and
-		// TestChatBootStillRequiresAPIKey fails on the DB error instead — which is exactly
-		// what happened on a machine that had exported it. Empty means the default provider,
-		// which is the hosted one, which is the case this file exists to pin.
+		// The LLM pair is cleared so a provider or key exported in the developer's shell
+		// cannot change which error the boot reports. Empty means the default provider,
+		// which is the hosted one.
 		"AURA_LLM_PROVIDER",
 		"OPENROUTER_API_KEY",
 	} {
@@ -48,12 +46,32 @@ func TestServeKeylessBootReachesInfraValidation(t *testing.T) {
 	}
 }
 
-func TestChatBootStillRequiresAPIKey(t *testing.T) {
+// TestChatBootReachesInfraValidationBeforeTheKey pins the order: the key may live in
+// aura.settings, so without a database the CLI boot fails on the infra it needs first.
+func TestChatBootReachesInfraValidationBeforeTheKey(t *testing.T) {
 	isolateKeylessBootEnv(t)
 
 	_, err := bootChatEnv(context.Background())
-	if !errors.Is(err, llm.ErrMissingAPIKey) {
-		t.Fatalf("bootChatEnv err = %v, want ErrMissingAPIKey", err)
+	if err == nil || errors.Is(err, llm.ErrMissingAPIKey) || !strings.Contains(err.Error(), "POSTGRES_PASSWORD") {
+		t.Fatalf("bootChatEnv err = %v, want the infra validation error before any key check", err)
+	}
+}
+
+// TestChatBootStillRequiresAPIKey proves the CLI's fail-fast, which runs once aura.settings is
+// applied: a hosted provider needs a key from one of the two places, a local one needs none.
+func TestChatBootStillRequiresAPIKey(t *testing.T) {
+	hosted := &config.Config{}
+	if !missingLLMKey(hosted) {
+		t.Fatal("a hosted provider with no key passed the CLI's fail-fast")
+	}
+	hosted.LLM.APIKey = "sk-from-settings"
+	if missingLLMKey(hosted) {
+		t.Fatal("a key applied from aura.settings did not satisfy the fail-fast")
+	}
+	local := &config.Config{}
+	local.LLM.Provider = "llamacpp"
+	if missingLLMKey(local) {
+		t.Fatal("a local provider was asked for a key")
 	}
 }
 

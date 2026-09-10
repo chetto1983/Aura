@@ -233,21 +233,36 @@ func mediaConfigFingerprint(cfg *config.Config, primaryAcceptsImages bool) strin
 }
 
 func loadEffectiveConfig(ctx context.Context) (*config.Config, error) {
-	if dbURL := strings.TrimSpace(os.Getenv("AURA_DB_URL")); dbURL != "" {
-		pool, err := pgxpool.New(ctx, dbURL)
-		if err != nil {
-			return nil, fmt.Errorf("settings database: %w", err)
-		}
-		defer pool.Close()
-		store, err := settings.NewStore(pool, os.Getenv("AURA_AUTHULA_SECRET"))
-		if err != nil {
-			return nil, fmt.Errorf("settings store: %w", err)
-		}
-		if err = settings.OverlayEnv(ctx, store); err != nil {
-			return nil, fmt.Errorf("settings overlay: %w", err)
-		}
+	dbURL := strings.TrimSpace(os.Getenv("AURA_DB_URL"))
+	if dbURL == "" {
+		return config.LoadServe()
 	}
-	return config.LoadServe()
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		return nil, fmt.Errorf("settings database: %w", err)
+	}
+	defer pool.Close()
+	store, err := settings.NewStore(pool, os.Getenv("AURA_AUTHULA_SECRET"))
+	if err != nil {
+		return nil, fmt.Errorf("settings store: %w", err)
+	}
+	if err = settings.OverlayEnv(ctx, store); err != nil {
+		return nil, fmt.Errorf("settings overlay: %w", err)
+	}
+	cfg, err := config.LoadServe()
+	if err != nil {
+		return nil, err
+	}
+	// The services key never reaches the environment, and the vision call on the OpenRouter
+	// route needs it.
+	key, err := store.Secret(ctx, "OPENROUTER_API_KEY")
+	if err != nil {
+		return nil, fmt.Errorf("settings secret: %w", err)
+	}
+	if key != "" {
+		cfg.LLM.APIKey = key
+	}
+	return cfg, nil
 }
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {

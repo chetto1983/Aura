@@ -3,8 +3,9 @@
 // local↔cloud (embed/STT/TTS/vision), sets the single OpenRouter key, and picks
 // the embed dimension. Rows live in aura.settings (migration 0024); secret rows are
 // AES-GCM ciphertext (secrets.go), which the Store decrypts for its callers. At
-// daemon boot OverlayEnv applies them onto the process environment BEFORE
-// config.Load, so the existing env readers pick them up with NO per-field mapping;
+// daemon boot OverlayEnv applies the non-secret rows onto the process environment (secret
+// rows never reach it) BEFORE config.Load, so the existing env readers pick them up with NO
+// per-field mapping;
 // DB values WIN over pre-set env (the operator's UI choice is authoritative).
 // The primary LLM profile is also published to the live runtime by the Settings API;
 // the remaining backend knobs still take effect on restart.
@@ -303,18 +304,18 @@ func (s *Store) withWriteLock(
 	return fn(sqlc.New(tx))
 }
 
-// OverlayEnv applies the allowlisted aura.settings rows onto the process
-// environment so a subsequent config.Load reads them. Non-allowlisted rows are
-// ignored. Call at daemon boot BEFORE config.Load, after the pool is open. A row
-// whose key is allowlisted but whose value fails os.Setenv (an invalid name can't
-// occur for the static allowlist) is skipped without aborting the overlay.
+// OverlayEnv applies the allowlisted, non-secret aura.settings rows onto the process
+// environment so a subsequent config.Load reads them. Call at daemon boot BEFORE config.Load,
+// after the pool is open. Secret rows are skipped: a credential in the environment reaches
+// every child process the daemon starts, so their readers call Store.Secret instead.
 func OverlayEnv(ctx context.Context, l Lister) error {
 	rows, err := l.List(ctx)
 	if err != nil {
 		return err
 	}
 	for _, r := range rows {
-		if _, ok := AllowedKeys[r.Key]; !ok {
+		meta, ok := AllowedKeys[r.Key]
+		if !ok || meta.Secret {
 			continue
 		}
 		_ = os.Setenv(r.Key, r.Value)

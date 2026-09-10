@@ -302,13 +302,13 @@ func load(allowEmptyKey bool) (*Config, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	if cfg.APIKey == "" && !allowEmptyKey && requiresAPIKey(cfg.Provider) {
+	if cfg.APIKey == "" && !allowEmptyKey && RequiresAPIKey(cfg.Provider) {
 		return nil, ErrMissingAPIKey
 	}
 	return cfg, nil
 }
 
-// requiresAPIKey answers whether an empty APIKey should stop startup. Only the hosted
+// RequiresAPIKey answers whether an empty APIKey should stop startup. Only the hosted
 // provider authenticates with OPENROUTER_API_KEY; a self-hosted llama.cpp server takes no
 // credential at all, and the request path already reflects that — model_reasoning_caps.go
 // sets the Authorization header ONLY when the key is non-empty.
@@ -319,7 +319,7 @@ func load(allowEmptyKey bool) (*Config, error) {
 // protected nothing: any non-empty string satisfied it, so the workaround was to invent a
 // credential, and the check only ever caught the operator who was honest about not having
 // one. An unset provider still requires the key, because the default IS the hosted one.
-func requiresAPIKey(provider string) bool {
+func RequiresAPIKey(provider string) bool {
 	return strings.TrimSpace(provider) == "" || strings.EqualFold(strings.TrimSpace(provider), defaultProvider)
 }
 

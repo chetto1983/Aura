@@ -32,7 +32,7 @@ var (
 	doctorProbePostgres   doctorProbe = defaultDoctorProbePostgres
 	doctorProbeEmbed      doctorProbe = defaultDoctorProbeEmbed
 	doctorProbeMCPServers doctorProbe = defaultDoctorProbeMCPServers
-	doctorLookupLLMKey                = func() string { return os.Getenv("OPENROUTER_API_KEY") } //nolint:gosec // boolean presence check only; value is never printed.
+	doctorLookupLLMKey                = func() string { return effectiveLLMKeyForCLI(context.Background()) } //nolint:gosec // boolean presence check only; value is never printed.
 	doctorHTTPClient                  = &http.Client{Timeout: 10 * time.Second}
 	doctorOpenPostgres                = func(ctx context.Context, cfg *config.Config) (doctorPostgresPool, error) {
 		return db.Open(ctx, &cfg.DB)

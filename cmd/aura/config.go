@@ -163,9 +163,10 @@ var settingsListerForCLI = func(ctx context.Context) (settings.Lister, func(), s
 	return store, pool.Close, ""
 }
 
-// applySettingsOverlay copies the allowlisted aura.settings rows onto the process
-// environment exactly as the daemon does at boot (chat_boot.go's resolveConfigAndPool),
-// so the CLI resolves the SAME configuration `aura serve` is running.
+// applySettingsOverlay copies the allowlisted, non-secret aura.settings rows onto the process
+// environment exactly as the daemon does at boot (chat_boot_settings.go's
+// resolveConfigAndPool), so the CLI resolves the SAME configuration `aura serve` is running;
+// the stored key comes in through effectiveLLMKeyForCLI.
 //
 // Without it these commands report the compiled-in defaults as "effective" whenever the
 // deployment is configured from the cockpit -- which is the normal case, since
@@ -205,9 +206,31 @@ func loadLLMConfigTolerant() (*llm.Config, error) {
 // loadLLMConfigAndOverlayNote is loadLLMConfigTolerant for the one caller that prints
 // the overlay note (`show`); the others discard it through the wrapper above.
 func loadLLMConfigAndOverlayNote() (*llm.Config, string, error) {
-	note := applySettingsOverlay(context.Background())
+	ctx := context.Background()
+	note := applySettingsOverlay(ctx)
 	cfg, err := resolveLLMConfigTiers()
+	if err == nil {
+		if key := effectiveLLMKeyForCLI(ctx); key != "" {
+			cfg.APIKey = key
+		}
+	}
 	return cfg, note, err
+}
+
+// effectiveLLMKeyForCLI is the key the daemon would use: the aura.settings row, which never
+// reaches the environment, then the environment.
+func effectiveLLMKeyForCLI(ctx context.Context) string {
+	if lister, closeLister, _ := settingsListerForCLI(ctx); lister != nil {
+		defer closeLister()
+		if rows, err := lister.List(ctx); err == nil {
+			for _, row := range rows {
+				if row.Key == "OPENROUTER_API_KEY" && strings.TrimSpace(row.Value) != "" {
+					return row.Value
+				}
+			}
+		}
+	}
+	return os.Getenv("OPENROUTER_API_KEY")
 }
 
 // resolveLLMConfigTiers runs llm.Load's own tier chain, tolerating an empty API key so

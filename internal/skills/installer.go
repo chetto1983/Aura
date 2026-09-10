@@ -12,6 +12,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/scoring"
 )
 
@@ -375,8 +376,10 @@ func execCommandRunner(ctx context.Context, dir, name string, args ...string) (s
 	return string(out), err
 }
 
+// execCommandEnv is npx's environment. npx runs third-party install scripts, so it gets the
+// same credential-free environment an MCP install resolver does, never Aura's own.
 func execCommandEnv() []string {
-	return append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "DO_NOT_TRACK=1")
+	return append(mcp.InstallerEnv(), "GIT_TERMINAL_PROMPT=0", "DO_NOT_TRACK=1")
 }
 
 // splitLines splits s on "\n" (the ANSI-stripped output is already LF-normalized for

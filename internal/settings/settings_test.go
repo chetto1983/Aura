@@ -87,6 +87,8 @@ func TestOverlayEnvAppliesAllowlistOnly(t *testing.T) {
 
 func TestOverlayEnvFeedsRuntimeConfig(t *testing.T) {
 	clearRuntimeConfigEnvForOverlayTest(t)
+	t.Setenv("OPENROUTER_API_KEY", "sk-from-environment")
+	t.Setenv("AURA_OPENROUTER_MANAGEMENT_KEY", "")
 
 	l := fakeLister{rows: []sqlc.AuraSettings{
 		{Key: "AURA_LLM_MODEL", Value: "settings/primary-model"},
@@ -117,11 +119,11 @@ func TestOverlayEnvFeedsRuntimeConfig(t *testing.T) {
 	if got := cfg.LLM.BaseURL; got != "https://settings-llm.example/v1" {
 		t.Errorf("LLM.BaseURL = %q, want overlaid settings base URL", got)
 	}
-	if got := cfg.LLM.APIKey; got != "sk-settings-overlay" {
-		t.Errorf("LLM.APIKey = %q, want overlaid settings API key", got)
+	if got := cfg.LLM.APIKey; got != "sk-from-environment" {
+		t.Errorf("LLM.APIKey = %q, want the environment's key: the settings secret must not be overlaid", got)
 	}
-	if got := cfg.OpenRouterManagementKey; got != "sk-or-mgmt-settings-overlay" {
-		t.Errorf("OpenRouterManagementKey = %q, want overlaid settings management key", got)
+	if got := cfg.OpenRouterManagementKey; got != "" {
+		t.Errorf("OpenRouterManagementKey = %q, want empty: the settings secret must not be overlaid", got)
 	}
 	if got := cfg.LLM.MaxTokens; got != 1111 {
 		t.Errorf("LLM.MaxTokens = %d, want 1111", got)
@@ -149,23 +151,33 @@ func TestOverlayEnvFeedsRuntimeConfig(t *testing.T) {
 	}
 
 	embedBase, embedKey, embedModel := cfg.EmbedRoute()
-	if embedBase != "https://settings-embed.example" || embedKey != "sk-settings-overlay" || embedModel != "settings/embed-model" {
-		t.Errorf("EmbedRoute() = (%q, %q, %q), want overlaid base/key/model", embedBase, embedKey, embedModel)
+	if embedBase != "https://settings-embed.example" || embedKey != "sk-from-environment" || embedModel != "settings/embed-model" {
+		t.Errorf("EmbedRoute() = (%q, %q, %q), want overlaid base and model with the environment's key", embedBase, embedKey, embedModel)
 	}
 }
 
-func TestOverlayEnvAppliesTelegramBotToken(t *testing.T) {
-	t.Setenv("TELEGRAM_BOT_TOKEN", "")
-
+// TestOverlayEnvSkipsSecretRows proves no credential reaches the process environment, where
+// every child process would inherit it: secret rows are read through Store.Secret instead.
+func TestOverlayEnvSkipsSecretRows(t *testing.T) {
+	for _, key := range []string{"TELEGRAM_BOT_TOKEN", "OPENROUTER_API_KEY", "AURA_OPENROUTER_MANAGEMENT_KEY", "AURA_TTS_MODEL"} {
+		t.Setenv(key, "")
+	}
 	l := fakeLister{rows: []sqlc.AuraSettings{
 		{Key: "TELEGRAM_BOT_TOKEN", Value: "123456:settings-telegram-token"},
+		{Key: "OPENROUTER_API_KEY", Value: "sk-settings-services"},
+		{Key: "AURA_OPENROUTER_MANAGEMENT_KEY", Value: "sk-settings-management"},
+		{Key: "AURA_TTS_MODEL", Value: "tts-from-settings"},
 	}}
 	if err := OverlayEnv(t.Context(), l); err != nil {
 		t.Fatalf("OverlayEnv: %v", err)
 	}
-
-	if got := os.Getenv("TELEGRAM_BOT_TOKEN"); got != "123456:settings-telegram-token" {
-		t.Errorf("TELEGRAM_BOT_TOKEN = %q, want overlaid Settings token", got)
+	for _, key := range []string{"TELEGRAM_BOT_TOKEN", "OPENROUTER_API_KEY", "AURA_OPENROUTER_MANAGEMENT_KEY"} {
+		if got := os.Getenv(key); got != "" {
+			t.Errorf("%s = %q, want unset: a secret row must not enter the environment", key, got)
+		}
+	}
+	if got := os.Getenv("AURA_TTS_MODEL"); got != "tts-from-settings" {
+		t.Errorf("AURA_TTS_MODEL = %q, want the overlaid value", got)
 	}
 }
 
@@ -296,8 +308,10 @@ func TestOverlayEnvBeatsAConflictingDeploymentValue(t *testing.T) {
 	if got := cfg.LLM.Model; got != "settings/model-from-postgres" {
 		t.Errorf("LLM.Model = %q, want the persisted row to beat the deployment value", got)
 	}
-	if got := cfg.LLM.APIKey; got != "sk-from-postgres" {
-		t.Errorf("LLM.APIKey = %q, want the persisted row to beat the deployment key", got)
+	// The key row is a secret: it never enters the environment, so config.Load still sees the
+	// deployment key. cmd/aura's applySecretSettings is where the stored key wins.
+	if got := cfg.LLM.APIKey; got != "sk-from-dotenv" {
+		t.Errorf("LLM.APIKey = %q, want the deployment key: a secret row must not be overlaid", got)
 	}
 	// The loop budget is consumed by the agent layer, not by llm.Config, so the
 	// contract to assert here is OverlayEnv's own: the row reached the process

@@ -56,13 +56,14 @@ const telegramGetMeTimeout = 5 * time.Second
 
 // bootChannelsAndSetup builds the channels Registry (with the boot Telegram channel
 // registered) + the setup-wizard HTTP server over the shared composition root. It
-// reads the Telegram channel config (TELEGRAM_BOT_TOKEN + the AURA_TELEGRAM_*
-// throttles) from the environment, resolves the local identity for the setup
+// reads the Telegram channel config (the AURA_TELEGRAM_* throttles from the environment,
+// the bot token from aura.settings, else the environment), resolves the local identity for the setup
 // onboarding FK, and applies the --no-telegram/--only=cli override. With no token
 // the boot channel fails to start, logged and never fatal; the returned
 // telegramHotSwap starts the token the Settings API saves later, without a restart.
 func bootChannelsAndSetup(ctx context.Context, chat *chatEnv, override func(name string) (enabled, ok bool)) (*channels.Registry, *telegramHotSwap, *http.Server) {
 	tgCfg := telegram.LoadConfig()
+	tgCfg.BotToken = effectiveTelegramToken(ctx, chat)
 	reg := channels.NewRegistry()
 	if override != nil {
 		reg.SetEnabledOverride(override)

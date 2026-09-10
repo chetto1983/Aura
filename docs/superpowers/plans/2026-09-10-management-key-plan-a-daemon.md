@@ -1446,7 +1446,7 @@ Expected: PASS; `chat_boot.go` under 600 lines.
 
 Every consumer of the services key reads `cfg.LLM.APIKey`: cloud embeddings (`config_routes.go:27`), web TTS/STT (`serve_voice.go:70,90`), Telegram TTS (`serve_channels.go:143`). Setting that one field at boot covers them all.
 
-- [ ] **Step 1: Write the failing tests.** In `settings_test.go`, replace `TestOverlayEnvAppliesTelegramBotToken` with:
+- [x] **Step 1: Write the failing tests.** In `settings_test.go`, replace `TestOverlayEnvAppliesTelegramBotToken` with:
 
 ```go
 // TestOverlayEnvSkipsSecretRows proves no credential reaches the process environment, where
@@ -1575,12 +1575,12 @@ func TestExecCommandEnvCarriesNoCredential(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests and watch them fail**
+- [x] **Step 2: Run the tests and watch them fail**
 
 Run: `go test ./internal/settings/ ./cmd/aura/ ./internal/skills/`
 Expected: `TestOverlayEnvSkipsSecretRows` fails (the secrets are overlaid); `applySecretSettings` is undefined; the npx environment leaks the key.
 
-- [ ] **Step 3: Implement.** In `settings.go`, replace `OverlayEnv` and its doc with:
+- [x] **Step 3: Implement.** In `settings.go`, replace `OverlayEnv` and its doc with:
 
 ```go
 // OverlayEnv applies the allowlisted, non-secret aura.settings rows onto the process
@@ -1820,12 +1820,12 @@ func execCommandEnv() []string {
 
 (import `github.com/chetto1983/aura/internal/mcp`; `internal/mcp` does not import `internal/skills`, so there is no cycle).
 
-- [ ] **Step 4: Run the tests and watch them pass**
+- [x] **Step 4: Run the tests and watch them pass**
 
 Run: `go test ./internal/settings/ ./internal/llm/ ./internal/skills/ ./cmd/aura/ ./cmd/aura-media-index/ && go build ./...`
 Expected: PASS.
 
-- [ ] **Step 5: Race, lint, commit** (`feat: keep secret settings out of the process environment`). Body: every child process inherited the OpenRouter keys and the Telegram token, npx included; the daemon now reads them from `aura.settings` at boot and at call time. Name the two rewritten `OverlayEnv` tests and the deleted keyless-branch tests, with why.
+- [x] **Step 5: Race, lint, commit** (`feat: keep secret settings out of the process environment`). Body: every child process inherited the OpenRouter keys and the Telegram token, npx included; the daemon now reads them from `aura.settings` at boot and at call time. Name the two rewritten `OverlayEnv` tests and the deleted keyless-branch tests, with why.
 
 ---
 

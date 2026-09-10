@@ -282,7 +282,7 @@ func buildOnboardingService(
 			deps.Authula = authulaCoreAdapter{core: core}
 		}
 	}
-	deps.BotUsername = resolveBotUsername(ctx, telegram.LoadConfig().BotToken)
+	deps.BotUsername = resolveBotUsername(ctx, effectiveTelegramToken(ctx, chat))
 	// Live resolver (ONBD Telegram step): a token saved mid-session via Settings yields a
 	// working deep-link without a daemon restart. Falls back to deps.BotUsername when empty.
 	deps.BotUsernameResolver = newBotUsernameResolver(chat.pool, chat.cfg.AuthulaSecret)
