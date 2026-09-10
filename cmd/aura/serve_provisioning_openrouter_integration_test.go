@@ -23,6 +23,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/chetto1983/aura/internal/identityctx"
@@ -147,7 +148,7 @@ func TestOpenRouterKeyAdaptersRoundTripLive(t *testing.T) {
 		client: srv.Client(), baseURL: srv.URL, store: store,
 		managementKey: func(context.Context) (string, error) { return "test-management-key", nil },
 	}
-	mint := openRouterKeyMintAdapter{cfg}
+	mint := agui.NewIdentityKeyMinter(openRouterMintingAdapter{cfg}, store, memberCapabilities{}, func() bool { return true })
 	revoke := openRouterKeyRevokeAdapter{cfg}
 
 	minted, err := mint.MintKey(ctx, identityID, identityID)
@@ -172,6 +173,9 @@ func TestOpenRouterKeyAdaptersRoundTripLive(t *testing.T) {
 	if rec.Hash != minted.Hash {
 		t.Fatalf("stored hash = %q, want %q (MintKey's own return value)", rec.Hash, minted.Hash)
 	}
+	if rec.LimitUSD == nil || *rec.LimitUSD != 0 {
+		t.Fatalf("stored cap = %v, want a member's zero cap", rec.LimitUSD)
+	}
 
 	// The reverse-saga adapter is identity-keyed: it must look the hash up itself and
 	// revoke it — proving deprovision.go's real contract, not just the forward leg's.
@@ -182,4 +186,11 @@ func TestOpenRouterKeyAdaptersRoundTripLive(t *testing.T) {
 	if err := revoke.RevokeKey(ctx, identityID); err != nil {
 		t.Fatalf("second RevokeKey(identityID) (already revoked): %v", err)
 	}
+}
+
+// memberCapabilities answers "not an admin" for every identity.
+type memberCapabilities struct{}
+
+func (memberCapabilities) HasCapability(context.Context, string, string) (bool, error) {
+	return false, nil
 }

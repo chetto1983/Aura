@@ -2045,7 +2045,7 @@ Expected: PASS.
 - Consumes: `MintRequest.Limit *USDCap` (Task 2), `Record.LimitUSD *float64` (Task 3), `openRouterKeyConfig.key` (Task 7).
 - Produces: `(*identitykey.Store).InsertIfAbsent(ctx, Record) (bool, error)`; `agui.OpenRouterMinting`; `agui.NewIdentityKeyMinter(minting OpenRouterMinting, keys identityKeyStore, caps capabilityChecker, routeBills func() bool) *IdentityKeyMinter`; its methods `MintKey`, `RevokeKey` (it satisfies `OpenRouterKeyMinter`), `readiness(ctx) (string, error)`, `ensure(ctx, identityID, keyName) (MintedKey, bool, error)`, `revokeUnrecorded(ctx, hash)`; the constants `skipLocalRoute`, `skipManagementKeyUnset`; `liveRouteBills(*chatEnv) func() bool`; the test helper `adminCaps(admins ...string) *fakeIdentityAdmin`.
 
-- [ ] **Step 1: Add the query and regenerate.** Append to `internal/db/queries/identity_llm_key.sql`:
+- [x] **Step 1: Add the query and regenerate.** Append to `internal/db/queries/identity_llm_key.sql`:
 
 ```sql
 -- name: InsertIdentityLLMKeyIfAbsent :execrows
@@ -2060,7 +2060,7 @@ ON CONFLICT (identity_id) DO NOTHING;
 Run: `make sqlc && git diff --stat internal/db/sqlc`
 Expected: `identity_llm_key.sql.go` gains `InsertIdentityLLMKeyIfAbsent(ctx, InsertIdentityLLMKeyIfAbsentParams) (int64, error)`, whose params have the same fields as `UpsertIdentityLLMKeyParams`.
 
-- [ ] **Step 2: Write the failing tests.** Append to `store_integration_test.go`:
+- [x] **Step 2: Write the failing tests.** Append to `store_integration_test.go`:
 
 ```go
 // TestInsertIfAbsentKeepsTheFirstKey proves the second of two mints for one identity is told
@@ -2311,12 +2311,12 @@ type memberCapabilities struct{}
 func (memberCapabilities) HasCapability(context.Context, string, string) (bool, error) { return false, nil }
 ```
 
-- [ ] **Step 3: Run the tests and watch them fail**
+- [x] **Step 3: Run the tests and watch them fail**
 
 Run: `go test ./internal/agui/ -run Minter && go test ./cmd/aura/ -run MintingAdapter`
 Expected: build failure (`NewIdentityKeyMinter`, `openRouterMintingAdapter` undefined).
 
-- [ ] **Step 4: Implement the store.** In `identitykey/store.go`, replace `Save` with `rowParams` + `Save` + `InsertIfAbsent`:
+- [x] **Step 4: Implement the store.** In `identitykey/store.go`, replace `Save` with `rowParams` + `Save` + `InsertIfAbsent`:
 
 ```go
 // rowParams validates r and encodes it for the identity on ctx; Save and InsertIfAbsent
@@ -2386,7 +2386,7 @@ func (s *Store) InsertIfAbsent(ctx context.Context, r Record) (bool, error) {
 }
 ```
 
-- [ ] **Step 5: Implement the minter.** `internal/agui/openrouter_keys.go`:
+- [x] **Step 5: Implement the minter.** `internal/agui/openrouter_keys.go`:
 
 ```go
 package agui
@@ -2541,7 +2541,7 @@ func (m *IdentityKeyMinter) revokeUnrecorded(ctx context.Context, hash string) {
 
 Update `onboarding_provision_credit.go`'s file header: the composition-root adapter it describes is now `agui.IdentityKeyMinter` over `cmd/aura`'s `openRouterMintingAdapter`.
 
-- [ ] **Step 6: Wire it.** In `serve_provisioning_openrouter.go`, delete `openRouterKeyMintAdapter` and its two methods, and add:
+- [x] **Step 6: Wire it.** In `serve_provisioning_openrouter.go`, delete `openRouterKeyMintAdapter` and its two methods, and add:
 
 ```go
 // openRouterMintingAdapter satisfies agui.OpenRouterMinting over the management key it reads
@@ -2582,12 +2582,12 @@ func liveRouteBills(chat *chatEnv) func() bool {
 
 `openRouterKeyMinterFor` returns `agui.NewIdentityKeyMinter(openRouterMintingAdapter{cfg}, cfg.store, chat.identity, liveRouteBills(chat))` when `resolveOpenRouterKeyConfig` succeeds, and nil otherwise. In `serve_agui.go`, Task 4's inline `creditBackendBills` func becomes `creditBackendBills := liveRouteBills(chat)`.
 
-- [ ] **Step 7: Run the tests and watch them pass**
+- [x] **Step 7: Run the tests and watch them pass**
 
 Run: `go test ./internal/identitykey/ ./internal/agui/ ./cmd/aura/ && go build ./...`, then with the stack up `go test -tags db_integration -race -run 'InsertIfAbsent|OpenRouter' ./internal/identitykey/ ./cmd/aura/`
 Expected: PASS.
 
-- [ ] **Step 8: Race, lint, commit** (`feat(agui): one minter for every identity's OpenRouter key`). Body: the saga minted every key at a zero cap and overwrote any existing row; the minter gives an admin no limit, skips a local route or a missing management key, and never leaves two live keys for one identity.
+- [x] **Step 8: Race, lint, commit** (`feat(agui): one minter for every identity's OpenRouter key`). Body: the saga minted every key at a zero cap and overwrote any existing row; the minter gives an admin no limit, skips a local route or a missing management key, and never leaves two live keys for one identity.
 
 ---
 

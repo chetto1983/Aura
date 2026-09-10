@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/openrouterprovision"
 )
@@ -61,13 +60,12 @@ func TestOpenRouterKeyConfigRefusesABlankManagementKey(t *testing.T) {
 	}
 }
 
-func TestMintSkipsWhileTheManagementKeyIsUnset(t *testing.T) {
-	cfg := openRouterKeyConfig{managementKey: func(context.Context) (string, error) { return "", nil }}
-	minted, err := openRouterKeyMintAdapter{cfg}.MintKey(context.Background(), "id", "id")
-	if err != nil || minted != (agui.MintedKey{}) {
-		t.Fatalf("MintKey without a management key = %+v, %v; want an empty key and no error", minted, err)
+func TestMintingAdapterWithoutAManagementKey(t *testing.T) {
+	adapter := openRouterMintingAdapter{openRouterKeyConfig{managementKey: func(context.Context) (string, error) { return "", nil }}}
+	if set, err := adapter.ManagementKeySet(context.Background()); set || err != nil {
+		t.Fatalf("ManagementKeySet = %v, %v; want false, nil", set, err)
 	}
-	if err := (openRouterKeyMintAdapter{cfg}).RevokeKey(context.Background(), ""); err != nil {
-		t.Fatalf("RevokeKey(\"\") = %v, want nil: nothing was minted", err)
+	if _, err := adapter.Mint(context.Background(), openrouterprovision.MintRequest{}); !errors.Is(err, openrouterprovision.ErrManagementKeyUnset) {
+		t.Fatalf("Mint error = %v, want ErrManagementKeyUnset", err)
 	}
 }

@@ -4,17 +4,18 @@ import "context"
 
 // onboarding_provision_credit.go carries the CRED-01/CRED-02/CRED-08 credit leg the
 // provisioning saga adds in plan 02-06: minting a freshly-provisioned identity's own
-// OpenRouter key at a zero cap, and that leg's own compensation. Split out of
+// OpenRouter key (a zero cap for a member, no limit for an admin), and that leg's own
+// compensation. Split out of
 // onboarding_provision.go on purpose (C-05 required the split precede the growth,
 // which plan 02-02 performed) rather than grown in place.
 //
 // Declared consumer-side, mirroring onboarding_provision_resources.go's ports, so this
 // package stays free of the internal/openrouterprovision and internal/identitykey
-// concretes. The composition-root adapter (cmd/aura/serve_provisioning.go) composes
-// openrouterprovision.MintKey with identitykey.Store.Save for the forward half, and
-// identitykey.Store.Load with openrouterprovision.RevokeKey for the reverse half — the
-// raw key never crosses back through this port at all, only the hash/label a revoke or
-// a journal entry needs.
+// concretes. The forward half is IdentityKeyMinter (openrouter_keys.go) over cmd/aura's
+// openRouterMintingAdapter, which composes openrouterprovision.MintKey with
+// identitykey.Store.InsertIfAbsent; the reverse half composes identitykey.Store.Load with
+// openrouterprovision.RevokeKey — the raw key never crosses back through this port at all,
+// only the hash/label a revoke or a journal entry needs.
 
 // MintedKey is the saga-facing projection of a freshly-minted OpenRouter key. It never
 // carries the raw credential (T-02-06c): the composition-root adapter mints it, stores
@@ -31,7 +32,8 @@ type MintedKey struct {
 }
 
 // OpenRouterKeyMinter mints and revokes one identity's OpenRouter key. MintKey is the
-// forward leg: it mints at a zero cap (D-09's default state) with the OpenRouter-side
+// forward leg: it mints at a zero cap for a member (D-09's default state) and with no limit
+// for an admin, with the OpenRouter-side
 // key named after identityID (and external.user set to the same id), persists the key
 // encrypted, and returns only the hash/label — never the raw key, which the adapter
 // mints, stores, and lets go out of scope in the same call. RevokeKey is that leg's own

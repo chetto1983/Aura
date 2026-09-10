@@ -33,6 +33,39 @@ func (q *Queries) GetIdentityLLMKey(ctx context.Context, identityID pgtype.UUID)
 	return i, err
 }
 
+const insertIdentityLLMKeyIfAbsent = `-- name: InsertIdentityLLMKeyIfAbsent :execrows
+INSERT INTO aura.identity_llm_key (identity_id, key_ciphertext, key_hash, key_label, limit_usd, limit_reset)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (identity_id) DO NOTHING
+`
+
+type InsertIdentityLLMKeyIfAbsentParams struct {
+	IdentityID    pgtype.UUID    `json:"identity_id"`
+	KeyCiphertext []byte         `json:"key_ciphertext"`
+	KeyHash       string         `json:"key_hash"`
+	KeyLabel      string         `json:"key_label"`
+	LimitUsd      pgtype.Numeric `json:"limit_usd"`
+	LimitReset    string         `json:"limit_reset"`
+}
+
+// Writes a key only when the identity has none. The reconciler and the provisioning saga can
+// mint for the same new identity at once; the one that loses sees 0 rows and revokes its own
+// key instead of overwriting the winner's.
+func (q *Queries) InsertIdentityLLMKeyIfAbsent(ctx context.Context, arg InsertIdentityLLMKeyIfAbsentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertIdentityLLMKeyIfAbsent,
+		arg.IdentityID,
+		arg.KeyCiphertext,
+		arg.KeyHash,
+		arg.KeyLabel,
+		arg.LimitUsd,
+		arg.LimitReset,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const listIdentityLLMKeys = `-- name: ListIdentityLLMKeys :many
 SELECT identity_id, key_hash, key_label, limit_usd, limit_reset, updated_at
 FROM aura.identity_llm_key

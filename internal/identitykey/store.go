@@ -112,39 +112,44 @@ func NewStore(pool *pgxpool.Pool, authulaSecretHex string) (*Store, error) {
 	return &Store{pool: pool, aead: aead}, nil
 }
 
-// Save writes the key, replacing any earlier one for the same identity (ON CONFLICT
-// DO UPDATE — a rotation rewrites the same row rather than accumulating history).
-func (s *Store) Save(ctx context.Context, r Record) error {
+// rowParams validates r and encodes it for the identity on ctx; Save and InsertIfAbsent
+// share it.
+func (s *Store) rowParams(ctx context.Context, r Record) (string, sqlc.UpsertIdentityLLMKeyParams, error) {
 	identity, err := requireIdentity(ctx)
 	if err != nil {
-		return err
+		return "", sqlc.UpsertIdentityLLMKeyParams{}, err
 	}
 	id, err := parseUUID(identity)
 	if err != nil {
-		return err
+		return "", sqlc.UpsertIdentityLLMKeyParams{}, err
 	}
 	if strings.TrimSpace(r.Key) == "" {
-		return errors.New("identitykey: save needs a key")
+		return "", sqlc.UpsertIdentityLLMKeyParams{}, errors.New("identitykey: save needs a key")
 	}
 	ciphertext, err := s.seal([]byte(r.Key))
 	if err != nil {
-		return err
+		return "", sqlc.UpsertIdentityLLMKeyParams{}, err
 	}
 	limitUSD, err := numericCap(r.LimitUSD)
 	if err != nil {
-		return fmt.Errorf("identitykey: save: %w", err)
+		return "", sqlc.UpsertIdentityLLMKeyParams{}, fmt.Errorf("identitykey: save: %w", err)
 	}
 	limitReset := strings.TrimSpace(r.LimitReset)
 	if limitReset == "" {
 		limitReset = "monthly"
 	}
-	params := sqlc.UpsertIdentityLLMKeyParams{
-		IdentityID:    id,
-		KeyCiphertext: ciphertext,
-		KeyHash:       r.Hash,
-		KeyLabel:      r.Label,
-		LimitUsd:      limitUSD,
-		LimitReset:    limitReset,
+	return identity, sqlc.UpsertIdentityLLMKeyParams{
+		IdentityID: id, KeyCiphertext: ciphertext, KeyHash: r.Hash, KeyLabel: r.Label,
+		LimitUsd: limitUSD, LimitReset: limitReset,
+	}, nil
+}
+
+// Save writes the key, replacing any earlier one for the same identity (ON CONFLICT DO
+// UPDATE — a rotation rewrites the same row rather than accumulating history).
+func (s *Store) Save(ctx context.Context, r Record) error {
+	identity, params, err := s.rowParams(ctx, r)
+	if err != nil {
+		return err
 	}
 	err = db.WithIdentityTx(ctx, s.pool, identity, func(q *sqlc.Queries) error {
 		return q.UpsertIdentityLLMKey(ctx, params)
@@ -153,6 +158,24 @@ func (s *Store) Save(ctx context.Context, r Record) error {
 		return fmt.Errorf("identitykey: save: %w", err)
 	}
 	return nil
+}
+
+// InsertIfAbsent writes the key only when the identity has none, and reports whether it did.
+func (s *Store) InsertIfAbsent(ctx context.Context, r Record) (bool, error) {
+	identity, params, err := s.rowParams(ctx, r)
+	if err != nil {
+		return false, err
+	}
+	var inserted int64
+	err = db.WithIdentityTx(ctx, s.pool, identity, func(q *sqlc.Queries) error {
+		var qerr error
+		inserted, qerr = q.InsertIdentityLLMKeyIfAbsent(ctx, sqlc.InsertIdentityLLMKeyIfAbsentParams(params))
+		return qerr
+	})
+	if err != nil {
+		return false, fmt.Errorf("identitykey: insert: %w", err)
+	}
+	return inserted == 1, nil
 }
 
 // Load returns the OpenRouter key for the identity on ctx, or ErrNoKey — never a

@@ -267,6 +267,10 @@ type Querier interface {
 	// NULLIF keeps seq=1 (the root) at NULL, matching that backfill's `WHERE seq > 1`.
 	InsertConversationTurn(ctx context.Context, arg InsertConversationTurnParams) (int64, error)
 	InsertIdentityAudit(ctx context.Context, arg InsertIdentityAuditParams) (AuraIdentityAudit, error)
+	// Writes a key only when the identity has none. The reconciler and the provisioning saga can
+	// mint for the same new identity at once; the one that loses sees 0 rows and revokes its own
+	// key instead of overwriting the winner's.
+	InsertIdentityLLMKeyIfAbsent(ctx context.Context, arg InsertIdentityLLMKeyIfAbsentParams) (int64, error)
 	InsertIdentityRecoveryAudit(ctx context.Context, arg InsertIdentityRecoveryAuditParams) (AuraIdentityRecoveryAudit, error)
 	InsertMcpAudit(ctx context.Context, arg InsertMcpAuditParams) (AuraMcpAudit, error)
 	InsertPasswordResetChallenge(ctx context.Context, arg InsertPasswordResetChallengeParams) (AuraPasswordResetChallenges, error)

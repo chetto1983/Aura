@@ -181,3 +181,25 @@ func TestIdentityLLMKeyNoLimitRoundTrips(t *testing.T) {
 		t.Fatalf("List = %+v (err %v), want one summary with no limit", list, err)
 	}
 }
+
+// TestInsertIfAbsentKeepsTheFirstKey proves the second of two mints for one identity is told
+// it lost, and that the stored key stays the first one.
+func TestInsertIfAbsentKeepsTheFirstKey(t *testing.T) {
+	pool := migratedKeyPool(t)
+	store := keyStore(t, pool)
+	owner := seedKeyIdentity(t, pool)
+	ctx := identityctx.WithIdentityID(context.Background(), owner)
+
+	first := Record{Key: "sk-or-v1-first-" + uuid.NewString(), Hash: "hash-first", Label: "first", LimitUSD: capUSD(0), LimitReset: "monthly"}
+	if inserted, err := store.InsertIfAbsent(ctx, first); err != nil || !inserted {
+		t.Fatalf("first InsertIfAbsent = %v, %v; want inserted", inserted, err)
+	}
+	second := Record{Key: "sk-or-v1-second-" + uuid.NewString(), Hash: "hash-second", Label: "second", LimitUSD: capUSD(0), LimitReset: "monthly"}
+	if inserted, err := store.InsertIfAbsent(ctx, second); err != nil || inserted {
+		t.Fatalf("second InsertIfAbsent = %v, %v; want not inserted", inserted, err)
+	}
+	got, err := store.Load(ctx)
+	if err != nil || got.Hash != "hash-first" || got.Key != first.Key {
+		t.Fatalf("stored key = %+v (err %v), want the first one", got, err)
+	}
+}

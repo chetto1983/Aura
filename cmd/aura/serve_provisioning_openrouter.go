@@ -11,6 +11,7 @@ import (
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/identitykey"
+	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/openrouterprovision"
 	"github.com/chetto1983/aura/internal/settings"
 )
@@ -23,7 +24,7 @@ import (
 // serve_provisioning_objectstore.go's own refactor-on-touch precedent).
 
 var (
-	_ agui.OpenRouterKeyMinter  = openRouterKeyMintAdapter{}
+	_ agui.OpenRouterMinting    = openRouterMintingAdapter{}
 	_ agui.OpenRouterKeyRevoker = openRouterKeyRevokeAdapter{}
 )
 
@@ -53,73 +54,38 @@ func (c openRouterKeyConfig) key(ctx context.Context) (string, error) {
 	return key, nil
 }
 
-// openRouterKeyMintAdapter satisfies agui.OpenRouterKeyMinter (onboarding_provision_credit.go).
-// Its own RevokeKey(ctx, hash) is the FORWARD saga's compensation, keyed on the hash
-// MintKey returned — a DIFFERENT method from openRouterKeyRevokeAdapter's RevokeKey
-// below despite the identical name: the two ports' RevokeKey methods take different
-// arguments (a hash here, an identity id there) under the same method name, and one
-// type satisfying both interfaces would silently accept either meaning depending on
-// which interface variable held it. Keeping them as two distinct types makes that
-// ambiguity a compile-time impossibility rather than a runtime foot-gun.
-type openRouterKeyMintAdapter struct{ openRouterKeyConfig }
+// openRouterMintingAdapter satisfies agui.OpenRouterMinting over the management key it reads
+// at call time. agui.IdentityKeyMinter owns the rules (who gets which cap, never two keys for
+// one identity); this adapter only speaks to the provider.
+type openRouterMintingAdapter struct{ openRouterKeyConfig }
 
-// MintKey mints identityID's own OpenRouter key at a zero cap (CRED-02) named after the
-// identity id (keyName), persists it encrypted via identitykey.Store.Save, and returns
-// only the hash/label — the raw key returned by the provider goes out of scope at the
-// end of this call and never crosses back through the agui port (T-02-06c). An unset
-// management key is "nothing to mint yet": the saga still provisions the identity, and its
-// key is minted once an admin sets the management key.
-func (a openRouterKeyMintAdapter) MintKey(ctx context.Context, identityID, keyName string) (agui.MintedKey, error) {
-	managementKey, err := a.key(ctx)
+func (a openRouterMintingAdapter) ManagementKeySet(ctx context.Context) (bool, error) {
+	_, err := a.key(ctx)
 	if errors.Is(err, openrouterprovision.ErrManagementKeyUnset) {
-		return agui.MintedKey{}, nil
+		return false, nil
 	}
-	if err != nil {
-		return agui.MintedKey{}, err
-	}
-	result, err := openrouterprovision.MintKey(ctx, a.client, a.baseURL, managementKey, openrouterprovision.MintRequest{
-		IdentityID: identityID,
-		Name:       keyName,
-		Limit:      new(openrouterprovision.USDCap),
-		LimitReset: openrouterprovision.LimitResetMonthly,
-	})
-	if err != nil {
-		return agui.MintedKey{}, fmt.Errorf("openrouter key minter: mint: %w", err)
-	}
-	// Save/Load's own requireIdentity(ctx) reads identityctx.IdentityID(ctx) — scope ctx
-	// to the identity being PROVISIONED, not whatever ambient principal (the creator)
-	// the saga's own ctx carries.
-	saveCtx := identityctx.WithIdentityID(ctx, identityID)
-	if err := a.store.Save(saveCtx, identitykey.Record{
-		Key:        result.Key,
-		Hash:       result.Record.Hash,
-		Label:      result.Record.Label,
-		LimitUSD:   new(float64),
-		LimitReset: string(openrouterprovision.LimitResetMonthly),
-	}); err != nil {
-		// The key exists at the provider but Aura never recorded it — revoke rather than
-		// leave an orphan the operator pays for and cannot see (T-02-31).
-		if rerr := openrouterprovision.RevokeKey(context.WithoutCancel(ctx), a.client, a.baseURL, managementKey, result.Record.Hash); rerr != nil {
-			slog.Error("openrouter key minter: revoke after a failed persist also failed — an orphan key may exist at the provider", "step", "compensate")
-		}
-		return agui.MintedKey{}, fmt.Errorf("openrouter key minter: persist: %w", err)
-	}
-	return agui.MintedKey{Hash: result.Record.Hash, Label: result.Record.Label}, nil
+	return err == nil, err
 }
 
-// RevokeKey is the forward saga's own compensation (onboarding_provision.go's
-// compCredit) — see the type doc for why this is hash-keyed and lives on a separate
-// type from openRouterKeyRevokeAdapter's identity-keyed RevokeKey below. An empty hash is a
-// mint that never happened (no management key yet), so there is nothing to revoke.
-func (a openRouterKeyMintAdapter) RevokeKey(ctx context.Context, hash string) error {
-	if hash == "" {
-		return nil
+func (a openRouterMintingAdapter) Mint(ctx context.Context, req openrouterprovision.MintRequest) (openrouterprovision.MintResult, error) {
+	managementKey, err := a.key(ctx)
+	if err != nil {
+		return openrouterprovision.MintResult{}, err
 	}
+	return openrouterprovision.MintKey(ctx, a.client, a.baseURL, managementKey, req)
+}
+
+func (a openRouterMintingAdapter) Revoke(ctx context.Context, hash string) error {
 	managementKey, err := a.key(ctx)
 	if err != nil {
 		return err
 	}
 	return openrouterprovision.RevokeKey(ctx, a.client, a.baseURL, managementKey, hash)
+}
+
+// liveRouteBills reports whether the primary route the operator runs right now bills.
+func liveRouteBills(chat *chatEnv) func() bool {
+	return func() bool { return !llm.IsKeylessLocalBaseURL(chat.llmRuntime.Snapshot().Config.BaseURL) }
 }
 
 // openRouterKeyPatchAdapter satisfies agui/credit_api.go's unexported creditProvider
@@ -204,7 +170,7 @@ func openRouterKeyMinterFor(chat *chatEnv) agui.OpenRouterKeyMinter {
 	if !ok {
 		return nil
 	}
-	return openRouterKeyMintAdapter{cfg}
+	return agui.NewIdentityKeyMinter(openRouterMintingAdapter{cfg}, cfg.store, chat.identity, liveRouteBills(chat))
 }
 
 // openRouterKeyRevokerFor builds the reverse-saga port. Nil under the same conditions as

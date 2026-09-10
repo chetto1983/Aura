@@ -18,7 +18,6 @@ import (
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/identity"
-	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/readiness"
 	"github.com/chetto1983/aura/internal/swarm"
@@ -250,7 +249,7 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	// (below) is configured, so CRED-09's exemption must be wireable even when the
 	// management credential is entirely absent (a local-backend deployment has no
 	// reason to set it).
-	creditBackendBills := func() bool { return !llm.IsKeylessLocalBaseURL(chat.llmRuntime.Snapshot().Config.BaseURL) }
+	creditBackendBills := liveRouteBills(chat)
 	// creditResolver may be nil (no AURA_AUTHULA_SECRET, or a broken one); routed
 	// through agui.NewCreditInvalidator so the nil check happens on the CONCRETE
 	// pointer, never producing a non-nil interface wrapping a nil one (the SAME
