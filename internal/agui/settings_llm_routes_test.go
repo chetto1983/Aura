@@ -94,6 +94,7 @@ func TestPutLLMProfileRemembersTheRouteItPersisted(t *testing.T) {
 		settings:         &fakeSettingsStore{},
 		llmRoutes:        routes,
 		llmRouteReloader: &fakeLLMRouteReloader{},
+		idAdmin:          adminCaps("operator"),
 	}
 	rr := putLLMProfile(t, s, `{"settings":{
 		"AURA_LLM_PROVIDER":"ollama",
@@ -119,6 +120,7 @@ func TestPutLLMProfileSurvivesARouteMemoryFailure(t *testing.T) {
 		settings:         &fakeSettingsStore{},
 		llmRoutes:        &fakeRouteStore{upsertErr: errors.New("pool closed")},
 		llmRouteReloader: &fakeLLMRouteReloader{},
+		idAdmin:          adminCaps("operator"),
 	}
 	rr := putLLMProfile(t, s, `{"settings":{
 		"AURA_LLM_PROVIDER":"llamacpp",
@@ -171,6 +173,7 @@ func TestPutSettingRemembersOnlyRouteKeys(t *testing.T) {
 				settings:         &fakeSettingsStore{rows: tc.rows},
 				llmRoutes:        routes,
 				llmRouteReloader: &fakeLLMRouteReloader{},
+				idAdmin:          adminCaps("operator"),
 			}
 			req := httptest.NewRequest(http.MethodPut, "/api/settings/"+tc.key,
 				strings.NewReader(`{"value":"`+tc.value+`"}`))

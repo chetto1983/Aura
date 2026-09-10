@@ -37,6 +37,9 @@ func TestAllowed(t *testing.T) {
 	if m, ok := Allowed("TELEGRAM_BOT_TOKEN"); !ok || !m.Secret {
 		t.Errorf("TELEGRAM_BOT_TOKEN should be allowed + secret, got ok=%v meta=%+v", ok, m)
 	}
+	if m, ok := Allowed("AURA_OPENROUTER_SERVICES_CAP_USD"); !ok || m.Secret || m.Kind != KindString {
+		t.Errorf("AURA_OPENROUTER_SERVICES_CAP_USD should be an allowlisted non-secret string setting, got ok=%v meta=%+v", ok, m)
+	}
 	if _, ok := Allowed("POSTGRES_PASSWORD"); ok {
 		t.Error("POSTGRES_PASSWORD must NOT be settings-overridable")
 	}

@@ -182,7 +182,7 @@ func TestHandlePutLLMProfilePreparesThenPersistsAndPublishesOnce(t *testing.T) {
 		{Key: "AURA_LLM_MODEL", Value: "cloud-model"},
 	}}
 	reloader := &fakeLLMRouteReloader{}
-	s := &Server{settings: store, llmRouteReloader: reloader}
+	s := &Server{settings: store, llmRouteReloader: reloader, idAdmin: adminCaps("op-1")}
 	body := strings.NewReader(`{"settings":{` +
 		`"AURA_LLM_PROVIDER":"llamacpp",` +
 		`"AURA_LLM_BASE_URL":"http://aura-llm:8084/v1",` +
@@ -212,7 +212,7 @@ func TestHandlePutLLMProfileDropsPreviousModelLimitsOnRouteChange(t *testing.T) 
 		{Key: "AURA_MODEL_MAX_OUTPUT_TOKENS", Value: "32768"},
 	}}
 	reloader := &fakeLLMRouteReloader{}
-	s := &Server{settings: store, llmRouteReloader: reloader}
+	s := &Server{settings: store, llmRouteReloader: reloader, idAdmin: adminCaps("op-1")}
 	body := strings.NewReader(`{"settings":{` +
 		`"AURA_LLM_PROVIDER":"ollama",` +
 		`"AURA_LLM_BASE_URL":"http://host.docker.internal:11434/v1",` +
@@ -341,7 +341,7 @@ func TestHandlePutSetting(t *testing.T) {
 			{Key: "AURA_LLM_MODEL", Value: "old-model"},
 		}}
 		reloader := &fakeLLMRouteReloader{}
-		s := &Server{settings: store, llmRouteReloader: reloader}
+		s := &Server{settings: store, llmRouteReloader: reloader, idAdmin: adminCaps("op-1")}
 		rr, r := putReq(t, "AURA_LLM_MODEL", "gemma-4-12b", "op-1")
 
 		s.handlePutSetting(rr, r)
@@ -363,7 +363,7 @@ func TestHandlePutSetting(t *testing.T) {
 	t.Run("invalid primary route is rejected before persistence", func(t *testing.T) {
 		store := &fakeSettingsStore{}
 		reloader := &fakeLLMRouteReloader{err: errors.New("invalid route")}
-		s := &Server{settings: store, llmRouteReloader: reloader}
+		s := &Server{settings: store, llmRouteReloader: reloader, idAdmin: adminCaps("op-1")}
 		rr, r := putReq(t, "AURA_LLM_MODEL", "bad-model", "op-1")
 
 		s.handlePutSetting(rr, r)
@@ -384,7 +384,7 @@ func TestHandleDeleteSettingHotLLMRoutePublishesFallbackOverrides(t *testing.T) 
 		{Key: "AURA_LLM_MODEL", Value: "gemma-4-12b"},
 	}}
 	reloader := &fakeLLMRouteReloader{}
-	s := &Server{settings: store, llmRouteReloader: reloader}
+	s := &Server{settings: store, llmRouteReloader: reloader, idAdmin: adminCaps("op-1")}
 	r := httptest.NewRequest(http.MethodDelete, "/api/settings/AURA_LLM_MODEL", nil)
 	r.SetPathValue("key", "AURA_LLM_MODEL")
 	r = withPrincipal(r, "op-1")

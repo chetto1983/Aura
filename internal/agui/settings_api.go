@@ -1,9 +1,9 @@
 package agui
 
 // settings_api.go is the cockpit "Settings" page backend (SETTINGS-01): the model-
-// backend knobs the operator swaps local↔cloud (embed/STT/TTS/vision), the single
-// OpenRouter key, and the embed dimension. Rows live in aura.settings and are
-// overlaid onto the environment at boot (internal/settings.OverlayEnv). The primary
+// backend knobs the operator swaps local↔cloud (embed/STT/TTS/vision), the OpenRouter
+// management key, and the embed dimension. Rows live in aura.settings and the non-secret
+// ones are overlaid onto the environment at boot (internal/settings.OverlayEnv). The primary
 // LLM profile is additionally hot-published and the Telegram token hot-swaps the
 // running channel; restart_required covers only a persisted difference whose runtime
 // remains boot-bound, and POST /api/admin/restart applies it where supported.
@@ -11,31 +11,26 @@ package agui
 // GET returns the allowlist + current effective values with SECRETS REDACTED (the
 // real value never crosses the wire on read). PUT/DELETE are operator write-class
 // actions gated by RequireCapability(governance.write) at the parent-mux mount
-// (serve_webui.go); GET is gated by governance.read. Every key is validated
-// against the static allowlist + its Kind before persisting, so the API can never
-// write a non-model key (the allowlist already excludes connection/security env).
+// (serve_webui.go); GET is gated by governance.read. PUT and DELETE of the credential,
+// route and model keys, and the whole llm-profile route, also require identity.create
+// (settings_api_authz.go); OPENROUTER_API_KEY is minted by Aura and cannot be written
+// through the API. Every key is validated against the static allowlist + its Kind before
+// persisting, so the API can never write a non-model key (the allowlist already excludes
+// connection/security env).
 
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"maps"
 	"net/http"
 	"os"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
-	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/settings"
-)
-
-var (
-	errInvalidInt  = errors.New("value must be an integer")
-	errInvalidBool = errors.New("value must be a boolean (true/false)")
 )
 
 // hotLLMProfileKeys are the rows the wired reloader publishes into the runtime
@@ -193,6 +188,8 @@ func (s *Server) handleListSettings(w http.ResponseWriter, r *http.Request) {
 			switch {
 			case key == telegramTokenKey && s.telegramRuns(row.Value):
 				item.Applied = appliedLive
+			case isCallTimeSetting(key):
+				item.Applied = appliedLive
 			case row.Value != os.Getenv(key) && !s.hotLLMRouteEnabled(key):
 				item.Applied = appliedRestart
 				out.RestartRequired = true
@@ -249,6 +246,9 @@ func (s *Server) handlePutLLMProfile(w http.ResponseWriter, r *http.Request) {
 			writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
+	}
+	if !s.authorizeSettingWrite(w, r, actor, true, slices.Collect(maps.Keys(body.Settings))...) {
+		return
 	}
 
 	s.settingsMu.Lock()
@@ -324,6 +324,9 @@ func (s *Server) handlePutSetting(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
+	if !s.authorizeSettingWrite(w, r, actor, false, key) {
+		return
+	}
 	raw, ok := readCappedBody(w, r)
 	if !ok {
 		return
@@ -395,8 +398,12 @@ func (s *Server) handleDeleteSetting(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "unknown setting key"})
 		return
 	}
-	if _, ok := principalIdentityID(r); !ok {
+	actor, ok := principalIdentityID(r)
+	if !ok {
 		writeJSONStatus(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	if !s.authorizeSettingWrite(w, r, actor, false, key) {
 		return
 	}
 	s.settingsMu.Lock()
@@ -461,70 +468,6 @@ func (s *Server) effectiveSettingValue(ctx context.Context, key string) (string,
 		}
 	}
 	return strings.TrimSpace(os.Getenv(key)), nil
-}
-
-// validateSettingValue rejects a value that does not parse for its Kind (an int
-// knob like AURA_EMBED_DIMENSIONS must be an int; a bool like AURA_MEMORY_PRELOAD_ENABLED
-// must parse) so a bad value never reaches config.Load's silent default fallback.
-func validateSettingValue(kind settings.Kind, value string) error {
-	switch kind {
-	case settings.KindInt:
-		if _, err := strconv.Atoi(value); err != nil {
-			return errInvalidInt
-		}
-	case settings.KindBool:
-		if _, err := strconv.ParseBool(value); err != nil {
-			return errInvalidBool
-		}
-	}
-	return nil
-}
-
-func isLLMTokenSetting(key string) bool {
-	switch key {
-	case "AURA_LLM_MAX_TOKENS",
-		"AURA_MODEL_CONTEXT_WINDOW",
-		"AURA_MODEL_MAX_OUTPUT_TOKENS":
-		return true
-	default:
-		return false
-	}
-}
-
-func validatePendingLLMTokenSetting(rows []sqlc.AuraSettings, key, value string) error {
-	cfg, err := llm.LoadAllowEmptyKey()
-	if err != nil {
-		return err
-	}
-	for _, row := range rows {
-		if isLLMTokenSetting(row.Key) {
-			if err := applyLLMTokenSetting(cfg, row.Key, row.Value); err != nil {
-				return err
-			}
-		}
-	}
-	if err := applyLLMTokenSetting(cfg, key, value); err != nil {
-		return err
-	}
-	return cfg.Validate()
-}
-
-func applyLLMTokenSetting(cfg *llm.Config, key, value string) error {
-	parsed, err := strconv.Atoi(value)
-	if err != nil {
-		return errInvalidInt
-	}
-	switch key {
-	case "AURA_LLM_MAX_TOKENS":
-		cfg.MaxTokens = parsed
-	case "AURA_MODEL_CONTEXT_WINDOW":
-		cfg.ContextWindow = parsed
-		cfg.ContextWindowConfigured = true
-	case "AURA_MODEL_MAX_OUTPUT_TOKENS":
-		cfg.MaxOutputTokens = parsed
-		cfg.MaxOutputTokensConfigured = true
-	}
-	return nil
 }
 
 // settingItemFromRow projects a stored row to the redacted DTO returned by a write.

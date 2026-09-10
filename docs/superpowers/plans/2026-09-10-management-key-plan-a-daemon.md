@@ -2603,7 +2603,7 @@ Expected: PASS.
 - Consumes: `adminCaps` (Task 8 test helper), `fakeIdentityAdmin` (`audit_api_test.go`).
 - Produces: `(*Server).authorizeSettingWrite(w, r, actor string, requireAdmin bool, keys ...string) bool`; `isCallTimeSetting(key string) bool`; the setting `AURA_OPENROUTER_SERVICES_CAP_USD`.
 
-- [ ] **Step 1: Write the failing tests.** Add to `settings_test.go`'s `TestAllowed`:
+- [x] **Step 1: Write the failing tests.** Add to `settings_test.go`'s `TestAllowed`:
 
 ```go
 	if m, ok := Allowed("AURA_OPENROUTER_SERVICES_CAP_USD"); !ok || m.Secret || m.Kind != KindString {
@@ -2703,12 +2703,12 @@ func TestCallTimeSettingsReadAsLive(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests and watch them fail**
+- [x] **Step 2: Run the tests and watch them fail**
 
 Run: `go test ./internal/agui/ -run 'Member|Admin|Nobody|CallTime' && go test ./internal/settings/ -run TestAllowed`
 Expected: the member writes succeed (want 403), and the new key is not allowlisted.
 
-- [ ] **Step 3: Implement.** In `settings.go`'s `AllowedKeys`, after the management key:
+- [x] **Step 3: Implement.** In `settings.go`'s `AllowedKeys`, after the management key:
 
 ```go
 	// The monthly cap of the aura-services key the reconciler mints. It is read when the key is
@@ -2806,18 +2806,18 @@ In `settings_api.go`:
 
 and update the file header: PUT and DELETE of the credential, route and model keys, and the whole `llm-profile` route, also require `identity.create`; `OPENROUTER_API_KEY` cannot be written through the API.
 
-- [ ] **Step 4: Bring the existing settings tests in line.** Run: `go test ./internal/agui/ -run 'Setting|LLMProfile|LLMModel|Telegram'`. For each failure:
+- [x] **Step 4: Bring the existing settings tests in line.** Run: `go test ./internal/agui/ -run 'Setting|LLMProfile|LLMModel|Telegram'`. For each failure:
   - a test that writes an admin-only key gets `idAdmin: adminCaps("op-1")` (or its own principal) on its `Server`;
   - a test that writes `OPENROUTER_API_KEY` to exercise hot publishing switches to another hot key (`AURA_LOOP_MAX_STEPS`); a test that exercised the key itself is replaced by `TestNobodyWritesTheServicesKey`.
 
   Name every changed test in the commit body.
 
-- [ ] **Step 5: Run the tests and watch them pass**
+- [x] **Step 5: Run the tests and watch them pass**
 
 Run: `go test ./internal/agui/ ./internal/settings/ && go build ./... && wc -l internal/agui/settings_api.go`
 Expected: PASS; `settings_api.go` under 600 lines.
 
-- [ ] **Step 6: Race, lint, commit** (`fix(agui): only an admin changes the deployment's credential and route`). Body: every identity holds `governance.write`, so any member could replace the management key or switch to a local route that exempts everyone from billing; nobody can type the services key any more.
+- [x] **Step 6: Race, lint, commit** (`fix(agui): only an admin changes the deployment's credential and route`). Body: every identity holds `governance.write`, so any member could replace the management key or switch to a local route that exempts everyone from billing; nobody can type the services key any more.
 
 ---
 

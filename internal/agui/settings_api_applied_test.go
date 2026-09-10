@@ -70,20 +70,21 @@ func TestHandleListSettingsLoopBudgetEffectiveValue(t *testing.T) {
 	}
 }
 
-// The batch route accepts the four keys that joined the hot profile and rejects a
-// boot-bound key, so the cockpit can save them in one prepare→persist→publish.
-func TestHandlePutLLMProfileAcceptsLoopBudgetTriggerAndKey(t *testing.T) {
+// The batch route accepts the keys that joined the hot profile and rejects a boot-bound key,
+// so the cockpit can save them in one prepare→persist→publish. The services key is hot too,
+// but Aura mints it, so no batch carries it (TestNobodyWritesTheServicesKey).
+func TestHandlePutLLMProfileAcceptsLoopBudgetAndTrigger(t *testing.T) {
 	store := &fakeSettingsStore{}
 	reloader := &fakeLLMRouteReloader{}
-	s := &Server{settings: store, llmRouteReloader: reloader}
+	s := &Server{settings: store, llmRouteReloader: reloader, idAdmin: adminCaps("op-1")}
 	body := strings.NewReader(`{"settings":{"AURA_LOOP_MAX_STEPS":"60","AURA_LOOP_MAX_WALLCLOCK_SEC":"1200",` +
-		`"AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT":"40","OPENROUTER_API_KEY":"sk-rotated"}}`)
+		`"AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT":"40"}}`)
 	rr := httptest.NewRecorder()
 	s.handlePutLLMProfile(rr, withPrincipal(httptest.NewRequest(http.MethodPut, "/api/settings/llm-profile", body), "op-1"))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rr.Code, rr.Body.String())
 	}
-	if len(reloader.applied) != 1 || reloader.applied[0]["AURA_LOOP_MAX_STEPS"] != "60" || store.upserted["OPENROUTER_API_KEY"] != "sk-rotated" {
+	if len(reloader.applied) != 1 || reloader.applied[0]["AURA_LOOP_MAX_STEPS"] != "60" || store.upserted["AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT"] != "40" {
 		t.Fatalf("applied %v upserted %v", reloader.applied, store.upserted)
 	}
 

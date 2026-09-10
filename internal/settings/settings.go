@@ -1,12 +1,12 @@
 // Package settings is the cockpit-editable runtime override layer for Aura's
 // model-backend knobs — the "Settings" page where the operator swaps any backend
-// local↔cloud (embed/STT/TTS/vision), sets the single OpenRouter key, and picks
+// local↔cloud (embed/STT/TTS/vision), sets the OpenRouter management key, and picks
 // the embed dimension. Rows live in aura.settings (migration 0024); secret rows are
 // AES-GCM ciphertext (secrets.go), which the Store decrypts for its callers. At
 // daemon boot OverlayEnv applies the non-secret rows onto the process environment (secret
 // rows never reach it) BEFORE config.Load, so the existing env readers pick them up with NO
-// per-field mapping;
-// DB values WIN over pre-set env (the operator's UI choice is authoritative).
+// per-field mapping; DB values WIN over pre-set env (the operator's UI choice is
+// authoritative).
 // The primary LLM profile is also published to the live runtime by the Settings API;
 // the remaining backend knobs still take effect on restart.
 //
@@ -82,12 +82,15 @@ var AllowedKeys = map[string]KeyMeta{
 	// keys and reads analytics/credits, but cannot call completion endpoints (M-01) —
 	// a different credential from the inference key above, stored the same way.
 	"AURA_OPENROUTER_MANAGEMENT_KEY": {Secret: true, Kind: KindString, Label: "OpenRouter management key (mint/revoke, not inference)"},
-	"AURA_EMBED_MODEL":               {Kind: KindString, Label: "Embedding cloud model"},
-	"AURA_EMBED_DIMENSIONS":          {Kind: KindInt, Label: "Embedding dimensions"},
-	"AURA_EMBED_BASE_URL":            {Kind: KindString, Label: "Embedding base URL"},
-	"AURA_TTS_MODEL":                 {Kind: KindString, Label: "TTS cloud model"},
-	"AURA_STT_CLOUD_MODEL":           {Kind: KindString, Label: "STT cloud model"},
-	"TELEGRAM_BOT_TOKEN":             {Secret: true, Kind: KindString, Label: "Telegram bot token"},
+	// The monthly cap of the aura-services key the reconciler mints. It is read when the key is
+	// minted, never overlaid into a running config.
+	"AURA_OPENROUTER_SERVICES_CAP_USD": {Kind: KindString, Label: "OpenRouter services key monthly cap (USD)"},
+	"AURA_EMBED_MODEL":                 {Kind: KindString, Label: "Embedding cloud model"},
+	"AURA_EMBED_DIMENSIONS":            {Kind: KindInt, Label: "Embedding dimensions"},
+	"AURA_EMBED_BASE_URL":              {Kind: KindString, Label: "Embedding base URL"},
+	"AURA_TTS_MODEL":                   {Kind: KindString, Label: "TTS cloud model"},
+	"AURA_STT_CLOUD_MODEL":             {Kind: KindString, Label: "STT cloud model"},
+	"TELEGRAM_BOT_TOKEN":               {Secret: true, Kind: KindString, Label: "Telegram bot token"},
 }
 
 // Allowed reports whether key may be set through the Settings layer.
