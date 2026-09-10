@@ -69,3 +69,23 @@ grep -q 'could not fetch http://127.0.0.1:1/unreachable/compose.yaml' "$net_err"
   || { echo "FAIL: an empty AURA_PAYLOAD_DIR did not reach the curl branch: $(cat "$net_err")" >&2; exit 1; }
 
 echo "ok: download_file prefers the payload and still falls back to the network"
+
+# A compose service whose pull_policy defaults to `never` is repo-built: its `build:` context
+# is not in the payload, so on an :edge install compose must pull it instead. Read from
+# compose.yaml rather than listed here, so a service added later is covered the day it lands.
+# Measured 2026-09-10, first npx install on a clean mini PC: arcadedb-mcp was left at
+# `never`, compose fell back to building it, and `up` died on the missing context.
+never_policies="$(sed -n 's/.*pull_policy: \${\([A-Z_]*\):-never}.*/\1/p' "$repo_root/compose.yaml" | sort -u)"
+[ -n "$never_policies" ] || { echo "FAIL: no never-defaulted pull_policy found in compose.yaml" >&2; exit 1; }
+mkdir -p "$fixture_root/edge"
+(
+  cd "$fixture_root/edge"
+  printf 'AURA_IMAGE=ghcr.io/chetto1983/aura:edge\n' > .env
+  ensure_edge_channel_env
+  for policy in $never_policies; do
+    [ "$(env_value "$policy")" = "always" ] \
+      || { echo "FAIL: an :edge install leaves $policy at its compose default 'never'" >&2; exit 1; }
+  done
+)
+
+echo "ok: an :edge install pulls every repo-built compose image"

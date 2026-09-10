@@ -512,16 +512,20 @@ ensure_edge_channel_env() {
   case "$(env_value AURA_IMAGE)" in
     *:edge)
       ensure_env_default AURA_PULL_POLICY always
-      ensure_env_default AURA_ARCADEDB_MCP_IMAGE ghcr.io/chetto1983/aura-arcadedb-mcp:edge
       ensure_env_default AURA_PIM_MCP_IMAGE ghcr.io/chetto1983/aura-pim-mcp:sidecar
       ensure_env_default AURA_WHATSAPP_MCP_IMAGE ghcr.io/chetto1983/whatsapp-mcp:latest
-      # caddy and ingest are repo-built images: without a published pin a fresh
-      # appliance tries to `docker build` them against a payload that has no
-      # build context and dies (measured 2026-08-31, first clean-host E2E).
+      # caddy, ingest and arcadedb-mcp are repo-built images whose compose
+      # pull_policy defaults to `never`: without a published pin AND `always` a
+      # fresh appliance tries to `docker build` them against a payload that has
+      # no build context and dies (measured 2026-08-31 for caddy and ingest on
+      # the first clean-host E2E, 2026-09-10 for arcadedb-mcp on the first npx
+      # install).
       ensure_env_default AURA_CADDY_IMAGE ghcr.io/chetto1983/aura-caddy:edge
       ensure_env_default AURA_CADDY_PULL_POLICY always
       ensure_env_default AURA_INGEST_IMAGE ghcr.io/chetto1983/aura-ingest:edge
       ensure_env_default AURA_INGEST_PULL_POLICY always
+      ensure_env_default AURA_ARCADEDB_MCP_IMAGE ghcr.io/chetto1983/aura-arcadedb-mcp:edge
+      ensure_env_default AURA_ARCADEDB_MCP_PULL_POLICY always
       # The per-identity box and its egress sidecar are repo-built too, but they
       # are NOT compose services -- the daemon creates them per identity -- so
       # they escaped the pin above and defaulted to the bare local names

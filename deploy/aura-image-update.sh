@@ -9,7 +9,7 @@
 # an MCP left at its SHA-pinned compose default is a no-op here):
 #   AURA_IMAGE=ghcr.io/chetto1983/aura:edge
 #   AURA_PULL_POLICY=always
-#   AURA_ARCADEDB_MCP_IMAGE=ghcr.io/chetto1983/aura-arcadedb-mcp:edge
+#   AURA_ARCADEDB_MCP_IMAGE=ghcr.io/chetto1983/aura-arcadedb-mcp:edge  (+ AURA_ARCADEDB_MCP_PULL_POLICY=always)
 #   AURA_PIM_MCP_IMAGE=ghcr.io/chetto1983/aura-pim-mcp:sidecar
 #   AURA_WHATSAPP_MCP_IMAGE=ghcr.io/chetto1983/whatsapp-mcp:latest
 #   AURA_CADDY_IMAGE=ghcr.io/chetto1983/aura-caddy:edge  (+ AURA_CADDY_PULL_POLICY=always)
