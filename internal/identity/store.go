@@ -24,9 +24,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Wildcard is the system-managed match-all capability. It is seeded by migration
-// 0004 on the `local` identity and is NEVER granted or revoked through the Store
-// or CLI — HasCapability treats it as "has every capability".
+// Wildcard is the retired match-all capability. Migration 0004 seeded it on the
+// `local` identity; migration 0121 replaced every '*' row with the six declared
+// capabilities and deleted it, and HasCapability matches only an exact name, so it
+// grants nothing. It is kept so the Store and CLI can still REFUSE it by name
+// (ErrWildcardManaged) rather than accept '*' as an ordinary capability string.
 const Wildcard = "*"
 
 // capNameRe is the capability-name grammar (SPEC Req#6): a lowercase letter
