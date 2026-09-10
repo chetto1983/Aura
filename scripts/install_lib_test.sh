@@ -70,6 +70,31 @@ grep -q 'could not fetch http://127.0.0.1:1/unreachable/compose.yaml' "$net_err"
 
 echo "ok: download_file prefers the payload and still falls back to the network"
 
+# The payload is configuration the sidecars read as their own non-root users (prometheus
+# runs as nobody, grafana as 472, tempo as 10001), and the npx path runs this installer
+# under a restrictive umask: measured 2026-09-10, every payload file landed 0600 and
+# prometheus crash-looped on "permission denied". A re-run must also repair what an earlier
+# one left behind, which cp alone never does to a file that already exists.
+perm_root="$fixture_root/perm"
+mkdir -p "$perm_root/payload/observability/prometheus" "$perm_root/out/observability/prometheus"
+printf 'scrape_configs: []\n' > "$perm_root/payload/observability/prometheus/prometheus.yml"
+printf 'stale\n' > "$perm_root/out/observability/prometheus/prometheus.yml"
+chmod 0600 "$perm_root/out/observability/prometheus/prometheus.yml"
+chmod 0700 "$perm_root/out/observability/prometheus" "$perm_root/out/observability"
+(
+  umask 077
+  cd "$perm_root/out"
+  AURA_PAYLOAD_DIR="$perm_root/payload" RAW_BASE="http://127.0.0.1:1/unreachable" \
+    download_file observability/prometheus/prometheus.yml observability/prometheus/prometheus.yml
+  for want in "644 observability/prometheus/prometheus.yml" "755 observability/prometheus" "755 observability"; do
+    path="${want#* }"
+    got="$(stat -c %a "$path")"
+    [ "$got" = "${want%% *}" ] || { echo "FAIL: download_file left $path at $got, want ${want%% *}" >&2; exit 1; }
+  done
+)
+
+echo "ok: download_file leaves the payload readable by the sidecars under any umask"
+
 # A compose service whose pull_policy defaults to `never` is repo-built: its `build:` context
 # is not in the payload, so on an :edge install compose must pull it instead. Read from
 # compose.yaml rather than listed here, so a service added later is covered the day it lands.

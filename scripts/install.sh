@@ -254,12 +254,30 @@ download_file() {
       echo "FAIL: payload is missing ${src}" >&2
       exit 1
     }
-    return 0
+  else
+    curl -fsSL "${RAW_BASE}/${src}" -o "$dst" || {
+      echo "FAIL: could not fetch ${RAW_BASE}/${src}" >&2
+      exit 1
+    }
   fi
-  curl -fsSL "${RAW_BASE}/${src}" -o "$dst" || {
-    echo "FAIL: could not fetch ${RAW_BASE}/${src}" >&2
-    exit 1
-  }
+  readable_by_sidecars "$dst"
+}
+
+# The payload is configuration, never a secret (those live in .env, 0600), and the sidecars
+# read it as their own non-root users: prometheus as nobody, grafana as 472, tempo as 10001.
+# The npx path runs this installer under a restrictive umask, so a plain cp left every file
+# 0600 and prometheus crash-looping on "permission denied" (measured 2026-09-10); cp over an
+# existing file keeps its old mode, so a re-run has to set it rather than inherit it.
+# Directories are walked for relative paths only: the installer works inside INSTALL_DIR,
+# and walking an absolute path would end at /tmp or / and strip their bits as root.
+readable_by_sidecars() {
+  chmod 0644 "$1"
+  case "$1" in /*) return 0 ;; esac
+  dir="$(dirname "$1")"
+  while [ "$dir" != "." ]; do
+    chmod 0755 "$dir"
+    dir="$(dirname "$dir")"
+  done
 }
 
 # The wizard hands its answers over in a file, never in argv: an API key on a command line
