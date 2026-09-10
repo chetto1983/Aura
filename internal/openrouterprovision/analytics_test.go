@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -240,7 +241,7 @@ func TestAnalyticsQuerySendsMetricsAndGranularity(t *testing.T) {
 func TestAnalyticsQueryDecodesEnvelope(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"data":{"data":[{"total_usage":1.5,"request_count":10},{"total_usage":2.5,"request_count":20}],"metadata":{"row_count":2,"query_time_ms":12,"truncated":false},"warnings":["partial data for one day"],"cachedAt":"2026-09-08T00:00:00Z"}}`))
+		_, _ = w.Write([]byte(`{"data":{"data":[{"total_usage":1.5,"request_count":10},{"total_usage":2.5,"request_count":20}],"metadata":{"row_count":2,"query_time_ms":12,"truncated":false},"warnings":["partial data for one day"],"cachedAt":1789044730539}}`))
 	}))
 	defer srv.Close()
 
@@ -261,9 +262,6 @@ func TestAnalyticsQueryDecodesEnvelope(t *testing.T) {
 	}
 	if len(resp.Warnings) != 1 || resp.Warnings[0] != "partial data for one day" {
 		t.Errorf("Warnings = %v, want one warning preserved", resp.Warnings)
-	}
-	if resp.CachedAt != "2026-09-08T00:00:00Z" {
-		t.Errorf("CachedAt = %q", resp.CachedAt)
 	}
 }
 
@@ -303,6 +301,108 @@ func TestAnalyticsQueryDecodeFailure(t *testing.T) {
 	}
 	if _, err := openrouterprovision.AnalyticsQuery(context.Background(), srv.Client(), srv.URL, "sk-mgmt", req); err == nil {
 		t.Fatal("want a decode error, got nil")
+	}
+}
+
+func serveAnalytics(t *testing.T, body string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func dayQuery(metrics ...string) openrouterprovision.AnalyticsRequest {
+	return openrouterprovision.AnalyticsRequest{
+		Metrics:     metrics,
+		Granularity: "day",
+		TimeRange:   openrouterprovision.TimeRange{Start: "2026-08-29T00:00:00Z", End: "2026-09-10T11:32:10Z"},
+	}
+}
+
+// liveKPIPayload is the live API's answer to the KPI query, captured verbatim on 2026-09-10:
+// newest day first, idle days absent, counts quoted, cachedAt an epoch-milliseconds number,
+// and blended cost 0 in every row.
+const liveKPIPayload = `{"data":{"data":[{"date__day":"2026-09-09","total_usage":0.005235,"request_count":"4","tokens_total":"66342","cache_hit_rate":0.19096112993983816,"blended_cost_per_million_tokens":0},{"date__day":"2026-09-08","total_usage":0.074694,"request_count":"43","tokens_total":"1152597","cache_hit_rate":0.7594291386610319,"blended_cost_per_million_tokens":0},{"date__day":"2026-09-07","total_usage":0.013649,"request_count":"10","tokens_total":"199878","cache_hit_rate":0.11119815205383148,"blended_cost_per_million_tokens":0},{"date__day":"2026-09-04","total_usage":0.086801,"request_count":"80","tokens_total":"1052695","cache_hit_rate":0.5022285356076858,"blended_cost_per_million_tokens":0},{"date__day":"2026-09-03","total_usage":0.088529,"request_count":"59","tokens_total":"1162846","cache_hit_rate":0.24654000844388152,"blended_cost_per_million_tokens":0},{"date__day":"2026-08-29","total_usage":2.505722,"request_count":"677","tokens_total":"17251624","cache_hit_rate":0.6224484147034853,"blended_cost_per_million_tokens":0}],"metadata":{"query_time_ms":15,"row_count":6,"truncated":false},"cachedAt":1789044730539}}`
+
+// TestAnalyticsQueryDecodesTheLiveKPIResponse replays the live answer: the quoted counts
+// decode, the date bucket is not taken for a metric, and the rows come back oldest day first.
+func TestAnalyticsQueryDecodesTheLiveKPIResponse(t *testing.T) {
+	srv := serveAnalytics(t, liveKPIPayload)
+	resp, err := openrouterprovision.AnalyticsQuery(context.Background(), srv.Client(), srv.URL, "sk-mgmt", dayQuery(openrouterprovision.KPIMetrics...))
+	if err != nil {
+		t.Fatalf("AnalyticsQuery: %v", err)
+	}
+	if len(resp.Rows) != 6 || resp.RowCount != 6 {
+		t.Fatalf("len(Rows) = %d, RowCount = %d, want 6 and 6", len(resp.Rows), resp.RowCount)
+	}
+	oldest, newest := resp.Rows[0], resp.Rows[5]
+	if oldest["request_count"] != 677 || oldest["tokens_total"] != 17251624 || oldest["total_usage"] != 2.505722 {
+		t.Errorf("Rows[0] = %v, want 2026-08-29: 677 requests, 17251624 tokens, $2.505722", oldest)
+	}
+	if newest["request_count"] != 4 || newest["cache_hit_rate"] != 0.19096112993983816 {
+		t.Errorf("Rows[5] = %v, want 2026-09-09: 4 requests at a 0.19096112993983816 cache hit rate", newest)
+	}
+	if len(oldest) != len(openrouterprovision.KPIMetrics) {
+		t.Errorf("Rows[0] = %v, want exactly the %d requested metrics", oldest, len(openrouterprovision.KPIMetrics))
+	}
+}
+
+func TestAnalyticsQueryReadsANullMetricAsZero(t *testing.T) {
+	srv := serveAnalytics(t, `{"data":{"data":[{"date__day":"2026-09-09","request_count":"4","cache_hit_rate":null}],"metadata":{"row_count":1}}}`)
+	resp, err := openrouterprovision.AnalyticsQuery(context.Background(), srv.Client(), srv.URL, "sk-mgmt", dayQuery("request_count", "cache_hit_rate"))
+	if err != nil {
+		t.Fatalf("AnalyticsQuery: %v", err)
+	}
+	if row := resp.Rows[0]; row["request_count"] != 4 || row["cache_hit_rate"] != 0 {
+		t.Errorf("Rows[0] = %v, want 4 requests and a zero cache hit rate", row)
+	}
+}
+
+// A cell that is neither a number nor a quoted number fails the decode by name, instead of
+// reading as zero and passing for a quiet day.
+func TestAnalyticsQueryRefusesACellItCannotRead(t *testing.T) {
+	for name, tc := range map[string]struct{ row, want string }{
+		"metric that is not a number": {`{"date__day":"2026-09-09","request_count":"many"}`, "metric request_count"},
+		"bucket that is not a string": {`{"date__day":20260909,"request_count":"4"}`, "bucket date__day"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := serveAnalytics(t, `{"data":{"data":[`+tc.row+`],"metadata":{"row_count":1}}}`)
+			_, err := openrouterprovision.AnalyticsQuery(context.Background(), srv.Client(), srv.URL, "sk-mgmt", dayQuery("request_count"))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want a decode error naming %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// TestKPIWindowsSeriesRunsOldestFirstAndDerivesBlendedPerDay feeds the live shape (newest
+// day first, blended cost 0 in every row) and pins every sparkline in calendar order, the
+// blended point re-derived from that day's own spend and tokens.
+func TestKPIWindowsSeriesRunsOldestFirstAndDerivesBlendedPerDay(t *testing.T) {
+	srv := serveAnalytics(t, `{"data":{"data":[
+		{"date__day":"2026-09-09","total_usage":1.0,"request_count":"4","tokens_total":"250000","cache_hit_rate":0.25,"blended_cost_per_million_tokens":0},
+		{"date__day":"2026-09-08","total_usage":3.0,"request_count":"40","tokens_total":"1500000","cache_hit_rate":0.75,"blended_cost_per_million_tokens":0}
+	],"metadata":{"row_count":2},"cachedAt":1789044730539}}`)
+	current := openrouterprovision.TimeRange{Start: "2026-08-30T00:00:00Z", End: "2026-09-10T09:42:07Z"}
+	prior := openrouterprovision.TimeRange{Start: "2026-08-18T00:00:00Z", End: "2026-08-30T00:00:00Z"}
+	tiles, err := openrouterprovision.KPIWindows(context.Background(), srv.Client(), srv.URL, "sk-mgmt", current, prior)
+	if err != nil {
+		t.Fatalf("KPIWindows: %v", err)
+	}
+	want := map[string][]float64{
+		"total_usage":    {3.0, 1.0},
+		"request_count":  {40, 4},
+		"tokens_total":   {1_500_000, 250_000},
+		"cache_hit_rate": {0.75, 0.25},
+		// Hand-computed: 3.0/1,500,000*1e6 = 2.0 on 09-08, 1.0/250,000*1e6 = 4.0 on 09-09.
+		"blended_cost_per_million_tokens": {2.0, 4.0},
+	}
+	for _, tile := range tiles {
+		if !slices.Equal(tile.Series, want[tile.Metric]) {
+			t.Errorf("%s.Series = %v, want %v", tile.Metric, tile.Series, want[tile.Metric])
+		}
 	}
 }
 

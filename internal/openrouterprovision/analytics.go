@@ -6,7 +6,10 @@
 // them directly.
 //
 // Field names are transcribed from 02-OPENROUTER-API.md (retrieved from openapi.json on
-// 2026-09-08), same discipline as client.go/wire.go: never from recall.
+// 2026-09-08), same discipline as client.go/wire.go: never from recall. The analytics row is
+// decoded here rather than through the official Go SDK because v0.7.129 types it as an
+// empty struct (QueryAnalyticsData1, models/operations/queryanalytics.go), which drops every
+// metric the provider sends.
 package openrouterprovision
 
 import (
@@ -17,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
@@ -160,35 +164,27 @@ type analyticsRequestWire struct {
 	} `json:"time_range"`
 }
 
-// AnalyticsRow is one bucketed row of data.data, decoded generically: 02-OPENROUTER-API.md
-// documents the 38 metric NAMES and the 16 dimension NAMES, and states a dimension value
-// "comes back as" a field named after the dimension (api_key_id, external_user) — but does
-// not publish a JSON schema for a row. Since this package's own queries request no
-// dimension, every row's fields are the requested metrics, each expected back under its own
-// metric name; decoding into map[string]float64 rather than a fixed struct means this
-// package never has to guess a field it cannot cite.
+// AnalyticsRow is one bucket's requested metrics, keyed by metric name. openapi.json types a
+// row only as "an object with metric/dimension values", so each requested metric is read by
+// its own name and nothing else in the row is guessed at.
 type AnalyticsRow map[string]float64
 
-// AnalyticsResponse is the decoded data.{data,metadata.row_count,warnings,cachedAt}
-// envelope. Warnings are NOT an error: 02-OPENROUTER-API.md documents data.warnings as a
-// normal part of a successful response, distinct from a non-2xx failure.
+// AnalyticsResponse is the decoded data.{data,metadata.row_count,warnings} envelope, rows
+// oldest bucket first. Warnings are NOT an error: 02-OPENROUTER-API.md documents
+// data.warnings as a normal part of a successful response, distinct from a non-2xx failure.
 type AnalyticsResponse struct {
 	Rows     []AnalyticsRow
 	RowCount int
 	Warnings []string
-	CachedAt string
 }
 
 type analyticsResponseWire struct {
 	Data struct {
-		Data     []AnalyticsRow `json:"data"`
+		Data     []map[string]json.RawMessage `json:"data"`
 		Metadata struct {
-			QueryTimeMs int  `json:"query_time_ms"`
-			RowCount    int  `json:"row_count"`
-			Truncated   bool `json:"truncated"`
+			RowCount int `json:"row_count"`
 		} `json:"metadata"`
 		Warnings []string `json:"warnings"`
-		CachedAt string   `json:"cachedAt"`
 	} `json:"data"`
 }
 
@@ -236,12 +232,64 @@ func AnalyticsQuery(ctx context.Context, client *http.Client, baseURL, apiKey st
 	if err := json.Unmarshal(respBody, &wireResp); err != nil {
 		return AnalyticsResponse{}, fmt.Errorf("openrouterprovision: analytics query: decode response: %w", err)
 	}
+	rows, err := decodeRows(wireResp.Data.Data, req)
+	if err != nil {
+		return AnalyticsResponse{}, fmt.Errorf("openrouterprovision: analytics query: decode response: %w", err)
+	}
 	return AnalyticsResponse{
-		Rows:     wireResp.Data.Data,
+		Rows:     rows,
 		RowCount: wireResp.Data.Metadata.RowCount,
 		Warnings: wireResp.Data.Warnings,
-		CachedAt: wireResp.Data.CachedAt,
 	}, nil
+}
+
+// decodeRows reads each requested metric out of every row and returns the rows oldest bucket
+// first. Measured live 2026-09-10 on a day-granularity query: rows come newest day first,
+// each naming its bucket "date__day":"2026-09-09" (the date__<granularity> key the
+// openapi.json example shows), and counts come quoted ("request_count":"43") while dollars
+// and rates are bare numbers. The zero-padded bucket strings sort chronologically as text; a
+// row without one keeps the provider's order.
+func decodeRows(wire []map[string]json.RawMessage, req AnalyticsRequest) ([]AnalyticsRow, error) {
+	type bucketRow struct {
+		bucket string
+		row    AnalyticsRow
+	}
+	decoded := make([]bucketRow, len(wire))
+	for i, cells := range wire {
+		if raw, ok := cells["date__"+req.Granularity]; ok {
+			if err := json.Unmarshal(raw, &decoded[i].bucket); err != nil {
+				return nil, fmt.Errorf("bucket date__%s: %w", req.Granularity, err)
+			}
+		}
+		decoded[i].row = make(AnalyticsRow, len(req.Metrics))
+		for _, metric := range req.Metrics {
+			v, err := metricCell(cells[metric])
+			if err != nil {
+				return nil, fmt.Errorf("metric %s: %w", metric, err)
+			}
+			decoded[i].row[metric] = v
+		}
+	}
+	sort.SliceStable(decoded, func(i, j int) bool { return decoded[i].bucket < decoded[j].bucket })
+	rows := make([]AnalyticsRow, len(decoded))
+	for i, d := range decoded {
+		rows[i] = d.row
+	}
+	return rows, nil
+}
+
+// metricCell reads one metric value, bare or quoted: json.Number takes both and refuses a
+// string that is not a number. A missing or null cell reads as zero, the per-bucket backstop
+// spend_overview_api.go's kpiDTOsFrom documents.
+func metricCell(raw json.RawMessage) (float64, error) {
+	if len(raw) == 0 {
+		return 0, nil
+	}
+	var n json.Number
+	if err := json.Unmarshal(raw, &n); err != nil || n == "" {
+		return 0, err
+	}
+	return n.Float64()
 }
 
 // ErrUnsupportedRateMetric marks a metric AggregateRateMetricAcrossBuckets has no
@@ -257,7 +305,9 @@ var ErrUnsupportedRateMetric = errors.New("openrouterprovision: no rate-aggregat
 //   - blended_cost_per_million_tokens is RE-DERIVED from the two ADDITIVE totals already in
 //     the SAME KPI row's own metric set (total_usage, tokens_total): "cost per million
 //     tokens" is definitionally cost/tokens*1e6, so Σtotal_usage / Σtokens_total * 1e6 is an
-//     exact recomputation of the documented quantity, not a guess.
+//     exact recomputation of the documented quantity, not a guess. The provider's own value
+//     is never read: it came back 0 in every row, with and without a model dimension
+//     (measured live 2026-09-10).
 //   - cache_hit_rate has no such re-derivation available: 02-OPENROUTER-API.md names the
 //     metric but not its numerator/denominator, and a SEPARATE possible_cache_hit_rate
 //     metric exists in the same 38-metric list — implying more than one plausible
@@ -348,10 +398,10 @@ func headlineValue(rows []AnalyticsRow, metric string) (float64, error) {
 // KPIWindows fetches the Overview's five-tile KPI data over BOTH the current and prior
 // window in two calls — 02-UI-SPEC.md's own data-source ledger accepts the doubled call
 // count as an implementation cost, not a blocker — so the caller never has to orchestrate
-// the pair itself. Each tile's Series comes from the CURRENT window's rows, in whatever
-// order the provider returns them for a day-granularity, no-dimension query (chronological,
-// by construction of the request); 02-OPENROUTER-API.md does not document a per-row
-// date/bucket field name, so this package does not re-sort by one it cannot name.
+// the pair itself. Each tile's Series is the CURRENT window's days, oldest first, each point
+// the tile's own headline rule applied to that one day, so a point and the headline never
+// disagree on what the metric means. A day with no OpenRouter traffic has no row, and so no
+// point.
 func KPIWindows(ctx context.Context, client *http.Client, baseURL, apiKey string, current, prior TimeRange) ([]KPITile, error) {
 	curResp, err := AnalyticsQuery(ctx, client, baseURL, apiKey, AnalyticsRequest{
 		Metrics: KPIMetrics, Granularity: "day", TimeRange: current,
@@ -378,7 +428,11 @@ func KPIWindows(ctx context.Context, client *http.Client, baseURL, apiKey string
 		}
 		series := make([]float64, 0, len(curResp.Rows))
 		for _, row := range curResp.Rows {
-			series = append(series, row[metric])
+			point, err := headlineValue([]AnalyticsRow{row}, metric)
+			if err != nil {
+				return nil, fmt.Errorf("openrouterprovision: kpi windows: current %s: %w", metric, err)
+			}
+			series = append(series, point)
 		}
 		tiles = append(tiles, KPITile{Metric: metric, Value: curVal, Delta: DeltaPercent(curVal, priorVal), Series: series})
 	}
