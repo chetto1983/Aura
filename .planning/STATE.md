@@ -6,10 +6,10 @@ current_phase: 02
 current_phase_name: Two Roles and a Budget
 status: executing
 stopped_at: Completed 02-09-PLAN.md
-last_updated: "2026-09-10T08:41:10.140Z"
+last_updated: "2026-09-10T08:45:35.399Z"
 last_activity: 2026-09-10
 last_activity_desc: Phase 02 execution started
-state_head: efe4eb85f5672f65748a4df64ee619b3242c279f
+state_head: b2a76c33d06f8e32475c3eece89203e86bd121ac
 progress:
   total_phases: 7
   completed_phases: 0
@@ -136,6 +136,9 @@ creation:
 - [Phase 02]: [Plan 02-05] CRED-05 cannot be switched on before plan 02-06: `identitykey.Store.Save` and `internal/openrouterprovision` both have ZERO production callers, so no identity holds a key and a fail-closed interactive runner would refuse every turn including the operator's. The seam is committed but inert (`da24cbf82`, `Deps.IdentityLLM` nil everywhere) — an ordering constraint neither plan states.
 - [Phase 02]: [Plan 02-05] The interactive turn's one correct seam is `turnLocked`, not the HTTP layer: it resolves ONE snapshot after `scopeContextToConversation` has put the conversation owner on ctx and seeds it via `withLLMRuntimeSnapshot`, so `buildAgent`, the title worker and the tracker all inherit that decision. No other call site needs changing.
 - [Phase 02]: [Plan 02-04] A compile-failure RED is structurally uncommittable in this repo — the pre-commit hook runs `go vet` and fails closed on a non-building package, and `--no-verify` is forbidden. Measured by attempting it. Task 1 used the deliberately-wrong-scaffold pattern 02-01/02-03 already established under the same gate.
+- [Phase 02]: [Plan 02-09] Four UI-SPEC backstops decided server-side and pinned by tests: cache_hit_rate is request-weighted and blended $/1M re-derived from totals (a rate is never summed across buckets); a zero prior period gives no delta (nil); over-allocation triggers at strict > (equality is not over-allocated); the ranked-list tiebreak is identity id ascending. — The component renders what the server resolved; each rule has a hand-computed test (TestAggregateRateMetricAcrossBuckets, TestDeltaWhenPriorPeriodIsZero, TestSpendOverviewOverAllocationBoundary, TestSpendOverviewTiebreakIsStable).
+- [Phase 02]: [Plan 02-09] OPEN for the operator: GET /api/admin/spend/overview is gated on governance.write (the 02-07 credit-route precedent), which every member holds under D-01, so a member can read every identity's name and lifetime spend plus the account-wide available credit pool. Gating it on an administrative capability instead is a one-line mount change. — The plan asked for a deliberate choice and allowed an administrative gate. The pool figure is not otherwise visible to a member, so the mount comment's "only aggregation of what an identity could infer" argument does not cover it.
+- [Phase 02]: [Plan 02-09] gsd-executor subagents die on the 600s watchdog when they run the full web suite (npm run test = vitest run --coverage): four times across 02-08 and 02-09. The orchestrator runs the full suite itself; executors run targeted vitest paths only. — Measured: the suite completes in 129s from the main session and does not hang; telling the executor to background it did not prevent the stall. Recorded in aura-memory.
 
 ### Pending Todos
 

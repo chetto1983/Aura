@@ -71,7 +71,7 @@ already refused it in two places (`onboarding_session.go:14` declares the no-esc
 - [x] **RBAC-08**: A fresh install lands the first operator with both administrative capabilities explicitly granted and auditable — no wildcard, no manual SQL
 - [ ] **RBAC-09**: An authorization decision denies by default — an unknown capability, an unresolved principal or a store error refuses rather than admits
 - [ ] **RBAC-10**: Every denial is auditable: who, which capability, which route, when — and the admin surface can read them back
-- [ ] **RBAC-11**: The cockpit creates an identity and removes one without leaving the UI, extending the surface under Settings that already lists the roster and grants against it
+- [x] **RBAC-11**: The cockpit creates an identity and removes one without leaving the UI, extending the surface under Settings that already lists the roster and grants against it
 
 ### Credits (CRED)
 
@@ -95,7 +95,7 @@ per-identity spend, tokens, cache hit rate and latency need no analytics of our 
 - [ ] **CRED-03**: The admin sets an identity's cap and its reset interval from the cockpit, and can change both afterwards
 - [x] **CRED-04**: The cap is enforced by OpenRouter, not by Aura's accounting — an identity over its cap is refused at the provider even if Aura believes otherwise
 - [ ] **CRED-05**: A turn by an identity with no credit is refused cleanly before the model is called, rather than surfacing a raw provider 403 mid-turn
-- [ ] **CRED-06**: The cockpit shows each identity's cap, remaining credit and spend, and the figure it shows is Aura's own in-band ledger rather than the provider's delayed counter
+- [x] **CRED-06**: The cockpit shows each identity's cap, remaining credit and spend, and the figure it shows is Aura's own in-band ledger rather than the provider's delayed counter
 - [ ] **CRED-07**: An identity without its own key never falls back to the deployment key — the OpenRouter path is fail-closed
 - [ ] **CRED-08**: Removing an identity revokes its OpenRouter key, and the revocation is verified rather than assumed
 - [ ] **CRED-09**: A local backend is exempt and says so, rather than presenting a zero balance for a provider that bills nothing
@@ -199,13 +199,13 @@ Every v1 requirement maps to exactly one phase. Mapped during roadmap creation, 
 | RBAC-08 | Phase 2 | Complete |
 | RBAC-09 | Phase 2 | Pending |
 | RBAC-10 | Phase 2 | Pending |
-| RBAC-11 | Phase 2 | Pending |
+| RBAC-11 | Phase 2 | Complete |
 | CRED-01 | Phase 2 | Pending |
 | CRED-02 | Phase 2 | Pending |
 | CRED-03 | Phase 2 | Pending |
 | CRED-04 | Phase 2 | Complete |
 | CRED-05 | Phase 2 | Pending |
-| CRED-06 | Phase 2 | Pending |
+| CRED-06 | Phase 2 | Complete |
 | CRED-07 | Phase 2 | Pending |
 | CRED-08 | Phase 2 | Pending |
 | CRED-09 | Phase 2 | Pending |
