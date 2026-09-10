@@ -264,12 +264,12 @@ Expected: PASS.
 
 **The trap to handle explicitly.** A `Record` literal that omits `LimitUSD` used to mean a zero cap; it now means no limit. In every test file listed, write `LimitUSD: capUSD(0)` wherever the test expects a refusal or a zero cap.
 
-- [ ] **Step 1: Check the migration number**
+- [x] **Step 1: Check the migration number**
 
 Run: `ls internal/db/migrations/ | tail -1`
 Expected: `0124_widen_cost_usd_scale.up.sql`, so this migration is 0125. If it is higher, use the next free number and adjust the pin in Step 4.
 
-- [ ] **Step 2: Write the failing tests.** In `policy_test.go` add the helper and the test, and change the existing literals (lines 23, 34, 47, 73, 80) from `LimitUSD: 0`, `5`, `0.01` to `capUSD(0)`, `capUSD(5)`, `capUSD(0.01)`:
+- [x] **Step 2: Write the failing tests.** In `policy_test.go` add the helper and the test, and change the existing literals (lines 23, 34, 47, 73, 80) from `LimitUSD: 0`, `5`, `0.01` to `capUSD(0)`, `capUSD(5)`, `capUSD(0.01)`:
 
 ```go
 func capUSD(v float64) *float64 { return &v }
@@ -447,12 +447,12 @@ func TestSpendOverviewCountsUncappedKeys(t *testing.T) {
 
 In `runner_identity_llm_test.go`, add `func capUSD(v float64) *float64 { return &v }` and turn every `LimitUSD: <n>` into `LimitUSD: capUSD(<n>)`. In `cmd/aura/two_role_tracer_e2e_test.go:249`, declare `memberCap := 15.0` before the literal and write `LimitUSD: &memberCap`.
 
-- [ ] **Step 3: Run the tests and watch them fail**
+- [x] **Step 3: Run the tests and watch them fail**
 
 Run: `go test ./internal/identitykey/ ./internal/agui/ ./internal/runner/`
 Expected: build failures on the `LimitUSD` type and the missing fields.
 
-- [ ] **Step 4: Implement.** `0125_identity_llm_key_no_limit.up.sql`:
+- [x] **Step 4: Implement.** `0125_identity_llm_key_no_limit.up.sql`:
 
 ```sql
 -- A NULL limit_usd is a key with no spending limit: the admin's own key is minted that way
@@ -632,17 +632,17 @@ func buildOverAllocation(sumCaps float64, uncapped int, credits openrouterprovis
 
 In `cmd/aura/serve_provisioning_openrouter.go`, the adapter's `LimitUSD: 0,` becomes `LimitUSD: new(float64),`.
 
-- [ ] **Step 5: Confirm sqlc output is unchanged**
+- [x] **Step 5: Confirm sqlc output is unchanged**
 
 Run: `make sqlc && git diff --stat internal/db/sqlc`
 Expected: no changes, because a nullable `numeric` is still `pgtype.Numeric`.
 
-- [ ] **Step 6: Run the tests and watch them pass**
+- [x] **Step 6: Run the tests and watch them pass**
 
 Run: `go test ./internal/identitykey/ ./internal/agui/ ./internal/runner/ ./internal/db/ && go build ./...`, then with the stack up `go test -tags db_integration -race -run 'TestIdentityLLMKey' ./internal/identitykey/`
 Expected: PASS.
 
-- [ ] **Step 7: Race, lint, commit** (`feat(identitykey): let a key's cap be NULL, meaning no limit`). In the body, name the rewritten credit assertions and say why: the cap is now a pointer.
+- [x] **Step 7: Race, lint, commit** (`feat(identitykey): let a key's cap be NULL, meaning no limit`). In the body, name the rewritten credit assertions and say why: the cap is now a pointer.
 
 ---
 

@@ -111,12 +111,12 @@ func TestIdentityLLMKeyRLSAndCascade(t *testing.T) {
 	bobCtx := identityctx.WithIdentityID(context.Background(), bob)
 
 	if err := store.Save(aliceCtx, Record{
-		Key: "sk-or-v1-alice-" + uuid.NewString(), Hash: "hash-alice", Label: "sk-or-v1-ali...ce1", LimitUSD: 10, LimitReset: "monthly",
+		Key: "sk-or-v1-alice-" + uuid.NewString(), Hash: "hash-alice", Label: "sk-or-v1-ali...ce1", LimitUSD: capUSD(10), LimitReset: "monthly",
 	}); err != nil {
 		t.Fatalf("Save as alice: %v", err)
 	}
 	if err := store.Save(bobCtx, Record{
-		Key: "sk-or-v1-bob-" + uuid.NewString(), Hash: "hash-bob", Label: "sk-or-v1-bob...ob1", LimitUSD: 5, LimitReset: "monthly",
+		Key: "sk-or-v1-bob-" + uuid.NewString(), Hash: "hash-bob", Label: "sk-or-v1-bob...ob1", LimitUSD: capUSD(5), LimitReset: "monthly",
 	}); err != nil {
 		t.Fatalf("Save as bob: %v", err)
 	}
@@ -153,5 +153,31 @@ func TestIdentityLLMKeyRLSAndCascade(t *testing.T) {
 	}
 	if _, err := store.Load(bobCtx); err != nil {
 		t.Fatalf("bob's key after alice's identity delete: %v (must survive)", err)
+	}
+}
+
+// TestIdentityLLMKeyNoLimitRoundTrips proves a key saved with no limit reads back with no
+// limit, never as a zero cap that would refuse every turn.
+func TestIdentityLLMKeyNoLimitRoundTrips(t *testing.T) {
+	pool := migratedKeyPool(t)
+	store := keyStore(t, pool)
+	owner := seedKeyIdentity(t, pool)
+	ctx := identityctx.WithIdentityID(context.Background(), owner)
+
+	if err := store.Save(ctx, Record{
+		Key: "sk-or-v1-admin-" + uuid.NewString(), Hash: "hash-admin", Label: "sk-or-v1-adm...in1", LimitReset: "monthly",
+	}); err != nil {
+		t.Fatalf("Save with no limit: %v", err)
+	}
+	got, err := store.Load(ctx)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.LimitUSD != nil {
+		t.Fatalf("LimitUSD = %v, want nil (no limit)", *got.LimitUSD)
+	}
+	list, err := store.List(ctx)
+	if err != nil || len(list) != 1 || list[0].LimitUSD != nil {
+		t.Fatalf("List = %+v (err %v), want one summary with no limit", list, err)
 	}
 }

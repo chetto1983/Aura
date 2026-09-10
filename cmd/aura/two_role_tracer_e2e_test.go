@@ -245,8 +245,9 @@ func TestTwoRolesTracer(t *testing.T) {
 			t.Fatalf("identitykey.NewStore: %v", err)
 		}
 		memberCtx := identityctx.WithIdentityID(context.Background(), memberID)
+		memberCap := 15.0
 		if err := keyStore.Save(memberCtx, identitykey.Record{
-			Key: "sk-or-v1-tracer-" + uuid.NewString(), Hash: "hash-tracer-member", Label: "sk-or-v1-tra...er1", LimitUSD: 15, LimitReset: "monthly",
+			Key: "sk-or-v1-tracer-" + uuid.NewString(), Hash: "hash-tracer-member", Label: "sk-or-v1-tra...er1", LimitUSD: &memberCap, LimitReset: "monthly",
 		}); err != nil {
 			t.Fatalf("Save member key: %v", err)
 		}

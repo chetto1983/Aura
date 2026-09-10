@@ -26,6 +26,13 @@ func (c *fakeIdentityScopedClient) Stream(context.Context, llm.Request) (<-chan 
 
 var _ llm.Client = (*fakeIdentityScopedClient)(nil)
 
+// capUSD stays a real helper rather than an inlined new(expr) (Go 1.26): every caller
+// below passes an integer literal (capUSD(5), capUSD(0)), which new(x) types as *int,
+// not *float64 — a compile error against the fields it targets.
+//
+//nolint:modernize // inlining only compiles for an explicit float literal (none used here).
+func capUSD(v float64) *float64 { return &v }
+
 // fakeKeyLoader scripts one Record (or ErrNoKey) per identity, keyed by the identity
 // id the resolver scopes ctx to before calling Load — mirroring how
 // identitykey.Store reads identityctx.IdentityID(ctx).
@@ -58,8 +65,8 @@ func fakeClientFactory() llmClientFactory {
 func TestResolveBuildsIdentityScopedSnapshot(t *testing.T) {
 	t.Parallel()
 	loader := newFakeKeyLoader(map[string]identitykey.Record{
-		"identity-a": {Key: "key-for-a", LimitUSD: 5},
-		"identity-b": {Key: "key-for-b", LimitUSD: 5},
+		"identity-a": {Key: "key-for-a", LimitUSD: capUSD(5)},
+		"identity-b": {Key: "key-for-b", LimitUSD: capUSD(5)},
 	})
 	rs := NewIdentityLLMResolver(loader, nil, llm.Config{Provider: "openrouter"}, fakeClientFactory(), nil)
 
@@ -130,8 +137,8 @@ func TestResolveLocalBackendExemption(t *testing.T) {
 
 func TestResolveConcurrentIdentitiesDoNotCross(t *testing.T) {
 	loader := newFakeKeyLoader(map[string]identitykey.Record{
-		"identity-a": {Key: "key-for-a", LimitUSD: 5},
-		"identity-b": {Key: "key-for-b", LimitUSD: 5},
+		"identity-a": {Key: "key-for-a", LimitUSD: capUSD(5)},
+		"identity-b": {Key: "key-for-b", LimitUSD: capUSD(5)},
 	})
 	rs := NewIdentityLLMResolver(loader, nil, llm.Config{Provider: "openrouter"}, fakeClientFactory(), nil)
 
@@ -187,7 +194,7 @@ var _ llm.Client = fakeExhaustedClient{}
 func TestResolverReturnsCreditExhaustedOnZeroCap(t *testing.T) {
 	t.Parallel()
 	loader := newFakeKeyLoader(map[string]identitykey.Record{
-		"identity-broke": {Key: "key-for-broke", LimitUSD: 0},
+		"identity-broke": {Key: "key-for-broke", LimitUSD: capUSD(0)},
 	})
 	processClient := &fakeIdentityScopedClient{label: "process-wide"}
 	processRuntime := llm.NewRuntime(processClient, llm.Config{Provider: "openrouter"})
@@ -256,7 +263,7 @@ func TestResolverExemptLocalReturnsProcessSnapshot(t *testing.T) {
 func TestResolverCacheInvalidatedOnCapChange(t *testing.T) {
 	t.Parallel()
 	loader := newFakeKeyLoader(map[string]identitykey.Record{
-		"identity-topup": {Key: "key-for-topup", LimitUSD: 0},
+		"identity-topup": {Key: "key-for-topup", LimitUSD: capUSD(0)},
 	})
 	exhausted := fakeExhaustedClient{}
 	rs := NewIdentityLLMResolver(loader, nil, llm.Config{Provider: "openrouter"}, fakeClientFactory(), exhausted)
@@ -270,7 +277,7 @@ func TestResolverCacheInvalidatedOnCapChange(t *testing.T) {
 	}
 
 	loader.mu.Lock()
-	loader.records["identity-topup"] = identitykey.Record{Key: "key-for-topup", LimitUSD: 5}
+	loader.records["identity-topup"] = identitykey.Record{Key: "key-for-topup", LimitUSD: capUSD(5)}
 	loader.mu.Unlock()
 
 	stale, err := rs.SnapshotFor(context.Background(), "identity-topup")

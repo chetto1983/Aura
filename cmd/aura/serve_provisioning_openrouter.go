@@ -69,7 +69,7 @@ func (a openRouterKeyMintAdapter) MintKey(ctx context.Context, identityID, keyNa
 		Key:        result.Key,
 		Hash:       result.Record.Hash,
 		Label:      result.Record.Label,
-		LimitUSD:   0,
+		LimitUSD:   new(float64),
 		LimitReset: string(openrouterprovision.LimitResetMonthly),
 	}); err != nil {
 		// The key exists at the provider but Aura never recorded it — revoke rather than

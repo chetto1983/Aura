@@ -6,12 +6,27 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/identitykey"
 	"github.com/chetto1983/aura/internal/openrouterprovision"
 )
+
+// capUSD stays a real helper rather than an inlined new(expr) (Go 1.26): most callers
+// below pass an integer literal (capUSD(0), capUSD(1)), which new(x) types as *int, not
+// *float64 — a compile error against the fields it targets.
+//
+//nolint:modernize // inlining only compiles for callers passing an explicit float literal.
+func capUSD(v float64) *float64 { return &v }
+
+func capString(p *float64) string {
+	if p == nil {
+		return "nil"
+	}
+	return strconv.FormatFloat(*p, 'f', -1, 64)
+}
 
 // fakeCreditSpendReader answers PeriodSpend from an in-memory map keyed on identity id.
 type fakeCreditSpendReader struct {
@@ -124,7 +139,7 @@ func creditRequest(method, path, body string) *http.Request {
 func TestAdminGetCredit(t *testing.T) {
 	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{
 		Key: "sk-or-v1-should-never-appear", Hash: "hash-abc", Label: "sk-or-v1-caa...61c",
-		LimitUSD: 5.00, LimitReset: "monthly",
+		LimitUSD: new(5.00), LimitReset: "monthly",
 	}}
 	spend := &fakeCreditSpendReader{spend: map[string]float64{testLocalID: 1.50}}
 	s := newTestCreditServer(spend, keys, &fakeCreditProvider{}, &fakeCreditInvalidator{}, true)
@@ -185,7 +200,7 @@ func TestAdminGetCreditLocalBackendExempt(t *testing.T) {
 // exactly equal to cap reports 100% and remaining zero; one cent below reports under
 // 100%.
 func TestAdminGetCreditSpendEqualsCapReadsAsFull(t *testing.T) {
-	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: 5.00, LimitReset: "monthly"}}
+	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: new(5.00), LimitReset: "monthly"}}
 	spend := &fakeCreditSpendReader{spend: map[string]float64{testLocalID: 5.00}}
 	s := newTestCreditServer(spend, keys, &fakeCreditProvider{}, &fakeCreditInvalidator{}, true)
 
@@ -219,7 +234,7 @@ func TestAdminGetCreditSpendEqualsCapReadsAsFull(t *testing.T) {
 // TestAdminSetCredit proves a POST with cap and interval writes the store, PATCHes
 // the provider once with both, and invalidates the resolver cache exactly once.
 func TestAdminSetCredit(t *testing.T) {
-	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Key: "sk-x", Hash: "hash-1", Label: "l", LimitUSD: 0, LimitReset: "monthly"}}
+	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Key: "sk-x", Hash: "hash-1", Label: "l", LimitUSD: capUSD(0), LimitReset: "monthly"}}
 	provider := &fakeCreditProvider{}
 	invalidator := &fakeCreditInvalidator{}
 	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, invalidator, true)
@@ -233,8 +248,8 @@ func TestAdminSetCredit(t *testing.T) {
 	if keys.saveCalls != 1 {
 		t.Fatalf("Save calls = %d, want 1", keys.saveCalls)
 	}
-	if keys.savedRec.LimitUSD != 5.00 || keys.savedRec.LimitReset != "weekly" {
-		t.Errorf("saved record = %+v, want LimitUSD=5.00 LimitReset=weekly", keys.savedRec)
+	if got := keys.savedRec.LimitUSD; got == nil || *got != 5.00 || keys.savedRec.LimitReset != "weekly" {
+		t.Errorf("saved cap %s reset %q, want 5.00 and weekly", capString(got), keys.savedRec.LimitReset)
 	}
 	if keys.savedRec.Key != "sk-x" || keys.savedRec.Hash != "hash-1" {
 		t.Errorf("saved record must preserve the existing Key/Hash, got %+v", keys.savedRec)
@@ -253,7 +268,7 @@ func TestAdminSetCredit(t *testing.T) {
 // TestAdminSetCreditCapOnly proves changing the cap alone leaves the reset interval
 // unchanged in both the store and the outgoing PATCH.
 func TestAdminSetCreditCapOnly(t *testing.T) {
-	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: 1.00, LimitReset: "daily"}}
+	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: new(1.00), LimitReset: "daily"}}
 	provider := &fakeCreditProvider{}
 	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, &fakeCreditInvalidator{}, true)
 
@@ -265,8 +280,8 @@ func TestAdminSetCreditCapOnly(t *testing.T) {
 	if keys.savedRec.LimitReset != "daily" {
 		t.Errorf("reset_interval changed to %q, want unchanged daily", keys.savedRec.LimitReset)
 	}
-	if keys.savedRec.LimitUSD != 9.00 {
-		t.Errorf("cap = %v, want 9.00", keys.savedRec.LimitUSD)
+	if got := keys.savedRec.LimitUSD; got == nil || *got != 9.00 {
+		t.Errorf("cap = %s, want 9.00", capString(got))
 	}
 	if provider.lastPatch.LimitReset != nil {
 		t.Errorf("PatchCap sent LimitReset=%v, want nil (unchanged field omitted)", *provider.lastPatch.LimitReset)
@@ -276,7 +291,7 @@ func TestAdminSetCreditCapOnly(t *testing.T) {
 // TestAdminSetCreditIntervalOnly is CapOnly's mirror: changing the interval alone
 // leaves the cap unchanged.
 func TestAdminSetCreditIntervalOnly(t *testing.T) {
-	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: 3.00, LimitReset: "daily"}}
+	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: new(3.00), LimitReset: "daily"}}
 	provider := &fakeCreditProvider{}
 	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, &fakeCreditInvalidator{}, true)
 
@@ -285,8 +300,8 @@ func TestAdminSetCreditIntervalOnly(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
-	if keys.savedRec.LimitUSD != 3.00 {
-		t.Errorf("cap changed to %v, want unchanged 3.00", keys.savedRec.LimitUSD)
+	if got := keys.savedRec.LimitUSD; got == nil || *got != 3.00 {
+		t.Errorf("cap changed to %s, want unchanged 3.00", capString(got))
 	}
 	if keys.savedRec.LimitReset != "monthly" {
 		t.Errorf("reset_interval = %q, want monthly", keys.savedRec.LimitReset)
@@ -299,7 +314,7 @@ func TestAdminSetCreditIntervalOnly(t *testing.T) {
 // TestAdminSetCreditEmptyBodyRefused proves a body with neither field is refused with
 // a 400 naming what was missing; no store write and no PATCH occur.
 func TestAdminSetCreditEmptyBodyRefused(t *testing.T) {
-	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: 1, LimitReset: "monthly"}}
+	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: capUSD(1), LimitReset: "monthly"}}
 	provider := &fakeCreditProvider{}
 	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, &fakeCreditInvalidator{}, true)
 
@@ -320,7 +335,7 @@ func TestAdminSetCreditEmptyBodyRefused(t *testing.T) {
 // write, while zero is accepted (a separate case, exercised by TestAdminSetCredit's
 // own default-zero starting record).
 func TestAdminSetCreditNegativeCapRefused(t *testing.T) {
-	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: 1, LimitReset: "monthly"}}
+	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: capUSD(1), LimitReset: "monthly"}}
 	provider := &fakeCreditProvider{}
 	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, &fakeCreditInvalidator{}, true)
 
@@ -337,7 +352,7 @@ func TestAdminSetCreditNegativeCapRefused(t *testing.T) {
 // TestAdminSetCreditPrecisionRule proves a cap of 5.126 is stored and PATCHed as 5.13
 // -- half-up to two decimals -- and the response reports the applied value.
 func TestAdminSetCreditPrecisionRule(t *testing.T) {
-	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: 0, LimitReset: "monthly"}}
+	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: capUSD(0), LimitReset: "monthly"}}
 	provider := &fakeCreditProvider{}
 	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, &fakeCreditInvalidator{}, true)
 
@@ -346,8 +361,8 @@ func TestAdminSetCreditPrecisionRule(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
-	if keys.savedRec.LimitUSD != 5.13 {
-		t.Errorf("stored cap = %v, want 5.13", keys.savedRec.LimitUSD)
+	if got := keys.savedRec.LimitUSD; got == nil || *got != 5.13 {
+		t.Errorf("stored cap = %s, want 5.13", capString(got))
 	}
 	if provider.lastPatch.Limit == nil || provider.lastPatch.Limit.String() != "5.13" {
 		t.Errorf("PATCHed cap = %v, want 5.13", provider.lastPatch.Limit)
@@ -364,7 +379,7 @@ func TestAdminSetCreditPrecisionRule(t *testing.T) {
 // TestAdminSetCreditProviderFailureAfterStoreWrite pins what happens when the second
 // half fails: the response names which half landed, asserted on content.
 func TestAdminSetCreditProviderFailureAfterStoreWrite(t *testing.T) {
-	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: 0, LimitReset: "monthly"}}
+	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: capUSD(0), LimitReset: "monthly"}}
 	provider := &fakeCreditProvider{err: errors.New("provider unreachable")}
 	invalidator := &fakeCreditInvalidator{}
 	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, invalidator, true)
@@ -408,7 +423,7 @@ func TestAdminCreditRoutesAreIdempotencyRegistered(t *testing.T) {
 func TestAdminGetCreditReportsSubCentSpend(t *testing.T) {
 	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{
 		Key: "sk-or-v1-should-never-appear", Hash: "hash-abc", Label: "sk-or-v1-caa...61c",
-		LimitUSD: 5.00, LimitReset: "monthly",
+		LimitUSD: new(5.00), LimitReset: "monthly",
 	}}
 	spend := &fakeCreditSpendReader{spend: map[string]float64{testLocalID: 0.000016632}}
 	s := newTestCreditServer(spend, keys, &fakeCreditProvider{}, &fakeCreditInvalidator{}, true)
@@ -432,5 +447,60 @@ func TestAdminGetCreditReportsSubCentSpend(t *testing.T) {
 	}
 	if got := out["percent_used"]; got != float64(0) {
 		t.Errorf("percent_used = %v, want 0", got)
+	}
+}
+
+func TestAdminGetCreditForAKeyWithNoLimit(t *testing.T) {
+	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitReset: "monthly"}}
+	spend := &fakeCreditSpendReader{spend: map[string]float64{testLocalID: 2.5}}
+	s := newTestCreditServer(spend, keys, &fakeCreditProvider{}, &fakeCreditInvalidator{}, true)
+
+	rec := httptest.NewRecorder()
+	s.handleGetCredit(rec, creditRequest(http.MethodGet, "/api/admin/identities/"+testLocalID+"/credit", ""))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var got map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got["unlimited"] != true || got["cap"] != nil || got["remaining"] != nil || got["percent_used"] != nil || got["spend"] != 2.5 {
+		t.Fatalf("body = %v, want unlimited, a null cap, remaining and percent_used, and the real spend", got)
+	}
+}
+
+func TestAdminSetCreditClearsTheCap(t *testing.T) {
+	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Key: "sk-x", Hash: "hash-1", Label: "l", LimitUSD: capUSD(5), LimitReset: "monthly"}}
+	provider := &fakeCreditProvider{}
+	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, &fakeCreditInvalidator{}, true)
+
+	rec := httptest.NewRecorder()
+	s.handleSetCredit(rec, creditRequest(http.MethodPost, "/api/admin/identities/"+testLocalID+"/credit", `{"clear_cap":true}`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if !provider.lastPatch.ClearLimit || provider.lastPatch.Limit != nil {
+		t.Fatalf("provider patch = %+v, want ClearLimit and no Limit", provider.lastPatch)
+	}
+	if keys.savedRec.LimitUSD != nil {
+		t.Fatalf("stored cap = %s, want nil (no limit)", capString(keys.savedRec.LimitUSD))
+	}
+	if !strings.Contains(rec.Body.String(), `"unlimited":true`) {
+		t.Fatalf("body = %s, want \"unlimited\":true", rec.Body.String())
+	}
+}
+
+func TestAdminSetCreditRefusesCapAndClearCapTogether(t *testing.T) {
+	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: capUSD(1), LimitReset: "monthly"}}
+	provider := &fakeCreditProvider{}
+	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, &fakeCreditInvalidator{}, true)
+
+	rec := httptest.NewRecorder()
+	s.handleSetCredit(rec, creditRequest(http.MethodPost, "/api/admin/identities/"+testLocalID+"/credit", `{"cap":"5","clear_cap":true}`))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	if keys.saveCalls != 0 || provider.calls != 0 {
+		t.Fatalf("a contradictory request wrote something: saves=%d patches=%d", keys.saveCalls, provider.calls)
 	}
 }

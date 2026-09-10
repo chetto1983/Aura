@@ -364,9 +364,10 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// T-02-36 checkpoint) widens aura.cache_metrics.cost_usd and
 	// aura.conversations.total_cost_usd from numeric(10,4) to numeric(24,12) so a
 	// per-call cost as small as the measured 0.000004158 (02-CONTEXT.md M-09)
-	// survives instead of rounding to zero.
-	if head != 124 {
-		t.Fatalf("MigrationHead=%d, want embedded head 124", head)
+	// survives instead of rounding to zero. 0125 lets identity_llm_key.limit_usd
+	// be NULL, a key with no limit (the admin's own).
+	if head != 125 {
+		t.Fatalf("MigrationHead=%d, want embedded head 125", head)
 	}
 }
 

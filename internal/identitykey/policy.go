@@ -61,12 +61,11 @@ type DecisionInput struct {
 	// identity — the caller derives this from its own store lookup (e.g. a
 	// nil vs non-nil error from identitykey.Store.Load), never from this file.
 	HasKey bool
-	// LimitUSD is the stored key's cap, carried as a float64 and compared
-	// directly — never narrowed to a smaller-precision type, never rounded
-	// through a display formatter first: a cap of 0.004 is above zero and
-	// must stay above zero through this comparison, or a real sub-cent
-	// balance rounds into a refusal.
-	LimitUSD float64
+	// LimitUSD is the stored key's cap. nil is a key with no limit and never refuses for
+	// credit. A non-nil cap is compared directly — never narrowed or rounded through a
+	// display formatter first: a cap of 0.004 is above zero and must stay above zero here,
+	// or a real sub-cent balance rounds into a refusal.
+	LimitUSD *float64
 	// BackendBills reports whether the deployment's configured LLM backend is
 	// one that charges at all. The caller derives this from the SAME host
 	// classification cmd/aura/llm_client.go's allowsKeylessLLMBaseURL already
@@ -93,7 +92,7 @@ func Decide(in DecisionInput) (Decision, error) {
 	if !in.HasKey {
 		return DecisionRefuseNoKey, ErrNoKey
 	}
-	if in.LimitUSD <= 0 {
+	if in.LimitUSD != nil && *in.LimitUSD <= 0 {
 		return DecisionRefuseNoCredit, ErrNoCredit
 	}
 	return DecisionAllow, nil

@@ -124,9 +124,10 @@ type spendIdentityDTO struct {
 // Σ(cap) exactly equals the available pool is NOT an over-allocation, because every cap
 // can still be honored in full at that exact point.
 type spendOverAllocationDTO struct {
-	Triggered bool    `json:"triggered"`
-	SumCaps   float64 `json:"sum_caps"`
-	Available float64 `json:"available"`
+	Triggered    bool    `json:"triggered"`
+	SumCaps      float64 `json:"sum_caps"`
+	Available    float64 `json:"available"`
+	UncappedKeys int     `json:"uncapped_keys"`
 }
 
 func (s *Server) handleSpendOverview(w http.ResponseWriter, r *http.Request) {
@@ -166,7 +167,7 @@ func (s *Server) handleSpendOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sumCaps, err := s.sumIdentityCaps(ctx, identities)
+	sumCaps, uncapped, err := s.sumIdentityCaps(ctx, identities)
 	if err != nil {
 		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "credit store unavailable"})
 		return
@@ -175,31 +176,35 @@ func (s *Server) handleSpendOverview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, spendOverviewResponse{
 		KPIs:           kpiDTOsFrom(tiles),
 		TopIdentities:  topIdentitiesFrom(identities, keys),
-		OverAllocation: buildOverAllocation(sumCaps, credits),
+		OverAllocation: buildOverAllocation(sumCaps, uncapped, credits),
 	})
 }
 
-// sumIdentityCaps sums EVERY roster identity's own stored OpenRouter cap. Each read is
-// scoped to that ONE identity (identityctx.WithIdentityID) — aura.identity_llm_key's RLS
-// floor (migration 0122) admits only the identity named by app.current_identity, so this
-// is N scoped reads, not one unscoped enumeration. An identity with no key contributes
-// zero rather than failing the whole sum (identitykey.ErrNoKey is a normal, expected
-// answer per that package's own doc — a deployment with some identities still on a local
-// backend, or provisioned before credit minting existed, is not an error).
-func (s *Server) sumIdentityCaps(ctx context.Context, identities []identity.Identity) (float64, error) {
+// sumIdentityCaps sums every roster identity's own stored OpenRouter cap and counts the keys
+// with no limit, which have no amount to add. Each read is scoped to that ONE identity
+// (identityctx.WithIdentityID): aura.identity_llm_key's RLS floor (migration 0122) admits
+// only the identity named by app.current_identity, so this is N scoped reads, not one
+// unscoped enumeration. An identity with no key contributes nothing rather than failing the
+// sum (identitykey.ErrNoKey is a normal answer: a local backend, or an identity provisioned
+// before minting existed).
+func (s *Server) sumIdentityCaps(ctx context.Context, identities []identity.Identity) (float64, int, error) {
 	var sum float64
+	var uncapped int
 	for _, idn := range identities {
-		scoped := identityctx.WithIdentityID(ctx, idn.ID)
-		rec, err := s.spendOverview.caps.Load(scoped)
-		if err != nil {
-			if errors.Is(err, identitykey.ErrNoKey) {
-				continue
-			}
-			return 0, err
+		rec, err := s.spendOverview.caps.Load(identityctx.WithIdentityID(ctx, idn.ID))
+		if errors.Is(err, identitykey.ErrNoKey) {
+			continue
 		}
-		sum += rec.LimitUSD
+		if err != nil {
+			return 0, 0, err
+		}
+		if rec.LimitUSD == nil {
+			uncapped++
+			continue
+		}
+		sum += *rec.LimitUSD
 	}
-	return sum, nil
+	return sum, uncapped, nil
 }
 
 // failSpendReconciliation answers a provider-side failure with the generic 502 and keeps the
@@ -289,15 +294,12 @@ func topIdentitiesFrom(identities []identity.Identity, keys []openrouterprovisio
 
 // buildOverAllocation decides the M-12 trigger by STRICT inequality (backstop decision,
 // UI-SPEC "Over-allocation advisory banner · zero-one-many"): Σ(cap) EXCEEDING the
-// available pool, not merely reaching it. At exact equality every assigned cap can still
-// be honored in full if every identity spends up to its own cap simultaneously — nothing
-// is starved YET, so `>` (not `>=`) is the correct boundary. `>=` would warn about a
-// perfectly sustainable allocation the day it happens to sum to exactly the pool.
-func buildOverAllocation(sumCaps float64, credits openrouterprovision.Credits) spendOverAllocationDTO {
+// available pool, not merely reaching it — at exact equality every cap can still be honored
+// in full. Keys with no limit are reported beside the sum, because they draw on the same
+// pool without an amount to add to it.
+func buildOverAllocation(sumCaps float64, uncapped int, credits openrouterprovision.Credits) spendOverAllocationDTO {
 	available := credits.TotalCredits - credits.TotalUsage
 	return spendOverAllocationDTO{
-		Triggered: sumCaps > available,
-		SumCaps:   sumCaps,
-		Available: available,
+		Triggered: sumCaps > available, SumCaps: sumCaps, Available: available, UncappedKeys: uncapped,
 	}
 }

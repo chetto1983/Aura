@@ -276,14 +276,15 @@ type AuraIdentityAuthLinks struct {
 
 // Per-identity OpenRouter API key (migration 0122, CRED-01). key_ciphertext is AES-256-GCM ciphertext (KEK derived from AURA_AUTHULA_SECRET with an info string domain-separated from internal/mcpoauth). key_hash is plaintext by design: OpenRouter addresses the key by hash for PATCH/DELETE and surfaces it in provider error messages, so a revoke never needs to decrypt.
 type AuraIdentityLlmKey struct {
-	IdentityID    pgtype.UUID        `json:"identity_id"`
-	KeyCiphertext []byte             `json:"key_ciphertext"`
-	KeyHash       string             `json:"key_hash"`
-	KeyLabel      string             `json:"key_label"`
-	LimitUsd      pgtype.Numeric     `json:"limit_usd"`
-	LimitReset    string             `json:"limit_reset"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	IdentityID    pgtype.UUID `json:"identity_id"`
+	KeyCiphertext []byte      `json:"key_ciphertext"`
+	KeyHash       string      `json:"key_hash"`
+	KeyLabel      string      `json:"key_label"`
+	// Spending cap in USD. NULL is a key with no limit (the admin key); 0 refuses until an admin tops it up.
+	LimitUsd   pgtype.Numeric     `json:"limit_usd"`
+	LimitReset string             `json:"limit_reset"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 }
 
 // Per-identity OAuth grant for a remote MCP server (migration 0100). access_token_enc, refresh_token_enc and client_info_enc are AES-256-GCM ciphertext (KEK derived from AURA_AUTHULA_SECRET, the same trust boundary as .env and as aura.identity_object_store); client_info_enc holds the dynamic-client-registration result, which carries an AS-minted client_secret. The operator's OWN pre-registered client credentials are NOT here: they are deployment config on ManagedServer.Env. expires_at is absolute, so a daemon restart can reconstruct the remaining TTL instead of trusting a relative expires_in with no wall-clock reference.

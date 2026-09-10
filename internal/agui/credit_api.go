@@ -144,12 +144,25 @@ func (s *Server) handleGetCredit(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "spend read unavailable"})
 		return
 	}
-	cap, err := usdCapFromFloat(rec.LimitUSD)
+	if rec.LimitUSD == nil {
+		writeJSON(w, unlimitedCreditResponse(targetID, rec.LimitReset, spendFloat))
+		return
+	}
+	cap, err := usdCapFromFloat(*rec.LimitUSD)
 	if err != nil {
 		writeJSONStatus(w, http.StatusInternalServerError, map[string]string{"error": "credit figures unavailable"})
 		return
 	}
 	writeJSON(w, creditGetResponse(targetID, rec.LimitReset, cap, spendFloat))
+}
+
+// unlimitedCreditResponse is the GET body for a key with no limit: no cap, so no remaining
+// and no percentage either — a zero there would read as exhausted.
+func unlimitedCreditResponse(identityID, limitReset string, spend float64) map[string]any {
+	return map[string]any{
+		"identity_id": identityID, "exempt": false, "unlimited": true, "cap": nil,
+		"reset_interval": limitReset, "spend": spend, "remaining": nil, "percent_used": nil,
+	}
 }
 
 // creditGetResponse builds the GET response map. Cap and spend are DIFFERENT KINDS of
@@ -177,6 +190,7 @@ func creditGetResponse(identityID, limitReset string, cap openrouterprovision.US
 	return map[string]any{
 		"identity_id":    identityID,
 		"exempt":         false,
+		"unlimited":      false,
 		"cap":            cap,
 		"reset_interval": limitReset,
 		"spend":          spend,
@@ -191,6 +205,8 @@ func creditGetResponse(identityID, limitReset string, cap openrouterprovision.US
 type creditSetRequest struct {
 	Cap           *string `json:"cap"`
 	ResetInterval *string `json:"reset_interval"`
+	// ClearCap removes the cap, giving the key no limit; it cannot be combined with Cap.
+	ClearCap bool `json:"clear_cap"`
 }
 
 func (s *Server) handleSetCredit(w http.ResponseWriter, r *http.Request) {
@@ -220,8 +236,12 @@ func (s *Server) handleSetCredit(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 		return
 	}
-	if body.Cap == nil && body.ResetInterval == nil {
-		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "at least one of cap or reset_interval is required"})
+	if body.Cap == nil && body.ResetInterval == nil && !body.ClearCap {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "at least one of cap, clear_cap or reset_interval is required"})
+		return
+	}
+	if body.ClearCap && body.Cap != nil {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "cap and clear_cap cannot both be set"})
 		return
 	}
 
@@ -236,6 +256,7 @@ func (s *Server) handleSetCredit(w http.ResponseWriter, r *http.Request) {
 		patch.Limit = &cap
 		appliedCapPtr = &cap
 	}
+	patch.ClearLimit = body.ClearCap
 	var appliedReset string
 	if body.ResetInterval != nil {
 		reset := openrouterprovision.LimitReset(strings.ToLower(strings.TrimSpace(*body.ResetInterval)))
@@ -259,8 +280,12 @@ func (s *Server) handleSetCredit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	finalLimitUSD := rec.LimitUSD
-	if appliedCapPtr != nil {
-		finalLimitUSD = float64(*appliedCapPtr) / 100
+	switch {
+	case body.ClearCap:
+		finalLimitUSD = nil
+	case appliedCapPtr != nil:
+		dollars := float64(*appliedCapPtr) / 100
+		finalLimitUSD = &dollars
 	}
 	finalLimitReset := rec.LimitReset
 	if appliedReset != "" {
@@ -294,18 +319,19 @@ func (s *Server) handleSetCredit(w http.ResponseWriter, r *http.Request) {
 		s.credit.invalidate.Invalidate(targetID)
 	}
 
-	displayCap, err := usdCapFromFloat(finalLimitUSD)
-	if err != nil {
-		writeJSONStatus(w, http.StatusInternalServerError, map[string]string{"error": "credit figures unavailable"})
-		return
+	resp := map[string]any{
+		"identity_id": targetID, "cap": nil, "unlimited": finalLimitUSD == nil,
+		"reset_interval": finalLimitReset, "store_applied": true, "provider_applied": true,
 	}
-	writeJSON(w, map[string]any{
-		"identity_id":      targetID,
-		"cap":              displayCap,
-		"reset_interval":   finalLimitReset,
-		"store_applied":    true,
-		"provider_applied": true,
-	})
+	if finalLimitUSD != nil {
+		displayCap, err := usdCapFromFloat(*finalLimitUSD)
+		if err != nil {
+			writeJSONStatus(w, http.StatusInternalServerError, map[string]string{"error": "credit figures unavailable"})
+			return
+		}
+		resp["cap"] = displayCap
+	}
+	writeJSON(w, resp)
 }
 
 // validLimitReset reports whether reset is one of the three documented intervals.

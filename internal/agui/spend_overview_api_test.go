@@ -56,16 +56,20 @@ func (f *fakeSpendReconciliation) GetCredits(context.Context) (openrouterprovisi
 // caller scoped ctx to (identityctx.WithIdentityID) — mirrors identitykey.Store's own
 // ctx-scoping contract, same fixture shape credit_api_test.go's fakeCreditKeyStore uses.
 type fakeSpendCapReader struct {
-	caps map[string]float64 // identity id -> cap; a missing id -> ErrNoKey
+	caps     map[string]float64 // identity id -> cap; a missing id -> ErrNoKey
+	uncapped map[string]bool    // identity id -> has a key with no limit
 }
 
 func (f *fakeSpendCapReader) Load(ctx context.Context) (identitykey.Record, error) {
 	id := identityctx.IdentityID(ctx)
+	if f.uncapped[id] {
+		return identitykey.Record{}, nil
+	}
 	cap, ok := f.caps[id]
 	if !ok {
 		return identitykey.Record{}, identitykey.ErrNoKey
 	}
-	return identitykey.Record{LimitUSD: cap}, nil
+	return identitykey.Record{LimitUSD: &cap}, nil
 }
 
 func spendFiveTiles() []openrouterprovision.KPITile {
@@ -338,7 +342,7 @@ func TestSpendOverviewProviderFailureIsIsolated(t *testing.T) {
 	s := newTestSpendServer(recon, &fakeSpendCapReader{caps: map[string]float64{}}, ids)
 	// Also wire the credit API on the SAME server with working fakes, proving its own
 	// route is unaffected by the Overview's failure.
-	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: 5, LimitReset: "monthly"}}
+	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: capUSD(5), LimitReset: "monthly"}}
 	s.SetCreditAPI(&fakeCreditSpendReader{spend: map[string]float64{testLocalID: 1}}, keys, &fakeCreditProvider{}, &fakeCreditInvalidator{}, true)
 
 	overviewRec := httptest.NewRecorder()
@@ -425,5 +429,25 @@ func TestSpendOverviewUnwiredReturns503(t *testing.T) {
 func TestSpendOverviewIsNotIdempotencyRegistered(t *testing.T) {
 	if _, ok := httpMutationRoutes["GET /api/admin/spend/overview"]; ok {
 		t.Fatal("GET /api/admin/spend/overview must NOT be registered in httpMutationRoutes")
+	}
+}
+
+func TestSpendOverviewCountsUncappedKeys(t *testing.T) {
+	ids := []identity.Identity{{ID: "id-admin", Name: "admin"}, {ID: "id-member", Name: "member"}}
+	recon := &fakeSpendReconciliation{tiles: spendFiveTiles(), credits: openrouterprovision.Credits{TotalCredits: 100, TotalUsage: 10}}
+	caps := &fakeSpendCapReader{caps: map[string]float64{"id-member": 5}, uncapped: map[string]bool{"id-admin": true}}
+	s := newTestSpendServer(recon, caps, ids)
+
+	rec := httptest.NewRecorder()
+	s.handleSpendOverview(rec, spendRequest())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var out spendOverviewResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.OverAllocation.SumCaps != 5 || out.OverAllocation.UncappedKeys != 1 {
+		t.Fatalf("over_allocation = %+v, want sum_caps 5 and uncapped_keys 1", out.OverAllocation)
 	}
 }
