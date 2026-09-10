@@ -189,14 +189,15 @@ func (p *Preparer) installNode(ctx context.Context, dir, pkg string) (string, er
 // nodeDeclared reads the installed package's own "bin" field. Same reason as the python side:
 // node_modules/.bin carries every dependency's binaries too, so the directory is not the answer.
 func (p *Preparer) nodeDeclared(dir, pkg string) ([]string, error) {
-	modules := filepath.Join(dir, "node_modules")
-	manifest := filepath.Join(modules, filepath.FromSlash(distributionName(pkg)), "package.json")
-	// The package name is the operator's own input: one that climbs out of node_modules names a
-	// path, not a package, and the package.json it reaches is not this install's.
-	if rel, err := filepath.Rel(modules, manifest); err != nil || !filepath.IsLocal(rel) {
+	// The package name is the operator's own input: one that is not a plain relative name (a
+	// "..", an absolute path) names a path rather than a package, and the package.json it
+	// reaches is not this install's.
+	name := filepath.FromSlash(distributionName(pkg))
+	if !filepath.IsLocal(name) {
 		return nil, fmt.Errorf("mcpenv: %q is not an npm package name", pkg)
 	}
-	raw, err := os.ReadFile(manifest) // #nosec G304 -- confined to the environment's node_modules above
+	manifest := filepath.Join(dir, "node_modules", name, "package.json")
+	raw, err := os.ReadFile(manifest) // #nosec G304 -- name checked local to node_modules above
 	if err != nil {
 		return nil, fmt.Errorf("mcpenv: read %s: %w", manifest, err)
 	}
