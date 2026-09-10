@@ -333,7 +333,7 @@ func setConfigKey(raw map[string]json.RawMessage, key, value string) error {
 			return err
 		}
 	case "llm.api_key":
-		return fmt.Errorf("llm.api_key is not settable here — set OPENROUTER_API_KEY in .env or the environment (D-28)")
+		return fmt.Errorf("llm.api_key is not settable here — Aura mints it once an admin connects OpenRouter in the first-run setup (D-28)")
 	default:
 		return fmt.Errorf("unknown config key %q", key)
 	}

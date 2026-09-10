@@ -96,8 +96,8 @@ func TestLLMNotConfiguredClientFailsClosed(t *testing.T) {
 	if payload.Error != "llm_not_configured" {
 		t.Fatalf("payload.error = %q, want llm_not_configured", payload.Error)
 	}
-	if !strings.Contains(payload.Hint, "OPENROUTER_API_KEY") {
-		t.Fatalf("payload.hint = %q, want OPENROUTER_API_KEY guidance", payload.Hint)
+	if !strings.Contains(payload.Hint, "connect OpenRouter") {
+		t.Fatalf("payload.hint = %q, want guidance to connect OpenRouter", payload.Hint)
 	}
 }
 

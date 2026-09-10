@@ -11,7 +11,7 @@ import (
 
 const (
 	llmNotConfiguredCode = "llm_not_configured"
-	llmNotConfiguredHint = "set OPENROUTER_API_KEY in .env or the environment, then retry"
+	llmNotConfiguredHint = "connect OpenRouter or pick a local route in Settings, then retry"
 
 	// creditExhaustedCode/Hint are CRED-05's clean pre-flight refusal: a zero-credit
 	// identity is refused before the model is called, with the SAME machine-readable
@@ -52,7 +52,7 @@ func (llmNotConfiguredClient) Stream(context.Context, llm.Request) (<-chan llm.C
 
 func (llmNotConfiguredError) Error() string {
 	return marshalRefusalPayload(llmNotConfiguredCode, llmNotConfiguredHint,
-		`{"error":"llm_not_configured","hint":"set OPENROUTER_API_KEY in .env or the environment, then retry"}`)
+		`{"error":"llm_not_configured","hint":"connect OpenRouter or pick a local route in Settings, then retry"}`)
 }
 
 func (creditExhaustedClient) Stream(context.Context, llm.Request) (<-chan llm.Chunk, error) {

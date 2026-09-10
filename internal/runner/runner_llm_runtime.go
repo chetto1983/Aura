@@ -51,6 +51,18 @@ func (r *Runner) turnLLMSnapshot(ctx context.Context) (llm.RuntimeSnapshot, erro
 	return r.identityLLM.SnapshotFor(ctx, identityID)
 }
 
+// SetIdentityLLM makes every later turn resolve its credential from the identity that owns it.
+// The serve composition root calls it once, before the listener opens; `aura chat` never does,
+// so the REPL keeps the process-wide client (runner_deps.go). A nil resolver is stored as a nil
+// interface, never a non-nil interface around a nil pointer.
+func (r *Runner) SetIdentityLLM(resolver *IdentityLLMResolver) {
+	if resolver == nil {
+		r.identityLLM = nil
+		return
+	}
+	r.identityLLM = resolver
+}
+
 type llmRuntimeSnapshotContextKey struct{}
 
 func withLLMRuntimeSnapshot(ctx context.Context, snapshot llm.RuntimeSnapshot) context.Context {

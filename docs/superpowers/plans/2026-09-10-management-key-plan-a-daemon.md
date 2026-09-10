@@ -3496,7 +3496,7 @@ Expected: PASS.
 - Consumes: the live-route resolver (Task 4), keys minted by Tasks 8 and 10.
 - Produces: `(*runner.Runner).SetIdentityLLM(*runner.IdentityLLMResolver)`.
 
-- [ ] **Step 1: Write the failing tests.** Append to `runner_llm_runtime_test.go`:
+- [x] **Step 1: Write the failing tests.** Append to `runner_llm_runtime_test.go`:
 
 ```go
 func TestSetIdentityLLMRoutesTurnsThroughTheResolver(t *testing.T) {
@@ -3528,12 +3528,12 @@ func TestSetIdentityLLMWithNilKeepsTheProcessClient(t *testing.T) {
 
 (add the `identitykey` import to the test file if it lacks it).
 
-- [ ] **Step 2: Run the tests and watch them fail**
+- [x] **Step 2: Run the tests and watch them fail**
 
 Run: `go test ./internal/runner/ -run SetIdentityLLM`
 Expected: build failure (`SetIdentityLLM` undefined).
 
-- [ ] **Step 3: Implement.** In `runner_llm_runtime.go`:
+- [x] **Step 3: Implement.** In `runner_llm_runtime.go`:
 
 ```go
 // SetIdentityLLM makes every later turn resolve its credential from the identity that owns it.
@@ -3576,12 +3576,12 @@ var ErrMissingAPIKey = errors.New("llm: API key is empty (connect OpenRouter in 
 
 Then run `grep -rn "set OPENROUTER_API_KEY in .env" --include=*.go --include=*.ts --include=*.tsx cmd internal web/src` and update every remaining copy.
 
-- [ ] **Step 4: Run the tests and watch them pass**
+- [x] **Step 4: Run the tests and watch them pass**
 
 Run: `go test ./internal/runner/ ./internal/llm/ ./cmd/aura/ && go build ./...`
 Expected: PASS.
 
-- [ ] **Step 5: Race, lint, commit** (`feat(runner): bill web and Telegram turns to the identity's own key`). Body: `runner.Deps.IdentityLLM` was never assigned, so every web and Telegram turn spent the deployment key and spend could not be split per person; the refusal texts stop telling the operator to edit `.env`.
+- [x] **Step 5: Race, lint, commit** (`feat(runner): bill web and Telegram turns to the identity's own key`). Body: `runner.Deps.IdentityLLM` was never assigned, so every web and Telegram turn spent the deployment key and spend could not be split per person; the refusal texts stop telling the operator to edit `.env`.
 
 ---
 

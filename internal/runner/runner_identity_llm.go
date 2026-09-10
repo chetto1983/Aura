@@ -24,7 +24,7 @@ import (
 // requested identity and the request is not exempt (D-13's local-backend carve-out).
 // The caller must refuse the turn — the process-wide deployment client is never
 // substituted (CRED-07).
-var ErrNoIdentityLLMKey = errors.New("runner: identity has no stored OpenRouter key")
+var ErrNoIdentityLLMKey = errors.New("runner: identity has no OpenRouter key yet; an admin connects OpenRouter in the first-run setup to mint it")
 
 // keyLoader is the resolver's consumer-side port onto the encrypted key store
 // (D-A2-02 "accept interfaces, return structs"): one method, load the record for

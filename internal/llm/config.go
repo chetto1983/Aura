@@ -16,7 +16,7 @@ import (
 // ErrMissingAPIKey is the clear, non-panic error surfaced when the API key is
 // empty after the full load-order chain (D-22, SPEC Req#5). Tests assert this
 // sentinel, so callers compare with errors.Is rather than the string.
-var ErrMissingAPIKey = errors.New("llm: API key is empty (set OPENROUTER_API_KEY in .env or the environment)")
+var ErrMissingAPIKey = errors.New("llm: API key is empty (connect OpenRouter in the first-run setup, or pick a local route)")
 
 // Built-in defaults (D-22). The const block is the single source for the
 // load-order base tier; later tiers (.env, ~/.aura/llm.json, AURA_LLM_*)
