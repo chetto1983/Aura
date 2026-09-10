@@ -23,6 +23,16 @@ export interface SettingsList {
   readonly restart_required: boolean;
   /** The rows behind restart_required, so the banner can name them. */
   readonly restart_keys?: readonly string[];
+  /** Whether POST /api/admin/restart can bring this daemon back; absent on an older daemon. */
+  readonly restart_supported?: boolean;
+}
+
+/** PUT /api/settings/{key}: the written row, plus what the save did to the running daemon. */
+export interface SettingWriteResult extends SettingItem {
+  /** TELEGRAM_BOT_TOKEN only: whether the save hot-started the bot channel. */
+  readonly channel_active?: boolean;
+  /** Why the channel did not start, free of the token; set only when channel_active is false. */
+  readonly channel_error?: string;
 }
 
 /** One provider's remembered route (aura.llm_provider_routes): what it was last saved with. */
@@ -120,14 +130,14 @@ export async function fetchLLMModels(
   return body.models ?? [];
 }
 
-export async function putSetting(key: string, value: string): Promise<SettingItem> {
+export async function putSetting(key: string, value: string): Promise<SettingWriteResult> {
   const res = await fetch(`/api/settings/${encodeURIComponent(key)}`, {
     method: 'PUT',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
     credentials: 'same-origin',
     body: JSON.stringify({ value }),
   });
-  return readJSON<SettingItem>(res);
+  return readJSON<SettingWriteResult>(res);
 }
 
 export async function putLLMProfile(settings: Readonly<Record<string, string>>): Promise<void> {

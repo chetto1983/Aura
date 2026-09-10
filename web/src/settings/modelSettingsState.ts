@@ -19,6 +19,8 @@ export interface LoadedState {
   readonly restartRequired: boolean;
   /** The keys behind restartRequired (amendment #188); empty on an older daemon. */
   readonly restartKeys: readonly string[];
+  /** Whether the banner may offer the in-app restart; false on a daemon that cannot come back. */
+  readonly restartSupported: boolean;
 }
 
 export type LoadStatus = 'loading' | 'ready' | 'error';
@@ -76,6 +78,7 @@ function buildState(list: Awaited<ReturnType<typeof fetchSettings>>): LoadedStat
     initial,
     restartRequired: list.restart_required,
     restartKeys: list.restart_keys ?? [],
+    restartSupported: list.restart_supported ?? false,
   };
 }
 

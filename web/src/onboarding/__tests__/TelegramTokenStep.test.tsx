@@ -5,8 +5,10 @@ import type { TelegramAvailability } from '../../settings/settingsApi';
 
 // TelegramTokenStep test — the onboarding Telegram-integration step. It mocks the Settings
 // telegram-check + putSetting seam to drive: the already-configured auto-skip (stored token
-// valid → Continue → onDone), the manual token happy path (verify → getMe ok → save → valid +
-// Continue → onDone), and the rejected-token path (getMe fails → invalid message, no save).
+// valid → Continue → onDone), the manual token happy path (verify → getMe ok → save hot-starts
+// the channel → active + Continue → onDone), the saved-but-not-started path (channel_active
+// false → the server's reason + Retry re-saves), and the rejected-token path (getMe fails →
+// invalid message, no save).
 
 const checkTelegramAvailability = vi.fn();
 const putSetting = vi.fn();
@@ -60,11 +62,18 @@ describe('TelegramTokenStep', () => {
     expect(checkTelegramAvailability).toHaveBeenCalledWith();
   });
 
-  it('verifies a pasted token, saves it, and Continue advances', async () => {
+  // REWRITTEN with the backend contract, not to make it pass: saving the token used to leave
+  // the channel dormant until a restart, and this test pinned the "Restart Aura" note that an
+  // appliance with no monitor and no SSH could never act on. The save now hot-starts the bot.
+  it('verifies a pasted token, saves it, reports the channel active, and Continue advances', async () => {
     checkTelegramAvailability.mockImplementation((token?: string) =>
       Promise.resolve(token === '123:ABC' ? AVAILABLE : NOT_CONFIGURED),
     );
-    putSetting.mockResolvedValue({});
+    putSetting.mockResolvedValue({
+      key: 'TELEGRAM_BOT_TOKEN',
+      channel_active: true,
+      restart_required: false,
+    });
     const onDone = vi.fn();
     render(<TelegramTokenStep onDone={onDone} />);
 
@@ -72,9 +81,52 @@ describe('TelegramTokenStep', () => {
     fireEvent.change(input, { target: { value: '123:ABC' } });
     fireEvent.click(screen.getByRole('button', { name: /verify token/i }));
 
-    await screen.findByText(/valid — bot @AuraBot/i);
+    await screen.findByText('Telegram channel active — @AuraBot');
     expect(putSetting).toHaveBeenCalledWith('TELEGRAM_BOT_TOKEN', '123:ABC');
+    expect(screen.queryByText(/restart/i)).toBeNull();
 
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the saved-but-not-started state with the server reason, and Retry re-saves', async () => {
+    checkTelegramAvailability.mockImplementation((token?: string) =>
+      Promise.resolve(token === '123:ABC' ? AVAILABLE : NOT_CONFIGURED),
+    );
+    putSetting
+      .mockResolvedValueOnce({
+        key: 'TELEGRAM_BOT_TOKEN',
+        channel_active: false,
+        channel_error: 'getUpdates: conflict with another bot instance',
+        restart_required: true,
+      })
+      .mockResolvedValueOnce({
+        key: 'TELEGRAM_BOT_TOKEN',
+        channel_active: true,
+        restart_required: false,
+      });
+    const onDone = vi.fn();
+    render(<TelegramTokenStep onDone={onDone} />);
+
+    const input = await screen.findByLabelText(/telegram bot token/i);
+    fireEvent.change(input, { target: { value: '123:ABC' } });
+    fireEvent.click(screen.getByRole('button', { name: /verify token/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain("didn't start");
+    expect(screen.getByText('getUpdates: conflict with another bot instance')).toBeTruthy();
+    expect(screen.queryByText(/restart/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: /continue/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    await screen.findByText('Telegram channel active — @AuraBot');
+    expect(putSetting).toHaveBeenCalledTimes(2);
+    expect(putSetting).toHaveBeenLastCalledWith('TELEGRAM_BOT_TOKEN', '123:ABC');
+    // getMe already accepted this token; Retry is about starting the channel, not re-checking it.
+    expect(
+      checkTelegramAvailability.mock.calls.filter(([token]) => token !== undefined),
+    ).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
     expect(onDone).toHaveBeenCalledTimes(1);
   });

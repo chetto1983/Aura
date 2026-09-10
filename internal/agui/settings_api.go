@@ -4,8 +4,9 @@ package agui
 // backend knobs the operator swaps local↔cloud (embed/STT/TTS/vision), the single
 // OpenRouter key, and the embed dimension. Rows live in aura.settings and are
 // overlaid onto the environment at boot (internal/settings.OverlayEnv). The primary
-// LLM profile is additionally hot-published; restart_required covers
-// only a persisted difference whose runtime remains boot-bound.
+// LLM profile is additionally hot-published and the Telegram token hot-swaps the
+// running channel; restart_required covers only a persisted difference whose runtime
+// remains boot-bound, and POST /api/admin/restart applies it where supported.
 //
 // GET returns the allowlist + current effective values with SECRETS REDACTED (the
 // real value never crosses the wire on read). PUT/DELETE are operator write-class
@@ -105,6 +106,8 @@ func (s *Server) registerSettingsRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/settings/telegram/{sessionToken}/status", s.handleSettingsTelegramStatus)
 	mux.HandleFunc("PUT /api/settings/{key}", s.handlePutSetting)
 	mux.HandleFunc("DELETE /api/settings/{key}", s.handleDeleteSetting)
+	// The restart is how a saved boot-bound row takes effect (restart_api.go).
+	mux.HandleFunc("POST /api/admin/restart", s.handleRestart)
 }
 
 // settingItemDTO is one row of the Settings page: the allowlist metadata + the
@@ -124,11 +127,13 @@ type settingItemDTO struct {
 }
 
 // settingsListDTO: restart_required stays as the derived boolean; restart_keys
-// names the rows behind it so the banner can be specific (amendment #188).
+// names the rows behind it so the banner can be specific (amendment #188), and
+// restart_supported says whether POST /api/admin/restart can carry the restart out.
 type settingsListDTO struct {
-	Settings        []settingItemDTO `json:"settings"`
-	RestartRequired bool             `json:"restart_required"`
-	RestartKeys     []string         `json:"restart_keys"`
+	Settings         []settingItemDTO `json:"settings"`
+	RestartRequired  bool             `json:"restart_required"`
+	RestartKeys      []string         `json:"restart_keys"`
+	RestartSupported bool             `json:"restart_supported"`
 }
 
 func (s *Server) handleListSettings(w http.ResponseWriter, r *http.Request) {
@@ -154,7 +159,10 @@ func (s *Server) handleListSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Strings(keys)
 
-	out := settingsListDTO{Settings: make([]settingItemDTO, 0, len(keys)), RestartKeys: []string{}}
+	out := settingsListDTO{
+		Settings: make([]settingItemDTO, 0, len(keys)), RestartKeys: []string{},
+		RestartSupported: s.restartTrigger != nil,
+	}
 	for _, key := range keys {
 		meta := settings.AllowedKeys[key]
 		row, overridden := byKey[key]
@@ -163,9 +171,10 @@ func (s *Server) handleListSettings(w http.ResponseWriter, r *http.Request) {
 			Applied: appliedBoot,
 		}
 		// Effective value: the DB value when overridden, else the active runtime for a
-		// hot model-profile key, else the process env. A hot key is always "live"; a
-		// boot-bound key persisted after boot (its row differs from what the process
-		// booted with) is "restart" and is named in restart_keys.
+		// hot model-profile key, else the process env. A hot key is always "live", and so
+		// is the Telegram token while the running channel polls it; any other boot-bound
+		// key persisted after boot (its row differs from what the process booted with) is
+		// "restart" and is named in restart_keys.
 		effective := os.Getenv(key)
 		if s.hotLLMRouteEnabled(key) {
 			item.Applied = appliedLive
@@ -181,7 +190,10 @@ func (s *Server) handleListSettings(w http.ResponseWriter, r *http.Request) {
 			if row.UpdatedBy.Valid {
 				item.UpdatedBy = row.UpdatedBy.String
 			}
-			if row.Value != os.Getenv(key) && !s.hotLLMRouteEnabled(key) {
+			switch {
+			case key == telegramTokenKey && s.telegramRuns(row.Value):
+				item.Applied = appliedLive
+			case row.Value != os.Getenv(key) && !s.hotLLMRouteEnabled(key):
 				item.Applied = appliedRestart
 				out.RestartRequired = true
 				out.RestartKeys = append(out.RestartKeys, key)
@@ -365,7 +377,12 @@ func (s *Server) handlePutSetting(w http.ResponseWriter, r *http.Request) {
 	if slices.Contains(modelRouteKeys, key) {
 		s.rememberProviderRoute(r.Context(), routeOverrides, actor)
 	}
-	writeJSON(w, settingItemFromRow(meta, row))
+	item := settingItemFromRow(meta, row)
+	if key == telegramTokenKey && s.telegram != nil {
+		writeJSON(w, telegramTokenPutDTO{settingItemDTO: item, telegramActivation: s.activateTelegram(r.Context(), body.Value)})
+		return
+	}
+	writeJSON(w, item)
 }
 
 func (s *Server) handleDeleteSetting(w http.ResponseWriter, r *http.Request) {
@@ -406,6 +423,10 @@ func (s *Server) handleDeleteSetting(w http.ResponseWriter, r *http.Request) {
 	}
 	if applyRoute != nil {
 		applyRoute()
+	}
+	if key == telegramTokenKey && s.telegram != nil {
+		writeJSON(w, telegramTokenDeleteDTO{Key: key, Deleted: true, telegramActivation: s.activateTelegram(r.Context(), "")})
+		return
 	}
 	writeJSONStatus(w, http.StatusOK, map[string]any{
 		"key": key, "deleted": true, "restart_required": routeOverrides == nil,

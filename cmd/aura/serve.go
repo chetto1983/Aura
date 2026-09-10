@@ -96,10 +96,15 @@ func runServe(args []string) {
 	// in-flight turns under a bounded grace, THEN workCancel fires as the final backstop.
 	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// The web console's restart (POST /api/admin/restart) ends the daemon exactly as a
+	// SIGTERM does, by cancelling this child of signalCtx; the process then exits cleanly
+	// and the container's restart policy brings it back.
+	lifecycleCtx, requestShutdown := context.WithCancel(signalCtx)
+	defer requestShutdown()
 	workCtx, workCancel := context.WithCancel(context.Background())
 	defer workCancel()
 
-	env, err := bootServe(workCtx, override)
+	env, err := bootServe(workCtx, override, requestShutdown)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "aura serve:", err)
 		os.Exit(exitInfra)
@@ -175,11 +180,11 @@ func runServe(args []string) {
 	}
 
 	slog.Info("aura serve: scheduler daemon started", "tick", "running")
-	// Start blocks until signalCtx is cancelled (SIGINT/SIGTERM) or it returns an
-	// error; on a clean shutdown it returns nil after the in-flight tick joins its
-	// workers. workCtx is STILL LIVE here, so an in-flight turn keeps running while
-	// the bounded drain below gives it a grace window to finalize (O-06/AP-17).
-	lifecycleErr := runServeComponentsWithMetrics(signalCtx, env.readiness, listener, env.httpSrv, env.scheduler, serveObs.metrics, func() {
+	// Start blocks until lifecycleCtx is cancelled (SIGINT/SIGTERM or the in-app restart)
+	// or it returns an error; on a clean shutdown it returns nil after the in-flight tick
+	// joins its workers. workCtx is STILL LIVE here, so an in-flight turn keeps running
+	// while the bounded drain below gives it a grace window to finalize (O-06/AP-17).
+	lifecycleErr := runServeComponentsWithMetrics(lifecycleCtx, env.readiness, listener, env.httpSrv, env.scheduler, serveObs.metrics, func() {
 		metricsCtx, metricsCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		if err := serveObs.stopMetrics(metricsCtx); err != nil {
 			slog.Warn("aura serve: private metrics shutdown", "err", err)
@@ -216,7 +221,8 @@ func runServe(args []string) {
 // bootChatEnv (pool + MCP mounts + registry + Runner) and adds the cron Store + the
 // Dispatcher wired with the live handlers, Notifier, and quiet-hours predicate. A boot
 // failure returns the error so runServe can exit cleanly without a leaked pool/MCP.
-func bootServe(ctx context.Context, channelOverride func(name string) (enabled, ok bool)) (*serveEnv, error) {
+// requestShutdown ends the daemon as SIGTERM does; the web console's restart calls it.
+func bootServe(ctx context.Context, channelOverride func(name string) (enabled, ok bool), requestShutdown func()) (*serveEnv, error) {
 	chat, err := bootServeChatEnv(ctx)
 	if err != nil {
 		return nil, err
@@ -281,7 +287,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// Registry must exist before dispatch is assembled. bootChannelsAndSetup needs only
 	// chat + override (both available here) — the per-channel Deliverer capability is
 	// resolved at delivery, not at build, so the late-bound pointer is sufficient.
-	reg, setupSrv := bootChannelsAndSetup(ctx, chat, channelOverride)
+	reg, telegramSwap, setupSrv := bootChannelsAndSetup(ctx, chat, channelOverride)
 	// Bind the channels Registry onto the elicitation consent surface now that it
 	// exists (plan 45.1-07). The MCP mounts in buildRegistryWithMCP already hold
 	// this holder; elicitation arrives during a live turn, long after this point.
@@ -354,6 +360,10 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// wiring (onboarding/bootstrap/password-reset) stays below, once auth/authulaProvider
 	// exist.
 	aguiServer, runRegistry := wireAGUIServer(ctx, chat, store, scheduler, readinessState, ownerExports, shareAPI, objectStore)
+	// A token saved from Settings or the setup wizard swaps the running Telegram channel
+	// in place, and inside the container the web console can restart the daemon.
+	aguiServer.SetTelegramActivator(telegramSwap.Activate, telegramSwap.Runs)
+	wireRestartTrigger(aguiServer, requestShutdown)
 	// The embedded operator SPA (internal/webui) mounts additively at "/" on the
 	// SAME loopback server: newServeHandler is a parent mux that keeps the AG-UI
 	// routes authoritative and falls everything else through to the static shell

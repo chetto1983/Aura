@@ -35,7 +35,7 @@ func isolateKeylessBootEnv(t *testing.T) {
 func TestServeKeylessBootReachesInfraValidation(t *testing.T) {
 	isolateKeylessBootEnv(t)
 
-	_, err := bootServe(context.Background(), nil)
+	_, err := bootServe(context.Background(), nil, func() {})
 	if err == nil {
 		t.Fatal("bootServe should fail on missing infra secrets in this test")
 	}

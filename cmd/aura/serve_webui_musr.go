@@ -48,6 +48,12 @@ package main
 //     panel — nothing here is new information an identity couldn't already infer,
 //     just aggregated. Following the credit routes' own precedent rather than
 //     inventing a stricter gate for a read.
+//
+// And the in-app restart:
+//
+//   - POST /api/admin/restart — ends the daemon as SIGTERM does, so the container's
+//     restart policy brings it back (restart_api.go). Gated on governance.write, the
+//     gate of the settings writes whose boot-bound rows it exists to apply.
 
 import (
 	"net/http"
@@ -66,6 +72,7 @@ const (
 	adminCreditSetRoute     = "POST /api/admin/identities/{id}/credit" // #nosec G101 -- a route pattern, not a credential.
 	adminRemoveRoute        = "DELETE /api/admin/identities/{id}"
 	adminSpendOverviewRoute = "GET /api/admin/spend/overview"
+	adminRestartRoute       = "POST /api/admin/restart"
 )
 
 // registerMUSRRoutes mounts the admin/user-distinction routes on the parent mux. Each
@@ -84,4 +91,5 @@ func registerMUSRRoutes(mux *http.ServeMux, aguiHandler http.Handler, auth agui.
 	// governance.write — see the file header for why.
 	mux.Handle(adminRemoveRoute, agui.RequireCapability(aguiHandler, auth, identity.CapIdentityDelete))
 	mux.Handle(adminSpendOverviewRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(adminRestartRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 }

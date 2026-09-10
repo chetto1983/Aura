@@ -71,6 +71,8 @@ var httpMutationRoutes = map[string]mutationRouteMeta{
 	"DELETE /api/admin/identities/{id}":      httpMutationMeta("identity_remove"),
 	"POST /api/approvals/{token}/resolve":    httpMutationMeta("approval_resolve"),
 	"POST /api/approvals/grants/revoke":      httpMutationMeta("approval_grant_revoke"),
+	// A replayed restart answers its stored 202 instead of stopping the daemon again.
+	"POST /api/admin/restart": httpMutationMeta("daemon_restart"),
 	// Starting an authorization is replay-SAFE by construction — a second start returns
 	// the flow already in progress rather than opening a second one — but it is
 	// inventoried anyway: the rule here is that every unsafe method carries a key, and

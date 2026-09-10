@@ -3,6 +3,7 @@ import { Cloud, Cpu, RefreshCw, Save, Server } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
 import { SettingsFields } from './SettingField';
+import { RestartAuraControl } from './RestartAuraControl';
 import { useModelSettings } from './modelSettingsState';
 import { useModelCatalog } from './useModelCatalog';
 import {
@@ -185,6 +186,7 @@ export function ModelSettingsPanel({
           {loaded.restartKeys.length > 0
             ? t('settings.restartRequiredFor', { keys: loaded.restartKeys.join(', ') })
             : t('settings.restartRequired')}
+          {loaded.restartSupported ? <RestartAuraControl /> : null}
         </div>
       ) : null}
 

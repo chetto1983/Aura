@@ -6,12 +6,19 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 
 	"github.com/chetto1983/aura/internal/envutil"
 )
+
+// ErrChannelDisabled reports a channel its enable gate keeps off: the --no-telegram /
+// --only=cli override or AURA_CHANNEL_<NAME>_ENABLED=false.
+var ErrChannelDisabled = errors.New("channel disabled")
+
+// ErrRegistryStopped reports a Replace that arrived after StopAll began the shutdown.
+var ErrRegistryStopped = errors.New("channel registry stopped")
 
 // Registry holds the set of daemon channels and aggregates their lifecycle. It
 // mirrors the map-backed internal/agent/tools.Registry idiom (NewRegistry /
@@ -19,20 +26,26 @@ import (
 // channel's Start failure is logged and aggregated via errors.Join but never
 // aborts the others or the daemon (research §1 / Pattern 2).
 //
-// The zero Registry is not usable — call NewRegistry (the channels/started maps
-// must be non-nil). StartAll/StopAll are safe to call once each per registry;
-// StopAll only stops channels StartAll actually started, and is idempotent.
+// The zero Registry is not usable — call NewRegistry. Every method is safe for
+// concurrent use. lifecycle serialises the start/stop transitions (StartAll,
+// StopAll, Replace, Stop) and is held across the blocking Channel.Start/Stop calls,
+// so two swaps of one name never overlap; mu guards only the maps and the override
+// and is never held across a network call, so a delivery never waits on a swap.
 type Registry struct {
-	channels map[string]Channel
+	lifecycle sync.Mutex
+	// stopped is set by StopAll. drainShutdown stops the channels before the HTTP
+	// server, so a settings write can still reach Replace afterwards; refusing it keeps
+	// a poller from starting that nothing will ever stop.
+	stopped bool
 
+	mu       sync.Mutex
+	channels map[string]Channel
+	started  map[string]Channel // channels actually started (the StopAll target)
 	// enabledOverride lets serve.go's --no-telegram / --only=cli flags (plan
 	// 13-09) override the AURA_CHANNEL_<NAME>_ENABLED env gate. It returns
 	// (enabled, ok): ok=false means "no override, fall back to env". nil means
 	// no override is installed.
 	enabledOverride func(name string) (enabled, ok bool)
-
-	mu      sync.Mutex
-	started map[string]Channel // channels StartAll actually started (StopAll target)
 }
 
 // NewRegistry returns an empty, ready-to-use Registry.
@@ -44,16 +57,21 @@ func NewRegistry() *Registry {
 }
 
 // Register adds a channel under its Name. A later Register with the same Name
-// replaces the earlier one (mirrors tools.Registry).
+// replaces the earlier one (mirrors tools.Registry) without starting or stopping
+// anything; Replace is the runtime swap.
 func (r *Registry) Register(c Channel) {
+	r.mu.Lock()
 	r.channels[c.Name()] = c
+	r.mu.Unlock()
 }
 
 // SetEnabledOverride installs the flag-driven override predicate. predicate(name)
 // returns (enabled, ok); ok=false defers to the AURA_CHANNEL_<NAME>_ENABLED env
 // gate. Passing nil clears the override.
 func (r *Registry) SetEnabledOverride(predicate func(name string) (enabled, ok bool)) {
+	r.mu.Lock()
 	r.enabledOverride = predicate
+	r.mu.Unlock()
 }
 
 // StartAll starts every enabled channel. A channel is enabled when its override
@@ -62,47 +80,111 @@ func (r *Registry) SetEnabledOverride(predicate func(name string) (enabled, ok b
 // are logged and aggregated with errors.Join — one failure never aborts the
 // siblings (fail-soft). Started channels are tracked so StopAll stops only them.
 func (r *Registry) StartAll(ctx context.Context) error {
+	r.lifecycle.Lock()
+	defer r.lifecycle.Unlock()
+	r.mu.Lock()
+	toStart := maps.Clone(r.channels)
+	r.mu.Unlock()
+
 	var errs []error
-	for name, ch := range r.channels {
-		if !r.enabled(name) {
-			slog.Info("channels: channel disabled, skipping start", "channel", name)
-			continue
+	for name, ch := range toStart {
+		if err := r.start(ctx, name, ch); err != nil && !errors.Is(err, ErrChannelDisabled) {
+			errs = append(errs, err)
 		}
-		if err := ch.Start(ctx); err != nil {
-			// Fail-soft: log + aggregate, but keep starting the rest and keep the
-			// daemon alive (mirrors serve.go agui http "log but never exit").
-			slog.Error("channels: channel start failed", "channel", name, "err", err)
-			errs = append(errs, fmt.Errorf("channels: start %q: %w", name, err))
-			continue
-		}
-		r.mu.Lock()
-		r.started[name] = ch
-		r.mu.Unlock()
-		slog.Info("channels: channel started", "channel", name)
 	}
 	return errors.Join(errs...)
 }
 
-// StopAll stops every channel StartAll started, aggregating drain errors with
-// errors.Join. It is idempotent: a channel is removed from the started set once
-// stopped, so a second StopAll (or one before StartAll) is a clean no-op.
+// StopAll stops every started channel, aggregating drain errors with errors.Join.
+// It is idempotent: a channel leaves the started set as it is stopped, so a second
+// StopAll (or one before StartAll) is a clean no-op. It also ends the registry's
+// runtime: a later Replace returns ErrRegistryStopped.
 func (r *Registry) StopAll(ctx context.Context) error {
+	r.lifecycle.Lock()
+	defer r.lifecycle.Unlock()
+	r.stopped = true
 	r.mu.Lock()
-	toStop := make(map[string]Channel, len(r.started))
-	maps.Copy(toStop, r.started)
+	names := slices.Collect(maps.Keys(r.started))
 	r.mu.Unlock()
 
 	var errs []error
-	for name, ch := range toStop {
-		if err := ch.Stop(ctx); err != nil {
-			slog.Error("channels: channel stop failed", "channel", name, "err", err)
-			errs = append(errs, fmt.Errorf("channels: stop %q: %w", name, err))
+	for _, name := range names {
+		if err := r.stop(ctx, name); err != nil {
+			errs = append(errs, err)
 		}
-		r.mu.Lock()
-		delete(r.started, name)
-		r.mu.Unlock()
 	}
 	return errors.Join(errs...)
+}
+
+// Replace swaps the channel registered under c's Name at runtime: the instance
+// started under that name (if any) is drained as StopAll drains it, c is
+// registered, and c is started through the same enable gate as StartAll. It
+// returns nil only when c is running. A disabled c returns ErrChannelDisabled; a
+// failed Start is logged and returned, leaving c registered but not started
+// (fail-soft); after StopAll it returns ErrRegistryStopped and changes nothing.
+// A drain failure of the old instance is logged, not returned: it has left the
+// started set either way, and the error reports whether c runs. ctx reaches c.Start,
+// which may keep it for the channel's lifetime (Telegram parents every turn on it), so
+// pass the daemon's context, never a request's.
+func (r *Registry) Replace(ctx context.Context, c Channel) error {
+	name := c.Name()
+	r.lifecycle.Lock()
+	defer r.lifecycle.Unlock()
+	if r.stopped {
+		return fmt.Errorf("channels: replace %q: %w", name, ErrRegistryStopped)
+	}
+	_ = r.stop(ctx, name) // logged inside; see the doc comment
+	r.mu.Lock()
+	r.channels[name] = c
+	r.mu.Unlock()
+	return r.start(ctx, name, c)
+}
+
+// Stop drains the channel started under name, leaving it registered. A name with
+// nothing started is a no-op.
+func (r *Registry) Stop(ctx context.Context, name string) error {
+	r.lifecycle.Lock()
+	defer r.lifecycle.Unlock()
+	return r.stop(ctx, name)
+}
+
+// start runs one channel through the enable gate and Start, recording it as
+// started on success. The caller holds lifecycle.
+func (r *Registry) start(ctx context.Context, name string, ch Channel) error {
+	if !r.enabled(name) {
+		slog.Info("channels: channel disabled, skipping start", "channel", name)
+		return fmt.Errorf("channels: start %q: %w", name, ErrChannelDisabled)
+	}
+	if err := ch.Start(ctx); err != nil {
+		// Fail-soft: log + return, but keep the daemon alive (mirrors serve.go agui
+		// http "log but never exit").
+		slog.Error("channels: channel start failed", "channel", name, "err", err)
+		return fmt.Errorf("channels: start %q: %w", name, err)
+	}
+	r.mu.Lock()
+	r.started[name] = ch
+	r.mu.Unlock()
+	slog.Info("channels: channel started", "channel", name)
+	return nil
+}
+
+// stop drops the channel started under name from the started set, then drains it.
+// It leaves the set first so no delivery reaches a draining channel, and stays out
+// even when Stop fails (a channel that failed to drain is not retried). The caller
+// holds lifecycle.
+func (r *Registry) stop(ctx context.Context, name string) error {
+	r.mu.Lock()
+	ch, ok := r.started[name]
+	delete(r.started, name)
+	r.mu.Unlock()
+	if !ok {
+		return nil
+	}
+	if err := ch.Stop(ctx); err != nil {
+		slog.Error("channels: channel stop failed", "channel", name, "err", err)
+		return fmt.Errorf("channels: stop %q: %w", name, err)
+	}
+	return nil
 }
 
 // DeliverToIdentity fans a push out to the started channel that owns identityID,
@@ -115,7 +197,7 @@ func (r *Registry) StopAll(ctx context.Context) error {
 // owns the identity it returns (false, nil) so the caller falls back to its route.
 //
 // The lock is held only to snapshot r.started — a Deliver call can block on the
-// network, so it runs unlocked (mirrors StopAll's snapshot-then-release idiom).
+// network, so it runs unlocked.
 func (r *Registry) DeliverToIdentity(ctx context.Context, identityID, text string) (bool, error) {
 	names, snap := r.startedSnapshot()
 	for _, n := range names {
@@ -159,17 +241,13 @@ func (r *Registry) DeliverToConversation(ctx context.Context, identityID, conver
 	return false, nil
 }
 
+// startedSnapshot copies the started set under mu and returns its names sorted, so
+// the delivery fan-outs iterate a stable order without holding the lock.
 func (r *Registry) startedSnapshot() ([]string, map[string]Channel) {
 	r.mu.Lock()
-	names := make([]string, 0, len(r.started))
-	snap := make(map[string]Channel, len(r.started))
-	for n, ch := range r.started {
-		names = append(names, n)
-		snap[n] = ch
-	}
+	snap := maps.Clone(r.started)
 	r.mu.Unlock()
-	sort.Strings(names)
-	return names, snap
+	return slices.Sorted(maps.Keys(snap)), snap
 }
 
 // DeliverApproval fans an ACTIONABLE approval prompt out to the started channel that owns
@@ -180,20 +258,8 @@ func (r *Registry) startedSnapshot() ([]string, map[string]Channel) {
 // back (for an approval that means the WebUI pull surface handles it, not an error). The token
 // binds the inline buttons to the pending ask_user pause the operator resolves; taskID/kind feed
 // the bounded, secret-safe prompt.
-//
-// The lock is held only to snapshot r.started — a Deliver call can block on the network, so it
-// runs unlocked (mirrors DeliverToIdentity).
 func (r *Registry) DeliverApproval(ctx context.Context, identityID, token, taskID, kind string) (bool, error) {
-	r.mu.Lock()
-	names := make([]string, 0, len(r.started))
-	snap := make(map[string]Channel, len(r.started))
-	for n, ch := range r.started {
-		names = append(names, n)
-		snap[n] = ch
-	}
-	r.mu.Unlock()
-
-	sort.Strings(names)
+	names, snap := r.startedSnapshot()
 	for _, n := range names {
 		d, ok := snap[n].(ApprovalDeliverer)
 		if !ok {
@@ -213,8 +279,11 @@ func (r *Registry) DeliverApproval(ctx context.Context, identityID, token, taskI
 // enabled resolves a channel's enablement: the override wins when it returns
 // ok=true, else the AURA_CHANNEL_<upper(Name)>_ENABLED env gate (default true).
 func (r *Registry) enabled(name string) bool {
-	if r.enabledOverride != nil {
-		if on, ok := r.enabledOverride(name); ok {
+	r.mu.Lock()
+	override := r.enabledOverride
+	r.mu.Unlock()
+	if override != nil {
+		if on, ok := override(name); ok {
 			return on
 		}
 	}

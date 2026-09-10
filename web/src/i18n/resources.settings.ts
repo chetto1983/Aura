@@ -13,6 +13,17 @@ export const settingsEn = {
     restartRequired:
       'Saved changes are in Postgres. Restart Aura to apply them to already-created model clients.',
     restartRequiredFor: 'Saved. Restart Aura to apply: {{keys}}. Everything else is already live.',
+    restart: {
+      action: 'Restart Aura',
+      restarting: 'Restarting Aura…',
+      restartingBody: 'This page reloads by itself as soon as Aura is back.',
+      timedOutTitle: 'Aura did not come back',
+      timedOutBody: 'Check the box or try again.',
+      tryAgain: 'Try again',
+      close: 'Close',
+      unsupported: 'Restart is not available on this installation.',
+      failed: "Couldn't restart Aura: {{message}}",
+    },
     applied: {
       live: 'Applies immediately',
       boot: 'Applied at start-up',
@@ -44,8 +55,7 @@ export const settingsEn = {
       available: 'Bot available: @{{username}}',
       unavailable: 'Telegram bot is not available with that token.',
       requiresRestart:
-        'Restart Aura after saving a new token before the Telegram bot can receive scans.',
-      saved: 'Telegram token saved. Restart Aura to start the bot with it.',
+        "The Telegram channel isn't running with this token yet. Saving the token starts it.",
       qrHeading: 'Link this identity',
       qrBody:
         'Create a one-hour Telegram QR for the current signed-in identity, then scan it from Telegram.',
@@ -53,7 +63,7 @@ export const settingsEn = {
       qrCaption: 'Scan to link Telegram',
       linked: 'Telegram linked.',
       waiting: 'Waiting for scan.',
-      actionError: 'Telegram setup failed. Check the token, restart state, and try again.',
+      actionError: 'Telegram setup failed. Check the token and try again.',
       actions: {
         check: 'Check availability',
         save: 'Save Telegram token',
@@ -153,6 +163,17 @@ export const settingsIt = {
     restartRequired:
       'Modifiche salvate in Postgres. Riavvia Aura per applicarle ai client modello gia creati.',
     restartRequiredFor: 'Salvato. Riavvia Aura per applicare: {{keys}}. Il resto è già attivo.',
+    restart: {
+      action: 'Riavvia Aura',
+      restarting: 'Riavvio di Aura in corso…',
+      restartingBody: 'La pagina si ricarica da sola appena Aura torna disponibile.',
+      timedOutTitle: 'Aura non è tornata disponibile',
+      timedOutBody: 'Controlla il dispositivo o riprova.',
+      tryAgain: 'Riprova',
+      close: 'Chiudi',
+      unsupported: 'Il riavvio non è disponibile su questa installazione.',
+      failed: 'Impossibile riavviare Aura: {{message}}',
+    },
     applied: {
       live: 'Si applica subito',
       boot: 'Applicato all’avvio',
@@ -184,8 +205,7 @@ export const settingsIt = {
       available: 'Bot disponibile: @{{username}}',
       unavailable: 'Bot Telegram non disponibile con quel token.',
       requiresRestart:
-        'Riavvia Aura dopo aver salvato un nuovo token prima che il bot Telegram riceva le scansioni.',
-      saved: 'Token Telegram salvato. Riavvia Aura per avviare il bot con questo token.',
+        'Il canale Telegram non è ancora attivo con questo token. Salvando il token si avvia.',
       qrHeading: 'Collega questa identita',
       qrBody:
         'Crea un QR Telegram valido un ora per l identita autenticata, poi scansionalo da Telegram.',
@@ -193,7 +213,7 @@ export const settingsIt = {
       qrCaption: 'Scansiona per collegare Telegram',
       linked: 'Telegram collegato.',
       waiting: 'In attesa della scansione.',
-      actionError: 'Setup Telegram non riuscito. Controlla token e stato del riavvio, poi riprova.',
+      actionError: 'Setup Telegram non riuscito. Controlla il token e riprova.',
       actions: {
         check: 'Controlla disponibilita',
         save: 'Salva token Telegram',

@@ -6,10 +6,10 @@ import { Button } from '@/components/ui/button';
 
 // TelegramTokenStep is the onboarding Telegram-integration step (ONBD): the operator pastes
 // the bot token (@BotFather), Aura validates it LIVE via getMe (POST /api/settings/telegram/
-// check with the token in the body — no restart), then persists it (PUT /api/settings/
-// TELEGRAM_BOT_TOKEN). The saved token makes the completion step mint a real deep-link + QR
-// (the resolve-on-use botName backend), while the bot CHANNEL that consumes the /start scan
-// activates on the next restart (the settings restart_required convention → activateNote).
+// check with the token in the body), then persists it (PUT /api/settings/TELEGRAM_BOT_TOKEN).
+// The save hot-starts the bot channel that consumes the pairing scan and says whether it came
+// up (channel_active). It used to end in "restart Aura", a dead end on an appliance with no
+// monitor and no SSH; a channel that did not start now shows the server's reason and a Retry.
 //
 // Multi-user (CR-01): there is ONE bot per instance. On mount the step checks the STORED
 // token; if the bot is already configured it auto-surfaces "already configured" and the
@@ -18,7 +18,15 @@ import { Button } from '@/components/ui/button';
 
 const TELEGRAM_BOT_TOKEN_KEY = 'TELEGRAM_BOT_TOKEN';
 
-type Phase = 'checking' | 'needsToken' | 'verifying' | 'saving' | 'valid' | 'configured' | 'error';
+type Phase =
+  | 'checking'
+  | 'needsToken'
+  | 'verifying'
+  | 'saving'
+  | 'active'
+  | 'notStarted'
+  | 'configured'
+  | 'error';
 
 export interface TelegramTokenStepProps {
   readonly onDone: () => void;
@@ -30,6 +38,7 @@ export function TelegramTokenStep({ onDone }: TelegramTokenStepProps) {
   const [token, setToken] = useState('');
   const [bot, setBot] = useState('');
   const [rejected, setRejected] = useState(false);
+  const [channelError, setChannelError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -53,12 +62,23 @@ export function TelegramTokenStep({ onDone }: TelegramTokenStepProps) {
     };
   }, []);
 
+  // Retry comes back here without a second getMe: the token was accepted, the channel was not.
+  const save = useCallback(async (value: string) => {
+    setPhase('saving');
+    try {
+      const res = await putSetting(TELEGRAM_BOT_TOKEN_KEY, value);
+      setChannelError(res.channel_error ?? '');
+      setPhase(res.channel_active === true ? 'active' : 'notStarted');
+    } catch {
+      setPhase('error');
+    }
+  }, []);
+
   const verifyAndSave = useCallback(async () => {
     const trimmed = token.trim();
     if (trimmed === '') return;
     setRejected(false);
     setPhase('verifying');
-    let username: string;
     try {
       const res = await checkTelegramAvailability(trimmed);
       if (!res.available || res.botUsername === undefined || res.botUsername === '') {
@@ -66,22 +86,14 @@ export function TelegramTokenStep({ onDone }: TelegramTokenStepProps) {
         setPhase('needsToken');
         return;
       }
-      username = res.botUsername;
+      setBot(res.botUsername);
     } catch {
       setRejected(true);
       setPhase('needsToken');
       return;
     }
-    setPhase('saving');
-    try {
-      await putSetting(TELEGRAM_BOT_TOKEN_KEY, trimmed);
-    } catch {
-      setPhase('error');
-      return;
-    }
-    setBot(username);
-    setPhase('valid');
-  }, [token]);
+    await save(trimmed);
+  }, [save, token]);
 
   if (phase === 'checking') {
     return (
@@ -105,17 +117,34 @@ export function TelegramTokenStep({ onDone }: TelegramTokenStepProps) {
     );
   }
 
-  if (phase === 'valid') {
+  if (phase === 'active') {
     return (
       <div className="flex flex-col items-start gap-4">
         <p role="status" className="text-[15.5px] font-semibold text-success">
-          {t('onboarding.profile.telegram.valid', { bot })}
-        </p>
-        <p className="max-w-xl text-[13px] leading-relaxed text-warning">
-          {t('onboarding.profile.telegram.activateNote')}
+          {t('onboarding.profile.telegram.channelActive', { bot })}
         </p>
         <Button type="button" onClick={onDone} className="px-6">
           {t('onboarding.profile.telegram.continue')}
+        </Button>
+      </div>
+    );
+  }
+
+  if (phase === 'notStarted') {
+    return (
+      <div className="flex max-w-xl flex-col items-start gap-4">
+        <div role="alert" className="flex flex-col gap-2">
+          <p className="text-[15.5px] font-semibold text-warning">
+            {t('onboarding.profile.telegram.channelInactive', { bot })}
+          </p>
+          {channelError === '' ? null : (
+            <p className="break-words font-mono text-[13px] leading-relaxed text-text-muted">
+              {channelError}
+            </p>
+          )}
+        </div>
+        <Button type="button" onClick={() => void save(token.trim())} className="px-6">
+          {t('onboarding.retry')}
         </Button>
       </div>
     );

@@ -28,6 +28,7 @@ function loadedWith(item: Partial<SettingItem>): LoadedState {
     initial: { [BOOL_KEY]: row.value ?? 'false' },
     restartRequired: false,
     restartKeys: [],
+    restartSupported: false,
   };
 }
 

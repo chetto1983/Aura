@@ -54,26 +54,27 @@ const setupShutdownTimeout = 10 * time.Second
 // bot username. Telebot's default client timeout is longer than daemon boot should wait.
 const telegramGetMeTimeout = 5 * time.Second
 
-// bootChannelsAndSetup builds the channels Registry (with the Telegram channel
+// bootChannelsAndSetup builds the channels Registry (with the boot Telegram channel
 // registered) + the setup-wizard HTTP server over the shared composition root. It
 // reads the Telegram channel config (TELEGRAM_BOT_TOKEN + the AURA_TELEGRAM_*
 // throttles) from the environment, resolves the local identity for the setup
-// onboarding FK, and applies the --no-telegram/--only=cli override. A nil/empty
-// token leaves the channel registered but the registry enable gate keeps it from
-// starting unless configured — the daemon still boots (fail-soft).
-func bootChannelsAndSetup(ctx context.Context, chat *chatEnv, override func(name string) (enabled, ok bool)) (*channels.Registry, *http.Server) {
+// onboarding FK, and applies the --no-telegram/--only=cli override. With no token
+// the boot channel fails to start, logged and never fatal; the returned
+// telegramHotSwap starts the token the Settings API saves later, without a restart.
+func bootChannelsAndSetup(ctx context.Context, chat *chatEnv, override func(name string) (enabled, ok bool)) (*channels.Registry, *telegramHotSwap, *http.Server) {
 	tgCfg := telegram.LoadConfig()
-
-	tg := telegram.NewChannel(buildTelegramDeps(chat, tgCfg))
-
 	reg := channels.NewRegistry()
-	reg.Register(tg)
 	if override != nil {
 		reg.SetEnabledOverride(override)
 	}
+	tg := newTelegramHotSwap(ctx, reg, tgCfg.BotToken, func(token string) channels.Channel {
+		cfg := tgCfg
+		cfg.BotToken = token
+		return telegram.NewChannel(buildTelegramDeps(chat, cfg))
+	})
 
 	setupSrv := buildSetupServer(ctx, chat)
-	return reg, setupSrv
+	return reg, tg, setupSrv
 }
 
 func buildTelegramDeps(chat *chatEnv, tgCfg telegram.Config) telegram.Deps {

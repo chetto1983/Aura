@@ -22,6 +22,13 @@ import { SecretInput } from '@/components/ui/secret-input';
 
 const TELEGRAM_BOT_TOKEN = 'TELEGRAM_BOT_TOKEN';
 
+// What the last save reported about the running channel. It outranks a check's
+// requiresRestart, which only describes the token the channel was polling before the save.
+interface ChannelReport {
+  readonly active: boolean;
+  readonly error: string;
+}
+
 function emptyTelegramSetting(): SettingItem {
   return {
     key: TELEGRAM_BOT_TOKEN,
@@ -45,7 +52,7 @@ export function TelegramSettingsPanel() {
   const [token, setToken] = useState('');
   const [loadStatus, setLoadStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [busy, setBusy] = useState<'save' | 'reset' | 'check' | 'link' | 'status' | undefined>();
-  const [saved, setSaved] = useState(false);
+  const [channel, setChannel] = useState<ChannelReport | undefined>();
   const [availability, setAvailability] = useState<TelegramAvailability | undefined>();
   const [link, setLink] = useState<TelegramLink | undefined>();
   const [linkStatus, setLinkStatus] = useState<TelegramLinkStatus | undefined>();
@@ -88,6 +95,7 @@ export function TelegramSettingsPanel() {
   const statusLabel = tokenConfigured
     ? t('settings.status.configured')
     : t('settings.status.notConfigured');
+  const bot = availability?.botUsername ?? 'bot';
   const availabilityText = useMemo(() => {
     if (availability === undefined) return undefined;
     if (!availability.configured) return t('settings.telegram.notConfigured');
@@ -114,10 +122,15 @@ export function TelegramSettingsPanel() {
     const value = token.trim();
     if (value === '') return;
     await runAction('save', async () => {
-      await putSetting(TELEGRAM_BOT_TOKEN, value);
+      const res = await putSetting(TELEGRAM_BOT_TOKEN, value);
       await reload();
-      setToken('');
-      setSaved(true);
+      const active = res.channel_active === true;
+      // A token the channel refused stays in the box, so trying again is one press of Save.
+      if (active) setToken('');
+      setChannel({ active, error: res.channel_error ?? '' });
+      // The save swapped the running channel, so a check made before it is stale; this one
+      // also names the bot, which the save's own response does not.
+      setAvailability(await checkTelegramAvailability());
     });
   }
 
@@ -126,7 +139,7 @@ export function TelegramSettingsPanel() {
       await deleteSetting(TELEGRAM_BOT_TOKEN);
       await reload();
       setAvailability(undefined);
-      setSaved(false);
+      setChannel(undefined);
     });
   }
 
@@ -200,7 +213,7 @@ export function TelegramSettingsPanel() {
             hideLabel={t('secret.hide', { label: t('settings.fields.telegramBotToken') })}
             onChange={(event) => {
               setToken(event.target.value);
-              setSaved(false);
+              setChannel(undefined);
             }}
             className="font-mono text-[13px]"
           />
@@ -239,13 +252,21 @@ export function TelegramSettingsPanel() {
               {availabilityText}
             </p>
           ) : null}
-          {availability?.requiresRestart === true ? (
+          {availability?.requiresRestart === true && channel === undefined ? (
             <p className="text-[13px] text-warning">{t('settings.telegram.requiresRestart')}</p>
           ) : null}
-          {saved ? (
+          {channel?.active === true ? (
             <p role="status" className="text-[13px] text-success">
-              {t('settings.telegram.saved')}
+              {t('onboarding.profile.telegram.channelActive', { bot })}
             </p>
+          ) : null}
+          {channel?.active === false ? (
+            <div role="alert" className="flex flex-col gap-1 text-[13px] text-warning">
+              <p>{t('onboarding.profile.telegram.channelInactive', { bot })}</p>
+              {channel.error === '' ? null : (
+                <p className="break-words font-mono text-text-muted">{channel.error}</p>
+              )}
+            </div>
           ) : null}
         </div>
 

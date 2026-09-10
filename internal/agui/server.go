@@ -171,6 +171,8 @@ type Server struct {
 	// credit/audit 503-until-wired precedent.
 	spendOverview    *spendOverviewPorts
 	telegramProbe    TelegramBotProbe
+	telegram         *telegramChannelPorts // nil until SetTelegramActivator
+	restartTrigger   func()                // nil until SetRestartTrigger (restart_api.go)
 	onboarding       OnboardingService
 	onboardingStatus OnboardingStatusSource
 	// profiles is the operator profile read/write model (profile_api.go). The onboarding
