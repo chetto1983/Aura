@@ -210,6 +210,17 @@ func kpiWindows(now time.Time) (current, prior openrouterprovision.TimeRange) {
 	return openrouterprovision.NewTimeRange(start, end), openrouterprovision.NewTimeRange(priorStart, start)
 }
 
+// kpiDTOsFrom is a pure projection: it never drops or substitutes a tile. The partial-
+// metrics backstop (UI-SPEC "Overview KPI row · overflow" — "when the analytics query
+// returns some metrics but not others... a tile renders a placeholder or the whole row
+// degrades") is decided ONE LAYER DOWN, in openrouterprovision.KPIWindows: EACH TILE
+// DEGRADES INDEPENDENTLY, never the whole row. AnalyticsRow is a map[string]float64 keyed
+// by metric name, so a metric the provider's response omits for a given day-bucket reads
+// as that metric's zero value for that bucket ONLY (Go's normal map-lookup zero value) —
+// every OTHER tile for that same bucket, and every other bucket for THIS metric, is
+// unaffected. The alternative (dropping the whole row on any partial response) would turn
+// a single missing field into a blank dashboard; per-tile, per-bucket degradation confines
+// the damage to the one number the provider actually omitted.
 func kpiDTOsFrom(tiles []openrouterprovision.KPITile) []spendKPIDTO {
 	out := make([]spendKPIDTO, 0, len(tiles))
 	for _, tile := range tiles {
