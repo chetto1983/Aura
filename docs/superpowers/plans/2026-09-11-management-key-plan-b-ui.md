@@ -146,11 +146,11 @@ func validateSettingKeyValue(key, value string) error {
 
 **Files:** `web/src/settings/settingsApi.ts` (`OpenRouterKeysResult`; `SettingWriteResult.openrouter_keys?`; `putLLMProfile` returns `LLMProfileWriteResult {updated, restart_required, openrouter_keys?}`); `modelSettingsState.ts` (`SaveOutcome {openRouterKeys}`; `save(onComplete?: (outcome: SaveOutcome) => …)` collects every write's `openrouter_keys` in write order; no dirty keys → `{openRouterKeys: []}`); `ModelSettingsPanel.tsx` (`onComplete?: (outcome?: SaveOutcome) => …`, new `skippable?: boolean`, default true, hides Skip); test `ModelSettingsPanel.openrouter.test.tsx`.
 
-- [ ] **Step 1: Tests:** onComplete receives `{openRouterKeys: [capRun, managementKeyRun]}`; `skippable={false}` hides Skip and keeps Continue.
-- [ ] **Step 2: Run, watch them fail.**
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run, watch them pass.**
-- [ ] **Step 5: Commit** `feat(web): hand the reconciler's runs to whoever saved the routing form`.
+- [x] **Step 1: Tests:** onComplete receives `{openRouterKeys: [capRun, managementKeyRun]}`; `skippable={false}` hides Skip and keeps Continue.
+- [x] **Step 2: Run, watch them fail.**
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run, watch them pass.**
+- [x] **Step 5: Commit** `feat(web): hand the reconciler's runs to whoever saved the routing form`.
 
 ---
 

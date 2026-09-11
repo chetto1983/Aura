@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
 import { SettingsFields } from './SettingField';
 import { RestartAuraControl } from './RestartAuraControl';
-import { useModelSettings } from './modelSettingsState';
+import { useModelSettings, type SaveOutcome } from './modelSettingsState';
 import { useModelCatalog } from './useModelCatalog';
 import {
   ALL_MODEL_GROUPS,
@@ -39,9 +39,11 @@ interface ModelSettingsPanelProps {
    * each pane is one form with one save button.
    */
   readonly groups?: readonly ModelSettingsGroup[];
-  readonly onComplete?: () => void | Promise<void>;
+  readonly onComplete?: (outcome?: SaveOutcome) => void | Promise<void>;
   readonly saveLabel?: string;
   readonly skipLabel?: string;
+  /** Whether Skip shows beside Save; the first-run route step hides it while the route is required. */
+  readonly skippable?: boolean;
 }
 
 export function ModelSettingsPanel({
@@ -50,6 +52,7 @@ export function ModelSettingsPanel({
   onComplete,
   saveLabel,
   skipLabel,
+  skippable = true,
 }: ModelSettingsPanelProps) {
   const { t } = useTranslation();
   const activeGroups = useMemo(
@@ -221,7 +224,7 @@ export function ModelSettingsPanel({
           {saving ? <Spinner /> : <Save aria-hidden="true" />}
           {saveButtonLabel}
         </Button>
-        {onComplete !== undefined ? (
+        {onComplete !== undefined && skippable ? (
           <Button
             type="button"
             variant="outline"

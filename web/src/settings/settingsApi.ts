@@ -33,6 +33,31 @@ export interface SettingWriteResult extends SettingItem {
   readonly channel_active?: boolean;
   /** Why the channel did not start, free of the token; set only when channel_active is false. */
   readonly channel_error?: string;
+  /** The reconciler's run, on a write that can make minting possible (the management key, the
+   * services cap, the route). */
+  readonly openrouter_keys?: OpenRouterKeysResult;
+}
+
+/** One reconciler run (internal/agui/openrouter_reconcile.go's OpenRouterKeysResult). Labels are
+ * OpenRouter's masked form; a key never crosses the wire. */
+export interface OpenRouterKeysResult {
+  /** Why nothing was minted: management_key_unset or local_route. */
+  readonly skipped?: string;
+  /** The services key's label, when this run minted it. */
+  readonly services_label?: string;
+  readonly identities_minted: readonly string[];
+  /** Identity id → the masked label of the key this run minted for it. */
+  readonly minted_labels?: Readonly<Record<string, string>>;
+  readonly limits_aligned: readonly string[];
+  readonly errors?: readonly string[];
+}
+
+/** PUT /api/settings/llm-profile: how many rows it wrote, and the reconciler's run when the
+ * profile touched the route. */
+export interface LLMProfileWriteResult {
+  readonly updated: number;
+  readonly restart_required: boolean;
+  readonly openrouter_keys?: OpenRouterKeysResult;
 }
 
 /** One provider's remembered route (aura.llm_provider_routes): what it was last saved with. */
@@ -140,14 +165,16 @@ export async function putSetting(key: string, value: string): Promise<SettingWri
   return readJSON<SettingWriteResult>(res);
 }
 
-export async function putLLMProfile(settings: Readonly<Record<string, string>>): Promise<void> {
+export async function putLLMProfile(
+  settings: Readonly<Record<string, string>>,
+): Promise<LLMProfileWriteResult> {
   const res = await fetch('/api/settings/llm-profile', {
     method: 'PUT',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
     credentials: 'same-origin',
     body: JSON.stringify({ settings }),
   });
-  await readJSON<unknown>(res);
+  return readJSON<LLMProfileWriteResult>(res);
 }
 
 export async function deleteSetting(key: string): Promise<{
