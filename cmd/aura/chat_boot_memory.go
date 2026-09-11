@@ -61,14 +61,17 @@ func (s *tenantReasoningMemory) UpsertReasoningTrace(
 	return client.UpsertReasoningTrace(ctx, trace)
 }
 
+// DeleteExpiredReasoning and DeleteReasoningBySource only remove, so they reach memory
+// through Existing: an identity that has never written any has nothing to remove, and must
+// not be given a database to remove it from.
 func (s *tenantReasoningMemory) DeleteExpiredReasoning(
 	ctx context.Context,
 	identityID string,
 	now time.Time,
 	limit int,
 ) (int, error) {
-	client, err := s.clients.For(ctx, identityID)
-	if err != nil {
+	client, ok, err := s.clients.Existing(ctx, identityID)
+	if err != nil || !ok {
 		return 0, err
 	}
 	return client.DeleteExpiredReasoning(ctx, identityID, now, limit)
@@ -78,8 +81,8 @@ func (s *tenantReasoningMemory) DeleteReasoningBySource(
 	ctx context.Context,
 	selector arcadedb.ReasoningDeleteSelector,
 ) (int, error) {
-	client, err := s.clients.For(ctx, selector.IdentityID)
-	if err != nil {
+	client, ok, err := s.clients.Existing(ctx, selector.IdentityID)
+	if err != nil || !ok {
 		return 0, err
 	}
 	return client.DeleteReasoningBySource(ctx, selector)

@@ -26,6 +26,7 @@ type tenantHTTPRecorder struct {
 	tenantPasswords map[string]string
 	blockSchema     <-chan struct{}
 	schemaStarted   chan<- struct{}
+	existsFails     bool
 }
 
 func newTenantHTTPRecorder(t *testing.T) *tenantHTTPRecorder {
@@ -63,6 +64,18 @@ func (r *tenantHTTPRecorder) serveHTTP(w http.ResponseWriter, request *http.Requ
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"result": []any{}})
+		return
+	}
+	if database, ok := strings.CutPrefix(request.URL.Path, "/api/v1/exists/"); ok {
+		r.mu.Lock()
+		exists, fails := r.provisioned[database], r.existsFails
+		r.mu.Unlock()
+		if fails {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "exists failed"})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]bool{"result": exists})
 		return
 	}
 	if request.URL.Path != "/api/v1/server" {
@@ -245,6 +258,61 @@ func TestTenantClientsWaitingCallerHonorsContext(t *testing.T) {
 	close(release)
 	if err := <-firstDone; err == nil {
 		t.Fatal("unprovisioned first call unexpectedly succeeded")
+	}
+}
+
+func TestTenantClientsExistingNeverProvisions(t *testing.T) {
+	recorder := newTenantHTTPRecorder(t)
+	admin, err := New(recorder.config("admin", "root", "root-password"))
+	if err != nil {
+		t.Fatalf("admin client: %v", err)
+	}
+	resolver := NewTenantClients(
+		recorder.config("template", "shared", "shared-password"), admin, nil, resolverCredentials(),
+	)
+
+	if client, ok, err := resolver.Existing(t.Context(), resolverIdentity); err != nil || ok || client != nil {
+		t.Fatalf("Existing without memory = %v, %v, %v; want nil, false, nil", client, ok, err)
+	}
+	database, _ := DatabaseFor(resolverIdentity)
+	recorder.mu.Lock()
+	recorder.provisioned[database] = true
+	recorder.mu.Unlock()
+	if client, ok, err := resolver.Existing(t.Context(), resolverIdentity); err != nil || !ok || client == nil {
+		t.Fatalf("Existing with memory = %v, %v, %v; want its client", client, ok, err)
+	}
+	if databaseCalls, userCalls := recorder.counts(); databaseCalls != 0 || userCalls != 0 {
+		t.Fatalf("Existing provisioned: database=%d user=%d", databaseCalls, userCalls)
+	}
+}
+
+func TestTenantClientsExistingFailsClosed(t *testing.T) {
+	recorder := newTenantHTTPRecorder(t)
+	admin, err := New(recorder.config("admin", "root", "root-password"))
+	if err != nil {
+		t.Fatalf("admin client: %v", err)
+	}
+	withAdmin := NewTenantClients(
+		recorder.config("template", "shared", "shared-password"), admin, nil, resolverCredentials(),
+	)
+	if _, _, err := withAdmin.Existing(t.Context(), ""); err == nil {
+		t.Fatal("empty identity accepted")
+	}
+	recorder.mu.Lock()
+	recorder.existsFails = true
+	recorder.mu.Unlock()
+	if _, ok, err := withAdmin.Existing(t.Context(), resolverIdentity); err == nil || ok {
+		t.Fatalf("unreadable existence = %v, %v; want an error", ok, err)
+	}
+
+	withoutAdmin := NewTenantClients(
+		recorder.config("template", "shared", "shared-password"), nil, nil, resolverCredentials(),
+	)
+	if _, ok, err := withoutAdmin.Existing(t.Context(), resolverIdentity); err == nil || ok {
+		t.Fatalf("unprovisioned tenant without an admin = %v, %v; want an error", ok, err)
+	}
+	if databaseCalls, userCalls := recorder.counts(); databaseCalls != 0 || userCalls != 0 {
+		t.Fatalf("Existing provisioned: database=%d user=%d", databaseCalls, userCalls)
 	}
 }
 

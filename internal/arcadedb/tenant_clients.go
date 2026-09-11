@@ -108,6 +108,37 @@ func (t *TenantClients) For(ctx context.Context, identityID string) (*Client, er
 	return client, nil
 }
 
+// Existing returns the identity's client when its memory database is already there, and
+// ok=false when it is not. It never provisions: expiring, pruning and deleting have nothing
+// to do in memory nobody has written, and creating the database to do nothing in it is how
+// the seeded `local` operator came to own an empty one that outlived its retirement
+// (measured 2026-09-11). Writers keep using For, which creates it.
+//
+// Existence is the admin's read, GET /api/v1/exists, not a bind as the tenant: ArcadeDB
+// counts a refused bind against that user name (ServerSecurity.authenticate), and a sweep
+// would add one per pass. Without an admin nothing could be provisioned anyway, so For's
+// own answer stands and a missing database is an error, as it always was.
+func (t *TenantClients) Existing(ctx context.Context, identityID string) (*Client, bool, error) {
+	if t != nil && t.admin != nil {
+		database, err := DatabaseFor(identityID)
+		if err != nil {
+			return nil, false, err
+		}
+		exists, err := t.admin.DatabaseExists(ctx, database)
+		if err != nil {
+			return nil, false, fmt.Errorf("memory for %s: %w", identityID, err)
+		}
+		if !exists {
+			return nil, false, nil
+		}
+	}
+	client, err := t.For(ctx, identityID)
+	if err != nil {
+		return nil, false, err
+	}
+	return client, true, nil
+}
+
 func (t *TenantClients) client(database string) (*Client, error) {
 	cfg := t.base
 	cfg.Database = database

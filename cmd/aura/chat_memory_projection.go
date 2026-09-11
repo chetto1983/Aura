@@ -45,12 +45,15 @@ func (s tenantConversationProjectionSink) ProjectedThroughSeq(
 	return client.ProjectedThroughSeq(ctx, identityID, conversationID)
 }
 
+// The three removals below reach memory through Existing: the boot and periodic
+// reconciliation prunes every identity, and one that has never written memory has nothing
+// to prune and must not be given a database to prune it from.
 func (s tenantConversationProjectionSink) DeleteConversationProjection(
 	ctx context.Context,
 	identityID, conversationID string,
 ) error {
-	client, err := s.client(ctx, identityID)
-	if err != nil {
+	client, ok, err := s.clients.Existing(ctx, identityID)
+	if err != nil || !ok {
 		return err
 	}
 	return client.DeleteConversationProjection(ctx, identityID, conversationID)
@@ -60,8 +63,8 @@ func (s tenantConversationProjectionSink) DeleteIdentityConversationProjections(
 	ctx context.Context,
 	identityID string,
 ) error {
-	client, err := s.client(ctx, identityID)
-	if err != nil {
+	client, ok, err := s.clients.Existing(ctx, identityID)
+	if err != nil || !ok {
 		return err
 	}
 	return client.DeleteIdentityConversationProjections(ctx, identityID)
@@ -72,8 +75,8 @@ func (s tenantConversationProjectionSink) PruneConversationProjections(
 	identityID string,
 	liveConversationIDs []string,
 ) error {
-	client, err := s.client(ctx, identityID)
-	if err != nil {
+	client, ok, err := s.clients.Existing(ctx, identityID)
+	if err != nil || !ok {
 		return err
 	}
 	return client.PruneConversationProjections(ctx, identityID, liveConversationIDs)
