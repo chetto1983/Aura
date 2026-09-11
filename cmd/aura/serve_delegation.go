@@ -8,7 +8,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -23,7 +22,6 @@ import (
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/identityctx"
-	"github.com/chetto1983/aura/internal/identitykey"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/steer"
 	"github.com/chetto1983/aura/internal/swarm"
@@ -31,27 +29,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-// buildIdentityLLMResolver wires seam A's per-identity LLM resolver
-// (CRED-01/CRED-05/CRED-07/D-11) for the headless paths that have no live HTTP
-// request to scope a context snapshot from: the delegation claim loop
-// (newRuntimeDelegationWorker, below) and cron's agent_job
-// (serve_dispatch.go's newCronAgentDeps). A nil pool or an unset
-// AURA_AUTHULA_SECRET disables it — mirrors mcp_first_party_grants.go's own
-// mcpoauth.NewStore nil-guard verbatim — and every caller degrades to its
-// Runtime/Client fallback rather than crashing; a store construction error is
-// logged and ALSO degrades, never panics a boot over a malformed secret.
-func buildIdentityLLMResolver(chat *chatEnv) *runner.IdentityLLMResolver {
-	if chat == nil || chat.pool == nil || strings.TrimSpace(chat.cfg.AuthulaSecret) == "" {
-		return nil
-	}
-	store, err := identitykey.NewStore(chat.pool, chat.cfg.AuthulaSecret)
-	if err != nil {
-		slog.Warn("identity_llm_resolver.store_unavailable", "error", err)
-		return nil
-	}
-	return runner.NewIdentityLLMResolver(store, chat.llmRuntime, chat.cfg.LLM, nil, creditExhaustedClient{})
-}
 
 // runtimeDelegationWorkerIDPrefix names the delegation claim loop's per-identity
 // worker id, distinct from the asset-processing worker's own prefix so a
@@ -369,14 +346,14 @@ func newRuntimeDelegationWorker(chat *chatEnv, delivery *swarm.DelegationDeliver
 	pollInterval := time.Duration(chat.cfg.SwarmDelegationPollSec) * time.Second
 	// resolver is read into a concrete-typed local BEFORE it reaches the
 	// interface-typed RunConfig.Resolver field below (#2924-class trap, per
-	// 02-04's own key-decisions): buildIdentityLLMResolver returns a typed
+	// 02-04's own key-decisions): identityLLMResolver returns a typed
 	// *runner.IdentityLLMResolver, and assigning a nil ONE of those directly into
 	// an interface field would box it into a NON-nil interface value —
 	// resolveWorkerLLM's `rc.Resolver != nil` check would then wrongly treat a
 	// disabled resolver (no AURA_AUTHULA_SECRET) as configured. Comparing the
 	// concrete pointer here, before it is ever assigned to the interface field,
 	// keeps RunConfig.Resolver a genuinely nil interface when disabled.
-	resolver := buildIdentityLLMResolver(chat)
+	resolver := identityLLMResolver(chat)
 	workerTemplate := swarm.RunConfig{
 		// Client/LLM are deliberately NOT set here (T-02-08b/D-11): the old
 		// chat.client/chat.cfg.LLM boot-time capture is exactly the deployment-key

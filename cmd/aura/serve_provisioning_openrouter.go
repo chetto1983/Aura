@@ -230,7 +230,7 @@ func openRouterKeyRevokerFor(chat *chatEnv) agui.OpenRouterKeyRevoker {
 // daemon booted with, so the ports are wired as soon as the pool and AURA_AUTHULA_SECRET
 // exist, and a missing key surfaces as ErrManagementKeyUnset at call time. ok is false only
 // when a store cannot be built (a malformed AURA_AUTHULA_SECRET, logged rather than a boot
-// panic, as buildIdentityLLMResolver does).
+// panic, as identityLLMResolver does).
 func resolveOpenRouterKeyConfig(chat *chatEnv) (openRouterKeyConfig, bool) {
 	if chat == nil || chat.pool == nil || chat.cfg == nil {
 		return openRouterKeyConfig{}, false

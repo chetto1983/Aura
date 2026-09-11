@@ -158,7 +158,7 @@ func newCronAgentDeps(chat *chatEnv) handlers.AgentDeps {
 	// #2924-class trap 02-04's key-decisions already documented for a nil-pool
 	// store), which would make resolveLLM's `h.Deps.Resolver != nil` check wrongly
 	// treat a disabled resolver (no AURA_AUTHULA_SECRET) as configured.
-	resolver := buildIdentityLLMResolver(chat)
+	resolver := identityLLMResolver(chat)
 	deps := handlers.AgentDeps{
 		// Client/LLM are deliberately NOT set here (T-02-08b/D-11): that boot-time
 		// capture is the deployment-key fallback CRED-07 forbids. Resolver resolves

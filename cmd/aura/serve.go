@@ -229,7 +229,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	}
 	// Web and Telegram turns are billed to the identity that owns them, never to the services
 	// key; `aura chat` keeps the process-wide client because it never comes through here.
-	chat.run.SetIdentityLLM(buildIdentityLLMResolver(chat))
+	chat.run.SetIdentityLLM(identityLLMResolver(chat))
 	// D-03/D-05: the sandbox-image boot preflight runs immediately after the chat composition
 	// root exists (chat.sandboxRouter is set there) and before any HTTP listener opens — a
 	// preflight failure must chat.close() and return the error, the same failure shape "build

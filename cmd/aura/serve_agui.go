@@ -250,11 +250,11 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	// management credential is entirely absent (a local-backend deployment has no
 	// reason to set it).
 	creditBackendBills := liveRouteBills(chat)
-	// creditResolver may be nil (no AURA_AUTHULA_SECRET, or a broken one); routed
-	// through agui.NewCreditInvalidator so the nil check happens on the CONCRETE
-	// pointer, never producing a non-nil interface wrapping a nil one (the SAME
-	// #2924-class trap buildIdentityLLMResolver's own callers already guard against).
-	creditResolver := buildIdentityLLMResolver(chat)
+	// creditResolver is the runner's own resolver, so a cap change it invalidates reaches the
+	// next turn. It may be nil (no AURA_AUTHULA_SECRET, or a broken one); routed through
+	// agui.NewCreditInvalidator so the nil check happens on the CONCRETE pointer, never
+	// producing a non-nil interface wrapping a nil one (#2924).
+	creditResolver := identityLLMResolver(chat)
 	// The OpenRouter ports are wired whenever the stores build; each call reads the
 	// management key and answers "management key not set" until an admin sets it.
 	if orCfg, ok := resolveOpenRouterKeyConfig(chat); ok {

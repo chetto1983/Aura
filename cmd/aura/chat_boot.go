@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
@@ -87,6 +88,10 @@ type chatEnv struct {
 	// consumer's own nil-safe seam then degrades to "steer is unwired" rather
 	// than half-live.
 	steer *steer.PostgresStore
+	// identityLLM is the one per-identity LLM resolver every caller shares; read it through
+	// identityLLMResolver, which builds it once.
+	identityLLM     *runner.IdentityLLMResolver
+	identityLLMOnce sync.Once
 }
 
 // close releases the pool (the OTel TracerProvider is owned by the REPL path).
