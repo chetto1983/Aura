@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
 )
@@ -84,12 +85,12 @@ func TestAutoTitleDeduplicatesAndPreservesManualRename(t *testing.T) {
 	id := newConvID(t)
 	mustCreate(t, r, id)
 	ctx := context.Background()
-	history := []llm.Message{{Role: llm.RoleUser, Content: "Pianifica il rilascio"}}
-	if err := store.AppendTurn(ctx, conversations.AppendTurnParams{ConversationID: id, Seq: 1, Role: llm.RoleUser, Content: history[0].Content}); err != nil {
+	const userMsg = "Pianifica il rilascio"
+	if err := store.AppendTurn(ctx, conversations.AppendTurnParams{ConversationID: id, Seq: 1, Role: llm.RoleUser, Content: userMsg}); err != nil {
 		t.Fatal(err)
 	}
 	for range 5 {
-		r.maybeAutoTitle(ctx, id, history)
+		r.maybeAutoTitle(ctx, id, userMsg)
 	}
 	select {
 	case <-client.titleStarted:
@@ -116,16 +117,64 @@ func TestAutoTitleFailureUsesFirstMessageFallback(t *testing.T) {
 	id := newConvID(t)
 	mustCreate(t, r, id)
 	ctx := context.Background()
-	history := []llm.Message{{Role: llm.RoleUser, Content: "  Pianifica   il rilascio  "}}
-	if err := store.AppendTurn(ctx, conversations.AppendTurnParams{ConversationID: id, Seq: 1, Role: llm.RoleUser, Content: history[0].Content}); err != nil {
+	const userMsg = "  Pianifica   il rilascio  "
+	if err := store.AppendTurn(ctx, conversations.AppendTurnParams{ConversationID: id, Seq: 1, Role: llm.RoleUser, Content: userMsg}); err != nil {
 		t.Fatal(err)
 	}
-	r.maybeAutoTitle(ctx, id, history)
+	r.maybeAutoTitle(ctx, id, userMsg)
 	if err := r.Stop(ctx, id); err != nil {
 		t.Fatal(err)
 	}
 	conv, _ := store.Get(ctx, id)
 	if conv.Title != "Pianifica il rilascio" {
 		t.Fatalf("fallback title=%q", conv.Title)
+	}
+}
+
+// An always:true skill reaches the history as a user-role turn ahead of the person's
+// message (conversations.injectAlwaysBlock). Titling from the history named a member's
+// conversation "Active skill instruc…" (measured 2026-09-11 on the reinstalled stack).
+const alwaysOnSkillBlock = "Active skill instructions (always-on):\n\nSKILL-BODY"
+
+func alwaysOnSkillRunner(t *testing.T, title *agenttest.FakeClient) (*Runner, *fakeConvStore) {
+	t.Helper()
+	r, store, _ := newTestRunner(t, agenttest.TitleClient{
+		Main:  agenttest.NewFakeClient(agenttest.ToolCallTurn(textResponseCall("call-1", "Fatto."))),
+		Title: title,
+	})
+	r.alwaysBlock = func(context.Context) string { return alwaysOnSkillBlock }
+	return r, store
+}
+
+func TestAutoTitlePromptCarriesOnlyTheUserMessage(t *testing.T) {
+	title := agenttest.NewFakeClient(agenttest.TextChunks("stop", "Rilascio di Aura"))
+	r, _ := alwaysOnSkillRunner(t, title)
+	id := newConvID(t)
+	mustCreate(t, r, id)
+	const userMsg = "Organizziamo il rilascio di Aura"
+	if _, err := drain(r.Turn(context.Background(), id, new(userMsg))); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Stop(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	requests := title.RecordedRequests()
+	if len(requests) != 1 || requests[0].Messages[1].Content != userMsg {
+		t.Fatalf("title requests = %+v, want one carrying only %q", requests, userMsg)
+	}
+}
+
+func TestAutoTitleFallbackIgnoresAlwaysOnSkill(t *testing.T) {
+	r, store := alwaysOnSkillRunner(t, agenttest.NewFakeClient(agenttest.FakeTurn{Err: errFake}))
+	id := newConvID(t)
+	mustCreate(t, r, id)
+	if _, err := drain(r.Turn(context.Background(), id, new("Pianifica il rilascio"))); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Stop(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	if conv, _ := store.Get(context.Background(), id); conv.Title != "Pianifica il rilascio" {
+		t.Fatalf("fallback title = %q, want the user message", conv.Title)
 	}
 }

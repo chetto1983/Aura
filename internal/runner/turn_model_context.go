@@ -15,6 +15,17 @@ type turnInput struct {
 	branchLeaf     int
 }
 
+// titleSource is what the conversation is named after: the text the person typed this
+// turn. Never the model-only rewrite, and never the loaded history, whose first user-role
+// turn can be the injected skills and profile block. Empty on a turn without a new
+// message (resume, branch re-run), which leaves the title to the turn that had one.
+func (in turnInput) titleSource() string {
+	if in.visibleUserMsg == nil {
+		return ""
+	}
+	return *in.visibleUserMsg
+}
+
 // TurnWithModelUserMessage persists visibleUserMsg as the human-facing user turn while
 // sending modelUserMsg to the LLM for the active round.
 func (r *Runner) TurnWithModelUserMessage(ctx context.Context, convID, visibleUserMsg, modelUserMsg string) iter.Seq2[*agent.Event, error] {

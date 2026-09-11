@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -246,13 +247,9 @@ func (f *fakeConvStore) LoadManagedHistory(_ context.Context, id string, cfg con
 	if f.manErr != nil {
 		return nil, f.manErr
 	}
-	return f.messagesLocked(id), nil
+	return f.managedMessagesLocked(id, cfg), nil
 }
 
-// LoadManagedHistoryForBranch records the selected leaf so the branch-aware re-run path
-// (TurnBranch) is assertable, then returns the same in-memory history as the linear
-// loader (the fake has no branch topology — the path-walk fidelity is the conversations
-// integration test's job; here we only prove TurnBranch routes through this method).
 // Compact records the requested compaction and reports the fixed result the tests
 // assert against; the real summarizer path is the conversations package's job.
 func (f *fakeConvStore) Compact(_ context.Context, id string, cfg conversations.ContextConfig) (conversations.CompactionResult, error) {
@@ -268,6 +265,10 @@ func (f *fakeConvStore) Compact(_ context.Context, id string, cfg conversations.
 	}, nil
 }
 
+// LoadManagedHistoryForBranch records the selected leaf so the branch-aware re-run path
+// (TurnBranch) is assertable, then returns the same in-memory history as the linear
+// loader (the fake has no branch topology — the path-walk fidelity is the conversations
+// integration test's job; here we only prove TurnBranch routes through this method).
 func (f *fakeConvStore) LoadManagedHistoryForBranch(_ context.Context, id string, leafSeq int, cfg conversations.ContextConfig) ([]llm.Message, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -276,7 +277,22 @@ func (f *fakeConvStore) LoadManagedHistoryForBranch(_ context.Context, id string
 	if f.manErr != nil {
 		return nil, f.manErr
 	}
-	return f.messagesLocked(id), nil
+	return f.managedMessagesLocked(id, cfg), nil
+}
+
+// managedMessagesLocked is messagesLocked plus the messages[1] context block, which the
+// real loader injects as a user-role turn right after a leading system turn
+// (conversations.injectAlwaysBlock). Caller holds the lock.
+func (f *fakeConvStore) managedMessagesLocked(id string, cfg conversations.ContextConfig) []llm.Message {
+	out := f.messagesLocked(id)
+	if cfg.AlwaysBlock == "" {
+		return out
+	}
+	start := 0
+	if len(out) > 0 && out[0].Role == llm.RoleSystem {
+		start = 1
+	}
+	return slices.Insert(out, start, llm.Message{Role: llm.RoleUser, Content: cfg.AlwaysBlock})
 }
 
 // messagesLocked rebuilds the loop messages from the persisted turns (the same

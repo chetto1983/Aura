@@ -237,7 +237,7 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 				return
 			}
 			if answer, ok := fastReplyFor(*input.visibleUserMsg); ok {
-				r.persistAutoTitle(ctx, convID, conversations.FallbackTitle([]llm.Message{{Role: llm.RoleUser, Content: *input.visibleUserMsg}}))
+				r.persistAutoTitle(ctx, convID, conversations.FallbackTitle(*input.visibleUserMsg))
 				ev := fastReplyEvent(convID, requestID, answer)
 				tr := &turnTracker{convID: convID, llmRuntime: turnRuntime}
 				if err := r.persistEvent(ctx, tr, ev); err != nil {
@@ -269,12 +269,12 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 			ctx, convID, requestID, agentHistory,
 		)
 		if err != nil {
-			r.persistAutoTitle(ctx, convID, conversations.FallbackTitle(history))
+			r.persistAutoTitle(ctx, convID, conversations.FallbackTitle(input.titleSource()))
 			yield(nil, err)
 			return
 		}
 		defer cancelAgent()
-		r.maybeAutoTitle(ctx, convID, history)
+		r.maybeAutoTitle(ctx, convID, input.titleSource())
 		// Register the live turn's ctx-cancel under the (identity, session) key so a
 		// concurrent conversation-delete can abort THIS owner's in-flight turn (MUSR-05
 		// step 1 / D-23). ctx is owner-scoped here (scopeContextToConversation set it), so

@@ -1,6 +1,6 @@
-// Unit tier (no build tag): the best-effort auto-title worker body, driven by the
-// scripted local fake client (no network). Proves a success path produces a
-// title and a stream-error path returns an error the caller treats as "leave NULL".
+// Unit tier (no build tag): the best-effort auto-title call, driven by the scripted
+// local fake client (no network). Proves a success path produces a title and a
+// stream-error path returns an error the caller answers with FallbackTitle.
 package conversations
 
 import (
@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/llm"
 )
@@ -59,33 +60,24 @@ func titleTextClient(reason string, text ...string) *titleTestClient {
 	return &titleTestClient{turns: []titleTestTurn{{chunks: chunks}}}
 }
 
-func titleHistory() []llm.Message {
-	return []llm.Message{
-		{Role: llm.RoleSystem, Content: "you are aura"}, // skipped by the title renderer
-		{Role: llm.RoleUser, Content: "help me refactor the budget loop"},
-		{Role: llm.RoleAssistant, Content: "sure, let's start with the dispatch"},
-	}
-}
+const titleUserMessage = "help me refactor the budget loop"
 
 // TestGenerateTitle_Success: a scripted client streaming a title yields a sanitized
 // non-empty title.
 func TestGenerateTitle_Success(t *testing.T) {
 	t.Parallel()
 	client := titleTextClient("stop", "  \"Refactor the budget loop\"  ")
-	got, err := generateTitle(context.Background(), client, "test-model", titleHistory())
+	got, err := GenerateTitle(context.Background(), client, "test-model", titleUserMessage)
 	if err != nil {
-		t.Fatalf("generateTitle: %v", err)
+		t.Fatalf("GenerateTitle: %v", err)
 	}
 	if got != "Refactor the budget loop" {
 		t.Errorf("title sanitization: got %q", got)
 	}
-	// The request carried only the system+user title prompt, not the full history.
+	// The request carried the title prompt and the person's message, nothing else.
 	req := client.LastRequest()
-	if len(req.Messages) != 2 || req.Messages[0].Role != llm.RoleSystem {
+	if len(req.Messages) != 2 || req.Messages[0].Role != llm.RoleSystem || req.Messages[1].Content != titleUserMessage {
 		t.Errorf("title request shape wrong: %+v", req.Messages)
-	}
-	if !strings.Contains(req.Messages[1].Content, "refactor the budget loop") {
-		t.Errorf("title prompt must include the user turn, got %q", req.Messages[1].Content)
 	}
 	if req.ToolChoice != "none" {
 		t.Errorf("title request tool choice = %q, want none", req.ToolChoice)
@@ -95,15 +87,30 @@ func TestGenerateTitle_Success(t *testing.T) {
 	}
 }
 
+// TestGenerateTitle_CapsTheUserMessage: a pasted document reaches the title model as
+// its opening bytes, cut on a rune boundary.
+func TestGenerateTitle_CapsTheUserMessage(t *testing.T) {
+	t.Parallel()
+	client := titleTextClient("stop", "Long paste")
+	if _, err := GenerateTitle(context.Background(), client, "m", strings.Repeat("界", 400)); err != nil {
+		t.Fatalf("GenerateTitle: %v", err)
+	}
+	got := client.LastRequest().Messages[1].Content
+	if len(got) > titleInputCap || len(got) < titleInputCap-3 || !utf8.ValidString(got) {
+		t.Fatalf("title input = %d bytes (valid UTF-8: %v), want the opening %d bytes on a rune boundary",
+			len(got), utf8.ValidString(got), titleInputCap)
+	}
+}
+
 // TestGenerateTitle_StreamError: a stream error is returned (the caller leaves the
 // title NULL, no crash).
 func TestGenerateTitle_StreamError(t *testing.T) {
 	t.Parallel()
 	boom := errors.New("provider down")
 	client := &titleTestClient{turns: []titleTestTurn{{openErr: boom}}}
-	_, err := generateTitle(context.Background(), client, "test-model", titleHistory())
+	_, err := GenerateTitle(context.Background(), client, "test-model", titleUserMessage)
 	if err == nil {
-		t.Fatal("generateTitle: want error on stream failure, got nil")
+		t.Fatal("GenerateTitle: want error on stream failure, got nil")
 	}
 	if !errors.Is(err, boom) {
 		t.Errorf("error must wrap the stream failure, got %v", err)
@@ -117,17 +124,17 @@ func TestGenerateTitle_TerminalStreamError(t *testing.T) {
 		{Text: "Partial title"},
 		{Err: boom},
 	}}}}
-	_, err := generateTitle(context.Background(), client, "test-model", titleHistory())
+	_, err := GenerateTitle(context.Background(), client, "test-model", titleUserMessage)
 	if !errors.Is(err, boom) {
-		t.Fatalf("generateTitle: terminal stream error = %v, want wrapped %v", err, boom)
+		t.Fatalf("GenerateTitle: terminal stream error = %v, want wrapped %v", err, boom)
 	}
 }
 
 func TestGenerateTitle_LengthIsIncomplete(t *testing.T) {
 	t.Parallel()
 	client := titleTextClient("length", "Partial title")
-	if _, err := generateTitle(context.Background(), client, "test-model", titleHistory()); err == nil {
-		t.Fatal("generateTitle: length-truncated stream must not persist a partial title")
+	if _, err := GenerateTitle(context.Background(), client, "test-model", titleUserMessage); err == nil {
+		t.Fatal("GenerateTitle: length-truncated stream must not persist a partial title")
 	}
 }
 
@@ -136,16 +143,16 @@ func TestGenerateTitle_LengthIsIncomplete(t *testing.T) {
 func TestGenerateTitle_EmptyResult(t *testing.T) {
 	t.Parallel()
 	client := titleTextClient("stop", "   \n  ")
-	if _, err := generateTitle(context.Background(), client, "test-model", titleHistory()); err == nil {
-		t.Error("generateTitle: want error on empty result, got nil")
+	if _, err := GenerateTitle(context.Background(), client, "test-model", titleUserMessage); err == nil {
+		t.Error("GenerateTitle: want error on empty result, got nil")
 	}
 }
 
 // TestGenerateTitle_NilClient guards the nil-client path.
 func TestGenerateTitle_NilClient(t *testing.T) {
 	t.Parallel()
-	if _, err := generateTitle(context.Background(), nil, "m", nil); err == nil {
-		t.Error("generateTitle(nil client): want error")
+	if _, err := GenerateTitle(context.Background(), nil, "m", titleUserMessage); err == nil {
+		t.Error("GenerateTitle(nil client): want error")
 	}
 }
 
@@ -166,35 +173,12 @@ func TestSanitizeTitle(t *testing.T) {
 	}
 }
 
-func TestFallbackTitleUsesFirstMeaningfulUserMessage(t *testing.T) {
-	history := []llm.Message{
-		{Role: llm.RoleSystem, Content: "system instructions"},
-		{Role: llm.RoleUser, Content: "   "},
-		{Role: llm.RoleAssistant, Content: "an old response"},
-		{Role: llm.RoleUser, Content: "  Pianifica\n il   rilascio  "},
-		{Role: llm.RoleUser, Content: "later unrelated question"},
-	}
-	if title := FallbackTitle(history); title != "Pianifica il rilascio" {
+func TestFallbackTitleFoldsWhitespace(t *testing.T) {
+	t.Parallel()
+	if title := FallbackTitle("  Pianifica\n il   rilascio  "); title != "Pianifica il rilascio" {
 		t.Fatalf("title=%q", title)
 	}
-	if title := FallbackTitle(history[:3]); title != "" {
-		t.Fatalf("no meaningful user message: %q", title)
-	}
-}
-
-func TestRenderHistoryForTitle_SkipsNonChatAndTruncates(t *testing.T) {
-	t.Parallel()
-	long := strings.Repeat("z", 1000)
-	h := []llm.Message{
-		{Role: llm.RoleSystem, Content: "sys"},
-		{Role: llm.RoleTool, Content: "tool result"},
-		{Role: llm.RoleUser, Content: long},
-	}
-	got := renderHistoryForTitle(h)
-	if strings.Contains(got, "sys") || strings.Contains(got, "tool result") {
-		t.Errorf("system/tool turns must be skipped, got %q", got)
-	}
-	if strings.Count(got, "z") > 500 {
-		t.Errorf("per-turn content must be truncated, got %d z's", strings.Count(got, "z"))
+	if title := FallbackTitle(" \n\t "); title != "" {
+		t.Fatalf("blank message: %q", title)
 	}
 }

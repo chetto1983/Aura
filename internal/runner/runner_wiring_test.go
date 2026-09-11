@@ -216,7 +216,7 @@ func TestMaybeAutoTitle_GetErrorIsNoOp(t *testing.T) {
 	conv := &errConvStore{fakeConvStore: newFakeConvStore(), getErr: errFake}
 	r := newCtxBlockRunner(t, conv, newFakeIdentityStore())
 	// Direct call: a Get error returns before any CountTurns/worker spawn.
-	r.maybeAutoTitle(context.Background(), newConvID(t), nil)
+	r.maybeAutoTitle(context.Background(), newConvID(t), "hello")
 	// Nothing to assert beyond "did not panic / did not spawn a worker"; Stop joins
 	// the (empty) WaitGroup cleanly.
 	if err := r.Stop(context.Background(), newConvID(t)); err != nil {

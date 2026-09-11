@@ -118,24 +118,6 @@ func TestValidateFinalRequestBudgetDropsToolsTheRequestForbids(t *testing.T) {
 	}
 }
 
-func TestRenderHistoryForTitleTruncatesAndStopsEarly(t *testing.T) {
-	t.Parallel()
-	long := strings.Repeat("z", 900)
-	history := make([]llm.Message, 0, 11)
-	history = append(history, llm.Message{Role: llm.RoleUser, Content: long})
-	history = append(history, llm.Message{Role: llm.RoleAssistant, Content: ""})
-	for range 9 {
-		history = append(history, llm.Message{Role: llm.RoleAssistant, Content: "turn"})
-	}
-	got := renderHistoryForTitle(history)
-	if strings.Count(got, "\n") != 5 {
-		t.Fatalf("rendered %d lines, want the first 6 turns only:\n%s", strings.Count(got, "\n")+1, got)
-	}
-	if strings.Count(got, "z") != 500 {
-		t.Fatalf("long turn was not truncated to the per-turn cap: %d chars", strings.Count(got, "z"))
-	}
-}
-
 func TestReadToolOutputSpillIDFallsBackWhenTheFooterCarriesNoID(t *testing.T) {
 	t.Parallel()
 	if got := readToolOutputSpillID(spillFooterMarker+" 10 bytes]", "fallback"); got != "fallback" {

@@ -95,7 +95,7 @@ func TestStop_HungWorkerDoesNotLeakWaiterGoroutines(t *testing.T) {
 			t.Fatalf("seed turn %d: %v", seq, err)
 		}
 	}
-	history := []llm.Message{{Role: llm.RoleUser, Content: "x"}}
+	const userMsg = "x"
 
 	// Deterministic teardown registered BEFORE the hung window opens: unblock the client and
 	// join the worker so ZERO goroutines remain at return (keeps goleak.VerifyTestMain green).
@@ -107,7 +107,7 @@ func TestStop_HungWorkerDoesNotLeakWaiterGoroutines(t *testing.T) {
 	})
 
 	// Spawn the (soon-to-hang) title worker and wait until it enters the blocked stream.
-	r.maybeAutoTitle(ctx, convID, history)
+	r.maybeAutoTitle(ctx, convID, userMsg)
 	select {
 	case <-client.entered:
 	case <-time.After(5 * time.Second):
@@ -186,7 +186,7 @@ func TestStop_ReArmsWaiterForWorkerSpawnedAfterCleanDrain(t *testing.T) {
 			t.Fatalf("seed turn %d: %v", seq, err)
 		}
 	}
-	history := []llm.Message{{Role: llm.RoleUser, Content: "x"}}
+	const userMsg = "x"
 
 	// Deterministic teardown: unblock worker #2 and join it so ZERO goroutines remain
 	// (keeps the package goleak.VerifyTestMain green).
@@ -198,7 +198,7 @@ func TestStop_ReArmsWaiterForWorkerSpawnedAfterCleanDrain(t *testing.T) {
 	})
 
 	// Worker #1 drains cleanly (call #1 returns an empty stream immediately).
-	r.maybeAutoTitle(ctx, convID, history)
+	r.maybeAutoTitle(ctx, convID, userMsg)
 	if !r.waitWorkers(2 * time.Second) {
 		t.Fatal("worker #1 did not drain cleanly — setup precondition failed")
 	}
@@ -209,7 +209,7 @@ func TestStop_ReArmsWaiterForWorkerSpawnedAfterCleanDrain(t *testing.T) {
 	if _, err := conv.Create(ctx, conversations.CreateParams{ID: nextID, IdentityID: "00000000-0000-0000-0000-000000000001"}); err != nil {
 		t.Fatal(err)
 	}
-	r.maybeAutoTitle(ctx, nextID, history)
+	r.maybeAutoTitle(ctx, nextID, userMsg)
 	select {
 	case <-client.entered:
 	case <-time.After(5 * time.Second):

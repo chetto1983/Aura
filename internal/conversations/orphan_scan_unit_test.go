@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
-	"github.com/chetto1983/aura/internal/llm"
 	"github.com/google/uuid"
 )
 
@@ -390,21 +389,6 @@ func TestNewRunDirSweeper_ProductionConstructor(t *testing.T) {
 	disabled := NewRunDirSweeper(nil, ScanParams{RunDir: runDir}, 0)
 	disabled.Start(context.Background()) // non-positive interval launches nothing
 	disabled.Stop()                      // clean join on a never-started worker
-}
-
-// TestGenerateTitle_ExportedDelegate covers the exported GenerateTitle wrapper (the
-// internal generateTitle body is covered in title_unit_test.go).
-func TestGenerateTitle_ExportedDelegate(t *testing.T) {
-	t.Parallel()
-	client := titleTextClient("stop", "A Tidy Title")
-	history := []llm.Message{{Role: llm.RoleUser, Content: "explain the budget loop"}}
-	got, err := GenerateTitle(context.Background(), client, "m", history)
-	if err != nil {
-		t.Fatalf("GenerateTitle: %v", err)
-	}
-	if got != "A Tidy Title" {
-		t.Errorf("GenerateTitle: got %q", got)
-	}
 }
 
 // TestInitEncoder_Idempotent proves the eager boot init succeeds offline and is safe

@@ -18,14 +18,15 @@ var resumeBoundary = obs.NewGlobalBoundary("github.com/chetto1983/aura/internal/
 	Operation: "resume", Count: obs.RunnerResumeCallsID, Duration: obs.RunnerResumeDurationID,
 })
 
-// Title generation uses the first request without waiting for the answer. Its
-// independent bounded context also covers a failed or interrupted main turn.
-func (r *Runner) maybeAutoTitle(turnCtx context.Context, convID string, history []llm.Message) {
+// maybeAutoTitle names the conversation from the person's message without waiting for
+// the answer. Its independent bounded context also covers a failed or interrupted main
+// turn.
+func (r *Runner) maybeAutoTitle(turnCtx context.Context, convID, userMessage string) {
 	conv, err := r.Conv.Get(turnCtx, convID)
 	if err != nil || conv.TitleSet {
 		return // already titled (or unreadable) — nothing to do
 	}
-	fallback := conversations.FallbackTitle(history)
+	fallback := conversations.FallbackTitle(userMessage)
 	if fallback == "" {
 		return
 	}
@@ -38,18 +39,13 @@ func (r *Runner) maybeAutoTitle(turnCtx context.Context, convID string, history 
 		return
 	}
 
-	// WR-03: the worker owns a defensive snapshot of history. The caller's slice
-	// header is shared with buildAgent/Turn; copying here removes the implicit
-	// "nobody mutates history after maybeAutoTitle returns" coupling so a future
-	// in-place mutation cannot race the title worker.
-	hist := append([]llm.Message(nil), history...)
 	runtime := r.llmSnapshot(turnCtx)
 	r.wg.Go(func() {
 		defer r.titleFlights.Delete(key)
 		ctx := context.WithoutCancel(turnCtx) // load-bearing: turnCtx cancels on Turn return
 		ctx, cancel := context.WithTimeout(ctx, r.titleTimeout)
 		defer cancel()
-		title, gerr := conversations.GenerateTitle(ctx, runtime.Client, runtime.Config.Model, hist)
+		title, gerr := conversations.GenerateTitle(ctx, runtime.Client, runtime.Config.Model, userMessage)
 		if gerr != nil || title == "" {
 			// Do not attach convID or gerr: both may contain user/provider-controlled text,
 			// which would let control characters forge adjacent text-handler log records.

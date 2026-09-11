@@ -59,10 +59,7 @@ func TestAutoTitleFailureLogsExcludeDynamicValues(t *testing.T) {
 			slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 			t.Cleanup(func() { slog.SetDefault(previous) })
 
-			r.maybeAutoTitle(context.Background(), convID, []llm.Message{
-				{Role: llm.RoleUser, Content: "request"},
-				{Role: llm.RoleAssistant, Content: "response"},
-			})
+			r.maybeAutoTitle(context.Background(), convID, "request")
 			if !r.waitWorkers(2 * time.Second) {
 				t.Fatal("auto-title worker did not finish")
 			}
