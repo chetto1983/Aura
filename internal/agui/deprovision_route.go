@@ -72,7 +72,9 @@ func (s *Server) handleRemoveIdentity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := r.Context()
+	// The saga outlives the request: a caller that goes away between the legs would otherwise
+	// leave the identity deactivated but not purged, with its OpenRouter key still live.
+	ctx := context.WithoutCancel(r.Context())
 	// Two simultaneous DELETEs for the same identity coalesce into ONE saga run
 	// (RBAC-05 concurrency probe): the loser never calls Deactivate/PurgeOne itself,
 	// it waits on and receives the SAME outcome the first caller's run produces.

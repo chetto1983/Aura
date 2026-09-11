@@ -21,6 +21,9 @@ type fakeIdentityRemover struct {
 	deactErr error
 	purgeErr error
 	delay    time.Duration
+	// afterDeactivate runs once Deactivate is done, to act out a client leaving mid-saga.
+	afterDeactivate func()
+	purgeCtxErr     error
 }
 
 func (f *fakeIdentityRemover) Deactivate(_ context.Context, identityID string) error {
@@ -30,14 +33,38 @@ func (f *fakeIdentityRemover) Deactivate(_ context.Context, identityID string) e
 	if f.delay > 0 {
 		time.Sleep(f.delay)
 	}
+	if f.afterDeactivate != nil {
+		f.afterDeactivate()
+	}
 	return f.deactErr
 }
 
-func (f *fakeIdentityRemover) PurgeOne(_ context.Context, identityID string) error {
+func (f *fakeIdentityRemover) PurgeOne(ctx context.Context, identityID string) error {
 	f.mu.Lock()
 	f.calls = append(f.calls, "purge:"+identityID)
+	f.purgeCtxErr = ctx.Err()
 	f.mu.Unlock()
 	return f.purgeErr
+}
+
+// TestRemoveIdentityOutlivesTheRequest proves the saga finishes when the caller goes away
+// between its legs. Measured 2026-09-11: a browser closed mid-removal left the identity
+// deactivated but not purged, and its OpenRouter key live, because the purge ran on the
+// request's cancelled context.
+func TestRemoveIdentityOutlivesTheRequest(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	fake := &fakeIdentityRemover{afterDeactivate: cancel}
+	s := &Server{}
+	s.SetIdentityRemover(fake)
+
+	s.handleRemoveIdentity(httptest.NewRecorder(), removeRequest().WithContext(ctx))
+	if fake.callCount() != 2 {
+		t.Fatalf("calls = %v, want deactivate then purge", fake.calls)
+	}
+	if fake.purgeCtxErr != nil {
+		t.Fatalf("purge ran on a cancelled context (%v): the saga must not end with the request", fake.purgeCtxErr)
+	}
 }
 
 func (f *fakeIdentityRemover) callCount() int {
