@@ -31,30 +31,44 @@ stack, driven through the UI.
 
 ### Task 1: Back up what the wipe destroys
 
-- [ ] **Step 1:** stop the writers (`aura`, `aura-ingest`, `arcadedb-mcp`), trigger a native
-  ArcadeDB backup of every database (`list databases`, then `backup database <name>` through
-  `/api/v1/server` with the root password read by `read_secret ARCADEDB_PASSWORD`), and copy
-  `/home/arcadedb/backups` out with `docker cp`.
-- [ ] **Step 2:** stop `arcadedb` and tar the `aura_aura-arcadedb` volume (databases plus
+- [x] **Step 1:** stop the writers (`aura`, `aura-ingest`, `arcadedb-mcp`), trigger a native
+  ArcadeDB backup of every database (`list databases`, then `trigger backup <name>` through
+  `/api/v1/server`, as `scripts/restore_drill.sh` does, with the root password read by
+  `read_secret ARCADEDB_PASSWORD`), and copy `/home/arcadedb/backups` out with
+  `docker compose cp` (Windows path: under `MSYS_NO_PATHCONV` a `/d/...` path reaches docker
+  as `D:\d\...`).
+- [x] **Step 2:** stop `arcadedb` and tar the `aura_aura-arcadedb` volume (databases plus
   server users) into the backup directory; `pg_dump -Fc` the `aura` database next to it as a
   safety net.
-- [ ] **Step 3:** move the checkout's `.env`, `C:\Users\chett\.aura` and WSL's `/root/.aura`
+- [x] **Step 3:** move the checkout's `.env`, `C:\Users\chett\.aura` and WSL's `/root/.aura`
   into the backup directory; list the directory with sizes as evidence.
+  Measured: native backups 329M (`aura_memory` among them, fresh at 09:39 UTC),
+  `arcadedb-volume.tgz` 12M, `postgres-aura.dump` 1.1M, `dotenv` 28K, `windows-dot-aura` 42M,
+  `wsl-root-dot-aura` 216K.
 
 ### Task 2: Wipe
 
-- [ ] **Step 1:** `docker compose down --remove-orphans` from the checkout.
-- [ ] **Step 2:** remove every `aura_*` volume but the kept ones, and every `aura-box-*`
+- [x] **Step 1:** `docker compose down --remove-orphans` from the checkout. With `.env` moved
+  away compose refuses its `:?` variables, so `--env-file` names the backed-up copy.
+- [x] **Step 2:** remove every `aura_*` volume but the kept ones, and every `aura-box-*`
   sandbox volume (their identities are gone with Postgres); list what remains.
+  `down` left four containers outside the project's services (two `aura-egress-*` sandbox
+  proxies, `aura-tempo-1`, `aura-docker-socket-proxy`) holding `aura_aura-tempo` and
+  `aura_default`; removed by name. Left: the six kept `aura_aura-*` caches and the three
+  sandbox package caches; no Aura container or network.
 
 ### Task 3: Install through the package
 
-- [ ] **Step 1:** wait for `Publish Aura edge image` green on the pushed commit.
-- [ ] **Step 2:** in WSL, `npm install -g` the packed `create-aura-appliance-0.2.0.tgz` and run
+- [x] **Step 1:** wait for `Publish Aura edge image` green on the pushed commit (06a64e054).
+- [x] **Step 2:** in WSL, `npm install -g` the packed `create-aura-appliance-0.2.0.tgz` and run
   `create-aura-appliance --mode local` under `expect`: install dir `/opt/aura`, appliance no,
   gVisor no, confirm yes. The run must end on the wizard URL; the output stays in WSL.
-- [ ] **Step 3:** `docker compose -f /opt/aura/compose.yaml ps` all healthy; the kept caches
-  are mounted (no model download beyond the HEAD probe).
+  WSL needed Node 22 (22.23.2, official tarball, SHA-256 checked) and makeself; `wsl.exe`
+  without `-e` hands the command to the default shell, which expands `$var` before the inner
+  bash sees it.
+- [x] **Step 3:** `docker compose -f /opt/aura/compose.yaml ps` all healthy.
+  Measured: install exit 0; 16 containers healthy (observability included); `aura` runs
+  `ghcr.io/chetto1983/aura:edge` at revision `06a64e054`; Caddy publishes 443.
 
 ### Task 4: The E2E (Definition of Done)
 
