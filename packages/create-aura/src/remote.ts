@@ -12,7 +12,7 @@ import {
   normalizeArchitecture,
 } from './preflight.js';
 import type { CommandRunner } from './process.js';
-import type { InstallSettings, PreflightResult, RemoteTarget } from './types.js';
+import type { PreflightResult, RemoteTarget } from './types.js';
 import { validateHost, validatePort, validateUsername } from './validation.js';
 
 const REMOTE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -243,7 +243,6 @@ export async function installRemote(
   target: RemoteTarget,
   artifact: TemporaryFile,
   config: TemporaryFile,
-  settings: InstallSettings,
   remoteId: string = randomUUID(),
   warn: WarningSink = (message) => process.stderr.write(`${message}\n`),
   tempRoot = tmpdir(),
@@ -255,15 +254,12 @@ export async function installRemote(
   const installerPath = `/tmp/create-aura-${remoteId}-installer.sh`;
   const configPath = `/tmp/create-aura-${remoteId}-install.conf`;
   const runnerPath = `/tmp/create-aura-${remoteId}-run.sh`;
-  // R7: the OpenRouter key travels in redactions on the remote path too -- its output crosses
-  // an SSH session and often a terminal someone is screen-sharing, so it matters MORE here
-  // than on the local path, not less.
-  const redactions = [settings.openrouterApiKey];
+  const terminal = { terminal: true };
 
   await runner.run(
     'ssh',
     ['-p', port, destination, remoteScriptCommand(STALE_CLEANUP)],
-    { terminal: true, redactions },
+    terminal,
   );
 
   const staged = await stageRemoteFiles(artifact, config, remoteId, tempRoot);
@@ -280,12 +276,12 @@ export async function installRemote(
         staged.runnerPath,
         `${destination}:/tmp/`,
       ],
-      { terminal: true, redactions },
+      terminal,
     );
     await runner.run(
       'ssh',
       ['-tt', '-p', port, destination, 'sh', runnerPath, installerPath, configPath],
-      { terminal: true, redactions },
+      terminal,
     );
   } catch (error) {
     operationFailed = true;
@@ -299,7 +295,7 @@ export async function installRemote(
           destination,
           remoteScriptCommand(CURRENT_CLEANUP, [installerPath, configPath, runnerPath]),
         ],
-        { terminal: true, redactions },
+        terminal,
       );
     } catch {
       warn('remoteCleanupFailed');
@@ -314,32 +310,4 @@ export async function installRemote(
   }
 
   if (operationFailed) throw operationError;
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
-// R2 (Task 6 controller ruling): collectSettings's Ollama probe (modelroute.ts) takes a
-// plain CommandRunner and knows nothing about SSH -- Task 5's own ruling forbids teaching it
-// ("Nothing inside collectSettings or modelroute.ts may learn what an SSH is"). This wraps one
-// so its run(command, args) executes ON THE REMOTE TARGET via sshDestination instead of on the
-// machine running the wizard. Each argument is single-quoted because ssh joins the trailing
-// argv into ONE string for the remote shell to re-parse (it does not preserve argv
-// boundaries the way execa's direct spawn does): an operator-typed Ollama base URL reaching
-// modelroute.ts's `docker run ... wget ... "$url"` unquoted would let shell metacharacters in
-// that URL execute on the target.
-export function createSshProbeRunner(runner: CommandRunner, target: RemoteTarget): CommandRunner {
-  const destination = sshDestination(target);
-  const port = String(validatePort(String(target.port)));
-
-  return {
-    async run(command, args = [], options) {
-      return runner.run(
-        'ssh',
-        ['-p', port, destination, ...[command, ...args].map(shellQuote)],
-        options,
-      );
-    },
-  };
 }

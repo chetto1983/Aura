@@ -60,30 +60,3 @@ export function assertNoLineBreak(raw: string, code: string): void {
   if (/[\n\r]/.test(raw)) throw new ValidationError(code);
 }
 
-export function validateBaseUrl(raw: string): string {
-  assertNoLineBreak(raw, 'invalidBaseUrl');
-  const value = raw.trim();
-  let parsed: URL;
-  try {
-    parsed = new URL(value);
-  } catch {
-    throw new ValidationError('invalidBaseUrl');
-  }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new ValidationError('invalidBaseUrl');
-  }
-  // modelroute.ts's tagsUrlFor only strips a trailing /v1; a base URL that ends in a bare
-  // trailing slash (no /v1) would reach it unchanged and produce `${base}//api/tags`, a
-  // double slash. Stripping it once here means every downstream consumer sees a URL with
-  // no trailing slash, whether or not it happens to end in /v1.
-  return value.replace(/\/$/, '');
-}
-
-// Aura is agnostic about which model an operator runs: no vendor-specific naming shape is
-// enforced here, only that a value was actually given and carries no line break.
-export function validateModelId(raw: string): string {
-  assertNoLineBreak(raw, 'invalidModelId');
-  const value = raw.trim();
-  if (value.length === 0) throw new ValidationError('invalidModelId');
-  return value;
-}

@@ -16,12 +16,10 @@ export interface PreflightResult {
   existingInstall: boolean;
 }
 
+// The installer's answers are infrastructure only. The model route, the model and the
+// OpenRouter management key are chosen by an admin in the first-run web setup.
 export interface InstallSettings {
   installDir: string;
   appliance: boolean;
   gvisor: boolean;
-  llmProvider: string;
-  llmBaseUrl: string;
-  llmModel: string;
-  openrouterApiKey?: string;
 }

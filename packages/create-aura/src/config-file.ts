@@ -28,16 +28,14 @@ function encode(value: string): string {
 
 export function serializeInstallConfig(settings: InstallSettings): string {
   return [
-    'format=1',
+    // Format 2 carries infrastructure only: the model route and the OpenRouter key are chosen
+    // in the first-run web setup, so no credential crosses to the install target.
+    'format=2',
     `install_dir_base64=${encode(settings.installDir)}`,
     // appliance and gvisor are the two install.sh reads RAW; base64-ing them would make
     // its literal `= "true"` comparison false and silently produce a non-appliance install.
     `appliance=${settings.appliance ? 'true' : 'false'}`,
     `gvisor=${settings.gvisor ? 'true' : 'false'}`,
-    `llm_provider_base64=${encode(settings.llmProvider)}`,
-    `llm_base_url_base64=${encode(settings.llmBaseUrl)}`,
-    `llm_model_base64=${encode(settings.llmModel)}`,
-    `openrouter_api_key_base64=${encode(settings.openrouterApiKey ?? '')}`,
     '',
   ].join('\n');
 }

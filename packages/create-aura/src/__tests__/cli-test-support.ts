@@ -66,7 +66,4 @@ export const validSettings = {
   installDir: '/opt/aura',
   appliance: true,
   gvisor: false,
-  llmProvider: 'ollama',
-  llmBaseUrl: 'http://host.docker.internal:11434/v1',
-  llmModel: 'llama3:8b',
 };

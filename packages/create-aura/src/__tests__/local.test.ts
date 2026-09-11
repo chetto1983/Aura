@@ -200,27 +200,16 @@ describe('local installer', () => {
 
   it('runs sudo with a `--` separator before --config so makeself hands off to install.sh', async () => {
     const runner = { run: vi.fn().mockResolvedValue(success) };
-    const apiKey = 'sk-or-v1-correct-horse-battery-staple';
 
     await installLocal(
       runner,
       { path: '/tmp/install-appliance.run', cleanup: vi.fn() },
       { path: '/tmp/install.conf', cleanup: vi.fn() },
-      {
-        installDir: '/opt/aura',
-        appliance: true,
-        gvisor: false,
-        llmProvider: 'openrouter',
-        llmBaseUrl: 'https://openrouter.ai/api/v1',
-        llmModel: 'vendor/model',
-        openrouterApiKey: apiKey,
-      },
     );
 
     expect(runner.run).toHaveBeenCalledWith(
       'sudo',
       ['bash', '/tmp/install-appliance.run', '--', '--config', '/tmp/install.conf'],
-      { redactions: [apiKey] },
     );
     // R6: makeself's own header parses argv against ITS flags before exec'ing install.sh --
     // `--` must be present, and it must come strictly before `--config`, not merely appear
@@ -228,7 +217,6 @@ describe('local installer', () => {
     const argv = runner.run.mock.calls[0]?.[1] as string[];
     expect(argv).toContain('--');
     expect(argv.indexOf('--')).toBeLessThan(argv.indexOf('--config'));
-    expect(JSON.stringify(runner.run.mock.calls[0]?.[1])).not.toContain(apiKey);
   });
 
   it('resolves the bundled installer artifact next to the package root', async () => {

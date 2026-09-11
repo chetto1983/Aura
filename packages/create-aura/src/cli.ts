@@ -9,7 +9,7 @@ import { collectSettings, collectTarget, inquirerPrompt } from './prompts.js';
 import type { PromptPort, TargetSelection } from './prompts.js';
 import { ProcessRunner } from './process.js';
 import type { CommandRunner } from './process.js';
-import { createSshProbeRunner, installRemote, preflightRemote } from './remote.js';
+import { installRemote, preflightRemote } from './remote.js';
 import type { InstallMode, InstallSettings, RemoteTarget } from './types.js';
 import { ValidationError } from './validation.js';
 
@@ -23,19 +23,13 @@ type SettingsCollector = (
   prompt: PromptPort,
   t: ReturnType<typeof createTranslator>,
   installDir: string,
-  probeRunner: CommandRunner | undefined,
 ) => Promise<InstallSettings | null>;
 type ConfigCreator = (settings: InstallSettings) => Promise<TemporaryFile>;
-type LocalInstaller = (
-  runner: CommandRunner,
-  config: TemporaryFile,
-  settings: InstallSettings,
-) => Promise<void>;
+type LocalInstaller = (runner: CommandRunner, config: TemporaryFile) => Promise<void>;
 type RemoteInstaller = (
   runner: CommandRunner,
   target: RemoteTarget,
   config: TemporaryFile,
-  settings: InstallSettings,
 ) => Promise<void>;
 
 export interface CliDependencies {
@@ -75,8 +69,6 @@ export const TRANSLATED_ERROR_CODES: Readonly<Record<string, MessageKey>> = {
   invalidPort: 'invalidPort',
   invalidUsername: 'invalidUsername',
   invalidInstallDir: 'invalidInstallDir',
-  invalidBaseUrl: 'invalidBaseUrl',
-  invalidModelId: 'invalidModelId',
   unsupportedArchitecture: 'unsupportedArchitecture',
   invalidDiskAvailability: 'invalidDiskAvailability',
   insufficientDiskSpace: 'insufficientDiskSpace',
@@ -173,20 +165,18 @@ export async function runCli(
   const configCreator = dependencies.createConfig ?? createTemporaryInstallConfig;
   // R5/R6: the real installer runs the bundled makeself artifact (Task 7 packages it beside
   // this module); resolving it here, once, keeps local.ts/remote.ts's own exported
-  // installLocal/installRemote matching the reference's ported (runner, artifact, config,
-  // settings) shape while cli.ts's injected defaults keep the 4-/5-arg shape the rest of this
-  // file already declares.
-  const localInstaller: LocalInstaller = dependencies.installLocal ?? (async (installRunner, installConfig, installSettings) => {
+  // installLocal/installRemote matching the reference's (runner, artifact, config) shape.
+  const localInstaller: LocalInstaller = dependencies.installLocal ?? (async (installRunner, installConfig) => {
     const artifact = await resolveInstallerArtifact();
-    await installLocal(installRunner, artifact, installConfig, installSettings);
+    await installLocal(installRunner, artifact, installConfig);
   });
-  const remoteInstaller: RemoteInstaller = dependencies.installRemote ?? (async (installRunner, installTarget, installConfig, installSettings) => {
+  const remoteInstaller: RemoteInstaller = dependencies.installRemote ?? (async (installRunner, installTarget, installConfig) => {
     const artifact = await resolveInstallerArtifact();
     // Matches the reference cli.ts's own default wiring: a best-effort cleanup failure is a
     // warning, not a fatal error, and which of the two cleanup steps produced it does not
     // change what the operator needs to do (re-run is safe either way) -- so one generic
     // message covers both, exactly like cleanupWarning already does for the config file.
-    await installRemote(installRunner, installTarget, artifact, installConfig, installSettings, undefined, () => writeError(t('cleanupWarning')));
+    await installRemote(installRunner, installTarget, artifact, installConfig, undefined, () => writeError(t('cleanupWarning')));
   });
 
   let config: TemporaryFile | undefined;
@@ -198,13 +188,7 @@ export async function runCli(
     write(t('phasePreflight'));
 
     // R1: the wizard runs on the operator's laptop, but in remote mode the install lands on
-    // a different machine. local mode passes the real runner -- the probed machine IS the
-    // target. R2 (Task 6, closing this out): remote mode used to pass undefined here --
-    // probing the laptop and presenting the answer as if it were the target's would have been
-    // worse than not probing -- but now wraps the runner over SSH (createSshProbeRunner) so
-    // collectSettings's Ollama probe reaches the real target. Nothing in collectSettings or
-    // modelroute.ts needed to change: the seam was built for exactly this swap.
-    let probeRunner: CommandRunner | undefined;
+    // a different machine, so each mode preflights the machine it actually installs onto.
     if (target.mode === 'remote') {
       if (!target.remote) throw new Error('invalidRemoteTarget');
       const preflight = await preflightRemote(runner, target.remote, target.installDir, dependencies.platform);
@@ -214,7 +198,6 @@ export async function runCli(
         port: target.remote.port,
       }));
       if (preflight.existingInstall) write(t('existingInstall'));
-      probeRunner = createSshProbeRunner(runner, target.remote);
     } else {
       // R1 (carried Task 5 debt, closed): the hardware/command/host gate that used to live
       // here as a small local-only runLocalPreflight now lives in local.ts's preflightLocal,
@@ -223,10 +206,9 @@ export async function runCli(
       const preflight = await preflightLocal(runner, target.installDir, dependencies.platform);
       write(t('localTargetSummary'));
       if (preflight.existingInstall) write(t('existingInstall'));
-      probeRunner = runner;
     }
 
-    const settings = await settingsCollector(prompt, t, target.installDir, probeRunner);
+    const settings = await settingsCollector(prompt, t, target.installDir);
     if (settings === null) {
       write(t('cancelled'));
       return 0;
@@ -237,9 +219,9 @@ export async function runCli(
     write(t('phaseInstall'));
     if (target.mode === 'remote') {
       if (!target.remote) throw new Error('invalidRemoteTarget');
-      await remoteInstaller(runner, target.remote, config, settings);
+      await remoteInstaller(runner, target.remote, config);
     } else {
-      await localInstaller(runner, config, settings);
+      await localInstaller(runner, config);
     }
     installed = true;
   } catch (error) {

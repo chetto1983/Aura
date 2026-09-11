@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   REMOTE_INSTALL_SCRIPT,
-  createSshProbeRunner,
   installRemote,
   preflightRemote,
   sshDestination,
@@ -15,16 +14,6 @@ const success = { stdout: '', stderr: '', exitCode: 0 };
 const target = { host: '192.168.1.40', port: 22, username: 'ubuntu' };
 const remoteId = '123e4567-e89b-42d3-a456-426614174000';
 const roots: string[] = [];
-
-const settings = {
-  installDir: '/opt/aura',
-  appliance: true,
-  gvisor: false,
-  llmProvider: 'openrouter',
-  llmBaseUrl: 'https://openrouter.ai/api/v1',
-  llmModel: 'vendor/model',
-  openrouterApiKey: 'correct horse battery',
-};
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -181,7 +170,6 @@ describe('remote installer', () => {
       target,
       { path: files.artifactPath, cleanup: vi.fn() },
       { path: files.configPath, cleanup: vi.fn() },
-      settings,
       remoteId,
       undefined,
       files.stagingRoot,
@@ -192,9 +180,7 @@ describe('remote installer', () => {
     const wrapperPath = `/tmp/create-aura-${remoteId}-run.sh`;
     expect(runner.run).toHaveBeenCalledTimes(3);
     expect(runner.run.mock.calls[0]?.[0]).toBe('ssh');
-    // R7: the OpenRouter key travels in redactions, not the reference's adminPassword --
-    // this crosses an SSH session and often a terminal someone is screen-sharing.
-    expect(runner.run.mock.calls[0]?.[2]).toEqual({ terminal: true, redactions: [settings.openrouterApiKey] });
+    expect(runner.run.mock.calls[0]?.[2]).toEqual({ terminal: true });
     const scpCall = runner.run.mock.calls[1];
     expect(scpCall?.[0]).toBe('scp');
     expect(scpCall?.[1]?.slice(0, 2)).toEqual(['-P', '22']);
@@ -202,18 +188,12 @@ describe('remote installer', () => {
     expect(basename(scpCall?.[1]?.[3] as string)).toBe(`create-aura-${remoteId}-install.conf`);
     expect(basename(scpCall?.[1]?.[4] as string)).toBe(`create-aura-${remoteId}-run.sh`);
     expect(scpCall?.[1]?.[5]).toBe('ubuntu@192.168.1.40:/tmp/');
-    expect(scpCall?.[2]).toEqual({ terminal: true, redactions: [settings.openrouterApiKey] });
+    expect(scpCall?.[2]).toEqual({ terminal: true });
     expect(runner.run).toHaveBeenLastCalledWith(
       'ssh',
       ['-tt', '-p', '22', 'ubuntu@192.168.1.40', 'sh', wrapperPath, installerPath, configPath],
-      { terminal: true, redactions: [settings.openrouterApiKey] },
+      { terminal: true },
     );
-
-    // The key legitimately travels in the `redactions` OPTION (ProcessRunner.execute reads
-    // it to scrub live stdout/stderr) -- it must never additionally appear in the argv the
-    // reference test itself checked this way, comparing only [command, args] pairs.
-    const argvOnly = runner.run.mock.calls.map((call) => [call[0], call[1]]);
-    expect(JSON.stringify(argvOnly)).not.toContain(settings.openrouterApiKey);
     const cleanupCommand = runner.run.mock.calls[0]?.[1]?.[3] as string;
     const encodedCleanup = cleanupCommand.split(' ')[2] ?? '';
     const cleanupScript = Buffer.from(encodedCleanup, 'base64').toString('utf8');
@@ -231,7 +211,6 @@ describe('remote installer', () => {
       target,
       { path: '/tmp/installer', cleanup: vi.fn() },
       { path: '/tmp/config', cleanup: vi.fn() },
-      { installDir: '/opt/aura', appliance: true, gvisor: false, llmProvider: 'ollama', llmBaseUrl: 'http://x', llmModel: 'm' },
       '../../unsafe',
     )).rejects.toThrow('invalidRemoteId');
     expect(runner.run).not.toHaveBeenCalled();
@@ -252,7 +231,6 @@ describe('remote installer', () => {
       target,
       { path: files.artifactPath, cleanup: vi.fn() },
       { path: files.configPath, cleanup: vi.fn() },
-      settings,
       remoteId,
       undefined,
       files.stagingRoot,
@@ -282,7 +260,6 @@ describe('remote installer', () => {
       target,
       { path: files.artifactPath, cleanup: vi.fn() },
       { path: files.configPath, cleanup: vi.fn() },
-      settings,
       remoteId,
       (message) => warnings.push(message),
       files.stagingRoot,
@@ -291,57 +268,3 @@ describe('remote installer', () => {
   });
 });
 
-describe('createSshProbeRunner', () => {
-  // R2 (Task 6 controller ruling): the trap this guards is an implementation that probes the
-  // OPERATOR'S OWN LAPTOP instead of the target -- exactly the class of bug
-  // modelroute.test.ts's host-only reachability test was built to catch. A naive assertion
-  // that 'docker' and 'run' merely appear SOMEWHERE in the recorded call would pass for that
-  // wrong implementation too; the command name itself must be 'ssh', with the probed command
-  // appearing later in argv.
-  it('wraps the probe command in ssh against the target instead of running it on the laptop', async () => {
-    const runner = { run: vi.fn().mockResolvedValue(success) };
-    const sshRunner = createSshProbeRunner(runner, target);
-
-    await sshRunner.run('docker', ['run', '--rm', 'alpine', 'wget', '-qO-', 'http://host.docker.internal:11434/api/tags']);
-
-    expect(runner.run).toHaveBeenCalledTimes(1);
-    const [command, args] = runner.run.mock.calls[0] as [string, string[], unknown];
-    expect(command).toBe('ssh');
-    expect(args[0]).toBe('-p');
-    expect(args[1]).toBe('22');
-    expect(args[2]).toBe('ubuntu@192.168.1.40');
-    const remoteCommand = args.slice(3).join(' ');
-    expect(remoteCommand.indexOf('docker')).toBeGreaterThan(-1);
-    expect(remoteCommand.indexOf('run')).toBeGreaterThan(remoteCommand.indexOf('docker'));
-  });
-
-  it('wraps a zero-argument probe command the same way', async () => {
-    const runner = { run: vi.fn().mockResolvedValue(success) };
-    const sshRunner = createSshProbeRunner(runner, target);
-
-    await sshRunner.run('uname');
-
-    expect(runner.run.mock.calls[0]?.[0]).toBe('ssh');
-    const args = runner.run.mock.calls[0]?.[1] as string[];
-    expect(args.slice(3).join(' ')).toContain('uname');
-  });
-
-  it('shell-quotes each argument so an operator-typed value cannot break out of the remote command', async () => {
-    const runner = { run: vi.fn().mockResolvedValue(success) };
-    const sshRunner = createSshProbeRunner(runner, target);
-
-    await sshRunner.run('docker', ['run', 'http://host;rm -rf /']);
-
-    const args = runner.run.mock.calls[0]?.[1] as string[];
-    expect(args).toContain("'http://host;rm -rf /'");
-  });
-
-  it('forwards run options (e.g. redactions) to the underlying local runner', async () => {
-    const runner = { run: vi.fn().mockResolvedValue(success) };
-    const sshRunner = createSshProbeRunner(runner, target);
-
-    await sshRunner.run('uname', [], { redactions: ['secret'] });
-
-    expect(runner.run.mock.calls[0]?.[2]).toEqual({ redactions: ['secret'] });
-  });
-});

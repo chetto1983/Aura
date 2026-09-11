@@ -1,14 +1,10 @@
-import { confirm, input, password, select } from '@inquirer/prompts';
+import { confirm, input, select } from '@inquirer/prompts';
 
 import type { Translator } from './i18n.js';
-import { probeOllama } from './modelroute.js';
-import type { CommandRunner } from './process.js';
 import type { InstallMode, InstallSettings, RemoteTarget } from './types.js';
 import {
-  validateBaseUrl,
   validateHost,
   validateInstallDir,
-  validateModelId,
   validatePort,
   validateUsername,
 } from './validation.js';
@@ -23,11 +19,6 @@ export interface InputOptions {
   default?: string;
 }
 
-export interface PasswordOptions {
-  message: string;
-  mask: string;
-}
-
 export interface ConfirmOptions {
   message: string;
   default: boolean;
@@ -36,14 +27,12 @@ export interface ConfirmOptions {
 export interface PromptPort {
   select(options: SelectOptions): Promise<string>;
   input(options: InputOptions): Promise<string>;
-  password(options: PasswordOptions): Promise<string>;
   confirm(options: ConfirmOptions): Promise<boolean>;
 }
 
 export const inquirerPrompt: PromptPort = {
   select: (options) => select({ message: options.message, choices: [...options.choices] }),
   input: (options) => input(options),
-  password: (options) => password(options),
   confirm: (options) => confirm(options),
 };
 
@@ -86,94 +75,19 @@ export async function collectTarget(
   return remote ? { mode, installDir, remote } : { mode, installDir };
 }
 
-async function collectOllamaModel(
-  prompt: PromptPort,
-  t: Translator,
-  probeRunner: CommandRunner | undefined,
-  llmBaseUrl: string,
-): Promise<string> {
-  const probe = probeRunner ? await probeOllama(probeRunner, llmBaseUrl) : undefined;
-
-  if (probe?.reachable && probe.models.length > 0) {
-    return prompt.select({
-      message: t('ollamaModelSelect'),
-      choices: probe.models.map((model) => ({ name: model, value: model })),
-    });
-  }
-
-  // R2 (Task 4 review, landed here): probe.reachable is false for four different causes --
-  // the endpoint refused, docker is absent or its daemon is down, the alpine probe image
-  // could not be pulled, or the reply was not JSON. The message must not assert the
-  // endpoint is at fault, or the operator debugs a box that was fine. A probe that WAS
-  // reachable but listed no models yet (or no probe was attempted at all, when no runner was passed in)
-  // gets the plain manual-entry prompt instead.
-  const message = probe && !probe.reachable ? t('ollamaModelUnreachable') : t('ollamaModelManualEntry');
-  return validateModelId(await prompt.input({ message }));
-}
-
+// The installer asks for infrastructure only. The model route, the model and the OpenRouter
+// management key are chosen by an admin in the first-run web setup (management-key design,
+// decision 3), so nothing typed here is a credential.
 export async function collectSettings(
   prompt: PromptPort,
   t: Translator,
   installDir: string,
-  probeRunner: CommandRunner | undefined,
 ): Promise<InstallSettings | null> {
   const appliance = await prompt.confirm({ message: t('applianceQuestion'), default: true });
   const gvisor = await prompt.confirm({ message: t('gvisorQuestion'), default: false });
 
-  // R4: exactly two model routes. A third llama.cpp route is deliberately not offered --
-  // compose.yaml's aura-llm sits behind profiles:[localllm] and needs a ~6.7 GB GGUF that
-  // install.sh never fetches, so enabling it would leave the volume empty, the healthcheck
-  // would never pass, and `docker compose up -d --wait` would abort the whole install.
-  const llmProvider = await prompt.select({
-    message: t('modelRouteQuestion'),
-    choices: [
-      { name: t('modelRouteOpenrouter'), value: 'openrouter' },
-      { name: t('modelRouteOllama'), value: 'ollama' },
-    ],
-  });
-
-  let llmBaseUrl: string;
-  let llmModel: string;
-  let openrouterApiKey: string | undefined;
-
-  if (llmProvider === 'openrouter') {
-    llmBaseUrl = validateBaseUrl(await prompt.input({
-      message: t('openrouterBaseUrl'),
-      default: 'https://openrouter.ai/api/v1',
-    }));
-    openrouterApiKey = await prompt.password({ message: t('openrouterApiKey'), mask: '*' });
-    llmModel = validateModelId(await prompt.input({ message: t('openrouterModel') }));
-  } else {
-    llmBaseUrl = validateBaseUrl(await prompt.input({
-      message: t('ollamaBaseUrl'),
-      // C1 (review round 1): 'localhost' here is wrong twice. probeOllama's request runs
-      // INSIDE the throwaway alpine container, where 'localhost' means the container itself,
-      // not the operator's host -- modelroute.ts's own comment warns about exactly this ("an
-      // Ollama on the host is not at 127.0.0.1 as seen from there"), so the wizard's own
-      // default could never probe reachable. And the /v1 suffix is load-bearing:
-      // internal/llm/config.go:21's defaultBaseURL carries it, and every other Ollama base
-      // URL in this repo is spelled with it (scripts/install_config_test.sh:19,
-      // internal/agui/settings_api_test.go:218,
-      // internal/channels/telegram/commands_spend_test.go:157) -- without it Aura requests
-      // .../11434/chat/completions, which Ollama does not serve.
-      default: 'http://host.docker.internal:11434/v1',
-    }));
-    llmModel = await collectOllamaModel(prompt, t, probeRunner, llmBaseUrl);
-  }
-
   const confirmed = await prompt.confirm({ message: t('confirmInstall'), default: true });
   if (!confirmed) return null;
 
-  return {
-    installDir,
-    appliance,
-    gvisor,
-    llmProvider,
-    llmBaseUrl,
-    llmModel,
-    // R5: the empty OpenRouter key is emitted, never omitted -- install.sh's
-    // parse_install_config accepts an empty openrouter_api_key_base64 and exit 2s on a
-    // MISSING key set, so the Ollama route must still produce all seven keys.
-    ...(openrouterApiKey === undefined ? {} : { openrouterApiKey }),
-  };
+  return { installDir, appliance, gvisor };
 }

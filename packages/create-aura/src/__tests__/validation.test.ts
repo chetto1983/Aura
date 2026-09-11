@@ -1,11 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ValidationError,
   assertNoLineBreak,
-  validateBaseUrl,
   validateHost,
   validateInstallDir,
-  validateModelId,
   validatePort,
   validateUsername,
 } from '../validation.js';
@@ -35,48 +32,11 @@ describe('installer validation', () => {
     },
   );
 
-  it.each(['http://10.0.0.5:11434', 'https://openrouter.ai/api/v1'])(
-    'accepts base url %s',
-    (value) => {
-      expect(validateBaseUrl(value)).toBe(value);
-    },
-  );
-
-  // modelroute.ts's tagsUrlFor only strips a trailing /v1, so a base URL ending in a bare
-  // slash reached it unchanged and produced `${base}//api/tags` -- a double slash Ollama's
-  // router does not resolve. Normalising the trailing slash off here, once, at entry, fixes
-  // every downstream consumer instead of just the one call site that happened to notice.
-  it.each([
-    ['http://10.0.0.5:11434/', 'http://10.0.0.5:11434'],
-    ['http://10.0.0.5:11434/v1/', 'http://10.0.0.5:11434/v1'],
-  ])('strips a trailing slash from base url %s', (value, expected) => {
-    expect(validateBaseUrl(value)).toBe(expected);
-  });
-
-  it.each(['', 'not a url', 'ftp://10.0.0.5', 'javascript:alert(1)'])(
-    'rejects base url %s',
-    (value) => {
-      expect(() => validateBaseUrl(value)).toThrow('invalidBaseUrl');
-    },
-  );
-
-  it('accepts an opaque model id and rejects an empty one', () => {
-    expect(validateModelId('deepseek/deepseek-v4')).toBe('deepseek/deepseek-v4');
-    expect(() => validateModelId('   ')).toThrow('invalidModelId');
-  });
-
   // A newline reaches set_env_value, which writes two .env lines; install.sh's reader takes
   // the first and docker compose takes the last, so the installer and the running appliance
-  // would trust different secrets. install.sh rejects it too -- this layer can say so while
-  // the operator is still typing.
-  it('rejects a line break in a model id', () =>
-    expect(() => validateModelId('a\nOPENROUTER_API_KEY=x')).toThrow(ValidationError));
-
-  it('rejects a line break in a base url', () =>
-    expect(() => validateBaseUrl('http://10.0.0.5\nOPENROUTER_API_KEY=x')).toThrow(ValidationError));
-
+  // would trust different values. install.sh rejects it too -- this layer says so first.
   it('assertNoLineBreak passes clean values and throws the caller-supplied code otherwise', () => {
-    expect(() => assertNoLineBreak('clean', 'invalidModelId')).not.toThrow();
-    expect(() => assertNoLineBreak('a\r\nb', 'invalidModelId')).toThrow('invalidModelId');
+    expect(() => assertNoLineBreak('clean', 'invalidConfigValue')).not.toThrow();
+    expect(() => assertNoLineBreak('a\r\nb', 'invalidConfigValue')).toThrow('invalidConfigValue');
   });
 });

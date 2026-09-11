@@ -34,8 +34,6 @@ GVISOR=0
 INSTALL_DIR="${AURA_INSTALL_DIR:-}"
 CONFIG_FILE=""
 CFG_INSTALL_DIR=""; CFG_APPLIANCE=""; CFG_GVISOR=""
-CFG_LLM_PROVIDER=""; CFG_LLM_BASE_URL=""; CFG_LLM_MODEL=""
-CFG_OPENROUTER_API_KEY=""
 
 usage() {
   cat <<'EOF'
@@ -280,9 +278,10 @@ readable_by_sidecars() {
   done
 }
 
-# The wizard hands its answers over in a file, never in argv: an API key on a command line
-# is readable in the process table and lands in shell history. Values are base64 so a
-# newline or a shell metacharacter in a model name cannot break the format.
+# The wizard hands its answers over in a file, never in argv, which is readable in the
+# process table and lands in shell history. Values are base64 so a newline or a shell
+# metacharacter in the install path cannot break the format. Format 2 carries
+# infrastructure only: the model route and the OpenRouter key are chosen in the web setup.
 parse_install_config() {
   path="$1"
   case "$path" in
@@ -290,7 +289,7 @@ parse_install_config() {
     *) echo "FAIL: --config requires an absolute path" >&2; exit 2 ;;
   esac
   [ -f "$path" ] || { echo "FAIL: config not found: $path" >&2; exit 2; }
-  head -n 1 "$path" | grep -qx 'format=1' || {
+  head -n 1 "$path" | grep -qx 'format=2' || {
     echo "FAIL: unsupported config format in $path" >&2
     exit 2
   }
@@ -305,49 +304,31 @@ parse_install_config() {
       install_dir_base64) CFG_INSTALL_DIR="$(config_decode "$value")" ;;
       appliance) CFG_APPLIANCE="$value" ;;
       gvisor) CFG_GVISOR="$value" ;;
-      llm_provider_base64) CFG_LLM_PROVIDER="$(config_decode "$value")" ;;
-      llm_base_url_base64) CFG_LLM_BASE_URL="$(config_decode "$value")" ;;
-      llm_model_base64) CFG_LLM_MODEL="$(config_decode "$value")" ;;
-      openrouter_api_key_base64) CFG_OPENROUTER_API_KEY="$(config_decode "$value")" ;;
-      # format=1 is what buys forward compatibility -- a future wizard bumps to
-      # format=2 and the check above already refuses that loudly -- so within
-      # format=1 a key naming nothing above can only be a typo or corruption.
+      # The format line is what buys forward compatibility -- a future wizard bumps it and
+      # the check above refuses that loudly -- so within format=2 a key naming nothing
+      # above can only be a typo or corruption.
       format|'') ;;
       '#'*) ;;
       *) echo "FAIL: unknown key '$key' in $path" >&2; exit 2 ;;
     esac
   done < "$path"
 
-  # base64 keeps a newline from breaking THIS file's key=value format, but .env has its own
-  # format and set_env_value writes one line per value. A newline here becomes a second
-  # .env line, and env_value (first match) and docker compose (last wins) then disagree
-  # about which secret is live -- the installer and the running appliance would use
-  # different ones. This must run in the main shell, not inside config_decode's command
-  # substitution above, because an exit there would only kill that subshell.
-  for value in "$CFG_INSTALL_DIR" "$CFG_LLM_PROVIDER" "$CFG_LLM_BASE_URL" "$CFG_LLM_MODEL" \
-               "$CFG_OPENROUTER_API_KEY"; do
-    case "$value" in
-      *$'\n'*|*$'\r'*)
-        echo "FAIL: a config value contains a line break, which would inject a second line into .env" >&2
-        exit 2
-        ;;
-    esac
-  done
+  # base64 keeps a newline from breaking THIS file's key=value format, but a decoded path
+  # with a line break in it is never a real directory, and any value that reached
+  # set_env_value would become a second .env line. This must run in the main shell, not
+  # inside config_decode's command substitution above, because an exit there would only
+  # kill that subshell.
+  case "$CFG_INSTALL_DIR" in
+    *$'\n'*|*$'\r'*)
+      echo "FAIL: a config value contains a line break" >&2
+      exit 2
+      ;;
+  esac
 }
 
 config_decode() {
   [ -n "$1" ] || { printf ''; return 0; }
   printf '%s' "$1" | base64 -d
-}
-
-# Only non-empty values are written. An absent key means "the wizard did not ask", not
-# "clear it": clearing is how a re-run would wipe a key the operator set by hand, and
-# install.sh's whole contract is that re-running preserves explicit settings.
-apply_install_config() {
-  if [ -n "$CFG_LLM_PROVIDER" ]; then set_env_value AURA_LLM_PROVIDER "$CFG_LLM_PROVIDER"; fi
-  if [ -n "$CFG_LLM_BASE_URL" ]; then set_env_value AURA_LLM_BASE_URL "$CFG_LLM_BASE_URL"; fi
-  if [ -n "$CFG_LLM_MODEL" ]; then set_env_value AURA_LLM_MODEL "$CFG_LLM_MODEL"; fi
-  if [ -n "$CFG_OPENROUTER_API_KEY" ]; then set_env_value OPENROUTER_API_KEY "$CFG_OPENROUTER_API_KEY"; fi
 }
 
 env_value() {
@@ -727,7 +708,6 @@ write_env_if_missing() {
   authula_secret="$(openssl rand -hex 32)"
   searxng_secret="$(openssl rand -hex 32)"
   aura_image="${AURA_IMAGE:-$DEFAULT_IMAGE}"
-  openrouter_key="${OPENROUTER_API_KEY:-}"
 
   umask 077
   cat > .env <<EOF
@@ -774,8 +754,6 @@ AURA_OBJECTSTORE_ACCESS_KEY=${objectstore_access_key}
 AURA_OBJECTSTORE_SECRET_KEY=${objectstore_secret_key}
 GARAGE_RPC_SECRET=${garage_rpc_secret}
 AURA_GARAGE_ADMIN_TOKEN=${garage_admin_token}
-
-OPENROUTER_API_KEY=${openrouter_key}
 EOF
   # The heredoc above is the fresh-install template and it WILL drift: compose
   # fail-fasts on every `:?` variable and interpolates the whole file before it
@@ -947,7 +925,6 @@ download_file observability/tempo/tempo.yml observability/tempo/tempo.yml
 chmod +x scripts/garage_bootstrap.sh scripts/fetch_embedding_model.sh scripts/observability_sidecar_check.sh deploy/aura-image-update.sh
 
 write_env_if_missing
-apply_install_config
 ensure_embed_backend_env
 
 ensure_objectstore_public_endpoint

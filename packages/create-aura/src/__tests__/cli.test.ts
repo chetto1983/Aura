@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { en } from '../messages/en.js';
 import { runCli } from '../cli.js';
-import type { CommandRunner } from '../process.js';
 import {
   createFakeRunner,
   createPassingPreflightRunner,
@@ -14,7 +13,7 @@ import {
 // plus the TRANSLATED_ERROR_CODES completeness checks) live in
 // cli_local_preflight.test.ts -- split out when this file crossed the 600-LOC cap.
 describe('create-aura CLI', () => {
-  it('runs a local hardware preflight, probes with the real runner, installs, and cleans up', async () => {
+  it('runs a local hardware preflight, collects the settings, installs, and cleans up', async () => {
     const events: string[] = [];
     const configCleanup = vi.fn(async () => { events.push('config-cleanup'); });
     const write = vi.fn();
@@ -43,21 +42,13 @@ describe('create-aura CLI', () => {
 
     expect(code).toBe(0);
     expect(events).toEqual(['settings', 'install', 'config-cleanup']);
-    // R1: local mode probes with the REAL runner (the probed machine IS the install target).
-    expect(collectSettingsMock).toHaveBeenCalledWith(
-      expect.anything(), expect.anything(), '/opt/aura', runner,
-    );
+    expect(collectSettingsMock).toHaveBeenCalledWith(expect.anything(), expect.anything(), '/opt/aura');
     expect(runner.calls.some((call) => call.command === 'uname')).toBe(true);
     expect(write).toHaveBeenCalledWith('Target: this Linux device');
     expect(write).toHaveBeenCalledWith('Aura is starting.');
   });
 
-  // Task 6 changed this contract and the change is the point: remote mode used to pass
-  // undefined so the laptop's own Ollama could never be presented as the target's. It now
-  // passes an SSH-wrapped runner, which answers the same question honestly instead of not
-  // answering it -- collectSettings's Ollama probe reaches the real machine. What must stay
-  // true is that the RAW local runner never reaches collectSettings.
-  it('probes the remote target over SSH rather than the laptop it runs on', async () => {
+  it('preflights the remote target over SSH, then collects the settings and installs there', async () => {
     const events: string[] = [];
     const runner = createPassingRemotePreflightRunner();
     const writeError = vi.fn();
@@ -87,19 +78,8 @@ describe('create-aura CLI', () => {
     expect(code).toBe(0);
     expect(events).toEqual(['settings', 'install']);
     expect(write).toHaveBeenCalledWith('Target: ubuntu@192.168.1.40:22');
-
-    // The assertion R2 exists for. That SOME runner was handed over is not enough -- one
-    // that probes the laptop would satisfy that and be precisely the bug. Drive the runner
-    // collectSettings actually received and read the argv it produced on the underlying
-    // runner: `ssh` must be the command, carrying the destination and the probe after it.
-    const probeRunner = collectSettingsMock.mock.calls[0][3] as CommandRunner;
-    expect(probeRunner).toBeDefined();
-    expect(probeRunner).not.toBe(runner);
-    await probeRunner.run('docker', ['run', '--rm', 'alpine', 'true']);
-    const probeCall = runner.calls.at(-1);
-    expect(probeCall?.command).toBe('ssh');
-    expect(probeCall?.args.join(' ')).toContain('ubuntu@192.168.1.40');
-    expect(probeCall?.args.join(' ')).toContain('docker');
+    expect(collectSettingsMock).toHaveBeenCalledWith(expect.anything(), expect.anything(), '/opt/aura');
+    expect(runner.calls.some((call) => call.command === 'ssh')).toBe(true);
   });
 
   it('returns zero without creating a config when final confirmation is declined', async () => {

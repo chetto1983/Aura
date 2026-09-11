@@ -14,10 +14,6 @@ const settings: InstallSettings = {
   installDir: '/opt/aura',
   appliance: true,
   gvisor: true,
-  llmProvider: 'openrouter',
-  llmBaseUrl: 'https://openrouter.ai/api/v1',
-  llmModel: 'deepseek/deepseek-v4',
-  openrouterApiKey: 'sk-or-v1-correct-horse-battery-staple',
 };
 
 const roots: string[] = [];
@@ -27,79 +23,58 @@ afterEach(async () => {
 });
 
 describe('serializeInstallConfig', () => {
-  it('base64-encodes every user-controlled value', () => {
-    const serialized = serializeInstallConfig(settings);
-
-    expect(serialized).toContain('format=1\n');
-    expect(serialized).toContain(`install_dir_base64=${Buffer.from(settings.installDir).toString('base64')}\n`);
-    expect(serialized).toContain(`llm_provider_base64=${Buffer.from(settings.llmProvider).toString('base64')}\n`);
-    expect(serialized).toContain(`llm_base_url_base64=${Buffer.from(settings.llmBaseUrl).toString('base64')}\n`);
-    expect(serialized).toContain(`llm_model_base64=${Buffer.from(settings.llmModel).toString('base64')}\n`);
-    expect(serialized).toContain(`openrouter_api_key_base64=${Buffer.from(settings.openrouterApiKey ?? '').toString('base64')}\n`);
-    expect(serialized).not.toContain(settings.installDir);
-    expect(serialized).not.toContain(settings.openrouterApiKey);
+  // Format 2 carries infrastructure only. The model route, the model and the OpenRouter
+  // management key are chosen by an admin in the first-run web setup, so no credential
+  // crosses to the install target any more.
+  it('writes format 2 with the install directory base64-encoded', () => {
+    expect(serializeInstallConfig(settings)).toBe(
+      `format=2\ninstall_dir_base64=${Buffer.from('/opt/aura').toString('base64')}\nappliance=true\ngvisor=true\n`,
+    );
   });
 
   // install.sh's parse_install_config reads these two RAW and compares them with a literal
   // `= "true"` -- base64 would make that comparison false and silently produce a
   // non-appliance install, so this is the one pair the emitter must leave untouched.
   it('leaves appliance and gvisor unencoded', () => {
-    const serialized = serializeInstallConfig(settings);
     const disabled = serializeInstallConfig({ ...settings, appliance: false, gvisor: false });
 
-    expect(serialized).toContain('appliance=true\n');
-    expect(serialized).toContain('gvisor=true\n');
     expect(disabled).toContain('appliance=false\n');
     expect(disabled).toContain('gvisor=false\n');
-    expect(serialized).not.toContain(Buffer.from('true').toString('base64'));
+    expect(serializeInstallConfig(settings)).not.toContain(Buffer.from('true').toString('base64'));
   });
 
-  it('uses an empty value, not the base64 of an empty string, when there is no api key', () => {
-    const serialized = serializeInstallConfig({ ...settings, openrouterApiKey: undefined });
-
-    expect(serialized).toContain('openrouter_api_key_base64=\n');
-  });
-
-  // install.sh's parse_install_config exits 2 on any key it does not name (scripts/
-  // install.sh:271-287), so a test that only checks "install_dir is present" would pass
-  // just as happily with an eighth key riding along that breaks the real installer.
-  it('emits exactly the seven keys install.sh accepts', () => {
+  // install.sh's parse_install_config exits 2 on any key it does not name, so a test that
+  // only checked for the install dir would pass just as happily with an extra key riding
+  // along that breaks the real installer.
+  it('emits exactly the three keys install.sh accepts', () => {
     const keys = serializeInstallConfig(settings).split('\n').filter(Boolean).slice(1)
       .map((l) => l.split('=')[0]).sort();
-    expect(keys).toEqual([
-      'appliance', 'gvisor', 'install_dir_base64', 'llm_base_url_base64', 'llm_model_base64',
-      'llm_provider_base64', 'openrouter_api_key_base64',
-    ]);
+    expect(keys).toEqual(['appliance', 'gvisor', 'install_dir_base64']);
   });
 
-  // install.sh detects the embed backend (CUDA, Vulkan or CPU) on the target, so the wizard
-  // has no embed setting left to hand it.
-  it('emits no embed_ key', () => {
-    expect(serializeInstallConfig(settings)).not.toMatch(/^embed_/m);
+  // install.sh detects the embed backend on the target, and the web setup owns the model route
+  // and the key, so the wizard has neither an embed_ nor an llm_ answer to hand over.
+  it('emits no embed_, llm_ or openrouter_ key', () => {
+    expect(serializeInstallConfig(settings)).not.toMatch(/^(embed|llm|openrouter)_/m);
   });
 
-  // GNU `base64` wraps output at 76 columns; a wrapped value would insert an extra line
-  // and break install.sh's key=value reader. Buffer.toString('base64') never wraps, so this
-  // documents a property the emitter depends on rather than one it implements -- a 400-char
-  // value is long enough that a wrapping encoder would have split it.
+  // GNU `base64` wraps output at 76 columns; a wrapped value would insert an extra line and
+  // break install.sh's key=value reader. Buffer.toString('base64') never wraps, so this
+  // documents a property the emitter depends on rather than one it implements.
   it('does not wrap a long base64 value across lines', () => {
-    const longSecret = 'x'.repeat(400);
-    const serialized = serializeInstallConfig({ ...settings, openrouterApiKey: longSecret });
-    const lines = serialized.split('\n');
+    const longDir = `/opt/${'x'.repeat(400)}`;
+    const lines = serializeInstallConfig({ ...settings, installDir: longDir }).split('\n');
 
-    expect(Buffer.from(longSecret, 'utf8').toString('base64').length).toBeGreaterThan(76);
-    // format=1 + 7 keys + the trailing '' from the join's final element = 9, regardless of
-    // any single value's length -- a wrapped value would insert an extra line and break this.
-    expect(lines).toHaveLength(9);
-    expect(lines.filter((line) => line.startsWith('openrouter_api_key_base64=')).length).toBe(1);
+    expect(Buffer.from(longDir, 'utf8').toString('base64').length).toBeGreaterThan(76);
+    // format=2 + 3 keys + the trailing '' from the join's final element.
+    expect(lines).toHaveLength(5);
   });
 
   // A decoded value carrying \n makes install.sh's set_env_value write two .env lines; its
-  // own reader takes the first, docker compose takes the last, so the installer and the
-  // running appliance would trust different values. Failing here, on the machine running
-  // the wizard, is strictly better than failing after the config has crossed to the target.
+  // own reader takes the first, docker compose takes the last. Failing here, on the machine
+  // running the wizard, is strictly better than failing after the config crossed to the target.
   it('rejects a config value containing a line break', () => {
-    expect(() => serializeInstallConfig({ ...settings, llmModel: 'a\nOPENROUTER_API_KEY=x' }))
+    expect(() => serializeInstallConfig({ ...settings, installDir: '/opt/a\nAURA_IMAGE=x' }))
       .toThrow(ValidationError);
   });
 });
@@ -110,10 +85,9 @@ describe('createTemporaryInstallConfig', () => {
     roots.push(root);
 
     const temporary = await createTemporaryInstallConfig(settings, root);
-    const contents = await readFile(temporary.path, 'utf8');
 
     expect(temporary.path.startsWith(root)).toBe(true);
-    expect(contents).not.toContain(settings.openrouterApiKey);
+    expect(await readFile(temporary.path, 'utf8')).toBe(serializeInstallConfig(settings));
 
     if (process.platform !== 'win32') {
       expect((await stat(temporary.directory)).mode & 0o777).toBe(0o700);
@@ -133,7 +107,7 @@ describe('createTemporaryInstallConfig', () => {
     roots.push(root);
 
     await expect(
-      createTemporaryInstallConfig({ ...settings, llmModel: 'a\nb' }, root),
+      createTemporaryInstallConfig({ ...settings, installDir: '/opt/a\nb' }, root),
     ).rejects.toThrow(ValidationError);
     await expect(readdir(root)).resolves.toHaveLength(0);
   });

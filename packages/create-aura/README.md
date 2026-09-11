@@ -10,7 +10,7 @@ npx create-aura-appliance --mode remote
 
 ## What it does
 
-The wizard collects the target and the model route, writes an installer config, and then
+The wizard collects the target, writes an installer config, and then
 runs the appliance installer. The installer is **carried inside this package** as a
 self-extracting archive: nothing is fetched from a source host at install time, so the
 payload you run is the payload npm delivered.

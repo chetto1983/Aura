@@ -9,7 +9,7 @@ import {
   normalizeArchitecture,
 } from './preflight.js';
 import type { CommandRunner } from './process.js';
-import type { InstallSettings, PreflightResult } from './types.js';
+import type { PreflightResult } from './types.js';
 
 // R4 (Task 6 controller ruling): derived from scripts/install.sh, not copied from the
 // reference's ['apt-get', 'systemctl', 'sudo', 'curl'].
@@ -127,7 +127,6 @@ export async function installLocal(
   runner: CommandRunner,
   artifact: TemporaryFile,
   config: TemporaryFile,
-  settings: InstallSettings,
 ): Promise<void> {
   // R6 (Task 6 controller ruling): makeself's runtime header parses argv against its OWN
   // flag set before it execs the embedded script, so `artifact --config X` dies with
@@ -136,6 +135,5 @@ export async function installLocal(
   await runner.run(
     'sudo',
     ['bash', artifact.path, '--', '--config', config.path],
-    { redactions: [settings.openrouterApiKey] },
   );
 }
