@@ -42,11 +42,6 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	for _, want := range []string{
 		"aura:",
 		"dockerfile: docker/aura/Dockerfile",
-		"OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}",
-		// .env only interpolates compose.yaml: a key with no line here never reaches the
-		// daemon. Measured 2026-09-10: set in .env, unset in the container, spend 503.
-		"AURA_OPENROUTER_MANAGEMENT_KEY: ${AURA_OPENROUTER_MANAGEMENT_KEY:-}",
-		"AURA_LLM_BASE_URL: ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1}",
 		"AURA_LLM_STREAM_IDLE_TIMEOUT_SEC: ${AURA_LLM_STREAM_IDLE_TIMEOUT_SEC:-60}",
 		"AURA_CONTEXT_PREVIEW_CAP_BYTES: ${AURA_CONTEXT_PREVIEW_CAP_BYTES:-30000}",
 		"AURA_SHOW_REASONING: ${AURA_SHOW_REASONING:-true}",
@@ -71,7 +66,6 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"AURA_GARAGE_ZONE: ${AURA_GARAGE_ZONE:-dc1}",
 		"AURA_GARAGE_CAPACITY: ${AURA_GARAGE_CAPACITY:-1G}",
 		"GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?GARAGE_RPC_SECRET required in .env}",
-		"TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}",
 		"AURA_TELEGRAM_STATUS_THROTTLE_MS: ${AURA_TELEGRAM_STATUS_THROTTLE_MS:-1500}",
 		"AURA_TELEGRAM_CONTENT_THROTTLE_MS: ${AURA_TELEGRAM_CONTENT_THROTTLE_MS:-500}",
 		"AURA_TELEGRAM_CHAT_RATE_LIMIT_MS: ${AURA_TELEGRAM_CHAT_RATE_LIMIT_MS:-1000}",
@@ -170,11 +164,17 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 			t.Fatalf("compose.yaml missing %q", want)
 		}
 	}
-	// AURA_LLM_MODEL stays fully .env-configurable: assert the env-override pattern
-	// with a non-empty built-in fallback, never a specific model tag. The operator
-	// switches models via AURA_LLM_MODEL / .env without touching this contract.
-	if !regexp.MustCompile(`AURA_LLM_MODEL: \$\{AURA_LLM_MODEL:-[^}]+\}`).MatchString(compose) {
-		t.Fatalf("compose.yaml missing env-overridable AURA_LLM_MODEL default pattern (AURA_LLM_MODEL: ${AURA_LLM_MODEL:-...})")
+	// The OpenRouter credentials, the route and the Telegram token are cockpit settings: an
+	// admin sets them in the first-run setup and they live in aura.settings (management-key
+	// design). A line here would let .env carry a second copy that diverges in silence from
+	// the one in force, so no service is handed them.
+	for _, name := range []string{
+		"OPENROUTER_API_KEY", "AURA_OPENROUTER_MANAGEMENT_KEY", "AURA_LLM_PROVIDER",
+		"AURA_LLM_MODEL", "AURA_LLM_BASE_URL", "TELEGRAM_BOT_TOKEN",
+	} {
+		if regexp.MustCompile(`(?m)^\s+` + name + `:`).MatchString(compose) {
+			t.Errorf("compose.yaml still hands %s to a service", name)
+		}
 	}
 	for _, knob := range []string{"AURA_MODEL_CONTEXT_WINDOW", "AURA_MODEL_MAX_OUTPUT_TOKENS"} {
 		if !strings.Contains(compose, knob+": ${"+knob+":-}") {

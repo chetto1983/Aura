@@ -32,14 +32,13 @@ if [ -f .env ]; then
   set +a
 fi
 # Live release gates may use a zero-cost OpenAI-compatible model without changing
-# product defaults. These are test-process overrides only; ingestion itself still reads
-# the cockpit-owned aura.settings rows through AURA_DB_URL below.
-export AURA_LLM_PROVIDER="${AURA_DOCUMENT_E2E_LLM_PROVIDER:-${AURA_LLM_PROVIDER:-openrouter}}"
-export AURA_LLM_MODEL="${AURA_DOCUMENT_E2E_LLM_MODEL:-${AURA_LLM_MODEL:-}}"
-export AURA_LLM_BASE_URL="${AURA_DOCUMENT_E2E_LLM_BASE_URL:-${AURA_LLM_BASE_URL:-}}"
-if [ -n "${AURA_DOCUMENT_E2E_LLM_API_KEY:-}" ]; then
-  export OPENROUTER_API_KEY="$AURA_DOCUMENT_E2E_LLM_API_KEY"
-fi
+# product defaults. They are test-process overrides only, handed to the containers below
+# only when set; otherwise ingestion reads the cockpit-owned aura.settings rows (route,
+# model, services key) through AURA_DB_URL.
+if [ -n "${AURA_DOCUMENT_E2E_LLM_PROVIDER:-}" ]; then export AURA_LLM_PROVIDER="$AURA_DOCUMENT_E2E_LLM_PROVIDER"; fi
+if [ -n "${AURA_DOCUMENT_E2E_LLM_MODEL:-}" ]; then export AURA_LLM_MODEL="$AURA_DOCUMENT_E2E_LLM_MODEL"; fi
+if [ -n "${AURA_DOCUMENT_E2E_LLM_BASE_URL:-}" ]; then export AURA_LLM_BASE_URL="$AURA_DOCUMENT_E2E_LLM_BASE_URL"; fi
+if [ -n "${AURA_DOCUMENT_E2E_LLM_API_KEY:-}" ]; then export OPENROUTER_API_KEY="$AURA_DOCUMENT_E2E_LLM_API_KEY"; fi
 
 retrieval_fixture="$repo_root/scripts/fixtures/document_retrieval_eval"
 retrieval_report_dir="${AURA_DOCUMENT_EVAL_REPORT_DIR:-$repo_root/artifacts/document-retrieval-eval}"
@@ -202,8 +201,8 @@ run_pass() {
     -e ARCADEDB_PASSWORD="$arcade_pw" -e ARCADE_HTTP="http://aura-arcadedb:2480" \
     -e ARCADE_BOLT="bolt://aura-arcadedb:7687" \
     -e AURA_DB_URL="$settings_db_url" \
-    -e AURA_LLM_PROVIDER="$AURA_LLM_PROVIDER" -e AURA_LLM_MODEL="$AURA_LLM_MODEL" \
-    -e AURA_LLM_BASE_URL="$AURA_LLM_BASE_URL" -e OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}" \
+    -e AURA_LLM_PROVIDER -e AURA_LLM_MODEL \
+    -e AURA_LLM_BASE_URL -e OPENROUTER_API_KEY \
     -e MULTIMODAL_BASE_URL="http://aura-ocr-vl:8082/v1" \
     -e MULTIMODAL_MODEL="${MULTIMODAL_MODEL:-glm-ocr}" \
     -e MULTIMODAL_TIMEOUT_SEC="${MULTIMODAL_TIMEOUT_SEC:-120}" \
@@ -404,8 +403,8 @@ container_id="$(docker run -d --network "$net" \
   -e ARCADEDB_PASSWORD="$arcade_pw" -e ARCADE_HTTP="http://aura-arcadedb:2480" \
   -e ARCADE_BOLT="bolt://aura-arcadedb:7687" \
   -e AURA_DB_URL="$settings_db_url" \
-  -e AURA_LLM_PROVIDER="$AURA_LLM_PROVIDER" -e AURA_LLM_MODEL="$AURA_LLM_MODEL" \
-  -e AURA_LLM_BASE_URL="$AURA_LLM_BASE_URL" -e OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}" \
+  -e AURA_LLM_PROVIDER -e AURA_LLM_MODEL \
+  -e AURA_LLM_BASE_URL -e OPENROUTER_API_KEY \
   -e MULTIMODAL_BASE_URL="http://aura-ocr-vl:8082/v1" \
   -e MULTIMODAL_MODEL="${MULTIMODAL_MODEL:-glm-ocr}" \
   -e MULTIMODAL_TIMEOUT_SEC="${MULTIMODAL_TIMEOUT_SEC:-120}" \
@@ -476,8 +475,8 @@ if ! docker run --rm --network "$net" \
   -e ARCADEDB_PASSWORD="$arcade_pw" -e ARCADE_HTTP="http://aura-arcadedb:2480" \
   -e ARCADE_BOLT="bolt://aura-arcadedb:7687" \
   -e AURA_DB_URL="$settings_db_url" \
-  -e AURA_LLM_PROVIDER="$AURA_LLM_PROVIDER" -e AURA_LLM_MODEL="$AURA_LLM_MODEL" \
-  -e AURA_LLM_BASE_URL="$AURA_LLM_BASE_URL" -e OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}" \
+  -e AURA_LLM_PROVIDER -e AURA_LLM_MODEL \
+  -e AURA_LLM_BASE_URL -e OPENROUTER_API_KEY \
   -e AURA_INGEST_IDENTITY_ID="$identity_id_b" \
   -e AURA_INGEST_S3_ENDPOINT="http://aura-garage:3900" -e AURA_INGEST_S3_BUCKET="$bucket_b" \
   -e AURA_INGEST_S3_ACCESS_KEY_ID="$access_key_b" -e AURA_INGEST_S3_SECRET_ACCESS_KEY="$secret_key_b" \

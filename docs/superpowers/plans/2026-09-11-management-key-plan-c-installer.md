@@ -49,11 +49,11 @@
 
 **Files:** `compose.yaml` (the `aura` and `aura-ingest` environment blocks; the local-LLM comment that told the operator to set `AURA_LLM_*` in `.env`), `cmd/aura/container_artifacts_test.go`, `scripts/musr_live_run_preconditions.sh`, `scripts/telegram_e2e.sh`, `scripts/ingest_reconcile_e2e.sh`, `scripts/payload_manifest.txt`.
 
-- [ ] **Step 1: Test.** `container_artifacts_test.go` drops the five assertions that pinned these lines and the `AURA_LLM_MODEL` default pattern, and asserts instead that no service passes `OPENROUTER_API_KEY`, `AURA_OPENROUTER_MANAGEMENT_KEY`, `AURA_LLM_PROVIDER`, `AURA_LLM_MODEL`, `AURA_LLM_BASE_URL` or `TELEGRAM_BOT_TOKEN`.
-- [ ] **Step 2: Run, watch it fail.**
-- [ ] **Step 3: Implement.** Remove the lines from compose. `telegram_e2e.sh` stops exporting `OPENROUTER_API_KEY` from `.env` (the host `aura serve` reads the store); `ingest_reconcile_e2e.sh` passes `AURA_LLM_*` and the key to its containers only when an `AURA_DOCUMENT_E2E_LLM_*` override asks for it; `musr_live_run_preconditions.sh` requires `AURA_OPENROUTER_MANAGEMENT_KEY` in the store.
-- [ ] **Step 4: Run, watch it pass;** `bash -n` on the three scripts; regenerate the payload manifest.
-- [ ] **Step 5: Commit** `feat(compose): stop passing the OpenRouter credentials and the route`.
+- [x] **Step 1: Test.** `container_artifacts_test.go` drops the five assertions that pinned these lines and the `AURA_LLM_MODEL` default pattern, and asserts instead that no service passes `OPENROUTER_API_KEY`, `AURA_OPENROUTER_MANAGEMENT_KEY`, `AURA_LLM_PROVIDER`, `AURA_LLM_MODEL`, `AURA_LLM_BASE_URL` or `TELEGRAM_BOT_TOKEN`.
+- [x] **Step 2: Run, watch it fail.**
+- [x] **Step 3: Implement.** Remove the lines from compose. `telegram_e2e.sh` stops exporting `OPENROUTER_API_KEY` from `.env` (the host `aura serve` reads the store); `ingest_reconcile_e2e.sh` passes `AURA_LLM_*` and the key to its containers only when an `AURA_DOCUMENT_E2E_LLM_*` override asks for it; `musr_live_run_preconditions.sh` requires `AURA_OPENROUTER_MANAGEMENT_KEY` in the store.
+- [x] **Step 4: Run, watch it pass;** `bash -n` on the three scripts; regenerate the payload manifest.
+- [x] **Step 5: Commit** `feat(compose): stop passing the OpenRouter credentials and the route`.
 
 ---
 

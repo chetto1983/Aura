@@ -15,8 +15,8 @@
 #     - POST /setup/onboard-link              → 200 + t.me/<bot>?start=<uuid> deep link
 #     - onboarding mint round-trip            → the pending row lands in Postgres
 #
-# Requires (from .env): POSTGRES_PASSWORD, TELEGRAM_BOT_TOKEN, AURA_E2E_CHAT_ID,
-# OPENROUTER_API_KEY; and the 9c sidecars up (aura-stt :9000,
+# Requires (from .env): POSTGRES_PASSWORD, TELEGRAM_BOT_TOKEN, AURA_E2E_CHAT_ID (the
+# OpenRouter keys come from aura.settings); and the 9c sidecars up (aura-stt :9000,
 # aura-tts :8880, aura-ocr-vl :8082). Composes AURA_DB_URL/MIGRATE_URL from
 # POSTGRES_PASSWORD (the same DSN shape the db_integration tier uses).
 #
@@ -57,7 +57,6 @@ getenv() {
 export POSTGRES_PASSWORD="$(getenv POSTGRES_PASSWORD)"
 export TELEGRAM_BOT_TOKEN="$(getenv TELEGRAM_BOT_TOKEN)"
 export AURA_E2E_CHAT_ID="$(getenv AURA_E2E_CHAT_ID)"
-export OPENROUTER_API_KEY="$(getenv OPENROUTER_API_KEY)"
 export STT_BASE_URL="${STT_BASE_URL:-http://127.0.0.1:9000/v1}"
 export TTS_BASE_URL="${TTS_BASE_URL:-http://127.0.0.1:8880/v1}"
 export MULTIMODAL_BASE_URL="${MULTIMODAL_BASE_URL:-http://127.0.0.1:8082/v1}"

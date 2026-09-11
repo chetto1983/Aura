@@ -132,12 +132,6 @@ services:
       # silently blinded the whole metrics plane for five and a half hours on
       # 2026-08-13 (see the prometheus service for the measurement).
       AURA_METRICS_BIND: ${AURA_METRICS_BIND:-0.0.0.0:9464}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      # Mints/revokes each identity's own key and feeds the spend overview. A row saved in
-      # Settings (aura.settings) wins at boot, as for the inference key above.
-      AURA_OPENROUTER_MANAGEMENT_KEY: ${AURA_OPENROUTER_MANAGEMENT_KEY:-}
-      AURA_LLM_BASE_URL: ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1}
-      AURA_LLM_MODEL: ${AURA_LLM_MODEL:-deepseek/deepseek-v4-flash:nitro}
       # No :-0.7 fallback. That default was the last place the pin survived: emptying it
       # in .env changed nothing while compose put it back on every boot, and 0.7 then
       # overrode the temperature the serving model publishes for itself. Unset means the
@@ -258,7 +252,6 @@ services:
       TELEGRAM_FILE_BASE_URL: ${TELEGRAM_FILE_BASE_URL:-}
       AURA_TELEGRAM_LOCAL_BOT_API: ${AURA_TELEGRAM_LOCAL_BOT_API:-false}
       AURA_SERVE_SHUTDOWN_GRACE_SEC: ${AURA_SERVE_SHUTDOWN_GRACE_SEC:-25}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       AURA_TELEGRAM_STATUS_THROTTLE_MS: ${AURA_TELEGRAM_STATUS_THROTTLE_MS:-1500}
       AURA_TELEGRAM_CONTENT_THROTTLE_MS: ${AURA_TELEGRAM_CONTENT_THROTTLE_MS:-500}
       AURA_TELEGRAM_CHAT_RATE_LIMIT_MS: ${AURA_TELEGRAM_CHAT_RATE_LIMIT_MS:-1000}
@@ -923,10 +916,6 @@ services:
       AURA_OBJECTSTORE_BUCKET: ${AURA_OBJECTSTORE_BUCKET:-aura-assets}
       AURA_OBJECTSTORE_ACCESS_KEY: ${AURA_OBJECTSTORE_ACCESS_KEY:?AURA_OBJECTSTORE_ACCESS_KEY required in .env}
       AURA_OBJECTSTORE_SECRET_KEY: ${AURA_OBJECTSTORE_SECRET_KEY:?AURA_OBJECTSTORE_SECRET_KEY required in .env}
-      AURA_LLM_PROVIDER: ${AURA_LLM_PROVIDER:-openrouter}
-      AURA_LLM_MODEL: ${AURA_LLM_MODEL:-deepseek/deepseek-v4-flash:nitro}
-      AURA_LLM_BASE_URL: ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       MULTIMODAL_BASE_URL: http://aura-ocr-vl:8082/v1
       MULTIMODAL_MODEL: ${MULTIMODAL_MODEL:-glm-ocr}
       STT_BASE_URL: http://aura-stt:9000/v1
@@ -1275,12 +1264,9 @@ services:
   # Optional LOCAL chat-LLM — run Aura fully offline on llama.cpp instead of OpenRouter.
   # Opt-in via profile, not via a fourth compose file:
   #   COMPOSE_PROFILES=localllm docker compose up -d
-  # then point the daemon at it in .env (the profile can gate a SERVICE, not another
-  # service's env, so this half stays explicit):
-  #   AURA_LLM_BASE_URL=http://aura-llm:8084/v1
-  #   AURA_LLM_MODEL=gemma-4-12b
-  #   AURA_LLM_PROVIDER=llamacpp
-  # Host-side `go run ./cmd/aura` is unaffected unless you export the same.
+  # then pick the Local route in the first-run setup or in Settings, which points the
+  # daemon at http://aura-llm:8084/v1 with the model gemma-4-12b. The route lives in
+  # aura.settings, not in .env or here.
   #
   # Sampling needs nothing here any more. It used to: Aura sent temperature on every
   # request from a built-in 0.7, llama.cpp honours a client value over its own flag, and

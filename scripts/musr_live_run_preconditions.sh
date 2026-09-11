@@ -48,7 +48,9 @@ for v in AURA_ARCADEDB_TENANT_SECRET AURA_AUTHULA_SECRET AURA_E2E_AUTHULA_EMAIL 
     missing+=("$v")
   fi
 done
-for v in TELEGRAM_BOT_TOKEN OPENROUTER_API_KEY; do
+# The management key, not the services key: every identity's own OpenRouter key is minted
+# from it, identity B's included (management-key design, 2026-09-10).
+for v in TELEGRAM_BOT_TOKEN AURA_OPENROUTER_MANAGEMENT_KEY; do
   if [[ -z "${!v:-}" ]] && ! store_has_key "$v"; then
     missing+=("$v (checked shell env AND the aura.settings store — present in neither)")
   fi
