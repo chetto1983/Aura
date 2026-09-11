@@ -37,11 +37,11 @@
 
 **Produces:** `InstallSettings { installDir; appliance; gvisor }`; `collectSettings(prompt, t, installDir)`; `install.conf` = `format=2`, `install_dir_base64`, `appliance`, `gvisor`.
 
-- [ ] **Step 1: Tests.** `config-file.test.ts`: the serialized config is exactly those four lines; `prompts.test.ts`: `collectSettings` asks the appliance, gVisor and confirmation questions and nothing else; `install_config_test.sh`: a `format=2` file parses, a `format=1` file is refused as an unsupported format, an `llm_model_base64` key is refused as unknown, and `apply_install_config` no longer exists.
-- [ ] **Step 2: Run, watch them fail.**
-- [ ] **Step 3: Implement.** Drop the route, key and model prompts, `collectOllamaModel`, `modelroute.ts`, `createSshProbeRunner` and `shellQuote`, `validateBaseUrl`, `validateModelId`, their messages and error-code mappings, and the probe runner in `cli.ts`. In `install.sh`: `CFG_LLM_*` and `CFG_OPENROUTER_API_KEY`, their parse cases and line-break check, `apply_install_config` and its call, and the `OPENROUTER_API_KEY` line and `openrouter_key` variable of the fresh `.env` template go; `parse_install_config` accepts `format=2` only.
-- [ ] **Step 4: Run, watch them pass;** `npm run build`; regenerate the payload manifest.
-- [ ] **Step 5: Commit** `feat(installer): ask for infrastructure only, in install.conf format 2`.
+- [x] **Step 1: Tests.** `config-file.test.ts`: the serialized config is exactly those four lines; `prompts.test.ts`: `collectSettings` asks the appliance, gVisor and confirmation questions and nothing else; `install_config_test.sh`: a `format=2` file parses, a `format=1` file is refused as an unsupported format, an `llm_model_base64` key is refused as unknown, and `apply_install_config` no longer exists.
+- [x] **Step 2: Run, watch them fail.**
+- [x] **Step 3: Implement.** Drop the route, key and model prompts, `collectOllamaModel`, `modelroute.ts`, `createSshProbeRunner` and `shellQuote`, `validateBaseUrl`, `validateModelId`, their messages and error-code mappings, and the probe runner in `cli.ts`. In `install.sh`: `CFG_LLM_*` and `CFG_OPENROUTER_API_KEY`, their parse cases and line-break check, `apply_install_config` and its call, and the `OPENROUTER_API_KEY` line and `openrouter_key` variable of the fresh `.env` template go; `parse_install_config` accepts `format=2` only.
+- [x] **Step 4: Run, watch them pass;** `npm run build`; regenerate the payload manifest.
+- [x] **Step 5: Commit** `feat(installer): ask for infrastructure only, in install.conf format 2`.
 
 ---
 
