@@ -25,9 +25,16 @@
 ## Deviations from the spec
 
 1. A line equal to its compose default is commented out, not deleted, so the explanation above it keeps its example. The guard reads active lines only.
-2. `OPENROUTER_API_KEY`, `AURA_OPENROUTER_MANAGEMENT_KEY`, `AURA_LLM_BASE_URL`, `AURA_LLM_MODEL`, `TELEGRAM_BOT_TOKEN` and `AURA_EMBED_DIMENSIONS` leave `.env.example` by hand: they still have readers, so the guard alone would keep them.
+2. `OPENROUTER_API_KEY`, `AURA_OPENROUTER_MANAGEMENT_KEY`, `AURA_LLM_BASE_URL`, `AURA_LLM_MODEL`, and `TELEGRAM_BOT_TOKEN` leave `.env.example` by hand: they still have readers, so the guard alone would keep them.
 3. `installLocal` and `installRemote` lose their `settings` parameter: it only carried the OpenRouter key into the redaction list, and nothing secret travels any more.
 4. `musr_live_run_preconditions.sh` checks the management key in the store instead of `OPENROUTER_API_KEY`, because every identity's key is minted from it.
+
+Found while executing:
+
+5. `AURA_EMBED_DIMENSIONS` stays in `.env.example` as a commented example (`# AURA_EMBED_DIMENSIONS=768`): it is still an environment default, just not a setting.
+6. An empty value where compose gives `${NAME:-default}` repeats the default too (compose applies it to an empty value), so the rule comments those lines as well: 143 in all, not 124.
+7. `AURA_GARAGE_ADMIN_TOKEN`, which compose requires, was missing from `.env.example`; the rewritten hygiene test found it and it is added.
+8. `TestDotEnvTemplateHygiene` required dozens of knobs to be set and is rewritten for the new contract; `verify-observability.ps1` checked the OTLP endpoint in the template and now checks compose's default.
 
 ---
 
@@ -75,11 +82,11 @@ The embedding model file fixes the width and changing it breaks the vector index
 
 **Files:** `.env.example`, `cmd/aura/env_example_test.go` (new).
 
-- [ ] **Step 1: Test.** `TestEnvExampleNamesHaveReaders` and `TestEnvExampleValuesDifferFromCompose`: every active `NAME=value` line names a variable some tracked code, compose file or script reads, and none repeats the single default compose gives that name.
-- [ ] **Step 2: Run, watch it fail** (7 names without readers, 124 values equal to compose).
-- [ ] **Step 3: Implement.** Delete the 7 dead names and the six names of deviation 2, rewriting their comments to point at the first-run setup and Settings; comment out every other line equal to its compose default.
-- [ ] **Step 4: Run, watch it pass.**
-- [ ] **Step 5: Commit** `refactor(env): keep .env.example to secrets and what differs from compose`.
+- [x] **Step 1: Test.** `TestEnvExampleNamesHaveReaders` and `TestEnvExampleValuesDifferFromCompose`: every active `NAME=value` line names a variable some tracked code, compose file or script reads, and none repeats the single default compose gives that name.
+- [x] **Step 2: Run, watch it fail** (7 names without readers, 124 values equal to compose).
+- [x] **Step 3: Implement.** Delete the 7 dead names and the six names of deviation 2, rewriting their comments to point at the first-run setup and Settings; comment out every other line equal to its compose default.
+- [x] **Step 4: Run, watch it pass.**
+- [x] **Step 5: Commit** `refactor(env): keep .env.example to secrets and what differs from compose`.
 
 ---
 

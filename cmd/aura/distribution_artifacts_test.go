@@ -237,78 +237,39 @@ func TestDotEnvTemplateHygiene(t *testing.T) {
 			t.Fatalf(".gitignore missing %q:\n%s", want, gitignore)
 		}
 	}
-	for _, want := range []string{
-		"AURA_IMAGE=",
-		"AURA_ACCESS_TOKEN=",
-		"OPENROUTER_API_KEY=",
-		// The embed sidecar loads a LOCAL gguf now: it has no egress, and a first
-		// boot that had to fetch one from HuggingFace restart-looped and took
-		// memory down with it. AURA_EMBED_HF_REPO/HF_FILE have no runtime reader —
-		// this list was the only thing keeping them in the template, while
-		// container_artifacts_test.go already required the replacement, so the two
-		// contracts contradicted each other.
-		"AURA_EMBED_MODEL_PATH=",
-		// The three ArcadeDB secrets compose fail-fasts on. compose interpolates
-		// the whole file before selecting a service, so a template missing one of
-		// them aborts every `docker compose` invocation an operator makes.
-		"ARCADEDB_PASSWORD=",
-		"ARCADEDB_APP_PASSWORD=",
-		"AURA_ARCADEDB_TENANT_SECRET=",
-		"AURA_LLM_STREAM_IDLE_TIMEOUT_SEC=",
-		// Asserted as present-and-assigned, not as an exact slug: the default model
-		// is a routine operational change, and pinning the slug here turns every
-		// model bump into an unrelated distribution-test failure.
-		"AURA_LLM_MODEL=",
-		"AURA_MODEL_CONTEXT_WINDOW=",
-		"AURA_COMPLETION_GATE=",
-		"AURA_AGENT_JOB_MAX_DURATION_SEC=",
-		"AURA_SWARM_MAX_GOALS=",
-		"AURA_SWARM_CHILD_IDLE_SEC=",
-		"AURA_SWARM_MAX_CONCURRENT=",
-		"AURA_SWARM_MAX_DEPTH=",
-		"AURA_LOOP_MAX_PARALLEL_TOOLS=",
-		"AURA_FS_MAX_READ_BYTES=",
-		"AURA_FS_WALK_NODE_CAP=",
-		"AURA_FS_WALK_TIMEOUT_MS=",
-		"AURA_SHELL_MAX_TIMEOUT_MS=",
-		"AURA_SHELL_OUTPUT_BUF_CAP=",
-		"SEARXNG_URL=",
-		"TELEGRAM_BOT_TOKEN=",
-		"AURA_TELEGRAM_STATUS_THROTTLE_MS=",
-		"MULTIMODAL_BASE_URL=",
-		"STT_BASE_URL=",
-		"TTS_BASE_URL=",
-		"AURA_SKILLS_DIR=",
-		"AURA_OBJECTSTORE_BACKEND=",
-		"AURA_OBJECTSTORE_ENDPOINT=",
-		"AURA_OBJECTSTORE_PUBLIC_ENDPOINT=",
-		"AURA_OBJECTSTORE_REGION=",
-		"AURA_OBJECTSTORE_BUCKET=",
-		"AURA_OBJECTSTORE_ACCESS_KEY=",
-		"AURA_OBJECTSTORE_SECRET_KEY=",
-		"AURA_OBJECTSTORE_PATH_STYLE=",
-		"AURA_ASSET_MAX_DOCUMENT_BYTES=",
-		"AURA_ASSET_MAX_IMAGE_BYTES=",
-		"AURA_ASSET_MAX_AUDIO_BYTES=",
-		"AURA_ASSET_PRESIGN_TTL_SEC=",
-		"AURA_ASSET_PROCESSING_CONCURRENCY=",
-		"TELEGRAM_API_BASE_URL=",
-		"TELEGRAM_FILE_BASE_URL=",
-		"AURA_TELEGRAM_LOCAL_BOT_API=",
-	} {
-		if !hasActiveEnvAssignment(envExample, strings.TrimSuffix(want, "=")) {
-			t.Fatalf(".env.example missing active assignment for %q", want)
+	// REWRITTEN with the management-key design: the template used to have to set dozens of
+	// knobs whose value compose already supplies. It now holds what compose requires and
+	// what a fresh install sets differently (env_example_test.go keeps the rest out).
+	//
+	// Every variable compose fail-fasts on is in the template: compose interpolates the whole
+	// file before selecting a service, so one missing name aborts every compose invocation an
+	// operator makes, including ones that touch none of its containers.
+	compose := readProjectFile(t, root, "compose.yaml")
+	for _, m := range composeRequiredEnv.FindAllStringSubmatch(compose, -1) {
+		if !hasActiveEnvAssignment(envExample, m[1]) {
+			t.Errorf(".env.example missing active assignment for %q, which compose requires", m[1])
 		}
 	}
-	// Exact-value lines only where the value itself carries a contract: a boolean
-	// default, and endpoints/ports that must agree with compose.yaml.
+	// The posture a fresh install ships differs from compose's fallbacks, which keep an
+	// in-place upgrade unchanged, so the template states it.
 	for _, want := range []string{
-		"AURA_SHOW_REASONING=true",
-		"AURA_OBJECTSTORE_PUBLIC_ENDPOINT=http://127.0.0.1:3900",
-		"AURA_WHATSAPP_BRIDGE_PORT=8094",
+		"AURA_PROFILE=single_user_hardened",
+		"AURA_MUSR_ISOLATION=true",
+		"AURA_SANDBOX_IMAGE=ghcr.io/chetto1983/aura-sandbox:edge",
+		"COMPOSE_PROFILES=observability",
 	} {
 		if !hasActiveEnvLine(envExample, want) {
-			t.Fatalf(".env.example missing coherent default line %q", want)
+			t.Errorf(".env.example missing the shipped posture line %q", want)
+		}
+	}
+	// Cockpit settings an admin sets in the first-run setup and Aura keeps in aura.settings:
+	// a template line would let .env carry a second copy that diverges in silence.
+	for _, name := range []string{
+		"OPENROUTER_API_KEY", "AURA_OPENROUTER_MANAGEMENT_KEY", "AURA_LLM_PROVIDER",
+		"AURA_LLM_MODEL", "AURA_LLM_BASE_URL", "TELEGRAM_BOT_TOKEN",
+	} {
+		if hasActiveEnvAssignment(envExample, name) {
+			t.Errorf(".env.example still sets %s, a cockpit setting", name)
 		}
 	}
 	if strings.Contains(envExample, "AURA_LLM_REASONING_LEARNING") {

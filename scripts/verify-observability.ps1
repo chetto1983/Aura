@@ -372,7 +372,7 @@ Assert-Observability ($sidecarCheckText.Contains('docker compose exec -T grafana
 
 $envExampleText = Get-Content -LiteralPath (Join-Path $repoRoot '.env.example') -Raw
 Assert-Observability ($envExampleText -match '(?m)^COMPOSE_PROFILES=observability\s*$') '.env.example must enable the observability profile'
-Assert-Observability ($envExampleText -match '(?m)^AURA_OTEL_ENDPOINT=tempo:4317\s*$') '.env.example OTLP endpoint must use Tempo service DNS'
+Assert-Observability ($auraBlock -match 'AURA_OTEL_ENDPOINT:\s+\$\{AURA_OTEL_ENDPOINT:-tempo:4317\}') 'Aura service OTLP endpoint must default to Tempo service DNS'
 Assert-Observability ($envExampleText -match '(?m)^AURA_OBSERVABILITY_CHECK_ENABLED=true\s*$') '.env.example must enable the scheduled scrape check'
 Assert-Observability ($auraBlock -match 'AURA_OBSERVABILITY_CHECK_ENABLED:\s+\$\{AURA_OBSERVABILITY_CHECK_ENABLED:-false\}') 'Aura service must receive the scheduled scrape-check switch'
 
