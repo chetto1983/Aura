@@ -182,11 +182,11 @@ func validateSettingKeyValue(key, value string) error {
 
 **Files:** create `web/src/onboarding/useFirstRunGate.ts` (`useFirstRunGate({linkRequested, onOpen, clearLink}) → {open, status, close}`: opens once per session when the status says the profile is owed or the route is required, or when a `?onboarding=1` link asked, in which case it opens once the status is read or fails and clears the link); `web/src/AppShell.tsx` (the two onboarding effects, `profileOnboardingOpen` and `autoOpenedOnboarding` go; `FirstRunSetup` gets `profileRequired={status?.required ?? true}` and `routeRequired={status?.routeRequired ?? false}`); test `useFirstRunGate.test.tsx`.
 
-- [ ] **Step 1: Tests:** opens for a required profile and for the route alone, carrying the status; stays closed when nothing is owed; the link opens it with the status and clears the URL; `close` closes.
-- [ ] **Step 2: Run, watch them fail.**
-- [ ] **Step 3: Implement;** `wc -l web/src/AppShell.tsx` under 600.
-- [ ] **Step 4: Run** the hook test and `AppShell.shell.test.tsx`.
-- [ ] **Step 5: Commit** `refactor(web): open first-run setup from one gate, for the route step too`.
+- [x] **Step 1: Tests:** opens for a required profile and for the route alone, carrying the status; stays closed when nothing is owed; the link opens it with the status and clears the URL; `close` closes.
+- [x] **Step 2: Run, watch them fail.**
+- [x] **Step 3: Implement;** `wc -l web/src/AppShell.tsx` under 600.
+- [x] **Step 4: Run** the hook test and `AppShell.shell.test.tsx`.
+- [x] **Step 5: Commit** `refactor(web): open first-run setup from one gate, for the route step too`.
 
 ---
 

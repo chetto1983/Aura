@@ -19,7 +19,7 @@ import { isSettingsSectionId } from './settings/settingsSections';
 import { storeSettingsSection } from './settings/useSettingsSection';
 import { useSurfaceRestore } from './shell/useSurfaceRestore';
 import { useCapabilities } from './admin/useAdmin';
-import { fetchOnboardingStatus } from './onboarding/onboardingApi';
+import { useFirstRunGate } from './onboarding/useFirstRunGate';
 import { useRunUsageOwner } from './chat/useRunUsageOwner';
 import type { ComposerDraftPrompt } from './chat/Composer';
 import { useCreateConversation } from './conversations/useConversations';
@@ -103,8 +103,14 @@ export function AppShell() {
   // The onboarding+provisioning wizard is a full-screen overlay (D-04), opened by an explicit
   // trigger and covering the shell while active — NOT a surface/mode.
   const [onboardingOpen, setOnboardingOpen] = useState(false);
-  const [profileOnboardingOpen, setProfileOnboardingOpen] = useState(false);
-  const autoOpenedOnboarding = useRef(false);
+  const clearOnboardingLink = useCallback(() => {
+    void navigate('/', { replace: true });
+  }, [navigate]);
+  const firstRun = useFirstRunGate({
+    linkRequested: searchParams.get('onboarding') === '1',
+    onOpen: closeNav,
+    clearLink: clearOnboardingLink,
+  });
   const deepLinkedSettings = useRef(false);
 
   const nextRouteId = routeId ?? '';
@@ -145,18 +151,11 @@ export function AppShell() {
 
   const { onArtifact: handleArtifact } = useRunSignals(activeThreadId, openArtifacts);
 
-  useEffect(() => {
-    if (searchParams.get('onboarding') !== '1' || autoOpenedOnboarding.current) return;
-    autoOpenedOnboarding.current = true;
-    setProfileOnboardingOpen(true);
-    closeNav();
-    void navigate('/', { replace: true });
-  }, [closeNav, navigate, searchParams]);
-
   // `?settings=<section>` opens the Settings surface on one pane, then cleans the URL — the
-  // same one-shot idiom as ?onboarding=1 above. Surfaces are not routed in this shell, so the
-  // parameter hands the choice to the pane's own persisted selection rather than becoming a
-  // route; a non-admin who follows such a link is still bounced by the admin-mode guard.
+  // same one-shot idiom as ?onboarding=1 (useFirstRunGate). Surfaces are not routed in this
+  // shell, so the parameter hands the choice to the pane's own persisted selection rather than
+  // becoming a route; a non-admin who follows such a link is still bounced by the admin-mode
+  // guard.
   useEffect(() => {
     const requested = searchParams.get('settings');
     if (!isSettingsSectionId(requested) || deepLinkedSettings.current) return;
@@ -166,21 +165,6 @@ export function AppShell() {
     closeNav();
     void navigate('/', { replace: true });
   }, [closeNav, navigate, searchParams, setSurface]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetchOnboardingStatus()
-      .then((status) => {
-        if (cancelled || autoOpenedOnboarding.current || !status.required) return;
-        autoOpenedOnboarding.current = true;
-        setProfileOnboardingOpen(true);
-        closeNav();
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [closeNav]);
 
   function selectThread(id: string) {
     setSurface('chat');
@@ -553,7 +537,7 @@ export function AppShell() {
             />
           </Suspense>
         ) : null}
-        {profileOnboardingOpen ? (
+        {firstRun.open ? (
           <Suspense
             fallback={
               <div
@@ -565,9 +549,9 @@ export function AppShell() {
             }
           >
             <FirstRunSetup
-              onClose={() => {
-                setProfileOnboardingOpen(false);
-              }}
+              onClose={firstRun.close}
+              profileRequired={firstRun.status?.required ?? true}
+              routeRequired={firstRun.status?.routeRequired ?? false}
             />
           </Suspense>
         ) : null}
