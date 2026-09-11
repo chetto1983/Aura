@@ -150,8 +150,13 @@ def apply_policy(
             baseline_covered = int(rule["covered_statements"])
             baseline_total = int(rule["total_statements"])
             if total != baseline_total:
+                # The new figures are what re-pinning the baseline needs; without them the
+                # only way to learn them was a full local tagged-tier run.
                 violations.append(
-                    f"{package}: statement denominator changed from {baseline_total} to {total}"
+                    f"{package}: statement denominator changed from {baseline_total} to {total} "
+                    f"(now {covered}/{total} = {percent:.2f}%, baseline "
+                    f"{baseline_covered}/{baseline_total} = "
+                    f"{baseline_covered * 100 / baseline_total:.2f}%)"
                 )
                 result["passed"] = False
             elif covered * baseline_total < baseline_covered * total:
