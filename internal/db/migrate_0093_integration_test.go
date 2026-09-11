@@ -26,13 +26,19 @@ import (
 // Stepping by COUNT is not the fix either: migration numbers are assigned at landing
 // and are NOT contiguous (69 files, highest 0094), so MigrateSteps(93) is 24 files
 // short of version 93. Migrating to head and stepping down until the version matches
-// is the only formulation that stays correct as more migrations land.
+// is the only formulation that stays correct as more migrations land -- so the step
+// budget is the head's distance from 93, not a constant that the next migration breaks.
 func migrateTo0093(t *testing.T, ctx context.Context, migrateURL string, admin *pgxpool.Pool) {
 	t.Helper()
 	if _, err := Migrate(ctx, migrateURL); err != nil {
 		t.Fatalf("migrate fresh database to head: %v", err)
 	}
-	for step := 0; step <= 32; step++ {
+	head, err := MigrationHead()
+	if err != nil {
+		t.Fatalf("read embedded migration head: %v", err)
+	}
+	budget := int(head) - 93
+	for step := 0; step <= budget; step++ {
 		switch v := currentMigrationVersion(t, ctx, admin); {
 		case v == 93:
 			return

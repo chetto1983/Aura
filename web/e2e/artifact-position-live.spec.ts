@@ -108,11 +108,13 @@ test.describe('live artifact position', () => {
     );
     expect(delivered?.tool_call_id).toBe(call?.id);
 
-    // What the person sees after a reload: one card, not under the greeting.
+    // What the person sees after a reload: one card in the transcript, not under the greeting.
+    // Scoped to the chat because the Artifacts panel lists the same file with its own download.
     await page.reload();
-    const download = page.getByRole('link', { name: `Download ${fileName}`, exact: true });
+    const chat = page.getByRole('region', { name: 'Chat', exact: true });
+    const download = chat.getByRole('link', { name: `Download ${fileName}`, exact: true });
     await expect(download).toHaveCount(1, { timeout: 30_000 });
-    const greeting = page.locator('[data-message-role="assistant"]').first();
+    const greeting = chat.locator('[data-message-role="assistant"]').first();
     await expect(greeting.getByRole('link', { name: `Download ${fileName}` })).toHaveCount(0);
   });
 });

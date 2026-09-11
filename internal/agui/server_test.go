@@ -483,7 +483,9 @@ func TestServer_DisconnectClosesPump(t *testing.T) {
 	resp.Body.Close()
 
 	// Goroutines return to baseline (poll — teardown is async). goleak TestMain also guards.
-	for range 100 {
+	// A 1s window missed the teardown by one goroutine under -race on a CI runner
+	// (2026-09-11, 74 vs baseline 71); a leak never returns, so a longer wait costs nothing.
+	for range 500 {
 		if runtime.NumGoroutine() <= baseline+2 {
 			return
 		}

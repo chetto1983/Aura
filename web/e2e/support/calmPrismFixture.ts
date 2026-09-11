@@ -36,6 +36,7 @@ function fixtureSnapshot() {
       {
         id: 'msg-1',
         role: 'user',
+        attachmentIds: ['upload-1'],
         content:
           'Compare the release evidence, the attached runbook, and the current operational constraints. Keep every recommendation traceable to a concrete result.',
       },
