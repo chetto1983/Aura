@@ -6,16 +6,33 @@ package agui
 import (
 	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/openrouterprovision"
 	"github.com/chetto1983/aura/internal/settings"
 )
 
 var (
-	errInvalidInt  = errors.New("value must be an integer")
-	errInvalidBool = errors.New("value must be a boolean (true/false)")
+	errInvalidInt         = errors.New("value must be an integer")
+	errInvalidBool        = errors.New("value must be a boolean (true/false)")
+	errInvalidServicesCap = errors.New("the services cap must be a USD amount above zero")
 )
+
+// validateSettingKeyValue holds the checks one key needs beyond its Kind. The services cap
+// becomes the limit of the key Aura mints for speech, embeddings and vision, so a value the
+// provider cannot take is refused here rather than failing at mint time. Empty leaves it unset.
+func validateSettingKeyValue(key, value string) error {
+	if key != servicesCapSetting || strings.TrimSpace(value) == "" {
+		return nil
+	}
+	limit, err := openrouterprovision.NewUSDCapFromString(value)
+	if err != nil || limit <= 0 {
+		return errInvalidServicesCap
+	}
+	return nil
+}
 
 // validateSettingValue rejects a value that does not parse for its Kind (an int
 // knob like AURA_EMBED_DIMENSIONS must be an int; a bool like AURA_MEMORY_PRELOAD_ENABLED

@@ -316,3 +316,50 @@ func TestWriteOnboardingErrorMapping(t *testing.T) {
 		})
 	}
 }
+
+// TestHandleOnboardingStatusRouteRequired pins who must connect OpenRouter before the first-run
+// setup lets them go: an admin, while the route bills and no management key is set.
+func TestHandleOnboardingStatusRouteRequired(t *testing.T) {
+	local := func() bool { return false }
+	for _, tc := range []struct {
+		name   string
+		admins []string
+		keySet bool
+		bills  func() bool
+		want   bool
+	}{
+		{"admin on a billing route with no management key", []string{testLocalID}, false, billing, true},
+		{"admin with the management key set", []string{testLocalID}, true, billing, false},
+		{"admin on a local route", []string{testLocalID}, false, local, false},
+		{"member", nil, false, billing, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			caps := adminCaps(tc.admins...)
+			s := &Server{onboardingStatus: &fakeOnboardingStatusSource{}, idAdmin: caps}
+			s.SetOpenRouterKeys(NewIdentityKeyMinter(&fakeMinting{keySet: tc.keySet}, newFakeIdentityKeys(), caps, tc.bills))
+			if got := onboardingStatusFor(t, s).RouteRequired; got != tc.want {
+				t.Fatalf("routeRequired = %v, want %v", got, tc.want)
+			}
+		})
+	}
+	t.Run("no minter wired", func(t *testing.T) {
+		s := &Server{onboardingStatus: &fakeOnboardingStatusSource{}, idAdmin: adminCaps(testLocalID)}
+		if onboardingStatusFor(t, s).RouteRequired {
+			t.Fatal("routeRequired with no minter: nothing could satisfy it")
+		}
+	})
+}
+
+func onboardingStatusFor(t *testing.T, s *Server) OnboardingStatus {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	s.handleOnboardingStatus(rec, withPrincipal(httptest.NewRequest(http.MethodGet, "/api/onboarding/status", nil), testLocalID))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var got OnboardingStatus
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	return got
+}

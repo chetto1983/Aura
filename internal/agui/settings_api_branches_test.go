@@ -65,6 +65,20 @@ func TestValidateSettingValueBoolAndDefault(t *testing.T) {
 	}
 }
 
+// TestValidateServicesCap: the services cap becomes the limit of a key Aura mints, so a value
+// the provider cannot take is refused when it is written, not at mint time. Empty leaves it unset.
+func TestValidateServicesCap(t *testing.T) {
+	for value, ok := range map[string]bool{"10": true, "0.5": true, "": true, "0": false, "0.001": false, "-1": false, "ten": false} {
+		err := validateSettingKeyValue(servicesCapSetting, value)
+		if (err == nil) != ok {
+			t.Errorf("services cap %q: err = %v, want accepted=%v", value, err, ok)
+		}
+	}
+	if err := validateSettingKeyValue("AURA_TTS_MODEL", "anything"); err != nil {
+		t.Errorf("another key: err = %v, want nil", err)
+	}
+}
+
 func TestHandlePutSettingBranches(t *testing.T) {
 	t.Run("503 unwired", func(t *testing.T) {
 		rec, r := putReq(t, "AURA_TTS_MODEL", "x", "op-1")

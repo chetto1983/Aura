@@ -41,8 +41,11 @@ type OpenRouterKeysResult struct {
 	Skipped          string   `json:"skipped,omitempty"`
 	ServicesLabel    string   `json:"services_label,omitempty"`
 	IdentitiesMinted []string `json:"identities_minted"`
-	LimitsAligned    []string `json:"limits_aligned"`
-	Errors           []string `json:"errors,omitempty"`
+	// MintedLabels maps each identity minted in this run to its key's masked label, so the
+	// first-run setup can show the admin their key. Never the key itself.
+	MintedLabels  map[string]string `json:"minted_labels,omitempty"`
+	LimitsAligned []string          `json:"limits_aligned"`
+	Errors        []string          `json:"errors,omitempty"`
 }
 
 // SetOpenRouterKeys wires the reconciler. Until it is set, nothing is minted.
@@ -97,12 +100,16 @@ func (s *Server) ensureOpenRouterKeysLocked(ctx context.Context) (OpenRouterKeys
 
 // reconcileIdentity mints the identity's key, or aligns an existing one with its role.
 func (s *Server) reconcileIdentity(ctx context.Context, identityID string, res *OpenRouterKeysResult) error {
-	_, created, err := s.keyMinter.ensure(ctx, identityID, identityID)
+	minted, created, err := s.keyMinter.ensure(ctx, identityID, identityID)
 	if err != nil {
 		return err
 	}
 	if created {
 		res.IdentitiesMinted = append(res.IdentitiesMinted, identityID)
+		if res.MintedLabels == nil {
+			res.MintedLabels = map[string]string{}
+		}
+		res.MintedLabels[identityID] = minted.Label
 		return nil
 	}
 	aligned, err := s.keyMinter.alignLimit(ctx, identityID)

@@ -349,6 +349,10 @@ func (s *Server) handlePutSetting(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	if err := validateSettingKeyValue(key, body.Value); err != nil {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 	s.settingsMu.Lock()
 	defer s.settingsMu.Unlock()
 	var rows []sqlc.AuraSettings

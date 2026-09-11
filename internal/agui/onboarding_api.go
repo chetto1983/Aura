@@ -3,8 +3,11 @@ package agui
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
+
+	"github.com/chetto1983/aura/internal/identity"
 )
 
 // onboarding_api.go is the thin REST adapter over the server-held OnboardingService
@@ -124,6 +127,9 @@ type OnboardingStatus struct {
 	Required  bool `json:"required"`
 	Completed bool `json:"completed"`
 	Skipped   bool `json:"skipped"`
+	// RouteRequired is true for an admin while the route bills and no management key is set:
+	// no identity's key can be minted yet, so the first-run route step cannot be skipped.
+	RouteRequired bool `json:"routeRequired"`
 }
 
 // OnboardingProfileComplete is returned after the seed form is submitted or skipped.
@@ -176,7 +182,31 @@ func (s *Server) handleOnboardingStatus(w http.ResponseWriter, r *http.Request) 
 		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": sanitizeErr(err)})
 		return
 	}
+	status.RouteRequired = s.routeStepRequired(r.Context(), identityID)
 	writeJSON(w, status)
+}
+
+// routeStepRequired reports whether identityID must connect OpenRouter or pick a local route
+// before the first-run setup lets them go. A read that fails answers false: the admin can then
+// leave the setup, and a turn still refuses with the reason.
+func (s *Server) routeStepRequired(ctx context.Context, identityID string) bool {
+	if s.keyMinter == nil || s.idAdmin == nil {
+		return false
+	}
+	admin, err := s.idAdmin.HasCapability(ctx, identityID, identity.CapIdentityCreate)
+	if err != nil {
+		slog.Warn("onboarding status: admin check failed", "err", err)
+		return false
+	}
+	if !admin {
+		return false
+	}
+	skip, err := s.keyMinter.readiness(ctx)
+	if err != nil {
+		slog.Warn("onboarding status: minting readiness unreadable", "err", err)
+		return false
+	}
+	return skip == skipManagementKeyUnset
 }
 
 // handleProfileSubmit serves POST /api/onboarding/profile (Amendment #95): the whole seed

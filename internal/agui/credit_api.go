@@ -133,7 +133,9 @@ func (s *Server) handleGetCredit(w http.ResponseWriter, r *http.Request) {
 	rec, loadErr := s.credit.keys.Load(ctx)
 	if loadErr != nil {
 		if errors.Is(loadErr, identitykey.ErrNoKey) {
-			writeJSONStatus(w, http.StatusConflict, map[string]string{"error": "identity has no OpenRouter key yet"})
+			writeJSONStatus(w, http.StatusConflict, map[string]string{
+				"error": "identity has no OpenRouter key yet", "cause": s.noKeyCause(r.Context()),
+			})
 			return
 		}
 		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "credit store unavailable"})
@@ -155,6 +157,25 @@ func (s *Server) handleGetCredit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, creditGetResponse(targetID, rec.LimitReset, cap, spendFloat))
+}
+
+// Why an identity has no key, beside skipManagementKeyUnset, for the Credit panel.
+const (
+	noKeyMintingUnavailable = "minting_unavailable"
+	noKeyNotMinted          = "not_minted"
+)
+
+// noKeyCause says why an identity has no OpenRouter key: the management key is not set, minting
+// is not wired, or the key was not minted yet — the reconciler retries at boot and on the
+// settings writes, and the provider's error is in the daemon log.
+func (s *Server) noKeyCause(ctx context.Context) string {
+	if s.keyMinter == nil {
+		return noKeyMintingUnavailable
+	}
+	if skip, err := s.keyMinter.readiness(ctx); err == nil && skip == skipManagementKeyUnset {
+		return skipManagementKeyUnset
+	}
+	return noKeyNotMinted
 }
 
 // unlimitedCreditResponse is the GET body for a key with no limit: no cap, so no remaining
@@ -273,7 +294,9 @@ func (s *Server) handleSetCredit(w http.ResponseWriter, r *http.Request) {
 	rec, loadErr := s.credit.keys.Load(ctx)
 	if loadErr != nil {
 		if errors.Is(loadErr, identitykey.ErrNoKey) {
-			writeJSONStatus(w, http.StatusConflict, map[string]string{"error": "identity has no OpenRouter key yet"})
+			writeJSONStatus(w, http.StatusConflict, map[string]string{
+				"error": "identity has no OpenRouter key yet", "cause": s.noKeyCause(r.Context()),
+			})
 			return
 		}
 		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "credit store unavailable"})

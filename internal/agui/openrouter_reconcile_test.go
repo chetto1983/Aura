@@ -182,3 +182,23 @@ func TestReconcileEndpointReportsTheResult(t *testing.T) {
 		t.Fatalf("status = %d body = %s, want 200 with the services label", rr.Code, rr.Body.String())
 	}
 }
+
+// TestReconcileReportsTheLabelsItMinted: the first-run setup shows the admin their new key by its
+// masked label, so a run names the labels of the keys it minted, and only those.
+func TestReconcileReportsTheLabelsItMinted(t *testing.T) {
+	s, _, _, _, _ := reconcileServer(withServicesKey(routeRows), []identity.Identity{{ID: "admin-1", Kind: "user"}}, "admin-1")
+	res, err := s.EnsureOpenRouterKeys(context.Background())
+	if err != nil {
+		t.Fatalf("EnsureOpenRouterKeys: %v", err)
+	}
+	if got := res.MintedLabels["admin-1"]; got != "sk-or-v1-...hash-1" {
+		t.Fatalf("minted label = %q, want the admin key's masked label", got)
+	}
+	again, err := s.EnsureOpenRouterKeys(context.Background())
+	if err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if len(again.MintedLabels) != 0 {
+		t.Fatalf("second run labels = %v, want none: it minted nothing", again.MintedLabels)
+	}
+}

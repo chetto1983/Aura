@@ -42,6 +42,16 @@ func TestNobodyWritesTheServicesKey(t *testing.T) {
 	}
 }
 
+func TestAdminCannotStoreAServicesCapTheProviderRefuses(t *testing.T) {
+	store := &fakeSettingsStore{}
+	s := &Server{settings: store, idAdmin: adminCaps("admin-1")}
+	rr, r := putReq(t, "AURA_OPENROUTER_SERVICES_CAP_USD", "ten", "admin-1")
+	s.handlePutSetting(rr, r)
+	if rr.Code != http.StatusBadRequest || len(store.upserted) != 0 {
+		t.Fatalf("status = %d upserted = %v, want 400 and nothing written", rr.Code, store.upserted)
+	}
+}
+
 func TestMemberCannotDeleteTheManagementKey(t *testing.T) {
 	store := &fakeSettingsStore{}
 	s := &Server{settings: store, idAdmin: adminCaps("admin-1")}

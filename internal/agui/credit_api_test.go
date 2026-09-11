@@ -134,6 +134,37 @@ func creditRequest(method, path, body string) *http.Request {
 	return r
 }
 
+// TestAdminGetCreditExplainsAMissingKey proves the 409 says why the identity has no key, so the
+// Credit panel can tell an admin what to do instead of showing a load error.
+func TestAdminGetCreditExplainsAMissingKey(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		minter *IdentityKeyMinter
+		want   string
+	}{
+		{"minting not wired", nil, "minting_unavailable"},
+		{"management key not set", NewIdentityKeyMinter(&fakeMinting{}, newFakeIdentityKeys(), adminCaps(), billing), "management_key_unset"},
+		{"not minted yet", NewIdentityKeyMinter(&fakeMinting{keySet: true}, newFakeIdentityKeys(), adminCaps(), billing), "not_minted"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newTestCreditServer(&fakeCreditSpendReader{}, &fakeCreditKeyStore{}, &fakeCreditProvider{}, &fakeCreditInvalidator{}, true)
+			s.keyMinter = tc.minter
+			rec := httptest.NewRecorder()
+			s.handleGetCredit(rec, creditRequest(http.MethodGet, "/api/admin/identities/"+testLocalID+"/credit", ""))
+			if rec.Code != http.StatusConflict {
+				t.Fatalf("status = %d, want 409", rec.Code)
+			}
+			var body map[string]string
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if body["cause"] != tc.want || body["error"] != "identity has no OpenRouter key yet" {
+				t.Fatalf("body = %v, want cause %q and the no-key error", body, tc.want)
+			}
+		})
+	}
+}
+
 // TestAdminGetCredit proves the GET response carries cap/spend/remaining and nothing
 // about the key -- asserted on the marshalled bytes.
 func TestAdminGetCredit(t *testing.T) {

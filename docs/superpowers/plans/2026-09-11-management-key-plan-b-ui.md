@@ -48,9 +48,9 @@
 
 **Produces:** `OnboardingStatus.RouteRequired` (`routeRequired`); `OpenRouterKeysResult.MintedLabels` (`minted_labels`); credit 409 `{"error": "identity has no OpenRouter key yet", "cause": <code>}`; `validateSettingKeyValue(key, value string) error`.
 
-- [ ] **Step 1: Failing tests.** `TestHandleOnboardingStatusRouteRequired` (admin + billing route + no management key → true; key set, local route, member, no minter → false); `TestReconcileReportsTheLabelsItMinted` (first run maps `admin-1` → `sk-or-v1-...hash-1`, second run maps nothing); `TestAdminGetCreditExplainsAMissingKey` (no minter → `minting_unavailable`, key unset → `management_key_unset`, key set → `not_minted`); `TestValidateServicesCap` (`10`, `0.5`, empty accepted; `0`, `0.001`, `-1`, `ten` refused; other keys untouched); `TestAdminCannotStoreAServicesCapTheProviderRefuses` (PUT `ten` → 400, nothing written).
-- [ ] **Step 2: Run, watch them fail** (`go test ./internal/agui/` → build failure on the new names).
-- [ ] **Step 3: Implement.**
+- [x] **Step 1: Failing tests.** `TestHandleOnboardingStatusRouteRequired` (admin + billing route + no management key → true; key set, local route, member, no minter → false); `TestReconcileReportsTheLabelsItMinted` (first run maps `admin-1` → `sk-or-v1-...hash-1`, second run maps nothing); `TestAdminGetCreditExplainsAMissingKey` (no minter → `minting_unavailable`, key unset → `management_key_unset`, key set → `not_minted`); `TestValidateServicesCap` (`10`, `0.5`, empty accepted; `0`, `0.001`, `-1`, `ten` refused; other keys untouched); `TestAdminCannotStoreAServicesCapTheProviderRefuses` (PUT `ten` → 400, nothing written).
+- [x] **Step 2: Run, watch them fail** (`go test ./internal/agui/` → build failure on the new names).
+- [x] **Step 3: Implement.**
 
 ```go
 // onboarding_api.go
@@ -125,8 +125,8 @@ func validateSettingKeyValue(key, value string) error {
 }
 ```
 
-- [ ] **Step 4: Run, watch them pass;** race in WSL.
-- [ ] **Step 5: Commit** `feat(agui): tell the first-run setup what the route step needs`.
+- [x] **Step 4: Run, watch them pass;** race in WSL.
+- [x] **Step 5: Commit** `feat(agui): tell the first-run setup what the route step needs`.
 
 ---
 
