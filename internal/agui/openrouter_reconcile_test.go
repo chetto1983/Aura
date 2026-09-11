@@ -91,6 +91,9 @@ func TestReconcileMintsEveryActiveUserIdentity(t *testing.T) {
 	ids := []identity.Identity{
 		{ID: "admin-1", Kind: "user"}, {ID: "member-1", Kind: "user"},
 		{ID: "aura-cli", Kind: "service"}, {ID: "gone-1", Kind: "user", Deactivated: true},
+		// The seeded `local` operator is kind system and is deleted at first login, its key
+		// row with it: a key minted for it outlives Aura's record of it (measured 2026-09-11).
+		{ID: "local", Kind: "system"}, {ID: "tg-1", Kind: "channel"},
 	}
 	s, _, keys, _, _ := reconcileServer(withServicesKey(routeRows), ids, "admin-1")
 	res, err := s.EnsureOpenRouterKeys(context.Background())

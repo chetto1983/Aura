@@ -17,11 +17,15 @@ import (
 )
 
 const (
-	servicesKeySetting  = "OPENROUTER_API_KEY"
-	servicesCapSetting  = "AURA_OPENROUTER_SERVICES_CAP_USD"
-	servicesKeyName     = "aura-services"
-	reconcileActor      = "aura-reconciler"
-	serviceIdentityKind = "service" // migration 0049: principals that can never log in
+	servicesKeySetting = "OPENROUTER_API_KEY"
+	servicesCapSetting = "AURA_OPENROUTER_SERVICES_CAP_USD"
+	servicesKeyName    = "aura-services"
+	reconcileActor     = "aura-reconciler"
+	// userIdentityKind is the only kind that gets a key: a person who signs in. The seeded
+	// `local` operator (kind system) is deleted at first login and its key row cascades with
+	// it, so a key minted for it stays live at OpenRouter with nothing in Aura to revoke it;
+	// service and channel principals never run a turn on a key of their own.
+	userIdentityKind = "user"
 )
 
 // reconcileTriggerKeys are the settings whose write can make minting possible.
@@ -85,7 +89,7 @@ func (s *Server) ensureOpenRouterKeysLocked(ctx context.Context) (OpenRouterKeys
 		errs = append(errs, fmt.Errorf("list identities: %w", err))
 	}
 	for _, idn := range ids {
-		if idn.Kind == serviceIdentityKind || idn.Deactivated {
+		if idn.Kind != userIdentityKind || idn.Deactivated {
 			continue
 		}
 		if err := s.reconcileIdentity(ctx, idn.ID, &res); err != nil {
