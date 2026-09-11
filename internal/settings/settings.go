@@ -86,7 +86,6 @@ var AllowedKeys = map[string]KeyMeta{
 	// minted, never overlaid into a running config.
 	"AURA_OPENROUTER_SERVICES_CAP_USD": {Kind: KindString, Label: "OpenRouter services key monthly cap (USD)"},
 	"AURA_EMBED_MODEL":                 {Kind: KindString, Label: "Embedding cloud model"},
-	"AURA_EMBED_DIMENSIONS":            {Kind: KindInt, Label: "Embedding dimensions"},
 	"AURA_EMBED_BASE_URL":              {Kind: KindString, Label: "Embedding base URL"},
 	"AURA_TTS_MODEL":                   {Kind: KindString, Label: "TTS cloud model"},
 	"AURA_STT_CLOUD_MODEL":             {Kind: KindString, Label: "STT cloud model"},

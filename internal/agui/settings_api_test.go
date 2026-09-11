@@ -311,10 +311,10 @@ func TestHandlePutSetting(t *testing.T) {
 	t.Run("invalid int 400", func(t *testing.T) {
 		store := &fakeSettingsStore{}
 		s := &Server{settings: store}
-		rr, r := putReq(t, "AURA_EMBED_DIMENSIONS", "not-a-number", "op-1")
+		rr, r := putReq(t, "AURA_LOOP_MAX_STEPS", "not-a-number", "op-1")
 		s.handlePutSetting(rr, r)
 		if rr.Code != http.StatusBadRequest {
-			t.Fatalf("status = %d, want 400 for a non-int dimension", rr.Code)
+			t.Fatalf("status = %d, want 400 for a non-int step budget", rr.Code)
 		}
 		if len(store.upserted) != 0 {
 			t.Errorf("an invalid value was persisted: %v", store.upserted)

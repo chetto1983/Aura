@@ -63,11 +63,11 @@
 
 The embedding model file fixes the width and changing it breaks the vector index, so it stays an environment default read by the daemon (`config.go:416`) and the Python ingest (`services/ingest/app.py:37`), never a Settings row.
 
-- [ ] **Step 1: Test.** `settings_test.go`: `AURA_EMBED_DIMENSIONS` is not allowed. The tests that used it as an example int or boot-bound row switch to another such key.
-- [ ] **Step 2: Run, watch it fail.**
-- [ ] **Step 3: Implement** the allowlist, Settings pane and copy removals.
-- [ ] **Step 4: Run, watch them pass** (Go and web).
-- [ ] **Step 5: Commit** `refactor(settings): take the embedding width out of the Settings`.
+- [x] **Step 1: Test.** `settings_test.go`: `AURA_EMBED_DIMENSIONS` is not allowed. The tests that used it as an example int or boot-bound row switch to another such key.
+- [x] **Step 2: Run, watch it fail.**
+- [x] **Step 3: Implement** the allowlist, Settings pane and copy removals.
+- [x] **Step 4: Run, watch them pass** (Go and web).
+- [x] **Step 5: Commit** `refactor(settings): take the embedding width out of the Settings`.
 
 ---
 

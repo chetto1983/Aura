@@ -35,7 +35,7 @@ func validateSettingKeyValue(key, value string) error {
 }
 
 // validateSettingValue rejects a value that does not parse for its Kind (an int
-// knob like AURA_EMBED_DIMENSIONS must be an int; a bool like AURA_MEMORY_PRELOAD_ENABLED
+// knob like AURA_LOOP_MAX_STEPS must be an int; a bool like AURA_MEMORY_PRELOAD_ENABLED
 // must parse) so a bad value never reaches config.Load's silent default fallback.
 func validateSettingValue(kind settings.Kind, value string) error {
 	switch kind {

@@ -50,7 +50,7 @@ const LIST = {
       overridden: true,
       applied: 'restart',
     }),
-    item({ key: 'AURA_EMBED_DIMENSIONS', kind: 'int', value: '768', applied: 'boot' }),
+    item({ key: 'AURA_EMBED_MODEL', kind: 'string', value: 'embeddinggemma', applied: 'boot' }),
   ],
 };
 
@@ -101,7 +101,7 @@ describe('ModelSettingsPanel — application state and turn budget', () => {
     expect(sttField?.querySelector('[data-applied="restart"]')?.textContent).toBe(
       'Saved — needs a restart',
     );
-    const embedField = screen.getByLabelText('Embedding dimensions').closest('div.flex.min-h-32');
+    const embedField = screen.getByLabelText('Embedding model').closest('div.flex.min-h-32');
     expect(embedField?.querySelector('[data-applied="boot"]')?.textContent).toBe(
       'Applied at start-up',
     );

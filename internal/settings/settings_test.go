@@ -143,8 +143,10 @@ func TestOverlayEnvFeedsRuntimeConfig(t *testing.T) {
 	if got := cfg.Embed.BaseURL; got != "https://settings-embed.example" {
 		t.Errorf("Embed.BaseURL = %q, want overlaid settings embed base URL", got)
 	}
-	if got := cfg.Embed.Dimensions; got != 444 {
-		t.Errorf("Embed.Dimensions = %d, want 444", got)
+	// A row left over from when the width was a setting must not reach the environment: the
+	// embedding model file fixes it, and a different width breaks the vector index.
+	if got := cfg.Embed.Dimensions; got != 768 {
+		t.Errorf("Embed.Dimensions = %d, want the 768 default: a stale settings row must not change it", got)
 	}
 	if got := cfg.TTSModel; got != "settings-tts-model" {
 		t.Errorf("TTSModel = %q, want overlaid settings TTS model", got)
@@ -242,6 +244,15 @@ func TestRerankKeysRemovedFromAllowlist(t *testing.T) {
 		if _, ok := Allowed(key); ok {
 			t.Errorf("Allowed(%q) = true, want false after removal", key)
 		}
+	}
+}
+
+// The embedding model file fixes the vector width, and changing it breaks the ArcadeDB vector
+// index, so AURA_EMBED_DIMENSIONS is an environment default the daemon and the Python ingest
+// read at start, never a cockpit setting.
+func TestEmbedDimensionsIsNotASetting(t *testing.T) {
+	if _, ok := Allowed("AURA_EMBED_DIMENSIONS"); ok {
+		t.Fatal("AURA_EMBED_DIMENSIONS must not be cockpit-overridable: the model file fixes the width")
 	}
 }
 

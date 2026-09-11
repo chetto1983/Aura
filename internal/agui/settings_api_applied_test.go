@@ -16,12 +16,12 @@ import (
 // restart_keys, and an untouched boot-bound key is "boot".
 func TestHandleListSettingsReportsPerItemApplicationState(t *testing.T) {
 	t.Setenv("AURA_STT_CLOUD_MODEL", "whisper-boot")
-	t.Setenv("AURA_EMBED_DIMENSIONS", "768")
+	t.Setenv("AURA_EMBED_MODEL", "embeddinggemma")
 	t.Setenv("AURA_LOOP_MAX_STEPS", "25")
 	s := &Server{
 		settings: &fakeSettingsStore{rows: []sqlc.AuraSettings{
 			{Key: "AURA_STT_CLOUD_MODEL", Value: "whisper-persisted"},
-			{Key: "AURA_EMBED_DIMENSIONS", Value: "768"},
+			{Key: "AURA_EMBED_MODEL", Value: "embeddinggemma"},
 			{Key: "AURA_LOOP_MAX_STEPS", Value: "60"},
 		}},
 		llmRouteReloader: &fakeLLMRouteReloader{},
@@ -36,10 +36,10 @@ func TestHandleListSettingsReportsPerItemApplicationState(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]string{
-		"AURA_STT_CLOUD_MODEL":  appliedRestart,
-		"AURA_EMBED_DIMENSIONS": appliedBoot,
-		"AURA_LOOP_MAX_STEPS":   appliedLive,
-		"AURA_TTS_MODEL":        appliedBoot,
+		"AURA_STT_CLOUD_MODEL": appliedRestart,
+		"AURA_EMBED_MODEL":     appliedBoot,
+		"AURA_LOOP_MAX_STEPS":  appliedLive,
+		"AURA_TTS_MODEL":       appliedBoot,
 	}
 	for _, item := range got.Settings {
 		if state, ok := want[item.Key]; ok && item.Applied != state {
