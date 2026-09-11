@@ -129,6 +129,7 @@ describe('AppShell run usage ownership', () => {
       required: false,
       completed: true,
       skipped: false,
+      routeRequired: false,
     });
     vi.stubGlobal(
       'fetch',

@@ -158,11 +158,11 @@ func validateSettingKeyValue(key, value string) error {
 
 **Files:** create `web/src/onboarding/routeStepModel.ts` (`summarizeOpenRouterKeys(runs, ownIdentityId) → {ownLabel, servicesLabel, errors}`: labels from whichever run minted them, errors from the LAST run only, since the management key's PUT runs after the cap's), `web/src/onboarding/RouteStep.tsx` (`{required, onRequiredChange, onDone}`: the routing pane with `skippable={!required}`; after a save, re-read the status when the step was required (a failed read counts as not required); errors or still required → stay and explain; services key minted → `requestRestart` then `watchRestart` with a `reload` that moves to "ready" instead of reloading the page; own key minted → "ready"; else `onDone`); `onboardingApi.ts` (`OnboardingStatus.routeRequired`); `resources.onboarding.ts` (`profile.steps.route`, `profile.route.*`); `web/e2e/auth.ts` fixture gains `routeRequired: false`; typed status mocks in `AppShell.{shell,usage,promptDrafts}.test.tsx` and `onboardingApi.test.ts` gain the field; tests `routeStepModel.test.ts`, `RouteStep.test.tsx`.
 
-- [ ] **Step 1: Tests.** Model: empty runs; labels picked by own id from any run; last run's errors only. Step (panel, restart and status mocked): optional save that minted nothing → `onDone`, no status read, no restart; minted services key → labels shown, one restart, "Continue" → `onDone`; provider errors → alert, no `onDone`; still required → "needs the OpenRouter management key" alert; restart unsupported → warning + Continue.
-- [ ] **Step 2: Run, watch them fail.**
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run, watch them pass;** typecheck.
-- [ ] **Step 5: Commit** `feat(web): the first-run route step mints the keys and restarts Aura once`.
+- [x] **Step 1: Tests.** Model: empty runs; labels picked by own id from any run; last run's errors only. Step (panel, restart and status mocked): optional save that minted nothing → `onDone`, no status read, no restart; minted services key → labels shown, one restart, "Continue" → `onDone`; provider errors → alert, no `onDone`; still required → "needs the OpenRouter management key" alert; restart unsupported → warning + Continue.
+- [x] **Step 2: Run, watch them fail.**
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run, watch them pass;** typecheck.
+- [x] **Step 5: Commit** `feat(web): the first-run route step mints the keys and restarts Aura once`.
 
 ---
 

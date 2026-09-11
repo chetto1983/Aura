@@ -176,6 +176,7 @@ beforeEach(async () => {
     required: false,
     completed: true,
     skipped: false,
+    routeRequired: false,
   });
   vi.stubGlobal(
     'fetch',

@@ -309,7 +309,12 @@ async function installCompletedProfileFixture(page: Page) {
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ required: false, completed: true, skipped: false }),
+      body: JSON.stringify({
+        required: false,
+        completed: true,
+        skipped: false,
+        routeRequired: false,
+      }),
     }),
   );
 }

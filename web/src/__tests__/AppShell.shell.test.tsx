@@ -85,6 +85,7 @@ describe('AppShell', () => {
       required: false,
       completed: true,
       skipped: false,
+      routeRequired: false,
     });
     vi.stubGlobal(
       'fetch',
@@ -204,6 +205,7 @@ describe('AppShell', () => {
       required: true,
       completed: false,
       skipped: false,
+      routeRequired: false,
     });
 
     renderShell();

@@ -120,6 +120,10 @@ export const onboardingEn = {
           label: 'Model and token setup',
           help: 'Choose cloud or local model routing, token budgets, and sidecar backends before Aura starts regular work.',
         },
+        route: {
+          label: 'Model route',
+          help: "Choose what Aura's model runs on: OpenRouter, with the management key Aura mints every other key from, or a local server.",
+        },
         telegram: {
           label: 'Telegram integration',
           help: 'Connect the Telegram bot Aura uses for the recovery link and chat channel, then scan the pairing QR.',
@@ -128,6 +132,21 @@ export const onboardingEn = {
       runtime: {
         save: 'Save and continue',
         skip: 'Skip runtime setup',
+      },
+      route: {
+        save: 'Save and continue',
+        skip: 'Skip for now',
+        ownKey: 'Your OpenRouter key: {{label}}, no spending limit.',
+        servicesKey: 'Services key for speech, embeddings and vision: {{label}}.',
+        errors: 'OpenRouter refused part of the setup:',
+        stillRequired:
+          'Aura needs the OpenRouter management key, or a local route, before anyone can chat.',
+        restarting: 'Restarting Aura…',
+        restartingBody:
+          'Speech, embeddings and vision switch to the new services key. It takes about a minute.',
+        restartFailed:
+          "Aura didn't restart. Your keys already work for chat; restart Aura from Settings so speech, embeddings and vision use the services key.",
+        continue: 'Continue',
       },
       telegram: {
         checking: 'Checking Telegram configuration…',
@@ -267,6 +286,10 @@ export const onboardingIt = {
           label: 'Configurazione modello e token',
           help: 'Scegli modello cloud o locale, budget token e backend sidecar prima del lavoro regolare.',
         },
+        route: {
+          label: 'Percorso del modello',
+          help: 'Scegli su cosa gira il modello di Aura: OpenRouter, con la chiave di gestione da cui Aura crea tutte le altre, oppure un server locale.',
+        },
         telegram: {
           label: 'Integrazione Telegram',
           help: 'Collega il bot Telegram che Aura usa per il link di recupero e il canale chat, poi scansiona il QR di abbinamento.',
@@ -275,6 +298,21 @@ export const onboardingIt = {
       runtime: {
         save: 'Salva e continua',
         skip: 'Salta configurazione runtime',
+      },
+      route: {
+        save: 'Salva e continua',
+        skip: 'Salta per ora',
+        ownKey: 'La tua chiave OpenRouter: {{label}}, senza limite di spesa.',
+        servicesKey: 'Chiave dei servizi per voce, embedding e visione: {{label}}.',
+        errors: 'OpenRouter ha rifiutato una parte della configurazione:',
+        stillRequired:
+          'Aura ha bisogno della chiave di gestione OpenRouter, o di un percorso locale, prima che chiunque possa chattare.',
+        restarting: 'Riavvio di Aura…',
+        restartingBody:
+          'Voce, embedding e visione passano alla nuova chiave dei servizi. Serve circa un minuto.',
+        restartFailed:
+          'Aura non si è riavviata. Le chiavi funzionano già per la chat; riavvia Aura dalle Impostazioni perché voce, embedding e visione usino la chiave dei servizi.',
+        continue: 'Continua',
       },
       telegram: {
         checking: 'Verifica configurazione Telegram…',

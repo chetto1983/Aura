@@ -76,6 +76,9 @@ export interface OnboardingStatus {
   readonly required: boolean;
   readonly completed: boolean;
   readonly skipped: boolean;
+  /** An admin must connect OpenRouter or pick a local route before the setup lets them go: the
+   * route bills and no management key is set, so no identity's key can be minted yet. */
+  readonly routeRequired: boolean;
 }
 
 /** POST /api/onboarding/profile response. `completed` and `skipped` are mutually exclusive.

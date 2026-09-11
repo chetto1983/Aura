@@ -119,14 +119,20 @@ describe('onboardingApi same-origin throwing fetch', () => {
     expect(init.method).toBeUndefined();
   });
 
-  it('fetchOnboardingStatus GETs /api/onboarding/status and parses the three flags', async () => {
-    const fetchMock = okJSON({ required: true, completed: false, skipped: false });
+  it('fetchOnboardingStatus GETs /api/onboarding/status and parses the four flags', async () => {
+    const fetchMock = okJSON({
+      required: true,
+      completed: false,
+      skipped: false,
+      routeRequired: true,
+    });
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(fetchOnboardingStatus()).resolves.toEqual({
       required: true,
       completed: false,
       skipped: false,
+      routeRequired: true,
     });
     const [url] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('/api/onboarding/status');
