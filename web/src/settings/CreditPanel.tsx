@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Wallet } from 'lucide-react';
+import { KeyRound, Wallet } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useIdentityCredit, useSetIdentityCredit } from '../admin/useAdmin';
 import {
@@ -39,6 +39,15 @@ const RESET_INTERVALS = ['daily', 'weekly', 'monthly'] as const;
 type ResetInterval = (typeof RESET_INTERVALS)[number];
 
 const DEFAULT_RESET: ResetInterval = 'monthly';
+
+/** The reasons credit_api.go's noKeyCause gives for an identity with no key. A code this build
+ * does not know reads as not minted yet, the one cause that asks nothing of the admin. */
+const NO_KEY_CAUSES = ['management_key_unset', 'minting_unavailable', 'not_minted'] as const;
+
+function noKeyCauseKey(cause: string): string {
+  const known = (NO_KEY_CAUSES as readonly string[]).includes(cause) ? cause : 'not_minted';
+  return `admin.credit.noKeyCause.${known}`;
+}
 
 function asResetInterval(value: string): ResetInterval {
   return (RESET_INTERVALS as readonly string[]).includes(value)
@@ -82,6 +91,30 @@ function clampPercent(percent: number): number {
   return Math.min(100, Math.max(0, Math.round(percent)));
 }
 
+/** The Empty composition the panel shows in place of a cap: a backend that bills nothing, or an
+ * identity with no key yet. */
+function CreditEmpty({
+  icon: Icon,
+  heading,
+  body,
+}: {
+  readonly icon: typeof Wallet;
+  readonly heading: string;
+  readonly body: string;
+}) {
+  return (
+    <Empty className="border border-dashed border-border bg-surface-2/40 py-8">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <Icon aria-hidden="true" className="size-5" />
+        </EmptyMedia>
+        <EmptyTitle className="text-sm">{heading}</EmptyTitle>
+        <EmptyDescription>{body}</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
+  );
+}
+
 export interface CreditPanelProps {
   readonly identityId: string;
 }
@@ -118,20 +151,28 @@ export function CreditPanel({ identityId }: CreditPanelProps) {
     );
   }
 
+  // A missing key is a state of the identity, not a failed read: the daemon says why, and the
+  // admin is told what, if anything, to do about it.
+  if (credit !== undefined && 'no_key' in credit) {
+    return (
+      <CreditEmpty
+        icon={KeyRound}
+        heading={t('admin.credit.noKeyHeading')}
+        body={t(noKeyCauseKey(credit.cause))}
+      />
+    );
+  }
+
   // CRED-09: a deployment whose backend does not bill is told it is EXEMPT. It is never shown a
   // zero balance -- an exemption and an exhaustion are different facts, and rendering the first
   // as the second is the LibreChat `tokenCredits.toFixed(2)` shape the UI-SPEC rejected by name.
   if (credit === undefined || credit.exempt) {
     return (
-      <Empty className="border border-dashed border-border bg-surface-2/40 py-8">
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <Wallet aria-hidden="true" className="size-5" />
-          </EmptyMedia>
-          <EmptyTitle className="text-sm">{t('admin.credit.emptyHeading')}</EmptyTitle>
-          <EmptyDescription>{t('admin.credit.emptyBody')}</EmptyDescription>
-        </EmptyHeader>
-      </Empty>
+      <CreditEmpty
+        icon={Wallet}
+        heading={t('admin.credit.emptyHeading')}
+        body={t('admin.credit.emptyBody')}
+      />
     );
   }
 

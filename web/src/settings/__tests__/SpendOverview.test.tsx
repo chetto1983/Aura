@@ -198,6 +198,21 @@ describe('SpendOverview — populated', () => {
     await screen.findByText('$5.52');
     expect(screen.queryByText(/Assigned caps total more than/)).toBeNull();
   });
+
+  // Keys with no limit (an admin's own) add nothing to the sum of caps yet draw on the same
+  // credit, so the banner says how many there are.
+  it('reports the keys with no limit inside the over-allocation banner', async () => {
+    stubFetch({
+      overview: {
+        ...overviewPayload(),
+        over_allocation: { triggered: true, sum_caps: 25, available: 20, uncapped_keys: 1 },
+      },
+    });
+    renderOverview();
+    expect(
+      await screen.findByText(/Keys with no limit, which draw on the same credit: 1\./),
+    ).toBeTruthy();
+  });
 });
 
 describe('SpendOverview — empty', () => {

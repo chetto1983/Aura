@@ -52,6 +52,14 @@ export const adminEn = {
       remainingLabel: 'Remaining',
       noLimit: 'No limit',
       noLimitBody: "An administrator's own key has no spending cap.",
+      noKeyHeading: 'No OpenRouter key yet',
+      noKeyCause: {
+        management_key_unset:
+          'An admin connects OpenRouter first: the management key goes in the first-run setup or in Settings.',
+        minting_unavailable: "This deployment can't mint OpenRouter keys.",
+        not_minted:
+          "Aura hasn't minted it yet. It retries when Aura restarts or when the OpenRouter settings are saved; the daemon log names the provider's error.",
+      },
       gaugeValue: '{{spend}} / {{cap}} · {{percent}}%',
       gaugeLabel: 'Spend against the cap; warns at {{near}}% and again at {{critical}}%',
       saveCap: 'Save cap',
@@ -101,6 +109,7 @@ export const adminEn = {
       empty: "No spend yet — this account hasn't made a billed request.",
       overAllocation:
         "Assigned caps total more than this account's available OpenRouter credit. A lower-priority identity could be starved without warning — lower a cap or add credit to the account.",
+      uncappedKeys: 'Keys with no limit, which draw on the same credit: {{keys}}.',
       vsPrevPeriod: 'vs prev period',
       kpi: {
         totalSpend: 'Total spend',
@@ -169,6 +178,14 @@ export const adminIt = {
       remainingLabel: 'Residuo',
       noLimit: 'Nessun limite',
       noLimitBody: 'La chiave di un amministratore non ha un limite di spesa.',
+      noKeyHeading: 'Ancora nessuna chiave OpenRouter',
+      noKeyCause: {
+        management_key_unset:
+          'Prima un amministratore collega OpenRouter: la chiave di gestione va nella configurazione iniziale o nelle Impostazioni.',
+        minting_unavailable: 'Questa installazione non può creare chiavi OpenRouter.',
+        not_minted:
+          "Aura non l'ha ancora creata. Ci riprova al riavvio o quando si salvano le impostazioni di OpenRouter; il log del demone riporta l'errore del provider.",
+      },
       gaugeValue: '{{spend}} / {{cap}} · {{percent}}%',
       gaugeLabel: 'Spesa rispetto al limite; avvisa al {{near}}% e di nuovo al {{critical}}%',
       saveCap: 'Salva limite',
@@ -219,6 +236,7 @@ export const adminIt = {
         'Ancora nessuna spesa — questo account non ha ancora effettuato una richiesta fatturata.',
       overAllocation:
         "I limiti assegnati superano nel totale il credito OpenRouter disponibile per questo account. Un'identità a priorità più bassa potrebbe restare senza credito senza preavviso — riduci un limite o aggiungi credito all'account.",
+      uncappedKeys: 'Chiavi senza limite, che attingono allo stesso credito: {{keys}}.',
       vsPrevPeriod: 'rispetto al periodo precedente',
       kpi: {
         totalSpend: 'Spesa totale',

@@ -194,6 +194,9 @@ export function SpendOverview() {
       {data.over_allocation.triggered ? (
         <p className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-[13px] text-warning">
           {t('admin.overview.overAllocation')}
+          {data.over_allocation.uncapped_keys > 0
+            ? ` ${t('admin.overview.uncappedKeys', { keys: data.over_allocation.uncapped_keys })}`
+            : null}
         </p>
       ) : null}
 

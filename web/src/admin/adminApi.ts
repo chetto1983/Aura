@@ -134,7 +134,16 @@ export interface CreditUnlimited {
   readonly percent_used: null;
 }
 
-export type CreditResponse = CreditExempt | CreditRecord | CreditUnlimited;
+/** A 409 from the credit route: the identity has no OpenRouter key yet. `cause` is the daemon's
+ * code for why (credit_api.go's noKeyCause): management_key_unset, minting_unavailable or
+ * not_minted. */
+export interface CreditNoKey {
+  readonly identity_id: string;
+  readonly no_key: true;
+  readonly cause: string;
+}
+
+export type CreditResponse = CreditExempt | CreditRecord | CreditUnlimited | CreditNoKey;
 
 /** POST /api/admin/identities/{id}/credit body — either field may be omitted to leave it
  * unchanged (server-side nil-means-unchanged convention, credit_api.go's creditSetRequest). */
@@ -156,8 +165,23 @@ export interface CreditSetResult {
   readonly provider_applied: boolean;
 }
 
-export function fetchIdentityCredit(identityId: string): Promise<CreditResponse> {
-  return getJSON<CreditResponse>(`/api/admin/identities/${encodeURIComponent(identityId)}/credit`);
+/** GET .../credit. A 409 is the identity having no key yet, a state the Credit panel explains,
+ * so it resolves to CreditNoKey with the daemon's cause instead of throwing. */
+export async function fetchIdentityCredit(identityId: string): Promise<CreditResponse> {
+  const res = await fetch(`/api/admin/identities/${encodeURIComponent(identityId)}/credit`, {
+    headers: { Accept: 'application/json' },
+    credentials: 'same-origin',
+  });
+  if (res.status === 409) {
+    const body = (await res.json().catch(() => ({}))) as { readonly cause?: unknown };
+    return {
+      identity_id: identityId,
+      no_key: true,
+      cause: typeof body.cause === 'string' ? body.cause : '',
+    };
+  }
+  if (!res.ok) throw await httpErrorFrom(res);
+  return (await res.json()) as CreditResponse;
 }
 
 export function setIdentityCredit(
@@ -226,6 +250,9 @@ export interface SpendOverviewOverAllocation {
   readonly triggered: boolean;
   readonly sum_caps: number;
   readonly available: number;
+  /** Keys with no limit (an admin's own): nothing to add to sum_caps, yet they draw on the same
+   * credit. */
+  readonly uncapped_keys: number;
 }
 
 export interface SpendOverviewResponse {

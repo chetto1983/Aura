@@ -85,6 +85,34 @@ describe('CreditPanel — a key with no limit', () => {
   });
 });
 
+describe('CreditPanel — no key yet', () => {
+  // The daemon answers 409 with the reason the identity has no key; the panel explains it instead
+  // of calling a normal state of the identity a failed load.
+  it.each([
+    ['management_key_unset', /management key goes in the first-run setup/],
+    ['minting_unavailable', /can't mint OpenRouter keys/],
+    ['not_minted', /hasn't minted it yet/],
+    ['a cause this build does not know', /hasn't minted it yet/],
+  ])('explains a missing key whose cause is %s', async (cause, copy) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ error: 'identity has no OpenRouter key yet', cause }), {
+            status: 409,
+          }),
+        ),
+      ),
+    );
+    renderPanel();
+
+    expect(await screen.findByText('No OpenRouter key yet')).toBeTruthy();
+    expect(screen.getByText(copy)).toBeTruthy();
+    expect(screen.queryByText("Couldn't load this identity's credit. Try again.")).toBeNull();
+    expect(screen.queryByRole('progressbar')).toBeNull();
+  });
+});
+
 describe('CreditPanel — the billing surface', () => {
   it('renders cap, reset interval and the spend gauge from the ledger response', async () => {
     stubFetch({ credit: BILLING });

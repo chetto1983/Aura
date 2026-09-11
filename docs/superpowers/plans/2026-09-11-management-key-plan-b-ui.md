@@ -194,11 +194,11 @@ func validateSettingKeyValue(key, value string) error {
 
 **Files:** `web/src/admin/adminApi.ts` (`CreditNoKey {identity_id, no_key: true, cause}` in `CreditResponse`; `fetchIdentityCredit` maps a 409 to it, other failures throw `httpErrorFrom`; `SpendOverviewOverAllocation.uncapped_keys`); `web/src/settings/CreditPanel.tsx` (no-key state with the cause copy; one `CreditEmpty` shared with the exempt state); `SpendOverview.tsx` (the banner adds the uncapped count when above zero); `resources.admin.ts` (`credit.noKeyHeading`, `credit.noKeyCause.{management_key_unset,minting_unavailable,not_minted}`, `overview.uncappedKeys`); tests `adminApi.test.ts`, `CreditPanel.test.tsx`, `SpendOverview.test.tsx`.
 
-- [ ] **Step 1: Tests:** a 409 resolves to the no-key shape with its cause, a 502 rejects; the panel shows the heading and each cause's copy (unknown → `not_minted`) and never the load error; the banner reports uncapped keys.
-- [ ] **Step 2: Run, watch them fail.**
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run, watch them pass.**
-- [ ] **Step 5: Commit** `feat(web): explain a missing or unlimited OpenRouter key`.
+- [x] **Step 1: Tests:** a 409 resolves to the no-key shape with its cause, a 502 rejects; the panel shows the heading and each cause's copy (unknown → `not_minted`) and never the load error; the banner reports uncapped keys.
+- [x] **Step 2: Run, watch them fail.**
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run, watch them pass.**
+- [x] **Step 5: Commit** `feat(web): explain a missing or unlimited OpenRouter key`.
 
 ---
 

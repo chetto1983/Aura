@@ -125,6 +125,39 @@ describe('adminApi fetchers', () => {
     expect(capturedUrl).toBe('/api/admin/identities/id-1/credit');
   });
 
+  // A missing key is a state of the identity, not a failed read: the 409 carries why.
+  it('fetchIdentityCredit turns a 409 into the no-key state with its cause', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              error: 'identity has no OpenRouter key yet',
+              cause: 'management_key_unset',
+            }),
+            { status: 409 },
+          ),
+        ),
+      ),
+    );
+    await expect(fetchIdentityCredit('id-1')).resolves.toEqual({
+      identity_id: 'id-1',
+      no_key: true,
+      cause: 'management_key_unset',
+    });
+  });
+
+  it('fetchIdentityCredit still rejects any other failure', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(new Response('{"error":"credit store unavailable"}', { status: 502 })),
+      ),
+    );
+    await expect(fetchIdentityCredit('id-1')).rejects.toMatchObject({ status: 502 });
+  });
+
   it('setIdentityCredit POSTs the cap/reset-interval patch', async () => {
     let seen: { url: string; method: string; body: string } | undefined;
     vi.stubGlobal(
