@@ -146,10 +146,58 @@ Found while running the spec:
 
 ### Task 5: Give Claude and Codex their memory back
 
-- [ ] **Step 1:** read ArcadeDB's backup and restore documentation, then restore the old
+- [x] **Step 1:** read ArcadeDB's backup and restore documentation, then restore the old
   `aura-memory` database from the Task 1 backup into the new operator's database; one
   `aura-memory` query returns a known fact.
+  Closed without a restore: the operator chose to start with empty memory. Measured on a
+  copy restored under its own name, then dropped:
+  - The old admin's database (`mem_bb78065b_…`, 10 MB) held 217 FACT, 310 Entity, 15
+    conversations with 40 turns, and 121 IndexedDocument with 633 Passage. Those documents
+    belong to the catalog the wipe removed.
+  - `restore database <name> <url>` refuses a name that already exists (arcadedb-docs,
+    how-to/operations/restore.adoc).
+  - Conversation, ConversationTurn, the reasoning types, MemoryBatchReceipt and
+    IngestStatus carry `identity_id`, and recall filters on it. A restore into another
+    identity's database would therefore have to rewrite those; FACT and Entity carry none.
+  - The new admin's database was backed up first
+    (`D:\Backups\aura-2026-09-11\new-admin-before-restore\`) and left as it was.
+
+Found while doing it: the first boot of a fresh install had created `mem_…0001` for
+`local` and `mem_…0039` for aura-cli (10:11:43 and 10:11:47, before any user existed), both
+empty. The projection and reasoning-retention reconcilers reach every identity's memory
+through `TenantClients.For`, which creates what is missing. Retiring `local` then left its
+database and user with no owner; both were dropped here. Reproduced on the live stack at
+`5aff02bc1`: with `mem_…0039` dropped, restarting `aura` at 17:54:45 recreated it at
+17:54:47. Fixed in `3e1cb4b58`: whatever only removes reaches memory through
+`TenantClients.Existing`, which never creates. Verified on `aura:edge` at `3e1cb4b58`: with
+`mem_…0039` dropped again, a restart at 18:04:54 created no database in the next 90 seconds and
+logged no sweep warning.
+
+The services key's monthly cap was read only when `aura-services` was minted:
+`ensureServicesKeyLocked` returned as soon as the key existed, so a later change to
+`AURA_OPENROUTER_SERVICES_CAP_USD` in Model routing was stored and never reached OpenRouter.
+Fixed in `dacc8f9b9`: an existing key is aligned to the stored cap, patched only when the
+limits differ, and a roster with no live `aura-services` key, or two of them, is refused rather
+than guessed. Verified on `aura:edge` at `17e87c218`, which carries it, with the spec's
+"follows the services cap an admin changes after the first run": saving 11 in Model routing
+moved the OpenRouter limit to 11, and saving 10 moved it back (8.8 s). The whole spec, both
+tests, then passed against the same stack (42.5 s).
+
+Found on the reinstalled stack: after a reload, an artifact delivered in a later turn rendered
+under the conversation's greeting ("Ciao, presentazione dell'assistente": `bundle.html` from
+the `send_file` call at seq 20, shown under seq 2). Nothing recorded which call had delivered
+the file, so the cockpit folded agent files onto assistant turns by position. Fixed in
+`17e87c218`: migration 0126 records the call on the asset, the snapshot puts the card back on
+that call, and the positional folds are gone. Verified on `aura:edge` at `17e87c218` with
+`web/e2e/artifact-position-live.spec.ts` (greeting turn, `send_file` turn, reload): one card in
+the chat, on its call, none under the greeting (16.9 s). A file stored before 0126 names no
+call and now appears only in the Artifacts panel.
 
 ### Task 6: Push
 
-- [ ] **Step 1:** push, watch CI green; record the measurements in this plan.
+- [x] **Step 1:** push, watch CI green; record the measurements in this plan.
+  `17e87c218` (the artifact fix) turned CI red in three tests that had pinned what it
+  changed: a fixed 32-step budget down to 0093, a calm-prism fixture whose user turn
+  declared no attachment, and a one-second wait for the SSE pump to wind down. `4f6cf063b`
+  took the step budget from the embedded head, gave the fixture its `attachmentIds`, and
+  widened the wait; CI run 34650585949 is green on it.
