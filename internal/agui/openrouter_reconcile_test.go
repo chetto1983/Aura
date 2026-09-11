@@ -12,6 +12,7 @@ import (
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/identitykey"
+	"github.com/chetto1983/aura/internal/openrouterprovision"
 )
 
 var routeRows = []sqlc.AuraSettings{
@@ -21,7 +22,8 @@ var routeRows = []sqlc.AuraSettings{
 }
 
 func reconcileServer(rows []sqlc.AuraSettings, ids []identity.Identity, admins ...string) (*Server, *fakeMinting, *fakeIdentityKeys, *fakeSettingsStore, *fakeLLMRouteReloader) {
-	minting, keys := &fakeMinting{keySet: true}, newFakeIdentityKeys()
+	minting := &fakeMinting{keySet: true, listed: []openrouterprovision.KeyRecord{servicesAtRouteCap}}
+	keys := newFakeIdentityKeys()
 	store, reloader := &fakeSettingsStore{rows: rows}, &fakeLLMRouteReloader{}
 	caps := adminCaps(admins...)
 	caps.identities = ids
@@ -32,6 +34,14 @@ func reconcileServer(rows []sqlc.AuraSettings, ids []identity.Identity, admins .
 
 func withServicesKey(rows []sqlc.AuraSettings) []sqlc.AuraSettings {
 	return append(slices.Clone(rows), sqlc.AuraSettings{Key: "OPENROUTER_API_KEY", Value: "sk-or-v1-existing", IsSecret: true})
+}
+
+// servicesAtRouteCap is the provider's record of aura-services at routeRows' 20.00 cap.
+var servicesAtRouteCap = openrouterprovision.KeyRecord{Hash: "hash-services", Name: "aura-services", Limit: providerCap(2000)}
+
+func providerCap(cents int64) *openrouterprovision.USDCap {
+	c := openrouterprovision.USDCap(cents)
+	return &c
 }
 
 func TestReconcileMintsTheServicesKeyAndKeepsTheRoute(t *testing.T) {
@@ -82,8 +92,54 @@ func TestReconcileLeavesAnExistingServicesKey(t *testing.T) {
 	if _, err := s.EnsureOpenRouterKeys(context.Background()); err != nil {
 		t.Fatalf("EnsureOpenRouterKeys: %v", err)
 	}
-	if len(minting.minted) != 0 {
-		t.Fatalf("mints = %+v, want none", minting.minted)
+	if len(minting.minted) != 0 || len(minting.patched) != 0 {
+		t.Fatalf("mints = %+v patches = %v, want none: the key exists and is at its cap", minting.minted, minting.patched)
+	}
+}
+
+// An admin can change the services key's monthly cap after the first run, in Model routing. The
+// cap was read only when the key was minted, so a saved change stayed in the settings and never
+// reached the provider, which is what enforces it (found on the reinstall, 2026-09-11).
+func TestReconcileAlignsTheServicesKeyWithItsCap(t *testing.T) {
+	s, minting, _, _, _ := reconcileServer(withServicesKey(routeRows), nil)
+	minting.listed = []openrouterprovision.KeyRecord{
+		{Hash: "hash-retired", Name: "aura-services", Limit: providerCap(500), Disabled: true},
+		{Hash: "hash-services", Name: "aura-services", Limit: providerCap(1000)},
+	}
+	if _, err := s.EnsureOpenRouterKeys(context.Background()); err != nil {
+		t.Fatalf("EnsureOpenRouterKeys: %v", err)
+	}
+	if patch, ok := minting.patched["hash-services"]; !ok || patch.Limit == nil || *patch.Limit != 2000 {
+		t.Fatalf("services patch = %+v, want its limit moved to the 20.00 cap", patch)
+	}
+	if _, touched := minting.patched["hash-retired"]; touched {
+		t.Fatal("a disabled key was patched")
+	}
+}
+
+// The settings hold the services key but not its provider id, so it is found by name. A roster
+// that cannot be read, or one with no live aura-services or with two, is reported rather than
+// guessed at: the other one is another deployment's key, or an orphan.
+func TestReconcileRefusesToGuessTheServicesKey(t *testing.T) {
+	for name, tc := range map[string]struct {
+		listed  []openrouterprovision.KeyRecord
+		listErr error
+	}{
+		"unreadable roster": {listErr: errors.New("provider 503")},
+		"none":              {},
+		"two": {listed: []openrouterprovision.KeyRecord{
+			{Hash: "hash-services", Name: "aura-services", Limit: providerCap(1000)},
+			{Hash: "hash-elsewhere", Name: "aura-services", Limit: providerCap(1000)},
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, minting, _, _, _ := reconcileServer(withServicesKey(routeRows), nil)
+			minting.listed, minting.listErr = tc.listed, tc.listErr
+			res, err := s.EnsureOpenRouterKeys(context.Background())
+			if err == nil || len(res.Errors) != 1 || len(minting.patched) != 0 {
+				t.Fatalf("result = %+v err = %v patched = %v; want one reported error and no patch", res, err, minting.patched)
+			}
+		})
 	}
 }
 

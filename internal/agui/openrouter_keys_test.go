@@ -30,6 +30,18 @@ type fakeMinting struct {
 	patched map[string]openrouterprovision.KeyPatch
 	revoked []string
 	next    int
+	// listed is the provider's roster, what GET /api/v1/keys answers; listErr fails that read.
+	listed  []openrouterprovision.KeyRecord
+	listErr error
+}
+
+func (f *fakeMinting) List(context.Context) ([]openrouterprovision.KeyRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	return append([]openrouterprovision.KeyRecord(nil), f.listed...), nil
 }
 
 func (f *fakeMinting) Patch(_ context.Context, hash string, patch openrouterprovision.KeyPatch) error {

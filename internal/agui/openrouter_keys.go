@@ -21,6 +21,9 @@ import (
 type OpenRouterMinting interface {
 	ManagementKeySet(ctx context.Context) (bool, error)
 	Mint(ctx context.Context, req openrouterprovision.MintRequest) (openrouterprovision.MintResult, error)
+	// List is the provider's roster, GET /api/v1/keys. The services key is found in it by name,
+	// because the settings keep the key and not its provider id.
+	List(ctx context.Context) ([]openrouterprovision.KeyRecord, error)
 	Patch(ctx context.Context, hash string, patch openrouterprovision.KeyPatch) error
 	Revoke(ctx context.Context, hash string) error
 }

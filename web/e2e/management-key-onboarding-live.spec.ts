@@ -278,4 +278,35 @@ test.describe('live management-key onboarding', () => {
     const afterRemoval = await openRouter<OpenRouterKey[]>(page, '/keys');
     expect(afterRemoval.some((key) => key.name === member.id && !key.disabled)).toBe(false);
   });
+
+  test('follows the services cap an admin changes after the first run', async ({
+    page,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== 'chrome', 'one live account witness is sufficient');
+    // Long enough for both polls: a test timeout that fires first skips the finally below and
+    // leaves the raised cap stored.
+    test.setTimeout(300_000);
+    expect(managementKey, 'AURA_E2E_OPENROUTER_MANAGEMENT_KEY').not.toBe('');
+    await gotoAuthenticated(page, '/');
+    const servicesLimit = async () =>
+      activeKey(await openRouter<OpenRouterKey[]>(page, '/keys'), SERVICES_KEY_NAME).limit;
+    expect(await servicesLimit()).toBe(servicesCap);
+
+    // The cap lives in Model routing. Saving it must move the key OpenRouter enforces, not only
+    // the stored value: until 2026-09-11 the cap was read when the key was minted and never again.
+    const saveCap = async (value: number) => {
+      await page.goto('/?settings=model', { waitUntil: 'domcontentloaded' });
+      const field = page.getByLabel('Services key monthly cap (USD)');
+      await expect(field).toBeVisible({ timeout: 30_000 });
+      await field.fill(String(value));
+      await page.getByRole('button', { name: 'Save runtime settings' }).click();
+      await expect(page.getByText('Runtime settings saved.')).toBeVisible({ timeout: 60_000 });
+      await expect.poll(servicesLimit, { timeout: 60_000, intervals: [2_000] }).toBe(value);
+    };
+    try {
+      await saveCap(servicesCap + 1);
+    } finally {
+      await saveCap(servicesCap);
+    }
+  });
 });

@@ -1,9 +1,9 @@
 package agui
 
 // openrouter_reconcile.go is EnsureOpenRouterKeys: it mints every OpenRouter key the
-// deployment is missing and aligns each key's limit with its owner's role. It is idempotent,
-// so boot, the settings writes that can make minting possible, and the admin endpoint all run
-// the same thing.
+// deployment is missing, aligns each person's key with their role, and keeps the services key
+// at its monthly cap. It is idempotent, so boot, the settings writes that can make minting
+// possible or move the cap, and the admin endpoint all run the same thing.
 
 import (
 	"context"
@@ -28,7 +28,8 @@ const (
 	userIdentityKind = "user"
 )
 
-// reconcileTriggerKeys are the settings whose write can make minting possible.
+// reconcileTriggerKeys are the settings whose write can make minting possible, or move the
+// services key's cap.
 var reconcileTriggerKeys = map[string]struct{}{
 	"AURA_OPENROUTER_MANAGEMENT_KEY": {},
 	servicesCapSetting:               {},
@@ -129,11 +130,12 @@ func (s *Server) reconcileIdentity(ctx context.Context, identityID string, res *
 	return nil
 }
 
-// ensureServicesKeyLocked mints the aura-services key when the settings hold none. It writes
-// the key the way a settings PUT does: Prepare with the whole persisted profile, so the route
-// is kept (Prepare resets every profile key it is not given), then ReplaceMany, then apply.
-// The new key is revoked if either step fails, so a key the deployment never recorded does not
-// stay live at the provider.
+// ensureServicesKeyLocked mints the aura-services key when the settings hold none, and keeps an
+// existing one at the monthly cap the settings hold: an admin can change that cap after the
+// first run, and the provider is what enforces it. A new key is written the way a settings PUT
+// does: Prepare with the whole persisted profile, so the route is kept (Prepare resets every
+// profile key it is not given), then ReplaceMany, then apply. It is revoked if either step
+// fails, so a key the deployment never recorded does not stay live at the provider.
 func (s *Server) ensureServicesKeyLocked(ctx context.Context) (string, error) {
 	rows, err := s.settings.List(ctx)
 	if err != nil {
@@ -143,15 +145,19 @@ func (s *Server) ensureServicesKeyLocked(ctx context.Context) (string, error) {
 	for _, row := range rows {
 		values[row.Key] = strings.TrimSpace(row.Value)
 	}
-	if values[servicesKeySetting] != "" {
-		return "", nil
-	}
+	hasKey := values[servicesKeySetting] != ""
 	if values[servicesCapSetting] == "" {
+		if hasKey {
+			return "", nil
+		}
 		return "", ErrServicesCapUnset
 	}
 	limit, err := openrouterprovision.NewUSDCapFromString(values[servicesCapSetting])
 	if err != nil {
 		return "", fmt.Errorf("services cap: %w", err)
+	}
+	if hasKey {
+		return "", s.alignServicesLimit(ctx, limit)
 	}
 	minted, err := s.keyMinter.minting.Mint(ctx, openrouterprovision.MintRequest{
 		IdentityID: servicesKeyName, Name: servicesKeyName, Limit: &limit, LimitReset: openrouterprovision.LimitResetMonthly,
@@ -171,6 +177,30 @@ func (s *Server) ensureServicesKeyLocked(ctx context.Context) (string, error) {
 	}
 	apply()
 	return minted.Record.Label, nil
+}
+
+// alignServicesLimit moves aura-services to limit when the provider holds another. The settings
+// keep the key but not its provider id, so the key is found by name: exactly one live key may be
+// called aura-services. None, or two, is reported rather than guessed at, since the other one is
+// another deployment's key or an orphan.
+func (s *Server) alignServicesLimit(ctx context.Context, limit openrouterprovision.USDCap) error {
+	keys, err := s.keyMinter.minting.List(ctx)
+	if err != nil {
+		return err
+	}
+	var live []openrouterprovision.KeyRecord
+	for _, key := range keys {
+		if key.Name == servicesKeyName && !key.Disabled {
+			live = append(live, key)
+		}
+	}
+	if len(live) != 1 {
+		return fmt.Errorf("the provider holds %d live keys named %s, want exactly one", len(live), servicesKeyName)
+	}
+	if live[0].Limit != nil && *live[0].Limit == limit {
+		return nil
+	}
+	return s.keyMinter.minting.Patch(ctx, live[0].Hash, openrouterprovision.KeyPatch{Limit: &limit})
 }
 
 // handleReconcileOpenRouterKeys runs the reconciler on demand and returns what it did, so the
