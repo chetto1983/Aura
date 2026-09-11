@@ -1,15 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
+import { sameOriginFetch, streamFrames } from './live';
 
 const runLive = process.env.AURA_E2E_LIVE_MODEL_ROUTES === '1';
 const ollamaBaseURL =
   process.env.AURA_E2E_OLLAMA_BASE_URL ?? 'http://host.docker.internal:11434/v1';
 const witnessURL = process.env.AURA_E2E_OLLAMA_WITNESS_URL;
-
-interface FetchResult {
-  readonly status: number;
-  readonly text: string;
-}
 
 interface ConversationRow {
   readonly ID: string;
@@ -48,26 +44,6 @@ const ollamaProfile: RouteProfile = {
   baseURL: ollamaBaseURL,
   model: 'gemma4:31b-cloud',
 };
-
-async function sameOriginFetch(
-  page: Page,
-  url: string,
-  init: { readonly method?: string; readonly body?: string } = {},
-): Promise<FetchResult> {
-  return page.evaluate(
-    async ({ requestURL, requestInit }) => {
-      const options: RequestInit = { credentials: 'same-origin' };
-      if (requestInit.method !== undefined) options.method = requestInit.method;
-      if (requestInit.body !== undefined) {
-        options.body = requestInit.body;
-        options.headers = { 'Content-Type': 'application/json' };
-      }
-      const response = await fetch(requestURL, options);
-      return { status: response.status, text: await response.text() };
-    },
-    { requestURL: url, requestInit: init },
-  );
-}
 
 async function putProfile(page: Page, profile: RouteProfile): Promise<void> {
   const response = await sameOriginFetch(page, '/api/settings/llm-profile', {
@@ -131,25 +107,6 @@ async function deleteConversation(page: Page, conversationID: string): Promise<v
     { method: 'DELETE' },
   );
   expect([200, 204], response.text).toContain(response.status);
-}
-
-function streamFrames(body: string): readonly Record<string, unknown>[] {
-  return body
-    .replace(/\r\n/g, '\n')
-    .split('\n\n')
-    .flatMap((block) => {
-      const data = block
-        .split('\n')
-        .filter((line) => line.startsWith('data:'))
-        .map((line) => line.slice(5).replace(/^ /, ''))
-        .join('\n');
-      if (data === '') return [];
-      try {
-        return [JSON.parse(data) as Record<string, unknown>];
-      } catch {
-        return [];
-      }
-    });
 }
 
 function reassembledText(frames: readonly Record<string, unknown>[]): string {
