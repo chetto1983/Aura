@@ -28,8 +28,8 @@ const SETTINGS_BODY = {
       overridden: false,
     },
     {
-      key: 'OPENROUTER_API_KEY',
-      label: 'OpenRouter API key',
+      key: 'AURA_OPENROUTER_MANAGEMENT_KEY',
+      label: 'OpenRouter management key',
       kind: 'string',
       secret: true,
       value: 'sk-should-never-render',
@@ -248,7 +248,10 @@ describe('ModelSettingsPanel', () => {
     expect(await screen.findByRole('heading', { name: 'Model routing' })).toBeTruthy();
   });
 
-  it('toggles the cloud provider, edits the secret field, then saves', async () => {
+  // REWRITTEN: this edited the services key, which Aura now mints and the API refuses to write,
+  // so the form no longer shows it. The secret the routing form still edits is the management
+  // key, which is outside the hot profile batch and is saved as its own row.
+  it('toggles the cloud provider, edits the management key, then saves it as its own row', async () => {
     const calls: { url: string; method: string; body: string | undefined }[] = [];
     vi.stubGlobal(
       'fetch',
@@ -267,25 +270,22 @@ describe('ModelSettingsPanel', () => {
     await screen.findByRole('heading', { name: 'Model routing' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Cloud' }));
-    fireEvent.change(screen.getByLabelText('OpenRouter API key'), {
-      target: { value: 'sk-or-newkey' },
+    fireEvent.change(screen.getByLabelText('OpenRouter management key'), {
+      target: { value: 'sk-or-v1-mgmt' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
 
     expect(await screen.findByText('Runtime settings saved.')).toBeTruthy();
     const puts = calls.filter((call) => call.method === 'PUT');
-    // The API key is a hot profile row (amendment #188): it rides the same batch as
-    // the route the Cloud button wrote, never its own single-key PUT.
     expect(
       puts.some(
         (call) =>
-          call.url === '/api/settings/llm-profile' &&
-          call.body !== undefined &&
-          (JSON.parse(call.body) as { settings: Record<string, string> }).settings
-            .OPENROUTER_API_KEY === 'sk-or-newkey',
+          call.url === '/api/settings/AURA_OPENROUTER_MANAGEMENT_KEY' &&
+          call.body === JSON.stringify({ value: 'sk-or-v1-mgmt' }),
       ),
     ).toBe(true);
-    expect(puts.some((call) => call.url === '/api/settings/OPENROUTER_API_KEY')).toBe(false);
+    expect(puts.some((call) => call.body?.includes('OPENROUTER_API_KEY') === true)).toBe(false);
+    expect(screen.queryByLabelText('OpenRouter API key')).toBeNull();
   });
 
   it('invokes onComplete from Continue and Skip when nothing changed', async () => {

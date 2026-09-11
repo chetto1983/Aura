@@ -18,7 +18,7 @@ export type SettingsKey =
   | 'AURA_LLM_MODEL'
   | 'AURA_LLM_BASE_URL'
   | 'AURA_LLM_PROVIDER'
-  | 'OPENROUTER_API_KEY'
+  | 'AURA_OPENROUTER_SERVICES_CAP_USD'
   | 'AURA_OPENROUTER_MANAGEMENT_KEY'
   | 'AURA_LLM_MAX_TOKENS'
   | 'AURA_MODEL_CONTEXT_WINDOW'
@@ -41,8 +41,8 @@ export interface SettingDef {
   /** One line under the input saying what the number governs, for knobs whose label
    *  alone reads ambiguously (two output caps side by side, a step vs. a token). */
   readonly helpKey?: string;
-  /** An OpenRouter credential: rendered only while Cloud is the route. Hidden is not
-   *  dropped, so a key typed under Cloud still saves after a switch to another route. */
+  /** An OpenRouter setting: rendered only while Cloud is the route. Hidden is not
+   *  dropped, so a value typed under Cloud still saves after a switch to another route. */
   readonly cloudOnly?: boolean;
 }
 
@@ -59,16 +59,21 @@ export const PRIMARY_SETTINGS: readonly SettingDef[] = [
     labelKey: 'settings.fields.primaryBaseUrl',
     placeholder: OPENROUTER_BASE_URL,
   },
+  // The monthly cap of the key Aura mints for speech, embeddings and vision. It comes BEFORE the
+  // management key on purpose: a save writes the rows outside the hot profile in this order, so
+  // the management key's PUT runs the reconciler with the cap already stored and one pass mints
+  // both keys.
   {
-    key: 'OPENROUTER_API_KEY',
+    key: 'AURA_OPENROUTER_SERVICES_CAP_USD',
     kind: 'string',
-    secret: true,
     cloudOnly: true,
-    labelKey: 'settings.fields.openRouterKey',
-    placeholder: 'sk-or-...',
+    labelKey: 'settings.fields.openRouterServicesCap',
+    placeholder: '10',
+    helpKey: 'settings.help.openRouterServicesCap',
   },
-  // A second OpenRouter credential: it mints each identity's own key and reads the account's
-  // spend, and cannot call a model. The daemon wires those at boot, so this row is not hot.
+  // The one OpenRouter credential an admin types: Aura mints every other key from it and reads
+  // the account's spend with it, and it cannot call a model. It is outside the hot profile
+  // batch, so it is saved as its own row.
   {
     key: 'AURA_OPENROUTER_MANAGEMENT_KEY',
     kind: 'string',

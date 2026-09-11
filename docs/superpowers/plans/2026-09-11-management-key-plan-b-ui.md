@@ -134,11 +134,11 @@ func validateSettingKeyValue(key, value string) error {
 
 **Files:** `web/src/settings/modelSettingsDefs.ts` (`SettingsKey`: `OPENROUTER_API_KEY` out, `AURA_OPENROUTER_SERVICES_CAP_USD` in; `PRIMARY_SETTINGS`: the services-key row replaced by a `cloudOnly` cap row placed BEFORE the management key, so the management key's PUT reconciles with the cap already stored); `modelSettingsState.ts` (`OPENROUTER_API_KEY` leaves `HOT_LLM_PROFILE_KEYS`); `resources.settings.ts` (`fields.openRouterKey` out; `fields.openRouterServicesCap` = "Services key monthly cap (USD)" / "Limite mensile chiave dei servizi (USD)", `help.openRouterServicesCap` in); tests `ModelSettingsPanel.openrouter.test.tsx`, `ModelSettingsPanel.test.tsx`.
 
-- [ ] **Step 1: Tests.** `ModelSettingsPanel.openrouter.test.tsx`: both views save the cap, then the management key, each as its own PUT; the two rows show only on Cloud; the services key is never rendered. `ModelSettingsPanel.test.tsx` "toggles the cloud provider, edits the secret field" is rewritten to edit the management key (the services key is minted by Aura and refused by the API).
-- [ ] **Step 2: Run, watch them fail.**
-- [ ] **Step 3: Implement** the defs, state and copy changes above.
-- [ ] **Step 4: Run, watch them pass;** typecheck, lint.
-- [ ] **Step 5: Commit** `feat(web): ask for the services cap, never the services key`.
+- [x] **Step 1: Tests.** `ModelSettingsPanel.openrouter.test.tsx`: both views save the cap, then the management key, each as its own PUT; the two rows show only on Cloud; the services key is never rendered. `ModelSettingsPanel.test.tsx` "toggles the cloud provider, edits the secret field" is rewritten to edit the management key (the services key is minted by Aura and refused by the API).
+- [x] **Step 2: Run, watch them fail.**
+- [x] **Step 3: Implement** the defs, state and copy changes above.
+- [x] **Step 4: Run, watch them pass;** typecheck, lint.
+- [x] **Step 5: Commit** `feat(web): ask for the services cap, never the services key`.
 
 ---
 

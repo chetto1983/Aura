@@ -6,9 +6,9 @@ import '../../i18n/i18n';
 import { ModelSettingsPanel } from '../ModelSettingsPanel';
 import type { ModelSettingsGroup } from '../modelSettingsDefs';
 
-// The routing pane's two OpenRouter credentials: the inference key, and the management key
-// that mints each identity's own key and feeds the spend overview. Both belong to the Cloud
-// route alone, and the management key is read once at boot, so it is saved as its own row.
+// The routing pane's OpenRouter rows on the Cloud route: the management key an admin types, and
+// the monthly cap of the services key Aura mints from it. The services key itself is minted by
+// Aura and the API refuses to write it, so the pane never shows it, although the daemon lists it.
 
 interface FetchCall {
   readonly url: string;
@@ -26,20 +26,24 @@ const ROUTING_LIST = {
   ].map((row) => ({ ...row, label: row.key, kind: 'string', has_value: true, overridden: true })),
 };
 
+const MANAGEMENT_KEY_LABEL = 'OpenRouter management key';
+const SERVICES_CAP_LABEL = 'Services key monthly cap (USD)';
+
 function requestURL(input: RequestInfo | URL): string {
   if (typeof input === 'string') return input;
   return input instanceof URL ? input.href : input.url;
 }
 
-function stubSettingsAPI(): FetchCall[] {
+function stubSettingsAPI(putPayload: (url: string) => unknown = () => ({ ok: true })): FetchCall[] {
   const calls: FetchCall[] = [];
   vi.stubGlobal(
     'fetch',
     vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestURL(input);
       const method = init?.method ?? 'GET';
       const body = typeof init?.body === 'string' ? init.body : undefined;
-      calls.push({ url: requestURL(input), method, body });
-      const payload = method === 'PUT' ? { ok: true } : ROUTING_LIST;
+      calls.push({ url, method, body });
+      const payload = method === 'PUT' ? putPayload(url) : ROUTING_LIST;
       return Promise.resolve(
         new Response(JSON.stringify(payload), {
           status: 200,
@@ -57,7 +61,7 @@ function mount(panel: ReactElement) {
   return screen.findByRole('heading', { name: 'Model routing' });
 }
 
-describe('ModelSettingsPanel OpenRouter credentials', () => {
+describe('ModelSettingsPanel OpenRouter rows', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -66,35 +70,38 @@ describe('ModelSettingsPanel OpenRouter credentials', () => {
   it.each<[string, { readonly groups?: readonly ModelSettingsGroup[] }]>([
     ['the Settings routing pane', { groups: ['routing'] }],
     ['the first-run wizard', {}],
-  ])(
-    'shows the OpenRouter management key in %s and saves it as its own boot-bound row',
-    async (_view, props) => {
-      const calls = stubSettingsAPI();
-      await mount(<ModelSettingsPanel {...props} onComplete={vi.fn()} />);
+  ])('saves the services cap, then the management key, in %s', async (_view, props) => {
+    const calls = stubSettingsAPI();
+    await mount(<ModelSettingsPanel {...props} onComplete={vi.fn()} />);
 
-      fireEvent.change(screen.getByLabelText('OpenRouter management key'), {
-        target: { value: 'sk-or-v1-mgmt' },
-      });
-      fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
+    fireEvent.change(screen.getByLabelText(MANAGEMENT_KEY_LABEL), {
+      target: { value: 'sk-or-v1-mgmt' },
+    });
+    fireEvent.change(screen.getByLabelText(SERVICES_CAP_LABEL), { target: { value: '10' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
 
-      expect(await screen.findByText('Runtime settings saved.')).toBeTruthy();
-      // The daemon reads it once at boot to wire key minting and the spend overview, so it
-      // is not a hot profile row: it gets its own PUT and the restart banner applies it.
-      expect(calls.filter((call) => call.method === 'PUT')).toEqual([
-        {
-          url: '/api/settings/AURA_OPENROUTER_MANAGEMENT_KEY',
-          method: 'PUT',
-          body: JSON.stringify({ value: 'sk-or-v1-mgmt' }),
-        },
-      ]);
-    },
-  );
+    expect(await screen.findByText('Runtime settings saved.')).toBeTruthy();
+    // Neither row is in the hot profile batch, so each gets its own PUT. The cap goes first: the
+    // management key's PUT runs the reconciler, which then finds the cap and mints both keys.
+    expect(calls.filter((call) => call.method === 'PUT')).toEqual([
+      {
+        url: '/api/settings/AURA_OPENROUTER_SERVICES_CAP_USD',
+        method: 'PUT',
+        body: JSON.stringify({ value: '10' }),
+      },
+      {
+        url: '/api/settings/AURA_OPENROUTER_MANAGEMENT_KEY',
+        method: 'PUT',
+        body: JSON.stringify({ value: 'sk-or-v1-mgmt' }),
+      },
+    ]);
+  });
 
-  it('shows the OpenRouter credentials only while Cloud is the route', async () => {
+  it('shows the OpenRouter rows only while Cloud is the route', async () => {
     stubSettingsAPI();
     await mount(<ModelSettingsPanel groups={['routing']} />);
     const shown = () =>
-      ['OpenRouter API key', 'OpenRouter management key'].map(
+      [MANAGEMENT_KEY_LABEL, SERVICES_CAP_LABEL].map(
         (label) => screen.queryByLabelText(label) !== null,
       );
 
@@ -105,5 +112,11 @@ describe('ModelSettingsPanel OpenRouter credentials', () => {
     }
     fireEvent.click(screen.getByRole('button', { name: 'Cloud' }));
     expect(shown()).toEqual([true, true]);
+  });
+
+  it('never shows the services key Aura mints', async () => {
+    stubSettingsAPI();
+    await mount(<ModelSettingsPanel groups={['routing']} />);
+    expect(screen.queryByLabelText('OpenRouter API key')).toBeNull();
   });
 });

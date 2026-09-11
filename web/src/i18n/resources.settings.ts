@@ -106,6 +106,8 @@ export const settingsEn = {
         'Tokens reserved for the answer when budgeting the prompt — the reservation, not the cap.',
       openRouterManagementKey:
         "Creates each person's own OpenRouter key and reads the account's spend. It can't run models.",
+      openRouterServicesCap:
+        'The monthly cap, in USD, of the key Aura mints for speech, embeddings and vision the first time OpenRouter is connected.',
       loopMaxSteps:
         'LLM calls or tool rounds one turn may spend before Aura wraps up (default 25).',
       loopMaxWallclock:
@@ -119,7 +121,7 @@ export const settingsEn = {
       primaryModel: 'Primary model',
       primaryBaseUrl: 'Primary base URL',
       primaryProvider: 'Primary provider',
-      openRouterKey: 'OpenRouter API key',
+      openRouterServicesCap: 'Services key monthly cap (USD)',
       openRouterManagementKey: 'OpenRouter management key',
       maxTokens: 'Max response tokens',
       contextWindow: 'Context window tokens',
@@ -259,6 +261,8 @@ export const settingsIt = {
         'Token riservati alla risposta quando si calcola il budget del prompt — la riserva, non il tetto.',
       openRouterManagementKey:
         "Crea la chiave OpenRouter di ogni persona e legge la spesa dell'account. Non può usare i modelli.",
+      openRouterServicesCap:
+        'Il limite mensile, in USD, della chiave che Aura crea per voce, embedding e visione la prima volta che OpenRouter viene collegato.',
       loopMaxSteps:
         'Chiamate LLM o giri di strumenti che un turno può spendere prima che Aura concluda (default 25).',
       loopMaxWallclock:
@@ -272,7 +276,7 @@ export const settingsIt = {
       primaryModel: 'Modello primario',
       primaryBaseUrl: 'URL base primario',
       primaryProvider: 'Provider primario',
-      openRouterKey: 'Chiave API OpenRouter',
+      openRouterServicesCap: 'Limite mensile chiave dei servizi (USD)',
       openRouterManagementKey: 'Chiave di gestione OpenRouter',
       maxTokens: 'Token massimi risposta',
       contextWindow: 'Token finestra contesto',
