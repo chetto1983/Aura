@@ -121,6 +121,7 @@ describe('ExternalStoreChat attachments', () => {
                 {
                   id: 'msg-1',
                   role: 'user',
+                  attachmentIds: ['asset-replay'],
                   content:
                     '<knowledge_base trust="operator_pinned_context">\n' +
                     'These documents the user uploaded earlier are indexed.\n' +

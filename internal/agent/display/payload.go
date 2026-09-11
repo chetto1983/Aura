@@ -81,6 +81,10 @@ type Artifact struct {
 	Filename  string `json:"filename"`
 	SizeBytes int64  `json:"size_bytes,omitempty"`
 	Path      string `json:"path,omitempty"`
+	// AssetID is the stored delivery the download route serves, absent when the bytes were
+	// never stored (D-02). MIMEType is an icon hint only, never a served Content-Type (D-10).
+	AssetID  string `json:"asset_id,omitempty"`
+	MIMEType string `json:"mime_type,omitempty"`
 }
 
 // Table is a structured grid (D-14: client sorts/filters/exports it).

@@ -34,43 +34,7 @@ function withMessageAttachments(
   return { ...message, metadata: { ...message.metadata, custom } };
 }
 
-// foldAssetsPositionally zips visible assets onto the messages of a given role using a
-// positional heuristic: the Nth asset attaches to the Nth role-turn, extras pile on the
-// last. `eligible` narrows which turns of that role may receive one.
-//
-// It is a guess, and it was wrong for user turns the moment a conversation had a turn
-// before the attachment. Migration 0116 gave user turns their own record, so this is now
-// their FALLBACK for rows saved before it. The D-15 agent-deliverable fold still relies on
-// it outright: nothing records which assistant turn produced a file.
-function foldAssetsPositionally(
-  messages: readonly ThreadMessageLike[],
-  assets: readonly Asset[],
-  role: ThreadMessageLike['role'],
-  eligible: (message: ThreadMessageLike) => boolean = () => true,
-): ThreadMessageLike[] {
-  const visibleAssets = assets.filter(
-    (asset) => asset.status !== 'deleted' && asset.status !== 'canceled',
-  );
-  if (visibleAssets.length === 0) return [...messages];
-  const targetIndexes = messages
-    .map((message, index) => (message.role === role && eligible(message) ? index : -1))
-    .filter((index) => index >= 0);
-  if (targetIndexes.length === 0) return [...messages];
-  const groups = new Map<number, Asset[]>();
-  visibleAssets.forEach((asset, assetIndex) => {
-    const target = targetIndexes[Math.min(assetIndex, targetIndexes.length - 1)];
-    if (target === undefined) return;
-    groups.set(target, [...(groups.get(target) ?? []), asset]);
-  });
-  return messages.map((message, index) => {
-    const additions = groups.get(index);
-    if (additions === undefined) return message;
-    return withMessageAttachments(message, [...messageAttachments(message), ...additions]);
-  });
-}
-
-/** The ids a user turn declares it was sent with (migration 0116), or [] for a turn that
- *  predates the column. */
+/** The ids a user turn declares it was sent with (migration 0116). */
 function declaredAttachmentIDs(message: ThreadMessageLike): readonly string[] {
   const custom = message.metadata?.custom as { attachmentIds?: readonly string[] } | undefined;
   return custom?.attachmentIds ?? [];
@@ -79,22 +43,22 @@ function declaredAttachmentIDs(message: ThreadMessageLike): readonly string[] {
 /**
  * Attach each user turn's assets, by the ids the turn itself declares.
  *
- * The positional fold below is now the FALLBACK, used only for turns saved before the
- * server recorded what was sent with them. It had to be: an asset carries no message key,
- * so the Nth asset went to the Nth user turn, and an image sent with the third message
- * rendered against the first (measured 2026-09-03).
+ * An asset carries no message key, so before migration 0116 the only rule was position: the
+ * Nth asset went to the Nth user turn, and an image sent with the third message rendered
+ * against the first (measured 2026-09-03). A turn now names what it was sent with and gets
+ * exactly that; an asset no turn names is placed nowhere. An id with no matching asset is
+ * dropped rather than rendered as a placeholder: the asset may have been deleted, and a card
+ * for bytes that no longer exist is worse than no card.
  *
- * A turn that declares ids gets exactly those, resolved against the thread's assets. An id
- * with no matching asset is dropped rather than rendered as a placeholder: the asset may
- * have been deleted, and a card for bytes that no longer exist is worse than no card.
+ * Agent files never pass through here: the snapshot puts each back on the send_file call that
+ * delivered it (migration 0126).
  */
 export function attachAssetsToUserMessages(
   messages: readonly ThreadMessageLike[],
   assets: readonly Asset[],
 ): ThreadMessageLike[] {
   const byID = new Map(assets.map((asset) => [asset.id, asset]));
-  const claimed = new Set<string>();
-  const resolved = messages.map((message) => {
+  return messages.map((message) => {
     const declared = declaredAttachmentIDs(message);
     if (message.role !== 'user' || declared.length === 0) return message;
     const found = declared.flatMap((id) => {
@@ -102,42 +66,11 @@ export function attachAssetsToUserMessages(
       if (asset === undefined || asset.status === 'deleted' || asset.status === 'canceled') {
         return [];
       }
-      claimed.add(id);
       return [asset];
     });
     if (found.length === 0) return message;
     return withMessageAttachments(message, [...messageAttachments(message), ...found]);
   });
-  // Only what no turn claimed still needs guessing — on a conversation saved since 0116
-  // that is nothing at all.
-  const unclaimed = assets.filter((asset) => !claimed.has(asset.id));
-  if (unclaimed.length === 0) return resolved;
-  // ...and only onto turns that declared nothing. A conversation continued across the
-  // deploy has both kinds, and piling leftovers onto a turn that already stated its own
-  // attachments would put a stray file under a message that never carried it.
-  return foldAssetsPositionally(
-    resolved,
-    unclaimed,
-    'user',
-    (message) => declaredAttachmentIDs(message).length === 0,
-  );
-}
-
-// D-15: fold `source_kind='agent'` deliverables onto the ASSISTANT turns that
-// produced them (send_file's inline chip is synthesized client-side and never
-// persisted, so the rehydrated tool card loses its asset_id — sseAdapter_snapshot).
-// It MUST NOT fold agent assets onto user turns — that is the exact bug being fixed.
-// Exported for the rehydration attribution test (pure fold, no runtime coupling).
-export function foldAgentOntoAssistant(
-  messages: readonly ThreadMessageLike[],
-  agentAssets: readonly Asset[],
-): ThreadMessageLike[] {
-  const hasAnswers = messages.some(
-    (message) => message.role === 'assistant' && hasAnswerText(message),
-  );
-  return foldAssetsPositionally(messages, agentAssets, 'assistant', (message) =>
-    hasAnswers ? hasAnswerText(message) : message.content.length > 0,
-  );
 }
 
 export function replaceAssetInMessages(

@@ -16,11 +16,13 @@ import (
 )
 
 // AssetDeliverer stores a host-file's bytes under the identity's object store and returns the
-// created thread-scoped asset id. It is primitive-typed on purpose: the tools package must not
-// import internal/assets (the substrate is delivery-mechanism unaware). Best-effort — any error
-// makes the caller degrade to a path-only descriptor (D-02).
+// created thread-scoped asset id. toolCallID names the call delivering it, which is what lets a
+// reopened thread put the card back on that call (migration 0126). It is primitive-typed on
+// purpose: the tools package must not import internal/assets (the substrate is
+// delivery-mechanism unaware). Best-effort — any error makes the caller degrade to a path-only
+// descriptor (D-02).
 type AssetDeliverer interface {
-	IngestAgentDelivery(ctx context.Context, identityID, threadID, hostPath, filename, mimeType string, size int64) (assetID string, err error)
+	IngestAgentDelivery(ctx context.Context, identityID, threadID, toolCallID, hostPath, filename, mimeType string, size int64) (assetID string, err error)
 }
 
 // ingestForDelivery best-effort ingests a workspace-fenced host file as an owned, thread-scoped
@@ -43,7 +45,7 @@ func ingestForDelivery(ctx context.Context, deliverer AssetDeliverer, hostPath, 
 		return "", "", false
 	}
 	mimeType = guessDeliveryMIME(filename)
-	id, err := deliverer.IngestAgentDelivery(ctx, identityID, tc.sessionID, hostPath, filename, mimeType, size)
+	id, err := deliverer.IngestAgentDelivery(ctx, identityID, tc.sessionID, tc.toolCallID, hostPath, filename, mimeType, size)
 	if err != nil || id == "" {
 		return "", "", false
 	}

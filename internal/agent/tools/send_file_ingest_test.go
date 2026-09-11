@@ -25,15 +25,16 @@ type fakeDeliverer struct {
 	calls     int
 	gotID     string
 	gotThread string
+	gotCall   string
 	gotPath   string
 	gotName   string
 	gotMIME   string
 	gotSize   int64
 }
 
-func (f *fakeDeliverer) IngestAgentDelivery(_ context.Context, identityID, threadID, hostPath, filename, mimeType string, size int64) (string, error) {
+func (f *fakeDeliverer) IngestAgentDelivery(_ context.Context, identityID, threadID, toolCallID, hostPath, filename, mimeType string, size int64) (string, error) {
 	f.calls++
-	f.gotID, f.gotThread, f.gotPath, f.gotName, f.gotMIME, f.gotSize = identityID, threadID, hostPath, filename, mimeType, size
+	f.gotID, f.gotThread, f.gotCall, f.gotPath, f.gotName, f.gotMIME, f.gotSize = identityID, threadID, toolCallID, hostPath, filename, mimeType, size
 	if f.err != nil {
 		return "", f.err
 	}
@@ -115,6 +116,9 @@ func TestSendFile_IngestSuccess(t *testing.T) {
 	}
 	if fake.gotThread != "conv-1" {
 		t.Fatalf("ingest thread = %q, want conv-1 (sessionID == ConvID)", fake.gotThread)
+	}
+	if fake.gotCall != "call-1" {
+		t.Fatalf("ingest tool call = %q, want call-1: the asset must name the call that delivered it", fake.gotCall)
 	}
 	if fake.gotPath != art["path"] {
 		t.Fatalf("ingest hostPath = %q, want the descriptor path %v", fake.gotPath, art["path"])

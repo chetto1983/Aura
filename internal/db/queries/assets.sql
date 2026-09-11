@@ -2,11 +2,11 @@
 INSERT INTO aura.assets (
     identity_id, source_kind, source_ref, thread_id, scope, modality,
     status, file_name, mime_type, declared_size_bytes, object_bucket,
-    object_key, metadata
+    object_key, metadata, tool_call_id
 ) VALUES (
     $1, $2, $3, $4, $5, $6,
     $7, $8, $9, $10, $11,
-    $12, $13
+    $12, $13, $14
 )
 ON CONFLICT (identity_id, source_kind, source_ref)
     WHERE source_kind = 'agent' AND source_ref <> ''

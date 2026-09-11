@@ -17,8 +17,6 @@ import { BranchPicker } from './BranchPicker';
 import { messageBudgetLimit } from './budgetLimit';
 import { BudgetLimitNotice } from './BudgetLimitNotice';
 import { DisplayRouter } from './displays/DisplayRouter';
-import { LocalArtifactDisplay } from './displays/LocalArtifactDisplay';
-import { previewKind } from './artifacts/artifactMeta';
 import { aggregateAnswerSources } from './displays/answerSources';
 import { useSourceExplorer } from './displays/sourceExplorerControls';
 import { SourcesButton } from './displays/SourcesButton';
@@ -147,7 +145,6 @@ export function AssistantMessage() {
   const { t } = useTranslation();
   const message = useAuiState((s) => s.message) as ThreadMessageLike;
   const { identityName } = useCapabilities();
-  const attachments = messageAttachments(message);
   return (
     <MessagePrimitive.Root data-message-role="assistant" className="w-full min-w-0 space-y-2">
       {/* §4 spacing rhythm: machinery parts within one turn stack with 8px. */}
@@ -174,57 +171,6 @@ export function AssistantMessage() {
       </div>
       {/* Amendment #188: a turn the loop budget cut says so under its answer. */}
       <BudgetLimitNotice limit={messageBudgetLimit(message)} />
-      {attachments.length > 0 ? (
-        <div className="flex w-full min-w-0 flex-col items-start gap-2">
-          {attachments.map((asset) =>
-            previewKind(asset.mime_type, asset.file_name) === 'html' ? (
-              <LocalArtifactDisplay
-                key={asset.id}
-                payload={{
-                  artifact: {
-                    filename: asset.file_name,
-                    size_bytes: asset.size_bytes,
-                    mime_type: asset.mime_type,
-                    ...(asset.status === 'accepted' ? { asset_id: asset.id } : {}),
-                  },
-                }}
-              />
-            ) : (
-              <a
-                key={asset.id}
-                href={`/api/assets/${encodeURIComponent(asset.id)}/download`}
-                download={asset.file_name}
-                aria-label={t('display.artifact.downloadAria', { filename: asset.file_name })}
-                data-required-touch-target
-                className="group inline-flex min-h-[44px] min-w-[44px] max-w-full items-center gap-2 rounded-[var(--radius-sm)] border border-accent/40 bg-surface-2 px-3 py-1.5 text-sm font-medium text-accent-text transition-colors hover:border-accent hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              >
-                <svg
-                  width="15"
-                  height="15"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                  className="shrink-0 transition-transform group-hover:translate-y-0.5"
-                >
-                  <path d="M12 3v12" />
-                  <path d="m7 10 5 5 5-5" />
-                  <path d="M5 21h14" />
-                </svg>
-                <span
-                  className="min-w-0 break-words [overflow-wrap:anywhere] font-mono"
-                  title={asset.file_name}
-                >
-                  {asset.file_name}
-                </span>
-              </a>
-            ),
-          )}
-        </div>
-      ) : null}
       <MessagePrimitive.Error>
         {/* CRED-05's refusal lands here rather than as a new component: the slot already
             renders on every errored turn and until now held nothing, so an identity out of

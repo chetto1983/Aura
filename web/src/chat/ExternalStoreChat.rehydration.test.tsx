@@ -1,19 +1,16 @@
 import type { ReactElement } from 'react';
-import type { ThreadMessageLike } from '@assistant-ui/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import '../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
 import { ExternalStoreChat } from './ExternalStoreChat';
-import { foldAgentOntoAssistant } from './ExternalStoreChat_folds';
 import type { Asset } from './attachments/types';
 
-// 37B plan 05 — D-15 split-fold rehydration + onArtifact forwarding.
-//   1. foldAgentOntoAssistant (pure) attributes agent deliverables to ASSISTANT
-//      turns and NEVER to user turns (the exact bug being fixed).
-//   2. On saved-conversation load, agent assets rehydrate the durable authenticated
-//      download chip on their assistant message while user uploads keep their
-//      user-turn card (non-regression).
+// Saved-conversation rehydration + onArtifact forwarding.
+//   1. An agent deliverable renders once, on the send_file call that delivered it: the
+//      snapshot carries that call's local_artifact display (migration 0126), and the
+//      thread's asset list never folds it onto some assistant turn by position.
+//   2. User uploads keep their user-turn card (non-regression).
 //   3. ExternalStoreChat forwards its onArtifact prop into the stream so an
 //      aura.artifact frame drives the panel signal.
 
@@ -45,77 +42,6 @@ function uploadAsset(over: Partial<Asset> = {}): Asset {
   };
 }
 
-function userTurn(id: string, text: string): ThreadMessageLike {
-  return { id, role: 'user', content: [{ type: 'text', text }] };
-}
-
-function assistantTurn(id: string, text: string): ThreadMessageLike {
-  return { id, role: 'assistant', content: [{ type: 'text', text }] };
-}
-
-describe('foldAgentOntoAssistant (D-15 attribution)', () => {
-  it('keeps artifacts visible when parallel tool calls leave an empty assistant placeholder', () => {
-    const messages: ThreadMessageLike[] = [
-      userTurn('request', 'create and verify a page'),
-      { id: 'placeholder', role: 'assistant', content: [] },
-      {
-        id: 'reasoning',
-        role: 'assistant',
-        content: [{ type: 'reasoning', text: 'Checking the browser' }],
-      },
-      assistantTurn('answer', 'The validated file is ready'),
-    ];
-    const folded = foldAgentOntoAssistant(messages, [agentAsset()]);
-    expect(folded[1]?.metadata).toBeUndefined();
-    expect(folded[2]?.metadata).toBeUndefined();
-    expect(folded[3]?.metadata?.custom?.attachments).toEqual([agentAsset()]);
-  });
-  it('retains a delivered file when the run ends without an answer', () => {
-    const messages: ThreadMessageLike[] = [
-      { id: 'placeholder', role: 'assistant', content: [] },
-      {
-        id: 'work',
-        role: 'assistant',
-        content: [{ type: 'reasoning', text: 'Delivered the file' }],
-      },
-    ];
-    const folded = foldAgentOntoAssistant(messages, [agentAsset()]);
-    expect(folded[0]?.metadata).toBeUndefined();
-    expect(folded[1]?.metadata?.custom?.attachments).toEqual([agentAsset()]);
-  });
-  it('attaches an agent asset to the assistant turn and NEVER to the user turn', () => {
-    const messages = [userTurn('m1', 'make me a spreadsheet'), assistantTurn('m2', 'here it is')];
-    const folded = foldAgentOntoAssistant(messages, [agentAsset()]);
-
-    const user = folded[0];
-    const assistant = folded[1];
-    if (user === undefined || assistant === undefined) throw new Error('expected two turns');
-
-    // The user turn is untouched (the regression assertion on the bug).
-    const userAttachments = (user.metadata?.custom as { attachments?: Asset[] } | undefined)
-      ?.attachments;
-    expect(userAttachments).toBeUndefined();
-
-    // The agent asset lands on the assistant turn.
-    const assistantAttachments = (
-      assistant.metadata?.custom as { attachments?: Asset[] } | undefined
-    )?.attachments;
-    expect(assistantAttachments).toEqual([agentAsset()]);
-  });
-
-  it('drops deleted/canceled agent assets and leaves messages untouched when none remain', () => {
-    const messages = [userTurn('m1', 'hi'), assistantTurn('m2', 'ok')];
-    const folded = foldAgentOntoAssistant(messages, [agentAsset({ status: 'deleted' })]);
-    expect(folded[1]?.metadata).toBeUndefined();
-  });
-
-  it('returns messages unchanged when there is no assistant turn to fold onto', () => {
-    const messages = [userTurn('m1', 'hi')];
-    const folded = foldAgentOntoAssistant(messages, [agentAsset()]);
-    expect(folded[0]?.metadata).toBeUndefined();
-  });
-});
-
 function sseArtifactResponse(assetId: string): Response {
   const enc = new TextEncoder();
   const frames = [
@@ -142,12 +68,14 @@ function renderChat(ui: ReactElement) {
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
 }
 
-describe('ExternalStoreChat rehydration (D-15) + onArtifact', () => {
+describe('ExternalStoreChat rehydration + onArtifact', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('rehydrates the agent download chip on the assistant turn and keeps uploads on the user turn', async () => {
+  // The live defect (2026-09-11, "Ciao, presentazione dell'assistente"): the file a later
+  // turn delivered rendered under the greeting.
+  it('renders an agent file once, on the call that delivered it', async () => {
     const fetchMock = vi.fn((url: unknown) => {
       if (url === '/threads/conv-1/messages') {
         return Promise.resolve(
@@ -155,8 +83,40 @@ describe('ExternalStoreChat rehydration (D-15) + onArtifact', () => {
             JSON.stringify({
               type: 'MESSAGES_SNAPSHOT',
               messages: [
-                { id: 'msg-1', role: 'user', content: 'make me a spreadsheet' },
-                { id: 'msg-2', role: 'assistant', content: 'here it is' },
+                { id: 'msg-1', role: 'user', content: 'ciao' },
+                { id: 'msg-2', role: 'assistant', content: 'Ciao! Sono Aura.' },
+                {
+                  id: 'msg-3',
+                  role: 'user',
+                  content: 'make me a spreadsheet',
+                  attachmentIds: ['up-1'],
+                },
+                {
+                  id: 'msg-4',
+                  role: 'assistant',
+                  toolCalls: [
+                    {
+                      id: 'call-1',
+                      type: 'function',
+                      function: {
+                        name: 'send_file',
+                        arguments: '{"path":"/workspace/report.xlsx"}',
+                      },
+                      display: {
+                        type: 'local_artifact',
+                        tool_call_id: 'call-1',
+                        artifact: { filename: 'report.xlsx', size_bytes: 4096, asset_id: 'ag-1' },
+                      },
+                    },
+                  ],
+                },
+                {
+                  id: 'msg-5',
+                  role: 'tool',
+                  toolCallId: 'call-1',
+                  content: 'queued report.xlsx for delivery',
+                },
+                { id: 'msg-6', role: 'assistant', content: 'here it is' },
               ],
             }),
             { status: 200, headers: { 'Content-Type': 'application/json' } },
@@ -177,16 +137,17 @@ describe('ExternalStoreChat rehydration (D-15) + onArtifact', () => {
 
     renderChat(<ExternalStoreChat threadId="conv-1" />);
 
-    // The agent deliverable renders the authenticated download anchor (D-15 chip).
-    const chip = await screen.findByRole('link', { name: /report\.xlsx/i });
-    expect(chip.getAttribute('href')).toBe('/api/assets/ag-1/download');
+    const chips = await screen.findAllByRole('link', { name: /report\.xlsx/i });
+    expect(chips).toHaveLength(1);
+    expect(chips[0]?.getAttribute('href')).toBe('/api/assets/ag-1/download');
+    const greeting = screen
+      .getByText('Ciao! Sono Aura.')
+      .closest('[data-message-role="assistant"]');
+    expect(greeting?.querySelector('a')).toBeNull();
 
-    // The user upload keeps its user-turn card (non-regression) — and it is NOT a
-    // download anchor, so the agent asset never leaked onto the user turn.
+    // The user upload keeps its user-turn card, and it is not a download anchor.
     expect(screen.getAllByText('upload.pdf').length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByRole('link', { name: /upload\.pdf/i })).toBeNull();
-    // Exactly one download anchor exists (the agent chip on the assistant turn).
-    expect(screen.getAllByRole('link')).toHaveLength(1);
   });
 
   it('forwards onArtifact into streamRun so an aura.artifact frame fires the signal', async () => {

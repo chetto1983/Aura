@@ -38,9 +38,9 @@ export function LocalArtifactDisplay({ payload }: LocalArtifactDisplayProps) {
   return (
     <DisplayCardShell label={label} meta={size}>
       <div className="flex flex-col gap-3">
-        <span className="flex items-center gap-2">
+        <span className="flex min-w-0 items-center gap-2">
           <File aria-hidden="true" className="size-4 shrink-0" />
-          <span className="truncate font-mono text-sm text-text" title={filename}>
+          <span className="min-w-0 truncate font-mono text-sm text-text" title={filename}>
             {filename}
           </span>
         </span>
@@ -49,7 +49,8 @@ export function LocalArtifactDisplay({ payload }: LocalArtifactDisplayProps) {
             href={`/api/assets/${encodeURIComponent(assetId)}/download`}
             download={filename}
             aria-label={t('display.artifact.downloadAria', { filename })}
-            className="group inline-flex w-fit items-center gap-2 rounded-[var(--radius-sm)] border border-accent/40 bg-surface-2 px-3 py-1.5 text-sm font-medium text-accent-text transition-colors hover:border-accent hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            data-required-touch-target
+            className="group inline-flex min-h-[44px] min-w-[44px] w-fit max-w-full items-center gap-2 rounded-[var(--radius-sm)] border border-accent/40 bg-surface-2 px-3 py-1.5 text-sm font-medium text-accent-text transition-colors hover:border-accent hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             <Download aria-hidden="true" className="size-4 shrink-0" />
             {t('display.artifact.download')}

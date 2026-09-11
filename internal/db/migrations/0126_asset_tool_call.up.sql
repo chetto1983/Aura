@@ -1,0 +1,12 @@
+-- Which tool call delivered an agent file.
+--
+-- Nothing recorded it. send_file stores its file as a thread asset, and the live stream
+-- puts the card on the call by tool_call_id -- but that frame is never persisted, so on
+-- reload the cockpit could only zip agent files onto assistant turns by position. Measured
+-- 2026-09-11: an artifact delivered in the fourth turn rendered under the greeting.
+--
+-- The pointer lives on the asset because the asset is written inside its call, where the
+-- id is already known, and the tool turn that could carry it is written after. Empty means
+-- no call produced the file (a delegation report, or a row older than this column); the
+-- transcript does not place those, and the Artifacts panel lists every asset regardless.
+ALTER TABLE aura.assets ADD COLUMN tool_call_id text NOT NULL DEFAULT '';

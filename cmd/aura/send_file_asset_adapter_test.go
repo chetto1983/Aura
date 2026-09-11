@@ -72,8 +72,8 @@ func (r *recordingAssetStore) Delete(context.Context, string, string) (assets.As
 }
 
 // TestSendFileAssetAdapterForwards proves the adapter opens the host file and forwards the
-// delivery to IngestAgentFile with the correct identity/thread/filename/mime/size mapping, and
-// returns the created asset id.
+// delivery to IngestAgentFile with the correct identity/thread/tool-call/filename/mime/size
+// mapping, and returns the created asset id.
 func TestSendFileAssetAdapterForwards(t *testing.T) {
 	var _ tools.AssetDeliverer = sendFileAssetAdapter{} // interface satisfaction
 
@@ -87,7 +87,7 @@ func TestSendFileAssetAdapterForwards(t *testing.T) {
 	svc := &assets.Service{Store: store, Objects: objectstore.NewFake()}
 	adapter := sendFileAssetAdapter{svc: svc}
 
-	id, err := adapter.IngestAgentDelivery(context.Background(), "id-9", "thread-9", path, "report.pdf", "application/pdf", int64(len(body)))
+	id, err := adapter.IngestAgentDelivery(context.Background(), "id-9", "thread-9", "call-9", path, "report.pdf", "application/pdf", int64(len(body)))
 	if err != nil {
 		t.Fatalf("IngestAgentDelivery: %v", err)
 	}
@@ -96,6 +96,9 @@ func TestSendFileAssetAdapterForwards(t *testing.T) {
 	}
 	if store.created.IdentityID != "id-9" || store.created.ThreadID != "thread-9" {
 		t.Fatalf("create identity/thread = %q/%q, want id-9/thread-9", store.created.IdentityID, store.created.ThreadID)
+	}
+	if store.created.ToolCallID != "call-9" {
+		t.Fatalf("create tool call = %q, want call-9: the asset must name the call that delivered it", store.created.ToolCallID)
 	}
 	if store.created.FileName != "report.pdf" || store.created.MIMEType != "application/pdf" {
 		t.Fatalf("create filename/mime = %q/%q, want report.pdf/application/pdf", store.created.FileName, store.created.MIMEType)
@@ -112,7 +115,7 @@ func TestSendFileAssetAdapterForwards(t *testing.T) {
 // errors before the service is touched (svc is nil here), so the tool degrades to path-only.
 func TestSendFileAssetAdapterMissingFileErrors(t *testing.T) {
 	adapter := sendFileAssetAdapter{svc: nil}
-	_, err := adapter.IngestAgentDelivery(context.Background(), "id", "thread", filepath.Join(t.TempDir(), "nope.bin"), "nope.bin", "", 0)
+	_, err := adapter.IngestAgentDelivery(context.Background(), "id", "thread", "call", filepath.Join(t.TempDir(), "nope.bin"), "nope.bin", "", 0)
 	if err == nil {
 		t.Fatal("a missing host file must error (os.Open) before the ingest service is touched")
 	}

@@ -25,6 +25,7 @@ type objectIngest struct {
 	threadID      string
 	sourceKind    SourceKind
 	sourceRef     string
+	toolCallID    string
 	fileName      string
 	mimeType      string
 	modality      Modality
@@ -74,6 +75,7 @@ func (s *Service) ingestObject(ctx context.Context, in objectIngest) (Asset, err
 		ThreadID:          in.threadID,
 		SourceKind:        in.sourceKind,
 		SourceRef:         in.sourceRef,
+		ToolCallID:        in.toolCallID,
 		Scope:             scope,
 		Modality:          modality,
 		FileName:          name,
@@ -148,6 +150,7 @@ func (s *Service) IngestAgentFile(ctx context.Context, req AgentIngestRequest) (
 		threadID:      req.ThreadID,
 		sourceKind:    SourceAgent,
 		sourceRef:     req.SourceRef,
+		toolCallID:    req.ToolCallID,
 		fileName:      req.FileName,
 		mimeType:      req.MIMEType,
 		modality:      req.Modality,

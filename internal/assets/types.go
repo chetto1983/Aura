@@ -77,6 +77,7 @@ type Asset struct {
 	IdentityID        string         `json:"identity_id"`
 	SourceKind        SourceKind     `json:"source_kind"`
 	SourceRef         string         `json:"source_ref"`
+	ToolCallID        string         `json:"tool_call_id"` // the call that delivered an agent file (migration 0126)
 	ThreadID          string         `json:"thread_id"`
 	Scope             Scope          `json:"scope"`
 	Modality          Modality       `json:"modality"`
@@ -113,6 +114,7 @@ type CreateRequest struct {
 	IdentityID        string
 	SourceKind        SourceKind
 	SourceRef         string
+	ToolCallID        string
 	ThreadID          string
 	Scope             Scope
 	Modality          Modality
@@ -167,12 +169,14 @@ type DocumentIngestRequest struct {
 // shared asset pipeline as a delivery-only, owned thread asset (WEBART-01/D-06). It mirrors
 // TelegramIngestRequest minus the Telegram source-reference fields. SourceRef is optional:
 // send_file leaves it empty, while durable producers use a namespaced stable key to make a
-// retried delivery resolve the same asset row and object key. The caller opens the host file
-// and closes the Reader after ingest.
+// retried delivery resolve the same asset row and object key. ToolCallID is the call that
+// delivered the file: send_file sets it, producers outside a tool call leave it empty. The
+// caller opens the host file and closes the Reader after ingest.
 type AgentIngestRequest struct {
 	IdentityID string
 	ThreadID   string
 	SourceRef  string
+	ToolCallID string
 	FileName   string
 	MIMEType   string
 	Modality   Modality

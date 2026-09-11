@@ -76,6 +76,7 @@ func TestPostgresAssetStoreRoundTrip(t *testing.T) {
 		IdentityID:        localIdentityID,
 		SourceKind:        SourceWeb,
 		SourceRef:         "https://example.test/manual.pdf",
+		ToolCallID:        "call-rt",
 		ThreadID:          threadID,
 		Scope:             ScopeThread,
 		Modality:          ModalityDocument,
@@ -99,6 +100,9 @@ func TestPostgresAssetStoreRoundTrip(t *testing.T) {
 	}
 	if got.ID != created.ID || got.FileName != "manual.pdf" || got.Modality != ModalityDocument {
 		t.Fatalf("GetForIdentity asset = %#v", got)
+	}
+	if got.ToolCallID != "call-rt" {
+		t.Fatalf("tool call round trip = %q, want call-rt", got.ToolCallID)
 	}
 	if got.Metadata["origin"] != "integration" || got.Metadata["label"] != "manual" {
 		t.Fatalf("metadata round trip = %#v", got.Metadata)

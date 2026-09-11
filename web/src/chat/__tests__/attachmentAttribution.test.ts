@@ -57,25 +57,14 @@ describe('attachAssetsToUserMessages', () => {
     expect(attachmentsOf(folded, 0).map((a) => a.id)).toEqual(['a1', 'a2']);
   });
 
-  // A turn saved before the column exists has nothing to declare, so the old rule is all
-  // there is for it.
-  it('still folds positionally for turns that declare nothing', () => {
-    const messages = [user('vecchio'), assistant, user('anche vecchio')];
+  // A turn that declares nothing was sent with nothing. Guessing by position is what put an
+  // image under the wrong message, so an asset no turn claims stays off the transcript.
+  it('places nothing on a turn that declares nothing', () => {
+    const messages = [user('ciao'), assistant, user('guarda', ['a2'])];
 
     const folded = attachAssetsToUserMessages(messages, [asset('a1'), asset('a2')]);
 
-    expect(attachmentsOf(folded, 0).map((a) => a.id)).toEqual(['a1']);
-    expect(attachmentsOf(folded, 2).map((a) => a.id)).toEqual(['a2']);
-  });
-
-  // A conversation continued across the deploy carries both kinds. The leftovers of the
-  // old half must not pile onto a turn that already stated its own.
-  it('never adds a leftover to a turn that declared its attachments', () => {
-    const messages = [user('vecchio'), assistant, user('nuovo', ['a2'])];
-
-    const folded = attachAssetsToUserMessages(messages, [asset('a1'), asset('a2')]);
-
-    expect(attachmentsOf(folded, 0).map((a) => a.id)).toEqual(['a1']);
+    expect(attachmentsOf(folded, 0)).toHaveLength(0);
     expect(attachmentsOf(folded, 2).map((a) => a.id)).toEqual(['a2']);
   });
 

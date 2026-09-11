@@ -252,31 +252,43 @@ describe('ExternalStoreChat message geometry', () => {
       'fetch',
       vi.fn((url: unknown) => {
         if (url === '/threads/conv-1/messages') {
+          // The agent file rides its send_file call's display (migration 0126), the only
+          // place a reopened thread renders it.
+          const messages = [
+            { id: 'msg-1', role: 'user', content: 'make a document' },
+            {
+              id: 'msg-2',
+              role: 'assistant',
+              toolCalls: [
+                {
+                  id: 'call-doc',
+                  type: 'function',
+                  function: { name: 'send_file', arguments: '{}' },
+                  display: {
+                    type: 'local_artifact',
+                    tool_call_id: 'call-doc',
+                    artifact: {
+                      filename: longName,
+                      size_bytes: 8,
+                      asset_id: 'asset-long',
+                      mime_type: 'application/pdf',
+                    },
+                  },
+                },
+              ],
+            },
+            { id: 'msg-3', role: 'tool', toolCallId: 'call-doc', content: 'queued for delivery' },
+            { id: 'msg-4', role: 'assistant', content: 'document ready' },
+          ];
           return Promise.resolve(
-            messagesSnapshotResponse([
-              { id: 'msg-1', role: 'user', content: 'make a document' },
-              { id: 'msg-2', role: 'assistant', content: 'document ready' },
-            ]),
+            new Response(JSON.stringify({ type: 'MESSAGES_SNAPSHOT', messages }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }),
           );
         }
         if (url === '/api/assets?thread_id=conv-1') {
-          return Promise.resolve(
-            new Response(
-              JSON.stringify([
-                {
-                  id: 'asset-long',
-                  source_kind: 'agent',
-                  status: 'complete',
-                  modality: 'document',
-                  file_name: longName,
-                  mime_type: 'application/pdf',
-                  declared_size_bytes: 8,
-                  size_bytes: 8,
-                },
-              ]),
-              { status: 200, headers: { 'Content-Type': 'application/json' } },
-            ),
-          );
+          return Promise.resolve(new Response('[]', { status: 200 }));
         }
         return Promise.reject(new Error(`unexpected fetch: ${String(url)}`));
       }),
@@ -284,14 +296,12 @@ describe('ExternalStoreChat message geometry', () => {
     renderChat(<ExternalStoreChat threadId="conv-1" />);
 
     const download = await screen.findByRole('link', { name: `Download ${longName}` });
-    const downloadOwner = download.parentElement;
-    if (!(downloadOwner instanceof HTMLElement)) throw new Error('expected download owner');
-    expect(downloadOwner.classList.contains('min-w-0')).toBe(true);
     expect(download.classList.contains('max-w-full')).toBe(true);
     expectRequiredTouchTarget(download);
     const filename = screen.getByText(longName);
     expect(filename.classList.contains('min-w-0')).toBe(true);
-    expect(filename.classList.contains('[overflow-wrap:anywhere]')).toBe(true);
+    expect(filename.classList.contains('truncate')).toBe(true);
+    expect(filename.parentElement?.classList.contains('min-w-0')).toBe(true);
   });
 
   it('sizes persisted attachment Retry and Promote actions for touch', async () => {
@@ -307,9 +317,19 @@ describe('ExternalStoreChat message geometry', () => {
         if (url === '/threads/conv-1/messages') {
           return Promise.resolve(
             messagesSnapshotResponse([
-              { id: 'msg-1', role: 'user', content: 'failed document' },
+              {
+                id: 'msg-1',
+                role: 'user',
+                content: 'failed document',
+                attachmentIds: ['asset-failed'],
+              },
               { id: 'msg-2', role: 'assistant', content: 'retry available' },
-              { id: 'msg-3', role: 'user', content: 'ready document' },
+              {
+                id: 'msg-3',
+                role: 'user',
+                content: 'ready document',
+                attachmentIds: ['asset-ready'],
+              },
               { id: 'msg-4', role: 'assistant', content: 'promotion available' },
             ]),
           );

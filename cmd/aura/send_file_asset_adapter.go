@@ -22,7 +22,7 @@ var _ tools.AssetDeliverer = sendFileAssetAdapter{}
 // ingests its bytes as an owned, thread-scoped asset via IngestAgentFile, returning the created
 // asset id. It is best-effort at the call site: any error makes send_file degrade to a path-only
 // descriptor (D-02), so the returned error never wedges the turn.
-func (a sendFileAssetAdapter) IngestAgentDelivery(ctx context.Context, identityID, threadID, hostPath, filename, mimeType string, size int64) (string, error) {
+func (a sendFileAssetAdapter) IngestAgentDelivery(ctx context.Context, identityID, threadID, toolCallID, hostPath, filename, mimeType string, size int64) (string, error) {
 	f, err := os.Open(hostPath) //nolint:gosec // hostPath is already workspace-fenced + size-gated by send_file before this call.
 	if err != nil {
 		return "", err
@@ -31,6 +31,7 @@ func (a sendFileAssetAdapter) IngestAgentDelivery(ctx context.Context, identityI
 	asset, err := a.svc.IngestAgentFile(ctx, assets.AgentIngestRequest{
 		IdentityID: identityID,
 		ThreadID:   threadID,
+		ToolCallID: toolCallID,
 		FileName:   filename,
 		MIMEType:   mimeType,
 		SizeBytes:  size,

@@ -64,12 +64,20 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		attachTurnReasoning(&snap, reasonings)
 	}
 	// Migration 0116: what each user turn was actually sent with. Fail-soft for the same
-	// reason reasoning is — it is additive display data, and the degrade is the cockpit's
-	// pre-0116 positional fold rather than a 500 for the whole thread.
+	// reason reasoning is — it is additive display data, and the degrade is a transcript
+	// without its attachment cards rather than a 500 for the whole thread.
 	if attached, aErr := s.conv.ListTurnAttachments(scopedCtx(ctx), id); aErr != nil {
 		slog.Warn("agui: list turn attachments (serving snapshot without them)", "thread", id, "err", aErr)
 	} else {
 		attachTurnAttachments(&snap, attached)
+	}
+	// Migration 0126: each agent file back on the call that delivered it. Fail-soft too.
+	if s.assets != nil {
+		if files, fErr := s.assets.ListForThread(ctx, scopedIdentityID(ctx), id); fErr != nil {
+			slog.Warn("agui: list thread assets (serving snapshot without artifact cards)", "thread", id, "err", fErr)
+		} else {
+			attachToolArtifacts(&snap, files)
+		}
 	}
 	if err := json.NewEncoder(w).Encode(snap); err != nil {
 		slog.Warn("agui: encode messages snapshot", "err", err)

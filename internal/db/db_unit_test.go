@@ -365,9 +365,10 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// aura.conversations.total_cost_usd from numeric(10,4) to numeric(24,12) so a
 	// per-call cost as small as the measured 0.000004158 (02-CONTEXT.md M-09)
 	// survives instead of rounding to zero. 0125 lets identity_llm_key.limit_usd
-	// be NULL, a key with no limit (the admin's own).
-	if head != 125 {
-		t.Fatalf("MigrationHead=%d, want embedded head 125", head)
+	// be NULL, a key with no limit (the admin's own). 0126 records on an agent
+	// asset the tool call that delivered it, so a reload puts its card back there.
+	if head != 126 {
+		t.Fatalf("MigrationHead=%d, want embedded head 126", head)
 	}
 }
 

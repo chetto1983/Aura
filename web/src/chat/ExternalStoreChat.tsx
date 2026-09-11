@@ -37,7 +37,6 @@ import {
   appendMessageText,
   assistantErrorMessage,
   attachAssetsToUserMessages,
-  foldAgentOntoAssistant,
   isAbortError,
   isAbortSignalAborted,
   userMessage,
@@ -376,12 +375,9 @@ export function ExternalStoreChat({
         }
         if (isAbortSignalAborted(controller.signal) || request !== historyRequestRef.current)
           return;
-        // D-15: split by source_kind BEFORE folding. Uploads (web/telegram/cli) keep
-        // the existing user-turn fold; agent deliverables rehydrate onto assistant
-        // turns (their download chip survives saved-conversation open with no reload).
-        const uploads = assets.filter((asset) => asset.source_kind !== 'agent');
-        const agent = assets.filter((asset) => asset.source_kind === 'agent');
-        setMessages(foldAgentOntoAssistant(attachAssetsToUserMessages(loaded, uploads), agent));
+        // A user turn names what it was sent with (migration 0116). An agent file is
+        // already on its send_file call, inside the snapshot itself (migration 0126).
+        setMessages(attachAssetsToUserMessages(loaded, assets));
         setHistoryReadiness({ threadId, status: 'ready' });
       })
       .catch((err: unknown) => {

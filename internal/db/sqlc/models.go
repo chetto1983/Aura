@@ -65,6 +65,7 @@ type AuraAssets struct {
 	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	PipelineGeneration int64              `json:"pipeline_generation"`
+	ToolCallID         string             `json:"tool_call_id"`
 }
 
 type AuraAuditLogs struct {

@@ -19,7 +19,7 @@ WHERE id = $1
   AND identity_id = $2
   AND thread_id = ''
   AND deleted_at IS NULL
-RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation
+RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation, tool_call_id
 `
 
 type AdoptAssetIntoThreadParams struct {
@@ -72,6 +72,7 @@ func (q *Queries) AdoptAssetIntoThread(ctx context.Context, arg AdoptAssetIntoTh
 		&i.DeletedAt,
 		&i.UpdatedAt,
 		&i.PipelineGeneration,
+		&i.ToolCallID,
 	)
 	return i, err
 }
@@ -124,16 +125,16 @@ const createAsset = `-- name: CreateAsset :one
 INSERT INTO aura.assets (
     identity_id, source_kind, source_ref, thread_id, scope, modality,
     status, file_name, mime_type, declared_size_bytes, object_bucket,
-    object_key, metadata
+    object_key, metadata, tool_call_id
 ) VALUES (
     $1, $2, $3, $4, $5, $6,
     $7, $8, $9, $10, $11,
-    $12, $13
+    $12, $13, $14
 )
 ON CONFLICT (identity_id, source_kind, source_ref)
     WHERE source_kind = 'agent' AND source_ref <> ''
 DO UPDATE SET updated_at = aura.assets.updated_at
-RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation
+RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation, tool_call_id
 `
 
 type CreateAssetParams struct {
@@ -150,6 +151,7 @@ type CreateAssetParams struct {
 	ObjectBucket      string      `json:"object_bucket"`
 	ObjectKey         string      `json:"object_key"`
 	Metadata          []byte      `json:"metadata"`
+	ToolCallID        string      `json:"tool_call_id"`
 }
 
 func (q *Queries) CreateAsset(ctx context.Context, arg CreateAssetParams) (AuraAssets, error) {
@@ -167,6 +169,7 @@ func (q *Queries) CreateAsset(ctx context.Context, arg CreateAssetParams) (AuraA
 		arg.ObjectBucket,
 		arg.ObjectKey,
 		arg.Metadata,
+		arg.ToolCallID,
 	)
 	var i AuraAssets
 	err := row.Scan(
@@ -200,12 +203,13 @@ func (q *Queries) CreateAsset(ctx context.Context, arg CreateAssetParams) (AuraA
 		&i.DeletedAt,
 		&i.UpdatedAt,
 		&i.PipelineGeneration,
+		&i.ToolCallID,
 	)
 	return i, err
 }
 
 const getAsset = `-- name: GetAsset :one
-SELECT id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation FROM aura.assets
+SELECT id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation, tool_call_id FROM aura.assets
 WHERE id = $1
 `
 
@@ -243,12 +247,13 @@ func (q *Queries) GetAsset(ctx context.Context, id pgtype.UUID) (AuraAssets, err
 		&i.DeletedAt,
 		&i.UpdatedAt,
 		&i.PipelineGeneration,
+		&i.ToolCallID,
 	)
 	return i, err
 }
 
 const getAssetByObjectKey = `-- name: GetAssetByObjectKey :one
-SELECT id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation FROM aura.assets
+SELECT id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation, tool_call_id FROM aura.assets
 WHERE identity_id = $1
   AND object_key = $2
   AND deleted_at IS NULL
@@ -293,12 +298,13 @@ func (q *Queries) GetAssetByObjectKey(ctx context.Context, arg GetAssetByObjectK
 		&i.DeletedAt,
 		&i.UpdatedAt,
 		&i.PipelineGeneration,
+		&i.ToolCallID,
 	)
 	return i, err
 }
 
 const getAssetForIdentity = `-- name: GetAssetForIdentity :one
-SELECT id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation FROM aura.assets
+SELECT id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation, tool_call_id FROM aura.assets
 WHERE id = $1
   AND identity_id = $2
   AND deleted_at IS NULL
@@ -343,6 +349,7 @@ func (q *Queries) GetAssetForIdentity(ctx context.Context, arg GetAssetForIdenti
 		&i.DeletedAt,
 		&i.UpdatedAt,
 		&i.PipelineGeneration,
+		&i.ToolCallID,
 	)
 	return i, err
 }
@@ -377,7 +384,7 @@ func (q *Queries) InsertAssetEvent(ctx context.Context, arg InsertAssetEventPara
 }
 
 const listAssetsForLibrary = `-- name: ListAssetsForLibrary :many
-SELECT id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation FROM aura.assets
+SELECT id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation, tool_call_id FROM aura.assets
 WHERE identity_id = $1
   AND scope = 'library'
   AND deleted_at IS NULL
@@ -430,6 +437,7 @@ func (q *Queries) ListAssetsForLibrary(ctx context.Context, arg ListAssetsForLib
 			&i.DeletedAt,
 			&i.UpdatedAt,
 			&i.PipelineGeneration,
+			&i.ToolCallID,
 		); err != nil {
 			return nil, err
 		}
@@ -442,7 +450,7 @@ func (q *Queries) ListAssetsForLibrary(ctx context.Context, arg ListAssetsForLib
 }
 
 const listAssetsForThread = `-- name: ListAssetsForThread :many
-SELECT id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation FROM aura.assets
+SELECT id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation, tool_call_id FROM aura.assets
 WHERE identity_id = $1
   AND thread_id = $2
   AND deleted_at IS NULL
@@ -494,6 +502,7 @@ func (q *Queries) ListAssetsForThread(ctx context.Context, arg ListAssetsForThre
 			&i.DeletedAt,
 			&i.UpdatedAt,
 			&i.PipelineGeneration,
+			&i.ToolCallID,
 		); err != nil {
 			return nil, err
 		}
@@ -511,7 +520,7 @@ SET status = 'deleted', deleted_at = COALESCE(deleted_at, now()), updated_at = n
 WHERE id = $1
   AND identity_id = $2
   AND status = 'deleting'
-RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation
+RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation, tool_call_id
 `
 
 type MarkAssetDeletedParams struct {
@@ -553,6 +562,7 @@ func (q *Queries) MarkAssetDeleted(ctx context.Context, arg MarkAssetDeletedPara
 		&i.DeletedAt,
 		&i.UpdatedAt,
 		&i.PipelineGeneration,
+		&i.ToolCallID,
 	)
 	return i, err
 }
@@ -577,7 +587,7 @@ SET scope = 'library',
 WHERE id = $1
   AND identity_id = $2
   AND deleted_at IS NULL
-RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation
+RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation, tool_call_id
 `
 
 type PromoteAssetToLibraryParams struct {
@@ -619,6 +629,7 @@ func (q *Queries) PromoteAssetToLibrary(ctx context.Context, arg PromoteAssetToL
 		&i.DeletedAt,
 		&i.UpdatedAt,
 		&i.PipelineGeneration,
+		&i.ToolCallID,
 	)
 	return i, err
 }
@@ -631,7 +642,7 @@ WHERE id = $1
   AND identity_id = $2
   AND status IN ('failed', 'refused', 'canceled')
   AND deleted_at IS NULL
-RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation
+RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation, tool_call_id
 `
 
 type ResetAssetForIngestionRetryParams struct {
@@ -673,6 +684,7 @@ func (q *Queries) ResetAssetForIngestionRetry(ctx context.Context, arg ResetAsse
 		&i.DeletedAt,
 		&i.UpdatedAt,
 		&i.PipelineGeneration,
+		&i.ToolCallID,
 	)
 	return i, err
 }
@@ -685,7 +697,7 @@ WHERE id = $1
   AND identity_id = $2
   AND deleted_at IS NULL
   AND status NOT IN ('deleting', 'deleted')
-RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation
+RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation, tool_call_id
 `
 
 type SoftDeleteAssetParams struct {
@@ -727,6 +739,7 @@ func (q *Queries) SoftDeleteAsset(ctx context.Context, arg SoftDeleteAssetParams
 		&i.DeletedAt,
 		&i.UpdatedAt,
 		&i.PipelineGeneration,
+		&i.ToolCallID,
 	)
 	return i, err
 }
@@ -742,7 +755,7 @@ SET status = 'accepted',
 WHERE id = $1
   AND identity_id = $2
   AND deleted_at IS NULL
-RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation
+RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation, tool_call_id
 `
 
 type UpdateAssetAcceptedParams struct {
@@ -793,6 +806,7 @@ func (q *Queries) UpdateAssetAccepted(ctx context.Context, arg UpdateAssetAccept
 		&i.DeletedAt,
 		&i.UpdatedAt,
 		&i.PipelineGeneration,
+		&i.ToolCallID,
 	)
 	return i, err
 }
@@ -812,7 +826,7 @@ SET status = $3,
 WHERE id = $1
   AND identity_id = $2
   AND deleted_at IS NULL
-RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation
+RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation, tool_call_id
 `
 
 type UpdateAssetResultParams struct {
@@ -865,6 +879,7 @@ func (q *Queries) UpdateAssetResult(ctx context.Context, arg UpdateAssetResultPa
 		&i.DeletedAt,
 		&i.UpdatedAt,
 		&i.PipelineGeneration,
+		&i.ToolCallID,
 	)
 	return i, err
 }
@@ -882,7 +897,7 @@ SET status = $3,
 WHERE id = $1
   AND identity_id = $2
   AND deleted_at IS NULL
-RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation
+RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation, tool_call_id
 `
 
 type UpdateAssetStatusParams struct {
@@ -933,6 +948,7 @@ func (q *Queries) UpdateAssetStatus(ctx context.Context, arg UpdateAssetStatusPa
 		&i.DeletedAt,
 		&i.UpdatedAt,
 		&i.PipelineGeneration,
+		&i.ToolCallID,
 	)
 	return i, err
 }
@@ -947,7 +963,7 @@ SET status = 'uploaded',
 WHERE id = $1
   AND identity_id = $2
   AND deleted_at IS NULL
-RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation
+RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation, tool_call_id
 `
 
 type UpdateAssetUploadedParams struct {
@@ -996,6 +1012,7 @@ func (q *Queries) UpdateAssetUploaded(ctx context.Context, arg UpdateAssetUpload
 		&i.DeletedAt,
 		&i.UpdatedAt,
 		&i.PipelineGeneration,
+		&i.ToolCallID,
 	)
 	return i, err
 }
