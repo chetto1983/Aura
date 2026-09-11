@@ -92,5 +92,5 @@ The embedding model file fixes the width and changing it breaks the vector index
 
 ### Task 5: Gates and push
 
-- [ ] **Step 1:** `make quality` in WSL; `npm test` in `packages/create-aura`; `bash scripts/install_config_test.sh`; `bash scripts/payload_manifest_gate.sh`.
+- [x] **Step 1:** `make quality` in WSL; `npm test` in `packages/create-aura`; `bash scripts/install_config_test.sh`; `bash scripts/payload_manifest_gate.sh`.
 - [ ] **Step 2:** push, watch CI green.

@@ -206,5 +206,5 @@ func validateSettingKeyValue(key, value string) error {
 
 - [x] **Step 1:** `web/e2e/first-run-route.spec.ts` against mocked routes (status `routeRequired`, admin `/api/me`, settings list and writes with `openrouter_keys`, restart 202, one refused `/healthz`): no Close and no Skip, the cap then the management key are written, the minted labels show, the setup closes, the management key never renders.
 - [x] **Step 2:** `npm run build` in `web/` (writes `internal/webui/dist`); `docker compose build aura && docker compose up -d --no-deps aura`; run the spec against the rebuilt stack.
-- [ ] **Step 3:** web gates (`npm run typecheck`, `npm run lint`, `npm run format:check`, `npm test`), `make quality` in WSL.
-- [ ] **Step 4:** commit the spec and the dist, push, watch CI green.
+- [x] **Step 3:** web gates (`npm run typecheck`, `npm run lint`, `npm run format:check`, `npm test`), `make quality` in WSL.
+- [x] **Step 4:** commit the spec and the dist, push, watch CI green.
