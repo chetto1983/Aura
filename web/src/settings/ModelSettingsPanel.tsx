@@ -7,7 +7,6 @@ import { RestartAuraControl } from './RestartAuraControl';
 import { useModelSettings, type SaveOutcome } from './modelSettingsState';
 import { useModelCatalog } from './useModelCatalog';
 import {
-  ALL_MODEL_GROUPS,
   MODEL_SETTINGS_GROUPS,
   PROVIDER_OPTIONS,
   resolveProvider,
@@ -34,11 +33,11 @@ function providerIDOf(choice: ProviderChoice): string {
 interface ModelSettingsPanelProps {
   readonly className?: string;
   /**
-   * Which runtime groups this panel renders and may write. Defaults to all three, which is
-   * the first-run wizard's single-form view; the Settings rail mounts one group per pane so
-   * each pane is one form with one save button.
+   * Which runtime groups this panel renders and may write. The Settings rail mounts one group
+   * per pane, so each pane is one form with one save button; the first-run route step mounts
+   * the routing group.
    */
-  readonly groups?: readonly ModelSettingsGroup[];
+  readonly groups: readonly ModelSettingsGroup[];
   readonly onComplete?: (outcome?: SaveOutcome) => void | Promise<void>;
   readonly saveLabel?: string;
   readonly skipLabel?: string;
@@ -48,7 +47,7 @@ interface ModelSettingsPanelProps {
 
 export function ModelSettingsPanel({
   className,
-  groups = ALL_MODEL_GROUPS,
+  groups,
   onComplete,
   saveLabel,
   skipLabel,

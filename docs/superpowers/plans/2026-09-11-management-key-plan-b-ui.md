@@ -170,11 +170,11 @@ func validateSettingKeyValue(key, value string) error {
 
 **Files:** `web/src/onboarding/FirstRunSetup.tsx` (props `profileRequired = true`, `routeRequired = false`; steps = profile and Telegram while the profile is owed, the route step for an admin or whenever required; route-only run closes after the route step; `onClose` withheld from the dialog while required); `OnboardingDialog.tsx` (`onClose` optional, no Close button without it); `resources.onboarding.ts` (`profile.steps.runtime`, `profile.runtime` out); test `FirstRunSetup.test.tsx` (useCapabilities mocked; status mock added).
 
-- [ ] **Step 1: Tests:** a member gets "Step 1 of 2" and no route step; an admin with only the route required sees "Step 1 of 1", no Close, no Skip, and the setup closes after the save without submitting a profile; the existing walk keeps passing for an admin.
-- [ ] **Step 2: Run, watch them fail.**
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run, watch them pass.**
-- [ ] **Step 5: Commit** `feat(web): keep the first-run setup open until an admin picks the route`.
+- [x] **Step 1: Tests:** a member gets "Step 1 of 2" and no route step; an admin with only the route required sees "Step 1 of 1", no Close, no Skip, and the setup closes after the save without submitting a profile; the existing walk keeps passing for an admin.
+- [x] **Step 2: Run, watch them fail.**
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run, watch them pass.**
+- [x] **Step 5: Commit** `feat(web): keep the first-run setup open until an admin picks the route`.
 
 ---
 

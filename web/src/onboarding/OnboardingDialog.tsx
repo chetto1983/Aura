@@ -15,7 +15,8 @@ export function OnboardingDialog({
   readonly closeLabel: string;
   readonly describedBy?: string;
   readonly kicker?: ReactNode;
-  readonly onClose: () => void;
+  /** Absent while the dialog must not be left: first-run setup with the route still required. */
+  readonly onClose?: (() => void) | undefined;
   readonly title: ReactNode;
   readonly titleId: string;
 }) {
@@ -40,16 +41,18 @@ export function OnboardingDialog({
             </h1>
           </div>
         )}
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label={closeLabel}
-          onClick={onClose}
-          className="text-text-muted hover:text-text"
-        >
-          <X data-icon aria-hidden="true" className="size-4" />
-        </Button>
+        {onClose === undefined ? null : (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={closeLabel}
+            onClick={onClose}
+            className="text-text-muted hover:text-text"
+          >
+            <X data-icon aria-hidden="true" className="size-4" />
+          </Button>
+        )}
       </header>
       {children}
     </div>

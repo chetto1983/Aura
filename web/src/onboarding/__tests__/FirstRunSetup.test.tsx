@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '../../i18n/i18n';
+import type { FirstRunSetupProps } from '../FirstRunSetup';
 import type { OnboardingProfileComplete } from '../onboardingApi';
 
 // FirstRunSetup test (Amendment #95) — first access after sign-in. It proves:
@@ -12,15 +13,21 @@ import type { OnboardingProfileComplete } from '../onboardingApi';
 //   - the typed name reaches the API byte-identical;
 //   - Skip walks on with an EMPTY seed (the server derives the skip) rather than short-circuiting
 //     to a submission that would 502 on an instance with no bot configured;
-//   - a 502 renders the retry, a 401 renders the auth-expired state.
+//   - a 502 renders the retry, a 401 renders the auth-expired state;
+//   - the route step is an admin's alone, and while the daemon says it is required the setup has
+//     no Close and the step no Skip.
 
 const submitOnboardingProfile = vi.fn();
+const caps = vi.hoisted(() => ({ isAdmin: true, identityId: 'id-admin' }));
 
 vi.mock('../onboardingApi', () => ({
   submitOnboardingProfile: (...a: unknown[]) =>
     submitOnboardingProfile(...a) as Promise<OnboardingProfileComplete>,
   fetchTelegramStatus: () => Promise.resolve({ linked: false }),
+  fetchOnboardingStatus: () =>
+    Promise.resolve({ required: false, completed: true, skipped: false, routeRequired: false }),
 }));
+vi.mock('../../admin/useAdmin', () => ({ useCapabilities: () => caps }));
 
 const { default: FirstRunSetup } = await import('../FirstRunSetup');
 
@@ -38,8 +45,8 @@ function client() {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } });
 }
 
-function renderSetup(onClose = vi.fn()) {
-  return render(<FirstRunSetup onClose={onClose} />, {
+function renderSetup({ onClose = vi.fn(), ...props }: Partial<FirstRunSetupProps> = {}) {
+  return render(<FirstRunSetup onClose={onClose} {...props} />, {
     wrapper: ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={client()}>{children}</QueryClientProvider>
     ),
@@ -64,6 +71,7 @@ async function walkToSubmit() {
 
 describe('FirstRunSetup', () => {
   beforeEach(() => {
+    caps.isAdmin = true;
     submitOnboardingProfile.mockReset();
     submitOnboardingProfile.mockResolvedValue(COMPLETED);
     vi.stubGlobal(
@@ -257,8 +265,44 @@ describe('FirstRunSetup', () => {
 
   it('closes via the header close button', () => {
     const onClose = vi.fn();
-    renderSetup(onClose);
+    renderSetup({ onClose });
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('never shows a member the route step', async () => {
+    caps.isAdmin = false;
+    renderSetup();
+
+    expect(screen.getAllByText('Step 1 of 2').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => {
+      expect(screen.getByText(/Telegram bot @AuraBot is already configured/)).toBeTruthy();
+    });
+    expect(screen.queryByRole('heading', { name: 'Model routing' })).toBeNull();
+  });
+
+  // Until an admin connects OpenRouter or picks a local route no identity's key can be minted, so
+  // the setup offers no way out of this step but through it.
+  it('keeps an admin in the route step until it is saved, then closes', async () => {
+    const onClose = vi.fn();
+    renderSetup({ onClose, profileRequired: false, routeRequired: true });
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Model routing' })).toBeTruthy();
+    });
+    expect(screen.getAllByText('Step 1 of 1').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Skip for now' })).toBeNull();
+
+    fireEvent.change(screen.getByLabelText('OpenRouter management key'), {
+      target: { value: 'sk-or-v1-mgmt' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save and continue' }));
+
+    await waitFor(() => {
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+    expect(submitOnboardingProfile).not.toHaveBeenCalled();
   });
 });

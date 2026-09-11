@@ -2,8 +2,9 @@ import { useCallback, useId, useState, type ReactNode } from 'react';
 import { CheckCircle2, Circle, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { ModelSettingsPanel } from '../settings/ModelSettingsPanel';
+import { useCapabilities } from '../admin/useAdmin';
 import { OnboardingCenteredState, OnboardingDialog } from './OnboardingDialog';
+import { RouteStep } from './RouteStep';
 import { SeedProfileForm } from './SeedProfileForm';
 import { TelegramLinkStep } from './TelegramLinkStep';
 import { TelegramTokenStep } from './TelegramTokenStep';
@@ -20,38 +21,57 @@ import { Button } from '@/components/ui/button';
 // accumulated server session and no per-answer round-trip here, so the surface mounts straight
 // into the form.
 //
-// Three steps, then ONE POST:
-//   1. seed form   — the typed profile fields (optional; blank = the server derives a skip)
-//   2. model setup — the surviving runtime step
-//   3. Telegram    — the surviving bot-token step, rehomed here from the deleted wizard
+// Up to three steps, then ONE POST:
+//   1. seed form — the typed profile fields (optional; blank = the server derives a skip)
+//   2. route     — admins only: OpenRouter with the management key, or a local server. While the
+//                  daemon reports routeRequired there is no Skip and no Close, because no
+//                  identity's key can be minted until an admin does this.
+//   3. Telegram  — the bot-token step, rehomed here from the deleted wizard
 //   → submitOnboardingProfile(seed) → the completion screen with the deep-link + QR.
+//
+// An admin whose profile is done but whose route is required gets the route step alone, and the
+// setup closes once it is done: there is no profile to submit.
 //
 // The submission is LAST on purpose: the server mints the Telegram deep-link BEFORE it writes
 // the profile and resolves the bot name out of the settings store, so submitting after the token
 // is saved is what makes the completion screen show a working link. It is a preference, not a
 // precondition — the server writes the profile (or the skip sentinel) even when no link can be
-// minted, and every step here, Telegram included, is skippable.
+// minted, and every step but a required route, Telegram included, is skippable.
 
-type SetupStep = 'profile' | 'runtime' | 'telegram';
+type SetupStep = 'profile' | 'route' | 'telegram';
 type CompletionStatus = 'idle' | 'saving' | 'completed' | 'skipped' | 'error';
 
-const STEP_ORDER: readonly SetupStep[] = ['profile', 'runtime', 'telegram'];
-
-// The seed form reuses the surviving `identity` copy slot; runtime + telegram keep their own.
+// The seed form reuses the surviving `identity` copy slot; route + telegram keep their own.
 const STEP_COPY_KEY: Record<SetupStep, string> = {
   profile: 'identity',
-  runtime: 'runtime',
+  route: 'route',
   telegram: 'telegram',
 };
 
+// setupSteps is the setup this operator gets: the profile and Telegram steps while the profile is
+// still owed, and the route step for an admin, or whenever the daemon says it is required.
+function setupSteps(profileRequired: boolean, showRoute: boolean): readonly SetupStep[] {
+  const steps: SetupStep[] = [];
+  if (profileRequired) steps.push('profile');
+  if (showRoute) steps.push('route');
+  if (profileRequired) steps.push('telegram');
+  return steps;
+}
+
 export interface FirstRunSetupProps {
   readonly onClose: () => void;
+  /** GET /api/onboarding/status `required`: the profile form and the Telegram step are owed. */
+  readonly profileRequired?: boolean;
+  /** GET /api/onboarding/status `routeRequired`. */
+  readonly routeRequired?: boolean;
 }
 
 function ProfileProgress({
+  steps,
   activeIndex,
   t,
 }: {
+  readonly steps: readonly SetupStep[];
   readonly activeIndex: number;
   readonly t: TFunction;
 }) {
@@ -67,7 +87,7 @@ function ProfileProgress({
         <p className="text-sm leading-relaxed text-text-muted">{t('onboarding.profile.body')}</p>
       </div>
       <ol aria-label={t('onboarding.profile.progressLabel')} className="mt-7 flex flex-col gap-3">
-        {STEP_ORDER.map((step, index) => {
+        {steps.map((step, index) => {
           const done = index < activeIndex;
           const active = index === activeIndex;
           return (
@@ -105,11 +125,18 @@ function ProfileProgress({
   );
 }
 
-export default function FirstRunSetup({ onClose }: FirstRunSetupProps) {
+export default function FirstRunSetup({
+  onClose,
+  profileRequired = true,
+  routeRequired: routeRequiredAtOpen = false,
+}: FirstRunSetupProps) {
   const { t } = useTranslation();
   const titleId = useId();
+  const { isAdmin } = useCapabilities();
+  const steps = setupSteps(profileRequired, isAdmin || routeRequiredAtOpen);
 
-  const [step, setStep] = useState<SetupStep>('profile');
+  const [step, setStep] = useState<SetupStep>(steps[0] ?? 'profile');
+  const [routeRequired, setRouteRequired] = useState(routeRequiredAtOpen);
   const [seed, setSeed] = useState<OnboardingSeed>({});
   const [authExpired, setAuthExpired] = useState(false);
   const [completionStatus, setCompletionStatus] = useState<CompletionStatus>('idle');
@@ -132,15 +159,27 @@ export default function FirstRunSetup({ onClose }: FirstRunSetupProps) {
     }
   }, []);
 
-  // Skipping does NOT submit immediately: it drops the seed and walks on to the Telegram step, so
-  // the empty submission still happens AFTER the bot token exists and the completion screen can
-  // still offer a link. The server derives "skipped" from the blank seed.
-  const skipProfile = useCallback(() => {
-    setSeed({});
-    setStep('runtime');
-  }, []);
+  const stepAfter = (current: SetupStep): SetupStep | undefined =>
+    steps[steps.indexOf(current) + 1];
 
-  const activeIndex = STEP_ORDER.indexOf(step);
+  // Skipping does NOT submit immediately: it drops the seed and walks on, so the empty
+  // submission still happens AFTER the bot token exists and the completion screen can still
+  // offer a link. The server derives "skipped" from the blank seed.
+  const skipProfile = () => {
+    setSeed({});
+    setStep(stepAfter('profile') ?? 'telegram');
+  };
+
+  const finishRoute = () => {
+    const next = stepAfter('route');
+    if (next === undefined) {
+      onClose();
+      return;
+    }
+    setStep(next);
+  };
+
+  const activeIndex = steps.indexOf(step);
 
   const overlay = (children: ReactNode) => (
     <OnboardingDialog
@@ -148,7 +187,7 @@ export default function FirstRunSetup({ onClose }: FirstRunSetupProps) {
       kicker={t('onboarding.profile.kicker')}
       title={t('onboarding.profile.title')}
       closeLabel={t('onboarding.close')}
-      onClose={onClose}
+      onClose={routeRequired ? undefined : onClose}
     >
       {children}
     </OnboardingDialog>
@@ -190,20 +229,20 @@ export default function FirstRunSetup({ onClose }: FirstRunSetupProps) {
 
   return overlay(
     <div className="flex min-h-0 flex-1">
-      <ProfileProgress activeIndex={activeIndex} t={t} />
+      <ProfileProgress steps={steps} activeIndex={activeIndex} t={t} />
       <main className="min-h-0 flex-1 overflow-y-auto">
         <div className="border-b border-border bg-surface px-4 py-4 lg:hidden">
           <p className="text-sm font-semibold text-text">
             {t('onboarding.profile.currentStep', {
               current: activeIndex + 1,
-              total: STEP_ORDER.length,
+              total: steps.length,
             })}
           </p>
           <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-2">
             <div
               className="h-full rounded-full bg-accent"
               style={{
-                width: `${String(Math.round(((activeIndex + 1) / STEP_ORDER.length) * 100))}%`,
+                width: `${String(Math.round(((activeIndex + 1) / steps.length) * 100))}%`,
               }}
             />
           </div>
@@ -213,7 +252,7 @@ export default function FirstRunSetup({ onClose }: FirstRunSetupProps) {
             <p className="hidden text-sm font-semibold text-accent-text lg:block">
               {t('onboarding.profile.currentStep', {
                 current: activeIndex + 1,
-                total: STEP_ORDER.length,
+                total: steps.length,
               })}
             </p>
             {step === 'profile' ? null : (
@@ -245,7 +284,7 @@ export default function FirstRunSetup({ onClose }: FirstRunSetupProps) {
                   type="button"
                   disabled={!seedValid(seed)}
                   onClick={() => {
-                    setStep('runtime');
+                    setStep(stepAfter('profile') ?? 'telegram');
                   }}
                   className="px-6"
                 >
@@ -258,13 +297,11 @@ export default function FirstRunSetup({ onClose }: FirstRunSetupProps) {
             </>
           ) : null}
 
-          {step === 'runtime' ? (
-            <ModelSettingsPanel
-              saveLabel={t('onboarding.profile.runtime.save')}
-              skipLabel={t('onboarding.profile.runtime.skip')}
-              onComplete={() => {
-                setStep('telegram');
-              }}
+          {step === 'route' ? (
+            <RouteStep
+              required={routeRequired}
+              onRequiredChange={setRouteRequired}
+              onDone={finishRoute}
             />
           ) : null}
 

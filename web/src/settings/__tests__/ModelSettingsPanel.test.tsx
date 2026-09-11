@@ -137,7 +137,7 @@ async function expectResetClears(targetKey: string) {
     }),
   );
 
-  renderPanel(<ModelSettingsPanel />);
+  renderPanel(<ModelSettingsPanel groups={['routing', 'tokens', 'backends']} />);
   await screen.findByRole('heading', { name: 'Model routing' });
   fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
   await waitFor(() => {
@@ -190,7 +190,10 @@ describe('ModelSettingsPanel', () => {
 
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const invalidate = vi.spyOn(client, 'invalidateQueries');
-    renderPanel(<ModelSettingsPanel onComplete={vi.fn()} />, client);
+    renderPanel(
+      <ModelSettingsPanel groups={['routing', 'tokens', 'backends']} onComplete={vi.fn()} />,
+      client,
+    );
     await screen.findByRole('heading', { name: 'Model routing' });
 
     fireEvent.click(screen.getByRole('button', { name: route.button }));
@@ -234,7 +237,7 @@ describe('ModelSettingsPanel', () => {
       }),
     );
 
-    renderPanel(<ModelSettingsPanel />);
+    renderPanel(<ModelSettingsPanel groups={['routing', 'tokens', 'backends']} />);
 
     expect(await screen.findByText(LOAD_ERROR_TEXT)).toBeTruthy();
 
@@ -266,7 +269,9 @@ describe('ModelSettingsPanel', () => {
       }),
     );
 
-    renderPanel(<ModelSettingsPanel onComplete={vi.fn()} />);
+    renderPanel(
+      <ModelSettingsPanel groups={['routing', 'tokens', 'backends']} onComplete={vi.fn()} />,
+    );
     await screen.findByRole('heading', { name: 'Model routing' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Cloud' }));
@@ -299,7 +304,9 @@ describe('ModelSettingsPanel', () => {
       }),
     );
 
-    renderPanel(<ModelSettingsPanel onComplete={onComplete} />);
+    renderPanel(
+      <ModelSettingsPanel groups={['routing', 'tokens', 'backends']} onComplete={onComplete} />,
+    );
     await screen.findByRole('heading', { name: 'Model routing' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
@@ -331,7 +338,7 @@ describe('ModelSettingsPanel', () => {
       }),
     );
 
-    renderPanel(<ModelSettingsPanel />);
+    renderPanel(<ModelSettingsPanel groups={['routing', 'tokens', 'backends']} />);
     await screen.findByRole('heading', { name: 'Model routing' });
 
     fireEvent.change(screen.getByLabelText('Primary base URL'), {
@@ -367,7 +374,7 @@ describe('ModelSettingsPanel', () => {
       }),
     );
 
-    renderPanel(<ModelSettingsPanel />);
+    renderPanel(<ModelSettingsPanel groups={['routing', 'tokens', 'backends']} />);
     await screen.findByRole('heading', { name: 'Model routing' });
 
     const resetButtons = screen.getAllByRole('button', { name: 'Reset' });
@@ -418,7 +425,7 @@ describe('ModelSettingsPanel', () => {
       }),
     );
 
-    renderPanel(<ModelSettingsPanel />);
+    renderPanel(<ModelSettingsPanel groups={['routing', 'tokens', 'backends']} />);
     await screen.findByRole('heading', { name: 'Model routing' });
 
     fireEvent.change(screen.getByLabelText('Primary base URL'), {
@@ -446,7 +453,9 @@ describe('ModelSettingsPanel', () => {
       vi.fn(() => getPromise),
     );
 
-    const { unmount } = renderPanel(<ModelSettingsPanel />);
+    const { unmount } = renderPanel(
+      <ModelSettingsPanel groups={['routing', 'tokens', 'backends']} />,
+    );
     unmount();
     await act(async () => {
       resolveGet?.(jsonResponse(SETTINGS_BODY));
@@ -466,7 +475,9 @@ describe('ModelSettingsPanel', () => {
       vi.fn(() => getPromise),
     );
 
-    const { unmount } = renderPanel(<ModelSettingsPanel />);
+    const { unmount } = renderPanel(
+      <ModelSettingsPanel groups={['routing', 'tokens', 'backends']} />,
+    );
     unmount();
     await act(async () => {
       rejectGet?.(new Error('boom'));
@@ -497,7 +508,7 @@ describe('ModelSettingsPanel', () => {
       }),
     );
 
-    renderPanel(<ModelSettingsPanel />);
+    renderPanel(<ModelSettingsPanel groups={['routing', 'tokens', 'backends']} />);
     const field = await screen.findByDisplayValue('4096');
     fireEvent.change(field, { target: { value: '8192' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
@@ -527,7 +538,7 @@ describe('ModelSettingsPanel', () => {
       }),
     );
 
-    renderPanel(<ModelSettingsPanel />);
+    renderPanel(<ModelSettingsPanel groups={['routing', 'tokens', 'backends']} />);
     const field = await screen.findByDisplayValue('4096');
     fireEvent.change(field, { target: { value: '8192' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));

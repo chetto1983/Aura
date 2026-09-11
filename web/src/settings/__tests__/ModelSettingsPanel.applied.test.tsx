@@ -88,7 +88,7 @@ describe('ModelSettingsPanel — application state and turn budget', () => {
 
   it('labels each field with how it applies and names the restart-bound rows in the banner', async () => {
     stubFetch();
-    renderPanel(<ModelSettingsPanel />);
+    renderPanel(<ModelSettingsPanel groups={['routing', 'tokens', 'backends']} />);
     await screen.findByRole('heading', { name: 'Token and turn budget' });
 
     const stepsField = screen.getByLabelText('Max steps per turn').closest('div.flex.min-h-32');

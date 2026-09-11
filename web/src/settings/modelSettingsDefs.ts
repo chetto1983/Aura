@@ -295,7 +295,3 @@ export const MODEL_SETTINGS_GROUPS: readonly ModelSettingsGroupDef[] = [
     tracked: [],
   },
 ];
-
-export const ALL_MODEL_GROUPS: readonly ModelSettingsGroup[] = MODEL_SETTINGS_GROUPS.map(
-  (group) => group.id,
-);

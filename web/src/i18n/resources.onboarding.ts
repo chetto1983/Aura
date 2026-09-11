@@ -116,10 +116,6 @@ export const onboardingEn = {
           label: 'About you',
           help: 'A handful of typed fields Aura saves straight to memory. All optional.',
         },
-        runtime: {
-          label: 'Model and token setup',
-          help: 'Choose cloud or local model routing, token budgets, and sidecar backends before Aura starts regular work.',
-        },
         route: {
           label: 'Model route',
           help: "Choose what Aura's model runs on: OpenRouter, with the management key Aura mints every other key from, or a local server.",
@@ -128,10 +124,6 @@ export const onboardingEn = {
           label: 'Telegram integration',
           help: 'Connect the Telegram bot Aura uses for the recovery link and chat channel, then scan the pairing QR.',
         },
-      },
-      runtime: {
-        save: 'Save and continue',
-        skip: 'Skip runtime setup',
       },
       route: {
         save: 'Save and continue',
@@ -282,10 +274,6 @@ export const onboardingIt = {
           label: 'Chi sei',
           help: 'Pochi campi che Aura salva direttamente in memoria. Tutti facoltativi.',
         },
-        runtime: {
-          label: 'Configurazione modello e token',
-          help: 'Scegli modello cloud o locale, budget token e backend sidecar prima del lavoro regolare.',
-        },
         route: {
           label: 'Percorso del modello',
           help: 'Scegli su cosa gira il modello di Aura: OpenRouter, con la chiave di gestione da cui Aura crea tutte le altre, oppure un server locale.',
@@ -294,10 +282,6 @@ export const onboardingIt = {
           label: 'Integrazione Telegram',
           help: 'Collega il bot Telegram che Aura usa per il link di recupero e il canale chat, poi scansiona il QR di abbinamento.',
         },
-      },
-      runtime: {
-        save: 'Salva e continua',
-        skip: 'Salta configurazione runtime',
       },
       route: {
         save: 'Salva e continua',

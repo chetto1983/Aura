@@ -4,7 +4,6 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '../../i18n/i18n';
 import { ModelSettingsPanel } from '../ModelSettingsPanel';
-import type { ModelSettingsGroup } from '../modelSettingsDefs';
 
 // The routing pane's OpenRouter rows on the Cloud route: the management key an admin types, and
 // the monthly cap of the services key Aura mints from it. The services key itself is minted by
@@ -34,7 +33,7 @@ function requestURL(input: RequestInfo | URL): string {
   return input instanceof URL ? input.href : input.url;
 }
 
-function stubSettingsAPI(putPayload: (url: string) => unknown = () => ({ ok: true })): FetchCall[] {
+function stubSettingsAPI(): FetchCall[] {
   const calls: FetchCall[] = [];
   vi.stubGlobal(
     'fetch',
@@ -43,7 +42,7 @@ function stubSettingsAPI(putPayload: (url: string) => unknown = () => ({ ok: tru
       const method = init?.method ?? 'GET';
       const body = typeof init?.body === 'string' ? init.body : undefined;
       calls.push({ url, method, body });
-      const payload = method === 'PUT' ? putPayload(url) : ROUTING_LIST;
+      const payload = method === 'PUT' ? { ok: true } : ROUTING_LIST;
       return Promise.resolve(
         new Response(JSON.stringify(payload), {
           status: 200,
@@ -66,13 +65,9 @@ describe('ModelSettingsPanel OpenRouter rows', () => {
     vi.unstubAllGlobals();
   });
 
-  // The wizard mounts the panel with no `groups` prop at all, so its case passes none.
-  it.each<[string, { readonly groups?: readonly ModelSettingsGroup[] }]>([
-    ['the Settings routing pane', { groups: ['routing'] }],
-    ['the first-run wizard', {}],
-  ])('saves the services cap, then the management key, in %s', async (_view, props) => {
+  it('saves the services cap, then the management key, each as its own row', async () => {
     const calls = stubSettingsAPI();
-    await mount(<ModelSettingsPanel {...props} onComplete={vi.fn()} />);
+    await mount(<ModelSettingsPanel groups={['routing']} onComplete={vi.fn()} />);
 
     fireEvent.change(screen.getByLabelText(MANAGEMENT_KEY_LABEL), {
       target: { value: 'sk-or-v1-mgmt' },

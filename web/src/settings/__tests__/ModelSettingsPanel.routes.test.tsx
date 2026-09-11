@@ -79,7 +79,7 @@ describe('ModelSettingsPanel routes', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={client}>
-        <ModelSettingsPanel onComplete={vi.fn()} />
+        <ModelSettingsPanel groups={['routing', 'tokens', 'backends']} onComplete={vi.fn()} />
       </QueryClientProvider>,
     );
 

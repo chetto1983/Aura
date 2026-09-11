@@ -61,7 +61,7 @@ function renderPanel() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <ModelSettingsPanel />
+      <ModelSettingsPanel groups={['routing', 'tokens', 'backends']} />
     </QueryClientProvider>,
   );
 }
