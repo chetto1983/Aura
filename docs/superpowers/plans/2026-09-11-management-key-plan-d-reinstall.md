@@ -23,7 +23,8 @@ stack, driven through the UI.
 - Backups live in `D:\Backups\aura-2026-09-11\`, outside every volume.
 - The management key is asked of the operator in one line; it is never searched for, printed
   or written to a file in the repository.
-- The package is built from a clean clone of `master` (`npm pack`), not from the working tree.
+- The package comes from npm: tag `installer-v0.2.0`, published by CI. The operator runs it and
+  answers its questions; nothing is built locally or answered by a script.
 - The Aura image is `ghcr.io/chetto1983/aura:edge` published from a commit that contains plans
   A to C.
 
@@ -60,15 +61,18 @@ stack, driven through the UI.
 ### Task 3: Install through the package
 
 - [x] **Step 1:** wait for `Publish Aura edge image` green on the pushed commit (06a64e054).
-- [x] **Step 2:** in WSL, `npm install -g` the packed `create-aura-appliance-0.2.0.tgz` and run
-  `create-aura-appliance --mode local` under `expect`: install dir `/opt/aura`, appliance no,
-  gVisor no, confirm yes. The run must end on the wizard URL; the output stays in WSL.
-  WSL needed Node 22 (22.23.2, official tarball, SHA-256 checked) and makeself; `wsl.exe`
-  without `-e` hands the command to the default shell, which expands `$var` before the inner
-  bash sees it.
-- [x] **Step 3:** `docker compose -f /opt/aura/compose.yaml ps` all healthy.
-  Measured: install exit 0; 16 containers healthy (observability included); `aura` runs
-  `ghcr.io/chetto1983/aura:edge` at revision `06a64e054`; Caddy publishes 443.
+- [x] **Step 2:** push tag `installer-v0.2.0`; `Verify and publish create-aura-appliance`
+  publishes 0.2.0 to npm.
+- [ ] **Step 3:** in WSL the operator runs `npx create-aura-appliance@0.2.0 --mode local` and
+  answers its questions (install dir `/opt/aura`, appliance no, gVisor no). The run ends on the
+  wizard URL.
+- [ ] **Step 4:** `docker compose -f /opt/aura/compose.yaml ps` all healthy.
+
+A first install from a locally packed tgz, answered by `expect`, reached a healthy stack
+(install exit 0, 16 containers, `aura:edge` at `06a64e054`) and was torn down: it was not the
+path an operator takes. WSL keeps Node 22.23.2 (official tarball, SHA-256 checked); `wsl.exe`
+without `-e` hands the command to the default shell, which expands `$var` before the inner
+bash sees it.
 
 ### Task 4: The E2E (Definition of Done)
 
