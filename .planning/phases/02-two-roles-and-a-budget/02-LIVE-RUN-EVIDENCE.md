@@ -67,6 +67,12 @@ share one instance, and `serve.go` attaches the legs as soon as the provider ans
 unit tests cover it (wired / session-kill / unwired nil-skip), plus one that pins the shared
 instance the wiring depends on.
 
+Re-observed live the same day, on the fixed build. The appliance was updated to the edge image
+of `fd9261208` (running image digest `sha256:240428a4…`, confirmed against the published tag),
+and the witness was driven again: 1 passed, 27.7 s. `authula.users` held six rows before the
+run and six after, the newest still the pre-fix orphan of 14:29 — the identity created and
+removed by this run left no account behind, where the same run had left one an hour earlier.
+
 ## Where each 02-10 truth is proven
 
 | Truth from 02-10-PLAN.md | Verdict |
@@ -98,8 +104,6 @@ instance the wiring depends on.
   run cleans up, and a destructive approval means really destroying something on a deployment
   that is in daily use. Both paths are covered by automated tests, and both remain unproven
   live. The capability behind them, `governance.write`, IS proven live by the skill write.
-- **That the Authula fix works on the deployment.** It is proven by unit tests and by reading
-  the boot order; the live re-check waits for the next edge image.
 - **Provider-side cap enforcement beyond what the management-key spec measured** — a raised cap
   reaching OpenRouter in ~25 s is measured; OpenRouter's own refusal at the ceiling is not.
 - **What OpenRouter retains about a deleted key's consumption.** Unchanged from phase 01.
@@ -108,7 +112,8 @@ instance the wiring depends on.
 
 ## Score
 
-9.6 / 10. The substance of the phase is proven on a live deployment and the run earned its
-keep by finding a real defect in the very leg it was written to observe. It is not a 10: two of
-the four member activities were excluded by judgement rather than driven, and the fix the run
-produced has not yet been re-observed live.
+9.8 / 10. The substance of the phase is proven on a live deployment, the run earned its keep by
+finding a real defect in the very leg it was written to observe, and the fix was re-observed on
+the fixed build rather than argued from the diff. It is not a 10: two of the four member
+activities — the MCP install and the destructive approval — were excluded by judgement rather
+than driven, and that exclusion is a choice about a deployment in daily use, not a measurement.
