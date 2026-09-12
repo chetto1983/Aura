@@ -18,6 +18,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/approvalgrants"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/assets"
@@ -42,6 +43,10 @@ import (
 // chatEnv is the booted composition root shared by every chat subcommand: the
 // config, the open pool, the three Stores, and the Runner that drives the REPL.
 type chatEnv struct {
+	// deprovisioner is the ONE de-provisioning saga the daemon runs: the cockpit's removal
+	// route and the cron grace-window sweep are wired with the same instance, so the Authula
+	// legs serve attaches after boot (buildAuthDeps comes later) reach both.
+	deprovisioner         *agui.Deprovisioner
 	cfg                   *config.Config
 	pool                  *pgxpool.Pool
 	conv                  *conversations.Store

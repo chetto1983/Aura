@@ -4,18 +4,18 @@ milestone: v1.1.0
 milestone_name: Production Launch — Multi-Tenant
 current_phase: 02
 current_phase_name: Two Roles and a Budget
-status: executing
-stopped_at: Completed 02-09-PLAN.md
-last_updated: "2026-09-10T12:24:29.991Z"
-last_activity: 2026-09-10
-last_activity_desc: Phase 02 execution resumed (wave continue)
+status: complete
+stopped_at: Completed 02-10-PLAN.md
+last_updated: "2026-09-12T15:10:00.000Z"
+last_activity: 2026-09-12
+last_activity_desc: Phase 02 closed by the live two-role witness, which found and fixed an Authula orphan
 state_head: 0ea2656c30d0dd1dcaf48991e8842267df1acd01
 progress:
   total_phases: 7
-  completed_phases: 0
+  completed_phases: 2
   total_plans: 17
-  completed_plans: 16
-  percent: 0
+  completed_plans: 17
+  percent: 29
 ---
 
 # Project State
@@ -29,12 +29,15 @@ See: .planning/PROJECT.md (updated 2026-09-07)
 
 ## Current Position
 
-Phase: 02 (Two Roles and a Budget) — EXECUTING
-Plan: 1 of 10
-Status: Executing Phase 02
-Last activity: 2026-09-10 — Phase 02 execution resumed (wave continue)
+Phase: 02 (Two Roles and a Budget) — COMPLETE
+Plan: 10 of 10
+Status: Phase 02 closed 2026-09-12 by its live two-role witness
+Last activity: 2026-09-12 — the closing run measured the reverse saga plane by plane, found an
+Authula account outliving every other teardown, and the fix landed with it
+(.planning/phases/02-two-roles-and-a-budget/02-LIVE-RUN-EVIDENCE.md)
 
-Progress: [░░░░░░░░░░] 0% (milestone phase-completion — phase 01 itself is not yet marked closed)
+Progress: [###░░░░░░░] 29% (2 of 7 phases; phase 01 closed 2026-09-08 with its own live run
+evidence, phase 02 today)
 
 ## Milestone Shape
 

@@ -360,11 +360,14 @@ func sandboxProvisionerFor(router *usersandbox.SandboxRouter) agui.SandboxProvis
 // Deactivator). The owned Postgres conversation plane and the ArcadeDB
 // memory plane are both mandatory: deprovision refuses identity deletion unless each adapter
 // acknowledges a verified purge.
-// AuthulaDelete/Sessions/Jobs are left nil here because the Authula provider is assembled
-// after this seam — which means the cron grace-window sweep, this constructor's only
-// consumer, purges an identity WITHOUT removing its Authula user. `aura identity
-// {deactivate|purge}` adds those two legs on top of deprovisionDeps (identity_deprovision.go,
-// withAuthulaTeardown) and is currently the only path that leaves no Authula orphan.
+// AuthulaDelete/Sessions/Jobs are left nil HERE because the Authula provider is assembled
+// after this seam. They are not left nil for the run: serve.go attaches the two Authula legs
+// to this instance once buildAuthDeps has answered (SetAuthulaTeardown), and the instance is
+// memoized above so the cockpit's removal route and the cron grace-window sweep share it.
+// Until 2026-09-12 they did not arrive at all on the daemon path, and the live two-role run
+// measured the cost: six Authula users outliving identities the cockpit had removed, while
+// every other plane was clean. `aura identity {deactivate|purge}` adds the same two legs for
+// its own short-lived process (identity_deprovision.go, withAuthulaTeardown).
 // The identity FK cascade still drops grants, auth links,
 // object-store ownership, and the whole document catalog (aura.documents.identity_id is
 // ON DELETE CASCADE, migration 0025) — which is why no document leg is wired here.
@@ -374,7 +377,13 @@ func sandboxProvisionerFor(router *usersandbox.SandboxRouter) agui.SandboxProvis
 // writer added turns every de-provision into a failed identity_row step, AFTER the memory
 // database has already been dropped.
 func buildDeprovisioner(chat *chatEnv) *agui.Deprovisioner {
-	return agui.NewDeprovisioner(deprovisionDeps(chat))
+	if chat == nil {
+		return agui.NewDeprovisioner(agui.DeprovisionDeps{})
+	}
+	if chat.deprovisioner == nil {
+		chat.deprovisioner = agui.NewDeprovisioner(deprovisionDeps(chat))
+	}
+	return chat.deprovisioner
 }
 
 // deprovisionDeps is buildDeprovisioner's port set, split out so `aura identity

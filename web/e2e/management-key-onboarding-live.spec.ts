@@ -1,12 +1,26 @@
 import { randomUUID } from 'node:crypto';
-import { expect, test, type Browser, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
-import { sameOriginFetch, streamFrames } from './live';
+import {
+  createIdentity,
+  getJSON,
+  identities,
+  openIdentities,
+  removeIdentity,
+  runTurn,
+  setSpendingCap,
+  signInAs,
+  skipFirstRunSetup,
+} from './identities';
+import { sameOriginFetch } from './live';
 
 // The management-key design's Definition of Done (spec 2026-09-10, §Testing, E2E) on an installed
 // Aura whose first-run setup is done: the keys OpenRouter holds, a billed admin turn, the admin's
 // Credit panel, and a second identity minted at zero. The OpenRouter account is read with the
 // management key, which comes from the environment and is only ever sent to openrouter.ai.
+//
+// Driving the cockpit (create, credit, sign in as, remove an identity) lives in ./identities,
+// shared with the two-role witness.
 
 const runLive = process.env.AURA_E2E_LIVE_MANAGEMENT_KEY === '1';
 const managementKey = process.env.AURA_E2E_OPENROUTER_MANAGEMENT_KEY ?? '';
@@ -24,12 +38,6 @@ interface OpenRouterKey {
   readonly external_user?: string | null;
 }
 
-interface Identity {
-  readonly id: string;
-  readonly name: string;
-  readonly kind: string;
-}
-
 async function openRouter<T>(page: Page, path: string): Promise<T> {
   const response = await page.request.get(`${OPENROUTER_API}${path}`, {
     headers: { Authorization: `Bearer ${managementKey}` },
@@ -44,32 +52,6 @@ function activeKey(keys: readonly OpenRouterKey[], name: string): OpenRouterKey 
   return key;
 }
 
-async function getJSON<T>(page: Page, path: string): Promise<T> {
-  const response = await sameOriginFetch(page, path);
-  expect(response.status, `${path}: ${response.text}`).toBe(200);
-  return JSON.parse(response.text) as T;
-}
-
-async function identities(page: Page): Promise<readonly Identity[]> {
-  return (
-    (await getJSON<{ identities?: Identity[] }>(page, '/api/admin/identities')).identities ?? []
-  );
-}
-
-async function runTurn(page: Page, prompt: string): Promise<readonly Record<string, unknown>[]> {
-  const composer = page.getByRole('textbox', { name: 'Ask Aura' });
-  await expect(composer).toBeVisible({ timeout: 30_000 });
-  const responsePromise = page.waitForResponse(
-    (response) =>
-      new URL(response.url()).pathname === '/agent/run' && response.request().method() === 'POST',
-    { timeout: 300_000 },
-  );
-  await composer.fill(prompt);
-  await composer.press('Enter');
-  const response = await responsePromise;
-  return streamFrames(await response.text());
-}
-
 async function deleteCurrentConversation(page: Page): Promise<void> {
   const conversationID = new URL(page.url()).pathname.split('/c/')[1];
   if (conversationID === undefined || conversationID === '') return;
@@ -77,80 +59,6 @@ async function deleteCurrentConversation(page: Page): Promise<void> {
     method: 'DELETE',
   });
   expect([200, 204], response.text).toContain(response.status);
-}
-
-async function openIdentities(page: Page): Promise<void> {
-  await page.goto('/?settings=identities', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('button', { name: 'Create identity' })).toBeVisible({
-    timeout: 30_000,
-  });
-}
-
-async function signInAs(
-  browser: Browser,
-  baseURL: string,
-  email: string,
-  password: string,
-): Promise<Page> {
-  const context = await browser.newContext({
-    baseURL,
-    ignoreHTTPSErrors: true,
-    serviceWorkers: 'block',
-  });
-  const page = await context.newPage();
-  await page.addInitScript(() => {
-    window.localStorage.setItem('aura.language', 'en');
-  });
-  await page.goto('/login', { waitUntil: 'domcontentloaded' });
-  await page.getByLabel('Operator email').fill(email);
-  await page.getByLabel('Password', { exact: true }).fill(password);
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page).not.toHaveURL(/\/login(?:[?#]|$)/, { timeout: 30_000 });
-  return page;
-}
-
-async function skipFirstRunSetup(page: Page): Promise<void> {
-  const setup = page.getByRole('dialog', { name: 'Set up your profile' });
-  await expect(setup).toBeVisible({ timeout: 30_000 });
-  await setup.getByRole('button', { name: 'Skip profile setup' }).click();
-  await setup.getByRole('button', { name: 'Skip Telegram setup' }).click();
-  await setup.getByRole('button', { name: 'Done' }).click();
-  await expect(setup).toBeHidden();
-}
-
-async function createIdentity(page: Page, email: string, password: string): Promise<void> {
-  await openIdentities(page);
-  await page.getByRole('button', { name: 'Create identity' }).click();
-  const wizard = page.getByRole('dialog', { name: 'Create identity' });
-  await wizard.getByLabel('Operator email').fill(email);
-  await wizard.getByLabel('Initial password', { exact: true }).fill(password);
-  await wizard.getByLabel('Confirm initial password', { exact: true }).fill(password);
-  await wizard.getByLabel('Security question').fill('E2E recovery word');
-  await wizard.getByLabel('Security answer', { exact: true }).fill('e2e');
-  await wizard.getByRole('button', { name: 'Continue' }).click();
-  await expect(wizard.getByText('Starting credit')).toBeVisible();
-  await wizard.getByRole('button', { name: 'Create identity' }).click();
-  await expect(wizard.getByRole('heading', { name: 'Identity created' })).toBeVisible({
-    timeout: 120_000,
-  });
-  await wizard.getByRole('button', { name: 'Done' }).click();
-}
-
-async function removeIdentity(page: Page, email: string): Promise<void> {
-  await openIdentities(page);
-  await page.getByRole('button', { name: `Remove ${email}` }).click();
-  await page.getByLabel(`Type ${email} to confirm`).fill(email);
-  // The row swaps its Remove button for a spinner while the saga runs, so the button going
-  // away proves nothing: the route's own answer does.
-  const removal = page.waitForResponse(
-    (response) =>
-      response.request().method() === 'DELETE' &&
-      new URL(response.url()).pathname.startsWith('/api/admin/identities/'),
-    { timeout: 300_000 },
-  );
-  await page.getByRole('button', { name: 'Remove permanently' }).click();
-  expect((await removal).status()).toBe(200);
-  await expect(page.getByRole('listitem').filter({ hasText: email })).toHaveCount(0);
 }
 
 test.describe('live management-key onboarding', () => {
@@ -251,16 +159,10 @@ test.describe('live management-key onboarding', () => {
       });
       expect(routeWrite.status, routeWrite.text).toBe(403);
 
-      await openIdentities(page);
-      await page.getByRole('button', { name: `Show credit for ${memberEmail}` }).click();
-      await page.getByLabel('Spending cap').fill('0.50');
-      await page.getByRole('button', { name: 'Save cap' }).click();
-      // The advisory appears once the save answered: the store, the provider and the cached
-      // refusal are all updated by then. OpenRouter itself takes about 25s more to honour a
-      // raised limit, so the member's turn is retried until the provider lets it through.
-      await expect(page.getByText('Takes about 25 seconds to apply.')).toBeVisible({
-        timeout: 120_000,
-      });
+      // The save answers once the store, the provider and the cached refusal are updated.
+      // OpenRouter itself takes about 25s more to honour a raised limit, so the member's turn
+      // is retried below until the provider lets it through.
+      await setSpendingCap(page, memberEmail, '0.50');
       expect((await openRouter<OpenRouterKey>(page, `/keys/${memberKey.hash}`)).limit).toBe(0.5);
       await expect(async () => {
         await memberPage.goto('/', { waitUntil: 'domcontentloaded' });

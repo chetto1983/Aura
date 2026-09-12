@@ -398,6 +398,17 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 			slog.Warn("aura serve: onboarding provisioning authula unavailable", "err", authulaErr)
 		}
 	}
+	// The de-provisioning saga is built before this provider exists (the cron dispatch, then
+	// the AG-UI server, then buildAuthDeps), so its two Authula legs arrive here — on the one
+	// memoized instance the cockpit's removal route and the grace-window sweep share. Without
+	// them a removed identity outlived its Authula account: measured on the live stack
+	// 2026-09-12, six such accounts, while every other plane had been torn down.
+	if onboardingAuthulaProvider != nil {
+		if core := onboardingAuthulaProvider.CoreServices(); core != nil {
+			teardown := authulaTeardownAdapter{core: core}
+			buildDeprovisioner(chat).SetAuthulaTeardown(teardown, teardown)
+		}
+	}
 	// Wire the Phase-28 onboarding wizard + provisioning saga (ONBD-01/02). Built
 	// best-effort over the daemon's existing seams (the identity Store for the capability
 	// picker + the aura-leg write, the Authula provider's CoreServices for Leg B, the

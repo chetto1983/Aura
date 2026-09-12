@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/chetto1983/aura/internal/identity"
@@ -178,11 +179,43 @@ type DeprovisionDeps struct {
 // across identities (each call is keyed on its own identity id / saga id).
 type Deprovisioner struct {
 	deps DeprovisionDeps
+	// authula guards the two ports the daemon can only supply after this saga is built.
+	// `aura serve` wires the cron dispatch and the AG-UI server before buildAuthDeps, so
+	// both consumers hold the saga while the Authula provider still does not exist; the
+	// write happens once, on the boot goroutine, and the reads happen on many afterwards.
+	authula sync.RWMutex
 }
 
 // NewDeprovisioner assembles the saga over the supplied reverse-leg ports.
 func NewDeprovisioner(d DeprovisionDeps) *Deprovisioner {
 	return &Deprovisioner{deps: d}
+}
+
+// SetAuthulaTeardown supplies the two reverse legs whose provider is assembled after this
+// saga is built: the session kill that blocks login on Deactivate, and the user delete that
+// keeps a removed identity from outliving its account on Purge. Until it is called each leg
+// nil-skips — which is what left six Authula users behind identities the cockpit had already
+// removed (measured on the live stack 2026-09-12; every other plane was clean). Call it
+// during boot, before the daemon serves: the ports are read under the same lock afterwards.
+func (d *Deprovisioner) SetAuthulaTeardown(sessions SessionTerminator, deleter AuthulaUserDeleter) {
+	if d == nil {
+		return
+	}
+	d.authula.Lock()
+	defer d.authula.Unlock()
+	d.deps.Sessions, d.deps.AuthulaDelete = sessions, deleter
+}
+
+func (d *Deprovisioner) sessionTerminator() SessionTerminator {
+	d.authula.RLock()
+	defer d.authula.RUnlock()
+	return d.deps.Sessions
+}
+
+func (d *Deprovisioner) authulaDeleter() AuthulaUserDeleter {
+	d.authula.RLock()
+	defer d.authula.RUnlock()
+	return d.deps.AuthulaDelete
 }
 
 func (d *Deprovisioner) graceWindow() time.Duration {
@@ -213,8 +246,8 @@ func (d *Deprovisioner) Deactivate(ctx context.Context, identityID string) error
 				return err
 			}
 		}
-		if d.deps.Sessions != nil && target.AuthulaUserID != "" {
-			if err := d.deps.Sessions.KillSessions(ctx, target.AuthulaUserID); err != nil {
+		if sessions := d.sessionTerminator(); sessions != nil && target.AuthulaUserID != "" {
+			if err := sessions.KillSessions(ctx, target.AuthulaUserID); err != nil {
 				return err
 			}
 		}
@@ -325,9 +358,9 @@ func (d *Deprovisioner) Purge(ctx context.Context, target DeprovisionTarget) err
 			return err
 		}
 	}
-	if d.deps.AuthulaDelete != nil && target.AuthulaUserID != "" {
+	if deleter := d.authulaDeleter(); deleter != nil && target.AuthulaUserID != "" {
 		if err := run.step(ctx, sagaStepAuthula, func(ctx context.Context) error {
-			return d.deps.AuthulaDelete.DeleteUser(ctx, target.AuthulaUserID)
+			return deleter.DeleteUser(ctx, target.AuthulaUserID)
 		}); err != nil {
 			return err
 		}
