@@ -47,15 +47,23 @@ Measured on this PC (Windows 11, WSL 2.7.12, kernel 6.18.33.2, Ubuntu 26.04 LTS 
   | 8 such chunks in one request | 19.3 s | 0.71 s |
 
   Cosine between the CPU and GPU vectors: 0.999574 (query), 0.999804 (chunk); 768 dimensions;
-  about 1.2 GB of VRAM. Cause: `detect_embed_backend` picks CUDA only when an NVIDIA container
-  hook is on the distro's PATH (`scripts/install.sh:546-560`), and none is; the `nvidia` runtime
-  lives inside Docker Desktop. Once written, `AURA_EMBED_BACKEND` is never detected again
-  (`scripts/install.sh:568`).
+  about 1.2 GB of VRAM. Two causes, both in `detect_embed_backend`
+  (`scripts/install.sh:546-560`): it picks CUDA only when an NVIDIA container hook is on PATH,
+  and none is in the distro (the `nvidia` runtime lives inside Docker Desktop); and it looks for
+  `nvidia-smi` on PATH, while WSL maps it into `/usr/lib/wsl/lib`, which a login shell has on
+  PATH and `sudo`'s `secure_path` does not — under `sudo`, as the installer runs,
+  `command -v nvidia-smi` finds nothing. Once written, `AURA_EMBED_BACKEND` is never detected
+  again (`scripts/install.sh:568`).
 - **A WSL distro does not stay up on systemd alone.** A throwaway distro with `systemd=true` and a
   service appending a timestamp every 5 s: the last `wsl.exe` session closed at +21 s, the service
   wrote its last line at +36 s, and the distro stayed down through +335 s. `vmIdleTimeout`
   defaults to 60 s ([wsl-config](https://learn.microsoft.com/en-us/windows/wsl/wsl-config)).
   Docker Desktop keeps WSL up today; without it something must hold a session.
+- **Aura answers on the LAN today because Docker Desktop publishes on Windows.** `aura-caddy`
+  publishes `0.0.0.0:443` and Windows listens on `0.0.0.0:443`; every other port is bound to
+  `127.0.0.1`. Under WSL's default NAT mode a port opened inside the distro reaches Windows
+  `localhost` only; mirrored mode puts it on the Windows interfaces, and inbound LAN traffic then
+  needs a Hyper-V firewall rule ([WSL networking](https://learn.microsoft.com/en-us/windows/wsl/networking)).
 - **The installer already covers part of this.** `install_docker` installs Docker Engine through
   `get.docker.com` when `docker` is absent (`scripts/install.sh:201-236`), and Docker Engine
   supports Ubuntu 26.04 LTS ([install on Ubuntu](https://docs.docker.com/engine/install/ubuntu/)).
@@ -83,6 +91,12 @@ Measured on this PC (Windows 11, WSL 2.7.12, kernel 6.18.33.2, Ubuntu 26.04 LTS 
    hook, so detection answers `cuda` wherever the GPU is real.
 4. The stack's data is carried across by volume, with a per-file checksum proof.
 5. A Windows scheduled task started at boot, with no one logged on, holds the distro up.
+6. WSL runs in mirrored networking mode with a Hyper-V firewall rule for TCP 443 only, so the
+   LAN keeps reaching Caddy and nothing else.
+
+Decisions 2 and 3 are the product: they hold on any Debian or Ubuntu host, WSL or a native
+server. Decisions 1, 4, 5 and 6 are this PC; a native Ubuntu Server already has Docker Engine,
+starts `docker.service` and `aura.service` from systemd and binds 443 on its own interfaces.
 
 ## Installer
 
@@ -104,7 +118,8 @@ In `scripts/install.sh`:
   prints a WARN and the detection falls to Vulkan or CPU as today. `runsc install` and
   `nvidia-ctk runtime configure` both edit `/etc/docker/daemon.json`; after both,
   `docker info` must list `runsc` and `nvidia`.
-- `detect_embed_backend` is unchanged.
+- `detect_embed_backend` finds `nvidia-smi` on PATH or, failing that, at
+  `/usr/lib/wsl/lib/nvidia-smi`; the hook rule is unchanged.
 - `--gvisor` help text and the `create-aura` question (`packages/create-aura/src/messages/{it,en}.ts`)
   say that it puts the Aura daemon container under gVisor.
 
@@ -126,17 +141,21 @@ Every step stops the migration if its check fails; nothing is uninstalled before
    anonymous volumes.
 2. **Verify.** Every archive reads end to end and its file count matches its manifest;
    `pg_restore -l` reads the dump.
-3. **Remove Docker Desktop.** `winget uninstall Docker.DockerDesktop` (the operator accepts the
-   UAC prompt), then `wsl --shutdown`. `wsl -l -v` no longer lists `docker-desktop`, and `docker`
-   no longer resolves in the distro.
+3. **Remove Docker Desktop, mirror the network.** `winget uninstall Docker.DockerDesktop` (the
+   operator accepts the UAC prompt). Add `networkingMode=mirrored` under `[wsl2]` in
+   `%UserProfile%\.wslconfig`, and, from an elevated PowerShell,
+   `New-NetFirewallHyperVRule -Name AuraHttps -DisplayName "Aura HTTPS" -Direction Inbound -VMCreatorId '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -Protocol TCP -LocalPorts 443`.
+   Then `wsl --shutdown`. `wsl -l -v` no longer lists `docker-desktop`, `docker` no longer
+   resolves in the distro, and `wslinfo --networking-mode` answers `mirrored`.
 4. **Install.** Remove `AURA_EMBED_BACKEND`, `COMPOSE_FILE`, `AURA_EMBED_IMAGE` and `AURA_EMBED_NGL`
    from `.env` so detection runs again. Claude runs `npx create-aura-appliance` in local mode.
    It installs Docker Engine, runsc and the NVIDIA toolkit, keeps every other `.env` value,
    detects `cuda`, pulls the images and brings the stack up on empty volumes.
-5. **Restore.** `docker compose down` (volumes kept). `docker volume create` the box volume.
-   Empty each carried volume and extract its archive into it. `docker compose up -d --wait`.
-6. **Prove.** Recompute every manifest on the restored volumes; each must equal its backup
-   manifest file for file.
+5. **Restore.** `docker compose down` (volumes kept). `docker volume create` every carried
+   volume (a no-op for those compose already made). Empty each and extract its archive into it.
+6. **Prove, then start.** Recompute every manifest on the restored volumes, before anything
+   starts and writes to them; each must equal its backup manifest file for file. Then
+   `docker compose up -d --wait`.
 
 ## Start at boot
 
@@ -155,7 +174,8 @@ On a real reboot of the PC:
 
 1. The stack's containers started before the operator's login (their `StartedAt` precedes the
    logon event), all healthy, none exited 127.
-2. `https://localhost` answers from Windows.
+2. `https://localhost` answers from Windows, and `https://<the PC's LAN address>` answers from
+   another machine on the LAN (the Synology NAS at 192.168.1.15, over SSH).
 3. `docker run --rm --runtime=runsc --entrypoint true <sandbox image>` succeeds.
 4. The embedding sidecar runs `llama.cpp:server-cuda`, logs its layers offloaded to CUDA, and a
    1,927-token chunk embeds in under 200 ms.
