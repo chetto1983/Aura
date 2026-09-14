@@ -403,6 +403,7 @@ func executeCLIChild(ctx context.Context, args []string, stdout, stderr io.Write
 	}
 	command := exec.CommandContext(ctx, executable, args...) //nolint:gosec // executable is the current Aura binary; args are the already-parsed CLI invocation
 	command.Env = append(os.Environ(), cliIdempotencyChildEnv+"=1")
+	command.Stdin = os.Stdin
 	command.Stdout = stdout
 	command.Stderr = stderr
 	if err := command.Run(); err != nil {

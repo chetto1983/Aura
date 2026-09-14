@@ -58,3 +58,34 @@ context-blocked runner, waits until the turn is open, disconnects, closes its ow
 HTTP client, and checks remaining goroutines with goleak. The corrected test
 passed 50 consecutive race runs and the full AG-UI race suite. Production SSE
 behavior is unchanged.
+
+## Appliance verification
+
+The shipped updater migrated the existing appliance environment automatically:
+`AURA_PROFILE=single_user_hardened`, `AURA_MUSR_ISOLATION=true`. Configuration
+validation returned no errors and `/readyz` returned ready with no reasons. The
+old unreferenced global uv/npm/pip volumes were removed; the workspace was retained.
+The update timer is active. The live image subsequently advanced to `605a9d8fa`.
+
+On 2026-09-14 the real operator agent, through `aura shell`, called `shell_exec`
+and successfully wrote a unique marker into all three package caches. Docker
+inspection confirmed each mount source includes the operator identity, alongside
+its existing workspace. The independent verifier read back all three markers in
+exactly one box and removed them. The agent reported exit code 0. This is a real
+model/tool/isolated-container check, not a readiness-only claim.
+
+`aura chat new` exposed a separate stdin defect: its idempotency subprocess reached
+the prompt and exited on EOF even with supplied input or a TTY. The executor now
+inherits `os.Stdin`; a real two-process regression failed before the fix (zero
+bytes instead of two lines). `aura shell` did not traverse the defective executor.
+
+The clean disposable database coverage gate passed **39,884/45,579 = 87.5%**, with
+the package-local policy satisfied. This is separate from the native Docker
+coverage denominator above. All six workflows on `605a9d8fa` passed, including CI,
+Skills, CodeQL, package verification and both image publication workflows.
+
+Installer tag `installer-v0.2.1` names that verified revision. Release workflow
+34841610637 passed Linux and Windows verification and published npm 0.2.1 with
+provenance. The independently downloaded public tarball starts its CLI, passes
+makeself integrity checks, contains byte-identical posture/environment helpers,
+and migrates an existing dev fixture while preserving its other values.
