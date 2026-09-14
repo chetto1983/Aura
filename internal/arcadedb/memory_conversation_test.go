@@ -2,6 +2,7 @@ package arcadedb
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -142,6 +143,80 @@ func TestConversationProjectionClosesReasoningInitiatorEdge(t *testing.T) {
 		if got := params[name]; got != want {
 			t.Errorf("link bound %s = %v, want %v", name, got, want)
 		}
+	}
+}
+
+// The reconciler replays EVERY projected turn once a minute (NewDeleteReconciler in
+// cmd/aura/chat_boot.go), so embedding a turn whose content and vector are already stored
+// made the sidecar's load grow with the whole conversation history rather than with what
+// changed. Measured 2026-09-14 on the appliance: the same four turns re-embedded every
+// ~60 s, queued on the sidecar's single slot between the passages of a document ingest.
+func TestConversationProjectionReplayEmbedsOnlyWhatChanged(t *testing.T) {
+	const content = "Remember the blue notebook"
+	storedWithVector := func(hash string) string {
+		return `{"result":[{"turn_seq":1,"content_hash":"` + hash + `"}]}`
+	}
+	older := storedWithVector(conversationContentHash("an older wording"))
+	tests := []struct {
+		name         string
+		stored       string
+		embedderDown bool
+		wantEmbeds   int
+		wantWritten  bool
+		wantRemoved  bool
+	}{
+		{"unchanged turn keeps its stored vector", storedWithVector(conversationContentHash(content)), false, 0, false, false},
+		{"edited turn is embedded again", older, false, 1, true, false},
+		{"turn stored without a vector is embedded", `{"result":[]}`, false, 1, true, false},
+		// Before this check a sidecar outage of one minute removed the vector of every turn
+		// in the history, because the replay treated "could not embed now" as "stale".
+		{"embedder down keeps a vector that still matches", storedWithVector(conversationContentHash(content)), true, 0, false, false},
+		{"embedder down still clears a vector of older content", older, true, 1, false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			embedder := &stubEmbedder{vectors: [][][]float64{{vectorOf(1)}}}
+			if tt.embedderDown {
+				embedder.err = errors.New("sidecar down")
+			}
+			client, requests := routedClient(t, func(request recordedRequest) testResponse {
+				statement, _ := request.Payload["command"].(string)
+				if strings.HasPrefix(statement, "SELECT") && strings.Contains(statement, "embedding IS NOT NULL") {
+					return testResponse{Body: tt.stored}
+				}
+				return testResponse{Body: `{"result":[]}`}
+			})
+			client.WithEmbedder(embedder)
+			projection := ConversationProjection{
+				IdentityID: "identity-a", ConversationID: "conversation-1",
+				Turns: []ConversationTurnProjection{{
+					IdentityID: "identity-a", ConversationID: "conversation-1", Seq: 1,
+					Role: "user", Content: content, ContentHash: conversationContentHash(content),
+					OccurredAt: time.Date(2026, 9, 14, 6, 0, 0, 0, time.UTC),
+					SourceRef:  "postgres://conversation/conversation-1/turn/1",
+				}},
+			}
+			if err := client.ApplyConversationProjection(context.Background(), projection); err != nil {
+				t.Fatalf("ApplyConversationProjection: %v", err)
+			}
+			if len(embedder.calls) != tt.wantEmbeds {
+				t.Fatalf("embedder called %d times, want %d", len(embedder.calls), tt.wantEmbeds)
+			}
+			var wroteTurn, wroteVector, removedVector bool
+			for _, request := range *requests {
+				statement, _ := request.Payload["command"].(string)
+				wroteTurn = wroteTurn || strings.Contains(statement, "content_hash = :content_hash")
+				wroteVector = wroteVector || strings.Contains(statement, "embedding = :embedding")
+				removedVector = removedVector || strings.Contains(statement, "REMOVE embedding")
+			}
+			if !wroteTurn {
+				t.Fatal("replay no longer writes the turn it exists to repair")
+			}
+			if wroteVector != tt.wantWritten || removedVector != tt.wantRemoved {
+				t.Fatalf("vector written=%v removed=%v, want written=%v removed=%v",
+					wroteVector, removedVector, tt.wantWritten, tt.wantRemoved)
+			}
+		})
 	}
 }
 

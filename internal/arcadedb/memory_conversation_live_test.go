@@ -51,6 +51,48 @@ func TestConversationProjectionLive_RestartGapAndReplay(t *testing.T) {
 	}
 }
 
+type countingEmbedder struct{ texts int }
+
+func (e *countingEmbedder) Embed(ctx context.Context, texts []string) ([][]float64, error) {
+	e.texts += len(texts)
+	return constantEmbedder{value: 1}.Embed(ctx, texts)
+}
+
+// The unit test proves the decision; this proves the query it rests on. `embedding IS NOT
+// NULL` must hold for a stored vector and stop holding once REMOVE has cleared it, or a turn
+// whose vector was lost would never be embedded again.
+func TestConversationProjectionLive_ReplayEmbedsOnlyWhatChanged(t *testing.T) {
+	client := conversationProjectionLiveClient(t)
+	embedder := &countingEmbedder{}
+	client.WithEmbedder(embedder)
+	ctx := context.Background()
+	scope := map[string]any{"identity_id": "identity-a", "conversation_id": "conversation-replay"}
+	apply := func(content string, wantTexts int) {
+		t.Helper()
+		if err := client.ApplyConversationProjection(ctx,
+			liveConversationProjection("identity-a", "conversation-replay", 1, content)); err != nil {
+			t.Fatalf("ApplyConversationProjection(%q): %v", content, err)
+		}
+		if embedder.texts != wantTexts {
+			t.Fatalf("after %q the embedder saw %d texts, want %d", content, embedder.texts, wantTexts)
+		}
+		rows, err := client.Query(ctx, "SELECT count(*) AS n FROM ConversationTurn"+
+			" WHERE identity_id = :identity_id AND conversation_id = :conversation_id AND embedding IS NOT NULL", scope)
+		if err != nil || len(rows) != 1 || rowInt(rows[0], "n") != 1 {
+			t.Fatalf("after %q the turn has no stored vector: rows=%+v err=%v", content, rows, err)
+		}
+	}
+
+	apply("replayamber", 1)
+	apply("replayamber", 1)
+	apply("replaycobalt", 2)
+	if _, err := client.Command(ctx, "UPDATE ConversationTurn REMOVE embedding"+
+		" WHERE identity_id = :identity_id AND conversation_id = :conversation_id", scope); err != nil {
+		t.Fatalf("clear stored vector: %v", err)
+	}
+	apply("replaycobalt", 3)
+}
+
 func TestConversationProjectionLive_EditReplacesDerivedContent(t *testing.T) {
 	client := conversationProjectionLiveClient(t)
 	if err := client.ApplyConversationProjection(context.Background(),

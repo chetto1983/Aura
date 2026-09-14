@@ -113,6 +113,9 @@ const upsertConversationTurnStatement = "UPDATE " + conversationTurnType +
 const upsertConversationTurnWhere = " UPSERT RETURN AFTER WHERE identity_id = :identity_id" +
 	" AND conversation_id = :conversation_id AND turn_seq = :turn_seq"
 
+const storedTurnVectorsStatement = "SELECT turn_seq, content_hash FROM " + conversationTurnType +
+	" WHERE identity_id = :identity_id AND conversation_id = :conversation_id AND embedding IS NOT NULL"
+
 const createHasTurnStatement = "CREATE EDGE " + hasTurnEdgeType +
 	" FROM (SELECT FROM " + conversationVertexType +
 	" WHERE identity_id = :identity_id AND conversation_id = :conversation_id)" +
@@ -147,6 +150,10 @@ func (c *Client) ApplyConversationProjection(ctx context.Context, projection Con
 	if _, err := c.Command(ctx, upsertConversationProjectionStatement, params); err != nil {
 		return fmt.Errorf("arcadedb: upsert conversation projection: %w", err)
 	}
+	embedded, err := c.storedTurnVectorHashes(ctx, projection)
+	if err != nil {
+		return err
+	}
 	for _, turn := range projection.Turns {
 		turnParams := map[string]any{
 			"identity_id": turn.IdentityID, "conversation_id": turn.ConversationID,
@@ -155,16 +162,21 @@ func (c *Client) ApplyConversationProjection(ctx context.Context, projection Con
 			"occurred_at":  turn.OccurredAt.UTC().Format(time.RFC3339Nano),
 			"source_ref":   turn.SourceRef,
 		}
+		// The reconciler replays every turn once a minute: a vector already stored for
+		// this exact content is kept, so the sidecar only ever embeds what changed.
+		keepVector := embedded[turn.Seq] == turn.ContentHash
 		statement := upsertConversationTurnStatement
-		if vector := c.embedStatement(ctx, turn.Content); vector != nil {
-			statement += ", embedding = :embedding"
-			turnParams["embedding"] = vector
+		if !keepVector {
+			if vector := c.embedStatement(ctx, turn.Content); vector != nil {
+				statement += ", embedding = :embedding"
+				turnParams["embedding"] = vector
+			}
 		}
 		statement += upsertConversationTurnWhere
 		if _, err := c.Command(ctx, statement, turnParams); err != nil {
 			return fmt.Errorf("arcadedb: upsert conversation turn %d: %w", turn.Seq, err)
 		}
-		if _, hasVector := turnParams["embedding"]; !hasVector {
+		if _, hasVector := turnParams["embedding"]; !hasVector && !keepVector {
 			if _, err := c.Command(ctx,
 				"UPDATE "+conversationTurnType+" REMOVE embedding"+
 					" WHERE identity_id = :identity_id AND conversation_id = :conversation_id AND turn_seq = :turn_seq",
@@ -203,6 +215,22 @@ func (c *Client) ApplyConversationProjection(ctx context.Context, projection Con
 		}
 	}
 	return nil
+}
+
+// storedTurnVectorHashes maps each turn of the conversation that already carries a vector
+// to the content_hash that vector was computed from.
+func (c *Client) storedTurnVectorHashes(ctx context.Context, projection ConversationProjection) (map[int]string, error) {
+	rows, err := c.Query(ctx, storedTurnVectorsStatement, map[string]any{
+		"identity_id": projection.IdentityID, "conversation_id": projection.ConversationID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("arcadedb: read stored conversation vectors: %w", err)
+	}
+	hashes := make(map[int]string, len(rows))
+	for _, row := range rows {
+		hashes[int(rowInt(row, "turn_seq"))] = rowString(row, "content_hash")
+	}
+	return hashes, nil
 }
 
 func validateConversationProjection(projection ConversationProjection) error {

@@ -56,6 +56,10 @@ func TestConversationProjectionTracer(t *testing.T) {
 		}
 		_ = json.Unmarshal(raw, &payload)
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v1/query/aura" && strings.Contains(payload.Command, "embedding IS NOT NULL") {
+			_, _ = io.WriteString(w, `{"result":[]}`) // a first projection finds no stored vector
+			return
+		}
 		if r.URL.Path == "/api/v1/query/aura" {
 			_, _ = io.WriteString(w, `{"result":[{"identity_id":"identity-a","conversation_id":"conversation-1","turn_seq":1,"role":"user","content":"Remember the blue notebook","content_hash":"`+contentHash+`","occurred_at":"2026-08-31T12:00:00Z","source_ref":"postgres://conversation/conversation-1/turn/1"}]}`)
 			return
