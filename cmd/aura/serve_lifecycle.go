@@ -18,24 +18,42 @@ type schedulerLifecycle interface {
 	Start(context.Context) error
 }
 
-func shutdownBackgroundShells(env *serveEnv) {
-	if env.shellCompletions != nil {
-		if env.toolHandles.BackgroundShells != nil {
-			env.toolHandles.BackgroundShells.SetCompletionHook(nil)
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if err := env.shellCompletions.Stop(ctx); err != nil {
-			slog.Warn("aura serve: background shell completion dispatcher shutdown", "err", err)
-		}
-		cancel()
+// backgroundStopTimeout bounds each join of background work at shutdown.
+const backgroundStopTimeout = 5 * time.Second
+
+// newServeCompletionDispatcher builds the daemon's one background-completion dispatcher and
+// installs it as the background shell completion hook. It is nil without the steer rail that
+// carries its wakes: shells then keep explicit polls, and completed video jobs stay undelivered
+// until a boot with the rail wakes them.
+func newServeCompletionDispatcher(ctx context.Context, chat *chatEnv) *backgroundCompletionDispatcher {
+	if chat.run == nil || chat.steer == nil {
+		return nil
 	}
-	if env.toolHandles.BackgroundShells == nil {
-		return
+	dispatcher := newBackgroundCompletionDispatcher(ctx, chat.run, chat.steer)
+	chat.toolHandles.BackgroundShells.SetCompletionHook(dispatcher.NotifyShell)
+	return dispatcher
+}
+
+// shutdownBackgroundWork stops, in order, the work that starts agent turns on its own: video job
+// recovery, then the watcher and its supervisors, then the completion dispatcher and its wakes,
+// then the background shells. The dispatcher closes before the shells are killed because a
+// running shell keeps the completion hook it started with, so killing it first would wake its
+// conversation with a completion that shutdown itself produced.
+func shutdownBackgroundWork(env *serveEnv) {
+	env.mediaRecovery.Stop()
+	if env.mediaWatcher != nil {
+		stopBackground("video job watcher", env.mediaWatcher.Stop)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	stopBackground("background completion dispatcher", env.backgroundCompletions.Stop)
+	env.toolHandles.BackgroundShells.SetCompletionHook(nil)
+	stopBackground("background shells", env.toolHandles.BackgroundShells.Shutdown)
+}
+
+func stopBackground(component string, stop func(context.Context) error) {
+	ctx, cancel := context.WithTimeout(context.Background(), backgroundStopTimeout)
 	defer cancel()
-	if err := env.toolHandles.BackgroundShells.Shutdown(ctx); err != nil {
-		slog.Warn("aura serve: background shell shutdown", "err", err)
+	if err := stop(ctx); err != nil {
+		slog.Warn("aura serve: background work shutdown", "component", component, "err", err)
 	}
 }
 

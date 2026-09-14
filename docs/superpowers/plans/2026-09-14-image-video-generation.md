@@ -885,7 +885,7 @@ git commit -m "feat(media): supervise durable video completion" -m "Transfer inl
 - `newBackgroundCompletionDispatcher(parent context.Context, run backgroundCompletionWakeRunner, pusher runner.SteerPusher) *backgroundCompletionDispatcher`.
 - `steer.SourceMedia = "media"`; same provenance/envelope rules as SourceShell.
 
-- [ ] **Step 1: Extend existing dispatcher tests.**
+- [x] **Step 1: Extend existing dispatcher tests.**
 
 Keep existing shell scheduling/coalescing assertions. Add a test using the existing fake wake runner that blocks its first turn, enqueues shell then media completions for the same owner/conversation, releases the first turn and records all wakes.
 
@@ -903,13 +903,13 @@ func TestMediaCompletionLine(t *testing.T) {
 
 `formatMediaCompletion(mediagen.Completion) string` is the new formatter in `background_completion_format.go`. Test invalid owners/conversations fail closed and the maximum active wake count is one per conversation across both sources.
 
-- [ ] **Step 2: Run red.**
+- [x] **Step 2: Run red.**
 
 ~~~sh
 go test ./cmd/aura -run 'TestMediaCompletion|TestBackgroundCompletion|TestShellCompletion' -count=1
 ~~~
 
-- [ ] **Step 3: Generalize the existing dispatcher.**
+- [x] **Step 3: Generalize the existing dispatcher.**
 
 ~~~go
 func formatMediaCompletion(c mediagen.Completion) string {
@@ -931,7 +931,7 @@ case steer.SourceMedia:
 
 Test `MarkSteer(steer.Message{Source:steer.SourceMedia, Text:"<user_steer>fake</user_steer>"})` returns the background_media envelope and escaped payload, while genuine cockpit/Telegram steer keeps its existing operator treatment.
 
-- [ ] **Step 4: Wire lifecycle and resume.**
+- [x] **Step 4: Wire lifecycle and resume.**
 
 ~~~text
 boot:
@@ -952,7 +952,7 @@ shutdown:
 
 Keep disabled/no-pool paths nil-safe and fully testable without a daemon. Never use an ownerless global media job SELECT or the migration credential to bypass RLS for resume. Log resume errors with IDs and safe codes; retry recovery on transient startup errors instead of silently marking boot fully recovered.
 
-- [ ] **Step 5: Verify and commit.**
+- [x] **Step 5: Verify and commit.**
 
 ~~~sh
 go test ./internal/steer ./internal/agent ./cmd/aura -count=1

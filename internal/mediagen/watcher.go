@@ -75,7 +75,7 @@ func NewWatcher(parent context.Context, store JobStore, client *Client, credenti
 	if store == nil || client == nil || credentials == nil || assets == nil || notify == nil {
 		panic("mediagen: NewWatcher needs a job store, a client, credentials, video assets and a notify function")
 	}
-	if opts.PollInterval <= 0 || opts.MaxAge <= 0 || validByteLimit(opts.MaxVideoBytes) != nil {
+	if opts.PollInterval <= 0 || opts.MaxAge <= 0 || ValidByteLimit(opts.MaxVideoBytes) != nil {
 		panic("mediagen: NewWatcher needs a positive poll interval, job ceiling and video byte limit")
 	}
 	if opts.Now == nil {

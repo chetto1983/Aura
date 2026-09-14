@@ -147,6 +147,10 @@ func runServe(args []string) {
 	if env.liveMCP != nil {
 		env.liveMCP.StartReconnect(ctx, env.cfg, env.pool)
 	}
+	// Detached video jobs rejoin their watcher before the channels start and before the HTTP
+	// listener serves: Resume must precede any tool call that tracks the same owner's jobs.
+	env.mediaRecovery.SweepNow(ctx)
+	env.mediaRecovery.Start(ctx)
 
 	// The channels Registry (Telegram) + the setup wizard server (:9081) mount as
 	// fail-soft siblings of the AG-UI gateway: a failed channel or a taken setup
@@ -171,13 +175,7 @@ func runServe(args []string) {
 	// Background-shell TTL reaper (MUSR-04): bounds runaway background jobs on the same
 	// work ctx as the sweeper; the drain's BackgroundShells.Shutdown joins it. A disabled
 	// TTL / nil registry launches no goroutine.
-	if env.toolHandles.BackgroundShells != nil {
-		if env.steer != nil {
-			env.shellCompletions = newShellCompletionDispatcher(ctx, env.run, env.steer)
-			env.toolHandles.BackgroundShells.SetCompletionHook(env.shellCompletions.Notify)
-		}
-		env.toolHandles.BackgroundShells.StartReaper(ctx)
-	}
+	env.toolHandles.BackgroundShells.StartReaper(ctx)
 
 	slog.Info("aura serve: scheduler daemon started", "tick", "running")
 	// Start blocks until lifecycleCtx is cancelled (SIGINT/SIGTERM or the in-app restart)
@@ -190,7 +188,7 @@ func runServe(args []string) {
 			slog.Warn("aura serve: private metrics shutdown", "err", err)
 		}
 		metricsCancel()
-		shutdownBackgroundShells(env)
+		shutdownBackgroundWork(env)
 
 		// Bounded in-flight turn drain (O-06/AP-17): the signal stopped NEW work, but a
 		// turn already mid-stream must reach its terminal frame rather than being hard-
@@ -280,7 +278,10 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	if chat.toolHandles.SendFile != nil {
 		chat.toolHandles.SendFile.Assets = sendFileAssetAdapter{svc: chat.assets}
 	}
-	wireMediaTools(chat)
+	media := newMediaDeps(chat)
+	wireMediaTools(chat, media)
+	backgroundCompletions := newServeCompletionDispatcher(ctx, chat)
+	mediaWatcher := newMediaWatcher(ctx, media, backgroundCompletions.NotifyMedia)
 	// share_service_wiring.go: wires WEBSHARE-02/03 into HTTP, the D-15 delete cascade, and
 	// the share_expiry_sweep cron handler below — all three were previously unwired.
 	shareSvc, shareAPI := buildShareService(chat, objectStore)
@@ -536,6 +537,9 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		scheduler:                 scheduler,
 		httpSrv:                   httpSrv,
 		readiness:                 readinessState,
+		backgroundCompletions:     backgroundCompletions,
+		mediaWatcher:              mediaWatcher,
+		mediaRecovery:             newMediaJobRecovery(mediaWatcher, chat.identity),
 		channels:                  reg,
 		setupSrv:                  setupSrv,
 		sweeper:                   sweeper,

@@ -12,9 +12,9 @@ import (
 )
 
 // SteerInbox is the narrow consumer-side contract drainSteer needs. Defined
-// here rather than referencing *steer.Inbox directly so internal/agent stays
-// testable with a fake and never takes a hard dependency on the concrete
-// inbox type; *steer.Inbox satisfies it by construction (identical Drain
+// here rather than referencing *steer.PostgresStore directly so internal/agent
+// stays testable with a fake and never takes a hard dependency on the concrete
+// store; *steer.PostgresStore satisfies it by construction (identical Drain
 // signature) — no adapter needed.
 type SteerInbox interface {
 	Drain(conv string) []steer.Message
@@ -90,18 +90,23 @@ func scrubSteerLookalikes(content string) string {
 // words), while a worker's generated text is escaped like any other untrusted
 // output.
 //
-// Only the reserved non-operator sources take an untrusted branch. Every channel
-// in the tree pushes an operator source, and an unrecognised one keeps the
-// operator envelope byte-for-byte, so a new channel cannot fall into a runtime
-// branch by forgetting to name itself.
+// Only the reserved non-operator sources in runtimeSteerEnvelopes take the
+// untrusted envelope. Every channel in the tree pushes an operator source, and an
+// unrecognised one keeps the operator envelope byte-for-byte, so a new channel
+// cannot fall into a runtime branch by forgetting to name itself.
 func MarkSteer(m steer.Message) (marked, envelope string) {
-	switch m.Source {
-	case steer.SourceWorker:
-		return "\n" + wrapUntrustedToolOutput(m.Source, m.Text), "worker_report"
-	case steer.SourceShell:
-		return "\n" + wrapUntrustedToolOutput(m.Source, m.Text), "background_shell"
+	if envelope, ok := runtimeSteerEnvelopes[m.Source]; ok {
+		return "\n" + wrapUntrustedToolOutput(m.Source, m.Text), envelope
 	}
 	return wrapUserSteer(m.Text), "user_steer"
+}
+
+// runtimeSteerEnvelopes names the echo envelope of each source Aura itself generates: a
+// delegated worker's report, a background shell's exit and a detached video job's outcome.
+var runtimeSteerEnvelopes = map[string]string{
+	steer.SourceWorker: "worker_report",
+	steer.SourceShell:  "background_shell",
+	steer.SourceMedia:  "background_media",
 }
 
 // drainSteer delivers whatever is queued for this conversation into the

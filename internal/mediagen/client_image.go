@@ -119,7 +119,7 @@ func (c *Client) GenerateImage(ctx context.Context, baseURL, apiKey string, req 
 // size too: DecodedLen is an upper bound on the decoded length, not always
 // the exact value once padding is accounted for.
 func decodeCappedBase64(encoded string, maxBytes int64) ([]byte, error) {
-	if err := validByteLimit(maxBytes); err != nil {
+	if err := ValidByteLimit(maxBytes); err != nil {
 		return nil, err
 	}
 	if int64(base64.StdEncoding.DecodedLen(len(encoded))) > maxBytes {

@@ -120,12 +120,13 @@ func validProviderID(id string) (string, error) {
 	return id, nil
 }
 
-// validByteLimit rejects a maxBytes value that cannot bound anything: zero or
+// ValidByteLimit rejects a maxBytes value that cannot bound anything: zero or
 // negative accepts nothing, and math.MaxInt64 (readCapped's own maxBytes+1
-// sentinel for "unbounded") would defeat the point of bounding at all.
-// Shared by readCapped and decodeCappedBase64: both guard an external byte
-// count the same way before touching it.
-func validByteLimit(maxBytes int64) error {
+// sentinel for "unbounded") would defeat the point of bounding at all. Every
+// byte-bounded read in this package guards its limit with it, and NewWatcher
+// panics on a limit it rejects, so the composition root checks the boot
+// video ceiling with it before building a watcher.
+func ValidByteLimit(maxBytes int64) error {
 	if maxBytes <= 0 || maxBytes == math.MaxInt64 {
 		return &Error{Code: "too_large", Message: "Invalid media byte limit."}
 	}
@@ -137,7 +138,7 @@ func validByteLimit(maxBytes int64) error {
 // read and LoadReferences' owned-asset read: both bound an external byte
 // stream the same way.
 func readCapped(r io.Reader, maxBytes int64) ([]byte, error) {
-	if err := validByteLimit(maxBytes); err != nil {
+	if err := ValidByteLimit(maxBytes); err != nil {
 		return nil, err
 	}
 	data, err := io.ReadAll(io.LimitReader(r, maxBytes+1))

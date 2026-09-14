@@ -14,6 +14,7 @@ import (
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/gateway"
+	"github.com/chetto1983/aura/internal/mediagen"
 	"github.com/chetto1983/aura/internal/readiness"
 	"github.com/chetto1983/aura/internal/webauth"
 )
@@ -27,10 +28,16 @@ type serveEnv struct {
 	scheduler *cron.Scheduler
 	httpSrv   *http.Server // the AG-UI gateway (Slice 8b), mounted alongside the tick loop
 	readiness *readiness.Snapshot
-	// shellCompletions owns autonomous background-shell wake goroutines. It is
-	// installed only when the shared steer rail is live and stops before shell
-	// shutdown, so daemon termination never manufactures a fresh agent turn.
-	shellCompletions *shellCompletionDispatcher
+	// backgroundCompletions owns the wake goroutines of finished background shells and
+	// detached video jobs. It exists only when the shared steer rail is live and stops
+	// before shell shutdown, so daemon termination never manufactures a fresh agent turn.
+	backgroundCompletions *backgroundCompletionDispatcher
+	// mediaWatcher supervises detached video jobs until they finish, waking their
+	// conversations through backgroundCompletions; nil without a pool or a usable video
+	// ceiling. mediaRecovery resumes the jobs each identity left behind, once per owner,
+	// before runServe starts serving requests, and retries the owners it could not reach.
+	mediaWatcher  *mediagen.Watcher
+	mediaRecovery *conversations.Sweeper
 
 	// channels is the Phase-13 channels Registry (Telegram). It mounts as a
 	// fail-soft daemon sibling of the AG-UI gateway; runServe StartAll/StopAll it.

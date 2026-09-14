@@ -252,14 +252,22 @@ func TestImageGenerateHandleRetainedWithoutDependencies(t *testing.T) {
 
 func TestWireMediaToolsInjectsLiveDependencies(t *testing.T) {
 	_, handles := buildBaseRegistryWithHandles(config.LoadDB(), nil, nil)
-	svc := &assets.Service{Limits: assets.Limits{MaxImageBytes: 12 << 20}}
+	svc := &assets.Service{Limits: assets.Limits{MaxImageBytes: 12 << 20, MaxVideoBytes: 30 << 20}}
 	chat := &chatEnv{cfg: &config.Config{}, assets: svc, toolHandles: handles}
 
-	wireMediaTools(chat)
+	media := newMediaDeps(chat)
+	wireMediaTools(chat, media)
 
 	image := handles.ImageGenerate
 	if image.Catalog == nil || image.Client == nil || image.Settings == nil || image.MaxImageBytes != 12<<20 {
 		t.Fatalf("image_generate = %+v, want catalog, client, settings and the asset image ceiling", image)
+	}
+	if image.Client != media.client || image.Catalog != media.catalog || image.Credentials != media.credentials {
+		t.Fatal("image_generate must use the one client, catalog and credentials the video watcher shares")
+	}
+	if media.maxVideoBytes != 30<<20 || media.jobs != nil {
+		t.Fatalf("media video ceiling = %d, jobs = %v; want the asset service's boot ceiling and no job store without a pool",
+			media.maxVideoBytes, media.jobs)
 	}
 	if refs, ok := image.References.(mediaAssetAdapter); !ok || refs.svc != svc {
 		t.Fatalf("References = %#v, want the asset-service reference adapter", image.References)
@@ -285,7 +293,8 @@ func TestWireMediaToolsLeavesTheToolRefusingWhenItCannotBeServed(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, handles := buildBaseRegistryWithHandles(config.LoadDB(), nil, nil)
-			wireMediaTools(&chatEnv{cfg: &config.Config{AuthulaSecret: cfg.secret}, assets: cfg.assets, toolHandles: handles})
+			chat := &chatEnv{cfg: &config.Config{AuthulaSecret: cfg.secret}, assets: cfg.assets, toolHandles: handles}
+			wireMediaTools(chat, newMediaDeps(chat))
 			if image := handles.ImageGenerate; *image != (tools.ImageGenerate{}) {
 				t.Fatalf("image_generate partially wired: %+v", image)
 			}

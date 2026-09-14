@@ -89,7 +89,7 @@ func (c *Client) DownloadVideo(ctx context.Context, baseURL, apiKey, providerID 
 	if err != nil {
 		return nil, err
 	}
-	if err := validByteLimit(maxBytes); err != nil {
+	if err := ValidByteLimit(maxBytes); err != nil {
 		return nil, err
 	}
 	client := sdkClient(c.http, baseURL, option.WithAPIKey(apiKey))

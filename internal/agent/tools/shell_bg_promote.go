@@ -82,9 +82,9 @@ func (p *promotedShell) settle(output string, exitCode int, waitErr error) {
 // happened, that nothing was lost, the id, and the one call that collects it.
 func promotionNotice(id string, cap fmt.Stringer) string {
 	// "Aura notifies this conversation" is not a promise invented here: it is the existing
-	// shellCompletionDispatcher (cmd/aura/shell_completion.go), the same wake path the swarm
-	// uses to deliver a finished delegation. Promotion only puts work into a channel that was
-	// already built and, until now, never carried anything.
+	// backgroundCompletionDispatcher (cmd/aura/background_completion.go), the same wake path
+	// the swarm uses to deliver a finished delegation. Promotion only puts work into a channel
+	// that was already built and, until now, never carried anything.
 	//
 	// The id is never followed by punctuation: a trailing "." reads as part of the token
 	// to anything parsing it — the model included.
