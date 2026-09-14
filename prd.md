@@ -341,6 +341,28 @@ EmbeddingGemma contract is 768 dimensions with a 2,048-token input ceiling, incl
 prefixes and special tokens. Model artifact, dimension, input format and fingerprint
 agree across installation, ingestion, memory and CI.
 
+The Go embedding client fits every input to the selected model's input limit, so no
+single text can fail its request or the batch around it. The limit comes from the route's
+own catalogue, as the LLM context window does: llama.cpp `meta.n_ctx`, or the lower of
+OpenRouter's `context_length` and `top_provider.context_length` for the named embedding
+model. A limit that cannot be read fails the call instead of sending blind. Locally, an
+input whose UTF-8 bytes plus two fit is sent unchanged; a longer one is tokenized by the
+sidecar and, when still over, sent as its leading token IDs plus the closing special
+token. The cloud route has no tokenizer and cuts at the limit minus two bytes on a UTF-8
+boundary. Requests are also bounded to 4,096 estimated tokens unless one input alone
+exceeds that. The sidecar's physical batch equals its context, because llama.cpp refuses
+an embedding input above `n_ubatch` and publishes only `n_ctx`.
+
+Measured 2026-09-14 on the appliance sidecar (llama.cpp b10951, Vulkan, `-c 2048 -ub 2048`):
+2,048 tokens including BOS/EOS returned 200 in 5.7 s and 2,049 returned HTTP 500 at once;
+a batch holding one 6,142-token input failed whole; token count never exceeded UTF-8 bytes
+over 3,219 adversarial and prose strings; token-ID input matched string input at cosine
+1.0, as did head-token and detokenized truncation. On OpenRouter, `thenlper/gte-base`
+(DeepInfra) silently truncated to 512 tokens while `qwen/qwen3-embedding-8b` rejected
+about 37k tokens with HTTP 400, batched or alone. The byte bound is proven only for
+EmbeddingGemma's tokenizer; a cloud cut drops text a truncating provider would have kept;
+timing covers the appliance GPU, not a sidecar queue shared with ingestion.
+
 Long-document extraction must retain the configured Tika builder result and reject
 reported write-limit truncation. The 2026-09-09 ArcadeDB manual baseline indexed only
 23.203% of its non-whitespace text despite a successful reconciliation. Oversized
