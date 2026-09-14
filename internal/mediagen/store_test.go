@@ -260,8 +260,12 @@ func TestStoreRefusesMalformedInputBeforeAnyQuery(t *testing.T) {
 	owner, job := uuid.NewString(), uuid.NewString()
 	valid := Job{
 		IdentityID: owner, ConversationID: "thread-a", ToolCallID: "call-1", ProviderJobID: "vid_1",
-		Model: "minimax/hailuo-3-max", Request: json.RawMessage(`{"model":"minimax/hailuo-3-max"}`),
-		Status: StatusInProgress,
+		Model:   "minimax/hailuo-3-max",
+		Request: json.RawMessage(`{"model":"minimax/hailuo-3-max","_aura":{"origin":"https://openrouter.ai/api/v1"}}`),
+		Status:  StatusInProgress,
+	}
+	if err := validateNewJob(valid); err != nil {
+		t.Fatalf("the baseline job must be valid, or every refusal below proves nothing: %v", err)
 	}
 	invalidJobs := map[string]func(*Job){
 		"owner not a uuid":       func(j *Job) { j.IdentityID = "local" },
@@ -272,6 +276,8 @@ func TestStoreRefusesMalformedInputBeforeAnyQuery(t *testing.T) {
 		"no model":               func(j *Job) { j.Model = "" },
 		"unsafe provider job id": func(j *Job) { j.ProviderJobID = "../videos" },
 		"request not json":       func(j *Job) { j.Request = json.RawMessage(`{"model":`) },
+		"request without _aura":  func(j *Job) { j.Request = json.RawMessage(`{"model":"minimax/hailuo-3-max"}`) },
+		"request with no origin": func(j *Job) { j.Request = json.RawMessage(`{"model":"m","_aura":{"origin":""}}`) },
 	}
 	for name, mutate := range invalidJobs {
 		job := valid

@@ -1,9 +1,13 @@
-// Package mediagen defines the ports image/video generation tools and the video
-// watcher consume: a live-model/wait settings port over aura.settings and an
-// identity-scoped credential port over the daemon's existing per-identity LLM
-// resolver (CRED-01/CRED-05). It has no implementation of its own — the
-// composition root (cmd/aura) implements both ports over concrete infrastructure
-// it already owns, the same split as internal/llm's Client interface.
+// Package mediagen is OpenRouter image and video generation for the generation
+// tools and the video watcher: the Catalog of image/video models and the clamp
+// that fits a request to what a model declares, the Client that submits, polls
+// and downloads through the openai-go SDK, and the Store of durable,
+// identity-scoped video jobs in aura.media_job.
+//
+// What it needs from the daemon arrives through ports the composition root
+// (cmd/aura) implements over infrastructure it already owns: Settings over
+// aura.settings, MediaCredentials over the per-identity LLM resolver
+// (CRED-01/CRED-05) and ReferenceReader over the assets service.
 package mediagen
 
 import "errors"

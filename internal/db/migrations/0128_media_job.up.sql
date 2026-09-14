@@ -11,8 +11,13 @@
 -- insert can never make a second watcher poll and ingest the same paid job.
 --
 -- asset_id has no ON DELETE action: assets are soft-deleted (deleted_at), and a completed job
--- must never silently lose the pointer to the clip it paid for. The identity FK cascades both
--- tables in one statement, so deprovisioning is not blocked.
+-- must never silently lose the pointer to the clip it paid for. Deleting an identity cascades
+-- its jobs and its assets in the same statement, so a job pointing at its OWN identity's asset
+-- does not block deprovisioning. The FK does not enforce that the asset shares the job's
+-- identity: referential-integrity checks bypass row-level security, so a row pointing at
+-- ANOTHER identity's asset would block deleting that identity (23503) until the row is gone.
+-- mediagen.Store never writes one, because CompleteMediaJob only sets an asset of the job's own
+-- identity; only a raw write outside the store can create it.
 --
 -- RLS is the 0090/0122 shape: ENABLE, not FORCE, because aura_migrate owns the table and
 -- a table owner bypasses row security; aura_app is a non-owner and gets both policies. The

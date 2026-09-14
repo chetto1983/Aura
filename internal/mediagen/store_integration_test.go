@@ -78,7 +78,10 @@ func seedMediaIdentity(t *testing.T, pool *pgxpool.Pool) string {
 		t.Fatalf("seed identity: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM aura.identities WHERE id = $1`, id)
+		tag, err := pool.Exec(context.Background(), `DELETE FROM aura.identities WHERE id = $1`, id)
+		if err != nil || tag.RowsAffected() != 1 {
+			t.Errorf("cleanup identity %s: deleted %d rows (%v)", id, tag.RowsAffected(), err)
+		}
 	})
 	return id
 }
@@ -121,7 +124,7 @@ INSERT INTO aura.media_job (identity_id, conversation_id, tool_call_id, provider
                             status, asset_id, created_at, updated_at, completed_at, delivered_at)
 VALUES ($1, 'thread-a', 'call-submit', $2, 'minimax/hailuo-3-max', '{"model":"minimax/hailuo-3-max"}',
         $3, NULLIF($4, '')::uuid, now() - $5::interval, now() - $5::interval,
-        CASE WHEN $3 IN ('completed','failed') THEN now() END, CASE WHEN $6 THEN now() END)
+        CASE WHEN $3 IN ('completed','failed','expired','cancelled') THEN now() END, CASE WHEN $6 THEN now() END)
 RETURNING id`,
 			owner, "vid_"+uuid.NewString(), status, assetID, createdAgo.String(), delivered).Scan(&id)
 	})
@@ -460,6 +463,20 @@ func TestMediaJobClaimRollsBackWhenTheAssetCannotBeBound(t *testing.T) {
 
 	foreignAsset := seedAsset(t, pool, stranger, acceptedVideo)
 	pointsAway := seedJob(t, pool, owner, "completed", foreignAsset, 0, false)
+	// The asset FK bypasses row-level security, so this row blocks deleting the stranger (23503)
+	// until it is gone. Cleanups run last-registered first: this one runs before both identities'.
+	t.Cleanup(func() {
+		err := db.WithIdentityTxRaw(context.Background(), pool, owner, func(tx pgx.Tx) error {
+			tag, err := tx.Exec(context.Background(), `DELETE FROM aura.media_job WHERE id = $1`, pointsAway.ID)
+			if err == nil && tag.RowsAffected() != 1 {
+				err = fmt.Errorf("deleted %d rows", tag.RowsAffected())
+			}
+			return err
+		})
+		if err != nil {
+			t.Errorf("cleanup cross-identity job %s: %v", pointsAway.ID, err)
+		}
+	})
 	for name, jobID := range map[string]string{"deleted asset": completed.ID, "foreign asset": pointsAway.ID} {
 		_, claimed, err := store.ClaimDelivery(ctx, owner, jobID, "thread-a", "call-collect")
 		if claimed || ErrorCode(err) != "asset_not_found" {
@@ -485,7 +502,9 @@ func TestMediaJobRecoverableOrdersByCreationAndRetainsIt(t *testing.T) {
 	newest := seedJob(t, pool, owner, "pending", "", 10*time.Minute, false)
 	oldest := seedJob(t, pool, owner, "in_progress", "", 30*time.Minute, false)
 	middle := seedJob(t, pool, owner, "completed", assetID, 20*time.Minute, false)
-	seedJob(t, pool, owner, "failed", "", 40*time.Minute, false)
+	for _, terminal := range []string{"failed", "expired", "cancelled"} {
+		seedJob(t, pool, owner, terminal, "", 40*time.Minute, false)
+	}
 	seedJob(t, pool, owner, "completed", seedAsset(t, pool, owner, acceptedVideo), 50*time.Minute, true)
 	tie := seedJob(t, pool, owner, "pending", "", 0, false)
 	if err := db.WithIdentityTxRaw(ctx, pool, owner, func(tx pgx.Tx) error {

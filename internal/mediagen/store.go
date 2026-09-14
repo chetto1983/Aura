@@ -60,8 +60,9 @@ func validateNewJob(job Job) error {
 		return fmt.Errorf("mediagen: a new job must be pending or in_progress, not %q", job.Status)
 	case job.ConversationID == "" || job.ToolCallID == "" || job.Model == "":
 		return errors.New("mediagen: a new job needs its conversation, tool call and model")
-	case !json.Valid(job.Request):
-		return errors.New("mediagen: a new job needs its request as JSON")
+	}
+	if _, err := job.Audit(); err != nil {
+		return fmt.Errorf("mediagen: a new job needs a request built by JobRequest, or no resume can check its origin: %w", err)
 	}
 	_, err := validProviderID(job.ProviderJobID)
 	return err

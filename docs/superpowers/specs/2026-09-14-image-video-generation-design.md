@@ -229,17 +229,17 @@ submission idempotency key and no endpoint that lists jobs. The only other place
 surfaces is the completion webhook (`callback_url` or a workspace default): it needs a public
 HTTPS receiver, which Aura does not run, and its `X-OpenRouter-Idempotency-Key`
 (`<job_id>-<status>`) deduplicates webhook deliveries, not submissions. That reading does not show
-how the provider behaves on a duplicate body. So the submission interval is excluded: when the provider has accepted a job but the response or the
-Insert is lost, the outcome is unknown, the provider ID is known only to the interrupted process,
-and nothing ever POSTs again automatically. After the Insert, the job is resumed from its durable
-provider ID. `delivered_at` gives one winner per completed job. It does not prove that an external
-channel received the clip: a crash between the claim and the tool result leaves the asset in
-identity storage and the job delivered, and a later collect answers `already_delivered`. Telegram
-receipt stays best-effort.
+how the provider behaves on a duplicate body. So the submission interval is excluded: when the
+provider has accepted a job but the response or the Insert is lost, the outcome is unknown, the
+provider ID is known only to the interrupted process, and nothing ever POSTs again automatically.
+After the Insert, the job is resumed from its durable provider ID. `delivered_at` gives one winner
+per completed job. It does not prove that an external channel received the clip: a crash between
+the claim and the tool result leaves the asset in identity storage and the job delivered, and a
+later collect answers `already_delivered`. Telegram receipt stays best-effort.
 
 | Fault | Expected evidence | Test |
 |---|---|---|
-| before acceptance | no remote job, no charge claim | Task 4 `TestSubmitVideoNeverResendsAfterFailureOrLostResponse`, 5xx case: one POST, an error, no job to persist |
+| before acceptance | no remote job, no charge claim | `TestSubmitVideoNeverResendsAfterFailureOrLostResponse` (added by Task 6 to Task 4's `client_video_test.go`), 5xx case: one POST, an error, no job to persist |
 | after acceptance / response lost | outcome unknown; never POST again automatically | same test, lost-response case: the connection closes after the body is read; one POST, an error (SDK retries are off) |
 | response received / before Insert | remote ID known only to the interrupted process | excluded by the guarantee; Task 9 pins that the row is persisted before the inline wait starts |
 | after Insert | same job resumed; one content download and one asset identity | Task 6 `TestMediaJobInsertRefusesDuplicateProviderID`, `TestMediaJobRecoverableOrdersByCreationAndRetainsIt`; Task 7 resume tests |
