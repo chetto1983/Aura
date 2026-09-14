@@ -1,0 +1,56 @@
+{
+    "id": "microsoft/mai-image-2.6",
+    "endpoints": [
+        {
+            "provider_name": "Azure",
+            "provider_slug": "azure",
+            "provider_tag": "azure",
+            "supported_parameters": {
+                "aspect_ratio": {
+                    "type": "enum",
+                    "values": [
+                        "1:1",
+                        "4:3",
+                        "3:4",
+                        "16:9",
+                        "9:16",
+                        "3:2",
+                        "2:3",
+                        "auto"
+                    ]
+                },
+                "n": {
+                    "type": "range",
+                    "min": 1,
+                    "max": 1
+                },
+                "input_references": {
+                    "type": "range",
+                    "min": 0,
+                    "max": 5
+                }
+            },
+            "allowed_passthrough_parameters": [
+                "web_grounding"
+            ],
+            "supports_streaming": false,
+            "pricing": [
+                {
+                    "billable": "input_text",
+                    "unit": "token",
+                    "cost_usd": 0.000005
+                },
+                {
+                    "billable": "input_image",
+                    "unit": "token",
+                    "cost_usd": 0.000008
+                },
+                {
+                    "billable": "output_image",
+                    "unit": "token",
+                    "cost_usd": 0.000038
+                }
+            ]
+        }
+    ]
+}

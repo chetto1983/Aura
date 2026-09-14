@@ -1,0 +1,121 @@
+package mediagen
+
+import (
+	"math"
+	"testing"
+)
+
+func TestImagePriceDoesNotCallTokenPricingPerImage(t *testing.T) {
+	_, _, ok := ImagePrice([]PriceLine{{Billable: "output_image", Unit: "token", CostUSD: .000038}})
+	if ok {
+		t.Fatal("token pricing must not become a per-image label")
+	}
+}
+
+func TestImagePrice(t *testing.T) {
+	cases := []struct {
+		name      string
+		lines     []PriceLine
+		low, high float64
+		ok        bool
+	}{
+		{name: "no lines", lines: nil},
+		{
+			name: "observed MAI endpoint is token priced",
+			lines: []PriceLine{
+				{Billable: "input_text", Unit: "token", CostUSD: 0.000005},
+				{Billable: "input_image", Unit: "token", CostUSD: 0.000008},
+				{Billable: "output_image", Unit: "token", CostUSD: 0.000038},
+			},
+		},
+		{
+			name:  "one per-image line",
+			lines: []PriceLine{{Billable: "output_image", Unit: "image", CostUSD: 0.05}},
+			low:   0.05, high: 0.05, ok: true,
+		},
+		{
+			name: "variants and endpoints widen the range",
+			lines: []PriceLine{
+				{Billable: "output_image", Unit: "image", Variant: "high", CostUSD: 0.19},
+				{Billable: "input_image", Unit: "image", CostUSD: 0.01},
+				{Billable: "output_image", Unit: "image", Variant: "low", CostUSD: 0.02},
+				{Billable: "output_image", Unit: "megapixel", CostUSD: 0.001},
+				{Billable: "output_image", Unit: "image", Variant: "medium", CostUSD: 0.07},
+			},
+			low: 0.02, high: 0.19, ok: true,
+		},
+		{
+			name:  "zero is a real known price",
+			lines: []PriceLine{{Billable: "output_image", Unit: "image", CostUSD: 0}},
+			low:   0, high: 0, ok: true,
+		},
+		{
+			name: "negative, NaN and infinite costs are ignored",
+			lines: []PriceLine{
+				{Billable: "output_image", Unit: "image", CostUSD: -0.04},
+				{Billable: "output_image", Unit: "image", CostUSD: math.NaN()},
+				{Billable: "output_image", Unit: "image", CostUSD: math.Inf(1)},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			low, high, ok := ImagePrice(tc.lines)
+			if low != tc.low || high != tc.high || ok != tc.ok {
+				t.Fatalf("ImagePrice = (%v, %v, %v), want (%v, %v, %v)", low, high, ok, tc.low, tc.high, tc.ok)
+			}
+		})
+	}
+}
+
+func TestVideoPrice(t *testing.T) {
+	cases := []struct {
+		name      string
+		skus      map[string]string
+		low, high float64
+		ok        bool
+	}{
+		{name: "nil map", skus: nil},
+		{
+			name: "observed Hailuo duration SKUs",
+			skus: map[string]string{"duration_seconds": "0.08", "duration_seconds_480p": "0.05", "duration_seconds_768p": "0.08"},
+			low:  0.05, high: 0.08, ok: true,
+		},
+		{
+			name: "cents per second are converted to dollars",
+			skus: map[string]string{"cents_per_second_output": "3", "cents_per_second": "12.5"},
+			low:  0.03, high: 0.125, ok: true,
+		},
+		{
+			name: "token, megapixel, image and flat SKUs carry no per-second price",
+			skus: map[string]string{
+				"video_tokens": "0.000007", "cents_per_megapixel_second_precise": "4",
+				"cents_per_image_input": "2", "minimum_cents_per_generation": "10",
+				"text_to_video_duration_seconds_480p": "0.05", "generate": "0.50",
+				"duration_secondsx": "0.01",
+			},
+		},
+		{
+			name: "zero is a real known price",
+			skus: map[string]string{"duration_seconds": "0"},
+			low:  0, high: 0, ok: true,
+		},
+		{
+			name: "malformed, negative, NaN and infinite values are ignored",
+			skus: map[string]string{
+				"duration_seconds": "free", "duration_seconds_720p": "-0.1",
+				"duration_seconds_1080p": "NaN", "cents_per_second": "Inf",
+				"duration_seconds_4k": " 0.4 ",
+			},
+			low: 0.4, high: 0.4, ok: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			low, high, ok := VideoPrice(tc.skus)
+			if low != tc.low || high != tc.high || ok != tc.ok {
+				t.Fatalf("VideoPrice = (%v, %v, %v), want (%v, %v, %v)", low, high, ok, tc.low, tc.high, tc.ok)
+			}
+		})
+	}
+}

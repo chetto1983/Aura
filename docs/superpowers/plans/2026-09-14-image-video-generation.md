@@ -340,7 +340,7 @@ git commit -m "feat(assets): support bounded MP4 and WebM assets" -m "The SQL mo
 - `Catalog.List(ctx, baseURL string, kind Kind, refresh bool) ([]Model, error)`; `Catalog.Find(ctx, baseURL string, kind Kind, id string) (*Model, error)`. Missing ID returns nil, nil; unavailable catalog returns an error.
 - `ImagePrice([]PriceLine) (min, max float64, ok bool)`; `VideoPrice(map[string]string) (min, max float64, ok bool)`.
 
-- [ ] **Step 1: Write clamp and price tests.**
+- [x] **Step 1: Write clamp and price tests.**
 
 ~~~go
 func TestClampVideoUsesNearestDeclaredValues(t *testing.T) {
@@ -365,7 +365,7 @@ func TestImagePriceDoesNotCallTokenPricingPerImage(t *testing.T) {
 
 Add a property test with `testing/quick`: for nonempty supported duration sets the selected duration belongs to the set, and every already-supported duration is unchanged. Table-test reference truncation, unsupported/dropped ratios, no frame support, audio nil versus false, empty catalog entries, nil model, and input slice immutability.
 
-- [ ] **Step 2: Run red.**
+- [x] **Step 2: Run red.**
 
 ~~~sh
 go test ./internal/mediagen -run 'TestClamp|TestImagePrice|TestVideoPrice' -count=1
@@ -373,7 +373,7 @@ go test ./internal/mediagen -run 'TestClamp|TestImagePrice|TestVideoPrice' -coun
 
 Expected: undefined catalog/clamp functions.
 
-- [ ] **Step 3: Implement pure selection and notes.**
+- [x] **Step 3: Implement pure selection and notes.**
 
 ~~~go
 func nearestInt(want int, supported []int) int {
@@ -396,7 +396,7 @@ Normalize resolution heights as `480p=480,720p=720,768p=768,1080p=1080,1K=1024,2
 
 For a known image model, missing parameter descriptors mean unsupported: drop requested ratio/references and explain each change. Truncate only the consumed references before loading assets. For a known video model, reject a requested first frame without `first_frame` support, drop undeclared audio, and clamp nonempty supported sets. The video catalog may not declare a reference maximum: in that case retain references for provider validation; do not invent an image-model limit. Missing model passes inputs through with no invented capabilities. Every dropped/clamped parameter produces one plain-language note containing requested and used values, never base64 bytes.
 
-- [ ] **Step 4: Implement the cache and conservative pricing.**
+- [x] **Step 4: Implement the cache and conservative pricing.**
 
 ~~~go
 type catalogCacheKey struct { BaseURL string; Kind Kind }
@@ -408,7 +408,7 @@ Use one daemon-owned cache for tool clamp and settings lists, keyed by normalize
 
 Image pricing considers only `billable=output_image, unit=image` finite nonnegative lines. For video accept finite nonnegative numeric values on `duration_seconds`/`duration_seconds_*` as USD/s and `cents_per_second`/`cents_per_second_*` divided by 100. Omit unknown/token/megapixel SKU units. Calculate min/max across eligible entries without multiplying or dividing by clip duration. Preserve zero as a real known price.
 
-- [ ] **Step 5: Verify and commit.**
+- [x] **Step 5: Verify and commit.**
 
 Cache tests assert one fetch within five minutes, refresh on expiry, explicit refresh, separated origins/kinds, failed fetch retry and concurrency under race. Price tests include `0.05–0.08`, zero, malformed/negative/NaN and multiple endpoints. Include the real observed token-priced image fixture.
 
