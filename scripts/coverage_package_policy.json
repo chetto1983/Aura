@@ -47,6 +47,7 @@
     "github.com/chetto1983/aura/internal/mcp/mcpenv": {"mode": "target"},
     "github.com/chetto1983/aura/internal/mcpoauth": {"mode": "target"},
     "github.com/chetto1983/aura/internal/mcpregistry": {"mode": "target"},
+    "github.com/chetto1983/aura/internal/mediagen": {"mode": "target"},
     "github.com/chetto1983/aura/internal/multimodal": {"mode": "target"},
     "github.com/chetto1983/aura/internal/objectstore": {"mode": "baseline", "covered_statements": 350, "total_statements": 502},
     "github.com/chetto1983/aura/internal/objectstore/garageadmin": {"mode": "baseline", "covered_statements": 109, "total_statements": 139},
