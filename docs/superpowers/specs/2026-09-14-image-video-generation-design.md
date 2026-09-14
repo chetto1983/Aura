@@ -93,7 +93,8 @@ origin; its blocking `video_generate` (900 s) does not fit Aura's 300 s turn.
    (§3, Recovery boundary).
 6. v1 covers text-to-image, image editing with references, text-to-video and image-to-video.
 7. The cockpit renders generation with assistant-ui's `image` and `image-generation` elements,
-   installed from the registry and restyled; video gets its own player in the same card.
+   installed from the registry and restyled; video gets its own player in the same card: the
+   browser's native controls, click to play, streamed from the asset with HTTP Range (§5).
 8. Telegram shows images as photos and videos as videos. WhatsApp is out of v1.
 
 ## Design
@@ -260,7 +261,9 @@ to the cockpit tokens. New strings in English and Italian.
 **While running.** `ToolFallback` gains a branch for `image_generate` and `video_generate` whose
 part is running: a `GenerationFrame` built on the ImageGeneration element (dot grid over the
 blurred gradient) sized to the requested `aspect_ratio`, with the prompt from `argsText` rendered as
-plain text. It renders inline, not inside the collapsed tool row.
+plain text. It renders inline, not inside the collapsed tool row. The frame shows the elapsed time
+as `m:ss`, counted from when the running part mounted and ticking once a second. There is no
+percentage: the video client reads only the job's status, so Aura has no progress value to show.
 
 **After the tool returns.**
 
@@ -269,12 +272,25 @@ plain text. It renders inline, not inside the collapsed tool row.
   `video`:
   - `image/*` → the Image element with fullscreen zoom and actions (download through the existing
     `/api/assets/{id}/download`, copy), fed by `useAssetContent`. SVG stays download-only.
-  - `video/*` → `VideoPreview`, `<video controls playsInline>` over the blob `useAssetContent`
-    returns relabelled `video/mp4`.
+  - `video/*` → `VideoPreview`, `<video controls playsInline preload="metadata">` with the
+    browser's native controls. It never autoplays, including when the thread is reopened. Its
+    `src` is a same-origin asset URL, not a blob, so a clip starts playing and seeks without being
+    downloaded whole. That URL serves the stored bytes inline with the accepted video
+    `Content-Type` and `Accept-Ranges: bytes`: `206 Partial Content` for a satisfiable `Range`,
+    `416` for an unsatisfiable one. It applies the same identity ownership checks as
+    `/api/assets/{id}/download`, and the public share page gets the equivalent token-scoped URL.
+    None of the asset routes serve `Range` today (`internal/agui/assets_api.go`, read on
+    2026-09-14). Range handling reuses `net/http.ServeContent` or the object store's ranged read;
+    it is not a hand-written parser.
   Media delivered by `send_file` gains the same previews.
-- `{status: "in_progress"}` → the frame stays, without animation, with a static "arriving in this
-  chat" label: the part is replayed when the thread is reopened, and a job that finished hours
-  earlier must not look like it is still running. The video appears in the wake turn.
+- `{status: "in_progress"}` → the frame stays, without animation or elapsed time, with a static
+  "arriving in this chat" label: the part is replayed when the thread is reopened, and a job that
+  finished hours earlier must not look like it is still running. The video appears in the wake
+  turn.
+
+The player and loading choices (click to play, native controls, Range streaming, elapsed time)
+were made with the operator on 2026-09-14. No measurement proves them yet: acceptance 2 and 4 are
+where they get checked in a browser.
 - `content_blocked` → the Image element's content-filter card. Any other error → the existing
   `ToolActivityCard` error rendering.
 
@@ -353,8 +369,11 @@ The PRD env catalog gains these four rows.
   400 on an unsupported parameter; 402; content-policy failure.
 - **db_integration.** `aura.media_job` store with row-level security (identity A cannot read B's
   job), the resume query, `delivered_at` exactly once.
-- **Web.** `ToolFallback` generation branches, `LocalArtifactDisplay` image and video branches,
-  picker formatters.
+- **Asset streaming (Go).** A single range, an open-ended range, a suffix range, an unsatisfiable
+  range (416), a foreign identity's asset (refused like download), and the share-token URL.
+- **Web.** `ToolFallback` generation branches with the elapsed counter (fake timers),
+  `LocalArtifactDisplay` image and video branches (the video `src` is the asset URL and no blob is
+  fetched), picker formatters.
 - **Live E2E.** Acceptance 2-9 on the running stack, driven by the real agent. Paid runs are
   batched and started only after a go, with the estimated cost stated first.
 
