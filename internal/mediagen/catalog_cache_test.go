@@ -29,9 +29,23 @@ func (s *fakeCatalogSource) fetch(ctx context.Context, baseURL string, kind Kind
 	return out, nil
 }
 
-type fakeClock struct{ at time.Time }
+// fakeClock is a settable clock that a supervisor goroutine may read while a test advances it.
+type fakeClock struct {
+	mu sync.Mutex
+	at time.Time
+}
 
-func (c *fakeClock) now() time.Time { return c.at }
+func (c *fakeClock) now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.at
+}
+
+func (c *fakeClock) advance(by time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.at = c.at.Add(by)
+}
 
 func catalogFixture() []Model {
 	return []Model{
@@ -63,14 +77,14 @@ func TestCatalogCachesForFiveMinutes(t *testing.T) {
 	if got := []string{first[0].ID, first[1].ID}; !slices.Equal(got, []string{"alpha/image", "zeta/video"}) {
 		t.Fatalf("models not sorted by id: %q", got)
 	}
-	clock.at = clock.at.Add(catalogTTL - time.Nanosecond)
+	clock.advance(catalogTTL - time.Nanosecond)
 	if _, err := catalog.List(ctx, "https://openrouter.ai/api/v1/", KindImage, false); err != nil {
 		t.Fatal(err)
 	}
 	if calls := source.calls.Load(); calls != 1 {
 		t.Fatalf("fetches within the TTL = %d, want 1", calls)
 	}
-	clock.at = clock.at.Add(time.Nanosecond)
+	clock.advance(time.Nanosecond)
 	if _, err := catalog.List(ctx, "https://openrouter.ai/api/v1", KindImage, false); err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +157,7 @@ func TestCatalogFailureIsNeverAnEmptyCatalog(t *testing.T) {
 		t.Fatalf("failed refresh erased the valid entry: %v, %v", kept, err)
 	}
 
-	clock.at = clock.at.Add(catalogTTL)
+	clock.advance(catalogTTL)
 	if _, err := catalog.List(ctx, "https://openrouter.ai/api/v1", KindImage, false); !errors.Is(err, boom) {
 		t.Fatalf("expired entry with a failing source = %v, want error, never stale models", err)
 	}

@@ -82,10 +82,14 @@ func (c *Client) GetVideo(ctx context.Context, baseURL, apiKey, providerID strin
 // always requests OpenRouter's own content endpoint for providerID; it never
 // follows a URL the provider supplied (e.g. a poll response's
 // unsigned_urls), which would hand an identity's Authorization header to
-// whatever host that field named.
+// whatever host that field named. A declared Content-Length above maxBytes
+// is refused before the body is read.
 func (c *Client) DownloadVideo(ctx context.Context, baseURL, apiKey, providerID string, maxBytes int64) ([]byte, error) {
 	id, err := validProviderID(providerID)
 	if err != nil {
+		return nil, err
+	}
+	if err := validByteLimit(maxBytes); err != nil {
 		return nil, err
 	}
 	client := sdkClient(c.http, baseURL, option.WithAPIKey(apiKey))
@@ -94,6 +98,9 @@ func (c *Client) DownloadVideo(ctx context.Context, baseURL, apiKey, providerID 
 		return nil, classifyProviderError(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.ContentLength > maxBytes {
+		return nil, mediaTooLarge()
+	}
 	return readCapped(resp.Body, maxBytes)
 }
 

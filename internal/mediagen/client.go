@@ -145,7 +145,11 @@ func readCapped(r io.Reader, maxBytes int64) ([]byte, error) {
 		return nil, err
 	}
 	if int64(len(data)) > maxBytes {
-		return nil, &Error{Code: "too_large", Message: "Media exceeds the configured byte limit."}
+		return nil, mediaTooLarge()
 	}
 	return data, nil
+}
+
+func mediaTooLarge() *Error {
+	return &Error{Code: "too_large", Message: "Media exceeds the configured byte limit."}
 }

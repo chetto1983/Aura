@@ -102,6 +102,138 @@ func TestMediaAssetAdapterRefusesWithoutAReadableAsset(t *testing.T) {
 	}
 }
 
+// agentVideoStore keeps agent assets as aura.assets does on this path: CreateAsset's ON
+// CONFLICT answers a repeated (identity, source kind, source reference) with the row already
+// stored, and the upload and acceptance steps move that row to accepted.
+type agentVideoStore struct {
+	*recordingAssetStore
+	rows    map[string]assets.Asset
+	creates int
+	uploads int
+}
+
+func newAgentVideoService() (*assets.Service, *agentVideoStore, *objectstore.FakeStore) {
+	store := &agentVideoStore{recordingAssetStore: &recordingAssetStore{}, rows: map[string]assets.Asset{}}
+	objects := objectstore.NewFake()
+	return &assets.Service{Store: store, Objects: objects}, store, objects
+}
+
+func (s *agentVideoStore) Create(_ context.Context, req assets.CreateRequest) (assets.Asset, error) {
+	s.creates++
+	key := req.IdentityID + "|" + string(req.SourceKind) + "|" + req.SourceRef
+	if row, ok := s.rows[key]; ok {
+		return row, nil
+	}
+	row := assets.Asset{
+		ID: "asset-video-1", IdentityID: req.IdentityID, SourceKind: req.SourceKind, SourceRef: req.SourceRef,
+		ToolCallID: req.ToolCallID, ThreadID: req.ThreadID, Scope: req.Scope, Modality: req.Modality,
+		Status: assets.StatusCreated, FileName: req.FileName, MIMEType: req.MIMEType,
+		DeclaredSizeBytes: req.DeclaredSizeBytes, ObjectBucket: req.ObjectBucket, ObjectKey: req.ObjectKey,
+	}
+	s.rows[key] = row
+	return row, nil
+}
+
+func (s *agentVideoStore) MarkUploaded(_ context.Context, id, _ string, size int64, _ string) (assets.Asset, error) {
+	s.uploads++
+	return s.move(id, func(row *assets.Asset) { row.Status, row.SizeBytes = assets.StatusUploaded, size })
+}
+
+func (s *agentVideoStore) MarkAccepted(_ context.Context, id, _ string, size int64, hash, mimeType string) (assets.Asset, error) {
+	return s.move(id, func(row *assets.Asset) {
+		row.Status, row.SizeBytes, row.ContentHash, row.MIMEType = assets.StatusAccepted, size, hash, mimeType
+	})
+}
+
+func (s *agentVideoStore) move(id string, change func(*assets.Asset)) (assets.Asset, error) {
+	for key, row := range s.rows {
+		if row.ID == id {
+			change(&row)
+			s.rows[key] = row
+			return row, nil
+		}
+	}
+	return assets.Asset{}, errors.New("asset not found")
+}
+
+var (
+	mp4Clip  = []byte("\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isommp41\x00\x00\x00\x08free")
+	webmClip = []byte("\x1a\x45\xdf\xa3\x9f\x42\x86\x81\x01\x42\xf7\x81\x01webm")
+	videoJob = mediagen.Job{ID: "job-7", IdentityID: "owner-1", ConversationID: "thread-a", ToolCallID: "call-submit"}
+)
+
+// TestMediaAssetAdapterIngestsTheVideoCompleteAccepts checks the row against what
+// mediagen.Store.Complete requires: the owner's accepted agent video in the job's conversation.
+func TestMediaAssetAdapterIngestsTheVideoCompleteAccepts(t *testing.T) {
+	for name, tc := range map[string]struct {
+		clip           []byte
+		mime, fileName string
+	}{
+		"mp4":  {mp4Clip, "video/mp4", "generated.mp4"},
+		"webm": {webmClip, "video/webm", "generated.webm"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc, store, objects := newAgentVideoService()
+			id, err := mediaAssetAdapter{svc: svc}.IngestVideo(context.Background(), videoJob, tc.clip)
+			if err != nil {
+				t.Fatalf("IngestVideo: %v", err)
+			}
+			row := store.rows["owner-1|agent|media-job:job-7"]
+			if row.ID != id || row.IdentityID != "owner-1" || row.ThreadID != "thread-a" || row.Scope != assets.ScopeThread ||
+				row.SourceKind != assets.SourceAgent || row.Modality != assets.ModalityVideo || row.Status != assets.StatusAccepted {
+				t.Fatalf("row = %+v, want the owner's accepted agent video in the job's conversation", row)
+			}
+			if row.MIMEType != tc.mime || row.FileName != tc.fileName || row.SizeBytes != int64(len(tc.clip)) || row.ToolCallID != "" {
+				t.Fatalf("row = %+v, want %s named %s, its size, and no tool call before a delivery claim", row, tc.mime, tc.fileName)
+			}
+			rc, _, err := objects.Get(context.Background(), objectstore.ObjectRef{Bucket: row.ObjectBucket, Key: row.ObjectKey})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = rc.Close() }()
+			if stored, err := io.ReadAll(rc); err != nil || !bytes.Equal(stored, tc.clip) {
+				t.Fatalf("stored object = %q, %v; want the clip", stored, err)
+			}
+		})
+	}
+}
+
+func TestMediaAssetAdapterReingestReturnsTheStoredVideo(t *testing.T) {
+	svc, store, _ := newAgentVideoService()
+	adapter := mediaAssetAdapter{svc: svc}
+	first, err := adapter.IngestVideo(context.Background(), videoJob, mp4Clip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := adapter.IngestVideo(context.Background(), videoJob, mp4Clip)
+	if err != nil || second != first {
+		t.Fatalf("second ingest = %q, %v; want the asset %q already stored", second, err, first)
+	}
+	if store.creates != 2 || store.uploads != 1 || len(store.rows) != 1 {
+		t.Fatalf("creates=%d uploads=%d rows=%d; a repeated job must reuse its one accepted asset",
+			store.creates, store.uploads, len(store.rows))
+	}
+}
+
+func TestMediaAssetAdapterRefusesAClipItCannotStoreAsVideo(t *testing.T) {
+	for name, clip := range map[string][]byte{
+		"quicktime":       []byte("\x00\x00\x00\x14ftypqt  \x00\x00\x02\x00qt  "),
+		"html error page": []byte("<html><body>Bad gateway</body></html>"),
+		"empty":           nil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc, store, _ := newAgentVideoService()
+			_, err := mediaAssetAdapter{svc: svc}.IngestVideo(context.Background(), videoJob, clip)
+			if mediagen.ErrorCode(err) != "unsupported" || store.creates != 0 {
+				t.Fatalf("IngestVideo = %v after %d creates; want unsupported before any asset row", err, store.creates)
+			}
+		})
+	}
+	if _, err := (mediaAssetAdapter{}).IngestVideo(context.Background(), videoJob, mp4Clip); !errors.Is(err, errNoAssetService) {
+		t.Fatalf("IngestVideo without an asset service = %v", err)
+	}
+}
+
 func TestImageGenerateHandleRetainedWithoutDependencies(t *testing.T) {
 	reg, handles := buildBaseRegistryWithHandles(config.LoadDB(), nil, nil)
 	image := handles.ImageGenerate

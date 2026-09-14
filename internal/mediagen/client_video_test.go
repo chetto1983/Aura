@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestSubmitVideoSendsJSONAndAcceptsWhitespace(t *testing.T) {
@@ -302,6 +303,44 @@ func TestDownloadVideoBoundsContentToMaxBytes(t *testing.T) {
 	_, err := client.DownloadVideo(context.Background(), srv.URL, "k", "job1", 4)
 	if ErrorCode(err) != "too_large" {
 		t.Fatalf("ErrorCode = %q, want too_large", ErrorCode(err))
+	}
+}
+
+// TestDownloadVideoRefusesADeclaredOversizeBeforeReading holds the body back until the test
+// ends: a download that read before checking Content-Length would block instead of refusing.
+func TestDownloadVideoRefusesADeclaredOversizeBeforeReading(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/mp4")
+		w.Header().Set("Content-Length", "1048576")
+		w.WriteHeader(http.StatusOK)
+		http.NewResponseController(w).Flush()
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer srv.Close()
+	defer close(release)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := NewClient(srv.Client(), 1<<20).DownloadVideo(ctx, srv.URL, "k", "job1", 1024)
+	if ErrorCode(err) != "too_large" {
+		t.Fatalf("ErrorCode = %q (%v), want too_large from the declared length", ErrorCode(err), err)
+	}
+}
+
+func TestDownloadVideoRefusesAnInvalidLimitWithoutARequest(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests.Add(1) }))
+	defer srv.Close()
+	for _, limit := range []int64{0, -1, 1<<63 - 1} {
+		if _, err := NewClient(srv.Client(), 1<<20).DownloadVideo(context.Background(), srv.URL, "k", "job1", limit); ErrorCode(err) != "too_large" {
+			t.Fatalf("limit %d: ErrorCode = %q, want too_large", limit, ErrorCode(err))
+		}
+	}
+	if requests.Load() != 0 {
+		t.Fatalf("requests = %d, want none for a limit that bounds nothing", requests.Load())
 	}
 }
 

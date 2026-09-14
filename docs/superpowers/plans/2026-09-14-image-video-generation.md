@@ -774,7 +774,7 @@ Test actual status CHECKs, absent cost versus zero, duplicate provider ID, forei
 - `Waiter.Release()`: idempotent; if an unacknowledged terminal completion exists, enqueue a wake exactly once.
 - `Watcher.Resume(ctx context.Context, ownerID string) error`; `Watcher.Stop(ctx context.Context) error`.
 
-- [ ] **Step 1: Write pure handoff-state tests before asynchronous code.**
+- [x] **Step 1: Write pure handoff-state tests before asynchronous code.**
 
 Define an unexported `jobHandoff` with `waiting, terminal, claimed, notified bool`. Its API is `finish() bool` (returns whether to notify), `detach() bool` (returns whether to notify), and `claim() bool` (whether waiter owns delivery).
 
@@ -805,7 +805,7 @@ func TestInlineClaimSuppressesWake(t *testing.T) {
 
 Add completion-before-registration, duplicate Track, cancellation-after-finish-before-claim, release-after-failed-delivery, and repeated finish/release tests. These are the mutation targets.
 
-- [ ] **Step 2: Run red, then implement the state machine.**
+- [x] **Step 2: Run red, then implement the state machine.**
 
 ~~~sh
 go test ./internal/mediagen -run 'TestCompletionAtWaitBoundary|TestInlineClaim' -count=1
@@ -835,7 +835,7 @@ func (s *jobHandoff) claim() bool {
 
 In the real watcher all state methods run under the same mutex; notify callbacks and network/database work run after unlocking. A failed inline delivery before database claim explicitly returns ownership (`claimed=false`) before detach/notification. A completed database claim is never reset blindly.
 
-- [ ] **Step 3: Implement polling and ingestion.**
+- [x] **Step 3: Implement polling and ingestion.**
 
 ~~~text
 track:
@@ -859,13 +859,13 @@ Implement the loop with `select` on daemon context and timer; bound every poll/d
 
 At resume, a completed/undelivered job produces one completion notification; active rows rejoin the same watcher; the deadline is computed from stored CreatedAt. Failed/expired jobs do not become paid submissions. If the owner's key is temporarily unavailable or the configured origin changed, retain the row and retry within the ceiling, without sending an old job ID to a new origin.
 
-- [ ] **Step 4: Test asynchronous behavior and recovery.**
+- [x] **Step 4: Test asynchronous behavior and recovery.**
 
 Use injected timers or short options in httptest; use deterministic barrier channels for races, not multi-second sleeps. The fake store is thread-safe, copies rows, enforces the same terminal guards and counts Complete/Progress/Claim calls; it implements the full Task 6 JobStore interface in `watcher_test.go`.
 
 Assertions: cancellation of the tool context does not stop the watcher; daemon cancellation does; terminal channels close once; no notification while an inline waiter owns the job; exactly one notification on timeout; repeated download failure never increments POST count; ingestion recovery reuses SourceRef; remote failure/expiry and local timeout preserve cost; no reader/goroutine leaks. Add `goleak.VerifyTestMain` once for the mediagen package.
 
-- [ ] **Step 5: Verify and commit.**
+- [x] **Step 5: Verify and commit.**
 
 ~~~sh
 go test ./internal/mediagen -count=1
