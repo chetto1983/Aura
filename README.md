@@ -161,7 +161,6 @@ checkout or release directory:
 function New-Hex { -join ((1..32) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) }) }
 @"
 POSTGRES_PASSWORD=$(New-Hex)
-POSTGRES_IMAGE=postgres:18.4-alpine3.24
 POSTGRES_USER=aura
 POSTGRES_DB=aura
 ARCADEDB_PASSWORD=$(New-Hex)
@@ -176,7 +175,6 @@ AURA_OBJECTSTORE_SECRET_KEY=$(New-Hex)
 GARAGE_RPC_SECRET=$(New-Hex)
 AURA_GARAGE_ADMIN_TOKEN=$(New-Hex)
 AURA_BACKUP_DIR=./backups
-AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda
 AURA_EMBED_MODEL_PATH=/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf
 AURA_EMBED_REVISION=0f741b5a6585bd53aeb15cd1372c56f2a0f65e12
 AURA_EMBED_FINGERPRINT=b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63
@@ -191,10 +189,10 @@ docker compose up -d
 
 This `.env` targets an NVIDIA GPU: the embedding sidecar reserves one, so fix
 Docker/NVIDIA before starting Aura if the `nvidia-smi` container check fails. Without
-an NVIDIA GPU, run embeddings on the CPU instead: set
-`AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server`, `AURA_EMBED_NGL=0` and
+an NVIDIA GPU, run embeddings on the CPU instead: set `AURA_EMBED_NGL=0` and
 `COMPOSE_FILE=compose.yaml;compose.cpu.yaml` (`;` is Compose's path separator on
-Windows), which drops the GPU reservation.
+Windows), which drops the GPU reservation and selects the CPU build of the pinned
+llama.cpp server.
 
 Set `OPENROUTER_API_KEY` before production use. For local development images,
 replace `AURA_IMAGE` with `aura:local` after building the image.

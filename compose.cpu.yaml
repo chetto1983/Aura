@@ -3,7 +3,9 @@
 # compose.yaml reserves an NVIDIA GPU for aura-llama-embed, and Docker refuses to start a
 # container whose device request no driver can satisfy ("could not select device driver
 # nvidia", measured 2026-09-10 on a mini PC), so the reservation has to go, not just the
-# offload. The image and -ngl come from .env, written by the same installer function.
+# offload. -ngl comes from .env, written by the same installer function; the build is pinned
+# here beside compose.yaml's CUDA one and changes with it (see the comment there).
 services:
   aura-llama-embed:
+    image: ghcr.io/ggml-org/llama.cpp:server-b10951
     deploy: !reset null

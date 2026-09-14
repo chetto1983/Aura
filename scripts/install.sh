@@ -11,7 +11,6 @@
 # Optional env:
 #   AURA_INSTALL_REF=vX.Y.Z
 #   AURA_IMAGE=ghcr.io/chetto1983/aura:vX.Y.Z
-#   POSTGRES_IMAGE=postgres:18.4-alpine3.24
 #   AURA_INSTALL_DIR=/opt/aura
 
 set -euo pipefail
@@ -560,10 +559,11 @@ detect_embed_backend() {
 }
 
 # One knob: AURA_EMBED_BACKEND is detected once and is the operator's to change after that.
-# The overlay, image and offload are derived from it on every run so they can never
-# disagree -- a Vulkan overlay left with the CPU image would never touch the GPU it was
-# chosen for. docker compose reads COMPOSE_FILE from .env, so the installer, systemd and
-# the update timer all resolve the same files.
+# The overlay and offload are derived from it on every run so they can never disagree, and
+# the overlay pins the image build for its backend -- so the image is never written here: a
+# value in .env would outrank compose's pin on this machine and freeze the build forever.
+# docker compose reads COMPOSE_FILE from .env, so the installer, systemd and the update timer
+# all resolve the same files.
 ensure_embed_backend_env() {
   if [ -z "$(env_value AURA_EMBED_BACKEND)" ]; then
     set_env_value AURA_EMBED_BACKEND "$(detect_embed_backend "$@")"
@@ -572,17 +572,14 @@ ensure_embed_backend_env() {
   case "$backend" in
     cuda)
       set_env_value COMPOSE_FILE compose.yaml
-      set_env_value AURA_EMBED_IMAGE ghcr.io/ggml-org/llama.cpp:server-cuda
       set_env_value AURA_EMBED_NGL 99
       ;;
     vulkan)
       set_env_value COMPOSE_FILE compose.yaml:compose.vulkan.yaml
-      set_env_value AURA_EMBED_IMAGE ghcr.io/ggml-org/llama.cpp:server-vulkan
       set_env_value AURA_EMBED_NGL 99
       ;;
     cpu)
       set_env_value COMPOSE_FILE compose.yaml:compose.cpu.yaml
-      set_env_value AURA_EMBED_IMAGE ghcr.io/ggml-org/llama.cpp:server
       set_env_value AURA_EMBED_NGL 0
       ;;
     *)
@@ -658,7 +655,6 @@ ensure_internal_env_secrets() {
   ensure_embed_provenance
   ensure_env_default ARCADEDB_APP_USER "aura_memory"
   ensure_env_default ARCADEDB_DATABASE "aura_memory"
-  ensure_env_default POSTGRES_IMAGE "${POSTGRES_IMAGE:-postgres:18.4-alpine3.24}"
   ensure_env_default AURA_IMAGE "${AURA_IMAGE:-$DEFAULT_IMAGE}"
   ensure_edge_channel_env
 
@@ -712,7 +708,6 @@ write_env_if_missing() {
   umask 077
   cat > .env <<EOF
 POSTGRES_PASSWORD=${pg_pw}
-POSTGRES_IMAGE=${POSTGRES_IMAGE:-postgres:18.4-alpine3.24}
 POSTGRES_USER=aura
 POSTGRES_DB=aura
 POSTGRES_HOST=127.0.0.1

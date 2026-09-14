@@ -515,7 +515,11 @@ services:
       retries: 3
 
   postgres:
-    image: ${POSTGRES_IMAGE:-postgres:18.4-alpine3.24}
+    # A literal pin, not a POSTGRES_IMAGE variable: the installer used to write that variable into
+    # .env, where it outranked this line on every machine and froze the version there. An edge
+    # appliance takes this file from its aura image on every update tick, so a pin changed here
+    # reaches the whole fleet. A MAJOR bump is a data-directory upgrade, never a pin change.
+    image: postgres:18.4-alpine3.24
     container_name: aura-postgres
     restart: unless-stopped
     environment:
@@ -788,7 +792,13 @@ services:
       start_period: 20s
 
   aura-llama-embed:
-    image: ${AURA_EMBED_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
+    # Pinned to a llama.cpp build, and per backend in this file's overlays (compose.vulkan.yaml,
+    # compose.cpu.yaml) rather than in .env: ggml-org publishes several builds a day under the
+    # moving server-* tags, which a fleet would each pull unverified, and an installer-written
+    # AURA_EMBED_IMAGE in .env outranked this line and froze the build per machine (measured
+    # 2026-09-14: the mini PC ran b10884 while b10951 was out). Change the build here and in
+    # both overlays together.
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda-b10951
     container_name: aura-llama-embed
     restart: unless-stopped
     environment:
@@ -1029,7 +1039,7 @@ services:
   # SearXNG needs outbound egress to query upstream engines; loopback publishing
   # keeps the service local without cutting off metasearch.
   searxng:
-    image: searxng/searxng:2026.7.26-b060c780d
+    image: searxng/searxng:2026.9.13-d4ce87c23
     container_name: aura-searxng
     restart: unless-stopped
     environment:
@@ -1081,7 +1091,8 @@ services:
     # tops out lower, so the GPU image fails to start. To run STT on GPU after a
     # driver update: AURA_STT_IMAGE=hwdsl2/whisper-server:cuda STT_DEVICE=cuda
     # STT_COMPUTE_TYPE=int8_float16 + add the nvidia deploy block (see aura-ocr-vl).
-    image: ${AURA_STT_IMAGE:-hwdsl2/whisper-server:latest}
+    # hwdsl2 publishes no version tags, so the pin is the digest :latest carried on 2026-09-14.
+    image: ${AURA_STT_IMAGE:-hwdsl2/whisper-server:latest@sha256:257302e5ea7efb041546d1b5d8ee11bcba2235711ab94f08c4dcc54be074ac36}
     container_name: aura-stt
     restart: unless-stopped
     environment:
@@ -1104,7 +1115,7 @@ services:
   # aura-tts — Kokoro-82M (voice if_sara) → opus voice note. TTS_BASE_URL=
   # http://aura-tts:8880/v1, POST /audio/speech response_format=opus.
   aura-tts:
-    image: ${AURA_TTS_IMAGE:-ghcr.io/remsky/kokoro-fastapi-cpu:latest}
+    image: ${AURA_TTS_IMAGE:-ghcr.io/remsky/kokoro-fastapi-cpu:v0.9.0}
     container_name: aura-tts
     restart: unless-stopped
     ports:
@@ -1121,7 +1132,7 @@ services:
   # Only reached when the operator-selected model does NOT advertise the image
   # modality; a vision-capable primary reads the image itself and this stays down.
   aura-ocr-vl:
-    image: ${AURA_OCR_VL_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
+    image: ${AURA_OCR_VL_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda-b10951}
     container_name: aura-ocr-vl
     environment:
       LLAMA_ARG_HOST: 0.0.0.0
@@ -1278,7 +1289,7 @@ services:
   # Set the env only to OVERRIDE a model that states its own preference.
   aura-llm:
     profiles: [localllm]
-    image: ${AURA_LLM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
+    image: ${AURA_LLM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda-b10951}
     container_name: aura-llm
     restart: unless-stopped
     environment:

@@ -158,23 +158,24 @@ expect_posture() {
   mkdir -p "$fixture_root/posture-$backend"
   (
     cd "$fixture_root/posture-$backend"
-    printf 'AURA_EMBED_BACKEND=%s\nAURA_EMBED_IMAGE=stale\nAURA_EMBED_NGL=stale\n' "$backend" > .env
+    printf 'AURA_EMBED_BACKEND=%s\nAURA_EMBED_NGL=stale\n' "$backend" > .env
     ensure_embed_backend_env "$fixture_root/dri-render"
     shift
     for pair in "$@"; do
       [ "$(grep -c "^${pair%%=*}=" .env)" = 1 ] && grep -qx "$pair" .env \
         || { echo "FAIL: backend $backend should leave exactly $pair in .env, got: $(grep "^${pair%%=*}=" .env)" >&2; exit 1; }
     done
+    # The image build is the payload's: compose.yaml and its overlays pin it, and a value in
+    # .env would outrank that pin on this machine forever.
+    ! grep -q '^AURA_EMBED_IMAGE=' .env \
+      || { echo "FAIL: backend $backend wrote AURA_EMBED_IMAGE into .env, freezing the pinned build" >&2; exit 1; }
   )
 }
 # An explicit backend wins over what the host would detect: dri-render is present in every
 # case below, and only the vulkan one may end up on the Vulkan overlay.
-expect_posture cuda COMPOSE_FILE=compose.yaml \
-  AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda AURA_EMBED_NGL=99
-expect_posture vulkan COMPOSE_FILE=compose.yaml:compose.vulkan.yaml \
-  AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server-vulkan AURA_EMBED_NGL=99
-expect_posture cpu COMPOSE_FILE=compose.yaml:compose.cpu.yaml \
-  AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server AURA_EMBED_NGL=0
+expect_posture cuda COMPOSE_FILE=compose.yaml AURA_EMBED_NGL=99
+expect_posture vulkan COMPOSE_FILE=compose.yaml:compose.vulkan.yaml AURA_EMBED_NGL=99
+expect_posture cpu COMPOSE_FILE=compose.yaml:compose.cpu.yaml AURA_EMBED_NGL=0
 
 # The upgrade an existing CPU install takes: the 0.1.x wizard wrote the CPU pair and no
 # backend, and the host has a render node the old probe never looked for.
@@ -183,8 +184,7 @@ mkdir -p "$fixture_root/posture-upgrade"
   cd "$fixture_root/posture-upgrade"
   printf 'AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server\nAURA_EMBED_NGL=0\n' > .env
   PATH="$fixture_root/bin-none:/usr/bin:/bin" ensure_embed_backend_env "$fixture_root/dri-render"
-  for pair in AURA_EMBED_BACKEND=vulkan COMPOSE_FILE=compose.yaml:compose.vulkan.yaml \
-      AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server-vulkan AURA_EMBED_NGL=99; do
+  for pair in AURA_EMBED_BACKEND=vulkan COMPOSE_FILE=compose.yaml:compose.vulkan.yaml AURA_EMBED_NGL=99; do
     grep -qx "$pair" .env || { echo "FAIL: upgrading a CPU install on a Vulkan host did not write $pair" >&2; exit 1; }
   done
 )
@@ -201,7 +201,7 @@ mkdir -p "$fixture_root/posture-invalid"
     || { echo "FAIL: an unknown backend was refused for the wrong reason: $(cat "$fixture_root/posture-invalid.err")" >&2; exit 1; }
 )
 
-echo "ok: ensure_embed_backend_env derives the overlay, image and offload from one backend"
+echo "ok: ensure_embed_backend_env derives the overlay and offload from one backend, and never the image"
 
 # COMPOSE_FILE is only worth selecting if the overlay really clears what it claims to: the
 # merged config is the proof, not the overlay's text.
@@ -214,6 +214,9 @@ if docker compose version >/dev/null 2>&1; then
   compose_env="$fixture_root/compose-config.env"
   grep -oE '\$\{[A-Z0-9_]+:\?' "$repo_root/compose.yaml" | sed -e 's/^\${//' -e 's/:?$//' | sort -u \
     | sed 's/$/=placeholder/' > "$compose_env"
+  # What every install before 2026-09-14 left in .env. The pins must win over it, or a version
+  # changed in compose.yaml never reaches the hosts that already exist.
+  printf 'AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server-vulkan\nPOSTGRES_IMAGE=postgres:stale\n' >> "$compose_env"
   # Git Bash would hand a native docker.exe the MSYS path, which Windows cannot open.
   compose_env_arg="$compose_env"
   if command -v cygpath >/dev/null 2>&1; then compose_env_arg="$(cygpath -m "$compose_env")"; fi
@@ -224,7 +227,18 @@ if docker compose version >/dev/null 2>&1; then
     fi
   }
   nvidia_reservations() { grep -c 'driver: nvidia' "$compose_out" || true; }
+  service_image() { sed -n "/^  $1:/,/^  [a-z]/p" "$compose_out" | sed -n 's/^    image: //p' | head -n 1; }
+  expect_embed_build() {
+    case "$(service_image aura-llama-embed)" in
+      "ghcr.io/ggml-org/llama.cpp:$1"-b[0-9]*) ;;
+      *) echo "FAIL: $2 runs embed image '$(service_image aura-llama-embed)', want the pinned $1 build over a stale .env" >&2; exit 1 ;;
+    esac
+  }
   compose_config -f compose.yaml
+  expect_embed_build server-cuda compose.yaml
+  case "$(service_image postgres)" in
+    postgres:stale | "") echo "FAIL: postgres runs '$(service_image postgres)': a stale POSTGRES_IMAGE in .env still outranks the pin" >&2; exit 1 ;;
+  esac
   base_reservations="$(nvidia_reservations)"
   if [ "$base_reservations" -eq 0 ]; then
     echo "FAIL: compose.yaml config shows no NVIDIA reservation to clear (compose $(docker compose version --short 2>/dev/null)); embed service as merged:" >&2
@@ -238,8 +252,11 @@ if docker compose version >/dev/null 2>&1; then
       || { echo "FAIL: compose.$posture.yaml leaves $got NVIDIA reservations, want $((base_reservations - 1))" >&2; exit 1; }
   done
   compose_config -f compose.yaml -f compose.vulkan.yaml
+  expect_embed_build server-vulkan compose.vulkan.yaml
   grep -q '/dev/dri' "$compose_out" || { echo "FAIL: compose.vulkan.yaml does not hand /dev/dri to the embed sidecar" >&2; exit 1; }
-  echo "ok: the CPU and Vulkan overlays each drop exactly the embed sidecar's NVIDIA reservation"
+  compose_config -f compose.yaml -f compose.cpu.yaml
+  expect_embed_build server compose.cpu.yaml
+  echo "ok: the CPU and Vulkan overlays each drop exactly the embed sidecar's NVIDIA reservation and pin their build over .env"
 elif [ -n "${CI:-}" ]; then
   echo "FAIL: docker compose is required under CI to check the embed overlays" >&2
   exit 1

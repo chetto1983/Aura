@@ -119,7 +119,7 @@ func TestRetiredMiniPCComposeStaysOutOfDistribution(t *testing.T) {
 		t.Fatal("CPU CI jobs do not select the surviving CI cache overlay")
 	}
 	for _, want := range []string{
-		"AURA_EMBED_IMAGE:-ghcr.io/ggml-org/llama.cpp:server}",
+		"AURA_EMBED_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-b",
 		"deploy: !reset null",
 	} {
 		if !strings.Contains(cacheOverlay, want) {

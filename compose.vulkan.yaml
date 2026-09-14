@@ -2,9 +2,11 @@
 # through the /dev/dri render nodes llama.cpp's server-vulkan image drives. Selected through
 # COMPOSE_FILE by scripts/install.sh (ensure_embed_backend_env) on a host with a render node
 # and no NVIDIA driver Docker can use. Measured 2026-09-10 on the mini PC: server-vulkan
-# with /dev/dri lists "Vulkan0: Intel(R) Graphics (ADL-N)".
+# with /dev/dri lists "Vulkan0: Intel(R) Graphics (ADL-N)". The build is pinned beside
+# compose.yaml's CUDA one and changes with it (see the comment there).
 services:
   aura-llama-embed:
+    image: ghcr.io/ggml-org/llama.cpp:server-vulkan-b10951
     deploy: !reset null
     devices:
       - /dev/dri:/dev/dri
