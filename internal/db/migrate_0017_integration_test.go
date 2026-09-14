@@ -228,6 +228,28 @@ func TestMigrate0017_BranchPointersBackfillAndRoundTrip(t *testing.T) {
 	}
 }
 
+// migrateToVersion lands a fresh database on EXACTLY version, so a test of one migration's
+// round trip steps that migration and not whatever happens to be head. Migration numbers
+// are assigned at landing and are not contiguous, so the down distance is the count of
+// embedded migrations above version: neither `head - version` nor a fixed step budget,
+// which is what broke the 0094 and 0101 helpers the day head moved 33 steps past 94.
+func migrateToVersion(t *testing.T, ctx context.Context, migrateURL string, admin *pgxpool.Pool, version int) {
+	t.Helper()
+	if _, err := Migrate(ctx, migrateURL); err != nil {
+		t.Fatalf("migrate fresh database to head: %v", err)
+	}
+	above, err := MigrationStepsAbove(int64(version))
+	if err != nil {
+		t.Fatalf("count embedded migrations above %d: %v", version, err)
+	}
+	if err := MigrateSteps(ctx, migrateURL, -above); err != nil {
+		t.Fatalf("step down %d migrations to %d: %v", above, version, err)
+	}
+	if got := currentMigrationVersion(t, ctx, admin); got != version {
+		t.Fatalf("version after stepping down %d migrations = %d, want %d", above, got, version)
+	}
+}
+
 func currentMigrationVersion(t *testing.T, ctx context.Context, db *pgxpool.Pool) int {
 	t.Helper()
 	var version int

@@ -21,10 +21,8 @@ func TestMigrate0094FreshUpDownUp(t *testing.T) {
 
 	// Land on EXACTLY 94 rather than on head. This test asserts 0094's own round trip, so
 	// a bare Migrate() broke the day 0095 landed: head became 95, and the single step down
-	// took the database to 94 instead of 93. migrate_0093 carries the same helper for the
-	// same reason — the pattern is "go to head, then step down until the version matches",
-	// because migration numbers are assigned at landing and are not contiguous.
-	migrateTo0094(t, ctx, migrateURL, admin)
+	// took the database to 94 instead of 93.
+	migrateToVersion(t, ctx, migrateURL, admin, 94)
 	assert0094Schema(t, ctx, admin)
 
 	if err := MigrateSteps(ctx, migrateURL, -1); err != nil {

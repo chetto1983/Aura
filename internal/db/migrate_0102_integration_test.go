@@ -10,26 +10,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func migrateTo0101(t *testing.T, ctx context.Context, migrateURL string, admin *pgxpool.Pool) {
-	t.Helper()
-	if _, err := Migrate(ctx, migrateURL); err != nil {
-		t.Fatalf("migrate fresh database to head: %v", err)
-	}
-	for step := 0; step <= 32; step++ {
-		switch version := currentMigrationVersion(t, ctx, admin); {
-		case version == 101:
-			return
-		case version < 101:
-			t.Fatalf("stepped past 0101: landed on version %d", version)
-		default:
-			if err := MigrateSteps(ctx, migrateURL, -1); err != nil {
-				t.Fatalf("step down toward 0101 from version %d: %v", version, err)
-			}
-		}
-	}
-	t.Fatalf("did not reach version 101 within 32 steps (now %d)", currentMigrationVersion(t, ctx, admin))
-}
-
 // TestMigrate0102BackfillsDecisionPolicyRoundTrip executes the shipped SQL against a
 // real disposable PostgreSQL database. It starts at the exact pre-policy schema, seeds
 // every resume_context shape already accepted by PostgreSQL, upgrades, rolls back, and
@@ -39,7 +19,7 @@ func TestMigrate0102BackfillsDecisionPolicyRoundTrip(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	admin, migrateURL, _ := fresh0093Database(t, ctx, "aura_migrate0102_policy")
-	migrateTo0101(t, ctx, migrateURL, admin)
+	migrateToVersion(t, ctx, migrateURL, admin, 101)
 
 	var convID string
 	if err := admin.QueryRow(ctx, `

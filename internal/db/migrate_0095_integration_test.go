@@ -6,32 +6,7 @@ import (
 	"context"
 	"testing"
 	"time"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-// migrateTo0094 lands the database on EXACTLY version 94, the state immediately before
-// the parent_seq backfill. Same formulation as migrateTo0093 and for the same reason:
-// migration numbers are assigned at landing and are NOT contiguous, so stepping by count
-// lands somewhere arbitrary. Migrate to head, then step down until the version matches.
-func migrateTo0094(t *testing.T, ctx context.Context, migrateURL string, admin *pgxpool.Pool) {
-	t.Helper()
-	if _, err := Migrate(ctx, migrateURL); err != nil {
-		t.Fatalf("migrate fresh database to head: %v", err)
-	}
-	for step := 0; step <= 32; step++ {
-		switch v := currentMigrationVersion(t, ctx, admin); {
-		case v == 94:
-			return
-		case v < 94:
-			t.Fatalf("stepped past 0094: landed on version %d", v)
-		}
-		if err := MigrateSteps(ctx, migrateURL, -1); err != nil {
-			t.Fatalf("step down toward 0094: %v", err)
-		}
-	}
-	t.Fatalf("did not reach version 94 within 32 steps (now %d)", currentMigrationVersion(t, ctx, admin))
-}
 
 // TestMigrate0095RepairsLegacyNullParentChain covers the data repair AND its two guards.
 //
@@ -52,7 +27,7 @@ func TestMigrate0095RepairsLegacyNullParentChain(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	admin, migrateURL, _ := fresh0093Database(t, ctx, "aura_migrate0095_backfill")
-	migrateTo0094(t, ctx, migrateURL, admin)
+	migrateToVersion(t, ctx, migrateURL, admin, 94)
 
 	const canonical = "00000000-0000-0000-0000-000000000000"
 	forked := "11111111-1111-1111-1111-111111111111"

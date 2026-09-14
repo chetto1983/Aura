@@ -17,48 +17,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// migrateTo0093 lands the database on EXACTLY version 93.
-//
-// This file asserts 0093's own round trip and its down-guard, so it must target 0093,
-// not "whatever is newest" — Migrate() goes to head, and the day 0094 landed these
-// tests started reading version 94 and stepping 0094 down instead of 0093.
-//
-// Stepping by COUNT is not the fix either: migration numbers are assigned at landing
-// and are NOT contiguous (69 files, highest 0094), so MigrateSteps(93) is 24 files
-// short of version 93. Migrating to head and stepping down until the version matches
-// is the only formulation that stays correct as more migrations land -- so the step
-// budget is the head's distance from 93, not a constant that the next migration breaks.
-func migrateTo0093(t *testing.T, ctx context.Context, migrateURL string, admin *pgxpool.Pool) {
-	t.Helper()
-	if _, err := Migrate(ctx, migrateURL); err != nil {
-		t.Fatalf("migrate fresh database to head: %v", err)
-	}
-	head, err := MigrationHead()
-	if err != nil {
-		t.Fatalf("read embedded migration head: %v", err)
-	}
-	budget := int(head) - 93
-	for step := 0; step <= budget; step++ {
-		switch v := currentMigrationVersion(t, ctx, admin); {
-		case v == 93:
-			return
-		case v < 93:
-			t.Fatalf("stepped past 0093: landed on version %d", v)
-		default:
-			if err := MigrateSteps(ctx, migrateURL, -1); err != nil {
-				t.Fatalf("step down toward 0093 (at version %d): %v", v, err)
-			}
-		}
-	}
-	t.Fatalf("could not reach version 93 within 32 down-steps")
-}
-
 func TestMigrate0093FreshUpDownUp(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	admin, migrateURL, _ := fresh0093Database(t, ctx, "aura_migrate0093_roundtrip")
 
-	migrateTo0093(t, ctx, migrateURL, admin)
+	migrateToVersion(t, ctx, migrateURL, admin, 93)
 	assert0093Schema(t, ctx, admin)
 
 	if err := MigrateSteps(ctx, migrateURL, -1); err != nil {
@@ -86,7 +50,7 @@ func TestMigrate0093DownBlocksAfterVerifiedObjectDeletion(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	admin, migrateURL, _ := fresh0093Database(t, ctx, "aura_migrate0093_deleted")
-	migrateTo0093(t, ctx, migrateURL, admin)
+	migrateToVersion(t, ctx, migrateURL, admin, 93)
 	if _, err := admin.Exec(ctx, `
 INSERT INTO aura.storage_objects (
     identity_id, bucket, object_key, kind, size_bytes, status, deletion_verified_at
@@ -111,7 +75,7 @@ func TestMigrate0093OwnerScopedJobReclaimFenceAndManualRetry(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	admin, migrateURL, appURL := fresh0093Database(t, ctx, "aura_migrate0093_jobs")
-	migrateTo0093(t, ctx, migrateURL, admin)
+	migrateToVersion(t, ctx, migrateURL, admin, 93)
 	app, err := Open(ctx, &Config{URL: appURL})
 	if err != nil {
 		t.Fatalf("open app pool: %v", err)
