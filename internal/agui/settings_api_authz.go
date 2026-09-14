@@ -15,6 +15,13 @@ var adminOnlySettingKeys = map[string]struct{}{
 	"AURA_LLM_PROVIDER":                {},
 	"AURA_LLM_MODEL":                   {},
 	"AURA_LLM_BASE_URL":                {},
+	// The four live media-generation settings (image/video plan, ruling R3): the same
+	// governance-write + identity.create gate as the primary LLM route, because they
+	// pick the model (and spend) every identity's generation calls use.
+	"AURA_IMAGE_MODEL":           {},
+	"AURA_VIDEO_MODEL":           {},
+	"AURA_VIDEO_INLINE_WAIT_SEC": {},
+	"AURA_ASSET_MAX_VIDEO_BYTES": {},
 }
 
 // mintedSettingKeys are written only by the reconciler: nobody types the services key.
@@ -24,6 +31,12 @@ var mintedSettingKeys = map[string]struct{}{"OPENROUTER_API_KEY": {}}
 var callTimeSettingKeys = map[string]struct{}{
 	"AURA_OPENROUTER_MANAGEMENT_KEY":   {},
 	"AURA_OPENROUTER_SERVICES_CAP_USD": {},
+	// The two media models and the inline wait are read fresh on every generation
+	// call (cmd/aura's mediaSettings); the asset byte ceiling is boot-only, so it is
+	// deliberately absent here.
+	"AURA_IMAGE_MODEL":           {},
+	"AURA_VIDEO_MODEL":           {},
+	"AURA_VIDEO_INLINE_WAIT_SEC": {},
 }
 
 func isCallTimeSetting(key string) bool {

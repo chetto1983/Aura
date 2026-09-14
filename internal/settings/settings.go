@@ -90,6 +90,14 @@ var AllowedKeys = map[string]KeyMeta{
 	"AURA_TTS_MODEL":                   {Kind: KindString, Label: "TTS cloud model"},
 	"AURA_STT_CLOUD_MODEL":             {Kind: KindString, Label: "STT cloud model"},
 	"TELEGRAM_BOT_TOKEN":               {Secret: true, Kind: KindString, Label: "Telegram bot token"},
+	// The four live media-generation settings (image/video plan, ruling R3): rows in
+	// aura.settings exactly like the primary LLM model, read fresh by
+	// cmd/aura's mediagen.Settings implementation on every call — nothing reads
+	// them with os.Getenv.
+	"AURA_IMAGE_MODEL":           {Kind: KindString, Label: "Image generation model"},
+	"AURA_VIDEO_MODEL":           {Kind: KindString, Label: "Video generation model"},
+	"AURA_VIDEO_INLINE_WAIT_SEC": {Kind: KindInt, Label: "Video inline wait ceiling (seconds)"},
+	"AURA_ASSET_MAX_VIDEO_BYTES": {Kind: KindInt, Label: "Max video asset size (bytes)"},
 }
 
 // Allowed reports whether key may be set through the Settings layer.

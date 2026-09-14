@@ -155,7 +155,7 @@ The feature is one integrated subsystem: catalog, credentials and assets serve b
 - Produces in `config`: `MediaConfig{ImageModel, VideoModel string; VideoInlineWaitSec int; AssetMaxVideoBytes int64}`, embedded as `Config.Media MediaConfig`.
 - Produces: `*mediagen.Error{Code, Message string}`, implementing `error`; `ErrorCode(error) string` returns an empty string for nil, the contained code for a media Error, or `job_failed` for an infrastructure failure.
 
-- [ ] **Step 1: Pin credential classification with a unit test.**
+- [x] **Step 1: Pin credential classification with a unit test.**
 
 Define a local resolver stub; do not instantiate or compare a real secret in output.
 
@@ -184,7 +184,7 @@ func TestMediaCredentialsRefusesCreditSentinel(t *testing.T) {
 
 Add cases for `runner.ErrNoIdentityLLMKey`, `identitykey.ErrNoCredit`, nil resolver, empty owner, local URLs with a deployment key, valid owner key, and unrelated store failure. A non-credit infrastructure error is not a fabricated `no_credit`.
 
-- [ ] **Step 2: Run red.**
+- [x] **Step 2: Run red.**
 
 ~~~sh
 go test ./cmd/aura -run TestMediaCredentials -count=1
@@ -192,7 +192,7 @@ go test ./cmd/aura -run TestMediaCredentials -count=1
 
 Expected: missing media credential types. Config tests must assert all four exact defaults and reject negative wait / nonpositive byte ceiling; allow wait zero for immediate detachment.
 
-- [ ] **Step 3: Implement the port and settings precedence.**
+- [x] **Step 3: Implement the port and settings precedence.**
 
 ~~~go
 type snapshotResolver interface {
@@ -228,7 +228,7 @@ Use the existing singleton `identityLLMResolver(chat)` in serve wiring for both 
 
 `mediaModelSettings.Model` reads the store on each call: nonempty stored row → boot environment value → specified default. A store error must surface, not silently switch models. Add both models to `AllowedKeys`, `adminOnlySettingKeys`, `callTimeSettingKeys`; register four config knobs. Use `loadMediaConfig() MediaConfig` in `config_media.go` so Config/Load stay at or below 600 lines.
 
-- [ ] **Step 4: Record evidence and test hot changes.**
+- [x] **Step 4: Record evidence and test hot changes.** (scope per implementer-notes.md ruling R3: no PRD/`.env.example` edit — settings hot-change/reset/authz tests only)
 
 Update the current PRD sections for tools, assets, model selection and configuration; record the prior measured image/video costs and what those tests did not establish. Include this plan's free-catalog measurements without claiming a new paid probe. The four env example rows are:
 
@@ -241,12 +241,12 @@ AURA_ASSET_MAX_VIDEO_BYTES=52428800
 
 Test saved value changes on the same settings-port instance, reset to default, member PUT/DELETE refusal and admin success without restart. Preserve the existing no-key/no-credit LLM refusal behavior.
 
-- [ ] **Step 5: Verify and commit.**
+- [x] **Step 5: Verify and commit.** (file set per implementer-notes.md: `internal/mediagen`, `internal/settings/settings.go`, `internal/agui/settings_api_authz*.go`, `cmd/aura/media_*.go` — no `config`, `serve.go`, `prd.md`, `.env.example`)
 
 ~~~sh
-go test ./internal/config ./internal/settings ./internal/agui ./cmd/aura
-go test -race ./internal/config ./internal/settings ./internal/agui ./cmd/aura
-git add internal/config internal/settings internal/agui/settings_api_authz.go internal/agui/settings_api_authz_test.go internal/mediagen/errors.go internal/mediagen/ports.go cmd/aura/media_credentials.go cmd/aura/media_credentials_test.go cmd/aura/media_settings.go cmd/aura/media_settings_test.go cmd/aura/serve.go prd.md .env.example
+go test ./internal/mediagen ./internal/settings ./internal/agui ./cmd/aura -count=1
+go test -race ./internal/mediagen/ ./internal/settings/ ./internal/agui/ ./cmd/aura/ -count=1   # WSL
+git add internal/mediagen internal/settings/settings.go internal/agui/settings_api_authz.go internal/agui/settings_api_authz_test.go cmd/aura/media_credentials.go cmd/aura/media_credentials_test.go cmd/aura/media_settings.go cmd/aura/media_settings_test.go docs/superpowers/plans/2026-09-14-image-video-generation.md
 git commit -m "feat(media): resolve live models and identity credentials" -m "Reuse the existing credit decision and record measured provider constraints before generation."
 ~~~
 

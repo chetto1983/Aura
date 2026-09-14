@@ -86,6 +86,87 @@ func TestMemberStillTunesAnOrdinarySetting(t *testing.T) {
 	}
 }
 
+// TestMemberCannotChangeMediaSettings and TestAdminSetsMediaSettings pin the
+// image/video plan's ruling R3: all four media keys are admin-only, exactly
+// like the primary LLM route, because they pick the model (and spend) every
+// identity's generation calls use.
+func TestMemberCannotChangeMediaSettings(t *testing.T) {
+	for _, key := range []string{
+		"AURA_IMAGE_MODEL", "AURA_VIDEO_MODEL", "AURA_VIDEO_INLINE_WAIT_SEC", "AURA_ASSET_MAX_VIDEO_BYTES",
+	} {
+		store := &fakeSettingsStore{}
+		s := &Server{settings: store, idAdmin: adminCaps("admin-1")}
+		rr, r := putReq(t, key, "45", "member-1")
+		s.handlePutSetting(rr, r)
+		if rr.Code != http.StatusForbidden || len(store.upserted) != 0 {
+			t.Fatalf("%s: status = %d upserted = %v, want 403 and nothing written", key, rr.Code, store.upserted)
+		}
+	}
+}
+
+func TestAdminSetsMediaSettings(t *testing.T) {
+	cases := []struct{ key, value string }{
+		{"AURA_IMAGE_MODEL", "vendor/other-image-model"},
+		{"AURA_VIDEO_MODEL", "vendor/other-video-model"},
+		{"AURA_VIDEO_INLINE_WAIT_SEC", "60"},
+		{"AURA_ASSET_MAX_VIDEO_BYTES", "104857600"},
+	}
+	for _, tc := range cases {
+		store := &fakeSettingsStore{}
+		s := &Server{settings: store, idAdmin: adminCaps("admin-1")}
+		rr, r := putReq(t, tc.key, tc.value, "admin-1")
+		s.handlePutSetting(rr, r)
+		if rr.Code != http.StatusOK || store.upserted[tc.key] != tc.value {
+			t.Fatalf("%s: status = %d upserted = %v, want 200 and the value stored", tc.key, rr.Code, store.upserted)
+		}
+	}
+}
+
+func TestMemberCannotDeleteMediaSettings(t *testing.T) {
+	for _, key := range []string{
+		"AURA_IMAGE_MODEL", "AURA_VIDEO_MODEL", "AURA_VIDEO_INLINE_WAIT_SEC", "AURA_ASSET_MAX_VIDEO_BYTES",
+	} {
+		store := &fakeSettingsStore{}
+		s := &Server{settings: store, idAdmin: adminCaps("admin-1")}
+		r := withPrincipal(httptest.NewRequest(http.MethodDelete, "/api/settings/"+key, nil), "member-1")
+		r.SetPathValue("key", key)
+		rr := httptest.NewRecorder()
+		s.handleDeleteSetting(rr, r)
+		if rr.Code != http.StatusForbidden || len(store.deleted) != 0 {
+			t.Fatalf("%s: status = %d deleted = %v, want 403 and nothing deleted", key, rr.Code, store.deleted)
+		}
+	}
+}
+
+// TestMediaModelsAndWaitReadAsLive pins the three call-time media keys
+// (the two models plus the inline wait) as "live", matching ruling R3's
+// per-call read; the byte ceiling stays deliberately absent, per
+// TestAssetMaxVideoBytesIsBootBound below.
+func TestMediaModelsAndWaitReadAsLive(t *testing.T) {
+	store := &fakeSettingsStore{rows: []sqlc.AuraSettings{
+		{Key: "AURA_IMAGE_MODEL", Value: "vendor/other-image-model"},
+		{Key: "AURA_VIDEO_MODEL", Value: "vendor/other-video-model"},
+		{Key: "AURA_VIDEO_INLINE_WAIT_SEC", Value: "60"},
+	}}
+	s := &Server{settings: store}
+	rr := httptest.NewRecorder()
+	s.handleListSettings(rr, httptest.NewRequest(http.MethodGet, "/api/settings", nil))
+	for _, key := range []string{"AURA_IMAGE_MODEL", "AURA_VIDEO_MODEL", "AURA_VIDEO_INLINE_WAIT_SEC"} {
+		if item := settingItemByKey(t, rr.Body.Bytes(), key); item.Applied != appliedLive {
+			t.Fatalf("%s: applied = %q, want live: it is read on every call", key, item.Applied)
+		}
+	}
+}
+
+// TestAssetMaxVideoBytesIsBootBound pins the byte ceiling's deliberate absence
+// from callTimeSettingKeys: it is read once at boot, so a persisted change
+// reports "restart", not "live", unlike its three siblings above.
+func TestAssetMaxVideoBytesIsBootBound(t *testing.T) {
+	if isCallTimeSetting("AURA_ASSET_MAX_VIDEO_BYTES") {
+		t.Fatal("AURA_ASSET_MAX_VIDEO_BYTES must not be a call-time setting: it is read once at boot")
+	}
+}
+
 func TestCallTimeSettingsReadAsLive(t *testing.T) {
 	store := &fakeSettingsStore{rows: []sqlc.AuraSettings{{Key: "AURA_OPENROUTER_MANAGEMENT_KEY", Value: "sk-or-v1-mgmt", IsSecret: true}}}
 	s := &Server{settings: store}
