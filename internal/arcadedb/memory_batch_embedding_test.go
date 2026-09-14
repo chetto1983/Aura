@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -74,6 +77,73 @@ func TestMemoryBatch_EmbedsCreatedFacts(t *testing.T) {
 	}
 	if got := backend.embedCalls; got != 1 {
 		t.Fatalf("embed calls = %d, want exactly one batched call outside the transaction", got)
+	}
+}
+
+// A capture follows every memory_upsert_fact and restates the fact the tool call has just
+// stored, so the batch keeps that fact and throws away the vector it was handed: every
+// explicit fact reached the sidecar twice. Measured 2026-09-14 on the appliance: a fact an
+// operator had just asked Aura to remember was embedded twice, 0.1 s apart.
+// The vector is a pure function of the text, so a statement already stored with one
+// never needs the sidecar again.
+func TestMemoryBatchEmbedReusesStoredStatementVectors(t *testing.T) {
+	const known, fresh = "Davide lives in Torino.", "Davide works at Pmsync."
+	storedVector, err := json.Marshal(vectorOf(7))
+	if err != nil {
+		t.Fatalf("marshal stored vector: %v", err)
+	}
+	storedKnown := `{"result":[{"statement":"` + known + `","embedding":` + string(storedVector) + `}]}`
+	tests := []struct {
+		name       string
+		statements []string
+		lookup     testResponse
+		wantSent   []string
+		wantFirst  map[string]float64
+	}{
+		{"only the never-stored statement is sent", []string{known, fresh}, testResponse{Body: storedKnown},
+			[]string{fresh}, map[string]float64{known: 7, fresh: 1}},
+		{"a fully stored batch never reaches the sidecar", []string{known}, testResponse{Body: storedKnown},
+			nil, map[string]float64{known: 7}},
+		{"a failed lookup still embeds everything", []string{known, fresh},
+			testResponse{Status: http.StatusInternalServerError, Body: `{"detail":"down"}`},
+			[]string{known, fresh}, map[string]float64{known: 1, fresh: 1}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			answer := make([][]float64, len(tt.wantSent))
+			for i := range answer {
+				answer[i] = vectorOf(1)
+			}
+			embedder := &stubEmbedder{vectors: [][][]float64{answer}}
+			client, _ := routedClient(t, func(request recordedRequest) testResponse {
+				statement, _ := request.Payload["command"].(string)
+				if strings.Contains(statement, "embedding IS NOT NULL") {
+					return tt.lookup
+				}
+				return testResponse{Body: `{"result":[]}`}
+			})
+			client.WithEmbedder(embedder)
+
+			vectors := clientMemoryBatchBackend{client: client}.EmbedStatements(context.Background(), tt.statements)
+
+			var sent []string
+			for _, call := range embedder.calls {
+				for _, text := range call {
+					sent = append(sent, strings.TrimPrefix(text, taskDocumentPrefix))
+				}
+			}
+			if !slices.Equal(sent, tt.wantSent) {
+				t.Fatalf("sidecar received %q, want %q", sent, tt.wantSent)
+			}
+			if len(vectors) != len(tt.wantFirst) {
+				t.Fatalf("vectors for %d statements, want %d", len(vectors), len(tt.wantFirst))
+			}
+			for statement, first := range tt.wantFirst {
+				if vector := vectors[statement]; len(vector) != vectorDimensions || vector[0] != first {
+					t.Fatalf("vector for %q starts %v (width %d), want %v", statement, vector[:min(1, len(vector))], len(vector), first)
+				}
+			}
+		})
 	}
 }
 

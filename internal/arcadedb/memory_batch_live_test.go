@@ -51,6 +51,54 @@ func TestMemoryBatchLive_AtomicRollbackAndReplay(t *testing.T) {
 	}
 }
 
+// The unit test proves the decision; this proves the lookup it rests on against a real
+// server: `statement IN :statements` with a list parameter, and an ARRAY_OF_FLOATS vector
+// read back into a usable []float64.
+func TestMemoryBatchLive_RestatedStatementIsNotEmbeddedAgain(t *testing.T) {
+	client := disposableMemoryClient(t)
+	embedder := &countingEmbedder{}
+	client.WithEmbedder(embedder)
+	ctx := context.Background()
+	actor := MemoryBatchActor{IdentityID: "batch-embed-live", WriterRole: WriterParent}
+	at := time.Date(2026, 9, 14, 7, 0, 0, 0, time.UTC)
+	batch := func(key string, operation MemoryBatchOperation, wantTexts int) {
+		t.Helper()
+		if _, err := client.ApplyMemoryBatch(ctx, actor,
+			MemoryBatchRequest{IdempotencyKey: key, Operations: []MemoryBatchOperation{operation}}, at); err != nil {
+			t.Fatalf("batch %s: %v", key, err)
+		}
+		if embedder.texts != wantTexts {
+			t.Fatalf("after batch %s the embedder saw %d texts, want %d", key, embedder.texts, wantTexts)
+		}
+	}
+
+	if _, err := client.UpsertFact(ctx, mergeFact("EmbedLiveDavide", "works_at", "EmbedLivePmsync",
+		"EmbedLiveDavide works at EmbedLivePmsync."), at); err != nil {
+		t.Fatalf("UpsertFact: %v", err)
+	}
+	if embedder.texts != 1 {
+		t.Fatalf("UpsertFact sent %d texts to the embedder, want 1", embedder.texts)
+	}
+
+	// What the capture after memory_upsert_fact submits: the same fact, restated.
+	restated := memoryBatchTestUpsert("EmbedLiveDavide", "works_at", "EmbedLivePmsync", "capture-run")
+	restated.Fact.Statement = "EmbedLiveDavide works at EmbedLivePmsync."
+	batch("capture", restated, 1)
+
+	// A different fact carrying identical text is created with the stored vector, not a new call.
+	sameText := memoryBatchTestUpsert("EmbedLiveAlias", "works_at", "EmbedLivePmsync", "alias-run")
+	sameText.Fact.Statement = "EmbedLiveDavide works at EmbedLivePmsync."
+	batch("same-text", sameText, 1)
+
+	batch("fresh", memoryBatchTestUpsert("EmbedLiveDavide", "lives_in", "EmbedLiveCuneo", "fresh-run"), 2)
+
+	rows, err := client.Query(ctx, "SELECT count(*) AS n FROM FACT WHERE embedding.size() = :width",
+		map[string]any{"width": vectorDimensions})
+	if err != nil || len(rows) != 1 || rowInt(rows[0], "n") != 3 {
+		t.Fatalf("facts carrying a full-width vector: rows=%+v err=%v, want 3", rows, err)
+	}
+}
+
 func TestMemoryBatchLive_ConcurrentBatchesConverge(t *testing.T) {
 	client := disposableMemoryClient(t)
 	ctx := context.Background()

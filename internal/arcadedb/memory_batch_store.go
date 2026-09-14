@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"reflect"
 	"sort"
 	"time"
@@ -31,11 +32,63 @@ type clientMemoryBatchTx struct {
 	closed    bool
 }
 
+const storedStatementVectorsStatement = "SELECT statement, embedding FROM " + factEdgeType +
+	" WHERE statement IN :statements AND embedding IS NOT NULL"
+
+// EmbedStatements reuses the vector of every statement the store already holds and sends
+// only the rest to the sidecar. A capture restates the fact its tool call has just written,
+// so without the lookup every explicit fact was embedded twice.
 func (backend clientMemoryBatchBackend) EmbedStatements(
 	ctx context.Context,
 	statements []string,
 ) map[string][]float64 {
-	return backend.client.embedStatements(ctx, statements)
+	client := backend.client
+	if client == nil || client.embedder == nil || len(statements) == 0 {
+		return nil
+	}
+	vectors := client.storedStatementVectors(ctx, statements)
+	missing := make([]string, 0, len(statements))
+	for _, statement := range statements {
+		if _, stored := vectors[statement]; !stored {
+			missing = append(missing, statement)
+		}
+	}
+	maps.Copy(vectors, client.embedStatements(ctx, missing))
+	return vectors
+}
+
+// storedStatementVectors is fail-soft like the embedder it saves a call to: a lookup that
+// cannot be served only means every statement is embedded, never that the batch fails.
+func (c *Client) storedStatementVectors(ctx context.Context, statements []string) map[string][]float64 {
+	vectors := make(map[string][]float64, len(statements))
+	rows, err := c.Query(ctx, storedStatementVectorsStatement, map[string]any{"statements": statements})
+	if err != nil {
+		return vectors
+	}
+	for _, row := range rows {
+		if vector := rowVector(row, "embedding"); vector != nil {
+			vectors[rowString(row, "statement")] = vector
+		}
+	}
+	return vectors
+}
+
+// rowVector returns the row's vector only when it has the index width; anything else is
+// treated as absent so the statement is embedded afresh.
+func rowVector(row map[string]any, key string) []float64 {
+	items, ok := row[key].([]any)
+	if !ok || len(items) != vectorDimensions {
+		return nil
+	}
+	vector := make([]float64, len(items))
+	for i, item := range items {
+		value, ok := item.(float64)
+		if !ok {
+			return nil
+		}
+		vector[i] = value
+	}
+	return vector
 }
 
 func (backend clientMemoryBatchBackend) Begin(
