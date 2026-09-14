@@ -14,6 +14,8 @@
 #   AURA_WHATSAPP_MCP_IMAGE=ghcr.io/chetto1983/whatsapp-mcp:latest
 #   AURA_CADDY_IMAGE=ghcr.io/chetto1983/aura-caddy:edge  (+ AURA_CADDY_PULL_POLICY=always)
 #   AURA_INGEST_IMAGE=ghcr.io/chetto1983/aura-ingest:edge  (+ AURA_INGEST_PULL_POLICY=always)
+#   AURA_SANDBOX_IMAGE=ghcr.io/chetto1983/aura-sandbox:edge
+#   AURA_SANDBOX_EGRESS_IMAGE=ghcr.io/chetto1983/aura-egress:edge
 
 set -Eeuo pipefail
 
@@ -54,6 +56,18 @@ service_is_healthy() {
   [[ "${state}" == 'running' && ("${health}" == 'healthy' || "${health}" == 'none') ]]
 }
 
+wait_healthy() {
+  local svc="$1" deadline=$((SECONDS + HEALTH_TIMEOUT_SECONDS))
+  until service_is_healthy "${svc}"; do
+    if ((SECONDS >= deadline)); then
+      echo "${svc} did not become healthy within ${HEALTH_TIMEOUT_SECONDS}s" >&2
+      docker compose ps "${svc}" >&2
+      exit 1
+    fi
+    sleep 2
+  done
+}
+
 before="$(container_image_id aura)"
 
 # aura, aura-migrate and garage-bootstrap share ${AURA_IMAGE}: the migrator must
@@ -63,16 +77,7 @@ before="$(container_image_id aura)"
 # first; already-healthy infra deps (postgres, garage, embed) are left alone.
 docker compose pull aura aura-migrate garage-bootstrap
 docker compose up -d aura
-
-deadline=$((SECONDS + HEALTH_TIMEOUT_SECONDS))
-until service_is_healthy aura; do
-  if ((SECONDS >= deadline)); then
-    echo "Aura did not become healthy within ${HEALTH_TIMEOUT_SECONDS}s" >&2
-    docker compose ps aura >&2
-    exit 1
-  fi
-  sleep 2
-done
+wait_healthy aura
 
 after="$(container_image_id aura)"
 echo "aura: ${before} -> ${after}"
@@ -97,15 +102,7 @@ update_sidecar() {
     return 0
   }
   docker compose up -d --no-deps "${svc}"
-  deadline=$((SECONDS + HEALTH_TIMEOUT_SECONDS))
-  until service_is_healthy "${svc}"; do
-    if ((SECONDS >= deadline)); then
-      echo "${svc} did not become healthy within ${HEALTH_TIMEOUT_SECONDS}s" >&2
-      docker compose ps "${svc}" >&2
-      exit 1
-    fi
-    sleep 2
-  done
+  wait_healthy "${svc}"
   svc_after="$(container_image_id "${svc}")"
   echo "${svc}: ${svc_before} -> ${svc_after}"
 }
@@ -117,6 +114,53 @@ update_sidecar whatsapp
 # as aura itself); on a machine pinned to :local these skip via pull tolerance.
 update_sidecar caddy
 update_sidecar aura-ingest
+
+# Per-user boxes are aura's own containers, not compose services, and aura pulls a box image
+# only when it is missing locally (DockerBackend.ensureImage): a tag already present is never
+# refreshed, and an existing box restarts on its old image forever. So both tags are pulled
+# here, and a box left on a superseded image is removed together with its egress sidecar --
+# the volumes stay -- for aura to recreate on that identity's next tool call. The pair goes
+# together because egress joins the box's network by container ID, and aura is restarted
+# afterwards because its idle reaper still holds the removed containers' IDs.
+env_value() {
+  [[ -f .env ]] || return 0
+  sed -n "s/^$1=//p" .env | tail -n 1 | tr -d "\"'"
+}
+
+refresh_sandbox_images() {
+  local box_image egress_image box_id egress_id name egress egress_now removed=0
+  box_image="$(env_value AURA_SANDBOX_IMAGE)"
+  egress_image="$(env_value AURA_SANDBOX_EGRESS_IMAGE)"
+  if [[ -z "${box_image}" || -z "${egress_image}" ]]; then
+    echo "sandbox: no images pinned in .env; skipped."
+    return 0
+  fi
+  if ! docker pull -q "${box_image}" >/dev/null || ! docker pull -q "${egress_image}" >/dev/null; then
+    echo "sandbox: pull failed (local-only pin or registry unreachable); skipped."
+    return 0
+  fi
+  box_id="$(docker image inspect --format '{{.Id}}' "${box_image}")"
+  egress_id="$(docker image inspect --format '{{.Id}}' "${egress_image}")"
+  while read -r name; do
+    [[ "${name}" == aura-box-* ]] || continue
+    egress="aura-egress-${name#aura-box-}"
+    egress_now="$(docker inspect --format '{{.Image}}' "${egress}" 2>/dev/null || true)"
+    if [[ "$(docker inspect --format '{{.Image}}' "${name}")" == "${box_id}" &&
+      ("${egress_now}" == '' || "${egress_now}" == "${egress_id}") ]]; then
+      continue
+    fi
+    [[ -z "${egress_now}" ]] || docker rm -f "${egress}" >/dev/null
+    docker rm -f "${name}" >/dev/null
+    echo "sandbox: ${name} ran a superseded image; removed for aura to recreate."
+    removed=$((removed + 1))
+  done < <(docker ps -a --filter name=aura-box- --format '{{.Names}}')
+  if ((removed > 0)); then
+    docker compose restart aura
+    wait_healthy aura
+  fi
+}
+
+refresh_sandbox_images
 
 # Remove only untagged images left behind by a successful replacement.
 docker image prune --force >/dev/null
