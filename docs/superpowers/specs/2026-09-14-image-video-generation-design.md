@@ -87,8 +87,10 @@ origin; its blocking `video_generate` (900 s) does not fit Aura's 300 s turn.
 4. Every generation spends on the identity's own key through the same credit decision as its LLM
    turns.
 5. A video is produced by one detached job watcher with two outcomes: inline in the same turn when
-   it finishes within a short wait, otherwise announced later by waking the conversation. A paid
-   clip is never lost, including across a restart.
+   it finishes within a short wait, otherwise announced later by waking the conversation. Once its
+   job row is stored, a paid clip is never lost, including across a restart. The submission
+   interval before that row exists is excluded: its outcome is unknown and it is never re-sent
+   (§3, Recovery boundary).
 6. v1 covers text-to-image, image editing with references, text-to-video and image-to-video.
 7. The cockpit renders generation with assistant-ui's `image` and `image-generation` elements,
    installed from the registry and restyled; video gets its own player in the same card.
@@ -192,7 +194,8 @@ unclamped; OpenRouter validates.
 
 **Table** `aura.media_job`, identity-scoped with fail-closed row-level security, the pattern
 `0090_rls_fail_closed_assets` applies to `aura.assets`: `id`, `identity_id`, `conversation_id`, `tool_call_id`, `provider_job_id` (unique),
-`model`, `request` (jsonb, the clamped body without image data), `status`
+`model`, `request` (jsonb, the clamped body without image data, plus a reserved `_aura` object
+with the reference asset IDs and the submission origin, never sent to the provider), `status`
 (`pending | in_progress | completed | failed | expired | cancelled`, CHECK), `error`, `asset_id`,
 `cost_usd`, `created_at`, `updated_at`, `completed_at`, `delivered_at`. Queries through sqlc. The
 migration number is the next free slot when the phase lands (`ls internal/db/migrations/ | tail -1`),
@@ -217,6 +220,30 @@ line reads: video job `<id>` finished with status `<s>`; call `video_generate` w
 
 **Boot.** The daemon resumes watchers for `pending` and `in_progress` rows, and re-wakes the
 conversation for `completed` rows with no `delivered_at`.
+
+**Recovery boundary** (decided 2026-09-14). The recovery guarantee starts after a successful
+Insert of the job row. The POST to OpenRouter and the Postgres transaction cannot be made atomic.
+The Video API reference read on 2026-09-14 (submit, poll, content, models) documents no
+submission idempotency key and no endpoint that lists jobs. The only other place a job ID
+surfaces is the completion webhook (`callback_url` or a workspace default): it needs a public
+HTTPS receiver, which Aura does not run, and its `X-OpenRouter-Idempotency-Key`
+(`<job_id>-<status>`) deduplicates webhook deliveries, not submissions. That reading does not show
+how the provider behaves on a duplicate body. So the submission interval is excluded: when the provider has accepted a job but the response or the
+Insert is lost, the outcome is unknown, the provider ID is known only to the interrupted process,
+and nothing ever POSTs again automatically. After the Insert, the job is resumed from its durable
+provider ID. `delivered_at` gives one winner per completed job. It does not prove that an external
+channel received the clip: a crash between the claim and the tool result leaves the asset in
+identity storage and the job delivered, and a later collect answers `already_delivered`. Telegram
+receipt stays best-effort.
+
+| Fault | Expected evidence | Test |
+|---|---|---|
+| before acceptance | no remote job, no charge claim | Task 4 `TestSubmitVideoNeverResendsAfterFailureOrLostResponse`, 5xx case: one POST, an error, no job to persist |
+| after acceptance / response lost | outcome unknown; never POST again automatically | same test, lost-response case: the connection closes after the body is read; one POST, an error (SDK retries are off) |
+| response received / before Insert | remote ID known only to the interrupted process | excluded by the guarantee; Task 9 pins that the row is persisted before the inline wait starts |
+| after Insert | same job resumed; one content download and one asset identity | Task 6 `TestMediaJobInsertRefusesDuplicateProviderID`, `TestMediaJobRecoverableOrdersByCreationAndRetainsIt`; Task 7 resume tests |
+| after ingest / before Complete | the stable SourceRef `media-job:<id>` reuses the same asset | Task 7 ingestion-recovery test; Task 6 `TestMediaJobCompleteRequiresOwnedAcceptedVideoAsset` |
+| after claim / before event | asset survives; external receipt is not proven | Task 6 `TestMediaJobClaimsOnceAndIsolatesOwners`, `TestMediaJobClaimRollsBackWhenTheAssetCannotBeBound`; Task 9 collect answers `already_delivered` |
 
 ### 4. Assets
 
