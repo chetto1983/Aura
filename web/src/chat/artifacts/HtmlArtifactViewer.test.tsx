@@ -18,6 +18,7 @@ function sourceFetch() {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -40,6 +41,13 @@ describe('HTML artifact workflow', () => {
   });
 
   it('shows source beside the preview in the expanded workspace without restarting the frame', async () => {
+    // jsdom gives every panel offsetLeft=0. The library orders registered panels by
+    // that offset; prepending source would otherwise leave preview first internally.
+    vi.spyOn(HTMLElement.prototype, 'offsetLeft', 'get').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return Array.from(this.parentElement?.children ?? []).indexOf(this) * 100;
+    });
     sourceFetch();
     const { container } = render(<HtmlArtifactViewer {...artifact} expanded />);
     const frame = container.querySelector('iframe');
