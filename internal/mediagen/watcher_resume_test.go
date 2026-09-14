@@ -1,8 +1,11 @@
 package mediagen
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
@@ -28,6 +31,26 @@ func requireRow(t *testing.T, h *watcherHarness, job Job, status Status, code st
 	return row
 }
 
+func (p *fakeProvider) requestsTo(path string) int {
+	count := 0
+	for _, request := range p.recorded() {
+		if strings.Fields(request)[1] == path {
+			count++
+		}
+	}
+	return count
+}
+
+// captureLogs sends the default logger to a buffer for the test; read it once no supervisor runs.
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	return &logs
+}
+
 func requireOneNotice(t *testing.T, h *watcherHarness, want Completion) {
 	t.Helper()
 	h.stop(t)
@@ -43,10 +66,8 @@ func TestWatcherRetriesTheDownloadWithoutPollingOrSubmittingAgain(t *testing.T) 
 			case 1:
 				respondJSON(w, http.StatusTooManyRequests, `{"error":{"code":429,"message":"Rate limited"}}`)
 			case 2:
-				conn, _, err := http.NewResponseController(w).Hijack()
-				if err == nil {
-					_ = conn.Close()
-				}
+				w.Header().Set("Content-Length", "1048576")
+				_, _ = w.Write(mp4Clip[:8])
 			default:
 				serveClip(n, w, r)
 			}
@@ -60,7 +81,7 @@ func TestWatcherRetriesTheDownloadWithoutPollingOrSubmittingAgain(t *testing.T) 
 		t.Fatalf("finished asset %q, row asset %q; want the ingested clip", finished.AssetID, row.AssetID)
 	}
 	if provider.polls.Load() != 1 || provider.downloads.Load() != 3 || provider.posts.Load() != 0 {
-		t.Fatalf("polls=%d downloads=%d POSTs=%d; want the completion kept across 3 downloads and no submission",
+		t.Fatalf("polls=%d downloads=%d POSTs=%d; want the completion kept across 3 watcher downloads and no submission",
 			provider.polls.Load(), provider.downloads.Load(), provider.posts.Load())
 	}
 	requireOneNotice(t, h, completionOf(finished))
@@ -116,53 +137,179 @@ func TestWatcherRecordsARemoteFailureWithItsCost(t *testing.T) {
 	}
 }
 
-func TestWatcherExpiresAtTheCeilingWithTheLastKnownCost(t *testing.T) {
+// spendLifetime wraps a provider handler so that answering it moves the clock to the ceiling.
+func spendLifetime(h **watcherHarness, handler providerHandler) providerHandler {
+	return func(n int32, w http.ResponseWriter, r *http.Request) {
+		(*h).clock.advance(VideoJobMaxAge)
+		handler(n, w, r)
+	}
+}
+
+func TestWatcherExpiresAfterOneFinalAttemptWithTheLastKnownCost(t *testing.T) {
 	cases := map[string]struct {
-		poll, download   providerHandler
-		spendOnDownload  bool
+		poll, download   func(h **watcherHarness) providerHandler
 		polls, downloads int32
+		progressWrites   int
 	}{
 		"while the job is still running": {
-			poll: func(_ int32, w http.ResponseWriter, _ *http.Request) {
-				respondJSON(w, http.StatusOK, `{"id":"vid_slow","status":"in_progress","usage":{"cost":0.2}}`)
+			poll: func(h **watcherHarness) providerHandler {
+				return spendLifetime(h, statuses(`{"id":"vid_slow","status":"in_progress","usage":{"cost":0.2}}`))
 			},
-			polls: 1,
+			// The in_progress write, a failed expiry, and the expiry retried without a provider call.
+			polls: 2, progressWrites: 3,
 		},
 		"while the clip download is retried": {
-			poll: statuses(`{"id":"vid_slow","status":"completed","usage":{"cost":0.2}}`),
-			download: func(_ int32, w http.ResponseWriter, _ *http.Request) {
-				respondJSON(w, http.StatusBadGateway, `{"error":{"code":502,"message":"Bad gateway"}}`)
+			poll: func(**watcherHarness) providerHandler {
+				return statuses(`{"id":"vid_slow","status":"completed","usage":{"cost":0.2}}`)
 			},
-			spendOnDownload: true,
-			polls:           1,
-			downloads:       1,
+			download: func(h **watcherHarness) providerHandler {
+				return spendLifetime(h, func(_ int32, w http.ResponseWriter, _ *http.Request) {
+					respondJSON(w, http.StatusBadGateway, `{"error":{"code":502,"message":"Bad gateway"}}`)
+				})
+			},
+			polls: 1, downloads: 2, progressWrites: 1,
 		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			var h *watcherHarness
-			spendLifetime := func(handler providerHandler) providerHandler {
-				return func(n int32, w http.ResponseWriter, r *http.Request) {
-					h.clock.advance(VideoJobMaxAge)
-					handler(n, w, r)
-				}
+			download := refuseRequest(t)
+			if tc.download != nil {
+				download = tc.download(&h)
 			}
-			poll, download := spendLifetime(tc.poll), refuseRequest(t)
-			if tc.spendOnDownload {
-				poll, download = tc.poll, spendLifetime(tc.download)
-			}
-			provider := newFakeProvider(t, poll, download)
+			provider := newFakeProvider(t, tc.poll(&h), download)
 			h = newWatcherHarness(t, context.Background(), provider, nil)
+			if tc.download == nil {
+				h.store.failNext("Progress", nil, errors.New("connection reset by peer"))
+			}
 			job := h.insertJob(t, "vid_slow")
 
 			finished := h.awaitTerminal(t, job)
 			requireRow(t, h, job, StatusExpired, "job_expired", 0.2)
-			if provider.polls.Load() != tc.polls || provider.downloads.Load() != tc.downloads {
-				t.Fatalf("polls=%d downloads=%d; want %d and %d, and no provider call past the ceiling",
-					provider.polls.Load(), provider.downloads.Load(), tc.polls, tc.downloads)
+			if provider.polls.Load() != tc.polls || provider.downloads.Load() != tc.downloads || h.store.count("Progress") != tc.progressWrites {
+				t.Fatalf("polls=%d downloads=%d Progress=%d; want %d, %d and %d: one final provider call, then only the expiry",
+					provider.polls.Load(), provider.downloads.Load(), h.store.count("Progress"), tc.polls, tc.downloads, tc.progressWrites)
 			}
 			requireOneNotice(t, h, completionOf(finished))
 		})
+	}
+}
+
+func TestWatcherCollectsTheClipOnItsFinalAttempt(t *testing.T) {
+	cases := map[string]struct {
+		download          func(h **watcherHarness) providerHandler
+		failComplete      bool
+		downloads         int32
+		completes, grants int
+	}{
+		"a completion whose download failed at the ceiling": {
+			download: func(h **watcherHarness) providerHandler {
+				return func(n int32, w http.ResponseWriter, r *http.Request) {
+					if n == 1 {
+						spendLifetime(h, func(_ int32, w http.ResponseWriter, _ *http.Request) {
+							respondJSON(w, http.StatusBadGateway, `{"error":{"code":502,"message":"Bad gateway"}}`)
+						})(n, w, r)
+						return
+					}
+					serveClip(n, w, r)
+				}
+			},
+			downloads: 2, completes: 1, grants: 2,
+		},
+		"an ingested clip whose Complete failed at the ceiling": {
+			download:     func(h **watcherHarness) providerHandler { return spendLifetime(h, serveClip) },
+			failComplete: true,
+			downloads:    1, completes: 2, grants: 1,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			var h *watcherHarness
+			provider := newFakeProvider(t, statuses(`{"id":"vid_edge","status":"completed","usage":{"cost":0.45}}`), tc.download(&h))
+			h = newWatcherHarness(t, context.Background(), provider, nil)
+			if tc.failComplete {
+				h.store.failNext("Complete", errors.New("connection reset by peer"))
+			}
+			job := h.insertJob(t, "vid_edge")
+
+			finished := h.awaitTerminal(t, job)
+			requireRow(t, h, job, StatusCompleted, "", 0.45)
+			h.credentials.mu.Lock()
+			grants := h.credentials.calls
+			h.credentials.mu.Unlock()
+			if provider.polls.Load() != 1 || provider.downloads.Load() != tc.downloads || h.store.count("Complete") != tc.completes || grants != tc.grants {
+				t.Fatalf("polls=%d downloads=%d completes=%d credentials=%d; want 1, %d, %d and %d",
+					provider.polls.Load(), provider.downloads.Load(), h.store.count("Complete"), grants, tc.downloads, tc.completes, tc.grants)
+			}
+			if d := h.store.deadline("Complete"); d.IsZero() || time.Until(d) > videoFinalAttemptGrace {
+				t.Fatalf("the final Complete had deadline %v, want one within the final attempt's grace", d)
+			}
+			requireOneNotice(t, h, completionOf(finished))
+		})
+	}
+}
+
+func TestWatcherStopAbortsTheFinalAttempt(t *testing.T) {
+	polled := make(chan struct{}, 1)
+	provider := newFakeProvider(t, func(_ int32, _ http.ResponseWriter, r *http.Request) {
+		select {
+		case polled <- struct{}{}:
+		default:
+		}
+		<-r.Context().Done()
+	}, refuseRequest(t))
+	h := newWatcherHarness(t, context.Background(), provider, nil)
+	job := h.insertJob(t, "vid_stopped")
+	job.CreatedAt = h.clock.now().Add(-VideoJobMaxAge - time.Hour)
+	h.store.seed(job)
+
+	h.watcher.Track(job, false)
+	select {
+	case <-polled:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the final attempt never read the job")
+	}
+	h.stop(t)
+	if row, err := h.store.Get(context.Background(), job.IdentityID, job.ID); err != nil || row.Status != StatusPending {
+		t.Fatalf("row = %+v, %v; a stopped final attempt must leave the job for the next boot", row, err)
+	}
+	if notices := h.drainNotices(); len(notices) != 0 || h.store.count("Progress") != 0 {
+		t.Fatalf("notices=%+v Progress=%d; want nothing recorded", notices, h.store.count("Progress"))
+	}
+}
+
+func TestWatcherReportsAPersistentCauseOnce(t *testing.T) {
+	logs := captureLogs(t)
+	attempts := make(chan struct{}, 1)
+	provider := newFakeProvider(t, refuseRequest(t), refuseRequest(t))
+	var clock func() time.Time
+	counted := 0
+	h := newWatcherHarness(t, context.Background(), provider, func(opts *WatcherOptions) {
+		clock = opts.Now
+		opts.Now = func() time.Time {
+			if counted++; counted == 5 {
+				attempts <- struct{}{}
+			}
+			return clock()
+		}
+	})
+	job := h.insertJob(t, "vid_no_origin")
+	job.Request = json.RawMessage(`{"model":"minimax/hailuo-3-max"}`)
+	h.store.seed(job)
+
+	h.watcher.Track(job, false)
+	select {
+	case <-attempts:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the supervisor did not retry")
+	}
+	h.stop(t)
+	lines := strings.Count(logs.String(), "job="+job.ID)
+	if lines != 1 || !strings.Contains(logs.String(), "records no submission origin") || strings.Contains(logs.String(), errOriginChanged.Error()) {
+		t.Fatalf("logged %d lines:\n%s\nwant the unreadable origin reported once, as itself", lines, logs.String())
+	}
+	if h.credentials.calls != 0 || len(provider.recorded()) != 0 {
+		t.Fatal("a job with no readable origin reached the credential or the provider")
 	}
 }
 
@@ -201,8 +348,9 @@ func TestWatcherFailsAClipItCannotStoreWithItsCost(t *testing.T) {
 
 			finished := h.awaitTerminal(t, job)
 			requireRow(t, h, job, StatusFailed, tc.code, 0.6)
-			if len(h.assets.ingests()) != tc.ingests || provider.downloads.Load() != 1 {
-				t.Fatalf("ingests=%d downloads=%d; a clip no retry can store is fetched once", len(h.assets.ingests()), provider.downloads.Load())
+			if len(h.assets.ingests()) != tc.ingests || h.assets.assets() != 0 || provider.downloads.Load() != 1 {
+				t.Fatalf("ingests=%d assets=%d downloads=%d; a clip no retry can store is fetched once and stored nowhere",
+					len(h.assets.ingests()), h.assets.assets(), provider.downloads.Load())
 			}
 			requireOneNotice(t, h, completionOf(finished))
 		})
@@ -210,6 +358,7 @@ func TestWatcherFailsAClipItCannotStoreWithItsCost(t *testing.T) {
 }
 
 func TestWatcherNeverSendsTheJobToAnotherOrigin(t *testing.T) {
+	logs := captureLogs(t)
 	provider := newFakeProvider(t, statuses(`{"id":"vid_origin","status":"completed","usage":{"cost":0.1}}`), serveClip)
 	other := newFakeProvider(t, refuseRequest(t), refuseRequest(t))
 	h := newWatcherHarness(t, context.Background(), provider, nil)
@@ -236,6 +385,9 @@ func TestWatcherNeverSendsTheJobToAnotherOrigin(t *testing.T) {
 		}
 	}
 	requireOneNotice(t, h, completionOf(finished))
+	if lines := strings.Count(logs.String(), "job="+job.ID); lines != 2 {
+		t.Fatalf("logged %d lines:\n%s\nwant the missing key and the changed origin, once each", lines, logs.String())
+	}
 }
 
 func TestWatcherWritesOnlyUnrecordedProgress(t *testing.T) {
@@ -338,44 +490,50 @@ func TestResumeWakesUndeliveredCompletionsOnceAndRejoinsActiveJobs(t *testing.T)
 	}
 }
 
-func TestResumeCountsTheCeilingFromTheStoredCreationTime(t *testing.T) {
-	polled := make(chan struct{}, 1)
+func TestResumeGivesAJobPastItsCeilingOneFinalAttempt(t *testing.T) {
 	provider := newFakeProvider(t, func(_ int32, w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/videos/vid_young" {
-			t.Errorf("resume polled %s", r.URL.Path)
-		}
-		select {
-		case polled <- struct{}{}:
+		switch r.URL.Path {
+		case "/videos/vid_charged":
+			respondJSON(w, http.StatusOK, `{"id":"vid_charged","status":"completed","usage":{"cost":0.7}}`)
+		case "/videos/vid_running":
+			respondJSON(w, http.StatusOK, `{"id":"vid_running","status":"in_progress","usage":{"cost":0.4}}`)
 		default:
+			respondJSON(w, http.StatusOK, `{"id":"vid_young","status":"in_progress"}`)
 		}
-		respondJSON(w, http.StatusOK, `{"id":"vid_young","status":"in_progress"}`)
-	}, refuseRequest(t))
-	h := newWatcherHarness(t, context.Background(), provider, func(opts *WatcherOptions) {
-		*opts = WatcherOptions{PollInterval: VideoPollInterval, MaxAge: VideoJobMaxAge, MaxVideoBytes: DefaultAssetMaxVideoBytes}
-	})
-	old, young := h.insertJob(t, "vid_old"), h.insertJob(t, "vid_young")
-	young.IdentityID = old.IdentityID
-	old.CreatedAt, old.CostUSD = time.Now().Add(-VideoJobMaxAge-time.Minute), new(0.7)
-	young.CreatedAt = time.Now().Add(-VideoJobMaxAge + time.Minute)
-	h.store.seed(old)
-	h.store.seed(young)
+	}, serveClip)
+	h := newWatcherHarness(t, context.Background(), provider, nil)
+	charged, running, young := h.insertJob(t, "vid_charged"), h.insertJob(t, "vid_running"), h.insertJob(t, "vid_young")
+	owner := charged.IdentityID
+	running.IdentityID, young.IdentityID = owner, owner
+	charged.CreatedAt = h.clock.now().Add(-VideoJobMaxAge - time.Minute)
+	running.CreatedAt = charged.CreatedAt
+	young.CreatedAt = h.clock.now().Add(-VideoJobMaxAge + time.Minute)
+	for _, job := range []Job{charged, running, young} {
+		h.store.seed(job)
+	}
 
-	if err := h.watcher.Resume(context.Background(), old.IdentityID); err != nil {
+	if err := h.watcher.Resume(context.Background(), owner); err != nil {
 		t.Fatalf("Resume: %v", err)
 	}
-	old.Status = StatusExpired
-	if notice := h.awaitNotice(t); notice != completionOf(old) {
-		t.Fatalf("notice = %+v, want the expiry of the job created past the ceiling", notice)
-	}
-	requireRow(t, h, old, StatusExpired, "job_expired", 0.7)
-	select {
-	case <-polled:
-	case <-time.After(10 * time.Second):
-		t.Fatal("the job still inside its ceiling was not polled")
+	notices := []Completion{h.awaitNotice(t), h.awaitNotice(t)}
+	charged.Status, running.Status = StatusCompleted, StatusExpired
+	want := []Completion{completionOf(charged), completionOf(running)}
+	byJob := func(a, b Completion) int { return strings.Compare(a.JobID, b.JobID) }
+	slices.SortFunc(notices, byJob)
+	slices.SortFunc(want, byJob)
+	if !slices.Equal(notices, want) {
+		t.Fatalf("notices = %+v, want %+v", notices, want)
 	}
 	h.stop(t)
-	if provider.polls.Load() != 1 {
-		t.Fatalf("polls = %d, want only the job still inside its ceiling", provider.polls.Load())
+	requireRow(t, h, charged, StatusCompleted, "", 0.7)
+	requireRow(t, h, running, StatusExpired, "job_expired", 0.4)
+	if row, err := h.store.Get(context.Background(), owner, young.ID); err != nil || !row.Status.active() {
+		t.Fatalf("young row = %+v, %v; a job inside its ceiling keeps running", row, err)
+	}
+	reads := []int{provider.requestsTo("/videos/vid_charged"), provider.requestsTo("/videos/vid_charged/content"), provider.requestsTo("/videos/vid_running")}
+	if !slices.Equal(reads, []int{1, 1, 1}) || provider.posts.Load() != 0 {
+		t.Fatalf("charged reads, charged downloads, running reads = %v, POSTs = %d; want exactly one each and no submission",
+			reads, provider.posts.Load())
 	}
 }
 

@@ -23,18 +23,23 @@ var mp4Clip = []byte("\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isommp41\x00\x00\x
 // fakeJobStore is JobStore in memory under Store's contract: a job of another identity reads
 // as pgx.ErrNoRows, a terminal job refuses every update with ErrJobNotActive, Complete accepts
 // only a video ingested for the job's owner and conversation, and one delivery claim wins.
-// Rows are copied in and out; calls are counted and can be failed one at a time.
+// Rows are copied in and out; calls are counted, answer a cancelled context as pgx does, record
+// their context's deadline and can be failed one at a time.
 type fakeJobStore struct {
-	mu     sync.Mutex
-	now    func() time.Time
-	jobs   map[string]Job
-	videos map[string]Job
-	fail   map[string][]error
-	calls  map[string]int
+	mu        sync.Mutex
+	now       func() time.Time
+	jobs      map[string]Job
+	videos    map[string]Job
+	fail      map[string][]error
+	calls     map[string]int
+	deadlines map[string]time.Time
 }
 
 func newFakeJobStore(now func() time.Time) *fakeJobStore {
-	return &fakeJobStore{now: now, jobs: map[string]Job{}, videos: map[string]Job{}, fail: map[string][]error{}, calls: map[string]int{}}
+	return &fakeJobStore{
+		now: now, jobs: map[string]Job{}, videos: map[string]Job{}, fail: map[string][]error{},
+		calls: map[string]int{}, deadlines: map[string]time.Time{},
+	}
 }
 
 var _ JobStore = (*fakeJobStore)(nil)
@@ -56,9 +61,14 @@ func clonePointer[T any](value *T) *T {
 	return &copied
 }
 
-// called counts method and returns the next failure queued for it. The caller holds mu.
-func (s *fakeJobStore) called(method string) error {
+// called counts method and returns ctx's error or the next failure queued for it. The caller
+// holds mu.
+func (s *fakeJobStore) called(ctx context.Context, method string) error {
 	s.calls[method]++
+	s.deadlines[method], _ = ctx.Deadline()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	queue := s.fail[method]
 	if len(queue) == 0 {
 		return nil
@@ -77,6 +87,12 @@ func (s *fakeJobStore) count(method string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.calls[method]
+}
+
+func (s *fakeJobStore) deadline(method string) time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.deadlines[method]
 }
 
 func (s *fakeJobStore) seed(job Job) Job {
@@ -101,10 +117,10 @@ func (s *fakeJobStore) acceptVideo(assetID string, job Job) {
 	s.videos[assetID] = job
 }
 
-func (s *fakeJobStore) Insert(_ context.Context, job Job) (Job, error) {
+func (s *fakeJobStore) Insert(ctx context.Context, job Job) (Job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.called("Insert"); err != nil {
+	if err := s.called(ctx, "Insert"); err != nil {
 		return Job{}, err
 	}
 	if err := validateNewJob(job); err != nil {
@@ -129,20 +145,20 @@ func (s *fakeJobStore) owned(ownerID, jobID string) (Job, error) {
 	return job, nil
 }
 
-func (s *fakeJobStore) Get(_ context.Context, ownerID, jobID string) (Job, error) {
+func (s *fakeJobStore) Get(ctx context.Context, ownerID, jobID string) (Job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.called("Get"); err != nil {
+	if err := s.called(ctx, "Get"); err != nil {
 		return Job{}, err
 	}
 	job, err := s.owned(ownerID, jobID)
 	return cloneJob(job), err
 }
 
-func (s *fakeJobStore) Recoverable(_ context.Context, ownerID string) ([]Job, error) {
+func (s *fakeJobStore) Recoverable(ctx context.Context, ownerID string) ([]Job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.called("Recoverable"); err != nil {
+	if err := s.called(ctx, "Recoverable"); err != nil {
 		return nil, err
 	}
 	var jobs []Job
@@ -162,10 +178,10 @@ func (s *fakeJobStore) Recoverable(_ context.Context, ownerID string) ([]Job, er
 }
 
 // update applies change to an owned active job, the guard every store update shares.
-func (s *fakeJobStore) update(method, ownerID, jobID string, change func(*Job) error) (Job, error) {
+func (s *fakeJobStore) update(ctx context.Context, method, ownerID, jobID string, change func(*Job) error) (Job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.called(method); err != nil {
+	if err := s.called(ctx, method); err != nil {
 		return Job{}, err
 	}
 	job, err := s.owned(ownerID, jobID)
@@ -183,11 +199,11 @@ func (s *fakeJobStore) update(method, ownerID, jobID string, change func(*Job) e
 	return cloneJob(job), nil
 }
 
-func (s *fakeJobStore) Progress(_ context.Context, ownerID, jobID string, status Status, cost *float64, failure *Error) (Job, error) {
+func (s *fakeJobStore) Progress(ctx context.Context, ownerID, jobID string, status Status, cost *float64, failure *Error) (Job, error) {
 	if status == StatusCompleted {
 		return Job{}, errors.New("a job completes through Complete")
 	}
-	return s.update("Progress", ownerID, jobID, func(job *Job) error {
+	return s.update(ctx, "Progress", ownerID, jobID, func(job *Job) error {
 		job.Status, job.Error = status, clonePointer(failure)
 		if cost != nil {
 			job.CostUSD = clonePointer(cost)
@@ -199,8 +215,8 @@ func (s *fakeJobStore) Progress(_ context.Context, ownerID, jobID string, status
 	})
 }
 
-func (s *fakeJobStore) Complete(_ context.Context, ownerID, jobID, assetID string, cost *float64) (Job, error) {
-	return s.update("Complete", ownerID, jobID, func(job *Job) error {
+func (s *fakeJobStore) Complete(ctx context.Context, ownerID, jobID, assetID string, cost *float64) (Job, error) {
+	return s.update(ctx, "Complete", ownerID, jobID, func(job *Job) error {
 		ingested, ok := s.videos[assetID]
 		if !ok || ingested.IdentityID != job.IdentityID || ingested.ConversationID != job.ConversationID {
 			return videoAssetNotFound()
@@ -214,10 +230,10 @@ func (s *fakeJobStore) Complete(_ context.Context, ownerID, jobID, assetID strin
 	})
 }
 
-func (s *fakeJobStore) ClaimDelivery(_ context.Context, ownerID, jobID, conversationID, deliveryCallID string) (Job, bool, error) {
+func (s *fakeJobStore) ClaimDelivery(ctx context.Context, ownerID, jobID, conversationID, deliveryCallID string) (Job, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.called("ClaimDelivery"); err != nil {
+	if err := s.called(ctx, "ClaimDelivery"); err != nil {
 		return Job{}, false, err
 	}
 	if conversationID == "" || deliveryCallID == "" {
@@ -236,7 +252,8 @@ func (s *fakeJobStore) ClaimDelivery(_ context.Context, ownerID, jobID, conversa
 }
 
 // fakeVideoAssets keeps one asset per job, as the adapter's stable source reference does, and
-// registers it as the video Complete accepts. A queued failure is returned after the asset is
+// registers it as the video Complete accepts. A queued *Error is a refusal returned before any
+// asset exists, as the adapter refuses; any other queued failure is returned after the asset is
 // stored: the answer of an ingest that did happen was lost.
 type fakeVideoAssets struct {
 	store    *fakeJobStore
@@ -246,10 +263,17 @@ type fakeVideoAssets struct {
 	fail     []error
 }
 
-func (a *fakeVideoAssets) IngestVideo(_ context.Context, job Job, data []byte) (string, error) {
+func (a *fakeVideoAssets) IngestVideo(_ context.Context, job Job, _ []byte) (string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.ingested = append(a.ingested, job.ID)
+	var failure error
+	if len(a.fail) > 0 {
+		failure, a.fail = a.fail[0], a.fail[1:]
+	}
+	if _, refused := errors.AsType[*Error](failure); refused {
+		return "", failure
+	}
 	source := "media-job:" + job.ID
 	assetID, ok := a.bySource[source]
 	if !ok {
@@ -257,15 +281,16 @@ func (a *fakeVideoAssets) IngestVideo(_ context.Context, job Job, data []byte) (
 		a.bySource[source] = assetID
 		a.store.acceptVideo(assetID, job)
 	}
-	if len(a.fail) > 0 {
-		err := a.fail[0]
-		a.fail = a.fail[1:]
-		return "", err
-	}
-	if len(data) == 0 {
-		return "", errors.New("empty clip")
+	if failure != nil {
+		return "", failure
 	}
 	return assetID, nil
+}
+
+func (a *fakeVideoAssets) assets() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.bySource)
 }
 
 func (a *fakeVideoAssets) ingests() []string {

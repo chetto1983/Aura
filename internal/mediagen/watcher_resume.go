@@ -13,8 +13,9 @@ import (
 )
 
 // Resume rejoins the owner's recoverable jobs after a restart: an active job is supervised
-// again until the ceiling counted from its stored creation time, and a completed job never
-// delivered notifies its conversation once. Nothing is submitted again.
+// again until the ceiling counted from its stored creation time, then given its final attempt,
+// and a completed job never delivered notifies its conversation once. Nothing is submitted
+// again. Call it once per owner, before any tool can Track that owner's jobs.
 func (w *Watcher) Resume(ctx context.Context, ownerID string) error {
 	jobs, err := w.store.Recoverable(ctx, ownerID)
 	if err != nil {
@@ -29,6 +30,12 @@ func (w *Watcher) Resume(ctx context.Context, ownerID string) error {
 // errOriginChanged keeps a job ID away from a base URL it was not submitted to.
 var errOriginChanged = errors.New("mediagen: the configured base URL is not the origin this video job was submitted to")
 
+// videoFinalAttemptGrace bounds each call of the one attempt a job gets once its ceiling has
+// passed: enough to fetch or store a 50 MiB clip at under half a MiB per second. It is not
+// counted from the job's age, so a clip the provider finished and charged is still collected
+// after a restart that outlasted the ceiling.
+const videoFinalAttemptGrace = 2 * time.Minute
+
 type outcome int
 
 const (
@@ -37,25 +44,35 @@ const (
 	jobVanished
 )
 
+// callBound gives one provider or store call its context.
+type callBound func() (context.Context, context.CancelFunc)
+
 // supervision is a supervisor's state between attempts. A fresh submission and a restart start
 // it the same way, from the persisted row.
 type supervision struct {
 	job Job
-	// origin is empty when the row records none: no base URL matches it, so the job is never
-	// polled and expires at its ceiling.
-	origin   string
-	deadline time.Time
+	// origin is the recorded submission origin; originErr says why the row has none readable,
+	// and such a job is never polled.
+	origin    string
+	originErr error
+	deadline  time.Time
 	// cost is the latest cost the provider reported, kept across polls that report none.
 	cost *float64
 	// remoteCompleted is kept while the clip download is retried, so completion is not polled
-	// again; assetID is kept while Complete is retried, so the clip is not ingested again.
+	// again; assetID is kept while Complete is retried, so the clip is not fetched again.
 	remoteCompleted bool
 	assetID         string
+	// final is set when the ceiling has passed and the job's one final attempt starts.
+	final bool
+	// cause is the retry cause last logged, so a failure that persists is reported once.
+	cause string
 }
 
 func newSupervision(job Job, maxAge time.Duration) supervision {
-	audit, _ := job.Audit()
-	return supervision{job: job, origin: audit.Origin, deadline: job.CreatedAt.Add(maxAge), cost: job.CostUSD}
+	audit, err := job.Audit()
+	return supervision{
+		job: job, origin: audit.Origin, originErr: err, deadline: job.CreatedAt.Add(maxAge), cost: job.CostUSD,
+	}
 }
 
 // supervise polls immediately and then every PollInterval until the job's row is terminal,
@@ -72,65 +89,86 @@ func (w *Watcher) supervise(entry *trackedJob, job Job) {
 		case <-timer.C:
 		}
 		result, err := w.attempt(&run)
-		switch {
-		case result == jobFinished:
+		switch result {
+		case jobFinished:
 			w.publish(entry, run.job)
 			return
-		case result == jobVanished:
+		case jobVanished:
 			w.forget(entry)
 			return
-		case err != nil && w.ctx.Err() == nil:
-			slog.Warn("mediagen: video job not advanced; retrying",
-				"job", run.job.ID, "owner", run.job.IdentityID, "err", redact.String(err.Error()))
 		}
+		w.report(&run, err)
 		timer.Reset(w.opts.PollInterval)
 	}
 }
 
-// attempt advances the job by one step. Every call it makes is bounded by the watcher's
-// context and the job's remaining lifetime; once that lifetime is spent only the expiry is
-// written, and no provider is called.
+// attempt advances the job by one step. Before the ceiling every call shares the job's
+// remaining lifetime. The first attempt past the ceiling is the job's last contact with the
+// provider, each call bounded by videoFinalAttemptGrace: it can still complete an ingested clip,
+// record a terminal status or collect a completed clip. A job it leaves unfinished expires with
+// the freshest known cost, and only that expiry is retried.
 func (w *Watcher) attempt(run *supervision) (outcome, error) {
-	remaining := run.deadline.Sub(w.opts.Now())
-	if remaining <= 0 {
-		row, err := w.store.Progress(w.ctx, run.job.IdentityID, run.job.ID, StatusExpired, run.cost,
-			&Error{Code: "job_expired", Message: "Video generation did not finish in time."})
-		return w.record(w.ctx, run, row, err)
+	if remaining := run.deadline.Sub(w.opts.Now()); remaining > 0 {
+		deadline := time.Now().Add(remaining)
+		return w.advance(run, func() (context.Context, context.CancelFunc) {
+			return context.WithDeadline(w.ctx, deadline)
+		})
 	}
-	ctx, cancel := context.WithTimeout(w.ctx, remaining)
-	defer cancel()
-	baseURL, apiKey, err := w.endpoint(ctx, run)
+	if !run.final {
+		run.final = true
+		result, err := w.advance(run, w.graceBound)
+		if result != keepPolling || w.ctx.Err() != nil {
+			return result, err
+		}
+		w.report(run, err)
+	}
+	return w.progress(run, w.graceBound, StatusExpired,
+		&Error{Code: "job_expired", Message: "Video generation did not finish in time."})
+}
+
+func (w *Watcher) graceBound() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(w.ctx, videoFinalAttemptGrace)
+}
+
+// advance completes an ingested clip, or reads the provider's status and acts on it.
+func (w *Watcher) advance(run *supervision, bound callBound) (outcome, error) {
+	if run.assetID != "" {
+		return w.complete(run, bound)
+	}
+	baseURL, apiKey, err := w.endpoint(run, bound)
 	if err != nil {
 		return keepPolling, err
 	}
 	if !run.remoteCompleted {
-		remote, err := w.client.GetVideo(ctx, baseURL, apiKey, run.job.ProviderJobID)
+		remote, err := w.poll(run, bound, baseURL, apiKey)
 		if err != nil {
 			return keepPolling, err
 		}
-		if remote.CostUSD != nil {
-			run.cost = remote.CostUSD
-		}
 		switch remote.Status {
 		case StatusPending, StatusInProgress:
-			if !run.unrecorded(remote.Status) {
+			if run.final || !run.unrecorded(remote.Status) {
 				return keepPolling, nil
 			}
-			return w.progress(ctx, run, remote.Status, nil)
+			return w.progress(run, bound, remote.Status, nil)
 		case StatusFailed, StatusExpired, StatusCancelled:
-			return w.progress(ctx, run, remote.Status, remote.Error)
+			return w.progress(run, bound, remote.Status, remote.Error)
 		case StatusCompleted:
 			run.remoteCompleted = true
 		default:
 			return keepPolling, fmt.Errorf("mediagen: the provider reported an unknown video status %q", remote.Status)
 		}
 	}
-	return w.collect(ctx, run, baseURL, apiKey)
+	return w.collect(run, bound, baseURL, apiKey)
 }
 
 // endpoint resolves the owner's credential afresh and returns it only for the origin the job
 // was submitted to.
-func (w *Watcher) endpoint(ctx context.Context, run *supervision) (string, string, error) {
+func (w *Watcher) endpoint(run *supervision, bound callBound) (string, string, error) {
+	if run.originErr != nil {
+		return "", "", run.originErr
+	}
+	ctx, cancel := bound()
+	defer cancel()
 	baseURL, apiKey, err := w.credentials.For(ctx, run.job.IdentityID)
 	if err != nil {
 		return "", "", err
@@ -141,33 +179,53 @@ func (w *Watcher) endpoint(ctx context.Context, run *supervision) (string, strin
 	return baseURL, apiKey, nil
 }
 
+func (w *Watcher) poll(run *supervision, bound callBound, baseURL, apiKey string) (RemoteVideo, error) {
+	ctx, cancel := bound()
+	defer cancel()
+	remote, err := w.client.GetVideo(ctx, baseURL, apiKey, run.job.ProviderJobID)
+	if err == nil && remote.CostUSD != nil {
+		run.cost = remote.CostUSD
+	}
+	return remote, err
+}
+
 // collect turns a remote completion into an Aura asset and completes the job with it. A clip
 // no retry can store fails the job with its cost; any other failure is retried on the same
 // provider job.
-func (w *Watcher) collect(ctx context.Context, run *supervision, baseURL, apiKey string) (outcome, error) {
-	if run.assetID == "" {
-		assetID, err := w.ingest(ctx, run, baseURL, apiKey)
-		if failure, ok := errors.AsType[*Error](err); ok && (failure.Code == "too_large" || failure.Code == "unsupported") {
-			return w.progress(ctx, run, StatusFailed, failure)
-		}
-		if err != nil {
-			return keepPolling, err
-		}
-		run.assetID = assetID
+func (w *Watcher) collect(run *supervision, bound callBound, baseURL, apiKey string) (outcome, error) {
+	assetID, err := w.ingest(run, bound, baseURL, apiKey)
+	if failure, ok := errors.AsType[*Error](err); ok && (failure.Code == "too_large" || failure.Code == "unsupported") {
+		return w.progress(run, bound, StatusFailed, failure)
 	}
+	if err != nil {
+		return keepPolling, err
+	}
+	run.assetID = assetID
+	return w.complete(run, bound)
+}
+
+func (w *Watcher) ingest(run *supervision, bound callBound, baseURL, apiKey string) (string, error) {
+	downloadCtx, cancelDownload := bound()
+	defer cancelDownload()
+	data, err := w.client.DownloadVideo(downloadCtx, baseURL, apiKey, run.job.ProviderJobID, w.opts.MaxVideoBytes)
+	if err != nil {
+		return "", err
+	}
+	ingestCtx, cancelIngest := bound()
+	defer cancelIngest()
+	return w.assets.IngestVideo(ingestCtx, run.job, data)
+}
+
+func (w *Watcher) complete(run *supervision, bound callBound) (outcome, error) {
+	ctx, cancel := bound()
+	defer cancel()
 	row, err := w.store.Complete(ctx, run.job.IdentityID, run.job.ID, run.assetID, run.cost)
 	return w.record(ctx, run, row, err)
 }
 
-func (w *Watcher) ingest(ctx context.Context, run *supervision, baseURL, apiKey string) (string, error) {
-	data, err := w.client.DownloadVideo(ctx, baseURL, apiKey, run.job.ProviderJobID, w.opts.MaxVideoBytes)
-	if err != nil {
-		return "", err
-	}
-	return w.assets.IngestVideo(ctx, run.job, data)
-}
-
-func (w *Watcher) progress(ctx context.Context, run *supervision, status Status, failure *Error) (outcome, error) {
+func (w *Watcher) progress(run *supervision, bound callBound, status Status, failure *Error) (outcome, error) {
+	ctx, cancel := bound()
+	defer cancel()
 	row, err := w.store.Progress(ctx, run.job.IdentityID, run.job.ID, status, run.cost, failure)
 	return w.record(ctx, run, row, err)
 }
@@ -197,4 +255,18 @@ func (r *supervision) unrecorded(status Status) bool {
 		return true
 	}
 	return r.cost != nil && (r.job.CostUSD == nil || *r.cost != *r.job.CostUSD)
+}
+
+// report logs why an attempt left the job unfinished, once per cause: a failure that persists
+// is not repeated every interval, and one that clears and returns is reported again.
+func (w *Watcher) report(run *supervision, err error) {
+	cause := ""
+	if err != nil && w.ctx.Err() == nil {
+		cause = redact.String(err.Error())
+	}
+	if cause != "" && cause != run.cause {
+		slog.Warn("mediagen: video job not advanced; retrying",
+			"job", run.job.ID, "owner", run.job.IdentityID, "err", cause)
+	}
+	run.cause = cause
 }

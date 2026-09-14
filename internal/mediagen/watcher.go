@@ -67,8 +67,17 @@ type trackedJob struct {
 
 // NewWatcher returns a watcher whose supervisors stop when parent is cancelled or Stop is
 // called. notify receives each completion the wake path owns, after the watcher's lock is
-// released.
+// released; it runs on the goroutine that finished or released the job, Resume's included, so
+// it must not block. A missing dependency or a nonpositive option is a wiring error and panics:
+// a zero byte limit would fail every paid clip, a zero interval would poll without pause and a
+// zero ceiling would leave every job a single attempt.
 func NewWatcher(parent context.Context, store JobStore, client *Client, credentials MediaCredentials, assets VideoAssets, notify func(Completion), opts WatcherOptions) *Watcher {
+	if store == nil || client == nil || credentials == nil || assets == nil || notify == nil {
+		panic("mediagen: NewWatcher needs a job store, a client, credentials, video assets and a notify function")
+	}
+	if opts.PollInterval <= 0 || opts.MaxAge <= 0 || validByteLimit(opts.MaxVideoBytes) != nil {
+		panic("mediagen: NewWatcher needs a positive poll interval, job ceiling and video byte limit")
+	}
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
@@ -82,10 +91,11 @@ func NewWatcher(parent context.Context, store JobStore, client *Client, credenti
 
 // Track supervises a persisted job and returns a waiter for it. With inlineWaiter the waiter
 // is registered as the job's owner, under the same lock, before supervision starts: whenever
-// the job finishes, either that waiter claims it or the wake path is notified, exactly once.
-// A job already tracked keeps its one supervisor and its owner, and the waiter returned owns
-// nothing. A job tracked in a terminal status is not polled: it is claimed by its inline
-// waiter or notified at once.
+// the job finishes, either that waiter claims it or the wake path is notified, exactly once,
+// provided the owner calls Wait or Release. Until one of them runs, a finished job stays with
+// its waiter and nobody is notified. A job already tracked keeps its one supervisor and its
+// owner, and the waiter returned owns nothing. A job tracked in a terminal status is not
+// polled: it is claimed by its inline waiter or notified at once.
 func (w *Watcher) Track(job Job, inlineWaiter bool) *Waiter {
 	waiter, fresh := w.register(job, inlineWaiter)
 	switch {
@@ -180,7 +190,7 @@ func (w *Watcher) Stop(ctx context.Context) error {
 }
 
 // Waiter is one caller's hold on a tracked job. Only the waiter Track registered as the inline
-// owner can claim the job or hand it to the wake path.
+// owner can claim the job or hand it to the wake path, and it must call Wait or Release.
 type Waiter struct {
 	watcher  *Watcher
 	entry    *trackedJob
@@ -189,10 +199,11 @@ type Waiter struct {
 }
 
 // Wait blocks until the job finishes, duration passes, ctx is cancelled or the watcher stops,
-// then settles ownership under the watcher's lock. It returns the job's latest tracked row and
-// true when this waiter owns the finished job's inline handling; false means the wake path
-// owns it and has been notified if the job already finished. A cancelled ctx never claims: its
-// turn can no longer deliver.
+// then settles ownership under the watcher's lock. It returns the job's terminal row once the
+// job has finished, and otherwise the row Track was given: progress is not copied back. True
+// means this waiter owns the finished job's inline handling; false means the wake path owns it
+// and has been notified if the job already finished. A cancelled ctx never claims: its turn can
+// no longer deliver.
 func (w *Waiter) Wait(ctx context.Context, duration time.Duration) (Job, bool) {
 	timer := time.NewTimer(duration)
 	defer timer.Stop()
@@ -214,8 +225,9 @@ func (w *Waiter) Wait(ctx context.Context, duration time.Duration) (Job, bool) {
 
 // Release gives up the owner's hold; it is idempotent and a no-op for any other waiter. A job
 // still running is left to the wake path. A claimed completion goes back to the wake path, once,
-// unless its delivery claim committed in the store; a claimed failure was already reported by
-// the inline turn and stays acknowledged.
+// unless its delivery claim committed in the store. On a stopped watcher it is not woken: the row
+// stays completed and undelivered, and the next Resume wakes it. A claimed failure was already
+// reported by the inline turn and stays acknowledged.
 func (w *Waiter) Release() {
 	if w.owner {
 		w.released.Do(func() { w.watcher.release(w.entry) })
@@ -224,16 +236,21 @@ func (w *Waiter) Release() {
 
 func (w *Watcher) release(entry *trackedJob) {
 	job, claimed := w.transition(entry, func(*jobHandoff) bool { return false })
-	if claimed && (job.Status != StatusCompleted || w.deliveryClaimed(job)) {
+	if claimed && (job.Status != StatusCompleted || w.deliveryClaimed(job) || w.ctx.Err() != nil) {
 		return
 	}
 	w.transition(entry, (*jobHandoff).release)
 }
 
+// deliveryCheckTimeout bounds the store read a Release makes on the releasing turn's goroutine.
+const deliveryCheckTimeout = 10 * time.Second
+
 // deliveryClaimed reports whether the job's delivery claim committed. An unreadable row counts
 // as unclaimed: a wake that finds the job delivered answers already_delivered, while a wake
 // never sent would leave the clip uncollected until the next restart.
 func (w *Watcher) deliveryClaimed(job Job) bool {
-	row, err := w.store.Get(w.ctx, job.IdentityID, job.ID)
+	ctx, cancel := context.WithTimeout(w.ctx, deliveryCheckTimeout)
+	defer cancel()
+	row, err := w.store.Get(ctx, job.IdentityID, job.ID)
 	return err == nil && row.DeliveredAt != nil
 }

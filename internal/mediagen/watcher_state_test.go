@@ -3,6 +3,7 @@ package mediagen
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"strings"
 	"testing"
@@ -266,6 +267,9 @@ func TestWatcherReleaseAfterAClaimedCompletion(t *testing.T) {
 			tc.deliver(t, h, finished)
 			waiter.Release()
 			waiter.Release()
+			if d := h.store.deadline("Get"); finished.Status == StatusCompleted && (d.IsZero() || time.Until(d) > deliveryCheckTimeout) {
+				t.Fatalf("Release read the delivery claim with deadline %v, want one within %v", d, deliveryCheckTimeout)
+			}
 			h.stop(t)
 			notices := h.drainNotices()
 			if len(notices) != tc.wakes {
@@ -358,4 +362,106 @@ func TestWatcherTracksATerminalJobWithoutPolling(t *testing.T) {
 	if extra := h.drainNotices(); len(extra) != 0 || trackedJobs(h.watcher) != 0 {
 		t.Fatalf("notices = %+v, entries = %d; want no other notice and no entry left once settled", extra, trackedJobs(h.watcher))
 	}
+}
+
+func TestWatcherReleaseAfterStopLeavesTheCompletionForResume(t *testing.T) {
+	provider := newFakeProvider(t, statuses(`{"id":"vid_shutdown","status":"completed"}`), serveClip)
+	h := newWatcherHarness(t, context.Background(), provider, nil)
+	job := h.insertJob(t, "vid_shutdown")
+	waiter := h.watcher.Track(job, true)
+	if _, owns := waiter.Wait(context.Background(), time.Minute); !owns {
+		t.Fatal("the waiter did not own the completion")
+	}
+
+	h.stop(t)
+	waiter.Release()
+	if notices := h.drainNotices(); len(notices) != 0 {
+		t.Fatalf("a release after Stop woke a shutting-down dispatcher: %+v", notices)
+	}
+	recoverable, err := h.store.Recoverable(context.Background(), job.IdentityID)
+	if err != nil || len(recoverable) != 1 || recoverable[0].Status != StatusCompleted {
+		t.Fatalf("Recoverable = %+v, %v; want the undelivered completion for the next boot", recoverable, err)
+	}
+}
+
+// TestWatcherKeepsARetrackedEntryWhenAnOldWaiterSettles releases a waiter whose entry was
+// already replaced by a new Track of the same job: only the stale entry may be dropped.
+func TestWatcherKeepsARetrackedEntryWhenAnOldWaiterSettles(t *testing.T) {
+	provider := newFakeProvider(t, refuseRequest(t), refuseRequest(t))
+	h := newWatcherHarness(t, context.Background(), provider, nil)
+	job := h.insertJob(t, "vid_retracked")
+	job.Status, job.AssetID = StatusCompleted, uuid.NewString()
+	job = h.store.seed(job)
+
+	first := h.watcher.Track(job, true)
+	if _, owns := first.Wait(context.Background(), 0); !owns {
+		t.Fatal("the first waiter did not own the completion")
+	}
+	second := h.watcher.Track(job, true)
+	if second.entry == first.entry || !second.owner {
+		t.Fatal("tracking a settled job again did not install a new owner")
+	}
+	if _, won, err := h.store.ClaimDelivery(context.Background(), job.IdentityID, job.ID, job.ConversationID, "call-deliver"); err != nil || !won {
+		t.Fatalf("ClaimDelivery = %v, %v", won, err)
+	}
+	first.Release()
+	if tracked := trackedJobs(h.watcher); tracked != 1 {
+		t.Fatalf("entries = %d after the old waiter released, want the new entry kept", tracked)
+	}
+	if _, owns := second.Wait(context.Background(), 0); !owns || trackedJobs(h.watcher) != 0 {
+		t.Fatal("the new owner lost its claim or its settled entry stayed")
+	}
+	h.stop(t)
+	if notices := h.drainNotices(); len(notices) != 0 {
+		t.Fatalf("notices = %+v, want none", notices)
+	}
+}
+
+func TestNewWatcherRefusesAMiswiredWatcher(t *testing.T) {
+	provider := newFakeProvider(t, refuseRequest(t), refuseRequest(t))
+	store := newFakeJobStore(time.Now)
+	client := NewClient(provider.Client(), 1<<20)
+	credentials := &fakeCredentials{answers: []credentialAnswer{{baseURL: provider.URL}}}
+	assets := &fakeVideoAssets{store: store, bySource: map[string]string{}}
+	notify := func(Completion) {}
+	valid := WatcherOptions{PollInterval: time.Millisecond, MaxAge: time.Minute, MaxVideoBytes: 1}
+	with := func(change func(*WatcherOptions)) WatcherOptions {
+		opts := valid
+		change(&opts)
+		return opts
+	}
+	ctx := context.Background()
+	for name, build := range map[string]func(){
+		"no store":        func() { NewWatcher(ctx, nil, client, credentials, assets, notify, valid) },
+		"no client":       func() { NewWatcher(ctx, store, nil, credentials, assets, notify, valid) },
+		"no credentials":  func() { NewWatcher(ctx, store, client, nil, assets, notify, valid) },
+		"no video assets": func() { NewWatcher(ctx, store, client, credentials, nil, notify, valid) },
+		"no notify":       func() { NewWatcher(ctx, store, client, credentials, assets, nil, valid) },
+		"zero poll interval": func() {
+			NewWatcher(ctx, store, client, credentials, assets, notify, with(func(o *WatcherOptions) { o.PollInterval = 0 }))
+		},
+		"negative ceiling": func() {
+			NewWatcher(ctx, store, client, credentials, assets, notify, with(func(o *WatcherOptions) { o.MaxAge = -time.Minute }))
+		},
+		"zero byte limit": func() {
+			NewWatcher(ctx, store, client, credentials, assets, notify, with(func(o *WatcherOptions) { o.MaxVideoBytes = 0 }))
+		},
+		"unbounded byte limit": func() {
+			NewWatcher(ctx, store, client, credentials, assets, notify, with(func(o *WatcherOptions) { o.MaxVideoBytes = math.MaxInt64 }))
+		},
+	} {
+		if !panics(build) {
+			t.Errorf("NewWatcher with %s built a watcher", name)
+		}
+	}
+	w := NewWatcher(ctx, store, client, credentials, assets, notify, valid)
+	if err := w.Stop(ctx); err != nil {
+		t.Fatalf("the valid watcher's Stop = %v", err)
+	}
+}
+
+func panics(build func()) (panicked bool) {
+	defer func() { panicked = recover() != nil }()
+	build()
+	return false
 }
