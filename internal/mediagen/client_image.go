@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"math"
 	"mime"
 	"net/http"
 	"strings"
@@ -120,8 +119,8 @@ func (c *Client) GenerateImage(ctx context.Context, baseURL, apiKey string, req 
 // size too: DecodedLen is an upper bound on the decoded length, not always
 // the exact value once padding is accounted for.
 func decodeCappedBase64(encoded string, maxBytes int64) ([]byte, error) {
-	if maxBytes <= 0 || maxBytes == math.MaxInt64 {
-		return nil, &Error{Code: "too_large", Message: "Invalid media byte limit."}
+	if err := validByteLimit(maxBytes); err != nil {
+		return nil, err
 	}
 	if int64(base64.StdEncoding.DecodedLen(len(encoded))) > maxBytes {
 		return nil, &Error{Code: "too_large", Message: "Generated image exceeds the configured byte limit."}
