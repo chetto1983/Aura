@@ -89,7 +89,7 @@ func (t *DocumentSearch) Execute(ctx context.Context, raw json.RawMessage) (Tool
 		return ToolResult{}, fmt.Errorf("document_search: document library is not configured")
 	}
 	var args documentSearchArgs
-	if err := decodeDocumentSearchArgs(raw, &args); err != nil {
+	if err := decodeStrictArgs(raw, &args); err != nil {
 		return ToolResult{}, fmt.Errorf("document_search args: %w", err)
 	}
 	args.Query = strings.TrimSpace(args.Query)
@@ -125,7 +125,9 @@ func (t *DocumentSearch) Execute(ctx context.Context, raw json.RawMessage) (Tool
 	return result, nil
 }
 
-func decodeDocumentSearchArgs(raw json.RawMessage, dst *documentSearchArgs) error {
+// decodeStrictArgs decodes exactly one JSON value into dst, refusing unknown fields, so a
+// tool whose schema forbids extra properties also refuses them at call time.
+func decodeStrictArgs(raw json.RawMessage, dst any) error {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return nil
 	}

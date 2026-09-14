@@ -186,6 +186,7 @@ type runtimeToolHandles struct {
 	// nothing; every *ViewCatalog method tolerates that.
 	MCPViews    *mcp.ViewCatalog
 	ViewCallers mcptools.ViewCallers
+	mediaToolHandles
 }
 
 // buildBaseRegistry is the shared composition root for every boot path. ts is the
@@ -285,6 +286,7 @@ func buildBaseRegistryWithHandles(
 	sf := &tools.SendFile{Router: sandboxRouter}
 	handles.SendFile = sf
 	reg.Register(sf)
+	handles.mediaToolHandles = registerMediaTools(reg)
 	// document_index / document_describe were DELETED (2026-08-07): with the ingest bucket as the
 	// source of truth, "indexing" a workspace file is not an agent action any more — putting the
 	// file in the bucket is, and that is a pipeline concern, not a tool call. document_open is

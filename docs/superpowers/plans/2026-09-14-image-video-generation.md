@@ -537,7 +537,7 @@ git commit -m "feat(media): execute image and video requests through the SDK" -m
 - `mediaArtifactResult(ctx context.Context, path, filename, mimeType, assetID, prompt string, size int64, preview any) ToolResult`.
 - `mediaAssetAdapter` in cmd implements reference reads over `OpenForIdentity`; image delivery reuses `sendFileAssetAdapter`.
 
-- [ ] **Step 1: Write the deferred specification contract.**
+- [x] **Step 1: Write the deferred specification contract.**
 
 ~~~go
 func TestImageGenerateSpec(t *testing.T) {
@@ -558,13 +558,13 @@ func TestImageGenerateSpec(t *testing.T) {
 
 Create an Execute test using `WithToolCallContext(identityctx.WithIdentityID(ctx, owner), "thread", "call-image", t.TempDir(), 8192)`, a fixture catalog/SDK server, an owned reference reader, and a recording `AssetDeliverer`. Assert the full artifact descriptor and parsed preview; no metadata must contain base64.
 
-- [ ] **Step 2: Run red.**
+- [x] **Step 2: Run red.**
 
 ~~~sh
 go test ./internal/agent/tools -run 'TestImageGenerate|TestMediaDelivery' -count=1
 ~~~
 
-- [ ] **Step 3: Implement schema and Execute pipeline.**
+- [x] **Step 3: Implement schema and Execute pipeline.**
 
 ~~~go
 return Spec{
@@ -583,7 +583,7 @@ return Spec{
 
 Execution order: credentials → live image model → catalog clamp → bounded reference read → SDK generation → stage → `ingestForDelivery` → artifact. Preflight the required delivery dependency before charging. A failed ingest is `job_failed` with no success artifact; unlike `send_file`, a newly paid generation must not silently claim successful cockpit delivery using a path-only descriptor.
 
-- [ ] **Step 4: Implement staging, preview and wiring.**
+- [x] **Step 4: Implement staging, preview and wiring.**
 
 ~~~go
 descriptor := map[string]any{
@@ -603,7 +603,7 @@ return ToolResult{Preview: string(encoded), Bytes: len(encoded), Meta: &meta}
 
 Add `mediaToolHandles` as an embedded field in `runtimeToolHandles`, and one registration helper call in `buildBaseRegistryWithHandles`. All registry variants retain a discoverable tool with nil dependencies on static/manifest paths; execution then returns a useful error. Serve injects live dependencies after asset construction and before accepting turns.
 
-- [ ] **Step 5: Verify discovery and replay contracts, then commit.**
+- [x] **Step 5: Verify discovery and replay contracts, then commit.**
 
 Tests cover all descriptor keys, MIME extensions, UTF-8 prompt, clamping notes, nil dependencies, no-key/no-credit zero outbound requests, dropped references never opened, ingest failure, strict run-root staging, and standard operation metadata. Extend tool-search tests using "image", "picture", "edit photo". Add the new tool to `builtinTools()` in `builtin_spec_golden_test.go`; this repository's "golden" is a static well-formedness sweep, not a generated snapshot to update.
 

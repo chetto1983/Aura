@@ -280,6 +280,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	if chat.toolHandles.SendFile != nil {
 		chat.toolHandles.SendFile.Assets = sendFileAssetAdapter{svc: chat.assets}
 	}
+	wireMediaTools(chat)
 	// share_service_wiring.go: wires WEBSHARE-02/03 into HTTP, the D-15 delete cascade, and
 	// the share_expiry_sweep cron handler below — all three were previously unwired.
 	shareSvc, shareAPI := buildShareService(chat, objectStore)

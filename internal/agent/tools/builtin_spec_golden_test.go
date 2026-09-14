@@ -29,6 +29,7 @@ func builtinTools() []Tool {
 		&Patch{},
 		&SearchFiles{},
 		&SendFile{},
+		&ImageGenerate{},
 		// document_open registers only when a live pool exists (cmd/aura/main.go), but
 		// Spec() reads no dependency and the sweep is the only thing asserting a deferred
 		// tool carries a legible description — exactly what tool_search retrieves on.

@@ -99,7 +99,7 @@ func TestOnlyTheWorkingSetIsAlwaysActive(t *testing.T) {
 	// Every tool the daemon can register, constructed the cheap way (no wiring): Spec() is
 	// a pure function of the value, and Deferred never depends on collaborators.
 	all := []Tool{
-		&AskUser{}, &CurrentTime{}, &DocumentOpen{}, &DocumentSearch{}, &PackTool{}, &Patch{},
+		&AskUser{}, &CurrentTime{}, &DocumentOpen{}, &DocumentSearch{}, &ImageGenerate{}, &PackTool{}, &Patch{},
 		&SearchFiles{}, &ReadFile{}, &WriteFile{}, &ReadToolOutput{}, &SendFile{},
 		&ShellExec{}, &ShellPoll{}, &ShellKill{},
 		&SkillTool{}, &SkillManageTool{}, &SwarmSpawn{}, &SwarmStatus{}, &TaskTool{},
