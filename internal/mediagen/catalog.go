@@ -12,7 +12,6 @@ import (
 	"time"
 
 	openai "github.com/openai/openai-go/v3"
-	"github.com/openai/openai-go/v3/option"
 )
 
 // maxEndpointReads bounds the per-model endpoint reads one image refresh runs at once.
@@ -31,20 +30,6 @@ func NewCatalog(httpClient *http.Client) *Catalog {
 		}
 		return nil, fmt.Errorf("unknown media kind %q", kind)
 	}, time.Now)
-}
-
-// sdkClient builds the one SDK client this package uses, from explicit options only.
-// openai.NewClient would first load OPENAI_API_KEY, OPENAI_ADMIN_KEY and custom headers
-// from the environment and send them to the operator's base URL whenever no identity key
-// overrides them; the SDK's opt-out marker is internal API. Only Options is populated,
-// so callers use the generic Get/Post/Execute methods. Retries are off: a paid POST must
-// never be sent twice.
-func sdkClient(httpClient *http.Client, baseURL string, opts ...option.RequestOption) *openai.Client {
-	return &openai.Client{Options: append([]option.RequestOption{
-		option.WithBaseURL(strings.TrimRight(baseURL, "/") + "/"),
-		option.WithHTTPClient(httpClient),
-		option.WithMaxRetries(0),
-	}, opts...)}
 }
 
 type imageModelRow struct {

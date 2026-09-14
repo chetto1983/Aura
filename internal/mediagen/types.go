@@ -1,5 +1,19 @@
 package mediagen
 
+// Status is a video generation job's lifecycle state, as OpenRouter's video
+// API reports it (submit response and poll response share the same enum).
+type Status string
+
+// The six job statuses OpenRouter's video API declares.
+const (
+	StatusPending    Status = "pending"
+	StatusInProgress Status = "in_progress"
+	StatusCompleted  Status = "completed"
+	StatusFailed     Status = "failed"
+	StatusExpired    Status = "expired"
+	StatusCancelled  Status = "cancelled"
+)
+
 // ImageInput is the caller-requested shape of an image generation call, before
 // ClampImage narrows it to what the target Model actually declares.
 type ImageInput struct {

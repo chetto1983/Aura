@@ -438,7 +438,7 @@ git commit -m "feat(media): normalize model catalogs and clamp supported options
 - `Client.DownloadVideo(ctx, baseURL, apiKey, providerID string, maxBytes int64) ([]byte, error)`.
 - `NewClient(httpClient *http.Client, maxImageBytes int64) *Client`; `Client` contains `http *http.Client` and `maxImageBytes int64`. This is a small SDK caller, not a reimplementation of HTTP serialization.
 
-- [ ] **Step 1: Write wire-contract tests with httptest.**
+- [x] **Step 1: Write wire-contract tests with httptest.**
 
 ~~~go
 func TestSubmitVideoSendsJSONAndAcceptsWhitespace(t *testing.T) {
@@ -468,13 +468,13 @@ func TestSubmitVideoSendsJSONAndAcceptsWhitespace(t *testing.T) {
 
 Add image tests that return actual small encoded PNG/JPEG/WebP bytes, extra `media_type` and `usage.cost`; inspect `aspect_ratio` and both kinds of references. A test server returning 500 on POST must receive exactly one request.
 
-- [ ] **Step 2: Run red.**
+- [x] **Step 2: Run red.**
 
 ~~~sh
 go test ./internal/mediagen -run 'TestSubmitVideo|TestGenerateImage|TestLoadReferences' -count=1
 ~~~
 
-- [ ] **Step 3: Implement calls using the installed SDK.**
+- [x] **Step 3: Implement calls using the installed SDK.**
 
 ~~~go
 func (c *Client) sdk(baseURL, apiKey string) openai.Client {
@@ -493,7 +493,7 @@ For videos use `sdk.Post(ctx, "videos", req, &raw)`, `sdk.Get(ctx, "videos/"+url
 
 Validate opaque provider IDs (nonempty, no slash, backslash, dot-segment, query or fragment) before path construction. Configure the injected HTTP client's CheckRedirect to reject any origin change and test it: same-host subdomain redirects must not receive Authorization. Return `model_rejected` with a useful redacted upstream message for provider validation, `no_credit` for 402, `content_blocked` only for an explicit provider content-policy code, `job_failed` for remote failure and `job_expired` for expiry. Do not classify every 400 as policy blocking. Errors must not contain the key, image data or whole request bodies.
 
-- [ ] **Step 4: Implement bounded owned-asset reads.**
+- [x] **Step 4: Implement bounded owned-asset reads.**
 
 ~~~go
 func readCapped(r io.Reader, maxBytes int64) ([]byte, error) {
@@ -515,7 +515,7 @@ func readCapped(r io.Reader, maxBytes int64) ([]byte, error) {
 ~~~
 The first-frame object additionally contains `"frame_type":"first_frame"`. Foreign/deleted/missing IDs map to the same `asset_not_found` result; a video passed as an image maps to `unsupported`. Byte limits apply before base64 allocation; reject oversized image output before decode when the encoded length already exceeds the maximum possible valid encoding, then verify the decoded size.
 
-- [ ] **Step 5: Verify and commit.**
+- [x] **Step 5: Verify and commit.**
 
 Include missing/foreign assets, lying lengths, nil reader, early cancellation, non-image reference, content truncation, malformed base64/JSON, absent cost, explicit zero cost, 400, 402, policy refusal, 5xx, terminal statuses, same-origin content and malicious `unsigned_urls` tests. Set an unrelated ambient OPENAI_API_KEY in a test and assert Authorization is still the explicit identity key.
 
