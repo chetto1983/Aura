@@ -367,8 +367,10 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// survives instead of rounding to zero. 0125 lets identity_llm_key.limit_usd
 	// be NULL, a key with no limit (the admin's own). 0126 records on an agent
 	// asset the tool call that delivered it, so a reload puts its card back there.
-	if head != 126 {
-		t.Fatalf("MigrationHead=%d, want embedded head 126", head)
+	// 0127 admits video in the aura.assets modality CHECK, for bounded MP4/WebM
+	// assets and generated clips.
+	if head != 127 {
+		t.Fatalf("MigrationHead=%d, want embedded head 127", head)
 	}
 }
 
