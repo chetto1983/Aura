@@ -282,6 +282,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	wireMediaTools(chat, media)
 	backgroundCompletions := newServeCompletionDispatcher(ctx, chat)
 	mediaWatcher := newMediaWatcher(ctx, media, backgroundCompletions.NotifyMedia)
+	wireVideoTool(chat, media, mediaWatcher)
 	// share_service_wiring.go: wires WEBSHARE-02/03 into HTTP, the D-15 delete cascade, and
 	// the share_expiry_sweep cron handler below — all three were previously unwired.
 	shareSvc, shareAPI := buildShareService(chat, objectStore)

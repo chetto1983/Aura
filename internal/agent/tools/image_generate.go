@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/mediagen"
@@ -34,8 +33,6 @@ const imageGenerateParameters = `{
   "required": ["prompt"],
   "additionalProperties": false
 }`
-
-const uncheckedOptionsNote = "the model catalog is unavailable, so the options were not checked against the model; OpenRouter validates them"
 
 type imageGenerateArgs struct {
 	Prompt            string   `json:"prompt"`
@@ -128,21 +125,14 @@ func (g *ImageGenerate) configured() bool {
 		g.References != nil && g.Assets != nil && g.MaxImageBytes > 0
 }
 
-// clamp narrows the request to what the catalog declares for model. An unreadable
-// catalog is treated like a model the catalog does not list: the request goes out
-// unclamped with a note, because refusing a paid call over a free lookup helps nobody.
+// clamp narrows the request to what the catalog declares for model.
 func (g *ImageGenerate) clamp(ctx context.Context, baseURL, model string, args imageGenerateArgs) (mediagen.ImageInput, []string, error) {
-	entry, err := g.Catalog.Find(ctx, baseURL, mediagen.KindImage, model)
-	unchecked := errors.Is(err, mediagen.ErrCatalogUnavailable)
-	if err != nil && !unchecked {
+	entry, adjustments, err := mediaCatalogEntry(ctx, g.Catalog, baseURL, mediagen.KindImage, model)
+	if err != nil {
 		return mediagen.ImageInput{}, nil, err
 	}
 	input, notes := mediagen.ClampImage(mediagen.ImageInput{
 		Prompt: args.Prompt, AspectRatio: args.AspectRatio, ReferenceAssetIDs: args.ReferenceAssetIDs,
 	}, entry)
-	adjustments := []string{}
-	if unchecked {
-		adjustments = append(adjustments, uncheckedOptionsNote)
-	}
 	return input, append(adjustments, notes...), nil
 }

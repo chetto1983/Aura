@@ -219,12 +219,23 @@ func (q *Queries) InsertMediaJob(ctx context.Context, arg InsertMediaJobParams) 
 }
 
 const listRecoverableMediaJobs = `-- name: ListRecoverableMediaJobs :many
-SELECT id, identity_id, conversation_id, tool_call_id, provider_job_id, model, request, status, error, asset_id, cost_usd, created_at, updated_at, completed_at, delivered_at FROM aura.media_job WHERE identity_id = $1
-AND (status IN ('pending','in_progress') OR
-     (status = 'completed' AND delivered_at IS NULL))
+SELECT id, identity_id, conversation_id, tool_call_id, provider_job_id, model, request, status, error, asset_id, cost_usd, created_at, updated_at, completed_at, delivered_at FROM aura.media_job WHERE media_job.identity_id = $1
+AND (media_job.status IN ('pending','in_progress') OR
+     (media_job.status = 'completed' AND media_job.delivered_at IS NULL AND EXISTS (
+         SELECT 1 FROM aura.assets
+         WHERE assets.id = media_job.asset_id
+           AND assets.identity_id = media_job.identity_id
+           AND assets.thread_id = media_job.conversation_id
+           AND assets.source_kind = 'agent'
+           AND assets.status = 'accepted'
+           AND assets.deleted_at IS NULL
+     )))
 ORDER BY created_at, id
 `
 
+// A completed, undelivered job is recoverable only while BindMediaJobAssetDelivery could still
+// bind its asset: once the clip is deleted no delivery can succeed, so waking the conversation
+// on every boot would only ever answer asset_not_found.
 func (q *Queries) ListRecoverableMediaJobs(ctx context.Context, identityID pgtype.UUID) ([]AuraMediaJob, error) {
 	rows, err := q.db.Query(ctx, listRecoverableMediaJobs, identityID)
 	if err != nil {

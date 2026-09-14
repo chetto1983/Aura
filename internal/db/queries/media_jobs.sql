@@ -10,9 +10,20 @@ RETURNING *;
 SELECT * FROM aura.media_job WHERE id = $1 AND identity_id = $2;
 
 -- name: ListRecoverableMediaJobs :many
-SELECT * FROM aura.media_job WHERE identity_id = $1
-AND (status IN ('pending','in_progress') OR
-     (status = 'completed' AND delivered_at IS NULL))
+-- A completed, undelivered job is recoverable only while BindMediaJobAssetDelivery could still
+-- bind its asset: once the clip is deleted no delivery can succeed, so waking the conversation
+-- on every boot would only ever answer asset_not_found.
+SELECT * FROM aura.media_job WHERE media_job.identity_id = $1
+AND (media_job.status IN ('pending','in_progress') OR
+     (media_job.status = 'completed' AND media_job.delivered_at IS NULL AND EXISTS (
+         SELECT 1 FROM aura.assets
+         WHERE assets.id = media_job.asset_id
+           AND assets.identity_id = media_job.identity_id
+           AND assets.thread_id = media_job.conversation_id
+           AND assets.source_kind = 'agent'
+           AND assets.status = 'accepted'
+           AND assets.deleted_at IS NULL
+     )))
 ORDER BY created_at, id;
 
 -- name: UpdateMediaJobProgress :one

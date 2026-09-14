@@ -1,8 +1,10 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -10,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/mediagen"
 )
 
 func mediaCtx(t *testing.T, runDir string) context.Context {
@@ -191,6 +194,61 @@ func TestMediaDeliveryArtifactResultCarriesTheDescriptorAndPreview(t *testing.T)
 	}
 	if res.Preview != `{"adjustments":[],"asset_id":"asset-9"}` || res.Bytes != len(res.Preview) {
 		t.Fatalf("preview = %q (%d bytes)", res.Preview, res.Bytes)
+	}
+}
+
+func TestMediaDeliveryRestagesAnOwnedVideoWithoutIngestingIt(t *testing.T) {
+	runDir := t.TempDir()
+	library := &fakeVideoLibrary{clips: map[string]storedClip{}, bySource: map[string]string{}}
+	assetID := library.store("owner-1")
+	path, filename, mimeType, size, err := stageExistingVideo(mediaCtx(t, runDir), library, "owner-1", assetID, 1<<20)
+	if err != nil || filename != "generated.mp4" || mimeType != "video/mp4" || size != int64(len(generatedClip)) {
+		t.Fatalf("stageExistingVideo = %q %q %q %d, %v", path, filename, mimeType, size, err)
+	}
+	if staged, err := os.ReadFile(path); err != nil || string(staged) != string(generatedClip) {
+		t.Fatalf("staged bytes = %q (%v), want the stored clip", staged, err)
+	}
+	if dirs := stagedMediaDirs(t, runDir); len(dirs) != 1 || filepath.Base(filepath.Dir(path)) != dirs[0] {
+		t.Fatalf("staged %q under %v, want one media- directory in the run tmp tree", path, dirs)
+	}
+}
+
+// understatedClip declares fewer bytes than it streams, so only the bounded copy can catch it.
+type understatedClip struct{ data []byte }
+
+func (c understatedClip) Open(context.Context, string, string) (io.ReadCloser, mediagen.ReferenceMeta, error) {
+	return io.NopCloser(bytes.NewReader(c.data)), mediagen.ReferenceMeta{MIMEType: "video/mp4", Modality: "video", SizeBytes: 1}, nil
+}
+
+func TestMediaDeliveryRefusesAVideoItCannotRestage(t *testing.T) {
+	library := &fakeVideoLibrary{clips: map[string]storedClip{}, bySource: map[string]string{}}
+	owned := library.store("owner-1")
+	image := &fakeReferenceReader{assets: map[string]ownedReference{
+		"picture": {owner: "owner-1", mimeType: "image/png", modality: "image", data: []byte("png")},
+	}}
+	cases := map[string]struct {
+		reader   mediagen.ReferenceReader
+		assetID  string
+		maxBytes int64
+		code     string
+	}{
+		"foreign clip":         {library, library.store("owner-2"), 1 << 20, "asset_not_found"},
+		"missing clip":         {library, "gone", 1 << 20, "asset_not_found"},
+		"not a video":          {image, "picture", 1 << 20, "asset_not_found"},
+		"declared over limit":  {library, owned, 8, "too_large"},
+		"streamed over limit":  {understatedClip{data: generatedClip}, "lying", 8, "too_large"},
+		"limit bounds nothing": {library, owned, 0, "too_large"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			runDir := t.TempDir()
+			if _, _, _, _, err := stageExistingVideo(mediaCtx(t, runDir), tc.reader, "owner-1", tc.assetID, tc.maxBytes); mediagen.ErrorCode(err) != tc.code {
+				t.Fatalf("err = %v (%q), want %q", err, mediagen.ErrorCode(err), tc.code)
+			}
+			if dirs := stagedMediaDirs(t, runDir); len(dirs) != 0 {
+				t.Fatalf("a refused restage left %v behind", dirs)
+			}
+		})
 	}
 }
 

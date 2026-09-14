@@ -55,13 +55,15 @@ func (s Status) active() bool {
 }
 
 // JobAudit is the reserved "_aura" object of a persisted job request: what the provider body
-// cannot carry. The reference asset IDs replace the image data the body sent, and Origin lets
-// a resume refuse to poll a job at a base URL other than the one it was submitted to, without
-// storing a key.
+// cannot carry. The reference asset IDs replace the image data the body sent, Origin lets a
+// resume refuse to poll a job at a base URL other than the one it was submitted to, without
+// storing a key, and Adjustments keeps the clamp's notes so a delivery after a restart reports
+// what the submitting call reported.
 type JobAudit struct {
 	Origin            string   `json:"origin"`
 	FirstFrameAssetID string   `json:"first_frame_asset_id,omitempty"`
 	ReferenceAssetIDs []string `json:"reference_asset_ids,omitempty"`
+	Adjustments       []string `json:"adjustments,omitempty"`
 }
 
 type jobRequest struct {
@@ -86,16 +88,21 @@ func JobRequest(req VideoRequest, audit JobAudit) (json.RawMessage, error) {
 
 // Audit reads back the _aura object JobRequest recorded.
 func (j Job) Audit() (JobAudit, error) {
-	var request struct {
-		Aura *JobAudit `json:"_aura"`
-	}
+	_, audit, err := j.Submission()
+	return audit, err
+}
+
+// Submission reads back what JobRequest recorded: the request as submitted, without its image
+// data and with its prompt redacted, and its _aura object.
+func (j Job) Submission() (VideoRequest, JobAudit, error) {
+	var request jobRequest
 	if err := json.Unmarshal(j.Request, &request); err != nil {
-		return JobAudit{}, fmt.Errorf("mediagen: decode job %s request: %w", j.ID, err)
+		return VideoRequest{}, JobAudit{}, fmt.Errorf("mediagen: decode job %s request: %w", j.ID, err)
 	}
-	if request.Aura == nil || request.Aura.Origin == "" {
-		return JobAudit{}, fmt.Errorf("mediagen: job %s request records no submission origin", j.ID)
+	if request.Aura.Origin == "" {
+		return VideoRequest{}, JobAudit{}, fmt.Errorf("mediagen: job %s request records no submission origin", j.ID)
 	}
-	return *request.Aura, nil
+	return request.VideoRequest, request.Aura, nil
 }
 
 // SubmissionOrigin is the form of a base URL a job records and a resume compares: scheme,

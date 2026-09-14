@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/assets"
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/mediagen"
@@ -335,5 +337,69 @@ func TestShutdownBackgroundWorkStopsTheWatcherBeforeTheDispatcher(t *testing.T) 
 	defer dispatcher.mu.Unlock()
 	if !dispatcher.closed {
 		t.Fatal("shutdown left the background completion dispatcher open")
+	}
+}
+
+func TestVideoGenerateHandleRetainedWithoutDependencies(t *testing.T) {
+	reg, handles := buildBaseRegistryWithHandles(config.LoadDB(), nil, nil)
+	video := handles.VideoGenerate
+	if video == nil || *video != (tools.VideoGenerate{}) {
+		t.Fatalf("the registry must retain a dependency-free video_generate handle for serve-boot wiring: %+v", video)
+	}
+	registered, ok := reg.Get("video_generate")
+	if !ok || registered != video || !registered.Spec().Deferred {
+		t.Fatal("the registry must list the retained, deferred video_generate tool")
+	}
+}
+
+func TestWireVideoToolSharesTheImageToolsDependenciesAndTheWatcher(t *testing.T) {
+	_, handles := buildBaseRegistryWithHandles(config.LoadDB(), nil, nil)
+	svc := &assets.Service{Limits: assets.Limits{MaxImageBytes: 12 << 20, MaxVideoBytes: 30 << 20}}
+	chat := &chatEnv{cfg: &config.Config{}, assets: svc, toolHandles: handles}
+	media := newMediaDeps(chat)
+	media.jobs = &recoveryJobStore{}
+	watcher := newMediaWatcher(context.Background(), media, func(mediagen.Completion) {})
+	defer stopWatcher(t, watcher)
+	wireMediaTools(chat, media)
+
+	wireVideoTool(chat, media, watcher)
+
+	video, image := handles.VideoGenerate, handles.ImageGenerate
+	if video.Credentials != image.Credentials || video.Settings != image.Settings || video.Catalog != image.Catalog ||
+		video.Client != image.Client || video.References != image.References {
+		t.Fatal("video_generate must reuse the one credential port, settings, catalog, client and reference adapter")
+	}
+	if video.Jobs != media.jobs || video.Watcher != watcher || video.MaxImageBytes != 12<<20 || video.MaxVideoBytes != 30<<20 {
+		t.Fatalf("video_generate = %+v, want the job store, the daemon's watcher and both boot ceilings", video)
+	}
+	if clips, ok := video.VideoAssets.(mediaAssetAdapter); !ok || clips.svc != svc {
+		t.Fatalf("VideoAssets = %#v, want the asset adapter the watcher ingests through", video.VideoAssets)
+	}
+}
+
+func TestWireVideoToolLeavesTheToolRefusingWhenItCannotBeServed(t *testing.T) {
+	svc := &assets.Service{Limits: assets.Limits{MaxImageBytes: 12 << 20, MaxVideoBytes: 30 << 20}}
+	for name, tc := range map[string]struct {
+		secret  string
+		assets  *assets.Service
+		watcher bool
+	}{
+		"watcher disabled":        {assets: svc},
+		"no asset service":        {watcher: true},
+		"unreadable settings key": {secret: "not-hex", assets: svc, watcher: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, handles := buildBaseRegistryWithHandles(config.LoadDB(), nil, nil)
+			chat := &chatEnv{cfg: &config.Config{AuthulaSecret: tc.secret}, assets: tc.assets, toolHandles: handles}
+			var watcher *mediagen.Watcher
+			if tc.watcher {
+				watcher = newMediaWatcher(context.Background(), testMediaDeps(t, &recoveryJobStore{}, nil), func(mediagen.Completion) {})
+				defer stopWatcher(t, watcher)
+			}
+			wireVideoTool(chat, newMediaDeps(chat), watcher)
+			if video := handles.VideoGenerate; *video != (tools.VideoGenerate{}) {
+				t.Fatalf("video_generate partially wired: %+v", video)
+			}
+		})
 	}
 }

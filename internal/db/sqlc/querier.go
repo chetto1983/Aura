@@ -427,6 +427,9 @@ type Querier interface {
 	ListPendingDelegationResults(ctx context.Context, arg ListPendingDelegationResultsParams) ([]AuraSteerQueue, error)
 	ListPendingPausedStates(ctx context.Context, conversationID pgtype.UUID) ([]AuraPausedStates, error)
 	ListRecentPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error)
+	// A completed, undelivered job is recoverable only while BindMediaJobAssetDelivery could still
+	// bind its asset: once the clip is deleted no delivery can succeed, so waking the conversation
+	// on every boot would only ever answer asset_not_found.
 	ListRecoverableMediaJobs(ctx context.Context, identityID pgtype.UUID) ([]AuraMediaJob, error)
 	ListReservedConversationDeletes(ctx context.Context, arg ListReservedConversationDeletesParams) ([]ListReservedConversationDeletesRow, error)
 	// Every grant standing on one resource, for the operator asking "who can read this?" before

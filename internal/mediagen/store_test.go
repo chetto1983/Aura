@@ -179,6 +179,29 @@ func TestJobAuditReadsTheRecordedSubmission(t *testing.T) {
 	}
 }
 
+// A collect after a restart renders the clip from the stored row alone, so the submitted
+// options and the plain-language adjustments must read back exactly, without the image data.
+func TestJobSubmissionReadsBackTheClampedRequestAndItsAdjustments(t *testing.T) {
+	req := referencedVideoRequest()
+	audit := JobAudit{
+		Origin: "https://openrouter.ai/api/v1", FirstFrameAssetID: uuid.NewString(),
+		Adjustments: []string{"duration 4s is not offered; used 6s"},
+	}
+	raw, err := JobRequest(req, audit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotReq, gotAudit, err := Job{Request: raw}.Submission()
+	wantReq := req
+	wantReq.FrameImages, wantReq.InputReferences = nil, nil
+	if err != nil || !reflect.DeepEqual(gotReq, wantReq) || !reflect.DeepEqual(gotAudit, audit) {
+		t.Fatalf("Submission = %#v, %#v, %v; want %#v, %#v", gotReq, gotAudit, err, wantReq, audit)
+	}
+	if _, _, err := (Job{ID: "job-1", Request: json.RawMessage(`{"model":"m","prompt":"p"}`)}).Submission(); err == nil {
+		t.Fatal("Submission accepted a request with no recorded origin")
+	}
+}
+
 func TestJobFromRowMapsNullableColumns(t *testing.T) {
 	created := time.Date(2026, 9, 14, 10, 0, 0, 0, time.UTC)
 	id, owner, asset := uuid.New(), uuid.New(), uuid.New()

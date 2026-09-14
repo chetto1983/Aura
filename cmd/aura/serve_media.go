@@ -79,6 +79,26 @@ func wireMediaTools(chat *chatEnv, media *mediaDeps) {
 	image.MaxImageBytes = chat.assets.Limits.MaxImageBytes
 }
 
+// wireVideoTool gives the retained video tool its live dependencies once the watcher exists, all
+// or nothing like the image tool: without a watcher no submitted job could be supervised or woken,
+// so the tool keeps its zero value and refuses before any paid request.
+func wireVideoTool(chat *chatEnv, media *mediaDeps, watcher *mediagen.Watcher) {
+	video := chat.toolHandles.VideoGenerate
+	if video == nil || media == nil || media.settings == nil || watcher == nil {
+		return
+	}
+	video.Credentials = media.credentials
+	video.Settings = media.settings
+	video.Catalog = media.catalog
+	video.Client = media.client
+	video.References = media.references
+	video.Jobs = media.jobs
+	video.Watcher = watcher
+	video.VideoAssets = media.references
+	video.MaxImageBytes = chat.assets.Limits.MaxImageBytes
+	video.MaxVideoBytes = media.maxVideoBytes
+}
+
 // newMediaWatcher builds the daemon's one video watcher, living as long as ctx, or returns nil
 // when no job can be persisted or the boot video ceiling bounds nothing — NewWatcher would panic
 // on that ceiling, and every clip would be refused under it anyway.

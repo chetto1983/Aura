@@ -7,10 +7,12 @@ import "github.com/chetto1983/aura/internal/agent/tools"
 // discoverable and refuse at call time.
 type mediaToolHandles struct {
 	ImageGenerate *tools.ImageGenerate
+	VideoGenerate *tools.VideoGenerate
 }
 
 func registerMediaTools(reg *tools.Registry) mediaToolHandles {
-	handles := mediaToolHandles{ImageGenerate: &tools.ImageGenerate{}}
+	handles := mediaToolHandles{ImageGenerate: &tools.ImageGenerate{}, VideoGenerate: &tools.VideoGenerate{}}
 	reg.Register(handles.ImageGenerate)
+	reg.Register(handles.VideoGenerate)
 	return handles
 }

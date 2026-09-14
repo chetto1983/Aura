@@ -198,3 +198,66 @@ func TestGatewayOperationReplayValidationAndBounds(t *testing.T) {
 		t.Fatalf("boundedString UTF-8 = %q, want one rune", got)
 	}
 }
+
+// A replayed video_generate delivery reaches the agent loop as the recorded result, never as a
+// new execution: the same artifact descriptor, so the card correlated by tool_call_id replaces
+// the one the recorded dispatch produced instead of adding a second, and the recorded JSON
+// followed by exactly replayedMarker. Nothing strips the marker from a preview today; a parser
+// of this result must remove only that exact suffix.
+func TestGatewayReplaysARecordedVideoDeliveryWithItsArtifact(t *testing.T) {
+	t.Parallel()
+
+	spec := (&tools.VideoGenerate{}).Spec()
+	args := json.RawMessage(`{"job_id":"0b8f1c2e-8f7a-4a51-9d0f-3c3f9d1a2b4c"}`)
+	fingerprint, err := tools.OperationFingerprint(spec, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	operationCtx := func(t *testing.T) context.Context {
+		ctx, err := idempotency.WithOperation(identityctx.WithIdentityID(context.Background(), identityctx.LocalOperatorIdentity),
+			idempotency.Operation{
+				Key:         idempotency.OperationKey{IdentityID: identityctx.LocalOperatorIdentity, Scope: idempotency.ScopeAgentTool, Key: "video-collect"},
+				Fingerprint: fingerprint,
+			})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ctx
+	}
+	const preview = `{"asset_id":"asset-video-1","mime_type":"video/mp4","model":"minimax/hailuo-3-max","cost_usd":0.4,"used":{"duration":6},"adjustments":[]}`
+	recorded := tools.ToolResult{Preview: preview, Bytes: len(preview), Meta: &tools.ToolResultMeta{"artifact": map[string]any{
+		"path": "/run/tmp/media-1/generated.mp4", "filename": "generated.mp4", "mime_type": "video/mp4",
+		"asset_id": "asset-video-1", "caption": "waves at dawn", "tool_call_id": "call-collect", "size_bytes": 1024,
+	}}}
+
+	registry := &fakeOperationRegistry{}
+	g := New(config.ProfileSingleUserHardened, &fakeStore{})
+	g.SetOperationRegistry(registry)
+	claimed, err := idempotency.WithClaimToken(operationCtx(t), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := g.CompleteOperation(claimed, recorded); err != nil {
+		t.Fatalf("CompleteOperation: %v", err)
+	}
+	registry.decision = idempotency.BeginDecision{Decision: idempotency.DecisionReplay, Replay: &registry.complete[0].Result}
+
+	verdict, err := g.Decide(operationCtx(t), spec, args, testKey())
+	if err != nil || verdict.Decision != Allow || verdict.Replay == nil {
+		t.Fatalf("Decide = %+v, %v; want an allowed replay", verdict, err)
+	}
+	replayed := *verdict.Replay
+	if replayed.Preview != preview+replayedMarker {
+		t.Fatalf("replayed preview = %q, want the recorded JSON plus exactly the replay marker", replayed.Preview)
+	}
+	if body, found := strings.CutSuffix(replayed.Preview, replayedMarker); !found || !json.Valid([]byte(body)) {
+		t.Fatalf("stripping the exact marker leaves %q, want valid JSON", body)
+	}
+	if replayed.Meta == nil {
+		t.Fatal("the replay dropped the recorded artifact")
+	}
+	artifact, _ := (*replayed.Meta)["artifact"].(map[string]any)
+	if artifact["asset_id"] != "asset-video-1" || artifact["tool_call_id"] != "call-collect" || artifact["path"] != "/run/tmp/media-1/generated.mp4" {
+		t.Fatalf("replayed artifact = %#v, want the recorded descriptor", artifact)
+	}
+}

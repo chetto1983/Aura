@@ -103,7 +103,7 @@ func TestOnlyTheWorkingSetIsAlwaysActive(t *testing.T) {
 		&SearchFiles{}, &ReadFile{}, &WriteFile{}, &ReadToolOutput{}, &SendFile{},
 		&ShellExec{}, &ShellPoll{}, &ShellKill{},
 		&SkillTool{}, &SkillManageTool{}, &SwarmSpawn{}, &SwarmStatus{}, &TaskTool{},
-		&TextResponse{}, &TodoTool{}, &ToolSearch{}, &WebFetch{}, &WebSearch{},
+		&TextResponse{}, &TodoTool{}, &ToolSearch{}, &VideoGenerate{}, &WebFetch{}, &WebSearch{},
 	}
 
 	var got []string

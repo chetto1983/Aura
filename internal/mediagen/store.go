@@ -81,7 +81,7 @@ func (s *Store) Get(ctx context.Context, ownerID, jobID string) (Job, error) {
 }
 
 // Recoverable lists the owner's jobs a restart must pick up, oldest first: active jobs to
-// resume polling and completed jobs never delivered.
+// resume polling and completed jobs never delivered whose clip can still be delivered.
 func (s *Store) Recoverable(ctx context.Context, ownerID string) ([]Job, error) {
 	owner, err := db.ParseUUID("owner id", ownerID)
 	if err != nil {

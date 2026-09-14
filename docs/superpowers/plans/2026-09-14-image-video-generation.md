@@ -971,7 +971,7 @@ git commit -m "feat(runtime): wake conversations for background media jobs" -m "
 - Output is either the media artifact preview, `{status,job_id,message,model,cost_usd,used,adjustments}`, or a spec error result.
 - `stageExistingVideo(ctx, reader mediagen.ReferenceReader, owner, assetID string, maxBytes int64) (path, filename, mimeType string, size int64, err error)` stages the existing owned asset, with no second ingest.
 
-- [ ] **Step 1: Write submit/collect tests.**
+- [x] **Step 1: Write submit/collect tests.** (controller ruling 2026-09-15: the schema test asserts NO root `anyOf`/`oneOf`/`allOf`/`enum` — D-10 and Anthropic's 400 on root composition keywords — and Execute refuses a call with neither prompt nor job_id)
 
 ~~~go
 func TestVideoGenerateSchemaAllowsCollectWithoutPrompt(t *testing.T) {
@@ -988,13 +988,13 @@ func TestVideoGenerateSchemaAllowsCollectWithoutPrompt(t *testing.T) {
 
 Build an Execute fixture from Task 4's httptest provider, Task 7's fake store and the real watcher. With a barrier-controlled completion, assert: one POST, persisted row before wait, artifact on early completion, no wake; with timeout, assert in_progress then one wake then a fresh collect call with one artifact. Repeat collect with a new tool-call ID and assert `already_delivered` and no provider request.
 
-- [ ] **Step 2: Run red.**
+- [x] **Step 2: Run red.**
 
 ~~~sh
 go test ./internal/agent/tools -run TestVideoGenerate -count=1
 ~~~
 
-- [ ] **Step 3: Implement submission.**
+- [x] **Step 3: Implement submission.** (per the same ruling the root `anyOf` below is not in the schema; per R3 the inline wait is read from `Settings.VideoInlineWait` on every submit, not an `InlineWait` field)
 
 ~~~json
 {
@@ -1020,7 +1020,7 @@ When job_id is present, choose collect before credentials/model/clamp and do not
 
 If the remote submit already reports completed, persist an active job and let the watcher perform the same download/ingest path. A provider status of completed does not prove a usable Aura asset exists.
 
-- [ ] **Step 4: Implement collect and stable artifact correlation.**
+- [x] **Step 4: Implement collect and stable artifact correlation.**
 
 ~~~text
 Get(owner, job_id)
@@ -1041,7 +1041,7 @@ Collecting a finished job does not need a fresh paid credential or the current m
 
 Pin the replay distinction: replaying the same operation does not resubmit; an explicit second collect with a new operation returns already_delivered. Replayed cached tool results must not create a second visible media artifact in the same message. Verify the existing gateway replay marker cannot invalidate JSON parsing: use the established result parsing helpers or strip only the exact runtime marker in the UI parser.
 
-- [ ] **Step 5: Verify and commit.**
+- [x] **Step 5: Verify and commit.**
 
 Include foreign job, wrong conversation, no-credit submit with zero HTTP, collect after credit removal, first-frame unsupported before asset load, original model after settings change, origin change, tool cancellation at handoff, failed staging, duplicate calls, provider timeout without re-POST, and restart fixtures.
 

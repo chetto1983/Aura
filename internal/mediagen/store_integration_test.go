@@ -147,6 +147,16 @@ func newJob(owner string) Job {
 	}
 }
 
+func softDeleteAsset(t *testing.T, pool *pgxpool.Pool, owner, assetID string) {
+	t.Helper()
+	if err := db.WithIdentityTxRaw(context.Background(), pool, owner, func(tx pgx.Tx) error {
+		_, err := tx.Exec(context.Background(), `UPDATE aura.assets SET deleted_at = now() WHERE id = $1`, assetID)
+		return err
+	}); err != nil {
+		t.Fatalf("soft-delete asset: %v", err)
+	}
+}
+
 func assetToolCall(t *testing.T, pool *pgxpool.Pool, owner, assetID string) string {
 	t.Helper()
 	var call string
@@ -454,12 +464,7 @@ func TestMediaJobClaimRollsBackWhenTheAssetCannotBeBound(t *testing.T) {
 	if _, claimed, err := store.ClaimDelivery(ctx, owner, completed.ID, "thread-b", "call-collect"); claimed || !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("claim from another conversation = %v, %v; want a missing job", claimed, err)
 	}
-	if err := db.WithIdentityTxRaw(ctx, pool, owner, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `UPDATE aura.assets SET deleted_at = now() WHERE id = $1`, assetID)
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
+	softDeleteAsset(t, pool, owner, assetID)
 
 	foreignAsset := seedAsset(t, pool, stranger, acceptedVideo)
 	pointsAway := seedJob(t, pool, owner, "completed", foreignAsset, 0, false)
@@ -535,5 +540,33 @@ func TestMediaJobRecoverableOrdersByCreationAndRetainsIt(t *testing.T) {
 	}
 	if time.Since(resumed.CreatedAt) < 29*time.Minute {
 		t.Fatalf("created_at %v lost the job's real age", resumed.CreatedAt)
+	}
+}
+
+// A completed job whose clip was deleted before anyone collected it can never be delivered: it
+// leaves the resume list, so no restart wakes its conversation again, and a collect's claim
+// answers asset_not_found while the row keeps its history.
+func TestMediaJobRecoverableDropsACompletedJobWhoseClipIsGone(t *testing.T) {
+	pool := migratedMediaJobPool(t)
+	ctx := context.Background()
+	store := NewStore(pool)
+	owner := seedMediaIdentity(t, pool)
+	assetID := seedAsset(t, pool, owner, acceptedVideo)
+	job := seedJob(t, pool, owner, "completed", assetID, 0, false)
+	running := seedJob(t, pool, owner, "in_progress", "", time.Minute, false)
+	if jobs, err := store.Recoverable(ctx, owner); err != nil || len(jobs) != 2 || jobs[1].ID != job.ID {
+		t.Fatalf("Recoverable = %#v (%v), want the running job and the collectible one", jobs, err)
+	}
+
+	softDeleteAsset(t, pool, owner, assetID)
+	jobs, err := store.Recoverable(ctx, owner)
+	if err != nil || len(jobs) != 1 || jobs[0].ID != running.ID {
+		t.Fatalf("Recoverable = %#v (%v), want only the running job once the clip is gone", jobs, err)
+	}
+	if _, claimed, err := store.ClaimDelivery(ctx, owner, job.ID, "thread-a", "call-collect"); claimed || ErrorCode(err) != "asset_not_found" {
+		t.Fatalf("claim = %v, %v; want asset_not_found", claimed, err)
+	}
+	if after, err := store.Get(ctx, owner, job.ID); err != nil || after.Status != StatusCompleted || after.DeliveredAt != nil {
+		t.Fatalf("job = %#v (%v), want it completed and undelivered", after, err)
 	}
 }
